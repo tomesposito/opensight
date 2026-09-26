@@ -531,6 +531,29 @@ keeps unsupported features from silently changing totals. Local execution makes 
 boundary testable without implying archive, API or source compatibility.
 **Status:** decided for the synthetic local slice; QuickSight semantics remain provisional.
 
+### D11 — Hosting target
+
+**Context:** Where OpenSight runs once there is something to deploy. Owner direction
+(2026-09-26): assume the owner's AWS account when available; prefer free-tier and
+serverless services where possible.
+
+**Options:**
+- **AWS serverless-first** — Lambda (TypeScript API) + API Gateway, S3 + CloudFront
+  (frontend), RDS free tier (Postgres metadata), DuckDB inside the Lambda package or
+  as a sidecar for the SPICE-equivalent cache on S3/Parquet.
+- **Single VPS / Docker Compose** — simplest self-host story, but not the owner's
+  target and a worse fit for the OSS "deploy to your own AWS" narrative.
+- **ECS Fargate** — middle ground if Lambda packaging (native DuckDB bindings,
+  250 MB limit) proves painful.
+
+**Decision:** AWS serverless-first; free tier where it exists.
+**Reasoning:** The architecture (stateless TypeScript API, DuckDB-in-process,
+Postgres for metadata, static frontend) maps cleanly onto Lambda + S3 + CloudFront +
+RDS. Serverless keeps idle cost near zero, which matters for the owner's cost
+constraint. Fargate stays as the fallback if Lambda packaging fights the native
+DuckDB bindings.
+**Status:** decided as target; no infrastructure code until a later phase.
+
 ---
 
 ## 6. Phased Delivery Plan
