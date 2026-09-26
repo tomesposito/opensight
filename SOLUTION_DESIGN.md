@@ -589,6 +589,35 @@ constraint. Fargate stays as the fallback if Lambda packaging fights the native
 DuckDB bindings.
 **Status:** decided as target; no infrastructure code until a later phase.
 
+### D12 — Production data plane: Postgres, not DynamoDB; DuckDB stays local-only
+
+**Context:** Owner direction (2026-09-26): for the hosted deployment DuckDB will
+likely need swapping for DynamoDB or Aurora Serverless.
+
+**Options:**
+- **DynamoDB** — generous free tier and truly serverless, but it is a
+  key-value/document store with no engine for ad-hoc GROUP BY and aggregation.
+  Every analytical query would become a full-table scan aggregated in Lambda —
+  reimplementing, worse, what DuckDB already does. PartiQL is not OLAP.
+- **Aurora Serverless v2 (Postgres)** — best technical fit: real Postgres, and
+  the query engine's generated SQL translates with dialect adjustments. But the
+  ~0.5 ACU floor is roughly $43/month — real money against the owner's cost
+  constraint.
+- **RDS free tier (db.t3.micro Postgres)** — $0 for 12 months, real Postgres,
+  and the same engine as Aurora, so graduating to Serverless v2 later is
+  trivial. Not serverless (always on), but free beats serverless while learning.
+- **S3 + Athena** — near-zero idle cost and pay-per-query, but multi-second
+  latency and a different execution story; revisit for the SPICE-equivalent
+  cache layer, not the primary query path.
+
+**Decision:** Postgres in production — RDS free tier first, Aurora Serverless v2
+when the free year ends or load demands it. DynamoDB is rejected for the
+analytical query path (wrong data model; it would force scan-and-aggregate in
+Lambda). DuckDB remains the local dev/test engine (zero setup, fast): the
+query engine's planner/executor split absorbs the dialect difference through a
+Postgres executor, and the engine's SQL is already the portability seam.
+**Status:** decided; no infrastructure code yet.
+
 ---
 
 ## 6. Phased Delivery Plan
@@ -860,3 +889,53 @@ consumer typechecks and fixture account/ARN hygiene checks cover this import bou
   unchecked → checked).
 - Nothing here is precious. When we learn something that contradicts it, we change the
   doc first, then the code.
+
+---
+
+## 11. Deployment (AWS) — spec, 2026-09-26
+
+**Target:** a live OpenSight Tom can open on his phone — no tunnels, no local
+servers. Owner-approved direction; not yet built.
+
+**Topology (all free-tier to start):**
+- **Frontend** (`packages/web`): S3 static hosting + CloudFront. The Vite build
+  already produces a static bundle; the single-file demo build proves the app
+  runs with no server beyond API calls.
+- **API** (`packages/api` + `@opensight/query-engine` with the Postgres
+  executor): Lambda + API Gateway (HTTP API). The API is already stateless
+  plain `node:http` with no framework — it ports to a Lambda handler with a
+  thin adapter. No DuckDB native module in the Lambda package (that was the
+  D11 packaging risk; D12 removes it).
+- **Data** (D12): RDS `db.t3.micro` Postgres, free tier for 12 months. Holds
+  datasets (migrated from local CSVs) and, later, metadata. Aurora Serverless
+  v2 is the graduation path, same engine.
+- **Total idle cost:** ~$0 (S3/CloudFront/Lambda/API Gateway free tiers;
+  RDS free tier). The only metered cost is real usage.
+
+**Deploy pipeline — two routes, owner's choice:**
+1. **GitHub Actions (recommended):** push to `master` → build workspaces →
+   run full test suite → deploy frontend to S3 + invalidate CloudFront →
+   package and deploy Lambda → run smoke tests against the live URL. Push-to-
+   deploy, full history, no local AWS tooling needed after setup.
+2. **AWS CLI (manual):** same steps run by hand from an authorized machine.
+   Faster to first deploy, but every release is manual.
+
+**Prerequisites (owner actions):**
+- AWS account access for deployments. No keys in chat, no keys in the repo —
+  GitHub Actions uses OIDC (short-lived credentials, no stored secrets) where
+  possible; the CLI route uses a named profile on an authorized machine.
+- GitHub Actions workflow files cannot be pushed with the current PAT
+  (`public_repo` scope only — API 404s on `.github/workflows/*`). The workflow
+  must be added through the GitHub web UI or a re-scoped token. The pending
+  CI workflow precedent is documented in `~/workspace/goals/opensight/
+  hidden_files/ci-workflow-pending.yml`.
+- Nothing is provisioned and no money is spent until the owner explicitly
+  approves the build phase.
+
+**Build order when approved:**
+1. Query-engine Postgres executor + dialect pass (replaces DuckDB for the
+   hosted path; DuckDB stays for local dev/test).
+2. Lambda handler adapter for `packages/api` (keep `node:http` locally).
+3. IaC for S3/CloudFront/API Gateway/Lambda/RDS (CDK or Terraform — decide at
+   build time; keep it minimal and free-tier-pinned).
+4. GitHub Actions pipeline (or AWS CLI runbook) + live smoke tests.
