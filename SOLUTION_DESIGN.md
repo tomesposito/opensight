@@ -14,6 +14,7 @@
 |------------|--------|
 | 2026-09-26 | Initial draft: vision, compatibility contract, architecture, decisions D1–D9, phased plan. Repo scaffold + bundle-parser spike started. |
 | 2026-09-26 | bundle-parser spike builds clean (tsc strict) and summarizes the sample fixture; committed locally as `3655cc3`, ready to push once GitHub is connected. |
+| 2026-09-26 | Published as public repo `tomesposito/opensight`. Added Phase 0 export runbook (capture a real `QUICKSIGHT_JSON` bundle via AWS CLI) and public-repo hygiene rule: placeholders only, redact any real export before keeping it as a fixture. |
 
 ---
 
@@ -311,11 +312,56 @@ function at a time.
 ## 6. Phased Delivery Plan
 
 ### Phase 0 — Learn the format (current)
-- [ ] Capture real QuickSight asset-bundle exports; document exact schema + zip layout in `docs/research/`.
+- [ ] Capture real QuickSight asset-bundle exports (runbook below); document exact schema + zip layout in `docs/research/`.
 - [x] Repo scaffold + `bundle-parser` spike (parses a reconstructed sample bundle).
 - [ ] Replace sample fixture with a real export.
 - [ ] Confirm D2 (TypeScript) with the spike; record API action inventory (which QuickSight
   API actions exist, prioritized for implementation).
+
+#### Runbook — capture a real export (at a PC with AWS CLI v2)
+
+Goal: one real `QUICKSIGHT_JSON` bundle, with all dependencies, to replace the
+reconstructed sample fixture and ground the schema docs in `docs/research/`.
+
+Prerequisites: AWS CLI v2 with access to the QuickSight account. Pick the most
+complex dashboard available — more visual types means better parser coverage.
+
+1. Find the dashboard ID:
+
+   aws quicksight list-dashboards --aws-account-id YOUR_ACCOUNT_ID --region YOUR_REGION
+
+2. Start the export. `--include-all-dependencies` pulls in datasets, data sources
+   and themes so the bundle is self-describing:
+
+   aws quicksight start-asset-bundle-export-job \
+     --aws-account-id YOUR_ACCOUNT_ID \
+     --asset-bundle-export-job-id opensight-sample-1 \
+     --resource-arns '["arn:aws:quicksight:YOUR_REGION:YOUR_ACCOUNT_ID:dashboard/YOUR_DASHBOARD_ID"]' \
+     --include-all-dependencies \
+     --export-format QUICKSIGHT_JSON \
+     --region YOUR_REGION
+
+3. Poll until `JobStatus` is `SUCCESSFUL`, then copy the presigned `DownloadUrl`:
+
+   aws quicksight describe-asset-bundle-export-job \
+     --aws-account-id YOUR_ACCOUNT_ID \
+     --asset-bundle-export-job-id opensight-sample-1 \
+     --region YOUR_REGION
+
+4. Download promptly (the URL expires) and hand the file to the build agent.
+
+What happens next: the bundle is validated against `bundle-parser`, the exact
+schema + zip layout is documented in `docs/research/bundle-format.md`, and a
+sanitized copy replaces the sample fixture in `fixtures/`.
+
+Cost: the export is API calls only — no per-job charge. QuickSight bills per user
+seat per month, independent of exports.
+
+> **Public-repo hygiene.** This repository is public. Never commit real account
+> IDs, ARNs, credentials, hostnames, or customer data. The commands above use
+> placeholders (`YOUR_ACCOUNT_ID`, …) — keep it that way. Any real export kept
+> as a fixture must be redacted first: replace account IDs/ARNs with example
+> values and strip connection details.
 
 ### Phase 1 — Vertical slice
 - Import a bundle → connect CSV/Postgres → render a dashboard with bar, line, table,
