@@ -325,7 +325,9 @@ share types with the web UI.
 class of drift bugs — and drift from the bundle format is the project's #1 risk.
 Contributor accessibility matters for an OSS project; TypeScript wins there.
 **Status:** decided for shared packages by the strict TypeScript parser and local
-query-engine slices; API and web remain unimplemented.
+query-engine slices; first API slice (`packages/api`, plain `node:http`, local
+definition endpoints) and web slice (`packages/web`, React + ECharts fixture
+renderer) implemented 2026-09-26; full API/web remain future work.
 
 ### D3 — Metadata store
 
@@ -355,7 +357,9 @@ KPI, table, pivot, scatter, geospatial, funnel, gauge, …).
 **Reasoning:** Treat ECharts option objects as a *compile target*: the renderer compiles
 a QuickSight visual definition → ECharts option. This keeps visual logic declarative
 and testable in the conformance suite.
-**Status:** proposed.
+**Status:** decided — first renderer slice (`packages/web`) compiles bundle visual
+definitions to ECharts options for pie/donut, bar and KPI shapes over local
+fixtures (2026-09-26); broader visual coverage remains future work.
 
 ### D5 — Canonical data model = QuickSight bundle format
 
@@ -602,6 +606,14 @@ DuckDB bindings.
   inventory in §3.2 (captured API contract and endpoint gates remain open).
 - [x] Catalog the public definition API shapes and add separate provisional API
   type projections (§3.2); preserve existing parser/runtime behavior.
+- [x] First local definition API slice (`packages/api`): plain `node:http` server
+  with `GET /analyses/{id}/definition` and `/dashboards/{id}/definition` reading
+  local `.qs` bundles/fixtures; PascalCase responses per the API catalog, unknown
+  properties preserved; 18 HTTP-level tests. No auth, no AWS calls (D2).
+- [x] First web renderer slice (`packages/web`): React 19 + ECharts 6 + Vite app;
+  pure visual compiler (bundle definition → ECharts options) for pie/donut, bar
+  and KPI; renders the sanitized real bundle and synthetic fixtures from
+  precomputed results (no in-browser DuckDB); 50 compiler/fixture tests (D4).
 
 #### Runbook — capture a real export (at a PC with AWS CLI v2)
 
