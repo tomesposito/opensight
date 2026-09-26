@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { createServer, type Server, type ServerResponse } from 'node:http';
 import { DefinitionStore, RESOURCE_ID } from './store.js';
+import { QueryEngineError } from '@opensight/query-engine';
+import { readQuery, RequestError, SalesQuery } from './query.js';
 
 export interface ApiOptions {
   /** Directory of local fixtures/bundles, or one .qs/.json file. Loaded at startup. */
@@ -10,6 +12,7 @@ export interface ApiOptions {
 /** Loads a complete snapshot before returning an unbound HTTP server. */
 export async function createApiServer(options: ApiOptions): Promise<Server> {
   const store = await DefinitionStore.load(options.dataRoot);
+  const sales = await SalesQuery.load(options.dataRoot);
   return createServer((request, response) => {
     const requestId = randomUUID();
     const error = (status: number, type: string, message: string): void => {
@@ -19,6 +22,30 @@ export async function createApiServer(options: ApiOptions): Promise<Server> {
     const queryOffset = url.indexOf('?');
     const path = queryOffset === -1 ? url : url.slice(0, queryOffset);
     const query = queryOffset === -1 ? '' : url.slice(queryOffset + 1);
+    const queryMatch = /^\/api\/datasets\/([^/]+)\/query$/u.exec(path);
+    if (queryMatch) {
+      void (async () => {
+        try {
+          if (request.method !== 'POST') {
+            response.setHeader('Allow', 'POST');
+            throw new RequestError(405, 'Only POST is supported');
+          }
+          let id: string;
+          try { id = decodeURIComponent(queryMatch[1]!); }
+          catch { throw new RequestError(400, 'Invalid dataset ID encoding'); }
+          if (!RESOURCE_ID.test(id)) throw new RequestError(400, 'Invalid dataset ID');
+          if (query) throw new RequestError(400, 'Query parameters are not supported');
+          if (id !== 'sales' || !sales) throw new RequestError(404, 'Dataset has no resolved local sales CSV binding');
+          send(response, 200, await sales.execute(await readQuery(request)));
+        } catch (cause) {
+          request.resume();
+          if (cause instanceof QueryEngineError) send(response, 422, { errorCode: cause.code, message: cause.message, path: cause.path });
+          else if (cause instanceof RequestError) send(response, cause.status, { Message: cause.message });
+          else send(response, 500, { Message: 'Unable to execute local query' });
+        }
+      })();
+      return;
+    }
     const match = /^\/(analyses|dashboards)\/([^/]+)\/definition$/u.exec(path);
     if (!match) {
       error(404, 'ResourceNotFoundException', 'Route not found');

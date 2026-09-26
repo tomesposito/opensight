@@ -92,7 +92,7 @@ export class DefinitionStore {
   }
 }
 
-async function readJson(path: string): Promise<unknown> {
+export async function readJson(path: string): Promise<unknown> {
   const file = await open(path, 'r');
   try {
     if ((await file.stat()).size > JSON_BYTES) throw new Error('JSON exceeds 16 MiB limit');

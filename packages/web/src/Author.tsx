@@ -2,6 +2,8 @@ import { useEffect, useMemo, useReducer, useState } from 'react';
 import type { Dispatch } from 'react';
 import { VisualCard } from './VisualCard.js';
 import { buildAuthorPreview } from './author-preview.js';
+import { LiveAuthorVisual } from './LiveAuthorVisual.js';
+import type { QueryClient } from './author-query.js';
 import {
   SALES_FIELDS, VISUAL_TYPES, authorReducer, dimensionLabel, loadDraft, saveDraft, serializeDraft, singleMeasure,
 } from './authoring.js';
@@ -9,7 +11,7 @@ import type { AuthorAction, AuthorDraft, AuthorVisual, VisualKind } from './auth
 
 const browserStorage = () => window.localStorage;
 
-export function Author() {
+export function Author({ client }: { client?: QueryClient }) {
   const [restored] = useState(() => loadDraft(browserStorage));
   const [draft, dispatch] = useReducer(authorReducer, restored.draft);
   const [storageStatus, setStorageStatus] = useState(restored.warning ?? 'Draft saved on this device.');
@@ -41,18 +43,18 @@ export function Author() {
   };
   return <>
     <div className="dashboard-heading"><div><p className="eyebrow">Synthetic sales · Author</p><h1>Build your analysis</h1></div><span className="phase-badge">Builder v0</span></div>
-    <p className="fixture-notice">Preview uses fixed sample results: region = East, dates grouped by UTC month. Only revenue totals by region, category, month, or overall are available. Other selections show “Data unavailable”. No live queries run.</p>
+    <p className="fixture-notice">{client ? 'Live local sales data · All regions, dates grouped by UTC month. Field assignments query the API; unsupported queries show “Data unavailable”.' : 'Offline demo: preview uses fixed sample results: region = East, dates grouped by UTC month. Only revenue totals by region, category, month, or overall are available. Other selections show “Data unavailable”. No live queries run.'}</p>
     <div className="author-save">
       <p role="status">{storageStatus}</p>
       <button type="button" className="primary-button" onClick={download} disabled={!draft.visuals.length || !!exported.error} aria-describedby="export-help">Export JSON</button>
-      <p id="export-help">{exported.error ?? 'Downloads visual definitions only; sample rows and the fixed East preview filter are not included.'}</p>
+      <p id="export-help">{exported.error ?? (client ? 'Downloads visual definitions only; query results are not included.' : 'Downloads visual definitions only; sample rows and the fixed East preview filter are not included.')}</p>
       {exportStatus && <p role="status">{exportStatus}</p>}
     </div>
-    <AuthorCanvas draft={draft} dispatch={dispatch} />
+    <AuthorCanvas draft={draft} dispatch={dispatch} client={client} />
   </>;
 }
 
-export function AuthorCanvas({ draft, dispatch }: { draft: AuthorDraft; dispatch: Dispatch<AuthorAction> }) {
+export function AuthorCanvas({ draft, dispatch, client }: { draft: AuthorDraft; dispatch: Dispatch<AuthorAction>; client?: QueryClient }) {
   const [newKind, setNewKind] = useState<VisualKind>('bar');
   const selected = draft.visuals.find(v => v.id === draft.selectedId);
   return <div className="author-layout">
@@ -80,16 +82,16 @@ export function AuthorCanvas({ draft, dispatch }: { draft: AuthorDraft; dispatch
       {!draft.visuals.length && <div className="canvas-empty"><h2>Your canvas is ready</h2><p>Choose a visual type and select Add visual. Then configure its fields below.</p></div>}
       <div className="author-stack" aria-label="Authoring canvas">
         {draft.visuals.map((visual, index) => <AuthorCard key={visual.id} visual={visual} index={index}
-          count={draft.visuals.length} selected={visual.id === draft.selectedId} dispatch={dispatch} />)}
+          count={draft.visuals.length} selected={visual.id === draft.selectedId} dispatch={dispatch} client={client} />)}
       </div>
     </div>
   </div>;
 }
 
-function AuthorCard({ visual, index, count, selected, dispatch }: {
-  visual: AuthorVisual; index: number; count: number; selected: boolean; dispatch: Dispatch<AuthorAction>;
+function AuthorCard({ visual, index, count, selected, dispatch, client }: {
+  visual: AuthorVisual; index: number; count: number; selected: boolean; dispatch: Dispatch<AuthorAction>; client?: QueryClient;
 }) {
-  const preview = useMemo(() => buildAuthorPreview(visual), [visual]);
+  const preview = useMemo(() => client ? undefined : buildAuthorPreview(visual), [visual, client]);
   const label = visual.title || `Visual ${index + 1}`;
   const configId = `configure-${visual.id}`;
   return <section className={`author-card${selected ? ' is-selected' : ''}`} aria-label={label}>
@@ -131,6 +133,6 @@ function AuthorCard({ visual, index, count, selected, dispatch }: {
         <p className="field-hint">Use the Fields panel or a well’s picker. Remove a field with ×. Dates use UTC months.</p>
       </div>}
     </div>
-    <VisualCard visual={preview} />
+    {client ? <LiveAuthorVisual visual={visual} client={client} /> : preview && <VisualCard visual={preview} />}
   </section>;
 }

@@ -7,6 +7,7 @@ import { build } from 'vite';
 const root = fileURLToPath(new URL('../', import.meta.url));
 const result = await build({
   root, configFile: false, base: './',
+  define: { 'import.meta.env.VITE_OPENSIGHT_OFFLINE_DEMO': JSON.stringify('true') },
   build: {
     write: false, cssCodeSplit: false, modulePreload: false,
     rolldownOptions: { output: { codeSplitting: false } },

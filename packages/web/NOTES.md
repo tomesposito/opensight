@@ -1,7 +1,7 @@
 # Web explorer and Builder v0
 
 React 19 / ECharts 6 / Vite 8 provide fixture and API definition exploration,
-plus the Phase 1b **Author** mode. D2, D4, §3.2 and Phase 1b of
+plus the Phase 1b **Author** mode with Phase 1c live queries. D2, D4, §3.2 and Phases 1b/1c of
 `SOLUTION_DESIGN.md` guide these slices; that spec is unchanged. This is a local
 definition explorer and authoring preview, not a general QuickSight runtime or
 a fidelity claim.
@@ -48,6 +48,13 @@ values are public, read at dev startup/build time; restart/rebuild to change the
 Production API mode needs an equivalent reverse proxy or a CORS-enabled server;
 the dev proxy is not bundled into the static build or Vite preview.
 
+Both definition and query requests use that same server mount. The query route
+itself is `/api/datasets/sales/query`, so the default browser URL is
+`/api/api/datasets/sales/query`; Vite removes the first `/api` and forwards the
+remaining path unchanged. With base `http://127.0.0.1:3000`, the query URL is
+`http://127.0.0.1:3000/api/datasets/sales/query`. Custom reverse proxies must
+preserve this distinction between their mount prefix and the server's routes.
+
 The **Mode** selector starts at `fixtures` on every page load. This mode
 uses only generated assets and makes no definition requests, keeping the static
 demo usable offline. Choose `api` to load the selected example live, or enter an
@@ -66,10 +73,11 @@ actions or a synthetic `ResourceType` wrapper.
 
 ### API definitions versus chart data
 
-**Only definitions are live. The query engine is not behind HTTP.** API mode
+**The `api` explorer mode still loads only definitions.** API mode
 does not fetch data, execute SQL, aggregate CSV, evaluate filters/calculations,
 connect to sources, or establish source permissions. All visible numbers still
-come from the pinned, precomputed fixture results.
+come from the pinned, precomputed fixture results. Author mode uses the live
+query endpoint described below.
 
 Rows and aliases are reused only when resource kind + ID and the **entire
 converted definition** match the reviewed fixture definition (JSON object key
@@ -152,7 +160,8 @@ screens. Local well pickers avoid scrolling back to the panel on mobile. All
 controls work with clicks or a keyboard; no drag-and-drop is required.
 
 `src/authoring.ts` holds the pure immutable reducer and serialization;
-`src/author-preview.ts` binds only the reviewed fixture results. Explorer and
+`src/author-preview.ts` builds visual definitions and binds reviewed offline
+fixture results; `src/author-query.ts` builds live requests. Explorer and
 Author share `src/VisualCard.tsx`, including the existing `compileVisual` call,
 SVG charts, semantic HTML tables, View data, ready / Data unavailable / No
 results / error states. Removing a required field shows the compiler error
@@ -161,13 +170,28 @@ shows Data unavailable and can still be exported.
 
 ### Author data boundary
 
-Author makes **no API requests or live data queries**. Previews use the same
-pinned precomputed sales oracles as the explorer; the query engine is not behind
-HTTP. No client-side aggregation, CSV loading, calculation, joining or filtering
-is performed. The UI always discloses the fixed **region = East** subset and
-UTC month grouping already present in those rows.
+In the normal web build, complete wells POST to the local query API using the
+same configured base as definition fetches. Requests include assigned dimensions
+(dates use MONTH), SUM measures in well order, and an empty filters array. They
+query **all regions**, with no hidden East filter. Profit and multiple measures
+now compute real results. Numeric `order_id` dimensions remain unsupported by
+the engine and honestly show its diagnostic.
 
-Only revenue by region, category or month, and overall revenue for KPI, have
+The UI shows loading while waiting, renders returned rows on 200, and reuses
+**Data unavailable** with the engine message on 422. Network, malformed-response
+and other HTTP errors also show unavailable data; they never reuse sample rows.
+Empty results show **No results**. Incomplete wells do not query. Changing wells,
+removing cards or leaving Author aborts requests; late responses cannot restore
+old rows. Title/selection edits do not query again. Result columns and cell types
+are validated before rendering; MONTH binds explicitly to `month`.
+
+The **single-file demo** uses `VITE_OPENSIGHT_OFFLINE_DEMO=true`, set explicitly
+by `build:demo`, and keeps Author's pinned precomputed oracles. Its visible
+notice says **Offline demo**, discloses **region = East** and UTC month grouping,
+and says no live queries run. No client-side aggregation or CSV loading occurs.
+Fixtures mode remains offline in both builds.
+
+In that offline demo, only revenue by region, category or month, and overall revenue for KPI, have
 reviewed results. Those grains may be presented in any compatible visual type.
 `order_date` binds explicitly to the oracle's `month` column. Profit, order IDs
 and multiple-measure configurations have no matching oracle: every value in
@@ -217,7 +241,7 @@ npm run build:demo --workspace @opensight/web
 
 This rebuilds fixtures, runs strict TypeScript and emits
 `packages/web/dist/opensight-demo.html` with inline JavaScript and CSS. Open it
-directly for offline fixtures and Author, including charts and JSON downloads;
+directly for offline fixtures and Author with fixed fixture rows, including charts and JSON downloads;
 there are no external asset requests. File-URL localStorage behavior depends on
 the browser; use the dev/preview server for a stable origin. API mode still needs
 the separately served API and proxy described above. The normal split Vite
@@ -242,9 +266,9 @@ ignored rather than committed.
   `parseQsBundle`, selects its dashboard member, and preserves the original
   visual definition in generated JSON. The `.qs` itself is not fetched or
   decompressed in the browser. Preparation does not query any source.
-- **Precomputed results were chosen instead of browser CSV aggregation.** Sales
-  rows come directly from `expected-queries.json`; neither its SQL nor DuckDB is
-  executed by the app or preparation script. The existing query-engine suite
+- **Fixture views use precomputed results.** Their sales rows come directly from
+  `expected-queries.json`; no SQL or DuckDB runs in the browser or preparation
+  script. Live Author queries run DuckDB in the API. The existing query-engine suite
   separately checks these oracles. The fixed East filter, UTC month grouping,
   and discounted-revenue calculation are already reflected in those results.
   No filter controls suggest that the user can recompute the fixed results.
@@ -432,6 +456,45 @@ external requests. This used environment-provided Playwright/Chromium with local
 socket access, not a new project dependency. The mobile screenshot was also
 reviewed. `git diff --check` passed; no AWS calls were made, and
 `SOLUTION_DESIGN.md` and source fixtures remain unchanged.
+
+### Live query validation (Phase 1c, 2026-09-26)
+
+Node 24.20.0 / npm 10.9.4. Final root `npm test` exited 0, including strict
+TypeScript and public consumer checks:
+
+| Workspace | Passed | Failed | Skipped / cancelled / todo |
+| --- | ---: | ---: | ---: |
+| API | 26 | 0 | 0 / 0 / 0 |
+| Bundle parser | 134 | 0 | 0 / 0 / 0 |
+| Query engine | 131 | 0 | 0 / 0 / 0 |
+| Web | 139 | 0 | 0 / 0 / 0 |
+| Total | 430 | 0 | 0 / 0 / 0 |
+
+Eight added web tests cover assignment-to-request mapping, POST routing/headers,
+returned live cells, month aliases, empty results, the engine's 422 diagnostic,
+malformed/network/HTTP failures, cancellation even when fetch ignores abort,
+initial loading and the offline boundary. Root tests automatically discover the
+new files. The initial sandboxed run passed 408 and failed 22 API tests because
+loopback was denied (`listen EPERM`); the final run used local socket access.
+
+`npm run build` and `npm run build:demo --workspace=@opensight/web` exited 0.
+The existing ECharts chunk-size warning remains (584.14 kB minified / 199.58 kB
+gzip). The rebuilt ignored demo is 870,275 bytes.
+
+A supplemental Chromium 152 check used the production web build, actual Vite
+proxy and an ephemeral local API. It verified all-region revenue (East 500,
+West 400), profit (65/70), monthly totals, 422 data-unavailable messages,
+clearing old rows and ignoring a deliberately delayed stale response, KPI 900,
+and 390px layout without overflow. Eight queries returned six 200s and two 422s;
+there were zero page exceptions. Browser requests were routed through the local
+proxy because the browser environment blocks direct loopback navigation.
+
+The existing offline Chromium check also passed against the rebuilt demo:
+all five visuals, field edits, fixture/unavailable states, JSON downloads,
+localStorage restore and mobile layout, with zero page/console errors and zero
+external requests. These use environment-provided browser tooling, not a new
+project dependency. `git diff --check` passed. No AWS calls were made;
+`SOLUTION_DESIGN.md` and the source fixtures are unchanged.
 
 ## Sources
 

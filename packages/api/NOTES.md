@@ -1,4 +1,61 @@
-# First local definition API slice
+# Local definition and live query API
+
+## Phase 1c: local sales queries
+
+`POST /api/datasets/sales/query` executes DuckDB against the existing
+`fixtures/renderable-sales/sales.csv` binding. This is an **OpenSight-local**
+contract, not a QuickSight-compatible query API. There is **no authentication**;
+use the loopback local development server. No AWS or PostgreSQL connections run.
+Native DuckDB packaging for Lambda remains deferred.
+
+```sh
+curl http://127.0.0.1:3000/api/datasets/sales/query \
+  -H 'Content-Type: application/json' \
+  -d '{"dimensions":[{"fieldId":"region","columnName":"region"}],"measures":[{"fieldId":"revenue","columnName":"revenue","aggregation":"SUM"}],"filters":[]}'
+```
+
+The three arrays are required. Dimensions have `fieldId`, `columnName` and
+optional `granularity`; measures additionally require `aggregation`; filters
+have `columnName` and a string `value`. Unknown properties, invalid JSON/UTF-8,
+wrong types, missing fields, or no measures return **400 `{Message}`**.
+Bodies require `application/json` and are capped at **1 MiB** while reading,
+including chunked bodies; exceeding the cap returns **413 `{Message}`**.
+
+Supported semantics come from the engine: string dimensions, UTC `MONTH` date
+dimensions, numeric `SUM`/`AVG`/`COUNT`/`MIN`/`MAX`, and ANDed string equality
+filters applied before aggregation. There is no implicit East filter. Unsupported
+semantics (including numeric dimensions, bad aggregation names, unknown columns,
+or other date grains) return **422 `{errorCode, message, path}`**, preserving the
+`QueryEngineError` diagnostic. The adapter supplies the engine's full
+`PlanRequest` analysis/metadata envelope; callers cannot supply SQL, paths,
+source metadata, or security declarations.
+
+Success is **200 `{columns: [{name, type}], rows: [...]}`**. Rows are objects;
+column types are `string` or `number`. Aliases are field IDs, except the engine's
+MONTH dimension uses `month` (a `YYYY-MM` string). Columns remain available for
+empty results, null aggregates remain null, and dimensions follow the engine's
+ordering. The example returns East/500 and West/400.
+
+Only ID `sales` is allowlisted. The configured `dataRoot` must contain the sales
+fixture directory, be that directory, or select a file within it. At startup,
+the API resolves only the fixed `local-data.json`, dataset/source response files
+and regular `sales.csv`, requiring the existing sales ARN/table/file binding.
+Absent or unresolved bindings and other IDs return **404 `{Message}`**. There is
+no fallback to a different root. Metadata is loaded at startup; execution reads
+the CSV per query and retains the engine's metadata/security and real-path checks.
+Other methods return **405** with `Allow: POST`; invalid IDs/URL selectors return
+400. Unexpected failures return 500 without stack traces. Responses use JSON and
+`Cache-Control: no-store`.
+
+Phase 1c validation (Node 24.20.0 / npm 10.9.4): final root `npm test` exited 0,
+with API **26/26**, bundle parser **134/134**, query engine **131/131**, and web
+**139/139** passing (**430 total; 0 failed, skipped, cancelled or todo**).
+Strict builds and public consumer checks passed. The eight new API tests cover
+CSV-derived aggregation values/nulls, filters/months/multiple dimensions, KPI,
+404/400/422 responses, routing, and both fixed-length and chunked size limits.
+Root build and the single-file demo build passed; see the web notes for browser
+checks. An initial sandboxed run had 408 passes and 22 loopback `listen EPERM`
+failures; the successful final suite ran with local socket access. No AWS calls.
 
 ## Scope and evidence
 
@@ -14,8 +71,9 @@ model pin, authentication, or service-response captures are introduced.
 ## Runtime and use
 
 - TypeScript with `strict` and `noUncheckedIndexedAccess`, ESM, Node >=24.
-- Plain `node:http`: two read-only routes need no framework or additional runtime
-  HTTP dependency. `@opensight/bundle-parser` is the sole runtime dependency.
+- Plain `node:http`, without a framework or HTTP runtime dependency.
+  Runtime dependencies are the workspace `@opensight/bundle-parser` and
+  `@opensight/query-engine` packages.
 - Public `createApiServer({ dataRoot })` loads the data and returns an **unbound**
   `node:http` server. Callers control host, port, and shutdown. Importing the package
   starts no listener. HTTP tests use actual loopback sockets and Node's `fetch`.
@@ -47,8 +105,9 @@ directory/file), not the single real bundle in the optional command above.
 
 - At startup, recursively scan the configured directory in sorted order for `.qs`
   and `.json` files. IDs come from document contents, never filenames. Restart to
-  reload changes; there is no request-time filesystem access, watcher, mutation,
-  database, or query execution. Dataset/source definitions are not served.
+  reload definition changes; definition routes have no request-time filesystem
+  access or watcher. Dataset/source definitions are not served. The query route
+  separately reads its resolved CSV and executes DuckDB as described above.
 - `.qs` uses `loadQsBundle`, including its ZIP limits, CRC/path/ID validation and
   unknown-property preservation. Standalone lowercase analysis/dashboard archive
   members use `parseBundleResource` and the same API adapter.
@@ -112,13 +171,13 @@ directory/file), not the single real bundle in the optional command above.
 
 ## HTTP boundary
 
-- Only the exact routes above and GET are supported. Decode the ID once, then
+- Definition routes support GET only. Decode the ID once, then
   require `[A-Za-z0-9_-]{1,512}`. This is a local routing rule. IDs index a `Map`;
   they never construct file paths. Invalid percent encoding, separators, control
   characters and overlong IDs return 400. Valid encoded IDs resolve normally.
 - Unknown resources/routes return 404. Other methods on a definition route return
   405 with `Allow: GET`; HEAD has no response body. No implicit metadata or AWS
-  account-prefixed routes, write routes, CORS, health route, or list API is added.
+  account-prefixed routes, persistence routes, CORS, health route, or list API is added.
 - Nonempty query strings return 400, including dashboard version/alias selectors.
   Returning a default definition for an unsupported selector would be misleading.
 - Errors use local `{ Type, Message, RequestId }` bodies: 400
@@ -134,7 +193,7 @@ directory/file), not the single real bundle in the optional command above.
 
 `npm test` already runs all `packages/*` workspace test scripts, so the new package
 joins the root suite without changing root scripts. The API build explicitly builds
-its parser dependency first, making both a clean workspace build and an isolated
+its parser and query-engine dependencies first, making both a clean workspace build and an isolated
 API test run independent of workspace enumeration order. Tests also compile a
 strict TypeScript consumer through the public package export.
 

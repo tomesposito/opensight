@@ -29,7 +29,7 @@ export default function App() {
   const fixture = fixtures.find(f => f.id === fixtureId);
   return <div className="app-shell">
     <header className="app-header"><a className="brand" href="./"><span className="brand-mark" aria-hidden="true">◈</span>OpenSight</a><span className="header-caption">{mode === 'author' ? 'BI builder' : 'Definition explorer'}</span><label className="source-picker">Mode<select value={mode} onChange={event => setMode(event.target.value === 'author' ? 'author' : event.target.value === 'api' ? 'api' : 'fixtures')}><option value="fixtures">fixtures</option><option value="api">api</option><option value="author">Author</option></select></label>{mode !== 'author' && <label className="fixture-picker">Example<select value={fixtureId} onChange={event => setFixtureId(event.target.value)}>{fixtures.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}</select></label>}</header>
-    <main>{mode === 'author' ? <Author /> : mode === 'api' ? <ApiExplorer key={fixtureId} example={fixture} /> : fixture ? <Dashboard key={fixture.id} fixture={fixture} /> : <p>No fixtures available.</p>}</main>
+    <main>{mode === 'author' ? <Author client={import.meta.env.VITE_OPENSIGHT_OFFLINE_DEMO === 'true' ? undefined : api} /> : mode === 'api' ? <ApiExplorer key={fixtureId} example={fixture} /> : fixture ? <Dashboard key={fixture.id} fixture={fixture} /> : <p>No fixtures available.</p>}</main>
     <footer className="app-footer">OpenSight · Local rendering preview · QuickSight fidelity has not been measured</footer>
   </div>;
 }

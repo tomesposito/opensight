@@ -20,8 +20,13 @@ export function buildAuthorPreview(visual: AuthorVisual): FixtureVisual {
     : visual.dimension !== null && visual.dimension !== 'order_id' ? grains[visual.dimension] : undefined;
   const rows = visual.measures.length === 1 && visual.measures[0] === 'revenue' && grain
     ? oracles.get(grain) ?? null : null;
+  return { ...buildAuthorVisual(visual), rows };
+}
+
+/** A row-free definition shared by the fixture and live previews. */
+export function buildAuthorVisual(visual: AuthorVisual): FixtureVisual {
   return {
-    source: 'bundle', definition: serializeVisual(visual), rows,
+    source: 'bundle', definition: serializeVisual(visual), rows: null,
     bindings: visual.dimension === 'order_date' ? { order_date: 'month' } : {},
     placement: { column: 0, columns: 36, row: 0, rows: 6 },
     path: `author.${visual.id}`,

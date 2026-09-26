@@ -26,7 +26,7 @@ function DataTable({ compiled }: { compiled: CompiledVisual }) {
   </table></div>;
 }
 
-export function VisualCard({ visual }: { visual: FixtureVisual }) {
+export function VisualCard({ visual, dataMessage, loading = false }: { visual: FixtureVisual; dataMessage?: string; loading?: boolean }) {
   const headingId = useId();
   const result = useMemo(() => {
     try { return { compiled: compileVisual(visual) }; }
@@ -45,8 +45,8 @@ export function VisualCard({ visual }: { visual: FixtureVisual }) {
         {compiled.model.kind === 'table' ? <DataTable compiled={compiled} /> : <Chart option={compiled.option} title={compiled.model.title} />}
         {compiled.state !== 'ready' && <div className="empty-state" role="status">
           <span className="empty-symbol" aria-hidden="true">◌</span>
-          <strong>{compiled.state === 'unavailable' ? 'Data unavailable' : 'No results'}</strong>
-          <p>{compiled.state === 'unavailable' ? 'The chart definition is loaded. No matching precomputed fixture rows are available.' : 'The supplied result set is empty.'}</p>
+          <strong>{loading ? 'Loading data…' : compiled.state === 'unavailable' ? 'Data unavailable' : 'No results'}</strong>
+          <p>{loading ? 'Computing the assigned fields from local sales data.' : dataMessage ?? (compiled.state === 'unavailable' ? 'The chart definition is loaded. No matching precomputed fixture rows are available.' : 'The supplied result set is empty.')}</p>
           <small>{compiled.model.measures.map(f => `SUM(${f.column})`).join(', ')}{compiled.model.dimensions[0] && ` by ${compiled.model.dimensions[0].column}`}</small>
         </div>}
       </div>
