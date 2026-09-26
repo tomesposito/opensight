@@ -614,6 +614,13 @@ DuckDB bindings.
   pure visual compiler (bundle definition → ECharts options) for pie/donut, bar
   and KPI; renders the sanitized real bundle and synthetic fixtures from
   precomputed results (no in-browser DuckDB); 50 compiler/fixture tests (D4).
+- [x] Web/API definition integration: `packages/web` fetches live definitions
+  from the local API (`VITE_OPENSIGHT_API_URL`, default `/api` proxied to the
+  API server in dev); PascalCase → camelCase converter reuses bundle-parser
+  types; chart data is pinned only when the live definition deep-equals a
+  reviewed fixture (otherwise an honest definition-only notice). Fixtures mode
+  stays the offline default. 36 new client/converter/preview tests; full
+  HTTP → convert → compile loop verified end to end (369/369 tests green).
 
 #### Runbook — capture a real export (at a PC with AWS CLI v2)
 
