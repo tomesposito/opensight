@@ -3,7 +3,8 @@
  *
  * SyntheticAnalysisDocument is an OpenSight test envelope, NOT a .qs archive
  * member or a DescribeAnalysisDefinition response. API response envelopes and
- * archive member schemas are separate contracts; archive types await a real export.
+ * archive member schemas are separate contracts; observed camelCase archive types
+ * live in bundle-types.ts. See docs/research/bundle-format.md for the mapping.
  * Only the inventory subset below is validated. Opaque properties are preserved,
  * not certified as executable QuickSight configurations.
  */

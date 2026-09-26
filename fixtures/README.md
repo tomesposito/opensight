@@ -1,9 +1,11 @@
-# Provisional fixtures reconstructed from documentation
+# Fixtures
 
-Nothing here is a real QuickSight export. File and directory names are OpenSight
-fixture organization; they make no claim about `.qs` ZIP layout or member schemas.
-All identifiers and data are fabricated examples using AWS's example account ID.
+The synthetic regression fixtures below use fabricated examples and AWS's example
+account ID. Their filenames and envelopes do not describe the real archive format.
+The separate real bundle sample retains sanitized AWS-exported member structure.
 
+- `real-bundle-sample/`: sanitized real AWS `.qs` export with four members; see its
+  README for provenance, checksum, privacy checks and expected summary.
 - `sample-sales-analysis.json`: inventory smoke fixture. The `ResourceType` envelope
   is synthetic. Its pivot and unbound calculations intentionally exercise inventory;
   it has no executable field wells or data. The category filter explicitly uses
@@ -15,7 +17,7 @@ All identifiers and data are fabricated examples using AWS's example account ID.
 
 The parser validates the consumed inventory subset and preserves other properties.
 It is neither a complete AWS schema validator nor an execution eligibility check.
-A successful inventory says nothing about archive compatibility or query support.
+A successful inventory does not certify full AWS compatibility or query support.
 
 Sources checked 2026-09-26:
 [AnalysisDefinition](https://docs.aws.amazon.com/quicksight/latest/APIReference/API_AnalysisDefinition.html),
@@ -24,6 +26,6 @@ Sources checked 2026-09-26:
 [CustomFilterConfiguration](https://docs.aws.amazon.com/quicksight/latest/APIReference/API_CustomFilterConfiguration.html),
 [ParameterDeclaration](https://docs.aws.amazon.com/quicksight/latest/APIReference/API_ParameterDeclaration.html).
 
-Keep these regression fixtures when a sanitized real export arrives; add the export
-separately with provenance and observed archive/member documentation. Real-export
-acceptance and archive round-trip tests are blocked until then.
+Keep the synthetic regression fixtures unchanged alongside the real export.
+See [observed archive/member documentation](../docs/research/bundle-format.md)
+for the real sample's confirmed schema and remaining evidence gaps.

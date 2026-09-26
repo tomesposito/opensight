@@ -1,0 +1,85 @@
+{
+  "memberCount": 4,
+  "resourceCounts": {
+    "analysis": 1,
+    "dashboard": 1,
+    "dataset": 1,
+    "datasource": 1
+  },
+  "members": [
+    {
+      "path": "dashboard/e0772d4e-bd69-444e-a421-cb3f165dbad8.json",
+      "resourceType": "dashboard",
+      "id": "e0772d4e-bd69-444e-a421-cb3f165dbad8",
+      "name": "TotalDeathByCountry",
+      "definition": {
+        "dataSets": [
+          {
+            "identifier": "us_simplified",
+            "arn": "arn:aws:quicksight:us-east-2:123456789012:dataset/2b4bd673-99f3-4d18-a475-ac37d56af357"
+          }
+        ],
+        "sheets": [
+          {
+            "sheetId": "e0772d4e-bd69-444e-a421-cb3f165dbad8_9d289c46-2931-44ac-a4d1-ad28e3ad3d81",
+            "name": "Sheet 1",
+            "visualCount": 1
+          }
+        ],
+        "visuals": [
+          {
+            "kind": "pieChartVisual",
+            "visualId": "e0772d4e-bd69-444e-a421-cb3f165dbad8_371234b0-070d-4c97-8b7e-7aac3c8d8d68",
+            "sheetId": "e0772d4e-bd69-444e-a421-cb3f165dbad8_9d289c46-2931-44ac-a4d1-ad28e3ad3d81"
+          }
+        ],
+        "calculatedFieldCount": 0,
+        "parameterCount": 0,
+        "filterGroupCount": 0
+      }
+    },
+    {
+      "path": "dataset/2b4bd673-99f3-4d18-a475-ac37d56af357.json",
+      "resourceType": "dataset",
+      "id": "2b4bd673-99f3-4d18-a475-ac37d56af357",
+      "name": "us_simplified"
+    },
+    {
+      "path": "analysis/2f99f271-1f84-4a57-9843-31646734d5c9.json",
+      "resourceType": "analysis",
+      "id": "2f99f271-1f84-4a57-9843-31646734d5c9",
+      "name": "Death By Countries",
+      "definition": {
+        "dataSets": [
+          {
+            "identifier": "us_simplified",
+            "arn": "arn:aws:quicksight:us-east-2:123456789012:dataset/2b4bd673-99f3-4d18-a475-ac37d56af357"
+          }
+        ],
+        "sheets": [
+          {
+            "sheetId": "9d289c46-2931-44ac-a4d1-ad28e3ad3d81",
+            "name": "Sheet 1",
+            "visualCount": 1
+          }
+        ],
+        "visuals": [
+          {
+            "kind": "pieChartVisual",
+            "visualId": "371234b0-070d-4c97-8b7e-7aac3c8d8d68",
+            "sheetId": "9d289c46-2931-44ac-a4d1-ad28e3ad3d81"
+          }
+        ],
+        "calculatedFieldCount": 0,
+        "parameterCount": 0,
+        "filterGroupCount": 0
+      }
+    },
+    {
+      "path": "datasource/8e5eb8e2-7430-4e3a-a4f7-940af71a93f6.json",
+      "resourceType": "datasource",
+      "id": "8e5eb8e2-7430-4e3a-a4f7-940af71a93f6",
+      "name": "athena"
+    }
+  ]
+}

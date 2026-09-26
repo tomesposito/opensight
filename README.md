@@ -8,17 +8,19 @@ architecture, decisions and phased plan.
 
 ## Status
 
-Phase 0 — research. The parser inventories **provisional synthetic JSON reconstructed
-from AWS documentation**. It does not load real QuickSight `.qs` ZIP exports or API
-response envelopes. A sanitized real export is an explicit Phase 1 entry requirement;
-archive layout and resource schemas will be documented from that evidence.
+Phase 0 — research. The parser reads real QuickSight `.qs` ZIP exports with
+analysis, dashboard, dataset and datasource members, grounded in the sanitized
+[AWS sample](fixtures/real-bundle-sample/README.md). Its camelCase archive types
+are separate from the existing PascalCase synthetic inventory. See the
+[observed format and API mapping](docs/research/bundle-format.md).
 
 The [fixtures](fixtures/README.md) include an inventory smoke sample and a separate
 query/render specification with five visual types, field wells, layouts, source/dataset
 response reconstructions, CSV data and SQL result oracles. The
 [local query engine](packages/query-engine/README.md) compiles that synthetic subset
 to DuckDB SQL and runs it over CSV without AWS. There is no renderer or
-QuickSight-compatible API yet, and no real-export compatibility is claimed.
+QuickSight-compatible API yet. Broader archive schemas, AWS reimport and source
+conformance still need evidence from more complex exports.
 
 ## Quick start
 
@@ -29,6 +31,7 @@ npm ci
 npm run build
 npm test
 npm run summarize --workspace @opensight/bundle-parser -- ../../fixtures/sample-sales-analysis.json
+npm run summarize --workspace @opensight/bundle-parser -- ../../fixtures/real-bundle-sample/TotalDeathByCountry.sanitized.qs
 ```
 
 Expected [CLI output](fixtures/sample-sales-analysis.summary.txt) and
@@ -40,24 +43,25 @@ execution checks for unsupported features and protected/unresolved datasets.
 After building, workspace consumers can import the public API:
 
 ```ts
-import { loadSyntheticAnalysis, summarizeBundle } from '@opensight/bundle-parser';
-const inventory = summarizeBundle(loadSyntheticAnalysis('fixtures/sample-sales-analysis.json'));
+import { loadQsBundle, summarizeQsBundle } from '@opensight/bundle-parser';
+const inventory = summarizeQsBundle(await loadQsBundle('fixtures/real-bundle-sample/TotalDeathByCountry.sanitized.qs'));
 ```
 
 `loadBundle` remains a historical alias for `loadSyntheticAnalysis`. Validation errors
-include JSON paths. Unknown properties are retained; inventory success does not imply
-full schema validity or execution support. Summary titles retain their `plain`/`rich`
-format; rich markup is raw text and must not be inserted directly into HTML.
+include JSON paths and, for archive members, their ZIP path. Unknown properties are
+retained; inventory success does not imply full schema validity or execution support.
+Synthetic summary titles retain their `plain`/`rich` format; rich markup is raw text
+and must not be inserted directly into HTML.
 
 ## Layout
 
 ```
-packages/bundle-parser  Provisional JSON inventory, validation and summary
+packages/bundle-parser  Observed .qs archive import + synthetic JSON inventory
 packages/api            QuickSight-compatible REST API (planned)
 packages/web            React renderer + authoring (planned)
 packages/query-engine   Typed synthetic planner + local DuckDB CSV executor
 packages/cli            Archive import/export/validate (planned)
 docs/research           Observed format and API contract research
-fixtures                Reconstructed regression and query/render specifications
+fixtures                Sanitized real export + synthetic regression specifications
 conformance             Real-export round trips + source fidelity (planned)
 ```

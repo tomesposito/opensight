@@ -12,6 +12,7 @@
 
 | Date       | Change |
 |------------|--------|
+| 2026-09-26 | Real bundle grounding: sanitized AWS sample confirms four resource directories, lowercase envelopes and camelCase definitions; separate archive types, ZIP reader, acceptance/preservation tests and format notes. Complex exports and source conformance remain open. |
 | 2026-09-26 | Query-engine slice: D10 records the local DuckDB architecture, typed planning stages, explicit synthetic security binding and deferred semantic gates. |
 | 2026-09-26 | Review fixes: provisional format boundary, recursive inventory validation, public package entry, regression tests/CI, query/render fixture and explicit Phase 1 compatibility/execution gates. Real-export archive work remains blocked. |
 | 2026-09-26 | Initial draft: vision, compatibility contract, architecture, decisions D1–D9, phased plan. Repo scaffold + bundle-parser spike started. |
@@ -94,8 +95,20 @@ bundles of JSON definition files. OpenSight must:
 The observed asset-bundle format will be the canonical **interchange** model. A
 `QUICKSIGHT_JSON` export is a `.qs` ZIP containing asset definitions; it does not
 include underlying data ([AWS export documentation](https://docs.aws.amazon.com/quicksight/latest/developerguide/assetbundle-export.html)).
-We have no real export yet. Archive paths, member envelopes, resource discriminators
-and dependencies remain **unverified**. No archive layout is specified or implemented.
+The sanitized AWS `TotalDeathByCountry.qs` sample now supplies ground truth:
+`analysis/{id}.json`, `dashboard/{id}.json`, `dataset/{id}.json` and
+`datasource/{id}.json`, with lowercase `resourceType` envelopes and camelCase
+properties throughout. There is no manifest in this four-member archive.
+See [observed format and API mapping](docs/research/bundle-format.md) and
+[fixture provenance/checksum](fixtures/real-bundle-sample/README.md).
+
+`loadQsBundle` / `parseQsBundle` read ZIP members, dispatch those four resource types,
+and preserve unknown JSON properties. `BundleDefinition` is a separate camelCase
+layer; it is not the PascalCase `AnalysisDefinition` inventory used by the synthetic
+loader or a `Describe*Definition` response. ZIP reading is bounded, does not extract
+files, and rejects duplicate/unsafe paths, malformed members and path/envelope ID or
+type mismatches. Unsupported resource directories fail explicitly; no asset is
+silently dropped.
 
 `SyntheticAnalysisDocument` and `fixtures/sample-sales-analysis.json` are explicitly
 **provisional, reconstructed-from-docs** inventory aids. Their `ResourceType: Analysis`
@@ -104,14 +117,15 @@ envelope is an OpenSight invention, not evidence of an AWS file or response shap
 JSON document, not a `.qs` archive. Unknown JSON properties survive loading; the
 validator certifies only the modeled inventory subset, not full AWS validity.
 
-> **Phase 1 entry requirement:** obtain at least one sanitized real export with
-> dependencies and provenance before starting compatibility implementation. Inspect
-> the actual archive, document member paths and schemas separately from API response
-> contracts, then implement archive reading and observed resource dispatch (including
-> dashboard exports from the runbook). Add real-export acceptance and structural
-> round-trip tests before freezing the canonical model. Do not guess the ZIP layout.
+> **Phase 1 entry requirement: satisfied for initial archive import.** The sanitized
+> AWS sample has dependencies and recorded provenance. Acceptance and structural
+> JSON preservation/repacking tests cover all four observed members. Canonical types
+> remain an observed subset: one sheet/pie per definition, ATHENA source and SPICE
+> dataset. Calculated fields, parameters and filter groups are empty, so their item
+> shapes remain opaque. Tom's complex export is still needed, as are export-to-AWS,
+> API, semantic and rendering conformance. Test repacking is not an export API.
 
-Keep the reconstructed regression fixtures alongside the eventual real export.
+Keep the reconstructed regression fixtures alongside the sanitized real export.
 Structural equality means preserving JSON values, unknown fields and absent optional
 properties; it does not require identical ZIP compression, whitespace or key order.
 
@@ -122,7 +136,7 @@ read paths and growing toward create/update. Keep three contracts separate:
 
 | Contract | Shape and intended use |
 |---|---|
-| Archive member | Unknown until observed in a real export; used by import/export adapters |
+| Archive member | Observed camelCase fields with lowercase `resourceType`; separate `BundleResource` / `BundleDefinition` types for import/export adapters |
 | Definition API response | `DescribeAnalysisDefinition` / `DescribeDashboardDefinition` return `Definition` plus action-specific IDs, status, errors and other response fields; renderer reads these actions |
 | Metadata API response | `DescribeAnalysis` returns `Analysis`; `DescribeDashboard` returns `Dashboard`; neither is a substitute for the full definition action |
 
@@ -227,7 +241,7 @@ not QuickSight source-conformance certification.
 |---|---|---|
 | API server | `packages/api` | QuickSight-compatible REST, auth, scheduling endpoints |
 | Web UI | `packages/web` | Dashboard/analysis renderer + authoring (later phases) |
-| Bundle parser | `packages/bundle-parser` | Synthetic inventory today; observed archive import/export after the Phase 1 entry gate |
+| Bundle parser | `packages/bundle-parser` | Observed .qs ZIP import and synthetic inventory; export adapter still pending |
 | Query engine | `packages/query-engine` | Planner + expression compiler on DuckDB |
 | CLI | `packages/cli` | `opensight import/export/validate` for bundles |
 | Conformance | `conformance/` | Bundle round-trip + rendering fidelity tests |
@@ -328,8 +342,9 @@ features unsupported by the query planner.
 adapters at API/execution boundaries. Similar definition objects do not establish
 identical archive-member and API-response envelopes. Round trips must be tested,
 not assumed to follow from a shared TypeScript interface.
-**Status:** interchange principle decided; canonical archive schema and dispatch
-blocked on the sanitized real-export entry requirement in §3.1.
+**Status:** interchange principle decided; observed archive subset and import dispatch
+implemented from the sanitized AWS sample (§3.1). Broader schema and export
+conformance await more real samples; the synthetic/API layer remains separate.
 
 ### D6 — License
 
@@ -456,8 +471,8 @@ slice; source semantics provisional, broader levels deferred to Phase 2.
 
 ### D10 — First local query-engine slice
 
-**Context:** Prove definition → SQL → CSV results without AWS, while real-export and
-source-conformance gates remain unsatisfied.
+**Context:** Prove definition → SQL → CSV results without AWS, separately from
+archive import and source-conformance work. The latter remains an execution gate.
 
 **Options:** Emit SQL directly from field wells / typed staged plan / interpret rows
 in JavaScript. Use the legacy `duckdb` package / official Neo Node API and bindings.
@@ -521,21 +536,22 @@ boundary testable without implying archive, API or source compatibility.
 ## 6. Phased Delivery Plan
 
 ### Phase 0 — Learn the format (current)
-- [ ] Capture real QuickSight asset-bundle exports (runbook below); document exact schema + zip layout in `docs/research/`.
+- [x] Ground initial archive/member schemas in the sanitized AWS real export; document observed layout in `docs/research/bundle-format.md`.
+- [ ] Capture Tom's complex export (runbook below) for nonempty parameters, filters, calculations and more visuals.
 - [x] Repo scaffold + provisional `bundle-parser` inventory of reconstructed JSON.
 - [x] Recursive inventory validation, strict indexed access, public exports, regression tests and CI.
 - [x] Separate query/render specification with five visuals, source/dataset definitions, CSV and SQL data oracles.
 - [x] Synthetic local query-engine slice: typed row planning, DuckDB SQL/CSV execution,
   five visual result checks, semantic rejection/oracle tests and execution gates (D10).
-- [ ] Add a sanitized real export alongside the reconstructions; document observed archive/member schemas.
+- [x] Add the sanitized real export alongside unchanged reconstructions; implement observed resource dispatch and acceptance/preservation tests.
 - [x] Confirm D2 (TypeScript) with the local spike; record the initial API action
   inventory in §3.2 (captured API contract and endpoint gates remain open).
 
 #### Runbook — capture a real export (at a PC with AWS CLI v2)
 
-Goal: one sanitized real `QUICKSIGHT_JSON` bundle, with all dependencies and capture
-provenance, to satisfy the Phase 1 entry requirement and ground schema research.
-The current single-JSON inventory loader cannot validate this archive.
+Goal: a complex sanitized real `QUICKSIGHT_JSON` bundle, with all dependencies and
+capture provenance, to extend coverage beyond the simple AWS pie-chart sample.
+Use `loadQsBundle` to inventory the archive; the synthetic loader remains separate.
 
 Prerequisites: AWS CLI v2 with access to the QuickSight account. Pick the most
 complex dashboard available — more visual types means better parser coverage.
@@ -566,14 +582,12 @@ complex dashboard available — more visual types means better parser coverage.
    before keeping a fixture; retain relationships while replacing identifying values.
    Record capture date, export options, asset kinds, sanitization changes and checksum.
 
-What happens next: inspect the actual archive and write observed member paths,
-resource schemas and dependency relationships in `docs/research/bundle-format.md`.
-Keep API response captures in separate contract fixtures. Only then implement archive
-reading and resource dispatch, including the exported dashboard and its dependencies,
-with acceptance and structural round-trip tests. A dashboard archive is not input to
-the current synthetic analysis loader. Retain the inventory fixture for regression
-coverage and add the sanitized export separately. Underlying test data must be
-provided separately; asset exports do not contain it.
+What happens next: compare the archive with the observed schemas in
+`docs/research/bundle-format.md`, extend the distinct camelCase bundle types from
+new evidence, and add acceptance/preservation tests. Keep API response captures in
+separate contract fixtures. Retain existing regression fixtures and add complex
+exports separately. Underlying test data must be provided separately; asset exports
+do not contain it.
 
 > **Public-repo hygiene.** This repository is public. Never commit real account
 > IDs, ARNs, credentials, hostnames, or customer data. The commands above use
@@ -584,11 +598,13 @@ provided separately; asset exports do not contain it.
 ### Phase 1 — Vertical slice
 
 **Entry gate:** a sanitized real export with dependencies, provenance and observed
-archive/member documentation (§3.1). This gate is currently **not satisfied**. Work
-on synthetic regression fixtures can continue; it cannot establish bundle compatibility.
+archive/member documentation (§3.1). This gate is **satisfied for initial import**
+by the sanitized AWS sample. Complex-feature, export, API and source-conformance
+gates remain open; synthetic regression tests do not establish those capabilities.
 
-- Implement archive/resource dispatch from the observed export; add real acceptance
-  and structural round-trip tests before freezing archive types.
+- Archive/resource dispatch and real acceptance/JSON preservation tests are implemented
+  for the four observed types. Expand from complex exports and implement a production
+  export adapter with AWS import verification before freezing archive types.
 - Use `fixtures/renderable-sales/` as a provisional query/render specification for bar,
   line, ordinary table, KPI and pie visuals. Compare against the eventual real source.
 - Compile the supported aggregation + static-filter query to DuckDB SQL, with typed
@@ -629,11 +645,11 @@ opensight/
 ├── docs/
 │   ├── research/             # bundle format notes, API surface inventory
 │   └── adr/                  # decision records spun out of this doc
-├── fixtures/                 # provisional inventory/render specs; future sanitized exports
+├── fixtures/                 # synthetic regression specs + sanitized real export
 ├── packages/
 │   ├── api/                  # QuickSight-compatible REST API (Phase 1)
 │   ├── web/                  # React renderer + authoring (Phase 1)
-│   ├── bundle-parser/        # provisional inventory; archive support after real export
+│   ├── bundle-parser/        # observed ZIP import + separate synthetic inventory
 │   ├── query-engine/         # planner + expression compiler on DuckDB (Phase 1)
 │   └── cli/                  # opensight import/export/validate (Phase 1)
 └── conformance/              # round-trip + fidelity tests (Phase 1+)
@@ -660,13 +676,18 @@ inputs. Deferred semantic references also run in DuckDB as test-only oracles wit
 calendar-date syntax adaptation; planner and executor must still reject those features.
 Public-entry consumer typechecking and a native-version/extension lock check run with
 the package tests. Root `npm test` includes both workspaces. These are local regression
-tests, not renderer, real-export, QuickSight result or remote-pushdown conformance.
+tests, not renderer, QuickSight result or remote-pushdown conformance.
+The parser also accepts the real four-member `.qs` fixture, checks IDs, camelCase
+pie field wells and summaries, and preserves every member's JSON through test ZIP
+repacking. Located malformed-member and ZIP error regressions, public camelCase
+consumer typechecks and fixture account/ARN hygiene checks cover this import boundary.
 
 **Required as the corresponding runtime is implemented:**
 
 1. **Archive acceptance/round trip:** load the sanitized real export, dispatch every
    observed resource, then export and compare member structure, unknown fields,
-   omitted properties and dependency references. Blocked until the export arrives.
+   omitted properties and dependency references. Initial acceptance and test repacking
+   pass for the AWS sample; a production exporter and AWS reimport remain pending.
 2. **Semantic conformance:** compare every enabled calculation and evaluation stage
    with captured QuickSight results. Include missing periods, nulls, zero denominators,
    row/aggregate ratios and filter ordering; deferred cases must cause execution errors.
@@ -687,7 +708,7 @@ tests, not renderer, real-export, QuickSight result or remote-pushdown conforman
 | ID | Question | Notes |
 |---|---|---|
 | OQ-1 | Project name | **Decided 2026-09-26: OpenSight.** "QuickSight" is an AWS trademark — not used in the name. The name is crowded on GitHub (6+ unrelated repos: cash-flow forecasting, marketing analytics, brand AI-monitoring, YOLO image annotation, video analytics, k8s manifests; none BI-related), but repo names are per-account so this does not block us; revisit only if discoverability becomes a problem. Rejected: "openquick" (active samuellawrentz/openquick collision + trademark-adjacent to QuickSight); openprism / openpulse / openlantern / openlumen (all crowded); OpenMeridian / OpenAperture / OpenFathom (clear on GitHub, but Tom preferred opensight). |
-| OQ-2 | Real bundle samples | **Phase 1 entry blocker:** sanitized real export plus provenance/observed schema required. No ZIP layout assumptions or archive support until received. |
+| OQ-2 | Real bundle samples | **Initial import unblocked:** sanitized AWS sample and observed schemas checked in. Tom's complex export still needed for nonempty calculations/parameters/filters, additional visuals, security and other resource types. |
 | OQ-3 | Auth model for Phase 1 | Start simple (local users + API keys)? OIDC from the start? Leaning simple-first, OIDC in Phase 3. |
 | OQ-4 | Which QuickSight API version to track | Exact SDK revision + service-model checksum and recorded contracts required **before endpoints** (§3.2); no API implementation yet. |
 | OQ-5 | Geospatial visuals | ECharts maps vs. dedicated mapping lib — decide in Phase 2 when visual coverage expands. |
