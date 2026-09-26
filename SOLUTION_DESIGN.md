@@ -6,13 +6,14 @@
 >
 > - **Status:** Draft — Phase 0 (research)
 > - **Last updated:** 2026-09-26
-> - **Working title:** OpenSight *(see Open Question OQ-1 — "QuickSight" is an AWS trademark)*
+> - **Name:** OpenSight *(decided 2026-09-26 — see OQ-1)*
 
 ## Changelog
 
 | Date       | Change |
 |------------|--------|
 | 2026-09-26 | Initial draft: vision, compatibility contract, architecture, decisions D1–D9, phased plan. Repo scaffold + bundle-parser spike started. |
+| 2026-09-26 | bundle-parser spike builds clean (tsc strict) and summarizes the sample fixture; committed locally as `3655cc3`, ready to push once GitHub is connected. |
 
 ---
 
@@ -382,7 +383,7 @@ opensight/
 
 | ID | Question | Notes |
 |---|---|---|
-| OQ-1 | Project name | "QuickSight" is an AWS trademark. Candidates: OpenSight (working title), Sightline, Prism… Needs a trademark sanity check before any public launch. |
+| OQ-1 | Project name | **Decided 2026-09-26: OpenSight.** "QuickSight" is an AWS trademark — not used in the name. The name is crowded on GitHub (6+ unrelated repos: cash-flow forecasting, marketing analytics, brand AI-monitoring, YOLO image annotation, video analytics, k8s manifests; none BI-related), but repo names are per-account so this does not block us; revisit only if discoverability becomes a problem. Rejected: "openquick" (active samuellawrentz/openquick collision + trademark-adjacent to QuickSight); openprism / openpulse / openlantern / openlumen (all crowded); OpenMeridian / OpenAperture / OpenFathom (clear on GitHub, but Tom preferred opensight). |
 | OQ-2 | Real bundle samples | Blocked on access to a QuickSight account with representative dashboards. |
 | OQ-3 | Auth model for Phase 1 | Start simple (local users + API keys)? OIDC from the start? Leaning simple-first, OIDC in Phase 3. |
 | OQ-4 | Which QuickSight API version to track | Pin when Phase 1 API work starts; record here. |
