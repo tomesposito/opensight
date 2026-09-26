@@ -1,0 +1,9 @@
+{
+  "real-bundle-sample/TotalDeathByCountry.sanitized.qs": "a6188dabf94a60e6413a6caaedebf6659d998d3197c217754250d1cd892bc0c9",
+  "renderable-sales/analysis.json": "8a93af436ff78917f70ab00e95c57526bee03491e0e79eef8f7420385ce7a4e6",
+  "renderable-sales/expected-queries.json": "9b90ef746677cc00c8dca6a341204566c61a7ef6cc829e68fc1a1731011ecd0f",
+  "renderable-sales/describe-data-set.response.json": "6033f7b46fea024110b8d14da1ebc3da5ff22c310e1881b9133267532ad26166",
+  "renderable-sales/describe-data-source.response.json": "38e2241a6ff14fee37a768151a5e77c708fe22a65f1cf2ddabb524af79e9a903",
+  "renderable-sales/local-data.json": "3c7e5697483e6fd51301366dad06ceaaebb2ce72ea2a94d911dbe30cf8e8db56",
+  "renderable-sales/sales.csv": "9d25aa4378d18da0258fd8caaf7b40bb55296f9298519a031877d8eb72826bd1"
+}
