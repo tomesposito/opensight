@@ -31,6 +31,7 @@ export async function prepareFixtures(root = resolve(here, '../../../fixtures'))
   }
   const real = {
     id: dashboard.dashboardId,
+    apiResource: { kind: 'dashboard', definition: dashboard.definition, source: 'bundle' },
     name: dashboard.name,
     description: 'Sanitized QuickSight dashboard · real .qs archive',
     provenance: 'fixtures/real-bundle-sample/TotalDeathByCountry.sanitized.qs',
@@ -47,6 +48,7 @@ export async function prepareFixtures(root = resolve(here, '../../../fixtures'))
   const used = new Set();
   const synthetic = {
     id: sales.AnalysisId, name: sales.Name,
+    apiResource: { kind: 'analysis', definition: sales.Definition, source: 'api' },
     description: 'Synthetic sales dashboard · precomputed reference results',
     provenance: 'fixtures/renderable-sales/expected-queries.json',
     notice: 'Reference results • region = East • UTC months • discounted revenue = revenue × 0.9. Values are precomputed; filters are fixed.',

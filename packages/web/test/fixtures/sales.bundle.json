@@ -1,0 +1,314 @@
+{
+  "dataSetIdentifierDeclarations": [
+    {
+      "identifier": "sales_data",
+      "dataSetArn": "arn:aws:quicksight:us-east-1:123456789012:dataset/renderable-sales"
+    }
+  ],
+  "calculatedFields": [
+    {
+      "DataSetIdentifier": "sales_data",
+      "Name": "discounted_revenue",
+      "Expression": "{revenue} * 0.9"
+    }
+  ],
+  "filterGroups": [
+    {
+      "FilterGroupId": "east-only",
+      "CrossDataset": "SINGLE_DATASET",
+      "Status": "ENABLED",
+      "ScopeConfiguration": {
+        "AllSheets": {}
+      },
+      "Filters": [
+        {
+          "CategoryFilter": {
+            "FilterId": "east-region",
+            "Column": {
+              "DataSetIdentifier": "sales_data",
+              "ColumnName": "region"
+            },
+            "Configuration": {
+              "FilterListConfiguration": {
+                "MatchOperator": "EQUALS",
+                "CategoryValues": [
+                  "East"
+                ],
+                "NullOption": "NON_NULLS_ONLY"
+              }
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "sheets": [
+    {
+      "sheetId": "overview",
+      "name": "Overview",
+      "contentType": "INTERACTIVE",
+      "visuals": [
+        {
+          "barChartVisual": {
+            "visualId": "revenue-by-region",
+            "title": {
+              "visibility": "VISIBLE",
+              "formatText": {
+                "plainText": "Revenue by Region"
+              }
+            },
+            "chartConfiguration": {
+              "fieldWells": {
+                "barChartAggregatedFieldWells": {
+                  "category": [
+                    {
+                      "categoricalDimensionField": {
+                        "fieldId": "region",
+                        "column": {
+                          "dataSetIdentifier": "sales_data",
+                          "columnName": "region"
+                        }
+                      }
+                    }
+                  ],
+                  "values": [
+                    {
+                      "numericalMeasureField": {
+                        "fieldId": "revenue",
+                        "column": {
+                          "dataSetIdentifier": "sales_data",
+                          "columnName": "revenue"
+                        },
+                        "aggregationFunction": {
+                          "simpleNumericalAggregation": "SUM"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "lineChartVisual": {
+            "visualId": "revenue-trend",
+            "title": {
+              "visibility": "VISIBLE",
+              "formatText": {
+                "plainText": "Monthly Revenue"
+              }
+            },
+            "chartConfiguration": {
+              "fieldWells": {
+                "lineChartAggregatedFieldWells": {
+                  "category": [
+                    {
+                      "dateDimensionField": {
+                        "fieldId": "order_date",
+                        "column": {
+                          "dataSetIdentifier": "sales_data",
+                          "columnName": "order_date"
+                        },
+                        "dateGranularity": "MONTH"
+                      }
+                    }
+                  ],
+                  "values": [
+                    {
+                      "numericalMeasureField": {
+                        "fieldId": "revenue",
+                        "column": {
+                          "dataSetIdentifier": "sales_data",
+                          "columnName": "revenue"
+                        },
+                        "aggregationFunction": {
+                          "simpleNumericalAggregation": "SUM"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "tableVisual": {
+            "visualId": "sales-table",
+            "title": {
+              "visibility": "VISIBLE",
+              "formatText": {
+                "plainText": "Revenue and Discounted Revenue"
+              }
+            },
+            "chartConfiguration": {
+              "fieldWells": {
+                "tableAggregatedFieldWells": {
+                  "groupBy": [
+                    {
+                      "categoricalDimensionField": {
+                        "fieldId": "region",
+                        "column": {
+                          "dataSetIdentifier": "sales_data",
+                          "columnName": "region"
+                        }
+                      }
+                    }
+                  ],
+                  "values": [
+                    {
+                      "numericalMeasureField": {
+                        "fieldId": "revenue",
+                        "column": {
+                          "dataSetIdentifier": "sales_data",
+                          "columnName": "revenue"
+                        },
+                        "aggregationFunction": {
+                          "simpleNumericalAggregation": "SUM"
+                        }
+                      }
+                    },
+                    {
+                      "numericalMeasureField": {
+                        "fieldId": "discounted_revenue",
+                        "column": {
+                          "dataSetIdentifier": "sales_data",
+                          "columnName": "discounted_revenue"
+                        },
+                        "aggregationFunction": {
+                          "simpleNumericalAggregation": "SUM"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "kpiVisual": {
+            "visualId": "total-revenue",
+            "title": {
+              "visibility": "VISIBLE",
+              "formatText": {
+                "plainText": "Total Revenue"
+              }
+            },
+            "chartConfiguration": {
+              "fieldWells": {
+                "values": [
+                  {
+                    "numericalMeasureField": {
+                      "fieldId": "revenue",
+                      "column": {
+                        "dataSetIdentifier": "sales_data",
+                        "columnName": "revenue"
+                      },
+                      "aggregationFunction": {
+                        "simpleNumericalAggregation": "SUM"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "pieChartVisual": {
+            "visualId": "share-by-category",
+            "title": {
+              "visibility": "VISIBLE",
+              "formatText": {
+                "plainText": "Revenue by Category"
+              }
+            },
+            "chartConfiguration": {
+              "fieldWells": {
+                "pieChartAggregatedFieldWells": {
+                  "category": [
+                    {
+                      "categoricalDimensionField": {
+                        "fieldId": "category",
+                        "column": {
+                          "dataSetIdentifier": "sales_data",
+                          "columnName": "category"
+                        }
+                      }
+                    }
+                  ],
+                  "values": [
+                    {
+                      "numericalMeasureField": {
+                        "fieldId": "revenue",
+                        "column": {
+                          "dataSetIdentifier": "sales_data",
+                          "columnName": "revenue"
+                        },
+                        "aggregationFunction": {
+                          "simpleNumericalAggregation": "SUM"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ],
+      "layouts": [
+        {
+          "configuration": {
+            "gridLayout": {
+              "elements": [
+                {
+                  "elementId": "revenue-by-region",
+                  "elementType": "VISUAL",
+                  "columnIndex": 0,
+                  "columnSpan": 18,
+                  "rowIndex": 0,
+                  "rowSpan": 6
+                },
+                {
+                  "elementId": "revenue-trend",
+                  "elementType": "VISUAL",
+                  "columnIndex": 18,
+                  "columnSpan": 18,
+                  "rowIndex": 0,
+                  "rowSpan": 6
+                },
+                {
+                  "elementId": "sales-table",
+                  "elementType": "VISUAL",
+                  "columnIndex": 0,
+                  "columnSpan": 18,
+                  "rowIndex": 6,
+                  "rowSpan": 6
+                },
+                {
+                  "elementId": "total-revenue",
+                  "elementType": "VISUAL",
+                  "columnIndex": 18,
+                  "columnSpan": 18,
+                  "rowIndex": 6,
+                  "rowSpan": 6
+                },
+                {
+                  "elementId": "share-by-category",
+                  "elementType": "VISUAL",
+                  "columnIndex": 0,
+                  "columnSpan": 18,
+                  "rowIndex": 12,
+                  "rowSpan": 6
+                }
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

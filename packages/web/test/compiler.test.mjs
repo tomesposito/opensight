@@ -120,7 +120,7 @@ test('null chart measures remain gaps instead of becoming zero', () => {
 const rejections = [
   ['unknown visual', input => { input.definition = { HeatMapVisual: { VisualId: 'heat' } }; }],
   ['ambiguous visual union', input => { input.definition.KPIVisual = { VisualId: 'kpi' }; }],
-  ['unobserved bundle bar', input => { input.source = 'bundle'; input.definition = { barChartVisual: { visualId: 'bar' } }; }],
+  ['bundle bar missing configuration', input => { input.source = 'bundle'; input.definition = { barChartVisual: { visualId: 'bar' } }; }],
   ['unknown configuration', input => { body(input).ChartConfiguration.ReferenceLines = [{}]; }],
   ['unsupported percent stack', input => { body(input).ChartConfiguration.BarsArrangement = 'STACKED_PERCENT'; }],
   ['color field well', input => { body(input).ChartConfiguration.FieldWells.BarChartAggregatedFieldWells.Colors = [{}]; }],

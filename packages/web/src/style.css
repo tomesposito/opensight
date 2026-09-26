@@ -1,15 +1,21 @@
 :root { font-family: Inter, ui-sans-serif, system-ui, sans-serif; color: #19384a; background: #f3f6f7; font-synthesis: none; text-rendering: optimizeLegibility; }
 * { box-sizing: border-box; }
 body { margin: 0; }
-button, select { font: inherit; }
+button, select, input { font: inherit; }
 button, select, summary { cursor: pointer; }
-button:focus-visible, select:focus-visible, summary:focus-visible, a:focus-visible { outline: 3px solid #e5a046; outline-offset: 4px; }
-.app-header { display: flex; align-items: center; gap: 24px; padding: 20px 36px; background: #fff; border-bottom: 1px solid #dce5e9; }
+button:focus-visible, select:focus-visible, input:focus-visible, summary:focus-visible, a:focus-visible { outline: 3px solid #e5a046; outline-offset: 4px; }
+.app-header { display: flex; flex-wrap: wrap; align-items: center; gap: 24px; padding: 20px 36px; background: #fff; border-bottom: 1px solid #dce5e9; }
 .brand { color: #153c4a; text-decoration: none; font-size: 23px; font-weight: 750; letter-spacing: -.8px; display: flex; align-items: center; gap: 10px; }
 .brand-mark { color: #157f88; font-size: 32px; }
 .header-caption { color: #687e89; border-left: 1px solid #dce5e9; padding-left: 24px; font-size: 14px; }
 .fixture-picker { display: flex; align-items: center; gap: 12px; margin-left: auto; font-size: 12px; font-weight: 650; color: #526c7a; }
 select { background: #fff; border: 1px solid #c9d8de; border-radius: 6px; padding: 10px; color: #19384a; max-width: 340px; }
+.source-picker { display: flex; align-items: center; gap: 12px; font-size: 12px; font-weight: 650; color: #526c7a; }
+.api-picker { display: flex; flex-wrap: wrap; gap: 16px; align-items: end; }
+.api-picker label { display: flex; flex-direction: column; gap: 8px; font-size: 12px; color: #526c7a; }
+.resource-id { flex: 1; min-width: 180px; }
+.api-picker input { min-width: 0; padding: 10px; border: 1px solid #c9d8de; border-radius: 6px; }
+.api-picker button { padding: 11px 18px; border: 0; border-radius: 6px; background: #157f88; color: white; }
 main { padding: 34px 36px; max-width: 1680px; margin: auto; }
 .dashboard-heading { display: flex; justify-content: space-between; align-items: center; gap: 20px; }
 .eyebrow { color: #526c7a; font-size: 12px; margin: 0 0 8px; }

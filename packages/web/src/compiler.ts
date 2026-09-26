@@ -42,7 +42,7 @@ function enumValue(value: unknown, choices: string[], fallback: string, path: st
   return value;
 }
 
-/** Explicit dialect selection. No recursive casing conversion or invented bundle variants. */
+/** Explicit dialect selection; camelCase includes the API converter's projections. */
 export function normalizeVisual(source: Input['source'], definition: Input['definition'], path = '$'): VisualModel {
   if (source !== 'api' && source !== 'bundle') fail(path, 'unknown definition dialect');
   const bundle = source === 'bundle';
@@ -52,7 +52,7 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
   if (entries.length !== 1) fail(path, 'expected exactly one visual variant');
   const [variant, raw] = entries[0]!;
   const kinds: Record<string, VisualModel['kind']> = bundle
-    ? { pieChartVisual: 'pie' }
+    ? { pieChartVisual: 'pie', barChartVisual: 'bar', kpiVisual: 'kpi', lineChartVisual: 'line', tableVisual: 'table' }
     : { PieChartVisual: 'pie', BarChartVisual: 'bar', KPIVisual: 'kpi', LineChartVisual: 'line', TableVisual: 'table' };
   const kind = Object.hasOwn(kinds, variant) ? kinds[variant] : undefined;
   if (!kind) fail(`${path}.${variant}`, 'unsupported visual variant in this dialect');
@@ -68,31 +68,31 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
   const common = [key('fieldWells', 'FieldWells')];
   if (kind !== 'kpi' && kind !== 'table') common.push(key('sortConfiguration', 'SortConfiguration'), key('dataLabels', 'DataLabels'), key('tooltip', 'Tooltip'), key('legend', 'Legend'));
   if (kind === 'pie') common.push(key('donutOptions', 'DonutOptions'));
-  if (kind === 'bar') common.push('Orientation', 'BarsArrangement');
+  if (kind === 'bar') common.push(key('orientation', 'Orientation'), key('barsArrangement', 'BarsArrangement'));
   keys(config, common, cpath);
   const fpath = `${cpath}.${key('fieldWells', 'FieldWells')}`;
   const outer = object(config[key('fieldWells', 'FieldWells')], fpath);
   const wellsKey = kind === 'pie' ? key('pieChartAggregatedFieldWells', 'PieChartAggregatedFieldWells')
-    : { bar: 'BarChartAggregatedFieldWells', line: 'LineChartAggregatedFieldWells', table: 'TableAggregatedFieldWells', kpi: '' }[kind];
+    : { bar: key('barChartAggregatedFieldWells', 'BarChartAggregatedFieldWells'), line: key('lineChartAggregatedFieldWells', 'LineChartAggregatedFieldWells'), table: key('tableAggregatedFieldWells', 'TableAggregatedFieldWells'), kpi: '' }[kind];
   if (wellsKey) keys(outer, [wellsKey], fpath);
   const wells = wellsKey ? object(outer[wellsKey], `${fpath}.${wellsKey}`) : outer;
   const wpath = wellsKey ? `${fpath}.${wellsKey}` : fpath;
-  const categoryKey = kind === 'table' ? 'GroupBy' : key('category', 'Category');
+  const categoryKey = kind === 'table' ? key('groupBy', 'GroupBy') : key('category', 'Category');
   const valueKey = key('values', 'Values');
   // Empty optional wells are harmless; nonempty colors/targets/trends change semantics.
-  const unused = bundle ? ['smallMultiples'] : ['Colors', 'SmallMultiples', 'TargetValues', 'TrendGroups'];
+  const unused = [key('colors', 'Colors'), key('smallMultiples', 'SmallMultiples'), key('targetValues', 'TargetValues'), key('trendGroups', 'TrendGroups')];
   keys(wells, [categoryKey, valueKey, ...unused], wpath);
   for (const name of unused) if (list(wells[name], `${wpath}.${name}`).length) fail(`${wpath}.${name}`, 'field well not supported');
   const field = (value: unknown, measure: boolean, fp: string): Field => {
     const wrapper = object(value, fp);
     const variants = measure ? [key('numericalMeasureField', 'NumericalMeasureField')]
-      : bundle ? ['categoricalDimensionField'] : ['CategoricalDimensionField', 'DateDimensionField', 'NumericalDimensionField'];
+      : [key('categoricalDimensionField', 'CategoricalDimensionField'), key('dateDimensionField', 'DateDimensionField'), key('numericalDimensionField', 'NumericalDimensionField')];
     keys(wrapper, variants, fp);
     const pair = Object.entries(wrapper);
     if (pair.length !== 1) fail(fp, 'expected one supported field variant');
     const [name, content] = pair[0]!;
     const f = object(content, `${fp}.${name}`);
-    keys(f, [key('fieldId', 'FieldId'), key('column', 'Column'), ...(measure ? [key('aggregationFunction', 'AggregationFunction')] : name === 'DateDimensionField' ? ['DateGranularity'] : [])], fp);
+    keys(f, [key('fieldId', 'FieldId'), key('column', 'Column'), ...(measure ? [key('aggregationFunction', 'AggregationFunction')] : name === key('dateDimensionField', 'DateDimensionField') ? [key('dateGranularity', 'DateGranularity')] : [])], fp);
     if (measure) {
       const aggKey = key('aggregationFunction', 'AggregationFunction');
       const agg = object(f[aggKey], `${fp}.${aggKey}`);
@@ -100,7 +100,7 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
       keys(agg, [sumKey], fp);
       if (agg[sumKey] !== 'SUM') fail(`${fp}.${aggKey}`, 'only explicit SUM result bindings are supported');
     }
-    if (name === 'DateDimensionField') enumValue(f.DateGranularity, ['DAY', 'MONTH', 'YEAR'], 'DAY', `${fp}.DateGranularity`);
+    if (name === key('dateDimensionField', 'DateDimensionField')) enumValue(f[key('dateGranularity', 'DateGranularity')], ['DAY', 'MONTH', 'YEAR'], 'DAY', `${fp}.${key('dateGranularity', 'DateGranularity')}`);
     const column = object(f[key('column', 'Column')], `${fp}.${key('column', 'Column')}`);
     keys(column, [key('columnName', 'ColumnName'), key('dataSetIdentifier', 'DataSetIdentifier')], fp);
     return {
@@ -174,8 +174,8 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
     id, kind, title: plain as string | undefined ?? `${measures.map(f => f.column).join(', ')}${dimensions[0] ? ` by ${dimensions[0].column}` : ''}`,
     titleVisible: visibility(title, key('visibility', 'Visibility')),
     dimensions, measures, innerRadius, sort: fieldSort, warnings,
-    horizontal: kind === 'bar' && enumValue(config.Orientation, ['VERTICAL', 'HORIZONTAL'], 'VERTICAL', `${cpath}.Orientation`) === 'HORIZONTAL',
-    stacked: kind === 'bar' && enumValue(config.BarsArrangement, ['CLUSTERED', 'STACKED'], 'CLUSTERED', `${cpath}.BarsArrangement`) === 'STACKED',
+    horizontal: kind === 'bar' && enumValue(config[key('orientation', 'Orientation')], ['VERTICAL', 'HORIZONTAL'], 'VERTICAL', `${cpath}.${key('orientation', 'Orientation')}`) === 'HORIZONTAL',
+    stacked: kind === 'bar' && enumValue(config[key('barsArrangement', 'BarsArrangement')], ['CLUSTERED', 'STACKED'], 'CLUSTERED', `${cpath}.${key('barsArrangement', 'BarsArrangement')}`) === 'STACKED',
     labels: visibility(labels, key('visibility', 'Visibility'), kind === 'pie' ? 'VISIBLE' : 'HIDDEN'),
     tooltip: visibility(tooltip, key('tooltipVisibility', 'TooltipVisibility')),
     legend: visibility(legend, key('visibility', 'Visibility')),

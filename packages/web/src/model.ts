@@ -1,4 +1,5 @@
 import type { BundleVisual, VisualBody } from '@opensight/bundle-parser';
+import type { ResourceKind } from './api-client.js';
 
 export type Cell = string | number | boolean | null;
 export type Row = Readonly<Record<string, Cell>>;
@@ -38,5 +39,7 @@ export interface Fixture {
   description: string;
   provenance: string;
   notice: string;
+  /** Pinned source definition, used only to authorize reuse of fixture results. */
+  apiResource?: { kind: ResourceKind; definition: unknown; source: 'bundle' | 'api' };
   sheets: { id: string; name: string; visuals: FixtureVisual[] }[];
 }

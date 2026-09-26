@@ -5,9 +5,13 @@ import type { CompiledVisual } from './compiler.js';
 import type { Fixture, FixtureVisual } from './model.js';
 import { init } from './echarts.js';
 import generated from './fixtures.generated.json';
+import { createApiClient } from './api-client.js';
+import type { ResourceKind } from './api-client.js';
+import { buildApiPreview } from './api-preview.js';
 
 // Generated exclusively from the pinned repository fixtures; never external JSON.
 const fixtures = generated as Fixture[];
+const api = createApiClient(import.meta.env.VITE_OPENSIGHT_API_URL);
 
 function Chart({ option, title }: { option: EChartsOption; title: string }) {
   const container = useRef<HTMLDivElement>(null);
@@ -50,7 +54,7 @@ function VisualCard({ visual }: { visual: FixtureVisual }) {
         {compiled.state !== 'ready' && <div className="empty-state" role="status">
           <span className="empty-symbol" aria-hidden="true">◌</span>
           <strong>{compiled.state === 'unavailable' ? 'Data unavailable' : 'No results'}</strong>
-          <p>{compiled.state === 'unavailable' ? 'The chart definition is loaded. This archive contains no data rows.' : 'The supplied result set is empty.'}</p>
+          <p>{compiled.state === 'unavailable' ? 'The chart definition is loaded. No matching precomputed fixture rows are available.' : 'The supplied result set is empty.'}</p>
           <small>{compiled.model.measures.map(f => `SUM(${f.column})`).join(', ')}{compiled.model.dimensions[0] && ` by ${compiled.model.dimensions[0].column}`}</small>
         </div>}
       </div>
@@ -75,11 +79,41 @@ function Dashboard({ fixture }: { fixture: Fixture }) {
 }
 
 export default function App() {
+  const [mode, setMode] = useState<'fixtures' | 'api'>('fixtures');
   const [fixtureId, setFixtureId] = useState(fixtures[0]?.id);
   const fixture = fixtures.find(f => f.id === fixtureId);
   return <div className="app-shell">
-    <header className="app-header"><a className="brand" href="./"><span className="brand-mark" aria-hidden="true">◈</span>OpenSight</a><span className="header-caption">Fixture explorer</span><label className="fixture-picker">Dashboard<select value={fixtureId} onChange={event => setFixtureId(event.target.value)}>{fixtures.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}</select></label></header>
-    <main>{fixture ? <Dashboard key={fixture.id} fixture={fixture} /> : <p>No fixtures available.</p>}</main>
+    <header className="app-header"><a className="brand" href="./"><span className="brand-mark" aria-hidden="true">◈</span>OpenSight</a><span className="header-caption">Definition explorer</span><label className="source-picker">Data source<select value={mode} onChange={event => setMode(event.target.value === 'api' ? 'api' : 'fixtures')}><option value="fixtures">fixtures</option><option value="api">api</option></select></label><label className="fixture-picker">Example<select value={fixtureId} onChange={event => setFixtureId(event.target.value)}>{fixtures.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}</select></label></header>
+    <main>{mode === 'api' ? <ApiExplorer key={fixtureId} example={fixture} /> : fixture ? <Dashboard key={fixture.id} fixture={fixture} /> : <p>No fixtures available.</p>}</main>
     <footer className="app-footer">OpenSight · Local rendering preview · QuickSight fidelity has not been measured</footer>
   </div>;
+}
+
+function ApiExplorer({ example }: { example?: Fixture }) {
+  const [kind, setKind] = useState<ResourceKind>(example?.apiResource?.kind ?? 'analysis');
+  const [id, setId] = useState(example?.id ?? 'renderable-sales');
+  const [request, setRequest] = useState({ kind, id });
+  const [state, setState] = useState<{ request: typeof request; fixture?: Fixture; error?: string }>();
+  useEffect(() => {
+    const controller = new AbortController();
+    let active = true;
+    const load = request.kind === 'analysis' ? api.getAnalysisDefinition : api.getDashboardDefinition;
+    void load(request.id, controller.signal)
+      .then(response => buildApiPreview(response, request.kind, fixtures))
+      .then(fixture => { if (active) setState({ request, fixture }); })
+      .catch((error: unknown) => { if (active) setState({ request, error: error instanceof Error ? error.message : String(error) }); });
+    return () => { active = false; controller.abort(); };
+  }, [request]);
+  const current = state?.request === request ? state : undefined;
+  return <>
+    <form className="api-picker" onSubmit={event => { event.preventDefault(); setRequest({ kind, id: id.trim() }); }}>
+      <label>Resource<select value={kind} onChange={event => setKind(event.target.value === 'dashboard' ? 'dashboard' : 'analysis')}><option value="analysis">Analysis</option><option value="dashboard">Dashboard</option></select></label>
+      <label className="resource-id">Resource ID<input value={id} onChange={event => setId(event.target.value)} required pattern={'[A-Za-z0-9_\\-]{1,512}'} /></label>
+      <button type="submit">Load definition</button>
+    </form>
+    <p className="fixture-notice">API mode fetches definitions only. Charts use fixed, precomputed fixture results; no live data queries are run.</p>
+    {!current && <p role="status">Loading definition…</p>}
+    {current?.error && <div className="visual-error" role="alert"><strong>Unable to load definition</strong><p>{current.error}</p><p>Check that the API is running, then use Load definition to retry.</p></div>}
+    {current?.fixture && <Dashboard key={`${request.kind}/${request.id}`} fixture={current.fixture} />}
+  </>;
 }
