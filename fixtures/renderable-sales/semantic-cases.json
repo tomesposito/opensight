@@ -1,0 +1,85 @@
+[
+  {
+    "id": "missing-period",
+    "status": "deferred-until-QuickSight-conformance",
+    "description": "Calendar MONTH offset 1: March has no February predecessor. A row-offset LAG would incorrectly use January.",
+    "sql": "WITH monthly AS (SELECT substr(order_date, 1, 7) || '-01' AS month, SUM(revenue) AS revenue FROM sales GROUP BY month) SELECT c.month, c.revenue - p.revenue AS difference FROM monthly c LEFT JOIN monthly p ON p.month = date(c.month, '-1 month') ORDER BY c.month",
+    "rows": [
+      {
+        "month": "2025-01-01",
+        "difference": null
+      },
+      {
+        "month": "2025-03-01",
+        "difference": null
+      },
+      {
+        "month": "2025-04-01",
+        "difference": 200
+      }
+    ]
+  },
+  {
+    "id": "null-and-zero-denominator",
+    "status": "deferred-until-QuickSight-conformance",
+    "description": "Proposed null-propagating guarded division, never infinity; confirm against QuickSight before enabling division.",
+    "sql": "SELECT order_id, profit * 100.0 / NULLIF(revenue, 0) AS margin FROM sales ORDER BY order_id",
+    "rows": [
+      {
+        "order_id": 1,
+        "margin": 20
+      },
+      {
+        "order_id": 2,
+        "margin": 10
+      },
+      {
+        "order_id": 3,
+        "margin": 20
+      },
+      {
+        "order_id": 4,
+        "margin": null
+      },
+      {
+        "order_id": 5,
+        "margin": null
+      },
+      {
+        "order_id": 6,
+        "margin": null
+      },
+      {
+        "order_id": 7,
+        "margin": 20
+      },
+      {
+        "order_id": 8,
+        "margin": null
+      }
+    ]
+  },
+  {
+    "id": "row-ratio-versus-aggregate-ratio",
+    "status": "deferred-until-QuickSight-conformance",
+    "description": "Averaging row margins differs from dividing summed profit by summed revenue.",
+    "sql": "SELECT AVG(profit * 100.0 / NULLIF(revenue, 0)) AS average_row_margin, SUM(profit) * 100.0 / NULLIF(SUM(revenue), 0) AS aggregate_margin FROM sales",
+    "rows": [
+      {
+        "average_row_margin": 17.5,
+        "aggregate_margin": 15
+      }
+    ]
+  },
+  {
+    "id": "all-null-aggregation",
+    "status": "local-oracle-awaiting-QuickSight-conformance",
+    "description": "An all-null measure remains null, not zero.",
+    "sql": "SELECT SUM(revenue) AS revenue FROM sales WHERE order_id = 6",
+    "rows": [
+      {
+        "revenue": null
+      }
+    ]
+  }
+]

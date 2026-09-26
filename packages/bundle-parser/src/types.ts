@@ -1,72 +1,104 @@
 /**
- * QuickSight analysis-bundle type definitions.
+ * PROVISIONAL, reconstructed-from-docs inventory types.
  *
- * Mirrors the shapes returned by QuickSight's DescribeAnalysisDefinition /
- * asset-bundle export format (see SOLUTION_DESIGN.md D5: the bundle format is
- * the canonical model). This is a deliberately small subset covering the
- * Phase 0 spike; it grows as real exports are studied.
+ * SyntheticAnalysisDocument is an OpenSight test envelope, NOT a .qs archive
+ * member or a DescribeAnalysisDefinition response. API response envelopes and
+ * archive member schemas are separate contracts; archive types await a real export.
+ * Only the inventory subset below is validated. Opaque properties are preserved,
+ * not certified as executable QuickSight configurations.
  */
+export interface UnknownProperties {
+  [key: string]: unknown;
+}
 
-/** Top-level bundle file for an Analysis asset. */
-export interface AnalysisBundle {
+export interface SyntheticAnalysisDocument extends UnknownProperties {
   ResourceType: 'Analysis';
   AnalysisId: string;
   Name: string;
   Definition: AnalysisDefinition;
 }
 
-export interface AnalysisDefinition {
+/** @deprecated Phase 0 synthetic envelope only; use SyntheticAnalysisDocument. */
+export type AnalysisBundle = SyntheticAnalysisDocument;
+
+/** Inventory subset of the documented definition object, not an API response. */
+export interface AnalysisDefinition extends UnknownProperties {
   DataSetIdentifierDeclarations: DataSetIdentifierDeclaration[];
-  Sheets: Sheet[];
+  Sheets?: Sheet[];
   CalculatedFields?: CalculatedField[];
   ParameterDeclarations?: ParameterDeclaration[];
   FilterGroups?: FilterGroup[];
 }
 
-export interface DataSetIdentifierDeclaration {
+export interface DataSetIdentifierDeclaration extends UnknownProperties {
   Identifier: string;
   DataSetArn: string;
 }
 
-export interface Sheet {
+export interface Sheet extends UnknownProperties {
   SheetId: string;
   Name?: string;
-  /** Each entry is an object with a single key like "BarChartVisual". */
+  /** Exactly one visual-type key per entry; unknown visual kinds remain inventoryable. */
   Visuals?: Record<string, VisualBody>[];
 }
 
-export interface VisualBody {
-  VisualId: string;
-  Title?: { Visibility?: string; FormatText?: { PlainText?: string } };
-  Subtitle?: { Visibility?: string; FormatText?: { PlainText?: string } };
-  // Visual-type-specific configuration lives here; intentionally untyped
-  // until real exports pin down the shapes.
-  [key: string]: unknown;
+export interface VisualTitle extends UnknownProperties {
+  Visibility?: 'VISIBLE' | 'HIDDEN';
+  FormatText?: { PlainText?: string; RichText?: string } & UnknownProperties;
 }
 
-/** A visual with its QuickSight visual-type key resolved, e.g. "BarChartVisual". */
+export interface VisualBody extends UnknownProperties {
+  VisualId: string;
+  Title?: VisualTitle;
+  Subtitle?: VisualTitle;
+  // Field wells, layouts and visual-specific options remain opaque in this spike.
+}
+
 export interface ResolvedVisual {
   kind: string;
   visualId: string;
+  /** Rich text is retained verbatim, never interpreted as HTML by this library. */
   title?: string;
+  titleFormat?: 'plain' | 'rich';
   sheetId: string;
   sheetName?: string;
 }
 
-export interface CalculatedField {
+export interface CalculatedField extends UnknownProperties {
   DataSetIdentifier: string;
   Name: string;
   Expression: string;
 }
 
-export type ParameterDeclaration =
-  | { StringParameterDeclaration: { Name: string; ParameterValueType?: string } }
-  | { IntegerParameterDeclaration: { Name: string; ParameterValueType?: string } }
-  | { DecimalParameterDeclaration: { Name: string; ParameterValueType?: string } }
-  | { DateTimeParameterDeclaration: { Name: string; ParameterValueType?: string } };
+export type ParameterValueType = 'SINGLE_VALUED' | 'MULTI_VALUED';
+export interface ValueParameterBody extends UnknownProperties {
+  Name: string;
+  ParameterValueType: ParameterValueType;
+}
+export interface DateTimeParameterBody extends UnknownProperties {
+  Name: string;
+  TimeGranularity?: 'YEAR' | 'QUARTER' | 'MONTH' | 'WEEK' | 'DAY' |
+    'HOUR' | 'MINUTE' | 'SECOND' | 'MILLISECOND';
+}
 
-export interface FilterGroup {
+interface ParameterBodies {
+  StringParameterDeclaration: ValueParameterBody;
+  IntegerParameterDeclaration: ValueParameterBody;
+  DecimalParameterDeclaration: ValueParameterBody;
+  DateTimeParameterDeclaration: DateTimeParameterBody;
+}
+
+/** Exactly one recognized variant, including at the TypeScript boundary. */
+export type ParameterDeclaration = {
+  [Kind in keyof ParameterBodies]: { [Key in Kind]: ParameterBodies[Key] } &
+    { [Other in Exclude<keyof ParameterBodies, Kind>]?: never }
+}[keyof ParameterBodies];
+
+export interface FilterGroup extends UnknownProperties {
   FilterGroupId: string;
-  Filters?: Record<string, unknown>[];
-  ScopeConfiguration?: Record<string, unknown>;
+  CrossDataset: 'ALL_DATASETS' | 'SINGLE_DATASET';
+  Filters: Record<string, UnknownProperties>[];
+  /** Opaque union body: preservation does not imply execution support. */
+  ScopeConfiguration: Record<string, UnknownProperties>;
+  Status?: 'ENABLED' | 'DISABLED';
 }

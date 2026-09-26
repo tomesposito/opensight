@@ -1,0 +1,82 @@
+{
+  "analysisId": "sales-overview",
+  "name": "Sales Overview",
+  "dataSets": [
+    {
+      "identifier": "sales_data",
+      "arn": "arn:aws:quicksight:us-east-1:123456789012:dataset/sales-data"
+    }
+  ],
+  "sheets": [
+    {
+      "sheetId": "overview-sheet",
+      "name": "Overview",
+      "visualCount": 4
+    },
+    {
+      "sheetId": "deep-dive-sheet",
+      "name": "Deep Dive",
+      "visualCount": 1
+    }
+  ],
+  "visuals": [
+    {
+      "kind": "KPIVisual",
+      "visualId": "total-revenue-kpi",
+      "title": "Total Revenue",
+      "titleFormat": "plain",
+      "sheetId": "overview-sheet",
+      "sheetName": "Overview"
+    },
+    {
+      "kind": "BarChartVisual",
+      "visualId": "revenue-by-region",
+      "title": "Revenue by Region",
+      "titleFormat": "plain",
+      "sheetId": "overview-sheet",
+      "sheetName": "Overview"
+    },
+    {
+      "kind": "LineChartVisual",
+      "visualId": "revenue-trend",
+      "title": "Revenue Trend",
+      "titleFormat": "plain",
+      "sheetId": "overview-sheet",
+      "sheetName": "Overview"
+    },
+    {
+      "kind": "PivotTableVisual",
+      "visualId": "sales-pivot",
+      "title": "Sales Detail",
+      "titleFormat": "plain",
+      "sheetId": "overview-sheet",
+      "sheetName": "Overview"
+    },
+    {
+      "kind": "PieChartVisual",
+      "visualId": "share-by-category",
+      "title": "Share by Category",
+      "titleFormat": "plain",
+      "sheetId": "deep-dive-sheet",
+      "sheetName": "Deep Dive"
+    }
+  ],
+  "calculatedFields": [
+    {
+      "dataSet": "sales_data",
+      "name": "profit_margin",
+      "expression": "({profit} / {revenue}) * 100"
+    },
+    {
+      "dataSet": "sales_data",
+      "name": "revenue_yoy",
+      "expression": "periodOverPeriodDifference(sum({revenue}), {order_date}, YEAR, 1)"
+    }
+  ],
+  "parameters": [
+    "regionParam"
+  ],
+  "filterGroups": [
+    "region-filter-group"
+  ]
+}

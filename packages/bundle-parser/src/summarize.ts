@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 /**
- * summarize: load a QuickSight analysis bundle and print a human-readable
- * inventory. Usage: node dist/summarize.js <bundle.json>
+ * summarize: load a provisional synthetic analysis document and print a human-readable
+ * inventory. Usage: node dist/summarize.js <synthetic-analysis.json>
  */
 import { loadBundle, summarizeBundle } from './parse.js';
 
 const path = process.argv[2];
 if (!path) {
-  console.error('Usage: summarize <bundle.json>');
+  console.error('Usage: summarize <synthetic-analysis.json>');
   process.exit(1);
 }
 

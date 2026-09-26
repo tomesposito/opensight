@@ -1,0 +1,78 @@
+{
+  "DataSet": {
+    "Arn": "arn:aws:quicksight:us-east-1:123456789012:dataset/renderable-sales",
+    "DataSetId": "renderable-sales",
+    "Name": "Synthetic Sales",
+    "ImportMode": "DIRECT_QUERY",
+    "PhysicalTableMap": {
+      "sales": {
+        "RelationalTable": {
+          "DataSourceArn": "arn:aws:quicksight:us-east-1:123456789012:datasource/synthetic-postgres",
+          "Schema": "public",
+          "Name": "sales",
+          "InputColumns": [
+            {
+              "Name": "order_id",
+              "Type": "INTEGER"
+            },
+            {
+              "Name": "order_date",
+              "Type": "DATETIME"
+            },
+            {
+              "Name": "region",
+              "Type": "STRING"
+            },
+            {
+              "Name": "category",
+              "Type": "STRING"
+            },
+            {
+              "Name": "revenue",
+              "Type": "DECIMAL"
+            },
+            {
+              "Name": "profit",
+              "Type": "DECIMAL"
+            }
+          ]
+        }
+      }
+    },
+    "LogicalTableMap": {
+      "sales": {
+        "Alias": "sales",
+        "Source": {
+          "PhysicalTableId": "sales"
+        }
+      }
+    },
+    "OutputColumns": [
+      {
+        "Name": "order_id",
+        "Type": "INTEGER"
+      },
+      {
+        "Name": "order_date",
+        "Type": "DATETIME"
+      },
+      {
+        "Name": "region",
+        "Type": "STRING"
+      },
+      {
+        "Name": "category",
+        "Type": "STRING"
+      },
+      {
+        "Name": "revenue",
+        "Type": "DECIMAL"
+      },
+      {
+        "Name": "profit",
+        "Type": "DECIMAL"
+      }
+    ]
+  },
+  "RequestId": "synthetic-request"
+}

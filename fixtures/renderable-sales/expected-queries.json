@@ -1,0 +1,64 @@
+[
+  {
+    "visualId": "revenue-by-region",
+    "sql": "SELECT region, SUM(revenue) AS revenue FROM sales WHERE region = 'East' GROUP BY region ORDER BY region",
+    "rows": [
+      {
+        "region": "East",
+        "revenue": 500
+      }
+    ]
+  },
+  {
+    "visualId": "revenue-trend",
+    "sql": "SELECT substr(order_date, 1, 7) AS month, SUM(revenue) AS revenue FROM sales WHERE region = 'East' GROUP BY month ORDER BY month",
+    "rows": [
+      {
+        "month": "2025-01",
+        "revenue": 400
+      },
+      {
+        "month": "2025-03",
+        "revenue": 0
+      },
+      {
+        "month": "2025-04",
+        "revenue": 100
+      }
+    ]
+  },
+  {
+    "visualId": "sales-table",
+    "sql": "SELECT region, SUM(revenue) AS revenue, SUM(revenue * 0.9) AS discounted_revenue FROM sales WHERE region = 'East' GROUP BY region ORDER BY region",
+    "rows": [
+      {
+        "region": "East",
+        "revenue": 500,
+        "discounted_revenue": 450
+      }
+    ]
+  },
+  {
+    "visualId": "total-revenue",
+    "sql": "SELECT SUM(revenue) AS revenue FROM sales WHERE region = 'East'",
+    "rows": [
+      {
+        "revenue": 500
+      }
+    ]
+  },
+  {
+    "visualId": "share-by-category",
+    "sql": "SELECT category, SUM(revenue) AS revenue FROM sales WHERE region = 'East' GROUP BY category ORDER BY category",
+    "rows": [
+      {
+        "category": "Hardware",
+        "revenue": 200
+      },
+      {
+        "category": "Software",
+        "revenue": 300
+      }
+    ]
+  }
+]

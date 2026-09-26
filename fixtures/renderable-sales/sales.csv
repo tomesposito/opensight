@@ -1,0 +1,9 @@
+order_id,order_date,region,category,revenue,profit
+1,2025-01-01,East,Hardware,100,20
+2,2025-01-01,East,Software,300,30
+3,2025-01-01,West,Hardware,200,40
+4,2025-03-01,East,Hardware,0,10
+5,2025-03-01,West,Software,50,
+6,2025-04-01,East,Software,,5
+7,2025-04-01,West,Hardware,150,30
+8,2025-04-01,East,Hardware,100,

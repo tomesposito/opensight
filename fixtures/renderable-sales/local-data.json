@@ -1,0 +1,8 @@
+{
+  "provenance": "OpenSight test-only CSV binding; not a QuickSight API or archive member",
+  "dataSetArn": "arn:aws:quicksight:us-east-1:123456789012:dataset/renderable-sales",
+  "physicalTableId": "sales",
+  "csv": "sales.csv",
+  "nullEncoding": "empty cell",
+  "timezone": "UTC"
+}

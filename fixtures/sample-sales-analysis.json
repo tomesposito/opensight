@@ -1,0 +1,149 @@
+{
+  "AnalysisId": "sales-overview",
+  "Definition": {
+    "CalculatedFields": [
+      {
+        "DataSetIdentifier": "sales_data",
+        "Expression": "({profit} / {revenue}) * 100",
+        "Name": "profit_margin"
+      },
+      {
+        "DataSetIdentifier": "sales_data",
+        "Expression": "periodOverPeriodDifference(sum({revenue}), {order_date}, YEAR, 1)",
+        "Name": "revenue_yoy"
+      }
+    ],
+    "DataSetIdentifierDeclarations": [
+      {
+        "DataSetArn": "arn:aws:quicksight:us-east-1:123456789012:dataset/sales-data",
+        "Identifier": "sales_data"
+      }
+    ],
+    "FilterGroups": [
+      {
+        "FilterGroupId": "region-filter-group",
+        "Filters": [
+          {
+            "CategoryFilter": {
+              "Column": {
+                "ColumnName": "region",
+                "DataSetIdentifier": "sales_data"
+              },
+              "FilterId": "region-filter",
+              "Configuration": {
+                "CustomFilterConfiguration": {
+                  "MatchOperator": "EQUALS",
+                  "NullOption": "NON_NULLS_ONLY",
+                  "ParameterName": "regionParam"
+                }
+              }
+            }
+          }
+        ],
+        "CrossDataset": "SINGLE_DATASET",
+        "Status": "ENABLED",
+        "ScopeConfiguration": {
+          "SelectedSheets": {
+            "SheetVisualScopingConfigurations": [
+              {
+                "SheetId": "overview-sheet",
+                "Scope": "ALL_VISUALS"
+              },
+              {
+                "SheetId": "deep-dive-sheet",
+                "Scope": "ALL_VISUALS"
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "ParameterDeclarations": [
+      {
+        "StringParameterDeclaration": {
+          "Name": "regionParam",
+          "ParameterValueType": "SINGLE_VALUED",
+          "DefaultValues": {
+            "StaticValues": [
+              "East"
+            ]
+          }
+        }
+      }
+    ],
+    "Sheets": [
+      {
+        "Name": "Overview",
+        "SheetId": "overview-sheet",
+        "Visuals": [
+          {
+            "KPIVisual": {
+              "Title": {
+                "FormatText": {
+                  "PlainText": "Total Revenue"
+                },
+                "Visibility": "VISIBLE"
+              },
+              "VisualId": "total-revenue-kpi"
+            }
+          },
+          {
+            "BarChartVisual": {
+              "ChartConfiguration": {
+                "Orientation": "VERTICAL"
+              },
+              "Title": {
+                "FormatText": {
+                  "PlainText": "Revenue by Region"
+                },
+                "Visibility": "VISIBLE"
+              },
+              "VisualId": "revenue-by-region"
+            }
+          },
+          {
+            "LineChartVisual": {
+              "Title": {
+                "FormatText": {
+                  "PlainText": "Revenue Trend"
+                },
+                "Visibility": "VISIBLE"
+              },
+              "VisualId": "revenue-trend"
+            }
+          },
+          {
+            "PivotTableVisual": {
+              "Title": {
+                "FormatText": {
+                  "PlainText": "Sales Detail"
+                },
+                "Visibility": "VISIBLE"
+              },
+              "VisualId": "sales-pivot"
+            }
+          }
+        ]
+      },
+      {
+        "Name": "Deep Dive",
+        "SheetId": "deep-dive-sheet",
+        "Visuals": [
+          {
+            "PieChartVisual": {
+              "Title": {
+                "FormatText": {
+                  "PlainText": "Share by Category"
+                },
+                "Visibility": "VISIBLE"
+              },
+              "VisualId": "share-by-category"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "Name": "Sales Overview",
+  "ResourceType": "Analysis"
+}

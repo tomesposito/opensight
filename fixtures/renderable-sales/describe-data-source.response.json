@@ -1,0 +1,17 @@
+{
+  "DataSource": {
+    "Arn": "arn:aws:quicksight:us-east-1:123456789012:datasource/synthetic-postgres",
+    "DataSourceId": "synthetic-postgres",
+    "Name": "Synthetic Postgres",
+    "Type": "POSTGRESQL",
+    "Status": "CREATION_SUCCESSFUL",
+    "DataSourceParameters": {
+      "PostgreSqlParameters": {
+        "Host": "localhost",
+        "Port": 5432,
+        "Database": "synthetic_sales"
+      }
+    }
+  },
+  "RequestId": "synthetic-request"
+}

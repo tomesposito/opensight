@@ -1,0 +1,319 @@
+{
+  "ResourceType": "Analysis",
+  "AnalysisId": "renderable-sales",
+  "Name": "Renderable Sales (Synthetic)",
+  "Definition": {
+    "DataSetIdentifierDeclarations": [
+      {
+        "Identifier": "sales_data",
+        "DataSetArn": "arn:aws:quicksight:us-east-1:123456789012:dataset/renderable-sales"
+      }
+    ],
+    "CalculatedFields": [
+      {
+        "DataSetIdentifier": "sales_data",
+        "Name": "discounted_revenue",
+        "Expression": "{revenue} * 0.9"
+      }
+    ],
+    "FilterGroups": [
+      {
+        "FilterGroupId": "east-only",
+        "CrossDataset": "SINGLE_DATASET",
+        "Status": "ENABLED",
+        "ScopeConfiguration": {
+          "AllSheets": {}
+        },
+        "Filters": [
+          {
+            "CategoryFilter": {
+              "FilterId": "east-region",
+              "Column": {
+                "DataSetIdentifier": "sales_data",
+                "ColumnName": "region"
+              },
+              "Configuration": {
+                "FilterListConfiguration": {
+                  "MatchOperator": "EQUALS",
+                  "CategoryValues": [
+                    "East"
+                  ],
+                  "NullOption": "NON_NULLS_ONLY"
+                }
+              }
+            }
+          }
+        ]
+      }
+    ],
+    "Sheets": [
+      {
+        "SheetId": "overview",
+        "Name": "Overview",
+        "ContentType": "INTERACTIVE",
+        "Visuals": [
+          {
+            "BarChartVisual": {
+              "VisualId": "revenue-by-region",
+              "Title": {
+                "Visibility": "VISIBLE",
+                "FormatText": {
+                  "PlainText": "Revenue by Region"
+                }
+              },
+              "ChartConfiguration": {
+                "FieldWells": {
+                  "BarChartAggregatedFieldWells": {
+                    "Category": [
+                      {
+                        "CategoricalDimensionField": {
+                          "FieldId": "region",
+                          "Column": {
+                            "DataSetIdentifier": "sales_data",
+                            "ColumnName": "region"
+                          }
+                        }
+                      }
+                    ],
+                    "Values": [
+                      {
+                        "NumericalMeasureField": {
+                          "FieldId": "revenue",
+                          "Column": {
+                            "DataSetIdentifier": "sales_data",
+                            "ColumnName": "revenue"
+                          },
+                          "AggregationFunction": {
+                            "SimpleNumericalAggregation": "SUM"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          {
+            "LineChartVisual": {
+              "VisualId": "revenue-trend",
+              "Title": {
+                "Visibility": "VISIBLE",
+                "FormatText": {
+                  "PlainText": "Monthly Revenue"
+                }
+              },
+              "ChartConfiguration": {
+                "FieldWells": {
+                  "LineChartAggregatedFieldWells": {
+                    "Category": [
+                      {
+                        "DateDimensionField": {
+                          "FieldId": "order_date",
+                          "Column": {
+                            "DataSetIdentifier": "sales_data",
+                            "ColumnName": "order_date"
+                          },
+                          "DateGranularity": "MONTH"
+                        }
+                      }
+                    ],
+                    "Values": [
+                      {
+                        "NumericalMeasureField": {
+                          "FieldId": "revenue",
+                          "Column": {
+                            "DataSetIdentifier": "sales_data",
+                            "ColumnName": "revenue"
+                          },
+                          "AggregationFunction": {
+                            "SimpleNumericalAggregation": "SUM"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          {
+            "TableVisual": {
+              "VisualId": "sales-table",
+              "Title": {
+                "Visibility": "VISIBLE",
+                "FormatText": {
+                  "PlainText": "Revenue and Discounted Revenue"
+                }
+              },
+              "ChartConfiguration": {
+                "FieldWells": {
+                  "TableAggregatedFieldWells": {
+                    "GroupBy": [
+                      {
+                        "CategoricalDimensionField": {
+                          "FieldId": "region",
+                          "Column": {
+                            "DataSetIdentifier": "sales_data",
+                            "ColumnName": "region"
+                          }
+                        }
+                      }
+                    ],
+                    "Values": [
+                      {
+                        "NumericalMeasureField": {
+                          "FieldId": "revenue",
+                          "Column": {
+                            "DataSetIdentifier": "sales_data",
+                            "ColumnName": "revenue"
+                          },
+                          "AggregationFunction": {
+                            "SimpleNumericalAggregation": "SUM"
+                          }
+                        }
+                      },
+                      {
+                        "NumericalMeasureField": {
+                          "FieldId": "discounted_revenue",
+                          "Column": {
+                            "DataSetIdentifier": "sales_data",
+                            "ColumnName": "discounted_revenue"
+                          },
+                          "AggregationFunction": {
+                            "SimpleNumericalAggregation": "SUM"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          {
+            "KPIVisual": {
+              "VisualId": "total-revenue",
+              "Title": {
+                "Visibility": "VISIBLE",
+                "FormatText": {
+                  "PlainText": "Total Revenue"
+                }
+              },
+              "ChartConfiguration": {
+                "FieldWells": {
+                  "Values": [
+                    {
+                      "NumericalMeasureField": {
+                        "FieldId": "revenue",
+                        "Column": {
+                          "DataSetIdentifier": "sales_data",
+                          "ColumnName": "revenue"
+                        },
+                        "AggregationFunction": {
+                          "SimpleNumericalAggregation": "SUM"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "PieChartVisual": {
+              "VisualId": "share-by-category",
+              "Title": {
+                "Visibility": "VISIBLE",
+                "FormatText": {
+                  "PlainText": "Revenue by Category"
+                }
+              },
+              "ChartConfiguration": {
+                "FieldWells": {
+                  "PieChartAggregatedFieldWells": {
+                    "Category": [
+                      {
+                        "CategoricalDimensionField": {
+                          "FieldId": "category",
+                          "Column": {
+                            "DataSetIdentifier": "sales_data",
+                            "ColumnName": "category"
+                          }
+                        }
+                      }
+                    ],
+                    "Values": [
+                      {
+                        "NumericalMeasureField": {
+                          "FieldId": "revenue",
+                          "Column": {
+                            "DataSetIdentifier": "sales_data",
+                            "ColumnName": "revenue"
+                          },
+                          "AggregationFunction": {
+                            "SimpleNumericalAggregation": "SUM"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        ],
+        "Layouts": [
+          {
+            "Configuration": {
+              "GridLayout": {
+                "Elements": [
+                  {
+                    "ElementId": "revenue-by-region",
+                    "ElementType": "VISUAL",
+                    "ColumnIndex": 0,
+                    "ColumnSpan": 18,
+                    "RowIndex": 0,
+                    "RowSpan": 6
+                  },
+                  {
+                    "ElementId": "revenue-trend",
+                    "ElementType": "VISUAL",
+                    "ColumnIndex": 18,
+                    "ColumnSpan": 18,
+                    "RowIndex": 0,
+                    "RowSpan": 6
+                  },
+                  {
+                    "ElementId": "sales-table",
+                    "ElementType": "VISUAL",
+                    "ColumnIndex": 0,
+                    "ColumnSpan": 18,
+                    "RowIndex": 6,
+                    "RowSpan": 6
+                  },
+                  {
+                    "ElementId": "total-revenue",
+                    "ElementType": "VISUAL",
+                    "ColumnIndex": 18,
+                    "ColumnSpan": 18,
+                    "RowIndex": 6,
+                    "RowSpan": 6
+                  },
+                  {
+                    "ElementId": "share-by-category",
+                    "ElementType": "VISUAL",
+                    "ColumnIndex": 0,
+                    "ColumnSpan": 18,
+                    "RowIndex": 12,
+                    "RowSpan": 6
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

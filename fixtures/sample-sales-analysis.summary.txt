@@ -1,0 +1,22 @@
+Analysis: Sales Overview (sales-overview)
+
+Datasets (1):
+  - sales_data
+
+Sheets (2):
+  - Overview [overview-sheet]: 4 visual(s)
+  - Deep Dive [deep-dive-sheet]: 1 visual(s)
+
+Visuals (5):
+  - [KPIVisual] Total Revenue (sheet: Overview)
+  - [BarChartVisual] Revenue by Region (sheet: Overview)
+  - [LineChartVisual] Revenue Trend (sheet: Overview)
+  - [PivotTableVisual] Sales Detail (sheet: Overview)
+  - [PieChartVisual] Share by Category (sheet: Deep Dive)
+
+Calculated fields (2):
+  - profit_margin [sales_data]: ({profit} / {revenue}) * 100
+  - revenue_yoy [sales_data]: periodOverPeriodDifference(sum({revenue}), {order_date}, YEAR, 1)
+
+Parameters (1): regionParam
+Filter groups (1): region-filter-group
