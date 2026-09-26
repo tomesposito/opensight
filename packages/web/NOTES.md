@@ -1,9 +1,10 @@
-# Phase 0 web renderer
+# Web explorer and Builder v0
 
-This continues the React 19 / ECharts 6 / Vite 8 fixture renderer with live
-definition loading on `work/web-api-integration`. D2, D4 and §3.2 of
-`SOLUTION_DESIGN.md` guide this slice; that spec is unchanged. This is a local
-definition/fixture explorer, not a general QuickSight runtime or a fidelity claim.
+React 19 / ECharts 6 / Vite 8 provide fixture and API definition exploration,
+plus the Phase 1b **Author** mode. D2, D4, §3.2 and Phase 1b of
+`SOLUTION_DESIGN.md` guide these slices; that spec is unchanged. This is a local
+definition explorer and authoring preview, not a general QuickSight runtime or
+a fidelity claim.
 
 ## Run
 
@@ -47,7 +48,7 @@ values are public, read at dev startup/build time; restart/rebuild to change the
 Production API mode needs an equivalent reverse proxy or a CORS-enabled server;
 the dev proxy is not bundled into the static build or Vite preview.
 
-The **Data source** selector starts at `fixtures` on every page load. This mode
+The **Mode** selector starts at `fixtures` on every page load. This mode
 uses only generated assets and makes no definition requests, keeping the static
 demo usable offline. Choose `api` to load the selected example live, or enter an
 analysis/dashboard resource ID and choose **Load definition**. The bundled
@@ -119,6 +120,110 @@ executed just because it converts. Missing/unsupported/invalid layouts use
 full-width cards in definition order with a notice; valid grids use the existing
 36-column renderer. Duplicate sheet/visual IDs reject the preview.
 
+## Author mode (Phase 1b — Builder v0)
+
+Choose **Author** in the Mode selector. Choose a visual type and **Add visual**;
+the new card starts with revenue and a suitable dimension so it previews
+immediately. **Configure** selects a card and exposes its title, chart type and
+field wells. The Fields panel separates the four dimensions (`order_id`,
+`order_date`, `region`, `category`) from the two measures (`revenue`, `profit`)
+and shows the dataset's INTEGER / DATETIME / STRING / DECIMAL type badges.
+
+Click a field in the panel or use a well's picker to assign it to the selected
+card. Dimensions replace the existing dimension; bar, line and table accept both
+measures in assignment order. Pie and KPI keep one measure, replacing the prior
+one. Click an assigned field's × to remove it. All values use explicit SUM;
+dates use MONTH granularity. Pie has a Donut checkbox.
+
+| Visual | Wells |
+| --- | --- |
+| Bar | Category + Values |
+| Line | X-axis + Values |
+| Pie / donut | Category + Values |
+| KPI | Values |
+| Table | Group-by + Values |
+
+Changing type keeps compatible assignments, reduces pie/KPI to the first
+measure, and removes the dimension for KPI. Switching from KPI to a grouped
+visual requires assigning a dimension again. **Remove** deletes a card; the
+up/down buttons change canvas and export order. Cards stack on all screen
+sizes, with the Fields panel above the canvas on mobile and beside it on larger
+screens. Local well pickers avoid scrolling back to the panel on mobile. All
+controls work with clicks or a keyboard; no drag-and-drop is required.
+
+`src/authoring.ts` holds the pure immutable reducer and serialization;
+`src/author-preview.ts` binds only the reviewed fixture results. Explorer and
+Author share `src/VisualCard.tsx`, including the existing `compileVisual` call,
+SVG charts, semantic HTML tables, View data, ready / Data unavailable / No
+results / error states. Removing a required field shows the compiler error
+until the well is repaired. A valid definition with no matching sample results
+shows Data unavailable and can still be exported.
+
+### Author data boundary
+
+Author makes **no API requests or live data queries**. Previews use the same
+pinned precomputed sales oracles as the explorer; the query engine is not behind
+HTTP. No client-side aggregation, CSV loading, calculation, joining or filtering
+is performed. The UI always discloses the fixed **region = East** subset and
+UTC month grouping already present in those rows.
+
+Only revenue by region, category or month, and overall revenue for KPI, have
+reviewed results. Those grains may be presented in any compatible visual type.
+`order_date` binds explicitly to the oracle's `month` column. Profit, order IDs
+and multiple-measure configurations have no matching oracle: every value in
+that preview is unavailable, rather than showing a partial or unrelated total.
+The explorer's discounted-revenue calculation is not offered as profit. Fixture
+generation still checks the complete dependency/security pins before either
+mode can use these results. This author-only mapping never relaxes API mode's
+whole-definition matching rule.
+
+### Drafts and Export JSON
+
+Edits, order and selected card automatically persist under localStorage key
+`opensight.author.v0`. Re-entering Author or reloading and choosing Author
+restores them, including unfinished wells. Draft loading validates the version,
+IDs, field roles, cardinalities and selection. Invalid/unknown-version drafts
+show a warning and remain untouched until the next edit. Storage access/quota
+failures show a warning and leave the current in-memory canvas usable. Drafts
+are local to the browser origin/device; they are not a server save or a backup.
+
+**Export JSON** downloads `opensight-visuals.json`, an ordered JSON array of
+camelCase `BundleVisual` objects. Each array element is the exact `definition`
+input to `compileVisual({ source: 'bundle', definition, rows, bindings, path })`.
+Export requires at least one card and complete wells in every card. It does not
+require available preview rows. Serializer fields and return values are checked
+against `@opensight/bundle-parser` types; the compiler's runtime normalization
+validates every exported visual. Tests additionally pass serialized definitions
+through the parser in a test analysis envelope. The parser deliberately leaves
+unobserved bar/line/KPI/table configuration as opaque extensions, so compiler
+checks enforce those provisional renderer projections. No Node parser runtime
+is imported into the browser.
+
+The download contains visual definitions only, referencing `sales_data`. It has
+no result rows, aliases, draft metadata, dataset declarations, filter context,
+sheet wrapper or ZIP archive. In particular, the fixed East preview filter is
+**not** exported: these are visual definitions, not a reproduction of the sample
+analysis's query context. A consumer supplies its own dataset context and
+authorized preaggregated results. General bundle import/reimport is not claimed.
+
+Drag-drop, filters, parameters, calculated fields, themes, grid layout,
+multi-sheet authoring, undo/redo and server-side saving remain outside v0.
+
+### Single-file demo
+
+```sh
+npm run build:demo --workspace @opensight/web
+```
+
+This rebuilds fixtures, runs strict TypeScript and emits
+`packages/web/dist/opensight-demo.html` with inline JavaScript and CSS. Open it
+directly for offline fixtures and Author, including charts and JSON downloads;
+there are no external asset requests. File-URL localStorage behavior depends on
+the browser; use the dev/preview server for a stable origin. API mode still needs
+the separately served API and proxy described above. The normal split Vite
+build remains available with `npm run build`. Generated demo/build files are
+ignored rather than committed.
+
 ## Runtime and data boundary
 
 - React owns the dashboard, sheet selection, cards, diagnostic messages, and
@@ -160,7 +265,8 @@ full-width cards in definition order with a notice; valid grids use the existing
   These pins authorize only the reviewed, closed repository fixtures; they are
   not an arbitrary-import security validator. Review dependencies and refresh
   result oracles before deliberately changing pins. Arbitrary upload, source
-  connection, query execution and export are outside this slice.
+  connection, query execution and archive export are outside this slice. Author
+  exports only the visual definitions described above.
 
 ## Compiler scope and choices
 
@@ -287,6 +393,45 @@ The first sandboxed root test run had 355 passes and 14 API failures, all from
 `listen EPERM` on loopback; the successful full run above used loopback access.
 `git diff --check` passed. No AWS calls were made, and `SOLUTION_DESIGN.md` and
 the source fixtures remain unchanged.
+
+### Builder v0 validation (2026-09-26)
+
+Node 24.20.0 / npm 10.9.4. Final root `npm test` exited 0, including strict
+TypeScript application/test builds and the existing public consumer checks:
+
+| Workspace | Tests | Passed | Failed | Skipped / cancelled / todo |
+| --- | ---: | ---: | ---: | ---: |
+| API | 18 | 18 | 0 | 0 / 0 / 0 |
+| Bundle parser | 134 | 134 | 0 | 0 / 0 / 0 |
+| Query engine | 131 | 131 | 0 | 0 / 0 / 0 |
+| Web | 131 | 131 | 0 | 0 / 0 / 0 |
+| Total | 414 | 414 | 0 | 0 / 0 / 0 |
+
+The 45 new web tests cover field/type metadata, well assignment/removal,
+type transitions, selected-card edits, reordering/removal, exact camelCase
+serialization, parser acceptance and compiler/SVG round-trips, reviewed preview
+grains, unavailable combinations, storage restore/validation/failures, and React
+server-rendered canvas/preview states. Root `npm test` discovers both new test
+files through the existing workspace and `test/*.test.mjs` scripts; no root
+script change or browser dependency is needed. A standalone web run also passed
+all 131 tests. The first sandboxed root run passed 400 and failed 14 API tests
+with `listen EPERM`; the successful final run above used loopback access.
+
+Root `npm run build` passed all four workspaces. The existing ECharts chunk
+warning remains: 584.14 kB minified / 199.58 kB gzip. `npm run build:demo
+--workspace @opensight/web` also passed and produced the 867,086-byte single-file
+demo with Author included.
+
+A supplemental Chromium 152.0.7977.82 check opened that demo directly from disk
+and exercised all five types, SVG/table previews, field assignment/removal,
+unavailable/error states, incomplete-export blocking, titles, reordering, donut,
+downloaded JSON content, draft restore after reload, card removal and switching
+between Author and fixtures. At 390px, well pickers worked and neither mode had
+horizontal overflow. The browser reported zero page/console errors and zero
+external requests. This used environment-provided Playwright/Chromium with local
+socket access, not a new project dependency. The mobile screenshot was also
+reviewed. `git diff --check` passed; no AWS calls were made, and
+`SOLUTION_DESIGN.md` and source fixtures remain unchanged.
 
 ## Sources
 

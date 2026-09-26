@@ -7,5 +7,5 @@
     "rootDir": "../src",
     "types": ["node"]
   },
-  "include": ["../src/compiler.ts", "../src/model.ts", "../src/echarts.ts", "../src/api-client.ts", "../src/api-preview.ts", "../src/definition-converter.ts"]
+  "include": ["../src/compiler.ts", "../src/model.ts", "../src/echarts.ts", "../src/api-client.ts", "../src/api-preview.ts", "../src/definition-converter.ts", "../src/authoring.ts", "../src/author-preview.ts", "../src/Author.tsx", "../src/VisualCard.tsx"]
 }
