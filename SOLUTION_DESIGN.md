@@ -695,6 +695,35 @@ gates remain open; synthetic regression tests do not establish those capabilitie
 - Full calculated-field function library (grown behind conformance tests).
 - General filters, parameters, controls, cross-visual filtering, drill-down; until supported, refuse affected execution (§3.4).
 - Remaining visual types; theme support.
+
+### Phase 1b — BI builder (authoring canvas) — NEW, pulled forward 2026-09-26
+
+Tom: "This is what QuickSight looks like. We need to get the bi builder."
+The definition explorer proved we can read and render definitions; the builder is
+the product. The reference UX is the QuickSight analysis editor: fields panel,
+visual-type picker, field wells, canvas with live preview.
+
+**Builder v0 scope** (`packages/web`, new "Author" mode alongside fixtures/api):
+- Dataset: the synthetic sales dataset (`order_id, order_date, region, category,
+  revenue, profit`). Fields panel lists dimensions vs measures with types.
+- Visual types: the five the compiler supports — bar, line, pie/donut, KPI, table.
+- Field wells per type (click-to-assign, mobile-first; drag-drop later):
+  bar → category + values; line → x-axis + values; pie → category + values;
+  KPI → values; table → group-by + values. Wells show assigned fields, removable.
+- Canvas: stacked visual cards (add / configure / remove / reorder). Each visual
+  compiles live through the existing compiler — same preview, empty and error
+  states as the explorer.
+- Data boundary (same as API mode): precomputed fixture rows only; the query
+  engine is not behind HTTP yet, so no live queries in v0.
+- Save: authoring state serializes to camelCase bundle-format visual definitions
+  (the compiler's input shape), validated against bundle-parser types; export as
+  downloadable JSON; draft persists to localStorage.
+- Out of scope for v0: drag-drop, filters, parameters, calculated fields, themes,
+  grid layout, multi-sheet, undo/redo, server-side save.
+
+**Acceptance:** well-assignment → definition serialization tests, compiler
+round-trip on authored definitions, UI state tests; full suite green; single-file
+demo rebuilt with the builder included.
 - Analysis authoring UI (basic).
 
 ### Phase 3 — Enterprise surface
