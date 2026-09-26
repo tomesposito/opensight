@@ -1,0 +1,168 @@
+{
+  "AnalysisId": "2f99f271-1f84-4a57-9843-31646734d5c9",
+  "Name": "Death By Countries",
+  "Definition": {
+    "DataSetIdentifierDeclarations": [
+      {
+        "Identifier": "us_simplified",
+        "DataSetArn": "arn:aws:quicksight:us-east-2:123456789012:dataset/2b4bd673-99f3-4d18-a475-ac37d56af357"
+      }
+    ],
+    "Sheets": [
+      {
+        "SheetId": "9d289c46-2931-44ac-a4d1-ad28e3ad3d81",
+        "Name": "Sheet 1",
+        "Visuals": [
+          {
+            "PieChartVisual": {
+              "VisualId": "371234b0-070d-4c97-8b7e-7aac3c8d8d68",
+              "Title": {
+                "Visibility": "VISIBLE"
+              },
+              "Subtitle": {
+                "Visibility": "VISIBLE"
+              },
+              "ChartConfiguration": {
+                "FieldWells": {
+                  "PieChartAggregatedFieldWells": {
+                    "Category": [
+                      {
+                        "CategoricalDimensionField": {
+                          "FieldId": "us_simpli-country-77f044.0.1763228950747",
+                          "Column": {
+                            "DataSetIdentifier": "us_simplified",
+                            "ColumnName": "country"
+                          }
+                        }
+                      }
+                    ],
+                    "Values": [
+                      {
+                        "NumericalMeasureField": {
+                          "FieldId": "us_simpli-deaths-ffbeb4.1.1763228955350",
+                          "Column": {
+                            "DataSetIdentifier": "us_simplified",
+                            "ColumnName": "deaths"
+                          },
+                          "AggregationFunction": {
+                            "SimpleNumericalAggregation": "SUM"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                },
+                "SortConfiguration": {
+                  "CategorySort": [
+                    {
+                      "FieldSort": {
+                        "FieldId": "us_simpli-deaths-ffbeb4.1.1763228955350",
+                        "Direction": "DESC"
+                      }
+                    }
+                  ],
+                  "CategoryItemsLimit": {
+                    "OtherCategories": "INCLUDE"
+                  },
+                  "SmallMultiplesLimitConfiguration": {
+                    "OtherCategories": "INCLUDE"
+                  }
+                },
+                "DonutOptions": {
+                  "ArcOptions": {
+                    "ArcThickness": "WHOLE"
+                  }
+                },
+                "DataLabels": {
+                  "Visibility": "VISIBLE",
+                  "Overlap": "DISABLE_OVERLAP"
+                },
+                "Tooltip": {
+                  "TooltipVisibility": "VISIBLE",
+                  "SelectedTooltipType": "DETAILED",
+                  "FieldBasedTooltip": {
+                    "AggregationVisibility": "HIDDEN",
+                    "TooltipTitleType": "PRIMARY_VALUE",
+                    "TooltipFields": [
+                      {
+                        "FieldTooltipItem": {
+                          "FieldId": "us_simpli-country-77f044.0.1763228950747",
+                          "Visibility": "VISIBLE"
+                        }
+                      },
+                      {
+                        "FieldTooltipItem": {
+                          "FieldId": "us_simpli-deaths-ffbeb4.1.1763228955350",
+                          "Visibility": "VISIBLE"
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              "Actions": [],
+              "ColumnHierarchies": []
+            }
+          }
+        ],
+        "Layouts": [
+          {
+            "Configuration": {
+              "GridLayout": {
+                "Elements": [
+                  {
+                    "ElementId": "371234b0-070d-4c97-8b7e-7aac3c8d8d68",
+                    "ElementType": "VISUAL",
+                    "ColumnSpan": 18,
+                    "RowSpan": 12
+                  }
+                ],
+                "CanvasSizeOptions": {
+                  "ScreenCanvasSizeOptions": {
+                    "ResizeOption": "FIXED",
+                    "OptimizedViewPortWidth": "1600px"
+                  }
+                }
+              }
+            }
+          }
+        ],
+        "ContentType": "INTERACTIVE"
+      }
+    ],
+    "CalculatedFields": [],
+    "ParameterDeclarations": [],
+    "FilterGroups": [],
+    "AnalysisDefaults": {
+      "DefaultNewSheetConfiguration": {
+        "InteractiveLayoutConfiguration": {
+          "Grid": {
+            "CanvasSizeOptions": {
+              "ScreenCanvasSizeOptions": {
+                "ResizeOption": "FIXED",
+                "OptimizedViewPortWidth": "1600px"
+              }
+            }
+          }
+        },
+        "SheetContentType": "INTERACTIVE"
+      }
+    },
+    "Options": {
+      "WeekStart": "SUNDAY",
+      "CustomActionDefaults": {
+        "highlightOperation": {
+          "Trigger": "DATA_POINT_CLICK"
+        }
+      },
+      "ExcludedDataSetArns": [],
+      "QBusinessInsightsStatus": "DISABLED"
+    },
+    "QueryExecutionOptions": {
+      "QueryExecutionMode": "AUTO"
+    }
+  },
+  "validationStrategy": {
+    "mode": "LENIENT"
+  }
+}
