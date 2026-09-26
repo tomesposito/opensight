@@ -1,0 +1,1 @@
+{"description":"Open-source QuickSight-compatible BI platform (working title)","license":"Apache-2.0","name":"opensight","private":true,"scripts":{"build":"npm run build --workspaces","test":"npm run test --workspaces"},"version":"0.0.0","workspaces":["packages/*"]}
