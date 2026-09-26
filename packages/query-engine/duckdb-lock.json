@@ -1,0 +1,23 @@
+{
+  "purpose": "Pinned local synthetic query slice; no Postgres extension or pushdown claim",
+  "nodeApi": "1.5.5-r.5",
+  "nodeBindings": "1.5.5-r.5",
+  "native": {
+    "library_version": "v1.5.5",
+    "source_id": "d8cdaa33fd",
+    "codename": "Variegata"
+  },
+  "verifiedPlatform": "linux-x64-glibc",
+  "nativePackage": "@duckdb/node-bindings-linux-x64",
+  "nativePackageIntegrity": "sha512-kCyq6BXhn6QXfwF8yVdVKriSSHP+rfVWcJ56cG8qZzlOZpxyvT5WGm6jMshxg4ditLlOsHsIN/D47RYrcjXuHQ==",
+  "loadedExtensions": [
+    { "extension_name": "autocomplete", "extension_version": "v1.5.5", "install_mode": "STATICALLY_LINKED" },
+    { "extension_name": "core_functions", "extension_version": "v1.5.5", "install_mode": "STATICALLY_LINKED" },
+    { "extension_name": "icu", "extension_version": "v1.5.5", "install_mode": "STATICALLY_LINKED" },
+    { "extension_name": "json", "extension_version": "v1.5.5", "install_mode": "STATICALLY_LINKED" },
+    { "extension_name": "parquet", "extension_version": "v1.5.5", "install_mode": "STATICALLY_LINKED" }
+  ],
+  "extensionAutoload": false,
+  "extensionAutoinstall": false,
+  "postgres": "disabled; server/extension pins and remote-query evidence still required by D8"
+}

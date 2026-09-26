@@ -86,7 +86,7 @@ test('filter scope and predicate match the reference queries; inventory paramete
   assert.deepEqual(smokeGroup.ScopeConfiguration.SelectedSheets.SheetVisualScopingConfigurations.map((s) => s.SheetId), smoke.Definition.Sheets.map((s) => s.SheetId));
 });
 
-// Deliberately a handwritten SQL oracle. No production compiler exists yet.
+// Independent handwritten SQLite oracle; the query-engine suite tests generated DuckDB SQL.
 function database() {
   const db = new DatabaseSync(':memory:');
   db.exec('CREATE TABLE sales (order_id INTEGER, order_date TEXT, region TEXT, category TEXT, revenue REAL, profit REAL)');

@@ -15,8 +15,10 @@ archive layout and resource schemas will be documented from that evidence.
 
 The [fixtures](fixtures/README.md) include an inventory smoke sample and a separate
 query/render specification with five visual types, field wells, layouts, source/dataset
-response reconstructions, CSV data and SQL result oracles. There is no renderer,
-query compiler or QuickSight-compatible API implemented yet.
+response reconstructions, CSV data and SQL result oracles. The
+[local query engine](packages/query-engine/README.md) compiles that synthetic subset
+to DuckDB SQL and runs it over CSV without AWS. There is no renderer or
+QuickSight-compatible API yet, and no real-export compatibility is claimed.
 
 ## Quick start
 
@@ -32,7 +34,8 @@ npm run summarize --workspace @opensight/bundle-parser -- ../../fixtures/sample-
 Expected [CLI output](fixtures/sample-sales-analysis.summary.txt) and
 [JSON summary](fixtures/sample-sales-analysis.summary.json) are checked by tests.
 The suite includes malformed-input regressions, public-entry typechecking and local
-SQL data-oracle checks. CI runs build and tests.
+SQL data-oracle checks, generated DuckDB query/result comparisons and fail-closed
+execution checks for unsupported features and protected/unresolved datasets.
 
 After building, workspace consumers can import the public API:
 
@@ -52,7 +55,7 @@ format; rich markup is raw text and must not be inserted directly into HTML.
 packages/bundle-parser  Provisional JSON inventory, validation and summary
 packages/api            QuickSight-compatible REST API (planned)
 packages/web            React renderer + authoring (planned)
-packages/query-engine   Typed planner + expression compiler on DuckDB (planned)
+packages/query-engine   Typed synthetic planner + local DuckDB CSV executor
 packages/cli            Archive import/export/validate (planned)
 docs/research           Observed format and API contract research
 fixtures                Reconstructed regression and query/render specifications

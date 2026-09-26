@@ -4,5 +4,9 @@
   "physicalTableId": "sales",
   "csv": "sales.csv",
   "nullEncoding": "empty cell",
-  "timezone": "UTC"
+  "timezone": "UTC",
+  "security": {
+    "dataset": "unrestricted",
+    "source": "unrestricted"
+  }
 }

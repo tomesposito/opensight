@@ -1,11 +1,13 @@
 # Reconstructed query/render specification
 
 This is a provisional, docs-derived fixture for a future renderer, not a captured
-bundle or proof of QuickSight compatibility. The repository has no renderer or
-expression compiler yet. The test suite verifies field references, source linkage,
-layout coverage and expected query results using Node's in-memory SQLite. These
-handwritten reference queries are a data oracle, not a QuickSight SQL compiler or
-a DuckDB/Postgres pushdown test. Tests never connect to the placeholder data source.
+bundle or proof of QuickSight compatibility. The repository has no renderer yet.
+The parser suite verifies field references, source linkage, layout coverage and
+handwritten reference SQL using Node's in-memory SQLite. The separate
+[query-engine suite](../../packages/query-engine/README.md) compiles the supported
+synthetic subset to DuckDB SQL and checks generated-query results against these
+oracles. This is local regression coverage, not captured QuickSight conformance or
+a Postgres pushdown test. Tests never connect to the placeholder data source.
 
 Files have distinct roles:
 
@@ -14,7 +16,7 @@ Files have distinct roles:
 | `analysis.json` | Synthetic OpenSight envelope around an analysis definition subset |
 | `describe-data-set.response.json` | Reconstructed **API response body** describing physical/logical tables and column types |
 | `describe-data-source.response.json` | Reconstructed **API response body** describing a placeholder Postgres source |
-| `local-data.json` | OpenSight test-only mapping from that physical table to local CSV |
+| `local-data.json` | Trusted OpenSight test-only mapping to local CSV, with explicit unrestricted dataset/source declarations; not AWS security metadata |
 | `sales.csv` | Deterministic test data supplied separately from asset definitions; blank cells mean null |
 | `expected-queries.json` | Ordered reference SQL results for each visual with the enabled East filter |
 | `semantic-cases.json` | Planning regression oracles; deferred cases must not be enabled before real QuickSight comparisons |

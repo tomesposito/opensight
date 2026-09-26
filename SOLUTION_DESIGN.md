@@ -12,6 +12,7 @@
 
 | Date       | Change |
 |------------|--------|
+| 2026-09-26 | Query-engine slice: D10 records the local DuckDB architecture, typed planning stages, explicit synthetic security binding and deferred semantic gates. |
 | 2026-09-26 | Review fixes: provisional format boundary, recursive inventory validation, public package entry, regression tests/CI, query/render fixture and explicit Phase 1 compatibility/execution gates. Real-export archive work remains blocked. |
 | 2026-09-26 | Initial draft: vision, compatibility contract, architecture, decisions D1–D9, phased plan. Repo scaffold + bundle-parser spike started. |
 | 2026-09-26 | bundle-parser spike builds clean (tsc strict) and summarizes the sample fixture; committed locally as `3655cc3`, ready to push once GitHub is connected. |
@@ -174,8 +175,10 @@ The initial execution allowlist is deliberately narrow: the five Phase 1 visuals
 explicit field wells, known dataset/source mappings, D9's calculation subset and a
 static single-dataset category equality filter with a fully resolved scope and null
 policy. General parameters, controls, windows, period functions, RLS and CLS remain
-preservable but non-executable until their conformance tests pass. The current package
-only inventories JSON and performs no execution or capability certification.
+preservable but non-executable until their conformance tests pass. The bundle parser
+only inventories JSON and grants no execution capability. The separate query-engine
+package implements a synthetic local allowlist with explicit rejection gates (D10),
+not QuickSight source-conformance certification.
 
 ---
 
@@ -276,7 +279,8 @@ share types with the web UI.
 **Reasoning:** Type-sharing between the bundle parser, API, and UI eliminates a whole
 class of drift bugs — and drift from the bundle format is the project's #1 risk.
 Contributor accessibility matters for an OSS project; TypeScript wins there.
-**Status:** proposed (to be confirmed by the Phase 1 spike).
+**Status:** decided for shared packages by the strict TypeScript parser and local
+query-engine slices; API and web remain unimplemented.
 
 ### D3 — Metadata store
 
@@ -371,8 +375,11 @@ not arbitrary remote execution of DuckDB plans
 Before enabling Postgres, pin the exact Node binding and native DuckDB versions,
 Postgres server version, and the `postgres` extension build/platform/checksum in a
 committed query-engine lock manifest. Record the actual loaded extension metadata;
-a floating `INSTALL postgres` is not a reproducible pin. This repo has no DuckDB
-binding/extension installed yet; these are required artifacts of the engine spike.
+a floating `INSTALL postgres` is not a reproducible pin. The local slice now pins
+Node API/bindings `1.5.5-r.5` and native DuckDB `v1.5.5` in
+`packages/query-engine/duckdb-lock.json`, including observed statically linked
+extensions and npm artifact integrity. No Postgres server or extension is enabled
+or measured; those artifacts remain required before a remote-source spike.
 
 The spike must inspect a representative query:
 `SELECT region, SUM(revenue) FROM sales WHERE region = 'East' GROUP BY region`.
@@ -405,7 +412,7 @@ parsed and executed faithfully.
 - Embed an existing expression language (e.g., adapt a SQL parser like sqlglot).
 - Interpret row-by-row in JS (simple, but slow and hard to push down).
 
-**Decision:** Parser → typed expressions → relational plan → DuckDB SQL (proposed).
+**Decision:** Parser → typed expressions → relational plan → DuckDB SQL.
 Parsing/function substitution alone cannot preserve calculation semantics. Follow
 QuickSight's [evaluation order](https://docs.aws.amazon.com/quick/latest/userguide/order-of-evaluation-quicksight.html).
 
@@ -420,8 +427,10 @@ unsupported evaluation levels rather than independently substituting SQL functio
 **Initial supported subset:** a single dataset; numeric literals and column references;
 row arithmetic `+`, `-`, `*` with null propagation; SUM/COUNT/MIN/MAX/AVG at an explicit
 visual grain; static category equality filtering before aggregation; and calendar
-month grouping in UTC. Only enable each operation after captured QuickSight result
-comparisons pass. The renderable fixture binds `{revenue} * 0.9` before SUM; no joins,
+month grouping in UTC. Only enable each operation for QuickSight-compatible production
+execution after captured result comparisons pass. D10 permits the explicitly
+provisional synthetic local experiment before those captures. The renderable fixture
+binds `{revenue} * 0.9` before SUM; no joins,
 parameters, windows, level-aware aggregation, division or period functions are enabled
 in the initial slice. Unsupported functions/levels follow §3.4.
 
@@ -435,10 +444,77 @@ results before enabling it, rather than inherited accidentally from the SQL back
 
 `fixtures/renderable-sales/semantic-cases.json` records concrete local regression
 oracles for these edge cases, marked provisional/deferred pending QuickSight result
-capture. Tests execute their reference SQL; they do not claim an implemented compiler
-or measured source conformance. Compilation keeps computation in DuckDB; remote
-Postgres execution is governed separately by D8.
-**Status:** proposed — typed planning spike in Phase 1, broader levels in Phase 2.
+capture. Tests execute their reference SQL separately from planner/result checks. The
+local compiler rejects deferred division, aggregate-expression and period cases;
+all-null aggregation executes. Neither local suite establishes source conformance.
+Compilation keeps computation in DuckDB; remote Postgres execution is governed
+separately by D8.
+**Status:** typed row-stage architecture decided and implemented for the D10 local
+slice; source semantics provisional, broader levels deferred to Phase 2.
+
+---
+
+### D10 — First local query-engine slice
+
+**Context:** Prove definition → SQL → CSV results without AWS, while real-export and
+source-conformance gates remain unsatisfied.
+
+**Options:** Emit SQL directly from field wells / typed staged plan / interpret rows
+in JavaScript. Use the legacy `duckdb` package / official Neo Node API and bindings.
+
+**Decision:** `@opensight/query-engine` uses the official Neo Node API (and its native
+`@duckdb/node-bindings` dependency), an in-memory DuckDB instance per execution, and
+DuckDB SQL. No fallback, network source, extension install or remote pushdown is part
+of this slice. Package versions and native engine identity are recorded alongside the
+engine; npm's root lockfile pins native artifacts. This does not satisfy D8's Postgres gate.
+
+Planning stages:
+
+1. Validate the synthetic definition, requested visual, dataset/source linkage and
+   explicit local CSV binding. Reject protected or unresolved security and unknown
+   execution properties before opening data. Missing AWS security properties alone
+   are insufficient: a trusted local fixture binding must declare both dataset and
+   source unrestricted. This declaration is test configuration, never an AWS policy.
+2. Normalize the five fixture visual field-well shapes and resolve column types.
+3. Parse row expressions, bind dependencies topologically and annotate source spans,
+   dataset bindings, scalar type, nullability and row evaluation level. Compile only
+   the dependency closure used by the visual and applicable filters.
+4. Project row calculations in dependency-ordered CTEs; apply static category equality
+   filters before grouping; aggregate at the explicit dimension grain. Emit quoted
+   identifiers, bound filter values, UTC calendar-month grouping and deterministic
+   ascending dimension order. Field IDs map to result columns in the plan.
+5. Execute generated SQL over the explicitly mapped local CSV with declared types
+   and empty-cell nulls, then return JSON-compatible result rows. No raw-SQL execution
+   API bypasses planning/security checks.
+
+**Local data/results contract:** INTEGER → BIGINT, DECIMAL → DOUBLE, STRING → VARCHAR;
+the initial DATETIME input subset accepts ISO date-only `YYYY-MM-DD` values at UTC
+midnight. Other timestamp formats/offsets are rejected. Arithmetic is floating point
+and null-propagating, not an exact financial decimal contract. Nonfinite cells/results
+are rejected. COUNT counts non-null field values; empty/all-null SUM/AVG/MIN/MAX
+return null. Integers outside JavaScript's safe range serialize as decimal strings.
+Month output is `YYYY-MM`, with no filled calendar gaps. Result aliases use field IDs
+except `month` for the fixture date dimension; duplicate aliases are rejected.
+
+The caller selects a local data root; CSV headers/types and the resolved file boundary
+are checked. Each run uses one thread, 256 MiB memory and no disk spill, closes native
+resources in `finally`, disables extension autoload/install, and disables external
+access after import. No generic query API, caching or preview path bypasses planning.
+
+**Provisional semantics:** This user-requested Phase 0 experiment enables D9's small
+subset for synthetic local fixtures only; it does not enable QuickSight-compatible
+production execution before captured comparisons. SUM/AVG/COUNT/MIN/MAX, numeric
+literals, column references, parentheses and row `+`, `-`, `*` are supported. Division,
+aggregate expressions, windows and period functions remain explicit planning errors.
+Every `semantic-cases.json` entry gets a planner test: supported all-null aggregation
+executes; the three deferred cases prove rejection, with separate reference-oracle
+execution documenting their proposed results. SQL-shape comparisons are structural,
+since DuckDB date syntax, parameters and CTE staging differ from SQLite fixture SQL.
+
+**Reasoning:** A typed dependency plan preserves row-before-aggregation semantics and
+keeps unsupported features from silently changing totals. Local execution makes this
+boundary testable without implying archive, API or source compatibility.
+**Status:** decided for the synthetic local slice; QuickSight semantics remain provisional.
 
 ---
 
@@ -449,9 +525,11 @@ Postgres execution is governed separately by D8.
 - [x] Repo scaffold + provisional `bundle-parser` inventory of reconstructed JSON.
 - [x] Recursive inventory validation, strict indexed access, public exports, regression tests and CI.
 - [x] Separate query/render specification with five visuals, source/dataset definitions, CSV and SQL data oracles.
+- [x] Synthetic local query-engine slice: typed row planning, DuckDB SQL/CSV execution,
+  five visual result checks, semantic rejection/oracle tests and execution gates (D10).
 - [ ] Add a sanitized real export alongside the reconstructions; document observed archive/member schemas.
-- [ ] Confirm D2 (TypeScript) with the spike; record API action inventory (which QuickSight
-  API actions exist, prioritized for implementation).
+- [x] Confirm D2 (TypeScript) with the local spike; record the initial API action
+  inventory in §3.2 (captured API contract and endpoint gates remain open).
 
 #### Runbook — capture a real export (at a PC with AWS CLI v2)
 
@@ -572,8 +650,17 @@ cover the checked-in summary/CLI output, omitted sheets and optional fields, mal
 nested objects with JSON paths, union cardinality/parameter variants, rich-text titles,
 and preservation of unknown properties through a synthetic JSON round trip. The
 render fixture checks source/field/layout linkage and executes handwritten reference
-SQL against deterministic CSV in Node's in-memory SQLite. This establishes data-oracle
-consistency only; it is not a renderer, expression compiler or DuckDB integration.
+SQL against deterministic CSV in Node's in-memory SQLite. Those independent checks
+establish data-oracle consistency. `@opensight/query-engine` additionally compiles all
+five visuals and executes generated parameterized DuckDB SQL against that CSV,
+comparing ordered rows and SQL shape to `expected-queries.json`. Tests cover each
+semantic case, row-expression typing/dependencies/cycles, aggregation/null/filter
+ordering, multi-dimension grain, CSV validation and malformed/protected/unsupported
+inputs. Deferred semantic references also run in DuckDB as test-only oracles with a
+calendar-date syntax adaptation; planner and executor must still reject those features.
+Public-entry consumer typechecking and a native-version/extension lock check run with
+the package tests. Root `npm test` includes both workspaces. These are local regression
+tests, not renderer, real-export, QuickSight result or remote-pushdown conformance.
 
 **Required as the corresponding runtime is implemented:**
 
@@ -604,6 +691,9 @@ consistency only; it is not a renderer, expression compiler or DuckDB integratio
 | OQ-3 | Auth model for Phase 1 | Start simple (local users + API keys)? OIDC from the start? Leaning simple-first, OIDC in Phase 3. |
 | OQ-4 | Which QuickSight API version to track | Exact SDK revision + service-model checksum and recorded contracts required **before endpoints** (§3.2); no API implementation yet. |
 | OQ-5 | Geospatial visuals | ECharts maps vs. dedicated mapping lib — decide in Phase 2 when visual coverage expands. |
+| OQ-6 | Numeric and temporal source semantics | D10 uses DOUBLE arithmetic and date-only UTC input. Capture QuickSight null/COUNT/rounding/overflow and timezone behavior before enabling production semantics, division or broader timestamps; choose an exact decimal contract if required. |
+| OQ-7 | Local engine lifecycle and budgets | Per-query in-memory instances suffice for small trusted fixtures. Define cancellation, source/result byte limits, pooling/cache freshness and a trusted policy resolver before exposing execution through an API. Local security assertions must never come from imported assets. |
+| OQ-8 | Deferred semantic enablement | Obtain captured results for period gaps, zero/null division and row versus aggregate ratios; until then these cases remain planning errors, even though their proposed reference SQL has local oracle tests. |
 
 ---
 
