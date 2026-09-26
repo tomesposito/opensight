@@ -9,3 +9,5 @@ export { loadBundle, loadSyntheticAnalysis, parseSyntheticAnalysis, summarizeBun
 export type { BundleSummary } from './parse.js';
 export { ValidationError } from './validate.js';
 export type * from './types.js';
+/** Provisional documentation-only API types; no parser returns these projections. */
+export type * as QuickSightApi from './api-types.js';

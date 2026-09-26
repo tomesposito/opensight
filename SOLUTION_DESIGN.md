@@ -12,6 +12,7 @@
 
 | Date       | Change |
 |------------|--------|
+| 2026-09-26 | Docs-only definition API catalog: 25 visual variants, 41 field-well structures, 8 filter variants, 4 parameter declarations and calculation/context helpers. Additive provisional API types remain separate from validated synthetic inventory and observed bundle types; endpoint contracts remain open. |
 | 2026-09-26 | Real bundle grounding: sanitized AWS sample confirms four resource directories, lowercase envelopes and camelCase definitions; separate archive types, ZIP reader, acceptance/preservation tests and format notes. Complex exports and source conformance remain open. |
 | 2026-09-26 | Query-engine slice: D10 records the local DuckDB architecture, typed planning stages, explicit synthetic security binding and deferred semantic gates. |
 | 2026-09-26 | Review fixes: provisional format boundary, recursive inventory validation, public package entry, regression tests/CI, query/render fixture and explicit Phase 1 compatibility/execution gates. Real-export archive work remains blocked. |
@@ -146,6 +147,36 @@ References: [DescribeAnalysisDefinition](https://docs.aws.amazon.com/quicksight/
 [DescribeDashboard](https://docs.aws.amazon.com/quicksight/latest/APIReference/API_DescribeDashboard.html).
 API wire bodies, HTTP status/headers and SDK-decoded objects must also be recorded
 separately; SDK metadata is not part of a JSON response body.
+
+**Documentation inventory captured (2026-09-26, provisional):**
+[API surface catalog](docs/research/api-surface.md) records both definition response
+bodies and 224 related shapes from public AWS documentation, with source links,
+direct members, required/optional flags and per-shape bundle evidence. No AWS
+service calls or captured responses were used.
+
+| Captured definition surface | Coverage |
+|---|---|
+| Response roots | `AnalysisDefinition`, `DashboardVersionDefinition`, sheet/tooltip-sheet definitions, dataset/topic declarations, defaults/options, errors and publication options; `Status` is HTTP status, outside the documented JSON body |
+| Visuals and fields | All 25 `Visual` variants, their configurations, all 41 named field-well structures, dimension/measure/unaggregated fields, layer-map paths and aggregation helpers |
+| Filters | All 8 `Filter` variants, category configurations, nested inner filters, scope and numeric/time/rolling-date bounds |
+| Parameters | All 4 declaration variants, typed defaults, dynamic/rolling defaults, unset-value configurations and dataset-parameter mappings; separate control shapes |
+| Calculations | Definition `CalculatedField`, visual `CalculatedMeasureField`, dataset `CalculatedColumn`/creation transforms as dependency context, rolling-date expressions and 10 insight computation variants |
+
+The additive, type-only `QuickSightApi` namespace contains docs-derived PascalCase
+projections for response bodies, definition context, fields/wells and parameters.
+Optional detail fields and new standalone shapes do not change the existing
+synthetic inventory or validators. In particular, current docs allow topic binding
+and optional dataset identifiers on calculated fields/column references; the
+synthetic parser still requires its original dataset bindings. Opaque API properties
+remain opaque, and timestamp wire/SDK encoding is not inferred. The camelCase
+`BundleDefinition` layer remains grounded only in the sanitized fixture: a pie and
+its field wells are observed; calculation/parameter/filter item shapes are unknown.
+
+**Still open:** complex bundle mappings, the remaining presentation/layout/action
+graph, conditional requiredness and documentation/model drift, timestamp/long
+serialization, calculation/filter/parameter semantics and source conformance. The
+catalog is a dated reading of mutable docs, not a pinned service model or endpoint
+contract; recognizing a type grants no new query or rendering capability.
 
 **Endpoint implementation gate:** first pin an exact AWS SDK package revision and
 service-model revision/checksum in `docs/research/api-contracts.md`, with sanitized
@@ -569,6 +600,8 @@ DuckDB bindings.
 - [x] Add the sanitized real export alongside unchanged reconstructions; implement observed resource dispatch and acceptance/preservation tests.
 - [x] Confirm D2 (TypeScript) with the local spike; record the initial API action
   inventory in §3.2 (captured API contract and endpoint gates remain open).
+- [x] Catalog the public definition API shapes and add separate provisional API
+  type projections (§3.2); preserve existing parser/runtime behavior.
 
 #### Runbook — capture a real export (at a PC with AWS CLI v2)
 

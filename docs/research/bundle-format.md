@@ -60,6 +60,9 @@ an OpenSight invention. It is neither a real archive envelope nor a complete
 `DescribeAnalysisDefinition` API response. Describe definition responses have
 action-specific fields such as status, errors and request ID; metadata Describe
 actions are another contract. No API response capture or API adapter is introduced.
+The [API surface catalog](api-surface.md) records the docs-derived shapes separately;
+`api-types.ts` exposes provisional `QuickSightApi` types without changing parser
+return types. Documented HTTP `Status` is outside the JSON response body.
 
 Do not recursively change property casing: opaque properties, map keys, field IDs
 and future schema differences must survive. A future API adapter needs explicit
