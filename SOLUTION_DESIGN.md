@@ -724,6 +724,35 @@ visual-type picker, field wells, canvas with live preview.
 **Acceptance:** well-assignment → definition serialization tests, compiler
 round-trip on authored definitions, UI state tests; full suite green; single-file
 demo rebuilt with the builder included.
+
+### Phase 1c — Live query API — NEW 2026-09-26
+
+Tom approved making builder data real: any field assignment should compute
+actual aggregations instead of serving precomputed rows.
+
+**Scope:**
+- `packages/api` gains `POST /api/datasets/{datasetId}/query`. The request
+  mirrors the query-engine `PlanRequest` (dimensions with optional MONTH
+  granularity, measures with SUM/AVG/COUNT/MIN/MAX, static row filters) — an
+  OpenSight-local shape, not the QuickSight API; documented as such.
+- Dataset allowlist: only datasets with resolved local-CSV bindings (the sales
+  dataset). Unknown or unresolved datasets → 404 with an honest message.
+- Success → `{ columns, rows }`. Unsupported features → 422 carrying the
+  engine's error code and message — an honest "can't compute", never silent
+  wrong data. No auth in this slice (local dev); documented.
+- `packages/api` depends on `@opensight/query-engine`. DuckDB native module
+  runs on this machine; Lambda packaging stays a later D11 concern.
+- `packages/web` Author mode: when wells are assigned, POST the query and
+  render live rows; on 422 show the honest unsupported state; fixtures mode
+  keeps precomputed rows for offline use.
+- Static single-file demo keeps fixture rows in Author mode (no engine in a
+  static file); the boundary is documented in the demo.
+
+**Out of scope:** Postgres live scans (needs D8 gates), RLS/CLS, a
+QuickSight-compatible query API shape, result caching, DuckDB-WASM.
+
+**Acceptance:** API endpoint tests (200 / 404 / 422), web live-data path
+tests, full suite green, demo rebuilt.
 - Analysis authoring UI (basic).
 
 ### Phase 3 — Enterprise surface
