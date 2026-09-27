@@ -7,7 +7,10 @@ export function evaluateExpression(e: RowExpression, row: ResultRow = {}, specia
     case 'literal': case 'parameter': case 'symbol': return e.value;
     case 'column': return row[e.columnName] ?? null;
     case 'list': case 'sort': throw new Error('Expected scalar expression');
-    case 'call': return scalarValue(e.name, e.args.map(run));
+    case 'call':
+      if (e.name === 'ifelse') { for (let i = 0; i < e.args.length - 1; i += 2) if (run(e.args[i]!)) return run(e.args[i + 1]!); return run(e.args.at(-1)!); }
+      if (e.name === 'coalesce') { for (const arg of e.args) { const value = run(arg); if (value !== null) return value; } return null; }
+      return scalarValue(e.name, e.args.map(run));
     case 'unary': { const a = run(e.operand); return a === null ? null : e.operator === 'NOT' ? Number(!a) : e.operator === '-' ? -Number(a) : Number(a); }
     case 'binary': {
       const a = run(e.left), b = run(e.right);

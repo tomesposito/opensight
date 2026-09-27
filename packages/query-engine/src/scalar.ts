@@ -3,6 +3,9 @@ import type { ResultValue, RowExpression, SqlDialect } from './types.js';
 import { fail } from './validation.js';
 export type CallExpression = Extract<RowExpression, { kind: 'call' }>;
 export function scalarValue(name: string, args: readonly ResultValue[]): ResultValue {
+  if (name === 'isNull') return Number(args[0] === null);
+  if (name === 'isNotNull') return Number(args[0] !== null);
+  if (name === 'nullIf') return args[0] === args[1] ? null : args[0]!;
   const date = datetimeValue(name, args); if (date !== undefined) return date;
   if (args.some(a => a === null)) return null;
   const [a, b, c] = args, chars = [...String(a)];
@@ -50,6 +53,10 @@ export function scalarSql(e: CallExpression, dialect: SqlDialect, compile: (e: R
   const integer = (s: string | undefined) => `CAST(TRUNC(${s}) AS INTEGER)`;
   const numeric = dialect === 'postgres' ? 'DOUBLE PRECISION' : 'DOUBLE';
   switch (e.name) {
+    case 'ifelse': return `(CASE ${args.slice(0, -1).flatMap((a, i) => i % 2 === 0 ? [`WHEN ${a} THEN ${args[i + 1]}`] : []).join(' ')} ELSE ${args.at(-1)} END)`;
+    case 'coalesce': case 'nullIf': return `${e.name}(${args.join(', ')})`;
+    case 'isNull': return `(${a} IS NULL)`;
+    case 'isNotNull': return `(${a} IS NOT NULL)`;
     case 'abs': case 'ceil': case 'floor': return `${e.name}(${a})`;
     case 'decimalToInt': return `TRUNC(${a})`;
     case 'round': return dialect === 'postgres' ? `CAST(ROUND(CAST(${a} AS NUMERIC), ${integer(b ?? '0')}) AS DOUBLE PRECISION)` : `ROUND(${a}, ${integer(b ?? '0')})`;

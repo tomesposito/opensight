@@ -5,6 +5,10 @@ import { parseExpression, expressionSql, evaluateExpression } from '@opensight/q
 
 // One-based Unicode positions, strict null propagation and QuickSight argument order.
 export const scalarCases = [
+  ["ifelse(1 = 2, 'no', 2 >= 1 AND NOT false, 'yes', 'else')", 'yes'],
+  ['ifelse(isNull(null), 3, 1 / 0)', 3], ['ifelse(null, 1, 2)', 2], ['coalesce(null, null, 5)', 5], ['coalesce(null, null)', null],
+  ['nullIf(3, 3)', null], ['nullIf(3, null)', 3], ['isNull(null)', 1], ['isNull(0)', 0], ['isNotNull(0)', 1],
+  ['1 / 0', null], ['null = null', null], ['false AND null', 0], ['true OR null', 1],
   ["parseDate('2024-02-29')", '2024-02-29T00:00:00.000Z'], ["parseDate('2023-02-29')", null], ["parseDate('nonsense')", null],
   ["parseDate('31/01/2024 13:04:05', 'dd/MM/yyyy HH:mm:ss')", '2024-01-31T13:04:05.000Z'],
   ["parseDate('Feb 29, 2024', 'MMM dd, yyyy')", '2024-02-29T00:00:00.000Z'],
@@ -45,7 +49,7 @@ test('scalar differential: DuckDB, PostgreSQL, client', async t => {
     for (const dialect of ['duckdb', 'postgres']) {
       const values = [], sql = `SELECT ${expressionSql(e, dialect, v => { values.push(v); return '$' + values.length; })} AS value`;
       const result = dialect === 'duckdb' ? (await duck.runAndReadAll(sql, values)).getRowObjects()[0].value : (await pg.query(sql, values)).rows[0].value;
-      assert.deepEqual(result && typeof result === 'object' && 'micros' in result ? new Date(Number(result.micros / 1000n)).toISOString() : result instanceof Date ? result.toISOString() : typeof result === 'bigint' || e.scalarType === 'number' && result !== null ? Number(result) : result, expected, `${dialect}: ${source}`);
+      assert.deepEqual(result && typeof result === 'object' && 'micros' in result ? new Date(Number(result.micros / 1000n)).toISOString() : result instanceof Date ? result.toISOString() : typeof result === 'boolean' || typeof result === 'bigint' || e.scalarType === 'number' && result !== null ? Number(result) : result, expected, `${dialect}: ${source}`);
     }
   }
 });

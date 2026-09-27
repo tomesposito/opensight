@@ -9,6 +9,10 @@ export interface FunctionReference {
 }
 const entry = (name: string, category: string, signature: string, example: string, min: number, max: number, result: FunctionReference['result'], types?: readonly ScalarType[], stage?: FunctionReference['stage']): FunctionReference => ({ name, category, signature: `${name}(${signature})`, example, min, max, result, types, stage });
 export const functionCatalog: readonly FunctionReference[] = [
+  entry('ifelse', 'Conditional', 'condition, then [, condition, then ...], else', "ifelse({revenue} > 0, {profit} / {revenue}, 0)", 3, 99, 'first'),
+  entry('coalesce', 'Conditional', 'expression1, expression2, ...', 'coalesce({profit}, 0)', 2, 99, 'first'),
+  entry('nullIf', 'Conditional', 'expression1, expression2', 'nullIf({revenue}, 0)', 2, 2, 'first'),
+  ...['isNull', 'isNotNull'].map(n => entry(n, 'Conditional', 'expression', `${n}({profit})`, 1, 1, 'boolean')),
   entry('addDateTime', 'Datetime', 'amount, period, datetime', "addDateTime(1, 'MM', {order_date})", 3, 3, 'datetime', ['number', 'string', 'datetime']),
   entry('dateDiff', 'Datetime', 'date1, date2 [, period]', "dateDiff({order_date}, now(), 'DD')", 2, 3, 'number', ['datetime', 'datetime', 'string']),
   entry('truncDate', 'Datetime', 'period, datetime', "truncDate('MM', {order_date})", 2, 2, 'datetime', ['string', 'datetime']),
@@ -45,6 +49,13 @@ export function validateCall(name: string, args: readonly RowExpression[], path:
     const expected = f.types![Math.min(i, f.types!.length - 1)]!;
     if (a.scalarType !== 'unknown' && a.scalarType !== expected && !(a.kind === 'literal' && a.value === null)) functionError(f, path, `argument ${i + 1} must be ${expected}`);
   });
+  if (f.name === 'ifelse' && args.length % 2 !== 1) functionError(f, path, 'conditions and results must be followed by one else result');
+  if (f.name === 'ifelse') args.slice(0, -1).forEach((arg, i) => { if (i % 2 === 0 && !['boolean', 'unknown'].includes(arg.scalarType)) functionError(f, path, `argument ${i + 1} must be a condition`); });
+  if (['ifelse', 'coalesce', 'nullIf'].includes(f.name)) {
+    const results = f.name === 'ifelse' ? args.filter((_, i) => i % 2 === 1 || i === args.length - 1) : args;
+    const types = new Set(results.map(a => a.scalarType).filter(t => t !== 'unknown'));
+    if (types.size > 1) functionError(f, path, 'result arguments must have compatible types');
+  }
   const periodIndex = f.name === 'addDateTime' ? 1 : f.name === 'dateDiff' ? 2 : ['truncDate', 'extract'].includes(f.name) ? 0 : -1;
   if (periodIndex >= 0 && args[periodIndex]) {
     const period = constant(args[periodIndex]).toUpperCase();

@@ -116,7 +116,7 @@ export function parseExpression(source: string, path = '$.expression', context: 
           offset++; const args: RowExpression[] = []; whitespace();
           if (source[offset] !== ')') do { args.push(expression()); whitespace(); if (source[offset] !== ',') break; offset++; } while (true);
           expect(')'); const f = validateCall(name, args, path);
-          left = { ...info(start, f.result === 'first' ? args[0]!.scalarType : f.result, args), kind: 'call', name: f.name, args };
+          left = { ...info(start, f.result === 'first' ? (f.name === 'ifelse' ? args.filter((_, i) => i % 2 === 1 || i === args.length - 1) : args).find(a => a.scalarType !== 'unknown')?.scalarType ?? 'unknown' : f.result, args), kind: 'call', name: f.name, args };
           if (f.name === 'now') left = { ...info(start, 'datetime'), nullable: false, kind: 'literal', value: context.now ?? new Date().toISOString() };
         } else if (/^(null|true|false)$/i.test(name)) {
           left = { ...info(start, /^null$/i.test(name) ? 'unknown' : 'boolean'), kind: 'literal', value: /^null$/i.test(name) ? null : /^true$/i.test(name) ? 1 : 0 };
