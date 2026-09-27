@@ -158,3 +158,45 @@ The Mode picker includes **Folders, sharing & embedding**, following the Securit
 **Needs hosted API**. The view states that sample data is public and does not
 simulate folder writes, shares, signing or SSO. The hosted iframe build is separate
 from the offline demo and contains no sample dataset fallback.
+
+## Validation (2026-09-27)
+
+Node v24.20.0 / npm 10.9.4. Final root `npm test` exited 0, including strict builds,
+public TypeScript consumer checks, the new SDK workspace and conformance tests:
+
+| Suite | Tests | Passed | Failed | Skipped |
+| --- | ---: | ---: | ---: | ---: |
+| API | 90 | 90 | 0 | 0 |
+| Bundle parser | 183 | 183 | 0 | 0 |
+| Embedding SDK | 4 | 4 | 0 | 0 |
+| Query engine | 354 | 353 | 0 | 1 |
+| Web | 323 | 323 | 0 | 0 |
+| Conformance | 3 | 3 | 0 | 0 |
+| Total | 957 | 956 | 0 | 1 |
+
+Zero cancelled or todo tests. The sole skip is the opt-in external Postgres test
+(`DATABASE_URL` unset). Existing DuckDB and embedded PostgreSQL security tests
+both passed. API tests use loopback HTTP and mail stubs. Embedding tests verify
+real signed HTTP responses and authorized renderer data; SDK lifecycle tests use
+a DOM stub. The initial sandbox folder run failed to bind local sockets; rerunning
+with loopback access passed. The first full run exposed a new test-fixture
+expectation error: the saved East filter correctly excluded a West-only tenant's
+rows. Removing that filter from the temporary tenant fixture let the test isolate
+namespace policy enforcement; the subsequent full run above passed.
+
+Root `npm run build` passed. No third-party dependency versions changed. External
+Postgres and SMTP configuration were removed for the final test run. No AWS calls,
+remote service calls or pushes were made. Installation used npm's offline mode
+only to register the local SDK workspace. `SOLUTION_DESIGN.md` is unchanged.
+
+UI verification gap: no reference screenshot set or browser executable was
+available in this checkout/environment, so a screenshot comparison was not
+performed. The static notice was rendered and checked for disabled controls and
+honest hosted requirements, and the hosted iframe payload and build were tested.
+No screenshot parity is claimed. No GitHub issue was filed because this build was
+explicitly restricted to local work without network access beyond npm install.
+
+Final `npm run build:demo --workspace=@opensight/web` exited 0. The rebuilt
+single-file demo is `packages/web/dist/opensight-demo.html` (1,587,222 bytes), and
+the hosted renderer is `packages/web/dist/opensight-embed.html` (1,237,540 bytes).
+Generated artifacts remain ignored. `git diff --check` passed.
