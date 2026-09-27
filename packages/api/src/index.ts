@@ -1,3 +1,4 @@
+import { namespaceRoute, scopePath } from './namespace-routes.js';
 import { SecurityService, SecurityError, type SecurityOptions } from './security.js';
 import { randomUUID } from 'node:crypto';
 import { createServer, type Server, type ServerResponse } from 'node:http';
@@ -14,6 +15,8 @@ import { refreshRoute, reportRoute, alertRoute, method } from './automation-rout
 
 export interface ApiOptions {
   security?: SecurityOptions;
+  /** Trusted startup roots. Unconfigured namespaces start empty; IDs never become paths. */
+  namespaceDataRoots?: Readonly<Record<string, string>>;
   /** Directory of local fixtures/bundles, or one .qs/.json file. Loaded at startup. */
   dataRoot: string;
   /** A single-process, atomic JSON resource store; omit for ephemeral library use. */
@@ -29,6 +32,16 @@ export async function createApiServer(options: ApiOptions): Promise<Server> {
   const schema = options.security && sales ? sales.securitySchema() : undefined;
   const security = options.security ? await SecurityService.load(options.security, schema?.columns ?? [], schema?.localData.dataSetArn ?? '') : undefined;
   if (sales) sales.security = security;
+  const namespaceStores = new Map([['default', store]]);
+  const namespaceQueries = new Map([['default', sales]]);
+  for (const [namespaceId, root] of Object.entries(options.namespaceDataRoots ?? {})) {
+    if (!security || namespaceId === 'default' || !RESOURCE_ID.test(namespaceId) || !security.store.read().namespaces.some(n => n.id === namespaceId)) throw new Error('Namespace data root requires a registered non-default namespace');
+    const definitions = await DefinitionStore.load(root), source = await SalesQuery.load(root);
+    if (source && JSON.stringify(source.securitySchema().columns) !== JSON.stringify(schema?.columns)) throw new Error('Namespace sales schemas must match the configured sales binding');
+    if (source) source.security = security;
+    namespaceStores.set(namespaceId, definitions); namespaceQueries.set(namespaceId, source);
+  }
+  if (security) security.hasAssets = namespaceId => !!namespaceStores.get(namespaceId)?.list().length || !!namespaceQueries.get(namespaceId);
   const automation = await AutomationStore.load(emptyRefreshState(), options.automationStorePath, validateRefreshState);
   const refresh = new RefreshService(automation, new Map(sales ? [['sales', sales]] : []));
   await refresh.recover();
@@ -47,14 +60,33 @@ export async function createApiServer(options: ApiOptions): Promise<Server> {
     };
     const url = request.url ?? '';
     const queryOffset = url.indexOf('?');
-    const path = queryOffset === -1 ? url : url.slice(0, queryOffset);
+    let path = queryOffset === -1 ? url : url.slice(0, queryOffset);
     const query = queryOffset === -1 ? '' : url.slice(queryOffset + 1);
     const identity = await security?.authenticate(request);
+    if (identity) path = scopePath(path, identity);
+    const namespaceId = identity?.namespaceId ?? 'default';
+    const scopedStore = namespaceStores.get(namespaceId), scopedSales = namespaceQueries.get(namespaceId);
+    if (/^\/api\/(namespaces|groups|users)(?:\/[^/]+)?$/.test(path)) {
+      if (!security || !identity) throw new SecurityError(503, 'SECURITY_NOT_CONFIGURED', 'Needs a hosted API with authentication configured');
+      if (await namespaceRoute(request, response, path, query, identity, security)) return;
+    }
+    if (['/api/assets', '/analyses', '/dashboards', '/api/datasets'].includes(path)) {
+      method(request, response, ['GET']);
+      if (query) throw new RequestError(400, 'Query parameters are not supported');
+      const assets = [...(scopedStore?.list() ?? []), ...(scopedSales ? [{ kind: 'dataset', id: 'sales', name: 'Sales' }] : [])];
+      send(response, 200, assets.filter(a => path === '/api/assets' || path === '/analyses' && a.kind === 'analysis' || path === '/dashboards' && a.kind === 'dashboard' || path === '/api/datasets' && a.kind === 'dataset'));
+      return;
+    }
     if (/^\/api\/datasets\/[^/]+\/(row-rules|column-grants)/.test(path)) {
       if (!security || !identity) throw new SecurityError(503, 'SECURITY_NOT_CONFIGURED', 'Needs a hosted API with authentication configured');
+      if (!scopedSales) throw new RequestError(404, 'Dataset not found');
       if (await security.route(request, response, path, query, identity)) return;
     }
     if (path === '/api/automation-status' || path.startsWith('/api/users/') || path.startsWith('/api/alert-rules') || path === '/api/refresh-schedules' || /^\/api\/datasets\/[^/]+\/refresh-/.test(path)) {
+      if (security && identity) {
+        if (namespaceId !== 'default') throw new SecurityError(404, 'RESOURCE_NOT_FOUND', 'Resource not found');
+        security.admin(identity);
+      }
       void (async () => {
         if (path === '/api/automation-status') {
           method(request, response, ['GET']);
@@ -85,8 +117,8 @@ export async function createApiServer(options: ApiOptions): Promise<Server> {
           catch { throw new RequestError(400, 'Invalid dataset ID encoding'); }
           if (!RESOURCE_ID.test(id)) throw new RequestError(400, 'Invalid dataset ID');
           if (query) throw new RequestError(400, 'Query parameters are not supported');
-          if (id !== 'sales' || !sales) throw new RequestError(404, 'Dataset has no resolved local sales CSV binding');
-          send(response, 200, await sales.execute(await readQuery(request), identity));
+          if (id !== 'sales' || !scopedSales) throw new RequestError(404, 'Dataset has no resolved local sales CSV binding');
+          send(response, 200, await scopedSales.execute(await readQuery(request), identity));
         } catch (cause) {
           request.resume();
           if (cause instanceof QueryEngineError) send(response, 422, { errorCode: cause.code, message: cause.message, path: cause.path });
@@ -122,7 +154,7 @@ export async function createApiServer(options: ApiOptions): Promise<Server> {
       error(400, 'InvalidParameterValueException', 'Query parameters are not supported');
       return;
     }
-    const body = store.get(match[1] === 'analyses' ? 'analysis' : 'dashboard', id);
+    const body = scopedStore?.get(match[1] === 'analyses' ? 'analysis' : 'dashboard', id);
     if (!body) {
       error(404, 'ResourceNotFoundException', 'Definition not found');
       return;

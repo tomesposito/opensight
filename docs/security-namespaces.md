@@ -81,3 +81,39 @@ indirect calculation dependencies, dimensions, filters, parameter filters,
 partition fields and sort fields. It never silently drops a requested field.
 Multirow SQL results project only permitted physical columns. RLS predicates may
 use a denied column internally without granting that column to the caller.
+
+## Namespaces
+
+All identities, group membership and dataset policies include a namespace ID.
+The verifier chooses it from verified credentials. Requests cannot select a
+namespace through query parameters or identity headers. Optional explicit paths
+`/api/namespaces/{namespaceId}/assets`, `/analyses/{id}/definition` (after that
+prefix), `/datasets/sales/query`, `/users`, and `/groups` must match the verified
+namespace; a mismatch is a 404. Existing paths use the verified namespace.
+
+`GET /api/assets`, `/analyses`, `/dashboards`, and `/api/datasets` list only the
+current namespace's resources. `namespaceDataRoots` maps registered namespace IDs
+to trusted startup directories. The existing `dataRoot` belongs to `default`.
+Each directory loads an independent definition snapshot and sales query binding;
+identical asset IDs can exist in different namespaces. A namespace without a root
+has no assets and never falls back to default. Roots must use the current sales
+schema, as the existing query API still supports only that binding.
+
+`GET /api/namespaces` lists the caller's namespace. `GET|PUT|DELETE
+/api/namespaces/{id}` reads/renames/deletes it. An administrator may create an
+unused ID with PUT `{ "name": "Tenant" }`; this copies that administrator's
+registered user into the new namespace. It does not issue credentials or grant
+cross-namespace access. Provision credentials through the trusted verifier.
+An existing other namespace remains invisible. Deletion requires no assets,
+policies or groups and no other users, and deletes the sole administrator with the
+namespace. The default namespace cannot be deleted.
+
+Namespace administrators manage `GET /api/users` and `/api/groups`, and
+`GET|PUT|DELETE /api/users/{id}` and `/api/groups/{id}`. User PUT bodies contain
+`name` and `role` (`admin` or `reader`); group bodies contain `name` and `userIds`.
+IDs may repeat across namespaces. Unknown/duplicate group members, foreign
+namespace fields, unresolved policy principals, referenced user/group deletion,
+and deletion/demotion of the last administrator are rejected atomically.
+
+Legacy automation resources belong to default and require its administrator in
+secured mode; other namespaces cannot inspect their configuration or history.

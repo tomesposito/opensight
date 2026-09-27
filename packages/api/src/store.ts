@@ -13,6 +13,10 @@ export class DefinitionStore {
     ['analysis', new Map()], ['dashboard', new Map()],
   ]);
 
+  list(): { kind: ResourceKind; id: string; name: string }[] {
+    return [...this.resources].flatMap(([kind, resources]) => [...resources].map(([id, body]) => ({ kind, id, name: typeof body.Name === 'string' ? body.Name : id })));
+  }
+
   get(kind: ResourceKind, id: string): JsonObject | undefined {
     return this.resources.get(kind)?.get(id);
   }

@@ -63,6 +63,7 @@ export function validateSecurityState(raw: unknown, columns: readonly BoundColum
   return { version: 1, namespaces, users, groups, datasets };
 }
 export class SecurityService {
+  hasAssets: (namespaceId: string) => boolean = () => false;
   private constructor(readonly store: AutomationStore<SecurityState>, private readonly options: SecurityOptions, readonly columns: readonly BoundColumn[], readonly dataSetArn: string) {}
   static async load(options: SecurityOptions, columns: readonly BoundColumn[], dataSetArn: string): Promise<SecurityService> {
     const validate = (raw: unknown) => validateSecurityState(raw, columns);
@@ -79,8 +80,8 @@ export class SecurityService {
     if (!this.store.read().users.some(u => u.id === identity.userId && u.namespaceId === identity.namespaceId)) throw new SecurityError(403, 'UNKNOWN_PRINCIPAL', 'Principal does not resolve');
     return { namespaceId: identity.namespaceId, userId: identity.userId };
   }
-  admin(identity: Identity): void {
-    if (!this.store.read().users.some(u => u.id === identity.userId && u.namespaceId === identity.namespaceId && u.role === 'admin')) throw new SecurityError(403, 'SECURITY_ADMIN_REQUIRED', 'Namespace administrator required');
+  admin(identity: Identity, state = this.store.read()): void {
+    if (!state.users.some(u => u.id === identity.userId && u.namespaceId === identity.namespaceId && u.role === 'admin')) throw new SecurityError(403, 'SECURITY_ADMIN_REQUIRED', 'Namespace administrator required');
   }
   context(identity?: Identity): SecurityContext {
     const state = this.store.read(), namespaceId = identity?.namespaceId ?? 'default';
@@ -110,6 +111,7 @@ export class SecurityService {
       const rule = raw && !columnMode ? validateRowRule({ ...raw, id: ruleId }, this.columns) : undefined;
       const grant = raw && columnMode ? validateColumnGrant({ ...raw, id: ruleId }, this.columns) : undefined;
       await this.store.change(state => {
+        this.admin(identity, state);
         let dataset = state.datasets.find(d => d.namespaceId === identity.namespaceId && d.datasetId === 'sales');
         if (!dataset) { dataset = { ...policy, datasetId: 'sales' }; state.datasets.push(dataset); }
         if (columnMode) {
