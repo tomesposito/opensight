@@ -24,9 +24,14 @@ export function buildAuthorQuery(visual: AuthorVisual, calculations: readonly Ca
 }
 
 /** One grouped query supplies category choices; its SUM is discarded, never used as preview data. */
-export function buildDistinctQuery(columnName: string, calculations: readonly CalculatedField[]): QueryRequest {
-  return { dimensions: [{ fieldId: columnName, columnName }], measures: [{ fieldId: '__distinct_count', columnName: 'revenue', aggregation: 'COUNT' }],
-    filters: [], ...(calculations.length ? { calculatedFields: calculations.map(({ name, expression }) => ({ name, expression })) } : {}) };
+export function buildDistinctQuery(columnName: string, calculations: readonly CalculatedField[], parameters: readonly AuthorParameter[] = []): QueryRequest {
+  const relevant = queryDependencies([columnName], calculations);
+  const names = new Set(relevant.flatMap(c => [...c.expression.matchAll(/\$\{([^}]+)\}/g)].map(m => m[1]!)));
+  const used = parameters.filter(p => names.has(p.name));
+  return { dimensions: [{ fieldId: columnName, columnName }], measures: [{ fieldId: '__distinct_count', columnName: 'revenue', aggregation: 'COUNT' }], filters: [],
+    ...(relevant.length ? { calculatedFields: relevant.map(({ name, expression }) => ({ name, expression })) } : {}),
+    ...(used.length ? { parameterDeclarations: used.map(declaration), parameterBindings: Object.fromEntries(used.map(p => [p.name, p.values])) } : {}),
+  };
 }
 
 /** Errors never fall back to fixture rows. Cancellation remains a rejected request. */

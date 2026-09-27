@@ -1,5 +1,6 @@
+import { serializeControl, serializeFilter } from './bundle-controls.js';
 import { controlError, validateControls, type AuthorControl } from './controls.js';
-import { parameterError, parameterValueError, validateAuthorParameters } from './parameters.js';
+import { parameterError, parameterValueError, validateAuthorParameters, serializeParameter } from './parameters.js';
 import type { AuthorParameter, ParameterValue } from './parameters.js';
 import type { BundleAnalysis, BundleColumnField, BundleDimensionField, BundleMeasureField, BundleVisual, BundleVisualBody } from '@opensight/bundle-parser';
 import { summarizeQsBundle } from '@opensight/bundle-parser/browser';
@@ -35,7 +36,7 @@ export interface ImportedVisual {
   filterGroups: { id: string; columnName: string }[];
 }
 export interface ImportedSheet {
-  memberPath: string; sheetId: string; name: string; layout: Placement[];
+  memberPath: string; sheetId: string; name: string; layout: Placement[]; controls?: AuthorControl[];
 }
 export interface ImportResult { path: string; name: string; messages: string[] }
 export interface BundleOrigin {
@@ -154,7 +155,10 @@ export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorD
   const sheet = activeSheet(draft);
   const update = (changes: Partial<AuthorSheet>): AuthorDraft => ({ ...draft, sheets: draft.sheets.map(s => s === sheet ? { ...s, ...changes } : s) });
   if (action.type === 'control-add') {
-    const c = { ...action.control, id: nextId('control', sheet.controls.map(c => c.id)) };
+    const source = draft.bundle?.original.members.find(m => m.path === sheet.imported?.memberPath)?.resource;
+    const raw = source && (source.resourceType === 'analysis' || source.resourceType === 'dashboard') ? source.definition.sheets?.find(s => s.sheetId === sheet.imported?.sheetId)?.parameterControls : undefined;
+    const reserved = Array.isArray(raw) ? raw.flatMap(value => { const body = Object.values(value as Record<string, unknown>)[0]; return isObject(body) && typeof body.parameterControlId === 'string' ? [body.parameterControlId] : []; }) : [];
+    const c = { ...action.control, id: nextId('control', [...sheet.controls.map(c => c.id), ...reserved]) };
     if (controlError(c, sheetParameters(draft))) return draft;
     try { validateControls([...sheet.controls, c], sheetParameters(draft)); } catch { return draft; }
     return update({ controls: [...sheet.controls, c] });
@@ -208,7 +212,7 @@ export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorD
         return { ...visual, filters: [...visual.filters.filter(f => f.columnName !== action.columnName), { columnName: action.columnName, values: [], parameterName: p.name, operator: action.operator ?? 'EQUALS' }] };
       }
       case 'filter': {
-        if (!dataFields(draft.calculatedFields).some(f => f.name === action.columnName && f.type === 'STRING')) return visual;
+        if (!dataFields(draft.calculatedFields).some(f => f.name === action.columnName && (f.type === 'STRING' || action.values === null))) return visual;
         const filters = visual.filters.filter(f => f.columnName !== action.columnName);
         return { ...visual, filters: action.values === null ? filters : [...filters, { columnName: action.columnName, values: [...new Set(action.values)] }] };
       }
@@ -249,7 +253,7 @@ export function remapVisual(visual: AuthorVisual): AuthorVisual {
   const dimension = tabular(visual.kind) ? rows[0] ?? null : match(visual.dimension ? [visual.dimension] : [], 'dimension')[0] ?? null;
   const measures = match(visual.measures, 'measure');
   const filters = visual.filters.flatMap(f => {
-    const field = SALES_FIELDS.find(c => c.type === 'STRING' && c.name.toLowerCase() === f.columnName.toLowerCase());
+    const field = SALES_FIELDS.find(c => (f.parameterName || c.type === 'STRING') && c.name.toLowerCase() === f.columnName.toLowerCase());
     if (!field) { missing.add(f.columnName); return []; }
     return [{ ...f, columnName: field.name }];
   });
@@ -296,14 +300,14 @@ export function serializeDraft(draft: AuthorDraft): BundleAnalysis {
   validateDraft(draft);
   return { resourceType: 'analysis', analysisId: 'authored-analysis', name: draft.title.trim() || 'Untitled analysis', definition: {
     dataSetIdentifierDeclarations: [{ identifier: 'sales_data', dataSetArn: 'arn:aws:quicksight:us-east-1:123456789012:dataset/renderable-sales' }],
+    ...(draft.parameters.length ? { parameterDeclarations: draft.parameters.map(serializeParameter) } : {}),
     calculatedFields: draft.calculatedFields.map(({ name, expression }) => ({ dataSetIdentifier: 'sales_data', name, expression })),
     filterGroups: draft.sheets.flatMap(sheet => sheet.visuals.flatMap(visual => visual.filters.map((filter, index) => ({
       filterGroupId: `${visual.id}-filter-${index}`, status: 'ENABLED', crossDataset: 'SINGLE_DATASET',
       scopeConfiguration: { selectedSheets: { sheetVisualScopingConfigurations: [{ sheetId: sheet.id, scope: 'SELECTED_VISUALS', visualIds: [visual.id] }] } },
-      filters: [{ categoryFilter: { filterId: `${visual.id}-filter-${index}`, column: { dataSetIdentifier: 'sales_data', columnName: filter.columnName },
-        configuration: { filterListConfiguration: { matchOperator: 'EQUALS', nullOption: 'NON_NULLS_ONLY', categoryValues: filter.values } } } }],
+      filters: [serializeFilter(filter, `${visual.id}-filter-${index}`, 'sales_data', sheetParameters(draft, sheet))],
     })))),
-    sheets: draft.sheets.map(sheet => ({ sheetId: sheet.id, name: sheet.name, visuals: sheet.visuals.map(visual => {
+    sheets: draft.sheets.map(sheet => ({ sheetId: sheet.id, name: sheet.name, ...(sheet.controls.length ? { parameterControls: sheet.controls.map(c => serializeControl(c, sheetParameters(draft, sheet), sheet.controls)) } : {}), visuals: sheet.visuals.map(visual => {
       const definition = serializeVisual(visual);
       normalizeVisual('bundle', definition, `sheets.${sheet.id}.${visual.id}`);
       return definition;
@@ -317,7 +321,7 @@ const onlyKeys = (v: Record<string, unknown>, keys: string[]): boolean => Object
 export function validateDraft(value: unknown): asserts value is AuthorDraft {
   const fail = (): never => { throw new Error('Invalid or unsupported author draft.'); };
   if (!isObject(value) || !onlyKeys(value, ['version', 'title', 'sheets', 'activeSheetId', 'calculatedFields', 'parameters', 'bundle']) || value.version !== 2 || typeof value.title !== 'string' || !Array.isArray(value.sheets) || !value.sheets.length || !Array.isArray(value.calculatedFields)) return fail();
-  validateAuthorParameters(value.parameters ?? []);
+  validateAuthorParameters(value.parameters);
   if (value.bundle !== undefined) {
     const b = value.bundle;
     if (!isObject(b) || !onlyKeys(b, ['original', 'primaryPath', 'title', 'report', 'calculations', 'emptySheetId']) || typeof b.primaryPath !== 'string' || typeof b.title !== 'string' || (b.emptySheetId !== undefined && typeof b.emptySheetId !== 'string') || !Array.isArray(b.report) || !Array.isArray(b.calculations)) return fail();
@@ -340,7 +344,9 @@ export function validateDraft(value: unknown): asserts value is AuthorDraft {
     const source = isObject(sheet.imported) ? origin?.members.find(m => m.path === (sheet.imported as Record<string, unknown>).memberPath)?.resource : undefined;
     const sourceSheet = source && (source.resourceType === 'analysis' || source.resourceType === 'dashboard') ? source.definition.sheets?.find(s => s.sheetId === (sheet.imported as Record<string, unknown>).sheetId) : undefined;
     if (sheet.imported !== undefined && (!sourceSheet || !(sheet.imported as Record<string, unknown>).layout || !(sheet.imported as { layout: unknown[] }).layout.every(p => isObject(p) && typeof p.i === 'string' && [p.x, p.y, p.w, p.h].every(Number.isSafeInteger)))) return fail();
-    validateControls(sheet.controls ?? [], (value.parameters ?? []) as AuthorParameter[]);
+    const parameters = (value.parameters as AuthorParameter[]).filter(p => !p.memberPath || p.memberPath === (isObject(sheet.imported) ? sheet.imported.memberPath : isObject(value.bundle) ? value.bundle.primaryPath : undefined));
+    validateControls(sheet.controls, parameters);
+    if (isObject(sheet.imported) && sheet.imported.controls !== undefined) validateControls(sheet.imported.controls, parameters);
     sheetIds.add(sheet.id);
     for (const v of sheet.visuals) {
       const imported = isObject(v) && isObject(v.imported) ? v.imported : undefined;
@@ -359,7 +365,12 @@ export function validateDraft(value: unknown): asserts value is AuthorDraft {
       const filters = new Set<string>();
       for (const f of v.filters) {
         if (!isObject(f) || !onlyKeys(f, ['columnName', 'values', 'parameterName', 'operator']) || typeof f.columnName !== 'string' || filters.has(f.columnName) || (!imported && !fields.some(field => field.name === f.columnName && (f.parameterName !== undefined || field.type === 'STRING'))) || !Array.isArray(f.values) || !f.values.every(n => typeof n === 'string' && !n.includes('\0')) || new Set(f.values).size !== f.values.length) return fail();
-        if (f.parameterName !== undefined && (typeof f.parameterName !== 'string' || !((value.parameters ?? []) as AuthorParameter[]).some(p => p.name === f.parameterName)) || f.operator !== undefined && !['EQUALS', 'GREATER_THAN_OR_EQUAL_TO', 'LESS_THAN_OR_EQUAL_TO'].includes(String(f.operator))) return fail();
+        if (f.parameterName !== undefined && (typeof f.parameterName !== 'string' || !parameters.some(p => p.name === f.parameterName)) || f.operator !== undefined && !['EQUALS', 'GREATER_THAN_OR_EQUAL_TO', 'LESS_THAN_OR_EQUAL_TO'].includes(String(f.operator))) return fail();
+        if (f.parameterName !== undefined) {
+          const p = parameters.find(p => p.name === f.parameterName)!;
+          const field = fields.find(c => c.name === f.columnName);
+          if (!imported && (!field || p.type !== (field.type === 'STRING' ? 'string' : field.type === 'DATETIME' ? 'datetime' : 'number')) || f.operator && f.operator !== 'EQUALS' && (p.type === 'string' || p.multiple) || f.values.length) return fail();
+        }
         filters.add(f.columnName);
       }
       ids.add(v.id);

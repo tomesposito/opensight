@@ -4,7 +4,7 @@ import { ParameterEditor } from './ParameterEditor.js';
 import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import type { Dispatch, ReactNode } from 'react';
 import { GridLayout, noCompactor, useContainerWidth } from 'react-grid-layout';
-import { downloadBundleBytes, exportBundle, importBundleFile, importedFilterProblem } from './bundle-authoring.js';
+import { downloadBundleBytes, exportBundle, importBundleFile, importedFilterProblem, withInheritedParameterFilters } from './bundle-authoring.js';
 import { VisualCard } from './VisualCard.js';
 import { buildAuthorPreview, fixtureCategoryValues } from './author-preview.js';
 import { LiveAuthorVisual } from './LiveAuthorVisual.js';
@@ -156,7 +156,7 @@ export function AuthorCanvas({ draft, dispatch, client }: EditorProps) {
               onDragStop={next => { if (!mobile) dispatch({ type: 'layout', sheetId: sheet.id, layout: next }); }}
               onResizeStop={next => { if (!mobile) dispatch({ type: 'layout', sheetId: sheet.id, layout: next }); }}>
               {sheet.visuals.map((visual, index) => <div key={visual.id}>
-                <AuthorCard visual={visual} index={index} count={sheet.visuals.length} selected={visual.id === sheet.selectedId} filterProblem={importedFilterProblem(draft, sheet, visual)} dispatch={dispatch} client={client} calculations={draft.calculatedFields} parameters={sheetParameters(draft)} />
+                <AuthorCard visual={withInheritedParameterFilters(draft, sheet, visual)} index={index} count={sheet.visuals.length} selected={visual.id === sheet.selectedId} filterProblem={importedFilterProblem(draft, sheet, visual)} dispatch={dispatch} client={client} calculations={draft.calculatedFields} parameters={sheetParameters(draft)} />
               </div>)}
             </GridLayout>
           </div>
@@ -224,26 +224,28 @@ function Properties({ visual, draft, dispatch, client }: EditorProps & { visual:
 function FilterEditor({ visual, calculations, dispatch, client, parameters }: { parameters: AuthorParameter[]; visual: AuthorVisual; calculations: CalculatedField[]; dispatch: Dispatch<AuthorAction>; client?: QueryClient }) {
   const [column, setColumn] = useState('region');
   const [result, setResult] = useState<{ key: string; values: string[]; error?: string }>();
-  const key = JSON.stringify([column, calculations]);
+  const key = JSON.stringify(buildDistinctQuery(column, calculations, parameters));
+  const request = useMemo(() => JSON.parse(key) as ReturnType<typeof buildDistinctQuery>, [key]);
   useEffect(() => {
     if (!client) return;
     const controller = new AbortController();
-    void loadAuthorRows(client, buildDistinctQuery(column, calculations), controller.signal).then(data => {
+    void loadAuthorRows(client, request, controller.signal).then(data => {
       if (!controller.signal.aborted) setResult({ key, values: [...new Set((data.rows ?? []).flatMap(row => typeof row[column] === 'string' ? [row[column]] : []))], error: data.message });
     }).catch(() => {});
     return () => controller.abort();
-  }, [client, column, calculations, key]);
+  }, [client, column, request, key]);
   const current: { values: string[]; error?: string } | undefined = client ? result?.key === key ? result : undefined : { values: fixtureCategoryValues(column) };
   const filter = visual.filters.find(f => f.columnName === column);
-  const values = [...new Set([...(current?.values ?? []), ...(filter?.values ?? [])])];
+  const filterValues = filter?.parameterName ? parameters.find(p => p.name === filter.parameterName)?.values.map(String) ?? [] : filter?.values;
+  const values = [...new Set([...(current?.values ?? []), ...(filterValues ?? [])])];
   return <div className="filter-editor"><h3>Filters</h3>
     {visual.filters.map(f => <button className="field-chip filter-pill" type="button" key={f.columnName} aria-label={`Remove ${f.columnName} filter`} onClick={() => dispatch({ type: 'filter', columnName: f.columnName, values: null })}>{f.columnName}: {f.parameterName ? `$${f.parameterName}` : f.values.length ? f.values.join(', ') : 'None'} <span aria-hidden="true">×</span></button>)}
     <ParameterFilterEditor parameters={parameters} calculations={calculations} dispatch={dispatch} />
     <label>Category field<select value={column} onChange={e => setColumn(e.target.value)}>{dataFields(calculations).filter(f => f.type === 'STRING').map(f => <option key={f.name}>{f.name}</option>)}</select></label>
     {!current && <p role="status">Loading values…</p>}
     {current?.error && <p role="status">{current.error}</p>}
-    <div className="filter-values" role="group" aria-label={`${column} values`}>{values.map(value => <label className="toggle" key={value}><input type="checkbox" checked={!filter || filter.values.includes(value)} onChange={e => {
-      const selected = filter?.values ?? values;
+    <div className="filter-values" role="group" aria-label={`${column} values`}>{values.map(value => <label className="toggle" key={value}><input type="checkbox" checked={!filter || (filterValues ?? []).includes(value)} onChange={e => {
+      const selected = filterValues ?? values;
       dispatch({ type: 'filter', columnName: column, values: e.target.checked ? [...selected, value] : selected.filter(v => v !== value) });
     }} />{value || '(empty string)'}</label>)}</div>
     <div className="filter-actions"><button type="button" disabled={!current || !!current.error} onClick={() => dispatch({ type: 'filter', columnName: column, values })}>Select all</button><button type="button" onClick={() => dispatch({ type: 'filter', columnName: column, values: [] })}>Select none</button></div>

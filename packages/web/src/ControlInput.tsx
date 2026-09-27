@@ -15,7 +15,7 @@ export function ControlInput({ control, parameter, options = control.options ?? 
           change(values.map(v => parameter.type === 'number' ? Number(v) : v));
         }}>
         {!parameter.multiple && value === undefined && <option value="" disabled>Choose a value…</option>}
-        {[...new Set([...options, ...parameter.values])].map(v => <option key={String(v)} value={String(v)}>{String(v) || '(empty string)'}{options.includes(v) ? '' : ' (unavailable)'}</option>)}
+        {[...new Set([...options, ...parameter.values])].map(v => <option key={String(v)} value={String(v)} disabled={!options.includes(v)}>{String(v) || '(empty string)'}{options.includes(v) ? '' : ' (unavailable)'}</option>)}
       </select> : control.kind === 'slider' ? <><input aria-label={control.label} type="range" min={control.min} max={control.max} step={control.step} value={value ?? control.min} onChange={e => change([Number(e.target.value)])} /><output>{value ?? 'No value'}</output></>
         : <input aria-label={control.label} type={control.kind === 'date' ? 'date' : 'text'} value={control.kind === 'date' ? String(value ?? '').slice(0, 10) : value ?? ''} onChange={e => change(control.kind === 'date' ? e.target.value ? [`${e.target.value}T00:00:00Z`] : [] : [e.target.value])} />}
     </label>

@@ -13,6 +13,9 @@ export function ControlsStrip({ draft, dispatch, client }: { draft: AuthorDraft;
   const [min, setMin] = useState('0'), [max, setMax] = useState('100'), [step, setStep] = useState('1');
   const parameter = parameters.find(p => p.id === parameterId) ?? parameters[0];
   const strings = dataFields().filter(f => f.type === 'STRING');
+  const parentParameter = parameters.find(p => p.id === sheet.controls.find(c => c.id === parent)?.parameterId);
+  const parentFields = dataFields().filter(f => parentParameter?.type === (f.type === 'STRING' ? 'string' : f.type === 'DATETIME' ? 'datetime' : 'number'));
+  const matchColumn = parentFields.find(f => f.name === parentColumn)?.name ?? parentFields[0]?.name ?? '';
   return <section className="controls-strip" aria-label={`${sheet.name} controls`}>
     <div className="controls-heading"><strong>Controls</strong><button type="button" disabled={!parameters.length} onClick={() => setOpen(!open)}>+ Add control</button></div>
     {!parameters.length && <p>Create a parameter in the Data panel to add controls.</p>}
@@ -32,7 +35,7 @@ export function ControlsStrip({ draft, dispatch, client }: { draft: AuthorDraft;
       e.preventDefault(); if (!parameter) return;
       const control: AuthorControl = { id: 'new', label: label.trim() || parameter.name, kind, parameterId: parameter.id,
         ...(kind === 'slider' ? { min: Number(min), max: Number(max), step: Number(step) } : {}),
-        ...(kind === 'dropdown' ? column ? { source: { columnName: column, dataSetIdentifier: 'sales_data', local: true }, ...(parent ? { cascade: [{ controlId: parent, columnName: parentColumn }] } : {}) } : { options: options === '' ? [] : options.split('\n').map(v => parameter.type === 'number' ? Number(v) : v) } : {}),
+        ...(kind === 'dropdown' ? column ? { source: { columnName: column, dataSetIdentifier: 'sales_data', local: true }, ...(parent ? { cascade: [{ controlId: parent, columnName: matchColumn }] } : {}) } : { options: options === '' ? [] : options.split('\n').map(v => parameter.type === 'number' ? Number(v) : v) } : {}),
       };
       const problem = controlError(control, parameters);
       if (problem) setError(problem); else { dispatch({ type: 'control-add', control }); setOpen(false); setError(''); setLabel(''); }
@@ -44,10 +47,7 @@ export function ControlsStrip({ draft, dispatch, client }: { draft: AuthorDraft;
         <label>Options source<select value={column} onChange={e => setColumn(e.target.value)}><option value="">Static values</option>{parameter?.type === 'string' && strings.map(f => <option key={f.name} value={f.name}>{f.name} (local sales)</option>)}</select></label>
         {!column ? <label>Options (one per line)<textarea value={options} onChange={e => setOptions(e.target.value)} /></label> : <>
           <label>Cascade from<select value={parent} onChange={e => setParent(e.target.value)}><option value="">No parent</option>{sheet.controls.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}</select></label>
-          {parent && <label>Parent filter column<select value={parentColumn} onChange={e => setParentColumn(e.target.value)}>{dataFields().filter(f => {
-            const p = parameters.find(p => p.id === sheet.controls.find(c => c.id === parent)?.parameterId);
-            return p?.type === (f.type === 'STRING' ? 'string' : f.type === 'DATETIME' ? 'datetime' : 'number');
-          }).map(f => <option key={f.name}>{f.name}</option>)}</select></label>}
+          {parent && <label>Parent filter column<select value={matchColumn} onChange={e => setParentColumn(e.target.value)}>{parentFields.map(f => <option key={f.name}>{f.name}</option>)}</select></label>}
         </>}
       </>}
       {kind === 'slider' && <><label>Minimum<input type="number" value={min} onChange={e => setMin(e.target.value)} /></label><label>Maximum<input type="number" value={max} onChange={e => setMax(e.target.value)} /></label><label>Step<input type="number" value={step} onChange={e => setStep(e.target.value)} /></label></>}

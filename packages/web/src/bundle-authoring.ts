@@ -1,7 +1,8 @@
-import { importParameter } from './parameters.js';
+import { importControls, importParameterFilter, serializeControl, serializeFilter } from './bundle-controls.js';
+import { importParameter, serializeParameter, type AuthorParameter } from './parameters.js';
 import { assembleQsBundle, parseBundleJson, parseQsBundle, summarizeQsBundle, ZIP_LIMITS } from '@opensight/bundle-parser/browser';
 import type { BundleDefinition, BundleSheet, BundleVisual, QsBundle } from '@opensight/bundle-parser';
-import { defaults, emptyDraft, serializeDraft, serializeVisual, tabular, singleMeasure, validateDraft, dataFields, calculationError } from './authoring.js';
+import { defaults, emptyDraft, serializeDraft, serializeVisual, tabular, singleMeasure, validateDraft, dataFields, calculationError, sheetParameters } from './authoring.js';
 import type { AuthorDraft, AuthorSheet, AuthorVisual, CalculatedField, CategoryFilter, ImportResult, ImportedVisual, Placement, VisualKind } from './authoring.js';
 
 type Obj = Record<string, unknown>;
@@ -101,6 +102,20 @@ function editableFilter(group: Obj, sheet: AuthorSheet, visual: AuthorVisual): C
   return { columnName: column.columnName, values: [...new Set(config.categoryValues as string[])] };
 }
 
+function parameterGroup(group: Obj, parameters: readonly AuthorParameter[], identifiers: readonly string[]): CategoryFilter | undefined {
+  if (group.status !== 'ENABLED' || group.crossDataset !== 'SINGLE_DATASET' || list(group.filters).length !== 1 || Object.keys(group).some(k => !['filterGroupId','status','crossDataset','scopeConfiguration','filters'].includes(k))) return;
+  const scope = obj(group.scopeConfiguration);
+  if (Object.keys(scope).length !== 1) return;
+  if (Object.hasOwn(scope, 'allSheets')) { if (Object.keys(obj(scope.allSheets)).length) return; }
+  else {
+    const selected = obj(scope.selectedSheets);
+    if (Object.keys(selected).some(k => k !== 'sheetVisualScopingConfigurations') || !Array.isArray(selected.sheetVisualScopingConfigurations) || selected.sheetVisualScopingConfigurations.some(raw => Object.keys(obj(raw)).some(k => !['sheetId','scope','visualIds'].includes(k)))) return;
+  }
+  const raw = list(group.filters)[0], column = obj(obj(Object.values(obj(raw))[0]).column);
+  if (!identifiers.includes(string(column.dataSetIdentifier))) return;
+  return importParameterFilter(raw, parameters);
+}
+
 export function importBundle(bundle: QsBundle): AuthorDraft {
   const summary = summarizeQsBundle(bundle);
   const original = copy(bundle), draft = emptyDraft(), sheets: AuthorSheet[] = [], report: ImportResult[] = [];
@@ -124,6 +139,8 @@ export function importBundle(bundle: QsBundle): AuthorDraft {
       const imported = importParameter(parameter, `parameter-${draft.parameters.length + 1}`, member.path);
       if (imported) draft.parameters.push(imported);
       messages.push(`Parameter ${string(obj(value).name, kind)} (${kind}): ${imported ? 'live; static defaults imported' : 'display only; unsupported declaration'}.`);
+      for (const key of Object.keys(obj(value))) if (!['name','parameterValueType','defaultValues','timeGranularity'].includes(key)) messages.push(`Parameter ${string(obj(value).name, kind)}.${key}: retained, read-only.`);
+      if (obj(obj(value).defaultValues).rollingDate) messages.push(`Parameter ${string(obj(value).name, kind)}: rolling defaults are unsupported; choose a value locally.`);
       if (obj(obj(value).defaultValues).dynamicValue) messages.push(`Parameter ${string(obj(value).name, kind)}: server-side defaults are unsupported; choose a value locally.`);
     }
     for (const value of d.calculatedFields ?? []) {
@@ -163,9 +180,12 @@ export function importBundle(bundle: QsBundle): AuthorDraft {
       const layout = grid(s, visuals);
       const sheet: AuthorSheet = { id, controls: [], name: s.name?.trim() || 'Untitled sheet', visuals, layout, selectedId: visuals[0]?.id ?? null,
         imported: { memberPath: member.path, sheetId: s.sheetId, name: s.name?.trim() || 'Untitled sheet', layout: copy(layout) } };
+      const parameters = draft.parameters.filter(p => p.memberPath === member.path);
+      sheet.controls = importControls(s.parameterControls, parameters, identifier => localBinding(d.dataSetIdentifierDeclarations.find(ds => ds.identifier === identifier)?.dataSetArn, original, identifier), messages, s.sheetId);
+      sheet.imported!.controls = copy(sheet.controls);
       sheets.push(sheet);
       messages.push(`Sheet ${s.name ?? s.sheetId}: ${visuals.length} visual(s) imported.`);
-      for (const key of Object.keys(s)) if (!['sheetId', 'name', 'visuals', 'layouts'].includes(key)) messages.push(`Sheet ${s.sheetId}.${key}: retained, read-only.`);
+      for (const key of Object.keys(s)) if (!['sheetId', 'name', 'visuals', 'layouts', 'parameterControls'].includes(key)) messages.push(`Sheet ${s.sheetId}.${key}: retained, read-only.`);
       if (s.layouts?.length) messages.push(`Sheet ${s.sheetId}.layouts: grid geometry projected where compatible; original layouts and other layout features retained until edited.`);
       for (const v of visuals) {
         const meta = v.imported!;
@@ -178,12 +198,16 @@ export function importBundle(bundle: QsBundle): AuthorDraft {
             continue;
           }
           if (!scopeMatches(group, s.sheetId, meta.visualId)) continue;
-          const filter = editableFilter(group, sheet, v);
+          const dynamic = parameterGroup(group, parameters, [...meta.dataSets.map(ds => ds.identifier), ...(meta.local ? d.dataSetIdentifierDeclarations.filter(ds => localBinding(ds.dataSetArn, original, ds.identifier)).map(ds => ds.identifier) : [])]);
+          const filter = dynamic ?? editableFilter(group, sheet, v);
           if (filter && !v.filters.some(f => f.columnName === filter.columnName)) {
             v.filters.push(filter); meta.filterGroups.push({ id: string(group.filterGroupId), columnName: filter.columnName });
-            const projected = obj(generatedFilters(sheet, { ...v, filters: [filter] }, meta.dataSets[0]?.identifier ?? '')[0]);
+            const projected = obj(generatedFilters(sheet, { ...v, filters: [filter] }, meta.dataSets[0]?.identifier ?? '', new Set(), parameters)[0]);
+            if (dynamic) projected.scopeConfiguration = copy(group.scopeConfiguration);
             projected.filterGroupId = group.filterGroupId;
-            obj(obj(list(projected.filters)[0]).categoryFilter).filterId = obj(obj(list(group.filters)[0]).categoryFilter).filterId;
+            obj(Object.values(obj(list(projected.filters)[0]))[0]).filterId = obj(Object.values(obj(list(group.filters)[0]))[0]).filterId;
+            // Accepted parameter filter variants are semantically equivalent; retain the original wrapper and optional omissions.
+            if (dynamic) projected.filters = copy(group.filters);
             meta.issues.push(...differences(group, projected, `Filter group ${string(group.filterGroupId)}`));
           } else if (group.status !== 'DISABLED') meta.issues.push(`Filter group ${string(group.filterGroupId)}: scope or filter semantics are display-only`);
         }
@@ -194,7 +218,7 @@ export function importBundle(bundle: QsBundle): AuthorDraft {
     for (const value of d.filterGroups ?? []) {
       const group = obj(value), editable = sheets.some(s => s.imported?.memberPath === member.path && s.visuals.some(v => v.imported?.filterGroups.some(g => g.id === group.filterGroupId)));
       for (const key of Object.keys(group)) if (!['filterGroupId', 'crossDataset', 'status', 'scopeConfiguration', 'filters'].includes(key)) messages.push(`Filter group ${string(group.filterGroupId)}.${key}: retained, read-only.`);
-      messages.push(`Filter group ${string(group.filterGroupId)} (${list(group.filters).flatMap(f => Object.keys(obj(f))).join(', ')}): ${editable ? 'editable category list in Properties' : 'display only; scope, status and configuration retained'}.`);
+      messages.push(`Filter group ${string(group.filterGroupId)} (${list(group.filters).flatMap(f => Object.keys(obj(f))).join(', ')}): ${editable ? 'live compatible filter in Properties' : 'display only; scope, status and configuration retained'}.`);
     }
   }
   if (sheets.length) { draft.sheets = sheets; draft.activeSheetId = sheets[0]!.id; }
@@ -296,7 +320,7 @@ function exportLayout(sheet: AuthorSheet, raw: BundleSheet): void {
   })];
   config.gridLayout = grid; first.configuration = config; layouts[0] = first; raw.layouts = layouts;
 }
-function generatedFilters(sheet: AuthorSheet, visual: AuthorVisual, identifier: string, existingIds: ReadonlySet<string> = new Set()): unknown[] {
+function generatedFilters(sheet: AuthorSheet, visual: AuthorVisual, identifier: string, existingIds: ReadonlySet<string> = new Set(), parameters: readonly AuthorParameter[] = []): unknown[] {
   const visualId = visual.imported?.visualId ?? visual.id;
   const used = new Set(existingIds);
   return visual.filters.map((filter, i) => {
@@ -305,8 +329,7 @@ function generatedFilters(sheet: AuthorSheet, visual: AuthorVisual, identifier: 
     used.add(id);
     return { filterGroupId: id, status: 'ENABLED', crossDataset: 'SINGLE_DATASET',
       scopeConfiguration: { selectedSheets: { sheetVisualScopingConfigurations: [{ sheetId: sheet.imported?.sheetId ?? sheet.id, scope: 'SELECTED_VISUALS', visualIds: [visualId] }] } },
-      filters: [{ categoryFilter: { filterId: id, column: { dataSetIdentifier: identifier, columnName: filter.columnName },
-        configuration: { filterListConfiguration: { matchOperator: 'EQUALS', nullOption: 'NON_NULLS_ONLY', categoryValues: copy(filter.values) } } } }],
+      filters: [serializeFilter(filter, id, identifier, parameters)],
     };
   });
 }
@@ -322,11 +345,36 @@ export function exportBundle(draft: AuthorDraft): QsBundle {
     const r = member.resource;
     if (r.resourceType !== 'analysis' && r.resourceType !== 'dashboard') continue;
     const d = r.definition, primary = member.path === origin.primaryPath;
+    const parameters = draft.parameters.filter(p => !p.memberPath || p.memberPath === member.path);
+    const declarations = d.parameterDeclarations ?? [];
+    for (const p of parameters) {
+      const index = declarations.findIndex(raw => string(obj(Object.values(obj(raw))[0]).name) === p.name);
+      if (index < 0) declarations.push(serializeParameter(p));
+      else {
+        const baseline = importParameter(declarations[index], p.id, member.path);
+        if (baseline && !equal(baseline.defaultValues, p.defaultValues)) {
+          const body = obj(Object.values(obj(declarations[index]))[0]);
+          body.defaultValues = { ...obj(body.defaultValues), staticValues: copy(p.defaultValues) };
+          delete obj(body.defaultValues).dynamicValue; delete obj(body.defaultValues).rollingDate;
+        }
+      }
+    }
+    if (declarations.length || d.parameterDeclarations !== undefined) d.parameterDeclarations = declarations;
     if (primary && draft.title !== origin.title) r.name = draft.title.trim() || 'Untitled analysis';
     const sheets = draft.sheets.filter(s => s.imported ? s.imported.memberPath === member.path : primary && (s.id !== origin.emptySheetId || s.visuals.length > 0 || s.name !== 'Sheet 1'));
     if (d.sheets !== undefined || sheets.length) d.sheets = sheets.map(sheet => {
       const raw = copy(d.sheets?.find(s => s.sheetId === sheet.imported?.sheetId) ?? { sheetId: sheet.id, name: sheet.name });
       if (!sheet.imported || sheet.name !== sheet.imported.name) raw.name = sheet.name;
+      const baselineControls = sheet.imported?.controls ?? [];
+      if (!equal(baselineControls, sheet.controls)) {
+        const originals = list(raw.parameterControls), projected = sheet.controls.map(c => {
+          const before = baselineControls.find(b => b.importedId === c.importedId && !!c.importedId);
+          const original = originals.find(r => obj(Object.values(obj(r))[0]).parameterControlId === c.importedId);
+          const after = serializeControl(c, parameters, sheet.controls);
+          return before && original ? patch(original, serializeControl(before, parameters, baselineControls), after) : after;
+        });
+        raw.parameterControls = [...projected, ...originals.filter(r => !baselineControls.some(c => c.importedId === obj(Object.values(obj(r))[0]).parameterControlId))];
+      }
       if (raw.visuals !== undefined || sheet.visuals.length) raw.visuals = sheet.visuals.map(v => exportVisual(v, raw.visuals?.find(r => Object.values(r)[0]?.visualId === v.imported?.visualId)));
       exportLayout(sheet, raw);
       return raw;
@@ -372,15 +420,29 @@ export function exportBundle(draft: AuthorDraft): QsBundle {
       for (const binding of meta?.filterGroups ?? []) {
         const group = existing.find(g => obj(g).filterGroupId === binding.id), filter = v.filters.find(f => f.columnName === binding.columnName);
         if (!group) continue;
+        const scopes = list(obj(obj(obj(group).scopeConfiguration).selectedSheets).sheetVisualScopingConfigurations);
+        const exclusive = scopes.length === 1 && obj(scopes[0]).sheetId === (sheet.imported?.sheetId ?? sheet.id) && equal(obj(scopes[0]).visualIds, [meta?.visualId ?? v.id]);
+        if (!exclusive) {
+          // Split only the edited visual out of a shared parameter filter. Preserve the other scopes.
+          const remaining = (d.sheets ?? []).flatMap(s => {
+            const ids = (s.visuals ?? []).map(raw => Object.values(raw)[0]!.visualId).filter(id => scopeMatches(obj(group), s.sheetId, id) && !(s.sheetId === (sheet.imported?.sheetId ?? sheet.id) && id === (meta?.visualId ?? v.id)));
+            return ids.length ? [{ sheetId: s.sheetId, scope: 'SELECTED_VISUALS', visualIds: ids }] : [];
+          });
+          if (remaining.length) obj(group).scopeConfiguration = { selectedSheets: { sheetVisualScopingConfigurations: remaining } };
+          else existing.splice(existing.indexOf(group), 1);
+          if (filter) existing.push(...generatedFilters(sheet, { ...v, filters: [filter] }, identifier, new Set(existing.map(g => string(obj(g).filterGroupId))), parameters));
+          continue;
+        }
         if (!filter) existing.splice(existing.indexOf(group), 1);
         else {
-          const category = obj(obj(list(obj(group).filters)[0]).categoryFilter);
-          obj(category.column).dataSetIdentifier = identifier;
-          obj(obj(category.configuration).filterListConfiguration).categoryValues = copy(filter.values);
+          const old = obj(Object.values(obj(list(obj(group).filters)[0]))[0]);
+          const previous = before.find(f => f.columnName === binding.columnName);
+          const projected = serializeFilter(filter, string(old.filterId), identifier, parameters);
+          obj(group).filters = [previous?.parameterName || filter.parameterName ? projected : previous ? patch(list(obj(group).filters)[0], serializeFilter(previous, string(old.filterId), meta?.dataSets[0]?.identifier ?? identifier, parameters), projected) : projected];
         }
       }
       const added = v.filters.filter(f => !meta?.filterGroups.some(g => g.columnName === f.columnName));
-      if (added.length) existing.push(...generatedFilters(sheet, { ...v, filters: added }, identifier, new Set(existing.map(g => string(obj(g).filterGroupId)))));
+      if (added.length) existing.push(...generatedFilters(sheet, { ...v, filters: added }, identifier, new Set(existing.map(g => string(obj(g).filterGroupId))), parameters));
       if (existing.length || d.filterGroups !== undefined) d.filterGroups = existing;
     }
     if ((primary || sheets.some(s => s.visuals.some(v => !v.imported || v.imported.local))) && !equal(draft.calculatedFields, origin.calculations)) {
@@ -396,7 +458,7 @@ export function exportBundle(draft: AuthorDraft): QsBundle {
     }
   }
   // A dataset-only import can still become an authored analysis without losing dependency members.
-  if (!origin.primaryPath && (draft.sheets.some(s => s.visuals.length || s.id !== origin.emptySheetId || s.name !== 'Sheet 1') || draft.calculatedFields.length || draft.title !== origin.title)) {
+  if (!origin.primaryPath && (draft.sheets.some(s => s.visuals.length || s.id !== origin.emptySheetId || s.name !== 'Sheet 1') || draft.calculatedFields.length || draft.parameters.length || draft.sheets.some(s => s.controls.length) || draft.title !== origin.title)) {
     const resource = serializeDraft({ ...draft, bundle: undefined });
     bundle.members.push({ path: `analysis/${resource.analysisId}.json`, resource });
   }
@@ -418,13 +480,27 @@ export function exportBundle(draft: AuthorDraft): QsBundle {
 }
 export const downloadBundleBytes = (draft: AuthorDraft): Promise<Uint8Array> => assembleQsBundle(exportBundle(draft));
 
+/** Supported all-sheet parameter filters also apply to newly authored visuals. */
+export function withInheritedParameterFilters(draft: AuthorDraft, sheet: AuthorSheet, visual: AuthorVisual): AuthorVisual {
+  const resource = draft.bundle?.original.members.find(m => m.path === (sheet.imported?.memberPath ?? draft.bundle?.primaryPath))?.resource;
+  if (!resource || (resource.resourceType !== 'analysis' && resource.resourceType !== 'dashboard')) return visual;
+  const identifiers = resource.definition.dataSetIdentifierDeclarations.filter(d => localBinding(d.dataSetArn, draft.bundle!.original, d.identifier)).map(d => d.identifier);
+  const inherited = (resource.definition.filterGroups ?? []).flatMap(raw => {
+    const group = obj(raw);
+    if (visual.imported?.filterGroups.some(g => g.id === group.filterGroupId) || !scopeMatches(group, sheet.imported?.sheetId ?? sheet.id, visual.imported?.visualId ?? visual.id)) return [];
+    const f = parameterGroup(group, sheetParameters(draft, sheet), identifiers);
+    return f ? [f] : [];
+  });
+  return inherited.length ? { ...visual, filters: [...visual.filters, ...inherited] } : visual;
+}
+
 /** Newly added cards must not ignore read-only all-sheet filters in an imported definition. */
 export function importedFilterProblem(draft: AuthorDraft, sheet: AuthorSheet, visual: AuthorVisual): string | undefined {
   const resource = draft.bundle?.original.members.find(m => m.path === (sheet.imported?.memberPath ?? draft.bundle?.primaryPath))?.resource;
   if (!resource || (resource.resourceType !== 'analysis' && resource.resourceType !== 'dashboard')) return;
   const blocked = (resource.definition.filterGroups ?? []).filter(value => {
     const group = obj(value);
-    return group.status !== 'DISABLED' && (!scopeResolved(group, resource.definition) || scopeMatches(group, sheet.imported?.sheetId ?? sheet.id, visual.imported?.visualId ?? visual.id) && !visual.imported?.filterGroups.some(g => g.id === group.filterGroupId));
+    return group.status !== 'DISABLED' && (!scopeResolved(group, resource.definition) || scopeMatches(group, sheet.imported?.sheetId ?? sheet.id, visual.imported?.visualId ?? visual.id) && !visual.imported?.filterGroups.some(g => g.id === group.filterGroupId) && !parameterGroup(group, sheetParameters(draft, sheet), resource.definition.dataSetIdentifierDeclarations.filter(d => localBinding(d.dataSetArn, draft.bundle!.original, d.identifier)).map(d => d.identifier)));
   });
   if (blocked.length) return `Unsupported filter groups: ${blocked.map(g => string(obj(g).filterGroupId)).join(', ')} (display only)`;
 }
