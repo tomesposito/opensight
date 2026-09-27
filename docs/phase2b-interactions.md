@@ -4,7 +4,7 @@ In Author mode, select a visual and open **Filter actions** in Properties. Add
 an action, choose the source dimension, and choose all compatible targets or
 explicit targets. Each target lists its eligibility and allows an explicit
 field mapping. Mappings require matching types and a dimension grouped by the
-target. KPIs, unresolved datasets, unsupported numeric grouping, and missing
+target or included in its hierarchy. KPIs, unresolved datasets, unsupported numeric grouping, and missing
 fields display their reasons. Actions stay on the current sheet.
 
 Click a bar segment, pie slice, or table row to apply its selection. A line

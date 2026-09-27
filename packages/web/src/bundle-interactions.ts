@@ -19,6 +19,7 @@ export function importAction(raw: unknown, fields: Map<string, string>): FilterA
   const a = obj(raw), operations = list(a.actionOperations), op = obj(obj(operations[0]).filterOperation);
   const selected = obj(op.selectedFieldsConfiguration), targets = obj(obj(op.targetVisualsConfiguration).sameSheetTargetVisualConfiguration);
   if (!keys(a, ['customActionId','name','status','trigger','actionOperations','opensightFieldMappings']) || typeof a.customActionId !== 'string' || typeof a.name !== 'string' || a.status !== 'ENABLED' || a.trigger !== 'DATA_POINT_CLICK' || operations.length !== 1 || !keys(operations[0], ['filterOperation']) || !keys(op, ['selectedFieldsConfiguration','targetVisualsConfiguration']) || !keys(selected, ['selectedFieldOptions','selectedFields']) || !keys(op.targetVisualsConfiguration, ['sameSheetTargetVisualConfiguration']) || !keys(targets, ['targetVisualOptions','targetVisuals'])) return;
+  if (selected.selectedFieldOptions === 'ALL_FIELDS' && list(selected.selectedFields).length || targets.targetVisualOptions === 'ALL_VISUALS' && list(targets.targetVisuals).length) return;
   const selectedFields = selected.selectedFieldOptions === 'ALL_FIELDS' ? [...fields.keys()] : list(selected.selectedFields);
   // Measures never originate filters. ALL_FIELDS is resolved by the caller's dimension-only field map.
   if (selectedFields.length !== 1 || selected.selectedFieldOptions !== undefined && selected.selectedFieldOptions !== 'ALL_FIELDS' || !fields.has(String(selectedFields[0]))) return;
@@ -41,7 +42,10 @@ export function importHierarchy(raw: unknown, visual: AuthorVisual, fields: Map<
     levels = h.columns.map(c => ({ columnName: c.columnName }));
   }
   const hierarchy = { id: h.hierarchyId, name: typeof h.opensightName === 'string' ? h.opensightName : 'Drill hierarchy', levels };
-  return hierarchyError(hierarchy, [], true) ? undefined : hierarchy;
+  if (hierarchyError(hierarchy, [], true)) return;
+  if (kind === 'dateTimeHierarchy' && !levels.every(l => l.columnName === levels[0]!.columnName && l.granularity)) return;
+  if (kind === 'explicitHierarchy' && !equal(list(h.columns).map(c => obj(c).columnName), levels.map(l => l.columnName))) return;
+  return hierarchy;
 }
 export function serializeAction(action: FilterAction, fields = new Map<string, string>(), targetId: (id: string) => string = id => id): Obj {
   const sourceId = [...fields].find(([, column]) => column === action.sourceField)?.[0] ?? action.sourceField;

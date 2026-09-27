@@ -106,3 +106,11 @@ test('field edits clear conflicting hierarchies, deleting targets prunes action 
   assert.deepEqual(activeSheet(d).visuals[0].filterActions[0].mappings, {});
   for (const value of ['2025-13', '2025-02-30', '2025-Q0', '2025-Q1-02', 'bad']) assert.equal(dateBounds(value), undefined);
 });
+test('actions remain effective on hierarchy dimensions after the target drills to a child level', () => {
+  let d = actionDraft();
+  d = authorReducer(d, { type: 'hierarchy', hierarchy: { id: 'h', name: 'Region → category', levels: [{ columnName: 'region' }, { columnName: 'category' }] } });
+  const s = activeSheet(d), target = s.visuals[1], drilled = withDrill(target, drillDown(target, [], { values: { region: 'West' } }));
+  const projected = withActionFilters(s, drilled, { 'visual-1': { values: { region: 'East' } } });
+  assert.deepEqual(executeFixtureQuery(buildAuthorQuery(projected)).rows, []);
+  assert.match(targetProblem(s.visuals[0], { ...target, measures: [] }, s.visuals[0].filterActions[0]), /Assign a measure/);
+});

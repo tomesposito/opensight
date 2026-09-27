@@ -19,11 +19,12 @@ export function originProblem(visual: AuthorVisual): string | undefined {
     : !visual.measures.length ? 'Assign a measure to produce selectable results.'
     : visual.kind === 'line' && visual.dimension !== 'order_date' ? 'Line actions require a datetime axis for range brushing.' : undefined);
 }
+export const actionDimensions = (visual: AuthorVisual): string[] => visual.kind === 'kpi' ? [] : [...new Set([...visualDimensions(visual), ...(visual.hierarchy?.levels.map(l => l.columnName) ?? [])])];
 export function targetProblem(source: AuthorVisual, target: AuthorVisual, action: FilterAction, calculations: readonly CalculatedField[] = []): string | undefined {
   const field = action.mappings[target.id] ?? action.sourceField;
-  return originProblem(source) ?? authorVisualProblem(target) ?? (visualDimensions(target).includes('order_id') ? 'Numeric grouping is not supported by the current query engine.' : undefined) ?? (source.id === target.id ? 'The source visual is not its own target.'
-    : !visualDimensions(source).includes(action.sourceField) ? `Source does not group by ${action.sourceField}.`
-    : !visualDimensions(target).includes(field) ? `${target.kind === 'kpi' ? 'KPI has no grouped dimensions' : `Target does not group by ${field}`}.`
+  return originProblem(source) ?? authorVisualProblem(target) ?? (!target.measures.length ? 'Assign a measure to the target to produce results.' : undefined) ?? (visualDimensions(target).includes('order_id') ? 'Numeric grouping is not supported by the current query engine.' : undefined) ?? (source.id === target.id ? 'The source visual is not its own target.'
+    : !actionDimensions(source).includes(action.sourceField) ? `Source does not group by ${action.sourceField}.`
+    : !actionDimensions(target).includes(field) ? `${target.kind === 'kpi' ? 'KPI has no grouped dimensions' : `Target does not group by ${field}`}.`
     : !fieldType(field, calculations) || fieldType(field, calculations) !== fieldType(action.sourceField, calculations) ? 'Source and target fields must have the same supported type.' : undefined);
 }
 export function toggleSelection(selections: ActionSelections, sourceId: string, selection: Selection): ActionSelections {
