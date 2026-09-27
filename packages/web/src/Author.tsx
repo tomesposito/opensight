@@ -173,12 +173,12 @@ export function AuthorCanvas({ draft, dispatch, client }: EditorProps) {
               {sheet.visuals.map((visual, index) => {
                 const path = paths[visual.id] ?? [], projected = withDrill(withInheritedParameterFilters(draft, sheet, visual), path, draft.calculatedFields);
                 const hierarchy = visual.kind !== 'kpi' ? visual.hierarchy : undefined;
-                const interaction: VisualInteraction | undefined = (visual.filterActions?.length || hierarchy) && !originProblem(projected) ? {
+                const interaction: VisualInteraction | undefined = (visual.filterActions?.length || hierarchy) && (hierarchy ? !authorVisualProblem(projected) && projected.measures.length > 0 : !originProblem(projected)) ? {
                   brush: visual.kind === 'line' && !!visual.filterActions?.length && armed !== visual.id,
                   onClear: clearActions,
                   onSelect: selection => {
                     if (armed === visual.id && hierarchy) setPath(visual.id, drillDown(visual, path, selection));
-                    else if (visual.filterActions?.length) setInteractionState({ key: interactionKey, selections: toggleSelection(selections, visual.id, { ...selection, values: Object.assign({}, ...path.map(p => p.values), selection.values) }) });
+                    else if (visual.filterActions?.length) setInteractionState({ key: interactionKey, selections: toggleSelection(selections, visual.id, { ...selection, values: Object.fromEntries([...path.flatMap(p => Object.entries(p.values)), ...Object.entries(selection.values)]) }) });
                   },
                 } : undefined;
                 return <div key={visual.id}><AuthorCard interactive={interactive} interaction={interaction}
@@ -229,7 +229,7 @@ function FieldWells({ visual, draft, dispatch, activeWell, onWell }: { visual: A
   ];
   return <div className="field-wells">{wells.map(w => <fieldset key={w.name} className={activeWell === w.name ? 'active-well' : ''} onFocus={() => onWell(w.name)} onClick={() => onWell(w.name)}>
     <legend>{w.label}{w.name === 'values' && singleMeasure(visual.kind) ? ' · 1 measure' : ''}</legend>
-    {w.values.map(field => <button className="field-chip" key={field} type="button" aria-label={`Remove ${field} from ${w.label}`} onClick={() => dispatch({ type: 'unassign', field, well: w.name })}>{w.name === 'values' ? `SUM(${field})` : `${field}${field === 'order_date' ? ' · Month' : ''}`} <span aria-hidden="true">×</span></button>)}
+    {w.values.map(field => <button className="field-chip" key={field} type="button" aria-label={`Remove ${field} from ${w.label}`} onClick={() => dispatch({ type: 'unassign', field, well: w.name })}>{w.name === 'values' ? `SUM(${field})` : `${field}${field === 'order_date' ? ` · ${visual.hierarchy?.levels[0]?.granularity ?? visual.dateGrain ?? 'MONTH'}` : ''}`} <span aria-hidden="true">×</span></button>)}
     {!w.values.length && <p>{w.name === 'columns' ? 'Optional column dimensions' : 'Choose a field'}</p>}
     <label className="well-picker">Assign {w.name === 'values' ? 'measure' : w.name === 'dimension' ? 'dimension' : w.name}<select aria-label={`Assign ${w.label}`} value="" onChange={e => dispatch({ type: 'assign', field: e.target.value, well: w.name })}><option value="" disabled>Choose field…</option>{fields.filter(f => f.role === (w.name === 'values' ? 'measure' : 'dimension')).map(f => <option key={f.name}>{f.name}</option>)}</select></label>
   </fieldset>)}</div>;

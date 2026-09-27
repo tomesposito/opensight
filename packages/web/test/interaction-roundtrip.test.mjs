@@ -1,0 +1,75 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { activeSheet, authorReducer, emptyDraft, serializeDraft, validateDraft, saveDraft, loadDraft } from '../build/test/authoring.js';
+import { importBundle, exportBundle, downloadBundleBytes } from '../build/test/bundle-authoring.js';
+import { parseQsBundle } from '@opensight/bundle-parser/browser';
+import { withActionFilters } from '../build/test/interactions.js';
+import { withDrill, drillDown } from '../build/test/drill.js';
+import { buildAuthorQuery } from '../build/test/author-query.js';
+import { executeFixtureQuery } from '../build/test/fixture-query.js';
+const bundle = resource => ({ members: [{ path: 'analysis/authored-analysis.json', resource }] });
+function fixture() {
+  let d = authorReducer(emptyDraft(), { type: 'add', kind: 'bar' });
+  d = authorReducer(d, { type: 'filter-actions', actions: [{ id: 'click', name: 'Filter categories', sourceField: 'region', targets: ['visual-2'], mappings: { 'visual-2': 'region' } }] });
+  d = authorReducer(d, { type: 'hierarchy', hierarchy: { id: 'geography', name: 'Region → Category', levels: [{ columnName: 'region' }, { columnName: 'category' }] } });
+  d = authorReducer(d, { type: 'add', kind: 'pivot' });
+  d = authorReducer(d, { type: 'add', kind: 'line' });
+  d = authorReducer(d, { type: 'hierarchy', hierarchy: { id: 'dates', name: 'Year → Quarter → Month', levels: ['YEAR', 'QUARTER', 'MONTH'].map(granularity => ({ columnName: 'order_date', granularity })) } });
+  return d;
+}
+test('authored camelCase actions and hierarchies survive JSON, ZIP, storage and repeated imports', async () => {
+  const d = fixture(), resource = serializeDraft(d), original = bundle(resource), raw = resource.definition.sheets[0].visuals[0].barChartVisual;
+  assert.equal(raw.actions[0].actionOperations[0].filterOperation.targetVisualsConfiguration.sameSheetTargetVisualConfiguration.targetVisuals[0], 'visual-2');
+  assert.deepEqual(raw.columnHierarchies[0].explicitHierarchy.columns.map(c => c.columnName), ['region', 'category']);
+  const imported = importBundle(original); validateDraft(imported);
+  assert.deepEqual(imported.sheets[0].visuals[0].filterActions, d.sheets[0].visuals[0].filterActions);
+  assert.deepEqual(imported.sheets[0].visuals.map(v => v.hierarchy), d.sheets[0].visuals.map(v => v.hierarchy));
+  assert.deepEqual(imported.sheets[0].visuals.map(v => v.imported.issues), [[], [], []]);
+  assert.deepEqual(exportBundle(imported), original);
+  assert.deepEqual(await parseQsBundle(await downloadBundleBytes(imported)), original);
+  assert.deepEqual(exportBundle(importBundle(exportBundle(imported))), original);
+  let saved; saveDraft(imported, () => ({ setItem: (_, value) => { saved = value; } }));
+  assert.deepEqual(loadDraft(() => ({ getItem: () => saved })).draft, JSON.parse(JSON.stringify(imported)));
+  const [source, target] = imported.sheets[0].visuals;
+  assert.deepEqual(executeFixtureQuery(buildAuthorQuery(withActionFilters(imported.sheets[0], target, { [source.id]: { values: { region: 'West' } } }))).rows, [{ region: 'West', revenue: 400 }]);
+});
+test('native field and visual identities resolve locally and edits serialize the original target identities', () => {
+  const resource = serializeDraft(fixture()), sheet = resource.definition.sheets[0], source = sheet.visuals[0].barChartVisual;
+  source.visualId = 'native-source'; sheet.visuals[1].pivotTableVisual.visualId = 'native-target';
+  source.chartConfiguration.fieldWells.barChartAggregatedFieldWells.category[0].categoricalDimensionField.fieldId = 'native-region';
+  source.actions[0].actionOperations[0].filterOperation.selectedFieldsConfiguration.selectedFields = ['native-region'];
+  source.actions[0].actionOperations[0].filterOperation.targetVisualsConfiguration.sameSheetTargetVisualConfiguration.targetVisuals = ['native-target'];
+  source.actions[0].opensightFieldMappings = { 'native-target': 'region' };
+  let imported = importBundle(bundle(resource));
+  const action = activeSheet(imported).visuals[0].filterActions[0];
+  assert.deepEqual(action.targets, ['visual-2']); assert.equal(action.sourceField, 'region');
+  imported = authorReducer(imported, { type: 'filter-actions', actions: [{ ...action, name: 'Edited filter' }] });
+  const exported = exportBundle(imported).members[0].resource.definition.sheets[0].visuals[0].barChartVisual;
+  assert.equal(exported.actions[0].name, 'Edited filter');
+  assert.deepEqual(exported.actions[0].actionOperations[0].filterOperation.selectedFieldsConfiguration.selectedFields, ['native-region']);
+  assert.deepEqual(exported.actions[0].actionOperations[0].filterOperation.targetVisualsConfiguration.sameSheetTargetVisualConfiguration.targetVisuals, ['native-target']);
+  assert.deepEqual(importBundle(exportBundle(imported)).sheets[0].visuals[0].imported.issues, []);
+});
+test('native datetime hierarchy imports by field ID; native explicit hierarchy imports ordered columns', () => {
+  const resource = serializeDraft(fixture()), visuals = resource.definition.sheets[0].visuals;
+  visuals[2].lineChartVisual.columnHierarchies = [{ dateTimeHierarchy: { hierarchyId: 'order_date' } }];
+  delete visuals[0].barChartVisual.columnHierarchies[0].explicitHierarchy.opensightLevels;
+  delete visuals[0].barChartVisual.columnHierarchies[0].explicitHierarchy.opensightName;
+  const d = importBundle(bundle(resource)), v = d.sheets[0].visuals[2];
+  assert.deepEqual(v.hierarchy.levels.map(l => l.granularity), ['YEAR','QUARTER','MONTH','DAY']);
+  assert.deepEqual(executeFixtureQuery(buildAuthorQuery(withDrill(v, drillDown(v, [], { values: { order_date: '2025' } })))).rows, [{ quarter: '2025-Q1', revenue: 650 }, { quarter: '2025-Q2', revenue: 250 }]);
+  assert.deepEqual(exportBundle(d), bundle(resource));
+});
+test('unknown operations and drill filters are reported and retained through unrelated and supported edits', () => {
+  const resource = serializeDraft(fixture()), source = resource.definition.sheets[0].visuals[0].barChartVisual;
+  source.actions.push({ customActionId: 'opaque', name: 'URL', trigger: 'DATA_POINT_CLICK', actionOperations: [{ urlOperation: { urlTemplate: 'https://example.invalid' } }] });
+  let d = importBundle(bundle(resource));
+  assert.match(JSON.stringify(d.bundle.report), /actions/);
+  d = authorReducer(d, { type: 'filter-actions', actions: [] });
+  const actions = exportBundle(d).members[0].resource.definition.sheets[0].visuals[0].barChartVisual.actions;
+  assert.deepEqual(actions, [source.actions[1]]);
+  const temporal = resource.definition.sheets[0].visuals[2].lineChartVisual;
+  temporal.columnHierarchies[0].dateTimeHierarchy.drillDownFilters = [{ unknownFilter: true }];
+  d = importBundle(bundle(resource)); assert.equal(d.sheets[0].visuals[2].hierarchy, undefined);
+  assert.match(JSON.stringify(d.bundle.report), /columnHierarchies/); assert.deepEqual(exportBundle(d), bundle(resource));
+});

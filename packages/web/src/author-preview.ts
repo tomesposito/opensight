@@ -27,7 +27,7 @@ export function buildAuthorPreview(visual: AuthorVisual): FixtureVisual {
 /** A row-free definition shared by the fixture and live previews. */
 export function buildAuthorVisual(visual: AuthorVisual): FixtureVisual {
   return {
-    source: 'bundle', definition: serializeVisual(visual), rows: null,
+    source: 'bundle', definition: serializeVisual(visual, false), rows: null,
     bindings: visualDimensions(visual).includes('order_date') ? { order_date: (visual.dateGrain ?? 'MONTH').toLowerCase() } : {},
     placement: { column: 0, columns: 36, row: 0, rows: 6 },
     path: `author.${visual.id}`,

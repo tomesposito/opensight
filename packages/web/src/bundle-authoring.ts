@@ -1,3 +1,4 @@
+import { importInteractions, exportInteractions } from './bundle-interactions.js';
 import { importControls, importParameterFilter, serializeControl, serializeFilter } from './bundle-controls.js';
 import { importParameter, serializeParameter, type AuthorParameter } from './parameters.js';
 import { assembleQsBundle, parseBundleJson, parseQsBundle, summarizeQsBundle, ZIP_LIMITS } from '@opensight/bundle-parser/browser';
@@ -66,8 +67,15 @@ function importVisual(raw: BundleVisual, id: string, definition: BundleDefinitio
     totals: (kind === 'pivot' ? obj(total.rowTotalOptions) : total).totalsVisibility === 'VISIBLE',
     subtotals: (kind === 'pivot' ? obj(total.rowSubtotalOptions) : obj(config.opensightSubtotalOptions)).totalsVisibility === 'VISIBLE',
   };
+  const dateField = list(wells[kind === 'pivot' ? 'rows' : kind === 'table' ? 'groupBy' : 'category']).map(f => obj(obj(f).dateDimensionField)).find(f => obj(f.column).columnName === 'order_date');
+  if (dateField && ['YEAR','QUARTER','DAY'].includes(String(dateField.dateGranularity))) visual.dateGrain = dateField.dateGranularity as 'YEAR' | 'QUARTER' | 'DAY';
+  const unrecognized = importInteractions(body, visual);
+  const checkedBody = { ...body, ...unrecognized } as Obj;
+  if (!unrecognized.actions.length) delete checkedBody.actions;
+  if (!unrecognized.columnHierarchies.length) delete checkedBody.columnHierarchies;
+  const checked = { [variant]: checkedBody };
   const dataSets = [...new Set(references(body))].map(identifier => ({ identifier, arn: definition.dataSetIdentifierDeclarations.find(d => d.identifier === identifier)?.dataSetArn }));
-  const issues = Object.hasOwn(kinds, variant) ? differences(raw, projectVisual(visual, raw), variant) : [`Unsupported visual type: ${variant}`];
+  const issues = Object.hasOwn(kinds, variant) ? differences(checked, projectVisual(visual, raw), variant) : [`Unsupported visual type: ${variant}`];
   if (dataSets.length > 1) issues.push('Multiple datasets in one visual are unsupported');
   visual.imported = { visualId: string(body.visualId), variant, dataSets, issues, unmappedFields: [],
     local: dataSets.length === 1 && localBinding(dataSets[0]!.arn, bundle, dataSets[0]!.identifier),
@@ -177,6 +185,8 @@ export function importBundle(bundle: QsBundle): AuthorDraft {
     draft.calculatedFields = draft.calculatedFields.filter(field => !addedCalculations.has(field) || !calculationProblems.has(field.name));
     for (const s of d.sheets ?? []) {
       const id = `sheet-${sheets.length + 1}`, visuals = (s.visuals ?? []).map(v => importVisual(v, `visual-${++visualIndex}`, d, original));
+      const localId = (rawId: string): string => visuals.find(v => v.imported?.visualId === rawId)?.id ?? rawId;
+      for (const visual of visuals) if (visual.filterActions) visual.filterActions = visual.filterActions.map(a => ({ ...a, targets: a.targets === 'all' ? 'all' : a.targets.map(localId), mappings: Object.fromEntries(Object.entries(a.mappings).map(([id, field]) => [localId(id), field])) }));
       const layout = grid(s, visuals);
       const sheet: AuthorSheet = { id, controls: [], name: s.name?.trim() || 'Untitled sheet', visuals, layout, selectedId: visuals[0]?.id ?? null,
         imported: { memberPath: member.path, sheetId: s.sheetId, name: s.name?.trim() || 'Untitled sheet', layout: copy(layout) } };
@@ -266,7 +276,7 @@ function rebind(value: unknown, identifier: string): void {
 }
 /** Match the original well wrapper and dataset identifiers when projecting edits. */
 function projectVisual(visual: AuthorVisual, raw: BundleVisual): BundleVisual {
-  const projected = serializeVisual(visual), body = obj(Object.values(projected)[0]), original = obj(Object.values(raw)[0]);
+  const projected = serializeVisual(visual, false), body = obj(Object.values(projected)[0]), original = obj(Object.values(raw)[0]);
   const originalWells = obj(obj(original.chartConfiguration).fieldWells), config = obj(body.chartConfiguration);
   const identifiers = new Map<string, string>();
   const collect = (value: unknown): void => {
@@ -291,7 +301,7 @@ function exportVisual(v: AuthorVisual, raw: BundleVisual | undefined): BundleVis
   const before = obj(Object.values(projectVisual(baseline, raw))[0]), after = obj(Object.values(projectVisual(v, raw))[0]);
   const originalBody = Object.values(raw)[0]!;
   const changedKind = !!meta.replaced;
-  const body = changedKind ? Object.values(serializeVisual(v))[0]! : patch(originalBody, before, after) as typeof originalBody;
+  const body = changedKind ? Object.values(serializeVisual(v, false))[0]! : patch(originalBody, before, after) as typeof originalBody;
   body.visualId = meta.visualId;
   if (!changedKind && v.title !== baseline.title && v.title.trim()) {
     // Rich/plain text are a union; a plain-title edit replaces that union, not its unknown siblings.
@@ -375,7 +385,12 @@ export function exportBundle(draft: AuthorDraft): QsBundle {
         });
         raw.parameterControls = [...projected, ...originals.filter(r => !baselineControls.some(c => c.importedId === obj(Object.values(obj(r))[0]).parameterControlId))];
       }
-      if (raw.visuals !== undefined || sheet.visuals.length) raw.visuals = sheet.visuals.map(v => exportVisual(v, raw.visuals?.find(r => Object.values(r)[0]?.visualId === v.imported?.visualId)));
+      if (raw.visuals !== undefined || sheet.visuals.length) raw.visuals = sheet.visuals.map(v => {
+        const result = exportVisual(v, raw.visuals?.find(r => Object.values(r)[0]?.visualId === v.imported?.visualId));
+        const identifier = v.imported ? usesRemappedDataset(v.imported) ? LOCAL_IDENTIFIER : v.imported.dataSets[0]?.identifier ?? LOCAL_IDENTIFIER : LOCAL_IDENTIFIER;
+        exportInteractions(obj(Object.values(result)[0]), v, id => { const target = sheet.visuals.find(t => t.id === id); return target?.imported?.visualId ?? id; }, identifier);
+        return result;
+      });
       exportLayout(sheet, raw);
       return raw;
     });
