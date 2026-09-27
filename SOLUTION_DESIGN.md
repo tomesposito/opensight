@@ -863,6 +863,44 @@ tests (member paths/IDs consistent), dataset remap tests; full suite green;
 demo rebuilt.
 - Analysis authoring UI (basic).
 
+### Phase 2a — Parameters & controls (interactive) — NEW 2026-09-27
+
+Phase 1e imports parameters and filters into the builder as display-only.
+Phase 2a makes them live: this is the slice of Phase 2 (Expression &
+interactivity) that turns the builder from a static layout tool into an
+interactive dashboard author.
+
+**Scope:**
+- **Control types**: dropdown (single + multi-select), numeric slider,
+  date picker, text input — each bound to a declared parameter.
+- **Parameter model**: extend the authoring state (string, number,
+  datetime; single/multi-value per QuickSight semantics). Parameters
+  created in the builder, imported from bundles, or both.
+- **Wiring**: parameter values feed (a) visual filters as dynamic values,
+  (b) calculated-field expressions referencing parameters, (c) control
+  defaults and cascading (one control's selection narrowing another's
+  options where the data supports it).
+- **Controls UI**: QuickSight-parity controls strip above each sheet;
+  add/remove/reorder controls; bind each control to a parameter.
+- **Live update**: changing a control re-queries affected visuals through
+  the live query API (debounced; parameter bindings validated against
+  declared parameter types in the strict request allowlist). Fixtures
+  mode recomputes client-side. Show a pending state on visuals while
+  re-querying; never show stale data as current.
+- **Import/export**: parameters/controls imported by the round-trip
+  become live; export serializes them back to bundle format
+  (parameters, filter groups referencing parameters, controls).
+
+**Out of scope for 2a:** cross-visual filter actions (2b), drill-down
+(2b), full calculated-field function library (2c), remaining visual
+types and themes (2d), server-side parameter defaults.
+
+**Acceptance:** control→parameter→filter→requery tests (live API and
+fixtures mode), debounce and pending-state tests, parameter type
+validation tests (bad bindings rejected), bundle round-trip tests with
+parameters/controls, import-report coverage for controls; full suite
+green; demo rebuilt.
+
 ### Phase 3 — Enterprise surface
 - Scheduled DuckDB refresh (D8), email reports, threshold alerts.
 - Expand row-level / column-level security enforcement, namespaces, embedding SDK. Protected datasets are rejected from Phase 1 until this support is available (§3.4).
