@@ -108,7 +108,7 @@ test('unsupported aggregation, granularity, fields and types preserve engine 422
   const post = await start(t);
   for (const [body, code, message] of [
     [{ ...query(), measures: [{ fieldId: 'total', columnName: 'revenue', aggregation: 'MEDIAN' }] }, 'UNSUPPORTED_FEATURE', /SUM, AVG, COUNT, MIN or MAX/],
-    [{ ...query(), dimensions: [{ fieldId: 'd', columnName: 'order_date', granularity: 'DAY' }] }, 'UNSUPPORTED_FEATURE', /expected MONTH/],
+    [{ ...query(), dimensions: [{ fieldId: 'd', columnName: 'order_date', granularity: 'HOUR' }] }, 'UNSUPPORTED_FEATURE', /unsupported date granularity/],
     [{ ...query(), dimensions: [{ fieldId: 'id', columnName: 'order_id' }] }, 'TYPE_MISMATCH', /dimension type/],
     [{ ...query(), measures: [{ fieldId: 'x', columnName: 'missing', aggregation: 'SUM' }] }, 'UNRESOLVED_BINDING', /missing/],
   ]) {
