@@ -1,8 +1,7 @@
 # Query engine
 
-`@opensight/query-engine` is a **synthetic/provisional Phase 0 slice**, not proof of
-QuickSight export or expression compatibility. It compiles the five renderable-sales
-visuals into DuckDB SQL for an explicitly mapped local CSV, or Postgres SQL for an
+`@opensight/query-engine` compiles validated visual requests and calculated fields
+for the mapped renderable-sales dataset. It compiles visuals into DuckDB SQL for an explicitly mapped local CSV, or Postgres SQL for an
 existing table. DuckDB remains the default local dev/test engine; the opt-in Postgres
 executor is the D12 production data-plane seam. There are no AWS calls or `.qs`
 archive handling.
@@ -92,17 +91,17 @@ executor nor its returned plan logs or contains the connection string.
 ## Postgres tests
 
 Root `npm test` includes exact SQL tests for both dialects, DuckDB snapshots captured
-before this change, shared rejection tests and mocked Postgres lifecycle tests, all
-without a database. The live Postgres suite skips cleanly when `DATABASE_URL` is absent.
+before the dialect expansion, shared rejection tests and mocked Postgres lifecycle tests.
+Function differential tests also execute PostgreSQL locally through the Apache-2.0
+PGlite development dependency and compare with DuckDB and the client evaluator. The live Postgres suite skips cleanly when `DATABASE_URL` is absent.
 To enable it, set `DATABASE_URL` to a disposable test database and run `npm test` (or
 `npm test --workspace @opensight/query-engine`). The database role must be able to
 create and drop a schema. The suite creates a uniquely named schema with a sales-like
 table, checks fixture results, calculations, filters, all five aggregations, nulls,
 large integers and UTC months, then removes that schema in `finally`.
 
-No Postgres server or Docker is available on the implementation machine, and
-`DATABASE_URL` is absent there. Live execution tests therefore skip on that machine;
-SQL generation, strict TypeScript checks and database-free tests still run normally.
+The embedded PostgreSQL differential suite always runs, including when the optional
+external-server suite has no connection configured.
 
 The plan includes typed source columns, row expression trees with source spans,
 dependency-ordered calculations, filters, dimensions, measures, SQL and parameters.
@@ -114,29 +113,31 @@ or case-ambiguous identifiers/output aliases are rejected (including two month a
 
 - One untransformed physical/logical dataset and its linked source reconstruction.
 - Bar, line, ordinary table, KPI and pie field-well shapes from the fixture.
-- Multiple categorical dimensions; date dimensions grouped by calendar month in UTC.
+- Multiple categorical dimensions; date dimensions grouped by year, quarter, month or day in UTC.
   Dimensions order ascending, nulls first; no missing periods are synthesized.
 - Explicit SUM, AVG, COUNT, MIN and MAX over numeric fields. COUNT counts non-null
   values, and SUM/AVG/MIN/MAX of all-null or empty input return null.
-- Numeric literals, column references, parentheses, row `+`, `-`, `*`; null propagation,
-  normal arithmetic precedence, forward dependencies and cycle detection. A direct
-  column reference can also alias a string/date field. Only reachable expressions run.
-- Static string category equality with `NON_NULLS_ONLY`, one value/filter per group.
+- The Phase 2c [calculated-field catalog](../../docs/calculated-fields.md): string,
+  numeric, datetime, conditional, aggregation, table, level-aware and conversion
+  functions. The browser-safe parser shares signatures and validation with the editor.
+- Scalar parameters, comparisons, boolean logic and arithmetic with null propagation,
+  forward dependencies and cycle detection. Only reachable expressions execute.
+- Static string category equality with `NON_NULLS_ONLY`, one or more selected values per filter.
   Groups intersect. `AllSheets` and fully resolved selected-sheet/visual scopes work;
   disabled filters are omitted. Unresolved scopes block the analysis. Applicable
   unsupported filters block execution; independent visuals can run.
 
-Row calculation CTEs precede filter CTEs, which precede the explicit visual GROUP BY
-and aggregation. Identifiers are quoted and filter values are bound parameters.
-Division, aggregate expressions, windows, period offsets, joins, transforms, custom
-SQL, parameters, controls, sorting and other unrecognized execution options fail
-closed. Harmless fixture titles/layouts are accepted but not rendered here.
+Row calculation CTEs precede filters and visual grouping for ordinary SQL plans.
+For table calculations and level-aware stages, both SQL engines return source rows
+and pushed scalar calculations to the shared processing layer. See the
+[stage ordering and semantics](../../docs/calculated-fields.md#execution).
+Identifiers are quoted; literal and parameter values are bound. Joins, source
+transforms, arbitrary SQL and unsupported visual configuration still fail closed.
 
-`semantic-cases.json` is authoritative about deferred cases. Tests reject all three
-deferred expressions in the planner/executor and separately run the proposed reference
-SQL in DuckDB, adapting the SQLite calendar-date function in test code only. The
-all-null case uses CSV row 6 (the reference SQL's selected row), since numeric equality
-filters are outside this slice. The existing SQLite oracle tests remain independent.
+The three historically deferred expressions in `semantic-cases.json` now execute:
+calendar period differences, guarded division, and row-versus-aggregate ratios.
+The independent SQLite and DuckDB reference oracles are retained. No AWS calls or
+captured AWS conformance results are claimed.
 
 ## Local binding and limits
 
