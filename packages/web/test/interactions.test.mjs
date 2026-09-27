@@ -86,3 +86,12 @@ test('categorical hierarchy drill retains the selected parent and aggregates chi
   const v = activeSheet(d).visuals[0], path = drillDown(v, [], { values: { region: 'West' } });
   assert.deepEqual(executeFixtureQuery(buildAuthorQuery(withDrill(v, path))).rows, [{ category: 'Hardware', revenue: 350 }, { category: 'Software', revenue: 50 }]);
 });
+test('honest eligibility names missing dimensions, incompatible types and unresolved datasets', () => {
+  const d = actionDraft(), [source, target] = activeSheet(d).visuals, action = source.filterActions[0];
+  assert.match(targetProblem(source, { ...target, rows: ['category'], dimension: 'category' }, action), /does not group by region/);
+  assert.match(targetProblem(source, { ...target, rows: ['order_date'], dimension: 'order_date' }, { ...action, mappings: { [target.id]: 'order_date' } }), /same supported type/);
+  assert.match(targetProblem(source, { ...target, imported: { local: false, dataSets: [{ identifier: 'foreign' }] } }, action), /Unresolved dataset/);
+  assert.match(targetProblem(source, { ...target, rows: ['order_id'], dimension: 'order_id' }, action), /Numeric grouping/);
+  const html = renderToStaticMarkup(createElement(ActionEditor, { draft: d, visual: source, dispatch() {} }));
+  assert.match(html, /source visual is not its own target/); assert.match(html, /Can receive this action/);
+});

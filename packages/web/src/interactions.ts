@@ -15,12 +15,13 @@ export const fieldType = (name: string, calculations: readonly CalculatedField[]
 export function originProblem(visual: AuthorVisual): string | undefined {
   return authorVisualProblem(visual) ?? (visual.kind === 'kpi' ? 'KPI has no selectable dimension.'
     : !visualDimensions(visual).length ? 'Assign a dimension to originate an action.'
+    : visualDimensions(visual).includes('order_id') ? 'Numeric grouping is not supported by the current query engine.'
     : !visual.measures.length ? 'Assign a measure to produce selectable results.'
     : visual.kind === 'line' && visual.dimension !== 'order_date' ? 'Line actions require a datetime axis for range brushing.' : undefined);
 }
 export function targetProblem(source: AuthorVisual, target: AuthorVisual, action: FilterAction, calculations: readonly CalculatedField[] = []): string | undefined {
   const field = action.mappings[target.id] ?? action.sourceField;
-  return originProblem(source) ?? authorVisualProblem(target) ?? (source.id === target.id ? 'The source visual is not its own target.'
+  return originProblem(source) ?? authorVisualProblem(target) ?? (visualDimensions(target).includes('order_id') ? 'Numeric grouping is not supported by the current query engine.' : undefined) ?? (source.id === target.id ? 'The source visual is not its own target.'
     : !visualDimensions(source).includes(action.sourceField) ? `Source does not group by ${action.sourceField}.`
     : !visualDimensions(target).includes(field) ? `${target.kind === 'kpi' ? 'KPI has no grouped dimensions' : `Target does not group by ${field}`}.`
     : !fieldType(field, calculations) || fieldType(field, calculations) !== fieldType(action.sourceField, calculations) ? 'Source and target fields must have the same supported type.' : undefined);

@@ -193,3 +193,12 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .parameter-editor { margin-top: 16px; }
 .parameter-editor form { padding: 8px 0; }
 .parameter-editor p { overflow-wrap: anywhere; }
+
+.interaction-editor { margin-block: 1rem; }
+.interaction-editor fieldset { margin-block: .7rem; min-width: 0; border: 1px solid #cedbde; }
+.action-target { border-top: 1px solid #dce5e7; padding-block: .6rem; }
+.action-target p { font-size: .8rem; margin-block: .3rem; }
+.action-status, .drill-navigation { display: flex; align-items: center; flex-wrap: wrap; gap: .4rem; padding: .5rem; font-size: .8rem; }
+.drill-navigation { border-bottom: 1px solid #dce5e7; }
+.drill-navigation button[aria-pressed="true"] { background: #157f88; color: white; }
+.table-scroll td button { color: #126a74; text-decoration: underline; }

@@ -82,7 +82,7 @@ export function Author({ client }: { client?: QueryClient }) {
       {importStatus && <p role={importStatus.startsWith('Import failed') ? 'alert' : 'status'}>{importStatus}</p>}
       {draft.bundle && <button type="button" onClick={() => setReportOpen(true)}>View import report</button>}
     </div>
-    <p className="fixture-notice">{client ? 'Live local sales data · All regions, dates grouped by UTC month. Field assignments query the API; unsupported queries show “Data unavailable”.' : draft.parameters.length ? 'Offline demo: controls recompute pinned synthetic sales rows locally across all regions. No live queries run.' : 'Offline demo: preview uses fixed sample results: region = East, dates grouped by UTC month. Only revenue totals by region, category, month, or overall are available. Other selections show “Data unavailable”. No live queries run.'}</p>
+    <p className="fixture-notice">{client ? 'Live local sales data · All regions, dates grouped in UTC (month by default). Field assignments query the API; unsupported queries show “Data unavailable”.' : draft.parameters.length || draft.sheets.some(s => s.visuals.some(v => v.filterActions?.length || v.hierarchy)) ? 'Offline demo: controls and interactions recompute pinned synthetic sales rows locally across all regions. No live queries run.' : 'Offline demo: preview uses fixed sample results: region = East, dates grouped by UTC month. Only revenue totals by region, category, month, or overall are available. Other selections show “Data unavailable”. No live queries run.'}</p>
     <div className="author-save"><p role="status">{storageStatus}</p>
       <p id="export-help">{exported.error ?? (client ? 'Downloads analysis definitions and sheet layouts; query results are not included.' : 'Downloads analysis definitions and sheet layouts; sample rows and the fixed East preview filter are not included.')}</p>
       {exportStatus && <p role="status">{exportStatus}</p>}
@@ -111,7 +111,7 @@ export function AuthorCanvas({ draft, dispatch, client }: EditorProps) {
   const [well, setWell] = useState<Well>('rows');
   const [calculationOpen, setCalculationOpen] = useState(false);
   const sheet = activeSheet(draft), fields = dataFields(draft.calculatedFields);
-  const interactionKey = JSON.stringify([sheet.id, sheet.visuals.map(v => [v.id, v.kind, v.dimension, v.rows, v.columns, v.filterActions, v.hierarchy, v.imported]), draft.parameters]);
+  const interactionKey = JSON.stringify([sheet.id, sheet.visuals.map(v => [v.id, v.kind, v.dimension, v.rows, v.columns, v.measures, v.filters, v.filterActions, v.hierarchy, v.imported]), draft.parameters, draft.calculatedFields, !!client]);
   const [interactionState, setInteractionState] = useState<{ key: string; selections: ActionSelections }>({ key: interactionKey, selections: {} });
   const selections = interactionState.key === interactionKey ? interactionState.selections : {};
   const [drillState, setDrillState] = useState<{ key: string; paths: Record<string, DrillPath>; armed?: string }>({ key: interactionKey, paths: {} });
@@ -285,7 +285,7 @@ function FilterEditor({ visual, calculations, dispatch, client, parameters }: { 
       dispatch({ type: 'filter', columnName: column, values: e.target.checked ? [...selected, value] : selected.filter(v => v !== value) });
     }} />{value || '(empty string)'}</label>)}</div>
     <div className="filter-actions"><button type="button" disabled={!current || !!current.error} onClick={() => dispatch({ type: 'filter', columnName: column, values })}>Select all</button><button type="button" onClick={() => dispatch({ type: 'filter', columnName: column, values: [] })}>Select none</button></div>
-    {!client && <p className="field-hint">Values come from fixed samples. Filtered previews require API mode.</p>}
+    {!client && <p className="field-hint">Values come from fixed samples. Filtered previews require API mode or a sheet with parameters, actions, or drill hierarchies.</p>}
   </div>;
 }
 

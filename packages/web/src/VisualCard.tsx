@@ -31,7 +31,7 @@ function DataTable({ compiled, interaction }: { compiled: CompiledVisual; intera
   return <div className="table-scroll"><table>
     <caption className="sr-only">{compiled.model.title} — result data</caption>
     <thead><tr>{compiled.table.columns.map((column, i) => <th key={i} scope="col">{column}</th>)}</tr></thead>
-    <tbody>{compiled.table.rows.map((row, i) => <tr key={i} className={compiled.table.rowKinds?.[i]}>{row.map((cell, j) => <td key={j}>{j === 0 && interaction && rowSelection(compiled, i) ? <button type="button" onClick={() => interaction.onSelect(rowSelection(compiled, i)!)}>{displayCell(cell)}</button> : displayCell(cell)}</td>)}</tr>)}</tbody>
+    <tbody>{compiled.table.rows.map((row, i) => <tr key={i} className={compiled.table.rowKinds?.[i]} onClick={interaction && rowSelection(compiled, i) ? () => interaction.onSelect(rowSelection(compiled, i)!) : undefined}>{row.map((cell, j) => <td key={j}>{j === 0 && interaction && rowSelection(compiled, i) ? <button type="button" onClick={event => { event.stopPropagation(); interaction.onSelect(rowSelection(compiled, i)!); }}>{displayCell(cell)}</button> : displayCell(cell)}</td>)}</tr>)}</tbody>
   </table></div>;
 }
 
