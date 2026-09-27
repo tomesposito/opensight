@@ -22,6 +22,16 @@ function resultValue(value: unknown): ResultValue {
 
 /** Plan and execute locally. Planning/security always happens before file or database access. */
 export async function executeLocal(request: PlanRequest, options: ExecuteOptions): Promise<QueryResult> {
+  return runLocal(request, options, false);
+}
+
+/** Reload and validate every source row through the same DuckDB/security path. */
+export async function refreshLocal(request: PlanRequest, options: ExecuteOptions): Promise<number> {
+  const result = await runLocal(request, options, true);
+  return Number(result.rows[0]!.rows);
+}
+
+async function runLocal(request: PlanRequest, options: ExecuteOptions, refresh: boolean): Promise<QueryResult> {
   const plan = planVisual(request);
   const rootInput = string(options?.dataRoot, '$.options.dataRoot');
   let csvPath: string;
@@ -62,10 +72,10 @@ export async function executeLocal(request: PlanRequest, options: ExecuteOptions
       }
       // Only generated SQL runs after materialization; disable all further external reads.
       await connection.run('SET enable_external_access = false');
-      const reader = await connection.runAndReadAll(plan.sql, [...plan.parameters]);
+      const reader = await connection.runAndReadAll(refresh ? `SELECT COUNT(*) AS rows FROM ${q(plan.tableName)}` : plan.sql, refresh ? [] : [...plan.parameters]);
       const names = reader.columnNames();
       const rows = reader.getRows().map((values) => Object.fromEntries(names.map((name, i) => [name, resultValue(values[i])])));
-      return { plan, rows: plan.postProcess ? evaluatePlan(plan, rows) : rows };
+      return { plan, rows: !refresh && plan.postProcess ? evaluatePlan(plan, rows) : rows };
     } finally {
       connection.closeSync();
     }

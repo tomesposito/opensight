@@ -2,7 +2,7 @@ import { validateParameters } from '@opensight/query-engine/parameters';
 import type { IncomingMessage } from 'node:http';
 import { lstat, realpath } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
-import { executeLocal, interactiveRequest, type InteractiveQuery, type PlanRequest } from '@opensight/query-engine';
+import { executeLocal, refreshLocal, interactiveRequest, type InteractiveQuery, type PlanRequest } from '@opensight/query-engine';
 import { isObject } from './mapping.js';
 import { readJson } from './store.js';
 
@@ -30,7 +30,7 @@ function array(value: unknown, path: string): unknown[] {
 }
 
 /** Validate the transport shape; unsupported semantic values belong to the engine (422). */
-function validateBody(raw: unknown): QueryBody {
+export function validateQuery(raw: unknown): QueryBody {
   const body = record(raw, ['dimensions', 'measures', 'filters', 'calculatedFields', 'parameterDeclarations', 'parameterBindings'], '$');
   let parameters: ReturnType<typeof validateParameters>;
   try { parameters = validateParameters(body.parameterDeclarations, body.parameterBindings); }
@@ -75,6 +75,10 @@ function validateBody(raw: unknown): QueryBody {
 }
 
 export async function readQuery(request: IncomingMessage): Promise<QueryBody> {
+  return validateQuery(await readBody(request));
+}
+
+export async function readBody(request: IncomingMessage): Promise<unknown> {
   if (request.headers['content-type']?.split(';')[0]?.trim().toLowerCase() !== 'application/json') {
     request.resume();
     throw new RequestError(400, 'Expected application/json');
@@ -89,7 +93,7 @@ export async function readQuery(request: IncomingMessage): Promise<QueryBody> {
       if (size > BODY_BYTES) throw new RequestError(413, 'Query body exceeds 1 MiB limit');
       chunks.push(bytes);
     }
-    return validateBody(JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks, size))) as unknown);
+    return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks, size))) as unknown;
   } catch (error) {
     request.resume();
     if (error instanceof RequestError) throw error;
@@ -130,5 +134,9 @@ export class SalesQuery {
         ...plan.measures.map(field => ({ name: field.outputName, type: 'number' as const }))],
       rows,
     };
+  }
+
+  async refresh(): Promise<number> {
+    return refreshLocal(interactiveRequest({ dimensions: [], measures: [{ fieldId: 'rows', columnName: 'revenue', aggregation: 'COUNT' }], filters: [] }, this.metadata), { dataRoot: this.dataRoot });
   }
 }

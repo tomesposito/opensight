@@ -3,17 +3,27 @@ import { createServer, type Server, type ServerResponse } from 'node:http';
 import { DefinitionStore, RESOURCE_ID } from './store.js';
 import { QueryEngineError } from '@opensight/query-engine';
 import { readQuery, RequestError, SalesQuery } from './query.js';
+import { AutomationStore } from './automation-store.js';
+import { emptyRefreshState, RefreshService, validateRefreshState } from './refresh.js';
+import { Scheduler } from './schedule.js';
+import { refreshRoute } from './automation-routes.js';
 
 export interface ApiOptions {
   /** Directory of local fixtures/bundles, or one .qs/.json file. Loaded at startup. */
   dataRoot: string;
+  /** A single-process, atomic JSON resource store; omit for ephemeral library use. */
+  automationStorePath?: string;
 }
 
 /** Loads a complete snapshot before returning an unbound HTTP server. */
 export async function createApiServer(options: ApiOptions): Promise<Server> {
   const store = await DefinitionStore.load(options.dataRoot);
   const sales = await SalesQuery.load(options.dataRoot);
-  return createServer((request, response) => {
+  const automation = await AutomationStore.load(emptyRefreshState(), options.automationStorePath, validateRefreshState);
+  const refresh = new RefreshService(automation, new Map(sales ? [['sales', sales]] : []));
+  await refresh.recover();
+  const scheduler = new Scheduler(() => refresh.tick());
+  const server = createServer((request, response) => {
     const requestId = randomUUID();
     const error = (status: number, type: string, message: string): void => {
       send(response, status, { Type: type, Message: message, RequestId: requestId });
@@ -22,6 +32,15 @@ export async function createApiServer(options: ApiOptions): Promise<Server> {
     const queryOffset = url.indexOf('?');
     const path = queryOffset === -1 ? url : url.slice(0, queryOffset);
     const query = queryOffset === -1 ? '' : url.slice(queryOffset + 1);
+    if (path === '/api/refresh-schedules' || /^\/api\/datasets\/[^/]+\/refresh-/.test(path)) {
+      void refreshRoute(request, response, path, query, refresh).then(handled => {
+        if (!handled) error(404, 'ResourceNotFoundException', 'Route not found');
+      }).catch(cause => {
+        request.resume();
+        send(response, cause instanceof RequestError ? cause.status : 500, { Message: cause instanceof RequestError ? cause.message : 'Unable to process automation resource' });
+      });
+      return;
+    }
     const queryMatch = /^\/api\/datasets\/([^/]+)\/query$/u.exec(path);
     if (queryMatch) {
       void (async () => {
@@ -83,6 +102,9 @@ export async function createApiServer(options: ApiOptions): Promise<Server> {
       error(500, 'InternalFailureException', 'Unable to serialize definition');
     }
   });
+  server.once('listening', () => scheduler.start());
+  server.once('close', () => scheduler.stop());
+  return server;
 }
 
 function send(response: ServerResponse, status: number, body: object): void {
