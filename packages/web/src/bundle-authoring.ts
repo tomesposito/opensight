@@ -1,4 +1,5 @@
 import { themeValid, paletteValid } from './themes.js';
+import { formattingValid, gaugeValid, binsValid } from './formatting.js';
 import { EXTRA_VISUALS, extraKind, variantKinds } from './visual-catalog.js';
 import { unsupportedFunctions } from '@opensight/query-engine/browser';
 import { importInteractions, exportInteractions } from './bundle-interactions.js';
@@ -65,6 +66,9 @@ function importVisual(raw: BundleVisual, id: string, definition: BundleDefinitio
   const measures = extra ? extra.measures.flatMap(name => names(wells[name])) : names(wells.values);
   const total = obj(config.totalOptions);
   const visual: AuthorVisual = { ...defaults(), ...(paletteValid(body.opensightPalette) ? { palette: [...body.opensightPalette] } : {}), id, kind, title: string(obj(obj(body.title).formatText).plainText),
+    ...(formattingValid(body.opensightFormatting) ? { formatting: copy(body.opensightFormatting) } : {}),
+    ...(kind === 'gauge' && gaugeValid(config.opensightGauge) ? { gauge: copy(config.opensightGauge) } : {}),
+    ...(kind === 'histogram' && binsValid(config.opensightBins) ? { bins: config.opensightBins } : {}),
     titleVisible: obj(body.title).visibility !== 'HIDDEN', dimension: noDimensions(kind) ? null : rows[0] ?? null,
     rows: grouped(kind) ? rows : [], columns, measures: singleMeasure(kind) ? measures.slice(0, 1) : measures,
     donut: kind === 'pie' && ['SMALL', 'MEDIUM', 'LARGE'].includes(string(obj(obj(config.donutOptions).arcOptions).arcThickness)),

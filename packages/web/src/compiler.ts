@@ -1,4 +1,5 @@
 import { LIGHT_THEME, themeValid, paletteValid } from './themes.js';
+import { formattingValid, fieldName, fieldRule } from './formatting.js';
 import type { EChartsOption, BarSeriesOption, LineSeriesOption } from 'echarts';
 import type { Cell, Field, FixtureVisual, Row, VisualModel } from './model.js';
 
@@ -11,7 +12,7 @@ export interface CompiledVisual {
   model: VisualModel;
   option: EChartsOption;
   /** Ordered, validated cells also used by the accessible HTML data table. */
-  table: { columns: string[]; rows: Cell[][]; rowKinds?: ('detail' | 'subtotal' | 'total')[] };
+  table: { columns: string[]; visibleColumns?: string[]; rows: Cell[][]; rowKinds?: ('detail' | 'subtotal' | 'total')[] };
   state: 'ready' | 'empty' | 'unavailable';
 }
 
@@ -60,12 +61,14 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
   if (!kind) fail(`${path}.${variant}`, 'unsupported visual variant in this dialect');
   const p = `${path}.${variant}`;
   const body = object(raw, p);
-  keys(body, [key('opensightPalette', 'OpenSightPalette'), key('visualId', 'VisualId'), key('title', 'Title'), key('subtitle', 'Subtitle'), key('chartConfiguration', 'ChartConfiguration'), key('actions', 'Actions'), key('columnHierarchies', 'ColumnHierarchies')], p);
+  keys(body, [key('opensightFormatting', 'OpenSightFormatting'), key('opensightPalette', 'OpenSightPalette'), key('visualId', 'VisualId'), key('title', 'Title'), key('subtitle', 'Subtitle'), key('chartConfiguration', 'ChartConfiguration'), key('actions', 'Actions'), key('columnHierarchies', 'ColumnHierarchies')], p);
   for (const name of [key('actions', 'Actions'), key('columnHierarchies', 'ColumnHierarchies')]) {
     if (list(body[name], `${p}.${name}`).length) fail(`${p}.${name}`, 'actions and drill hierarchies are not supported');
   }
   const palette = body[key('opensightPalette', 'OpenSightPalette')];
   if (palette !== undefined && !paletteValid(palette)) fail(p, 'invalid visual palette');
+  const formatting = body[key('opensightFormatting', 'OpenSightFormatting')];
+  if (formatting !== undefined && !formattingValid(formatting)) fail(p, 'invalid visual formatting');
   const id = text(body[key('visualId', 'VisualId')], p);
   const cpath = `${p}.${key('chartConfiguration', 'ChartConfiguration')}`;
   const config = object(body[key('chartConfiguration', 'ChartConfiguration')], cpath);
@@ -219,7 +222,7 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
     fieldSort = { fieldId, direction };
   }
   return {
-    id, kind, ...(palette ? { palette: palette as string[] } : {}), gaugeMin, gaugeMax, bins, title: plain as string | undefined ?? `${measures.map(f => f.column).join(', ')}${dimensions[0] ? ` by ${dimensions[0].column}` : ''}`,
+    id, kind, ...(formattingValid(formatting) ? { formatting } : {}), ...(palette ? { palette: palette as string[] } : {}), gaugeMin, gaugeMax, bins, title: plain as string | undefined ?? `${measures.map(f => fieldName(f, formattingValid(formatting) ? formatting : undefined)).join(', ')}${dimensions[0] ? ` by ${fieldName(dimensions[0], formattingValid(formatting) ? formatting : undefined)}` : ''}`,
     titleVisible: visibility(title, key('visibility', 'Visibility')),
     dimensions, rowDimensions, columnDimensions, measures, totals, subtotals, columnTotals, columnSubtotals, innerRadius, sort: fieldSort, warnings,
     horizontal: (kind === 'bar' || kind === 'bar100') && enumValue(config[key('orientation', 'Orientation')], ['VERTICAL', 'HORIZONTAL'], 'VERTICAL', `${cpath}.${key('orientation', 'Orientation')}`) === 'HORIZONTAL',
@@ -286,7 +289,7 @@ export function compileVisual(input: Input): CompiledVisual {
     const measure = model.measures[0]!;
     option.legend = { show: model.legend, bottom: 4, type: 'scroll' };
     option.series = [{
-      type: 'pie', name: measure.column, radius: [model.innerRadius, '70%'], center: ['50%', '45%'],
+      type: 'pie', name: fieldName(measure, model.formatting), radius: [model.innerRadius, '70%'], center: ['50%', '45%'],
       showEmptyCircle: false, stillShowZeroSum: false, avoidLabelOverlap: true,
       label: { show: model.labels, formatter: '{b}: {d}%' }, labelLine: { show: model.labels },
       data: rows.map(row => {
@@ -303,11 +306,11 @@ export function compileVisual(input: Input): CompiledVisual {
     option.yAxis = model.horizontal ? category : value;
     option.legend = { show: model.legend && model.measures.length > 1, bottom: 0 };
     option.series = model.measures.map((field): BarSeriesOption | LineSeriesOption => model.kind === 'bar' ? {
-      type: 'bar', name: field.column, data: rows.map(row => number(row, field)),
+      type: 'bar', name: fieldName(field, model.formatting), data: rows.map(row => number(row, field)),
       barMaxWidth: 72, ...(model.stacked ? { stack: 'values' } : {}),
       label: { show: model.labels },
     } : {
-      type: 'line', name: field.column, data: rows.map(row => number(row, field)),
+      type: 'line', name: fieldName(field, model.formatting), data: rows.map(row => number(row, field)),
       connectNulls: false, symbolSize: 8, label: { show: model.labels },
     });
   } else if (model.kind === 'kpi') {
@@ -327,10 +330,24 @@ export function compileVisual(input: Input): CompiledVisual {
       if (series.type === 'gauge') { series.itemStyle = { color: (model.palette ?? theme.palette)[0] }; series.axisLabel = { color: theme.textColor }; series.detail = { ...series.detail, color: theme.textColor }; series.title = { color: theme.textColor }; }
     }
   }
+  // Rules evaluate supplied measures, before chart-specific transforms such as percentages.
+  if (model.formatting?.rules?.length && ['bar', 'line', 'pie', 'scatter', 'funnel', 'area', 'combo', 'bar100'].includes(model.kind) && Array.isArray(option.series)) {
+    option.series.forEach((series, index) => {
+      if (!('data' in series) || !Array.isArray(series.data)) return;
+      const measures = model.kind === 'scatter' ? model.measures : [model.measures[index] ?? model.measures[0]!];
+      series.data = series.data.map((datum: unknown, rowIndex: number) => {
+        const row = rows[rowIndex];
+        const rule = row && measures.map(f => fieldRule(model.formatting, f, number(row, f))).find(Boolean);
+        return rule ? { ...(datum && typeof datum === 'object' && !Array.isArray(datum) ? datum : { value: datum }), itemStyle: { color: rule.color } } : datum;
+      }) as typeof series.data;
+    });
+  }
   if (model.kind === 'pivot' || model.kind === 'table' && (model.totals || model.subtotals)) {
     return { model, option, state, table: compilePivotTable(model, rows, cell, number, input.path) };
   }
-  return { model, option, state, table: { columns: fields.map(f => f.column), rows: rows.map(row => fields.map(field => cell(row, field))) } };
+  return { model, option, state, table: { columns: fields.map(f => fieldName(f, model.formatting)), rows: rows.map(row => fields.map(field => cell(row, field))),
+    ...(model.formatting ? { visibleColumns: fields.map(f => (model.measures.includes(f) ? model.formatting?.valueNamesVisible : model.formatting?.rowNamesVisible) === false ? '' : fieldName(f, model.formatting)) } : {}),
+  } };
 }
 
 export function displayCell(value: Cell): string {
@@ -366,12 +383,13 @@ function compilePivotTable(model: VisualModel, rows: Row[], cell: (row: Row, fie
   const colPaths = rows.map(row => columnFields.map(f => cell(row, f)));
   const rowAxis = axisEntries(rowPaths, rowFields.length, model.subtotals, model.totals);
   const colAxis = axisEntries(colPaths, columnFields.length, model.columnSubtotals, model.columnTotals);
-  const label = (entry: AxisEntry, fields: Field[]): string => entry.kind === 'total' ? 'Grand total' : [
-    ...entry.cells.map((value, i) => `${fields[i]!.column}: ${displayCell(value)}`),
+  const label = (entry: AxisEntry, fields: Field[], visible = false): string => entry.kind === 'total' ? 'Grand total' : [
+    ...entry.cells.map((value, i) => `${visible && model.formatting?.columnNamesVisible === false ? '' : `${fieldName(fields[i]!, model.formatting)}: `}${displayCell(value)}`),
     ...(entry.kind === 'subtotal' ? ['Subtotal'] : []),
   ].join(' / ');
   const matches = (entry: AxisEntry, values: Cell[]): boolean => entry.cells.every((value, i) => value === values[i]);
-  const columns = [...rowFields.map(f => f.column), ...colAxis.flatMap(entry => model.measures.map(f => [label(entry, columnFields), f.column].filter(Boolean).join(' · ')))];
+  const columns = [...rowFields.map(f => fieldName(f, model.formatting)), ...colAxis.flatMap(entry => model.measures.map(f => [label(entry, columnFields), fieldName(f, model.formatting)].filter(Boolean).join(' · ')))];
+  const visibleColumns = model.formatting ? [...rowFields.map(f => model.formatting?.rowNamesVisible === false ? '' : fieldName(f, model.formatting)), ...colAxis.flatMap(entry => model.measures.map(f => [label(entry, columnFields, true), model.formatting?.valueNamesVisible === false ? '' : fieldName(f, model.formatting)].filter(Boolean).join(' · ')))] : undefined;
   const output = rows.length ? rowAxis.map(rowEntry => {
     const labels: Cell[] = rowFields.map((_, i) => rowEntry.cells[i] ?? (i === rowEntry.cells.length ? rowEntry.kind === 'total' ? 'Grand total' : 'Subtotal' : ''));
     // A null dimension is a value, not a missing level.
@@ -387,5 +405,5 @@ function compilePivotTable(model: VisualModel, rows: Row[], cell: (row: Row, fie
       return total;
     }))];
   }) : [];
-  return { columns, rows: output, rowKinds: rows.length ? rowAxis.map(entry => entry.kind) : [] };
+  return { columns, ...(visibleColumns ? { visibleColumns } : {}), rows: output, rowKinds: rows.length ? rowAxis.map(entry => entry.kind) : [] };
 }

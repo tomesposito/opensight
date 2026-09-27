@@ -107,6 +107,7 @@ const tableStyle: Schema = { Border: ['border', { UniformBorder: ['uniformBorder
   SideSpecificBorder: ['sideSpecificBorder', { InnerHorizontal: ['innerHorizontal', border] }],
 }] };
 const visualBody: Schema = {
+  OpenSightPalette: ['opensightPalette'], OpenSightFormatting: ['opensightFormatting'],
   VisualId: ['visualId'], Title: ['title', title], Subtitle: ['subtitle', title],
   Actions: ['actions', {
     ...members('CustomActionId Name Status Trigger'), ActionOperations: ['actionOperations', {
@@ -206,6 +207,7 @@ const filterBody: Schema = {
   }],
 };
 const definition: Schema = {
+  OpenSightTheme: ['opensightTheme'],
   DataSetIdentifierDeclarations: ['dataSetIdentifierDeclarations', { Identifier: ['identifier'], DataSetArn: ['dataSetArn'] }],
   Sheets: ['sheets', {
     SheetId: ['sheetId'], Name: ['name'], ContentType: ['contentType'], ...members('Title Description'),

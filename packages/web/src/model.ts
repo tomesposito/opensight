@@ -1,4 +1,5 @@
 import type { AnalysisTheme } from './themes.js';
+import type { VisualFormatting } from './formatting.js';
 import type { BundleVisual, VisualBody } from '@opensight/bundle-parser';
 import type { VisualKind } from './visual-catalog.js';
 import type { ResourceKind } from './api-client.js';
@@ -16,6 +17,7 @@ export interface VisualModel {
   titleVisible: boolean;
   kind: VisualKind;
   palette?: string[];
+  formatting?: VisualFormatting;
   gaugeMin: number;
   gaugeMax: number;
   bins: number;

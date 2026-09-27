@@ -225,3 +225,33 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .measure-order { display: flex; flex-wrap: wrap; gap: 4px; }
 .measure-order button { font-size: 10px; }
 .visual-card .empty-state { background: inherit; color: inherit; }
+
+/* Native disclosure menus remain usable with a keyboard and without a backend. */
+.author-menu { position: relative; z-index: 20; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 6px 10px; background: #214d75; color: #fff; border-radius: 5px; margin: 0 0 12px; }
+.author-menu > details { position: relative; }
+.author-menu summary { padding: 9px 10px; cursor: pointer; font-size: 13px; list-style: none; border-radius: 4px; }
+.author-menu summary::-webkit-details-marker { display: none; }
+.author-menu summary:hover, .author-menu details[open] > summary { background: #37678f; }
+.menu-popover { position: absolute; top: 100%; left: 0; width: 270px; max-width: 85vw; max-height: 360px; overflow: auto; padding: 10px; border: 1px solid var(--chrome-border); border-radius: 5px; box-shadow: 0 8px 24px #0003; color: var(--chrome-text); background: var(--chrome-surface); }
+.menu-popover button { display: block; width: 100%; text-align: left; margin: 3px 0; }
+.menu-popover p { font-size: 12px; line-height: 1.5; color: var(--chrome-muted); }
+.menu-popover label { display: grid; gap: 6px; font-size: 12px; }
+.menu-popover input { width: 100%; padding: 8px; border: 1px solid var(--chrome-border); border-radius: 4px; }
+.menu-spacer { flex: 1; }
+.author-menu > button { font-size: 11px; background: transparent; color: white; border-color: #8da9c1; }
+.author-menu > button[aria-pressed=true] { background: #e9f3fc; color: #214d75; }
+.toolbar-notice { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; padding: 12px; background: var(--chrome-surface); border: 1px solid var(--chrome-border); font-size: 13px; }
+.canvas-viewport { min-width: 0; overflow: auto; }
+.property-section { border-top: 1px solid var(--chrome-border, #c9d8de); padding: 10px 0; }
+.property-section summary { font-size: 12px; font-weight: 600; margin-bottom: 10px; cursor: pointer; }
+.property-section li { font-size: 12px; overflow-wrap: anywhere; margin-bottom: 8px; }
+.property-section input[type=color] { height: 34px; padding: 3px; }
+.author-workspace :focus-visible { outline: 2px solid #499de3; outline-offset: 2px; }
+.visual-card th { background: var(--visual-header, #f3f7f8); color: inherit; }
+.visual-card .table-scroll td button { color: inherit; background: transparent; }
+@media (max-width: 760px) {
+  .author-menu > details { position: static; }
+  .menu-popover { left: 0; width: min(320px, 90vw); }
+  .author-menu { gap: 0; }
+  .author-menu summary { padding: 8px; }
+}

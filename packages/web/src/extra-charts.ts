@@ -1,4 +1,5 @@
 import type { EChartsOption, SeriesOption, TreemapSeriesOption } from 'echarts';
+import { fieldName } from './formatting.js';
 import type { Cell, Field, Row, VisualModel } from './model.js';
 import { countryNames, WORLD_MAP } from './geo/world.js';
 
@@ -36,17 +37,17 @@ export function compileExtra(model: VisualModel, rows: Row[], cell: CellReader, 
     option.legend = { show: model.legend, bottom: 0 };
     option.series = model.measures.map((f, i): SeriesOption => {
       const data = values(i).map((n, j) => percent ? totals[j] ? (n! / totals[j]!) * 100 : 0 : n);
-      return percent || model.kind === 'combo' && i === 0 ? { type: 'bar', name: f.column, data, ...(percent ? { stack: 'percent' } : {}), label: { show: model.labels }, barMaxWidth: 72 }
-        : { type: 'line', name: f.column, data, connectNulls: false, ...(model.kind === 'area' ? { areaStyle: { opacity: 0.3 } } : {}), label: { show: model.labels } };
+      return percent || model.kind === 'combo' && i === 0 ? { type: 'bar', name: fieldName(f, model.formatting), data, ...(percent ? { stack: 'percent' } : {}), label: { show: model.labels }, barMaxWidth: 72 }
+        : { type: 'line', name: fieldName(f, model.formatting), data, connectNulls: false, ...(model.kind === 'area' ? { areaStyle: { opacity: 0.3 } } : {}), label: { show: model.labels } };
     });
   } else if (model.kind === 'scatter') {
-    axes(); option.xAxis = { type: 'value', name: model.measures[0]!.column }; option.yAxis = { type: 'value', name: model.measures[1]!.column };
+    axes(); option.xAxis = { type: 'value', name: fieldName(model.measures[0]!, model.formatting) }; option.yAxis = { type: 'value', name: fieldName(model.measures[1]!, model.formatting) };
     option.series = [{ type: 'scatter', data: rows.map((r, i) => ({ name: names[i], value: model.measures.map(f => number(r, f)), symbolSize: model.measures[2] ? Math.min(60, 8 + Math.sqrt(nonnegative(r, 2))) : 12 })), label: { show: model.labels, formatter: '{b}' } }];
   } else if (model.kind === 'funnel') {
     option.series = [{ type: 'funnel', sort: 'none', left: '15%', width: '70%', top: 20, bottom: 20, label: { show: model.labels }, data: rows.map((r, i) => ({ name: names[i]!, value: nonnegative(r) })) }];
   } else if (model.kind === 'gauge') {
     if (rows.length > 1) fail('Gauge expects one aggregate row and a single measure');
-    option.series = [{ type: 'gauge', min: model.gaugeMin, max: model.gaugeMax, progress: { show: true }, detail: { formatter: '{value}', fontSize: 22 }, data: rows.length && values()[0] !== null ? [{ name: model.measures[0]!.column, value: values()[0]! }] : [] }];
+    option.series = [{ type: 'gauge', min: model.gaugeMin, max: model.gaugeMax, progress: { show: true }, detail: { formatter: '{value}', fontSize: 22 }, data: rows.length && values()[0] !== null ? [{ name: fieldName(model.measures[0]!, model.formatting), value: values()[0]! }] : [] }];
     if (rows.length && values()[0] === null) model.warnings.push('Gauge measure is null; no needle value is shown.');
   } else if (model.kind === 'treemap') {
     type Node = { name: string; value?: number; children?: Node[] };
@@ -77,7 +78,7 @@ export function compileExtra(model: VisualModel, rows: Row[], cell: CellReader, 
     if (samples.length && !Number.isFinite(width)) fail('histogram range must be finite');
     const bins = samples.length ? Array<number>(count).fill(0) : [];
     samples.forEach(n => { const index = Math.min(count - 1, Math.floor((n - min) / width)); bins[index] = bins[index]! + 1; });
-    axes(); option.xAxis = { type: 'category', name: model.measures[0]!.column, data: bins.map((_, i) => `${+(min + i * width).toPrecision(6)}–${+(min + (i + 1) * width).toPrecision(6)}`) };
+    axes(); option.xAxis = { type: 'category', name: fieldName(model.measures[0]!, model.formatting), data: bins.map((_, i) => `${+(min + i * width).toPrecision(6)}–${+(min + (i + 1) * width).toPrecision(6)}`) };
     option.yAxis = { type: 'value', name: 'Frequency', minInterval: 1 }; option.series = [{ type: 'bar', barCategoryGap: '0%', data: bins, label: { show: model.labels } }];
   } else if (model.kind === 'wordCloud') {
     const words = rows.map((r, i) => ({ name: names[i]!, value: nonnegative(r), i })).sort((a, b) => b.value - a.value || a.i - b.i).slice(0, 80);

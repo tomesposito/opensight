@@ -1,4 +1,6 @@
 import { ThemeEditor } from './ThemeEditor.js';
+import { AuthorToolbar } from './AuthorToolbar.js';
+import { FormattingEditor } from './FormattingEditor.js';
 import { LIGHT_THEME, themeValid, type AnalysisTheme } from './themes.js';
 import { functionCatalog } from '@opensight/query-engine/browser';
 import { expressionError } from './authoring.js';
@@ -35,6 +37,8 @@ export function Author({ client }: { client?: QueryClient }) {
   const [importStatus, setImportStatus] = useState('');
   const [busy, setBusy] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
+  const [fit, setFit] = useState(true);
+  const fileInput = useRef<HTMLInputElement>(null);
   const importFile = async (file: File | undefined) => {
     if (!file || busy) return;
     setBusy(true); setImportStatus(`Importing ${file.name}…`);
@@ -81,8 +85,9 @@ export function Author({ client }: { client?: QueryClient }) {
       <button type="button" onClick={() => void downloadQs()} disabled={busy} aria-describedby="export-help">Download .qs</button>
       <button type="button" className="primary-button" onClick={download} disabled={!draft.sheets.some(s => s.visuals.length) || !!exported.error} aria-describedby="export-help">Export JSON</button>
     </div>
+    <AuthorToolbar draft={draft} dispatch={dispatch} fit={fit} onFit={() => setFit(value => !value)} onJson={download} onBundle={() => { if (!busy) void downloadQs(); }} onImport={() => fileInput.current?.click()} busy={busy} jsonDisabled={!draft.sheets.some(s => s.visuals.length) || !!exported.error} />
     <div className="bundle-import" onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; }} onDrop={e => { e.preventDefault(); if (e.dataTransfer.files.length !== 1) setImportStatus('Drop one .qs ZIP or one bundle .json member.'); else void importFile(e.dataTransfer.files[0]); }} aria-label="Bundle drop zone">
-      <label>Import .qs or bundle JSON<input type="file" accept=".qs,.json,application/zip,application/json" disabled={busy} onChange={e => { const file = e.currentTarget.files?.[0]; e.currentTarget.value = ''; void importFile(file); }} /></label>
+      <label>Import .qs or bundle JSON<input ref={fileInput} type="file" accept=".qs,.json,application/zip,application/json" disabled={busy} onChange={e => { const file = e.currentTarget.files?.[0]; e.currentTarget.value = ''; void importFile(file); }} /></label>
       <p>Drop one .qs ZIP or JSON member here. Import replaces the current draft. Download your work first to keep it.</p>
       {importStatus && <p role={importStatus.startsWith('Import failed') ? 'alert' : 'status'}>{importStatus}</p>}
       {draft.bundle && <button type="button" onClick={() => setReportOpen(true)}>View import report</button>}
@@ -92,7 +97,7 @@ export function Author({ client }: { client?: QueryClient }) {
       <p id="export-help">{exported.error ?? (client ? 'Downloads analysis definitions and sheet layouts; query results are not included.' : 'Downloads analysis definitions and sheet layouts; sample rows and the fixed East preview filter are not included.')}</p>
       {exportStatus && <p role="status">{exportStatus}</p>}
     </div>
-    <AuthorCanvas draft={draft} dispatch={dispatch} client={client} />
+    <AuthorCanvas draft={draft} dispatch={dispatch} client={client} fit={fit} />
     {reportOpen && draft.bundle && <ImportReport draft={draft} onClose={() => setReportOpen(false)} />}
   </div>;
 }
@@ -110,7 +115,7 @@ function Panel({ title, className, children }: { title: string; className: strin
   </details>;
 }
 
-export function AuthorCanvas({ draft, dispatch, client }: EditorProps) {
+export function AuthorCanvas({ draft, dispatch, client, fit = true }: EditorProps & { fit?: boolean }) {
   const [newKind, setNewKind] = useState<VisualKind>('bar');
   const [search, setSearch] = useState('');
   const [well, setWell] = useState<Well>('rows');
@@ -171,7 +176,8 @@ export function AuthorCanvas({ draft, dispatch, client }: EditorProps) {
             <FieldWells visual={selected} draft={draft} dispatch={dispatch} activeWell={well} onWell={setWell} />
           </div> : <p className="field-hint">Choose a visual type and select ADD.</p>}
         </Panel>
-        <div className="author-canvas" style={{ backgroundColor: theme.background, fontFamily: theme.fontFamily }} ref={containerRef}>
+        <div className="canvas-viewport" data-fit={fit ? 'width' : 'actual'} aria-label={fit ? 'Canvas fits available width' : 'Canvas at 1200 pixel width'}>
+        <div className="author-canvas" style={{ width: fit ? '100%' : 1200, backgroundColor: theme.background, color: theme.textColor, fontFamily: theme.fontFamily }} ref={containerRef}>
           <div className="canvas-label"><strong>{sheet.name}</strong><span>{sheet.visuals.length} {sheet.visuals.length === 1 ? 'visual' : 'visuals'} · {mobile ? 'Mobile preview' : 'Drag the handle to move · Drag a corner to resize'}</span></div>
           {!sheet.visuals.length && <div className="canvas-empty"><h2>Your canvas is ready</h2><p>Add a visual, then choose fields from the Data panel.</p></div>}
           <div aria-label="Authoring canvas">
@@ -205,7 +211,7 @@ export function AuthorCanvas({ draft, dispatch, client }: EditorProps) {
             </GridLayout>
           </div>
         </div>
-      </div>
+      </div></div>
       <Panel title="Properties" className="properties-panel">
         {selected ? <Properties key={selected.id} visual={selected} draft={draft} dispatch={dispatch} client={client} /> : <><p>Select a visual to edit its display settings.</p><ThemeEditor draft={draft} dispatch={dispatch} /></>}
       </Panel>
@@ -249,14 +255,21 @@ function FieldWells({ visual, draft, dispatch, activeWell, onWell }: { visual: A
 function Properties({ visual, draft, dispatch, client }: EditorProps & { visual: AuthorVisual }) {
   const toggles: { property: 'titleVisible' | 'legend' | 'labels' | 'horizontal' | 'stacked' | 'totals' | 'subtotals'; label: string }[] = [
     { property: 'titleVisible', label: 'Show title' },
-    ...(tabular(visual.kind) ? [{ property: 'totals' as const, label: 'Show totals' }, { property: 'subtotals' as const, label: 'Show subtotals' }] : visual.kind === 'kpi' ? [] : [{ property: 'legend' as const, label: 'Show legend' }, { property: 'labels' as const, label: 'Show data labels' }]),
-    ...(visual.kind === 'bar' ? [{ property: 'horizontal' as const, label: 'Horizontal bars' }, { property: 'stacked' as const, label: 'Stack values' }] : []),
+    ...(['bar', 'line', 'pie', 'combo', 'area', 'bar100'].includes(visual.kind) ? [{ property: 'legend' as const, label: 'Show legend' }] : []),
+    ...(!['table', 'pivot', 'kpi', 'gauge', 'box', 'wordCloud', 'pointMap'].includes(visual.kind) ? [{ property: 'labels' as const, label: 'Show data labels' }] : []),
+    ...(['bar', 'bar100'].includes(visual.kind) ? [{ property: 'horizontal' as const, label: 'Horizontal bars' }] : []),
+    ...(visual.kind === 'bar' ? [{ property: 'stacked' as const, label: 'Stack values' }] : []),
   ];
   return <>
+    <details className="property-section" open><summary>Display settings</summary>
     <label>Title<input value={visual.title} placeholder="Generated from fields" onChange={e => dispatch({ type: 'title', title: e.target.value })} /></label>
     {toggles.map(({ property, label }) => <label className="toggle" key={property}><input type="checkbox" checked={visual[property]} onChange={e => dispatch({ type: 'display', property, value: e.target.checked })} />{label}</label>)}
     {visual.kind === 'pie' && <label className="toggle"><input type="checkbox" checked={visual.donut} onChange={e => dispatch({ type: 'donut', donut: e.target.checked })} />Donut</label>}
     {tabular(visual.kind) && <p className="field-hint">Subtotals summarize parent groups when multiple dimensions are assigned.</p>}
+    {visual.kind === 'gauge' && <>{(['min', 'max'] as const).map(bound => <label key={bound}>Gauge {bound === 'min' ? 'minimum' : 'maximum'}<input type="number" step="any" value={visual.gauge?.[bound] ?? (bound === 'min' ? 0 : 100)} onChange={e => { if (e.target.value.trim()) dispatch({ type: 'gauge', min: visual.gauge?.min ?? 0, max: visual.gauge?.max ?? 100, [bound]: Number(e.target.value) }); }} /></label>)}<p>Minimum must be smaller than maximum.</p></>}
+    {visual.kind === 'histogram' && <label>Histogram bins<input type="number" min="1" max="100" value={visual.bins ?? 10} onChange={e => dispatch({ type: 'bins', bins: Number(e.target.value) })} /></label>}
+    </details>
+    <FormattingEditor visual={visual} dispatch={dispatch} />
     {visual.imported && <div className="dataset-binding"><h3>Dataset binding</h3><p>{visual.imported.local ? 'Local sales dataset' : authorVisualProblem(visual)}</p>
       {!visual.imported.local && <button type="button" onClick={() => dispatch({ type: 'remap', id: visual.id })}>Remap to local dataset</button>}
       {visual.imported.unmappedFields.length > 0 && <p>Fields requiring manual assignment: {visual.imported.unmappedFields.join(', ')}</p>}

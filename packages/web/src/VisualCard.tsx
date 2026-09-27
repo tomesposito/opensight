@@ -1,6 +1,7 @@
 import { LIGHT_THEME } from './themes.js';
+import { fieldRule } from './formatting.js';
 import { rowSelection, brushSelection, type VisualInteraction } from './visual-selection.js';
-import { useEffect, useId, useMemo, useRef } from 'react';
+import { useEffect, useId, useMemo, useRef, type CSSProperties } from 'react';
 import type { EChartsOption } from 'echarts';
 import { compileVisual, displayCell } from './compiler.js';
 import type { CompiledVisual } from './compiler.js';
@@ -29,10 +30,17 @@ function Chart({ option, title, compiled, interaction }: { option: EChartsOption
 }
 
 function DataTable({ compiled, interaction }: { compiled: CompiledVisual; interaction?: VisualInteraction }) {
-  return <div className="table-scroll"><table>
+  const { model, table } = compiled, f = model.formatting;
+  const dimensionCount = model.kind === 'pivot' ? model.rowDimensions.length : model.dimensions.length;
+  const formatted = (value: import('./model.js').Cell, index: number) => typeof value === 'number' && index >= dimensionCount && f?.decimalPlaces !== undefined ? value.toLocaleString('en-US', { minimumFractionDigits: f.decimalPlaces, maximumFractionDigits: f.decimalPlaces }) : displayCell(value);
+  return <div className="table-scroll"><table style={{ fontSize: f?.fontSize, color: f?.cellColor, background: f?.cellBackground }}>
     <caption className="sr-only">{compiled.model.title} — result data</caption>
-    <thead><tr>{compiled.table.columns.map((column, i) => <th key={i} scope="col">{column}</th>)}</tr></thead>
-    <tbody>{compiled.table.rows.map((row, i) => <tr key={i} className={compiled.table.rowKinds?.[i]} onClick={interaction && rowSelection(compiled, i) ? () => interaction.onSelect(rowSelection(compiled, i)!) : undefined}>{row.map((cell, j) => <td key={j}>{j === 0 && interaction && rowSelection(compiled, i) ? <button type="button" onClick={event => { event.stopPropagation(); interaction.onSelect(rowSelection(compiled, i)!); }}>{displayCell(cell)}</button> : displayCell(cell)}</td>)}</tr>)}</tbody>
+    <thead className={f?.headersVisible === false ? 'sr-only' : undefined}><tr>{table.columns.map((column, i) => <th key={i} scope="col" style={{ color: f?.headerColor, background: f?.headerBackground }}>{table.visibleColumns?.[i] === '' ? <span className="sr-only">{column}</span> : table.visibleColumns?.[i] ?? column}</th>)}</tr></thead>
+    <tbody>{table.rows.map((row, i) => <tr key={i} className={table.rowKinds?.[i]} onClick={interaction && rowSelection(compiled, i) ? () => interaction.onSelect(rowSelection(compiled, i)!) : undefined}>{row.map((cell, j) => {
+      const measure = j >= dimensionCount ? model.measures[(j - dimensionCount) % model.measures.length] : undefined;
+      const rule = measure && fieldRule(f, measure, cell);
+      return <td key={j} style={rule ? { color: rule.color, background: rule.background } : undefined}>{j === 0 && interaction && rowSelection(compiled, i) ? <button type="button" onClick={event => { event.stopPropagation(); interaction.onSelect(rowSelection(compiled, i)!); }}>{formatted(cell, j)}</button> : formatted(cell, j)}</td>;
+    })}</tr>)}</tbody>
   </table></div>;
 }
 
@@ -45,7 +53,7 @@ export function VisualCard({ visual, dataMessage, loading = false, interaction }
   }, [visual]);
   const { compiled, error } = result;
   const { column, columns, row, rows } = visual.placement;
-  return <section className="visual-card" aria-busy={loading} aria-labelledby={headingId} style={{ background: theme.surface, color: theme.textColor, fontFamily: theme.fontFamily, gridColumn: `${column + 1} / span ${columns}`, gridRow: `${row + 1} / span ${rows}` }}>
+  return <section className="visual-card" aria-busy={loading} aria-labelledby={headingId} style={{ '--visual-header': theme.background, background: theme.surface, color: theme.textColor, fontFamily: theme.fontFamily, gridColumn: `${column + 1} / span ${columns}`, gridRow: `${row + 1} / span ${rows}` } as CSSProperties}>
     <header className="card-heading">
       <h3 id={headingId} className={compiled && !compiled.model.titleVisible ? 'sr-only' : ''}>{compiled?.model.title ?? 'Unsupported visual'}</h3>
       {compiled && <span className="chart-kind">{compiled.model.kind}</span>}
