@@ -1,5 +1,9 @@
 # Local definition and live query API
 
+Phase 2a adds [live parameters and controls](../../docs/parameters-controls.md).
+That document supersedes the historical parameter/filter and offline Author
+limitations below; the explorer and remote dataset boundaries are unchanged.
+
 ## Phase 1c: local sales queries
 
 `POST /api/datasets/sales/query` executes DuckDB against the existing

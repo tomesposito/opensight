@@ -1,5 +1,9 @@
 # Web explorer and Builder v0
 
+Phase 2a adds [live parameters and controls](../../docs/parameters-controls.md).
+That document supersedes the historical parameter/filter and offline Author
+limitations below; the explorer and remote dataset boundaries are unchanged.
+
 React 19 / ECharts 6 / Vite 8 provide fixture and API definition exploration,
 plus the Phase 1b **Author** mode with Phase 1c live queries. D2, D4, §3.2 and Phases 1b/1c of
 `SOLUTION_DESIGN.md` guide these slices; that spec is unchanged. This is a local

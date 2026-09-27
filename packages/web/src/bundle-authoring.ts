@@ -402,7 +402,7 @@ export function exportBundle(draft: AuthorDraft): QsBundle {
         return next.length ? [value] : [];
       });
     }
-    const needsLocal = sheets.some(s => s.visuals.some(v => !v.imported || usesRemappedDataset(v.imported)));
+    const needsLocal = sheets.some(s => s.controls.some(c => c.source?.local && c.source.dataSetIdentifier === LOCAL_IDENTIFIER) || s.visuals.some(v => !v.imported || usesRemappedDataset(v.imported)));
     if (needsLocal) {
       if (d.dataSetIdentifierDeclarations.some(ds => ds.identifier === LOCAL_IDENTIFIER && ds.dataSetArn !== LOCAL_SALES_ARN)) throw new Error(`Cannot export: ${LOCAL_IDENTIFIER} is already bound to another dataset.`);
       if (!d.dataSetIdentifierDeclarations.some(ds => ds.identifier === LOCAL_IDENTIFIER)) d.dataSetIdentifierDeclarations.push({ identifier: LOCAL_IDENTIFIER, dataSetArn: LOCAL_SALES_ARN });

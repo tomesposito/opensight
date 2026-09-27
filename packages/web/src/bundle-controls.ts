@@ -18,16 +18,17 @@ export function serializeControl(c: AuthorControl, parameters: readonly AuthorPa
 }
 export function importControls(raw: unknown, parameters: readonly AuthorParameter[], local: (identifier: string) => boolean, messages: string[], sheetId: string): AuthorControl[] {
   const controls: AuthorControl[] = [];
-  const known = ['parameterControlId','title','sourceParameterName','type','selectableValues','minimumValue','maximumValue','stepSize','cascadingControlConfiguration','displayOptions'];
+  if (raw !== undefined && !Array.isArray(raw)) { messages.push(`Sheet ${sheetId}.parameterControls: display only; expected an array (retained verbatim).`); return controls; }
   for (const [index, value] of list(raw).entries()) {
     const [variant, v] = Object.entries(obj(value))[0] ?? [], body = obj(v), name = text(body.title) || text(body.parameterControlId) || `control ${index + 1}`;
     const report = (m: string) => messages.push(`Control ${name} on sheet ${sheetId}: ${m}`);
     const p = parameters.find(p => p.name === body.sourceParameterName);
     const kind = variant === 'dropdown' ? 'dropdown' : variant === 'slider' ? 'slider' : variant === 'dateTimePicker' ? 'date' : variant === 'textField' ? 'text' : undefined;
     if (!p || !kind || !text(body.parameterControlId) || Object.keys(obj(value)).length !== 1) { report('display only; unsupported control type or unresolved parameter (retained verbatim).'); continue; }
-    if (Object.keys(body).some(k => !known.includes(k)) || kind === 'dropdown' && body.type !== undefined && body.type !== (p.multiple ? 'MULTI_SELECT' : 'SINGLE_SELECT') || kind === 'slider' && body.type !== undefined && body.type !== 'SINGLE_POINT' || kind === 'date' && body.type !== undefined && body.type !== 'SINGLE_VALUED') { report('display only; unsupported control properties or selection semantics (retained verbatim).'); continue; }
+    const known = ['parameterControlId','title','sourceParameterName','displayOptions', ...(kind === 'dropdown' ? ['type','selectableValues','cascadingControlConfiguration'] : kind === 'slider' ? ['type','minimumValue','maximumValue','stepSize'] : kind === 'date' ? ['type'] : [])];
+    if (Object.keys(body).some(k => !known.includes(k)) || body.title !== undefined && typeof body.title !== 'string' || kind === 'dropdown' && body.type !== undefined && body.type !== (p.multiple ? 'MULTI_SELECT' : 'SINGLE_SELECT') || kind === 'slider' && body.type !== undefined && body.type !== 'SINGLE_POINT' || kind === 'date' && body.type !== undefined && body.type !== 'SINGLE_VALUED') { report('display only; unsupported control properties or selection semantics (retained verbatim).'); continue; }
     const selectable = obj(body.selectableValues), source = obj(selectable.linkToDataSetColumn);
-    if (Object.keys(selectable).some(k => !['values','linkToDataSetColumn'].includes(k)) || selectable.values !== undefined && selectable.linkToDataSetColumn !== undefined) { report('display only; unsupported options (retained verbatim).'); continue; }
+    if (body.selectableValues !== undefined && (typeof body.selectableValues !== 'object' || body.selectableValues === null || Array.isArray(body.selectableValues)) || selectable.values !== undefined && !Array.isArray(selectable.values) || Object.keys(source).some(k => !['dataSetIdentifier','columnName'].includes(k)) || Object.keys(selectable).some(k => !['values','linkToDataSetColumn'].includes(k)) || selectable.values !== undefined && selectable.linkToDataSetColumn !== undefined) { report('display only; unsupported options (retained verbatim).'); continue; }
     const c: AuthorControl = { id: `control-${index + 1}`, importedId: text(body.parameterControlId), label: name, kind, parameterId: p.id,
       ...(kind === 'slider' ? { min: body.minimumValue as number, max: body.maximumValue as number, step: body.stepSize as number } : {}),
       ...(kind === 'dropdown' ? selectable.linkToDataSetColumn ? { source: { columnName: text(source.columnName), dataSetIdentifier: text(source.dataSetIdentifier), local: local(text(source.dataSetIdentifier)) } } : { options: list(selectable.values).map(v => p.type === 'number' && typeof v === 'string' && v.trim() ? Number(v) : v as string | number) } : {}),
@@ -38,7 +39,7 @@ export function importControls(raw: unknown, parameters: readonly AuthorParamete
     if (body.cascadingControlConfiguration !== undefined) {
       if (!c.source || Object.keys(cascades).some(k => k !== 'sourceControls') || !Array.isArray(cascades.sourceControls)) { report('display only; unsupported cascade (retained verbatim).'); continue; }
       c.cascade = list(cascades.sourceControls).map(raw => { const parent = obj(raw), match = obj(parent.columnToMatch); return { controlId: text(parent.sourceSheetControlId), columnName: text(match.columnName) }; });
-      if (list(cascades.sourceControls).some(raw => { const parent = obj(raw), match = obj(parent.columnToMatch); return Object.keys(parent).some(k => !['sourceSheetControlId', 'columnToMatch'].includes(k)) || match.dataSetIdentifier !== c.source?.dataSetIdentifier; })) { report('display only; cascade crosses datasets or has unsupported properties (retained verbatim).'); continue; }
+      if (list(cascades.sourceControls).some(raw => { const parent = obj(raw), match = obj(parent.columnToMatch); return Object.keys(parent).some(k => !['sourceSheetControlId', 'columnToMatch'].includes(k)) || Object.keys(match).some(k => !['dataSetIdentifier','columnName'].includes(k)) || match.dataSetIdentifier !== c.source?.dataSetIdentifier; })) { report('display only; cascade crosses datasets or has unsupported properties (retained verbatim).'); continue; }
     }
     if (body.displayOptions !== undefined) report('displayOptions retained; native input appearance used.');
     controls.push(c);

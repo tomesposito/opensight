@@ -27,11 +27,13 @@ v1 authoring shapes, including direct and wrapped KPI wells. The existing type s
 replaces its editable configuration and archives the original configuration.
 
 The Data panel displays imported calculated expressions and parameters. Foreign
-calculations and all parameters are read-only. Compatible calculations already
+calculations remain read-only; compatible parameter declarations and controls
+are live in Phase 2a ([usage and API contract](parameters-controls.md)). Compatible calculations already
 bound to local sales also populate the v1 field list. Filter groups display their
 original JSON and scope. A single enabled EQUALS category list with
 NON_NULLS_ONLY, scoped to one visual and a known local text column, is editable
-through the existing filter pills. Other filter configurations remain read-only;
+through the existing filter pills. Compatible parameter equality and inclusive range filters also execute.
+Other filter configurations remain read-only;
 previews depending on their unsupported semantics are blocked explicitly.
 Unknown nested filter options are named in the report and block execution even
 when the recognized category values remain editable. A filter with unresolved
@@ -48,8 +50,8 @@ identifier `opensight_local_sales` and the same example sales ARN emitted by v1.
 A conflicting existing identifier blocks export. The original declarations and
 dependency resources are retained. The exact example sales ARN is the local
 binding marker when reading OpenSight exports. Unsupported visual semantics still
-show a placeholder after remapping. Offline previews retain v1's fixed sample
-limits; only API mode can query the local sales dataset.
+show a placeholder after remapping. Parameter-free offline previews retain v1's fixed sample limits. Sheets with
+parameters recompute pinned sales rows locally; API mode queries the local CSV.
 If an imported dataset dependency has the same ID as the example sales dataset,
 it stays unresolved until explicitly remapped. The reserved local identifier
 selects the configured sales data; it never connects to an imported datasource or

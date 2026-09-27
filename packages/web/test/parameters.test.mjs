@@ -54,3 +54,10 @@ test('cascading option queries use parent selections and unrelated parameters do
   let d = authorReducer(emptyDraft(), { type: 'add', kind: 'kpi' });
   assert.deepEqual(buildAuthorQuery(activeSheet(d).visuals[0], [], parameters), buildAuthorQuery(activeSheet(d).visuals[0]));
 });
+
+test('legacy version-2 storage migrates empty parameters/controls and retains builder state', () => {
+  const previous = authorReducer(emptyDraft(), { type: 'add', kind: 'table' });
+  const raw = structuredClone(previous); delete raw.parameters; raw.sheets.forEach(s => { delete s.controls; });
+  const restored = loadDraft(() => ({ getItem: () => JSON.stringify(raw) }));
+  assert.equal(restored.warning, undefined); assert.deepEqual(restored.draft, previous);
+});

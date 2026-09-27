@@ -55,3 +55,20 @@ test('data-supported cascading options narrow immediately in fixtures mode', asy
   assert.deepEqual(available(), ['Software']);
   assert.deepEqual(ui.state().parameters[2].values, ['Hardware']); // Keep explicit selection; show it as unavailable.
 });
+
+import { importBundle, exportBundle } from '../build/test/bundle-authoring.js';
+test('parameters created on new sheets of an imported analysis stay in that resource', async t => {
+  const bundle = exportBundle(initial()), second = structuredClone(bundle.members[0]);
+  second.path = 'analysis/second.json'; second.resource.analysisId = 'second';
+  second.resource.definition.parameterDeclarations[0].stringParameterDeclaration.name = 'NewRegion';
+  bundle.members.push(second);
+  const ui = await mount(t, importBundle(bundle));
+  await ui.click('+ Add sheet'); await ui.click('+ Parameter');
+  await ui.change(ui.label('Parameter name').findByType('input'), 'NewRegion');
+  await ui.change(ui.label('Default values').findByType('textarea'), 'West');
+  await act(() => ui.find('form', p => p['aria-label'] === 'Create parameter').props.onSubmit({ preventDefault() {} }));
+  const created = ui.state().parameters.at(-1);
+  assert.equal(created.name, 'NewRegion'); assert.equal(created.memberPath, 'analysis/authored-analysis.json');
+  assert.equal(exportBundle(ui.state()).members[0].resource.definition.parameterDeclarations.length, 2);
+  assert.equal(exportBundle(ui.state()).members[1].resource.definition.parameterDeclarations.length, 1);
+});

@@ -99,3 +99,56 @@ test('parameters with the same name in different bundle members keep independent
   assert.deepEqual(executeFixtureQuery(query(d, d.sheets[0])).rows, [{ Scaled: 1800 }]);
   assert.deepEqual(executeFixtureQuery(query(d, d.sheets[1])).rows, [{ Scaled: 4500 }]);
 });
+
+test('rebinding an imported customFilterList replaces its selector union without stale parameter names', () => {
+  const b = exportBundle(authored()), f = b.members[0].resource.definition.filterGroups[0].filters[0].categoryFilter;
+  f.configuration.customFilterListConfiguration = f.configuration.customFilterConfiguration; delete f.configuration.customFilterConfiguration;
+  let d = importBundle(b);
+  d = reduce(d, { type: 'parameter-add', parameter: { name: 'Alternate', type: 'string', multiple: false, values: ['West'], defaultValues: ['West'], memberPath: 'analysis/authored-analysis.json' } });
+  d = reduce(d, { type: 'filter-parameter', columnName: 'region', parameterName: 'Alternate' });
+  const exported = exportBundle(d), configuration = exported.members[0].resource.definition.filterGroups[0].filters[0].categoryFilter.configuration;
+  assert.deepEqual(Object.keys(configuration), ['customFilterConfiguration']);
+  assert.equal(configuration.customFilterConfiguration.parameterName, 'Alternate');
+  const again = importBundle(exported);
+  assert.deepEqual(executeFixtureQuery(query(again)).rows, [{ Scaled: 800 }]);
+});
+test('new control IDs avoid opaque and imported original IDs', () => {
+  const b = exportBundle(authored()), controls = b.members[0].resource.definition.sheets[0].parameterControls;
+  controls[0].dropdown.parameterControlId = 'control-6';
+  controls[4].dropdown.cascadingControlConfiguration.sourceControls[0].sourceSheetControlId = 'control-6';
+  controls.push({ opaqueControl: { parameterControlId: 'control-7' } });
+  let d = importBundle(b);
+  d = reduce(d, { type: 'control-add', control: { label: 'New text', kind: 'text', parameterId: 'parameter-4' } });
+  const exported = exportBundle(d), ids = exported.members[0].resource.definition.sheets[0].parameterControls.map(c => Object.values(c)[0].parameterControlId);
+  assert.equal(new Set(ids).size, ids.length); assert.ok(ids.includes('control-8'));
+});
+test('number/date parameter filters can be removed with existing filter pills', () => {
+  let d = authored();
+  for (const [columnName, parameterName] of [['revenue', 'Scale'], ['order_date', 'AsOf']]) {
+    d = reduce(d, { type: 'filter-parameter', columnName, parameterName });
+    assert.ok(activeSheet(d).visuals[0].filters.some(f => f.columnName === columnName));
+    d = reduce(d, { type: 'filter', columnName, values: null });
+    assert.ok(!activeSheet(d).visuals[0].filters.some(f => f.columnName === columnName));
+  }
+});
+
+test('opaque or malformed option semantics stay reported and never become active controls', () => {
+  for (const mutate of [c => { c.dropdown.selectableValues.values = 'East'; }, c => { c.dropdown.minimumValue = 2; }, c => { c.dropdown.selectableValues = { linkToDataSetColumn: { columnName: 'region', dataSetIdentifier: 'sales_data', futureMode: 'REMOTE' } }; }]) {
+    const b = exportBundle(authored()); mutate(b.members[0].resource.definition.sheets[0].parameterControls[0]);
+    const d = importBundle(b);
+    assert.ok(!d.sheets[0].controls.some(c => c.importedId === 'control-1'));
+    assert.match(JSON.stringify(d.bundle.report), /display only; unsupported/);
+    assert.deepEqual(exportBundle(d), b);
+  }
+});
+
+test('new data-backed controls in imported analyses declare their local dataset binding', () => {
+  const resource = serializeDraft(authored());
+  resource.definition.sheets[0].parameterControls = [];
+  const d = reduce(importBundle(wrap(resource)), { type: 'control-add', control: { label: 'Local options', kind: 'dropdown', parameterId: 'parameter-1', source: { columnName: 'region', dataSetIdentifier: 'sales_data', local: true } } });
+  const exported = exportBundle(d), definition = exported.members[0].resource.definition;
+  const source = definition.sheets[0].parameterControls[0].dropdown.selectableValues.linkToDataSetColumn;
+  assert.equal(source.dataSetIdentifier, 'opensight_local_sales');
+  assert.ok(definition.dataSetIdentifierDeclarations.some(ds => ds.identifier === source.dataSetIdentifier));
+  assert.equal(importBundle(exported).sheets[0].controls[0].source.local, true);
+});

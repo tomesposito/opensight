@@ -158,7 +158,7 @@ export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorD
     const source = draft.bundle?.original.members.find(m => m.path === sheet.imported?.memberPath)?.resource;
     const raw = source && (source.resourceType === 'analysis' || source.resourceType === 'dashboard') ? source.definition.sheets?.find(s => s.sheetId === sheet.imported?.sheetId)?.parameterControls : undefined;
     const reserved = Array.isArray(raw) ? raw.flatMap(value => { const body = Object.values(value as Record<string, unknown>)[0]; return isObject(body) && typeof body.parameterControlId === 'string' ? [body.parameterControlId] : []; }) : [];
-    const c = { ...action.control, id: nextId('control', [...sheet.controls.map(c => c.id), ...reserved]) };
+    const c = { ...action.control, ...(action.control.source?.local ? { source: { ...action.control.source, dataSetIdentifier: draft.bundle?.primaryPath ? 'opensight_local_sales' : 'sales_data' } } : {}), id: nextId('control', [...sheet.controls.map(c => c.id), ...reserved]) };
     if (controlError(c, sheetParameters(draft))) return draft;
     try { validateControls([...sheet.controls, c], sheetParameters(draft)); } catch { return draft; }
     return update({ controls: [...sheet.controls, c] });

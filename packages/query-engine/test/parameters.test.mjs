@@ -32,3 +32,16 @@ test('wrong parameter types, missing bindings and multi-value scalar expressions
     const body = query(); mutate(body); assert.throws(() => planVisual(interactiveRequest(body, metadata)), /parameter|binding|Parameter/);
   }
 });
+
+test('string and datetime references bind as typed scalar expressions without interpolation', async () => {
+  const label = "West'); DROP TABLE sales; --";
+  const body = { dimensions: [{ fieldId: 'Label', columnName: 'Label' }], measures: [{ fieldId: 'total', columnName: 'revenue', aggregation: 'SUM' }],
+    calculatedFields: [{ name: 'Label', expression: '${LabelValue}' }, { name: 'Anchor', expression: '${AsOf}' }],
+    filters: [{ columnName: 'Anchor', parameterName: 'AsOf' }],
+    parameterDeclarations: [{ name: 'LabelValue', type: 'string', multiple: false }, { name: 'AsOf', type: 'datetime', multiple: false }],
+    parameterBindings: { LabelValue: [label], AsOf: ['2025-01-01T00:00:00Z'] },
+  };
+  const result = await executeLocal(interactiveRequest(body, metadata), { dataRoot: root });
+  assert.deepEqual(result.rows, [{ Label: label, total: 900 }]);
+  assert.doesNotMatch(result.plan.sql, /DROP TABLE/); assert.match(result.plan.sql, /AS VARCHAR/); assert.match(result.plan.sql, /AS TIMESTAMP/);
+});

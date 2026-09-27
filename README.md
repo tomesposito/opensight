@@ -25,6 +25,8 @@ conformance still need evidence from more complex exports.
 
 The Author UI supports client-side `.qs` import, dataset remapping and ZIP export.
 See [bundle round-trip usage and preservation](docs/bundle-roundtrip.md).
+Parameters and per-sheet controls now drive typed filters, calculated fields,
+cascading dropdowns and debounced queries. See [interactive controls](docs/parameters-controls.md).
 
 ## Quick start
 
@@ -67,5 +69,5 @@ packages/query-engine   Typed synthetic planner + local DuckDB CSV executor
 packages/cli            Archive import/export/validate (planned)
 docs/research           Observed format and API contract research
 fixtures                Sanitized real export + synthetic regression specifications
-conformance             Real-export round trips + source fidelity (planned)
+conformance             Controls-to-query integration; source fidelity planned
 ```

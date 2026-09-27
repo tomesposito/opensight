@@ -12,7 +12,7 @@ export function ParameterEditor({ draft, dispatch }: { draft: AuthorDraft; dispa
     {open && <form aria-label="Create parameter" onSubmit={e => {
       e.preventDefault();
       const values: ParameterValue[] = defaults === '' ? [] : (multiple ? defaults.split('\n') : [defaults]).map(v => type === 'number' ? Number(v) : v);
-      const p: AuthorParameter = { id: 'parameter-1', name, type, multiple: type !== 'datetime' && multiple, ...(type === 'number' ? { integer } : {}), values, defaultValues: values, ...(activeSheet(draft).imported ? { memberPath: activeSheet(draft).imported!.memberPath } : {}) };
+      const p: AuthorParameter = { id: 'parameter-1', name, type, multiple: type !== 'datetime' && multiple, ...(type === 'number' ? { integer } : {}), values, defaultValues: values, ...((activeSheet(draft).imported?.memberPath ?? draft.bundle?.primaryPath) ? { memberPath: activeSheet(draft).imported?.memberPath ?? draft.bundle!.primaryPath } : {}) };
       const problem = parameterError(p) ?? (sheetParameters(draft).some(p => p.name === name) ? 'A parameter with that name already exists.' : undefined);
       if (problem) setError(problem); else { dispatch({ type: 'parameter-add', parameter: p }); setOpen(false); setError(''); setName(''); setDefaults(''); }
     }}>
