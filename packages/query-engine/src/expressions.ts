@@ -8,6 +8,7 @@ interface Declaration { expression: string; path: string }
 /** Resolve only reachable calculations; completed nodes are emitted in dependency order. */
 export class ExpressionBinder {
   readonly calculations: Calculation[] = [];
+  readonly now = new Date().toISOString();
   private readonly declarations = new Map<string, Declaration>();
   private readonly bindings = new Map<string, Binding>();
   private readonly visiting = new Set<string>();
@@ -48,6 +49,7 @@ export class ExpressionBinder {
 export interface ExpressionContext {
   dataSetIdentifier?: string;
   now?: string;
+  validationOnly?: boolean;
   bind?: (name: string, path: string) => Binding;
   parameters?: readonly ParameterDeclaration[];
   values?: ParameterBindings;
@@ -70,8 +72,8 @@ export function parseExpression(source: string, path = '$.expression', context: 
       const end = source.indexOf('}', offset + 2), name = source.slice(offset + 2, end);
       if (end < 0 || !name) fail('INVALID_INPUT', path, `unclosed parameter at offset ${offset}`);
       const parameter = context.parameters?.find(p => p.name === name), values = context.values?.[name];
-      if (context.bind && !parameter) fail('UNRESOLVED_BINDING', path, `unknown parameter: ${name}`);
-      if (parameter && (parameter.multiple || values?.length !== 1)) fail('TYPE_MISMATCH', path, `parameter ${name} requires exactly one scalar value in an expression`);
+      if (context.bind && !parameter && !context.validationOnly) fail('UNRESOLVED_BINDING', path, `unknown parameter: ${name}`);
+      if (parameter && !context.validationOnly && (parameter.multiple || values?.length !== 1)) fail('TYPE_MISMATCH', path, `parameter ${name} requires exactly one scalar value in an expression`);
       offset = end + 1;
       left = { ...info(start, parameter?.type ?? 'unknown'), nullable: false, kind: 'parameter', name, value: values?.[0] ?? 0 };
     } else if (source[offset] === '{') {
@@ -118,6 +120,7 @@ export function parseExpression(source: string, path = '$.expression', context: 
           expect(')'); const f = validateCall(name, args, path);
           left = { ...info(start, f.result === 'first' ? (f.name === 'ifelse' ? args.filter((_, i) => i % 2 === 1 || i === args.length - 1) : args).find(a => a.scalarType !== 'unknown')?.scalarType ?? 'unknown' : f.result, args), kind: 'call', name: f.name, args };
           if (f.stage === 'table') left = { ...left, level: 'table' };
+          if (f.stage === 'over' || ['rank', 'denseRank'].includes(f.name)) left = { ...left, level: constant(args[2], 'POST_AGG_FILTER') === 'PRE_FILTER' ? 'pre_filter' : constant(args[2]) === 'PRE_AGG' ? 'pre_agg' : 'table' };
           if (f.stage === 'aggregate') left = { ...left, level: 'aggregate' };
           if (f.name === 'now') left = { ...info(start, 'datetime'), nullable: false, kind: 'literal', value: context.now ?? new Date().toISOString() };
         } else if (/^(null|true|false)$/i.test(name)) {
@@ -171,5 +174,12 @@ export function expressionSql(expression: RowExpression, dialect: SqlDialect = '
   }
 }
 import { validateCall, functionReference } from './catalog.js';
+import { constant } from './datetime.js';
 import { scalarSql } from './scalar.js';
 import { quoteLiteral } from './validation.js';
+
+/** Inventory every unknown call without treating quoted text or field names as code. */
+export function unsupportedFunctions(source: string): string[] {
+  const code = source.replace(/'(?:\\.|''|[^'])*'|"(?:\\.|""|[^"])*"|\$?\{[^}]*\}/g, ' ');
+  return [...new Set([...code.matchAll(/\b([A-Za-z_][A-Za-z_0-9]*)\s*\(/g)].map(m => m[1]!).filter(name => !functionReference(name)))];
+}

@@ -9,6 +9,7 @@ export interface FunctionReference {
 }
 const entry = (name: string, category: string, signature: string, example: string, min: number, max: number, result: FunctionReference['result'], types?: readonly ScalarType[], stage?: FunctionReference['stage']): FunctionReference => ({ name, category, signature: `${name}(${signature})`, example, min, max, result, types, stage });
 export const functionCatalog: readonly FunctionReference[] = [
+  ...['sumOver', 'avgOver', 'countOver', 'minOver', 'maxOver'].map(n => entry(n, 'Level-aware aggregation', 'measure, [partition fields] [, PRE_FILTER|PRE_AGG|POST_AGG_FILTER]', `${n}({revenue}, [{region}], PRE_AGG)`, 2, 3, n === 'minOver' || n === 'maxOver' ? 'first' : 'number', undefined, 'over')),
   entry('runningSum', 'Table calculation', 'measure, [sort ASC|DESC, ...] [, partition fields]', 'runningSum(sum({revenue}), [{order_date} ASC], [{region}])', 2, 3, 'number', undefined, 'table'),
   ...['periodOverPeriodDifference', 'periodOverPeriodPercentDifference'].map(n => entry(n, 'Table calculation', 'measure, date [, period, offset]', `${n}(sum({revenue}), {order_date}, MONTH, 1)`, 2, 4, 'number', undefined, 'table')),
   entry('percentOfTotal', 'Table calculation', 'measure [, partition fields]', 'percentOfTotal(sum({revenue}), [{region}])', 1, 2, 'number', undefined, 'table'),
@@ -80,7 +81,17 @@ export function validateCall(name: string, args: readonly RowExpression[], path:
     }
     const index = period ? 3 : ['difference', 'percentDifference'].includes(f.name) ? 2 : -1;
     if (index >= 0 && args[index] && !integerConstant(args[index]!)) functionError(f, path, 'offset must be a constant integer');
-    if (ranked && args[2] && constant(args[2]) !== 'POST_AGG_FILTER') functionError(f, path, 'calculation level must be POST_AGG_FILTER');
+    if (ranked && args[2] && !['PRE_FILTER', 'PRE_AGG', 'POST_AGG_FILTER'].includes(constant(args[2]))) functionError(f, path, 'invalid calculation level');
+    if (ranked && args[2] && constant(args[2]) !== 'POST_AGG_FILTER' && ['aggregate', 'table'].includes(args[0]!.level)) functionError(f, path, 'sort expressions must be unaggregated at PRE_FILTER and PRE_AGG');
+  }
+  if (f.stage === 'over') {
+    if (args[1]!.kind !== 'list' || args[1]!.items.some(a => a.kind === 'sort' || a.level === 'aggregate' || a.level === 'table')) functionError(f, path, 'partition must be a list of unaggregated fields');
+    const level = constant(args[2], 'POST_AGG_FILTER');
+    if (!['PRE_FILTER', 'PRE_AGG', 'POST_AGG_FILTER'].includes(level)) functionError(f, path, 'invalid calculation level');
+    if (level === 'POST_AGG_FILTER' && !['aggregate', 'table'].includes(args[0]!.level) && args[0]!.scalarType !== 'unknown') functionError(f, path, 'POST_AGG_FILTER requires an aggregated measure');
+    if (level !== 'POST_AGG_FILTER' && ['aggregate', 'table'].includes(args[0]!.level)) functionError(f, path, `${level} requires an unaggregated measure`);
+    if (level === 'PRE_FILTER' && args.some(a => a.level === 'pre_agg')) functionError(f, path, 'PRE_FILTER cannot depend on PRE_AGG');
+    if (['sumOver', 'avgOver'].includes(f.name) && !['number', 'unknown'].includes(args[0]!.scalarType)) functionError(f, path, 'measure must be numeric');
   }
   const periodIndex = f.name === 'addDateTime' ? 1 : f.name === 'dateDiff' ? 2 : ['truncDate', 'extract'].includes(f.name) ? 0 : -1;
   if (periodIndex >= 0 && args[periodIndex]) {

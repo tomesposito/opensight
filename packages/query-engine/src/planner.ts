@@ -1,3 +1,5 @@
+import { expressionChildren } from './evaluate.js';
+import { functionReference, functionError } from './catalog.js';
 import { validateParameters, type ParameterValue } from './parameters.js';
 import { ExpressionBinder, expressionSql } from './expressions.js';
 import { bindMetadata } from './metadata.js';
@@ -294,12 +296,23 @@ export function planVisual(request: PlanRequest, options: PlanOptions = {}): Que
     const values = parameters.bindings[name]!;
     predicates.push({ columnName, path, scalarType: type, operator: operator as 'EQUALS' | 'GREATER_THAN_OR_EQUAL_TO' | 'LESS_THAN_OR_EQUAL_TO', ...(values.length === 1 ? { value: values[0]! } : { values }) });
   }
+  const nodes = (e: RowExpression): RowExpression[] => [e, ...expressionChildren(e).flatMap(nodes)];
+  const allNodes = binder.calculations.flatMap(c => nodes(c.expression));
+  const checkGroupField = (e: RowExpression, call: Extract<RowExpression, { kind: 'call' }>): void => {
+    if (e.level === 'aggregate' || e.kind === 'call' && functionReference(e.name)?.stage) return;
+    if (e.kind === 'column' && !fields.dimensions.some(d => d.columnName === e.columnName)) functionError(functionReference(call.name)!, call.location.path, `field ${e.columnName} must be a visual grouping dimension`);
+    expressionChildren(e).forEach(a => checkGroupField(a, call));
+  };
+  for (const node of allNodes) if (node.kind === 'call' && node.level === 'table') {
+    for (const arg of node.args) if (arg.kind === 'list') checkGroupField(arg, node);
+    if (node.name.startsWith('periodOverPeriod')) checkGroupField(node.args[1]!, node);
+  }
   const plan: Omit<QueryPlan, 'sql' | 'parameters'> = {
     dialect, mode: 'synthetic-local', visualId, dataSetIdentifier: identifier,
     tableName: metadata.tableName, sourceColumns: metadata.columns, localData: metadata.localData,
     ...(dialect === 'postgres' ? { tableSchema: metadata.tableSchema } : {}),
     calculations: binder.calculations, filters: predicates, ...fields,
-    ...(binder.calculations.some(c => ['table', 'pre_filter', 'pre_agg'].includes(c.expression.level)) ? { postProcess: true } : {}),
+    ...(allNodes.some(e => ['table', 'pre_filter', 'pre_agg'].includes(e.level)) || predicates.some(f => ['aggregate', 'table'].includes(binder.bind(f.columnName, f.path).level ?? 'row')) ? { postProcess: true } : {}),
     stages: ['source', 'row-calculations', 'row-filters', 'visual-aggregation', 'order'],
   };
   const values: ParameterValue[] = [];

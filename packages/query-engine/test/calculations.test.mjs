@@ -85,3 +85,33 @@ test('table calculation fixture differential uses calendar offsets, partitions, 
     assert.deepEqual((await differential(r, pg)).map(r => r.calculated), [540, 585, 810]);
   });
 });
+
+
+test('level-aware stages agree across engines and preserve filter ordering', async t => {
+  const pg = await postgresFixture(t);
+  const expected = { sum: [900, 500], avg: [900/7, 125], count: [7, 4], min: [0, 0], max: [300, 300] };
+  for (const [name, values] of Object.entries(expected)) for (const [i, level] of ['PRE_FILTER', 'PRE_AGG'].entries()) await t.test(`${name}Over ${level}`, async () => {
+    const r = request(); calculation(r, `${name}Over({revenue}, [], ${level})`); wells(r).Values = [measure('calculated', 'MIN')];
+    assert.deepEqual(await differential(r, pg), [{ calculated: values[i] }]);
+  });
+  for (const name of Object.keys(expected)) await t.test(`${name}Over POST_AGG_FILTER`, async () => {
+    const r = request('sales-table'); r.analysis.Definition.FilterGroups = []; wells(r).GroupBy = [dimension('region')];
+    calculation(r, `${name}Over(sum({revenue}), [], POST_AGG_FILTER)`);
+    const value = { sum: 900, avg: 450, count: 2, min: 400, max: 500 }[name];
+    assert.deepEqual(await differential(r, pg), [{ region: 'East', calculated: value }, { region: 'West', calculated: value }]);
+  });
+  await t.test('PRE_FILTER nested in an aggregate survives the analysis filter', async () => {
+    const r = request(); calculation(r, 'sum({revenue}) / min(sumOver({revenue}, [], PRE_FILTER))');
+    assert.deepEqual(await differential(r, pg), [{ calculated: 500/900 }]);
+  });
+  await t.test('PRE_AGG partitions can use fields absent from the visual', async () => {
+    const r = request(); calculation(r, 'max(sumOver({revenue}, [{category}], PRE_AGG))');
+    assert.deepEqual(await differential(r, pg), [{ calculated: 300 }]);
+  });
+  await t.test('POST_AGG_FILTER sees aggregate-filtered groups', async () => {
+    const r = request('sales-table'); r.analysis.Definition.FilterGroups = []; wells(r).GroupBy = [dimension('region')];
+    calculation(r, 'percentOfTotal(sum({revenue}))'); r.analysis.Definition.CalculatedFields.push({ Name: 'Total', DataSetIdentifier: 'sales_data', Expression: 'sum({revenue})' });
+    r.parameterDeclarations = [{ name: 'Threshold', type: 'number', multiple: false }]; r.parameterBindings = { Threshold: [450] }; r.parameterFilters = [{ columnName: 'Total', parameterName: 'Threshold', operator: 'GREATER_THAN_OR_EQUAL_TO' }];
+    assert.deepEqual(await differential(r, pg), [{ region: 'East', calculated: 1 }]);
+  });
+});

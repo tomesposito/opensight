@@ -27,7 +27,31 @@ export function evaluatePlan(plan: QueryPlan, input: readonly ResultRow[]): Resu
     for (const c of plan.calculations) if (c.expression.level === 'row' && !Object.hasOwn(row, c.name)) row[c.name] = evaluate(c.expression, row);
     return row;
   });
-  rows = rows.filter(row => plan.filters.filter(f => !['aggregate', 'table'].includes(calculations.get(f.columnName)?.level ?? 'row')).every(f => matchesFilter(f, row)));
+  const precomputed = new Map<RowExpression, Map<ResultRow, ResultValue>>();
+  const rowValue = (e: RowExpression, row: ResultRow): ResultValue => evaluate(e, row, node => precomputed.get(node)?.get(row));
+  const stage = (level: ExpressionLevel): void => {
+    const visit = (e: RowExpression): void => {
+      expressionChildren(e).forEach(visit);
+      if (e.kind !== 'call' || e.level !== level || !['over', 'table'].includes(functionReference(e.name)?.stage ?? '') || precomputed.has(e)) return;
+      const result = new Map<ResultRow, ResultValue>(); precomputed.set(e, result);
+      const rank = ['rank', 'denseRank'].includes(e.name), partition = list(e.args[1]);
+      const partitions = new Map<string, ResultRow[]>();
+      const key = (row: ResultRow) => JSON.stringify(partition.map(p => rowValue(p, row)));
+      for (const row of rows) { const k = key(row); if (!partitions.has(k)) partitions.set(k, []); partitions.get(k)!.push(row); }
+      for (const peers of partitions.values()) {
+        if (rank) {
+          const compare = (a: ResultRow, b: ResultRow) => { for (const sort of list(e.args[0])) { const expr = sort.kind === 'sort' ? sort.expression : sort; const order = compareValues(rowValue(expr, a), rowValue(expr, b)) * (sort.kind === 'sort' && sort.direction === 'DESC' ? -1 : 1); if (order) return order; } return 0; };
+          peers.sort(compare); let dense = 0, rankValue = 1;
+          peers.forEach((row, i) => { if (!i || compare(row, peers[i - 1]!)) { dense++; rankValue = i + 1; } result.set(row, e.name === 'rank' ? rankValue : dense); });
+        } else { const value = aggregateValue(e.name.replace('Over', '').toLowerCase(), peers.map(row => rowValue(e.args[0]!, row))); for (const row of peers) result.set(row, value); }
+      }
+    };
+    for (const c of plan.calculations) { visit(c.expression); if (c.expression.level === level) for (const row of rows) row[c.name] = rowValue(c.expression, row); }
+  };
+  stage('pre_filter');
+  const filterLevel = (levels: ExpressionLevel[]) => { rows = rows.filter(row => plan.filters.filter(f => levels.includes(calculations.get(f.columnName)?.level ?? 'row')).every(f => matchesFilter(f, row))); };
+  filterLevel(['row', 'pre_filter']);
+  stage('pre_agg'); filterLevel(['pre_agg']);
   const groups = new Map<string, Group>();
   if (!plan.dimensions.length) groups.set('[]', { dimensions: [], context: {}, rows: [] });
   for (const row of rows) {
@@ -47,15 +71,17 @@ export function evaluatePlan(plan: QueryPlan, input: readonly ResultRow[]): Resu
     let results = cache.get(e); if (!results) { results = new Map(); cache.set(e, results); }
     if (results.has(group)) return results.get(group)!;
     const value = evaluate(e, group.context, node => {
+      if (precomputed.has(node)) return precomputed.get(node)!.get(group.rows[0]!) ?? null;
       if (node.kind === 'column') { const c = calculations.get(node.columnName); if (c && ['aggregate', 'table'].includes(c.level)) return run(c, group); }
       if (node.kind !== 'call') return undefined;
       const stage = functionReference(node.name)?.stage;
-      if (stage === 'aggregate') return aggregateValue(node.name, group.rows.map(row => evaluate(node.args[0]!, row)), Number(constant(node.args[1], '50')));
-      if (stage !== 'table') return undefined;
+      if (stage === 'aggregate') return aggregateValue(node.name, group.rows.map(row => rowValue(node.args[0]!, row)), Number(constant(node.args[1], '50')));
+      if (stage !== 'table' && stage !== 'over') return precomputed.get(node)?.get(group.rows[0]!);
       const rank = ['rank', 'denseRank'].includes(node.name), period = node.name.startsWith('periodOverPeriod');
-      const partition = list(node.args[rank || node.name === 'percentOfTotal' ? 1 : node.name === 'runningSum' ? 2 : 3]);
+      const partition = list(node.args[stage === 'over' || rank || node.name === 'percentOfTotal' ? 1 : node.name === 'runningSum' ? 2 : 3]);
       const key = (g: Group) => JSON.stringify(partition.map(p => run(p, g)));
       let peers = visible.filter(g => key(g) === key(group));
+      if (stage === 'over') return aggregateValue(node.name.replace('Over', '').toLowerCase(), peers.map(g => run(node.args[0]!, g)));
       if (period) {
         const dateArg = node.args[1]!, dimension = plan.dimensions.find(d => d.columnName === (dateArg.kind === 'column' ? dateArg.columnName : ''));
         const unitName = periodUnits[constant(node.args[2], dimension?.granularity ?? 'MONTH').toUpperCase()]!;
@@ -89,10 +115,13 @@ export function evaluatePlan(plan: QueryPlan, input: readonly ResultRow[]): Resu
     results.set(group, value); return value;
   };
   // Aggregate filters precede table calculations; table-calculation filters follow them.
-  for (const level of ['aggregate', 'table'] as const) {
+  for (const level of ['aggregate'] as const) {
     const filters = plan.filters.filter(f => calculations.get(f.columnName)?.level === level);
     if (filters.length) visible = visible.filter(g => filters.every(f => matchesFilter(f, { [f.columnName]: run(calculations.get(f.columnName)!, g) })));
   }
+  for (const group of visible) for (const c of plan.calculations) if (c.expression.level === 'table') run(c.expression, group);
+  const tableFilters = plan.filters.filter(f => calculations.get(f.columnName)?.level === 'table');
+  visible = visible.filter(g => tableFilters.every(f => matchesFilter(f, { [f.columnName]: run(calculations.get(f.columnName)!, g) })));
   return visible.map(group => Object.fromEntries([
     ...plan.dimensions.map((d, i) => [d.outputName, group.dimensions[i]!]),
     ...plan.measures.map(m => { const c = calculations.get(m.columnName); return [m.outputName, c && ['aggregate', 'table'].includes(c.level) ? run(c, group) : aggregateValue(m.aggregation.toLowerCase(), group.rows.map(row => row[m.columnName] ?? null))]; }),

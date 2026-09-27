@@ -4,6 +4,6 @@ export { interactiveRequest } from './interactive.js';
 export type { InteractiveQuery } from './interactive.js';
 export { evaluatePlan } from './evaluate.js';
 
-export { parseExpression, expressionSql } from './expressions.js';
+export { parseExpression, expressionSql, unsupportedFunctions } from './expressions.js';
 export { evaluateExpression } from './evaluate-expression.js';
 export { functionCatalog } from './catalog.js';
