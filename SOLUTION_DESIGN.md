@@ -1056,7 +1056,21 @@ protected datasets stay rejected (§3.4 fail-closed rule).
 tests, namespace isolation tests, bypass-attempt tests (fail closed),
 API validation tests; full suite green; demo rebuilt.
 
-- Folder management, asset sharing APIs.
+#### Phase 3c — Folders, sharing, embedding — NEW 2026-09-27
+
+The final slice of Phase 3: asset organization and consumption.
+
+**Scope:**
+- **Folders**: folder CRUD as API resources; asset move/copy between
+  folders; folder-level permissions inherited from namespace grants.
+- **Asset sharing APIs**: share analyses/dashboards with users/groups
+  (viewer/co-owner roles); revocation; share-listing endpoints.
+- **Embedding SDK**: client-side SDK for embedding dashboards/visuals
+  (URL signing, single-sign-on hooks as documented stubs against the
+  3b principal model); embed URL generation endpoint.
+
+**Acceptance:** folder CRUD/move tests, share/revoke tests, embed URL
+signing tests, API validation tests; full suite green; demo rebuilt.
 
 ### Phase 4 — Parity & beyond
 - Paginated reports, Q-like natural language (investigate, don't commit).
