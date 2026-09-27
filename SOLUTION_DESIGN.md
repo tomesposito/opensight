@@ -934,6 +934,42 @@ up/down/breadcrumb tests, hierarchy definition tests, bundle
 round-trip tests with filter actions and drill config, honest-state
 tests for non-participating visuals; full suite green; demo rebuilt.
 
+### Phase 2c — Full calculated-field function library — NEW 2026-09-27
+
+The third slice of Phase 2 (Expression & interactivity): calculated
+fields grow from the v1 expression subset to the full QuickSight
+function library, evaluated identically in every engine.
+
+**Scope:**
+- Implement the QuickSight calculated-field function catalog across
+  categories: string, numeric, datetime, conditional (ifelse,
+  coalesce, nullIf), aggregation (sum, avg, count, distinct_count,
+  min, max, median, stdev, var, percentile), table calculations
+  (runningSum, periodOverPeriodDifference,
+  periodOverPeriodPercentDifference, percentOfTotal, difference,
+  percentDifference), level-aware aggregations (sumOver, avgOver,
+  countOver, minOver, maxOver with PRE_FILTER / PRE_AGG /
+  POST_AGG_FILTER semantics), and type-conversion functions.
+- One evaluator shared by the DuckDB path, the Postgres path, and
+  the fixtures/client path so all three agree (cross-engine
+  differential tests).
+- Builder: function reference picker in the calculated-field editor
+  with signatures and examples; syntax validation with
+  QuickSight-style error messages.
+- Bundle import: calculated-field expressions import verbatim;
+  unsupported functions are reported honestly in the import report
+  (named, per-expression) rather than silently dropped.
+
+**Out of scope for 2c:** remaining visual types and themes (2d);
+natural-language expression generation ("Build for me") stays a
+Phase 4 investigation item.
+
+**Acceptance:** per-function unit tests against documented QuickSight
+semantics, cross-engine differential tests (DuckDB vs Postgres vs
+client evaluator agree on the fixture suite), editor validation
+tests, import-report coverage for unsupported functions; full suite
+green; demo rebuilt.
+
 ### Phase 3 — Enterprise surface
 - Scheduled DuckDB refresh (D8), email reports, threshold alerts.
 - Expand row-level / column-level security enforcement, namespaces, embedding SDK. Protected datasets are rejected from Phase 1 until this support is available (§3.4).
