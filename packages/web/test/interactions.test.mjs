@@ -50,3 +50,39 @@ test('honest action config retains nonparticipating visuals with reasons', () =>
   assert.match(html, /visual-3/); assert.match(html, /Cannot receive: KPI has no grouped dimensions/);
   assert.match(renderToStaticMarkup(createElement(ActionEditor, { draft: d, visual: kpi, dispatch() {} })), /Cannot originate: KPI has no selectable dimension/);
 });
+
+import { hierarchyError, withDrill, drillDown, drillUp, drillBreadcrumbs } from '../build/test/drill.js';
+const dateHierarchy = { id: 'dates', name: 'Order date', levels: ['YEAR', 'QUARTER', 'MONTH'].map(granularity => ({ columnName: 'order_date', granularity })) };
+test('hierarchy definition validates unique ordered dimensions and survives reducer validation', () => {
+  assert.equal(hierarchyError(dateHierarchy), undefined);
+  assert.match(hierarchyError({ ...dateHierarchy, levels: [dateHierarchy.levels[1], dateHierarchy.levels[0]] }), /coarser/);
+  assert.match(hierarchyError({ ...dateHierarchy, levels: [dateHierarchy.levels[0], dateHierarchy.levels[0]] }), /unique/);
+  assert.match(hierarchyError({ ...dateHierarchy, levels: [{ columnName: 'revenue' }, { columnName: 'region' }] }), /dimension/);
+  const d = authorReducer(actionDraft(), { type: 'hierarchy', hierarchy: dateHierarchy });
+  validateDraft(d); assert.equal(activeSheet(d).visuals[1].dimension, 'order_date');
+});
+test('bar, line, pie and pivot drill through year, quarter and month with parent filters and breadcrumbs', () => {
+  for (const kind of ['bar', 'line', 'pie', 'pivot']) {
+    let d = authorReducer(emptyDraft(), { type: 'add', kind });
+    d = authorReducer(d, { type: 'hierarchy', hierarchy: dateHierarchy });
+    const v = activeSheet(d).visuals[0];
+    const rows = path => executeFixtureQuery(buildAuthorQuery(withDrill(v, path))).rows;
+    assert.deepEqual(rows([]), [{ year: '2025', revenue: 900 }]);
+    const year = drillDown(v, [], { values: { order_date: '2025' } });
+    assert.deepEqual(rows(year), [{ quarter: '2025-Q1', revenue: 650 }, { quarter: '2025-Q2', revenue: 250 }]);
+    const quarter = drillDown(v, year, { values: { order_date: '2025-Q1' } });
+    assert.deepEqual(rows(quarter), [{ month: '2025-01', revenue: 600 }, { month: '2025-03', revenue: 50 }]);
+    assert.deepEqual(drillDown(v, quarter, { values: { order_date: '2025-01' } }), quarter);
+    assert.deepEqual(drillUp(quarter), year); assert.deepEqual(drillUp(quarter, 0), []);
+    assert.deepEqual(drillBreadcrumbs(v, quarter).map(c => c.depth), [0, 1, 2]);
+    assert.match(drillBreadcrumbs(v, quarter)[2].label, /2025-Q1/);
+    const projected = withDrill(v, quarter);
+    assert.equal(compileVisual({ ...buildAuthorVisual(projected), rows: rows(quarter) }).state, 'ready');
+  }
+});
+test('categorical hierarchy drill retains the selected parent and aggregates child rows', () => {
+  let d = authorReducer(emptyDraft(), { type: 'add', kind: 'pivot' });
+  d = authorReducer(d, { type: 'hierarchy', hierarchy: { id: 'geo', name: 'Region to category', levels: [{ columnName: 'region' }, { columnName: 'category' }] } });
+  const v = activeSheet(d).visuals[0], path = drillDown(v, [], { values: { region: 'West' } });
+  assert.deepEqual(executeFixtureQuery(buildAuthorQuery(withDrill(v, path))).rows, [{ category: 'Hardware', revenue: 350 }, { category: 'Software', revenue: 50 }]);
+});

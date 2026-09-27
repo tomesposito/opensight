@@ -102,7 +102,7 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
       keys(agg, [sumKey], fp);
       if (agg[sumKey] !== 'SUM') fail(`${fp}.${aggKey}`, 'only explicit SUM result bindings are supported');
     }
-    if (name === key('dateDimensionField', 'DateDimensionField')) enumValue(f[key('dateGranularity', 'DateGranularity')], ['DAY', 'MONTH', 'YEAR'], 'DAY', `${fp}.${key('dateGranularity', 'DateGranularity')}`);
+    if (name === key('dateDimensionField', 'DateDimensionField')) enumValue(f[key('dateGranularity', 'DateGranularity')], ['DAY', 'MONTH', 'QUARTER', 'YEAR'], 'DAY', `${fp}.${key('dateGranularity', 'DateGranularity')}`);
     const column = object(f[key('column', 'Column')], `${fp}.${key('column', 'Column')}`);
     keys(column, [key('columnName', 'ColumnName'), key('dataSetIdentifier', 'DataSetIdentifier')], fp);
     return {

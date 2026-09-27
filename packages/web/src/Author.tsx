@@ -1,3 +1,5 @@
+import { HierarchyEditor } from './HierarchyEditor.js';
+import { withDrill, drillDown, drillUp, drillBreadcrumbs, levelLabel, type DrillPath } from './drill.js';
 import { ActionEditor } from './ActionEditor.js';
 import { toggleSelection, withActionFilters, originProblem, type ActionSelections } from './interactions.js';
 import type { VisualInteraction } from './visual-selection.js';
@@ -109,10 +111,14 @@ export function AuthorCanvas({ draft, dispatch, client }: EditorProps) {
   const [well, setWell] = useState<Well>('rows');
   const [calculationOpen, setCalculationOpen] = useState(false);
   const sheet = activeSheet(draft), fields = dataFields(draft.calculatedFields);
-  const interactionKey = JSON.stringify([sheet.id, sheet.visuals.map(v => [v.id, v.kind, v.dimension, v.rows, v.columns, v.filterActions, v.imported]), draft.parameters]);
+  const interactionKey = JSON.stringify([sheet.id, sheet.visuals.map(v => [v.id, v.kind, v.dimension, v.rows, v.columns, v.filterActions, v.hierarchy, v.imported]), draft.parameters]);
   const [interactionState, setInteractionState] = useState<{ key: string; selections: ActionSelections }>({ key: interactionKey, selections: {} });
   const selections = interactionState.key === interactionKey ? interactionState.selections : {};
-  const interactive = sheet.visuals.some(v => v.filterActions?.length);
+  const [drillState, setDrillState] = useState<{ key: string; paths: Record<string, DrillPath>; armed?: string }>({ key: interactionKey, paths: {} });
+  const paths = drillState.key === interactionKey ? drillState.paths : {};
+  const armed = drillState.key === interactionKey ? drillState.armed : undefined;
+  const interactive = sheet.visuals.some(v => v.filterActions?.length || v.hierarchy);
+  const setPath = (id: string, path: DrillPath) => setDrillState({ key: interactionKey, paths: { ...paths, [id]: path } });
   const clearActions = () => setInteractionState({ key: interactionKey, selections: {} });
   const selected = sheet.visuals.find(v => v.id === sheet.selectedId);
   const { width, containerRef } = useContainerWidth({ initialWidth: 900 });
@@ -164,9 +170,28 @@ export function AuthorCanvas({ draft, dispatch, client }: EditorProps) {
               dragConfig={{ enabled: !mobile, handle: '.drag-handle' }} resizeConfig={{ enabled: !mobile, handles: ['se', 'sw'] }}
               onDragStop={next => { if (!mobile) dispatch({ type: 'layout', sheetId: sheet.id, layout: next }); }}
               onResizeStop={next => { if (!mobile) dispatch({ type: 'layout', sheetId: sheet.id, layout: next }); }}>
-              {sheet.visuals.map((visual, index) => <div key={visual.id}>
-                <AuthorCard interactive={interactive} interaction={visual.filterActions?.length && !originProblem(visual) ? { brush: visual.kind === 'line', onClear: clearActions, onSelect: selection => setInteractionState({ key: interactionKey, selections: toggleSelection(selections, visual.id, selection) }) } : undefined} visual={withActionFilters(sheet, withInheritedParameterFilters(draft, sheet, visual), selections, draft.calculatedFields)} index={index} count={sheet.visuals.length} selected={visual.id === sheet.selectedId} filterProblem={importedFilterProblem(draft, sheet, visual)} dispatch={dispatch} client={client} calculations={draft.calculatedFields} parameters={sheetParameters(draft)} />
-              </div>)}
+              {sheet.visuals.map((visual, index) => {
+                const path = paths[visual.id] ?? [], projected = withDrill(withInheritedParameterFilters(draft, sheet, visual), path, draft.calculatedFields);
+                const hierarchy = visual.kind !== 'kpi' ? visual.hierarchy : undefined;
+                const interaction: VisualInteraction | undefined = (visual.filterActions?.length || hierarchy) && !originProblem(projected) ? {
+                  brush: visual.kind === 'line' && !!visual.filterActions?.length && armed !== visual.id,
+                  onClear: clearActions,
+                  onSelect: selection => {
+                    if (armed === visual.id && hierarchy) setPath(visual.id, drillDown(visual, path, selection));
+                    else if (visual.filterActions?.length) setInteractionState({ key: interactionKey, selections: toggleSelection(selections, visual.id, { ...selection, values: Object.assign({}, ...path.map(p => p.values), selection.values) }) });
+                  },
+                } : undefined;
+                return <div key={visual.id}><AuthorCard interactive={interactive} interaction={interaction}
+                  drillNavigation={hierarchy && <nav className="drill-navigation" aria-label={`Drill breadcrumb for ${visual.id}`}>
+                    {drillBreadcrumbs(visual, path).map((crumb, i) => <button type="button" key={i} onClick={() => setPath(visual.id, drillUp(path, crumb.depth))}>{crumb.label}</button>)}
+                    <span>Current: {levelLabel(hierarchy.levels[path.length]!)}</span>
+                    <button type="button" disabled={!path.length} onClick={() => setPath(visual.id, drillUp(path))}>Drill up</button>
+                    <button type="button" disabled={path.length >= hierarchy.levels.length - 1} aria-pressed={armed === visual.id} onClick={() => setDrillState({ key: interactionKey, paths, armed: armed === visual.id ? undefined : visual.id })}>Drill down</button>
+                    {armed === visual.id && <span role="status">Select a category or data row to drill.</span>}
+                  </nav>}
+                  visual={withActionFilters(sheet, projected, selections, draft.calculatedFields)} index={index} count={sheet.visuals.length} selected={visual.id === sheet.selectedId} filterProblem={importedFilterProblem(draft, sheet, visual)} dispatch={dispatch} client={client} calculations={draft.calculatedFields} parameters={sheetParameters(draft)} />
+                </div>;
+              })}
             </GridLayout>
           </div>
         </div>
@@ -226,6 +251,7 @@ function Properties({ visual, draft, dispatch, client }: EditorProps & { visual:
       {visual.imported.unmappedFields.length > 0 && <p>Fields requiring manual assignment: {visual.imported.unmappedFields.join(', ')}</p>}
       {visual.imported.issues.length > 0 && <details><summary>Unsupported features (retained)</summary><ul>{visual.imported.issues.map((issue, i) => <li key={i}>{issue}</li>)}</ul></details>}
     </div>}
+    <HierarchyEditor draft={draft} visual={visual} dispatch={dispatch} />
     <ActionEditor draft={draft} visual={visual} dispatch={dispatch} />
     <FilterEditor visual={visual} parameters={sheetParameters(draft)} calculations={draft.calculatedFields} dispatch={dispatch} client={visual.imported && !visual.imported.local ? undefined : client} />
   </>;
@@ -281,8 +307,8 @@ function CalculationDialog({ fields, onSave, onClose }: { fields: CalculatedFiel
   </dialog>;
 }
 
-function AuthorCard({ visual, index, count, selected, dispatch, client, calculations, filterProblem, parameters, interaction, interactive }: {
-  interaction?: VisualInteraction; interactive?: boolean; visual: AuthorVisual; index: number; count: number; selected: boolean; filterProblem?: string; dispatch: Dispatch<AuthorAction>; client?: QueryClient; calculations: CalculatedField[]; parameters: AuthorParameter[];
+function AuthorCard({ visual, index, count, selected, dispatch, client, calculations, filterProblem, parameters, interaction, interactive, drillNavigation }: {
+  drillNavigation?: ReactNode; interaction?: VisualInteraction; interactive?: boolean; visual: AuthorVisual; index: number; count: number; selected: boolean; filterProblem?: string; dispatch: Dispatch<AuthorAction>; client?: QueryClient; calculations: CalculatedField[]; parameters: AuthorParameter[];
 }) {
   const problem = authorVisualProblem(visual) ?? filterProblem;
   const preview = useMemo(() => client || interactive || parameters.length || problem ? undefined : buildAuthorPreview(visual), [visual, client, interactive, problem, parameters.length]);
@@ -297,6 +323,7 @@ function AuthorCard({ visual, index, count, selected, dispatch, client, calculat
         <button type="button" aria-label={`Remove ${label}`} onClick={e => { e.stopPropagation(); dispatch({ type: 'remove', id: visual.id }); }}>×</button>
       </div>
     </div>
+    {drillNavigation}
     {problem ? <div className="bundle-placeholder" role="status"><p>{problem}</p>
       {visual.imported && !visual.imported.local && <button type="button" onClick={e => { e.stopPropagation(); dispatch({ type: 'remap', id: visual.id }); }}>Remap to local dataset</button>}
     </div> : client || interactive || parameters.length ? <LiveAuthorVisual interactive={interactive} interaction={interaction} visual={visual} client={client} calculations={calculations} parameters={parameters} /> : preview && <VisualCard visual={preview} />}

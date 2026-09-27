@@ -39,7 +39,7 @@ export interface Dimension {
   readonly fieldId: string;
   readonly outputName: string;
   readonly columnName: string;
-  readonly granularity?: 'MONTH';
+  readonly granularity?: 'YEAR' | 'QUARTER' | 'MONTH' | 'DAY';
   readonly scalarType: ScalarType;
   readonly path: string;
 }

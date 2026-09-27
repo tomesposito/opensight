@@ -50,7 +50,7 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
       if (typeof column.name !== 'string' || !column.name || (column.type !== 'string' && column.type !== 'number')) throw new ApiError('Invalid query result column.');
       return { name: column.name, type: column.type };
     });
-    const expected = [...query.dimensions.map(field => field.granularity === 'MONTH' ? 'month' : field.fieldId), ...query.measures.map(field => field.fieldId)];
+    const expected = [...query.dimensions.map(field => field.granularity ? field.granularity.toLowerCase() : field.fieldId), ...query.measures.map(field => field.fieldId)];
     if (new Set(expected).size !== expected.length || JSON.stringify(columns.map(column => column.name)) !== JSON.stringify(expected)) {
       throw new ApiError('Invalid query result: columns do not match assigned fields.');
     }

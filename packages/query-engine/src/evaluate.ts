@@ -27,7 +27,7 @@ export function evaluatePlan(plan: QueryPlan, input: readonly ResultRow[]): Resu
   const groups = new Map<string, { dimensions: ResultValue[]; rows: ResultRow[] }>();
   if (!plan.dimensions.length) groups.set('[]', { dimensions: [], rows: [] });
   for (const row of rows) {
-    const dimensions = plan.dimensions.map(d => row[d.columnName] == null ? null : d.granularity === 'MONTH' ? String(row[d.columnName]).slice(0, 7) : row[d.columnName]!);
+    const dimensions = plan.dimensions.map(d => row[d.columnName] == null ? null : d.granularity === 'YEAR' ? String(row[d.columnName]).slice(0, 4) : d.granularity === 'QUARTER' ? `${String(row[d.columnName]).slice(0, 4)}-Q${Math.ceil(Number(String(row[d.columnName]).slice(5, 7)) / 3)}` : d.granularity === 'MONTH' ? String(row[d.columnName]).slice(0, 7) : d.granularity === 'DAY' ? String(row[d.columnName]).slice(0, 10) : row[d.columnName]!);
     const key = JSON.stringify(dimensions);
     if (!groups.has(key)) groups.set(key, { dimensions, rows: [] });
     groups.get(key)!.rows.push(row);

@@ -1,3 +1,4 @@
+import { hierarchyError, type DimensionHierarchy, type DateGrain } from './drill.js';
 import { validFilterActions, type FilterAction, type InteractionFilter } from './interactions.js';
 import { serializeControl, serializeFilter } from './bundle-controls.js';
 import { controlError, validateControls, type AuthorControl } from './controls.js';
@@ -51,6 +52,8 @@ export interface AuthorVisual {
   horizontal: boolean; stacked: boolean; totals: boolean; subtotals: boolean;
   filters: CategoryFilter[];
   filterActions?: FilterAction[];
+  hierarchy?: DimensionHierarchy;
+  dateGrain?: DateGrain;
   interactionFilters?: InteractionFilter[];
   imported?: ImportedVisual;
 }
@@ -87,6 +90,7 @@ export function calculationError(field: CalculatedField, existing: readonly Data
   if (field.role !== 'dimension' && field.role !== 'measure') return 'Choose a field role.';
 }
 export type AuthorAction =
+  | { type: 'hierarchy'; hierarchy: DimensionHierarchy | null }
   | { type: 'filter-actions'; actions: FilterAction[] }
   | { type: 'import'; draft: AuthorDraft }
   | { type: 'parameter-add'; parameter: Omit<AuthorParameter, 'id'> }
@@ -206,6 +210,12 @@ export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorD
         rows: tabular(action.kind) ? (tabular(visual.kind) ? visual.rows : visual.dimension ? [visual.dimension] : []) : [],
         columns: action.kind === 'pivot' ? visual.columns : [],
         measures: singleMeasure(action.kind) ? visual.measures.slice(0, 1) : visual.measures };
+      case 'hierarchy': {
+        if (!action.hierarchy) { const { hierarchy: _old, ...rest } = visual; return rest; }
+        if (visual.kind === 'kpi' || hierarchyError(action.hierarchy, draft.calculatedFields)) return visual;
+        const root = action.hierarchy.levels[0]!.columnName;
+        return { ...visual, hierarchy: action.hierarchy, dimension: root, ...(tabular(visual.kind) ? { rows: [root, ...visual.rows.slice(1).filter(f => f !== root)], columns: visual.columns.filter(f => f !== root) } : {}) };
+      }
       case 'filter-actions': return validFilterActions(action.actions) ? { ...visual, filterActions: action.actions } : visual;
       case 'title': return { ...visual, title: action.title };
       case 'donut': return { ...visual, donut: visual.kind === 'pie' && action.donut };
@@ -274,13 +284,13 @@ export function authorVisualProblem(visual: AuthorVisual): string | undefined {
 function columnField(name: string): BundleColumnField {
   return { fieldId: name, column: { dataSetIdentifier: 'sales_data', columnName: name } };
 }
-function dimensionField(name: string): BundleDimensionField {
-  return name === 'order_date' ? { dateDimensionField: { ...columnField(name), dateGranularity: 'MONTH' } }
+function dimensionField(name: string, granularity: DateGrain = 'MONTH'): BundleDimensionField {
+  return name === 'order_date' ? { dateDimensionField: { ...columnField(name), dateGranularity: granularity } }
     : name === 'order_id' ? { numericalDimensionField: columnField(name) } : { categoricalDimensionField: columnField(name) };
 }
 /** Typed camelCase projection, including the parser's opaque extensions. */
 export function serializeVisual(visual: AuthorVisual): BundleVisual {
-  const category = visualDimensions(visual).map(dimensionField);
+  const category = visualDimensions(visual).map(name => dimensionField(name, visual.dateGrain));
   const values: BundleMeasureField[] = visual.measures.map(name => ({ numericalMeasureField: { ...columnField(name), aggregationFunction: { simpleNumericalAggregation: 'SUM' } } }));
   const visibility = (show: boolean) => ({ visibility: show ? 'VISIBLE' : 'HIDDEN' });
   const body = { visualId: visual.id, ...(visual.title.trim() || !visual.titleVisible ? { title: { ...visibility(visual.titleVisible), ...(visual.title.trim() ? { formatText: { plainText: visual.title.trim() } } : {}) } } : {}) } satisfies BundleVisualBody;
@@ -296,7 +306,7 @@ export function serializeVisual(visual: AuthorVisual): BundleVisual {
     case 'bar': return { barChartVisual: { ...body, chartConfiguration: { ...display, orientation: visual.horizontal ? 'HORIZONTAL' : 'VERTICAL', barsArrangement: visual.stacked ? 'STACKED' : 'CLUSTERED', fieldWells: { barChartAggregatedFieldWells: { category, values } } } } };
     case 'line': return { lineChartVisual: { ...body, chartConfiguration: { ...display, fieldWells: { lineChartAggregatedFieldWells: { category, values } } } } };
     case 'table': return { tableVisual: { ...body, chartConfiguration: { ...tableTotals, fieldWells: { tableAggregatedFieldWells: { groupBy: category, values } } } } };
-    case 'pivot': return { pivotTableVisual: { ...body, chartConfiguration: { ...pivotTotals, fieldWells: { pivotTableAggregatedFieldWells: { rows: visual.rows.map(dimensionField), columns: visual.columns.map(dimensionField), values } } } } };
+    case 'pivot': return { pivotTableVisual: { ...body, chartConfiguration: { ...pivotTotals, fieldWells: { pivotTableAggregatedFieldWells: { rows: visual.rows.map(name => dimensionField(name, visual.dateGrain)), columns: visual.columns.map(name => dimensionField(name, visual.dateGrain)), values } } } } };
     case 'kpi': return { kpiVisual: { ...body, chartConfiguration: { fieldWells: { values } } } };
   }
 }
@@ -365,8 +375,9 @@ export function validateDraft(value: unknown): asserts value is AuthorDraft {
       }
       const fieldNames = (v: unknown, role: string): v is string[] => imported ? Array.isArray(v) && v.every(n => typeof n === 'string' && !!n && !n.includes('\0')) && new Set(v).size === v.length : names(v, role);
 
-      if (!isObject(v) || !onlyKeys(v, ['id', 'kind', 'title', 'dimension', 'measures', 'donut', 'imported', 'filterActions', ...Object.keys(defaults())]) || typeof v.id !== 'string' || !/^visual-[1-9][0-9]*$/.test(v.id) || ids.has(v.id) || !VISUAL_TYPES.some(t => t.kind === v.kind) || typeof v.title !== 'string' || !['donut', 'titleVisible', 'legend', 'labels', 'horizontal', 'stacked', 'totals', 'subtotals'].every(k => typeof v[k] === 'boolean') || !fieldNames(v.measures, 'measure') || !fieldNames(v.rows, 'dimension') || !fieldNames(v.columns, 'dimension') || (v.dimension !== null && !fieldNames([v.dimension], 'dimension')) || !Array.isArray(v.filters)) return fail();
+      if (!isObject(v) || !onlyKeys(v, ['id', 'kind', 'title', 'dimension', 'measures', 'donut', 'imported', 'filterActions', 'hierarchy', ...Object.keys(defaults())]) || typeof v.id !== 'string' || !/^visual-[1-9][0-9]*$/.test(v.id) || ids.has(v.id) || !VISUAL_TYPES.some(t => t.kind === v.kind) || typeof v.title !== 'string' || !['donut', 'titleVisible', 'legend', 'labels', 'horizontal', 'stacked', 'totals', 'subtotals'].every(k => typeof v[k] === 'boolean') || !fieldNames(v.measures, 'measure') || !fieldNames(v.rows, 'dimension') || !fieldNames(v.columns, 'dimension') || (v.dimension !== null && !fieldNames([v.dimension], 'dimension')) || !Array.isArray(v.filters)) return fail();
       if ((v.kind === 'kpi' || v.kind === 'pie') && v.measures.length > 1 || v.kind === 'kpi' && v.dimension !== null || v.kind !== 'pie' && v.donut || v.kind !== 'pivot' && v.columns.length || (v.kind === 'table' || v.kind === 'pivot' ? v.dimension !== (v.rows[0] ?? null) : v.rows.length) || v.rows.some(n => (v.columns as string[]).includes(n))) return fail();
+      if (v.hierarchy !== undefined && hierarchyError(v.hierarchy as DimensionHierarchy, calculations, !!imported)) return fail();
       if (v.filterActions !== undefined && !validFilterActions(v.filterActions)) return fail();
       const filters = new Set<string>();
       for (const f of v.filters) {

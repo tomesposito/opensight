@@ -145,9 +145,9 @@ function fieldWells(visual: Visual, binder: ExpressionBinder): { dimensions: Dim
   const ids = new Set<string>();
   const outputs = new Set<string>();
   // Field IDs are stable output names; one month dimension keeps the fixture's 'month' alias.
-  const outputName = (fieldId: string, month: boolean, path: string) => {
+  const outputName = (fieldId: string, grain: string | undefined, path: string) => {
     unique(ids, fieldId, `${path}.FieldId`);
-    const alias = month ? 'month' : fieldId;
+    const alias = grain ? grain.toLowerCase() : fieldId;
     unique(outputs, alias, path);
     return alias;
   };
@@ -161,10 +161,11 @@ function fieldWells(visual: Visual, binder: ExpressionBinder): { dimensions: Dim
     const name = column(f.Column, `${fp}.Column`, binder);
     const type = binder.bind(name, fp).scalarType;
     const month = kind === 'DateDimensionField';
-    if (month) equals(f.DateGranularity, 'MONTH', `${fp}.DateGranularity`);
+    const grain = month ? string(f.DateGranularity, `${fp}.DateGranularity`) : undefined;
+    if (grain && !['YEAR', 'QUARTER', 'MONTH', 'DAY'].includes(grain)) fail('UNSUPPORTED_FEATURE', `${fp}.DateGranularity`, 'unsupported date granularity');
     if (type !== (month ? 'datetime' : 'string')) fail('TYPE_MISMATCH', fp, 'dimension type does not match column type');
-    return { fieldId, outputName: outputName(fieldId, month, fp), columnName: name,
-      ...(month ? { granularity: 'MONTH' as const } : {}), scalarType: type, path: fp };
+    return { fieldId, outputName: outputName(fieldId, grain, fp), columnName: name,
+      ...(month ? { granularity: grain as NonNullable<Dimension['granularity']> } : {}), scalarType: type, path: fp };
   });
   const measures: Measure[] = array(wells.Values, `${wp}.Values`).map((value, i) => {
     const p = `${wp}.Values[${i}]`;
@@ -182,7 +183,7 @@ function fieldWells(visual: Visual, binder: ExpressionBinder): { dimensions: Dim
         !['SUM', 'AVG', 'COUNT', 'MIN', 'MAX'].includes(aggregationValue)) {
       fail('UNSUPPORTED_FEATURE', `${fp}.AggregationFunction`, 'expected explicit SUM, AVG, COUNT, MIN or MAX');
     }
-    return { fieldId, outputName: outputName(fieldId, false, fp), columnName: name,
+    return { fieldId, outputName: outputName(fieldId, undefined, fp), columnName: name,
       aggregation: aggregationValue as Aggregation, path: fp };
   });
   if (!measures.length) fail('INVALID_INPUT', `${wp}.Values`, 'at least one explicit measure is required');
@@ -211,11 +212,15 @@ function sql(plan: Omit<QueryPlan, 'sql' | 'parameters'>, parameters: ParameterV
     ctes.push(`${relation} AS (SELECT * FROM ${from} WHERE ${predicates.join(' AND ')})`);
     from = relation;
   }
-  const dimensions = plan.dimensions.map((d) => d.granularity === 'MONTH'
-    ? plan.dialect === 'postgres'
-      ? `to_char(date_trunc('month', ${q(d.columnName)}), 'YYYY-MM')`
-      : `strftime(date_trunc('month', ${q(d.columnName)}), '%Y-%m')`
-    : q(d.columnName));
+  const dimensions = plan.dimensions.map(d => {
+    if (!d.granularity) return q(d.columnName);
+    const grain = d.granularity.toLowerCase(), value = `date_trunc('${grain}', ${q(d.columnName)})`;
+    if (d.granularity === 'QUARTER') return plan.dialect === 'postgres'
+      ? `to_char(${value}, 'YYYY-"Q"Q')`
+      : `strftime(${value}, '%Y') || '-Q' || CAST(quarter(${value}) AS VARCHAR)`;
+    const format = d.granularity === 'YEAR' ? ['YYYY', '%Y'] : d.granularity === 'DAY' ? ['YYYY-MM-DD', '%Y-%m-%d'] : ['YYYY-MM', '%Y-%m'];
+    return plan.dialect === 'postgres' ? `to_char(${value}, '${format[0]}')` : `strftime(${value}, '${format[1]}')`;
+  });
   const projections = [
     ...dimensions.map((expression, i) => `${expression} AS ${q(plan.dimensions[i]!.outputName)}`),
     ...plan.measures.map((m) => `${m.aggregation}(${q(m.columnName)}) AS ${q(m.outputName)}`),
