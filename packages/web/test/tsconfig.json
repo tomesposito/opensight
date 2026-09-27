@@ -21,6 +21,7 @@
     "../src/Author.tsx",
     "../src/VisualCard.tsx",
     "../src/ControlInput.tsx",
-    "../src/fixture-query.ts"
+    "../src/fixture-query.ts",
+    "../src/AutomationNotice.tsx"
   ]
 }

@@ -256,3 +256,9 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
   .author-menu { gap: 0; }
   .author-menu summary { padding: 8px; }
 }
+
+.automation-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap: 20px; }
+.automation-notice { padding: 24px; background: #fff; border: 1px solid #dce5e8; border-radius: 12px; }
+.automation-notice h2 { margin-top: 0; }
+.automation-notice p { line-height: 1.6; }
+.automation-notice button:disabled { cursor: not-allowed; opacity: .6; }
