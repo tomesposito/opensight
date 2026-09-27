@@ -1,3 +1,4 @@
+import { OrganizationService } from './organization.js';
 import { namespaceRoute, scopePath } from './namespace-routes.js';
 import { SecurityService, SecurityError, type SecurityOptions } from './security.js';
 import { realpath, stat } from 'node:fs/promises';
@@ -56,6 +57,7 @@ export async function createApiServer(options: ApiOptions): Promise<Server> {
     if (source) source.security = security;
     namespaceStores.set(namespaceId, definitions); namespaceQueries.set(namespaceId, source);
   }
+  const organization = security ? new OrganizationService(security, namespaceStores) : undefined;
   if (security) security.hasAssets = namespaceId => !!namespaceStores.get(namespaceId)?.list().length || !!namespaceQueries.get(namespaceId);
   const automation = await AutomationStore.load(emptyRefreshState(), options.automationStorePath, validateRefreshState);
   const refresh = new RefreshService(automation, new Map(sales ? [['sales', sales]] : []));
@@ -87,10 +89,14 @@ export async function createApiServer(options: ApiOptions): Promise<Server> {
         if (!security || !identity) throw new SecurityError(503, 'SECURITY_NOT_CONFIGURED', 'Needs a hosted API with authentication configured');
         if (await namespaceRoute(request, response, path, query, identity, security)) return;
       }
+      if (/^\/api\/(folders|assets\/)/.test(path)) {
+        if (!security || !identity || !organization) throw new SecurityError(503, 'SECURITY_NOT_CONFIGURED', 'Needs a hosted API with authentication configured');
+        if (await organization.route(request, response, path, query, identity)) return;
+      }
       if (['/api/assets', '/analyses', '/dashboards', '/api/datasets'].includes(path)) {
         method(request, response, ['GET']);
         if (query) throw new RequestError(400, 'Query parameters are not supported');
-        const assets = [...(scopedStore?.list() ?? []), ...(scopedSales ? [{ kind: 'dataset', id: 'sales', name: 'Sales' }] : [])];
+        const assets = [...(identity && organization ? organization.list(identity) : scopedStore?.list() ?? []), ...(scopedSales ? [{ kind: 'dataset', id: 'sales', name: 'Sales' }] : [])];
         send(response, 200, assets.filter(a => path === '/api/assets' || path === '/analyses' && a.kind === 'analysis' || path === '/dashboards' && a.kind === 'dashboard' || path === '/api/datasets' && a.kind === 'dataset'));
         return;
       }
@@ -172,7 +178,8 @@ export async function createApiServer(options: ApiOptions): Promise<Server> {
         error(400, 'InvalidParameterValueException', 'Query parameters are not supported');
         return;
       }
-      const body = scopedStore?.get(match[1] === 'analyses' ? 'analysis' : 'dashboard', id);
+      const kind = match[1] === 'analyses' ? 'analysis' : 'dashboard';
+      const body = identity && organization ? organization.requireRead(identity, kind, id) : scopedStore?.get(kind, id);
       if (!body) {
         error(404, 'ResourceNotFoundException', 'Definition not found');
         return;

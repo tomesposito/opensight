@@ -30,7 +30,7 @@ export async function namespaceRoute(request: IncomingMessage, response: ServerR
     if (verb === 'DELETE' && !existing) missing();
     if (kind === 'namespaces') {
       if (verb === 'DELETE') {
-        if (resourceId === 'default' || service.hasAssets(resourceId!) || state.groups.some(g => g.namespaceId === resourceId) || state.datasets.some(d => d.namespaceId === resourceId) || state.users.some(u => u.namespaceId === resourceId && u.id !== identity.userId)) throw new RequestError(409, 'Namespace must contain only its deleting administrator and no assets or policies');
+        if (resourceId === 'default' || state.folders?.some(f => f.namespaceId === resourceId) || state.assets?.some(a => a.namespaceId === resourceId) || service.hasAssets(resourceId!) || state.groups.some(g => g.namespaceId === resourceId) || state.datasets.some(d => d.namespaceId === resourceId) || state.users.some(u => u.namespaceId === resourceId && u.id !== identity.userId)) throw new RequestError(409, 'Namespace must contain only its deleting administrator and no assets or policies');
         state.namespaces = state.namespaces.filter(n => n.id !== resourceId);
         state.users = state.users.filter(u => u.namespaceId !== resourceId);
       } else {
@@ -71,6 +71,7 @@ export async function namespaceRoute(request: IncomingMessage, response: ServerR
   send(response, 200, result); return true;
 }
 function referenced(state: SecurityState, namespaceId: string, type: 'user' | 'group', id: string): boolean {
+  if (state.folders?.some(f => f.namespaceId === namespaceId && f.grants?.some(g => g.principal.type === type && g.principal.id === id))) return true;
   return state.datasets.filter(d => d.namespaceId === namespaceId).some(d => [...d.rowRules, ...(d.columnGrants ?? [])].some(r => r.principals.some(p => p.type === type && p.id === id)));
 }
 export function scopePath(path: string, identity: Identity): string {

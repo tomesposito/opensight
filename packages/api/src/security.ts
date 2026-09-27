@@ -1,3 +1,4 @@
+import { validateOrganization, type Folder, type OrganizedAsset } from './organization.js';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { QueryEngineError, validatePolicy, validateRowRule, validateColumnGrant, type BoundColumn, type DatasetPolicy, type SecurityContext, type SecurityGroup, type SecurityUser } from '@opensight/query-engine';
 import { AutomationStore } from './automation-store.js';
@@ -10,6 +11,8 @@ export interface User extends SecurityUser { name: string; role: 'admin' | 'read
 export interface Group extends SecurityGroup { name: string }
 export interface SecurityState {
   version: 1;
+  folders?: Folder[];
+  assets?: OrganizedAsset[];
   namespaces: { id: string; name: string }[];
   users: User[];
   groups: Group[];
@@ -32,7 +35,7 @@ function rows(raw: unknown): Record<string, unknown>[] {
   return raw as Record<string, unknown>[];
 }
 export function validateSecurityState(raw: unknown, columns: readonly BoundColumn[]): SecurityState {
-  const s = record(raw, ['version', 'namespaces', 'users', 'groups', 'datasets']);
+  const s = record(raw, ['version', 'namespaces', 'users', 'groups', 'datasets', 'folders', 'assets']);
   if (s.version !== 1) invalid('$.version', 'expected 1');
   const namespaces = rows(s.namespaces).map(r => { record(r, ['id', 'name']); return { id: id(r.id, '$.id'), name: name(r.name) }; });
   const users = rows(s.users).map(r => {
@@ -58,7 +61,9 @@ export function validateSecurityState(raw: unknown, columns: readonly BoundColum
   for (const d of datasets) for (const rule of [...d.rowRules, ...(d.columnGrants ?? [])]) for (const p of rule.principals) {
     if (!(p.type === 'user' ? users : groups).some(v => v.id === p.id && v.namespaceId === d.namespaceId)) invalid('$.principals', 'unresolved principal');
   }
-  return { version: 1, namespaces, users, groups, datasets };
+  const result: SecurityState = { version: 1, namespaces, users, groups, datasets, ...(s.folders === undefined ? {} : { folders: s.folders as Folder[] }), ...(s.assets === undefined ? {} : { assets: s.assets as OrganizedAsset[] }) };
+  validateOrganization(result);
+  return result;
 }
 export class SecurityService {
   hasAssets: (namespaceId: string) => boolean = () => false;
