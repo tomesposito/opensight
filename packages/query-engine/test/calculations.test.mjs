@@ -17,7 +17,8 @@ export async function differential(r, pg) {
   const duck = await executeLocal(r, { dataRoot: fixtureRoot }), plan = planVisual(r, { dialect: 'postgres' });
   const results = await pg.query(plan.sql, [...plan.parameters]);
   const numeric = new Set(plan.measures.map(m => m.outputName));
-  const normalized = results.rows.map(row => Object.fromEntries(Object.entries(row).map(([k, v]) => [k, numeric.has(k) && v !== null ? Number(v) : v])));
+  let normalized = results.rows.map(row => Object.fromEntries(Object.entries(row).map(([k, v]) => [k, numeric.has(k) && v !== null ? Number(v) : v])));
+  if (plan.postProcess) { normalized = normalized.map(row => Object.fromEntries(Object.entries(row).map(([k, v]) => [k, v instanceof Date ? v.toISOString() : v !== null && plan.sourceColumns.find(c => c.name === k)?.scalarType === 'number' ? Number(v) : v]))); normalized = evaluatePlan(plan, normalized); }
   const equivalent = (actual, expected, engine) => {
     assert.equal(actual.length, expected.length, engine);
     actual.forEach((row, i) => { assert.deepEqual(Object.keys(row), Object.keys(expected[i])); for (const [key, value] of Object.entries(row)) {
@@ -49,4 +50,38 @@ test('aggregate function fixture differential and null semantics', async t => {
     assert.deepEqual(await differential(r, pg), [{ region: 'East', calculated: 65 / 500 }, { region: 'West', calculated: 70 / 400 }]);
   });
   await t.test('empty groups', async () => { const r = request(); r.analysis.Definition.FilterGroups[0].Filters[0].CategoryFilter.Configuration.FilterListConfiguration.CategoryValues = ['missing']; calculation(r, 'coalesce(sum({revenue}), 0) + count({revenue})'); assert.deepEqual(await differential(r, pg), [{ calculated: 0 }]); });
+});
+
+
+test('table calculation fixture differential uses calendar offsets, partitions, ties and visual grain', async t => {
+  const pg = await postgresFixture(t);
+  const query = expression => { const r = request('revenue-trend'); r.analysis.Definition.FilterGroups = []; calculation(r, expression); return r; };
+  const cases = [
+    ['runningSum(sum({revenue}), [{order_date} ASC])', [600, 650, 900]],
+    ['percentOfTotal(sum({revenue}))', [600/900, 50/900, 250/900]],
+    ['difference(sum({revenue}), [{order_date} ASC], -1)', [null, -550, 200]],
+    ['percentDifference(sum({revenue}), [{order_date} ASC], -1)', [null, -550/600, 4]],
+    ['periodOverPeriodDifference(sum({revenue}), {order_date}, MONTH, 1)', [null, null, 200]],
+    ['periodOverPeriodPercentDifference(sum({revenue}), {order_date}, MONTH, 1)', [null, null, 4]],
+    ['rank([sum({revenue}) DESC])', [1, 3, 2]],
+    ['denseRank([sum({revenue}) ASC])', [3, 1, 2]],
+  ];
+  for (const [expression, expected] of cases) await t.test(expression, async () => {
+    const result = await differential(query(expression), pg);
+    assert.deepEqual(result.map(r => r.calculated), expected);
+  });
+  await t.test('partitions and ties', async () => {
+    const r = request('sales-table'); r.analysis.Definition.FilterGroups = []; wells(r).GroupBy = [dimension('region'), dimension('category')];
+    calculation(r, 'percentOfTotal(sum({revenue}), [{region}])');
+    assert.deepEqual((await differential(r, pg)).map(r => r.calculated), [0.4, 0.6, 0.875, 0.125]);
+    calculation(r, 'rank([count({region}) ASC])', 'ranks');
+    assert.deepEqual((await differential(r, pg)).map(r => r.ranks), [4, 2, 2, 1]);
+    calculation(r, 'denseRank([count({region}) ASC])', 'dense');
+    assert.deepEqual((await differential(r, pg)).map(r => r.dense), [3, 2, 2, 1]);
+  });
+  await t.test('post processing retains pushed scalar expressions', async () => {
+    const r = query('runningSum(sum({Rounded}), [{order_date} ASC])'); r.analysis.Definition.CalculatedFields.push({ Name: 'Rounded', DataSetIdentifier: 'sales_data', Expression: 'round({revenue} * 0.9, 2)' });
+    assert.match(planVisual(r).sql, /ROUND/);
+    assert.deepEqual((await differential(r, pg)).map(r => r.calculated), [540, 585, 810]);
+  });
 });

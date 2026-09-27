@@ -117,6 +117,7 @@ export function parseExpression(source: string, path = '$.expression', context: 
           if (source[offset] !== ')') do { args.push(expression()); whitespace(); if (source[offset] !== ',') break; offset++; } while (true);
           expect(')'); const f = validateCall(name, args, path);
           left = { ...info(start, f.result === 'first' ? (f.name === 'ifelse' ? args.filter((_, i) => i % 2 === 1 || i === args.length - 1) : args).find(a => a.scalarType !== 'unknown')?.scalarType ?? 'unknown' : f.result, args), kind: 'call', name: f.name, args };
+          if (f.stage === 'table') left = { ...left, level: 'table' };
           if (f.stage === 'aggregate') left = { ...left, level: 'aggregate' };
           if (f.name === 'now') left = { ...info(start, 'datetime'), nullable: false, kind: 'literal', value: context.now ?? new Date().toISOString() };
         } else if (/^(null|true|false)$/i.test(name)) {

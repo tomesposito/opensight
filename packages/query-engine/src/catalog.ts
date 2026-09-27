@@ -9,6 +9,11 @@ export interface FunctionReference {
 }
 const entry = (name: string, category: string, signature: string, example: string, min: number, max: number, result: FunctionReference['result'], types?: readonly ScalarType[], stage?: FunctionReference['stage']): FunctionReference => ({ name, category, signature: `${name}(${signature})`, example, min, max, result, types, stage });
 export const functionCatalog: readonly FunctionReference[] = [
+  entry('runningSum', 'Table calculation', 'measure, [sort ASC|DESC, ...] [, partition fields]', 'runningSum(sum({revenue}), [{order_date} ASC], [{region}])', 2, 3, 'number', undefined, 'table'),
+  ...['periodOverPeriodDifference', 'periodOverPeriodPercentDifference'].map(n => entry(n, 'Table calculation', 'measure, date [, period, offset]', `${n}(sum({revenue}), {order_date}, MONTH, 1)`, 2, 4, 'number', undefined, 'table')),
+  entry('percentOfTotal', 'Table calculation', 'measure [, partition fields]', 'percentOfTotal(sum({revenue}), [{region}])', 1, 2, 'number', undefined, 'table'),
+  ...['difference', 'percentDifference'].map(n => entry(n, 'Table calculation', 'measure, [sort ASC|DESC, ...] [, lookup_index, partition fields]', `${n}(sum({revenue}), [{order_date} ASC], -1, [{region}])`, 2, 4, 'number', undefined, 'table')),
+  ...['rank', 'denseRank'].map(n => entry(n, 'Table calculation', '[sort ASC|DESC, ...] [, partition fields, calculation level]', `${n}([sum({revenue}) DESC], [{region}])`, 1, 3, 'number', undefined, 'table')),
   ...['sum', 'avg', 'median', 'stdev', 'stdevp', 'var', 'varp'].map(n => entry(n, 'Aggregation', 'measure', `${n}({revenue})`, 1, 1, 'number', ['number'], 'aggregate')),
   ...['count', 'distinct_count', 'min', 'max'].map(n => entry(n, 'Aggregation', 'expression', `${n}({revenue})`, 1, 1, n === 'min' || n === 'max' ? 'first' : 'number', undefined, 'aggregate')),
   entry('percentile', 'Aggregation', 'measure, percentile', 'percentile({revenue}, 90)', 2, 2, 'number', ['number'], 'aggregate'),
@@ -61,6 +66,22 @@ export function validateCall(name: string, args: readonly RowExpression[], path:
   }
   if (f.stage === 'aggregate' && args.some(a => a.level === 'aggregate' || a.level === 'table')) functionError(f, path, 'nested aggregation is not allowed');
   if (f.name === 'percentile' && (args[1]?.kind !== 'literal' || typeof args[1].value !== 'number' || args[1].value < 0 || args[1].value > 100)) functionError(f, path, 'percentile must be a constant from 0 to 100');
+  if (f.stage === 'table') {
+    const ranked = ['rank', 'denseRank'].includes(f.name), period = f.name.startsWith('periodOverPeriod');
+    if (!ranked && !['aggregate', 'table'].includes(args[0]!.level) && args[0]!.scalarType !== 'unknown') functionError(f, path, 'measure must be aggregated');
+    if (!ranked && !['number', 'unknown'].includes(args[0]!.scalarType)) functionError(f, path, 'measure must be numeric');
+    const listIndexes = ranked ? [0, 1] : period ? [] : f.name === 'percentOfTotal' ? [1] : f.name === 'runningSum' ? [1, 2] : [1, 3];
+    for (const i of listIndexes) if (args[i] && args[i]!.kind !== 'list') functionError(f, path, `argument ${i + 1} must be a field list`);
+    const sortIndex = ranked ? 0 : !period && f.name !== 'percentOfTotal' ? 1 : -1;
+    if (sortIndex >= 0 && args[sortIndex]?.kind === 'list' && !args[sortIndex].items.length) functionError(f, path, 'sort list cannot be empty');
+    if (period) {
+      if (!['datetime', 'unknown'].includes(args[1]!.scalarType)) functionError(f, path, 'date must be a datetime field');
+      if (args[2] && !(constant(args[2]).toUpperCase() in periodUnits)) functionError(f, path, 'invalid period');
+    }
+    const index = period ? 3 : ['difference', 'percentDifference'].includes(f.name) ? 2 : -1;
+    if (index >= 0 && args[index] && !integerConstant(args[index]!)) functionError(f, path, 'offset must be a constant integer');
+    if (ranked && args[2] && constant(args[2]) !== 'POST_AGG_FILTER') functionError(f, path, 'calculation level must be POST_AGG_FILTER');
+  }
   const periodIndex = f.name === 'addDateTime' ? 1 : f.name === 'dateDiff' ? 2 : ['truncDate', 'extract'].includes(f.name) ? 0 : -1;
   if (periodIndex >= 0 && args[periodIndex]) {
     const period = constant(args[periodIndex]).toUpperCase();
@@ -72,3 +93,6 @@ export function validateCall(name: string, args: readonly RowExpression[], path:
   }
   return f;
 }
+
+export const periodUnits: Record<string, string> = { ...dateUnits, YEAR: 'year', QUARTER: 'quarter', MONTH: 'month', WEEK: 'week', DAY: 'day', HOUR: 'hour', MINUTE: 'minute', SECOND: 'second', MILLISECOND: 'millisecond' };
+export const integerConstant = (e: RowExpression): boolean => e.kind === 'literal' && typeof e.value === 'number' && Number.isInteger(e.value) || e.kind === 'unary' && e.operator !== 'NOT' && integerConstant(e.operand);

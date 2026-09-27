@@ -204,6 +204,11 @@ function sql(plan: Omit<QueryPlan, 'sql' | 'parameters'>, parameters: ParameterV
     ctes.push(`${relation} AS (SELECT *, ${expressionSql(calculation.expression, plan.dialect, bind)} AS ${q(calculation.name)} FROM ${from})`);
     from = relation;
   }
+  if (plan.postProcess) {
+    const columns = [...plan.sourceColumns.map(c => ({ name: c.name, type: c.scalarType })), ...plan.calculations.filter(c => c.expression.level === 'row').map(c => ({ name: c.name, type: c.expression.scalarType }))];
+    const projections = columns.map(c => `${c.type === 'datetime' ? plan.dialect === 'postgres' ? `TO_CHAR(${q(c.name)}, 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')` : `STRFTIME(${q(c.name)}, '%Y-%m-%dT%H:%M:%S.%gZ')` : q(c.name)} AS ${q(c.name)}`);
+    return `${ctes.length ? `WITH ${ctes.join(',\n')}\n` : ''}SELECT ${projections.join(', ')} FROM ${from}`;
+  }
   if (plan.filters.length) {
     const relation = q(`${prefix}filtered`);
     const predicates = plan.filters.map(f => {
@@ -294,6 +299,7 @@ export function planVisual(request: PlanRequest, options: PlanOptions = {}): Que
     tableName: metadata.tableName, sourceColumns: metadata.columns, localData: metadata.localData,
     ...(dialect === 'postgres' ? { tableSchema: metadata.tableSchema } : {}),
     calculations: binder.calculations, filters: predicates, ...fields,
+    ...(binder.calculations.some(c => ['table', 'pre_filter', 'pre_agg'].includes(c.expression.level)) ? { postProcess: true } : {}),
     stages: ['source', 'row-calculations', 'row-filters', 'visual-aggregation', 'order'],
   };
   const values: ParameterValue[] = [];

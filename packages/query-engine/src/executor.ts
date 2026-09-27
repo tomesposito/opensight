@@ -1,3 +1,4 @@
+import { evaluatePlan } from './evaluate.js';
 import { realpath, stat } from 'node:fs/promises';
 import { isAbsolute, relative, resolve } from 'node:path';
 import { DuckDBInstance } from '@duckdb/node-api';
@@ -63,7 +64,7 @@ export async function executeLocal(request: PlanRequest, options: ExecuteOptions
       const reader = await connection.runAndReadAll(plan.sql, [...plan.parameters]);
       const names = reader.columnNames();
       const rows = reader.getRows().map((values) => Object.fromEntries(names.map((name, i) => [name, resultValue(values[i])])));
-      return { plan, rows };
+      return { plan, rows: plan.postProcess ? evaluatePlan(plan, rows) : rows };
     } finally {
       connection.closeSync();
     }

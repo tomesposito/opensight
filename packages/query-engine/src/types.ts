@@ -102,6 +102,8 @@ export interface QueryPlan {
   readonly dimensions: readonly Dimension[];
   readonly measures: readonly Measure[];
   readonly stages: readonly ['source', 'row-calculations', 'row-filters', 'visual-aggregation', 'order'];
+  /** SQL returns source rows plus pushed scalar calculations for the shared multirow stages. */
+  readonly postProcess?: boolean;
   readonly sql: string;
   readonly parameters: readonly ParameterValue[];
 }
