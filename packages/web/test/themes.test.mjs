@@ -42,3 +42,12 @@ test('NEW LOOK persists separately and theme editor exposes palette, fonts and b
   for (const label of ['Analysis theme', 'Analysis font', 'Canvas background', 'Visual background', 'Visual palette override']) assert.ok(html.includes(label));
   assert.match(renderToStaticMarkup(createElement(Author)), /NEW LOOK/);
 });
+
+test('API theme, palette and formatting extensions retain literal field names through conversion', async () => {
+  const { convertDefinition } = await import('../build/test/definition-converter.js');
+  const api = { OpenSightTheme: DARK_THEME, DataSetIdentifierDeclarations: [], Sheets: [{ SheetId: 's', Visuals: [{ BarChartVisual: { VisualId: 'v', OpenSightPalette: ['#123456'], OpenSightFormatting: { names: { MixedCase: 'Shown name' }, rules: [{ fieldId: 'MixedCase', operator: 'gt', threshold: 1, color: '#112233', background: '#ffffff' }] } } }] }] };
+  const converted = convertDefinition(api);
+  assert.deepEqual(converted.opensightTheme, DARK_THEME);
+  assert.deepEqual(converted.sheets[0].visuals[0].barChartVisual.opensightPalette, ['#123456']);
+  assert.deepEqual(converted.sheets[0].visuals[0].barChartVisual.opensightFormatting, api.Sheets[0].Visuals[0].BarChartVisual.OpenSightFormatting);
+});

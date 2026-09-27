@@ -58,3 +58,16 @@ test('word cloud orders weights deterministically and limits visible words witho
   const c = compileVisual(input('wordCloud', Array.from({ length: 100 }, (_, i) => ({ group: `word${i}`, a: i }))));
   assert.equal(c.option.series[0].data.length, 80); assert.equal(c.option.series[0].data[0].name, 'word99'); assert.equal(c.table.rows.length, 100);
 });
+
+// API dialect and its explicit converter must keep the same fields and cells.
+const apiKeys = v => Array.isArray(v) ? v.map(apiKeys) : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, v]) => [k.startsWith('opensight') ? `OpenSight${k.slice(9)}` : k[0].toUpperCase() + k.slice(1), apiKeys(v)])) : v;
+for (const kind of Object.keys(EXTRA_VISUALS)) test(`${kind}: API and converted bundle options match pinned bundle rendering`, async () => {
+  const { convertDefinition } = await import('../build/test/definition-converter.js');
+  const source = input(kind), apiDefinition = apiKeys(source.definition);
+  const fromApi = compileVisual({ ...source, source: 'api', definition: apiDefinition });
+  const converted = convertDefinition({ DataSetIdentifierDeclarations: [{ Identifier: 'data', DataSetArn: 'arn:aws:quicksight:us-east-1:123456789012:dataset/local' }], Sheets: [{ SheetId: 'sheet', Name: 'Sheet', Visuals: [apiDefinition] }] });
+  const fromBundle = compileVisual({ ...source, definition: converted.sheets[0].visuals[0] });
+  const expected = compileVisual(source);
+  assert.deepEqual(fromApi.option, expected.option); assert.deepEqual(fromApi.table, expected.table);
+  assert.deepEqual(fromBundle.option, expected.option); assert.deepEqual(fromBundle.table, expected.table);
+});

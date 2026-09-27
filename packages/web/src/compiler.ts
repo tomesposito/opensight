@@ -1,5 +1,5 @@
 import { LIGHT_THEME, themeValid, paletteValid } from './themes.js';
-import { formattingValid, fieldName, fieldRule } from './formatting.js';
+import { formattingValid, fieldName, matchingRule } from './formatting.js';
 import type { EChartsOption, BarSeriesOption, LineSeriesOption } from 'echarts';
 import type { Cell, Field, FixtureVisual, Row, VisualModel } from './model.js';
 
@@ -96,7 +96,7 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
   const valueKey = key('values', 'Values');
   // Empty optional wells are harmless; nonempty colors/targets/trends change semantics.
   const unused = [key('colors', 'Colors'), key('smallMultiples', 'SmallMultiples'), key('targetValues', 'TargetValues'), key('trendGroups', 'TrendGroups')];
-  const wellKey = (name: string) => key(name, name[0]!.toUpperCase() + name.slice(1));
+  const wellKey = (name: string) => key(name, name.startsWith('opensight') ? `OpenSight${name.slice(9)}` : name[0]!.toUpperCase() + name.slice(1));
   keys(wells, [...(extra ? [...extra.dimensions, ...extra.measures].map(wellKey) : [categoryKey, valueKey]), ...(kind === 'pivot' ? [key('columns', 'Columns')] : []), ...unused], wpath);
   for (const name of unused) if (list(wells[name], `${wpath}.${name}`).length) fail(`${wpath}.${name}`, 'field well not supported');
   const field = (value: unknown, measure: boolean, fp: string): Field => {
@@ -337,7 +337,10 @@ export function compileVisual(input: Input): CompiledVisual {
       const measures = model.kind === 'scatter' ? model.measures : [model.measures[index] ?? model.measures[0]!];
       series.data = series.data.map((datum: unknown, rowIndex: number) => {
         const row = rows[rowIndex];
-        const rule = row && measures.map(f => fieldRule(model.formatting, f, number(row, f))).find(Boolean);
+        const rule = row && model.formatting?.rules?.find(rule => {
+          const field = measures.find(f => f.column === rule.fieldId || f.id === rule.fieldId);
+          return field && matchingRule([rule], rule.fieldId, number(row, field));
+        });
         return rule ? { ...(datum && typeof datum === 'object' && !Array.isArray(datum) ? datum : { value: datum }), itemStyle: { color: rule.color } } : datum;
       }) as typeof series.data;
     });

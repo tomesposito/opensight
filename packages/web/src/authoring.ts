@@ -260,7 +260,7 @@ export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorD
         dimension: noDimensions(action.kind) ? null : visual.dimension,
         rows: grouped(action.kind) ? (grouped(visual.kind) ? visual.rows : visual.dimension ? [visual.dimension] : []) : [],
         columns: splitDimensions(action.kind) ? visual.columns : [],
-        measures: singleMeasure(action.kind) ? visual.measures.slice(0, 1) : visual.measures };
+        measures: singleMeasure(action.kind) ? visual.measures.slice(0, 1) : action.kind === 'scatter' ? visual.measures.slice(0, 3) : visual.measures };
       case 'hierarchy': {
         if (!action.hierarchy) { const { hierarchy: _old, ...rest } = visual; return rest; }
         if (noDimensions(visual.kind) || hierarchyError(action.hierarchy, draft.calculatedFields)) return visual;
@@ -305,7 +305,7 @@ export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorD
       case 'assign': {
         const field = dataFields(draft.calculatedFields).find(f => f.name === action.field);
         if (!field) return visual;
-        if (field.role === 'measure') return action.well && action.well !== 'values' ? visual : { ...visual, measures: singleMeasure(visual.kind) ? [field.name] : [...new Set([...visual.measures, field.name])] };
+        if (field.role === 'measure') return action.well && action.well !== 'values' || visual.kind === 'scatter' && visual.measures.length >= 3 ? visual : { ...visual, measures: singleMeasure(visual.kind) ? [field.name] : [...new Set([...visual.measures, field.name])] };
         if (noDimensions(visual.kind) || action.well === 'values') return visual;
         if (grouped(visual.kind)) {
           const well = splitDimensions(visual.kind) && action.well === 'columns' ? 'columns' : 'rows';

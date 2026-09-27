@@ -248,6 +248,7 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .property-section input[type=color] { height: 34px; padding: 3px; }
 .author-workspace :focus-visible { outline: 2px solid #499de3; outline-offset: 2px; }
 .visual-card th { background: var(--visual-header, #f3f7f8); color: inherit; }
+.visual-card :is(tr.subtotal, tr.total) { background: var(--visual-header, #edf6f6); }
 .visual-card .table-scroll td button { color: inherit; background: transparent; }
 @media (max-width: 760px) {
   .author-menu > details { position: static; }

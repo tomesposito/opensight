@@ -39,3 +39,16 @@ test('unsupported options on a newly supported visual remain reported and preser
   const bundle = { members: [{ path: 'analysis/authored-analysis.json', resource: raw }] }, draft = importBundle(bundle);
   assert.match(JSON.stringify(draft.bundle.report), /futureRegression.*retained/); assert.deepEqual(exportBundle(draft), bundle);
 });
+
+test('scatter wells cap at X, Y and size; kind changes cannot silently serialize a fourth measure', () => {
+  let draft = add('scatter');
+  for (const name of ['Margin', 'Cost']) draft = authorReducer(draft, { type: 'calculation-add', field: { name, expression: '{revenue} - {profit}', role: 'measure' } });
+  for (const field of ['Margin', 'Cost']) draft = authorReducer(draft, { type: 'assign', field, well: 'values' });
+  assert.deepEqual(visual(draft).measures, ['revenue', 'profit', 'Margin']);
+  draft = authorReducer(draft, { type: 'kind', kind: 'bar' });
+  draft = authorReducer(draft, { type: 'assign', field: 'Cost', well: 'values' });
+  assert.equal(visual(draft).measures.length, 4);
+  draft = authorReducer(draft, { type: 'kind', kind: 'scatter' });
+  assert.equal(visual(draft).measures.length, 3);
+  validateDraft(draft);
+});

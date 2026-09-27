@@ -117,3 +117,10 @@ test('gauge ranges and histogram bins validate and round-trip as supported setti
   assert.equal(selected(authorReducer(add('gauge'), { type: 'gauge', min: 5, max: 4 })).gauge, undefined);
   assert.equal(selected(authorReducer(add('histogram'), { type: 'bins', bins: 101 })).bins, undefined);
 });
+
+test('scatter marks respect rule priority across X and Y measures', () => {
+  const rules = [{ ...rule, fieldId: 'profit', threshold: 10, color: '#0000ff' }, rule];
+  const v = { ...selected(add('scatter')), formatting: { rules } };
+  const c = compileVisual(input(v, [{ region: 'East', revenue: 120, profit: 30 }]));
+  assert.equal(c.option.series[0].data[0].itemStyle.color, '#0000ff');
+});
