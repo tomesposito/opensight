@@ -1,3 +1,5 @@
+import { ControlsStrip } from './ControlsStrip.js';
+import type { AuthorParameter } from './parameters.js';
 import { ParameterEditor } from './ParameterEditor.js';
 import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import type { Dispatch, ReactNode } from 'react';
@@ -10,7 +12,7 @@ import { buildDistinctQuery, loadAuthorRows } from './author-query.js';
 import type { QueryClient } from './author-query.js';
 import {
   authorVisualProblem, VISUAL_TYPES, GRID_COLUMNS, activeSheet, authorReducer, calculationError, dataFields, dimensionLabel,
-  loadDraft, saveDraft, serializeDraft, singleMeasure, tabular,
+  loadDraft, saveDraft, serializeDraft, sheetParameters, singleMeasure, tabular,
 } from './authoring.js';
 import type { AuthorAction, AuthorDraft, AuthorVisual, CalculatedField, VisualKind, Well } from './authoring.js';
 
@@ -75,7 +77,7 @@ export function Author({ client }: { client?: QueryClient }) {
       {importStatus && <p role={importStatus.startsWith('Import failed') ? 'alert' : 'status'}>{importStatus}</p>}
       {draft.bundle && <button type="button" onClick={() => setReportOpen(true)}>View import report</button>}
     </div>
-    <p className="fixture-notice">{client ? 'Live local sales data · All regions, dates grouped by UTC month. Field assignments query the API; unsupported queries show “Data unavailable”.' : 'Offline demo: preview uses fixed sample results: region = East, dates grouped by UTC month. Only revenue totals by region, category, month, or overall are available. Other selections show “Data unavailable”. No live queries run.'}</p>
+    <p className="fixture-notice">{client ? 'Live local sales data · All regions, dates grouped by UTC month. Field assignments query the API; unsupported queries show “Data unavailable”.' : draft.parameters.length ? 'Offline demo: controls recompute pinned synthetic sales rows locally across all regions. No live queries run.' : 'Offline demo: preview uses fixed sample results: region = East, dates grouped by UTC month. Only revenue totals by region, category, month, or overall are available. Other selections show “Data unavailable”. No live queries run.'}</p>
     <div className="author-save"><p role="status">{storageStatus}</p>
       <p id="export-help">{exported.error ?? (client ? 'Downloads analysis definitions and sheet layouts; query results are not included.' : 'Downloads analysis definitions and sheet layouts; sample rows and the fixed East preview filter are not included.')}</p>
       {exportStatus && <p role="status">{exportStatus}</p>}
@@ -131,6 +133,7 @@ export function AuthorCanvas({ draft, dispatch, client }: EditorProps) {
         {!fields.some(f => f.name.toLowerCase().includes(search.toLowerCase())) && <p>No matching fields.</p>}
       </Panel>
       <div className="author-center">
+        <ControlsStrip key={sheet.id} draft={draft} dispatch={dispatch} client={client} />
         <Panel title="Visual build" className="build-panel">
           <form className="add-visual" onSubmit={e => { e.preventDefault(); dispatch({ type: 'add', kind: newKind }); }}>
             <div className="visual-gallery" role="group" aria-label="Visual type gallery">{VISUAL_TYPES.map(type => <button type="button" key={type.kind} value={type.kind} aria-label={type.label} aria-pressed={newKind === type.kind} onClick={() => setNewKind(type.kind)}>
@@ -153,7 +156,7 @@ export function AuthorCanvas({ draft, dispatch, client }: EditorProps) {
               onDragStop={next => { if (!mobile) dispatch({ type: 'layout', sheetId: sheet.id, layout: next }); }}
               onResizeStop={next => { if (!mobile) dispatch({ type: 'layout', sheetId: sheet.id, layout: next }); }}>
               {sheet.visuals.map((visual, index) => <div key={visual.id}>
-                <AuthorCard visual={visual} index={index} count={sheet.visuals.length} selected={visual.id === sheet.selectedId} filterProblem={importedFilterProblem(draft, sheet, visual)} dispatch={dispatch} client={client} calculations={draft.calculatedFields} />
+                <AuthorCard visual={visual} index={index} count={sheet.visuals.length} selected={visual.id === sheet.selectedId} filterProblem={importedFilterProblem(draft, sheet, visual)} dispatch={dispatch} client={client} calculations={draft.calculatedFields} parameters={sheetParameters(draft)} />
               </div>)}
             </GridLayout>
           </div>
@@ -214,11 +217,11 @@ function Properties({ visual, draft, dispatch, client }: EditorProps & { visual:
       {visual.imported.unmappedFields.length > 0 && <p>Fields requiring manual assignment: {visual.imported.unmappedFields.join(', ')}</p>}
       {visual.imported.issues.length > 0 && <details><summary>Unsupported features (retained)</summary><ul>{visual.imported.issues.map((issue, i) => <li key={i}>{issue}</li>)}</ul></details>}
     </div>}
-    <FilterEditor visual={visual} calculations={draft.calculatedFields} dispatch={dispatch} client={visual.imported && !visual.imported.local ? undefined : client} />
+    <FilterEditor visual={visual} parameters={sheetParameters(draft)} calculations={draft.calculatedFields} dispatch={dispatch} client={visual.imported && !visual.imported.local ? undefined : client} />
   </>;
 }
 
-function FilterEditor({ visual, calculations, dispatch, client }: { visual: AuthorVisual; calculations: CalculatedField[]; dispatch: Dispatch<AuthorAction>; client?: QueryClient }) {
+function FilterEditor({ visual, calculations, dispatch, client, parameters }: { parameters: AuthorParameter[]; visual: AuthorVisual; calculations: CalculatedField[]; dispatch: Dispatch<AuthorAction>; client?: QueryClient }) {
   const [column, setColumn] = useState('region');
   const [result, setResult] = useState<{ key: string; values: string[]; error?: string }>();
   const key = JSON.stringify([column, calculations]);
@@ -234,7 +237,8 @@ function FilterEditor({ visual, calculations, dispatch, client }: { visual: Auth
   const filter = visual.filters.find(f => f.columnName === column);
   const values = [...new Set([...(current?.values ?? []), ...(filter?.values ?? [])])];
   return <div className="filter-editor"><h3>Filters</h3>
-    {visual.filters.map(f => <button className="field-chip filter-pill" type="button" key={f.columnName} aria-label={`Remove ${f.columnName} filter`} onClick={() => dispatch({ type: 'filter', columnName: f.columnName, values: null })}>{f.columnName}: {f.values.length ? f.values.join(', ') : 'None'} <span aria-hidden="true">×</span></button>)}
+    {visual.filters.map(f => <button className="field-chip filter-pill" type="button" key={f.columnName} aria-label={`Remove ${f.columnName} filter`} onClick={() => dispatch({ type: 'filter', columnName: f.columnName, values: null })}>{f.columnName}: {f.parameterName ? `$${f.parameterName}` : f.values.length ? f.values.join(', ') : 'None'} <span aria-hidden="true">×</span></button>)}
+    <ParameterFilterEditor parameters={parameters} calculations={calculations} dispatch={dispatch} />
     <label>Category field<select value={column} onChange={e => setColumn(e.target.value)}>{dataFields(calculations).filter(f => f.type === 'STRING').map(f => <option key={f.name}>{f.name}</option>)}</select></label>
     {!current && <p role="status">Loading values…</p>}
     {current?.error && <p role="status">{current.error}</p>}
@@ -258,18 +262,18 @@ function CalculationDialog({ fields, onSave, onClose }: { fields: CalculatedFiel
       <label>Name<input autoFocus value={field.name} onChange={e => setField({ ...field, name: e.target.value })} /></label>
       <label>Use as<select value={field.role} onChange={e => setField({ ...field, role: e.target.value as CalculatedField['role'] })}><option value="measure">Measure (number)</option><option value="dimension">Dimension (text)</option></select></label>
       <label>Expression<textarea rows={5} value={field.expression} placeholder="{revenue} - {profit}" onChange={e => setField({ ...field, expression: e.target.value })} /></label>
-      <p className="field-hint">Use braces to reference fields. Live queries support row arithmetic (+, −, *) and field references. Other expressions are saved but may show Data unavailable.</p>
+      <p className="field-hint">Use braces to reference fields and {'${Name}'} to reference a single-value parameter. Live queries support row arithmetic (+, −, *) and field references. Other expressions are saved but may show Data unavailable.</p>
       {error && <p role="alert">{error}</p>}
       <div className="dialog-actions"><button type="button" onClick={onClose}>Cancel</button><button type="submit" className="primary-button">Create field</button></div>
     </form>
   </dialog>;
 }
 
-function AuthorCard({ visual, index, count, selected, dispatch, client, calculations, filterProblem }: {
-  visual: AuthorVisual; index: number; count: number; selected: boolean; filterProblem?: string; dispatch: Dispatch<AuthorAction>; client?: QueryClient; calculations: CalculatedField[];
+function AuthorCard({ visual, index, count, selected, dispatch, client, calculations, filterProblem, parameters }: {
+  visual: AuthorVisual; index: number; count: number; selected: boolean; filterProblem?: string; dispatch: Dispatch<AuthorAction>; client?: QueryClient; calculations: CalculatedField[]; parameters: AuthorParameter[];
 }) {
   const problem = authorVisualProblem(visual) ?? filterProblem;
-  const preview = useMemo(() => client || problem ? undefined : buildAuthorPreview(visual), [visual, client, problem]);
+  const preview = useMemo(() => client || parameters.length || problem ? undefined : buildAuthorPreview(visual), [visual, client, problem, parameters.length]);
   const label = visual.title || `Visual ${index + 1}`;
   return <section className={`author-card${selected ? ' is-selected' : ''}`} aria-label={label} onClick={() => { if (!selected) dispatch({ type: 'select', id: visual.id }); }}>
     <div className="author-card-toolbar">
@@ -283,7 +287,7 @@ function AuthorCard({ visual, index, count, selected, dispatch, client, calculat
     </div>
     {problem ? <div className="bundle-placeholder" role="status"><p>{problem}</p>
       {visual.imported && !visual.imported.local && <button type="button" onClick={e => { e.stopPropagation(); dispatch({ type: 'remap', id: visual.id }); }}>Remap to local dataset</button>}
-    </div> : client ? <LiveAuthorVisual visual={visual} client={client} calculations={calculations} /> : preview && <VisualCard visual={preview} />}
+    </div> : client || parameters.length ? <LiveAuthorVisual visual={visual} client={client} calculations={calculations} parameters={parameters} /> : preview && <VisualCard visual={preview} />}
   </section>;
 }
 
@@ -322,4 +326,18 @@ function ImportedPanels({ draft }: { draft: AuthorDraft }) {
       return <details key={i}><summary className={group.name.includes('filter') ? 'filter-pill' : ''}>{name}</summary><pre>{JSON.stringify(value, null, 2)}</pre></details>;
     })}
   </details>)}</>;
+}
+
+function ParameterFilterEditor({ parameters, calculations, dispatch }: { parameters: AuthorParameter[]; calculations: CalculatedField[]; dispatch: Dispatch<AuthorAction> }) {
+  const [name, setName] = useState(''), [column, setColumn] = useState('region'), [operator, setOperator] = useState<'EQUALS' | 'GREATER_THAN_OR_EQUAL_TO' | 'LESS_THAN_OR_EQUAL_TO'>('EQUALS');
+  const parameter = parameters.find(p => p.name === name) ?? parameters[0];
+  const fields = dataFields(calculations).filter(f => parameter?.type === (f.type === 'STRING' ? 'string' : f.type === 'DATETIME' ? 'datetime' : 'number'));
+  const field = fields.find(f => f.name === column) ?? fields[0];
+  if (!parameters.length) return null;
+  return <fieldset><legend>Parameter filter</legend>
+    <label>Filter parameter<select aria-label="Filter parameter" value={parameter?.name ?? ''} onChange={e => { setName(e.target.value); setOperator('EQUALS'); }}>{parameters.map(p => <option key={p.id}>{p.name}</option>)}</select></label>
+    <label>Filter column<select aria-label="Parameter filter column" value={field?.name ?? ''} onChange={e => setColumn(e.target.value)}>{fields.map(f => <option key={f.name}>{f.name}</option>)}</select></label>
+    <label>Comparison<select value={operator} onChange={e => setOperator(e.target.value as typeof operator)}><option value="EQUALS">Equals</option>{parameter?.type !== 'string' && !parameter?.multiple && <><option value="GREATER_THAN_OR_EQUAL_TO">At least / on or after</option><option value="LESS_THAN_OR_EQUAL_TO">At most / on or before</option></>}</select></label>
+    <button type="button" disabled={!field || !parameter} onClick={() => { if (parameter && field) dispatch({ type: 'filter-parameter', columnName: field.name, parameterName: parameter.name, operator }); }}>Apply parameter filter</button>
+  </fieldset>;
 }

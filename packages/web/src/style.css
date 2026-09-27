@@ -179,3 +179,17 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .imported-panel { border-top: 1px solid #d4e1e5; margin-top: 18px; padding-top: 12px; }
 .imported-panel pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 250px; overflow: auto; font-size: 11px; }
 .imported-panel summary { cursor: pointer; margin: 6px 0; }
+
+.controls-strip { border: 1px solid var(--border, #cbd5e1); background: #fff; padding: 14px; margin-bottom: 12px; border-radius: 6px; }
+.controls-heading, .controls-row { display: flex; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
+.controls-heading { align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.control-container { flex: 1 1 180px; max-width: 320px; min-width: 0; }
+.parameter-control label, .control-settings label, .control-form label, .parameter-editor label { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
+.parameter-control input, .parameter-control select { width: 100%; min-height: 34px; }
+.parameter-control select[multiple] { min-height: 80px; }
+.parameter-control output { font-variant-numeric: tabular-nums; }
+.control-settings { font-size: 12px; margin-top: 8px; }
+.control-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; padding-top: 14px; }
+.parameter-editor { margin-top: 16px; }
+.parameter-editor form { padding: 8px 0; }
+.parameter-editor p { overflow-wrap: anywhere; }
