@@ -1032,7 +1032,30 @@ SDK, folders, sharing APIs (3c).
 tests, email assembly tests with stub transport, alert evaluation
 tests, API resource validation tests; full suite green; demo rebuilt.
 
-- Expand row-level / column-level security enforcement, namespaces, embedding SDK. Protected datasets are rejected from Phase 1 until this support is available (§3.4).
+#### Phase 3b — Row/column security & namespaces — NEW 2026-09-27
+
+The second slice of Phase 3: data governance. Until this ships,
+protected datasets stay rejected (§3.4 fail-closed rule).
+
+**Scope:**
+- **Row-level security**: dataset rules mapping users/groups to row
+  predicates; enforced in the query planner for DuckDB and Postgres
+  paths (predicates pushed into SQL, never client-side); rule CRUD
+  as API resources with validation.
+- **Column-level security**: per-column grants (allow/deny) by
+  user/group; denied columns rejected at query plan time with a
+  named error, never silently dropped.
+- **Namespaces**: multi-tenant namespaces for users, groups, assets;
+  namespace-scoped asset listing and isolation tests.
+- Enforcement tested against bypass attempts (direct query API with
+  forged principals fails closed).
+
+**Out of scope for 3b:** embedding SDK, folders, sharing APIs (3c).
+
+**Acceptance:** RLS predicate tests (both dialects), CLS grant/deny
+tests, namespace isolation tests, bypass-attempt tests (fail closed),
+API validation tests; full suite green; demo rebuilt.
+
 - Folder management, asset sharing APIs.
 
 ### Phase 4 — Parity & beyond
