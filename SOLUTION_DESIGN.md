@@ -1003,7 +1003,35 @@ visuals, screenshot comparison against the 2c baseline and the
 QuickSight references; full suite green; demo rebuilt.
 
 ### Phase 3 — Enterprise surface
-- Scheduled DuckDB refresh (D8), email reports, threshold alerts.
+
+#### Phase 3a — Scheduled refresh, email reports & alerts — NEW 2026-09-27
+
+The first slice of Phase 3: analyses stay fresh and stakeholders get
+notified without opening the product.
+
+**Scope:**
+- **Scheduled refresh**: per-dataset refresh schedules (interval,
+  daily/weekly at a time, timezone-aware) against the DuckDB engine;
+  refresh history and status per dataset; honest states when a source
+  is unreachable (named error, last-good timestamp, never silently
+  stale).
+- **Email reports**: dashboard snapshots rendered server-side and
+  sent via configured SMTP; per-user subscriptions with schedules;
+  SMTP strictly via environment config — never in the repo, never in
+  tests (stub transport in tests).
+- **Threshold alerts**: alert rules on KPI/visual metrics (crosses
+  above/below, percent change); evaluated on refresh; email
+  notification first, webhook payload shape defined for later.
+- All modeled as API resources (CRUD + run history) with validation;
+  static demo shows honest "not configured / needs hosted API" states.
+
+**Out of scope for 3a:** row/column-level security (3b), embedding
+SDK, folders, sharing APIs (3c).
+
+**Acceptance:** scheduler tests (fake timers), refresh history/status
+tests, email assembly tests with stub transport, alert evaluation
+tests, API resource validation tests; full suite green; demo rebuilt.
+
 - Expand row-level / column-level security enforcement, namespaces, embedding SDK. Protected datasets are rejected from Phase 1 until this support is available (§3.4).
 - Folder management, asset sharing APIs.
 
