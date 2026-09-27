@@ -85,3 +85,47 @@ send boundary; it does not prove inbox delivery.
 Tests inject `StubMailTransport`; it retains messages in memory and never opens a
 socket. No new external packages were added: SMTP uses Node TLS and the server
 imports the Apache-2.0 workspace visual compiler through `@opensight/web/compiler`.
+
+## Threshold alerts
+
+- `GET /api/alert-rules` lists rules.
+- `GET|PUT|DELETE /api/alert-rules/{id}` manages a rule.
+- `GET /api/alert-rules/{id}/state` reports condition state and evaluation errors.
+- `GET /api/alert-rules/{id}/runs[/{runId}]` retrieves evaluation/delivery history.
+- `GET /api/alert-rules/{id}/transitions` retrieves persisted webhook-shaped events.
+
+PUT accepts `datasetId`, `dashboardId`, `visualId`, `fieldId` (a visual measure),
+optional `dimensions` (dimension field IDs mapped to exact values), `enabled`,
+`recipients`, and `condition`. Above/below conditions are
+`{ "kind": "above", "threshold": 100 }` or `below`, using strict comparisons.
+A KPI must return one finite numeric metric. Grouped visuals must resolve exactly
+one row after applying dimension selectors; ambiguous/empty/null results record
+`METRIC_UNAVAILABLE` and preserve the last condition state.
+
+Percent change uses `{ "kind": "percent-change", "comparison": "above",
+"threshold": 20, "period": { "columnName": "order_date", "unit": "month" } }`.
+`unit` is day, week (Monday start), or month. The most recently **completed UTC
+calendar period** is compared with the complete period before it, using the
+original visual's filters and measure definition plus bound datetime limits.
+The value is `(current - previous) / abs(previous) * 100`; 20 means 20 percent.
+Missing previous values and zero baselines are explicit errors, not zero change.
+This is a calendar comparison, not a comparison with the previous refresh.
+
+Enabled rules run after each successful refresh of their dataset. Initial state
+is `ok`; a breached threshold records `ok -> triggered` and sends email through
+the shared transport. Continued breaches do not send duplicates. Clearing the
+condition (including equality) records `triggered -> ok`. Re-entering a breach
+sends again. Editing a rule retains its condition state until the next evaluation;
+in-progress evaluations reject edits/deletes with 409. Failed source refreshes
+never evaluate rules. Metric and SMTP errors are recorded separately from the
+refresh result. Missing SMTP leaves the condition triggered and the notification
+failed; this phase has no automatic notification retry.
+
+Webhook delivery is deferred. Transition payloads are persisted and returned by
+the API, with exactly these fields: `version: 1`,
+`type: "opensight.alert.state_changed"`, `eventId`, `occurredAt`, `ruleId`,
+`datasetId`, `dashboardId`, `visualId`, `fieldId`, `refreshRunId`, `from`, `to`,
+`value`, `previousValue`, `percentChange`, and `condition`. Non-percent rules
+have null previousValue/percentChange. Events contain no recipients or credentials.
+No webhook URL is accepted and no outbound HTTP request is made. History and
+transitions remain available after deleting a rule.

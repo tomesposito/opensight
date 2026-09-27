@@ -2,7 +2,7 @@ import { validateParameters } from '@opensight/query-engine/parameters';
 import type { IncomingMessage } from 'node:http';
 import { lstat, realpath } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
-import { executeLocal, refreshLocal, interactiveRequest, type InteractiveQuery, type PlanRequest } from '@opensight/query-engine';
+import { executeLocal, refreshLocal, planVisual, interactiveRequest, type InteractiveQuery, type PlanRequest } from '@opensight/query-engine';
 import { isObject } from './mapping.js';
 import { readJson } from './store.js';
 
@@ -136,8 +136,19 @@ export class SalesQuery {
     };
   }
 
-  async executeVisual(definition: unknown, visualId: string) {
-    return executeLocal({ ...this.metadata, visualId, analysis: { ResourceType: 'Analysis', AnalysisId: 'snapshot', Name: 'Dashboard snapshot', Definition: definition } }, { dataRoot: this.dataRoot });
+  private visualRequest(definition: unknown, visualId: string, window?: { columnName: string; start: string; end: string }): PlanRequest {
+    return { ...this.metadata, visualId, analysis: { ResourceType: 'Analysis', AnalysisId: 'snapshot', Name: 'Dashboard snapshot', Definition: definition },
+      ...(window ? { parameterDeclarations: [{ name: 'OSPeriodStart', type: 'datetime' as const, multiple: false }, { name: 'OSPeriodEnd', type: 'datetime' as const, multiple: false }],
+        parameterBindings: { OSPeriodStart: [window.start], OSPeriodEnd: [window.end] }, parameterFilters: [
+          { columnName: window.columnName, parameterName: 'OSPeriodStart', operator: 'GREATER_THAN_OR_EQUAL_TO' as const },
+          { columnName: window.columnName, parameterName: 'OSPeriodEnd', operator: 'LESS_THAN_OR_EQUAL_TO' as const },
+        ] } : {}) };
+  }
+  planDefinition(definition: unknown, visualId: string, window?: { columnName: string; start: string; end: string }) {
+    return planVisual(this.visualRequest(definition, visualId, window));
+  }
+  async executeVisual(definition: unknown, visualId: string, window?: { columnName: string; start: string; end: string }) {
+    return executeLocal(this.visualRequest(definition, visualId, window), { dataRoot: this.dataRoot });
   }
 
   async refresh(): Promise<number> {

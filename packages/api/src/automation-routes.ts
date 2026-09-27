@@ -70,3 +70,29 @@ export async function reportRoute(request: IncomingMessage, response: ServerResp
   }
   return true;
 }
+
+export async function alertRoute(request: IncomingMessage, response: ServerResponse, path: string, query: string, alerts: import('./alerts.js').AlertService): Promise<boolean> {
+  const match = /^\/api\/alert-rules(?:\/([^/]+)(?:\/(runs|state|transitions)(?:\/([^/]+))?)?)?$/u.exec(path);
+  if (!match) return false;
+  if (query) throw new RequestError(400, 'Query parameters are not supported');
+  const ruleId = match[1] ? routeId(match[1]) : undefined;
+  if (!ruleId) { method(request, response, ['GET']); send(response, 200, alerts.list()); }
+  else if (match[2]) {
+    method(request, response, ['GET']);
+    if (match[4] || match[3] && match[2] !== 'runs') throw new RequestError(404, 'Route not found');
+    if (match[2] === 'state') send(response, 200, alerts.state(ruleId));
+    else if (match[2] === 'transitions') send(response, 200, alerts.transitions(ruleId));
+    else {
+      const runs = alerts.history(ruleId), runId = match[3] ? routeId(match[3]) : undefined;
+      const result = runId ? runs.find(r => r.id === runId) : runs;
+      if (!result) throw new RequestError(404, 'Alert run not found');
+      send(response, 200, result);
+    }
+  } else {
+    const verb = method(request, response, ['GET', 'PUT', 'DELETE']);
+    if (verb === 'PUT') send(response, 200, await alerts.put(ruleId, await readBody(request)));
+    else if (verb === 'DELETE') { await alerts.remove(ruleId); send(response, 200, { deleted: true }); }
+    else send(response, 200, alerts.get(ruleId));
+  }
+  return true;
+}

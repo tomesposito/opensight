@@ -1,3 +1,4 @@
+import { validateAlert, type AlertRule, type AlertState, type AlertRun, type AlertWebhook } from './alerts.js';
 import type { Subscription, ReportRun } from './reports.js';
 import { randomUUID } from 'node:crypto';
 import { QueryEngineError } from '@opensight/query-engine';
@@ -9,15 +10,18 @@ export interface RefreshSchedule { datasetId: string; enabled: boolean; schedule
 export interface RunError { code: string; message: string; lastGood: string | null }
 export interface RefreshRun { id: string; datasetId: string; startedAt: string; finishedAt: string | null; state: 'running' | 'succeeded' | 'failed'; rows: number | null; error: RunError | null }
 export interface DatasetStatus { datasetId: string; lastGood: string | null; nextRun: string | null; consecutiveFailures: number; state: 'never' | 'running' | 'ready' | 'error'; error: RunError | null }
-export interface RefreshState { version: 1; subscriptions: Subscription[]; reportRuns: ReportRun[]; schedules: RefreshSchedule[]; refreshRuns: RefreshRun[]; datasets: DatasetStatus[] }
-export const emptyRefreshState = (): RefreshState => ({ version: 1, subscriptions: [], reportRuns: [], schedules: [], refreshRuns: [], datasets: [] });
+export interface RefreshState { version: 1; alertRules: AlertRule[]; alertStates: AlertState[]; alertRuns: AlertRun[]; alertTransitions: AlertWebhook[]; subscriptions: Subscription[]; reportRuns: ReportRun[]; schedules: RefreshSchedule[]; refreshRuns: RefreshRun[]; datasets: DatasetStatus[] }
+export const emptyRefreshState = (): RefreshState => ({ version: 1, alertRules: [], alertStates: [], alertRuns: [], alertTransitions: [], subscriptions: [], reportRuns: [], schedules: [], refreshRuns: [], datasets: [] });
 export function validateRefreshState(value: unknown): RefreshState {
-  const s = record(value, ['version', 'schedules', 'refreshRuns', 'datasets', 'subscriptions', 'reportRuns']);
+  const s = record(value, ['version', 'schedules', 'refreshRuns', 'datasets', 'subscriptions', 'reportRuns', 'alertRules', 'alertStates', 'alertRuns', 'alertTransitions']);
   if (s.version !== 1 || !Array.isArray(s.schedules) || !Array.isArray(s.refreshRuns) || !Array.isArray(s.datasets)) throw new Error('Invalid automation state');
   for (const item of s.schedules) { const r = record(item, ['datasetId', 'enabled', 'schedule', 'nextRun']); id(r.datasetId, 'datasetId'); enabled(r.enabled); validateSchedule(r.schedule); }
   s.subscriptions ??= []; s.reportRuns ??= [];
   if (!Array.isArray(s.subscriptions) || !Array.isArray(s.reportRuns)) throw new Error('Invalid report state');
   for (const item of s.subscriptions) { const r = record(item, ['id', 'userId', 'dashboardId', 'recipients', 'enabled', 'schedule', 'nextRun']); id(r.id, 'id'); id(r.userId, 'userId'); id(r.dashboardId, 'dashboardId'); enabled(r.enabled); validateSchedule(r.schedule); }
+  s.alertRules ??= []; s.alertStates ??= []; s.alertRuns ??= []; s.alertTransitions ??= [];
+  if (![s.alertRules, s.alertStates, s.alertRuns, s.alertTransitions].every(Array.isArray)) throw new Error('Invalid alert state');
+  for (const item of s.alertRules as unknown[]) { const r = item as AlertRule; const { id: ruleId, ...body } = r; validateAlert(id(ruleId, 'id'), body); }
   return s as unknown as RefreshState;
 }
 function status(state: RefreshState, datasetId: string): DatasetStatus {

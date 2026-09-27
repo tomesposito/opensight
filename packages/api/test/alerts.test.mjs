@@ -1,0 +1,95 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { join } from 'node:path';
+import { readFile, writeFile, unlink } from 'node:fs/promises';
+import { AlertService, DashboardMetrics, evaluateCondition, periodWindows } from '../dist/alerts.js';
+import { AutomationStore } from '../dist/automation-store.js';
+import { emptyRefreshState, validateRefreshState, RefreshService } from '../dist/refresh.js';
+import { StubMailTransport, smtpFromEnvironment } from '../dist/mail.js';
+import { DefinitionStore } from '../dist/store.js';
+import { SalesQuery } from '../dist/query.js';
+import { dashboardRoot, startApi } from './automation-helpers.mjs';
+const body = () => ({ datasetId: 'sales', dashboardId: 'sales-dashboard', visualId: 'total-revenue', fieldId: 'revenue', enabled: true, recipients: ['reader@example.com'], condition: { kind: 'above', threshold: 100 } });
+const refreshRun = (id = 'refresh-1') => ({ id, datasetId: 'sales', state: 'succeeded', rows: 5, startedAt: '2026-09-27T00:00:00.000Z', finishedAt: '2026-09-27T00:00:01.000Z', error: null });
+
+test('threshold and percent-change comparisons have strict boundaries, signed change and explicit missing/zero errors', () => {
+  for (const [kind, value, expected] of [['above', 101, true], ['above', 100, false], ['below', 99, true], ['below', 100, false]]) assert.equal(evaluateCondition({ kind, threshold: 100 }, value).triggered, expected);
+  const percent = { kind: 'percent-change', comparison: 'above', threshold: 20, period: { columnName: 'order_date', unit: 'month' } };
+  assert.deepEqual(evaluateCondition(percent, 150, 100), { triggered: true, percentChange: 50 });
+  assert.deepEqual(evaluateCondition(percent, -50, -100), { triggered: true, percentChange: 50 });
+  assert.equal(evaluateCondition({ ...percent, comparison: 'below', threshold: -20 }, 60, 100).triggered, true);
+  assert.throws(() => evaluateCondition(percent, 10, 0), e => e.code === 'ZERO_BASELINE');
+  assert.throws(() => evaluateCondition(percent, 10), e => e.code === 'PREVIOUS_PERIOD_UNAVAILABLE');
+  assert.throws(() => evaluateCondition(percent, NaN, 1), e => e.code === 'METRIC_UNAVAILABLE');
+});
+test('previous periods use adjacent complete UTC calendar windows including leap years and Mondays', () => {
+  assert.deepEqual(periodWindows('month', new Date('2024-03-31T22:10:00Z')), { current: { start: '2024-02-01T00:00:00.000Z', end: '2024-02-29T23:59:59.999Z' }, previous: { start: '2024-01-01T00:00:00.000Z', end: '2024-01-31T23:59:59.999Z' } });
+  assert.equal(periodWindows('week', new Date('2026-09-27T10:00:00Z')).current.start, '2026-09-14T00:00:00.000Z');
+  assert.equal(periodWindows('day', new Date('2026-01-01T10:00:00Z')).previous.start, '2025-12-30T00:00:00.000Z');
+});
+test('refresh hooks record ok -> triggered -> ok, notify once per crossing and persist exact webhook shape', async t => {
+  const root = await dashboardRoot(t), path = join(root, '.state.json');
+  const store = await AutomationStore.load(emptyRefreshState(), path, validateRefreshState), mail = new StubMailTransport();
+  let current = 90;
+  const alerts = new AlertService(store, { validate() {}, async measure() { return { current }; } }, mail, () => new Date('2026-09-27T00:00:01Z'));
+  const refresh = new RefreshService(store, new Map([['sales', { refresh: async () => 5 }]])); refresh.onSuccess = (id, run) => alerts.afterRefresh(id, run);
+  await alerts.put('rule', body());
+  await refresh.run('sales'); current = 150; const trigger = await refresh.run('sales'); await refresh.run('sales'); current = 100; await refresh.run('sales');
+  assert.equal(mail.messages.length, 1); assert.equal(alerts.state('rule').state, 'ok'); assert.equal(alerts.history('rule').length, 4);
+  const [event, recovery] = alerts.transitions('rule');
+  assert.deepEqual(event, { version: 1, type: 'opensight.alert.state_changed', eventId: event.eventId, occurredAt: '2026-09-27T00:00:01.000Z', ruleId: 'rule', datasetId: 'sales', dashboardId: 'sales-dashboard', visualId: 'total-revenue', fieldId: 'revenue', refreshRunId: trigger.id, from: 'ok', to: 'triggered', value: 150, previousValue: null, percentChange: null, condition: { kind: 'above', threshold: 100 } });
+  assert.match(event.eventId, /^[0-9a-f-]{36}$/); assert.equal(recovery.from, 'triggered'); assert.equal(recovery.to, 'ok');
+  const restored = await AutomationStore.load(emptyRefreshState(), path, validateRefreshState); assert.deepEqual(restored.read().alertTransitions, alerts.transitions('rule'));
+  assert.doesNotMatch(JSON.stringify(event), /reader@example|recipients|smtp|webhookUrl/);
+});
+test('disabled/other-dataset/failed refreshes do not evaluate; evaluation errors preserve triggered state', async () => {
+  const store = await AutomationStore.load(emptyRefreshState()), mail = new StubMailTransport(); let fail = false;
+  const alerts = new AlertService(store, { validate() {}, async measure() { if (fail) throw new Error('private details'); return { current: 150 }; } }, mail);
+  await alerts.put('rule', body()); await alerts.put('disabled', { ...body(), enabled: false });
+  await alerts.afterRefresh('other', refreshRun()); await alerts.afterRefresh('sales', { ...refreshRun(), state: 'failed' }); assert.equal(alerts.history('rule').length, 0);
+  await alerts.afterRefresh('sales', refreshRun()); fail = true; await alerts.afterRefresh('sales', refreshRun('refresh-2'));
+  assert.equal(alerts.state('rule').state, 'triggered'); assert.equal(alerts.state('rule').error.code, 'METRIC_UNAVAILABLE');
+  assert.equal(alerts.transitions('rule').length, 1); assert.equal(alerts.history('disabled').length, 0); assert.equal(mail.messages.length, 1);
+});
+test('SMTP failure is visible separately from alert condition and source refresh success', async () => {
+  const store = await AutomationStore.load(emptyRefreshState());
+  const alerts = new AlertService(store, { validate() {}, async measure() { return { current: 150 }; } }, smtpFromEnvironment({}));
+  await alerts.put('rule', body()); await alerts.afterRefresh('sales', refreshRun());
+  const run = alerts.history('rule')[0]; assert.equal(run.state, 'evaluated'); assert.equal(run.notification, 'failed'); assert.equal(run.notificationError.code, 'SMTP_NOT_CONFIGURED');
+  assert.equal(alerts.state('rule').state, 'triggered');
+});
+test('DuckDB metric provider compares actual calendar periods and requires an unambiguous visual metric', async t => {
+  const root = await dashboardRoot(t), csv = await readFile(join(root, 'sales.csv'), 'utf8');
+  const lines = csv.trim().split('\n'), header = lines[0].split(',');
+  const row = (date, revenue) => header.map(key => ({ order_date: date, region: 'East', category: 'Hardware', revenue, profit: 10, order_id: 1 }[key] ?? 1)).join(',');
+  await writeFile(join(root, 'sales.csv'), `${lines[0]}\n${row('2025-01-05', 100)}\n${row('2025-02-05', 150)}\n`);
+  const metrics = new DashboardMetrics(await DefinitionStore.load(root), await SalesQuery.load(root));
+  const rule = { ...body(), id: 'rule', dimensions: {}, condition: { kind: 'percent-change', comparison: 'above', threshold: 20, period: { columnName: 'order_date', unit: 'month' } } };
+  metrics.validate(rule); assert.deepEqual(await metrics.measure(rule, new Date('2025-03-15')), { current: 150, previous: 100 });
+  await assert.rejects(metrics.measure(rule, new Date('2025-02-15')), e => e.code === 'PREVIOUS_PERIOD_UNAVAILABLE');
+  const grouped = { ...rule, visualId: 'revenue-trend', condition: { kind: 'above', threshold: 10 } };
+  await assert.rejects(metrics.measure(grouped, new Date()), e => e.code === 'METRIC_UNAVAILABLE');
+  assert.deepEqual(await metrics.measure({ ...grouped, dimensions: { order_date: '2025-01' } }, new Date()), { current: 100 });
+});
+test('alert API validates rules, evaluates after real refresh, exposes history/state/transitions, and keeps recovery', async t => {
+  const root = await dashboardRoot(t), { request, mail } = await startApi(t, { dataRoot: root }); const base = '/api/alert-rules/revenue';
+  for (const change of [{ condition: { kind: 'above', threshold: '100' } }, { condition: { kind: 'percent-change', threshold: 10, comparison: 'above' } }, { condition: { kind: 'above', threshold: 100, period: {} } }, { recipients: ['invalid'] }, { webhookUrl: 'https://example.com' }, { dimensions: { region: [] } }]) assert.equal((await request(base, 'PUT', { ...body(), ...change })).status, 400);
+  assert.equal((await request(base, 'PUT', { ...body(), fieldId: 'missing' })).status, 400);
+  assert.equal((await request(base, 'PUT', { ...body(), dashboardId: 'missing' })).status, 404);
+  assert.equal((await request(base, 'PUT', { ...body(), visualId: 'missing' })).status, 422);
+  assert.equal((await request(base, 'PUT', body())).status, 200);
+  assert.equal((await (await request('/api/alert-rules')).json()).length, 1);
+  await request('/api/datasets/sales/refresh-runs', 'POST'); assert.equal(mail.messages.length, 1);
+  assert.equal((await (await request(`${base}/state`)).json()).state, 'triggered');
+  const [run] = await (await request(`${base}/runs`)).json(); assert.equal(run.value, 500); assert.equal(run.notification, 'sent');
+  assert.deepEqual(await (await request(`${base}/runs/${run.id}`)).json(), run);
+  const csv = await readFile(join(root, 'sales.csv'), 'utf8'); await unlink(join(root, 'sales.csv'));
+  assert.equal((await (await request('/api/datasets/sales/refresh-runs', 'POST')).json()).state, 'failed');
+  assert.equal((await (await request(`${base}/runs`)).json()).length, 1);
+  await writeFile(join(root, 'sales.csv'), csv);
+  await request(base, 'PUT', { ...body(), condition: { kind: 'above', threshold: 1000 } });
+  await request('/api/datasets/sales/refresh-runs', 'POST');
+  assert.equal((await (await request(`${base}/state`)).json()).state, 'ok'); assert.equal((await (await request(`${base}/transitions`)).json()).length, 2);
+  assert.equal((await request(`${base}?extra=1`)).status, 400);
+  assert.equal((await request(base, 'DELETE')).status, 200); assert.equal((await request(base)).status, 404); assert.equal((await (await request(`${base}/runs`)).json()).length, 2);
+});
