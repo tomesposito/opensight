@@ -970,6 +970,38 @@ client evaluator agree on the fixture suite), editor validation
 tests, import-report coverage for unsupported functions; full suite
 green; demo rebuilt.
 
+### Phase 2d — Remaining visual types & themes — NEW 2026-09-27
+
+The final slice of Phase 2 (Expression & interactivity): the visual
+gallery grows to QuickSight's catalog and analyses get themes.
+
+**Scope:**
+- Renderer: add scatter plot, combo (bar+line), stacked 100% bar,
+  area, funnel, gauge, treemap, heatmap, box plot, word cloud,
+  histogram, and geospatial (filled/point map — dependency-free or
+  MIT/Apache-2.0 only; no commercial map tiles at runtime).
+- Builder: all new types in the visual-type gallery with field-well
+  definitions, live preview, and honest per-type capability notes
+  (e.g. map needs geo fields).
+- Themes: analysis-level theme (colors, fonts, background), the
+  QuickSight "NEW LOOK" light/dark treatment, per-visual palette
+  overrides; theme import/export in bundle JSON.
+- Look-and-feel pass against `lookfeel-references/`: close the
+  toolbar gap (File/Edit/Data/Insert/Sheets/Objects/Search menus,
+  PUBLISH, FIT TO WIDTH affordances as honest stubs where no backend
+  exists yet) and deepen the Properties panel (display settings,
+  headers/cells/total/subtotal, row/column/value names, conditional
+  formatting).
+
+**Out of scope for 2d:** Q-style natural-language features (Phase 4);
+pixel-perfect QuickSight CSS (ongoing).
+
+**Acceptance:** compiler tests for every new visual type (options
+shape + pinned-row rendering), builder gallery/well tests, theme
+apply/round-trip tests, import-report coverage for unsupported
+visuals, screenshot comparison against the 2c baseline and the
+QuickSight references; full suite green; demo rebuilt.
+
 ### Phase 3 — Enterprise surface
 - Scheduled DuckDB refresh (D8), email reports, threshold alerts.
 - Expand row-level / column-level security enforcement, namespaces, embedding SDK. Protected datasets are rejected from Phase 1 until this support is available (§3.4).
