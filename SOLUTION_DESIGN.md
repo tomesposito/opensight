@@ -821,6 +821,46 @@ conditional formatting, server-side save, paginated reports.
 (row/column/subtotal), drag-resize layout persistence tests, calculated-field
 round-trip tests, filter application tests; full suite green; single-file demo
 rebuilt with builder v1.
+
+### Phase 1e — Bundle round-trip (import .qs → edit → export) — NEW 2026-09-27
+
+The parser and the builder are two halves that don't touch. Round-trip makes
+them one product: import a QuickSight asset-bundle export, edit it visually,
+export it back out.
+
+**Scope:**
+- **Import UI** (Author mode): file picker + drag-drop for `.qs` ZIP files
+  (also accept single bundle-JSON members). Parsed client-side with the
+  existing `parseQsBundle` (`@opensight/bundle-parser` is already a web
+  dependency). Zip bomb limits already in the parser apply.
+- **Bundle → authoring state**: sheets become sheet tabs; visuals become
+  cards with wells populated (dimensions/measures mapped to fields where the
+  dataset resolves); parameters, filter groups, and calculated fields
+  imported into their respective panels (read-only where v1 has no editor).
+- **Import report**: modal listing what imported cleanly and what didn't —
+  unsupported visual types or features are named honestly, never silently
+  dropped.
+- **Dataset binding**: imported visuals reference dataset ARNs/IDs we don't
+  have. Unresolved bindings show an honest placeholder state; user can
+  **remap a visual to the local sales dataset** (field-name matching where
+  possible, manual well assignment otherwise) to get live data.
+- **Export**: authoring state serializes to bundle-format JSON
+  (camelCase, per-resource members per `STRUCTURAL_NOTES.md` conventions);
+  **"Download .qs"** assembles a real ZIP client-side (MIT-licensed zip
+  library — jszip or equivalent; verify license). Exported members validate
+  against bundle-parser types.
+- Static demo: import works fully client-side (no server needed); export
+  downloads the file.
+
+**Out of scope for 1e:** cross-account dataset resolution, theme import,
+paginated-report visuals, parameter UI editing (display only), server-side
+bundle storage.
+
+**Acceptance:** round-trip tests (synthetic fixture `.qs` → import →
+export → re-import; structural equality modulo documented extensions),
+import-report tests (unsupported visual named, not dropped), ZIP assembly
+tests (member paths/IDs consistent), dataset remap tests; full suite green;
+demo rebuilt.
 - Analysis authoring UI (basic).
 
 ### Phase 3 — Enterprise surface
