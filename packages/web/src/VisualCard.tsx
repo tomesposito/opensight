@@ -34,7 +34,7 @@ export function VisualCard({ visual, dataMessage, loading = false }: { visual: F
   }, [visual]);
   const { compiled, error } = result;
   const { column, columns, row, rows } = visual.placement;
-  return <section className="visual-card" aria-labelledby={headingId} style={{ gridColumn: `${column + 1} / span ${columns}`, gridRow: `${row + 1} / span ${rows}` }}>
+  return <section className="visual-card" aria-busy={loading} aria-labelledby={headingId} style={{ gridColumn: `${column + 1} / span ${columns}`, gridRow: `${row + 1} / span ${rows}` }}>
     <header className="card-heading">
       <h3 id={headingId} className={compiled && !compiled.model.titleVisible ? 'sr-only' : ''}>{compiled?.model.title ?? 'Unsupported visual'}</h3>
       {compiled && <span className="chart-kind">{compiled.model.kind}</span>}
@@ -42,7 +42,7 @@ export function VisualCard({ visual, dataMessage, loading = false }: { visual: F
     {error && <div className="visual-error" role="alert"><strong>Unable to render</strong><p>{error}</p></div>}
     {compiled && <>
       <div className="visual-content">
-        {(compiled.model.kind === 'table' || compiled.model.kind === 'pivot') ? <DataTable compiled={compiled} /> : <Chart option={compiled.option} title={compiled.model.title} />}
+        {!loading && ((compiled.model.kind === 'table' || compiled.model.kind === 'pivot') ? <DataTable compiled={compiled} /> : <Chart option={compiled.option} title={compiled.model.title} />)}
         {compiled.state !== 'ready' && <div className="empty-state" role="status">
           <span className="empty-symbol" aria-hidden="true">◌</span>
           <strong>{loading ? 'Loading data…' : compiled.state === 'unavailable' ? 'Data unavailable' : 'No results'}</strong>

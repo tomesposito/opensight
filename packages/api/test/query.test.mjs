@@ -179,3 +179,35 @@ test('builder transport rejects malformed calculation/filter lists and does not 
     assert.equal((await post({ ...query(), ...fields })).status, 400);
   }
 });
+
+const parameterQuery = () => ({ ...query(), filters: [{ columnName: 'region', parameterName: 'Region' }],
+  parameterDeclarations: [{ name: 'Region', type: 'string', multiple: true }, { name: 'Scale', type: 'number', multiple: false }],
+  parameterBindings: { Region: ['East'], Scale: [2] },
+  calculatedFields: [{ name: 'Scaled', expression: '{revenue} * ${Scale}' }], measures: [{ fieldId: 'scaled', columnName: 'Scaled', aggregation: 'SUM' }],
+});
+test('parameter binding changes requery the live API with typed filters and expressions', async t => {
+  const post = await start(t), body = parameterQuery();
+  for (const [selection, expected] of [[['East'], [{ region: 'East', scaled: 1000 }]], [['West'], [{ region: 'West', scaled: 800 }]], [[], []]]) {
+    body.parameterBindings.Region = selection;
+    const response = await post(body); assert.equal(response.status, 200); assert.deepEqual((await response.json()).rows, expected);
+  }
+  body.parameterBindings.Region = ["East' OR TRUE --"];
+  assert.deepEqual((await (await post(body)).json()).rows, []);
+});
+test('strict parameter transport rejects invalid declarations, bindings and mixed filter shapes with clear paths', async t => {
+  const post = await start(t);
+  for (const mutate of [
+    b => { b.parameterBindings.Region = [1]; }, b => { b.parameterBindings.Scale = ['2']; }, b => { b.parameterBindings.Scale = [null]; },
+    b => { b.parameterDeclarations[1].integer = true; b.parameterBindings.Scale = [1.2]; },
+    b => { b.parameterDeclarations[1].type = 'datetime'; b.parameterBindings.Scale = ['2025-02-30']; },
+    b => { b.parameterDeclarations[1].type = 'datetime'; b.parameterDeclarations[1].multiple = true; b.parameterBindings.Scale = ['2025-01-01']; },
+    b => { b.parameterBindings.Scale = [1, 2]; }, b => { b.parameterBindings.extra = ['x']; }, b => { delete b.parameterBindings.Scale; },
+    b => { b.parameterDeclarations[1].sql = 'select 1'; }, b => { b.parameterDeclarations.push(b.parameterDeclarations[0]); },
+    b => { b.filters[0].parameterName = 'Unknown'; }, b => { b.filters[0].values = ['East']; }, b => { b.filters[0].operator = 'DROP'; },
+  ]) {
+    const body = parameterQuery(); mutate(body); const response = await post(body);
+    assert.equal(response.status, 400, JSON.stringify(body)); assert.match((await response.json()).Message, /parameter|filters/);
+  }
+  const badColumn = parameterQuery(); badColumn.filters[0].columnName = 'revenue';
+  const response = await post(badColumn); assert.equal(response.status, 422); assert.match((await response.json()).message, /does not match/);
+});
