@@ -1,3 +1,4 @@
+import { validFilterActions, type FilterAction, type InteractionFilter } from './interactions.js';
 import { serializeControl, serializeFilter } from './bundle-controls.js';
 import { controlError, validateControls, type AuthorControl } from './controls.js';
 import { parameterError, parameterValueError, validateAuthorParameters, serializeParameter } from './parameters.js';
@@ -49,6 +50,8 @@ export interface AuthorVisual {
   donut: boolean; titleVisible: boolean; legend: boolean; labels: boolean;
   horizontal: boolean; stacked: boolean; totals: boolean; subtotals: boolean;
   filters: CategoryFilter[];
+  filterActions?: FilterAction[];
+  interactionFilters?: InteractionFilter[];
   imported?: ImportedVisual;
 }
 export interface Placement { i: string; x: number; y: number; w: number; h: number }
@@ -84,6 +87,7 @@ export function calculationError(field: CalculatedField, existing: readonly Data
   if (field.role !== 'dimension' && field.role !== 'measure') return 'Choose a field role.';
 }
 export type AuthorAction =
+  | { type: 'filter-actions'; actions: FilterAction[] }
   | { type: 'import'; draft: AuthorDraft }
   | { type: 'parameter-add'; parameter: Omit<AuthorParameter, 'id'> }
   | { type: 'parameter-value'; id: string; values: ParameterValue[] }
@@ -202,6 +206,7 @@ export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorD
         rows: tabular(action.kind) ? (tabular(visual.kind) ? visual.rows : visual.dimension ? [visual.dimension] : []) : [],
         columns: action.kind === 'pivot' ? visual.columns : [],
         measures: singleMeasure(action.kind) ? visual.measures.slice(0, 1) : visual.measures };
+      case 'filter-actions': return validFilterActions(action.actions) ? { ...visual, filterActions: action.actions } : visual;
       case 'title': return { ...visual, title: action.title };
       case 'donut': return { ...visual, donut: visual.kind === 'pie' && action.donut };
       case 'display': return { ...visual, [action.property]: action.value };
@@ -360,8 +365,9 @@ export function validateDraft(value: unknown): asserts value is AuthorDraft {
       }
       const fieldNames = (v: unknown, role: string): v is string[] => imported ? Array.isArray(v) && v.every(n => typeof n === 'string' && !!n && !n.includes('\0')) && new Set(v).size === v.length : names(v, role);
 
-      if (!isObject(v) || !onlyKeys(v, ['id', 'kind', 'title', 'dimension', 'measures', 'donut', 'imported', ...Object.keys(defaults())]) || typeof v.id !== 'string' || !/^visual-[1-9][0-9]*$/.test(v.id) || ids.has(v.id) || !VISUAL_TYPES.some(t => t.kind === v.kind) || typeof v.title !== 'string' || !['donut', 'titleVisible', 'legend', 'labels', 'horizontal', 'stacked', 'totals', 'subtotals'].every(k => typeof v[k] === 'boolean') || !fieldNames(v.measures, 'measure') || !fieldNames(v.rows, 'dimension') || !fieldNames(v.columns, 'dimension') || (v.dimension !== null && !fieldNames([v.dimension], 'dimension')) || !Array.isArray(v.filters)) return fail();
+      if (!isObject(v) || !onlyKeys(v, ['id', 'kind', 'title', 'dimension', 'measures', 'donut', 'imported', 'filterActions', ...Object.keys(defaults())]) || typeof v.id !== 'string' || !/^visual-[1-9][0-9]*$/.test(v.id) || ids.has(v.id) || !VISUAL_TYPES.some(t => t.kind === v.kind) || typeof v.title !== 'string' || !['donut', 'titleVisible', 'legend', 'labels', 'horizontal', 'stacked', 'totals', 'subtotals'].every(k => typeof v[k] === 'boolean') || !fieldNames(v.measures, 'measure') || !fieldNames(v.rows, 'dimension') || !fieldNames(v.columns, 'dimension') || (v.dimension !== null && !fieldNames([v.dimension], 'dimension')) || !Array.isArray(v.filters)) return fail();
       if ((v.kind === 'kpi' || v.kind === 'pie') && v.measures.length > 1 || v.kind === 'kpi' && v.dimension !== null || v.kind !== 'pie' && v.donut || v.kind !== 'pivot' && v.columns.length || (v.kind === 'table' || v.kind === 'pivot' ? v.dimension !== (v.rows[0] ?? null) : v.rows.length) || v.rows.some(n => (v.columns as string[]).includes(n))) return fail();
+      if (v.filterActions !== undefined && !validFilterActions(v.filterActions)) return fail();
       const filters = new Set<string>();
       for (const f of v.filters) {
         if (!isObject(f) || !onlyKeys(f, ['columnName', 'values', 'parameterName', 'operator']) || typeof f.columnName !== 'string' || filters.has(f.columnName) || (!imported && !fields.some(field => field.name === f.columnName && (f.parameterName !== undefined || field.type === 'STRING'))) || !Array.isArray(f.values) || !f.values.every(n => typeof n === 'string' && !n.includes('\0')) || new Set(f.values).size !== f.values.length) return fail();

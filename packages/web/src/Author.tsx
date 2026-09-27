@@ -1,3 +1,6 @@
+import { ActionEditor } from './ActionEditor.js';
+import { toggleSelection, withActionFilters, originProblem, type ActionSelections } from './interactions.js';
+import type { VisualInteraction } from './visual-selection.js';
 import { ControlsStrip } from './ControlsStrip.js';
 import type { AuthorParameter } from './parameters.js';
 import { ParameterEditor } from './ParameterEditor.js';
@@ -106,6 +109,11 @@ export function AuthorCanvas({ draft, dispatch, client }: EditorProps) {
   const [well, setWell] = useState<Well>('rows');
   const [calculationOpen, setCalculationOpen] = useState(false);
   const sheet = activeSheet(draft), fields = dataFields(draft.calculatedFields);
+  const interactionKey = JSON.stringify([sheet.id, sheet.visuals.map(v => [v.id, v.kind, v.dimension, v.rows, v.columns, v.filterActions, v.imported]), draft.parameters]);
+  const [interactionState, setInteractionState] = useState<{ key: string; selections: ActionSelections }>({ key: interactionKey, selections: {} });
+  const selections = interactionState.key === interactionKey ? interactionState.selections : {};
+  const interactive = sheet.visuals.some(v => v.filterActions?.length);
+  const clearActions = () => setInteractionState({ key: interactionKey, selections: {} });
   const selected = sheet.visuals.find(v => v.id === sheet.selectedId);
   const { width, containerRef } = useContainerWidth({ initialWidth: 900 });
   const mobile = width < 600;
@@ -133,6 +141,7 @@ export function AuthorCanvas({ draft, dispatch, client }: EditorProps) {
         {!fields.some(f => f.name.toLowerCase().includes(search.toLowerCase())) && <p>No matching fields.</p>}
       </Panel>
       <div className="author-center">
+        {interactive && <div className="action-status"><button type="button" disabled={!Object.keys(selections).length} onClick={clearActions}>Reset actions</button><span role="status">{Object.keys(selections).length} active selection(s) · {client ? 'Live queries' : 'Recomputed synthetic sales across all regions'}</span></div>}
         <ControlsStrip key={sheet.id} draft={draft} dispatch={dispatch} client={client} />
         <Panel title="Visual build" className="build-panel">
           <form className="add-visual" onSubmit={e => { e.preventDefault(); dispatch({ type: 'add', kind: newKind }); }}>
@@ -156,7 +165,7 @@ export function AuthorCanvas({ draft, dispatch, client }: EditorProps) {
               onDragStop={next => { if (!mobile) dispatch({ type: 'layout', sheetId: sheet.id, layout: next }); }}
               onResizeStop={next => { if (!mobile) dispatch({ type: 'layout', sheetId: sheet.id, layout: next }); }}>
               {sheet.visuals.map((visual, index) => <div key={visual.id}>
-                <AuthorCard visual={withInheritedParameterFilters(draft, sheet, visual)} index={index} count={sheet.visuals.length} selected={visual.id === sheet.selectedId} filterProblem={importedFilterProblem(draft, sheet, visual)} dispatch={dispatch} client={client} calculations={draft.calculatedFields} parameters={sheetParameters(draft)} />
+                <AuthorCard interactive={interactive} interaction={visual.filterActions?.length && !originProblem(visual) ? { brush: visual.kind === 'line', onClear: clearActions, onSelect: selection => setInteractionState({ key: interactionKey, selections: toggleSelection(selections, visual.id, selection) }) } : undefined} visual={withActionFilters(sheet, withInheritedParameterFilters(draft, sheet, visual), selections, draft.calculatedFields)} index={index} count={sheet.visuals.length} selected={visual.id === sheet.selectedId} filterProblem={importedFilterProblem(draft, sheet, visual)} dispatch={dispatch} client={client} calculations={draft.calculatedFields} parameters={sheetParameters(draft)} />
               </div>)}
             </GridLayout>
           </div>
@@ -217,6 +226,7 @@ function Properties({ visual, draft, dispatch, client }: EditorProps & { visual:
       {visual.imported.unmappedFields.length > 0 && <p>Fields requiring manual assignment: {visual.imported.unmappedFields.join(', ')}</p>}
       {visual.imported.issues.length > 0 && <details><summary>Unsupported features (retained)</summary><ul>{visual.imported.issues.map((issue, i) => <li key={i}>{issue}</li>)}</ul></details>}
     </div>}
+    <ActionEditor draft={draft} visual={visual} dispatch={dispatch} />
     <FilterEditor visual={visual} parameters={sheetParameters(draft)} calculations={draft.calculatedFields} dispatch={dispatch} client={visual.imported && !visual.imported.local ? undefined : client} />
   </>;
 }
@@ -271,11 +281,11 @@ function CalculationDialog({ fields, onSave, onClose }: { fields: CalculatedFiel
   </dialog>;
 }
 
-function AuthorCard({ visual, index, count, selected, dispatch, client, calculations, filterProblem, parameters }: {
-  visual: AuthorVisual; index: number; count: number; selected: boolean; filterProblem?: string; dispatch: Dispatch<AuthorAction>; client?: QueryClient; calculations: CalculatedField[]; parameters: AuthorParameter[];
+function AuthorCard({ visual, index, count, selected, dispatch, client, calculations, filterProblem, parameters, interaction, interactive }: {
+  interaction?: VisualInteraction; interactive?: boolean; visual: AuthorVisual; index: number; count: number; selected: boolean; filterProblem?: string; dispatch: Dispatch<AuthorAction>; client?: QueryClient; calculations: CalculatedField[]; parameters: AuthorParameter[];
 }) {
   const problem = authorVisualProblem(visual) ?? filterProblem;
-  const preview = useMemo(() => client || parameters.length || problem ? undefined : buildAuthorPreview(visual), [visual, client, problem, parameters.length]);
+  const preview = useMemo(() => client || interactive || parameters.length || problem ? undefined : buildAuthorPreview(visual), [visual, client, interactive, problem, parameters.length]);
   const label = visual.title || `Visual ${index + 1}`;
   return <section className={`author-card${selected ? ' is-selected' : ''}`} aria-label={label} onClick={() => { if (!selected) dispatch({ type: 'select', id: visual.id }); }}>
     <div className="author-card-toolbar">
@@ -289,7 +299,7 @@ function AuthorCard({ visual, index, count, selected, dispatch, client, calculat
     </div>
     {problem ? <div className="bundle-placeholder" role="status"><p>{problem}</p>
       {visual.imported && !visual.imported.local && <button type="button" onClick={e => { e.stopPropagation(); dispatch({ type: 'remap', id: visual.id }); }}>Remap to local dataset</button>}
-    </div> : client || parameters.length ? <LiveAuthorVisual visual={visual} client={client} calculations={calculations} parameters={parameters} /> : preview && <VisualCard visual={preview} />}
+    </div> : client || interactive || parameters.length ? <LiveAuthorVisual interactive={interactive} interaction={interaction} visual={visual} client={client} calculations={calculations} parameters={parameters} /> : preview && <VisualCard visual={preview} />}
   </section>;
 }
 

@@ -11,15 +11,21 @@ export function buildAuthorQuery(visual: AuthorVisual, calculations: readonly Ca
   if (authorVisualProblem(visual)) return null;
   const dimensions = visualDimensions(visual);
   if (!visual.measures.length || (visual.kind !== 'kpi' && !dimensions.length)) return null;
-  const relevant = queryDependencies([...dimensions, ...visual.measures, ...visual.filters.map(f => f.columnName)], calculations);
+  const relevant = queryDependencies([...dimensions, ...visual.measures, ...visual.filters.map(f => f.columnName), ...(visual.interactionFilters ?? []).map(f => f.columnName)], calculations);
   const names = new Set([...visual.filters.flatMap(f => f.parameterName ? [f.parameterName] : []), ...relevant.flatMap(c => [...c.expression.matchAll(/\$\{([^}]+)\}/g)].map(m => m[1]!))]);
   const used = parameters.filter(p => names.has(p.name));
+  const dynamic = (visual.interactionFilters ?? []).map((filter, i) => {
+    let name = `OSInteraction${i}`;
+    while (parameters.some(p => p.name === name)) name += 'X';
+    return { filter, parameter: { name, type: filter.type, multiple: filter.values.length !== 1, id: name, values: filter.values, defaultValues: filter.values } };
+  });
+  const bound = [...used, ...dynamic.map(d => d.parameter)];
   return {
     dimensions: dimensions.map(name => ({ fieldId: name, columnName: name, ...(name === 'order_date' ? { granularity: 'MONTH' } : {}) })),
     measures: visual.measures.map(name => ({ fieldId: name, columnName: name, aggregation: 'SUM' })),
-    filters: visual.filters.map(f => f.parameterName ? { columnName: f.columnName, parameterName: f.parameterName, ...(f.operator ? { operator: f.operator } : {}) } : { columnName: f.columnName, values: f.values }),
+    filters: [...visual.filters.map(f => f.parameterName ? { columnName: f.columnName, parameterName: f.parameterName, ...(f.operator ? { operator: f.operator } : {}) } : { columnName: f.columnName, values: f.values }), ...dynamic.map(({ filter, parameter }) => ({ columnName: filter.columnName, parameterName: parameter.name, ...(filter.operator ? { operator: filter.operator } : {}) }))],
     ...(relevant.length ? { calculatedFields: relevant.map(({ name, expression }) => ({ name, expression })) } : {}),
-    ...(used.length ? { parameterDeclarations: used.map(declaration), parameterBindings: Object.fromEntries(used.map(p => [p.name, p.values])) } : {}),
+    ...(bound.length ? { parameterDeclarations: bound.map(declaration), parameterBindings: Object.fromEntries(bound.map(p => [p.name, p.values])) } : {}),
   };
 }
 
