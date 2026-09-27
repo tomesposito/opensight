@@ -93,3 +93,35 @@ test('CLS excludes unrequested denied physical columns from SQL multirow project
   }
   assert.deepEqual((await executeLocal(r, { dataRoot: fixtureRoot })).rows, [{ region: 'East', calculated: 1 }]);
 });
+
+test('both executors deny forged, omitted and unsupported security before file/connection access', async t => {
+  const { Client } = await import('pg'); const { executePostgres } = await import('@opensight/query-engine');
+  const connect = t.mock.method(Client.prototype, 'connect', () => { throw new Error('Must not connect'); });
+  for (const [mutate, code] of [
+    [r => { delete r.security; }, 'SECURITY_REJECTED'], [r => { delete r.security.userId; }, 'PRINCIPAL_REQUIRED'],
+    [r => { r.security.userId = 'forged'; }, 'UNKNOWN_PRINCIPAL'], [r => { r.security.userId = 'bob'; }, 'ROW_ACCESS_DENIED'],
+    [r => { r.security.policy.rowLevel = false; r.security.policy.rowRules = []; }, 'SECURITY_REJECTED'],
+    [r => { r.security.policy.protectedColumns = ['revenue']; }, 'COLUMN_ACCESS_DENIED'],
+    [r => { r.security.policy.rowRules[0].predicate = { sql: 'TRUE' }; }, 'INVALID_SECURITY_POLICY'],
+    [r => { r.security.policy.rowRules[0].predicate.value = null; }, 'INVALID_SECURITY_POLICY'],
+    [r => { r.dataSet.DataSet.RowLevelPermissionDataSet = {}; }, 'SECURITY_REJECTED'],
+    [r => { r.dataSource.DataSource.Permissions = []; }, 'SECURITY_REJECTED'],
+  ]) {
+    const r = secured(); mutate(r);
+    await assert.rejects(executeLocal(r, { dataRoot: '/deliberately-absent' }), { code });
+    await assert.rejects(executePostgres(r, { connectionString: 'postgres://unused.invalid/test' }), { code });
+  }
+  assert.equal(connect.mock.callCount(), 0);
+});
+test('Postgres executor sends the secured SQL and parameters to the driver', async t => {
+  const { Client, types } = await import('pg'); const { executePostgres } = await import('@opensight/query-engine');
+  t.mock.method(Client.prototype, 'connect', async () => {});
+  const query = t.mock.method(Client.prototype, 'query', async config => typeof config === 'string' ? { rows: [] } : {
+    fields: [{ name: 'region', dataTypeID: types.builtins.TEXT }, { name: 'revenue', dataTypeID: types.builtins.FLOAT8 }], rows: [['East', '500']],
+  });
+  const end = t.mock.method(Client.prototype, 'end', async () => {});
+  const result = await executePostgres(secured(), { connectionString: 'postgres://unused.invalid/test' });
+  const config = query.mock.calls[1].arguments[0];
+  assert.match(config.text, /FROM "public"\."sales" WHERE \("region" = \$1\)/);
+  assert.deepEqual(config.values, ['East']); assert.deepEqual(result.rows, [{ region: 'East', revenue: 500 }]); assert.equal(end.mock.callCount(), 1);
+});

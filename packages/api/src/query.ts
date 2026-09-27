@@ -14,6 +14,10 @@ export class RequestError extends Error {
   constructor(readonly status: number, message: string) { super(message); }
 }
 
+export class SecurityError extends RequestError {
+  constructor(status: number, readonly code: string, message: string) { super(status, message); this.name = 'SecurityError'; }
+}
+
 type QueryBody = InteractiveQuery;
 
 function invalid(path: string): never { throw new RequestError(400, `${path}: invalid query body`); }
@@ -32,6 +36,7 @@ function array(value: unknown, path: string): unknown[] {
 
 /** Validate the transport shape; unsupported semantic values belong to the engine (422). */
 export function validateQuery(raw: unknown): QueryBody {
+  if (isObject(raw) && ['principal', 'principals', 'user', 'userId', 'groups', 'groupIds', 'namespace', 'namespaceId', 'security', 'policy'].some(k => Object.hasOwn(raw, k))) throw new SecurityError(403, 'FORGED_PRINCIPAL', 'Query bodies cannot assert identity or policy');
   const body = record(raw, ['dimensions', 'measures', 'filters', 'calculatedFields', 'parameterDeclarations', 'parameterBindings'], '$');
   let parameters: ReturnType<typeof validateParameters>;
   try { parameters = validateParameters(body.parameterDeclarations, body.parameterBindings); }

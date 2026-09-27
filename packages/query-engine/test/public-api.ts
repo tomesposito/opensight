@@ -29,3 +29,11 @@ function consumer(): void {
   void [expression, result, postgresPlan, postgresResult, invalid, QueryEngineError];
 }
 void consumer;
+
+import type { SecurityContext, DatasetPolicy, RowRule, ColumnGrant } from '@opensight/query-engine';
+const rowRule: RowRule = { id: 'east', principals: [{ type: 'user', id: 'reader' }], predicate: { column: 'region', operator: 'eq', value: 'East' } };
+const columnGrant: ColumnGrant = { id: 'revenue', principals: rowRule.principals, column: 'revenue', effect: 'allow' };
+const policy: DatasetPolicy = { namespaceId: 'default', dataSetArn: 'synthetic', rowLevel: true, rowRules: [rowRule], protectedColumns: ['revenue'], columnGrants: [columnGrant] };
+const security: SecurityContext = { namespaceId: 'default', userId: 'reader', users: [{ id: 'reader', namespaceId: 'default' }], groups: [], policy };
+const securedRequest: PlanRequest = { ...request, security };
+void securedRequest;

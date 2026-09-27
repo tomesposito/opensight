@@ -54,116 +54,119 @@ export async function createApiServer(options: ApiOptions): Promise<Server> {
   const scheduler = new Scheduler(async () => { await refresh.tick(); await reports.tick(); });
   const server = createServer((request, response) => {
     void (async () => {
-    const requestId = randomUUID();
-    const error = (status: number, type: string, message: string): void => {
-      send(response, status, { Type: type, Message: message, RequestId: requestId });
-    };
-    const url = request.url ?? '';
-    const queryOffset = url.indexOf('?');
-    let path = queryOffset === -1 ? url : url.slice(0, queryOffset);
-    const query = queryOffset === -1 ? '' : url.slice(queryOffset + 1);
-    const identity = await security?.authenticate(request);
-    if (identity) path = scopePath(path, identity);
-    const namespaceId = identity?.namespaceId ?? 'default';
-    const scopedStore = namespaceStores.get(namespaceId), scopedSales = namespaceQueries.get(namespaceId);
-    if (/^\/api\/(namespaces|groups|users)(?:\/[^/]+)?$/.test(path)) {
-      if (!security || !identity) throw new SecurityError(503, 'SECURITY_NOT_CONFIGURED', 'Needs a hosted API with authentication configured');
-      if (await namespaceRoute(request, response, path, query, identity, security)) return;
-    }
-    if (['/api/assets', '/analyses', '/dashboards', '/api/datasets'].includes(path)) {
-      method(request, response, ['GET']);
-      if (query) throw new RequestError(400, 'Query parameters are not supported');
-      const assets = [...(scopedStore?.list() ?? []), ...(scopedSales ? [{ kind: 'dataset', id: 'sales', name: 'Sales' }] : [])];
-      send(response, 200, assets.filter(a => path === '/api/assets' || path === '/analyses' && a.kind === 'analysis' || path === '/dashboards' && a.kind === 'dashboard' || path === '/api/datasets' && a.kind === 'dataset'));
-      return;
-    }
-    if (/^\/api\/datasets\/[^/]+\/(row-rules|column-grants)/.test(path)) {
-      if (!security || !identity) throw new SecurityError(503, 'SECURITY_NOT_CONFIGURED', 'Needs a hosted API with authentication configured');
-      if (!scopedSales) throw new RequestError(404, 'Dataset not found');
-      if (await security.route(request, response, path, query, identity)) return;
-    }
-    if (path === '/api/automation-status' || path.startsWith('/api/users/') || path.startsWith('/api/alert-rules') || path === '/api/refresh-schedules' || /^\/api\/datasets\/[^/]+\/refresh-/.test(path)) {
-      if (security && identity) {
-        if (namespaceId !== 'default') throw new SecurityError(404, 'RESOURCE_NOT_FOUND', 'Resource not found');
-        security.admin(identity);
+      const requestId = randomUUID();
+      const error = (status: number, type: string, message: string): void => {
+        send(response, status, { Type: type, Message: message, RequestId: requestId });
+      };
+      const url = request.url ?? '';
+      const queryOffset = url.indexOf('?');
+      let path = queryOffset === -1 ? url : url.slice(0, queryOffset);
+      const query = queryOffset === -1 ? '' : url.slice(queryOffset + 1);
+      if (['x-user', 'x-user-id', 'x-principal', 'x-groups', 'x-group-ids', 'x-namespace', 'x-namespace-id'].some(k => request.headers[k] !== undefined)) throw new SecurityError(403, 'FORGED_PRINCIPAL', 'Caller-supplied principal headers are not supported');
+      if (!security && request.headers.authorization) throw new SecurityError(503, 'SECURITY_NOT_CONFIGURED', 'Credential verification is not configured');
+      const identity = await security?.authenticate(request);
+      if (identity) path = scopePath(path, identity);
+      const namespaceId = identity?.namespaceId ?? 'default';
+      const scopedStore = namespaceStores.get(namespaceId), scopedSales = namespaceQueries.get(namespaceId);
+      if (/^\/api\/(namespaces|groups|users)(?:\/[^/]+)?$/.test(path)) {
+        if (!security || !identity) throw new SecurityError(503, 'SECURITY_NOT_CONFIGURED', 'Needs a hosted API with authentication configured');
+        if (await namespaceRoute(request, response, path, query, identity, security)) return;
       }
-      void (async () => {
-        if (path === '/api/automation-status') {
-          method(request, response, ['GET']);
-          if (query) throw new RequestError(400, 'Query parameters are not supported');
-          send(response, 200, { scheduler: 'api-process', smtp: mail.configured ? 'configured' : 'not-configured', persistence: options.automationStorePath ? 'file' : 'ephemeral' });
-          return true;
+      if (['/api/assets', '/analyses', '/dashboards', '/api/datasets'].includes(path)) {
+        method(request, response, ['GET']);
+        if (query) throw new RequestError(400, 'Query parameters are not supported');
+        const assets = [...(scopedStore?.list() ?? []), ...(scopedSales ? [{ kind: 'dataset', id: 'sales', name: 'Sales' }] : [])];
+        send(response, 200, assets.filter(a => path === '/api/assets' || path === '/analyses' && a.kind === 'analysis' || path === '/dashboards' && a.kind === 'dashboard' || path === '/api/datasets' && a.kind === 'dataset'));
+        return;
+      }
+      if (/^\/api\/datasets\/[^/]+\/(row-rules|column-grants)/.test(path)) {
+        if (!security || !identity) throw new SecurityError(503, 'SECURITY_NOT_CONFIGURED', 'Needs a hosted API with authentication configured');
+        if (!scopedSales) throw new RequestError(404, 'Dataset not found');
+        if (await security.route(request, response, path, query, identity)) return;
+      }
+      if (path === '/api/automation-status' || path.startsWith('/api/users/') || path.startsWith('/api/alert-rules') || path === '/api/refresh-schedules' || /^\/api\/datasets\/[^/]+\/refresh-/.test(path)) {
+        if (security && identity) {
+          if (namespaceId !== 'default') throw new SecurityError(404, 'RESOURCE_NOT_FOUND', 'Resource not found');
+          security.admin(identity);
         }
-        return await refreshRoute(request, response, path, query, refresh) || await reportRoute(request, response, path, query, reports) || await alertRoute(request, response, path, query, alerts);
-      })().then(handled => {
-        if (!handled) error(404, 'ResourceNotFoundException', 'Route not found');
-      }).catch(cause => {
-        request.resume();
-        if (cause instanceof QueryEngineError) send(response, 422, { errorCode: cause.code, message: cause.message, path: cause.path });
-        else send(response, cause instanceof RequestError ? cause.status : 500, { Message: cause instanceof RequestError ? cause.message : 'Unable to process automation resource' });
-      });
-      return;
-    }
-    const queryMatch = /^\/api\/datasets\/([^/]+)\/query$/u.exec(path);
-    if (queryMatch) {
-      void (async () => {
-        try {
-          if (request.method !== 'POST') {
-            response.setHeader('Allow', 'POST');
-            throw new RequestError(405, 'Only POST is supported');
+        void (async () => {
+          if (path === '/api/automation-status') {
+            method(request, response, ['GET']);
+            if (query) throw new RequestError(400, 'Query parameters are not supported');
+            send(response, 200, { scheduler: 'api-process', smtp: mail.configured ? 'configured' : 'not-configured', persistence: options.automationStorePath ? 'file' : 'ephemeral' });
+            return true;
           }
-          let id: string;
-          try { id = decodeURIComponent(queryMatch[1]!); }
-          catch { throw new RequestError(400, 'Invalid dataset ID encoding'); }
-          if (!RESOURCE_ID.test(id)) throw new RequestError(400, 'Invalid dataset ID');
-          if (query) throw new RequestError(400, 'Query parameters are not supported');
-          if (id !== 'sales' || !scopedSales) throw new RequestError(404, 'Dataset has no resolved local sales CSV binding');
-          send(response, 200, await scopedSales.execute(await readQuery(request), identity));
-        } catch (cause) {
+          return await refreshRoute(request, response, path, query, refresh) || await reportRoute(request, response, path, query, reports) || await alertRoute(request, response, path, query, alerts);
+        })().then(handled => {
+          if (!handled) error(404, 'ResourceNotFoundException', 'Route not found');
+        }).catch(cause => {
           request.resume();
           if (cause instanceof QueryEngineError) send(response, 422, { errorCode: cause.code, message: cause.message, path: cause.path });
-          else if (cause instanceof RequestError) send(response, cause.status, { Message: cause.message });
-          else send(response, 500, { Message: 'Unable to execute local query' });
-        }
-      })();
-      return;
-    }
-    const match = /^\/(analyses|dashboards)\/([^/]+)\/definition$/u.exec(path);
-    if (!match) {
-      error(404, 'ResourceNotFoundException', 'Route not found');
-      return;
-    }
-    if (request.method !== 'GET') {
-      response.setHeader('Allow', 'GET');
-      error(405, 'MethodNotAllowed', 'Only GET is supported');
-      return;
-    }
-    let id: string;
-    try {
-      id = decodeURIComponent(match[2]!);
-    } catch {
-      error(400, 'InvalidParameterValueException', 'Invalid resource ID encoding');
-      return;
-    }
-    if (!RESOURCE_ID.test(id)) {
-      error(400, 'InvalidParameterValueException', 'Invalid resource ID');
-      return;
-    }
-    // Version/alias selection and other query semantics have no local implementation.
-    if (query !== '') {
-      error(400, 'InvalidParameterValueException', 'Query parameters are not supported');
-      return;
-    }
-    const body = scopedStore?.get(match[1] === 'analyses' ? 'analysis' : 'dashboard', id);
-    if (!body) {
-      error(404, 'ResourceNotFoundException', 'Definition not found');
-      return;
-    }
-    try {
-      send(response, 200, { ...body, RequestId: requestId });
-    } catch {
-      error(500, 'InternalFailureException', 'Unable to serialize definition');
-    }
+          else send(response, cause instanceof RequestError ? cause.status : 500, { Message: cause instanceof RequestError ? cause.message : 'Unable to process automation resource' });
+        });
+        return;
+      }
+      const queryMatch = /^\/api\/datasets\/([^/]+)\/query$/u.exec(path);
+      if (queryMatch) {
+        void (async () => {
+          try {
+            if (request.method !== 'POST') {
+              response.setHeader('Allow', 'POST');
+              throw new RequestError(405, 'Only POST is supported');
+            }
+            let id: string;
+            try { id = decodeURIComponent(queryMatch[1]!); }
+            catch { throw new RequestError(400, 'Invalid dataset ID encoding'); }
+            if (!RESOURCE_ID.test(id)) throw new RequestError(400, 'Invalid dataset ID');
+            if (query) throw new RequestError(400, 'Query parameters are not supported');
+            if (id !== 'sales' || !scopedSales) throw new RequestError(404, 'Dataset has no resolved local sales CSV binding');
+            send(response, 200, await scopedSales.execute(await readQuery(request), identity));
+          } catch (cause) {
+            request.resume();
+            if (cause instanceof QueryEngineError) send(response, 422, { errorCode: cause.code, message: cause.message, path: cause.path });
+            else if (cause instanceof SecurityError) send(response, cause.status, { errorCode: cause.code, Message: cause.message });
+            else if (cause instanceof RequestError) send(response, cause.status, { Message: cause.message });
+            else send(response, 500, { Message: 'Unable to execute local query' });
+          }
+        })();
+        return;
+      }
+      const match = /^\/(analyses|dashboards)\/([^/]+)\/definition$/u.exec(path);
+      if (!match) {
+        error(404, 'ResourceNotFoundException', 'Route not found');
+        return;
+      }
+      if (request.method !== 'GET') {
+        response.setHeader('Allow', 'GET');
+        error(405, 'MethodNotAllowed', 'Only GET is supported');
+        return;
+      }
+      let id: string;
+      try {
+        id = decodeURIComponent(match[2]!);
+      } catch {
+        error(400, 'InvalidParameterValueException', 'Invalid resource ID encoding');
+        return;
+      }
+      if (!RESOURCE_ID.test(id)) {
+        error(400, 'InvalidParameterValueException', 'Invalid resource ID');
+        return;
+      }
+      // Version/alias selection and other query semantics have no local implementation.
+      if (query !== '') {
+        error(400, 'InvalidParameterValueException', 'Query parameters are not supported');
+        return;
+      }
+      const body = scopedStore?.get(match[1] === 'analyses' ? 'analysis' : 'dashboard', id);
+      if (!body) {
+        error(404, 'ResourceNotFoundException', 'Definition not found');
+        return;
+      }
+      try {
+        send(response, 200, { ...body, RequestId: requestId });
+      } catch {
+        error(500, 'InternalFailureException', 'Unable to serialize definition');
+      }
     })().catch(cause => {
       request.resume();
       if (cause instanceof SecurityError) send(response, cause.status, { errorCode: cause.code, Message: cause.message });

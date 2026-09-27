@@ -3,7 +3,7 @@ import { QueryEngineError, validatePolicy, validateRowRule, validateColumnGrant,
 import { AutomationStore } from './automation-store.js';
 import { method, routeId, send } from './automation-routes.js';
 import { id, record, invalid } from './schedule.js';
-import { readBody, RequestError } from './query.js';
+import { readBody, RequestError, SecurityError } from './query.js';
 
 export interface Identity { namespaceId: string; userId: string }
 export interface User extends SecurityUser { name: string; role: 'admin' | 'reader' }
@@ -21,9 +21,7 @@ export interface SecurityOptions {
   initialState: SecurityState;
   storePath?: string;
 }
-export class SecurityError extends RequestError {
-  constructor(status: number, readonly code: string, message: string) { super(status, message); this.name = 'SecurityError'; }
-}
+export { SecurityError } from './query.js';
 export const emptySecurityState = (): SecurityState => ({ version: 1, namespaces: [{ id: 'default', name: 'Default' }], users: [], groups: [], datasets: [] });
 function name(raw: unknown): string {
   if (typeof raw !== 'string' || !raw.trim() || raw.length > 512 || /[\x00-\x1f]/.test(raw)) invalid('$.name', 'expected a name');
@@ -72,7 +70,6 @@ export class SecurityService {
     return new SecurityService(store, options, columns, dataSetArn);
   }
   async authenticate(request: IncomingMessage): Promise<Identity> {
-    if (['x-user-id', 'x-principal', 'x-groups', 'x-namespace-id'].some(k => request.headers[k] !== undefined)) throw new SecurityError(403, 'FORGED_PRINCIPAL', 'Caller-supplied principal headers are not supported');
     let identity: Identity | undefined;
     try { identity = await this.options.authenticate(request); }
     catch { throw new SecurityError(401, 'UNKNOWN_PRINCIPAL', 'Credentials could not be resolved'); }

@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { once } from 'node:events';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { dashboardRoot, interval } from './automation-helpers.mjs';
 import { createApiServer, emptySecurityState, StubMailTransport } from '@opensight/api';
 
 const fixtures = fileURLToPath(new URL('../../../fixtures/', import.meta.url));
@@ -112,4 +113,59 @@ test('namespace assets, definitions, same user/group IDs, policies and query bin
   assert.deepEqual((await api('/api/groups/east', 'GET', undefined, normal)).body.userIds, ['alice']);
   assert.deepEqual((await api('/api/datasets/sales/query', 'POST', query, 'default-alice')).body.rows, [{ region: 'East', total: 500 }]);
   assert.equal((await api('/api/namespaces/tenant', 'DELETE', undefined, tenant)).status, 409);
+});
+test('direct query bypass attempts reject missing/forged credentials and untrusted identity or policy claims', async t => {
+  const api = await secureApi(t);
+  await api('/api/datasets/sales/row-rules/east', 'PUT', rowRule);
+  const path = '/api/datasets/sales/query';
+  assert.deepEqual((await api(path, 'POST', query, '')).body.errorCode, 'PRINCIPAL_REQUIRED');
+  assert.deepEqual((await api(path, 'POST', query, 'forged')).body.errorCode, 'UNKNOWN_PRINCIPAL');
+  for (const key of ['principal', 'principals', 'user', 'userId', 'groups', 'groupIds', 'namespace', 'namespaceId', 'security', 'policy']) {
+    const result = await api(path, 'POST', { ...query, [key]: 'admin' }, 'alice');
+    assert.equal(result.status, 403, key); assert.equal(result.body.errorCode, 'FORGED_PRINCIPAL');
+  }
+  for (const header of ['x-user', 'x-user-id', 'x-principal', 'x-groups', 'x-group-ids', 'x-namespace', 'x-namespace-id']) assert.equal((await api(path, 'POST', query, 'alice', { [header]: 'admin' })).body.errorCode, 'FORGED_PRINCIPAL');
+  for (const field of ['localData', 'dataSet', 'dataSource', 'sql']) assert.equal((await api(path, 'POST', { ...query, [field]: {} }, 'alice')).status, 400);
+  assert.equal((await api(`${path}?namespace=other`, 'POST', query, 'alice')).status, 400);
+  assert.deepEqual((await api(path, 'POST', { ...query, filters: [{ columnName: 'region', values: ['West', "East' OR TRUE --"] }] }, 'alice')).body.rows, []);
+  assert.equal((await api('/api/datasets/sales/row-rules/east', 'DELETE', undefined, 'alice')).status, 403);
+  // Changing membership takes effect on the next query; no principal/group cache.
+  await api('/api/groups/east', 'PUT', { name: 'East', userIds: [] });
+  assert.equal((await api(path, 'POST', query, 'alice')).body.errorCode, 'ROW_ACCESS_DENIED');
+});
+test('verifier exceptions and unknown registered identities fail closed without leaking verifier details', async t => {
+  for (const authenticate of [() => { throw new Error('private verifier details'); }, () => ({ namespaceId: 'default', userId: 'missing' }), () => ({ namespaceId: 'missing', userId: 'alice' })]) {
+    const api = await secureApi(t, { authenticate });
+    const result = await api('/api/datasets/sales/query', 'POST', query);
+    assert.equal(result.body.errorCode, 'UNKNOWN_PRINCIPAL'); assert.doesNotMatch(JSON.stringify(result.body), /private verifier/);
+  }
+});
+test('protected background refresh, alerts and report capture cannot bypass missing execution identities', async t => {
+  const mail = new StubMailTransport();
+  const api = await secureApi(t, { apiOptions: { dataRoot: await dashboardRoot(t), mailTransport: mail } });
+  await api('/api/datasets/sales/row-rules/east', 'PUT', rowRule);
+  const run = await api('/api/datasets/sales/refresh-runs', 'POST', {});
+  assert.equal(run.body.state, 'failed'); assert.equal(run.body.rows, null); assert.equal(run.body.error.code, 'PRINCIPAL_REQUIRED');
+  assert.equal((await api('/api/refresh-schedules', 'GET', undefined, 'alice')).status, 403);
+  const alert = await api('/api/alert-rules/test', 'PUT', { datasetId: 'sales', dashboardId: 'sales-dashboard', visualId: 'total-revenue', fieldId: 'revenue', enabled: true, recipients: ['reader@example.com'], condition: { kind: 'above', threshold: 1 } });
+  assert.equal(alert.body.errorCode, 'PRINCIPAL_REQUIRED');
+  assert.equal((await api('/api/users/alice/subscriptions/test', 'PUT', { dashboardId: 'sales-dashboard', recipients: ['reader@example.com'], enabled: false, schedule: interval })).status, 200);
+  assert.equal((await api('/api/users/alice/subscriptions/test/runs', 'POST', {})).body.state, 'failed');
+  assert.equal(mail.messages.length, 0);
+});
+test('security store persists protection and rejects corrupted policies before startup', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'opensight-policy-')); t.after(() => rm(root, { recursive: true, force: true }));
+  const storePath = join(root, 'security.json'), api = await secureApi(t, { storePath });
+  await api('/api/datasets/sales/row-rules/east', 'PUT', rowRule);
+  await api('/api/datasets/sales/row-rules/east', 'DELETE');
+  await api('/api/datasets/sales/column-grants/revenue', 'PUT', { column: 'revenue', effect: 'allow', principals: [{ type: 'user', id: 'alice' }] });
+  await api('/api/datasets/sales/column-grants/revenue', 'DELETE');
+  const restarted = await secureApi(t, { storePath });
+  assert.equal((await restarted('/api/datasets/sales/query', 'POST', query, 'alice')).body.errorCode, 'ROW_ACCESS_DENIED');
+  const { readFile } = await import('node:fs/promises');
+  const saved = JSON.parse(await readFile(storePath, 'utf8'));
+  assert.equal(saved.datasets[0].rowLevel, true); assert.deepEqual(saved.datasets[0].protectedColumns, ['revenue']);
+  saved.datasets[0].rowRules = [{ id: 'bad', ...rowRule, principals: [{ type: 'user', id: 'missing' }] }];
+  await writeFile(storePath, JSON.stringify(saved));
+  await assert.rejects(secureApi(t, { storePath }), /Unable to load automation store/);
 });

@@ -117,3 +117,20 @@ and deletion/demotion of the last administrator are rejected atomically.
 
 Legacy automation resources belong to default and require its administrator in
 secured mode; other namespaces cannot inspect their configuration or history.
+
+## Fail-closed diagnostics and verification
+
+The HTTP boundary returns `PRINCIPAL_REQUIRED` for missing credentials,
+`UNKNOWN_PRINCIPAL` for failed verification or absent registry entries, and
+`FORGED_PRINCIPAL` for caller-supplied identity/policy body fields or identity
+headers. Query credentials use the injected verifier, never a principal selected
+in a query body. Unconfigured credential verification cannot accept an
+Authorization header. Readers cannot modify policy resources; administrators
+cannot bypass row or column rules. All responses remain `Cache-Control: no-store`.
+
+Tests execute RLS SQL against local DuckDB and embedded PostgreSQL (PGlite), inspect
+the Postgres executor's driver call, and verify both executors reject unauthorized
+work before opening a data file/connection. API tests use loopback HTTP, a synthetic
+credential verifier and a stub mail transport. No AWS calls, remote database
+connections or additional dependencies are required. Root `npm test` already
+includes workspace test globs and the public strict TypeScript consumers.
