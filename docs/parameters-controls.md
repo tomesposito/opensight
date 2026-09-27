@@ -92,3 +92,28 @@ No third-party dependency was added for this phase. The web package now imports
 browser-safe entry points from the repository's existing `@opensight/query-engine`
 workspace; its package metadata and repository LICENSE declare Apache-2.0.
 Native database drivers are not imported by the browser entry points.
+
+## Verification (2026-09-27)
+
+`env -u DATABASE_URL npm test` exited 0:
+
+| Suite | Tests | Passed | Failed | Skipped |
+| --- | ---: | ---: | ---: | ---: |
+| API | 31 | 31 | 0 | 0 |
+| Bundle parser | 183 | 183 | 0 | 0 |
+| Query engine | 166 | 165 | 0 | 1 |
+| Web | 232 | 232 | 0 | 0 |
+| Root controls integration | 2 | 2 | 0 | 0 |
+| Total | 614 | 613 | 0 | 1 |
+
+The external PostgreSQL integration test was skipped because `DATABASE_URL` was
+unset. All suites had zero cancellations and zero todo tests. Local API integration
+used loopback; no AWS or external service calls were made.
+
+After the final decimal-slider form adjustment, strict TypeScript compilation and
+six focused control/UI regressions passed (6 tests, 6 passed, 0 failed/skipped).
+`npm run build` and `npm run build:demo --workspace @opensight/web` both exited 0.
+The rebuilt `packages/web/dist/opensight-demo.html` is 1,096,026 bytes and was checked
+for inline script/CSS and included parameter/control code. `git diff --check` passed.
+The build retains the existing ECharts chunk-size warning; test rendering uses the
+existing deprecated react-test-renderer dependency.

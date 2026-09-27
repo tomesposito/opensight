@@ -50,7 +50,7 @@ export function ControlsStrip({ draft, dispatch, client }: { draft: AuthorDraft;
           {parent && <label>Parent filter column<select value={matchColumn} onChange={e => setParentColumn(e.target.value)}>{parentFields.map(f => <option key={f.name}>{f.name}</option>)}</select></label>}
         </>}
       </>}
-      {kind === 'slider' && <><label>Minimum<input type="number" value={min} onChange={e => setMin(e.target.value)} /></label><label>Maximum<input type="number" value={max} onChange={e => setMax(e.target.value)} /></label><label>Step<input type="number" value={step} onChange={e => setStep(e.target.value)} /></label></>}
+      {kind === 'slider' && <><label>Minimum<input type="number" step="any" value={min} onChange={e => setMin(e.target.value)} /></label><label>Maximum<input type="number" step="any" value={max} onChange={e => setMax(e.target.value)} /></label><label>Step<input type="number" step="any" value={step} onChange={e => setStep(e.target.value)} /></label></>}
       {error && <p role="alert">{error}</p>}<button type="submit">Create control</button>
     </form>}
   </section>;
