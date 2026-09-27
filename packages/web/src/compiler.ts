@@ -1,6 +1,9 @@
 import type { EChartsOption, BarSeriesOption, LineSeriesOption } from 'echarts';
 import type { Cell, Field, FixtureVisual, Row, VisualModel } from './model.js';
 
+import { EXTRA_VISUALS, extraKind, variantKinds } from './visual-catalog.js';
+import { compileExtra } from './extra-charts.js';
+
 type ObjectValue = Record<string, unknown>;
 type Input = Pick<FixtureVisual, 'source' | 'definition' | 'rows' | 'bindings' | 'path'>;
 export interface CompiledVisual {
@@ -51,10 +54,8 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
   const entries = Object.entries(visual);
   if (entries.length !== 1) fail(path, 'expected exactly one visual variant');
   const [variant, raw] = entries[0]!;
-  const kinds: Record<string, VisualModel['kind']> = bundle
-    ? { pieChartVisual: 'pie', barChartVisual: 'bar', kpiVisual: 'kpi', lineChartVisual: 'line', tableVisual: 'table', pivotTableVisual: 'pivot' }
-    : { PieChartVisual: 'pie', BarChartVisual: 'bar', KPIVisual: 'kpi', LineChartVisual: 'line', TableVisual: 'table', PivotTableVisual: 'pivot' };
-  const kind = Object.hasOwn(kinds, variant) ? kinds[variant] : undefined;
+  const kinds = bundle ? variantKinds : Object.fromEntries(Object.entries(variantKinds).map(([name, kind]) => [name === 'kpiVisual' ? 'KPIVisual' : name[0]!.toUpperCase() + name.slice(1), kind]));
+  let kind = Object.hasOwn(kinds, variant) ? kinds[variant] : undefined;
   if (!kind) fail(`${path}.${variant}`, 'unsupported visual variant in this dialect');
   const p = `${path}.${variant}`;
   const body = object(raw, p);
@@ -65,17 +66,23 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
   const id = text(body[key('visualId', 'VisualId')], p);
   const cpath = `${p}.${key('chartConfiguration', 'ChartConfiguration')}`;
   const config = object(body[key('chartConfiguration', 'ChartConfiguration')], cpath);
+  if (kind === 'bar' && config[key('barsArrangement', 'BarsArrangement')] === 'STACKED_PERCENT') kind = 'bar100';
+  if (kind === 'line' && config[key('type', 'Type')] === 'AREA') kind = 'area';
+  const extra = extraKind(kind) ? EXTRA_VISUALS[kind] : undefined;
   const common = [key('fieldWells', 'FieldWells')];
   if (kind !== 'kpi' && kind !== 'table' && kind !== 'pivot') common.push(key('sortConfiguration', 'SortConfiguration'), key('dataLabels', 'DataLabels'), key('tooltip', 'Tooltip'), key('legend', 'Legend'));
   if (kind === 'pie') common.push(key('donutOptions', 'DonutOptions'));
-  if (kind === 'bar') common.push(key('orientation', 'Orientation'), key('barsArrangement', 'BarsArrangement'));
+  if (kind === 'bar' || kind === 'bar100') common.push(key('orientation', 'Orientation'), key('barsArrangement', 'BarsArrangement'));
   if (kind === 'table' || kind === 'pivot') common.push(key('totalOptions', 'TotalOptions'));
   if (kind === 'table') common.push(key('opensightSubtotalOptions', 'OpenSightSubtotalOptions'));
+  if (kind === 'area') common.push(key('type', 'Type'));
+  if (kind === 'gauge') common.push(key('opensightGauge', 'OpenSightGauge'));
+  if (kind === 'histogram') common.push(key('opensightBins', 'OpenSightBins'));
   keys(config, common, cpath);
   const fpath = `${cpath}.${key('fieldWells', 'FieldWells')}`;
   const outer = object(config[key('fieldWells', 'FieldWells')], fpath);
-  const wellsKey = kind === 'pie' ? key('pieChartAggregatedFieldWells', 'PieChartAggregatedFieldWells')
-    : { bar: key('barChartAggregatedFieldWells', 'BarChartAggregatedFieldWells'), line: key('lineChartAggregatedFieldWells', 'LineChartAggregatedFieldWells'), table: key('tableAggregatedFieldWells', 'TableAggregatedFieldWells'), pivot: key('pivotTableAggregatedFieldWells', 'PivotTableAggregatedFieldWells'), kpi: '' }[kind];
+  const wellsKey = extra ? (extra.wells ? key(extra.wells, extra.wells[0]!.toUpperCase() + extra.wells.slice(1)) : '') : kind === 'pie' ? key('pieChartAggregatedFieldWells', 'PieChartAggregatedFieldWells')
+    : { bar: key('barChartAggregatedFieldWells', 'BarChartAggregatedFieldWells'), line: key('lineChartAggregatedFieldWells', 'LineChartAggregatedFieldWells'), table: key('tableAggregatedFieldWells', 'TableAggregatedFieldWells'), pivot: key('pivotTableAggregatedFieldWells', 'PivotTableAggregatedFieldWells'), kpi: '' }[kind as 'bar' | 'line' | 'table' | 'pivot' | 'kpi'];
   if (wellsKey) keys(outer, [wellsKey], fpath);
   const wells = wellsKey ? object(outer[wellsKey], `${fpath}.${wellsKey}`) : outer;
   const wpath = wellsKey ? `${fpath}.${wellsKey}` : fpath;
@@ -83,7 +90,8 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
   const valueKey = key('values', 'Values');
   // Empty optional wells are harmless; nonempty colors/targets/trends change semantics.
   const unused = [key('colors', 'Colors'), key('smallMultiples', 'SmallMultiples'), key('targetValues', 'TargetValues'), key('trendGroups', 'TrendGroups')];
-  keys(wells, [categoryKey, valueKey, ...(kind === 'pivot' ? [key('columns', 'Columns')] : []), ...unused], wpath);
+  const wellKey = (name: string) => key(name, name[0]!.toUpperCase() + name.slice(1));
+  keys(wells, [...(extra ? [...extra.dimensions, ...extra.measures].map(wellKey) : [categoryKey, valueKey]), ...(kind === 'pivot' ? [key('columns', 'Columns')] : []), ...unused], wpath);
   for (const name of unused) if (list(wells[name], `${wpath}.${name}`).length) fail(`${wpath}.${name}`, 'field well not supported');
   const field = (value: unknown, measure: boolean, fp: string): Field => {
     const wrapper = object(value, fp);
@@ -111,16 +119,30 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
       dataSet: text(column[key('dataSetIdentifier', 'DataSetIdentifier')], fp),
     };
   };
-  const rowDimensions = list(wells[categoryKey], `${wpath}.${categoryKey}`).map((v, i) => field(v, false, `${wpath}.${categoryKey}[${i}]`));
+  const dimensionNames = extra ? extra.dimensions.map(wellKey) : [categoryKey];
+  const measureNames = extra ? extra.measures.map(wellKey) : [valueKey];
+  const rowDimensions = dimensionNames.flatMap(name => list(wells[name], `${wpath}.${name}`).map((v, i) => field(v, false, `${wpath}.${name}[${i}]`)));
   const columnDimensions = kind === 'pivot' ? list(wells[key('columns', 'Columns')], wpath).map((v, i) => field(v, false, `${wpath}.columns[${i}]`)) : [];
   const dimensions = [...rowDimensions, ...columnDimensions];
-  const measures = list(wells[valueKey], `${wpath}.${valueKey}`).map((v, i) => field(v, true, `${wpath}.${valueKey}[${i}]`));
-  if (kind === 'kpi' ? dimensions.length !== 0 : kind === 'pivot' || kind === 'table' ? dimensions.length < 1 : dimensions.length !== 1) fail(wpath, kind === 'kpi' ? 'KPI must have no category' : 'exactly one category/group field is supported');
-  if (!measures.length || ((kind === 'pie' || kind === 'kpi') && measures.length !== 1)) fail(wpath, 'expected supported number of measures (pie/KPI: one)');
+  const measures = measureNames.flatMap(name => list(wells[name], `${wpath}.${name}`).map((v, i) => field(v, true, `${wpath}.${name}[${i}]`)));
+  if (extra) {
+    const d = dimensions.length, m = measures.length;
+    const validDimensions = kind === 'gauge' ? d === 0 : kind === 'scatter' || kind === 'histogram' ? d <= 1 : kind === 'heatmap' || kind === 'pointMap' ? d === 2 && dimensionNames.every(n => list(wells[n], wpath).length === 1) : kind === 'treemap' || kind === 'box' ? d >= 1 : d === 1;
+    const validMeasures = kind === 'scatter' ? m >= 2 && m <= 3 && measureNames.slice(0, 2).every(n => list(wells[n], wpath).length === 1) && list(wells[measureNames[2]!], wpath).length <= 1 : kind === 'combo' ? m >= 2 && list(wells[measureNames[0]!], wpath).length === 1 && measureNames.every(n => list(wells[n], wpath).length >= 1) : kind === 'bar100' || kind === 'area' ? m >= 1 : m === 1;
+    if (!validDimensions || !validMeasures) fail(wpath, extra.note);
+  } else {
+    if (kind === 'kpi' ? dimensions.length !== 0 : kind === 'pivot' || kind === 'table' ? dimensions.length < 1 : dimensions.length !== 1) fail(wpath, kind === 'kpi' ? 'KPI must have no category' : 'exactly one category/group field is supported');
+    if (!measures.length || ((kind === 'pie' || kind === 'kpi') && measures.length !== 1)) fail(wpath, 'expected supported number of measures (pie/KPI: one)');
+  }
   const fields = [...dimensions, ...measures];
   if (new Set(fields.map(f => f.id)).size !== fields.length) fail(wpath, 'duplicate field IDs');
   if (new Set(fields.map(f => f.dataSet)).size !== 1) fail(wpath, 'multiple datasets are unsupported');
-  const warnings: string[] = [];
+  const warnings: string[] = extra ? [`${p}: ${extra.note}`] : [];
+  const gauge = object(config[key('opensightGauge', 'OpenSightGauge')] ?? {}, cpath);
+  keys(gauge, ['min', 'max'], cpath);
+  const gaugeMin = gauge.min ?? 0, gaugeMax = gauge.max ?? 100, bins = config[key('opensightBins', 'OpenSightBins')] ?? 10;
+  if (typeof gaugeMin !== 'number' || typeof gaugeMax !== 'number' || !Number.isFinite(gaugeMin) || !Number.isFinite(gaugeMax) || gaugeMin >= gaugeMax) fail(cpath, 'gauge requires finite min < max');
+  if (typeof bins !== 'number' || !Number.isInteger(bins) || bins < 1 || bins > 100) fail(cpath, 'histogram bins must be 1–100');
   const titleKey = key('title', 'Title');
   const title = object(body[titleKey] ?? {}, `${p}.${titleKey}`);
   keys(title, [key('visibility', 'Visibility'), key('formatText', 'FormatText')], `${p}.${titleKey}`);
@@ -194,10 +216,10 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
     fieldSort = { fieldId, direction };
   }
   return {
-    id, kind, title: plain as string | undefined ?? `${measures.map(f => f.column).join(', ')}${dimensions[0] ? ` by ${dimensions[0].column}` : ''}`,
+    id, kind, gaugeMin, gaugeMax, bins, title: plain as string | undefined ?? `${measures.map(f => f.column).join(', ')}${dimensions[0] ? ` by ${dimensions[0].column}` : ''}`,
     titleVisible: visibility(title, key('visibility', 'Visibility')),
     dimensions, rowDimensions, columnDimensions, measures, totals, subtotals, columnTotals, columnSubtotals, innerRadius, sort: fieldSort, warnings,
-    horizontal: kind === 'bar' && enumValue(config[key('orientation', 'Orientation')], ['VERTICAL', 'HORIZONTAL'], 'VERTICAL', `${cpath}.${key('orientation', 'Orientation')}`) === 'HORIZONTAL',
+    horizontal: (kind === 'bar' || kind === 'bar100') && enumValue(config[key('orientation', 'Orientation')], ['VERTICAL', 'HORIZONTAL'], 'VERTICAL', `${cpath}.${key('orientation', 'Orientation')}`) === 'HORIZONTAL',
     stacked: kind === 'bar' && enumValue(config[key('barsArrangement', 'BarsArrangement')], ['CLUSTERED', 'STACKED'], 'CLUSTERED', `${cpath}.${key('barsArrangement', 'BarsArrangement')}`) === 'STACKED',
     labels: visibility(labels, key('visibility', 'Visibility'), kind === 'pie' ? 'VISIBLE' : 'HIDDEN'),
     tooltip: visibility(tooltip, key('tooltipVisibility', 'TooltipVisibility')),
@@ -240,7 +262,7 @@ export function compileVisual(input: Input): CompiledVisual {
       return sort.direction === 'DESC' ? -cmp : cmp;
     });
   }
-  if (model.dimensions[0]) {
+  if (model.dimensions[0] && !['box', 'histogram', 'scatter', 'pointMap'].includes(model.kind)) {
     const categories = rows.map(row => JSON.stringify(model.dimensions.map(f => cell(row, f))));
     if (new Set(categories).size !== categories.length) fail(input.path, 'duplicate categories: expected aggregated result rows');
   }
@@ -253,7 +275,9 @@ export function compileVisual(input: Input): CompiledVisual {
     tooltip: { show: model.tooltip, trigger: model.kind === 'pie' ? 'item' : 'axis', renderMode: 'richText', confine: true },
     aria: { enabled: true },
   };
-  if (model.kind === 'pie') {
+  if (extraKind(model.kind)) {
+    compileExtra(model, rows, cell, number, option, message => fail(input.path, message));
+  } else if (model.kind === 'pie') {
     const measure = model.measures[0]!;
     option.legend = { show: model.legend, bottom: 4, type: 'scroll' };
     option.series = [{

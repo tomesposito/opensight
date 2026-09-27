@@ -1,4 +1,5 @@
 import type { BundleVisual, VisualBody } from '@opensight/bundle-parser';
+import type { VisualKind } from './visual-catalog.js';
 import type { ResourceKind } from './api-client.js';
 
 export type Cell = string | number | boolean | null;
@@ -12,7 +13,10 @@ export interface VisualModel {
   id: string;
   title: string;
   titleVisible: boolean;
-  kind: 'pie' | 'bar' | 'kpi' | 'line' | 'table' | 'pivot';
+  kind: VisualKind;
+  gaugeMin: number;
+  gaugeMax: number;
+  bins: number;
   dimensions: Field[];
   measures: Field[];
   rowDimensions: Field[];

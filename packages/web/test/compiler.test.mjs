@@ -122,7 +122,7 @@ const rejections = [
   ['ambiguous visual union', input => { input.definition.KPIVisual = { VisualId: 'kpi' }; }],
   ['bundle bar missing configuration', input => { input.source = 'bundle'; input.definition = { barChartVisual: { visualId: 'bar' } }; }],
   ['unknown configuration', input => { body(input).ChartConfiguration.ReferenceLines = [{}]; }],
-  ['unsupported percent stack', input => { body(input).ChartConfiguration.BarsArrangement = 'STACKED_PERCENT'; }],
+  ['unsupported arrangement', input => { body(input).ChartConfiguration.BarsArrangement = 'UNKNOWN'; }],
   ['color field well', input => { body(input).ChartConfiguration.FieldWells.BarChartAggregatedFieldWells.Colors = [{}]; }],
   ['field calculation', input => { body(input).ChartConfiguration.FieldWells.BarChartAggregatedFieldWells.Values[0] = { CalculatedMeasureField: { FieldId: 'x', Expression: 'sum({revenue})' } }; }],
   ['missing measure', input => { body(input).ChartConfiguration.FieldWells.BarChartAggregatedFieldWells.Values = []; }],

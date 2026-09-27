@@ -88,6 +88,7 @@ const measure: Schema = { NumericalMeasureField: ['numericalMeasureField', field
   CategoricalMeasureField: ['categoricalMeasureField', field], DateMeasureField: ['dateMeasureField', field],
   CalculatedMeasureField: ['calculatedMeasureField', members('FieldId Expression')] };
 const wells: Schema = {
+  Latitude: ['latitude', dimension], Longitude: ['longitude', dimension], Geospatial: ['geospatial', dimension], Groups: ['groups', dimension], OpenSightSample: ['opensightSample', dimension], Sizes: ['sizes', measure],
   Rows: ['rows', dimension], Columns: ['columns', dimension], Category: ['category', dimension], GroupBy: ['groupBy', dimension], Values: ['values', measure],
   Colors: ['colors', dimension], SmallMultiples: ['smallMultiples', dimension],
   TargetValues: ['targetValues', measure], TrendGroups: ['trendGroups', dimension],
@@ -121,6 +122,7 @@ const visualBody: Schema = {
   ColumnHierarchies: ['columnHierarchies', { DateTimeHierarchy: ['dateTimeHierarchy', members('HierarchyId DrillDownFilters')] }],
   ChartConfiguration: ['chartConfiguration', {
     FieldWells: ['fieldWells', {
+      ...Object.fromEntries(['FunnelChartAggregatedFieldWells', 'TreeMapAggregatedFieldWells', 'HeatMapAggregatedFieldWells', 'BoxPlotAggregatedFieldWells', 'WordCloudAggregatedFieldWells', 'HistogramAggregatedFieldWells', 'FilledMapAggregatedFieldWells', 'GeospatialMapAggregatedFieldWells'].map(name => [name, [name[0]!.toLowerCase() + name.slice(1), wells] as Rule])),
       PieChartAggregatedFieldWells: ['pieChartAggregatedFieldWells', wells],
       BarChartAggregatedFieldWells: ['barChartAggregatedFieldWells', wells],
       LineChartAggregatedFieldWells: ['lineChartAggregatedFieldWells', wells],
@@ -133,6 +135,7 @@ const visualBody: Schema = {
       RowTotalOptions: ['rowTotalOptions', members('TotalsVisibility')], ColumnTotalOptions: ['columnTotalOptions', members('TotalsVisibility')],
       RowSubtotalOptions: ['rowSubtotalOptions', members('TotalsVisibility')], ColumnSubtotalOptions: ['columnSubtotalOptions', members('TotalsVisibility')],
     }],
+    OpenSightBins: ['opensightBins'], OpenSightGauge: ['opensightGauge'],
     OpenSightSubtotalOptions: ['opensightSubtotalOptions', members('TotalsVisibility')],
     Orientation: ['orientation'], BarsArrangement: ['barsArrangement'], Type: ['type'],
     Interactions: ['interactions', interactions], CategoryAxis: ['categoryAxis', axis], XAxisDisplayOptions: ['xAxisDisplayOptions', axis],
@@ -213,6 +216,7 @@ const definition: Schema = {
       }],
     }] }],
     Visuals: ['visuals', {
+      ...Object.fromEntries(['FunnelChartVisual', 'GaugeChartVisual', 'TreeMapVisual', 'HeatMapVisual', 'BoxPlotVisual', 'WordCloudVisual', 'HistogramVisual', 'FilledMapVisual', 'GeospatialMapVisual'].map(name => [name, [name[0]!.toLowerCase() + name.slice(1), visualBody] as Rule])),
       PieChartVisual: ['pieChartVisual', visualBody], BarChartVisual: ['barChartVisual', visualBody],
       ComboChartVisual: ['comboChartVisual', visualBody], ScatterPlotVisual: ['scatterPlotVisual', visualBody],
       KPIVisual: ['kpiVisual', visualBody], LineChartVisual: ['lineChartVisual', visualBody], TableVisual: ['tableVisual', visualBody], PivotTableVisual: ['pivotTableVisual', visualBody],
