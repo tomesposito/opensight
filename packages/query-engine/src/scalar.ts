@@ -1,3 +1,4 @@
+import { functionReference } from './catalog.js';
 import { datetimeValue, datetimeSql } from './datetime.js';
 import type { ResultValue, RowExpression, SqlDialect } from './types.js';
 import { fail } from './validation.js';
@@ -48,6 +49,14 @@ export function scalarValue(name: string, args: readonly ResultValue[]): ResultV
   }
 }
 export function scalarSql(e: CallExpression, dialect: SqlDialect, compile: (e: RowExpression) => string): string {
+  if (functionReference(e.name)?.stage === 'aggregate') {
+    const a = compile(e.args[0]!);
+    if (e.name === 'distinct_count') return `COUNT(DISTINCT ${a})`;
+    if (e.name === 'percentile') return `PERCENTILE_DISC(${compile(e.args[1]!)} / 100.0) WITHIN GROUP (ORDER BY ${a})`;
+    if (e.name === 'median') return `PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY ${a})`;
+    const names: Record<string, string> = { stdev: 'STDDEV_SAMP', stdevp: 'STDDEV_POP', var: 'VAR_SAMP', varp: 'VAR_POP' };
+    return `${names[e.name] ?? e.name.toUpperCase()}(${a})`;
+  }
   const date = datetimeSql(e, dialect, compile); if (date !== undefined) return date;
   const args = e.args.map(compile), [a, b, c] = args;
   const integer = (s: string | undefined) => `CAST(TRUNC(${s}) AS INTEGER)`;

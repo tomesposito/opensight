@@ -1,10 +1,12 @@
 import type { QueryPlan, ResultRow, ResultValue, RowExpression } from './types.js';
+import { aggregateValue } from './aggregate.js';
+import { functionReference } from './catalog.js';
 import { evaluateExpression as evaluate } from './evaluate-expression.js';
 /** Executes an already validated plan over caller-owned pinned fixture rows. */
 export function evaluatePlan(plan: QueryPlan, input: readonly ResultRow[]): ResultRow[] {
   const rows = input.map(source => {
     const row = { ...source };
-    for (const c of plan.calculations) row[c.name] = evaluate(c.expression, row);
+    for (const c of plan.calculations.filter(c => c.expression.level === 'row')) row[c.name] = evaluate(c.expression, row);
     return row;
   }).filter(row => plan.filters.every(f => {
     const raw = row[f.columnName];
@@ -32,10 +34,13 @@ export function evaluatePlan(plan: QueryPlan, input: readonly ResultRow[]): Resu
   }).map(group => Object.fromEntries([
     ...plan.dimensions.map((d, i) => [d.outputName, group.dimensions[i]!]),
     ...plan.measures.map(m => {
-      const values = group.rows.flatMap(row => typeof row[m.columnName] === 'number' ? [row[m.columnName] as number] : []);
-      const sum = values.reduce((a, b) => a + b, 0);
-      const value = m.aggregation === 'COUNT' ? values.length : !values.length ? null : m.aggregation === 'MIN' ? Math.min(...values) : m.aggregation === 'MAX' ? Math.max(...values) : m.aggregation === 'AVG' ? sum / values.length : sum;
-      if (typeof value === 'number' && !Number.isFinite(value)) throw new Error('Nonfinite aggregate');
+      const run = (e: RowExpression): ResultValue => evaluate(e, group.rows[0] ?? {}, node => {
+        if (node.kind === 'column') { const c = plan.calculations.find(c => c.name === node.columnName && c.expression.level === 'aggregate'); if (c) return run(c.expression); }
+        if (node.kind === 'call' && functionReference(node.name)?.stage === 'aggregate') return aggregateValue(node.name, group.rows.map(row => evaluate(node.args[0]!, row)), node.args[1]?.kind === 'literal' ? Number(node.args[1].value) : 50);
+        return undefined;
+      });
+      const c = plan.calculations.find(c => c.name === m.columnName && c.expression.level === 'aggregate');
+      const value = c ? run(c.expression) : aggregateValue(m.aggregation.toLowerCase(), group.rows.map(row => row[m.columnName] ?? null));
       return [m.outputName, value];
     }),
   ]));

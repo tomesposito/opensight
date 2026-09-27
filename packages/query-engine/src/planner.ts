@@ -1,7 +1,7 @@
 import { validateParameters, type ParameterValue } from './parameters.js';
 import { ExpressionBinder, expressionSql } from './expressions.js';
 import { bindMetadata } from './metadata.js';
-import type { Aggregation, Dimension, Measure, PlanOptions, PlanRequest, QueryPlan, RowFilter } from './types.js';
+import type { Aggregation, Dimension, Measure, PlanOptions, PlanRequest, QueryPlan, RowFilter, RowExpression } from './types.js';
 import { array, emptyArray, equals, fail, keys, object, quoteIdentifier as q, string, unique, variant } from './validation.js';
 import type { ObjectValue } from './validation.js';
 
@@ -159,7 +159,8 @@ function fieldWells(visual: Visual, binder: ExpressionBinder): { dimensions: Dim
     keys(f, kind === 'DateDimensionField' ? ['FieldId', 'Column', 'DateGranularity'] : ['FieldId', 'Column'], fp);
     const fieldId = string(f.FieldId, `${fp}.FieldId`);
     const name = column(f.Column, `${fp}.Column`, binder);
-    const type = binder.bind(name, fp).scalarType;
+    const binding = binder.bind(name, fp), type = binding.scalarType;
+    if (binding.level === 'aggregate' || binding.level === 'table') fail('TYPE_MISMATCH', fp, 'an aggregate calculation cannot be a grouping dimension');
     const month = kind === 'DateDimensionField';
     const grain = month ? string(f.DateGranularity, `${fp}.DateGranularity`) : undefined;
     if (grain && !['YEAR', 'QUARTER', 'MONTH', 'DAY'].includes(grain)) fail('UNSUPPORTED_FEATURE', `${fp}.DateGranularity`, 'unsupported date granularity');
@@ -198,6 +199,7 @@ function sql(plan: Omit<QueryPlan, 'sql' | 'parameters'>, parameters: ParameterV
   while (plan.tableName.toLowerCase().startsWith(prefix)) prefix += '_';
   let from = plan.tableSchema === undefined ? q(plan.tableName) : `${q(plan.tableSchema)}.${q(plan.tableName)}`;
   for (const [i, calculation] of plan.calculations.entries()) {
+    if (calculation.expression.level !== 'row') continue;
     const relation = q(`${prefix}row_${i}`);
     ctes.push(`${relation} AS (SELECT *, ${expressionSql(calculation.expression, plan.dialect, bind)} AS ${q(calculation.name)} FROM ${from})`);
     from = relation;
@@ -221,9 +223,17 @@ function sql(plan: Omit<QueryPlan, 'sql' | 'parameters'>, parameters: ParameterV
     const format = d.granularity === 'YEAR' ? ['YYYY', '%Y'] : d.granularity === 'DAY' ? ['YYYY-MM-DD', '%Y-%m-%d'] : ['YYYY-MM', '%Y-%m'];
     return plan.dialect === 'postgres' ? `to_char(${value}, '${format[0]}')` : `strftime(${value}, '${format[1]}')`;
   });
+  const expand = (e: RowExpression): RowExpression => {
+    if (e.kind === 'column') { const c = plan.calculations.find(c => c.name === e.columnName && c.expression.level !== 'row'); if (c) return expand(c.expression); }
+    if (e.kind === 'binary') return { ...e, left: expand(e.left), right: expand(e.right) };
+    if (e.kind === 'unary') return { ...e, operand: expand(e.operand) };
+    if (e.kind === 'call') return { ...e, args: e.args.map(expand) };
+    return e;
+  };
   const projections = [
     ...dimensions.map((expression, i) => `${expression} AS ${q(plan.dimensions[i]!.outputName)}`),
-    ...plan.measures.map((m) => `${m.aggregation}(${q(m.columnName)}) AS ${q(m.outputName)}`),
+    ...plan.measures.map(m => { const c = plan.calculations.find(c => c.name === m.columnName && c.expression.level === 'aggregate');
+      return `${c ? expressionSql(expand(c.expression), plan.dialect, bind) : `${m.aggregation}(${q(m.columnName)})`} AS ${q(m.outputName)}`; }),
   ];
   const positions = dimensions.map((_, i) => i + 1).join(', ');
   return `${ctes.length ? `WITH ${ctes.join(',\n')}\n` : ''}SELECT ${projections.join(', ')}\nFROM ${from}` +

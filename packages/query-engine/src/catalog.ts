@@ -9,6 +9,9 @@ export interface FunctionReference {
 }
 const entry = (name: string, category: string, signature: string, example: string, min: number, max: number, result: FunctionReference['result'], types?: readonly ScalarType[], stage?: FunctionReference['stage']): FunctionReference => ({ name, category, signature: `${name}(${signature})`, example, min, max, result, types, stage });
 export const functionCatalog: readonly FunctionReference[] = [
+  ...['sum', 'avg', 'median', 'stdev', 'stdevp', 'var', 'varp'].map(n => entry(n, 'Aggregation', 'measure', `${n}({revenue})`, 1, 1, 'number', ['number'], 'aggregate')),
+  ...['count', 'distinct_count', 'min', 'max'].map(n => entry(n, 'Aggregation', 'expression', `${n}({revenue})`, 1, 1, n === 'min' || n === 'max' ? 'first' : 'number', undefined, 'aggregate')),
+  entry('percentile', 'Aggregation', 'measure, percentile', 'percentile({revenue}, 90)', 2, 2, 'number', ['number'], 'aggregate'),
   entry('ifelse', 'Conditional', 'condition, then [, condition, then ...], else', "ifelse({revenue} > 0, {profit} / {revenue}, 0)", 3, 99, 'first'),
   entry('coalesce', 'Conditional', 'expression1, expression2, ...', 'coalesce({profit}, 0)', 2, 99, 'first'),
   entry('nullIf', 'Conditional', 'expression1, expression2', 'nullIf({revenue}, 0)', 2, 2, 'first'),
@@ -56,6 +59,8 @@ export function validateCall(name: string, args: readonly RowExpression[], path:
     const types = new Set(results.map(a => a.scalarType).filter(t => t !== 'unknown'));
     if (types.size > 1) functionError(f, path, 'result arguments must have compatible types');
   }
+  if (f.stage === 'aggregate' && args.some(a => a.level === 'aggregate' || a.level === 'table')) functionError(f, path, 'nested aggregation is not allowed');
+  if (f.name === 'percentile' && (args[1]?.kind !== 'literal' || typeof args[1].value !== 'number' || args[1].value < 0 || args[1].value > 100)) functionError(f, path, 'percentile must be a constant from 0 to 100');
   const periodIndex = f.name === 'addDateTime' ? 1 : f.name === 'dateDiff' ? 2 : ['truncDate', 'extract'].includes(f.name) ? 0 : -1;
   if (periodIndex >= 0 && args[periodIndex]) {
     const period = constant(args[periodIndex]).toUpperCase();

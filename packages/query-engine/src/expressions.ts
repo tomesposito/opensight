@@ -117,6 +117,7 @@ export function parseExpression(source: string, path = '$.expression', context: 
           if (source[offset] !== ')') do { args.push(expression()); whitespace(); if (source[offset] !== ',') break; offset++; } while (true);
           expect(')'); const f = validateCall(name, args, path);
           left = { ...info(start, f.result === 'first' ? (f.name === 'ifelse' ? args.filter((_, i) => i % 2 === 1 || i === args.length - 1) : args).find(a => a.scalarType !== 'unknown')?.scalarType ?? 'unknown' : f.result, args), kind: 'call', name: f.name, args };
+          if (f.stage === 'aggregate') left = { ...left, level: 'aggregate' };
           if (f.name === 'now') left = { ...info(start, 'datetime'), nullable: false, kind: 'literal', value: context.now ?? new Date().toISOString() };
         } else if (/^(null|true|false)$/i.test(name)) {
           left = { ...info(start, /^null$/i.test(name) ? 'unknown' : 'boolean'), kind: 'literal', value: /^null$/i.test(name) ? null : /^true$/i.test(name) ? 1 : 0 };
@@ -138,7 +139,13 @@ export function parseExpression(source: string, path = '$.expression', context: 
   const result = expression(); whitespace();
   if (offset !== source.length) fail('INVALID_INPUT', path, `unexpected token at offset ${offset}`);
   if (result.kind === 'symbol' || result.kind === 'list') fail('INVALID_INPUT', path, 'expected a scalar expression');
+  validateLevels(result);
   return result;
+}
+function validateLevels(e: RowExpression): void {
+  const args = e.kind === 'binary' ? [e.left, e.right] : e.kind === 'unary' ? [e.operand] : e.kind === 'call' ? e.args : e.kind === 'list' ? e.items : e.kind === 'sort' ? [e.expression] : [];
+  args.forEach(validateLevels);
+  if ((e.kind === 'binary' || e.kind === 'call' && !functionReference(e.name)?.stage) && args.some(a => ['aggregate', 'table'].includes(a.level)) && args.some(a => ['row', 'pre_filter', 'pre_agg'].includes(a.level) && a.dependencies.length)) fail('UNSUPPORTED_FEATURE', e.location.path, 'Mismatched aggregation: aggregate and nonaggregated fields cannot be mixed.');
 }
 
 export function expressionSql(expression: RowExpression, dialect: SqlDialect = 'duckdb', bind?: (value: ParameterValue) => string): string {
@@ -162,6 +169,6 @@ export function expressionSql(expression: RowExpression, dialect: SqlDialect = '
     default: return fail('INVALID_INPUT', expression.location.path, 'list or keyword outside function argument');
   }
 }
-import { validateCall } from './catalog.js';
+import { validateCall, functionReference } from './catalog.js';
 import { scalarSql } from './scalar.js';
 import { quoteLiteral } from './validation.js';
