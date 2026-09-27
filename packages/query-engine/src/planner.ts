@@ -1,3 +1,4 @@
+import { resolveSecurity, rowSecuritySql } from './security.js';
 import { expressionChildren } from './evaluate.js';
 import { functionReference, functionError } from './catalog.js';
 import { validateParameters, type ParameterValue } from './parameters.js';
@@ -200,6 +201,11 @@ function sql(plan: Omit<QueryPlan, 'sql' | 'parameters'>, parameters: ParameterV
   let prefix = '__opensight_';
   while (plan.tableName.toLowerCase().startsWith(prefix)) prefix += '_';
   let from = plan.tableSchema === undefined ? q(plan.tableName) : `${q(plan.tableSchema)}.${q(plan.tableName)}`;
+  if (plan.rowSecurity) {
+    const relation = q(`${prefix}security`);
+    ctes.push(`${relation} AS (SELECT * FROM ${from} WHERE ${rowSecuritySql(plan.rowSecurity, plan.sourceColumns, bind)})`);
+    from = relation;
+  }
   for (const [i, calculation] of plan.calculations.entries()) {
     if (calculation.expression.level !== 'row') continue;
     const relation = q(`${prefix}row_${i}`);
@@ -254,8 +260,9 @@ export function planVisual(request: PlanRequest, options: PlanOptions = {}): Que
   const dialect = opts.dialect === undefined ? 'duckdb' : opts.dialect;
   if (dialect !== 'duckdb' && dialect !== 'postgres') fail('UNSUPPORTED_FEATURE', '$.options.dialect', 'expected duckdb or postgres');
   const r = object(request, '$');
-  keys(r, ['analysis', 'dataSet', 'dataSource', 'localData', 'visualId', 'parameterDeclarations', 'parameterBindings', 'parameterFilters'], '$');
-  const metadata = bindMetadata(r.dataSet, r.dataSource, r.localData);
+  keys(r, ['analysis', 'dataSet', 'dataSource', 'localData', 'visualId', 'parameterDeclarations', 'parameterBindings', 'parameterFilters', 'security'], '$');
+  const metadata = bindMetadata(r.dataSet, r.dataSource, r.localData, r.security !== undefined);
+  const rowSecurity = r.security === undefined ? undefined : resolveSecurity(r.security, metadata.columns, metadata.localData.dataSetArn);
   const analysis = object(r.analysis, '$.analysis');
   keys(analysis, ['ResourceType', 'AnalysisId', 'Name', 'Definition'], '$.analysis');
   equals(analysis.ResourceType, 'Analysis', '$.analysis.ResourceType');
@@ -308,6 +315,7 @@ export function planVisual(request: PlanRequest, options: PlanOptions = {}): Que
     if (node.name.startsWith('periodOverPeriod')) checkGroupField(node.args[1]!, node);
   }
   const plan: Omit<QueryPlan, 'sql' | 'parameters'> = {
+    ...(rowSecurity ? { rowSecurity } : {}),
     dialect, mode: 'synthetic-local', visualId, dataSetIdentifier: identifier,
     tableName: metadata.tableName, sourceColumns: metadata.columns, localData: metadata.localData,
     ...(dialect === 'postgres' ? { tableSchema: metadata.tableSchema } : {}),

@@ -1,4 +1,4 @@
-import { evaluatePlan } from './evaluate.js';
+import { evaluateSqlPlan } from './evaluate.js';
 import { Client, types } from 'pg';
 import { planVisual } from './planner.js';
 import type { PlanRequest, PostgresExecuteOptions, QueryResult, ResultValue } from './types.js';
@@ -43,7 +43,7 @@ export async function executePostgres(request: PlanRequest, options: PostgresExe
       });
       const rows = result.rows.map(values => Object.fromEntries(result.fields.map((field, i) =>
         [field.name, resultValue(values[i], field.dataTypeID)])));
-      return { plan, rows: plan.postProcess ? evaluatePlan(plan, rows) : rows };
+      return { plan, rows: plan.postProcess ? evaluateSqlPlan(plan, rows) : rows };
     } finally {
       await client.end();
     }

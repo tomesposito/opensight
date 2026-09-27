@@ -22,7 +22,7 @@ function columns(raw: unknown, path: string): BoundColumn[] {
   return result;
 }
 
-export function bindMetadata(dataSet: unknown, dataSource: unknown, localData: unknown): {
+export function bindMetadata(dataSet: unknown, dataSource: unknown, localData: unknown, hasSecurity = false): {
   columns: BoundColumn[]; tableName: string; tableSchema: string; localData: LocalDataBinding;
 } {
   const response = object(dataSet, '$.dataSet');
@@ -97,7 +97,7 @@ export function bindMetadata(dataSet: unknown, dataSource: unknown, localData: u
     fail('SECURITY_REJECTED', `${bp}.security`, 'explicit local dataset and source security declarations are required');
   }
   const policy = object(security, `${bp}.security`);
-  if (Object.keys(policy).length !== 2 || policy.dataset !== 'unrestricted' || policy.source !== 'unrestricted') {
+  if (Object.keys(policy).length !== 2 || (policy.dataset !== 'unrestricted' && !(policy.dataset === 'protected' && hasSecurity)) || policy.source !== 'unrestricted') {
     fail('SECURITY_REJECTED', `${bp}.security`, 'only explicitly unrestricted local fixtures can execute');
   }
   const csv = string(binding.csv, `${bp}.csv`);
@@ -108,5 +108,5 @@ export function bindMetadata(dataSet: unknown, dataSource: unknown, localData: u
   equals(binding.nullEncoding, 'empty cell', `${bp}.nullEncoding`);
   equals(binding.timezone, 'UTC', `${bp}.timezone`);
   return { columns: outputColumns, tableName, tableSchema, localData: { provenance, dataSetArn: arn, physicalTableId: physicalId,
-    csv, nullEncoding: 'empty cell', timezone: 'UTC', security: { dataset: 'unrestricted', source: 'unrestricted' } } };
+    csv, nullEncoding: 'empty cell', timezone: 'UTC', security: { dataset: policy.dataset as 'unrestricted' | 'protected', source: 'unrestricted' } } };
 }

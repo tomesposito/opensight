@@ -2,7 +2,8 @@ import { validateParameters } from '@opensight/query-engine/parameters';
 import type { IncomingMessage } from 'node:http';
 import { lstat, realpath } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
-import { executeLocal, refreshLocal, planVisual, interactiveRequest, type InteractiveQuery, type PlanRequest } from '@opensight/query-engine';
+import { bindMetadata, executeLocal, refreshLocal, planVisual, interactiveRequest, type InteractiveQuery, type PlanRequest } from '@opensight/query-engine';
+import type { Identity, SecurityService } from './security.js';
 import { isObject } from './mapping.js';
 import { readJson } from './store.js';
 
@@ -103,6 +104,11 @@ export async function readBody(request: IncomingMessage): Promise<unknown> {
 
 /** Only the caller-selected sales fixture binding is eligible; request IDs never form paths. */
 export class SalesQuery {
+  security?: SecurityService;
+  securitySchema() { return bindMetadata(this.metadata.dataSet, this.metadata.dataSource, this.metadata.localData, true); }
+  private secured(request: PlanRequest, identity?: Identity): PlanRequest {
+    return this.security ? { ...request, security: this.security.context(identity) } : request;
+  }
   private constructor(private readonly metadata: Pick<PlanRequest, 'dataSet' | 'dataSource' | 'localData'>,
     private readonly dataRoot: string) {}
 
@@ -127,8 +133,8 @@ export class SalesQuery {
     return undefined;
   }
 
-  async execute(body: QueryBody) {
-    const { plan, rows } = await executeLocal(interactiveRequest(body, this.metadata), { dataRoot: this.dataRoot });
+  async execute(body: QueryBody, identity?: Identity) {
+    const { plan, rows } = await executeLocal(this.secured(interactiveRequest(body, this.metadata), identity), { dataRoot: this.dataRoot });
     return {
       columns: [...plan.dimensions.map(field => ({ name: field.outputName, type: 'string' as const })),
         ...plan.measures.map(field => ({ name: field.outputName, type: 'number' as const }))],
@@ -145,13 +151,13 @@ export class SalesQuery {
         ] } : {}) };
   }
   planDefinition(definition: unknown, visualId: string, window?: { columnName: string; start: string; end: string }) {
-    return planVisual(this.visualRequest(definition, visualId, window));
+    return planVisual(this.secured(this.visualRequest(definition, visualId, window)));
   }
   async executeVisual(definition: unknown, visualId: string, window?: { columnName: string; start: string; end: string }) {
-    return executeLocal(this.visualRequest(definition, visualId, window), { dataRoot: this.dataRoot });
+    return executeLocal(this.secured(this.visualRequest(definition, visualId, window)), { dataRoot: this.dataRoot });
   }
 
   async refresh(): Promise<number> {
-    return refreshLocal(interactiveRequest({ dimensions: [], measures: [{ fieldId: 'rows', columnName: 'revenue', aggregation: 'COUNT' }], filters: [] }, this.metadata), { dataRoot: this.dataRoot });
+    return refreshLocal(this.secured(interactiveRequest({ dimensions: [], measures: [{ fieldId: 'rows', columnName: 'revenue', aggregation: 'COUNT' }], filters: [] }, this.metadata)), { dataRoot: this.dataRoot });
   }
 }

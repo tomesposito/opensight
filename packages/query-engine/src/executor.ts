@@ -1,4 +1,4 @@
-import { evaluatePlan } from './evaluate.js';
+import { evaluateSqlPlan } from './evaluate.js';
 import { realpath, stat } from 'node:fs/promises';
 import { isAbsolute, relative, resolve } from 'node:path';
 import { DuckDBInstance } from '@duckdb/node-api';
@@ -33,6 +33,7 @@ export async function refreshLocal(request: PlanRequest, options: ExecuteOptions
 
 async function runLocal(request: PlanRequest, options: ExecuteOptions, refresh: boolean): Promise<QueryResult> {
   const plan = planVisual(request);
+  if (refresh && (plan.rowSecurity || plan.localData.security.dataset === 'protected')) fail('SECURITY_REJECTED', '$.security', 'protected dataset refresh requires a scoped materialization implementation');
   const rootInput = string(options?.dataRoot, '$.options.dataRoot');
   let csvPath: string;
   try {
@@ -75,7 +76,7 @@ async function runLocal(request: PlanRequest, options: ExecuteOptions, refresh: 
       const reader = await connection.runAndReadAll(refresh ? `SELECT COUNT(*) AS rows FROM ${q(plan.tableName)}` : plan.sql, refresh ? [] : [...plan.parameters]);
       const names = reader.columnNames();
       const rows = reader.getRows().map((values) => Object.fromEntries(names.map((name, i) => [name, resultValue(values[i])])));
-      return { plan, rows: !refresh && plan.postProcess ? evaluatePlan(plan, rows) : rows };
+      return { plan, rows: !refresh && plan.postProcess ? evaluateSqlPlan(plan, rows) : rows };
     } finally {
       connection.closeSync();
     }

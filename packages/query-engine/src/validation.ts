@@ -1,5 +1,6 @@
 export type ObjectValue = Record<string, unknown>;
 export type ErrorCode = 'INVALID_INPUT' | 'UNSUPPORTED_FEATURE' | 'UNRESOLVED_BINDING' |
+  'INVALID_SECURITY_POLICY' | 'PRINCIPAL_REQUIRED' | 'UNKNOWN_PRINCIPAL' | 'ROW_ACCESS_DENIED' | 'COLUMN_ACCESS_DENIED' | 'NAMESPACE_ACCESS_DENIED' |
   'TYPE_MISMATCH' | 'CALCULATION_CYCLE' | 'SECURITY_REJECTED' | 'LOCAL_DATA_ERROR' | 'EXECUTION_ERROR';
 
 /** A located execution diagnostic; inventory acceptance is deliberately insufficient. */

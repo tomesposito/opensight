@@ -1,3 +1,4 @@
+import { fail } from './validation.js';
 import type { QueryPlan, ResultRow, ResultValue, RowExpression, RowFilter, ExpressionLevel } from './types.js';
 import { aggregateValue } from './aggregate.js';
 import { constant, dateUnits, addDate, asDate, truncateDate } from './datetime.js';
@@ -20,6 +21,11 @@ export function expressionChildren(e: RowExpression): readonly RowExpression[] {
 interface Group { dimensions: ResultValue[]; context: ResultRow; rows: ResultRow[] }
 /** Shared stage evaluator used by fixtures and by both SQL engines for multirow calculations. */
 export function evaluatePlan(plan: QueryPlan, input: readonly ResultRow[]): ResultRow[] {
+  if (plan.rowSecurity) fail('SECURITY_REJECTED', '$.security', 'protected rows require SQL execution');
+  return evaluateSqlPlan(plan, input);
+}
+/** Internal executor entry: input has already passed the SQL security predicate. */
+export function evaluateSqlPlan(plan: QueryPlan, input: readonly ResultRow[]): ResultRow[] {
   const calculations = new Map(plan.calculations.map(c => [c.name, c.expression]));
   let rows = input.map(source => {
     const row = { ...source };

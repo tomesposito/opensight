@@ -1,3 +1,4 @@
+import { SecurityService, SecurityError, type SecurityOptions } from './security.js';
 import { randomUUID } from 'node:crypto';
 import { createServer, type Server, type ServerResponse } from 'node:http';
 import { DefinitionStore, RESOURCE_ID } from './store.js';
@@ -12,6 +13,7 @@ import { smtpFromEnvironment, type MailTransport } from './mail.js';
 import { refreshRoute, reportRoute, alertRoute, method } from './automation-routes.js';
 
 export interface ApiOptions {
+  security?: SecurityOptions;
   /** Directory of local fixtures/bundles, or one .qs/.json file. Loaded at startup. */
   dataRoot: string;
   /** A single-process, atomic JSON resource store; omit for ephemeral library use. */
@@ -24,6 +26,9 @@ export interface ApiOptions {
 export async function createApiServer(options: ApiOptions): Promise<Server> {
   const store = await DefinitionStore.load(options.dataRoot);
   const sales = await SalesQuery.load(options.dataRoot);
+  const schema = options.security && sales ? sales.securitySchema() : undefined;
+  const security = options.security ? await SecurityService.load(options.security, schema?.columns ?? [], schema?.localData.dataSetArn ?? '') : undefined;
+  if (sales) sales.security = security;
   const automation = await AutomationStore.load(emptyRefreshState(), options.automationStorePath, validateRefreshState);
   const refresh = new RefreshService(automation, new Map(sales ? [['sales', sales]] : []));
   await refresh.recover();
@@ -35,6 +40,7 @@ export async function createApiServer(options: ApiOptions): Promise<Server> {
   refresh.onSuccess = (datasetId, run) => alerts.afterRefresh(datasetId, run);
   const scheduler = new Scheduler(async () => { await refresh.tick(); await reports.tick(); });
   const server = createServer((request, response) => {
+    void (async () => {
     const requestId = randomUUID();
     const error = (status: number, type: string, message: string): void => {
       send(response, status, { Type: type, Message: message, RequestId: requestId });
@@ -43,6 +49,11 @@ export async function createApiServer(options: ApiOptions): Promise<Server> {
     const queryOffset = url.indexOf('?');
     const path = queryOffset === -1 ? url : url.slice(0, queryOffset);
     const query = queryOffset === -1 ? '' : url.slice(queryOffset + 1);
+    const identity = await security?.authenticate(request);
+    if (/^\/api\/datasets\/[^/]+\/row-rules/.test(path)) {
+      if (!security || !identity) throw new SecurityError(503, 'SECURITY_NOT_CONFIGURED', 'Needs a hosted API with authentication configured');
+      if (await security.route(request, response, path, query, identity)) return;
+    }
     if (path === '/api/automation-status' || path.startsWith('/api/users/') || path.startsWith('/api/alert-rules') || path === '/api/refresh-schedules' || /^\/api\/datasets\/[^/]+\/refresh-/.test(path)) {
       void (async () => {
         if (path === '/api/automation-status') {
@@ -75,7 +86,7 @@ export async function createApiServer(options: ApiOptions): Promise<Server> {
           if (!RESOURCE_ID.test(id)) throw new RequestError(400, 'Invalid dataset ID');
           if (query) throw new RequestError(400, 'Query parameters are not supported');
           if (id !== 'sales' || !sales) throw new RequestError(404, 'Dataset has no resolved local sales CSV binding');
-          send(response, 200, await sales.execute(await readQuery(request)));
+          send(response, 200, await sales.execute(await readQuery(request), identity));
         } catch (cause) {
           request.resume();
           if (cause instanceof QueryEngineError) send(response, 422, { errorCode: cause.code, message: cause.message, path: cause.path });
@@ -121,6 +132,12 @@ export async function createApiServer(options: ApiOptions): Promise<Server> {
     } catch {
       error(500, 'InternalFailureException', 'Unable to serialize definition');
     }
+    })().catch(cause => {
+      request.resume();
+      if (cause instanceof SecurityError) send(response, cause.status, { errorCode: cause.code, Message: cause.message });
+      else if (cause instanceof RequestError) send(response, cause.status, { Message: cause.message });
+      else send(response, 500, { Message: 'Unable to process request' });
+    });
   });
   server.once('listening', () => scheduler.start());
   server.once('close', () => scheduler.stop());
@@ -139,3 +156,6 @@ function send(response: ServerResponse, status: number, body: object): void {
 
 export { StubMailTransport } from './mail.js';
 export type { MailTransport, MailMessage } from './mail.js';
+
+export { emptySecurityState } from './security.js';
+export type { SecurityOptions, SecurityState, Identity } from './security.js';

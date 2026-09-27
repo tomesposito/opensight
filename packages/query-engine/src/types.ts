@@ -71,9 +71,10 @@ export interface LocalDataBinding {
   readonly csv: string;
   readonly nullEncoding: 'empty cell';
   readonly timezone: 'UTC';
-  readonly security: { readonly dataset: 'unrestricted'; readonly source: 'unrestricted' };
+  readonly security: { readonly dataset: 'unrestricted' | 'protected'; readonly source: 'unrestricted' };
 }
 export interface PlanRequest {
+  readonly security?: import('./security.js').SecurityContext;
   readonly parameterDeclarations?: readonly ParameterDeclaration[];
   readonly parameterBindings?: ParameterBindings;
   readonly parameterFilters?: readonly ParameterFilter[];
@@ -88,6 +89,7 @@ export interface PlanRequest {
   readonly visualId: string;
 }
 export interface QueryPlan {
+  readonly rowSecurity?: import('./security.js').RowPredicate;
   readonly dialect: SqlDialect;
   readonly mode: 'synthetic-local';
   readonly visualId: string;
