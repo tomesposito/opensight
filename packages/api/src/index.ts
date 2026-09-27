@@ -1,3 +1,4 @@
+import { EmbeddingService, type EmbeddingOptions } from './embedding.js';
 import { sharingRoute } from './sharing.js';
 import { OrganizationService } from './organization.js';
 import { namespaceRoute, scopePath } from './namespace-routes.js';
@@ -18,6 +19,7 @@ import { smtpFromEnvironment, type MailTransport } from './mail.js';
 import { refreshRoute, reportRoute, alertRoute, method } from './automation-routes.js';
 
 export interface ApiOptions {
+  embedding?: EmbeddingOptions;
   security?: SecurityOptions;
   /** Trusted startup roots. Unconfigured namespaces start empty; IDs never become paths. */
   namespaceDataRoots?: Readonly<Record<string, string>>;
@@ -59,6 +61,8 @@ export async function createApiServer(options: ApiOptions): Promise<Server> {
     namespaceStores.set(namespaceId, definitions); namespaceQueries.set(namespaceId, source);
   }
   const organization = security ? new OrganizationService(security, namespaceStores) : undefined;
+  if (options.embedding && !organization) throw new Error('Embedding requires security configuration');
+  const embedding = organization ? new EmbeddingService(options.embedding, organization) : undefined;
   if (security) security.hasAssets = namespaceId => !!namespaceStores.get(namespaceId)?.list().length || !!namespaceQueries.get(namespaceId);
   const automation = await AutomationStore.load(emptyRefreshState(), options.automationStorePath, validateRefreshState);
   const refresh = new RefreshService(automation, new Map(sales ? [['sales', sales]] : []));
@@ -82,10 +86,19 @@ export async function createApiServer(options: ApiOptions): Promise<Server> {
       const query = queryOffset === -1 ? '' : url.slice(queryOffset + 1);
       if (['x-user', 'x-user-id', 'x-principal', 'x-groups', 'x-group-ids', 'x-namespace', 'x-namespace-id'].some(k => request.headers[k] !== undefined)) throw new SecurityError(403, 'FORGED_PRINCIPAL', 'Caller-supplied principal headers are not supported');
       if (!security && request.headers.authorization) throw new SecurityError(503, 'SECURITY_NOT_CONFIGURED', 'Credential verification is not configured');
+      if (path.startsWith('/embed/')) {
+        if (!embedding) throw new SecurityError(503, 'EMBEDDING_NOT_CONFIGURED', 'Embedding requires configured authentication');
+        if (await embedding.render(request, response, path, query, namespaceQueries)) return;
+      }
+      if (embedding?.cors(request, response, path)) return;
       const identity = await security?.authenticate(request);
       if (identity) path = scopePath(path, identity);
       const namespaceId = identity?.namespaceId ?? 'default';
       const scopedStore = namespaceStores.get(namespaceId), scopedSales = namespaceQueries.get(namespaceId);
+      if (/^\/(?:api\/)?dashboards\/[^/]+\/embed-url$/.test(path)) {
+        if (!embedding || !identity) throw new SecurityError(503, 'EMBEDDING_NOT_CONFIGURED', 'Embedding requires configured authentication');
+        if (await embedding.issue(request, response, path, query, identity)) return;
+      }
       if (/^\/api\/(namespaces|groups|users)(?:\/[^/]+)?$/.test(path)) {
         if (!security || !identity) throw new SecurityError(503, 'SECURITY_NOT_CONFIGURED', 'Needs a hosted API with authentication configured');
         if (await namespaceRoute(request, response, path, query, identity, security)) return;
@@ -222,3 +235,5 @@ export type { MailTransport, MailMessage } from './mail.js';
 
 export { emptySecurityState } from './security.js';
 export type { SecurityOptions, SecurityState, Identity } from './security.js';
+
+export type { EmbeddingOptions } from './embedding.js';
