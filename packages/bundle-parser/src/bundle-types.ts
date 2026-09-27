@@ -9,7 +9,8 @@ import type { UnknownProperties } from './types.js';
 export interface BundleDefinition extends UnknownProperties {
   dataSetIdentifierDeclarations: BundleDataSetIdentifierDeclaration[];
   sheets?: BundleSheet[];
-  /** Only empty arrays observed: item schemas deliberately remain unknown. */
+  /** Only empty arrays observed in real exports. Nonempty items are validated
+   * provisionally from synthetic conversions; summaries expose typed inventories. */
   calculatedFields?: unknown[];
   parameterDeclarations?: unknown[];
   filterGroups?: unknown[];
@@ -45,7 +46,7 @@ export interface BundleVisualBody extends UnknownProperties {
 
 export interface BundleVisualTitle extends UnknownProperties {
   visibility?: string;
-  // No title text was observed; other properties remain opaque.
+  // Title text is validated provisionally from synthetic conversions.
 }
 
 export interface BundlePieChartVisual extends BundleVisualBody {

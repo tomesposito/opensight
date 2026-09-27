@@ -1,6 +1,9 @@
 import { open } from 'node:fs/promises';
 import type { BundleDefinition, BundleResource, BundleResourceType, QsBundle, QsBundleMember } from './bundle-types.js';
 import { assertBundleResource } from './bundle-validate.js';
+import { summarizeCalculations, summarizeFilterGroup, summarizeParameter,
+  type BundleCalculatedFieldSummary, type BundleFilterGroupSummary, type BundleParameterSummary,
+} from './bundle-features.js';
 import { array, fail, nonempty, object, required, singleVariant } from './validation.js';
 import { memberJsonPath, readZipArchive, ZIP_LIMITS } from './zip.js';
 
@@ -63,10 +66,14 @@ export interface BundleDefinitionSummary {
   dataSets: { identifier: string; arn: string }[];
   sheets: { sheetId: string; name?: string; visualCount: number }[];
   visuals: { kind: string; visualId: string; sheetId: string }[];
-  /** Counts only: no unobserved calculation/parameter/filter item schema is assumed. */
+  /** Provisional feature inventory; not evidence of bundle execution semantics. */
+  calculatedFields: BundleCalculatedFieldSummary[];
+  parameters: BundleParameterSummary[];
+  filterGroups: BundleFilterGroupSummary[];
   calculatedFieldCount: number;
   parameterCount: number;
   filterGroupCount: number;
+  filterCount: number;
 }
 
 export interface QsBundleSummary {
@@ -82,6 +89,7 @@ export interface QsBundleSummary {
 }
 
 function summarizeDefinition(definition: BundleDefinition): BundleDefinitionSummary {
+  const filterGroups = (definition.filterGroups ?? []).map(summarizeFilterGroup);
   return {
     dataSets: definition.dataSetIdentifierDeclarations.map(d => ({ identifier: d.identifier, arn: d.dataSetArn })),
     sheets: (definition.sheets ?? []).map(s => ({ sheetId: s.sheetId, name: s.name, visualCount: s.visuals?.length ?? 0 })),
@@ -90,9 +98,13 @@ function summarizeDefinition(definition: BundleDefinition): BundleDefinitionSumm
       // assertBundleResource has validated this property before summarization.
       return { kind, visualId: body.visualId as string, sheetId: s.sheetId };
     })),
+    calculatedFields: summarizeCalculations(definition.calculatedFields ?? []),
+    parameters: (definition.parameterDeclarations ?? []).map(summarizeParameter),
+    filterGroups,
     calculatedFieldCount: definition.calculatedFields?.length ?? 0,
     parameterCount: definition.parameterDeclarations?.length ?? 0,
     filterGroupCount: definition.filterGroups?.length ?? 0,
+    filterCount: filterGroups.reduce((count, group) => count + group.filters.length, 0),
   };
 }
 

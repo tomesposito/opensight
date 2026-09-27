@@ -127,9 +127,11 @@ test('unknown archive subtrees and unobserved variants survive without recursive
   source.futureEnvelope = unknown;
   source.definition.futureRoot = unknown;
   source.definition.options.futureOption = unknown;
-  source.definition.calculatedFields = [unknown];
-  source.definition.parameterDeclarations = [unknown];
-  source.definition.filterGroups = [unknown];
+  source.definition.calculatedFields = [{ dataSetIdentifier: 'us_simplified', name: 'future', expression: '{deaths}', future: unknown }];
+  source.definition.parameterDeclarations = [{ futureParameterDeclaration: unknown }];
+  source.definition.filterGroups = [{ filterGroupId: 'future', crossDataset: 'SINGLE_DATASET',
+    scopeConfiguration: { allSheets: {} }, filters: [{ futureFilter: unknown }], future: unknown,
+  }];
   const pie = source.definition.sheets[0].visuals[0].pieChartVisual;
   pie.futureVisualOption = unknown;
   pie.actions = [unknown];
@@ -145,7 +147,9 @@ test('unknown archive subtrees and unobserved variants survive without recursive
   assert.deepEqual(body.validationStrategy, source.validationStrategy);
   assert.deepEqual(body.Definition.futureRoot, unknown);
   assert.deepEqual(body.Definition.Options.futureOption, unknown);
-  for (const key of ['CalculatedFields', 'ParameterDeclarations', 'FilterGroups']) assert.deepEqual(body.Definition[key], [unknown]);
+  for (const [apiKey, bundleKey] of [['CalculatedFields', 'calculatedFields'], ['ParameterDeclarations', 'parameterDeclarations'], ['FilterGroups', 'filterGroups']]) {
+    assert.deepEqual(body.Definition[apiKey], source.definition[bundleKey]);
+  }
   const mappedPie = body.Definition.Sheets[0].Visuals[0].PieChartVisual;
   assert.deepEqual(mappedPie.futureVisualOption, unknown);
   assert.deepEqual(mappedPie.Actions, [unknown]);

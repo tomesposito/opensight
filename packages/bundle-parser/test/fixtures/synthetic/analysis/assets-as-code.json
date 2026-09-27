@@ -1,0 +1,867 @@
+{
+  "resourceType": "analysis",
+  "analysisId": "assets-as-code",
+  "name": "SYNTHETIC assets-as-code",
+  "definition": {
+    "dataSetIdentifierDeclarations": [
+      {
+        "dataSetArn": "arn:aws:quicksight:us-east-1:123456789012:dataset/5793e4cf-74e0-4b08-b6d8-552ae48aa13c",
+        "identifier": "SaaS-Sales.csv"
+      }
+    ],
+    "analysisDefaults": {
+      "defaultNewSheetConfiguration": {
+        "interactiveLayoutConfiguration": {
+          "freeForm": {
+            "canvasSizeOptions": {
+              "screenCanvasSizeOptions": {
+                "optimizedViewPortWidth": "1600px"
+              }
+            }
+          }
+        },
+        "sheetContentType": "INTERACTIVE"
+      }
+    },
+    "calculatedFields": [
+      {
+        "dataSetIdentifier": "SaaS-Sales.csv",
+        "expression": "{Sales} - {Profit}",
+        "name": "Cost"
+      }
+    ],
+    "filterGroups": [
+      {
+        "crossDataset": "ALL_DATASETS",
+        "filterGroupId": "filtergroup1",
+        "filters": [
+          {
+            "categoryFilter": {
+              "filterId": "productfilter1",
+              "column": {
+                "dataSetIdentifier": "SaaS-Sales.csv",
+                "columnName": "Product"
+              },
+              "configuration": {
+                "filterListConfiguration": {
+                  "matchOperator": "CONTAINS",
+                  "categoryValues": [
+                    "Alchemy",
+                    "Big Ol Database",
+                    "Data Smasher",
+                    "OneView",
+                    "ChatBot Plugin"
+                  ]
+                }
+              }
+            }
+          }
+        ],
+        "scopeConfiguration": {
+          "selectedSheets": {
+            "sheetVisualScopingConfigurations": [
+              {
+                "scope": "ALL_VISUALS",
+                "sheetId": "sheet1"
+              }
+            ]
+          }
+        },
+        "status": "ENABLED"
+      },
+      {
+        "crossDataset": "ALL_DATASETS",
+        "filterGroupId": "filtergroup2",
+        "filters": [
+          {
+            "timeRangeFilter": {
+              "filterId": "timerangefilter1",
+              "column": {
+                "dataSetIdentifier": "SaaS-Sales.csv",
+                "columnName": "Order Date"
+              },
+              "nullOption": "ALL_VALUES",
+              "rangeMinimumValue": {
+                "parameter": "Date"
+              }
+            }
+          }
+        ],
+        "scopeConfiguration": {
+          "selectedSheets": {
+            "sheetVisualScopingConfigurations": [
+              {
+                "scope": "ALL_VISUALS",
+                "sheetId": "sheet1"
+              }
+            ]
+          }
+        },
+        "status": "ENABLED"
+      }
+    ],
+    "parameterDeclarations": [
+      {
+        "dateTimeParameterDeclaration": {
+          "name": "Date",
+          "defaultValues": {
+            "staticValues": [
+              "2017/01/01"
+            ]
+          },
+          "timeGranularity": "DAY"
+        }
+      },
+      {
+        "integerParameterDeclaration": {
+          "name": "digit",
+          "parameterValueType": "MULTI_VALUED"
+        }
+      }
+    ],
+    "sheets": [
+      {
+        "sheetId": "sheet1",
+        "description": "This dashboard shows YTD Sales on AnyCompany Products. All the assets in this dashboard (Visuals, Parameters, Filters, Actions, etc.) were programmatically created using assets-as-code.",
+        "layouts": [
+          {
+            "configuration": {
+              "gridLayout": {
+                "elements": [
+                  {
+                    "elementId": "barchart1",
+                    "elementType": "VISUAL",
+                    "columnSpan": 13,
+                    "rowSpan": 10,
+                    "columnIndex": 0,
+                    "rowIndex": 0
+                  },
+                  {
+                    "elementId": "barchart2",
+                    "elementType": "VISUAL",
+                    "columnSpan": 13,
+                    "rowSpan": 10,
+                    "columnIndex": 13,
+                    "rowIndex": 0
+                  },
+                  {
+                    "elementId": "linechart1",
+                    "elementType": "VISUAL",
+                    "columnSpan": 13,
+                    "rowSpan": 10,
+                    "columnIndex": 0,
+                    "rowIndex": 10
+                  },
+                  {
+                    "elementId": "table1",
+                    "elementType": "VISUAL",
+                    "columnSpan": 13,
+                    "rowSpan": 10,
+                    "columnIndex": 13,
+                    "rowIndex": 10
+                  },
+                  {
+                    "elementId": "kpi1",
+                    "elementType": "VISUAL",
+                    "columnSpan": 20,
+                    "rowSpan": 20,
+                    "columnIndex": 20,
+                    "rowIndex": 20
+                  },
+                  {
+                    "elementId": "id1234",
+                    "elementType": "PARAMETER_CONTROL",
+                    "columnSpan": 7,
+                    "rowSpan": 3,
+                    "columnIndex": 26,
+                    "rowIndex": 0
+                  }
+                ],
+                "canvasSizeOptions": {
+                  "screenCanvasSizeOptions": {
+                    "resizeOption": "FIXED",
+                    "optimizedViewPortWidth": "1600px"
+                  }
+                }
+              }
+            }
+          }
+        ],
+        "name": "AnyCompany Sales - Grid Layout",
+        "parameterControls": [
+          {
+            "dateTimePicker": {
+              "parameterControlId": "id1234",
+              "sourceParameterName": "Date",
+              "title": "Date",
+              "displayOptions": {
+                "titleOptions": {
+                  "fontConfiguration": {
+                    "fontDecoration": "UNDERLINE"
+                  }
+                }
+              }
+            }
+          }
+        ],
+        "title": "AnyCompany Sales",
+        "visuals": [
+          {
+            "barChartVisual": {
+              "visualId": "barchart1",
+              "actions": [
+                {
+                  "actionOperations": [
+                    {
+                      "filterOperation": {
+                        "selectedFieldsConfiguration": {
+                          "selectedFieldOptions": "ALL_FIELDS"
+                        },
+                        "targetVisualsConfiguration": {
+                          "sameSheetTargetVisualConfiguration": {
+                            "targetVisualOptions": "ALL_VISUALS"
+                          }
+                        }
+                      }
+                    }
+                  ],
+                  "customActionId": "quick_filter_action_1",
+                  "name": "Quick Filter",
+                  "trigger": "DATA_POINT_CLICK",
+                  "status": "ENABLED"
+                }
+              ],
+              "chartConfiguration": {
+                "fieldWells": {
+                  "barChartAggregatedFieldWells": {
+                    "category": [
+                      {
+                        "categoricalDimensionField": {
+                          "fieldId": "Product",
+                          "column": {
+                            "columnName": "Product",
+                            "dataSetIdentifier": "SaaS-Sales.csv"
+                          }
+                        }
+                      }
+                    ],
+                    "values": [
+                      {
+                        "numericalMeasureField": {
+                          "fieldId": "Sales",
+                          "column": {
+                            "columnName": "Sales",
+                            "dataSetIdentifier": "SaaS-Sales.csv"
+                          },
+                          "aggregationFunction": {
+                            "simpleNumericalAggregation": "SUM"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                },
+                "barsArrangement": "CLUSTERED",
+                "orientation": "HORIZONTAL",
+                "categoryAxis": {
+                  "scrollbarOptions": {
+                    "visibility": "HIDDEN"
+                  }
+                }
+              },
+              "title": {
+                "visibility": "VISIBLE",
+                "formatText": {
+                  "plainText": "Sum of Sales by Product"
+                }
+              },
+              "subtitle": {
+                "visibility": "VISIBLE",
+                "formatText": {
+                  "plainText": "Use this visual to drill down into specific products."
+                }
+              }
+            }
+          },
+          {
+            "barChartVisual": {
+              "visualId": "barchart2",
+              "chartConfiguration": {
+                "fieldWells": {
+                  "barChartAggregatedFieldWells": {
+                    "category": [
+                      {
+                        "categoricalDimensionField": {
+                          "fieldId": "Product",
+                          "column": {
+                            "columnName": "Product",
+                            "dataSetIdentifier": "SaaS-Sales.csv"
+                          }
+                        }
+                      }
+                    ],
+                    "values": [
+                      {
+                        "numericalMeasureField": {
+                          "fieldId": "Profit",
+                          "column": {
+                            "columnName": "Profit",
+                            "dataSetIdentifier": "SaaS-Sales.csv"
+                          },
+                          "aggregationFunction": {
+                            "simpleNumericalAggregation": "AVERAGE"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                },
+                "barsArrangement": "STACKED",
+                "orientation": "HORIZONTAL",
+                "categoryAxis": {
+                  "scrollbarOptions": {
+                    "visibility": "HIDDEN"
+                  }
+                }
+              },
+              "title": {
+                "visibility": "VISIBLE",
+                "formatText": {
+                  "plainText": "Average Profit by Product"
+                }
+              }
+            }
+          },
+          {
+            "lineChartVisual": {
+              "visualId": "linechart1",
+              "chartConfiguration": {
+                "fieldWells": {
+                  "lineChartAggregatedFieldWells": {
+                    "category": [
+                      {
+                        "dateDimensionField": {
+                          "fieldId": "Order Date",
+                          "column": {
+                            "columnName": "Order Date",
+                            "dataSetIdentifier": "SaaS-Sales.csv"
+                          },
+                          "dateGranularity": "MONTH"
+                        }
+                      }
+                    ],
+                    "values": [
+                      {
+                        "numericalMeasureField": {
+                          "fieldId": "Sales",
+                          "column": {
+                            "columnName": "Sales",
+                            "dataSetIdentifier": "SaaS-Sales.csv"
+                          },
+                          "aggregationFunction": {
+                            "simpleNumericalAggregation": "SUM"
+                          }
+                        }
+                      },
+                      {
+                        "numericalMeasureField": {
+                          "fieldId": "Profit",
+                          "column": {
+                            "columnName": "Profit",
+                            "dataSetIdentifier": "SaaS-Sales.csv"
+                          },
+                          "aggregationFunction": {
+                            "simpleNumericalAggregation": "SUM"
+                          }
+                        }
+                      },
+                      {
+                        "numericalMeasureField": {
+                          "fieldId": "Cost",
+                          "column": {
+                            "columnName": "Cost",
+                            "dataSetIdentifier": "SaaS-Sales.csv"
+                          },
+                          "aggregationFunction": {
+                            "simpleNumericalAggregation": "SUM"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                },
+                "xAxisDisplayOptions": {
+                  "scrollbarOptions": {
+                    "visibility": "HIDDEN"
+                  }
+                },
+                "type": "LINE"
+              },
+              "title": {
+                "visibility": "VISIBLE",
+                "formatText": {
+                  "plainText": "Sales vs Profit over time"
+                }
+              }
+            }
+          },
+          {
+            "tableVisual": {
+              "visualId": "table1",
+              "chartConfiguration": {
+                "fieldWells": {
+                  "tableAggregatedFieldWells": {
+                    "groupBy": [
+                      {
+                        "categoricalDimensionField": {
+                          "fieldId": "Product",
+                          "column": {
+                            "columnName": "Product",
+                            "dataSetIdentifier": "SaaS-Sales.csv"
+                          }
+                        }
+                      }
+                    ],
+                    "values": [
+                      {
+                        "numericalMeasureField": {
+                          "fieldId": "Sales",
+                          "column": {
+                            "columnName": "Sales",
+                            "dataSetIdentifier": "SaaS-Sales.csv"
+                          },
+                          "aggregationFunction": {
+                            "simpleNumericalAggregation": "SUM"
+                          },
+                          "formatConfiguration": {
+                            "formatConfiguration": {
+                              "currencyDisplayFormatConfiguration": {
+                                "symbol": "USD"
+                              }
+                            }
+                          }
+                        }
+                      },
+                      {
+                        "numericalMeasureField": {
+                          "fieldId": "Profit",
+                          "column": {
+                            "columnName": "Profit",
+                            "dataSetIdentifier": "SaaS-Sales.csv"
+                          },
+                          "aggregationFunction": {
+                            "simpleNumericalAggregation": "SUM"
+                          },
+                          "formatConfiguration": {
+                            "formatConfiguration": {
+                              "currencyDisplayFormatConfiguration": {
+                                "symbol": "USD"
+                              }
+                            }
+                          }
+                        }
+                      },
+                      {
+                        "numericalMeasureField": {
+                          "fieldId": "Quantity",
+                          "column": {
+                            "columnName": "Quantity",
+                            "dataSetIdentifier": "SaaS-Sales.csv"
+                          },
+                          "aggregationFunction": {
+                            "simpleNumericalAggregation": "SUM"
+                          }
+                        }
+                      },
+                      {
+                        "numericalMeasureField": {
+                          "fieldId": "Discount",
+                          "column": {
+                            "columnName": "Discount",
+                            "dataSetIdentifier": "SaaS-Sales.csv"
+                          },
+                          "aggregationFunction": {
+                            "simpleNumericalAggregation": "AVERAGE"
+                          },
+                          "formatConfiguration": {
+                            "formatConfiguration": {
+                              "percentageDisplayFormatConfiguration": {
+                                "suffix": "%"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  }
+                },
+                "sortConfiguration": {
+                  "rowSort": [
+                    {
+                      "fieldSort": {
+                        "direction": "DESC",
+                        "fieldId": "Sales"
+                      }
+                    }
+                  ]
+                },
+                "tableInlineVisualizations": [
+                  {
+                    "dataBars": {
+                      "fieldId": "Profit"
+                    }
+                  }
+                ],
+                "tableOptions": {
+                  "cellStyle": {
+                    "border": {
+                      "uniformBorder": {
+                        "style": "NONE"
+                      }
+                    }
+                  },
+                  "headerStyle": {
+                    "border": {
+                      "sideSpecificBorder": {
+                        "innerHorizontal": {
+                          "thickness": 2
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              "conditionalFormatting": {
+                "conditionalFormattingOptions": [
+                  {
+                    "cell": {
+                      "fieldId": "Sales",
+                      "textFormat": {
+                        "icon": {
+                          "customCondition": {
+                            "expression": "SUM({Sales}) > \"TOP_25_PERCENT\"",
+                            "iconOptions": {
+                              "icon": "THREE_BAR"
+                            },
+                            "color": "#0251D3"
+                          }
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "cell": {
+                      "fieldId": "Sales",
+                      "textFormat": {
+                        "icon": {
+                          "customCondition": {
+                            "expression": "(SUM({Sales}) >= \"BOTTOM_25_PERCENT\") AND (SUM({Sales}) <= \"TOP_25_PERCENT\")",
+                            "iconOptions": {
+                              "icon": "TWO_BAR"
+                            },
+                            "color": "#0251D3"
+                          }
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "cell": {
+                      "fieldId": "Sales",
+                      "textFormat": {
+                        "icon": {
+                          "customCondition": {
+                            "expression": "SUM({Sales}) < \"BOTTOM_25_PERCENT\"",
+                            "iconOptions": {
+                              "icon": "ONE_BAR"
+                            },
+                            "color": "#0251D3"
+                          }
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "cell": {
+                      "fieldId": "Sales",
+                      "textFormat": {
+                        "textColor": {
+                          "gradient": {
+                            "expression": "SUM({Sales})",
+                            "color": {
+                              "stops": [
+                                {
+                                  "gradientOffset": 0,
+                                  "dataValue": 0,
+                                  "color": "#DE3E00"
+                                },
+                                {
+                                  "gradientOffset": 100,
+                                  "dataValue": 200000,
+                                  "color": "#BADF2D"
+                                }
+                              ]
+                            }
+                          }
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "cell": {
+                      "fieldId": "Discount",
+                      "textFormat": {
+                        "textColor": {
+                          "gradient": {
+                            "expression": "AVG({Discount})",
+                            "color": {
+                              "stops": [
+                                {
+                                  "gradientOffset": 0,
+                                  "dataValue": 0,
+                                  "color": "#DE3E00"
+                                },
+                                {
+                                  "gradientOffset": 100,
+                                  "dataValue": 0.5,
+                                  "color": "#BADF2D"
+                                }
+                              ]
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                ]
+              },
+              "title": {
+                "visibility": "VISIBLE",
+                "formatText": {
+                  "plainText": "Product Metrics Table"
+                }
+              }
+            }
+          },
+          {
+            "kpiVisual": {
+              "visualId": "kpi1",
+              "chartConfiguration": {
+                "fieldWells": {
+                  "kpiFieldWells": {
+                    "values": [
+                      {
+                        "numericalMeasureField": {
+                          "fieldId": "Sales",
+                          "column": {
+                            "columnName": "Sales",
+                            "dataSetIdentifier": "SaaS-Sales.csv"
+                          },
+                          "aggregationFunction": {
+                            "simpleNumericalAggregation": "SUM"
+                          },
+                          "formatConfiguration": {
+                            "formatConfiguration": {
+                              "currencyDisplayFormatConfiguration": {
+                                "symbol": "USD"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      {
+        "sheetId": "sheet2",
+        "layouts": [
+          {
+            "configuration": {
+              "freeFormLayout": {
+                "elements": [
+                  {
+                    "elementId": "linechart3",
+                    "elementType": "VISUAL",
+                    "height": "300px",
+                    "width": "600px",
+                    "xAxisLocation": "0px",
+                    "yAxisLocation": "0px"
+                  },
+                  {
+                    "elementId": "barchart3",
+                    "elementType": "VISUAL",
+                    "height": "300px",
+                    "width": "600px",
+                    "xAxisLocation": "600px",
+                    "yAxisLocation": "0px"
+                  }
+                ]
+              }
+            }
+          }
+        ],
+        "name": "AnyCompany Sales - Freeform Layout",
+        "visuals": [
+          {
+            "barChartVisual": {
+              "visualId": "barchart3",
+              "actions": [
+                {
+                  "actionOperations": [
+                    {
+                      "filterOperation": {
+                        "selectedFieldsConfiguration": {
+                          "selectedFieldOptions": "ALL_FIELDS"
+                        },
+                        "targetVisualsConfiguration": {
+                          "sameSheetTargetVisualConfiguration": {
+                            "targetVisualOptions": "ALL_VISUALS"
+                          }
+                        }
+                      }
+                    }
+                  ],
+                  "customActionId": "quick_filter_action_2",
+                  "name": "Quick Filter",
+                  "trigger": "DATA_POINT_CLICK",
+                  "status": "ENABLED"
+                }
+              ],
+              "chartConfiguration": {
+                "fieldWells": {
+                  "barChartAggregatedFieldWells": {
+                    "category": [
+                      {
+                        "categoricalDimensionField": {
+                          "fieldId": "Product",
+                          "column": {
+                            "columnName": "Product",
+                            "dataSetIdentifier": "SaaS-Sales.csv"
+                          }
+                        }
+                      }
+                    ],
+                    "values": [
+                      {
+                        "numericalMeasureField": {
+                          "fieldId": "Sales",
+                          "column": {
+                            "columnName": "Sales",
+                            "dataSetIdentifier": "SaaS-Sales.csv"
+                          },
+                          "aggregationFunction": {
+                            "simpleNumericalAggregation": "SUM"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                },
+                "barsArrangement": "CLUSTERED",
+                "orientation": "HORIZONTAL",
+                "categoryAxis": {
+                  "scrollbarOptions": {
+                    "visibility": "HIDDEN"
+                  }
+                }
+              },
+              "title": {
+                "visibility": "VISIBLE",
+                "formatText": {
+                  "plainText": "Sum of Sales by Product"
+                }
+              },
+              "subtitle": {
+                "visibility": "VISIBLE",
+                "formatText": {
+                  "plainText": "Use this visual to drill down into specific products."
+                }
+              }
+            }
+          },
+          {
+            "lineChartVisual": {
+              "visualId": "linechart3",
+              "chartConfiguration": {
+                "fieldWells": {
+                  "lineChartAggregatedFieldWells": {
+                    "category": [
+                      {
+                        "dateDimensionField": {
+                          "fieldId": "Order Date",
+                          "column": {
+                            "columnName": "Order Date",
+                            "dataSetIdentifier": "SaaS-Sales.csv"
+                          },
+                          "dateGranularity": "MONTH"
+                        }
+                      }
+                    ],
+                    "values": [
+                      {
+                        "numericalMeasureField": {
+                          "fieldId": "Sales",
+                          "column": {
+                            "columnName": "Sales",
+                            "dataSetIdentifier": "SaaS-Sales.csv"
+                          },
+                          "aggregationFunction": {
+                            "simpleNumericalAggregation": "SUM"
+                          }
+                        }
+                      },
+                      {
+                        "numericalMeasureField": {
+                          "fieldId": "Profit",
+                          "column": {
+                            "columnName": "Profit",
+                            "dataSetIdentifier": "SaaS-Sales.csv"
+                          },
+                          "aggregationFunction": {
+                            "simpleNumericalAggregation": "SUM"
+                          }
+                        }
+                      },
+                      {
+                        "numericalMeasureField": {
+                          "fieldId": "Cost",
+                          "column": {
+                            "columnName": "Cost",
+                            "dataSetIdentifier": "SaaS-Sales.csv"
+                          },
+                          "aggregationFunction": {
+                            "simpleNumericalAggregation": "SUM"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                },
+                "xAxisDisplayOptions": {
+                  "scrollbarOptions": {
+                    "visibility": "HIDDEN"
+                  }
+                },
+                "type": "LINE"
+              },
+              "title": {
+                "visibility": "VISIBLE",
+                "formatText": {
+                  "plainText": "Sales vs Profit over time"
+                }
+              }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "validationStrategy": {
+    "mode": "LENIENT"
+  }
+}

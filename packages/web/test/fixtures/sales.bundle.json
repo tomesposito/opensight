@@ -7,34 +7,34 @@
   ],
   "calculatedFields": [
     {
-      "DataSetIdentifier": "sales_data",
-      "Name": "discounted_revenue",
-      "Expression": "{revenue} * 0.9"
+      "dataSetIdentifier": "sales_data",
+      "name": "discounted_revenue",
+      "expression": "{revenue} * 0.9"
     }
   ],
   "filterGroups": [
     {
-      "FilterGroupId": "east-only",
-      "CrossDataset": "SINGLE_DATASET",
-      "Status": "ENABLED",
-      "ScopeConfiguration": {
-        "AllSheets": {}
+      "filterGroupId": "east-only",
+      "crossDataset": "SINGLE_DATASET",
+      "status": "ENABLED",
+      "scopeConfiguration": {
+        "allSheets": {}
       },
-      "Filters": [
+      "filters": [
         {
-          "CategoryFilter": {
-            "FilterId": "east-region",
-            "Column": {
-              "DataSetIdentifier": "sales_data",
-              "ColumnName": "region"
+          "categoryFilter": {
+            "filterId": "east-region",
+            "column": {
+              "dataSetIdentifier": "sales_data",
+              "columnName": "region"
             },
-            "Configuration": {
-              "FilterListConfiguration": {
-                "MatchOperator": "EQUALS",
-                "CategoryValues": [
+            "configuration": {
+              "filterListConfiguration": {
+                "matchOperator": "EQUALS",
+                "categoryValues": [
                   "East"
                 ],
-                "NullOption": "NON_NULLS_ONLY"
+                "nullOption": "NON_NULLS_ONLY"
               }
             }
           }

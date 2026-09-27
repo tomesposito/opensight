@@ -40,6 +40,10 @@ const resource: BundleResource = {
 };
 const realBundle: QsBundle = { members: [{ path: 'analysis/a.json', resource }] };
 const realSummary: QsBundleSummary = summarizeQsBundle(realBundle);
+const dependencies: string[] | undefined = realSummary.members[0]?.definition?.calculatedFields[0]?.dependencies.calculatedFields;
+const parameterName: string | undefined = realSummary.members[0]?.definition?.parameters[0]?.name;
+const filterSupported: boolean | undefined = realSummary.members[0]?.definition?.filterGroups[0]?.filters[0]?.supported;
+void [dependencies, parameterName, filterSupported];
 const columnName: string | undefined = bundleDefinition.sheets?.[0]?.visuals?.[0]
   ?.pieChartVisual?.chartConfiguration?.fieldWells?.pieChartAggregatedFieldWells
   ?.values?.[0]?.numericalMeasureField?.column.columnName;

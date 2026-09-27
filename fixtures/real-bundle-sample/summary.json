@@ -33,9 +33,13 @@
             "sheetId": "e0772d4e-bd69-444e-a421-cb3f165dbad8_9d289c46-2931-44ac-a4d1-ad28e3ad3d81"
           }
         ],
+        "calculatedFields": [],
+        "parameters": [],
+        "filterGroups": [],
         "calculatedFieldCount": 0,
         "parameterCount": 0,
-        "filterGroupCount": 0
+        "filterGroupCount": 0,
+        "filterCount": 0
       }
     },
     {
@@ -70,9 +74,13 @@
             "sheetId": "9d289c46-2931-44ac-a4d1-ad28e3ad3d81"
           }
         ],
+        "calculatedFields": [],
+        "parameters": [],
+        "filterGroups": [],
         "calculatedFieldCount": 0,
         "parameterCount": 0,
-        "filterGroupCount": 0
+        "filterGroupCount": 0,
+        "filterCount": 0
       }
     },
     {

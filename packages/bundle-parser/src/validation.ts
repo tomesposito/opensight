@@ -33,7 +33,7 @@ export const enumeration = (...allowed: string[]): Validator => (value, path) =>
 };
 export const array = (item: Validator): Validator => (value, path) => {
   if (!Array.isArray(value)) fail(path, 'expected an array');
-  value.forEach((entry: unknown, index: number) => item(entry, `${path}[${index}]`));
+  for (let index = 0; index < value.length; index++) item(value[index], `${path}[${index}]`);
 };
 export function optional(value: ObjectValue, key: string, path: string, validate: Validator): void {
   if (Object.hasOwn(value, key)) validate(value[key], `${path}.${key}`);

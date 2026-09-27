@@ -97,3 +97,52 @@ test('rejects malformed definition, dataset, sheet and visual envelopes with con
     assert.throws(() => convertDefinition(input), /Definition/);
   }
 });
+
+test('converts nonempty parameters, filters, scopes and calculations without rewriting expressions', () => {
+  const expression = 'ifelse({MixedCaseColumn} > ${Threshold}, "Keep CAPS", 0)';
+  const input = {
+    DataSetIdentifierDeclarations: [],
+    ParameterDeclarations: [
+      { StringParameterDeclaration: { Name: 'Region', ParameterValueType: 'MULTI_VALUED', DefaultValues: { StaticValues: ['MixedCase'] } } },
+      { DateTimeParameterDeclaration: { Name: 'AsOf', DefaultValues: { RollingDate: { Expression: 'addDateTime(-1, "DD", now())' } } } },
+      { IntegerParameterDeclaration: { Name: 'Months', ParameterValueType: 'SINGLE_VALUED', DefaultValues: { StaticValues: [3] } } },
+      { DecimalParameterDeclaration: { Name: 'Threshold', ParameterValueType: 'SINGLE_VALUED', DefaultValues: { DynamicValue: {
+        DataSetIdentifier: 'Sales', DefaultValueColumn: 'Limit', UserNameColumn: 'User',
+      } }, ValueWhenUnset: { CustomValue: 1.5 } } },
+    ],
+    CalculatedFields: [{ DataSetIdentifier: 'Sales', Name: 'Flag', Expression: expression }],
+    FilterGroups: [{ FilterGroupId: 'f', CrossDataset: 'SINGLE_DATASET', ScopeConfiguration: { AllSheets: {} }, Filters: [
+      { NumericRangeFilter: { FilterId: 'numeric', Column: { DataSetIdentifier: 'Sales', ColumnName: 'Revenue' }, RangeMinimum: { Parameter: 'Threshold' }, IncludeMinimum: true, NullOption: 'ALL_VALUES' } },
+      { RelativeDatesFilter: { FilterId: 'date', Column: { DataSetIdentifier: 'Sales', ColumnName: 'Date' }, RelativeDateType: 'LAST', RelativeDateValue: 3, TimeGranularity: 'MONTH', NullOption: 'ALL_VALUES', AnchorDateConfiguration: { AnchorOption: 'NOW' } } },
+      { CategoryFilter: { FilterId: 'region', Column: { DataSetIdentifier: 'Sales', ColumnName: 'Region' }, Configuration: { CustomFilterConfiguration: { MatchOperator: 'EQUALS', ParameterName: 'Region', NullOption: 'NON_NULLS_ONLY' } } } },
+    ] }],
+  };
+  const before = structuredClone(input);
+  const result = convertDefinition(input);
+  assert.deepEqual(result.calculatedFields, [{ dataSetIdentifier: 'Sales', name: 'Flag', expression }]);
+  assert.deepEqual(result.parameterDeclarations.map(p => Object.keys(p)[0]), ['stringParameterDeclaration', 'dateTimeParameterDeclaration', 'integerParameterDeclaration', 'decimalParameterDeclaration']);
+  assert.deepEqual(result.parameterDeclarations[0].stringParameterDeclaration.defaultValues.staticValues, ['MixedCase']);
+  assert.deepEqual(result.parameterDeclarations[3].decimalParameterDeclaration.defaultValues.dynamicValue, {
+    dataSetIdentifier: 'Sales', defaultValueColumn: 'Limit', userNameColumn: 'User',
+  });
+  assert.deepEqual(result.filterGroups[0].scopeConfiguration, { allSheets: {} });
+  const filters = result.filterGroups[0].filters;
+  assert.deepEqual(filters[0].numericRangeFilter.rangeMinimum, { parameter: 'Threshold' });
+  assert.deepEqual(filters[1].relativeDatesFilter.anchorDateConfiguration, { anchorOption: 'NOW' });
+  assert.deepEqual(filters[2].categoryFilter.configuration.customFilterConfiguration, { matchOperator: 'EQUALS', parameterName: 'Region', nullOption: 'NON_NULLS_ONLY' });
+  assert.deepEqual(input, before);
+});
+
+test('converts wrapped KPI wells, table measures and selected-sheet filter scoping', () => {
+  const measure = { CategoricalMeasureField: { FieldId: 'count', Column: { DataSetIdentifier: 'Sales', ColumnName: 'Product' }, AggregationFunction: 'COUNT' } };
+  const wrapped = convertVisual({ KPIVisual: { VisualId: 'kpi', ChartConfiguration: { FieldWells: { KPIFieldWells: { Values: [measure] } } } } });
+  assert.deepEqual(wrapped.kpiVisual.chartConfiguration.fieldWells.kpiFieldWells.values, [{ categoricalMeasureField: {
+    fieldId: 'count', column: { dataSetIdentifier: 'Sales', columnName: 'Product' }, aggregationFunction: 'COUNT',
+  } }]);
+  const table = convertVisual({ TableVisual: { VisualId: 'table', ChartConfiguration: { FieldWells: { TableAggregatedFieldWells: { Values: [{ CalculatedMeasureField: { FieldId: 'm', Expression: 'sum({Sales})' } }] } } } } });
+  assert.equal(table.tableVisual.chartConfiguration.fieldWells.tableAggregatedFieldWells.values[0].calculatedMeasureField.expression, 'sum({Sales})');
+  const result = convertDefinition({ DataSetIdentifierDeclarations: [], FilterGroups: [{ ScopeConfiguration: { SelectedSheets: {
+    SheetVisualScopingConfigurations: [{ SheetId: 's', Scope: 'SELECTED_VISUALS', VisualIds: ['kpi', 'table'] }],
+  } } }] });
+  assert.deepEqual(result.filterGroups[0].scopeConfiguration.selectedSheets.sheetVisualScopingConfigurations, [{ sheetId: 's', scope: 'SELECTED_VISUALS', visualIds: ['kpi', 'table'] }]);
+});

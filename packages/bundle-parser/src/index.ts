@@ -1,6 +1,7 @@
 /** Separate APIs for observed .qs archives and provisional synthetic inventory. */
 export { loadQsBundle, parseQsBundle, summarizeQsBundle } from './archive.js';
 export type { QsBundleSummary, BundleDefinitionSummary } from './archive.js';
+export type { BundleParameterSummary, BundleFilterSummary, BundleFilterGroupSummary, BundleCalculatedFieldSummary } from './bundle-features.js';
 export { parseBundleResource } from './bundle-validate.js';
 export { listZipMembers, ZIP_LIMITS } from './zip.js';
 export type { ZipMemberInfo } from './zip.js';

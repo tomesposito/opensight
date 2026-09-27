@@ -1,0 +1,402 @@
+{
+  "resourceType": "analysis",
+  "analysisId": "orders-overview",
+  "name": "SYNTHETIC orders-overview",
+  "definition": {
+    "dataSetIdentifierDeclarations": [
+      {
+        "identifier": "orders",
+        "dataSetArn": "arn:aws:quicksight:us-east-1:123456789012:dataset/orders-enriched"
+      }
+    ],
+    "sheets": [
+      {
+        "sheetId": "sheet1",
+        "name": "Orders Overview",
+        "visuals": [
+          {
+            "kpiVisual": {
+              "visualId": "kpiRevenue",
+              "title": {
+                "visibility": "VISIBLE",
+                "formatText": {
+                  "plainText": "Total Net Revenue"
+                }
+              },
+              "subtitle": {
+                "visibility": "VISIBLE"
+              },
+              "chartConfiguration": {
+                "fieldWells": {
+                  "values": [
+                    {
+                      "numericalMeasureField": {
+                        "fieldId": "kpi-netrev",
+                        "column": {
+                          "dataSetIdentifier": "orders",
+                          "columnName": "NET_REVENUE"
+                        },
+                        "aggregationFunction": {
+                          "simpleNumericalAggregation": "SUM"
+                        },
+                        "formatConfiguration": {
+                          "formatConfiguration": {
+                            "currencyDisplayFormatConfiguration": {
+                              "separatorConfiguration": {
+                                "thousandsSeparator": {
+                                  "symbol": "COMMA",
+                                  "visibility": "VISIBLE"
+                                }
+                              },
+                              "symbol": "USD",
+                              "decimalPlacesConfiguration": {
+                                "decimalPlaces": 0
+                              },
+                              "numberScale": "NONE"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ],
+                  "targetValues": [],
+                  "trendGroups": []
+                },
+                "sortConfiguration": {}
+              },
+              "actions": [],
+              "columnHierarchies": []
+            }
+          },
+          {
+            "kpiVisual": {
+              "visualId": "kpiMargin",
+              "title": {
+                "visibility": "VISIBLE",
+                "formatText": {
+                  "plainText": "Avg Profit Margin"
+                }
+              },
+              "subtitle": {
+                "visibility": "VISIBLE"
+              },
+              "chartConfiguration": {
+                "fieldWells": {
+                  "values": [
+                    {
+                      "numericalMeasureField": {
+                        "fieldId": "kpi-margin",
+                        "column": {
+                          "dataSetIdentifier": "orders",
+                          "columnName": "Profit Margin"
+                        },
+                        "aggregationFunction": {
+                          "simpleNumericalAggregation": "AVERAGE"
+                        },
+                        "formatConfiguration": {
+                          "formatConfiguration": {
+                            "percentageDisplayFormatConfiguration": {
+                              "decimalPlacesConfiguration": {
+                                "decimalPlaces": 1
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ],
+                  "targetValues": [],
+                  "trendGroups": []
+                },
+                "sortConfiguration": {}
+              },
+              "actions": [],
+              "columnHierarchies": []
+            }
+          },
+          {
+            "barChartVisual": {
+              "visualId": "barCategory",
+              "title": {
+                "visibility": "VISIBLE",
+                "formatText": {
+                  "plainText": "Net Revenue by Category"
+                }
+              },
+              "subtitle": {
+                "visibility": "VISIBLE"
+              },
+              "chartConfiguration": {
+                "fieldWells": {
+                  "barChartAggregatedFieldWells": {
+                    "category": [
+                      {
+                        "categoricalDimensionField": {
+                          "fieldId": "bar-cat",
+                          "column": {
+                            "dataSetIdentifier": "orders",
+                            "columnName": "CATEGORY"
+                          }
+                        }
+                      }
+                    ],
+                    "values": [
+                      {
+                        "numericalMeasureField": {
+                          "fieldId": "bar-rev",
+                          "column": {
+                            "dataSetIdentifier": "orders",
+                            "columnName": "NET_REVENUE"
+                          },
+                          "aggregationFunction": {
+                            "simpleNumericalAggregation": "SUM"
+                          },
+                          "formatConfiguration": {
+                            "formatConfiguration": {
+                              "currencyDisplayFormatConfiguration": {
+                                "separatorConfiguration": {
+                                  "thousandsSeparator": {
+                                    "symbol": "COMMA",
+                                    "visibility": "VISIBLE"
+                                  }
+                                },
+                                "symbol": "USD",
+                                "decimalPlacesConfiguration": {
+                                  "decimalPlaces": 0
+                                },
+                                "numberScale": "NONE"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    ],
+                    "colors": []
+                  }
+                },
+                "sortConfiguration": {},
+                "orientation": "HORIZONTAL",
+                "barsArrangement": "CLUSTERED",
+                "dataLabels": {
+                  "visibility": "VISIBLE",
+                  "overlap": "DISABLE_OVERLAP"
+                }
+              },
+              "actions": [],
+              "columnHierarchies": []
+            }
+          },
+          {
+            "lineChartVisual": {
+              "visualId": "lineMonth",
+              "title": {
+                "visibility": "VISIBLE",
+                "formatText": {
+                  "plainText": "Net Revenue Trend"
+                }
+              },
+              "subtitle": {
+                "visibility": "VISIBLE"
+              },
+              "chartConfiguration": {
+                "fieldWells": {
+                  "lineChartAggregatedFieldWells": {
+                    "category": [
+                      {
+                        "dateDimensionField": {
+                          "fieldId": "line-date",
+                          "column": {
+                            "dataSetIdentifier": "orders",
+                            "columnName": "FULL_DATE"
+                          },
+                          "dateGranularity": "MONTH",
+                          "hierarchyId": "line-date"
+                        }
+                      }
+                    ],
+                    "values": [
+                      {
+                        "numericalMeasureField": {
+                          "fieldId": "line-rev",
+                          "column": {
+                            "dataSetIdentifier": "orders",
+                            "columnName": "NET_REVENUE"
+                          },
+                          "aggregationFunction": {
+                            "simpleNumericalAggregation": "SUM"
+                          },
+                          "formatConfiguration": {
+                            "formatConfiguration": {
+                              "currencyDisplayFormatConfiguration": {
+                                "separatorConfiguration": {
+                                  "thousandsSeparator": {
+                                    "symbol": "COMMA",
+                                    "visibility": "VISIBLE"
+                                  }
+                                },
+                                "symbol": "USD",
+                                "decimalPlacesConfiguration": {
+                                  "decimalPlaces": 0
+                                },
+                                "numberScale": "NONE"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    ],
+                    "colors": []
+                  }
+                },
+                "sortConfiguration": {},
+                "type": "LINE"
+              },
+              "actions": [],
+              "columnHierarchies": [
+                {
+                  "dateTimeHierarchy": {
+                    "hierarchyId": "line-date",
+                    "drillDownFilters": []
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "pieChartVisual": {
+              "visualId": "pieProfit",
+              "title": {
+                "visibility": "VISIBLE",
+                "formatText": {
+                  "plainText": "Net Revenue by Region"
+                }
+              },
+              "subtitle": {
+                "visibility": "VISIBLE"
+              },
+              "chartConfiguration": {
+                "fieldWells": {
+                  "pieChartAggregatedFieldWells": {
+                    "category": [
+                      {
+                        "categoricalDimensionField": {
+                          "fieldId": "pie-region",
+                          "column": {
+                            "dataSetIdentifier": "orders",
+                            "columnName": "REGION"
+                          }
+                        }
+                      }
+                    ],
+                    "values": [
+                      {
+                        "numericalMeasureField": {
+                          "fieldId": "pie-rev",
+                          "column": {
+                            "dataSetIdentifier": "orders",
+                            "columnName": "NET_REVENUE"
+                          },
+                          "aggregationFunction": {
+                            "simpleNumericalAggregation": "SUM"
+                          },
+                          "formatConfiguration": {
+                            "formatConfiguration": {
+                              "currencyDisplayFormatConfiguration": {
+                                "separatorConfiguration": {
+                                  "thousandsSeparator": {
+                                    "symbol": "COMMA",
+                                    "visibility": "VISIBLE"
+                                  }
+                                },
+                                "symbol": "USD",
+                                "decimalPlacesConfiguration": {
+                                  "decimalPlaces": 0
+                                },
+                                "numberScale": "NONE"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  }
+                },
+                "sortConfiguration": {},
+                "donutOptions": {
+                  "arcOptions": {
+                    "arcThickness": "MEDIUM"
+                  }
+                },
+                "dataLabels": {
+                  "visibility": "VISIBLE",
+                  "measureLabelVisibility": "VISIBLE",
+                  "overlap": "DISABLE_OVERLAP"
+                }
+              },
+              "actions": [],
+              "columnHierarchies": []
+            }
+          }
+        ],
+        "layouts": [
+          {
+            "configuration": {
+              "gridLayout": {
+                "elements": [
+                  {
+                    "elementId": "kpiRevenue",
+                    "elementType": "VISUAL",
+                    "columnSpan": 18,
+                    "rowSpan": 12
+                  },
+                  {
+                    "elementId": "kpiMargin",
+                    "elementType": "VISUAL",
+                    "columnSpan": 18,
+                    "rowSpan": 12
+                  },
+                  {
+                    "elementId": "barCategory",
+                    "elementType": "VISUAL",
+                    "columnSpan": 18,
+                    "rowSpan": 12
+                  },
+                  {
+                    "elementId": "lineMonth",
+                    "elementType": "VISUAL",
+                    "columnSpan": 18,
+                    "rowSpan": 12
+                  },
+                  {
+                    "elementId": "pieProfit",
+                    "elementType": "VISUAL",
+                    "columnSpan": 18,
+                    "rowSpan": 12
+                  }
+                ]
+              }
+            }
+          }
+        ],
+        "contentType": "INTERACTIVE"
+      }
+    ],
+    "calculatedFields": [
+      {
+        "dataSetIdentifier": "orders",
+        "name": "Profit Margin",
+        "expression": "{NET_PROFIT} / {NET_REVENUE}"
+      },
+      {
+        "dataSetIdentifier": "orders",
+        "name": "Profitability",
+        "expression": "ifelse({NET_PROFIT} >= 0, 'Profitable', 'Unprofitable')"
+      }
+    ],
+    "parameterDeclarations": [],
+    "filterGroups": []
+  },
+  "validationStrategy": {
+    "mode": "LENIENT"
+  }
+}

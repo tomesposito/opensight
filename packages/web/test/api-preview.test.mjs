@@ -40,9 +40,9 @@ test('object key ordering and response name changes do not invalidate identical 
   assert.equal(compileVisual(preview.sheets[0].visuals[0]).state, 'ready');
 });
 for (const [name, mutate] of [
-  ['filter', d => { d.filterGroups[0].Filters[0].CategoryFilter.Configuration.FilterListConfiguration.CategoryValues = ['West']; }],
-  ['calculation', d => { d.calculatedFields[0].Expression = '{revenue} * 0.8'; }],
-  ['parameter', d => { d.parameterDeclarations = [{ StringParameterDeclaration: { Name: 'new' } }]; }],
+  ['filter', d => { d.filterGroups[0].filters[0].categoryFilter.configuration.filterListConfiguration.categoryValues = ['West']; }],
+  ['calculation', d => { d.calculatedFields[0].expression = '{revenue} * 0.8'; }],
+  ['parameter', d => { d.parameterDeclarations = [{ stringParameterDeclaration: { name: 'new', parameterValueType: 'SINGLE_VALUED' } }]; }],
   ['dataset', d => { d.dataSetIdentifierDeclarations[0].dataSetArn = 'different'; }],
   ['field binding', d => { d.sheets[0].visuals[0].barChartVisual.chartConfiguration.fieldWells.barChartAggregatedFieldWells.values = []; }],
   ['unknown semantic property', d => { d.FutureSemantics = true; }],

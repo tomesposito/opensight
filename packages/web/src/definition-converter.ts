@@ -32,39 +32,118 @@ function map(value: unknown, schema: Schema, path: string): unknown {
   }));
 }
 
+// Schema helpers list API member names explicitly; they never rewrite arbitrary
+// dictionary keys, strings, expressions, enum values, or unknown subtrees.
+const members = (names: string): Schema => Object.fromEntries(names.split(' ').map(name => [name, [
+  name.replace(/^[A-Z]+(?=[A-Z][a-z]|$)|^[A-Z]/u, prefix => prefix.toLowerCase()),
+]]));
+const visibility: Schema = members('Visibility');
+const font: Schema = { ...members('FontColor FontDecoration'), FontSize: ['fontSize', members('Relative Absolute')] };
+const displayFormat: Schema = {
+  ...members('NumberScale Prefix Suffix Symbol'),
+  DecimalPlacesConfiguration: ['decimalPlacesConfiguration', members('DecimalPlaces')],
+  NullValueFormatConfiguration: ['nullValueFormatConfiguration', members('NullString')],
+  NegativeValueConfiguration: ['negativeValueConfiguration', members('DisplayMode')],
+  SeparatorConfiguration: ['separatorConfiguration', {
+    DecimalSeparator: ['decimalSeparator'], ThousandsSeparator: ['thousandsSeparator', members('Symbol Visibility')],
+  }],
+};
+const numberFormat: Schema = {
+  NumberDisplayFormatConfiguration: ['numberDisplayFormatConfiguration', displayFormat],
+  CurrencyDisplayFormatConfiguration: ['currencyDisplayFormatConfiguration', displayFormat],
+  PercentageDisplayFormatConfiguration: ['percentageDisplayFormatConfiguration', displayFormat],
+};
+const format: Schema = {
+  ...members('DateTimeFormat'), ...numberFormat, FormatConfiguration: ['formatConfiguration', numberFormat],
+  NullValueFormatConfiguration: ['nullValueFormatConfiguration', members('NullString')],
+};
+const interactions: Schema = {
+  VisualMenuOption: ['visualMenuOption', members('AvailabilityStatus')],
+  TextBoxMenuOption: ['textBoxMenuOption', members('AvailabilityStatus')],
+};
+const conditionalStyle: Schema = {
+  Icon: ['icon', { CustomCondition: ['customCondition', {
+    ...members('Color Expression'), IconOptions: ['iconOptions', members('Icon')],
+  }] }],
+  TextColor: ['textColor', {
+    Solid: ['solid', members('Color Expression')],
+    Gradient: ['gradient', { Expression: ['expression'], Color: ['color', { Stops: ['stops', members('Color DataValue GradientOffset')] }] }],
+  }],
+};
+const conditionalFormatting: Schema = { ConditionalFormattingOptions: ['conditionalFormattingOptions', {
+  ComparisonValue: ['comparisonValue', conditionalStyle],
+  Cell: ['cell', { FieldId: ['fieldId'], TextFormat: ['textFormat', conditionalStyle] }],
+}] };
 const column: Schema = { DataSetIdentifier: ['dataSetIdentifier'], ColumnName: ['columnName'] };
 const field: Schema = {
   FieldId: ['fieldId'], Column: ['column', column], DateGranularity: ['dateGranularity'],
+  HierarchyId: ['hierarchyId'], FormatConfiguration: ['formatConfiguration', format],
   AggregationFunction: ['aggregationFunction', { SimpleNumericalAggregation: ['simpleNumericalAggregation'] }],
 };
 const dimension: Schema = {
   CategoricalDimensionField: ['categoricalDimensionField', field],
   DateDimensionField: ['dateDimensionField', field], NumericalDimensionField: ['numericalDimensionField', field],
 };
-const measure: Schema = { NumericalMeasureField: ['numericalMeasureField', field] };
+const measure: Schema = { NumericalMeasureField: ['numericalMeasureField', field],
+  CategoricalMeasureField: ['categoricalMeasureField', field], DateMeasureField: ['dateMeasureField', field],
+  CalculatedMeasureField: ['calculatedMeasureField', members('FieldId Expression')] };
 const wells: Schema = {
   Category: ['category', dimension], GroupBy: ['groupBy', dimension], Values: ['values', measure],
   Colors: ['colors', dimension], SmallMultiples: ['smallMultiples', dimension],
   TargetValues: ['targetValues', measure], TrendGroups: ['trendGroups', dimension],
+  BarValues: ['barValues', measure], LineValues: ['lineValues', measure],
+  XAxis: ['xAxis', measure], YAxis: ['yAxis', measure], Size: ['size', measure], Label: ['label', dimension],
 };
 const title: Schema = {
   Visibility: ['visibility'], FormatText: ['formatText', { PlainText: ['plainText'], RichText: ['richText'] }],
 };
-const limit: Schema = { OtherCategories: ['otherCategories'] };
+const limit: Schema = members('OtherCategories ItemsLimit');
+const sort: Schema = { FieldSort: ['fieldSort', members('FieldId Direction')] };
+const labels: Schema = members('Visibility Overlap MeasureLabelVisibility');
+const axis: Schema = { ScrollbarOptions: ['scrollbarOptions', visibility] };
+const border: Schema = members('Style Thickness Color');
+const tableStyle: Schema = { Border: ['border', { UniformBorder: ['uniformBorder', border],
+  SideSpecificBorder: ['sideSpecificBorder', { InnerHorizontal: ['innerHorizontal', border] }],
+}] };
 const visualBody: Schema = {
   VisualId: ['visualId'], Title: ['title', title], Subtitle: ['subtitle', title],
-  Actions: ['actions'], ColumnHierarchies: ['columnHierarchies'],
+  Actions: ['actions', {
+    ...members('CustomActionId Name Status Trigger'), ActionOperations: ['actionOperations', {
+      FilterOperation: ['filterOperation', {
+        SelectedFieldsConfiguration: ['selectedFieldsConfiguration', members('SelectedFieldOptions SelectedFields')],
+        TargetVisualsConfiguration: ['targetVisualsConfiguration', {
+          SameSheetTargetVisualConfiguration: ['sameSheetTargetVisualConfiguration', members('TargetVisualOptions TargetVisuals')],
+        }],
+      }],
+    }],
+  }],
+  ConditionalFormatting: ['conditionalFormatting', conditionalFormatting],
+  ColumnHierarchies: ['columnHierarchies', { DateTimeHierarchy: ['dateTimeHierarchy', members('HierarchyId DrillDownFilters')] }],
   ChartConfiguration: ['chartConfiguration', {
     FieldWells: ['fieldWells', {
       PieChartAggregatedFieldWells: ['pieChartAggregatedFieldWells', wells],
       BarChartAggregatedFieldWells: ['barChartAggregatedFieldWells', wells],
       LineChartAggregatedFieldWells: ['lineChartAggregatedFieldWells', wells],
-      TableAggregatedFieldWells: ['tableAggregatedFieldWells', wells], ...wells,
+      TableAggregatedFieldWells: ['tableAggregatedFieldWells', wells],
+      KPIFieldWells: ['kpiFieldWells', wells], ComboChartAggregatedFieldWells: ['comboChartAggregatedFieldWells', wells],
+      ScatterPlotCategoricallyAggregatedFieldWells: ['scatterPlotCategoricallyAggregatedFieldWells', wells], ...wells,
     }],
-    Orientation: ['orientation'], BarsArrangement: ['barsArrangement'],
+    Orientation: ['orientation'], BarsArrangement: ['barsArrangement'], Type: ['type'],
+    Interactions: ['interactions', interactions], CategoryAxis: ['categoryAxis', axis], XAxisDisplayOptions: ['xAxisDisplayOptions', axis],
+    BarDataLabels: ['barDataLabels', labels], LineDataLabels: ['lineDataLabels', labels],
+    TableInlineVisualizations: ['tableInlineVisualizations', { DataBars: ['dataBars', members('FieldId')] }],
+    TableOptions: ['tableOptions', { CellStyle: ['cellStyle', tableStyle], HeaderStyle: ['headerStyle', tableStyle] }],
+    KPIOptions: ['kpiOptions', {
+      PrimaryValueDisplayType: ['primaryValueDisplayType'],
+      PrimaryValueFontConfiguration: ['primaryValueFontConfiguration', font], SecondaryValueFontConfiguration: ['secondaryValueFontConfiguration', font],
+      ProgressBar: ['progressBar', visibility], TrendArrows: ['trendArrows', visibility],
+      Sparkline: ['sparkline', members('TooltipVisibility Type Visibility')],
+      Comparison: ['comparison', { ComparisonMethod: ['comparisonMethod'], ComparisonFormat: ['comparisonFormat', numberFormat] }],
+      VisualLayoutOptions: ['visualLayoutOptions', { StandardLayout: ['standardLayout', members('Type')] }],
+    }],
     DonutOptions: ['donutOptions', { ArcOptions: ['arcOptions', { ArcThickness: ['arcThickness'] }] }],
-    DataLabels: ['dataLabels', { Visibility: ['visibility'], Overlap: ['overlap'] }],
-    Legend: ['legend', { Visibility: ['visibility'] }],
+    DataLabels: ['dataLabels', labels],
+    Legend: ['legend', members('Visibility Position Width')],
     Tooltip: ['tooltip', {
       TooltipVisibility: ['tooltipVisibility'], SelectedTooltipType: ['selectedTooltipType'],
       FieldBasedTooltip: ['fieldBasedTooltip', {
@@ -73,7 +152,7 @@ const visualBody: Schema = {
       }],
     }],
     SortConfiguration: ['sortConfiguration', {
-      CategorySort: ['categorySort', { FieldSort: ['fieldSort', { FieldId: ['fieldId'], Direction: ['direction'] }] }],
+      CategorySort: ['categorySort', sort], TrendGroupSort: ['trendGroupSort', sort], RowSort: ['rowSort', sort],
       CategoryItemsLimit: ['categoryItemsLimit', limit], SmallMultiplesLimitConfiguration: ['smallMultiplesLimitConfiguration', limit],
     }],
   }],
@@ -87,19 +166,72 @@ const grid: Schema = {
     RowIndex: ['rowIndex'], RowSpan: ['rowSpan'],
   }], CanvasSizeOptions: ['canvasSizeOptions', canvas],
 };
+const freeForm: Schema = {
+  Elements: ['elements', {
+    ...members('ElementId ElementType XAxisLocation YAxisLocation Width Height Visibility'),
+    BorderStyle: ['borderStyle', members('Visibility Color')], SelectedBorderStyle: ['selectedBorderStyle', members('Visibility Color')],
+    BackgroundStyle: ['backgroundStyle', members('Visibility Color')], LoadingAnimation: ['loadingAnimation', visibility],
+  }], CanvasSizeOptions: ['canvasSizeOptions', canvas],
+};
+const parameterBody: Schema = {
+  ...members('Name ParameterValueType TimeGranularity'),
+  DefaultValues: ['defaultValues', {
+    StaticValues: ['staticValues'], DynamicValue: ['dynamicValue', {
+      ...members('DataSetIdentifier DefaultValueColumn GroupNameColumn UserNameColumn'),
+    }], RollingDate: ['rollingDate', members('Expression DataSetIdentifier')],
+  }],
+  ValueWhenUnset: ['valueWhenUnset', members('ValueWhenUnsetOption CustomValue')],
+};
+const categoryConfig: Schema = members('MatchOperator NullOption ParameterName CategoryValue CategoryValues SelectAllOptions');
+const rangeValue: Schema = members('Parameter StaticValue');
+const filterBody: Schema = {
+  ...members('FilterId NullOption IncludeMinimum IncludeMaximum TimeGranularity RelativeDateType RelativeDateValue ParameterName MinimumGranularity'),
+  Column: ['column', column], RangeMinimum: ['rangeMinimum', rangeValue], RangeMaximum: ['rangeMaximum', rangeValue],
+  RangeMinimumValue: ['rangeMinimumValue', rangeValue], RangeMaximumValue: ['rangeMaximumValue', rangeValue],
+  AnchorDateConfiguration: ['anchorDateConfiguration', members('AnchorOption ParameterName')],
+  ExcludePeriodConfiguration: ['excludePeriodConfiguration', members('Amount Granularity Status')],
+  AggregationFunction: ['aggregationFunction', members('SimpleNumericalAggregation')],
+  Configuration: ['configuration', {
+    FilterListConfiguration: ['filterListConfiguration', categoryConfig], CustomFilterConfiguration: ['customFilterConfiguration', categoryConfig],
+    CustomFilterListConfiguration: ['customFilterListConfiguration', categoryConfig],
+  }],
+};
 const definition: Schema = {
   DataSetIdentifierDeclarations: ['dataSetIdentifierDeclarations', { Identifier: ['identifier'], DataSetArn: ['dataSetArn'] }],
   Sheets: ['sheets', {
-    SheetId: ['sheetId'], Name: ['name'], ContentType: ['contentType'],
+    SheetId: ['sheetId'], Name: ['name'], ContentType: ['contentType'], ...members('Title Description'),
+    TextBoxes: ['textBoxes', { ...members('SheetTextBoxId Content'), Interactions: ['interactions', interactions] }],
+    ParameterControls: ['parameterControls', { DateTimePicker: ['dateTimePicker', {
+      ...members('ParameterControlId SourceParameterName Title'), DisplayOptions: ['displayOptions', {
+        TitleOptions: ['titleOptions', { FontConfiguration: ['fontConfiguration', font] }],
+      }],
+    }] }],
     Visuals: ['visuals', {
       PieChartVisual: ['pieChartVisual', visualBody], BarChartVisual: ['barChartVisual', visualBody],
+      ComboChartVisual: ['comboChartVisual', visualBody], ScatterPlotVisual: ['scatterPlotVisual', visualBody],
       KPIVisual: ['kpiVisual', visualBody], LineChartVisual: ['lineChartVisual', visualBody], TableVisual: ['tableVisual', visualBody],
     }],
-    Layouts: ['layouts', { Configuration: ['configuration', { GridLayout: ['gridLayout', grid] }] }],
+    Layouts: ['layouts', { Configuration: ['configuration', { GridLayout: ['gridLayout', grid], FreeFormLayout: ['freeFormLayout', freeForm] }] }],
   }],
-  CalculatedFields: ['calculatedFields'], ParameterDeclarations: ['parameterDeclarations'], FilterGroups: ['filterGroups'],
+  CalculatedFields: ['calculatedFields', members('DataSetIdentifier Name Expression')],
+  ParameterDeclarations: ['parameterDeclarations', {
+    StringParameterDeclaration: ['stringParameterDeclaration', parameterBody], IntegerParameterDeclaration: ['integerParameterDeclaration', parameterBody],
+    DecimalParameterDeclaration: ['decimalParameterDeclaration', parameterBody], DateTimeParameterDeclaration: ['dateTimeParameterDeclaration', parameterBody],
+  }],
+  FilterGroups: ['filterGroups', {
+    ...members('FilterGroupId CrossDataset Status'),
+    Filters: ['filters', {
+      CategoryFilter: ['categoryFilter', filterBody], NumericRangeFilter: ['numericRangeFilter', filterBody],
+      RelativeDatesFilter: ['relativeDatesFilter', filterBody], TimeRangeFilter: ['timeRangeFilter', filterBody],
+    }],
+    ScopeConfiguration: ['scopeConfiguration', {
+      AllSheets: ['allSheets', {}], SelectedSheets: ['selectedSheets', {
+        SheetVisualScopingConfigurations: ['sheetVisualScopingConfigurations', members('SheetId Scope VisualIds')],
+      }],
+    }],
+  }],
   AnalysisDefaults: ['analysisDefaults', { DefaultNewSheetConfiguration: ['defaultNewSheetConfiguration', {
-    InteractiveLayoutConfiguration: ['interactiveLayoutConfiguration', { Grid: ['grid', grid] }], SheetContentType: ['sheetContentType'],
+    InteractiveLayoutConfiguration: ['interactiveLayoutConfiguration', { Grid: ['grid', grid], FreeForm: ['freeForm', freeForm] }], SheetContentType: ['sheetContentType'],
   }] }],
   Options: ['options', {
     WeekStart: ['weekStart'], ExcludedDataSetArns: ['excludedDataSetArns'], QBusinessInsightsStatus: ['qbusinessInsightsStatus'],
@@ -128,7 +260,7 @@ function sheet(value: unknown, path: string): BundleSheet {
   return result;
 }
 
-/** Browser-only projection into existing bundle types, not an archive validator
+/** Provisional API projection into bundle types (also reused by synthetic fixtures), not an archive validator
  * or an execution grant. compileVisual validates every rendered field/config. */
 export function convertDefinition(raw: unknown): BundleDefinition {
   object(raw, 'Definition');

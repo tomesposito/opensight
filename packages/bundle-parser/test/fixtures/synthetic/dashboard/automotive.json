@@ -1,0 +1,4260 @@
+{
+  "resourceType": "dashboard",
+  "dashboardId": "automotive",
+  "name": "SYNTHETIC automotive",
+  "definition": {
+    "dataSetIdentifierDeclarations": [
+      {
+        "identifier": "Issue Categories",
+        "dataSetArn": "arn:aws:quicksight:us-east-1:123456789012:dataset/issue-categories"
+      },
+      {
+        "identifier": "At-Risk Revenue",
+        "dataSetArn": "arn:aws:quicksight:us-east-1:123456789012:dataset/at-risk-revenue"
+      },
+      {
+        "identifier": "KPI Trends",
+        "dataSetArn": "arn:aws:quicksight:us-east-1:123456789012:dataset/kpi-trends"
+      },
+      {
+        "identifier": "customer-health-scores",
+        "dataSetArn": "arn:aws:quicksight:us-east-1:123456789012:dataset/customer-health-scores"
+      },
+      {
+        "identifier": "Revenue Breakdown",
+        "dataSetArn": "arn:aws:quicksight:us-east-1:123456789012:dataset/revenue-breakdown"
+      },
+      {
+        "identifier": "Top Revenue Stream",
+        "dataSetArn": "arn:aws:quicksight:us-east-1:123456789012:dataset/top-revenue-stream"
+      },
+      {
+        "identifier": "Customer 360",
+        "dataSetArn": "arn:aws:quicksight:us-east-1:123456789012:dataset/customer-360"
+      },
+      {
+        "identifier": "Operational KPIs",
+        "dataSetArn": "arn:aws:quicksight:us-east-1:123456789012:dataset/operational-kpis"
+      }
+    ],
+    "sheets": [
+      {
+        "sheetId": "32328b83-2444-4f82-8625-2b7b317bb798_742b843d-9cab-4ffa-96fe-e248e80828ce",
+        "name": "Executive Overview",
+        "visuals": [
+          {
+            "kpiVisual": {
+              "visualId": "32328b83-2444-4f82-8625-2b7b317bb798_d596062a-401c-443a-9027-f47fb32d5545",
+              "title": {
+                "visibility": "VISIBLE",
+                "formatText": {
+                  "richText": "<visual-title>\n  <inline font-size=\"14px\">Total Subscriptions Sold</inline>\n</visual-title>"
+                }
+              },
+              "subtitle": {
+                "visibility": "VISIBLE",
+                "formatText": {
+                  "plainText": "OEM"
+                }
+              },
+              "chartConfiguration": {
+                "fieldWells": {
+                  "values": [
+                    {
+                      "numericalMeasureField": {
+                        "fieldId": "trends.subscriptions_sold.1.1765489779683",
+                        "column": {
+                          "dataSetIdentifier": "KPI Trends",
+                          "columnName": "subscriptions_sold"
+                        },
+                        "aggregationFunction": {
+                          "simpleNumericalAggregation": "SUM"
+                        }
+                      }
+                    }
+                  ],
+                  "targetValues": [],
+                  "trendGroups": [
+                    {
+                      "dateDimensionField": {
+                        "fieldId": "month_date",
+                        "column": {
+                          "dataSetIdentifier": "KPI Trends",
+                          "columnName": "month_date"
+                        },
+                        "dateGranularity": "MONTH",
+                        "hierarchyId": "month_date"
+                      }
+                    }
+                  ]
+                },
+                "sortConfiguration": {
+                  "trendGroupSort": [
+                    {
+                      "fieldSort": {
+                        "fieldId": "month_date",
+                        "direction": "DESC"
+                      }
+                    }
+                  ]
+                },
+                "kpiOptions": {
+                  "progressBar": {
+                    "visibility": "VISIBLE"
+                  },
+                  "comparison": {
+                    "comparisonMethod": "PERCENT_DIFFERENCE"
+                  },
+                  "primaryValueDisplayType": "COMPARISON",
+                  "sparkline": {
+                    "visibility": "VISIBLE",
+                    "type": "AREA",
+                    "tooltipVisibility": "HIDDEN"
+                  }
+                }
+              },
+              "conditionalFormatting": {
+                "conditionalFormattingOptions": [
+                  {
+                    "comparisonValue": {
+                      "textColor": {
+                        "solid": {
+                          "expression": "difference(SUM({subscriptions_sold}),[SUM({subscriptions_sold}) DESC],1,[]) > 0",
+                          "color": "#2CAD00"
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "comparisonValue": {
+                      "textColor": {
+                        "solid": {
+                          "expression": "difference(SUM({subscriptions_sold}),[SUM({subscriptions_sold}) DESC],1,[]) < 0",
+                          "color": "#DE3B00"
+                        }
+                      }
+                    }
+                  }
+                ]
+              },
+              "actions": [],
+              "columnHierarchies": [
+                {
+                  "dateTimeHierarchy": {
+                    "hierarchyId": "month_date"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "kpiVisual": {
+              "visualId": "32328b83-2444-4f82-8625-2b7b317bb798_1ced7296-aed3-4bee-9814-cc78c24ca3eb",
+              "title": {
+                "visibility": "VISIBLE",
+                "formatText": {
+                  "plainText": "Median Health Score"
+                }
+              },
+              "subtitle": {
+                "visibility": "VISIBLE",
+                "formatText": {
+                  "plainText": "CX"
+                }
+              },
+              "chartConfiguration": {
+                "fieldWells": {
+                  "values": [
+                    {
+                      "numericalMeasureField": {
+                        "fieldId": "median_health_score",
+                        "column": {
+                          "dataSetIdentifier": "KPI Trends",
+                          "columnName": "median_health_score"
+                        },
+                        "aggregationFunction": {
+                          "simpleNumericalAggregation": "AVERAGE"
+                        }
+                      }
+                    }
+                  ],
+                  "targetValues": [],
+                  "trendGroups": [
+                    {
+                      "dateDimensionField": {
+                        "fieldId": "trends.snapshot_month.1.1763570715493",
+                        "column": {
+                          "dataSetIdentifier": "KPI Trends",
+                          "columnName": "snapshot_month"
+                        },
+                        "hierarchyId": "trends.snapshot_month.1.1763570715493",
+                        "formatConfiguration": {
+                          "dateTimeFormat": "MMM YYYY",
+                          "nullValueFormatConfiguration": {
+                            "nullString": "null"
+                          }
+                        }
+                      }
+                    }
+                  ]
+                },
+                "sortConfiguration": {
+                  "trendGroupSort": [
+                    {
+                      "fieldSort": {
+                        "fieldId": "trends.snapshot_month.1.1763570715493",
+                        "direction": "DESC"
+                      }
+                    }
+                  ]
+                },
+                "kpiOptions": {
+                  "progressBar": {
+                    "visibility": "VISIBLE"
+                  },
+                  "comparison": {
+                    "comparisonMethod": "PERCENT_DIFFERENCE"
+                  },
+                  "primaryValueDisplayType": "COMPARISON",
+                  "sparkline": {
+                    "visibility": "VISIBLE",
+                    "type": "AREA",
+                    "tooltipVisibility": "HIDDEN"
+                  }
+                }
+              },
+              "conditionalFormatting": {
+                "conditionalFormattingOptions": [
+                  {
+                    "comparisonValue": {
+                      "textColor": {
+                        "solid": {
+                          "expression": "difference(AVG({median_health_score}),[AVG({median_health_score}) DESC],1,[]) < 0",
+                          "color": "#DE3B00"
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "comparisonValue": {
+                      "textColor": {
+                        "solid": {
+                          "expression": "difference(AVG({median_health_score}),[AVG({median_health_score}) DESC],1,[]) > 0",
+                          "color": "#2CAD00"
+                        }
+                      }
+                    }
+                  }
+                ]
+              },
+              "actions": [],
+              "columnHierarchies": [
+                {
+                  "dateTimeHierarchy": {
+                    "hierarchyId": "trends.snapshot_month.1.1763570715493"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "kpiVisual": {
+              "visualId": "32328b83-2444-4f82-8625-2b7b317bb798_3a4a2fd5-1f4f-45b4-acca-6d0eb78e228b",
+              "title": {
+                "visibility": "VISIBLE",
+                "formatText": {
+                  "plainText": "Avg Revenue Per Customer"
+                }
+              },
+              "subtitle": {
+                "visibility": "VISIBLE",
+                "formatText": {
+                  "plainText": "CX"
+                }
+              },
+              "chartConfiguration": {
+                "fieldWells": {
+                  "values": [
+                    {
+                      "numericalMeasureField": {
+                        "fieldId": "avg_revenue_per_customer",
+                        "column": {
+                          "dataSetIdentifier": "KPI Trends",
+                          "columnName": "avg_revenue_per_customer"
+                        },
+                        "aggregationFunction": {
+                          "simpleNumericalAggregation": "AVERAGE"
+                        },
+                        "formatConfiguration": {
+                          "formatConfiguration": {
+                            "numberDisplayFormatConfiguration": {
+                              "prefix": "$",
+                              "decimalPlacesConfiguration": {
+                                "decimalPlaces": 0
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ],
+                  "targetValues": [],
+                  "trendGroups": [
+                    {
+                      "dateDimensionField": {
+                        "fieldId": "trends.snapshot_month.1.1763570727340",
+                        "column": {
+                          "dataSetIdentifier": "KPI Trends",
+                          "columnName": "snapshot_month"
+                        },
+                        "hierarchyId": "trends.snapshot_month.1.1763570727340",
+                        "formatConfiguration": {
+                          "dateTimeFormat": "MMM YYYY",
+                          "nullValueFormatConfiguration": {
+                            "nullString": "null"
+                          }
+                        }
+                      }
+                    }
+                  ]
+                },
+                "sortConfiguration": {
+                  "trendGroupSort": [
+                    {
+                      "fieldSort": {
+                        "fieldId": "trends.snapshot_month.1.1763570727340",
+                        "direction": "DESC"
+                      }
+                    }
+                  ]
+                },
+                "kpiOptions": {
+                  "progressBar": {
+                    "visibility": "VISIBLE"
+                  },
+                  "trendArrows": {
+                    "visibility": "VISIBLE"
+                  },
+                  "comparison": {
+                    "comparisonMethod": "PERCENT_DIFFERENCE",
+                    "comparisonFormat": {
+                      "percentageDisplayFormatConfiguration": {
+                        "decimalPlacesConfiguration": {
+                          "decimalPlaces": 1
+                        }
+                      }
+                    }
+                  },
+                  "primaryValueDisplayType": "COMPARISON",
+                  "sparkline": {
+                    "visibility": "VISIBLE",
+                    "type": "AREA",
+                    "tooltipVisibility": "HIDDEN"
+                  }
+                }
+              },
+              "conditionalFormatting": {
+                "conditionalFormattingOptions": [
+                  {
+                    "comparisonValue": {
+                      "textColor": {
+                        "solid": {
+                          "expression": "difference(AVG({avg_revenue_per_customer}),[AVG({avg_revenue_per_customer}) DESC],1,[]) < 0",
+                          "color": "#DE3B00"
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "comparisonValue": {
+                      "textColor": {
+                        "solid": {
+                          "expression": "difference(AVG({avg_revenue_per_customer}),[AVG({avg_revenue_per_customer}) DESC],1,[]) > 0",
+                          "color": "#2CAD00"
+                        }
+                      }
+                    }
+                  }
+                ]
+              },
+              "actions": [],
+              "columnHierarchies": [
+                {
+                  "dateTimeHierarchy": {
+                    "hierarchyId": "trends.snapshot_month.1.1763570727340"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "kpiVisual": {
+              "visualId": "32328b83-2444-4f82-8625-2b7b317bb798_a4822547-5084-435d-8c5b-d8367ef68ab9",
+              "title": {
+                "visibility": "VISIBLE",
+                "formatText": {
+                  "plainText": "Monthly Sales"
+                }
+              },
+              "subtitle": {
+                "visibility": "VISIBLE",
+                "formatText": {
+                  "plainText": "OEM (MTD)"
+                }
+              },
+              "chartConfiguration": {
+                "fieldWells": {
+                  "values": [
+                    {
+                      "numericalMeasureField": {
+                        "fieldId": "monthly_sales",
+                        "column": {
+                          "dataSetIdentifier": "KPI Trends",
+                          "columnName": "monthly_sales"
+                        },
+                        "aggregationFunction": {
+                          "simpleNumericalAggregation": "MAX"
+                        }
+                      }
+                    }
+                  ],
+                  "targetValues": [],
+                  "trendGroups": [
+                    {
+                      "dateDimensionField": {
+                        "fieldId": "month_date",
+                        "column": {
+                          "dataSetIdentifier": "KPI Trends",
+                          "columnName": "month_date"
+                        },
+                        "dateGranularity": "MONTH",
+                        "hierarchyId": "month_date"
+                      }
+                    }
+                  ]
+                },
+                "sortConfiguration": {
+                  "trendGroupSort": [
+                    {
+                      "fieldSort": {
+                        "fieldId": "month_date",
+                        "direction": "DESC"
+                      }
+                    }
+                  ]
+                },
+                "kpiOptions": {
+                  "progressBar": {
+                    "visibility": "VISIBLE"
+                  },
+                  "comparison": {
+                    "comparisonMethod": "PERCENT_DIFFERENCE"
+                  },
+                  "primaryValueDisplayType": "COMPARISON",
+                  "sparkline": {
+                    "visibility": "VISIBLE",
+                    "type": "AREA",
+                    "tooltipVisibility": "HIDDEN"
+                  }
+                }
+              },
+              "conditionalFormatting": {
+                "conditionalFormattingOptions": [
+                  {
+                    "comparisonValue": {
+                      "textColor": {
+                        "solid": {
+                          "expression": "difference(MAX({monthly_sales}),[MAX({monthly_sales}) DESC],1,[]) > 0",
+                          "color": "#2CAD00"
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "comparisonValue": {
+                      "textColor": {
+                        "solid": {
+                          "expression": "difference(MAX({monthly_sales}),[MAX({monthly_sales}) DESC],1,[]) < 0",
+                          "color": "#DE3B00"
+                        }
+                      }
+                    }
+                  }
+                ]
+              },
+              "actions": [],
+              "columnHierarchies": [
+                {
+                  "dateTimeHierarchy": {
+                    "hierarchyId": "month_date"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "kpiVisual": {
+              "visualId": "32328b83-2444-4f82-8625-2b7b317bb798_f609ac09-caf4-4cc2-9a8c-4adda6e51baf",
+              "title": {
+                "visibility": "VISIBLE",
+                "formatText": {
+                  "plainText": "Total Vehicles Sold"
+                }
+              },
+              "subtitle": {
+                "visibility": "VISIBLE",
+                "formatText": {
+                  "plainText": "OEM"
+                }
+              },
+              "chartConfiguration": {
+                "fieldWells": {
+                  "values": [
+                    {
+                      "numericalMeasureField": {
+                        "fieldId": "total_vehicles",
+                        "column": {
+                          "dataSetIdentifier": "KPI Trends",
+                          "columnName": "total_vehicles"
+                        },
+                        "aggregationFunction": {
+                          "simpleNumericalAggregation": "MAX"
+                        }
+                      }
+                    }
+                  ],
+                  "targetValues": [],
+                  "trendGroups": [
+                    {
+                      "dateDimensionField": {
+                        "fieldId": "month_date",
+                        "column": {
+                          "dataSetIdentifier": "KPI Trends",
+                          "columnName": "month_date"
+                        },
+                        "dateGranularity": "MONTH",
+                        "hierarchyId": "month_date"
+                      }
+                    }
+                  ]
+                },
+                "sortConfiguration": {
+                  "trendGroupSort": [
+                    {
+                      "fieldSort": {
+                        "fieldId": "month_date",
+                        "direction": "DESC"
+                      }
+                    }
+                  ]
+                },
+                "kpiOptions": {
+                  "progressBar": {
+                    "visibility": "VISIBLE"
+                  },
+                  "comparison": {
+                    "comparisonMethod": "PERCENT_DIFFERENCE"
+                  },
+                  "primaryValueDisplayType": "COMPARISON",
+                  "sparkline": {
+                    "visibility": "VISIBLE",
+                    "type": "AREA",
+                    "tooltipVisibility": "HIDDEN"
+                  }
+                }
+              },
+              "conditionalFormatting": {
+                "conditionalFormattingOptions": [
+                  {
+                    "comparisonValue": {
+                      "textColor": {
+                        "solid": {
+                          "expression": "difference(MAX({total_vehicles}),[MAX({total_vehicles}) DESC],1,[]) > 0",
+                          "color": "#2CAD00"
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "comparisonValue": {
+                      "textColor": {
+                        "solid": {
+                          "expression": "difference(MAX({total_vehicles}),[MAX({total_vehicles}) DESC],1,[]) < 0",
+                          "color": "#DE3B00"
+                        }
+                      }
+                    }
+                  }
+                ]
+              },
+              "actions": [],
+              "columnHierarchies": [
+                {
+                  "dateTimeHierarchy": {
+                    "hierarchyId": "month_date"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "kpiVisual": {
+              "visualId": "32328b83-2444-4f82-8625-2b7b317bb798_f89d616c-df87-488d-91a5-3f985a712774",
+              "title": {
+                "visibility": "VISIBLE",
+                "formatText": {
+                  "plainText": "Open Support Cases"
+                }
+              },
+              "subtitle": {
+                "visibility": "VISIBLE",
+                "formatText": {
+                  "plainText": "OEM (MTD)"
+                }
+              },
+              "chartConfiguration": {
+                "fieldWells": {
+                  "values": [
+                    {
+                      "numericalMeasureField": {
+                        "fieldId": "open_cases",
+                        "column": {
+                          "dataSetIdentifier": "KPI Trends",
+                          "columnName": "open_cases"
+                        },
+                        "aggregationFunction": {
+                          "simpleNumericalAggregation": "MAX"
+                        }
+                      }
+                    }
+                  ],
+                  "targetValues": [],
+                  "trendGroups": [
+                    {
+                      "dateDimensionField": {
+                        "fieldId": "month_date",
+                        "column": {
+                          "dataSetIdentifier": "KPI Trends",
+                          "columnName": "month_date"
+                        },
+                        "dateGranularity": "MONTH",
+                        "hierarchyId": "month_date"
+                      }
+                    }
+                  ]
+                },
+                "sortConfiguration": {
+                  "trendGroupSort": [
+                    {
+                      "fieldSort": {
+                        "fieldId": "month_date",
+                        "direction": "DESC"
+                      }
+                    }
+                  ]
+                },
+                "kpiOptions": {
+                  "progressBar": {
+                    "visibility": "VISIBLE"
+                  },
+                  "comparison": {
+                    "comparisonMethod": "PERCENT_DIFFERENCE"
+                  },
+                  "primaryValueDisplayType": "COMPARISON",
+                  "sparkline": {
+                    "visibility": "VISIBLE",
+                    "type": "AREA",
+                    "tooltipVisibility": "VISIBLE"
+                  }
+                }
+              },
+              "conditionalFormatting": {
+                "conditionalFormattingOptions": [
+                  {
+                    "comparisonValue": {
+                      "textColor": {
+                        "solid": {
+                          "expression": "difference(MAX({open_cases}),[MAX({open_cases}) DESC],1,[]) > 0",
+                          "color": "#DE3B00"
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "comparisonValue": {
+                      "textColor": {
+                        "solid": {
+                          "expression": "difference(MAX({open_cases}),[MAX({open_cases}) DESC],1,[]) < 0",
+                          "color": "#2CAD00"
+                        }
+                      }
+                    }
+                  }
+                ]
+              },
+              "actions": [],
+              "columnHierarchies": [
+                {
+                  "dateTimeHierarchy": {
+                    "hierarchyId": "month_date"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "kpiVisual": {
+              "visualId": "32328b83-2444-4f82-8625-2b7b317bb798_2d3a1867-c175-4255-be38-151a2816d746",
+              "title": {
+                "visibility": "VISIBLE",
+                "formatText": {
+                  "plainText": "Revenue Growth Rate (MoM)"
+                }
+              },
+              "subtitle": {
+                "visibility": "VISIBLE"
+              },
+              "chartConfiguration": {
+                "fieldWells": {
+                  "values": [
+                    {
+                      "numericalMeasureField": {
+                        "fieldId": "revenue_growth_rate",
+                        "column": {
+                          "dataSetIdentifier": "KPI Trends",
+                          "columnName": "revenue_growth_rate"
+                        },
+                        "aggregationFunction": {
+                          "simpleNumericalAggregation": "AVERAGE"
+                        },
+                        "formatConfiguration": {
+                          "formatConfiguration": {
+                            "numberDisplayFormatConfiguration": {
+                              "suffix": "%"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ],
+                  "targetValues": [],
+                  "trendGroups": [
+                    {
+                      "dateDimensionField": {
+                        "fieldId": "trends.snapshot_month.1.1763571915944",
+                        "column": {
+                          "dataSetIdentifier": "KPI Trends",
+                          "columnName": "snapshot_month"
+                        },
+                        "hierarchyId": "trends.snapshot_month.1.1763571915944",
+                        "formatConfiguration": {
+                          "dateTimeFormat": "MMM YYYY",
+                          "nullValueFormatConfiguration": {
+                            "nullString": "null"
+                          }
+                        }
+                      }
+                    }
+                  ]
+                },
+                "sortConfiguration": {
+                  "trendGroupSort": [
+                    {
+                      "fieldSort": {
+                        "fieldId": "trends.snapshot_month.1.1763571915944",
+                        "direction": "DESC"
+                      }
+                    }
+                  ]
+                },
+                "kpiOptions": {
+                  "progressBar": {
+                    "visibility": "HIDDEN"
+                  },
+                  "trendArrows": {
+                    "visibility": "VISIBLE"
+                  },
+                  "comparison": {
+                    "comparisonFormat": {
+                      "numberDisplayFormatConfiguration": {}
+                    }
+                  },
+                  "primaryValueDisplayType": "COMPARISON",
+                  "primaryValueFontConfiguration": {
+                    "fontSize": {
+                      "relative": "SMALL"
+                    },
+                    "fontColor": "#212121"
+                  },
+                  "sparkline": {
+                    "visibility": "VISIBLE",
+                    "type": "AREA",
+                    "tooltipVisibility": "HIDDEN"
+                  },
+                  "visualLayoutOptions": {
+                    "standardLayout": {
+                      "type": "CLASSIC"
+                    }
+                  }
+                },
+                "interactions": {
+                  "visualMenuOption": {
+                    "availabilityStatus": "ENABLED"
+                  }
+                }
+              },
+              "conditionalFormatting": {
+                "conditionalFormattingOptions": [
+                  {
+                    "comparisonValue": {
+                      "textColor": {
+                        "solid": {
+                          "expression": "difference(AVG({revenue_growth_rate}),[AVG({revenue_growth_rate}) DESC],1,[]) < 0",
+                          "color": "#DE3B00"
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "comparisonValue": {
+                      "textColor": {
+                        "solid": {
+                          "expression": "difference(AVG({revenue_growth_rate}),[AVG({revenue_growth_rate}) DESC],1,[]) > 0",
+                          "color": "#2CAD00"
+                        }
+                      }
+                    }
+                  }
+                ]
+              },
+              "actions": [],
+              "columnHierarchies": [
+                {
+                  "dateTimeHierarchy": {
+                    "hierarchyId": "trends.snapshot_month.1.1763571915944"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "kpiVisual": {
+              "visualId": "32328b83-2444-4f82-8625-2b7b317bb798_b1fca881-955c-4754-bcf1-3e1a8555abd1",
+              "title": {
+                "visibility": "VISIBLE",
+                "formatText": {
+                  "richText": "<visual-title>\n  <inline font-size=\"14px\">Total Customer Lifetime Value</inline>\n</visual-title>"
+                }
+              },
+              "subtitle": {
+                "visibility": "VISIBLE"
+              },
+              "chartConfiguration": {
+                "fieldWells": {
+                  "values": [
+                    {
+                      "numericalMeasureField": {
+                        "fieldId": "total_clv",
+                        "column": {
+                          "dataSetIdentifier": "KPI Trends",
+                          "columnName": "total_clv"
+                        },
+                        "aggregationFunction": {
+                          "simpleNumericalAggregation": "MAX"
+                        },
+                        "formatConfiguration": {
+                          "formatConfiguration": {
+                            "numberDisplayFormatConfiguration": {
+                              "decimalPlacesConfiguration": {
+                                "decimalPlaces": 2
+                              },
+                              "numberScale": "AUTO"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ],
+                  "targetValues": [],
+                  "trendGroups": [
+                    {
+                      "dateDimensionField": {
+                        "fieldId": "trends.snapshot_month.1.1763581803382",
+                        "column": {
+                          "dataSetIdentifier": "KPI Trends",
+                          "columnName": "snapshot_month"
+                        },
+                        "hierarchyId": "trends.snapshot_month.1.1763581803382"
+                      }
+                    }
+                  ]
+                },
+                "sortConfiguration": {
+                  "trendGroupSort": [
+                    {
+                      "fieldSort": {
+                        "fieldId": "trends.snapshot_month.1.1763581803382",
+                        "direction": "DESC"
+                      }
+                    }
+                  ]
+                },
+                "kpiOptions": {
+                  "progressBar": {
+                    "visibility": "HIDDEN"
+                  },
+                  "comparison": {
+                    "comparisonMethod": "PERCENT_DIFFERENCE"
+                  },
+                  "primaryValueDisplayType": "COMPARISON",
+                  "primaryValueFontConfiguration": {
+                    "fontSize": {
+                      "relative": "SMALL"
+                    },
+                    "fontColor": "#212121"
+                  },
+                  "sparkline": {
+                    "visibility": "VISIBLE",
+                    "type": "AREA",
+                    "tooltipVisibility": "HIDDEN"
+                  },
+                  "visualLayoutOptions": {
+                    "standardLayout": {
+                      "type": "CLASSIC"
+                    }
+                  }
+                }
+              },
+              "actions": [],
+              "columnHierarchies": [
+                {
+                  "dateTimeHierarchy": {
+                    "hierarchyId": "trends.snapshot_month.1.1763581803382"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "kpiVisual": {
+              "visualId": "32328b83-2444-4f82-8625-2b7b317bb798_3103e58e-2964-4551-b03a-261e0994aa7f",
+              "title": {
+                "visibility": "VISIBLE",
+                "formatText": {
+                  "plainText": "Median Health Score"
+                }
+              },
+              "subtitle": {
+                "visibility": "VISIBLE"
+              },
+              "chartConfiguration": {
+                "fieldWells": {
+                  "values": [
+                    {
+                      "numericalMeasureField": {
+                        "fieldId": "median_health_score",
+                        "column": {
+                          "dataSetIdentifier": "KPI Trends",
+                          "columnName": "median_health_score"
+                        },
+                        "aggregationFunction": {
+                          "simpleNumericalAggregation": "MAX"
+                        }
+                      }
+                    }
+                  ],
+                  "targetValues": [],
+                  "trendGroups": [
+                    {
+                      "dateDimensionField": {
+                        "fieldId": "trends.snapshot_month.1.1763581816554",
+                        "column": {
+                          "dataSetIdentifier": "KPI Trends",
+                          "columnName": "snapshot_month"
+                        },
+                        "hierarchyId": "trends.snapshot_month.1.1763581816554"
+                      }
+                    }
+                  ]
+                },
+                "sortConfiguration": {
+                  "trendGroupSort": [
+                    {
+                      "fieldSort": {
+                        "fieldId": "trends.snapshot_month.1.1763581816554",
+                        "direction": "DESC"
+                      }
+                    }
+                  ]
+                },
+                "kpiOptions": {
+                  "progressBar": {
+                    "visibility": "HIDDEN"
+                  },
+                  "comparison": {
+                    "comparisonMethod": "PERCENT_DIFFERENCE"
+                  },
+                  "primaryValueDisplayType": "COMPARISON",
+                  "primaryValueFontConfiguration": {
+                    "fontSize": {
+                      "relative": "SMALL"
+                    },
+                    "fontColor": "#212121"
+                  },
+                  "sparkline": {
+                    "visibility": "VISIBLE",
+                    "type": "AREA",
+                    "tooltipVisibility": "HIDDEN"
+                  },
+                  "visualLayoutOptions": {
+                    "standardLayout": {
+                      "type": "CLASSIC"
+                    }
+                  }
+                }
+              },
+              "actions": [],
+              "columnHierarchies": [
+                {
+                  "dateTimeHierarchy": {
+                    "hierarchyId": "trends.snapshot_month.1.1763581816554"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "kpiVisual": {
+              "visualId": "32328b83-2444-4f82-8625-2b7b317bb798_67e77b36-b7fb-4b0c-bc2f-45d87b77b498",
+              "title": {
+                "visibility": "VISIBLE",
+                "formatText": {
+                  "plainText": "Avg NPS Score"
+                }
+              },
+              "subtitle": {
+                "visibility": "VISIBLE"
+              },
+              "chartConfiguration": {
+                "fieldWells": {
+                  "values": [
+                    {
+                      "numericalMeasureField": {
+                        "fieldId": "avg_nps_score",
+                        "column": {
+                          "dataSetIdentifier": "KPI Trends",
+                          "columnName": "avg_nps_score"
+                        },
+                        "aggregationFunction": {
+                          "simpleNumericalAggregation": "MAX"
+                        }
+                      }
+                    }
+                  ],
+                  "targetValues": [],
+                  "trendGroups": [
+                    {
+                      "dateDimensionField": {
+                        "fieldId": "trends.snapshot_month.1.1763581834646",
+                        "column": {
+                          "dataSetIdentifier": "KPI Trends",
+                          "columnName": "snapshot_month"
+                        },
+                        "hierarchyId": "trends.snapshot_month.1.1763581834646"
+                      }
+                    }
+                  ]
+                },
+                "sortConfiguration": {
+                  "trendGroupSort": [
+                    {
+                      "fieldSort": {
+                        "fieldId": "trends.snapshot_month.1.1763581834646",
+                        "direction": "DESC"
+                      }
+                    }
+                  ]
+                },
+                "kpiOptions": {
+                  "progressBar": {
+                    "visibility": "HIDDEN"
+                  },
+                  "comparison": {
+                    "comparisonMethod": "PERCENT_DIFFERENCE"
+                  },
+                  "primaryValueDisplayType": "COMPARISON",
+                  "primaryValueFontConfiguration": {
+                    "fontSize": {
+                      "relative": "SMALL"
+                    },
+                    "fontColor": "#212121"
+                  },
+                  "sparkline": {
+                    "visibility": "VISIBLE",
+                    "type": "AREA",
+                    "tooltipVisibility": "HIDDEN"
+                  },
+                  "visualLayoutOptions": {
+                    "standardLayout": {
+                      "type": "CLASSIC"
+                    }
+                  }
+                }
+              },
+              "actions": [],
+              "columnHierarchies": [
+                {
+                  "dateTimeHierarchy": {
+                    "hierarchyId": "trends.snapshot_month.1.1763581834646"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "kpiVisual": {
+              "visualId": "32328b83-2444-4f82-8625-2b7b317bb798_b3c24175-edb0-467b-919b-410c5fd58345",
+              "title": {
+                "visibility": "VISIBLE",
+                "formatText": {
+                  "plainText": "Avg Revenue Per Customer"
+                }
+              },
+              "subtitle": {
+                "visibility": "VISIBLE"
+              },
+              "chartConfiguration": {
+                "fieldWells": {
+                  "values": [
+                    {
+                      "numericalMeasureField": {
+                        "fieldId": "arpc",
+                        "column": {
+                          "dataSetIdentifier": "KPI Trends",
+                          "columnName": "avg_revenue_per_customer"
+                        },
+                        "aggregationFunction": {
+                          "simpleNumericalAggregation": "MAX"
+                        }
+                      }
+                    }
+                  ],
+                  "targetValues": [],
+                  "trendGroups": [
+                    {
+                      "dateDimensionField": {
+                        "fieldId": "trends.snapshot_month.1.1763581840123",
+                        "column": {
+                          "dataSetIdentifier": "KPI Trends",
+                          "columnName": "snapshot_month"
+                        },
+                        "hierarchyId": "trends.snapshot_month.1.1763581840123"
+                      }
+                    }
+                  ]
+                },
+                "sortConfiguration": {
+                  "trendGroupSort": [
+                    {
+                      "fieldSort": {
+                        "fieldId": "trends.snapshot_month.1.1763581840123",
+                        "direction": "DESC"
+                      }
+                    }
+                  ]
+                },
+                "kpiOptions": {
+                  "progressBar": {
+                    "visibility": "HIDDEN"
+                  },
+                  "comparison": {
+                    "comparisonMethod": "PERCENT_DIFFERENCE"
+                  },
+                  "primaryValueDisplayType": "COMPARISON",
+                  "primaryValueFontConfiguration": {
+                    "fontSize": {
+                      "relative": "SMALL"
+                    },
+                    "fontColor": "#212121"
+                  },
+                  "sparkline": {
+                    "visibility": "VISIBLE",
+                    "type": "AREA",
+                    "tooltipVisibility": "HIDDEN"
+                  },
+                  "visualLayoutOptions": {
+                    "standardLayout": {
+                      "type": "CLASSIC"
+                    }
+                  }
+                }
+              },
+              "actions": [],
+              "columnHierarchies": [
+                {
+                  "dateTimeHierarchy": {
+                    "hierarchyId": "trends.snapshot_month.1.1763581840123"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "kpiVisual": {
+              "visualId": "32328b83-2444-4f82-8625-2b7b317bb798_db6ed106-d6d1-46b0-a729-1628ef2387d1",
+              "title": {
+                "visibility": "VISIBLE",
+                "formatText": {
+                  "plainText": "At-Risk Customers"
+                }
+              },
+              "subtitle": {
+                "visibility": "VISIBLE",
+                "formatText": {
+                  "plainText": "Health Score < 35"
+                }
+              },
+              "chartConfiguration": {
+                "fieldWells": {
+                  "values": [
+                    {
+                      "numericalMeasureField": {
+                        "fieldId": "at_risk_customers",
+                        "column": {
+                          "dataSetIdentifier": "KPI Trends",
+                          "columnName": "at_risk_customers"
+                        },
+                        "aggregationFunction": {
+                          "simpleNumericalAggregation": "MAX"
+                        }
+                      }
+                    }
+                  ],
+                  "targetValues": [],
+                  "trendGroups": [
+                    {
+                      "dateDimensionField": {
+                        "fieldId": "trends.snapshot_month.1.1763585630185",
+                        "column": {
+                          "dataSetIdentifier": "KPI Trends",
+                          "columnName": "snapshot_month"
+                        },
+                        "hierarchyId": "trends.snapshot_month.1.1763585630185"
+                      }
+                    }
+                  ]
+                },
+                "sortConfiguration": {
+                  "trendGroupSort": [
+                    {
+                      "fieldSort": {
+                        "fieldId": "trends.snapshot_month.1.1763585630185",
+                        "direction": "DESC"
+                      }
+                    }
+                  ]
+                },
+                "kpiOptions": {
+                  "progressBar": {
+                    "visibility": "HIDDEN"
+                  },
+                  "comparison": {
+                    "comparisonMethod": "PERCENT_DIFFERENCE"
+                  },
+                  "primaryValueDisplayType": "COMPARISON",
+                  "primaryValueFontConfiguration": {
+                    "fontSize": {
+                      "relative": "SMALL"
+                    },
+                    "fontColor": "#212121"
+                  },
+                  "sparkline": {
+                    "visibility": "VISIBLE",
+                    "type": "AREA",
+                    "tooltipVisibility": "HIDDEN"
+                  },
+                  "visualLayoutOptions": {
+                    "standardLayout": {
+                      "type": "CLASSIC"
+                    }
+                  }
+                }
+              },
+              "conditionalFormatting": {
+                "conditionalFormattingOptions": [
+                  {
+                    "comparisonValue": {
+                      "textColor": {
+                        "solid": {
+                          "expression": "difference(MAX({at_risk_customers}),[MAX({at_risk_customers}) DESC],1,[]) > 0",
+                          "color": "#DE3B00"
+                        }
+                      }
+                    }
+                  }
+                ]
+              },
+              "actions": [],
+              "columnHierarchies": [
+                {
+                  "dateTimeHierarchy": {
+                    "hierarchyId": "trends.snapshot_month.1.1763585630185"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "pieChartVisual": {
+              "visualId": "32328b83-2444-4f82-8625-2b7b317bb798_582960a4-9187-428c-a3fc-5cc979683390",
+              "title": {
+                "visibility": "VISIBLE",
+                "formatText": {
+                  "plainText": "Customer Health Distribution"
+                }
+              },
+              "subtitle": {
+                "visibility": "VISIBLE"
+              },
+              "chartConfiguration": {
+                "fieldWells": {
+                  "pieChartAggregatedFieldWells": {
+                    "category": [
+                      {
+                        "categoricalDimensionField": {
+                          "fieldId": "health_segment",
+                          "column": {
+                            "dataSetIdentifier": "customer-health-scores",
+                            "columnName": "health_segment"
+                          }
+                        }
+                      }
+                    ],
+                    "values": [
+                      {
+                        "numericalMeasureField": {
+                          "fieldId": "customer_count",
+                          "column": {
+                            "dataSetIdentifier": "customer-health-scores",
+                            "columnName": "customer_count"
+                          },
+                          "aggregationFunction": {
+                            "simpleNumericalAggregation": "SUM"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                },
+                "sortConfiguration": {},
+                "donutOptions": {
+                  "arcOptions": {
+                    "arcThickness": "MEDIUM"
+                  }
+                },
+                "legend": {
+                  "visibility": "VISIBLE",
+                  "position": "RIGHT"
+                },
+                "dataLabels": {
+                  "visibility": "VISIBLE",
+                  "overlap": "DISABLE_OVERLAP"
+                },
+                "tooltip": {
+                  "tooltipVisibility": "VISIBLE",
+                  "selectedTooltipType": "DETAILED",
+                  "fieldBasedTooltip": {
+                    "aggregationVisibility": "HIDDEN",
+                    "tooltipTitleType": "PRIMARY_VALUE",
+                    "tooltipFields": [
+                      {
+                        "fieldTooltipItem": {
+                          "fieldId": "health_segment",
+                          "visibility": "VISIBLE"
+                        }
+                      },
+                      {
+                        "fieldTooltipItem": {
+                          "fieldId": "customer_count",
+                          "visibility": "VISIBLE"
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              "actions": [],
+              "columnHierarchies": []
+            }
+          },
+          {
+            "lineChartVisual": {
+              "visualId": "32328b83-2444-4f82-8625-2b7b317bb798_66e744e4-6878-4cc8-86c5-14f526d9f15b",
+              "title": {
+                "visibility": "VISIBLE",
+                "formatText": {
+                  "plainText": "Monthly Vehicle Sales Trend"
+                }
+              },
+              "subtitle": {
+                "visibility": "VISIBLE"
+              },
+              "chartConfiguration": {
+                "fieldWells": {
+                  "lineChartAggregatedFieldWells": {
+                    "category": [
+                      {
+                        "dateDimensionField": {
+                          "fieldId": "month_date",
+                          "column": {
+                            "dataSetIdentifier": "KPI Trends",
+                            "columnName": "month_date"
+                          },
+                          "dateGranularity": "MONTH",
+                          "hierarchyId": "month_date"
+                        }
+                      }
+                    ],
+                    "values": [
+                      {
+                        "numericalMeasureField": {
+                          "fieldId": "monthly_sales",
+                          "column": {
+                            "dataSetIdentifier": "KPI Trends",
+                            "columnName": "monthly_sales"
+                          },
+                          "aggregationFunction": {
+                            "simpleNumericalAggregation": "SUM"
+                          }
+                        }
+                      }
+                    ],
+                    "colors": []
+                  }
+                },
+                "sortConfiguration": {},
+                "type": "LINE",
+                "legend": {
+                  "visibility": "HIDDEN"
+                },
+                "dataLabels": {
+                  "visibility": "VISIBLE",
+                  "overlap": "DISABLE_OVERLAP"
+                },
+                "tooltip": {
+                  "tooltipVisibility": "VISIBLE",
+                  "selectedTooltipType": "BASIC",
+                  "fieldBasedTooltip": {
+                    "aggregationVisibility": "HIDDEN",
+                    "tooltipTitleType": "PRIMARY_VALUE",
+                    "tooltipFields": [
+                      {
+                        "fieldTooltipItem": {
+                          "fieldId": "month_date",
+                          "visibility": "VISIBLE"
+                        }
+                      },
+                      {
+                        "fieldTooltipItem": {
+                          "fieldId": "monthly_sales",
+                          "visibility": "VISIBLE"
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              "actions": [],
+              "columnHierarchies": [
+                {
+                  "dateTimeHierarchy": {
+                    "hierarchyId": "month_date"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "comboChartVisual": {
+              "visualId": "32328b83-2444-4f82-8625-2b7b317bb798_c050b8e9-4a7a-46c7-8bae-abb8c620b8c6",
+              "title": {
+                "visibility": "VISIBLE",
+                "formatText": {
+                  "plainText": "Open vs Created Cases"
+                }
+              },
+              "subtitle": {
+                "visibility": "VISIBLE"
+              },
+              "chartConfiguration": {
+                "fieldWells": {
+                  "comboChartAggregatedFieldWells": {
+                    "category": [
+                      {
+                        "dateDimensionField": {
+                          "fieldId": "month_date",
+                          "column": {
+                            "dataSetIdentifier": "KPI Trends",
+                            "columnName": "month_date"
+                          },
+                          "dateGranularity": "MONTH",
+                          "hierarchyId": "month_date"
+                        }
+                      }
+                    ],
+                    "barValues": [
+                      {
+                        "numericalMeasureField": {
+                          "fieldId": "cases_created",
+                          "column": {
+                            "dataSetIdentifier": "KPI Trends",
+                            "columnName": "cases_created"
+                          },
+                          "aggregationFunction": {
+                            "simpleNumericalAggregation": "MAX"
+                          }
+                        }
+                      }
+                    ],
+                    "colors": [],
+                    "lineValues": [
+                      {
+                        "numericalMeasureField": {
+                          "fieldId": "open_cases",
+                          "column": {
+                            "dataSetIdentifier": "KPI Trends",
+                            "columnName": "open_cases"
+                          },
+                          "aggregationFunction": {
+                            "simpleNumericalAggregation": "MAX"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                },
+                "sortConfiguration": {},
+                "barsArrangement": "CLUSTERED",
+                "legend": {
+                  "visibility": "VISIBLE",
+                  "position": "BOTTOM"
+                },
+                "barDataLabels": {
+                  "overlap": "DISABLE_OVERLAP"
+                },
+                "lineDataLabels": {
+                  "overlap": "DISABLE_OVERLAP"
+                }
+              },
+              "actions": [],
+              "columnHierarchies": [
+                {
+                  "dateTimeHierarchy": {
+                    "hierarchyId": "month_date"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "pieChartVisual": {
+              "visualId": "32328b83-2444-4f82-8625-2b7b317bb798_633a501a-8a3a-4ec9-94b7-a5cecf0212da",
+              "title": {
+                "visibility": "VISIBLE",
+                "formatText": {
+                  "richText": "<visual-title>Revenue by Stream</visual-title>"
+                }
+              },
+              "subtitle": {
+                "visibility": "VISIBLE",
+                "formatText": {
+                  "richText": "<visual-subtitle>Current Month</visual-subtitle>"
+                }
+              },
+              "chartConfiguration": {
+                "fieldWells": {
+                  "pieChartAggregatedFieldWells": {
+                    "category": [
+                      {
+                        "categoricalDimensionField": {
+                          "fieldId": "breakdown.revenue_stream.1.1763572696227",
+                          "column": {
+                            "dataSetIdentifier": "Revenue Breakdown",
+                            "columnName": "revenue_stream"
+                          }
+                        }
+                      }
+                    ],
+                    "values": [
+                      {
+                        "numericalMeasureField": {
+                          "fieldId": "breakdown.revenue.0.1763572687972",
+                          "column": {
+                            "dataSetIdentifier": "Revenue Breakdown",
+                            "columnName": "revenue"
+                          },
+                          "aggregationFunction": {
+                            "simpleNumericalAggregation": "SUM"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                },
+                "sortConfiguration": {
+                  "categorySort": [
+                    {
+                      "fieldSort": {
+                        "fieldId": "breakdown.revenue.0.1763572687972",
+                        "direction": "DESC"
+                      }
+                    }
+                  ],
+                  "categoryItemsLimit": {
+                    "otherCategories": "INCLUDE"
+                  },
+                  "smallMultiplesLimitConfiguration": {
+                    "otherCategories": "INCLUDE"
+                  }
+                },
+                "donutOptions": {
+                  "arcOptions": {
+                    "arcThickness": "MEDIUM"
+                  }
+                },
+                "legend": {
+                  "width": "100px"
+                },
+                "dataLabels": {
+                  "visibility": "VISIBLE",
+                  "overlap": "DISABLE_OVERLAP"
+                },
+                "tooltip": {
+                  "tooltipVisibility": "VISIBLE",
+                  "selectedTooltipType": "DETAILED",
+                  "fieldBasedTooltip": {
+                    "aggregationVisibility": "HIDDEN",
+                    "tooltipTitleType": "PRIMARY_VALUE",
+                    "tooltipFields": [
+                      {
+                        "fieldTooltipItem": {
+                          "fieldId": "breakdown.revenue.0.1763572687972",
+                          "visibility": "VISIBLE"
+                        }
+                      },
+                      {
+                        "fieldTooltipItem": {
+                          "fieldId": "breakdown.revenue_stream.1.1763572696227",
+                          "visibility": "VISIBLE"
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              "actions": [],
+              "columnHierarchies": []
+            }
+          },
+          {
+            "kpiVisual": {
+              "visualId": "32328b83-2444-4f82-8625-2b7b317bb798_659d05a8-b22f-4fa6-8b32-1f86e8578f4e",
+              "title": {
+                "visibility": "VISIBLE",
+                "formatText": {
+                  "richText": "<visual-title>Total Revenue At Risk</visual-title>"
+                }
+              },
+              "subtitle": {
+                "visibility": "VISIBLE",
+                "formatText": {
+                  "richText": "<visual-subtitle>From Customers with Health Score &lt; 50</visual-subtitle>"
+                }
+              },
+              "chartConfiguration": {
+                "fieldWells": {
+                  "values": [
+                    {
+                      "numericalMeasureField": {
+                        "fieldId": "at-risk-revenue-logical.total_revenue_at_risk.0.1763575609418",
+                        "column": {
+                          "dataSetIdentifier": "At-Risk Revenue",
+                          "columnName": "total_revenue_at_risk"
+                        },
+                        "aggregationFunction": {
+                          "simpleNumericalAggregation": "SUM"
+                        },
+                        "formatConfiguration": {
+                          "formatConfiguration": {
+                            "currencyDisplayFormatConfiguration": {
+                              "separatorConfiguration": {
+                                "decimalSeparator": "DOT",
+                                "thousandsSeparator": {
+                                  "symbol": "COMMA",
+                                  "visibility": "VISIBLE"
+                                }
+                              },
+                              "symbol": "USD",
+                              "decimalPlacesConfiguration": {
+                                "decimalPlaces": 2
+                              },
+                              "numberScale": "MILLIONS",
+                              "negativeValueConfiguration": {
+                                "displayMode": "POSITIVE"
+                              },
+                              "nullValueFormatConfiguration": {
+                                "nullString": "null"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ],
+                  "targetValues": [],
+                  "trendGroups": [
+                    {
+                      "dateDimensionField": {
+                        "fieldId": "at-risk-revenue-logical.month_date.1.1763575826323",
+                        "column": {
+                          "dataSetIdentifier": "At-Risk Revenue",
+                          "columnName": "month_date"
+                        },
+                        "hierarchyId": "at-risk-revenue-logical.month_date.1.1763575826323"
+                      }
+                    }
+                  ]
+                },
+                "sortConfiguration": {
+                  "trendGroupSort": [
+                    {
+                      "fieldSort": {
+                        "fieldId": "at-risk-revenue-logical.month_date.1.1763575826323",
+                        "direction": "DESC"
+                      }
+                    }
+                  ]
+                },
+                "kpiOptions": {
+                  "comparison": {
+                    "comparisonMethod": "PERCENT_DIFFERENCE"
+                  },
+                  "primaryValueDisplayType": "ACTUAL",
+                  "secondaryValueFontConfiguration": {
+                    "fontSize": {
+                      "relative": "EXTRA_LARGE"
+                    }
+                  },
+                  "sparkline": {
+                    "visibility": "VISIBLE",
+                    "type": "AREA"
+                  },
+                  "visualLayoutOptions": {
+                    "standardLayout": {
+                      "type": "VERTICAL"
+                    }
+                  }
+                }
+              },
+              "conditionalFormatting": {
+                "conditionalFormattingOptions": [
+                  {
+                    "comparisonValue": {
+                      "textColor": {
+                        "solid": {
+                          "expression": "percentDifference(SUM({total_revenue_at_risk}),[SUM({total_revenue_at_risk}) DESC],1,[]) > 0.0",
+                          "color": "#2CAD00"
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "comparisonValue": {
+                      "textColor": {
+                        "solid": {
+                          "expression": "percentDifference(SUM({total_revenue_at_risk}),[SUM({total_revenue_at_risk}) DESC],1,[]) < 0.0",
+                          "color": "#DE3B00"
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "comparisonValue": {
+                      "icon": {
+                        "customCondition": {
+                          "expression": "percentDifference(SUM({total_revenue_at_risk}),[SUM({total_revenue_at_risk}) DESC],1,[]) > 0.0",
+                          "iconOptions": {
+                            "icon": "CARET_UP"
+                          },
+                          "color": "#2CAD00"
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "comparisonValue": {
+                      "icon": {
+                        "customCondition": {
+                          "expression": "percentDifference(SUM({total_revenue_at_risk}),[SUM({total_revenue_at_risk}) DESC],1,[]) < 0.0",
+                          "iconOptions": {
+                            "icon": "CARET_DOWN"
+                          },
+                          "color": "#DE3B00"
+                        }
+                      }
+                    }
+                  }
+                ]
+              },
+              "actions": [],
+              "columnHierarchies": [
+                {
+                  "dateTimeHierarchy": {
+                    "hierarchyId": "at-risk-revenue-logical.month_date.1.1763575826323"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "kpiVisual": {
+              "visualId": "32328b83-2444-4f82-8625-2b7b317bb798_ab81cfb5-0802-4856-8989-cac7aac0d18e",
+              "title": {
+                "visibility": "VISIBLE",
+                "formatText": {
+                  "richText": "<visual-title>Total Revenue</visual-title>"
+                }
+              },
+              "subtitle": {
+                "visibility": "VISIBLE",
+                "formatText": {
+                  "richText": "<visual-subtitle>All Revenue Streams (MoM)</visual-subtitle>"
+                }
+              },
+              "chartConfiguration": {
+                "fieldWells": {
+                  "values": [
+                    {
+                      "numericalMeasureField": {
+                        "fieldId": "trends.total_clv.0.1763576277995",
+                        "column": {
+                          "dataSetIdentifier": "KPI Trends",
+                          "columnName": "total_clv"
+                        },
+                        "aggregationFunction": {
+                          "simpleNumericalAggregation": "SUM"
+                        },
+                        "formatConfiguration": {
+                          "formatConfiguration": {
+                            "numberDisplayFormatConfiguration": {
+                              "numberScale": "MILLIONS",
+                              "nullValueFormatConfiguration": {
+                                "nullString": "null"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ],
+                  "targetValues": [],
+                  "trendGroups": [
+                    {
+                      "dateDimensionField": {
+                        "fieldId": "trends.snapshot_month.1.1763576290056",
+                        "column": {
+                          "dataSetIdentifier": "KPI Trends",
+                          "columnName": "snapshot_month"
+                        },
+                        "hierarchyId": "trends.snapshot_month.1.1763576290056"
+                      }
+                    }
+                  ]
+                },
+                "sortConfiguration": {
+                  "trendGroupSort": [
+                    {
+                      "fieldSort": {
+                        "fieldId": "trends.snapshot_month.1.1763576290056",
+                        "direction": "DESC"
+                      }
+                    }
+                  ]
+                },
+                "kpiOptions": {
+                  "comparison": {
+                    "comparisonMethod": "PERCENT_DIFFERENCE"
+                  },
+                  "primaryValueDisplayType": "ACTUAL",
+                  "secondaryValueFontConfiguration": {
+                    "fontSize": {
+                      "relative": "EXTRA_LARGE"
+                    }
+                  },
+                  "sparkline": {
+                    "visibility": "VISIBLE",
+                    "type": "AREA"
+                  },
+                  "visualLayoutOptions": {
+                    "standardLayout": {
+                      "type": "VERTICAL"
+                    }
+                  }
+                }
+              },
+              "conditionalFormatting": {
+                "conditionalFormattingOptions": [
+                  {
+                    "comparisonValue": {
+                      "textColor": {
+                        "solid": {
+                          "expression": "percentDifference(SUM({total_clv}),[SUM({total_clv}) DESC],1,[]) > 0.0",
+                          "color": "#2CAD00"
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "comparisonValue": {
+                      "textColor": {
+                        "solid": {
+                          "expression": "percentDifference(SUM({total_clv}),[SUM({total_clv}) DESC],1,[]) < 0.0",
+                          "color": "#DE3B00"
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "comparisonValue": {
+                      "icon": {
+                        "customCondition": {
+                          "expression": "percentDifference(SUM({total_clv}),[SUM({total_clv}) DESC],1,[]) > 0.0",
+                          "iconOptions": {
+                            "icon": "CARET_UP"
+                          },
+                          "color": "#2CAD00"
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "comparisonValue": {
+                      "icon": {
+                        "customCondition": {
+                          "expression": "percentDifference(SUM({total_clv}),[SUM({total_clv}) DESC],1,[]) < 0.0",
+                          "iconOptions": {
+                            "icon": "CARET_DOWN"
+                          },
+                          "color": "#DE3B00"
+                        }
+                      }
+                    }
+                  }
+                ]
+              },
+              "actions": [],
+              "columnHierarchies": [
+                {
+                  "dateTimeHierarchy": {
+                    "hierarchyId": "trends.snapshot_month.1.1763576290056"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "kpiVisual": {
+              "visualId": "32328b83-2444-4f82-8625-2b7b317bb798_ad0c228f-a5f1-4c50-84ab-6f15a562e299",
+              "title": {
+                "visibility": "VISIBLE",
+                "formatText": {
+                  "richText": "<visual-title>NPS Score</visual-title>"
+                }
+              },
+              "subtitle": {
+                "visibility": "VISIBLE",
+                "formatText": {
+                  "richText": "<visual-subtitle>Net Promoter Score</visual-subtitle>"
+                }
+              },
+              "chartConfiguration": {
+                "fieldWells": {
+                  "values": [
+                    {
+                      "numericalMeasureField": {
+                        "fieldId": "nps.nps_score.0.1763581251807",
+                        "column": {
+                          "dataSetIdentifier": "KPI Trends",
+                          "columnName": "nps_score"
+                        },
+                        "aggregationFunction": {
+                          "simpleNumericalAggregation": "MAX"
+                        }
+                      }
+                    }
+                  ],
+                  "targetValues": [],
+                  "trendGroups": [
+                    {
+                      "dateDimensionField": {
+                        "fieldId": "nps.month_date.1.1763581264346",
+                        "column": {
+                          "dataSetIdentifier": "KPI Trends",
+                          "columnName": "month_date"
+                        },
+                        "hierarchyId": "nps.month_date.1.1763581264346"
+                      }
+                    }
+                  ]
+                },
+                "sortConfiguration": {
+                  "trendGroupSort": [
+                    {
+                      "fieldSort": {
+                        "fieldId": "nps.month_date.1.1763581264346",
+                        "direction": "DESC"
+                      }
+                    }
+                  ]
+                },
+                "kpiOptions": {
+                  "comparison": {
+                    "comparisonMethod": "PERCENT_DIFFERENCE"
+                  },
+                  "primaryValueDisplayType": "ACTUAL",
+                  "secondaryValueFontConfiguration": {
+                    "fontSize": {
+                      "relative": "EXTRA_LARGE"
+                    }
+                  },
+                  "sparkline": {
+                    "visibility": "VISIBLE",
+                    "type": "AREA"
+                  },
+                  "visualLayoutOptions": {
+                    "standardLayout": {
+                      "type": "VERTICAL"
+                    }
+                  }
+                }
+              },
+              "conditionalFormatting": {
+                "conditionalFormattingOptions": [
+                  {
+                    "comparisonValue": {
+                      "textColor": {
+                        "solid": {
+                          "expression": "percentDifference(MAX({nps_score}),[MAX({nps_score}) DESC],1,[]) > 0.0",
+                          "color": "#2CAD00"
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "comparisonValue": {
+                      "textColor": {
+                        "solid": {
+                          "expression": "percentDifference(MAX({nps_score}),[MAX({nps_score}) DESC],1,[]) < 0.0",
+                          "color": "#DE3B00"
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "comparisonValue": {
+                      "icon": {
+                        "customCondition": {
+                          "expression": "percentDifference(MAX({nps_score}),[MAX({nps_score}) DESC],1,[]) > 0.0",
+                          "iconOptions": {
+                            "icon": "CARET_UP"
+                          },
+                          "color": "#2CAD00"
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "comparisonValue": {
+                      "icon": {
+                        "customCondition": {
+                          "expression": "percentDifference(MAX({nps_score}),[MAX({nps_score}) DESC],1,[]) < 0.0",
+                          "iconOptions": {
+                            "icon": "CARET_DOWN"
+                          },
+                          "color": "#DE3B00"
+                        }
+                      }
+                    }
+                  }
+                ]
+              },
+              "actions": [],
+              "columnHierarchies": [
+                {
+                  "dateTimeHierarchy": {
+                    "hierarchyId": "nps.month_date.1.1763581264346"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "kpiVisual": {
+              "visualId": "32328b83-2444-4f82-8625-2b7b317bb798_8eaa4cff-979d-4c3c-905c-e8315977ba87",
+              "title": {
+                "visibility": "VISIBLE",
+                "formatText": {
+                  "richText": "<visual-title>Customer Retention Rate</visual-title>"
+                }
+              },
+              "subtitle": {
+                "visibility": "VISIBLE",
+                "formatText": {
+                  "richText": "<visual-subtitle>Customer's Retained</visual-subtitle>"
+                }
+              },
+              "chartConfiguration": {
+                "fieldWells": {
+                  "values": [
+                    {
+                      "numericalMeasureField": {
+                        "fieldId": "current.retention_rate.0.1763582038136",
+                        "column": {
+                          "dataSetIdentifier": "KPI Trends",
+                          "columnName": "retention_rate"
+                        },
+                        "aggregationFunction": {
+                          "simpleNumericalAggregation": "MAX"
+                        },
+                        "formatConfiguration": {
+                          "formatConfiguration": {
+                            "percentageDisplayFormatConfiguration": {
+                              "suffix": "%",
+                              "separatorConfiguration": {
+                                "decimalSeparator": "DOT",
+                                "thousandsSeparator": {
+                                  "symbol": "COMMA",
+                                  "visibility": "VISIBLE"
+                                }
+                              },
+                              "decimalPlacesConfiguration": {
+                                "decimalPlaces": 1
+                              },
+                              "negativeValueConfiguration": {
+                                "displayMode": "NEGATIVE"
+                              },
+                              "nullValueFormatConfiguration": {
+                                "nullString": "null"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ],
+                  "targetValues": [],
+                  "trendGroups": [
+                    {
+                      "numericalDimensionField": {
+                        "fieldId": "current.retention_change.1.1763582053745",
+                        "column": {
+                          "dataSetIdentifier": "KPI Trends",
+                          "columnName": "retention_change"
+                        }
+                      }
+                    }
+                  ]
+                },
+                "sortConfiguration": {
+                  "trendGroupSort": [
+                    {
+                      "fieldSort": {
+                        "fieldId": "current.retention_rate.0.1763582038136",
+                        "direction": "DESC"
+                      }
+                    }
+                  ]
+                },
+                "kpiOptions": {
+                  "comparison": {
+                    "comparisonMethod": "PERCENT_DIFFERENCE"
+                  },
+                  "primaryValueDisplayType": "ACTUAL",
+                  "secondaryValueFontConfiguration": {
+                    "fontSize": {
+                      "relative": "EXTRA_LARGE"
+                    }
+                  },
+                  "sparkline": {
+                    "visibility": "VISIBLE",
+                    "type": "AREA"
+                  },
+                  "visualLayoutOptions": {
+                    "standardLayout": {
+                      "type": "VERTICAL"
+                    }
+                  }
+                }
+              },
+              "conditionalFormatting": {
+                "conditionalFormattingOptions": [
+                  {
+                    "comparisonValue": {
+                      "textColor": {
+                        "solid": {
+                          "expression": "percentDifference(MAX({retention_rate}),[MAX({retention_rate}) DESC],1,[]) > 0.0",
+                          "color": "#2CAD00"
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "comparisonValue": {
+                      "textColor": {
+                        "solid": {
+                          "expression": "percentDifference(MAX({retention_rate}),[MAX({retention_rate}) DESC],1,[]) < 0.0",
+                          "color": "#DE3B00"
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "comparisonValue": {
+                      "icon": {
+                        "customCondition": {
+                          "expression": "percentDifference(MAX({retention_rate}),[MAX({retention_rate}) DESC],1,[]) > 0.0",
+                          "iconOptions": {
+                            "icon": "CARET_UP"
+                          },
+                          "color": "#2CAD00"
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "comparisonValue": {
+                      "icon": {
+                        "customCondition": {
+                          "expression": "percentDifference(MAX({retention_rate}),[MAX({retention_rate}) DESC],1,[]) < 0.0",
+                          "iconOptions": {
+                            "icon": "CARET_DOWN"
+                          },
+                          "color": "#DE3B00"
+                        }
+                      }
+                    }
+                  }
+                ]
+              },
+              "actions": [],
+              "columnHierarchies": []
+            }
+          },
+          {
+            "kpiVisual": {
+              "visualId": "32328b83-2444-4f82-8625-2b7b317bb798_1f255f27-df15-4efc-8196-190029861d61",
+              "title": {
+                "visibility": "VISIBLE"
+              },
+              "subtitle": {
+                "visibility": "VISIBLE"
+              },
+              "chartConfiguration": {
+                "fieldWells": {
+                  "values": [
+                    {
+                      "numericalMeasureField": {
+                        "fieldId": "top-stream-logical.current_revenue.0.1763591200722",
+                        "column": {
+                          "dataSetIdentifier": "Top Revenue Stream",
+                          "columnName": "current_revenue"
+                        },
+                        "aggregationFunction": {
+                          "simpleNumericalAggregation": "SUM"
+                        }
+                      }
+                    }
+                  ],
+                  "targetValues": [],
+                  "trendGroups": [
+                    {
+                      "numericalDimensionField": {
+                        "fieldId": "top-stream-logical.revenue_change.1.1763591243697",
+                        "column": {
+                          "dataSetIdentifier": "Top Revenue Stream",
+                          "columnName": "revenue_change"
+                        }
+                      }
+                    }
+                  ]
+                },
+                "sortConfiguration": {
+                  "trendGroupSort": [
+                    {
+                      "fieldSort": {
+                        "fieldId": "top-stream-logical.current_revenue.0.1763591200722",
+                        "direction": "DESC"
+                      }
+                    }
+                  ]
+                },
+                "kpiOptions": {
+                  "comparison": {
+                    "comparisonMethod": "PERCENT_DIFFERENCE"
+                  },
+                  "primaryValueDisplayType": "ACTUAL",
+                  "secondaryValueFontConfiguration": {
+                    "fontSize": {
+                      "relative": "EXTRA_LARGE"
+                    }
+                  },
+                  "sparkline": {
+                    "visibility": "VISIBLE",
+                    "type": "AREA"
+                  },
+                  "visualLayoutOptions": {
+                    "standardLayout": {
+                      "type": "VERTICAL"
+                    }
+                  }
+                }
+              },
+              "conditionalFormatting": {
+                "conditionalFormattingOptions": [
+                  {
+                    "comparisonValue": {
+                      "textColor": {
+                        "solid": {
+                          "expression": "percentDifference(SUM({current_revenue}),[SUM({current_revenue}) DESC],1,[]) > 0.0",
+                          "color": "#2CAD00"
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "comparisonValue": {
+                      "textColor": {
+                        "solid": {
+                          "expression": "percentDifference(SUM({current_revenue}),[SUM({current_revenue}) DESC],1,[]) < 0.0",
+                          "color": "#DE3B00"
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "comparisonValue": {
+                      "icon": {
+                        "customCondition": {
+                          "expression": "percentDifference(SUM({current_revenue}),[SUM({current_revenue}) DESC],1,[]) > 0.0",
+                          "iconOptions": {
+                            "icon": "CARET_UP"
+                          },
+                          "color": "#2CAD00"
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "comparisonValue": {
+                      "icon": {
+                        "customCondition": {
+                          "expression": "percentDifference(SUM({current_revenue}),[SUM({current_revenue}) DESC],1,[]) < 0.0",
+                          "iconOptions": {
+                            "icon": "CARET_DOWN"
+                          },
+                          "color": "#DE3B00"
+                        }
+                      }
+                    }
+                  }
+                ]
+              },
+              "actions": [],
+              "columnHierarchies": []
+            }
+          }
+        ],
+        "textBoxes": [
+          {
+            "sheetTextBoxId": "66de0fd7-1ad2-4eb5-b300-e7bd9f379060",
+            "content": "<text-box>\n  <inline font-size=\"20px\">\n    <b>Customer Experience Metrics</b>\n  </inline>\n</text-box>",
+            "interactions": {
+              "textBoxMenuOption": {
+                "availabilityStatus": "DISABLED"
+              }
+            }
+          },
+          {
+            "sheetTextBoxId": "99d68123-cfcf-4edf-ad0b-a274182db6b7",
+            "content": "<text-box>\n  <inline font-size=\"20px\">\n    <b>Operational Metrics</b>\n  </inline>\n  <inline font-size=\"20px\">\n    <b/>\n  </inline>\n</text-box>",
+            "interactions": {
+              "textBoxMenuOption": {
+                "availabilityStatus": "DISABLED"
+              }
+            }
+          }
+        ],
+        "layouts": [
+          {
+            "configuration": {
+              "freeFormLayout": {
+                "elements": [
+                  {
+                    "elementId": "32328b83-2444-4f82-8625-2b7b317bb798_1ced7296-aed3-4bee-9814-cc78c24ca3eb",
+                    "elementType": "VISUAL",
+                    "xAxisLocation": "291px",
+                    "yAxisLocation": "324px",
+                    "width": "260px",
+                    "height": "250px",
+                    "visibility": "VISIBLE"
+                  },
+                  {
+                    "elementId": "32328b83-2444-4f82-8625-2b7b317bb798_3a4a2fd5-1f4f-45b4-acca-6d0eb78e228b",
+                    "elementType": "VISUAL",
+                    "xAxisLocation": "896px",
+                    "yAxisLocation": "40px",
+                    "width": "260px",
+                    "height": "250px",
+                    "visibility": "VISIBLE"
+                  },
+                  {
+                    "elementId": "32328b83-2444-4f82-8625-2b7b317bb798_2d3a1867-c175-4255-be38-151a2816d746",
+                    "elementType": "VISUAL",
+                    "xAxisLocation": "287px",
+                    "yAxisLocation": "40px",
+                    "width": "260px",
+                    "height": "250px",
+                    "visibility": "VISIBLE",
+                    "borderStyle": {
+                      "visibility": "VISIBLE"
+                    }
+                  },
+                  {
+                    "elementId": "32328b83-2444-4f82-8625-2b7b317bb798_a4822547-5084-435d-8c5b-d8367ef68ab9",
+                    "elementType": "VISUAL",
+                    "xAxisLocation": "560px",
+                    "yAxisLocation": "40px",
+                    "width": "320px",
+                    "height": "250px",
+                    "visibility": "VISIBLE"
+                  },
+                  {
+                    "elementId": "32328b83-2444-4f82-8625-2b7b317bb798_f609ac09-caf4-4cc2-9a8c-4adda6e51baf",
+                    "elementType": "VISUAL",
+                    "xAxisLocation": "1168px",
+                    "yAxisLocation": "592px",
+                    "width": "320px",
+                    "height": "208px",
+                    "visibility": "VISIBLE"
+                  },
+                  {
+                    "elementId": "32328b83-2444-4f82-8625-2b7b317bb798_f89d616c-df87-488d-91a5-3f985a712774",
+                    "elementType": "VISUAL",
+                    "xAxisLocation": "560px",
+                    "yAxisLocation": "324px",
+                    "width": "260px",
+                    "height": "250px",
+                    "visibility": "VISIBLE",
+                    "borderStyle": {
+                      "visibility": "VISIBLE",
+                      "color": "#E4E4E4FF"
+                    },
+                    "selectedBorderStyle": {
+                      "visibility": "HIDDEN"
+                    },
+                    "backgroundStyle": {
+                      "visibility": "VISIBLE"
+                    },
+                    "loadingAnimation": {
+                      "visibility": "VISIBLE"
+                    }
+                  },
+                  {
+                    "elementId": "32328b83-2444-4f82-8625-2b7b317bb798_b1fca881-955c-4754-bcf1-3e1a8555abd1",
+                    "elementType": "VISUAL",
+                    "xAxisLocation": "1120px",
+                    "yAxisLocation": "1040px",
+                    "width": "368px",
+                    "height": "176px",
+                    "visibility": "VISIBLE"
+                  },
+                  {
+                    "elementId": "32328b83-2444-4f82-8625-2b7b317bb798_3103e58e-2964-4551-b03a-261e0994aa7f",
+                    "elementType": "VISUAL",
+                    "xAxisLocation": "384px",
+                    "yAxisLocation": "1040px",
+                    "width": "352px",
+                    "height": "176px",
+                    "visibility": "VISIBLE"
+                  },
+                  {
+                    "elementId": "32328b83-2444-4f82-8625-2b7b317bb798_67e77b36-b7fb-4b0c-bc2f-45d87b77b498",
+                    "elementType": "VISUAL",
+                    "xAxisLocation": "16px",
+                    "yAxisLocation": "1040px",
+                    "width": "352px",
+                    "height": "176px",
+                    "visibility": "VISIBLE"
+                  },
+                  {
+                    "elementId": "32328b83-2444-4f82-8625-2b7b317bb798_db6ed106-d6d1-46b0-a729-1628ef2387d1",
+                    "elementType": "VISUAL",
+                    "xAxisLocation": "832px",
+                    "yAxisLocation": "324px",
+                    "width": "320px",
+                    "height": "250px",
+                    "visibility": "VISIBLE"
+                  },
+                  {
+                    "elementId": "32328b83-2444-4f82-8625-2b7b317bb798_b3c24175-edb0-467b-919b-410c5fd58345",
+                    "elementType": "VISUAL",
+                    "xAxisLocation": "752px",
+                    "yAxisLocation": "1040px",
+                    "width": "352px",
+                    "height": "176px",
+                    "visibility": "VISIBLE"
+                  },
+                  {
+                    "elementId": "66de0fd7-1ad2-4eb5-b300-e7bd9f379060",
+                    "elementType": "TEXT_BOX",
+                    "xAxisLocation": "15px",
+                    "yAxisLocation": "288px",
+                    "width": "672px",
+                    "height": "48px",
+                    "visibility": "VISIBLE",
+                    "borderStyle": {
+                      "visibility": "HIDDEN"
+                    },
+                    "selectedBorderStyle": {
+                      "visibility": "HIDDEN"
+                    },
+                    "backgroundStyle": {
+                      "visibility": "HIDDEN"
+                    }
+                  },
+                  {
+                    "elementId": "99d68123-cfcf-4edf-ad0b-a274182db6b7",
+                    "elementType": "TEXT_BOX",
+                    "xAxisLocation": "15px",
+                    "yAxisLocation": "0px",
+                    "width": "480px",
+                    "height": "48px",
+                    "visibility": "VISIBLE",
+                    "borderStyle": {
+                      "visibility": "HIDDEN"
+                    },
+                    "selectedBorderStyle": {
+                      "visibility": "HIDDEN"
+                    },
+                    "backgroundStyle": {
+                      "visibility": "HIDDEN"
+                    }
+                  },
+                  {
+                    "elementId": "32328b83-2444-4f82-8625-2b7b317bb798_582960a4-9187-428c-a3fc-5cc979683390",
+                    "elementType": "VISUAL",
+                    "xAxisLocation": "560px",
+                    "yAxisLocation": "592px",
+                    "width": "592px",
+                    "height": "432px",
+                    "visibility": "VISIBLE"
+                  },
+                  {
+                    "elementId": "32328b83-2444-4f82-8625-2b7b317bb798_66e744e4-6878-4cc8-86c5-14f526d9f15b",
+                    "elementType": "VISUAL",
+                    "xAxisLocation": "16px",
+                    "yAxisLocation": "1888px",
+                    "width": "592px",
+                    "height": "384px",
+                    "visibility": "VISIBLE"
+                  },
+                  {
+                    "elementId": "32328b83-2444-4f82-8625-2b7b317bb798_c050b8e9-4a7a-46c7-8bae-abb8c620b8c6",
+                    "elementType": "VISUAL",
+                    "xAxisLocation": "16px",
+                    "yAxisLocation": "1232px",
+                    "width": "1472px",
+                    "height": "640px",
+                    "visibility": "VISIBLE"
+                  },
+                  {
+                    "elementId": "32328b83-2444-4f82-8625-2b7b317bb798_633a501a-8a3a-4ec9-94b7-a5cecf0212da",
+                    "elementType": "VISUAL",
+                    "xAxisLocation": "16px",
+                    "yAxisLocation": "592px",
+                    "width": "528px",
+                    "height": "432px",
+                    "visibility": "VISIBLE"
+                  },
+                  {
+                    "elementId": "32328b83-2444-4f82-8625-2b7b317bb798_659d05a8-b22f-4fa6-8b32-1f86e8578f4e",
+                    "elementType": "VISUAL",
+                    "xAxisLocation": "1168px",
+                    "yAxisLocation": "40px",
+                    "width": "320px",
+                    "height": "250px",
+                    "visibility": "VISIBLE"
+                  },
+                  {
+                    "elementId": "32328b83-2444-4f82-8625-2b7b317bb798_ab81cfb5-0802-4856-8989-cac7aac0d18e",
+                    "elementType": "VISUAL",
+                    "xAxisLocation": "19px",
+                    "yAxisLocation": "40px",
+                    "width": "260px",
+                    "height": "250px",
+                    "visibility": "VISIBLE"
+                  },
+                  {
+                    "elementId": "32328b83-2444-4f82-8625-2b7b317bb798_ad0c228f-a5f1-4c50-84ab-6f15a562e299",
+                    "elementType": "VISUAL",
+                    "xAxisLocation": "19px",
+                    "yAxisLocation": "324px",
+                    "width": "260px",
+                    "height": "250px",
+                    "visibility": "VISIBLE"
+                  },
+                  {
+                    "elementId": "32328b83-2444-4f82-8625-2b7b317bb798_8eaa4cff-979d-4c3c-905c-e8315977ba87",
+                    "elementType": "VISUAL",
+                    "xAxisLocation": "1168px",
+                    "yAxisLocation": "324px",
+                    "width": "320px",
+                    "height": "250px",
+                    "visibility": "VISIBLE"
+                  },
+                  {
+                    "elementId": "32328b83-2444-4f82-8625-2b7b317bb798_1f255f27-df15-4efc-8196-190029861d61",
+                    "elementType": "VISUAL",
+                    "xAxisLocation": "624px",
+                    "yAxisLocation": "1888px",
+                    "width": "864px",
+                    "height": "384px",
+                    "visibility": "VISIBLE"
+                  },
+                  {
+                    "elementId": "32328b83-2444-4f82-8625-2b7b317bb798_d596062a-401c-443a-9027-f47fb32d5545",
+                    "elementType": "VISUAL",
+                    "xAxisLocation": "1168px",
+                    "yAxisLocation": "816px",
+                    "width": "320px",
+                    "height": "208px",
+                    "visibility": "VISIBLE"
+                  }
+                ],
+                "canvasSizeOptions": {
+                  "screenCanvasSizeOptions": {
+                    "optimizedViewPortWidth": "1920px"
+                  }
+                }
+              }
+            }
+          }
+        ],
+        "contentType": "INTERACTIVE"
+      },
+      {
+        "sheetId": "32328b83-2444-4f82-8625-2b7b317bb798_704a0b8b-e1d0-4d90-b699-ea974e74669c",
+        "name": "Customer 360",
+        "visuals": [
+          {
+            "kpiVisual": {
+              "visualId": "32328b83-2444-4f82-8625-2b7b317bb798_753c47f5-5d76-4435-a7b2-d487d9d52a9b",
+              "title": {
+                "visibility": "VISIBLE",
+                "formatText": {
+                  "richText": "<visual-title>\n  <inline font-size=\"14px\">Operational Health Score</inline>\n</visual-title>"
+                }
+              },
+              "subtitle": {
+                "visibility": "VISIBLE",
+                "formatText": {
+                  "richText": "<visual-subtitle>Combined operational performance index</visual-subtitle>"
+                }
+              },
+              "chartConfiguration": {
+                "fieldWells": {
+                  "values": [
+                    {
+                      "numericalMeasureField": {
+                        "fieldId": "kpis.operational_health_score.1.1765555820301",
+                        "column": {
+                          "dataSetIdentifier": "Operational KPIs",
+                          "columnName": "operational_health_score"
+                        },
+                        "aggregationFunction": {
+                          "simpleNumericalAggregation": "SUM"
+                        }
+                      }
+                    }
+                  ],
+                  "targetValues": [],
+                  "trendGroups": [
+                    {
+                      "dateDimensionField": {
+                        "fieldId": "month-trend",
+                        "column": {
+                          "dataSetIdentifier": "Operational KPIs",
+                          "columnName": "month_date"
+                        },
+                        "dateGranularity": "MONTH",
+                        "hierarchyId": "month-trend"
+                      }
+                    }
+                  ]
+                },
+                "sortConfiguration": {
+                  "trendGroupSort": [
+                    {
+                      "fieldSort": {
+                        "fieldId": "month-trend",
+                        "direction": "DESC"
+                      }
+                    }
+                  ]
+                },
+                "kpiOptions": {
+                  "progressBar": {
+                    "visibility": "VISIBLE"
+                  },
+                  "comparison": {
+                    "comparisonMethod": "PERCENT_DIFFERENCE"
+                  },
+                  "primaryValueDisplayType": "ACTUAL",
+                  "sparkline": {
+                    "visibility": "VISIBLE",
+                    "type": "AREA"
+                  }
+                }
+              },
+              "conditionalFormatting": {
+                "conditionalFormattingOptions": [
+                  {
+                    "comparisonValue": {
+                      "textColor": {
+                        "solid": {
+                          "expression": "percentDifference(SUM({operational_health_score}),[SUM({operational_health_score}) DESC],1,[]) > 0.0",
+                          "color": "#DE3B00"
+                        }
+                      }
+                    }
+                  }
+                ]
+              },
+              "actions": [],
+              "columnHierarchies": [
+                {
+                  "dateTimeHierarchy": {
+                    "hierarchyId": "month-trend"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "kpiVisual": {
+              "visualId": "32328b83-2444-4f82-8625-2b7b317bb798_fe038669-9810-4af9-a47b-ee1bac2784c2",
+              "title": {
+                "visibility": "VISIBLE",
+                "formatText": {
+                  "richText": "<visual-title>\n  <inline font-size=\"14px\">First Contact Resolution Rate</inline>\n</visual-title>"
+                }
+              },
+              "subtitle": {
+                "visibility": "VISIBLE",
+                "formatText": {
+                  "richText": "<visual-subtitle>% of cases resolved on first interaction</visual-subtitle>"
+                }
+              },
+              "chartConfiguration": {
+                "fieldWells": {
+                  "values": [
+                    {
+                      "numericalMeasureField": {
+                        "fieldId": "kpis.first_contact_resolution_rate.1.1765554267832",
+                        "column": {
+                          "dataSetIdentifier": "Operational KPIs",
+                          "columnName": "first_contact_resolution_rate"
+                        },
+                        "aggregationFunction": {
+                          "simpleNumericalAggregation": "SUM"
+                        }
+                      }
+                    }
+                  ],
+                  "targetValues": [],
+                  "trendGroups": [
+                    {
+                      "dateDimensionField": {
+                        "fieldId": "month-trend",
+                        "column": {
+                          "dataSetIdentifier": "Operational KPIs",
+                          "columnName": "month_date"
+                        },
+                        "dateGranularity": "MONTH",
+                        "hierarchyId": "month-trend"
+                      }
+                    }
+                  ]
+                },
+                "sortConfiguration": {
+                  "trendGroupSort": [
+                    {
+                      "fieldSort": {
+                        "fieldId": "month-trend",
+                        "direction": "DESC"
+                      }
+                    }
+                  ]
+                },
+                "kpiOptions": {
+                  "progressBar": {
+                    "visibility": "VISIBLE"
+                  },
+                  "comparison": {
+                    "comparisonMethod": "PERCENT_DIFFERENCE"
+                  },
+                  "primaryValueDisplayType": "ACTUAL",
+                  "sparkline": {
+                    "visibility": "VISIBLE",
+                    "type": "AREA"
+                  }
+                }
+              },
+              "conditionalFormatting": {
+                "conditionalFormattingOptions": [
+                  {
+                    "comparisonValue": {
+                      "textColor": {
+                        "solid": {
+                          "expression": "percentDifference(SUM({first_contact_resolution_rate}),[SUM({first_contact_resolution_rate}) DESC],1,[]) < 1.0",
+                          "color": "#DE3B00"
+                        }
+                      }
+                    }
+                  }
+                ]
+              },
+              "actions": [],
+              "columnHierarchies": [
+                {
+                  "dateTimeHierarchy": {
+                    "hierarchyId": "month-trend"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "kpiVisual": {
+              "visualId": "32328b83-2444-4f82-8625-2b7b317bb798_f37dcf4e-441e-42f6-81ae-8b6435c3ef31",
+              "title": {
+                "visibility": "VISIBLE",
+                "formatText": {
+                  "plainText": "Repeat Service Rate"
+                }
+              },
+              "subtitle": {
+                "visibility": "VISIBLE",
+                "formatText": {
+                  "richText": "<visual-subtitle>% of customers returning for same issue within 30 days\"</visual-subtitle>"
+                }
+              },
+              "chartConfiguration": {
+                "fieldWells": {
+                  "values": [
+                    {
+                      "numericalMeasureField": {
+                        "fieldId": "repeat-value",
+                        "column": {
+                          "dataSetIdentifier": "Operational KPIs",
+                          "columnName": "repeat_service_rate"
+                        },
+                        "aggregationFunction": {
+                          "simpleNumericalAggregation": "AVERAGE"
+                        }
+                      }
+                    }
+                  ],
+                  "targetValues": [],
+                  "trendGroups": [
+                    {
+                      "dateDimensionField": {
+                        "fieldId": "month-trend",
+                        "column": {
+                          "dataSetIdentifier": "Operational KPIs",
+                          "columnName": "month_date"
+                        },
+                        "dateGranularity": "MONTH",
+                        "hierarchyId": "month-trend"
+                      }
+                    }
+                  ]
+                },
+                "sortConfiguration": {},
+                "kpiOptions": {
+                  "progressBar": {
+                    "visibility": "VISIBLE"
+                  },
+                  "comparison": {
+                    "comparisonMethod": "PERCENT_DIFFERENCE"
+                  },
+                  "sparkline": {
+                    "visibility": "VISIBLE",
+                    "type": "AREA"
+                  }
+                }
+              },
+              "conditionalFormatting": {
+                "conditionalFormattingOptions": [
+                  {
+                    "comparisonValue": {
+                      "textColor": {
+                        "solid": {
+                          "expression": "difference(AVG({repeat_service_rate}),[AVG({repeat_service_rate}) DESC],1,[]) > 0",
+                          "color": "#DE3B00"
+                        }
+                      }
+                    }
+                  }
+                ]
+              },
+              "actions": [],
+              "columnHierarchies": [
+                {
+                  "dateTimeHierarchy": {
+                    "hierarchyId": "month-trend"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "kpiVisual": {
+              "visualId": "32328b83-2444-4f82-8625-2b7b317bb798_1a97bf5c-6b5f-46d8-ad34-ddd81bda902d",
+              "title": {
+                "visibility": "VISIBLE",
+                "formatText": {
+                  "plainText": "Avg Case Resolution Days"
+                }
+              },
+              "subtitle": {
+                "visibility": "VISIBLE",
+                "formatText": {
+                  "richText": "<visual-subtitle>Average time to close support cases</visual-subtitle>"
+                }
+              },
+              "chartConfiguration": {
+                "fieldWells": {
+                  "values": [
+                    {
+                      "numericalMeasureField": {
+                        "fieldId": "resolution-value",
+                        "column": {
+                          "dataSetIdentifier": "Operational KPIs",
+                          "columnName": "avg_case_resolution_days"
+                        },
+                        "aggregationFunction": {
+                          "simpleNumericalAggregation": "AVERAGE"
+                        }
+                      }
+                    }
+                  ],
+                  "targetValues": [],
+                  "trendGroups": [
+                    {
+                      "dateDimensionField": {
+                        "fieldId": "month-trend",
+                        "column": {
+                          "dataSetIdentifier": "Operational KPIs",
+                          "columnName": "month_date"
+                        },
+                        "dateGranularity": "MONTH",
+                        "hierarchyId": "month-trend"
+                      }
+                    }
+                  ]
+                },
+                "sortConfiguration": {},
+                "kpiOptions": {
+                  "progressBar": {
+                    "visibility": "VISIBLE"
+                  },
+                  "comparison": {
+                    "comparisonMethod": "PERCENT_DIFFERENCE"
+                  },
+                  "primaryValueDisplayType": "ACTUAL",
+                  "sparkline": {
+                    "visibility": "VISIBLE",
+                    "type": "AREA"
+                  }
+                }
+              },
+              "conditionalFormatting": {
+                "conditionalFormattingOptions": [
+                  {
+                    "comparisonValue": {
+                      "textColor": {
+                        "solid": {
+                          "expression": "percentDifference(AVG({avg_case_resolution_days}),[AVG({avg_case_resolution_days}) DESC],1,[]) > 1.0",
+                          "color": "#DE3B00"
+                        }
+                      }
+                    }
+                  }
+                ]
+              },
+              "actions": [],
+              "columnHierarchies": [
+                {
+                  "dateTimeHierarchy": {
+                    "hierarchyId": "month-trend"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "kpiVisual": {
+              "visualId": "32328b83-2444-4f82-8625-2b7b317bb798_fe92b542-2a2a-4ed4-b909-56108ba52f71",
+              "title": {
+                "visibility": "VISIBLE",
+                "formatText": {
+                  "plainText": "Warranty Claim Rate"
+                }
+              },
+              "subtitle": {
+                "visibility": "VISIBLE",
+                "formatText": {
+                  "richText": "<visual-subtitle>% of vehicles with active warranty claims</visual-subtitle>"
+                }
+              },
+              "chartConfiguration": {
+                "fieldWells": {
+                  "values": [
+                    {
+                      "numericalMeasureField": {
+                        "fieldId": "warranty-value",
+                        "column": {
+                          "dataSetIdentifier": "Operational KPIs",
+                          "columnName": "warranty_claim_rate"
+                        },
+                        "aggregationFunction": {
+                          "simpleNumericalAggregation": "AVERAGE"
+                        }
+                      }
+                    }
+                  ],
+                  "targetValues": [],
+                  "trendGroups": [
+                    {
+                      "dateDimensionField": {
+                        "fieldId": "month-trend",
+                        "column": {
+                          "dataSetIdentifier": "Operational KPIs",
+                          "columnName": "month_date"
+                        },
+                        "dateGranularity": "MONTH",
+                        "hierarchyId": "month-trend"
+                      }
+                    }
+                  ]
+                },
+                "sortConfiguration": {},
+                "kpiOptions": {
+                  "progressBar": {
+                    "visibility": "VISIBLE"
+                  },
+                  "comparison": {
+                    "comparisonMethod": "PERCENT_DIFFERENCE"
+                  },
+                  "sparkline": {
+                    "visibility": "VISIBLE",
+                    "type": "AREA"
+                  }
+                }
+              },
+              "conditionalFormatting": {
+                "conditionalFormattingOptions": [
+                  {
+                    "comparisonValue": {
+                      "textColor": {
+                        "solid": {
+                          "expression": "difference(AVG({warranty_claim_rate}),[AVG({warranty_claim_rate}) DESC],1,[]) > 0",
+                          "color": "#DE3B00"
+                        }
+                      }
+                    }
+                  }
+                ]
+              },
+              "actions": [],
+              "columnHierarchies": [
+                {
+                  "dateTimeHierarchy": {
+                    "hierarchyId": "month-trend"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "kpiVisual": {
+              "visualId": "32328b83-2444-4f82-8625-2b7b317bb798_db5698a2-623a-41b8-b0d8-ffbb6df8a2a3",
+              "title": {
+                "visibility": "VISIBLE",
+                "formatText": {
+                  "plainText": "Service Wait Days"
+                }
+              },
+              "subtitle": {
+                "visibility": "VISIBLE",
+                "formatText": {
+                  "richText": "<visual-subtitle>Days until next available service appointment</visual-subtitle>"
+                }
+              },
+              "chartConfiguration": {
+                "fieldWells": {
+                  "values": [
+                    {
+                      "numericalMeasureField": {
+                        "fieldId": "wait-value",
+                        "column": {
+                          "dataSetIdentifier": "Operational KPIs",
+                          "columnName": "service_wait_days"
+                        },
+                        "aggregationFunction": {
+                          "simpleNumericalAggregation": "AVERAGE"
+                        }
+                      }
+                    }
+                  ],
+                  "targetValues": [],
+                  "trendGroups": [
+                    {
+                      "dateDimensionField": {
+                        "fieldId": "month-trend",
+                        "column": {
+                          "dataSetIdentifier": "Operational KPIs",
+                          "columnName": "month_date"
+                        },
+                        "dateGranularity": "MONTH",
+                        "hierarchyId": "month-trend"
+                      }
+                    }
+                  ]
+                },
+                "sortConfiguration": {},
+                "kpiOptions": {
+                  "progressBar": {
+                    "visibility": "VISIBLE"
+                  },
+                  "comparison": {
+                    "comparisonMethod": "PERCENT_DIFFERENCE"
+                  },
+                  "sparkline": {
+                    "visibility": "VISIBLE",
+                    "type": "AREA"
+                  }
+                }
+              },
+              "conditionalFormatting": {
+                "conditionalFormattingOptions": [
+                  {
+                    "comparisonValue": {
+                      "textColor": {
+                        "solid": {
+                          "expression": "difference(AVG({service_wait_days}),[AVG({service_wait_days}) DESC],1,[]) > 0",
+                          "color": "#DE3B00"
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "comparisonValue": {
+                      "textColor": {
+                        "solid": {
+                          "expression": "difference(AVG({service_wait_days}),[AVG({service_wait_days}) DESC],1,[]) < 0",
+                          "color": "#2CAD00"
+                        }
+                      }
+                    }
+                  }
+                ]
+              },
+              "actions": [],
+              "columnHierarchies": [
+                {
+                  "dateTimeHierarchy": {
+                    "hierarchyId": "month-trend"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "kpiVisual": {
+              "visualId": "32328b83-2444-4f82-8625-2b7b317bb798_e645173e-a1cc-428e-af39-8b28198699fc",
+              "title": {
+                "visibility": "VISIBLE",
+                "formatText": {
+                  "plainText": "Churn Risk Revenue"
+                }
+              },
+              "subtitle": {
+                "visibility": "VISIBLE",
+                "formatText": {
+                  "richText": "<visual-subtitle>Annual revenue at risk from potential churn</visual-subtitle>"
+                }
+              },
+              "chartConfiguration": {
+                "fieldWells": {
+                  "values": [
+                    {
+                      "numericalMeasureField": {
+                        "fieldId": "churn-rev-value",
+                        "column": {
+                          "dataSetIdentifier": "Operational KPIs",
+                          "columnName": "churn_risk_revenue"
+                        },
+                        "aggregationFunction": {
+                          "simpleNumericalAggregation": "MAX"
+                        }
+                      }
+                    }
+                  ],
+                  "targetValues": [],
+                  "trendGroups": [
+                    {
+                      "dateDimensionField": {
+                        "fieldId": "month-trend",
+                        "column": {
+                          "dataSetIdentifier": "Operational KPIs",
+                          "columnName": "month_date"
+                        },
+                        "dateGranularity": "MONTH",
+                        "hierarchyId": "month-trend"
+                      }
+                    }
+                  ]
+                },
+                "sortConfiguration": {},
+                "kpiOptions": {
+                  "progressBar": {
+                    "visibility": "VISIBLE"
+                  },
+                  "comparison": {
+                    "comparisonMethod": "PERCENT_DIFFERENCE"
+                  },
+                  "sparkline": {
+                    "visibility": "VISIBLE",
+                    "type": "AREA"
+                  }
+                }
+              },
+              "conditionalFormatting": {
+                "conditionalFormattingOptions": [
+                  {
+                    "comparisonValue": {
+                      "textColor": {
+                        "solid": {
+                          "expression": "difference(MAX({churn_risk_revenue}),[MAX({churn_risk_revenue}) DESC],1,[]) > 0",
+                          "color": "#DE3B00"
+                        }
+                      }
+                    }
+                  }
+                ]
+              },
+              "actions": [],
+              "columnHierarchies": [
+                {
+                  "dateTimeHierarchy": {
+                    "hierarchyId": "month-trend"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "kpiVisual": {
+              "visualId": "32328b83-2444-4f82-8625-2b7b317bb798_2450e248-978b-4274-865c-25ca8b41293a",
+              "title": {
+                "visibility": "VISIBLE",
+                "formatText": {
+                  "plainText": "Churn Risk Customers"
+                }
+              },
+              "subtitle": {
+                "visibility": "VISIBLE",
+                "formatText": {
+                  "richText": "<visual-subtitle>Customers likely to leave in next 90 days</visual-subtitle>"
+                }
+              },
+              "chartConfiguration": {
+                "fieldWells": {
+                  "values": [
+                    {
+                      "numericalMeasureField": {
+                        "fieldId": "churn-cust-value",
+                        "column": {
+                          "dataSetIdentifier": "Operational KPIs",
+                          "columnName": "churn_risk_customers"
+                        },
+                        "aggregationFunction": {
+                          "simpleNumericalAggregation": "MAX"
+                        }
+                      }
+                    }
+                  ],
+                  "targetValues": [],
+                  "trendGroups": [
+                    {
+                      "dateDimensionField": {
+                        "fieldId": "month-trend",
+                        "column": {
+                          "dataSetIdentifier": "Operational KPIs",
+                          "columnName": "month_date"
+                        },
+                        "dateGranularity": "MONTH",
+                        "hierarchyId": "month-trend"
+                      }
+                    }
+                  ]
+                },
+                "sortConfiguration": {},
+                "kpiOptions": {
+                  "progressBar": {
+                    "visibility": "VISIBLE"
+                  },
+                  "comparison": {
+                    "comparisonMethod": "PERCENT_DIFFERENCE"
+                  },
+                  "sparkline": {
+                    "visibility": "VISIBLE",
+                    "type": "AREA"
+                  }
+                }
+              },
+              "conditionalFormatting": {
+                "conditionalFormattingOptions": [
+                  {
+                    "comparisonValue": {
+                      "textColor": {
+                        "solid": {
+                          "expression": "difference(MAX({churn_risk_customers}),[MAX({churn_risk_customers}) DESC],1,[]) > 0",
+                          "color": "#DE3B00"
+                        }
+                      }
+                    }
+                  }
+                ]
+              },
+              "actions": [],
+              "columnHierarchies": [
+                {
+                  "dateTimeHierarchy": {
+                    "hierarchyId": "month-trend"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "tableVisual": {
+              "visualId": "32328b83-2444-4f82-8625-2b7b317bb798_fc2d61a8-9841-47a0-b99b-5567ab8dbb4e",
+              "title": {
+                "visibility": "VISIBLE",
+                "formatText": {
+                  "plainText": "Top At-Risk Customers"
+                }
+              },
+              "subtitle": {
+                "visibility": "VISIBLE"
+              },
+              "chartConfiguration": {
+                "fieldWells": {
+                  "tableAggregatedFieldWells": {
+                    "groupBy": [
+                      {
+                        "categoricalDimensionField": {
+                          "fieldId": "customer-id",
+                          "column": {
+                            "dataSetIdentifier": "Customer 360",
+                            "columnName": "customer_id"
+                          }
+                        }
+                      }
+                    ],
+                    "values": [
+                      {
+                        "numericalMeasureField": {
+                          "fieldId": "health-score",
+                          "column": {
+                            "dataSetIdentifier": "Customer 360",
+                            "columnName": "health_score"
+                          },
+                          "aggregationFunction": {
+                            "simpleNumericalAggregation": "AVERAGE"
+                          }
+                        }
+                      },
+                      {
+                        "numericalMeasureField": {
+                          "fieldId": "clv",
+                          "column": {
+                            "dataSetIdentifier": "Customer 360",
+                            "columnName": "clv"
+                          },
+                          "aggregationFunction": {
+                            "simpleNumericalAggregation": "SUM"
+                          }
+                        }
+                      },
+                      {
+                        "numericalMeasureField": {
+                          "fieldId": "battery-cases",
+                          "column": {
+                            "dataSetIdentifier": "Customer 360",
+                            "columnName": "battery_related_cases"
+                          },
+                          "aggregationFunction": {
+                            "simpleNumericalAggregation": "SUM"
+                          }
+                        }
+                      },
+                      {
+                        "numericalMeasureField": {
+                          "fieldId": "total-cases",
+                          "column": {
+                            "dataSetIdentifier": "Customer 360",
+                            "columnName": "total_cases"
+                          },
+                          "aggregationFunction": {
+                            "simpleNumericalAggregation": "SUM"
+                          }
+                        }
+                      },
+                      {
+                        "numericalMeasureField": {
+                          "fieldId": "open-cases",
+                          "column": {
+                            "dataSetIdentifier": "Customer 360",
+                            "columnName": "open_cases"
+                          },
+                          "aggregationFunction": {
+                            "simpleNumericalAggregation": "SUM"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                },
+                "sortConfiguration": {
+                  "rowSort": [
+                    {
+                      "fieldSort": {
+                        "fieldId": "clv",
+                        "direction": "DESC"
+                      }
+                    }
+                  ]
+                }
+              },
+              "actions": []
+            }
+          },
+          {
+            "pieChartVisual": {
+              "visualId": "32328b83-2444-4f82-8625-2b7b317bb798_875f0603-b041-49b4-b9ad-3b53821c845f",
+              "title": {
+                "visibility": "VISIBLE",
+                "formatText": {
+                  "plainText": "At-Risk Customer Distribution"
+                }
+              },
+              "subtitle": {
+                "visibility": "VISIBLE"
+              },
+              "chartConfiguration": {
+                "fieldWells": {
+                  "pieChartAggregatedFieldWells": {
+                    "category": [
+                      {
+                        "categoricalDimensionField": {
+                          "fieldId": "health-segment",
+                          "column": {
+                            "dataSetIdentifier": "Customer 360",
+                            "columnName": "health_segment"
+                          }
+                        }
+                      }
+                    ],
+                    "values": [
+                      {
+                        "numericalMeasureField": {
+                          "fieldId": "customer-count",
+                          "column": {
+                            "dataSetIdentifier": "Customer 360",
+                            "columnName": "health_score"
+                          },
+                          "aggregationFunction": {
+                            "simpleNumericalAggregation": "COUNT"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                },
+                "sortConfiguration": {},
+                "donutOptions": {
+                  "arcOptions": {
+                    "arcThickness": "MEDIUM"
+                  }
+                },
+                "legend": {
+                  "visibility": "VISIBLE",
+                  "position": "RIGHT"
+                }
+              },
+              "actions": [],
+              "columnHierarchies": []
+            }
+          },
+          {
+            "scatterPlotVisual": {
+              "visualId": "32328b83-2444-4f82-8625-2b7b317bb798_396c0fcb-053a-4f5e-ace4-c1a8de959729",
+              "title": {
+                "visibility": "VISIBLE",
+                "formatText": {
+                  "plainText": "Health Score vs Revenue"
+                }
+              },
+              "subtitle": {
+                "visibility": "VISIBLE"
+              },
+              "chartConfiguration": {
+                "fieldWells": {
+                  "scatterPlotCategoricallyAggregatedFieldWells": {
+                    "xAxis": [
+                      {
+                        "numericalMeasureField": {
+                          "fieldId": "health-x",
+                          "column": {
+                            "dataSetIdentifier": "Customer 360",
+                            "columnName": "health_score"
+                          },
+                          "aggregationFunction": {
+                            "simpleNumericalAggregation": "AVERAGE"
+                          }
+                        }
+                      }
+                    ],
+                    "yAxis": [
+                      {
+                        "numericalMeasureField": {
+                          "fieldId": "clv-y",
+                          "column": {
+                            "dataSetIdentifier": "Customer 360",
+                            "columnName": "clv"
+                          },
+                          "aggregationFunction": {
+                            "simpleNumericalAggregation": "SUM"
+                          }
+                        }
+                      }
+                    ],
+                    "category": [
+                      {
+                        "categoricalDimensionField": {
+                          "fieldId": "customer-cat",
+                          "column": {
+                            "dataSetIdentifier": "Customer 360",
+                            "columnName": "customer_id"
+                          }
+                        }
+                      }
+                    ],
+                    "size": [
+                      {
+                        "numericalMeasureField": {
+                          "fieldId": "cases-size",
+                          "column": {
+                            "dataSetIdentifier": "Customer 360",
+                            "columnName": "total_cases"
+                          },
+                          "aggregationFunction": {
+                            "simpleNumericalAggregation": "SUM"
+                          }
+                        }
+                      }
+                    ],
+                    "label": []
+                  }
+                },
+                "legend": {
+                  "visibility": "HIDDEN"
+                }
+              },
+              "actions": [],
+              "columnHierarchies": []
+            }
+          },
+          {
+            "kpiVisual": {
+              "visualId": "32328b83-2444-4f82-8625-2b7b317bb798_8903db62-61ef-4947-8fc8-3a16f9d96a37",
+              "title": {
+                "visibility": "VISIBLE",
+                "formatText": {
+                  "plainText": "Battery/Charging Cases"
+                }
+              },
+              "subtitle": {
+                "visibility": "VISIBLE"
+              },
+              "chartConfiguration": {
+                "fieldWells": {
+                  "values": [
+                    {
+                      "numericalMeasureField": {
+                        "fieldId": "battery-value",
+                        "column": {
+                          "dataSetIdentifier": "Issue Categories",
+                          "columnName": "battery_cases"
+                        },
+                        "aggregationFunction": {
+                          "simpleNumericalAggregation": "SUM"
+                        }
+                      }
+                    }
+                  ],
+                  "targetValues": [],
+                  "trendGroups": [
+                    {
+                      "dateDimensionField": {
+                        "fieldId": "month-trend",
+                        "column": {
+                          "dataSetIdentifier": "Issue Categories",
+                          "columnName": "month_date"
+                        },
+                        "dateGranularity": "MONTH",
+                        "hierarchyId": "9a1da883-1095-4ff5-8c09-d3b78149ffc7"
+                      }
+                    }
+                  ]
+                },
+                "sortConfiguration": {},
+                "kpiOptions": {
+                  "progressBar": {
+                    "visibility": "VISIBLE"
+                  },
+                  "comparison": {
+                    "comparisonMethod": "PERCENT_DIFFERENCE"
+                  },
+                  "primaryValueDisplayType": "ACTUAL",
+                  "sparkline": {
+                    "visibility": "VISIBLE",
+                    "type": "AREA"
+                  }
+                }
+              },
+              "conditionalFormatting": {
+                "conditionalFormattingOptions": [
+                  {
+                    "comparisonValue": {
+                      "textColor": {
+                        "solid": {
+                          "expression": "percentDifference(SUM({battery_cases}),[SUM({battery_cases}) DESC],1,[]) > 0.0",
+                          "color": "#DE3B00"
+                        }
+                      }
+                    }
+                  }
+                ]
+              },
+              "actions": [],
+              "columnHierarchies": [
+                {
+                  "dateTimeHierarchy": {
+                    "hierarchyId": "9a1da883-1095-4ff5-8c09-d3b78149ffc7",
+                    "drillDownFilters": []
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "kpiVisual": {
+              "visualId": "32328b83-2444-4f82-8625-2b7b317bb798_a246d19a-2b17-4c01-999d-db5283597839",
+              "title": {
+                "visibility": "VISIBLE",
+                "formatText": {
+                  "plainText": "ADAS Cases"
+                }
+              },
+              "subtitle": {
+                "visibility": "VISIBLE"
+              },
+              "chartConfiguration": {
+                "fieldWells": {
+                  "values": [
+                    {
+                      "numericalMeasureField": {
+                        "fieldId": "adas-value",
+                        "column": {
+                          "dataSetIdentifier": "Issue Categories",
+                          "columnName": "adas_cases"
+                        },
+                        "aggregationFunction": {
+                          "simpleNumericalAggregation": "SUM"
+                        }
+                      }
+                    }
+                  ],
+                  "targetValues": [],
+                  "trendGroups": [
+                    {
+                      "dateDimensionField": {
+                        "fieldId": "month-trend",
+                        "column": {
+                          "dataSetIdentifier": "Issue Categories",
+                          "columnName": "month_date"
+                        },
+                        "dateGranularity": "MONTH",
+                        "hierarchyId": "597f72cb-728d-43c1-873e-072b84d53529"
+                      }
+                    }
+                  ]
+                },
+                "sortConfiguration": {},
+                "kpiOptions": {
+                  "progressBar": {
+                    "visibility": "VISIBLE"
+                  },
+                  "comparison": {
+                    "comparisonMethod": "PERCENT_DIFFERENCE"
+                  },
+                  "primaryValueDisplayType": "ACTUAL",
+                  "sparkline": {
+                    "visibility": "VISIBLE",
+                    "type": "AREA"
+                  }
+                }
+              },
+              "conditionalFormatting": {
+                "conditionalFormattingOptions": [
+                  {
+                    "comparisonValue": {
+                      "textColor": {
+                        "solid": {
+                          "expression": "difference(SUM({adas_cases}),[SUM({adas_cases}) DESC],1,[]) > 0",
+                          "color": "#DE3B00"
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "comparisonValue": {
+                      "textColor": {
+                        "solid": {
+                          "expression": "difference(SUM({adas_cases}),[SUM({adas_cases}) DESC],1,[]) < 0",
+                          "color": "#2CAD00"
+                        }
+                      }
+                    }
+                  }
+                ]
+              },
+              "actions": [],
+              "columnHierarchies": [
+                {
+                  "dateTimeHierarchy": {
+                    "hierarchyId": "597f72cb-728d-43c1-873e-072b84d53529",
+                    "drillDownFilters": []
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "kpiVisual": {
+              "visualId": "32328b83-2444-4f82-8625-2b7b317bb798_7101cd79-c6ca-4181-861b-7a6ae35f6a13",
+              "title": {
+                "visibility": "VISIBLE",
+                "formatText": {
+                  "plainText": "Infotainment Cases"
+                }
+              },
+              "subtitle": {
+                "visibility": "VISIBLE"
+              },
+              "chartConfiguration": {
+                "fieldWells": {
+                  "values": [
+                    {
+                      "numericalMeasureField": {
+                        "fieldId": "infotainment-value",
+                        "column": {
+                          "dataSetIdentifier": "Issue Categories",
+                          "columnName": "infotainment_cases"
+                        },
+                        "aggregationFunction": {
+                          "simpleNumericalAggregation": "SUM"
+                        }
+                      }
+                    }
+                  ],
+                  "targetValues": [],
+                  "trendGroups": [
+                    {
+                      "dateDimensionField": {
+                        "fieldId": "month-trend",
+                        "column": {
+                          "dataSetIdentifier": "Issue Categories",
+                          "columnName": "month_date"
+                        },
+                        "dateGranularity": "MONTH",
+                        "hierarchyId": "c38c0319-180e-4866-a8d0-f5c2884b2931"
+                      }
+                    }
+                  ]
+                },
+                "sortConfiguration": {},
+                "kpiOptions": {
+                  "progressBar": {
+                    "visibility": "VISIBLE"
+                  },
+                  "comparison": {
+                    "comparisonMethod": "PERCENT_DIFFERENCE"
+                  },
+                  "primaryValueDisplayType": "ACTUAL",
+                  "sparkline": {
+                    "visibility": "VISIBLE",
+                    "type": "AREA"
+                  }
+                }
+              },
+              "conditionalFormatting": {
+                "conditionalFormattingOptions": [
+                  {
+                    "comparisonValue": {
+                      "textColor": {
+                        "solid": {
+                          "expression": "difference(SUM({infotainment_cases}),[SUM({infotainment_cases}) DESC],1,[]) > 0",
+                          "color": "#DE3B00"
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "comparisonValue": {
+                      "textColor": {
+                        "solid": {
+                          "expression": "difference(SUM({infotainment_cases}),[SUM({infotainment_cases}) DESC],1,[]) < 0",
+                          "color": "#2CAD00"
+                        }
+                      }
+                    }
+                  }
+                ]
+              },
+              "actions": [],
+              "columnHierarchies": [
+                {
+                  "dateTimeHierarchy": {
+                    "hierarchyId": "c38c0319-180e-4866-a8d0-f5c2884b2931",
+                    "drillDownFilters": []
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "lineChartVisual": {
+              "visualId": "32328b83-2444-4f82-8625-2b7b317bb798_e2e74a3b-f05b-4813-9f64-437b4aa253e6",
+              "title": {
+                "visibility": "VISIBLE",
+                "formatText": {
+                  "plainText": "Issue Category Trends Over Time"
+                }
+              },
+              "subtitle": {
+                "visibility": "VISIBLE"
+              },
+              "chartConfiguration": {
+                "fieldWells": {
+                  "lineChartAggregatedFieldWells": {
+                    "category": [
+                      {
+                        "dateDimensionField": {
+                          "fieldId": "month-cat",
+                          "column": {
+                            "dataSetIdentifier": "Issue Categories",
+                            "columnName": "month_date"
+                          },
+                          "dateGranularity": "MONTH",
+                          "hierarchyId": "month-cat"
+                        }
+                      }
+                    ],
+                    "values": [
+                      {
+                        "numericalMeasureField": {
+                          "fieldId": "battery-val",
+                          "column": {
+                            "dataSetIdentifier": "Issue Categories",
+                            "columnName": "battery_cases"
+                          },
+                          "aggregationFunction": {
+                            "simpleNumericalAggregation": "SUM"
+                          }
+                        }
+                      },
+                      {
+                        "numericalMeasureField": {
+                          "fieldId": "adas-val",
+                          "column": {
+                            "dataSetIdentifier": "Issue Categories",
+                            "columnName": "adas_cases"
+                          },
+                          "aggregationFunction": {
+                            "simpleNumericalAggregation": "SUM"
+                          }
+                        }
+                      },
+                      {
+                        "numericalMeasureField": {
+                          "fieldId": "connectivity-val",
+                          "column": {
+                            "dataSetIdentifier": "Issue Categories",
+                            "columnName": "connectivity_cases"
+                          },
+                          "aggregationFunction": {
+                            "simpleNumericalAggregation": "SUM"
+                          }
+                        }
+                      },
+                      {
+                        "numericalMeasureField": {
+                          "fieldId": "infotainment-val",
+                          "column": {
+                            "dataSetIdentifier": "Issue Categories",
+                            "columnName": "infotainment_cases"
+                          },
+                          "aggregationFunction": {
+                            "simpleNumericalAggregation": "SUM"
+                          }
+                        }
+                      }
+                    ],
+                    "colors": []
+                  }
+                },
+                "sortConfiguration": {},
+                "type": "AREA",
+                "legend": {
+                  "visibility": "VISIBLE",
+                  "position": "RIGHT"
+                }
+              },
+              "actions": [],
+              "columnHierarchies": [
+                {
+                  "dateTimeHierarchy": {
+                    "hierarchyId": "month-cat"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "kpiVisual": {
+              "visualId": "32328b83-2444-4f82-8625-2b7b317bb798_5fa0808c-5db2-4a43-ac21-67d76cb81df5",
+              "title": {
+                "visibility": "VISIBLE",
+                "formatText": {
+                  "plainText": "Connectivity Cases"
+                }
+              },
+              "subtitle": {
+                "visibility": "VISIBLE"
+              },
+              "chartConfiguration": {
+                "fieldWells": {
+                  "values": [
+                    {
+                      "numericalMeasureField": {
+                        "fieldId": "connectivity-value",
+                        "column": {
+                          "dataSetIdentifier": "Issue Categories",
+                          "columnName": "connectivity_cases"
+                        },
+                        "aggregationFunction": {
+                          "simpleNumericalAggregation": "SUM"
+                        }
+                      }
+                    }
+                  ],
+                  "targetValues": [],
+                  "trendGroups": [
+                    {
+                      "dateDimensionField": {
+                        "fieldId": "month-trend",
+                        "column": {
+                          "dataSetIdentifier": "Issue Categories",
+                          "columnName": "month_date"
+                        },
+                        "dateGranularity": "MONTH",
+                        "hierarchyId": "60801c30-7986-4b0f-a3fe-cec82cfd324f"
+                      }
+                    }
+                  ]
+                },
+                "sortConfiguration": {},
+                "kpiOptions": {
+                  "progressBar": {
+                    "visibility": "VISIBLE"
+                  },
+                  "comparison": {
+                    "comparisonMethod": "PERCENT_DIFFERENCE"
+                  },
+                  "primaryValueDisplayType": "ACTUAL",
+                  "sparkline": {
+                    "visibility": "VISIBLE",
+                    "type": "AREA"
+                  }
+                }
+              },
+              "conditionalFormatting": {
+                "conditionalFormattingOptions": [
+                  {
+                    "comparisonValue": {
+                      "textColor": {
+                        "solid": {
+                          "expression": "difference(SUM({connectivity_cases}),[SUM({connectivity_cases}) DESC],1,[]) > 0",
+                          "color": "#DE3B00"
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "comparisonValue": {
+                      "textColor": {
+                        "solid": {
+                          "expression": "difference(SUM({connectivity_cases}),[SUM({connectivity_cases}) DESC],1,[]) < 0",
+                          "color": "#2CAD00"
+                        }
+                      }
+                    }
+                  }
+                ]
+              },
+              "actions": [],
+              "columnHierarchies": [
+                {
+                  "dateTimeHierarchy": {
+                    "hierarchyId": "60801c30-7986-4b0f-a3fe-cec82cfd324f",
+                    "drillDownFilters": []
+                  }
+                }
+              ]
+            }
+          }
+        ],
+        "layouts": [
+          {
+            "configuration": {
+              "freeFormLayout": {
+                "elements": [
+                  {
+                    "elementId": "32328b83-2444-4f82-8625-2b7b317bb798_1a97bf5c-6b5f-46d8-ad34-ddd81bda902d",
+                    "elementType": "VISUAL",
+                    "xAxisLocation": "416px",
+                    "yAxisLocation": "16px",
+                    "width": "384px",
+                    "height": "240px",
+                    "visibility": "VISIBLE"
+                  },
+                  {
+                    "elementId": "32328b83-2444-4f82-8625-2b7b317bb798_db5698a2-623a-41b8-b0d8-ffbb6df8a2a3",
+                    "elementType": "VISUAL",
+                    "xAxisLocation": "816px",
+                    "yAxisLocation": "16px",
+                    "width": "336px",
+                    "height": "240px",
+                    "visibility": "VISIBLE"
+                  },
+                  {
+                    "elementId": "32328b83-2444-4f82-8625-2b7b317bb798_fe92b542-2a2a-4ed4-b909-56108ba52f71",
+                    "elementType": "VISUAL",
+                    "xAxisLocation": "16px",
+                    "yAxisLocation": "272px",
+                    "width": "384px",
+                    "height": "256px",
+                    "visibility": "VISIBLE"
+                  },
+                  {
+                    "elementId": "32328b83-2444-4f82-8625-2b7b317bb798_f37dcf4e-441e-42f6-81ae-8b6435c3ef31",
+                    "elementType": "VISUAL",
+                    "xAxisLocation": "1168px",
+                    "yAxisLocation": "16px",
+                    "width": "336px",
+                    "height": "240px",
+                    "visibility": "VISIBLE"
+                  },
+                  {
+                    "elementId": "32328b83-2444-4f82-8625-2b7b317bb798_2450e248-978b-4274-865c-25ca8b41293a",
+                    "elementType": "VISUAL",
+                    "xAxisLocation": "416px",
+                    "yAxisLocation": "272px",
+                    "width": "384px",
+                    "height": "256px",
+                    "visibility": "VISIBLE"
+                  },
+                  {
+                    "elementId": "32328b83-2444-4f82-8625-2b7b317bb798_e645173e-a1cc-428e-af39-8b28198699fc",
+                    "elementType": "VISUAL",
+                    "xAxisLocation": "816px",
+                    "yAxisLocation": "272px",
+                    "width": "336px",
+                    "height": "256px",
+                    "visibility": "VISIBLE"
+                  },
+                  {
+                    "elementId": "32328b83-2444-4f82-8625-2b7b317bb798_fe038669-9810-4af9-a47b-ee1bac2784c2",
+                    "elementType": "VISUAL",
+                    "xAxisLocation": "16px",
+                    "yAxisLocation": "16px",
+                    "width": "384px",
+                    "height": "240px",
+                    "visibility": "VISIBLE"
+                  },
+                  {
+                    "elementId": "32328b83-2444-4f82-8625-2b7b317bb798_753c47f5-5d76-4435-a7b2-d487d9d52a9b",
+                    "elementType": "VISUAL",
+                    "xAxisLocation": "1168px",
+                    "yAxisLocation": "272px",
+                    "width": "336px",
+                    "height": "256px",
+                    "visibility": "VISIBLE"
+                  },
+                  {
+                    "elementId": "32328b83-2444-4f82-8625-2b7b317bb798_875f0603-b041-49b4-b9ad-3b53821c845f",
+                    "elementType": "VISUAL",
+                    "xAxisLocation": "16px",
+                    "yAxisLocation": "544px",
+                    "width": "784px",
+                    "height": "496px",
+                    "visibility": "VISIBLE"
+                  },
+                  {
+                    "elementId": "32328b83-2444-4f82-8625-2b7b317bb798_fc2d61a8-9841-47a0-b99b-5567ab8dbb4e",
+                    "elementType": "VISUAL",
+                    "xAxisLocation": "816px",
+                    "yAxisLocation": "544px",
+                    "width": "688px",
+                    "height": "496px",
+                    "visibility": "VISIBLE"
+                  },
+                  {
+                    "elementId": "32328b83-2444-4f82-8625-2b7b317bb798_396c0fcb-053a-4f5e-ace4-c1a8de959729",
+                    "elementType": "VISUAL",
+                    "xAxisLocation": "16px",
+                    "yAxisLocation": "1056px",
+                    "width": "784px",
+                    "height": "528px",
+                    "visibility": "VISIBLE"
+                  },
+                  {
+                    "elementId": "32328b83-2444-4f82-8625-2b7b317bb798_8903db62-61ef-4947-8fc8-3a16f9d96a37",
+                    "elementType": "VISUAL",
+                    "xAxisLocation": "1520px",
+                    "yAxisLocation": "16px",
+                    "width": "400px",
+                    "height": "240px",
+                    "visibility": "VISIBLE"
+                  },
+                  {
+                    "elementId": "32328b83-2444-4f82-8625-2b7b317bb798_a246d19a-2b17-4c01-999d-db5283597839",
+                    "elementType": "VISUAL",
+                    "xAxisLocation": "1520px",
+                    "yAxisLocation": "272px",
+                    "width": "400px",
+                    "height": "256px",
+                    "visibility": "VISIBLE"
+                  },
+                  {
+                    "elementId": "32328b83-2444-4f82-8625-2b7b317bb798_5fa0808c-5db2-4a43-ac21-67d76cb81df5",
+                    "elementType": "VISUAL",
+                    "xAxisLocation": "1520px",
+                    "yAxisLocation": "544px",
+                    "width": "400px",
+                    "height": "240px",
+                    "visibility": "VISIBLE"
+                  },
+                  {
+                    "elementId": "32328b83-2444-4f82-8625-2b7b317bb798_7101cd79-c6ca-4181-861b-7a6ae35f6a13",
+                    "elementType": "VISUAL",
+                    "xAxisLocation": "1520px",
+                    "yAxisLocation": "800px",
+                    "width": "400px",
+                    "height": "240px",
+                    "visibility": "VISIBLE"
+                  },
+                  {
+                    "elementId": "32328b83-2444-4f82-8625-2b7b317bb798_e2e74a3b-f05b-4813-9f64-437b4aa253e6",
+                    "elementType": "VISUAL",
+                    "xAxisLocation": "816px",
+                    "yAxisLocation": "1056px",
+                    "width": "1104px",
+                    "height": "528px",
+                    "visibility": "VISIBLE"
+                  }
+                ],
+                "canvasSizeOptions": {
+                  "screenCanvasSizeOptions": {
+                    "optimizedViewPortWidth": "1920px"
+                  }
+                }
+              }
+            }
+          }
+        ],
+        "contentType": "INTERACTIVE"
+      }
+    ],
+    "calculatedFields": [
+      {
+        "dataSetIdentifier": "Top Revenue Stream",
+        "name": "stream_name_display",
+        "expression": "ifelse(\n  count({revenue_stream}) > 0,\n  \"Warranty\",\n  \"N/A\"\n)"
+      }
+    ],
+    "parameterDeclarations": [],
+    "filterGroups": [],
+    "analysisDefaults": {
+      "defaultNewSheetConfiguration": {
+        "interactiveLayoutConfiguration": {
+          "grid": {
+            "canvasSizeOptions": {
+              "screenCanvasSizeOptions": {
+                "resizeOption": "RESPONSIVE"
+              }
+            }
+          }
+        },
+        "sheetContentType": "INTERACTIVE"
+      }
+    },
+    "options": {
+      "qbusinessInsightsStatus": "DISABLED",
+      "customActionDefaults": {
+        "highlightOperation": {
+          "trigger": "DATA_POINT_HOVER"
+        }
+      }
+    }
+  },
+  "validationStrategy": {
+    "mode": "LENIENT"
+  }
+}

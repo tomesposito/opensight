@@ -104,9 +104,11 @@ test('all real members survive structural JSON serialization and ZIP repacking u
 test('unobserved properties, variants and feature arrays survive without casing conversion', async () => {
   const raw = sample('analysis');
   raw.futureEnvelope = { PascalKey: [null, true] };
-  raw.definition.calculatedFields = [{ futureCalculation: { preserve: true } }];
-  raw.definition.parameterDeclarations = [{ futureParameter: { preserve: true } }];
-  raw.definition.filterGroups = [{ futureFilter: { preserve: true } }];
+  raw.definition.calculatedFields = [{ dataSetIdentifier: 'us_simplified', name: 'future', expression: '{deaths}', futureCalculation: { preserve: true } }];
+  raw.definition.parameterDeclarations = [{ futureParameterDeclaration: { preserve: true } }];
+  raw.definition.filterGroups = [{ filterGroupId: 'future', crossDataset: 'SINGLE_DATASET',
+    scopeConfiguration: { allSheets: {} }, filters: [{ futureFilter: { preserve: true } }],
+  }];
   raw.definition.sheets[0].visuals.push({ futureVisual: { visualId: 'future', opaque: [null, 7] } });
   const wells = raw.definition.sheets[0].visuals[0].pieChartVisual.chartConfiguration.fieldWells.pieChartAggregatedFieldWells;
   wells.category.push({ futureDimension: { arbitrary: true } });
@@ -120,6 +122,8 @@ test('unobserved properties, variants and feature arrays survive without casing 
   assert.equal(summary.calculatedFieldCount, 1);
   assert.equal(summary.parameterCount, 1);
   assert.equal(summary.filterGroupCount, 1);
+  assert.equal(summary.parameters[0].supported, false);
+  assert.equal(summary.filterGroups[0].filters[0].supported, false);
   assert.deepEqual(raw, before);
 });
 
@@ -127,7 +131,7 @@ test('absent optional fields are not inserted or changed into empty arrays', asy
   const raw = { resourceType: 'analysis', analysisId: 'a', name: 'A', definition: { dataSetIdentifierDeclarations: [] } };
   const bundle = await parseQsBundle(pack({ 'analysis/a.json': raw }));
   assert.deepEqual(bundle.members[0].resource, raw);
-  assert.deepEqual(summarizeQsBundle(bundle).members[0].definition, { dataSets: [], sheets: [], visuals: [], calculatedFieldCount: 0, parameterCount: 0, filterGroupCount: 0 });
+  assert.deepEqual(summarizeQsBundle(bundle).members[0].definition, { dataSets: [], sheets: [], visuals: [], calculatedFields: [], parameters: [], filterGroups: [], calculatedFieldCount: 0, parameterCount: 0, filterGroupCount: 0, filterCount: 0 });
 });
 
 const piePath = ['definition', 'sheets', 0, 'visuals', 0, 'pieChartVisual'];

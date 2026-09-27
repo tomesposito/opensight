@@ -84,7 +84,8 @@ const summary = summarizeQsBundle(bundle);
 `parseQsBundle(Uint8Array)` reads in-memory ZIPs; `parseBundleResource(unknown)`
 validates a standalone lowercase envelope. `loadBundle` remains the historical
 alias for the synchronous synthetic JSON loader. `summarizeQsBundle` inventories
-all resources and counts opaque feature arrays. The CLI accepts `.qs` paths and
+all resources and reports feature counts plus provisional parameter, filter and
+calculation inventories. The CLI accepts `.qs` paths and
 prints this summary as JSON; synthetic JSON CLI output stays unchanged.
 
 The [yauzl ZIP reader](https://github.com/thejoshwolfe/yauzl) reads the central
@@ -106,7 +107,14 @@ no query or rendering capability; unknown semantics must still fail execution.
 ## Known limits and remaining evidence
 
 - Calculated fields, parameter declarations, filter groups, visual actions and
-  column hierarchies are empty here. Their item schemas remain `unknown[]`.
+  column hierarchies are empty here. Their raw item types remain `unknown[]`.
+  [Synthetic conversions](../../packages/bundle-parser/test/fixtures/synthetic/README.md)
+  now exercise nonempty parameters, category/numeric-range/relative-date/time-range
+  filters, calculations and additional visuals. Their validators and typed
+  summaries are provisional, not new evidence about real bundle semantics.
+  Calculations preserve expressions and list direct braced field/parameter
+  references without evaluation. Unknown parameter/filter variants are marked
+  unsupported; malformed known structures raise located `ValidationError`s.
 - Layout internals, appearance options, publish options and dataset preparation
   graphs are preserved with only object/array container validation.
 - The sample proves one pie, an Athena source and a SPICE dataset. Tom's complex
