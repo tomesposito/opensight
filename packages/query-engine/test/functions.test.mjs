@@ -5,6 +5,11 @@ import { parseExpression, expressionSql, evaluateExpression } from '@opensight/q
 
 // One-based Unicode positions, strict null propagation and QuickSight argument order.
 export const scalarCases = [
+  ['abs(-3)', 3], ['ceil(-1.2)', -1], ['floor(-1.2)', -2], ['round(-1.25, 1)', -1.3], ['round(125, -1)', 130],
+  ['sqrt(9)', 3], ['sqrt(-1)', null], ['power(2, 3)', 8], ['power(-2, 0.5)', null], ['exp(0)', 1], ['exp(1000)', null],
+  ['ln(1)', 0], ['ln(0)', null], ['log(100)', 2], ['log(8, 2)', 3], ['log(8, 1)', null],
+  ['mod(-5, 3)', -2], ['mod(5, 0)', null], ['pi()', Math.PI], ['decimalToInt(-2.9)', -2], ['abs(null)', null],
+  ['toDecimal(12)', 12], ["parseDecimal('12.50')", 12.5], ["parseInt('-12.50')", -12], ["parseInt('abc')", null], ["parseDecimal('12x')", null],
   ["concat('East', ' / ', 'Hardware')", 'East / Hardware'], ["concat('x', null)", null],
   ["substring('a😀bc', 2, 2)", '😀b'], ["substring('abc', 0, 2)", null],
   ["left('abc', 2)", 'ab'], ["right('abc', 2)", 'bc'], ["right('abc', 0)", ''],

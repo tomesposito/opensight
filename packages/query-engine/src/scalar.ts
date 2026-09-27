@@ -4,7 +4,26 @@ export type CallExpression = Extract<RowExpression, { kind: 'call' }>;
 export function scalarValue(name: string, args: readonly ResultValue[]): ResultValue {
   if (args.some(a => a === null)) return null;
   const [a, b, c] = args, chars = [...String(a)];
+  const finite = (n: number): ResultValue => Number.isFinite(n) ? n : null;
   switch (name) {
+    case 'abs': return Math.abs(Number(a));
+    case 'ceil': return Math.ceil(Number(a));
+    case 'floor': return Math.floor(Number(a));
+    case 'decimalToInt': return Math.trunc(Number(a));
+    case 'round': { const factor = 10 ** Math.trunc(Number(b ?? 0)); return finite(Math.sign(Number(a)) * Math.round(Math.abs(Number(a)) * factor) / factor); }
+    case 'sqrt': return finite(Math.sqrt(Number(a)));
+    case 'power': return finite(Math.pow(Number(a), Number(b)));
+    case 'exp': return finite(Math.exp(Number(a)));
+    case 'ln': return finite(Math.log(Number(a)));
+    case 'log': return Number(b ?? 10) <= 0 || Number(b ?? 10) === 1 ? null : finite(Math.log(Number(a)) / Math.log(Number(b ?? 10)));
+    case 'mod': return Number(b) === 0 ? null : Number(a) % Number(b);
+    case 'pi': return Math.PI;
+    case 'toDecimal': return Number(a);
+    case 'parseDecimal': case 'parseInt': {
+      const text = String(a).trim();
+      if (!/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(text)) return null;
+      const value = Number(text); return finite(name === 'parseInt' ? Math.trunc(value) : value);
+    }
     case 'concat': return args.join('');
     case 'substring': return Number(b) < 1 || Number(c) < 0 ? null : chars.slice(Math.trunc(Number(b)) - 1, Math.trunc(Number(b)) - 1 + Math.trunc(Number(c))).join('');
     case 'left': return Number(b) < 0 ? null : chars.slice(0, Math.trunc(Number(b))).join('');
@@ -26,7 +45,25 @@ export function scalarValue(name: string, args: readonly ResultValue[]): ResultV
 export function scalarSql(e: CallExpression, dialect: SqlDialect, compile: (e: RowExpression) => string): string {
   const args = e.args.map(compile), [a, b, c] = args;
   const integer = (s: string | undefined) => `CAST(TRUNC(${s}) AS INTEGER)`;
+  const numeric = dialect === 'postgres' ? 'DOUBLE PRECISION' : 'DOUBLE';
   switch (e.name) {
+    case 'abs': case 'ceil': case 'floor': return `${e.name}(${a})`;
+    case 'decimalToInt': return `TRUNC(${a})`;
+    case 'round': return dialect === 'postgres' ? `CAST(ROUND(CAST(${a} AS NUMERIC), ${integer(b ?? '0')}) AS DOUBLE PRECISION)` : `ROUND(${a}, ${integer(b ?? '0')})`;
+    case 'sqrt': return `(CASE WHEN ${a} >= 0 THEN SQRT(${a}) ELSE NULL END)`;
+    case 'ln': return `(CASE WHEN ${a} > 0 THEN LN(${a}) ELSE NULL END)`;
+    case 'log': return `(CASE WHEN ${a} > 0 AND ${b ?? '10'} > 0 AND ${b ?? '10'} <> 1 THEN LN(${a}) / LN(${b ?? '10'}) ELSE NULL END)`;
+    case 'exp': return `(CASE WHEN ${a} <= 709.782712893384 THEN EXP(${a}) ELSE NULL END)`;
+    case 'power': return `(CASE WHEN (${a} >= 0 OR ${b} = TRUNC(${b})) AND NOT (${a} = 0 AND ${b} < 0) THEN POWER(${a}, ${b}) ELSE NULL END)`;
+    case 'mod': return `CAST(MOD(CAST(${a} AS ${dialect === 'postgres' ? 'NUMERIC' : 'DOUBLE'}), NULLIF(CAST(${b} AS ${dialect === 'postgres' ? 'NUMERIC' : 'DOUBLE'}), 0)) AS ${numeric})`;
+    case 'pi': return 'PI()';
+    case 'toDecimal': return `CAST(${a} AS ${numeric})`;
+    case 'parseDecimal': case 'parseInt': {
+      const pattern = "'^[+-]?([0-9]+(\\.[0-9]*)?|\\.[0-9]+)([eE][+-]?[0-9]+)?$'";
+      const valid = dialect === 'postgres' ? `TRIM(${a}) ~ ${pattern}` : `REGEXP_FULL_MATCH(TRIM(${a}), ${pattern})`;
+      const value = `CAST(TRIM(${a}) AS ${numeric})`;
+      return `(CASE WHEN ${valid} THEN ${e.name === 'parseInt' ? `TRUNC(${value})` : value} ELSE NULL END)`;
+    }
     case 'concat': return `(${args.join(' || ')})`;
     case 'substring': return `(CASE WHEN ${b} < 1 OR ${c} < 0 THEN NULL ELSE SUBSTRING(${a}, ${integer(b)}, ${integer(c)}) END)`;
     case 'left': case 'right': return `(CASE WHEN ${b} < 0 THEN NULL ELSE ${e.name}(${a}, ${integer(b)}) END)`;
