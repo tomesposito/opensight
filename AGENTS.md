@@ -101,3 +101,19 @@ The builder models the QuickSight analysis editor:
   contract, not a scratchpad.
 - No claiming parity we haven't measured. The demo footer says it:
   *QuickSight fidelity has not been measured.*
+
+## 6. Pull-request workflow (planned — not yet adopted)
+
+When the project outgrows merge-straight-to-main:
+
+- **Branches:** `work/<phase>-<topic>` land only via PR into `master`.
+  Branch protection: no direct pushes, CI must pass.
+- **CI:** GitHub Actions builds and tests every PR (the workflow file
+  needs adding via web UI or a re-scoped token — see §1).
+- **Reviews:** the assistant reviews Codex's PRs (full suite, spec
+  compliance, AGENTS.md principles, screenshot compare for UI). A second
+  Codex run reviews the assistant's PRs (specs, docs, small fixes).
+- **Tom** reviews only product-level decisions and vision — never a
+  bottleneck on routine PRs.
+- **Merge style:** `--no-ff` merge commits (keeps phase history
+  readable); revisit if it gets noisy.
