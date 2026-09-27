@@ -43,7 +43,8 @@ Overlapping rules grant the union of rows and never duplicate rows. `all` and
 filters further restrict that union with AND; they cannot widen it. Supported
 physical-column comparisons are `eq`, `ne`, `lt`, `lte`, `gt`, `gte`, `in`
 (`values`), `is-null` and `is-not-null`. Other comparisons use `value`.
-Values must match the column's type, with ISO dates/UTC datetimes for date columns.
+Values must match the column's type: finite numbers (safe integers for INTEGER),
+and ISO dates/UTC datetimes for date columns.
 SQL NULL follows SQL three-valued logic; only TRUE grants a row.
 
 Rules are validated, bounded, quoted and parameterized, never SQL fragments.
@@ -94,6 +95,8 @@ namespace; a mismatch is a 404. Existing paths use the verified namespace.
 `GET /api/assets`, `/analyses`, `/dashboards`, and `/api/datasets` list only the
 current namespace's resources. `namespaceDataRoots` maps registered namespace IDs
 to trusted startup directories. The existing `dataRoot` belongs to `default`.
+Overlapping roots (including canonical aliases and file roots in the same directory)
+are rejected before startup so recursive scans cannot import another tenant.
 Each directory loads an independent definition snapshot and sales query binding;
 identical asset IDs can exist in different namespaces. A namespace without a root
 has no assets and never falls back to default. Roots must use the current sales
@@ -141,3 +144,31 @@ The Security & namespaces mode explains RLS, CLS and namespace configuration,
 labels each control `Needs hosted API`, and disables configuration actions.
 It explicitly identifies the bundled samples as public and provides no simulated
 login, tenant switch, local policy save or client-side security enforcement.
+
+## Validation (2026-09-27)
+
+Node v24.20.0 / npm 10.9.4. Final root `npm test` exited 0:
+
+| Suite | Tests | Passed | Failed | Skipped |
+| --- | ---: | ---: | ---: | ---: |
+| API | 68 | 68 | 0 | 0 |
+| Bundle parser | 183 | 183 | 0 | 0 |
+| Query engine | 354 | 353 | 0 | 1 |
+| Web | 322 | 322 | 0 | 0 |
+| Conformance | 3 | 3 | 0 | 0 |
+| Total | 930 | 929 | 0 | 1 |
+
+Zero cancelled or todo tests. The one skipped test is the opt-in external Postgres
+integration (`DATABASE_URL` unset). Both security SQL dialects execute locally in
+DuckDB/PGlite, including PRE_FILTER. Postgres executor tests use a stub driver;
+API tests use loopback sockets and mail stubs. The final root run had remote
+Postgres/SMTP configuration unset. An initial sandbox-only focused run could not
+bind loopback sockets; rerunning with local socket access passed.
+
+No dependencies or lockfiles changed. No AWS calls, external network calls or
+pushes were made. `SOLUTION_DESIGN.md` remains unchanged.
+
+Root `npm run build` and `npm run build:demo --workspace=@opensight/web` exited 0.
+The rebuilt single-file demo is `packages/web/dist/opensight-demo.html`
+(1,584,768 bytes; generated build artifacts remain ignored). Strict compilation
+and public consumer typechecks passed. `git diff --check` passed.

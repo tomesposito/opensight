@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { PGlite } from '@electric-sql/pglite';
 import { executeLocal, planVisual, refreshLocal } from '@opensight/query-engine';
+import { evaluateSqlPlan } from '../dist/evaluate.js';
 import { evaluatePlan } from '@opensight/query-engine/browser';
 import { calculation, fixtureRoot, read, request } from './helpers.mjs';
 
@@ -22,7 +23,8 @@ test('RLS executes in DuckDB and PostgreSQL before aggregates, with OR rules and
     const plan = planVisual(r, { dialect: 'postgres' });
     assert.match(plan.sql, /__opensight_security.*SELECT \* FROM "public"\."sales" WHERE/s);
     assert.doesNotMatch(plan.sql, /East|West|Hardware/);
-    assert.deepEqual((await pg.query(plan.sql, [...plan.parameters])).rows, duck.rows);
+    const pgRows = (await pg.query(plan.sql, [...plan.parameters])).rows;
+    assert.deepEqual(plan.postProcess ? evaluateSqlPlan(plan, pgRows) : pgRows, duck.rows);
     return duck.rows;
   };
   const r = secured();
@@ -35,6 +37,9 @@ test('RLS executes in DuckDB and PostgreSQL before aggregates, with OR rules and
   assert.deepEqual(await run(r), []);
   r.security.policy.rowRules = [rule('null', { any: [{ column: 'revenue', operator: 'is-null' }, { all: [{ column: 'order_date', operator: 'gte', value: '2025-04-01' }, { column: 'revenue', operator: 'gt', value: 0 }] }] })];
   await run(r);
+  r.security.policy.rowRules = [rule()];
+  calculation(r, 'sumOver({revenue}, [], PRE_FILTER)');
+  assert.deepEqual(await run(r), [{ region: 'East', calculated: 2500 }]);
 });
 for (const dialect of ['duckdb', 'postgres']) test(`${dialect} RLS denies missing/unknown principals, unmatched policies and unresolved groups`, () => {
   for (const [change, code] of [
@@ -124,4 +129,15 @@ test('Postgres executor sends the secured SQL and parameters to the driver', asy
   const config = query.mock.calls[1].arguments[0];
   assert.match(config.text, /FROM "public"\."sales" WHERE \("region" = \$1\)/);
   assert.deepEqual(config.values, ['East']); assert.deepEqual(result.rows, [{ region: 'East', revenue: 500 }]); assert.equal(end.mock.callCount(), 1);
+});
+for (const dialect of ['duckdb', 'postgres']) test(`${dialect} malformed optional policies, excess nesting and unknown policy fields cannot disable protection`, () => {
+  for (const mutate of [
+    r => { r.security.policy.columnGrants = null; }, r => { r.security.policy.protectedColumns = null; },
+    r => { r.security.policy.rowRules[0].predicate = { column: 'order_id', operator: 'eq', value: 1.5 }; },
+    r => { r.security.policy.rowLevel = null; }, r => { r.security.policy.bypass = true; },
+    r => { r.security.policy.rowRules.push(structuredClone(r.security.policy.rowRules[0])); },
+    r => { for (let i = 0; i < 18; i++) r.security.policy.rowRules[0].predicate = { all: [r.security.policy.rowRules[0].predicate] }; },
+  ]) {
+    const r = secured(); mutate(r); assert.throws(() => planVisual(r, { dialect }), { code: 'INVALID_SECURITY_POLICY' });
+  }
 });

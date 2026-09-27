@@ -59,7 +59,7 @@ export function validateRowRule(raw: unknown, columns: readonly BoundColumn[]): 
     const column = columns.find(c => c.name === p.column);
     if (!column) invalid(`${path}.column`, 'unknown physical column');
     const value = (v: unknown): ParameterValue => {
-      if (column.scalarType === 'number' ? typeof v !== 'number' || !Number.isFinite(v)
+      if (column.scalarType === 'number' ? typeof v !== 'number' || !Number.isFinite(v) || column.type === 'INTEGER' && !Number.isSafeInteger(v)
         : typeof v !== 'string' || v.includes('\0') || v.length > 10000 || column.scalarType === 'datetime' && !validDateTime(v)) invalid(path, 'predicate value does not match column type');
       return v as ParameterValue;
     };
@@ -88,11 +88,11 @@ export function validatePolicy(raw: unknown, columns: readonly BoundColumn[]): D
   if (typeof p.dataSetArn !== 'string' || !p.dataSetArn || p.dataSetArn.includes('\0') || typeof p.rowLevel !== 'boolean') invalid('$.security.policy', 'explicit dataset binding and rowLevel required');
   const rowRules = list(p.rowRules, '$.security.policy.rowRules').map(r => validateRowRule(r, columns));
   if (new Set(rowRules.map(r => r.id)).size !== rowRules.length || !p.rowLevel && rowRules.length) invalid('$.security.policy', 'duplicate rules or rules on an unprotected dataset');
-  const protectedColumns = list(p.protectedColumns ?? [], '$.security.policy.protectedColumns').map(v => {
+  const protectedColumns = list(p.protectedColumns === undefined ? [] : p.protectedColumns, '$.security.policy.protectedColumns').map(v => {
     if (typeof v !== 'string' || !columns.some(c => c.name === v)) invalid('$.security.policy.protectedColumns', 'unknown physical column');
     return v;
   });
-  const columnGrants = list(p.columnGrants ?? [], '$.security.policy.columnGrants').map(g => validateColumnGrant(g, columns));
+  const columnGrants = list(p.columnGrants === undefined ? [] : p.columnGrants, '$.security.policy.columnGrants').map(g => validateColumnGrant(g, columns));
   if (new Set(protectedColumns).size !== protectedColumns.length || new Set(columnGrants.map(g => g.id)).size !== columnGrants.length || columnGrants.some(g => !protectedColumns.includes(g.column))) invalid('$.security.policy', 'duplicate grants/columns or unprotected grant column');
   return { ...(p.protectedColumns !== undefined || p.columnGrants !== undefined ? { protectedColumns, columnGrants } : {}), namespaceId: securityId(p.namespaceId, '$.security.policy.namespaceId'), dataSetArn: p.dataSetArn, rowLevel: p.rowLevel, rowRules };
 }

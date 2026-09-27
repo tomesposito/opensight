@@ -1,5 +1,9 @@
 # Local definition and live query API
 
+Phase 3b adds [row/column security and namespaces](../../docs/security-namespaces.md).
+That document describes authenticated hosted enforcement; earlier local-only notes
+below describe the unchanged unrestricted fixture mode.
+
 Phase 3a adds [scheduled refresh, email reports and alerts](../../docs/scheduled-refresh-reports-alerts.md).
 That document describes the new persistent automation resources, scheduler,
 environment-only SMTP and run history; existing definition/query behavior remains.

@@ -1,5 +1,9 @@
 # Query engine
 
+Phase 3b adds [row/column security and namespaces](../../docs/security-namespaces.md).
+That document describes authenticated hosted enforcement; earlier local-only notes
+below describe the unchanged unrestricted fixture mode.
+
 `@opensight/query-engine` compiles validated visual requests and calculated fields
 for the mapped renderable-sales dataset. It compiles visuals into DuckDB SQL for an explicitly mapped local CSV, or Postgres SQL for an
 existing table. DuckDB remains the default local dev/test engine; the opt-in Postgres

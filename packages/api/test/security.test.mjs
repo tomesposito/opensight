@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { once } from 'node:events';
@@ -168,4 +168,29 @@ test('security store persists protection and rejects corrupted policies before s
   saved.datasets[0].rowRules = [{ id: 'bad', ...rowRule, principals: [{ type: 'user', id: 'missing' }] }];
   await writeFile(storePath, JSON.stringify(saved));
   await assert.rejects(secureApi(t, { storePath }), /Unable to load automation store/);
+});
+test('two resolved namespace datasets with identical IDs and principals apply independent SQL policies', async t => {
+  const tenantRoot = await mkdtemp(join(tmpdir(), 'opensight-tenant-sales-')); t.after(() => rm(tenantRoot, { recursive: true, force: true }));
+  await cp(join(fixtures, 'renderable-sales'), tenantRoot, { recursive: true });
+  const initialState = emptySecurityState(); initialState.namespaces.push({ id: 'tenant', name: 'Tenant' });
+  initialState.users = ['default', 'tenant'].flatMap(namespaceId => [{ id: 'admin', name: 'Admin', namespaceId, role: 'admin' }, { id: 'alice', name: 'Alice', namespaceId, role: 'reader' }]);
+  initialState.groups = ['default', 'tenant'].map(namespaceId => ({ id: 'east', name: 'Team', namespaceId, userIds: ['alice'] }));
+  const api = await secureApi(t, { initialState, apiOptions: { namespaceDataRoots: { tenant: tenantRoot } }, authenticate: r => {
+    const match = /^Bearer test-(default|tenant)-(admin|alice)$/.exec(r.headers.authorization ?? '');
+    return match ? { namespaceId: match[1], userId: match[2] } : undefined;
+  } });
+  const path = '/api/datasets/sales/row-rules/same-id';
+  await api(path, 'PUT', rowRule, 'default-admin');
+  await api(path, 'PUT', { ...rowRule, predicate: { column: 'region', operator: 'eq', value: 'West' } }, 'tenant-admin');
+  assert.deepEqual((await api('/api/datasets/sales/query', 'POST', query, 'default-alice')).body.rows, [{ region: 'East', total: 500 }]);
+  assert.deepEqual((await api('/api/datasets/sales/query', 'POST', query, 'tenant-alice')).body.rows, [{ region: 'West', total: 400 }]);
+  await api(path, 'DELETE', undefined, 'tenant-admin');
+  assert.equal((await api('/api/datasets/sales/query', 'POST', query, 'tenant-alice')).body.errorCode, 'ROW_ACCESS_DENIED');
+  assert.equal((await api('/api/datasets/sales/query', 'POST', query, 'default-alice')).status, 200);
+});
+test('overlapping namespace roots fail startup instead of leaking recursively scanned assets', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'opensight-overlap-')); t.after(() => rm(root, { recursive: true, force: true }));
+  const child = join(root, 'tenant'); await mkdir(child);
+  const initialState = emptySecurityState(); initialState.namespaces.push({ id: 'tenant', name: 'Tenant' });
+  for (const [dataRoot, tenantRoot] of [[root, child], [child, root], [root, root]]) await assert.rejects(createApiServer({ dataRoot, namespaceDataRoots: { tenant: tenantRoot }, security: { initialState, authenticate: () => undefined }, mailTransport: new StubMailTransport() }), /Namespace data roots must not overlap/);
 });

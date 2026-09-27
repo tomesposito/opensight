@@ -1,5 +1,7 @@
 import { namespaceRoute, scopePath } from './namespace-routes.js';
 import { SecurityService, SecurityError, type SecurityOptions } from './security.js';
+import { realpath, stat } from 'node:fs/promises';
+import { dirname, isAbsolute, relative } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { createServer, type Server, type ServerResponse } from 'node:http';
 import { DefinitionStore, RESOURCE_ID } from './store.js';
@@ -27,6 +29,19 @@ export interface ApiOptions {
 
 /** Loads a complete snapshot before returning an unbound HTTP server. */
 export async function createApiServer(options: ApiOptions): Promise<Server> {
+  // The recursive default scan must never absorb another tenant's directory.
+  const roots = [options.dataRoot, ...Object.values(options.namespaceDataRoots ?? {})];
+  const directories: string[] = [];
+  for (const root of roots.length > 1 ? roots : []) {
+    const canonical = await realpath(root);
+    const directory = (await stat(canonical)).isDirectory() ? canonical : dirname(canonical);
+    const contains = (parent: string, child: string) => {
+      const path = relative(parent, child);
+      return path === '' || !isAbsolute(path) && path !== '..' && !path.startsWith('../');
+    };
+    if (directories.some(other => contains(other, directory) || contains(directory, other))) throw new Error('Namespace data roots must not overlap');
+    directories.push(directory);
+  }
   const store = await DefinitionStore.load(options.dataRoot);
   const sales = await SalesQuery.load(options.dataRoot);
   const schema = options.security && sales ? sales.securitySchema() : undefined;

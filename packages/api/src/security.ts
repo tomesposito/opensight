@@ -100,7 +100,7 @@ export class SecurityService {
     if (verb === 'GET') {
       const resources = columnMode ? policy.columnGrants ?? [] : policy.rowRules;
       const result = ruleId ? resources.find(r => r.id === ruleId) : resources;
-      if (!result) throw new RequestError(404, 'Row rule not found');
+      if (!result) throw new RequestError(404, columnMode ? 'Column grant not found' : 'Row rule not found');
       send(response, 200, result); return true;
     }
     const raw = verb === 'PUT' ? record(await readBody(request), columnMode ? ['principals', 'column', 'effect'] : ['principals', 'predicate']) : undefined;
@@ -119,10 +119,10 @@ export class SecurityService {
             dataset.protectedColumns = [...new Set([...(dataset.protectedColumns ?? []), grant.column])];
           }
         } else {
-        if (!rule && !dataset.rowRules.some(r => r.id === ruleId)) throw new RequestError(404, 'Row rule not found');
-        dataset.rowRules = dataset.rowRules.filter(r => r.id !== ruleId);
-        dataset.rowLevel = true;
-        if (rule) dataset.rowRules.push(rule);
+          if (!rule && !dataset.rowRules.some(r => r.id === ruleId)) throw new RequestError(404, 'Row rule not found');
+          dataset.rowRules = dataset.rowRules.filter(r => r.id !== ruleId);
+          dataset.rowLevel = true;
+          if (rule) dataset.rowRules.push(rule);
         }
         validateSecurityState(state, this.columns);
       });
