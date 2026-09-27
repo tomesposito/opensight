@@ -27,7 +27,7 @@ export function LiveAuthorVisual({ visual, client, calculations, parameters = []
   }, [request, client, interactive]);
   const fixture = useMemo(() => !client && request ? executeFixtureQuery(request) : undefined, [client, request]);
   const current = client ? state?.request === request && state.client === client ? state.result : undefined : fixture;
-  const preview = useMemo(() => ({ ...buildAuthorVisual(visual), rows: current?.rows ?? null }), [visual, current]);
+  const preview = useMemo(() => ({ ...buildAuthorVisual(visual, calculations), rows: current?.rows ?? null }), [visual, current, calculations]);
   // Clear previous results immediately when assignments change, even before the effect runs.
   return <VisualCard interaction={interaction} visual={preview} loading={!!request && !current} dataMessage={current?.message} />;
 }

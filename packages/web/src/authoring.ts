@@ -1,3 +1,4 @@
+import { parseExpression } from '@opensight/query-engine/browser';
 import { serializeInteractions } from './bundle-interactions.js';
 import { hierarchyError, type DimensionHierarchy, type DateGrain } from './drill.js';
 import { validFilterActions, type FilterAction, type InteractionFilter } from './interactions.js';
@@ -20,8 +21,23 @@ export const SALES_FIELDS = [
 ] as const;
 export interface CalculatedField { name: string; expression: string; role: 'dimension' | 'measure' }
 export interface DataField { name: string; role: 'dimension' | 'measure'; type: string }
+export function calculationInfo(name: string, calculations: readonly CalculatedField[]) {
+  const visiting = new Set<string>();
+  const bind = (name: string): { scalarType: 'number' | 'string' | 'datetime' | 'boolean' | 'unknown'; nullable: boolean; level?: 'row' | 'pre_filter' | 'pre_agg' | 'aggregate' | 'table' } => {
+    const field = SALES_FIELDS.find(f => f.name === name);
+    if (field) return { scalarType: field.type === 'STRING' ? 'string' : field.type === 'DATETIME' ? 'datetime' : 'number', nullable: true };
+    if (visiting.has(name)) throw new Error(`Calculated-field cycle through ${name}`);
+    const c = calculations.find(c => c.name === name); if (!c) return { scalarType: 'unknown', nullable: true };
+    visiting.add(name); const result = parseExpression(c.expression, '$.expression', { validationOnly: true, bind }); visiting.delete(name); return result;
+  };
+  return bind(name);
+}
 export const dataFields = (calculations: readonly CalculatedField[] = []): DataField[] => [
-  ...SALES_FIELDS, ...calculations.map(f => ({ name: f.name, role: f.role, type: f.role === 'measure' ? 'DECIMAL' : 'STRING' } as const)),
+  ...SALES_FIELDS, ...calculations.map(f => {
+    let type = f.role === 'measure' ? 'DECIMAL' : 'STRING';
+    try { const info = calculationInfo(f.name, calculations); if (info.scalarType === 'datetime') type = 'DATETIME'; } catch { /* Invalid imported expressions remain in the import report. */ }
+    return { name: f.name, role: f.role, type };
+  }),
 ];
 export const VISUAL_TYPES = [
   { kind: 'bar', label: 'Bar', icon: '▥' }, { kind: 'line', label: 'Line', icon: '⌁' },
@@ -82,13 +98,20 @@ const nextId = (prefix: string, ids: string[]): string => {
 export const defaults = () => ({ rows: [] as string[], columns: [] as string[], titleVisible: true, legend: true, labels: false,
   horizontal: false, stacked: false, totals: false, subtotals: false, filters: [] as CategoryFilter[] });
 
-/** Expressions are preserved, never evaluated in the browser. The query engine validates execution. */
+/** Use the execution parser for editor diagnostics; retain expression text byte for byte. */
+export function expressionError(expression: string, existing: readonly DataField[] = []): string | undefined {
+  try { parseExpression(expression, '$.expression', { validationOnly: true, bind: name => {
+    const field = existing.find(f => f.name === name);
+    return { scalarType: !field ? 'unknown' : field.type === 'DATETIME' ? 'datetime' : field.type === 'STRING' ? 'string' : 'number', nullable: true };
+  } }); } catch (e) { return (e instanceof Error ? e.message : String(e)).replace(/^\$\.expression: /, ''); }
+}
 export function calculationError(field: CalculatedField, existing: readonly DataField[]): string | undefined {
   if (!/^[A-Za-z_][A-Za-z0-9_ ]{0,127}$/.test(field.name.trim())) return 'Use a field name starting with a letter or underscore (up to 128 characters).';
   if (existing.some(f => f.name.toLowerCase() === field.name.trim().toLowerCase())) return 'A field with that name already exists.';
   if (!field.expression.trim()) return 'Enter an expression.';
-  if (field.expression.length > 10000 || /[;`\0]|--|\/\*|\*\/|<\/?[a-z]|=>|\b(?:eval|Function|fetch|require|import|exec|window|document|process|globalThis)\b/i.test(field.expression)) return 'Remove scripts, comments, or statement separators from the expression.';
+  if (field.expression.length > 10000 || /[;`\0]|--|\/\*|\*\/|=>|\b(?:eval|Function|fetch|require|import|exec|window|document|process|globalThis)\b/i.test(field.expression)) return 'Remove scripts, comments, or statement separators from the expression.';
   if (field.role !== 'dimension' && field.role !== 'measure') return 'Choose a field role.';
+  return expressionError(field.expression, existing);
 }
 export type AuthorAction =
   | { type: 'hierarchy'; hierarchy: DimensionHierarchy | null }
@@ -290,13 +313,13 @@ export function authorVisualProblem(visual: AuthorVisual): string | undefined {
 function columnField(name: string): BundleColumnField {
   return { fieldId: name, column: { dataSetIdentifier: 'sales_data', columnName: name } };
 }
-function dimensionField(name: string, granularity: DateGrain = 'MONTH'): BundleDimensionField {
-  return name === 'order_date' ? { dateDimensionField: { ...columnField(name), dateGranularity: granularity } }
+function dimensionField(name: string, granularity: DateGrain = 'MONTH', calculations: readonly CalculatedField[] = []): BundleDimensionField {
+  return dataFields(calculations).find(f => f.name === name)?.type === 'DATETIME' ? { dateDimensionField: { ...columnField(name), dateGranularity: granularity } }
     : name === 'order_id' ? { numericalDimensionField: columnField(name) } : { categoricalDimensionField: columnField(name) };
 }
 /** Typed camelCase projection, including the parser's opaque extensions. */
-export function serializeVisual(visual: AuthorVisual, includeInteractions = true): BundleVisual {
-  const category = visualDimensions(visual).map(name => dimensionField(name, visual.dateGrain));
+export function serializeVisual(visual: AuthorVisual, includeInteractions = true, calculations: readonly CalculatedField[] = []): BundleVisual {
+  const category = visualDimensions(visual).map(name => dimensionField(name, visual.dateGrain, calculations));
   const values: BundleMeasureField[] = visual.measures.map(name => ({ numericalMeasureField: { ...columnField(name), aggregationFunction: { simpleNumericalAggregation: 'SUM' } } }));
   const visibility = (show: boolean) => ({ visibility: show ? 'VISIBLE' : 'HIDDEN' });
   const body = { ...(includeInteractions ? serializeInteractions(visual) : {}), visualId: visual.id, ...(visual.title.trim() || !visual.titleVisible ? { title: { ...visibility(visual.titleVisible), ...(visual.title.trim() ? { formatText: { plainText: visual.title.trim() } } : {}) } } : {}) } satisfies BundleVisualBody;
@@ -312,7 +335,7 @@ export function serializeVisual(visual: AuthorVisual, includeInteractions = true
     case 'bar': return { barChartVisual: { ...body, chartConfiguration: { ...display, orientation: visual.horizontal ? 'HORIZONTAL' : 'VERTICAL', barsArrangement: visual.stacked ? 'STACKED' : 'CLUSTERED', fieldWells: { barChartAggregatedFieldWells: { category, values } } } } };
     case 'line': return { lineChartVisual: { ...body, chartConfiguration: { ...display, fieldWells: { lineChartAggregatedFieldWells: { category, values } } } } };
     case 'table': return { tableVisual: { ...body, chartConfiguration: { ...tableTotals, fieldWells: { tableAggregatedFieldWells: { groupBy: category, values } } } } };
-    case 'pivot': return { pivotTableVisual: { ...body, chartConfiguration: { ...pivotTotals, fieldWells: { pivotTableAggregatedFieldWells: { rows: visual.rows.map(name => dimensionField(name, visual.dateGrain)), columns: visual.columns.map(name => dimensionField(name, visual.dateGrain)), values } } } } };
+    case 'pivot': return { pivotTableVisual: { ...body, chartConfiguration: { ...pivotTotals, fieldWells: { pivotTableAggregatedFieldWells: { rows: visual.rows.map(name => dimensionField(name, visual.dateGrain, calculations)), columns: visual.columns.map(name => dimensionField(name, visual.dateGrain, calculations)), values } } } } };
     case 'kpi': return { kpiVisual: { ...body, chartConfiguration: { fieldWells: { values } } } };
   }
 }
@@ -329,8 +352,8 @@ export function serializeDraft(draft: AuthorDraft): BundleAnalysis {
       filters: [serializeFilter(filter, `${visual.id}-filter-${index}`, 'sales_data', sheetParameters(draft, sheet))],
     })))),
     sheets: draft.sheets.map(sheet => ({ sheetId: sheet.id, name: sheet.name, ...(sheet.controls.length ? { parameterControls: sheet.controls.map(c => serializeControl(c, sheetParameters(draft, sheet), sheet.controls)) } : {}), visuals: sheet.visuals.map(visual => {
-      const definition = serializeVisual(visual);
-      normalizeVisual('bundle', serializeVisual(visual, false), `sheets.${sheet.id}.${visual.id}`);
+      const definition = serializeVisual(visual, true, draft.calculatedFields);
+      normalizeVisual('bundle', serializeVisual(visual, false, draft.calculatedFields), `sheets.${sheet.id}.${visual.id}`);
       return definition;
     }), layouts: [{ configuration: { gridLayout: { elements: sheet.layout.map(p => ({ elementId: p.i, elementType: 'VISUAL', columnIndex: p.x * 3, columnSpan: p.w * 3, rowIndex: p.y, rowSpan: p.h })) } } }] })),
   } };

@@ -1,5 +1,5 @@
 import { authorVisualProblem, serializeVisual, visualDimensions } from './authoring.js';
-import type { AuthorVisual } from './authoring.js';
+import type { AuthorVisual, CalculatedField } from './authoring.js';
 import { normalizeVisual } from './compiler.js';
 import type { Fixture, FixtureVisual } from './model.js';
 import generated from './fixtures.generated.json' with { type: 'json' };
@@ -25,9 +25,9 @@ export function buildAuthorPreview(visual: AuthorVisual): FixtureVisual {
 }
 
 /** A row-free definition shared by the fixture and live previews. */
-export function buildAuthorVisual(visual: AuthorVisual): FixtureVisual {
+export function buildAuthorVisual(visual: AuthorVisual, calculations: readonly CalculatedField[] = []): FixtureVisual {
   return {
-    source: 'bundle', definition: serializeVisual(visual, false), rows: null,
+    source: 'bundle', definition: serializeVisual(visual, false, calculations), rows: null,
     bindings: visualDimensions(visual).includes('order_date') ? { order_date: (visual.dateGrain ?? 'MONTH').toLowerCase() } : {},
     placement: { column: 0, columns: 36, row: 0, rows: 6 },
     path: `author.${visual.id}`,

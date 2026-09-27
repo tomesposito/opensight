@@ -1,3 +1,5 @@
+import { functionCatalog } from '@opensight/query-engine/browser';
+import { expressionError } from './authoring.js';
 import { HierarchyEditor } from './HierarchyEditor.js';
 import { withDrill, drillDown, drillUp, drillBreadcrumbs, levelLabel, type DrillPath } from './drill.js';
 import { ActionEditor } from './ActionEditor.js';
@@ -17,7 +19,7 @@ import { buildDistinctQuery, loadAuthorRows } from './author-query.js';
 import type { QueryClient } from './author-query.js';
 import {
   authorVisualProblem, VISUAL_TYPES, GRID_COLUMNS, activeSheet, authorReducer, calculationError, dataFields, dimensionLabel,
-  loadDraft, saveDraft, serializeDraft, sheetParameters, singleMeasure, tabular,
+  loadDraft, saveDraft, serializeDraft, sheetParameters, singleMeasure, tabular, visualDimensions,
 } from './authoring.js';
 import type { AuthorAction, AuthorDraft, AuthorVisual, CalculatedField, VisualKind, Well } from './authoring.js';
 
@@ -290,10 +292,13 @@ function FilterEditor({ visual, calculations, dispatch, client, parameters }: { 
   </div>;
 }
 
-function CalculationDialog({ fields, onSave, onClose }: { fields: CalculatedField[]; onSave: (field: CalculatedField) => void; onClose: () => void }) {
+export function CalculationDialog({ fields, onSave, onClose }: { fields: CalculatedField[]; onSave: (field: CalculatedField) => void; onClose: () => void }) {
   const ref = useRef<HTMLDialogElement>(null);
   const [field, setField] = useState<CalculatedField>({ name: '', expression: '', role: 'measure' });
   const [error, setError] = useState('');
+  const [functionName, setFunctionName] = useState('concat');
+  const reference = functionCatalog.find(f => f.name === functionName)!;
+  const syntaxError = field.expression.trim() ? expressionError(field.expression, dataFields(fields)) : undefined;
   useEffect(() => { ref.current?.showModal(); return () => ref.current?.close(); }, []);
   return <dialog ref={ref} className="calculation-dialog" aria-labelledby="calculation-heading" onCancel={onClose}>
     <form onSubmit={e => { e.preventDefault(); const problem = calculationError(field, dataFields(fields)); if (problem) setError(problem); else onSave({ ...field, name: field.name.trim() }); }}>
@@ -301,8 +306,10 @@ function CalculationDialog({ fields, onSave, onClose }: { fields: CalculatedFiel
       <label>Name<input autoFocus value={field.name} onChange={e => setField({ ...field, name: e.target.value })} /></label>
       <label>Use as<select value={field.role} onChange={e => setField({ ...field, role: e.target.value as CalculatedField['role'] })}><option value="measure">Measure (number)</option><option value="dimension">Dimension (text)</option></select></label>
       <label>Expression<textarea rows={5} value={field.expression} placeholder="{revenue} - {profit}" onChange={e => setField({ ...field, expression: e.target.value })} /></label>
-      <p className="field-hint">Use braces to reference fields and {'${Name}'} to reference a single-value parameter. Live queries support row arithmetic (+, −, *) and field references. Other expressions are saved but may show Data unavailable.</p>
-      {error && <p role="alert">{error}</p>}
+      <label>Function reference<select value={functionName} onChange={e => setFunctionName(e.target.value)}>{[...new Set(functionCatalog.map(f => f.category))].map(category => <optgroup key={category} label={category}>{functionCatalog.filter(f => f.category === category).map(f => <option key={f.name} value={f.name}>{f.name}</option>)}</optgroup>)}</select></label>
+      <div className="function-reference"><code>{reference.signature}</code><p>Example: <code>{reference.example}</code></p><button type="button" onClick={() => { setField({ ...field, expression: reference.example }); setError(''); }}>Use example</button></div>
+      <p className="field-hint">Use braces to reference fields and {'${Name}'} to reference a single-value parameter. Choose a function to see its signature and example. Table calculations use the grouping and sort fields in the visual.</p>
+      {(syntaxError || error) && <p role="alert">{syntaxError || error}</p>}
       <div className="dialog-actions"><button type="button" onClick={onClose}>Cancel</button><button type="submit" className="primary-button">Create field</button></div>
     </form>
   </dialog>;
@@ -312,7 +319,8 @@ function AuthorCard({ visual, index, count, selected, dispatch, client, calculat
   drillNavigation?: ReactNode; interaction?: VisualInteraction; interactive?: boolean; visual: AuthorVisual; index: number; count: number; selected: boolean; filterProblem?: string; dispatch: Dispatch<AuthorAction>; client?: QueryClient; calculations: CalculatedField[]; parameters: AuthorParameter[];
 }) {
   const problem = authorVisualProblem(visual) ?? filterProblem;
-  const preview = useMemo(() => client || interactive || parameters.length || problem ? undefined : buildAuthorPreview(visual), [visual, client, interactive, problem, parameters.length]);
+  const hasCalculation = [...visualDimensions(visual), ...visual.measures].some(name => calculations.some(c => c.name === name));
+  const preview = useMemo(() => client || interactive || parameters.length || hasCalculation || problem ? undefined : buildAuthorPreview(visual), [visual, client, interactive, problem, parameters.length, hasCalculation]);
   const label = visual.title || `Visual ${index + 1}`;
   return <section className={`author-card${selected ? ' is-selected' : ''}`} aria-label={label} onClick={() => { if (!selected) dispatch({ type: 'select', id: visual.id }); }}>
     <div className="author-card-toolbar">
@@ -327,7 +335,7 @@ function AuthorCard({ visual, index, count, selected, dispatch, client, calculat
     {drillNavigation}
     {problem ? <div className="bundle-placeholder" role="status"><p>{problem}</p>
       {visual.imported && !visual.imported.local && <button type="button" onClick={e => { e.stopPropagation(); dispatch({ type: 'remap', id: visual.id }); }}>Remap to local dataset</button>}
-    </div> : client || interactive || parameters.length ? <LiveAuthorVisual interactive={interactive} interaction={interaction} visual={visual} client={client} calculations={calculations} parameters={parameters} /> : preview && <VisualCard visual={preview} />}
+    </div> : client || interactive || parameters.length || hasCalculation ? <LiveAuthorVisual interactive={interactive} interaction={interaction} visual={visual} client={client} calculations={calculations} parameters={parameters} /> : preview && <VisualCard visual={preview} />}
   </section>;
 }
 

@@ -1,3 +1,4 @@
+import { unsupportedFunctions } from '@opensight/query-engine/browser';
 import { importInteractions, exportInteractions } from './bundle-interactions.js';
 import { importControls, importParameterFilter, serializeControl, serializeFilter } from './bundle-controls.js';
 import { importParameter, serializeParameter, type AuthorParameter } from './parameters.js';
@@ -67,7 +68,7 @@ function importVisual(raw: BundleVisual, id: string, definition: BundleDefinitio
     totals: (kind === 'pivot' ? obj(total.rowTotalOptions) : total).totalsVisibility === 'VISIBLE',
     subtotals: (kind === 'pivot' ? obj(total.rowSubtotalOptions) : obj(config.opensightSubtotalOptions)).totalsVisibility === 'VISIBLE',
   };
-  const dateField = list(wells[kind === 'pivot' ? 'rows' : kind === 'table' ? 'groupBy' : 'category']).map(f => obj(obj(f).dateDimensionField)).find(f => obj(f.column).columnName === 'order_date');
+  const dateField = list(wells[kind === 'pivot' ? 'rows' : kind === 'table' ? 'groupBy' : 'category']).map(f => obj(obj(f).dateDimensionField)).find(f => typeof obj(f.column).columnName === 'string');
   if (dateField && ['YEAR','QUARTER','DAY'].includes(String(dateField.dateGranularity))) visual.dateGrain = dateField.dateGranularity as 'YEAR' | 'QUARTER' | 'DAY';
   const unrecognized = importInteractions(body, visual);
   const checkedBody = { ...body, ...unrecognized } as Obj;
@@ -75,7 +76,7 @@ function importVisual(raw: BundleVisual, id: string, definition: BundleDefinitio
   if (!unrecognized.columnHierarchies.length) delete checkedBody.columnHierarchies;
   const checked = { [variant]: checkedBody };
   const dataSets = [...new Set(references(body))].map(identifier => ({ identifier, arn: definition.dataSetIdentifierDeclarations.find(d => d.identifier === identifier)?.dataSetArn }));
-  const issues = Object.hasOwn(kinds, variant) ? differences(checked, projectVisual(visual, raw), variant) : [`Unsupported visual type: ${variant}`];
+  const issues = Object.hasOwn(kinds, variant) ? differences(checked, projectVisual(visual, raw, (definition.calculatedFields ?? []).map(c => ({ name: string(obj(c).name), expression: string(obj(c).expression), role: 'dimension' }))), variant) : [`Unsupported visual type: ${variant}`];
   if (dataSets.length > 1) issues.push('Multiple datasets in one visual are unsupported');
   visual.imported = { visualId: string(body.visualId), variant, dataSets, issues, unmappedFields: [],
     local: dataSets.length === 1 && localBinding(dataSets[0]!.arn, bundle, dataSets[0]!.identifier),
@@ -153,6 +154,8 @@ export function importBundle(bundle: QsBundle): AuthorDraft {
     }
     for (const value of d.calculatedFields ?? []) {
       const c = obj(value), field: CalculatedField = { name: string(c.name), expression: string(c.expression), role: 'measure' };
+      const unsupported = unsupportedFunctions(field.expression);
+      if (unsupported.length) { const problem = `unsupported functions: ${unsupported.join(', ')}; expression retained verbatim`; calculationProblems.set(field.name, problem); messages.push(`Calculated field ${field.name} (${string(c.dataSetIdentifier)}): ${problem}.`); }
       // Local authored calculations retain the v1 editor/query behavior. Foreign ones are display-only.
       const local = d.dataSetIdentifierDeclarations.some(ds => ds.identifier === c.dataSetIdentifier && localBinding(ds.dataSetArn, original, ds.identifier));
       const dimensionUse = (d.sheets ?? []).some(s => (s.visuals ?? []).some(v => {
@@ -275,8 +278,8 @@ function rebind(value: unknown, identifier: string): void {
   Object.values(o).forEach(v => { if (v && typeof v === 'object') rebind(v, identifier); });
 }
 /** Match the original well wrapper and dataset identifiers when projecting edits. */
-function projectVisual(visual: AuthorVisual, raw: BundleVisual): BundleVisual {
-  const projected = serializeVisual(visual, false), body = obj(Object.values(projected)[0]), original = obj(Object.values(raw)[0]);
+function projectVisual(visual: AuthorVisual, raw: BundleVisual, calculations: readonly CalculatedField[] = []): BundleVisual {
+  const projected = serializeVisual(visual, false, calculations), body = obj(Object.values(projected)[0]), original = obj(Object.values(raw)[0]);
   const originalWells = obj(obj(original.chartConfiguration).fieldWells), config = obj(body.chartConfiguration);
   const identifiers = new Map<string, string>();
   const collect = (value: unknown): void => {
@@ -295,13 +298,13 @@ function projectVisual(visual: AuthorVisual, raw: BundleVisual): BundleVisual {
   return projected;
 }
 const usesRemappedDataset = (meta: ImportedVisual): boolean => meta.local && (!!meta.remapped || !meta.dataSets.every(d => d.arn === LOCAL_SALES_ARN));
-function exportVisual(v: AuthorVisual, raw: BundleVisual | undefined): BundleVisual {
-  if (!v.imported || !raw) return serializeVisual(v);
+function exportVisual(v: AuthorVisual, raw: BundleVisual | undefined, calculations: readonly CalculatedField[]): BundleVisual {
+  if (!v.imported || !raw) return serializeVisual(v, true, calculations);
   const meta = v.imported, baseline = meta.baseline;
-  const before = obj(Object.values(projectVisual(baseline, raw))[0]), after = obj(Object.values(projectVisual(v, raw))[0]);
+  const before = obj(Object.values(projectVisual(baseline, raw, calculations))[0]), after = obj(Object.values(projectVisual(v, raw, calculations))[0]);
   const originalBody = Object.values(raw)[0]!;
   const changedKind = !!meta.replaced;
-  const body = changedKind ? Object.values(serializeVisual(v, false))[0]! : patch(originalBody, before, after) as typeof originalBody;
+  const body = changedKind ? Object.values(serializeVisual(v, false, calculations))[0]! : patch(originalBody, before, after) as typeof originalBody;
   body.visualId = meta.visualId;
   if (!changedKind && v.title !== baseline.title && v.title.trim()) {
     // Rich/plain text are a union; a plain-title edit replaces that union, not its unknown siblings.
@@ -309,13 +312,13 @@ function exportVisual(v: AuthorVisual, raw: BundleVisual | undefined): BundleVis
   }
   if (usesRemappedDataset(meta)) {
     // A remap intentionally replaces editable wells. The complete original resource is archived on export.
-    const generated = obj(Object.values(changedKind ? serializeVisual(v) : projectVisual(v, raw))[0]).chartConfiguration;
+    const generated = obj(Object.values(changedKind ? serializeVisual(v, true, calculations) : projectVisual(v, raw, calculations))[0]).chartConfiguration;
     const config = obj(body.chartConfiguration);
     config.fieldWells = copy(obj(generated).fieldWells); body.chartConfiguration = config;
     rebind(config.fieldWells, LOCAL_IDENTIFIER);
   }
   if (changedKind && !usesRemappedDataset(meta)) rebind(obj(body.chartConfiguration).fieldWells, meta.dataSets[0]?.identifier ?? 'sales_data');
-  return { [changedKind ? Object.keys(serializeVisual(v))[0]! : meta.variant]: body };
+  return { [changedKind ? Object.keys(serializeVisual(v, true, calculations))[0]! : meta.variant]: body };
 }
 function exportLayout(sheet: AuthorSheet, raw: BundleSheet): void {
   if (sheet.imported && equal(sheet.layout, sheet.imported.layout)) return;
@@ -386,7 +389,7 @@ export function exportBundle(draft: AuthorDraft): QsBundle {
         raw.parameterControls = [...projected, ...originals.filter(r => !baselineControls.some(c => c.importedId === obj(Object.values(obj(r))[0]).parameterControlId))];
       }
       if (raw.visuals !== undefined || sheet.visuals.length) raw.visuals = sheet.visuals.map(v => {
-        const result = exportVisual(v, raw.visuals?.find(r => Object.values(r)[0]?.visualId === v.imported?.visualId));
+        const result = exportVisual(v, raw.visuals?.find(r => Object.values(r)[0]?.visualId === v.imported?.visualId), draft.calculatedFields);
         const identifier = v.imported ? usesRemappedDataset(v.imported) ? LOCAL_IDENTIFIER : v.imported.dataSets[0]?.identifier ?? LOCAL_IDENTIFIER : LOCAL_IDENTIFIER;
         exportInteractions(obj(Object.values(result)[0]), v, id => { const target = sheet.visuals.find(t => t.id === id); return target?.imported?.visualId ?? (id.startsWith('unresolved:') ? id.slice(11) : id); }, identifier);
         return result;

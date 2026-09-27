@@ -1,6 +1,6 @@
 import { declaration, type AuthorParameter } from './parameters.js';
 import type { AuthorControl } from './controls.js';
-import { authorVisualProblem, visualDimensions, type CalculatedField, type AuthorVisual } from './authoring.js';
+import { authorVisualProblem, visualDimensions, dataFields, type CalculatedField, type AuthorVisual } from './authoring.js';
 import type { createApiClient, QueryRequest } from './api-client.js';
 import type { Row } from './model.js';
 
@@ -21,7 +21,7 @@ export function buildAuthorQuery(visual: AuthorVisual, calculations: readonly Ca
   });
   const bound = [...used, ...dynamic.map(d => d.parameter)];
   return {
-    dimensions: dimensions.map(name => ({ fieldId: name, columnName: name, ...(name === 'order_date' ? { granularity: visual.dateGrain ?? 'MONTH' } : {}) })),
+    dimensions: dimensions.map(name => ({ fieldId: name, columnName: name, ...(dataFields(calculations).find(f => f.name === name)?.type === 'DATETIME' ? { granularity: visual.dateGrain ?? 'MONTH' } : {}) })),
     measures: visual.measures.map(name => ({ fieldId: name, columnName: name, aggregation: 'SUM' })),
     filters: [...visual.filters.map(f => f.parameterName ? { columnName: f.columnName, parameterName: f.parameterName, ...(f.operator ? { operator: f.operator } : {}) } : { columnName: f.columnName, values: f.values }), ...dynamic.map(({ filter, parameter }) => ({ columnName: filter.columnName, parameterName: parameter.name, ...(filter.operator ? { operator: filter.operator } : {}) }))],
     ...(relevant.length ? { calculatedFields: relevant.map(({ name, expression }) => ({ name, expression })) } : {}),
