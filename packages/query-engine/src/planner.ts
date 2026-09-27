@@ -1,3 +1,4 @@
+import { validateParameters, type ParameterValue } from './parameters.js';
 import { ExpressionBinder, expressionSql } from './expressions.js';
 import { bindMetadata } from './metadata.js';
 import type { Aggregation, Dimension, Measure, PlanOptions, PlanRequest, QueryPlan, RowFilter } from './types.js';
@@ -188,7 +189,8 @@ function fieldWells(visual: Visual, binder: ExpressionBinder): { dimensions: Dim
   return { dimensions, measures };
 }
 
-function sql(plan: Omit<QueryPlan, 'sql' | 'parameters'>): string {
+function sql(plan: Omit<QueryPlan, 'sql' | 'parameters'>, parameters: ParameterValue[]): string {
+  const bind = (value: ParameterValue): string => { parameters.push(value); return `$${parameters.length}`; };
   const ctes: string[] = [];
   // Choose internal relation names distinct from the physical name to avoid CTE shadowing.
   let prefix = '__opensight_';
@@ -196,15 +198,15 @@ function sql(plan: Omit<QueryPlan, 'sql' | 'parameters'>): string {
   let from = plan.tableSchema === undefined ? q(plan.tableName) : `${q(plan.tableSchema)}.${q(plan.tableName)}`;
   for (const [i, calculation] of plan.calculations.entries()) {
     const relation = q(`${prefix}row_${i}`);
-    ctes.push(`${relation} AS (SELECT *, ${expressionSql(calculation.expression, plan.dialect)} AS ${q(calculation.name)} FROM ${from})`);
+    ctes.push(`${relation} AS (SELECT *, ${expressionSql(calculation.expression, plan.dialect, bind)} AS ${q(calculation.name)} FROM ${from})`);
     from = relation;
   }
   if (plan.filters.length) {
     const relation = q(`${prefix}filtered`);
-    let parameter = 0;
     const predicates = plan.filters.map(f => {
-      if ('value' in f) return `${q(f.columnName)} = $${++parameter}`;
-      return f.values.length ? `${q(f.columnName)} IN (${f.values.map(() => `$${++parameter}`).join(', ')})` : 'FALSE';
+      const placeholder = (value: ParameterValue) => f.scalarType === 'datetime' ? `CAST(${bind(value)} AS TIMESTAMP)` : bind(value);
+      if ('value' in f) return `${q(f.columnName)} ${f.operator === 'GREATER_THAN_OR_EQUAL_TO' ? '>=' : f.operator === 'LESS_THAN_OR_EQUAL_TO' ? '<=' : '='} ${placeholder(f.value)}`;
+      return f.values.length ? `${q(f.columnName)} IN (${f.values.map(placeholder).join(', ')})` : 'FALSE';
     });
     ctes.push(`${relation} AS (SELECT * FROM ${from} WHERE ${predicates.join(' AND ')})`);
     from = relation;
@@ -230,7 +232,7 @@ export function planVisual(request: PlanRequest, options: PlanOptions = {}): Que
   const dialect = opts.dialect === undefined ? 'duckdb' : opts.dialect;
   if (dialect !== 'duckdb' && dialect !== 'postgres') fail('UNSUPPORTED_FEATURE', '$.options.dialect', 'expected duckdb or postgres');
   const r = object(request, '$');
-  keys(r, ['analysis', 'dataSet', 'dataSource', 'localData', 'visualId'], '$');
+  keys(r, ['analysis', 'dataSet', 'dataSource', 'localData', 'visualId', 'parameterDeclarations', 'parameterBindings', 'parameterFilters'], '$');
   const metadata = bindMetadata(r.dataSet, r.dataSource, r.localData);
   const analysis = object(r.analysis, '$.analysis');
   keys(analysis, ['ResourceType', 'AnalysisId', 'Name', 'Definition'], '$.analysis');
@@ -253,10 +255,25 @@ export function planVisual(request: PlanRequest, options: PlanOptions = {}): Que
   const visualId = string(r.visualId, '$.visualId');
   const visual = all.find((v) => v.id === visualId);
   if (!visual) fail('UNRESOLVED_BINDING', '$.visualId', `unknown visual: ${visualId}`);
-  const binder = new ExpressionBinder(identifier, metadata.columns, definition.CalculatedFields);
+  let parameters: ReturnType<typeof validateParameters>;
+  try { parameters = validateParameters(r.parameterDeclarations, r.parameterBindings); } catch (e) { fail('INVALID_INPUT', '$.parameterBindings', e instanceof Error ? e.message : String(e)); }
+  const binder = new ExpressionBinder(identifier, metadata.columns, definition.CalculatedFields, parameters.declarations, parameters.bindings);
   const fields = fieldWells(visual, binder);
   const sheetIds = new Set(array(definition.Sheets, `${dp}.Sheets`).map((s, i) => string(object(s, `${dp}.Sheets[${i}]`).SheetId, `${dp}.Sheets[${i}].SheetId`)));
   const predicates = filters(definition.FilterGroups, visual, all, sheetIds, binder);
+  for (const [i, raw] of array(r.parameterFilters ?? [], '$.parameterFilters').entries()) {
+    const path = `$.parameterFilters[${i}]`, f = object(raw, path);
+    keys(f, ['columnName', 'parameterName', 'operator'], path);
+    const columnName = string(f.columnName, `${path}.columnName`), name = string(f.parameterName, `${path}.parameterName`);
+    const p = parameters.declarations.find(p => p.name === name);
+    if (!p) fail('UNRESOLVED_BINDING', path, `undeclared parameter ${name}`);
+    const type = binder.bind(columnName, path).scalarType;
+    if (type !== p.type) fail('TYPE_MISMATCH', path, `parameter ${name} (${p.type}) does not match ${columnName} (${type})`);
+    const operator = f.operator ?? 'EQUALS';
+    if (!['EQUALS', 'GREATER_THAN_OR_EQUAL_TO', 'LESS_THAN_OR_EQUAL_TO'].includes(String(operator)) || operator !== 'EQUALS' && (p.multiple || type === 'string')) fail('TYPE_MISMATCH', path, 'range comparisons require a single number or datetime parameter');
+    const values = parameters.bindings[name]!;
+    predicates.push({ columnName, path, scalarType: type, operator: operator as 'EQUALS' | 'GREATER_THAN_OR_EQUAL_TO' | 'LESS_THAN_OR_EQUAL_TO', ...(values.length === 1 ? { value: values[0]! } : { values }) });
+  }
   const plan: Omit<QueryPlan, 'sql' | 'parameters'> = {
     dialect, mode: 'synthetic-local', visualId, dataSetIdentifier: identifier,
     tableName: metadata.tableName, sourceColumns: metadata.columns, localData: metadata.localData,
@@ -264,5 +281,6 @@ export function planVisual(request: PlanRequest, options: PlanOptions = {}): Que
     calculations: binder.calculations, filters: predicates, ...fields,
     stages: ['source', 'row-calculations', 'row-filters', 'visual-aggregation', 'order'],
   };
-  return { ...plan, sql: sql(plan), parameters: predicates.flatMap(f => 'value' in f ? [f.value] : [...f.values]) };
+  const values: ParameterValue[] = [];
+  return { ...plan, sql: sql(plan, values), parameters: values };
 }

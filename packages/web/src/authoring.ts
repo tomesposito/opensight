@@ -26,7 +26,7 @@ export const VISUAL_TYPES = [
 ] as const;
 export type VisualKind = typeof VISUAL_TYPES[number]['kind'];
 export type Well = 'dimension' | 'rows' | 'columns' | 'values';
-export interface CategoryFilter { columnName: string; values: string[] }
+export interface CategoryFilter { columnName: string; values: string[]; parameterName?: string; operator?: 'EQUALS' | 'GREATER_THAN_OR_EQUAL_TO' | 'LESS_THAN_OR_EQUAL_TO' }
 export interface ImportedVisual {
   visualId: string; variant: string; local: boolean; replaced?: boolean; remapped?: boolean;
   dataSets: { identifier: string; arn?: string }[];
@@ -106,6 +106,7 @@ export type AuthorAction =
   | { type: 'title'; title: string }
   | { type: 'donut'; donut: boolean }
   | { type: 'display'; property: 'titleVisible' | 'legend' | 'labels' | 'horizontal' | 'stacked' | 'totals' | 'subtotals'; value: boolean }
+  | { type: 'filter-parameter'; columnName: string; parameterName: string; operator?: CategoryFilter['operator'] }
   | { type: 'filter'; columnName: string; values: string[] | null }
   | { type: 'assign' | 'unassign'; field: string; well?: Well };
 
@@ -200,6 +201,12 @@ export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorD
       case 'title': return { ...visual, title: action.title };
       case 'donut': return { ...visual, donut: visual.kind === 'pie' && action.donut };
       case 'display': return { ...visual, [action.property]: action.value };
+      case 'filter-parameter': {
+        const p = sheetParameters(draft).find(p => p.name === action.parameterName), field = dataFields(draft.calculatedFields).find(f => f.name === action.columnName);
+        const type = field?.type === 'STRING' ? 'string' : field?.type === 'DATETIME' ? 'datetime' : 'number';
+        if (!p || !field || p.type !== type || action.operator && action.operator !== 'EQUALS' && (p.multiple || p.type === 'string')) return visual;
+        return { ...visual, filters: [...visual.filters.filter(f => f.columnName !== action.columnName), { columnName: action.columnName, values: [], parameterName: p.name, operator: action.operator ?? 'EQUALS' }] };
+      }
       case 'filter': {
         if (!dataFields(draft.calculatedFields).some(f => f.name === action.columnName && f.type === 'STRING')) return visual;
         const filters = visual.filters.filter(f => f.columnName !== action.columnName);
@@ -351,7 +358,8 @@ export function validateDraft(value: unknown): asserts value is AuthorDraft {
       if ((v.kind === 'kpi' || v.kind === 'pie') && v.measures.length > 1 || v.kind === 'kpi' && v.dimension !== null || v.kind !== 'pie' && v.donut || v.kind !== 'pivot' && v.columns.length || (v.kind === 'table' || v.kind === 'pivot' ? v.dimension !== (v.rows[0] ?? null) : v.rows.length) || v.rows.some(n => (v.columns as string[]).includes(n))) return fail();
       const filters = new Set<string>();
       for (const f of v.filters) {
-        if (!isObject(f) || !onlyKeys(f, ['columnName', 'values']) || typeof f.columnName !== 'string' || filters.has(f.columnName) || (!imported && !fields.some(field => field.name === f.columnName && field.type === 'STRING')) || !Array.isArray(f.values) || !f.values.every(n => typeof n === 'string' && !n.includes('\0')) || new Set(f.values).size !== f.values.length) return fail();
+        if (!isObject(f) || !onlyKeys(f, ['columnName', 'values', 'parameterName', 'operator']) || typeof f.columnName !== 'string' || filters.has(f.columnName) || (!imported && !fields.some(field => field.name === f.columnName && (f.parameterName !== undefined || field.type === 'STRING'))) || !Array.isArray(f.values) || !f.values.every(n => typeof n === 'string' && !n.includes('\0')) || new Set(f.values).size !== f.values.length) return fail();
+        if (f.parameterName !== undefined && (typeof f.parameterName !== 'string' || !((value.parameters ?? []) as AuthorParameter[]).some(p => p.name === f.parameterName)) || f.operator !== undefined && !['EQUALS', 'GREATER_THAN_OR_EQUAL_TO', 'LESS_THAN_OR_EQUAL_TO'].includes(String(f.operator))) return fail();
         filters.add(f.columnName);
       }
       ids.add(v.id);

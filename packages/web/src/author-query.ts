@@ -1,3 +1,5 @@
+import { declaration, type AuthorParameter } from './parameters.js';
+import type { AuthorControl } from './controls.js';
 import { authorVisualProblem, visualDimensions, type CalculatedField, type AuthorVisual } from './authoring.js';
 import type { createApiClient, QueryRequest } from './api-client.js';
 import type { Row } from './model.js';
@@ -5,15 +7,19 @@ import type { Row } from './model.js';
 export type QueryClient = Pick<ReturnType<typeof createApiClient>, 'queryDataset'>;
 export interface AuthorRows { rows: Row[] | null; message?: string }
 
-export function buildAuthorQuery(visual: AuthorVisual, calculations: readonly CalculatedField[] = []): QueryRequest | null {
+export function buildAuthorQuery(visual: AuthorVisual, calculations: readonly CalculatedField[] = [], parameters: readonly AuthorParameter[] = []): QueryRequest | null {
   if (authorVisualProblem(visual)) return null;
   const dimensions = visualDimensions(visual);
   if (!visual.measures.length || (visual.kind !== 'kpi' && !dimensions.length)) return null;
+  const relevant = queryDependencies([...dimensions, ...visual.measures, ...visual.filters.map(f => f.columnName)], calculations);
+  const names = new Set([...visual.filters.flatMap(f => f.parameterName ? [f.parameterName] : []), ...relevant.flatMap(c => [...c.expression.matchAll(/\$\{([^}]+)\}/g)].map(m => m[1]!))]);
+  const used = parameters.filter(p => names.has(p.name));
   return {
     dimensions: dimensions.map(name => ({ fieldId: name, columnName: name, ...(name === 'order_date' ? { granularity: 'MONTH' } : {}) })),
     measures: visual.measures.map(name => ({ fieldId: name, columnName: name, aggregation: 'SUM' })),
-    filters: visual.filters.map(f => ({ columnName: f.columnName, values: f.values })),
-    ...(calculations.length ? { calculatedFields: calculations.map(({ name, expression }) => ({ name, expression })) } : {}),
+    filters: visual.filters.map(f => f.parameterName ? { columnName: f.columnName, parameterName: f.parameterName, ...(f.operator ? { operator: f.operator } : {}) } : { columnName: f.columnName, values: f.values }),
+    ...(relevant.length ? { calculatedFields: relevant.map(({ name, expression }) => ({ name, expression })) } : {}),
+    ...(used.length ? { parameterDeclarations: used.map(declaration), parameterBindings: Object.fromEntries(used.map(p => [p.name, p.values])) } : {}),
   };
 }
 
@@ -33,4 +39,26 @@ export async function loadAuthorRows(client: QueryClient, request: QueryRequest,
     signal.throwIfAborted();
     return { rows: null, message: error instanceof Error ? error.message : String(error) };
   }
+}
+
+/** Reachability prevents unrelated controls/calculations from invalidating visual results. */
+export function queryDependencies(fields: readonly string[], calculations: readonly CalculatedField[]): CalculatedField[] {
+  const seen = new Set<string>();
+  const visit = (name: string): void => {
+    if (seen.has(name)) return; seen.add(name);
+    const c = calculations.find(c => c.name === name);
+    if (c) for (const m of c.expression.matchAll(/(?<!\$)\{([^}]+)\}/g)) visit(m[1]!);
+  };
+  fields.forEach(visit);
+  return calculations.filter(c => seen.has(c.name));
+}
+export function buildControlQuery(control: AuthorControl, controls: readonly AuthorControl[], parameters: readonly AuthorParameter[]): QueryRequest | undefined {
+  if (!control.source?.local) return;
+  const parents = (control.cascade ?? []).map(c => ({ ...c, parameter: parameters.find(p => p.id === controls.find(parent => parent.id === c.controlId)?.parameterId) }));
+  if (parents.some(p => !p.parameter)) return;
+  const used = [...new Map(parents.map(p => [p.parameter!.name, p.parameter!])).values()];
+  return { dimensions: [{ fieldId: control.source.columnName, columnName: control.source.columnName }], measures: [{ fieldId: '__count', columnName: 'revenue', aggregation: 'COUNT' }],
+    filters: parents.map(p => ({ columnName: p.columnName, parameterName: p.parameter!.name })),
+    ...(used.length ? { parameterDeclarations: used.map(declaration), parameterBindings: Object.fromEntries(used.map(p => [p.name, p.values])) } : {}),
+  };
 }

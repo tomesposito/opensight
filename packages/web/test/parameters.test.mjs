@@ -25,3 +25,32 @@ test('four synthetic bundle declaration variants become typed live parameters', 
   assert.deepEqual(d.parameters.map(p => [p.name, p.type, p.multiple, p.integer]), [['Region', 'string', true, undefined], ['AsOf', 'datetime', false, undefined], ['Periods', 'number', false, true], ['MinimumRevenue', 'number', false, false]]);
   assert.match(JSON.stringify(d.bundle.report), /live; static defaults imported/);
 });
+
+import { buildAuthorQuery, buildControlQuery } from '../build/test/author-query.js';
+import { executeFixtureQuery } from '../build/test/fixture-query.js';
+import { activeSheet } from '../build/test/authoring.js';
+test('fixture controls feed parameter filters and transitive calculated expressions', () => {
+  let d = authorReducer(emptyDraft(), { type: 'add', kind: 'kpi' });
+  d = authorReducer(d, { type: 'parameter-add', parameter });
+  d = authorReducer(d, { type: 'filter-parameter', columnName: 'region', parameterName: 'Region' });
+  const query = () => buildAuthorQuery(activeSheet(d).visuals[0], d.calculatedFields, d.parameters);
+  assert.deepEqual(executeFixtureQuery(query()).rows, [{ revenue: 500 }]);
+  d = authorReducer(d, { type: 'parameter-value', id: 'parameter-1', values: ['West'] });
+  assert.deepEqual(executeFixtureQuery(query()).rows, [{ revenue: 400 }]);
+  d = authorReducer(d, { type: 'parameter-add', parameter: { name: 'Scale', type: 'number', multiple: false, values: [2], defaultValues: [1] } });
+  d = authorReducer(d, { type: 'calculation-add', field: { name: 'Scaled', expression: '{revenue} * ${Scale}', role: 'measure' } });
+  d = authorReducer(d, { type: 'calculation-add', field: { name: 'Chained', expression: '{Scaled} + 1', role: 'measure' } });
+  d = authorReducer(d, { type: 'assign', field: 'Chained', well: 'values' });
+  assert.deepEqual(executeFixtureQuery(query()).rows, [{ Chained: 803 }]);
+  d = authorReducer(d, { type: 'parameter-value', id: 'parameter-1', values: [] });
+  assert.deepEqual(executeFixtureQuery(query()).rows, [{ Chained: null }]);
+});
+test('cascading option queries use parent selections and unrelated parameters do not alter visual requests', () => {
+  const parameters = [{ ...parameter, id: 'parameter-1' }, { ...parameter, id: 'parameter-2', name: 'Category', values: ['Software'] }];
+  const controls = [{ id: 'region', parameterId: 'parameter-1' }, { id: 'category', parameterId: 'parameter-2', source: { columnName: 'order_date', local: true }, cascade: [{ controlId: 'region', columnName: 'region' }, { controlId: 'software', columnName: 'category' }] }, { id: 'software', parameterId: 'parameter-2' }];
+  // Choose category values narrowed by an explicit date parent in a second query.
+  const regionOnly = buildControlQuery({ ...controls[1], source: { columnName: 'category', local: true }, cascade: [controls[1].cascade[0]] }, controls, parameters);
+  assert.deepEqual(executeFixtureQuery(regionOnly).rows.map(r => r.category), ['Hardware', 'Software']);
+  let d = authorReducer(emptyDraft(), { type: 'add', kind: 'kpi' });
+  assert.deepEqual(buildAuthorQuery(activeSheet(d).visuals[0], [], parameters), buildAuthorQuery(activeSheet(d).visuals[0]));
+});

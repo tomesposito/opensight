@@ -1,3 +1,4 @@
+import type { ParameterBindings, ParameterDeclaration, ParameterValue } from './parameters.js';
 import type { BoundColumn, Calculation, RowExpression, ScalarType, SqlDialect } from './types.js';
 import { array, equals, fail, keys, object, quoteIdentifier, string, unique } from './validation.js';
 
@@ -11,7 +12,7 @@ export class ExpressionBinder {
   private readonly bindings = new Map<string, Binding>();
   private readonly visiting = new Set<string>();
 
-  constructor(readonly dataSetIdentifier: string, columns: readonly BoundColumn[], raw: unknown) {
+  constructor(readonly dataSetIdentifier: string, columns: readonly BoundColumn[], raw: unknown, readonly parameters: readonly ParameterDeclaration[] = [], readonly values: ParameterBindings = {}) {
     const names = new Set<string>();
     for (const column of columns) {
       unique(names, column.name, '$.dataSet.DataSet.OutputColumns');
@@ -63,6 +64,14 @@ function parseExpression(source: string, path: string, binder: ExpressionBinder)
       if (source[offset] !== ')') fail('INVALID_INPUT', path, `expected ')' at offset ${offset}`);
       offset++;
       left = { ...left, location: location(offset) };
+    } else if (source.startsWith('${', offset)) {
+      const end = source.indexOf('}', offset + 2), name = source.slice(offset + 2, end);
+      const parameter = binder.parameters.find(p => p.name === name);
+      if (end < 0 || !parameter) fail('UNRESOLVED_BINDING', path, `unknown parameter at offset ${offset}: ${name}`);
+      const values = binder.values[name];
+      if (parameter.multiple || values?.length !== 1) fail('TYPE_MISMATCH', path, `parameter ${name} requires exactly one scalar value in an expression`);
+      offset = end + 1;
+      left = { kind: 'parameter', name, value: values[0]!, scalarType: parameter.type, nullable: false, level: 'row', dependencies: [], location: location(offset) };
     } else if (source[offset] === '{') {
       const end = source.indexOf('}', offset + 1);
       if (end < 0) fail('INVALID_INPUT', path, `unclosed column reference at offset ${offset}`);
@@ -111,12 +120,16 @@ function parseExpression(source: string, path: string, binder: ExpressionBinder)
   return result;
 }
 
-export function expressionSql(expression: RowExpression, dialect: SqlDialect = 'duckdb'): string {
+export function expressionSql(expression: RowExpression, dialect: SqlDialect = 'duckdb', bind?: (value: ParameterValue) => string): string {
   const numericType = dialect === 'postgres' ? 'DOUBLE PRECISION' : 'DOUBLE';
   switch (expression.kind) {
+    case 'parameter': {
+      if (!bind) fail('INVALID_INPUT', expression.location.path, 'parameter SQL requires a binder');
+      return `CAST(${bind(expression.value)} AS ${expression.scalarType === 'number' ? numericType : expression.scalarType === 'datetime' ? 'TIMESTAMP' : 'VARCHAR'})`;
+    }
     case 'literal': return `CAST(${expression.value} AS ${numericType})`;
     case 'column': return quoteIdentifier(expression.columnName);
     // Arithmetic operates on double precision in this provisional slice; avoid integer overflow.
-    case 'binary': return `(CAST(${expressionSql(expression.left, dialect)} AS ${numericType}) ${expression.operator} CAST(${expressionSql(expression.right, dialect)} AS ${numericType}))`;
+    case 'binary': return `(CAST(${expressionSql(expression.left, dialect, bind)} AS ${numericType}) ${expression.operator} CAST(${expressionSql(expression.right, dialect, bind)} AS ${numericType}))`;
   }
 }

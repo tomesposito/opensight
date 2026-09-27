@@ -3,12 +3,8 @@ import { convertDefinition, object } from './definition-converter.js';
 import type { Row } from './model.js';
 
 /** OpenSight HTTP projection; the API supplies the engine's trusted metadata. */
-export interface QueryRequest {
-  dimensions: { fieldId: string; columnName: string; granularity?: string }[];
-  measures: { fieldId: string; columnName: string; aggregation: string }[];
-  filters: ({ columnName: string; value: string } | { columnName: string; values: string[] })[];
-  calculatedFields?: { name: string; expression: string }[];
-}
+export type { InteractiveQuery as QueryRequest } from '@opensight/query-engine/browser';
+import type { InteractiveQuery as QueryRequest } from '@opensight/query-engine/browser';
 export interface QueryResponse {
   columns: { name: string; type: 'string' | 'number' }[];
   rows: Row[];

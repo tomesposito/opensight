@@ -16,6 +16,10 @@
     "./parameters": {
       "types": "./dist/parameters.d.ts",
       "import": "./dist/parameters.js"
+    },
+    "./browser": {
+      "types": "./dist/browser.d.ts",
+      "import": "./dist/browser.js"
     }
   },
   "types": "./dist/index.d.ts",

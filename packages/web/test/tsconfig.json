@@ -20,6 +20,7 @@
     "../src/author-preview.ts",
     "../src/Author.tsx",
     "../src/VisualCard.tsx",
-    "../src/ControlInput.tsx"
+    "../src/ControlInput.tsx",
+    "../src/fixture-query.ts"
   ]
 }

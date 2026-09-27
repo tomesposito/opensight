@@ -1,3 +1,4 @@
+import type { ParameterBindings, ParameterDeclaration, ParameterValue } from './parameters.js';
 export type ScalarType = 'number' | 'string' | 'datetime';
 export type ColumnType = 'INTEGER' | 'DECIMAL' | 'STRING' | 'DATETIME';
 export type Aggregation = 'SUM' | 'AVG' | 'COUNT' | 'MIN' | 'MAX';
@@ -19,6 +20,7 @@ interface ExpressionInfo {
   readonly dependencies: readonly string[];
 }
 export type RowExpression = ExpressionInfo & (
+  { readonly kind: 'parameter'; readonly name: string; readonly value: ParameterValue } |
   { readonly kind: 'literal'; readonly value: number } |
   { readonly kind: 'column'; readonly dataSetIdentifier: string; readonly columnName: string } |
   { readonly kind: 'binary'; readonly operator: '+' | '-' | '*'; readonly left: RowExpression; readonly right: RowExpression }
@@ -51,7 +53,10 @@ export interface Measure {
 export type RowFilter = {
   readonly columnName: string;
   readonly path: string;
-} & ({ readonly value: string } | { readonly values: readonly string[] });
+  readonly operator?: 'EQUALS' | 'GREATER_THAN_OR_EQUAL_TO' | 'LESS_THAN_OR_EQUAL_TO';
+  readonly scalarType?: ScalarType;
+} & ({ readonly value: ParameterValue } | { readonly values: readonly ParameterValue[] });
+export interface ParameterFilter { columnName: string; parameterName: string; operator?: 'EQUALS' | 'GREATER_THAN_OR_EQUAL_TO' | 'LESS_THAN_OR_EQUAL_TO' }
 /** OpenSight local test configuration, never inferred from missing AWS policies. */
 export interface LocalDataBinding {
   readonly provenance: string;
@@ -63,6 +68,9 @@ export interface LocalDataBinding {
   readonly security: { readonly dataset: 'unrestricted'; readonly source: 'unrestricted' };
 }
 export interface PlanRequest {
+  readonly parameterDeclarations?: readonly ParameterDeclaration[];
+  readonly parameterBindings?: ParameterBindings;
+  readonly parameterFilters?: readonly ParameterFilter[];
   /** Provisional synthetic analysis envelope, not an archive or API response. */
   readonly analysis: unknown;
   /** Reconstructed DescribeDataSet response body. */
@@ -89,7 +97,7 @@ export interface QueryPlan {
   readonly measures: readonly Measure[];
   readonly stages: readonly ['source', 'row-calculations', 'row-filters', 'visual-aggregation', 'order'];
   readonly sql: string;
-  readonly parameters: readonly string[];
+  readonly parameters: readonly ParameterValue[];
 }
 export type ResultValue = string | number | null;
 export type ResultRow = Record<string, ResultValue>;

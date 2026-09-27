@@ -45,6 +45,10 @@ export async function prepareFixtures(root = resolve(here, '../../../fixtures'))
       })),
     })),
   };
+  const csv = files.get('renderable-sales/sales.csv').toString('utf8').trim().split(/\r?\n/).map(line => line.split(','));
+  if (csv[0].join(',') !== 'order_id,order_date,region,category,revenue,profit') throw new Error('Unexpected pinned sales CSV header');
+  const rows = csv.slice(1).map(row => Object.fromEntries(csv[0].map((name, i) => [name, row[i] === '' ? null : ['order_id', 'revenue', 'profit'].includes(name) ? Number(row[i]) : row[i]])));
+  await writeFile(resolve(here, '../src/sales.generated.json'), JSON.stringify({ rows, metadata: { dataSet: json('renderable-sales/describe-data-set.response.json'), dataSource: json('renderable-sales/describe-data-source.response.json'), localData: local } }));
   const used = new Set();
   const synthetic = {
     id: sales.AnalysisId, name: sales.Name,
