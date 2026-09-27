@@ -46,3 +46,27 @@ export async function refreshRoute(request: IncomingMessage, response: ServerRes
   }
   return true;
 }
+
+export async function reportRoute(request: IncomingMessage, response: ServerResponse, path: string, query: string, reports: import('./reports.js').ReportService): Promise<boolean> {
+  const match = /^\/api\/users\/([^/]+)\/subscriptions(?:\/([^/]+)(?:\/(runs)(?:\/([^/]+))?)?)?$/u.exec(path);
+  if (!match) return false;
+  if (query) throw new RequestError(400, 'Query parameters are not supported');
+  const userId = routeId(match[1]!), subscriptionId = match[2] ? routeId(match[2]) : undefined;
+  if (!subscriptionId) { method(request, response, ['GET']); send(response, 200, reports.list(userId)); }
+  else if (match[3]) {
+    const runId = match[4] ? routeId(match[4]) : undefined;
+    const verb = method(request, response, runId ? ['GET'] : ['GET', 'POST']);
+    if (verb === 'POST') send(response, 200, await reports.run(userId, subscriptionId));
+    else {
+      const runs = reports.history(userId, subscriptionId), result = runId ? runs.find(r => r.id === runId) : runs;
+      if (!result) throw new RequestError(404, 'Report run not found');
+      send(response, 200, result);
+    }
+  } else {
+    const verb = method(request, response, ['GET', 'PUT', 'DELETE']);
+    if (verb === 'PUT') send(response, 200, await reports.put(userId, subscriptionId, await readBody(request)));
+    else if (verb === 'DELETE') { await reports.remove(userId, subscriptionId); send(response, 200, { deleted: true }); }
+    else send(response, 200, reports.get(userId, subscriptionId));
+  }
+  return true;
+}

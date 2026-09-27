@@ -7,7 +7,7 @@ import { EXTRA_VISUALS, extraKind, variantKinds } from './visual-catalog.js';
 import { compileExtra } from './extra-charts.js';
 
 type ObjectValue = Record<string, unknown>;
-type Input = Pick<FixtureVisual, 'source' | 'definition' | 'rows' | 'bindings' | 'path' | 'theme'>;
+type Input = Pick<FixtureVisual, 'source' | 'rows' | 'bindings' | 'path' | 'theme'> & { definition: unknown };
 export interface CompiledVisual {
   model: VisualModel;
   option: EChartsOption;

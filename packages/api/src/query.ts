@@ -136,6 +136,10 @@ export class SalesQuery {
     };
   }
 
+  async executeVisual(definition: unknown, visualId: string) {
+    return executeLocal({ ...this.metadata, visualId, analysis: { ResourceType: 'Analysis', AnalysisId: 'snapshot', Name: 'Dashboard snapshot', Definition: definition } }, { dataRoot: this.dataRoot });
+  }
+
   async refresh(): Promise<number> {
     return refreshLocal(interactiveRequest({ dimensions: [], measures: [{ fieldId: 'rows', columnName: 'revenue', aggregation: 'COUNT' }], filters: [] }, this.metadata), { dataRoot: this.dataRoot });
   }

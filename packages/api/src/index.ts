@@ -6,13 +6,17 @@ import { readQuery, RequestError, SalesQuery } from './query.js';
 import { AutomationStore } from './automation-store.js';
 import { emptyRefreshState, RefreshService, validateRefreshState } from './refresh.js';
 import { Scheduler } from './schedule.js';
-import { refreshRoute } from './automation-routes.js';
+import { DashboardSnapshots, ReportService } from './reports.js';
+import { smtpFromEnvironment, type MailTransport } from './mail.js';
+import { refreshRoute, reportRoute } from './automation-routes.js';
 
 export interface ApiOptions {
   /** Directory of local fixtures/bundles, or one .qs/.json file. Loaded at startup. */
   dataRoot: string;
   /** A single-process, atomic JSON resource store; omit for ephemeral library use. */
   automationStorePath?: string;
+  /** Inject a stub in tests. Real SMTP configuration is environment-only. */
+  mailTransport?: MailTransport;
 }
 
 /** Loads a complete snapshot before returning an unbound HTTP server. */
@@ -22,7 +26,10 @@ export async function createApiServer(options: ApiOptions): Promise<Server> {
   const automation = await AutomationStore.load(emptyRefreshState(), options.automationStorePath, validateRefreshState);
   const refresh = new RefreshService(automation, new Map(sales ? [['sales', sales]] : []));
   await refresh.recover();
-  const scheduler = new Scheduler(() => refresh.tick());
+  const mail = options.mailTransport ?? smtpFromEnvironment();
+  const reports = new ReportService(automation, new DashboardSnapshots(store, sales), mail);
+  await reports.recover();
+  const scheduler = new Scheduler(async () => { await refresh.tick(); await reports.tick(); });
   const server = createServer((request, response) => {
     const requestId = randomUUID();
     const error = (status: number, type: string, message: string): void => {
@@ -32,8 +39,15 @@ export async function createApiServer(options: ApiOptions): Promise<Server> {
     const queryOffset = url.indexOf('?');
     const path = queryOffset === -1 ? url : url.slice(0, queryOffset);
     const query = queryOffset === -1 ? '' : url.slice(queryOffset + 1);
-    if (path === '/api/refresh-schedules' || /^\/api\/datasets\/[^/]+\/refresh-/.test(path)) {
-      void refreshRoute(request, response, path, query, refresh).then(handled => {
+    if (path === '/api/automation-status' || path.startsWith('/api/users/') || path === '/api/refresh-schedules' || /^\/api\/datasets\/[^/]+\/refresh-/.test(path)) {
+      void (async () => {
+        if (path === '/api/automation-status') {
+          if (query || request.method !== 'GET') throw new RequestError(400, 'Expected GET without selectors');
+          send(response, 200, { scheduler: 'api-process', smtp: mail.configured ? 'configured' : 'not-configured', persistence: options.automationStorePath ? 'file' : 'ephemeral' });
+          return true;
+        }
+        return await refreshRoute(request, response, path, query, refresh) || await reportRoute(request, response, path, query, reports);
+      })().then(handled => {
         if (!handled) error(404, 'ResourceNotFoundException', 'Route not found');
       }).catch(cause => {
         request.resume();
@@ -116,3 +130,6 @@ function send(response: ServerResponse, status: number, body: object): void {
   });
   response.end(json);
 }
+
+export { StubMailTransport } from './mail.js';
+export type { MailTransport, MailMessage } from './mail.js';

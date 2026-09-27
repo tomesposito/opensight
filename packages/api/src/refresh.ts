@@ -1,3 +1,4 @@
+import type { Subscription, ReportRun } from './reports.js';
 import { randomUUID } from 'node:crypto';
 import { QueryEngineError } from '@opensight/query-engine';
 import { AutomationStore } from './automation-store.js';
@@ -8,12 +9,15 @@ export interface RefreshSchedule { datasetId: string; enabled: boolean; schedule
 export interface RunError { code: string; message: string; lastGood: string | null }
 export interface RefreshRun { id: string; datasetId: string; startedAt: string; finishedAt: string | null; state: 'running' | 'succeeded' | 'failed'; rows: number | null; error: RunError | null }
 export interface DatasetStatus { datasetId: string; lastGood: string | null; nextRun: string | null; consecutiveFailures: number; state: 'never' | 'running' | 'ready' | 'error'; error: RunError | null }
-export interface RefreshState { version: 1; schedules: RefreshSchedule[]; refreshRuns: RefreshRun[]; datasets: DatasetStatus[] }
-export const emptyRefreshState = (): RefreshState => ({ version: 1, schedules: [], refreshRuns: [], datasets: [] });
+export interface RefreshState { version: 1; subscriptions: Subscription[]; reportRuns: ReportRun[]; schedules: RefreshSchedule[]; refreshRuns: RefreshRun[]; datasets: DatasetStatus[] }
+export const emptyRefreshState = (): RefreshState => ({ version: 1, subscriptions: [], reportRuns: [], schedules: [], refreshRuns: [], datasets: [] });
 export function validateRefreshState(value: unknown): RefreshState {
-  const s = record(value, ['version', 'schedules', 'refreshRuns', 'datasets']);
+  const s = record(value, ['version', 'schedules', 'refreshRuns', 'datasets', 'subscriptions', 'reportRuns']);
   if (s.version !== 1 || !Array.isArray(s.schedules) || !Array.isArray(s.refreshRuns) || !Array.isArray(s.datasets)) throw new Error('Invalid automation state');
   for (const item of s.schedules) { const r = record(item, ['datasetId', 'enabled', 'schedule', 'nextRun']); id(r.datasetId, 'datasetId'); enabled(r.enabled); validateSchedule(r.schedule); }
+  s.subscriptions ??= []; s.reportRuns ??= [];
+  if (!Array.isArray(s.subscriptions) || !Array.isArray(s.reportRuns)) throw new Error('Invalid report state');
+  for (const item of s.subscriptions) { const r = record(item, ['id', 'userId', 'dashboardId', 'recipients', 'enabled', 'schedule', 'nextRun']); id(r.id, 'id'); id(r.userId, 'userId'); id(r.dashboardId, 'dashboardId'); enabled(r.enabled); validateSchedule(r.schedule); }
   return s as unknown as RefreshState;
 }
 function status(state: RefreshState, datasetId: string): DatasetStatus {

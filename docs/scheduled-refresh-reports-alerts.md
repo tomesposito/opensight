@@ -44,3 +44,44 @@ The CLI stores resources/history atomically in `.opensight/automation.json`
 state. Use one API process per store file. Restart retains next-run timestamps
 and last-good state, marks unfinished runs `REFRESH_INTERRUPTED`, and resumes
 schedules. Disk write failures fail the operation instead of claiming persistence.
+
+## Email reports
+
+- `GET /api/users/{userId}/subscriptions` lists that user's subscriptions.
+- `GET|PUT|DELETE /api/users/{userId}/subscriptions/{id}` manages a subscription.
+- `GET|POST /api/users/{userId}/subscriptions/{id}/runs` lists history or sends now.
+- `GET /api/users/{userId}/subscriptions/{id}/runs/{runId}` retrieves a run.
+- `GET /api/automation-status` identifies SMTP configuration and persistence mode.
+
+PUT accepts `dashboardId`, `recipients` (1–50 unique plain email addresses),
+`enabled`, and `schedule` (the refresh schedule shape). Dashboard IDs must resolve
+in the definition store. User IDs scope resources and history; there is no user
+authentication in this phase. IDs are caller-chosen; PUT creates or replaces.
+Schedules persist alongside refresh resources. Deleting a subscription preserves
+its history. Interrupted deliveries are recorded with an unknown delivery outcome
+and are not automatically retried, avoiding silent duplicate mail.
+
+At send time, the server executes the complete dashboard definition through the
+existing DuckDB planner, preserving filters, calculations and security gates. It
+passes the resulting rows and field bindings into the same pure visual compiler
+used by the browser. The email uses its ordered table cells, titles, labels,
+visibility, decimal formatting and background options. HTML is escaped; no scripts,
+remote images or browser chart runtime are embedded. These are accessible tabular
+snapshots, not screenshots. Unsupported definitions and unresolved sources record
+`SNAPSHOT_FAILED`; there is no fallback to old results or fixture values.
+
+SMTP configuration is exclusively process environment:
+`OPENSIGHT_SMTP_HOST`, `OPENSIGHT_SMTP_PORT` (default 465),
+`OPENSIGHT_SMTP_FROM`, and optionally both `OPENSIGHT_SMTP_USER` and
+`OPENSIGHT_SMTP_PASSWORD`. The built-in transport supports implicit TLS with
+certificate verification and optional AUTH LOGIN. Use an SMTP service's implicit
+TLS endpoint; STARTTLS/plaintext endpoints are not supported. Secrets belong in
+the deployment environment, never resource bodies, files in the repository, or
+logs. Partial/unknown settings fail startup. With no SMTP settings, report runs
+record `SMTP_NOT_CONFIGURED`. Rejected/timed-out delivery records
+`SMTP_SEND_FAILED` without raw server messages. Acceptance of SMTP DATA is the
+send boundary; it does not prove inbox delivery.
+
+Tests inject `StubMailTransport`; it retains messages in memory and never opens a
+socket. No new external packages were added: SMTP uses Node TLS and the server
+imports the Apache-2.0 workspace visual compiler through `@opensight/web/compiler`.
