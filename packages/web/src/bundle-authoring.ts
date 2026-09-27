@@ -1,3 +1,4 @@
+import { importParameter } from './parameters.js';
 import { assembleQsBundle, parseBundleJson, parseQsBundle, summarizeQsBundle, ZIP_LIMITS } from '@opensight/bundle-parser/browser';
 import type { BundleDefinition, BundleSheet, BundleVisual, QsBundle } from '@opensight/bundle-parser';
 import { defaults, emptyDraft, serializeDraft, serializeVisual, tabular, singleMeasure, validateDraft, dataFields, calculationError } from './authoring.js';
@@ -120,8 +121,10 @@ export function importBundle(bundle: QsBundle): AuthorDraft {
     for (const declaration of d.dataSetIdentifierDeclarations) for (const key of Object.keys(declaration)) if (!['identifier', 'dataSetArn'].includes(key)) messages.push(`Dataset declaration ${declaration.identifier}.${key}: retained, read-only.`);
     for (const parameter of d.parameterDeclarations ?? []) {
       const [kind, value] = Object.entries(obj(parameter))[0]!;
-      messages.push(`Parameter ${string(obj(value).name, kind)} features (${Object.keys(obj(value)).join(', ')}): display only.`);
-      messages.push(`Parameter ${string(obj(value).name, kind)} (${kind}): display only; parameter editing and execution are unsupported.`);
+      const imported = importParameter(parameter, `parameter-${draft.parameters.length + 1}`, member.path);
+      if (imported) draft.parameters.push(imported);
+      messages.push(`Parameter ${string(obj(value).name, kind)} (${kind}): ${imported ? 'live; static defaults imported' : 'display only; unsupported declaration'}.`);
+      if (obj(obj(value).defaultValues).dynamicValue) messages.push(`Parameter ${string(obj(value).name, kind)}: server-side defaults are unsupported; choose a value locally.`);
     }
     for (const value of d.calculatedFields ?? []) {
       const c = obj(value), field: CalculatedField = { name: string(c.name), expression: string(c.expression), role: 'measure' };

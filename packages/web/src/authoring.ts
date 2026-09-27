@@ -1,3 +1,5 @@
+import { parameterError, parameterValueError, validateAuthorParameters } from './parameters.js';
+import type { AuthorParameter, ParameterValue } from './parameters.js';
 import type { BundleAnalysis, BundleColumnField, BundleDimensionField, BundleMeasureField, BundleVisual, BundleVisualBody } from '@opensight/bundle-parser';
 import { summarizeQsBundle } from '@opensight/bundle-parser/browser';
 import type { QsBundle } from '@opensight/bundle-parser';
@@ -50,12 +52,13 @@ export interface AuthorVisual {
 export interface Placement { i: string; x: number; y: number; w: number; h: number }
 export interface AuthorSheet { id: string; name: string; visuals: AuthorVisual[]; layout: Placement[]; selectedId: string | null; imported?: ImportedSheet }
 export interface AuthorDraft {
-  version: 2; title: string; sheets: AuthorSheet[]; activeSheetId: string; calculatedFields: CalculatedField[]; bundle?: BundleOrigin;
+  version: 2; parameters: AuthorParameter[]; title: string; sheets: AuthorSheet[]; activeSheetId: string; calculatedFields: CalculatedField[]; bundle?: BundleOrigin;
 }
 export const GRID_COLUMNS = 12;
 const newSheet = (id: string, name: string): AuthorSheet => ({ id, name, visuals: [], layout: [], selectedId: null });
-export const emptyDraft = (): AuthorDraft => ({ version: 2, title: 'Untitled analysis', sheets: [newSheet('sheet-1', 'Sheet 1')], activeSheetId: 'sheet-1', calculatedFields: [] });
+export const emptyDraft = (): AuthorDraft => ({ version: 2, parameters: [], title: 'Untitled analysis', sheets: [newSheet('sheet-1', 'Sheet 1')], activeSheetId: 'sheet-1', calculatedFields: [] });
 export const activeSheet = (draft: AuthorDraft): AuthorSheet => draft.sheets.find(s => s.id === draft.activeSheetId)!;
+export const sheetParameters = (draft: AuthorDraft, sheet = activeSheet(draft)): AuthorParameter[] => draft.parameters.filter(p => !p.memberPath || p.memberPath === (sheet.imported?.memberPath ?? draft.bundle?.primaryPath));
 export const dimensionLabel = (kind: VisualKind): string => kind === 'line' ? 'X-axis' : kind === 'table' ? 'Group-by' : kind === 'pivot' ? 'Rows' : 'Category';
 export const singleMeasure = (kind: VisualKind): boolean => kind === 'pie' || kind === 'kpi';
 export const tabular = (kind: VisualKind): boolean => kind === 'table' || kind === 'pivot';
@@ -80,6 +83,9 @@ export function calculationError(field: CalculatedField, existing: readonly Data
 }
 export type AuthorAction =
   | { type: 'import'; draft: AuthorDraft }
+  | { type: 'parameter-add'; parameter: Omit<AuthorParameter, 'id'> }
+  | { type: 'parameter-value'; id: string; values: ParameterValue[] }
+  | { type: 'parameter-default'; id: string; values: ParameterValue[] }
   | { type: 'remap'; id: string }
   | { type: 'sheet-remap'; id: string }
   | { type: 'analysis-title'; title: string }
@@ -108,6 +114,12 @@ const cleanLayout = (layout: readonly Placement[]): Placement[] => layout.map(({
 /** Immutable transitions shared by field buttons, pills, sheet tabs and drag/resize callbacks. */
 export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorDraft {
   if (action.type === 'import') { validateDraft(action.draft); return action.draft; }
+  if (action.type === 'parameter-add') {
+    const p = { ...action.parameter, id: nextId('parameter', draft.parameters.map(p => p.id)) };
+    if (parameterError(p) || draft.parameters.some(e => e.name === p.name && (!e.memberPath || !p.memberPath || e.memberPath === p.memberPath))) return draft;
+    return { ...draft, parameters: [...draft.parameters, p] };
+  }
+  if (action.type === 'parameter-value' || action.type === 'parameter-default') return { ...draft, parameters: draft.parameters.map(p => p.id !== action.id || parameterValueError(p, action.values) ? p : { ...p, [action.type === 'parameter-value' ? 'values' : 'defaultValues']: [...action.values] }) };
   if (action.type === 'analysis-title') return { ...draft, title: action.title };
   if (action.type === 'calculation-add') {
     if (calculationError(action.field, dataFields(draft.calculatedFields))) return draft;
@@ -279,7 +291,8 @@ const onlyKeys = (v: Record<string, unknown>, keys: string[]): boolean => Object
 /** localStorage is untrusted: validate every identity, field, layout and display option. */
 export function validateDraft(value: unknown): asserts value is AuthorDraft {
   const fail = (): never => { throw new Error('Invalid or unsupported author draft.'); };
-  if (!isObject(value) || !onlyKeys(value, ['version', 'title', 'sheets', 'activeSheetId', 'calculatedFields', 'bundle']) || value.version !== 2 || typeof value.title !== 'string' || !Array.isArray(value.sheets) || !value.sheets.length || !Array.isArray(value.calculatedFields)) return fail();
+  if (!isObject(value) || !onlyKeys(value, ['version', 'title', 'sheets', 'activeSheetId', 'calculatedFields', 'parameters', 'bundle']) || value.version !== 2 || typeof value.title !== 'string' || !Array.isArray(value.sheets) || !value.sheets.length || !Array.isArray(value.calculatedFields)) return fail();
+  validateAuthorParameters(value.parameters ?? []);
   if (value.bundle !== undefined) {
     const b = value.bundle;
     if (!isObject(b) || !onlyKeys(b, ['original', 'primaryPath', 'title', 'report', 'calculations', 'emptySheetId']) || typeof b.primaryPath !== 'string' || typeof b.title !== 'string' || (b.emptySheetId !== undefined && typeof b.emptySheetId !== 'string') || !Array.isArray(b.report) || !Array.isArray(b.calculations)) return fail();
@@ -332,6 +345,7 @@ export function validateDraft(value: unknown): asserts value is AuthorDraft {
 
 /** Keep the original storage key and migrate v0 drafts only after checking their complete shape. */
 function migrateDraft(value: unknown): unknown {
+  if (isObject(value) && value.version === 2) return { parameters: [], ...value };
   if (!isObject(value) || value.version !== 1) return value;
   if (!onlyKeys(value, ['version', 'visuals', 'selectedId']) || !Array.isArray(value.visuals)) throw new Error('Invalid legacy draft');
   const draft = emptyDraft();

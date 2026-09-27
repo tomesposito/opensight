@@ -1,3 +1,4 @@
+import { ParameterEditor } from './ParameterEditor.js';
 import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import type { Dispatch, ReactNode } from 'react';
 import { GridLayout, noCompactor, useContainerWidth } from 'react-grid-layout';
@@ -125,6 +126,7 @@ export function AuthorCanvas({ draft, dispatch, client }: EditorProps) {
             <span className="field-name">{field.name}</span><span className="field-type">{field.type}</span>
           </button>)}
         </div>)}
+        <ParameterEditor draft={draft} dispatch={dispatch} />
         <ImportedPanels draft={draft} />
         {!fields.some(f => f.name.toLowerCase().includes(search.toLowerCase())) && <p>No matching fields.</p>}
       </Panel>
@@ -308,7 +310,6 @@ function ImportedPanels({ draft }: { draft: AuthorDraft }) {
   if (!resource || (resource.resourceType !== 'analysis' && resource.resourceType !== 'dashboard')) return null;
   const definition = resource.definition;
   const groups = [
-    { name: 'Parameters', values: definition.parameterDeclarations ?? [] },
     { name: 'Imported calculated fields', values: definition.calculatedFields ?? [] },
     { name: 'Imported filter groups', values: definition.filterGroups ?? [] },
   ];

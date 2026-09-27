@@ -12,6 +12,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./parameters": {
+      "types": "./dist/parameters.d.ts",
+      "import": "./dist/parameters.js"
     }
   },
   "types": "./dist/index.d.ts",
