@@ -23,6 +23,7 @@
     "../src/ControlInput.tsx",
     "../src/fixture-query.ts",
     "../src/AutomationNotice.tsx",
-    "../src/SecurityNotice.tsx"
+    "../src/SecurityNotice.tsx",
+    "../src/OrganizationNotice.tsx"
   ]
 }

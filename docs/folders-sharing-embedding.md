@@ -150,3 +150,11 @@ No third-party dependencies were added. The SDK reuses the installed TypeScript
 compiler (Apache-2.0, verified from its installed package metadata/license); the
 workspace itself is Apache-2.0. HMAC uses Node's built-in crypto. The lockfile adds
 only the local SDK workspace link and metadata.
+
+## Static demo
+
+The Mode picker includes **Folders, sharing & embedding**, following the Security
+& namespaces and Schedules & alerts notices. Every action is disabled and marked
+**Needs hosted API**. The view states that sample data is public and does not
+simulate folder writes, shares, signing or SSO. The hosted iframe build is separate
+from the offline demo and contains no sample dataset fallback.
