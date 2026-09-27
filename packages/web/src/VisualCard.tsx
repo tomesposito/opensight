@@ -1,3 +1,4 @@
+import { LIGHT_THEME } from './themes.js';
 import { rowSelection, brushSelection, type VisualInteraction } from './visual-selection.js';
 import { useEffect, useId, useMemo, useRef } from 'react';
 import type { EChartsOption } from 'echarts';
@@ -37,13 +38,14 @@ function DataTable({ compiled, interaction }: { compiled: CompiledVisual; intera
 
 export function VisualCard({ visual, dataMessage, loading = false, interaction }: { visual: FixtureVisual; dataMessage?: string; loading?: boolean; interaction?: VisualInteraction }) {
   const headingId = useId();
+  const theme = visual.theme ?? LIGHT_THEME;
   const result = useMemo(() => {
     try { return { compiled: compileVisual(visual) }; }
     catch (error) { return { error: error instanceof Error ? error.message : String(error) }; }
   }, [visual]);
   const { compiled, error } = result;
   const { column, columns, row, rows } = visual.placement;
-  return <section className="visual-card" aria-busy={loading} aria-labelledby={headingId} style={{ gridColumn: `${column + 1} / span ${columns}`, gridRow: `${row + 1} / span ${rows}` }}>
+  return <section className="visual-card" aria-busy={loading} aria-labelledby={headingId} style={{ background: theme.surface, color: theme.textColor, fontFamily: theme.fontFamily, gridColumn: `${column + 1} / span ${columns}`, gridRow: `${row + 1} / span ${rows}` }}>
     <header className="card-heading">
       <h3 id={headingId} className={compiled && !compiled.model.titleVisible ? 'sr-only' : ''}>{compiled?.model.title ?? 'Unsupported visual'}</h3>
       {compiled && <span className="chart-kind">{compiled.model.kind}</span>}

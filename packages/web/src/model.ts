@@ -1,3 +1,4 @@
+import type { AnalysisTheme } from './themes.js';
 import type { BundleVisual, VisualBody } from '@opensight/bundle-parser';
 import type { VisualKind } from './visual-catalog.js';
 import type { ResourceKind } from './api-client.js';
@@ -14,6 +15,7 @@ export interface VisualModel {
   title: string;
   titleVisible: boolean;
   kind: VisualKind;
+  palette?: string[];
   gaugeMin: number;
   gaugeMax: number;
   bins: number;
@@ -35,6 +37,7 @@ export interface VisualModel {
   warnings: string[];
 }
 export interface FixtureVisual {
+  theme?: AnalysisTheme;
   source: 'bundle' | 'api';
   definition: BundleVisual | Record<string, VisualBody>;
   rows: Row[] | null;

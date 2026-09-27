@@ -1,3 +1,4 @@
+import { themeValid } from './themes.js';
 import type { BundleSheet } from '@opensight/bundle-parser';
 import type { DefinitionResponse, ResourceKind } from './api-client.js';
 import { convertDefinition } from './definition-converter.js';
@@ -61,7 +62,7 @@ export function buildApiPreview(response: DefinitionResponse, kind: ResourceKind
           visualIds.add(id);
           const pinned = matches ? fixture?.sheets[si]?.visuals[vi] : undefined;
           return {
-            source: 'bundle', definition, rows: pinned?.rows ?? null, bindings: pinned?.bindings ?? {},
+            source: 'bundle', definition, ...(themeValid(response.definition.opensightTheme) ? { theme: response.definition.opensightTheme } : {}), rows: pinned?.rows ?? null, bindings: pinned?.bindings ?? {},
             placement: grid?.get(id) ?? { column: 0, columns: 36, row: vi * 6, rows: 6 },
             path: `Definition.sheets[${si}].visuals[${vi}]`,
           };

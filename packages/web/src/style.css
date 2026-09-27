@@ -202,3 +202,26 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .drill-navigation { border-bottom: 1px solid #dce5e7; }
 .drill-navigation button[aria-pressed="true"] { background: #157f88; color: white; }
 .table-scroll td button { color: #126a74; text-decoration: underline; }
+
+/* NEW LOOK controls the editor; the analysis theme independently styles its canvas. */
+.author-workspace { --chrome-surface: #fff; --chrome-bg: #f3f6f7; --chrome-text: #19384a; --chrome-muted: #526c7a; --chrome-border: #c9d8de; color: var(--chrome-text); background: var(--chrome-bg); }
+.author-workspace[data-chrome=dark] { color-scheme: dark; --chrome-surface: #202e40; --chrome-bg: #141e2c; --chrome-text: #e7eef7; --chrome-muted: #adc0d5; --chrome-border: #45566d; }
+.author-workspace[data-chrome=dark] :is(.builder-panel, .controls-strip, button, input, select, textarea, .author-card-toolbar, .bundle-import) { color: var(--chrome-text); background-color: var(--chrome-surface); border-color: var(--chrome-border); }
+.author-workspace[data-chrome=dark] :is(label, .field-hint, .field-type, .author-save p, .canvas-label span, .mode-badge, .field-wells legend) { color: var(--chrome-muted); }
+.author-workspace[data-chrome=dark] .field-wells .active-well { background: #293f50; }
+.author-workspace[data-chrome=dark] .fixture-notice { background: #223b4a; color: #c4dce7; }
+.author-workspace[data-chrome=dark] button[aria-pressed=true] { background: #28586a; color: #fff; }
+.author-workspace[data-chrome=dark] .primary-button { background: #177b93; color: #fff; }
+.author-workspace[data-chrome=dark] button:hover:not(:disabled) { background: #334c62; }
+.chrome-switch { display: flex; gap: 6px; align-items: center; font-size: 10px; letter-spacing: .06em; }
+.chrome-switch select { padding: 5px; }
+.theme-editor { padding: 12px 0; border-top: 1px solid var(--chrome-border, #c9d8de); }
+.theme-editor summary { font-weight: 600; font-size: 12px; margin-bottom: 10px; }
+.color-inputs { display: flex; flex-wrap: wrap; gap: 5px; }
+.color-inputs label { width: 48px; font-size: 9px; }
+.color-inputs input[type=color] { padding: 2px; height: 30px; }
+.theme-presets { display: flex; gap: 6px; margin-bottom: 10px; }
+.capability-note { font-size: 11px; line-height: 1.5; color: var(--chrome-muted); }
+.measure-order { display: flex; flex-wrap: wrap; gap: 4px; }
+.measure-order button { font-size: 10px; }
+.visual-card .empty-state { background: inherit; color: inherit; }

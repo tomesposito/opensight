@@ -1,3 +1,5 @@
+import { ThemeEditor } from './ThemeEditor.js';
+import { LIGHT_THEME, themeValid, type AnalysisTheme } from './themes.js';
 import { functionCatalog } from '@opensight/query-engine/browser';
 import { expressionError } from './authoring.js';
 import { HierarchyEditor } from './HierarchyEditor.js';
@@ -71,9 +73,10 @@ export function Author({ client }: { client?: QueryClient }) {
       setExportStatus('Export downloaded: opensight-analysis.json');
     } catch { setExportStatus('Export could not be downloaded. Please try again.'); }
   };
-  return <div className="author-workspace">
+  return <div className="author-workspace" data-chrome={draft.chrome ?? 'light'}>
     <div className="author-topbar">
       <label className="analysis-title">Analysis title<input value={draft.title} onChange={e => dispatch({ type: 'analysis-title', title: e.target.value })} /></label>
+      <label className="chrome-switch">NEW LOOK<select aria-label="NEW LOOK" value={draft.chrome ?? 'light'} onChange={e => dispatch({ type: 'chrome', mode: e.target.value as 'light' | 'dark' })}><option value="light">Light</option><option value="dark">Dark</option></select></label>
       <span className="mode-badge">{client ? 'API · Local sales' : 'Fixtures · Offline'}</span><span className="phase-badge">Builder v1</span>
       <button type="button" onClick={() => void downloadQs()} disabled={busy} aria-describedby="export-help">Download .qs</button>
       <button type="button" className="primary-button" onClick={download} disabled={!draft.sheets.some(s => s.visuals.length) || !!exported.error} aria-describedby="export-help">Export JSON</button>
@@ -125,6 +128,9 @@ export function AuthorCanvas({ draft, dispatch, client }: EditorProps) {
   const clearActions = () => setInteractionState({ key: interactionKey, selections: {} });
   const selected = sheet.visuals.find(v => v.id === sheet.selectedId);
   const { width, containerRef } = useContainerWidth({ initialWidth: 900 });
+  const original = draft.bundle?.original.members.find(m => m.path === sheet.imported?.memberPath)?.resource;
+  const originalTheme = original && (original.resourceType === 'analysis' || original.resourceType === 'dashboard') ? original.definition.opensightTheme : undefined;
+  const theme = sheet.imported && sheet.imported.memberPath !== draft.bundle?.primaryPath ? themeValid(originalTheme) ? originalTheme : LIGHT_THEME : draft.theme ?? LIGHT_THEME;
   const mobile = width < 600;
   const layout = useMemo(() => mobile ? sheet.layout.map((p, i) => ({ ...p, x: 0, y: i * 8, w: GRID_COLUMNS, h: 8 })) : sheet.layout.map(p => ({ ...p, minW: 3, minH: 4 })), [mobile, sheet.layout]);
   return <>
@@ -165,7 +171,7 @@ export function AuthorCanvas({ draft, dispatch, client }: EditorProps) {
             <FieldWells visual={selected} draft={draft} dispatch={dispatch} activeWell={well} onWell={setWell} />
           </div> : <p className="field-hint">Choose a visual type and select ADD.</p>}
         </Panel>
-        <div className="author-canvas" ref={containerRef}>
+        <div className="author-canvas" style={{ backgroundColor: theme.background, fontFamily: theme.fontFamily }} ref={containerRef}>
           <div className="canvas-label"><strong>{sheet.name}</strong><span>{sheet.visuals.length} {sheet.visuals.length === 1 ? 'visual' : 'visuals'} · {mobile ? 'Mobile preview' : 'Drag the handle to move · Drag a corner to resize'}</span></div>
           {!sheet.visuals.length && <div className="canvas-empty"><h2>Your canvas is ready</h2><p>Add a visual, then choose fields from the Data panel.</p></div>}
           <div aria-label="Authoring canvas">
@@ -185,7 +191,7 @@ export function AuthorCanvas({ draft, dispatch, client }: EditorProps) {
                     else if (visual.filterActions?.length) setInteractionState({ key: interactionKey, selections: toggleSelection(selections, visual.id, { ...selection, values: Object.fromEntries([...path.flatMap(p => Object.entries(p.values)), ...Object.entries(selection.values)]) }) });
                   },
                 } : undefined;
-                return <div key={visual.id}><AuthorCard interactive={interactive} interaction={interaction}
+                return <div key={visual.id}><AuthorCard theme={theme} interactive={interactive} interaction={interaction}
                   drillNavigation={hierarchy && <nav className="drill-navigation" aria-label={`Drill breadcrumb for ${visual.id}`}>
                     {drillBreadcrumbs(visual, path).map((crumb, i) => <button type="button" key={i} onClick={() => setPath(visual.id, drillUp(path, crumb.depth))}>{crumb.label}</button>)}
                     <span>Current: {levelLabel(hierarchy.levels[path.length]!)}</span>
@@ -201,7 +207,7 @@ export function AuthorCanvas({ draft, dispatch, client }: EditorProps) {
         </div>
       </div>
       <Panel title="Properties" className="properties-panel">
-        {selected ? <Properties key={selected.id} visual={selected} draft={draft} dispatch={dispatch} client={client} /> : <p>Select a visual to edit its display settings.</p>}
+        {selected ? <Properties key={selected.id} visual={selected} draft={draft} dispatch={dispatch} client={client} /> : <><p>Select a visual to edit its display settings.</p><ThemeEditor draft={draft} dispatch={dispatch} /></>}
       </Panel>
     </div>
     {calculationOpen && <CalculationDialog fields={draft.calculatedFields} onClose={() => setCalculationOpen(false)} onSave={field => { dispatch({ type: 'calculation-add', field }); setCalculationOpen(false); }} />}
@@ -256,6 +262,7 @@ function Properties({ visual, draft, dispatch, client }: EditorProps & { visual:
       {visual.imported.unmappedFields.length > 0 && <p>Fields requiring manual assignment: {visual.imported.unmappedFields.join(', ')}</p>}
       {visual.imported.issues.length > 0 && <details><summary>Unsupported features (retained)</summary><ul>{visual.imported.issues.map((issue, i) => <li key={i}>{issue}</li>)}</ul></details>}
     </div>}
+    <ThemeEditor visual={visual} draft={draft} dispatch={dispatch} />
     <HierarchyEditor draft={draft} visual={visual} dispatch={dispatch} />
     <ActionEditor draft={draft} visual={visual} dispatch={dispatch} />
     <FilterEditor visual={visual} parameters={sheetParameters(draft)} calculations={draft.calculatedFields} dispatch={dispatch} client={visual.imported && !visual.imported.local ? undefined : client} />
@@ -317,8 +324,8 @@ export function CalculationDialog({ fields, onSave, onClose }: { fields: Calcula
   </dialog>;
 }
 
-function AuthorCard({ visual, index, count, selected, dispatch, client, calculations, filterProblem, parameters, interaction, interactive, drillNavigation }: {
-  drillNavigation?: ReactNode; interaction?: VisualInteraction; interactive?: boolean; visual: AuthorVisual; index: number; count: number; selected: boolean; filterProblem?: string; dispatch: Dispatch<AuthorAction>; client?: QueryClient; calculations: CalculatedField[]; parameters: AuthorParameter[];
+function AuthorCard({ visual, theme, index, count, selected, dispatch, client, calculations, filterProblem, parameters, interaction, interactive, drillNavigation }: {
+  theme?: AnalysisTheme; drillNavigation?: ReactNode; interaction?: VisualInteraction; interactive?: boolean; visual: AuthorVisual; index: number; count: number; selected: boolean; filterProblem?: string; dispatch: Dispatch<AuthorAction>; client?: QueryClient; calculations: CalculatedField[]; parameters: AuthorParameter[];
 }) {
   const problem = authorVisualProblem(visual) ?? filterProblem;
   const hasCalculation = [...visualDimensions(visual), ...visual.measures].some(name => calculations.some(c => c.name === name));
@@ -338,7 +345,7 @@ function AuthorCard({ visual, index, count, selected, dispatch, client, calculat
     {drillNavigation}
     {problem ? <div className="bundle-placeholder" role="status"><p>{problem}</p>
       {visual.imported && !visual.imported.local && <button type="button" onClick={e => { e.stopPropagation(); dispatch({ type: 'remap', id: visual.id }); }}>Remap to local dataset</button>}
-    </div> : extended || client || interactive || parameters.length || hasCalculation ? <LiveAuthorVisual interactive={interactive} interaction={interaction} visual={visual} client={client} calculations={calculations} parameters={parameters} /> : preview && <VisualCard visual={preview} />}
+    </div> : extended || client || interactive || parameters.length || hasCalculation ? <LiveAuthorVisual theme={theme} interactive={interactive} interaction={interaction} visual={visual} client={client} calculations={calculations} parameters={parameters} /> : preview && <VisualCard visual={{ ...preview, theme }} />}
   </section>;
 }
 

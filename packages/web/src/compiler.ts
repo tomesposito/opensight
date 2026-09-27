@@ -1,3 +1,4 @@
+import { LIGHT_THEME, themeValid, paletteValid } from './themes.js';
 import type { EChartsOption, BarSeriesOption, LineSeriesOption } from 'echarts';
 import type { Cell, Field, FixtureVisual, Row, VisualModel } from './model.js';
 
@@ -5,7 +6,7 @@ import { EXTRA_VISUALS, extraKind, variantKinds } from './visual-catalog.js';
 import { compileExtra } from './extra-charts.js';
 
 type ObjectValue = Record<string, unknown>;
-type Input = Pick<FixtureVisual, 'source' | 'definition' | 'rows' | 'bindings' | 'path'>;
+type Input = Pick<FixtureVisual, 'source' | 'definition' | 'rows' | 'bindings' | 'path' | 'theme'>;
 export interface CompiledVisual {
   model: VisualModel;
   option: EChartsOption;
@@ -59,10 +60,12 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
   if (!kind) fail(`${path}.${variant}`, 'unsupported visual variant in this dialect');
   const p = `${path}.${variant}`;
   const body = object(raw, p);
-  keys(body, [key('visualId', 'VisualId'), key('title', 'Title'), key('subtitle', 'Subtitle'), key('chartConfiguration', 'ChartConfiguration'), key('actions', 'Actions'), key('columnHierarchies', 'ColumnHierarchies')], p);
+  keys(body, [key('opensightPalette', 'OpenSightPalette'), key('visualId', 'VisualId'), key('title', 'Title'), key('subtitle', 'Subtitle'), key('chartConfiguration', 'ChartConfiguration'), key('actions', 'Actions'), key('columnHierarchies', 'ColumnHierarchies')], p);
   for (const name of [key('actions', 'Actions'), key('columnHierarchies', 'ColumnHierarchies')]) {
     if (list(body[name], `${p}.${name}`).length) fail(`${p}.${name}`, 'actions and drill hierarchies are not supported');
   }
+  const palette = body[key('opensightPalette', 'OpenSightPalette')];
+  if (palette !== undefined && !paletteValid(palette)) fail(p, 'invalid visual palette');
   const id = text(body[key('visualId', 'VisualId')], p);
   const cpath = `${p}.${key('chartConfiguration', 'ChartConfiguration')}`;
   const config = object(body[key('chartConfiguration', 'ChartConfiguration')], cpath);
@@ -216,7 +219,7 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
     fieldSort = { fieldId, direction };
   }
   return {
-    id, kind, gaugeMin, gaugeMax, bins, title: plain as string | undefined ?? `${measures.map(f => f.column).join(', ')}${dimensions[0] ? ` by ${dimensions[0].column}` : ''}`,
+    id, kind, ...(palette ? { palette: palette as string[] } : {}), gaugeMin, gaugeMax, bins, title: plain as string | undefined ?? `${measures.map(f => f.column).join(', ')}${dimensions[0] ? ` by ${dimensions[0].column}` : ''}`,
     titleVisible: visibility(title, key('visibility', 'Visibility')),
     dimensions, rowDimensions, columnDimensions, measures, totals, subtotals, columnTotals, columnSubtotals, innerRadius, sort: fieldSort, warnings,
     horizontal: (kind === 'bar' || kind === 'bar100') && enumValue(config[key('orientation', 'Orientation')], ['VERTICAL', 'HORIZONTAL'], 'VERTICAL', `${cpath}.${key('orientation', 'Orientation')}`) === 'HORIZONTAL',
@@ -229,6 +232,8 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
 
 /** Pure renderer: rows must already be authorized, filtered and aggregated. No query execution. */
 export function compileVisual(input: Input): CompiledVisual {
+  if (input.theme !== undefined && !themeValid(input.theme)) fail(input.path, 'invalid analysis theme');
+  const theme = input.theme ?? LIGHT_THEME;
   const model = normalizeVisual(input.source, input.definition, input.path);
   const fields = [...model.dimensions, ...model.measures];
   for (const fieldId of Object.keys(input.bindings)) if (!fields.some(f => f.id === fieldId)) fail(input.path, `binding references unknown field ${fieldId}`);
@@ -269,8 +274,8 @@ export function compileVisual(input: Input): CompiledVisual {
   const state = input.rows === null ? 'unavailable' : rows.length ? 'ready' : 'empty';
   const option: EChartsOption = {
     animation: false,
-    color: ['#157f88', '#e5a046', '#4f6fc6', '#b76b88', '#8b9465'],
-    textStyle: { fontFamily: 'system-ui, sans-serif', color: '#19384a' },
+    color: model.palette ?? theme.palette, backgroundColor: theme.surface,
+    textStyle: { fontFamily: theme.fontFamily, color: theme.textColor },
     // Titles belong to the React card heading. Native tables use the same cells.
     tooltip: { show: model.tooltip, trigger: model.kind === 'pie' ? 'item' : 'axis', renderMode: 'richText', confine: true },
     aria: { enabled: true },
@@ -311,7 +316,16 @@ export function compileVisual(input: Input): CompiledVisual {
     const value = row ? number(row, model.measures[0]!) : null;
     const label = state === 'unavailable' ? 'Data unavailable' : state === 'empty' ? 'No results' : value === null ? 'No value' : displayCell(value);
     option.tooltip = { show: false };
-    option.graphic = [{ type: 'text', left: 'center', top: 'middle', style: { text: label, fill: '#157f88', fontSize: value === null ? 22 : 56, fontWeight: 600, fontFamily: 'system-ui, sans-serif' } }];
+    option.graphic = [{ type: 'text', left: 'center', top: 'middle', style: { text: label, fill: (model.palette ?? theme.palette)[0], fontSize: value === null ? 22 : 56, fontWeight: 600, fontFamily: theme.fontFamily } }];
+  }
+  if (input.theme || model.palette) {
+    for (const axis of [option.xAxis, option.yAxis].flat()) if (axis) { axis.axisLabel = { ...axis.axisLabel, color: theme.textColor }; axis.nameTextStyle = { color: theme.textColor }; }
+    if (option.legend && !Array.isArray(option.legend)) option.legend.textStyle = { color: theme.textColor, fontFamily: theme.fontFamily };
+    if (option.visualMap && !Array.isArray(option.visualMap)) { option.visualMap.textStyle = { color: theme.textColor }; option.visualMap.inRange = { color: [theme.surface, ...(model.palette ?? theme.palette)] }; }
+    if (Array.isArray(option.series)) for (const series of option.series) {
+      if ('label' in series) series.label = { ...series.label, color: theme.textColor };
+      if (series.type === 'gauge') { series.itemStyle = { color: (model.palette ?? theme.palette)[0] }; series.axisLabel = { color: theme.textColor }; series.detail = { ...series.detail, color: theme.textColor }; series.title = { color: theme.textColor }; }
+    }
   }
   if (model.kind === 'pivot' || model.kind === 'table' && (model.totals || model.subtotals)) {
     return { model, option, state, table: compilePivotTable(model, rows, cell, number, input.path) };

@@ -1,3 +1,4 @@
+import type { AnalysisTheme } from './themes.js';
 import type { VisualInteraction } from './visual-selection.js';
 import { executeFixtureQuery } from './fixture-query.js';
 import type { AuthorParameter } from './parameters.js';
@@ -11,7 +12,7 @@ import type { QueryRequest } from './api-client.js';
 
 export const PARAMETER_DEBOUNCE_MS = 250;
 
-export function LiveAuthorVisual({ visual, client, calculations, parameters = [], interaction, interactive = false }: { interaction?: VisualInteraction; interactive?: boolean; parameters?: readonly AuthorParameter[]; visual: AuthorVisual; client?: QueryClient; calculations: readonly CalculatedField[] }) {
+export function LiveAuthorVisual({ visual, theme, client, calculations, parameters = [], interaction, interactive = false }: { theme?: AnalysisTheme; interaction?: VisualInteraction; interactive?: boolean; parameters?: readonly AuthorParameter[]; visual: AuthorVisual; client?: QueryClient; calculations: readonly CalculatedField[] }) {
   const queryKey = JSON.stringify(buildAuthorQuery(visual, calculations, parameters));
   const request: QueryRequest | null = useMemo(() => JSON.parse(queryKey) as QueryRequest | null, [queryKey]);
   const [state, setState] = useState<{ request: QueryRequest; client: QueryClient; result: AuthorRows }>();
@@ -27,7 +28,7 @@ export function LiveAuthorVisual({ visual, client, calculations, parameters = []
   }, [request, client, interactive]);
   const fixture = useMemo(() => !client && request ? executeFixtureQuery(request) : undefined, [client, request]);
   const current = client ? state?.request === request && state.client === client ? state.result : undefined : fixture;
-  const preview = useMemo(() => ({ ...buildAuthorVisual(visual, calculations), rows: current?.rows ?? null }), [visual, current, calculations]);
+  const preview = useMemo(() => ({ ...buildAuthorVisual(visual, calculations), theme, rows: current?.rows ?? null }), [visual, current, calculations, theme]);
   // Clear previous results immediately when assignments change, even before the effect runs.
   return <VisualCard interaction={interaction} visual={preview} loading={!!request && !current} dataMessage={current?.message} />;
 }

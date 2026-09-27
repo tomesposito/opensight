@@ -1,3 +1,4 @@
+import { paletteValid, themeValid, type AnalysisTheme } from './themes.js';
 import { EXTRA_VISUALS, extraKind, type VisualKind } from './visual-catalog.js';
 export type { VisualKind } from './visual-catalog.js';
 import { parseExpression } from '@opensight/query-engine/browser';
@@ -65,6 +66,7 @@ export interface BundleOrigin {
   report: ImportResult[]; calculations: CalculatedField[]; emptySheetId?: string;
 }
 export interface AuthorVisual {
+  palette?: string[];
   id: string; kind: VisualKind; title: string;
   dimension: string | null; measures: string[]; rows: string[]; columns: string[];
   donut: boolean; titleVisible: boolean; legend: boolean; labels: boolean;
@@ -79,6 +81,7 @@ export interface AuthorVisual {
 export interface Placement { i: string; x: number; y: number; w: number; h: number }
 export interface AuthorSheet { controls: AuthorControl[]; id: string; name: string; visuals: AuthorVisual[]; layout: Placement[]; selectedId: string | null; imported?: ImportedSheet }
 export interface AuthorDraft {
+  theme?: AnalysisTheme; chrome?: 'light' | 'dark';
   version: 2; parameters: AuthorParameter[]; title: string; sheets: AuthorSheet[]; activeSheetId: string; calculatedFields: CalculatedField[]; bundle?: BundleOrigin;
 }
 export const GRID_COLUMNS = 12;
@@ -120,6 +123,9 @@ export function calculationError(field: CalculatedField, existing: readonly Data
   return expressionError(field.expression, existing);
 }
 export type AuthorAction =
+  | { type: 'theme'; theme: AnalysisTheme }
+  | { type: 'chrome'; mode: 'light' | 'dark' }
+  | { type: 'palette'; palette?: string[] }
   | { type: 'hierarchy'; hierarchy: DimensionHierarchy | null }
   | { type: 'filter-actions'; actions: FilterAction[] }
   | { type: 'import'; draft: AuthorDraft }
@@ -159,6 +165,8 @@ const cleanLayout = (layout: readonly Placement[]): Placement[] => layout.map(({
 
 /** Immutable transitions shared by field buttons, pills, sheet tabs and drag/resize callbacks. */
 export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorDraft {
+  if (action.type === 'theme') return themeValid(action.theme) ? { ...draft, theme: structuredClone(action.theme) } : draft;
+  if (action.type === 'chrome') return { ...draft, chrome: action.mode };
   if (action.type === 'import') { validateDraft(action.draft); return action.draft; }
   if (action.type === 'parameter-add') {
     const p = { ...action.parameter, id: nextId('parameter', draft.parameters.map(p => p.id)) };
@@ -259,6 +267,11 @@ export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorD
         [measures[action.index], measures[target]] = [measures[target]!, measures[action.index]!];
         return { ...visual, measures };
       }
+      case 'palette': {
+        if (action.palette !== undefined && !paletteValid(action.palette)) return visual;
+        const { palette: _old, ...rest } = visual;
+        return action.palette ? { ...rest, palette: [...action.palette] } : rest;
+      }
       case 'title': return { ...visual, title: action.title };
       case 'donut': return { ...visual, donut: visual.kind === 'pie' && action.donut };
       case 'display': return { ...visual, [action.property]: action.value };
@@ -335,7 +348,7 @@ export function serializeVisual(visual: AuthorVisual, includeInteractions = true
   const category = visualDimensions(visual).map(name => dimensionField(name, visual.dateGrain, calculations));
   const values: BundleMeasureField[] = visual.measures.map(name => ({ numericalMeasureField: { ...columnField(name), aggregationFunction: { simpleNumericalAggregation: 'SUM' } } }));
   const visibility = (show: boolean) => ({ visibility: show ? 'VISIBLE' : 'HIDDEN' });
-  const body = { ...(includeInteractions ? serializeInteractions(visual) : {}), visualId: visual.id, ...(visual.title.trim() || !visual.titleVisible ? { title: { ...visibility(visual.titleVisible), ...(visual.title.trim() ? { formatText: { plainText: visual.title.trim() } } : {}) } } : {}) } satisfies BundleVisualBody;
+  const body = { ...(visual.palette ? { opensightPalette: visual.palette } : {}), ...(includeInteractions ? serializeInteractions(visual) : {}), visualId: visual.id, ...(visual.title.trim() || !visual.titleVisible ? { title: { ...visibility(visual.titleVisible), ...(visual.title.trim() ? { formatText: { plainText: visual.title.trim() } } : {}) } } : {}) } satisfies BundleVisualBody;
   const display = { legend: visibility(visual.legend), dataLabels: visibility(visual.labels) };
   const totalVisibility = (show: boolean) => ({ totalsVisibility: show ? 'VISIBLE' : 'HIDDEN' });
   const tableTotals = { totalOptions: totalVisibility(visual.totals), opensightSubtotalOptions: totalVisibility(visual.subtotals) };
@@ -366,6 +379,7 @@ export function serializeVisual(visual: AuthorVisual, includeInteractions = true
 export function serializeDraft(draft: AuthorDraft): BundleAnalysis {
   validateDraft(draft);
   return { resourceType: 'analysis', analysisId: 'authored-analysis', name: draft.title.trim() || 'Untitled analysis', definition: {
+    ...(draft.theme ? { opensightTheme: draft.theme } : {}),
     dataSetIdentifierDeclarations: [{ identifier: 'sales_data', dataSetArn: 'arn:aws:quicksight:us-east-1:123456789012:dataset/renderable-sales' }],
     ...(draft.parameters.length ? { parameterDeclarations: draft.parameters.map(serializeParameter) } : {}),
     calculatedFields: draft.calculatedFields.map(({ name, expression }) => ({ dataSetIdentifier: 'sales_data', name, expression })),
@@ -387,7 +401,8 @@ const onlyKeys = (v: Record<string, unknown>, keys: string[]): boolean => Object
 /** localStorage is untrusted: validate every identity, field, layout and display option. */
 export function validateDraft(value: unknown): asserts value is AuthorDraft {
   const fail = (): never => { throw new Error('Invalid or unsupported author draft.'); };
-  if (!isObject(value) || !onlyKeys(value, ['version', 'title', 'sheets', 'activeSheetId', 'calculatedFields', 'parameters', 'bundle']) || value.version !== 2 || typeof value.title !== 'string' || !Array.isArray(value.sheets) || !value.sheets.length || !Array.isArray(value.calculatedFields)) return fail();
+  if (!isObject(value) || !onlyKeys(value, ['version', 'title', 'sheets', 'activeSheetId', 'calculatedFields', 'parameters', 'bundle', 'theme', 'chrome']) || value.version !== 2 || typeof value.title !== 'string' || !Array.isArray(value.sheets) || !value.sheets.length || !Array.isArray(value.calculatedFields)) return fail();
+  if (value.theme !== undefined && !themeValid(value.theme) || value.chrome !== undefined && !['light', 'dark'].includes(String(value.chrome))) return fail();
   validateAuthorParameters(value.parameters);
   if (value.bundle !== undefined) {
     const b = value.bundle;
@@ -427,8 +442,9 @@ export function validateDraft(value: unknown): asserts value is AuthorDraft {
       }
       const fieldNames = (v: unknown, role: string): v is string[] => imported ? Array.isArray(v) && v.every(n => typeof n === 'string' && !!n && !n.includes('\0')) && new Set(v).size === v.length : names(v, role);
 
-      if (!isObject(v) || !onlyKeys(v, ['id', 'kind', 'title', 'dimension', 'measures', 'donut', 'imported', 'filterActions', 'hierarchy', 'dateGrain', ...Object.keys(defaults())]) || typeof v.id !== 'string' || !/^visual-[1-9][0-9]*$/.test(v.id) || ids.has(v.id) || !VISUAL_TYPES.some(t => t.kind === v.kind) || typeof v.title !== 'string' || !['donut', 'titleVisible', 'legend', 'labels', 'horizontal', 'stacked', 'totals', 'subtotals'].every(k => typeof v[k] === 'boolean') || !fieldNames(v.measures, 'measure') || !fieldNames(v.rows, 'dimension') || !fieldNames(v.columns, 'dimension') || (v.dimension !== null && !fieldNames([v.dimension], 'dimension')) || !Array.isArray(v.filters)) return fail();
+      if (!isObject(v) || !onlyKeys(v, ['id', 'kind', 'title', 'dimension', 'measures', 'donut', 'imported', 'filterActions', 'hierarchy', 'dateGrain', 'palette', ...Object.keys(defaults())]) || typeof v.id !== 'string' || !/^visual-[1-9][0-9]*$/.test(v.id) || ids.has(v.id) || !VISUAL_TYPES.some(t => t.kind === v.kind) || typeof v.title !== 'string' || !['donut', 'titleVisible', 'legend', 'labels', 'horizontal', 'stacked', 'totals', 'subtotals'].every(k => typeof v[k] === 'boolean') || !fieldNames(v.measures, 'measure') || !fieldNames(v.rows, 'dimension') || !fieldNames(v.columns, 'dimension') || (v.dimension !== null && !fieldNames([v.dimension], 'dimension')) || !Array.isArray(v.filters)) return fail();
       if (singleMeasure(v.kind as VisualKind) && v.measures.length > 1 || noDimensions(v.kind as VisualKind) && v.dimension !== null || v.kind !== 'pie' && v.donut || !splitDimensions(v.kind as VisualKind) && v.columns.length || (grouped(v.kind as VisualKind) ? v.dimension !== (v.rows[0] ?? null) : v.rows.length) || v.rows.some(n => (v.columns as string[]).includes(n))) return fail();
+      if (v.palette !== undefined && !paletteValid(v.palette)) return fail();
       if (v.dateGrain !== undefined && !['YEAR','QUARTER','MONTH','DAY'].includes(String(v.dateGrain))) return fail();
       if (v.hierarchy !== undefined && hierarchyError(v.hierarchy as DimensionHierarchy, calculations, !!imported)) return fail();
       if (v.filterActions !== undefined && !validFilterActions(v.filterActions)) return fail();

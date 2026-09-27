@@ -1,3 +1,4 @@
+import { themeValid, paletteValid } from './themes.js';
 import { EXTRA_VISUALS, extraKind, variantKinds } from './visual-catalog.js';
 import { unsupportedFunctions } from '@opensight/query-engine/browser';
 import { importInteractions, exportInteractions } from './bundle-interactions.js';
@@ -63,7 +64,7 @@ function importVisual(raw: BundleVisual, id: string, definition: BundleDefinitio
   const columns = kind === 'pivot' || kind === 'heatmap' || kind === 'pointMap' ? names(wells[kind === 'pointMap' ? 'longitude' : 'columns']).filter(n => !rows.includes(n)) : [];
   const measures = extra ? extra.measures.flatMap(name => names(wells[name])) : names(wells.values);
   const total = obj(config.totalOptions);
-  const visual: AuthorVisual = { ...defaults(), id, kind, title: string(obj(obj(body.title).formatText).plainText),
+  const visual: AuthorVisual = { ...defaults(), ...(paletteValid(body.opensightPalette) ? { palette: [...body.opensightPalette] } : {}), id, kind, title: string(obj(obj(body.title).formatText).plainText),
     titleVisible: obj(body.title).visibility !== 'HIDDEN', dimension: noDimensions(kind) ? null : rows[0] ?? null,
     rows: grouped(kind) ? rows : [], columns, measures: singleMeasure(kind) ? measures.slice(0, 1) : measures,
     donut: kind === 'pie' && ['SMALL', 'MEDIUM', 'LARGE'].includes(string(obj(obj(config.donutOptions).arcOptions).arcThickness)),
@@ -135,6 +136,7 @@ export function importBundle(bundle: QsBundle): AuthorDraft {
   let visualIndex = 0;
   const primary = original.members.find(m => m.resource.resourceType === 'analysis') ?? original.members.find(m => m.resource.resourceType === 'dashboard');
   draft.title = primary?.resource.name ?? 'Imported resources';
+  if (primary && (primary.resource.resourceType === 'analysis' || primary.resource.resourceType === 'dashboard') && themeValid(primary.resource.definition.opensightTheme)) draft.theme = copy(primary.resource.definition.opensightTheme);
   for (const member of original.members) {
     const r = member.resource, messages: string[] = [];
     report.push({ path: member.path, name: r.name, messages });
@@ -143,9 +145,10 @@ export function importBundle(bundle: QsBundle): AuthorDraft {
       for (const key of Object.keys(r)) if (!['resourceType', 'dataSetId', 'dataSourceId', 'name'].includes(key)) messages.push(`${r.resourceType}.${key}: retained, read-only; not executed.`);
       continue;
     }
+    if (r.definition.opensightTheme !== undefined) messages.push(themeValid(r.definition.opensightTheme) ? 'Analysis theme: palette, font and background supported.' : 'Analysis theme: unsupported definition retained, read-only.');
     const d = r.definition, calculationProblems = new Map<string, string>(), addedCalculations = new Set<CalculatedField>();
     for (const key of Object.keys(r)) if (!['resourceType', 'analysisId', 'dashboardId', 'name', 'definition'].includes(key)) messages.push(`${key}: retained, read-only.`);
-    for (const key of Object.keys(d)) if (!['dataSetIdentifierDeclarations', 'sheets', 'calculatedFields', 'parameterDeclarations', 'filterGroups'].includes(key)) messages.push(`definition.${key}: retained, read-only.`);
+    for (const key of Object.keys(d)) if (!['dataSetIdentifierDeclarations', 'sheets', 'calculatedFields', 'parameterDeclarations', 'filterGroups', 'opensightTheme'].includes(key)) messages.push(`definition.${key}: retained, read-only.`);
     for (const declaration of d.dataSetIdentifierDeclarations) for (const key of Object.keys(declaration)) if (!['identifier', 'dataSetArn'].includes(key)) messages.push(`Dataset declaration ${declaration.identifier}.${key}: retained, read-only.`);
     for (const parameter of d.parameterDeclarations ?? []) {
       const [kind, value] = Object.entries(obj(parameter))[0]!;
@@ -362,6 +365,7 @@ export function exportBundle(draft: AuthorDraft): QsBundle {
     const r = member.resource;
     if (r.resourceType !== 'analysis' && r.resourceType !== 'dashboard') continue;
     const d = r.definition, primary = member.path === origin.primaryPath;
+    if (primary && draft.theme && !equal(draft.theme, d.opensightTheme)) d.opensightTheme = copy(draft.theme);
     const parameters = draft.parameters.filter(p => !p.memberPath || p.memberPath === member.path);
     const declarations = d.parameterDeclarations ?? [];
     for (const p of parameters) {
