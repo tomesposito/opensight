@@ -15,7 +15,8 @@ export class RequestError extends Error {
 interface QueryBody {
   dimensions: { fieldId: string; columnName: string; granularity?: string }[];
   measures: { fieldId: string; columnName: string; aggregation: string }[];
-  filters: { columnName: string; value: string }[];
+  filters: ({ columnName: string; value: string } | { columnName: string; values: string[] })[];
+  calculatedFields?: { name: string; expression: string }[];
 }
 
 function invalid(path: string): never { throw new RequestError(400, `${path}: invalid query body`); }
@@ -34,7 +35,7 @@ function array(value: unknown, path: string): unknown[] {
 
 /** Validate the transport shape; unsupported semantic values belong to the engine (422). */
 function validateBody(raw: unknown): QueryBody {
-  const body = record(raw, ['dimensions', 'measures', 'filters'], '$');
+  const body = record(raw, ['dimensions', 'measures', 'filters', 'calculatedFields'], '$');
   const dimensions = array(body.dimensions, '$.dimensions').map((raw, i) => {
     const path = `$.dimensions[${i}]`;
     const field = record(raw, ['fieldId', 'columnName', 'granularity'], path);
@@ -50,10 +51,19 @@ function validateBody(raw: unknown): QueryBody {
   if (!measures.length) invalid('$.measures');
   const filters = array(body.filters, '$.filters').map((raw, i) => {
     const path = `$.filters[${i}]`;
-    const filter = record(raw, ['columnName', 'value'], path);
-    return { columnName: text(filter.columnName, `${path}.columnName`), value: text(filter.value, `${path}.value`, true) };
+    const filter = record(raw, ['columnName', 'value', 'values'], path);
+    const columnName = text(filter.columnName, `${path}.columnName`);
+    if (Object.hasOwn(filter, 'value') === Object.hasOwn(filter, 'values')) invalid(path);
+    return Object.hasOwn(filter, 'values')
+      ? { columnName, values: array(filter.values, `${path}.values`).map((v, j) => text(v, `${path}.values[${j}]`, true)) }
+      : { columnName, value: text(filter.value, `${path}.value`, true) };
   });
-  return { dimensions, measures, filters };
+  const calculatedFields = body.calculatedFields === undefined ? undefined : array(body.calculatedFields, '$.calculatedFields').map((raw, i) => {
+    const path = `$.calculatedFields[${i}]`;
+    const field = record(raw, ['name', 'expression'], path);
+    return { name: text(field.name, `${path}.name`), expression: text(field.expression, `${path}.expression`) };
+  });
+  return { dimensions, measures, filters, ...(calculatedFields ? { calculatedFields } : {}) };
 }
 
 export async function readQuery(request: IncomingMessage): Promise<QueryBody> {
@@ -113,10 +123,11 @@ export class SalesQuery {
       ResourceType: 'Analysis', AnalysisId: 'live-query', Name: 'Local sales query',
       Definition: {
         DataSetIdentifierDeclarations: [{ Identifier: 'sales_data', DataSetArn: SALES_ARN }],
+        CalculatedFields: (body.calculatedFields ?? []).map(field => ({ DataSetIdentifier: 'sales_data', Name: field.name, Expression: field.expression })),
         FilterGroups: body.filters.map((filter, i) => ({
           FilterGroupId: `filter-${i}`, Status: 'ENABLED', CrossDataset: 'SINGLE_DATASET', ScopeConfiguration: { AllSheets: {} },
           Filters: [{ CategoryFilter: { FilterId: `filter-${i}`, Column: column(filter.columnName),
-            Configuration: { FilterListConfiguration: { MatchOperator: 'EQUALS', NullOption: 'NON_NULLS_ONLY', CategoryValues: [filter.value] } } } }],
+            Configuration: { FilterListConfiguration: { MatchOperator: 'EQUALS', NullOption: 'NON_NULLS_ONLY', CategoryValues: 'values' in filter ? filter.values : [filter.value] } } } }],
         })),
         Sheets: [{ SheetId: 'query', Visuals: [{ TableVisual: { VisualId: 'query', ChartConfiguration: {
           FieldWells: { TableAggregatedFieldWells: {

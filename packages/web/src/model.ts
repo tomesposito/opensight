@@ -12,9 +12,15 @@ export interface VisualModel {
   id: string;
   title: string;
   titleVisible: boolean;
-  kind: 'pie' | 'bar' | 'kpi' | 'line' | 'table';
+  kind: 'pie' | 'bar' | 'kpi' | 'line' | 'table' | 'pivot';
   dimensions: Field[];
   measures: Field[];
+  rowDimensions: Field[];
+  columnDimensions: Field[];
+  totals: boolean;
+  subtotals: boolean;
+  columnTotals: boolean;
+  columnSubtotals: boolean;
   innerRadius: string;
   horizontal: boolean;
   stacked: boolean;

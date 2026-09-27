@@ -3,11 +3,12 @@ import { VisualCard } from './VisualCard.js';
 import { buildAuthorVisual } from './author-preview.js';
 import { buildAuthorQuery, loadAuthorRows } from './author-query.js';
 import type { AuthorRows, QueryClient } from './author-query.js';
-import type { AuthorVisual } from './authoring.js';
+import type { AuthorVisual, CalculatedField } from './authoring.js';
 import type { QueryRequest } from './api-client.js';
 
-export function LiveAuthorVisual({ visual, client }: { visual: AuthorVisual; client: QueryClient }) {
-  const request = useMemo(() => buildAuthorQuery(visual), [visual.kind, visual.dimension, visual.measures]);
+export function LiveAuthorVisual({ visual, client, calculations }: { visual: AuthorVisual; client: QueryClient; calculations: readonly CalculatedField[] }) {
+  const queryKey = JSON.stringify(buildAuthorQuery(visual, calculations));
+  const request: QueryRequest | null = useMemo(() => JSON.parse(queryKey) as QueryRequest | null, [queryKey]);
   const [state, setState] = useState<{ request: QueryRequest; result: AuthorRows }>();
   useEffect(() => {
     if (!request) return;

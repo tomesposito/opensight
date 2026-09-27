@@ -496,6 +496,101 @@ external requests. These use environment-provided browser tooling, not a new
 project dependency. `git diff --check` passed. No AWS calls were made;
 `SOLUTION_DESIGN.md` and the source fixtures are unchanged.
 
+## Builder v1 (Phase 1d)
+
+The Author workspace has collapsible Data, Visual build and Properties panels.
+Click a well or its picker to choose where a field goes; click a pill's × to
+remove it. Tables accept multiple group fields; pivots have independent row and
+column wells. The title, legend, labels, bar orientation/stacking, donut and
+applicable totals options are controlled in Properties. Category filters use
+checkboxes and removable pills. Live distinct values use a grouped COUNT query;
+fixture values come only from pinned oracle results.
+
+The middle panel contains a 12-column `react-grid-layout` canvas. Drag the handle
+or resize a lower corner; the entire resulting sheet layout is persisted,
+including gaps and any displaced neighbors. The up/down buttons offer a keyboard
+alternative for exchanging card positions. Narrow canvases display stacked cards
+without overwriting desktop geometry. Panels collapse on small screens.
+
+Draft version 2 stores the analysis title, calculations and multiple sheets,
+each with its own visuals, selected visual and layout. The original
+`opensight.author.v0` localStorage key is retained, with validated migration of
+legacy version 1 drafts. Unknown or malformed drafts remain untouched until an
+edit. JSON export is now a complete camelCase analysis resource: named sheets,
+visual definitions, 36-column bundle grid placements, calculated-field
+declarations and filters scoped to individual visuals. It contains no query
+results or implicit East filter. Definitions satisfy bundle-parser types and are
+validated by the compiler before export. Incomplete visuals on any sheet block
+export; the draft still saves.
+
+Pivots render as semantic HTML tables, using the same validated result cells as
+the accessible data table. This supports readable headings, scrolling and
+subtotal styling without turning category values into heatmap coordinates.
+The compiler accepts row and column dimensions and explicit SUM measures,
+rejects duplicate full dimension tuples, preserves sparse/null cells, and rolls
+up parent groups and grand totals on both axes. It only sums already filtered,
+aggregated SUM results. A zero is distinct from a null; all-null subtotals stay
+null. Totals default off. The documented pivot `totalOptions` structure contains
+`rowTotalOptions`, `columnTotalOptions`, `rowSubtotalOptions` and
+`columnSubtotalOptions`, each with `totalsVisibility`. These shapes were checked
+against the published `@aws-sdk/client-quicksight` 3.1141.0 type declarations in a
+temporary npm installation; the SDK is not a project dependency and was never
+used to call AWS. Ordinary tables have native `totalOptions` but no subtotal
+option, so their subtotal toggle uses the explicit, parser-preserved
+`opensightSubtotalOptions` extension. These remain provisional projections,
+not claims of measured QuickSight rendering conformance.
+
+Calculated-field expressions are preserved verbatim. The editor validates names,
+duplicates, empty expressions and obvious script/statement constructs; it never
+evaluates expressions. The live query body adds optional `calculatedFields`
+containing names and expressions, which are bound by the existing expression
+engine. Its supported arithmetic and reference semantics, cycle/type checks and
+422 failures remain authoritative. Calculated dimensions can reference text
+fields; calculated measures can use row arithmetic. Unsupported formulas remain
+saved and produce Data unavailable in API mode. Null arithmetic is evaluated
+before aggregation, as in the existing engine.
+
+The query body also accepts category `values: string[]` while retaining the old
+single `value` contract. Values within a filter are ORed using bound SQL IN
+parameters; separate filters are ANDed before aggregation. An empty selection
+means FALSE. DuckDB and Postgres share this behavior. Neither filters nor
+calculations can select data sources or supply SQL. The API still uses the
+explicit local sales binding. API failures never fall back to fixture data;
+offline previews retain exactly the original four reviewed revenue grains.
+Unsupported filtered, calculated or multi-dimension fixture previews report
+Data unavailable rather than fabricate results.
+
+New runtime dependency: `react-grid-layout` 2.2.4, verified MIT before addition.
+Its added dependencies (`clsx`, `fast-equals`, `prop-types`, `react-draggable`,
+`react-resizable`, `resize-observer-polyfill`, `js-tokens`, `loose-envify`,
+`object-assign` and `react-is`) are MIT. The test-only `react-test-renderer`
+19.3.0 and its dependencies are also MIT; its upstream deprecation notice is
+expected during interaction tests. No commercial charting library was added.
+
+Tests under the existing root `npm test` cover controls and pills, grid drag and
+resize callbacks, per-sheet persistence, legacy migration, sheet lifecycle,
+calculation create/assign/query payloads and real API execution, filter scope and
+multi-value execution, native pivot API conversion, sparse pivot cells and
+hierarchical totals. The original v0 assertions remain, adapted to the analysis
+export envelope and per-sheet state.
+
+Validation for Builder v1: root `npm test` exited 0 with **534 tests: 533 passed,
+0 failed, 1 skipped**. Breakdown: API 29 passed; bundle-parser 183 passed;
+query-engine 161 passed and the existing live Postgres test skipped because
+`DATABASE_URL` is unset; web 160 passed. `npm run build` exited 0; the existing
+ECharts chunk-size warning remains. `npm run build:demo --workspace @opensight/web`
+exited 0 and rebuilt `dist/opensight-demo.html` (971,011 bytes, ignored build
+artifact). `git diff --check` passed.
+
+An additional check in the installed Chromium used only the local single-file
+demo. It exercised actual mouse drag and resize (persisted position changed from
+x=0/y=0 to x=2/y=2; height changed from 8 to 11), pills, calculated-field modal,
+new/renamed sheets, exact draft restoration after reload, and 390px panel collapse.
+The mobile document width was exactly 390px with no horizontal overflow, and
+switching viewport sizes preserved desktop geometry. There were zero page
+exceptions and zero HTTP(S) requests. No AWS calls were made and
+`SOLUTION_DESIGN.md` was not edited.
+
 ## Sources
 
 The local [API catalog](../../docs/research/api-surface.md),

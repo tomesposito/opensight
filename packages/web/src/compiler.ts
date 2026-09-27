@@ -7,7 +7,7 @@ export interface CompiledVisual {
   model: VisualModel;
   option: EChartsOption;
   /** Ordered, validated cells also used by the accessible HTML data table. */
-  table: { columns: string[]; rows: Cell[][] };
+  table: { columns: string[]; rows: Cell[][]; rowKinds?: ('detail' | 'subtotal' | 'total')[] };
   state: 'ready' | 'empty' | 'unavailable';
 }
 
@@ -52,8 +52,8 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
   if (entries.length !== 1) fail(path, 'expected exactly one visual variant');
   const [variant, raw] = entries[0]!;
   const kinds: Record<string, VisualModel['kind']> = bundle
-    ? { pieChartVisual: 'pie', barChartVisual: 'bar', kpiVisual: 'kpi', lineChartVisual: 'line', tableVisual: 'table' }
-    : { PieChartVisual: 'pie', BarChartVisual: 'bar', KPIVisual: 'kpi', LineChartVisual: 'line', TableVisual: 'table' };
+    ? { pieChartVisual: 'pie', barChartVisual: 'bar', kpiVisual: 'kpi', lineChartVisual: 'line', tableVisual: 'table', pivotTableVisual: 'pivot' }
+    : { PieChartVisual: 'pie', BarChartVisual: 'bar', KPIVisual: 'kpi', LineChartVisual: 'line', TableVisual: 'table', PivotTableVisual: 'pivot' };
   const kind = Object.hasOwn(kinds, variant) ? kinds[variant] : undefined;
   if (!kind) fail(`${path}.${variant}`, 'unsupported visual variant in this dialect');
   const p = `${path}.${variant}`;
@@ -66,22 +66,24 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
   const cpath = `${p}.${key('chartConfiguration', 'ChartConfiguration')}`;
   const config = object(body[key('chartConfiguration', 'ChartConfiguration')], cpath);
   const common = [key('fieldWells', 'FieldWells')];
-  if (kind !== 'kpi' && kind !== 'table') common.push(key('sortConfiguration', 'SortConfiguration'), key('dataLabels', 'DataLabels'), key('tooltip', 'Tooltip'), key('legend', 'Legend'));
+  if (kind !== 'kpi' && kind !== 'table' && kind !== 'pivot') common.push(key('sortConfiguration', 'SortConfiguration'), key('dataLabels', 'DataLabels'), key('tooltip', 'Tooltip'), key('legend', 'Legend'));
   if (kind === 'pie') common.push(key('donutOptions', 'DonutOptions'));
   if (kind === 'bar') common.push(key('orientation', 'Orientation'), key('barsArrangement', 'BarsArrangement'));
+  if (kind === 'table' || kind === 'pivot') common.push(key('totalOptions', 'TotalOptions'));
+  if (kind === 'table') common.push(key('opensightSubtotalOptions', 'OpenSightSubtotalOptions'));
   keys(config, common, cpath);
   const fpath = `${cpath}.${key('fieldWells', 'FieldWells')}`;
   const outer = object(config[key('fieldWells', 'FieldWells')], fpath);
   const wellsKey = kind === 'pie' ? key('pieChartAggregatedFieldWells', 'PieChartAggregatedFieldWells')
-    : { bar: key('barChartAggregatedFieldWells', 'BarChartAggregatedFieldWells'), line: key('lineChartAggregatedFieldWells', 'LineChartAggregatedFieldWells'), table: key('tableAggregatedFieldWells', 'TableAggregatedFieldWells'), kpi: '' }[kind];
+    : { bar: key('barChartAggregatedFieldWells', 'BarChartAggregatedFieldWells'), line: key('lineChartAggregatedFieldWells', 'LineChartAggregatedFieldWells'), table: key('tableAggregatedFieldWells', 'TableAggregatedFieldWells'), pivot: key('pivotTableAggregatedFieldWells', 'PivotTableAggregatedFieldWells'), kpi: '' }[kind];
   if (wellsKey) keys(outer, [wellsKey], fpath);
   const wells = wellsKey ? object(outer[wellsKey], `${fpath}.${wellsKey}`) : outer;
   const wpath = wellsKey ? `${fpath}.${wellsKey}` : fpath;
-  const categoryKey = kind === 'table' ? key('groupBy', 'GroupBy') : key('category', 'Category');
+  const categoryKey = kind === 'pivot' ? key('rows', 'Rows') : kind === 'table' ? key('groupBy', 'GroupBy') : key('category', 'Category');
   const valueKey = key('values', 'Values');
   // Empty optional wells are harmless; nonempty colors/targets/trends change semantics.
   const unused = [key('colors', 'Colors'), key('smallMultiples', 'SmallMultiples'), key('targetValues', 'TargetValues'), key('trendGroups', 'TrendGroups')];
-  keys(wells, [categoryKey, valueKey, ...unused], wpath);
+  keys(wells, [categoryKey, valueKey, ...(kind === 'pivot' ? [key('columns', 'Columns')] : []), ...unused], wpath);
   for (const name of unused) if (list(wells[name], `${wpath}.${name}`).length) fail(`${wpath}.${name}`, 'field well not supported');
   const field = (value: unknown, measure: boolean, fp: string): Field => {
     const wrapper = object(value, fp);
@@ -109,9 +111,11 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
       dataSet: text(column[key('dataSetIdentifier', 'DataSetIdentifier')], fp),
     };
   };
-  const dimensions = list(wells[categoryKey], `${wpath}.${categoryKey}`).map((v, i) => field(v, false, `${wpath}.${categoryKey}[${i}]`));
+  const rowDimensions = list(wells[categoryKey], `${wpath}.${categoryKey}`).map((v, i) => field(v, false, `${wpath}.${categoryKey}[${i}]`));
+  const columnDimensions = kind === 'pivot' ? list(wells[key('columns', 'Columns')], wpath).map((v, i) => field(v, false, `${wpath}.columns[${i}]`)) : [];
+  const dimensions = [...rowDimensions, ...columnDimensions];
   const measures = list(wells[valueKey], `${wpath}.${valueKey}`).map((v, i) => field(v, true, `${wpath}.${valueKey}[${i}]`));
-  if (kind === 'kpi' ? dimensions.length !== 0 : dimensions.length !== 1) fail(wpath, kind === 'kpi' ? 'KPI must have no category' : 'exactly one category/group field is supported');
+  if (kind === 'kpi' ? dimensions.length !== 0 : kind === 'pivot' || kind === 'table' ? dimensions.length < 1 : dimensions.length !== 1) fail(wpath, kind === 'kpi' ? 'KPI must have no category' : 'exactly one category/group field is supported');
   if (!measures.length || ((kind === 'pie' || kind === 'kpi') && measures.length !== 1)) fail(wpath, 'expected supported number of measures (pie/KPI: one)');
   const fields = [...dimensions, ...measures];
   if (new Set(fields.map(f => f.id)).size !== fields.length) fail(wpath, 'duplicate field IDs');
@@ -127,6 +131,25 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
   if (format[key('richText', 'RichText')] !== undefined) warnings.push(`${p}.${titleKey}: rich title formatting is not rendered; using a plain fallback.`);
   if (body[key('subtitle', 'Subtitle')] !== undefined) warnings.push(`${p}.${key('subtitle', 'Subtitle')}: subtitle presentation is not rendered.`);
   const visibility = (o: ObjectValue, name: string, defaultValue = 'VISIBLE'): boolean => enumValue(o[name], ['VISIBLE', 'HIDDEN'], defaultValue, `${cpath}.${name}`) === 'VISIBLE';
+  const totalVisibility = (raw: unknown, name: string): boolean => {
+    const option = object(raw ?? {}, `${cpath}.${name}`);
+    keys(option, [key('totalsVisibility', 'TotalsVisibility')], `${cpath}.${name}`);
+    return visibility(option, key('totalsVisibility', 'TotalsVisibility'), 'HIDDEN');
+  };
+  let totals = false, subtotals = false, columnTotals = false, columnSubtotals = false;
+  if (kind === 'pivot') {
+    const totalOptions = object(config[key('totalOptions', 'TotalOptions')] ?? {}, cpath);
+    const rowTotal = key('rowTotalOptions', 'RowTotalOptions'), colTotal = key('columnTotalOptions', 'ColumnTotalOptions');
+    const rowSub = key('rowSubtotalOptions', 'RowSubtotalOptions'), colSub = key('columnSubtotalOptions', 'ColumnSubtotalOptions');
+    keys(totalOptions, [rowTotal, colTotal, rowSub, colSub], cpath);
+    totals = totalVisibility(totalOptions[rowTotal], rowTotal);
+    columnTotals = totalVisibility(totalOptions[colTotal], colTotal);
+    subtotals = totalVisibility(totalOptions[rowSub], rowSub);
+    columnSubtotals = totalVisibility(totalOptions[colSub], colSub);
+  } else if (kind === 'table') {
+    totals = totalVisibility(config[key('totalOptions', 'TotalOptions')], 'totalOptions');
+    subtotals = totalVisibility(config[key('opensightSubtotalOptions', 'OpenSightSubtotalOptions')], 'opensightSubtotalOptions');
+  }
   const labels = object(config[key('dataLabels', 'DataLabels')] ?? {}, cpath);
   keys(labels, [key('visibility', 'Visibility'), key('overlap', 'Overlap')], cpath);
   enumValue(labels[key('overlap', 'Overlap')], ['DISABLE_OVERLAP'], 'DISABLE_OVERLAP', cpath);
@@ -173,7 +196,7 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
   return {
     id, kind, title: plain as string | undefined ?? `${measures.map(f => f.column).join(', ')}${dimensions[0] ? ` by ${dimensions[0].column}` : ''}`,
     titleVisible: visibility(title, key('visibility', 'Visibility')),
-    dimensions, measures, innerRadius, sort: fieldSort, warnings,
+    dimensions, rowDimensions, columnDimensions, measures, totals, subtotals, columnTotals, columnSubtotals, innerRadius, sort: fieldSort, warnings,
     horizontal: kind === 'bar' && enumValue(config[key('orientation', 'Orientation')], ['VERTICAL', 'HORIZONTAL'], 'VERTICAL', `${cpath}.${key('orientation', 'Orientation')}`) === 'HORIZONTAL',
     stacked: kind === 'bar' && enumValue(config[key('barsArrangement', 'BarsArrangement')], ['CLUSTERED', 'STACKED'], 'CLUSTERED', `${cpath}.${key('barsArrangement', 'BarsArrangement')}`) === 'STACKED',
     labels: visibility(labels, key('visibility', 'Visibility'), kind === 'pie' ? 'VISIBLE' : 'HIDDEN'),
@@ -218,7 +241,7 @@ export function compileVisual(input: Input): CompiledVisual {
     });
   }
   if (model.dimensions[0]) {
-    const categories = rows.map(row => JSON.stringify(cell(row, model.dimensions[0]!)));
+    const categories = rows.map(row => JSON.stringify(model.dimensions.map(f => cell(row, f))));
     if (new Set(categories).size !== categories.length) fail(input.path, 'duplicate categories: expected aggregated result rows');
   }
   const state = input.rows === null ? 'unavailable' : rows.length ? 'ready' : 'empty';
@@ -266,9 +289,65 @@ export function compileVisual(input: Input): CompiledVisual {
     option.tooltip = { show: false };
     option.graphic = [{ type: 'text', left: 'center', top: 'middle', style: { text: label, fill: '#157f88', fontSize: value === null ? 22 : 56, fontWeight: 600, fontFamily: 'system-ui, sans-serif' } }];
   }
+  if (model.kind === 'pivot' || model.kind === 'table' && (model.totals || model.subtotals)) {
+    return { model, option, state, table: compilePivotTable(model, rows, cell, number, input.path) };
+  }
   return { model, option, state, table: { columns: fields.map(f => f.column), rows: rows.map(row => fields.map(field => cell(row, field))) } };
 }
 
 export function displayCell(value: Cell): string {
   return value === null ? '(null)' : typeof value === 'number' ? new Intl.NumberFormat('en-US', { maximumFractionDigits: 12 }).format(value) : String(value);
+}
+
+interface AxisEntry { cells: Cell[]; kind: 'detail' | 'subtotal' | 'total' }
+/** Hierarchical axes preserve typed keys (null, strings and numbers never collide). */
+function axisEntries(paths: Cell[][], depth: number, subtotals: boolean, totals: boolean): AxisEntry[] {
+  if (!depth) return [{ cells: [], kind: 'detail' }];
+  const result: AxisEntry[] = [];
+  const visit = (prefix: Cell[], candidates: Cell[][]) => {
+    if (prefix.length === depth) { result.push({ cells: prefix, kind: 'detail' }); return; }
+    const groups = new Map<string, Cell[][]>();
+    for (const path of candidates) {
+      const key = JSON.stringify(path[prefix.length]);
+      const group = groups.get(key) ?? [];
+      group.push(path); groups.set(key, group);
+    }
+    for (const group of groups.values()) visit([...prefix, group[0]![prefix.length]!], group);
+    if (subtotals && prefix.length) result.push({ cells: prefix, kind: 'subtotal' });
+  };
+  visit([], paths);
+  if (totals && paths.length) result.push({ cells: [], kind: 'total' });
+  return result;
+}
+
+/** Native HTML pivot: only additive SUM bindings are accepted, so rollups are exact over the supplied groups. */
+function compilePivotTable(model: VisualModel, rows: Row[], cell: (row: Row, field: Field) => Cell,
+  number: (row: Row, field: Field) => number | null, path: string): CompiledVisual['table'] {
+  const rowFields = model.rowDimensions, columnFields = model.columnDimensions;
+  const rowPaths = rows.map(row => rowFields.map(f => cell(row, f)));
+  const colPaths = rows.map(row => columnFields.map(f => cell(row, f)));
+  const rowAxis = axisEntries(rowPaths, rowFields.length, model.subtotals, model.totals);
+  const colAxis = axisEntries(colPaths, columnFields.length, model.columnSubtotals, model.columnTotals);
+  const label = (entry: AxisEntry, fields: Field[]): string => entry.kind === 'total' ? 'Grand total' : [
+    ...entry.cells.map((value, i) => `${fields[i]!.column}: ${displayCell(value)}`),
+    ...(entry.kind === 'subtotal' ? ['Subtotal'] : []),
+  ].join(' / ');
+  const matches = (entry: AxisEntry, values: Cell[]): boolean => entry.cells.every((value, i) => value === values[i]);
+  const columns = [...rowFields.map(f => f.column), ...colAxis.flatMap(entry => model.measures.map(f => [label(entry, columnFields), f.column].filter(Boolean).join(' · ')))];
+  const output = rows.length ? rowAxis.map(rowEntry => {
+    const labels: Cell[] = rowFields.map((_, i) => rowEntry.cells[i] ?? (i === rowEntry.cells.length ? rowEntry.kind === 'total' ? 'Grand total' : 'Subtotal' : ''));
+    // A null dimension is a value, not a missing level.
+    rowEntry.cells.forEach((value, i) => { labels[i] = value; });
+    return [...labels, ...colAxis.flatMap(colEntry => model.measures.map(measure => {
+      let total: number | null = null;
+      rows.forEach((row, i) => {
+        if (!matches(rowEntry, rowPaths[i]!) || !matches(colEntry, colPaths[i]!)) return;
+        const value = number(row, measure);
+        if (value !== null) total = (total ?? 0) + value;
+      });
+      if (total !== null && !Number.isFinite(total)) fail(path, 'pivot total must be finite');
+      return total;
+    }))];
+  }) : [];
+  return { columns, rows: output, rowKinds: rows.length ? rowAxis.map(entry => entry.kind) : [] };
 }

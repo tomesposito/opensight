@@ -48,11 +48,10 @@ export interface Measure {
   readonly aggregation: Aggregation;
   readonly path: string;
 }
-export interface RowFilter {
+export type RowFilter = {
   readonly columnName: string;
-  readonly value: string;
   readonly path: string;
-}
+} & ({ readonly value: string } | { readonly values: readonly string[] });
 /** OpenSight local test configuration, never inferred from missing AWS policies. */
 export interface LocalDataBinding {
   readonly provenance: string;

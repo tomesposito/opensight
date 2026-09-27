@@ -146,3 +146,19 @@ test('converts wrapped KPI wells, table measures and selected-sheet filter scopi
   } } }] });
   assert.deepEqual(result.filterGroups[0].scopeConfiguration.selectedSheets.sheetVisualScopingConfigurations, [{ sheetId: 's', scope: 'SELECTED_VISUALS', visualIds: ['kpi', 'table'] }]);
 });
+
+test('pivot API wells and independent total options convert to camelCase without changing compiled cells', () => {
+  const field = name => ({ FieldId: name, Column: { DataSetIdentifier: 'sales_data', ColumnName: name } });
+  const definition = { PivotTableVisual: { VisualId: 'pivot', ChartConfiguration: {
+    FieldWells: { PivotTableAggregatedFieldWells: { Rows: [{ CategoricalDimensionField: field('region') }], Columns: [{ CategoricalDimensionField: field('category') }],
+      Values: [{ NumericalMeasureField: { ...field('revenue'), AggregationFunction: { SimpleNumericalAggregation: 'SUM' } } }] } },
+    TotalOptions: { RowTotalOptions: { TotalsVisibility: 'VISIBLE' }, ColumnTotalOptions: { TotalsVisibility: 'HIDDEN' }, RowSubtotalOptions: { TotalsVisibility: 'HIDDEN' }, ColumnSubtotalOptions: { TotalsVisibility: 'VISIBLE' } },
+  } } };
+  const common = { bindings: {}, path: 'pivot', rows: [{ region: 'East', category: 'Hardware', revenue: 100 }] };
+  const api = compileVisual({ ...common, source: 'api', definition });
+  const converted = convertVisual(definition);
+  assert.deepEqual(converted.pivotTableVisual.chartConfiguration.totalOptions.rowTotalOptions, { totalsVisibility: 'VISIBLE' });
+  assert.deepEqual(compileVisual({ ...common, source: 'bundle', definition: converted }), api);
+  assert.equal(api.model.columnTotals, false); assert.equal(api.model.columnSubtotals, true);
+  assert.deepEqual(api.table.rows, [['East', 100], ['Grand total', 100]]);
+});

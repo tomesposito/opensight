@@ -110,10 +110,10 @@ function filters(raw: unknown, target: Visual, all: Visual[], sheetIds: Set<stri
     equals(config.MatchOperator, 'EQUALS', `${lp}.MatchOperator`);
     equals(config.NullOption, 'NON_NULLS_ONLY', `${lp}.NullOption`);
     const values = array(config.CategoryValues, `${lp}.CategoryValues`);
-    if (values.length !== 1 || typeof values[0] !== 'string' || values[0].includes('\0')) {
-      fail('UNSUPPORTED_FEATURE', `${lp}.CategoryValues`, 'exactly one string equality value is supported');
+    if (!values.every((v): v is string => typeof v === 'string' && !v.includes('\0'))) {
+      fail('UNSUPPORTED_FEATURE', `${lp}.CategoryValues`, 'category values must be strings without NUL');
     }
-    result.push({ columnName: name, value: values[0], path: fp });
+    result.push({ columnName: name, ...(values.length === 1 ? { value: values[0]! } : { values }), path: fp });
   }
   return result;
 }
@@ -201,7 +201,12 @@ function sql(plan: Omit<QueryPlan, 'sql' | 'parameters'>): string {
   }
   if (plan.filters.length) {
     const relation = q(`${prefix}filtered`);
-    ctes.push(`${relation} AS (SELECT * FROM ${from} WHERE ${plan.filters.map((f, i) => `${q(f.columnName)} = $${i + 1}`).join(' AND ')})`);
+    let parameter = 0;
+    const predicates = plan.filters.map(f => {
+      if ('value' in f) return `${q(f.columnName)} = $${++parameter}`;
+      return f.values.length ? `${q(f.columnName)} IN (${f.values.map(() => `$${++parameter}`).join(', ')})` : 'FALSE';
+    });
+    ctes.push(`${relation} AS (SELECT * FROM ${from} WHERE ${predicates.join(' AND ')})`);
     from = relation;
   }
   const dimensions = plan.dimensions.map((d) => d.granularity === 'MONTH'
@@ -259,5 +264,5 @@ export function planVisual(request: PlanRequest, options: PlanOptions = {}): Que
     calculations: binder.calculations, filters: predicates, ...fields,
     stages: ['source', 'row-calculations', 'row-filters', 'visual-aggregation', 'order'],
   };
-  return { ...plan, sql: sql(plan), parameters: predicates.map((f) => f.value) };
+  return { ...plan, sql: sql(plan), parameters: predicates.flatMap(f => 'value' in f ? [f.value] : [...f.values]) };
 }

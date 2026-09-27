@@ -4,7 +4,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { Author, AuthorCanvas } from '../build/test/Author.js';
 import { VisualCard } from '../build/test/VisualCard.js';
-import { authorReducer, emptyDraft } from '../build/test/authoring.js';
+import { activeSheet, authorReducer, emptyDraft } from '../build/test/authoring.js';
 import { buildAuthorPreview } from '../build/test/author-preview.js';
 
 const add = (kind = 'bar') => authorReducer(emptyDraft(), { type: 'add', kind });
@@ -42,26 +42,27 @@ test('only the selected card exposes configuration and titles are escaped', () =
   let draft = authorReducer(add(), { type: 'add', kind: 'line' });
   draft = authorReducer(draft, { type: 'title', title: '<img src=x onerror=alert(1)>' });
   const html = renderCanvas(draft);
-  assert.match(html, /id="configure-visual-1" hidden=""/);
+  assert.doesNotMatch(html, /id="configure-visual-1"/);
+  assert.match(html, /id="configure-visual-2"/);
   assert.equal((html.match(/class="visual-config"/g) ?? []).length, 1);
   assert.match(html, /&lt;img src=x onerror=alert\(1\)&gt;/);
   assert.doesNotMatch(html, /<img/);
 });
 
 test('shared VisualCard shows ready, unavailable, empty and compiler error states', () => {
-  const preview = buildAuthorPreview(add().visuals[0]);
+  const preview = buildAuthorPreview(activeSheet(add()).visuals[0]);
   assert.match(renderCard(preview), /View data · 1 row/);
   assert.match(renderCard({ ...preview, rows: null }), /Data unavailable/);
   assert.match(renderCard({ ...preview, rows: [] }), /No results/);
   const incomplete = authorReducer(add(), { type: 'unassign', field: 'revenue' });
-  const error = renderCard(buildAuthorPreview(incomplete.visuals[0]));
+  const error = renderCard(buildAuthorPreview(activeSheet(incomplete).visuals[0]));
   assert.match(error, /role="alert"/);
   assert.match(error, /Unable to render/);
   assert.match(error, /expected supported number of measures/);
 });
 
 test('shared table preview renders the validated cells as semantic HTML', () => {
-  const html = renderCard(buildAuthorPreview(add('table').visuals[0]));
+  const html = renderCard(buildAuthorPreview(activeSheet(add('table')).visuals[0]));
   assert.match(html, /<th scope="col">region<\/th>/);
   assert.match(html, /<td>East<\/td><td>500<\/td>/);
   assert.doesNotMatch(html, /role="img"/);

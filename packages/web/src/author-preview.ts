@@ -1,4 +1,4 @@
-import { serializeVisual } from './authoring.js';
+import { serializeVisual, visualDimensions } from './authoring.js';
 import type { AuthorVisual } from './authoring.js';
 import { normalizeVisual } from './compiler.js';
 import type { Fixture, FixtureVisual } from './model.js';
@@ -16,9 +16,10 @@ const grains = {
 } as const;
 
 export function buildAuthorPreview(visual: AuthorVisual): FixtureVisual {
+  const dimensions = visualDimensions(visual);
   const grain = visual.kind === 'kpi' ? 'total-revenue'
-    : visual.dimension !== null && visual.dimension !== 'order_id' ? grains[visual.dimension] : undefined;
-  const rows = visual.measures.length === 1 && visual.measures[0] === 'revenue' && grain
+    : dimensions.length === 1 ? grains[dimensions[0] as keyof typeof grains] : undefined;
+  const rows = !visual.filters.length && visual.measures.length === 1 && visual.measures[0] === 'revenue' && grain
     ? oracles.get(grain) ?? null : null;
   return { ...buildAuthorVisual(visual), rows };
 }
@@ -27,8 +28,14 @@ export function buildAuthorPreview(visual: AuthorVisual): FixtureVisual {
 export function buildAuthorVisual(visual: AuthorVisual): FixtureVisual {
   return {
     source: 'bundle', definition: serializeVisual(visual), rows: null,
-    bindings: visual.dimension === 'order_date' ? { order_date: 'month' } : {},
+    bindings: visualDimensions(visual).includes('order_date') ? { order_date: 'month' } : {},
     placement: { column: 0, columns: 36, row: 0, rows: 6 },
     path: `author.${visual.id}`,
   };
+}
+
+/** Distinct lists are taken only from the pinned results; they never authorize new preview grains. */
+export function fixtureCategoryValues(column: string): string[] {
+  const grain = grains[column as keyof typeof grains];
+  return [...new Set((grain ? oracles.get(grain) ?? [] : []).flatMap(row => typeof row[column] === 'string' ? [row[column]] : []))];
 }

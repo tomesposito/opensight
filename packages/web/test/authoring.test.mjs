@@ -4,17 +4,19 @@ import { readFile } from 'node:fs/promises';
 import { parseBundleResource } from '@opensight/bundle-parser';
 import {
   SALES_FIELDS, VISUAL_TYPES, DRAFT_KEY, authorReducer, emptyDraft,
-  serializeVisual, serializeDraft, validateDraft, loadDraft, saveDraft,
+  serializeVisual, serializeDraft as serializeAnalysis, activeSheet, validateDraft, loadDraft, saveDraft,
 } from '../build/test/authoring.js';
 import { buildAuthorPreview } from '../build/test/author-preview.js';
 import { compileVisual } from '../build/test/compiler.js';
 import { init } from '../build/test/echarts.js';
 
+// Retain the v0 visual-definition assertions inside the new analysis export envelope.
+const serializeDraft = draft => serializeAnalysis(draft).definition.sheets.flatMap(s => s.visuals);
 const add = (kind = 'bar') => authorReducer(emptyDraft(), { type: 'add', kind });
 const edit = (draft, ...actions) => actions.reduce(authorReducer, draft);
 const assign = field => ({ type: 'assign', field });
 const unassign = field => ({ type: 'unassign', field });
-const visual = draft => draft.visuals.find(v => v.id === draft.selectedId);
+const visual = draft => activeSheet(draft).visuals.find(v => v.id === activeSheet(draft).selectedId);
 const body = definition => Object.values(definition)[0];
 
 test('sales field names and type badges match the pinned dataset', async () => {
@@ -31,7 +33,7 @@ test('assignment replaces the dimension, appends unique measures, and preserves 
   assert.equal(visual(draft).dimension, 'category');
   assert.deepEqual(visual(draft).measures, ['revenue', 'profit']);
   assert.deepEqual(serializeDraft(draft), [{ barChartVisual: {
-    visualId: 'visual-1', chartConfiguration: { fieldWells: { barChartAggregatedFieldWells: {
+    visualId: 'visual-1', chartConfiguration: { legend: { visibility: 'VISIBLE' }, dataLabels: { visibility: 'HIDDEN' }, orientation: 'VERTICAL', barsArrangement: 'CLUSTERED', fieldWells: { barChartAggregatedFieldWells: {
       category: [{ categoricalDimensionField: { fieldId: 'category', column: { dataSetIdentifier: 'sales_data', columnName: 'category' } } }],
       values: ['revenue', 'profit'].map(name => ({ numericalMeasureField: {
         fieldId: name, column: { dataSetIdentifier: 'sales_data', columnName: name },
@@ -98,8 +100,8 @@ test('removed wells remain in drafts but prevent export until repaired', () => {
 test('configuration only edits the selected visual; title is trimmed plain text', () => {
   const first = add();
   const second = edit(first, { type: 'add', kind: 'line' });
-  const draft = edit(second, { type: 'select', id: first.selectedId }, { type: 'title', title: '  <b>Sales</b>  ' }, assign('category'));
-  assert.deepEqual(draft.visuals[1], second.visuals[1]);
+  const draft = edit(second, { type: 'select', id: activeSheet(first).selectedId }, { type: 'title', title: '  <b>Sales</b>  ' }, assign('category'));
+  assert.deepEqual(activeSheet(draft).visuals[1], activeSheet(second).visuals[1]);
   assert.deepEqual(body(serializeDraft(draft)[0]).title, { visibility: 'VISIBLE', formatText: { plainText: '<b>Sales</b>' } });
   assert.equal(body(serializeDraft(first)[0]).title, undefined);
 });
@@ -107,9 +109,9 @@ test('configuration only edits the selected visual; title is trimmed plain text'
 test('move preserves selection and identities, defines export order, and stops at canvas edges', () => {
   const draft = edit(add(), { type: 'add', kind: 'line' }, { type: 'add', kind: 'pie' });
   const moved = edit(draft, { type: 'move', id: 'visual-3', offset: -1 });
-  assert.equal(moved.selectedId, 'visual-3');
+  assert.equal(activeSheet(moved).selectedId, 'visual-3');
   assert.deepEqual(serializeDraft(moved).map(v => body(v).visualId), ['visual-1', 'visual-3', 'visual-2']);
-  assert.deepEqual(draft.visuals.map(v => v.id), ['visual-1', 'visual-2', 'visual-3']);
+  assert.deepEqual(activeSheet(draft).visuals.map(v => v.id), ['visual-1', 'visual-2', 'visual-3']);
   assert.equal(authorReducer(moved, { type: 'move', id: 'visual-1', offset: -1 }), moved);
   assert.equal(authorReducer(moved, { type: 'move', id: 'visual-2', offset: 1 }), moved);
   for (const type of ['select', 'move', 'remove']) {
@@ -120,13 +122,13 @@ test('move preserves selection and identities, defines export order, and stops a
 test('removal selects an adjacent card, handles the last card, and new IDs stay unique', () => {
   let draft = edit(add(), { type: 'add', kind: 'line' }, { type: 'add', kind: 'pie' }, { type: 'select', id: 'visual-2' });
   draft = edit(draft, { type: 'remove', id: 'visual-2' });
-  assert.equal(draft.selectedId, 'visual-3');
+  assert.equal(activeSheet(draft).selectedId, 'visual-3');
   draft = edit(draft, { type: 'add', kind: 'table' });
-  assert.equal(new Set(draft.visuals.map(v => v.id)).size, 3);
+  assert.equal(new Set(activeSheet(draft).visuals.map(v => v.id)).size, 3);
   draft = edit(draft, { type: 'remove', id: 'visual-1' });
-  assert.equal(draft.selectedId, 'visual-2');
+  assert.equal(activeSheet(draft).selectedId, 'visual-2');
   draft = edit(draft, { type: 'remove', id: 'visual-2' });
-  assert.equal(draft.selectedId, 'visual-3');
+  assert.equal(activeSheet(draft).selectedId, 'visual-3');
   assert.deepEqual(edit(draft, { type: 'remove', id: 'visual-3' }), emptyDraft());
 });
 
@@ -146,8 +148,9 @@ for (const { kind } of VISUAL_TYPES) {
     assert.equal(compiled.state, 'ready');
     assert.equal(compiled.option.animation, false);
     assert.ok(compiled.table.rows.length);
-    if (kind === 'table') {
-      assert.deepEqual(compiled.table, { columns: ['region', 'revenue'], rows: [['East', 500]] });
+    if (kind === 'table' || kind === 'pivot') {
+      assert.deepEqual(compiled.table.columns, ['region', 'revenue']);
+      assert.deepEqual(compiled.table.rows, [['East', 500]]);
       assert.equal(compiled.option.series, undefined);
     } else {
       const chart = init(null, undefined, { renderer: 'svg', ssr: true, width: 600, height: 320 });
@@ -194,7 +197,7 @@ test('profit, order IDs and multiple values never reuse unrelated or partial ora
     const preview = buildAuthorPreview(profit);
     assert.equal(preview.rows, null);
     assert.equal(compileVisual(preview).state, 'unavailable');
-    assert.doesNotThrow(() => serializeDraft({ version: 1, visuals: [profit], selectedId: profit.id }));
+    assert.doesNotThrow(() => serializeDraft(edit(add(kind), unassign('revenue'), assign('profit'))));
     if (kind !== 'kpi') {
       assert.equal(buildAuthorPreview(visual(edit(add(kind), assign('order_id')))).rows, null);
     }
@@ -231,20 +234,20 @@ test('localStorage saves and restores selected card, ordering and unfinished wel
 });
 
 for (const [name, corrupt] of [
-  ['unsupported version', draft => { draft.version = 2; }],
+  ['unsupported version', draft => { draft.version = 3; }],
   ['extra data', draft => { draft.rows = [{ revenue: 999 }]; }],
-  ['missing selection', draft => { draft.selectedId = 'missing'; }],
-  ['null selection with cards', draft => { draft.selectedId = null; }],
-  ['duplicate IDs', draft => { draft.visuals.push(structuredClone(draft.visuals[0])); }],
-  ['unsafe ID', draft => { draft.visuals[0].id = '../invalid'; }],
-  ['unknown kind', draft => { draft.visuals[0].kind = 'scatter'; }],
-  ['unknown field', draft => { draft.visuals[0].dimension = 'country'; }],
-  ['wrong field role', draft => { draft.visuals[0].measures = ['region']; }],
-  ['duplicate measures', draft => { draft.visuals[0].measures = ['revenue', 'revenue']; }],
-  ['KPI dimension', draft => { draft.visuals[0].kind = 'kpi'; }],
-  ['multiple pie values', draft => { draft.visuals[0].kind = 'pie'; draft.visuals[0].measures.push('profit'); }],
-  ['invalid donut', draft => { draft.visuals[0].donut = true; }],
-  ['nontext title', draft => { draft.visuals[0].title = 42; }],
+  ['missing selection', draft => { activeSheet(draft).selectedId = 'missing'; }],
+  ['null selection with cards', draft => { activeSheet(draft).selectedId = null; }],
+  ['duplicate IDs', draft => { activeSheet(draft).visuals.push(structuredClone(activeSheet(draft).visuals[0])); }],
+  ['unsafe ID', draft => { activeSheet(draft).visuals[0].id = '../invalid'; }],
+  ['unknown kind', draft => { activeSheet(draft).visuals[0].kind = 'scatter'; }],
+  ['unknown field', draft => { activeSheet(draft).visuals[0].dimension = 'country'; }],
+  ['wrong field role', draft => { activeSheet(draft).visuals[0].measures = ['region']; }],
+  ['duplicate measures', draft => { activeSheet(draft).visuals[0].measures = ['revenue', 'revenue']; }],
+  ['KPI dimension', draft => { activeSheet(draft).visuals[0].kind = 'kpi'; }],
+  ['multiple pie values', draft => { activeSheet(draft).visuals[0].kind = 'pie'; activeSheet(draft).visuals[0].measures.push('profit'); }],
+  ['invalid donut', draft => { activeSheet(draft).visuals[0].donut = true; }],
+  ['nontext title', draft => { activeSheet(draft).visuals[0].title = 42; }],
 ]) {
   test(`untrusted draft rejects ${name} without overwriting storage`, () => {
     const draft = add();

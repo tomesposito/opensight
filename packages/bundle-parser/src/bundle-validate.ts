@@ -48,13 +48,13 @@ const title: Validator = (value, path) => {
 
 const wellKinds: Record<string, string> = {
   pieChartVisual: 'pieChartAggregatedFieldWells', barChartVisual: 'barChartAggregatedFieldWells',
-  lineChartVisual: 'lineChartAggregatedFieldWells', tableVisual: 'tableAggregatedFieldWells',
+  pivotTableVisual: 'pivotTableAggregatedFieldWells', lineChartVisual: 'lineChartAggregatedFieldWells', tableVisual: 'tableAggregatedFieldWells',
   comboChartVisual: 'comboChartAggregatedFieldWells', scatterPlotVisual: 'scatterPlotCategoricallyAggregatedFieldWells',
   kpiVisual: 'kpiFieldWells',
 };
 const fieldWells: Validator = (value, path) => {
   const wells = object(value, path);
-  for (const key of ['category', 'groupBy', 'colors', 'smallMultiples', 'trendGroups', 'label']) optional(wells, key, path, array(dimension));
+  for (const key of ['rows', 'columns', 'category', 'groupBy', 'colors', 'smallMultiples', 'trendGroups', 'label']) optional(wells, key, path, array(dimension));
   for (const key of ['values', 'targetValues', 'barValues', 'lineValues', 'xAxis', 'yAxis', 'size']) optional(wells, key, path, array(measure));
 };
 

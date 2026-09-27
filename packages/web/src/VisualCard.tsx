@@ -22,7 +22,7 @@ function DataTable({ compiled }: { compiled: CompiledVisual }) {
   return <div className="table-scroll"><table>
     <caption className="sr-only">{compiled.model.title} — result data</caption>
     <thead><tr>{compiled.table.columns.map((column, i) => <th key={i} scope="col">{column}</th>)}</tr></thead>
-    <tbody>{compiled.table.rows.map((row, i) => <tr key={i}>{row.map((cell, j) => <td key={j}>{displayCell(cell)}</td>)}</tr>)}</tbody>
+    <tbody>{compiled.table.rows.map((row, i) => <tr key={i} className={compiled.table.rowKinds?.[i]}>{row.map((cell, j) => <td key={j}>{displayCell(cell)}</td>)}</tr>)}</tbody>
   </table></div>;
 }
 
@@ -42,7 +42,7 @@ export function VisualCard({ visual, dataMessage, loading = false }: { visual: F
     {error && <div className="visual-error" role="alert"><strong>Unable to render</strong><p>{error}</p></div>}
     {compiled && <>
       <div className="visual-content">
-        {compiled.model.kind === 'table' ? <DataTable compiled={compiled} /> : <Chart option={compiled.option} title={compiled.model.title} />}
+        {(compiled.model.kind === 'table' || compiled.model.kind === 'pivot') ? <DataTable compiled={compiled} /> : <Chart option={compiled.option} title={compiled.model.title} />}
         {compiled.state !== 'ready' && <div className="empty-state" role="status">
           <span className="empty-symbol" aria-hidden="true">◌</span>
           <strong>{loading ? 'Loading data…' : compiled.state === 'unavailable' ? 'Data unavailable' : 'No results'}</strong>
@@ -51,7 +51,7 @@ export function VisualCard({ visual, dataMessage, loading = false }: { visual: F
         </div>}
       </div>
       <footer className="card-footer">
-        {compiled.state === 'ready' && compiled.model.kind !== 'table' && <details><summary>View data · {compiled.table.rows.length} {compiled.table.rows.length === 1 ? 'row' : 'rows'}</summary><DataTable compiled={compiled} /></details>}
+        {compiled.state === 'ready' && compiled.model.kind !== 'table' && compiled.model.kind !== 'pivot' && <details><summary>View data · {compiled.table.rows.length} {compiled.table.rows.length === 1 ? 'row' : 'rows'}</summary><DataTable compiled={compiled} /></details>}
         {!!compiled.model.warnings.length && <details className="render-notes"><summary>Rendering notes · {compiled.model.warnings.length}</summary><ul>{compiled.model.warnings.map(warning => <li key={warning}>{warning}</li>)}</ul></details>}
       </footer>
     </>}

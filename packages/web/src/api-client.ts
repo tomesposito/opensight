@@ -6,7 +6,8 @@ import type { Row } from './model.js';
 export interface QueryRequest {
   dimensions: { fieldId: string; columnName: string; granularity?: string }[];
   measures: { fieldId: string; columnName: string; aggregation: string }[];
-  filters: { columnName: string; value: string }[];
+  filters: ({ columnName: string; value: string } | { columnName: string; values: string[] })[];
+  calculatedFields?: { name: string; expression: string }[];
 }
 export interface QueryResponse {
   columns: { name: string; type: 'string' | 'number' }[];

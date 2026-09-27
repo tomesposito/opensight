@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { createApiClient, QueryError } from '../build/test/api-client.js';
-import { authorReducer, emptyDraft } from '../build/test/authoring.js';
+import { activeSheet, authorReducer, emptyDraft } from '../build/test/authoring.js';
 import { buildAuthorQuery, loadAuthorRows } from '../build/test/author-query.js';
 import { buildAuthorVisual } from '../build/test/author-preview.js';
 import { compileVisual } from '../build/test/compiler.js';
@@ -11,7 +11,7 @@ import { VisualCard } from '../build/test/VisualCard.js';
 import { Author, AuthorCanvas } from '../build/test/Author.js';
 
 const draft = kind => authorReducer(emptyDraft(), { type: 'add', kind });
-const visual = kind => draft(kind).visuals[0];
+const visual = kind => activeSheet(draft(kind)).visuals[0];
 const render = (item, data, props = {}) => renderToStaticMarkup(createElement(VisualCard, { visual: { ...buildAuthorVisual(item), rows: data.rows }, dataMessage: data.message, ...props }));
 const controller = () => new AbortController();
 

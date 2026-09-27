@@ -121,3 +121,23 @@ test('unknown or malformed dialect options fail closed', () => {
   assert.throws(() => planVisual(request(), null), { code: 'INVALID_INPUT', path: '$.options' });
   assert.throws(() => planVisual(request(), { future: true }), { code: 'UNSUPPORTED_FEATURE', path: '$.options.future' });
 });
+
+for (const dialect of ['duckdb', 'postgres']) {
+  test(`${dialect} multi-value category filters bind every value in order, including empty selections`, () => {
+    const r = request();
+    const group = r.analysis.Definition.FilterGroups[0];
+    group.Filters[0].CategoryFilter.Configuration.FilterListConfiguration.CategoryValues = ['East', "West' OR TRUE --"];
+    const second = structuredClone(group); second.FilterGroupId = 'second';
+    second.Filters[0].CategoryFilter.Column.ColumnName = 'category';
+    second.Filters[0].CategoryFilter.Configuration.FilterListConfiguration.CategoryValues = ['Hardware'];
+    r.analysis.Definition.FilterGroups.push(second);
+    const plan = planVisual(r, { dialect });
+    assert.match(plan.sql, /"region" IN \(\$1, \$2\) AND "category" = \$3/);
+    assert.deepEqual(plan.parameters, ['East', "West' OR TRUE --", 'Hardware']);
+    assert.doesNotMatch(plan.sql, /East|West|TRUE/);
+    group.Filters[0].CategoryFilter.Configuration.FilterListConfiguration.CategoryValues = [];
+    const none = planVisual(r, { dialect });
+    assert.match(none.sql, /WHERE FALSE AND "category" = \$1/);
+    assert.deepEqual(none.parameters, ['Hardware']);
+  });
+}

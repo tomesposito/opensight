@@ -141,3 +141,41 @@ test('body cap returns JSON 413 for fixed-length and streamed bodies without poi
   }
   assert.equal((await post(query())).status, 200);
 });
+
+test('builder calculated measures and dimensions execute after dependency binding and before static filters', async t => {
+  const post = await start(t);
+  const body = { dimensions: [{ fieldId: 'Area', columnName: 'Area' }],
+    measures: [{ fieldId: 'Net', columnName: 'Net', aggregation: 'SUM' }],
+    calculatedFields: [{ name: 'Net', expression: '{revenue} - {profit}' }, { name: 'Area', expression: '{region}' }],
+    filters: [{ columnName: 'Area', values: ['East', 'West'] }],
+  };
+  const response = await post(body);
+  assert.equal(response.status, 200);
+  assert.deepEqual((await response.json()).rows, [{ Area: 'East', Net: 340 }, { Area: 'West', Net: 280 }]);
+  body.calculatedFields[0].expression = 'sum({revenue})';
+  const unsupported = await post(body);
+  assert.equal(unsupported.status, 422);
+  assert.equal((await unsupported.json()).errorCode, 'UNSUPPORTED_FEATURE');
+});
+
+test('builder filters OR selected values, AND different fields, bind quotes and support select-none', async t => {
+  const post = await start(t);
+  const body = { ...query(), filters: [{ columnName: 'region', values: ['East', 'West', "East' OR TRUE --"] }, { columnName: 'category', values: ['Hardware'] }] };
+  const response = await post(body);
+  assert.equal(response.status, 200);
+  assert.deepEqual((await response.json()).rows, ['East', 'West'].map(region => ({ region, total: aggregates(csv.filter(row => row.region === region && row.category === 'Hardware'), 'revenue').SUM })));
+  const none = await post({ ...query(), filters: [{ columnName: 'region', values: [] }] });
+  assert.equal(none.status, 200); assert.deepEqual((await none.json()).rows, []);
+  const quoted = await post({ ...query(), filters: [{ columnName: 'region', values: ["East' OR TRUE --", 'absent'] }] });
+  assert.equal(quoted.status, 200); assert.deepEqual((await quoted.json()).rows, []);
+});
+
+test('builder transport rejects malformed calculation/filter lists and does not accept both filter shapes', async t => {
+  const post = await start(t);
+  for (const fields of [{ calculatedFields: null }, { calculatedFields: [{ name: 'Net', expression: '' }] },
+    { calculatedFields: [{ name: 'Net', expression: '{revenue}', sql: 'select 1' }] },
+    { filters: [{ columnName: 'region', values: ['East'], value: 'West' }] }, { filters: [{ columnName: 'region', values: [1] }] },
+    { filters: [{ columnName: 'region', values: 'East' }] }, { filters: [{ columnName: 'region' }] }]) {
+    assert.equal((await post({ ...query(), ...fields })).status, 400);
+  }
+});

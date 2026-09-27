@@ -35,6 +35,7 @@ export interface BundleSheet extends UnknownProperties {
 /** Exactly one type key at runtime; unobserved visual kinds retain their body. */
 export interface BundleVisual {
   pieChartVisual?: BundlePieChartVisual;
+  pivotTableVisual?: BundlePivotTableVisual;
   [kind: string]: BundleVisualBody | undefined;
 }
 
@@ -54,6 +55,20 @@ export interface BundlePieChartVisual extends BundleVisualBody {
   actions?: unknown[];
   columnHierarchies?: unknown[];
 }
+
+/** Provisional camelCase projection of the documented pivot API configuration. */
+export interface BundlePivotTableVisual extends BundleVisualBody {
+  chartConfiguration?: {
+    fieldWells?: { pivotTableAggregatedFieldWells?: {
+      rows?: BundleDimensionField[]; columns?: BundleDimensionField[]; values?: BundleMeasureField[];
+    } & UnknownProperties } & UnknownProperties;
+    totalOptions?: {
+      rowTotalOptions?: BundleTotalsVisibility; columnTotalOptions?: BundleTotalsVisibility;
+      rowSubtotalOptions?: BundleTotalsVisibility; columnSubtotalOptions?: BundleTotalsVisibility;
+    } & UnknownProperties;
+  } & UnknownProperties;
+}
+export interface BundleTotalsVisibility extends UnknownProperties { totalsVisibility?: string }
 
 export interface BundlePieChartConfiguration extends UnknownProperties {
   fieldWells?: BundlePieChartFieldWells;

@@ -88,7 +88,7 @@ const measure: Schema = { NumericalMeasureField: ['numericalMeasureField', field
   CategoricalMeasureField: ['categoricalMeasureField', field], DateMeasureField: ['dateMeasureField', field],
   CalculatedMeasureField: ['calculatedMeasureField', members('FieldId Expression')] };
 const wells: Schema = {
-  Category: ['category', dimension], GroupBy: ['groupBy', dimension], Values: ['values', measure],
+  Rows: ['rows', dimension], Columns: ['columns', dimension], Category: ['category', dimension], GroupBy: ['groupBy', dimension], Values: ['values', measure],
   Colors: ['colors', dimension], SmallMultiples: ['smallMultiples', dimension],
   TargetValues: ['targetValues', measure], TrendGroups: ['trendGroups', dimension],
   BarValues: ['barValues', measure], LineValues: ['lineValues', measure],
@@ -125,9 +125,15 @@ const visualBody: Schema = {
       BarChartAggregatedFieldWells: ['barChartAggregatedFieldWells', wells],
       LineChartAggregatedFieldWells: ['lineChartAggregatedFieldWells', wells],
       TableAggregatedFieldWells: ['tableAggregatedFieldWells', wells],
+      PivotTableAggregatedFieldWells: ['pivotTableAggregatedFieldWells', wells],
       KPIFieldWells: ['kpiFieldWells', wells], ComboChartAggregatedFieldWells: ['comboChartAggregatedFieldWells', wells],
       ScatterPlotCategoricallyAggregatedFieldWells: ['scatterPlotCategoricallyAggregatedFieldWells', wells], ...wells,
     }],
+    TotalOptions: ['totalOptions', { ...members('TotalsVisibility'),
+      RowTotalOptions: ['rowTotalOptions', members('TotalsVisibility')], ColumnTotalOptions: ['columnTotalOptions', members('TotalsVisibility')],
+      RowSubtotalOptions: ['rowSubtotalOptions', members('TotalsVisibility')], ColumnSubtotalOptions: ['columnSubtotalOptions', members('TotalsVisibility')],
+    }],
+    OpenSightSubtotalOptions: ['opensightSubtotalOptions', members('TotalsVisibility')],
     Orientation: ['orientation'], BarsArrangement: ['barsArrangement'], Type: ['type'],
     Interactions: ['interactions', interactions], CategoryAxis: ['categoryAxis', axis], XAxisDisplayOptions: ['xAxisDisplayOptions', axis],
     BarDataLabels: ['barDataLabels', labels], LineDataLabels: ['lineDataLabels', labels],
@@ -209,7 +215,7 @@ const definition: Schema = {
     Visuals: ['visuals', {
       PieChartVisual: ['pieChartVisual', visualBody], BarChartVisual: ['barChartVisual', visualBody],
       ComboChartVisual: ['comboChartVisual', visualBody], ScatterPlotVisual: ['scatterPlotVisual', visualBody],
-      KPIVisual: ['kpiVisual', visualBody], LineChartVisual: ['lineChartVisual', visualBody], TableVisual: ['tableVisual', visualBody],
+      KPIVisual: ['kpiVisual', visualBody], LineChartVisual: ['lineChartVisual', visualBody], TableVisual: ['tableVisual', visualBody], PivotTableVisual: ['pivotTableVisual', visualBody],
     }],
     Layouts: ['layouts', { Configuration: ['configuration', { GridLayout: ['gridLayout', grid], FreeFormLayout: ['freeFormLayout', freeForm] }] }],
   }],
