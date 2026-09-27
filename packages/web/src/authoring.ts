@@ -1,3 +1,5 @@
+import { EXTRA_VISUALS, extraKind, type VisualKind } from './visual-catalog.js';
+export type { VisualKind } from './visual-catalog.js';
 import { parseExpression } from '@opensight/query-engine/browser';
 import { serializeInteractions } from './bundle-interactions.js';
 import { hierarchyError, type DimensionHierarchy, type DateGrain } from './drill.js';
@@ -43,8 +45,8 @@ export const VISUAL_TYPES = [
   { kind: 'bar', label: 'Bar', icon: '▥' }, { kind: 'line', label: 'Line', icon: '⌁' },
   { kind: 'pie', label: 'Pie / donut', icon: '◔' }, { kind: 'kpi', label: 'KPI', icon: '123' },
   { kind: 'table', label: 'Table', icon: '▤' }, { kind: 'pivot', label: 'Pivot', icon: '▦' },
+  ...Object.entries(EXTRA_VISUALS).map(([kind, type]) => ({ kind: kind as VisualKind, label: type.label, icon: type.icon })),
 ] as const;
-export type VisualKind = typeof VISUAL_TYPES[number]['kind'];
 export type Well = 'dimension' | 'rows' | 'columns' | 'values';
 export interface CategoryFilter { columnName: string; values: string[]; parameterName?: string; operator?: 'EQUALS' | 'GREATER_THAN_OR_EQUAL_TO' | 'LESS_THAN_OR_EQUAL_TO' }
 export interface ImportedVisual {
@@ -85,9 +87,13 @@ export const emptyDraft = (): AuthorDraft => ({ version: 2, parameters: [], titl
 export const activeSheet = (draft: AuthorDraft): AuthorSheet => draft.sheets.find(s => s.id === draft.activeSheetId)!;
 export const sheetParameters = (draft: AuthorDraft, sheet = activeSheet(draft)): AuthorParameter[] => draft.parameters.filter(p => !p.memberPath || p.memberPath === (sheet.imported?.memberPath ?? draft.bundle?.primaryPath));
 export const dimensionLabel = (kind: VisualKind): string => kind === 'line' ? 'X-axis' : kind === 'table' ? 'Group-by' : kind === 'pivot' ? 'Rows' : 'Category';
-export const singleMeasure = (kind: VisualKind): boolean => kind === 'pie' || kind === 'kpi';
+export const singleMeasure = (kind: VisualKind): boolean => ['pie', 'kpi', 'funnel', 'gauge', 'treemap', 'heatmap', 'box', 'wordCloud', 'histogram', 'filledMap', 'pointMap'].includes(kind);
+export const noDimensions = (kind: VisualKind): boolean => kind === 'kpi' || kind === 'gauge';
+export const grouped = (kind: VisualKind): boolean => ['table', 'pivot', 'treemap', 'heatmap', 'box', 'pointMap'].includes(kind);
+export const splitDimensions = (kind: VisualKind): boolean => ['pivot', 'heatmap', 'pointMap'].includes(kind);
+export const capabilityNote = (kind: VisualKind): string => extraKind(kind) ? EXTRA_VISUALS[kind].note : kind === 'kpi' ? 'One measure, one aggregate row.' : tabular(kind) ? 'Additive SUM totals over supplied groups; nulls remain null.' : 'One category dimension; measures use SUM. Pie requires nonnegative values.';
 export const tabular = (kind: VisualKind): boolean => kind === 'table' || kind === 'pivot';
-export const visualDimensions = (visual: AuthorVisual): string[] => visual.kind === 'kpi' ? [] : tabular(visual.kind)
+export const visualDimensions = (visual: AuthorVisual): string[] => noDimensions(visual.kind) ? [] : grouped(visual.kind)
   ? [...visual.rows, ...visual.columns] : visual.dimension === null ? [] : [visual.dimension];
 const originalIds = (draft: AuthorDraft, visual: boolean): string[] => (draft.bundle?.original.members ?? []).flatMap(({ resource }) => resource.resourceType === 'analysis' || resource.resourceType === 'dashboard' ? (resource.definition.sheets ?? []).flatMap(s => visual ? (s.visuals ?? []).map(v => Object.values(v)[0]!.visualId) : [s.sheetId]) : []);
 const nextId = (prefix: string, ids: string[]): string => {
@@ -136,6 +142,7 @@ export type AuthorAction =
   | { type: 'select' | 'remove'; id: string }
   | { type: 'move'; id: string; offset: -1 | 1 }
   | { type: 'kind'; kind: VisualKind }
+  | { type: 'measure-move'; index: number; offset: -1 | 1 }
   | { type: 'title'; title: string }
   | { type: 'donut'; donut: boolean }
   | { type: 'display'; property: 'titleVisible' | 'legend' | 'labels' | 'horizontal' | 'stacked' | 'totals' | 'subtotals'; value: boolean }
@@ -204,9 +211,9 @@ export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorD
   }
   if (action.type === 'add') {
     const id = nextId('visual', [...draft.sheets.flatMap(s => s.visuals.map(v => v.id)), ...originalIds(draft, true)]);
-    const dimension = action.kind === 'kpi' ? null : action.kind === 'line' ? 'order_date' : action.kind === 'pie' ? 'category' : 'region';
-    const visual: AuthorVisual = { ...defaults(), id, kind: action.kind, title: '', donut: false, dimension, measures: ['revenue'],
-      rows: tabular(action.kind) && dimension ? [dimension] : [], labels: action.kind === 'pie' };
+    const dimension = noDimensions(action.kind) ? null : ['line', 'area'].includes(action.kind) ? 'order_date' : action.kind === 'pie' ? 'category' : 'region';
+    const visual: AuthorVisual = { ...defaults(), id, kind: action.kind, title: '', donut: false, dimension, measures: ['scatter', 'combo', 'bar100'].includes(action.kind) ? ['revenue', 'profit'] : ['revenue'],
+      rows: grouped(action.kind) && dimension ? (['box', 'treemap'].includes(action.kind) ? [dimension, 'category'] : [dimension]) : [], columns: ['heatmap', 'pointMap'].includes(action.kind) ? ['category'] : [], labels: action.kind === 'pie' };
     const bottom = Math.max(0, ...sheet.layout.map(p => p.y + p.h));
     return update({ visuals: [...sheet.visuals, visual], selectedId: id, layout: [...sheet.layout, { i: id, x: 0, y: bottom, w: 6, h: 8 }] });
   }
@@ -230,22 +237,28 @@ export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorD
   return update({ visuals: sheet.visuals.map(item => {
     if (item.id !== sheet.selectedId) return item;
     let visual = item;
-    if (visual.hierarchy && (action.type === 'kind' && action.kind === 'kpi' || (action.type === 'assign' || action.type === 'unassign') && action.well !== 'values' && dataFields(draft.calculatedFields).some(f => f.name === action.field && f.role === 'dimension'))) {
+    if (visual.hierarchy && (action.type === 'kind' && noDimensions(action.kind) || (action.type === 'assign' || action.type === 'unassign') && action.well !== 'values' && dataFields(draft.calculatedFields).some(f => f.name === action.field && f.role === 'dimension'))) {
       const { hierarchy: _hierarchy, ...rest } = visual; visual = rest;
     }
     switch (action.type) {
       case 'kind': return { ...visual, ...(visual.imported ? { imported: { ...visual.imported, replaced: visual.imported.replaced || action.kind !== visual.kind || visual.imported.issues.some(i => i.startsWith('Unsupported visual type:')) } } : {}), kind: action.kind, donut: action.kind === 'pie' && visual.donut,
-        dimension: action.kind === 'kpi' ? null : visual.dimension,
-        rows: tabular(action.kind) ? (tabular(visual.kind) ? visual.rows : visual.dimension ? [visual.dimension] : []) : [],
-        columns: action.kind === 'pivot' ? visual.columns : [],
+        dimension: noDimensions(action.kind) ? null : visual.dimension,
+        rows: grouped(action.kind) ? (grouped(visual.kind) ? visual.rows : visual.dimension ? [visual.dimension] : []) : [],
+        columns: splitDimensions(action.kind) ? visual.columns : [],
         measures: singleMeasure(action.kind) ? visual.measures.slice(0, 1) : visual.measures };
       case 'hierarchy': {
         if (!action.hierarchy) { const { hierarchy: _old, ...rest } = visual; return rest; }
-        if (visual.kind === 'kpi' || hierarchyError(action.hierarchy, draft.calculatedFields)) return visual;
+        if (noDimensions(visual.kind) || hierarchyError(action.hierarchy, draft.calculatedFields)) return visual;
         const root = action.hierarchy.levels[0]!.columnName;
-        return { ...visual, hierarchy: action.hierarchy, dimension: root, ...(tabular(visual.kind) ? { rows: [root, ...visual.rows.slice(1).filter(f => f !== root)], columns: visual.columns.filter(f => f !== root) } : {}) };
+        return { ...visual, hierarchy: action.hierarchy, dimension: root, ...(grouped(visual.kind) ? { rows: [root, ...visual.rows.slice(1).filter(f => f !== root)], columns: visual.columns.filter(f => f !== root) } : {}) };
       }
       case 'filter-actions': return validFilterActions(action.actions) ? { ...visual, filterActions: action.actions } : visual;
+      case 'measure-move': {
+        const measures = [...visual.measures], target = action.index + action.offset;
+        if (action.index < 0 || target < 0 || action.index >= measures.length || target >= measures.length) return visual;
+        [measures[action.index], measures[target]] = [measures[target]!, measures[action.index]!];
+        return { ...visual, measures };
+      }
       case 'title': return { ...visual, title: action.title };
       case 'donut': return { ...visual, donut: visual.kind === 'pie' && action.donut };
       case 'display': return { ...visual, [action.property]: action.value };
@@ -263,18 +276,18 @@ export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorD
       case 'unassign': {
         const rows = (!action.well || action.well === 'rows') ? visual.rows.filter(f => f !== action.field) : visual.rows;
         return { ...visual, rows, columns: !action.well || action.well === 'columns' ? visual.columns.filter(f => f !== action.field) : visual.columns,
-          dimension: tabular(visual.kind) ? rows[0] ?? null : visual.dimension === action.field ? null : visual.dimension,
+          dimension: grouped(visual.kind) ? rows[0] ?? null : visual.dimension === action.field ? null : visual.dimension,
           measures: !action.well || action.well === 'values' ? visual.measures.filter(f => f !== action.field) : visual.measures };
       }
       case 'assign': {
         const field = dataFields(draft.calculatedFields).find(f => f.name === action.field);
         if (!field) return visual;
         if (field.role === 'measure') return action.well && action.well !== 'values' ? visual : { ...visual, measures: singleMeasure(visual.kind) ? [field.name] : [...new Set([...visual.measures, field.name])] };
-        if (visual.kind === 'kpi' || action.well === 'values') return visual;
-        if (tabular(visual.kind)) {
-          const well = visual.kind === 'pivot' && action.well === 'columns' ? 'columns' : 'rows';
+        if (noDimensions(visual.kind) || action.well === 'values') return visual;
+        if (grouped(visual.kind)) {
+          const well = splitDimensions(visual.kind) && action.well === 'columns' ? 'columns' : 'rows';
           const other = well === 'rows' ? 'columns' : 'rows';
-          const next = { ...visual, [well]: action.well ? [...new Set([...visual[well], field.name])] : [field.name], [other]: visual[other].filter(f => f !== field.name) };
+          const next = { ...visual, [well]: action.well && !['heatmap', 'pointMap'].includes(visual.kind) ? [...new Set([...visual[well], field.name])] : [field.name], [other]: visual[other].filter(f => f !== field.name) };
           return { ...next, dimension: next.rows[0] ?? null };
         }
         return { ...visual, dimension: field.name };
@@ -294,7 +307,7 @@ export function remapVisual(visual: AuthorVisual): AuthorVisual {
     return [field.name];
   }).filter((name, index, all) => all.indexOf(name) === index);
   const rows = match(visual.rows, 'dimension'), columns = match(visual.columns, 'dimension').filter(n => !rows.includes(n));
-  const dimension = tabular(visual.kind) ? rows[0] ?? null : match(visual.dimension ? [visual.dimension] : [], 'dimension')[0] ?? null;
+  const dimension = grouped(visual.kind) ? rows[0] ?? null : match(visual.dimension ? [visual.dimension] : [], 'dimension')[0] ?? null;
   const measures = match(visual.measures, 'measure');
   const filters = visual.filters.flatMap(f => {
     const field = SALES_FIELDS.find(c => (f.parameterName || c.type === 'STRING') && c.name.toLowerCase() === f.columnName.toLowerCase());
@@ -328,6 +341,16 @@ export function serializeVisual(visual: AuthorVisual, includeInteractions = true
   const tableTotals = { totalOptions: totalVisibility(visual.totals), opensightSubtotalOptions: totalVisibility(visual.subtotals) };
   const pivotTotals = { totalOptions: { rowTotalOptions: totalVisibility(visual.totals), columnTotalOptions: totalVisibility(visual.totals),
     rowSubtotalOptions: totalVisibility(visual.subtotals), columnSubtotalOptions: totalVisibility(visual.subtotals) } };
+  if (extraKind(visual.kind)) {
+    const spec = EXTRA_VISUALS[visual.kind];
+    const wells: Record<string, unknown> = {};
+    spec.dimensions.forEach((name, i) => { wells[name] = spec.dimensions.length === 1 ? category : (i === 0 ? visual.rows : visual.columns).map(n => dimensionField(n, visual.dateGrain, calculations)); });
+    spec.measures.forEach((name, i) => { wells[name] = spec.measures.length === 1 ? values : visual.kind === 'combo' && i === 1 ? values.slice(1) : values.slice(i, i + 1); });
+    return { [spec.variant]: { ...body, chartConfiguration: { ...display, fieldWells: spec.wells ? { [spec.wells]: wells } : wells,
+      ...(visual.kind === 'bar100' ? { barsArrangement: 'STACKED_PERCENT', orientation: visual.horizontal ? 'HORIZONTAL' : 'VERTICAL' } : {}),
+      ...(visual.kind === 'area' ? { type: 'AREA' } : {}),
+    } } };
+  }
   switch (visual.kind) {
     case 'pie': return { pieChartVisual: { ...body, chartConfiguration: { ...display,
       fieldWells: { pieChartAggregatedFieldWells: { category, values } }, donutOptions: { arcOptions: { arcThickness: visual.donut ? 'MEDIUM' : 'WHOLE' } },
@@ -405,7 +428,7 @@ export function validateDraft(value: unknown): asserts value is AuthorDraft {
       const fieldNames = (v: unknown, role: string): v is string[] => imported ? Array.isArray(v) && v.every(n => typeof n === 'string' && !!n && !n.includes('\0')) && new Set(v).size === v.length : names(v, role);
 
       if (!isObject(v) || !onlyKeys(v, ['id', 'kind', 'title', 'dimension', 'measures', 'donut', 'imported', 'filterActions', 'hierarchy', 'dateGrain', ...Object.keys(defaults())]) || typeof v.id !== 'string' || !/^visual-[1-9][0-9]*$/.test(v.id) || ids.has(v.id) || !VISUAL_TYPES.some(t => t.kind === v.kind) || typeof v.title !== 'string' || !['donut', 'titleVisible', 'legend', 'labels', 'horizontal', 'stacked', 'totals', 'subtotals'].every(k => typeof v[k] === 'boolean') || !fieldNames(v.measures, 'measure') || !fieldNames(v.rows, 'dimension') || !fieldNames(v.columns, 'dimension') || (v.dimension !== null && !fieldNames([v.dimension], 'dimension')) || !Array.isArray(v.filters)) return fail();
-      if ((v.kind === 'kpi' || v.kind === 'pie') && v.measures.length > 1 || v.kind === 'kpi' && v.dimension !== null || v.kind !== 'pie' && v.donut || v.kind !== 'pivot' && v.columns.length || (v.kind === 'table' || v.kind === 'pivot' ? v.dimension !== (v.rows[0] ?? null) : v.rows.length) || v.rows.some(n => (v.columns as string[]).includes(n))) return fail();
+      if (singleMeasure(v.kind as VisualKind) && v.measures.length > 1 || noDimensions(v.kind as VisualKind) && v.dimension !== null || v.kind !== 'pie' && v.donut || !splitDimensions(v.kind as VisualKind) && v.columns.length || (grouped(v.kind as VisualKind) ? v.dimension !== (v.rows[0] ?? null) : v.rows.length) || v.rows.some(n => (v.columns as string[]).includes(n))) return fail();
       if (v.dateGrain !== undefined && !['YEAR','QUARTER','MONTH','DAY'].includes(String(v.dateGrain))) return fail();
       if (v.hierarchy !== undefined && hierarchyError(v.hierarchy as DimensionHierarchy, calculations, !!imported)) return fail();
       if (v.filterActions !== undefined && !validFilterActions(v.filterActions)) return fail();

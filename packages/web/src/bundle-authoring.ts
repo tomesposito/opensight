@@ -1,11 +1,12 @@
+import { EXTRA_VISUALS, extraKind, variantKinds } from './visual-catalog.js';
 import { unsupportedFunctions } from '@opensight/query-engine/browser';
 import { importInteractions, exportInteractions } from './bundle-interactions.js';
 import { importControls, importParameterFilter, serializeControl, serializeFilter } from './bundle-controls.js';
 import { importParameter, serializeParameter, type AuthorParameter } from './parameters.js';
 import { assembleQsBundle, parseBundleJson, parseQsBundle, summarizeQsBundle, ZIP_LIMITS } from '@opensight/bundle-parser/browser';
 import type { BundleDefinition, BundleSheet, BundleVisual, QsBundle } from '@opensight/bundle-parser';
-import { defaults, emptyDraft, serializeDraft, serializeVisual, tabular, singleMeasure, validateDraft, dataFields, calculationError, sheetParameters } from './authoring.js';
-import type { AuthorDraft, AuthorSheet, AuthorVisual, CalculatedField, CategoryFilter, ImportResult, ImportedVisual, Placement, VisualKind } from './authoring.js';
+import { defaults, emptyDraft, serializeDraft, serializeVisual, grouped, noDimensions, singleMeasure, validateDraft, dataFields, calculationError, sheetParameters } from './authoring.js';
+import type { AuthorDraft, AuthorSheet, AuthorVisual, CalculatedField, CategoryFilter, ImportResult, ImportedVisual, Placement } from './authoring.js';
 
 type Obj = Record<string, unknown>;
 const obj = (v: unknown): Obj => v !== null && typeof v === 'object' && !Array.isArray(v) ? v as Obj : {};
@@ -15,7 +16,7 @@ const copy = <T,>(v: T): T => structuredClone(v);
 const equal = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b);
 export const LOCAL_SALES_ARN = 'arn:aws:quicksight:us-east-1:123456789012:dataset/renderable-sales';
 const LOCAL_IDENTIFIER = 'opensight_local_sales';
-const kinds: Record<string, VisualKind> = { barChartVisual: 'bar', lineChartVisual: 'line', pieChartVisual: 'pie', kpiVisual: 'kpi', tableVisual: 'table', pivotTableVisual: 'pivot' };
+const kinds = variantKinds;
 
 /** Every unmodeled property/value is named; the original JSON stays in bundle.original. */
 function differences(raw: unknown, projected: unknown, path: string): string[] {
@@ -49,19 +50,22 @@ function localBinding(arn: string | undefined, bundle: QsBundle, identifier: str
 function importVisual(raw: BundleVisual, id: string, definition: BundleDefinition, bundle: QsBundle): AuthorVisual {
   const [variant, value] = Object.entries(raw)[0]!;
   const body = obj(value), config = obj(body.chartConfiguration), outer = obj(config.fieldWells);
-  const kind = Object.hasOwn(kinds, variant) ? kinds[variant]! : 'bar';
-  const wells = kind === 'kpi' ? obj(outer.kpiFieldWells ?? outer) : obj(Object.values(outer)[0]);
+  let kind = Object.hasOwn(kinds, variant) ? kinds[variant]! : 'bar';
+  if (kind === 'bar' && config.barsArrangement === 'STACKED_PERCENT') kind = 'bar100';
+  if (kind === 'line' && config.type === 'AREA') kind = 'area';
+  const extra = extraKind(kind) ? EXTRA_VISUALS[kind] : undefined;
+  const wells = noDimensions(kind) ? obj(outer.kpiFieldWells ?? outer) : obj(Object.values(outer)[0]);
   const names = (v: unknown) => [...new Set(list(v).flatMap(f => {
     const column = obj(obj(Object.values(obj(f))[0]).column);
     return typeof column.columnName === 'string' ? [column.columnName] : [];
   }))];
-  const rows = names(wells[kind === 'pivot' ? 'rows' : kind === 'table' ? 'groupBy' : 'category']);
-  const columns = kind === 'pivot' ? names(wells.columns).filter(n => !rows.includes(n)) : [];
-  const measures = names(wells.values);
+  const rows = names(wells[extra?.dimensions[0] ?? (kind === 'pivot' ? 'rows' : kind === 'table' ? 'groupBy' : 'category')]);
+  const columns = kind === 'pivot' || kind === 'heatmap' || kind === 'pointMap' ? names(wells[kind === 'pointMap' ? 'longitude' : 'columns']).filter(n => !rows.includes(n)) : [];
+  const measures = extra ? extra.measures.flatMap(name => names(wells[name])) : names(wells.values);
   const total = obj(config.totalOptions);
   const visual: AuthorVisual = { ...defaults(), id, kind, title: string(obj(obj(body.title).formatText).plainText),
-    titleVisible: obj(body.title).visibility !== 'HIDDEN', dimension: kind === 'kpi' ? null : rows[0] ?? null,
-    rows: tabular(kind) ? rows : [], columns, measures: singleMeasure(kind) ? measures.slice(0, 1) : measures,
+    titleVisible: obj(body.title).visibility !== 'HIDDEN', dimension: noDimensions(kind) ? null : rows[0] ?? null,
+    rows: grouped(kind) ? rows : [], columns, measures: singleMeasure(kind) ? measures.slice(0, 1) : measures,
     donut: kind === 'pie' && ['SMALL', 'MEDIUM', 'LARGE'].includes(string(obj(obj(config.donutOptions).arcOptions).arcThickness)),
     legend: obj(config.legend).visibility !== 'HIDDEN', labels: obj(config.dataLabels).visibility === 'VISIBLE' || kind === 'pie' && obj(config.dataLabels).visibility === undefined,
     horizontal: config.orientation === 'HORIZONTAL', stacked: config.barsArrangement === 'STACKED',

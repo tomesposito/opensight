@@ -19,7 +19,7 @@ import { buildDistinctQuery, loadAuthorRows } from './author-query.js';
 import type { QueryClient } from './author-query.js';
 import {
   authorVisualProblem, VISUAL_TYPES, GRID_COLUMNS, activeSheet, authorReducer, calculationError, dataFields, dimensionLabel,
-  loadDraft, saveDraft, serializeDraft, sheetParameters, singleMeasure, tabular, visualDimensions,
+  loadDraft, saveDraft, serializeDraft, sheetParameters, singleMeasure, tabular, visualDimensions, grouped, splitDimensions, noDimensions, capabilityNote,
 } from './authoring.js';
 import type { AuthorAction, AuthorDraft, AuthorVisual, CalculatedField, VisualKind, Well } from './authoring.js';
 
@@ -138,9 +138,9 @@ export function AuthorCanvas({ draft, dispatch, client }: EditorProps) {
         {(['dimension', 'measure'] as const).map(role => <div key={role} className="field-group">
           <h3>{role === 'dimension' ? 'Dimensions' : 'Measures'}</h3>
           {fields.filter(f => f.role === role && f.name.toLowerCase().includes(search.toLowerCase())).map(field => <button key={field.name} type="button"
-            disabled={!selected || (role === 'dimension' && selected.kind === 'kpi')}
+            disabled={!selected || (role === 'dimension' && noDimensions(selected.kind))}
             aria-label={`Assign ${field.name}`} aria-pressed={selected?.dimension === field.name || selected?.rows.includes(field.name) || selected?.columns.includes(field.name) || !!selected?.measures.includes(field.name)}
-            onClick={() => dispatch({ type: 'assign', field: field.name, well: role === 'measure' ? 'values' : selected && tabular(selected.kind) ? (well === 'columns' && selected.kind === 'pivot' ? 'columns' : 'rows') : 'dimension' })}>
+            onClick={() => dispatch({ type: 'assign', field: field.name, well: role === 'measure' ? 'values' : selected && grouped(selected.kind) ? (well === 'columns' && splitDimensions(selected.kind) ? 'columns' : 'rows') : 'dimension' })}>
             <span className="field-icon" aria-hidden="true">{draft.calculatedFields.some(f => f.name === field.name) ? 'ƒ' : field.type === 'DATETIME' ? '▣' : field.type === 'STRING' ? 'Abc' : '#'}</span>
             <span className="field-name">{field.name}</span><span className="field-type">{field.type}</span>
           </button>)}
@@ -161,6 +161,7 @@ export function AuthorCanvas({ draft, dispatch, client }: EditorProps) {
           </form>
           {selected ? <div className="visual-config" id={`configure-${selected.id}`}>
             <label className="change-type">Change visual type<select value={selected.imported?.issues.some(i => i.startsWith('Unsupported visual type:')) && !selected.imported.replaced ? '' : selected.kind} onChange={e => dispatch({ type: 'kind', kind: e.target.value as VisualKind })}>{selected.imported?.issues.some(i => i.startsWith('Unsupported visual type:')) && !selected.imported.replaced && <option value="" disabled>{selected.imported.variant} (unsupported)</option>}{VISUAL_TYPES.map(type => <option value={type.kind} key={type.kind}>{type.label}</option>)}</select></label>
+            <p className="capability-note" role="note">{capabilityNote(selected.kind)}</p>
             <FieldWells visual={selected} draft={draft} dispatch={dispatch} activeWell={well} onWell={setWell} />
           </div> : <p className="field-hint">Choose a visual type and select ADD.</p>}
         </Panel>
@@ -226,13 +227,14 @@ function SheetTabs({ draft, dispatch }: Omit<EditorProps, 'client'>) {
 function FieldWells({ visual, draft, dispatch, activeWell, onWell }: { visual: AuthorVisual; draft: AuthorDraft; dispatch: Dispatch<AuthorAction>; activeWell: Well; onWell: (well: Well) => void }) {
   const fields = dataFields(draft.calculatedFields);
   const wells: { name: Well; label: string; values: string[] }[] = [
-    ...(visual.kind === 'kpi' ? [] : tabular(visual.kind) ? [{ name: 'rows' as const, label: dimensionLabel(visual.kind), values: visual.rows }] : [{ name: 'dimension' as const, label: dimensionLabel(visual.kind), values: visual.dimension ? [visual.dimension] : [] }]),
-    ...(visual.kind === 'pivot' ? [{ name: 'columns' as const, label: 'Columns', values: visual.columns }] : []),
-    { name: 'values', label: 'Values', values: visual.measures },
+    ...(noDimensions(visual.kind) ? [] : grouped(visual.kind) ? [{ name: 'rows' as const, label: visual.kind === 'pointMap' ? 'Latitude' : visual.kind === 'box' ? 'Group / sample dimensions' : dimensionLabel(visual.kind), values: visual.rows }] : [{ name: 'dimension' as const, label: dimensionLabel(visual.kind), values: visual.dimension ? [visual.dimension] : [] }]),
+    ...(splitDimensions(visual.kind) ? [{ name: 'columns' as const, label: visual.kind === 'pointMap' ? 'Longitude' : 'Columns', values: visual.columns }] : []),
+    { name: 'values', label: visual.kind === 'scatter' ? 'Values · X, Y, size (in order)' : visual.kind === 'combo' ? 'Values · bar, then lines' : 'Values', values: visual.measures },
   ];
   return <div className="field-wells">{wells.map(w => <fieldset key={w.name} className={activeWell === w.name ? 'active-well' : ''} onFocus={() => onWell(w.name)} onClick={() => onWell(w.name)}>
     <legend>{w.label}{w.name === 'values' && singleMeasure(visual.kind) ? ' · 1 measure' : ''}</legend>
     {w.values.map(field => <button className="field-chip" key={field} type="button" aria-label={`Remove ${field} from ${w.label}`} onClick={() => dispatch({ type: 'unassign', field, well: w.name })}>{w.name === 'values' ? `SUM(${field})` : `${field}${field === 'order_date' ? ` · ${visual.hierarchy?.levels[0]?.granularity ?? visual.dateGrain ?? 'MONTH'}` : ''}`} <span aria-hidden="true">×</span></button>)}
+    {w.name === 'values' && visual.measures.length > 1 && <div className="measure-order">{visual.measures.map((name, index) => <button type="button" key={name} disabled={!index} aria-label={`Move ${name} measure earlier`} onClick={() => dispatch({ type: 'measure-move', index, offset: -1 })}>↑ {name}</button>)}</div>}
     {!w.values.length && <p>{w.name === 'columns' ? 'Optional column dimensions' : 'Choose a field'}</p>}
     <label className="well-picker">Assign {w.name === 'values' ? 'measure' : w.name === 'dimension' ? 'dimension' : w.name}<select aria-label={`Assign ${w.label}`} value="" onChange={e => dispatch({ type: 'assign', field: e.target.value, well: w.name })}><option value="" disabled>Choose field…</option>{fields.filter(f => f.role === (w.name === 'values' ? 'measure' : 'dimension')).map(f => <option key={f.name}>{f.name}</option>)}</select></label>
   </fieldset>)}</div>;
@@ -320,7 +322,8 @@ function AuthorCard({ visual, index, count, selected, dispatch, client, calculat
 }) {
   const problem = authorVisualProblem(visual) ?? filterProblem;
   const hasCalculation = [...visualDimensions(visual), ...visual.measures].some(name => calculations.some(c => c.name === name));
-  const preview = useMemo(() => client || interactive || parameters.length || hasCalculation || problem ? undefined : buildAuthorPreview(visual), [visual, client, interactive, problem, parameters.length, hasCalculation]);
+  const extended = !['bar', 'line', 'pie', 'kpi', 'table', 'pivot'].includes(visual.kind);
+  const preview = useMemo(() => extended || client || interactive || parameters.length || hasCalculation || problem ? undefined : buildAuthorPreview(visual), [visual, client, interactive, problem, parameters.length, hasCalculation, extended]);
   const label = visual.title || `Visual ${index + 1}`;
   return <section className={`author-card${selected ? ' is-selected' : ''}`} aria-label={label} onClick={() => { if (!selected) dispatch({ type: 'select', id: visual.id }); }}>
     <div className="author-card-toolbar">
@@ -335,7 +338,7 @@ function AuthorCard({ visual, index, count, selected, dispatch, client, calculat
     {drillNavigation}
     {problem ? <div className="bundle-placeholder" role="status"><p>{problem}</p>
       {visual.imported && !visual.imported.local && <button type="button" onClick={e => { e.stopPropagation(); dispatch({ type: 'remap', id: visual.id }); }}>Remap to local dataset</button>}
-    </div> : client || interactive || parameters.length || hasCalculation ? <LiveAuthorVisual interactive={interactive} interaction={interaction} visual={visual} client={client} calculations={calculations} parameters={parameters} /> : preview && <VisualCard visual={preview} />}
+    </div> : extended || client || interactive || parameters.length || hasCalculation ? <LiveAuthorVisual interactive={interactive} interaction={interaction} visual={visual} client={client} calculations={calculations} parameters={parameters} /> : preview && <VisualCard visual={preview} />}
   </section>;
 }
 

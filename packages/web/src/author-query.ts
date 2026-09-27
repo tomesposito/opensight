@@ -1,6 +1,6 @@
 import { declaration, type AuthorParameter } from './parameters.js';
 import type { AuthorControl } from './controls.js';
-import { authorVisualProblem, visualDimensions, dataFields, type CalculatedField, type AuthorVisual } from './authoring.js';
+import { authorVisualProblem, noDimensions, visualDimensions, dataFields, type CalculatedField, type AuthorVisual } from './authoring.js';
 import type { createApiClient, QueryRequest } from './api-client.js';
 import type { Row } from './model.js';
 
@@ -10,7 +10,7 @@ export interface AuthorRows { rows: Row[] | null; message?: string }
 export function buildAuthorQuery(visual: AuthorVisual, calculations: readonly CalculatedField[] = [], parameters: readonly AuthorParameter[] = []): QueryRequest | null {
   if (authorVisualProblem(visual)) return null;
   const dimensions = visualDimensions(visual);
-  if (!visual.measures.length || (visual.kind !== 'kpi' && !dimensions.length)) return null;
+  if (!visual.measures.length || (!noDimensions(visual.kind) && !dimensions.length)) return null;
   const relevant = queryDependencies([...dimensions, ...visual.measures, ...visual.filters.map(f => f.columnName), ...(visual.interactionFilters ?? []).map(f => f.columnName)], calculations);
   const names = new Set([...visual.filters.flatMap(f => f.parameterName ? [f.parameterName] : []), ...relevant.flatMap(c => [...c.expression.matchAll(/\$\{([^}]+)\}/g)].map(m => m[1]!))]);
   const used = parameters.filter(p => names.has(p.name));
