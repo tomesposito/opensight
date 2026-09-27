@@ -185,7 +185,7 @@ export function importBundle(bundle: QsBundle): AuthorDraft {
     draft.calculatedFields = draft.calculatedFields.filter(field => !addedCalculations.has(field) || !calculationProblems.has(field.name));
     for (const s of d.sheets ?? []) {
       const id = `sheet-${sheets.length + 1}`, visuals = (s.visuals ?? []).map(v => importVisual(v, `visual-${++visualIndex}`, d, original));
-      const localId = (rawId: string): string => visuals.find(v => v.imported?.visualId === rawId)?.id ?? rawId;
+      const localId = (rawId: string): string => visuals.find(v => v.imported?.visualId === rawId)?.id ?? `unresolved:${rawId}`;
       for (const visual of visuals) if (visual.filterActions) visual.filterActions = visual.filterActions.map(a => ({ ...a, targets: a.targets === 'all' ? 'all' : a.targets.map(localId), mappings: Object.fromEntries(Object.entries(a.mappings).map(([id, field]) => [localId(id), field])) }));
       const layout = grid(s, visuals);
       const sheet: AuthorSheet = { id, controls: [], name: s.name?.trim() || 'Untitled sheet', visuals, layout, selectedId: visuals[0]?.id ?? null,
@@ -388,7 +388,7 @@ export function exportBundle(draft: AuthorDraft): QsBundle {
       if (raw.visuals !== undefined || sheet.visuals.length) raw.visuals = sheet.visuals.map(v => {
         const result = exportVisual(v, raw.visuals?.find(r => Object.values(r)[0]?.visualId === v.imported?.visualId));
         const identifier = v.imported ? usesRemappedDataset(v.imported) ? LOCAL_IDENTIFIER : v.imported.dataSets[0]?.identifier ?? LOCAL_IDENTIFIER : LOCAL_IDENTIFIER;
-        exportInteractions(obj(Object.values(result)[0]), v, id => { const target = sheet.visuals.find(t => t.id === id); return target?.imported?.visualId ?? id; }, identifier);
+        exportInteractions(obj(Object.values(result)[0]), v, id => { const target = sheet.visuals.find(t => t.id === id); return target?.imported?.visualId ?? (id.startsWith('unresolved:') ? id.slice(11) : id); }, identifier);
         return result;
       });
       exportLayout(sheet, raw);

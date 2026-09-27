@@ -201,10 +201,15 @@ export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorD
       return update({ visuals, layout: sheet.layout.map(p => p === a ? { ...b, i: a.i } : p === b ? { ...a, i: b.i } : p) });
     }
     visuals.splice(index, 1);
-    return update({ visuals, layout: sheet.layout.filter(p => p.i !== action.id), selectedId: sheet.selectedId === action.id ? (visuals[Math.min(index, visuals.length - 1)]?.id ?? null) : sheet.selectedId });
+    const remaining = visuals.map(v => v.filterActions ? { ...v, filterActions: v.filterActions.map(a => ({ ...a, targets: a.targets === 'all' ? 'all' as const : a.targets.filter(id => id !== action.id), mappings: Object.fromEntries(Object.entries(a.mappings).filter(([id]) => id !== action.id)) })) } : v);
+    return update({ visuals: remaining, layout: sheet.layout.filter(p => p.i !== action.id), selectedId: sheet.selectedId === action.id ? (visuals[Math.min(index, visuals.length - 1)]?.id ?? null) : sheet.selectedId });
   }
-  return update({ visuals: sheet.visuals.map(visual => {
-    if (visual.id !== sheet.selectedId) return visual;
+  return update({ visuals: sheet.visuals.map(item => {
+    if (item.id !== sheet.selectedId) return item;
+    let visual = item;
+    if (visual.hierarchy && (action.type === 'kind' && action.kind === 'kpi' || (action.type === 'assign' || action.type === 'unassign') && action.well !== 'values' && dataFields(draft.calculatedFields).some(f => f.name === action.field && f.role === 'dimension'))) {
+      const { hierarchy: _hierarchy, ...rest } = visual; visual = rest;
+    }
     switch (action.type) {
       case 'kind': return { ...visual, ...(visual.imported ? { imported: { ...visual.imported, replaced: visual.imported.replaced || action.kind !== visual.kind || visual.imported.issues.some(i => i.startsWith('Unsupported visual type:')) } } : {}), kind: action.kind, donut: action.kind === 'pie' && visual.donut,
         dimension: action.kind === 'kpi' ? null : visual.dimension,

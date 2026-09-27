@@ -95,3 +95,14 @@ test('honest eligibility names missing dimensions, incompatible types and unreso
   const html = renderToStaticMarkup(createElement(ActionEditor, { draft: d, visual: source, dispatch() {} }));
   assert.match(html, /source visual is not its own target/); assert.match(html, /Can receive this action/);
 });
+test('field edits clear conflicting hierarchies, deleting targets prunes action mappings, and invalid date buckets are rejected', () => {
+  let d = authorReducer(actionDraft(), { type: 'hierarchy', hierarchy: dateHierarchy });
+  d = authorReducer(d, { type: 'assign', field: 'category' });
+  assert.equal(activeSheet(d).visuals[1].hierarchy, undefined);
+  assert.equal(activeSheet(d).visuals[1].dimension, 'category');
+  const source = activeSheet(d).visuals[0]; source.filterActions[0].targets = ['visual-2']; source.filterActions[0].mappings['visual-2'] = 'category';
+  d = authorReducer(d, { type: 'remove', id: 'visual-2' });
+  assert.deepEqual(activeSheet(d).visuals[0].filterActions[0].targets, []);
+  assert.deepEqual(activeSheet(d).visuals[0].filterActions[0].mappings, {});
+  for (const value of ['2025-13', '2025-02-30', '2025-Q0', '2025-Q1-02', 'bad']) assert.equal(dateBounds(value), undefined);
+});

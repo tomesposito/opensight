@@ -118,7 +118,8 @@ export function AuthorCanvas({ draft, dispatch, client }: EditorProps) {
   const paths = drillState.key === interactionKey ? drillState.paths : {};
   const armed = drillState.key === interactionKey ? drillState.armed : undefined;
   const interactive = sheet.visuals.some(v => v.filterActions?.length || v.hierarchy);
-  const setPath = (id: string, path: DrillPath) => setDrillState({ key: interactionKey, paths: { ...paths, [id]: path } });
+  const clearSource = (id: string) => setInteractionState({ key: interactionKey, selections: Object.fromEntries(Object.entries(selections).filter(([key]) => key !== id)) });
+  const setPath = (id: string, path: DrillPath) => { setDrillState({ key: interactionKey, paths: { ...paths, [id]: path } }); clearSource(id); };
   const clearActions = () => setInteractionState({ key: interactionKey, selections: {} });
   const selected = sheet.visuals.find(v => v.id === sheet.selectedId);
   const { width, containerRef } = useContainerWidth({ initialWidth: 900 });
@@ -147,7 +148,7 @@ export function AuthorCanvas({ draft, dispatch, client }: EditorProps) {
         {!fields.some(f => f.name.toLowerCase().includes(search.toLowerCase())) && <p>No matching fields.</p>}
       </Panel>
       <div className="author-center">
-        {interactive && <div className="action-status"><button type="button" disabled={!Object.keys(selections).length} onClick={clearActions}>Reset actions</button><span role="status">{Object.keys(selections).length} active selection(s) · {client ? 'Live queries' : 'Recomputed synthetic sales across all regions'}</span></div>}
+        {interactive && <div className="action-status"><button type="button" disabled={!Object.keys(selections).length} onClick={clearActions}>Reset actions</button><span role="status">{Object.keys(selections).length} active selection(s) {Object.entries(selections).map(([id, selection]) => `${id}: ${selection.range?.join(' – ') ?? Object.entries(selection.values).map(([field, value]) => `${field} = ${value}`).join(', ')}`).join('; ')} · {client ? 'Live queries' : 'Recomputed synthetic sales across all regions'}</span></div>}
         <ControlsStrip key={sheet.id} draft={draft} dispatch={dispatch} client={client} />
         <Panel title="Visual build" className="build-panel">
           <form className="add-visual" onSubmit={e => { e.preventDefault(); dispatch({ type: 'add', kind: newKind }); }}>
@@ -175,7 +176,7 @@ export function AuthorCanvas({ draft, dispatch, client }: EditorProps) {
                 const hierarchy = visual.kind !== 'kpi' ? visual.hierarchy : undefined;
                 const interaction: VisualInteraction | undefined = (visual.filterActions?.length || hierarchy) && (hierarchy ? !authorVisualProblem(projected) && projected.measures.length > 0 : !originProblem(projected)) ? {
                   brush: visual.kind === 'line' && !!visual.filterActions?.length && armed !== visual.id,
-                  onClear: clearActions,
+                  onClear: () => clearSource(visual.id),
                   onSelect: selection => {
                     if (armed === visual.id && hierarchy) setPath(visual.id, drillDown(visual, path, selection));
                     else if (visual.filterActions?.length) setInteractionState({ key: interactionKey, selections: toggleSelection(selections, visual.id, { ...selection, values: Object.fromEntries([...path.flatMap(p => Object.entries(p.values)), ...Object.entries(selection.values)]) }) });

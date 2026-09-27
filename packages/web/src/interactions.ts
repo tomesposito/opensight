@@ -34,13 +34,20 @@ export function toggleSelection(selections: ActionSelections, sourceId: string, 
 }
 /** UTC inclusive bounds for an aggregated date bucket; source data is date-only. */
 export function dateBounds(value: string): [string, string] | undefined {
-  const match = /^(\d{4})(?:-(\d{2})|(-Q[1-4]))?(?:-(\d{2}))?$/.exec(value);
-  if (!match) return;
-  const year = Number(match[1]), month = match[3] ? (Number(match[3].slice(2)) - 1) * 3 : Number(match[2] ?? 1) - 1;
-  const start = new Date(Date.UTC(year, month, Number(match[4] ?? 1)));
-  const end = match[4] ? new Date(start) : new Date(Date.UTC(year + (!match[2] && !match[3] ? 1 : 0), month + (match[3] ? 3 : match[2] ? 1 : 0), 0));
-  if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime())) return;
-  return [start.toISOString().slice(0, 10), end.toISOString().slice(0, 10)];
+  if (!/^\d{4}(?:-Q[1-4]|-\d{2}(?:-\d{2})?)?$/.test(value)) return;
+  const year = Number(value.slice(0, 4)), quarter = value.includes('-Q'), day = value.length === 10;
+  const month = quarter ? (Number(value.slice(6)) - 1) * 3 + 1 : value.length >= 7 ? Number(value.slice(5, 7)) : 1;
+  if (month < 1 || month > 12) return;
+  const startText = `${value.slice(0, 4)}-${String(month).padStart(2, '0')}-${day ? value.slice(8) : '01'}`;
+  const start = new Date(`${startText}T00:00:00.000Z`);
+  if (!Number.isFinite(start.getTime()) || start.toISOString().slice(0, 10) !== startText) return;
+  const end = new Date(start);
+  if (!day) {
+    if (value.length === 4) end.setUTCFullYear(year + 1);
+    else end.setUTCMonth(end.getUTCMonth() + (quarter ? 3 : 1));
+    end.setUTCDate(end.getUTCDate() - 1);
+  }
+  return [startText, end.toISOString().slice(0, 10)];
 }
 export function selectionFilters(columnName: string, type: ParameterDeclaration['type'], value: string | number, range?: [string, string]): InteractionFilter[] {
   if (type === 'datetime') {

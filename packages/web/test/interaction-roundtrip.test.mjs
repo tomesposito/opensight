@@ -73,3 +73,24 @@ test('unknown operations and drill filters are reported and retained through unr
   d = importBundle(bundle(resource)); assert.equal(d.sheets[0].visuals[2].hierarchy, undefined);
   assert.match(JSON.stringify(d.bundle.report), /columnHierarchies/); assert.deepEqual(exportBundle(d), bundle(resource));
 });
+test('unresolved native targets cannot alias local visual IDs and remain honestly reported', () => {
+  const resource = serializeDraft(fixture()), source = resource.definition.sheets[0].visuals[0].barChartVisual;
+  resource.definition.sheets[0].visuals[1].pivotTableVisual.visualId = 'native-target';
+  source.actions[0].actionOperations[0].filterOperation.targetVisualsConfiguration.sameSheetTargetVisualConfiguration.targetVisuals = ['visual-2'];
+  const d = importBundle(bundle(resource)), s = activeSheet(d);
+  assert.deepEqual(s.visuals[0].filterActions[0].targets, ['unresolved:visual-2']);
+  const target = s.visuals[1];
+  assert.equal(withActionFilters(s, target, { 'visual-1': { values: { region: 'East' } } }), target);
+  assert.deepEqual(exportBundle(d), bundle(resource));
+});
+test('recognized native YEAR hierarchy is executable and editing hierarchies preserves surrounding JSON', () => {
+  const resource = serializeDraft(fixture()), raw = resource.definition.sheets[0].visuals[2].lineChartVisual;
+  raw.chartConfiguration.fieldWells.lineChartAggregatedFieldWells.category[0].dateDimensionField.dateGranularity = 'YEAR';
+  let d = importBundle(bundle(resource));
+  assert.deepEqual(d.sheets[0].visuals[2].imported.issues, []);
+  d = authorReducer(d, { type: 'select', id: 'visual-3' });
+  d = authorReducer(d, { type: 'hierarchy', hierarchy: { ...d.sheets[0].visuals[2].hierarchy, name: 'Edited date hierarchy' } });
+  const out = exportBundle(d), reimported = importBundle(out);
+  assert.equal(reimported.sheets[0].visuals[2].hierarchy.name, 'Edited date hierarchy');
+  assert.deepEqual(reimported.sheets[0].visuals[2].imported.issues, []);
+});

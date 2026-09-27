@@ -71,7 +71,7 @@ export function importInteractions(body: Obj, visual: AuthorVisual): { actions: 
   if (supported.length && validFilterActions(supported)) visual.filterActions = supported;
   const hierarchy = hierarchies.length === 1 ? importHierarchy(hierarchies[0], visual, fields) : undefined;
   if (hierarchy && visual.kind !== 'kpi') visual.hierarchy = hierarchy;
-  return { actions: actions.filter(a => !importAction(a, dimensions)), columnHierarchies: hierarchy && visual.kind !== 'kpi' ? [] : hierarchies };
+  return { actions: validFilterActions(supported) ? actions.filter(a => !importAction(a, dimensions)) : actions, columnHierarchies: hierarchy && visual.kind !== 'kpi' ? [] : hierarchies };
 }
 /** Patch only modeled interaction arrays; retain unknown entries and untouched native shapes. */
 export function exportInteractions(body: Obj, visual: AuthorVisual, targetId: (id: string) => string, identifier: string): void {

@@ -10,6 +10,7 @@ export function ActionEditor({ draft, visual, dispatch }: { draft: AuthorDraft; 
       <label>Action name<input value={action.name} onChange={e => save({ ...action, name: e.target.value })} /></label>
       <label>Selection field<select value={action.sourceField} onChange={e => save({ ...action, sourceField: e.target.value })}>{[...new Set([action.sourceField, ...visualDimensions(visual)])].map(f => <option key={f}>{f}</option>)}</select></label>
       <label>Affected visuals<select value={action.targets === 'all' ? 'all' : 'selected'} onChange={e => save({ ...action, targets: e.target.value === 'all' ? 'all' : [] })}><option value="all">All compatible visuals</option><option value="selected">Selected visuals</option></select></label>
+      {action.targets !== 'all' && action.targets.filter(id => !sheet.visuals.some(v => v.id === id)).map(id => <p key={id}>Cannot receive: {id.replace(/^unresolved:/, '')} is not on this sheet.</p>)}
       {sheet.visuals.map(target => {
         const reason = targetProblem(visual, target, action, draft.calculatedFields), field = action.mappings[target.id] ?? action.sourceField;
         return <div key={target.id} className="action-target"><strong>{target.title || target.id} ({target.kind})</strong>

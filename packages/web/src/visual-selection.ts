@@ -5,8 +5,7 @@ export function rowSelection(compiled: CompiledVisual, index: number): Selection
   const row = compiled.table.rows[index];
   if (!row || compiled.state !== 'ready' || compiled.table.rowKinds?.[index] && compiled.table.rowKinds[index] !== 'detail') return;
   const fields = compiled.model.kind === 'pivot' ? compiled.model.rowDimensions : compiled.model.dimensions;
-  const values: Selection['values'] = {};
-  for (const [i, field] of fields.entries()) { const cell = row[i]; if (typeof cell === 'string' || typeof cell === 'number') values[field.column] = cell; }
+  const values: Selection['values'] = Object.fromEntries(fields.flatMap((field, i) => { const cell = row[i]; return typeof cell === 'string' || typeof cell === 'number' ? [[field.column, cell]] : []; }));
   return Object.keys(values).length ? { values } : undefined;
 }
 export function brushSelection(compiled: CompiledVisual, range: unknown): Selection | undefined {
