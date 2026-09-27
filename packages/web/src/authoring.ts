@@ -1,3 +1,4 @@
+import { controlError, validateControls, type AuthorControl } from './controls.js';
 import { parameterError, parameterValueError, validateAuthorParameters } from './parameters.js';
 import type { AuthorParameter, ParameterValue } from './parameters.js';
 import type { BundleAnalysis, BundleColumnField, BundleDimensionField, BundleMeasureField, BundleVisual, BundleVisualBody } from '@opensight/bundle-parser';
@@ -50,12 +51,12 @@ export interface AuthorVisual {
   imported?: ImportedVisual;
 }
 export interface Placement { i: string; x: number; y: number; w: number; h: number }
-export interface AuthorSheet { id: string; name: string; visuals: AuthorVisual[]; layout: Placement[]; selectedId: string | null; imported?: ImportedSheet }
+export interface AuthorSheet { controls: AuthorControl[]; id: string; name: string; visuals: AuthorVisual[]; layout: Placement[]; selectedId: string | null; imported?: ImportedSheet }
 export interface AuthorDraft {
   version: 2; parameters: AuthorParameter[]; title: string; sheets: AuthorSheet[]; activeSheetId: string; calculatedFields: CalculatedField[]; bundle?: BundleOrigin;
 }
 export const GRID_COLUMNS = 12;
-const newSheet = (id: string, name: string): AuthorSheet => ({ id, name, visuals: [], layout: [], selectedId: null });
+const newSheet = (id: string, name: string): AuthorSheet => ({ id, name, controls: [], visuals: [], layout: [], selectedId: null });
 export const emptyDraft = (): AuthorDraft => ({ version: 2, parameters: [], title: 'Untitled analysis', sheets: [newSheet('sheet-1', 'Sheet 1')], activeSheetId: 'sheet-1', calculatedFields: [] });
 export const activeSheet = (draft: AuthorDraft): AuthorSheet => draft.sheets.find(s => s.id === draft.activeSheetId)!;
 export const sheetParameters = (draft: AuthorDraft, sheet = activeSheet(draft)): AuthorParameter[] => draft.parameters.filter(p => !p.memberPath || p.memberPath === (sheet.imported?.memberPath ?? draft.bundle?.primaryPath));
@@ -90,6 +91,10 @@ export type AuthorAction =
   | { type: 'sheet-remap'; id: string }
   | { type: 'analysis-title'; title: string }
   | { type: 'sheet-add' }
+  | { type: 'control-add'; control: Omit<AuthorControl, 'id'> }
+  | { type: 'control-remove'; id: string }
+  | { type: 'control-move'; id: string; offset: -1 | 1 }
+  | { type: 'control-bind'; id: string; parameterId: string }
   | { type: 'sheet-select' | 'sheet-delete'; id: string }
   | { type: 'sheet-rename'; id: string; name: string }
   | { type: 'layout'; sheetId: string; layout: readonly Placement[] }
@@ -147,6 +152,19 @@ export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorD
   }
   const sheet = activeSheet(draft);
   const update = (changes: Partial<AuthorSheet>): AuthorDraft => ({ ...draft, sheets: draft.sheets.map(s => s === sheet ? { ...s, ...changes } : s) });
+  if (action.type === 'control-add') {
+    const c = { ...action.control, id: nextId('control', sheet.controls.map(c => c.id)) };
+    if (controlError(c, sheetParameters(draft))) return draft;
+    try { validateControls([...sheet.controls, c], sheetParameters(draft)); } catch { return draft; }
+    return update({ controls: [...sheet.controls, c] });
+  }
+  if (action.type === 'control-remove') return update({ controls: sheet.controls.filter(c => c.id !== action.id).map(c => ({ ...c, ...(c.cascade ? { cascade: c.cascade.filter(p => p.controlId !== action.id) } : {}) })) });
+  if (action.type === 'control-bind') return update({ controls: sheet.controls.map(c => c.id !== action.id || controlError({ ...c, parameterId: action.parameterId }, sheetParameters(draft)) ? c : { ...c, parameterId: action.parameterId }) });
+  if (action.type === 'control-move') {
+    const controls = [...sheet.controls], i = controls.findIndex(c => c.id === action.id), j = i + action.offset;
+    if (i < 0 || j < 0 || j >= controls.length) return draft;
+    [controls[i], controls[j]] = [controls[j]!, controls[i]!]; return update({ controls });
+  }
   if (action.type === 'add') {
     const id = nextId('visual', [...draft.sheets.flatMap(s => s.visuals.map(v => v.id)), ...originalIds(draft, true)]);
     const dimension = action.kind === 'kpi' ? null : action.kind === 'line' ? 'order_date' : action.kind === 'pie' ? 'category' : 'region';
@@ -309,12 +327,13 @@ export function validateDraft(value: unknown): asserts value is AuthorDraft {
   const fields = dataFields(calculations), ids = new Set<string>(), sheetIds = new Set<string>();
   const names = (v: unknown, role: string): v is string[] => Array.isArray(v) && v.every(n => fields.some(f => f.name === n && f.role === role)) && new Set(v).size === v.length;
   for (const sheet of value.sheets) {
-    if (!isObject(sheet) || !onlyKeys(sheet, ['id', 'name', 'visuals', 'layout', 'selectedId', 'imported']) || typeof sheet.id !== 'string' || !/^sheet-[1-9][0-9]*$/.test(sheet.id) || sheetIds.has(sheet.id) || typeof sheet.name !== 'string' || !sheet.name.trim() || !Array.isArray(sheet.visuals) || !Array.isArray(sheet.layout)) return fail();
+    if (!isObject(sheet) || !onlyKeys(sheet, ['id', 'name', 'controls', 'visuals', 'layout', 'selectedId', 'imported']) || typeof sheet.id !== 'string' || !/^sheet-[1-9][0-9]*$/.test(sheet.id) || sheetIds.has(sheet.id) || typeof sheet.name !== 'string' || !sheet.name.trim() || !Array.isArray(sheet.visuals) || !Array.isArray(sheet.layout)) return fail();
     if (sheet.imported !== undefined && (!value.bundle || !isObject(sheet.imported) || typeof sheet.imported.memberPath !== 'string' || typeof sheet.imported.sheetId !== 'string' || typeof sheet.imported.name !== 'string' || !Array.isArray(sheet.imported.layout))) return fail();
     const origin = isObject(value.bundle) ? value.bundle.original as QsBundle : undefined;
     const source = isObject(sheet.imported) ? origin?.members.find(m => m.path === (sheet.imported as Record<string, unknown>).memberPath)?.resource : undefined;
     const sourceSheet = source && (source.resourceType === 'analysis' || source.resourceType === 'dashboard') ? source.definition.sheets?.find(s => s.sheetId === (sheet.imported as Record<string, unknown>).sheetId) : undefined;
     if (sheet.imported !== undefined && (!sourceSheet || !(sheet.imported as Record<string, unknown>).layout || !(sheet.imported as { layout: unknown[] }).layout.every(p => isObject(p) && typeof p.i === 'string' && [p.x, p.y, p.w, p.h].every(Number.isSafeInteger)))) return fail();
+    validateControls(sheet.controls ?? [], (value.parameters ?? []) as AuthorParameter[]);
     sheetIds.add(sheet.id);
     for (const v of sheet.visuals) {
       const imported = isObject(v) && isObject(v.imported) ? v.imported : undefined;
@@ -345,7 +364,7 @@ export function validateDraft(value: unknown): asserts value is AuthorDraft {
 
 /** Keep the original storage key and migrate v0 drafts only after checking their complete shape. */
 function migrateDraft(value: unknown): unknown {
-  if (isObject(value) && value.version === 2) return { parameters: [], ...value };
+  if (isObject(value) && value.version === 2) return { parameters: [], ...value, sheets: Array.isArray(value.sheets) ? value.sheets.map(s => isObject(s) ? { controls: [], ...s } : s) : value.sheets };
   if (!isObject(value) || value.version !== 1) return value;
   if (!onlyKeys(value, ['version', 'visuals', 'selectedId']) || !Array.isArray(value.visuals)) throw new Error('Invalid legacy draft');
   const draft = emptyDraft();

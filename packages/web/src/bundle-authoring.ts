@@ -161,7 +161,7 @@ export function importBundle(bundle: QsBundle): AuthorDraft {
     for (const s of d.sheets ?? []) {
       const id = `sheet-${sheets.length + 1}`, visuals = (s.visuals ?? []).map(v => importVisual(v, `visual-${++visualIndex}`, d, original));
       const layout = grid(s, visuals);
-      const sheet: AuthorSheet = { id, name: s.name?.trim() || 'Untitled sheet', visuals, layout, selectedId: visuals[0]?.id ?? null,
+      const sheet: AuthorSheet = { id, controls: [], name: s.name?.trim() || 'Untitled sheet', visuals, layout, selectedId: visuals[0]?.id ?? null,
         imported: { memberPath: member.path, sheetId: s.sheetId, name: s.name?.trim() || 'Untitled sheet', layout: copy(layout) } };
       sheets.push(sheet);
       messages.push(`Sheet ${s.name ?? s.sheetId}: ${visuals.length} visual(s) imported.`);
