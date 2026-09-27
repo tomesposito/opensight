@@ -58,9 +58,12 @@ test('copy snapshots persist with their own IDs; failed transfers never change m
   assert.equal((await api('/api/folders/copies/assets')).body.length, 1);
   assert.equal((await api('/api/assets/dashboard/sales-dashboard/copy', 'POST', { folderId: 'copies', newId: 'dashboard-copy' })).status, 200);
   assert.equal((await api('/dashboards/dashboard-copy/definition')).body.DashboardId, 'dashboard-copy');
+  await api('/analyses/copy/shares/user/alice', 'PUT', { role: 'viewer' });
+  await api('/analyses/copy/shares/user/alice', 'DELETE');
   const restarted = (await organizationApi(t, { dataRoot, security: { storePath } })).api;
   assert.deepEqual((await restarted('/analyses/copy/definition')).body.Definition, original.Definition);
   assert.equal((await restarted('/api/folders/copies/assets')).body.length, 2);
+  assert.equal((await restarted('/analyses/copy/definition', 'GET', undefined, 'default-alice')).status, 404);
   const stored = JSON.parse(await readFile(storePath, 'utf8')); stored.assets[0].folderId = 'missing';
   await writeFile(storePath, JSON.stringify(stored));
   await assert.rejects(organizationApi(t, { dataRoot, security: { storePath } }), /Unable to load automation store/);

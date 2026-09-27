@@ -158,8 +158,8 @@ export class SalesQuery {
   planDefinition(definition: unknown, visualId: string, window?: { columnName: string; start: string; end: string }) {
     return planVisual(this.secured(this.visualRequest(definition, visualId, window)));
   }
-  async executeVisual(definition: unknown, visualId: string, window?: { columnName: string; start: string; end: string }) {
-    return executeLocal(this.secured(this.visualRequest(definition, visualId, window)), { dataRoot: this.dataRoot });
+  async executeVisual(definition: unknown, visualId: string, window?: { columnName: string; start: string; end: string }, identity?: Identity) {
+    return executeLocal(this.secured(this.visualRequest(definition, visualId, window), identity), { dataRoot: this.dataRoot });
   }
 
   async refresh(): Promise<number> {

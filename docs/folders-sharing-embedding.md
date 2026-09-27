@@ -35,3 +35,28 @@ viewer access, including when a stored grant says `co-owner`. Administrators can
 manage all resources in their namespace. A folder cannot promote a reader or grant
 cross-namespace access. Membership changes and role demotion apply immediately.
 Folder restrictions apply to both listings and direct definition reads.
+
+## Sharing
+
+`GET /analyses/{id}/shares` and `/dashboards/{id}/shares` return `access`
+(`inherited` or `restricted`) and `grants`. `GET|PUT|DELETE .../shares/{user|group}/{id}`
+reads, upserts (`{ "role": "viewer" }` or `co-owner`), or revokes one share.
+These routes also accept the `/api` prefix. Share administration requires the
+namespace's management privilege (admin); the namespace role ceiling above also
+applies to co-owner grants. Sharing cannot give a reader administrative power.
+
+Untouched assets retain their Phase 3b namespace access. Creating the first share
+switches that asset to explicit access; revoking the last share keeps it private
+(to admins). User/group shares are additive, so revoking a user share does not
+remove a matching group share. The containing folder is an additional gate: an
+asset share cannot bypass its folder. Moving applies the destination folder gate;
+copies preserve explicit asset grants and use the destination folder's grants.
+User/group deletion is blocked while referenced by a share or folder grant.
+
+`POST /analyses/{id}/visuals/{visualId}/query` (also dashboards and `/api` prefixes)
+takes `{}` and runs the **stored** visual through the existing sales query binding
+with the authenticated viewer's security context. It returns columns and rows.
+It does not accept an alternate definition, principal or policy. RLS and CLS are
+applied by the engine before data execution. Neither admins nor co-owners bypass
+data policies. Direct dataset queries retain their Phase 3b data access checks;
+sharing a definition does not grant or revoke independent dataset access.

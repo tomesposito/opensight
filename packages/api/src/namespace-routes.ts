@@ -71,6 +71,7 @@ export async function namespaceRoute(request: IncomingMessage, response: ServerR
   send(response, 200, result); return true;
 }
 function referenced(state: SecurityState, namespaceId: string, type: 'user' | 'group', id: string): boolean {
+  if (state.assets?.some(a => a.namespaceId === namespaceId && a.grants?.some(g => g.principal.type === type && g.principal.id === id))) return true;
   if (state.folders?.some(f => f.namespaceId === namespaceId && f.grants?.some(g => g.principal.type === type && g.principal.id === id))) return true;
   return state.datasets.filter(d => d.namespaceId === namespaceId).some(d => [...d.rowRules, ...(d.columnGrants ?? [])].some(r => r.principals.some(p => p.type === type && p.id === id)));
 }

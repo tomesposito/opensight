@@ -2,7 +2,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { AutomationStore } from './automation-store.js';
 import { method, routeId, send } from './automation-routes.js';
 import { isObject, type JsonObject } from './mapping.js';
-import { readBody, RequestError, SecurityError } from './query.js';
+import { readBody, RequestError } from './query.js';
 import { id, invalid, record } from './schedule.js';
 import type { Identity, SecurityService, SecurityState } from './security.js';
 import type { DefinitionStore, ResourceKind } from './store.js';
@@ -13,6 +13,8 @@ export interface OrganizedAsset {
   id: string; kind: ResourceKind; namespaceId: string; folderId: string | null;
   /** Copies own an immutable definition snapshot; imported assets stay in the startup store. */
   definition?: JsonObject;
+  /** Undefined preserves inherited access; an empty list stays private after revocation. */
+  grants?: AssetGrant[];
 }
 export function resourceName(raw: unknown): string {
   if (typeof raw !== 'string' || !raw.trim() || raw.length > 512 || /[\x00-\x1f]/.test(raw)) invalid('$.name', 'expected a name');
@@ -43,7 +45,7 @@ export function validateOrganization(state: SecurityState): void {
     return { id: id(f.id, '$.id'), namespaceId, name: resourceName(f.name), ...(f.grants === undefined ? {} : { grants: validateGrants(f.grants, namespaceId, state) }) };
   });
   const assets = list(state.assets ?? []).map(raw => {
-    const a = record(raw, ['id', 'kind', 'namespaceId', 'folderId', 'definition']);
+    const a = record(raw, ['id', 'kind', 'namespaceId', 'folderId', 'definition', 'grants']);
     if (a.kind !== 'analysis' && a.kind !== 'dashboard') invalid('$.kind', 'expected analysis or dashboard');
     const assetId = id(a.id, '$.id'), namespaceId = id(a.namespaceId, '$.namespaceId');
     const folderId = a.folderId === null ? null : id(a.folderId, '$.folderId');
@@ -53,7 +55,7 @@ export function validateOrganization(state: SecurityState): void {
       if (!isObject(d) || d[a.kind === 'analysis' ? 'AnalysisId' : 'DashboardId'] !== assetId || !isObject(d.Definition)
         || !Array.isArray(d.Definition.DataSetIdentifierDeclarations) || d.Definition.DataSetIdentifierDeclarations.some(v => !isObject(v) || typeof v.Identifier !== 'string' || typeof v.DataSetArn !== 'string')) invalid('$.definition', 'invalid copied definition');
     }
-    return { id: assetId, kind: a.kind, namespaceId, folderId, ...(a.definition === undefined ? {} : { definition: a.definition as JsonObject }) } as OrganizedAsset;
+    return { id: assetId, kind: a.kind, namespaceId, folderId, ...(a.grants === undefined ? {} : { grants: validateGrants(a.grants, namespaceId, state) }), ...(a.definition === undefined ? {} : { definition: a.definition as JsonObject }) } as OrganizedAsset;
   });
   for (const resources of [folders, assets]) {
     if (resources.some(r => !state.namespaces.some(n => n.id === r.namespaceId))) invalid('$.namespaceId', 'unknown namespace');
@@ -92,7 +94,7 @@ export class OrganizationService {
     if (!this.definition(identity.namespaceId, kind, assetId, state) || !this.grantsAllow(undefined, identity, state)) return false;
     const asset = this.asset(state, identity.namespaceId, kind, assetId);
     const folder = asset?.folderId == null ? undefined : state.folders?.find(f => f.namespaceId === identity.namespaceId && f.id === asset.folderId);
-    return asset?.folderId != null && !folder ? false : this.grantsAllow(folder?.grants, identity, state);
+    return asset?.folderId != null && !folder ? false : this.grantsAllow(folder?.grants, identity, state) && this.grantsAllow(asset?.grants, identity, state);
   }
   requireRead(identity: Identity, kind: ResourceKind, assetId: string, state = this.store().read()): JsonObject {
     if (!this.canRead(identity, kind, assetId, state)) throw new RequestError(404, 'Asset not found');
@@ -124,6 +126,8 @@ export class OrganizationService {
         if (!asset) { asset = { id: newId, kind, namespaceId: identity.namespaceId, folderId }; (state.assets ??= []).push(asset); }
         asset.folderId = folderId;
         if (copy) {
+          const source = this.asset(state, identity.namespaceId, kind, assetId);
+          if (source?.grants !== undefined) asset.grants = structuredClone(source.grants);
           // A local copy has its own ID; source ARN/version metadata cannot identify it.
           const { Arn, AnalysisId, DashboardId, Version, ...definition } = structuredClone(original);
           asset.definition = { ...definition, [kind === 'analysis' ? 'AnalysisId' : 'DashboardId']: newId, ...(name === undefined ? {} : { Name: name }) };
