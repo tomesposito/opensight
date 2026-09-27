@@ -50,7 +50,7 @@ export async function createApiServer(options: ApiOptions): Promise<Server> {
     const path = queryOffset === -1 ? url : url.slice(0, queryOffset);
     const query = queryOffset === -1 ? '' : url.slice(queryOffset + 1);
     const identity = await security?.authenticate(request);
-    if (/^\/api\/datasets\/[^/]+\/row-rules/.test(path)) {
+    if (/^\/api\/datasets\/[^/]+\/(row-rules|column-grants)/.test(path)) {
       if (!security || !identity) throw new SecurityError(503, 'SECURITY_NOT_CONFIGURED', 'Needs a hosted API with authentication configured');
       if (await security.route(request, response, path, query, identity)) return;
     }

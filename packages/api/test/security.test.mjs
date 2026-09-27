@@ -41,3 +41,16 @@ test('RLS resource validates bodies, columns, principal resolution, operators an
   assert.equal((await api(path, 'PUT', rowRule, 'alice')).status, 403);
   assert.deepEqual((await api('/api/datasets/sales/row-rules')).body, []);
 });
+test('column grant CRUD validates principals/columns/effects and retains column protection after delete', async t => {
+  const api = await secureApi(t), path = '/api/datasets/sales/column-grants/revenue';
+  const grant = { column: 'revenue', effect: 'allow', principals: [{ type: 'user', id: 'alice' }] };
+  assert.equal((await api(path, 'PUT', grant)).status, 200);
+  assert.deepEqual((await api(path)).body, { id: 'revenue', ...grant });
+  assert.equal((await api('/api/datasets/sales/column-grants')).body.length, 1);
+  assert.equal((await api('/api/datasets/sales/query', 'POST', query, 'alice')).status, 200);
+  assert.equal((await api('/api/datasets/sales/query', 'POST', query, 'bob')).body.errorCode, 'COLUMN_ACCESS_DENIED');
+  for (const invalid of [{ ...grant, column: 'missing' }, { ...grant, effect: 'other' }, { ...grant, sql: '1' }, { ...grant, principals: [{ type: 'user', id: 'missing' }] }]) assert.equal((await api(path, 'PUT', invalid)).status, 400);
+  assert.equal((await api(path, 'PUT', { ...grant, effect: 'deny' }, 'alice')).status, 403);
+  assert.equal((await api(path, 'DELETE')).status, 200);
+  assert.equal((await api('/api/datasets/sales/query', 'POST', query, 'alice')).body.errorCode, 'COLUMN_ACCESS_DENIED');
+});

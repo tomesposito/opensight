@@ -13,6 +13,6 @@ export { parseExpression, expressionSql, unsupportedFunctions } from './expressi
 export { evaluateExpression } from './evaluate-expression.js';
 export { functionCatalog } from './catalog.js';
 
-export { validateRowRule, validatePolicy } from './security.js';
+export { validateRowRule, validateColumnGrant, validatePolicy } from './security.js';
 export type * from './security.js';
 export { bindMetadata } from './metadata.js';

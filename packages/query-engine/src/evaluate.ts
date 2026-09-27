@@ -21,7 +21,7 @@ export function expressionChildren(e: RowExpression): readonly RowExpression[] {
 interface Group { dimensions: ResultValue[]; context: ResultRow; rows: ResultRow[] }
 /** Shared stage evaluator used by fixtures and by both SQL engines for multirow calculations. */
 export function evaluatePlan(plan: QueryPlan, input: readonly ResultRow[]): ResultRow[] {
-  if (plan.rowSecurity) fail('SECURITY_REJECTED', '$.security', 'protected rows require SQL execution');
+  if (plan.securityProtected) fail('SECURITY_REJECTED', '$.security', 'protected rows require SQL execution');
   return evaluateSqlPlan(plan, input);
 }
 /** Internal executor entry: input has already passed the SQL security predicate. */

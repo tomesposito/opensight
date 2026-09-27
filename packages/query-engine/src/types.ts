@@ -89,6 +89,8 @@ export interface PlanRequest {
   readonly visualId: string;
 }
 export interface QueryPlan {
+  readonly securityProtected?: boolean;
+  readonly deniedColumns?: readonly string[];
   readonly rowSecurity?: import('./security.js').RowPredicate;
   readonly dialect: SqlDialect;
   readonly mode: 'synthetic-local';

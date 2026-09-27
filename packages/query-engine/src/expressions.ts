@@ -13,7 +13,7 @@ export class ExpressionBinder {
   private readonly bindings = new Map<string, Binding>();
   private readonly visiting = new Set<string>();
 
-  constructor(readonly dataSetIdentifier: string, columns: readonly BoundColumn[], raw: unknown, readonly parameters: readonly ParameterDeclaration[] = [], readonly values: ParameterBindings = {}) {
+  constructor(readonly dataSetIdentifier: string, columns: readonly BoundColumn[], raw: unknown, readonly parameters: readonly ParameterDeclaration[] = [], readonly values: ParameterBindings = {}, private readonly authorizeColumn?: (name: string, path: string) => void) {
     const names = new Set<string>();
     for (const column of columns) {
       unique(names, column.name, '$.dataSet.DataSet.OutputColumns');
@@ -32,7 +32,7 @@ export class ExpressionBinder {
 
   bind(name: string, path: string): Binding {
     const ready = this.bindings.get(name);
-    if (ready) return ready;
+    if (ready) { this.authorizeColumn?.(name, path); return ready; }
     const declaration = this.declarations.get(name);
     if (!declaration) fail('UNRESOLVED_BINDING', path, `unknown column: ${name}`);
     if (this.visiting.has(name)) fail('CALCULATION_CYCLE', path, `calculated-field cycle through ${name}`);

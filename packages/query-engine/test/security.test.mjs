@@ -52,3 +52,44 @@ test('RLS precedes PRE_FILTER and cannot be evaluated or refreshed over unfilter
   assert.throws(() => evaluatePlan(plan, []), { code: 'SECURITY_REJECTED' });
   await assert.rejects(refreshLocal(r, { dataRoot: '/absent' }), { code: 'SECURITY_REJECTED' });
 });
+
+for (const dialect of ['duckdb', 'postgres']) test(`${dialect} CLS deny wins over user/group allows and checks every reachable dependency`, () => {
+  const r = secured();
+  r.security.policy.protectedColumns = ['revenue', 'profit'];
+  r.security.policy.columnGrants = [
+    { id: 'revenue', column: 'revenue', effect: 'allow', principals: [{ type: 'group', id: 'east-team' }] },
+    { id: 'profit', column: 'profit', effect: 'allow', principals: [{ type: 'user', id: 'alice' }] },
+    { id: 'deny', column: 'profit', effect: 'deny', principals: [{ type: 'group', id: 'east-team' }] },
+  ];
+  assert.doesNotThrow(() => planVisual(r, { dialect }));
+  calculation(r, '{Indirect}');
+  r.analysis.Definition.CalculatedFields.push({ Name: 'Indirect', DataSetIdentifier: 'sales_data', Expression: '{profit} + 1' });
+  assert.throws(() => planVisual(r, { dialect }), { code: 'COLUMN_ACCESS_DENIED' });
+  r.analysis.Definition.CalculatedFields.at(-1).Expression = 'sumOver({profit}, [], PRE_FILTER)';
+  assert.throws(() => planVisual(r, { dialect }), { code: 'COLUMN_ACCESS_DENIED' });
+  r.security.policy.columnGrants = r.security.policy.columnGrants.filter(g => g.id !== 'deny');
+  assert.doesNotThrow(() => planVisual(r, { dialect }));
+  r.security.policy.columnGrants = [];
+  assert.throws(() => planVisual(r, { dialect }), { code: 'COLUMN_ACCESS_DENIED' });
+});
+for (const dialect of ['duckdb', 'postgres']) test(`${dialect} CLS rejects denied filters, dimensions, partitions and parameter filters`, () => {
+  for (const change of [
+    r => { r.security.policy.protectedColumns = ['region']; },
+    r => { r.analysis.Definition.FilterGroups = request().analysis.Definition.FilterGroups; r.security.policy.protectedColumns = ['region']; r.visualId = 'total-revenue'; },
+    r => { calculation(r, 'sumOver({revenue}, [{category}], PRE_FILTER)'); },
+    r => { r.parameterDeclarations = [{ name: 'c', type: 'string', multiple: false }]; r.parameterBindings = { c: ['Hardware'] }; r.parameterFilters = [{ columnName: 'category', parameterName: 'c' }]; },
+  ]) {
+    const r = secured(); r.security.policy.protectedColumns = ['category']; change(r);
+    assert.throws(() => planVisual(r, { dialect }), { code: 'COLUMN_ACCESS_DENIED' });
+  }
+});
+test('CLS excludes unrequested denied physical columns from SQL multirow projections without dropping requested fields', async () => {
+  const r = secured(); r.security.policy.protectedColumns = ['profit'];
+  calculation(r, 'percentOfTotal(sum({revenue}))');
+  for (const dialect of ['duckdb', 'postgres']) {
+    const plan = planVisual(r, { dialect });
+    assert.equal(plan.postProcess, true);
+    assert.doesNotMatch(plan.sql, /"profit"/);
+  }
+  assert.deepEqual((await executeLocal(r, { dataRoot: fixtureRoot })).rows, [{ region: 'East', calculated: 1 }]);
+});

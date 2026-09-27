@@ -62,3 +62,22 @@ and validates persisted resources before startup. Background reports, alerts and
 refresh do not have authenticated execution identities in this slice; in secured
 mode their query work fails closed instead of using an administrator identity or
 materializing unrestricted protected data.
+
+## Column policies
+
+Administrators manage `GET /api/datasets/sales/column-grants` and
+`GET|PUT|DELETE /api/datasets/sales/column-grants/{id}`. A PUT body contains
+`column` (exact physical name), `effect` (`allow` or `deny`), and `principals`
+(the same user/group selectors as row rules).
+
+A column becomes protected when its first grant is created. It then requires at
+least one matching allow and no matching deny. Deny takes precedence regardless
+of whether it comes from a user or group. Unmentioned columns remain available.
+Deleting the last grant leaves the column protected with no allowed principals.
+The persisted `protectedColumns` list is independent of the grants themselves.
+
+The binder rejects requested denied columns with `COLUMN_ACCESS_DENIED`, including
+indirect calculation dependencies, dimensions, filters, parameter filters,
+partition fields and sort fields. It never silently drops a requested field.
+Multirow SQL results project only permitted physical columns. RLS predicates may
+use a denied column internally without granting that column to the caller.

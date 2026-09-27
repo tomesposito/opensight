@@ -213,7 +213,7 @@ function sql(plan: Omit<QueryPlan, 'sql' | 'parameters'>, parameters: ParameterV
     from = relation;
   }
   if (plan.postProcess) {
-    const columns = [...plan.sourceColumns.map(c => ({ name: c.name, type: c.scalarType })), ...plan.calculations.filter(c => c.expression.level === 'row').map(c => ({ name: c.name, type: c.expression.scalarType }))];
+    const columns = [...plan.sourceColumns.filter(c => !plan.deniedColumns?.includes(c.name)).map(c => ({ name: c.name, type: c.scalarType })), ...plan.calculations.filter(c => c.expression.level === 'row').map(c => ({ name: c.name, type: c.expression.scalarType }))];
     const projections = columns.map(c => `${c.type === 'datetime' ? plan.dialect === 'postgres' ? `TO_CHAR(${q(c.name)}, 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')` : `STRFTIME(${q(c.name)}, '%Y-%m-%dT%H:%M:%S.%gZ')` : q(c.name)} AS ${q(c.name)}`);
     return `${ctes.length ? `WITH ${ctes.join(',\n')}\n` : ''}SELECT ${projections.join(', ')} FROM ${from}`;
   }
@@ -262,7 +262,9 @@ export function planVisual(request: PlanRequest, options: PlanOptions = {}): Que
   const r = object(request, '$');
   keys(r, ['analysis', 'dataSet', 'dataSource', 'localData', 'visualId', 'parameterDeclarations', 'parameterBindings', 'parameterFilters', 'security'], '$');
   const metadata = bindMetadata(r.dataSet, r.dataSource, r.localData, r.security !== undefined);
-  const rowSecurity = r.security === undefined ? undefined : resolveSecurity(r.security, metadata.columns, metadata.localData.dataSetArn);
+  const security = r.security === undefined ? undefined : resolveSecurity(r.security, metadata.columns, metadata.localData.dataSetArn);
+  if (metadata.localData.security.dataset === 'protected' && !security?.protected) fail('SECURITY_REJECTED', '$.security', 'protected dataset requires an active policy');
+  const rowSecurity = security?.rowPredicate;
   const analysis = object(r.analysis, '$.analysis');
   keys(analysis, ['ResourceType', 'AnalysisId', 'Name', 'Definition'], '$.analysis');
   equals(analysis.ResourceType, 'Analysis', '$.analysis.ResourceType');
@@ -286,7 +288,9 @@ export function planVisual(request: PlanRequest, options: PlanOptions = {}): Que
   if (!visual) fail('UNRESOLVED_BINDING', '$.visualId', `unknown visual: ${visualId}`);
   let parameters: ReturnType<typeof validateParameters>;
   try { parameters = validateParameters(r.parameterDeclarations, r.parameterBindings); } catch (e) { fail('INVALID_INPUT', '$.parameterBindings', e instanceof Error ? e.message : String(e)); }
-  const binder = new ExpressionBinder(identifier, metadata.columns, definition.CalculatedFields, parameters.declarations, parameters.bindings);
+  const binder = new ExpressionBinder(identifier, metadata.columns, definition.CalculatedFields, parameters.declarations, parameters.bindings, (name, path) => {
+    if (security?.deniedColumns.includes(name)) fail('COLUMN_ACCESS_DENIED', path, `access denied to column: ${name}`);
+  });
   const fields = fieldWells(visual, binder);
   const sheetIds = new Set(array(definition.Sheets, `${dp}.Sheets`).map((s, i) => string(object(s, `${dp}.Sheets[${i}]`).SheetId, `${dp}.Sheets[${i}].SheetId`)));
   const predicates = filters(definition.FilterGroups, visual, all, sheetIds, binder);
@@ -315,6 +319,7 @@ export function planVisual(request: PlanRequest, options: PlanOptions = {}): Que
     if (node.name.startsWith('periodOverPeriod')) checkGroupField(node.args[1]!, node);
   }
   const plan: Omit<QueryPlan, 'sql' | 'parameters'> = {
+    ...(security?.protected ? { securityProtected: true, deniedColumns: security.deniedColumns } : {}),
     ...(rowSecurity ? { rowSecurity } : {}),
     dialect, mode: 'synthetic-local', visualId, dataSetIdentifier: identifier,
     tableName: metadata.tableName, sourceColumns: metadata.columns, localData: metadata.localData,

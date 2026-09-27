@@ -11,7 +11,8 @@ export type RowPredicate = { all: RowPredicate[] } | { any: RowPredicate[] }
   | { column: string; operator: 'in'; values: ParameterValue[] }
   | { column: string; operator: 'is-null' | 'is-not-null' };
 export interface RowRule { id: string; principals: RulePrincipal[]; predicate: RowPredicate }
-export interface DatasetPolicy { namespaceId: string; dataSetArn: string; rowLevel: boolean; rowRules: RowRule[] }
+export interface ColumnGrant { id: string; column: string; effect: 'allow' | 'deny'; principals: RulePrincipal[] }
+export interface DatasetPolicy { columnGrants?: ColumnGrant[]; protectedColumns?: string[]; namespaceId: string; dataSetArn: string; rowLevel: boolean; rowRules: RowRule[] }
 /** Trusted server configuration, never accepted from query HTTP bodies or imported assets. */
 export interface SecurityContext {
   namespaceId: string;
@@ -76,14 +77,26 @@ export function validateRowRule(raw: unknown, columns: readonly BoundColumn[]): 
   };
   return { id: securityId(r.id, '$.rule.id'), principals: validatePrincipals(r.principals, '$.rule.principals'), predicate: predicate(r.predicate, '$.rule.predicate') };
 }
+export function validateColumnGrant(raw: unknown, columns: readonly BoundColumn[]): ColumnGrant {
+  const g = securityObject(raw, ['id', 'column', 'effect', 'principals'], '$.grant');
+  if (g.effect !== 'allow' && g.effect !== 'deny') invalid('$.grant.effect', 'expected allow or deny');
+  if (typeof g.column !== 'string' || !columns.some(c => c.name === g.column)) invalid('$.grant.column', 'unknown physical column');
+  return { id: securityId(g.id, '$.grant.id'), column: g.column, effect: g.effect, principals: validatePrincipals(g.principals, '$.grant.principals') };
+}
 export function validatePolicy(raw: unknown, columns: readonly BoundColumn[]): DatasetPolicy {
-  const p = securityObject(raw, ['namespaceId', 'dataSetArn', 'rowLevel', 'rowRules'], '$.security.policy');
+  const p = securityObject(raw, ['namespaceId', 'dataSetArn', 'rowLevel', 'rowRules', 'protectedColumns', 'columnGrants'], '$.security.policy');
   if (typeof p.dataSetArn !== 'string' || !p.dataSetArn || p.dataSetArn.includes('\0') || typeof p.rowLevel !== 'boolean') invalid('$.security.policy', 'explicit dataset binding and rowLevel required');
   const rowRules = list(p.rowRules, '$.security.policy.rowRules').map(r => validateRowRule(r, columns));
   if (new Set(rowRules.map(r => r.id)).size !== rowRules.length || !p.rowLevel && rowRules.length) invalid('$.security.policy', 'duplicate rules or rules on an unprotected dataset');
-  return { namespaceId: securityId(p.namespaceId, '$.security.policy.namespaceId'), dataSetArn: p.dataSetArn, rowLevel: p.rowLevel, rowRules };
+  const protectedColumns = list(p.protectedColumns ?? [], '$.security.policy.protectedColumns').map(v => {
+    if (typeof v !== 'string' || !columns.some(c => c.name === v)) invalid('$.security.policy.protectedColumns', 'unknown physical column');
+    return v;
+  });
+  const columnGrants = list(p.columnGrants ?? [], '$.security.policy.columnGrants').map(g => validateColumnGrant(g, columns));
+  if (new Set(protectedColumns).size !== protectedColumns.length || new Set(columnGrants.map(g => g.id)).size !== columnGrants.length || columnGrants.some(g => !protectedColumns.includes(g.column))) invalid('$.security.policy', 'duplicate grants/columns or unprotected grant column');
+  return { ...(p.protectedColumns !== undefined || p.columnGrants !== undefined ? { protectedColumns, columnGrants } : {}), namespaceId: securityId(p.namespaceId, '$.security.policy.namespaceId'), dataSetArn: p.dataSetArn, rowLevel: p.rowLevel, rowRules };
 }
-export function resolveSecurity(raw: unknown, columns: readonly BoundColumn[], dataSetArn: string): RowPredicate | undefined {
+export function resolveSecurity(raw: unknown, columns: readonly BoundColumn[], dataSetArn: string): { rowPredicate?: RowPredicate; deniedColumns: string[]; protected: boolean } {
   const s = securityObject(raw, ['namespaceId', 'userId', 'users', 'groups', 'policy'], '$.security');
   const namespaceId = securityId(s.namespaceId, '$.security.namespaceId');
   if (s.userId === undefined) fail('PRINCIPAL_REQUIRED', '$.security.userId', 'an authenticated principal is required');
@@ -103,13 +116,19 @@ export function resolveSecurity(raw: unknown, columns: readonly BoundColumn[], d
   if (new Set(groups.map(g => `${g.namespaceId}/${g.id}`)).size !== groups.length) invalid('$.security.groups', 'duplicate group');
   const policy = validatePolicy(s.policy, columns);
   if (policy.namespaceId !== namespaceId || policy.dataSetArn !== dataSetArn) fail('NAMESPACE_ACCESS_DENIED', '$.security.policy', 'policy does not resolve in this namespace and dataset');
-  for (const rule of policy.rowRules) for (const p of rule.principals) {
+  for (const rule of [...policy.rowRules, ...(policy.columnGrants ?? [])]) for (const p of rule.principals) {
     if (!(p.type === 'user' ? users : groups).some(v => v.id === p.id && v.namespaceId === namespaceId)) fail('UNKNOWN_PRINCIPAL', '$.security.policy', 'rule principal does not resolve');
   }
-  if (!policy.rowLevel) return undefined;
-  const matches = policy.rowRules.filter(r => r.principals.some(p => p.type === 'user' ? p.id === userId : groups.some(g => g.namespaceId === namespaceId && g.id === p.id && g.userIds.includes(userId))));
+  const matchesPrincipal = (principals: RulePrincipal[]) => principals.some(p => p.type === 'user' ? p.id === userId : groups.some(g => g.namespaceId === namespaceId && g.id === p.id && g.userIds.includes(userId)));
+  const deniedColumns = (policy.protectedColumns ?? []).filter(column => {
+    const grants = (policy.columnGrants ?? []).filter(g => g.column === column && matchesPrincipal(g.principals));
+    return grants.some(g => g.effect === 'deny') || !grants.some(g => g.effect === 'allow');
+  });
+  const protectedData = policy.rowLevel || !!policy.protectedColumns?.length;
+  if (!policy.rowLevel) return { deniedColumns, protected: protectedData };
+  const matches = policy.rowRules.filter(r => matchesPrincipal(r.principals));
   if (!matches.length) fail('ROW_ACCESS_DENIED', '$.security.policy', 'protected dataset has no matching row rule');
-  return { any: matches.map(r => r.predicate) };
+  return { rowPredicate: { any: matches.map(r => r.predicate) }, deniedColumns, protected: protectedData };
 }
 export function rowSecuritySql(predicate: RowPredicate, columns: readonly BoundColumn[], bind: (value: ParameterValue) => string): string {
   const compile = (p: RowPredicate): string => {

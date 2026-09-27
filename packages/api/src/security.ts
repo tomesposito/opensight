@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { QueryEngineError, validatePolicy, validateRowRule, type BoundColumn, type DatasetPolicy, type SecurityContext, type SecurityGroup, type SecurityUser } from '@opensight/query-engine';
+import { QueryEngineError, validatePolicy, validateRowRule, validateColumnGrant, type BoundColumn, type DatasetPolicy, type SecurityContext, type SecurityGroup, type SecurityUser } from '@opensight/query-engine';
 import { AutomationStore } from './automation-store.js';
 import { method, routeId, send } from './automation-routes.js';
 import { id, record, invalid } from './schedule.js';
@@ -57,7 +57,7 @@ export function validateSecurityState(raw: unknown, columns: readonly BoundColum
   }
   for (const r of [...users, ...groups, ...datasets]) if (!namespaces.some(n => n.id === r.namespaceId)) invalid('$.namespaceId', 'unknown namespace');
   for (const g of groups) if (new Set(g.userIds).size !== g.userIds.length || g.userIds.some(id => !users.some(u => u.id === id && u.namespaceId === g.namespaceId))) invalid('$.userIds', 'unresolved or duplicate user');
-  for (const d of datasets) for (const rule of d.rowRules) for (const p of rule.principals) {
+  for (const d of datasets) for (const rule of [...d.rowRules, ...(d.columnGrants ?? [])]) for (const p of rule.principals) {
     if (!(p.type === 'user' ? users : groups).some(v => v.id === p.id && v.namespaceId === d.namespaceId)) invalid('$.principals', 'unresolved principal');
   }
   return { version: 1, namespaces, users, groups, datasets };
@@ -90,32 +90,44 @@ export class SecurityService {
       policy };
   }
   async route(request: IncomingMessage, response: ServerResponse, path: string, query: string, identity: Identity): Promise<boolean> {
-    const match = /^\/api\/datasets\/([^/]+)\/row-rules(?:\/([^/]+))?$/.exec(path);
+    const match = /^\/api\/datasets\/([^/]+)\/(row-rules|column-grants)(?:\/([^/]+))?$/.exec(path);
     if (!match) return false;
     if (query) throw new RequestError(400, 'Query parameters are not supported');
     this.admin(identity);
     if (routeId(match[1]!) !== 'sales') throw new RequestError(404, 'Dataset not found');
-    const ruleId = match[2] === undefined ? undefined : routeId(match[2]);
+    const columnMode = match[2] === 'column-grants';
+    const ruleId = match[3] === undefined ? undefined : routeId(match[3]);
     const verb = method(request, response, ruleId ? ['GET', 'PUT', 'DELETE'] : ['GET']);
     const policy = this.context(identity).policy;
     if (verb === 'GET') {
-      const result = ruleId ? policy.rowRules.find(r => r.id === ruleId) : policy.rowRules;
+      const resources = columnMode ? policy.columnGrants ?? [] : policy.rowRules;
+      const result = ruleId ? resources.find(r => r.id === ruleId) : resources;
       if (!result) throw new RequestError(404, 'Row rule not found');
       send(response, 200, result); return true;
     }
-    const raw = verb === 'PUT' ? record(await readBody(request), ['principals', 'predicate']) : undefined;
+    const raw = verb === 'PUT' ? record(await readBody(request), columnMode ? ['principals', 'column', 'effect'] : ['principals', 'predicate']) : undefined;
     try {
-      const rule = raw ? validateRowRule({ ...raw, id: ruleId }, this.columns) : undefined;
+      const rule = raw && !columnMode ? validateRowRule({ ...raw, id: ruleId }, this.columns) : undefined;
+      const grant = raw && columnMode ? validateColumnGrant({ ...raw, id: ruleId }, this.columns) : undefined;
       await this.store.change(state => {
         let dataset = state.datasets.find(d => d.namespaceId === identity.namespaceId && d.datasetId === 'sales');
         if (!dataset) { dataset = { ...policy, datasetId: 'sales' }; state.datasets.push(dataset); }
+        if (columnMode) {
+          if (!grant && !dataset.columnGrants?.some(g => g.id === ruleId)) throw new RequestError(404, 'Column grant not found');
+          dataset.columnGrants = (dataset.columnGrants ?? []).filter(g => g.id !== ruleId);
+          if (grant) {
+            dataset.columnGrants.push(grant);
+            dataset.protectedColumns = [...new Set([...(dataset.protectedColumns ?? []), grant.column])];
+          }
+        } else {
         if (!rule && !dataset.rowRules.some(r => r.id === ruleId)) throw new RequestError(404, 'Row rule not found');
         dataset.rowRules = dataset.rowRules.filter(r => r.id !== ruleId);
         dataset.rowLevel = true;
         if (rule) dataset.rowRules.push(rule);
+        }
         validateSecurityState(state, this.columns);
       });
-      send(response, 200, rule ?? { deleted: true });
+      send(response, 200, rule ?? grant ?? { deleted: true });
     } catch (error) {
       if (error instanceof QueryEngineError) throw new SecurityError(400, error.code, error.message);
       throw error;
