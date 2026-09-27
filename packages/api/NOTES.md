@@ -1,5 +1,8 @@
 # Local definition and live query API
 
+Phase 3c adds [folders, asset sharing and signed embedding](../../docs/folders-sharing-embedding.md),
+including the browser SDK, environment-only signing configuration and SSO integration stubs.
+
 Phase 3b adds [row/column security and namespaces](../../docs/security-namespaces.md).
 That document describes authenticated hosted enforcement; earlier local-only notes
 below describe the unchanged unrestricted fixture mode.

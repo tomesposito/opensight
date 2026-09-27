@@ -24,7 +24,7 @@ test('SDK issues authenticated requests and retries once through the host SSO ho
   await assert.rejects(ssoNotConfigured(), { code: 'SSO_NOT_CONFIGURED' });
 });
 test('SDK fails closed on invalid origins, IDs, expiry, API errors and hostile response URLs', async () => {
-  for (const value of ['https://api.example.com/path', 'http://remote.example.com', 'javascript:alert(1)', 'https://api.example.com/']) assert.throws(() => createEmbeddingClient({ apiOrigin: value }));
+  for (const value of ['https://api.example.com/path', 'http://remote.example.com', 'javascript:alert(1)', 'https://*.example.com', 'https://api.example.com/']) assert.throws(() => createEmbeddingClient({ apiOrigin: value }));
   let calls = 0; const client = createEmbeddingClient({ apiOrigin, fetch: async () => { calls++; return json(signed); } });
   await assert.rejects(client.generateEmbedUrl({ ...request, dashboardId: '../x' }), { code: 'INVALID_RESOURCE_ID' });
   await assert.rejects(client.generateEmbedUrl({ ...request, expiresInSeconds: 901 }), { code: 'INVALID_EXPIRY' });

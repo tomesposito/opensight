@@ -93,3 +93,22 @@ test('namespace and group deletion account for folder resources and grants', asy
   await api('/api/folders/f/permissions', 'PUT', { grants: [] });
   assert.equal((await api('/api/groups/team', 'DELETE')).status, 200);
 });
+
+test('concurrent copies serialize collision checks and preserve the original asset', async t => {
+  const { api } = await organizationApi(t);
+  const results = await Promise.all([1, 2].map(() => api(`${asset}/copy`, 'POST', { folderId: null, newId: 'unique' })));
+  assert.deepEqual(results.map(r => r.status).sort(), [200, 409]);
+  assert.equal((await api('/analyses')).body.filter(a => a.id === 'unique').length, 1);
+  assert.equal((await api('/analyses/renderable-sales/definition')).status, 200);
+});
+test('folders prevent deleting an otherwise empty namespace', async t => {
+  const { registry } = await import('./organization-helpers.mjs');
+  const initialState = registry();
+  initialState.users = initialState.users.filter(u => u.namespaceId !== 'tenant' || u.id === 'admin');
+  initialState.groups = initialState.groups.filter(g => g.namespaceId !== 'tenant');
+  const { api } = await organizationApi(t, { security: { initialState } });
+  await api('/api/folders/f', 'PUT', { name: 'Folder' }, 'tenant-admin');
+  assert.equal((await api('/api/namespaces/tenant', 'DELETE', undefined, 'tenant-admin')).status, 409);
+  await api('/api/folders/f', 'DELETE', undefined, 'tenant-admin');
+  assert.equal((await api('/api/namespaces/tenant', 'DELETE', undefined, 'tenant-admin')).status, 200);
+});

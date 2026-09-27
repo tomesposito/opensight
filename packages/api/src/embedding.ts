@@ -23,7 +23,7 @@ export function embedOrigin(raw: unknown): string {
   if (typeof raw !== 'string') invalid('$.origin', 'expected an origin');
   let url: URL;
   try { url = new URL(raw); } catch { return invalid('$.origin', 'expected an origin'); }
-  if (url.origin !== raw || url.username || url.password || (url.protocol !== 'https:' && !(url.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)))) invalid('$.origin', 'expected an exact HTTPS origin (or loopback HTTP)');
+  if (url.origin !== raw || url.username || url.password || (!/^[a-z0-9.-]+$/i.test(url.hostname) && !/^\[[a-f0-9:]+\]$/i.test(url.hostname)) || (url.protocol !== 'https:' && !(url.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)))) invalid('$.origin', 'expected an exact HTTPS origin (or loopback HTTP)');
   return raw;
 }
 function unavailable(): never { throw new SecurityError(503, 'EMBEDDING_NOT_CONFIGURED', 'Embedding requires hosted configuration and an environment signing key'); }

@@ -83,3 +83,20 @@ test('sharing and visual-query API reject invalid roles, principals, IDs, method
   assert.equal((await api(`${asset}/visuals/total-revenue/query`, 'POST', { principal: 'admin' }, 'default-alice')).status, 400);
   assert.equal((await api(`${asset}/visuals/total-revenue/query`, 'GET')).status, 405);
 });
+
+test('namespace role demotion immediately caps an existing co-owner grant', async t => {
+  const { api } = await organizationApi(t);
+  await api('/api/users/alice', 'PUT', { name: 'Alice', role: 'admin' });
+  await api(`${asset}/shares/user/alice`, 'PUT', { role: 'co-owner' });
+  assert.equal((await api(`${asset}/shares/user/bob`, 'PUT', { role: 'viewer' }, 'default-alice')).status, 200);
+  await api('/api/users/alice', 'PUT', { name: 'Alice', role: 'reader' });
+  assert.equal((await api(`${asset}/definition`, 'GET', undefined, 'default-alice')).status, 200);
+  assert.equal((await api(`${asset}/shares/user/bob`, 'DELETE', undefined, 'default-alice')).status, 403);
+  assert.equal((await api('/api/assets/analysis/renderable-sales/copy', 'POST', { folderId: null, newId: 'forbidden' }, 'default-alice')).status, 403);
+});
+test('missing secured definitions preserve the existing definition API error envelope', async t => {
+  const { api } = await organizationApi(t);
+  const result = await api('/analyses/missing/definition');
+  assert.equal(result.status, 404); assert.equal(result.body.Type, 'ResourceNotFoundException');
+  assert.equal(result.body.Message, 'Definition not found'); assert.match(result.body.RequestId, /^[0-9a-f-]{36}$/);
+});

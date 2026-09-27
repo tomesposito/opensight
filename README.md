@@ -32,6 +32,8 @@ formatting, with author menus and canvas fitting. See [Phase 2d capabilities
 and validation](docs/phase2d-visuals-themes.md).
 The API also supports scheduled DuckDB refreshes, SMTP dashboard reports and
 metric threshold alerts. See [Phase 3a resources and configuration](docs/scheduled-refresh-reports-alerts.md).
+Authenticated deployments also support [row/column security and namespaces](docs/security-namespaces.md),
+[folders, asset sharing and the embedding SDK](docs/folders-sharing-embedding.md).
 
 ## Quick start
 

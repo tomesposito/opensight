@@ -197,7 +197,9 @@ export async function createApiServer(options: ApiOptions): Promise<Server> {
         return;
       }
       const kind = match[1] === 'analyses' ? 'analysis' : 'dashboard';
-      const body = identity && organization ? organization.requireRead(identity, kind, id) : scopedStore?.get(kind, id);
+      const body = identity && organization
+        ? organization.canRead(identity, kind, id) ? organization.definition(identity.namespaceId, kind, id) : undefined
+        : scopedStore?.get(kind, id);
       if (!body) {
         error(404, 'ResourceNotFoundException', 'Definition not found');
         return;

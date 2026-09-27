@@ -92,7 +92,7 @@ test('share and folder revocation and user/group changes invalidate existing URL
 });
 test('embed issuance validates origins, claims, TTL, methods, credentials and environment-only configuration', async t => {
   const api = await embeddedApi(t);
-  for (const body of [null, {}, { parentOrigin, userId: 'admin' }, { parentOrigin, secret: 'not-accepted' }, { parentOrigin, expiresInSeconds: 0 }, { parentOrigin, expiresInSeconds: 901 }, { parentOrigin, expiresInSeconds: 60.5 }, { parentOrigin: 'javascript:alert(1)' }, { parentOrigin: `${parentOrigin}/` }, { parentOrigin, visualId: '../bad' }]) assert.equal((await api.api(endpoint, 'POST', body)).status, 400);
+  for (const body of [null, {}, { parentOrigin, userId: 'admin' }, { parentOrigin, secret: 'not-accepted' }, { parentOrigin, expiresInSeconds: 0 }, { parentOrigin, expiresInSeconds: 901 }, { parentOrigin, expiresInSeconds: 60.5 }, { parentOrigin: 'javascript:alert(1)' }, { parentOrigin: 'https://*.example.com' }, { parentOrigin: 'https://example.com;script-src' }, { parentOrigin: `${parentOrigin}/` }, { parentOrigin, visualId: '../bad' }]) assert.equal((await api.api(endpoint, 'POST', body)).status, 400);
   assert.equal((await api.api(endpoint, 'POST', { parentOrigin: 'https://evil.example' })).status, 403);
   assert.equal((await api.api(endpoint, 'POST', { parentOrigin, visualId: 'missing' })).status, 404);
   assert.equal((await api.api(endpoint, 'POST', { parentOrigin }, 'tenant-admin')).status, 404);
@@ -116,4 +116,27 @@ test('embed URL issuance has exact-origin credentialed CORS and rejects broadene
   assert.equal((await preflight({ ...headers, 'Access-Control-Request-Headers': 'x-user-id' })).status, 400);
   const issued = await api.api(endpoint, 'POST', { parentOrigin }, 'default-alice', { Origin: parentOrigin });
   assert.equal(issued.status, 200); assert.equal(issued.headers.get('access-control-allow-origin'), parentOrigin);
+});
+
+test('identical dashboard and user IDs in two namespaces embed against independent dataset policies', async t => {
+  const { dashboardRoot } = await import('./automation-helpers.mjs');
+  const tenant = await dashboardRoot(t);
+  const { readFile, writeFile } = await import('node:fs/promises');
+  const { join } = await import('node:path');
+  const tenantDashboard = JSON.parse(await readFile(join(tenant, 'dashboard.json'), 'utf8'));
+  // The fixture's saved East filter must not exclude the tenant's authorized West rows.
+  tenantDashboard.Definition.FilterGroups = [];
+  await writeFile(join(tenant, 'dashboard.json'), JSON.stringify(tenantDashboard));
+  const api = await embeddedApi(t, { namespaceDataRoots: { tenant } });
+  const rule = value => ({ principals: [{ type: 'user', id: 'alice' }], predicate: { column: 'region', operator: 'eq', value } });
+  await api.api('/api/datasets/sales/row-rules/region', 'PUT', rule('East'));
+  await api.api('/api/datasets/sales/row-rules/region', 'PUT', rule('West'), 'tenant-admin');
+  const signed = await api.api(endpoint, 'POST', { parentOrigin, visualId: 'total-revenue' }, 'tenant-alice');
+  const response = await load(api, signed.body.url); assert.equal(response.status, 200);
+  const data = JSON.parse(/id="opensight-embed-data">(.*?)<\/script>/.exec(await response.text())[1]);
+  assert.deepEqual(data.visuals[0].rows, [{ revenue: 400 }]);
+  const changedNamespace = new URL(signed.body.url), [encoded, mac] = changedNamespace.searchParams.get('token').split('.');
+  const claims = JSON.parse(Buffer.from(encoded, 'base64url')); claims.namespaceId = 'default';
+  changedNamespace.searchParams.set('token', `${Buffer.from(JSON.stringify(claims)).toString('base64url')}.${mac}`);
+  assert.equal((await load(api, changedNamespace)).status, 401);
 });

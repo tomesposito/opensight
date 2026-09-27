@@ -18,7 +18,7 @@ export class EmbeddingError extends Error {
 export async function ssoNotConfigured(): Promise<never> { throw new EmbeddingError('SSO_NOT_CONFIGURED', 'Configure a host sign-in hook and the API credential verifier'); }
 function origin(value: string): string {
   const url = new URL(value);
-  if (url.origin !== value || url.username || url.password || (url.protocol !== 'https:' && !(url.protocol === 'http:' && ['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname)))) throw new EmbeddingError('INVALID_ORIGIN', 'Expected an exact HTTPS origin or loopback HTTP');
+  if (url.origin !== value || url.username || url.password || (!/^[a-z0-9.-]+$/i.test(url.hostname) && !/^\[[a-f0-9:]+\]$/i.test(url.hostname)) || (url.protocol !== 'https:' && !(url.protocol === 'http:' && ['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname)))) throw new EmbeddingError('INVALID_ORIGIN', 'Expected an exact HTTPS origin or loopback HTTP');
   return value;
 }
 function resourceId(value: string): string {
