@@ -1,5 +1,5 @@
 import type { ParameterBindings, ParameterDeclaration, ParameterValue } from './parameters.js';
-export type ScalarType = 'number' | 'string' | 'datetime';
+export type ScalarType = 'number' | 'string' | 'datetime' | 'boolean' | 'unknown';
 export type ColumnType = 'INTEGER' | 'DECIMAL' | 'STRING' | 'DATETIME';
 export type Aggregation = 'SUM' | 'AVG' | 'COUNT' | 'MIN' | 'MAX';
 export type SqlDialect = 'duckdb' | 'postgres';
@@ -12,18 +12,24 @@ export interface SourceLocation {
   readonly start: number;
   readonly end: number;
 }
+export type ExpressionLevel = 'row' | 'pre_filter' | 'pre_agg' | 'aggregate' | 'table';
 interface ExpressionInfo {
   readonly location: SourceLocation;
   readonly scalarType: ScalarType;
   readonly nullable: boolean;
-  readonly level: 'row';
+  readonly level: ExpressionLevel;
   readonly dependencies: readonly string[];
 }
 export type RowExpression = ExpressionInfo & (
   { readonly kind: 'parameter'; readonly name: string; readonly value: ParameterValue } |
-  { readonly kind: 'literal'; readonly value: number } |
+  { readonly kind: 'literal'; readonly value: ResultValue } |
+  { readonly kind: 'symbol'; readonly value: string } |
+  { readonly kind: 'list'; readonly items: readonly RowExpression[] } |
+  { readonly kind: 'sort'; readonly expression: RowExpression; readonly direction: 'ASC' | 'DESC' } |
+  { readonly kind: 'call'; readonly name: string; readonly args: readonly RowExpression[] } |
+  { readonly kind: 'unary'; readonly operator: '-' | '+' | 'NOT'; readonly operand: RowExpression } |
   { readonly kind: 'column'; readonly dataSetIdentifier: string; readonly columnName: string } |
-  { readonly kind: 'binary'; readonly operator: '+' | '-' | '*'; readonly left: RowExpression; readonly right: RowExpression }
+  { readonly kind: 'binary'; readonly operator: '+' | '-' | '*' | '/' | '=' | '<>' | '<' | '>' | '<=' | '>=' | 'AND' | 'OR'; readonly left: RowExpression; readonly right: RowExpression }
 );
 export interface BoundColumn {
   readonly name: string;

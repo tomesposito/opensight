@@ -1,14 +1,5 @@
 import type { QueryPlan, ResultRow, ResultValue, RowExpression } from './types.js';
-function evaluate(expression: RowExpression, row: ResultRow): ResultValue {
-  if (expression.kind === 'literal' || expression.kind === 'parameter') return expression.value;
-  if (expression.kind === 'column') return row[expression.columnName] ?? null;
-  const a = evaluate(expression.left, row), b = evaluate(expression.right, row);
-  if (a === null || b === null) return null;
-  if (typeof a !== 'number' || typeof b !== 'number') throw new Error('Arithmetic requires numbers');
-  const value = expression.operator === '+' ? a + b : expression.operator === '-' ? a - b : a * b;
-  if (!Number.isFinite(value)) throw new Error('Nonfinite calculated value');
-  return value;
-}
+import { evaluateExpression as evaluate } from './evaluate-expression.js';
 /** Executes an already validated plan over caller-owned pinned fixture rows. */
 export function evaluatePlan(plan: QueryPlan, input: readonly ResultRow[]): ResultRow[] {
   const rows = input.map(source => {
