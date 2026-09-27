@@ -1,0 +1,7 @@
+{
+  "revenue-by-region": "WITH \"__opensight_filtered\" AS (SELECT * FROM \"sales\" WHERE \"region\" = $1)\nSELECT \"region\" AS \"region\", SUM(\"revenue\") AS \"revenue\"\nFROM \"__opensight_filtered\"\nGROUP BY 1\nORDER BY 1 ASC NULLS FIRST",
+  "revenue-trend": "WITH \"__opensight_filtered\" AS (SELECT * FROM \"sales\" WHERE \"region\" = $1)\nSELECT strftime(date_trunc('month', \"order_date\"), '%Y-%m') AS \"month\", SUM(\"revenue\") AS \"revenue\"\nFROM \"__opensight_filtered\"\nGROUP BY 1\nORDER BY 1 ASC NULLS FIRST",
+  "sales-table": "WITH \"__opensight_row_0\" AS (SELECT *, (CAST(\"revenue\" AS DOUBLE) * CAST(CAST(0.9 AS DOUBLE) AS DOUBLE)) AS \"discounted_revenue\" FROM \"sales\"),\n\"__opensight_filtered\" AS (SELECT * FROM \"__opensight_row_0\" WHERE \"region\" = $1)\nSELECT \"region\" AS \"region\", SUM(\"revenue\") AS \"revenue\", SUM(\"discounted_revenue\") AS \"discounted_revenue\"\nFROM \"__opensight_filtered\"\nGROUP BY 1\nORDER BY 1 ASC NULLS FIRST",
+  "total-revenue": "WITH \"__opensight_filtered\" AS (SELECT * FROM \"sales\" WHERE \"region\" = $1)\nSELECT SUM(\"revenue\") AS \"revenue\"\nFROM \"__opensight_filtered\"",
+  "share-by-category": "WITH \"__opensight_filtered\" AS (SELECT * FROM \"sales\" WHERE \"region\" = $1)\nSELECT \"category\" AS \"category\", SUM(\"revenue\") AS \"revenue\"\nFROM \"__opensight_filtered\"\nGROUP BY 1\nORDER BY 1 ASC NULLS FIRST"
+}

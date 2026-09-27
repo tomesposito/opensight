@@ -1,6 +1,6 @@
 import { ExpressionBinder, expressionSql } from './expressions.js';
 import { bindMetadata } from './metadata.js';
-import type { Aggregation, Dimension, Measure, PlanRequest, QueryPlan, RowFilter } from './types.js';
+import type { Aggregation, Dimension, Measure, PlanOptions, PlanRequest, QueryPlan, RowFilter } from './types.js';
 import { array, emptyArray, equals, fail, keys, object, quoteIdentifier as q, string, unique, variant } from './validation.js';
 import type { ObjectValue } from './validation.js';
 
@@ -193,10 +193,10 @@ function sql(plan: Omit<QueryPlan, 'sql' | 'parameters'>): string {
   // Choose internal relation names distinct from the physical name to avoid CTE shadowing.
   let prefix = '__opensight_';
   while (plan.tableName.toLowerCase().startsWith(prefix)) prefix += '_';
-  let from = q(plan.tableName);
+  let from = plan.tableSchema === undefined ? q(plan.tableName) : `${q(plan.tableSchema)}.${q(plan.tableName)}`;
   for (const [i, calculation] of plan.calculations.entries()) {
     const relation = q(`${prefix}row_${i}`);
-    ctes.push(`${relation} AS (SELECT *, ${expressionSql(calculation.expression)} AS ${q(calculation.name)} FROM ${from})`);
+    ctes.push(`${relation} AS (SELECT *, ${expressionSql(calculation.expression, plan.dialect)} AS ${q(calculation.name)} FROM ${from})`);
     from = relation;
   }
   if (plan.filters.length) {
@@ -205,7 +205,10 @@ function sql(plan: Omit<QueryPlan, 'sql' | 'parameters'>): string {
     from = relation;
   }
   const dimensions = plan.dimensions.map((d) => d.granularity === 'MONTH'
-    ? `strftime(date_trunc('month', ${q(d.columnName)}), '%Y-%m')` : q(d.columnName));
+    ? plan.dialect === 'postgres'
+      ? `to_char(date_trunc('month', ${q(d.columnName)}), 'YYYY-MM')`
+      : `strftime(date_trunc('month', ${q(d.columnName)}), '%Y-%m')`
+    : q(d.columnName));
   const projections = [
     ...dimensions.map((expression, i) => `${expression} AS ${q(plan.dimensions[i]!.outputName)}`),
     ...plan.measures.map((m) => `${m.aggregation}(${q(m.columnName)}) AS ${q(m.outputName)}`),
@@ -216,7 +219,11 @@ function sql(plan: Omit<QueryPlan, 'sql' | 'parameters'>): string {
 }
 
 /** Plan a synthetic local visual. Unknown execution semantics fail closed. */
-export function planVisual(request: PlanRequest): QueryPlan {
+export function planVisual(request: PlanRequest, options: PlanOptions = {}): QueryPlan {
+  const opts = object(options, '$.options');
+  keys(opts, ['dialect'], '$.options');
+  const dialect = opts.dialect === undefined ? 'duckdb' : opts.dialect;
+  if (dialect !== 'duckdb' && dialect !== 'postgres') fail('UNSUPPORTED_FEATURE', '$.options.dialect', 'expected duckdb or postgres');
   const r = object(request, '$');
   keys(r, ['analysis', 'dataSet', 'dataSource', 'localData', 'visualId'], '$');
   const metadata = bindMetadata(r.dataSet, r.dataSource, r.localData);
@@ -246,8 +253,9 @@ export function planVisual(request: PlanRequest): QueryPlan {
   const sheetIds = new Set(array(definition.Sheets, `${dp}.Sheets`).map((s, i) => string(object(s, `${dp}.Sheets[${i}]`).SheetId, `${dp}.Sheets[${i}].SheetId`)));
   const predicates = filters(definition.FilterGroups, visual, all, sheetIds, binder);
   const plan: Omit<QueryPlan, 'sql' | 'parameters'> = {
-    dialect: 'duckdb', mode: 'synthetic-local', visualId, dataSetIdentifier: identifier,
+    dialect, mode: 'synthetic-local', visualId, dataSetIdentifier: identifier,
     tableName: metadata.tableName, sourceColumns: metadata.columns, localData: metadata.localData,
+    ...(dialect === 'postgres' ? { tableSchema: metadata.tableSchema } : {}),
     calculations: binder.calculations, filters: predicates, ...fields,
     stages: ['source', 'row-calculations', 'row-filters', 'visual-aggregation', 'order'],
   };

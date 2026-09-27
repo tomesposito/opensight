@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { executeLocal, planVisual, QueryEngineError } from '@opensight/query-engine';
+import { executeLocal, executePostgres, planVisual, QueryEngineError } from '@opensight/query-engine';
 import { body, calculation, measure, request, selectedScope, wells } from './helpers.mjs';
 
 const cases = [
@@ -88,6 +88,9 @@ for (const [name, mutate, code, pathSuffix] of cases) {
     const check = e => e instanceof QueryEngineError && e.code === code && e.path.endsWith(pathSuffix);
     assert.throws(() => planVisual(r), check);
     await assert.rejects(executeLocal(r, { dataRoot: '/does-not-exist' }), check);
+    assert.throws(() => planVisual(r, { dialect: 'postgres' }), check);
+    // Invalid connection options prove planning errors precede any connection setup.
+    await assert.rejects(executePostgres(r, { connectionString: '' }), check);
   });
 }
 

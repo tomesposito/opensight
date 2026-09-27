@@ -1,9 +1,11 @@
-# Local query engine
+# Query engine
 
 `@opensight/query-engine` is a **synthetic/provisional Phase 0 slice**, not proof of
 QuickSight export or expression compatibility. It compiles the five renderable-sales
-visuals into DuckDB SQL and executes them over an explicitly mapped local CSV. There
-are no AWS calls, Postgres connections or `.qs` archive handling.
+visuals into DuckDB SQL for an explicitly mapped local CSV, or Postgres SQL for an
+existing table. DuckDB remains the default local dev/test engine; the opt-in Postgres
+executor is the D12 production data-plane seam. There are no AWS calls or `.qs`
+archive handling.
 
 From the repository root (Node 24+):
 
@@ -18,7 +20,9 @@ depends on native `@duckdb/node-bindings`. Both are pinned to `1.5.5-r.5`; nativ
 DuckDB is `v1.5.5`. Installation succeeded on Linux x64/glibc; no executor fallback
 was needed or implemented. [duckdb-lock.json](duckdb-lock.json) records the observed
 native build and statically linked extensions. Root `package-lock.json` pins package
-integrities, including platform artifacts. Postgres remains disabled under D8.
+integrities, including platform artifacts. Postgres uses the
+[pg driver](https://node-postgres.com/apis/client), with its dependency pinned in the
+root lockfile.
 
 ## Public API
 
@@ -48,6 +52,57 @@ filter scopes; a bare visual is insufficient to authorize execution. The parser'
 inventory validation does not certify execution. `executeLocal` always replans before
 opening files. There is no public raw-SQL or caller-modified-plan execution method.
 `QueryEngineError` exposes a stable `code`, a JSON `path`, and a human-readable message.
+
+For Postgres, reuse the request above and supply trusted connection details explicitly:
+
+```js
+import { executePostgres } from '@opensight/query-engine';
+
+const postgresPlan = planVisual(request, { dialect: 'postgres' });
+const result = await executePostgres(request, {
+  connectionString: process.env.DATABASE_URL,
+});
+console.log(result.rows);
+```
+
+`planVisual(request)` and `{ dialect: 'duckdb' }` retain the original DuckDB SQL.
+Both dialects quote identifiers and use `$1`, `$2`, … parameters (DuckDB already used
+this parameter syntax). Postgres uses `DOUBLE PRECISION` for row arithmetic and
+`to_char(date_trunc('month', ...), 'YYYY-MM')` for the existing month result format.
+Its table reference includes the physical metadata's schema and table as separately
+quoted identifiers, independent of the server's search path.
+
+`executePostgres` performs the same complete planning, capability and security
+validation as `executeLocal` before constructing a client. The current `PlanRequest`
+still requires the trusted `localData` binding, including its security declarations;
+Postgres validates that binding but never reads its CSV. Source metadata never supplies
+connection credentials. The caller must provision a table with the declared columns
+and compatible Postgres types (for example BIGINT, DOUBLE PRECISION/NUMERIC, TEXT,
+and DATE/TIMESTAMP/TIMESTAMPTZ). No CSV import, migration or infrastructure is performed.
+
+Each Postgres call creates one client, sets the session timezone to UTC, executes the
+parameterized plan and awaits client cleanup on success or failure. Result rows use
+the same JSON-compatible scalar shape: nulls remain null, numeric aggregates become
+numbers, and large integer results remain decimal strings. Fractional numeric results
+use JavaScript's approximate floating point; nonfinite numeric results are rejected.
+Type parsing is local to the query. Driver failures become `EXECUTION_ERROR` at
+`$.postgres` without exposing raw driver messages or connection details. Neither the
+executor nor its returned plan logs or contains the connection string.
+
+## Postgres tests
+
+Root `npm test` includes exact SQL tests for both dialects, DuckDB snapshots captured
+before this change, shared rejection tests and mocked Postgres lifecycle tests, all
+without a database. The live Postgres suite skips cleanly when `DATABASE_URL` is absent.
+To enable it, set `DATABASE_URL` to a disposable test database and run `npm test` (or
+`npm test --workspace @opensight/query-engine`). The database role must be able to
+create and drop a schema. The suite creates a uniquely named schema with a sales-like
+table, checks fixture results, calculations, filters, all five aggregations, nulls,
+large integers and UTC months, then removes that schema in `finally`.
+
+No Postgres server or Docker is available on the implementation machine, and
+`DATABASE_URL` is absent there. Live execution tests therefore skip on that machine;
+SQL generation, strict TypeScript checks and database-free tests still run normally.
 
 The plan includes typed source columns, row expression trees with source spans,
 dependency-ordered calculations, filters, dimensions, measures, SQL and parameters.

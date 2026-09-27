@@ -1,4 +1,4 @@
-import type { BoundColumn, Calculation, RowExpression, ScalarType } from './types.js';
+import type { BoundColumn, Calculation, RowExpression, ScalarType, SqlDialect } from './types.js';
 import { array, equals, fail, keys, object, quoteIdentifier, string, unique } from './validation.js';
 
 interface Binding { scalarType: ScalarType; nullable: boolean }
@@ -111,11 +111,12 @@ function parseExpression(source: string, path: string, binder: ExpressionBinder)
   return result;
 }
 
-export function expressionSql(expression: RowExpression): string {
+export function expressionSql(expression: RowExpression, dialect: SqlDialect = 'duckdb'): string {
+  const numericType = dialect === 'postgres' ? 'DOUBLE PRECISION' : 'DOUBLE';
   switch (expression.kind) {
-    case 'literal': return `CAST(${expression.value} AS DOUBLE)`;
+    case 'literal': return `CAST(${expression.value} AS ${numericType})`;
     case 'column': return quoteIdentifier(expression.columnName);
-    // Arithmetic operates on DOUBLE in this provisional slice; avoid integer overflow.
-    case 'binary': return `(CAST(${expressionSql(expression.left)} AS DOUBLE) ${expression.operator} CAST(${expressionSql(expression.right)} AS DOUBLE))`;
+    // Arithmetic operates on double precision in this provisional slice; avoid integer overflow.
+    case 'binary': return `(CAST(${expressionSql(expression.left, dialect)} AS ${numericType}) ${expression.operator} CAST(${expressionSql(expression.right, dialect)} AS ${numericType}))`;
   }
 }

@@ -23,7 +23,7 @@ function columns(raw: unknown, path: string): BoundColumn[] {
 }
 
 export function bindMetadata(dataSet: unknown, dataSource: unknown, localData: unknown): {
-  columns: BoundColumn[]; tableName: string; localData: LocalDataBinding;
+  columns: BoundColumn[]; tableName: string; tableSchema: string; localData: LocalDataBinding;
 } {
   const response = object(dataSet, '$.dataSet');
   keys(response, ['DataSet', 'RequestId', 'Status'], '$.dataSet');
@@ -45,7 +45,7 @@ export function bindMetadata(dataSet: unknown, dataSource: unknown, localData: u
   const table = object(physical.RelationalTable, pp);
   keys(table, ['DataSourceArn', 'Schema', 'Name', 'InputColumns'], pp);
   const sourceArn = string(table.DataSourceArn, `${pp}.DataSourceArn`);
-  string(table.Schema, `${pp}.Schema`);
+  const tableSchema = string(table.Schema, `${pp}.Schema`);
   const tableName = string(table.Name, `${pp}.Name`);
   const inputColumns = columns(table.InputColumns, `${pp}.InputColumns`);
   const outputColumns = columns(ds.OutputColumns, `${path}.OutputColumns`);
@@ -107,6 +107,6 @@ export function bindMetadata(dataSet: unknown, dataSource: unknown, localData: u
   }
   equals(binding.nullEncoding, 'empty cell', `${bp}.nullEncoding`);
   equals(binding.timezone, 'UTC', `${bp}.timezone`);
-  return { columns: outputColumns, tableName, localData: { provenance, dataSetArn: arn, physicalTableId: physicalId,
+  return { columns: outputColumns, tableName, tableSchema, localData: { provenance, dataSetArn: arn, physicalTableId: physicalId,
     csv, nullEncoding: 'empty cell', timezone: 'UTC', security: { dataset: 'unrestricted', source: 'unrestricted' } } };
 }

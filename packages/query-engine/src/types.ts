@@ -1,6 +1,10 @@
 export type ScalarType = 'number' | 'string' | 'datetime';
 export type ColumnType = 'INTEGER' | 'DECIMAL' | 'STRING' | 'DATETIME';
 export type Aggregation = 'SUM' | 'AVG' | 'COUNT' | 'MIN' | 'MAX';
+export type SqlDialect = 'duckdb' | 'postgres';
+export interface PlanOptions {
+  readonly dialect?: SqlDialect;
+}
 export interface SourceLocation {
   readonly path: string;
   /** Zero-based expression offsets, end exclusive. */
@@ -71,11 +75,13 @@ export interface PlanRequest {
   readonly visualId: string;
 }
 export interface QueryPlan {
-  readonly dialect: 'duckdb';
+  readonly dialect: SqlDialect;
   readonly mode: 'synthetic-local';
   readonly visualId: string;
   readonly dataSetIdentifier: string;
   readonly tableName: string;
+  /** Postgres resolves the declared schema; DuckDB materializes a local table. */
+  readonly tableSchema?: string;
   readonly sourceColumns: readonly BoundColumn[];
   readonly localData: LocalDataBinding;
   readonly calculations: readonly Calculation[];
@@ -95,4 +101,8 @@ export interface QueryResult {
 export interface ExecuteOptions {
   /** CSV must resolve to a regular file inside this caller-selected directory. */
   readonly dataRoot: string;
+}
+export interface PostgresExecuteOptions {
+  /** Trusted caller-owned connection details, never taken from imported metadata. */
+  readonly connectionString: string;
 }
