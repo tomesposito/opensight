@@ -27,6 +27,9 @@ The Author UI supports client-side `.qs` import, dataset remapping and ZIP expor
 See [bundle round-trip usage and preservation](docs/bundle-roundtrip.md).
 Parameters and per-sheet controls now drive typed filters, calculated fields,
 cascading dropdowns and debounced queries. See [interactive controls](docs/parameters-controls.md).
+The gallery now includes 19 visual types, offline maps, analysis themes and
+formatting, with author menus and canvas fitting. See [Phase 2d capabilities
+and validation](docs/phase2d-visuals-themes.md).
 
 ## Quick start
 
