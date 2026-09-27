@@ -5,6 +5,19 @@ import { parseExpression, expressionSql, evaluateExpression } from '@opensight/q
 
 // One-based Unicode positions, strict null propagation and QuickSight argument order.
 export const scalarCases = [
+  ["parseDate('2024-02-29')", '2024-02-29T00:00:00.000Z'], ["parseDate('2023-02-29')", null], ["parseDate('nonsense')", null],
+  ["parseDate('31/01/2024 13:04:05', 'dd/MM/yyyy HH:mm:ss')", '2024-01-31T13:04:05.000Z'],
+  ["parseDate('Feb 29, 2024', 'MMM dd, yyyy')", '2024-02-29T00:00:00.000Z'],
+  ["addDateTime(1, 'MM', parseDate('2024-01-31'))", '2024-02-29T00:00:00.000Z'],
+  ["addDateTime(-1, 'YYYY', parseDate('2024-02-29'))", '2023-02-28T00:00:00.000Z'],
+  ["dateDiff(parseDate('2023-12-31'), parseDate('2024-01-01'), 'YYYY')", 1],
+  ["dateDiff(parseDate('2024-02-28'), parseDate('2024-03-01'))", 2],
+  ["dateDiff(parseDate('2024-01-06'), parseDate('2024-01-07'), 'WK')", 1],
+  ["truncDate('Q', parseDate('2024-05-23'))", '2024-04-01T00:00:00.000Z'],
+  ["truncDate('WK', parseDate('2024-01-10'))", '2024-01-07T00:00:00.000Z'],
+  ["extract('WD', parseDate('2024-01-07'))", 1], ["extract('MM', parseDate('2024-02-29'))", 2],
+  ["formatDate(parseDate('2024-02-29'), 'MMM dd, yyyy')", 'Feb 29, 2024'],
+  ["formatDate(parseDate('2024-02-29'))", '2024-02-29T00:00:00.000Z'],
   ['abs(-3)', 3], ['ceil(-1.2)', -1], ['floor(-1.2)', -2], ['round(-1.25, 1)', -1.3], ['round(125, -1)', 130],
   ['sqrt(9)', 3], ['sqrt(-1)', null], ['power(2, 3)', 8], ['power(-2, 0.5)', null], ['exp(0)', 1], ['exp(1000)', null],
   ['ln(1)', 0], ['ln(0)', null], ['log(100)', 2], ['log(8, 2)', 3], ['log(8, 1)', null],
@@ -32,7 +45,9 @@ test('scalar differential: DuckDB, PostgreSQL, client', async t => {
     for (const dialect of ['duckdb', 'postgres']) {
       const values = [], sql = `SELECT ${expressionSql(e, dialect, v => { values.push(v); return '$' + values.length; })} AS value`;
       const result = dialect === 'duckdb' ? (await duck.runAndReadAll(sql, values)).getRowObjects()[0].value : (await pg.query(sql, values)).rows[0].value;
-      assert.deepEqual(typeof result === 'bigint' ? Number(result) : result, expected, `${dialect}: ${source}`);
+      assert.deepEqual(result && typeof result === 'object' && 'micros' in result ? new Date(Number(result.micros / 1000n)).toISOString() : result instanceof Date ? result.toISOString() : typeof result === 'bigint' || e.scalarType === 'number' && result !== null ? Number(result) : result, expected, `${dialect}: ${source}`);
     }
   }
 });
+
+test('now captures one UTC instant for both SQL dialects and the client', () => { const e = parseExpression('now()', '$.expression', { now: '2024-02-29T12:00:00.000Z' }); assert.equal(evaluateExpression(e), '2024-02-29T12:00:00.000Z'); assert.match(expressionSql(e), /TIMESTAMP/); });

@@ -1,7 +1,9 @@
+import { datetimeValue, datetimeSql } from './datetime.js';
 import type { ResultValue, RowExpression, SqlDialect } from './types.js';
 import { fail } from './validation.js';
 export type CallExpression = Extract<RowExpression, { kind: 'call' }>;
 export function scalarValue(name: string, args: readonly ResultValue[]): ResultValue {
+  const date = datetimeValue(name, args); if (date !== undefined) return date;
   if (args.some(a => a === null)) return null;
   const [a, b, c] = args, chars = [...String(a)];
   const finite = (n: number): ResultValue => Number.isFinite(n) ? n : null;
@@ -43,6 +45,7 @@ export function scalarValue(name: string, args: readonly ResultValue[]): ResultV
   }
 }
 export function scalarSql(e: CallExpression, dialect: SqlDialect, compile: (e: RowExpression) => string): string {
+  const date = datetimeSql(e, dialect, compile); if (date !== undefined) return date;
   const args = e.args.map(compile), [a, b, c] = args;
   const integer = (s: string | undefined) => `CAST(TRUNC(${s}) AS INTEGER)`;
   const numeric = dialect === 'postgres' ? 'DOUBLE PRECISION' : 'DOUBLE';

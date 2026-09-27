@@ -47,6 +47,7 @@ export class ExpressionBinder {
 
 export interface ExpressionContext {
   dataSetIdentifier?: string;
+  now?: string;
   bind?: (name: string, path: string) => Binding;
   parameters?: readonly ParameterDeclaration[];
   values?: ParameterBindings;
@@ -116,6 +117,7 @@ export function parseExpression(source: string, path = '$.expression', context: 
           if (source[offset] !== ')') do { args.push(expression()); whitespace(); if (source[offset] !== ',') break; offset++; } while (true);
           expect(')'); const f = validateCall(name, args, path);
           left = { ...info(start, f.result === 'first' ? args[0]!.scalarType : f.result, args), kind: 'call', name: f.name, args };
+          if (f.name === 'now') left = { ...info(start, 'datetime'), nullable: false, kind: 'literal', value: context.now ?? new Date().toISOString() };
         } else if (/^(null|true|false)$/i.test(name)) {
           left = { ...info(start, /^null$/i.test(name) ? 'unknown' : 'boolean'), kind: 'literal', value: /^null$/i.test(name) ? null : /^true$/i.test(name) ? 1 : 0 };
         } else left = { ...info(start, 'string'), kind: 'symbol', value: name.toUpperCase() };
@@ -147,7 +149,8 @@ export function expressionSql(expression: RowExpression, dialect: SqlDialect = '
       if (!bind) fail('INVALID_INPUT', expression.location.path, 'parameter SQL requires a binder');
       return `CAST(${bind(expression.value)} AS ${expression.scalarType === 'number' ? numericType : expression.scalarType === 'datetime' ? 'TIMESTAMP' : 'VARCHAR'})`;
     }
-    case 'literal': return expression.value === null ? 'NULL' : expression.scalarType === 'boolean' ? expression.value ? 'TRUE' : 'FALSE' : typeof expression.value === 'number' ? `CAST(${expression.value} AS ${numericType})` : `CAST(${bind ? bind(expression.value) : quoteLiteral(expression.value)} AS VARCHAR)`;
+    case 'literal': if (expression.scalarType === 'datetime' && typeof expression.value === 'string') return `CAST(${bind ? bind(expression.value) : quoteLiteral(expression.value)} AS TIMESTAMP)`;
+      return expression.value === null ? 'NULL' : expression.scalarType === 'boolean' ? expression.value ? 'TRUE' : 'FALSE' : typeof expression.value === 'number' ? `CAST(${expression.value} AS ${numericType})` : `CAST(${bind ? bind(expression.value) : quoteLiteral(expression.value)} AS VARCHAR)`;
     case 'column': return quoteIdentifier(expression.columnName);
     case 'unary': return `(${expression.operator} ${compile(expression.operand)})`;
     case 'binary': {

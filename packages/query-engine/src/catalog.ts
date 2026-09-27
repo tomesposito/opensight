@@ -1,4 +1,5 @@
 import type { RowExpression, ScalarType } from './types.js';
+import { constant, dateUnits, formatParts } from './datetime.js';
 import { fail } from './validation.js';
 
 export interface FunctionReference {
@@ -8,6 +9,13 @@ export interface FunctionReference {
 }
 const entry = (name: string, category: string, signature: string, example: string, min: number, max: number, result: FunctionReference['result'], types?: readonly ScalarType[], stage?: FunctionReference['stage']): FunctionReference => ({ name, category, signature: `${name}(${signature})`, example, min, max, result, types, stage });
 export const functionCatalog: readonly FunctionReference[] = [
+  entry('addDateTime', 'Datetime', 'amount, period, datetime', "addDateTime(1, 'MM', {order_date})", 3, 3, 'datetime', ['number', 'string', 'datetime']),
+  entry('dateDiff', 'Datetime', 'date1, date2 [, period]', "dateDiff({order_date}, now(), 'DD')", 2, 3, 'number', ['datetime', 'datetime', 'string']),
+  entry('truncDate', 'Datetime', 'period, datetime', "truncDate('MM', {order_date})", 2, 2, 'datetime', ['string', 'datetime']),
+  entry('extract', 'Datetime', 'period, datetime', "extract('YYYY', {order_date})", 2, 2, 'number', ['string', 'datetime']),
+  entry('formatDate', 'Datetime', 'datetime [, format]', "formatDate({order_date}, 'yyyy-MM-dd')", 1, 2, 'string', ['datetime', 'string']),
+  entry('now', 'Datetime', '', 'now()', 0, 0, 'datetime'),
+  entry('parseDate', 'Conversion', 'string [, format]', "parseDate('2024-02-29', 'yyyy-MM-dd')", 1, 2, 'datetime', ['string']),
   ...['abs', 'ceil', 'floor', 'sqrt', 'exp', 'ln', 'decimalToInt'].map(n => entry(n, 'Numeric', 'number', `${n}({revenue})`, 1, 1, 'number', ['number'])),
   entry('round', 'Numeric', 'number [, decimal_places]', 'round({revenue}, 2)', 1, 2, 'number', ['number']),
   entry('power', 'Numeric', 'number, exponent', 'power({revenue}, 2)', 2, 2, 'number', ['number']),
@@ -37,5 +45,14 @@ export function validateCall(name: string, args: readonly RowExpression[], path:
     const expected = f.types![Math.min(i, f.types!.length - 1)]!;
     if (a.scalarType !== 'unknown' && a.scalarType !== expected && !(a.kind === 'literal' && a.value === null)) functionError(f, path, `argument ${i + 1} must be ${expected}`);
   });
+  const periodIndex = f.name === 'addDateTime' ? 1 : f.name === 'dateDiff' ? 2 : ['truncDate', 'extract'].includes(f.name) ? 0 : -1;
+  if (periodIndex >= 0 && args[periodIndex]) {
+    const period = constant(args[periodIndex]).toUpperCase();
+    if (!(period in dateUnits) && !(f.name === 'extract' && period === 'WD') || f.name === 'extract' && period === 'WK') functionError(f, path, 'invalid period');
+  }
+  if (['formatDate', 'parseDate'].includes(f.name) && args[1]) {
+    if (args[1].kind !== 'literal' || typeof args[1].value !== 'string') functionError(f, path, 'format must be a string literal');
+    try { formatParts(args[1].value); } catch (e) { functionError(f, path, e instanceof Error ? e.message : String(e)); }
+  }
   return f;
 }
