@@ -782,6 +782,45 @@ QuickSight-compatible query API shape, result caching, DuckDB-WASM.
 
 **Acceptance:** API endpoint tests (200 / 404 / 422), web live-data path
 tests, full suite green, demo rebuilt.
+
+### Phase 1d — Builder v1 (QuickSight-parity authoring UX) — NEW 2026-09-27
+
+Tom: "This still looks a long way from the quicksight analysis builder ui"
+(with a screenshot of the QuickSight analysis editor). The v0 builder proved
+the authoring loop; v1 closes the UX gap toward the reference: three-panel
+layout, field-well pills, free-position canvas, sheets, pivot tables.
+
+**Scope** (`packages/web` Author mode):
+- **Three-panel layout**: left Data panel (dataset selector, field search,
+  dimensions/measures with type icons, "+ CALCULATED FIELD" button); middle
+  Visual build panel (visual-type gallery with icons, ADD, change-visual-type,
+  field wells rendered as removable pills); right Properties panel
+  (per-visual display settings; totals/subtotals toggles for pivot/table).
+- **Free-position canvas**: drag + resize visual cards on a sheet grid
+  (react-grid-layout, MIT). Layout persists per sheet in the authoring state.
+- **Sheet tabs**: multiple sheets per analysis (add / rename / delete), each
+  with its own visuals and layout.
+- **Visual types**: add pivot table (compiler support: row/column
+  dimensions, values, subtotals) alongside bar, line, pie/donut, KPI, table.
+- **Calculated field editor**: dialog with expression text input; new field
+  appears in the Data panel and is usable in wells (expression passthrough,
+  same semantics as the bundle parser).
+- **Filters (minimal)**: per-visual category multi-select filter pills;
+  applied as static row filters through the live query API.
+- **Top toolbar**: analysis title (editable), sheet actions, JSON export
+  (existing), API/fixtures mode indicator.
+- Keep from v0/v1c: live query on well assignment, localStorage drafts,
+  downloadable JSON (camelCase bundle-format visual definitions validated
+  against bundle-parser types), fixtures mode in the static demo.
+
+**Out of scope for v1:** drag-drop field assignment (click-to-assign stays),
+parameters UI + controls, cross-visual filtering, themes, undo/redo,
+conditional formatting, server-side save, paginated reports.
+
+**Acceptance:** layout/well/pill interaction tests, pivot compiler tests
+(row/column/subtotal), drag-resize layout persistence tests, calculated-field
+round-trip tests, filter application tests; full suite green; single-file demo
+rebuilt with builder v1.
 - Analysis authoring UI (basic).
 
 ### Phase 3 — Enterprise surface
