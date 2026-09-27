@@ -901,6 +901,39 @@ validation tests (bad bindings rejected), bundle round-trip tests with
 parameters/controls, import-report coverage for controls; full suite
 green; demo rebuilt.
 
+### Phase 2b — Cross-visual filter actions & drill-down — NEW 2026-09-27
+
+The second slice of Phase 2 (Expression & interactivity): visuals stop
+being islands. Interacting with one visual filters the others, and
+dimension hierarchies can be drilled.
+
+**Scope:**
+- **Filter actions**: click a bar segment / pie slice / table row, or
+  brush a time range on a line chart, to filter other visuals on the
+  sheet. Per-action configuration: which visuals are affected (all or
+  selected), which fields the selection maps to. Clear-action control.
+- **Drill-down**: dimension hierarchies (e.g. Year → Quarter → Month,
+  Region → Country → City); drill up/down with breadcrumb on supported
+  visuals. Hierarchies definable in the builder and imported from
+  bundles where present.
+- **Modes**: live query mode (actions/drill become query filters via
+  the API) and fixtures mode (client-side recompute). Pending states
+  while re-querying; never stale-as-current.
+- **Honest states**: visuals that can't originate or receive an action
+  (e.g. KPI as a target of a category filter it doesn't group by) say
+  why, in the action configuration UI.
+- **Import/export**: filter actions and drill hierarchies import from
+  bundles and serialize back to bundle-format JSON (camelCase, per
+  STRUCTURAL_NOTES.md conventions).
+
+**Out of scope for 2b:** full calculated-field function library (2c),
+remaining visual types and themes (2d), URL actions / navigation actions.
+
+**Acceptance:** action→filter→requery tests (live + fixtures), drill
+up/down/breadcrumb tests, hierarchy definition tests, bundle
+round-trip tests with filter actions and drill config, honest-state
+tests for non-participating visuals; full suite green; demo rebuilt.
+
 ### Phase 3 — Enterprise surface
 - Scheduled DuckDB refresh (D8), email reports, threshold alerts.
 - Expand row-level / column-level security enforcement, namespaces, embedding SDK. Protected datasets are rejected from Phase 1 until this support is available (§3.4).
