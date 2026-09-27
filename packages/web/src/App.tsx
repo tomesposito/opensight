@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { Fixture } from './model.js';
 import { VisualCard } from './VisualCard.js';
 import { Author } from './Author.js';
+import { SecurityNotice } from './SecurityNotice.js';
 import { AutomationNotice } from './AutomationNotice.js';
 import generated from './fixtures.generated.json';
 import { createApiClient } from './api-client.js';
@@ -25,12 +26,12 @@ function Dashboard({ fixture }: { fixture: Fixture }) {
 }
 
 export default function App() {
-  const [mode, setMode] = useState<'fixtures' | 'api' | 'author' | 'automation'>('fixtures');
+  const [mode, setMode] = useState<'fixtures' | 'api' | 'author' | 'automation' | 'security'>('fixtures');
   const [fixtureId, setFixtureId] = useState(fixtures[0]?.id);
   const fixture = fixtures.find(f => f.id === fixtureId);
   return <div className="app-shell">
-    <header className="app-header"><a className="brand" href="./"><span className="brand-mark" aria-hidden="true">◈</span>OpenSight</a><span className="header-caption">{mode === 'author' ? 'BI builder' : 'Definition explorer'}</span><label className="source-picker">Mode<select value={mode} onChange={event => setMode(event.target.value === 'automation' ? 'automation' : event.target.value === 'author' ? 'author' : event.target.value === 'api' ? 'api' : 'fixtures')}><option value="fixtures">fixtures</option><option value="api">api</option><option value="author">Author</option><option value="automation">Schedules &amp; alerts</option></select></label>{mode !== 'author' && mode !== 'automation' && <label className="fixture-picker">Example<select value={fixtureId} onChange={event => setFixtureId(event.target.value)}>{fixtures.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}</select></label>}</header>
-    <main>{mode === 'automation' ? <AutomationNotice /> : mode === 'author' ? <Author client={import.meta.env.VITE_OPENSIGHT_OFFLINE_DEMO === 'true' ? undefined : api} /> : mode === 'api' ? <ApiExplorer key={fixtureId} example={fixture} /> : fixture ? <Dashboard key={fixture.id} fixture={fixture} /> : <p>No fixtures available.</p>}</main>
+    <header className="app-header"><a className="brand" href="./"><span className="brand-mark" aria-hidden="true">◈</span>OpenSight</a><span className="header-caption">{mode === 'author' ? 'BI builder' : 'Definition explorer'}</span><label className="source-picker">Mode<select value={mode} onChange={event => setMode(event.target.value === 'security' ? 'security' : event.target.value === 'automation' ? 'automation' : event.target.value === 'author' ? 'author' : event.target.value === 'api' ? 'api' : 'fixtures')}><option value="fixtures">fixtures</option><option value="api">api</option><option value="author">Author</option><option value="security">Security &amp; namespaces</option><option value="automation">Schedules &amp; alerts</option></select></label>{mode !== 'author' && mode !== 'automation' && mode !== 'security' && <label className="fixture-picker">Example<select value={fixtureId} onChange={event => setFixtureId(event.target.value)}>{fixtures.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}</select></label>}</header>
+    <main>{mode === 'security' ? <SecurityNotice /> : mode === 'automation' ? <AutomationNotice /> : mode === 'author' ? <Author client={import.meta.env.VITE_OPENSIGHT_OFFLINE_DEMO === 'true' ? undefined : api} /> : mode === 'api' ? <ApiExplorer key={fixtureId} example={fixture} /> : fixture ? <Dashboard key={fixture.id} fixture={fixture} /> : <p>No fixtures available.</p>}</main>
     <footer className="app-footer">OpenSight · Local rendering preview · QuickSight fidelity has not been measured</footer>
   </div>;
 }

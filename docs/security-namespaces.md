@@ -134,3 +134,10 @@ work before opening a data file/connection. API tests use loopback HTTP, a synth
 credential verifier and a stub mail transport. No AWS calls, remote database
 connections or additional dependencies are required. Root `npm test` already
 includes workspace test globs and the public strict TypeScript consumers.
+
+## Static demo
+
+The Security & namespaces mode explains RLS, CLS and namespace configuration,
+labels each control `Needs hosted API`, and disables configuration actions.
+It explicitly identifies the bundled samples as public and provides no simulated
+login, tenant switch, local policy save or client-side security enforcement.
