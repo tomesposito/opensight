@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import type { Dispatch, ReactNode } from 'react';
 import { GridLayout, noCompactor, useContainerWidth } from 'react-grid-layout';
+import { downloadBundleBytes, exportBundle, importBundleFile, importedFilterProblem } from './bundle-authoring.js';
 import { VisualCard } from './VisualCard.js';
 import { buildAuthorPreview, fixtureCategoryValues } from './author-preview.js';
 import { LiveAuthorVisual } from './LiveAuthorVisual.js';
 import { buildDistinctQuery, loadAuthorRows } from './author-query.js';
 import type { QueryClient } from './author-query.js';
 import {
-  VISUAL_TYPES, GRID_COLUMNS, activeSheet, authorReducer, calculationError, dataFields, dimensionLabel,
+  authorVisualProblem, VISUAL_TYPES, GRID_COLUMNS, activeSheet, authorReducer, calculationError, dataFields, dimensionLabel,
   loadDraft, saveDraft, serializeDraft, singleMeasure, tabular,
 } from './authoring.js';
 import type { AuthorAction, AuthorDraft, AuthorVisual, CalculatedField, VisualKind, Well } from './authoring.js';
@@ -19,22 +20,44 @@ export function Author({ client }: { client?: QueryClient }) {
   const [draft, dispatch] = useReducer(authorReducer, restored.draft);
   const [storageStatus, setStorageStatus] = useState(restored.warning ?? 'Draft saved on this device.');
   const [exportStatus, setExportStatus] = useState('');
+  const [importStatus, setImportStatus] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
+  const importFile = async (file: File | undefined) => {
+    if (!file || busy) return;
+    setBusy(true); setImportStatus(`Importing ${file.name}…`);
+    try {
+      const imported = await importBundleFile(file);
+      dispatch({ type: 'import', draft: imported }); setReportOpen(true);
+      setImportStatus(`Imported ${file.name}. Review the import report for unsupported features.`);
+    } catch (error) { setImportStatus(`Import failed: ${error instanceof Error ? error.message : String(error)}`); }
+    finally { setBusy(false); }
+  };
+  const downloadQs = async () => {
+    setBusy(true);
+    try {
+      const bytes = await downloadBundleBytes(draft);
+      downloadBlob(new Blob([new Uint8Array(bytes)], { type: 'application/zip' }), 'opensight-analysis.qs');
+      setExportStatus('Export downloaded: opensight-analysis.qs');
+    } catch (error) { setExportStatus(`Export blocked: ${error instanceof Error ? error.message : String(error)}`); }
+    finally { setBusy(false); }
+  };
   useEffect(() => {
     if (restored.warning && draft === restored.draft) return;
     setStorageStatus(saveDraft(draft, browserStorage));
   }, [draft, restored]);
   const exported = useMemo(() => {
-    try { return { json: JSON.stringify(serializeDraft(draft), null, 2) + '\n' }; }
-    catch { return { error: 'Complete the field wells in every visual to export.' }; }
+    try {
+      const members = draft.bundle ? exportBundle(draft).members : undefined;
+      const resource = members ? (members.find(m => m.path === draft.bundle?.primaryPath) ?? members[0])?.resource : serializeDraft(draft);
+      return { json: JSON.stringify(resource, null, 2) + '\n' };
+    }
+    catch (error) { return { error: `Export blocked: ${error instanceof Error ? error.message : String(error)}` }; }
   }, [draft]);
   const download = () => {
     if (!exported.json) return;
     try {
-      const url = URL.createObjectURL(new Blob([exported.json], { type: 'application/json' }));
-      const link = document.createElement('a');
-      link.href = url; link.download = 'opensight-analysis.json';
-      document.body.append(link); link.click(); link.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      downloadBlob(new Blob([exported.json], { type: 'application/json' }), 'opensight-analysis.json');
       setExportStatus('Export downloaded: opensight-analysis.json');
     } catch { setExportStatus('Export could not be downloaded. Please try again.'); }
   };
@@ -42,7 +65,14 @@ export function Author({ client }: { client?: QueryClient }) {
     <div className="author-topbar">
       <label className="analysis-title">Analysis title<input value={draft.title} onChange={e => dispatch({ type: 'analysis-title', title: e.target.value })} /></label>
       <span className="mode-badge">{client ? 'API · Local sales' : 'Fixtures · Offline'}</span><span className="phase-badge">Builder v1</span>
+      <button type="button" onClick={() => void downloadQs()} disabled={busy} aria-describedby="export-help">Download .qs</button>
       <button type="button" className="primary-button" onClick={download} disabled={!draft.sheets.some(s => s.visuals.length) || !!exported.error} aria-describedby="export-help">Export JSON</button>
+    </div>
+    <div className="bundle-import" onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; }} onDrop={e => { e.preventDefault(); if (e.dataTransfer.files.length !== 1) setImportStatus('Drop one .qs ZIP or one bundle .json member.'); else void importFile(e.dataTransfer.files[0]); }} aria-label="Bundle drop zone">
+      <label>Import .qs or bundle JSON<input type="file" accept=".qs,.json,application/zip,application/json" disabled={busy} onChange={e => { const file = e.currentTarget.files?.[0]; e.currentTarget.value = ''; void importFile(file); }} /></label>
+      <p>Drop one .qs ZIP or JSON member here. Import replaces the current draft. Download your work first to keep it.</p>
+      {importStatus && <p role={importStatus.startsWith('Import failed') ? 'alert' : 'status'}>{importStatus}</p>}
+      {draft.bundle && <button type="button" onClick={() => setReportOpen(true)}>View import report</button>}
     </div>
     <p className="fixture-notice">{client ? 'Live local sales data · All regions, dates grouped by UTC month. Field assignments query the API; unsupported queries show “Data unavailable”.' : 'Offline demo: preview uses fixed sample results: region = East, dates grouped by UTC month. Only revenue totals by region, category, month, or overall are available. Other selections show “Data unavailable”. No live queries run.'}</p>
     <div className="author-save"><p role="status">{storageStatus}</p>
@@ -50,6 +80,7 @@ export function Author({ client }: { client?: QueryClient }) {
       {exportStatus && <p role="status">{exportStatus}</p>}
     </div>
     <AuthorCanvas draft={draft} dispatch={dispatch} client={client} />
+    {reportOpen && draft.bundle && <ImportReport draft={draft} onClose={() => setReportOpen(false)} />}
   </div>;
 }
 
@@ -94,6 +125,7 @@ export function AuthorCanvas({ draft, dispatch, client }: EditorProps) {
             <span className="field-name">{field.name}</span><span className="field-type">{field.type}</span>
           </button>)}
         </div>)}
+        <ImportedPanels draft={draft} />
         {!fields.some(f => f.name.toLowerCase().includes(search.toLowerCase())) && <p>No matching fields.</p>}
       </Panel>
       <div className="author-center">
@@ -105,7 +137,7 @@ export function AuthorCanvas({ draft, dispatch, client }: EditorProps) {
             <button type="submit" className="primary-button" aria-label="Add visual">ADD</button>
           </form>
           {selected ? <div className="visual-config" id={`configure-${selected.id}`}>
-            <label className="change-type">Change visual type<select value={selected.kind} onChange={e => dispatch({ type: 'kind', kind: e.target.value as VisualKind })}>{VISUAL_TYPES.map(type => <option value={type.kind} key={type.kind}>{type.label}</option>)}</select></label>
+            <label className="change-type">Change visual type<select value={selected.imported?.issues.some(i => i.startsWith('Unsupported visual type:')) && !selected.imported.replaced ? '' : selected.kind} onChange={e => dispatch({ type: 'kind', kind: e.target.value as VisualKind })}>{selected.imported?.issues.some(i => i.startsWith('Unsupported visual type:')) && !selected.imported.replaced && <option value="" disabled>{selected.imported.variant} (unsupported)</option>}{VISUAL_TYPES.map(type => <option value={type.kind} key={type.kind}>{type.label}</option>)}</select></label>
             <FieldWells visual={selected} draft={draft} dispatch={dispatch} activeWell={well} onWell={setWell} />
           </div> : <p className="field-hint">Choose a visual type and select ADD.</p>}
         </Panel>
@@ -119,7 +151,7 @@ export function AuthorCanvas({ draft, dispatch, client }: EditorProps) {
               onDragStop={next => { if (!mobile) dispatch({ type: 'layout', sheetId: sheet.id, layout: next }); }}
               onResizeStop={next => { if (!mobile) dispatch({ type: 'layout', sheetId: sheet.id, layout: next }); }}>
               {sheet.visuals.map((visual, index) => <div key={visual.id}>
-                <AuthorCard visual={visual} index={index} count={sheet.visuals.length} selected={visual.id === sheet.selectedId} dispatch={dispatch} client={client} calculations={draft.calculatedFields} />
+                <AuthorCard visual={visual} index={index} count={sheet.visuals.length} selected={visual.id === sheet.selectedId} filterProblem={importedFilterProblem(draft, sheet, visual)} dispatch={dispatch} client={client} calculations={draft.calculatedFields} />
               </div>)}
             </GridLayout>
           </div>
@@ -141,6 +173,7 @@ function SheetTabs({ draft, dispatch }: Omit<EditorProps, 'client'>) {
     <button type="button" onClick={() => dispatch({ type: 'sheet-add' })}>+ Add sheet</button>
     <button type="button" onClick={() => setRename({ id: sheet.id, name: sheet.name })}>Rename sheet</button>
     <button type="button" disabled={draft.sheets.length === 1} onClick={() => { dispatch({ type: 'sheet-delete', id: sheet.id }); setRename(undefined); }}>Delete sheet</button>
+    {sheet.visuals.some(v => v.imported && !v.imported.local) && <button type="button" onClick={() => dispatch({ type: 'sheet-remap', id: sheet.id })}>Remap sheet to local dataset</button>}
     {rename && <form className="rename-sheet" onSubmit={e => { e.preventDefault(); if (rename.name.trim()) { dispatch({ type: 'sheet-rename', ...rename }); setRename(undefined); } }}>
       <label>Sheet name<input autoFocus value={rename.name} onChange={e => setRename({ ...rename, name: e.target.value })} /></label>
       <button type="submit" disabled={!rename.name.trim()}>Save name</button><button type="button" onClick={() => setRename(undefined)}>Cancel</button>
@@ -174,7 +207,12 @@ function Properties({ visual, draft, dispatch, client }: EditorProps & { visual:
     {toggles.map(({ property, label }) => <label className="toggle" key={property}><input type="checkbox" checked={visual[property]} onChange={e => dispatch({ type: 'display', property, value: e.target.checked })} />{label}</label>)}
     {visual.kind === 'pie' && <label className="toggle"><input type="checkbox" checked={visual.donut} onChange={e => dispatch({ type: 'donut', donut: e.target.checked })} />Donut</label>}
     {tabular(visual.kind) && <p className="field-hint">Subtotals summarize parent groups when multiple dimensions are assigned.</p>}
-    <FilterEditor visual={visual} calculations={draft.calculatedFields} dispatch={dispatch} client={client} />
+    {visual.imported && <div className="dataset-binding"><h3>Dataset binding</h3><p>{visual.imported.local ? 'Local sales dataset' : authorVisualProblem(visual)}</p>
+      {!visual.imported.local && <button type="button" onClick={() => dispatch({ type: 'remap', id: visual.id })}>Remap to local dataset</button>}
+      {visual.imported.unmappedFields.length > 0 && <p>Fields requiring manual assignment: {visual.imported.unmappedFields.join(', ')}</p>}
+      {visual.imported.issues.length > 0 && <details><summary>Unsupported features (retained)</summary><ul>{visual.imported.issues.map((issue, i) => <li key={i}>{issue}</li>)}</ul></details>}
+    </div>}
+    <FilterEditor visual={visual} calculations={draft.calculatedFields} dispatch={dispatch} client={visual.imported && !visual.imported.local ? undefined : client} />
   </>;
 }
 
@@ -225,14 +263,15 @@ function CalculationDialog({ fields, onSave, onClose }: { fields: CalculatedFiel
   </dialog>;
 }
 
-function AuthorCard({ visual, index, count, selected, dispatch, client, calculations }: {
-  visual: AuthorVisual; index: number; count: number; selected: boolean; dispatch: Dispatch<AuthorAction>; client?: QueryClient; calculations: CalculatedField[];
+function AuthorCard({ visual, index, count, selected, dispatch, client, calculations, filterProblem }: {
+  visual: AuthorVisual; index: number; count: number; selected: boolean; filterProblem?: string; dispatch: Dispatch<AuthorAction>; client?: QueryClient; calculations: CalculatedField[];
 }) {
-  const preview = useMemo(() => client ? undefined : buildAuthorPreview(visual), [visual, client]);
+  const problem = authorVisualProblem(visual) ?? filterProblem;
+  const preview = useMemo(() => client || problem ? undefined : buildAuthorPreview(visual), [visual, client, problem]);
   const label = visual.title || `Visual ${index + 1}`;
   return <section className={`author-card${selected ? ' is-selected' : ''}`} aria-label={label} onClick={() => { if (!selected) dispatch({ type: 'select', id: visual.id }); }}>
     <div className="author-card-toolbar">
-      <span className="drag-handle" aria-hidden="true" title="Drag visual">⠿</span><strong>{index + 1}. {visual.title || VISUAL_TYPES.find(t => t.kind === visual.kind)?.label}</strong>
+      <span className="drag-handle" aria-hidden="true" title="Drag visual">⠿</span><strong>{index + 1}. {visual.title || (visual.imported?.issues.some(i => i.startsWith('Unsupported visual type:')) && !visual.imported.replaced ? visual.imported.variant : VISUAL_TYPES.find(t => t.kind === visual.kind)?.label)}</strong>
       <div className="author-card-actions">
         <button type="button" aria-expanded={selected} aria-controls={selected ? `configure-${visual.id}` : undefined} onClick={() => dispatch({ type: 'select', id: visual.id })}>Configure<span className="sr-only"> {label}</span></button>
         <button type="button" disabled={index === 0} aria-label={`Move ${label} up`} onClick={e => { e.stopPropagation(); dispatch({ type: 'move', id: visual.id, offset: -1 }); }}>↑</button>
@@ -240,6 +279,46 @@ function AuthorCard({ visual, index, count, selected, dispatch, client, calculat
         <button type="button" aria-label={`Remove ${label}`} onClick={e => { e.stopPropagation(); dispatch({ type: 'remove', id: visual.id }); }}>×</button>
       </div>
     </div>
-    {client ? <LiveAuthorVisual visual={visual} client={client} calculations={calculations} /> : preview && <VisualCard visual={preview} />}
+    {problem ? <div className="bundle-placeholder" role="status"><p>{problem}</p>
+      {visual.imported && !visual.imported.local && <button type="button" onClick={e => { e.stopPropagation(); dispatch({ type: 'remap', id: visual.id }); }}>Remap to local dataset</button>}
+    </div> : client ? <LiveAuthorVisual visual={visual} client={client} calculations={calculations} /> : preview && <VisualCard visual={preview} />}
   </section>;
+}
+
+function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob), link = document.createElement('a');
+  link.href = url; link.download = filename;
+  document.body.append(link); link.click(); link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+function ImportReport({ draft, onClose }: { draft: AuthorDraft; onClose: () => void }) {
+  const ref = useRef<HTMLDialogElement>(null);
+  useEffect(() => { ref.current?.showModal(); return () => ref.current?.close(); }, []);
+  return <dialog ref={ref} className="import-report" aria-labelledby="import-report-title" onCancel={onClose}>
+    <h2 id="import-report-title">Bundle import report</h2>
+    <p>Unknown and unsupported JSON is retained verbatim in the draft and .qs export. Unsupported features are displayed here and are not executed. JSON export downloads one resource; Download .qs keeps all resources.</p>
+    {draft.bundle?.report.map(r => <section key={r.path}><h3>{r.name}</h3><code>{r.path}</code><ul>{r.messages.map((m, i) => <li key={i}>{m}</li>)}</ul></section>)}
+    <button type="button" autoFocus onClick={onClose}>Close import report</button>
+  </dialog>;
+}
+function ImportedPanels({ draft }: { draft: AuthorDraft }) {
+  if (!draft.bundle) return null;
+  const path = activeSheet(draft).imported?.memberPath ?? draft.bundle.primaryPath;
+  const resource = draft.bundle.original.members.find(m => m.path === path)?.resource;
+  if (!resource || (resource.resourceType !== 'analysis' && resource.resourceType !== 'dashboard')) return null;
+  const definition = resource.definition;
+  const groups = [
+    { name: 'Parameters', values: definition.parameterDeclarations ?? [] },
+    { name: 'Imported calculated fields', values: definition.calculatedFields ?? [] },
+    { name: 'Imported filter groups', values: definition.filterGroups ?? [] },
+  ];
+  return <>{groups.map(group => <details className="imported-panel" key={group.name} open><summary>{group.name}</summary>
+    <p className="field-hint">Original definitions · display only. Compatible category filters can be edited in Properties.</p>
+    {!group.values.length && <p>None</p>}
+    {group.values.map((value, i) => {
+      const raw = value as Record<string, unknown>, variant = Object.keys(raw)[0] ?? '', body = raw[variant] as Record<string, unknown> | undefined;
+      const name = String(raw.name ?? raw.filterGroupId ?? body?.name ?? variant);
+      return <details key={i}><summary className={group.name.includes('filter') ? 'filter-pill' : ''}>{name}</summary><pre>{JSON.stringify(value, null, 2)}</pre></details>;
+    })}
+  </details>)}</>;
 }

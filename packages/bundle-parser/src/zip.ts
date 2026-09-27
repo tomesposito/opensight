@@ -2,24 +2,10 @@ import { crc32 } from 'node:zlib';
 import { fromBufferPromise } from 'yauzl';
 import { ValidationError, fail } from './validation.js';
 
-/** Local inventory budgets, not AWS format limits. No files are extracted. */
-export const ZIP_LIMITS = Object.freeze({
-  archiveBytes: 32 * 1024 * 1024,
-  memberBytes: 16 * 1024 * 1024,
-  totalBytes: 64 * 1024 * 1024,
-  members: 1000,
-});
-
-export interface ZipMemberInfo {
-  path: string;
-  compressedSize: number;
-  uncompressedSize: number;
-  directory: boolean;
-}
-
-export function memberJsonPath(path: string): string {
-  return `$[${JSON.stringify(path)}]`;
-}
+import { ZIP_LIMITS, memberJsonPath } from './zip-common.js';
+import type { ZipMemberInfo } from './zip-common.js';
+export { ZIP_LIMITS, memberJsonPath } from './zip-common.js';
+export type { ZipMemberInfo } from './zip-common.js';
 
 /** Central-directory order; list-only calls do not decompress member contents. */
 export async function listZipMembers(bytes: Uint8Array): Promise<ZipMemberInfo[]> {

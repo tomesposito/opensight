@@ -1,4 +1,4 @@
-import { serializeVisual, visualDimensions } from './authoring.js';
+import { authorVisualProblem, serializeVisual, visualDimensions } from './authoring.js';
 import type { AuthorVisual } from './authoring.js';
 import { normalizeVisual } from './compiler.js';
 import type { Fixture, FixtureVisual } from './model.js';
@@ -19,7 +19,7 @@ export function buildAuthorPreview(visual: AuthorVisual): FixtureVisual {
   const dimensions = visualDimensions(visual);
   const grain = visual.kind === 'kpi' ? 'total-revenue'
     : dimensions.length === 1 ? grains[dimensions[0] as keyof typeof grains] : undefined;
-  const rows = !visual.filters.length && visual.measures.length === 1 && visual.measures[0] === 'revenue' && grain
+  const rows = !authorVisualProblem(visual) && !visual.filters.length && visual.measures.length === 1 && visual.measures[0] === 'revenue' && grain
     ? oracles.get(grain) ?? null : null;
   return { ...buildAuthorVisual(visual), rows };
 }

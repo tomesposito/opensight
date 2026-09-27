@@ -1,4 +1,4 @@
-import { visualDimensions, type CalculatedField, type AuthorVisual } from './authoring.js';
+import { authorVisualProblem, visualDimensions, type CalculatedField, type AuthorVisual } from './authoring.js';
 import type { createApiClient, QueryRequest } from './api-client.js';
 import type { Row } from './model.js';
 
@@ -6,6 +6,7 @@ export type QueryClient = Pick<ReturnType<typeof createApiClient>, 'queryDataset
 export interface AuthorRows { rows: Row[] | null; message?: string }
 
 export function buildAuthorQuery(visual: AuthorVisual, calculations: readonly CalculatedField[] = []): QueryRequest | null {
+  if (authorVisualProblem(visual)) return null;
   const dimensions = visualDimensions(visual);
   if (!visual.measures.length || (visual.kind !== 'kpi' && !dimensions.length)) return null;
   return {

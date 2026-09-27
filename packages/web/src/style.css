@@ -167,3 +167,15 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
   .visual-card { min-height: 340px; }
   .visual-content { min-height: 235px; }
 }
+
+.bundle-import { border: 2px dashed #8ba9b2; border-radius: 8px; padding: 14px 18px; margin: 12px 0; background: #f4f9fa; }
+.bundle-import label { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; font-weight: 600; }
+.bundle-import p { margin: 8px 0; }
+.import-report { width: min(850px, 90vw); max-height: 85vh; overflow: auto; border: 1px solid #8ba9b2; border-radius: 10px; padding: 24px; }
+.import-report::backdrop { background: #15374688; }
+.import-report li, .bundle-placeholder, .dataset-binding { overflow-wrap: anywhere; }
+.import-report section { border-top: 1px solid #d4e1e5; margin-top: 18px; }
+.bundle-placeholder { padding: 20px; overflow: auto; }
+.imported-panel { border-top: 1px solid #d4e1e5; margin-top: 18px; padding-top: 12px; }
+.imported-panel pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 250px; overflow: auto; font-size: 11px; }
+.imported-panel summary { cursor: pointer; margin: 6px 0; }

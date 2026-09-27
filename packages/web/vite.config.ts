@@ -7,6 +7,7 @@ export default defineConfig({
   build: {
     rolldownOptions: {
       output: {
+        comments: { legal: true },
         codeSplitting: { groups: [{ name: 'echarts', test: /node_modules\/(echarts|zrender)\// }] },
       },
     },

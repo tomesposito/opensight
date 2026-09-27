@@ -8,7 +8,7 @@ architecture, decisions and phased plan.
 
 ## Status
 
-Phase 0 — research. The parser reads real QuickSight `.qs` ZIP exports with
+The parser reads real QuickSight `.qs` ZIP exports with
 analysis, dashboard, dataset and datasource members, grounded in the sanitized
 [AWS sample](fixtures/real-bundle-sample/README.md). Its camelCase archive types
 are separate from the existing PascalCase synthetic inventory. See the
@@ -18,9 +18,13 @@ The [fixtures](fixtures/README.md) include an inventory smoke sample and a separ
 query/render specification with five visual types, field wells, layouts, source/dataset
 response reconstructions, CSV data and SQL result oracles. The
 [local query engine](packages/query-engine/README.md) compiles that synthetic subset
-to DuckDB SQL and runs it over CSV without AWS. There is no renderer or
-QuickSight-compatible API yet. Broader archive schemas, AWS reimport and source
+to DuckDB SQL and runs it over CSV without AWS. The web app renders and authors
+this subset, and the local API serves definitions and queries. Broader archive
+schemas, AWS reimport and source
 conformance still need evidence from more complex exports.
+
+The Author UI supports client-side `.qs` import, dataset remapping and ZIP export.
+See [bundle round-trip usage and preservation](docs/bundle-roundtrip.md).
 
 ## Quick start
 
@@ -57,8 +61,8 @@ and must not be inserted directly into HTML.
 
 ```
 packages/bundle-parser  Observed .qs archive import + synthetic JSON inventory
-packages/api            QuickSight-compatible REST API (planned)
-packages/web            React renderer + authoring (planned)
+packages/api            Local definition and dataset-query API
+packages/web            React renderer + authoring and bundle round trips
 packages/query-engine   Typed synthetic planner + local DuckDB CSV executor
 packages/cli            Archive import/export/validate (planned)
 docs/research           Observed format and API contract research

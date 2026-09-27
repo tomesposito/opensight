@@ -10,7 +10,7 @@ const result = await build({
   define: { 'import.meta.env.VITE_OPENSIGHT_OFFLINE_DEMO': JSON.stringify('true') },
   build: {
     write: false, cssCodeSplit: false, modulePreload: false,
-    rolldownOptions: { output: { codeSplitting: false } },
+    rolldownOptions: { output: { codeSplitting: false, comments: { legal: true } } },
   },
 });
 if (Array.isArray(result) || !('output' in result)) throw new Error('Expected a single demo bundle');

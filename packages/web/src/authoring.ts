@@ -1,4 +1,6 @@
 import type { BundleAnalysis, BundleColumnField, BundleDimensionField, BundleMeasureField, BundleVisual, BundleVisualBody } from '@opensight/bundle-parser';
+import { summarizeQsBundle } from '@opensight/bundle-parser/browser';
+import type { QsBundle } from '@opensight/bundle-parser';
 import { normalizeVisual } from './compiler.js';
 
 export const SALES_FIELDS = [
@@ -22,17 +24,33 @@ export const VISUAL_TYPES = [
 export type VisualKind = typeof VISUAL_TYPES[number]['kind'];
 export type Well = 'dimension' | 'rows' | 'columns' | 'values';
 export interface CategoryFilter { columnName: string; values: string[] }
+export interface ImportedVisual {
+  visualId: string; variant: string; local: boolean; replaced?: boolean; remapped?: boolean;
+  dataSets: { identifier: string; arn?: string }[];
+  issues: string[]; unmappedFields: string[];
+  baseline: Omit<AuthorVisual, 'imported'>;
+  filterGroups: { id: string; columnName: string }[];
+}
+export interface ImportedSheet {
+  memberPath: string; sheetId: string; name: string; layout: Placement[];
+}
+export interface ImportResult { path: string; name: string; messages: string[] }
+export interface BundleOrigin {
+  original: QsBundle; primaryPath: string; title: string;
+  report: ImportResult[]; calculations: CalculatedField[]; emptySheetId?: string;
+}
 export interface AuthorVisual {
   id: string; kind: VisualKind; title: string;
   dimension: string | null; measures: string[]; rows: string[]; columns: string[];
   donut: boolean; titleVisible: boolean; legend: boolean; labels: boolean;
   horizontal: boolean; stacked: boolean; totals: boolean; subtotals: boolean;
   filters: CategoryFilter[];
+  imported?: ImportedVisual;
 }
 export interface Placement { i: string; x: number; y: number; w: number; h: number }
-export interface AuthorSheet { id: string; name: string; visuals: AuthorVisual[]; layout: Placement[]; selectedId: string | null }
+export interface AuthorSheet { id: string; name: string; visuals: AuthorVisual[]; layout: Placement[]; selectedId: string | null; imported?: ImportedSheet }
 export interface AuthorDraft {
-  version: 2; title: string; sheets: AuthorSheet[]; activeSheetId: string; calculatedFields: CalculatedField[];
+  version: 2; title: string; sheets: AuthorSheet[]; activeSheetId: string; calculatedFields: CalculatedField[]; bundle?: BundleOrigin;
 }
 export const GRID_COLUMNS = 12;
 const newSheet = (id: string, name: string): AuthorSheet => ({ id, name, visuals: [], layout: [], selectedId: null });
@@ -43,12 +61,13 @@ export const singleMeasure = (kind: VisualKind): boolean => kind === 'pie' || ki
 export const tabular = (kind: VisualKind): boolean => kind === 'table' || kind === 'pivot';
 export const visualDimensions = (visual: AuthorVisual): string[] => visual.kind === 'kpi' ? [] : tabular(visual.kind)
   ? [...visual.rows, ...visual.columns] : visual.dimension === null ? [] : [visual.dimension];
+const originalIds = (draft: AuthorDraft, visual: boolean): string[] => (draft.bundle?.original.members ?? []).flatMap(({ resource }) => resource.resourceType === 'analysis' || resource.resourceType === 'dashboard' ? (resource.definition.sheets ?? []).flatMap(s => visual ? (s.visuals ?? []).map(v => Object.values(v)[0]!.visualId) : [s.sheetId]) : []);
 const nextId = (prefix: string, ids: string[]): string => {
   let n = 1;
   while (ids.includes(`${prefix}-${n}`)) n++;
   return `${prefix}-${n}`;
 };
-const defaults = () => ({ rows: [] as string[], columns: [] as string[], titleVisible: true, legend: true, labels: false,
+export const defaults = () => ({ rows: [] as string[], columns: [] as string[], titleVisible: true, legend: true, labels: false,
   horizontal: false, stacked: false, totals: false, subtotals: false, filters: [] as CategoryFilter[] });
 
 /** Expressions are preserved, never evaluated in the browser. The query engine validates execution. */
@@ -60,6 +79,9 @@ export function calculationError(field: CalculatedField, existing: readonly Data
   if (field.role !== 'dimension' && field.role !== 'measure') return 'Choose a field role.';
 }
 export type AuthorAction =
+  | { type: 'import'; draft: AuthorDraft }
+  | { type: 'remap'; id: string }
+  | { type: 'sheet-remap'; id: string }
   | { type: 'analysis-title'; title: string }
   | { type: 'sheet-add' }
   | { type: 'sheet-select' | 'sheet-delete'; id: string }
@@ -85,16 +107,19 @@ const cleanLayout = (layout: readonly Placement[]): Placement[] => layout.map(({
 
 /** Immutable transitions shared by field buttons, pills, sheet tabs and drag/resize callbacks. */
 export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorDraft {
+  if (action.type === 'import') { validateDraft(action.draft); return action.draft; }
   if (action.type === 'analysis-title') return { ...draft, title: action.title };
   if (action.type === 'calculation-add') {
     if (calculationError(action.field, dataFields(draft.calculatedFields))) return draft;
     return { ...draft, calculatedFields: [...draft.calculatedFields, { ...action.field, name: action.field.name.trim() }] };
   }
   if (action.type === 'sheet-add') {
-    const id = nextId('sheet', draft.sheets.map(s => s.id));
+    const id = nextId('sheet', [...draft.sheets.map(s => s.id), ...originalIds(draft, false)]);
     return { ...draft, sheets: [...draft.sheets, newSheet(id, `Sheet ${id.slice(6)}`)], activeSheetId: id };
   }
   if (action.type === 'sheet-select') return draft.sheets.some(s => s.id === action.id) ? { ...draft, activeSheetId: action.id } : draft;
+  if (action.type === 'sheet-remap') return { ...draft, sheets: draft.sheets.map(s => s.id === action.id
+    ? { ...s, visuals: s.visuals.map(v => v.imported && !v.imported.local ? remapVisual(v) : v) } : s) };
   if (action.type === 'sheet-rename') return action.name.trim() ? { ...draft, sheets: draft.sheets.map(s => s.id === action.id ? { ...s, name: action.name.trim() } : s) } : draft;
   if (action.type === 'sheet-delete') {
     const index = draft.sheets.findIndex(s => s.id === action.id);
@@ -111,13 +136,14 @@ export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorD
   const sheet = activeSheet(draft);
   const update = (changes: Partial<AuthorSheet>): AuthorDraft => ({ ...draft, sheets: draft.sheets.map(s => s === sheet ? { ...s, ...changes } : s) });
   if (action.type === 'add') {
-    const id = nextId('visual', draft.sheets.flatMap(s => s.visuals.map(v => v.id)));
+    const id = nextId('visual', [...draft.sheets.flatMap(s => s.visuals.map(v => v.id)), ...originalIds(draft, true)]);
     const dimension = action.kind === 'kpi' ? null : action.kind === 'line' ? 'order_date' : action.kind === 'pie' ? 'category' : 'region';
     const visual: AuthorVisual = { ...defaults(), id, kind: action.kind, title: '', donut: false, dimension, measures: ['revenue'],
       rows: tabular(action.kind) && dimension ? [dimension] : [], labels: action.kind === 'pie' };
     const bottom = Math.max(0, ...sheet.layout.map(p => p.y + p.h));
     return update({ visuals: [...sheet.visuals, visual], selectedId: id, layout: [...sheet.layout, { i: id, x: 0, y: bottom, w: 6, h: 8 }] });
   }
+  if (action.type === 'remap') return update({ visuals: sheet.visuals.map(v => v.id === action.id ? remapVisual(v) : v) });
   if (action.type === 'select') return sheet.visuals.some(v => v.id === action.id) ? update({ selectedId: action.id }) : draft;
   if (action.type === 'remove' || action.type === 'move') {
     const index = sheet.visuals.findIndex(v => v.id === action.id);
@@ -136,7 +162,7 @@ export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorD
   return update({ visuals: sheet.visuals.map(visual => {
     if (visual.id !== sheet.selectedId) return visual;
     switch (action.type) {
-      case 'kind': return { ...visual, kind: action.kind, donut: action.kind === 'pie' && visual.donut,
+      case 'kind': return { ...visual, ...(visual.imported ? { imported: { ...visual.imported, replaced: visual.imported.replaced || action.kind !== visual.kind || visual.imported.issues.some(i => i.startsWith('Unsupported visual type:')) } } : {}), kind: action.kind, donut: action.kind === 'pie' && visual.donut,
         dimension: action.kind === 'kpi' ? null : visual.dimension,
         rows: tabular(action.kind) ? (tabular(visual.kind) ? visual.rows : visual.dimension ? [visual.dimension] : []) : [],
         columns: action.kind === 'pivot' ? visual.columns : [],
@@ -171,6 +197,32 @@ export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorD
     }
     return visual;
   }) });
+}
+
+/** Explicit remapping authorizes only matching sales columns; it never guesses by ARN. */
+export function remapVisual(visual: AuthorVisual): AuthorVisual {
+  if (!visual.imported) return visual;
+  const missing = new Set<string>();
+  const match = (names: string[], role: string): string[] => names.flatMap(name => {
+    const field = SALES_FIELDS.find(f => f.role === role && f.name.toLowerCase() === name.toLowerCase());
+    if (!field) { missing.add(name); return []; }
+    return [field.name];
+  }).filter((name, index, all) => all.indexOf(name) === index);
+  const rows = match(visual.rows, 'dimension'), columns = match(visual.columns, 'dimension').filter(n => !rows.includes(n));
+  const dimension = tabular(visual.kind) ? rows[0] ?? null : match(visual.dimension ? [visual.dimension] : [], 'dimension')[0] ?? null;
+  const measures = match(visual.measures, 'measure');
+  const filters = visual.filters.flatMap(f => {
+    const field = SALES_FIELDS.find(c => c.type === 'STRING' && c.name.toLowerCase() === f.columnName.toLowerCase());
+    if (!field) { missing.add(f.columnName); return []; }
+    return [{ ...f, columnName: field.name }];
+  });
+  return { ...visual, rows, columns, dimension, measures, filters, imported: { ...visual.imported, local: true, remapped: true, unmappedFields: [...missing] } };
+}
+export function authorVisualProblem(visual: AuthorVisual): string | undefined {
+  if (!visual.imported) return;
+  if (!visual.imported.local) return `Unresolved dataset: ${visual.imported.dataSets.map(d => d.arn ?? d.identifier).join(', ') || 'no dataset binding'}`;
+  const issues = visual.imported.replaced ? visual.imported.issues.filter(i => i.startsWith('Filter group ') || i.startsWith('Calculated field ')) : visual.imported.issues;
+  if (issues.length) return `Unsupported features: ${issues.join('; ')}`;
 }
 
 function columnField(name: string): BundleColumnField {
@@ -227,7 +279,13 @@ const onlyKeys = (v: Record<string, unknown>, keys: string[]): boolean => Object
 /** localStorage is untrusted: validate every identity, field, layout and display option. */
 export function validateDraft(value: unknown): asserts value is AuthorDraft {
   const fail = (): never => { throw new Error('Invalid or unsupported author draft.'); };
-  if (!isObject(value) || !onlyKeys(value, ['version', 'title', 'sheets', 'activeSheetId', 'calculatedFields']) || value.version !== 2 || typeof value.title !== 'string' || !Array.isArray(value.sheets) || !value.sheets.length || !Array.isArray(value.calculatedFields)) return fail();
+  if (!isObject(value) || !onlyKeys(value, ['version', 'title', 'sheets', 'activeSheetId', 'calculatedFields', 'bundle']) || value.version !== 2 || typeof value.title !== 'string' || !Array.isArray(value.sheets) || !value.sheets.length || !Array.isArray(value.calculatedFields)) return fail();
+  if (value.bundle !== undefined) {
+    const b = value.bundle;
+    if (!isObject(b) || !onlyKeys(b, ['original', 'primaryPath', 'title', 'report', 'calculations', 'emptySheetId']) || typeof b.primaryPath !== 'string' || typeof b.title !== 'string' || (b.emptySheetId !== undefined && typeof b.emptySheetId !== 'string') || !Array.isArray(b.report) || !Array.isArray(b.calculations)) return fail();
+    const summary = summarizeQsBundle(b.original as QsBundle);
+    if (!summary.memberCount || (b.primaryPath && !summary.members.some(m => m.path === b.primaryPath && (m.resourceType === 'analysis' || m.resourceType === 'dashboard'))) || !b.report.every(r => isObject(r) && typeof r.path === 'string' && typeof r.name === 'string' && Array.isArray(r.messages) && r.messages.every(m => typeof m === 'string')) || !b.calculations.every(c => isObject(c) && typeof c.name === 'string' && typeof c.expression === 'string' && (c.role === 'measure' || c.role === 'dimension'))) return fail();
+  }
   const calculations: CalculatedField[] = [];
   for (const item of value.calculatedFields) {
     if (!isObject(item) || !onlyKeys(item, ['name', 'expression', 'role']) || typeof item.name !== 'string' || typeof item.expression !== 'string' || (item.role !== 'dimension' && item.role !== 'measure')) return fail();
@@ -238,14 +296,30 @@ export function validateDraft(value: unknown): asserts value is AuthorDraft {
   const fields = dataFields(calculations), ids = new Set<string>(), sheetIds = new Set<string>();
   const names = (v: unknown, role: string): v is string[] => Array.isArray(v) && v.every(n => fields.some(f => f.name === n && f.role === role)) && new Set(v).size === v.length;
   for (const sheet of value.sheets) {
-    if (!isObject(sheet) || !onlyKeys(sheet, ['id', 'name', 'visuals', 'layout', 'selectedId']) || typeof sheet.id !== 'string' || !/^sheet-[1-9][0-9]*$/.test(sheet.id) || sheetIds.has(sheet.id) || typeof sheet.name !== 'string' || !sheet.name.trim() || !Array.isArray(sheet.visuals) || !Array.isArray(sheet.layout)) return fail();
+    if (!isObject(sheet) || !onlyKeys(sheet, ['id', 'name', 'visuals', 'layout', 'selectedId', 'imported']) || typeof sheet.id !== 'string' || !/^sheet-[1-9][0-9]*$/.test(sheet.id) || sheetIds.has(sheet.id) || typeof sheet.name !== 'string' || !sheet.name.trim() || !Array.isArray(sheet.visuals) || !Array.isArray(sheet.layout)) return fail();
+    if (sheet.imported !== undefined && (!value.bundle || !isObject(sheet.imported) || typeof sheet.imported.memberPath !== 'string' || typeof sheet.imported.sheetId !== 'string' || typeof sheet.imported.name !== 'string' || !Array.isArray(sheet.imported.layout))) return fail();
+    const origin = isObject(value.bundle) ? value.bundle.original as QsBundle : undefined;
+    const source = isObject(sheet.imported) ? origin?.members.find(m => m.path === (sheet.imported as Record<string, unknown>).memberPath)?.resource : undefined;
+    const sourceSheet = source && (source.resourceType === 'analysis' || source.resourceType === 'dashboard') ? source.definition.sheets?.find(s => s.sheetId === (sheet.imported as Record<string, unknown>).sheetId) : undefined;
+    if (sheet.imported !== undefined && (!sourceSheet || !(sheet.imported as Record<string, unknown>).layout || !(sheet.imported as { layout: unknown[] }).layout.every(p => isObject(p) && typeof p.i === 'string' && [p.x, p.y, p.w, p.h].every(Number.isSafeInteger)))) return fail();
     sheetIds.add(sheet.id);
     for (const v of sheet.visuals) {
-      if (!isObject(v) || !onlyKeys(v, ['id', 'kind', 'title', 'dimension', 'measures', 'donut', ...Object.keys(defaults())]) || typeof v.id !== 'string' || !/^visual-[1-9][0-9]*$/.test(v.id) || ids.has(v.id) || !VISUAL_TYPES.some(t => t.kind === v.kind) || typeof v.title !== 'string' || !['donut', 'titleVisible', 'legend', 'labels', 'horizontal', 'stacked', 'totals', 'subtotals'].every(k => typeof v[k] === 'boolean') || !names(v.measures, 'measure') || !names(v.rows, 'dimension') || !names(v.columns, 'dimension') || (v.dimension !== null && !fields.some(f => f.role === 'dimension' && f.name === v.dimension)) || !Array.isArray(v.filters)) return fail();
+      const imported = isObject(v) && isObject(v.imported) ? v.imported : undefined;
+      if (isObject(v) && v.imported !== undefined) {
+        if (!value.bundle || !imported || typeof imported.visualId !== 'string' || typeof imported.variant !== 'string' || typeof imported.local !== 'boolean' || (imported.replaced !== undefined && typeof imported.replaced !== 'boolean') || (imported.remapped !== undefined && typeof imported.remapped !== 'boolean') || !isObject(imported.baseline) || !Array.isArray(imported.dataSets) || !imported.dataSets.every(d => isObject(d) && typeof d.identifier === 'string' && (d.arn === undefined || typeof d.arn === 'string')) || !Array.isArray(imported.issues) || !imported.issues.every(i => typeof i === 'string') || !Array.isArray(imported.unmappedFields) || !imported.unmappedFields.every(i => typeof i === 'string') || !Array.isArray(imported.filterGroups) || !imported.filterGroups.every(g => isObject(g) && typeof g.id === 'string' && typeof g.columnName === 'string')) return fail();
+      }
+      if (imported) {
+        const baseline = imported.baseline as Record<string, unknown>;
+        const strings = (a: unknown): a is string[] => Array.isArray(a) && a.every(n => typeof n === 'string' && !!n && !n.includes('\0'));
+        if (!sourceSheet?.visuals?.some(raw => raw[imported.variant as string]?.visualId === imported.visualId) || !isObject(v) || baseline.id !== v.id || !VISUAL_TYPES.some(t => t.kind === baseline.kind) || typeof baseline.title !== 'string' || (baseline.dimension !== null && typeof baseline.dimension !== 'string') || !['rows', 'columns', 'measures'].every(k => strings(baseline[k])) || !['donut', 'titleVisible', 'legend', 'labels', 'horizontal', 'stacked', 'totals', 'subtotals'].every(k => typeof baseline[k] === 'boolean') || !Array.isArray(baseline.filters) || !baseline.filters.every(f => isObject(f) && typeof f.columnName === 'string' && Array.isArray(f.values) && f.values.every(n => typeof n === 'string'))) return fail();
+      }
+      const fieldNames = (v: unknown, role: string): v is string[] => imported ? Array.isArray(v) && v.every(n => typeof n === 'string' && !!n && !n.includes('\0')) && new Set(v).size === v.length : names(v, role);
+
+      if (!isObject(v) || !onlyKeys(v, ['id', 'kind', 'title', 'dimension', 'measures', 'donut', 'imported', ...Object.keys(defaults())]) || typeof v.id !== 'string' || !/^visual-[1-9][0-9]*$/.test(v.id) || ids.has(v.id) || !VISUAL_TYPES.some(t => t.kind === v.kind) || typeof v.title !== 'string' || !['donut', 'titleVisible', 'legend', 'labels', 'horizontal', 'stacked', 'totals', 'subtotals'].every(k => typeof v[k] === 'boolean') || !fieldNames(v.measures, 'measure') || !fieldNames(v.rows, 'dimension') || !fieldNames(v.columns, 'dimension') || (v.dimension !== null && !fieldNames([v.dimension], 'dimension')) || !Array.isArray(v.filters)) return fail();
       if ((v.kind === 'kpi' || v.kind === 'pie') && v.measures.length > 1 || v.kind === 'kpi' && v.dimension !== null || v.kind !== 'pie' && v.donut || v.kind !== 'pivot' && v.columns.length || (v.kind === 'table' || v.kind === 'pivot' ? v.dimension !== (v.rows[0] ?? null) : v.rows.length) || v.rows.some(n => (v.columns as string[]).includes(n))) return fail();
       const filters = new Set<string>();
       for (const f of v.filters) {
-        if (!isObject(f) || !onlyKeys(f, ['columnName', 'values']) || typeof f.columnName !== 'string' || filters.has(f.columnName) || !fields.some(field => field.name === f.columnName && field.type === 'STRING') || !Array.isArray(f.values) || !f.values.every(n => typeof n === 'string' && !n.includes('\0')) || new Set(f.values).size !== f.values.length) return fail();
+        if (!isObject(f) || !onlyKeys(f, ['columnName', 'values']) || typeof f.columnName !== 'string' || filters.has(f.columnName) || (!imported && !fields.some(field => field.name === f.columnName && field.type === 'STRING')) || !Array.isArray(f.values) || !f.values.every(n => typeof n === 'string' && !n.includes('\0')) || new Set(f.values).size !== f.values.length) return fail();
         filters.add(f.columnName);
       }
       ids.add(v.id);

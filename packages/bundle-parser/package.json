@@ -2,7 +2,6 @@
   "devDependencies": {
     "@types/node": "^26.6.3",
     "@types/yauzl": "3.4.0",
-    "fflate": "0.8.3",
     "typescript": "^5.6.0"
   },
   "license": "Apache-2.0",
@@ -19,10 +18,15 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./browser": {
+      "types": "./dist/browser.d.ts",
+      "import": "./dist/browser.js"
     }
   },
   "types": "./dist/index.d.ts",
   "dependencies": {
-    "yauzl": "3.4.0"
+    "yauzl": "3.4.0",
+    "fflate": "0.8.3"
   }
 }
