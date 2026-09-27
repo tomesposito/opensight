@@ -30,6 +30,8 @@ cascading dropdowns and debounced queries. See [interactive controls](docs/param
 The gallery now includes 19 visual types, offline maps, analysis themes and
 formatting, with author menus and canvas fitting. See [Phase 2d capabilities
 and validation](docs/phase2d-visuals-themes.md).
+The API also supports scheduled DuckDB refreshes, SMTP dashboard reports and
+metric threshold alerts. See [Phase 3a resources and configuration](docs/scheduled-refresh-reports-alerts.md).
 
 ## Quick start
 

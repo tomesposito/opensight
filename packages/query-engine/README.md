@@ -163,3 +163,12 @@ autoload/install, and external access disabled after CSV import. This is intende
 small trusted fixtures; cancellation, source-size/result budgets, pooling and caching
 remain open. Native runtime failures propagate as located execution errors; failures
 do not trigger a different SQL backend.
+
+## Scheduled local refresh
+
+`refreshLocal(request, { dataRoot })` replans and reloads the complete local CSV
+through the same metadata/security/schema/finite-value checks as `executeLocal`.
+It returns the physical row count, including rows with null measure values, then
+closes DuckDB. It does not create a persistent cache or alter query behavior.
+The API owns scheduling, last-good timestamps and failure history; see
+[Phase 3a](../../docs/scheduled-refresh-reports-alerts.md).

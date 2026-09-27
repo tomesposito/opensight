@@ -1,5 +1,3 @@
-import { validateAlert, type AlertRule, type AlertState, type AlertRun, type AlertWebhook } from './alerts.js';
-import type { Subscription, ReportRun } from './reports.js';
 import { randomUUID } from 'node:crypto';
 import { QueryEngineError } from '@opensight/query-engine';
 import { AutomationStore } from './automation-store.js';
@@ -10,20 +8,9 @@ export interface RefreshSchedule { datasetId: string; enabled: boolean; schedule
 export interface RunError { code: string; message: string; lastGood: string | null }
 export interface RefreshRun { id: string; datasetId: string; startedAt: string; finishedAt: string | null; state: 'running' | 'succeeded' | 'failed'; rows: number | null; error: RunError | null }
 export interface DatasetStatus { datasetId: string; lastGood: string | null; nextRun: string | null; consecutiveFailures: number; state: 'never' | 'running' | 'ready' | 'error'; error: RunError | null }
-export interface RefreshState { version: 1; alertRules: AlertRule[]; alertStates: AlertState[]; alertRuns: AlertRun[]; alertTransitions: AlertWebhook[]; subscriptions: Subscription[]; reportRuns: ReportRun[]; schedules: RefreshSchedule[]; refreshRuns: RefreshRun[]; datasets: DatasetStatus[] }
-export const emptyRefreshState = (): RefreshState => ({ version: 1, alertRules: [], alertStates: [], alertRuns: [], alertTransitions: [], subscriptions: [], reportRuns: [], schedules: [], refreshRuns: [], datasets: [] });
-export function validateRefreshState(value: unknown): RefreshState {
-  const s = record(value, ['version', 'schedules', 'refreshRuns', 'datasets', 'subscriptions', 'reportRuns', 'alertRules', 'alertStates', 'alertRuns', 'alertTransitions']);
-  if (s.version !== 1 || !Array.isArray(s.schedules) || !Array.isArray(s.refreshRuns) || !Array.isArray(s.datasets)) throw new Error('Invalid automation state');
-  for (const item of s.schedules) { const r = record(item, ['datasetId', 'enabled', 'schedule', 'nextRun']); id(r.datasetId, 'datasetId'); enabled(r.enabled); validateSchedule(r.schedule); }
-  s.subscriptions ??= []; s.reportRuns ??= [];
-  if (!Array.isArray(s.subscriptions) || !Array.isArray(s.reportRuns)) throw new Error('Invalid report state');
-  for (const item of s.subscriptions) { const r = record(item, ['id', 'userId', 'dashboardId', 'recipients', 'enabled', 'schedule', 'nextRun']); id(r.id, 'id'); id(r.userId, 'userId'); id(r.dashboardId, 'dashboardId'); enabled(r.enabled); validateSchedule(r.schedule); }
-  s.alertRules ??= []; s.alertStates ??= []; s.alertRuns ??= []; s.alertTransitions ??= [];
-  if (![s.alertRules, s.alertStates, s.alertRuns, s.alertTransitions].every(Array.isArray)) throw new Error('Invalid alert state');
-  for (const item of s.alertRules as unknown[]) { const r = item as AlertRule; const { id: ruleId, ...body } = r; validateAlert(id(ruleId, 'id'), body); }
-  return s as unknown as RefreshState;
-}
+import type { AutomationState as RefreshState } from './automation-state.js';
+export type { AutomationState as RefreshState } from './automation-state.js';
+export { emptyAutomationState as emptyRefreshState, validateAutomationState as validateRefreshState } from './automation-state.js';
 function status(state: RefreshState, datasetId: string): DatasetStatus {
   let value = state.datasets.find(s => s.datasetId === datasetId);
   if (!value) { value = { datasetId, lastGood: null, nextRun: null, consecutiveFailures: 0, state: 'never', error: null }; state.datasets.push(value); }
@@ -99,7 +86,7 @@ export class RefreshService {
       if (!Number.isSafeInteger(run.rows) || run.rows < 0) throw new Error('Invalid refresh row count');
       run.state = 'succeeded';
     } catch (error) {
-      run.state = 'failed';
+      run.state = 'failed'; run.rows = null;
       const code = error instanceof QueryEngineError ? error.code === 'LOCAL_DATA_ERROR' ? 'SOURCE_UNREACHABLE' : error.code : 'REFRESH_FAILED';
       run.error = { code, message: `${code === 'SOURCE_UNREACHABLE' ? 'Source unreachable' : 'Refresh failed'} for dataset ${datasetId}`, lastGood: this.getStatus(datasetId).lastGood };
     }

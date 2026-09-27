@@ -1,5 +1,9 @@
 # Local definition and live query API
 
+Phase 3a adds [scheduled refresh, email reports and alerts](../../docs/scheduled-refresh-reports-alerts.md).
+That document describes the new persistent automation resources, scheduler,
+environment-only SMTP and run history; existing definition/query behavior remains.
+
 Phase 2a adds [live parameters and controls](../../docs/parameters-controls.md).
 That document supersedes the historical parameter/filter and offline Author
 limitations below; the explorer and remote dataset boundaries are unchanged.

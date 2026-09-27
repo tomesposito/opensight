@@ -127,7 +127,11 @@ export class AlertService {
   }
   async recover(): Promise<void> {
     await this.store.change(state => { for (const run of state.alertRuns) {
-      if (run.state === 'running') { run.state = 'failed'; run.finishedAt = this.now().toISOString(); run.error = { code: 'ALERT_INTERRUPTED', message: 'Alert evaluation interrupted' }; }
+      if (run.state === 'running') {
+        run.state = 'failed'; run.finishedAt = this.now().toISOString(); run.error = { code: 'ALERT_INTERRUPTED', message: 'Alert evaluation interrupted' };
+        const current = state.alertStates.find(s => s.ruleId === run.ruleId);
+        if (current) { current.error = run.error; current.evaluatedAt = run.finishedAt; }
+      }
       if (run.notification === 'pending') { run.notification = 'failed'; run.notificationError = { code: 'NOTIFICATION_INTERRUPTED', message: 'Delivery outcome unknown after restart' }; }
     } });
   }

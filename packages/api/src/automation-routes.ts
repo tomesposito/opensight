@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { readBody, RequestError } from './query.js';
-import { id } from './schedule.js';
+import { id, record } from './schedule.js';
 import type { RefreshService } from './refresh.js';
 
 export function send(response: ServerResponse, status: number, body: unknown): void {
@@ -18,6 +18,9 @@ export function routeId(raw: string): string {
   try { return id(decodeURIComponent(raw), '$.id'); }
   catch { throw new RequestError(400, 'Invalid resource ID'); }
 }
+async function emptyRunBody(request: IncomingMessage): Promise<void> {
+  if (request.headers['transfer-encoding'] || request.headers['content-length'] && request.headers['content-length'] !== '0') record(await readBody(request), []);
+}
 export async function refreshRoute(request: IncomingMessage, response: ServerResponse, path: string, query: string, refresh: RefreshService): Promise<boolean> {
   const match = /^\/api\/datasets\/([^/]+)\/(refresh-schedule|refresh-status|refresh-runs)(?:\/([^/]+))?$/u.exec(path);
   if (path !== '/api/refresh-schedules' && !match) return false;
@@ -28,7 +31,7 @@ export async function refreshRoute(request: IncomingMessage, response: ServerRes
   if (resource === 'refresh-status') { method(request, response, ['GET']); send(response, 200, refresh.getStatus(datasetId)); }
   else if (resource === 'refresh-runs') {
     const verb = method(request, response, runId ? ['GET'] : ['GET', 'POST']);
-    if (verb === 'POST') send(response, 200, await refresh.run(datasetId));
+    if (verb === 'POST') { await emptyRunBody(request); send(response, 200, await refresh.run(datasetId)); }
     else {
       const runs = refresh.history(datasetId), result = runId ? runs.find(r => r.id === runId) : runs;
       if (!result) throw new RequestError(404, 'Refresh run not found');
@@ -56,7 +59,7 @@ export async function reportRoute(request: IncomingMessage, response: ServerResp
   else if (match[3]) {
     const runId = match[4] ? routeId(match[4]) : undefined;
     const verb = method(request, response, runId ? ['GET'] : ['GET', 'POST']);
-    if (verb === 'POST') send(response, 200, await reports.run(userId, subscriptionId));
+    if (verb === 'POST') { await emptyRunBody(request); send(response, 200, await reports.run(userId, subscriptionId)); }
     else {
       const runs = reports.history(userId, subscriptionId), result = runId ? runs.find(r => r.id === runId) : runs;
       if (!result) throw new RequestError(404, 'Report run not found');
@@ -79,7 +82,7 @@ export async function alertRoute(request: IncomingMessage, response: ServerRespo
   if (!ruleId) { method(request, response, ['GET']); send(response, 200, alerts.list()); }
   else if (match[2]) {
     method(request, response, ['GET']);
-    if (match[4] || match[3] && match[2] !== 'runs') throw new RequestError(404, 'Route not found');
+    if (match[3] && match[2] !== 'runs') throw new RequestError(404, 'Route not found');
     if (match[2] === 'state') send(response, 200, alerts.state(ruleId));
     else if (match[2] === 'transitions') send(response, 200, alerts.transitions(ruleId));
     else {

@@ -9,7 +9,7 @@ import { Scheduler } from './schedule.js';
 import { AlertService, DashboardMetrics } from './alerts.js';
 import { DashboardSnapshots, ReportService } from './reports.js';
 import { smtpFromEnvironment, type MailTransport } from './mail.js';
-import { refreshRoute, reportRoute, alertRoute } from './automation-routes.js';
+import { refreshRoute, reportRoute, alertRoute, method } from './automation-routes.js';
 
 export interface ApiOptions {
   /** Directory of local fixtures/bundles, or one .qs/.json file. Loaded at startup. */
@@ -46,7 +46,8 @@ export async function createApiServer(options: ApiOptions): Promise<Server> {
     if (path === '/api/automation-status' || path.startsWith('/api/users/') || path.startsWith('/api/alert-rules') || path === '/api/refresh-schedules' || /^\/api\/datasets\/[^/]+\/refresh-/.test(path)) {
       void (async () => {
         if (path === '/api/automation-status') {
-          if (query || request.method !== 'GET') throw new RequestError(400, 'Expected GET without selectors');
+          method(request, response, ['GET']);
+          if (query) throw new RequestError(400, 'Query parameters are not supported');
           send(response, 200, { scheduler: 'api-process', smtp: mail.configured ? 'configured' : 'not-configured', persistence: options.automationStorePath ? 'file' : 'ephemeral' });
           return true;
         }

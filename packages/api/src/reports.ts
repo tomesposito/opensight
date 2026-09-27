@@ -106,7 +106,7 @@ export class ReportService {
     try {
       if (!this.mail.configured) throw new MailError('SMTP_NOT_CONFIGURED');
       const snapshot = await this.snapshots.capture(s.dashboardId);
-      await this.mail.send({ to: s.recipients, subject: `OpenSight report: ${snapshot.title.replace(/[\r\n\0]/g, ' ').slice(0, 150)}`, html: assembleReport(snapshot) });
+      await this.mail.send({ to: s.recipients, subject: `OpenSight report: ${snapshot.title.replace(/[\r\n\0]/g, ' ').slice(0, 150)}`, html: assembleReport(snapshot) }).catch(() => { throw new MailError('SMTP_SEND_FAILED'); });
       run.state = 'sent';
     } catch (error) {
       run.state = 'failed'; run.error = error instanceof MailError ? { code: error.code, message: error.message } : { code: 'SNAPSHOT_FAILED', message: 'Unable to assemble dashboard snapshot from its configured source' };

@@ -50,7 +50,14 @@ export function nextRun(schedule: Schedule, after: Date): string {
   for (let time = Math.floor(after.getTime() / 60000) * 60000 + 60000, end = time + 16 * 86400000; time < end; time += 60000) {
     const p = parts(time);
     if (skipToday && dateKey(p) === dateKey(start)) continue;
-    if (`${p.hour}:${p.minute}` === schedule.at && (schedule.kind === 'daily' || ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][schedule.weekday] === p.weekday)) return new Date(time).toISOString();
+    if (`${p.hour}:${p.minute}` !== schedule.at || schedule.kind === 'weekly' && ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][schedule.weekday] !== p.weekday) continue;
+    // A process may resume inside the repeated hour. Never select the second fold.
+    let repeated = false;
+    for (let earlier = time - 60000; earlier >= time - 86400000; earlier -= 60000) {
+      const before = parts(earlier);
+      if (dateKey(before) === dateKey(p) && `${before.hour}:${before.minute}` === schedule.at) { repeated = true; break; }
+    }
+    if (!repeated) return new Date(time).toISOString();
   }
   throw new Error('No schedule occurrence found');
 }

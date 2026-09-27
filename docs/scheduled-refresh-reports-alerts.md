@@ -129,3 +129,44 @@ the API, with exactly these fields: `version: 1`,
 have null previousValue/percentChange. Events contain no recipients or credentials.
 No webhook URL is accepted and no outbound HTTP request is made. History and
 transitions remain available after deleting a rule.
+
+## Static preview and validation
+
+The demo's **Schedules & alerts** mode presents separate refresh, subscription and
+alert states, each labeled as needing a hosted API. Creation controls are disabled;
+there are no fake jobs, subscriptions, rule evaluations or delivery confirmations.
+
+Root `npm test` includes the API's new `*.test.mjs` files automatically through
+its existing workspace runner. Final Phase 3a validation on Node 24.20.0:
+
+| Suite | Tests | Passed | Failed | Skipped |
+| --- | ---: | ---: | ---: | ---: |
+| API | 56 | 56 | 0 | 0 |
+| Bundle parser | 183 | 183 | 0 | 0 |
+| Query engine | 341 | 340 | 0 | 1 |
+| Web | 321 | 321 | 0 | 0 |
+| Cross-package conformance | 3 | 3 | 0 | 0 |
+| **Total** | **904** | **903** | **0** | **1** |
+
+Root `npm test` exited 0; no tests were cancelled or marked todo. It includes
+strict package builds and public consumer typechecks. The optional external
+Postgres test was skipped with `DATABASE_URL` unset; embedded PostgreSQL
+comparisons ran. SMTP settings were removed from the test process, and email
+sends used the stub transport. Tests used only local files, DuckDB, embedded
+Postgres and loopback HTTP; no AWS, real SMTP, webhook or external database calls.
+
+Coverage includes fake-timer refresh/report scheduling, DST gaps/folds (including
+resuming within a fold), nonoverlap, missed-run coalescing, source loss/recovery,
+last-good status, restart/interruption history, atomic-store failures and corrupt
+state rejection, HTML escaping and compiler output, SMTP configuration/errors,
+calendar-period metrics, threshold transitions and exact webhook payloads, CRUD
+validation and static disabled states. Existing definition/query/dialect and
+browser regressions remain green. Persistent files retain all history in this
+phase; administrators should monitor store size. One process must own each file.
+
+`npm run build` and `npm run build:demo --workspace=@opensight/web` both exited 0.
+The rebuilt single-file artifact is `packages/web/dist/opensight-demo.html`
+(1,575,036 bytes; generated and gitignored). `git diff --check` passed.
+`SOLUTION_DESIGN.md` was unchanged. The only added package dependency is the
+existing `@opensight/web` workspace, whose manifest license was verified as
+Apache-2.0; the lockfile adds no third-party packages.

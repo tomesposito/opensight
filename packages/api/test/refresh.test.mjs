@@ -36,6 +36,7 @@ test('timezone daily and weekly scheduling skips DST gaps and duplicate fold tim
   const fold = { ...daily, at: '01:30' };
   assert.equal(nextRun(fold, new Date('2026-11-01T04:00:00Z')), '2026-11-01T05:30:00.000Z');
   assert.equal(nextRun(fold, new Date('2026-11-01T05:30:00Z')), '2026-11-02T06:30:00.000Z');
+  assert.equal(nextRun(fold, new Date('2026-11-01T06:10:00Z')), '2026-11-02T06:30:00.000Z');
   assert.equal(nextRun({ kind: 'weekly', at: '09:00', weekday: 1, timeZone: 'Asia/Kolkata' }, new Date('2026-09-27T00:00:00Z')), '2026-09-28T03:30:00.000Z');
 });
 test('fake timers run due schedules, coalesce missed intervals, stop and prevent overlap', async t => {
@@ -72,7 +73,7 @@ test('success, failure, last-good, recovery and schedule deletion are durable', 
 });
 test('restart records interrupted refreshes and preserves last-good', async t => {
   const path = join(await temporary(t), 'state.json');
-  const state = emptyRefreshState(); state.refreshRuns.push({ id: 'run', datasetId: 'sales', startedAt: '2026-01-01T00:00:00Z', finishedAt: null, rows: null, error: null, state: 'running' });
+  const state = emptyRefreshState(); state.refreshRuns.push({ id: 'run', datasetId: 'sales', startedAt: '2026-01-01T00:00:00.000Z', finishedAt: null, rows: null, error: null, state: 'running' });
   await writeFile(path, JSON.stringify(state)); const refresh = await service({ refresh: async () => 1 }, path);
   assert.equal(refresh.history('sales')[0].error.code, 'REFRESH_INTERRUPTED'); assert.equal(refresh.getStatus('sales').state, 'error');
 });
