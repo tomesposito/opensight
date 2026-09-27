@@ -30,6 +30,7 @@ interface FormatPart { token?: string; literal?: string }
 export function formatParts(format: string): FormatPart[] {
   const parts: FormatPart[] = []; let i = 0;
   while (i < format.length) {
+    if (format.startsWith("''", i)) { parts.push({ literal: "'" }); i += 2; continue; }
     if (format[i] === "'") { let literal = ''; i++; while (i < format.length) { if (format[i] === "'") { i++; if (format[i] !== "'") break; } literal += format[i++]!; } parts.push({ literal }); }
     else { const token = /^(yyyy|YYYY|yy|MMMM|MMM|MM|M|dd|d|HH|H|hh|h|mm|m|ss|s|SSS|SS|S|EEEE|EEE|EE|E|a|ZZ|Z)/.exec(format.slice(i));
       if (token) { parts.push({ token: token[0] }); i += token[0].length; }
@@ -109,11 +110,11 @@ export function datetimeSql(e: Extract<RowExpression, {kind: 'call'}>, dialect: 
     const a = node(0), format = constant(e.args[1], "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'");
     const pg: Record<string, string> = { yyyy: 'YYYY', YYYY: 'YYYY', yy: 'YY', MMMM: 'FMMonth', MMM: 'Mon', MM: 'MM', M: 'FMMM', dd: 'DD', d: 'FMDD', HH: 'HH24', H: 'FMHH24', hh: 'HH12', h: 'FMHH12', mm: 'MI', m: 'FMMI', ss: 'SS', s: 'FMSS', SSS: 'MS', EEEE: 'FMDay', EEE: 'Dy', EE: 'Dy', E: 'Dy', a: 'AM' };
     const duck: Record<string, string> = { yyyy: '%Y', YYYY: '%Y', yy: '%y', MMMM: '%B', MMM: '%b', MM: '%m', M: '%-m', dd: '%d', d: '%-d', HH: '%H', H: '%-H', hh: '%I', h: '%-I', mm: '%M', m: '%-M', ss: '%S', s: '%-S', SSS: '%g', EEEE: '%A', EEE: '%a', EE: '%a', E: '%a', a: '%p' };
-    return `(${formatParts(format).map(p => { if (p.literal !== undefined) return q(p.literal); const t = p.token!; if (t === 'Z' || t === 'ZZ') return q(t === 'Z' ? '+0000' : '+00:00');
+    return `(CASE WHEN ${a} IS NULL THEN NULL ELSE (${formatParts(format).map(p => { if (p.literal !== undefined) return q(p.literal); const t = p.token!; if (t === 'Z' || t === 'ZZ') return q(t === 'Z' ? '+0000' : '+00:00');
       const token = t === 'S' || t === 'SS' ? 'SSS' : t;
       const value = dialect === 'postgres' ? `TO_CHAR(${a}, ${q(pg[token]!)})` : `STRFTIME(${a}, ${q(duck[token]!)})`;
       return t === 'S' || t === 'SS' ? `LEFT(${value}, ${t.length})` : value;
-    }).join(' || ')})`;
+    }).join(' || ')}) END)`;
   }
   if (e.name !== 'parseDate') return undefined;
   const a = node(0), { pattern, tokens } = parsePattern(constant(e.args[1], 'yyyy-MM-dd'));

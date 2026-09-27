@@ -299,7 +299,7 @@ export function planVisual(request: PlanRequest, options: PlanOptions = {}): Que
   const nodes = (e: RowExpression): RowExpression[] => [e, ...expressionChildren(e).flatMap(nodes)];
   const allNodes = binder.calculations.flatMap(c => nodes(c.expression));
   const checkGroupField = (e: RowExpression, call: Extract<RowExpression, { kind: 'call' }>): void => {
-    if (e.level === 'aggregate' || e.kind === 'call' && functionReference(e.name)?.stage) return;
+    if (e.kind === 'column' && e.level === 'aggregate' || e.kind === 'call' && functionReference(e.name)?.stage) return;
     if (e.kind === 'column' && !fields.dimensions.some(d => d.columnName === e.columnName)) functionError(functionReference(call.name)!, call.location.path, `field ${e.columnName} must be a visual grouping dimension`);
     expressionChildren(e).forEach(a => checkGroupField(a, call));
   };

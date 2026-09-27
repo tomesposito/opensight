@@ -87,10 +87,10 @@ export function evaluatePlan(plan: QueryPlan, input: readonly ResultRow[]): Resu
         const unitName = periodUnits[constant(node.args[2], dimension?.granularity ?? 'MONTH').toUpperCase()]!;
         const unit = Object.entries(dateUnits).find(([, name]) => name === unitName)![0];
         const current = run(dateArg, group); if (current === null) return null;
-        const target = addDate(truncateDate(current, unit), -Number(node.args[3] ? evaluate(node.args[3]) : 1), unit);
+        const target = addDate(current, -Number(node.args[3] ? evaluate(node.args[3]) : 1), unit);
         const otherDimensions = plan.dimensions.filter(d => d.columnName !== (dateArg.kind === 'column' ? dateArg.columnName : ''));
         peers = visible.filter(g => otherDimensions.every(d => g.context[d.columnName] === group.context[d.columnName]));
-        const previous = peers.find(g => truncateDate(run(dateArg, g), unit) === target);
+        const previous = peers.find(g => { const value = run(dateArg, g); return value !== null && asDate(value).toISOString() === target; });
         if (!previous) return null;
         const a = run(node.args[0]!, group), b = run(node.args[0]!, previous);
         return a === null || b === null || node.name.endsWith('PercentDifference') && b === 0 ? null : node.name.endsWith('PercentDifference') ? (Number(a) - Number(b)) / Number(b) : Number(a) - Number(b);

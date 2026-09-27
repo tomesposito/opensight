@@ -5,6 +5,16 @@ import { parseExpression, expressionSql, evaluateExpression } from '@opensight/q
 
 // One-based Unicode positions, strict null propagation and QuickSight argument order.
 export const scalarCases = [
+  ['power(10, 400)', null], ['power(2, -2000)', 0], ['exp(-1000)', 0], ['power(0, -1)', null],
+  ["parseDecimal('1e999')", null], ["parseDecimal('1e-999')", 0],
+
+  ['toString(true)', 'true'], ["toString(parseDate('2024-02-29'))", '2024-02-29T00:00:00.000Z'],
+  [`formatDate(null, "'literal'")`, null],
+  ["parseDate('2024-02-29T23:01:02.123+0200', \"yyyy-MM-dd'T'HH:mm:ss.SSSZ\")", '2024-02-29T21:01:02.123Z'],
+  ["parseDate('2024-13-01')", null], ["parseDate('2024-01-00')", null],
+  ["parseDate('11:59:01 PM', 'hh:mm:ss a')", '2000-01-01T23:59:01.000Z'],
+  ["formatDate(parseDate('2024-02-29'), \"EEEE, MMMM d yyyy 'at' H:mm:ss\")", 'Thursday, February 29 2024 at 0:00:00'],
+
   ["ifelse(1 = 2, 'no', 2 >= 1 AND NOT false, 'yes', 'else')", 'yes'],
   ['ifelse(isNull(null), 3, 1 / 0)', 3], ['ifelse(null, 1, 2)', 2], ['coalesce(null, null, 5)', 5], ['coalesce(null, null)', null],
   ['nullIf(3, 3)', null], ['nullIf(3, null)', 3], ['isNull(null)', 1], ['isNull(0)', 0], ['isNotNull(0)', 1],
@@ -55,3 +65,7 @@ test('scalar differential: DuckDB, PostgreSQL, client', async t => {
 });
 
 test('now captures one UTC instant for both SQL dialects and the client', () => { const e = parseExpression('now()', '$.expression', { now: '2024-02-29T12:00:00.000Z' }); assert.equal(evaluateExpression(e), '2024-02-29T12:00:00.000Z'); assert.match(expressionSql(e), /TIMESTAMP/); });
+
+test('malformed scalar and table operands fail before reaching either SQL engine', () => {
+  for (const expression of ['NOT 1', "-'a'", "1 = '1'", '1 AND true', 'foo = 1', 'runningSum(sum(1), [foo ASC])', 'percentOfTotal([])', 'toString([1])']) assert.throws(() => parseExpression(expression), undefined, expression);
+});

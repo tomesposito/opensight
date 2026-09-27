@@ -115,3 +115,36 @@ test('level-aware stages agree across engines and preserve filter ordering', asy
     assert.deepEqual(await differential(r, pg), [{ region: 'East', calculated: 1 }]);
   });
 });
+
+test('scalar functions also agree on nullable fixture columns and chained calculations', async t => {
+  const pg = await postgresFixture(t);
+  const expressions = ['concat({region}, {category})', 'substring({region}, 2, 2)', 'left({region}, 1)', 'right({region}, 2)', 'trim({region})', 'upper({region})', 'lower({region})', "replace({region}, 'a', 'X')", 'toString({revenue})', "formatDate(addDateTime(1, 'MM', {order_date}), 'yyyy-MM-dd')"];
+  for (const [i, expression] of expressions.entries()) {
+    const r = request('sales-table'); r.analysis.Definition.FilterGroups = [];
+    r.analysis.Definition.CalculatedFields.push({ Name: 'Label', DataSetIdentifier: 'sales_data', Expression: expression });
+    wells(r).GroupBy = [dimension('Label')]; wells(r).Values = [measure('revenue')];
+    await t.test(`fixture string/date ${i}: ${expression}`, () => differential(r, pg));
+  }
+  for (const expression of ['locate({region}, \'a\')', 'strlen({category})', 'abs({profit})', 'ceil({profit} / 3)', 'floor({profit} / 3)', 'round({profit} / 3, 2)', 'sqrt({profit})', 'power({profit}, 2)', 'exp({profit} / 10)', 'ln({profit})', 'log({profit})', 'mod({profit}, 3)', 'pi()', 'decimalToInt({profit} / 3)', 'toDecimal({order_id})', 'parseInt(toString({profit}))', 'parseDecimal(toString({profit}))', 'ifelse(isNull({profit}), 0, {profit})', 'coalesce({profit}, 0)', 'nullIf({profit}, 10)', "dateDiff({order_date}, addDateTime(1, 'MM', {order_date}), 'DD')", "extract('YYYY', truncDate('MM', {order_date}))"]) {
+    const r = request(); r.analysis.Definition.FilterGroups = []; calculation(r, expression);
+    await t.test(`fixture scalar ${expression}`, () => differential(r, pg));
+  }
+});
+
+test('period offsets preserve the day within a month and windows precede their own filters', () => {
+  const r = request('revenue-trend'); r.analysis.Definition.FilterGroups = [];
+  wells(r).Category[0].DateDimensionField.DateGranularity = 'DAY';
+  calculation(r, 'periodOverPeriodDifference(sum({revenue}), {order_date}, MONTH, 1)');
+  const input = [{ order_date: '2024-02-01', revenue: 1 }, { order_date: '2024-02-15', revenue: 10 }, { order_date: '2024-03-15', revenue: 25 }];
+  assert.deepEqual(evaluatePlan(planVisual(r), input).map(r => r.calculated), [null, null, 15]);
+  calculation(r, 'percentOfTotal(sum({revenue}))', 'Share');
+  r.parameterDeclarations = [{ name: 'Minimum', type: 'number', multiple: false }]; r.parameterBindings = { Minimum: [0.5] }; r.parameterFilters = [{ columnName: 'Share', parameterName: 'Minimum', operator: 'GREATER_THAN_OR_EQUAL_TO' }];
+  assert.deepEqual(evaluatePlan(planVisual(r), input), [{ day: '2024-03-15', Share: 25/36 }]);
+});
+
+test('datetime parameters compare as instants in all three engines', async t => {
+  const pg = await postgresFixture(t), r = request(); r.analysis.Definition.FilterGroups = [];
+  r.parameterDeclarations = [{ name: 'Day', type: 'datetime', multiple: false }]; r.parameterBindings = { Day: ['2025-01-01'] };
+  calculation(r, 'ifelse({order_date} = ${Day}, {revenue}, 0)');
+  assert.deepEqual(await differential(r, pg), [{ calculated: 600 }]);
+});

@@ -103,6 +103,7 @@ export function parseExpression(source: string, path = '$.expression', context: 
     } else if (source[offset] === '-' || source[offset] === '+' || /^NOT\b/i.test(source.slice(offset))) {
       const operator = /^NOT\b/i.test(source.slice(offset)) ? 'NOT' : source[offset] as '-' | '+';
       offset += operator.length; const operand = expression(operator === 'NOT' ? 3 : 7);
+      if (!['unknown', operator === 'NOT' ? 'boolean' : 'number'].includes(operand.scalarType)) fail('TYPE_MISMATCH', path, `${operator} requires ${operator === 'NOT' ? 'a condition' : 'a number'}`);
       left = { ...info(start, operator === 'NOT' ? 'boolean' : 'number', [operand]), kind: 'unary', operator, operand };
     } else {
       const numeric = /^(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?/.exec(source.slice(offset));
@@ -118,7 +119,7 @@ export function parseExpression(source: string, path = '$.expression', context: 
           offset++; const args: RowExpression[] = []; whitespace();
           if (source[offset] !== ')') do { args.push(expression()); whitespace(); if (source[offset] !== ',') break; offset++; } while (true);
           expect(')'); const f = validateCall(name, args, path);
-          left = { ...info(start, f.result === 'first' ? (f.name === 'ifelse' ? args.filter((_, i) => i % 2 === 1 || i === args.length - 1) : args).find(a => a.scalarType !== 'unknown')?.scalarType ?? 'unknown' : f.result, args), kind: 'call', name: f.name, args };
+          left = { ...info(start, f.result === 'first' ? (f.name === 'ifelse' ? args.filter((_, i) => i % 2 === 1 || i === args.length - 1) : ['coalesce', 'nullIf'].includes(f.name) ? args : args.slice(0, 1)).find(a => a.scalarType !== 'unknown')?.scalarType ?? 'unknown' : f.result, args), kind: 'call', name: f.name, args };
           if (f.stage === 'table') left = { ...left, level: 'table' };
           if (f.stage === 'over' || ['rank', 'denseRank'].includes(f.name)) left = { ...left, level: constant(args[2], 'POST_AGG_FILTER') === 'PRE_FILTER' ? 'pre_filter' : constant(args[2]) === 'PRE_AGG' ? 'pre_agg' : 'table' };
           if (f.stage === 'aggregate') left = { ...left, level: 'aggregate' };
@@ -135,6 +136,8 @@ export function parseExpression(source: string, path = '$.expression', context: 
       const precedence = operator === 'OR' ? 1 : operator === 'AND' ? 2 : ['=', '<>', '<', '>', '<=', '>='].includes(operator) ? 3 : ['+', '-'].includes(operator) ? 4 : 5;
       if (precedence < minimum) break;
       offset += raw.length; const right = expression(precedence + 1), arithmetic = precedence >= 4;
+      if (['AND', 'OR'].includes(operator) && [left, right].some(x => !['boolean', 'unknown'].includes(x.scalarType))) fail('TYPE_MISMATCH', path, `${operator} requires conditions`);
+      if (precedence === 3 && left.scalarType !== right.scalarType && ![left.scalarType, right.scalarType].includes('unknown')) fail('TYPE_MISMATCH', path, 'comparison operands must have compatible types');
       if (arithmetic && [left, right].some(x => !['number', 'unknown'].includes(x.scalarType))) fail('TYPE_MISMATCH', path, 'arithmetic requires numeric operands');
       left = { ...info(start, arithmetic ? 'number' : 'boolean', [left, right]), nullable: left.nullable || right.nullable, kind: 'binary', operator, left, right };
     }
@@ -149,6 +152,7 @@ export function parseExpression(source: string, path = '$.expression', context: 
 function validateLevels(e: RowExpression): void {
   const args = e.kind === 'binary' ? [e.left, e.right] : e.kind === 'unary' ? [e.operand] : e.kind === 'call' ? e.args : e.kind === 'list' ? e.items : e.kind === 'sort' ? [e.expression] : [];
   args.forEach(validateLevels);
+  if (['binary', 'unary', 'list', 'sort'].includes(e.kind) && args.some(a => a.kind === 'symbol' || a.kind === 'list')) fail('INVALID_INPUT', e.location.path, 'expected a field reference, scalar expression or quoted literal');
   if ((e.kind === 'binary' || e.kind === 'call' && !functionReference(e.name)?.stage) && args.some(a => ['aggregate', 'table'].includes(a.level)) && args.some(a => ['row', 'pre_filter', 'pre_agg'].includes(a.level) && a.dependencies.length)) fail('UNSUPPORTED_FEATURE', e.location.path, 'Mismatched aggregation: aggregate and nonaggregated fields cannot be mixed.');
 }
 

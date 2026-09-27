@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { Client, types } from 'pg';
 import { executePostgres, QueryEngineError } from '@opensight/query-engine';
-import { calculation, deferredExpressions, request } from './helpers.mjs';
+import { calculation, request } from './helpers.mjs';
 
 const options = { connectionString: 'postgres://user:secret@example.invalid/test' };
 const empty = { fields: [], rows: [] };
@@ -119,17 +119,23 @@ test('Postgres validates requests and connection options before connecting', asy
     await assert.rejects(executePostgres(request(), { connectionString }), { code: 'INVALID_INPUT', path: '$.options.connectionString' });
   }
   await assert.rejects(executePostgres(null, options), { code: 'INVALID_INPUT', path: '$' });
-  for (const expressions of Object.values(deferredExpressions)) {
-    for (const expression of expressions) {
-      const r = request();
-      calculation(r, expression);
-      await assert.rejects(executePostgres(r, options), { code: 'UNSUPPORTED_FEATURE' });
-    }
-  }
+  const r = request(); calculation(r, 'unsupportedFunction({revenue})');
+  await assert.rejects(executePostgres(r, options), { code: 'UNSUPPORTED_FEATURE' });
   assert.equal(mocks.connectMock.mock.callCount(), 0);
 });
 
 test('Postgres sanitizes client construction failures', async () => {
   await assert.rejects(executePostgres(request(), { connectionString: 'postgres://user:secret@[' }),
     { code: 'EXECUTION_ERROR', message: '$.postgres: Postgres connection or query failed' });
+});
+
+test('Postgres driver normalizes boolean scalar columns before the shared table stages', async t => {
+  mockClient(t, { query: config => typeof config === 'string' ? empty : {
+    fields: [{ name: 'region', dataTypeID: types.builtins.TEXT }, { name: 'revenue', dataTypeID: types.builtins.FLOAT8 }, { name: 'Flag', dataTypeID: types.builtins.BOOL }],
+    rows: [['East', '100', 't'], ['West', '50', 'f']],
+  } });
+  const r = request('revenue-by-region'); r.analysis.Definition.FilterGroups = [];
+  calculation(r, 'percentOfTotal(sum(ifelse({Flag}, {revenue}, 0)))');
+  r.analysis.Definition.CalculatedFields.push({ Name: 'Flag', DataSetIdentifier: 'sales_data', Expression: '{revenue} > 75' });
+  assert.deepEqual((await executePostgres(r, options)).rows, [{ region: 'East', calculated: 1 }, { region: 'West', calculated: 0 }]);
 });

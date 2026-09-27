@@ -34,12 +34,11 @@ for (const oracle of expected) {
 for (const scenario of semantics) {
   test(`semantic planner contract: ${scenario.id}`, () => {
     if (scenario.status.startsWith('deferred-')) {
-      assert.ok(deferredExpressions[scenario.id], 'every deferred fixture needs a compiler rejection case');
+      assert.ok(deferredExpressions[scenario.id], 'historical semantic cases remain covered');
       for (const expression of deferredExpressions[scenario.id]) {
-        const r = request();
+        const r = request(scenario.id === 'missing-period' ? 'revenue-trend' : undefined);
         calculation(r, expression);
-        assert.throws(() => planVisual(r), (e) => e instanceof QueryEngineError &&
-          e.code === 'UNSUPPORTED_FEATURE' && e.path === '$.analysis.Definition.CalculatedFields[1].Expression');
+        assert.doesNotThrow(() => planVisual(r));
       }
     } else {
       assert.equal(scenario.id, 'all-null-aggregation');
@@ -82,7 +81,7 @@ test('row expressions bind forward dependencies topologically with types and loc
 
 test('reachable calculations alone determine execution capability', () => {
   const r = request();
-  r.analysis.Definition.CalculatedFields[0].Expression = 'sumOver({revenue}, [], PRE_AGG)';
+  r.analysis.Definition.CalculatedFields[0].Expression = 'unsupportedFunction({revenue})';
   assert.equal(planVisual(r).calculations.length, 0);
   wells(r).Values = [measure('discounted_revenue')];
   assert.throws(() => planVisual(r), { code: 'UNSUPPORTED_FEATURE' });

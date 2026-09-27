@@ -72,7 +72,7 @@ const cases = [
   ['calculation trailing SQL', r => calculation(r, '{revenue}; DROP TABLE sales'), 'INVALID_INPUT', '.Expression'],
   ['nonfinite literal', r => calculation(r, '1e999'), 'INVALID_INPUT', '.Expression'],
   ['excessive expression nesting', r => calculation(r, '('.repeat(101) + '1' + ')'.repeat(101)), 'INVALID_INPUT', '.Expression'],
-  ['table calculation', r => calculation(r, 'sumOver({revenue}, [], PRE_AGG)'), 'UNSUPPORTED_FEATURE', '.Expression'],
+  ['invalid calculation level', r => calculation(r, 'sumOver({revenue}, [], DURING_LOAD)'), 'TYPE_MISMATCH', '.Expression'],
   ['mixed aggregation grain', r => calculation(r, '{revenue} + sum({profit})'), 'UNSUPPORTED_FEATURE', '.Expression'],
   ['remote CSV', r => { r.localData.csv = 's3://example/sales.csv'; }, 'LOCAL_DATA_ERROR', '.csv'],
   ['absolute CSV', r => { r.localData.csv = '/tmp/sales.csv'; }, 'LOCAL_DATA_ERROR', '.csv'],

@@ -152,7 +152,7 @@ test('builder calculated measures and dimensions execute after dependency bindin
   const response = await post(body);
   assert.equal(response.status, 200);
   assert.deepEqual((await response.json()).rows, [{ Area: 'East', Net: 340 }, { Area: 'West', Net: 280 }]);
-  body.calculatedFields[0].expression = 'sum({revenue})';
+  body.calculatedFields[0].expression = 'unsupportedFunction({revenue})';
   const unsupported = await post(body);
   assert.equal(unsupported.status, 422);
   assert.equal((await unsupported.json()).errorCode, 'UNSUPPORTED_FEATURE');
@@ -210,4 +210,16 @@ test('strict parameter transport rejects invalid declarations, bindings and mixe
   }
   const badColumn = parameterQuery(); badColumn.filters[0].columnName = 'revenue';
   const response = await post(badColumn); assert.equal(response.status, 422); assert.match((await response.json()).message, /does not match/);
+});
+
+test('calculated catalog reaches the API SQL and shared table stages', async t => {
+  const post = await start(t);
+  const response = await post({ dimensions: [{ fieldId: 'region', columnName: 'region' }], measures: [{ fieldId: 'share', columnName: 'Share', aggregation: 'SUM' }], filters: [], calculatedFields: [
+    { name: 'Net', expression: 'round(coalesce({revenue}, 0), 2)' },
+    { name: 'Share', expression: 'percentOfTotal(sum({Net}))' },
+  ] });
+  assert.equal(response.status, 200);
+  assert.deepEqual((await response.json()).rows, [{ region: 'East', share: 500/900 }, { region: 'West', share: 400/900 }]);
+  const invalid = await post({ dimensions: [], measures: [{ fieldId: 'bad', columnName: 'Bad', aggregation: 'SUM' }], filters: [], calculatedFields: [{ name: 'Bad', expression: 'round({revenue}, 1, 2)' }] });
+  assert.equal(invalid.status, 422); assert.match((await invalid.json()).message, /round.*Expected round/);
 });

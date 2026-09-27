@@ -16,10 +16,21 @@ for (const oracle of expected) {
 for (const scenario of semantics) {
   test(`semantic execution contract: ${scenario.id}`, async (t) => {
     if (scenario.status.startsWith('deferred-')) {
-      for (const expression of deferredExpressions[scenario.id]) {
-        const r = request();
-        calculation(r, expression);
-        await assert.rejects(executeLocal(r, { dataRoot: '/does-not-exist' }), { code: 'UNSUPPORTED_FEATURE' });
+      if (scenario.id === 'missing-period') {
+        const r = request('revenue-trend'); r.analysis.Definition.FilterGroups = []; calculation(r, deferredExpressions[scenario.id][0], 'difference');
+        assert.deepEqual((await executeLocal(r, { dataRoot: fixtureRoot })).rows.map(row => ({ ...row, month: row.month + '-01' })), scenario.rows);
+      } else if (scenario.id === 'row-ratio-versus-aggregate-ratio') {
+        const r = request(); r.analysis.Definition.FilterGroups = [];
+        calculation(r, deferredExpressions[scenario.id][0], 'average_row_margin'); calculation(r, deferredExpressions[scenario.id][1], 'aggregate_margin');
+        wells(r).Values = [measure('average_row_margin'), measure('aggregate_margin')];
+        assert.deepEqual((await executeLocal(r, { dataRoot: fixtureRoot })).rows, scenario.rows);
+      } else {
+        const lines = read('sales.csv').trimEnd().split('\n');
+        for (const expected of scenario.rows) {
+          const r = request(); r.analysis.Definition.FilterGroups = []; calculation(r, deferredExpressions[scenario.id][0], 'margin');
+          const options = temporaryCsv(t, `${lines[0]}\n${lines.find(line => line.startsWith(expected.order_id + ','))}\n`);
+          assert.deepEqual((await executeLocal(r, options)).rows, [{ margin: expected.margin }]);
+        }
       }
     } else {
       // Select the same row as the oracle's WHERE order_id = 6 without enabling numeric filters.

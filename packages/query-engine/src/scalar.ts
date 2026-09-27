@@ -72,16 +72,19 @@ export function scalarSql(e: CallExpression, dialect: SqlDialect, compile: (e: R
     case 'sqrt': return `(CASE WHEN ${a} >= 0 THEN SQRT(${a}) ELSE NULL END)`;
     case 'ln': return `(CASE WHEN ${a} > 0 THEN LN(${a}) ELSE NULL END)`;
     case 'log': return `(CASE WHEN ${a} > 0 AND ${b ?? '10'} > 0 AND ${b ?? '10'} <> 1 THEN LN(${a}) / LN(${b ?? '10'}) ELSE NULL END)`;
-    case 'exp': return `(CASE WHEN ${a} <= 709.782712893384 THEN EXP(${a}) ELSE NULL END)`;
-    case 'power': return `(CASE WHEN (${a} >= 0 OR ${b} = TRUNC(${b})) AND NOT (${a} = 0 AND ${b} < 0) THEN POWER(${a}, ${b}) ELSE NULL END)`;
+    case 'exp': return `(CASE WHEN ${a} < -745 THEN 0 WHEN ${a} <= 709.782712893384 THEN EXP(${a}) ELSE NULL END)`;
+    case 'power': return `(CASE WHEN ${a} IS NULL OR ${b} IS NULL THEN NULL WHEN ${a} = 0 THEN CASE WHEN ${b} > 0 THEN 0 WHEN ${b} = 0 THEN 1 ELSE NULL END WHEN ${a} < 0 AND ${b} <> TRUNC(${b}) THEN NULL WHEN ${b} * LN(ABS(${a})) > 709.782712893384 THEN NULL WHEN ${b} * LN(ABS(${a})) < -745 THEN 0 ELSE POWER(${a}, ${b}) END)`;
     case 'mod': return `CAST(MOD(CAST(${a} AS ${dialect === 'postgres' ? 'NUMERIC' : 'DOUBLE'}), NULLIF(CAST(${b} AS ${dialect === 'postgres' ? 'NUMERIC' : 'DOUBLE'}), 0)) AS ${numeric})`;
     case 'pi': return 'PI()';
     case 'toDecimal': return `CAST(${a} AS ${numeric})`;
     case 'parseDecimal': case 'parseInt': {
       const pattern = "'^[+-]?([0-9]+(\\.[0-9]*)?|\\.[0-9]+)([eE][+-]?[0-9]+)?$'";
       const valid = dialect === 'postgres' ? `TRIM(${a}) ~ ${pattern}` : `REGEXP_FULL_MATCH(TRIM(${a}), ${pattern})`;
-      const value = `CAST(TRIM(${a}) AS ${numeric})`;
-      return `(CASE WHEN ${valid} THEN ${e.name === 'parseInt' ? `TRUNC(${value})` : value} ELSE NULL END)`;
+      const value = dialect === 'duckdb' ? `TRY_CAST(TRIM(${a}) AS DOUBLE)` : `CAST(TRIM(${a}) AS DOUBLE PRECISION)`;
+      const safe = dialect === 'duckdb' ? `(CASE WHEN ISFINITE(${value}) THEN ${value} ELSE NULL END)` : `(CASE WHEN ABS(CAST(TRIM(${a}) AS NUMERIC)) > 1.7976931348623157e308 THEN NULL WHEN ABS(CAST(TRIM(${a}) AS NUMERIC)) < 4.9406564584124654e-324 THEN 0 ELSE ${value} END)`;
+      // Bound the exponent before PostgreSQL's numeric parser, which can itself overflow.
+      const bounded = dialect === 'postgres' ? ` AND LENGTH(${a}) <= 10000 AND NOT (TRIM(${a}) ~ '[eE][+-]?[0-9]{5,}$')` : '';
+      return `(CASE WHEN ${valid}${bounded} THEN ${e.name === 'parseInt' ? `TRUNC(${safe})` : safe} ELSE NULL END)`;
     }
     case 'concat': return `(${args.join(' || ')})`;
     case 'substring': return `(CASE WHEN ${b} < 1 OR ${c} < 0 THEN NULL ELSE SUBSTRING(${a}, ${integer(b)}, ${integer(c)}) END)`;
@@ -92,7 +95,8 @@ export function scalarSql(e: CallExpression, dialect: SqlDialect, compile: (e: R
       return `(CASE WHEN ${a} IS NULL OR ${b} IS NULL OR ${start} IS NULL THEN NULL WHEN ${start} < 1 OR ${position} = 0 THEN 0 ELSE ${position} + ${integer(start)} - 1 END)`;
     }
     case 'strlen': return `LENGTH(${a})`;
-    case 'toString': return e.args[0]!.scalarType === 'number' ? `REGEXP_REPLACE(CAST(${a} AS VARCHAR), '\\.0$', '')` : `CAST(${a} AS VARCHAR)`;
+    case 'toString': if (e.args[0]!.scalarType === 'datetime') return dialect === 'postgres' ? `TO_CHAR(${a}, 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')` : `STRFTIME(${a}, '%Y-%m-%dT%H:%M:%S.%gZ')`;
+      return e.args[0]!.scalarType === 'number' ? `REGEXP_REPLACE(CAST(${a} AS VARCHAR), '\\.0$', '')` : `CAST(${a} AS VARCHAR)`;
     default: return fail('UNSUPPORTED_FEATURE', e.location.path, `Unsupported SQL function ${e.name}`);
   }
 }

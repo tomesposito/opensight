@@ -54,6 +54,12 @@ export function validateCall(name: string, args: readonly RowExpression[], path:
   const f = functionReference(name);
   if (!f) fail('UNSUPPORTED_FEATURE', path, `Unsupported function ${name}.`);
   if (args.length < f.min || args.length > f.max) functionError(f, path, 'incorrect number of arguments');
+  const keywordIndexes = f.stage === 'over' || ['rank', 'denseRank'].includes(f.name) ? [2] : f.name.startsWith('periodOverPeriod') ? [2] : f.name === 'addDateTime' ? [1] : f.name === 'dateDiff' ? [2] : ['truncDate', 'extract'].includes(f.name) ? [0] : [];
+  const listIndexes = f.stage === 'over' ? [1] : ['rank', 'denseRank'].includes(f.name) ? [0, 1] : f.name === 'percentOfTotal' ? [1] : f.name === 'runningSum' ? [1, 2] : ['difference', 'percentDifference'].includes(f.name) ? [1, 3] : [];
+  args.forEach((a, i) => {
+    if (a.kind === 'symbol' && !keywordIndexes.includes(i)) functionError(f, path, `argument ${i + 1} must be a field, expression or quoted literal`);
+    if (a.kind === 'list' && !listIndexes.includes(i)) functionError(f, path, `argument ${i + 1} must be scalar`);
+  });
   if (f.types) args.forEach((a, i) => {
     const expected = f.types![Math.min(i, f.types!.length - 1)]!;
     if (a.scalarType !== 'unknown' && a.scalarType !== expected && !(a.kind === 'literal' && a.value === null)) functionError(f, path, `argument ${i + 1} must be ${expected}`);

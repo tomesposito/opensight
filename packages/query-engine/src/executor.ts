@@ -12,6 +12,7 @@ const sqlTypes: Record<ColumnType, string> = {
 
 function resultValue(value: unknown): ResultValue {
   if (value === null || typeof value === 'string') return value;
+  if (typeof value === 'boolean') return Number(value);
   if (typeof value === 'number' && Number.isFinite(value)) return value;
   if (typeof value === 'bigint') {
     return value <= BigInt(Number.MAX_SAFE_INTEGER) && value >= BigInt(Number.MIN_SAFE_INTEGER) ? Number(value) : value.toString();

@@ -12,6 +12,7 @@ const numericTypes = new Set<number>([
 function resultValue(value: unknown, oid: number): ResultValue {
   if (value === null) return null;
   if (typeof value !== 'string') return fail('EXECUTION_ERROR', '$.result', 'unsupported result scalar');
+  if (oid === types.builtins.BOOL) return value === 't' ? 1 : 0;
   if (!numericTypes.has(oid)) return value;
   // SUM(bigint) is NUMERIC and COUNT is INT8. Preserve large integers exactly.
   if ((oid === types.builtins.INT8 || oid === types.builtins.NUMERIC) && /^[+-]?\d+$/.test(value)) {
