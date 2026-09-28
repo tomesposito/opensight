@@ -1,3 +1,5 @@
+import type { InterpretationResult, CalculationResult } from '@opensight/o-interpreter';
+import type { CalculatedField } from './authoring.js';
 import { isRole } from '@opensight/query-engine/browser';
 import type { Session } from './access.js';
 import type { BundleDefinition } from '@opensight/bundle-parser';
@@ -25,6 +27,8 @@ export interface DefinitionResponse {
 }
 export const DEFAULT_API_URL = '/api';
 
+export interface AIStatus { configured: boolean; state: 'configured' | 'not-configured' | 'needs-approval' }
+export interface ORequest { question: string; dashboardId?: string; calculatedFields?: readonly CalculatedField[] }
 export interface AIConfig {
   provider: 'openai' | 'anthropic' | 'openai-compatible' | 'bedrock' | null;
   model: string; baseUrl?: string; hasKey: boolean; configured: boolean;
@@ -53,6 +57,9 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
     }
     return value as T;
   }
+  const getAIStatus = () => resource<AIStatus>('/api/o/status');
+  const generateO = (request: ORequest) => resource<InterpretationResult>('/api/o/generate', 'POST', request);
+  const generateCalculation = (request: ORequest) => resource<CalculationResult>('/api/o/calculation', 'POST', request);
   const getAIConfig = () => resource<AIConfig>('/api/admin/ai');
   const saveAIConfig = (config: Pick<AIConfig, 'provider' | 'model' | 'baseUrl'>) => resource<AIConfig>('/api/admin/ai', 'POST', config);
   const saveAIKey = (key: string) => resource<AIConfig>('/api/admin/ai/key', 'POST', { key });
@@ -145,7 +152,7 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
     }
   }
   return {
-    getAIConfig, saveAIConfig, saveAIKey, testAIConnection, getSession, queryO, getDatasetRefreshStatus,
+    getAIStatus, generateO, generateCalculation, getAIConfig, saveAIConfig, saveAIKey, testAIConnection, getSession, queryO, getDatasetRefreshStatus,
     queryDataset,
     getAnalysisDefinition: (id: string, signal?: AbortSignal) => getDefinition('analysis', id, signal),
     getDashboardDefinition: (id: string, signal?: AbortSignal) => getDefinition('dashboard', id, signal),

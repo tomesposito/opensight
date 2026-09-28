@@ -12,7 +12,7 @@ for (const hosted of [false, true]) test(`generative mode stays disabled with ${
   assert.match(html, /role="switch"[^>]*disabled=""/);
   assert.doesNotMatch(html, / checked=""/);
   assert.match(html, /Needs hosted API and API key via server env \(not configured\)/);
-  assert.match(html, /Generative mode is not implemented/);
+  assert.match(html, /not configured/);
   assert.doesNotMatch(html, /type="password"|Built by AI/);
 });
 test('calculation generation discloses deterministic templates and the same disabled mode', () => {

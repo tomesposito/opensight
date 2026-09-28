@@ -1,5 +1,5 @@
-import { useAccess, allowed } from './access.js';
-import { useMemo, useState, type Dispatch, type ReactNode } from 'react';
+import { useAccess, allowed, useAI } from './access.js';
+import { useMemo, useState, useRef, useEffect, type Dispatch, type ReactNode } from 'react';
 import { interpretQuestion, type InterpretationResult } from '@opensight/o-interpreter';
 import { dataFields, type AuthorAction, type AuthorDraft } from './authoring.js';
 import { prepareOVisual } from './o-authoring.js';
@@ -15,6 +15,10 @@ export function OEntry(props: OEntryProps) {
 }
 function OEntryContent({ draft, dispatch, client, renderBar, dashboardId }: OEntryProps) {
   const access = useAccess();
+  const ai = useAI();
+  const [generative, setGenerative] = useState(false), [pending, setPending] = useState(false), [error, setError] = useState('');
+  const revision = useRef(0);
+  useEffect(() => () => { revision.current++; }, []);
   const previewClient = useMemo<QueryClient | undefined>(() => client ? { queryDataset: (_id, query, signal) => {
     if (!client.queryO) return Promise.reject(new Error('SECURITY_AI_REQUIRED: Hosted O endpoint required.'));
     return client.queryO(query, dashboardId, signal);
@@ -24,6 +28,7 @@ function OEntryContent({ draft, dispatch, client, renderBar, dashboardId }: OEnt
   const [selected, setSelected] = useState(0);
   const [added, setAdded] = useState('');
   const schema = JSON.stringify(draft.calculatedFields);
+  useEffect(() => { revision.current++; setPending(false); setError(''); }, [schema, generative]);
   const result = answer?.schema === schema ? answer.result : undefined;
   const interpretation = result?.interpretations[selected];
   const prepared = useMemo(() => {
@@ -31,18 +36,30 @@ function OEntryContent({ draft, dispatch, client, renderBar, dashboardId }: OEnt
     try { return { value: prepareOVisual(interpretation, draft.calculatedFields) }; }
     catch (e) { return { error: e instanceof Error ? e.message : String(e) }; }
   }, [interpretation, draft.calculatedFields]);
-  const bar = <form className="o-bar" onSubmit={e => { e.preventDefault(); setSelected(0); setAdded(''); setAnswer({ schema, result: interpretQuestion(question, dataFields(draft.calculatedFields)) }); }}>
+  const submit = async () => {
+    const current = ++revision.current; setSelected(0); setAdded(''); setError(''); setAnswer(undefined);
+    if (!generative) { setAnswer({ schema, result: interpretQuestion(question, dataFields(draft.calculatedFields)) }); return; }
+    if (!ai.available || !ai.client) return;
+    setPending(true);
+    try {
+      const result = await ai.client.generateO({ question, calculatedFields: draft.calculatedFields, ...(dashboardId ? { dashboardId } : {}) });
+      if (current === revision.current) setAnswer({ schema, result });
+    } catch (e) { if (current === revision.current) setError(e instanceof Error ? e.message : String(e)); }
+    finally { if (current === revision.current) setPending(false); }
+  };
+  const bar = <form className="o-bar" onSubmit={e => { e.preventDefault(); void submit(); }}>
       {renderBar && <span className="o-mark" aria-hidden="true">O</span>}
       <label htmlFor="o-question">Ask a question</label>
-      <input id="o-question" type="search" maxLength={2000} value={question} placeholder={renderBar ? 'Ask a question about Local sales' : 'Sum of revenue by region'} onChange={e => { setQuestion(e.target.value); setAnswer(undefined); setAdded(''); }} />
-      <button type="submit">Ask</button>
+      <input id="o-question" type="search" maxLength={2000} value={question} placeholder={renderBar ? 'Ask a question about Local sales' : 'Sum of revenue by region'} onChange={e => { revision.current++; setPending(false); setError(''); setQuestion(e.target.value); setAnswer(undefined); setAdded(''); }} />
+      <button type="submit" disabled={pending}>Ask</button>
     </form>;
   return <>
     {renderBar?.(bar)}
     <section className={`o-entry${renderBar ? ' o-entry-toolbar' : ''}`} aria-label="Ask a question">
     {!renderBar && bar}
-    <span className="o-local-label">Local deterministic interpreter · No AI</span>
-    <OModeNotice />
+    <span className="o-local-label">{generative ? 'AI interpretation · Review before use' : 'Local deterministic interpreter · No AI'}</span>
+    <OModeNotice available={ai.available} state={ai.state} checked={generative} onChange={value => { revision.current++; setGenerative(value); setAnswer(undefined); setError(''); }} />
+    {pending && <p role="status">Asking configured provider…</p>}{error && <p role="alert">{error}</p>}
     {result && <div className="o-answer">
       <div className="o-answer-actions"><strong>Interpreted question</strong><button type="button" onClick={() => setAnswer(undefined)}>Close answer</button></div>
       {result.errors.map(e => <p key={e.code} role="status" className="o-diagnostic">{e.code}: {e.message}</p>)}

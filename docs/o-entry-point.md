@@ -115,18 +115,26 @@ no invented expression is returned.
 removes the suggestion without changing the editor. **Create field** remains the
 separate save action. Editing the request clears any stale suggestion.
 
-## Configuration and generative stub
+## Hosted roles and generative mode (Issue #7)
 
-Local interpretation and templates require no configuration, key, hosted backend,
-or external connection. Both flows show a disabled **Generative mode** switch:
-“Needs hosted API and API key via server env (not configured). Generative mode is
-not implemented.” Selecting the existing data API does not enable generative mode.
+The entire ask-a-question bar is restricted to administrator, author_ai and
+reader_ai, including deterministic mode. Reader AI is available on accessible
+published dashboards and has no ADD TO ANALYSIS action. The offline public
+sample preview uses a fixed author_ai persona and cannot access hosted features.
 
-There is currently no provider integration and no environment variable that
-enables it. A future hosted implementation would need a server-side provider key
-supplied through environment configuration; no variable name is reserved here.
-Never place such keys in Vite/client environment variables, browser storage, or
-an exported analysis. This build does not read, accept, store, or send provider keys.
+Hosted generative mode enables only when both AI capability and a configured
+non-Bedrock provider are present. The provider translates a question into O's
+supported grammar; unsupported output returns a named diagnostic. Preview data
+still runs through the existing query engine and caller's row/column policies.
+Generated calculated fields bind and validate on the server before INSERT
+EXPRESSION is offered. The existing deterministic templates remain local.
+
+The static demo keeps Generative mode disabled and says “Needs hosted API and API
+key via server env (not configured).” See [roles and provider settings](roles-ai-settings.md)
+for server configuration, encryption, routes, capability checks and Bedrock's
+approval-required state. No key is read back into the browser or exported with
+an analysis. Provider prompts contain question text and permitted field metadata,
+not dataset rows. Treat generated interpretations as suggestions to review.
 
 ## Verification and look-and-feel notes
 

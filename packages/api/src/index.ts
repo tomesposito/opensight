@@ -1,3 +1,4 @@
+import { generativeRoute } from './o-generative.js';
 import { AISettings, aiFromEnvironment, type AIOptions } from './ai-settings.js';
 import { oRoute } from './o-routes.js';
 import { EmbeddingService, type EmbeddingOptions } from './embedding.js';
@@ -112,6 +113,7 @@ export async function createApiServer(options: ApiOptions): Promise<Server> {
       }
       if (path.startsWith('/api/o/')) {
         if (!security || !identity || !organization) throw new SecurityError(503, 'SECURITY_NOT_CONFIGURED', 'Hosted authentication required');
+        if (await generativeRoute(request, response, path, query, identity, security, organization, ai, scopedSales)) return;
         if (await oRoute(request, response, path, query, identity, security, organization, scopedSales)) return;
       }
       if (/^\/(?:api\/)?dashboards\/[^/]+\/embed-url$/.test(path)) {

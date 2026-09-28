@@ -39,7 +39,7 @@ export default function App() {
   useEffect(() => {
     if (offline) return;
     const controller = new AbortController();
-    void api.getSession(controller.signal).then(session => setAccess({ mode: 'hosted', session })).catch(() => { if (!controller.signal.aborted) setError('Hosted session unavailable. Sign in through your configured authentication service.'); });
+    void api.getSession(controller.signal).then(session => setAccess({ mode: 'hosted', session, aiClient: api })).catch(() => { if (!controller.signal.aborted) setError('Hosted session unavailable. Sign in through your configured authentication service.'); });
     return () => controller.abort();
   }, [offline]);
   if (offline) return <Application />;

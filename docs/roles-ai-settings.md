@@ -65,3 +65,25 @@ Changing provider or endpoint discards the saved key; changing model retains it.
 Transport checks use a 20-second timeout, bounded responses, disabled redirects,
 no automatic retries, and sanitized `AI_*` diagnostics. No upstream error body or
 key is returned. Builds/tests inject transports and make no provider or AWS calls.
+
+## Generative O and calculated fields
+
+`GET /api/o/status` is AI-gated and returns only configuration availability/state.
+`POST /api/o/generate` takes `{ question, calculatedFields?, dashboardId? }` and
+returns the existing O interpretation result. The provider translates to supported
+O grammar; unparseable/unsupported replies fail with `O_INVALID_PROVIDER_RESPONSE`
+or `O_UNSUPPORTED_QUESTION`. Generative mode broadens phrasing, not the current
+query/visual feature set. Preview queries use `/api/o/query` and RLS/CLS.
+
+`POST /api/o/calculation` additionally requires build capability. It returns a
+validated calculated-field suggestion for review/insert, with no automatic draft
+mutation. The server binds actual fields, checks calculation dependencies and
+column access, and rejects unknown functions, fields and parameters. Original
+row/column protection applies to later execution.
+
+Provider prompts contain question text and permitted field names/types only.
+No rows, credentials, principal identifiers, or dataset ARNs are sent. Row denial
+blocks calls, denied columns are excluded, and supplied calculations cannot
+indirectly disclose denied columns. Role, grants, and policies are checked again
+after provider I/O. Client edits discard pending stale suggestions; failures do
+not fall back to fixtures or deterministic results.

@@ -19,3 +19,6 @@ export { bindMetadata } from './metadata.js';
 
 export { ROLES, isRole, hasCapability } from './roles.js';
 export type { Role, Capability } from './roles.js';
+
+export { resolveSecurity } from './security.js';
+export { ExpressionBinder } from './expressions.js';
