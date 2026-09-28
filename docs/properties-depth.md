@@ -16,8 +16,16 @@ continues to use dimension values; totals and subtotals cannot originate clicks.
 Hide empty rows/columns suppresses rendered measure rows/columns whose values
 are all null or missing. Zero is not empty. Suppression does not change queries
 or totals. Wrapping applies to headers and cells. Explicit column widths are
-60–400 pixels; wrapping without an explicit width uses 140 pixels. Interactive
-row-group expansion/collapse belongs to issue #5 and is not introduced here.
+60–400 pixels; wrapping without an explicit width uses 140 pixels.
+
+Interactive row-group expansion/collapse (issue #5): pivots with two or more
+row dimensions and Subtotals enabled render +/− toggles on each row-group
+subtotal row, QuickSight-style. Collapsing a group hides its detail rows and
+deeper subtotals; the group's own subtotal row stays as the collapsed anchor
+and the grand total never hides. Toggles carry `aria-expanded` and
+`aria-label`; collapse state is per-visual and resets when the data changes.
+Expand/collapse is display-only: queries, totals, and bundle contents are
+unchanged, and row selection still uses original row indices.
 
 Options are validated as `opensightFormatting.pivot`, retained verbatim in `.qs`
 archives and local drafts, and included in the existing import preservation
