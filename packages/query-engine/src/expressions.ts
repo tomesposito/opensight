@@ -1,3 +1,4 @@
+import { mysqlDateCast } from './mysql-sql.js';
 import type { ParameterBindings, ParameterDeclaration, ParameterValue } from './parameters.js';
 import type { BoundColumn, Calculation, RowExpression, ScalarType, SqlDialect, ExpressionLevel } from './types.js';
 import { array, equals, fail, keys, object, quoteIdentifier, string, unique } from './validation.js';
@@ -157,16 +158,18 @@ function validateLevels(e: RowExpression): void {
 }
 
 export function expressionSql(expression: RowExpression, dialect: SqlDialect = 'duckdb', bind?: (value: ParameterValue) => string): string {
+  const textType = dialect === 'mysql' ? 'CHAR' : 'VARCHAR', dateType = dialect === 'mysql' ? 'DATETIME(3)' : 'TIMESTAMP';
   const numericType = dialect === 'postgres' ? 'DOUBLE PRECISION' : 'DOUBLE';
   const compile = (e: RowExpression) => expressionSql(e, dialect, bind);
   switch (expression.kind) {
     case 'parameter': {
       if (!bind) fail('INVALID_INPUT', expression.location.path, 'parameter SQL requires a binder');
-      return `CAST(${bind(expression.value)} AS ${expression.scalarType === 'number' ? numericType : expression.scalarType === 'datetime' ? 'TIMESTAMP' : 'VARCHAR'})`;
+      if (dialect === 'mysql' && expression.scalarType === 'datetime') return mysqlDateCast(bind(expression.value));
+      return `CAST(${bind(expression.value)} AS ${expression.scalarType === 'number' ? numericType : expression.scalarType === 'datetime' ? dateType : textType})`;
     }
-    case 'literal': if (expression.scalarType === 'datetime' && typeof expression.value === 'string') return `CAST(${bind ? bind(expression.value) : quoteLiteral(expression.value)} AS TIMESTAMP)`;
-      return expression.value === null ? 'NULL' : expression.scalarType === 'boolean' ? expression.value ? 'TRUE' : 'FALSE' : typeof expression.value === 'number' ? `CAST(${expression.value} AS ${numericType})` : `CAST(${bind ? bind(expression.value) : quoteLiteral(expression.value)} AS VARCHAR)`;
-    case 'column': return quoteIdentifier(expression.columnName);
+    case 'literal': if (expression.scalarType === 'datetime' && typeof expression.value === 'string') return dialect === 'mysql' ? mysqlDateCast(bind ? bind(expression.value) : quoteLiteral(expression.value)) : `CAST(${bind ? bind(expression.value) : quoteLiteral(expression.value)} AS ${dateType})`;
+      return expression.value === null ? 'NULL' : expression.scalarType === 'boolean' ? expression.value ? 'TRUE' : 'FALSE' : typeof expression.value === 'number' ? `CAST(${expression.value} AS ${numericType})` : `CAST(${bind ? bind(expression.value) : quoteLiteral(expression.value)} AS ${textType})`;
+    case 'column': return quoteIdentifier(expression.columnName, dialect) + (dialect === 'mysql' && expression.scalarType === 'string' ? ' COLLATE utf8mb4_0900_bin' : '');
     case 'unary': return `(${expression.operator} ${compile(expression.operand)})`;
     case 'binary': {
       const a = compile(expression.left), b = compile(expression.right);

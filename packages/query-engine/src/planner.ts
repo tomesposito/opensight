@@ -1,3 +1,4 @@
+import { mysqlBindings, mysqlTimestamp, mysqlDateCast } from './mysql-sql.js';
 import { resolveSecurity, rowSecuritySql } from './security.js';
 import { expressionChildren } from './evaluate.js';
 import { functionReference, functionError } from './catalog.js';
@@ -5,7 +6,7 @@ import { validateParameters, type ParameterValue } from './parameters.js';
 import { ExpressionBinder, expressionSql } from './expressions.js';
 import { bindMetadata } from './metadata.js';
 import type { Aggregation, Dimension, Measure, PlanOptions, PlanRequest, QueryPlan, RowFilter, RowExpression } from './types.js';
-import { array, emptyArray, equals, fail, keys, object, quoteIdentifier as q, string, unique, variant } from './validation.js';
+import { array, emptyArray, equals, fail, keys, object, quoteIdentifier, string, unique, variant } from './validation.js';
 import type { ObjectValue } from './validation.js';
 
 interface Visual { id: string; sheetId: string; kind: string; body: ObjectValue; path: string }
@@ -195,6 +196,7 @@ function fieldWells(visual: Visual, binder: ExpressionBinder): { dimensions: Dim
 }
 
 function sql(plan: Omit<QueryPlan, 'sql' | 'parameters'>, parameters: ParameterValue[]): string {
+  const q = (value: string) => quoteIdentifier(value, plan.dialect);
   const bind = (value: ParameterValue): string => { parameters.push(value); return `$${parameters.length}`; };
   const ctes: string[] = [];
   // Choose internal relation names distinct from the physical name to avoid CTE shadowing.
@@ -203,7 +205,7 @@ function sql(plan: Omit<QueryPlan, 'sql' | 'parameters'>, parameters: ParameterV
   let from = plan.tableSchema === undefined ? q(plan.tableName) : `${q(plan.tableSchema)}.${q(plan.tableName)}`;
   if (plan.rowSecurity) {
     const relation = q(`${prefix}security`);
-    ctes.push(`${relation} AS (SELECT * FROM ${from} WHERE ${rowSecuritySql(plan.rowSecurity, plan.sourceColumns, bind)})`);
+    ctes.push(`${relation} AS (SELECT * FROM ${from} WHERE ${rowSecuritySql(plan.rowSecurity, plan.sourceColumns, bind, plan.dialect)})`);
     from = relation;
   }
   for (const [i, calculation] of plan.calculations.entries()) {
@@ -214,21 +216,23 @@ function sql(plan: Omit<QueryPlan, 'sql' | 'parameters'>, parameters: ParameterV
   }
   if (plan.postProcess) {
     const columns = [...plan.sourceColumns.filter(c => !plan.deniedColumns?.includes(c.name)).map(c => ({ name: c.name, type: c.scalarType })), ...plan.calculations.filter(c => c.expression.level === 'row').map(c => ({ name: c.name, type: c.expression.scalarType }))];
-    const projections = columns.map(c => `${c.type === 'datetime' ? plan.dialect === 'postgres' ? `TO_CHAR(${q(c.name)}, 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')` : `STRFTIME(${q(c.name)}, '%Y-%m-%dT%H:%M:%S.%gZ')` : q(c.name)} AS ${q(c.name)}`);
+    const projections = columns.map(c => `${c.type === 'datetime' ? plan.dialect === 'mysql' ? mysqlTimestamp(q(c.name)) : plan.dialect === 'postgres' ? `TO_CHAR(${q(c.name)}, 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')` : `STRFTIME(${q(c.name)}, '%Y-%m-%dT%H:%M:%S.%gZ')` : q(c.name)} AS ${q(c.name)}`);
     return `${ctes.length ? `WITH ${ctes.join(',\n')}\n` : ''}SELECT ${projections.join(', ')} FROM ${from}`;
   }
   if (plan.filters.length) {
     const relation = q(`${prefix}filtered`);
     const predicates = plan.filters.map(f => {
-      const placeholder = (value: ParameterValue) => f.scalarType === 'datetime' ? `CAST(${bind(value)} AS TIMESTAMP)` : bind(value);
-      if ('value' in f) return `${q(f.columnName)} ${f.operator === 'GREATER_THAN_OR_EQUAL_TO' ? '>=' : f.operator === 'LESS_THAN_OR_EQUAL_TO' ? '<=' : '='} ${placeholder(f.value)}`;
-      return f.values.length ? `${q(f.columnName)} IN (${f.values.map(placeholder).join(', ')})` : 'FALSE';
+      const column = plan.dialect === 'mysql' && (!f.scalarType || f.scalarType === 'string') ? `${q(f.columnName)} COLLATE utf8mb4_0900_bin` : q(f.columnName);
+      const placeholder = (value: ParameterValue) => f.scalarType === 'datetime' ? plan.dialect === 'mysql' ? mysqlDateCast(bind(value)) : `CAST(${bind(value)} AS TIMESTAMP)` : bind(value);
+      if ('value' in f) return `${column} ${f.operator === 'GREATER_THAN_OR_EQUAL_TO' ? '>=' : f.operator === 'LESS_THAN_OR_EQUAL_TO' ? '<=' : '='} ${placeholder(f.value)}`;
+      return f.values.length ? `${column} IN (${f.values.map(placeholder).join(', ')})` : 'FALSE';
     });
     ctes.push(`${relation} AS (SELECT * FROM ${from} WHERE ${predicates.join(' AND ')})`);
     from = relation;
   }
   const dimensions = plan.dimensions.map(d => {
-    if (!d.granularity) return q(d.columnName);
+    if (!d.granularity) return plan.dialect === 'mysql' && d.scalarType === 'string' ? `${q(d.columnName)} COLLATE utf8mb4_0900_bin` : q(d.columnName);
+    if (plan.dialect === 'mysql') return d.granularity === 'QUARTER' ? `CONCAT(YEAR(${q(d.columnName)}), '-Q', QUARTER(${q(d.columnName)}))` : `DATE_FORMAT(${q(d.columnName)}, '${d.granularity === 'YEAR' ? '%Y' : d.granularity === 'DAY' ? '%Y-%m-%d' : '%Y-%m'}')`;
     const grain = d.granularity.toLowerCase(), value = `date_trunc('${grain}', ${q(d.columnName)})`;
     if (d.granularity === 'QUARTER') return plan.dialect === 'postgres'
       ? `to_char(${value}, 'YYYY-"Q"Q')`
@@ -250,7 +254,7 @@ function sql(plan: Omit<QueryPlan, 'sql' | 'parameters'>, parameters: ParameterV
   ];
   const positions = dimensions.map((_, i) => i + 1).join(', ');
   return `${ctes.length ? `WITH ${ctes.join(',\n')}\n` : ''}SELECT ${projections.join(', ')}\nFROM ${from}` +
-    (dimensions.length ? `\nGROUP BY ${positions}\nORDER BY ${dimensions.map((_, i) => `${i + 1} ASC NULLS FIRST`).join(', ')}` : '');
+    (dimensions.length ? `\nGROUP BY ${positions}\nORDER BY ${dimensions.map((_, i) => `${i + 1} ASC${plan.dialect === 'mysql' ? '' : ' NULLS FIRST'}`).join(', ')}` : '');
 }
 
 /** Plan a synthetic local visual. Unknown execution semantics fail closed. */
@@ -258,7 +262,7 @@ export function planVisual(request: PlanRequest, options: PlanOptions = {}): Que
   const opts = object(options, '$.options');
   keys(opts, ['dialect'], '$.options');
   const dialect = opts.dialect === undefined ? 'duckdb' : opts.dialect;
-  if (dialect !== 'duckdb' && dialect !== 'postgres') fail('UNSUPPORTED_FEATURE', '$.options.dialect', 'expected duckdb or postgres');
+  if (dialect !== 'duckdb' && dialect !== 'postgres' && dialect !== 'mysql') fail('UNSUPPORTED_FEATURE', '$.options.dialect', 'expected duckdb, postgres or mysql');
   const r = object(request, '$');
   keys(r, ['analysis', 'dataSet', 'dataSource', 'localData', 'visualId', 'parameterDeclarations', 'parameterBindings', 'parameterFilters', 'security'], '$');
   const metadata = bindMetadata(r.dataSet, r.dataSource, r.localData, r.security !== undefined);
@@ -323,11 +327,12 @@ export function planVisual(request: PlanRequest, options: PlanOptions = {}): Que
     ...(rowSecurity ? { rowSecurity } : {}),
     dialect, mode: 'synthetic-local', visualId, dataSetIdentifier: identifier,
     tableName: metadata.tableName, sourceColumns: metadata.columns, localData: metadata.localData,
-    ...(dialect === 'postgres' ? { tableSchema: metadata.tableSchema } : {}),
+    ...(dialect !== 'duckdb' ? { tableSchema: metadata.tableSchema } : {}),
     calculations: binder.calculations, filters: predicates, ...fields,
     ...(allNodes.some(e => ['table', 'pre_filter', 'pre_agg'].includes(e.level)) || predicates.some(f => ['aggregate', 'table'].includes(binder.bind(f.columnName, f.path).level ?? 'row')) ? { postProcess: true } : {}),
     stages: ['source', 'row-calculations', 'row-filters', 'visual-aggregation', 'order'],
   };
   const values: ParameterValue[] = [];
-  return { ...plan, sql: sql(plan, values), parameters: values };
+  const statement = sql(plan, values);
+  return { ...plan, ...(dialect === 'mysql' ? mysqlBindings(statement, values) : { sql: statement, parameters: values }) };
 }

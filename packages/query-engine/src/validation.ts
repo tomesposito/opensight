@@ -55,7 +55,8 @@ export function unique(names: Set<string>, name: string, path: string): void {
   if (names.has(folded)) fail('INVALID_INPUT', path, `duplicate or case-ambiguous name: ${name}`);
   names.add(folded);
 }
-export function quoteIdentifier(value: string): string {
+export function quoteIdentifier(value: string, dialect?: import('./types.js').SqlDialect): string {
+  if (dialect === 'mysql') return '`' + value.replaceAll('`', '``') + '`';
   return `"${value.replaceAll('"', '""')}"`;
 }
 export function quoteLiteral(value: string): string {

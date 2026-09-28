@@ -41,7 +41,7 @@ test('RLS executes in DuckDB and PostgreSQL before aggregates, with OR rules and
   calculation(r, 'sumOver({revenue}, [], PRE_FILTER)');
   assert.deepEqual(await run(r), [{ region: 'East', calculated: 2500 }]);
 });
-for (const dialect of ['duckdb', 'postgres']) test(`${dialect} RLS denies missing/unknown principals, unmatched policies and unresolved groups`, () => {
+for (const dialect of ['duckdb', 'postgres', 'mysql']) test(`${dialect} RLS denies missing/unknown principals, unmatched policies and unresolved groups`, () => {
   for (const [change, code] of [
     [r => { delete r.security.userId; }, 'PRINCIPAL_REQUIRED'], [r => { r.security.userId = 'forged'; }, 'UNKNOWN_PRINCIPAL'],
     [r => { r.security.userId = 'bob'; }, 'ROW_ACCESS_DENIED'], [r => { r.security.policy.rowRules = []; }, 'ROW_ACCESS_DENIED'],
@@ -58,7 +58,7 @@ test('RLS precedes PRE_FILTER and cannot be evaluated or refreshed over unfilter
   await assert.rejects(refreshLocal(r, { dataRoot: '/absent' }), { code: 'SECURITY_REJECTED' });
 });
 
-for (const dialect of ['duckdb', 'postgres']) test(`${dialect} CLS deny wins over user/group allows and checks every reachable dependency`, () => {
+for (const dialect of ['duckdb', 'postgres', 'mysql']) test(`${dialect} CLS deny wins over user/group allows and checks every reachable dependency`, () => {
   const r = secured();
   r.security.policy.protectedColumns = ['revenue', 'profit'];
   r.security.policy.columnGrants = [
@@ -77,7 +77,7 @@ for (const dialect of ['duckdb', 'postgres']) test(`${dialect} CLS deny wins ove
   r.security.policy.columnGrants = [];
   assert.throws(() => planVisual(r, { dialect }), { code: 'COLUMN_ACCESS_DENIED' });
 });
-for (const dialect of ['duckdb', 'postgres']) test(`${dialect} CLS rejects denied filters, dimensions, partitions and parameter filters`, () => {
+for (const dialect of ['duckdb', 'postgres', 'mysql']) test(`${dialect} CLS rejects denied filters, dimensions, partitions and parameter filters`, () => {
   for (const change of [
     r => { r.security.policy.protectedColumns = ['region']; },
     r => { r.analysis.Definition.FilterGroups = request().analysis.Definition.FilterGroups; r.security.policy.protectedColumns = ['region']; r.visualId = 'total-revenue'; },
@@ -91,7 +91,7 @@ for (const dialect of ['duckdb', 'postgres']) test(`${dialect} CLS rejects denie
 test('CLS excludes unrequested denied physical columns from SQL multirow projections without dropping requested fields', async () => {
   const r = secured(); r.security.policy.protectedColumns = ['profit'];
   calculation(r, 'percentOfTotal(sum({revenue}))');
-  for (const dialect of ['duckdb', 'postgres']) {
+  for (const dialect of ['duckdb', 'postgres', 'mysql']) {
     const plan = planVisual(r, { dialect });
     assert.equal(plan.postProcess, true);
     assert.doesNotMatch(plan.sql, /"profit"/);
@@ -130,7 +130,7 @@ test('Postgres executor sends the secured SQL and parameters to the driver', asy
   assert.match(config.text, /FROM "public"\."sales" WHERE \("region" = \$1\)/);
   assert.deepEqual(config.values, ['East']); assert.deepEqual(result.rows, [{ region: 'East', revenue: 500 }]); assert.equal(end.mock.callCount(), 1);
 });
-for (const dialect of ['duckdb', 'postgres']) test(`${dialect} malformed optional policies, excess nesting and unknown policy fields cannot disable protection`, () => {
+for (const dialect of ['duckdb', 'postgres', 'mysql']) test(`${dialect} malformed optional policies, excess nesting and unknown policy fields cannot disable protection`, () => {
   for (const mutate of [
     r => { r.security.policy.columnGrants = null; }, r => { r.security.policy.protectedColumns = null; },
     r => { r.security.policy.rowRules[0].predicate = { column: 'order_id', operator: 'eq', value: 1.5 }; },

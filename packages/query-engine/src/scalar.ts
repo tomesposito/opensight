@@ -1,3 +1,4 @@
+import { mysqlScalarSql } from './mysql-sql.js';
 import { functionReference } from './catalog.js';
 import { datetimeValue, datetimeSql } from './datetime.js';
 import type { ResultValue, RowExpression, SqlDialect } from './types.js';
@@ -49,6 +50,7 @@ export function scalarValue(name: string, args: readonly ResultValue[]): ResultV
   }
 }
 export function scalarSql(e: CallExpression, dialect: SqlDialect, compile: (e: RowExpression) => string): string {
+  if (dialect === 'mysql') return mysqlScalarSql(e, compile);
   if (functionReference(e.name)?.stage === 'aggregate') {
     const a = compile(e.args[0]!);
     if (e.name === 'distinct_count') return `COUNT(DISTINCT ${a})`;

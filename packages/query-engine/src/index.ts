@@ -27,3 +27,5 @@ export { connectors, connectorDefinition, validateConnectorConfig, connectorStat
 export type { ConnectorDefinition, ConnectorConfig, ConnectorField, ConnectorState } from './connectors.js';
 export { parseUpload, UploadStaging, UploadError } from './upload.js';
 export type { UploadColumn, UploadRequest, UploadSummary, UploadType } from './upload.js';
+export { executeMySql, executeConnector } from './mysql-executor.js';
+export type { MySqlExecuteOptions } from './mysql-executor.js';

@@ -74,10 +74,10 @@ export function bindMetadata(dataSet: unknown, dataSource: unknown, localData: u
   if (src.Arn !== sourceArn) fail('UNRESOLVED_BINDING', `${sp}.Arn`, 'data source does not match physical table');
   string(src.DataSourceId, `${sp}.DataSourceId`);
   string(src.Name, `${sp}.Name`);
-  equals(src.Type, 'POSTGRESQL', `${sp}.Type`);
+  if (src.Type !== 'POSTGRESQL' && src.Type !== 'MYSQL') fail('UNSUPPORTED_FEATURE', `${sp}.Type`, 'expected POSTGRESQL or MYSQL');
   equals(src.Status, 'CREATION_SUCCESSFUL', `${sp}.Status`);
   const [parameterKind, parameters] = variant(src.DataSourceParameters, `${sp}.DataSourceParameters`);
-  equals(parameterKind, 'PostgreSqlParameters', `${sp}.DataSourceParameters`);
+  equals(parameterKind, src.Type === 'MYSQL' ? 'MySqlParameters' : 'PostgreSqlParameters', `${sp}.DataSourceParameters`);
   keys(parameters, ['Host', 'Port', 'Database'], `${sp}.DataSourceParameters.${parameterKind}`);
   string(parameters.Host, `${sp}.DataSourceParameters.${parameterKind}.Host`);
   string(parameters.Database, `${sp}.DataSourceParameters.${parameterKind}.Database`);
