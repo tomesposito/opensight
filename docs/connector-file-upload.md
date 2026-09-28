@@ -1,0 +1,37 @@
+# File connector: DuckDB staging
+
+`parseUpload({ config, data, columns? })` validates the whole file;
+`UploadStaging.create()` / `ingest(...)` materializes a session-owned in-memory
+DuckDB table and returns `{ id, rowCount, columns, delimiter?, sheet? }`.
+`preview(id)` reads up to 20 rows from that table; `close()` discards the session.
+This is staging, not publication into the analysis builder or persistent storage.
+No filesystem path, URL, or SQL is accepted from an upload. DuckDB extension
+installation and external access are disabled. Values use bound parameters.
+Failed ingestion drops its private table before returning a named error.
+
+Config requires `format`: `csv`, `tsv`, `json`, `xls`, or `xlsx`. CSV detects comma,
+tab, semicolon or pipe across all rows; ambiguous files require `delimiter`.
+TSV requires tabs. UTF-8 BOM, CRLF, quoted delimiters, escaped quotes and quoted
+newlines are supported. Empty text cells are null. Blank data records are retained
+and validated, never silently skipped. Header-only CSV returns zero rows.
+JSON must be a nonempty array of flat objects with identical keys in every row;
+key order may vary. Duplicate keys, nested values and nonfinite numbers fail.
+Excel must have headers at A1; choose `sheet` explicitly for multi-sheet files.
+Formula/error cells and merged cells fail instead of using stale cached values.
+
+Names must be unique ignoring case, nonblank, trimmed, at most 128 characters,
+and free of control characters. Types are INTEGER (safe JS integers), DECIMAL
+(finite double), STRING, BOOLEAN, and DATETIME (ISO date or UTC timestamp).
+Inference checks every row, widens integer + decimal to decimal, and rejects
+mixed types. All-null columns default to STRING. Optional `columns` specifies the
+exact ordered schema. Declare STRING to retain numeric-looking text IDs or large
+integer strings. JSON retains scalar types instead of coercing strings to numbers.
+Limits: 8 MiB input, 100,000 rows, 256 columns, 20 staged tables per session.
+No remote file reads or live database are required.
+
+License verification at build time (2026-09-28): installed `xlsx@0.18.5`
+`LICENSE` is Apache-2.0; installed `mysql2@3.24.4` `License` is MIT. All 19 newly
+resolved packages in package-lock.json declare MIT or Apache-2.0 (adler-32,
+aws-ssl-profiles, cfb, codepage, crc-32, frac, generate-function, iconv-lite,
+is-property, long, lru.min, mysql2, named-placeholders, safer-buffer, sql-escaper,
+ssf, wmf, word, xlsx). No proprietary parser was introduced.
