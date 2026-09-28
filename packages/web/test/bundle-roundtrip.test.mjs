@@ -7,7 +7,7 @@ import { zipSync, strToU8, unzipSync } from 'fflate';
 import { assembleQsBundle, parseQsBundle, parseBundleJson, ZIP_LIMITS } from '@opensight/bundle-parser/browser';
 import { parseQsBundle as parseNodeBundle } from '@opensight/bundle-parser';
 import { importBundle, importBundleFile, exportBundle, downloadBundleBytes } from '../build/test/bundle-authoring.js';
-import { activeSheet, authorReducer, emptyDraft, serializeDraft, validateDraft, loadDraft, saveDraft } from '../build/test/authoring.js';
+import { activeSheet, authorReducer, dataFields, emptyDraft, serializeDraft, validateDraft, loadDraft, saveDraft } from '../build/test/authoring.js';
 import { buildAuthorQuery } from '../build/test/author-query.js';
 import { buildAuthorPreview } from '../build/test/author-preview.js';
 import { AuthorCanvas } from '../build/test/Author.js';
@@ -37,6 +37,31 @@ const stripExtension = bundle => {
   result.members.forEach(m => { delete m.resource.opensightRoundTrip; });
   return result;
 };
+
+test('data-panel folders and icons preserve native exports and imported folder metadata through .qs round trips', async () => {
+  const native = authorReducer(authorReducer(emptyDraft(), { type: 'add', kind: 'bar' }), {
+    type: 'calculation-add', field: { name: 'Net', role: 'measure', expression: '{revenue} - {profit}' },
+  });
+  const nativeBefore = structuredClone(serializeDraft(native));
+  const original = fixture();
+  original.members.find(m => m.resource.resourceType === 'dataset').resource.fieldFolders = {
+    Original: { columns: ['region', 'revenue'], description: 'Preserve imported folder choices' },
+  };
+  const imported = importBundle(original);
+  for (const draft of [native, imported]) {
+    const before = structuredClone(draft);
+    const fields = dataFields(draft.calculatedFields);
+    assert.ok(fields.every(f => typeof f.group === 'string'));
+    const html = renderToStaticMarkup(createElement(AuthorCanvas, { draft, dispatch() {} }));
+    assert.match(html, /Geography/);
+    assert.match(html, /Calculated field/);
+    assert.deepEqual(draft, before);
+  }
+  assert.deepEqual(serializeDraft(native), nativeBefore);
+  assert.doesNotMatch(JSON.stringify(nativeBefore), /"group"|field-icon|collapsedGroups/);
+  assert.deepEqual(exportBundle(imported), original);
+  assert.deepEqual(await parseQsBundle(await downloadBundleBytes(imported)), original);
+});
 
 test('synthetic .qs -> import -> export -> re-import is structurally identical across all four resources and six visual types', async () => {
   const original = fixture();

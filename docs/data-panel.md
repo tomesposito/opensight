@@ -53,3 +53,7 @@ Unknown types use `?` and an explicit accessible unknown-type label. The local
 schema currently has no BOOLEAN fields; the icon is available when needed.
 Inline SVGs and text glyphs use the existing chrome palette, including a lighter
 icon color in dark mode. No dependencies or bundle-format changes are required.
+
+Imported dataset folder metadata is retained verbatim on export. The Data panel
+still describes the local assignable fields; it does not rewrite imported folders
+to match its derived groups or relabel an imported dataset as the local source.
