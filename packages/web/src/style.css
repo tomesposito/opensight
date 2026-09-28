@@ -221,7 +221,7 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 
 /* NEW LOOK controls the editor; the analysis theme independently styles its canvas. */
 .author-workspace {
-  --chrome-surface: #fff; --chrome-bg: #f3f6f7; --chrome-text: #19384a; --chrome-muted: #526c7a; --chrome-border: #c9d8de;
+  --chrome-surface: #fff; --chrome-bg: #f3f6f7; --chrome-text: #19384a; --chrome-muted: #526c7a; --chrome-border: #c9d8de; --chrome-menu-hover: #eaf3f8; --chrome-menu-shadow: #14253633;
   /* Both editor themes share the NEW LOOK identity and menu bands. */
   --header-bg: #142536; --header-text: #ffffff; --header-muted: #c8eafa;
   --header-menu-bg: #187199; --header-hover: #126080; --header-pressed: #0b435f;
@@ -229,7 +229,7 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
   --header-selected-bg: #e2f2fa; --header-selected-text: #103e56; --header-selected-hover: #c8eafa;
   color: var(--chrome-text); background: var(--chrome-bg);
 }
-.author-workspace[data-chrome=dark] { color-scheme: dark; --chrome-surface: #202e40; --chrome-bg: #141e2c; --chrome-text: #e7eef7; --chrome-muted: #adc0d5; --chrome-border: #45566d; --chrome-icon: #7dd4df; }
+.author-workspace[data-chrome=dark] { color-scheme: dark; --chrome-surface: #202e40; --chrome-bg: #141e2c; --chrome-text: #e7eef7; --chrome-muted: #adc0d5; --chrome-border: #45566d; --chrome-icon: #7dd4df; --chrome-menu-hover: #293f55; --chrome-menu-shadow: #00000080; }
 .author-workspace[data-chrome=dark] :is(.builder-panel, .controls-strip, button, input, select, textarea, .author-card-toolbar, .bundle-import) { color: var(--chrome-text); background-color: var(--chrome-surface); border-color: var(--chrome-border); }
 .author-workspace[data-chrome=dark] :is(label, .field-hint, .field-type, .author-save p, .canvas-label span, .mode-badge, .field-wells legend) { color: var(--chrome-muted); }
 .author-workspace[data-chrome=dark] .field-wells .active-well { background: #293f50; }
@@ -258,11 +258,12 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .author-menu summary:hover, .author-menu summary:focus-visible { background: var(--header-hover); }
 .author-menu summary:active, .author-menu details[open] > summary { background: var(--header-pressed); box-shadow: inset 0 -3px var(--header-focus); }
 .author-workspace .author-menu summary:focus-visible { outline: 2px solid var(--header-focus); outline-offset: -4px; }
-.menu-popover { position: absolute; top: 100%; left: 0; width: 270px; max-width: 85vw; max-height: 360px; overflow: auto; padding: 10px; border: 1px solid var(--chrome-border); border-radius: 5px; box-shadow: 0 8px 24px #0003; color: var(--chrome-text); background: var(--chrome-surface); }
-.menu-popover button { display: block; width: 100%; text-align: left; margin: 3px 0; }
-.menu-popover p { font-size: 12px; line-height: 1.5; color: var(--chrome-muted); }
-.menu-popover label { display: grid; gap: 6px; font-size: 12px; }
-.menu-popover input { width: 100%; padding: 8px; border: 1px solid var(--chrome-border); border-radius: 4px; }
+.menu-popover { position: absolute; z-index: 30; top: 100%; left: 0; width: 270px; max-width: 85vw; max-height: min(360px, 60vh); overflow: auto; padding: 6px; border: 1px solid var(--chrome-border); border-top: 2px solid var(--header-menu-bg); border-radius: 0 0 4px 4px; box-shadow: 0 8px 24px var(--chrome-menu-shadow); color: var(--chrome-text); background: var(--chrome-surface); }
+.author-workspace[data-chrome] .menu-popover button { display: block; width: 100%; min-height: 34px; padding: 8px 10px; text-align: left; margin: 0; border: 1px solid transparent; border-radius: 2px; background: var(--chrome-surface); color: var(--chrome-text); font-size: 12px; }
+.author-workspace[data-chrome] .menu-popover button:hover:not(:disabled), .author-workspace[data-chrome] .menu-popover button:focus-visible { background: var(--chrome-menu-hover); color: var(--chrome-text); border-color: var(--chrome-border); }
+.menu-popover p { margin: 8px 10px; font-size: 12px; line-height: 1.5; color: var(--chrome-muted); }
+.author-workspace[data-chrome] .menu-popover label { display: grid; gap: 6px; padding: 6px; font-size: 12px; color: var(--chrome-text); }
+.author-workspace[data-chrome] .menu-popover input { width: 100%; padding: 8px; border: 1px solid var(--chrome-border); border-radius: 3px; color: var(--chrome-text); background: var(--chrome-surface); }
 .menu-spacer { flex: 1; }
 .author-workspace .author-menu > button { min-height: 30px; padding: 5px 10px; border-radius: 3px; font-size: 11px; line-height: 18px; letter-spacing: .02em; white-space: nowrap; background: var(--header-menu-bg); color: var(--header-text); border-color: var(--header-border); }
 .author-workspace .author-menu > button:hover:not(:disabled) { background: var(--header-hover); border-color: var(--header-text); }

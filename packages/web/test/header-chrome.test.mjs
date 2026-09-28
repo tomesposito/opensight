@@ -30,6 +30,7 @@ for (const theme of ['light', 'dark']) {
     ['fit on', '--header-selected-text', '--header-selected-bg'],
     ['fit on hover', '--header-selected-text', '--header-selected-hover'],
     ['popover', '--chrome-text', '--chrome-surface'],
+    ['popover hover / focus', '--chrome-text', '--chrome-menu-hover'],
     ['popover hint', '--chrome-muted', '--chrome-surface'],
   ]) test(`NEW LOOK ${theme}: ${label} text meets WCAG AA 4.5:1`, () => {
     const ratio = contrast(tokens[foreground], tokens[background]);
