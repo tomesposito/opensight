@@ -1,0 +1,13 @@
+{
+  "name": "@opensight/q-interpreter",
+  "version": "0.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "test": "npm run build && node --test --test-isolation=none test/*.test.mjs"
+  },
+  "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
+  "devDependencies": { "typescript": "^5.6.0" }
+}
