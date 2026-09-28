@@ -1,3 +1,4 @@
+import { ConnectorRoutes } from './connector-routes.js';
 import { invitationRoute } from './invitations.js';
 import { generativeRoute } from './o-generative.js';
 import { AISettings, aiFromEnvironment, type AIOptions } from './ai-settings.js';
@@ -80,6 +81,7 @@ export async function createApiServer(options: ApiOptions): Promise<Server> {
   await alerts.recover();
   refresh.onSuccess = (datasetId, run) => alerts.afterRefresh(datasetId, run);
   const scheduler = new Scheduler(async () => { await refresh.tick(); await reports.tick(); });
+  const connectorRoutes = new ConnectorRoutes();
   const server = createServer((request, response) => {
     void (async () => {
       const requestId = randomUUID();
@@ -113,6 +115,11 @@ export async function createApiServer(options: ApiOptions): Promise<Server> {
       if (security && identity && (/^\/(?:api\/)?analyses(?:\/|$)/.test(path) || /^\/api\/datasets(?:\/sales\/query)?$/.test(path))) security.require(identity, 'build');
       const namespaceId = identity?.namespaceId ?? 'default';
       const scopedStore = namespaceStores.get(namespaceId), scopedSales = namespaceQueries.get(namespaceId);
+      if (/^\/api\/(connectors|uploads)(?:\/|$)/.test(path)) {
+        if (!security || !identity) throw new SecurityError(503, 'SECURITY_NOT_CONFIGURED', 'Needs hosted API with authentication configured');
+        security.require(identity, 'build');
+        await connectorRoutes.route(request, response, path, query, identity); return;
+      }
       if (path.startsWith('/api/invitations')) {
         if (!security || !identity) throw new SecurityError(503, 'SECURITY_NOT_CONFIGURED', 'Hosted authentication required');
         if (await invitationRoute(request, response, path, query, identity, security)) return;
@@ -249,7 +256,7 @@ export async function createApiServer(options: ApiOptions): Promise<Server> {
     });
   });
   server.once('listening', () => scheduler.start());
-  server.once('close', () => scheduler.stop());
+  server.once('close', () => { scheduler.stop(); void connectorRoutes.close(); });
   return server;
 }
 

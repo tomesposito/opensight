@@ -35,3 +35,26 @@ resolved packages in package-lock.json declare MIT or Apache-2.0 (adler-32,
 aws-ssl-profiles, cfb, codepage, crc-32, frac, generate-function, iconv-lite,
 is-property, long, lru.min, mysql2, named-placeholders, safer-buffer, sql-escaper,
 ssf, wmf, word, xlsx). No proprietary parser was introduced.
+
+## Hosted API
+
+Authenticated users with `build` capability can use:
+
+- `GET /api/connectors`: public schemas plus honest availability states.
+- `POST /api/connectors/:id/connect` with `{ config }`: validates configuration
+  only; credentialed connectors return `not_configured`, unimplemented engines
+  return `not_implemented`. This route never opens a remote connection.
+- `POST /api/uploads` with `{ config, base64, columns? }`: canonical base64 bytes,
+  optional exact column schema; returns HTTP 201 with the staging summary.
+- `GET /api/uploads/:id`: summary and up to 20 rows from the staged DuckDB table.
+
+These routes require hosted authentication even when fixture endpoints are
+available without it. Reader access is denied. Upload IDs are scoped to both the
+verified user and namespace; another principal receives `UPLOAD_NOT_FOUND`.
+Request bodies cannot assert identity, credentials, paths or SQL. The HTTP JSON
+envelope is capped at 1 MiB; the browser form limits files to 640 KiB to leave
+room for base64/JSON overhead. Library staging retains its separate 8 MiB limit.
+The server permits 32 owner sessions and serializes ingestion within each owner.
+Staging is ephemeral, closes with the server, and is not an analysis dataset
+catalog. Upload errors carry `errorCode`, `Message`, and `path`; oversized requests
+return 413. No remote connector can be configured through upload request fields.
