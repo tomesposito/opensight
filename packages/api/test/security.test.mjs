@@ -13,7 +13,7 @@ export const query = { dimensions: [{ fieldId: 'region', columnName: 'region' }]
 export async function secureApi(t, options = {}) {
   const { apiOptions = {}, ...securityOptions } = options;
   const initialState = emptySecurityState();
-  initialState.users = ['admin', 'alice', 'bob'].map(id => ({ id, name: id, namespaceId: 'default', role: id === 'admin' ? 'admin' : 'reader' }));
+  initialState.users = ['admin', 'alice', 'bob'].map(id => ({ id, name: id, namespaceId: 'default', role: id === 'admin' ? 'admin' : 'author' }));
   initialState.groups = [{ id: 'east', name: 'East', namespaceId: 'default', userIds: ['alice'] }];
   const server = await createApiServer({ dataRoot: fixtures, mailTransport: new StubMailTransport(), security: { initialState, authenticate: request => {
     const token = request.headers.authorization;
@@ -93,7 +93,7 @@ test('namespace assets, definitions, same user/group IDs, policies and query bin
   const root = await mkdtemp(join(tmpdir(), 'opensight-tenant-')); t.after(() => rm(root, { recursive: true, force: true }));
   await writeFile(join(root, 'tenant.json'), JSON.stringify({ AnalysisId: 'renderable-sales', Name: 'Tenant private asset', Definition: { DataSetIdentifierDeclarations: [], Sheets: [] } }));
   const initialState = emptySecurityState(); initialState.namespaces.push({ id: 'tenant', name: 'Tenant' });
-  initialState.users = ['default', 'tenant'].flatMap(namespaceId => [{ id: 'admin', name: 'Admin', namespaceId, role: 'admin' }, { id: 'alice', name: 'Alice', namespaceId, role: 'reader' }]);
+  initialState.users = ['default', 'tenant'].flatMap(namespaceId => [{ id: 'admin', name: 'Admin', namespaceId, role: 'admin' }, { id: 'alice', name: 'Alice', namespaceId, role: 'author' }]);
   initialState.groups = ['default', 'tenant'].map(namespaceId => ({ id: 'east', name: 'East', namespaceId, userIds: ['alice'] }));
   const api = await secureApi(t, { initialState, apiOptions: { namespaceDataRoots: { tenant: root } }, authenticate: r => {
     const match = /^Bearer test-(default|tenant)-(admin|alice)$/.exec(r.headers.authorization ?? '');
@@ -173,7 +173,7 @@ test('two resolved namespace datasets with identical IDs and principals apply in
   const tenantRoot = await mkdtemp(join(tmpdir(), 'opensight-tenant-sales-')); t.after(() => rm(tenantRoot, { recursive: true, force: true }));
   await cp(join(fixtures, 'renderable-sales'), tenantRoot, { recursive: true });
   const initialState = emptySecurityState(); initialState.namespaces.push({ id: 'tenant', name: 'Tenant' });
-  initialState.users = ['default', 'tenant'].flatMap(namespaceId => [{ id: 'admin', name: 'Admin', namespaceId, role: 'admin' }, { id: 'alice', name: 'Alice', namespaceId, role: 'reader' }]);
+  initialState.users = ['default', 'tenant'].flatMap(namespaceId => [{ id: 'admin', name: 'Admin', namespaceId, role: 'admin' }, { id: 'alice', name: 'Alice', namespaceId, role: 'author' }]);
   initialState.groups = ['default', 'tenant'].map(namespaceId => ({ id: 'east', name: 'Team', namespaceId, userIds: ['alice'] }));
   const api = await secureApi(t, { initialState, apiOptions: { namespaceDataRoots: { tenant: tenantRoot } }, authenticate: r => {
     const match = /^Bearer test-(default|tenant)-(admin|alice)$/.exec(r.headers.authorization ?? '');

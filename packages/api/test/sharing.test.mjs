@@ -86,11 +86,11 @@ test('sharing and visual-query API reject invalid roles, principals, IDs, method
 
 test('namespace role demotion immediately caps an existing co-owner grant', async t => {
   const { api } = await organizationApi(t);
-  await api('/api/users/alice', 'PUT', { name: 'Alice', role: 'admin' });
+  await api('/api/users/alice', 'PUT', { name: 'Alice', role: 'administrator' });
   await api(`${asset}/shares/user/alice`, 'PUT', { role: 'co-owner' });
   assert.equal((await api(`${asset}/shares/user/bob`, 'PUT', { role: 'viewer' }, 'default-alice')).status, 200);
   await api('/api/users/alice', 'PUT', { name: 'Alice', role: 'reader' });
-  assert.equal((await api(`${asset}/definition`, 'GET', undefined, 'default-alice')).status, 200);
+  assert.equal((await api(`${asset}/definition`, 'GET', undefined, 'default-alice')).status, 403);
   assert.equal((await api(`${asset}/shares/user/bob`, 'DELETE', undefined, 'default-alice')).status, 403);
   assert.equal((await api('/api/assets/analysis/renderable-sales/copy', 'POST', { folderId: null, newId: 'forbidden' }, 'default-alice')).status, 403);
 });

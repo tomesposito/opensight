@@ -1,3 +1,4 @@
+import { isRole } from '@opensight/query-engine';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { method, routeId, send } from './automation-routes.js';
 import { readBody, RequestError } from './query.js';
@@ -40,7 +41,7 @@ export async function namespaceRoute(request: IncomingMessage, response: ServerR
         else {
           state.namespaces.push(resource);
           const owner = state.users.find(u => u.namespaceId === identity.namespaceId && u.id === identity.userId)!;
-          state.users.push({ ...owner, namespaceId: resourceId!, role: 'admin' });
+          state.users.push({ ...owner, namespaceId: resourceId!, role: 'administrator' });
         }
       }
     } else if (kind === 'users') {
@@ -49,11 +50,11 @@ export async function namespaceRoute(request: IncomingMessage, response: ServerR
         if (state.groups.some(g => g.namespaceId === namespaceId && g.userIds.includes(resourceId!)) || referenced(state, namespaceId, 'user', resourceId!)) throw new RequestError(409, 'User is referenced by a group or policy');
         state.users = state.users.filter(u => !(u.namespaceId === namespaceId && u.id === resourceId));
       } else {
-        if (body!.role !== 'admin' && body!.role !== 'reader') invalid('$.role', 'expected admin or reader');
+        if (!isRole(body!.role)) invalid('$.role', 'expected a supported role');
         const resource: User = { id: resourceId!, namespaceId, name: label(body!.name), role: body!.role };
         if (existing) Object.assign(existing, resource); else state.users.push(resource);
       }
-      if (!state.users.some(u => u.namespaceId === namespaceId && u.role === 'admin')) throw new RequestError(409, 'Namespace requires an administrator');
+      if (!state.users.some(u => u.namespaceId === namespaceId && u.role === 'administrator')) throw new RequestError(409, 'Namespace requires an administrator');
     } else {
       const namespaceId = identity.namespaceId;
       if (verb === 'DELETE') {

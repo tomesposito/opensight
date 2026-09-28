@@ -16,3 +16,6 @@ export { functionCatalog } from './catalog.js';
 export { validateRowRule, validateColumnGrant, validatePolicy } from './security.js';
 export type * from './security.js';
 export { bindMetadata } from './metadata.js';
+
+export { ROLES, isRole, hasCapability } from './roles.js';
+export type { Role, Capability } from './roles.js';

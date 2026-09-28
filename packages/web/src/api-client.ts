@@ -1,3 +1,5 @@
+import { isRole } from '@opensight/query-engine/browser';
+import type { Session } from './access.js';
 import type { BundleDefinition } from '@opensight/bundle-parser';
 import { convertDefinition, object } from './definition-converter.js';
 import type { Row } from './model.js';
@@ -35,6 +37,13 @@ export class QueryError extends ApiError {
 
 export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch = globalThis.fetch) {
   const base = (baseUrl.trim() || DEFAULT_API_URL).replace(/\/+$/, '');
+  async function getSession(signal?: AbortSignal): Promise<Session> {
+    const response = await fetcher(`${base}/api/session`, { signal, credentials: 'same-origin', headers: { Accept: 'application/json' } });
+    if (!response.ok) throw new ApiError('Authenticated hosted session unavailable.', response.status);
+    const body = object(await response.json(), 'Session');
+    if (!isRole(body.role) || typeof body.id !== 'string' || typeof body.namespaceId !== 'string' || typeof body.name !== 'string') throw new ApiError('Invalid session.');
+    return { id: body.id, namespaceId: body.namespaceId, name: body.name, role: body.role };
+  }
   async function getDatasetRefreshStatus(id: string, signal?: AbortSignal): Promise<DatasetRefreshStatus> {
     if (!/^[A-Za-z0-9_-]{1,512}$/.test(id)) throw new ApiError('Invalid dataset ID.');
     const response = await fetcher(`${base}/api/datasets/${encodeURIComponent(id)}/refresh-status`, { signal, headers: { Accept: 'application/json' } });
@@ -111,7 +120,7 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
     }
   }
   return {
-    getDatasetRefreshStatus,
+    getSession, getDatasetRefreshStatus,
     queryDataset,
     getAnalysisDefinition: (id: string, signal?: AbortSignal) => getDefinition('analysis', id, signal),
     getDashboardDefinition: (id: string, signal?: AbortSignal) => getDefinition('dashboard', id, signal),

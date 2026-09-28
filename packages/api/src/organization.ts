@@ -1,3 +1,4 @@
+import { hasCapability } from '@opensight/query-engine';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { AutomationStore } from './automation-store.js';
 import { method, routeId, send } from './automation-routes.js';
@@ -81,7 +82,7 @@ export class OrganizationService {
   }
   grantsAllow(grants: AssetGrant[] | undefined, identity: Identity, state: SecurityState): boolean {
     if (!state.users.some(u => u.namespaceId === identity.namespaceId && u.id === identity.userId)) return false;
-    if (state.users.some(u => u.namespaceId === identity.namespaceId && u.id === identity.userId && u.role === 'admin')) return true;
+    if (state.users.some(u => u.namespaceId === identity.namespaceId && u.id === identity.userId && u.role === 'administrator')) return true;
     return grants === undefined || grants.some(g => g.principal.type === 'user' ? g.principal.id === identity.userId
       : state.groups.some(group => group.namespaceId === identity.namespaceId && group.id === g.principal.id && group.userIds.includes(identity.userId)));
   }
@@ -91,6 +92,7 @@ export class OrganizationService {
     return folder;
   }
   canRead(identity: Identity, kind: ResourceKind, assetId: string, state = this.store().read()): boolean {
+    if (kind === 'analysis' && !hasCapability(this.security.user(identity, state).role, 'build')) return false;
     if (!this.definition(identity.namespaceId, kind, assetId, state) || !this.grantsAllow(undefined, identity, state)) return false;
     const asset = this.asset(state, identity.namespaceId, kind, assetId);
     const folder = asset?.folderId == null ? undefined : state.folders?.find(f => f.namespaceId === identity.namespaceId && f.id === asset.folderId);

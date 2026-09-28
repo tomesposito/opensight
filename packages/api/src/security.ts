@@ -1,3 +1,4 @@
+import { isRole, hasCapability, type Role, type Capability } from '@opensight/query-engine';
 import { validateOrganization, type Folder, type OrganizedAsset } from './organization.js';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { QueryEngineError, validatePolicy, validateRowRule, validateColumnGrant, type BoundColumn, type DatasetPolicy, type SecurityContext, type SecurityGroup, type SecurityUser } from '@opensight/query-engine';
@@ -7,7 +8,7 @@ import { id, record, invalid } from './schedule.js';
 import { readBody, RequestError, SecurityError } from './query.js';
 
 export interface Identity { namespaceId: string; userId: string }
-export interface User extends SecurityUser { name: string; role: 'admin' | 'reader' }
+export interface User extends SecurityUser { name: string; role: Role }
 export interface Group extends SecurityGroup { name: string }
 export interface SecurityState {
   version: 1;
@@ -21,7 +22,7 @@ export interface SecurityState {
 export interface SecurityOptions {
   /** Verify credentials server-side. Never resolve identity from user/group headers or query bodies. */
   authenticate(request: IncomingMessage): Identity | undefined | Promise<Identity | undefined>;
-  initialState: SecurityState;
+  initialState: Omit<SecurityState, 'users'> & { users: (Omit<User, 'role'> & { role: Role | 'admin' })[] };
   storePath?: string;
 }
 export { SecurityError } from './query.js';
@@ -40,7 +41,9 @@ export function validateSecurityState(raw: unknown, columns: readonly BoundColum
   const namespaces = rows(s.namespaces).map(r => { record(r, ['id', 'name']); return { id: id(r.id, '$.id'), name: name(r.name) }; });
   const users = rows(s.users).map(r => {
     record(r, ['id', 'namespaceId', 'name', 'role']);
-    if (r.role !== 'admin' && r.role !== 'reader') invalid('$.role', 'expected admin or reader');
+    // Legacy admin is accepted only when loading trusted state, never through user mutation routes.
+    if (r.role === 'admin') r = { ...r, role: 'administrator' };
+    if (!isRole(r.role)) invalid('$.role', 'expected a supported role');
     return { id: id(r.id, '$.id'), namespaceId: id(r.namespaceId, '$.namespaceId'), name: name(r.name), role: r.role } as User;
   });
   const groups = rows(s.groups).map(r => {
@@ -82,9 +85,15 @@ export class SecurityService {
     if (!this.store.read().users.some(u => u.id === identity.userId && u.namespaceId === identity.namespaceId)) throw new SecurityError(403, 'UNKNOWN_PRINCIPAL', 'Principal does not resolve');
     return { namespaceId: identity.namespaceId, userId: identity.userId };
   }
-  admin(identity: Identity, state = this.store.read()): void {
-    if (!state.users.some(u => u.id === identity.userId && u.namespaceId === identity.namespaceId && u.role === 'admin')) throw new SecurityError(403, 'SECURITY_ADMIN_REQUIRED', 'Namespace administrator required');
+  user(identity: Identity, state = this.store.read()): User {
+    const user = state.users.find(u => u.id === identity.userId && u.namespaceId === identity.namespaceId);
+    if (!user) throw new SecurityError(403, 'SECURITY_UNKNOWN_PRINCIPAL', 'Registered principal required');
+    return user;
   }
+  require(identity: Identity, capability: Capability, state = this.store.read()): void {
+    if (!hasCapability(this.user(identity, state).role, capability)) throw new SecurityError(403, `SECURITY_${capability.toUpperCase()}_REQUIRED`, `${capability} capability required`);
+  }
+  admin(identity: Identity, state = this.store.read()): void { this.require(identity, 'admin', state); }
   context(identity?: Identity): SecurityContext {
     const state = this.store.read(), namespaceId = identity?.namespaceId ?? 'default';
     const stored = state.datasets.find(d => d.namespaceId === namespaceId && d.datasetId === 'sales');

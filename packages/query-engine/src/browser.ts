@@ -7,3 +7,6 @@ export { evaluatePlan } from './evaluate.js';
 export { parseExpression, expressionSql, unsupportedFunctions } from './expressions.js';
 export { evaluateExpression } from './evaluate-expression.js';
 export { functionCatalog } from './catalog.js';
+
+export { ROLES, isRole, hasCapability } from './roles.js';
+export type { Role, Capability } from './roles.js';

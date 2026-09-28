@@ -1,3 +1,4 @@
+import { AccessProvider, useAccess, allowed, type Access } from './access.js';
 import { OrganizationNotice } from './OrganizationNotice.js';
 import { useEffect, useState } from 'react';
 import type { Fixture } from './model.js';
@@ -27,10 +28,24 @@ function Dashboard({ fixture }: { fixture: Fixture }) {
 }
 
 export default function App() {
+  const offline = import.meta.env.VITE_OPENSIGHT_OFFLINE_DEMO === 'true';
+  const [access, setAccess] = useState<Access>({ mode: 'hosted' });
+  const [error, setError] = useState('');
+  useEffect(() => {
+    if (offline) return;
+    const controller = new AbortController();
+    void api.getSession(controller.signal).then(session => setAccess({ mode: 'hosted', session })).catch(() => { if (!controller.signal.aborted) setError('Hosted session unavailable. Sign in through your configured authentication service.'); });
+    return () => controller.abort();
+  }, [offline]);
+  if (offline) return <Application />;
+  return <AccessProvider access={access}>{error && <p role="alert">{error}</p>}<Application /></AccessProvider>;
+}
+function Application() {
+  const access = useAccess();
   const [mode, setMode] = useState<'fixtures' | 'api' | 'author' | 'automation' | 'security' | 'organization'>('fixtures');
   const [fixtureId, setFixtureId] = useState(fixtures[0]?.id);
   const fixture = fixtures.find(f => f.id === fixtureId);
-  const modePicker = <label className="source-picker">Mode<select value={mode} onChange={event => setMode(event.target.value === 'organization' ? 'organization' : event.target.value === 'security' ? 'security' : event.target.value === 'automation' ? 'automation' : event.target.value === 'author' ? 'author' : event.target.value === 'api' ? 'api' : 'fixtures')}><option value="fixtures">fixtures</option><option value="api">api</option><option value="author">Author</option><option value="security">Security &amp; namespaces</option><option value="organization">Folders, sharing &amp; embedding</option><option value="automation">Schedules &amp; alerts</option></select></label>;
+  const modePicker = <label className="source-picker">Mode<select value={mode} onChange={event => setMode(event.target.value === 'organization' ? 'organization' : event.target.value === 'security' ? 'security' : event.target.value === 'automation' ? 'automation' : event.target.value === 'author' ? 'author' : event.target.value === 'api' ? 'api' : 'fixtures')}><option value="fixtures">fixtures</option><option value="api">api</option>{allowed(access, 'build') && <option value="author">Author</option>}<option value="security">Security &amp; namespaces</option><option value="organization">Folders, sharing &amp; embedding</option><option value="automation">Schedules &amp; alerts</option></select></label>;
   return <div className="app-shell">
     {mode !== 'author' && <header className="app-header"><a className="brand" href="./"><span className="brand-mark" aria-hidden="true">◈</span>OpenSight</a><span className="header-caption">Definition explorer</span>{modePicker}{mode !== 'automation' && mode !== 'security' && mode !== 'organization' && <label className="fixture-picker">Example<select value={fixtureId} onChange={event => setFixtureId(event.target.value)}>{fixtures.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}</select></label>}</header>}
     <main className={mode === 'author' ? 'author-main' : undefined}>{mode === 'organization' ? <OrganizationNotice /> : mode === 'security' ? <SecurityNotice /> : mode === 'automation' ? <AutomationNotice /> : mode === 'author' ? <Author modePicker={modePicker} client={import.meta.env.VITE_OPENSIGHT_OFFLINE_DEMO === 'true' ? undefined : api} /> : mode === 'api' ? <ApiExplorer key={fixtureId} example={fixture} /> : fixture ? <Dashboard key={fixture.id} fixture={fixture} /> : <p>No fixtures available.</p>}</main>
@@ -39,7 +54,8 @@ export default function App() {
 }
 
 function ApiExplorer({ example }: { example?: Fixture }) {
-  const [kind, setKind] = useState<ResourceKind>(example?.apiResource?.kind ?? 'analysis');
+  const access = useAccess();
+  const [kind, setKind] = useState<ResourceKind>(allowed(access, 'build') ? example?.apiResource?.kind ?? 'analysis' : 'dashboard');
   const [id, setId] = useState(example?.id ?? 'renderable-sales');
   const [request, setRequest] = useState({ kind, id });
   const [state, setState] = useState<{ request: typeof request; fixture?: Fixture; error?: string }>();
@@ -56,7 +72,7 @@ function ApiExplorer({ example }: { example?: Fixture }) {
   const current = state?.request === request ? state : undefined;
   return <>
     <form className="api-picker" onSubmit={event => { event.preventDefault(); setRequest({ kind, id: id.trim() }); }}>
-      <label>Resource<select value={kind} onChange={event => setKind(event.target.value === 'dashboard' ? 'dashboard' : 'analysis')}><option value="analysis">Analysis</option><option value="dashboard">Dashboard</option></select></label>
+      <label>Resource<select value={kind} onChange={event => setKind(event.target.value === 'dashboard' ? 'dashboard' : 'analysis')}>{allowed(access, 'build') && <option value="analysis">Analysis</option>}<option value="dashboard">Dashboard</option></select></label>
       <label className="resource-id">Resource ID<input value={id} onChange={event => setId(event.target.value)} required pattern={'[A-Za-z0-9_\\-]{1,512}'} /></label>
       <button type="submit">Load definition</button>
     </form>

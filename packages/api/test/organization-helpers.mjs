@@ -4,7 +4,7 @@ import { dashboardRoot } from './automation-helpers.mjs';
 export function registry() {
   const state = emptySecurityState();
   state.namespaces.push({ id: 'tenant', name: 'Tenant' });
-  state.users = ['default', 'tenant'].flatMap(namespaceId => ['admin', 'alice', 'bob'].map(id => ({ id, namespaceId, name: id, role: id === 'admin' ? 'admin' : 'reader' })));
+  state.users = ['default', 'tenant'].flatMap(namespaceId => ['admin', 'alice', 'bob'].map(id => ({ id, namespaceId, name: id, role: id === 'admin' ? 'admin' : 'author' })));
   state.groups = ['default', 'tenant'].map(namespaceId => ({ id: 'team', namespaceId, name: 'Team', userIds: ['alice'] }));
   return state;
 }

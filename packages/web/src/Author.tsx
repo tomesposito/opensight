@@ -1,3 +1,4 @@
+import { useAccess, allowed } from './access.js';
 import { ThemeEditor } from './ThemeEditor.js';
 import { DatasetHeader } from './DatasetHeader.js';
 import { FieldIcon } from './FieldIcon.js';
@@ -33,9 +34,14 @@ import {
 } from './authoring.js';
 import type { AuthorAction, AuthorDraft, AuthorVisual, CalculatedField, FieldGroup, VisualKind, Well } from './authoring.js';
 
+export function Author(props: { client?: QueryClient; modePicker?: ReactNode }) {
+  const access = useAccess();
+  return allowed(access, 'build') ? <AuthorWorkspace {...props} /> : <p role="alert">SECURITY_BUILD_REQUIRED: Author access required.</p>;
+}
+
 const browserStorage = () => window.localStorage;
 type EditorProps = { draft: AuthorDraft; dispatch: Dispatch<AuthorAction>; client?: QueryClient };
-export function Author({ client, modePicker }: { client?: QueryClient; modePicker?: ReactNode }) {
+function AuthorWorkspace({ client, modePicker }: { client?: QueryClient; modePicker?: ReactNode }) {
   const [restored] = useState(() => loadDraft(browserStorage));
   const [draft, dispatch] = useReducer(authorReducer, restored.draft);
   const [storageStatus, setStorageStatus] = useState(restored.warning ?? 'Draft saved on this device.');

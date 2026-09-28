@@ -36,7 +36,7 @@ function array(value: unknown, path: string): unknown[] {
 
 /** Validate the transport shape; unsupported semantic values belong to the engine (422). */
 export function validateQuery(raw: unknown): QueryBody {
-  if (isObject(raw) && ['principal', 'principals', 'user', 'userId', 'groups', 'groupIds', 'namespace', 'namespaceId', 'security', 'policy'].some(k => Object.hasOwn(raw, k))) throw new SecurityError(403, 'FORGED_PRINCIPAL', 'Query bodies cannot assert identity or policy');
+  if (isObject(raw) && ['principal', 'principals', 'user', 'userId', 'groups', 'groupIds', 'namespace', 'namespaceId', 'security', 'policy', 'role', 'roles', 'capabilities'].some(k => Object.hasOwn(raw, k))) throw new SecurityError(403, 'FORGED_PRINCIPAL', 'Query bodies cannot assert identity or policy');
   const body = record(raw, ['dimensions', 'measures', 'filters', 'calculatedFields', 'parameterDeclarations', 'parameterBindings'], '$');
   let parameters: ReturnType<typeof validateParameters>;
   try { parameters = validateParameters(body.parameterDeclarations, body.parameterBindings); }

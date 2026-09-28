@@ -8,7 +8,7 @@ import { dirname, isAbsolute, relative } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { createServer, type Server, type ServerResponse } from 'node:http';
 import { DefinitionStore, RESOURCE_ID } from './store.js';
-import { QueryEngineError } from '@opensight/query-engine';
+import { hasCapability, QueryEngineError } from '@opensight/query-engine';
 import { readQuery, RequestError, SalesQuery } from './query.js';
 import { AutomationStore } from './automation-store.js';
 import { emptyRefreshState, RefreshService, validateRefreshState } from './refresh.js';
@@ -84,7 +84,7 @@ export async function createApiServer(options: ApiOptions): Promise<Server> {
       const queryOffset = url.indexOf('?');
       let path = queryOffset === -1 ? url : url.slice(0, queryOffset);
       const query = queryOffset === -1 ? '' : url.slice(queryOffset + 1);
-      if (['x-user', 'x-user-id', 'x-principal', 'x-groups', 'x-group-ids', 'x-namespace', 'x-namespace-id'].some(k => request.headers[k] !== undefined)) throw new SecurityError(403, 'FORGED_PRINCIPAL', 'Caller-supplied principal headers are not supported');
+      if (['x-user', 'x-user-id', 'x-principal', 'x-groups', 'x-group-ids', 'x-namespace', 'x-namespace-id', 'x-role', 'x-roles', 'x-capabilities'].some(k => request.headers[k] !== undefined)) throw new SecurityError(403, 'FORGED_PRINCIPAL', 'Caller-supplied principal headers are not supported');
       if (!security && request.headers.authorization) throw new SecurityError(503, 'SECURITY_NOT_CONFIGURED', 'Credential verification is not configured');
       if (path.startsWith('/embed/')) {
         if (!embedding) throw new SecurityError(503, 'EMBEDDING_NOT_CONFIGURED', 'Embedding requires configured authentication');
@@ -93,6 +93,13 @@ export async function createApiServer(options: ApiOptions): Promise<Server> {
       if (embedding?.cors(request, response, path)) return;
       const identity = await security?.authenticate(request);
       if (identity) path = scopePath(path, identity);
+      if (path === '/api/session') {
+        if (!security || !identity) throw new SecurityError(503, 'SECURITY_NOT_CONFIGURED', 'Hosted authentication is not configured');
+        method(request, response, ['GET']);
+        if (query) throw new RequestError(400, 'Query parameters are not supported');
+        send(response, 200, security.user(identity)); return;
+      }
+      if (security && identity && (/^\/(?:api\/)?analyses(?:\/|$)/.test(path) || /^\/api\/datasets(?:\/sales\/query)?$/.test(path))) security.require(identity, 'build');
       const namespaceId = identity?.namespaceId ?? 'default';
       const scopedStore = namespaceStores.get(namespaceId), scopedSales = namespaceQueries.get(namespaceId);
       if (/^\/(?:api\/)?dashboards\/[^/]+\/embed-url$/.test(path)) {
@@ -114,7 +121,7 @@ export async function createApiServer(options: ApiOptions): Promise<Server> {
       if (['/api/assets', '/analyses', '/dashboards', '/api/datasets'].includes(path)) {
         method(request, response, ['GET']);
         if (query) throw new RequestError(400, 'Query parameters are not supported');
-        const assets = [...(identity && organization ? organization.list(identity) : scopedStore?.list() ?? []), ...(scopedSales ? [{ kind: 'dataset', id: 'sales', name: 'Sales' }] : [])];
+        const assets = [...(identity && organization ? organization.list(identity) : scopedStore?.list() ?? []), ...(scopedSales && (!identity || !security || hasCapability(security.user(identity).role, 'build')) ? [{ kind: 'dataset', id: 'sales', name: 'Sales' }] : [])];
         send(response, 200, assets.filter(a => path === '/api/assets' || path === '/analyses' && a.kind === 'analysis' || path === '/dashboards' && a.kind === 'dashboard' || path === '/api/datasets' && a.kind === 'dataset'));
         return;
       }
