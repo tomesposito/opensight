@@ -33,7 +33,7 @@ export async function prepareFixtures(root = resolve(here, '../../../fixtures'))
     id: dashboard.dashboardId,
     apiResource: { kind: 'dashboard', definition: dashboard.definition, source: 'bundle' },
     name: dashboard.name,
-    description: 'Sanitized QuickSight dashboard · real .qs archive',
+    description: 'Sanitized dashboard export · real .qs archive',
     provenance: 'fixtures/real-bundle-sample/TotalDeathByCountry.sanitized.qs',
     notice: 'Definition preview only. This export contains no underlying data; the Athena source and its security policies are unresolved. No query is run.',
     sheets: (dashboard.definition.sheets ?? []).map((sheet, si) => ({
