@@ -27,10 +27,10 @@ import { LiveAuthorVisual } from './LiveAuthorVisual.js';
 import { buildDistinctQuery, loadAuthorRows } from './author-query.js';
 import type { QueryClient } from './author-query.js';
 import {
-  authorVisualProblem, VISUAL_TYPES, GRID_COLUMNS, activeSheet, authorReducer, calculationError, dataFields, dimensionLabel,
+  authorVisualProblem, VISUAL_TYPES, GRID_COLUMNS, FIELD_GROUPS, fieldGroup, activeSheet, authorReducer, calculationError, dataFields, dimensionLabel,
   loadDraft, saveDraft, serializeDraft, sheetParameters, singleMeasure, tabular, visualDimensions, grouped, splitDimensions, noDimensions, capabilityNote,
 } from './authoring.js';
-import type { AuthorAction, AuthorDraft, AuthorVisual, CalculatedField, VisualKind, Well } from './authoring.js';
+import type { AuthorAction, AuthorDraft, AuthorVisual, CalculatedField, FieldGroup, VisualKind, Well } from './authoring.js';
 
 const browserStorage = () => window.localStorage;
 type EditorProps = { draft: AuthorDraft; dispatch: Dispatch<AuthorAction>; client?: QueryClient };
@@ -130,6 +130,7 @@ function Panel({ title, className, children }: { title: string; className: strin
 export function AuthorCanvas({ draft, dispatch, client, fit = true }: EditorProps & { fit?: boolean }) {
   const [newKind, setNewKind] = useState<VisualKind>('bar');
   const [search, setSearch] = useState('');
+  const [collapsedGroups, setCollapsedGroups] = useState<Partial<Record<FieldGroup, boolean>>>({});
   const [well, setWell] = useState<Well>('rows');
   const [calculationOpen, setCalculationOpen] = useState(false);
   const sheet = activeSheet(draft), fields = dataFields(draft.calculatedFields);
@@ -157,16 +158,19 @@ export function AuthorCanvas({ draft, dispatch, client, fit = true }: EditorProp
         <label>Search fields<input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Find a field…" /></label>
         <button type="button" className="calculation-button" onClick={() => setCalculationOpen(true)}>+ CALCULATED FIELD</button>
         <p className="field-hint">{selected ? 'Click a field to assign it. Select a well to choose its destination.' : 'Add a visual to start assigning fields.'}</p>
-        {(['dimension', 'measure'] as const).map(role => <div key={role} className="field-group">
-          <h3>{role === 'dimension' ? 'Dimensions' : 'Measures'}</h3>
-          {fields.filter(f => f.role === role && f.name.toLowerCase().includes(search.toLowerCase())).map(field => <button key={field.name} type="button"
-            disabled={!selected || (role === 'dimension' && noDimensions(selected.kind))}
+        {FIELD_GROUPS.filter(group => fields.some(f => fieldGroup(f) === group)).map(group => <details key={group} className="field-group" open={!collapsedGroups[group]} onToggle={e => {
+          const collapsed = !e.currentTarget.open;
+          setCollapsedGroups(previous => previous[group] === collapsed ? previous : { ...previous, [group]: collapsed });
+        }}>
+          <summary><svg className="field-folder" viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 4V2.5h5l2 2h6V13h-13V4Z" /></svg>{group}</summary>
+          {fields.filter(f => fieldGroup(f) === group && f.name.toLowerCase().includes(search.toLowerCase())).map(field => <button key={field.name} type="button"
+            disabled={!selected || (field.role === 'dimension' && noDimensions(selected.kind))}
             aria-label={`Assign ${field.name}`} aria-pressed={selected?.dimension === field.name || selected?.rows.includes(field.name) || selected?.columns.includes(field.name) || !!selected?.measures.includes(field.name)}
-            onClick={() => dispatch({ type: 'assign', field: field.name, well: role === 'measure' ? 'values' : selected && grouped(selected.kind) ? (well === 'columns' && splitDimensions(selected.kind) ? 'columns' : 'rows') : 'dimension' })}>
+            onClick={() => dispatch({ type: 'assign', field: field.name, well: field.role === 'measure' ? 'values' : selected && grouped(selected.kind) ? (well === 'columns' && splitDimensions(selected.kind) ? 'columns' : 'rows') : 'dimension' })}>
             <span className="field-icon" aria-hidden="true">{draft.calculatedFields.some(f => f.name === field.name) ? 'ƒ' : field.type === 'DATETIME' ? '▣' : field.type === 'STRING' ? 'Abc' : '#'}</span>
             <span className="field-name">{field.name}</span><span className="field-type">{field.type}</span>
           </button>)}
-        </div>)}
+        </details>)}
         <ParameterEditor draft={draft} dispatch={dispatch} />
         <ImportedPanels draft={draft} />
         {!fields.some(f => f.name.toLowerCase().includes(search.toLowerCase())) && <p>No matching fields.</p>}

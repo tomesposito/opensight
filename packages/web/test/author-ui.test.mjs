@@ -18,7 +18,7 @@ test('empty canvas exposes all visual types and typed fields with assignment dis
   for (const field of ['order_id', 'order_date', 'region', 'category', 'revenue', 'profit']) {
     assert.match(html, new RegExp(`disabled="" aria-label="Assign ${field}"`));
   }
-  for (const label of ['Dimensions', 'Measures', 'INTEGER', 'DATETIME', 'STRING', 'DECIMAL']) assert.ok(html.includes(label));
+  for (const label of ['Geography', 'Metadata', 'Sales', 'INTEGER', 'DATETIME', 'STRING', 'DECIMAL']) assert.ok(html.includes(label));
 });
 
 for (const [kind, well] of [['bar', 'Category'], ['line', 'X-axis'], ['pie', 'Category'], ['kpi', null], ['table', 'Group-by']]) {

@@ -15,3 +15,17 @@ successful refresh is the API's `lastGood`, displayed in UTC. A running or faile
 refresh is shown alongside it; an old success is never presented as a new one.
 No recorded success, loading, invalid responses and unavailable metadata have
 explicit states. Failed requests never fall back to fixture counts or times.
+
+`dataFields()` derives optional presentation groups from names and types:
+
+- Geography: region (also recognized: country, state, city, postal/zip code,
+  latitude and longitude).
+- Metadata: identifiers (`id`, names ending in `_id`) and DATETIME fields.
+- Sales: remaining fields, currently category, revenue and profit.
+- Calculated: all calculated fields, regardless of their names or result types.
+
+Every field belongs to one section. The folder disclosures start expanded and
+remember collapse choices for the mounted editor. Grouping does not change a
+field's dimension/measure role or assignment destination. Groups and disclosure
+state are not serialized into drafts or bundles. No Sensitive group is inferred
+from this synthetic schema; these folders are not security classifications.

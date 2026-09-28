@@ -24,7 +24,16 @@ export const SALES_FIELDS = [
   { name: 'profit', role: 'measure', type: 'DECIMAL' },
 ] as const;
 export interface CalculatedField { name: string; expression: string; role: 'dimension' | 'measure' }
-export interface DataField { name: string; role: 'dimension' | 'measure'; type: string }
+export const FIELD_GROUPS = ['Geography', 'Metadata', 'Sales', 'Calculated'] as const;
+export type FieldGroup = typeof FIELD_GROUPS[number];
+export interface DataField { name: string; role: 'dimension' | 'measure'; type: string; group?: FieldGroup }
+/** Presentation only: never persisted in a draft or bundle definition. */
+export function fieldGroup(field: DataField): FieldGroup {
+  if (field.group) return field.group;
+  if (/^(region|country|state|city|postal_code|zip_code|latitude|longitude)$/i.test(field.name)) return 'Geography';
+  if (field.type === 'DATETIME' || /(^id$|_id$)/i.test(field.name)) return 'Metadata';
+  return 'Sales';
+}
 export function calculationInfo(name: string, calculations: readonly CalculatedField[]) {
   const visiting = new Set<string>();
   const bind = (name: string): { scalarType: 'number' | 'string' | 'datetime' | 'boolean' | 'unknown'; nullable: boolean; level?: 'row' | 'pre_filter' | 'pre_agg' | 'aggregate' | 'table' } => {
@@ -37,10 +46,10 @@ export function calculationInfo(name: string, calculations: readonly CalculatedF
   return bind(name);
 }
 export const dataFields = (calculations: readonly CalculatedField[] = []): DataField[] => [
-  ...SALES_FIELDS, ...calculations.map(f => {
+  ...SALES_FIELDS.map(f => ({ ...f, group: fieldGroup(f) })), ...calculations.map(f => {
     let type = f.role === 'measure' ? 'DECIMAL' : 'STRING';
     try { const info = calculationInfo(f.name, calculations); if (info.scalarType === 'datetime') type = 'DATETIME'; } catch { /* Invalid imported expressions remain in the import report. */ }
-    return { name: f.name, role: f.role, type };
+    return { name: f.name, role: f.role, type, group: 'Calculated' as const };
   }),
 ];
 export const VISUAL_TYPES = [
