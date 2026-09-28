@@ -1,3 +1,5 @@
+import type { ConnectorState } from '@opensight/query-engine/browser';
+import type { UploadSummary } from '@opensight/query-engine';
 import type { InterpretationResult, CalculationResult } from '@opensight/o-interpreter';
 import type { CalculatedField } from './authoring.js';
 import { isRole, type Role } from '@opensight/query-engine/browser';
@@ -58,6 +60,8 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
     }
     return value as T;
   }
+  const uploadFile = (body: { config: Readonly<Record<string, string>>; base64: string }) => resource<UploadSummary>('/api/uploads', 'POST', body);
+  const validateConnector = (id: string, config: Readonly<Record<string, string>>) => resource<ConnectorState>(`/api/connectors/${encodeURIComponent(id)}/connect`, 'POST', { config });
   const listUsers = () => resource<Session[]>('/api/users');
   const saveUser = (id: string, body: { name: string; role: Role }) => resource<Session>(`/api/users/${encodeURIComponent(id)}`, 'PUT', body);
   const deleteUser = (id: string) => resource<{ deleted: true }>(`/api/users/${encodeURIComponent(id)}`, 'DELETE');
@@ -160,7 +164,7 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
     }
   }
   return {
-    listUsers, saveUser, deleteUser, listInvitations, inviteUser, revokeInvitation, acceptInvitation, getAIStatus, generateO, generateCalculation, getAIConfig, saveAIConfig, saveAIKey, testAIConnection, getSession, queryO, getDatasetRefreshStatus,
+    uploadFile, validateConnector, listUsers, saveUser, deleteUser, listInvitations, inviteUser, revokeInvitation, acceptInvitation, getAIStatus, generateO, generateCalculation, getAIConfig, saveAIConfig, saveAIKey, testAIConnection, getSession, queryO, getDatasetRefreshStatus,
     queryDataset,
     getAnalysisDefinition: (id: string, signal?: AbortSignal) => getDefinition('analysis', id, signal),
     getDashboardDefinition: (id: string, signal?: AbortSignal) => getDefinition('dashboard', id, signal),

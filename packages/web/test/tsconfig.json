@@ -27,6 +27,7 @@
     "../src/OrganizationNotice.tsx",
     "../src/AISettings.tsx",
     "../src/UserManagement.tsx",
-    "../src/Dashboard.tsx"
+    "../src/Dashboard.tsx",
+    "../src/DataSources.tsx"
   ]
 }
