@@ -87,8 +87,10 @@ export function Author({ client }: { client?: QueryClient }) {
     </div>
     <AuthorToolbar draft={draft} dispatch={dispatch} fit={fit} onFit={() => setFit(value => !value)} onJson={download} onBundle={() => { if (!busy) void downloadQs(); }} onImport={() => fileInput.current?.click()} busy={busy} jsonDisabled={!draft.sheets.some(s => s.visuals.length) || !!exported.error} />
     <div className="bundle-import" onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; }} onDrop={e => { e.preventDefault(); if (e.dataTransfer.files.length !== 1) setImportStatus('Drop one .qs ZIP or one bundle .json member.'); else void importFile(e.dataTransfer.files[0]); }} aria-label="Bundle drop zone">
+      <details><summary>Import bundle</summary>
       <label>Import .qs or bundle JSON<input ref={fileInput} type="file" accept=".qs,.json,application/zip,application/json" disabled={busy} onChange={e => { const file = e.currentTarget.files?.[0]; e.currentTarget.value = ''; void importFile(file); }} /></label>
       <p>Drop one .qs ZIP or JSON member here. Import replaces the current draft. Download your work first to keep it.</p>
+      </details>
       {importStatus && <p role={importStatus.startsWith('Import failed') ? 'alert' : 'status'}>{importStatus}</p>}
       {draft.bundle && <button type="button" onClick={() => setReportOpen(true)}>View import report</button>}
     </div>
@@ -103,7 +105,9 @@ export function Author({ client }: { client?: QueryClient }) {
 }
 
 function Panel({ title, className, children }: { title: string; className: string; children: ReactNode }) {
-  const [open, setOpen] = useState(true);
+  // Start at the viewport's default: an initial native toggle event from an
+  // open disclosure can otherwise race the effect that collapses narrow rails.
+  const [open, setOpen] = useState(() => typeof window === 'undefined' || !window.matchMedia('(max-width: 1100px)').matches);
   useEffect(() => {
     const query = window.matchMedia('(max-width: 1100px)');
     const change = () => setOpen(!query.matches);
@@ -170,8 +174,8 @@ export function AuthorCanvas({ draft, dispatch, client, fit = true }: EditorProp
             <h3>Field wells</h3>
             <p className="selected-visual">{selected.title || `Visual ${sheet.visuals.indexOf(selected) + 1}`}</p>
             <label className="change-type">Change visual type<select value={selected.imported?.issues.some(i => i.startsWith('Unsupported visual type:')) && !selected.imported.replaced ? '' : selected.kind} onChange={e => dispatch({ type: 'kind', kind: e.target.value as VisualKind })}>{selected.imported?.issues.some(i => i.startsWith('Unsupported visual type:')) && !selected.imported.replaced && <option value="" disabled>{selected.imported.variant} (unsupported)</option>}{VISUAL_TYPES.map(type => <option value={type.kind} key={type.kind}>{type.label}</option>)}</select></label>
-            <p className="capability-note" role="note">{capabilityNote(selected.kind)}</p>
             <FieldWells visual={selected} draft={draft} dispatch={dispatch} activeWell={well} onWell={setWell} />
+            <p className="capability-note" role="note">{capabilityNote(selected.kind)}</p>
           </div> : <p className="field-hint">Choose a visual type and select ADD.</p>}
       </Panel>
       <div className="author-center" role="region" aria-label="Analysis sheet">

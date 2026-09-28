@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { act, createElement, useReducer } from 'react';
 import { create } from 'react-test-renderer';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { AuthorCanvas } from '../build/test/Author.js';
 import { activeSheet, authorReducer, emptyDraft } from '../build/test/authoring.js';
 
@@ -116,6 +117,10 @@ test('panel disclosure and narrow-screen defaults do not mutate sheet selection 
 
 test('narrow screens initially collapse all three control panels while retaining the sheet', async t => {
   const ui = await mount(t, emptyDraft(), true);
+  // Check the initial render before effects: native details must not emit an
+  // opening toggle that races the narrow-screen default during browser mount.
+  const html = renderToStaticMarkup(createElement(AuthorCanvas, { draft: emptyDraft(), dispatch() {} }));
+  assert.doesNotMatch(html, /<details class="builder-panel [^"]+" open/);
   for (const name of ['fields', 'build', 'properties']) assert.equal(ui.panel(name).props.open, false);
   assert.ok(ui.find('div', p => p.className === 'author-canvas'));
 });
