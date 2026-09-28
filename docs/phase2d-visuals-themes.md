@@ -93,8 +93,9 @@ Visual review compares the supplied Phase 2c baseline and QuickSight editor
 references with light/dark desktop (1440 × 900) and mobile (390 × 844) captures.
 The seven-menu toolbar, fitting/publishing affordances, 19-type gallery, named
 Properties sections and independent dark chrome close the scoped gaps. The
-expanded gallery still takes more vertical space than the reference; collapsing
-Visual build exposes the canvas. Exact QuickSight CSS, pivot expand/collapse
+gallery's original vertical-space gap is addressed by the subsequent
+[Issue #1 author layout](author-layout.md): gallery and wells dock between Data
+and the sheet, with a bounded gallery scroll area. Exact QuickSight CSS, pivot expand/collapse
 and Q features remain outside this slice. Proprietary reference screenshots
 are not copied into the repository.
 
