@@ -1,6 +1,7 @@
 import { ThemeEditor } from './ThemeEditor.js';
 import { AuthorToolbar } from './AuthorToolbar.js';
 import { QEntry } from './QEntry.js';
+import { BuildForMe } from './BuildForMe.js';
 import { FormattingEditor } from './FormattingEditor.js';
 import { LIGHT_THEME, themeValid, type AnalysisTheme } from './themes.js';
 import { functionCatalog } from '@opensight/query-engine/browser';
@@ -335,6 +336,7 @@ export function CalculationDialog({ fields, onSave, onClose }: { fields: Calcula
   return <dialog ref={ref} className="calculation-dialog" aria-labelledby="calculation-heading" onCancel={onClose}>
     <form onSubmit={e => { e.preventDefault(); const problem = calculationError(field, dataFields(fields)); if (problem) setError(problem); else onSave({ ...field, name: field.name.trim() }); }}>
       <h2 id="calculation-heading">Calculated field</h2>
+      <BuildForMe fields={fields} onInsert={suggestion => { setField({ ...suggestion, name: field.name.trim() ? field.name : suggestion.name }); setError(''); }} />
       <label>Name<input autoFocus value={field.name} onChange={e => setField({ ...field, name: e.target.value })} /></label>
       <label>Use as<select value={field.role} onChange={e => setField({ ...field, role: e.target.value as CalculatedField['role'] })}><option value="measure">Measure (number)</option><option value="dimension">Dimension (text)</option></select></label>
       <label>Expression<textarea rows={5} value={field.expression} placeholder="{revenue} - {profit}" onChange={e => setField({ ...field, expression: e.target.value })} /></label>

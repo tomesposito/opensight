@@ -287,3 +287,6 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .q-alternatives small { display: block; margin-top: 4px; }
 .q-alternatives button[aria-pressed="true"] { outline: 2px solid #167d9a; }
 .author-workspace[data-chrome="dark"] .q-entry { background: #18283b; color: #e5edf7; border-color: #41516a; }
+.q-build-for-me { margin: 10px 0; padding: 10px; border: 1px solid #a9c5d2; border-radius: 4px; }
+.q-build-for-me summary { font-weight: 600; cursor: pointer; }
+.q-build-for-me pre { white-space: pre-wrap; overflow-wrap: anywhere; }

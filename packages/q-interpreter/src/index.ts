@@ -15,6 +15,8 @@ export interface Interpretation {
   explanation: string;
 }
 export interface QDiagnostic { code: string; message: string }
+export interface CalculationSuggestion { name: string; expression: string; role: 'measure' | 'dimension'; explanation: string }
+export type CalculationResult = { suggestion: CalculationSuggestion; error?: never } | { suggestion?: never; error: QDiagnostic };
 export interface InterpretationResult { interpretations: Interpretation[]; errors: QDiagnostic[] }
 export const numeric = (field: SchemaField): boolean => ['NUMBER', 'INTEGER', 'DECIMAL', 'INT', 'FLOAT', 'DOUBLE'].includes(field.type.toUpperCase());
 export const datetime = (field: SchemaField): boolean => ['DATE', 'DATETIME', 'TIMESTAMP'].includes(field.type.toUpperCase());
@@ -146,4 +148,42 @@ export function interpretQuestion(question: string, schema: readonly SchemaField
   if (!interpretations.length) error('UNSUPPORTED_INTERPRETATION', 'No compatible measure, aggregation and filters were found.');
   if (interpretations.length > 1) error('AMBIGUOUS_QUESTION', 'Multiple interpretations fit. Choose the intended fields or aggregation.');
   return { interpretations, errors };
+}
+
+/** Small, auditable templates using the existing Phase 2c function library. */
+export function suggestCalculation(question: string, schema: readonly SchemaField[]): CalculationResult {
+  const fail = (code: string, message: string): CalculationResult => ({ error: { code, message } });
+  if (!question.trim()) return fail('EMPTY_QUESTION', 'Describe a calculated field.');
+  if (question.length > 2000 || schema.length > 500) return fail('INPUT_LIMIT', 'Use at most 2,000 characters and 500 fields.');
+  if (schema.some(f => !f.name.trim() || /[{}\0]/.test(f.name))) return fail('INVALID_SCHEMA', 'Field names must be nonempty and cannot contain braces or NUL.');
+  const normalized = words(question.replace(/-/g, ' ')).join(' ');
+  const find = (names: string[], predicate: (f: SchemaField) => boolean) => {
+    for (const name of names) {
+      const fields = schema.filter(f => words(f.name).join(' ') === name && predicate(f));
+      if (fields.length) return fields.length === 1 ? fields[0] : undefined;
+    }
+  };
+  if (/^(?:build |create )?(?:a )?profit margin$/.test(normalized)) {
+    const profit = find(['profit'], numeric), sales = find(['sales', 'revenue'], numeric);
+    if (!profit || !sales) return fail('MISSING_CALCULATION_FIELDS', 'Profit margin needs numeric profit and sales (or revenue) fields.');
+    return { suggestion: { name: 'Profit margin', role: 'measure', expression: `sum({${profit.name}}) / nullIf(sum({${sales.name}}), 0)`, explanation: 'Ratio of total profit to total sales. Zero sales returns null; format the result as a percentage.' } };
+  }
+  if (/^(?:build |create )?(?:a )?full name$/.test(normalized)) {
+    const string = (f: SchemaField) => f.type.toUpperCase() === 'STRING';
+    const first = find(['first name', 'firstname', 'given name'], string), last = find(['last name', 'lastname', 'surname'], string);
+    if (!first || !last) return fail('MISSING_CALCULATION_FIELDS', 'Full name needs string first_name and last_name (or given name and surname) fields.');
+    return { suggestion: { name: 'Full name', role: 'dimension', expression: `trim(concat(coalesce({${first.name}}, ''), ' ', coalesce({${last.name}}, '')))`, explanation: 'Join first and last name with a space, treating missing names as empty strings.' } };
+  }
+  const growth = /^(year over year|yoy|month over month|mom) (.+?) (?:growth|percent change|percentage change)(?: by (.+))?$/.exec(normalized);
+  if (growth) {
+    const measureName = growth[2]!, dateName = growth[3];
+    const measure = find(measureName === 'sales' ? ['sales', 'revenue'] : [measureName], numeric);
+    const dates = schema.filter(f => datetime(f) && (!dateName || words(f.name).join(' ') === dateName));
+    if (!measure) return fail('MISSING_CALCULATION_FIELDS', `Growth needs a numeric ${measureName} field.`);
+    if (dates.length !== 1) return fail(dates.length ? 'AMBIGUOUS_DATE_FIELD' : 'MISSING_DATE_FIELD', dates.length ? 'Name the date field with “by <date field>”.' : 'Growth needs a date field.');
+    const period = growth[1] === 'yoy' || growth[1] === 'year over year' ? 'YEAR' : 'MONTH';
+    return { suggestion: { name: `${period === 'YEAR' ? 'YoY' : 'MoM'} ${measure.name} growth`, role: 'measure', expression: `periodOverPeriodPercentDifference(sum({${measure.name}}), {${dates[0]!.name}}, ${period}, 1)`, explanation: `Group the visual by ${dates[0]!.name}. Compare with the previous calendar ${period.toLowerCase()}; missing or zero prior values return null. The result is a fractional percentage.` } };
+  }
+  const fn = /\b([A-Za-z_]\w*)\s*\(/.exec(question)?.[1];
+  return fail('UNSUPPORTED_CALCULATION_TEMPLATE', `${fn ? `Function request ${fn}` : `Request “${question.trim()}”`} is not supported by the local templates. Try year over year sales growth, profit margin, or full name. No generative service is configured.`);
 }
