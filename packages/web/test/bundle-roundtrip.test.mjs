@@ -54,7 +54,8 @@ test('data-panel folders and icons preserve native exports and imported folder m
     assert.ok(fields.every(f => typeof f.group === 'string'));
     const html = renderToStaticMarkup(createElement(AuthorCanvas, { draft, dispatch() {} }));
     assert.match(html, /Geography/);
-    assert.match(html, /Calculated field/);
+    if (draft === native) assert.match(html, /Calculated field/);
+    else assert.match(html, /Imported calculated fields/); // Foreign dataset calculations remain display-only.
     assert.deepEqual(draft, before);
   }
   assert.deepEqual(serializeDraft(native), nativeBefore);
