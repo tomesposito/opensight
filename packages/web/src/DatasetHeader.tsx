@@ -37,7 +37,7 @@ export function DatasetHeader({ client }: { client?: QueryClient }) {
   return <section className="dataset-header" aria-label="Dataset metadata">
     <span className="dataset-label">Dataset</span>
     <strong className="dataset-name">Local sales dataset</strong>
-    <span className="dataset-badge" data-mode={client ? 'direct' : 'spice'} title={client ? 'Queries the hosted API' : 'Local in-memory sample import · offline demo'}>{client ? 'DIRECT QUERY' : 'SPICE'}</span>
+    <span className="dataset-badge" data-mode={client ? 'direct' : 'blaze'} title={client ? 'Queries the hosted API' : 'Local in-memory sample import · offline demo'}>{client ? 'DIRECT QUERY' : 'BLAZE'}</span>
     <p className="dataset-metadata" role="status">{rows}<br />
       {!client || !client.getDatasetRefreshStatus ? 'Refresh info needs hosted API' : currentRefresh?.error ?? (status ? <>
         {status.lastGood ? <>Last successful refresh: <time dateTime={status.lastGood}>{status.lastGood.slice(0, 19).replace('T', ' ')} UTC</time></> : 'No successful refresh recorded'}

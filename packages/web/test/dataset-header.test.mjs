@@ -21,7 +21,7 @@ async function mount(t, client) {
 test('offline header uses the full sample row count and explicitly requires a hosted API for refresh', () => {
   const html = renderToStaticMarkup(createElement(DatasetHeader));
   assert.match(html, /Local sales dataset/);
-  assert.match(html, />SPICE</);
+  assert.match(html, />BLAZE</);
   assert.ok(html.includes(`${sales.rows.length} sample rows · offline demo`));
   assert.match(html, /Refresh info needs hosted API/);
   assert.doesNotMatch(html, /<time|Last successful refresh|DIRECT QUERY/);
@@ -37,7 +37,7 @@ test('live header requests secured unfiltered counts and actual refresh metadata
   assert.match(ui.text(), /DIRECT QUERY/);
   assert.match(ui.text(), /81 rows · live query/);
   assert.match(ui.text(), /2026-09-28 09:30:00/);
-  assert.doesNotMatch(ui.text(), /sample rows|offline demo|SPICE/);
+  assert.doesNotMatch(ui.text(), /sample rows|offline demo|BLAZE/);
   assert.deepEqual(calls.map(c => c.url), ['/prefix/api/datasets/sales/query', '/prefix/api/datasets/sales/refresh-status']);
   assert.deepEqual(JSON.parse(calls[0].options.body), { dimensions: [], measures: [{ fieldId: 'row_count', columnName: 'order_id', aggregation: 'COUNT' }], filters: [] });
   assert.equal(calls[0].options.signal, calls[1].options.signal);

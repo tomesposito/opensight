@@ -1,7 +1,7 @@
 # Data panel
 
 The header describes **Local sales dataset**, the source of the assignable fields.
-SPICE labels the local in-memory sample import in the offline demo; it does not
+The BLAZE badge labels the local in-memory sample import in the offline demo; it does not
 mean the demo connects to AWS. The sample count comes from the pinned synthetic
 rows used by the fixture query engine, not the selected visual's aggregate rows.
 The demo says “Refresh info needs hosted API” and never invents a timestamp.
