@@ -9,6 +9,11 @@ export interface QueryResponse {
   columns: { name: string; type: 'string' | 'number' }[];
   rows: Row[];
 }
+export interface DatasetRefreshStatus {
+  lastGood: string | null;
+  state: 'never' | 'running' | 'ready' | 'error';
+  error: { code: string; message: string } | null;
+}
 
 export type ResourceKind = 'analysis' | 'dashboard';
 export interface DefinitionResponse {
@@ -30,6 +35,22 @@ export class QueryError extends ApiError {
 
 export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch = globalThis.fetch) {
   const base = (baseUrl.trim() || DEFAULT_API_URL).replace(/\/+$/, '');
+  async function getDatasetRefreshStatus(id: string, signal?: AbortSignal): Promise<DatasetRefreshStatus> {
+    if (!/^[A-Za-z0-9_-]{1,512}$/.test(id)) throw new ApiError('Invalid dataset ID.');
+    const response = await fetcher(`${base}/api/datasets/${encodeURIComponent(id)}/refresh-status`, { signal, headers: { Accept: 'application/json' } });
+    let raw: unknown;
+    try { raw = await response.json(); }
+    catch { throw new ApiError(`Refresh status returned invalid JSON (HTTP ${response.status}).`, response.status); }
+    if (!response.ok) throw new ApiError(`Refresh status unavailable (HTTP ${response.status}).`, response.status);
+    const body = object(raw, 'Refresh status');
+    const validDate = body.lastGood === null || typeof body.lastGood === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(body.lastGood) && Number.isFinite(Date.parse(body.lastGood)) && new Date(body.lastGood).toISOString() === body.lastGood;
+    if (body.datasetId !== id || !validDate || !['never', 'running', 'ready', 'error'].includes(String(body.state))) throw new ApiError('Invalid refresh status.');
+    const error = body.error === null ? null : object(body.error, 'Refresh error');
+    if (error && (typeof error.code !== 'string' || typeof error.message !== 'string')) throw new ApiError('Invalid refresh error.');
+    if ((body.state !== 'running' && (body.state === 'error') !== (error !== null)) ||
+      (body.state === 'ready' && body.lastGood === null) || (body.state === 'never' && body.lastGood !== null)) throw new ApiError('Inconsistent refresh status.');
+    return { lastGood: body.lastGood as string | null, state: body.state as DatasetRefreshStatus['state'], error: error ? { code: error.code as string, message: error.message as string } : null };
+  }
   async function queryDataset(id: string, query: QueryRequest, signal?: AbortSignal): Promise<QueryResponse> {
     if (!/^[A-Za-z0-9_-]{1,512}$/.test(id)) throw new ApiError('Invalid dataset ID.');
     // Like definitions, base is the server mount. The local query route itself includes /api.
@@ -90,6 +111,7 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
     }
   }
   return {
+    getDatasetRefreshStatus,
     queryDataset,
     getAnalysisDefinition: (id: string, signal?: AbortSignal) => getDefinition('analysis', id, signal),
     getDashboardDefinition: (id: string, signal?: AbortSignal) => getDefinition('dashboard', id, signal),

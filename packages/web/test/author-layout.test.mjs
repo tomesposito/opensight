@@ -71,7 +71,7 @@ test('author regions read Data → Visuals with wells → sheet → Properties w
     'builder-panel fields-panel', 'builder-panel build-panel', 'author-center', 'builder-panel properties-panel',
   ]);
   const [data, visuals, sheet, properties] = regions;
-  assert.equal(data.findAllByType('select')[0].props['aria-label'], 'Dataset');
+  assert.equal(data.findByProps({ className: 'dataset-header' }).props['aria-label'], 'Dataset metadata');
   assert.ok(data.findAllByType('button').some(n => n.props['aria-label'] === 'Assign revenue'));
   const content = visuals.find(n => n.props.className === 'panel-content');
   assert.deepEqual(content.children.map(n => n.props.className), ['add-visual', 'visual-config']);

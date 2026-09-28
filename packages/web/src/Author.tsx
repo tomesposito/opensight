@@ -1,4 +1,5 @@
 import { ThemeEditor } from './ThemeEditor.js';
+import { DatasetHeader } from './DatasetHeader.js';
 import { AuthorToolbar } from './AuthorToolbar.js';
 import { QEntry } from './QEntry.js';
 import { BuildForMe } from './BuildForMe.js';
@@ -152,7 +153,7 @@ export function AuthorCanvas({ draft, dispatch, client, fit = true }: EditorProp
   return <>
     <div className="author-layout">
       <Panel title="Data" className="fields-panel">
-        <label>Dataset<select aria-label="Dataset" value="sales" onChange={() => {}}><option value="sales">Synthetic sales</option></select></label>
+        <DatasetHeader client={client} />
         <label>Search fields<input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Find a field…" /></label>
         <button type="button" className="calculation-button" onClick={() => setCalculationOpen(true)}>+ CALCULATED FIELD</button>
         <p className="field-hint">{selected ? 'Click a field to assign it. Select a well to choose its destination.' : 'Add a visual to start assigning fields.'}</p>
