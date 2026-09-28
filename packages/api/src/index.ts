@@ -1,3 +1,4 @@
+import { oRoute } from './o-routes.js';
 import { EmbeddingService, type EmbeddingOptions } from './embedding.js';
 import { sharingRoute } from './sharing.js';
 import { OrganizationService } from './organization.js';
@@ -102,6 +103,10 @@ export async function createApiServer(options: ApiOptions): Promise<Server> {
       if (security && identity && (/^\/(?:api\/)?analyses(?:\/|$)/.test(path) || /^\/api\/datasets(?:\/sales\/query)?$/.test(path))) security.require(identity, 'build');
       const namespaceId = identity?.namespaceId ?? 'default';
       const scopedStore = namespaceStores.get(namespaceId), scopedSales = namespaceQueries.get(namespaceId);
+      if (path.startsWith('/api/o/')) {
+        if (!security || !identity || !organization) throw new SecurityError(503, 'SECURITY_NOT_CONFIGURED', 'Hosted authentication required');
+        if (await oRoute(request, response, path, query, identity, security, organization, scopedSales)) return;
+      }
       if (/^\/(?:api\/)?dashboards\/[^/]+\/embed-url$/.test(path)) {
         if (!embedding || !identity) throw new SecurityError(503, 'EMBEDDING_NOT_CONFIGURED', 'Embedding requires configured authentication');
         if (await embedding.issue(request, response, path, query, identity)) return;

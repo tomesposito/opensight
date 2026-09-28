@@ -22,3 +22,11 @@ with the existing `SecurityOptions.authenticate` deployment boundary.
 Analysis access and unrestricted dataset queries require `SECURITY_BUILD_REQUIRED`;
 admin routes require `SECURITY_ADMIN_REQUIRED`. Dashboard access still intersects
 namespace, folder and asset grants and dataset row/column policies.
+
+The entire O bar (including deterministic mode) is AI-gated on builder and
+published-dashboard surfaces. `POST /api/o/query` takes `{ query, dashboardId? }`:
+AI authors can query their namespace's sales binding; reader_ai must supply an
+accessible published dashboard bound to that dataset. Missing AI capability
+returns `SECURITY_AI_REQUIRED`; omission of dashboard scope by a reader returns
+`SECURITY_BUILD_REQUIRED`. Queries still enforce RLS/CLS. Readers never see ADD TO
+ANALYSIS. No caller identity, role, or policy is accepted in the query body.

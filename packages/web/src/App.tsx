@@ -1,3 +1,5 @@
+import { OEntry } from './OEntry.js';
+import { emptyDraft } from './authoring.js';
 import { AccessProvider, useAccess, allowed, type Access } from './access.js';
 import { OrganizationNotice } from './OrganizationNotice.js';
 import { useEffect, useState } from 'react';
@@ -15,10 +17,12 @@ import { buildApiPreview } from './api-preview.js';
 const fixtures = generated as Fixture[];
 const api = createApiClient(import.meta.env.VITE_OPENSIGHT_API_URL);
 
-function Dashboard({ fixture }: { fixture: Fixture }) {
+function Dashboard({ fixture, hosted = false }: { fixture: Fixture; hosted?: boolean }) {
+  const access = useAccess();
   const [sheetId, setSheetId] = useState(fixture.sheets[0]?.id);
   const sheet = fixture.sheets.find(s => s.id === sheetId);
   return <>
+    {(access.mode === 'demo' || hosted && fixture.apiResource?.kind === 'dashboard') && <OEntry draft={emptyDraft()} client={hosted ? api : undefined} dashboardId={hosted ? fixture.id : undefined} />}
     <div className="dashboard-heading"><div><p className="eyebrow">{fixture.description}</p><h1>{fixture.name}</h1></div><span className="phase-badge">Phase 0 preview</span></div>
     <p className="fixture-notice">{fixture.notice}</p>
     <nav className="sheet-tabs" aria-label="Sheets">{fixture.sheets.map(s => <button key={s.id} aria-current={s.id === sheetId ? 'page' : undefined} onClick={() => setSheetId(s.id)}>{s.name}<span>{s.visuals.length} {s.visuals.length === 1 ? 'visual' : 'visuals'}</span></button>)}</nav>
@@ -79,6 +83,6 @@ function ApiExplorer({ example }: { example?: Fixture }) {
     <p className="fixture-notice">API mode fetches definitions only. Charts use fixed, precomputed fixture results; no live data queries are run.</p>
     {!current && <p role="status">Loading definition…</p>}
     {current?.error && <div className="visual-error" role="alert"><strong>Unable to load definition</strong><p>{current.error}</p><p>Check that the API is running, then use Load definition to retry.</p></div>}
-    {current?.fixture && <Dashboard key={`${request.kind}/${request.id}`} fixture={current.fixture} />}
+    {current?.fixture && <Dashboard key={`${request.kind}/${request.id}`} fixture={current.fixture} hosted />}
   </>;
 }

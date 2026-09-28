@@ -105,7 +105,7 @@ test('O submit, alternative selection and ADD TO ANALYSIS use the chosen rendere
 test('API-mode O sends the same interpretation query and reports errors without fixture fallback', async t => {
   const old = globalThis.IS_REACT_ACT_ENVIRONMENT; globalThis.IS_REACT_ACT_ENVIRONMENT = true;
   let renderer; const requests = [];
-  const client = { async queryDataset(id, request) { requests.push({ id, request }); throw new Error('O test API unavailable'); } };
+  const client = { async queryO(request) { requests.push({ id: 'sales', request }); throw new Error('O test API unavailable'); } };
   await act(() => { renderer = create(createElement(OEntry, { draft: emptyDraft(), dispatch() {}, client })); });
   t.after(async () => { await act(() => renderer.unmount()); globalThis.IS_REACT_ACT_ENVIRONMENT = old; });
   await act(() => renderer.root.findByProps({ id: 'o-question' }).props.onChange({ target: { value: 'average revenue by region in 2025 top 1' } }));

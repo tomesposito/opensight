@@ -62,9 +62,14 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
   }
   async function queryDataset(id: string, query: QueryRequest, signal?: AbortSignal): Promise<QueryResponse> {
     if (!/^[A-Za-z0-9_-]{1,512}$/.test(id)) throw new ApiError('Invalid dataset ID.');
-    // Like definitions, base is the server mount. The local query route itself includes /api.
-    const response = await fetcher(`${base}/api/datasets/${encodeURIComponent(id)}/query`, {
-      method: 'POST', signal, headers: { Accept: 'application/json', 'Content-Type': 'application/json' }, body: JSON.stringify(query),
+    return runQuery(`/api/datasets/${encodeURIComponent(id)}/query`, query, signal);
+  }
+  async function queryO(query: QueryRequest, dashboardId?: string, signal?: AbortSignal): Promise<QueryResponse> {
+    return runQuery('/api/o/query', query, signal, { query, ...(dashboardId ? { dashboardId } : {}) });
+  }
+  async function runQuery(route: string, query: QueryRequest, signal?: AbortSignal, payload: unknown = query): Promise<QueryResponse> {
+    const response = await fetcher(`${base}${route}`, {
+      method: 'POST', signal, headers: { Accept: 'application/json', 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
     });
     let raw: unknown;
     try { raw = await response.json(); }
@@ -120,7 +125,7 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
     }
   }
   return {
-    getSession, getDatasetRefreshStatus,
+    getSession, queryO, getDatasetRefreshStatus,
     queryDataset,
     getAnalysisDefinition: (id: string, signal?: AbortSignal) => getDefinition('analysis', id, signal),
     getDashboardDefinition: (id: string, signal?: AbortSignal) => getDefinition('dashboard', id, signal),
