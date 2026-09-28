@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { act, createElement } from 'react';
 import { create } from 'react-test-renderer';
-import { suggestCalculation } from '@opensight/q-interpreter';
+import { suggestCalculation } from '@opensight/o-interpreter';
 import { CalculationDialog } from '../build/test/Author.js';
 import { BuildForMe } from '../build/test/BuildForMe.js';
 import { dataFields, defaults, expressionError } from '../build/test/authoring.js';

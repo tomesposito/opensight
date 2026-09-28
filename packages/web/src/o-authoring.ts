@@ -1,14 +1,14 @@
-import { datetime, numeric, type Interpretation } from '@opensight/q-interpreter';
+import { datetime, numeric, type Interpretation } from '@opensight/o-interpreter';
 import { calculationInfo, dataFields, defaults, type AuthorVisual, type CalculatedField } from './authoring.js';
 
-export interface PreparedQVisual { visual: AuthorVisual; calculatedFields: CalculatedField[] }
-/** Q compiles into ordinary Phase 2c expressions and scoped filters, shared by all engines. */
-export function prepareQVisual(interpretation: Interpretation, existing: readonly CalculatedField[] = []): PreparedQVisual {
+export interface PreparedOVisual { visual: AuthorVisual; calculatedFields: CalculatedField[] }
+/** O compiles into ordinary Phase 2c expressions and scoped filters, shared by all engines. */
+export function prepareOVisual(interpretation: Interpretation, existing: readonly CalculatedField[] = []): PreparedOVisual {
   const fields = dataFields(existing), calculatedFields: CalculatedField[] = [];
   const field = (name: string) => {
     const f = fields.find(f => f.name === name);
-    if (!f || /[{}\0]/.test(name)) throw new Error(`Q_UNKNOWN_FIELD: ${name}`);
-    if (existing.some(c => c.name === name) && ![undefined, 'row'].includes(calculationInfo(name, existing).level)) throw new Error(`Q_UNSUPPORTED_CALCULATION: ${name} is already an aggregate or table calculation.`);
+    if (!f || /[{}\0]/.test(name)) throw new Error(`O_UNKNOWN_FIELD: ${name}`);
+    if (existing.some(c => c.name === name) && ![undefined, 'row'].includes(calculationInfo(name, existing).level)) throw new Error(`O_UNSUPPORTED_CALCULATION: ${name} is already an aggregate or table calculation.`);
     return f;
   };
   const ref = (name: string) => { field(name); return `{${name}}`; };
@@ -17,7 +17,7 @@ export function prepareQVisual(interpretation: Interpretation, existing: readonl
     // Reuse equivalent helpers; never overwrite an existing field or expression.
     const found = [...existing, ...calculatedFields].find(c => c.expression === expression && c.role === role);
     if (found) return found.name;
-    const base = `Q ${label}`.replace(/[^A-Za-z0-9_ ]/g, ' ').slice(0, 110);
+    const base = `O ${label}`.replace(/[^A-Za-z0-9_ ]/g, ' ').slice(0, 110);
     let name = base, n = 2;
     while ([...fields, ...calculatedFields].some(f => f.name.toLowerCase() === name.toLowerCase())) name = `${base} ${n++}`;
     calculatedFields.push({ name, expression, role }); return name;
@@ -48,7 +48,7 @@ export function prepareQVisual(interpretation: Interpretation, existing: readonl
   }
   const kind = interpretation.suggestedVisualType;
   return { calculatedFields, visual: {
-    ...defaults(), id: 'q-preview', kind, title: interpretation.explanation.replace(/^Showing /, '').replace(/\.$/, ''),
+    ...defaults(), id: 'o-preview', kind, title: interpretation.explanation.replace(/^Showing /, '').replace(/\.$/, ''),
     dimension: dimensions[0] ?? null, rows: kind === 'table' ? dimensions : [], measures: [measure],
     donut: false, filters, ...(dates.length === 1 ? { dateGrain: grain } : {}),
   } };

@@ -161,7 +161,7 @@ export type AuthorAction =
   | { type: 'sheet-rename'; id: string; name: string }
   | { type: 'layout'; sheetId: string; layout: readonly Placement[] }
   | { type: 'calculation-add'; field: CalculatedField }
-  | { type: 'q-add'; visual: AuthorVisual; calculatedFields: CalculatedField[] }
+  | { type: 'o-add'; visual: AuthorVisual; calculatedFields: CalculatedField[] }
   | { type: 'add'; kind: VisualKind }
   | { type: 'select' | 'remove'; id: string }
   | { type: 'move'; id: string; offset: -1 | 1 }
@@ -221,7 +221,7 @@ export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorD
   }
   const sheet = activeSheet(draft);
   const update = (changes: Partial<AuthorSheet>): AuthorDraft => ({ ...draft, sheets: draft.sheets.map(s => s === sheet ? { ...s, ...changes } : s) });
-  if (action.type === 'q-add') {
+  if (action.type === 'o-add') {
     const id = nextId('visual', [...draft.sheets.flatMap(s => s.visuals.map(v => v.id)), ...originalIds(draft, true)]);
     const visual = structuredClone({ ...action.visual, id });
     const bottom = Math.max(0, ...sheet.layout.map(p => p.y + p.h));

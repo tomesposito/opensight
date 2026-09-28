@@ -1,4 +1,4 @@
-# Q entry point — Phase 4, issue #6
+# O entry point — Phase 4, issue #6
 
 The builder chrome contains **Ask a question**. This is a local deterministic
 interpreter, not an LLM. It interprets the local sales schema (including locally
@@ -9,7 +9,7 @@ the selected visual and its helper calculations to the active sheet in one edit.
 The normal draft save and bundle/JSON export paths retain that definition.
 
 The input uses local sales even when other imported resources are present.
-Imported unresolved datasets are not queried. Q previews use synthetic fixture
+Imported unresolved datasets are not queried. O previews use synthetic fixture
 rows offline, or the existing local sales query endpoint when API mode is selected.
 An API failure is displayed; it never falls back to fixtures. Sheet controls and
 inherited filters apply to added visuals through the existing authoring path.
@@ -47,7 +47,7 @@ The package returns `{ interpretations, errors }`. Each interpretation contains
 Results are capped at 12, ordered by confidence then explanation. The input is
 bounded to 2,000 characters and 500 schema fields; grouping/filter combinations
 are bounded during expansion. There is no network access or runtime dependency
-in `@opensight/q-interpreter`.
+in `@opensight/o-interpreter`.
 
 Unknown words produce `UNRECOGNIZED_WORDS` and lower confidence. Gibberish without
 a measure produces `MISSING_MEASURE`. Empty questions, invalid schemas, missing
@@ -69,7 +69,7 @@ reviewable and are only added by an explicit button press.
 
 ## Execution and persistence
 
-`prepareQVisual` produces ordinary authoring definitions and Phase 2c calculated
+`prepareOVisual` produces ordinary authoring definitions and Phase 2c calculated
 fields. A measure uses `sum`, `avg`, `count`, `min` or `max` in its expression;
 the existing outer SUM binding projects that expression's aggregate result.
 `count(1)` counts every row, including rows with null measures; `count({field})`
@@ -84,7 +84,7 @@ browser fixtures. No separate JavaScript aggregation approximates the answer.
 Generated helper fields are visible in the Data panel. Equivalent helpers are
 reused and name collisions receive a suffix. Adding the visual is atomic; invalid
 definitions cannot leave helper fields behind. Existing aggregate/table calculated
-fields cannot be reaggregated by Q and receive `Q_UNSUPPORTED_CALCULATION`.
+fields cannot be reaggregated by O and receive `O_UNSUPPORTED_CALCULATION`.
 
 Q creates visuals without totals or subtotals. The builder's existing additive
 SUM rollups are not a recomputation of nonadditive statistics such as AVG.
@@ -130,7 +130,7 @@ an exported analysis. This build does not read, accept, store, or send provider 
 
 ## Verification and look-and-feel notes
 
-Root `npm test` discovers the parser workspace and web `q-*.test.mjs` files.
+Root `npm test` discovers the parser workspace and web `o-*.test.mjs` files.
 Checks cover grammar/ambiguity, mapping through the compiler, helper persistence,
 actual UI selection/add wiring, templates/insert/discard, and disabled generative
 states. The standalone demo is built with
@@ -149,14 +149,14 @@ adding a dependency. The offline file passed submit, alternate selection,
 ADD TO ANALYSIS, reload/persistence, expression insert, disabled switch, and
 gibberish checks. Captures at 1440×1000, 1280×800, 768×1024 and 390×844 showed no
 page overflow, JavaScript errors or HTTP(S) requests. Light/dark captures and the
-calculation dialog were compared with `qs-q-generative.jpg` and
+calculation dialog were compared with `qs-o-generative.jpg` and
 `qs-author-light-flow.jpg` from the private reference set. Reference images and
 generated captures are not committed.
 
 The comparison caught clipped preview axes; giving the preview content its own
-minimum height corrected the clipping. The Q bar now uses the builder's input
+minimum height corrected the clipping. The O bar now uses the builder's input
 styling, and the disabled switch stays aligned in the calculation dialog. The
-reference is denser and docks Q beside the sheet; this implementation uses the
+reference is denser and docks O beside the sheet; this implementation uses the
 document-flow answer described above, keeping the sheet's established rails
 intact. No unresolved new rendering defect was found in the checked viewports.
 Existing Properties/Data follow-ups (#2/#3) remain outside issue #6.
@@ -171,7 +171,7 @@ cross-engine subtests) run in the standard root suite.
 | API | 90 | 0 | 0 |
 | Bundle parser | 183 | 0 | 0 |
 | Embedding SDK | 4 | 0 | 0 |
-| Q interpreter | 32 | 0 | 0 |
+| O interpreter | 32 | 0 | 0 |
 | Query engine | 353 | 0 | 1 |
 | Web | 366 | 0 | 0 |
 | Conformance | 3 | 0 | 0 |
