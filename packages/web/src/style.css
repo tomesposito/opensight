@@ -201,8 +201,7 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .parameter-editor form { padding: 8px 0; }
 .parameter-editor p { overflow-wrap: anywhere; }
 
-.interaction-editor { margin-block: 1rem; }
-.interaction-editor fieldset { margin-block: .7rem; min-width: 0; border: 1px solid #cedbde; }
+.property-section fieldset { margin-block: .7rem; min-width: 0; border: 1px solid var(--chrome-border, #cedbde); }
 .action-target { border-top: 1px solid #dce5e7; padding-block: .6rem; }
 .action-target p { font-size: .8rem; margin-block: .3rem; }
 .action-status, .drill-navigation { display: flex; align-items: center; flex-wrap: wrap; gap: .4rem; padding: .5rem; font-size: .8rem; }
@@ -222,8 +221,6 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .author-workspace[data-chrome=dark] button:hover:not(:disabled) { background: #334c62; }
 .chrome-switch { display: flex; gap: 6px; align-items: center; font-size: 10px; letter-spacing: .06em; }
 .chrome-switch select { padding: 5px; }
-.theme-editor { padding: 12px 0; border-top: 1px solid var(--chrome-border, #c9d8de); }
-.theme-editor summary { font-weight: 600; font-size: 12px; margin-bottom: 10px; }
 .color-inputs { display: flex; flex-wrap: wrap; gap: 5px; }
 .color-inputs label { width: 48px; font-size: 9px; }
 .color-inputs input[type=color] { padding: 2px; height: 30px; }
@@ -253,6 +250,10 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .property-section summary { font-size: 12px; font-weight: 600; margin-bottom: 10px; cursor: pointer; }
 .property-section li { font-size: 12px; overflow-wrap: anywhere; margin-bottom: 8px; }
 .property-section input[type=color] { height: 34px; padding: 3px; }
+.properties-tabs { display: flex; gap: 12px; margin-bottom: 8px; }
+.properties-tabs button { border: 0; border-radius: 0; padding: 9px 2px; background: transparent; color: inherit; font-size: 12px; }
+.properties-tabs button[aria-selected=true] { border-bottom: 3px solid #16859b; font-weight: 700; }
+.properties-tabs button:focus-visible { outline: 2px solid #16859b; outline-offset: 2px; }
 .author-workspace :focus-visible { outline: 2px solid #499de3; outline-offset: 2px; }
 .visual-card th { background: var(--visual-header, #f3f7f8); color: inherit; }
 .visual-card :is(tr.subtotal, tr.total) { background: var(--visual-header, #edf6f6); }

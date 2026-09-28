@@ -101,6 +101,7 @@ test('calculated field dialog validates, creates a pill and submits expression t
 
 test('filter checkboxes, select-none and removable pills apply static filters to just the selected visual', async t => {
   const ui = await mount(t, authorReducer(emptyDraft(), { type: 'add', kind: 'bar' }));
+  await ui.click('Interaction');
   const group = ui.find('div', p => p['aria-label'] === 'region values');
   await ui.change(group.findByType('input'), false);
   assert.deepEqual(buildAuthorQuery(selected(ui.state())).filters, [{ columnName: 'region', values: [] }]);

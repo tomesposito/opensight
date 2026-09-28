@@ -15,7 +15,7 @@ import type { VisualInteraction } from './visual-selection.js';
 import { ControlsStrip } from './ControlsStrip.js';
 import type { AuthorParameter } from './parameters.js';
 import { ParameterEditor } from './ParameterEditor.js';
-import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useReducer, useRef, useState } from 'react';
 import type { Dispatch, ReactNode } from 'react';
 import { GridLayout, noCompactor, useContainerWidth } from 'react-grid-layout';
 import { downloadBundleBytes, exportBundle, importBundleFile, importedFilterProblem, withInheritedParameterFilters } from './bundle-authoring.js';
@@ -265,6 +265,8 @@ function FieldWells({ visual, draft, dispatch, activeWell, onWell }: { visual: A
 }
 
 function Properties({ visual, draft, dispatch, client }: EditorProps & { visual: AuthorVisual }) {
+  const [tab, setTab] = useState<'Visual' | 'Interaction'>('Visual');
+  const tabId = useId();
   const toggles: { property: 'titleVisible' | 'legend' | 'labels' | 'horizontal' | 'stacked' | 'totals' | 'subtotals'; label: string }[] = [
     { property: 'titleVisible', label: 'Show title' },
     ...(['bar', 'line', 'pie', 'combo', 'area', 'bar100'].includes(visual.kind) ? [{ property: 'legend' as const, label: 'Show legend' }] : []),
@@ -273,6 +275,16 @@ function Properties({ visual, draft, dispatch, client }: EditorProps & { visual:
     ...(visual.kind === 'bar' ? [{ property: 'stacked' as const, label: 'Stack values' }] : []),
   ];
   return <>
+    <div className="properties-tabs" role="tablist" aria-label="Properties tabs">
+      {(['Visual', 'Interaction'] as const).map(name => <button type="button" key={name} role="tab" id={`${tabId}-${name}`} aria-controls={`${tabId}-panel-${name}`} aria-selected={tab === name} tabIndex={tab === name ? 0 : -1} onClick={() => setTab(name)} onKeyDown={e => {
+        if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return;
+        e.preventDefault();
+        const next = e.key === 'Home' ? 'Visual' : e.key === 'End' ? 'Interaction' : name === 'Visual' ? 'Interaction' : 'Visual';
+        setTab(next);
+        e.currentTarget.parentElement?.querySelector<HTMLButtonElement>(`[id="${tabId}-${next}"]`)?.focus();
+      }}>{name}</button>)}
+    </div>
+    <div role="tabpanel" id={`${tabId}-panel-Visual`} aria-labelledby={`${tabId}-Visual`} hidden={tab !== 'Visual'}>
     <details className="property-section" open><summary>Display settings</summary>
     <label>Title<input value={visual.title} placeholder="Generated from fields" onChange={e => dispatch({ type: 'title', title: e.target.value })} /></label>
     {toggles.map(({ property, label }) => <label className="toggle" key={property}><input type="checkbox" checked={visual[property]} onChange={e => dispatch({ type: 'display', property, value: e.target.checked })} />{label}</label>)}
@@ -289,9 +301,15 @@ function Properties({ visual, draft, dispatch, client }: EditorProps & { visual:
       {visual.imported.issues.length > 0 && <details><summary>Unsupported features (retained)</summary><ul>{visual.imported.issues.map((issue, i) => <li key={i}>{issue}</li>)}</ul></details>}
     </div>}
     <ThemeEditor visual={visual} draft={draft} dispatch={dispatch} />
-    <HierarchyEditor draft={draft} visual={visual} dispatch={dispatch} />
-    <ActionEditor draft={draft} visual={visual} dispatch={dispatch} />
-    <FilterEditor visual={visual} parameters={sheetParameters(draft)} calculations={draft.calculatedFields} dispatch={dispatch} client={visual.imported && !visual.imported.local ? undefined : client} />
+    </div>
+    <div role="tabpanel" id={`${tabId}-panel-Interaction`} aria-labelledby={`${tabId}-Interaction`} hidden={tab !== 'Interaction'}>
+      {tab === 'Interaction' && <>
+        <FilterEditor visual={visual} parameters={sheetParameters(draft)} calculations={draft.calculatedFields} dispatch={dispatch} client={visual.imported && !visual.imported.local ? undefined : client} />
+        <ActionEditor draft={draft} visual={visual} dispatch={dispatch} />
+        <HierarchyEditor draft={draft} visual={visual} dispatch={dispatch} />
+        <ParameterFilterEditor parameters={sheetParameters(draft)} calculations={draft.calculatedFields} dispatch={dispatch} />
+      </>}
+    </div>
   </>;
 }
 
@@ -312,9 +330,8 @@ function FilterEditor({ visual, calculations, dispatch, client, parameters }: { 
   const filter = visual.filters.find(f => f.columnName === column);
   const filterValues = filter?.parameterName ? parameters.find(p => p.name === filter.parameterName)?.values.map(String) ?? [] : filter?.values;
   const values = [...new Set([...(current?.values ?? []), ...(filterValues ?? [])])];
-  return <div className="filter-editor"><h3>Filters</h3>
+  return <details className="property-section" open><summary>Filters</summary>
     {visual.filters.map(f => <button className="field-chip filter-pill" type="button" key={f.columnName} aria-label={`Remove ${f.columnName} filter`} onClick={() => dispatch({ type: 'filter', columnName: f.columnName, values: null })}>{f.columnName}: {f.parameterName ? `$${f.parameterName}` : f.values.length ? f.values.join(', ') : 'None'} <span aria-hidden="true">×</span></button>)}
-    <ParameterFilterEditor parameters={parameters} calculations={calculations} dispatch={dispatch} />
     <label>Category field<select value={column} onChange={e => setColumn(e.target.value)}>{dataFields(calculations).filter(f => f.type === 'STRING').map(f => <option key={f.name}>{f.name}</option>)}</select></label>
     {!current && <p role="status">Loading values…</p>}
     {current?.error && <p role="status">{current.error}</p>}
@@ -324,7 +341,7 @@ function FilterEditor({ visual, calculations, dispatch, client, parameters }: { 
     }} />{value || '(empty string)'}</label>)}</div>
     <div className="filter-actions"><button type="button" disabled={!current || !!current.error} onClick={() => dispatch({ type: 'filter', columnName: column, values })}>Select all</button><button type="button" onClick={() => dispatch({ type: 'filter', columnName: column, values: [] })}>Select none</button></div>
     {!client && <p className="field-hint">Values come from fixed samples. Filtered previews require API mode or a sheet with parameters, actions, or drill hierarchies.</p>}
-  </div>;
+  </details>;
 }
 
 export function CalculationDialog({ fields, onSave, onClose }: { fields: CalculatedField[]; onSave: (field: CalculatedField) => void; onClose: () => void }) {
@@ -418,11 +435,11 @@ function ParameterFilterEditor({ parameters, calculations, dispatch }: { paramet
   const parameter = parameters.find(p => p.name === name) ?? parameters[0];
   const fields = dataFields(calculations).filter(f => parameter?.type === (f.type === 'STRING' ? 'string' : f.type === 'DATETIME' ? 'datetime' : 'number'));
   const field = fields.find(f => f.name === column) ?? fields[0];
-  if (!parameters.length) return null;
-  return <fieldset><legend>Parameter filter</legend>
+  if (!parameters.length) return <details className="property-section"><summary>Parameter bindings</summary><p>Create an analysis parameter to bind a filter to this visual.</p></details>;
+  return <details className="property-section"><summary>Parameter bindings</summary>
     <label>Filter parameter<select aria-label="Filter parameter" value={parameter?.name ?? ''} onChange={e => { setName(e.target.value); setOperator('EQUALS'); }}>{parameters.map(p => <option key={p.id}>{p.name}</option>)}</select></label>
     <label>Filter column<select aria-label="Parameter filter column" value={field?.name ?? ''} onChange={e => setColumn(e.target.value)}>{fields.map(f => <option key={f.name}>{f.name}</option>)}</select></label>
     <label>Comparison<select value={operator} onChange={e => setOperator(e.target.value as typeof operator)}><option value="EQUALS">Equals</option>{parameter?.type !== 'string' && !parameter?.multiple && <><option value="GREATER_THAN_OR_EQUAL_TO">At least / on or after</option><option value="LESS_THAN_OR_EQUAL_TO">At most / on or before</option></>}</select></label>
     <button type="button" disabled={!field || !parameter} onClick={() => { if (parameter && field) dispatch({ type: 'filter-parameter', columnName: field.name, parameterName: parameter.name, operator }); }}>Apply parameter filter</button>
-  </fieldset>;
+  </details>;
 }

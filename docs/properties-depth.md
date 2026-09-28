@@ -23,3 +23,13 @@ Options are validated as `opensightFormatting.pivot`, retained verbatim in `.qs`
 archives and local drafts, and included in the existing import preservation
 report if unsupported. Existing bundles without these options keep their layout.
 No new dependencies or configuration are required.
+
+Visual and Interaction tabs apply to the selected visual. Visual contains the
+reference formatting sections and the existing palette/analysis theme editors.
+Interaction contains Filters, Filter actions, Drill-down hierarchy, and Parameter
+bindings. Arrow keys, Home, and End switch tabs and move focus. Changing selection
+opens Visual for the newly selected visual; tab navigation is not document state.
+Saved edits survive switches. With no selection, the existing empty message and
+analysis theme editor remain available. All section headers use the shared
+`property-section` details style. Tabular formatting and pivot options remain
+limited to their applicable visual kinds.

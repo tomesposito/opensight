@@ -7,7 +7,7 @@ export function HierarchyEditor({ draft, visual, dispatch }: { draft: AuthorDraf
   const [column, setColumn] = useState(visual.dimension ?? 'region');
   const [grain, setGrain] = useState<'YEAR' | 'QUARTER' | 'MONTH' | 'DAY'>('YEAR');
   const hierarchy = { id: visual.hierarchy?.id ?? `hierarchy-${visual.id}`, name, levels }, error = hierarchyError(hierarchy, draft.calculatedFields);
-  return <details className="interaction-editor"><summary>Drill hierarchy</summary>
+  return <details className="property-section"><summary>Drill-down hierarchy</summary>
     {visual.kind === 'kpi' ? <p>KPI has no dimension to drill.</p> : <>
       <label>Hierarchy name<input value={name} onChange={e => setName(e.target.value)} /></label>
       <ol>{levels.map((level, i) => <li key={i}>{levelLabel(level)} <button type="button" aria-label={`Remove hierarchy level ${i + 1}`} onClick={() => setLevels(levels.filter((_, j) => i !== j))}>×</button></li>)}</ol>

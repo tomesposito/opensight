@@ -25,6 +25,7 @@ test('sheet controls can be created, reordered, rebound and removed; selections 
   await ui.change(ui.label('Control label').findByType('input'), 'Region choice');
   await ui.change(ui.label('Options (one per line)').findByType('textarea'), 'East\nWest');
   await act(() => ui.find('form', p => p['aria-label'] === 'Add control').props.onSubmit({ preventDefault() {} }));
+  await ui.click('Interaction');
   await ui.click('Apply parameter filter');
   assert.deepEqual(ui.renderer.root.findByType(VisualCard).props.visual.rows, [{ revenue: 500 }]);
   await ui.change(ui.find('select', p => p['aria-label'] === 'Region choice'), 'West');

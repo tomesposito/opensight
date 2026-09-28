@@ -4,7 +4,7 @@ import { actionDimensions, originProblem, targetProblem, type FilterAction } fro
 export function ActionEditor({ draft, visual, dispatch }: { draft: AuthorDraft; visual: AuthorVisual; dispatch: Dispatch<AuthorAction> }) {
   const sheet = activeSheet(draft), actions = visual.filterActions ?? [], problem = originProblem(visual);
   const save = (action: FilterAction) => dispatch({ type: 'filter-actions', actions: actions.map(a => a.id === action.id ? action : a) });
-  return <details className="interaction-editor" open><summary>Filter actions</summary>
+  return <details className="property-section" open><summary>Filter actions</summary>
     {problem && <p role="status">Cannot originate: {problem}</p>}
     {actions.map(action => <fieldset key={action.id}><legend>{action.name}</legend>
       <label>Action name<input value={action.name} onChange={e => save({ ...action, name: e.target.value })} /></label>
