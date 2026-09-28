@@ -23,6 +23,7 @@ export function applyDisplayOptions(model: VisualModel, option: EChartsOption): 
         series.top = position === 'TOP' ? 36 : 0;
         series.bottom = !side && position !== 'TOP' ? 36 : 0;
         series.center = ['50%', '50%'];
+        series.label = { ...series.label, overflow: 'break' };
       }
     }
   }

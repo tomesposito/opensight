@@ -114,6 +114,15 @@ test('bar category spacing applies with clustered, stacked, percent and combo ar
   }
 });
 
+test('a side legend leaves pie percentages readable in a narrow card', () => {
+  const v = { ...selected(add('pie')), dimension: 'region', labels: true, formatting: { legendPosition: 'RIGHT', decimalPlaces: 2 } };
+  const chart = init(null, undefined, { renderer: 'svg', ssr: true, width: 344, height: 240 });
+  try {
+    chart.setOption(compileVisual(input(v)).option);
+    assert.match(chart.renderToSVGString(), /100.00%/);
+  } finally { chart.dispose(); }
+});
+
 test('decimal formatting preserves each label meaning and leaves input values untouched', () => {
   for (const [kind, params, expected] of [
     ['bar', { value: 1234.567 }, '1,234.57'], ['line', { value: 0 }, '0.00'], ['area', { value: 3.2 }, '3.20'], ['combo', { value: -3.2 }, '-3.20'],
