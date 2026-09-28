@@ -113,3 +113,27 @@ responses or URL query parameters. Expiry, revocation, replay and identity
 mismatch have named `SECURITY_INVITATION_*` errors. The sign-in provider must
 already recognize the invited identity; invitations do not create credentials or
 send email. This is stated in the UI.
+
+## Verification (2026-09-28)
+
+Final root `npm test` exited 0 with `TZ=UTC` and the supplied local PostgreSQL
+connection. Live PostgreSQL ran; no tests were skipped.
+
+| Stage | Passed | Failed | Skipped |
+| --- | ---: | ---: | ---: |
+| API | 114 | 0 | 0 |
+| Bundle parser | 183 | 0 | 0 |
+| Embedding SDK | 4 | 0 | 0 |
+| O interpreter | 32 | 0 | 0 |
+| Query engine | 367 | 0 | 0 |
+| Web | 442 | 0 | 0 |
+| Conformance | 3 | 0 | 0 |
+| **Total** | **1,145** | **0** | **0** |
+
+Strict TypeScript and public consumer checks are included in the suite.
+`git diff --check` passed. Provider transports were stubbed; no live provider or
+AWS calls were made. No new third-party dependencies were added; the API now
+uses the existing Apache-2.0 O interpreter workspace. Browser verification and
+reference comparisons are recorded in [Issue #7 gap notes](issue-7-gap-notes.md).
+All changes are checkpointed on `work/issue-7-roles-settings`. No merge, publish,
+or static-demo rebuild was performed; SOLUTION_DESIGN.md is unchanged.

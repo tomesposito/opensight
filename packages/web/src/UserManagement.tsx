@@ -29,7 +29,7 @@ function Users({ client }: { client: Client }) {
     finally { setBusy(false); }
   };
   return <section className="admin-settings" aria-labelledby="users-title"><h1 id="users-title">Users and invitations</h1>
-    <p>Manage users in this namespace. Administrators configure the system and invite users. Authors build analyses; readers view published dashboards. Roles ending in _ai can use AI.</p>
+    <p>Manage users in this namespace. Administrators configure the system and invite users. Authors build analyses; readers view published dashboards. Administrators and roles ending in _ai can use AI.</p>
     <form aria-label="Invite user" onSubmit={e => { e.preventDefault(); setLink(''); void run(async () => {
       const created = await client.inviteUser({ id, name, role });
       const url = new URL(window.location.href); url.search = ''; url.hash = `invite=${created.token}`;

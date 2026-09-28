@@ -113,7 +113,9 @@ namespace. The default namespace cannot be deleted.
 
 Namespace administrators manage `GET /api/users` and `/api/groups`, and
 `GET|PUT|DELETE /api/users/{id}` and `/api/groups/{id}`. User PUT bodies contain
-`name` and `role` (`admin` or `reader`); group bodies contain `name` and `userIds`.
+`name` and `role` (`administrator`, `author`, `author_ai`, `reader`, or `reader_ai`);
+group bodies contain `name` and `userIds`. Trusted legacy `admin` state migrates
+to `administrator`. See [roles, invitations and AI settings](roles-ai-settings.md).
 IDs may repeat across namespaces. Unknown/duplicate group members, foreign
 namespace fields, unresolved policy principals, referenced user/group deletion,
 and deletion/demotion of the last administrator are rejected atomically.

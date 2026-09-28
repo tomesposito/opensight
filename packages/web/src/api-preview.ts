@@ -47,7 +47,7 @@ export function buildApiPreview(response: DefinitionResponse, kind: ResourceKind
     name: response.name ?? response.id,
     description: `Live ${kind} definition · precomputed fixture data only`,
     provenance: `${kind === 'analysis' ? 'analyses' : 'dashboards'}/${response.id}/definition`,
-    notice: 'Definitions are fetched live. Chart data uses precomputed fixture results; the query engine is not available over HTTP. ',
+    notice: 'Definitions are fetched live. These dashboard charts use precomputed fixture results; O answer previews use the hosted query API. ',
     sheets: sheets.map((sheet, si) => {
       if (sheetIds.has(sheet.sheetId)) throw new Error(`Duplicate sheet ID: ${sheet.sheetId}`);
       sheetIds.add(sheet.sheetId);

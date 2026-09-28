@@ -28,3 +28,15 @@ test('entire O bar is hidden for non-AI and unresolved roles on builder and dash
     if (!hasCapability(role, 'ai')) assert.doesNotMatch(html, /o-bar|o-question|Generative mode|deterministic/);
   }
 });
+
+
+import { Dashboard } from '../build/test/Dashboard.js';
+test('hosted dashboard O uses explicit published ID even when API preview has no fixture metadata', () => {
+  const fixture = { id: 'published', name: 'Published', description: 'API preview', notice: 'Fixed results', provenance: 'dashboards/published/definition', sheets: [] };
+  for (const role of ['reader', 'reader_ai', 'author', 'author_ai', 'administrator']) {
+    const access = { mode: 'hosted', session: { id: 'u', namespaceId: 'n', name: 'User', role } };
+    const render = dashboardId => renderToStaticMarkup(createElement(AccessProvider, { access }, createElement(Dashboard, { fixture, hosted: true, dashboardId })));
+    assert.equal(render('published').includes('Ask a question'), hasCapability(role, 'ai'));
+    assert.equal(render(undefined).includes('Ask a question'), false);
+  }
+});

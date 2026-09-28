@@ -1,12 +1,10 @@
 import { UserManagement, AcceptInvitation } from './UserManagement.js';
 import { AISettings } from './AISettings.js';
-import { OEntry } from './OEntry.js';
-import { emptyDraft } from './authoring.js';
+import { Dashboard } from './Dashboard.js';
 import { AccessProvider, useAccess, allowed, type Access } from './access.js';
 import { OrganizationNotice } from './OrganizationNotice.js';
 import { useEffect, useState } from 'react';
 import type { Fixture } from './model.js';
-import { VisualCard } from './VisualCard.js';
 import { Author } from './Author.js';
 import { SecurityNotice } from './SecurityNotice.js';
 import { AutomationNotice } from './AutomationNotice.js';
@@ -19,25 +17,17 @@ import { buildApiPreview } from './api-preview.js';
 const fixtures = generated as Fixture[];
 const api = createApiClient(import.meta.env.VITE_OPENSIGHT_API_URL);
 
-function Dashboard({ fixture, hosted = false }: { fixture: Fixture; hosted?: boolean }) {
-  const access = useAccess();
-  const [sheetId, setSheetId] = useState(fixture.sheets[0]?.id);
-  const sheet = fixture.sheets.find(s => s.id === sheetId);
-  return <>
-    {(access.mode === 'demo' || hosted && fixture.apiResource?.kind === 'dashboard') && <OEntry draft={emptyDraft()} client={hosted ? api : undefined} dashboardId={hosted ? fixture.id : undefined} />}
-    <div className="dashboard-heading"><div><p className="eyebrow">{fixture.description}</p><h1>{fixture.name}</h1></div><span className="phase-badge">Phase 0 preview</span></div>
-    <p className="fixture-notice">{fixture.notice}</p>
-    <nav className="sheet-tabs" aria-label="Sheets">{fixture.sheets.map(s => <button key={s.id} aria-current={s.id === sheetId ? 'page' : undefined} onClick={() => setSheetId(s.id)}>{s.name}<span>{s.visuals.length} {s.visuals.length === 1 ? 'visual' : 'visuals'}</span></button>)}</nav>
-    {sheet ? <div className="dashboard-grid" aria-label={sheet.name}>{sheet.visuals.map(v => <VisualCard key={v.path} visual={v} />)}</div> : <p>No sheets in this fixture.</p>}
-    <p className="provenance">Source: <code>{fixture.provenance}</code></p>
-  </>;
-}
 
 export default function App() {
   const offline = import.meta.env.VITE_OPENSIGHT_OFFLINE_DEMO === 'true';
   const [access, setAccess] = useState<Access>({ mode: 'hosted' });
   const [error, setError] = useState('');
   const [invite, setInvite] = useState(() => /^#invite=([a-f0-9]{64})$/.exec(window.location.hash)?.[1]);
+  useEffect(() => {
+    const changed = () => setInvite(/^#invite=([a-f0-9]{64})$/.exec(window.location.hash)?.[1]);
+    window.addEventListener('hashchange', changed);
+    return () => window.removeEventListener('hashchange', changed);
+  }, []);
   useEffect(() => {
     if (offline) return;
     const controller = new AbortController();
@@ -94,9 +84,9 @@ function ApiExplorer({ example }: { example?: Fixture }) {
       <label className="resource-id">Resource ID<input value={id} onChange={event => setId(event.target.value)} required pattern={'[A-Za-z0-9_\\-]{1,512}'} /></label>
       <button type="submit">Load definition</button>
     </form>
-    <p className="fixture-notice">API mode fetches definitions only. Charts use fixed, precomputed fixture results; no live data queries are run.</p>
+    <p className="fixture-notice">Dashboard charts use fixed, precomputed fixture results. O answer previews query the hosted API with your data permissions.</p>
     {!current && <p role="status">Loading definition…</p>}
     {current?.error && <div className="visual-error" role="alert"><strong>Unable to load definition</strong><p>{current.error}</p><p>Check that the API is running, then use Load definition to retry.</p></div>}
-    {current?.fixture && <Dashboard key={`${request.kind}/${request.id}`} fixture={current.fixture} hosted />}
+    {current?.fixture && <Dashboard key={`${request.kind}/${request.id}`} fixture={current.fixture} hosted client={api} dashboardId={request.kind === 'dashboard' ? request.id : undefined} />}
   </>;
 }

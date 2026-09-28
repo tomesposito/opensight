@@ -30,11 +30,11 @@ function SettingsForm({ client }: { client: Client }) {
     <p>Configure O generative answers and AI Build for me for this namespace.</p>
     {!config && !error && <p role="status">Loading settings…</p>}
     <form onSubmit={e => { e.preventDefault(); void run(() => client.saveAIConfig({ provider, model, ...(provider === 'openai-compatible' ? { baseUrl } : {}) }), 'Provider and model saved.'); }}>
-      <label>AI provider<select value={provider ?? 'openai'} onChange={e => { setProvider(e.target.value as AIConfig['provider']); setKey(''); }} disabled={busy}>
+      <label>AI provider<select aria-label="AI provider" value={provider ?? 'openai'} onChange={e => { setProvider(e.target.value as AIConfig['provider']); setKey(''); }} disabled={busy}>
         <option value="openai">OpenAI</option><option value="anthropic">Anthropic</option><option value="openai-compatible">OpenAI-compatible</option><option value="bedrock">Amazon Bedrock — needs approval</option>
       </select></label>
       <label>Model ID<input required maxLength={256} value={model} onChange={e => setModel(e.target.value)} disabled={busy} /></label>
-      {provider === 'openai-compatible' && <label>Server-approved endpoint<select value={baseUrl} onChange={e => setBaseUrl(e.target.value)} disabled={busy} required><option value="">Choose endpoint</option>{config?.compatibleBaseUrls.map(url => <option key={url}>{url}</option>)}</select></label>}
+      {provider === 'openai-compatible' && <label>Server-approved endpoint<select aria-label="Server-approved endpoint" value={baseUrl} onChange={e => setBaseUrl(e.target.value)} disabled={busy} required><option value="">Choose endpoint</option>{config?.compatibleBaseUrls.map(url => <option key={url}>{url}</option>)}</select></label>}
       {provider === 'bedrock' && <p role="status">AI_BEDROCK_APPROVAL_REQUIRED: Bedrock needs explicit approval. Live AWS calls are disabled.</p>}
       <button type="submit" disabled={busy || !config}>Save provider and model</button>
     </form>

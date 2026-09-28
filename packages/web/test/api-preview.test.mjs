@@ -22,7 +22,7 @@ test('mocked API through converter and preview renders all five sales visuals wi
     assert.equal(compileVisual(v).state, 'ready');
   });
   assert.match(preview.notice, /region = East/);
-  assert.match(preview.notice, /not available over HTTP/);
+  assert.match(preview.notice, /dashboard charts use precomputed fixture results/);
 });
 test('real API dashboard retains observed grid and unavailable data', async () => {
   const body = await json('../../api/test/fixtures/real-dashboard.response.json');
