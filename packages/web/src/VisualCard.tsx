@@ -1,9 +1,9 @@
 import { LIGHT_THEME } from './themes.js';
 import { fieldRule } from './formatting.js';
 import { rowSelection, brushSelection, type VisualInteraction } from './visual-selection.js';
-import { useEffect, useId, useMemo, useRef, type CSSProperties } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, type CSSProperties } from 'react';
 import type { EChartsOption } from 'echarts';
-import { compileVisual, displayCell } from './compiler.js';
+import { compileVisual, displayCell, rowGroupKey, rowGroupVisibility } from './compiler.js';
 import type { CompiledVisual } from './compiler.js';
 import type { FixtureVisual } from './model.js';
 import { init } from './echarts.js';
@@ -36,14 +36,31 @@ function DataTable({ compiled, interaction }: { compiled: CompiledVisual; intera
   const width = pivot?.columnWidth ?? (pivot?.wordWrap ? 140 : undefined);
   const cellStyle: CSSProperties = { ...(pivot?.wordWrap !== undefined ? { whiteSpace: pivot.wordWrap ? 'normal' : 'nowrap', overflowWrap: pivot.wordWrap ? 'anywhere' : undefined } : {}), ...(width ? { width, minWidth: width, maxWidth: width } : {}) };
   const formatted = (value: import('./model.js').Cell, index: number) => typeof value === 'number' && index >= dimensionCount && f?.decimalPlaces !== undefined ? value.toLocaleString('en-US', { minimumFractionDigits: f.decimalPlaces, maximumFractionDigits: f.decimalPlaces }) : displayCell(value);
+  // Issue #5: pivot row-group expand/collapse. Requires subtotals: the subtotal row is the
+  // collapsed group's anchor, as in QuickSight. State resets when the compiled visual changes.
+  const expandable = model.kind === 'pivot' && model.subtotals && model.rowDimensions.length >= 2 && Array.isArray(table.rowGroupPaths);
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
+  useEffect(() => { setCollapsed(new Set()); }, [compiled]);
+  const visible = useMemo(() => expandable ? rowGroupVisibility(table.rowGroupPaths!, collapsed) : table.rows.map(() => true), [table, collapsed, expandable]);
+  const indices = table.rows.map((_, i) => i).filter(i => visible[i]);
+  const toggle = (i: number) => {
+    const path = table.rowGroupPaths?.[i];
+    if (!expandable || table.rowKinds?.[i] !== 'subtotal' || !path?.length) return null;
+    const key = rowGroupKey(path);
+    const isCollapsed = collapsed.has(key);
+    return <button type="button" className="expand-toggle" aria-expanded={!isCollapsed}
+      aria-label={`${isCollapsed ? 'Expand' : 'Collapse'} row group ${path.map(displayCell).join(' / ')}`}
+      onClick={event => { event.stopPropagation(); setCollapsed(previous => { const next = new Set(previous); if (next.has(key)) next.delete(key); else next.add(key); return next; }); }}>{isCollapsed ? '+' : '−'}</button>;
+  };
   return <div className="table-scroll"><table style={{ fontSize: f?.fontSize, color: f?.cellColor, background: f?.cellBackground, ...(width ? { tableLayout: 'fixed', width: width * table.columns.length } : {}) }}>
     <caption className="sr-only">{compiled.model.title} — result data</caption>
     <thead className={f?.headersVisible === false ? 'sr-only' : undefined}><tr>{table.columns.map((column, i) => <th key={i} scope="col" style={{ ...cellStyle, color: f?.headerColor, background: f?.headerBackground }}>{table.visibleColumns?.[i] === '' ? <span className="sr-only">{column}</span> : table.visibleColumns?.[i] ?? column}</th>)}</tr></thead>
-    <tbody>{table.rows.map((row, i) => <tr key={i} className={table.rowKinds?.[i]} onClick={interaction && rowSelection(compiled, i) ? () => interaction.onSelect(rowSelection(compiled, i)!) : undefined}>{row.map((cell, j) => {
+    <tbody>{indices.map(i => { const row = table.rows[i]!; const path = table.rowGroupPaths?.[i]; const toggleCell = (path?.length ?? 0) - 1; return <tr key={i} className={table.rowKinds?.[i]} onClick={interaction && rowSelection(compiled, i) ? () => interaction.onSelect(rowSelection(compiled, i)!) : undefined}>{row.map((cell, j) => {
       const measure = j >= dimensionCount ? model.measures[table.measureIndices?.[i]?.[j] ?? (j - dimensionCount) % model.measures.length] : undefined;
       const rule = measure && fieldRule(f, measure, cell);
-      return <td key={j} style={{ ...cellStyle, ...(rule ? { color: rule.color, background: rule.background } : {}) }}>{pivot?.metricPlacement === 'rows' && j === dimensionCount - 1 && f?.valueNamesVisible === false ? <span className="sr-only">{formatted(cell, j)}</span> : j === 0 && interaction && rowSelection(compiled, i) ? <button type="button" onClick={event => { event.stopPropagation(); interaction.onSelect(rowSelection(compiled, i)!); }}>{formatted(cell, j)}</button> : formatted(cell, j)}</td>;
-    })}</tr>)}</tbody>
+      const toggleButton = j === toggleCell ? toggle(i) : null;
+      return <td key={j} style={{ ...cellStyle, ...(rule ? { color: rule.color, background: rule.background } : {}) }}>{toggleButton}{toggleButton ? ' ' : null}{pivot?.metricPlacement === 'rows' && j === dimensionCount - 1 && f?.valueNamesVisible === false ? <span className="sr-only">{formatted(cell, j)}</span> : j === 0 && interaction && rowSelection(compiled, i) ? <button type="button" onClick={event => { event.stopPropagation(); interaction.onSelect(rowSelection(compiled, i)!); }}>{formatted(cell, j)}</button> : formatted(cell, j)}</td>;
+    })}</tr>; })}</tbody>
   </table></div>;
 }
 
