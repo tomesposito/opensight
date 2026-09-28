@@ -6,7 +6,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { Author, AuthorCanvas } from '../build/test/Author.js';
 import { AuthorToolbar } from '../build/test/AuthorToolbar.js';
 import { FormattingEditor } from '../build/test/FormattingEditor.js';
-import { activeSheet, authorReducer, emptyDraft, DRAFT_KEY as STORAGE_KEY } from '../build/test/authoring.js';
+import { activeSheet, authorReducer, emptyDraft, serializeDraft, DRAFT_KEY as STORAGE_KEY } from '../build/test/authoring.js';
 
 async function mount(t, element, stored) {
   const oldWindow = globalThis.window, oldAct = globalThis.IS_REACT_ACT_ENVIRONMENT;
@@ -20,6 +20,33 @@ async function mount(t, element, stored) {
   return { renderer, find, click, saved: () => JSON.parse(saved) };
 }
 const add = kind => authorReducer(emptyDraft(), { type: 'add', kind });
+
+test('header keeps identity, menus, working Q entry, canvas actions and NEW LOOK in order', async t => {
+  const ui = await mount(t, createElement(Author), add('bar'));
+  const header = ui.find('header', p => p.className === 'author-topbar app-header');
+  assert.equal(header.children[0].props.className, 'brand');
+  const title = header.findByType('input');
+  await act(() => title.props.onChange({ target: { value: 'Sales analysis' } }));
+  assert.equal(ui.saved().title, 'Sales analysis');
+  const nav = ui.find('nav', p => p['aria-label'] === 'Analysis menu');
+  assert.deepEqual(nav.children.map(n => n.type), [...Array(7).fill('details'), 'form', 'div', 'button', 'button', 'label']);
+  assert.equal(nav.children[9].props.children, 'FIT TO WIDTH');
+  assert.equal(nav.children[10].props.children, 'PUBLISH');
+  const toggle = nav.findByType('select');
+  assert.equal(toggle.props['aria-label'], 'NEW LOOK');
+  const before = serializeDraft(ui.saved());
+  await act(() => toggle.props.onChange({ target: { value: 'dark' } }));
+  assert.equal(ui.find('div', p => p.className === 'author-workspace').props['data-chrome'], 'dark');
+  assert.equal(ui.saved().chrome, 'dark');
+  assert.deepEqual(serializeDraft(ui.saved()), before, 'chrome does not change the analysis definition');
+  await act(() => nav.findByProps({ id: 'q-question' }).props.onChange({ target: { value: 'sum revenue by region' } }));
+  await act(() => nav.findByType('form').props.onSubmit({ preventDefault() {} }));
+  const answer = ui.find('div', p => p.className === 'q-answer');
+  assert.ok(answer);
+  assert.equal(nav.findAll(n => n.props.className === 'q-answer').length, 0, 'Q answers stay below the toolbar');
+  await ui.click('ADD TO ANALYSIS');
+  assert.equal(activeSheet(ui.saved()).visuals.length, 2);
+});
 
 test('toolbar exposes all seven menus, callbacks, busy guards and honest publish status', async t => {
   let calls = [];

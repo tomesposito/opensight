@@ -1,4 +1,4 @@
-import { useMemo, useState, type Dispatch } from 'react';
+import { useMemo, useState, type Dispatch, type ReactNode } from 'react';
 import { interpretQuestion, type InterpretationResult } from '@opensight/q-interpreter';
 import { dataFields, type AuthorAction, type AuthorDraft } from './authoring.js';
 import { prepareQVisual } from './q-authoring.js';
@@ -6,7 +6,7 @@ import { LiveAuthorVisual } from './LiveAuthorVisual.js';
 import type { QueryClient } from './author-query.js';
 import { QModeNotice } from './QModeNotice.js';
 
-export function QEntry({ draft, dispatch, client }: { draft: AuthorDraft; dispatch: Dispatch<AuthorAction>; client?: QueryClient }) {
+export function QEntry({ draft, dispatch, client, renderBar }: { draft: AuthorDraft; dispatch: Dispatch<AuthorAction>; client?: QueryClient; renderBar?: (bar: ReactNode) => ReactNode }) {
   const [question, setQuestion] = useState('');
   const [answer, setAnswer] = useState<{ result: InterpretationResult; schema: string }>();
   const [selected, setSelected] = useState(0);
@@ -19,13 +19,17 @@ export function QEntry({ draft, dispatch, client }: { draft: AuthorDraft; dispat
     try { return { value: prepareQVisual(interpretation, draft.calculatedFields) }; }
     catch (e) { return { error: e instanceof Error ? e.message : String(e) }; }
   }, [interpretation, draft.calculatedFields]);
-  return <section className="q-entry" aria-label="Ask a question">
-    <form className="q-bar" onSubmit={e => { e.preventDefault(); setSelected(0); setAdded(''); setAnswer({ schema, result: interpretQuestion(question, dataFields(draft.calculatedFields)) }); }}>
+  const bar = <form className="q-bar" onSubmit={e => { e.preventDefault(); setSelected(0); setAdded(''); setAnswer({ schema, result: interpretQuestion(question, dataFields(draft.calculatedFields)) }); }}>
+      {renderBar && <span className="q-mark" aria-hidden="true">Q</span>}
       <label htmlFor="q-question">Ask a question</label>
-      <input id="q-question" type="search" maxLength={2000} value={question} placeholder="Sum of revenue by region" onChange={e => { setQuestion(e.target.value); setAnswer(undefined); setAdded(''); }} />
+      <input id="q-question" type="search" maxLength={2000} value={question} placeholder={renderBar ? 'Ask a question about Local sales' : 'Sum of revenue by region'} onChange={e => { setQuestion(e.target.value); setAnswer(undefined); setAdded(''); }} />
       <button type="submit">Ask</button>
-      <span className="q-local-label">Local deterministic interpreter · No AI</span>
-    </form>
+    </form>;
+  return <>
+    {renderBar?.(bar)}
+    <section className={`q-entry${renderBar ? ' q-entry-toolbar' : ''}`} aria-label="Ask a question">
+    {!renderBar && bar}
+    <span className="q-local-label">Local deterministic interpreter · No AI</span>
     <QModeNotice />
     {result && <div className="q-answer">
       <div className="q-answer-actions"><strong>Interpreted question</strong><button type="button" onClick={() => setAnswer(undefined)}>Close answer</button></div>
@@ -43,5 +47,6 @@ export function QEntry({ draft, dispatch, client }: { draft: AuthorDraft; dispat
       </>}
     </div>}
     {added && <p role="status">{added}</p>}
-  </section>;
+    </section>
+  </>;
 }

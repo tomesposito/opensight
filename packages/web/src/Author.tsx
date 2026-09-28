@@ -35,7 +35,7 @@ import type { AuthorAction, AuthorDraft, AuthorVisual, CalculatedField, FieldGro
 
 const browserStorage = () => window.localStorage;
 type EditorProps = { draft: AuthorDraft; dispatch: Dispatch<AuthorAction>; client?: QueryClient };
-export function Author({ client }: { client?: QueryClient }) {
+export function Author({ client, modePicker }: { client?: QueryClient; modePicker?: ReactNode }) {
   const [restored] = useState(() => loadDraft(browserStorage));
   const [draft, dispatch] = useReducer(authorReducer, restored.draft);
   const [storageStatus, setStorageStatus] = useState(restored.warning ?? 'Draft saved on this device.');
@@ -84,15 +84,17 @@ export function Author({ client }: { client?: QueryClient }) {
     } catch { setExportStatus('Export could not be downloaded. Please try again.'); }
   };
   return <div className="author-workspace" data-chrome={draft.chrome ?? 'light'}>
-    <div className="author-topbar">
-      <label className="analysis-title">Analysis title<input value={draft.title} onChange={e => dispatch({ type: 'analysis-title', title: e.target.value })} /></label>
-      <label className="chrome-switch">NEW LOOK<select aria-label="NEW LOOK" value={draft.chrome ?? 'light'} onChange={e => dispatch({ type: 'chrome', mode: e.target.value as 'light' | 'dark' })}><option value="light">Light</option><option value="dark">Dark</option></select></label>
+    <header className="author-topbar app-header">
+      <a className="brand" href="./"><span className="brand-mark" aria-hidden="true">◈</span>OpenSight</a>
+      <label className="analysis-title"><span className="sr-only">Analysis title</span><input value={draft.title} onChange={e => dispatch({ type: 'analysis-title', title: e.target.value })} /></label>
+      {modePicker}
+    </header>
+    <QEntry draft={draft} dispatch={dispatch} client={client} renderBar={bar => <AuthorToolbar draft={draft} dispatch={dispatch} qEntry={bar} fit={fit} onFit={() => setFit(value => !value)} onJson={download} onBundle={() => { if (!busy) void downloadQs(); }} onImport={() => fileInput.current?.click()} busy={busy} jsonDisabled={!draft.sheets.some(s => s.visuals.length) || !!exported.error} />} />
+    <div className="author-utilities">
       <span className="mode-badge">{client ? 'API · Local sales' : 'Fixtures · Offline'}</span><span className="phase-badge">Builder v1</span>
       <button type="button" onClick={() => void downloadQs()} disabled={busy} aria-describedby="export-help">Download .qs</button>
       <button type="button" className="primary-button" onClick={download} disabled={!draft.sheets.some(s => s.visuals.length) || !!exported.error} aria-describedby="export-help">Export JSON</button>
     </div>
-    <AuthorToolbar draft={draft} dispatch={dispatch} fit={fit} onFit={() => setFit(value => !value)} onJson={download} onBundle={() => { if (!busy) void downloadQs(); }} onImport={() => fileInput.current?.click()} busy={busy} jsonDisabled={!draft.sheets.some(s => s.visuals.length) || !!exported.error} />
-    <QEntry draft={draft} dispatch={dispatch} client={client} />
     <div className="bundle-import" onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; }} onDrop={e => { e.preventDefault(); if (e.dataTransfer.files.length !== 1) setImportStatus('Drop one .qs ZIP or one bundle .json member.'); else void importFile(e.dataTransfer.files[0]); }} aria-label="Bundle drop zone">
       <details><summary>Import bundle</summary>
       <label>Import .qs or bundle JSON<input ref={fileInput} type="file" accept=".qs,.json,application/zip,application/json" disabled={busy} onChange={e => { const file = e.currentTarget.files?.[0]; e.currentTarget.value = ''; void importFile(file); }} /></label>
