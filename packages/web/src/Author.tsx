@@ -105,7 +105,7 @@ export function Author({ client }: { client?: QueryClient }) {
 function Panel({ title, className, children }: { title: string; className: string; children: ReactNode }) {
   const [open, setOpen] = useState(true);
   useEffect(() => {
-    const query = window.matchMedia('(max-width: 760px)');
+    const query = window.matchMedia('(max-width: 1100px)');
     const change = () => setOpen(!query.matches);
     change(); query.addEventListener('change', change);
     return () => query.removeEventListener('change', change);
@@ -139,7 +139,6 @@ export function AuthorCanvas({ draft, dispatch, client, fit = true }: EditorProp
   const mobile = width < 600;
   const layout = useMemo(() => mobile ? sheet.layout.map((p, i) => ({ ...p, x: 0, y: i * 8, w: GRID_COLUMNS, h: 8 })) : sheet.layout.map(p => ({ ...p, minW: 3, minH: 4 })), [mobile, sheet.layout]);
   return <>
-    <SheetTabs draft={draft} dispatch={dispatch} />
     <div className="author-layout">
       <Panel title="Data" className="fields-panel">
         <label>Dataset<select aria-label="Dataset" value="sales" onChange={() => {}}><option value="sales">Synthetic sales</option></select></label>
@@ -160,10 +159,7 @@ export function AuthorCanvas({ draft, dispatch, client, fit = true }: EditorProp
         <ImportedPanels draft={draft} />
         {!fields.some(f => f.name.toLowerCase().includes(search.toLowerCase())) && <p>No matching fields.</p>}
       </Panel>
-      <div className="author-center">
-        {interactive && <div className="action-status"><button type="button" disabled={!Object.keys(selections).length} onClick={clearActions}>Reset actions</button><span role="status">{Object.keys(selections).length} active selection(s) {Object.entries(selections).map(([id, selection]) => `${id}: ${selection.range?.join(' – ') ?? Object.entries(selection.values).map(([field, value]) => `${field} = ${value}`).join(', ')}`).join('; ')} · {client ? 'Live queries' : 'Recomputed synthetic sales across all regions'}</span></div>}
-        <ControlsStrip key={sheet.id} draft={draft} dispatch={dispatch} client={client} />
-        <Panel title="Visual build" className="build-panel">
+      <Panel title="Visuals" className="build-panel">
           <form className="add-visual" onSubmit={e => { e.preventDefault(); dispatch({ type: 'add', kind: newKind }); }}>
             <div className="visual-gallery" role="group" aria-label="Visual type gallery">{VISUAL_TYPES.map(type => <button type="button" key={type.kind} value={type.kind} aria-label={type.label} aria-pressed={newKind === type.kind} onClick={() => setNewKind(type.kind)}>
               <span aria-hidden="true">{type.icon}</span>{type.label}
@@ -171,11 +167,17 @@ export function AuthorCanvas({ draft, dispatch, client, fit = true }: EditorProp
             <button type="submit" className="primary-button" aria-label="Add visual">ADD</button>
           </form>
           {selected ? <div className="visual-config" id={`configure-${selected.id}`}>
+            <h3>Field wells</h3>
+            <p className="selected-visual">{selected.title || `Visual ${sheet.visuals.indexOf(selected) + 1}`}</p>
             <label className="change-type">Change visual type<select value={selected.imported?.issues.some(i => i.startsWith('Unsupported visual type:')) && !selected.imported.replaced ? '' : selected.kind} onChange={e => dispatch({ type: 'kind', kind: e.target.value as VisualKind })}>{selected.imported?.issues.some(i => i.startsWith('Unsupported visual type:')) && !selected.imported.replaced && <option value="" disabled>{selected.imported.variant} (unsupported)</option>}{VISUAL_TYPES.map(type => <option value={type.kind} key={type.kind}>{type.label}</option>)}</select></label>
             <p className="capability-note" role="note">{capabilityNote(selected.kind)}</p>
             <FieldWells visual={selected} draft={draft} dispatch={dispatch} activeWell={well} onWell={setWell} />
           </div> : <p className="field-hint">Choose a visual type and select ADD.</p>}
-        </Panel>
+      </Panel>
+      <div className="author-center" role="region" aria-label="Analysis sheet">
+        <SheetTabs draft={draft} dispatch={dispatch} />
+        {interactive && <div className="action-status"><button type="button" disabled={!Object.keys(selections).length} onClick={clearActions}>Reset actions</button><span role="status">{Object.keys(selections).length} active selection(s) {Object.entries(selections).map(([id, selection]) => `${id}: ${selection.range?.join(' – ') ?? Object.entries(selection.values).map(([field, value]) => `${field} = ${value}`).join(', ')}`).join('; ')} · {client ? 'Live queries' : 'Recomputed synthetic sales across all regions'}</span></div>}
+        <ControlsStrip key={sheet.id} draft={draft} dispatch={dispatch} client={client} />
         <div className="canvas-viewport" data-fit={fit ? 'width' : 'actual'} aria-label={fit ? 'Canvas fits available width' : 'Canvas at 1200 pixel width'}>
         <div className="author-canvas" style={{ width: fit ? '100%' : 1200, backgroundColor: theme.background, color: theme.textColor, fontFamily: theme.fontFamily }} ref={containerRef}>
           <div className="canvas-label"><strong>{sheet.name}</strong><span>{sheet.visuals.length} {sheet.visuals.length === 1 ? 'visual' : 'visuals'} · {mobile ? 'Mobile preview' : 'Drag the handle to move · Drag a corner to resize'}</span></div>
