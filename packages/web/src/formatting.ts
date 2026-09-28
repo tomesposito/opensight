@@ -7,7 +7,21 @@ export function gaugeValid(v: unknown): v is { min: number; max: number } {
   return Object.keys(g).every(k => k === 'min' || k === 'max') && typeof g.min === 'number' && typeof g.max === 'number' && Number.isFinite(g.min) && Number.isFinite(g.max) && g.min < g.max;
 }
 export interface ConditionalRule { fieldId: string; operator: 'gt' | 'gte' | 'lt' | 'lte' | 'eq'; threshold: number; color: string; background: string }
+export interface PivotOptions {
+  metricPlacement?: 'columns' | 'rows';
+  hideEmptyRows?: boolean; hideEmptyColumns?: boolean;
+  wordWrap?: boolean; columnWidth?: number;
+}
+export function pivotOptionsValid(raw: unknown): raw is PivotOptions {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return false;
+  const p = raw as Record<string, unknown>;
+  return Object.keys(p).every(k => ['metricPlacement', 'hideEmptyRows', 'hideEmptyColumns', 'wordWrap', 'columnWidth'].includes(k))
+    && (p.metricPlacement === undefined || p.metricPlacement === 'columns' || p.metricPlacement === 'rows')
+    && ['hideEmptyRows', 'hideEmptyColumns', 'wordWrap'].every(k => p[k] === undefined || typeof p[k] === 'boolean')
+    && (p.columnWidth === undefined || Number.isInteger(p.columnWidth) && Number(p.columnWidth) >= 60 && Number(p.columnWidth) <= 400);
+}
 export interface VisualFormatting {
+  pivot?: PivotOptions;
   headersVisible?: boolean; rowNamesVisible?: boolean; columnNamesVisible?: boolean; valueNamesVisible?: boolean;
   headerColor?: string; headerBackground?: string; cellColor?: string; cellBackground?: string;
   fontSize?: number; decimalPlaces?: number; names?: Record<string, string>; rules?: ConditionalRule[];
@@ -17,7 +31,8 @@ export function formattingValid(raw: unknown): raw is VisualFormatting {
   const f = raw as Record<string, unknown>;
   const booleans = ['headersVisible', 'rowNamesVisible', 'columnNamesVisible', 'valueNamesVisible'];
   const colors = ['headerColor', 'headerBackground', 'cellColor', 'cellBackground'];
-  if (Object.keys(f).some(k => ![...booleans, ...colors, 'fontSize', 'decimalPlaces', 'names', 'rules'].includes(k))) return false;
+  if (Object.keys(f).some(k => ![...booleans, ...colors, 'fontSize', 'decimalPlaces', 'names', 'rules', 'pivot'].includes(k))) return false;
+  if (f.pivot !== undefined && !pivotOptionsValid(f.pivot)) return false;
   if (booleans.some(k => f[k] !== undefined && typeof f[k] !== 'boolean') || colors.some(k => f[k] !== undefined && !colorValid(f[k]))) return false;
   if (f.fontSize !== undefined && (!Number.isInteger(f.fontSize) || Number(f.fontSize) < 8 || Number(f.fontSize) > 32) || f.decimalPlaces !== undefined && (!Number.isInteger(f.decimalPlaces) || Number(f.decimalPlaces) < 0 || Number(f.decimalPlaces) > 12)) return false;
   if (f.names !== undefined && (!f.names || typeof f.names !== 'object' || Array.isArray(f.names) || Object.entries(f.names).some(([k, v]) => !k || typeof v !== 'string' || !v.trim() || v.length > 128))) return false;

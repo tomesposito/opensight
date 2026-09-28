@@ -12,7 +12,9 @@ export interface CompiledVisual {
   model: VisualModel;
   option: EChartsOption;
   /** Ordered, validated cells also used by the accessible HTML data table. */
-  table: { columns: string[]; visibleColumns?: string[]; rows: Cell[][]; rowKinds?: ('detail' | 'subtotal' | 'total')[] };
+  table: { columns: string[]; visibleColumns?: string[]; rows: Cell[][]; rowKinds?: ('detail' | 'subtotal' | 'total')[];
+    /** Pivot layouts can move or hide measures; retain their identities for cell formatting. */
+    dimensionCount?: number; measureIndices?: number[][] };
   state: 'ready' | 'empty' | 'unavailable';
 }
 
@@ -346,7 +348,8 @@ export function compileVisual(input: Input): CompiledVisual {
     });
   }
   if (model.kind === 'pivot' || model.kind === 'table' && (model.totals || model.subtotals)) {
-    return { model, option, state, table: compilePivotTable(model, rows, cell, number, input.path) };
+    const table = compilePivotTable(model, rows, cell, number, input.path);
+    return { model, option, state: state === 'ready' && !table.rows.length ? 'empty' : state, table };
   }
   return { model, option, state, table: { columns: fields.map(f => fieldName(f, model.formatting)), rows: rows.map(row => fields.map(field => cell(row, field))),
     ...(model.formatting ? { visibleColumns: fields.map(f => (model.measures.includes(f) ? model.formatting?.valueNamesVisible : model.formatting?.rowNamesVisible) === false ? '' : fieldName(f, model.formatting)) } : {}),
@@ -408,5 +411,27 @@ function compilePivotTable(model: VisualModel, rows: Row[], cell: (row: Row, fie
       return total;
     }))];
   }) : [];
-  return { columns, ...(visibleColumns ? { visibleColumns } : {}), rows: output, rowKinds: rows.length ? rowAxis.map(entry => entry.kind) : [] };
+  let table: CompiledVisual['table'] = { columns, ...(visibleColumns ? { visibleColumns } : {}), rows: output, rowKinds: rows.length ? rowAxis.map(entry => entry.kind) : [] };
+  if (model.kind !== 'pivot') return table;
+  const pivot = model.formatting?.pivot;
+  const metricsOnRows = pivot?.metricPlacement === 'rows';
+  const dimensionCount = rowFields.length + (metricsOnRows ? 1 : 0);
+  if (metricsOnRows) {
+    table = {
+      columns: [...columns.slice(0, rowFields.length), 'Value', ...colAxis.map(entry => label(entry, columnFields) || 'Value')],
+      visibleColumns: [...rowFields.map(f => model.formatting?.rowNamesVisible === false ? '' : fieldName(f, model.formatting)), model.formatting?.valueNamesVisible === false ? '' : 'Value', ...colAxis.map(entry => label(entry, columnFields, true) || (model.formatting?.valueNamesVisible === false ? '' : 'Value'))],
+      rows: output.flatMap(row => model.measures.map((measure, m) => [...row.slice(0, rowFields.length), fieldName(measure, model.formatting), ...colAxis.map((_, c) => row[rowFields.length + c * model.measures.length + m]!)])),
+      rowKinds: table.rowKinds!.flatMap(kind => model.measures.map(() => kind)),
+    };
+  }
+  const measureIndices = table.rows.map((row, i) => row.map((_, j) => j < dimensionCount ? -1 : metricsOnRows ? i % model.measures.length : (j - dimensionCount) % model.measures.length));
+  const keptRows = table.rows.flatMap((row, i) => !pivot?.hideEmptyRows || row.slice(dimensionCount).some(value => value !== null) ? [i] : []);
+  const keptColumns = table.columns.flatMap((_, j) => j < dimensionCount || !pivot?.hideEmptyColumns || table.rows.some(row => row[j] !== null) ? [j] : []);
+  return {
+    columns: keptColumns.map(j => table.columns[j]!),
+    ...(table.visibleColumns ? { visibleColumns: keptColumns.map(j => table.visibleColumns![j]!) } : {}),
+    rows: keptRows.map(i => keptColumns.map(j => table.rows[i]![j]!)),
+    rowKinds: keptRows.map(i => table.rowKinds![i]!), dimensionCount,
+    measureIndices: keptRows.map(i => keptColumns.map(j => measureIndices[i]![j]!)),
+  };
 }
