@@ -78,3 +78,14 @@ test('calculated fields have their own expanded section and preserve assign labe
   await ui.click('Assign Net');
   assert.ok(activeSheet(ui.state()).visuals[0].measures.includes('Net'));
 });
+
+test('assignment buttons retain their names and reference accessible type or geography descriptions', async t => {
+  const ui = await mount(t);
+  for (const [name, label] of [['order_id', 'Integer'], ['order_date', 'Date and time'], ['region', 'Geography · Text'], ['category', 'Text'], ['revenue', 'Decimal']]) {
+    const button = ui.button(`Assign ${name}`);
+    const icon = button.findByProps({ role: 'img' });
+    assert.equal(icon.props['aria-label'], label);
+    assert.equal(button.props['aria-describedby'], icon.props.id);
+    assert.equal(icon.props['aria-hidden'], undefined);
+  }
+});

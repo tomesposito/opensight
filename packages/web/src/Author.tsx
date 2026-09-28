@@ -1,5 +1,6 @@
 import { ThemeEditor } from './ThemeEditor.js';
 import { DatasetHeader } from './DatasetHeader.js';
+import { FieldIcon } from './FieldIcon.js';
 import { AuthorToolbar } from './AuthorToolbar.js';
 import { QEntry } from './QEntry.js';
 import { BuildForMe } from './BuildForMe.js';
@@ -131,6 +132,7 @@ export function AuthorCanvas({ draft, dispatch, client, fit = true }: EditorProp
   const [newKind, setNewKind] = useState<VisualKind>('bar');
   const [search, setSearch] = useState('');
   const [collapsedGroups, setCollapsedGroups] = useState<Partial<Record<FieldGroup, boolean>>>({});
+  const fieldIconId = useId();
   const [well, setWell] = useState<Well>('rows');
   const [calculationOpen, setCalculationOpen] = useState(false);
   const sheet = activeSheet(draft), fields = dataFields(draft.calculatedFields);
@@ -166,8 +168,9 @@ export function AuthorCanvas({ draft, dispatch, client, fit = true }: EditorProp
           {fields.filter(f => fieldGroup(f) === group && f.name.toLowerCase().includes(search.toLowerCase())).map(field => <button key={field.name} type="button"
             disabled={!selected || (field.role === 'dimension' && noDimensions(selected.kind))}
             aria-label={`Assign ${field.name}`} aria-pressed={selected?.dimension === field.name || selected?.rows.includes(field.name) || selected?.columns.includes(field.name) || !!selected?.measures.includes(field.name)}
+            aria-describedby={`${fieldIconId}-${encodeURIComponent(field.name)}`}
             onClick={() => dispatch({ type: 'assign', field: field.name, well: field.role === 'measure' ? 'values' : selected && grouped(selected.kind) ? (well === 'columns' && splitDimensions(selected.kind) ? 'columns' : 'rows') : 'dimension' })}>
-            <span className="field-icon" aria-hidden="true">{draft.calculatedFields.some(f => f.name === field.name) ? 'ƒ' : field.type === 'DATETIME' ? '▣' : field.type === 'STRING' ? 'Abc' : '#'}</span>
+            <FieldIcon field={field} id={`${fieldIconId}-${encodeURIComponent(field.name)}`} />
             <span className="field-name">{field.name}</span><span className="field-type">{field.type}</span>
           </button>)}
         </details>)}

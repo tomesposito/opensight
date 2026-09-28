@@ -29,3 +29,21 @@ remember collapse choices for the mounted editor. Grouping does not change a
 field's dimension/measure role or assignment destination. Groups and disclosure
 state are not serialized into drafts or bundles. No Sensitive group is inferred
 from this synthetic schema; these folders are not security classifications.
+
+Icons have accessible names and also describe their assignment buttons without
+changing the buttons' `Assign <name>` labels. The legend is:
+
+| Type or semantic role | Icon |
+| --- | --- |
+| INTEGER | `#` |
+| DECIMAL | `0.0` |
+| STRING | `Abc` |
+| DATETIME | Calendar outline |
+| BOOLEAN | `T/F` |
+| Calculated | `ƒ` (takes precedence over type and geography) |
+| Geography | Globe pin outline (includes the type in its accessible name) |
+
+Unknown types use `?` and an explicit accessible unknown-type label. The local
+schema currently has no BOOLEAN fields; the icon is available when needed.
+Inline SVGs and text glyphs use the existing chrome palette, including a lighter
+icon color in dark mode. No dependencies or bundle-format changes are required.

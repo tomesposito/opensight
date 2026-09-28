@@ -89,7 +89,8 @@ button:disabled { cursor: default; opacity: .5; }
 .field-folder { width: 13px; height: 13px; margin-right: 5px; vertical-align: -2px; fill: none; stroke: currentColor; stroke-width: 1.3; }
 .field-group button { display: flex; align-items: center; width: 100%; gap: 6px; margin-top: 4px; text-align: left; font-size: 12px; }
 .field-group button[aria-pressed=true], .visual-gallery button[aria-pressed=true] { background: #eaf5f5; border-color: #157f88; color: #126e76; }
-.field-icon { min-width: 20px; font-size: 11px; color: #157f88; }
+.field-icon { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 20px; font-size: 11px; font-weight: 650; color: var(--chrome-icon, #157f88); }
+.field-icon svg { width: 16px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.3; stroke-linecap: round; stroke-linejoin: round; }
 .field-name { overflow-wrap: anywhere; flex: 1; }
 .field-type { font-size: 8px; color: #526c7a; }
 .author-center, .author-canvas, .visual-config { min-width: 0; }
@@ -220,7 +221,7 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 
 /* NEW LOOK controls the editor; the analysis theme independently styles its canvas. */
 .author-workspace { --chrome-surface: #fff; --chrome-bg: #f3f6f7; --chrome-text: #19384a; --chrome-muted: #526c7a; --chrome-border: #c9d8de; color: var(--chrome-text); background: var(--chrome-bg); }
-.author-workspace[data-chrome=dark] { color-scheme: dark; --chrome-surface: #202e40; --chrome-bg: #141e2c; --chrome-text: #e7eef7; --chrome-muted: #adc0d5; --chrome-border: #45566d; }
+.author-workspace[data-chrome=dark] { color-scheme: dark; --chrome-surface: #202e40; --chrome-bg: #141e2c; --chrome-text: #e7eef7; --chrome-muted: #adc0d5; --chrome-border: #45566d; --chrome-icon: #7dd4df; }
 .author-workspace[data-chrome=dark] :is(.builder-panel, .controls-strip, button, input, select, textarea, .author-card-toolbar, .bundle-import) { color: var(--chrome-text); background-color: var(--chrome-surface); border-color: var(--chrome-border); }
 .author-workspace[data-chrome=dark] :is(label, .field-hint, .field-type, .author-save p, .canvas-label span, .mode-badge, .field-wells legend) { color: var(--chrome-muted); }
 .author-workspace[data-chrome=dark] .field-wells .active-well { background: #293f50; }
