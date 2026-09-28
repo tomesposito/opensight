@@ -1,6 +1,6 @@
 import type { InterpretationResult, CalculationResult } from '@opensight/o-interpreter';
 import type { CalculatedField } from './authoring.js';
-import { isRole } from '@opensight/query-engine/browser';
+import { isRole, type Role } from '@opensight/query-engine/browser';
 import type { Session } from './access.js';
 import type { BundleDefinition } from '@opensight/bundle-parser';
 import { convertDefinition, object } from './definition-converter.js';
@@ -27,6 +27,7 @@ export interface DefinitionResponse {
 }
 export const DEFAULT_API_URL = '/api';
 
+export interface Invitation { id: string; namespaceId: string; name: string; role: Role; invitedBy: string; expiresAt: string }
 export interface AIStatus { configured: boolean; state: 'configured' | 'not-configured' | 'needs-approval' }
 export interface ORequest { question: string; dashboardId?: string; calculatedFields?: readonly CalculatedField[] }
 export interface AIConfig {
@@ -57,6 +58,13 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
     }
     return value as T;
   }
+  const listUsers = () => resource<Session[]>('/api/users');
+  const saveUser = (id: string, body: { name: string; role: Role }) => resource<Session>(`/api/users/${encodeURIComponent(id)}`, 'PUT', body);
+  const deleteUser = (id: string) => resource<{ deleted: true }>(`/api/users/${encodeURIComponent(id)}`, 'DELETE');
+  const listInvitations = () => resource<Invitation[]>('/api/invitations');
+  const inviteUser = (body: { id: string; name: string; role: Role }) => resource<{ invitation: Invitation; token: string }>('/api/invitations', 'POST', body);
+  const revokeInvitation = (id: string) => resource<{ deleted: true }>(`/api/invitations/${encodeURIComponent(id)}`, 'DELETE');
+  const acceptInvitation = (token: string) => resource<Session>('/api/invitations/accept', 'POST', { token });
   const getAIStatus = () => resource<AIStatus>('/api/o/status');
   const generateO = (request: ORequest) => resource<InterpretationResult>('/api/o/generate', 'POST', request);
   const generateCalculation = (request: ORequest) => resource<CalculationResult>('/api/o/calculation', 'POST', request);
@@ -152,7 +160,7 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
     }
   }
   return {
-    getAIStatus, generateO, generateCalculation, getAIConfig, saveAIConfig, saveAIKey, testAIConnection, getSession, queryO, getDatasetRefreshStatus,
+    listUsers, saveUser, deleteUser, listInvitations, inviteUser, revokeInvitation, acceptInvitation, getAIStatus, generateO, generateCalculation, getAIConfig, saveAIConfig, saveAIKey, testAIConnection, getSession, queryO, getDatasetRefreshStatus,
     queryDataset,
     getAnalysisDefinition: (id: string, signal?: AbortSignal) => getDefinition('analysis', id, signal),
     getDashboardDefinition: (id: string, signal?: AbortSignal) => getDefinition('dashboard', id, signal),

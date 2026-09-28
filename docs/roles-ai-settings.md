@@ -87,3 +87,29 @@ blocks calls, denied columns are excluded, and supplied calculations cannot
 indirectly disclose denied columns. Role, grants, and policies are checked again
 after provider I/O. Client edits discard pending stale suggestions; failures do
 not fall back to fixtures or deterministic results.
+
+## User management and invitations
+
+The administrator-only Users and invitations page lists registered namespace
+users, edits names/roles, removes unreferenced users, creates invitations and
+revokes pending invitations. The last administrator cannot be removed or demoted.
+Existing `GET /api/users` and `GET|PUT|DELETE /api/users/{id}` retain atomic
+validation and referential checks. Changes take effect on the next API request;
+the hosted UI refreshes its session on focus and every 30 seconds.
+
+- `GET /api/invitations`: namespace pending invitations, without tokens/digests.
+- `POST /api/invitations`: `{ id, name, role }`, creates a seven-day invitation;
+  returns its single-use token once. Share the generated fragment link manually.
+- `DELETE /api/invitations/{id}`: revoke by invited user ID.
+- `POST /api/invitations/accept`: `{ token }`; verifies credentials through the
+  deployment's trusted authentication callback even before registry enrollment.
+
+Acceptance requires the exact invited user ID and namespace from verified
+credentials, a nonexpired token, and an inviter who is still an administrator.
+The server atomically creates the user with the saved role and consumes the
+invitation. Concurrent acceptance succeeds only once. Only SHA-256 token digests
+are persisted. Body roles/identities are rejected. Tokens never appear in list
+responses or URL query parameters. Expiry, revocation, replay and identity
+mismatch have named `SECURITY_INVITATION_*` errors. The sign-in provider must
+already recognize the invited identity; invitations do not create credentials or
+send email. This is stated in the UI.

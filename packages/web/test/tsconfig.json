@@ -25,6 +25,7 @@
     "../src/AutomationNotice.tsx",
     "../src/SecurityNotice.tsx",
     "../src/OrganizationNotice.tsx",
-    "../src/AISettings.tsx"
+    "../src/AISettings.tsx",
+    "../src/UserManagement.tsx"
   ]
 }

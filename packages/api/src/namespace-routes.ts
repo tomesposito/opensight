@@ -32,6 +32,7 @@ export async function namespaceRoute(request: IncomingMessage, response: ServerR
     if (kind === 'namespaces') {
       if (verb === 'DELETE') {
         if (resourceId === 'default' || state.folders?.some(f => f.namespaceId === resourceId) || state.assets?.some(a => a.namespaceId === resourceId) || service.hasAssets(resourceId!) || state.groups.some(g => g.namespaceId === resourceId) || state.datasets.some(d => d.namespaceId === resourceId) || state.users.some(u => u.namespaceId === resourceId && u.id !== identity.userId)) throw new RequestError(409, 'Namespace must contain only its deleting administrator and no assets or policies');
+        state.invitations = state.invitations?.filter(i => i.namespaceId !== resourceId);
         state.namespaces = state.namespaces.filter(n => n.id !== resourceId);
         state.users = state.users.filter(u => u.namespaceId !== resourceId);
       } else {
@@ -49,9 +50,11 @@ export async function namespaceRoute(request: IncomingMessage, response: ServerR
       if (verb === 'DELETE') {
         if (state.groups.some(g => g.namespaceId === namespaceId && g.userIds.includes(resourceId!)) || referenced(state, namespaceId, 'user', resourceId!)) throw new RequestError(409, 'User is referenced by a group or policy');
         state.users = state.users.filter(u => !(u.namespaceId === namespaceId && u.id === resourceId));
+        state.invitations = state.invitations?.filter(i => i.namespaceId !== namespaceId || i.invitedBy !== resourceId);
       } else {
         if (!isRole(body!.role)) invalid('$.role', 'expected a supported role');
         const resource: User = { id: resourceId!, namespaceId, name: label(body!.name), role: body!.role };
+        if (state.invitations?.some(i => i.namespaceId === namespaceId && i.id === resourceId)) throw new RequestError(409, 'User has a pending invitation');
         if (existing) Object.assign(existing, resource); else state.users.push(resource);
       }
       if (!state.users.some(u => u.namespaceId === namespaceId && u.role === 'administrator')) throw new RequestError(409, 'Namespace requires an administrator');

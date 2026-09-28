@@ -1,3 +1,4 @@
+import { UserManagement, AcceptInvitation } from './UserManagement.js';
 import { AISettings } from './AISettings.js';
 import { OEntry } from './OEntry.js';
 import { emptyDraft } from './authoring.js';
@@ -36,25 +37,36 @@ export default function App() {
   const offline = import.meta.env.VITE_OPENSIGHT_OFFLINE_DEMO === 'true';
   const [access, setAccess] = useState<Access>({ mode: 'hosted' });
   const [error, setError] = useState('');
+  const [invite, setInvite] = useState(() => /^#invite=([a-f0-9]{64})$/.exec(window.location.hash)?.[1]);
   useEffect(() => {
     if (offline) return;
     const controller = new AbortController();
-    void api.getSession(controller.signal).then(session => setAccess({ mode: 'hosted', session, aiClient: api })).catch(() => { if (!controller.signal.aborted) setError('Hosted session unavailable. Sign in through your configured authentication service.'); });
-    return () => controller.abort();
-  }, [offline]);
+    let loading = false;
+    const refresh = async () => {
+      if (loading) return; loading = true;
+      try { const session = await api.getSession(controller.signal); if (!controller.signal.aborted) { setAccess({ mode: 'hosted', session, aiClient: api }); setError(''); } }
+      catch { if (!controller.signal.aborted) { setAccess({ mode: 'hosted' }); setError('Hosted session unavailable. Sign in through your configured authentication service.'); } }
+      finally { loading = false; }
+    };
+    void refresh();
+    const timer = window.setInterval(() => void refresh(), 30_000);
+    window.addEventListener('focus', refresh);
+    return () => { controller.abort(); window.clearInterval(timer); window.removeEventListener('focus', refresh); };
+  }, [offline, invite]);
   if (offline) return <Application />;
+  if (invite) return <AcceptInvitation token={invite} client={api} onAccepted={() => { window.history.replaceState(null, '', window.location.pathname + window.location.search); setInvite(undefined); }} />;
   if (!access.session) return <p role={error ? 'alert' : 'status'}>{error || 'Resolving hosted session…'}</p>;
   return <AccessProvider access={access}>{error && <p role="alert">{error}</p>}<Application /></AccessProvider>;
 }
 function Application() {
   const access = useAccess();
-  const [mode, setMode] = useState<'fixtures' | 'api' | 'author' | 'automation' | 'security' | 'organization' | 'ai-settings'>(access.mode === 'hosted' && !allowed(access, 'build') ? 'api' : 'fixtures');
+  const [mode, setMode] = useState<'fixtures' | 'api' | 'author' | 'automation' | 'security' | 'organization' | 'ai-settings' | 'users'>(access.mode === 'hosted' && !allowed(access, 'build') ? 'api' : 'fixtures');
   const [fixtureId, setFixtureId] = useState(fixtures[0]?.id);
   const fixture = fixtures.find(f => f.id === fixtureId);
-  const modePicker = <label className="source-picker">Mode<select value={mode} onChange={event => setMode(event.target.value === 'ai-settings' ? 'ai-settings' : event.target.value === 'organization' ? 'organization' : event.target.value === 'security' ? 'security' : event.target.value === 'automation' ? 'automation' : event.target.value === 'author' ? 'author' : event.target.value === 'api' ? 'api' : 'fixtures')}>{(access.mode === 'demo' || allowed(access, 'build')) && <option value="fixtures">fixtures</option>}<option value="api">api</option>{allowed(access, 'build') && <option value="author">Author</option>}<option value="security">Security &amp; namespaces</option><option value="organization">Folders, sharing &amp; embedding</option><option value="automation">Schedules &amp; alerts</option>{access.mode === 'hosted' && allowed(access, 'admin') && <option value="ai-settings">AI provider settings</option>}</select></label>;
+  const modePicker = <label className="source-picker">Mode<select value={mode} onChange={event => setMode(event.target.value === 'users' ? 'users' : event.target.value === 'ai-settings' ? 'ai-settings' : event.target.value === 'organization' ? 'organization' : event.target.value === 'security' ? 'security' : event.target.value === 'automation' ? 'automation' : event.target.value === 'author' ? 'author' : event.target.value === 'api' ? 'api' : 'fixtures')}>{(access.mode === 'demo' || allowed(access, 'build')) && <option value="fixtures">fixtures</option>}<option value="api">api</option>{allowed(access, 'build') && <option value="author">Author</option>}<option value="security">Security &amp; namespaces</option><option value="organization">Folders, sharing &amp; embedding</option><option value="automation">Schedules &amp; alerts</option>{access.mode === 'hosted' && allowed(access, 'admin') && <><option value="ai-settings">AI provider settings</option><option value="users">Users and invitations</option></>}</select></label>;
   return <div className="app-shell">
-    {mode !== 'author' && <header className="app-header"><a className="brand" href="./"><span className="brand-mark" aria-hidden="true">◈</span>OpenSight</a><span className="header-caption">Definition explorer</span>{modePicker}{mode !== 'automation' && mode !== 'security' && mode !== 'organization' && mode !== 'ai-settings' && <label className="fixture-picker">Example<select value={fixtureId} onChange={event => setFixtureId(event.target.value)}>{fixtures.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}</select></label>}</header>}
-    <main className={mode === 'author' ? 'author-main' : undefined}>{mode === 'ai-settings' ? <AISettings client={api} /> : mode === 'organization' ? <OrganizationNotice /> : mode === 'security' ? <SecurityNotice /> : mode === 'automation' ? <AutomationNotice /> : mode === 'author' ? <Author modePicker={modePicker} client={import.meta.env.VITE_OPENSIGHT_OFFLINE_DEMO === 'true' ? undefined : api} /> : mode === 'api' ? <ApiExplorer key={fixtureId} example={fixture} /> : fixture ? <Dashboard key={fixture.id} fixture={fixture} /> : <p>No fixtures available.</p>}</main>
+    {mode !== 'author' && <header className="app-header"><a className="brand" href="./"><span className="brand-mark" aria-hidden="true">◈</span>OpenSight</a><span className="header-caption">Definition explorer</span>{modePicker}{mode !== 'automation' && mode !== 'security' && mode !== 'organization' && mode !== 'ai-settings' && mode !== 'users' && <label className="fixture-picker">Example<select value={fixtureId} onChange={event => setFixtureId(event.target.value)}>{fixtures.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}</select></label>}</header>}
+    <main className={mode === 'author' ? 'author-main' : undefined}>{mode === 'users' ? <UserManagement client={api} /> : mode === 'ai-settings' ? <AISettings client={api} /> : mode === 'organization' ? <OrganizationNotice /> : mode === 'security' ? <SecurityNotice /> : mode === 'automation' ? <AutomationNotice /> : mode === 'author' ? <Author modePicker={modePicker} client={import.meta.env.VITE_OPENSIGHT_OFFLINE_DEMO === 'true' ? undefined : api} /> : mode === 'api' ? <ApiExplorer key={fixtureId} example={fixture} /> : fixture ? <Dashboard key={fixture.id} fixture={fixture} /> : <p>No fixtures available.</p>}</main>
     <footer className="app-footer">OpenSight · Local rendering preview · QuickSight fidelity has not been measured</footer>
   </div>;
 }

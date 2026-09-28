@@ -10,8 +10,10 @@ import { readBody, RequestError, SecurityError } from './query.js';
 export interface Identity { namespaceId: string; userId: string }
 export interface User extends SecurityUser { name: string; role: Role }
 export interface Group extends SecurityGroup { name: string }
+export interface Invitation { id: string; namespaceId: string; name: string; role: Role; invitedBy: string; expiresAt: string; tokenHash: string }
 export interface SecurityState {
   version: 1;
+  invitations?: Invitation[];
   folders?: Folder[];
   assets?: OrganizedAsset[];
   namespaces: { id: string; name: string }[];
@@ -36,7 +38,7 @@ function rows(raw: unknown): Record<string, unknown>[] {
   return raw as Record<string, unknown>[];
 }
 export function validateSecurityState(raw: unknown, columns: readonly BoundColumn[]): SecurityState {
-  const s = record(raw, ['version', 'namespaces', 'users', 'groups', 'datasets', 'folders', 'assets']);
+  const s = record(raw, ['version', 'namespaces', 'users', 'groups', 'datasets', 'folders', 'assets', 'invitations']);
   if (s.version !== 1) invalid('$.version', 'expected 1');
   const namespaces = rows(s.namespaces).map(r => { record(r, ['id', 'name']); return { id: id(r.id, '$.id'), name: name(r.name) }; });
   const users = rows(s.users).map(r => {
@@ -46,6 +48,15 @@ export function validateSecurityState(raw: unknown, columns: readonly BoundColum
     if (!isRole(r.role)) invalid('$.role', 'expected a supported role');
     return { id: id(r.id, '$.id'), namespaceId: id(r.namespaceId, '$.namespaceId'), name: name(r.name), role: r.role } as User;
   });
+  const invitations = rows(s.invitations ?? []).map(r => {
+    record(r, ['id', 'namespaceId', 'name', 'role', 'invitedBy', 'expiresAt', 'tokenHash']);
+    if (!isRole(r.role) || typeof r.tokenHash !== 'string' || !/^[a-f0-9]{64}$/.test(r.tokenHash) || typeof r.expiresAt !== 'string' || !Number.isFinite(Date.parse(r.expiresAt))) invalid('$.invitations', 'invalid invitation');
+    return { id: id(r.id, '$.id'), namespaceId: id(r.namespaceId, '$.namespaceId'), name: name(r.name), role: r.role, invitedBy: id(r.invitedBy, '$.invitedBy'), expiresAt: r.expiresAt, tokenHash: r.tokenHash } as Invitation;
+  });
+  for (const invite of invitations) {
+    if (!namespaces.some(n => n.id === invite.namespaceId) || !users.some(u => u.id === invite.invitedBy && u.namespaceId === invite.namespaceId) || users.some(u => u.id === invite.id && u.namespaceId === invite.namespaceId)) invalid('$.invitations', 'unresolved inviter or existing user');
+  }
+  if (new Set(invitations.map(i => `${i.namespaceId}/${i.id}`)).size !== invitations.length || new Set(invitations.map(i => i.tokenHash)).size !== invitations.length) invalid('$.invitations', 'duplicate invitation');
   const groups = rows(s.groups).map(r => {
     record(r, ['id', 'namespaceId', 'name', 'userIds']);
     if (!Array.isArray(r.userIds) || r.userIds.length > 256) invalid('$.userIds', 'expected user IDs');
@@ -64,7 +75,7 @@ export function validateSecurityState(raw: unknown, columns: readonly BoundColum
   for (const d of datasets) for (const rule of [...d.rowRules, ...(d.columnGrants ?? [])]) for (const p of rule.principals) {
     if (!(p.type === 'user' ? users : groups).some(v => v.id === p.id && v.namespaceId === d.namespaceId)) invalid('$.principals', 'unresolved principal');
   }
-  const result: SecurityState = { version: 1, namespaces, users, groups, datasets, ...(s.folders === undefined ? {} : { folders: s.folders as Folder[] }), ...(s.assets === undefined ? {} : { assets: s.assets as OrganizedAsset[] }) };
+  const result: SecurityState = { version: 1, ...(s.invitations === undefined ? {} : { invitations }), namespaces, users, groups, datasets, ...(s.folders === undefined ? {} : { folders: s.folders as Folder[] }), ...(s.assets === undefined ? {} : { assets: s.assets as OrganizedAsset[] }) };
   validateOrganization(result);
   return result;
 }
@@ -77,11 +88,15 @@ export class SecurityService {
     if (store.read().datasets.some(d => d.datasetId !== 'sales' || d.dataSetArn !== dataSetArn)) throw new Error('Unresolved security dataset binding');
     return new SecurityService(store, options, columns, dataSetArn);
   }
-  async authenticate(request: IncomingMessage): Promise<Identity> {
+  async verify(request: IncomingMessage): Promise<Identity> {
     let identity: Identity | undefined;
     try { identity = await this.options.authenticate(request); }
     catch { throw new SecurityError(401, 'UNKNOWN_PRINCIPAL', 'Credentials could not be resolved'); }
     if (!identity) throw new SecurityError(401, request.headers.authorization ? 'UNKNOWN_PRINCIPAL' : 'PRINCIPAL_REQUIRED', 'Authenticated principal required');
+    return { namespaceId: identity.namespaceId, userId: identity.userId };
+  }
+  async authenticate(request: IncomingMessage): Promise<Identity> {
+    const identity = await this.verify(request);
     if (!this.store.read().users.some(u => u.id === identity.userId && u.namespaceId === identity.namespaceId)) throw new SecurityError(403, 'UNKNOWN_PRINCIPAL', 'Principal does not resolve');
     return { namespaceId: identity.namespaceId, userId: identity.userId };
   }

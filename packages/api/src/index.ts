@@ -1,3 +1,4 @@
+import { invitationRoute } from './invitations.js';
 import { generativeRoute } from './o-generative.js';
 import { AISettings, aiFromEnvironment, type AIOptions } from './ai-settings.js';
 import { oRoute } from './o-routes.js';
@@ -96,6 +97,11 @@ export async function createApiServer(options: ApiOptions): Promise<Server> {
         if (await embedding.render(request, response, path, query, namespaceQueries)) return;
       }
       if (embedding?.cors(request, response, path)) return;
+      if (path === '/api/invitations/accept') {
+        if (!security) throw new SecurityError(503, 'SECURITY_NOT_CONFIGURED', 'Hosted authentication required');
+        const invitedIdentity = await security.verify(request);
+        await invitationRoute(request, response, path, query, invitedIdentity, security); return;
+      }
       const identity = await security?.authenticate(request);
       if (identity) path = scopePath(path, identity);
       if (path === '/api/session') {
@@ -107,6 +113,10 @@ export async function createApiServer(options: ApiOptions): Promise<Server> {
       if (security && identity && (/^\/(?:api\/)?analyses(?:\/|$)/.test(path) || /^\/api\/datasets(?:\/sales\/query)?$/.test(path))) security.require(identity, 'build');
       const namespaceId = identity?.namespaceId ?? 'default';
       const scopedStore = namespaceStores.get(namespaceId), scopedSales = namespaceQueries.get(namespaceId);
+      if (path.startsWith('/api/invitations')) {
+        if (!security || !identity) throw new SecurityError(503, 'SECURITY_NOT_CONFIGURED', 'Hosted authentication required');
+        if (await invitationRoute(request, response, path, query, identity, security)) return;
+      }
       if (path.startsWith('/api/admin/ai')) {
         if (!security || !identity) throw new SecurityError(503, 'SECURITY_NOT_CONFIGURED', 'Hosted authentication required');
         if (await ai.route(request, response, path, query, identity, security)) return;
