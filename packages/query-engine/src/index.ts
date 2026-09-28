@@ -22,3 +22,6 @@ export type { Role, Capability } from './roles.js';
 
 export { resolveSecurity } from './security.js';
 export { ExpressionBinder } from './expressions.js';
+
+export { connectors, connectorDefinition, validateConnectorConfig, connectorState, connectConnector, connectorDialect, ConnectorError } from './connectors.js';
+export type { ConnectorDefinition, ConnectorConfig, ConnectorField, ConnectorState } from './connectors.js';
