@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createElement } from 'react';
+import { act, createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { create } from 'react-test-renderer';
 import { activeSheet, authorReducer, emptyDraft } from '../build/test/authoring.js';
 import { buildAuthorVisual } from '../build/test/author-preview.js';
 import { compileVisual, rowGroupKey, rowGroupVisibility } from '../build/test/compiler.js';
@@ -68,4 +69,27 @@ test('pivot without subtotals renders no expand/collapse toggles', () => {
   const single = { ...base(), rows: ['region'], subtotals: true };
   const singleHtml = renderToStaticMarkup(createElement(VisualCard, { visual: input(single, sales) }));
   assert.doesNotMatch(singleHtml, /expand-toggle/);
+});
+
+test('toggle click collapses and re-expands a row group in the rendered table', async t => {
+  const oldWindow = globalThis.window, oldAct = globalThis.IS_REACT_ACT_ENVIRONMENT;
+  globalThis.window = { matchMedia: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }) };
+  globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+  const v = { ...base(), rows: ['region', 'category'], subtotals: true, totals: true };
+  let renderer;
+  await act(() => { renderer = create(createElement(VisualCard, { visual: input(v, sales) })); });
+  t.after(async () => { await act(() => renderer.unmount()); globalThis.window = oldWindow; globalThis.IS_REACT_ACT_ENVIRONMENT = oldAct; });
+  const bodyRows = () => renderer.root.findAllByType('tr').filter(tr => tr.parent?.type === 'tbody');
+  const toggle = label => renderer.root.findAllByType('button').find(b => b.props.className === 'expand-toggle' && b.props['aria-label'] === label);
+  const click = async button => { assert.ok(button); await act(() => button.props.onClick({ stopPropagation() {} })); };
+  assert.equal(bodyRows().length, 6);
+  await click(toggle('Collapse row group East'));
+  // East detail rows hide; the East subtotal anchor, West rows and the grand total stay.
+  assert.equal(bodyRows().length, 4);
+  assert.equal(bodyRows()[0].props.className, 'subtotal');
+  assert.ok(toggle('Expand row group East'));
+  assert.equal(toggle('Expand row group East').props['aria-expanded'], false);
+  await click(toggle('Expand row group East'));
+  assert.equal(bodyRows().length, 6);
+  assert.ok(toggle('Collapse row group East'));
 });
