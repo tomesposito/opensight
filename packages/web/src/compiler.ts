@@ -15,7 +15,9 @@ export interface CompiledVisual {
   /** Ordered, validated cells also used by the accessible HTML data table. */
   table: { columns: string[]; visibleColumns?: string[]; rows: Cell[][]; rowKinds?: ('detail' | 'subtotal' | 'total')[];
     /** Pivot layouts can move or hide measures; retain their identities for cell formatting. */
-    dimensionCount?: number; measureIndices?: number[][] };
+    dimensionCount?: number; measureIndices?: number[][];
+    /** Typed row-group path per row (pivot only): subtotal rows carry their prefix, the grand total carries []. */
+    rowGroupPaths?: Cell[][] };
   state: 'ready' | 'empty' | 'unavailable';
 }
 
@@ -392,6 +394,19 @@ function axisEntries(paths: Cell[][], depth: number, subtotals: boolean, totals:
   return result;
 }
 
+/** Stable key for a typed row-group path; numbers, strings and null never collide. */
+export const rowGroupKey = (path: Cell[]): string => JSON.stringify(path);
+
+/**
+ * Row-group expand/collapse visibility: a row is hidden only when a collapsed
+ * group path is a strict prefix of its own path, so the group's subtotal row
+ * stays visible as the collapsed anchor and the grand total never hides.
+ */
+export function rowGroupVisibility(paths: Cell[][], collapsed: ReadonlySet<string>): boolean[] {
+  const groups = [...collapsed].map(key => JSON.parse(key) as Cell[]);
+  return paths.map(path => !groups.some(group => group.length < path.length && group.every((cell, i) => cell === path[i])));
+}
+
 /** Native HTML pivot: only additive SUM bindings are accepted, so rollups are exact over the supplied groups. */
 function compilePivotTable(model: VisualModel, rows: Row[], cell: (row: Row, field: Field) => Cell,
   number: (row: Row, field: Field) => number | null, path: string): CompiledVisual['table'] {
@@ -427,6 +442,7 @@ function compilePivotTable(model: VisualModel, rows: Row[], cell: (row: Row, fie
   const pivot = model.formatting?.pivot;
   const metricsOnRows = pivot?.metricPlacement === 'rows';
   const dimensionCount = rowFields.length + (metricsOnRows ? 1 : 0);
+  let rowGroupPaths = rows.length ? rowAxis.map(entry => entry.kind === 'total' ? [] : entry.cells) : [];
   if (metricsOnRows) {
     table = {
       columns: [...columns.slice(0, rowFields.length), 'Value', ...colAxis.map(entry => label(entry, columnFields) || 'Value')],
@@ -434,6 +450,7 @@ function compilePivotTable(model: VisualModel, rows: Row[], cell: (row: Row, fie
       rows: output.flatMap(row => model.measures.map((measure, m) => [...row.slice(0, rowFields.length), fieldName(measure, model.formatting), ...colAxis.map((_, c) => row[rowFields.length + c * model.measures.length + m]!)])),
       rowKinds: table.rowKinds!.flatMap(kind => model.measures.map(() => kind)),
     };
+    rowGroupPaths = rowGroupPaths.flatMap(path => model.measures.map(() => path));
   }
   const measureIndices = table.rows.map((row, i) => row.map((_, j) => j < dimensionCount ? -1 : metricsOnRows ? i % model.measures.length : (j - dimensionCount) % model.measures.length));
   const keptRows = table.rows.flatMap((row, i) => !pivot?.hideEmptyRows || row.slice(dimensionCount).some(value => value !== null) ? [i] : []);
@@ -444,5 +461,6 @@ function compilePivotTable(model: VisualModel, rows: Row[], cell: (row: Row, fie
     rows: keptRows.map(i => keptColumns.map(j => table.rows[i]![j]!)),
     rowKinds: keptRows.map(i => table.rowKinds![i]!), dimensionCount,
     measureIndices: keptRows.map(i => keptColumns.map(j => measureIndices[i]![j]!)),
+    rowGroupPaths: keptRows.map(i => rowGroupPaths[i]!),
   };
 }
