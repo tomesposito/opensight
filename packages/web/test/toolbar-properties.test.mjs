@@ -21,7 +21,7 @@ async function mount(t, element, stored) {
 }
 const add = kind => authorReducer(emptyDraft(), { type: 'add', kind });
 
-test('header keeps identity, menus, working Q entry, canvas actions and NEW LOOK in order', async t => {
+test('header keeps identity, menus, working O entry, canvas actions and NEW LOOK in order', async t => {
   const ui = await mount(t, createElement(Author), add('bar'));
   const header = ui.find('header', p => p.className === 'author-topbar app-header');
   assert.equal(header.children[0].props.className, 'brand');
@@ -39,7 +39,7 @@ test('header keeps identity, menus, working Q entry, canvas actions and NEW LOOK
   assert.equal(ui.find('div', p => p.className === 'author-workspace').props['data-chrome'], 'dark');
   assert.equal(ui.saved().chrome, 'dark');
   assert.deepEqual(serializeDraft(ui.saved()), before, 'chrome does not change the analysis definition');
-  await act(() => nav.findByProps({ id: 'q-question' }).props.onChange({ target: { value: 'sum revenue by region' } }));
+  await act(() => nav.findByProps({ id: 'o-question' }).props.onChange({ target: { value: 'sum revenue by region' } }));
   await act(() => nav.findByType('form').props.onSubmit({ preventDefault() {} }));
   const answer = ui.find('div', p => p.className === 'q-answer');
   assert.ok(answer);
