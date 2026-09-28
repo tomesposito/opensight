@@ -41,7 +41,7 @@ test('header keeps identity, menus, working O entry, canvas actions and NEW LOOK
   assert.deepEqual(serializeDraft(ui.saved()), before, 'chrome does not change the analysis definition');
   await act(() => nav.findByProps({ id: 'o-question' }).props.onChange({ target: { value: 'sum revenue by region' } }));
   await act(() => nav.findByType('form').props.onSubmit({ preventDefault() {} }));
-  const answer = ui.find('div', p => p.className === 'q-answer');
+  const answer = ui.find('div', p => p.className === 'o-answer');
   assert.ok(answer);
   assert.equal(nav.findAll(n => n.props.className === 'o-answer').length, 0, 'O answers stay below the toolbar');
   await ui.click('ADD TO ANALYSIS');
