@@ -4,6 +4,7 @@ import { dataFields, type AuthorAction, type AuthorDraft } from './authoring.js'
 import { prepareQVisual } from './q-authoring.js';
 import { LiveAuthorVisual } from './LiveAuthorVisual.js';
 import type { QueryClient } from './author-query.js';
+import { QModeNotice } from './QModeNotice.js';
 
 export function QEntry({ draft, dispatch, client }: { draft: AuthorDraft; dispatch: Dispatch<AuthorAction>; client?: QueryClient }) {
   const [question, setQuestion] = useState('');
@@ -25,6 +26,7 @@ export function QEntry({ draft, dispatch, client }: { draft: AuthorDraft; dispat
       <button type="submit">Ask</button>
       <span className="q-local-label">Local deterministic interpreter · No AI</span>
     </form>
+    <QModeNotice />
     {result && <div className="q-answer">
       <div className="q-answer-actions"><strong>Interpreted question</strong><button type="button" onClick={() => setAnswer(undefined)}>Close answer</button></div>
       {result.errors.map(e => <p key={e.code} role="status" className="q-diagnostic">{e.code}: {e.message}</p>)}

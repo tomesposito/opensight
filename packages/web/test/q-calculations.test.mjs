@@ -50,7 +50,7 @@ test('changing a generation request removes stale suggestions before insert', as
   let renderer;
   await act(() => { renderer = create(createElement(BuildForMe, { fields: [], onInsert() { assert.fail('No insert expected'); } })); });
   t.after(async () => { await act(() => renderer.unmount()); globalThis.IS_REACT_ACT_ENVIRONMENT = old; });
-  const change = value => act(() => renderer.root.findByType('input').props.onChange({ target: { value } }));
+  const change = value => act(() => renderer.root.findAllByType('input').find(n => n.props.maxLength === 2000).props.onChange({ target: { value } }));
   await change('profit margin');
   await act(() => renderer.root.findAllByType('button')[0].props.onClick());
   assert.equal(renderer.root.findAllByType('pre').length, 1);

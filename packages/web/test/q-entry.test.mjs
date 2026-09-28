@@ -81,7 +81,7 @@ test('Q submit, alternative selection and ADD TO ANALYSIS use the chosen rendere
   function Harness() { const [d, dispatch] = useReducer(authorReducer, emptyDraft()); draft = d; return createElement(QEntry, { draft: d, dispatch }); }
   await act(() => { renderer = create(createElement(Harness)); });
   t.after(async () => { await act(() => renderer.unmount()); globalThis.IS_REACT_ACT_ENVIRONMENT = old; });
-  await act(() => renderer.root.findByType('input').props.onChange({ target: { value: 'revenue by region' } }));
+  await act(() => renderer.root.findByProps({ id: 'q-question' }).props.onChange({ target: { value: 'revenue by region' } }));
   await act(() => renderer.root.findByType('form').props.onSubmit({ preventDefault() {} }));
   const card = () => renderer.root.findByType(VisualCard).props.visual;
   assert.equal(card().rows[0]['Q sum revenue'], 500);
