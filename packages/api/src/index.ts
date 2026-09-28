@@ -1,3 +1,4 @@
+import { AISettings, aiFromEnvironment, type AIOptions } from './ai-settings.js';
 import { oRoute } from './o-routes.js';
 import { EmbeddingService, type EmbeddingOptions } from './embedding.js';
 import { sharingRoute } from './sharing.js';
@@ -20,6 +21,7 @@ import { smtpFromEnvironment, type MailTransport } from './mail.js';
 import { refreshRoute, reportRoute, alertRoute, method } from './automation-routes.js';
 
 export interface ApiOptions {
+  ai?: AIOptions;
   embedding?: EmbeddingOptions;
   security?: SecurityOptions;
   /** Trusted startup roots. Unconfigured namespaces start empty; IDs never become paths. */
@@ -61,6 +63,7 @@ export async function createApiServer(options: ApiOptions): Promise<Server> {
     if (source) source.security = security;
     namespaceStores.set(namespaceId, definitions); namespaceQueries.set(namespaceId, source);
   }
+  const ai = await AISettings.load(options.ai ?? aiFromEnvironment());
   const organization = security ? new OrganizationService(security, namespaceStores) : undefined;
   if (options.embedding && !organization) throw new Error('Embedding requires security configuration');
   const embedding = organization ? new EmbeddingService(options.embedding, organization) : undefined;
@@ -103,6 +106,10 @@ export async function createApiServer(options: ApiOptions): Promise<Server> {
       if (security && identity && (/^\/(?:api\/)?analyses(?:\/|$)/.test(path) || /^\/api\/datasets(?:\/sales\/query)?$/.test(path))) security.require(identity, 'build');
       const namespaceId = identity?.namespaceId ?? 'default';
       const scopedStore = namespaceStores.get(namespaceId), scopedSales = namespaceQueries.get(namespaceId);
+      if (path.startsWith('/api/admin/ai')) {
+        if (!security || !identity) throw new SecurityError(503, 'SECURITY_NOT_CONFIGURED', 'Hosted authentication required');
+        if (await ai.route(request, response, path, query, identity, security)) return;
+      }
       if (path.startsWith('/api/o/')) {
         if (!security || !identity || !organization) throw new SecurityError(503, 'SECURITY_NOT_CONFIGURED', 'Hosted authentication required');
         if (await oRoute(request, response, path, query, identity, security, organization, scopedSales)) return;
@@ -251,3 +258,5 @@ export { emptySecurityState } from './security.js';
 export type { SecurityOptions, SecurityState, Identity } from './security.js';
 
 export type { EmbeddingOptions } from './embedding.js';
+
+export type { AIOptions } from './ai-settings.js';

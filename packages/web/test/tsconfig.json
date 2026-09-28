@@ -24,6 +24,7 @@
     "../src/fixture-query.ts",
     "../src/AutomationNotice.tsx",
     "../src/SecurityNotice.tsx",
-    "../src/OrganizationNotice.tsx"
+    "../src/OrganizationNotice.tsx",
+    "../src/AISettings.tsx"
   ]
 }

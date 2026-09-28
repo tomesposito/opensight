@@ -25,6 +25,13 @@ export interface DefinitionResponse {
 }
 export const DEFAULT_API_URL = '/api';
 
+export interface AIConfig {
+  provider: 'openai' | 'anthropic' | 'openai-compatible' | 'bedrock' | null;
+  model: string; baseUrl?: string; hasKey: boolean; configured: boolean;
+  state: 'configured' | 'not-configured' | 'needs-approval';
+  keyStorage: 'ephemeral' | 'encrypted-file'; canSaveKey: boolean; compatibleBaseUrls: string[];
+}
+
 export class ApiError extends Error {
   constructor(message: string, readonly status?: number) { super(message); this.name = 'ApiError'; }
 }
@@ -37,6 +44,19 @@ export class QueryError extends ApiError {
 
 export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch = globalThis.fetch) {
   const base = (baseUrl.trim() || DEFAULT_API_URL).replace(/\/+$/, '');
+  async function resource<T>(route: string, method = 'GET', body?: unknown): Promise<T> {
+    const response = await fetcher(`${base}${route}`, { method, credentials: 'same-origin', headers: { Accept: 'application/json', ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+    const value: unknown = await response.json();
+    if (!response.ok) {
+      const error = object(value, 'API error');
+      throw new ApiError(`${typeof error.errorCode === 'string' ? `${error.errorCode}: ` : ''}${typeof error.Message === 'string' ? error.Message : 'Request failed'}`, response.status);
+    }
+    return value as T;
+  }
+  const getAIConfig = () => resource<AIConfig>('/api/admin/ai');
+  const saveAIConfig = (config: Pick<AIConfig, 'provider' | 'model' | 'baseUrl'>) => resource<AIConfig>('/api/admin/ai', 'POST', config);
+  const saveAIKey = (key: string) => resource<AIConfig>('/api/admin/ai/key', 'POST', { key });
+  const testAIConnection = () => resource<{ ok: true }>('/api/admin/ai/test', 'POST', {});
   async function getSession(signal?: AbortSignal): Promise<Session> {
     const response = await fetcher(`${base}/api/session`, { signal, credentials: 'same-origin', headers: { Accept: 'application/json' } });
     if (!response.ok) throw new ApiError('Authenticated hosted session unavailable.', response.status);
@@ -125,7 +145,7 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
     }
   }
   return {
-    getSession, queryO, getDatasetRefreshStatus,
+    getAIConfig, saveAIConfig, saveAIKey, testAIConnection, getSession, queryO, getDatasetRefreshStatus,
     queryDataset,
     getAnalysisDefinition: (id: string, signal?: AbortSignal) => getDefinition('analysis', id, signal),
     getDashboardDefinition: (id: string, signal?: AbortSignal) => getDefinition('dashboard', id, signal),
