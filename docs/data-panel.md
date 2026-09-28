@@ -30,6 +30,12 @@ field's dimension/measure role or assignment destination. Groups and disclosure
 state are not serialized into drafts or bundles. No Sensitive group is inferred
 from this synthetic schema; these folders are not security classifications.
 
+Search is a case-insensitive substring match across all field names (including
+calculations), with surrounding spaces ignored. Empty groups disappear. A new
+search opens matching groups; they can still be collapsed during that search.
+Clearing search restores the prior unfiltered collapse choices. No matches shows
+“No matching fields.” without leaving empty folder headings.
+
 Icons have accessible names and also describe their assignment buttons without
 changing the buttons' `Assign <name>` labels. The legend is:
 

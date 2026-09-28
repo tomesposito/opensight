@@ -89,3 +89,42 @@ test('assignment buttons retain their names and reference accessible type or geo
     assert.equal(icon.props['aria-hidden'], undefined);
   }
 });
+
+test('search matches across folders, hides empty groups and restores previous collapse choices', async t => {
+  const ui = await mount(t);
+  await ui.toggle('Metadata', false);
+  const before = structuredClone(ui.state());
+  await ui.search('  OrDeR  ');
+  assert.equal(ui.groups().length, 1);
+  assert.equal(ui.group('Metadata').props.open, true);
+  assert.equal(ui.group('Metadata').findAllByType('button').length, 2);
+  await ui.toggle('Metadata', false);
+  assert.equal(ui.group('Metadata').props.open, false);
+  await ui.search('order_date');
+  assert.equal(ui.group('Metadata').props.open, true);
+  assert.equal(ui.group('Metadata').findAllByType('button').length, 1);
+  await ui.search('re');
+  assert.ok(ui.group('Geography'));
+  assert.ok(ui.group('Sales'));
+  assert.equal(ui.group('Metadata'), undefined);
+  await ui.search('');
+  assert.equal(ui.group('Metadata').props.open, false);
+  assert.equal(ui.groups().length, 3);
+  assert.deepEqual(ui.state(), before);
+});
+
+test('search includes calculations, supports assignment of results and exposes one empty state', async t => {
+  let initial = authorReducer(emptyDraft(), { type: 'add', kind: 'bar' });
+  initial = authorReducer(initial, { type: 'calculation-add', field: { name: 'Net profit', role: 'measure', expression: '{revenue} - {profit}' } });
+  const ui = await mount(t, initial);
+  await ui.search('PROFIT');
+  assert.equal(ui.groups().length, 2);
+  assert.equal(ui.group('Calculated').findAllByType('button').length, 1);
+  await ui.click('Assign Net profit');
+  assert.ok(activeSheet(ui.state()).visuals[0].measures.includes('Net profit'));
+  await ui.search('missing_xyz');
+  assert.equal(ui.groups().length, 0);
+  const empty = ui.renderer.root.findAllByType('p').filter(p => p.props.children === 'No matching fields.');
+  assert.equal(empty.length, 1);
+  assert.equal(empty[0].props.role, 'status');
+});

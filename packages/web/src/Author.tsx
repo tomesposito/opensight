@@ -132,10 +132,13 @@ export function AuthorCanvas({ draft, dispatch, client, fit = true }: EditorProp
   const [newKind, setNewKind] = useState<VisualKind>('bar');
   const [search, setSearch] = useState('');
   const [collapsedGroups, setCollapsedGroups] = useState<Partial<Record<FieldGroup, boolean>>>({});
+  const [searchCollapsedGroups, setSearchCollapsedGroups] = useState<Partial<Record<FieldGroup, boolean>>>({});
   const fieldIconId = useId();
   const [well, setWell] = useState<Well>('rows');
   const [calculationOpen, setCalculationOpen] = useState(false);
   const sheet = activeSheet(draft), fields = dataFields(draft.calculatedFields);
+  const query = search.trim().toLowerCase();
+  const matchingFields = fields.filter(f => f.name.toLowerCase().includes(query));
   const interactionKey = JSON.stringify([sheet.id, sheet.visuals.map(v => [v.id, v.kind, v.dimension, v.rows, v.columns, v.measures, v.filters, v.filterActions, v.hierarchy, v.imported]), draft.parameters, draft.calculatedFields, !!client]);
   const [interactionState, setInteractionState] = useState<{ key: string; selections: ActionSelections }>({ key: interactionKey, selections: {} });
   const selections = interactionState.key === interactionKey ? interactionState.selections : {};
@@ -157,15 +160,15 @@ export function AuthorCanvas({ draft, dispatch, client, fit = true }: EditorProp
     <div className="author-layout">
       <Panel title="Data" className="fields-panel">
         <DatasetHeader client={client} />
-        <label>Search fields<input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Find a field…" /></label>
+        <label>Search fields<input type="search" value={search} onChange={e => { setSearch(e.target.value); setSearchCollapsedGroups({}); }} placeholder="Find a field…" /></label>
         <button type="button" className="calculation-button" onClick={() => setCalculationOpen(true)}>+ CALCULATED FIELD</button>
         <p className="field-hint">{selected ? 'Click a field to assign it. Select a well to choose its destination.' : 'Add a visual to start assigning fields.'}</p>
-        {FIELD_GROUPS.filter(group => fields.some(f => fieldGroup(f) === group)).map(group => <details key={group} className="field-group" open={!collapsedGroups[group]} onToggle={e => {
+        {FIELD_GROUPS.filter(group => matchingFields.some(f => fieldGroup(f) === group)).map(group => <details key={group} className="field-group" open={!(query ? searchCollapsedGroups : collapsedGroups)[group]} onToggle={e => {
           const collapsed = !e.currentTarget.open;
-          setCollapsedGroups(previous => previous[group] === collapsed ? previous : { ...previous, [group]: collapsed });
+          (query ? setSearchCollapsedGroups : setCollapsedGroups)(previous => previous[group] === collapsed ? previous : { ...previous, [group]: collapsed });
         }}>
           <summary><svg className="field-folder" viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 4V2.5h5l2 2h6V13h-13V4Z" /></svg>{group}</summary>
-          {fields.filter(f => fieldGroup(f) === group && f.name.toLowerCase().includes(search.toLowerCase())).map(field => <button key={field.name} type="button"
+          {matchingFields.filter(f => fieldGroup(f) === group).map(field => <button key={field.name} type="button"
             disabled={!selected || (field.role === 'dimension' && noDimensions(selected.kind))}
             aria-label={`Assign ${field.name}`} aria-pressed={selected?.dimension === field.name || selected?.rows.includes(field.name) || selected?.columns.includes(field.name) || !!selected?.measures.includes(field.name)}
             aria-describedby={`${fieldIconId}-${encodeURIComponent(field.name)}`}
@@ -174,9 +177,9 @@ export function AuthorCanvas({ draft, dispatch, client, fit = true }: EditorProp
             <span className="field-name">{field.name}</span><span className="field-type">{field.type}</span>
           </button>)}
         </details>)}
+        {!matchingFields.length && <p role="status">No matching fields.</p>}
         <ParameterEditor draft={draft} dispatch={dispatch} />
         <ImportedPanels draft={draft} />
-        {!fields.some(f => f.name.toLowerCase().includes(search.toLowerCase())) && <p>No matching fields.</p>}
       </Panel>
       <Panel title="Visuals" className="build-panel">
           <form className="add-visual" onSubmit={e => { e.preventDefault(); dispatch({ type: 'add', kind: newKind }); }}>
