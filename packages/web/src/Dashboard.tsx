@@ -19,4 +19,3 @@ export function Dashboard({ fixture, hosted = false, dashboardId, client }: { fi
     <p className="provenance">Source: <code>{fixture.provenance}</code></p>
   </>;
 }
-
