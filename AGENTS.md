@@ -100,7 +100,7 @@ The builder models the QuickSight analysis editor:
 - No editing `SOLUTION_DESIGN.md` inside a build phase — it's the
   contract, not a scratchpad.
 - No claiming parity we haven't measured. The demo footer says it:
-  *QuickSight fidelity has not been measured.*
+  *visual fidelity not measured.*
 
 ## 6. Pull-request workflow (planned — not yet adopted)
 

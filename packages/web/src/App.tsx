@@ -58,7 +58,7 @@ function Application() {
   return <div className="app-shell">
     {mode !== 'author' && <header className="app-header"><a className="brand" href="./"><span className="brand-mark" aria-hidden="true">◈</span>OpenSight</a><span className="header-caption">Definition explorer</span>{modePicker}{mode !== 'data-sources' && mode !== 'automation' && mode !== 'security' && mode !== 'organization' && mode !== 'ai-settings' && mode !== 'users' && <label className="fixture-picker">Example<select value={fixtureId} onChange={event => setFixtureId(event.target.value)}>{fixtures.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}</select></label>}</header>}
     <main className={mode === 'author' ? 'author-main' : undefined}>{mode === 'data-sources' ? <DataSources client={access.mode === 'hosted' ? api : undefined} /> : mode === 'users' ? <UserManagement client={api} /> : mode === 'ai-settings' ? <AISettings client={api} /> : mode === 'organization' ? <OrganizationNotice /> : mode === 'security' ? <SecurityNotice /> : mode === 'automation' ? <AutomationNotice /> : mode === 'author' ? <Author modePicker={modePicker} client={import.meta.env.VITE_OPENSIGHT_OFFLINE_DEMO === 'true' ? undefined : api} /> : mode === 'api' ? <ApiExplorer key={fixtureId} example={fixture} /> : fixture ? <Dashboard key={fixture.id} fixture={fixture} /> : <p>No fixtures available.</p>}</main>
-    <footer className="app-footer">OpenSight · Local rendering preview · QuickSight fidelity has not been measured</footer>
+    <footer className="app-footer">OpenSight · Local rendering preview · visual fidelity not measured</footer>
   </div>;
 }
 

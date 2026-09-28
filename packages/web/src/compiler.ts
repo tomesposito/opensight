@@ -206,7 +206,7 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
     keys(arc, [key('arcThickness', 'ArcThickness')], cpath);
     const thickness = enumValue(arc[key('arcThickness', 'ArcThickness')], ['WHOLE', 'SMALL', 'MEDIUM', 'LARGE'], 'WHOLE', cpath);
     innerRadius = ({ WHOLE: '0%', SMALL: '56%', MEDIUM: '42%', LARGE: '28%' } as const)[thickness as 'WHOLE' | 'SMALL' | 'MEDIUM' | 'LARGE'];
-    if (thickness !== 'WHOLE') warnings.push(`${cpath}: donut radii are OpenSight approximations, not measured QuickSight geometry.`);
+    if (thickness !== 'WHOLE') warnings.push(`${cpath}: donut radii are OpenSight approximations, not measured reference geometry.`);
   }
   const sort = object(config[key('sortConfiguration', 'SortConfiguration')] ?? {}, cpath);
   const sortsKey = key('categorySort', 'CategorySort');
