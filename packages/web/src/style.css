@@ -273,13 +273,13 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .q-entry { margin: 8px 0; padding: 10px 14px; border: 1px solid var(--border, #cbd5e1); border-radius: 6px; background: var(--panel, #fff); color: var(--text, #15283d); }
 .q-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 .q-bar label { font-weight: 650; }
-.q-bar input { flex: 1 1 240px; min-width: 0; }
+.q-bar input { flex: 1 1 240px; min-width: 0; font: inherit; padding: 8px; border: 1px solid #c9d8de; border-radius: 5px; }
 .q-local-label, .q-source, .q-diagnostic, .q-explanation span { font-size: 12px; }
 .q-answer { margin-top: 12px; border-top: 1px solid #cbd5e1; padding-top: 10px; }
 .q-answer-actions { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .q-result { max-width: 850px; margin: 8px auto; }
 .q-result .visual-card { min-width: 0; }
-.q-result .chart { height: 260px; }
+.q-result .visual-content { min-height: 260px; }
 .q-explanation { font-weight: 600; }
 .q-explanation span { font-weight: normal; margin-left: 8px; }
 .q-alternatives > div { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -291,5 +291,5 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .q-build-for-me summary { font-weight: 600; cursor: pointer; }
 .q-build-for-me pre { white-space: pre-wrap; overflow-wrap: anywhere; }
 .q-mode-notice { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin-top: 6px; font-size: 12px; }
-.q-mode-notice label { display: flex; align-items: center; gap: 5px; white-space: nowrap; }
-.q-mode-notice input { width: auto; }
+.q-mode-notice label { display: flex; flex-direction: row; align-items: center; gap: 5px; white-space: nowrap; margin: 0; }
+.q-mode-notice input[type=checkbox] { width: auto; margin: 0; }

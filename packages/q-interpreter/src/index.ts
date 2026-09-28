@@ -51,7 +51,7 @@ export function interpretQuestion(question: string, schema: readonly SchemaField
   if (!question.trim()) return stop('EMPTY_QUESTION', 'Enter a question.');
   if (question.length > 2000 || schema.length > 500) return stop('INPUT_LIMIT', 'Use at most 2,000 characters and 500 fields.');
   if (!schema.length || schema.some(f => !f.name.trim() || /[{}\0]/.test(f.name)) || new Set(schema.map(f => f.name.toLowerCase())).size !== schema.length) return stop('INVALID_SCHEMA', 'Use a nonempty schema with unique, safe field names.');
-  const tokens: Token[] = [...question.matchAll(/"[^"]*"|'[^']*'|[\p{L}\p{N}_]+(?:[.-][\p{L}\p{N}_]+)*|[^\s]/gu)].map(m => ({ raw: /^['"]/.test(m[0]) && m[0].length > 1 ? m[0].slice(1, -1) : m[0], word: m[0].toLowerCase(), quoted: /^['"]/.test(m[0]) }));
+  const tokens: Token[] = [...question.matchAll(/"[^"]*"|'[^']*'|-\d+(?:\.\d+)?|[\p{L}\p{N}_]+(?:[.-][\p{L}\p{N}_]+)*|[^\s]/gu)].map(m => ({ raw: /^['"]/.test(m[0]) && m[0].length > 1 ? m[0].slice(1, -1) : m[0], word: m[0].toLowerCase(), quoted: /^['"]/.test(m[0]) }));
   if (tokens.some(t => [';', '`', '\0', "'", '"'].includes(t.raw))) return stop('UNSUPPORTED_SYNTAX', 'Use a question with balanced quotes, without statement separators.');
   const measures: SchemaField[] = [], dimensions: SchemaField[][] = [], filterOptions: QFilter[][] = [];
   const aggregations: Aggregation[] = [], unknown: string[] = [];
@@ -67,12 +67,16 @@ export function interpretQuestion(question: string, schema: readonly SchemaField
       i += 1 + m.length;
       if (tokens[i]?.word === 'is' || tokens[i]?.word === 'equals' || tokens[i]?.word === '=') i++;
       const value: string[] = [];
-      while (i < tokens.length && (tokens[i]!.quoted || !clause.has(tokens[i]!.word) && !['and', '?', ','].includes(tokens[i]!.word))) value.push(tokens[i++]!.raw);
+      while (i < tokens.length && (tokens[i]!.quoted || !clause.has(tokens[i]!.word) && !['and', '?', ','].includes(tokens[i]!.word))) {
+        if (!tokens[i]!.quoted && ['not', 'or', '>', '<', '!='].includes(tokens[i]!.word)) bad('UNSUPPORTED_FILTER', 'Only equality is supported. Quote literal values containing grammar words.');
+        value.push(tokens[i++]!.raw);
+      }
+      if (tokens[i]?.word === 'and' && !clause.has(tokens[i + 1]?.word ?? '')) bad('UNSUPPORTED_FILTER', 'Repeat “where” or “for” for each additional equality filter.');
       if (!value.length) { bad('MISSING_FILTER_VALUE', `Supply a value for ${m.fields.map(f => f.name).join(' / ')}.`); continue; }
       const raw = value.join(' ');
       const filters = m.fields.flatMap(f => {
-        if (numeric(f) && !/^-?\d+(?:\.\d+)?$/.test(raw)) return [];
-        if (datetime(f) && !/^\d{4}-\d{2}-\d{2}(?:T[^\s]+)?$/.test(raw)) return [];
+        if (numeric(f) && (!/^-?\d+(?:\.\d+)?$/.test(raw) || !Number.isFinite(Number(raw)))) return [];
+        if (datetime(f) && (!/^\d{4}-\d{2}-\d{2}(?:T[^\s]+)?$/.test(raw) || !Number.isFinite(Date.parse(raw)) || raw.length === 10 && new Date(raw).toISOString().slice(0, 10) !== raw)) return [];
         return [{ field: f.name, operator: 'equals' as const, value: numeric(f) ? Number(raw) : raw }];
       });
       if (!filters.length) bad('INVALID_FILTER_VALUE', `Invalid value for ${m.fields.map(f => f.name).join(' / ')}.`);
@@ -89,12 +93,12 @@ export function interpretQuestion(question: string, schema: readonly SchemaField
     }
     if (word === 'top') {
       const n = Number(tokens[i + 1]?.raw);
-      if (!Number.isSafeInteger(n) || n < 1 || n > 10000) bad('INVALID_TOP_N', 'Top N must be an integer from 1 to 10,000.');
+      if (!Number.isSafeInteger(n) || n < 1 || n > 10000 || topN !== null) bad('INVALID_TOP_N', 'Use one Top N integer from 1 to 10,000.');
       else topN = n;
       i += 2; continue;
     }
     if (word === 'by' || word === 'per') {
-      if (grains[tokens[i + 1]?.word ?? '']) { granularity = grains[tokens[i + 1]!.word]!; time = true; i += 2; continue; }
+      if (Object.hasOwn(grains, tokens[i + 1]?.word ?? '')) { granularity = grains[tokens[i + 1]!.word]!; time = true; i += 2; continue; }
       const m = fieldAt(i + 1);
       if (!m) { bad('UNKNOWN_DIMENSION', `Unknown field after ${word}.`); break; }
       dimensions.push(m.fields); i += 1 + m.length;
@@ -105,8 +109,8 @@ export function interpretQuestion(question: string, schema: readonly SchemaField
       continue;
     }
     if (word === 'over' && tokens[i + 1]?.word === 'time') { time = true; granularity ??= 'MONTH'; i += 2; continue; }
-    if (grains[word]) { granularity = grains[word]!; time = true; i++; continue; }
-    if (aggregates[word]) { aggregations.push(aggregates[word]!); i++; continue; }
+    if (Object.hasOwn(grains, word)) { granularity = grains[word]!; time = true; i++; continue; }
+    if (Object.hasOwn(aggregates, word)) { aggregations.push(aggregates[word]!); i++; continue; }
     if (['rows', 'records'].includes(word) && aggregations.includes('COUNT')) { countRows = true; i++; continue; }
     if (charts.has(word)) { hint = word === 'trend' ? 'line' : word as typeof hint; if (word === 'trend') { time = true; granularity ??= 'MONTH'; } i++; continue; }
     const m = fieldAt(i);

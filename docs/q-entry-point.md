@@ -143,3 +143,36 @@ OpenSight keeps the answer in document flow beneath the chrome and closes it
 after adding; the left-to-right Data → Visuals → analysis-sheet layout remains.
 The reference's AI claims are replaced by explicit local deterministic labels.
 The demo continues to state: “QuickSight fidelity has not been measured.”
+
+Browser review (2026-09-28) used the installed Playwright/Chromium tooling without
+adding a dependency. The offline file passed submit, alternate selection,
+ADD TO ANALYSIS, reload/persistence, expression insert, disabled switch, and
+gibberish checks. Captures at 1440×1000, 1280×800, 768×1024 and 390×844 showed no
+page overflow, JavaScript errors or HTTP(S) requests. Light/dark captures and the
+calculation dialog were compared with `qs-q-generative.jpg` and
+`qs-author-light-flow.jpg` from the private reference set. Reference images and
+generated captures are not committed.
+
+The comparison caught clipped preview axes; giving the preview content its own
+minimum height corrected the clipping. The Q bar now uses the builder's input
+styling, and the disabled switch stays aligned in the calculation dialog. The
+reference is denser and docks Q beside the sheet; this implementation uses the
+document-flow answer described above, keeping the sheet's established rails
+intact. No unresolved new rendering defect was found in the checked viewports.
+Existing Properties/Data follow-ups (#2/#3) remain outside issue #6.
+
+Final root `npm test` on 2026-09-28 exited 0. The sole skip is the live PostgreSQL
+integration test (`DATABASE_URL` unset); embedded PostgreSQL differential checks
+ran and passed. The 32 interpreter tests and 35 added web tests (including
+cross-engine subtests) run in the standard root suite.
+
+| Root test stage | Passed | Failed | Skipped |
+| --- | ---: | ---: | ---: |
+| API | 90 | 0 | 0 |
+| Bundle parser | 183 | 0 | 0 |
+| Embedding SDK | 4 | 0 | 0 |
+| Q interpreter | 32 | 0 | 0 |
+| Query engine | 353 | 0 | 1 |
+| Web | 366 | 0 | 0 |
+| Conformance | 3 | 0 | 0 |
+| **Total** | **1,031** | **0** | **1** |

@@ -71,6 +71,14 @@ test('Q helper names never overwrite existing fields; aggregate inputs are named
   assert.equal(prepare('sum revenue', existing).visual.measures[0], 'Q sum revenue 2');
   assert.throws(() => prepare('sum "Total revenue"', [{ name: 'Total revenue', role: 'measure', expression: 'sum({revenue})' }]), /Q_UNSUPPORTED_CALCULATION/);
 });
+test('calculated date dimensions retain their result aliases and multiple date groupings compile', () => {
+  const existing = [{ name: 'ship_date', role: 'dimension', expression: "addDateTime(1, 'DD', {order_date})" }];
+  for (const q of ['sum revenue by ship_date yearly', 'sum revenue by order_date and ship_date yearly']) {
+    const p = prepare(q, existing);
+    const r = execute({ ...p, calculatedFields: [...existing, ...p.calculatedFields] });
+    assert.equal(r.compiled.state, 'ready'); assert.equal(r.rows.length, 1);
+  }
+});
 test('Q chrome labels the local interpreter and no-result diagnostics honestly', () => {
   const html = renderToStaticMarkup(createElement(QEntry, { draft: emptyDraft(), dispatch() {} }));
   assert.match(html, /Ask a question/); assert.match(html, /Local deterministic interpreter · No AI/);
@@ -93,4 +101,19 @@ test('Q submit, alternative selection and ADD TO ANALYSIS use the chosen rendere
   assert.equal(activeSheet(draft).visuals[0].measures[0], 'Q avg revenue');
   assert.equal(renderer.root.findAllByType(VisualCard).length, 0);
   validateDraft(draft);
+});
+test('API-mode Q sends the same interpretation query and reports errors without fixture fallback', async t => {
+  const old = globalThis.IS_REACT_ACT_ENVIRONMENT; globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+  let renderer; const requests = [];
+  const client = { async queryDataset(id, request) { requests.push({ id, request }); throw new Error('Q test API unavailable'); } };
+  await act(() => { renderer = create(createElement(QEntry, { draft: emptyDraft(), dispatch() {}, client })); });
+  t.after(async () => { await act(() => renderer.unmount()); globalThis.IS_REACT_ACT_ENVIRONMENT = old; });
+  await act(() => renderer.root.findByProps({ id: 'q-question' }).props.onChange({ target: { value: 'average revenue by region in 2025 top 1' } }));
+  await act(() => renderer.root.findByType('form').props.onSubmit({ preventDefault() {} }));
+  const p = prepare('average revenue by region in 2025 top 1');
+  assert.deepEqual(requests, [{ id: 'sales', request: buildAuthorQuery(p.visual, p.calculatedFields) }]);
+  assert.equal(renderer.root.findByType(VisualCard).props.visual.rows, null);
+  assert.match(renderer.root.findByType(VisualCard).props.dataMessage, /API unavailable/);
+  await act(() => renderer.root.findByProps({ id: 'q-question' }).props.onChange({ target: { value: 'new question' } }));
+  assert.equal(renderer.root.findAllByType(VisualCard).length, 0);
 });

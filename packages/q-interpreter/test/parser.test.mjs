@@ -42,6 +42,8 @@ test('year, category and quoted multiword filters are conjunctive and preserve v
 test('numeric filters are typed and invalid numeric values fail closed', () => {
   assert.equal(first('sum sales where profit is 12.5').filters[0].value, 12.5);
   assert.equal(ask('sum sales where profit is bananas').interpretations.length, 0);
+  assert.equal(ask(`sum sales where profit is ${'9'.repeat(400)}`).interpretations.length, 0);
+  assert.equal(ask('sum sales where order date is 2025-02-30').interpretations.length, 0);
 });
 test('omitted aggregation ranks sum before average; output is repeatable', () => {
   const r = ask('Sales by Region');
@@ -64,9 +66,10 @@ test('exact field names beat aliases; sales can resolve to revenue with reduced 
 });
 test('unknown words reduce confidence and gibberish/blank inputs give named diagnostics', () => {
   assert.ok(first('sum sales blargh whoosh zzz').confidence < 0.6);
-  for (const q of ['', 'zzzz 🐙 !', "'; DROP TABLE sales; --"]) {
+  for (const q of ['', 'zzzz 🐙 !', 'constructor', '__proto__', "'; DROP TABLE sales; --"]) {
     const r = ask(q); assert.equal(r.interpretations.length, 0); assert.ok(r.errors.every(e => e.code && e.message));
   }
+  assert.equal(first('sum sales constructor __proto__').aggregation, 'SUM');
 });
 test('unresolved filter/dimension/date intent never silently drops a clause', () => {
   for (const q of ['sum sales by unicorn', 'sum sales where unknown is x', 'sum sales for region', 'sum sales in yesterday', 'sum sales top 0', 'sum sales top 1.5', 'sum sales top 5']) {
@@ -77,4 +80,21 @@ test('unresolved filter/dimension/date intent never silently drops a clause', ()
 test('schema and input bounds yield diagnostics, without throwing', () => {
   for (const fields of [[], [{ name: '{unsafe}', type: 'NUMBER' }], [...schema, schema[0]]]) assert.equal(ask('sales', fields).errors[0].code, 'INVALID_SCHEMA');
   assert.equal(ask('x'.repeat(2001)).errors[0].code, 'INPUT_LIMIT');
+});
+test('unsupported negation, disjunction and incomplete filter conjunctions fail closed', () => {
+  for (const q of ['sum sales where region is not East', 'sum sales where region is East or West', 'sum sales for region East and customer name is Ada']) {
+    const r = ask(q); assert.equal(r.interpretations.length, 0, q); assert.ok(r.errors.some(e => e.code === 'UNSUPPORTED_FILTER'));
+  }
+  assert.equal(first('sum sales where profit is -12.5').filters[0].value, -12.5);
+  assert.equal(first('sum sales for region "North and West"').filters[0].value, 'North and West');
+});
+test('bounded generated questions never throw, and their rankings and confidence remain valid', () => {
+  const fragments = ['sales', 'sum', 'where', 'by', 'region', 'top', 'in', '🌿', 'is', 'xyz', '-5', '2024', '"West"'];
+  let seed = 42;
+  for (let i = 0; i < 300; i++) {
+    const q = Array.from({ length: 7 }, () => { seed = (seed * 1664525 + 1013904223) >>> 0; return fragments[seed % fragments.length]; }).join(' ');
+    const result = ask(q);
+    assert.ok(result.interpretations.length <= 12);
+    result.interpretations.forEach((r, j) => { assert.ok(r.confidence >= 0 && r.confidence <= 1); if (j) assert.ok(result.interpretations[j - 1].confidence >= r.confidence); });
+  }
 });

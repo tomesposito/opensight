@@ -27,7 +27,8 @@ test('function picker exposes signatures, inserts examples, and blocks invalid s
   assert.ok(renderer.root.findAllByType('code').some(c => c.props.children === 'substring(string, start, length)'));
   await act(() => renderer.root.findAllByType('button').find(b => b.props.children === 'Use example').props.onClick());
   assert.equal(renderer.root.findByType('textarea').props.value, 'substring({region}, 1, 2)');
-  await act(() => renderer.root.findByType('input').props.onChange({ target: { value: 'Short region' } }));
+  const nameInput = renderer.root.findAllByType('label').find(label => label.children[0] === 'Name').findByType('input');
+  await act(() => nameInput.props.onChange({ target: { value: 'Short region' } }));
   await act(() => renderer.root.findAllByType('select')[0].props.onChange({ target: { value: 'dimension' } }));
   await act(() => renderer.root.findByType('textarea').props.onChange({ target: { value: 'substring({region}, 1)' } }));
   await act(() => renderer.root.findByType('form').props.onSubmit({ preventDefault() {} }));
