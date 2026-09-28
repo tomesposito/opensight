@@ -269,3 +269,21 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .automation-notice h2 { margin-top: 0; }
 .automation-notice p { line-height: 1.6; }
 .automation-notice button:disabled { cursor: not-allowed; opacity: .6; }
+/* Q stays in the document flow; opening an answer never covers the analysis sheet. */
+.q-entry { margin: 8px 0; padding: 10px 14px; border: 1px solid var(--border, #cbd5e1); border-radius: 6px; background: var(--panel, #fff); color: var(--text, #15283d); }
+.q-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.q-bar label { font-weight: 650; }
+.q-bar input { flex: 1 1 240px; min-width: 0; }
+.q-local-label, .q-source, .q-diagnostic, .q-explanation span { font-size: 12px; }
+.q-answer { margin-top: 12px; border-top: 1px solid #cbd5e1; padding-top: 10px; }
+.q-answer-actions { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.q-result { max-width: 850px; margin: 8px auto; }
+.q-result .visual-card { min-width: 0; }
+.q-result .chart { height: 260px; }
+.q-explanation { font-weight: 600; }
+.q-explanation span { font-weight: normal; margin-left: 8px; }
+.q-alternatives > div { display: flex; flex-wrap: wrap; gap: 8px; }
+.q-alternatives button { flex: 1 1 220px; text-align: left; white-space: normal; }
+.q-alternatives small { display: block; margin-top: 4px; }
+.q-alternatives button[aria-pressed="true"] { outline: 2px solid #167d9a; }
+.author-workspace[data-chrome="dark"] .q-entry { background: #18283b; color: #e5edf7; border-color: #41516a; }

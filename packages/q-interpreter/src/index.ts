@@ -134,7 +134,7 @@ export function interpretQuestion(question: string, schema: readonly SchemaField
     for (const dims of cross(dimensions)) for (const filters of cross(filterOptions)) {
       const names = [...new Set(dims.map(f => f.name))];
       if (filters.some((f, i) => filters.findIndex(g => g.field === f.field) !== i)) continue;
-      const type = names.length > 1 ? 'table' : !names.length ? (hint === 'table' ? 'table' : 'kpi') : hint ?? (dims.some(datetime) ? 'line' : 'bar');
+      const type = names.length > 1 ? 'table' : !names.length ? 'kpi' : hint ?? (dims.some(datetime) ? 'line' : 'bar');
       const grain = dims.some(datetime) ? granularity ?? 'MONTH' : null;
       const assumptions = (!aggregations.length ? 0.10 : 0) + (time && schema.filter(datetime).length > 1 ? 0.10 : 0) + aliases * 0.05;
       const confidence = Math.max(0.15, Math.min(0.99, 0.98 - assumptions - Math.min(0.60, unknown.length * 0.15) - (aggregation === 'AVG' && !aggregations.length ? 0.12 : 0)));

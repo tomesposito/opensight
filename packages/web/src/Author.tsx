@@ -1,5 +1,6 @@
 import { ThemeEditor } from './ThemeEditor.js';
 import { AuthorToolbar } from './AuthorToolbar.js';
+import { QEntry } from './QEntry.js';
 import { FormattingEditor } from './FormattingEditor.js';
 import { LIGHT_THEME, themeValid, type AnalysisTheme } from './themes.js';
 import { functionCatalog } from '@opensight/query-engine/browser';
@@ -86,6 +87,7 @@ export function Author({ client }: { client?: QueryClient }) {
       <button type="button" className="primary-button" onClick={download} disabled={!draft.sheets.some(s => s.visuals.length) || !!exported.error} aria-describedby="export-help">Export JSON</button>
     </div>
     <AuthorToolbar draft={draft} dispatch={dispatch} fit={fit} onFit={() => setFit(value => !value)} onJson={download} onBundle={() => { if (!busy) void downloadQs(); }} onImport={() => fileInput.current?.click()} busy={busy} jsonDisabled={!draft.sheets.some(s => s.visuals.length) || !!exported.error} />
+    <QEntry draft={draft} dispatch={dispatch} client={client} />
     <div className="bundle-import" onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; }} onDrop={e => { e.preventDefault(); if (e.dataTransfer.files.length !== 1) setImportStatus('Drop one .qs ZIP or one bundle .json member.'); else void importFile(e.dataTransfer.files[0]); }} aria-label="Bundle drop zone">
       <details><summary>Import bundle</summary>
       <label>Import .qs or bundle JSON<input ref={fileInput} type="file" accept=".qs,.json,application/zip,application/json" disabled={busy} onChange={e => { const file = e.currentTarget.files?.[0]; e.currentTarget.value = ''; void importFile(file); }} /></label>

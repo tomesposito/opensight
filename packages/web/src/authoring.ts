@@ -151,6 +151,7 @@ export type AuthorAction =
   | { type: 'sheet-rename'; id: string; name: string }
   | { type: 'layout'; sheetId: string; layout: readonly Placement[] }
   | { type: 'calculation-add'; field: CalculatedField }
+  | { type: 'q-add'; visual: AuthorVisual; calculatedFields: CalculatedField[] }
   | { type: 'add'; kind: VisualKind }
   | { type: 'select' | 'remove'; id: string }
   | { type: 'move'; id: string; offset: -1 | 1 }
@@ -208,6 +209,17 @@ export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorD
   }
   const sheet = activeSheet(draft);
   const update = (changes: Partial<AuthorSheet>): AuthorDraft => ({ ...draft, sheets: draft.sheets.map(s => s === sheet ? { ...s, ...changes } : s) });
+  if (action.type === 'q-add') {
+    const id = nextId('visual', [...draft.sheets.flatMap(s => s.visuals.map(v => v.id)), ...originalIds(draft, true)]);
+    const visual = structuredClone({ ...action.visual, id });
+    const bottom = Math.max(0, ...sheet.layout.map(p => p.y + p.h));
+    const result = { ...update({ visuals: [...sheet.visuals, visual], selectedId: id,
+      layout: [...sheet.layout, { i: id, x: 0, y: bottom, w: 6, h: 8 }] }),
+      calculatedFields: [...draft.calculatedFields, ...structuredClone(action.calculatedFields)] };
+    // A question is one atomic edit: a rejected definition cannot leave orphaned helpers.
+    try { validateDraft(result); } catch { return draft; }
+    return result;
+  }
   if (action.type === 'control-add') {
     const source = draft.bundle?.original.members.find(m => m.path === sheet.imported?.memberPath)?.resource;
     const raw = source && (source.resourceType === 'analysis' || source.resourceType === 'dashboard') ? source.definition.sheets?.find(s => s.sheetId === sheet.imported?.sheetId)?.parameterControls : undefined;

@@ -111,12 +111,12 @@ function scopeResolved(group: Obj, definition: BundleDefinition): boolean {
   });
 }
 /** Only a single, enabled EQUALS list on one visual can be edited without changing scope semantics. */
-function editableFilter(group: Obj, sheet: AuthorSheet, visual: AuthorVisual): CategoryFilter | undefined {
+function editableFilter(group: Obj, sheet: AuthorSheet, visual: AuthorVisual, calculations: readonly CalculatedField[]): CategoryFilter | undefined {
   const scopes = list(obj(obj(group.scopeConfiguration).selectedSheets).sheetVisualScopingConfigurations);
   const scope = obj(scopes[0]), filters = list(group.filters), filter = obj(obj(filters[0]).categoryFilter);
   const config = obj(obj(filter.configuration).filterListConfiguration), column = obj(filter.column);
   if (group.status !== 'ENABLED' || group.crossDataset !== 'SINGLE_DATASET' || filters.length !== 1 || scopes.length !== 1 || scope.scope !== 'SELECTED_VISUALS' || scope.sheetId !== sheet.imported?.sheetId || !equal(scope.visualIds, [visual.imported?.visualId]) || config.matchOperator !== 'EQUALS' || config.nullOption !== 'NON_NULLS_ONLY' || !Array.isArray(config.categoryValues) || !config.categoryValues.every(v => typeof v === 'string' && !v.includes('\0')) || typeof column.columnName !== 'string' || !visual.imported?.dataSets.some(d => d.identifier === column.dataSetIdentifier)) return;
-  if (!dataFields().some(f => f.name === column.columnName && f.type === 'STRING')) return;
+  if (!dataFields(calculations).some(f => f.name === column.columnName && f.type === 'STRING')) return;
   return { columnName: column.columnName, values: [...new Set(config.categoryValues as string[])] };
 }
 
@@ -173,7 +173,8 @@ export function importBundle(bundle: QsBundle): AuthorDraft {
         const imported = importVisual(v, 'visual-1', d, original);
         return imported.dimension === field.name || imported.rows.includes(field.name) || imported.columns.includes(field.name);
       }));
-      if (dimensionUse) field.role = 'dimension';
+      const categoryFilterUse = (d.filterGroups ?? []).some(g => list(obj(g).filters).some(f => obj(obj(obj(f).categoryFilter).column).columnName === field.name));
+      if (dimensionUse || categoryFilterUse) field.role = 'dimension';
       if (local) {
         const problem = calculationError(field, dataFields(draft.calculatedFields));
         if (!problem) { draft.calculatedFields.push(field); addedCalculations.add(field); }
@@ -223,7 +224,7 @@ export function importBundle(bundle: QsBundle): AuthorDraft {
           }
           if (!scopeMatches(group, s.sheetId, meta.visualId)) continue;
           const dynamic = parameterGroup(group, parameters, [...meta.dataSets.map(ds => ds.identifier), ...(meta.local ? d.dataSetIdentifierDeclarations.filter(ds => localBinding(ds.dataSetArn, original, ds.identifier)).map(ds => ds.identifier) : [])]);
-          const filter = dynamic ?? editableFilter(group, sheet, v);
+          const filter = dynamic ?? editableFilter(group, sheet, v, draft.calculatedFields);
           if (filter && !v.filters.some(f => f.columnName === filter.columnName)) {
             v.filters.push(filter); meta.filterGroups.push({ id: string(group.filterGroupId), columnName: filter.columnName });
             const projected = obj(generatedFilters(sheet, { ...v, filters: [filter] }, meta.dataSets[0]?.identifier ?? '', new Set(), parameters)[0]);
