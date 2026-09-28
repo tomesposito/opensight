@@ -1,5 +1,5 @@
 import { themeValid, paletteValid } from './themes.js';
-import { formattingValid, gaugeValid, binsValid } from './formatting.js';
+import { formattingValid, gaugeValid, binsValid, legendPositionValid } from './formatting.js';
 import { EXTRA_VISUALS, extraKind, variantKinds } from './visual-catalog.js';
 import { unsupportedFunctions } from '@opensight/query-engine/browser';
 import { importInteractions, exportInteractions } from './bundle-interactions.js';
@@ -65,8 +65,11 @@ function importVisual(raw: BundleVisual, id: string, definition: BundleDefinitio
   const columns = kind === 'pivot' || kind === 'heatmap' || kind === 'pointMap' ? names(wells[kind === 'pointMap' ? 'longitude' : 'columns']).filter(n => !rows.includes(n)) : [];
   const measures = extra ? extra.measures.flatMap(name => names(wells[name])) : names(wells.values);
   const total = obj(config.totalOptions);
+  const subtitle = obj(body.subtitle), legendPosition = obj(config.legend).position;
   const visual: AuthorVisual = { ...defaults(), ...(paletteValid(body.opensightPalette) ? { palette: [...body.opensightPalette] } : {}), id, kind, title: string(obj(obj(body.title).formatText).plainText),
     ...(formattingValid(body.opensightFormatting) ? { formatting: copy(body.opensightFormatting) } : {}),
+    ...(body.subtitle !== undefined ? { subtitle: string(obj(subtitle.formatText).plainText), subtitleVisible: subtitle.visibility !== 'HIDDEN' } : {}),
+    ...(legendPositionValid(legendPosition) ? { formatting: { ...(formattingValid(body.opensightFormatting) ? copy(body.opensightFormatting) : {}), legendPosition } } : {}),
     ...(kind === 'gauge' && gaugeValid(config.opensightGauge) ? { gauge: copy(config.opensightGauge) } : {}),
     ...(kind === 'histogram' && binsValid(config.opensightBins) ? { bins: config.opensightBins } : {}),
     titleVisible: obj(body.title).visibility !== 'HIDDEN', dimension: noDimensions(kind) ? null : rows[0] ?? null,
@@ -321,6 +324,9 @@ function exportVisual(v: AuthorVisual, raw: BundleVisual | undefined, calculatio
   if (!changedKind && v.title !== baseline.title && v.title.trim()) {
     // Rich/plain text are a union; a plain-title edit replaces that union, not its unknown siblings.
     body.title = { ...obj(body.title), formatText: { plainText: v.title.trim() } };
+  }
+  if (!changedKind && v.subtitle !== baseline.subtitle && v.subtitle !== undefined) {
+    body.subtitle = { ...obj(body.subtitle), formatText: { plainText: v.subtitle } };
   }
   if (usesRemappedDataset(meta)) {
     // A remap intentionally replaces editable wells. The complete original resource is archived on export.

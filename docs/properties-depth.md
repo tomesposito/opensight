@@ -33,3 +33,34 @@ Saved edits survive switches. With no selection, the existing empty message and
 analysis theme editor remain available. All section headers use the shared
 `property-section` details style. Tabular formatting and pivot options remain
 limited to their applicable visual kinds.
+
+The display audit retains working kind-specific controls and adds:
+
+| Visual kinds | Display controls |
+| --- | --- |
+| All | Title text/visibility, title size (8–48 px), subtitle text/visibility |
+| Bar, line, pie, combo, area, 100% bar | Legend visibility and Auto/bottom/top/left/right position |
+| Bar, 100% bar, combo | Category spacing (0–80%); explicit spacing removes the bar-width cap |
+| Bar | Horizontal and stacked toggles; clearing stacked uses clustered bars |
+| 100% bar | Horizontal toggle; percentage stacking stays intrinsic to this kind |
+| Pie | Donut toggle |
+| Gauge, histogram | Existing min/max and bin-count controls |
+| Kinds with data labels | Decimal places (0–12), shared with the result table |
+
+Plain subtitles map to native `subtitle.formatText.plainText` and visibility;
+legend positions map to native `chartConfiguration.legend.position`. Legend
+position also lives in `opensightFormatting` so a temporary kind change retains
+it. Title size and category spacing use that extension as well. Imported rich
+subtitle text remains in the preservation report and original archive; an
+explicit subtitle text edit replaces the rich/plain union with plain text.
+
+Label precision retains chart meaning: pie percentages, 100% bar percentages,
+scatter coordinates, heatmap measures, histogram counts, and numeric values for
+other labels. Category names stay on pie, scatter, funnel, treemap, and map labels.
+Clearing the precision or spacing input restores automatic presentation. Legends
+reserve space around the plot. These controls affect the shared compiler/card,
+so fixture previews, API previews, and embedded rendering use the same settings.
+
+This audit compares the supplied screenshot's section structure and the control
+families requested in the brief. It does not claim exhaustive QuickSight feature
+coverage. Unsupported native formatting remains named and preserved by import.

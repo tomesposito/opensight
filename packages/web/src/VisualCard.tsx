@@ -58,7 +58,10 @@ export function VisualCard({ visual, dataMessage, loading = false, interaction }
   const { column, columns, row, rows } = visual.placement;
   return <section className="visual-card" aria-busy={loading} aria-labelledby={headingId} style={{ '--visual-header': theme.background, background: theme.surface, color: theme.textColor, fontFamily: theme.fontFamily, gridColumn: `${column + 1} / span ${columns}`, gridRow: `${row + 1} / span ${rows}` } as CSSProperties}>
     <header className="card-heading">
-      <h3 id={headingId} className={compiled && !compiled.model.titleVisible ? 'sr-only' : ''}>{compiled?.model.title ?? 'Unsupported visual'}</h3>
+      <div className="card-titles">
+        <h3 id={headingId} style={{ fontSize: compiled?.model.formatting?.titleFontSize }} className={compiled && !compiled.model.titleVisible ? 'sr-only' : ''}>{compiled?.model.title ?? 'Unsupported visual'}</h3>
+        {compiled?.model.subtitle && compiled.model.subtitleVisible && <p className="card-subtitle">{compiled.model.subtitle}</p>}
+      </div>
       {compiled && <span className="chart-kind">{compiled.model.kind}</span>}
     </header>
     {error && <div className="visual-error" role="alert"><strong>Unable to render</strong><p>{error}</p></div>}

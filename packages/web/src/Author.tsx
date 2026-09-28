@@ -4,6 +4,7 @@ import { QEntry } from './QEntry.js';
 import { BuildForMe } from './BuildForMe.js';
 import { FormattingEditor } from './FormattingEditor.js';
 import { PivotOptionsEditor } from './PivotOptionsEditor.js';
+import { hasLegend, hasDataLabels, LEGEND_POSITIONS, type LegendPosition, type VisualFormatting } from './formatting.js';
 import { LIGHT_THEME, themeValid, type AnalysisTheme } from './themes.js';
 import { functionCatalog } from '@opensight/query-engine/browser';
 import { expressionError } from './authoring.js';
@@ -267,10 +268,12 @@ function FieldWells({ visual, draft, dispatch, activeWell, onWell }: { visual: A
 function Properties({ visual, draft, dispatch, client }: EditorProps & { visual: AuthorVisual }) {
   const [tab, setTab] = useState<'Visual' | 'Interaction'>('Visual');
   const tabId = useId();
+  const formatting = visual.formatting ?? {};
+  const setFormatting = (patch: Partial<VisualFormatting>) => dispatch({ type: 'formatting', formatting: { ...formatting, ...patch } });
   const toggles: { property: 'titleVisible' | 'legend' | 'labels' | 'horizontal' | 'stacked' | 'totals' | 'subtotals'; label: string }[] = [
     { property: 'titleVisible', label: 'Show title' },
-    ...(['bar', 'line', 'pie', 'combo', 'area', 'bar100'].includes(visual.kind) ? [{ property: 'legend' as const, label: 'Show legend' }] : []),
-    ...(!['table', 'pivot', 'kpi', 'gauge', 'box', 'wordCloud', 'pointMap'].includes(visual.kind) ? [{ property: 'labels' as const, label: 'Show data labels' }] : []),
+    ...(hasLegend(visual.kind) ? [{ property: 'legend' as const, label: 'Show legend' }] : []),
+    ...(hasDataLabels(visual.kind) ? [{ property: 'labels' as const, label: 'Show data labels' }] : []),
     ...(['bar', 'bar100'].includes(visual.kind) ? [{ property: 'horizontal' as const, label: 'Horizontal bars' }] : []),
     ...(visual.kind === 'bar' ? [{ property: 'stacked' as const, label: 'Stack values' }] : []),
   ];
@@ -287,7 +290,19 @@ function Properties({ visual, draft, dispatch, client }: EditorProps & { visual:
     <div role="tabpanel" id={`${tabId}-panel-Visual`} aria-labelledby={`${tabId}-Visual`} hidden={tab !== 'Visual'}>
     <details className="property-section" open><summary>Display settings</summary>
     <label>Title<input value={visual.title} placeholder="Generated from fields" onChange={e => dispatch({ type: 'title', title: e.target.value })} /></label>
+    <label>Title font size<input type="number" min="8" max="48" value={formatting.titleFontSize ?? 14} onChange={e => setFormatting({ titleFontSize: Number(e.target.value) })} /></label>
+    <label>Subtitle<input value={visual.subtitle ?? ''} onChange={e => dispatch({ type: 'subtitle', subtitle: e.target.value, visible: visual.subtitleVisible !== false })} /></label>
+    <label className="toggle"><input type="checkbox" checked={visual.subtitleVisible !== false} onChange={e => dispatch({ type: 'subtitle', subtitle: visual.subtitle ?? '', visible: e.target.checked })} />Show subtitle</label>
     {toggles.map(({ property, label }) => <label className="toggle" key={property}><input type="checkbox" checked={visual[property]} onChange={e => dispatch({ type: 'display', property, value: e.target.checked })} />{label}</label>)}
+    {hasLegend(visual.kind) && <label>Legend position<select value={formatting.legendPosition ?? 'BOTTOM'} onChange={e => dispatch({ type: 'legend-position', position: e.target.value as LegendPosition })}>{LEGEND_POSITIONS.map(position => <option key={position} value={position}>{position === 'AUTO' ? 'Auto (bottom)' : position[0] + position.slice(1).toLowerCase()}</option>)}</select></label>}
+    {hasDataLabels(visual.kind) && <label>Data label decimal places<input type="number" min="0" max="12" placeholder="Automatic" value={formatting.decimalPlaces ?? ''} onChange={e => {
+      if (e.target.value === '') { const { decimalPlaces: _old, ...rest } = formatting; dispatch({ type: 'formatting', formatting: rest }); }
+      else setFormatting({ decimalPlaces: Number(e.target.value) });
+    }} /></label>}
+    {['bar', 'bar100', 'combo'].includes(visual.kind) && <label>Category spacing (%)<input type="number" min="0" max="80" placeholder="Automatic" value={formatting.barCategoryGap ?? ''} onChange={e => {
+      if (e.target.value === '') { const { barCategoryGap: _old, ...rest } = formatting; dispatch({ type: 'formatting', formatting: rest }); }
+      else setFormatting({ barCategoryGap: Number(e.target.value) });
+    }} /></label>}
     {visual.kind === 'pie' && <label className="toggle"><input type="checkbox" checked={visual.donut} onChange={e => dispatch({ type: 'donut', donut: e.target.checked })} />Donut</label>}
     {tabular(visual.kind) && <p className="field-hint">Subtotals summarize parent groups when multiple dimensions are assigned.</p>}
     {visual.kind === 'gauge' && <>{(['min', 'max'] as const).map(bound => <label key={bound}>Gauge {bound === 'min' ? 'minimum' : 'maximum'}<input type="number" step="any" value={visual.gauge?.[bound] ?? (bound === 'min' ? 0 : 100)} onChange={e => { if (e.target.value.trim()) dispatch({ type: 'gauge', min: visual.gauge?.min ?? 0, max: visual.gauge?.max ?? 100, [bound]: Number(e.target.value) }); }} /></label>)}<p>Minimum must be smaller than maximum.</p></>}

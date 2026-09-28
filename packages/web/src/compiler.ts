@@ -1,10 +1,11 @@
 import { LIGHT_THEME, themeValid, paletteValid } from './themes.js';
-import { formattingValid, fieldName, matchingRule } from './formatting.js';
+import { formattingValid, fieldName, matchingRule, LEGEND_POSITIONS, type LegendPosition } from './formatting.js';
 import type { EChartsOption, BarSeriesOption, LineSeriesOption } from 'echarts';
 import type { Cell, Field, FixtureVisual, Row, VisualModel } from './model.js';
 
 import { EXTRA_VISUALS, extraKind, variantKinds } from './visual-catalog.js';
 import { compileExtra } from './extra-charts.js';
+import { applyDisplayOptions } from './display-options.js';
 
 type ObjectValue = Record<string, unknown>;
 type Input = Pick<FixtureVisual, 'source' | 'rows' | 'bindings' | 'path' | 'theme'> & { definition: unknown };
@@ -159,7 +160,14 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
   const plain = format[key('plainText', 'PlainText')];
   if (plain !== undefined && typeof plain !== 'string') fail(`${p}.${titleKey}`, 'title must be text');
   if (format[key('richText', 'RichText')] !== undefined) warnings.push(`${p}.${titleKey}: rich title formatting is not rendered; using a plain fallback.`);
-  if (body[key('subtitle', 'Subtitle')] !== undefined) warnings.push(`${p}.${key('subtitle', 'Subtitle')}: subtitle presentation is not rendered.`);
+  const subtitleKey = key('subtitle', 'Subtitle');
+  const subtitle = object(body[subtitleKey] ?? {}, `${p}.${subtitleKey}`);
+  keys(subtitle, [key('visibility', 'Visibility'), key('formatText', 'FormatText')], `${p}.${subtitleKey}`);
+  const subtitleFormat = object(subtitle[key('formatText', 'FormatText')] ?? {}, `${p}.${subtitleKey}`);
+  keys(subtitleFormat, [key('plainText', 'PlainText'), key('richText', 'RichText')], `${p}.${subtitleKey}`);
+  const subtitleText = subtitleFormat[key('plainText', 'PlainText')] ?? '';
+  if (typeof subtitleText !== 'string') fail(`${p}.${subtitleKey}`, 'subtitle must be text');
+  if (subtitleFormat[key('richText', 'RichText')] !== undefined) warnings.push(`${p}.${subtitleKey}: rich subtitle formatting is not rendered; using a plain fallback.`);
   const visibility = (o: ObjectValue, name: string, defaultValue = 'VISIBLE'): boolean => enumValue(o[name], ['VISIBLE', 'HIDDEN'], defaultValue, `${cpath}.${name}`) === 'VISIBLE';
   const totalVisibility = (raw: unknown, name: string): boolean => {
     const option = object(raw ?? {}, `${cpath}.${name}`);
@@ -187,7 +195,7 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
   keys(tooltip, [key('tooltipVisibility', 'TooltipVisibility'), key('selectedTooltipType', 'SelectedTooltipType'), key('fieldBasedTooltip', 'FieldBasedTooltip')], cpath);
   if (tooltip[key('fieldBasedTooltip', 'FieldBasedTooltip')] !== undefined || tooltip[key('selectedTooltipType', 'SelectedTooltipType')] !== undefined) warnings.push(`${cpath}.${key('tooltip', 'Tooltip')}: detailed tooltip formatting is approximated with category and value.`);
   const legend = object(config[key('legend', 'Legend')] ?? {}, cpath);
-  keys(legend, [key('visibility', 'Visibility')], cpath);
+  keys(legend, [key('visibility', 'Visibility'), key('position', 'Position')], cpath);
   let innerRadius = '0%';
   if (kind === 'pie') {
     const donut = object(config[key('donutOptions', 'DonutOptions')] ?? {}, cpath);
@@ -226,6 +234,8 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
   return {
     id, kind, ...(formattingValid(formatting) ? { formatting } : {}), ...(palette ? { palette: palette as string[] } : {}), gaugeMin, gaugeMax, bins, title: plain as string | undefined ?? `${measures.map(f => fieldName(f, formattingValid(formatting) ? formatting : undefined)).join(', ')}${dimensions[0] ? ` by ${fieldName(dimensions[0], formattingValid(formatting) ? formatting : undefined)}` : ''}`,
     titleVisible: visibility(title, key('visibility', 'Visibility')),
+    subtitle: subtitleText, subtitleVisible: visibility(subtitle, key('visibility', 'Visibility')),
+    legendPosition: enumValue(legend[key('position', 'Position')] ?? (formattingValid(formatting) ? formatting.legendPosition : undefined), [...LEGEND_POSITIONS], 'BOTTOM', `${cpath}.legend.position`) as LegendPosition,
     dimensions, rowDimensions, columnDimensions, measures, totals, subtotals, columnTotals, columnSubtotals, innerRadius, sort: fieldSort, warnings,
     horizontal: (kind === 'bar' || kind === 'bar100') && enumValue(config[key('orientation', 'Orientation')], ['VERTICAL', 'HORIZONTAL'], 'VERTICAL', `${cpath}.${key('orientation', 'Orientation')}`) === 'HORIZONTAL',
     stacked: kind === 'bar' && enumValue(config[key('barsArrangement', 'BarsArrangement')], ['CLUSTERED', 'STACKED'], 'CLUSTERED', `${cpath}.${key('barsArrangement', 'BarsArrangement')}`) === 'STACKED',
@@ -306,7 +316,7 @@ export function compileVisual(input: Input): CompiledVisual {
     option.grid = { left: 20, right: 24, top: 36, bottom: 40, outerBoundsMode: 'same', outerBoundsContain: 'axisLabel' };
     option.xAxis = model.horizontal ? value : category;
     option.yAxis = model.horizontal ? category : value;
-    option.legend = { show: model.legend && model.measures.length > 1, bottom: 0 };
+    option.legend = { show: model.legend, bottom: 0 };
     option.series = model.measures.map((field): BarSeriesOption | LineSeriesOption => model.kind === 'bar' ? {
       type: 'bar', name: fieldName(field, model.formatting), data: rows.map(row => number(row, field)),
       barMaxWidth: 72, ...(model.stacked ? { stack: 'values' } : {}),
@@ -323,6 +333,7 @@ export function compileVisual(input: Input): CompiledVisual {
     option.tooltip = { show: false };
     option.graphic = [{ type: 'text', left: 'center', top: 'middle', style: { text: label, fill: (model.palette ?? theme.palette)[0], fontSize: value === null ? 22 : 56, fontWeight: 600, fontFamily: theme.fontFamily } }];
   }
+  applyDisplayOptions(model, option);
   if (input.theme || model.palette) {
     for (const axis of [option.xAxis, option.yAxis].flat()) if (axis) { axis.axisLabel = { ...axis.axisLabel, color: theme.textColor }; axis.nameTextStyle = { color: theme.textColor }; }
     if (option.legend && !Array.isArray(option.legend)) option.legend.textStyle = { color: theme.textColor, fontFamily: theme.fontFamily };

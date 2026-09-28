@@ -1,5 +1,5 @@
 import type { AnalysisTheme } from './themes.js';
-import type { VisualFormatting } from './formatting.js';
+import type { LegendPosition, VisualFormatting } from './formatting.js';
 import type { BundleVisual, VisualBody } from '@opensight/bundle-parser';
 import type { VisualKind } from './visual-catalog.js';
 import type { ResourceKind } from './api-client.js';
@@ -15,6 +15,7 @@ export interface VisualModel {
   id: string;
   title: string;
   titleVisible: boolean;
+  subtitle: string; subtitleVisible: boolean; legendPosition: LegendPosition;
   kind: VisualKind;
   palette?: string[];
   formatting?: VisualFormatting;

@@ -84,3 +84,31 @@ test('section visibility remains specific to each kind; no selected visual retai
   assert.ok(html.includes('<summary>Analysis theme</summary>'));
   assert.ok(!html.includes('aria-label="Properties tabs"'));
 });
+
+test('display controls update rendered settings and retain independent interaction state', async t => {
+  const ui = await mount(t, add('bar'));
+  await ui.change('Subtitle', 'Regional sales');
+  await ui.change('Title font size', '24');
+  await ui.change('Legend position', 'RIGHT', 'select');
+  await ui.change('Data label decimal places', '3');
+  await ui.change('Category spacing (%)', '35');
+  await ui.change('Show subtitle', false);
+  await ui.switch('Interaction'); await ui.click('Add filter action'); await ui.switch('Visual');
+  assert.equal(selected(ui.state()).subtitle, 'Regional sales');
+  assert.equal(selected(ui.state()).subtitleVisible, false);
+  assert.deepEqual(selected(ui.state()).formatting, { titleFontSize: 24, legendPosition: 'RIGHT', decimalPlaces: 3, barCategoryGap: 35 });
+  assert.equal(selected(ui.state()).filterActions.length, 1);
+  await ui.change('Data label decimal places', ''); await ui.change('Category spacing (%)', '');
+  assert.deepEqual(selected(ui.state()).formatting, { titleFontSize: 24, legendPosition: 'RIGHT' });
+});
+
+test('display audit shows only controls implemented for each visual kind', () => {
+  for (const { kind } of VISUAL_TYPES) {
+    const html = renderToStaticMarkup(createElement(AuthorCanvas, { draft: add(kind), dispatch() {} }));
+    for (const text of ['Subtitle', 'Show subtitle', 'Title font size']) assert.ok(html.includes(text), `${kind}: ${text}`);
+    assert.equal(html.includes('Legend position'), ['bar', 'line', 'pie', 'combo', 'area', 'bar100'].includes(kind), kind);
+    assert.equal(html.includes('Category spacing (%)'), ['bar', 'bar100', 'combo'].includes(kind), kind);
+    assert.equal(html.includes('Data label decimal places'), !['table', 'pivot', 'kpi', 'gauge', 'box', 'wordCloud', 'pointMap'].includes(kind), kind);
+    assert.equal(html.includes('Stack values'), kind === 'bar', kind);
+  }
+});

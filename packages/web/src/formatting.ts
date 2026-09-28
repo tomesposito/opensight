@@ -1,5 +1,11 @@
 import { colorValid } from './themes.js';
 import type { Cell, Field } from './model.js';
+import type { VisualKind } from './visual-catalog.js';
+export const hasLegend = (kind: VisualKind): boolean => ['bar', 'line', 'pie', 'combo', 'area', 'bar100'].includes(kind);
+export const hasDataLabels = (kind: VisualKind): boolean => !['table', 'pivot', 'kpi', 'gauge', 'box', 'wordCloud', 'pointMap'].includes(kind);
+export const LEGEND_POSITIONS = ['AUTO', 'TOP', 'BOTTOM', 'LEFT', 'RIGHT'] as const;
+export type LegendPosition = typeof LEGEND_POSITIONS[number];
+export const legendPositionValid = (raw: unknown): raw is LegendPosition => LEGEND_POSITIONS.some(p => p === raw);
 export const binsValid = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= 100;
 export function gaugeValid(v: unknown): v is { min: number; max: number } {
   if (!v || typeof v !== 'object' || Array.isArray(v)) return false;
@@ -22,6 +28,7 @@ export function pivotOptionsValid(raw: unknown): raw is PivotOptions {
 }
 export interface VisualFormatting {
   pivot?: PivotOptions;
+  titleFontSize?: number; barCategoryGap?: number; legendPosition?: LegendPosition;
   headersVisible?: boolean; rowNamesVisible?: boolean; columnNamesVisible?: boolean; valueNamesVisible?: boolean;
   headerColor?: string; headerBackground?: string; cellColor?: string; cellBackground?: string;
   fontSize?: number; decimalPlaces?: number; names?: Record<string, string>; rules?: ConditionalRule[];
@@ -31,8 +38,11 @@ export function formattingValid(raw: unknown): raw is VisualFormatting {
   const f = raw as Record<string, unknown>;
   const booleans = ['headersVisible', 'rowNamesVisible', 'columnNamesVisible', 'valueNamesVisible'];
   const colors = ['headerColor', 'headerBackground', 'cellColor', 'cellBackground'];
-  if (Object.keys(f).some(k => ![...booleans, ...colors, 'fontSize', 'decimalPlaces', 'names', 'rules', 'pivot'].includes(k))) return false;
+  if (Object.keys(f).some(k => ![...booleans, ...colors, 'fontSize', 'decimalPlaces', 'names', 'rules', 'pivot', 'titleFontSize', 'barCategoryGap', 'legendPosition'].includes(k))) return false;
+  if (f.legendPosition !== undefined && !legendPositionValid(f.legendPosition)) return false;
   if (f.pivot !== undefined && !pivotOptionsValid(f.pivot)) return false;
+  if (f.titleFontSize !== undefined && (!Number.isInteger(f.titleFontSize) || Number(f.titleFontSize) < 8 || Number(f.titleFontSize) > 48)) return false;
+  if (f.barCategoryGap !== undefined && (!Number.isInteger(f.barCategoryGap) || Number(f.barCategoryGap) < 0 || Number(f.barCategoryGap) > 80)) return false;
   if (booleans.some(k => f[k] !== undefined && typeof f[k] !== 'boolean') || colors.some(k => f[k] !== undefined && !colorValid(f[k]))) return false;
   if (f.fontSize !== undefined && (!Number.isInteger(f.fontSize) || Number(f.fontSize) < 8 || Number(f.fontSize) > 32) || f.decimalPlaces !== undefined && (!Number.isInteger(f.decimalPlaces) || Number(f.decimalPlaces) < 0 || Number(f.decimalPlaces) > 12)) return false;
   if (f.names !== undefined && (!f.names || typeof f.names !== 'object' || Array.isArray(f.names) || Object.entries(f.names).some(([k, v]) => !k || typeof v !== 'string' || !v.trim() || v.length > 128))) return false;

@@ -1,5 +1,5 @@
 import { paletteValid, themeValid, type AnalysisTheme } from './themes.js';
-import { formattingValid, gaugeValid, binsValid, type VisualFormatting } from './formatting.js';
+import { formattingValid, gaugeValid, binsValid, legendPositionValid, type LegendPosition, type VisualFormatting } from './formatting.js';
 import { EXTRA_VISUALS, extraKind, type VisualKind } from './visual-catalog.js';
 export type { VisualKind } from './visual-catalog.js';
 import { parseExpression } from '@opensight/query-engine/browser';
@@ -72,6 +72,7 @@ export interface AuthorVisual {
   gauge?: { min: number; max: number };
   bins?: number;
   id: string; kind: VisualKind; title: string;
+  subtitle?: string; subtitleVisible?: boolean;
   dimension: string | null; measures: string[]; rows: string[]; columns: string[];
   donut: boolean; titleVisible: boolean; legend: boolean; labels: boolean;
   horizontal: boolean; stacked: boolean; totals: boolean; subtotals: boolean;
@@ -158,6 +159,8 @@ export type AuthorAction =
   | { type: 'kind'; kind: VisualKind }
   | { type: 'measure-move'; index: number; offset: -1 | 1 }
   | { type: 'title'; title: string }
+  | { type: 'subtitle'; subtitle: string; visible: boolean }
+  | { type: 'legend-position'; position: LegendPosition }
   | { type: 'donut'; donut: boolean }
   | { type: 'display'; property: 'titleVisible' | 'legend' | 'labels' | 'horizontal' | 'stacked' | 'totals' | 'subtotals'; value: boolean }
   | { type: 'filter-parameter'; columnName: string; parameterName: string; operator?: CategoryFilter['operator'] }
@@ -295,6 +298,8 @@ export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorD
       case 'gauge': return gaugeValid({ min: action.min, max: action.max }) ? { ...visual, gauge: { min: action.min, max: action.max } } : visual;
       case 'bins': return binsValid(action.bins) ? { ...visual, bins: action.bins } : visual;
       case 'title': return { ...visual, title: action.title };
+      case 'subtitle': return typeof action.subtitle === 'string' && typeof action.visible === 'boolean' ? { ...visual, subtitle: action.subtitle, subtitleVisible: action.visible } : visual;
+      case 'legend-position': return legendPositionValid(action.position) ? { ...visual, formatting: { ...visual.formatting, legendPosition: action.position } } : visual;
       case 'donut': return { ...visual, donut: visual.kind === 'pie' && action.donut };
       case 'display': return { ...visual, [action.property]: action.value };
       case 'filter-parameter': {
@@ -370,8 +375,8 @@ export function serializeVisual(visual: AuthorVisual, includeInteractions = true
   const category = visualDimensions(visual).map(name => dimensionField(name, visual.dateGrain, calculations));
   const values: BundleMeasureField[] = visual.measures.map(name => ({ numericalMeasureField: { ...columnField(name), aggregationFunction: { simpleNumericalAggregation: 'SUM' } } }));
   const visibility = (show: boolean) => ({ visibility: show ? 'VISIBLE' : 'HIDDEN' });
-  const body = { ...(visual.formatting ? { opensightFormatting: visual.formatting } : {}), ...(visual.palette ? { opensightPalette: visual.palette } : {}), ...(includeInteractions ? serializeInteractions(visual) : {}), visualId: visual.id, ...(visual.title.trim() || !visual.titleVisible ? { title: { ...visibility(visual.titleVisible), ...(visual.title.trim() ? { formatText: { plainText: visual.title.trim() } } : {}) } } : {}) } satisfies BundleVisualBody;
-  const display = { legend: visibility(visual.legend), dataLabels: visibility(visual.labels) };
+  const body = { ...(visual.subtitle !== undefined ? { subtitle: { ...visibility(visual.subtitleVisible !== false), formatText: { plainText: visual.subtitle } } } : {}), ...(visual.formatting ? { opensightFormatting: visual.formatting } : {}), ...(visual.palette ? { opensightPalette: visual.palette } : {}), ...(includeInteractions ? serializeInteractions(visual) : {}), visualId: visual.id, ...(visual.title.trim() || !visual.titleVisible ? { title: { ...visibility(visual.titleVisible), ...(visual.title.trim() ? { formatText: { plainText: visual.title.trim() } } : {}) } } : {}) } satisfies BundleVisualBody;
+  const display = { legend: { ...visibility(visual.legend), ...(visual.formatting?.legendPosition ? { position: visual.formatting.legendPosition } : {}) }, dataLabels: visibility(visual.labels) };
   const totalVisibility = (show: boolean) => ({ totalsVisibility: show ? 'VISIBLE' : 'HIDDEN' });
   const tableTotals = { totalOptions: totalVisibility(visual.totals), opensightSubtotalOptions: totalVisibility(visual.subtotals) };
   const pivotTotals = { totalOptions: { rowTotalOptions: totalVisibility(visual.totals), columnTotalOptions: totalVisibility(visual.totals),
@@ -466,9 +471,10 @@ export function validateDraft(value: unknown): asserts value is AuthorDraft {
       }
       const fieldNames = (v: unknown, role: string): v is string[] => imported ? Array.isArray(v) && v.every(n => typeof n === 'string' && !!n && !n.includes('\0')) && new Set(v).size === v.length : names(v, role);
 
-      if (!isObject(v) || !onlyKeys(v, ['id', 'kind', 'title', 'dimension', 'measures', 'donut', 'imported', 'filterActions', 'hierarchy', 'dateGrain', 'palette', 'formatting', 'gauge', 'bins', ...Object.keys(defaults())]) || typeof v.id !== 'string' || !/^visual-[1-9][0-9]*$/.test(v.id) || ids.has(v.id) || !VISUAL_TYPES.some(t => t.kind === v.kind) || typeof v.title !== 'string' || !['donut', 'titleVisible', 'legend', 'labels', 'horizontal', 'stacked', 'totals', 'subtotals'].every(k => typeof v[k] === 'boolean') || !fieldNames(v.measures, 'measure') || !fieldNames(v.rows, 'dimension') || !fieldNames(v.columns, 'dimension') || (v.dimension !== null && !fieldNames([v.dimension], 'dimension')) || !Array.isArray(v.filters)) return fail();
+      if (!isObject(v) || !onlyKeys(v, ['id', 'kind', 'title', 'subtitle', 'subtitleVisible', 'dimension', 'measures', 'donut', 'imported', 'filterActions', 'hierarchy', 'dateGrain', 'palette', 'formatting', 'gauge', 'bins', ...Object.keys(defaults())]) || typeof v.id !== 'string' || !/^visual-[1-9][0-9]*$/.test(v.id) || ids.has(v.id) || !VISUAL_TYPES.some(t => t.kind === v.kind) || typeof v.title !== 'string' || !['donut', 'titleVisible', 'legend', 'labels', 'horizontal', 'stacked', 'totals', 'subtotals'].every(k => typeof v[k] === 'boolean') || !fieldNames(v.measures, 'measure') || !fieldNames(v.rows, 'dimension') || !fieldNames(v.columns, 'dimension') || (v.dimension !== null && !fieldNames([v.dimension], 'dimension')) || !Array.isArray(v.filters)) return fail();
       if (singleMeasure(v.kind as VisualKind) && v.measures.length > 1 || noDimensions(v.kind as VisualKind) && v.dimension !== null || v.kind !== 'pie' && v.donut || !splitDimensions(v.kind as VisualKind) && v.columns.length || (grouped(v.kind as VisualKind) ? v.dimension !== (v.rows[0] ?? null) : v.rows.length) || v.rows.some(n => (v.columns as string[]).includes(n))) return fail();
       if (v.formatting !== undefined && !formattingValid(v.formatting) || v.gauge !== undefined && !gaugeValid(v.gauge) || v.bins !== undefined && !binsValid(v.bins)) return fail();
+      if (v.subtitle !== undefined && typeof v.subtitle !== 'string' || v.subtitleVisible !== undefined && (typeof v.subtitleVisible !== 'boolean' || v.subtitle === undefined)) return fail();
       if (v.palette !== undefined && !paletteValid(v.palette)) return fail();
       if (v.dateGrain !== undefined && !['YEAR','QUARTER','MONTH','DAY'].includes(String(v.dateGrain))) return fail();
       if (v.hierarchy !== undefined && hierarchyError(v.hierarchy as DimensionHierarchy, calculations, !!imported)) return fail();
