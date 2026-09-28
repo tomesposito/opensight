@@ -63,15 +63,17 @@ button:disabled { cursor: default; opacity: .5; }
 .author-workspace .fixture-notice { margin: 10px 0; padding: 8px 12px; }
 .author-save { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 16px; margin-bottom: 14px; }
 .author-save p { margin: 0; color: #526c7a; font-size: 11px; line-height: 1.5; }
-.author-layout { display: grid; grid-template-columns: 190px 216px minmax(0, 1fr) 220px; gap: 8px; align-items: start; }
+.author-layout { --data-width: 190px; --build-width: 216px; --properties-width: 220px; display: grid; grid-template-columns: var(--data-width) var(--build-width) minmax(0, 1fr) var(--properties-width); gap: 8px; align-items: start; }
+.author-layout:has(> .fields-panel:not([open])) { --data-width: 44px; }
+.author-layout:has(> .build-panel:not([open])) { --build-width: 44px; }
+.author-layout:has(> .properties-panel:not([open])) { --properties-width: 44px; }
 .author-layout h2 { font-size: 18px; margin: 0 0 12px; }
 .author-layout label, .analysis-title, .rename-sheet label, .calculation-dialog label { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: #526c7a; margin-bottom: 12px; }
 .author-layout input:not([type=checkbox]), .analysis-title input, .rename-sheet input, .calculation-dialog input, .calculation-dialog textarea { width: 100%; min-width: 0; font: inherit; padding: 9px; border: 1px solid #c9d8de; border-radius: 5px; }
 .author-layout select, .calculation-dialog select { width: 100%; min-width: 0; max-width: none; padding: 8px; }
-.builder-panel { min-width: 0; border: 1px solid #dce5e9; border-radius: 6px; background: white; overflow: hidden; }
-.builder-panel > summary { padding: 13px; font-size: 14px; font-weight: 650; border-bottom: 1px solid #e7edef; }
+.builder-panel { min-width: 0; border: 1px solid #dce5e9; border-radius: 6px; background: white; position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow: auto; }
+.builder-panel > summary { position: sticky; top: 0; z-index: 1; padding: 13px; font-size: 14px; font-weight: 650; border-bottom: 1px solid var(--chrome-border, #e7edef); background: var(--chrome-surface, white); }
 .panel-content { padding: 12px; }
-.builder-panel { position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow: auto; }
 .builder-panel p { font-size: 12px; line-height: 1.5; }
 .calculation-button { width: 100%; font-size: 11px; font-weight: 650; }
 .field-group { margin-top: 18px; }
@@ -139,6 +141,9 @@ button:disabled { cursor: default; opacity: .5; }
 .dialog-actions { display: flex; justify-content: end; gap: 10px; }
 tr.subtotal, tr.total { font-weight: 650; background: #edf6f6; }
 textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
+@media (min-width: 1101px) {
+  .builder-panel:not([open]) > summary { writing-mode: vertical-rl; width: 100%; min-height: 120px; padding: 12px 8px; line-height: 24px; border-bottom: 0; }
+}
 @media (max-width: 1100px) {
   .author-layout { display: flex; flex-direction: column; }
   .author-layout > * { width: 100%; }

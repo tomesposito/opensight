@@ -105,15 +105,17 @@ export function Author({ client }: { client?: QueryClient }) {
 }
 
 function Panel({ title, className, children }: { title: string; className: string; children: ReactNode }) {
+  // Keep the sheet usable on laptops; Properties remains available in its rail.
+  const collapseQuery = className === 'properties-panel' ? '(max-width: 1399px)' : '(max-width: 1100px)';
   // Start at the viewport's default: an initial native toggle event from an
   // open disclosure can otherwise race the effect that collapses narrow rails.
-  const [open, setOpen] = useState(() => typeof window === 'undefined' || !window.matchMedia('(max-width: 1100px)').matches);
+  const [open, setOpen] = useState(() => typeof window === 'undefined' || !window.matchMedia(collapseQuery).matches);
   useEffect(() => {
-    const query = window.matchMedia('(max-width: 1100px)');
+    const query = window.matchMedia(collapseQuery);
     const change = () => setOpen(!query.matches);
     change(); query.addEventListener('change', change);
     return () => query.removeEventListener('change', change);
-  }, []);
+  }, [collapseQuery]);
   return <details className={`builder-panel ${className}`} open={open} onToggle={e => setOpen(e.currentTarget.open)}>
     <summary>{title}</summary><div className="panel-content">{children}</div>
   </details>;
