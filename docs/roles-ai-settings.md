@@ -137,3 +137,31 @@ uses the existing Apache-2.0 O interpreter workspace. Browser verification and
 reference comparisons are recorded in [Issue #7 gap notes](issue-7-gap-notes.md).
 All changes are checkpointed on `work/issue-7-roles-settings`. No merge, publish,
 or static-demo rebuild was performed; SOLUTION_DESIGN.md is unchanged.
+
+### Post-reboot verification (2026-09-28)
+
+Resumed from `12e77c9f` on `work/issue-7-roles-settings` with a clean working
+tree. All five implementation checkpoints and the browser review were already
+complete; none were repeated. Removed a trailing blank line in Dashboard.tsx
+so the full branch diff also passes the whitespace check.
+
+Reran root `npm test` with `TZ=UTC`; exit status was 0. This VM has no PostgreSQL
+binaries, and the supplied loopback database on port 5433 refused connections.
+`DATABASE_URL` was therefore unset for this run. Only the live-Postgres parent
+test was skipped (its 13 child tests did not run).
+
+| Stage | Passed | Failed | Skipped |
+| --- | ---: | ---: | ---: |
+| API | 114 | 0 | 0 |
+| Bundle parser | 183 | 0 | 0 |
+| Embedding SDK | 4 | 0 | 0 |
+| O interpreter | 32 | 0 | 0 |
+| Query engine | 353 | 0 | 1 |
+| Web | 442 | 0 | 0 |
+| Conformance | 3 | 0 | 0 |
+| **Total** | **1,131** | **0** | **1** |
+
+No provider or AWS calls were made. The static demo bundle and
+SOLUTION_DESIGN.md retained their pre-run SHA-256 hashes. No merge, push, or
+demo rebuild was performed. The full suite builds its required hosted iframe
+renderer separately from the static demo.
