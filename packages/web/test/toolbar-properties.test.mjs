@@ -43,7 +43,7 @@ test('header keeps identity, menus, working Q entry, canvas actions and NEW LOOK
   await act(() => nav.findByType('form').props.onSubmit({ preventDefault() {} }));
   const answer = ui.find('div', p => p.className === 'q-answer');
   assert.ok(answer);
-  assert.equal(nav.findAll(n => n.props.className === 'q-answer').length, 0, 'Q answers stay below the toolbar');
+  assert.equal(nav.findAll(n => n.props.className === 'o-answer').length, 0, 'O answers stay below the toolbar');
   await ui.click('ADD TO ANALYSIS');
   assert.equal(activeSheet(ui.saved()).visuals.length, 2);
 });
