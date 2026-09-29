@@ -91,13 +91,6 @@ The builder models the QuickSight analysis editor:
   against the reference screenshots. Record findings in the gap notes;
   file anything user-visible as a GitHub issue and schedule it into the
   phase plan.
-- **README stays great.** The README hero GIF (`docs/images/opensight-tour.gif`)
-  and feature screenshots (`docs/images/`) are refreshed on every phase that
-  changes user-visible UI — never older than the latest shipped phase.
-  Regenerate the GIF with the capture script
-  (`~/workspace/tools/screenshots/readme-gif.mjs` + the ffmpeg assembly
-  commands at its bottom) against the freshly rebuilt demo, then re-capture
-  any feature screenshots whose UI changed.
 
 ## 5. What we don't do
 

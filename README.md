@@ -1,57 +1,39 @@
 # OpenSight
 
-[![License](https://img.shields.io/badge/License-Apache_2.0-teal.svg)](LICENSE)
-[![Node](https://img.shields.io/badge/node-%3E%3D24-4d7c0f.svg)](package.json)
-
 An open-source BI platform aiming for full QuickSight capability parity and
-bidirectional asset compatibility — connect data, prepare datasets, build
-analyses and dashboards, and ask questions in natural language. Self-hosted;
-no AWS required.
+bidirectional asset compatibility.
 
-![OpenSight tour: dashboard, ask a question, data preparation, data sources](docs/images/opensight-tour.gif)
+**Start here:** [SOLUTION_DESIGN.md](SOLUTION_DESIGN.md) records the vision,
+architecture, decisions and phased plan.
 
-*Above: the offline demo — a dashboard, the O natural-language bar answering
-"revenue by region", the data-preparation pipeline, and the connector gallery.*
+## Status
 
-## Features
+The parser reads real QuickSight `.qs` ZIP exports with
+analysis, dashboard, dataset and datasource members, grounded in the sanitized
+[AWS sample](fixtures/real-bundle-sample/README.md). Its camelCase archive types
+are separate from the existing PascalCase synthetic inventory. See the
+[observed format and API mapping](docs/research/bundle-format.md).
 
-### 📊 Dashboards and analyses
+The [fixtures](fixtures/README.md) include an inventory smoke sample and a separate
+query/render specification with five visual types, field wells, layouts, source/dataset
+response reconstructions, CSV data and SQL result oracles. The
+[local query engine](packages/query-engine/README.md) compiles that synthetic subset
+to DuckDB SQL and runs it over CSV without AWS. The web app renders and authors
+this subset, and the local API serves definitions and queries. Broader archive
+schemas, AWS reimport and source
+conformance still need evidence from more complex exports.
 
-Author on a QuickSight-style canvas: 18 visual types (bar, line, pie/donut,
-KPI, table, pivot, scatter, combo, maps and more), parameters and controls,
-filter actions, drill-down, themes, and `.qs` bundle import/export round trips.
-
-![Authoring canvas with the O bar in the toolbar](docs/images/author.png)
-
-### 🛠️ Visual data preparation
-
-Build your own datasets on a transformation pipeline canvas: select fields,
-add calculated columns, change types, rename, filter — and combine sources
-with join/append steps. Every step previews against the hosted API.
-
-![Data preparation pipeline](docs/images/data-prep.png)
-
-### 🔌 Data source connectors
-
-A 23-connector gallery: CSV/TSV/JSON/Excel file uploads into DuckDB staging,
-MySQL and PostgreSQL with bounded execution, plus SaaS and AWS connectors
-with honest availability states — unimplemented sources say so instead of
-failing silently.
-
-![Data source connector gallery](docs/images/data-sources.png)
-
-### 💬 Ask O
-
-A natural-language entry point over your data. A local deterministic
-interpreter answers offline; administrators can configure a real AI provider
-(OpenAI, Anthropic, Bedrock, or a custom endpoint) for generative answers,
-gated by role.
-
-### 👥 Built for teams
-
-Five roles (administrator, author, author_ai, reader, reader_ai), single-use
-invitations, row/column security with namespaces, folders, asset sharing, an
-embedding SDK with signed URLs, scheduled refreshes, and dashboard reports.
+The Author UI supports client-side `.qs` import, dataset remapping and ZIP export.
+See [bundle round-trip usage and preservation](docs/bundle-roundtrip.md).
+Parameters and per-sheet controls now drive typed filters, calculated fields,
+cascading dropdowns and debounced queries. See [interactive controls](docs/parameters-controls.md).
+The gallery now includes 19 visual types, offline maps, analysis themes and
+formatting, with author menus and canvas fitting. See [Phase 2d capabilities
+and validation](docs/phase2d-visuals-themes.md).
+The API also supports scheduled DuckDB refreshes, SMTP dashboard reports and
+metric threshold alerts. See [Phase 3a resources and configuration](docs/scheduled-refresh-reports-alerts.md).
+Authenticated deployments also support [row/column security and namespaces](docs/security-namespaces.md),
+[folders, asset sharing and the embedding SDK](docs/folders-sharing-embedding.md).
 
 ## Quick start
 
@@ -61,20 +43,15 @@ Requires Node 24+ and npm. From the repository root:
 npm ci
 npm run build
 npm test
-```
-
-Parse a real QuickSight export:
-
-```bash
-npm run summarize --workspace @opensight/bundle-parser -- fixtures/real-bundle-sample/TotalDeathByCountry.sanitized.qs
+npm run summarize --workspace @opensight/bundle-parser -- ../../fixtures/sample-sales-analysis.json
+npm run summarize --workspace @opensight/bundle-parser -- ../../fixtures/real-bundle-sample/TotalDeathByCountry.sanitized.qs
 ```
 
 Expected [CLI output](fixtures/sample-sales-analysis.summary.txt) and
-[JSON summary](fixtures/sample-sales-analysis.summary.json) are checked by
-tests. The suite includes malformed-input regressions, public-entry
-typechecking, local SQL data-oracle checks, generated DuckDB query/result
-comparisons, and fail-closed execution checks for unsupported features and
-protected/unresolved datasets.
+[JSON summary](fixtures/sample-sales-analysis.summary.json) are checked by tests.
+The suite includes malformed-input regressions, public-entry typechecking and local
+SQL data-oracle checks, generated DuckDB query/result comparisons and fail-closed
+execution checks for unsupported features and protected/unresolved datasets.
 
 After building, workspace consumers can import the public API:
 
@@ -83,11 +60,11 @@ import { loadQsBundle, summarizeQsBundle } from '@opensight/bundle-parser';
 const inventory = summarizeQsBundle(await loadQsBundle('fixtures/real-bundle-sample/TotalDeathByCountry.sanitized.qs'));
 ```
 
-`loadBundle` remains a historical alias for `loadSyntheticAnalysis`. Validation
-errors include JSON paths and, for archive members, their ZIP path. Unknown
-properties are retained; inventory success does not imply full schema validity
-or execution support. Synthetic summary titles retain their `plain`/`rich`
-format; rich markup is raw text and must not be inserted directly into HTML.
+`loadBundle` remains a historical alias for `loadSyntheticAnalysis`. Validation errors
+include JSON paths and, for archive members, their ZIP path. Unknown properties are
+retained; inventory success does not imply full schema validity or execution support.
+Synthetic summary titles retain their `plain`/`rich` format; rich markup is raw text
+and must not be inserted directly into HTML.
 
 ## Layout
 
@@ -101,27 +78,3 @@ docs/research           Observed format and API contract research
 fixtures                Sanitized real export + synthetic regression specifications
 conformance             Controls-to-query integration; source fidelity planned
 ```
-
-## Documentation
-
-**Start here:** [SOLUTION_DESIGN.md](SOLUTION_DESIGN.md) records the vision,
-architecture, decisions and phased plan. Feature guides live in
-[docs/](docs/): [bundle round trips](docs/bundle-roundtrip.md),
-[interactive controls](docs/parameters-controls.md),
-[visuals and themes](docs/phase2d-visuals-themes.md),
-[scheduled refresh, reports and alerts](docs/scheduled-refresh-reports-alerts.md),
-[security and namespaces](docs/security-namespaces.md),
-[folders, sharing and embedding](docs/folders-sharing-embedding.md),
-[data preparation](docs/data-prep.md), and the
-[connector gallery](docs/connector-gallery.md).
-
-## Contributing
-
-Spec-first: propose the change against `SOLUTION_DESIGN.md`, build it on a
-branch with checkpoint commits, verify the full suite (`npm test`), and keep
-the README visuals fresh — every user-facing change refreshes the tour GIF
-and screenshots above (see `AGENTS.md` §4).
-
-## License
-
-[Apache 2.0](LICENSE). Dependencies are MIT/Apache-2.0 only.
