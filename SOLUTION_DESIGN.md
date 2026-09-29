@@ -1121,6 +1121,32 @@ signing tests, API validation tests; full suite green; demo rebuilt.
 - Distributed query investigation (only if evidence demands it).
 - Hosted reference deployment (Docker Compose / Helm).
 
+### Phase 5 — Hosted & scale-out — TRIGGERED, NOT SCHEDULED
+
+This phase does not start on a date or after a feature milestone. It starts when
+a business decision demands it: a hosted multi-tenant offering, or an enterprise
+self-hosted requirement for high availability / horizontal scale. Until then, the
+single-node architecture is the product, and no scale-out work is scheduled.
+
+**Trigger (any one):** decision to operate OpenSight as a hosted service; a
+deployment whose concurrent query load exceeds one node; an HA requirement no
+single node can meet.
+
+**Scope when triggered (per D13):**
+- Blaze snapshots move from in-process heap to content-addressed Parquet
+  artifacts on shared object storage (`blaze/{dataset}/{generation}.parquet`),
+  loaded into per-node local memory (DuckDB memory-map, already a dependency).
+  The `refresh(key, load)` / `read(key)` seam is the portability boundary —
+  execution modes, refresh lifecycle, named errors, and UI do not change.
+- Refresh coordination: distributed locks so one node runs each scheduled
+  refresh; invalidation pub/sub so one node's invalidation reaches all nodes
+  (Redis or equivalent — coordination only, never the snapshot store).
+- Same treatment for the other single-process state: metadata store, session/
+  auth state, refresh scheduler.
+
+**Explicitly not in scope now:** no distributed-systems work is scheduled in
+Phases 0–4. D13 exists so this phase is a swap, not a redesign.
+
 ---
 
 ## 7. Repository Layout
