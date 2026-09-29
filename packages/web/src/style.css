@@ -473,6 +473,3 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
   .prep-document-bar > label { width: 100%; }
   .prep-document-bar input { width: 100%; }
 }
-.prep-sidebar { display: flex; flex-direction: column; }
-.prep-sidebar > h2 { order: -2; }
-.prep-step-editor, .prep-step-summary, .prep-input-config { order: -1; }
