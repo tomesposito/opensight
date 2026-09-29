@@ -67,11 +67,11 @@ export function compilePrep(raw: unknown, sources: readonly PrepSource[], option
       case 'changeType': {
         const c = column(step.config.column), type = step.config.type;
         const types: Record<PrepType, string> = { INTEGER: 'BIGINT', DECIMAL: dialect === 'postgres' ? 'DOUBLE PRECISION' : 'DOUBLE', STRING: 'VARCHAR', DATETIME: 'TIMESTAMP', BOOLEAN: 'BOOLEAN' };
-        // Integer conversion truncates toward zero in both dialects. Invalid values fail the preview.
+        // Integer conversion truncates toward zero; text parsing follows the shared scalar library.
         const value = type === 'INTEGER' && c.type === 'DECIMAL' ? `TRUNC(${q(c.name)})` : q(c.name);
         if (type !== c.type && !(type === 'STRING' || ['INTEGER', 'DECIMAL'].includes(type) && ['INTEGER', 'DECIMAL', 'STRING'].includes(c.type) || type === 'DATETIME' && c.type === 'STRING' || type === 'BOOLEAN' && c.type === 'STRING')) prepFail('UNSUPPORTED_PREP_STEP', path, 'Unsupported type conversion');
-        const conversion = c.type === 'STRING' && type !== 'STRING' ? type === 'INTEGER' ? 'parseInt' : type === 'DECIMAL' ? 'parseDecimal' : type === 'DATETIME' ? 'parseDate' : undefined : undefined;
-        const parsed = conversion ? expressionSql(parseExpression(`${conversion}({value})`, path, { bind: () => ({ scalarType: 'string', nullable: true }) }), dialect, bind).replaceAll(q('value'), q(c.name)) : undefined;
+        const conversion = type === 'STRING' && ['INTEGER', 'DECIMAL'].includes(c.type) ? 'toString' : c.type === 'STRING' && type !== 'STRING' ? type === 'INTEGER' ? 'parseInt' : type === 'DECIMAL' ? 'parseDecimal' : type === 'DATETIME' ? 'parseDate' : undefined : undefined;
+        const parsed = conversion ? expressionSql(parseExpression(`${conversion}({value})`, path, { bind: () => ({ scalarType: scalarType(c.type), nullable: true }) }), dialect, bind).replaceAll(q('value'), q(c.name)) : undefined;
         const converted = parsed ?? (c.type === 'STRING' && type === 'BOOLEAN' ? `CASE WHEN ${q(c.name)} = 'true' THEN TRUE WHEN ${q(c.name)} = 'false' THEN FALSE END` : c.type === 'DATETIME' && type === 'STRING' ? timestamp(q(c.name), dialect) : c.type === 'BOOLEAN' && type === 'STRING' ? `CASE WHEN ${q(c.name)} THEN 'true' WHEN NOT ${q(c.name)} THEN 'false' END` : `CAST(${value} AS ${types[type]})`);
         sql = `SELECT ${columns.map(col => col.name === c.name ? `${converted} AS ${q(col.name)}` : q(col.name)).join(', ')} FROM ${from}`;
         columns = columns.map(col => col.name === c.name ? { ...col, type } : col); break;

@@ -58,6 +58,8 @@ test('prep validation is atomic and preview requests cannot bypass downstream va
   assert.equal((await call(`${path}/preview`, 'POST', { pipeline: invalid, through: null })).body.errorCode, 'PREP_SCHEMA_MISMATCH');
   assert.equal((await call(`${path}/preview`, 'POST', { limit: 501 })).body.errorCode, 'PREP_LIMIT_EXCEEDED');
   assert.equal((await call(`${path}/preview`, 'POST', { through: 'missing' })).body.errorCode, 'PREP_NOT_FOUND');
+  assert.equal((await call(`${path}/preview`, 'POST', { pipeline: null })).body.errorCode, 'INVALID_PREP_PIPELINE');
+  assert.equal((await call('/api/datasets/missing/prep/preview', 'POST', {})).body.errorCode, 'PREP_NOT_FOUND');
   assert.equal((await call(path, 'PATCH', {})).status, 405);
   assert.equal((await call(path + '?sql=1')).status, 400);
 });

@@ -45,8 +45,9 @@ export async function previewPrepPostgres(raw: unknown, sources: readonly PrepSo
   const plan = compilePrep(raw, sources, { ...options, dialect: 'postgres' });
   const validated = validateConnectorConfig('postgresql', config), connectionString = process.env[validated.connectionEnv!];
   if (!connectionString) prepFail('PREP_SOURCE_NOT_FOUND', '$.source', 'Postgres connection environment variable is not configured');
-  const client = new Client({ connectionString, connectionTimeoutMillis: 5000 });
   try {
+    const client = new Client({ connectionString, connectionTimeoutMillis: 5000 });
+    try {
     await client.connect();
     await client.query('BEGIN READ ONLY');
     await client.query("SET LOCAL TIME ZONE 'UTC'");
@@ -54,8 +55,9 @@ export async function previewPrepPostgres(raw: unknown, sources: readonly PrepSo
     const result = await client.query<Record<string, unknown>>({ text: plan.sql, values: plan.parameters, types: { getTypeParser: () => (v: string) => v } });
     const preview = prepPreviewResult(plan, result.rows);
     await client.query('COMMIT'); return preview;
+    } finally { await client.end(); }
   } catch (e) {
     if (e instanceof PrepError) throw e;
     return prepFail('PREP_EXECUTION_FAILED', '$.preview', 'Postgres preparation failed or exceeded the 10-second execution limit');
-  } finally { await client.end().catch(() => undefined); }
+  }
 }

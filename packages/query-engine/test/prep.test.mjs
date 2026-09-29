@@ -94,3 +94,8 @@ test('string conversions share function-library parsing, invalid values become n
     assert.ok(result.every(r => r.category === null));
   }
 });
+test('numeric-to-string preparation normalizes integer-valued decimals in both dialects', async t => {
+  const run = await engines(t);
+  const rows = await run([{ kind: 'changeType', config: { column: 'amount', type: 'STRING' } }, { kind: 'select', config: { columns: ['amount'] } }]);
+  assert.deepEqual(rows, [{ amount: '2.9' }, { amount: '3.1' }, { amount: '4' }, { amount: null }]);
+});

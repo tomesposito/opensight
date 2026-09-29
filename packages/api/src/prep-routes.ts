@@ -75,7 +75,8 @@ export class PrepRoutes {
       const existing = this.store.read().datasets.find(e => this.owned(identity, e) && e.resource.dataSetId === id);
       if (preview || request.method === 'PUT') {
         const body = prepObject(await readBody(request), preview ? ['pipeline', 'through', 'limit'] : ['name', 'pipeline'], '$');
-        const pipeline = validatePrepPipeline(body.pipeline ?? (preview ? existing?.resource.opensightPrep : undefined));
+        if (preview && !Object.hasOwn(body, 'pipeline') && !existing) prepFail('PREP_NOT_FOUND', '$.dataset', 'Prepared dataset not found');
+        const pipeline = validatePrepPipeline(Object.hasOwn(body, 'pipeline') ? body.pipeline : preview ? existing?.resource.opensightPrep : undefined);
         const context = await this.context(identity, pipeline.input);
         const options: PrepPreviewOptions = {};
         if (body.through !== undefined) { if (body.through !== null) prepName(body.through, '$.through'); options.through = body.through as string | null; }
