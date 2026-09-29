@@ -64,9 +64,15 @@ movement. Captured frames were held three times for readability and assembled
 with the script's 10-fps ffmpeg palette workflow. The resulting GIF is 960×600,
 16.2 seconds, and 162 frames. Every frame decoded successfully; Chromium loaded
 and animated it, and a playback screenshot visibly contains both branches and
-the Output marker. No unaffected feature screenshot needed replacement.
+the Output marker. `docs/images/blaze.png` is also refreshed because it includes the prep canvas.
+A temporary authenticated loopback API used synthetic sales and manager CSVs,
+materialized the selected summary output, and served two actual cached rows
+(East 2000, West 650). The hosted capture shows the branches, Output marker, cache
+status and provenance, with no page errors or external requests. No unaffected
+feature screenshot needed replacement.
 
 Temporary evidence: `/tmp/issue18-browser/` contains desktop/mobile, invalid
 reference, long-name, author, and GIF playback captures, the downloaded bundle,
 and browser check results. `/tmp/issue18-gif/` contains storyboard frames and
-palette output. These are synthetic sample-schema captures with no live rows.
+palette output. The static captures use sample schemas with no live rows. The separate Blaze
+capture uses only synthetic rows executed by the temporary local API.
