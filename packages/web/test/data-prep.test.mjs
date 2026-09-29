@@ -138,10 +138,11 @@ test('self-join instances render distinct canvas nodes with (2), (3) counters', 
   await submitStep(ui.renderer);
   await ui.click('\uFF0B Join');
   await field(ui.renderer, 'Right source', JSON.stringify('demo-sales'));
+  await field(ui.renderer, 'Right column prefix', 'again_');
   await submitStep(ui.renderer);
   const html = JSON.stringify(ui.renderer.toJSON());
   assert.match(html, /demo-sales \(2\)/); assert.match(html, /demo-sales \(3\)/);
-  assert.match(html, /Source 2/); assert.match(html, /Source 3/);
+  assert.match(html, /"Source ","2"/); assert.match(html, /"Source ","3"/);
 });
 test('hosted prepared joins preview before save and preserve refs and aliases in bundle exports', async t => {
   const lookup = { ...resource, dataSetId: 'lookup', name: 'Lookup', opensightPrep: pipeline };
