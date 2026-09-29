@@ -1,3 +1,5 @@
+import { prepFail } from '@opensight/bundle-parser/prep';
+import type { PrepSource, PrepPreview, PrepPreviewOptions } from '@opensight/query-engine';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { connectors, connectorState, connectConnector, ConnectorError, UploadStaging, UploadError, type UploadColumn } from '@opensight/query-engine';
 import { readBody, RequestError } from './query.js';
@@ -61,6 +63,17 @@ export class ConnectorRoutes {
       }
       throw error;
     }
+  }
+  async prepSources(identity: Identity): Promise<PrepSource[]> {
+    const session = this.sessions.get(JSON.stringify([identity.namespaceId, identity.userId]));
+    return session ? (await session).prepSources() : [];
+  }
+  async previewPrep(identity: Identity, raw: unknown, options: PrepPreviewOptions): Promise<PrepPreview> {
+    const owner = JSON.stringify([identity.namespaceId, identity.userId]), session = this.sessions.get(owner);
+    if (!session) prepFail('PREP_SOURCE_NOT_FOUND', '$.input', 'Upload staging is unavailable; upload the source again');
+    const operation = (this.queues.get(owner) ?? Promise.resolve()).catch(() => undefined).then(async () => (await session).previewPrep(raw, options));
+    this.queues.set(owner, operation);
+    try { return await operation; } finally { if (this.queues.get(owner) === operation) this.queues.delete(owner); }
   }
   async close(): Promise<void> {
     await Promise.allSettled(this.queues.values());

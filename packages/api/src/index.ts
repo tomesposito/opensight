@@ -1,3 +1,4 @@
+import { PrepRoutes, type PrepPostgresBinding } from './prep-routes.js';
 import { ConnectorRoutes } from './connector-routes.js';
 import { invitationRoute } from './invitations.js';
 import { generativeRoute } from './o-generative.js';
@@ -24,6 +25,8 @@ import { smtpFromEnvironment, type MailTransport } from './mail.js';
 import { refreshRoute, reportRoute, alertRoute, method } from './automation-routes.js';
 
 export interface ApiOptions {
+  prepStorePath?: string;
+  prepPostgresBindings?: readonly PrepPostgresBinding[];
   ai?: AIOptions;
   embedding?: EmbeddingOptions;
   security?: SecurityOptions;
@@ -82,6 +85,7 @@ export async function createApiServer(options: ApiOptions): Promise<Server> {
   refresh.onSuccess = (datasetId, run) => alerts.afterRefresh(datasetId, run);
   const scheduler = new Scheduler(async () => { await refresh.tick(); await reports.tick(); });
   const connectorRoutes = new ConnectorRoutes();
+  const prepRoutes = await PrepRoutes.create(connectorRoutes, options.prepStorePath, options.prepPostgresBindings);
   const server = createServer((request, response) => {
     void (async () => {
       const requestId = randomUUID();
@@ -115,6 +119,11 @@ export async function createApiServer(options: ApiOptions): Promise<Server> {
       if (security && identity && (/^\/(?:api\/)?analyses(?:\/|$)/.test(path) || /^\/api\/datasets(?:\/sales\/query)?$/.test(path))) security.require(identity, 'build');
       const namespaceId = identity?.namespaceId ?? 'default';
       const scopedStore = namespaceStores.get(namespaceId), scopedSales = namespaceQueries.get(namespaceId);
+      if (/^\/api\/(prep-sources|prep-datasets)(?:\/|$)/.test(path) || /^\/api\/datasets\/[^/]+\/prep(?:\/|$)/.test(path)) {
+        if (!security || !identity) throw new SecurityError(503, 'SECURITY_NOT_CONFIGURED', 'Needs hosted API with authentication configured');
+        security.require(identity, 'build');
+        await prepRoutes.route(request, response, path, query, identity); return;
+      }
       if (/^\/api\/(connectors|uploads)(?:\/|$)/.test(path)) {
         if (!security || !identity) throw new SecurityError(503, 'SECURITY_NOT_CONFIGURED', 'Needs hosted API with authentication configured');
         security.require(identity, 'build');
@@ -279,3 +288,5 @@ export type { SecurityOptions, SecurityState, Identity } from './security.js';
 export type { EmbeddingOptions } from './embedding.js';
 
 export type { AIOptions } from './ai-settings.js';
+
+export type { PrepPostgresBinding } from './prep-routes.js';

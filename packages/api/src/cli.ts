@@ -5,7 +5,7 @@ try {
   const portText = process.env.PORT ?? '3000';
   if (!/^\d+$/u.test(portText) || Number(portText) > 65535) throw new Error('PORT must be an integer from 0 to 65535');
   const dataRoot = process.env.OPENSIGHT_DATA_ROOT ?? fileURLToPath(new URL('../../../fixtures/', import.meta.url));
-  const server = await createApiServer({ dataRoot, automationStorePath: process.env.OPENSIGHT_AUTOMATION_STORE ?? '.opensight/automation.json' });
+  const server = await createApiServer({ dataRoot, prepStorePath: process.env.OPENSIGHT_PREP_STORE ?? '.opensight/prep.json', automationStorePath: process.env.OPENSIGHT_AUTOMATION_STORE ?? '.opensight/automation.json' });
   server.on('error', error => {
     console.error(error.message);
     process.exitCode = 1;
