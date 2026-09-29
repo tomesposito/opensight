@@ -82,3 +82,32 @@ test('step references do not consume the import step budget', () => {
   validatePrepPipeline(p); // 17 import steps total: allowed
   assert.throws(() => validatePrepPipeline({ version: 1, input: 'left', steps: Array.from({ length: 32 }, (_, i) => join(i)) }), e => e.code === 'PREP_LIMIT_EXCEEDED');
 });
+
+test('branch references and output are optional, preserved and strictly topological', () => {
+  const select = id => ({ id, kind: 'select', config: { columns: ['new'] } });
+  const p = { ...pipeline, output: 'rename', steps: [...pipeline.steps, select('a'), { ...select('b'), from: 'rename' }, { ...select('c'), from: 'b' }] };
+  assert.deepEqual(validatePrepPipeline(p), p);
+  assert.equal(JSON.stringify(validatePrepPipeline(pipeline)), JSON.stringify(pipeline));
+  for (const from of ['unknown', 'b', 'c', '', null, 3, undefined]) {
+    const bad = structuredClone(p); bad.steps[2].from = from;
+    assert.throws(() => validatePrepPipeline(bad), e => e.code === 'INVALID_PREP_PIPELINE' && e.path.endsWith('.steps[2].from'));
+  }
+  assert.throws(() => validatePrepPipeline({ ...p, steps: [{ ...p.steps[0], from: 'rename' }] }), e => e.code === 'INVALID_PREP_PIPELINE');
+  for (const output of ['unknown', '', null, 3, undefined]) assert.throws(() => validatePrepPipeline({ ...p, output }), e => e.code === 'INVALID_PREP_PIPELINE' && e.path.endsWith('.output'));
+  assert.throws(() => validatePrepPipeline({ version: 1, input: 'source', steps: [], output: 'rename' }), e => e.code === 'INVALID_PREP_PIPELINE');
+});
+test('five distinct downstream consumers include implicit left inputs and join right references', () => {
+  const select = id => ({ id, kind: 'select', config: { columns: ['new'] } });
+  const p = { ...pipeline, steps: [...pipeline.steps, select('implicit'), ...Array.from({ length: 4 }, (_, i) => ({ ...select(`b${i}`), from: 'rename' }))] };
+  validatePrepPipeline(p);
+  assert.throws(() => validatePrepPipeline({ ...p, steps: [...p.steps, { ...select('sixth'), from: 'rename' }] }), e => e.code === 'PREP_LIMIT_EXCEEDED');
+  const join = { id: 'join', kind: 'join', config: { source: { step: 'rename' }, joinType: 'left', keys: [{ left: 'new', right: 'new' }], prefix: 'r_' } };
+  assert.throws(() => validatePrepPipeline({ ...p, steps: [...p.steps, join] }), e => e.code === 'PREP_LIMIT_EXCEEDED');
+  // A step using the same upstream result on both sides is still one consumer.
+  validatePrepPipeline({ ...p, steps: [...p.steps.slice(0, -1), { ...join, from: 'rename' }] });
+});
+test('from reuse does not consume the 32-source import budget', () => {
+  const steps = Array.from({ length: 31 }, (_, i) => ({ id: `a${i}`, kind: 'append', config: { source: 'source' } }));
+  steps.push(...Array.from({ length: 19 }, (_, i) => ({ id: `b${i}`, from: `a${i}`, kind: 'select', config: { columns: ['new'] } })));
+  validatePrepPipeline({ version: 1, input: 'source', steps });
+});
