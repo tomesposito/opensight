@@ -426,6 +426,7 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .prep-sidebar { padding: 16px; background: #f7f9fb; border-right: 1px solid #c9d3dc; }
 .prep-sidebar h2, .prep-main h2 { font-size: 15px; margin: 0 0 12px; }
 .prep-sidebar h3 { font-size: 12px; margin: 15px 0 8px; color: #516572; }
+.prep-step-summary h3, .prep-preview-heading h2 { overflow-wrap: anywhere; }
 .prep-add-data, .prep-catalog-group > button { text-align: left; width: 100%; margin: 2px 0; }
 .prep-catalog-group > button { border-color: transparent; background: transparent; padding: 7px 8px; }
 .prep-input-config, .prep-step-editor, .prep-step-summary { border-top: 1px solid #c9d3dc; margin-top: 18px; padding-top: 8px; }
