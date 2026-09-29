@@ -78,22 +78,46 @@ identify both names and types; INTEGER and DECIMAL require explicit conversion.
 The editor shows these errors before Apply, alongside typed key choices and the
 prospective right output names.
 
-Prepared inputs resolve to the current saved definition owned by the same user
-and namespace. Compilation expands their complete results as SQL relations;
+Prepared inputs resolve within the same owner and namespace. Direct inputs
+expand the current saved definition as complete SQL relations;
 preview limits and datetime serialization apply only to the requested output.
 Each distinct dependency compiles once. Cycles fail with `INVALID_PREP_PIPELINE`;
 more than 16 nested datasets or 500 expanded transformation steps fail with
 `PREP_LIMIT_EXCEEDED`. Validation repeats on preview/save, including inside the
 serialized metadata write. Deleting a dependency, losing a source, or changing a
 dependency's schema cannot silently reuse old rows. The editor's Refresh sources
-reloads source and saved-dataset metadata. Prepared inputs do not use Blaze caches.
+reloads source and saved-dataset metadata. Blaze inputs use their ready cached
+snapshot and report its refresh time; unavailable snapshots never fall back to SQL.
 
 Joins and appends require the same engine and configured connection. Cross-engine
-federation is not implemented. MySQL prep is explicitly unsupported; the existing
-MySQL visual-query connector is unchanged. No prep operation opens an AWS service
+federation is not implemented. Separately materialize PostgreSQL inputs into Blaze
+before joining them with file/cached inputs in DuckDB. MySQL prep is explicitly
+unsupported; the existing MySQL visual-query connector is unchanged. No prep operation opens an AWS service
 or installs extensions. No new external dependency was added.
 
 ## Execution and previews
+
+**Materialization contract (#15, implemented by #12): cross-source joins and
+advanced prep steps — pivot, unpivot, append, aggregate — MUST materialize through
+Blaze.** Single-source simple pipelines may keep compiling to live SQL. The rule
+includes saved dependencies, so wrapping advanced preparation in another dataset
+cannot bypass it. Distinct connected sources or cached dataset inputs count as
+different sources; reusing one source or an earlier step alone does not.
+
+Saving a required pipeline, changing its dependencies, or loading older metadata
+selects Blaze without executing a refresh. Query/output routes require a ready
+snapshot. Selecting DIRECT QUERY fails with `BLAZE_MATERIALIZATION_REQUIRED` and
+the execution panel explains why. Save, then **Refresh Blaze** to publish output.
+Bounded draft previews below are available for editing; they do not publish a
+saved dataset or fulfill the materialization requirement.
+
+Blaze defaults to 100,000 output rows, 16 MiB accounted capacity per dataset,
+64 MiB total cache/intake capacity, and 16,384 combined text characters per row.
+Environment variables configure the limits. Oversize results fail with
+`BLAZE_DATASET_TOO_LARGE`; capacity pressure evicts least-recently-read snapshots,
+which report `BLAZE_EVICTED`. These are accounted storage limits, not process RSS
+limits. See [Blaze bounds and capacity](blaze.md#bounds-and-capacity) for all
+variables, accounting, execution overhead, and the eviction policy.
 
 Previews transform the full source, then return `limit + 1` rows internally.
 The API defaults to 100 displayed rows and accepts 1–500. Aggregate results are
@@ -152,7 +176,9 @@ permissions and atomic rename. The API/UI identifies ephemeral persistence.
 Uploads from issue #8 are immediately available through their existing private
 DuckDB staging session. The prep API serializes execution with upload ingestion.
 Upload tables disappear at restart. Pipeline metadata can survive restart, but
-expired references fail explicitly until rebound; no cached rows are returned.
+expired references fail explicitly until rebound. Blaze rows also disappear at
+restart and must be refreshed; an in-process snapshot remains readable after its
+upload source expires, with its original refresh time clearly labeled.
 
 For Postgres, the authenticated host supplies `prepPostgresBindings`, each with
 `namespaceId`, `userId`, `source`, and `config: {connectionEnv: 'ENV_VARIABLE_NAME'}`.
@@ -163,8 +189,9 @@ Combined sources must share that variable. Listing/validating metadata does not
 establish a database connection. Library hosts configure authentication using the
 existing `security` option; the basic CLI does not invent an authentication service.
 
-Saving a pipeline makes it reusable in preparation without materializing a table
-or publishing it into analysis field wells. Analysis dataset publication remains separate hosted integration work.
+Saving a pipeline persists metadata. A Blaze pipeline must be refreshed before
+it can be reused as a cached prep input. Analysis dataset publication into field
+wells remains separate hosted integration work.
 Imported prepared datasets are never substituted with untransformed local fixture
 rows. The UI states this boundary. Preview and export are available as documented;
 no deployed-server or measured visual-parity claim is made.
@@ -175,5 +202,13 @@ Root `npm test` includes malformed model/bundle tests, actual DuckDB/Postgres
 (PGlite) execution comparisons for every step kind, upload executor checks,
 authenticated HTTP CRUD/persistence/security tests, bundle preservation, and UI
 interaction/stale-response tests. Live Postgres remains the pre-existing optional
-integration suite. See `issue-11-gap-notes.md` for current run counts and visual
+integration suite. See `issue-12-gap-notes.md` for current run counts and visual
 checks, and `issue-9-gap-notes.md` for the original prep build verification.
+
+### Blaze execution (issue #12)
+
+Saved datasets now have a host-side DIRECT QUERY/BLAZE switch, manual and interval
+refresh, explicit cache status, and bounded output queries. A prepared input in
+Blaze mode resolves to its cached rows with refresh-time provenance. Draft step
+previews retain source-execution semantics and label cached dependencies. See
+[Blaze prepared datasets](blaze.md) for routes, failure behavior and capacity.

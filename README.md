@@ -31,6 +31,16 @@ with join/append steps. Every step previews against the hosted API.
 
 ![Data preparation pipeline](docs/images/data-prep.png)
 
+### ⚡ Blaze cached datasets
+
+Cache prepared datasets in the self-hosted API with manual or scheduled refresh,
+bounded memory, visible refresh times and explicit failures. Cross-source joins,
+pivot, unpivot, append and aggregate require Blaze; simple single-source pipelines
+can use direct query. The static demo keeps these hosted controls disabled.
+See [Blaze configuration and limits](docs/blaze.md).
+
+![Blaze refresh controls and cached output from a local hosted API using synthetic data](docs/images/blaze.png)
+
 ### 🔌 Data source connectors
 
 A 23-connector gallery: CSV/TSV/JSON/Excel file uploads into DuckDB staging,
