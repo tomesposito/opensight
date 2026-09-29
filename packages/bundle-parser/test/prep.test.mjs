@@ -111,3 +111,33 @@ test('from reuse does not consume the 32-source import budget', () => {
   steps.push(...Array.from({ length: 19 }, (_, i) => ({ id: `b${i}`, from: `a${i}`, kind: 'select', config: { columns: ['new'] } })));
   validatePrepPipeline({ version: 1, input: 'source', steps });
 });
+
+test('branch metadata round-trips through JSON and .qs without altering unrelated bundle content', async () => {
+  const { parseBundleJson } = await import('../dist/browser.js');
+  const p = { version: 1, input: 'unresolved-source', output: 'summary', steps: [
+    { id: 'clean', name: 'Clean input', kind: 'select', config: { columns: ['region', 'amount'] } },
+    { id: 'summary', kind: 'aggregate', config: { groupBy: ['region'], measures: [{ column: 'amount', name: 'total', aggregation: 'SUM' }] } },
+    { id: 'detail', from: 'clean', kind: 'select', config: { columns: ['region'] } },
+  ] };
+  const resource = { resourceType: 'dataset', dataSetId: 'branches', name: 'Branches', physicalTableMap: {}, importMode: 'DIRECT_QUERY', opensightPrep: p, opaque: { keep: true } };
+  const bundle = { members: [{ path: 'dataset/branches.json', resource }] };
+  const parsed = parseBundleJson(new TextEncoder().encode(JSON.stringify(resource)));
+  assert.deepEqual(parsed.members[0].resource, resource);
+  assert.deepEqual(await parseQsBundle(await assembleQsBundle(bundle)), bundle);
+  assert.equal(parsed.members[0].resource.opensightPrep.input, 'unresolved-source');
+  assert.equal(Object.hasOwn(parsed.members[0].resource.opensightPrep.steps[1], 'from'), false);
+});
+test('JSON and .qs imports reject invalid branch references and output before granting any binding', async () => {
+  const { parseBundleJson, parseQsBundle: parseBrowser } = await import('../dist/browser.js');
+  const { zipSync } = await import('fflate');
+  for (const p of [
+    { ...pipeline, output: 'missing' },
+    { ...pipeline, steps: [{ ...pipeline.steps[0], from: 'rename' }] },
+    { ...pipeline, steps: [...pipeline.steps, { id: 'later', from: 'missing', kind: 'select', config: { columns: ['new'] } }] },
+  ]) {
+    const resource = { resourceType: 'dataset', dataSetId: 'invalid', name: 'Invalid', physicalTableMap: {}, opensightPrep: p };
+    const bytes = new TextEncoder().encode(JSON.stringify(resource));
+    assert.throws(() => parseBundleJson(bytes), e => /INVALID_PREP_PIPELINE/.test(e.code));
+    for (const parse of [parseQsBundle, parseBrowser]) await assert.rejects(parse(zipSync({ 'dataset/invalid.json': bytes })), e => e.code === 'INVALID_PREP_PIPELINE');
+  }
+});

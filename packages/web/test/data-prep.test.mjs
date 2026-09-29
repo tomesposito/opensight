@@ -387,3 +387,18 @@ test('hosted branch selections preview each stage independently and output chang
   assert.equal(calls.length, count); assert.equal(ui.button('Save pipeline').props.disabled, true);
   assert.match(JSON.stringify(ui.renderer.toJSON()), /INVALID_PREP_PIPELINE/);
 });
+
+test('editor export preserves branch/output metadata and imports cannot confer source access', async () => {
+  const p = { ...pipeline, output: 'summary', steps: [
+    { id: 'clean', kind: 'select', config: { columns: ['region', 'amount'] } },
+    { id: 'summary', kind: 'aggregate', config: { groupBy: [], measures: [{ column: 'amount', name: 'total', aggregation: 'SUM' }] } },
+    { id: 'detail', from: 'clean', kind: 'select', config: { columns: ['region'] } },
+  ] };
+  const original = { members: [{ path: 'dataset/prepared.json', resource: { ...resource, opaque: { keep: true } } }] };
+  const imported = await parseQsBundle(await assembleQsBundle(prepBundle(resource, p, original)));
+  const parsed = imported.members[0].resource.opensightPrep;
+  assert.deepEqual(parsed, p); assert.deepEqual(imported.members[0].resource.opaque, { keep: true });
+  assert.throws(() => prepSchema(parsed, []), e => e.code === 'PREP_SOURCE_NOT_FOUND');
+  assert.throws(() => prepSchema(parsed, [{ ...source, available: false }]), e => e.code === 'PREP_SECURITY_REJECTED');
+  assert.deepEqual(prepSchema(parsed, [source]).map(c => c.name), ['total']);
+});
