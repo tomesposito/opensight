@@ -479,6 +479,12 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .prep-source-consumers { font-size: 11px; color: #426f91; line-height: 1.6; overflow-wrap: anywhere; }
 .prep-output-names { overflow-wrap: anywhere; }
 .prep-sidebar .prep-error { color: #962f24; }
+.data-prep .prep-node.staged { border-style: dashed; border-top-color: #c6972c; }
+.data-prep .prep-node.unconfigured { border-top-color: #b3372c; }
+.prep-node .unconfigured-dot { color: #b3372c; font-size: 12px; }
+.prep-node .prep-flag { font-size: 11px; color: #962f24; overflow-wrap: anywhere; max-width: 100%; }
+.prep-staging { border-top: 1px solid #c9d3dc; margin-top: 18px; padding-top: 8px; }
+.prep-staging .prep-actions { margin: 10px 0; }
 
 .dataset-execution { margin: 0 0 16px; padding: 12px 16px; background: var(--panel, #fff); border: 1px solid var(--border, #d7dfe8); border-radius: 4px; }
 .execution-controls, .execution-controls form { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }

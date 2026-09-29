@@ -27,6 +27,18 @@ export function prepInputNodes(pipeline: PrepPipeline): { ref: PrepInput; instan
 }
 /** QuickSight-style instance label: first occurrence plain, later ones get " (2)", " (3)". */
 export const prepInstanceLabel = (base: string, instance: number): string => instance > 1 ? `${base} (${instance})` : base;
+/** Scoped "unconfigured" reason for a join/append step: missing keys/source in the
+ *  step's own config. The canvas flags this inline so the fail-closed validation
+ *  (which already rejects empty key lists at apply/save) is visible on the node
+ *  itself, not only at apply/save time. Other step kinds are never unconfigured. */
+export function prepStepIssue(step: PrepStep): string {
+  if (step.kind === 'join') {
+    if (!step.config.keys.length || step.config.keys.some(k => !k.left || !k.right)) return 'Join keys are not set';
+    return '';
+  }
+  if (step.kind === 'append') return step.config.source ? '' : 'Append source is not set';
+  return '';
+}
 /** 1-based occurrence of a join/append step's source among same-ref uses in the pipeline,
  *  ordered by position (input first, then steps in order). Bundle refs distinguish instances
  *  by position; a step not yet in the pipeline counts as the next occurrence. */
