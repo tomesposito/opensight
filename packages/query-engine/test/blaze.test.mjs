@@ -38,11 +38,14 @@ test('Postgres materialization drains bounded cursor batches under read-only UTC
   t.after(()=>{if(old===undefined)delete process.env[variable];else process.env[variable]=old;});
   const calls=[];let batches=0;
   t.mock.method(Client.prototype,'connect',async()=>{});const end=t.mock.method(Client.prototype,'end',async()=>{});
-  t.mock.method(Client.prototype,'query',async arg=>{calls.push(arg);if(typeof arg==='object'&&arg.text.startsWith('FETCH')){batches++;return {rows:Array.from({length:batches===1?32:2},()=>['3','f'])};}return {rows:[]};});
+  // Single mock only: calling t.mock.method twice on the same prototype method
+  // leaves the mock installed after the test (node:test restore bug), which
+  // breaks postgres-live.test.mjs when files share a process (--test-isolation=none).
+  const queryMock=t.mock.method(Client.prototype,'query',async arg=>{calls.push(arg);if(typeof arg==='object'&&arg.text.startsWith('FETCH')){batches++;return {rows:Array.from({length:batches===1?32:2},()=>['3','f'])};}return {rows:[]};});
   const source={id:'source',connectorId:'postgresql',schema:'public',table:'source',columns:[{name:'n',type:'INTEGER'}],security:'unrestricted'},pipeline={version:1,input:'source',steps:[]};
   const result=sink();await streamPrepPostgres(pipeline,[source],{connectionEnv:variable},{},limits,result);
   assert.equal(result.rows.length,34);assert.deepEqual(calls.slice(0,3),['BEGIN READ ONLY',"SET LOCAL TIME ZONE 'UTC'","SET LOCAL statement_timeout = '10s'"]);assert.match(calls[3].text,/DECLARE blaze_cursor.*CASE WHEN/);assert.match(calls[3].text,/LIMIT 1001/);assert.equal(calls.at(-1),'COMMIT');assert.equal(end.mock.callCount(),1);
-  t.mock.method(Client.prototype,'query',async arg=>({rows:typeof arg==='object'&&arg.text.startsWith('FETCH')?[[null,'t']]:[]}));
+  queryMock.mock.mockImplementation(async arg=>({rows:typeof arg==='object'&&arg.text.startsWith('FETCH')?[[null,'t']]:[]}));
   await assert.rejects(streamPrepPostgres(pipeline,[source],{connectionEnv:variable},{},limits,sink()),/OVERSIZE/);assert.equal(end.mock.callCount(),2);
 });
 test('memory queries use shared datetime, filters, table and level-aware calculations',()=>{
