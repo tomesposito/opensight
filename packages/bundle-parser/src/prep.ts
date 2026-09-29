@@ -12,7 +12,7 @@ export type PrepStep = { id: string } & (
   { kind: 'filter'; config: { filters: PrepFilter[] } } |
   { kind: 'calculate'; config: { name: string; expression: string } } |
   { kind: 'aggregate'; config: { groupBy: string[]; measures: PrepMeasure[] } } |
-  { kind: 'join'; config: { source: string; joinType: 'inner' | 'left' | 'full'; keys: { left: string; right: string }[]; columns: { column: string; name: string }[] } } |
+  { kind: 'join'; config: { source: string; joinType: 'inner' | 'left' | 'right' | 'full'; keys: { left: string; right: string }[]; columns: { column: string; name: string }[] } } |
   { kind: 'append'; config: { source: string } } |
   { kind: 'pivot'; config: { groupBy: string[]; column: string; value: string; aggregation: PrepAggregation; values: { value: string | number; name: string }[] } } |
   { kind: 'unpivot'; config: { columns: string[]; nameColumn: string; valueColumn: string } }
@@ -77,7 +77,7 @@ export function validatePrepPipeline(raw: unknown, path = '$.opensightPrep'): Pr
         break;
       }
       case 'join': {
-        const c = prepObject(s.config, ['source', 'joinType', 'keys', 'columns'], cp); prepName(c.source, cp); choice(c.joinType, ['inner', 'left', 'full'], cp);
+        const c = prepObject(s.config, ['source', 'joinType', 'keys', 'columns'], cp); prepName(c.source, cp); choice(c.joinType, ['inner', 'left', 'right', 'full'], cp);
         for (const k of list(c.keys, cp)) { const v = prepObject(k, ['left', 'right'], cp); prepName(v.left, cp); prepName(v.right, cp); }
         for (const col of list(c.columns, cp)) { const v = prepObject(col, ['column', 'name'], cp); prepName(v.column, cp); prepName(v.name, cp); }
         break;
