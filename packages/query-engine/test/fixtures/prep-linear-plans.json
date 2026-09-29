@@ -1,0 +1,552 @@
+[
+  {
+    "pipeline": {
+      "version": 1,
+      "input": "sales",
+      "steps": [
+        {
+          "id": "keep",
+          "kind": "select",
+          "config": {
+            "columns": [
+              "region",
+              "amount"
+            ]
+          }
+        },
+        {
+          "id": "east",
+          "kind": "filter",
+          "config": {
+            "filters": [
+              {
+                "columnName": "region",
+                "value": "East"
+              }
+            ]
+          }
+        },
+        {
+          "id": "sum",
+          "kind": "aggregate",
+          "config": {
+            "groupBy": [
+              "region"
+            ],
+            "measures": [
+              {
+                "column": "amount",
+                "name": "total",
+                "aggregation": "SUM"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "sources": [
+      {
+        "id": "sales",
+        "table": "sales",
+        "connectorId": "file",
+        "security": "unrestricted",
+        "columns": [
+          {
+            "name": "region",
+            "type": "STRING"
+          },
+          {
+            "name": "amount",
+            "type": "DECIMAL"
+          }
+        ]
+      }
+    ],
+    "options": {
+      "dialect": "duckdb"
+    },
+    "serializedPlan": "{\"dialect\":\"duckdb\",\"pipeline\":{\"version\":1,\"input\":\"sales\",\"steps\":[{\"id\":\"keep\",\"kind\":\"select\",\"config\":{\"columns\":[\"region\",\"amount\"]}},{\"id\":\"east\",\"kind\":\"filter\",\"config\":{\"filters\":[{\"columnName\":\"region\",\"value\":\"East\"}]}},{\"id\":\"sum\",\"kind\":\"aggregate\",\"config\":{\"groupBy\":[\"region\"],\"measures\":[{\"column\":\"amount\",\"name\":\"total\",\"aggregation\":\"SUM\"}]}}]},\"columns\":[{\"name\":\"region\",\"type\":\"STRING\"},{\"name\":\"total\",\"type\":\"DECIMAL\"}],\"stages\":[{\"id\":\"keep\",\"columns\":[{\"name\":\"region\",\"type\":\"STRING\"},{\"name\":\"amount\",\"type\":\"DECIMAL\"}]},{\"id\":\"east\",\"columns\":[{\"name\":\"region\",\"type\":\"STRING\"},{\"name\":\"amount\",\"type\":\"DECIMAL\"}]},{\"id\":\"sum\",\"columns\":[{\"name\":\"region\",\"type\":\"STRING\"},{\"name\":\"total\",\"type\":\"DECIMAL\"}]}],\"parameters\":[\"East\"],\"sql\":\"WITH \\\"__prep_0\\\" AS (SELECT \\\"region\\\", \\\"amount\\\" FROM \\\"sales\\\"),\\n\\\"__prep_1\\\" AS (SELECT * FROM \\\"__prep_0\\\" WHERE \\\"region\\\" = $1),\\n\\\"__prep_2\\\" AS (SELECT \\\"region\\\", SUM(CAST(\\\"amount\\\" AS DOUBLE)) AS \\\"total\\\" FROM \\\"__prep_1\\\" GROUP BY \\\"region\\\")\\nSELECT \\\"region\\\" AS \\\"region\\\", \\\"total\\\" AS \\\"total\\\" FROM \\\"__prep_2\\\" LIMIT 101\",\"limit\":100,\"through\":\"sum\"}"
+  },
+  {
+    "pipeline": {
+      "version": 1,
+      "input": "sales",
+      "steps": [
+        {
+          "id": "keep",
+          "kind": "select",
+          "config": {
+            "columns": [
+              "region",
+              "amount"
+            ]
+          }
+        },
+        {
+          "id": "east",
+          "kind": "filter",
+          "config": {
+            "filters": [
+              {
+                "columnName": "region",
+                "value": "East"
+              }
+            ]
+          }
+        },
+        {
+          "id": "sum",
+          "kind": "aggregate",
+          "config": {
+            "groupBy": [
+              "region"
+            ],
+            "measures": [
+              {
+                "column": "amount",
+                "name": "total",
+                "aggregation": "SUM"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "sources": [
+      {
+        "id": "sales",
+        "table": "sales",
+        "connectorId": "file",
+        "security": "unrestricted",
+        "columns": [
+          {
+            "name": "region",
+            "type": "STRING"
+          },
+          {
+            "name": "amount",
+            "type": "DECIMAL"
+          }
+        ]
+      }
+    ],
+    "options": {
+      "dialect": "duckdb",
+      "through": null
+    },
+    "serializedPlan": "{\"dialect\":\"duckdb\",\"pipeline\":{\"version\":1,\"input\":\"sales\",\"steps\":[{\"id\":\"keep\",\"kind\":\"select\",\"config\":{\"columns\":[\"region\",\"amount\"]}},{\"id\":\"east\",\"kind\":\"filter\",\"config\":{\"filters\":[{\"columnName\":\"region\",\"value\":\"East\"}]}},{\"id\":\"sum\",\"kind\":\"aggregate\",\"config\":{\"groupBy\":[\"region\"],\"measures\":[{\"column\":\"amount\",\"name\":\"total\",\"aggregation\":\"SUM\"}]}}]},\"columns\":[{\"name\":\"region\",\"type\":\"STRING\"},{\"name\":\"amount\",\"type\":\"DECIMAL\"}],\"stages\":[{\"id\":\"keep\",\"columns\":[{\"name\":\"region\",\"type\":\"STRING\"},{\"name\":\"amount\",\"type\":\"DECIMAL\"}]},{\"id\":\"east\",\"columns\":[{\"name\":\"region\",\"type\":\"STRING\"},{\"name\":\"amount\",\"type\":\"DECIMAL\"}]},{\"id\":\"sum\",\"columns\":[{\"name\":\"region\",\"type\":\"STRING\"},{\"name\":\"total\",\"type\":\"DECIMAL\"}]}],\"parameters\":[],\"sql\":\"SELECT \\\"region\\\" AS \\\"region\\\", \\\"amount\\\" AS \\\"amount\\\" FROM \\\"sales\\\" LIMIT 101\",\"limit\":100,\"through\":null}"
+  },
+  {
+    "pipeline": {
+      "version": 1,
+      "input": "sales",
+      "steps": [
+        {
+          "id": "keep",
+          "kind": "select",
+          "config": {
+            "columns": [
+              "region",
+              "amount"
+            ]
+          }
+        },
+        {
+          "id": "east",
+          "kind": "filter",
+          "config": {
+            "filters": [
+              {
+                "columnName": "region",
+                "value": "East"
+              }
+            ]
+          }
+        },
+        {
+          "id": "sum",
+          "kind": "aggregate",
+          "config": {
+            "groupBy": [
+              "region"
+            ],
+            "measures": [
+              {
+                "column": "amount",
+                "name": "total",
+                "aggregation": "SUM"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "sources": [
+      {
+        "id": "sales",
+        "table": "sales",
+        "connectorId": "file",
+        "security": "unrestricted",
+        "columns": [
+          {
+            "name": "region",
+            "type": "STRING"
+          },
+          {
+            "name": "amount",
+            "type": "DECIMAL"
+          }
+        ]
+      }
+    ],
+    "options": {
+      "dialect": "duckdb",
+      "through": "keep"
+    },
+    "serializedPlan": "{\"dialect\":\"duckdb\",\"pipeline\":{\"version\":1,\"input\":\"sales\",\"steps\":[{\"id\":\"keep\",\"kind\":\"select\",\"config\":{\"columns\":[\"region\",\"amount\"]}},{\"id\":\"east\",\"kind\":\"filter\",\"config\":{\"filters\":[{\"columnName\":\"region\",\"value\":\"East\"}]}},{\"id\":\"sum\",\"kind\":\"aggregate\",\"config\":{\"groupBy\":[\"region\"],\"measures\":[{\"column\":\"amount\",\"name\":\"total\",\"aggregation\":\"SUM\"}]}}]},\"columns\":[{\"name\":\"region\",\"type\":\"STRING\"},{\"name\":\"amount\",\"type\":\"DECIMAL\"}],\"stages\":[{\"id\":\"keep\",\"columns\":[{\"name\":\"region\",\"type\":\"STRING\"},{\"name\":\"amount\",\"type\":\"DECIMAL\"}]},{\"id\":\"east\",\"columns\":[{\"name\":\"region\",\"type\":\"STRING\"},{\"name\":\"amount\",\"type\":\"DECIMAL\"}]},{\"id\":\"sum\",\"columns\":[{\"name\":\"region\",\"type\":\"STRING\"},{\"name\":\"total\",\"type\":\"DECIMAL\"}]}],\"parameters\":[],\"sql\":\"WITH \\\"__prep_0\\\" AS (SELECT \\\"region\\\", \\\"amount\\\" FROM \\\"sales\\\")\\nSELECT \\\"region\\\" AS \\\"region\\\", \\\"amount\\\" AS \\\"amount\\\" FROM \\\"__prep_0\\\" LIMIT 101\",\"limit\":100,\"through\":\"keep\"}"
+  },
+  {
+    "pipeline": {
+      "version": 1,
+      "input": "sales",
+      "steps": [
+        {
+          "id": "keep",
+          "kind": "select",
+          "config": {
+            "columns": [
+              "region",
+              "amount"
+            ]
+          }
+        },
+        {
+          "id": "east",
+          "kind": "filter",
+          "config": {
+            "filters": [
+              {
+                "columnName": "region",
+                "value": "East"
+              }
+            ]
+          }
+        },
+        {
+          "id": "sum",
+          "kind": "aggregate",
+          "config": {
+            "groupBy": [
+              "region"
+            ],
+            "measures": [
+              {
+                "column": "amount",
+                "name": "total",
+                "aggregation": "SUM"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "sources": [
+      {
+        "id": "sales",
+        "table": "sales",
+        "connectorId": "file",
+        "security": "unrestricted",
+        "columns": [
+          {
+            "name": "region",
+            "type": "STRING"
+          },
+          {
+            "name": "amount",
+            "type": "DECIMAL"
+          }
+        ]
+      }
+    ],
+    "options": {
+      "dialect": "duckdb",
+      "through": "east"
+    },
+    "serializedPlan": "{\"dialect\":\"duckdb\",\"pipeline\":{\"version\":1,\"input\":\"sales\",\"steps\":[{\"id\":\"keep\",\"kind\":\"select\",\"config\":{\"columns\":[\"region\",\"amount\"]}},{\"id\":\"east\",\"kind\":\"filter\",\"config\":{\"filters\":[{\"columnName\":\"region\",\"value\":\"East\"}]}},{\"id\":\"sum\",\"kind\":\"aggregate\",\"config\":{\"groupBy\":[\"region\"],\"measures\":[{\"column\":\"amount\",\"name\":\"total\",\"aggregation\":\"SUM\"}]}}]},\"columns\":[{\"name\":\"region\",\"type\":\"STRING\"},{\"name\":\"amount\",\"type\":\"DECIMAL\"}],\"stages\":[{\"id\":\"keep\",\"columns\":[{\"name\":\"region\",\"type\":\"STRING\"},{\"name\":\"amount\",\"type\":\"DECIMAL\"}]},{\"id\":\"east\",\"columns\":[{\"name\":\"region\",\"type\":\"STRING\"},{\"name\":\"amount\",\"type\":\"DECIMAL\"}]},{\"id\":\"sum\",\"columns\":[{\"name\":\"region\",\"type\":\"STRING\"},{\"name\":\"total\",\"type\":\"DECIMAL\"}]}],\"parameters\":[\"East\"],\"sql\":\"WITH \\\"__prep_0\\\" AS (SELECT \\\"region\\\", \\\"amount\\\" FROM \\\"sales\\\"),\\n\\\"__prep_1\\\" AS (SELECT * FROM \\\"__prep_0\\\" WHERE \\\"region\\\" = $1)\\nSELECT \\\"region\\\" AS \\\"region\\\", \\\"amount\\\" AS \\\"amount\\\" FROM \\\"__prep_1\\\" LIMIT 101\",\"limit\":100,\"through\":\"east\"}"
+  },
+  {
+    "pipeline": {
+      "version": 1,
+      "input": "sales",
+      "steps": [
+        {
+          "id": "keep",
+          "kind": "select",
+          "config": {
+            "columns": [
+              "region",
+              "amount"
+            ]
+          }
+        },
+        {
+          "id": "east",
+          "kind": "filter",
+          "config": {
+            "filters": [
+              {
+                "columnName": "region",
+                "value": "East"
+              }
+            ]
+          }
+        },
+        {
+          "id": "sum",
+          "kind": "aggregate",
+          "config": {
+            "groupBy": [
+              "region"
+            ],
+            "measures": [
+              {
+                "column": "amount",
+                "name": "total",
+                "aggregation": "SUM"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "sources": [
+      {
+        "id": "sales",
+        "table": "sales",
+        "connectorId": "postgresql",
+        "security": "unrestricted",
+        "columns": [
+          {
+            "name": "region",
+            "type": "STRING"
+          },
+          {
+            "name": "amount",
+            "type": "DECIMAL"
+          }
+        ]
+      }
+    ],
+    "options": {
+      "dialect": "postgres"
+    },
+    "serializedPlan": "{\"dialect\":\"postgres\",\"pipeline\":{\"version\":1,\"input\":\"sales\",\"steps\":[{\"id\":\"keep\",\"kind\":\"select\",\"config\":{\"columns\":[\"region\",\"amount\"]}},{\"id\":\"east\",\"kind\":\"filter\",\"config\":{\"filters\":[{\"columnName\":\"region\",\"value\":\"East\"}]}},{\"id\":\"sum\",\"kind\":\"aggregate\",\"config\":{\"groupBy\":[\"region\"],\"measures\":[{\"column\":\"amount\",\"name\":\"total\",\"aggregation\":\"SUM\"}]}}]},\"columns\":[{\"name\":\"region\",\"type\":\"STRING\"},{\"name\":\"total\",\"type\":\"DECIMAL\"}],\"stages\":[{\"id\":\"keep\",\"columns\":[{\"name\":\"region\",\"type\":\"STRING\"},{\"name\":\"amount\",\"type\":\"DECIMAL\"}]},{\"id\":\"east\",\"columns\":[{\"name\":\"region\",\"type\":\"STRING\"},{\"name\":\"amount\",\"type\":\"DECIMAL\"}]},{\"id\":\"sum\",\"columns\":[{\"name\":\"region\",\"type\":\"STRING\"},{\"name\":\"total\",\"type\":\"DECIMAL\"}]}],\"parameters\":[\"East\"],\"sql\":\"WITH \\\"__prep_0\\\" AS (SELECT \\\"region\\\", \\\"amount\\\" FROM \\\"sales\\\"),\\n\\\"__prep_1\\\" AS (SELECT * FROM \\\"__prep_0\\\" WHERE \\\"region\\\" = $1),\\n\\\"__prep_2\\\" AS (SELECT \\\"region\\\", SUM(CAST(\\\"amount\\\" AS DOUBLE PRECISION)) AS \\\"total\\\" FROM \\\"__prep_1\\\" GROUP BY \\\"region\\\")\\nSELECT \\\"region\\\" AS \\\"region\\\", \\\"total\\\" AS \\\"total\\\" FROM \\\"__prep_2\\\" LIMIT 101\",\"limit\":100,\"through\":\"sum\"}"
+  },
+  {
+    "pipeline": {
+      "version": 1,
+      "input": "sales",
+      "steps": [
+        {
+          "id": "keep",
+          "kind": "select",
+          "config": {
+            "columns": [
+              "region",
+              "amount"
+            ]
+          }
+        },
+        {
+          "id": "east",
+          "kind": "filter",
+          "config": {
+            "filters": [
+              {
+                "columnName": "region",
+                "value": "East"
+              }
+            ]
+          }
+        },
+        {
+          "id": "sum",
+          "kind": "aggregate",
+          "config": {
+            "groupBy": [
+              "region"
+            ],
+            "measures": [
+              {
+                "column": "amount",
+                "name": "total",
+                "aggregation": "SUM"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "sources": [
+      {
+        "id": "sales",
+        "table": "sales",
+        "connectorId": "postgresql",
+        "security": "unrestricted",
+        "columns": [
+          {
+            "name": "region",
+            "type": "STRING"
+          },
+          {
+            "name": "amount",
+            "type": "DECIMAL"
+          }
+        ]
+      }
+    ],
+    "options": {
+      "dialect": "postgres",
+      "through": null
+    },
+    "serializedPlan": "{\"dialect\":\"postgres\",\"pipeline\":{\"version\":1,\"input\":\"sales\",\"steps\":[{\"id\":\"keep\",\"kind\":\"select\",\"config\":{\"columns\":[\"region\",\"amount\"]}},{\"id\":\"east\",\"kind\":\"filter\",\"config\":{\"filters\":[{\"columnName\":\"region\",\"value\":\"East\"}]}},{\"id\":\"sum\",\"kind\":\"aggregate\",\"config\":{\"groupBy\":[\"region\"],\"measures\":[{\"column\":\"amount\",\"name\":\"total\",\"aggregation\":\"SUM\"}]}}]},\"columns\":[{\"name\":\"region\",\"type\":\"STRING\"},{\"name\":\"amount\",\"type\":\"DECIMAL\"}],\"stages\":[{\"id\":\"keep\",\"columns\":[{\"name\":\"region\",\"type\":\"STRING\"},{\"name\":\"amount\",\"type\":\"DECIMAL\"}]},{\"id\":\"east\",\"columns\":[{\"name\":\"region\",\"type\":\"STRING\"},{\"name\":\"amount\",\"type\":\"DECIMAL\"}]},{\"id\":\"sum\",\"columns\":[{\"name\":\"region\",\"type\":\"STRING\"},{\"name\":\"total\",\"type\":\"DECIMAL\"}]}],\"parameters\":[],\"sql\":\"SELECT \\\"region\\\" AS \\\"region\\\", \\\"amount\\\" AS \\\"amount\\\" FROM \\\"sales\\\" LIMIT 101\",\"limit\":100,\"through\":null}"
+  },
+  {
+    "pipeline": {
+      "version": 1,
+      "input": "sales",
+      "steps": [
+        {
+          "id": "keep",
+          "kind": "select",
+          "config": {
+            "columns": [
+              "region",
+              "amount"
+            ]
+          }
+        },
+        {
+          "id": "east",
+          "kind": "filter",
+          "config": {
+            "filters": [
+              {
+                "columnName": "region",
+                "value": "East"
+              }
+            ]
+          }
+        },
+        {
+          "id": "sum",
+          "kind": "aggregate",
+          "config": {
+            "groupBy": [
+              "region"
+            ],
+            "measures": [
+              {
+                "column": "amount",
+                "name": "total",
+                "aggregation": "SUM"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "sources": [
+      {
+        "id": "sales",
+        "table": "sales",
+        "connectorId": "postgresql",
+        "security": "unrestricted",
+        "columns": [
+          {
+            "name": "region",
+            "type": "STRING"
+          },
+          {
+            "name": "amount",
+            "type": "DECIMAL"
+          }
+        ]
+      }
+    ],
+    "options": {
+      "dialect": "postgres",
+      "through": "keep"
+    },
+    "serializedPlan": "{\"dialect\":\"postgres\",\"pipeline\":{\"version\":1,\"input\":\"sales\",\"steps\":[{\"id\":\"keep\",\"kind\":\"select\",\"config\":{\"columns\":[\"region\",\"amount\"]}},{\"id\":\"east\",\"kind\":\"filter\",\"config\":{\"filters\":[{\"columnName\":\"region\",\"value\":\"East\"}]}},{\"id\":\"sum\",\"kind\":\"aggregate\",\"config\":{\"groupBy\":[\"region\"],\"measures\":[{\"column\":\"amount\",\"name\":\"total\",\"aggregation\":\"SUM\"}]}}]},\"columns\":[{\"name\":\"region\",\"type\":\"STRING\"},{\"name\":\"amount\",\"type\":\"DECIMAL\"}],\"stages\":[{\"id\":\"keep\",\"columns\":[{\"name\":\"region\",\"type\":\"STRING\"},{\"name\":\"amount\",\"type\":\"DECIMAL\"}]},{\"id\":\"east\",\"columns\":[{\"name\":\"region\",\"type\":\"STRING\"},{\"name\":\"amount\",\"type\":\"DECIMAL\"}]},{\"id\":\"sum\",\"columns\":[{\"name\":\"region\",\"type\":\"STRING\"},{\"name\":\"total\",\"type\":\"DECIMAL\"}]}],\"parameters\":[],\"sql\":\"WITH \\\"__prep_0\\\" AS (SELECT \\\"region\\\", \\\"amount\\\" FROM \\\"sales\\\")\\nSELECT \\\"region\\\" AS \\\"region\\\", \\\"amount\\\" AS \\\"amount\\\" FROM \\\"__prep_0\\\" LIMIT 101\",\"limit\":100,\"through\":\"keep\"}"
+  },
+  {
+    "pipeline": {
+      "version": 1,
+      "input": "sales",
+      "steps": [
+        {
+          "id": "keep",
+          "kind": "select",
+          "config": {
+            "columns": [
+              "region",
+              "amount"
+            ]
+          }
+        },
+        {
+          "id": "east",
+          "kind": "filter",
+          "config": {
+            "filters": [
+              {
+                "columnName": "region",
+                "value": "East"
+              }
+            ]
+          }
+        },
+        {
+          "id": "sum",
+          "kind": "aggregate",
+          "config": {
+            "groupBy": [
+              "region"
+            ],
+            "measures": [
+              {
+                "column": "amount",
+                "name": "total",
+                "aggregation": "SUM"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "sources": [
+      {
+        "id": "sales",
+        "table": "sales",
+        "connectorId": "postgresql",
+        "security": "unrestricted",
+        "columns": [
+          {
+            "name": "region",
+            "type": "STRING"
+          },
+          {
+            "name": "amount",
+            "type": "DECIMAL"
+          }
+        ]
+      }
+    ],
+    "options": {
+      "dialect": "postgres",
+      "through": "east"
+    },
+    "serializedPlan": "{\"dialect\":\"postgres\",\"pipeline\":{\"version\":1,\"input\":\"sales\",\"steps\":[{\"id\":\"keep\",\"kind\":\"select\",\"config\":{\"columns\":[\"region\",\"amount\"]}},{\"id\":\"east\",\"kind\":\"filter\",\"config\":{\"filters\":[{\"columnName\":\"region\",\"value\":\"East\"}]}},{\"id\":\"sum\",\"kind\":\"aggregate\",\"config\":{\"groupBy\":[\"region\"],\"measures\":[{\"column\":\"amount\",\"name\":\"total\",\"aggregation\":\"SUM\"}]}}]},\"columns\":[{\"name\":\"region\",\"type\":\"STRING\"},{\"name\":\"amount\",\"type\":\"DECIMAL\"}],\"stages\":[{\"id\":\"keep\",\"columns\":[{\"name\":\"region\",\"type\":\"STRING\"},{\"name\":\"amount\",\"type\":\"DECIMAL\"}]},{\"id\":\"east\",\"columns\":[{\"name\":\"region\",\"type\":\"STRING\"},{\"name\":\"amount\",\"type\":\"DECIMAL\"}]},{\"id\":\"sum\",\"columns\":[{\"name\":\"region\",\"type\":\"STRING\"},{\"name\":\"total\",\"type\":\"DECIMAL\"}]}],\"parameters\":[\"East\"],\"sql\":\"WITH \\\"__prep_0\\\" AS (SELECT \\\"region\\\", \\\"amount\\\" FROM \\\"sales\\\"),\\n\\\"__prep_1\\\" AS (SELECT * FROM \\\"__prep_0\\\" WHERE \\\"region\\\" = $1)\\nSELECT \\\"region\\\" AS \\\"region\\\", \\\"amount\\\" AS \\\"amount\\\" FROM \\\"__prep_1\\\" LIMIT 101\",\"limit\":100,\"through\":\"east\"}"
+  }
+]
