@@ -4,7 +4,7 @@ import { authorVisualProblem, noDimensions, visualDimensions, dataFields, type C
 import type { createApiClient, QueryRequest } from './api-client.js';
 import type { Row } from './model.js';
 
-export type QueryClient = Pick<ReturnType<typeof createApiClient>, 'queryDataset'> & Partial<Pick<ReturnType<typeof createApiClient>, 'getDatasetRefreshStatus' | 'queryO'>>;
+export type QueryClient = Pick<ReturnType<typeof createApiClient>, 'queryDataset'> & Partial<Pick<ReturnType<typeof createApiClient>, 'getDatasetRefreshStatus' | 'queryO' | 'getDatasetExecution' | 'setDatasetExecution' | 'refreshBlaze' | 'getPreparedRows'>>;
 export interface AuthorRows { rows: Row[] | null; message?: string }
 
 export function buildAuthorQuery(visual: AuthorVisual, calculations: readonly CalculatedField[] = [], parameters: readonly AuthorParameter[] = []): QueryRequest | null {

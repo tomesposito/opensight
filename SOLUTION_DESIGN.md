@@ -1296,3 +1296,111 @@ execution, authenticated API ownership/cycle/expiry checks, UI editing/errors an
 bundle round trips. Rebuild the static demo and compare screenshots with available
 references; record limits honestly. No new dependency, AWS call, merge, publish or
 issue closure is part of this build.
+
+## 13. Issue #12 — Blaze prepared dataset execution (decided 2026-09-29)
+
+**Scope and modes.** Owned, saved prep datasets gain host-side `DIRECT_QUERY` or
+`BLAZE` execution settings, separate from portable pipeline metadata. Existing
+simple pipelines default to direct. Blaze is an ephemeral, in-process columnar scalar
+store on the self-hosted API; no service, extension download, new dependency or AI
+provider is involved. This implements the in-memory slice of D8, superseding its
+proposed Parquet storage for this slice. Restart preserves configured modes and
+intervals when the prep metadata store is configured, but never persists rows or
+claims that a previous process's cache is ready.
+
+**Issue #15 materialization contract.** Cross-source joins and advanced prep steps
+(`pivot`, `unpivot`, `append`, `aggregate`) MUST materialize through Blaze before
+serving saved output rows or visual queries. Single-source simple pipelines may
+continue compiling to live SQL. The host checks the saved dependency graph:
+advanced steps in reusable pipelines cannot bypass this rule; distinct connected
+source IDs or distinct cached dataset inputs count as separate sources. Reusing
+the same source or an earlier step alone does not make a join cross-source.
+Save, dependency changes and startup promote required datasets to Blaze (manual
+refresh by default), without automatically executing the pipeline. Selecting
+DIRECT_QUERY for a required dataset fails with `BLAZE_MATERIALIZATION_REQUIRED`;
+output routes enforce the rule independently. Execution status and prep controls
+explain the requirement. Bounded draft previews remain available for editing and
+validation; they do not publish dataset output or satisfy materialization.
+Existing cross-engine limits still apply: materialize PostgreSQL inputs separately
+before joining them to file/cached inputs in the local engine.
+
+**Materialization and reads.** Manual refresh executes the complete saved pipeline
+(including joins/aggregations, without a preview limit), normalizes typed output,
+and publishes a complete snapshot only after validation and bounds checks. Source
+results are consumed in bounded batches, with SQL scalar-size guards before driver
+transfer. Cached query execution uses the existing shared visual planner/evaluator;
+supported numeric/string/datetime fields retain shared semantics. Boolean columns
+remain available in prep/cached previews and joins; the existing visual query
+surface rejects unsupported Boolean fields by name. Direct queries execute the
+current pipeline against its source, subject to the same bounded result intake.
+`POST /api/datasets/:id/query` supports owned prepared datasets and returns explicit
+execution provenance; `GET /api/datasets/:id/execution`, `PUT` on that resource
+(`mode`, `intervalMinutes`, null disables scheduling), and `POST .../refresh`
+manage execution. `GET .../rows` returns at most 100 output rows and provenance.
+The existing `/prep/preview` always previews a draft's source execution and labels
+any cached dependencies; it is not a read of the root dataset's Blaze snapshot.
+The reserved fixture ID `sales` cannot be saved as a prepared dataset.
+
+**Honesty and failure.** Every cached result carries mode, cached flag, snapshot
+refresh time and dependency refresh times. Direct results with cached join inputs
+identify those inputs and never claim all-live data. Status exposes last success,
+row count, accounted bytes, state and named errors. Running refreshes block reads
+(`BLAZE_REFRESH_IN_PROGRESS`); failed refreshes drop readable rows and block reads
+(`BLAZE_REFRESH_FAILED`, with a safe cause code; invalid definitions use
+`BLAZE_PIPELINE_INVALID`). There is no fallback to source or stale rows. Missing,
+evicted or invalidated snapshots use `BLAZE_NOT_READY`, `BLAZE_EVICTED` or
+`BLAZE_INVALIDATED`. Last-success timestamps are diagnostic history, never evidence
+that an unavailable cache is readable. Switching direct discards the snapshot.
+Saving/deleting a pipeline or changing its mode invalidates dependent snapshots;
+generation checks prevent a concurrent refresh from publishing obsolete output.
+
+**Limits and refresh scheduler.** Environment-only server limits default to
+`OPENSIGHT_BLAZE_MAX_BYTES=67108864`,
+`OPENSIGHT_BLAZE_DATASET_BYTES=16777216`,
+`OPENSIGHT_BLAZE_MAX_ROWS=100000`, and
+`OPENSIGHT_BLAZE_CELL_CHARS=16384`. Configuration must be positive safe integers,
+with dataset capacity no greater than total capacity. Storage charges schema,
+column slots and conservative scalar/string overhead (UTF-16), not just JSON
+payload size. A single global intake reservation bounds simultaneous materialize
+and direct-query intake; overlaps refuse with `BLAZE_BUSY`. Least-recently-read
+snapshots are evicted until that reservation fits; the snapshot being refreshed
+is released first. Oversized output refuses with `BLAZE_DATASET_TOO_LARGE`, never
+truncates or publishes a partial snapshot. SQL execution keeps the existing
+10-second timeout and DuckDB memory/no-spill limits. Accounted store capacity is
+not an operating-system RSS limit: bounded driver batches, existing upload staging,
+SQL working memory and evaluator/result copies have separate overhead, documented
+for operators. No unbounded source result arrays are collected before checking.
+
+Intervals are whole minutes, 1–525600, or null. The existing in-process one-second
+scheduler checks due datasets, runs refreshes serially, coalesces missed intervals,
+and sets the next due time from completion (also after failure); manual success or
+failure resets that interval. No overlapping refresh or catch-up storm. It starts
+with the API listener and stops on close; scheduled execution rechecks the owner's
+current build capability. Restart begins empty and schedules the first refresh one
+interval after startup. Manual refresh is available immediately.
+
+**Reusable inputs and security.** This extends §12's direct-only dataset resolution:
+a trusted host binding may substitute a ready Blaze snapshot for a dataset relation.
+The existing `{dataset: id}` join API stays unchanged. Cached inputs run as bounded
+temporary DuckDB relations using their stored schema; no source scan or pipeline
+expansion occurs across a cache boundary. File/direct and cached joins, including
+all-cached joins whose original sources were PostgreSQL, run locally. A direct
+PostgreSQL relation mixed with a cached relation still fails the existing
+cross-engine check; materialize both sides first. Ownership/namespace resolution,
+protected-source refusal and graph validation remain fail-closed. Cache metadata
+from HTTP bodies or imported bundles never grants access. Root refresh revalidates
+its current pipeline and resolves dependencies anew. Source expiry does not erase a
+valid standalone snapshot, but a refresh fails visibly if its sources are missing.
+
+**UI and verification.** Prep shows mode, schedule, manual refresh, status, refresh
+time, row count and a labeled cached-output view. Source pickers/canvas show execution
+mode and cached dependency times. DatasetHeader accepts prepared dataset identity
+and execution metadata for data-panel use while retaining the existing local sample
+badge and sales flow; attaching arbitrary prepared datasets to the analysis editor
+remains outside this issue's publication scope. Static mode disables hosted controls
+and says “Needs hosted API”; its sample import is explicitly offline. Tests cover
+full output, shared query semantics, source-free reads/joins, isolation/bypasses,
+refresh failure and invalid pipelines, bounds/LRU, invalidation/races/restart and
+fake-timer scheduling. Rebuild and screenshot-compare the demo; refresh affected
+README screenshots. The sweep owner handles the hero GIF, merge, publish and issue
+closure; this branch does none of those actions.

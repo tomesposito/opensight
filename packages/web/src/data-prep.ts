@@ -1,11 +1,11 @@
 import { validatePrepPipeline, type PrepStep, type PrepColumn, type PrepPipeline, type PrepInput, type PrepJoinInput } from '@opensight/bundle-parser/prep';
 import type { BundleDataSet, QsBundle } from '@opensight/bundle-parser/browser';
 import { compilePrep, type PrepSource } from '@opensight/query-engine/browser';
-export interface PrepSourceSummary { id: string; ref?: PrepJoinInput; name?: string; connectorId: string; columns: PrepColumn[]; available: boolean; errorCode?: string }
+export interface PrepSourceSummary { execution?: import('./api-client.js').ExecutionStatus; id: string; ref?: PrepJoinInput; name?: string; connectorId: string; columns: PrepColumn[]; available: boolean; errorCode?: string }
 export const prepRefKey = (ref: PrepJoinInput): string => JSON.stringify(ref);
 export const prepSourceRef = (source: PrepSourceSummary): PrepJoinInput => source.ref ?? source.id;
 export const prepRefLabel = (ref: PrepJoinInput): string => typeof ref === 'string' ? ref : 'dataset' in ref ? `Dataset · ${ref.dataset}` : `Step · ${ref.step}`;
-export const prepSourceLabel = (source: PrepSourceSummary): string => `${source.ref && typeof source.ref !== 'string' ? 'dataset' in source.ref ? 'Prepared dataset' : 'Earlier step' : source.connectorId === 'file' ? 'Uploaded file' : source.connectorId} · ${source.name ?? source.id}`;
+export const prepSourceLabel = (source: PrepSourceSummary): string => `${source.ref && typeof source.ref !== 'string' ? 'dataset' in source.ref ? 'Prepared dataset' : 'Earlier step' : source.connectorId === 'file' ? 'Uploaded file' : source.connectorId} · ${source.name ?? source.id}${source.execution ? ` · ${source.execution.mode === 'BLAZE' ? 'BLAZE' : 'DIRECT QUERY'}` : ''}`;
 export function prepMessage(e: unknown): string {
   return e instanceof Error ? `${'code' in e && typeof e.code === 'string' ? `${e.code}: ` : ''}${e.message}` : 'Invalid pipeline';
 }
@@ -38,7 +38,12 @@ export function prepBindings(sources: readonly PrepSourceSummary[]): PrepSource[
 export function prepPlan(pipeline: PrepPipeline, sources: readonly PrepSourceSummary[], through?: string | null, context: PrepSchemaContext = {}) {
   const input = sources.find(s => prepRefKey(prepSourceRef(s)) === prepRefKey(pipeline.input));
   const dialect = input?.connectorId === 'postgresql' ? 'postgres' : 'duckdb';
-  return compilePrep(pipeline, prepBindings(sources), { dialect, through, datasetId: context.datasetId, datasets: context.datasets?.filter(d => d.opensightPrep).map(d => ({ id: d.dataSetId, pipeline: d.opensightPrep! })) });
+  const datasets = context.datasets?.filter(d => d.opensightPrep).map(d => {
+    const cached = sources.find(s => typeof s.ref === 'object' && 'dataset' in s.ref && s.ref.dataset === d.dataSetId && s.execution?.mode === 'BLAZE');
+    const materialized: PrepSource | undefined = cached ? { id: `cached-${cached.id}`, table: `cached-${cached.id}`, connectorId: 'file', columns: cached.columns, security: cached.available ? 'unrestricted' : 'protected' } : undefined;
+    return { id: d.dataSetId, pipeline: d.opensightPrep!, ...(materialized ? { materialized } : {}) };
+  });
+  return compilePrep(pipeline, prepBindings(sources), { dialect, through, datasetId: context.datasetId, datasets });
 }
 export function prepSchema(pipeline: PrepPipeline, sources: readonly PrepSourceSummary[], through?: string | null, context: PrepSchemaContext = {}): PrepColumn[] {
   return prepPlan(pipeline, sources, through, context).columns;

@@ -10,11 +10,13 @@ export interface InteractiveQuery {
 }
 /** Transport projection shared by the local API and pinned browser fixture execution. */
 export function interactiveRequest(body: InteractiveQuery, metadata: Pick<PlanRequest, 'dataSet' | 'dataSource' | 'localData'>): PlanRequest {
+  const dataset = metadata.dataSet as { DataSet?: { Arn?: string } };
+  const datasetArn = dataset.DataSet?.Arn ?? 'arn:aws:quicksight:us-east-1:123456789012:dataset/renderable-sales';
   const column = (columnName: string) => ({ DataSetIdentifier: 'sales_data', ColumnName: columnName });
   return { ...metadata, visualId: 'query', parameterDeclarations: body.parameterDeclarations, parameterBindings: body.parameterBindings,
     parameterFilters: body.filters.filter((f): f is ParameterFilter => 'parameterName' in f),
     analysis: { ResourceType: 'Analysis', AnalysisId: 'live-query', Name: 'Local sales query', Definition: {
-      DataSetIdentifierDeclarations: [{ Identifier: 'sales_data', DataSetArn: 'arn:aws:quicksight:us-east-1:123456789012:dataset/renderable-sales' }],
+      DataSetIdentifierDeclarations: [{ Identifier: 'sales_data', DataSetArn: datasetArn }],
       CalculatedFields: (body.calculatedFields ?? []).map(field => ({ DataSetIdentifier: 'sales_data', Name: field.name, Expression: field.expression })),
       FilterGroups: body.filters.filter((f): f is { columnName: string; value: string } | { columnName: string; values: string[] } => !('parameterName' in f)).map((filter, i) => ({ FilterGroupId: `filter-${i}`, Status: 'ENABLED', CrossDataset: 'SINGLE_DATASET', ScopeConfiguration: { AllSheets: {} },
         Filters: [{ CategoryFilter: { FilterId: `filter-${i}`, Column: column(filter.columnName), Configuration: { FilterListConfiguration: { MatchOperator: 'EQUALS', NullOption: 'NON_NULLS_ONLY', CategoryValues: 'values' in filter ? filter.values : [filter.value] } } } }],

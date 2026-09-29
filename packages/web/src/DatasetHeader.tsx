@@ -1,3 +1,4 @@
+import { DatasetExecution, type ExecutionClient } from './DatasetExecution.js';
 import { useEffect, useState } from 'react';
 import type { QueryClient } from './author-query.js';
 import type { DatasetRefreshStatus } from './api-client.js';
@@ -6,7 +7,12 @@ import sales from './sales.generated.json' with { type: 'json' };
 type Result<T> = { client: QueryClient; value?: T; error?: string };
 
 /** Metadata describes the local dataset, independently of the selected visual's filters. */
-export function DatasetHeader({ client }: { client?: QueryClient }) {
+export function DatasetHeader({ client, datasetId = 'sales', datasetName = 'Local sales dataset' }: { client?: QueryClient; datasetId?: string; datasetName?: string }) {
+  if (datasetId === 'sales') return <SalesDatasetHeader client={client} />;
+  const execution = client?.getDatasetExecution && client.setDatasetExecution && client.refreshBlaze && client.getPreparedRows ? client as QueryClient & ExecutionClient : undefined;
+  return <section className="dataset-header" aria-label="Dataset metadata"><span className="dataset-label">Dataset</span><strong className="dataset-name">{datasetName}</strong><DatasetExecution key={datasetId} client={execution} datasetId={datasetId} compact /></section>;
+}
+function SalesDatasetHeader({ client }: { client?: QueryClient }) {
   const [count, setCount] = useState<Result<number>>();
   const [refresh, setRefresh] = useState<Result<DatasetRefreshStatus>>();
   useEffect(() => {
