@@ -59,10 +59,14 @@ test('prep aggregate and explicit pivot/unpivot have shared null and grouping se
 });
 test('prep joins preserve multiplicity and SQL null semantics; append preserves duplicate rows', async t => {
   const run = await engines(t), right = { ...source, id: 'right' };
-  for (const joinType of ['inner', 'left', 'full']) {
-    const rows = await run([{ kind: 'join', config: { source: 'right', joinType, keys: [{ left: 'region', right: 'region' }], columns: [{ column: 'amount', name: 'right_amount' }] } }], {}, [right]);
-    assert.equal(rows.length, joinType === 'inner' ? 5 : joinType === 'left' ? 6 : 7);
+  const expected = { inner: 5, left: 6, right: 6, full: 7 };
+  const joinStep = joinType => ({ kind: 'join', config: { source: 'right', joinType, keys: [{ left: 'region', right: 'region' }], columns: [{ column: 'amount', name: 'right_amount' }, { column: 'category', name: 'right_category' }] } });
+  for (const joinType of Object.keys(expected)) {
+    const rows = await run([joinStep(joinType)], {}, [right]);
+    assert.equal(rows.length, expected[joinType]);
+    if (joinType === 'right') assert.ok(rows.some(r => r.region === null && r.right_category === 'A'), 'right join keeps unmatched right rows with null left columns');
   }
+  assert.throws(() => compilePrep(pipeline([{ kind: 'join', config: { source: 'right', joinType: 'cross', keys: [{ left: 'region', right: 'region' }], columns: [] } }]), [source, right]), e => e.code === 'INVALID_PREP_PIPELINE');
   assert.equal((await run([{ kind: 'append', config: { source: 'right' } }], {}, [right])).length, 8);
   for (const kind of ['join', 'append']) {
     const config = kind === 'join' ? { source: 'right', joinType: 'inner', keys: [{ left: 'region', right: 'region' }], columns: [{ column: 'amount', name: 'other' }] } : { source: 'right' };
