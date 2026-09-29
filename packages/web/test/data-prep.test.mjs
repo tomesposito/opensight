@@ -402,3 +402,28 @@ test('editor export preserves branch/output metadata and imports cannot confer s
   assert.throws(() => prepSchema(parsed, [{ ...source, available: false }]), e => e.code === 'PREP_SECURITY_REJECTED');
   assert.deepEqual(prepSchema(parsed, [source]).map(c => c.name), ['total']);
 });
+
+test('multiple dangling branches can be repaired in order while the entire draft stays fail closed', async t => {
+  const ui = await mount(t);
+  await ui.click('＋ Select columns'); await submitStep(ui.renderer);
+  const base = graphPipeline(ui).steps[0].id;
+  await nodeAction(ui, base, 'Add branch'); await submitStep(ui.renderer);
+  const first = graphPipeline(ui).steps[1].id;
+  await nodeAction(ui, base, 'Add branch'); await submitStep(ui.renderer);
+  const second = graphPipeline(ui).steps[2].id;
+  await selectNode(ui, base); await ui.click('Remove step');
+  assert.match(JSON.stringify(ui.renderer.toJSON()), /INVALID_PREP_PIPELINE/);
+  await selectNode(ui, first); await ui.click('Configure step');
+  await field(ui.renderer, 'Left input', '');
+  assert.equal(ui.renderer.root.findByProps({ type: 'submit' }).props.disabled, false);
+  assert.equal(ui.renderer.root.findByType(PrepStepEditor).findAllByProps({ type: 'checkbox' }).length, 4);
+  await submitStep(ui.renderer);
+  assert.equal(Object.hasOwn(graphPipeline(ui).steps[0], 'from'), false);
+  assert.equal(graphPipeline(ui).steps[1].from, base);
+  assert.match(JSON.stringify(ui.renderer.toJSON()), /INVALID_PREP_PIPELINE/);
+  assert.equal(ui.button('Save pipeline').props.disabled, true);
+  await selectNode(ui, second); await ui.click('Configure step');
+  await field(ui.renderer, 'Left input', first); await submitStep(ui.renderer);
+  assert.doesNotMatch(JSON.stringify(ui.renderer.toJSON()), /INVALID_PREP_PIPELINE/);
+  assert.equal(graphPipeline(ui).steps[1].from, first);
+});

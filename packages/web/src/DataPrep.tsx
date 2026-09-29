@@ -100,7 +100,12 @@ export function DataPrep({ client, onSources, onAuthor }: { client?: PrepClient;
     } catch (e) { setError(prepMessage(e)); }
   };
   const stepPipeline = (step: PrepStep): PrepPipeline => ({ ...pipeline, steps: pipeline.steps.some(s => s.id === step.id) ? pipeline.steps.map(s => s.id === step.id ? step : s) : [...pipeline.steps, step] });
-  const validateStep = (step: PrepStep) => { prepSchema(stepPipeline(step), sources, undefined, schemaContext); };
+  const validateStep = (step: PrepStep) => {
+    const next = stepPipeline(step), position = next.steps.findIndex(s => s.id === step.id);
+    // Permit topological, one-at-a-time repairs when multiple later branches
+    // already have dangling references. Save/preview still validate every step.
+    prepSchema(prepPrefix(next, position + 1), sources, step.id, schemaContext);
+  };
   const editorSources = (): PrepSourceSummary[] => {
     try {
       const plan = prepPlan(prepPrefix(pipeline, index < 0 ? pipeline.steps.length : index), sources, undefined, schemaContext);

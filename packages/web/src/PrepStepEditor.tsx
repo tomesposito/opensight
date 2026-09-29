@@ -24,7 +24,7 @@ export function PrepStepEditor({ step, columns: inputColumns, sources, pipeline,
   const index = pipeline?.steps.findIndex(s => s.id === step.id) ?? -1;
   const earlier = pipeline?.steps.slice(0, index < 0 ? pipeline.steps.length : index) ?? [];
   const left = edited.from ?? earlier.at(-1)?.id;
-  const columns = sources.find(s => typeof s.ref === 'object' && 'step' in s.ref && s.ref.step === left)?.columns ?? inputColumns;
+  const columns = sources.find(s => left === undefined && pipeline ? prepRefKey(prepSourceRef(s)) === prepRefKey(pipeline.input) : typeof s.ref === 'object' && 'step' in s.ref && s.ref.step === left)?.columns ?? inputColumns;
   const names = columns.map(c => c.name), sourceIds = sources.filter(s => !s.ref || typeof s.ref === 'string').map(s => s.id);
   let fields: ReactNode;
   switch (edited.kind) {

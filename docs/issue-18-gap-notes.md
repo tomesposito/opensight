@@ -32,7 +32,9 @@ The spec leaves two small UI/counting choices implicit:
 The Left input editor explicitly repairs dangling `from` references after a
 move/deletion. Deleting the explicit output resets it to the new last step,
 removing the property if no steps remain. Invalid pipelines disable hosted save
-and suppress preview requests. A rejected sixth branch is not added, and its
+and suppress preview requests. Draft Apply validates the edited step’s prefix so
+multiple broken branches can be repaired in topological order; intermediate
+invalid drafts still cannot save or preview. A rejected sixth branch is not added, and its
 named error remains visible. Import grants no source access. ZIP readers now
 preserve named prep validation errors instead of wrapping them as invalid ZIPs.
 
