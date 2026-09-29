@@ -1,3 +1,4 @@
+import { streamPrepDuckDb, withPrepTables, type PrepSink, type PrepReadLimits, type PrepMemoryTable } from './prep-stream.js';
 import { previewPrepDuckDb, type PrepPreview, type PrepPreviewOptions } from './prep-executor.js';
 import type { PrepSource } from './prep.js';
 import { randomUUID } from 'node:crypto';
@@ -217,8 +218,11 @@ export class UploadStaging {
   prepSources(): PrepSource[] {
     return [...this.uploads.values()].map(upload => ({ id: upload.id, connectorId: 'file', table: upload.id, columns: structuredClone(upload.columns), security: 'unrestricted' }));
   }
-  async previewPrep(raw: unknown, options: PrepPreviewOptions = {}): Promise<PrepPreview> {
-    return previewPrepDuckDb(this.connection, raw, this.prepSources(), options);
+  async previewPrep(raw: unknown, options: PrepPreviewOptions = {}, tables: readonly PrepMemoryTable[] = []): Promise<PrepPreview> {
+    return withPrepTables(this.connection, tables, () => previewPrepDuckDb(this.connection, raw, [...this.prepSources(), ...tables.map(t => t.source)], options));
+  }
+  async streamPrep(raw: unknown, options: PrepPreviewOptions, limits: PrepReadLimits, sink: PrepSink, tables: readonly PrepMemoryTable[] = []): Promise<void> {
+    return withPrepTables(this.connection, tables, () => streamPrepDuckDb(this.connection, raw, [...this.prepSources(), ...tables.map(t => t.source)], options, limits, sink));
   }
   close(): void { this.connection.closeSync(); this.instance.closeSync(); this.uploads.clear(); }
 }

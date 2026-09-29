@@ -11,10 +11,12 @@ export interface PrepSource {
   security: 'unrestricted' | 'protected';
 }
 /** Prepared definitions are supplied by the trusted host, never by source assertions. */
-export interface PrepDataset { id: string; pipeline: PrepPipeline }
+export interface PrepDataset { id: string; pipeline: PrepPipeline; materialized?: PrepSource }
 export interface PrepCompileOptions {
   dialect?: PrepPlan['dialect']; through?: string | null; limit?: number; now?: string;
   datasets?: readonly PrepDataset[]; datasetId?: string;
+  /** Trusted executor output bound, never accepted by the preview HTTP route. */
+  executionLimit?: number;
 }
 export interface PrepPlan {
   dialect: 'duckdb' | 'postgres'; pipeline: PrepPipeline; columns: PrepColumn[];
@@ -48,6 +50,7 @@ export function compilePrep(raw: unknown, sources: readonly PrepSource[], option
   const pipeline = validatePrepPipeline(raw), dialect = options.dialect ?? 'duckdb', limit = options.limit ?? 100;
   if (!['duckdb', 'postgres'].includes(dialect)) prepFail('UNSUPPORTED_PREP_STEP', '$.dialect', 'Only DuckDB and Postgres preparation is supported');
   if (!Number.isInteger(limit) || limit < 1 || limit > 500) prepFail('PREP_LIMIT_EXCEEDED', '$.limit', 'Preview limit must be 1–500 rows');
+  if (options.executionLimit !== undefined && (!Number.isSafeInteger(options.executionLimit) || options.executionLimit < 1)) prepFail('PREP_LIMIT_EXCEEDED', '$.executionLimit', 'Invalid execution limit');
   const through = options.through === undefined ? pipeline.steps.at(-1)?.id ?? null : options.through;
   if (through !== null && !pipeline.steps.some(s => s.id === through)) prepFail('PREP_NOT_FOUND', '$.through', 'Step not found');
   // Never shadow a caller-owned physical table with a generated CTE name.
@@ -75,6 +78,11 @@ export function compilePrep(raw: unknown, sources: readonly PrepSource[], option
     }
     const matches = datasets.filter(d => d.id === ref.dataset);
     if (matches.length !== 1) prepFail('PREP_SOURCE_NOT_FOUND', path, `Prepared dataset is missing or ambiguous: ${ref.dataset}`);
+    const materialized = matches[0]!.materialized;
+    if (materialized) {
+      const source = prepSource(materialized.id, [materialized], dialect);
+      return { from: relation(source), columns: prepColumns(source.columns, path), nesting: 0 };
+    }
     active.add(ref.dataset);
     const result = build(validatePrepPipeline(matches[0]!.pipeline, `${path}.dataset`), false, `${path}.dataset`, depth + 1);
     active.delete(ref.dataset);
@@ -187,7 +195,7 @@ export function compilePrep(raw: unknown, sources: readonly PrepSource[], option
   build(pipeline, true, '$.opensightPrep', 0);
   const projection = selectedColumns.map(c => `${c.type === 'DATETIME' ? timestamp(q(c.name), dialect) : q(c.name)} AS ${q(c.name)}`).join(', ');
   const withSql = selectedCtes ? `WITH ${ctes.slice(0, selectedCtes).join(',\n')}\n` : '';
-  return { dialect, pipeline, columns: selectedColumns, stages, parameters: parameters.slice(0, selectedParameters), sql: `${withSql}SELECT ${projection} FROM ${selectedFrom} LIMIT ${limit + 1}`, limit, through };
+  return { dialect, pipeline, columns: selectedColumns, stages, parameters: parameters.slice(0, selectedParameters), sql: `${withSql}SELECT ${projection} FROM ${selectedFrom} LIMIT ${options.executionLimit ?? limit + 1}`, limit, through };
 }
 function timestamp(value: string, dialect: PrepPlan['dialect']): string {
   return dialect === 'postgres' ? `TO_CHAR(${value}, 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')` : `STRFTIME(${value}, '%Y-%m-%dT%H:%M:%S.%gZ')`;

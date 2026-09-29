@@ -4,13 +4,14 @@ import { PrepError, prepFail, type PrepColumn } from '@opensight/bundle-parser/p
 import { compilePrep, type PrepSource, type PrepCompileOptions, type PrepPlan } from './prep.js';
 import { validateConnectorConfig } from './connectors.js';
 export interface PrepPreview {
+  cachedInputs?: { datasetId: string; refreshedAt: string }[];
   columns: PrepColumn[]; rows: Record<string, string | number | boolean | null>[];
   through: string | null; limit: number; returnedRows: number; truncated: boolean;
   /** Exact only if the bounded query exhausted the output; otherwise unknown. */
   totalRows: number | null; rowCountLowerBound: number; dialect: PrepPlan['dialect'];
 }
 export type PrepPreviewOptions = Omit<PrepCompileOptions, 'dialect'>;
-function normalize(value: unknown, column: PrepColumn): string | number | boolean | null {
+export function normalizePrepScalar(value: unknown, column: PrepColumn): string | number | boolean | null {
   if (value === null) return null;
   if (column.type === 'BOOLEAN') { if (typeof value === 'boolean') return value; if (value === 't' || value === 'f') return value === 't'; }
   if (column.type === 'STRING' || column.type === 'DATETIME') { if (typeof value === 'string') return value; }
@@ -25,7 +26,7 @@ function normalize(value: unknown, column: PrepColumn): string | number | boolea
 }
 export function prepPreviewResult(plan: PrepPlan, rows: readonly Record<string, unknown>[]): PrepPreview {
   const truncated = rows.length > plan.limit;
-  const sample = rows.slice(0, plan.limit).map(row => Object.fromEntries(plan.columns.map(c => [c.name, normalize(row[c.name], c)])));
+  const sample = rows.slice(0, plan.limit).map(row => Object.fromEntries(plan.columns.map(c => [c.name, normalizePrepScalar(row[c.name], c)])));
   return { columns: plan.columns, rows: sample, through: plan.through, limit: plan.limit, returnedRows: sample.length, truncated, totalRows: truncated ? null : sample.length, rowCountLowerBound: rows.length, dialect: plan.dialect };
 }
 /** Caller owns the private connection; requests provide metadata only, never SQL. */

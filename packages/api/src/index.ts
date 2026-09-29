@@ -83,7 +83,7 @@ export async function createApiServer(options: ApiOptions): Promise<Server> {
   const alerts = new AlertService(automation, new DashboardMetrics(store, sales), mail);
   await alerts.recover();
   refresh.onSuccess = (datasetId, run) => alerts.afterRefresh(datasetId, run);
-  const scheduler = new Scheduler(async () => { await refresh.tick(); await reports.tick(); });
+  const scheduler = new Scheduler(async () => { await refresh.tick(); await reports.tick(); await prepRoutes.tick(identity => { if (!security) throw new SecurityError(503, 'SECURITY_NOT_CONFIGURED', 'Authentication required'); security.require(identity, 'build'); }); });
   const connectorRoutes = new ConnectorRoutes();
   const prepRoutes = await PrepRoutes.create(connectorRoutes, options.prepStorePath, options.prepPostgresBindings);
   const server = createServer((request, response) => {
@@ -119,7 +119,7 @@ export async function createApiServer(options: ApiOptions): Promise<Server> {
       if (security && identity && (/^\/(?:api\/)?analyses(?:\/|$)/.test(path) || /^\/api\/datasets(?:\/sales\/query)?$/.test(path))) security.require(identity, 'build');
       const namespaceId = identity?.namespaceId ?? 'default';
       const scopedStore = namespaceStores.get(namespaceId), scopedSales = namespaceQueries.get(namespaceId);
-      if (/^\/api\/(prep-sources|prep-datasets)(?:\/|$)/.test(path) || /^\/api\/datasets\/[^/]+\/prep(?:\/|$)/.test(path)) {
+      if (/^\/api\/(prep-sources|prep-datasets)(?:\/|$)/.test(path) || /^\/api\/datasets\/[^/]+\/prep(?:\/|$)/.test(path) || /^\/api\/datasets\/[^/]+\/(execution|rows)$/.test(path) || /^\/api\/datasets\/(?!sales\/)[^/]+\/(refresh|query)$/.test(path)) {
         if (!security || !identity) throw new SecurityError(503, 'SECURITY_NOT_CONFIGURED', 'Needs hosted API with authentication configured');
         security.require(identity, 'build');
         await prepRoutes.route(request, response, path, query, identity); return;
@@ -265,7 +265,7 @@ export async function createApiServer(options: ApiOptions): Promise<Server> {
     });
   });
   server.once('listening', () => scheduler.start());
-  server.once('close', () => { scheduler.stop(); void connectorRoutes.close(); });
+  server.once('close', () => { scheduler.stop(); void scheduler.idle().then(() => connectorRoutes.close()); });
   return server;
 }
 

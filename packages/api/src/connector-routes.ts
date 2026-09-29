@@ -1,3 +1,4 @@
+import { streamPrepDuckDb, previewPrepDuckDb, withPrepMemory, type PrepSink, type PrepReadLimits, type PrepMemoryTable } from '@opensight/query-engine';
 import { prepFail } from '@opensight/bundle-parser/prep';
 import type { PrepSource, PrepPreview, PrepPreviewOptions } from '@opensight/query-engine';
 import type { IncomingMessage, ServerResponse } from 'node:http';
@@ -68,12 +69,19 @@ export class ConnectorRoutes {
     const session = this.sessions.get(JSON.stringify([identity.namespaceId, identity.userId]));
     return session ? (await session).prepSources() : [];
   }
-  async previewPrep(identity: Identity, raw: unknown, options: PrepPreviewOptions): Promise<PrepPreview> {
+  async previewPrep(identity: Identity, raw: unknown, options: PrepPreviewOptions, tables: readonly PrepMemoryTable[] = []): Promise<PrepPreview> {
     const owner = JSON.stringify([identity.namespaceId, identity.userId]), session = this.sessions.get(owner);
-    if (!session) prepFail('PREP_SOURCE_NOT_FOUND', '$.input', 'Upload staging is unavailable; upload the source again');
-    const operation = (this.queues.get(owner) ?? Promise.resolve()).catch(() => undefined).then(async () => (await session).previewPrep(raw, options));
+    if (!session) return withPrepMemory(tables, c => previewPrepDuckDb(c, raw, tables.map(t => t.source), options));
+    const operation = (this.queues.get(owner) ?? Promise.resolve()).catch(() => undefined).then(async () => (await session).previewPrep(raw, options, tables));
     this.queues.set(owner, operation);
     try { return await operation; } finally { if (this.queues.get(owner) === operation) this.queues.delete(owner); }
+  }
+  async streamPrep(identity: Identity, raw: unknown, options: PrepPreviewOptions, limits: PrepReadLimits, sink: PrepSink, tables: readonly PrepMemoryTable[]): Promise<void> {
+    const owner = JSON.stringify([identity.namespaceId, identity.userId]), session = this.sessions.get(owner);
+    if (!session) return withPrepMemory(tables, c => streamPrepDuckDb(c, raw, tables.map(t => t.source), options, limits, sink));
+    const operation = (this.queues.get(owner) ?? Promise.resolve()).catch(() => undefined).then(async () => (await session).streamPrep(raw, options, limits, sink, tables));
+    this.queues.set(owner, operation);
+    try { await operation; } finally { if (this.queues.get(owner) === operation) this.queues.delete(owner); }
   }
   async close(): Promise<void> {
     await Promise.allSettled(this.queues.values());
