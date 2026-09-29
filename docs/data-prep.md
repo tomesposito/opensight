@@ -1,4 +1,4 @@
-# Dataset preparation (issues #9 and #11)
+# Dataset preparation (issues #9, #11, and #14)
 
 The Data preparation view builds an ordered transformation pipeline over sources
 from the connector registry. Open it from Data sources → Prepare data, the mode
@@ -8,6 +8,17 @@ one node per connected or prepared input, with labeled connections to the steps
 that use it. Repeated joins share a source node; an earlier-step reference points
 back to that result. Select a node to preview that stage. Steps
 can be edited, reordered, or removed. Downstream schema errors remain visible.
+
+Adding data is a distinct action: **＋ Add data** stages a source (dataset,
+connector table, uploaded file, or an earlier step's result) as an input node on
+the canvas, visibly flagged until a Join or Append step is configured against it.
+Adding the Combine step while an input is staged presets the step's source and a
+default key; applying the step consumes the staged input. Join/append steps whose
+own configuration is incomplete — or that an upstream edit broke — carry a red
+unconfigured flag on the node with the validation message, so the fail-closed
+validation is visible on the canvas, not only in the editor at apply time. Staged
+inputs are a UI draft: they are not part of the saved pipeline or the exported
+bundle.
 
 ## Dataset and bundle model
 
