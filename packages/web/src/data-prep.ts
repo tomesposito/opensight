@@ -27,21 +27,22 @@ export function prepInputNodes(pipeline: PrepPipeline): { ref: PrepInput; instan
 }
 /** QuickSight-style instance label: first occurrence plain, later ones get " (2)", " (3)". */
 export const prepInstanceLabel = (base: string, instance: number): string => instance > 1 ? `${base} (${instance})` : base;
-/** 1-based occurrence of a join/append step's source among same-ref uses in the pipeline.
- *  Bundle refs distinguish instances by position; a step not yet in the pipeline counts as the next occurrence. */
+/** 1-based occurrence of a join/append step's source among same-ref uses in the pipeline,
+ *  ordered by position (input first, then steps in order). Bundle refs distinguish instances
+ *  by position; a step not yet in the pipeline counts as the next occurrence. */
 export function prepStepSourceInstance(pipeline: PrepPipeline, step: PrepStep): number {
   if (step.kind !== 'join' && step.kind !== 'append') return 1;
   const source = step.config.source;
   if (typeof source !== 'string' && 'step' in source) return 1;
-  const key = prepRefKey(source), keys = [prepRefKey(pipeline.input)];
-  for (const s of pipeline.steps) {
+  const key = prepRefKey(source), pos = pipeline.steps.findIndex(s => s.id === step.id);
+  let n = prepRefKey(pipeline.input) === key ? 1 : 0;
+  for (const [i, s] of pipeline.steps.entries()) {
+    if (pos >= 0 && i >= pos) break;
     if (s.kind !== 'join' && s.kind !== 'append') continue;
     if (typeof s.config.source !== 'string' && 'step' in s.config.source) continue;
-    keys.push(prepRefKey(s.config.source));
-    if (s.id === step.id) break;
+    if (prepRefKey(s.config.source) === key) n++;
   }
-  const count = keys.filter(k => k === key).length;
-  return pipeline.steps.some(s => s.id === step.id) ? count : count + 1;
+  return n + 1;
 }
 export const prepCatalog: { kind: PrepStep['kind']; label: string; group: string }[] = [
   { kind: 'calculate', label: 'Add calculated column', group: 'Column transformations' },
