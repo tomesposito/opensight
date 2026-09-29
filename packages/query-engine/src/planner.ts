@@ -1,3 +1,4 @@
+import { rowFilterSql } from './row-filter.js';
 import { mysqlBindings, mysqlTimestamp, mysqlDateCast } from './mysql-sql.js';
 import { resolveSecurity, rowSecuritySql } from './security.js';
 import { expressionChildren } from './evaluate.js';
@@ -221,12 +222,7 @@ function sql(plan: Omit<QueryPlan, 'sql' | 'parameters'>, parameters: ParameterV
   }
   if (plan.filters.length) {
     const relation = q(`${prefix}filtered`);
-    const predicates = plan.filters.map(f => {
-      const column = plan.dialect === 'mysql' && (!f.scalarType || f.scalarType === 'string') ? `${q(f.columnName)} COLLATE utf8mb4_0900_bin` : q(f.columnName);
-      const placeholder = (value: ParameterValue) => f.scalarType === 'datetime' ? plan.dialect === 'mysql' ? mysqlDateCast(bind(value)) : `CAST(${bind(value)} AS TIMESTAMP)` : bind(value);
-      if ('value' in f) return `${column} ${f.operator === 'GREATER_THAN_OR_EQUAL_TO' ? '>=' : f.operator === 'LESS_THAN_OR_EQUAL_TO' ? '<=' : '='} ${placeholder(f.value)}`;
-      return f.values.length ? `${column} IN (${f.values.map(placeholder).join(', ')})` : 'FALSE';
-    });
+    const predicates = plan.filters.map(f => rowFilterSql(f, plan.dialect, bind));
     ctes.push(`${relation} AS (SELECT * FROM ${from} WHERE ${predicates.join(' AND ')})`);
     from = relation;
   }

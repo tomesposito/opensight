@@ -1,3 +1,4 @@
+import { rowFilterSql } from './row-filter.js';
 import { validatePrepPipeline, prepFail, prepName, prepTypes, type PrepColumn, type PrepPipeline, type PrepType } from '@opensight/bundle-parser/prep';
 import { connectorDefinition, connectorDialect } from './connectors.js';
 import { parseExpression, expressionSql } from './expressions.js';
@@ -76,6 +77,15 @@ export function compilePrep(raw: unknown, sources: readonly PrepSource[], option
       case 'select': {
         columns = step.config.columns.map(name => column(name)); sql = `SELECT ${columns.map(c => q(c.name)).join(', ')} FROM ${from}`; break;
       }
+      case 'filter': {
+        const predicates = step.config.filters.map(f => {
+          const c = column(f.columnName), values = 'value' in f ? [f.value] : f.values;
+          if (c.type === 'BOOLEAN' || values.some(v => ['INTEGER', 'DECIMAL'].includes(c.type) ? typeof v !== 'number' : typeof v !== 'string')) prepFail('PREP_SCHEMA_MISMATCH', path, 'Filter values must match the column type');
+          if (c.type === 'DATETIME' && values.some(v => typeof v !== 'string' || !/^\d{4}-\d\d-\d\d(?:T\d\d:\d\d:\d\d(?:\.\d{1,3})?Z)?$/.test(v) || !Number.isFinite(Date.parse(v)) || new Date(v).toISOString().slice(0,10) !== v.slice(0,10))) prepFail('PREP_SCHEMA_MISMATCH', path, 'Expected an ISO date or UTC timestamp');
+          return rowFilterSql({ ...f, path, scalarType: scalarType(c.type) }, dialect, bind);
+        });
+        sql = `SELECT * FROM ${from} WHERE ${predicates.join(' AND ')}`; break;
+      }
       default: prepFail('UNSUPPORTED_PREP_STEP', path, 'Transformation compiler is unavailable');
     }
     columns = prepColumns(columns, path);
@@ -89,3 +99,5 @@ export function compilePrep(raw: unknown, sources: readonly PrepSource[], option
 function timestamp(value: string, dialect: PrepPlan['dialect']): string {
   return dialect === 'postgres' ? `TO_CHAR(${value}, 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')` : `STRFTIME(${value}, '%Y-%m-%dT%H:%M:%S.%gZ')`;
 }
+
+const scalarType = (type: PrepType): ScalarType => type === 'STRING' ? 'string' : type === 'DATETIME' ? 'datetime' : type === 'BOOLEAN' ? 'boolean' : 'number';

@@ -34,3 +34,10 @@ test('prep refuses unknown columns, case collisions, invalid previews and unreso
   assert.throws(() => compilePrep(pipeline([]), []), e => e.code === 'PREP_SOURCE_NOT_FOUND');
   assert.throws(() => compilePrep(pipeline([]), [source], { limit: 501 }), e => e.code === 'PREP_LIMIT_EXCEEDED');
 });
+test('prep filters reuse Phase 2b membership, ranges, empty-list and null semantics', async t => {
+  const run = await engines(t);
+  assert.deepEqual(await run([{ kind: 'filter', config: { filters: [{ columnName: 'region', values: ['East'] }, { columnName: 'amount', operator: 'GREATER_THAN_OR_EQUAL_TO', value: 3 }] } }]), [{ region: 'East', amount: 4, category: 'B' }]);
+  assert.deepEqual(await run([{ kind: 'filter', config: { filters: [{ columnName: 'region', values: [] }] } }]), []);
+  assert.deepEqual(await run([{ kind: 'filter', config: { filters: [{ columnName: 'region', value: "East' OR TRUE --" }] } }]), []);
+  assert.throws(() => compilePrep(pipeline([{ kind: 'filter', config: { filters: [{ columnName: 'amount', value: '3' }] } }]), [source]), e => e.code === 'PREP_SCHEMA_MISMATCH');
+});
