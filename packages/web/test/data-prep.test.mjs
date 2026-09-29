@@ -95,13 +95,13 @@ test('numeric filter editing preserves partially typed negative values until App
 });
 
 async function field(renderer, label, value) {
-  const holder = renderer.root.findAllByType('label').find(l => l.props.children[0] === label);
+  const holder = renderer.root.findAllByType('label').find(l => typeof l.props.children[0] === 'string' && l.props.children[0].startsWith(label));
   assert.ok(holder, label);
   const input = holder.findAll(n => typeof n.type === 'string' && ['input', 'select', 'textarea'].includes(n.type))[0];
   await act(async () => input.props.onChange({ target: { value } }));
 }
 const submitStep = async renderer => act(async () => renderer.root.findByType(PrepStepEditor).findByType('form').props.onSubmit({ preventDefault() {} }));
-test('join editor shows types, blocks mismatched keys and collisions, and reuses one node per source', async t => {
+test('join editor shows types, blocks mismatched keys and collisions, and renders one node per source instance', async t => {
   const ui = await mount(t);
   await ui.click('＋ Join');
   assert.ok(ui.renderer.root.findAllByType('option').some(o => Array.isArray(o.props.children) && o.props.children.join('') === 'region · STRING'));
@@ -129,6 +129,19 @@ test('join editor shows types, blocks mismatched keys and collisions, and reuses
   assert.match(JSON.stringify(ui.renderer.toJSON()), /INVALID_PREP_PIPELINE.*earlier step/);
   await ui.click('Move later');
   assert.doesNotMatch(JSON.stringify(ui.renderer.toJSON()), /INVALID_PREP_PIPELINE/);
+});
+test('self-join instances render distinct canvas nodes with (2), (3) counters', async t => {
+  const ui = await mount(t);
+  await ui.click('\uFF0B Join');
+  await field(ui.renderer, 'Right source', JSON.stringify('demo-sales'));
+  assert.match(JSON.stringify(ui.renderer.toJSON()), /Right source \u00B7 demo-sales \(2\)/);
+  await submitStep(ui.renderer);
+  await ui.click('\uFF0B Join');
+  await field(ui.renderer, 'Right source', JSON.stringify('demo-sales'));
+  await submitStep(ui.renderer);
+  const html = JSON.stringify(ui.renderer.toJSON());
+  assert.match(html, /demo-sales \(2\)/); assert.match(html, /demo-sales \(3\)/);
+  assert.match(html, /Source 2/); assert.match(html, /Source 3/);
 });
 test('hosted prepared joins preview before save and preserve refs and aliases in bundle exports', async t => {
   const lookup = { ...resource, dataSetId: 'lookup', name: 'Lookup', opensightPrep: pipeline };
@@ -161,7 +174,23 @@ test('raw and prepared references with the same ID remain distinct canvas inputs
   const { prepInputNodes } = await import('../build/test/data-prep.js');
   const step = id => ({ id, kind: 'join', config: { source: { dataset: source.id }, joinType: 'left', keys: [{ left: 'region', right: 'region' }], prefix: `${id}_` } });
   const p = { ...pipeline, steps: [step('first'), step('second')] };
-  const nodes = prepInputNodes(p); assert.equal(nodes.length, 2);
-  assert.equal(nodes[0].ref, source.id); assert.deepEqual(nodes[1].ref, { dataset: source.id });
-  assert.deepEqual(nodes[1].consumers, ['1. Join', '2. Join']);
+  const nodes = prepInputNodes(p); assert.equal(nodes.length, 3);
+  assert.equal(nodes[0].ref, source.id); assert.equal(nodes[0].instance, 1); assert.deepEqual(nodes[0].consumers, ['Input']);
+  assert.deepEqual(nodes[1].ref, { dataset: source.id }); assert.equal(nodes[1].instance, 1); assert.deepEqual(nodes[1].consumers, ['1. Join']);
+  assert.deepEqual(nodes[2].ref, { dataset: source.id }); assert.equal(nodes[2].instance, 2); assert.deepEqual(nodes[2].consumers, ['2. Join']);
+});
+test('self-joins render distinct nodes with QuickSight-style instance counters', async () => {
+  const { prepInputNodes, prepInstanceLabel, prepStepSourceInstance } = await import('../build/test/data-prep.js');
+  const step = id => ({ id, kind: 'join', config: { source: source.id, joinType: 'left', keys: [{ left: 'region', right: 'region' }], prefix: `${id}_` } });
+  const p = { ...pipeline, steps: [step('first'), step('second')] };
+  const nodes = prepInputNodes(p); assert.equal(nodes.length, 3);
+  assert.deepEqual(nodes.map(n => n.instance), [1, 2, 3]);
+  assert.deepEqual(nodes.map(n => n.consumers), [['Input'], ['1. Join'], ['2. Join']]);
+  assert.equal(prepInstanceLabel('Product', 1), 'Product');
+  assert.equal(prepInstanceLabel('Product', 2), 'Product (2)');
+  assert.equal(prepInstanceLabel('Product', 3), 'Product (3)');
+  assert.equal(prepStepSourceInstance(p, p.steps[0]), 2);
+  assert.equal(prepStepSourceInstance(p, p.steps[1]), 3);
+  assert.equal(prepStepSourceInstance(p, step('third')), 4);
+  assert.equal(prepStepSourceInstance(p, { id: 'x', kind: 'rename', config: { column: 'region', name: 'area' } }), 1);
 });

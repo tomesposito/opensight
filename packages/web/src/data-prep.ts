@@ -10,17 +10,38 @@ export function prepMessage(e: unknown): string {
   return e instanceof Error ? `${'code' in e && typeof e.code === 'string' ? `${e.code}: ` : ''}${e.message}` : 'Invalid pipeline';
 }
 export interface PrepSchemaContext { datasets?: readonly BundleDataSet[]; datasetId?: string }
-/** Graph nodes are derived from references, so repeated joins share one source node. */
-export function prepInputNodes(pipeline: PrepPipeline): { ref: PrepInput; consumers: string[] }[] {
-  const nodes = new Map<string, { ref: PrepInput; consumers: string[] }>();
+/** One graph node per source occurrence: repeated references to the same source render as
+ *  distinct nodes (self-join instances: Product, Product (2), Product (3)), ordered by first use. */
+export function prepInputNodes(pipeline: PrepPipeline): { ref: PrepInput; instance: number; consumers: string[] }[] {
+  const nodes: { ref: PrepInput; instance: number; consumers: string[] }[] = [];
+  const seen = new Map<string, number>();
   const add = (ref: PrepJoinInput, consumer: string) => {
     if (typeof ref !== 'string' && 'step' in ref) return;
-    const key = prepRefKey(ref), node = nodes.get(key) ?? { ref, consumers: [] };
-    node.consumers.push(consumer); nodes.set(key, node);
+    const key = prepRefKey(ref), instance = (seen.get(key) ?? 0) + 1;
+    seen.set(key, instance);
+    nodes.push({ ref, instance, consumers: [consumer] });
   };
   add(pipeline.input, 'Input');
   for (const [i, step] of pipeline.steps.entries()) if (step.kind === 'join' || step.kind === 'append') add(step.config.source, `${i + 1}. ${prepLabel(step.kind)}`);
-  return [...nodes.values()];
+  return nodes;
+}
+/** QuickSight-style instance label: first occurrence plain, later ones get " (2)", " (3)". */
+export const prepInstanceLabel = (base: string, instance: number): string => instance > 1 ? `${base} (${instance})` : base;
+/** 1-based occurrence of a join/append step's source among same-ref uses in the pipeline.
+ *  Bundle refs distinguish instances by position; a step not yet in the pipeline counts as the next occurrence. */
+export function prepStepSourceInstance(pipeline: PrepPipeline, step: PrepStep): number {
+  if (step.kind !== 'join' && step.kind !== 'append') return 1;
+  const source = step.config.source;
+  if (typeof source !== 'string' && 'step' in source) return 1;
+  const key = prepRefKey(source), keys = [prepRefKey(pipeline.input)];
+  for (const s of pipeline.steps) {
+    if (s.kind !== 'join' && s.kind !== 'append') continue;
+    if (typeof s.config.source !== 'string' && 'step' in s.config.source) continue;
+    keys.push(prepRefKey(s.config.source));
+    if (s.id === step.id) break;
+  }
+  const count = keys.filter(k => k === key).length;
+  return pipeline.steps.some(s => s.id === step.id) ? count : count + 1;
 }
 export const prepCatalog: { kind: PrepStep['kind']; label: string; group: string }[] = [
   { kind: 'calculate', label: 'Add calculated column', group: 'Column transformations' },
