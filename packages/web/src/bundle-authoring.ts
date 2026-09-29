@@ -45,6 +45,7 @@ function grid(sheet: BundleSheet, visuals: AuthorVisual[]): Placement[] {
   });
 }
 function localBinding(arn: string | undefined, bundle: QsBundle, identifier: string): boolean {
+  if (bundle.members.some(m => m.resource.resourceType === 'dataset' && m.resource.opensightPrep && arn?.endsWith(`/${m.resource.dataSetId}`))) return false;
   // The reserved identifier selects the configured local dataset explicitly.
   // Otherwise an imported dependency cannot inherit the example ARN's binding.
   return arn === LOCAL_SALES_ARN && (identifier === LOCAL_IDENTIFIER || !bundle.members.some(m => m.resource.resourceType === 'dataset' && m.resource.dataSetId === 'renderable-sales'));

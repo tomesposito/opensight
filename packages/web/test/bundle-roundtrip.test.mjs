@@ -530,3 +530,13 @@ test('local ZIP header checksum disagreement is rejected before member parsing',
   packed.writeUInt32LE((packed.readUInt32LE(14) ^ 1) >>> 0, 14);
   await assert.rejects(parseQsBundle(packed), /local\/central CRC32 mismatch/);
 });
+
+test('prepared dataset dependencies never fall back to untransformed local fixture rows', () => {
+  const native = serializeDraft(authorReducer(emptyDraft(), { type: 'add', kind: 'bar' }));
+  const declaration = native.definition.dataSetIdentifierDeclarations[0];
+  const id = declaration.dataSetArn.split('/').at(-1);
+  const bundle = { members: [member(native), member({ resourceType: 'dataset', dataSetId: id, name: 'Prepared', physicalTableMap: {}, importMode: 'DIRECT_QUERY', opensightPrep: { version: 1, input: 'source', steps: [] } })] };
+  const draft = importBundle(bundle);
+  assert.equal(activeSheet(draft).visuals[0].imported.local, false);
+  assert.deepEqual(exportBundle(draft), bundle);
+});

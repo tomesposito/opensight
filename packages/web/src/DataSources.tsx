@@ -4,12 +4,12 @@ import type { createApiClient } from './api-client.js';
 import type { UploadSummary } from '@opensight/query-engine';
 
 type Client = Pick<ReturnType<typeof createApiClient>, 'uploadFile' | 'validateConnector'>;
-export function DataSources({ client }: { client?: Client }) {
+export function DataSources({ client, onPrep }: { client?: Client; onPrep?: () => void }) {
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState('file');
   const visible = connectors.filter(c => `${c.name} ${c.category}`.toLowerCase().includes(search.toLowerCase()));
   return <section className="data-sources" aria-labelledby="data-sources-title">
-    <div className="data-sources-heading"><div><p className="eyebrow">DATA SOURCES</p><h1 id="data-sources-title">Create a data set</h1><p>Choose a source to explore its setup and availability.</p></div><span className="connector-count">{connectors.length} connectors</span></div>
+    <div className="data-sources-heading"><div><p className="eyebrow">DATA SOURCES</p><h1 id="data-sources-title">Create a data set</h1><p>Choose a source to explore its setup and availability.</p></div>{onPrep && <button onClick={onPrep}>Prepare data</button>}<span className="connector-count">{connectors.length} connectors</span></div>
     {!client && <p className="connector-demo-notice">Static demo · File uploads and credentialed connections need a hosted API. No data is uploaded or connections made here.</p>}
     <div className="connector-layout"><div className="connector-picker"><label className="connector-search">Find a data source<input type="search" value={search} placeholder="Search files, databases, AWS or SaaS" onChange={e => setSearch(e.target.value)} /></label>
       <div className="connector-grid">{visible.map(c => <button type="button" key={c.id} className={`connector-card${selected === c.id ? ' selected' : ''}`} aria-pressed={selected === c.id} onClick={() => setSelected(c.id)}>
@@ -53,7 +53,7 @@ function ConnectorDetails({ id, client }: { id: string; client?: Client }) {
       <button className="connector-submit" type="submit" disabled={!client || busy}>{busy ? 'Processing…' : fileSource ? 'Upload to staging' : 'Validate configuration'}</button>
     </form>
     {error && <p className="connector-error" role="alert">{error}</p>}
-    {upload && <div className="upload-result" role="status"><h3>Upload staged</h3><p>{upload.rowCount.toLocaleString()} rows · {upload.columns.length} columns</p><table><thead><tr><th>Column</th><th>Type</th></tr></thead><tbody>{upload.columns.map(c => <tr key={c.name}><td>{c.name}</td><td>{c.type}</td></tr>)}</tbody></table><p>Private staging for this session. Data set publication into an analysis is not yet available.</p></div>}
+    {upload && <div className="upload-result" role="status"><h3>Upload staged</h3><p>{upload.rowCount.toLocaleString()} rows · {upload.columns.length} columns</p><table><thead><tr><th>Column</th><th>Type</th></tr></thead><tbody>{upload.columns.map(c => <tr key={c.name}><td>{c.name}</td><td>{c.type}</td></tr>)}</tbody></table><p>Private staging for this session. Use Data preparation to transform this upload. Analysis publication is not yet available.</p></div>}
     {fileSource && <p className="connector-help">Hosted form limit: 640 KiB. Staging is private to your user and namespace and is cleared when the API restarts.</p>}
   </aside>;
 }

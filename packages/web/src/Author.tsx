@@ -34,14 +34,14 @@ import {
 } from './authoring.js';
 import type { AuthorAction, AuthorDraft, AuthorVisual, CalculatedField, FieldGroup, VisualKind, Well } from './authoring.js';
 
-export function Author(props: { client?: QueryClient; modePicker?: ReactNode }) {
+export function Author(props: { client?: QueryClient; modePicker?: ReactNode; onPrep?: () => void }) {
   const access = useAccess();
   return allowed(access, 'build') ? <AuthorWorkspace {...props} /> : <p role="alert">SECURITY_BUILD_REQUIRED: Author access required.</p>;
 }
 
 const browserStorage = () => window.localStorage;
 type EditorProps = { draft: AuthorDraft; dispatch: Dispatch<AuthorAction>; client?: QueryClient };
-function AuthorWorkspace({ client, modePicker }: { client?: QueryClient; modePicker?: ReactNode }) {
+function AuthorWorkspace({ client, modePicker, onPrep }: { client?: QueryClient; modePicker?: ReactNode; onPrep?: () => void }) {
   const [restored] = useState(() => loadDraft(browserStorage));
   const [draft, dispatch] = useReducer(authorReducer, restored.draft);
   const [storageStatus, setStorageStatus] = useState(restored.warning ?? 'Draft saved on this device.');
@@ -95,7 +95,7 @@ function AuthorWorkspace({ client, modePicker }: { client?: QueryClient; modePic
       <label className="analysis-title"><span className="sr-only">Analysis title</span><input value={draft.title} onChange={e => dispatch({ type: 'analysis-title', title: e.target.value })} /></label>
       {modePicker}
     </header>
-    <OEntry draft={draft} dispatch={dispatch} client={client} renderBar={bar => <AuthorToolbar draft={draft} dispatch={dispatch} oEntry={bar} fit={fit} onFit={() => setFit(value => !value)} onJson={download} onBundle={() => { if (!busy) void downloadQs(); }} onImport={() => fileInput.current?.click()} busy={busy} jsonDisabled={!draft.sheets.some(s => s.visuals.length) || !!exported.error} />} />
+    <OEntry draft={draft} dispatch={dispatch} client={client} renderBar={bar => <AuthorToolbar onPrep={onPrep} draft={draft} dispatch={dispatch} oEntry={bar} fit={fit} onFit={() => setFit(value => !value)} onJson={download} onBundle={() => { if (!busy) void downloadQs(); }} onImport={() => fileInput.current?.click()} busy={busy} jsonDisabled={!draft.sheets.some(s => s.visuals.length) || !!exported.error} />} />
     <div className="author-utilities">
       <span className="mode-badge">{client ? 'API · Local sales' : 'Fixtures · Offline'}</span><span className="phase-badge">Builder v1</span>
       <button type="button" onClick={() => void downloadQs()} disabled={busy} aria-describedby="export-help">Download .qs</button>

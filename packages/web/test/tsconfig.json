@@ -28,6 +28,7 @@
     "../src/AISettings.tsx",
     "../src/UserManagement.tsx",
     "../src/Dashboard.tsx",
-    "../src/DataSources.tsx"
+    "../src/DataSources.tsx",
+    "../src/DataPrep.tsx"
   ]
 }

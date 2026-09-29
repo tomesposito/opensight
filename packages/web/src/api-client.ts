@@ -1,3 +1,7 @@
+import type { PrepPipeline } from '@opensight/bundle-parser/prep';
+import type { BundleDataSet } from '@opensight/bundle-parser';
+import type { PrepPreview } from '@opensight/query-engine';
+import type { PrepSourceSummary } from './data-prep.js';
 import type { ConnectorState } from '@opensight/query-engine/browser';
 import type { UploadSummary } from '@opensight/query-engine';
 import type { InterpretationResult, CalculationResult } from '@opensight/o-interpreter';
@@ -60,6 +64,11 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
     }
     return value as T;
   }
+  const listPrepSources = () => resource<PrepSourceSummary[]>('/api/prep-sources');
+  const listPrepDatasets = () => resource<{ datasets: BundleDataSet[]; persistence: 'file' | 'ephemeral' }>('/api/prep-datasets');
+  const savePrep = (id: string, name: string, pipeline: PrepPipeline) => resource<{ resource: BundleDataSet; persistence: 'file' | 'ephemeral' }>(`/api/datasets/${encodeURIComponent(id)}/prep`, 'PUT', { name, pipeline });
+  const deletePrep = (id: string) => resource<{ deleted: true }>(`/api/datasets/${encodeURIComponent(id)}/prep`, 'DELETE');
+  const previewPrep = (id: string, pipeline: PrepPipeline, through: string | null, limit = 100) => resource<PrepPreview>(`/api/datasets/${encodeURIComponent(id)}/prep/preview`, 'POST', { pipeline, through, limit });
   const uploadFile = (body: { config: Readonly<Record<string, string>>; base64: string }) => resource<UploadSummary>('/api/uploads', 'POST', body);
   const validateConnector = (id: string, config: Readonly<Record<string, string>>) => resource<ConnectorState>(`/api/connectors/${encodeURIComponent(id)}/connect`, 'POST', { config });
   const listUsers = () => resource<Session[]>('/api/users');
@@ -164,7 +173,7 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
     }
   }
   return {
-    uploadFile, validateConnector, listUsers, saveUser, deleteUser, listInvitations, inviteUser, revokeInvitation, acceptInvitation, getAIStatus, generateO, generateCalculation, getAIConfig, saveAIConfig, saveAIKey, testAIConnection, getSession, queryO, getDatasetRefreshStatus,
+    listPrepSources, listPrepDatasets, savePrep, deletePrep, previewPrep, uploadFile, validateConnector, listUsers, saveUser, deleteUser, listInvitations, inviteUser, revokeInvitation, acceptInvitation, getAIStatus, generateO, generateCalculation, getAIConfig, saveAIConfig, saveAIKey, testAIConnection, getSession, queryO, getDatasetRefreshStatus,
     queryDataset,
     getAnalysisDefinition: (id: string, signal?: AbortSignal) => getDefinition('analysis', id, signal),
     getDashboardDefinition: (id: string, signal?: AbortSignal) => getDefinition('dashboard', id, signal),
