@@ -70,3 +70,27 @@ Final root `npm test` exited 0: **1,298 passed / 0 failed /
 1 skipped** (1,299 tests total). The only skip is the existing live
 Postgres executor because `DATABASE_URL` is unset. All embedded Postgres, DuckDB,
 API, web, bundle, SDK, interpreter, and root conformance tests ran.
+
+### Post-reboot verification (2026-09-29)
+
+Resumed from `fb686582` with a clean working tree on `work/issue-11-joins`.
+All implementation checkpoints were already complete and were preserved.
+
+The restored process environment sets `TZ=Europe/Paris`. In that environment,
+the existing scalar PostgreSQL date-parsing and XLS date tests fail; all new
+join checks pass. Both affected test files pass with `TZ=UTC` (105 passed,
+0 failed, 0 skipped), matching the UTC verification setting previously recorded
+in `roles-ai-settings.md`. Use `TZ=UTC npm test` from the repo root. API tests
+also require permission to bind localhost; the filesystem sandbox blocks those
+listeners. No test expectations or implementation code were changed.
+
+Fresh root `TZ=UTC npm test` exited 0: **1,298 passed / 0 failed / 1 skipped**
+(1,299 total). The only skip remains the live-Postgres executor because
+`DATABASE_URL` is unset. DuckDB and embedded Postgres comparisons ran.
+`TZ=UTC npm run build:demo --workspace @opensight/web` also exited 0 and rebuilt
+`packages/web/dist/opensight-demo.html`. The branch and working-tree diffs pass
+`git diff --check`.
+
+The temporary screenshot artifacts and reference paths cited above are absent
+from the restored workspace. The recorded pre-reboot visual comparison is
+retained; it was not repeated during this verification.
