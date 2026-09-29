@@ -1,3 +1,4 @@
+import { validatePrepPipeline } from './prep.js';
 import type { BundleResource } from './bundle-types.js';
 import { bundleCalculation, bundleColumn, bundleFilterGroup, bundleParameter } from './bundle-features.js';
 import {
@@ -171,6 +172,7 @@ export function assertBundleResource(raw: unknown, path = '$'): asserts raw is B
       }
       break;
     case 'dataset':
+      optional(r, 'opensightPrep', path, (value, p) => { validatePrepPipeline(value, p); });
       required(r, 'dataSetId', path, nonempty);
       required(r, 'importMode', path, nonempty);
       required(r, 'physicalTableMap', path, (value, p) => {

@@ -41,3 +41,5 @@ export async function assembleQsBundle(bundle: QsBundle): Promise<Uint8Array> {
   await parseQsBundle(bytes);
   return bytes;
 }
+
+export * from './prep.js';

@@ -135,6 +135,7 @@ export interface BundleDataSet extends UnknownProperties {
   importMode: string;
   dataSetRefreshProperties?: UnknownProperties;
   dataPrepConfiguration?: UnknownProperties;
+  opensightPrep?: import('./prep.js').PrepPipeline;
   semanticModelConfiguration?: UnknownProperties;
 }
 
