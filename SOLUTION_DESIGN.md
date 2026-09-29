@@ -18,6 +18,7 @@
 | 2026-09-26 | Review fixes: provisional format boundary, recursive inventory validation, public package entry, regression tests/CI, query/render fixture and explicit Phase 1 compatibility/execution gates. Real-export archive work remains blocked. |
 | 2026-09-26 | Initial draft: vision, compatibility contract, architecture, decisions D1–D9, phased plan. Repo scaffold + bundle-parser spike started. |
 | 2026-09-26 | bundle-parser spike builds clean (tsc strict) and summarizes the sample fixture; committed locally as `3655cc3`, ready to push once GitHub is connected. |
+| 2026-09-29 | D13: Blaze horizontal-scaling architecture decided — Parquet artifacts on shared object storage + per-node memory when multi-node matters, Redis (or equivalent) for refresh coordination/invalidation only; `refresh`/`read` seam is the portability boundary. D8 status updated to the shipped in-process implementation (#12/#15). |
 | 2026-09-26 | Published as public repo `tomesposito/opensight`. Added Phase 0 export runbook (capture a real `QUICKSIGHT_JSON` bundle via AWS CLI) and public-repo hygiene rule: placeholders only, redact any real export before keeping it as a fixture. |
 
 ---
@@ -451,6 +452,14 @@ conformance; security rejection in §3.4 always takes precedence over any fallba
 **Status:** proposed; version pins and remote-query evidence required before enabling
 the Postgres path. Local SQLite fixture oracles do not satisfy this gate.
 
+**Status update (2026-09-29, issues #12/#15):** shipped as an in-process columnar
+store (`BlazeTable`, one JS vector per column) in the API server rather than
+DuckDB-Parquet files — zero new dependencies, bounded by env-configured memory
+caps (`OPENSIGHT_BLAZE_MAX_BYTES` etc.), with the mandatory-materialization rule
+for cross-source joins and advanced steps. The DuckDB-Parquet option remains the
+conceptual ancestor of the D13 distributed design (Parquet artifacts on shared
+object storage).
+
 ### D9 — Calculated-field expression engine
 
 **Context:** QuickSight has a large proprietary function surface (aggregations like
@@ -617,6 +626,41 @@ Lambda). DuckDB remains the local dev/test engine (zero setup, fast): the
 query engine's planner/executor split absorbs the dialect difference through a
 Postgres executor, and the engine's SQL is already the portability seam.
 **Status:** decided; no infrastructure code yet.
+
+### D13 — Blaze horizontal-scaling architecture
+
+**Context:** Blaze (issues #12, #15) is an in-process columnar snapshot store in the
+API server's heap: one JS vector per column, bounded by env-configured memory caps,
+a single global refresh lock, no persistence. Correct for single-node self-hosted,
+but three hard limits under load balancing: snapshots are not shared across
+instances; one refresh at a time per process; a restart wipes the cache.
+
+**Options:**
+- **Sticky sessions + per-node Blaze** — simplest, but duplicates refreshes and
+  source load across nodes; a band-aid, not an architecture.
+- **Redis as the snapshot store** — wrong data model. A key-value store forces
+  serialization plus a network hop on every query, giving back much of the
+  cache's latency win. Redis (or equivalent) is the right tool for the
+  *coordination* layer — distributed refresh locks, invalidation pub/sub — not
+  for columnar snapshots.
+- **Parquet artifacts on shared object storage + per-node memory** — a refresh
+  writes a content-addressed `blaze/{dataset}/{generation}.parquet`; any node
+  loads it into local memory (or memory-maps it via DuckDB, already a
+  dependency). Scales horizontally with no cache cluster to operate, and queries
+  stay in-process fast.
+
+**Decision:** Keep the in-process store for single-node. When multi-node matters,
+snapshots move to Parquet artifacts on shared object storage with per-node local
+memory; Redis (or equivalent) only for refresh coordination and invalidation.
+The `refresh(key, load)` / `read(key)` seam is the portability boundary —
+execution modes, refresh lifecycle, named errors, and UI do not change.
+**Reasoning:** Do not make poor scaling decisions in the foundation, but do not
+pay distributed-systems cost before it is needed. The seam makes the future
+backend a swap, not a redesign. Columnar artifacts preserve the layout that
+makes Blaze fast; object storage is the cheapest durable shared layer.
+**Status:** decided 2026-09-29 (owner direction); single-node implementation
+shipped in #12/#15; distributed backend is a future phase with a defined seam.
+Trigger: multi-instance deployment.
 
 ---
 
