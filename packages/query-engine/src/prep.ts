@@ -49,6 +49,7 @@ export function compilePrep(raw: unknown, sources: readonly PrepSource[], option
   // Never shadow a caller-owned physical table with a generated CTE name.
   let prefix = '__prep_'; while (sources.some(s => s.table.toLowerCase().startsWith(prefix))) prefix += '_';
   const ctes: string[] = [], parameters: (string | number)[] = [], stages: PrepPlan['stages'] = [];
+  const now = options.now ?? new Date().toISOString();
   let from = relation(source), selectedFrom = from, selectedColumns = columns;
   const bind = (value: string | number): string => { parameters.push(value); return `$${parameters.length}`; };
   let selectedParameters = 0, selectedCtes = 0;
@@ -85,6 +86,14 @@ export function compilePrep(raw: unknown, sources: readonly PrepSource[], option
           return rowFilterSql({ ...f, path, scalarType: scalarType(c.type) }, dialect, bind);
         });
         sql = `SELECT * FROM ${from} WHERE ${predicates.join(' AND ')}`; break;
+      }
+      case 'calculate': {
+        const expression = parseExpression(step.config.expression, path, { now, bind: name => ({ scalarType: scalarType(column(name).type), nullable: true }) });
+        if (expression.level !== 'row') prepFail('UNSUPPORTED_PREP_STEP', path, 'Prep calculated columns require row expressions; use Aggregate for grouping. Visual table and level-aware calculations belong to visual post-processing');
+        if (expression.scalarType === 'unknown') prepFail('PREP_SCHEMA_MISMATCH', path, 'Calculated column must have a known scalar type');
+        sql = `SELECT *, ${expressionSql(expression, dialect, bind)} AS ${q(step.config.name)} FROM ${from}`;
+        const type: PrepType = expression.scalarType === 'number' ? 'DECIMAL' : expression.scalarType === 'datetime' ? 'DATETIME' : expression.scalarType === 'boolean' ? 'BOOLEAN' : 'STRING';
+        columns = [...columns, { name: step.config.name, type }]; break;
       }
       default: prepFail('UNSUPPORTED_PREP_STEP', path, 'Transformation compiler is unavailable');
     }

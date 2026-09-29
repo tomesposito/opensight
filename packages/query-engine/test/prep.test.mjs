@@ -41,3 +41,9 @@ test('prep filters reuse Phase 2b membership, ranges, empty-list and null semant
   assert.deepEqual(await run([{ kind: 'filter', config: { filters: [{ columnName: 'region', value: "East' OR TRUE --" }] } }]), []);
   assert.throws(() => compilePrep(pipeline([{ kind: 'filter', config: { filters: [{ columnName: 'amount', value: '3' }] } }]), [source]), e => e.code === 'PREP_SCHEMA_MISMATCH');
 });
+test('prep calculated columns reuse the typed function library and feed subsequent steps', async t => {
+  const run = await engines(t);
+  assert.deepEqual(await run([{ kind: 'calculate', config: { name: 'upper_region', expression: 'upper({region})' } }, { kind: 'calculate', config: { name: 'label', expression: "concat({upper_region}, ' zone')" } }, { kind: 'filter', config: { filters: [{ columnName: 'label', value: 'EAST zone' }] } }, { kind: 'select', config: { columns: ['label'] } }]), [{ label: 'EAST zone' }, { label: 'EAST zone' }]);
+  assert.equal((await run([{ kind: 'calculate', config: { name: 'date', expression: "parseDate('2024-02-29')" } }]))[0].date, '2024-02-29T00:00:00.000Z');
+  for (const expression of ['sum({amount})', 'sumOver({amount}, [], PRE_AGG)', 'unknown({amount})', '{missing} + 1']) assert.throws(() => compilePrep(pipeline([{ kind: 'calculate', config: { name: 'result', expression } }]), [source]));
+});
