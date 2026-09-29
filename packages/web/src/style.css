@@ -473,3 +473,9 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
   .prep-document-bar > label { width: 100%; }
   .prep-document-bar input { width: 100%; }
 }
+
+.prep-input-rail { display: flex; gap: 28px; width: max-content; padding-left: 210px; margin-bottom: 20px; }
+.prep-input-branch { display: flex; flex-direction: column; gap: 10px; width: 168px; }
+.prep-source-consumers { font-size: 11px; color: #426f91; line-height: 1.6; overflow-wrap: anywhere; }
+.prep-output-names { overflow-wrap: anywhere; }
+.prep-sidebar .prep-error { color: #962f24; }
