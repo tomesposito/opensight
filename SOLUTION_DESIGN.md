@@ -1301,12 +1301,28 @@ issue closure is part of this build.
 
 **Scope and modes.** Owned, saved prep datasets gain host-side `DIRECT_QUERY` or
 `BLAZE` execution settings, separate from portable pipeline metadata. Existing
-pipelines default to direct. Blaze is an ephemeral, in-process columnar scalar
+simple pipelines default to direct. Blaze is an ephemeral, in-process columnar scalar
 store on the self-hosted API; no service, extension download, new dependency or AI
 provider is involved. This implements the in-memory slice of D8, superseding its
 proposed Parquet storage for this slice. Restart preserves configured modes and
 intervals when the prep metadata store is configured, but never persists rows or
 claims that a previous process's cache is ready.
+
+**Issue #15 materialization contract.** Cross-source joins and advanced prep steps
+(`pivot`, `unpivot`, `append`, `aggregate`) MUST materialize through Blaze before
+serving saved output rows or visual queries. Single-source simple pipelines may
+continue compiling to live SQL. The host checks the saved dependency graph:
+advanced steps in reusable pipelines cannot bypass this rule; distinct connected
+source IDs or distinct cached dataset inputs count as separate sources. Reusing
+the same source or an earlier step alone does not make a join cross-source.
+Save, dependency changes and startup promote required datasets to Blaze (manual
+refresh by default), without automatically executing the pipeline. Selecting
+DIRECT_QUERY for a required dataset fails with `BLAZE_MATERIALIZATION_REQUIRED`;
+output routes enforce the rule independently. Execution status and prep controls
+explain the requirement. Bounded draft previews remain available for editing and
+validation; they do not publish dataset output or satisfy materialization.
+Existing cross-engine limits still apply: materialize PostgreSQL inputs separately
+before joining them to file/cached inputs in the local engine.
 
 **Materialization and reads.** Manual refresh executes the complete saved pipeline
 (including joins/aggregations, without a preview limit), normalizes typed output,
