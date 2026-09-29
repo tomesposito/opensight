@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react';
-import { prepTypes, type PrepColumn, type PrepStep, type PrepAggregation, type PrepJoinInput } from '@opensight/bundle-parser/prep';
-import { prepLabel, prepRefKey, prepRefLabel, prepSourceRef, prepSourceLabel, prepMessage, type PrepSourceSummary } from './data-prep.js';
+import { prepTypes, type PrepColumn, type PrepStep, type PrepAggregation, type PrepJoinInput, type PrepPipeline } from '@opensight/bundle-parser/prep';
+import { prepLabel, prepRefKey, prepRefLabel, prepSourceRef, prepSourceLabel, prepInstanceLabel, prepStepSourceInstance, prepMessage, type PrepSourceSummary } from './data-prep.js';
 const aggregations: PrepAggregation[] = ['SUM', 'AVG', 'COUNT', 'MIN', 'MAX'];
 function Select({ label, value, values, change }: { label: string; value: string; values: readonly string[]; change: (v: string) => void }) {
   return <label>{label}<select value={value} onChange={e => change(e.target.value)}>{!values.includes(value) && <option value={value}>{value || 'Choose a column'}</option>}{values.map(v => <option key={v} value={v}>{v}</option>)}</select></label>;
@@ -19,7 +19,7 @@ function Text({ label, value, change }: { label: string; value: string; change: 
 function Columns({ label, columns, selected, change }: { label: string; columns: readonly PrepColumn[]; selected: string[]; change: (v: string[]) => void }) {
   return <fieldset className="prep-columns"><legend>{label}</legend>{columns.map(c => <label key={c.name}><input type="checkbox" checked={selected.includes(c.name)} onChange={e => change(e.target.checked ? [...selected, c.name] : selected.filter(n => n !== c.name))} />{c.name}<small>{c.type}</small></label>)}</fieldset>;
 }
-export function PrepStepEditor({ step, columns, sources, apply, cancel, validate }: { step: PrepStep; columns: readonly PrepColumn[]; sources: readonly PrepSourceSummary[]; apply: (step: PrepStep) => void; cancel: () => void; validate?: (step: PrepStep) => void }) {
+export function PrepStepEditor({ step, columns, sources, pipeline, apply, cancel, validate }: { step: PrepStep; columns: readonly PrepColumn[]; sources: readonly PrepSourceSummary[]; pipeline?: PrepPipeline; apply: (step: PrepStep) => void; cancel: () => void; validate?: (step: PrepStep) => void }) {
   const [edited, setEdited] = useState<PrepStep>(() => structuredClone(step));
   const names = columns.map(c => c.name), sourceIds = sources.filter(s => !s.ref || typeof s.ref === 'string').map(s => s.id);
   let fields: ReactNode;
@@ -46,11 +46,12 @@ export function PrepStepEditor({ step, columns, sources, apply, cancel, validate
     case 'append': { const c = edited.config; fields = <><Select label="Append source" value={c.source} values={sourceIds} change={source => setEdited({ ...edited, config: { source } })} /><p>Names and types must match. Columns align by name; duplicates are kept.</p></>; break; }
     case 'join': {
       const c = edited.config, rightColumns = sources.find(s => prepRefKey(prepSourceRef(s)) === prepRefKey(c.source))?.columns ?? [], right = rightColumns.map(c => c.name);
+      const rightSourceName = pipeline ? prepInstanceLabel(prepRefLabel(c.source), prepStepSourceInstance(pipeline, edited)) : prepRefLabel(c.source);
       const outputs = c.columns ?? right.map(column => ({ column, name: `${c.prefix}${column}` }));
       const explicit = (columns: { column: string; name: string }[]) => setEdited({ ...edited, config: { source: c.source, joinType: c.joinType, keys: c.keys, columns } });
-      fields = <><PrepSourcePicker label="Right source" value={c.source} sources={sources} change={source => setEdited({ ...edited, config: { ...c, source } })} /><Select label="Join type" value={c.joinType} values={['inner','left','right','full']} change={joinType => setEdited({ ...edited, config: { ...c, joinType: joinType as typeof c.joinType } })} />{c.keys.map((k, i) => {
+      fields = <><PrepSourcePicker label={`Right source · ${rightSourceName}`} value={c.source} sources={sources} change={source => setEdited({ ...edited, config: { ...c, source } })} /><Select label="Join type" value={c.joinType} values={['inner','left','right','full']} change={joinType => setEdited({ ...edited, config: { ...c, joinType: joinType as typeof c.joinType } })} />{c.keys.map((k, i) => {
         const update = (next: typeof k) => setEdited({ ...edited, config: { ...c, keys: c.keys.map((v, n) => n === i ? next : v) } });
-        return <fieldset key={i}><legend>Join key {i + 1}</legend><KeyColumn label="Left column" value={k.left} columns={columns} change={left => update({ ...k, left })} /><KeyColumn label="Right column" value={k.right} columns={rightColumns} change={right => update({ ...k, right })} /><button type="button" onClick={() => setEdited({ ...edited, config: { ...c, keys: c.keys.filter((_, n) => n !== i) } })}>Remove key</button></fieldset>;
+        return <fieldset key={i}><legend>Join key {i + 1}</legend><KeyColumn label="Left column" value={k.left} columns={columns} change={left => update({ ...k, left })} /><KeyColumn label={`Right column · ${rightSourceName}`} value={k.right} columns={rightColumns} change={right => update({ ...k, right })} /><button type="button" onClick={() => setEdited({ ...edited, config: { ...c, keys: c.keys.filter((_, n) => n !== i) } })}>Remove key</button></fieldset>;
       })}<button type="button" onClick={() => setEdited({ ...edited, config: { ...c, keys: [...c.keys, { left: names[0] ?? '', right: right[0] ?? '' }] } })}>Add key</button>
       <Select label="Right output mode" value={c.columns ? 'Explicit aliases' : 'All columns with prefix'} values={['All columns with prefix', 'Explicit aliases']} change={mode => mode === 'Explicit aliases' ? explicit(outputs) : setEdited({ ...edited, config: { source: c.source, joinType: c.joinType, keys: c.keys, prefix: 'joined_' } })} />
       {c.columns ? <>{c.columns.map((col, i) => {
