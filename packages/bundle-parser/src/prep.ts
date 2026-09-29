@@ -47,6 +47,8 @@ function names(raw: unknown, path: string, empty = false): void {
 function choice(raw: unknown, values: readonly string[], path: string): void { if (typeof raw !== 'string' || !values.includes(raw)) invalid(path, `Expected ${values.join(', ')}`); }
 function scalar(raw: unknown, path: string): void { if (!(typeof raw === 'number' && Number.isFinite(raw) || typeof raw === 'string' && raw.length <= 10000 && !raw.includes('\0'))) invalid(path, 'Expected a finite number or string'); }
 const aggregations = ['SUM', 'AVG', 'COUNT', 'MIN', 'MAX'];
+/** Deliberate self-hosted workflow limits (see docs/data-prep.md § Workflow limits). */
+export const PREP_MAX_IMPORT_INPUTS = 32;
 export const prepTypes: readonly PrepType[] = ['INTEGER', 'DECIMAL', 'STRING', 'DATETIME', 'BOOLEAN'];
 function inputReference(raw: unknown, path: string, previous?: readonly string[]): void {
   if (typeof raw === 'string') { prepName(raw, path); return; }
@@ -115,5 +117,17 @@ export function validatePrepPipeline(raw: unknown, path = '$.opensightPrep'): Pr
       default: prepFail('UNSUPPORTED_PREP_STEP', `${sp}.kind`, 'Unknown or unsupported transformation');
     }
   }
-  return structuredClone(raw) as PrepPipeline;
+  // Import budget: every source read counts as an import step (top input, join
+  // dataset/table sources, append sources), matching QuickSight's 32 import
+  // steps per workflow. Step references reuse earlier results and do not count.
+  const parsed = structuredClone(raw) as PrepPipeline;
+  let importCount = 1; // the top-level input always reads a source
+  for (const step of parsed.steps) {
+    if (step.kind === 'join') {
+      const source = step.config.source;
+      if (typeof source === 'string' || Object.hasOwn(source, 'dataset')) importCount++;
+    } else if (step.kind === 'append') importCount++;
+  }
+  if (importCount > PREP_MAX_IMPORT_INPUTS) prepFail('PREP_LIMIT_EXCEEDED', `${path}.input`, `At most ${PREP_MAX_IMPORT_INPUTS} import steps per workflow (found ${importCount})`);
+  return parsed;
 }

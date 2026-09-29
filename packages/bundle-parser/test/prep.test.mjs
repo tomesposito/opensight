@@ -38,3 +38,18 @@ test('join reference and output validation rejects ambiguous, forward, repeated 
   const noOutputs = p({}); delete noOutputs.steps[0].config.prefix;
   assert.throws(() => validatePrepPipeline(noOutputs), e => e.code === 'INVALID_PREP_PIPELINE');
 });
+test('import step budget caps source reads at 32 per workflow with a named limit error', () => {
+  const appends = n => Array.from({ length: n }, (_, i) => ({ id: `a${i}`, kind: 'append', config: { source: `table${i}` } }));
+  const p = n => ({ version: 1, input: 'left', steps: appends(n) });
+  validatePrepPipeline(p(31)); // 1 input + 31 appends = 32 import steps: allowed
+  assert.throws(() => validatePrepPipeline(p(32)), e => e.code === 'PREP_LIMIT_EXCEEDED' && /At most 32 import steps/.test(e.message));
+});
+test('step references do not consume the import step budget', () => {
+  const join = i => ({ id: `j${i}`, kind: 'join', config: { source: 'right', joinType: 'left', keys: [{ left: 'id', right: 'id' }], prefix: `r${i}_` } });
+  const stepRef = i => ({ id: `s${i}`, kind: 'join', config: { source: { step: `j${i}` }, joinType: 'left', keys: [{ left: 'id', right: 'id' }], prefix: `s${i}_` } });
+  const steps = [];
+  for (let i = 0; i < 16; i++) { steps.push(join(i), stepRef(i)); } // 16 imports + 16 step refs
+  const p = { version: 1, input: 'left', steps };
+  validatePrepPipeline(p); // 17 import steps total: allowed
+  assert.throws(() => validatePrepPipeline({ version: 1, input: 'left', steps: Array.from({ length: 32 }, (_, i) => join(i)) }), e => e.code === 'PREP_LIMIT_EXCEEDED');
+});

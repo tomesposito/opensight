@@ -46,8 +46,8 @@ Source IDs are references, never SQL, credentials, URLs, or filesystem paths.
 The host resolves them to existing connector bindings. An imported bundle cannot
 grant access to a source. Each step has a stable ID and an exact, typed config;
 unknown versions, step kinds, properties, and malformed configurations fail with
-named errors. Maximums: 50 steps, 256 columns/list entries, names of 128 characters,
-and calculated expressions of 10,000 characters. Case-ambiguous output names fail.
+named errors. Workflow limits are documented in [Workflow limits](#workflow-limits).
+Case-ambiguous output names fail.
 
 The bundle parser validates this extension during JSON/ZIP import and export.
 The prep UI exports `.qs` bundles, preserving unrelated members and unknown
@@ -56,6 +56,27 @@ Bundle metadata does not contain result rows. Source IDs must be rebound to
 available sources after transfer to another host or after upload staging expires.
 Referenced prepared datasets must be saved on the destination host; importing a
 bundle does not save dependencies automatically.
+
+## Workflow limits
+
+Limits are chosen deliberately: QuickSight parity where it is cheap, tighter
+bounds where a self-hosted engine benefits from them. Violations fail closed
+with named errors (`INVALID_PREP_PIPELINE`, `UNSUPPORTED_PREP_STEP`,
+`PREP_LIMIT_EXCEEDED`); nothing silently drops.
+
+| Limit | OpenSight | QuickSight | Notes |
+| --- | --- | --- | --- |
+| Transformation steps per workflow | 50 | 256 | OpenSight's bound keeps compiled queries and previews bounded on self-hosted hardware |
+| Import steps (source tables) per workflow | 32 | 32 | Each top-level input, join dataset/table source, and append source counts; step references reuse earlier results and do not count |
+| Columns / list entries per step | 256 | 2048 per step, 2000 in final output | Applies to all bounded lists (columns, measures, values, steps lists) |
+| Name length | 128 characters | — | Names must be non-blank, trimmed, and free of control characters |
+| Calculated expression length | 10,000 characters | — | Expressions must be non-blank |
+| Dataset-as-source nesting depth | 16 levels | 10 levels | Cycle-checked at save/refresh; unavailable or cyclic references fail with named errors |
+| Divergent paths from a single step | supported via step references | 5 (SPICE only) | Step references point at earlier steps in the same pipeline |
+
+The bundle parser enforces step, import, list, name, and expression limits at
+import time; the API enforces dataset-reference nesting depth and cycle
+detection when a pipeline is saved or executed.
 
 ## Transformation semantics
 
