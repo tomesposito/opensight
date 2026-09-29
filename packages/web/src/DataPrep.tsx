@@ -55,7 +55,7 @@ export function DataPrep({ client, onSources, onAuthor }: { client?: PrepClient;
   const stagedNode = (): ReactNode => {
     if (!staged) return null;
     const ref = staged, occurrence = inputNodes.filter(n => prepRefKey(n.ref) === prepRefKey(ref)).length + 1;
-    return <div className="prep-input-branch"><button className="prep-node input-node staged" onClick={() => { setPending(ref); setStaging(true); setSelected(null); setEditing(undefined); }} title="Staged input — not joined yet. Add a Join or Append step to configure how it relates to the pipeline."><span className="prep-node-icon">▤</span><strong>Source {inputNodes.length + 1} · Staged</strong><span>{prepInstanceLabel(prepRefLabel(ref), occurrence)}</span></button><span className="prep-source-consumers"><span className="unconfigured-dot" aria-hidden="true">●</span> Not joined yet — add a Combine step</span></div>;
+    return <div className="prep-input-branch"><button className="prep-node input-node staged" onClick={() => { setPending(ref); setStaging(true); setSelected(null); setEditing(undefined); }} title="Staged input — not joined yet. Add a Join or Append step to configure how it relates to the pipeline."><span className="prep-node-icon">▤</span><strong>{`Source ${inputNodes.length + 1} · Staged`}</strong><span>{prepInstanceLabel(prepRefLabel(ref), occurrence)}</span></button><span className="prep-source-consumers"><span className="unconfigured-dot" aria-hidden="true">●</span> Not joined yet — add a Combine step</span></div>;
   };
   const selectedStep = index >= 0 ? pipeline.steps[index] : undefined;
   let columns: PrepColumn[] = [], problem = '';

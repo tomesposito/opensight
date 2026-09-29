@@ -220,7 +220,7 @@ test('Add data stages an input node and Join consumes it', async t => {
   await submitStep(ui.renderer);
   const applied = JSON.stringify(ui.renderer.toJSON());
   assert.doesNotMatch(applied, /Not joined yet/);
-  assert.match(applied, /Source 2/); assert.match(applied, /demo-regions/);
+  assert.match(applied, /"Source ","2"/); assert.match(applied, /demo-regions/);
 });
 test('join nodes flag stale keys on the canvas', async t => {
   const ui = await mount(t);
