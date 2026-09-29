@@ -250,8 +250,9 @@ Root `npm test` includes malformed model/bundle tests, actual DuckDB/Postgres
 (PGlite) execution comparisons for every step kind, upload executor checks,
 authenticated HTTP CRUD/persistence/security tests, bundle preservation, and UI
 interaction/stale-response tests. Live Postgres remains the pre-existing optional
-integration suite. See `issue-12-gap-notes.md` for current run counts and visual
-checks, and `issue-9-gap-notes.md` for the original prep build verification.
+integration suite. See `issue-17-gap-notes.md` for current run counts and step
+naming checks, `issue-12-gap-notes.md` for Blaze verification, and
+`issue-9-gap-notes.md` for the original prep build verification.
 
 ### Blaze execution (issue #12)
 
