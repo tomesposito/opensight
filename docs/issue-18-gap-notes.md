@@ -76,3 +76,38 @@ reference, long-name, author, and GIF playback captures, the downloaded bundle,
 and browser check results. `/tmp/issue18-gif/` contains storyboard frames and
 palette output. The static captures use sample schemas with no live rows. The separate Blaze
 capture uses only synthetic rows executed by the temporary local API.
+
+## Final automated verification
+
+The full root `npm test` ran with `TZ=UTC` and `DATABASE_URL` set to the
+brief's loopback Postgres on port 5433. The final foreground run exited **0**
+and reported **1,368 passed / 0 failed / 0 skipped**. Both the existing live
+Postgres suite and the new actual DuckDB-versus-live-Postgres branching test ran.
+
+| Runner | Passed | Failed | Skipped |
+| --- | ---: | ---: | ---: |
+| API | 144 | 0 | 0 |
+| Bundle parser | 197 | 0 | 0 |
+| Embedding SDK | 4 | 0 | 0 |
+| O interpreter | 32 | 0 | 0 |
+| Query engine | 511 | 0 | 0 |
+| Web | 477 | 0 | 0 |
+| Root conformance | 3 | 0 | 0 |
+| **Total** | **1,368** | **0** | **0** |
+
+Coverage includes eight serialized linear plans captured before the compiler
+change, branch chains and reused CTEs, every invalid `from` position, fan-out
+including join right references, import budgets, default/explicit/preview output
+selection, nested prepared output, output deletion, one-at-a-time repair of
+multiple dangling branches, JSON and both archive-reader round trips, imported
+source-access rejection, hosted save/preview rejection, Blaze output enforcement,
+and graph/preview/output-marker UI interactions. The focused final prep UI suite
+passed 24 tests with no failures or skips.
+
+After the repair fix the final demo was rebuilt and the browser flow rerun;
+its prep screenshot was pixel-identical to the committed image. Final logs are
+`/tmp/issue18-full-tests-verified.log` and
+`/tmp/issue18-full-tests-verified.exit` (value `0`). `git diff --check` passes;
+branch history contains only the spec and issue-18 checkpoint commits since
+`6dcdc0c8`, with no merge commits. All requested work is committed on
+`work/issue-18-branching`.
