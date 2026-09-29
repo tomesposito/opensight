@@ -11,7 +11,7 @@ no AWS required.
 ![OpenSight tour: dashboard, ask a question, data preparation, data sources](docs/images/opensight-tour.gif)
 
 *Above: the offline demo — a dashboard, the O natural-language bar answering
-"revenue by region", the data-preparation pipeline, and the connector gallery.*
+"revenue by region", branching data preparation, and the connector gallery.*
 
 ## Features
 
@@ -27,16 +27,17 @@ filter actions, drill-down, themes, and `.qs` bundle import/export round trips.
 
 Build your own datasets on a transformation pipeline canvas: select fields,
 add calculated columns, change types, rename, filter — and combine sources
-with join/append steps. Every step previews against the hosted API.
+with join/append steps. Branch from an earlier step, choose the output, and
+preview each path against the hosted API.
 
-![Data preparation pipeline](docs/images/data-prep.png)
+![Data preparation with summary and detail branches](docs/images/data-prep.png)
 
 ### ⚡ Blaze cached datasets
 
 Cache prepared datasets in the self-hosted API with manual or scheduled refresh,
 bounded memory, visible refresh times and explicit failures. Cross-source joins,
-pivot, unpivot, append and aggregate require Blaze; simple single-source pipelines
-can use direct query. The static demo keeps these hosted controls disabled.
+pivot, unpivot, append and aggregate on the output path require Blaze; simple
+single-source pipelines can use direct query. The static demo keeps these hosted controls disabled.
 See [Blaze configuration and limits](docs/blaze.md).
 
 ![Blaze refresh controls and cached output from a local hosted API using synthetic data](docs/images/blaze.png)
