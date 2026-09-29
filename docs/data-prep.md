@@ -1,4 +1,4 @@
-# Dataset preparation (issues #9, #11, and #14)
+# Dataset preparation (issues #9, #11, #14, and #17)
 
 The Data preparation view builds an ordered transformation pipeline over sources
 from the connector registry. Open it from Data sources → Prepare data, the mode
@@ -56,6 +56,22 @@ Bundle metadata does not contain result rows. Source IDs must be rebound to
 available sources after transfer to another host or after upload staging expires.
 Referenced prepared datasets must be saved on the destination host; importing a
 bundle does not save dependencies automatically.
+
+### Step naming
+
+Each step may include an optional top-level `name`, for example
+`{"id":"join-products","name":"Product Join","kind":"join","config":{...}}`.
+Select **Configure step** and edit **Step name (optional)** to name or rename it.
+The canvas uses this name when set and otherwise falls back to the kind's
+automatic label, such as **Join** or **Rename column**. Clearing the field removes
+the name and restores that fallback; the stable step ID and configuration stay
+unchanged.
+
+A supplied name must contain 1–128 characters, with no control characters or
+leading/trailing whitespace. Empty or invalid names in metadata are rejected with
+`INVALID_PREP_PIPELINE`; the editor treats a cleared field as an omitted name.
+Names are preserved through bundle export/import, and unnamed steps remain
+unnamed without an empty-string property being added.
 
 ## Workflow limits
 
