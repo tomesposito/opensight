@@ -44,7 +44,7 @@ test('offline step addition, configuration, reordering and removal change the gr
   const ui = await mount(t);
   await ui.click('＋ Rename column');
   const form = () => ui.renderer.root.findByType(PrepStepEditor);
-  await act(async () => form().findByType('input').props.onChange({ target: { value: 'area' } }));
+  await field(ui.renderer, 'New name', 'area');
   await act(async () => form().findByType('form').props.onSubmit({ preventDefault() {} }));
   assert.match(JSON.stringify(ui.renderer.toJSON()), /area/);
   await ui.click('＋ Select columns');
@@ -87,7 +87,7 @@ test('numeric filter editing preserves partially typed negative values until App
   const step = { id: 'f', kind: 'filter', config: { filters: [{ columnName: 'amount', value: 0 }] } };
   await act(async () => { renderer = create(createElement(PrepStepEditor, { step, columns: source.columns, sources: [source], apply: s => { applied = s; }, cancel() {} })); });
   t.after(async () => { await act(async () => renderer.unmount()); globalThis.IS_REACT_ACT_ENVIRONMENT = old; });
-  const field = () => renderer.root.findByType('input');
+  const field = () => renderer.root.findAllByType('label').find(l => l.props.children[0] === 'Value').findByType('input');
   await act(async () => field().props.onChange({ target: { value: '-' } })); assert.equal(field().props.value, '-');
   await act(async () => field().props.onChange({ target: { value: '-2.5' } }));
   await act(async () => renderer.root.findByType('form').props.onSubmit({ preventDefault() {} }));
@@ -229,7 +229,7 @@ test('join nodes flag stale keys on the canvas', async t => {
   assert.doesNotMatch(JSON.stringify(ui.renderer.toJSON()), /unconfigured/);
   await ui.click('＋ Rename column');
   const form = () => ui.renderer.root.findByType(PrepStepEditor);
-  await act(async () => form().findByType('input').props.onChange({ target: { value: 'area' } }));
+  await field(ui.renderer, 'New name', 'area');
   await act(async () => form().findByType('form').props.onSubmit({ preventDefault() {} }));
   await ui.click('Move earlier');
   const html = JSON.stringify(ui.renderer.toJSON());

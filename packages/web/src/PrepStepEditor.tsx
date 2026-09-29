@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react';
-import { prepTypes, type PrepColumn, type PrepStep, type PrepAggregation, type PrepJoinInput, type PrepPipeline } from '@opensight/bundle-parser/prep';
+import { prepName, prepTypes, type PrepColumn, type PrepStep, type PrepAggregation, type PrepJoinInput, type PrepPipeline } from '@opensight/bundle-parser/prep';
 import { prepLabel, prepRefKey, prepRefLabel, prepSourceRef, prepSourceLabel, prepInstanceLabel, prepStepSourceInstance, prepMessage, type PrepSourceSummary } from './data-prep.js';
 const aggregations: PrepAggregation[] = ['SUM', 'AVG', 'COUNT', 'MIN', 'MAX'];
 function Select({ label, value, values, change }: { label: string; value: string; values: readonly string[]; change: (v: string) => void }) {
@@ -76,6 +76,14 @@ export function PrepStepEditor({ step, columns, sources, pipeline, apply, cancel
     return edited;
   };
   let problem = '';
-  if (edited.kind === 'join' && validate) try { validate(edited); } catch (e) { problem = prepMessage(e); }
-  return <form className="prep-step-editor" onSubmit={e => { e.preventDefault(); if (!problem) apply(configured()); }}><h3>{prepLabel(edited.kind)}</h3>{fields}{problem && <p className="prep-error" role="alert">{problem}</p>}<div className="prep-actions"><button type="submit" disabled={!!problem}>Apply step</button><button type="button" onClick={cancel}>Cancel</button></div></form>;
+  try {
+    if (Object.hasOwn(edited, 'name')) prepName(edited.name, 'Step name');
+    if (edited.kind === 'join' && validate) validate(edited);
+  } catch (e) { problem = prepMessage(e); }
+  return <form className="prep-step-editor" onSubmit={e => { e.preventDefault(); if (!problem) apply(configured()); }}><h3>{prepLabel(edited.kind)}</h3><label>Step name (optional)<input type="text" value={edited.name ?? ''} maxLength={128} placeholder={prepLabel(edited.kind)} onChange={e => {
+    const next = { ...edited };
+    if (e.target.value === '') delete next.name;
+    else next.name = e.target.value;
+    setEdited(next);
+  }} /></label><p>Leave blank to use the automatic label. Names must be 1–128 characters, with no control characters or leading/trailing whitespace.</p>{fields}{problem && <p className="prep-error" role="alert">{problem}</p>}<div className="prep-actions"><button type="submit" disabled={!!problem}>Apply step</button><button type="button" onClick={cancel}>Cancel</button></div></form>;
 }

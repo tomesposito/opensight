@@ -22,7 +22,7 @@ export function prepInputNodes(pipeline: PrepPipeline): { ref: PrepInput; instan
     nodes.push({ ref, instance, consumers: [consumer] });
   };
   add(pipeline.input, 'Input');
-  for (const [i, step] of pipeline.steps.entries()) if (step.kind === 'join' || step.kind === 'append') add(step.config.source, `${i + 1}. ${prepLabel(step.kind)}`);
+  for (const [i, step] of pipeline.steps.entries()) if (step.kind === 'join' || step.kind === 'append') add(step.config.source, `${i + 1}. ${prepStepLabel(step)}`);
   return nodes;
 }
 /** QuickSight-style instance label: first occurrence plain, later ones get " (2)", " (3)". */
@@ -66,6 +66,7 @@ export const prepCatalog: { kind: PrepStep['kind']; label: string; group: string
   { kind: 'pivot', label: 'Pivot', group: 'Other' }, { kind: 'unpivot', label: 'Unpivot', group: 'Other' },
 ];
 export const prepLabel = (kind: PrepStep['kind']) => prepCatalog.find(c => c.kind === kind)!.label;
+export const prepStepLabel = (step: PrepStep): string => step.name ?? prepLabel(step.kind);
 export function prepBindings(sources: readonly PrepSourceSummary[]): PrepSource[] {
   return sources.filter(s => !s.ref || typeof s.ref === 'string').map(s => ({ ...s, table: s.id, security: s.available ? 'unrestricted' : 'protected' }));
 }

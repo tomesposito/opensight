@@ -446,6 +446,7 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .prep-edge { align-self: flex-end; padding: 0 14px 48px; color: #7d94a5; font-size: 25px; }
 .data-prep .prep-node { width: 168px; min-height: 124px; padding: 14px; display: flex; flex-direction: column; align-items: flex-start; gap: 10px; border: 1px solid #aebdca; border-top: 4px solid #426f91; box-shadow: 0 2px 5px #1230470d; text-align: left; }
 .data-prep .prep-node.selected { border-color: #087fbc; box-shadow: 0 0 0 2px #b4ddf3; }
+.prep-node > strong { overflow-wrap: anywhere; max-width: 100%; }
 .prep-node > span:last-child { font-size: 11px; color: #536879; overflow-wrap: anywhere; max-width: 100%; }
 .prep-node-icon { border-radius: 4px; background: #e4eff7; min-width: 23px; height: 23px; display: grid; place-items: center; color: #216c9b; }
 .prep-secondary-source { width: 168px; display: flex; flex-direction: column; align-items: center; font-size: 11px; gap: 6px; margin-bottom: 10px; overflow-wrap: anywhere; }
