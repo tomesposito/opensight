@@ -32,3 +32,6 @@ export type { MySqlExecuteOptions } from './mysql-executor.js';
 
 export { compilePrep, prepSource, prepColumns } from './prep.js';
 export type { PrepSource, PrepPlan } from './prep.js';
+
+export { previewPrepDuckDb, previewPrepPostgres, prepPreviewResult } from './prep-executor.js';
+export type { PrepPreview, PrepPreviewOptions } from './prep-executor.js';

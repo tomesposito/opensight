@@ -1,3 +1,5 @@
+import { previewPrepDuckDb, type PrepPreview, type PrepPreviewOptions } from './prep-executor.js';
+import type { PrepSource } from './prep.js';
 import { randomUUID } from 'node:crypto';
 import { DuckDBInstance, type DuckDBConnection } from '@duckdb/node-api';
 import * as XLSX from 'xlsx';
@@ -211,6 +213,12 @@ export class UploadStaging {
     const projection = upload.columns.map(c => c.type === 'DATETIME' ? `strftime(${q(c.name)}, '%Y-%m-%dT%H:%M:%S.%gZ') AS ${q(c.name)}` : q(c.name)).join(', ');
     const reader = await this.connection.runAndReadAll(`SELECT ${projection} FROM ${q(id)} LIMIT 20`);
     return { upload: structuredClone(upload), rows: reader.getRows().map(row => Object.fromEntries(upload.columns.map((c, i) => [c.name, typeof row[i] === 'bigint' ? Number(row[i]) : row[i]]))) as Record<string, string | number | boolean | null>[] };
+  }
+  prepSources(): PrepSource[] {
+    return [...this.uploads.values()].map(upload => ({ id: upload.id, connectorId: 'file', table: upload.id, columns: structuredClone(upload.columns), security: 'unrestricted' }));
+  }
+  async previewPrep(raw: unknown, options: PrepPreviewOptions = {}): Promise<PrepPreview> {
+    return previewPrepDuckDb(this.connection, raw, this.prepSources(), options);
   }
   close(): void { this.connection.closeSync(); this.instance.closeSync(); this.uploads.clear(); }
 }

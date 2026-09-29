@@ -73,3 +73,24 @@ test('prep validates all stages even for an earlier preview; no unsupported step
   assert.throws(() => compilePrep(pipeline([{ kind: 'select', config: { columns: ['region'] } }, { kind: 'select', config: { columns: ['amount'] } }]), [source], { through: 's0' }), e => e.code === 'PREP_SCHEMA_MISMATCH');
   assert.throws(() => compilePrep(pipeline([{ kind: 'append', config: { source: 'right' } }]), [source, { ...source, id: 'right', columns: columns.slice(1) }]), e => e.code === 'PREP_SCHEMA_MISMATCH');
 });
+test('private upload execution bounds the output and reports unknown totals honestly', async t => {
+  const { UploadStaging } = await import('../dist/index.js');
+  const staging = await UploadStaging.create(); t.after(() => staging.close());
+  const upload = await staging.ingest({ config: { format: 'csv' }, data: new TextEncoder().encode('label,n\na,1\nb,2\nc,3\n') });
+  const p = { version: 1, input: upload.id, steps: [] };
+  const result = await staging.previewPrep(p, { limit: 2 });
+  assert.equal(result.rows.length, 2); assert.equal(result.truncated, true); assert.equal(result.totalRows, null); assert.equal(result.rowCountLowerBound, 3);
+  assert.equal((await staging.previewPrep(p, { limit: 3 })).totalRows, 3);
+  const sources = staging.prepSources(); sources[0].columns[0].name = 'mutated';
+  assert.equal(staging.prepSources()[0].columns[0].name, 'label');
+  const counted = await staging.previewPrep({ ...p, steps: [{ id: 'a', kind: 'aggregate', config: { groupBy: [], measures: [{ column: 'n', name: 'total', aggregation: 'SUM' }] } }] }, { limit: 1 });
+  assert.deepEqual(counted.rows, [{ total: 6 }]); assert.equal(counted.totalRows, 1);
+  await assert.rejects(staging.previewPrep({ ...p, input: 'another-owner' }), e => e.code === 'PREP_SOURCE_NOT_FOUND');
+});
+test('string conversions share function-library parsing, invalid values become null', async t => {
+  const run = await engines(t);
+  for (const type of ['INTEGER','DECIMAL','DATETIME','BOOLEAN']) {
+    const result = await run([{ kind: 'changeType', config: { column: 'category', type } }]);
+    assert.ok(result.every(r => r.category === null));
+  }
+});
