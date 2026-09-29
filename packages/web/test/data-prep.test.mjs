@@ -152,7 +152,8 @@ test('renamed join renders on the canvas and input connections, and clearing res
   assert.equal(node().findByType('strong').props.children, 'Product Join');
   assert.match(JSON.stringify(ui.renderer.toJSON()), /1\. Product Join/);
   assert.match(JSON.stringify(ui.renderer.toJSON()), /Product Join preview/);
-  const rightSource = ui.renderer.root.findAll(n => n.type === 'button' && n.props.className === 'prep-node input-node')[1];
+  const rightSource = ui.renderer.root.findAll(n => n.type === 'button' && n.props.className === 'prep-node input-node').find(b => [].concat(b.findByType('strong').props.children).join('') === 'Source 2');
+  assert.ok(rightSource);
   await act(async () => rightSource.props.onClick());
   const editor = ui.renderer.root.findByType(PrepStepEditor);
   assert.equal(editor.props.step.id, id); assert.equal(editor.props.step.name, 'Product Join');
