@@ -19,6 +19,7 @@
 | 2026-09-26 | Initial draft: vision, compatibility contract, architecture, decisions D1–D9, phased plan. Repo scaffold + bundle-parser spike started. |
 | 2026-09-26 | bundle-parser spike builds clean (tsc strict) and summarizes the sample fixture; committed locally as `3655cc3`, ready to push once GitHub is connected. |
 | 2026-09-29 | D13: Blaze horizontal-scaling architecture decided — Parquet artifacts on shared object storage + per-node memory when multi-node matters, Redis (or equivalent) for refresh coordination/invalidation only; `refresh`/`read` seam is the portability boundary. D8 status updated to the shipped in-process implementation (#12/#15). |
+| 2026-09-29 | Issue #18: prep divergent paths (branching) specified — steps may name an earlier step as their left input, fan-out capped at 5 consumers per step (QuickSight parity), explicit output selector; linear pipelines unchanged. |
 | 2026-09-26 | Published as public repo `tomesposito/opensight`. Added Phase 0 export runbook (capture a real `QUICKSIGHT_JSON` bundle via AWS CLI) and public-repo hygiene rule: placeholders only, redact any real export before keeping it as a fixture. |
 
 ---
@@ -1474,3 +1475,78 @@ refresh failure and invalid pipelines, bounds/LRU, invalidation/races/restart an
 fake-timer scheduling. Rebuild and screenshot-compare the demo; refresh affected
 README screenshots. The sweep owner handles the hero GIF, merge, publish and issue
 closure; this branch does none of those actions.
+
+## 14. Issue #18 — prep divergent paths: branching from a single step (decided 2026-09-29)
+
+This additive contract extends the version-1 prep pipeline from §12. Existing
+linear pipelines validate and execute exactly as before; branching is opt-in
+per step. QuickSight's new experience supports divergent paths — up to 5 paths
+from a single step (e.g. one cleaned table feeding both an aggregate path and a
+detail path). OpenSight adopts the same 5-path fan-out cap and a stricter
+explicit-output model instead of QuickSight's implicit main-path selection.
+
+**Graph model.** A step may name its left input explicitly via optional
+`from: string` on `PrepStep`, referencing an earlier step in the same pipeline.
+Default (unchanged): a step's left input is the preceding array element, and the
+first step reads the pipeline input. Branching is any deviation from that
+default — two or more steps whose resolved left input is the same step, or a
+step whose `from` is not its immediate predecessor. The join right-side
+`{step: id}` references from §12 keep working alongside `from`.
+
+**Validation (fail closed).** `from` must name a step that appears strictly
+earlier in `steps[]` — cycles are impossible by construction. Unknown,
+later-or-equal-position, or self `from` references fail with
+`INVALID_PREP_PIPELINE`; a first step may not carry `from` at all. Moving or
+deleting a referenced step leaves an explicit invalid-reference error until
+repaired, exactly like §12's join step references. Each step's left input is
+resolved independently of array position, so array order must remain
+topological (a step after its `from` and after any join-source step ref).
+Disconnected steps — branches that feed nothing and are not the output — are
+allowed and render as detached branches, not errors. At most **5 direct
+downstream consumers** per step (resolved left inputs plus join right-side
+`{step:}` refs); violations fail with `PREP_LIMIT_EXCEEDED`. `from` reuses
+earlier results and never counts against the 32 import-step budget.
+
+**Output selector.** Optional pipeline-level `output: string` names the output
+step; default is the last step in array order (today's behavior). `output` must
+name an existing step, else `INVALID_PREP_PIPELINE`. The compiler selects the
+output stage for saved output and full-pipeline execution; the existing
+`through` compile option remains the per-preview override (an explicit `through`
+wins for that preview, otherwise `pipeline.output ?? last step`). Deleting the
+output step resets `output` to the new last step. For Blaze materialization
+(§13/#15), the mandatory-materialization rule is evaluated on the output path;
+advanced steps on non-output branches keep bounded draft previews but never
+publish saved output.
+
+**Compilation.** Each step still compiles to exactly one CTE; shared upstream
+stages are naturally reused by multiple consumers, so branching adds no new
+compilation machinery beyond resolving each step's left input from
+`from ?? previous step`. All steps still compile (not only the output path) so
+every stage keeps valid columns and previews. Stage metadata (`stages[]`)
+already keys previews by step id, so each path previews independently with no
+schema change. Dialects, 50-step, and 500-expanded-step budgets are unchanged.
+
+**Editor and hosted API.** The canvas renders the transformation graph as a DAG
+(nodes: input + steps; edges: resolved left inputs) instead of the current
+strictly ordered list; join/append secondary-source connections keep their
+existing labeled rendering. Each step node offers **Add branch** (appends a new
+step with `from` set to that step) and **Set as output** (moves the output
+marker). The output step carries an explicit Output marker; selecting any step
+previews that stage independently. `from`, fan-out, and output validation
+errors surface as visible named errors and fail closed on save/preview. Static
+demo permits branching configuration on sample schemas; live previews and
+saves say “Needs hosted API” as today.
+
+**Portability and verification.** JSON and `.qs` import/export preserve `from`
+and `output`; the validator runs on import and grants no source access.
+Verification: linear-default regression (byte-identical plans), `from` chains,
+5-consumer cap (including join right-side refs), invalid `from` variants,
+output default/override/delete-reset, delete-referenced-step repair errors,
+import/export round trips, actual DuckDB-versus-Postgres execution of a branched
+pipeline, UI branch creation/DAG rendering/per-path previews/output marker
+moves/error states, bundle round trips. Rebuild the static demo and compare
+screenshots; refresh the README hero GIF and affected feature screenshots —
+branching changes user-visible UI. Update `docs/data-prep.md` (branching
+semantics, output selector, the 5-consumer limit row). No new dependency, AWS
+call, merge, publish or issue closure is part of this build; the sweep owner
+handles those.
