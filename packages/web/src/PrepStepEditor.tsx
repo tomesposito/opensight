@@ -19,8 +19,12 @@ function Text({ label, value, change }: { label: string; value: string; change: 
 function Columns({ label, columns, selected, change }: { label: string; columns: readonly PrepColumn[]; selected: string[]; change: (v: string[]) => void }) {
   return <fieldset className="prep-columns"><legend>{label}</legend>{columns.map(c => <label key={c.name}><input type="checkbox" checked={selected.includes(c.name)} onChange={e => change(e.target.checked ? [...selected, c.name] : selected.filter(n => n !== c.name))} />{c.name}<small>{c.type}</small></label>)}</fieldset>;
 }
-export function PrepStepEditor({ step, columns, sources, pipeline, apply, cancel, validate }: { step: PrepStep; columns: readonly PrepColumn[]; sources: readonly PrepSourceSummary[]; pipeline?: PrepPipeline; apply: (step: PrepStep) => void; cancel: () => void; validate?: (step: PrepStep) => void }) {
+export function PrepStepEditor({ step, columns: inputColumns, sources, pipeline, apply, cancel, validate }: { step: PrepStep; columns: readonly PrepColumn[]; sources: readonly PrepSourceSummary[]; pipeline?: PrepPipeline; apply: (step: PrepStep) => void; cancel: () => void; validate?: (step: PrepStep) => void }) {
   const [edited, setEdited] = useState<PrepStep>(() => structuredClone(step));
+  const index = pipeline?.steps.findIndex(s => s.id === step.id) ?? -1;
+  const earlier = pipeline?.steps.slice(0, index < 0 ? pipeline.steps.length : index) ?? [];
+  const left = edited.from ?? earlier.at(-1)?.id;
+  const columns = sources.find(s => typeof s.ref === 'object' && 'step' in s.ref && s.ref.step === left)?.columns ?? inputColumns;
   const names = columns.map(c => c.name), sourceIds = sources.filter(s => !s.ref || typeof s.ref === 'string').map(s => s.id);
   let fields: ReactNode;
   switch (edited.kind) {
@@ -78,12 +82,17 @@ export function PrepStepEditor({ step, columns, sources, pipeline, apply, cancel
   let problem = '';
   try {
     if (Object.hasOwn(edited, 'name')) prepName(edited.name, 'Step name');
-    if (edited.kind === 'join' && validate) validate(edited);
+    if (validate) validate(configured());
   } catch (e) { problem = prepMessage(e); }
   return <form className="prep-step-editor" onSubmit={e => { e.preventDefault(); if (!problem) apply(configured()); }}><h3>{prepLabel(edited.kind)}</h3><label>Step name (optional)<input type="text" value={edited.name ?? ''} maxLength={128} placeholder={prepLabel(edited.kind)} onChange={e => {
     const next = { ...edited };
     if (e.target.value === '') delete next.name;
     else next.name = e.target.value;
     setEdited(next);
-  }} /></label><p>Leave blank to use the automatic label. Names must be 1–128 characters, with no control characters or leading/trailing whitespace.</p>{fields}{problem && <p className="prep-error" role="alert">{problem}</p>}<div className="prep-actions"><button type="submit" disabled={!!problem}>Apply step</button><button type="button" onClick={cancel}>Cancel</button></div></form>;
+  }} /></label><p>Leave blank to use the automatic label. Names must be 1–128 characters, with no control characters or leading/trailing whitespace.</p>{pipeline && <label>Left input<select value={edited.from ?? ''} onChange={e => {
+    const next = { ...edited };
+    if (e.target.value === '') delete next.from;
+    else next.from = e.target.value;
+    setEdited(next);
+  }}><option value="">{earlier.length ? 'Previous step (default)' : 'Pipeline input (default)'}</option>{edited.from && !earlier.some(s => s.id === edited.from) && <option value={edited.from}>Invalid reference · {edited.from}</option>}{earlier.map(s => <option key={s.id} value={s.id}>{prepLabel(s.kind)} · {s.name ?? s.id}</option>)}</select></label>}{fields}{problem && <p className="prep-error" role="alert">{problem}</p>}<div className="prep-actions"><button type="submit" disabled={!!problem}>Apply step</button><button type="button" onClick={cancel}>Cancel</button></div></form>;
 }
