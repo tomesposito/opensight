@@ -159,6 +159,16 @@ expressions use the Phase 2c parser, type system, and per-dialect function libra
 | `pivot` | `groupBy`, `column`, `value`, `aggregation`, `values` | Values are explicit `{value,name}` output definitions with unique typed keys. Conditional aggregation produces a stable schema. Unlisted/null keys contribute no measure; their groups can still appear. No data-dependent column discovery. |
 | `unpivot` | `columns`, `nameColumn`, `valueColumn` | Selected columns must share a type. Each input row produces one row per selected column. Names become values, null cells are kept, and unselected columns repeat. |
 
+**Deliberate difference from QuickSight — append schema leniency (#19).**
+QuickSight's Append aligns columns by name and tolerates differing column
+sequences and counts, filling missing columns with nulls and surfacing
+informational messages on the Configure tab. OpenSight stays fail-closed
+here: append requires identical column names and types (order aligned by
+name), and any mismatch fails with `PREP_SCHEMA_MISMATCH`. Silent
+null-filling hides data-quality problems, so strict validation is the
+deliberate, documented choice; it will be revisited if user feedback asks
+for leniency.
+
 Join outputs use either nonempty `columns: [{column,name}]` aliases or a nonempty
 `prefix`, which includes **all** right columns (including keys) in source order.
 The prefix is literal: `prefix: "region_"` turns `manager` into `region_manager`.
