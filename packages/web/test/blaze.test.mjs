@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { act, createElement } from 'react';
 import { create } from 'react-test-renderer';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { DatasetExecution } from '../build/test/DatasetExecution.js';
+import { DatasetExecution, ExecutionBadge } from '../build/test/DatasetExecution.js';
 import { DatasetHeader } from '../build/test/DatasetHeader.js';
 import { createApiClient } from '../build/test/api-client.js';
 import { prepSchema } from '../build/test/data-prep.js';
@@ -18,6 +18,7 @@ async function mount(t, props, component = DatasetExecution) {
 test('offline execution controls and unsaved pipelines never pretend materialization is available', () => {
   const html = renderToStaticMarkup(createElement(DatasetExecution,{datasetId:'draft',saved:false}));
   assert.match(html,/Needs hosted API/); assert.match(html,/disabled=""[^>]*>Refresh Blaze/); assert.doesNotMatch(html,/Last successful refresh/);
+  assert.equal(renderToStaticMarkup(createElement(ExecutionBadge, {})), '', 'Unsaved output must not claim a hosted execution mode');
 });
 test('mode switch, refresh, schedule and cached output preserve explicit freshness labels', async t => {
   let status = direct; const calls = [];

@@ -6,6 +6,7 @@ export function CachedProvenance({ execution }: { execution: ExecutionProvenance
   return <span>{execution.cached ? <>Cached · refreshed <time dateTime={execution.refreshedAt!}>{execution.refreshedAt}</time></> : execution.cachedInputs.length ? 'Direct query · includes cached inputs' : 'Direct query · live source'}{execution.cachedInputs.map(input => <span key={`${input.datasetId}:${input.refreshedAt}`}><br />Cached input {input.datasetId} · <time dateTime={input.refreshedAt}>{input.refreshedAt}</time></span>)}</span>;
 }
 export function ExecutionBadge({ status }: { status?: ExecutionStatus }) {
+  if (!status) return null;
   return <span className="dataset-badge" data-mode={status?.mode === 'BLAZE' ? 'blaze' : 'direct'}>{status?.mode === 'BLAZE' ? 'BLAZE' : 'DIRECT QUERY'}</span>;
 }
 /** Status is scoped to the current client/dataset; late requests cannot relabel another dataset. */
@@ -56,7 +57,7 @@ export function DatasetExecution({ client, datasetId, saved = true, dirty = fals
     </div>
     <p className="execution-status" role="status">{!client ? 'Needs hosted API · Blaze materialization and refresh are unavailable in the offline demo.' : !saved ? 'Save the pipeline to configure dataset execution.' : current?.error ? current.error : !status ? 'Loading execution status…' : <><ExecutionBadge status={status} /> {status.mode === 'DIRECT_QUERY' ? 'Queries execute the saved pipeline.' : <>Cached data · {status.state}{status.rowCount !== null ? ` · ${status.rowCount} rows` : ' · no readable snapshot'}<br />{status.lastRefreshedAt ? <>Last successful refresh: <time dateTime={status.lastRefreshedAt}>{status.lastRefreshedAt}</time></> : 'No successful refresh recorded'}{status.nextRefreshAt && <><br />Next refresh: <time dateTime={status.nextRefreshAt}>{status.nextRefreshAt}</time></>}</>}{status.error && <><br />{status.error.code}{status.error.causeCode ? ` (${status.error.causeCode})` : ''}: {status.error.message}</>}</>}{client && saved && dirty && <><br />Save pipeline changes before changing execution or refreshing.</>}</p>
     {actionError && <p className="prep-error" role="alert">{actionError}</p>}
-    {status?.materializationReason && <p className="execution-requirement">{status.materializationReason} Refresh the saved pipeline before querying its output.</p>}
+    {status?.materializationReason && <p className="execution-requirement">{status.materializationReason}{status.state !== 'ready' && ' Refresh the saved pipeline before querying its output.'}</p>}
     {output && !dirty && <div className="cached-output"><p><CachedProvenance execution={output.execution} /><br />{output.rowCount} cached rows · {output.rows.length} shown</p><div className="prep-table-scroll"><table><thead><tr>{output.columns.map(c => <th key={c.name}>{c.name}</th>)}</tr></thead><tbody>{output.rows.map((r,i) => <tr key={i}>{output.columns.map(c => <td key={c.name}>{r[c.name] === null ? <em>null</em> : String(r[c.name])}</td>)}</tr>)}</tbody></table></div></div>}
   </section>;
 }
