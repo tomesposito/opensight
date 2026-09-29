@@ -47,3 +47,29 @@ test('prep calculated columns reuse the typed function library and feed subseque
   assert.equal((await run([{ kind: 'calculate', config: { name: 'date', expression: "parseDate('2024-02-29')" } }]))[0].date, '2024-02-29T00:00:00.000Z');
   for (const expression of ['sum({amount})', 'sumOver({amount}, [], PRE_AGG)', 'unknown({amount})', '{missing} + 1']) assert.throws(() => compilePrep(pipeline([{ kind: 'calculate', config: { name: 'result', expression } }]), [source]));
 });
+test('prep aggregate and explicit pivot/unpivot have shared null and grouping semantics', async t => {
+  const run = await engines(t);
+  const grouped = await run([{ kind: 'aggregate', config: { groupBy: ['region'], measures: [{ column: 'amount', name: 'total', aggregation: 'SUM' }, { column: 'amount', name: 'count', aggregation: 'COUNT' }] } }]);
+  assert.ok(grouped.some(r => r.region === 'East' && r.total === 6.9 && r.count === 2));
+  const pivot = { kind: 'pivot', config: { groupBy: ['region'], column: 'category', value: 'amount', aggregation: 'SUM', values: [{ value: 'A', name: 'a' }, { value: 'B', name: 'b' }] } };
+  const rows = await run([pivot]); assert.ok(rows.some(r => r.region === 'East' && r.a === 2.9 && r.b === 4));
+  const unpivoted = await run([pivot, { kind: 'unpivot', config: { columns: ['a', 'b'], nameColumn: 'kind', valueColumn: 'value' } }]);
+  assert.equal(unpivoted.length, 6); assert.equal(unpivoted.filter(r => r.value === null).length, 3);
+  for (const aggregation of ['COUNT','MIN','MAX','AVG']) await run([{ kind: 'aggregate', config: { groupBy: [], measures: [{ column: 'amount', name: 'result', aggregation }] } }]);
+});
+test('prep joins preserve multiplicity and SQL null semantics; append preserves duplicate rows', async t => {
+  const run = await engines(t), right = { ...source, id: 'right' };
+  for (const joinType of ['inner', 'left', 'full']) {
+    const rows = await run([{ kind: 'join', config: { source: 'right', joinType, keys: [{ left: 'region', right: 'region' }], columns: [{ column: 'amount', name: 'right_amount' }] } }], {}, [right]);
+    assert.equal(rows.length, joinType === 'inner' ? 5 : joinType === 'left' ? 6 : 7);
+  }
+  assert.equal((await run([{ kind: 'append', config: { source: 'right' } }], {}, [right])).length, 8);
+  for (const kind of ['join', 'append']) {
+    const config = kind === 'join' ? { source: 'right', joinType: 'inner', keys: [{ left: 'region', right: 'region' }], columns: [{ column: 'amount', name: 'other' }] } : { source: 'right' };
+    assert.throws(() => compilePrep(pipeline([{ kind, config }]), [source, { ...right, security: 'protected' }]), e => e.code === 'PREP_SECURITY_REJECTED');
+  }
+});
+test('prep validates all stages even for an earlier preview; no unsupported steps disappear', () => {
+  assert.throws(() => compilePrep(pipeline([{ kind: 'select', config: { columns: ['region'] } }, { kind: 'select', config: { columns: ['amount'] } }]), [source], { through: 's0' }), e => e.code === 'PREP_SCHEMA_MISMATCH');
+  assert.throws(() => compilePrep(pipeline([{ kind: 'append', config: { source: 'right' } }]), [source, { ...source, id: 'right', columns: columns.slice(1) }]), e => e.code === 'PREP_SCHEMA_MISMATCH');
+});

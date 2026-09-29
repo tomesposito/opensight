@@ -56,6 +56,12 @@ export function compilePrep(raw: unknown, sources: readonly PrepSource[], option
   for (const [i, step] of pipeline.steps.entries()) {
     const path = `$.opensightPrep.steps[${i}].config`;
     const column = (name: string, cols = columns): PrepColumn => cols.find(c => c.name === name) ?? prepFail('PREP_SCHEMA_MISMATCH', path, `Unknown column: ${name}`);
+    const measure = (name: string, aggregation: string): PrepColumn => {
+      const c = column(name);
+      if (['SUM', 'AVG'].includes(aggregation) && !['INTEGER', 'DECIMAL'].includes(c.type) || c.type === 'BOOLEAN' && aggregation !== 'COUNT') prepFail('PREP_SCHEMA_MISMATCH', path, 'Invalid aggregation for column type');
+      return { name, type: aggregation === 'COUNT' ? 'INTEGER' : ['SUM', 'AVG'].includes(aggregation) ? 'DECIMAL' : c.type };
+    };
+    const aggregateSql = (value: string, aggregation: string): string => ['SUM', 'AVG'].includes(aggregation) ? `${aggregation}(CAST(${value} AS ${dialect === 'postgres' ? 'DOUBLE PRECISION' : 'DOUBLE'}))` : `${aggregation}(${value})`;
     let sql: string;
     switch (step.kind) {
       case 'changeType': {
@@ -94,6 +100,44 @@ export function compilePrep(raw: unknown, sources: readonly PrepSource[], option
         sql = `SELECT *, ${expressionSql(expression, dialect, bind)} AS ${q(step.config.name)} FROM ${from}`;
         const type: PrepType = expression.scalarType === 'number' ? 'DECIMAL' : expression.scalarType === 'datetime' ? 'DATETIME' : expression.scalarType === 'boolean' ? 'BOOLEAN' : 'STRING';
         columns = [...columns, { name: step.config.name, type }]; break;
+      }
+      case 'aggregate': {
+        const c = step.config, groups = c.groupBy.map(name => column(name));
+        const measures = c.measures.map(m => ({ ...measure(m.column, m.aggregation), name: m.name }));
+        const projections = [...groups.map(g => q(g.name)), ...c.measures.map(m => `${aggregateSql(q(m.column), m.aggregation)} AS ${q(m.name)}`)];
+        sql = `SELECT ${projections.join(', ')} FROM ${from}${groups.length ? ` GROUP BY ${groups.map(g => q(g.name)).join(', ')}` : ''}`;
+        columns = [...groups, ...measures]; break;
+      }
+      case 'join': {
+        const c = step.config, right = prepSource(c.source, sources, dialect);
+        const keys = c.keys.map(k => {
+          const leftCol = column(k.left), rightCol = column(k.right, [...right.columns]);
+          if (leftCol.type !== rightCol.type) prepFail('PREP_SCHEMA_MISMATCH', path, 'Join keys must have identical types');
+          return `l.${q(k.left)} = r.${q(k.right)}`;
+        });
+        const added = c.columns.map(c => ({ ...column(c.column, [...right.columns]), name: c.name }));
+        sql = `SELECT ${[...columns.map(c => `l.${q(c.name)}`), ...c.columns.map(c => `r.${q(c.column)} AS ${q(c.name)}`)].join(', ')} FROM ${from} l ${c.joinType.toUpperCase()} JOIN ${relation(right)} r ON ${keys.join(' AND ')}`;
+        columns = [...columns, ...added]; break;
+      }
+      case 'append': {
+        const right = prepSource(step.config.source, sources, dialect);
+        if (right.columns.length !== columns.length || columns.some(c => !right.columns.some(r => r.name === c.name && r.type === c.type))) prepFail('PREP_SCHEMA_MISMATCH', path, 'Append requires identical names and types; column order is matched by name');
+        const projection = columns.map(c => q(c.name)).join(', ');
+        sql = `SELECT ${projection} FROM ${from} UNION ALL SELECT ${projection} FROM ${relation(right)}`; break;
+      }
+      case 'pivot': {
+        const c = step.config, key = column(c.column), groups = c.groupBy.map(name => column(name)), result = measure(c.value, c.aggregation);
+        if (key.type === 'BOOLEAN' || key.type === 'DATETIME') prepFail('UNSUPPORTED_PREP_STEP', path, 'Pivot keys must be string or numeric');
+        if (c.values.some(v => typeof v.value !== (key.type === 'STRING' ? 'string' : 'number')) || new Set(c.values.map(v => JSON.stringify(v.value))).size !== c.values.length) prepFail('PREP_SCHEMA_MISMATCH', path, 'Pivot values must be unique and match the key type');
+        const projections = [...groups.map(g => q(g.name)), ...c.values.map(v => `${aggregateSql(`CASE WHEN ${q(c.column)} = ${bind(v.value)} THEN ${q(c.value)} END`, c.aggregation)} AS ${q(v.name)}`)];
+        sql = `SELECT ${projections.join(', ')} FROM ${from}${groups.length ? ` GROUP BY ${groups.map(g => q(g.name)).join(', ')}` : ''}`;
+        columns = [...groups, ...c.values.map(v => ({ name: v.name, type: result.type }))]; break;
+      }
+      case 'unpivot': {
+        const c = step.config, values = c.columns.map(name => column(name)), kept = columns.filter(col => !c.columns.includes(col.name));
+        if (values.some(v => v.type !== values[0]!.type)) prepFail('PREP_SCHEMA_MISMATCH', path, 'Unpivot columns must have identical types');
+        sql = values.map(v => `SELECT ${[...kept.map(c => q(c.name)), `${bind(v.name)} AS ${q(c.nameColumn)}`, `${q(v.name)} AS ${q(c.valueColumn)}`].join(', ')} FROM ${from}`).join(' UNION ALL ');
+        columns = [...kept, { name: c.nameColumn, type: 'STRING' }, { name: c.valueColumn, type: values[0]!.type }]; break;
       }
       default: prepFail('UNSUPPORTED_PREP_STEP', path, 'Transformation compiler is unavailable');
     }
