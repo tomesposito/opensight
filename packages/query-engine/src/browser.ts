@@ -15,4 +15,4 @@ export { connectors, connectorDefinition, validateConnectorConfig, connectorStat
 export type { ConnectorDefinition, ConnectorConfig, ConnectorField, ConnectorState } from './connectors.js';
 
 export { compilePrep, prepSource, prepColumns } from './prep.js';
-export type { PrepSource, PrepPlan } from './prep.js';
+export type { PrepSource, PrepPlan, PrepDataset, PrepCompileOptions } from './prep.js';

@@ -1,7 +1,7 @@
 import type { DuckDBConnection } from '@duckdb/node-api';
 import { Client } from 'pg';
 import { PrepError, prepFail, type PrepColumn } from '@opensight/bundle-parser/prep';
-import { compilePrep, type PrepSource, type PrepPlan } from './prep.js';
+import { compilePrep, type PrepSource, type PrepCompileOptions, type PrepPlan } from './prep.js';
 import { validateConnectorConfig } from './connectors.js';
 export interface PrepPreview {
   columns: PrepColumn[]; rows: Record<string, string | number | boolean | null>[];
@@ -9,7 +9,7 @@ export interface PrepPreview {
   /** Exact only if the bounded query exhausted the output; otherwise unknown. */
   totalRows: number | null; rowCountLowerBound: number; dialect: PrepPlan['dialect'];
 }
-export type PrepPreviewOptions = { through?: string | null; limit?: number; now?: string };
+export type PrepPreviewOptions = Omit<PrepCompileOptions, 'dialect'>;
 function normalize(value: unknown, column: PrepColumn): string | number | boolean | null {
   if (value === null) return null;
   if (column.type === 'BOOLEAN') { if (typeof value === 'boolean') return value; if (value === 't' || value === 'f') return value === 't'; }

@@ -103,3 +103,72 @@ test('numeric-to-string preparation normalizes integer-valued decimals in both d
   const rows = await run([{ kind: 'changeType', config: { column: 'amount', type: 'STRING' } }, { kind: 'select', config: { columns: ['amount'] } }]);
   assert.deepEqual(rows, [{ amount: '2.9' }, { amount: '3.1' }, { amount: '4' }, { amount: null }]);
 });
+
+const joinConfig = (source = 'right', extra = {}) => ({ source, joinType: 'left', keys: [{ left: 'region', right: 'region' }], prefix: 'r_', ...extra });
+test('joins reject mismatched and missing keys, aliases, prefix collisions and schema bounds', () => {
+  const right = { ...source, id: 'right' }, p = config => pipeline([{ kind: 'join', config }]);
+  for (const config of [
+    joinConfig('right', { keys: [{ left: 'region', right: 'amount' }] }),
+    joinConfig('right', { keys: [{ left: 'missing', right: 'region' }] }),
+    joinConfig('right', { keys: [{ left: 'region', right: 'missing' }] }),
+    { ...joinConfig(), prefix: undefined, columns: [{ column: 'missing', name: 'alias' }] },
+    { source: 'right', joinType: 'left', keys: [{ left: 'region', right: 'region' }], columns: [{ column: 'amount', name: 'REGION' }] },
+    { source: 'right', joinType: 'left', keys: [{ left: 'region', right: 'region' }], columns: [{ column: 'amount', name: 'r' }, { column: 'category', name: 'R' }] },
+    joinConfig('right', { prefix: 'x'.repeat(128) }),
+  ]) {
+    if (config.prefix === undefined) delete config.prefix;
+    assert.throws(() => compilePrep(p(config), [source, right]), e => e.code === 'PREP_SCHEMA_MISMATCH');
+  }
+  assert.throws(() => compilePrep(p(joinConfig()), [source, { ...right, columns: [{ name: 'region', type: 'INTEGER' }] }]), e => e.code === 'PREP_SCHEMA_MISMATCH' && /region \(STRING\).*region \(INTEGER\)/.test(e.message));
+  const many = Array.from({ length: 254 }, (_, i) => ({ name: `n${i}`, type: 'STRING' }));
+  assert.throws(() => compilePrep(p(joinConfig('right', { keys: [{ left: 'region', right: 'n0' }] })), [source, { ...right, columns: many }]), e => e.code === 'PREP_SCHEMA_MISMATCH');
+  const renamed = pipeline([{ kind: 'rename', config: { column: 'amount', name: 'r_region' } }, { kind: 'join', config: joinConfig() }]);
+  assert.throws(() => compilePrep(renamed, [source, right]), e => e.code === 'PREP_SCHEMA_MISMATCH');
+});
+test('composite joins, prefix outputs, chained joins and reuse of joined results agree across engines', async t => {
+  const run = await engines(t), right = { ...source, id: 'right' };
+  for (const joinType of ['inner', 'left', 'right', 'full']) {
+    const rows = await run([{ kind: 'join', config: joinConfig('right', { joinType, keys: [{ left: 'region', right: 'region' }, { left: 'category', right: 'category' }] }) }], {}, [right]);
+    assert.equal(rows.length, { inner: 3, left: 4, right: 4, full: 5 }[joinType]);
+    assert.ok(rows.some(r => r.region === 'East' && r.r_region === 'East' && r.r_amount === r.amount));
+  }
+  const steps = [
+    { kind: 'join', config: joinConfig() },
+    { kind: 'join', config: joinConfig({ step: 's0' }, { keys: [{ left: 'r_category', right: 'r_category' }], prefix: 'again_' }) },
+    { kind: 'filter', config: { filters: [{ columnName: 'again_r_category', value: 'B' }] } },
+    { kind: 'calculate', config: { name: 'combined', expression: '{r_amount} + {again_r_amount}' } },
+    { kind: 'aggregate', config: { groupBy: [], measures: [{ column: 'combined', name: 'count', aggregation: 'COUNT' }] } },
+  ];
+  assert.deepEqual(await run(steps, {}, [right]), [{ count: 9 }]);
+  assert.equal((await run(steps, { through: 's0' }, [right])).length, 6);
+});
+test('prepared inputs and nested joins expand without sampling, preserve parameters and reuse relations', async t => {
+  const run = await engines(t);
+  const datasets = [
+    { id: 'east', pipeline: pipeline([{ kind: 'filter', config: { filters: [{ columnName: 'region', value: 'East' }] } }]) },
+    { id: 'joined', pipeline: pipeline([{ kind: 'join', config: joinConfig({ dataset: 'east' }) }]) },
+  ];
+  const steps = [{ kind: 'join', config: joinConfig({ dataset: 'joined' }) }, { kind: 'filter', config: { filters: [{ columnName: 'r_r_category', value: 'A' }] } }];
+  const rows = await run(steps, { datasets }); assert.equal(rows.length, 4);
+  assert.equal((await run(steps, { datasets, through: null })).length, 4);
+  assert.equal((await run(steps, { datasets, through: 's0' })).length, 10);
+  // A prepared primary input remains a relation, without a preview limit inside it.
+  const { UploadStaging } = await import('../dist/index.js'); const staging = await UploadStaging.create(); t.after(() => staging.close());
+  const uploaded = await staging.ingest({ config: { format: 'csv' }, data: new TextEncoder().encode('n\n' + Array.from({ length: 150 }, () => '1').join('\n')) });
+  const prepared = [{ id: 'all', pipeline: { version: 1, input: uploaded.id, steps: [] } }];
+  const p = { version: 1, input: { dataset: 'all' }, steps: [{ id: 'sum', kind: 'aggregate', config: { groupBy: [], measures: [{ column: 'n', name: 'total', aggregation: 'SUM' }] } }] };
+  assert.deepEqual((await staging.previewPrep(p, { datasets: prepared, limit: 1 })).rows, [{ total: 150 }]);
+});
+test('prepared graphs fail closed on cycles, missing/protected inputs and excessive expansion', () => {
+  const p = { version: 1, input: { dataset: 'a' }, steps: [] };
+  assert.throws(() => compilePrep(p, [source]), e => e.code === 'PREP_SOURCE_NOT_FOUND');
+  const cycle = [{ id: 'a', pipeline: { ...p, input: { dataset: 'b' } } }, { id: 'b', pipeline: p }];
+  assert.throws(() => compilePrep(p, [source], { datasets: cycle }), e => e.code === 'INVALID_PREP_PIPELINE');
+  assert.throws(() => compilePrep(p, [source], { datasets: [{ id: 'a', pipeline: pipeline([]) }], datasetId: 'a' }), e => e.code === 'INVALID_PREP_PIPELINE');
+  assert.throws(() => compilePrep(p, [{ ...source, security: 'protected' }], { datasets: [{ id: 'a', pipeline: pipeline([]) }] }), e => e.code === 'PREP_SECURITY_REJECTED');
+  const deep = Array.from({ length: 17 }, (_, i) => ({ id: `d${i}`, pipeline: { version: 1, input: i === 16 ? 'sales' : { dataset: `d${i + 1}` }, steps: [] } }));
+  assert.throws(() => compilePrep({ ...p, input: { dataset: 'd0' } }, [source], { datasets: deep }), e => e.code === 'PREP_LIMIT_EXCEEDED');
+  const wide = Array.from({ length: 11 }, (_, i) => ({ id: `d${i}`, pipeline: pipeline(Array.from({ length: 50 }, () => ({ kind: 'select', config: { columns: ['region'] } }))) }));
+  const joins = pipeline(wide.map((d, i) => ({ kind: 'join', config: joinConfig({ dataset: d.id }, { prefix: `r${i}_` }) })));
+  assert.throws(() => compilePrep(joins, [source], { datasets: wide }), e => e.code === 'PREP_LIMIT_EXCEEDED');
+});

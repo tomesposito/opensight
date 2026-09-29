@@ -1,5 +1,5 @@
 import { rowFilterSql } from './row-filter.js';
-import { validatePrepPipeline, prepFail, prepName, prepTypes, type PrepColumn, type PrepPipeline, type PrepType } from '@opensight/bundle-parser/prep';
+import { validatePrepPipeline, prepFail, prepName, prepTypes, type PrepColumn, type PrepPipeline, type PrepType, type PrepJoinInput } from '@opensight/bundle-parser/prep';
 import { connectorDefinition, connectorDialect } from './connectors.js';
 import { parseExpression, expressionSql } from './expressions.js';
 import type { ScalarType } from './types.js';
@@ -9,6 +9,12 @@ export interface PrepSource {
   id: string; connectorId: string; table: string; schema?: string; columns: readonly PrepColumn[];
   /** Caller-owned authorization result. Imported metadata cannot grant access. */
   security: 'unrestricted' | 'protected';
+}
+/** Prepared definitions are supplied by the trusted host, never by source assertions. */
+export interface PrepDataset { id: string; pipeline: PrepPipeline }
+export interface PrepCompileOptions {
+  dialect?: PrepPlan['dialect']; through?: string | null; limit?: number; now?: string;
+  datasets?: readonly PrepDataset[]; datasetId?: string;
 }
 export interface PrepPlan {
   dialect: 'duckdb' | 'postgres'; pipeline: PrepPipeline; columns: PrepColumn[];
@@ -20,7 +26,7 @@ export function prepColumns(columns: readonly PrepColumn[], path: string): PrepC
   const seen = new Set<string>();
   for (const c of columns) {
     if (!c || !prepTypes.includes(c.type)) prepFail('PREP_SCHEMA_MISMATCH', path, 'Unsupported column type');
-    prepName(c.name, path);
+    if (typeof c.name !== 'string' || !c.name.trim() || c.name !== c.name.trim() || c.name.length > 128 || /[\x00-\x1f]/.test(c.name)) prepFail('PREP_SCHEMA_MISMATCH', path, 'Output names must contain 1–128 characters without control characters');
     if (seen.has(c.name.toLowerCase())) prepFail('PREP_SCHEMA_MISMATCH', path, 'Duplicate or case-ambiguous output columns');
     seen.add(c.name.toLowerCase());
   }
@@ -38,23 +44,46 @@ export function prepSource(id: string, sources: readonly PrepSource[], dialect: 
   return source;
 }
 const relation = (s: PrepSource): string => s.schema ? `${q(s.schema)}.${q(s.table)}` : q(s.table);
-export function compilePrep(raw: unknown, sources: readonly PrepSource[], options: { dialect?: PrepPlan['dialect']; through?: string | null; limit?: number; now?: string } = {}): PrepPlan {
+export function compilePrep(raw: unknown, sources: readonly PrepSource[], options: PrepCompileOptions = {}): PrepPlan {
   const pipeline = validatePrepPipeline(raw), dialect = options.dialect ?? 'duckdb', limit = options.limit ?? 100;
   if (!['duckdb', 'postgres'].includes(dialect)) prepFail('UNSUPPORTED_PREP_STEP', '$.dialect', 'Only DuckDB and Postgres preparation is supported');
   if (!Number.isInteger(limit) || limit < 1 || limit > 500) prepFail('PREP_LIMIT_EXCEEDED', '$.limit', 'Preview limit must be 1–500 rows');
   const through = options.through === undefined ? pipeline.steps.at(-1)?.id ?? null : options.through;
   if (through !== null && !pipeline.steps.some(s => s.id === through)) prepFail('PREP_NOT_FOUND', '$.through', 'Step not found');
-  const source = prepSource(pipeline.input, sources, dialect);
-  let columns = prepColumns(source.columns, '$.source.columns');
   // Never shadow a caller-owned physical table with a generated CTE name.
   let prefix = '__prep_'; while (sources.some(s => s.table.toLowerCase().startsWith(prefix))) prefix += '_';
   const ctes: string[] = [], parameters: (string | number)[] = [], stages: PrepPlan['stages'] = [];
   const now = options.now ?? new Date().toISOString();
-  let from = relation(source), selectedFrom = from, selectedColumns = columns;
+  type Stage = { from: string; columns: PrepColumn[] };
+  const datasets = options.datasets ?? [], cache = new Map<string, Stage>();
+  const active = new Set<string>(options.datasetId ? [options.datasetId] : []);
+  let totalSteps = 0, selectedFrom = '', selectedColumns: PrepColumn[] = [];
   const bind = (value: string | number): string => { parameters.push(value); return `$${parameters.length}`; };
   let selectedParameters = 0, selectedCtes = 0;
-  for (const [i, step] of pipeline.steps.entries()) {
-    const path = `$.opensightPrep.steps[${i}].config`;
+  function resolve(ref: PrepJoinInput, previous: Map<string, Stage>, path: string, depth: number): Stage {
+    if (typeof ref === 'string') {
+      const source = prepSource(ref, sources, dialect);
+      return { from: relation(source), columns: prepColumns(source.columns, path) };
+    }
+    if ('step' in ref) return previous.get(ref.step) ?? prepFail('INVALID_PREP_PIPELINE', path, `Join source must reference an earlier step: ${ref.step}`);
+    if (active.has(ref.dataset)) prepFail('INVALID_PREP_PIPELINE', path, `Prepared dataset cycle: ${ref.dataset}`);
+    if (depth >= 16) prepFail('PREP_LIMIT_EXCEEDED', path, 'At most 16 nested prepared datasets');
+    const cached = cache.get(ref.dataset); if (cached) return cached;
+    const matches = datasets.filter(d => d.id === ref.dataset);
+    if (matches.length !== 1) prepFail('PREP_SOURCE_NOT_FOUND', path, `Prepared dataset is missing or ambiguous: ${ref.dataset}`);
+    active.add(ref.dataset);
+    const result = build(validatePrepPipeline(matches[0]!.pipeline, `${path}.dataset`), false, `${path}.dataset`, depth + 1);
+    active.delete(ref.dataset); cache.set(ref.dataset, result); return result;
+  }
+  function build(p: PrepPipeline, root: boolean, basePath: string, depth: number): Stage {
+    totalSteps += p.steps.length;
+    if (totalSteps > 500) prepFail('PREP_LIMIT_EXCEEDED', basePath, 'At most 500 expanded transformation steps');
+    const previous = new Map<string, Stage>();
+    let { from, columns } = resolve(p.input, previous, `${basePath}.input`, depth);
+    const select = () => { selectedFrom = from; selectedColumns = columns; selectedParameters = parameters.length; selectedCtes = ctes.length; };
+    if (root) select();
+    for (const [i, step] of p.steps.entries()) {
+    const path = `${basePath}.steps[${i}].config`;
     const column = (name: string, cols = columns): PrepColumn => cols.find(c => c.name === name) ?? prepFail('PREP_SCHEMA_MISMATCH', path, `Unknown column: ${name}`);
     const measure = (name: string, aggregation: string): PrepColumn => {
       const c = column(name);
@@ -109,14 +138,15 @@ export function compilePrep(raw: unknown, sources: readonly PrepSource[], option
         columns = [...groups, ...measures]; break;
       }
       case 'join': {
-        const c = step.config, right = prepSource(c.source, sources, dialect);
-        const keys = c.keys.map(k => {
-          const leftCol = column(k.left), rightCol = column(k.right, [...right.columns]);
-          if (leftCol.type !== rightCol.type) prepFail('PREP_SCHEMA_MISMATCH', path, 'Join keys must have identical types');
+        const c = step.config, right = resolve(c.source, previous, `${path}.source`, depth);
+        const keys = c.keys.map((k, n) => {
+          const leftCol = column(k.left), rightCol = column(k.right, right.columns);
+          if (leftCol.type !== rightCol.type) prepFail('PREP_SCHEMA_MISMATCH', `${path}.keys[${n}]`, `Join keys must have identical types: ${k.left} (${leftCol.type}) and ${k.right} (${rightCol.type})`);
           return `l.${q(k.left)} = r.${q(k.right)}`;
         });
-        const added = c.columns.map(c => ({ ...column(c.column, [...right.columns]), name: c.name }));
-        sql = `SELECT ${[...columns.map(c => `l.${q(c.name)}`), ...c.columns.map(c => `r.${q(c.column)} AS ${q(c.name)}`)].join(', ')} FROM ${from} l ${c.joinType.toUpperCase()} JOIN ${relation(right)} r ON ${keys.join(' AND ')}`;
+        const outputs = c.columns ?? right.columns.map(col => ({ column: col.name, name: `${c.prefix}${col.name}` }));
+        const added = outputs.map(c => ({ ...column(c.column, right.columns), name: c.name }));
+        sql = `SELECT ${[...columns.map(c => `l.${q(c.name)}`), ...outputs.map(c => `r.${q(c.column)} AS ${q(c.name)}`)].join(', ')} FROM ${from} l ${c.joinType.toUpperCase()} JOIN ${right.from} r ON ${keys.join(' AND ')}`;
         columns = [...columns, ...added]; break;
       }
       case 'append': {
@@ -142,9 +172,13 @@ export function compilePrep(raw: unknown, sources: readonly PrepSource[], option
       default: prepFail('UNSUPPORTED_PREP_STEP', path, 'Transformation compiler is unavailable');
     }
     columns = prepColumns(columns, path);
-    from = q(`${prefix}${i}`); ctes.push(`${from} AS (${sql})`); stages.push({ id: step.id, columns });
-    if (step.id === through) { selectedFrom = from; selectedColumns = columns; selectedParameters = parameters.length; selectedCtes = ctes.length; }
+    from = q(`${prefix}${ctes.length}`); ctes.push(`${from} AS (${sql})`);
+    previous.set(step.id, { from, columns });
+    if (root) { stages.push({ id: step.id, columns }); if (step.id === through) select(); }
+    }
+    return { from, columns };
   }
+  build(pipeline, true, '$.opensightPrep', 0);
   const projection = selectedColumns.map(c => `${c.type === 'DATETIME' ? timestamp(q(c.name), dialect) : q(c.name)} AS ${q(c.name)}`).join(', ');
   const withSql = selectedCtes ? `WITH ${ctes.slice(0, selectedCtes).join(',\n')}\n` : '';
   return { dialect, pipeline, columns: selectedColumns, stages, parameters: parameters.slice(0, selectedParameters), sql: `${withSql}SELECT ${projection} FROM ${selectedFrom} LIMIT ${limit + 1}`, limit, through };
