@@ -7,6 +7,35 @@ test('prep model validates typed steps and rejects unsupported configurations by
   assert.deepEqual(validatePrepPipeline(pipeline), pipeline);
   for (const value of [{ ...pipeline, version: 2 }, { ...pipeline, extra: true }, { ...pipeline, steps: [...pipeline.steps, ...pipeline.steps] }, { ...pipeline, steps: [{ id: 's', kind: 'sql', config: {} }] }, { ...pipeline, steps: [{ id: 's', kind: 'rename', config: { column: 'x', name: 'y', ignored: true } }] }]) assert.throws(() => validatePrepPipeline(value), PrepError);
 });
+test('optional step names accept valid boundaries and leave absent names absent', () => {
+  for (const name of ['A', 'Product Join', '2023 & 2024 Union', 'Calc – Clean Zip', 'x'.repeat(128)]) {
+    const named = { ...pipeline, steps: [{ ...pipeline.steps[0], name }] };
+    assert.deepEqual(validatePrepPipeline(named), named);
+  }
+  const parsed = validatePrepPipeline(pipeline);
+  assert.equal(Object.hasOwn(parsed.steps[0], 'name'), false);
+  assert.equal(Object.hasOwn(pipeline.steps[0], 'name'), false);
+});
+test('step names reject empty, padded, oversized, control-containing and non-string values at the name path', () => {
+  for (const name of ['', ' ', ' Product Join', 'Product Join ', 'x'.repeat(129), 'Bad\0name', 'Bad\nname', 'Bad\tname', 'Bad\x1fname', null, 42, false, {}, undefined]) {
+    assert.throws(() => validatePrepPipeline({ ...pipeline, steps: [{ ...pipeline.steps[0], name }] }),
+      e => e instanceof PrepError && e.code === 'INVALID_PREP_PIPELINE' && e.path === '$.opensightPrep.steps[0].name');
+  }
+});
+test('bundle import/export preserves step names and omitted names together', async () => {
+  const p = { ...pipeline, steps: [
+    { ...pipeline.steps[0], name: 'Clean region' },
+    { id: 'select', kind: 'select', config: { columns: ['new'] } },
+  ] };
+  const resource = { resourceType: 'dataset', dataSetId: 'prepared', name: 'Prepared', physicalTableMap: {}, importMode: 'DIRECT_QUERY', opensightPrep: p };
+  assert.deepEqual(parseBundleResource(resource), resource);
+  const bundle = { members: [{ path: 'dataset/prepared.json', resource }] };
+  const result = await parseQsBundle(await assembleQsBundle(bundle));
+  assert.deepEqual(result, bundle);
+  const steps = result.members[0].resource.opensightPrep.steps;
+  assert.equal(steps[0].name, 'Clean region');
+  assert.equal(Object.hasOwn(steps[1], 'name'), false);
+});
 test('dataset prep survives resource and ZIP import/export without losing ordered configuration', async () => {
   const resource = { resourceType: 'dataset', dataSetId: 'prepared', name: 'Prepared', physicalTableMap: {}, importMode: 'DIRECT_QUERY', opensightPrep: pipeline };
   assert.deepEqual(parseBundleResource(resource), resource);

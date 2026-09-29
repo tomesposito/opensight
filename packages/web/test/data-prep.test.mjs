@@ -5,7 +5,7 @@ import { create } from 'react-test-renderer';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { DataPrep } from '../build/test/DataPrep.js';
 import { PrepStepEditor } from '../build/test/PrepStepEditor.js';
-import { prepBundle, prepCatalog, newPrepStep, prepSchema, prepStepIssue } from '../build/test/data-prep.js';
+import { prepBundle, prepCatalog, newPrepStep, prepSchema, prepStepIssue, prepStepLabel } from '../build/test/data-prep.js';
 import { createApiClient } from '../build/test/api-client.js';
 import { assembleQsBundle, parseQsBundle } from '@opensight/bundle-parser/browser';
 const source = { id: 'upload-source', connectorId: 'file', columns: [{ name: 'region', type: 'STRING' }, { name: 'amount', type: 'DECIMAL' }], available: true };
@@ -22,14 +22,28 @@ test('every catalog transformation has an editable configuration form', () => {
     const step = newPrepStep(c.kind, source.columns, [source], source.id);
     const html = renderToStaticMarkup(createElement(PrepStepEditor, { step, columns: source.columns, sources: [source], apply() {}, cancel() {} }));
     assert.match(html, /Apply step/); assert.match(html, /<select|<input|<textarea/);
+    assert.match(html, /Step name \(optional\)/);
+  }
+});
+test('canvas step labels resolve an author name or the catalog fallback for every kind', () => {
+  for (const { kind, label } of prepCatalog) {
+    const step = newPrepStep(kind, source.columns, [source], source.id);
+    assert.equal(Object.hasOwn(step, 'name'), false);
+    assert.equal(prepStepLabel(step), label);
+    assert.equal(prepStepLabel({ ...step, name: 'Customer cleanup' }), 'Customer cleanup');
+    assert.equal(Object.hasOwn(step, 'name'), false);
   }
 });
 test('prep bundle editing preserves unrelated resources and opaque dataset properties', async () => {
   const original = { members: [{ path: 'dataset/prepared.json', resource: { ...resource, opaque: { keep: true } } }, { path: 'datasource/example.json', resource: { resourceType: 'datasource', dataSourceId: 'example', name: 'Example', type: 'POSTGRESQL' } }] };
-  const next = { ...pipeline, steps: [{ id: 's', kind: 'rename', config: { column: 'region', name: 'area' } }] };
+  const next = { ...pipeline, steps: [
+    { id: 's', name: 'Clean region', kind: 'rename', config: { column: 'region', name: 'area' } },
+    { id: 'select', kind: 'select', config: { columns: ['area'] } },
+  ] };
   const result = await parseQsBundle(await assembleQsBundle(prepBundle(resource, next, original)));
   assert.deepEqual(result.members[1], original.members[1]); assert.deepEqual(result.members[0].resource.opaque, { keep: true });
   assert.deepEqual(result.members[0].resource.opensightPrep, next); assert.deepEqual(original.members[0].resource.opensightPrep, pipeline);
+  assert.equal(Object.hasOwn(result.members[0].resource.opensightPrep.steps[1], 'name'), false);
   assert.equal(prepSchema(next, [source])[0].name, 'area');
 });
 async function mount(t, client) {
@@ -101,6 +115,55 @@ async function field(renderer, label, value) {
   await act(async () => input.props.onChange({ target: { value } }));
 }
 const submitStep = async renderer => act(async () => renderer.root.findByType(PrepStepEditor).findByType('form').props.onSubmit({ preventDefault() {} }));
+test('step editor blocks invalid names and clearing a name omits it without changing configuration', async t => {
+  const old = globalThis.IS_REACT_ACT_ENVIRONMENT; globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+  let renderer;
+  const applied = [], step = { id: 'rename', name: 'Clean region', kind: 'rename', config: { column: 'region', name: 'area' } };
+  await act(async () => { renderer = create(createElement(PrepStepEditor, { step, columns: source.columns, sources: [source], apply: s => applied.push(s), cancel() {} })); });
+  t.after(async () => { await act(async () => renderer.unmount()); globalThis.IS_REACT_ACT_ENVIRONMENT = old; });
+  const input = () => renderer.root.findByProps({ type: 'text' });
+  const applyButton = () => renderer.root.findByProps({ type: 'submit' });
+  assert.equal(input().props.value, 'Clean region'); assert.equal(input().props.maxLength, 128);
+  for (const name of [' ', ' Leading', 'Trailing ', 'x'.repeat(129), 'Bad\0name', 'Bad\nname', 'Bad\tname']) {
+    await field(renderer, 'Step name', name);
+    assert.equal(applyButton().props.disabled, true);
+    assert.match(JSON.stringify(renderer.toJSON()), /INVALID_PREP_PIPELINE.*Step name/);
+    await submitStep(renderer); assert.equal(applied.length, 0);
+  }
+  for (const name of ['A', 'Calc – Clean Zip', 'x'.repeat(128)]) {
+    await field(renderer, 'Step name', name);
+    assert.equal(applyButton().props.disabled, false);
+    await submitStep(renderer);
+    assert.deepEqual(applied.at(-1), { ...step, name });
+  }
+  await field(renderer, 'Step name', '');
+  await submitStep(renderer);
+  assert.deepEqual(applied.at(-1), { id: step.id, kind: step.kind, config: step.config });
+  assert.equal(Object.hasOwn(applied.at(-1), 'name'), false);
+  assert.equal(step.name, 'Clean region');
+});
+test('renamed join renders on the canvas and input connections, and clearing restores the kind label', async t => {
+  const ui = await mount(t);
+  const node = () => ui.renderer.root.findAll(n => n.type === 'button' && n.props.className?.split(' ').includes('prep-node') && !n.props.className.includes('input-node'))[0];
+  await ui.click('＋ Join');
+  const id = ui.renderer.root.findByType(PrepStepEditor).props.step.id;
+  await field(ui.renderer, 'Step name', 'Product Join');
+  await submitStep(ui.renderer);
+  assert.equal(node().findByType('strong').props.children, 'Product Join');
+  assert.match(JSON.stringify(ui.renderer.toJSON()), /1\. Product Join/);
+  assert.match(JSON.stringify(ui.renderer.toJSON()), /Product Join preview/);
+  const rightSource = ui.renderer.root.findAll(n => n.type === 'button' && n.props.className === 'prep-node input-node')[1];
+  await act(async () => rightSource.props.onClick());
+  const editor = ui.renderer.root.findByType(PrepStepEditor);
+  assert.equal(editor.props.step.id, id); assert.equal(editor.props.step.name, 'Product Join');
+  await field(ui.renderer, 'Step name', '');
+  await submitStep(ui.renderer);
+  assert.equal(node().findByType('strong').props.children, 'Join');
+  assert.match(JSON.stringify(ui.renderer.toJSON()), /1\. Join/);
+  await ui.click('Configure step');
+  const unnamed = ui.renderer.root.findByType(PrepStepEditor).props.step;
+  assert.equal(unnamed.id, id); assert.equal(Object.hasOwn(unnamed, 'name'), false);
+});
 test('join editor shows types, blocks mismatched keys and collisions, and renders one node per source instance', async t => {
   const ui = await mount(t);
   await ui.click('＋ Join');
