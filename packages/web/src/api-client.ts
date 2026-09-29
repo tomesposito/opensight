@@ -18,6 +18,22 @@ import type { InteractiveQuery as QueryRequest } from '@opensight/query-engine/b
 export interface QueryResponse {
   columns: { name: string; type: 'string' | 'number' }[];
   rows: Row[];
+  execution?: ExecutionProvenance;
+}
+export interface ExecutionSettings { mode: 'DIRECT_QUERY' | 'BLAZE'; intervalMinutes: number | null }
+export interface ExecutionStatus extends ExecutionSettings {
+  state: 'direct' | 'empty' | 'running' | 'ready' | 'error' | 'evicted' | 'invalidated';
+  lastRefreshedAt: string | null; rowCount: number | null; bytes: number; nextRefreshAt: string | null;
+  error: { code: string; message: string; causeCode?: string } | null;
+}
+export interface ExecutionProvenance {
+  mode: ExecutionSettings['mode']; cached: boolean; refreshedAt: string | null;
+  cachedInputs: { datasetId: string; refreshedAt: string }[];
+}
+export interface PreparedRows {
+  columns: import('@opensight/bundle-parser/prep').PrepColumn[];
+  rows: Record<string, string | number | boolean | null>[];
+  rowCount: number; truncated: boolean; execution: ExecutionProvenance;
 }
 export interface DatasetRefreshStatus {
   lastGood: string | null;
@@ -64,6 +80,10 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
     }
     return value as T;
   }
+  const getDatasetExecution = (id: string) => resource<ExecutionStatus>(`/api/datasets/${encodeURIComponent(id)}/execution`);
+  const setDatasetExecution = (id: string, settings: ExecutionSettings) => resource<ExecutionStatus>(`/api/datasets/${encodeURIComponent(id)}/execution`, 'PUT', settings);
+  const refreshBlaze = (id: string) => resource<ExecutionStatus>(`/api/datasets/${encodeURIComponent(id)}/refresh`, 'POST', {});
+  const getPreparedRows = (id: string) => resource<PreparedRows>(`/api/datasets/${encodeURIComponent(id)}/rows`);
   const listPrepSources = () => resource<PrepSourceSummary[]>('/api/prep-sources');
   const listPrepDatasets = () => resource<{ datasets: BundleDataSet[]; persistence: 'file' | 'ephemeral' }>('/api/prep-datasets');
   const savePrep = (id: string, name: string, pipeline: PrepPipeline) => resource<{ resource: BundleDataSet; persistence: 'file' | 'ephemeral' }>(`/api/datasets/${encodeURIComponent(id)}/prep`, 'PUT', { name, pipeline });
@@ -126,7 +146,7 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
     if (response.status === 422 && typeof body.errorCode === 'string' && typeof body.message === 'string' && typeof body.path === 'string') {
       throw new QueryError(body.message, body.errorCode, body.path);
     }
-    if (!response.ok) throw new ApiError(`Query failed (HTTP ${response.status})${typeof body.Message === 'string' ? `: ${body.Message}` : '.'}`, response.status);
+    if (!response.ok) throw new ApiError(`${typeof body.errorCode === 'string' ? body.errorCode + ': ' : ''}Query failed (HTTP ${response.status})${typeof body.Message === 'string' ? `: ${body.Message}` : '.'}`, response.status);
     if (!Array.isArray(body.columns) || !Array.isArray(body.rows)) throw new ApiError('Invalid query result: expected columns and rows.');
     const columns: QueryResponse['columns'] = body.columns.map((raw, i) => {
       const column = object(raw, `columns[${i}]`);
@@ -147,7 +167,7 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
         return [column.name, value as string | number | null];
       }));
     });
-    return { columns, rows };
+    return { columns, rows, ...(body.execution ? { execution: body.execution as ExecutionProvenance } : {}) };
   }
   async function getDefinition(kind: ResourceKind, id: string, signal?: AbortSignal): Promise<DefinitionResponse> {
     if (!/^[A-Za-z0-9_-]{1,512}$/.test(id)) throw new ApiError('Resource ID must contain 1–512 letters, digits, underscores or hyphens.');
@@ -173,7 +193,7 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
     }
   }
   return {
-    listPrepSources, listPrepDatasets, savePrep, deletePrep, previewPrep, uploadFile, validateConnector, listUsers, saveUser, deleteUser, listInvitations, inviteUser, revokeInvitation, acceptInvitation, getAIStatus, generateO, generateCalculation, getAIConfig, saveAIConfig, saveAIKey, testAIConnection, getSession, queryO, getDatasetRefreshStatus,
+    getDatasetExecution, setDatasetExecution, refreshBlaze, getPreparedRows, listPrepSources, listPrepDatasets, savePrep, deletePrep, previewPrep, uploadFile, validateConnector, listUsers, saveUser, deleteUser, listInvitations, inviteUser, revokeInvitation, acceptInvitation, getAIStatus, generateO, generateCalculation, getAIConfig, saveAIConfig, saveAIKey, testAIConnection, getSession, queryO, getDatasetRefreshStatus,
     queryDataset,
     getAnalysisDefinition: (id: string, signal?: AbortSignal) => getDefinition('analysis', id, signal),
     getDashboardDefinition: (id: string, signal?: AbortSignal) => getDefinition('dashboard', id, signal),
