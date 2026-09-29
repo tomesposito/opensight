@@ -14,7 +14,7 @@ const resource = { resourceType: 'dataset', dataSetId: 'prepared', name: 'Prepar
 test('static prep canvas shows catalog, sample schema and honest hosted-only preview/save', () => {
   const html = renderToStaticMarkup(createElement(DataPrep));
   for (const c of prepCatalog) assert.ok(html.includes(c.label), c.label);
-  assert.match(html, /Ordered transformation graph/); assert.match(html, /Needs hosted API/); assert.match(html, /<button disabled="">Save pipeline/);
+  assert.match(html, /Transformation DAG/); assert.match(html, /Needs hosted API/); assert.match(html, /<button disabled="">Save pipeline/);
   assert.doesNotMatch(html, /rows shown|output rows total|Loading step preview/);
 });
 test('every catalog transformation has an editable configuration form', () => {
@@ -298,4 +298,132 @@ test('join nodes flag stale keys on the canvas', async t => {
   await ui.click('Move earlier');
   const html = JSON.stringify(ui.renderer.toJSON());
   assert.match(html, /unconfigured/); assert.match(html, /Unknown column: region/);
+});
+
+import { PrepGraph } from '../build/test/PrepGraph.js';
+import { removePrepStep } from '../build/test/data-prep.js';
+const graphPipeline = ui => ui.renderer.root.findByType(PrepGraph).props.pipeline;
+const stepNode = (ui, id) => ui.renderer.root.findByProps({ 'data-step-id': id });
+const nodeAction = async (ui, id, label) => act(async () => stepNode(ui, id).findAllByType('button').find(b => b.props.children === label).props.onClick());
+const selectNode = async (ui, id) => act(async () => stepNode(ui, id).findAllByType('button').find(b => b.props.className?.split(' ').includes('prep-node')).props.onClick());
+test('branch creation renders resolved DAG edges, edits its own schema and moves output marker', async t => {
+  const ui = await mount(t);
+  await ui.click('＋ Select columns'); await submitStep(ui.renderer);
+  const clean = graphPipeline(ui).steps[0].id;
+  await ui.click('＋ Aggregate'); await submitStep(ui.renderer);
+  const summary = graphPipeline(ui).steps[1].id;
+  await nodeAction(ui, clean, 'Add branch');
+  const detail = graphPipeline(ui).steps[2];
+  assert.equal(detail.from, clean);
+  assert.deepEqual(ui.renderer.root.findByType(PrepStepEditor).props.columns.map(c => c.name), ['region', 'category', 'revenue', 'order_date']);
+  await field(ui.renderer, 'Step name', 'Detail branch'); await submitStep(ui.renderer);
+  for (const target of [summary, detail.id]) assert.equal(ui.renderer.root.findByProps({ 'data-to': target }).props['data-from'], clean);
+  assert.equal(stepNode(ui, detail.id).findByProps({ className: 'prep-output-marker' }).props.children, 'Output');
+  await nodeAction(ui, summary, 'Set as output');
+  assert.equal(graphPipeline(ui).output, summary);
+  assert.equal(stepNode(ui, summary).findByProps({ className: 'prep-output-marker' }).props.children, 'Output');
+  assert.equal(stepNode(ui, detail.id).findAllByProps({ className: 'prep-output-marker' }).length, 0);
+  await selectNode(ui, summary); await ui.click('Remove step');
+  assert.equal(graphPipeline(ui).output, detail.id);
+  assert.match(JSON.stringify(ui.renderer.toJSON()), /Needs hosted API/);
+  assert.equal(ui.button('Save pipeline').props.disabled, true);
+});
+test('deleting or moving referenced steps surfaces a named error and allows explicit left-input repair', async t => {
+  const ui = await mount(t);
+  await ui.click('＋ Select columns'); await submitStep(ui.renderer);
+  const clean = graphPipeline(ui).steps[0].id;
+  await ui.click('＋ Select columns'); await submitStep(ui.renderer);
+  const other = graphPipeline(ui).steps[1].id;
+  await nodeAction(ui, clean, 'Add branch'); await submitStep(ui.renderer);
+  const branch = graphPipeline(ui).steps[2].id;
+  await selectNode(ui, clean); await ui.click('Move later');
+  await ui.click('Move later');
+  assert.match(JSON.stringify(ui.renderer.toJSON()), /INVALID_PREP_PIPELINE.*earlier step/);
+  await ui.click('Move earlier'); await ui.click('Move earlier');
+  await ui.click('Remove step');
+  assert.equal(graphPipeline(ui).steps[1].from, clean);
+  assert.match(JSON.stringify(ui.renderer.toJSON()), /INVALID_PREP_PIPELINE.*earlier step/);
+  assert.ok(ui.renderer.root.findByProps({ className: 'prep-detached' }));
+  await selectNode(ui, branch); await ui.click('Configure step');
+  assert.equal(ui.renderer.root.findByProps({ type: 'submit' }).props.disabled, true);
+  await field(ui.renderer, 'Left input', other); await submitStep(ui.renderer);
+  assert.equal(graphPipeline(ui).steps[1].from, other);
+  assert.doesNotMatch(JSON.stringify(ui.renderer.toJSON()), /INVALID_PREP_PIPELINE/);
+  const last = removePrepStep({ version: 1, input: 'source', output: 'only', steps: [{ id: 'only', kind: 'select', config: { columns: ['id'] } }] }, 'only');
+  assert.equal(Object.hasOwn(last, 'output'), false);
+});
+test('canvas rejects a sixth consumer visibly without adding or saving an invalid branch', async t => {
+  const ui = await mount(t);
+  await ui.click('＋ Select columns'); await submitStep(ui.renderer);
+  const base = graphPipeline(ui).steps[0].id;
+  for (let i = 0; i < 5; i++) { await nodeAction(ui, base, 'Add branch'); await submitStep(ui.renderer); }
+  assert.equal(graphPipeline(ui).steps.length, 6);
+  await nodeAction(ui, base, 'Add branch');
+  assert.equal(graphPipeline(ui).steps.length, 6);
+  assert.match(JSON.stringify(ui.renderer.toJSON()), /PREP_LIMIT_EXCEEDED/);
+});
+test('hosted branch selections preview each stage independently and output changes persist on save', async t => {
+  const p = { ...pipeline, output: 'detail', steps: [
+    { id: 'clean', kind: 'select', config: { columns: ['region', 'amount'] } },
+    { id: 'summary', kind: 'aggregate', config: { groupBy: [], measures: [{ column: 'amount', name: 'total', aggregation: 'SUM' }] } },
+    { id: 'detail', from: 'clean', kind: 'select', config: { columns: ['region'] } },
+  ] };
+  const calls = [], saves = [];
+  const client = { async listPrepSources() { return [source]; }, async listPrepDatasets() { return { datasets: [{ ...resource, opensightPrep: p }], persistence: 'file' }; }, async previewPrep(id, pipeline, through) {
+    calls.push(through); return { columns: [], rows: [], returnedRows: 0, totalRows: 0, truncated: false, rowCountLowerBound: 0, limit: 100, dialect: 'duckdb', through };
+  }, async savePrep(id, name, pipeline) { saves.push(pipeline); return { persistence: 'file' }; } };
+  const ui = await mount(t, client); await field(ui.renderer, 'Saved datasets', 'prepared');
+  for (const id of ['summary', 'detail', 'clean']) {
+    await selectNode(ui, id); await act(async () => new Promise(resolve => setTimeout(resolve, 340)));
+    assert.equal(calls.at(-1), id);
+    const headers = ui.renderer.root.findAllByType('th').map(n => n.props.children[0]);
+    assert.deepEqual(headers, id === 'summary' ? ['total'] : id === 'detail' ? ['region'] : ['region', 'amount']);
+  }
+  await nodeAction(ui, 'summary', 'Set as output'); await ui.click('Save pipeline');
+  assert.equal(saves[0].output, 'summary'); assert.equal(saves[0].steps[2].from, 'clean');
+  await selectNode(ui, 'clean'); await ui.click('Remove step');
+  const count = calls.length;
+  await act(async () => new Promise(resolve => setTimeout(resolve, 340)));
+  assert.equal(calls.length, count); assert.equal(ui.button('Save pipeline').props.disabled, true);
+  assert.match(JSON.stringify(ui.renderer.toJSON()), /INVALID_PREP_PIPELINE/);
+});
+
+test('editor export preserves branch/output metadata and imports cannot confer source access', async () => {
+  const p = { ...pipeline, output: 'summary', steps: [
+    { id: 'clean', kind: 'select', config: { columns: ['region', 'amount'] } },
+    { id: 'summary', kind: 'aggregate', config: { groupBy: [], measures: [{ column: 'amount', name: 'total', aggregation: 'SUM' }] } },
+    { id: 'detail', from: 'clean', kind: 'select', config: { columns: ['region'] } },
+  ] };
+  const original = { members: [{ path: 'dataset/prepared.json', resource: { ...resource, opaque: { keep: true } } }] };
+  const imported = await parseQsBundle(await assembleQsBundle(prepBundle(resource, p, original)));
+  const parsed = imported.members[0].resource.opensightPrep;
+  assert.deepEqual(parsed, p); assert.deepEqual(imported.members[0].resource.opaque, { keep: true });
+  assert.throws(() => prepSchema(parsed, []), e => e.code === 'PREP_SOURCE_NOT_FOUND');
+  assert.throws(() => prepSchema(parsed, [{ ...source, available: false }]), e => e.code === 'PREP_SECURITY_REJECTED');
+  assert.deepEqual(prepSchema(parsed, [source]).map(c => c.name), ['total']);
+});
+
+test('multiple dangling branches can be repaired in order while the entire draft stays fail closed', async t => {
+  const ui = await mount(t);
+  await ui.click('＋ Select columns'); await submitStep(ui.renderer);
+  const base = graphPipeline(ui).steps[0].id;
+  await nodeAction(ui, base, 'Add branch'); await submitStep(ui.renderer);
+  const first = graphPipeline(ui).steps[1].id;
+  await nodeAction(ui, base, 'Add branch'); await submitStep(ui.renderer);
+  const second = graphPipeline(ui).steps[2].id;
+  await selectNode(ui, base); await ui.click('Remove step');
+  assert.match(JSON.stringify(ui.renderer.toJSON()), /INVALID_PREP_PIPELINE/);
+  await selectNode(ui, first); await ui.click('Configure step');
+  await field(ui.renderer, 'Left input', '');
+  assert.equal(ui.renderer.root.findByProps({ type: 'submit' }).props.disabled, false);
+  assert.equal(ui.renderer.root.findByType(PrepStepEditor).findAllByProps({ type: 'checkbox' }).length, 4);
+  await submitStep(ui.renderer);
+  assert.equal(Object.hasOwn(graphPipeline(ui).steps[0], 'from'), false);
+  assert.equal(graphPipeline(ui).steps[1].from, base);
+  assert.match(JSON.stringify(ui.renderer.toJSON()), /INVALID_PREP_PIPELINE/);
+  assert.equal(ui.button('Save pipeline').props.disabled, true);
+  await selectNode(ui, second); await ui.click('Configure step');
+  await field(ui.renderer, 'Left input', first); await submitStep(ui.renderer);
+  assert.doesNotMatch(JSON.stringify(ui.renderer.toJSON()), /INVALID_PREP_PIPELINE/);
+  assert.equal(graphPipeline(ui).steps[1].from, first);
 });

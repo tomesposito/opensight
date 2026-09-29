@@ -180,3 +180,26 @@ test('dependency changes and legacy persisted pipelines cannot bypass mandatory 
   }
   assert.ok(JSON.parse(await readFile(prepStorePath, 'utf8')).datasets.every(e => e.execution.mode === 'BLAZE'));
 });
+
+test('branch output controls saved rows and Blaze; non-output paths remain bounded draft previews', async t => {
+  const call = await api(t), base = await prepare(call), path = '/api/datasets/branches';
+  const pipeline = { ...base, output: 'detail', steps: [
+    { id: 'clean', kind: 'select', config: { columns: ['id', 'amount'] } },
+    { id: 'detail', kind: 'filter', config: { filters: [{ columnName: 'id', value: 1 }] } },
+    { id: 'summary', from: 'clean', kind: 'aggregate', config: { groupBy: [], measures: [{ column: 'amount', name: 'amount', aggregation: 'SUM' }] } },
+  ] };
+  assert.equal((await call(`${path}/prep`, 'PUT', { name: 'Branches', pipeline })).status, 201);
+  assert.equal((await call(`${path}/execution`)).body.mode, 'DIRECT_QUERY');
+  assert.deepEqual((await call(`${path}/rows`)).body.rows, [{ id: 1, amount: 2 }]);
+  const preview = await call(`${path}/prep/preview`, 'POST', { pipeline, through: 'summary', limit: 1 });
+  assert.equal(preview.status, 200, JSON.stringify(preview.body)); assert.deepEqual(preview.body.rows, [{ amount: 5 }]); assert.equal(preview.body.limit, 1);
+  assert.deepEqual((await call(`${path}/prep/preview`, 'POST', { pipeline })).body.rows, [{ id: 1, amount: 2 }]);
+  assert.deepEqual((await call(`${path}/prep/preview`, 'POST', { pipeline, through: null })).body.rows, [{ id: 1, amount: 2 }, { id: 2, amount: 3 }]);
+  const changed = { ...pipeline, output: 'summary' };
+  assert.equal((await call(`${path}/prep`, 'PUT', { name: 'Branches', pipeline: changed })).status, 200);
+  assert.match((await call(`${path}/execution`)).body.materializationReason, /aggregate/);
+  assert.equal((await call(`${path}/rows`)).body.errorCode, 'BLAZE_INVALIDATED');
+  assert.equal((await call(`${path}/refresh`, 'POST', {})).status, 200);
+  assert.deepEqual((await call(`${path}/rows`)).body.rows, [{ amount: 5 }]);
+  assert.equal((await call(`${path}/execution`, 'PUT', { mode: 'DIRECT_QUERY', intervalMinutes: null })).body.errorCode, 'BLAZE_MATERIALIZATION_REQUIRED');
+});

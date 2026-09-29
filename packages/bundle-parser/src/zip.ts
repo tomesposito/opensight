@@ -1,3 +1,4 @@
+import { PrepError } from './prep.js';
 import { crc32 } from 'node:zlib';
 import { fromBufferPromise } from 'yauzl';
 import { ValidationError, fail } from './validation.js';
@@ -74,7 +75,7 @@ export async function readZipArchive(
       zip.close();
     }
   } catch (error) {
-    if (error instanceof ValidationError) throw error;
+    if (error instanceof ValidationError || error instanceof PrepError) throw error;
     throw new ValidationError(path, `invalid ZIP: ${error instanceof Error ? error.message : String(error)}`);
   }
 }

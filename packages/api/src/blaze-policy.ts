@@ -13,7 +13,19 @@ export function materializationReason(id: string, datasets: readonly Dataset[]):
     visited.set(key, result); // Invalid/cyclic graphs are rejected by the existing graph validator.
     const definition = byId.get(key);
     if (!definition) return result;
-    const advanced = definition.pipeline.steps.find(s => ['pivot', 'unpivot', 'append', 'aggregate'].includes(s.kind));
+    const { pipeline } = definition;
+    const outputSteps = new Set<string>();
+    const visit = (id: string | undefined): void => {
+      if (id === undefined || outputSteps.has(id)) return;
+      outputSteps.add(id);
+      const index = pipeline.steps.findIndex(s => s.id === id), step = pipeline.steps[index];
+      if (!step) return;
+      visit(step.from ?? pipeline.steps[index - 1]?.id);
+      if (step.kind === 'join' && typeof step.config.source === 'object' && 'step' in step.config.source) visit(step.config.source.step);
+    };
+    visit(pipeline.output ?? pipeline.steps.at(-1)?.id);
+    const path = pipeline.steps.filter(s => outputSteps.has(s.id));
+    const advanced = path.find(s => ['pivot', 'unpivot', 'append', 'aggregate'].includes(s.kind));
     if (advanced) result.reason = `The ${advanced.kind} preparation step requires Blaze materialization.`;
     const input = (ref: PrepInput) => {
       if (typeof ref === 'string') { result.sources.add(`source:${ref}`); return; }
@@ -23,7 +35,7 @@ export function materializationReason(id: string, datasets: readonly Dataset[]):
       else for (const source of child.sources) result.sources.add(source);
     };
     input(definition.pipeline.input);
-    for (const step of definition.pipeline.steps) {
+    for (const step of path) {
       if (step.kind === 'append') input(step.config.source);
       if (step.kind === 'join' && !(typeof step.config.source === 'object' && 'step' in step.config.source)) input(step.config.source);
     }

@@ -155,3 +155,28 @@ test('join API surfaces key mismatch and output collisions and rejects cross-con
   collision.steps[0].config.columns = [{ column: 'label', name: 'LABEL' }];
   assert.equal((await put('collision', collision)).body.errorCode, 'PREP_SCHEMA_MISMATCH');
 });
+
+test('branch validation errors fail closed on save and every preview, preserving the saved pipeline', async t => {
+  const call = await api(t), input = (await call('/api/uploads', 'POST', upload)).body.id;
+  const keep = id => ({ id, kind: 'select', config: { columns: ['region', 'amount'] } });
+  const pipeline = { version: 1, input, output: 'a', steps: [keep('a'), keep('b'), { ...keep('c'), from: 'a' }] };
+  const path = '/api/datasets/branches/prep';
+  assert.equal((await call(path, 'PUT', { name: 'Original', pipeline })).status, 201);
+  const bad = [
+    { ...pipeline, output: 'gone' },
+    { ...pipeline, steps: [{ ...keep('a'), from: 'a' }] },
+    { ...pipeline, steps: [keep('a'), { ...keep('b'), from: 'c' }, keep('c')] },
+    { ...pipeline, steps: [keep('a'), { ...keep('b'), from: 'missing' }] },
+    { ...pipeline, steps: [keep('a'), ...Array.from({ length: 6 }, (_, i) => ({ ...keep(`b${i}`), from: 'a' }))] },
+  ];
+  for (const [i, p] of bad.entries()) {
+    const code = i === bad.length - 1 ? 'PREP_LIMIT_EXCEEDED' : 'INVALID_PREP_PIPELINE';
+    assert.equal((await call(path, 'PUT', { name: 'Invalid', pipeline: p })).body.errorCode, code);
+    assert.equal((await call(`${path}/preview`, 'POST', { pipeline: p, through: null })).body.errorCode, code);
+    assert.deepEqual((await call(path)).body.resource.opensightPrep, pipeline);
+  }
+  for (const user of ['other-author', 'tenant-author']) {
+    assert.equal((await call(path, 'PUT', { name: 'Imported', pipeline }, user)).body.errorCode, 'PREP_SOURCE_NOT_FOUND');
+    assert.equal((await call(`${path}/preview`, 'POST', { pipeline, through: 'c' }, user)).body.errorCode, 'PREP_SOURCE_NOT_FOUND');
+  }
+});

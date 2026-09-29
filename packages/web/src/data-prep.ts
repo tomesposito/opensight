@@ -111,3 +111,23 @@ export function prepBundle(resource: BundleDataSet, pipeline: PrepPipeline, orig
   member.resource.opensightPrep = validatePrepPipeline(pipeline);
   return bundle;
 }
+
+/** Prefixes are for configuring/repairing a step, not selecting saved output. */
+export function prepPrefix(pipeline: PrepPipeline, length: number): PrepPipeline {
+  const { output: _output, ...rest } = pipeline;
+  return { ...rest, steps: pipeline.steps.slice(0, length) };
+}
+export function prepLeftInput(pipeline: PrepPipeline, step: PrepStep): string | null {
+  const index = pipeline.steps.findIndex(s => s.id === step.id);
+  return step.from ?? pipeline.steps[(index < 0 ? pipeline.steps.length : index) - 1]?.id ?? null;
+}
+export function removePrepStep(pipeline: PrepPipeline, id: string): PrepPipeline {
+  const next = { ...pipeline, steps: pipeline.steps.filter(s => s.id !== id) };
+  if (pipeline.output === id) {
+    const last = next.steps.at(-1)?.id;
+    if (last === undefined) delete next.output;
+    else next.output = last;
+  }
+  // Keep dangling from/join references so the author must explicitly repair them.
+  return next;
+}

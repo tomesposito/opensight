@@ -51,7 +51,7 @@ export function compilePrep(raw: unknown, sources: readonly PrepSource[], option
   if (!['duckdb', 'postgres'].includes(dialect)) prepFail('UNSUPPORTED_PREP_STEP', '$.dialect', 'Only DuckDB and Postgres preparation is supported');
   if (!Number.isInteger(limit) || limit < 1 || limit > 500) prepFail('PREP_LIMIT_EXCEEDED', '$.limit', 'Preview limit must be 1–500 rows');
   if (options.executionLimit !== undefined && (!Number.isSafeInteger(options.executionLimit) || options.executionLimit < 1)) prepFail('PREP_LIMIT_EXCEEDED', '$.executionLimit', 'Invalid execution limit');
-  const through = options.through === undefined ? pipeline.steps.at(-1)?.id ?? null : options.through;
+  const through = options.through === undefined ? pipeline.output ?? pipeline.steps.at(-1)?.id ?? null : options.through;
   if (through !== null && !pipeline.steps.some(s => s.id === through)) prepFail('PREP_NOT_FOUND', '$.through', 'Step not found');
   // Never shadow a caller-owned physical table with a generated CTE name.
   let prefix = '__prep_'; while (sources.some(s => s.table.toLowerCase().startsWith(prefix))) prefix += '_';
@@ -93,9 +93,11 @@ export function compilePrep(raw: unknown, sources: readonly PrepSource[], option
     if (totalSteps > 500) prepFail('PREP_LIMIT_EXCEEDED', basePath, 'At most 500 expanded transformation steps');
     const previous = new Map<string, Stage>();
     let { from, columns, nesting } = resolve(p.input, previous, `${basePath}.input`, depth);
+    const inputStage = { from, columns, nesting };
     const select = () => { selectedFrom = from; selectedColumns = columns; selectedParameters = parameters.length; selectedCtes = ctes.length; };
     if (root) select();
     for (const [i, step] of p.steps.entries()) {
+      if (step.from !== undefined) ({ from, columns, nesting } = previous.get(step.from)!);
       const path = `${basePath}.steps[${i}].config`;
       const column = (name: string, cols = columns): PrepColumn => cols.find(c => c.name === name) ?? prepFail('PREP_SCHEMA_MISMATCH', path, `Unknown column: ${name}`);
       const measure = (name: string, aggregation: string): PrepColumn => {
@@ -190,7 +192,11 @@ export function compilePrep(raw: unknown, sources: readonly PrepSource[], option
       previous.set(step.id, { from, columns, nesting });
       if (root) { stages.push({ id: step.id, columns }); if (step.id === through) select(); }
     }
-    return { from, columns, nesting };
+    const output = p.output ?? p.steps.at(-1)?.id;
+    // Prepared dataset references consume the selected output, even when other
+    // branches were compiled afterwards for validation and stage metadata.
+    const result = output === undefined ? inputStage : previous.get(output)!;
+    return { ...result, nesting: Math.max(inputStage.nesting, ...[...previous.values()].map(s => s.nesting)) };
   }
   build(pipeline, true, '$.opensightPrep', 0);
   const projection = selectedColumns.map(c => `${c.type === 'DATETIME' ? timestamp(q(c.name), dialect) : q(c.name)} AS ${q(c.name)}`).join(', ');

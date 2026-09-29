@@ -82,3 +82,62 @@ test('step references do not consume the import step budget', () => {
   validatePrepPipeline(p); // 17 import steps total: allowed
   assert.throws(() => validatePrepPipeline({ version: 1, input: 'left', steps: Array.from({ length: 32 }, (_, i) => join(i)) }), e => e.code === 'PREP_LIMIT_EXCEEDED');
 });
+
+test('branch references and output are optional, preserved and strictly topological', () => {
+  const select = id => ({ id, kind: 'select', config: { columns: ['new'] } });
+  const p = { ...pipeline, output: 'rename', steps: [...pipeline.steps, select('a'), { ...select('b'), from: 'rename' }, { ...select('c'), from: 'b' }] };
+  assert.deepEqual(validatePrepPipeline(p), p);
+  assert.equal(JSON.stringify(validatePrepPipeline(pipeline)), JSON.stringify(pipeline));
+  for (const from of ['unknown', 'b', 'c', '', null, 3, undefined]) {
+    const bad = structuredClone(p); bad.steps[2].from = from;
+    assert.throws(() => validatePrepPipeline(bad), e => e.code === 'INVALID_PREP_PIPELINE' && e.path.endsWith('.steps[2].from'));
+  }
+  assert.throws(() => validatePrepPipeline({ ...p, steps: [{ ...p.steps[0], from: 'rename' }] }), e => e.code === 'INVALID_PREP_PIPELINE');
+  for (const output of ['unknown', '', null, 3, undefined]) assert.throws(() => validatePrepPipeline({ ...p, output }), e => e.code === 'INVALID_PREP_PIPELINE' && e.path.endsWith('.output'));
+  assert.throws(() => validatePrepPipeline({ version: 1, input: 'source', steps: [], output: 'rename' }), e => e.code === 'INVALID_PREP_PIPELINE');
+});
+test('five distinct downstream consumers include implicit left inputs and join right references', () => {
+  const select = id => ({ id, kind: 'select', config: { columns: ['new'] } });
+  const p = { ...pipeline, steps: [...pipeline.steps, select('implicit'), ...Array.from({ length: 4 }, (_, i) => ({ ...select(`b${i}`), from: 'rename' }))] };
+  validatePrepPipeline(p);
+  assert.throws(() => validatePrepPipeline({ ...p, steps: [...p.steps, { ...select('sixth'), from: 'rename' }] }), e => e.code === 'PREP_LIMIT_EXCEEDED');
+  const join = { id: 'join', kind: 'join', config: { source: { step: 'rename' }, joinType: 'left', keys: [{ left: 'new', right: 'new' }], prefix: 'r_' } };
+  assert.throws(() => validatePrepPipeline({ ...p, steps: [...p.steps, join] }), e => e.code === 'PREP_LIMIT_EXCEEDED');
+  // A step using the same upstream result on both sides is still one consumer.
+  validatePrepPipeline({ ...p, steps: [...p.steps.slice(0, -1), { ...join, from: 'rename' }] });
+});
+test('from reuse does not consume the 32-source import budget', () => {
+  const steps = Array.from({ length: 31 }, (_, i) => ({ id: `a${i}`, kind: 'append', config: { source: 'source' } }));
+  steps.push(...Array.from({ length: 19 }, (_, i) => ({ id: `b${i}`, from: `a${i}`, kind: 'select', config: { columns: ['new'] } })));
+  validatePrepPipeline({ version: 1, input: 'source', steps });
+});
+
+test('branch metadata round-trips through JSON and .qs without altering unrelated bundle content', async () => {
+  const { parseBundleJson } = await import('../dist/browser.js');
+  const p = { version: 1, input: 'unresolved-source', output: 'summary', steps: [
+    { id: 'clean', name: 'Clean input', kind: 'select', config: { columns: ['region', 'amount'] } },
+    { id: 'summary', kind: 'aggregate', config: { groupBy: ['region'], measures: [{ column: 'amount', name: 'total', aggregation: 'SUM' }] } },
+    { id: 'detail', from: 'clean', kind: 'select', config: { columns: ['region'] } },
+  ] };
+  const resource = { resourceType: 'dataset', dataSetId: 'branches', name: 'Branches', physicalTableMap: {}, importMode: 'DIRECT_QUERY', opensightPrep: p, opaque: { keep: true } };
+  const bundle = { members: [{ path: 'dataset/branches.json', resource }] };
+  const parsed = parseBundleJson(new TextEncoder().encode(JSON.stringify(resource)));
+  assert.deepEqual(parsed.members[0].resource, resource);
+  assert.deepEqual(await parseQsBundle(await assembleQsBundle(bundle)), bundle);
+  assert.equal(parsed.members[0].resource.opensightPrep.input, 'unresolved-source');
+  assert.equal(Object.hasOwn(parsed.members[0].resource.opensightPrep.steps[1], 'from'), false);
+});
+test('JSON and .qs imports reject invalid branch references and output before granting any binding', async () => {
+  const { parseBundleJson, parseQsBundle: parseBrowser } = await import('../dist/browser.js');
+  const { zipSync } = await import('fflate');
+  for (const p of [
+    { ...pipeline, output: 'missing' },
+    { ...pipeline, steps: [{ ...pipeline.steps[0], from: 'rename' }] },
+    { ...pipeline, steps: [...pipeline.steps, { id: 'later', from: 'missing', kind: 'select', config: { columns: ['new'] } }] },
+  ]) {
+    const resource = { resourceType: 'dataset', dataSetId: 'invalid', name: 'Invalid', physicalTableMap: {}, opensightPrep: p };
+    const bytes = new TextEncoder().encode(JSON.stringify(resource));
+    assert.throws(() => parseBundleJson(bytes), e => /INVALID_PREP_PIPELINE/.test(e.code));
+    for (const parse of [parseQsBundle, parseBrowser]) await assert.rejects(parse(zipSync({ 'dataset/invalid.json': bytes })), e => e.code === 'INVALID_PREP_PIPELINE');
+  }
+});

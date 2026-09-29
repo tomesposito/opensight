@@ -1,11 +1,11 @@
-# Dataset preparation (issues #9, #11, #14, and #17)
+# Dataset preparation (issues #9, #11, #14, #17, and #18)
 
-The Data preparation view builds an ordered transformation pipeline over sources
+The Data preparation view builds a branching transformation pipeline over sources
 from the connector registry. Open it from Data sources → Prepare data, the mode
 picker, or the analysis editor's Data → Prepare data menu. The left panel contains
-configuration and the transformation catalog; the graph shows step order and
+configuration and the transformation catalog; the graph shows resolved left-input paths and
 one node per connected or prepared input, with labeled connections to the steps
-that use it. Repeated joins share a source node; an earlier-step reference points
+that use it. Repeated joins show distinct source instances; an earlier-step reference points
 back to that result. Select a node to preview that stage. Steps
 can be edited, reordered, or removed. Downstream schema errors remain visible.
 
@@ -38,7 +38,7 @@ A dataset resource carries `opensightPrep`:
 Primary `input` and a join's `config.source` may also be
 `{"dataset":"saved-dataset-id"}`. Joins additionally accept `{"step":"earlier-step-id"}`
 to reuse an earlier result in the same pipeline, including a joined result. Their
-left side is always the preceding stage. Moving/removing a referenced step leaves
+left side defaults to the preceding stage and can use an explicit `from` reference. Moving/removing a referenced step leaves
 an explicit validation error. Existing string references and version-1 bundles
 remain valid. Append configuration is unchanged.
 
@@ -73,6 +73,50 @@ leading/trailing whitespace. Empty or invalid names in metadata are rejected wit
 Names are preserved through bundle export/import, and unnamed steps remain
 unnamed without an empty-string property being added.
 
+### Branching and output selection
+
+A step's optional top-level `from` names a strictly earlier step in `steps[]`.
+Without it, the step reads its preceding array element; the first step reads the
+pipeline input and cannot carry `from`. Branches reuse the upstream result;
+they do not import another source. Array order must remain topological for both
+`from` and join right-side `{step: id}` references. Unknown, self, later, or
+first-step references fail with `INVALID_PREP_PIPELINE`.
+
+Each canvas step offers **Add branch**, which appends a Select columns step
+keeping that stage's columns and sets its `from` to the chosen step. Configure
+that step's **Left input** to select another earlier result or restore the default
+predecessor. The transformation catalog continues to append after the last array
+step. Left-input connectors form the branching graph; secondary join/append
+sources retain their labels. Branches that do not feed the selected output are
+allowed and remain independently selectable for draft previews.
+
+Optional pipeline-level `output` names the saved output step. If omitted, the
+last array step is the output, including after adding a branch. **Set as output**
+pins the selection and moves the explicit **Output** marker. Deleting that step
+resets `output` to the new last step, or removes it when no steps remain. Deleting
+or moving a referenced step keeps dangling `from` and join references visible;
+save and preview fail closed until those references are repaired. Invalid output
+IDs fail with `INVALID_PREP_PIPELINE`.
+
+```json
+{
+  "version": 1,
+  "input": "connected-source-id",
+  "output": "summary",
+  "steps": [
+    { "id": "clean", "kind": "select", "config": { "columns": ["region", "revenue"] } },
+    { "id": "summary", "kind": "aggregate", "config": { "groupBy": ["region"], "measures": [{ "column": "revenue", "name": "total", "aggregation": "SUM" }] } },
+    { "id": "detail", "from": "clean", "kind": "select", "config": { "columns": ["region", "revenue"] } }
+  ]
+}
+```
+
+The compiler validates and compiles every stage, reusing one CTE per step.
+Explicit preview `through` wins over `output`; `through: null` previews the input.
+Otherwise execution uses `output`, falling back to the last step. Prepared
+references also consume the selected output. JSON and `.qs` preserve `from` and
+`output`, validate on import, and confer no source access.
+
 ## Workflow limits
 
 Limits are chosen deliberately: QuickSight parity where it is cheap, tighter
@@ -88,9 +132,9 @@ with named errors (`INVALID_PREP_PIPELINE`, `UNSUPPORTED_PREP_STEP`,
 | Name length | 128 characters | — | Names must be non-blank, trimmed, and free of control characters |
 | Calculated expression length | 10,000 characters | — | Expressions must be non-blank |
 | Dataset-as-source nesting depth | 16 levels | 10 levels | Cycle-checked at save/refresh; unavailable or cyclic references fail with named errors |
-| Divergent paths from a single step | supported via step references | 5 (SPICE only) | Step references point at earlier steps in the same pipeline |
+| Direct downstream consumers per step | 5 | 5 divergent paths | Resolved left inputs plus join right-side step references; a step using the same result on both sides counts once. Exceeding the cap raises `PREP_LIMIT_EXCEEDED` |
 
-The bundle parser enforces step, import, list, name, and expression limits at
+The bundle parser enforces step, fan-out, import, list, name, and expression limits at
 import time; the API enforces dataset-reference nesting depth and cycle
 detection when a pipeline is saved or executed.
 
@@ -98,7 +142,7 @@ detection when a pipeline is saved or executed.
 
 All steps compile to ordered SQL relations for DuckDB and Postgres. Every stage
 is schema-validated, including stages after an explicitly requested preview.
-References resolve against the preceding stage; calculated columns can use earlier
+Column references resolve against each step’s selected left input; calculated columns can use earlier
 calculated columns. Filters use the same predicate compiler as Phase 2b. Scalar
 expressions use the Phase 2c parser, type system, and per-dialect function library.
 
@@ -146,11 +190,14 @@ or installs extensions. No new external dependency was added.
 ## Execution and previews
 
 **Materialization contract (#15, implemented by #12): cross-source joins and
-advanced prep steps — pivot, unpivot, append, aggregate — MUST materialize through
-Blaze.** Single-source simple pipelines may keep compiling to live SQL. The rule
+advanced prep steps — pivot, unpivot, append, aggregate — on the output path MUST
+materialize through Blaze.** Single-source simple pipelines may keep compiling to live SQL. The rule
 includes saved dependencies, so wrapping advanced preparation in another dataset
 cannot bypass it. Distinct connected sources or cached dataset inputs count as
-different sources; reusing one source or an earlier step alone does not.
+different sources; reusing one source or an earlier step alone does not. The output
+path includes left-input ancestry and join right-step ancestry, recursively through
+prepared dataset outputs. Advanced steps on other branches remain bounded draft
+previews and do not publish saved output or force its materialization.
 
 Saving a required pipeline, changing its dependencies, or loading older metadata
 selects Blaze without executing a refresh. Query/output routes require a ready
@@ -250,8 +297,10 @@ Root `npm test` includes malformed model/bundle tests, actual DuckDB/Postgres
 (PGlite) execution comparisons for every step kind, upload executor checks,
 authenticated HTTP CRUD/persistence/security tests, bundle preservation, and UI
 interaction/stale-response tests. Live Postgres remains the pre-existing optional
-integration suite. See `issue-17-gap-notes.md` for current run counts and step
-naming checks, `issue-12-gap-notes.md` for Blaze verification, and
+integration suite, including actual DuckDB-versus-live-Postgres branching
+comparisons when `DATABASE_URL` is set (run with `TZ=UTC`). See
+`issue-18-gap-notes.md` for branching verification and current counts,
+`issue-17-gap-notes.md` for step naming checks, `issue-12-gap-notes.md` for Blaze verification, and
 `issue-9-gap-notes.md` for the original prep build verification.
 
 ### Blaze execution (issue #12)

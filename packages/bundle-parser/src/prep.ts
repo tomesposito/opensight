@@ -8,7 +8,7 @@ export interface PrepMeasure { column: string; name: string; aggregation: PrepAg
 export type PrepInput = string | { dataset: string };
 export type PrepJoinInput = PrepInput | { step: string };
 export type PrepJoinOutputs = { columns: { column: string; name: string }[]; prefix?: never } | { prefix: string; columns?: never };
-export type PrepStep = { id: string; name?: string } & (
+export type PrepStep = { id: string; name?: string; from?: string } & (
   { kind: 'changeType'; config: { column: string; type: PrepType } } |
   { kind: 'rename'; config: { column: string; name: string } } |
   { kind: 'select'; config: { columns: string[] } } |
@@ -20,7 +20,7 @@ export type PrepStep = { id: string; name?: string } & (
   { kind: 'pivot'; config: { groupBy: string[]; column: string; value: string; aggregation: PrepAggregation; values: { value: string | number; name: string }[] } } |
   { kind: 'unpivot'; config: { columns: string[]; nameColumn: string; valueColumn: string } }
 );
-export interface PrepPipeline { version: 1; input: PrepInput; steps: PrepStep[] }
+export interface PrepPipeline { version: 1; input: PrepInput; steps: PrepStep[]; output?: string }
 export type PrepErrorCode = 'INVALID_PREP_PIPELINE' | 'UNSUPPORTED_PREP_STEP' | 'PREP_SCHEMA_MISMATCH' | 'PREP_SOURCE_NOT_FOUND' | 'PREP_SECURITY_REJECTED' | 'PREP_EXECUTION_FAILED' | 'PREP_NOT_FOUND' | 'PREP_LIMIT_EXCEEDED';
 export class PrepError extends Error {
   constructor(readonly code: PrepErrorCode, readonly path: string, message: string) { super(`${path}: ${message}`); this.name = 'PrepError'; }
@@ -49,6 +49,7 @@ function scalar(raw: unknown, path: string): void { if (!(typeof raw === 'number
 const aggregations = ['SUM', 'AVG', 'COUNT', 'MIN', 'MAX'];
 /** Deliberate self-hosted workflow limits (see docs/data-prep.md § Workflow limits). */
 export const PREP_MAX_IMPORT_INPUTS = 32;
+export const PREP_MAX_CONSUMERS = 5;
 export const prepTypes: readonly PrepType[] = ['INTEGER', 'DECIMAL', 'STRING', 'DATETIME', 'BOOLEAN'];
 function inputReference(raw: unknown, path: string, previous?: readonly string[]): void {
   if (typeof raw === 'string') { prepName(raw, path); return; }
@@ -61,16 +62,25 @@ function inputReference(raw: unknown, path: string, previous?: readonly string[]
   }
 }
 export function validatePrepPipeline(raw: unknown, path = '$.opensightPrep'): PrepPipeline {
-  const p = prepObject(raw, ['version', 'input', 'steps'], path);
+  const p = prepObject(raw, ['version', 'input', 'steps', 'output'], path);
   if (p.version !== 1) invalid(`${path}.version`, 'Unsupported pipeline version');
   inputReference(p.input, `${path}.input`);
   const steps = list(p.steps, `${path}.steps`, true);
   if (steps.length > 50) invalid(`${path}.steps`, 'At most 50 steps');
   names(steps.map(v => v && typeof v === 'object' ? (v as Record<string, unknown>).id : undefined), `${path}.steps.ids`, true);
+  const ids = steps.map(s => (s as { id: string }).id);
+  if (Object.hasOwn(p, 'output')) {
+    const output = prepName(p.output, `${path}.output`);
+    if (!ids.includes(output)) invalid(`${path}.output`, `Output must reference an existing step: ${output}`);
+  }
   for (const [i, rawStep] of steps.entries()) {
-    const sp = `${path}.steps[${i}]`, s = prepObject(rawStep, ['id', 'name', 'kind', 'config'], sp), cp = `${sp}.config`;
+    const sp = `${path}.steps[${i}]`, s = prepObject(rawStep, ['id', 'name', 'from', 'kind', 'config'], sp), cp = `${sp}.config`;
     prepName(s.id, `${sp}.id`);
     if (Object.hasOwn(s, 'name')) prepName(s.name, `${sp}.name`);
+    if (Object.hasOwn(s, 'from')) {
+      const from = prepName(s.from, `${sp}.from`);
+      if (!ids.slice(0, i).includes(from)) invalid(`${sp}.from`, `Left input must reference an earlier step: ${from}`);
+    }
     switch (s.kind) {
       case 'changeType': { const c = prepObject(s.config, ['column', 'type'], cp); prepName(c.column, cp); choice(c.type, prepTypes, cp); break; }
       case 'rename': { const c = prepObject(s.config, ['column', 'name'], cp); prepName(c.column, cp); prepName(c.name, cp); break; }
@@ -122,6 +132,17 @@ export function validatePrepPipeline(raw: unknown, path = '$.opensightPrep'): Pr
   // dataset/table sources, append sources), matching QuickSight's 32 import
   // steps per workflow. Step references reuse earlier results and do not count.
   const parsed = structuredClone(raw) as PrepPipeline;
+  const consumers = new Map<string, Set<string>>();
+  for (const [i, step] of parsed.steps.entries()) {
+    const inputs = [step.from ?? parsed.steps[i - 1]?.id];
+    if (step.kind === 'join' && typeof step.config.source === 'object' && 'step' in step.config.source) inputs.push(step.config.source.step);
+    for (const input of inputs) {
+      if (input === undefined) continue;
+      const downstream = consumers.get(input) ?? new Set<string>();
+      downstream.add(step.id); consumers.set(input, downstream);
+      if (downstream.size > PREP_MAX_CONSUMERS) prepFail('PREP_LIMIT_EXCEEDED', `${path}.steps[${i}]`, `At most ${PREP_MAX_CONSUMERS} direct downstream consumers per step: ${input}`);
+    }
+  }
   let importCount = 1; // the top-level input always reads a source
   for (const step of parsed.steps) {
     if (step.kind === 'join') {

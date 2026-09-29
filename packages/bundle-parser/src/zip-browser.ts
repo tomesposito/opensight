@@ -1,3 +1,4 @@
+import { PrepError } from './prep.js';
 /*! @license fflate 0.8.3 — MIT
 MIT License
 
@@ -109,7 +110,7 @@ export async function readZipArchive(bytes: Uint8Array, visit?: (entry: ZipMembe
     }
     return entries.map(({ path, compressedSize, uncompressedSize, directory }) => ({ path, compressedSize, uncompressedSize, directory }));
   } catch (error) {
-    if (error instanceof ValidationError) throw error;
+    if (error instanceof ValidationError || error instanceof PrepError) throw error;
     throw new ValidationError(path, `invalid ZIP: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
