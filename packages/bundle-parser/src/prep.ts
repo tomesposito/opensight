@@ -8,7 +8,7 @@ export interface PrepMeasure { column: string; name: string; aggregation: PrepAg
 export type PrepInput = string | { dataset: string };
 export type PrepJoinInput = PrepInput | { step: string };
 export type PrepJoinOutputs = { columns: { column: string; name: string }[]; prefix?: never } | { prefix: string; columns?: never };
-export type PrepStep = { id: string } & (
+export type PrepStep = { id: string; name?: string } & (
   { kind: 'changeType'; config: { column: string; type: PrepType } } |
   { kind: 'rename'; config: { column: string; name: string } } |
   { kind: 'select'; config: { columns: string[] } } |
@@ -68,8 +68,9 @@ export function validatePrepPipeline(raw: unknown, path = '$.opensightPrep'): Pr
   if (steps.length > 50) invalid(`${path}.steps`, 'At most 50 steps');
   names(steps.map(v => v && typeof v === 'object' ? (v as Record<string, unknown>).id : undefined), `${path}.steps.ids`, true);
   for (const [i, rawStep] of steps.entries()) {
-    const sp = `${path}.steps[${i}]`, s = prepObject(rawStep, ['id', 'kind', 'config'], sp), cp = `${sp}.config`;
+    const sp = `${path}.steps[${i}]`, s = prepObject(rawStep, ['id', 'name', 'kind', 'config'], sp), cp = `${sp}.config`;
     prepName(s.id, `${sp}.id`);
+    if (Object.hasOwn(s, 'name')) prepName(s.name, `${sp}.name`);
     switch (s.kind) {
       case 'changeType': { const c = prepObject(s.config, ['column', 'type'], cp); prepName(c.column, cp); choice(c.type, prepTypes, cp); break; }
       case 'rename': { const c = prepObject(s.config, ['column', 'name'], cp); prepName(c.column, cp); prepName(c.name, cp); break; }
