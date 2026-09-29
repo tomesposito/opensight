@@ -13,3 +13,6 @@ export type { Role, Capability } from './roles.js';
 
 export { connectors, connectorDefinition, validateConnectorConfig, connectorState, connectConnector, connectorDialect, ConnectorError } from './connectors.js';
 export type { ConnectorDefinition, ConnectorConfig, ConnectorField, ConnectorState } from './connectors.js';
+
+export { compilePrep, prepSource, prepColumns } from './prep.js';
+export type { PrepSource, PrepPlan } from './prep.js';

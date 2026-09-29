@@ -5,7 +5,7 @@
   "license": "Apache-2.0",
   "type": "module",
   "scripts": {
-    "build": "tsc",
+    "build": "npm run build --workspace @opensight/bundle-parser && tsc",
     "test": "npm run build && tsc -p test/tsconfig.json && node --test --test-isolation=none test/*.test.mjs"
   },
   "exports": {
@@ -33,6 +33,7 @@
     "@duckdb/node-api": "1.5.5-r.5",
     "mysql2": "3.24.4",
     "pg": "^8.23.0",
-    "xlsx": "0.18.5"
+    "xlsx": "0.18.5",
+    "@opensight/bundle-parser": "0.0.0"
   }
 }

@@ -29,3 +29,6 @@ export { parseUpload, UploadStaging, UploadError } from './upload.js';
 export type { UploadColumn, UploadRequest, UploadSummary, UploadType } from './upload.js';
 export { executeMySql, executeConnector } from './mysql-executor.js';
 export type { MySqlExecuteOptions } from './mysql-executor.js';
+
+export { compilePrep, prepSource, prepColumns } from './prep.js';
+export type { PrepSource, PrepPlan } from './prep.js';
