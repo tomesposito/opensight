@@ -22,6 +22,7 @@ export interface QueryResponse {
 }
 export interface ExecutionSettings { mode: 'DIRECT_QUERY' | 'BLAZE'; intervalMinutes: number | null }
 export interface ExecutionStatus extends ExecutionSettings {
+  materializationReason?: string | null;
   state: 'direct' | 'empty' | 'running' | 'ready' | 'error' | 'evicted' | 'invalidated';
   lastRefreshedAt: string | null; rowCount: number | null; bytes: number; nextRefreshAt: string | null;
   error: { code: string; message: string; causeCode?: string } | null;

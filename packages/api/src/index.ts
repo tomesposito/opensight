@@ -119,7 +119,12 @@ export async function createApiServer(options: ApiOptions): Promise<Server> {
       if (security && identity && (/^\/(?:api\/)?analyses(?:\/|$)/.test(path) || /^\/api\/datasets(?:\/sales\/query)?$/.test(path))) security.require(identity, 'build');
       const namespaceId = identity?.namespaceId ?? 'default';
       const scopedStore = namespaceStores.get(namespaceId), scopedSales = namespaceQueries.get(namespaceId);
-      if (/^\/api\/(prep-sources|prep-datasets)(?:\/|$)/.test(path) || /^\/api\/datasets\/[^/]+\/prep(?:\/|$)/.test(path) || /^\/api\/datasets\/[^/]+\/(execution|rows)$/.test(path) || /^\/api\/datasets\/(?!sales\/)[^/]+\/(refresh|query)$/.test(path)) {
+      const preparedResource = /^\/api\/(prep-sources|prep-datasets)(?:\/|$)/.test(path)
+        || /^\/api\/datasets\/[^/]+\/(prep(?:\/|$)|execution$|rows$)/.test(path)
+        || /^\/api\/datasets\/(?!sales\/)[A-Za-z0-9_-]{1,128}\/refresh$/.test(path);
+      // Preserve the unauthenticated fixture API's existing ID/method/404 validation.
+      const preparedQuery = !!security && /^\/api\/datasets\/(?!sales\/)[A-Za-z0-9_-]{1,128}\/query$/.test(path);
+      if (preparedResource || preparedQuery) {
         if (!security || !identity) throw new SecurityError(503, 'SECURITY_NOT_CONFIGURED', 'Needs hosted API with authentication configured');
         security.require(identity, 'build');
         await prepRoutes.route(request, response, path, query, identity); return;

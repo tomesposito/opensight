@@ -37,6 +37,10 @@ export class BlazeTable implements PrepSink {
   rowCount = 0;
   bytes = 256;
   cachedInputs: CachedInput[] = [];
+  setCachedInputs(inputs: CachedInput[]): void {
+    this.bytes += inputs.reduce((n, v) => n + 128 + 2 * (v.datasetId.length + v.refreshedAt.length), 0);
+    this.check(); this.cachedInputs = structuredClone(inputs);
+  }
   constructor(private readonly limits: BlazeLimits) {}
   start(columns: PrepColumn[]): void {
     this.columns = structuredClone(columns); this.vectors = columns.map(() => []);

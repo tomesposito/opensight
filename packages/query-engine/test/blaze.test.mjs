@@ -31,3 +31,24 @@ test('source guards reject large text before passing rows to the materializer', 
     const again = sink(); await staging.streamPrep({ version: 1, input: upload.id, steps: [] }, {}, { ...limits, cellChars: 200 }, again); assert.equal(again.rows.length, 1);
   } finally { staging.close(); }
 });
+import { Client } from 'pg';
+import { streamPrepPostgres } from '../dist/index.js';
+test('Postgres materialization drains bounded cursor batches under read-only UTC execution and preserves consumer refusal', async t => {
+  const variable='OPENSIGHT_TEST_BLAZE_CONNECTION',old=process.env[variable];process.env[variable]='postgres://localhost/synthetic';
+  t.after(()=>{if(old===undefined)delete process.env[variable];else process.env[variable]=old;});
+  const calls=[];let batches=0;
+  t.mock.method(Client.prototype,'connect',async()=>{});const end=t.mock.method(Client.prototype,'end',async()=>{});
+  t.mock.method(Client.prototype,'query',async arg=>{calls.push(arg);if(typeof arg==='object'&&arg.text.startsWith('FETCH')){batches++;return {rows:Array.from({length:batches===1?32:2},()=>['3','f'])};}return {rows:[]};});
+  const source={id:'source',connectorId:'postgresql',schema:'public',table:'source',columns:[{name:'n',type:'INTEGER'}],security:'unrestricted'},pipeline={version:1,input:'source',steps:[]};
+  const result=sink();await streamPrepPostgres(pipeline,[source],{connectionEnv:variable},{},limits,result);
+  assert.equal(result.rows.length,34);assert.deepEqual(calls.slice(0,3),['BEGIN READ ONLY',"SET LOCAL TIME ZONE 'UTC'","SET LOCAL statement_timeout = '10s'"]);assert.match(calls[3].text,/DECLARE blaze_cursor.*CASE WHEN/);assert.match(calls[3].text,/LIMIT 1001/);assert.equal(calls.at(-1),'COMMIT');assert.equal(end.mock.callCount(),1);
+  t.mock.method(Client.prototype,'query',async arg=>({rows:typeof arg==='object'&&arg.text.startsWith('FETCH')?[[null,'t']]:[]}));
+  await assert.rejects(streamPrepPostgres(pipeline,[source],{connectionEnv:variable},{},limits,sink()),/OVERSIZE/);assert.equal(end.mock.callCount(),2);
+});
+test('memory queries use shared datetime, filters, table and level-aware calculations',()=>{
+  const columns=[{name:'region',type:'STRING'},{name:'amount',type:'DECIMAL'},{name:'at',type:'DATETIME'}],rows=[['East',2,'2026-09-01T00:00:00.000Z'],['West',3,'2026-09-02T00:00:00.000Z'],['East',5,'2026-09-03T00:00:00.000Z']];
+  const query={dimensions:[{fieldId:'region',columnName:'region'}],measures:[{fieldId:'share',columnName:'share',aggregation:'SUM'}],filters:[{columnName:'region',value:'East'}],calculatedFields:[{name:'share',expression:'sum({amount}) / min(sumOver({amount}, [], PRE_FILTER))'}]};
+  assert.deepEqual(queryPrepared(columns,rows.length,(r,c)=>rows[r][c],query).rows,[{region:'East',share:0.7}]);
+  const monthly={dimensions:[{fieldId:'month',columnName:'at',granularity:'MONTH'}],measures:[{fieldId:'total',columnName:'amount',aggregation:'SUM'}],filters:[]};
+  assert.deepEqual(queryPrepared(columns,rows.length,(r,c)=>rows[r][c],monthly).rows,[{month:'2026-09',total:10}]);
+});

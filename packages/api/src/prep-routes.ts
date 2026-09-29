@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { materializationReason } from './blaze-policy.js';
 import { BlazeStore, BlazeError, directSettings, executionSettings, type BlazeTable, type ExecutionSettings, type CachedInput } from './blaze.js';
 import { streamPrepPostgres, queryPrepared, type PrepMemoryTable } from '@opensight/query-engine';
 import type { IncomingMessage, ServerResponse } from 'node:http';
@@ -38,6 +39,26 @@ function send(response: ServerResponse, status: number, body: unknown): void {
 }
 export class PrepRoutes {
   private readonly blaze = new BlazeStore();
+  private readonly configured = new Map<string, string>();
+  private requirement(identity: Identity, id: string, state = this.store.read()): string | null {
+    return materializationReason(id, state.datasets.filter(e => this.owned(identity, e)).map(e => ({ id: e.resource.dataSetId, pipeline: e.resource.opensightPrep!, mode: e.execution?.mode ?? 'DIRECT_QUERY' })));
+  }
+  private enforceModes(state: State): void {
+    for (const entry of state.datasets) if (entry.execution?.mode !== 'BLAZE' && this.requirement(entry, entry.resource.dataSetId, state)) entry.execution = { mode: 'BLAZE', intervalMinutes: null };
+  }
+  private syncModes(): void {
+    for (const entry of this.store.read().datasets) {
+      const key = this.key(entry, entry.resource.dataSetId), settings = entry.execution ?? directSettings, value = JSON.stringify(settings);
+      if (this.configured.get(key) !== value) { this.blaze.configure(key, settings); this.configured.set(key, value); }
+    }
+  }
+  private status(identity: Identity, id: string) {
+    return { ...this.blaze.status(this.key(identity, id)), materializationReason: this.requirement(identity, id) };
+  }
+  private requireDirect(identity: Identity, id: string, state = this.store.read()): void {
+    const reason = this.requirement(identity, id, state);
+    if (reason) throw new BlazeError('BLAZE_MATERIALIZATION_REQUIRED', reason);
+  }
   private key(identity: Identity, id: string): string { return JSON.stringify([identity.namespaceId, identity.userId, id]); }
   private find(identity: Identity, id: string): Stored {
     return this.store.read().datasets.find(e => this.owned(identity, e) && e.resource.dataSetId === id) ?? prepFail('PREP_NOT_FOUND', '$.dataset', 'Prepared dataset not found');
@@ -67,7 +88,7 @@ export class PrepRoutes {
   }
   private async resolve(identity: Identity, pipeline: PrepPipeline, id: string) {
     this.graph(identity, id, pipeline);
-    const datasets = this.datasets(identity), tables: PrepMemoryTable[] = [], cachedInputs: CachedInput[] = [], visited = new Set<string>();
+    const datasets = this.datasets(identity), tables: PrepMemoryTable[] = [], cachedInputs = new Map<string, CachedInput>(), visited = new Set<string>();
     const visit = (ref: PrepInput) => {
       if (typeof ref === 'string' || visited.has(ref.dataset)) return;
       visited.add(ref.dataset);
@@ -78,11 +99,16 @@ export class PrepRoutes {
         const { table, refreshedAt } = this.blaze.read(key);
         const source: PrepSource = { id: `blaze_${randomUUID().replaceAll('-', '')}`, table: `blaze_${randomUUID().replaceAll('-', '')}`, connectorId: 'file', columns: table.columns, security: 'unrestricted' };
         d.materialized = source; tables.push({ source, rowCount: table.rowCount, value: table.value });
-        cachedInputs.push({ datasetId: d.id, refreshedAt }, ...table.cachedInputs);
+        const add = (input: CachedInput) => {
+          const key = JSON.stringify([input.datasetId, input.refreshedAt]);
+          if (!cachedInputs.has(key) && cachedInputs.size >= 1000) throw new BlazeError('BLAZE_DATASET_TOO_LARGE', 'Cached input provenance exceeds 1000 snapshots');
+          cachedInputs.set(key, input);
+        };
+        add({ datasetId: d.id, refreshedAt }); for (const input of table.cachedInputs) add(input);
       } else for (const r of this.references(d.pipeline)) visit(r);
     };
     for (const ref of this.references(pipeline)) visit(ref);
-    return { ...await this.context(identity, pipeline.input, datasets), datasets, tables, cachedInputs: cachedInputs.filter((v, i, a) => a.findIndex(x => x.datasetId === v.datasetId && x.refreshedAt === v.refreshedAt) === i) };
+    return { ...await this.context(identity, pipeline.input, datasets), datasets, tables, cachedInputs: [...cachedInputs.values()] };
   }
   private async materialize(identity: Identity, id: string, table: BlazeTable): Promise<void> {
     const pipeline = this.find(identity, id).resource.opensightPrep!;
@@ -91,7 +117,7 @@ export class PrepRoutes {
     const limits = this.blaze.limits;
     if (context.binding) await streamPrepPostgres(pipeline, context.sources, context.binding.config, options, limits, table);
     else await this.connectors.streamPrep(identity, pipeline, options, limits, table, context.tables);
-    table.cachedInputs = context.cachedInputs;
+    table.setCachedInputs(context.cachedInputs);
   }
   async tick(authorize: (identity: Identity) => void): Promise<void> {
     await this.blaze.tick(async key => {
@@ -109,18 +135,20 @@ export class PrepRoutes {
         await this.store.change(draft => {
           const e = draft.datasets.find(e => this.owned(identity, e) && e.resource.dataSetId === id);
           if (!e) prepFail('PREP_NOT_FOUND', '$.dataset', 'Prepared dataset not found');
+          if (settings.mode === 'DIRECT_QUERY') this.requireDirect(identity, id, draft);
           e.execution = settings;
+          this.enforceModes(draft);
         });
         const previous = this.blaze.status(key).mode;
-        this.blaze.configure(key, settings);
+        this.syncModes();
         if (previous !== settings.mode) this.invalidate(identity, id);
       }
-      send(response, 200, this.blaze.status(key)); return;
+      send(response, 200, this.status(identity, id)); return;
     }
     if (action === 'refresh') {
       method(request, response, ['POST']); prepObject(await readBody(request), [], '$');
       await this.blaze.refresh(key, table => this.materialize(identity, id, table));
-      send(response, 200, this.blaze.status(key)); return;
+      send(response, 200, this.status(identity, id)); return;
     }
     method(request, response, action === 'query' ? ['POST'] : ['GET']);
     const body = action === 'query' ? await readQuery(request) : undefined;
@@ -130,7 +158,10 @@ export class PrepRoutes {
     });
     if (this.blaze.status(key).mode === 'BLAZE') {
       const { table, refreshedAt } = this.blaze.read(key); send(response, 200, use(table, refreshedAt));
-    } else send(response, 200, await this.blaze.transient(table => this.materialize(identity, existing.resource.dataSetId, table), table => use(table, null)));
+    } else {
+      this.requireDirect(identity, id);
+      send(response, 200, await this.blaze.transient(table => this.materialize(identity, existing.resource.dataSetId, table), table => use(table, null)));
+    }
   }
 
   private constructor(private readonly store: AutomationStore<State>, private readonly connectors: ConnectorRoutes, private readonly bindings: readonly PrepPostgresBinding[], private readonly persistent: boolean) {}
@@ -145,7 +176,9 @@ export class PrepRoutes {
       if (seen.has(key)) prepFail('INVALID_PREP_PIPELINE', '$.source', 'Duplicate source binding'); seen.add(key);
     }
     const routes = new PrepRoutes(await AutomationStore.load<State>({ version: 1, datasets: [] }, path, state), connectors, structuredClone(bindings), !!path);
-    for (const entry of routes.store.read().datasets) routes.blaze.configure(routes.key(entry, entry.resource.dataSetId), entry.execution ?? directSettings);
+    const current = routes.store.read();
+    if (current.datasets.some(e => e.execution?.mode !== 'BLAZE' && routes.requirement(e, e.resource.dataSetId, current))) await routes.store.change(draft => routes.enforceModes(draft));
+    routes.syncModes();
     return routes;
   }
   private owned(identity: Identity, entry: Pick<Stored, 'namespaceId' | 'userId'>): boolean { return identity.namespaceId === entry.namespaceId && identity.userId === entry.userId; }
@@ -183,7 +216,7 @@ export class PrepRoutes {
         const owned = this.store.read().datasets.filter(e => this.owned(identity, e)), datasets = this.datasets(identity);
         const raw = (await this.sources(identity)).map(s => ({ id: s.id, connectorId: s.connectorId, columns: s.columns, available: s.security === 'unrestricted' }));
         const prepared = await Promise.all(owned.map(async ({ resource: r }) => {
-          const execution = this.blaze.status(this.key(identity, r.dataSetId));
+          const execution = this.status(identity, r.dataSetId);
           const summary = { id: r.dataSetId, ref: { dataset: r.dataSetId }, name: r.name, execution };
           try {
             if (execution.mode === 'BLAZE') {
@@ -236,18 +269,21 @@ export class PrepRoutes {
             if (draft.datasets.length >= 1000 || draft.datasets.filter(e => this.owned(identity, e)).length >= 100) prepFail('PREP_LIMIT_EXCEEDED', '$.datasets', 'Prepared dataset limit reached');
             draft.datasets.push({ ...identity, resource });
           } else draft.datasets[index] = { ...draft.datasets[index]!, resource };
+          this.enforceModes(draft);
           return index < 0;
         });
-        if (created) this.blaze.configure(this.key(identity, id), directSettings);
+        this.syncModes();
         this.invalidate(identity, id);
         send(response, created ? 201 : 200, { resource, persistence: this.persistent ? 'file' : 'ephemeral' }); return;
       }
       if (!existing) prepFail('PREP_NOT_FOUND', '$.dataset', 'Prepared dataset not found');
       if (request.method === 'GET') { send(response, 200, { resource: existing.resource, persistence: this.persistent ? 'file' : 'ephemeral' }); return; }
       this.invalidate(identity, id); this.blaze.remove(this.key(identity, id));
+      this.configured.delete(this.key(identity, id));
       await this.store.change(draft => { draft.datasets = draft.datasets.filter(e => !(this.owned(identity, e) && e.resource.dataSetId === id)); });
       send(response, 200, { deleted: true });
     } catch (e) {
+      if (e instanceof QueryEngineError && path.endsWith('/query')) { request.resume(); send(response, 422, { errorCode: e.code, message: e.message, path: e.path }); return; }
       if (e instanceof SecurityError) { request.resume(); send(response, e.status, { errorCode: e.code, Message: e.message }); return; }
       if (e instanceof BlazeError) {
         request.resume(); send(response, e.code === 'PREP_NOT_FOUND' ? 404 : e.code === 'BLAZE_CONFIG_INVALID' ? 400 : e.code === 'BLAZE_DATASET_TOO_LARGE' ? 413 : 409, { errorCode: e.code, Message: e.message, ...(e.causeCode ? { causeCode: e.causeCode } : {}) }); return;

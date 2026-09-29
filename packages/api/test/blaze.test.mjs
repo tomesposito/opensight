@@ -20,7 +20,7 @@ async function api(t, authenticated = true, options = {}) {
   };
 }
 import { UploadStaging } from '@opensight/query-engine';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 const csv = text => ({ config: { format: 'csv' }, base64: Buffer.from(text).toString('base64') });
@@ -101,4 +101,82 @@ test('restart keeps mode and schedule but never claims cached rows survived', as
   assert.equal(status.mode,'BLAZE'); assert.equal(status.intervalMinutes,5); assert.equal(status.state,'empty'); assert.equal(status.lastRefreshedAt,null);
   assert.equal((await restarted('/api/datasets/cached/rows')).body.errorCode,'BLAZE_NOT_READY');
   const failure = await restarted('/api/datasets/cached/refresh','POST',{}); assert.equal(failure.body.errorCode,'BLAZE_PIPELINE_INVALID'); assert.equal(failure.body.causeCode,'PREP_SOURCE_NOT_FOUND');
+});
+test('saving during an HTTP refresh prevents obsolete output from being published',async t=>{
+  const call=await api(t),pipeline=await prepare(call);await call('/api/datasets/cached/execution','PUT',blaze);
+  let ready,release;const entered=new Promise(resolve=>ready=resolve),blocked=new Promise(resolve=>release=resolve);
+  const original=UploadStaging.prototype.streamPrep;
+  t.mock.method(UploadStaging.prototype,'streamPrep',async function(...args){await original.apply(this,args);ready();await blocked;});
+  const pending=call('/api/datasets/cached/refresh','POST',{});await entered;
+  assert.equal((await call('/api/datasets/cached/rows')).body.errorCode,'BLAZE_REFRESH_IN_PROGRESS');
+  assert.equal((await call('/api/datasets/cached/prep','PUT',{name:'Changed',pipeline})).status,200);
+  release();assert.equal((await pending).body.errorCode,'BLAZE_INVALIDATED');assert.equal((await call('/api/datasets/cached/rows')).body.errorCode,'BLAZE_INVALIDATED');
+});
+test('issue #15 advanced prep always serves materialized output and refuses direct mode', async t => {
+  const call = await api(t), base = await prepare(call), other = await prepare(call, 'other');
+  const steps = [
+    { id: 'sum', kind: 'aggregate', config: { groupBy: [], measures: [{ column: 'amount', name: 'amount', aggregation: 'SUM' }] } },
+    { id: 'pivot', kind: 'pivot', config: { groupBy: [], column: 'id', value: 'amount', aggregation: 'SUM', values: [{ value: 1, name: 'amount' }] } },
+    { id: 'unpivot', kind: 'unpivot', config: { columns: ['amount'], nameColumn: 'metric', valueColumn: 'amount' } },
+    { id: 'append', kind: 'append', config: { source: other.input } },
+  ];
+  for (const step of steps) {
+    const path = `/api/datasets/${step.kind}`, pipeline = { ...base, steps: [step] };
+    const preview = await call(`${path}/prep/preview`, 'POST', { pipeline }); assert.equal(preview.status, 200, JSON.stringify(preview.body));
+    assert.equal((await call(`${path}/prep`, 'PUT', { name: step.kind, pipeline })).status, 201);
+    const status = (await call(`${path}/execution`)).body; assert.equal(status.mode, 'BLAZE'); assert.match(status.materializationReason, new RegExp(step.kind));
+    const refused = await call(`${path}/execution`, 'PUT', { mode: 'DIRECT_QUERY', intervalMinutes: null });
+    assert.equal(refused.status, 409); assert.equal(refused.body.errorCode, 'BLAZE_MATERIALIZATION_REQUIRED');
+    assert.equal((await call(`${path}/rows`)).body.errorCode, 'BLAZE_INVALIDATED');
+    assert.equal((await call(`${path}/query`, 'POST', query)).body.errorCode, 'BLAZE_INVALIDATED');
+    assert.equal((await call(`${path}/refresh`, 'POST', {})).status, 200);
+    const source = t.mock.method(UploadStaging.prototype, 'streamPrep', async () => { throw new Error('No live advanced output'); });
+    const rows = await call(`${path}/rows`); assert.equal(rows.body.execution.cached, true); assert.deepEqual(rows.body.rows, preview.body.rows);
+    assert.equal((await call(`${path}/query`, 'POST', query)).body.execution.cached, true); assert.equal(source.mock.callCount(), 0); source.mock.restore();
+  }
+});
+test('issue #15 distinguishes cross-source joins from simple single-source and self joins', async t => {
+  const call = await api(t), base = await prepare(call), right = await prepare(call, 'right');
+  const step = source => ({ id: 'join', kind: 'join', config: { source, joinType: 'left', keys: [{ left: 'id', right: 'id' }], prefix: 'r_' } });
+  for (const [id, steps, required] of [
+    ['simple', [{ id: 'filter', kind: 'filter', config: { filters: [{ columnName: 'id', value: 1 }] } }], false],
+    ['self', [step(base.input)], false],
+    ['previous', [{ id: 'select', kind: 'select', config: { columns: ['id', 'amount'] } }, step({ step: 'select' })], false],
+    ['cross', [step(right.input)], true],
+    ['prepared-cross', [step({ dataset: 'right' })], true],
+  ]) {
+    const path = `/api/datasets/${id}`;
+    assert.equal((await call(`${path}/prep`, 'PUT', { name: id, pipeline: { ...base, steps } })).status, 201);
+    assert.equal((await call(`${path}/execution`)).body.mode, required ? 'BLAZE' : 'DIRECT_QUERY');
+    if (required) {
+      assert.equal((await call(`${path}/execution`, 'PUT', { mode: 'DIRECT_QUERY', intervalMinutes: null })).body.errorCode, 'BLAZE_MATERIALIZATION_REQUIRED');
+      assert.equal((await call(`${path}/refresh`, 'POST', {})).status, 200);
+    }
+    assert.equal((await call(`${path}/query`, 'POST', query)).body.execution.cached, required);
+  }
+});
+test('dependency changes and legacy persisted pipelines cannot bypass mandatory materialization', async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'blaze-policy-')); t.after(() => rm(directory, { recursive: true, force: true }));
+  const prepStorePath = join(directory, 'prep.json'), call = await api(t, true, { prepStorePath }), base = await prepare(call, 'base');
+  for (const [id, input] of [['child', 'base'], ['grandchild', 'child']]) {
+    assert.equal((await call(`/api/datasets/${id}/prep`, 'PUT', { name: id, pipeline: { version: 1, input: { dataset: input }, steps: [] } })).status, 201);
+  }
+  const pipeline = { ...base, steps: [{ id: 'aggregate', kind: 'aggregate', config: { groupBy: ['id'], measures: [{ column: 'amount', name: 'amount', aggregation: 'SUM' }] } }] };
+  assert.equal((await call('/api/datasets/base/prep', 'PUT', { name: 'Base', pipeline })).status, 200);
+  for (const id of ['base', 'child', 'grandchild']) {
+    assert.equal((await call(`/api/datasets/${id}/execution`)).body.mode, 'BLAZE');
+    assert.equal((await call(`/api/datasets/${id}/execution`, 'PUT', { mode: 'DIRECT_QUERY', intervalMinutes: null })).body.errorCode, 'BLAZE_MATERIALIZATION_REQUIRED');
+    assert.equal((await call(`/api/datasets/${id}/refresh`, 'POST', {})).status, 200);
+  }
+  // Model a store written before #15. Startup must migrate metadata without source reads.
+  const stored = JSON.parse(await readFile(prepStorePath, 'utf8'));
+  for (const entry of stored.datasets) delete entry.execution;
+  await writeFile(prepStorePath, JSON.stringify(stored));
+  const restarted = await api(t, true, { prepStorePath });
+  for (const id of ['base', 'child', 'grandchild']) {
+    const status = (await restarted(`/api/datasets/${id}/execution`)).body;
+    assert.equal(status.mode, 'BLAZE'); assert.equal(status.state, 'empty');
+    assert.equal((await restarted(`/api/datasets/${id}/query`, 'POST', query)).body.errorCode, 'BLAZE_NOT_READY');
+  }
+  assert.ok(JSON.parse(await readFile(prepStorePath, 'utf8')).datasets.every(e => e.execution.mode === 'BLAZE'));
 });

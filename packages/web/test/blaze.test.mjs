@@ -56,3 +56,10 @@ test('execution client uses resource endpoints and retains query cache provenanc
   assert.deepEqual(JSON.parse(calls[1][1].body),{mode:'BLAZE',intervalMinutes:3});
   assert.deepEqual((await client.queryDataset('prepared',{dimensions:[],measures:[{fieldId:'sum',columnName:'n',aggregation:'SUM'}],filters:[]})).execution,execution);
 });
+test('mandatory materialization explains why direct query is disabled', async t => {
+  const status = { ...ready, materializationReason: 'Cross-source joins require Blaze materialization.' };
+  const ui = await mount(t, { datasetId: 'joined', client: { getDatasetExecution: async () => status } });
+  assert.match(ui.text(), /Cross-source joins require Blaze materialization/);
+  assert.equal(ui.renderer.root.findAllByType('option').find(o => o.props.value === 'DIRECT_QUERY').props.disabled, true);
+  assert.equal(ui.renderer.root.findByType('select').props.value, 'BLAZE');
+});

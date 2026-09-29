@@ -29,7 +29,7 @@ export function DatasetExecution({ client, datasetId, saved = true, dirty = fals
     };
     void read(); const timer = setInterval(() => void read(), 5000);
     return () => { generation.current++; clearInterval(timer); };
-  }, [client, datasetId, saved]);
+  }, [client, datasetId, saved, dirty]);
   const current = result?.key === datasetId && result.client === client && saved ? result : undefined, status = current?.status;
   useEffect(() => setIntervalValue(status?.intervalMinutes?.toString() ?? ''), [status?.intervalMinutes, datasetId]);
   const action = async (run: () => Promise<ExecutionStatus | PreparedRows>) => {
@@ -49,13 +49,14 @@ export function DatasetExecution({ client, datasetId, saved = true, dirty = fals
   const disabled = !client || !saved || dirty || busy || !status;
   const select = (mode: ExecutionSettings['mode']) => { if (!client || disabled) return; void action(() => client.setDatasetExecution(datasetId, { mode, intervalMinutes: mode === 'DIRECT_QUERY' ? null : status!.intervalMinutes })); };
   return <section className={`dataset-execution${compact ? ' compact' : ''}`} aria-label="Dataset execution">
-    <div className="execution-controls"><label>Execution mode<select aria-label="Execution mode" disabled={disabled} value={status?.mode ?? 'DIRECT_QUERY'} onChange={e => select(e.target.value as ExecutionSettings['mode'])}><option value="DIRECT_QUERY">DIRECT QUERY</option><option value="BLAZE">BLAZE</option></select></label>
+    <div className="execution-controls"><label>Execution mode<select aria-label="Execution mode" disabled={disabled} value={status?.mode ?? 'DIRECT_QUERY'} onChange={e => select(e.target.value as ExecutionSettings['mode'])}><option value="DIRECT_QUERY" disabled={!!status?.materializationReason}>DIRECT QUERY</option><option value="BLAZE">BLAZE</option></select></label>
       <button disabled={disabled || status?.mode !== 'BLAZE'} onClick={() => void action(() => client!.refreshBlaze(datasetId))}>{busy ? 'Working…' : 'Refresh Blaze'}</button>
       {!compact && <form onSubmit={e => { e.preventDefault(); if (!disabled && status?.mode === 'BLAZE') void action(() => client!.setDatasetExecution(datasetId, { mode: 'BLAZE', intervalMinutes: interval === '' ? null : Number(interval) })); }}><label>Refresh interval (minutes)<input aria-label="Refresh interval (minutes)" type="number" min="1" max="525600" placeholder="Manual only" disabled={disabled || status?.mode !== 'BLAZE'} value={interval} onChange={e => setIntervalValue(e.target.value)} /></label><button disabled={disabled || status?.mode !== 'BLAZE'}>Apply schedule</button></form>}
       {!compact && <button disabled={disabled || status?.mode !== 'BLAZE' || status.state !== 'ready'} onClick={() => void action(() => client!.getPreparedRows(datasetId))}>View cached output</button>}
     </div>
     <p className="execution-status" role="status">{!client ? 'Needs hosted API · Blaze materialization and refresh are unavailable in the offline demo.' : !saved ? 'Save the pipeline to configure dataset execution.' : current?.error ? current.error : !status ? 'Loading execution status…' : <><ExecutionBadge status={status} /> {status.mode === 'DIRECT_QUERY' ? 'Queries execute the saved pipeline.' : <>Cached data · {status.state}{status.rowCount !== null ? ` · ${status.rowCount} rows` : ' · no readable snapshot'}<br />{status.lastRefreshedAt ? <>Last successful refresh: <time dateTime={status.lastRefreshedAt}>{status.lastRefreshedAt}</time></> : 'No successful refresh recorded'}{status.nextRefreshAt && <><br />Next refresh: <time dateTime={status.nextRefreshAt}>{status.nextRefreshAt}</time></>}</>}{status.error && <><br />{status.error.code}{status.error.causeCode ? ` (${status.error.causeCode})` : ''}: {status.error.message}</>}</>}{client && saved && dirty && <><br />Save pipeline changes before changing execution or refreshing.</>}</p>
     {actionError && <p className="prep-error" role="alert">{actionError}</p>}
+    {status?.materializationReason && <p className="execution-requirement">{status.materializationReason} Refresh the saved pipeline before querying its output.</p>}
     {output && !dirty && <div className="cached-output"><p><CachedProvenance execution={output.execution} /><br />{output.rowCount} cached rows · {output.rows.length} shown</p><div className="prep-table-scroll"><table><thead><tr>{output.columns.map(c => <th key={c.name}>{c.name}</th>)}</tr></thead><tbody>{output.rows.map((r,i) => <tr key={i}>{output.columns.map(c => <td key={c.name}>{r[c.name] === null ? <em>null</em> : String(r[c.name])}</td>)}</tr>)}</tbody></table></div></div>}
   </section>;
 }

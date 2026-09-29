@@ -102,6 +102,8 @@ test('hosted joins preview all outer cases before save, persist typed refs and r
   const pipeline = joined(left, { dataset: 'lookup' }, 'full');
   assert.equal((await call(path, 'PUT', { name: 'Joined', pipeline })).status, 201);
   assert.deepEqual((await call(path)).body.resource.opensightPrep, pipeline);
+  // Cross-source output is a Blaze input under #15, so refresh before reuse.
+  assert.equal((await call('/api/datasets/joined/refresh', 'POST', {})).status, 200);
   const reused = { version: 1, input: { dataset: 'joined' }, steps: [{ id: 'select', kind: 'select', config: { columns: ['r_label'] } }] };
   assert.equal((await call('/api/datasets/reused/prep/preview', 'POST', { pipeline: reused })).body.rows.length, 3);
   const changed = { ...base, steps: [{ id: 'filter', kind: 'filter', config: { filters: [{ columnName: 'id', value: 3 }] } }] };
@@ -111,7 +113,7 @@ test('hosted joins preview all outer cases before save, persist typed refs and r
   await call('/api/datasets/lookup/prep', 'DELETE');
   assert.equal((await call(`${path}/preview`, 'POST', {})).body.errorCode, 'PREP_SOURCE_NOT_FOUND');
   const unavailable = (await call('/api/prep-sources')).body.find(s => s.ref?.dataset === 'joined');
-  assert.equal(unavailable.available, false); assert.equal(unavailable.errorCode, 'PREP_SOURCE_NOT_FOUND');
+  assert.equal(unavailable.available, false); assert.equal(unavailable.errorCode, 'BLAZE_INVALIDATED');
 });
 test('prepared references cannot bypass ownership, namespace, authentication, or source security', async t => {
   const call = await api(t), uploadId = (await call('/api/uploads', 'POST', csv('id,label\n1,private\n'))).body.id;
