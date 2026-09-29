@@ -8,7 +8,7 @@ export interface PrepMeasure { column: string; name: string; aggregation: PrepAg
 export type PrepInput = string | { dataset: string };
 export type PrepJoinInput = PrepInput | { step: string };
 export type PrepJoinOutputs = { columns: { column: string; name: string }[]; prefix?: never } | { prefix: string; columns?: never };
-export type PrepStep = { id: string } & (
+export type PrepStep = { id: string; name?: string } & (
   { kind: 'changeType'; config: { column: string; type: PrepType } } |
   { kind: 'rename'; config: { column: string; name: string } } |
   { kind: 'select'; config: { columns: string[] } } |
