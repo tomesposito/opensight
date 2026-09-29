@@ -1222,3 +1222,77 @@ servers. Owner-approved direction; not yet built.
 3. IaC for S3/CloudFront/API Gateway/Lambda/RDS (CDK or Terraform — decide at
    build time; keep it minimal and free-tier-pinned).
 4. GitHub Actions pipeline (or AWS CLI runbook) + live smoke tests.
+
+## 12. Issue #11 — multi-input dataset preparation (decided 2026-09-29)
+
+This additive contract extends the existing version-1 prep pipeline. Existing
+string input IDs and explicit right-column aliases retain their behavior. Right
+outer joins already exist; this work completes reusable inputs and join editing.
+
+**Input references and graph.** `PrepPipeline.input` accepts a connected source ID
+(string) or `{dataset: dataSetId}`. A join's `config.source` accepts either of those
+or `{step: stepId}`, referring only to an earlier step in the same pipeline.
+The preceding step is always the left relation. Earlier results, including joined
+results, may also be reused on the right. The canvas derives one input node per
+unique source reference, with labeled connections to the main input or consuming
+join(s); previous-step references connect to that step, not a fabricated source.
+There is no separate editable inputs registry or duplicated pipeline data. Raw
+source IDs, dataset IDs and step IDs occupy distinct reference namespaces. Moving
+or deleting a referenced step leaves an explicit invalid-reference error until
+repaired. Append, pivot and unpivot configuration/semantics are unchanged.
+
+**Reusable prepared datasets.** Dataset references resolve to the current saved
+pipeline owned by the authenticated user in the same namespace, never to cached
+rows. The compiler expands them as SQL relations without inner preview limits or
+datetime formatting. Dependencies are validated on every preview/save, including
+steps after the selected preview stage. Missing/deleted/expired sources,
+protected bindings, cycles (including replacing a dataset with a self-dependent
+version), and cross-engine/connection combinations fail closed with named errors.
+Expansion is bounded to 16 nested datasets and 500 total transformation steps per
+compilation; each distinct dataset is compiled once. Cycles/invalid earlier-step
+references use `INVALID_PREP_PIPELINE`; expansion limits use
+`PREP_LIMIT_EXCEEDED`. Trusted host bindings still authorize every physical leaf.
+References carry no connection strings, table names, authorization assertions or
+cache settings, allowing future host-side source resolution for #12 without
+pretending caching is available now.
+
+**Join keys and outputs.** Inner, left, right and full outer equijoins accept one
+or more `{left,right}` key pairs combined with AND. Keys must have identical prep
+types (including INTEGER versus DECIMAL); users can add Change type explicitly.
+Missing columns/type mismatches use `PREP_SCHEMA_MISMATCH` with the key and types
+identified. Repeated identical key pairs are invalid. SQL null keys never match;
+duplicate keys multiply rows. All left columns are retained, with null extension
+for unmatched right rows. Right keys are retained only through the chosen output
+mode; keys are never implicitly coalesced.
+
+A join specifies exactly one output mode: existing nonempty
+`columns: [{column,name}]`, or `prefix: 'right_'`, which includes **all** right
+columns (including keys) in source order with that literal prefix. No automatic
+suffixes or silently omitted columns. Generated names must satisfy the existing
+128-character limit, and the combined schema must contain at most 256 columns.
+Duplicate/case-ambiguous names (including collisions with left columns) fail with
+`PREP_SCHEMA_MISMATCH`; explicit aliases can resolve them. Prefix is nonempty.
+
+**Editor and hosted API.** The source picker distinguishes uploaded/connector
+sources, saved prepared datasets, and earlier steps. Join keys show column types
+and visible named validation errors while editing. Users choose prefix-all or
+explicit aliases and can inspect resulting names before applying. Applying a
+valid join automatically previews that stage through the existing hosted preview
+endpoint before saving, bounded to 100 displayed rows (API maximum 500). The API
+source listing includes owned prepared dataset summaries with derived columns;
+unavailable dependencies report an availability error code. Saving persists only
+pipeline metadata. Static-demo sample schemas permit multi-input configuration
+and export, but live previews/saves say “Needs hosted API.” Dependency updates are
+resolved afresh; the editor refresh action reloads source and dataset metadata.
+
+**Portability and verification.** JSON and `.qs` import/export preserve all typed
+references, join modes and step order; imports grant no source access. Bundle
+members keep unrelated properties. Dependency datasets must be saved/rebound on
+the destination host; importing a bundle does not automatically save them.
+Verification includes all join types, composite/null/duplicate keys, mismatched
+and missing keys, collisions and bounds, self/previous/prepared joins, subsequent
+transforms, parameter/preview isolation, actual DuckDB-versus-Postgres (PGlite)
+execution, authenticated API ownership/cycle/expiry checks, UI editing/errors and
+bundle round trips. Rebuild the static demo and compare screenshots with available
+references; record limits honestly. No new dependency, AWS call, merge, publish or
+issue closure is part of this build.

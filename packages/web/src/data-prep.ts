@@ -1,7 +1,27 @@
-import { validatePrepPipeline, type PrepStep, type PrepColumn, type PrepPipeline } from '@opensight/bundle-parser/prep';
+import { validatePrepPipeline, type PrepStep, type PrepColumn, type PrepPipeline, type PrepInput, type PrepJoinInput } from '@opensight/bundle-parser/prep';
 import type { BundleDataSet, QsBundle } from '@opensight/bundle-parser/browser';
 import { compilePrep, type PrepSource } from '@opensight/query-engine/browser';
-export interface PrepSourceSummary { id: string; connectorId: string; columns: PrepColumn[]; available: boolean }
+export interface PrepSourceSummary { id: string; ref?: PrepJoinInput; name?: string; connectorId: string; columns: PrepColumn[]; available: boolean; errorCode?: string }
+export const prepRefKey = (ref: PrepJoinInput): string => JSON.stringify(ref);
+export const prepSourceRef = (source: PrepSourceSummary): PrepJoinInput => source.ref ?? source.id;
+export const prepRefLabel = (ref: PrepJoinInput): string => typeof ref === 'string' ? ref : 'dataset' in ref ? `Dataset · ${ref.dataset}` : `Step · ${ref.step}`;
+export const prepSourceLabel = (source: PrepSourceSummary): string => `${source.ref && typeof source.ref !== 'string' ? 'dataset' in source.ref ? 'Prepared dataset' : 'Earlier step' : source.connectorId === 'file' ? 'Uploaded file' : source.connectorId} · ${source.name ?? source.id}`;
+export function prepMessage(e: unknown): string {
+  return e instanceof Error ? `${'code' in e && typeof e.code === 'string' ? `${e.code}: ` : ''}${e.message}` : 'Invalid pipeline';
+}
+export interface PrepSchemaContext { datasets?: readonly BundleDataSet[]; datasetId?: string }
+/** Graph nodes are derived from references, so repeated joins share one source node. */
+export function prepInputNodes(pipeline: PrepPipeline): { ref: PrepInput; consumers: string[] }[] {
+  const nodes = new Map<string, { ref: PrepInput; consumers: string[] }>();
+  const add = (ref: PrepJoinInput, consumer: string) => {
+    if (typeof ref !== 'string' && 'step' in ref) return;
+    const key = prepRefKey(ref), node = nodes.get(key) ?? { ref, consumers: [] };
+    node.consumers.push(consumer); nodes.set(key, node);
+  };
+  add(pipeline.input, 'Input');
+  for (const [i, step] of pipeline.steps.entries()) if (step.kind === 'join' || step.kind === 'append') add(step.config.source, `${i + 1}. ${prepLabel(step.kind)}`);
+  return [...nodes.values()];
+}
 export const prepCatalog: { kind: PrepStep['kind']; label: string; group: string }[] = [
   { kind: 'calculate', label: 'Add calculated column', group: 'Column transformations' },
   { kind: 'changeType', label: 'Change data type', group: 'Column transformations' },
@@ -13,16 +33,21 @@ export const prepCatalog: { kind: PrepStep['kind']; label: string; group: string
 ];
 export const prepLabel = (kind: PrepStep['kind']) => prepCatalog.find(c => c.kind === kind)!.label;
 export function prepBindings(sources: readonly PrepSourceSummary[]): PrepSource[] {
-  return sources.map(s => ({ ...s, table: s.id, security: s.available ? 'unrestricted' : 'protected' }));
+  return sources.filter(s => !s.ref || typeof s.ref === 'string').map(s => ({ ...s, table: s.id, security: s.available ? 'unrestricted' : 'protected' }));
 }
-export function prepSchema(pipeline: PrepPipeline, sources: readonly PrepSourceSummary[], through?: string | null): PrepColumn[] {
-  const input = sources.find(s => s.id === pipeline.input);
+export function prepPlan(pipeline: PrepPipeline, sources: readonly PrepSourceSummary[], through?: string | null, context: PrepSchemaContext = {}) {
+  const input = sources.find(s => prepRefKey(prepSourceRef(s)) === prepRefKey(pipeline.input));
   const dialect = input?.connectorId === 'postgresql' ? 'postgres' : 'duckdb';
-  return compilePrep(pipeline, prepBindings(sources), { dialect, through }).columns;
+  return compilePrep(pipeline, prepBindings(sources), { dialect, through, datasetId: context.datasetId, datasets: context.datasets?.filter(d => d.opensightPrep).map(d => ({ id: d.dataSetId, pipeline: d.opensightPrep! })) });
 }
-export function newPrepStep(kind: PrepStep['kind'], columns: readonly PrepColumn[], sources: readonly PrepSourceSummary[], input: string): PrepStep {
+export function prepSchema(pipeline: PrepPipeline, sources: readonly PrepSourceSummary[], through?: string | null, context: PrepSchemaContext = {}): PrepColumn[] {
+  return prepPlan(pipeline, sources, through, context).columns;
+}
+export function newPrepStep(kind: PrepStep['kind'], columns: readonly PrepColumn[], sources: readonly PrepSourceSummary[], input: PrepInput): PrepStep {
   const col = columns[0]?.name ?? '', numeric = columns.find(c => c.type === 'DECIMAL' || c.type === 'INTEGER')?.name ?? col;
-  const source = sources.find(s => s.id !== input)?.id ?? input;
+  const available = sources.filter(s => s.available);
+  const right = available.find(s => prepRefKey(prepSourceRef(s)) !== prepRefKey(input)) ?? available[0];
+  const source = right ? prepSourceRef(right) : input;
   const id = `step-${globalThis.crypto.randomUUID()}`;
   switch (kind) {
     case 'changeType': return { id, kind, config: { column: col, type: 'STRING' } };
@@ -31,8 +56,8 @@ export function newPrepStep(kind: PrepStep['kind'], columns: readonly PrepColumn
     case 'filter': return { id, kind, config: { filters: [{ columnName: col, values: [] }] } };
     case 'calculate': return { id, kind, config: { name: 'calculated_column', expression: `{${numeric}}` } };
     case 'aggregate': return { id, kind, config: { groupBy: [], measures: [{ column: numeric, name: 'total', aggregation: 'SUM' }] } };
-    case 'join': return { id, kind, config: { source, joinType: 'left', keys: [{ left: col, right: sources.find(s => s.id === source)?.columns[0]?.name ?? '' }], columns: [{ column: col, name: `joined_${col}` }] } };
-    case 'append': return { id, kind, config: { source } };
+    case 'join': return { id, kind, config: { source, joinType: 'left', keys: [{ left: col, right: right?.columns.find(c => c.name === col && c.type === columns[0]?.type)?.name ?? right?.columns.find(c => c.type === columns[0]?.type)?.name ?? right?.columns[0]?.name ?? '' }], prefix: 'joined_' } };
+    case 'append': return { id, kind, config: { source: available.find(s => !s.ref && s.id !== input)?.id ?? (typeof input === 'string' ? input : '') } };
     case 'pivot': return { id, kind, config: { groupBy: [], column: col, value: numeric, aggregation: 'SUM', values: [{ value: 'value', name: 'pivot_value' }] } };
     case 'unpivot': return { id, kind, config: { columns: [numeric], nameColumn: 'column_name', valueColumn: 'column_value' } };
   }

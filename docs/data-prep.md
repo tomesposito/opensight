@@ -1,10 +1,12 @@
-# Dataset preparation (issue #9)
+# Dataset preparation (issues #9 and #11)
 
 The Data preparation view builds an ordered transformation pipeline over sources
 from the connector registry. Open it from Data sources → Prepare data, the mode
 picker, or the analysis editor's Data → Prepare data menu. The left panel contains
 configuration and the transformation catalog; the graph shows step order and
-secondary inputs for joins/appends. Select a node to preview that stage. Steps
+one node per connected or prepared input, with labeled connections to the steps
+that use it. Repeated joins share a source node; an earlier-step reference points
+back to that result. Select a node to preview that stage. Steps
 can be edited, reordered, or removed. Downstream schema errors remain visible.
 
 ## Dataset and bundle model
@@ -22,6 +24,13 @@ A dataset resource carries `opensightPrep`:
 }
 ```
 
+Primary `input` and a join's `config.source` may also be
+`{"dataset":"saved-dataset-id"}`. Joins additionally accept `{"step":"earlier-step-id"}`
+to reuse an earlier result in the same pipeline, including a joined result. Their
+left side is always the preceding stage. Moving/removing a referenced step leaves
+an explicit validation error. Existing string references and version-1 bundles
+remain valid. Append configuration is unchanged.
+
 Source IDs are references, never SQL, credentials, URLs, or filesystem paths.
 The host resolves them to existing connector bindings. An imported bundle cannot
 grant access to a source. Each step has a stable ID and an exact, typed config;
@@ -34,6 +43,8 @@ The prep UI exports `.qs` bundles, preserving unrelated members and unknown
 properties on an imported dataset. Multi-dataset bundles offer a dataset picker.
 Bundle metadata does not contain result rows. Source IDs must be rebound to
 available sources after transfer to another host or after upload staging expires.
+Referenced prepared datasets must be saved on the destination host; importing a
+bundle does not save dependencies automatically.
 
 ## Transformation semantics
 
@@ -51,10 +62,31 @@ expressions use the Phase 2c parser, type system, and per-dialect function libra
 | `filter` | `filters` | AND of `{columnName, value, operator?}` or `{columnName, values}`. EQUALS, GREATER_THAN_OR_EQUAL_TO, LESS_THAN_OR_EQUAL_TO; lists support equality only. Values must match the type. Empty lists match nothing; null never matches. Boolean predicates are unsupported. Dates use ISO dates or UTC timestamps. |
 | `calculate` | `name`, `expression` | Add a typed row expression. Visual aggregation, level-aware and table calculations are rejected here; their existing visual post-processing is unchanged. |
 | `aggregate` | `groupBy`, `measures` | Measures are `{column, name, aggregation}`; SUM, AVG, COUNT, MIN, MAX. Empty group list aggregates the full input. COUNT counts nonnull column values. SUM/AVG require numeric input. Empty/all-null input follows SQL aggregate semantics. |
-| `join` | `source`, `joinType`, `keys`, `columns` | inner/left/right/full equijoin. Keys are `{left,right}`, combined with AND and requiring identical types. Right outputs are explicit `{column,name}` aliases. All left columns are kept for inner/left/full; for `right` all right rows are kept and unmatched left columns are null. Null keys do not match; duplicate keys multiply rows. |
+| `join` | `source`, `joinType`, `keys`, exactly one of `columns` or `prefix` | inner/left/right/full equijoin. Keys are `{left,right}`, combined with AND and requiring identical types. All left columns are retained; outer joins extend unmatched sides with nulls. Null keys do not match; duplicate keys multiply rows. Right keys are not coalesced into left keys. |
 | `append` | `source` | UNION ALL; identical names and types required, order aligned by name. Duplicate rows are retained. |
 | `pivot` | `groupBy`, `column`, `value`, `aggregation`, `values` | Values are explicit `{value,name}` output definitions with unique typed keys. Conditional aggregation produces a stable schema. Unlisted/null keys contribute no measure; their groups can still appear. No data-dependent column discovery. |
 | `unpivot` | `columns`, `nameColumn`, `valueColumn` | Selected columns must share a type. Each input row produces one row per selected column. Names become values, null cells are kept, and unselected columns repeat. |
+
+Join outputs use either nonempty `columns: [{column,name}]` aliases or a nonempty
+`prefix`, which includes **all** right columns (including keys) in source order.
+The prefix is literal: `prefix: "region_"` turns `manager` into `region_manager`.
+There are no automatic suffixes or omitted columns. Duplicate/case-ambiguous
+output names, names over 128 characters, and more than 256 combined columns fail
+with `PREP_SCHEMA_MISMATCH`. Explicit aliases let users resolve collisions.
+Repeated identical key pairs fail with `INVALID_PREP_PIPELINE`. Key mismatches
+identify both names and types; INTEGER and DECIMAL require explicit conversion.
+The editor shows these errors before Apply, alongside typed key choices and the
+prospective right output names.
+
+Prepared inputs resolve to the current saved definition owned by the same user
+and namespace. Compilation expands their complete results as SQL relations;
+preview limits and datetime serialization apply only to the requested output.
+Each distinct dependency compiles once. Cycles fail with `INVALID_PREP_PIPELINE`;
+more than 16 nested datasets or 500 expanded transformation steps fail with
+`PREP_LIMIT_EXCEEDED`. Validation repeats on preview/save, including inside the
+serialized metadata write. Deleting a dependency, losing a source, or changing a
+dependency's schema cannot silently reuse old rows. The editor's Refresh sources
+reloads source and saved-dataset metadata. Prepared inputs do not use Blaze caches.
 
 Joins and appends require the same engine and configured connection. Cross-engine
 federation is not implemented. MySQL prep is explicitly unsupported; the existing
@@ -79,8 +111,8 @@ redacted into `PREP_EXECUTION_FAILED`. Unsafe-size integer results retain text
 precision; nonfinite/unsupported results fail.
 
 The shared compiler is exposed from the query engine's browser entry point for
-schema checks. The static demo only configures pipelines against a labeled sample
-schema. It never fabricates preview rows. It disables server saves and shows
+schema checks. The static demo only configures pipelines against labeled sales
+and region sample schemas. It never fabricates preview rows. It disables server saves and shows
 “Needs hosted API.” Native demo drafts persist locally; imported bundles remain in
 memory until exported. The hosted UI automatically refreshes the selected preview
 after a valid applied change and ignores stale asynchronous responses.
@@ -95,7 +127,7 @@ rejected. Protected or unresolved sources fail closed with
 
 | Method | Resource | Request / response |
 | --- | --- | --- |
-| GET | `/api/prep-sources` | Visible connector source IDs, columns, and availability; no physical table or connection details. |
+| GET | `/api/prep-sources` | Visible connector and owned prepared sources, columns, and availability. Prepared summaries add `ref: {dataset:id}` and `name`; unavailable dependencies add `errorCode`. No physical table or connection details. |
 | GET | `/api/prep-datasets` | Owned dataset resources and persistence mode. |
 | PUT | `/api/datasets/:id/prep` | `{name,pipeline}`; create (201) or replace (200) after full schema validation. Returns `{resource,persistence}`. |
 | GET | `/api/datasets/:id/prep` | `{resource,persistence}`. |
@@ -131,8 +163,8 @@ Combined sources must share that variable. Listing/validating metadata does not
 establish a database connection. Library hosts configure authentication using the
 existing `security` option; the basic CLI does not invent an authentication service.
 
-Saving a pipeline does not materialize a table or publish it into analysis field
-wells. Analysis dataset publication remains separate hosted integration work.
+Saving a pipeline makes it reusable in preparation without materializing a table
+or publishing it into analysis field wells. Analysis dataset publication remains separate hosted integration work.
 Imported prepared datasets are never substituted with untransformed local fixture
 rows. The UI states this boundary. Preview and export are available as documented;
 no deployed-server or measured visual-parity claim is made.
@@ -143,4 +175,5 @@ Root `npm test` includes malformed model/bundle tests, actual DuckDB/Postgres
 (PGlite) execution comparisons for every step kind, upload executor checks,
 authenticated HTTP CRUD/persistence/security tests, bundle preservation, and UI
 interaction/stale-response tests. Live Postgres remains the pre-existing optional
-integration suite. See `issue-9-gap-notes.md` for the run counts and visual checks.
+integration suite. See `issue-11-gap-notes.md` for current run counts and visual
+checks, and `issue-9-gap-notes.md` for the original prep build verification.

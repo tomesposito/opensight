@@ -5,6 +5,9 @@ export type PrepAggregation = 'SUM' | 'AVG' | 'COUNT' | 'MIN' | 'MAX';
 /** Same predicate shape/operators as the Phase 2b bound row filter. */
 export type PrepFilter = { columnName: string; operator?: 'EQUALS' | 'GREATER_THAN_OR_EQUAL_TO' | 'LESS_THAN_OR_EQUAL_TO' } & ({ value: string | number } | { values: (string | number)[] });
 export interface PrepMeasure { column: string; name: string; aggregation: PrepAggregation }
+export type PrepInput = string | { dataset: string };
+export type PrepJoinInput = PrepInput | { step: string };
+export type PrepJoinOutputs = { columns: { column: string; name: string }[]; prefix?: never } | { prefix: string; columns?: never };
 export type PrepStep = { id: string } & (
   { kind: 'changeType'; config: { column: string; type: PrepType } } |
   { kind: 'rename'; config: { column: string; name: string } } |
@@ -12,12 +15,12 @@ export type PrepStep = { id: string } & (
   { kind: 'filter'; config: { filters: PrepFilter[] } } |
   { kind: 'calculate'; config: { name: string; expression: string } } |
   { kind: 'aggregate'; config: { groupBy: string[]; measures: PrepMeasure[] } } |
-  { kind: 'join'; config: { source: string; joinType: 'inner' | 'left' | 'right' | 'full'; keys: { left: string; right: string }[]; columns: { column: string; name: string }[] } } |
+  { kind: 'join'; config: { source: PrepJoinInput; joinType: 'inner' | 'left' | 'right' | 'full'; keys: { left: string; right: string }[] } & PrepJoinOutputs } |
   { kind: 'append'; config: { source: string } } |
   { kind: 'pivot'; config: { groupBy: string[]; column: string; value: string; aggregation: PrepAggregation; values: { value: string | number; name: string }[] } } |
   { kind: 'unpivot'; config: { columns: string[]; nameColumn: string; valueColumn: string } }
 );
-export interface PrepPipeline { version: 1; input: string; steps: PrepStep[] }
+export interface PrepPipeline { version: 1; input: PrepInput; steps: PrepStep[] }
 export type PrepErrorCode = 'INVALID_PREP_PIPELINE' | 'UNSUPPORTED_PREP_STEP' | 'PREP_SCHEMA_MISMATCH' | 'PREP_SOURCE_NOT_FOUND' | 'PREP_SECURITY_REJECTED' | 'PREP_EXECUTION_FAILED' | 'PREP_NOT_FOUND' | 'PREP_LIMIT_EXCEEDED';
 export class PrepError extends Error {
   constructor(readonly code: PrepErrorCode, readonly path: string, message: string) { super(`${path}: ${message}`); this.name = 'PrepError'; }
@@ -45,10 +48,20 @@ function choice(raw: unknown, values: readonly string[], path: string): void { i
 function scalar(raw: unknown, path: string): void { if (!(typeof raw === 'number' && Number.isFinite(raw) || typeof raw === 'string' && raw.length <= 10000 && !raw.includes('\0'))) invalid(path, 'Expected a finite number or string'); }
 const aggregations = ['SUM', 'AVG', 'COUNT', 'MIN', 'MAX'];
 export const prepTypes: readonly PrepType[] = ['INTEGER', 'DECIMAL', 'STRING', 'DATETIME', 'BOOLEAN'];
+function inputReference(raw: unknown, path: string, previous?: readonly string[]): void {
+  if (typeof raw === 'string') { prepName(raw, path); return; }
+  const ref = prepObject(raw, previous ? ['dataset', 'step'] : ['dataset'], path);
+  if (Object.keys(ref).length !== 1) invalid(path, 'Expected exactly one input reference');
+  if (Object.hasOwn(ref, 'dataset')) prepName(ref.dataset, `${path}.dataset`);
+  else {
+    const id = prepName(ref.step, `${path}.step`);
+    if (!previous?.includes(id)) invalid(path, `Join source must reference an earlier step: ${id}`);
+  }
+}
 export function validatePrepPipeline(raw: unknown, path = '$.opensightPrep'): PrepPipeline {
   const p = prepObject(raw, ['version', 'input', 'steps'], path);
   if (p.version !== 1) invalid(`${path}.version`, 'Unsupported pipeline version');
-  prepName(p.input, `${path}.input`);
+  inputReference(p.input, `${path}.input`);
   const steps = list(p.steps, `${path}.steps`, true);
   if (steps.length > 50) invalid(`${path}.steps`, 'At most 50 steps');
   names(steps.map(v => v && typeof v === 'object' ? (v as Record<string, unknown>).id : undefined), `${path}.steps.ids`, true);
@@ -77,9 +90,19 @@ export function validatePrepPipeline(raw: unknown, path = '$.opensightPrep'): Pr
         break;
       }
       case 'join': {
-        const c = prepObject(s.config, ['source', 'joinType', 'keys', 'columns'], cp); prepName(c.source, cp); choice(c.joinType, ['inner', 'left', 'right', 'full'], cp);
-        for (const k of list(c.keys, cp)) { const v = prepObject(k, ['left', 'right'], cp); prepName(v.left, cp); prepName(v.right, cp); }
-        for (const col of list(c.columns, cp)) { const v = prepObject(col, ['column', 'name'], cp); prepName(v.column, cp); prepName(v.name, cp); }
+        const c = prepObject(s.config, ['source', 'joinType', 'keys', 'columns', 'prefix'], cp);
+        inputReference(c.source, `${cp}.source`, steps.slice(0, i).map(s => (s as { id: string }).id));
+        choice(c.joinType, ['inner', 'left', 'right', 'full'], cp);
+        const pairs = new Set<string>();
+        for (const [n, k] of list(c.keys, `${cp}.keys`).entries()) {
+          const kp = `${cp}.keys[${n}]`, v = prepObject(k, ['left', 'right'], kp);
+          prepName(v.left, `${kp}.left`); prepName(v.right, `${kp}.right`);
+          const pair = JSON.stringify([v.left, v.right]);
+          if (pairs.has(pair)) invalid(kp, 'Duplicate join key pair'); pairs.add(pair);
+        }
+        if (Object.hasOwn(c, 'columns') === Object.hasOwn(c, 'prefix')) invalid(cp, 'Expected exactly one of columns or prefix');
+        if (Object.hasOwn(c, 'prefix')) prepName(c.prefix, `${cp}.prefix`);
+        else for (const col of list(c.columns, `${cp}.columns`)) { const v = prepObject(col, ['column', 'name'], cp); prepName(v.column, cp); prepName(v.name, cp); }
         break;
       }
       case 'append': { const c = prepObject(s.config, ['source'], cp); prepName(c.source, cp); break; }

@@ -14,3 +14,27 @@ test('dataset prep survives resource and ZIP import/export without losing ordere
   assert.deepEqual(await parseQsBundle(await assembleQsBundle(bundle)), bundle);
   assert.throws(() => parseBundleResource({ ...resource, opensightPrep: { ...pipeline, steps: [{ id: 's', kind: 'sql', config: {} }] } }), /UNSUPPORTED|unsupported/);
 });
+
+test('multi-input joins round-trip typed references and output modes through .qs archives', async () => {
+  const p = { version: 1, input: { dataset: 'base' }, steps: [
+    { id: 'joined', kind: 'join', config: { source: 'uploaded', joinType: 'full', keys: [{ left: 'id', right: 'id' }], prefix: 'uploaded_' } },
+    { id: 'reuse', kind: 'join', config: { source: { step: 'joined' }, joinType: 'inner', keys: [{ left: 'id', right: 'id' }], columns: [{ column: 'uploaded_value', name: 'copy' }] } },
+    { id: 'lookup', kind: 'join', config: { source: { dataset: 'lookup' }, joinType: 'right', keys: [{ left: 'id', right: 'id' }], prefix: 'lookup_' } },
+  ] };
+  const bundle = { members: [{ path: 'dataset/joined.json', resource: { resourceType: 'dataset', dataSetId: 'joined', name: 'Joined', physicalTableMap: {}, importMode: 'DIRECT_QUERY', opensightPrep: p } }] };
+  assert.deepEqual(await parseQsBundle(await assembleQsBundle(bundle)), bundle);
+  assert.deepEqual(validatePrepPipeline(p), p);
+});
+test('join reference and output validation rejects ambiguous, forward, repeated and malformed configs', () => {
+  const join = { id: 'j', kind: 'join', config: { source: 'right', joinType: 'left', keys: [{ left: 'id', right: 'id' }], prefix: 'r_' } };
+  const p = config => ({ version: 1, input: 'left', steps: [{ ...join, config: { ...join.config, ...config } }] });
+  for (const config of [
+    { source: { step: 'j' } }, { source: { step: 'later' } }, { source: {} }, { source: { dataset: 'd', step: 'j' } },
+    { source: { dataset: 'd', security: 'unrestricted' } }, { source: { dataset: '' } }, { source: { cached: 'd' } },
+    { prefix: '' }, { prefix: 'r_', columns: [{ column: 'id', name: 'id' }] }, { keys: [] },
+    { keys: [{ left: 'id', right: 'id' }, { left: 'id', right: 'id' }] },
+  ]) assert.throws(() => validatePrepPipeline(p(config)), e => e.code === 'INVALID_PREP_PIPELINE');
+  assert.throws(() => validatePrepPipeline({ ...p({}), input: { step: 'j' } }), e => e.code === 'INVALID_PREP_PIPELINE');
+  const noOutputs = p({}); delete noOutputs.steps[0].config.prefix;
+  assert.throws(() => validatePrepPipeline(noOutputs), e => e.code === 'INVALID_PREP_PIPELINE');
+});

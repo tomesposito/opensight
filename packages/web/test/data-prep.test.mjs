@@ -93,3 +93,75 @@ test('numeric filter editing preserves partially typed negative values until App
   await act(async () => renderer.root.findByType('form').props.onSubmit({ preventDefault() {} }));
   assert.equal(applied.config.filters[0].value, -2.5);
 });
+
+async function field(renderer, label, value) {
+  const holder = renderer.root.findAllByType('label').find(l => l.props.children[0] === label);
+  assert.ok(holder, label);
+  const input = holder.findAll(n => typeof n.type === 'string' && ['input', 'select', 'textarea'].includes(n.type))[0];
+  await act(async () => input.props.onChange({ target: { value } }));
+}
+const submitStep = async renderer => act(async () => renderer.root.findByType(PrepStepEditor).findByType('form').props.onSubmit({ preventDefault() {} }));
+test('join editor shows types, blocks mismatched keys and collisions, and reuses one node per source', async t => {
+  const ui = await mount(t);
+  await ui.click('＋ Join');
+  assert.ok(ui.renderer.root.findAllByType('option').some(o => Array.isArray(o.props.children) && o.props.children.join('') === 'region · STRING'));
+  await field(ui.renderer, 'Left column', 'revenue');
+  assert.match(JSON.stringify(ui.renderer.toJSON()), /PREP_SCHEMA_MISMATCH.*DECIMAL.*STRING/);
+  assert.equal(ui.button('Apply step').props.disabled, true);
+  await submitStep(ui.renderer);
+  assert.equal(ui.renderer.root.findAllByProps({ className: 'prep-node-wrap' }).length, 2);
+  await field(ui.renderer, 'Left column', 'region');
+  await field(ui.renderer, 'Right output mode', 'Explicit aliases');
+  await field(ui.renderer, 'Output name', 'region');
+  assert.match(JSON.stringify(ui.renderer.toJSON()), /PREP_SCHEMA_MISMATCH.*Duplicate/);
+  await field(ui.renderer, 'Output name', 'lookup_region');
+  await submitStep(ui.renderer);
+  assert.equal(ui.renderer.root.findAll(n => n.type === 'button' && n.props.className?.includes('input-node')).length, 2);
+  await ui.click('＋ Join');
+  const stepOption = ui.renderer.root.findAllByType('option').find(n => typeof n.props.value === 'string' && n.props.value.startsWith('{"step":'));
+  assert.ok(stepOption);
+  await field(ui.renderer, 'Right source', stepOption.props.value);
+  await field(ui.renderer, 'Right column prefix', 'again_');
+  await submitStep(ui.renderer);
+  assert.match(JSON.stringify(ui.renderer.toJSON()), /again_lookup_region/);
+  assert.equal(ui.renderer.root.findAll(n => n.type === 'button' && n.props.className?.includes('input-node')).length, 2);
+  await ui.click('Move earlier');
+  assert.match(JSON.stringify(ui.renderer.toJSON()), /INVALID_PREP_PIPELINE.*earlier step/);
+  await ui.click('Move later');
+  assert.doesNotMatch(JSON.stringify(ui.renderer.toJSON()), /INVALID_PREP_PIPELINE/);
+});
+test('hosted prepared joins preview before save and preserve refs and aliases in bundle exports', async t => {
+  const lookup = { ...resource, dataSetId: 'lookup', name: 'Lookup', opensightPrep: pipeline };
+  const sources = [source, { ...source, id: 'lookup', name: 'Lookup', ref: { dataset: 'lookup' } }];
+  const calls = [], saves = [];
+  const client = {
+    async listPrepSources() { return sources; }, async listPrepDatasets() { return { datasets: [lookup], persistence: 'file' }; },
+    async previewPrep(id, p, through) { calls.push([id, p, through]); return { columns: [], rows: through ? [{ region: 'East', amount: 2, joined_region: 'JOINED ROW', joined_amount: 5 }] : [], returnedRows: through ? 1 : 0, totalRows: through ? 1 : 0, truncated: false, rowCountLowerBound: 1, limit: 100, dialect: 'duckdb', through }; },
+    async savePrep(id, name, p) { saves.push(p); return { resource: { ...resource, dataSetId: id, name, opensightPrep: p }, persistence: 'file' }; },
+  };
+  const ui = await mount(t, client);
+  await ui.click('＋ Join');
+  assert.match(JSON.stringify(ui.renderer.toJSON()), /Prepared dataset · Lookup/);
+  await field(ui.renderer, 'Join type', 'full');
+  await submitStep(ui.renderer);
+  await act(async () => new Promise(resolve => setTimeout(resolve, 340)));
+  assert.equal(saves.length, 0); assert.match(JSON.stringify(ui.renderer.toJSON()), /JOINED ROW/);
+  const p = calls.at(-1)[1];
+  assert.deepEqual(p.steps[0].config.source, { dataset: 'lookup' }); assert.equal(p.steps[0].config.joinType, 'full');
+  assert.equal(calls.at(-1)[2], p.steps[0].id);
+  const roundtrip = await parseQsBundle(await assembleQsBundle(prepBundle(resource, p)));
+  assert.deepEqual(roundtrip.members[0].resource.opensightPrep, p);
+  await ui.click('Save pipeline'); assert.deepEqual(saves[0], p);
+  await ui.click('＋ Add data');
+  await field(ui.renderer, 'Connected source', JSON.stringify({ dataset: 'lookup' }));
+  await act(async () => new Promise(resolve => setTimeout(resolve, 340)));
+  assert.deepEqual(calls.at(-1)[1].input, { dataset: 'lookup' });
+});
+test('raw and prepared references with the same ID remain distinct canvas inputs', async () => {
+  const { prepInputNodes } = await import('../build/test/data-prep.js');
+  const step = id => ({ id, kind: 'join', config: { source: { dataset: source.id }, joinType: 'left', keys: [{ left: 'region', right: 'region' }], prefix: `${id}_` } });
+  const p = { ...pipeline, steps: [step('first'), step('second')] };
+  const nodes = prepInputNodes(p); assert.equal(nodes.length, 2);
+  assert.equal(nodes[0].ref, source.id); assert.deepEqual(nodes[1].ref, { dataset: source.id });
+  assert.deepEqual(nodes[1].consumers, ['1. Join', '2. Join']);
+});
