@@ -4,6 +4,10 @@ import { SqliteMetadataDatabase } from '../dist/metadata-db.js';
 import { initializeMetadata } from '../dist/metadata-schema.js';
 import { TenantMetadata } from '../dist/metadata.js';
 import { insertResource, resourceKinds } from '../dist/metadata-resources.js';
+import { MetadataOperator } from '../dist/metadata-operator.js';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 
 export async function seed(db, namespaceId = 'one', tenantId = 'a') {
   await db.transaction(async c => {
@@ -118,5 +122,57 @@ test('H1 tenant/namespace uniqueness and composite foreign keys survive rollback
       await assert.rejects(db.transaction(c => c.query(sql)), { code: 'METADATA_CONFLICT' });
     await assert.rejects(db.transaction(c => c.query("INSERT INTO h1_revisions VALUES ('b','one',1,1,1)")), { code: 'METADATA_REFERENCE_INVALID' });
     await db.transaction(async c => assert.equal((await c.query('SELECT * FROM h1_namespaces')).length, 1));
+  } finally { await db.close(); }
+});
+
+test('H1 resumable operator lifecycle, suspension revocation and permanent deletion tombstone', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'opensight-h1-'));
+  let db = new SqliteMetadataDatabase(join(dir, 'metadata.db'));
+  try {
+    await initializeMetadata(db);
+    let operator = new MetadataOperator(db), repo = new TenantMetadata(db, db);
+    const request = { namespaceId: 'one', name: 'One', administrator: { id: 'admin', name: 'Admin' } };
+    const created = await operator.provision('provision', request);
+    assert.match(created.tenantId, /^[a-f0-9-]{36}$/);
+    assert.deepEqual(await operator.provision('provision', request), created);
+    await assert.rejects(operator.provision('provision', { ...request, namespaceId: 'two' }), { code: 'OPERATION_ID_REUSED' });
+    await assert.rejects(login(repo), { code: 'UNKNOWN_PRINCIPAL' });
+    await assert.rejects(operator.activate('provision'), { code: 'OPERATION_TRANSITION_INVALID' });
+    await operator.checkpoint('provision', 'created', 'configured');
+    await db.close(); db = new SqliteMetadataDatabase(join(dir, 'metadata.db'));
+    operator = new MetadataOperator(db); repo = new TenantMetadata(db, db);
+    assert.equal((await operator.inspect('provision')).step, 'configured');
+    await operator.checkpoint('provision', 'configured', 'verified');
+    await operator.activate('provision');
+    const context = await login(repo);
+    const suspended = await operator.transition('suspend', created.tenantId, 'suspend', 2);
+    assert.deepEqual(await operator.transition('suspend', created.tenantId, 'suspend', 2), suspended);
+    await assert.rejects(repo.list(context, 'user'), { code: 'TENANT_UNAVAILABLE' });
+    await operator.transition('resume', created.tenantId, 'resume', 3);
+    await assert.rejects(repo.list(context, 'user'), { code: 'AUTHORIZATION_REVISED' });
+    assert.equal((await repo.revisions(await login(repo))).authorization, 3);
+    await operator.transition('delete', created.tenantId, 'delete', 4);
+    await assert.rejects(login(repo), { code: 'UNKNOWN_PRINCIPAL' });
+    await assert.rejects(operator.finishDeletion('delete'), { code: 'OPERATION_TRANSITION_INVALID' });
+    await operator.checkpoint('delete', 'revoked', 'artifacts-removed');
+    await operator.finishDeletion('delete');
+    assert.equal((await operator.tenant(created.tenantId)).state, 'deleted');
+    assert.ok((await operator.tenant(created.tenantId)).tombstone);
+    await operator.finishDeletion('delete');
+    await assert.rejects(operator.transition('resurrect', created.tenantId, 'resume', 6), { code: 'OPERATION_TRANSITION_INVALID' });
+    await assert.rejects(operator.provision('reuse-namespace', request), { code: 'METADATA_CONFLICT' });
+  } finally { await db.close(); await rm(dir, { recursive: true, force: true }); }
+});
+
+test('H1 concurrent provisioning has one winner and no orphan tenant or operation', async () => {
+  const db = new SqliteMetadataDatabase(':memory:');
+  try {
+    await initializeMetadata(db); const operator = new MetadataOperator(db);
+    const results = await Promise.allSettled(['first', 'second'].map(id => operator.provision(id, { namespaceId: 'same', name: 'Same', administrator: { id: 'admin', name: 'Admin' } })));
+    assert.equal(results.filter(r => r.status === 'fulfilled').length, 1);
+    assert.equal(results.find(r => r.status === 'rejected').reason.code, 'METADATA_CONFLICT');
+    await db.transaction(async c => {
+      for (const table of ['tenants', 'namespaces', 'operations', 'resources', 'revisions']) assert.equal((await c.query(`SELECT * FROM h1_${table}`)).length, 1);
+    });
   } finally { await db.close(); }
 });
