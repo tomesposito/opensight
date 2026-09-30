@@ -23,7 +23,7 @@ test('H2 live Postgres: private credentials, concurrent onboarding/MFA/switch, c
   for (const table of metadataTables.filter(t => t !== 'migrations')) await adminPool.query(`GRANT SELECT, INSERT, UPDATE, DELETE ON h1_${table} TO ${role}`);
   const url = new URL(process.env.DATABASE_URL); url.username = role; url.password = '';
   tenantPool = new Pool({ connectionString: url.href, max: 1, options: `-c search_path=${schema}` });
-  for (const table of ['identities', 'memberships', 'sessions', 'keys', 'invitations', 'attempts', 'onboarding']) await assert.rejects(tenantPool.query(`SELECT * FROM h2_${table}`), { code: '42501' });
+  for (const table of ['identities', 'memberships', 'sessions', 'keys', 'invitations', 'attempts', 'onboarding', 'requests', 'control']) await assert.rejects(tenantPool.query(`SELECT * FROM h2_${table}`), { code: '42501' });
   const config = hostedConfig(environment()), mail = new StubMailTransport(); let now = 1800000000000;
   const provisioning = new HostedProvisioning(db, config, mail, () => now), auth = await HostedAuth.create(db, config, () => now);
   const second = await HostedAuth.create(new PostgresMetadataDatabase(adminPool), config, () => now);

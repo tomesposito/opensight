@@ -31,7 +31,7 @@ export function decode32(value) {
 }
 export async function authFixture(t) {
   const f = await database(t), mail = new StubMailTransport();
-  let now = 1800000000000;
+  let now = Math.floor(Date.now() / 30000) * 30000;
   const clock = () => now, advance = (ms = 30000) => { now += ms; };
   const auth = await HostedAuth.create(f.db, f.config, clock), provisioning = new HostedProvisioning(f.db, f.config, mail, clock);
   const email = 'invited@example.test', password = randomBytes(24).toString('base64');

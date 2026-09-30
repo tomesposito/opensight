@@ -4,6 +4,7 @@ import { request as httpRequest } from 'node:http';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { randomBytes } from 'node:crypto';
+import { stat } from 'node:fs/promises';
 import { createHostedApiServer, createBuiltinHostedServer } from '../dist/hosted-server.js';
 import { hostedConfig } from '../dist/hosted-config.js';
 import { HostedAuth } from '../dist/hosted-auth.js';
@@ -122,4 +123,54 @@ test('H2 CLI refuses accidental fixture fallback, malformed config and unsupport
     });
     assert.equal(result.status, 1); assert.ok(result.out.includes(expected)); assert.ok(!result.out.includes('listening'));
   }
+});
+
+test('H2 operator invitations preprovision users, revoke stale sessions, and preserve global idempotency across routes', async t => {
+  const f = await authFixture(t), { request, operator } = await serving(t, f), old = await f.login();
+  const path = `/api/host/tenants/${f.tenant.tenantId}/invitations`, headers = { ...operator, 'idempotency-key': 'additional-member' };
+  const input = { email: 'additional@example.test', name: 'Additional reader', role: 'reader' };
+  const first = await request(path, { method: 'POST', headers, body: input }); assert.equal(first.status, 201);
+  assert.deepEqual((await request(path, { method: 'POST', headers, body: input })).body, first.body); assert.equal(f.mail.messages.length, 2);
+  assert.equal((await request(path, { method: 'POST', headers, body: { ...input, role: 'administrator' } })).body.errorCode, 'OPERATION_ID_REUSED');
+  assert.equal((await request(`/api/host/tenants/${f.tenant.tenantId}/suspend`, { method: 'POST', headers, body: { expectedVersion: 2 } })).body.errorCode, 'OPERATION_ID_REUSED');
+  assert.equal((await request('/api/session', { headers: { authorization: `Bearer ${old.token}` } })).status, 401);
+  const session = await f.login(), members = (await request('/api/users', { headers: { authorization: `Bearer ${session.token}` } })).body;
+  assert.equal(members.length, 2); const invited = members.find(u => u.name === input.name); assert.ok(invited);
+  const membership = (await f.db.transaction(c => c.query('SELECT status FROM h2_memberships WHERE user_id = ?', [invited.id])))[0]; assert.equal(membership.status, 'invited');
+  const invitationToken = f.mail.messages[1].html.match(/<code>([^<]+)<\/code>/)[1], password = randomBytes(24).toString('base64');
+  const enrolled = await request('/api/auth/enroll', { method: 'POST', body: { invitationToken, password } }); assert.equal(enrolled.status, 200);
+  const readerSecret = decode32(enrolled.body.secret), readerCode = () => totp(readerSecret, Math.floor(f.clock() / 30000));
+  assert.equal((await request('/api/auth/accept', { method: 'POST', body: { invitationToken, password, code: readerCode() } })).status, 200); f.advance();
+  const reader = await request('/api/auth/login', { method: 'POST', body: { email: input.email, password, code: readerCode(), tenantId: f.tenant.tenantId } }); assert.equal(reader.status, 200);
+  const readerHeaders = { authorization: `Bearer ${reader.body.token}` };
+  assert.equal((await request('/api/users', { headers: readerHeaders })).body.errorCode, 'SECURITY_ADMIN_REQUIRED');
+  assert.equal((await request('/api/session', { headers: readerHeaders })).body.role, 'reader');
+  const remove = `/api/host/tenants/${f.tenant.tenantId}/users/${invited.id}`;
+  assert.equal((await request(remove, { method: 'DELETE', headers: operator, body: {} })).status, 200);
+  assert.equal((await request(remove, { method: 'DELETE', headers: operator, body: {} })).status, 200);
+  assert.equal((await request('/api/session', { headers: readerHeaders })).status, 401);
+  assert.equal((await request('/api/auth/enroll', { method: 'POST', body: { invitationToken, password: randomBytes(24).toString('base64') } })).status, 401);
+  assert.equal((await request('/api/host/tenants', { method: 'POST', headers, body: f.input })).body.errorCode, 'OPERATION_ID_REUSED');
+});
+
+test('H2 hosted CLI starts with private durable storage and its key-rotation command revokes a running process', async t => {
+  const f = await authFixture(t), session = await f.login(), cli = fileURLToPath(new URL('../dist/cli.js', import.meta.url));
+  const env = { PATH: process.env.PATH, TZ: 'UTC', ...configEnv(f.config), OPENSIGHT_MODE: 'hosted', OPENSIGHT_METADATA_DATABASE: f.path, PORT: '0' };
+  const child = spawn(process.execPath, [cli], { env });
+  const exit = new Promise(resolve => child.once('exit', resolve));
+  t.after(async () => { child.kill('SIGTERM'); await exit; });
+  const port = await new Promise((resolve, reject) => {
+    let out = ''; const timeout = setTimeout(() => reject(Error('Hosted CLI did not start')), 15000);
+    child.once('exit', () => { clearTimeout(timeout); reject(Error('Hosted CLI exited before listening')); });
+    child.stdout.on('data', bytes => { out += bytes; const match = /listening on http:\/\/127\.0\.0\.1:(\d+)/.exec(out); if (match) { clearTimeout(timeout); resolve(Number(match[1])); } });
+    child.stderr.resume();
+  });
+  const inspect = () => new Promise((resolve, reject) => {
+    const req = httpRequest({ port, hostname: '127.0.0.1', path: '/api/session', headers: { Host: new URL(f.config.origin).host, authorization: `Bearer ${session.token}` } }, res => { res.resume(); res.once('end', () => resolve(res.statusCode)); }); req.on('error', reject); req.end();
+  });
+  assert.equal(await inspect(), 200); assert.equal((await stat(f.path)).mode & 0o777, 0o600);
+  const rotation = spawn(process.execPath, [cli, 'rotate-auth-key'], { env: { ...env, OPENSIGHT_AUTH_KEY_ID: 'cli-rotated', OPENSIGHT_AUTH_SIGNING_KEY: randomBytes(32).toString('base64') } });
+  rotation.stdout.resume(); rotation.stderr.resume();
+  assert.equal(await new Promise(resolve => rotation.once('exit', resolve)), 0);
+  assert.equal(await inspect(), 401);
 });

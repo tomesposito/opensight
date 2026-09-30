@@ -4,7 +4,7 @@ import { HostedAuth } from './hosted-auth.js';
 import { initializeAuth } from './auth-schema.js';
 import { equal } from './auth-crypto.js';
 import { hostedConfig } from './hosted-config.js';
-import { HostedProvisioning, operatorOperationId } from './hosted-provisioning.js';
+import { HostedProvisioning } from './hosted-provisioning.js';
 import { MetadataError, type Database } from './metadata-db.js';
 import { TenantMetadata } from './metadata.js';
 import { identifier, object } from './metadata-resources.js';
@@ -88,7 +88,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
           if (!action || action === 'suspend' || action === 'resume') {
             method(request, response, [action ? 'POST' : 'DELETE']);
             const input = await body(request, ['expectedVersion']);
-            send(response, 200, await provisioning.operator.transition(operatorOperationId(idempotency(request)), tenantId, action === 'suspend' ? 'suspend' : action === 'resume' ? 'resume' : 'delete', input.expectedVersion as number)); return;
+            send(response, 200, await provisioning.transition(idempotency(request), tenantId, action === 'suspend' ? 'suspend' : action === 'resume' ? 'resume' : 'delete', input.expectedVersion as number)); return;
           }
         }
         throw new MetadataError('RESOURCE_NOT_FOUND', 404);

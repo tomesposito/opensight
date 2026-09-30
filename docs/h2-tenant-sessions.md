@@ -98,7 +98,8 @@ session; a failed switch preserves it. `POST /api/auth/logout` with `{}` revokes
 the current session. No implicit renewal or anonymous embedding is provided.
 
 Passwords use Node's built-in scrypt (`N=131072`, `r=8`, `p=1`), independent
-128-bit salts and a 256-bit result. This memory-hard choice adds no dependencies.
+128-bit salts and a 256-bit result. This memory-hard choice adds no dependencies
+and works throughout the repository's declared Node 24 support range.
 At most two password derivations run concurrently per process. TOTP uses random
 160-bit secrets, AES-256-GCM encryption bound to the immutable subject, six digits,
 30-second steps and a ±1-step window. The last accepted step is updated atomically

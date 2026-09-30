@@ -23,6 +23,20 @@ export class HostedProvisioning {
   constructor(private readonly database: Database, private readonly config: HostedConfig, private readonly mail: MailTransport, private readonly clock = Date.now) {
     this.operator = new MetadataOperator(database);
   }
+  private async reserve(operationId: string, hash: string): Promise<void> {
+    await this.database.transaction(async c => {
+      await c.query('INSERT INTO h2_requests VALUES (?,?) ON CONFLICT (operation_id) DO NOTHING', [operationId, hash]);
+      const prior = (await c.query('SELECT request_hash FROM h2_requests WHERE operation_id = ?', [operationId]))[0]!;
+      if (prior.request_hash !== hash) throw new MetadataError('OPERATION_ID_REUSED');
+    });
+  }
+  async transition(key: string, tenantId: string, action: 'suspend' | 'resume' | 'delete', expectedVersion: number): Promise<TenantOperation> {
+    identifier(tenantId);
+    if (!['suspend', 'resume', 'delete'].includes(action) || !Number.isSafeInteger(expectedVersion) || expectedVersion < 1) throw new MetadataError('METADATA_INVALID', 400);
+    const operationId = operatorOperationId(key);
+    await this.reserve(operationId, checksum({ action, tenantId, expectedVersion }));
+    return this.operator.transition(operationId, tenantId, action, expectedVersion);
+  }
   private async invite(c: SqlConnection, operationId: string, tenantId: string, namespaceId: string, userId: string, email: string): Promise<string> {
     await c.query("INSERT INTO h2_identities (subject,email,status) VALUES (?,?,'invited') ON CONFLICT (email) DO NOTHING", [randomUUID(), email]);
     const subject = String((await c.query('SELECT subject FROM h2_identities WHERE email = ?', [email]))[0]!.subject);
@@ -35,6 +49,7 @@ export class HostedProvisioning {
     const input = { name: label(raw.name), administrator: { email: normalizedEmail(raw.administrator.email), name: label(raw.administrator.name) } };
     const operationId = operatorOperationId(key), hash = checksum({ action: 'onboard', input });
     if (!this.mail.configured) throw new MetadataError('SMTP_NOT_CONFIGURED', 503);
+    await this.reserve(operationId, hash);
     await this.database.transaction(async c => {
       await c.query('UPDATE h2_control SET id = id WHERE id = 1');
       const prior = (await c.query('SELECT * FROM h2_onboarding WHERE operation_id = ?', [operationId]))[0];
@@ -88,6 +103,7 @@ export class HostedProvisioning {
     const input = { email: normalizedEmail(raw.email), name: label(raw.name), role: raw.role }, operationId = operatorOperationId(key);
     const hash = checksum({ action: 'invite', tenantId, input });
     if (!this.mail.configured) throw new MetadataError('SMTP_NOT_CONFIGURED', 503);
+    await this.reserve(operationId, hash);
     await this.database.transaction(async c => {
       const rows = await c.query("UPDATE h1_tenants SET version = version WHERE tenant_id = ? AND state = 'active' RETURNING tenant_id", [tenantId]);
       if (!rows.length) throw new MetadataError('TENANT_UNAVAILABLE', 403);

@@ -28,7 +28,8 @@ export async function initializeAuth(database: Database): Promise<void> {
         revoked INTEGER NOT NULL DEFAULT 0, FOREIGN KEY (subject, tenant_id) REFERENCES h2_memberships(subject, tenant_id))`,
       `CREATE TABLE IF NOT EXISTS h2_attempts (bucket TEXT PRIMARY KEY, window_start BIGINT NOT NULL, attempts INTEGER NOT NULL)`,
       `CREATE TABLE IF NOT EXISTS h2_onboarding (operation_id TEXT PRIMARY KEY, request_hash TEXT NOT NULL, tenant_id TEXT NOT NULL,
-        invitation_id TEXT NOT NULL REFERENCES h2_invitations(invitation_id))`
+        invitation_id TEXT NOT NULL REFERENCES h2_invitations(invitation_id))`,
+      `CREATE TABLE IF NOT EXISTS h2_requests (operation_id TEXT PRIMARY KEY, request_hash TEXT NOT NULL)`
     ]) await c.query(sql);
   });
 }
