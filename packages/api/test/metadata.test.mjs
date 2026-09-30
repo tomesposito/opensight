@@ -176,3 +176,21 @@ test('H1 concurrent provisioning has one winner and no orphan tenant or operatio
     });
   } finally { await db.close(); }
 });
+
+test('H1 outbox commits with state, contains no payloads, and rolls back on failure', async () => {
+  const db = new SqliteMetadataDatabase(':memory:');
+  try {
+    await initializeMetadata(db); await seed(db);
+    const repo = new TenantMetadata(db, db), context = await login(repo);
+    await repo.put(context, { kind: 'dataset', id: 'd' }, { definition: { Name: 'private payload' }, sources: [] });
+    const readEvents = () => db.transaction(c => c.query('SELECT * FROM h1_outbox'));
+    const before = await readEvents();
+    assert.equal(before.length, 1); assert.equal(before[0].event_type, 'metadata.changed');
+    assert.equal(JSON.stringify(before).includes('private payload'), false);
+    await assert.rejects(repo.put(context, { kind: 'group', id: 'bad' }, { name: 'bad', userIds: ['missing'] }));
+    assert.deepEqual(await readEvents(), before);
+    const operator = new MetadataOperator(db), request = { namespaceId: 'new', name: 'New', administrator: { id: 'admin', name: 'Admin' } };
+    await operator.provision('new-operation', request); await operator.provision('new-operation', request);
+    assert.equal((await readEvents()).length, 2);
+  } finally { await db.close(); }
+});

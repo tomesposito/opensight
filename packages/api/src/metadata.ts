@@ -2,6 +2,7 @@ import { hasCapability } from '@opensight/query-engine';
 import { MetadataError, missing, type Database, type SqlConnection, type SqlRow } from './metadata-db.js';
 import { identifier, insertLinks, insertResource, resourceKey, resourceKinds, resourceLinks, type MetadataKind, type MetadataResource, type ResourceKey, type Scope } from './metadata-resources.js';
 import type { JsonObject } from './mapping.js';
+import { appendMetadataEvent } from './metadata-outbox.js';
 
 export interface TenantContext extends Scope { readonly userId: string; readonly authorizationRevision: number }
 export interface Revisions { authorization: number; policy: number; configuration: number }
@@ -113,6 +114,7 @@ export class TenantMetadata {
         const configuration = changes.some(e => ['dataset', 'prepared-dataset', 'source', 'secret', 'ai-config'].includes(e.key.kind)) ? 1 : 0;
         await c.query('UPDATE h1_revisions SET authorization = authorization + ?, policy = policy + ?, configuration = configuration + ? WHERE tenant_id = ? AND namespace_id = ?',
           [authorization, policy, configuration, ...scopeValues(context)]);
+        await appendMetadataEvent(c, context, 'metadata.changed');
       }
     });
   }

@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { MetadataError, missing, type Database, type SqlConnection, type SqlRow } from './metadata-db.js';
 import { identifier, insertResource } from './metadata-resources.js';
+import { appendMetadataEvent } from './metadata-outbox.js';
 
 /** Canonical serialization makes idempotency independent of object property order. */
 export function canonical(value: unknown): string {
@@ -51,6 +52,7 @@ export class MetadataOperator {
       await c.query('INSERT INTO h1_revisions VALUES (?,?,1,1,1)', [tenantId, input.namespaceId]);
       await insertResource(c, { tenantId, namespaceId: input.namespaceId }, { kind: 'user', id: input.administrator.id }, { name: input.administrator.name, role: 'administrator' });
       await c.query("INSERT INTO h1_operations VALUES (?,?,?,'provision',?,'pending','created')", [operationId, tenantId, input.namespaceId, hash]);
+      await appendMetadataEvent(c, { tenantId, namespaceId: input.namespaceId }, 'tenant.provisioning');
       return read(c, operationId);
     });
   }
@@ -62,6 +64,7 @@ export class MetadataOperator {
       if (op.status !== 'pending' || !allowed.some(([from, to]) => from === expectedStep && to === nextStep)) throw new MetadataError('OPERATION_TRANSITION_INVALID');
       const rows = await c.query('UPDATE h1_operations SET step = ? WHERE operation_id = ? AND step = ? RETURNING operation_id', [nextStep, operationId, expectedStep]);
       if (!rows.length) throw new MetadataError('METADATA_CONFLICT');
+      await appendMetadataEvent(c, op, 'operation.checkpoint');
       return read(c, operationId);
     });
   }
@@ -76,6 +79,7 @@ export class MetadataOperator {
       const changed = await c.query("UPDATE h1_tenants SET state = 'active', version = version + 1 WHERE tenant_id = ? AND state = 'provisioning' RETURNING version", [op.tenantId]);
       if (!changed.length) throw new MetadataError('OPERATION_TRANSITION_INVALID');
       await c.query("UPDATE h1_operations SET status = 'complete', step = 'active' WHERE operation_id = ?", [operationId]);
+      await appendMetadataEvent(c, op, 'tenant.active');
       return read(c, operationId);
     });
   }
@@ -94,6 +98,7 @@ export class MetadataOperator {
       const namespaceId = String(tenant.namespace_id);
       await c.query('UPDATE h1_revisions SET authorization = authorization + 1 WHERE tenant_id = ? AND namespace_id = ?', [tenantId, namespaceId]);
       await c.query('INSERT INTO h1_operations VALUES (?,?,?,?,?,?,?)', [operationId, tenantId, namespaceId, action, hash, action === 'delete' ? 'pending' : 'complete', action === 'delete' ? 'revoked' : target]);
+      await appendMetadataEvent(c, { tenantId, namespaceId }, `tenant.${target}`);
       return read(c, operationId);
     });
   }
@@ -108,6 +113,7 @@ export class MetadataOperator {
       await c.query('DELETE FROM h1_links WHERE tenant_id = ? AND namespace_id = ?', [op.tenantId, op.namespaceId]);
       await c.query('DELETE FROM h1_resources WHERE tenant_id = ? AND namespace_id = ?', [op.tenantId, op.namespaceId]);
       await c.query("UPDATE h1_operations SET status = 'complete', step = 'deleted' WHERE operation_id = ?", [operationId]);
+      await appendMetadataEvent(c, op, 'tenant.deleted');
       return read(c, operationId);
     });
   }
