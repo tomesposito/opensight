@@ -17,9 +17,11 @@ import { RESOURCE_ID } from './store.js';
 export interface PrepPostgresBinding {
   namespaceId: string; userId: string; source: PrepSource; config: { connectionEnv: string };
 }
-interface Stored { namespaceId: string; userId: string; resource: BundleDataSet; execution?: ExecutionSettings }
-interface State { version: 1; datasets: Stored[] }
-function state(raw: unknown): State {
+export interface StoredPrep { namespaceId: string; userId: string; resource: BundleDataSet; execution?: ExecutionSettings }
+type Stored = StoredPrep;
+export interface PrepState { version: 1; datasets: Stored[] }
+type State = PrepState;
+export function validatePrepState(raw: unknown): State {
   const s = prepObject(raw, ['version', 'datasets'], '$');
   if (s.version !== 1 || !Array.isArray(s.datasets) || s.datasets.length > 1000) prepFail('INVALID_PREP_PIPELINE', '$', 'Invalid prep store');
   const seen = new Set<string>();
@@ -175,7 +177,7 @@ export class PrepRoutes {
       const key = JSON.stringify([b.namespaceId, b.userId, b.source.id]);
       if (seen.has(key)) prepFail('INVALID_PREP_PIPELINE', '$.source', 'Duplicate source binding'); seen.add(key);
     }
-    const routes = new PrepRoutes(await AutomationStore.load<State>({ version: 1, datasets: [] }, path, state), connectors, structuredClone(bindings), !!path);
+    const routes = new PrepRoutes(await AutomationStore.load<State>({ version: 1, datasets: [] }, path, validatePrepState), connectors, structuredClone(bindings), !!path);
     const current = routes.store.read();
     if (current.datasets.some(e => e.execution?.mode !== 'BLAZE' && routes.requirement(e, e.resource.dataSetId, current))) await routes.store.change(draft => routes.enforceModes(draft));
     routes.syncModes();

@@ -2,6 +2,7 @@ import { lstat, open, readdir } from 'node:fs/promises';
 import { extname, join, resolve } from 'node:path';
 import { loadQsBundle, parseBundleResource } from '@opensight/bundle-parser';
 import { fromArchive, isObject, type JsonObject } from './mapping.js';
+import { assertLegacyWritable } from './metadata-maintenance.js';
 
 export type ResourceKind = 'analysis' | 'dashboard';
 export const RESOURCE_ID = /^[A-Za-z0-9_-]{1,512}$/u;
@@ -60,9 +61,10 @@ export class DefinitionStore {
     return false;
   }
 
-  static async load(dataRoot: string): Promise<DefinitionStore> {
+  static async load(dataRoot: string, maintenanceRead = false): Promise<DefinitionStore> {
     const store = new DefinitionStore();
     const root = resolve(dataRoot);
+    if (!maintenanceRead) await assertLegacyWritable(root);
     async function visit(path: string, explicit = false): Promise<void> {
       const info = await lstat(path);
       if (info.isSymbolicLink()) {
