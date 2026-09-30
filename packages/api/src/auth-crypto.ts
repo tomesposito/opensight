@@ -6,8 +6,12 @@ export function equal(a: string, b: string): boolean {
   // Fixed-size digests avoid leaking the length of the stored credential.
   return timingSafeEqual(Buffer.from(digest(a), 'hex'), Buffer.from(digest(b), 'hex'));
 }
-function derive(password: string, salt: Buffer): Promise<Buffer> {
-  return new Promise((resolve, reject) => scrypt(password, salt, 32, { N: 131072, r: 8, p: 1, maxmem: 256 * 1024 * 1024 }, (error, result) => error ? reject(error) : resolve(result)));
+let activeDerivations = 0;
+async function derive(password: string, salt: Buffer): Promise<Buffer> {
+  if (activeDerivations >= 2) throw new MetadataError('AUTH_BUSY', 429);
+  activeDerivations++;
+  try { return await new Promise<Buffer>((resolve, reject) => scrypt(password, salt, 32, { N: 131072, r: 8, p: 1, maxmem: 256 * 1024 * 1024 }, (error, result) => error ? reject(error) : resolve(result))); }
+  finally { activeDerivations--; }
 }
 export function passwordInput(value: unknown): string {
   if (typeof value !== 'string' || value.length < 15 || Buffer.byteLength(value) > 1024) throw new MetadataError('PASSWORD_INVALID', 400);

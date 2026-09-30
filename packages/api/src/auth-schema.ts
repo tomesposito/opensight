@@ -5,6 +5,8 @@ export async function initializeAuth(database: Database): Promise<void> {
   if (database.durable !== true) throw new MetadataError('DURABLE_MEMBERSHIP_STORE_REQUIRED', 503);
   await database.transaction(async c => {
     for (const sql of [
+      `CREATE TABLE IF NOT EXISTS h2_control (id INTEGER PRIMARY KEY CHECK (id = 1))`,
+      `INSERT INTO h2_control VALUES (1) ON CONFLICT (id) DO NOTHING`,
       `CREATE TABLE IF NOT EXISTS h2_identities (
         subject TEXT PRIMARY KEY, email TEXT NOT NULL UNIQUE, password_hash TEXT, totp_secret TEXT,
         status TEXT NOT NULL CHECK (status IN ('invited','enrolling','active')), last_step BIGINT NOT NULL DEFAULT -1)`,
