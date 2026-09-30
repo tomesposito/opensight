@@ -349,10 +349,13 @@ See [Phase 3c documentation](folders-sharing-embedding.md) for existing limits.
 All additions below are OpenSight-local versioned contracts, **not implemented**.
 Continue the plain `node:http` resource/validation patterns. Preserve v1 issuance
 for its current semantics; do not silently turn its token into a session token.
-QuickSight compatibility applies to asset/security meaning. The documented AWS
-embed actions, lifetimes and options are surveyed as prior art in §2
-("QuickSight tenant model as prior art"); remaining product-scope questions are
-HQ-12.
+QuickSight compatibility applies to asset/security meaning and, per the
+2026-09-30 product decision (HQ-12), to API shapes for tenancy, identity and
+embedding: match QuickSight's action/parameter/session semantics wherever they
+do not weaken the tenant boundary. The documented AWS embed actions, lifetimes
+and options are surveyed as prior art in §2 ("QuickSight tenant model as prior
+art"); the remaining compatibility specifics (naming/versioning policy, adapter
+scope, evidence bar) are HQ-12.
 
 | Proposed endpoint | Authority and contract |
 | --- | --- |
@@ -757,7 +760,7 @@ distribution. Do not silently relabel its license or install an alternative.
 ## 7. Open questions
 
 The hosted/white-label direction and D13 are accepted inputs. Everything in this
-register is unresolved; recommendations above do not imply product approval. The
+register is unresolved **except HQ-12, decided 2026-09-30**; recommendations above do not imply product approval. The
 product owner decides product scope and operating commitments. Engineering supplies
 measurements and proposes contracts before the corresponding build slice starts.
 
@@ -774,7 +777,7 @@ measurements and proposes contracts before the corresponding build slice starts.
 | HQ-9 | Are custom embed domains required at launch? Who owns verification, certificates, renewal and DNS support? | Begin with a canonical origin unless custom domains are explicitly scheduled. Choose domain lifecycle and operator policy before routing a customer hostname. Product owner decision. | Custom-domain slice |
 | HQ-10 | What availability, recovery, retention/deletion and data-location commitments apply? | Specify RPO/RTO, backup/restore drills, audit/artifact retention, deletion completion including backups, and permitted single-region locations. No multi-region or compliance certification promised. Product owner decision. | Production pilot and HA claims |
 | HQ-11 | How should D11 serverless hosting, D12 production Postgres/local-only DuckDB and D13 local Parquet readers be reconciled? | Decide API/worker deployment lifetimes and cached execution backend; measure local loading/mapping and shared semantics. Compose is a reference harness, not a reversal of the cloud decision. | Hosted analytical executor and distributed artifacts |
-| HQ-12 | Which QuickSight embedding/API behavior must be compatible, beyond current asset/security semantics? Resolved by the §2 prior-art survey: `GenerateEmbedUrlForRegisteredUser` (15–600 min sessions; dashboard/visual/Q/console; authors only for authoring), `GenerateEmbedUrlForAnonymousUser` (5-min URL, 10-h session; session tags for RLS; virtual namespace), static + runtime `AllowedDomains` (≤3 per call), namespace semantics (users/groups only, 100/account default, assets account-scoped). | Remaining genuine unknowns: how much AWS API-shape compatibility the product wants (action names, parameter shapes, versioning/alias policy), whether anonymous embedding ever enters scope (owned by HQ-6), and what evidence counts as compatibility proof. No AWS-shaped adapter is built or promised. | Compatibility promises and optional AWS-shaped adapters |
+| HQ-12 | Which QuickSight embedding/API behavior must be compatible, beyond current asset/security semantics? §2 prior-art survey resolved the reference shapes: `GenerateEmbedUrlForRegisteredUser` (15–600 min sessions; dashboard/visual/Q/console; authors only for authoring), `GenerateEmbedUrlForAnonymousUser` (5-min URL, 10-h session; session tags for RLS; virtual namespace), static + runtime `AllowedDomains` (≤3 per call), namespace semantics (users/groups only, 100/account default, assets account-scoped). **Decision (product owner, 2026-09-30): compatibility matching** — the project is an open-source QuickSight clone (AGENTS.md §2.1), so hosted tenancy, identity and embedding APIs match QuickSight's shapes and semantics by default. Explicit carve-outs that compatibility does not override: OpenSight namespaces keep scoping assets and metadata (QuickSight's account-scoped assets are weaker isolation — do not adopt), the `tenantId` lifecycle record stays, and refresh stays fail-closed (`BLAZE_REFRESH_IN_PROGRESS`, never serve known-invalidating data as current). | Remaining: action-name and parameter naming/versioning policy (adopt AWS names verbatim vs OpenSight-local names with AWS-shaped adapters); adapter scope — which actions, which parameters, alias/version selection; whether anonymous embedding ever enters scope (owned by HQ-6); what evidence counts as compatibility proof. No AWS-shaped adapter is built or promised by this decision. | Compatibility promises and optional AWS-shaped adapters |
 | HQ-13 | Who owns recurring jobs after user removal? What recipient authorization and delivery retry/duplicate policy is acceptable? | Recheck current principal permissions; stop orphaned jobs initially. Decide service-principal ownership and ambiguous SMTP delivery behavior explicitly. Product semantics plus engineering reliability design. | Tenant reports/alerts and scheduler migration |
 | HQ-14 | What usage/entitlement events are needed, and does entitlement affect features or just limits? | Define units, accuracy and retention; hooks only. Pricing, payment providers and billing-driven suspension remain outside scope. Product owner decision. | Metering integration, not core tenant isolation |
 | HQ-15 | Does the strict MIT/Apache-2.0 rule permit the already-decided Postgres server license, or must D3/D12 change? Which compliant coordination/object-store/auth packages and releases pass review? | Record an explicit policy disposition; no implied exception. Verify exact release/distribution/transitive licenses. D13's coordination role does not select a Redis package. | Any hosted dependency selection affected by that conflict |
