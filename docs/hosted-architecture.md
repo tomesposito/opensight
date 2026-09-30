@@ -406,3 +406,165 @@ are offered. Branding must not hide data freshness, permission failures or
 unsupported functionality. Theme preview and screenshot tests should cover these
 states. Which surfaces are in the first release is HQ-5, not inferred from the
 phrase “like QuickSight.”
+
+## 5. Scaling plan
+
+### Triggers and placement of state
+
+D13 is the architectural decision: content-addressed Parquet on shared object
+storage, per-node local memory/loading or memory mapping, and Redis **or an
+equivalent** for distributed refresh locks and invalidation pub/sub only. Do not
+store columnar snapshots, sessions, authoritative manifests, metadata or durable job
+queues in that coordination service. A specific Redis distribution is not selected;
+the license constraint and a permissively licensed candidate are discussed in §6.
+
+| Step | Evidence that triggers it | What changes | What stays single-node |
+| --- | --- | --- | --- |
+| Default self-hosted | Existing local workload fits one node | Nothing: file/ephemeral stores, host auth callback, in-process Blaze and scheduler remain supported | Everything; restart empties Blaze |
+| Hosted correctness foundation | Decision to admit independent hosted tenants, already made in direction | Durable tenant metadata, verified auth, tenant-bound data paths, limits, lifecycle and embed configuration; storage migration required before real tenant admission | One API/query node, one scheduler, in-process Blaze; no coordinator or distributed artifact backend required yet |
+| Worker separation/fairness | Load tests show refresh/query contention, event-loop stalls, inadequate cancellation or memory isolation | Bounded worker processes and tenant admission; durable jobs if workers run independently | One placement/node may still suffice; this is not distributed analytical execution |
+| Shared Blaze backend and multiple instances | A second serving instance, an HA requirement, or measured concurrent load exceeds a node at approved limits | D13 artifacts, shared manifests, distributed coordination, node caches; shared identity/asset/source state must already be complete | Each individual query still executes on one worker; metadata and object services may initially have a single endpoint, which is not HA |
+| Operational HA and later placement | Approved availability/recovery targets or measured single-service bottlenecks | Redundant supporting services, tested failover, optional tenant placement pools; Helm only when operators need it | No multi-region or distributed query engine is implied |
+
+Measure query/refresh p95/p99 latency, queue delay, rejection rates, working memory,
+source connection pressure, disk/cache churn and scheduler lag. Establish workload
+fixtures, observation windows and targets before choosing capacity thresholds
+(HQ-8/HQ-10); tenant count alone is not a useful trigger. A business HA requirement
+can trigger multiple nodes before throughput does. Sticky sessions cannot satisfy
+the shared-state prerequisite or replace D13.
+
+Before a load balancer targets a second node, migrate security/folders/shares,
+AI settings, prep metadata, imported definitions, sessions, source bindings and job
+state from startup/file snapshots to authoritative tenant-scoped storage. Uploads
+need durable tenant-owned objects and metadata, or an explicit expiration/re-upload
+contract; in-process DuckDB staging cannot be reached safely from arbitrary nodes.
+Do not place `AutomationStore` JSON files on a shared volume: atomic rename does
+not provide cross-process serialization or coherent readers.
+
+### Artifact identity and publication
+
+**Current:** [blaze.ts](../packages/api/src/blaze.ts) keeps `BlazeTable` JS column
+vectors in the API heap. Refresh releases old readable rows, reserves capacity,
+builds a bounded table and publishes only if its generation still matches. Reads
+are synchronous and return a `BlazeTable`; there is no Parquet backend or memory
+mapping implementation today.
+
+**Proposed D13 extension:** retain the semantic `refresh(key, load)` / `read(key)`
+boundary but introduce an internal adapter for asynchronous artifact hydration and
+a compatible table/sink interface. The current synchronous method signatures cannot
+perform remote I/O unchanged. Mode/status/error/provenance behavior remains the
+external contract; compiler/evaluator callers need bounded adaptation and
+differential tests, not a claim that changing a storage class is sufficient.
+
+Use a server-constructed key such as
+`blaze/{tenantId}/{namespaceId}/{ownerId}/{datasetId}/{generation}/{sha256}.parquet`.
+Each segment is encoded/validated from trusted metadata; no imported ID becomes
+a path. `sha256` is the digest of the final immutable artifact bytes; a monotonic
+generation is a concurrency/version identifier, not a content hash. Do not
+deduplicate across tenants or expose digest-existence checks. This scopes D13's
+illustrative `blaze/{dataset}/{generation}.parquet` to the actual owner boundary.
+
+An authoritative manifest contains the complete key, definition/policy/source
+revisions, generation, fencing token, state, digest, format/schema revision,
+row count, encoded/decoded byte bounds, successful refresh time, dependency
+generations/refresh times and safe failure information. Keys, artifacts and local
+cache entries all carry the full tenant/namespace/owner identity. The manifest
+lives in metadata; the artifact never grants authorization by possession.
+
+Refresh protocol:
+
+1. Admit against tenant/node limits, authorize current owner and dependency graph,
+   and acquire a bounded per-dataset coordinator lease. Allocate a monotonically
+   increasing fencing token and claim the manifest through a metadata transaction.
+   All publication updates must match this token, revision and unexpired durable
+   claim; a lease alone cannot fence a paused or partitioned worker.
+2. Atomically record `running`, remove readable authority for the old snapshot and
+   append an invalidation event to the metadata outbox. Readers on every node now
+   receive `BLAZE_REFRESH_IN_PROGRESS`, even if they still hold old bytes. Retain
+   old files only for cleanup/recovery, never as a stale serving fallback.
+3. Run the complete saved output pipeline using bounded batches. Validate schema,
+   scalar semantics and row/byte limits; record exact dependency versions. Stage
+   the Parquet output privately and compute/verify its digest. Upload and verify
+   a complete immutable object before publishing its reference; abandoned uploads
+   must be reclaimable. Network timeouts cannot expose partial output.
+4. In a compare-and-swap transaction, verify active tenant/owner authorization,
+   definition and policy revisions, dependency validity, current lease/fence and
+   unchanged generation. Only then publish `ready` and its artifact metadata, and
+   append the completion event. A late worker cannot overwrite newer work.
+5. On failure, publish a safe failure only if the worker still owns the claim;
+   otherwise discard its staged output. A recovery process marks expired running
+   claims unavailable and schedules bounded retry. Failed/cancelled refreshes
+   never resurrect the old readable artifact.
+
+A metadata transaction/outbox records mode switches, pipeline saves/deletions and
+dependency invalidations as well as refresh transitions. Descendant generations
+are invalidated consistently before requests can authorize their old manifests;
+large graphs may be conservatively blocked while a durable invalidation walk
+finishes. Preserve current explicit cached-input freshness: a valid previously
+materialized dependency can be used with its recorded refresh time, but an
+invalidated dependency or changed definition cannot silently satisfy a new refresh.
+
+### Reads, invalidation and recovery
+
+Before each read, resolve current tenant authorization and authoritative manifest
+state/revisions. Pub/sub accelerates local eviction; it is never the sole proof
+of freshness. An outbox dispatcher publishes invalidations after commit and can
+retry. Nodes reconcile on reconnect and before serving; missed, duplicate and
+out-of-order messages must be harmless. If authoritative metadata is unavailable,
+protected reads fail closed even when local bytes remain.
+
+Hydrate a ready artifact into a private local file with verified digest/schema
+and bounded decoded size; atomically promote it to a cache entry. Per-node readers
+reuse the immutable local artifact, loading bounded columns into memory or using
+a proven file-backed/memory-mapped reader. D13's DuckDB memory-mapping suggestion
+is a performance hypothesis to validate: a Parquet file is not automatically a
+zero-copy substitute for JS scalar vectors. Account for decoding, SQL workspaces,
+page cache, result copies and process RSS. Preserve null, numeric, string and
+datetime semantics across the existing engines/evaluator.
+
+Check current revisions again before returning asynchronous results. Process
+restart can hydrate a still-ready distributed snapshot, preserving its original
+refresh time; the single-node backend still starts empty. Local byte eviction
+does not mean that an authoritative ready artifact was invalidated: a node may
+reload that same artifact within admission limits. If it cannot obtain a valid
+readable snapshot, return the existing applicable unavailable state, including
+`BLAZE_NOT_READY` or `BLAZE_EVICTED`, rather than query live sources implicitly.
+
+`BLAZE_REFRESH_FAILED`, `BLAZE_PIPELINE_INVALID`, `BLAZE_INVALIDATED`,
+`BLAZE_REFRESH_IN_PROGRESS`, `BLAZE_DATASET_TOO_LARGE` and provenance retain their
+meaning. Artifact corruption/storage failures surface as `BLAZE_REFRESH_FAILED`
+with a safe artifact cause code; do not fall back to an older manifest. Coordinator
+loss prevents new distributed refresh admission; reads may continue only with
+authoritative ready metadata and verified local/artifact bytes. Metadata loss
+blocks both authorization and publication. Supporting-service HA is required for
+an HA claim, regardless of API replica count.
+
+Garbage collection removes only unreferenced objects after a grace interval that
+covers in-flight readers, failed uploads and restore requirements. Persist deletion
+tombstones, bound artifact retention, and reconcile manifests against objects.
+Backups must capture metadata and all referenced artifact versions consistently;
+an older backup is not allowed to reverse a revocation or tenant deletion.
+
+### Durable schedules and external effects
+
+Keep the current single scheduler until worker separation or multi-instance
+operation requires durable claims. Its replacement claims due occurrences in a
+metadata transaction, names jobs by tenant/resource/occurrence and uses the same
+lease/fencing discipline for manual and scheduled refresh. Coalesce missed
+intervals, avoid catch-up storms, and preserve Blaze's completion-based next due
+time after success or failure. A timer on each API replica is not coordination.
+
+Workers retry durable jobs with bounded backoff; publication is idempotent for a
+given generation. Reports/alerts need a durable delivery outbox keyed by tenant,
+job and recipient, with current permission checks at render and send. Crashing
+after SMTP accepts mail but before the send receipt is committed can still cause
+duplicates. Promise at-least-once processing with deduplication where supported,
+not exactly-once email. Delivery retry/ambiguity policy is HQ-13. Metering events
+are similarly idempotent; no billing vendor is integrated.
+
+D11's serverless deployment preference and D12's production Postgres/local-only
+DuckDB decision are not silently overturned. The current prep/Blaze path uses
+DuckDB locally, and D13 names it as an artifact reader. Selecting a hosted cached
+executor and long-lived workers versus short-lived API containers needs explicit
+reconciliation (HQ-11) before implementation. This draft specifies the portable
+artifact and security contract without declaring a new production query engine.
