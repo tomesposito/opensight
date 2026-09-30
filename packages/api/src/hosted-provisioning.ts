@@ -72,10 +72,10 @@ export class HostedProvisioning {
       const tenants = await c.query("UPDATE h1_tenants SET version = version WHERE tenant_id = ? AND state IN ('provisioning','active') RETURNING state", [op.tenantId]);
       if (!tenants.length) throw new MetadataError('TENANT_UNAVAILABLE', 403);
       if ((await c.query('SELECT status FROM h1_operations WHERE operation_id = ?', [operationId]))[0]!.status === 'complete') return;
-      const rows = await c.query(`SELECT m.subject FROM h2_memberships m JOIN h2_invitations i ON i.subject = m.subject AND i.tenant_id = m.tenant_id
+      const rows = await c.query(`SELECT m.subject, u.body FROM h2_memberships m JOIN h2_invitations i ON i.subject = m.subject AND i.tenant_id = m.tenant_id
         JOIN h1_resources u ON u.tenant_id = m.tenant_id AND u.namespace_id = m.namespace_id AND u.resource_id = m.user_id AND u.kind = 'user'
         WHERE m.tenant_id = ? AND m.namespace_id = ? AND m.status = 'invited' AND i.delivered = 1 AND i.expires_at > ?`, [op.tenantId, op.namespaceId, this.clock()]);
-      if (!rows.length) throw new MetadataError('AUTH_MAPPING_REQUIRED', 503);
+      if (!rows.some(row => (JSON.parse(String(row.body)) as { role?: string }).role === 'administrator')) throw new MetadataError('AUTH_MAPPING_REQUIRED', 503);
       await c.query("UPDATE h1_tenants SET state = 'active', version = version + 1 WHERE tenant_id = ? AND state = 'provisioning'", [op.tenantId]);
       await c.query("UPDATE h1_operations SET status = 'complete', step = 'active' WHERE operation_id = ?", [operationId]);
       await appendMetadataEvent(c, op, 'tenant.active');
