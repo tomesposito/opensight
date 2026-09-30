@@ -259,8 +259,9 @@ expansion and result budgets; importing a pipeline grants no source access.
 
 **Current:** `/api/session` reports the verified user; it is not a login/session
 store. `SecurityOptions.authenticate` supplies verification. The shipped CLI does
-not wire a hosted verifier, and SDK SSO is a stub. No hosted identity provider is
-selected by this document (HQ-3).
+not wire a hosted verifier, and SDK SSO is a stub. HQ-3 (decided 2026-09-30):
+built-in email + password with TOTP MFA ships first; external OIDC is the
+designed follow-on verifier behind the seam.
 
 **Proposed:** hosted startup must refuse to expose tenant routes without a verifier,
 durable membership store and trusted public-origin configuration. Keep session
@@ -763,7 +764,7 @@ for bundled commercial licenses.
 ## 7. Open questions
 
 The hosted/white-label direction and D13 are accepted inputs. Everything in this
-register is unresolved **except HQ-1, HQ-2, HQ-12 and HQ-15, decided 2026-09-30**; recommendations above do not imply product approval. The
+register is unresolved **except HQ-1, HQ-2, HQ-3, HQ-12 and HQ-15, decided 2026-09-30**; recommendations above do not imply product approval. The
 product owner decides product scope and operating commitments. Engineering supplies
 measurements and proposes contracts before the corresponding build slice starts.
 
@@ -771,7 +772,7 @@ measurements and proposes contracts before the corresponding build slice starts.
 | --- | --- | --- | --- |
 | HQ-1 | Is a customer exactly one namespace, or an organization with several namespaces? Can one person belong to several customers? | **Decision (product owner, 2026-09-30): one namespace per tenant.** Each tenant gets exactly one member namespace initially; the separate `tenantId` lifecycle record is preserved so a future one-to-many relationship needs no schema rework. One external identity may hold memberships in several tenants, but each session selects and verifies exactly one. An organization/hierarchy concept needs its own spec if ever wanted. | Tenant schema and onboarding |
 | HQ-2 | Who may provision, suspend, resume and delete tenants? Is signup operator-managed, self-service or delegated through a product backend? | **Decision (product owner, 2026-09-30): operator/administrator provisions tenants.** The operator plane (`POST /api/host/tenants` and the lifecycle transitions) is separate from the tenant plane — the direct analogue of AWS, where the account administrator subscribes and configures QuickSight and end users never self-provision. Self-service signup, if ever wanted, is a product layer whose backend calls the operator API, not a tenant capability. Define support access without an implicit data-access superuser. | Provisioning and support APIs |
-| HQ-3 | Which authentication model, external identity provider/protocols, service credentials and subject-mapping rules ship first? Are users preprovisioned or created on verified first login? | Keep the host verifier seam; the SDK hooks are stubs. Specify issuer/audience, membership switching, invitation flow, logout and credential revocation. Select only compliant dependencies. | Hosted login and delegated embed issuance |
+| HQ-3 | Which authentication model, external identity provider/protocols, service credentials and subject-mapping rules ship first? Are users preprovisioned or created on verified first login? | **Decision (product owner, 2026-09-30): built-in email + password with TOTP MFA ships first.** OpenSight owns the user store for the pilot; external OIDC is the designed follow-on verifier behind the existing verifier seam (`/api/session` reporting, `SecurityOptions.authenticate`). Users are preprovisioned by the operator (invitation → membership record before first login); no implicit just-in-time creation. Credential storage must meet modern standards: memory-hard password hashing (Argon2id preferred), unique per-user salts, TOTP secrets encrypted at rest, constant-time comparison, and rate-limited authentication attempts. | Hosted login and delegated embed issuance |
 | HQ-4 | Can prepared datasets be shared/published, and which protected pipelines may be embedded? | Retain owner-only prep/protected-source refusal initially. Prove tenant and reader security through joins/aggregation before widening it; choose raw tenant artifacts or security-partitioned artifacts. Product scope plus engineering proof. | General dataset access and embedded prepared data |
 | HQ-5 | What is white-labelable: iframe chrome, full authoring app, errors, help links, emails, exports? Is branding removal universal or entitlement-controlled? | Define an explicit surface matrix, accessible themes and notice placement. No paid tier or removal policy is selected. Product owner decision. | Appearance schema and UI acceptance |
 | HQ-6 | Are anonymous/registered-user embeds, authoring, interactions, export/download and persistent reader state required in the first release? | Recommend registered dashboard/visual consumption as the first extension of Phase 3c. Unsupported features remain rejected. Product owner decision. | Session capabilities and SDK/UI scope |
