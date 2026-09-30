@@ -53,7 +53,11 @@ These principles resolve trade-offs. In order:
    dialect layers; table calculations and level-aware aggregations live
    in shared post-processing. Differential tests prove it.
 5. **Dependencies: MIT/Apache-2.0 only.** Verify every new dependency's
-   license. Commercial-licensed libraries are forbidden.
+   license. Commercial-licensed libraries are forbidden. This governs code we
+   bundle and ship (libraries, embedded binaries). Server infrastructure the
+   operator installs and configures (e.g. Postgres) is not bundled: it must be
+   open-source and freely available — the PostgreSQL License qualifies;
+   SSPL/RSAL/BSL-style terms do not.
 6. **Nothing personal, ever.** No credentials, tokens, customer data,
    private hostnames, account IDs, or unsanitized exports in the repo.
    Configuration comes strictly from environment variables.
