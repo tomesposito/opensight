@@ -47,6 +47,12 @@ const schema = [
 export async function initializeMetadata(database: Database, dialect: 'sqlite' | 'postgres' = 'sqlite'): Promise<void> {
   await database.transaction(async c => {
     for (const sql of schema) await c.query(sql);
+    if (dialect === 'postgres') {
+      await c.query('ALTER TABLE h1_tenants ENABLE ROW LEVEL SECURITY');
+      await c.query('ALTER TABLE h1_tenants FORCE ROW LEVEL SECURITY');
+      await c.query('DROP POLICY IF EXISTS h1_scope ON h1_tenants');
+      await c.query("CREATE POLICY h1_scope ON h1_tenants USING (tenant_id = current_setting('opensight.tenant_id', true)) WITH CHECK (tenant_id = current_setting('opensight.tenant_id', true))");
+    }
     if (dialect === 'postgres') for (const table of metadataTables.filter(t => !['tenants', 'migrations'].includes(t))) {
       await c.query(`ALTER TABLE h1_${table} ENABLE ROW LEVEL SECURITY`);
       await c.query(`ALTER TABLE h1_${table} FORCE ROW LEVEL SECURITY`);

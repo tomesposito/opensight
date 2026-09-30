@@ -2,6 +2,85 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { SqliteMetadataDatabase } from '../dist/metadata-db.js';
 import { initializeMetadata } from '../dist/metadata-schema.js';
+import { TenantMetadata } from '../dist/metadata.js';
+import { insertResource, resourceKinds } from '../dist/metadata-resources.js';
+
+export async function seed(db, namespaceId = 'one', tenantId = 'a') {
+  await db.transaction(async c => {
+    await c.query("INSERT INTO h1_tenants VALUES (?, 'active', 1, NULL, NULL, NULL)", [tenantId]);
+    await c.query('INSERT INTO h1_namespaces VALUES (?,?,?)', [namespaceId, tenantId, namespaceId]);
+    await c.query('INSERT INTO h1_revisions VALUES (?,?,1,1,1)', [tenantId, namespaceId]);
+    await insertResource(c, { tenantId, namespaceId }, { kind: 'user', id: 'admin' }, { name: namespaceId, role: 'administrator' });
+  });
+}
+const login = (repo, namespaceId = 'one', userId = 'admin') => repo.authenticate(null, async () => ({ namespaceId, userId, tenantId: 'ignored-forged-value' }));
+
+test('H1 scoped repositories isolate identical IDs, owners and unknown/foreign errors', async () => {
+  const db = new SqliteMetadataDatabase(':memory:');
+  try {
+    await initializeMetadata(db); await seed(db); await seed(db, 'two', 'b');
+    const repo = new TenantMetadata(db, db), a = await login(repo), b = await login(repo, 'two');
+    assert.equal(a.tenantId, 'a');
+    for (const context of [a, b]) {
+      await repo.put(context, { kind: 'group', id: 'same' }, { name: context.namespaceId, userIds: ['admin'] });
+      await repo.put(context, { kind: 'dataset', id: 'same' }, { definition: { label: context.namespaceId }, sources: [] });
+      await repo.put(context, { kind: 'analysis', id: 'same' }, { definition: { AnalysisId: 'same', Definition: { DataSetIdentifierDeclarations: [{ Identifier: 'd', DataSetArn: 'portable' }] } }, datasets: [{ kind: 'dataset', id: 'same' }], folderId: null });
+      assert.equal((await repo.get(context, { kind: 'user', id: 'admin' })).body.name, context.namespaceId);
+      assert.equal((await repo.get(context, { kind: 'group', id: 'same' })).body.name, context.namespaceId);
+      assert.equal((await repo.get(context, { kind: 'dataset', id: 'same' })).body.definition.label, context.namespaceId);
+      assert.equal((await repo.list(context, 'analysis')).length, 1);
+    }
+    await repo.put(b, { kind: 'folder', id: 'foreign' }, { name: 'foreign' });
+    for (const id of ['foreign', 'missing']) {
+      await assert.rejects(repo.get(a, { kind: 'folder', id }), { code: 'RESOURCE_NOT_FOUND', status: 404 });
+      await assert.rejects(repo.remove(a, { kind: 'folder', id }, 1), { code: 'RESOURCE_NOT_FOUND', status: 404 });
+    }
+    await assert.rejects(repo.get(a, { kind: 'source', id: 'missing', ownerId: 'other' }), { code: 'RESOURCE_NOT_FOUND' });
+    await assert.rejects(repo.put(a, { kind: 'folder', id: 'x' }, { name: 'x', tenantId: 'b' }), { code: 'METADATA_INVALID' });
+  } finally { await db.close(); }
+});
+
+test('H1 every tenant accessor refuses missing or fabricated context', async () => {
+  const db = new SqliteMetadataDatabase(':memory:');
+  try {
+    await initializeMetadata(db); await seed(db);
+    const repo = new TenantMetadata(db, db), context = await login(repo);
+    for (const bad of [undefined, null, {}, { ...context }, { tenantId: 'a', namespaceId: 'one', userId: 'admin', authorizationRevision: 1 }]) {
+      for (const kind of resourceKinds) {
+        await assert.rejects(repo.get(bad, { kind, id: 'x' }), { code: 'TENANT_CONTEXT_REQUIRED' });
+        await assert.rejects(repo.list(bad, kind), { code: 'TENANT_CONTEXT_REQUIRED' });
+        await assert.rejects(repo.put(bad, { kind, id: 'x' }, {}), { code: 'TENANT_CONTEXT_REQUIRED' });
+        await assert.rejects(repo.remove(bad, { kind, id: 'x' }, 1), { code: 'TENANT_CONTEXT_REQUIRED' });
+      }
+      await assert.rejects(repo.revisions(bad), { code: 'TENANT_CONTEXT_REQUIRED' });
+      await assert.rejects(repo.batch(bad, []), { code: 'TENANT_CONTEXT_REQUIRED' });
+    }
+    await assert.rejects(repo.authenticate(null, async () => undefined), { code: 'PRINCIPAL_REQUIRED' });
+    await assert.rejects(login(repo, 'two'), { code: 'UNKNOWN_PRINCIPAL' });
+  } finally { await db.close(); }
+});
+
+test('H1 foreign keys and optimistic concurrent writes roll back entire batches', async () => {
+  const db = new SqliteMetadataDatabase(':memory:');
+  try {
+    await initializeMetadata(db); await seed(db); await seed(db, 'two', 'b');
+    const repo = new TenantMetadata(db, db), a = await login(repo), b = await login(repo, 'two');
+    await repo.put(b, { kind: 'user', id: 'foreign' }, { name: 'Foreign', role: 'reader' });
+    await assert.rejects(repo.batch(a, [
+      { key: { kind: 'folder', id: 'rollback' }, body: { name: 'Rollback' }, expectedVersion: 0 },
+      { key: { kind: 'group', id: 'bad' }, body: { name: 'Bad', userIds: ['foreign'] }, expectedVersion: 0 }
+    ]), { code: 'METADATA_REFERENCE_INVALID' });
+    assert.deepEqual(await repo.list(a, 'folder'), []);
+    assert.deepEqual(await repo.list(a, 'group'), []);
+    await repo.put(a, { kind: 'folder', id: 'race' }, { name: 'original' });
+    const results = await Promise.allSettled(['first', 'second'].map(name => repo.put(a, { kind: 'folder', id: 'race' }, { name }, 1)));
+    assert.equal(results.filter(r => r.status === 'fulfilled').length, 1);
+    assert.equal(results.find(r => r.status === 'rejected').reason.code, 'METADATA_CONFLICT');
+    assert.equal((await repo.get(a, { kind: 'folder', id: 'race' })).version, 2);
+    await repo.put(a, { kind: 'group', id: 'depends' }, { name: 'Depends', userIds: ['admin'] });
+    await assert.rejects(repo.remove(a, { kind: 'user', id: 'admin' }, 1), { code: 'METADATA_REFERENCE_INVALID' });
+  } finally { await db.close(); }
+});
 
 test('H1 tenant/namespace uniqueness and composite foreign keys survive rollback', async () => {
   const db = new SqliteMetadataDatabase(':memory:');
