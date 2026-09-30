@@ -18,6 +18,7 @@
 | 2026-09-26 | Review fixes: provisional format boundary, recursive inventory validation, public package entry, regression tests/CI, query/render fixture and explicit Phase 1 compatibility/execution gates. Real-export archive work remains blocked. |
 | 2026-09-26 | Initial draft: vision, compatibility contract, architecture, decisions D1–D9, phased plan. Repo scaffold + bundle-parser spike started. |
 | 2026-09-26 | bundle-parser spike builds clean (tsc strict) and summarizes the sample fixture; committed locally as `3655cc3`, ready to push once GitHub is connected. |
+| 2026-09-30 | D14: hosted multi-tenant direction accepted — the owner's most important long-term vision. Hosted architecture spec merged (`docs/hosted-architecture.md`); HQ-1 (one namespace per tenant), HQ-2 (operator provisioning), HQ-12 (compatibility matching) and HQ-15 (dependency policy scope) decided; rollout slices H0–H12 defined; Phase 5 first trigger met (H1–H8 scheduled, H9–H12 still unscheduled). |
 | 2026-09-29 | D13: Blaze horizontal-scaling architecture decided — Parquet artifacts on shared object storage + per-node memory when multi-node matters, Redis (or equivalent) for refresh coordination/invalidation only; `refresh`/`read` seam is the portability boundary. D8 status updated to the shipped in-process implementation (#12/#15). |
 | 2026-09-29 | Issue #18: prep divergent paths (branching) specified — steps may name an earlier step as their left input, fan-out capped at 5 consumers per step (QuickSight parity), explicit output selector; linear pipelines unchanged. |
 | 2026-09-26 | Published as public repo `tomesposito/opensight`. Added Phase 0 export runbook (capture a real `QUICKSIGHT_JSON` bundle via AWS CLI) and public-repo hygiene rule: placeholders only, redact any real export before keeping it as a fixture. |
@@ -75,8 +76,12 @@ be exported from QuickSight and imported here, and vice versa.
 
 - QuickSight Q natural-language querying — revisit after dashboards are solid (Phase 4+).
 - Paginated/pixel-perfect reports — Phase 4 candidate, not Phase 1.
-- Multi-region / multi-tenant SaaS hosting — the project ships self-hostable software;
-  hosted offerings are a deployment concern, not a product goal.
+- Multi-region operation — not in scope for any planned phase.
+- Multi-tenant SaaS hosting as the *default* product — the project still ships
+  self-hostable software first. But hosted multi-tenant OpenSight is now the
+  accepted long-term vision (owner decision 2026-09-30; see D14): an optional
+  hosted offering with white-label embedding, built in rollout slices H0–H12.
+  Single-node self-hosting remains the default product and the reference behavior.
 - Reaching 100% of QuickSight's API on day one — the API grows behind the conformance suite.
 
 ---
@@ -663,6 +668,63 @@ makes Blaze fast; object storage is the cheapest durable shared layer.
 shipped in #12/#15; distributed backend is a future phase with a defined seam.
 Trigger: multi-instance deployment.
 
+### D14 — Hosted multi-tenant direction accepted; rollout slices defined
+
+**Context:** Owner decision 2026-09-30: hosted, horizontally scalable,
+embeddable/white-label OpenSight is the project's most important long-term
+direction. The hosted architecture spec (`docs/hosted-architecture.md`, merged
+2026-09-30) is the proposal record: tenancy model, isolation guarantees,
+embedding/white-label API surface, D13-based scaling plan, operations, 17 open
+questions (HQ-1–HQ-17), and phased rollout slices H0–H12. This decision
+reconciles the old §2 non-goal ("hosted offerings are a deployment concern, not
+a product goal") with the new direction.
+
+**Decisions recorded 2026-09-30 (from spec §7):**
+- **HQ-1:** one namespace per tenant. Each tenant gets exactly one member
+  namespace initially; a separate opaque `tenantId` lifecycle record is kept so
+  a future one-to-many relationship needs no schema rework. One external
+  identity may hold memberships in several tenants; each session selects and
+  verifies exactly one.
+- **HQ-2:** the operator/administrator provisions tenants. The operator plane
+  (tenant provisioning, suspend/resume/delete) is separate from the tenant plane —
+  the analogue of AWS, where the account administrator subscribes and configures
+  QuickSight. Self-service signup, if ever wanted, is a product layer whose
+  backend calls the operator API.
+- **HQ-12:** compatibility matching. Hosted tenancy, identity and embedding APIs
+  match QuickSight's shapes and semantics by default — but never by weakening the
+  tenant boundary: OpenSight namespaces keep scoping assets and metadata
+  (QuickSight's account-scoped assets are weaker isolation and are not adopted),
+  the `tenantId` lifecycle record stays, and refresh stays fail-closed.
+- **HQ-15:** no D3/D12 change. The MIT/Apache-2.0 rule governs bundled code;
+  operator-installed server infrastructure must be open-source and freely
+  available (the PostgreSQL License qualifies; SSPL/RSAL/BSL-style terms do not).
+  What OpenSight ships is the MIT-licensed `pg` client.
+
+**Still open (sequenced by the rollout, not decided here):** HQ-3 (auth model),
+HQ-4 (prepared-dataset sharing), HQ-5 (white-label scope), HQ-6 (anonymous
+embeds), HQ-7 (session lifetimes), HQ-8 (workload limits), HQ-9 (custom domains),
+HQ-10 (availability/recovery commitments), HQ-11 (D11 serverless vs D12/D13
+executor reconciliation), HQ-13 (job ownership), HQ-14 (metering units), HQ-16
+(source lifecycle), HQ-17 (asset templates).
+
+**D11 relationship:** D11 (AWS serverless-first) stands as the deployment target.
+The spec's Docker Compose reference is a local reference/test harness, not a
+reversal of the cloud decision. The executor question (long-lived workers vs
+short-lived containers) is HQ-11 and explicitly unresolved.
+
+**Pilot scope (first hosted release):** H1 tenant metadata/migration, H2 verified
+tenant sessions and provisioning, H3 durable sources and complete data
+authorization, H4 tenant budgets and worker containment, H5 embed configuration
+and appearance, H6 registered embed sessions and SDK evolution, H7 tenant
+automation and durable job ownership, H8 single-node hosted reference and pilot
+gate. Explicitly out of the pilot until their HQs are decided: anonymous embeds
+(HQ-6), custom embed domains (HQ-9), multi-node operation (H9–H10), HA claims
+(H12, pending HQ-10 targets).
+
+**Status:** decided; H0–H12 are the plan. H0–H8 (hosted correctness foundation,
+single-node) are buildable now; H9–H12 (shared artifacts, distributed refresh,
+replica safety, supporting-service HA) wait on the Phase 5 scale-out triggers.
+
 ---
 
 ## 6. Phased Delivery Plan
@@ -1120,7 +1182,8 @@ signing tests, API validation tests; full suite green; demo rebuilt.
 ### Phase 4 — Parity & beyond
 - Paginated reports, Q-like natural language (investigate, don't commit).
 - Distributed query investigation (only if evidence demands it).
-- Hosted reference deployment (Docker Compose / Helm).
+- Hosted reference deployment (Docker Compose / Helm) — superseded by the H0–H12
+  rollout (D14); the single-node reference is slice H8.
 
 **Tom's decisions, 2026-09-30:**
 - Paginated reports: yes, eventually — future polish item, not a priority. Not queued as
@@ -1133,16 +1196,21 @@ signing tests, API validation tests; full suite green; demo rebuilt.
   isolation, embedding API, scaling plan), then slice into buildable issues. This overlaps
   the Phase 5 trigger ("decision to operate OpenSight as a hosted service").
 
-### Phase 5 — Hosted & scale-out — TRIGGERED, NOT SCHEDULED
+### Phase 5 — Hosted & scale-out — FIRST TRIGGER MET, SCALE-OUT NOT SCHEDULED
 
-This phase does not start on a date or after a feature milestone. It starts when
-a business decision demands it: a hosted multi-tenant offering, or an enterprise
-self-hosted requirement for high availability / horizontal scale. Until then, the
-single-node architecture is the product, and no scale-out work is scheduled.
+The first trigger was met 2026-09-30: the owner decided to operate OpenSight as
+a hosted multi-tenant service (D14). Per the hosted spec's §5, that trigger
+schedules the *hosted correctness foundation* (H1–H8: tenant metadata, verified
+sessions, data authorization, budgets, embedding, automation, single-node
+reference) — not the distributed implementation. The remaining triggers are not
+met: H9–H12 (shared Parquet artifacts, distributed refresh, replica safety,
+supporting-service HA) stay unscheduled until measured load or an approved
+availability target demands them.
 
-**Trigger (any one):** decision to operate OpenSight as a hosted service; a
-deployment whose concurrent query load exceeds one node; an HA requirement no
-single node can meet.
+**Triggers:** decision to operate OpenSight as a hosted service — met 2026-09-30,
+schedules H1–H8; a deployment whose concurrent query load exceeds one node —
+not met, schedules H9–H10; an HA requirement no single node can meet — not met,
+schedules H12.
 
 **Scope when triggered (per D13):**
 - Blaze snapshots move from in-process heap to content-addressed Parquet
