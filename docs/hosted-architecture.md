@@ -81,7 +81,7 @@ Prepared-dataset refresh scheduling is separately keyed by namespace and owner.
 | One shared namespace with a tenant column in application data | Fewer namespace records | Asset, principal, folder, secret and scheduler separation would need rebuilding; RLS alone cannot isolate metadata; reject for the initial design |
 | Separate deployment/database per tenant | Smaller resource and failure blast radius | Provisioning, upgrades and capacity overhead; a placement option if isolation needs justify it, not the default |
 
-**Recommendation, pending HQ-1:** introduce an opaque `tenantId` with exactly one
+**Decision (product owner, 2026-09-30):** introduce an opaque `tenantId` with exactly one
 member namespace initially. Keep namespace IDs globally unique within a deployment,
 and enforce a unique tenant-to-namespace mapping. Do not rename namespaces to
 organizations or change portable QuickSight definitions. The tenant record holds
@@ -763,14 +763,14 @@ for bundled commercial licenses.
 ## 7. Open questions
 
 The hosted/white-label direction and D13 are accepted inputs. Everything in this
-register is unresolved **except HQ-12 and HQ-15, decided 2026-09-30**; recommendations above do not imply product approval. The
+register is unresolved **except HQ-1, HQ-2, HQ-12 and HQ-15, decided 2026-09-30**; recommendations above do not imply product approval. The
 product owner decides product scope and operating commitments. Engineering supplies
 measurements and proposes contracts before the corresponding build slice starts.
 
 | ID | Decision needed | Recommendation or evidence still needed | Blocks |
 | --- | --- | --- | --- |
-| HQ-1 | Is a customer exactly one namespace, or an organization with several namespaces? Can one person belong to several customers? | Recommend one namespace per tenant initially with explicit per-tenant sessions; preserve a separate lifecycle ID. Organization inheritance needs its own spec. Product owner decision. | Tenant schema and onboarding |
-| HQ-2 | Who may provision, suspend, resume and delete tenants? Is signup operator-managed, self-service or delegated through a product backend? | Start with the proposed operator boundary; signup and delegation are not assumed. Define support access without an implicit data-access superuser. Product owner decision. | Provisioning and support APIs |
+| HQ-1 | Is a customer exactly one namespace, or an organization with several namespaces? Can one person belong to several customers? | **Decision (product owner, 2026-09-30): one namespace per tenant.** Each tenant gets exactly one member namespace initially; the separate `tenantId` lifecycle record is preserved so a future one-to-many relationship needs no schema rework. One external identity may hold memberships in several tenants, but each session selects and verifies exactly one. An organization/hierarchy concept needs its own spec if ever wanted. | Tenant schema and onboarding |
+| HQ-2 | Who may provision, suspend, resume and delete tenants? Is signup operator-managed, self-service or delegated through a product backend? | **Decision (product owner, 2026-09-30): operator/administrator provisions tenants.** The operator plane (`POST /api/host/tenants` and the lifecycle transitions) is separate from the tenant plane — the direct analogue of AWS, where the account administrator subscribes and configures QuickSight and end users never self-provision. Self-service signup, if ever wanted, is a product layer whose backend calls the operator API, not a tenant capability. Define support access without an implicit data-access superuser. | Provisioning and support APIs |
 | HQ-3 | Which authentication model, external identity provider/protocols, service credentials and subject-mapping rules ship first? Are users preprovisioned or created on verified first login? | Keep the host verifier seam; the SDK hooks are stubs. Specify issuer/audience, membership switching, invitation flow, logout and credential revocation. Select only compliant dependencies. | Hosted login and delegated embed issuance |
 | HQ-4 | Can prepared datasets be shared/published, and which protected pipelines may be embedded? | Retain owner-only prep/protected-source refusal initially. Prove tenant and reader security through joins/aggregation before widening it; choose raw tenant artifacts or security-partitioned artifacts. Product scope plus engineering proof. | General dataset access and embedded prepared data |
 | HQ-5 | What is white-labelable: iframe chrome, full authoring app, errors, help links, emails, exports? Is branding removal universal or entitlement-controlled? | Define an explicit surface matrix, accessible themes and notice placement. No paid tier or removal policy is selected. Product owner decision. | Appearance schema and UI acceptance |
