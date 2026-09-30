@@ -142,3 +142,139 @@ operation, not immediate blind row removal. Revoke access first, then remove
 artifacts, uploads, secrets and metadata under the approved retention policy.
 Retain a deletion tombstone so retries/restores cannot resurrect access. Retention,
 backup purge timing and tenant-admin deletion authority remain HQ-10.
+
+## 3. Isolation guarantees
+
+These are **proposed acceptance guarantees** for a hosted release, not claims that
+today's API is ready for untrusted multi-tenant traffic. The threat model includes
+authenticated tenants guessing other tenants' IDs, forging identity assertions,
+replaying embeds, importing malicious references and exhausting shared resources.
+It does not claim isolation from a compromised host administrator or shared runtime;
+stronger process/deployment boundaries are a separate requirement (HQ-8).
+
+### Data and authorization
+
+**Current:** [security.ts](../packages/api/src/security.ts) resolves registered
+namespace users through an injected credential verifier. The HTTP boundary rejects
+forged principal headers and query bodies. The query engine's
+[security resolver](../packages/query-engine/src/security.ts) binds policy to both
+namespace and dataset, rejects unresolved principals, ORs matching row rules and
+denies protected columns unless explicitly allowed (deny wins). The
+[planner](../packages/query-engine/src/planner.ts) applies RLS before user
+aggregation/calculation stages and rejects denied-column references.
+
+There are important limits: the API policy service is bound to `sales`, and absent
+stored policy produces a local `rowLevel: false` default. That is not an acceptable
+implicit default for an unresolved hosted dataset. Prep accepts trusted
+`unrestricted` source bindings and rejects protected ones; cached prepared queries
+do not yet implement general per-reader RLS/CLS. Asset sharing is independent of
+dataset permissions. Administrators bypass folder/asset restrictions, not row and
+column policies.
+
+**Required hosted ordering:**
+
+1. Authenticate the session/service credential, resolve active tenant membership
+   and required capability, then perform a scoped asset lookup. Unknown or foreign
+   resources use the same not-found response, including list/search/history paths.
+2. Resolve the entire dataset/source dependency graph through trusted bindings.
+   Require explicit security metadata for every leaf. Reject absent policy,
+   unsupported protection or cross-tenant references before opening a source,
+   compiling a preview or reading an artifact.
+3. For a physical relation containing multiple tenants, apply an immutable
+   server-bound tenant predicate **AND** the user's RLS predicate. User row-rule
+   ORs, parameters, joins, PRE_FILTER calculations and administrators cannot widen
+   this outer boundary. A tenant-specific source still requires ownership and
+   source authorization; a namespace name alone does not filter shared rows.
+4. Resolve CLS over all dependent physical columns, including calculations,
+   filters, sorts, grouping and exports. Reject denied references by name rather
+   than silently removing columns. Execute SQL-mappable rules in the dialect
+   layers and retain equivalent server-side semantics for cached/fixture paths.
+5. Recheck authorization, policy and resource revisions before publishing results
+   after asynchronous execution. A change during execution cancels publication.
+   No metadata/auth availability failure permits a fallback to default or stale
+   policy. Already delivered browser data cannot be recalled.
+
+Use composite database constraints plus transaction-local tenant context, including
+pooled-connection cleanup; application roles must not bypass row policies or own
+tables in a way that defeats them. Test missing context and reused connections.
+Apply the same checks to preview, output rows, visual queries, downloads, reports,
+alerts, AI/schema access and source discovery. Never hand object-store credentials
+or raw Blaze URLs to a browser.
+
+**Prepared data gate:** initially retain owner-scoped prep and the protected-source
+refusal (`PREP_SECURITY_REJECTED`). Before sharing or embedding arbitrary prepared
+datasets, choose and prove either (a) tenant-only raw snapshots with per-reader
+RLS/CLS before every aggregation, or (b) snapshots partitioned by a stable effective
+security context, with policy/principal revision in their identity. Aggregation can
+erase security columns, making later row filtering impossible. Until that is solved
+for a pipeline, protected materialization is unsupported; neither a refresher's
+administrator identity nor a tenant-prefixed key grants readers its data. HQ-4
+covers the product scope; the isolation requirement is mandatory in either model.
+
+§14's prep graph remains authoritative: earlier-step `from`, explicit/default
+output, at most five consumers, full-stage validation and output-path
+materialization rules. Namespace isolation applies to all reusable dependencies
+and disconnected preview branches, not just the selected output. Preserve graph,
+expansion and result budgets; importing a pipeline grants no source access.
+
+### Auth, sessions and embedding
+
+**Current:** `/api/session` reports the verified user; it is not a login/session
+store. `SecurityOptions.authenticate` supplies verification. The shipped CLI does
+not wire a hosted verifier, and SDK SSO is a stub. No hosted identity provider is
+selected by this document (HQ-3).
+
+**Proposed:** hosted startup must refuse to expose tenant routes without a verifier,
+durable membership store and trusted public-origin configuration. Keep session
+records or revocation/version records in authoritative metadata, scoped by tenant,
+namespace, subject and audience. Verify issuer, audience, expiry and current
+membership; switching tenant requires an explicit verified session exchange.
+Cookie sessions, if selected, use secure, HTTP-only, host-only cookies and CSRF
+protection; never share cookies across customer domains. Browser storage and cache
+keys include the tenant and are cleared on switch/logout. Service credentials stay
+on the embedding product's server and cannot become broad browser API credentials.
+
+Tenant suspension, user removal, policy changes and key/config rotation must take
+effect for subsequent authorized operations on every node. The safe initial model
+reads authoritative revisions on each request; any later caching requires a
+specified revocation bound and tests. Signing keys include key IDs and tenant-bound
+claims; a token valid for one tenant/origin/audience must fail everywhere else.
+
+### Compute, Blaze and scheduler fairness
+
+**Current:** Blaze has global byte/row/cell caps, LRU eviction and one intake
+reservation per process for refresh/direct materialization. Keys distinguish
+namespace and owner, but one tenant can consume capacity or force another's
+eviction. Accounted bytes are not a process RSS limit. Upload staging/queues and
+DuckDB working memory add separate costs. These are bounds, not fair scheduling.
+
+**Proposed:** admission requires both a tenant budget and a node budget. Bound
+concurrent queries, refreshes, source connections, uploads, queued jobs, decoded
+snapshot bytes, artifact/disk bytes, result bytes and execution time. Start with
+equal tenant admission shares and bounded per-tenant queues; weights/tier values
+remain HQ-8. Reserve refresh capacity so a query burst cannot starve freshness,
+and retain global headroom. Evict within a tenant's allotment before borrowing
+unused shared capacity. Decline work explicitly (`TENANT_LIMIT_EXCEEDED`, proposed
+429 with retry guidance); never truncate a dataset to fit. Stop/cancel execution
+when budgets expire, with a safe diagnostic.
+
+Worker processes with memory/CPU limits are the recommended next boundary when
+untrusted analytical work can block the API event loop or cause process-wide
+failure. Fair queues alone do not bound native memory, garbage-collection pauses,
+disk pressure or shared source load. Before admitting unrelated hosted tenants,
+measure contention and cancellation; reject workloads that cannot be bounded in
+the chosen execution mode. Dedicated placement remains optional and unpriced.
+
+Every job carries tenant, namespace, initiating/owning principal, target revision,
+run ID and due occurrence. Reauthorize at execution and before output delivery;
+never execute as an all-tenant administrator. Tenant suspension/deletion cancels
+admission and publication. Scope recipients, histories, alert state and usage
+records as carefully as data. Legacy automation remains default-only until its
+resources and rendering path are migrated and tested. Do not merely add a
+namespace field to the current unscoped snapshot service.
+
+The hard problems are revocation racing with long queries, security through
+aggregated caches, tenant restore in shared metadata, native-memory fairness,
+lost invalidations, and duplicate externally visible job effects after crashes.
+The release gates in §8 require failure tests for these; they are not solved by
+adding tenant IDs or a distributed lock alone.
