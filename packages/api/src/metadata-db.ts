@@ -4,6 +4,8 @@ export type SqlValue = string | number | null;
 export type SqlRow = Record<string, SqlValue>;
 export interface SqlConnection { query(sql: string, values?: readonly SqlValue[]): Promise<SqlRow[]> }
 export interface Database {
+  /** Hosted authentication requires durable storage; ephemeral adapters fail startup. */
+  readonly durable?: boolean;
   transaction<T>(work: (connection: SqlConnection) => Promise<T>, scope?: { tenantId: string; namespaceId: string }): Promise<T>;
   close(): Promise<void>;
 }
@@ -35,9 +37,11 @@ export function constraintError(error: unknown): never {
 
 /** SQLite is the zero-service development adapter. A transaction never escapes its callback. */
 export class SqliteMetadataDatabase implements Database {
+  readonly durable: boolean;
   readonly #db: DatabaseSync;
   #tail: Promise<unknown> = Promise.resolve();
   constructor(path: string) {
+    this.durable = path !== ':memory:' && path !== '' && !path.includes('mode=memory');
     this.#db = new DatabaseSync(path);
     this.#db.exec('PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL;');
   }
@@ -66,6 +70,7 @@ export class SqliteMetadataDatabase implements Database {
 
 /** Use a separate owner/operator pool and a non-owner, NOBYPASSRLS tenant pool. */
 export class PostgresMetadataDatabase implements Database {
+  readonly durable = true;
   constructor(private readonly pool: MetadataPool, private readonly tenantRole = false) {}
   async transaction<T>(work: (connection: SqlConnection) => Promise<T>, scope?: { tenantId: string; namespaceId: string }): Promise<T> {
     if (this.tenantRole && !scope) throw new MetadataError('TENANT_CONTEXT_REQUIRED', 401);
