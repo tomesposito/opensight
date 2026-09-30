@@ -568,3 +568,149 @@ DuckDB locally, and D13 names it as an artifact reader. Selecting a hosted cache
 executor and long-lived workers versus short-lived API containers needs explicit
 reconciliation (HQ-11) before implementation. This draft specifies the portable
 artifact and security contract without declaring a new production query engine.
+
+## 6. Operational concerns
+
+### Configuration and secrets
+
+Follow [aiFromEnvironment](../packages/api/src/ai-settings.ts): translate deployment
+environment into typed options at the composition boundary, validate once, and
+inject options into services. Configuration that enables hosted mode must fail
+startup on missing required authentication, storage, encryption or origin settings.
+Optional capabilities report named “not configured” states. Do not let an absent
+setting silently select the unauthenticated fixture configuration.
+
+**Current:** `aiFromEnvironment` reads `OPENSIGHT_AI_STORE`,
+`OPENSIGHT_AI_ENCRYPTION_KEY`, provider/model/API-key settings and the compatible
+endpoint allowlist. Saved keys use AES-256-GCM with namespace/provider/endpoint
+as authenticated context; the bootstrap environment key is default-namespace-only
+and is not serialized. The encryption key is separate from ciphertext. Embedding
+reads its signing key from `OPENSIGHT_EMBED_SECRET`. Blaze limits are also
+environment-derived. Security and embedding origins are currently library options,
+not a complete environment-driven hosted CLI.
+
+| Proposed deployment setting | Purpose |
+| --- | --- |
+| `OPENSIGHT_HOSTING_MODE` | Explicit `self-hosted` or `hosted`; no inferred production mode |
+| `OPENSIGHT_METADATA_URL` | Authoritative metadata connection, supplied through the secret channel |
+| `OPENSIGHT_AUTH_CONFIG_REF` | Trusted verifier/issuer configuration reference; selected adapter still HQ-3 |
+| `OPENSIGHT_PUBLIC_ORIGIN` | Canonical public HTTPS origin; verified custom origins live in metadata |
+| `OPENSIGHT_SECRET_PROVIDER`, `OPENSIGHT_SECRET_CONFIG_REF` | Deployment-selected secret resolver and bootstrap reference |
+| `OPENSIGHT_EMBED_KEYSET_REF` | Versioned signing key set with active key ID and rotation metadata |
+| `OPENSIGHT_BLAZE_BACKEND` | Explicit local or shared-artifact backend, gated by implemented capabilities |
+| `OPENSIGHT_BLAZE_OBJECT_ENDPOINT`, `OPENSIGHT_BLAZE_OBJECT_BUCKET`, `OPENSIGHT_BLAZE_OBJECT_CREDENTIAL_REF` | Trusted object-store location and secret/workload-identity reference, never a request-selected URL |
+| `OPENSIGHT_COORDINATION_URL` | Coordination-only endpoint required by the distributed backend |
+| `OPENSIGHT_NODE_LIMITS`, `OPENSIGHT_TENANT_LIMIT_DEFAULTS` | Validated budgets; metadata overrides cannot exceed deployment ceilings |
+| `OPENSIGHT_WORKER_ROLE` | Explicit API, query or scheduler role; avoids accidental per-replica timers |
+
+These names are proposed, not a working configuration recipe. Existing environment
+variables retain their meaning during migration. Runtime resolution may use a
+secret manager or deployment-injected environment; select no vendor here. Secret
+references are server-owned and resolved only after tenant authorization. Tenant
+administrators may manage allowed tenant credentials through protected APIs, but
+never deployment master keys, another tenant's references or arbitrary endpoints.
+
+Generalize the AI pattern to authenticated encryption context including tenant,
+namespace, secret purpose and key version. Persist ciphertext/references only,
+use separate encryption and signing keys, and audit access/rotation without values.
+Plan re-encryption, overlapping verification keys, emergency revocation and recovery
+before enabling multi-node secrets. No default-namespace fallback or shared source
+credential is implied. Tenant-specific versus shared versioned signing key sets
+is HQ-7. Redact authorization headers, bootstrap URLs, connection strings, SQL
+values, row contents and provider prompts from logs/errors/traces. Public examples
+contain environment-variable names and synthetic identifiers only.
+
+Tenant connector/AI endpoints also need server-controlled egress authorization,
+DNS/address validation and redirect restrictions. Imported URLs or connection
+strings cannot confer network access to another tenant or internal host services.
+Continue the existing trusted source-binding and endpoint-allowlist approach.
+
+### Observability, recovery and usage hooks
+
+Emit structured events with request/job IDs, opaque tenant/namespace IDs, operation,
+resource revision, outcome/error code, latency and accounted usage. Scope audit
+read access per tenant; operator cross-tenant access is separately authorized.
+Measure queue wait, admission rejection, query/source duration, cancellations,
+refresh success/failure/age, cache hit/hydration, node RSS/disk, lock lease loss,
+manifest revision lag, scheduler delay and embed issue/redeem/revoke failures.
+Avoid unbounded tenant-ID metric labels; use controlled per-tenant views from
+metering/audit records and aggregate service metrics. Never include row values.
+
+Proposed internal `usage.recorded` and `entitlement.changed` hooks contain an
+idempotent event ID, tenant, interval/resource, units and schema revision. Usage
+units might include query time, refresh bytes, storage byte-hours and session
+creation; choose billable meaning later (HQ-14). Durable outbox delivery permits
+replay and reconciliation. These hooks do not choose prices, a payment vendor or
+automatic billing-driven suspension.
+
+Separate liveness from readiness. Readiness requires authoritative auth/metadata
+access and the capabilities of the node's role; shared-refresh workers also need
+coordination and artifact writes. Drain admission before shutdown, bound in-flight
+work, and expire/fence abandoned claims. Back up metadata, tenant secrets and
+referenced artifacts with recoverable key versions. Exercise tenant-specific
+restore, tenant deletion tombstones, total loss and interrupted migrations before
+promising recovery targets (HQ-10). A restored tenant must retain newer revocations
+or remain suspended until reconciled. Use versioned schemas and staged migrations;
+do not roll old writers onto incompatible new metadata. Retain an offline backup
+of legacy stores until migration is validated, without running dual writers.
+
+### Reference deployment shape and dependency gate
+
+**Proposed first reference:** Docker Compose on one host with an HTTPS ingress,
+static web assets, one authenticated API/query process, one active scheduler role,
+and durable metadata plus secret injection. The scheduler may initially share the
+API process. Keep tenant data and database ports private; publish only ingress.
+Persist metadata and keys independently of replaceable containers. In-process
+Blaze is initially ephemeral and retains its restart behavior. Separate bounded
+workers when the selected execution model requires them.
+
+The later shared-artifact profile adds private object storage, a coordination
+service, local per-node artifact directories and multiple API/worker processes:
+
+```mermaid
+flowchart LR
+  Parent[Product with embedded frame] --> Edge[HTTPS ingress and verified domains]
+  Web[OpenSight web] --> Edge
+  Edge --> API[Authenticated API replicas]
+  API --> Meta[Authoritative tenant metadata and sessions]
+  API --> Workers[Query and refresh workers with local artifact cache]
+  Scheduler[Scheduler with durable claims] --> Meta
+  Scheduler --> Workers
+  Workers --> Meta
+  Workers --> Objects[Private immutable Parquet objects]
+  Workers --> Coord[Refresh leases and invalidation pub/sub only]
+  Workers --> Sources[Authorized tenant source bindings]
+```
+
+This is a dependency diagram, not a deployed topology or a claim of HA. Single-host
+Compose has a host failure domain even with several containers. A later Helm chart
+should package the already-tested health checks, secrets, migrations, resource
+budgets and worker roles after an operator requirement, not introduce a new
+application architecture. AWS-compatible object storage can be an implementation
+option; this draft provisions nothing, makes no AWS calls and assumes no free-tier
+pricing or cloud budget.
+
+No new dependency is approved or installed by this draft. New libraries/services
+must have MIT or Apache-2.0 license evidence for the exact selected release and its
+distribution dependencies before a build. Relevant upstream license sources:
+
+| Component | Evidence and disposition |
+| --- | --- |
+| DuckDB, already used locally | [MIT](https://raw.githubusercontent.com/duckdb/duckdb/main/LICENSE); production artifact-reader suitability remains HQ-11 |
+| Docker Compose reference tooling | [Apache-2.0](https://raw.githubusercontent.com/docker/compose/main/LICENSE); selecting Compose does not require a commercial desktop product |
+| Helm, later packaging only | [Apache-2.0](https://raw.githubusercontent.com/helm/helm/main/LICENSE) |
+| Garnet, possible coordination equivalent | [MIT](https://raw.githubusercontent.com/microsoft/garnet/main/LICENSE); candidate only, lease/atomic-operation/pub-sub/failover behavior and packaged dependencies still require validation |
+
+These upstream links establish license candidates, not pinned release approval.
+Object-store, auth, ingress and secret-manager implementations remain unselected;
+an S3-compatible protocol or Redis-compatible protocol is not a license. D13's
+word “Redis” does not override the MIT/Apache-2.0 requirement or approve a commercial
+distribution.
+
+**Existing design conflict, HQ-15:** D3/D12 mandate Postgres, whose server uses the
+[PostgreSQL License](https://www.postgresql.org/about/licence/), not MIT/Apache-2.0.
+It is mentioned here as an inherited design constraint, not proposed as a new
+compliant dependency. This draft cannot simultaneously certify that server under
+the strict allowlist and preserve D3 unchanged. Resolve the policy scope/exception
+or revise the database decision in the design review before selecting a hosted
+distribution. Do not silently relabel its license or install an alternative.
