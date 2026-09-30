@@ -70,6 +70,11 @@ export class TenantMetadata {
     });
   }
   async revisions(context: TenantContext): Promise<Revisions> { return this.checked(context, async (_c, revisions) => revisions); }
+  async assertRevisions(context: TenantContext, expected: Revisions): Promise<void> {
+    await this.checked(context, async (_c, current) => {
+      if (current.authorization !== expected.authorization || current.policy !== expected.policy || current.configuration !== expected.configuration) throw new MetadataError('METADATA_REVISED', 403);
+    });
+  }
   async put(context: TenantContext, key: ResourceKey, body: JsonObject, expectedVersion = 0): Promise<void> {
     await this.batch(context, [{ key, body, expectedVersion }]);
   }
@@ -101,6 +106,13 @@ export class TenantMetadata {
             await insertLinks(c, context, key, links);
           }
         }
+      }
+      if (changes.length) {
+        const authorization = changes.some(e => ['user', 'group', 'folder', 'analysis', 'dashboard', 'policy', 'invitation'].includes(e.key.kind)) ? 1 : 0;
+        const policy = changes.some(e => e.key.kind === 'policy') ? 1 : 0;
+        const configuration = changes.some(e => ['dataset', 'prepared-dataset', 'source', 'secret', 'ai-config'].includes(e.key.kind)) ? 1 : 0;
+        await c.query('UPDATE h1_revisions SET authorization = authorization + ?, policy = policy + ?, configuration = configuration + ? WHERE tenant_id = ? AND namespace_id = ?',
+          [authorization, policy, configuration, ...scopeValues(context)]);
       }
     });
   }
