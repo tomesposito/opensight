@@ -124,7 +124,9 @@ architecture, decisions and phased plan. Feature guides live in
 [security and namespaces](docs/security-namespaces.md),
 [folders, sharing and embedding](docs/folders-sharing-embedding.md),
 [data preparation](docs/data-prep.md), and the
-[connector gallery](docs/connector-gallery.md).
+[connector gallery](docs/connector-gallery.md). The hosted metadata foundation and
+offline migration runbook are in [H1 tenant metadata](docs/h1-tenant-metadata.md);
+hosted HTTP/session composition follows in H2.
 
 ## Contributing
 

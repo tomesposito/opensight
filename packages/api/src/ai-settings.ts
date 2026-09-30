@@ -7,8 +7,9 @@ import { readBody, RequestError } from './query.js';
 import type { Identity, SecurityService } from './security.js';
 import { AIError, PROVIDERS, providerAdapters, type AIProvider, type ProviderConfig, type Completion } from './ai-providers.js';
 
-interface SavedConfig extends ProviderConfig { namespaceId: string; encryptedKey?: string }
-interface State { version: 1; configs: SavedConfig[] }
+export interface SavedConfig extends ProviderConfig { namespaceId: string; encryptedKey?: string }
+export interface AIState { version: 1; configs: SavedConfig[] }
+type State = AIState;
 export interface AIOptions {
   storePath?: string;
   /** 32 bytes, base64; environment/secret-manager only. Never persisted with ciphertext. */
@@ -40,6 +41,17 @@ function config(raw: unknown, allowed: readonly string[]): ProviderConfig {
   if (baseUrl && !allowed.includes(baseUrl)) invalid('$.baseUrl', 'endpoint is not allowed by server configuration');
   return { provider: value.provider as AIProvider, model: value.model.trim(), ...(baseUrl ? { baseUrl } : {}) };
 }
+export function validateAIState(raw: unknown, allowed: readonly string[] = []): AIState {
+  const state = record(raw, ['version', 'configs']);
+  if (state.version !== 1 || !Array.isArray(state.configs) || state.configs.length > 256) invalid('$', 'invalid AI settings store');
+  const configs = state.configs.map(raw => {
+    const { namespaceId, encryptedKey, ...rest } = record(raw, ['namespaceId', 'provider', 'model', 'baseUrl', 'encryptedKey']);
+    if (encryptedKey !== undefined && (typeof encryptedKey !== 'string' || encryptedKey.length > 16_000)) invalid('$.encryptedKey', 'invalid encrypted key');
+    return { namespaceId: id(namespaceId, '$.namespaceId'), ...config(rest, allowed), ...(encryptedKey ? { encryptedKey: encryptedKey as string } : {}) };
+  });
+  if (new Set(configs.map(c => c.namespaceId)).size !== configs.length) invalid('$', 'duplicate namespace configuration');
+  return { version: 1, configs };
+}
 export class AISettings {
   private readonly adapters;
   private constructor(private readonly store: AutomationStore<State>, private readonly options: AIOptions, private readonly encryptionKey: Buffer | undefined, private readonly allowed: readonly string[]) { this.adapters = providerAdapters(options.fetcher); }
@@ -47,17 +59,7 @@ export class AISettings {
     const allowed = (options.compatibleBaseUrls ?? []).map(endpoint);
     const encryptionKey = options.encryptionKey ? Buffer.from(options.encryptionKey, 'base64') : undefined;
     if (encryptionKey && (encryptionKey.length !== 32 || encryptionKey.toString('base64') !== options.encryptionKey)) throw new Error('OPENSIGHT_AI_ENCRYPTION_KEY must be 32 bytes encoded as base64');
-    const validate = (raw: unknown): State => {
-      const state = record(raw, ['version', 'configs']);
-      if (state.version !== 1 || !Array.isArray(state.configs) || state.configs.length > 256) invalid('$', 'invalid AI settings store');
-      const configs = state.configs.map(raw => {
-        const { namespaceId, encryptedKey, ...rest } = record(raw, ['namespaceId', 'provider', 'model', 'baseUrl', 'encryptedKey']);
-        if (encryptedKey !== undefined && (typeof encryptedKey !== 'string' || encryptedKey.length > 16_000)) invalid('$.encryptedKey', 'invalid encrypted key');
-        return { namespaceId: id(namespaceId, '$.namespaceId'), ...config(rest, allowed), ...(encryptedKey ? { encryptedKey: encryptedKey as string } : {}) };
-      });
-      if (new Set(configs.map(c => c.namespaceId)).size !== configs.length) invalid('$', 'duplicate namespace configuration');
-      return { version: 1, configs };
-    };
+    const validate = (raw: unknown): State => validateAIState(raw, allowed);
     const bootstrap = options.bootstrap ? config((({ key, ...rest }) => rest)(options.bootstrap), allowed) : undefined;
     const store = await AutomationStore.load<State>({ version: 1, configs: bootstrap ? [{ namespaceId: 'default', ...bootstrap }] : [] }, options.storePath, validate);
     const service = new AISettings(store, options, encryptionKey, allowed);
