@@ -106,6 +106,44 @@ lookups. Database accessors require the authenticated context; transactional ten
 row policies provide a second boundary where supported. Imported IDs/ARNs are
 portable references to rebind within that context, never storage paths or grants.
 
+### QuickSight tenant model as prior art
+
+Surveyed from public AWS documentation and the AWS QuickSight multi-tenancy
+design guidance (no AWS access was used; behavior below is documented, not
+measured). The mapping informs this draft but does not override OpenSight's
+existing isolation boundaries.
+
+| QuickSight concept | OpenSight analogue | Disposition |
+| --- | --- | --- |
+| AWS account + subscription (the effective tenant boundary; SPICE capacity pooled per account per region) | No direct analogue; the deployment is the boundary | Diverge: OpenSight has no account construct. The proposed `tenantId` lifecycle record is an addition QuickSight never needed because AWS account lifecycle covers provisioning, suspension and deletion. Keep the record. |
+| Namespace (Enterprise): partitions users and groups; sharing UI is namespace-scoped; `default` always exists; 100 per account by default | OpenSight namespace | Diverge carefully: QuickSight namespaces partition **users and groups only** — assets (data sources, datasets, analyses, dashboards) are account-scoped and reachable by permission grant, including cross-namespace grants via API. OpenSight namespaces already scope assets and metadata. Do **not** weaken that to match QuickSight; the current boundary is stronger and the HQ-1 recommendation preserves it. |
+| `RegisterUser(namespace)`: one person becomes a separate QuickSight user per namespace; the namespace qualifies the user ARN (`user/<namespace>/<name>`) | Membership records keyed by namespace | Clone: matches the draft's rule that each session selects and verifies exactly one membership. Note QuickSight users cannot be transferred between namespaces — a new registration is required. |
+| ADMIN / AUTHOR / READER roles (+ Pro variants, custom permission profiles) | administrator / author (+`_ai`) / reader (+`_ai`) | Mostly clone: the cohort semantics match. OpenSight's `_ai` roles have no QuickSight analogue. Custom permission profiles (e.g. restrict data-source creation) are a later refinement, not a launch requirement. |
+| `GenerateEmbedUrlForRegisteredUser`: provisioned users; session lifetime 15–600 minutes; embeds dashboards, visuals, Q, or the full console | Phase 3c signed embed URLs | Clone the shape: prior art for HQ-7 lifetime bounds (15–600 minutes) and for embedding the authoring console, which the draft leaves as HQ-6. Only registered authors can create/own assets in QuickSight — embedded authoring is not an anonymous feature there either. |
+| `GenerateEmbedUrlForAnonymousUser` + `SessionTags` for tag-based RLS: URL valid 5 minutes, session 10 hours; namespace passed as the anonymous user's *virtual* namespace for cost attribution; domain allowlist overridable per call (up to 3) | No analogue — anonymous embedding is a draft non-goal | Reference only: if HQ-6 ever selects anonymous embedding, QuickSight's session-tag pattern (tag keys bound to dataset columns, values asserted by the issuing server) is the proven design. Do not pre-build it. |
+| Static + runtime `AllowedDomains` for embed origins | Proposed `allowedParentOrigins` + server-owned embed-origin registry | Clone the two-level model; QuickSight's runtime override is itself bounded by an IAM condition (`quicksight:AllowedEmbeddingDomains`), which is the analogue of this draft's operator policy cap on tenant origin lists. |
+| SPICE: shared in-memory engine, capacity pooled per account/region, logically (not physically) isolated between tenants | Blaze artifact backend + per-tenant/node budgets | Clone the honesty: QuickSight documents logical tenant isolation over shared regional infrastructure — the same posture this draft's §1 takes. One deliberate behavioral divergence: QuickSight keeps serving the **previous snapshot** while a SPICE refresh runs; this draft's §5 removes readability during refresh (`BLAZE_REFRESH_IN_PROGRESS`). That is a fail-closed choice (never serve data as current when it is known-invalidating), not an oversight. Revisit only with a product decision. |
+| Pricing: user-based (authors per seat, readers per seat or per session) vs capacity (bulk reader sessions for embedded/large-scale, no user provisioning); SPICE billed per GB pooled at account level | HQ-14 usage hooks | Inform: the natural OpenSight analogue is per-seat entitlements + tenant storage budgets + reader-session usage events — exactly the units HQ-14 asks to define. QuickSight's capacity-pricing lesson is that unprovisioned embed scale needs bulk sessions, not per-user metering. |
+
+What this validates: AWS's own ISV guidance says the first multi-tenancy design
+decision is whether tenants create or edit resources — if they do, namespaces are
+the recommended isolation unit. That is precisely the draft's HQ-1 recommendation
+(one namespace per tenant, lifecycle record separate), so the recommendation stands
+with prior art behind it. The second AWS design decision (RLS vs a dataset per
+tenant; true isolation between cached datasets requires a dataset per tenant) is
+already reflected in the draft's prepared-data gate: tenant-scoped raw snapshots
+or security-partitioned artifacts, never shared snapshots with per-reader
+filtering after aggregation.
+
+What this cautions against: cloning QuickSight's namespace semantics verbatim
+would *reduce* OpenSight's current isolation (assets would leak from
+namespace-scoped to deployment-scoped). The tenant lifecycle record, the
+asset-scoped namespace, and the fail-closed refresh behavior are deliberate
+divergences, recorded here so a future "match QuickSight" instinct does not
+accidentally regress them. QuickSight-compatibility-first (AGENTS.md §2)
+applies to asset and security *semantics*, not to weakening OpenSight's tenant
+boundary to QuickSight's account-scoped asset model.
+
 ### Onboarding and lifecycle
 
 **Proposed operator API:** `POST /api/host/tenants` accepts a display name and an
@@ -311,9 +349,10 @@ See [Phase 3c documentation](folders-sharing-embedding.md) for existing limits.
 All additions below are OpenSight-local versioned contracts, **not implemented**.
 Continue the plain `node:http` resource/validation patterns. Preserve v1 issuance
 for its current semantics; do not silently turn its token into a session token.
-QuickSight compatibility applies to asset/security meaning, but exact AWS embed
-actions, lifetimes and options require the pinned-contract evidence described in
-SOLUTION_DESIGN §3.2 (HQ-12).
+QuickSight compatibility applies to asset/security meaning. The documented AWS
+embed actions, lifetimes and options are surveyed as prior art in §2
+("QuickSight tenant model as prior art"); remaining product-scope questions are
+HQ-12.
 
 | Proposed endpoint | Authority and contract |
 | --- | --- |
@@ -735,7 +774,7 @@ measurements and proposes contracts before the corresponding build slice starts.
 | HQ-9 | Are custom embed domains required at launch? Who owns verification, certificates, renewal and DNS support? | Begin with a canonical origin unless custom domains are explicitly scheduled. Choose domain lifecycle and operator policy before routing a customer hostname. Product owner decision. | Custom-domain slice |
 | HQ-10 | What availability, recovery, retention/deletion and data-location commitments apply? | Specify RPO/RTO, backup/restore drills, audit/artifact retention, deletion completion including backups, and permitted single-region locations. No multi-region or compliance certification promised. Product owner decision. | Production pilot and HA claims |
 | HQ-11 | How should D11 serverless hosting, D12 production Postgres/local-only DuckDB and D13 local Parquet readers be reconciled? | Decide API/worker deployment lifetimes and cached execution backend; measure local loading/mapping and shared semantics. Compose is a reference harness, not a reversal of the cloud decision. | Hosted analytical executor and distributed artifacts |
-| HQ-12 | Which QuickSight embedding/API behavior must be compatible, beyond current asset/security semantics? | Pin SDK/service-model evidence and recorded contracts before claiming API compatibility; define alias/version selection, parameters, lifetimes and feature coverage. Source conformance remains unmeasured. | Compatibility promises and optional AWS-shaped adapters |
+| HQ-12 | Which QuickSight embedding/API behavior must be compatible, beyond current asset/security semantics? Resolved by the §2 prior-art survey: `GenerateEmbedUrlForRegisteredUser` (15–600 min sessions; dashboard/visual/Q/console; authors only for authoring), `GenerateEmbedUrlForAnonymousUser` (5-min URL, 10-h session; session tags for RLS; virtual namespace), static + runtime `AllowedDomains` (≤3 per call), namespace semantics (users/groups only, 100/account default, assets account-scoped). | Remaining genuine unknowns: how much AWS API-shape compatibility the product wants (action names, parameter shapes, versioning/alias policy), whether anonymous embedding ever enters scope (owned by HQ-6), and what evidence counts as compatibility proof. No AWS-shaped adapter is built or promised. | Compatibility promises and optional AWS-shaped adapters |
 | HQ-13 | Who owns recurring jobs after user removal? What recipient authorization and delivery retry/duplicate policy is acceptable? | Recheck current principal permissions; stop orphaned jobs initially. Decide service-principal ownership and ambiguous SMTP delivery behavior explicitly. Product semantics plus engineering reliability design. | Tenant reports/alerts and scheduler migration |
 | HQ-14 | What usage/entitlement events are needed, and does entitlement affect features or just limits? | Define units, accuracy and retention; hooks only. Pricing, payment providers and billing-driven suspension remain outside scope. Product owner decision. | Metering integration, not core tenant isolation |
 | HQ-15 | Does the strict MIT/Apache-2.0 rule permit the already-decided Postgres server license, or must D3/D12 change? Which compliant coordination/object-store/auth packages and releases pass review? | Record an explicit policy disposition; no implied exception. Verify exact release/distribution/transitive licenses. D13's coordination role does not select a Redis package. | Any hosted dependency selection affected by that conflict |
