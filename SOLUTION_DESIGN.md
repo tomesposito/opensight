@@ -1122,6 +1122,17 @@ signing tests, API validation tests; full suite green; demo rebuilt.
 - Distributed query investigation (only if evidence demands it).
 - Hosted reference deployment (Docker Compose / Helm).
 
+**Tom's decisions, 2026-09-30:**
+- Paginated reports: yes, eventually — future polish item, not a priority. Not queued as
+  buildable work (do not file as an issue; the build loop would pick it up).
+- Generative natural language: yes. Provider-config UI already ships (OpenAI, Anthropic,
+  OpenAI-compatible; Bedrock stubbed pending AWS approval). Remaining work is a live API
+  key + Bedrock/AWS decision, not new code.
+- Hosted multi-tenant option: yes — the most important item and the long-term vision.
+  Embeddable/white-label like QuickSight. Spec the hosted architecture first (tenancy model,
+  isolation, embedding API, scaling plan), then slice into buildable issues. This overlaps
+  the Phase 5 trigger ("decision to operate OpenSight as a hosted service").
+
 ### Phase 5 — Hosted & scale-out — TRIGGERED, NOT SCHEDULED
 
 This phase does not start on a date or after a feature milestone. It starts when
