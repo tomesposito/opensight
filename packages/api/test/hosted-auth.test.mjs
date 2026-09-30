@@ -63,6 +63,7 @@ test('H2 tenant switching verifies preprovisioned membership and revokes the old
   assert.ok(await f.auth.verify(session.token));
   await f.auth.accept(token, f.password, f.code(), 'local'); f.advance();
   const switched = await f.auth.switchTenant(session.token, other.tenantId);
+  assert.equal(switched.expiresAt, session.expiresAt, 'Switching cannot renew the authenticated session lifetime');
   assert.equal((await f.auth.verify(switched.token)).namespaceId, other.namespaceId);
   await assert.rejects(f.auth.verify(session.token), { code: 'AUTHENTICATION_FAILED' });
   await f.auth.logout(switched.token);

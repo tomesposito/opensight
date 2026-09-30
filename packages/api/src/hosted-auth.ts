@@ -153,9 +153,9 @@ export class HostedAuth {
   private signature(prefix: string): string {
     return createHmac('sha256', this.config.signingKey).update(JSON.stringify([prefix, this.config.issuer, this.config.audience, this.config.origin])).digest('base64url');
   }
-  private async issue(c: SqlConnection, membership: SqlRow): Promise<{ token: string; expiresAt: number; tenantId: string }> {
+  private async issue(c: SqlConnection, membership: SqlRow, expiresAtLimit = Infinity): Promise<{ token: string; expiresAt: number; tenantId: string }> {
     const opaque = randomBytes(32).toString('base64url'), prefix = `h2.${this.config.keyId}.${opaque}`;
-    const expiresAt = this.clock() + this.config.sessionSeconds * 1000, tenantId = String(membership.tenant_id);
+    const expiresAt = Math.min(expiresAtLimit, this.clock() + this.config.sessionSeconds * 1000), tenantId = String(membership.tenant_id);
     await c.query(`INSERT INTO h2_sessions VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,0)`,
       [digest(opaque), String(membership.subject), tenantId, String(membership.namespace_id), String(membership.user_id), this.config.issuer, this.config.audience, this.config.origin,
         expiresAt, this.config.keyId, Number(membership.version), Number(membership.authorization), Number(membership.policy), Number(membership.configuration)]);
@@ -194,7 +194,7 @@ export class HostedAuth {
     return this.database.transaction(async c => {
       const { session } = await this.session(c, token);
       const membership = await this.membership(c, String(session.subject), tenantId);
-      const result = await this.issue(c, membership);
+      const result = await this.issue(c, membership, Number(session.expires_at));
       await c.query('UPDATE h2_sessions SET revoked = 1 WHERE session_id = ?', [String(session.session_id)]);
       return result;
     });

@@ -116,7 +116,8 @@ test('H2 verifier routing keeps current membership authoritative and never falls
 });
 test('H2 CLI refuses accidental fixture fallback, malformed config and unsupported arguments before listening', async () => {
   const cli = fileURLToPath(new URL('../dist/cli.js', import.meta.url));
-  for (const [env, args, expected] of [[{ OPENSIGHT_AUTH_KEY_ID: 'present' }, [], 'HOSTED_MODE_REQUIRED'], [{ OPENSIGHT_MODE: 'hosted' }, [], 'HOSTED_CONFIG_INVALID'], [{ OPENSIGHT_MODE: 'unknown' }, [], 'HOSTED_MODE_REQUIRED'], [{ OPENSIGHT_MODE: 'fixture' }, ['rotate-auth-key'], 'CLI_ARGUMENT_INVALID']]) {
+  const partialSettings = ['OPENSIGHT_AUTH_KEY_ID', 'OPENSIGHT_PUBLIC_ORIGIN', 'OPENSIGHT_OPERATOR_KEY', 'OPENSIGHT_SESSION_SECONDS', 'OPENSIGHT_INVITATION_SECONDS', 'OPENSIGHT_METADATA_DATABASE'].map(key => [{ [key]: 'present' }, [], 'HOSTED_MODE_REQUIRED']);
+  for (const [env, args, expected] of [...partialSettings, [{ OPENSIGHT_MODE: 'hosted' }, [], 'HOSTED_CONFIG_INVALID'], [{ OPENSIGHT_MODE: 'unknown' }, [], 'HOSTED_MODE_REQUIRED'], [{ OPENSIGHT_MODE: 'fixture' }, ['rotate-auth-key'], 'CLI_ARGUMENT_INVALID']]) {
     const result = await new Promise(resolve => {
       const child = spawn(process.execPath, [cli, ...args], { env: { PATH: process.env.PATH, TZ: 'UTC', ...env } }); let out = '';
       child.stdout.on('data', b => { out += b; }); child.stderr.on('data', b => { out += b; }); child.on('exit', status => resolve({ status, out }));

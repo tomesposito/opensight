@@ -95,7 +95,8 @@ no browser persistence. Clients must clear their old token and tenant caches on
 switch/logout and keep tokens out of URLs. `POST /api/auth/switch` with
 `{tenantId}` verifies the target membership and atomically replaces the current
 session; a failed switch preserves it. `POST /api/auth/logout` with `{}` revokes
-the current session. No implicit renewal or anonymous embedding is provided.
+the current session. Switching preserves the original expiry, so repeated switches
+cannot extend login lifetime. No implicit renewal or anonymous embedding is provided.
 
 Passwords use Node's built-in scrypt (`N=131072`, `r=8`, `p=1`), independent
 128-bit salts and a 256-bit result. This memory-hard choice adds no dependencies
