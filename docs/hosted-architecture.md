@@ -747,3 +747,86 @@ policy must be reconciled through an approved update to SOLUTION_DESIGN before a
 dependent build. That update is outside this branch. Experimental results may
 resolve engineering choices; they cannot silently decide branding, entitlements,
 identity onboarding or customer service commitments.
+
+## 8. Phased rollout
+
+These are proposed slice names for later planning, not scheduled work or GitHub
+issues. Each needs an approved contract in SOLUTION_DESIGN before its build branch.
+Dependency order is explicit; optional slices do not become launch requirements
+unless the product decisions select them. Resolve the listed questions before the
+dependent slice, rather than inventing answers during implementation.
+
+| Slice | Depends on / decision gate | Buildable outcome | Acceptance gate |
+| --- | --- | --- | --- |
+| H0 — Accept hosted boundaries and reconcile design | Review this draft; HQ-1, HQ-2, HQ-11, HQ-15 | Record approved tenant, deployment/executor and dependency decisions in a separate design change; choose pilot feature scope | Approved contract clearly separates launch scope from triggered scale-out; no infrastructure implied |
+| H1 — Tenant metadata and migration | H0 | Tenant/namespace mapping, scoped repositories/constraints, revisions, operator lifecycle records and durable outbox; migrate security/organization/prep/AI records and imported definitions | Concurrent write/rollback tests; identical IDs in two tenants; foreign-key and missing-context bypass tests; restart and interrupted migration recovery |
+| H2 — Verified tenant sessions and provisioning | H1; HQ-3 | Hosted composition/config validation, selected verifier, tenant-scoped sessions/revocation, provisioning operations and suspend/resume/delete admission gates | Forged headers/body/host/subject rejection; operator versus tenant-admin separation; idempotent onboarding and tenant switch/logout; no unauthenticated fallback |
+| H3 — Durable sources and complete data authorization | H1–H2; HQ-4 and HQ-16 | Tenant-owned source/upload lifecycle and secret references; explicit policy binding beyond sales; common authorization gates for discovery/query/preview/output/AI; retain protected-prep refusal where unsupported | Cross-tenant source/dependency/import attempts fail before I/O; owner isolation survives restart; RLS/CLS tests across SQL and server cached paths; graph/output-path conformance |
+| H4 — Tenant budgets and worker containment | H2–H3; HQ-8 | Tenant/node admission, bounded queues and resource accounting; worker/process cancellation as required by the chosen executor | Adversarial load from one tenant cannot bypass another's limits or authorization; measured bounded memory, time, queue and source usage; rejection/cancellation without partial results |
+| H5 — Embed configuration and appearance | H2–H4; HQ-5, HQ-6 | Tenant config API, revision checks, exact origin policy, safe appearance schema and selected renderer states; v1 compatibility retained | Wrong-origin/config-revision tests; no executable theme inputs; screenshots for loading/error/expiry/empty states and permitted branding changes |
+| H6 — Registered embed sessions and SDK evolution | H5; HQ-7 and required HQ-12 contracts | Scoped bootstrap redemption, revocation/renewal, verified backend subject mapping if selected, versioned SDK events/transport | Replay/race/key-rotation/suspension tests; viewer RLS/CLS; forged postMessage tests; browser checks with third-party cookies blocked; credentials never escape to parent or logs |
+| H7 — Tenant automation and durable job ownership | H2–H4; HQ-13 | Migrate legacy refresh/report/alert resources and rendering identities; durable occurrence records and delivery outbox; retain single scheduler initially | Fake-timer coalescing, permission changes while queued/running, tenant-scoped histories/recipients, orphaned jobs, interrupted delivery and stub-mail duplicate policy |
+| H8 — Single-node hosted reference and pilot gate | H1–H7 for selected features; HQ-10; HQ-14 only for selected usage hooks | Compose reference, environment/secret injection, health/drain, audit/metrics, backup/restore and operator runbook; unsupported optional surfaces disabled | Fresh install/migration/restart/restore and tenant deletion drills; full isolation/load suite; documented measured limits. Single node and ephemeral Blaze are disclosed; actual deployment requires separate authorization |
+| H9 — Shared Parquet artifact adapter | H8; scale-out trigger in §5, HQ-11/HQ-15 | Bounded artifact writer/reader, digest/schema manifests, async hydration adapter, local cache/GC and backup linkage behind D13 seam; test with one serving node first | Differential output versus in-process Blaze; oversize/corrupt/partial artifact handling; no stale fallback; restart hydration and bounded memory measurements |
+| H10 — Distributed refresh and replica safety | H9 and H7; multi-instance/HA trigger | Verified coordination adapter, leases/fencing, manifest CAS, outbox invalidation/reconciliation, durable scheduler claims; remove every remaining startup/file-only serving dependency | Two nodes with identical tenant IDs/resource IDs, dropped pub/sub, partitioned/paused workers, lease expiry, crashes at each publication step, concurrent delete/save/refresh, manual-versus-scheduled contention and authoritative-store outage; no obsolete publication or cross-tenant read |
+| H11 — Verified customer embed domains (optional) | H6 and H8; HQ-9 | Domain registry, proof of control, certificate/routing lifecycle and explicit SDK trusted-origin support | Unknown-host and tenant mismatch denial, DNS reassignment/takeover attempts, revoked-domain sessions, certificate failure/renewal and browser origin tests |
+| H12 — Supporting-service HA and later packaging | H10; approved HQ-10 targets and measured demand | Redundant supporting state/services, tested failover and recovery, optional placement pools; Helm reference only if needed | Dependency-failure and rolling-upgrade drills against stated targets; no HA claim with a single metadata/object/coordination failure point |
+
+H7 may be omitted from the first pilot only by explicitly disabling tenant reports
+and alerts in the approved scope; its legacy default-only handlers must remain
+inaccessible to other tenants. H3 must not broaden protected prepared execution
+until its security proof exists. H9–H10 are a paired multi-node release gate:
+artifact storage alone does not make independently scheduled replicas safe.
+H11 is independent of scale-out once its listed prerequisites pass. Hierarchical
+organizations, anonymous embeds and dedicated tenant deployments require new
+approved slices if selected; they are not hidden work inside these rows.
+
+### Migration and release discipline
+
+Use an explicit maintenance/frozen-write migration from legacy stores. Inventory
+namespace roots, owners, grants, policies, invitations, prepared definitions,
+source bindings and encrypted AI configuration; map `default` to an explicit
+self-hosted/hosted tenant only through operator configuration. Do not sweep fixtures
+into a customer. Validate referential integrity and duplicate IDs before commit,
+preserve portable definitions, and record counts/checksums without data contents.
+Reject unresolved rows for repair rather than silently dropping them. Legacy
+automation belongs to default until H7 assigns and validates an execution owner.
+Keep a versioned backup and an explicit rollback boundary; do not dual-write the
+old JSON files and new metadata indefinitely. In-process Blaze rows never become
+ready simply because metadata migrated.
+
+Every future build slice runs root `npm test` and reports passed/failed/skipped
+counts; only live-Postgres tests may skip when no server is available. Add meaningful
+tests beside the changed component: identical users/groups/assets/dataset IDs in
+different tenants; authorization/policy changes during async work; every preview,
+query, report, export, cache and SDK bypass path; pooled-context reset; missed
+invalidation and lease loss. Fault injection must prove each distributed guarantee,
+including delivery ambiguity. Source-conformance and real-browser/load evidence
+are separate from unit-test success. UI slices rebuild the static demo, compare
+available reference screenshots, record limitations, and refresh affected README
+images/GIF under AGENTS.md; the demo is never described as a deployed server.
+
+### Verification of this draft
+
+The code survey above used baseline `10fea78f`; the only tracked change in this
+draft is this document. No implementation, dependency or SOLUTION_DESIGN change
+is included. The full root suite was run with `TZ=UTC` and `DATABASE_URL` unset:
+
+| Suite | Passed | Failed | Skipped |
+| --- | ---: | ---: | ---: |
+| API | 144 | 0 | 0 |
+| Bundle parser | 197 | 0 | 0 |
+| Embedding SDK | 4 | 0 | 0 |
+| O interpreter | 32 | 0 | 0 |
+| Query engine | 496 | 0 | 2 |
+| Web | 477 | 0 | 0 |
+| Conformance | 3 | 0 | 0 |
+| **Total** | **1,353** | **0** | **2** |
+
+There were 1,355 tests, zero cancelled and zero todo. The two skips are the live
+Postgres executor and live Postgres branched-prep integration tests. The successful
+run used local socket access for loopback/stub tests. An initial restricted run
+failed on denied loopback listeners and a timezone-sensitive date test; rerunning
+with socket access and explicit UTC passed. This validates the existing baseline,
+not the proposed hosted behavior. No UI changed, so screenshots/demo media were
+not regenerated for this documentation-only draft. No service was deployed.
