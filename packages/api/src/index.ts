@@ -24,6 +24,9 @@ import { DashboardSnapshots, ReportService } from './reports.js';
 import { smtpFromEnvironment, type MailTransport } from './mail.js';
 import { refreshRoute, reportRoute, alertRoute, method } from './automation-routes.js';
 
+export { createHostedApiServer, createBuiltinHostedServer } from './hosted-server.js';
+export type { HostedServerOptions } from './hosted-server.js';
+
 export interface ApiOptions {
   prepStorePath?: string;
   prepPostgresBindings?: readonly PrepPostgresBinding[];

@@ -1,4 +1,8 @@
-/** H1 library surface. HTTP session/operator composition is deliberately deferred to H2. */
+/** Durable tenant metadata and trusted hosted-auth operator tools. */
+export { initializeAuth } from './auth-schema.js';
+export { HostedAuth, activateAuthKey } from './hosted-auth.js';
+export { HostedProvisioning } from './hosted-provisioning.js';
+export { hostedConfig } from './hosted-config.js';
 export { TenantMetadata } from './metadata.js';
 export type { TenantContext, Revisions, MetadataEdit } from './metadata.js';
 export { SqliteMetadataDatabase, PostgresMetadataDatabase, MetadataError } from './metadata-db.js';

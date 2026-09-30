@@ -21,3 +21,8 @@ const embeddedOptions: ApiOptions = { ...securedOptions, embedding };
 // @ts-expect-error Signing secrets are environment-only, never API options.
 const invalidEmbedding: EmbeddingOptions = { ...embedding, secret: 'disallowed-option' };
 void embeddedOptions; void invalidEmbedding;
+
+import { createHostedApiServer, createBuiltinHostedServer, type HostedServerOptions } from '@opensight/api';
+import { HostedAuth, HostedProvisioning, initializeAuth, hostedConfig, activateAuthKey } from '@opensight/api/metadata';
+const createHosted: (options: HostedServerOptions) => Promise<Server> = createHostedApiServer;
+void createHosted; void createBuiltinHostedServer; void HostedAuth; void HostedProvisioning; void initializeAuth; void hostedConfig; void activateAuthKey;
