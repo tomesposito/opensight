@@ -278,3 +278,131 @@ aggregated caches, tenant restore in shared metadata, native-memory fairness,
 lost invalidations, and duplicate externally visible job effects after crashes.
 The release gates in §8 require failure tests for these; they are not solved by
 adding tenant IDs or a distributed lock alone.
+
+## 4. Embedding & white-label API surface
+
+### Shipped Phase 3c contract
+
+The [embedding service](../packages/api/src/embedding.ts),
+[SDK](../packages/embedding-sdk/src/index.ts) and
+[renderer](../packages/web/src/embed-main.tsx) implement the following:
+
+| Surface | Current behavior |
+| --- | --- |
+| `POST /dashboards/{id}/embed-url` (also `/api/dashboards/...`) | Authenticated caller only; body `{parentOrigin, visualId?, expiresInSeconds?}`; TTL 60–900 whole seconds, default 300; response `{url, expiresAt}` |
+| `GET /embed/dashboards/{id}?token=...` | HMAC-SHA256 signed bearer URL; namespace/user, dashboard/optional visual, exact parent origin, issue/expiry times and nonce; token is not encrypted and is not a general API credential |
+| Server configuration | One trusted public origin and parent-origin allowlist for the process; signing secret from `OPENSIGHT_EMBED_SECRET`; no caller-selected host or client signer |
+| Authorization | Current membership and folder/asset grants rechecked on load, viewer query security applied, expiry and asset grants rechecked after asynchronous rendering |
+| Browser boundary | Credentialed CORS only for issuance; exact origins, CSP `frame-ancestors`, script nonce, `no-store`, `no-referrer`; URL removed from frame history after load |
+| SDK | `createEmbeddingClient`, `generateEmbedUrl`, `embedDashboard`, `embedVisual`; `refresh()` and `destroy()`; ready/expired/error callbacks with origin/window checks |
+| Authentication hook | `getAuthorization` plus `onAuthenticationRequired`; OIDC/SAML/exchange are not implemented; `ssoNotConfigured` is an explicit stub |
+
+This renders a snapshot of supported visuals using the namespace's sales binding.
+It has no persistent interactive data session; refresh generates and loads a new
+URL. Expiry replaces the view, but cannot erase data already received. The nonce
+does not make a v1 URL single-use. Current SDK validation requires the returned
+origin to equal `apiOrigin` and the v1 token shape; custom origins or a new token
+format need an explicit SDK upgrade. The iframe title includes OpenSight and the
+renderer has fixed presentation. There is no tenant branding/custom-domain API.
+See [Phase 3c documentation](folders-sharing-embedding.md) for existing limits.
+
+### Proposed tenant configuration
+
+All additions below are OpenSight-local versioned contracts, **not implemented**.
+Continue the plain `node:http` resource/validation patterns. Preserve v1 issuance
+for its current semantics; do not silently turn its token into a session token.
+QuickSight compatibility applies to asset/security meaning, but exact AWS embed
+actions, lifetimes and options require the pinned-contract evidence described in
+SOLUTION_DESIGN §3.2 (HQ-12).
+
+| Proposed endpoint | Authority and contract |
+| --- | --- |
+| `GET /api/embedding/config` | Tenant administrator; returns effective non-secret config, revision and supported capabilities |
+| `PUT /api/embedding/config` | Tenant administrator within operator policy; `If-Match` revision required; replaces validated config, increments revision and revokes sessions when security settings change |
+| `POST /api/embedding/sessions` | Registered user, or explicitly authorized server credential acting through a verified subject mapping; creates a bounded embed grant |
+| `DELETE /api/embedding/sessions/{id}` | Issuer or tenant administrator in the same tenant; revokes grant, redemption and future requests |
+| `POST /api/embedding/sessions/{id}/renew` | Reauthenticate original authority and reauthorize the subject and asset; issue fresh bootstrap URL; an expired embed token alone cannot renew |
+| `POST /api/embedding/domains` | Tenant administrator if operator permits; creates a pending hostname claim and verification challenge, no active routing |
+| `POST /api/embedding/domains/{id}/verify` | Verifies domain control and certificate readiness; activation is an audited state transition |
+| `GET /api/embedding/domains`, `DELETE /api/embedding/domains/{id}` | Tenant administrator; inspect status or revoke routing and affected sessions |
+
+Proposed configuration fields are `enabled`, `allowedParentOrigins`,
+`embedOriginId`, `maxSessionSeconds`, `appearance` and `features`. A server-owned
+registry resolves `embedOriginId`; a body cannot supply an arbitrary signing or
+redirect origin. `appearance` can reference a tenant-owned theme and validated
+logo/favicon assets, plus bounded text such as product name and iframe title.
+Use approved color/font/layout tokens, not executable HTML, arbitrary CSS or
+unrestricted external asset URLs. Theme resources retain their existing portable
+meaning; service chrome/branding metadata lives separately. Light/dark behavior,
+which chrome can be removed and whether branding removal is available to everyone
+are HQ-5. Required legal notices are not a UI theme switch.
+
+`features` describes supported capabilities such as parameter controls, filtering
+or export; it cannot confer authorization. Unsupported flags fail with proposed
+`EMBED_FEATURE_UNSUPPORTED` (422), not a simulated control. Embedded authoring,
+anonymous access, exports and saved reader state require explicit product choices
+(HQ-6). Configuration edits use optimistic concurrency (`412` on revision conflict),
+reject unknown fields and enforce operator caps. A tenant cannot widen its origin
+list beyond operator policy or set an unbounded session lifetime. Exact caps and
+default session lifetime remain HQ-7; the existing v1 TTL is unchanged.
+
+### Proposed session issuance and browser flow
+
+The session request contains `{dashboardId, visualId?, parentOrigin,
+requestedDurationSeconds?, initialParameters?}`. The server resolves tenant and
+user from authentication. A product backend integration may additionally submit
+an external-subject reference **only** when its server credential is allowed to
+use a preconfigured subject-to-membership mapping. No request may assert groups,
+roles, raw policy or an arbitrary target namespace. Unresolved subjects fail closed;
+no implicit just-in-time user creation is assumed (HQ-3).
+
+The response is proposed as `{sessionId, url, bootstrapExpiresAt, sessionExpiresAt,
+configRevision, capabilities}`. Bind the signed bootstrap to tenant, namespace,
+subject, dashboard/version or visual scope, exact parent and embed origins,
+audience, key ID, revision, nonce and expiry. A durable atomic redemption record
+makes the new bootstrap single-use; concurrent replay fails. Authorize again on
+redemption, renewal and every data request. Parameters are typed interaction
+values, not tenant predicates, and unsupported interactions fail explicitly.
+
+After redemption, deliver only an embed-scoped credential to the frame, held in
+memory for API authorization. Remove the bootstrap URL from history and prohibit
+logging its query string at every proxy hop. Keep session state/revocation in
+metadata, not coordination pub/sub. This proposed bearer flow avoids requiring
+third-party cookies; cookie-based alternatives and browser coverage need HQ-7's
+decision. Do not transfer the frame credential to the parent through `postMessage`.
+The signing and encryption keys always remain server-side.
+
+The SDK extension adds a versioned session transport, explicit allowed embed
+origins from trusted application configuration, and `sessionExpired`,
+`authorizationRevoked` and structured error events. Validate both message origin
+and source window and associate events with the active session/refresh generation.
+Never disable origin checks to support custom domains. The renderer polls or
+reauthorizes on interaction according to the approved revocation bound; a hosted
+status loss makes protected content unavailable. Immediate recall of a captured
+snapshot is impossible and must not be promised.
+
+Proposed safe errors include `EMBEDDING_NOT_CONFIGURED` (existing, 503),
+`EMBED_ORIGIN_DENIED` (existing, 403), `INVALID_EMBED_TOKEN` (existing, 401),
+`EMBED_SESSION_EXPIRED` / `EMBED_SESSION_REVOKED` (new, 401),
+`EMBED_SUBJECT_UNRESOLVED` (new, 403), and `EMBED_DOMAIN_UNVERIFIED` (new, 409).
+Responses must not reveal another tenant's membership or domain owner. Unrelated
+existing API error envelopes are not silently standardized by this proposal.
+
+### Custom domains and white-label gaps
+
+Treat product parent origins and OpenSight embed origins as distinct allowlists.
+A verified customer hostname may route only to its registered tenant. Check the
+trusted host mapping against authenticated tenant and token audience; never choose
+tenant identity from `Host` alone. Enforce globally unique active/pending hostname
+claims, HTTPS certificate lifecycle, exact parent origins, trusted proxy headers
+and safe handling of unknown hosts. Domain removal/reassignment invalidates old
+sessions and certificates/routing; stale DNS must not permit takeover. Ownership
+verification, certificate automation, renewal failure and quotas need a reviewed
+operational design before enabling domains (HQ-9).
+
+White-label completeness also includes loading/empty/error/expiry pages,
+accessibility titles, help links, favicon, emails and exports if those surfaces
+are offered. Branding must not hide data freshness, permission failures or
+unsupported functionality. Theme preview and screenshot tests should cover these
+states. Which surfaces are in the first release is HQ-5, not inferred from the
+phrase “like QuickSight.”
