@@ -749,18 +749,21 @@ an S3-compatible protocol or Redis-compatible protocol is not a license. D13's
 word “Redis” does not override the MIT/Apache-2.0 requirement or approve a commercial
 distribution.
 
-**Existing design conflict, HQ-15:** D3/D12 mandate Postgres, whose server uses the
+**Resolved design conflict, HQ-15 (decided 2026-09-30):** D3/D12 mandate Postgres,
+whose server uses the
 [PostgreSQL License](https://www.postgresql.org/about/licence/), not MIT/Apache-2.0.
-It is mentioned here as an inherited design constraint, not proposed as a new
-compliant dependency. This draft cannot simultaneously certify that server under
-the strict allowlist and preserve D3 unchanged. Resolve the policy scope/exception
-or revise the database decision in the design review before selecting a hosted
-distribution. Do not silently relabel its license or install an alternative.
+The policy scope is clarified rather than the database decision revised:
+MIT/Apache-2.0 governs bundled code; operator-installed server infrastructure
+must be open-source and freely available, which the PostgreSQL License
+(permissive, OSI-approved) satisfies. What OpenSight ships is the MIT-licensed
+`pg` client. PG-wire-compatible databases remain usable for the SQL surface;
+Postgres is the tested reference. No D3/D12 change, and no implied exception
+for bundled commercial licenses.
 
 ## 7. Open questions
 
 The hosted/white-label direction and D13 are accepted inputs. Everything in this
-register is unresolved **except HQ-12, decided 2026-09-30**; recommendations above do not imply product approval. The
+register is unresolved **except HQ-12 and HQ-15, decided 2026-09-30**; recommendations above do not imply product approval. The
 product owner decides product scope and operating commitments. Engineering supplies
 measurements and proposes contracts before the corresponding build slice starts.
 
@@ -780,7 +783,7 @@ measurements and proposes contracts before the corresponding build slice starts.
 | HQ-12 | Which QuickSight embedding/API behavior must be compatible, beyond current asset/security semantics? §2 prior-art survey resolved the reference shapes: `GenerateEmbedUrlForRegisteredUser` (15–600 min sessions; dashboard/visual/Q/console; authors only for authoring), `GenerateEmbedUrlForAnonymousUser` (5-min URL, 10-h session; session tags for RLS; virtual namespace), static + runtime `AllowedDomains` (≤3 per call), namespace semantics (users/groups only, 100/account default, assets account-scoped). **Decision (product owner, 2026-09-30): compatibility matching** — the project is an open-source QuickSight clone (AGENTS.md §2.1), so hosted tenancy, identity and embedding APIs match QuickSight's shapes and semantics by default. Explicit carve-outs that compatibility does not override: OpenSight namespaces keep scoping assets and metadata (QuickSight's account-scoped assets are weaker isolation — do not adopt), the `tenantId` lifecycle record stays, and refresh stays fail-closed (`BLAZE_REFRESH_IN_PROGRESS`, never serve known-invalidating data as current). | Remaining: action-name and parameter naming/versioning policy (adopt AWS names verbatim vs OpenSight-local names with AWS-shaped adapters); adapter scope — which actions, which parameters, alias/version selection; whether anonymous embedding ever enters scope (owned by HQ-6); what evidence counts as compatibility proof. No AWS-shaped adapter is built or promised by this decision. | Compatibility promises and optional AWS-shaped adapters |
 | HQ-13 | Who owns recurring jobs after user removal? What recipient authorization and delivery retry/duplicate policy is acceptable? | Recheck current principal permissions; stop orphaned jobs initially. Decide service-principal ownership and ambiguous SMTP delivery behavior explicitly. Product semantics plus engineering reliability design. | Tenant reports/alerts and scheduler migration |
 | HQ-14 | What usage/entitlement events are needed, and does entitlement affect features or just limits? | Define units, accuracy and retention; hooks only. Pricing, payment providers and billing-driven suspension remain outside scope. Product owner decision. | Metering integration, not core tenant isolation |
-| HQ-15 | Does the strict MIT/Apache-2.0 rule permit the already-decided Postgres server license, or must D3/D12 change? Which compliant coordination/object-store/auth packages and releases pass review? | Record an explicit policy disposition; no implied exception. Verify exact release/distribution/transitive licenses. D13's coordination role does not select a Redis package. | Any hosted dependency selection affected by that conflict |
+| HQ-15 | Does the strict MIT/Apache-2.0 rule permit the already-decided Postgres server license, or must D3/D12 change? Which compliant coordination/object-store/auth packages and releases pass review? | **Decision (product owner, 2026-09-30): no D3/D12 change.** The MIT/Apache-2.0 rule governs bundled code (libraries, embedded binaries). Server infrastructure the operator installs and configures is not bundled: it must be open-source and freely available, and the PostgreSQL License (permissive, OSI-approved) qualifies. What OpenSight ships is the MIT-licensed `pg` client. Excluded server terms: SSPL, RSAL, BSL and other source-available-but-not-open licenses. PG-wire-compatible databases remain usable for the SQL surface; Postgres is the tested reference. Remaining: verify exact release/distribution/transitive licenses for any newly bundled coordination/object-store/auth package. D13's coordination role does not select a Redis package. | Any hosted dependency selection affected by that conflict |
 | HQ-16 | Which production source/upload lifecycle ships first, and who supplies tenant source/AI credentials? | Decide durable upload retention versus explicit expiry, supported connectors and tenant secret-management authority. Existing startup roots and owner staging do not establish a hosted connector service. Keep egress endpoints operator-authorized. | Durable data bindings and meaningful multi-node restart behavior |
 | HQ-17 | Should newly created assets inherit current namespace visibility or start private? Are tenant templates or cross-tenant collaboration wanted? | Preserve existing Phase 3c semantics until changed by an explicit product decision. If templates are offered, copy definitions into the destination and rebind dependencies; no live cross-tenant grants. | Onboarding templates or changes to default sharing |
 
