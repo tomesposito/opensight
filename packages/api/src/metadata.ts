@@ -25,7 +25,7 @@ export class TenantMetadata {
     if (!identity) throw new MetadataError('PRINCIPAL_REQUIRED', 401);
     const namespaceId = identifier(identity.namespaceId), userId = identifier(identity.userId);
     return this.membershipDatabase.transaction(async c => {
-      const rows = await c.query(`SELECT n.tenant_id, r.authorization FROM h1_namespaces n
+      const rows = await c.query(`SELECT n.tenant_id, r."authorization" FROM h1_namespaces n
         JOIN h1_tenants t ON t.tenant_id = n.tenant_id
         JOIN h1_revisions r ON r.tenant_id = n.tenant_id AND r.namespace_id = n.namespace_id
         JOIN h1_resources u ON u.tenant_id = n.tenant_id AND u.namespace_id = n.namespace_id AND u.kind = 'user' AND u.owner_id = ''
@@ -49,7 +49,7 @@ export class TenantMetadata {
       // Serialize admission with tenant edits and lifecycle transitions on both engines.
       const tenants = await c.query("UPDATE h1_tenants SET version = version WHERE tenant_id = ? AND state = 'active' RETURNING version", [context.tenantId]);
       if (!tenants.length) throw new MetadataError('TENANT_UNAVAILABLE', 403);
-      const rows = await c.query('SELECT authorization, policy, configuration FROM h1_revisions WHERE tenant_id = ? AND namespace_id = ?', scopeValues(context));
+      const rows = await c.query('SELECT "authorization", policy, configuration FROM h1_revisions WHERE tenant_id = ? AND namespace_id = ?', scopeValues(context));
       const rev = rows[0];
       if (!rev || Number(rev.authorization) !== context.authorizationRevision) throw new MetadataError('AUTHORIZATION_REVISED', 403);
       const users = await c.query(`SELECT body FROM h1_resources WHERE ${predicates}`, keyValues(context, { kind: 'user', id: context.userId }));
@@ -112,7 +112,7 @@ export class TenantMetadata {
         const authorization = changes.some(e => ['user', 'group', 'folder', 'analysis', 'dashboard', 'policy', 'invitation'].includes(e.key.kind)) ? 1 : 0;
         const policy = changes.some(e => e.key.kind === 'policy') ? 1 : 0;
         const configuration = changes.some(e => ['dataset', 'prepared-dataset', 'source', 'secret', 'ai-config'].includes(e.key.kind)) ? 1 : 0;
-        await c.query('UPDATE h1_revisions SET authorization = authorization + ?, policy = policy + ?, configuration = configuration + ? WHERE tenant_id = ? AND namespace_id = ?',
+        await c.query('UPDATE h1_revisions SET "authorization" = "authorization" + ?, policy = policy + ?, configuration = configuration + ? WHERE tenant_id = ? AND namespace_id = ?',
           [authorization, policy, configuration, ...scopeValues(context)]);
         await appendMetadataEvent(c, context, 'metadata.changed');
       }

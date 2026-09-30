@@ -13,7 +13,7 @@ const schema = [
     UNIQUE (tenant_id, namespace_id))`,
   `CREATE TABLE IF NOT EXISTS h1_revisions (
     tenant_id TEXT NOT NULL, namespace_id TEXT NOT NULL,
-    authorization INTEGER NOT NULL CHECK (authorization > 0), policy INTEGER NOT NULL CHECK (policy > 0), configuration INTEGER NOT NULL CHECK (configuration > 0),
+    "authorization" INTEGER NOT NULL CHECK ("authorization" > 0), policy INTEGER NOT NULL CHECK (policy > 0), configuration INTEGER NOT NULL CHECK (configuration > 0),
     PRIMARY KEY (tenant_id, namespace_id), FOREIGN KEY (tenant_id, namespace_id) REFERENCES h1_namespaces(tenant_id, namespace_id))`,
   `CREATE TABLE IF NOT EXISTS h1_resources (
     tenant_id TEXT NOT NULL, namespace_id TEXT NOT NULL, kind TEXT NOT NULL,

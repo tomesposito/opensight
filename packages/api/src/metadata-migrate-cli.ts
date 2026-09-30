@@ -15,10 +15,13 @@ async function main(): Promise<void> {
     const migration = new MetadataMigration(database);
     if (action === 'rollback') {
       await migration.rollback(config); console.log(JSON.stringify({ migrationId: config.migrationId, state: 'rolled-back' }));
-    } else console.log(JSON.stringify(action === 'seal' ? await migration.seal(config) : await migration.migrate(config, process.env.OPENSIGHT_AI_ENCRYPTION_KEY)));
+    } else {
+      const report = action === 'seal' ? await migration.seal(config) : await migration.migrate(config, process.env.OPENSIGHT_AI_ENCRYPTION_KEY);
+      console.log(JSON.stringify(report));
+    }
   } finally { await database.close(); }
 }
-main().catch((error: unknown) => {
+await main().catch((error: unknown) => {
   // Validation/IO/JSON errors can contain legacy data or paths. Print only safe codes.
   console.error(error instanceof MetadataError ? error.code : 'MIGRATION_FAILED'); process.exitCode = 1;
 });

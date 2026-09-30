@@ -194,3 +194,45 @@ test('H1 outbox commits with state, contains no payloads, and rolls back on fail
     assert.equal((await readEvents()).length, 2);
   } finally { await db.close(); }
 });
+
+test('H1 every resource kind isolates identical IDs and all relational edges reject foreign-only targets', async () => {
+  const db = new SqliteMetadataDatabase(':memory:');
+  try {
+    await initializeMetadata(db); await seed(db); await seed(db, 'two', 'b');
+    const repo = new TenantMetadata(db, db);
+    const resources = name => [
+      [{ kind: 'user', id: 'same' }, { name, role: 'author' }],
+      [{ kind: 'group', id: 'same' }, { name, userIds: ['admin', 'same'] }],
+      [{ kind: 'folder', id: 'same' }, { name, grants: [{ principal: { type: 'group', id: 'same' }, role: 'viewer' }] }],
+      [{ kind: 'source', id: 'same' }, { binding: { name } }],
+      [{ kind: 'dataset', id: 'same' }, { definition: { name }, sources: [{ kind: 'source', id: 'same' }] }],
+      ...['analysis', 'dashboard'].map(kind => [{ kind, id: 'same' }, { definition: { Name: name, [kind === 'analysis' ? 'AnalysisId' : 'DashboardId']: 'same', Definition: { DataSetIdentifierDeclarations: [{ Identifier: 'd', DataSetArn: 'portable' }] } }, datasets: [{ kind: 'dataset', id: 'same' }], folderId: 'same' }]),
+      [{ kind: 'policy', id: 'same' }, { datasetId: 'same', dataSetArn: 'portable', rowLevel: true, rowRules: [{ id: 'same', principals: [{ type: 'group', id: 'same' }], predicate: {} }] }],
+      [{ kind: 'secret', id: 'same' }, { ciphertext: [Buffer.alloc(12), Buffer.alloc(16), Buffer.from(name)].map(b => b.toString('base64')).join('.'), aadVersion: 2 }],
+      [{ kind: 'ai-config', id: 'same' }, { provider: 'openai', model: name, secretId: 'same' }],
+      [{ kind: 'invitation', id: 'same' }, { name, role: 'reader', invitedBy: 'admin', tokenHash: 'a'.repeat(64), expiresAt: '2030-01-01T00:00:00Z' }],
+      [{ kind: 'job', id: 'same' }, { collection: 'test', record: { name }, references: [{ kind: 'dashboard', id: 'same' }], executionDisabled: true }],
+      [{ kind: 'source', id: 'owned', ownerId: 'admin' }, { binding: { name } }],
+      [{ kind: 'prepared-dataset', id: 'same', ownerId: 'admin' }, { resource: { resourceType: 'dataset', dataSetId: 'same', name, physicalTableMap: {}, importMode: 'DIRECT_QUERY', opensightPrep: { version: 1, input: 'owned', steps: [] } } }]
+    ];
+    for (const ns of ['one', 'two']) {
+      await repo.batch(await login(repo, ns), resources(ns).map(([key, body]) => ({ key, body, expectedVersion: 0 })));
+      const context = await login(repo, ns);
+      for (const [key, body] of resources(ns)) {
+        assert.deepEqual((await repo.get(context, key)).body, body);
+        const listed = await repo.list(context, key.kind);
+        assert.deepEqual(listed.find(v => v.id === key.id && v.ownerId === key.ownerId).body, body);
+      }
+      const author = await login(repo, ns, 'same');
+      assert.deepEqual(await repo.list(author, 'prepared-dataset'), []);
+      await assert.rejects(repo.get(author, { kind: 'prepared-dataset', id: 'same', ownerId: 'admin' }), { code: 'RESOURCE_NOT_FOUND' });
+    }
+    // The same target exists in tenant two only, and cannot satisfy tenant one's FK.
+    const a = await login(repo), b = await login(repo, 'two');
+    await repo.put(b, { kind: 'source', id: 'foreign' }, { binding: {} });
+    await assert.rejects(repo.put(a, { kind: 'dataset', id: 'bad' }, { definition: {}, sources: [{ kind: 'source', id: 'foreign' }] }), { code: 'METADATA_REFERENCE_INVALID' });
+    // Raw composite constraints, independent of JSON/application validation.
+    for (const kind of resourceKinds) await assert.rejects(db.transaction(c => c.query('INSERT INTO h1_resources VALUES (?,?,?,?,?,?,?)', ['b', 'one', kind, kind === 'prepared-dataset' ? 'admin' : '', 'bypass', '{}', 1])), { code: 'METADATA_REFERENCE_INVALID' });
+    await assert.rejects(db.transaction(c => c.query('INSERT INTO h1_links VALUES (?,?,?,?,?,?,?,?)', ['a', 'one', 'dataset', '', 'same', 'source', '', 'foreign'])), { code: 'METADATA_REFERENCE_INVALID' });
+  } finally { await db.close(); }
+});

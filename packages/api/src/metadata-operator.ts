@@ -96,7 +96,7 @@ export class MetadataOperator {
       const changed = await c.query('UPDATE h1_tenants SET state = ?, version = version + 1 WHERE tenant_id = ? AND version = ? RETURNING version', [target, tenantId, expectedVersion]);
       if (!changed.length) throw new MetadataError('METADATA_CONFLICT');
       const namespaceId = String(tenant.namespace_id);
-      await c.query('UPDATE h1_revisions SET authorization = authorization + 1 WHERE tenant_id = ? AND namespace_id = ?', [tenantId, namespaceId]);
+      await c.query('UPDATE h1_revisions SET "authorization" = "authorization" + 1 WHERE tenant_id = ? AND namespace_id = ?', [tenantId, namespaceId]);
       await c.query('INSERT INTO h1_operations VALUES (?,?,?,?,?,?,?)', [operationId, tenantId, namespaceId, action, hash, action === 'delete' ? 'pending' : 'complete', action === 'delete' ? 'revoked' : target]);
       await appendMetadataEvent(c, { tenantId, namespaceId }, `tenant.${target}`);
       return read(c, operationId);

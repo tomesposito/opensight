@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createCipheriv, randomBytes, randomUUID } from 'node:crypto';
-import { fork } from 'node:child_process';
+import { fork, execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { once } from 'node:events';
 import { mkdtemp, mkdir, readFile, writeFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -161,4 +162,31 @@ test('H1 SIGKILL during migration rolls back SQLite and resumes without a servab
     assert.equal((await f.migration.migrate(f.config, f.encryptionKey)).state, 'committed');
     await f.migration.seal(f.config); assert.equal((await repo.list(await login(repo), 'user')).length, 1);
   });
+});
+
+
+test('H1 offline CLI uses environment configuration, reports counts only, and enforces seal boundary', async t => {
+  const f = await fixture(t), configPath = join(f.dir, 'operator-config.json'); await save(configPath, f.config);
+  const env = { ...process.env, OPENSIGHT_METADATA_DATABASE: f.dbPath, OPENSIGHT_METADATA_MIGRATION_CONFIG: configPath, OPENSIGHT_AI_ENCRYPTION_KEY: f.encryptionKey };
+  delete env.NODE_TEST_CONTEXT;
+  const cli = fileURLToPath(new URL('../dist/metadata-migrate-cli.js', import.meta.url));
+  const invoke = action => promisify(execFile)(process.execPath, [cli, action], { env });
+  const migrated = await invoke('migrate');
+  assert.ok(migrated.stdout, JSON.stringify(migrated));
+  assert.equal(JSON.parse(migrated.stdout).state, 'committed');
+  assert.equal(migrated.stdout.includes(f.plaintext), false);
+  assert.equal(JSON.parse((await invoke('seal')).stdout).state, 'sealed');
+  await assert.rejects(invoke('rollback'), error => error.stderr.trim() === 'MIGRATION_ROLLBACK_BOUNDARY');
+  await assert.rejects(invoke('unknown'), error => error.stderr.trim() === 'MIGRATION_CONFIGURATION_REQUIRED');
+});
+
+test('H1 concurrent maintenance commands cannot roll back a migration while it commits', async t => {
+  const f = await fixture(t);
+  let entered, release; const ready = new Promise(r => { entered = r; }), hold = new Promise(r => { release = r; });
+  const migrating = f.migration.migrate(f.config, f.encryptionKey, async stage => { if (stage === 'before-commit') { entered(); await hold; } });
+  await ready;
+  try { await assert.rejects(f.migration.rollback(f.config), { code: 'METADATA_CONFLICT' }); }
+  finally { release(); }
+  assert.equal((await migrating).state, 'committed');
+  await f.migration.rollback(f.config);
 });
