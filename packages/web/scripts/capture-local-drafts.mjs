@@ -1,3 +1,4 @@
+import { navigate } from './app-navigation.mjs';
 // Issue #32: real save/reload/reopen and API-restart recovery acceptance; synthetic data only, no external I/O.
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
@@ -40,7 +41,7 @@ try {
   });
   page = await context.newPage(); page.on('pageerror', e => errors.push(e.message));
   const capture = async name => { assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, name + ' overflow'); await page.screenshot({ path: `${output}/${name}.png`, fullPage: true }); console.log('Captured', name); };
-  const mode = value => page.locator('.source-picker select').selectOption(value);
+  const mode = value => navigate(page, value);
   await page.goto(connected);
   await page.getByRole('complementary', { name: 'Local data workspace' }).waitFor();
   const prepare = async name => {
@@ -143,7 +144,7 @@ try {
   const demo = await demoContext.newPage(); demo.on('pageerror', e => errors.push(e.message));
   await demo.goto(new URL('../dist/opensight-demo.html', import.meta.url).href);
   const demoCapture = async name => { assert.equal(await demo.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true); await demo.screenshot({ path: `${output}/${name}.png`, fullPage: true }); console.log('Captured', name); };
-  await demo.locator('.source-picker select').selectOption('data-sources');
+  await navigate(demo, 'data-sources');
   assert.equal(await demo.getByRole('button', { name: 'Upload to staging', exact: true }).isDisabled(), true);
   await demoCapture('demo-data-sources');
   await demo.evaluate(() => localStorage.setItem('opensight-prep-draft', JSON.stringify({
@@ -154,20 +155,20 @@ try {
       { id: 'detail', name: 'Sales detail', kind: 'select', from: 'clean', config: { columns: ['region', 'category', 'revenue', 'order_date'] } },
     ] },
   })));
-  await demo.locator('.source-picker select').selectOption('data-prep');
+  await navigate(demo, 'data-prep');
   await demo.getByRole('button', { name: /Sales detail.*Configure/ }).click();
   assert.equal(await demo.getByRole('button', { name: 'Save pipeline', exact: true }).isDisabled(), true);
   await demoCapture('demo-data-prep');
-  await demo.locator('.source-picker select').selectOption('author');
+  await navigate(demo, 'author');
   await demo.getByRole('button', { name: 'Add visual', exact: true }).click();
   await demo.getByRole('button', { name: 'Save draft', exact: true }).click();
   await demo.getByText('Draft saved on this device.', { exact: true }).waitFor();
   await demoCapture('demo-author');
   await demo.getByRole('button', { name: 'PUBLISH', exact: true }).click();
   assert.match(await demo.locator('.toolbar-notice').innerText(), /This static demo.*no publication destination/);
-  await demo.locator('.source-picker select').selectOption('sample');
+  await navigate(demo, 'sample');
   await demo.evaluate(() => Object.defineProperty(window, 'localStorage', { get() { throw new DOMException('Denied for acceptance test', 'SecurityError'); } }));
-  await demo.locator('.source-picker select').selectOption('author');
+  await navigate(demo, 'author');
   await demo.getByRole('button', { name: 'Save draft', exact: true }).click();
   await demo.getByText(/Browser storage is blocked/).waitFor();
   assert.equal(await demo.getByRole('button', { name: 'Export JSON', exact: true }).last().isDisabled(), false);

@@ -1,6 +1,6 @@
 # Data sources gallery
 
-Choose **Data sources** in the Mode selector, then choose one of the 23 connector
+Choose **Data → Data sources**, then choose one of the 23 connector
 cards. Search matches connector names or categories. Source details remain docked
 beside the gallery on desktop and flow below it on narrow screens. All controls
 have labels; cards are keyboard-accessible buttons with selected state.

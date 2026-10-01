@@ -59,9 +59,10 @@ remaining path unchanged. With base `http://127.0.0.1:3000`, the query URL is
 `http://127.0.0.1:3000/api/datasets/sales/query`. Custom reverse proxies must
 preserve this distinction between their mount prefix and the server's routes.
 
-The **Mode** selector starts at `fixtures` on every page load. This mode
-uses only generated assets and makes no definition requests, keeping the static
-demo usable offline. Choose `api` to load the selected example live, or enter an
+The app opens **Home**, the pinned sample dashboard. Developer previews live
+under **Admin → Developer tools**; fixture preview uses only generated assets
+and makes no definition requests, keeping the static demo usable offline.
+Choose **API definition preview** to load the selected example live, or enter an
 analysis/dashboard resource ID and choose **Load definition**. The bundled
 examples target `analyses/renderable-sales/definition` and
 `dashboards/e0772d4e-bd69-444e-a421-cb3f165dbad8/definition`. The real analysis is
@@ -69,7 +70,7 @@ also available as `2f99f271-1f84-4a57-9843-31646734d5c9` (select Analysis).
 There is no list API; the example picker is local, not resource discovery.
 
 Loading and failures are shown explicitly. Use Load definition to retry; errors
-never switch to fixture definitions. Switching mode/example or issuing another
+never switch to fixture definitions. Switching screen/example or issuing another
 request aborts the previous fetch and ignores any late completion. The client
 checks HTTP errors, JSON/envelope validity, matching resource ID and nonempty
 definition `Errors`. It reads the full `Definition` actions, never metadata
@@ -134,7 +135,7 @@ full-width cards in definition order with a notice; valid grids use the existing
 
 ## Author mode (Phase 1b — Builder v0)
 
-Choose **Author** in the Mode selector. Choose a visual type and **Add visual**;
+Choose **Analyses → Author**, or reopen a draft from **My analyses**. Choose a visual type and **Add visual**;
 the new card starts with revenue and a suitable dimension so it previews
 immediately. **Configure** selects a card and exposes its title, chart type and
 field wells. The Fields panel separates the four dimensions (`order_id`,

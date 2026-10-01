@@ -1,3 +1,4 @@
+import { navigate } from './app-navigation.mjs';
 // Local browser acceptance. Run after the API and demo builds; uses existing
 // screenshot tools and Chromium, without installing or contacting anything.
 // Uses ephemeral loopback ports. No server is deployed by this script.
@@ -52,7 +53,7 @@ try {
   const setup = () => page.getByRole('heading', { name: 'Authentication is not configured', exact: true }).waitFor();
   const noOverflow = async () => assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
   const capture = async name => { await noOverflow(); await page.screenshot({ path: `${output}/${name}.png`, fullPage: true }); console.log('Captured:', name); };
-  const mode = value => page.locator('.source-picker select').selectOption(value);
+  const mode = value => navigate(page, value);
   await page.goto(connected); await setup();
   assert.match(await page.locator('main').innerText(), /SECURITY_NOT_CONFIGURED/);
   await capture('first-run');
@@ -66,7 +67,9 @@ try {
   assert.match(await page.locator('body').innerText(), /Renderable Sales/);
   const demoRequests = requests.length;
   await capture('fixture-demo');
-  assert.equal(await page.locator('option[value="api"]').evaluate(option => option.disabled), true);
+  await mode('security');
+  assert.equal(await page.getByText('API definition preview · Needs hosted API', { exact: true }).getAttribute('aria-disabled'), 'true');
+  await mode('sample');
   await page.locator('#o-question').fill('revenue by region');
   await page.locator('#o-question').press('Enter');
   await page.locator('.o-answer').waitFor();

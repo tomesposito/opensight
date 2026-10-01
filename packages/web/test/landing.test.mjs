@@ -6,11 +6,12 @@ import { create } from 'react-test-renderer';
 import { renderToStaticMarkup } from 'react-dom/server';
 import App from '../build/test/App.js';
 import { Application } from '../build/test/Application.js';
+import { AppNavigation } from '../build/test/AppNavigation.js';
 import { AccessProvider } from '../build/test/access.js';
 import { Dashboard } from '../build/test/Dashboard.js';
 import { compileVisual } from '../build/test/compiler.js';
 import { createApiClient } from '../build/test/api-client.js';
-import { ROLES, hasCapability } from '@opensight/query-engine/browser';
+import { ROLES } from '@opensight/query-engine/browser';
 import generated from '../build/test/fixtures.generated.json' with { type: 'json' };
 
 const fixtures = JSON.parse(readFileSync(new URL('../src/fixtures.generated.json', import.meta.url), 'utf8'));
@@ -25,7 +26,7 @@ const hosted = role => ({ mode: 'hosted', session: { id: 'u', namespaceId: 'n', 
 test('first application render is the populated pinned sales dashboard for demo and every hosted role', () => {
   for (const access of [undefined, ...ROLES.map(hosted)]) {
     const html = render(access);
-    assert.match(html, /<option value="sample" selected="">Sample dashboard<\/option>/);
+    assert.match(html, /href="#\/home" aria-current="page">Home<\/a>/);
     assert.doesNotMatch(html, /value="fixtures" selected|Data unavailable|empty-state|visual-error|TotalDeathByCountry/);
     assert.equal((html.match(/class="visual-card"/g) ?? []).length, 5);
     assert.equal((html.match(/class="chart"/g) ?? []).length, 4);
@@ -40,20 +41,6 @@ test('first application render is the populated pinned sales dashboard for demo 
   assert.equal(compileVisual(sales.sheets[0].visuals.find(v => v.definition.KPIVisual)).option.graphic[0].style.text, '500');
 });
 
-test('all existing modes remain in the picker under their existing role gates', () => {
-  for (const access of [undefined, ...ROLES.map(hosted)]) {
-    const html = render(access);
-    const options = [...html.matchAll(/<option value="([^"]+)"/g)].map(m => m[1]);
-    for (const mode of ['sample', 'api', 'security', 'organization', 'automation']) assert.ok(options.includes(mode), mode);
-    for (const mode of ['fixtures', 'data-prep', 'data-sources', 'author']) {
-      assert.equal(options.includes(mode), !access || hasCapability(access.session.role, 'build'), mode);
-    }
-    for (const mode of ['ai-settings', 'users']) {
-      assert.equal(options.includes(mode), !!access && hasCapability(access.session.role, 'admin'), mode);
-    }
-  }
-});
-
 test('switching to definition fixtures and back restores the sales dashboard', async t => {
   const oldAct = globalThis.IS_REACT_ACT_ENVIRONMENT;
   let renderer;
@@ -63,16 +50,12 @@ test('switching to definition fixtures and back restores the sales dashboard', a
     globalThis.IS_REACT_ACT_ENVIRONMENT = oldAct;
   });
   await act(() => { renderer = create(createElement(AccessProvider, { access: hosted('author') }, app())); });
-  const picker = () => renderer.root.findByProps({ className: 'source-picker' }).findByType('select');
-  assert.equal(picker().props.value, 'sample');
+  const choose = page => act(() => renderer.root.findByType(AppNavigation).props.navigate({ page }));
   assert.deepEqual(renderer.root.findByType(Dashboard).props.fixture, sales);
-  await act(() => picker().props.onChange({ target: { value: 'fixtures' } }));
-  assert.equal(picker().props.value, 'fixtures');
-  assert.equal(picker().findAllByType('option').find(o => o.props.value === 'fixtures').props.children, 'Developer fixture preview');
-  assert.equal(renderer.root.findByProps({ className: 'header-caption' }).props.children, 'Developer tools');
+  await choose('fixtures');
+  assert.equal(renderer.root.findByProps({ className: 'header-caption' }).props.children, 'Developer fixture preview');
   assert.deepEqual(renderer.root.findByType(Dashboard).props.fixture, fixtures[0]);
-  await act(() => picker().props.onChange({ target: { value: 'sample' } }));
-  assert.equal(picker().props.value, 'sample');
+  await choose('home');
   assert.deepEqual(renderer.root.findByType(Dashboard).props.fixture, sales);
 });
 
@@ -107,8 +90,7 @@ test('a build without definition examples explains how to load a hosted definiti
     globalThis.IS_REACT_ACT_ENVIRONMENT = oldAct;
   });
   await act(() => { renderer = create(app()); });
-  const picker = renderer.root.findByProps({ className: 'source-picker' }).findByType('select');
-  await act(() => picker.props.onChange({ target: { value: 'fixtures' } }));
+  await act(() => renderer.root.findByType(AppNavigation).props.navigate({ page: 'fixtures' }));
   assert.ok(renderer.root.findAllByType('p').some(p => p.props.role === 'status' && p.props.children === 'No definition examples are included in this build. Use API definition preview to load a definition from a hosted API.'));
   assert.equal(renderer.root.findAllByType(Dashboard).length, 0);
 });
@@ -121,8 +103,7 @@ test('fixture definitions are explicitly a developer preview while the landing s
   assert.match(preview, /Definition preview only/);
   assert.match(preview, /No query is run/);
   const landing = render();
-  assert.match(landing, /Developer fixture preview/);
-  assert.match(landing, /API · Needs hosted API/);
+  assert.doesNotMatch(landing, /Developer fixture preview|API definition preview/);
   assert.doesNotMatch(landing, /Developer tool:|Phase 0 preview|Definition preview only/);
-  assert.match(render(hosted('author')), /API definition preview/);
+  assert.doesNotMatch(render(hosted('author')), /API definition preview/);
 });

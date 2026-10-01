@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import type { DraftSummary } from './local-drafts.js';
 
-export function LocalDrafts({ entries, activeId, onOpen, onRename, onDelete, onRefresh }: {
+export function LocalDrafts({ entries, activeId, onOpen, onRename, onDelete, onRefresh, expanded = false }: {
+  expanded?: boolean;
   entries: DraftSummary[]; activeId?: string; onOpen: (id: string) => void;
   onRename: (id: string, name: string) => void; onDelete: (id: string) => void; onRefresh: () => void;
 }) {
   const [rename, setRename] = useState<{ id: string; name: string }>();
-  return <details className="local-drafts" onToggle={e => { if (e.currentTarget.open) onRefresh(); }}>
+  return <details className="local-drafts" open={expanded || undefined} onToggle={e => { if (e.currentTarget.open) onRefresh(); }}>
     <summary>Local drafts ({entries.length})</summary>
     <p>Saved in this browser on this device. Not synced or shared. Export .qs or JSON to share a definition; data is not included.</p>
     <button type="button" onClick={onRefresh}>Refresh drafts</button>

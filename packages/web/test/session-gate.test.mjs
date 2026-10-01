@@ -5,6 +5,7 @@ import { create } from 'react-test-renderer';
 import { SessionGate, SESSION_TIMEOUT_MS } from '../build/test/SessionGate.js';
 import { FirstRun } from '../build/test/FirstRun.js';
 import { Application } from '../build/test/Application.js';
+import { AppNavigation } from '../build/test/AppNavigation.js';
 import { Author } from '../build/test/Author.js';
 import { DataPrep } from '../build/test/DataPrep.js';
 import { DataSources } from '../build/test/DataSources.js';
@@ -134,15 +135,16 @@ test('fixture application never supplies API clients, even when API/admin modes 
   const fixtures = ['other', 'renderable-sales'].map(id => ({ id, name: id, description: '', provenance: '', notice: '', sheets: [] }));
   const ui = await mount(t, createElement(AccessProvider, { access: demoAccess }, createElement(Application, { api, fixtures })));
   assert.equal(ui.renderer.root.findByType(Dashboard).props.fixture.id, 'renderable-sales');
-  const choose = mode => act(async () => ui.renderer.root.findByProps({ className: 'source-picker' }).findByType('select').props.onChange({ target: { value: mode } }));
-  assert.equal(ui.renderer.root.findByProps({ value: 'api' }).props.disabled, true);
+  const choose = mode => act(async () => ui.renderer.root.findByType(AppNavigation).props.navigate({ page: mode }));
+  await choose('security');
+  assert.equal(ui.renderer.root.findByProps({ 'aria-disabled': 'true' }).props.children, 'API definition preview · Needs hosted API');
   for (const [mode, Component] of [['author', Author], ['data-prep', DataPrep], ['data-sources', DataSources]]) {
     await choose(mode);
     assert.equal(ui.renderer.root.findByType(Component).props.client, undefined);
   }
   for (const mode of ['api', 'ai-settings', 'users']) {
     await choose(mode);
-    assert.match(JSON.stringify(ui.renderer.toJSON()), /Needs hosted API/);
+    assert.match(JSON.stringify(ui.renderer.toJSON()), mode === 'api' ? /Needs hosted API/ : /SECURITY_ADMIN_REQUIRED/);
   }
 });
 
@@ -151,10 +153,11 @@ test('configured author retains its API client and the original initial fixture'
   const fixtures = ['other', 'renderable-sales'].map(id => ({ id, name: id, description: '', provenance: '', notice: '', sheets: [] }));
   const ui = await mount(t, createElement(AccessProvider, { access: { mode: 'hosted', session: registered } }, createElement(Application, { api, fixtures })));
   assert.equal(ui.renderer.root.findByType(Dashboard).props.fixture.id, 'renderable-sales');
-  assert.equal(ui.renderer.root.findByProps({ value: 'api' }).props.disabled, false);
-  await act(async () => ui.renderer.root.findByProps({ className: 'source-picker' }).findByType('select').props.onChange({ target: { value: 'fixtures' } }));
+  await act(() => ui.renderer.root.findByType(AppNavigation).props.navigate({ page: 'security' }));
+  assert.equal(ui.renderer.root.findAllByType('a').some(a => a.props.href === '#/admin/developer/api'), true);
+  await act(async () => ui.renderer.root.findByType(AppNavigation).props.navigate({ page: 'fixtures' }));
   assert.equal(ui.renderer.root.findByType(Dashboard).props.fixture.id, 'other');
-  await act(async () => ui.renderer.root.findByProps({ className: 'source-picker' }).findByType('select').props.onChange({ target: { value: 'author' } }));
+  await act(async () => ui.renderer.root.findByType(AppNavigation).props.navigate({ page: 'author' }));
   assert.equal(ui.renderer.root.findByType(Author).props.client, api);
 });
 

@@ -104,8 +104,9 @@ Build the offline, standalone demo with:
 npm run build:demo --workspace @opensight/web
 ```
 
-The local artifact is `packages/web/dist/opensight-demo.html`; choose Author
-in the Mode picker. Build output and screenshots are not committed.
+The local artifact is `packages/web/dist/opensight-demo.html`; choose
+**Analyses → Author**. Build output is ignored; current feature screenshots
+live in `docs/images/`.
 
 ## Look-and-feel gap notes
 
