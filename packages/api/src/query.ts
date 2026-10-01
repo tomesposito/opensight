@@ -84,7 +84,7 @@ export async function readQuery(request: IncomingMessage): Promise<QueryBody> {
   return validateQuery(await readBody(request));
 }
 
-export async function readBody(request: IncomingMessage): Promise<unknown> {
+export async function readBody(request: IncomingMessage, maxBytes = BODY_BYTES): Promise<unknown> {
   if (request.headers['content-type']?.split(';')[0]?.trim().toLowerCase() !== 'application/json') {
     request.resume();
     throw new RequestError(400, 'Expected application/json');
@@ -96,7 +96,7 @@ export async function readBody(request: IncomingMessage): Promise<unknown> {
     for await (const chunk of request.iterator({ destroyOnReturn: false })) {
       const bytes = chunk as Buffer;
       size += bytes.length;
-      if (size > BODY_BYTES) throw new RequestError(413, 'Query body exceeds 1 MiB limit');
+      if (size > maxBytes) throw new RequestError(413, `Request body exceeds ${maxBytes / (1024 * 1024)} MiB limit`);
       chunks.push(bytes);
     }
     return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks, size))) as unknown;

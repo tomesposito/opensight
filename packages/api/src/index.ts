@@ -28,6 +28,8 @@ export { createHostedApiServer, createBuiltinHostedServer } from './hosted-serve
 export type { HostedServerOptions } from './hosted-server.js';
 
 export interface ApiOptions {
+  /** Explicit single-user local file workspace; never a hosted auth fallback. */
+  localData?: boolean;
   prepStorePath?: string;
   prepPostgresBindings?: readonly PrepPostgresBinding[];
   ai?: AIOptions;
@@ -45,6 +47,8 @@ export interface ApiOptions {
 
 /** Loads a complete snapshot before returning an unbound HTTP server. */
 export async function createApiServer(options: ApiOptions): Promise<Server> {
+  if (options.localData && (options.security || options.prepPostgresBindings?.length || process.env.OPENSIGHT_MODE === 'hosted')) throw new Error('LOCAL_DATA_MODE_CONFLICT');
+  const localIdentity = options.localData ? { namespaceId: 'local', userId: 'local' } : undefined;
   // The recursive default scan must never absorb another tenant's directory.
   const roots = [options.dataRoot, ...Object.values(options.namespaceDataRoots ?? {})];
   const directories: string[] = [];
@@ -86,8 +90,8 @@ export async function createApiServer(options: ApiOptions): Promise<Server> {
   const alerts = new AlertService(automation, new DashboardMetrics(store, sales), mail);
   await alerts.recover();
   refresh.onSuccess = (datasetId, run) => alerts.afterRefresh(datasetId, run);
-  const scheduler = new Scheduler(async () => { await refresh.tick(); await reports.tick(); await prepRoutes.tick(identity => { if (!security) throw new SecurityError(503, 'SECURITY_NOT_CONFIGURED', 'Authentication required'); security.require(identity, 'build'); }); });
-  const connectorRoutes = new ConnectorRoutes();
+  const scheduler = new Scheduler(async () => { await connectorRoutes.expire(); await refresh.tick(); await reports.tick(); await prepRoutes.tick(identity => { if (localIdentity && identity.namespaceId === localIdentity.namespaceId && identity.userId === localIdentity.userId) return; if (!security) throw new SecurityError(503, 'SECURITY_NOT_CONFIGURED', 'Authentication required'); security.require(identity, 'build'); }); });
+  const connectorRoutes = new ConnectorRoutes(!!localIdentity);
   const prepRoutes = await PrepRoutes.create(connectorRoutes, options.prepStorePath, options.prepPostgresBindings);
   const server = createServer((request, response) => {
     void (async () => {
@@ -113,6 +117,12 @@ export async function createApiServer(options: ApiOptions): Promise<Server> {
       }
       const identity = await security?.authenticate(request);
       if (identity) path = scopePath(path, identity);
+      if (path === '/api/local-data') {
+        if (!localIdentity) throw new SecurityError(503, 'SECURITY_NOT_CONFIGURED', 'Local data is not enabled');
+        method(request, response, ['GET']);
+        if (query) throw new RequestError(400, 'Query parameters are not supported');
+        send(response, 200, { mode: 'local', maxUploadBytes: 8 * 1024 * 1024, uploadTtlSeconds: 86400 }); return;
+      }
       if (path === '/api/session') {
         if (!security || !identity) throw new SecurityError(503, 'SECURITY_NOT_CONFIGURED', 'Hosted authentication is not configured');
         method(request, response, ['GET']);
@@ -126,13 +136,16 @@ export async function createApiServer(options: ApiOptions): Promise<Server> {
         || /^\/api\/datasets\/[^/]+\/(prep(?:\/|$)|execution$|rows$)/.test(path)
         || /^\/api\/datasets\/(?!sales\/)[A-Za-z0-9_-]{1,128}\/refresh$/.test(path);
       // Preserve the unauthenticated fixture API's existing ID/method/404 validation.
-      const preparedQuery = !!security && /^\/api\/datasets\/(?!sales\/)[A-Za-z0-9_-]{1,128}\/query$/.test(path);
+      const preparedQuery = (!!security || !!localIdentity) && /^\/api\/datasets\/(?!sales\/)[A-Za-z0-9_-]{1,128}\/query$/.test(path);
       if (preparedResource || preparedQuery) {
-        if (!security || !identity) throw new SecurityError(503, 'SECURITY_NOT_CONFIGURED', 'Needs hosted API with authentication configured');
-        security.require(identity, 'build');
-        await prepRoutes.route(request, response, path, query, identity); return;
+        if (!localIdentity && (!security || !identity)) throw new SecurityError(503, 'SECURITY_NOT_CONFIGURED', 'Needs hosted API with authentication configured');
+        if (security && identity) security.require(identity, 'build');
+        await prepRoutes.route(request, response, path, query, localIdentity ?? identity!); return;
       }
       if (/^\/api\/(connectors|uploads)(?:\/|$)/.test(path)) {
+        if (localIdentity && /^\/api\/uploads(?:\/|$)/.test(path)) {
+          await connectorRoutes.route(request, response, path, query, localIdentity); return;
+        }
         if (!security || !identity) throw new SecurityError(503, 'SECURITY_NOT_CONFIGURED', 'Needs hosted API with authentication configured');
         security.require(identity, 'build');
         await connectorRoutes.route(request, response, path, query, identity); return;
