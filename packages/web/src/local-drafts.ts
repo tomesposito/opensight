@@ -11,7 +11,14 @@ interface Collection { version: 1; activeId: string | null; entries: Entry[] }
 export interface DraftSummary { id: string; name: string; updatedAt: string; problem?: string }
 const object = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 const keys = (v: Record<string, unknown>, allowed: string[]) => Object.keys(v).every(k => allowed.includes(k));
-const invalid = () => new Error('Saved drafts are corrupt or unsupported. Stored data was left unchanged. Export JSON to keep your current work.');
+const invalid = () => new Error('Saved drafts are corrupt or unsupported. Stored data was left unchanged.');
+
+export const browserDraftStorage: DraftStorage = () => {
+  if (typeof window === 'undefined') throw new Error('Browser storage is unavailable outside a browser.');
+  const storage = window.localStorage;
+  if (!storage) throw new Error('Browser storage is unavailable in this environment.');
+  return storage;
+};
 
 export function draftStorageKey(access: Access): string {
   if (access.mode === 'hosted') return `${DRAFTS_KEY}.hosted.${encodeURIComponent(access.session?.namespaceId ?? '')}.${encodeURIComponent(access.session?.id ?? '')}`;

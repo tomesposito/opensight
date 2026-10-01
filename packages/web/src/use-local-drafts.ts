@@ -1,11 +1,11 @@
 import { useMemo, useReducer, useState } from 'react';
 import { authorReducer, emptyDraft, type AuthorDataset, type AuthorDraft } from './authoring.js';
-import { createDraftStore, draftStorageError, draftStorageKey, type DraftSummary } from './local-drafts.js';
+import { browserDraftStorage, createDraftStore, draftStorageError, draftStorageKey, type DraftSummary } from './local-drafts.js';
 import type { Access } from './access.js';
 
 export function useLocalDrafts(access: Access, dataset?: AuthorDataset) {
   const key = draftStorageKey(access);
-  const store = useMemo(() => createDraftStore(() => window.localStorage, access), [key]);
+  const store = useMemo(() => createDraftStore(browserDraftStorage, access), [key]);
   const [initial] = useState<{ id?: string; draft: AuthorDraft; saved?: string; message: string }>(() => {
     try {
       const restored = store.restore();
