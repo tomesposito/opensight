@@ -5,6 +5,11 @@ provides this slice's specification; `SOLUTION_DESIGN.md`, dependencies and
 fixture pins are unchanged. No merge, publication, deployment or external
 service access is part of this work.
 
+Final verification uses `/tmp/opensight-issue-28-verify`, an isolated worktree of
+the same branch. The shared checkout changed to `work/issue-27-first-run` during
+verification; it was left on that branch. Existing installed dependencies were
+copied locally with workspace links resolving inside the isolated worktree.
+
 ## Landing and data semantics
 
 The application starts in **Sample dashboard**, selecting `renderable-sales`
@@ -90,12 +95,43 @@ Evidence: `/tmp/issue-28-browser.mjs`, `/tmp/issue-28-browser.log`,
 
 ## Full verification
 
-The first full run received SIGTERM during the query-engine suite, before a
-complete result was available; no assertion failure had been reported. That
-interrupted run is not counted. The preview server was stopped after the media
-refresh, and the full root `TZ=UTC npm test` is running again against
-implementation checkpoint `d38a2dd8`. Exact workspace and aggregate counts will
-be recorded after it exits.
-The root command includes strict TypeScript checks and the new landing and
-empty-state regressions through the existing web test glob. The final targeted
-run passed 90 tests with zero failures or skips.
+Earlier shared-checkout attempts are not counted: one received SIGTERM during
+the query-engine suite, and another was stopped when the checkout changed to
+issue #27. The second attempt also hit the existing H4 timing assertion at
+3,016.7 ms against its 3,000 ms execution ceiling; this had passed in the first
+attempt. An isolated attempt also exceeded that timing limit while another
+`npm test` was running in the shared checkout. That other process was left
+alone; this run was restarted after it finished. H4 then passed with maximum
+execution time 1,493.9 ms and competitor latency 2,648.2 ms. No backend code or
+timing thresholds were changed. The clean worktree needed
+`npm run build --workspace @opensight/o-interpreter` before the API's compiler
+build could resolve its generated declarations; that prerequisite was built
+locally without changing package scripts.
+
+The final root `TZ=UTC npm test` exited **0** in the isolated worktree with
+**1,473 passed / 0 failed / 9 skipped** (zero cancellations). All nine skips
+are live PostgreSQL integration tests because `DATABASE_URL` is not set.
+
+| Runner | Passed | Failed | Skipped |
+| --- | ---: | ---: | ---: |
+| API | 241 | 0 | 7 |
+| Bundle parser | 197 | 0 | 0 |
+| Embedding SDK | 4 | 0 | 0 |
+| O interpreter | 32 | 0 | 0 |
+| Query engine | 496 | 0 | 2 |
+| Web | 500 | 0 | 0 |
+| Root conformance | 3 | 0 | 0 |
+| **Total** | **1,473** | **0** | **9** |
+
+The run verifies implementation checkpoint `d38a2dd8` and media checkpoint
+`09720e6d`; the final commit only completes these notes. Strict TypeScript and
+public-entry checks ran through the workspace scripts. The 18 new web tests
+cover populated first renders for demo and every hosted role, mode retention,
+preview navigation, missing fixtures, session gating, developer labeling and
+honest missing/empty/loading/error states. The final targeted run passed 90
+tests with zero failures or skips.
+
+Exact runner output is retained in `/tmp/issue-28-exclusive-tests.log` and its
+exit status in `/tmp/issue-28-exclusive-tests.exit`. `git diff --check` passes.
+All checkpoints are committed only on `work/issue-28-landing`; merge, main-demo
+rebuild and publication remain with the orchestrator.
