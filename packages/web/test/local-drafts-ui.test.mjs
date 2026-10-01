@@ -73,6 +73,19 @@ test('expired upload blocks live charts, preserves definitions and reconnects co
   assert.ok(calls.includes(source.id)); assert.equal(calls.includes('sales'), false);
   assert.doesNotMatch(ui.text(), /Source data expired/);
 });
+test('renaming preserves active queries, and reopening rechecks expired source data', async t => {
+  let expired = false;
+  const calls = [];
+  const client = { async listPrepSources() { return [{ ...source, id: dataset.id, ref: { dataset: dataset.id }, available: !expired, ...(expired ? { errorCode: 'PREP_SOURCE_NOT_FOUND' } : {}) }]; }, async queryDataset(id) { calls.push(id); return { rows: [{ team: 'North', amount: 6 }] }; } };
+  const ui = await mount(t, { client });
+  const before = calls.length;
+  await act(() => ui.renderer.root.findByType(LocalDrafts).props.onRename(ui.id, 'Renamed live chart'));
+  assert.equal(calls.length, before, 'Renaming must not restart identical requests');
+  expired = true;
+  await act(() => ui.renderer.root.findByType(LocalDrafts).props.onOpen(ui.id));
+  assert.match(ui.text(), /Source data expired/);
+  assert.equal(calls.length, before, 'Reopening validates the source before querying');
+});
 test('recovery rejects schema mismatch, unavailable sources and non-prepared references', () => {
   const d = authored();
   for (const invalid of [{ ...source, available: false }, { ...source, ref: 'upload-1' }, { ...source, columns: [{ name: 'team', type: 'INTEGER' }] }]) assert.throws(() => reconnectDraft(d, invalid), /original column names and types/);

@@ -48,8 +48,12 @@ function AuthorWorkspace({ client: apiClient, dataset, onDatasetChange, modePick
   const access = useAccess();
   const drafts = useLocalDrafts(access, dataset);
   const { draft, dispatch } = drafts;
-  const client = useMemo(() => apiClient ? { ...apiClient, dataset: draft.dataset } : undefined, [apiClient, draft.dataset]);
-  const source = useDraftSource(draft.dataset, client, access.mode === 'local');
+  // Storage reads create fresh objects. Renaming a draft must not cancel and
+  // restart an identical data query while the server is still executing it.
+  const datasetKey = JSON.stringify(draft.dataset);
+  const queryDataset = useMemo(() => draft.dataset, [datasetKey]);
+  const client = useMemo(() => apiClient ? { ...apiClient, dataset: queryDataset } : undefined, [apiClient, queryDataset]);
+  const source = useDraftSource(queryDataset, client, access.mode === 'local');
   const [exportStatus, setExportStatus] = useState('');
   const [importStatus, setImportStatus] = useState('');
   const [busy, setBusy] = useState(false);
@@ -105,7 +109,7 @@ function AuthorWorkspace({ client: apiClient, dataset, onDatasetChange, modePick
       <button type="button" onClick={() => void downloadQs()} disabled={busy} aria-describedby="export-help">Download .qs</button>
       <button type="button" className="primary-button" onClick={download} disabled={!!exported.error} aria-describedby="export-help">Export JSON</button>
     </div>
-    <LocalDrafts entries={drafts.entries} activeId={drafts.id} onRefresh={drafts.refresh} onOpen={id => { const opened = drafts.open(id); if (opened) onDatasetChange?.(opened.dataset); }} onRename={drafts.rename} onDelete={id => { if (drafts.remove(id) && id === drafts.id) onDatasetChange?.(undefined); }} />
+    <LocalDrafts entries={drafts.entries} activeId={drafts.id} onRefresh={drafts.refresh} onOpen={id => { const opened = drafts.open(id); if (opened) { source.retry(); onDatasetChange?.(opened.dataset); } }} onRename={drafts.rename} onDelete={id => { if (drafts.remove(id) && id === drafts.id) onDatasetChange?.(undefined); }} />
     <div className="bundle-import" onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; }} onDrop={e => { e.preventDefault(); if (e.dataTransfer.files.length !== 1) setImportStatus('Drop one .qs ZIP or one bundle .json member.'); else void importFile(e.dataTransfer.files[0]); }} aria-label="Bundle drop zone">
       <details><summary>Import bundle</summary>
       <label>Import .qs or bundle JSON<input ref={fileInput} type="file" accept=".qs,.json,application/zip,application/json" disabled={busy} onChange={e => { const file = e.currentTarget.files?.[0]; e.currentTarget.value = ''; void importFile(file); }} /></label>

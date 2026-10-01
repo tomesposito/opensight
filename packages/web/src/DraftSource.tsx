@@ -32,7 +32,7 @@ export function DraftSourceRecovery({ draft, sources, problem, onRetry, onSource
       <p>Re-upload and prepare the file, reopen this saved draft, then reconnect it below. Keep the original column names and types. Visuals and formatting stay in the draft.</p>
       {onSources && <button type="button" onClick={onSources}>Re-upload file</button>}
       <button type="button" onClick={onRetry}>Retry source data</button>
-      <label>Replacement dataset<select value={selected} onChange={e => setSelected(e.target.value)}><option value="">Choose a compatible dataset…</option>{choices.map(s => <option key={s.id} value={s.id}>{s.name ?? s.id}</option>)}</select></label>
+      <label>Replacement dataset<select aria-label="Replacement dataset" value={selected} onChange={e => setSelected(e.target.value)}><option value="">Choose a compatible dataset…</option>{choices.map(s => <option key={s.id} value={s.id}>{s.name ?? s.id}</option>)}</select></label>
       <button type="button" disabled={!choices.some(s => s.id === selected)} onClick={() => {
         try { const source = choices.find(s => s.id === selected); if (source) { onReconnect(reconnectDraft(draft, source)); setError(''); } }
         catch (error) { setError(error instanceof Error ? error.message : String(error)); }
