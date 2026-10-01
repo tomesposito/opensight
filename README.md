@@ -84,15 +84,6 @@ npm run build
 npm test
 ```
 
-Start the local API with `npm start --workspace @opensight/api` and, in a second
-terminal, run `npm run dev --workspace @opensight/web`. Open
-`http://127.0.0.1:5173`. With no authentication configured, the welcome screen
-offers setup guidance and **Explore sample data**, an explicit fixture-only demo
-with no hosted session. See the [first-run guide](docs/first-run.md) for the
-existing auth settings, integration steps and demo security boundaries.
-
-![OpenSight first run with authentication setup and a public sample demo](docs/images/first-run.png)
-
 Parse a real QuickSight export:
 
 ```bash

@@ -61,7 +61,7 @@ export interface AIConfig {
 }
 
 export class ApiError extends Error {
-  constructor(message: string, readonly status?: number, readonly errorCode?: string) { super(message); this.name = 'ApiError'; }
+  constructor(message: string, readonly status?: number) { super(message); this.name = 'ApiError'; }
 }
 
 export class QueryError extends ApiError {
@@ -108,13 +108,7 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
   const testAIConnection = () => resource<{ ok: true }>('/api/admin/ai/test', 'POST', {});
   async function getSession(signal?: AbortSignal): Promise<Session> {
     const response = await fetcher(`${base}/api/session`, { signal, credentials: 'same-origin', headers: { Accept: 'application/json' } });
-    if (!response.ok) {
-      // Keep the machine-readable reason without exposing backend messages or
-      // proxy HTML in startup guidance. Some outages do not return JSON at all.
-      const body: unknown = await response.json().catch(() => undefined);
-      const code = body !== null && typeof body === 'object' && 'errorCode' in body && typeof body.errorCode === 'string' ? body.errorCode : undefined;
-      throw new ApiError('Session request failed.', response.status, code);
-    }
+    if (!response.ok) throw new ApiError('Authenticated hosted session unavailable.', response.status);
     const body = object(await response.json(), 'Session');
     if (!isRole(body.role) || typeof body.id !== 'string' || typeof body.namespaceId !== 'string' || typeof body.name !== 'string') throw new ApiError('Invalid session.');
     return { id: body.id, namespaceId: body.namespaceId, name: body.name, role: body.role };

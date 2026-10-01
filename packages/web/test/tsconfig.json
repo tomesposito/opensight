@@ -6,13 +6,11 @@
     "outDir": "../build/test",
     "rootDir": "../src",
     "types": [
-      "node"
+      "node",
+      "vite/client"
     ]
   },
   "include": [
-    "../src/FirstRun.tsx",
-    "../src/SessionGate.tsx",
-    "../src/Application.tsx",
     "../src/compiler.ts",
     "../src/model.ts",
     "../src/echarts.ts",
@@ -31,6 +29,7 @@
     "../src/AISettings.tsx",
     "../src/UserManagement.tsx",
     "../src/Dashboard.tsx",
+    "../src/App.tsx",
     "../src/DataSources.tsx",
     "../src/DataPrep.tsx",
     "../src/EmbedFrame.tsx",
