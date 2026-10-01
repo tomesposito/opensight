@@ -1,5 +1,11 @@
 # MySQL connector
 
+MySQL is **not yet implemented in the product API**. The registry deliberately
+marks it `unimplemented`: there is no MySQL query path in `packages/api/src`, so
+the gallery and `connectConnector` must not imply a usable connection. The
+library executor described below remains available to trusted server code;
+its existence does not enable MySQL in the app.
+
 `executeMySql(request, { config, environment? })` uses the shared planner with the
 `mysql` dialect. `executeConnector('mysql', config, request)` resolves settings
 from the server environment. Configuration contains `hostEnv`, `portEnv`,

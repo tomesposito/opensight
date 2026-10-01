@@ -24,7 +24,7 @@ export const connectors: readonly ConnectorDefinition[] = [
     delimiter: { kind: 'choice', label: 'Delimiter', values: [',', '\t', ';', '|'] },
     sheet: { kind: 'string', label: 'Worksheet' },
   } },
-  { id: 'mysql', name: 'MySQL', category: 'Database', schema: sql, dialect: 'mysql', implementation: 'query' },
+  { id: 'mysql', name: 'MySQL', category: 'Database', schema: sql, dialect: 'mysql', implementation: 'unimplemented' },
   { id: 'postgresql', name: 'PostgreSQL', category: 'Database', schema: { connectionEnv: env('Connection URL environment variable') }, dialect: 'postgres', implementation: 'query' },
   { id: 'mariadb', name: 'MariaDB', category: 'Database', schema: sql, dialect: 'mysql', implementation: 'unimplemented' },
   ...[['sql-server', 'SQL Server'], ['presto', 'Presto'], ['trino', 'Trino'], ['spark', 'Spark'], ['teradata', 'Teradata'], ['snowflake', 'Snowflake']].map(([id, name]): ConnectorDefinition => ({ id: id!, name: name!, category: 'Database', schema: sql, implementation: 'unimplemented' })),
@@ -71,17 +71,21 @@ export function validateConnectorConfig(id: string, raw: unknown): ConnectorConf
   return Object.freeze(result);
 }
 export interface ConnectorState { state: 'needs_hosted_api' | 'not_configured' | 'not_implemented' | 'ready'; message: string }
-export function connectorState(id: string, hosted = false): ConnectorState {
+export function connectorState(id: string, apiAvailable = false): ConnectorState {
   const c = connectorDefinition(id);
   if (c.implementation === 'unimplemented') return { state: 'not_implemented', message: 'Not yet implemented' };
-  if (!hosted) return { state: 'needs_hosted_api', message: 'Needs hosted API / not configured' };
-  if (c.implementation === 'upload') return { state: 'ready', message: 'Ready for file upload to DuckDB staging' };
-  return { state: 'not_configured', message: 'Not configured — needs hosted API connection setup' };
+  if (c.implementation === 'upload') return apiAvailable
+    ? { state: 'ready', message: 'Ready for file upload to DuckDB staging' }
+    : { state: 'needs_hosted_api', message: 'Needs local or hosted API · Uploads are unavailable in the static demo.' };
+  if (c.implementation === 'hosted') return { state: apiAvailable ? 'not_configured' : 'needs_hosted_api', message: 'Needs a hosted connector implementation' };
+  return apiAvailable
+    ? { state: 'not_configured', message: 'Needs an operator-configured connection' }
+    : { state: 'needs_hosted_api', message: 'Needs a hosted API and an operator-configured connection' };
 }
 /** Validation does not test credentials or claim a successful connection. No I/O. */
-export function connectConnector(id: string, config: unknown, hosted = false): ConnectorState {
+export function connectConnector(id: string, config: unknown, apiAvailable = false): ConnectorState {
   validateConnectorConfig(id, config);
-  return connectorState(id, hosted);
+  return connectorState(id, apiAvailable);
 }
 export function connectorDialect(id: string): SqlDialect {
   const c = connectorDefinition(id);

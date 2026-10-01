@@ -17,12 +17,12 @@ returns availability; it never performs I/O or claims a successful connection.
 | Module / connectors | Dialect | Connection semantics |
 | --- | --- | --- |
 | File (CSV, TSV, JSON, XLS, XLSX) | DuckDB | Local or authenticated staging; static demo requires an API |
-| MySQL | MySQL | Trusted environment configuration, server library executor |
-| PostgreSQL | PostgreSQL | Existing server library executor |
+| MySQL | MySQL | Library executor only; product API connection not yet implemented |
+| PostgreSQL | PostgreSQL | Operator-provisioned hosted sources; no local self-serve setup |
 | MariaDB | MySQL | SQL mapping only; connection not yet implemented |
 | SQL Server, Presto, Trino, Spark, Snowflake, Teradata | None | Not yet implemented |
-| Salesforce, GitHub, Twitter, Jira, ServiceNow | None | Needs hosted API / not configured |
-| S3 Analytics, S3, Athena, RDS auto-discovery, Aurora, Redshift auto-discovery, Redshift manual, IoT Analytics | None | Needs hosted API / not configured; no AWS calls |
+| Salesforce, GitHub, Twitter, Jira, ServiceNow | None | Needs a hosted connector implementation |
+| S3 Analytics, S3, Athena, RDS auto-discovery, Aurora, Redshift auto-discovery, Redshift manual, IoT Analytics | None | Needs a hosted connector implementation; no AWS calls |
 
 There are 23 gallery entries: separate Redshift discovery/manual entries plus
 Aurora and Trino. Redshift is not assumed to be the PostgreSQL dialect; its

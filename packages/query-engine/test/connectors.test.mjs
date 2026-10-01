@@ -1,6 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { connectors, connectorDefinition, validateConnectorConfig, connectConnector, connectorState, connectorDialect } from '@opensight/query-engine';
+test('MySQL metadata and connect cannot imply an API query path', () => {
+  assert.equal(connectorDefinition('mysql').implementation, 'unimplemented');
+  const config = { hostEnv: 'DB_HOST', portEnv: 'DB_PORT', databaseEnv: 'DB_NAME', userEnv: 'DB_USER', passwordEnv: 'DB_PASSWORD' };
+  for (const apiAvailable of [false, true]) assert.deepEqual(connectConnector('mysql', config, apiAvailable), { state: 'not_implemented', message: 'Not yet implemented' });
+});
+test('availability copy describes the missing capability, including an existing local API', () => {
+  assert.match(connectorState('file').message, /Uploads are unavailable in the static demo/);
+  assert.equal(connectorState('file', true).state, 'ready');
+  assert.equal(connectorState('postgresql', true).message, 'Needs an operator-configured connection');
+  assert.match(connectorState('postgresql').message, /hosted API and an operator-configured connection/);
+  for (const apiAvailable of [false, true]) assert.equal(connectorState('github', apiAvailable).message, 'Needs a hosted connector implementation');
+});
 for (const connector of connectors) {
   const config = Object.fromEntries(Object.entries(connector.schema).filter(([, f]) => f.required).map(([k, f]) => [k, f.kind === 'choice' ? f.values[0] : 'OPENSIGHT_TEST_VALUE']));
   test(`${connector.name}: validates config, missing/invalid/unknown fields fail closed`, () => {
