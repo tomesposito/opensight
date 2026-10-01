@@ -72,8 +72,10 @@ export class TenantBudgets {
   private queued = 0;
   private lastTenant = '';
   private closed = false;
+  private readonly drained: (() => void)[] = [];
+  async shutdown(): Promise<void> { this.close(); if (this.running) await new Promise<void>(resolve => this.drained.push(resolve)); }
   constructor(config: BudgetConfig, private readonly context: (context: TenantContext) => void) { this.config = validateBudgets(config); }
-  limits(tenantId: string): WorkLimits { return this.config.tenants[tenantId] ?? this.config.defaults; }
+  limits(tenantId: string): WorkLimits { return Object.hasOwn(this.config.tenants, tenantId) ? this.config.tenants[tenantId]! : this.config.defaults; }
   snapshot(tenantId: string): Usage { return { ...this.account(tenantId) }; }
   node(): { running: number; queued: number } { return { running: this.running, queued: this.queued }; }
   private account(id: string): Usage { let a = this.accounts.get(id); if (!a) { a = usage(); this.accounts.set(id, a); } return a; }
@@ -88,13 +90,16 @@ export class TenantBudgets {
     for (const scope of this.scopes) scope.cancel();
     for (const queue of [...this.queues.values()]) for (const job of [...queue]) job.reject(new MetadataError('EXECUTION_CANCELLED'));
   }
+  private slotAvailable(tenantId: string, refresh: boolean): boolean {
+    return this.running < this.config.node.running && this.account(tenantId).running < this.limits(tenantId).running
+      && (refresh || this.queries < this.config.node.running - this.config.node.refreshSlots);
+  }
   private available(tenantId: string, refresh: boolean): boolean {
     const active = [...this.scopes];
     const limits = this.limits(tenantId);
     return active.reduce((n, s) => n + s.limits.workingBytes, 0) + limits.workingBytes <= this.config.node.workingBytes
       && active.reduce((n, s) => n + s.limits.workerRssBytes, 0) + limits.workerRssBytes <= this.config.node.workerRssBytes
-      && this.running < this.config.node.running && this.account(tenantId).running < this.limits(tenantId).running
-      && (refresh || this.queries < this.config.node.running - this.config.node.refreshSlots);
+      && this.slotAvailable(tenantId, refresh);
   }
   private drain(): void {
     if (this.closed) return;
@@ -105,8 +110,11 @@ export class TenantBudgets {
       for (const id of order) {
         const queue = this.queues.get(id)!;
         // A reserved refresh can pass queries waiting for the general pool.
-        const job = queue.find(j => this.available(id, j.refresh));
+        const job = queue.find(j => this.slotAvailable(id, j.refresh));
         if (!job) continue;
+        // Preserve this tenant's turn while existing memory reservations drain.
+        // Refilling smaller jobs here could indefinitely starve a larger admitted job.
+        if (!this.available(id, job.refresh)) return;
         this.lastTenant = id; job.start(); found = true; break;
       }
       if (!found) break;
@@ -118,7 +126,7 @@ export class TenantBudgets {
     const reject = (code: string): never => { a.rejected++; budgetError(code); };
     if (this.closed) reject('NODE_ADMISSION_REFUSED');
     if (signal?.aborted) reject('EXECUTION_CANCELLED');
-    const immediate = !this.queues.get(id)?.length && this.available(id, refresh);
+    const immediate = this.queued === 0 && this.available(id, refresh);
     if (!immediate && a.queued >= limits.queued) reject('TENANT_BUDGET_EXCEEDED');
     if (!immediate && this.queued >= this.config.node.queued) reject('NODE_ADMISSION_REFUSED');
     return new Promise<T>((resolve, fail) => {
@@ -138,7 +146,7 @@ export class TenantBudgets {
           remove(); state = 'done'; signal?.removeEventListener('abort', abort); a.rejected++; fail(error); this.drain();
         },
         start: () => {
-          remove(); state = 'running';
+          remove(); state = 'running'; this.lastTenant = id;
           a.maxQueueMs = Math.max(a.maxQueueMs, performance.now() - job.enqueued);
           a.running++; this.running++; if (!refresh) this.queries++;
           a.peakRunning = Math.max(a.peakRunning, a.running);
@@ -146,11 +154,14 @@ export class TenantBudgets {
           timer = setTimeout(() => scope!.cancel(), limits.executionMs);
           void this.local.run(scope, async () => {
             try { scope!.check(); await recheck(); scope!.check(); const result = await work(); scope!.check(); await recheck(); scope!.check(); a.completed++; resolve(result); }
-            catch (error) { scope!.failed(); if (scope!.signal.aborted) { a.cancelled++; fail(new MetadataError('EXECUTION_CANCELLED')); } else fail(error); }
+            catch (error) {
+              if (error && typeof error === 'object' && 'code' in error && error.code === 'EXECUTION_CANCELLED') scope!.cancel();
+              scope!.failed(); if (scope!.signal.aborted) { a.cancelled++; fail(new MetadataError('EXECUTION_CANCELLED')); } else fail(error); }
             finally {
               clearTimeout(timer); signal?.removeEventListener('abort', abort); state = 'done';
               const elapsed = performance.now() - scope!.started; a.executionMs += elapsed; a.maxExecutionMs = Math.max(a.maxExecutionMs, elapsed);
               this.scopes.delete(scope!); a.running--; this.running--; if (!refresh) this.queries--; this.drain();
+              if (!this.running) for (const resolve of this.drained.splice(0)) resolve();
             }
           });
         } };

@@ -1,7 +1,7 @@
 import { maintenanceLock } from './metadata-maintenance.js';
 import { fileURLToPath } from 'node:url';
 import { createApiServer } from './index.js';
-import { createBuiltinHostedServer } from './hosted-server.js';
+import { createBuiltinHostedServer, drainHostedServer } from './hosted-server.js';
 import { SqliteMetadataDatabase } from './metadata-db.js';
 import { initializeMetadata } from './metadata-schema.js';
 import { initializeAuth } from './auth-schema.js';
@@ -44,7 +44,7 @@ try {
     return createApiServer({ dataRoot, prepStorePath: process.env.OPENSIGHT_PREP_STORE ?? '.opensight/prep.json', automationStorePath: process.env.OPENSIGHT_AUTOMATION_STORE ?? '.opensight/automation.json' });
   })();
   if (server) {
-    server.once('close', () => { void database?.close().finally(() => unlock?.()); });
+    server.once('close', () => { void drainHostedServer(server).finally(async () => { await database?.close(); unlock?.(); }); });
     server.on('error', error => {
       console.error(error.message);
       process.exitCode = 1;

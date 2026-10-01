@@ -15,6 +15,7 @@ test('H4 queue bounds reject before callbacks; copied or absent tenant contexts 
   const queued = Array.from({ length: 4 }, () => run(a));
   assert.throws(() => run(a), { code: 'TENANT_BUDGET_EXCEEDED' });
   for (const c of [undefined, { ...a }, { ...a, tenantId: b.tenantId }]) assert.throws(() => run(c), { code: 'TENANT_CONTEXT_REQUIRED' });
+  assert.deepEqual(g.limits('constructor'), budgetConfig.defaults);
   assert.equal(io, 1); assert.deepEqual(g.node(), { running: 1, queued: 4 });
   await g.run(b, false, async () => {}, async () => { io++; });
   assert.equal(io, 2); hold.resolve(); await Promise.all([first, ...queued]);
@@ -70,4 +71,32 @@ test('H4 budgets reject unknown fields, invalid ceilings, unresolved tenant poli
   await f.restart(); const next = gate(f, await readBudgets(f.db));
   assert.throws(() => next.run(old, false, async () => {}, async () => {}), { code: 'TENANT_CONTEXT_REQUIRED' });
   assert.deepEqual(next.node(), { running: 0, queued: 0 });
+});
+
+test('H4 migration interruption rolls back configuration and policy cutover; shutdown drains before restart', async t => {
+  const f = await sourceFixture(t); await migrateBudgets(f.db, budgetConfig, 'frozen');
+  const before = await readBudgets(f.db), next = structuredClone(budgetConfig); next.defaults.queued = 1;
+  const interrupted = { transaction: work => f.db.transaction(c => work({ query: async (sql, values) => {
+    const result = await c.query(sql, values); if (sql.startsWith('UPDATE h4_budget_config')) throw new Error('synthetic interruption'); return result;
+  } })) };
+  await assert.rejects(migrateBudgets(interrupted, next, 'frozen'), /synthetic interruption/);
+  assert.deepEqual(await readBudgets(f.db), before);
+  const a = await f.login(), g = gate(f), hold = deferred();
+  const work = g.run(a, false, async () => {}, () => hold.promise); await turn();
+  const failed = assert.rejects(work, { code: 'EXECUTION_CANCELLED' }); let drained = false;
+  const shutdown = g.shutdown().then(() => { drained = true; }); await turn(); assert.equal(drained, false);
+  hold.resolve(); await failed; await shutdown; assert.equal(drained, true);
+  assert.throws(() => g.run(a, false, async () => {}, async () => {}), { code: 'NODE_ADMISSION_REFUSED' });
+});
+
+test('H4 a larger admitted memory reservation keeps its fair turn while smaller jobs drain', async t => {
+  const f = await sourceFixture(t), a = await f.login(), b = await f.login('two'), config = structuredClone(budgetConfig);
+  config.defaults.running = 2; config.tenants[b.tenantId] = { ...config.defaults, running: 1, workingBytes: config.node.workingBytes };
+  const g = gate(f, config), h1 = deferred(), h2 = deferred(), hb = deferred(); const order = [];
+  const one = g.run(a, false, async () => {}, () => h1.promise), two = g.run(a, false, async () => {}, () => h2.promise);
+  const large = g.run(b, false, async () => {}, async () => { order.push('b'); await hb.promise; });
+  const small = g.run(a, false, async () => {}, async () => { order.push('a'); });
+  h1.resolve(); await one; await turn(); assert.deepEqual(order, []); assert.equal(g.node().running, 1);
+  h2.resolve(); await two; await turn(); assert.deepEqual(order, ['b']);
+  hb.resolve(); await large; await small; assert.deepEqual(order, ['b', 'a']);
 });

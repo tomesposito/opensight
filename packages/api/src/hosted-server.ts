@@ -23,6 +23,9 @@ import { readBody, RequestError, SecurityError } from './query.js';
 import { method, send } from './automation-routes.js';
 import { smtpFromEnvironment, type MailTransport } from './mail.js';
 
+const drains = new WeakMap<Server, () => Promise<void>>();
+export async function drainHostedServer(server: Server): Promise<void> { await drains.get(server)?.(); }
+
 export interface HostedServerOptions {
   membershipDatabase: Database;
   tenantDatabase: Database;
@@ -179,6 +182,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
   });
   const expiryTimer = setInterval(() => { void expireUploads(options.membershipDatabase).catch(() => { /* Reads still fail closed on expiry. */ }); }, 60000);
   expiryTimer.unref(); server.once('close', () => { clearInterval(expiryTimer); budgets.close(); });
+  drains.set(server, () => budgets.shutdown());
   server.requestTimeout = 15000; server.headersTimeout = 10000;
   return server;
 }

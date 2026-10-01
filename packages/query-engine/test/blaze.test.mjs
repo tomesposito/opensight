@@ -41,11 +41,11 @@ test('Postgres materialization drains bounded cursor batches under read-only UTC
   // Single mock only: calling t.mock.method twice on the same prototype method
   // leaves the mock installed after the test (node:test restore bug), which
   // breaks postgres-live.test.mjs when files share a process (--test-isolation=none).
-  const queryMock=t.mock.method(Client.prototype,'query',async arg=>{calls.push(arg);if(typeof arg==='object'&&arg.text.startsWith('FETCH')){batches++;return {rows:Array.from({length:batches===1?32:2},()=>['3','f'])};}return {rows:[]};});
+  const queryMock=t.mock.method(Client.prototype,'query',async arg=>{calls.push(arg);if(arg==='SELECT pg_backend_pid() AS pid')return {rows:[{pid:1234}]};if(typeof arg==='object'&&arg.text.startsWith('FETCH')){batches++;return {rows:Array.from({length:batches===1?32:2},()=>['3','f'])};}return {rows:[]};});
   const source={id:'source',connectorId:'postgresql',schema:'public',table:'source',columns:[{name:'n',type:'INTEGER'}],security:'unrestricted'},pipeline={version:1,input:'source',steps:[]};
   const result=sink();await streamPrepPostgres(pipeline,[source],{connectionEnv:variable},{},limits,result);
-  assert.equal(result.rows.length,34);assert.deepEqual(calls.slice(0,3),['BEGIN READ ONLY',"SET LOCAL TIME ZONE 'UTC'","SET LOCAL statement_timeout = '10s'"]);assert.match(calls[3].text,/DECLARE blaze_cursor.*CASE WHEN/);assert.match(calls[3].text,/LIMIT 1001/);assert.equal(calls.at(-1),'COMMIT');assert.equal(end.mock.callCount(),1);
-  queryMock.mock.mockImplementation(async arg=>({rows:typeof arg==='object'&&arg.text.startsWith('FETCH')?[[null,'t']]:[]}));
+  assert.equal(result.rows.length,34);assert.deepEqual(calls.slice(0,4),['SELECT pg_backend_pid() AS pid','BEGIN READ ONLY',"SET LOCAL TIME ZONE 'UTC'","SET LOCAL statement_timeout = '10000ms'"]);assert.match(calls[4].text,/DECLARE blaze_cursor.*CASE WHEN/);assert.match(calls[4].text,/LIMIT 1001/);assert.equal(calls.at(-1),'COMMIT');assert.equal(end.mock.callCount(),1);
+  queryMock.mock.mockImplementation(async arg=>({rows:arg==='SELECT pg_backend_pid() AS pid'?[{pid:1234}]:typeof arg==='object'&&arg.text.startsWith('FETCH')?[[null,'t']]:[]}));
   await assert.rejects(streamPrepPostgres(pipeline,[source],{connectionEnv:variable},{},limits,sink()),/OVERSIZE/);assert.equal(end.mock.callCount(),2);
 });
 test('memory queries use shared datetime, filters, table and level-aware calculations',()=>{

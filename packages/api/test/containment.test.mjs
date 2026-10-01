@@ -109,6 +109,7 @@ test('H4 measured two-tenant flood: bounded queues, fair completion, H3 denials,
   assert.equal(results.filter(x => x === 'TENANT_BUDGET_EXCEEDED').length, 12);
   assert.equal(usage.sourceRows, 4096 * 5); assert.equal(other.sourceRows, 4096);
   assert.equal(usage.peakQueued, 4); assert.equal(usage.peakRunning, 1);
+  assert.ok(usage.maxExecutionMs < 3000, `execution ${usage.maxExecutionMs}ms`);
   assert.ok(otherLatencyMs < 6000, `competitor latency ${otherLatencyMs}ms`);
   assert.ok(measurement.maxEventLoopMs < 250, `event-loop stall ${measurement.maxEventLoopMs}ms`);
   assert.ok(measurement.parentRssDeltaBytes < 128 * 1048576);

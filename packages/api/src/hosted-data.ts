@@ -62,12 +62,18 @@ export class HostedData {
     await this.sources.capability(context, 'build');
     if (!this.budgets) throw new MetadataError('BUDGET_MIGRATION_REQUIRED', 503);
     // Upload commits invalidate its own revision-bound session; verify before the atomic write.
-    return this.budgets.run(context, false, () => this.sources.capability(context, 'build'), () => this.sources.upload(context, input, async request => {
-      const scope = this.scope(context); scope.memory(request.data.byteLength);
-      const result = await containedWork<TableResult>(scope, { kind: 'upload', request }, this.limits(context));
-      scope.rows(result.rows.length); scope.memory(Buffer.byteLength(JSON.stringify(result)));
-      await this.verifiers.get(context)?.(); scope.check(); return result;
-    }), this.signals.get(context));
+    let committed = false;
+    return this.budgets.run(context, false, async () => {
+      await this.sources.capability(context, 'build'); if (!committed) await this.verifiers.get(context)?.();
+    }, async () => {
+      const result = await this.sources.upload(context, input, async request => {
+        const scope = this.scope(context); scope.memory(request.data.byteLength);
+        const parsed = await containedWork<TableResult>(scope, { kind: 'upload', request }, this.limits(context));
+        scope.rows(parsed.rows.length); scope.memory(Buffer.byteLength(JSON.stringify(parsed)));
+        await this.verifiers.get(context)?.(); scope.check(); return parsed;
+      });
+      committed = true; return result;
+    }, this.signals.get(context));
   }
   async admit(context: TenantContext, id: string, path: DataPath): Promise<Admission> {
     const revisions = await this.sources.metadata.revisions(context);
@@ -196,7 +202,7 @@ export class HostedData {
     if (path === 'query') { query = validateQuery(raw.query); planPreparedQuery(a.physical.columns, query, a.security); }
     const columns = raw.columns === undefined ? this.read(a).columns : raw.columns;
     if (!Array.isArray(columns) || columns.some(c => typeof c !== 'string')) sourceError('SOURCE_COLUMNS_INVALID');
-    const limit = raw.limit ?? (path === 'preview' ? 100 : this.limits(context).maxRows);
+    const limit = raw.limit ?? (path === 'preview' ? Math.min(100, this.limits(context).maxRows) : this.limits(context).maxRows);
     if (!Number.isSafeInteger(limit) || Number(limit) < 1 || Number(limit) > this.limits(context).maxRows) sourceError('SOURCE_LIMIT_INVALID');
     planSourceRead(this.read(a, columns as string[]), this.limits(context), 'postgres');
     return this.work(context, false, [a], async () => {
