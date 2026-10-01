@@ -12,7 +12,7 @@ export class HostedDataRoutes {
   readonly prep: HostedPrep;
   constructor(readonly data: HostedData) { this.prep = new HostedPrep(data); }
   async route(request: IncomingMessage, response: ServerResponse, path: string, context: TenantContext, recheck: () => Promise<void>): Promise<boolean> {
-    this.data.begin(context);
+    this.data.begin(context, undefined, recheck);
     const revisions = await this.data.sources.metadata.revisions(context);
     const read = request.method === 'GET' || /\/(query|preview|rows|output|refresh|schema)$/.test(path);
     const input = async () => {
@@ -35,7 +35,7 @@ export class HostedDataRoutes {
       method(request, response, ['GET']); await publish(200, await this.data.discover(context, path === '/api/ai/sources' ? 'ai' : 'discovery')); return true;
     }
     if (path === '/api/uploads') {
-      method(request, response, ['POST']); await publish(201, await this.data.sources.upload(context, await input())); return true;
+      method(request, response, ['POST']); await publish(201, await this.data.upload(context, await input())); return true;
     }
     const source = /^\/api\/sources\/([A-Za-z0-9_-]{1,512})(?:\/(bind|rotate|preview|rows|output|query|refresh|policy))?$/.exec(path);
     if (source) {

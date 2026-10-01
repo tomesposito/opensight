@@ -12,6 +12,9 @@ export interface PrepSink {
   row(values: PrepScalar[]): void;
   oversized(): never;
 }
+export interface ExecutionControl { signal?: AbortSignal; memoryMb?: number; executionMs?: number }
+export class ExecutionCancelledError extends Error { readonly code = 'EXECUTION_CANCELLED'; constructor() { super('EXECUTION_CANCELLED'); } }
+function check(control?: ExecutionControl): void { if (control?.signal?.aborted) throw new ExecutionCancelledError(); }
 export interface PrepReadLimits { maxRows: number; cellChars: number }
 export interface PrepMemoryTable { source: PrepSource; rowCount: number; value(row: number, column: number): PrepScalar }
 const types: Record<PrepType, string> = { INTEGER: 'BIGINT', DECIMAL: 'DOUBLE', STRING: 'VARCHAR', DATETIME: 'TIMESTAMP', BOOLEAN: 'BOOLEAN' };
@@ -33,8 +36,9 @@ export async function withPrepTables<T>(connection: DuckDBConnection, tables: re
     return await run();
   } finally { for (const name of created.reverse()) await connection.run(`DROP TABLE IF EXISTS ${name}`); }
 }
-export async function withPrepMemory<T>(tables: readonly PrepMemoryTable[], run: (connection: DuckDBConnection) => Promise<T>): Promise<T> {
-  const instance = await DuckDBInstance.create(':memory:', { enable_external_access: 'false', autoinstall_known_extensions: 'false', autoload_known_extensions: 'false', threads: '1', memory_limit: '256MB', max_temp_directory_size: '0B' });
+export async function withPrepMemory<T>(tables: readonly PrepMemoryTable[], run: (connection: DuckDBConnection) => Promise<T>, control?: ExecutionControl): Promise<T> {
+  check(control);
+  const instance = await DuckDBInstance.create(':memory:', { enable_external_access: 'false', autoinstall_known_extensions: 'false', autoload_known_extensions: 'false', threads: '1', memory_limit: `${control?.memoryMb ?? 256}MB`, max_temp_directory_size: '0B' });
   try { const connection = await instance.connect(); try { return await withPrepTables(connection, tables, () => run(connection)); } finally { connection.closeSync(); } } finally { instance.closeSync(); }
 }
 /** A per-row guard bounds driver allocation even for unexpectedly large source text. */
@@ -75,26 +79,48 @@ export async function streamPrepPostgres(raw: unknown, sources: readonly PrepSou
   if (!connectionString) prepFail('PREP_SOURCE_NOT_FOUND', '$.source', 'Postgres connection environment variable is not configured');
   return streamPostgresPlan(plan, { connectionString }, limits, sink);
 }
-export async function streamPostgresPlan(plan: Pick<PrepPlan, 'columns' | 'sql' | 'parameters'>, config: ClientConfig, limits: PrepReadLimits, sink: PrepSink): Promise<void> {
+export async function streamPostgresPlan(plan: Pick<PrepPlan, 'columns' | 'sql' | 'parameters'>, config: ClientConfig, limits: PrepReadLimits, sink: PrepSink, control?: ExecutionControl): Promise<void> {
+  check(control);
   sink.start(plan.columns);
   let consumerError: unknown;
+  const duration = Math.min(control?.executionMs ?? 10_000, 10_000);
+  const client = new Client({ ...config, connectionTimeoutMillis: Math.min(duration, 5000), query_timeout: duration });
+  let pid: number | undefined, cancelling: Promise<void> | undefined;
+  const cancel = () => {
+    cancelling ??= (async () => {
+      // Hold the original connection until cancellation finishes: its backend PID cannot be reused.
+      if (pid !== undefined) {
+        const canceller = new Client({ ...config, connectionTimeoutMillis: 500, query_timeout: 500 });
+        canceller.on('error', () => {});
+        try { await canceller.connect(); await canceller.query('SELECT pg_cancel_backend($1)', [pid]); }
+        catch { /* Closing the dedicated socket and server statement_timeout remain the fallback. */ }
+        finally { await canceller.end(); }
+      }
+      await client.end();
+    })().catch(() => {});
+  };
+  client.on('error', () => {});
+  control?.signal?.addEventListener('abort', cancel, { once: true });
+  const timer = setTimeout(cancel, duration);
   try {
-    const client = new Client({ ...config, connectionTimeoutMillis: 5000, query_timeout: 10_000 });
     try {
-      await client.connect(); await client.query('BEGIN READ ONLY');
-      await client.query("SET LOCAL TIME ZONE 'UTC'"); await client.query("SET LOCAL statement_timeout = '10s'");
+      await client.connect(); check(control);
+      pid = Number((await client.query('SELECT pg_backend_pid() AS pid')).rows[0].pid); check(control);
+      await client.query('BEGIN READ ONLY');
+      await client.query("SET LOCAL TIME ZONE 'UTC'"); await client.query(`SET LOCAL statement_timeout = '${duration}ms'`);
       await client.query({ text: `DECLARE blaze_cursor NO SCROLL CURSOR FOR ${boundedPrepSql(plan, limits)}`, values: plan.parameters });
-      const deadline = Date.now() + 10_000;
+      const deadline = Date.now() + duration;
       for (;;) {
-        if (Date.now() > deadline) prepFail('PREP_EXECUTION_FAILED', '$.materialize', 'Postgres preparation exceeded the 10-second execution limit');
+        check(control); if (cancelling || Date.now() > deadline) throw new ExecutionCancelledError();
         const batch = await client.query({ text: 'FETCH FORWARD 32 FROM blaze_cursor', rowMode: 'array', types: { getTypeParser: () => (v: string) => v } });
-        for (const row of batch.rows as unknown[][]) { try { intake(plan, row, sink); } catch (e) { consumerError = e; throw e; } }
+        for (const row of batch.rows as unknown[][]) { try { check(control); intake(plan, row, sink); } catch (e) { consumerError = e; throw e; } }
         if (batch.rows.length < 32) break;
       }
-      await client.query('COMMIT');
-    } finally { await client.end(); }
+      check(control); await client.query('COMMIT');
+    } finally { await cancelling; await client.end(); }
   } catch (e) {
+    if (control?.signal?.aborted || cancelling || e instanceof ExecutionCancelledError) throw new ExecutionCancelledError();
     if (e === consumerError || e instanceof PrepError) throw e;
     prepFail('PREP_EXECUTION_FAILED', '$.materialize', 'Postgres preparation failed or exceeded its memory/time limit');
-  }
+  } finally { clearTimeout(timer); control?.signal?.removeEventListener('abort', cancel); await cancelling; }
 }

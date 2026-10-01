@@ -29,8 +29,6 @@ test('H4 node queue bounds, reserved refresh capacity and per-tenant round-robin
   const a2 = g.run(a, false, async () => {}, async () => { order.push('a'); });
   const b1 = g.run(b, false, async () => {}, async () => { order.push('b'); });
   assert.throws(() => g.run(b, false, async () => {}, async () => {}), { code: 'NODE_ADMISSION_REFUSED' });
-  // Use a second verified principal in b; refresh gets the reserved node slot.
-  // The full queue is intentionally still rejected, even when a slot is reserved.
   hold.resolve(); await Promise.all([first, a2, b1]);
   const hold2 = deferred(), active = g.run(a, false, async () => {}, () => hold2.promise);
   await g.run(b, true, async () => {}, async () => { order.push('refresh'); });

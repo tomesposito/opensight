@@ -1,3 +1,5 @@
+import { migrateBudgets } from '../dist/budget-store.js';
+import { budgetConfig } from './budget-helpers.mjs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -21,7 +23,7 @@ export async function database(t) {
   const directory = await mkdtemp(join(tmpdir(), 'opensight-h2-')), path = join(directory, 'metadata.sqlite');
   const db = new SqliteMetadataDatabase(path);
   t.after(async () => { await db.close(); await rm(directory, { recursive: true, force: true }); });
-  await initializeMetadata(db); await initializeAuth(db);
+  await initializeMetadata(db); await initializeAuth(db); await migrateBudgets(db, budgetConfig, 'frozen');
   return { db, path, config: hostedConfig(environment()) };
 }
 export function decode32(value) {

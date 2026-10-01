@@ -1,3 +1,5 @@
+import { TenantBudgets } from '../dist/budgets.js';
+import { budgetConfig } from './budget-helpers.mjs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -28,7 +30,7 @@ export async function sourceFixture(t, options = {}) {
   const f = { path, key, get db() { return db; }, advance(ms) { now += ms; }, endpoints: options.endpoints ?? endpoints,
     async restart() { await db.close(); db = new SqliteMetadataDatabase(path); setup(); } };
   function setup() {
-    f.metadata = new TenantMetadata(db, db); f.sources = new HostedSources(f.metadata, key, f.endpoints, () => now);
+    f.metadata = new TenantMetadata(db, db); f.budgets = new TenantBudgets(budgetConfig, c => f.metadata.assertContext(c)); f.sources = new HostedSources(f.metadata, key, f.endpoints, () => now);
     f.login = (namespaceId = 'one', userId = 'admin') => f.metadata.authenticate(null, async () => ({ namespaceId, userId }));
   }
   setup(); t.after(async () => { await db.close(); await rm(dir, { recursive: true, force: true }); }); return f;

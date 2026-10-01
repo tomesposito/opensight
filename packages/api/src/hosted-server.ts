@@ -1,3 +1,4 @@
+import { loadBudgets } from './budget-store.js';
 import { assertHostedSourcesReady, expireUploads } from './source-maintenance.js';
 import { HostedSources } from './hosted-sources.js';
 import { HostedData } from './hosted-data.js';
@@ -63,7 +64,8 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
   if (typeof options.security?.authenticate !== 'function') throw new MetadataError('HOSTED_VERIFIER_REQUIRED', 503);
   const authenticate = options.security.authenticate;
   const metadata = new TenantMetadata(options.tenantDatabase, options.membershipDatabase);
-  const data = new HostedDataRoutes(new HostedData(new HostedSources(metadata, config.encryptionKey.toString('base64'), sourceEndpoints(options.env))));
+  const budgets = await loadBudgets(options.membershipDatabase, metadata);
+  const data = new HostedDataRoutes(new HostedData(new HostedSources(metadata, config.encryptionKey.toString('base64'), sourceEndpoints(options.env)), undefined, budgets));
   const provisioning = new HostedProvisioning(options.membershipDatabase, config, options.mailTransport ?? smtpFromEnvironment(options.env));
   // Prove that the durable H1/H2 schema is reachable before binding a socket.
   await options.membershipDatabase.transaction(async c => { await c.query('SELECT tenant_id FROM h1_tenants WHERE 1 = 0'); await c.query('SELECT subject FROM h2_memberships WHERE 1 = 0'); });
@@ -157,6 +159,10 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
         send(response, 200, resources.map(r => ({ id: r.id, namespaceId: context.namespaceId, ...r.body }))); return;
       }
       if (/^\/api\/(namespaces|users|invitations)(?:\/|$)/.test(path)) throw new MetadataError('OPERATOR_REQUIRED', 403);
+      const cancellation = new AbortController();
+      request.once('aborted', () => cancellation.abort());
+      response.once('close', () => { if (!response.writableFinished) cancellation.abort(); });
+      data.data.begin(context, cancellation.signal);
       if (await data.route(request, response, path, context, async () => {
         const current = await metadata.authenticate(request, verified);
         if (current.tenantId !== context.tenantId || current.userId !== context.userId) throw new MetadataError('AUTHENTICATION_FAILED', 401);
@@ -172,7 +178,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
     });
   });
   const expiryTimer = setInterval(() => { void expireUploads(options.membershipDatabase).catch(() => { /* Reads still fail closed on expiry. */ }); }, 60000);
-  expiryTimer.unref(); server.once('close', () => clearInterval(expiryTimer));
+  expiryTimer.unref(); server.once('close', () => { clearInterval(expiryTimer); budgets.close(); });
   server.requestTimeout = 15000; server.headersTimeout = 10000;
   return server;
 }

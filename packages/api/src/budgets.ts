@@ -31,28 +31,32 @@ export function validateBudgets(raw: unknown): BudgetConfig {
 export interface Usage {
   running: number; queued: number; completed: number; cancelled: number; rejected: number;
   executionMs: number; sourceRows: number; peakRunning: number; peakQueued: number;
-  maxQueueMs: number; maxExecutionMs: number; peakWorkerRssBytes: number;
+  maxQueueMs: number; maxExecutionMs: number; peakWorkerRssBytes: number; peakWorkingBytes: number; workerExecutions: number;
 }
-const usage = (): Usage => ({ running: 0, queued: 0, completed: 0, cancelled: 0, rejected: 0, executionMs: 0, sourceRows: 0, peakRunning: 0, peakQueued: 0, maxQueueMs: 0, maxExecutionMs: 0, peakWorkerRssBytes: 0 });
+const usage = (): Usage => ({ running: 0, queued: 0, completed: 0, cancelled: 0, rejected: 0, executionMs: 0, sourceRows: 0, peakRunning: 0, peakQueued: 0, maxQueueMs: 0, maxExecutionMs: 0, peakWorkerRssBytes: 0, peakWorkingBytes: 0, workerExecutions: 0 });
 export class WorkScope {
   readonly controller = new AbortController();
   readonly started = performance.now();
   sourceRows = 0;
   workingBytes = 0;
+  private readonly rollback: (() => void)[] = [];
+  onFailure(work: () => void): void { this.rollback.push(work); }
+  failed(): void { for (const work of this.rollback) work(); }
   constructor(readonly tenantId: string, readonly limits: WorkLimits, private readonly account: Usage) {}
   get signal(): AbortSignal { return this.controller.signal; }
-  cancel(): void { this.controller.abort(); }
+  cancel(): void { this.controller.abort(); this.failed(); }
   check(): void {
     if (performance.now() - this.started >= this.limits.executionMs) this.cancel();
     if (this.signal.aborted) budgetError('EXECUTION_CANCELLED');
   }
+  workerStarted(): void { this.account.workerExecutions++; }
   rows(count: number): void {
     this.check();
     if (!Number.isSafeInteger(count) || count < 0) budgetError('EXECUTOR_PRESSURE_INVALID');
     this.sourceRows += count; this.account.sourceRows += count;
     if (this.sourceRows > this.limits.sourceRows) budgetError('TENANT_BUDGET_EXCEEDED');
   }
-  memory(bytes: number): void { this.check(); this.workingBytes += bytes; if (this.workingBytes > this.limits.workingBytes) budgetError('TENANT_BUDGET_EXCEEDED'); }
+  memory(bytes: number): void { this.check(); this.workingBytes += bytes; this.account.peakWorkingBytes = Math.max(this.account.peakWorkingBytes, this.workingBytes); if (this.workingBytes > this.limits.workingBytes) budgetError('TENANT_BUDGET_EXCEEDED'); }
   rss(bytes: number): void { this.account.peakWorkerRssBytes = Math.max(this.account.peakWorkerRssBytes, bytes); if (bytes > this.limits.workerRssBytes) this.cancel(); }
 }
 interface Job { tenantId: string; refresh: boolean; enqueued: number; start(): void; reject(error: unknown): void }
@@ -85,7 +89,11 @@ export class TenantBudgets {
     for (const queue of [...this.queues.values()]) for (const job of [...queue]) job.reject(new MetadataError('EXECUTION_CANCELLED'));
   }
   private available(tenantId: string, refresh: boolean): boolean {
-    return this.running < this.config.node.running && this.account(tenantId).running < this.limits(tenantId).running
+    const active = [...this.scopes];
+    const limits = this.limits(tenantId);
+    return active.reduce((n, s) => n + s.limits.workingBytes, 0) + limits.workingBytes <= this.config.node.workingBytes
+      && active.reduce((n, s) => n + s.limits.workerRssBytes, 0) + limits.workerRssBytes <= this.config.node.workerRssBytes
+      && this.running < this.config.node.running && this.account(tenantId).running < this.limits(tenantId).running
       && (refresh || this.queries < this.config.node.running - this.config.node.refreshSlots);
   }
   private drain(): void {
@@ -110,7 +118,7 @@ export class TenantBudgets {
     const reject = (code: string): never => { a.rejected++; budgetError(code); };
     if (this.closed) reject('NODE_ADMISSION_REFUSED');
     if (signal?.aborted) reject('EXECUTION_CANCELLED');
-    const immediate = this.queued === 0 && this.available(id, refresh);
+    const immediate = !this.queues.get(id)?.length && this.available(id, refresh);
     if (!immediate && a.queued >= limits.queued) reject('TENANT_BUDGET_EXCEEDED');
     if (!immediate && this.queued >= this.config.node.queued) reject('NODE_ADMISSION_REFUSED');
     return new Promise<T>((resolve, fail) => {
@@ -138,7 +146,7 @@ export class TenantBudgets {
           timer = setTimeout(() => scope!.cancel(), limits.executionMs);
           void this.local.run(scope, async () => {
             try { scope!.check(); await recheck(); scope!.check(); const result = await work(); scope!.check(); await recheck(); scope!.check(); a.completed++; resolve(result); }
-            catch (error) { if (scope!.signal.aborted) { a.cancelled++; fail(new MetadataError('EXECUTION_CANCELLED')); } else fail(error); }
+            catch (error) { scope!.failed(); if (scope!.signal.aborted) { a.cancelled++; fail(new MetadataError('EXECUTION_CANCELLED')); } else fail(error); }
             finally {
               clearTimeout(timer); signal?.removeEventListener('abort', abort); state = 'done';
               const elapsed = performance.now() - scope!.started; a.executionMs += elapsed; a.maxExecutionMs = Math.max(a.maxExecutionMs, elapsed);
