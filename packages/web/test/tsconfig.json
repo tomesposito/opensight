@@ -11,6 +11,8 @@
   },
   "include": [
     "../src/FirstRun.tsx",
+    "../src/SessionGate.tsx",
+    "../src/Application.tsx",
     "../src/compiler.ts",
     "../src/model.ts",
     "../src/echarts.ts",
