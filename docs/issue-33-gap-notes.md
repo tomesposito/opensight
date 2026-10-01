@@ -80,3 +80,26 @@ Local logs and captures are retained under ignored `.opensight/issue-33/`:
 The initial full-suite process received SIGTERM during query-engine tests after
 488 tests passed in the completed workspaces, with no reported failures. It is
 not counted as a completed run; the final run records its exit status separately.
+
+The complete rerun of
+`TZ=UTC DATABASE_URL=postgresql://postgres@localhost:5433/opensight npm test`
+from the repository root exited 0: **1,571 passed / 0 failed / 0 skipped**.
+All live PostgreSQL tests ran. Strict TypeScript checks and workspace builds ran
+through the standard scripts. `full-tests-final.exit` records the successful
+exit status.
+
+| Runner | Passed | Failed | Skipped |
+| --- | ---: | ---: | ---: |
+| API | 255 | 0 | 0 |
+| Bundle parser | 197 | 0 | 0 |
+| Embedding SDK | 4 | 0 | 0 |
+| O interpreter | 32 | 0 | 0 |
+| Query engine | 512 | 0 | 0 |
+| Web | 565 | 0 | 0 |
+| Root conformance | 6 | 0 | 0 |
+| **Total** | **1,571** | **0** | **0** |
+
+API build, static-demo build, browser acceptance, GIF assembly and
+`git diff --check` also passed. The static demo in `packages/web/dist` is a local
+artifact, not a deployed server. All work is committed on the requested branch;
+no merge, push or issue closure was performed.
