@@ -10,7 +10,7 @@ import { OModeNotice } from './OModeNotice.js';
 interface OEntryProps { draft: AuthorDraft; dispatch?: Dispatch<AuthorAction>; client?: QueryClient; dashboardId?: string; renderBar?: (bar: ReactNode) => ReactNode }
 export function OEntry(props: OEntryProps) {
   const access = useAccess();
-  if (!allowed(access, 'ai')) return <>{props.renderBar?.(null)}</>;
+  if (access.mode !== 'local' && !allowed(access, 'ai')) return <>{props.renderBar?.(null)}</>;
   return <OEntryContent {...props} />;
 }
 function OEntryContent({ draft, dispatch, client, renderBar, dashboardId }: OEntryProps) {
@@ -19,10 +19,11 @@ function OEntryContent({ draft, dispatch, client, renderBar, dashboardId }: OEnt
   const [generative, setGenerative] = useState(false), [pending, setPending] = useState(false), [error, setError] = useState('');
   const revision = useRef(0);
   useEffect(() => () => { revision.current++; }, []);
-  const previewClient = useMemo<QueryClient | undefined>(() => client ? { queryDataset: (_id, query, signal) => {
+  const previewClient = useMemo<QueryClient | undefined>(() => client ? { dataset: client.dataset, queryDataset: (id, query, signal) => {
+    if (access.mode !== 'hosted') return client.queryDataset(id, query, signal);
     if (!client.queryO) return Promise.reject(new Error('SECURITY_AI_REQUIRED: Hosted O endpoint required.'));
     return client.queryO(query, dashboardId, signal);
-  } } : undefined, [client, dashboardId]);
+  } } : undefined, [access.mode, client, dashboardId]);
   const [question, setQuestion] = useState('');
   const [answer, setAnswer] = useState<{ result: InterpretationResult; schema: string }>();
   const [selected, setSelected] = useState(0);
