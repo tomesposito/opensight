@@ -37,7 +37,7 @@ test('live uploaded queries target the selected dataset and arbitrary dates comp
   const compiled = compileVisual({ ...buildAuthorVisual(visual, [], dataset), rows: result.rows });
   assert.equal(compiled.state, 'ready'); assert.deepEqual(compiled.table.rows, [['2026-01', 9]]);
   const failed = await loadAuthorRows({ dataset, async queryDataset(id) { assert.equal(id, dataset.id); throw new Error('PREP_SOURCE_NOT_FOUND'); } }, request, new AbortController().signal);
-  assert.deepEqual(failed, { rows: null, message: 'PREP_SOURCE_NOT_FOUND' });
+  assert.equal(failed.rows, null); assert.match(failed.message, /Source data expired.*re-upload.*PREP_SOURCE_NOT_FOUND/);
   assert.equal(buildDistinctQuery('team', [], [], dataset).measures[0].columnName, 'amount');
 });
 test('local draft validation and export preserve the binding without inventing a sales binding or embedding rows', () => {

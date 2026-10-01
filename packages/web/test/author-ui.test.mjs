@@ -70,9 +70,11 @@ test('shared table preview renders the validated cells as semantic HTML', () => 
 
 test('Author discloses fixture boundaries and recovers when browser storage is unavailable', () => {
   const html = renderToStaticMarkup(createElement(Author));
-  assert.match(html, /The saved draft could not be restored/);
+  assert.match(html, /Browser storage is unavailable outside a browser/);
+  assert.match(html, /Export JSON to keep your work/);
   assert.match(html, /region = East/);
   assert.match(html, /No live queries run/);
-  assert.match(html, /disabled="" aria-describedby="export-help">Export JSON/);
+  assert.doesNotMatch(html, /disabled="" aria-describedby="export-help">Export JSON/);
+  assert.match(html, /aria-describedby="export-help">Export JSON/);
   assert.match(html, /sample rows and the fixed East preview filter are not included/);
 });

@@ -127,3 +127,37 @@ test('live canvas initially shows loading without fixture data; offline Author r
   assert.match(offline, /region = East/);
   assert.match(offline, /No live queries run/);
 });
+
+test('reopened prepared queries retry only the busy gate, with a finite retry budget', async t => {
+  const { ApiError } = await import('../build/test/api-client.js');
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  let calls = 0;
+  const busy = new ApiError('BLAZE_BUSY: another read is finishing', 409);
+  const client = { dataset: { id: 'prepared-reopen' }, async queryDataset(id) {
+    assert.equal(id, 'prepared-reopen'); calls++;
+    if (calls < 3) throw busy;
+    return { rows: [{ region: 'North', revenue: 6 }] };
+  } };
+  const pending = loadAuthorRows(client, buildAuthorQuery(visual('kpi')), controller().signal);
+  await new Promise(setImmediate); t.mock.timers.tick(250);
+  await new Promise(setImmediate); t.mock.timers.tick(500);
+  assert.deepEqual(await pending, { rows: [{ region: 'North', revenue: 6 }] }); assert.equal(calls, 3);
+  calls = 0;
+  client.queryDataset = async () => { calls++; throw busy; };
+  const exhausted = loadAuthorRows(client, buildAuthorQuery(visual('kpi')), controller().signal);
+  for (const delay of [250, 500, 1000]) { await new Promise(setImmediate); t.mock.timers.tick(delay); }
+  assert.match((await exhausted).message, /BLAZE_BUSY/); assert.equal(calls, 4);
+  calls = 0;
+  client.queryDataset = async () => { calls++; throw new ApiError('SECURITY_DENIED', 403); };
+  assert.match((await loadAuthorRows(client, buildAuthorQuery(visual('kpi')), controller().signal)).message, /SECURITY_DENIED/);
+  assert.equal(calls, 1);
+});
+test('cancelling a pending reopen retry prevents any later query', async t => {
+  const { ApiError } = await import('../build/test/api-client.js');
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const abort = controller(); let calls = 0;
+  const pending = loadAuthorRows({ async queryDataset() { calls++; throw new ApiError('BLAZE_BUSY: previous read', 409); } }, buildAuthorQuery(visual('kpi')), abort.signal);
+  await new Promise(setImmediate);
+  abort.abort(); await assert.rejects(pending, { name: 'AbortError' });
+  t.mock.timers.tick(5000); assert.equal(calls, 1);
+});

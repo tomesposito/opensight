@@ -1,8 +1,9 @@
 # Author bundle round trip (Phase 1e)
 
 In Author mode, choose **Import .qs or bundle JSON**, or drop one file onto the
-import zone. A successful import replaces the device's current draft. Download
-existing work first if needed. Invalid input leaves the draft unchanged and
+import zone. A successful import opens a new device-local draft and checkpoints
+existing edits first. If saving fails, the current work stays open; export it
+before retrying. Invalid input leaves the draft unchanged and
 shows the parser's error, including the member/property path where available.
 
 **Download .qs** produces a ZIP containing camelCase members at

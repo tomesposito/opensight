@@ -4,6 +4,7 @@ import { act, createElement } from 'react';
 import { create } from 'react-test-renderer';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { Author, AuthorCanvas } from '../build/test/Author.js';
+import { createDraftStore } from '../build/test/local-drafts.js';
 import { AuthorToolbar } from '../build/test/AuthorToolbar.js';
 import { FormattingEditor } from '../build/test/FormattingEditor.js';
 import { activeSheet, authorReducer, emptyDraft, serializeDraft, DRAFT_KEY as STORAGE_KEY } from '../build/test/authoring.js';
@@ -11,13 +12,14 @@ import { activeSheet, authorReducer, emptyDraft, serializeDraft, DRAFT_KEY as ST
 async function mount(t, element, stored) {
   const oldWindow = globalThis.window, oldAct = globalThis.IS_REACT_ACT_ENVIRONMENT;
   globalThis.IS_REACT_ACT_ENVIRONMENT = true;
-  let saved = stored && JSON.stringify(stored);
-  globalThis.window = { matchMedia: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }), localStorage: { getItem: () => saved ?? null, setItem: (k, v) => { assert.equal(k, STORAGE_KEY); saved = v; } } };
+  const values = new Map(stored ? [[STORAGE_KEY, JSON.stringify(stored)]] : []);
+  const storage = { getItem: k => values.get(k) ?? null, setItem: (k, v) => values.set(k, v) };
+  globalThis.window = { matchMedia: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }), localStorage: storage };
   let renderer; await act(() => { renderer = create(element); });
   t.after(async () => { await act(() => renderer.unmount()); globalThis.window = oldWindow; globalThis.IS_REACT_ACT_ENVIRONMENT = oldAct; });
   const find = (type, predicate) => renderer.root.findAllByType(type).find(n => predicate(n.props));
   const click = async label => { const n = find('button', p => p.children === label || p['aria-label'] === label); assert.ok(n, label); await act(() => n.props.onClick()); };
-  return { renderer, find, click, saved: () => JSON.parse(saved) };
+  return { renderer, find, click, saved: () => createDraftStore(() => storage, { mode: 'demo' }).restore()?.draft };
 }
 const add = kind => authorReducer(emptyDraft(), { type: 'add', kind });
 
@@ -27,6 +29,7 @@ test('header keeps identity, menus, working O entry, canvas actions and NEW LOOK
   assert.equal(header.children[0].props.className, 'brand');
   const title = header.findByType('input');
   await act(() => title.props.onChange({ target: { value: 'Sales analysis' } }));
+  await ui.click('Save draft');
   assert.equal(ui.saved().title, 'Sales analysis');
   const nav = ui.find('nav', p => p['aria-label'] === 'Analysis menu');
   assert.deepEqual(nav.children.map(n => n.type), [...Array(7).fill('details'), 'form', 'div', 'button', 'button', 'label']);
@@ -37,6 +40,7 @@ test('header keeps identity, menus, working O entry, canvas actions and NEW LOOK
   const before = serializeDraft(ui.saved());
   await act(() => toggle.props.onChange({ target: { value: 'dark' } }));
   assert.equal(ui.find('div', p => p.className === 'author-workspace').props['data-chrome'], 'dark');
+  await ui.click('Save draft');
   assert.equal(ui.saved().chrome, 'dark');
   assert.deepEqual(serializeDraft(ui.saved()), before, 'chrome does not change the analysis definition');
   await act(() => nav.findByProps({ id: 'o-question' }).props.onChange({ target: { value: 'sum revenue by region' } }));
@@ -45,6 +49,7 @@ test('header keeps identity, menus, working O entry, canvas actions and NEW LOOK
   assert.ok(answer);
   assert.equal(nav.findAll(n => n.props.className === 'o-answer').length, 0, 'O answers stay below the toolbar');
   await ui.click('ADD TO ANALYSIS');
+  await ui.click('Save draft');
   assert.equal(activeSheet(ui.saved()).visuals.length, 2);
 });
 
@@ -58,7 +63,7 @@ test('toolbar exposes all seven menus, callbacks, busy guards and honest publish
   await ui.click('Add bar visual'); await ui.click('Add sheet'); await ui.click('Remove selected visual');
   assert.deepEqual(calls.slice(4), [{ type: 'add', kind: 'bar' }, { type: 'sheet-add' }, { type: 'remove', id: 'visual-1' }]);
   await ui.click('PUBLISH');
-  assert.match(ui.find('div', p => p.role === 'status').props.children[0], /Hosted publishing needs the AWS deployment; nothing has been published/);
+  assert.match(ui.find('div', p => p.role === 'status').props.children[0], /This static demo has no publication destination/);
   await ui.click('Dismiss'); assert.equal(ui.find('div', p => p.role === 'status'), undefined);
   await act(() => ui.renderer.update(createElement(AuthorToolbar, { ...props, busy: true, jsonDisabled: true })));
   for (const label of ['Import bundle…', 'Download .qs', 'Export JSON']) assert.equal(ui.find('button', p => p.children === label).props.disabled, true);

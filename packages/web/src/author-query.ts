@@ -2,6 +2,7 @@ import { declaration, type AuthorParameter } from './parameters.js';
 import type { AuthorControl } from './controls.js';
 import { authorVisualProblem, noDimensions, visualDimensions, dataFields, type AuthorDataset, type CalculatedField, type AuthorVisual } from './authoring.js';
 import type { createApiClient, QueryRequest } from './api-client.js';
+import { ApiError } from './api-client.js';
 import type { Row } from './model.js';
 
 export type QueryClient = Pick<ReturnType<typeof createApiClient>, 'queryDataset'> & Partial<Pick<ReturnType<typeof createApiClient>, 'getDatasetRefreshStatus' | 'queryO' | 'getDatasetExecution' | 'setDatasetExecution' | 'refreshBlaze' | 'getPreparedRows' | 'listPrepSources'>> & { dataset?: AuthorDataset };
@@ -43,13 +44,33 @@ export function buildDistinctQuery(columnName: string, calculations: readonly Ca
 /** Errors never fall back to fixture rows. Cancellation remains a rejected request. */
 export async function loadAuthorRows(client: QueryClient, request: QueryRequest, signal: AbortSignal): Promise<AuthorRows> {
   try {
-    const result = await client.queryDataset(client.dataset?.id ?? 'sales', request, signal);
-    signal.throwIfAborted();
-    return { rows: result.rows };
+    for (let attempt = 0; ; attempt++) {
+      signal.throwIfAborted();
+      try {
+        const result = await client.queryDataset(client.dataset?.id ?? 'sales', request, signal);
+        signal.throwIfAborted();
+        return { rows: result.rows };
+      } catch (error) {
+        // A reopened visual can arrive before the cancelled previous read has
+        // released the local prepared-data gate. Retry only that named conflict.
+        if (!(error instanceof ApiError) || error.status !== 409 || !error.message.startsWith('BLAZE_BUSY:') || attempt >= 3) throw error;
+        await retryDelay(250 * 2 ** attempt, signal);
+      }
+    }
   } catch (error) {
     signal.throwIfAborted();
-    return { rows: null, message: error instanceof Error ? error.message : String(error) };
+    const message = error instanceof Error ? error.message : String(error);
+    return { rows: null, message: client.dataset && /PREP_SOURCE_NOT_FOUND|PREP_NOT_FOUND/.test(message) ? `Source data expired or is unavailable — re-upload the file, prepare it, then reopen and reconnect this draft. ${message}` : message };
   }
+}
+
+function retryDelay(ms: number, signal: AbortSignal): Promise<void> {
+  signal.throwIfAborted();
+  return new Promise((resolve, reject) => {
+    const cancel = () => { clearTimeout(timer); reject(signal.reason); };
+    const timer = setTimeout(() => { signal.removeEventListener('abort', cancel); resolve(); }, ms);
+    signal.addEventListener('abort', cancel, { once: true });
+  });
 }
 
 /** Reachability prevents unrelated controls/calculations from invalidating visual results. */
