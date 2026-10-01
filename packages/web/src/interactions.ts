@@ -1,4 +1,4 @@
-import { authorVisualProblem, dataFields, visualDimensions, type AuthorSheet, type AuthorVisual, type CalculatedField } from './authoring.js';
+import { authorVisualProblem, dataFields, visualDimensions, type AuthorDataset, type AuthorSheet, type AuthorVisual, type CalculatedField } from './authoring.js';
 import type { ParameterDeclaration, ParameterValue } from './parameters.js';
 
 export interface FilterAction {
@@ -8,8 +8,8 @@ export interface FilterAction {
 export interface Selection { values: Record<string, string | number>; range?: [string, string] }
 export interface InteractionFilter { columnName: string; type: ParameterDeclaration['type']; values: ParameterValue[]; operator?: 'EQUALS' | 'GREATER_THAN_OR_EQUAL_TO' | 'LESS_THAN_OR_EQUAL_TO' }
 export type ActionSelections = Record<string, Selection>;
-export const fieldType = (name: string, calculations: readonly CalculatedField[] = []): ParameterDeclaration['type'] | undefined => {
-  const field = dataFields(calculations).find(f => f.name === name);
+export const fieldType = (name: string, calculations: readonly CalculatedField[] = [], dataset?: AuthorDataset): ParameterDeclaration['type'] | undefined => {
+  const field = dataFields(calculations, dataset).find(f => f.name === name);
   return !field ? undefined : field.type === 'DATETIME' ? 'datetime' : field.type === 'STRING' ? 'string' : 'number';
 };
 export function originProblem(visual: AuthorVisual): string | undefined {
@@ -20,12 +20,12 @@ export function originProblem(visual: AuthorVisual): string | undefined {
     : visual.kind === 'line' && visual.dimension !== 'order_date' ? 'Line actions require a datetime axis for range brushing.' : undefined);
 }
 export const actionDimensions = (visual: AuthorVisual): string[] => visual.kind === 'kpi' ? [] : [...new Set([...visualDimensions(visual), ...(visual.hierarchy?.levels.map(l => l.columnName) ?? [])])];
-export function targetProblem(source: AuthorVisual, target: AuthorVisual, action: FilterAction, calculations: readonly CalculatedField[] = []): string | undefined {
+export function targetProblem(source: AuthorVisual, target: AuthorVisual, action: FilterAction, calculations: readonly CalculatedField[] = [], dataset?: AuthorDataset): string | undefined {
   const field = action.mappings[target.id] ?? action.sourceField;
   return originProblem(source) ?? authorVisualProblem(target) ?? (!target.measures.length ? 'Assign a measure to the target to produce results.' : undefined) ?? (visualDimensions(target).includes('order_id') ? 'Numeric grouping is not supported by the current query engine.' : undefined) ?? (source.id === target.id ? 'The source visual is not its own target.'
     : !actionDimensions(source).includes(action.sourceField) ? `Source does not group by ${action.sourceField}.`
     : !actionDimensions(target).includes(field) ? `${target.kind === 'kpi' ? 'KPI has no grouped dimensions' : `Target does not group by ${field}`}.`
-    : !fieldType(field, calculations) || fieldType(field, calculations) !== fieldType(action.sourceField, calculations) ? 'Source and target fields must have the same supported type.' : undefined);
+    : !fieldType(field, calculations, dataset) || fieldType(field, calculations, dataset) !== fieldType(action.sourceField, calculations, dataset) ? 'Source and target fields must have the same supported type.' : undefined);
 }
 export function toggleSelection(selections: ActionSelections, sourceId: string, selection: Selection): ActionSelections {
   const next = { ...selections };
@@ -60,11 +60,11 @@ export function selectionFilters(columnName: string, type: ParameterDeclaration[
   }
   return typeof value === (type === 'number' ? 'number' : 'string') ? [{ columnName, type, values: [value] }] : [];
 }
-export function withActionFilters(sheet: AuthorSheet, visual: AuthorVisual, selections: ActionSelections, calculations: readonly CalculatedField[] = []): AuthorVisual {
+export function withActionFilters(sheet: AuthorSheet, visual: AuthorVisual, selections: ActionSelections, calculations: readonly CalculatedField[] = [], dataset?: AuthorDataset): AuthorVisual {
   const filters = sheet.visuals.flatMap(source => (source.filterActions ?? []).flatMap(action => {
     const selection = selections[source.id], value = selection?.values[action.sourceField];
-    if (!selection || value === undefined || action.targets !== 'all' && !action.targets.includes(visual.id) || targetProblem(source, visual, action, calculations)) return [];
-    return selectionFilters(action.mappings[visual.id] ?? action.sourceField, fieldType(action.sourceField, calculations)!, value, selection.range);
+    if (!selection || value === undefined || action.targets !== 'all' && !action.targets.includes(visual.id) || targetProblem(source, visual, action, calculations, dataset)) return [];
+    return selectionFilters(action.mappings[visual.id] ?? action.sourceField, fieldType(action.sourceField, calculations, dataset)!, value, selection.range);
   }));
   return filters.length ? { ...visual, interactionFilters: [...(visual.interactionFilters ?? []), ...filters] } : visual;
 }
