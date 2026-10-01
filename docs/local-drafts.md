@@ -1,5 +1,10 @@
 # Local analysis drafts
 
+Open **Analyses → My analyses** for the device-local draft list, or **New
+analysis** to start blank. Reopen opens the selected draft in Author with a
+reloadable URL. The list also remains available inside Author. See
+[app navigation](app-navigation.md) for routes and role visibility.
+
 In Author, use **Save draft** before leaving the editor or reloading. **Local
 drafts** lists saved analyses by name and updated time, most recent first. Each
 entry offers **Reopen**, **Rename**, and **Delete**. **New analysis**, choosing

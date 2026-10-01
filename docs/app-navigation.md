@@ -22,6 +22,8 @@ local/demo/hosted-user separation, validation, limits, source recovery, and
 export fallback apply. These are browser-local definitions, not a server list
 or shared analyses. See [local drafts](local-drafts.md).
 
+![My analyses and device-local drafts](images/analyses.png)
+
 ## Visibility and permissions
 
 Home and Admin are available in all three modes. Analyses and Data require
@@ -54,3 +56,8 @@ do not autosave: use Save draft before leaving Author, as in #32. Opening
 Author without a draft ID restores the last saved draft; New analysis starts
 blank. Opening a draft by URL restores its saved definition and rechecks its
 source using the existing editor behavior.
+
+Saving or reopening a different draft inside Author replaces the current
+history entry with its draft URL without resetting the editor. Starting an
+unsaved analysis inside Author uses the generic Author URL until it is saved.
+Thus Back returns to the preceding screen instead of stepping through saves.

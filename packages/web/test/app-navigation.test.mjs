@@ -27,6 +27,7 @@ for (const access of accesses) test(`product and secondary navigation preserve g
   assert.match(product, />Home<\/a>/); assert.match(product, />Admin<\/a>/);
   for (const label of ['Analyses', 'Data']) assert.equal(product.includes(`>${label}</a>`), canBuild);
   assert.doesNotMatch(product, /Developer|fixtures|definition|AI provider|Users|Mode/);
+  assert.equal(shell(access, 'author').includes('aria-label="Analyses"'), canBuild);
   assert.match(home, /href="#\/home" aria-current="page"/);
   const admin = shell(access, 'security');
   for (const page of ['security', 'organization', 'automation']) assert.ok(admin.includes(`#${pages[page].path}`));

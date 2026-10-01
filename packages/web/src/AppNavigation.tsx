@@ -42,7 +42,7 @@ export function AppNavigation({ route, navigate, children }: { route?: AppRoute;
       <span className="header-caption">{route ? pages[route.page].title : 'Page not found'}</span>
       {children}
     </header>
-    {section === 'Analyses' && <nav className="section-nav" aria-label="Analyses"><AppLink to={{ page: 'analyses' }} navigate={navigate} current={route?.page === 'analyses'}>My analyses</AppLink><AppLink to={{ page: 'author' }} navigate={navigate} current={route?.page === 'author'}>Author</AppLink></nav>}
+    {section === 'Analyses' && visiblePage(access, 'analyses') && <nav className="section-nav" aria-label="Analyses"><AppLink to={{ page: 'analyses' }} navigate={navigate} current={route?.page === 'analyses'}>My analyses</AppLink><AppLink to={{ page: 'author' }} navigate={navigate} current={route?.page === 'author'}>Author</AppLink></nav>}
     {section === 'Data' && <nav className="section-nav" aria-label="Data">{dataPages.filter(page => visiblePage(access, page)).map(link)}</nav>}
     {section === 'Admin' && <div className="admin-navigation"><nav className="section-nav" aria-label="Admin">{adminPages.filter(page => visiblePage(access, page)).map(link)}</nav><nav className="section-nav developer-nav" aria-label="Developer tools"><span>Developer tools</span>{developerPages.filter(page => visiblePage(access, page)).map(link)}</nav></div>}
   </>;
