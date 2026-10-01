@@ -36,8 +36,8 @@ atomic collection write keeps the list and active draft consistent without an
 IndexedDB dependency. The browser may enforce a lower quota, especially when
 other site data uses space. No old drafts are silently evicted. The UI identifies
 blocked storage, quota failures, or an invalid definition and still offers
-**Export JSON** / **Download .qs**. Multi-tab edits to one draft use the last
-successful save; refresh the list to see other tabs' changes. A deleted draft is
+**File → Export JSON** / **File → Download .qs**. Multi-tab edits to one draft
+use the last successful save; refresh the list to see other tabs' changes. A deleted draft is
 not silently recreated by another tab's save.
 
 Existing single-draft keys (`opensight.author.v0` in the demo and

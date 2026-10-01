@@ -66,7 +66,7 @@ hosted source, role, RLS/CLS and ownership suites remain part of mandatory tests
   the actual Author caption and absence of the old phrase in both render modes.
   No product/header implementation change.
 - **5 — Changed:** Definition previews hide O in every mode and link to Home
-  for sample sales questions. Home and Author retain their existing O routing;
+  to explore sample sales data. Home and Author retain their existing O routing;
   hosted published dashboards retain their existing dashboard and AI gates.
   Regressions cover all bundled fixtures plus the sample and hosted exceptions.
   The browser follows the Home link and checks actual offline East 500 / West 400.
@@ -77,3 +77,74 @@ hosted source, role, RLS/CLS and ownership suites remain part of mandatory tests
   analyses explain reload/import recovery and preserve the stored value, including
   malformed legacy JSON. Existing source retry/re-upload/reconnect controls remain.
   Focused refresh, authoring and draft tests: 69 passed / 0 failed / 0 skipped.
+
+## Real-browser and static-demo verification
+
+`packages/web/scripts/verify-p2-polish.mjs` starts isolated real local API and
+Vite processes, with temporary prep metadata and Chromium. Browser requests are
+forwarded unchanged through Node to the actual loopback server because installed
+Chromium restricts loopback. No API responses or chart rows are mocked. It also
+opens the rebuilt single-file static demo with all HTTP(S) blocked.
+
+The completed pass checked:
+
+- Exactly one DOM button per export action, visible in File, with actual JSON
+  and .qs downloads in both local and static modes.
+- The OpenSight brand and Author caption, with no old explorer caption.
+- Fresh Author without the idle refresh or draft-restore failure notices.
+- TotalDeathByCountry with no question box, loading symbol, chart or animation.
+  The static preview's Home link leads to a working synthetic sales question
+  (East 500 / West 400); a no-match question settles at No results without a symbol.
+- An actual uploaded CSV queried through O, then an API restart that expires
+  the source. Its `PREP_SOURCE_NOT_FOUND` error card has `aria-busy=false`, no
+  loading symbol and no animation. Reopened draft controls retain retry,
+  re-upload and reconnect; retry preserves the truthful expired state.
+- A malformed legacy draft yields reload/import guidance without a parser
+  diagnostic. First-run storage and unreadable stored data are distinct cases.
+
+This pass recorded **12 actual query requests, 0 page errors and 0 external
+requests**. The existing `verify-o-answer.mjs` also passed: **17 actual queries,
+0 page errors, 0 external requests and 0 hosted O requests**, including uploaded
+North 6 / South 3, date grouping, adding the chart, saving and source expiry.
+
+## Visual review and documentation captures
+
+Compared the local Author capture with the private reference
+`lookfeel-references/dyn-05-author-o-bar.png`, and the local/static definition
+captures with the unchanged-master baseline. The docked Data → Visuals → canvas
+layout and menu styling remain; export actions have one menu home and the idle
+refresh line is absent. Definition cards settle as text and their question
+notice points to sample sales. Checked captures have no horizontal overflow at
+1440 pixels. No new layout gap was identified; visual fidelity is not measured.
+
+Author is visible in the README tour and feature captures. Refreshed
+`author.png`, `local-data.png`, `local-drafts.png`, `expired-draft.png` and
+`definition-preview.png`. The O-answer screenshot was recaptured and is byte
+identical: the changed utility row is below its viewport. Other README images
+show unchanged surfaces. Documentation now locates exports in File.
+
+The tour uses `capture-readme-tour.mjs`, the current-navigation adaptation of
+`~/workspace/tools/screenshots/readme-gif.mjs`, against the rebuilt demo. Its
+82 frames have no page errors and are assembled with the documented FFmpeg
+palette commands at 960×600, 10 fps (8.2 seconds). `packages/web/dist` remains a
+local static preview, not a deployed server.
+
+Logs and before/after captures are retained under ignored `.opensight/issue-35/`.
+
+
+Final review corrected the shared preview link to **Open Home to explore sample
+sales data**: local/hosted Home shows the sample dashboard, while demo Home also
+has O. Browser acceptance follows the link in both local and demo modes, then
+asks a question only in the demo. This keeps the guidance accurate without
+changing Home access or adding an O entry point.
+
+## Full-suite verification record
+
+The initial full run (`full-tests-interrupted.log`) reported a failure in the
+existing H4 two-tenant flood test while browser captures were also running. The
+command ended with SIGTERM (143) before any suite summary; it is not a completed
+verification run. The unchanged flood test subsequently passed in isolation:
+**1 passed / 0 failed / 0 skipped**, maximum execution 1495.2 ms (limit 3000 ms),
+competitor latency 2860.4 ms (limit 6000 ms), and event-loop delay 35.9 ms (limit
+250 ms). No timing limit, security assertion or runtime implementation changed.
+Browser/media work finished before the final full-suite rerun.

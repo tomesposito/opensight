@@ -6,7 +6,7 @@ existing edits first. If saving fails, the current work stays open; export it
 before retrying. Invalid input leaves the draft unchanged and
 shows the parser's error, including the member/property path where available.
 
-**Download .qs** produces a ZIP containing camelCase members at
+**File → Download .qs** produces a ZIP containing camelCase members at
 `analysis/{analysisId}.json`, `dashboard/{dashboardId}.json`,
 `dataset/{dataSetId}.json`, and `datasource/{dataSourceId}.json`. Member envelopes,
 identities and paths are validated before assembly; the completed ZIP is checked
