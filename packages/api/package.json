@@ -9,7 +9,8 @@
     "start": "node dist/cli.js",
     "test": "npm run build && tsc -p test/tsconfig.json && node --test --test-isolation=none test/*.test.mjs",
     "metadata:migrate": "node dist/metadata-migrate-cli.js",
-    "sources:migrate": "node dist/source-migrate-cli.js"
+    "sources:migrate": "node dist/source-migrate-cli.js",
+    "budgets:migrate": "node dist/budget-migrate-cli.js"
   },
   "exports": {
     ".": {

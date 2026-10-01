@@ -35,7 +35,7 @@ export class TenantMetadata {
       this.#contexts.add(context); return context;
     });
   }
-  private context(context: TenantContext): void {
+  assertContext(context: TenantContext): void {
     if (!context || !this.#contexts.has(context)) throw new MetadataError('TENANT_CONTEXT_REQUIRED', 401);
   }
   private key(context: TenantContext, key: ResourceKey): ResourceKey {
@@ -44,7 +44,7 @@ export class TenantMetadata {
     return normalized;
   }
   private async checked<T>(context: TenantContext, work: (c: SqlConnection, revisions: Revisions, user: JsonObject) => Promise<T>): Promise<T> {
-    this.context(context);
+    this.assertContext(context);
     return this.tenantDatabase.transaction(async c => {
       // Serialize admission with tenant edits and lifecycle transitions on both engines.
       const tenants = await c.query("UPDATE h1_tenants SET version = version WHERE tenant_id = ? AND state = 'active' RETURNING version", [context.tenantId]);
@@ -83,7 +83,7 @@ export class TenantMetadata {
     await this.batch(context, [{ key, body: null, expectedVersion }]);
   }
   async batch(context: TenantContext, edits: readonly MetadataEdit[], expectedRevisions?: Revisions): Promise<void> {
-    this.context(context);
+    this.assertContext(context);
     // Snapshot before awaiting; caller mutation cannot change a checked write mid-transaction.
     const changes = structuredClone(edits);
     await this.checked(context, async (c, _revisions, user) => {
