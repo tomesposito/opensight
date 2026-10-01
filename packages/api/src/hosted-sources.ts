@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { hasCapability, isRole, parseUpload, type UploadColumn } from '@opensight/query-engine';
+import { hasCapability, isRole, parseUpload, type UploadColumn, type UploadRequest } from '@opensight/query-engine';
 import { TenantMetadata, type TenantContext } from './metadata.js';
 import { object, identifier, type MetadataResource } from './metadata-resources.js';
 import { encryptMetadataSecret, decryptMetadataSecret } from './metadata-secrets.js';
@@ -63,12 +63,12 @@ export class HostedSources {
     ]);
     return this.summary({ ...body, id, version: 1 });
   }
-  async upload(context: TenantContext, raw: unknown): Promise<ReturnType<HostedSources['summary']>> {
+  async upload(context: TenantContext, raw: unknown, parse: (request: UploadRequest) => ReturnType<typeof parseUpload> | Promise<ReturnType<typeof parseUpload>> = parseUpload): Promise<ReturnType<HostedSources['summary']>> {
     await this.capability(context, 'build');
     const r = object(structuredClone(raw), ['config', 'base64', 'columns', 'expiresAt', 'policy']);
     if (typeof r.expiresAt !== 'string' || !Number.isFinite(Date.parse(r.expiresAt)) || Date.parse(r.expiresAt) <= this.clock()) sourceError('UPLOAD_EXPIRY_REQUIRED');
     if (typeof r.base64 !== 'string' || !r.base64 || r.base64.length > 12 * 1024 * 1024 || Buffer.from(r.base64, 'base64').toString('base64') !== r.base64) sourceError('INVALID_UPLOAD');
-    const parsed = parseUpload({ config: r.config, data: Buffer.from(r.base64, 'base64'), ...(r.columns === undefined ? {} : { columns: r.columns as UploadColumn[] }) });
+    const parsed = await parse({ config: r.config, data: Buffer.from(r.base64, 'base64'), ...(r.columns === undefined ? {} : { columns: r.columns as UploadColumn[] }) });
     const id = `upload_${randomUUID().replaceAll('-', '')}`, secretId = randomUUID();
     const body = sourceBody({ binding: { version: 3, connectorId: 'file', state: 'active', columns: parsed.columns, rowCount: parsed.rows.length, expiresAt: r.expiresAt }, secretId, policy: r.policy });
     await this.metadata.batch(context, [

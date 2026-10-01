@@ -76,7 +76,7 @@ test('H3 HTTP revoked verification after body intake prevents durable source wri
 test('H3 every data response rejects policy changes or expiry during the final verifier check', async t => {
   for (const change of ['policy', 'expiry']) for (const path of ['discovery', 'query', 'preview', 'output', 'ai', 'prep']) {
     const f = await sourceFixture(t), a = await f.login(), source = await f.sources.upload(a, upload(undefined, new Date(Date.now() + 60000).toISOString()));
-    const routes = new HostedDataRoutes(new HostedData(f.sources));
+    const routes = new HostedDataRoutes(new HostedData(f.sources, undefined, f.budgets));
     await routes.prep.save(a, 'private', { name: 'Private', pipeline: { version: 1, input: source.id, steps: [] }, expectedVersion: 0 });
     const url = { discovery: '/api/sources', query: `/api/sources/${source.id}/query`, preview: `/api/uploads/${source.id}`, output: `/api/sources/${source.id}/output`, ai: `/api/ai/sources/${source.id}/schema`, prep: '/api/datasets/private/rows' }[path];
     const body = path === 'query' ? { query: { dimensions: [], measures: [{ fieldId: 'total', columnName: 'amount', aggregation: 'SUM' }], filters: [] } } : {};
@@ -93,7 +93,7 @@ test('H3 every data response rejects policy changes or expiry during the final v
 });
 test('H3 cached prepared dependencies require graph admission and perform no source read', async t => {
   const f = await sourceFixture(t), a = await f.login(); let reads = 0;
-  const data = new HostedData(f.sources, async (_r, _c, _l, table) => { reads++; table.start(registration().columns); table.row(['east', 10, 'a']); });
+  const data = new HostedData(f.sources, async (_r, _c, _l, table) => { reads++; table.start(registration().columns); table.row(['east', 10, 'a']); }, f.budgets);
   const prep = new HostedPrep(data); await f.sources.create(a, 'source', registration());
   const pipeline = { version: 1, input: 'source', steps: [{ id: 'total', kind: 'aggregate', config: { groupBy: [], measures: [{ column: 'amount', name: 'total', aggregation: 'SUM' }] } }] };
   await prep.save(a, 'base', { name: 'Base', pipeline, expectedVersion: 0 });

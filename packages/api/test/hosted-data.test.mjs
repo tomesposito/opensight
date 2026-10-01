@@ -8,7 +8,7 @@ const query = { dimensions: [], measures: [{ fieldId: 'total', columnName: 'amou
 const pipe = input => ({ version: 1, input, steps: [] });
 
 test('H3 discovery, preview, output, query and AI use the same RLS/CLS on uploads and Blaze', async t => {
-  const f = await sourceFixture(t), a = await f.login(), data = new HostedData(f.sources), u = await f.sources.upload(a, upload(protectedPolicy));
+  const f = await sourceFixture(t), a = await f.login(), data = new HostedData(f.sources, undefined, f.budgets), u = await f.sources.upload(a, upload(protectedPolicy));
   for (const path of ['discovery', 'ai']) assert.deepEqual((await data.schema(a, u.id, path)).columns.map(c => c.name), ['region', 'amount']);
   assert.deepEqual((await data.discover(a))[0].columns.map(c => c.name), ['region', 'amount']);
   await data.refresh(a, u.id);
@@ -29,7 +29,7 @@ test('H3 discovery, preview, output, query and AI use the same RLS/CLS on upload
 });
 test('H3 cross-tenant, cross-owner, unresolved policy and forged contexts deny before connector/cache I/O', async t => {
   const f = await sourceFixture(t), a = await f.login(); let io = 0;
-  const data = new HostedData(f.sources, async () => { io++; throw new Error('must not open source'); });
+  const data = new HostedData(f.sources, async () => { io++; throw new Error('must not open source'); }, f.budgets);
   await f.sources.create(await f.login('two'), 'foreign', registration());
   await f.sources.create(await f.login('one', 'other'), 'other', registration());
   await f.sources.create(a, 'no-rules', { ...registration(), policy: { rowLevel: true, rowRules: [] } });
@@ -44,7 +44,7 @@ test('H3 cross-tenant, cross-owner, unresolved policy and forged contexts deny b
   assert.equal(io, 0);
 });
 test('H3 source rotation, retirement, expiry and policy changes invalidate cache admission', async t => {
-  const f = await sourceFixture(t), a = await f.login(), data = new HostedData(f.sources), u = await f.sources.upload(a, upload());
+  const f = await sourceFixture(t), a = await f.login(), data = new HostedData(f.sources, undefined, f.budgets), u = await f.sources.upload(a, upload());
   await data.refresh(a, u.id); await f.sources.bind(a, u.id, { expectedVersion: 1, policy: protectedPolicy });
   await assert.rejects(data.execute(a, u.id, 'query', { query, mode: 'BLAZE' }), { code: 'BLAZE_NOT_READY' });
   await data.refresh(a, u.id); assert.deepEqual((await data.execute(a, u.id, 'query', { query, mode: 'BLAZE' })).rows, [{ total: 40 }]);
@@ -57,7 +57,7 @@ test('H3 asynchronous rotation, policy revision and owner removal prevent result
   for (const change of ['rotate', 'policy', 'remove']) {
     const f = await sourceFixture(t), a = await f.login(); await f.sources.create(a, 'source', registration());
     let release, opened; const entered = new Promise(r => { opened = r; }), wait = new Promise(r => { release = r; });
-    const data = new HostedData(f.sources, async (_read, _connection, _limits, sink) => { opened(); await wait; sink.start([{ name: 'amount', type: 'INTEGER' }]); sink.row([999]); });
+    const data = new HostedData(f.sources, async (_read, _connection, _limits, sink) => { opened(); await wait; sink.start([{ name: 'amount', type: 'INTEGER' }]); sink.row([999]); }, f.budgets);
     const result = data.execute(a, 'source', 'output', { columns: ['amount'] }); await entered;
     if (change === 'rotate') await f.sources.rotate(a, 'source', { expectedVersion: 1, credentials: registration().credentials });
     else if (change === 'policy') await f.sources.bind(a, 'source', { expectedVersion: 1, policy: protectedPolicy });
@@ -67,7 +67,7 @@ test('H3 asynchronous rotation, policy revision and owner removal prevent result
 });
 test('H3 protected prep, foreign imports, joins, append and unused branches fail before source I/O', async t => {
   const f = await sourceFixture(t), a = await f.login(); let io = 0;
-  const data = new HostedData(f.sources, async () => { io++; }), prep = new HostedPrep(data);
+  const data = new HostedData(f.sources, async () => { io++; }, f.budgets), prep = new HostedPrep(data);
   await f.sources.create(a, 'local', registration());
   await f.sources.create(a, 'protected', { ...registration(), policy: protectedPolicy });
   await f.sources.create(await f.login('two'), 'foreign', registration());
@@ -85,7 +85,7 @@ test('H3 protected prep, foreign imports, joins, append and unused branches fail
   assert.equal(io, 0);
 });
 test('H3 durable prepared output graph, restart admission and cached protected-source refusal', async t => {
-  const f = await sourceFixture(t); let a = await f.login(), data = new HostedData(f.sources), prep = new HostedPrep(data);
+  const f = await sourceFixture(t); let a = await f.login(), data = new HostedData(f.sources, undefined, f.budgets), prep = new HostedPrep(data);
   const u = await f.sources.upload(a, upload());
   const pipeline = { version: 1, input: u.id, steps: [
     { id: 'east', kind: 'filter', config: { filters: [{ columnName: 'region', value: 'east' }] } },
@@ -95,7 +95,7 @@ test('H3 durable prepared output graph, restart admission and cached protected-s
   await prep.save(a, 'prepared', { name: 'Prepared', pipeline, expectedVersion: 0 });
   await prep.execute(a, 'prepared', 'refresh');
   assert.deepEqual((await prep.execute(a, 'prepared', 'rows')).rows, [{ sum: 40 }]);
-  await f.restart(); a = await f.login(); data = new HostedData(f.sources); prep = new HostedPrep(data);
+  await f.restart(); a = await f.login(); data = new HostedData(f.sources, undefined, f.budgets); prep = new HostedPrep(data);
   assert.deepEqual((await prep.get(a, 'prepared')).resource.opensightPrep, pipeline);
   await assert.rejects(prep.execute(a, 'prepared', 'rows'), { code: 'BLAZE_NOT_READY' });
   await assert.rejects(prep.get(await f.login('one', 'other'), 'prepared'), { code: 'RESOURCE_NOT_FOUND' });

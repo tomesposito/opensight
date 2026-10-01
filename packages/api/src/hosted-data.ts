@@ -1,10 +1,14 @@
-import { resolveSecurity, planSourceRead, planPreparedQuery, queryPrepared, streamSourcePostgres, streamSourceMemory,
+import { setImmediate as yieldTurn } from 'node:timers/promises';
+import { TenantBudgets, type WorkScope } from './budgets.js';
+import { HostedCache } from './hosted-cache.js';
+import { containedWork, wireTable, type TableResult, type QueryResult } from './contained-work.js';
+import { resolveSecurity, planSourceRead, planPreparedQuery, streamSourcePostgres,
   type SecurityContext, type RowPredicate, type SourceRead, type PrepSource, type PrepMemoryTable, type InteractiveQuery } from '@opensight/query-engine';
 import { HostedSources, type HostedSource } from './hosted-sources.js';
 import { boundColumns, sourceCredentials, sourceError } from './source-schema.js';
 import { type TenantContext, type Revisions } from './metadata.js';
 import { object } from './metadata-resources.js';
-import { BlazeStore, BlazeTable, BlazeError } from './blaze.js';
+import { BlazeTable } from './blaze.js';
 import { validateQuery } from './query.js';
 import { MetadataError } from './metadata-db.js';
 
@@ -15,12 +19,62 @@ export interface Admission {
 }
 /** Every hosted data path enters here, before payload/connector/cache I/O. */
 export class HostedData {
-  readonly blaze = new BlazeStore();
-  private readonly cacheRevisions = new Map<string, string>();
+  readonly cache?: HostedCache;
+  private readonly verifiers = new WeakMap<TenantContext, () => Promise<void>>();
+  private readonly signals = new WeakMap<TenantContext, AbortSignal>();
   private readonly admitted = new WeakMap<TenantContext, Set<Admission>>();
-  begin(context: TenantContext): void { this.admitted.set(context, new Set()); }
+  begin(context: TenantContext, signal?: AbortSignal, verify?: () => Promise<void>): void { if (verify) this.verifiers.set(context, verify); this.admitted.set(context, new Set()); if (signal) this.signals.set(context, signal); }
   async publication(context: TenantContext, revisions: Revisions): Promise<void> { await this.finish(context, [...this.admitted.get(context) ?? []], revisions); }
-  constructor(readonly sources: HostedSources, private readonly postgres = streamSourcePostgres) {}
+  constructor(readonly sources: HostedSources, private readonly postgres = streamSourcePostgres, readonly budgets?: TenantBudgets) { if (budgets) this.cache = new HostedCache(budgets); }
+  scope(context: TenantContext): WorkScope {
+    this.sources.metadata.assertContext(context);
+    if (!this.budgets) throw new MetadataError('BUDGET_MIGRATION_REQUIRED', 503);
+    return this.budgets.current(context);
+  }
+  limits(context: TenantContext) {
+    this.sources.metadata.assertContext(context);
+    const l = this.budgets?.limits(context.tenantId);
+    if (!l) throw new MetadataError('BUDGET_MIGRATION_REQUIRED', 503);
+    return { maxRows: l.sourceRows, cellChars: l.cellChars, datasetBytes: l.workingBytes, maxBytes: l.cacheBytes };
+  }
+  async work<T>(context: TenantContext, refresh: boolean, admissions: readonly Admission[], run: () => Promise<T>, revisions?: Revisions): Promise<T> {
+    if (!this.budgets) throw new MetadataError('BUDGET_MIGRATION_REQUIRED', 503);
+    return this.budgets.run(context, refresh, async () => { await this.verifiers.get(context)?.(); await this.finish(context, admissions, revisions); }, async () => {
+      const result = await run(); const scope = this.scope(context);
+      if (Buffer.byteLength(JSON.stringify(result)) > scope.limits.resultBytes) throw new MetadataError('TENANT_BUDGET_EXCEEDED', 429);
+      scope.check(); return result;
+    }, this.signals.get(context));
+  }
+  sink(context: TenantContext, table: BlazeTable, source = false) {
+    const scope = this.scope(context);
+    return {
+      start: (columns: Parameters<BlazeTable['start']>[0]) => { scope.check(); const bytes = table.bytes; table.start(columns); scope.memory(table.bytes - bytes + 256); },
+      row: (values: Parameters<BlazeTable['row']>[0]) => { scope.check(); if (source) scope.rows(1); const bytes = table.bytes; table.row(values); scope.memory(table.bytes - bytes); },
+      oversized: (): never => table.oversized(),
+    };
+  }
+  async computeQuery(context: TenantContext, table: BlazeTable, query: InteractiveQuery) {
+    const scope = this.scope(context);
+    const source: PrepSource = { id: 'result', connectorId: 'file', table: 'result', columns: table.columns, security: 'unrestricted' };
+    return containedWork<QueryResult>(scope, { kind: 'query', table: await wireTable(scope, table, source), query }, this.limits(context));
+  }
+  async upload(context: TenantContext, input: unknown) {
+    await this.sources.capability(context, 'build');
+    if (!this.budgets) throw new MetadataError('BUDGET_MIGRATION_REQUIRED', 503);
+    // Upload commits invalidate its own revision-bound session; verify before the atomic write.
+    let committed = false;
+    return this.budgets.run(context, false, async () => {
+      await this.sources.capability(context, 'build'); if (!committed) await this.verifiers.get(context)?.();
+    }, async () => {
+      const result = await this.sources.upload(context, input, async request => {
+        const scope = this.scope(context); scope.memory(request.data.byteLength);
+        const parsed = await containedWork<TableResult>(scope, { kind: 'upload', request }, this.limits(context));
+        scope.rows(parsed.rows.length); scope.memory(Buffer.byteLength(JSON.stringify(parsed)));
+        await this.verifiers.get(context)?.(); scope.check(); return parsed;
+      });
+      committed = true; return result;
+    }, this.signals.get(context));
+  }
   async admit(context: TenantContext, id: string, path: DataPath): Promise<Admission> {
     const revisions = await this.sources.metadata.revisions(context);
     await this.sources.capability(context, path === 'ai' ? 'ai' : path === 'prep' ? 'build' : 'view');
@@ -38,7 +92,7 @@ export class HostedData {
     const physical: PrepSource = { id, connectorId: b.connectorId, columns: b.columns, table: b.table ?? 'source_rows', ...(b.schema ? { schema: b.schema } : {}), security: protectedData ? 'protected' : 'unrestricted' };
     const admission = { source, security, physical, ...(tenantPredicate ? { tenantPredicate } : {}), deniedColumns: resolved.deniedColumns, revisions };
     // Validate the immutable predicate even on schema/discovery paths.
-    planSourceRead(this.read(admission), this.blaze.limits, 'postgres');
+    planSourceRead(this.read(admission), this.limits(context), 'postgres');
     await this.finish(context, [admission]);
     this.admitted.get(context)?.add(admission);
     return admission;
@@ -93,15 +147,16 @@ export class HostedData {
     if (a.source.binding.connectorId === 'postgresql') {
       const raw: SourceRead = { source: a.physical, columns: a.physical.columns.map(c => c.name), security: { ...a.security,
         policy: { namespaceId: context.namespaceId, dataSetArn: a.security.policy.dataSetArn, rowLevel: false, rowRules: [] } }, ...(a.tenantPredicate ? { tenantPredicate: a.tenantPredicate } : {}) };
-      await this.postgres(raw, await this.connection(context, a), this.blaze.limits, table);
+      await this.postgres(raw, await this.connection(context, a), this.limits(context), this.sink(context, table, true), this.scope(context));
     } else {
       const payload = object(await this.sources.payload(context, a.source), ['rows']);
       if (!Array.isArray(payload.rows) || payload.rows.length !== a.source.binding.rowCount) sourceError('SOURCE_PAYLOAD_INVALID', 503);
       await this.finish(context, [a]);
-      table.start(a.source.binding.columns);
-      for (const row of payload.rows) {
+      const sink = this.sink(context, table, true); sink.start(a.source.binding.columns);
+      for (const [index, row] of payload.rows.entries()) {
+        if (index % 256 === 0) { await yieldTurn(); this.scope(context).check(); }
         if (!Array.isArray(row) || row.length !== table.columns.length || row.some(v => v !== null && !['string', 'number', 'boolean'].includes(typeof v))) sourceError('SOURCE_PAYLOAD_INVALID', 503);
-        table.row(row);
+        sink.row(row);
       }
     }
     await this.finish(context, [a]);
@@ -109,26 +164,32 @@ export class HostedData {
   async refresh(context: TenantContext, id: string) {
     await this.sources.capability(context, 'build');
     const a = await this.admit(context, id, 'query'), key = this.key(context, id);
-    this.blaze.configure(key, { mode: 'BLAZE', intervalMinutes: null }); this.cacheRevisions.delete(key);
-    await this.blaze.refresh(key, table => this.raw(context, a, table));
-    await this.finish(context, [a]); this.cacheRevisions.set(key, this.stamp(a));
-    // Raw counts, sizes and provenance never leave this boundary.
-    return { mode: 'BLAZE', state: 'ready' };
+    return this.work(context, true, [a], async () => {
+      const scope = this.scope(context);
+      await this.cache!.refresh(scope, key, this.stamp(a), async () => {
+        const table = new BlazeTable(this.limits(context)); await this.raw(context, a, table);
+        await this.finish(context, [a]); scope.check(); return table;
+      });
+      return { mode: 'BLAZE', state: 'ready' };
+    });
   }
   async table(context: TenantContext, a: Admission, columns: readonly string[], mode: 'DIRECT_QUERY' | 'BLAZE' = 'DIRECT_QUERY'): Promise<BlazeTable> {
+    const scope = this.scope(context);
     const read = this.read(a, [...columns]);
-    planSourceRead(read, this.blaze.limits, 'postgres'); // CLS and schema before secret or cache access.
+    planSourceRead(read, this.limits(context), 'postgres'); // CLS and schema before secret or cache access.
     await this.finish(context, [a]);
-    const result = new BlazeTable(this.blaze.limits);
-    if (mode === 'BLAZE') {
-      const key = this.key(context, a.source.id);
-      if (this.cacheRevisions.get(key) !== this.stamp(a)) { this.blaze.invalidate(key); throw new BlazeError('BLAZE_NOT_READY', 'Source or policy changed; refresh required'); }
-      const { table } = this.blaze.read(key);
-      await streamSourceMemory(read, this.memory(a, table), this.blaze.limits, result);
-    } else if (a.source.binding.connectorId === 'postgresql') await this.postgres(read, await this.connection(context, a), this.blaze.limits, result);
-    else {
-      const raw = new BlazeTable(this.blaze.limits); await this.raw(context, a, raw);
-      await streamSourceMemory(read, this.memory(a, raw), this.blaze.limits, result);
+    const result = new BlazeTable(this.limits(context));
+    if (mode === 'DIRECT_QUERY' && a.source.binding.connectorId === 'postgresql') {
+      await this.postgres(read, await this.connection(context, a), this.limits(context), this.sink(context, result, true), scope);
+    } else {
+      let table: BlazeTable;
+      if (mode === 'BLAZE') {
+        table = this.cache!.read(scope, this.key(context, a.source.id), this.stamp(a)); scope.rows(table.rowCount);
+      } else { table = new BlazeTable(this.limits(context)); await this.raw(context, a, table); }
+      const computed = await containedWork<TableResult>(scope, { kind: 'source', read,
+        table: await wireTable(scope, table, this.memory(a, table).source) }, this.limits(context));
+      const sink = this.sink(context, result); sink.start(computed.columns);
+      for (const [i, row] of computed.rows.entries()) { if (i % 256 === 0) await yieldTurn(); sink.row(row); }
     }
     await this.finish(context, [a]); return result;
   }
@@ -141,10 +202,13 @@ export class HostedData {
     if (path === 'query') { query = validateQuery(raw.query); planPreparedQuery(a.physical.columns, query, a.security); }
     const columns = raw.columns === undefined ? this.read(a).columns : raw.columns;
     if (!Array.isArray(columns) || columns.some(c => typeof c !== 'string')) sourceError('SOURCE_COLUMNS_INVALID');
-    const limit = raw.limit ?? (path === 'preview' ? 100 : this.blaze.limits.maxRows);
-    if (!Number.isSafeInteger(limit) || Number(limit) < 1 || Number(limit) > this.blaze.limits.maxRows) sourceError('SOURCE_LIMIT_INVALID');
-    const table = await this.table(context, a, columns as string[], mode);
-    const result = query ? queryPrepared(table.columns, table.rowCount, table.value, query) : { columns: table.columns, rows: table.rows(Number(limit)), rowCount: table.rowCount, truncated: table.rowCount > Number(limit) };
-    await this.finish(context, [a]); return result;
+    const limit = raw.limit ?? (path === 'preview' ? Math.min(100, this.limits(context).maxRows) : this.limits(context).maxRows);
+    if (!Number.isSafeInteger(limit) || Number(limit) < 1 || Number(limit) > this.limits(context).maxRows) sourceError('SOURCE_LIMIT_INVALID');
+    planSourceRead(this.read(a, columns as string[]), this.limits(context), 'postgres');
+    return this.work(context, false, [a], async () => {
+      const table = await this.table(context, a, columns as string[], mode);
+      const result = query ? await this.computeQuery(context, table, query) : { columns: table.columns, rows: table.rows(Number(limit)), rowCount: table.rowCount, truncated: table.rowCount > Number(limit) };
+      await this.finish(context, [a]); return result;
+    });
   }
 }

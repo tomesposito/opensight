@@ -1,11 +1,13 @@
+import { setImmediate as yieldTurn } from 'node:timers/promises';
+import { containedWork, wireTable, type WireTable, type TableResult } from './contained-work.js';
 import { parseBundleResource, type BundleDataSet } from '@opensight/bundle-parser';
 import { validatePrepPipeline, type PrepPipeline, type PrepInput } from '@opensight/bundle-parser/prep';
-import { compilePrep, streamPrepDuckDb, withPrepMemory, queryPrepared, planPreparedQuery, type PrepDataset, type PrepMemoryTable } from '@opensight/query-engine';
+import { compilePrep, planPreparedQuery, type PrepDataset } from '@opensight/query-engine';
 import { HostedData, type Admission } from './hosted-data.js';
 import { object, identifier } from './metadata-resources.js';
 import { type TenantContext, type Revisions } from './metadata.js';
 import { sourceError } from './source-schema.js';
-import { BlazeStore, BlazeTable, BlazeError, executionSettings, directSettings, type ExecutionSettings } from './blaze.js';
+import { BlazeTable, executionSettings, directSettings, type ExecutionSettings } from './blaze.js';
 import { materializationReason } from './blaze-policy.js';
 import { validateQuery } from './query.js';
 
@@ -13,8 +15,6 @@ const references = (p: PrepPipeline): PrepInput[] => [p.input, ...p.steps.flatMa
 interface Graph { pipeline: PrepPipeline; datasets: PrepDataset[]; leaves: Admission[]; revisions: Revisions; reason: string | null; modes: Map<string, { version: number; execution: ExecutionSettings }> }
 /** Owner-only durable recipes. The complete graph is checked even when reading a cached output. */
 export class HostedPrep {
-  readonly blaze = new BlazeStore();
-  private readonly cacheRevisions = new Map<string, string>();
   constructor(readonly data: HostedData) {}
   private key(context: TenantContext, id: string) { return { kind: 'prepared-dataset' as const, id: identifier(id), ownerId: context.userId }; }
   private cacheKey(context: TenantContext, id: string) { return JSON.stringify([context.tenantId, context.namespaceId, context.userId, 'prep', id]); }
@@ -58,8 +58,9 @@ export class HostedPrep {
     return compilePrep(g.pipeline, this.sources(g), { datasets: g.datasets, datasetId: id, ...(through === undefined ? {} : { through }) });
   }
   private async load(context: TenantContext, id: string, g: Graph, output: BlazeTable, through?: string | null) {
-    const tables: PrepMemoryTable[] = [], sources = this.sources(g), datasets = structuredClone(g.datasets), needed = new Set<string>(), visited = new Set<string>();
-    const visit = (p: PrepPipeline): void => {
+    const scope = this.data.scope(context);
+    const tables: WireTable[] = [], sources = this.sources(g), datasets = structuredClone(g.datasets), needed = new Set<string>(), visited = new Set<string>();
+    const visit = async (p: PrepPipeline): Promise<void> => {
       for (const ref of references(p)) {
         if (typeof ref === 'string') { needed.add(ref); continue; }
         if (visited.has(ref.dataset)) continue;
@@ -67,21 +68,22 @@ export class HostedPrep {
         const d = datasets.find(d => d.id === ref.dataset)!, mode = g.modes.get(ref.dataset)!;
         if (mode.execution.mode === 'BLAZE') {
           const key = this.cacheKey(context, ref.dataset), stamp = JSON.stringify([mode.version, g.revisions]);
-          if (this.cacheRevisions.get(key) !== stamp) { this.blaze.invalidate(key); throw new BlazeError('BLAZE_NOT_READY', 'Dependency changed; refresh required'); }
-          const table = this.blaze.read(key).table;
+          const table = this.data.cache!.read(scope, key, stamp); scope.rows(table.rowCount);
           d.materialized = { id: `cached_${tables.length}`, table: `cached_${tables.length}`, connectorId: 'file', columns: table.columns, security: 'unrestricted' };
-          tables.push({ source: d.materialized, rowCount: table.rowCount, value: table.value });
-        } else visit(d.pipeline);
+          tables.push(await wireTable(scope, table, d.materialized));
+        } else await visit(d.pipeline);
       }
     };
     // Check every cache dependency before opening any leaf. Full graph policy checks already ran.
-    visit(g.pipeline);
+    await visit(g.pipeline);
     for (const [i, a] of g.leaves.entries()) if (needed.has(a.source.id)) {
       const table = await this.data.table(context, a, a.physical.columns.map(c => c.name));
-      tables.push({ source: sources[i]!, rowCount: table.rowCount, value: table.value });
+      tables.push(await wireTable(scope, table, sources[i]!));
     }
     await this.data.finish(context, g.leaves, g.revisions);
-    await withPrepMemory(tables, c => streamPrepDuckDb(c, g.pipeline, sources, { datasets, datasetId: id, ...(through === undefined ? {} : { through }) }, this.blaze.limits, output));
+    const result = await containedWork<TableResult>(scope, { kind: 'prep', pipeline: g.pipeline, sources, datasets, id, tables, ...(through === undefined ? {} : { through }) }, this.data.limits(context));
+    const sink = this.data.sink(context, output); sink.start(result.columns);
+    for (const [i, row] of result.rows.entries()) { if (i % 256 === 0) await yieldTurn(); sink.row(row); }
     await this.data.finish(context, g.leaves, g.revisions);
   }
   async save(context: TenantContext, id: string, input: unknown) {
@@ -91,7 +93,7 @@ export class HostedPrep {
     const resource: BundleDataSet = { resourceType: 'dataset', dataSetId: identifier(id), name: raw.name, physicalTableMap: {}, importMode: 'DIRECT_QUERY', opensightPrep: pipeline };
     const execution: ExecutionSettings = graph.reason ? { mode: 'BLAZE', intervalMinutes: null } : directSettings;
     await this.data.sources.metadata.batch(context, [{ key: this.key(context, id), body: { resource, execution }, expectedVersion: raw.expectedVersion as number }], graph.revisions);
-    this.blaze.invalidate(this.cacheKey(context, id)); return { resource, version: Number(raw.expectedVersion) + 1, execution };
+    this.data.cache?.invalidate(this.cacheKey(context, id)); return { resource, version: Number(raw.expectedVersion) + 1, execution };
   }
   async import(context: TenantContext, input: unknown) {
     const raw = object(structuredClone(input), ['resource', 'expectedVersion']), resource = parseBundleResource(raw.resource);
@@ -110,7 +112,7 @@ export class HostedPrep {
     await this.data.sources.metadata.assertRevisions(context, rev); return result;
   }
   async remove(context: TenantContext, id: string, expectedVersion: number) {
-    await this.data.sources.metadata.remove(context, this.key(context, id), expectedVersion); this.blaze.remove(this.cacheKey(context, id));
+    await this.data.sources.metadata.remove(context, this.key(context, id), expectedVersion); this.data.cache?.invalidate(this.cacheKey(context, id));
   }
   async preview(context: TenantContext, id: string, input: unknown) {
     const raw = object(structuredClone(input), ['pipeline', 'through', 'limit']);
@@ -118,10 +120,12 @@ export class HostedPrep {
     const through = raw.through === undefined || raw.through === null ? raw.through : identifier(raw.through);
     const limit = raw.limit ?? 100;
     if (!Number.isSafeInteger(limit) || Number(limit) < 1 || Number(limit) > 500) sourceError('PREP_LIMIT_EXCEEDED');
-    const plan = this.plan(graph, id, through), table = new BlazeTable(this.blaze.limits);
-    await this.load(context, id, graph, table, through);
-    await this.data.finish(context, graph.leaves, graph.revisions);
-    return { columns: table.columns, rows: table.rows(Number(limit)), truncated: table.rowCount > Number(limit), stages: plan.stages, through: plan.through };
+    const plan = this.plan(graph, id, through), table = new BlazeTable(this.data.limits(context));
+    return this.data.work(context, false, graph.leaves, async () => {
+      await this.load(context, id, graph, table, through);
+      await this.data.finish(context, graph.leaves, graph.revisions);
+      return { columns: table.columns, rows: table.rows(Number(limit)), truncated: table.rowCount > Number(limit), stages: plan.stages, through: plan.through };
+    }, graph.revisions);
   }
   async configure(context: TenantContext, id: string, input: unknown) {
     const raw = object(structuredClone(input), ['expectedVersion', 'mode', 'intervalMinutes']), settings = executionSettings({ mode: raw.mode, intervalMinutes: raw.intervalMinutes });
@@ -129,7 +133,7 @@ export class HostedPrep {
     const stored = await this.stored(context, id), graph = await this.graph(context, id, stored.resource.opensightPrep!);
     if (settings.mode === 'DIRECT_QUERY' && graph.reason) sourceError('BLAZE_MATERIALIZATION_REQUIRED', 409);
     await this.data.sources.metadata.batch(context, [{ key: this.key(context, id), body: { resource: stored.resource, execution: settings }, expectedVersion: raw.expectedVersion as number }], graph.revisions);
-    this.blaze.invalidate(this.cacheKey(context, id)); return settings;
+    this.data.cache?.invalidate(this.cacheKey(context, id)); return settings;
   }
   async execute(context: TenantContext, id: string, path: 'rows' | 'query' | 'refresh', input: unknown = {}) {
     const stored = await this.stored(context, id), graph = await this.graph(context, id, stored.resource.opensightPrep!), key = this.cacheKey(context, id);
@@ -138,22 +142,25 @@ export class HostedPrep {
     const columns = this.plan(graph, id).columns;
     if (query) planPreparedQuery(columns, query); // Query semantics are checked before loading data.
     const stamp = JSON.stringify([stored.version, graph.revisions]);
-    let table: BlazeTable;
-    if (path === 'refresh') {
-      if (stored.execution.mode !== 'BLAZE') sourceError('BLAZE_MODE_REQUIRED', 409);
-      this.blaze.configure(key, stored.execution); this.cacheRevisions.delete(key);
-      await this.blaze.refresh(key, output => this.load(context, id, graph, output));
-      await this.data.finish(context, graph.leaves, graph.revisions); this.cacheRevisions.set(key, stamp);
-      return { mode: 'BLAZE', state: 'ready' };
-    }
-    if (stored.execution.mode === 'BLAZE') {
-      if (this.cacheRevisions.get(key) !== stamp) { this.blaze.invalidate(key); throw new BlazeError('BLAZE_NOT_READY', 'Dataset or source changed; refresh required'); }
-      table = this.blaze.read(key).table;
-    } else {
-      if (graph.reason) sourceError('BLAZE_MATERIALIZATION_REQUIRED', 409);
-      table = new BlazeTable(this.blaze.limits); await this.load(context, id, graph, table);
-    }
-    const result = query ? queryPrepared(table.columns, table.rowCount, table.value, query) : { columns: table.columns, rows: table.rows(100), rowCount: table.rowCount, truncated: table.rowCount > 100 };
-    await this.data.finish(context, graph.leaves, graph.revisions); return result;
+    return this.data.work(context, path === 'refresh', graph.leaves, async () => {
+      const scope = this.data.scope(context);
+      let table: BlazeTable;
+      if (path === 'refresh') {
+        if (stored.execution.mode !== 'BLAZE') sourceError('BLAZE_MODE_REQUIRED', 409);
+        await this.data.cache!.refresh(scope, key, stamp, async () => {
+          const output = new BlazeTable(this.data.limits(context)); await this.load(context, id, graph, output);
+          await this.data.finish(context, graph.leaves, graph.revisions); scope.check(); return output;
+        });
+        return { mode: 'BLAZE', state: 'ready' };
+      }
+      if (stored.execution.mode === 'BLAZE') {
+        table = this.data.cache!.read(scope, key, stamp); scope.rows(table.rowCount);
+      } else {
+        if (graph.reason) sourceError('BLAZE_MATERIALIZATION_REQUIRED', 409);
+        table = new BlazeTable(this.data.limits(context)); await this.load(context, id, graph, table);
+      }
+      const result = query ? await this.data.computeQuery(context, table, query) : { columns: table.columns, rows: table.rows(100), rowCount: table.rowCount, truncated: table.rowCount > 100 };
+      await this.data.finish(context, graph.leaves, graph.revisions); return result;
+    }, graph.revisions);
   }
 }

@@ -1,7 +1,7 @@
 import type { PrepColumn } from '@opensight/bundle-parser/prep';
 import { prepColumns, type PrepSource } from './prep.js';
 import { resolveSecurity, rowSecuritySql, validateRowRule, type SecurityContext, type RowPredicate } from './security.js';
-import { withPrepMemory, streamDuckDbPlan, streamPostgresPlan, type PrepMemoryTable, type PrepReadLimits, type PrepSink } from './prep-stream.js';
+import { withPrepMemory, streamDuckDbPlan, streamPostgresPlan, type PrepMemoryTable, type PrepReadLimits, type PrepSink, type ExecutionControl } from './prep-stream.js';
 import { fail, quoteIdentifier as q } from './validation.js';
 import type { BoundColumn } from './types.js';
 export interface SourceRead {
@@ -37,12 +37,12 @@ export function planSourceRead(read: SourceRead, limits: PrepReadLimits, dialect
   const relation = (read.source.schema ? `${q(read.source.schema)}.` : '') + q(read.source.table);
   return { columns: selected, parameters, sql: `SELECT ${projection.join(', ')} FROM ${relation}${predicates.length ? ` WHERE ${predicates.map(p => `(${p})`).join(' AND ')}` : ''} LIMIT ${limits.maxRows + 1}` };
 }
-export async function streamSourcePostgres(read: SourceRead, connection: SourceConnection, limits: PrepReadLimits, sink: PrepSink): Promise<void> {
+export async function streamSourcePostgres(read: SourceRead, connection: SourceConnection, limits: PrepReadLimits, sink: PrepSink, control?: ExecutionControl): Promise<void> {
   const plan = planSourceRead(read, limits, 'postgres'); // Reject every invalid reference before connecting.
-  return streamPostgresPlan(plan, connection, limits, sink);
+  return streamPostgresPlan(plan, connection, limits, sink, control);
 }
-export async function streamSourceMemory(read: SourceRead, table: PrepMemoryTable, limits: PrepReadLimits, sink: PrepSink): Promise<void> {
+export async function streamSourceMemory(read: SourceRead, table: PrepMemoryTable, limits: PrepReadLimits, sink: PrepSink, control?: ExecutionControl): Promise<void> {
   const memory = { ...read, source: { ...read.source, table: table.source.table, schema: undefined } };
   const plan = planSourceRead(memory, limits, 'duckdb');
-  return withPrepMemory([table], c => streamDuckDbPlan(c, plan, limits, sink));
+  return withPrepMemory([table], c => streamDuckDbPlan(c, plan, limits, sink), control);
 }

@@ -19,7 +19,7 @@ test('H3 live PostgreSQL versus cached SQL: immutable tenant boundary, RLS OR/nu
   await pool.query(`CREATE TABLE "${name}" (tenant TEXT, region TEXT, amount BIGINT, private TEXT, day TIMESTAMP)`);
   await pool.query(`INSERT INTO "${name}" VALUES ('tenant-one','east',10,'a','2026-01-01'),('tenant-one','west',20,'b','2026-01-02'),('tenant-one',NULL,30,'c',NULL),('tenant-two','east',999,'other','2026-01-01')`);
   const url = new URL(process.env.DATABASE_URL), endpoint = { id: 'reference', host: url.hostname, port: Number(url.port || 5432), database: url.pathname.slice(1), tls: false, tenantColumn: 'tenant' };
-  const f = await sourceFixture(t, { endpoints: [endpoint] }), a = await f.login(), data = new HostedData(f.sources);
+  const f = await sourceFixture(t, { endpoints: [endpoint] }), a = await f.login(), data = new HostedData(f.sources, undefined, f.budgets);
   const credentials = { username: decodeURIComponent(url.username), password: decodeURIComponent(url.password) || randomBytes(12).toString('hex') };
   const create = p => ({ connectorId: 'postgresql', endpointId: 'reference', schema: 'public', table: name, columns, credentials, policy: p });
   const predicates = [
