@@ -7,22 +7,38 @@ configure authentication or issue sessions.
 
 ## Run locally
 
-Use Node 24+ and npm. From the repository root:
+Follow the README's [Run it](../README.md#run-it) path. Use Node 24+ and npm,
+free ports 3000 and 5173, and the default local configuration without hosted
+environment settings. No external database is needed. In terminal 1, from the
+repository root:
 
-```sh
+```bash
 npm ci
-npm run build
+npm run build --workspace @opensight/api
 npm start --workspace @opensight/api
 ```
 
-In a second terminal, run `npm run dev --workspace @opensight/web`, then open
-`http://127.0.0.1:5173`. The Vite proxy forwards browser API requests to port 3000.
+The build prepares the API and its workspace dependencies; `npm start` alone
+does not build. Wait for `OpenSight API listening on http://127.0.0.1:3000`.
+In terminal 2, also from the repository root:
+
+```bash
+npm run dev --workspace @opensight/web
+```
+
+Open [http://127.0.0.1:5173](http://127.0.0.1:5173) and keep both terminals running.
+Stop each with Ctrl+C when finished. The Vite proxy forwards browser API requests to port 3000.
 The API's logical session route is `/api/session`; the default web client requests
 `/api/api/session` and the dev proxy strips the first `/api` prefix.
 
 The default CLI advertises an explicit local-data capability. The web app opens
-a **Local workspace**, where files can be uploaded, prepared and charted without
-a hosted session. Uploads expire after 24 hours or restart. `/api/session` still
+a **Local workspace**, where **Home** displays the pinned synthetic sales sample
+(fixed East-region filter, no live query). Open **Data → Data sources** to upload
+a CSV, select **Prepare this upload**, then **Save pipeline → Build a chart**.
+In Author, **Add visual**, assign fields, and **Save draft**; reopen through
+**Analyses → My analyses**. [Draft definitions](local-drafts.md) stay in this
+browser and origin, without uploaded rows, sync or publication. This local path
+needs no hosted session. Uploads expire after 24 hours or restart. `/api/session` still
 returns `503 SECURITY_NOT_CONFIGURED`; local capability discovery is separate.
 
 A library API without either local-data opt-in or authentication instead shows
@@ -46,8 +62,8 @@ to a server.
 A persistent **Fixture demo · Public samples only · No hosted session** banner
 includes **Return to setup**. Returning discards the mounted demo view and checks
 authentication again. Reloading also returns to the normal session check; the
-choice is not stored in a URL, cookie or local storage. Locally saved drafts are
-subject to the demo's existing persistence behavior.
+choice is not stored in a URL, cookie or local storage. [Locally saved drafts](local-drafts.md)
+remain device-local, in a collection separate from the local API workspace.
 
 There is **no development sign-in endpoint or authentication bypass**, and no new
 dev-sign-in environment variable. Local file access is a separate, explicitly

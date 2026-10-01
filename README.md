@@ -13,6 +13,58 @@ no AWS required.
 *Above: the offline demo — a dashboard, the O natural-language bar answering
 "revenue by region", the data preparation canvas, and the connector gallery.*
 
+## Run it
+
+Requires **Node 24+ and npm**, a local checkout, and free ports **3000** (API)
+and **5173** (web). Run both terminals from the repository root, using the default
+local configuration (no hosted environment settings or external database needed).
+
+**Terminal 1 — install, build, and start the local API:**
+
+```bash
+npm ci
+npm run build --workspace @opensight/api
+npm start --workspace @opensight/api
+```
+
+Wait for `OpenSight API listening on http://127.0.0.1:3000` and leave it running.
+The build is required on a fresh checkout; `npm start` does not build the API.
+
+**Terminal 2 — start the web app:**
+
+```bash
+npm run dev --workspace @opensight/web
+```
+
+Open **[http://127.0.0.1:5173](http://127.0.0.1:5173)**. Leave both terminals
+running; stop each with Ctrl+C when finished.
+
+On first load, the app checks the API and opens **Local workspace** without
+sign-in. **Home** shows a sales dashboard with pinned synthetic sample results
+and a fixed East-region filter; it does not query your uploaded data. To build
+with your own CSV:
+
+1. Open **Data → Data sources → Upload a file**, choose your CSV (and delimiter
+   if needed), then select **Upload to staging**.
+2. Select **Prepare this upload** to open **Data preparation**. Review the
+   columns and preview rows, make any transformations, then **Save pipeline**.
+3. Select **Build a chart**, then **Add visual** in Author and assign fields.
+4. Select **Save draft**. Reopen it through **Analyses → My analyses** in the
+   same browser and origin. Draft definitions stay on this device; they are
+   not synced or published and do not preserve uploaded rows.
+
+Uploads stay in local DuckDB memory, are limited to **8 MiB**, and expire after
+**24 hours or an API restart**. See [local data](docs/local-data.md) for the
+workflow and limits, and [local drafts](docs/local-drafts.md) for source recovery.
+If the API is unavailable, the first-run screen offers recovery guidance; an API
+without local-data support or authentication instead offers setup and explicit
+**Explore sample data**. See the [first-run guide](docs/first-run.md).
+
+The **static demo** is a separate, no-backend preview with public samples:
+it cannot upload files or run live queries and is not a deployed server. The
+[first-run guide](docs/first-run.md#local-demo-and-development-sign-in) explains
+how to build and open it.
+
 ## Features
 
 ### 📊 Dashboards and analyses
@@ -88,9 +140,9 @@ v1 behavior. See [embedding configuration](docs/embedding-config.md).
 
 ![Offline embed appearance fixture showing four states with synthetic Atlas branding](docs/images/embed-preview.png)
 
-## Quick start
+## Contributor quickstart
 
-Requires Node 24+ and npm. From the repository root:
+For development and verification, use Node 24+ and npm. From the repository root:
 
 ```bash
 npm ci
@@ -98,14 +150,9 @@ npm run build
 npm test
 ```
 
-Start the local API with `npm start --workspace @opensight/api` and, in a second
-terminal, run `npm run dev --workspace @opensight/web`. Open
-`http://127.0.0.1:5173`. The default **Local workspace** supports file upload →
-data preparation → live charts without hosted authentication. Uploads stay in
-local DuckDB memory, are limited to 8 MiB, and expire after 24 hours or restart.
-See [local data](docs/local-data.md) for the workflow and limits, and the
-[first-run guide](docs/first-run.md) for hosted setup and the separate static demo.
-An API without local-data support or authentication shows the setup screen below.
+To use the app, follow [Run it](#run-it) above. An API without local-data support
+or authentication shows this first-run setup screen; it is not the default local
+workspace:
 
 ![OpenSight first run with authentication setup and a public sample demo](docs/images/first-run.png)
 
