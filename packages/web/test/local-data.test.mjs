@@ -52,7 +52,8 @@ test('local file UI discloses its cap and expiry while the static demo stays dis
   const html = renderToStaticMarkup(createElement(DataSources, { local: true, client: { uploadFile() {}, validateConnector() {} } }));
   assert.match(html, /Local form limit: 8 MiB/); assert.match(html, /expire after 24 hours or restart/); assert.doesNotMatch(html, /type="file"[^>]*disabled/);
   const demo = renderToStaticMarkup(createElement(DataSources));
-  assert.match(demo, /File uploads need a local or hosted API/); assert.match(demo, /type="file"[^>]*disabled/);
+  assert.match(demo, /Needs local or hosted API/); assert.match(demo, /Uploads are unavailable in the static demo/);
+  assert.match(demo, /type="file"[^>]*disabled/);
   assert.equal(allowed({ mode: 'local' }, 'build'), true);
   for (const capability of ['ai', 'admin']) assert.equal(allowed({ mode: 'local' }, capability), false);
 });

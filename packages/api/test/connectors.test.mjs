@@ -23,7 +23,10 @@ const upload = { config: { format: 'csv' }, base64: Buffer.from('region,amount\n
 test('connector API lists honest states and validates configs without making connections', async t => {
   const call = await api(t);
   const list = await call('/api/connectors'); assert.equal(list.status, 200); assert.equal(list.body.length, 23);
-  assert.equal(list.body.find(c => c.id === 'mysql').availability.state, 'not_configured');
+  assert.equal(list.body.find(c => c.id === 'mysql').availability.state, 'not_implemented');
+  const mysql = await call('/api/connectors/mysql/connect', 'POST', { config: { hostEnv: 'DB_HOST', portEnv: 'DB_PORT', databaseEnv: 'DB_NAME', userEnv: 'DB_USER', passwordEnv: 'DB_PASSWORD' } });
+  assert.equal(mysql.status, 200); assert.deepEqual(mysql.body, { state: 'not_implemented', message: 'Not yet implemented' });
+  assert.match(list.body.find(c => c.id === 'postgresql').availability.message, /Needs an operator-configured connection/);
   assert.equal((await call('/api/connectors/github/connect', 'POST', { config: { endpointEnv: 'TEST_ENDPOINT', tokenEnv: 'TEST_TOKEN' } })).body.state, 'not_configured');
   assert.equal((await call('/api/connectors/github/connect', 'POST', { config: { endpointEnv: 'https://private.invalid', tokenEnv: 'secret' } })).body.errorCode, 'INVALID_CONNECTOR_CONFIG');
   assert.equal((await call('/api/connectors/missing/connect', 'POST', { config: {} })).body.errorCode, 'UNKNOWN_CONNECTOR');

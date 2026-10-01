@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { performance, monitorEventLoopDelay } from 'node:perf_hooks';
 import { setTimeout as delay } from 'node:timers/promises';
-import { TenantBudgets } from '../dist/budgets.js';
+import { TenantBudgets, WorkScope } from '../dist/budgets.js';
 import { HostedData } from '../dist/hosted-data.js';
 import { HostedPrep } from '../dist/hosted-prep.js';
 import { sourceFixture, upload, registration } from './source-helpers.mjs';
@@ -45,15 +45,27 @@ test('H4 real worker cancellation covers cached/direct source reads, prepared ou
     () => prep.preview(a, 'prepared', {}), () => prep.execute(a, 'prepared', 'query', query),
     () => prep.execute(a, 'prepared', 'refresh'), () => data.upload(a, upload()),
   ];
+  // Cancel on the actual worker-start event. Polling its counter every 2 ms can
+  // miss a small job that finishes between the event and the next timer tick.
+  const workerStarted = WorkScope.prototype.workerStarted;
+  let cancelWorker;
+  t.mock.method(WorkScope.prototype, 'workerStarted', function () {
+    workerStarted.call(this); cancelWorker?.();
+  });
   let maxCancellationMs = 0;
   for (const action of actions) {
     const before = data.budgets.snapshot(a.tenantId).workerExecutions;
     const controller = new AbortController(); data.begin(a, controller.signal);
-    const result = action(), rejected = assert.rejects(result, { code: 'EXECUTION_CANCELLED' });
-    await waitFor(() => data.budgets.snapshot(a.tenantId).workerExecutions > before);
-    const started = performance.now(); controller.abort(); await rejected; maxCancellationMs = Math.max(maxCancellationMs, performance.now() - started);
+    let started;
+    cancelWorker = () => { started = performance.now(); controller.abort(); };
+    await assert.rejects(action(), { code: 'EXECUTION_CANCELLED' });
+    assert.ok(data.budgets.snapshot(a.tenantId).workerExecutions > before);
+    assert.equal(controller.signal.aborted, true);
+    assert.notEqual(started, undefined, 'worker did not reach cancellation checkpoint');
+    maxCancellationMs = Math.max(maxCancellationMs, performance.now() - started);
     assert.deepEqual(data.budgets.node(), { running: 0, queued: 0 });
   }
+  cancelWorker = undefined;
   data.begin(a, new AbortController().signal);
   await assert.rejects(prep.execute(a, 'prepared', 'rows'), { code: 'EXECUTION_CANCELLED' });
   assert.equal((await f.metadata.list(a, 'source')).length, 1, 'cancelled upload persisted nothing');

@@ -434,6 +434,12 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .connector-search { display: grid; gap: 8px; font-size: 12px; font-weight: 600; margin-bottom: 20px; }
 .connector-search input { width: 100%; padding: 11px 12px; border: 1px solid #b8c7d3; border-radius: 3px; background: white; font: inherit; font-size: 14px; }
 .connector-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(176px, 1fr)); gap: 14px; }
+.connector-featured { grid-column: 1 / -1; }
+.connector-description { font-size: 14px; line-height: 1.5; }
+.connector-toggle { display: flex; align-items: center; gap: 8px; margin: 24px 0; font-size: 14px; cursor: pointer; }
+.connector-toggle input { margin: 0; }
+.connector-unavailable { border-top: 1px solid #d4dfe7; padding-top: 16px; }
+.connector-unavailable > p { font-size: 13px; color: #52687b; }
 .connector-card { display: flex; flex-direction: column; text-align: left; align-items: flex-start; gap: 6px; min-height: 176px; padding: 18px; border: 1px solid #cdd8e2; border-radius: 4px; background: white; color: #26364a; cursor: pointer; }
 .connector-card:hover { border-color: #508bb6; background: #f8fbff; }
 .connector-card.selected { border-color: #1479b8; box-shadow: inset 0 0 0 1px #1479b8; background: #f4faff; }

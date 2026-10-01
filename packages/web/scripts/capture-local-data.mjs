@@ -89,8 +89,10 @@ try {
   await mode('author');
   await page.getByRole('button', { name: 'Assign doubled', exact: true }).waitFor();
   await mode('data-sources');
+  await page.getByRole('checkbox', { name: 'Show unavailable connectors', exact: true }).check();
   await page.locator('.connector-card').filter({ hasText: 'MySQL' }).click();
   assert.equal(await page.getByRole('button', { name: 'Validate configuration', exact: true }).isDisabled(), true);
+  await page.getByRole('checkbox', { name: 'Show unavailable connectors', exact: true }).uncheck();
   await page.setViewportSize({ width: 390, height: 844 });
   await page.locator('.connector-card').filter({ hasText: 'Upload a file' }).click();
   await capture('local-upload-mobile');

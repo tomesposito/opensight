@@ -73,6 +73,8 @@ try {
   // 5. Data source connector gallery. End.
   await setMode('data-sources');
   await page.waitForTimeout(900);
+  assert.deepEqual(await page.locator('.connector-name').allTextContents(), ['Upload a file']);
+  assert.equal(await page.getByRole('checkbox', { name: 'Show unavailable connectors', exact: true }).isChecked(), false);
   await hold(1600);
 
   await setMode('security'); await hold(1400);
