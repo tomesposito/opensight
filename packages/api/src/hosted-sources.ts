@@ -27,6 +27,7 @@ export class HostedSources {
     return { ...sourceBody(r.body), id: r.id, version: r.version };
   }
   active(source: HostedSource): void {
+    if (source.binding.state === 'expired') sourceError('UPLOAD_EXPIRED', 403);
     if (source.binding.state !== 'active') sourceError('SOURCE_RETIRED', 403);
     if (source.binding.expiresAt && Date.parse(source.binding.expiresAt) <= this.clock()) sourceError('UPLOAD_EXPIRED', 403);
     if (source.binding.endpointId) this.endpoint(source.binding.endpointId);

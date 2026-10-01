@@ -8,7 +8,8 @@
     "build": "npm run build --workspace=@opensight/bundle-parser && npm run build --workspace=@opensight/query-engine && npm run build:compiler --workspace=@opensight/web && npm run build --workspace=@opensight/o-interpreter && tsc && npm run build:embed --workspace=@opensight/web",
     "start": "node dist/cli.js",
     "test": "npm run build && tsc -p test/tsconfig.json && node --test --test-isolation=none test/*.test.mjs",
-    "metadata:migrate": "node dist/metadata-migrate-cli.js"
+    "metadata:migrate": "node dist/metadata-migrate-cli.js",
+    "sources:migrate": "node dist/source-migrate-cli.js"
   },
   "exports": {
     ".": {

@@ -4,7 +4,7 @@ import { object, identifier, type ResourceKey } from './metadata-resources.js';
 
 export type SourcePolicy = Omit<DatasetPolicy, 'namespaceId' | 'dataSetArn'>;
 export interface SourceBinding {
-  version: 3; connectorId: 'file' | 'postgresql'; state: 'active' | 'retired';
+  version: 3; connectorId: 'file' | 'postgresql'; state: 'active' | 'retired' | 'expired';
   columns: UploadColumn[]; endpointId?: string; schema?: string; table?: string;
   expiresAt?: string; rowCount?: number;
 }
@@ -28,10 +28,14 @@ export function sourcePolicy(value: unknown, columns: readonly UploadColumn[]): 
   return policy;
 }
 export function sourceBody(raw: unknown): SourceBody {
-  const body = object(raw, ['binding', 'secretId', 'policy']), b = object(body.binding, ['version', 'connectorId', 'state', 'columns', 'endpointId', 'schema', 'table', 'expiresAt', 'rowCount']);
-  if (b.version !== 3) sourceError('SOURCE_MIGRATION_REQUIRED', 503);
-  if (!['file', 'postgresql'].includes(String(b.connectorId)) || !['active', 'retired'].includes(String(b.state))) sourceError();
+  const body = object(raw, ['binding', 'secretId', 'policy']);
+  if (object(body.binding).version !== 3) sourceError('SOURCE_MIGRATION_REQUIRED', 503);
+  const b = object(body.binding, ['version', 'connectorId', 'state', 'columns', 'endpointId', 'schema', 'table', 'expiresAt', 'rowCount']);
+  if (!['file', 'postgresql'].includes(String(b.connectorId)) || !['active', 'retired', 'expired'].includes(String(b.state))) sourceError();
+  if (!Array.isArray(b.columns)) sourceError();
+  for (const column of b.columns) object(column, ['name', 'type']);
   const columns = prepColumns(b.columns as UploadColumn[], '$.columns');
+  if (b.connectorId !== 'file' && b.state === 'expired') sourceError();
   if (b.connectorId === 'file') {
     if (typeof b.expiresAt !== 'string' || !Number.isFinite(Date.parse(b.expiresAt)) || new Date(b.expiresAt).toISOString() !== b.expiresAt
       || !Number.isSafeInteger(b.rowCount) || Number(b.rowCount) < 0 || b.endpointId !== undefined || b.schema !== undefined || b.table !== undefined) sourceError();
