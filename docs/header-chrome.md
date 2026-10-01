@@ -1,11 +1,11 @@
 # Header chrome
 
-Author mode uses two full-width, square-edged bands: the OpenSight identity,
-editable analysis title and Mode picker above the blue analysis toolbar.
+The shared [app navigation](app-navigation.md) header identifies OpenSight and
+the active product section. Inside Analyses, Author uses two full-width,
+square-edged bands: the editable analysis title above the blue analysis toolbar.
 The toolbar orders File, Edit, Data, Insert, Sheets, Objects, Search, the
 existing Q form, FIT TO WIDTH, PUBLISH, and NEW LOOK. Narrow viewports wrap
-controls without changing their reading or keyboard order. Other modes retain
-their existing header.
+controls without changing their reading or keyboard order.
 
 Native `details`/`summary` menus keep keyboard activation, exclusive opening,
 Escape-to-close with focus restoration, outside-click closure and action

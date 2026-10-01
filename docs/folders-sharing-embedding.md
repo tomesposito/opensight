@@ -153,8 +153,8 @@ only the local SDK workspace link and metadata.
 
 ## Static demo
 
-The Mode picker includes **Folders, sharing & embedding**, following the Security
-& namespaces and Schedules & alerts notices. Every action is disabled and marked
+**Admin → Folders, sharing & embedding** sits alongside the Security & namespaces
+and Schedules & alerts notices. Every action is disabled and marked
 **Needs hosted API**. The view states that sample data is public and does not
 simulate folder writes, shares, signing or SSO. The hosted iframe build is separate
 from the offline demo and contains no sample dataset fallback.
