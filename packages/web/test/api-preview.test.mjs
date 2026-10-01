@@ -53,6 +53,8 @@ for (const [name, mutate] of [
     const preview = buildApiPreview(response, 'analysis', fixtures);
     assert.ok(preview.sheets[0].visuals.every(v => v.rows === null && Object.keys(v.bindings).length === 0));
     assert.match(preview.notice, /No matching reviewed fixture definition/);
+    assert.match(preview.notice, /no sample results are attached/);
+    assert.match(preview.notice, /These charts do not query live data; use Author with a hosted API for live queries/);
   });
 }
 test('unknown resource and analysis/dashboard namespace mismatch never borrow sales rows', () => {

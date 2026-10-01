@@ -9,6 +9,7 @@ import { AccessProvider } from '../build/test/access.js';
 import { Dashboard } from '../build/test/Dashboard.js';
 import { compileVisual } from '../build/test/compiler.js';
 import { ROLES, hasCapability } from '@opensight/query-engine/browser';
+import generated from '../build/test/fixtures.generated.json' with { type: 'json' };
 
 const fixtures = JSON.parse(readFileSync(new URL('../src/fixtures.generated.json', import.meta.url), 'utf8'));
 const sales = fixtures.find(f => f.id === 'renderable-sales');
@@ -78,6 +79,34 @@ test('hosted entry still resolves a session before exposing the application', t 
   const html = renderToStaticMarkup(createElement(App));
   assert.match(html, /Resolving hosted session/);
   assert.doesNotMatch(html, /visual-card|Sample dashboard|source-picker/);
+});
+
+test('a build without the pinned sample gives recovery guidance without falling back to an empty chart', () => {
+  const saved = [...generated];
+  try {
+    generated.splice(0, generated.length, ...saved.filter(f => f.id !== 'renderable-sales'));
+    const html = render(hosted('reader'));
+    assert.match(html, /The sample dashboard is not included in this build/);
+    assert.match(html, /Ask the operator to restore the pinned sales sample/);
+    assert.doesNotMatch(html, /visual-card|Choose Author/);
+  } finally { generated.splice(0, generated.length, ...saved); }
+});
+
+test('a build without definition examples explains how to load a hosted definition', async t => {
+  const saved = [...generated], oldAct = globalThis.IS_REACT_ACT_ENVIRONMENT;
+  let renderer;
+  generated.splice(0, generated.length);
+  globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+  t.after(async () => {
+    if (renderer) await act(() => renderer.unmount());
+    generated.splice(0, generated.length, ...saved);
+    globalThis.IS_REACT_ACT_ENVIRONMENT = oldAct;
+  });
+  await act(() => { renderer = create(createElement(Application)); });
+  const picker = renderer.root.findByProps({ className: 'source-picker' }).findByType('select');
+  await act(() => picker.props.onChange({ target: { value: 'fixtures' } }));
+  assert.ok(renderer.root.findAllByType('p').some(p => p.props.role === 'status' && p.props.children === 'No definition examples are included in this build. Use API definition preview to load a definition from a hosted API.'));
+  assert.equal(renderer.root.findAllByType(Dashboard).length, 0);
 });
 
 

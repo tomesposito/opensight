@@ -70,7 +70,7 @@ export function buildApiPreview(response: DefinitionResponse, kind: ResourceKind
       };
     }),
   };
-  preview.notice += matches ? fixture!.notice : 'No matching reviewed fixture definition: data is unavailable.';
+  preview.notice += matches ? fixture!.notice : 'No matching reviewed fixture definition: no sample results are attached. These charts do not query live data; use Author with a hosted API for live queries.';
   if (fallbackLayout) preview.notice += ' Missing or unsupported layouts use full-width cards in definition order.';
   return preview;
 }
