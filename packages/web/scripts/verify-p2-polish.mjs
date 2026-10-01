@@ -78,13 +78,27 @@ try {
     await file.click();
     console.log(`PASS: ${label}: exactly one JSON and .qs export, both download from File`);
   };
+  const settled = async label => {
+    await navigate(page, 'fixtures');
+    await page.getByLabel('Definition example').selectOption({ label: 'TotalDeathByCountry' });
+    const card = page.locator('.visual-card');
+    await card.getByText('Definition only', { exact: true }).waitFor();
+    assert.equal(await card.getAttribute('aria-busy'), 'false');
+    assert.equal(await card.locator('.empty-symbol').count(), 0);
+    assert.equal(await card.evaluate(node => node.getAnimations({ subtree: true }).length), 0);
+    assert.equal(await card.locator('.chart').count(), 0);
+    await capture(`${label}-definition`);
+    console.log(`PASS: ${label}: settled definition preview has no spinner or animation`);
+  };
   page = await localPage();
   await exports('local');
+  await settled('local');
   const demo = await browser.newContext({ viewport: { width: 1440, height: 1100 } });
   await demo.route(/^https?:/, route => { external.push(route.request().url()); return route.abort(); });
   page = await demo.newPage(); page.on('pageerror', e => errors.push(e.message));
   await page.goto(new URL('../dist/opensight-demo.html', import.meta.url).href);
   await exports('demo');
+  await settled('demo');
   assert.deepEqual(errors, []); assert.deepEqual(external, []);
   console.log(JSON.stringify({ pageErrors: errors.length, externalRequests: external.length, actualQueries: queries.length }));
 } finally { await browser?.close(); await vite?.close(); await stop(); await rm(store, { recursive: true, force: true }); }

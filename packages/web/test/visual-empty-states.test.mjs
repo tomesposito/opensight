@@ -66,3 +66,14 @@ test('author notices distinguish unsupported samples from hosted query errors', 
   assert.match(hosted, /unsupported queries show their error details and guidance/);
   assert.doesNotMatch(offline + hosted, /Data unavailable/);
 });
+
+
+test('Issue #35: settled missing, empty, failed and definition states have no loading symbol', () => {
+  const visual = sales.sheets[0].visuals[0];
+  for (const [rows, props] of [[null, {}], [[], {}], [null, { dataMessage: 'Query failed' }], [null, { definitionPreview: true }]]) {
+    const html = card({ ...visual, rows }, props);
+    assert.match(html, /aria-busy="false"/);
+    assert.doesNotMatch(html, /empty-symbol|◌|Loading data/);
+  }
+  assert.match(card({ ...visual, rows: null }, { loading: true }), /class="empty-symbol"/);
+});

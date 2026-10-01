@@ -30,3 +30,7 @@ brief is the polish contract; `SOLUTION_DESIGN.md` remains unchanged.
   Their existing handlers, disabled states and export explanation remain.
   Author and bundle UI tests: 15 passed, 0 failed, 0 skipped. The browser
   acceptance script checks DOM counts and real downloads in local/static modes.
+- **2 — Fixed:** Only pending queries render the circular loading symbol.
+  Missing data, empty results, definition previews and query failures remain
+  settled text states. Focused empty-state tests: 12 passed / 0 failed / 0 skipped.
+  Browser checks also require no active animations in settled definition cards.
