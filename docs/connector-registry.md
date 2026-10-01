@@ -16,7 +16,7 @@ returns availability; it never performs I/O or claims a successful connection.
 
 | Module / connectors | Dialect | Connection semantics |
 | --- | --- | --- |
-| File (CSV, TSV, JSON, XLS, XLSX) | DuckDB | Hosted upload staging; offline demo requires hosted API |
+| File (CSV, TSV, JSON, XLS, XLSX) | DuckDB | Local or authenticated staging; static demo requires an API |
 | MySQL | MySQL | Trusted environment configuration, server library executor |
 | PostgreSQL | PostgreSQL | Existing server library executor |
 | MariaDB | MySQL | SQL mapping only; connection not yet implemented |

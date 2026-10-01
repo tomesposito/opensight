@@ -1,5 +1,5 @@
 import { authorVisualProblem, dataFields, noDimensions, serializeVisual, visualDimensions } from './authoring.js';
-import type { AuthorVisual, CalculatedField } from './authoring.js';
+import type { AuthorVisual, AuthorDataset, CalculatedField } from './authoring.js';
 import { normalizeVisual } from './compiler.js';
 import type { Fixture, FixtureVisual } from './model.js';
 import generated from './fixtures.generated.json' with { type: 'json' };
@@ -25,10 +25,10 @@ export function buildAuthorPreview(visual: AuthorVisual): FixtureVisual {
 }
 
 /** A row-free definition shared by the fixture and live previews. */
-export function buildAuthorVisual(visual: AuthorVisual, calculations: readonly CalculatedField[] = []): FixtureVisual {
+export function buildAuthorVisual(visual: AuthorVisual, calculations: readonly CalculatedField[] = [], dataset?: AuthorDataset): FixtureVisual {
   return {
-    source: 'bundle', definition: serializeVisual(visual, false, calculations), rows: null,
-    bindings: Object.fromEntries(visualDimensions(visual).filter(name => dataFields(calculations).some(f => f.name === name && f.type === 'DATETIME')).map(name => [name, (visual.dateGrain ?? 'MONTH').toLowerCase()])),
+    source: 'bundle', definition: serializeVisual(visual, false, calculations, dataset), rows: null,
+    bindings: Object.fromEntries(visualDimensions(visual).filter(name => dataFields(calculations, dataset).some(f => f.name === name && f.type === 'DATETIME')).map(name => [name, (visual.dateGrain ?? 'MONTH').toLowerCase()])),
     placement: { column: 0, columns: 36, row: 0, rows: 6 },
     path: `author.${visual.id}`,
   };

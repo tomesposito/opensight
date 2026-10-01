@@ -13,7 +13,7 @@ import type { QueryRequest } from './api-client.js';
 export const PARAMETER_DEBOUNCE_MS = 250;
 
 export function LiveAuthorVisual({ visual, theme, client, calculations, parameters = [], interaction, interactive = false }: { theme?: AnalysisTheme; interaction?: VisualInteraction; interactive?: boolean; parameters?: readonly AuthorParameter[]; visual: AuthorVisual; client?: QueryClient; calculations: readonly CalculatedField[] }) {
-  const queryKey = JSON.stringify(buildAuthorQuery(visual, calculations, parameters));
+  const queryKey = JSON.stringify(buildAuthorQuery(visual, calculations, parameters, client?.dataset));
   const request: QueryRequest | null = useMemo(() => JSON.parse(queryKey) as QueryRequest | null, [queryKey]);
   const [state, setState] = useState<{ request: QueryRequest; client: QueryClient; result: AuthorRows }>();
   useEffect(() => {
@@ -28,7 +28,7 @@ export function LiveAuthorVisual({ visual, theme, client, calculations, paramete
   }, [request, client, interactive]);
   const fixture = useMemo(() => !client && request ? executeFixtureQuery(request) : undefined, [client, request]);
   const current = client ? state?.request === request && state.client === client ? state.result : undefined : fixture;
-  const preview = useMemo(() => ({ ...buildAuthorVisual(visual, calculations), theme, rows: current?.rows ?? null }), [visual, current, calculations, theme]);
+  const preview = useMemo(() => ({ ...buildAuthorVisual(visual, calculations, client?.dataset), theme, rows: current?.rows ?? null }), [visual, current, calculations, theme, client?.dataset]);
   // Clear previous results immediately when assignments change, even before the effect runs.
   return <VisualCard interaction={interaction} visual={preview} loading={!!request && !current} dataMessage={current?.message} />;
 }

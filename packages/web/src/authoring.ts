@@ -13,6 +13,7 @@ import type { AuthorParameter, ParameterValue } from './parameters.js';
 import type { BundleAnalysis, BundleColumnField, BundleDimensionField, BundleMeasureField, BundleVisual, BundleVisualBody } from '@opensight/bundle-parser';
 import { summarizeQsBundle } from '@opensight/bundle-parser/browser';
 import type { QsBundle } from '@opensight/bundle-parser';
+import type { PrepColumn } from '@opensight/bundle-parser/prep';
 import { normalizeVisual } from './compiler.js';
 
 export const SALES_FIELDS = [
@@ -24,7 +25,7 @@ export const SALES_FIELDS = [
   { name: 'profit', role: 'measure', type: 'DECIMAL' },
 ] as const;
 export interface CalculatedField { name: string; expression: string; role: 'dimension' | 'measure' }
-export const FIELD_GROUPS = ['Geography', 'Metadata', 'Sales', 'Calculated'] as const;
+export const FIELD_GROUPS = ['Geography', 'Metadata', 'Sales', 'Columns', 'Calculated'] as const;
 export type FieldGroup = typeof FIELD_GROUPS[number];
 export interface DataField { name: string; role: 'dimension' | 'measure'; type: string; group?: FieldGroup }
 /** Presentation only: never persisted in a draft or bundle definition. */
@@ -34,21 +35,23 @@ export function fieldGroup(field: DataField): FieldGroup {
   if (field.type === 'DATETIME' || /(^id$|_id$)/i.test(field.name)) return 'Metadata';
   return 'Sales';
 }
-export function calculationInfo(name: string, calculations: readonly CalculatedField[]) {
+export interface AuthorDataset { id: string; name: string; columns: readonly PrepColumn[] }
+export const datasetFields = (dataset?: AuthorDataset): readonly DataField[] => dataset ? dataset.columns.map(c => ({ ...c, role: c.type === 'INTEGER' || c.type === 'DECIMAL' ? 'measure' : 'dimension' })) : SALES_FIELDS;
+export function calculationInfo(name: string, calculations: readonly CalculatedField[], dataset?: AuthorDataset) {
   const visiting = new Set<string>();
   const bind = (name: string): { scalarType: 'number' | 'string' | 'datetime' | 'boolean' | 'unknown'; nullable: boolean; level?: 'row' | 'pre_filter' | 'pre_agg' | 'aggregate' | 'table' } => {
-    const field = SALES_FIELDS.find(f => f.name === name);
-    if (field) return { scalarType: field.type === 'STRING' ? 'string' : field.type === 'DATETIME' ? 'datetime' : 'number', nullable: true };
+    const field = datasetFields(dataset).find(f => f.name === name);
+    if (field) return { scalarType: field.type === 'STRING' ? 'string' : field.type === 'DATETIME' ? 'datetime' : field.type === 'BOOLEAN' ? 'boolean' : 'number', nullable: true };
     if (visiting.has(name)) throw new Error(`Calculated-field cycle through ${name}`);
     const c = calculations.find(c => c.name === name); if (!c) return { scalarType: 'unknown', nullable: true };
     visiting.add(name); const result = parseExpression(c.expression, '$.expression', { validationOnly: true, bind }); visiting.delete(name); return result;
   };
   return bind(name);
 }
-export const dataFields = (calculations: readonly CalculatedField[] = []): DataField[] => [
-  ...SALES_FIELDS.map(f => ({ ...f, group: fieldGroup(f) })), ...calculations.map(f => {
+export const dataFields = (calculations: readonly CalculatedField[] = [], dataset?: AuthorDataset): DataField[] => [
+  ...datasetFields(dataset).map(f => ({ ...f, group: dataset && fieldGroup(f) === 'Sales' ? 'Columns' as const : fieldGroup(f) })), ...calculations.map(f => {
     let type = f.role === 'measure' ? 'DECIMAL' : 'STRING';
-    try { const info = calculationInfo(f.name, calculations); if (info.scalarType === 'datetime') type = 'DATETIME'; } catch { /* Invalid imported expressions remain in the import report. */ }
+    try { const info = calculationInfo(f.name, calculations, dataset); if (info.scalarType === 'datetime') type = 'DATETIME'; } catch { /* Invalid imported expressions remain in the import report. */ }
     return { name: f.name, role: f.role, type, group: 'Calculated' as const };
   }),
 ];
@@ -95,6 +98,7 @@ export interface AuthorVisual {
 export interface Placement { i: string; x: number; y: number; w: number; h: number }
 export interface AuthorSheet { controls: AuthorControl[]; id: string; name: string; visuals: AuthorVisual[]; layout: Placement[]; selectedId: string | null; imported?: ImportedSheet }
 export interface AuthorDraft {
+  dataset?: AuthorDataset;
   theme?: AnalysisTheme; chrome?: 'light' | 'dark';
   version: 2; parameters: AuthorParameter[]; title: string; sheets: AuthorSheet[]; activeSheetId: string; calculatedFields: CalculatedField[]; bundle?: BundleOrigin;
 }
@@ -196,7 +200,7 @@ export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorD
   if (action.type === 'parameter-value' || action.type === 'parameter-default') return { ...draft, parameters: draft.parameters.map(p => p.id !== action.id || parameterValueError(p, action.values) ? p : { ...p, [action.type === 'parameter-value' ? 'values' : 'defaultValues']: [...action.values] }) };
   if (action.type === 'analysis-title') return { ...draft, title: action.title };
   if (action.type === 'calculation-add') {
-    if (calculationError(action.field, dataFields(draft.calculatedFields))) return draft;
+    if (calculationError(action.field, dataFields(draft.calculatedFields, draft.dataset))) return draft;
     return { ...draft, calculatedFields: [...draft.calculatedFields, { ...action.field, name: action.field.name.trim() }] };
   }
   if (action.type === 'sheet-add') {
@@ -253,6 +257,15 @@ export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorD
     const dimension = noDimensions(action.kind) ? null : ['line', 'area'].includes(action.kind) ? 'order_date' : action.kind === 'pie' ? 'category' : 'region';
     const visual: AuthorVisual = { ...defaults(), id, kind: action.kind, title: '', donut: false, dimension, measures: ['scatter', 'combo', 'bar100'].includes(action.kind) ? ['revenue', 'profit'] : ['revenue'],
       rows: grouped(action.kind) && dimension ? (['box', 'treemap'].includes(action.kind) ? [dimension, 'category'] : [dimension]) : [], columns: ['heatmap', 'pointMap'].includes(action.kind) ? ['category'] : [], labels: action.kind === 'pie' };
+    if (draft.dataset) {
+      const fields = dataFields(draft.calculatedFields, draft.dataset), dimensions = fields.filter(f => f.role === 'dimension' && f.type !== 'BOOLEAN'), measures = fields.filter(f => f.role === 'measure');
+      const primary = (['line', 'area'].includes(action.kind) ? dimensions.find(f => f.type === 'DATETIME') : undefined) ?? dimensions[0];
+      visual.dimension = noDimensions(action.kind) ? null : primary?.name ?? null;
+      visual.measures = measures.slice(0, ['scatter', 'combo', 'bar100'].includes(action.kind) ? 2 : 1).map(f => f.name);
+      visual.rows = grouped(action.kind) && visual.dimension ? [visual.dimension] : [];
+      if (['box', 'treemap'].includes(action.kind) && dimensions[1]) visual.rows.push(dimensions[1].name);
+      visual.columns = splitDimensions(action.kind) && dimensions[1] ? [dimensions[1].name] : [];
+    }
     const bottom = Math.max(0, ...sheet.layout.map(p => p.y + p.h));
     return update({ visuals: [...sheet.visuals, visual], selectedId: id, layout: [...sheet.layout, { i: id, x: 0, y: bottom, w: 6, h: 8 }] });
   }
@@ -276,7 +289,7 @@ export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorD
   return update({ visuals: sheet.visuals.map(item => {
     if (item.id !== sheet.selectedId) return item;
     let visual = item;
-    if (visual.hierarchy && (action.type === 'kind' && noDimensions(action.kind) || (action.type === 'assign' || action.type === 'unassign') && action.well !== 'values' && dataFields(draft.calculatedFields).some(f => f.name === action.field && f.role === 'dimension'))) {
+    if (visual.hierarchy && (action.type === 'kind' && noDimensions(action.kind) || (action.type === 'assign' || action.type === 'unassign') && action.well !== 'values' && dataFields(draft.calculatedFields, draft.dataset).some(f => f.name === action.field && f.role === 'dimension'))) {
       const { hierarchy: _hierarchy, ...rest } = visual; visual = rest;
     }
     switch (action.type) {
@@ -287,7 +300,7 @@ export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorD
         measures: singleMeasure(action.kind) ? visual.measures.slice(0, 1) : action.kind === 'scatter' ? visual.measures.slice(0, 3) : visual.measures };
       case 'hierarchy': {
         if (!action.hierarchy) { const { hierarchy: _old, ...rest } = visual; return rest; }
-        if (noDimensions(visual.kind) || hierarchyError(action.hierarchy, draft.calculatedFields)) return visual;
+        if (noDimensions(visual.kind) || hierarchyError(action.hierarchy, draft.calculatedFields, false, draft.dataset)) return visual;
         const root = action.hierarchy.levels[0]!.columnName;
         return { ...visual, hierarchy: action.hierarchy, dimension: root, ...(grouped(visual.kind) ? { rows: [root, ...visual.rows.slice(1).filter(f => f !== root)], columns: visual.columns.filter(f => f !== root) } : {}) };
       }
@@ -312,13 +325,13 @@ export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorD
       case 'donut': return { ...visual, donut: visual.kind === 'pie' && action.donut };
       case 'display': return { ...visual, [action.property]: action.value };
       case 'filter-parameter': {
-        const p = sheetParameters(draft).find(p => p.name === action.parameterName), field = dataFields(draft.calculatedFields).find(f => f.name === action.columnName);
+        const p = sheetParameters(draft).find(p => p.name === action.parameterName), field = dataFields(draft.calculatedFields, draft.dataset).find(f => f.name === action.columnName);
         const type = field?.type === 'STRING' ? 'string' : field?.type === 'DATETIME' ? 'datetime' : 'number';
         if (!p || !field || p.type !== type || action.operator && action.operator !== 'EQUALS' && (p.multiple || p.type === 'string')) return visual;
         return { ...visual, filters: [...visual.filters.filter(f => f.columnName !== action.columnName), { columnName: action.columnName, values: [], parameterName: p.name, operator: action.operator ?? 'EQUALS' }] };
       }
       case 'filter': {
-        if (!dataFields(draft.calculatedFields).some(f => f.name === action.columnName && (f.type === 'STRING' || action.values === null))) return visual;
+        if (!dataFields(draft.calculatedFields, draft.dataset).some(f => f.name === action.columnName && (f.type === 'STRING' || action.values === null))) return visual;
         const filters = visual.filters.filter(f => f.columnName !== action.columnName);
         return { ...visual, filters: action.values === null ? filters : [...filters, { columnName: action.columnName, values: [...new Set(action.values)] }] };
       }
@@ -329,7 +342,7 @@ export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorD
           measures: !action.well || action.well === 'values' ? visual.measures.filter(f => f !== action.field) : visual.measures };
       }
       case 'assign': {
-        const field = dataFields(draft.calculatedFields).find(f => f.name === action.field);
+        const field = dataFields(draft.calculatedFields, draft.dataset).find(f => f.name === action.field);
         if (!field) return visual;
         if (field.role === 'measure') return action.well && action.well !== 'values' || visual.kind === 'scatter' && visual.measures.length >= 3 ? visual : { ...visual, measures: singleMeasure(visual.kind) ? [field.name] : [...new Set([...visual.measures, field.name])] };
         if (noDimensions(visual.kind) || action.well === 'values') return visual;
@@ -375,13 +388,13 @@ export function authorVisualProblem(visual: AuthorVisual): string | undefined {
 function columnField(name: string): BundleColumnField {
   return { fieldId: name, column: { dataSetIdentifier: 'sales_data', columnName: name } };
 }
-function dimensionField(name: string, granularity: DateGrain = 'MONTH', calculations: readonly CalculatedField[] = []): BundleDimensionField {
-  return dataFields(calculations).find(f => f.name === name)?.type === 'DATETIME' ? { dateDimensionField: { ...columnField(name), dateGranularity: granularity } }
-    : name === 'order_id' ? { numericalDimensionField: columnField(name) } : { categoricalDimensionField: columnField(name) };
+function dimensionField(name: string, granularity: DateGrain = 'MONTH', calculations: readonly CalculatedField[] = [], dataset?: AuthorDataset): BundleDimensionField {
+  return dataFields(calculations, dataset).find(f => f.name === name)?.type === 'DATETIME' ? { dateDimensionField: { ...columnField(name), dateGranularity: granularity } }
+    : !dataset && name === 'order_id' ? { numericalDimensionField: columnField(name) } : { categoricalDimensionField: columnField(name) };
 }
 /** Typed camelCase projection, including the parser's opaque extensions. */
-export function serializeVisual(visual: AuthorVisual, includeInteractions = true, calculations: readonly CalculatedField[] = []): BundleVisual {
-  const category = visualDimensions(visual).map(name => dimensionField(name, visual.dateGrain, calculations));
+export function serializeVisual(visual: AuthorVisual, includeInteractions = true, calculations: readonly CalculatedField[] = [], dataset?: AuthorDataset): BundleVisual {
+  const category = visualDimensions(visual).map(name => dimensionField(name, visual.dateGrain, calculations, dataset));
   const values: BundleMeasureField[] = visual.measures.map(name => ({ numericalMeasureField: { ...columnField(name), aggregationFunction: { simpleNumericalAggregation: 'SUM' } } }));
   const visibility = (show: boolean) => ({ visibility: show ? 'VISIBLE' : 'HIDDEN' });
   const body = { ...(visual.subtitle !== undefined ? { subtitle: { ...visibility(visual.subtitleVisible !== false), formatText: { plainText: visual.subtitle } } } : {}), ...(visual.formatting ? { opensightFormatting: visual.formatting } : {}), ...(visual.palette ? { opensightPalette: visual.palette } : {}), ...(includeInteractions ? serializeInteractions(visual) : {}), visualId: visual.id, ...(visual.title.trim() || !visual.titleVisible ? { title: { ...visibility(visual.titleVisible), ...(visual.title.trim() ? { formatText: { plainText: visual.title.trim() } } : {}) } } : {}) } satisfies BundleVisualBody;
@@ -393,7 +406,7 @@ export function serializeVisual(visual: AuthorVisual, includeInteractions = true
   if (extraKind(visual.kind)) {
     const spec = EXTRA_VISUALS[visual.kind];
     const wells: Record<string, unknown> = {};
-    spec.dimensions.forEach((name, i) => { wells[name] = spec.dimensions.length === 1 ? category : (i === 0 ? visual.rows : visual.columns).map(n => dimensionField(n, visual.dateGrain, calculations)); });
+    spec.dimensions.forEach((name, i) => { wells[name] = spec.dimensions.length === 1 ? category : (i === 0 ? visual.rows : visual.columns).map(n => dimensionField(n, visual.dateGrain, calculations, dataset)); });
     spec.measures.forEach((name, i) => { wells[name] = spec.measures.length === 1 ? values : visual.kind === 'combo' && i === 1 ? values.slice(1) : values.slice(i, i + 1); });
     return { [spec.variant]: { ...body, chartConfiguration: { ...display, fieldWells: spec.wells ? { [spec.wells]: wells } : wells,
       ...(visual.kind === 'bar100' ? { barsArrangement: 'STACKED_PERCENT', orientation: visual.horizontal ? 'HORIZONTAL' : 'VERTICAL' } : {}),
@@ -409,7 +422,7 @@ export function serializeVisual(visual: AuthorVisual, includeInteractions = true
     case 'bar': return { barChartVisual: { ...body, chartConfiguration: { ...display, orientation: visual.horizontal ? 'HORIZONTAL' : 'VERTICAL', barsArrangement: visual.stacked ? 'STACKED' : 'CLUSTERED', fieldWells: { barChartAggregatedFieldWells: { category, values } } } } };
     case 'line': return { lineChartVisual: { ...body, chartConfiguration: { ...display, fieldWells: { lineChartAggregatedFieldWells: { category, values } } } } };
     case 'table': return { tableVisual: { ...body, chartConfiguration: { ...tableTotals, fieldWells: { tableAggregatedFieldWells: { groupBy: category, values } } } } };
-    case 'pivot': return { pivotTableVisual: { ...body, chartConfiguration: { ...pivotTotals, fieldWells: { pivotTableAggregatedFieldWells: { rows: visual.rows.map(name => dimensionField(name, visual.dateGrain, calculations)), columns: visual.columns.map(name => dimensionField(name, visual.dateGrain, calculations)), values } } } } };
+    case 'pivot': return { pivotTableVisual: { ...body, chartConfiguration: { ...pivotTotals, fieldWells: { pivotTableAggregatedFieldWells: { rows: visual.rows.map(name => dimensionField(name, visual.dateGrain, calculations, dataset)), columns: visual.columns.map(name => dimensionField(name, visual.dateGrain, calculations, dataset)), values } } } } };
     case 'kpi': return { kpiVisual: { ...body, chartConfiguration: { fieldWells: { values } } } };
   }
 }
@@ -418,7 +431,7 @@ export function serializeDraft(draft: AuthorDraft): BundleAnalysis {
   validateDraft(draft);
   return { resourceType: 'analysis', analysisId: 'authored-analysis', name: draft.title.trim() || 'Untitled analysis', definition: {
     ...(draft.theme ? { opensightTheme: draft.theme } : {}),
-    dataSetIdentifierDeclarations: [{ identifier: 'sales_data', dataSetArn: 'arn:aws:quicksight:us-east-1:123456789012:dataset/renderable-sales' }],
+    dataSetIdentifierDeclarations: [{ identifier: 'sales_data', dataSetArn: draft.dataset ? `opensight:dataset:${draft.dataset.id}` : 'arn:aws:quicksight:us-east-1:123456789012:dataset/renderable-sales' }],
     ...(draft.parameters.length ? { parameterDeclarations: draft.parameters.map(serializeParameter) } : {}),
     calculatedFields: draft.calculatedFields.map(({ name, expression }) => ({ dataSetIdentifier: 'sales_data', name, expression })),
     filterGroups: draft.sheets.flatMap(sheet => sheet.visuals.flatMap(visual => visual.filters.map((filter, index) => ({
@@ -427,8 +440,8 @@ export function serializeDraft(draft: AuthorDraft): BundleAnalysis {
       filters: [serializeFilter(filter, `${visual.id}-filter-${index}`, 'sales_data', sheetParameters(draft, sheet))],
     })))),
     sheets: draft.sheets.map(sheet => ({ sheetId: sheet.id, name: sheet.name, ...(sheet.controls.length ? { parameterControls: sheet.controls.map(c => serializeControl(c, sheetParameters(draft, sheet), sheet.controls)) } : {}), visuals: sheet.visuals.map(visual => {
-      const definition = serializeVisual(visual, true, draft.calculatedFields);
-      normalizeVisual('bundle', serializeVisual(visual, false, draft.calculatedFields), `sheets.${sheet.id}.${visual.id}`);
+      const definition = serializeVisual(visual, true, draft.calculatedFields, draft.dataset);
+      normalizeVisual('bundle', serializeVisual(visual, false, draft.calculatedFields, draft.dataset), `sheets.${sheet.id}.${visual.id}`);
       return definition;
     }), layouts: [{ configuration: { gridLayout: { elements: sheet.layout.map(p => ({ elementId: p.i, elementType: 'VISUAL', columnIndex: p.x * 3, columnSpan: p.w * 3, rowIndex: p.y, rowSpan: p.h })) } } }] })),
   } };
@@ -439,8 +452,17 @@ const onlyKeys = (v: Record<string, unknown>, keys: string[]): boolean => Object
 /** localStorage is untrusted: validate every identity, field, layout and display option. */
 export function validateDraft(value: unknown): asserts value is AuthorDraft {
   const fail = (): never => { throw new Error('Invalid or unsupported author draft.'); };
-  if (!isObject(value) || !onlyKeys(value, ['version', 'title', 'sheets', 'activeSheetId', 'calculatedFields', 'parameters', 'bundle', 'theme', 'chrome']) || value.version !== 2 || typeof value.title !== 'string' || !Array.isArray(value.sheets) || !value.sheets.length || !Array.isArray(value.calculatedFields)) return fail();
+  if (!isObject(value) || !onlyKeys(value, ['version', 'title', 'sheets', 'activeSheetId', 'calculatedFields', 'parameters', 'bundle', 'theme', 'chrome', 'dataset']) || value.version !== 2 || typeof value.title !== 'string' || !Array.isArray(value.sheets) || !value.sheets.length || !Array.isArray(value.calculatedFields)) return fail();
   if (value.theme !== undefined && !themeValid(value.theme) || value.chrome !== undefined && !['light', 'dark'].includes(String(value.chrome))) return fail();
+  const dataset = value.dataset as AuthorDataset | undefined;
+  if (dataset !== undefined) {
+    if (!isObject(dataset) || !onlyKeys(dataset, ['id', 'name', 'columns']) || typeof dataset.id !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(dataset.id) || dataset.id === 'sales' || typeof dataset.name !== 'string' || !dataset.name.trim() || !Array.isArray(dataset.columns) || !dataset.columns.length || dataset.columns.length > 256 || value.bundle !== undefined) return fail();
+    const names = new Set<string>();
+    for (const c of dataset.columns) {
+      if (!isObject(c) || !onlyKeys(c, ['name', 'type']) || typeof c.name !== 'string' || !c.name.trim() || c.name !== c.name.trim() || c.name.length > 128 || /[\x00-\x1f]/.test(c.name) || !['STRING', 'INTEGER', 'DECIMAL', 'DATETIME', 'BOOLEAN'].includes(String(c.type)) || names.has(c.name.toLowerCase())) return fail();
+      names.add(c.name.toLowerCase());
+    }
+  }
   validateAuthorParameters(value.parameters);
   if (value.bundle !== undefined) {
     const b = value.bundle;
@@ -452,10 +474,10 @@ export function validateDraft(value: unknown): asserts value is AuthorDraft {
   for (const item of value.calculatedFields) {
     if (!isObject(item) || !onlyKeys(item, ['name', 'expression', 'role']) || typeof item.name !== 'string' || typeof item.expression !== 'string' || (item.role !== 'dimension' && item.role !== 'measure')) return fail();
     const field: CalculatedField = { name: item.name, expression: item.expression, role: item.role };
-    if (field.name !== field.name.trim() || calculationError(field, dataFields(calculations))) return fail();
+    if (field.name !== field.name.trim() || calculationError(field, dataFields(calculations, dataset))) return fail();
     calculations.push(field);
   }
-  const fields = dataFields(calculations), ids = new Set<string>(), sheetIds = new Set<string>();
+  const fields = dataFields(calculations, dataset), ids = new Set<string>(), sheetIds = new Set<string>();
   const names = (v: unknown, role: string): v is string[] => Array.isArray(v) && v.every(n => fields.some(f => f.name === n && f.role === role)) && new Set(v).size === v.length;
   for (const sheet of value.sheets) {
     if (!isObject(sheet) || !onlyKeys(sheet, ['id', 'name', 'controls', 'visuals', 'layout', 'selectedId', 'imported']) || typeof sheet.id !== 'string' || !/^sheet-[1-9][0-9]*$/.test(sheet.id) || sheetIds.has(sheet.id) || typeof sheet.name !== 'string' || !sheet.name.trim() || !Array.isArray(sheet.visuals) || !Array.isArray(sheet.layout)) return fail();
@@ -486,7 +508,7 @@ export function validateDraft(value: unknown): asserts value is AuthorDraft {
       if (v.subtitle !== undefined && typeof v.subtitle !== 'string' || v.subtitleVisible !== undefined && (typeof v.subtitleVisible !== 'boolean' || v.subtitle === undefined)) return fail();
       if (v.palette !== undefined && !paletteValid(v.palette)) return fail();
       if (v.dateGrain !== undefined && !['YEAR','QUARTER','MONTH','DAY'].includes(String(v.dateGrain))) return fail();
-      if (v.hierarchy !== undefined && hierarchyError(v.hierarchy as DimensionHierarchy, calculations, !!imported)) return fail();
+      if (v.hierarchy !== undefined && hierarchyError(v.hierarchy as DimensionHierarchy, calculations, !!imported, dataset)) return fail();
       if (v.filterActions !== undefined && !validFilterActions(v.filterActions)) return fail();
       const filters = new Set<string>();
       for (const f of v.filters) {
@@ -495,7 +517,7 @@ export function validateDraft(value: unknown): asserts value is AuthorDraft {
         if (f.parameterName !== undefined) {
           const p = parameters.find(p => p.name === f.parameterName)!;
           const field = fields.find(c => c.name === f.columnName);
-          if (!imported && (!field || p.type !== (field.type === 'STRING' ? 'string' : field.type === 'DATETIME' ? 'datetime' : 'number')) || f.operator && f.operator !== 'EQUALS' && (p.type === 'string' || p.multiple) || f.values.length) return fail();
+          if (!imported && (!field || p.type !== (field.type === 'STRING' ? 'string' : field.type === 'DATETIME' ? 'datetime' : field.type === 'BOOLEAN' ? 'boolean' : 'number')) || f.operator && f.operator !== 'EQUALS' && (p.type === 'string' || p.multiple) || f.values.length) return fail();
         }
         filters.add(f.columnName);
       }

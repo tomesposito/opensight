@@ -10,7 +10,8 @@ import { quoteIdentifier as q } from './validation.js';
 export type UploadType = 'INTEGER' | 'DECIMAL' | 'STRING' | 'DATETIME' | 'BOOLEAN';
 export interface UploadColumn { name: string; type: UploadType }
 export interface UploadRequest { config: unknown; data: Uint8Array; columns?: readonly UploadColumn[] }
-export interface UploadSummary { id: string; rowCount: number; columns: readonly UploadColumn[]; delimiter?: string; sheet?: string }
+export interface UploadSummary { id: string; rowCount: number; columns: readonly UploadColumn[]; delimiter?: string; sheet?: string; expiresAt?: string }
+export interface UploadLifetime { ttlMs: number; now?: () => number }
 type Cell = string | number | boolean | null;
 export class UploadError extends Error {
   constructor(readonly code: 'INVALID_UPLOAD' | 'UPLOAD_SCHEMA_MISMATCH' | 'UPLOAD_LIMIT_EXCEEDED' | 'UPLOAD_NOT_FOUND' | 'UPLOAD_STAGING_FAILED', readonly path: string, message: string) {
@@ -183,12 +184,22 @@ const sqlTypes: Record<UploadType, string> = { INTEGER: 'BIGINT', DECIMAL: 'DOUB
 /** One staging session per owner. Tables live until close; no paths or SQL from uploads execute. */
 export class UploadStaging {
   private readonly uploads = new Map<string, UploadSummary>();
-  private constructor(private readonly instance: DuckDBInstance, private readonly connection: DuckDBConnection) {}
-  static async create(): Promise<UploadStaging> {
+  private constructor(private readonly instance: DuckDBInstance, private readonly connection: DuckDBConnection, private readonly lifetime?: UploadLifetime) {}
+  static async create(lifetime?: UploadLifetime): Promise<UploadStaging> {
+    if (lifetime && (!Number.isSafeInteger(lifetime.ttlMs) || lifetime.ttlMs <= 0)) throw new Error('Invalid upload lifetime');
     const instance = await DuckDBInstance.create(':memory:', { enable_external_access: 'false', autoinstall_known_extensions: 'false', autoload_known_extensions: 'false', threads: '1', memory_limit: '256MB', max_temp_directory_size: '0B' });
-    try { return new UploadStaging(instance, await instance.connect()); } catch (e) { instance.closeSync(); throw e; }
+    try { return new UploadStaging(instance, await instance.connect(), lifetime); } catch (e) { instance.closeSync(); throw e; }
+  }
+  private now(): number { return this.lifetime?.now?.() ?? Date.now(); }
+  private expired(upload: UploadSummary): boolean { return !!upload.expiresAt && Date.parse(upload.expiresAt) <= this.now(); }
+  async expire(): Promise<void> {
+    for (const [id, upload] of this.uploads) if (this.expired(upload)) {
+      await this.connection.run(`DROP TABLE IF EXISTS ${q(id)}`);
+      this.uploads.delete(id);
+    }
   }
   async ingest(request: UploadRequest): Promise<UploadSummary> {
+    await this.expire();
     const parsed = parseUpload(request); // Validate every row before creating a table.
     if (this.uploads.size >= 20) throw new UploadError('UPLOAD_LIMIT_EXCEEDED', '$.uploads', 'Staging holds at most 20 uploads per session');
     const id = `upload_${randomUUID().replaceAll('-', '')}`;
@@ -201,7 +212,7 @@ export class UploadStaging {
       }
       const reader = await this.connection.runAndReadAll(`SELECT COUNT(*) FROM ${q(id)}`);
       const rowCount = Number(reader.getRows()[0]![0]);
-      const summary: UploadSummary = { id, rowCount, columns: parsed.columns, ...(parsed.delimiter ? { delimiter: parsed.delimiter } : {}), ...(parsed.sheet ? { sheet: parsed.sheet } : {}) };
+      const summary: UploadSummary = { id, rowCount, columns: parsed.columns, ...(parsed.delimiter ? { delimiter: parsed.delimiter } : {}), ...(parsed.sheet ? { sheet: parsed.sheet } : {}), ...(this.lifetime ? { expiresAt: new Date(this.now() + this.lifetime.ttlMs).toISOString() } : {}) };
       this.uploads.set(id, structuredClone(summary)); return summary;
     } catch {
       await this.connection.run(`DROP TABLE IF EXISTS ${q(id)}`).catch(() => undefined);
@@ -209,19 +220,22 @@ export class UploadStaging {
     }
   }
   async preview(id: string): Promise<{ upload: UploadSummary; rows: Record<string, string | number | boolean | null>[] }> {
+    await this.expire();
     const upload = this.uploads.get(id);
-    if (!upload) throw new UploadError('UPLOAD_NOT_FOUND', '$.id', 'Upload not found');
+    if (!upload) throw new UploadError('UPLOAD_NOT_FOUND', '$.id', 'Upload not found or expired; upload the file again');
     const projection = upload.columns.map(c => c.type === 'DATETIME' ? `strftime(${q(c.name)}, '%Y-%m-%dT%H:%M:%S.%gZ') AS ${q(c.name)}` : q(c.name)).join(', ');
     const reader = await this.connection.runAndReadAll(`SELECT ${projection} FROM ${q(id)} LIMIT 20`);
     return { upload: structuredClone(upload), rows: reader.getRows().map(row => Object.fromEntries(upload.columns.map((c, i) => [c.name, typeof row[i] === 'bigint' ? Number(row[i]) : row[i]]))) as Record<string, string | number | boolean | null>[] };
   }
   prepSources(): PrepSource[] {
-    return [...this.uploads.values()].map(upload => ({ id: upload.id, connectorId: 'file', table: upload.id, columns: structuredClone(upload.columns), security: 'unrestricted' }));
+    return [...this.uploads.values()].filter(upload => !this.expired(upload)).map(upload => ({ id: upload.id, connectorId: 'file', table: upload.id, columns: structuredClone(upload.columns), security: 'unrestricted' }));
   }
   async previewPrep(raw: unknown, options: PrepPreviewOptions = {}, tables: readonly PrepMemoryTable[] = []): Promise<PrepPreview> {
+    await this.expire();
     return withPrepTables(this.connection, tables, () => previewPrepDuckDb(this.connection, raw, [...this.prepSources(), ...tables.map(t => t.source)], options));
   }
   async streamPrep(raw: unknown, options: PrepPreviewOptions, limits: PrepReadLimits, sink: PrepSink, tables: readonly PrepMemoryTable[] = []): Promise<void> {
+    await this.expire();
     return withPrepTables(this.connection, tables, () => streamPrepDuckDb(this.connection, raw, [...this.prepSources(), ...tables.map(t => t.source)], options, limits, sink));
   }
   close(): void { this.connection.closeSync(); this.instance.closeSync(); this.uploads.clear(); }

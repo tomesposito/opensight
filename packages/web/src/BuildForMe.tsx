@@ -1,10 +1,10 @@
 import { useAI } from './access.js';
 import { useState, useRef, useEffect } from 'react';
 import { suggestCalculation, type CalculationResult } from '@opensight/o-interpreter';
-import { dataFields, expressionError, type CalculatedField } from './authoring.js';
+import { dataFields, expressionError, type AuthorDataset, type CalculatedField } from './authoring.js';
 import { OModeNotice } from './OModeNotice.js';
 
-export function BuildForMe({ fields, onInsert }: { fields: readonly CalculatedField[]; onInsert: (field: CalculatedField) => void }) {
+export function BuildForMe({ dataset, fields, onInsert }: { dataset?: AuthorDataset; fields: readonly CalculatedField[]; onInsert: (field: CalculatedField) => void }) {
   const ai = useAI();
   const [generative, setGenerative] = useState(false), [pending, setPending] = useState(false), [requestError, setRequestError] = useState('');
   const revision = useRef(0);
@@ -13,10 +13,10 @@ export function BuildForMe({ fields, onInsert }: { fields: readonly CalculatedFi
   const [question, setQuestion] = useState('');
   const [result, setResult] = useState<CalculationResult>();
   const suggestion = result?.suggestion;
-  const error = result?.error ? `${result.error.code}: ${result.error.message}` : suggestion ? expressionError(suggestion.expression, dataFields(fields)) : undefined;
+  const error = result?.error ? `${result.error.code}: ${result.error.message}` : suggestion ? expressionError(suggestion.expression, dataFields(fields, dataset)) : undefined;
   const suggest = async () => {
     const current = ++revision.current; setResult(undefined); setRequestError('');
-    if (!generative) { setResult(suggestCalculation(question, dataFields(fields))); return; }
+    if (!generative) { setResult(suggestCalculation(question, dataFields(fields, dataset))); return; }
     if (!ai.available || !ai.client) return;
     setPending(true);
     try { const value = await ai.client.generateCalculation({ question, calculatedFields: fields }); if (current === revision.current) setResult(value); }

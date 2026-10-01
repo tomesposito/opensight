@@ -30,20 +30,26 @@ import { buildDistinctQuery, loadAuthorRows } from './author-query.js';
 import type { QueryClient } from './author-query.js';
 import {
   authorVisualProblem, VISUAL_TYPES, GRID_COLUMNS, FIELD_GROUPS, fieldGroup, activeSheet, authorReducer, calculationError, dataFields, dimensionLabel,
-  loadDraft, saveDraft, serializeDraft, sheetParameters, singleMeasure, tabular, visualDimensions, grouped, splitDimensions, noDimensions, capabilityNote,
+  emptyDraft, loadDraft, saveDraft, serializeDraft, sheetParameters, singleMeasure, tabular, visualDimensions, grouped, splitDimensions, noDimensions, capabilityNote,
 } from './authoring.js';
-import type { AuthorAction, AuthorDraft, AuthorVisual, CalculatedField, FieldGroup, VisualKind, Well } from './authoring.js';
+import type { AuthorAction, AuthorDataset, AuthorDraft, AuthorVisual, CalculatedField, FieldGroup, VisualKind, Well } from './authoring.js';
 
-export function Author(props: { client?: QueryClient; modePicker?: ReactNode; onPrep?: () => void }) {
+export function Author(props: { onDatasetChange?: (dataset?: AuthorDataset) => void; dataset?: AuthorDataset; client?: QueryClient; modePicker?: ReactNode; onPrep?: () => void }) {
   const access = useAccess();
   return allowed(access, 'build') ? <AuthorWorkspace {...props} /> : <p role="alert">SECURITY_BUILD_REQUIRED: Author access required.</p>;
 }
 
 const browserStorage = () => window.localStorage;
 type EditorProps = { draft: AuthorDraft; dispatch: Dispatch<AuthorAction>; client?: QueryClient };
-function AuthorWorkspace({ client, modePicker, onPrep }: { client?: QueryClient; modePicker?: ReactNode; onPrep?: () => void }) {
-  const [restored] = useState(() => loadDraft(browserStorage));
+function AuthorWorkspace({ client: apiClient, dataset, onDatasetChange, modePicker, onPrep }: { onDatasetChange?: (dataset?: AuthorDataset) => void; dataset?: AuthorDataset; client?: QueryClient; modePicker?: ReactNode; onPrep?: () => void }) {
+  const access = useAccess();
+  const storage = useMemo(() => access.mode === 'local' ? () => ({ getItem: (key: string) => window.localStorage.getItem(`local.${key}`), setItem: (key: string, value: string) => window.localStorage.setItem(`local.${key}`, value) }) : browserStorage, [access.mode]);
+  const [restored] = useState(() => {
+    const saved = loadDraft(storage);
+    return dataset && JSON.stringify(saved.draft.dataset) !== JSON.stringify(dataset) ? { draft: { ...emptyDraft(), dataset } } : saved;
+  });
   const [draft, dispatch] = useReducer(authorReducer, restored.draft);
+  const client = useMemo(() => apiClient ? { ...apiClient, dataset: draft.dataset } : undefined, [apiClient, draft.dataset]);
   const [storageStatus, setStorageStatus] = useState(restored.warning ?? 'Draft saved on this device.');
   const [exportStatus, setExportStatus] = useState('');
   const [importStatus, setImportStatus] = useState('');
@@ -72,8 +78,8 @@ function AuthorWorkspace({ client, modePicker, onPrep }: { client?: QueryClient;
   };
   useEffect(() => {
     if (restored.warning && draft === restored.draft) return;
-    setStorageStatus(saveDraft(draft, browserStorage));
-  }, [draft, restored]);
+    setStorageStatus(saveDraft(draft, storage));
+  }, [draft, restored, storage]);
   const exported = useMemo(() => {
     try {
       const members = draft.bundle ? exportBundle(draft).members : undefined;
@@ -97,7 +103,7 @@ function AuthorWorkspace({ client, modePicker, onPrep }: { client?: QueryClient;
     </header>
     <OEntry draft={draft} dispatch={dispatch} client={client} renderBar={bar => <AuthorToolbar onPrep={onPrep} draft={draft} dispatch={dispatch} oEntry={bar} fit={fit} onFit={() => setFit(value => !value)} onJson={download} onBundle={() => { if (!busy) void downloadQs(); }} onImport={() => fileInput.current?.click()} busy={busy} jsonDisabled={!draft.sheets.some(s => s.visuals.length) || !!exported.error} />} />
     <div className="author-utilities">
-      <span className="mode-badge">{client ? 'API · Local sales' : 'Fixtures · Offline'}</span><span className="phase-badge">Builder v1</span>
+      <span className="mode-badge">{client ? `API · ${draft.dataset?.name ?? 'Local sales'}` : 'Fixtures · Offline'}</span><span className="phase-badge">Builder v1</span>
       <button type="button" onClick={() => void downloadQs()} disabled={busy} aria-describedby="export-help">Download .qs</button>
       <button type="button" className="primary-button" onClick={download} disabled={!draft.sheets.some(s => s.visuals.length) || !!exported.error} aria-describedby="export-help">Export JSON</button>
     </div>
@@ -109,7 +115,8 @@ function AuthorWorkspace({ client, modePicker, onPrep }: { client?: QueryClient;
       {importStatus && <p role={importStatus.startsWith('Import failed') ? 'alert' : 'status'}>{importStatus}</p>}
       {draft.bundle && <button type="button" onClick={() => setReportOpen(true)}>View import report</button>}
     </div>
-    <p className="fixture-notice">{client ? 'Live local sales data · All regions, dates grouped in UTC (month by default). Field assignments query the API; unsupported queries show their error details and guidance.' : draft.calculatedFields.length || draft.parameters.length || draft.sheets.some(s => s.visuals.some(v => v.filterActions?.length || v.hierarchy)) ? 'Offline demo: controls, calculated fields and interactions recompute pinned synthetic sales rows locally across all regions. No live queries run.' : 'Offline demo: manual visual previews use fixed sample results: region = East, dates grouped by UTC month. Only revenue totals by region, category, month, or overall are available. Other manual selections need a supported sample or a hosted API. O recomputes synthetic sales rows locally across all regions. No live queries run.'}</p>
+    {access.mode === 'local' && <LocalDatasetPicker client={client} dataset={draft.dataset} onSelect={dataset => { dispatch({ type: 'import', draft: { ...emptyDraft(), ...(dataset ? { dataset } : {}) } }); onDatasetChange?.(dataset); }} />}
+    <p className="fixture-notice">{draft.dataset ? 'Live prepared data · Field assignments query the local API. Uploads expire after 24 hours or API restart.' : client ? 'Live local sales data · All regions, dates grouped in UTC (month by default). Field assignments query the API; unsupported queries show their error details and guidance.' : draft.calculatedFields.length || draft.parameters.length || draft.sheets.some(s => s.visuals.some(v => v.filterActions?.length || v.hierarchy)) ? 'Offline demo: controls, calculated fields and interactions recompute pinned synthetic sales rows locally across all regions. No live queries run.' : 'Offline demo: manual visual previews use fixed sample results: region = East, dates grouped by UTC month. Only revenue totals by region, category, month, or overall are available. Other manual selections need a supported sample or a hosted API. O recomputes synthetic sales rows locally across all regions. No live queries run.'}</p>
     <div className="author-save"><p role="status">{storageStatus}</p>
       <p id="export-help">{exported.error ?? (client ? 'Downloads analysis definitions and sheet layouts; query results are not included.' : 'Downloads analysis definitions and sheet layouts; sample rows and the fixed East preview filter are not included.')}</p>
       {exportStatus && <p role="status">{exportStatus}</p>}
@@ -117,6 +124,23 @@ function AuthorWorkspace({ client, modePicker, onPrep }: { client?: QueryClient;
     <AuthorCanvas draft={draft} dispatch={dispatch} client={client} fit={fit} />
     {reportOpen && draft.bundle && <ImportReport draft={draft} onClose={() => setReportOpen(false)} />}
   </div>;
+}
+
+function LocalDatasetPicker({ client, dataset, onSelect }: { client?: QueryClient; dataset?: AuthorDataset; onSelect: (dataset?: AuthorDataset) => void }) {
+  const [sources, setSources] = useState<Awaited<ReturnType<NonNullable<QueryClient['listPrepSources']>>>>([]);
+  const [error, setError] = useState('');
+  const [reload, setReload] = useState(0);
+  const list = client?.listPrepSources;
+  useEffect(() => {
+    let active = true;
+    if (list) void list().then(value => { if (active) { setSources(value.filter(s => typeof s.ref === 'object' && 'dataset' in s.ref)); setError(''); } }).catch(e => { if (active) setError(String(e)); });
+    return () => { active = false; };
+  }, [list, reload]);
+  return <div className="api-picker"><label>Analysis dataset<select value={dataset?.id ?? 'sales'} onChange={e => {
+    const selected = sources.find(s => s.id === e.target.value);
+    if (e.target.value === 'sales') onSelect();
+    else if (selected?.available) onSelect({ id: selected.id, name: selected.name ?? selected.id, columns: selected.columns });
+  }}><option value="sales">Local sales (fixture)</option>{dataset && !sources.some(s => s.id === dataset.id) && <option value={dataset.id}>{dataset.name} (unavailable)</option>}{sources.map(s => <option key={s.id} value={s.id} disabled={!s.available}>{s.name ?? s.id}{!s.available ? ` · ${s.errorCode ?? 'Unavailable'}` : ''}</option>)}</select></label><button onClick={() => setReload(n => n + 1)}>Refresh datasets</button><span>Choosing a dataset starts a new analysis draft.</span>{error && <p role="alert">{error}</p>}</div>;
 }
 
 function Panel({ title, className, children }: { title: string; className: string; children: ReactNode }) {
@@ -144,10 +168,10 @@ export function AuthorCanvas({ draft, dispatch, client, fit = true }: EditorProp
   const fieldIconId = useId();
   const [well, setWell] = useState<Well>('rows');
   const [calculationOpen, setCalculationOpen] = useState(false);
-  const sheet = activeSheet(draft), fields = dataFields(draft.calculatedFields);
+  const sheet = activeSheet(draft), fields = dataFields(draft.calculatedFields, draft.dataset);
   const query = search.trim().toLowerCase();
   const matchingFields = fields.filter(f => f.name.toLowerCase().includes(query));
-  const interactionKey = JSON.stringify([sheet.id, sheet.visuals.map(v => [v.id, v.kind, v.dimension, v.rows, v.columns, v.measures, v.filters, v.filterActions, v.hierarchy, v.imported]), draft.parameters, draft.calculatedFields, !!client]);
+  const interactionKey = JSON.stringify([draft.dataset?.id, sheet.id, sheet.visuals.map(v => [v.id, v.kind, v.dimension, v.rows, v.columns, v.measures, v.filters, v.filterActions, v.hierarchy, v.imported]), draft.parameters, draft.calculatedFields, !!client]);
   const [interactionState, setInteractionState] = useState<{ key: string; selections: ActionSelections }>({ key: interactionKey, selections: {} });
   const selections = interactionState.key === interactionKey ? interactionState.selections : {};
   const [drillState, setDrillState] = useState<{ key: string; paths: Record<string, DrillPath>; armed?: string }>({ key: interactionKey, paths: {} });
@@ -167,7 +191,7 @@ export function AuthorCanvas({ draft, dispatch, client, fit = true }: EditorProp
   return <>
     <div className="author-layout">
       <Panel title="Data" className="fields-panel">
-        <DatasetHeader client={client} />
+        <DatasetHeader datasetId={draft.dataset?.id} datasetName={draft.dataset?.name} client={client} />
         <label>Search fields<input type="search" value={search} onChange={e => { setSearch(e.target.value); setSearchCollapsedGroups({}); }} placeholder="Find a field…" /></label>
         <button type="button" className="calculation-button" onClick={() => setCalculationOpen(true)}>+ CALCULATED FIELD</button>
         <p className="field-hint">{selected ? 'Click a field to assign it. Select a well to choose its destination.' : 'Add a visual to start assigning fields.'}</p>
@@ -177,7 +201,8 @@ export function AuthorCanvas({ draft, dispatch, client, fit = true }: EditorProp
         }}>
           <summary><svg className="field-folder" viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 4V2.5h5l2 2h6V13h-13V4Z" /></svg>{group}</summary>
           {matchingFields.filter(f => fieldGroup(f) === group).map(field => <button key={field.name} type="button"
-            disabled={!selected || (field.role === 'dimension' && noDimensions(selected.kind))}
+            title={field.type === 'BOOLEAN' ? 'Boolean fields are supported in preparation; convert to text or number before charting.' : undefined}
+            disabled={field.type === 'BOOLEAN' || !selected || (field.role === 'dimension' && noDimensions(selected.kind))}
             aria-label={`Assign ${field.name}`} aria-pressed={selected?.dimension === field.name || selected?.rows.includes(field.name) || selected?.columns.includes(field.name) || !!selected?.measures.includes(field.name)}
             aria-describedby={`${fieldIconId}-${encodeURIComponent(field.name)}`}
             onClick={() => dispatch({ type: 'assign', field: field.name, well: field.role === 'measure' ? 'values' : selected && grouped(selected.kind) ? (well === 'columns' && splitDimensions(selected.kind) ? 'columns' : 'rows') : 'dimension' })}>
@@ -219,7 +244,7 @@ export function AuthorCanvas({ draft, dispatch, client, fit = true }: EditorProp
               onDragStop={next => { if (!mobile) dispatch({ type: 'layout', sheetId: sheet.id, layout: next }); }}
               onResizeStop={next => { if (!mobile) dispatch({ type: 'layout', sheetId: sheet.id, layout: next }); }}>
               {sheet.visuals.map((visual, index) => {
-                const path = paths[visual.id] ?? [], projected = withDrill(withInheritedParameterFilters(draft, sheet, visual), path, draft.calculatedFields);
+                const path = paths[visual.id] ?? [], projected = withDrill(withInheritedParameterFilters(draft, sheet, visual), path, draft.calculatedFields, draft.dataset);
                 const hierarchy = visual.kind !== 'kpi' ? visual.hierarchy : undefined;
                 const interaction: VisualInteraction | undefined = (visual.filterActions?.length || hierarchy) && (hierarchy ? !authorVisualProblem(projected) && projected.measures.length > 0 : !originProblem(projected)) ? {
                   brush: visual.kind === 'line' && !!visual.filterActions?.length && armed !== visual.id,
@@ -237,7 +262,7 @@ export function AuthorCanvas({ draft, dispatch, client, fit = true }: EditorProp
                     <button type="button" disabled={path.length >= hierarchy.levels.length - 1} aria-pressed={armed === visual.id} onClick={() => setDrillState({ key: interactionKey, paths, armed: armed === visual.id ? undefined : visual.id })}>Drill down</button>
                     {armed === visual.id && <span role="status">Select a category or data row to drill.</span>}
                   </nav>}
-                  visual={withActionFilters(sheet, projected, selections, draft.calculatedFields)} index={index} count={sheet.visuals.length} selected={visual.id === sheet.selectedId} filterProblem={importedFilterProblem(draft, sheet, visual)} dispatch={dispatch} client={client} calculations={draft.calculatedFields} parameters={sheetParameters(draft)} />
+                  visual={withActionFilters(sheet, projected, selections, draft.calculatedFields, draft.dataset)} index={index} count={sheet.visuals.length} selected={visual.id === sheet.selectedId} filterProblem={draft.dataset && !client ? 'Local dataset needs its local API; no sample data is substituted.' : importedFilterProblem(draft, sheet, visual)} dispatch={dispatch} client={client} calculations={draft.calculatedFields} parameters={sheetParameters(draft)} />
                 </div>;
               })}
             </GridLayout>
@@ -248,7 +273,7 @@ export function AuthorCanvas({ draft, dispatch, client, fit = true }: EditorProp
         {selected ? <Properties key={selected.id} visual={selected} draft={draft} dispatch={dispatch} client={client} /> : <><p>Select a visual to edit its display settings.</p><ThemeEditor draft={draft} dispatch={dispatch} /></>}
       </Panel>
     </div>
-    {calculationOpen && <CalculationDialog fields={draft.calculatedFields} onClose={() => setCalculationOpen(false)} onSave={field => { dispatch({ type: 'calculation-add', field }); setCalculationOpen(false); }} />}
+    {calculationOpen && <CalculationDialog dataset={draft.dataset} fields={draft.calculatedFields} onClose={() => setCalculationOpen(false)} onSave={field => { dispatch({ type: 'calculation-add', field }); setCalculationOpen(false); }} />}
   </>;
 }
 
@@ -269,7 +294,7 @@ function SheetTabs({ draft, dispatch }: Omit<EditorProps, 'client'>) {
 }
 
 function FieldWells({ visual, draft, dispatch, activeWell, onWell }: { visual: AuthorVisual; draft: AuthorDraft; dispatch: Dispatch<AuthorAction>; activeWell: Well; onWell: (well: Well) => void }) {
-  const fields = dataFields(draft.calculatedFields);
+  const fields = dataFields(draft.calculatedFields, draft.dataset);
   const wells: { name: Well; label: string; values: string[] }[] = [
     ...(noDimensions(visual.kind) ? [] : grouped(visual.kind) ? [{ name: 'rows' as const, label: visual.kind === 'pointMap' ? 'Latitude' : visual.kind === 'box' ? 'Group / sample dimensions' : dimensionLabel(visual.kind), values: visual.rows }] : [{ name: 'dimension' as const, label: dimensionLabel(visual.kind), values: visual.dimension ? [visual.dimension] : [] }]),
     ...(splitDimensions(visual.kind) ? [{ name: 'columns' as const, label: visual.kind === 'pointMap' ? 'Longitude' : 'Columns', values: visual.columns }] : []),
@@ -277,7 +302,7 @@ function FieldWells({ visual, draft, dispatch, activeWell, onWell }: { visual: A
   ];
   return <div className="field-wells">{wells.map(w => <fieldset key={w.name} className={activeWell === w.name ? 'active-well' : ''} onFocus={() => onWell(w.name)} onClick={() => onWell(w.name)}>
     <legend>{w.label}{w.name === 'values' && singleMeasure(visual.kind) ? ' · 1 measure' : ''}</legend>
-    {w.values.map(field => <button className="field-chip" key={field} type="button" aria-label={`Remove ${field} from ${w.label}`} onClick={() => dispatch({ type: 'unassign', field, well: w.name })}>{w.name === 'values' ? `SUM(${field})` : `${field}${field === 'order_date' ? ` · ${visual.hierarchy?.levels[0]?.granularity ?? visual.dateGrain ?? 'MONTH'}` : ''}`} <span aria-hidden="true">×</span></button>)}
+    {w.values.map(field => <button className="field-chip" key={field} type="button" aria-label={`Remove ${field} from ${w.label}`} onClick={() => dispatch({ type: 'unassign', field, well: w.name })}>{w.name === 'values' ? `SUM(${field})` : `${field}${fields.find(f => f.name === field)?.type === 'DATETIME' ? ` · ${visual.hierarchy?.levels[0]?.granularity ?? visual.dateGrain ?? 'MONTH'}` : ''}`} <span aria-hidden="true">×</span></button>)}
     {w.name === 'values' && visual.measures.length > 1 && <div className="measure-order">{visual.measures.map((name, index) => <button type="button" key={name} disabled={!index} aria-label={`Move ${name} measure earlier`} onClick={() => dispatch({ type: 'measure-move', index, offset: -1 })}>↑ {name}</button>)}</div>}
     {!w.values.length && <p>{w.name === 'columns' ? 'Optional column dimensions' : 'Choose a field'}</p>}
     <label className="well-picker">Assign {w.name === 'values' ? 'measure' : w.name === 'dimension' ? 'dimension' : w.name}<select aria-label={`Assign ${w.label}`} value="" onChange={e => dispatch({ type: 'assign', field: e.target.value, well: w.name })}><option value="" disabled>Choose field…</option>{fields.filter(f => f.role === (w.name === 'values' ? 'measure' : 'dimension')).map(f => <option key={f.name}>{f.name}</option>)}</select></label>
@@ -338,22 +363,22 @@ function Properties({ visual, draft, dispatch, client }: EditorProps & { visual:
     </div>
     <div role="tabpanel" id={`${tabId}-panel-Interaction`} aria-labelledby={`${tabId}-Interaction`} hidden={tab !== 'Interaction'}>
       {tab === 'Interaction' && <>
-        <FilterEditor visual={visual} parameters={sheetParameters(draft)} calculations={draft.calculatedFields} dispatch={dispatch} client={visual.imported && !visual.imported.local ? undefined : client} />
+        <FilterEditor dataset={draft.dataset} visual={visual} parameters={sheetParameters(draft)} calculations={draft.calculatedFields} dispatch={dispatch} client={visual.imported && !visual.imported.local ? undefined : client} />
         <ActionEditor draft={draft} visual={visual} dispatch={dispatch} />
         <HierarchyEditor draft={draft} visual={visual} dispatch={dispatch} />
-        <ParameterFilterEditor parameters={sheetParameters(draft)} calculations={draft.calculatedFields} dispatch={dispatch} />
+        <ParameterFilterEditor dataset={draft.dataset} parameters={sheetParameters(draft)} calculations={draft.calculatedFields} dispatch={dispatch} />
       </>}
     </div>
   </>;
 }
 
-function FilterEditor({ visual, calculations, dispatch, client, parameters }: { parameters: AuthorParameter[]; visual: AuthorVisual; calculations: CalculatedField[]; dispatch: Dispatch<AuthorAction>; client?: QueryClient }) {
-  const [column, setColumn] = useState('region');
+function FilterEditor({ dataset, visual, calculations, dispatch, client, parameters }: { dataset?: AuthorDataset; parameters: AuthorParameter[]; visual: AuthorVisual; calculations: CalculatedField[]; dispatch: Dispatch<AuthorAction>; client?: QueryClient }) {
+  const [column, setColumn] = useState(() => dataFields(calculations, dataset).find(f => f.type === 'STRING')?.name ?? '');
   const [result, setResult] = useState<{ key: string; values: string[]; error?: string }>();
-  const key = JSON.stringify(buildDistinctQuery(column, calculations, parameters));
-  const request = useMemo(() => JSON.parse(key) as ReturnType<typeof buildDistinctQuery>, [key]);
+  const key = JSON.stringify([dataset?.id, buildDistinctQuery(column, calculations, parameters, dataset)]);
+  const request = useMemo(() => (JSON.parse(key) as [unknown, ReturnType<typeof buildDistinctQuery>])[1], [key]);
   useEffect(() => {
-    if (!client) return;
+    if (!client || !column) return;
     const controller = new AbortController();
     void loadAuthorRows(client, request, controller.signal).then(data => {
       if (!controller.signal.aborted) setResult({ key, values: [...new Set((data.rows ?? []).flatMap(row => typeof row[column] === 'string' ? [row[column]] : []))], error: data.message });
@@ -366,7 +391,7 @@ function FilterEditor({ visual, calculations, dispatch, client, parameters }: { 
   const values = [...new Set([...(current?.values ?? []), ...(filterValues ?? [])])];
   return <details className="property-section" open><summary>Filters</summary>
     {visual.filters.map(f => <button className="field-chip filter-pill" type="button" key={f.columnName} aria-label={`Remove ${f.columnName} filter`} onClick={() => dispatch({ type: 'filter', columnName: f.columnName, values: null })}>{f.columnName}: {f.parameterName ? `$${f.parameterName}` : f.values.length ? f.values.join(', ') : 'None'} <span aria-hidden="true">×</span></button>)}
-    <label>Category field<select value={column} onChange={e => setColumn(e.target.value)}>{dataFields(calculations).filter(f => f.type === 'STRING').map(f => <option key={f.name}>{f.name}</option>)}</select></label>
+    <label>Category field<select value={column} onChange={e => setColumn(e.target.value)}>{dataFields(calculations, dataset).filter(f => f.type === 'STRING').map(f => <option key={f.name}>{f.name}</option>)}</select></label>
     {!current && <p role="status">Loading values…</p>}
     {current?.error && <p role="status">{current.error}</p>}
     <div className="filter-values" role="group" aria-label={`${column} values`}>{values.map(value => <label className="toggle" key={value}><input type="checkbox" checked={!filter || (filterValues ?? []).includes(value)} onChange={e => {
@@ -378,18 +403,18 @@ function FilterEditor({ visual, calculations, dispatch, client, parameters }: { 
   </details>;
 }
 
-export function CalculationDialog({ fields, onSave, onClose }: { fields: CalculatedField[]; onSave: (field: CalculatedField) => void; onClose: () => void }) {
+export function CalculationDialog({ dataset, fields, onSave, onClose }: { dataset?: AuthorDataset; fields: CalculatedField[]; onSave: (field: CalculatedField) => void; onClose: () => void }) {
   const ref = useRef<HTMLDialogElement>(null);
   const [field, setField] = useState<CalculatedField>({ name: '', expression: '', role: 'measure' });
   const [error, setError] = useState('');
   const [functionName, setFunctionName] = useState('concat');
   const reference = functionCatalog.find(f => f.name === functionName)!;
-  const syntaxError = field.expression.trim() ? expressionError(field.expression, dataFields(fields)) : undefined;
+  const syntaxError = field.expression.trim() ? expressionError(field.expression, dataFields(fields, dataset)) : undefined;
   useEffect(() => { ref.current?.showModal(); return () => ref.current?.close(); }, []);
   return <dialog ref={ref} className="calculation-dialog" aria-labelledby="calculation-heading" onCancel={onClose}>
-    <form onSubmit={e => { e.preventDefault(); const problem = calculationError(field, dataFields(fields)); if (problem) setError(problem); else onSave({ ...field, name: field.name.trim() }); }}>
+    <form onSubmit={e => { e.preventDefault(); const problem = calculationError(field, dataFields(fields, dataset)); if (problem) setError(problem); else onSave({ ...field, name: field.name.trim() }); }}>
       <h2 id="calculation-heading">Calculated field</h2>
-      <BuildForMe fields={fields} onInsert={suggestion => { setField({ ...suggestion, name: field.name.trim() ? field.name : suggestion.name }); setError(''); }} />
+      <BuildForMe dataset={dataset} fields={fields} onInsert={suggestion => { setField({ ...suggestion, name: field.name.trim() ? field.name : suggestion.name }); setError(''); }} />
       <label>Name<input autoFocus value={field.name} onChange={e => setField({ ...field, name: e.target.value })} /></label>
       <label>Use as<select value={field.role} onChange={e => setField({ ...field, role: e.target.value as CalculatedField['role'] })}><option value="measure">Measure (number)</option><option value="dimension">Dimension (text)</option></select></label>
       <label>Expression<textarea rows={5} value={field.expression} placeholder="{revenue} - {profit}" onChange={e => setField({ ...field, expression: e.target.value })} /></label>
@@ -464,10 +489,10 @@ function ImportedPanels({ draft }: { draft: AuthorDraft }) {
   </details>)}</>;
 }
 
-function ParameterFilterEditor({ parameters, calculations, dispatch }: { parameters: AuthorParameter[]; calculations: CalculatedField[]; dispatch: Dispatch<AuthorAction> }) {
+function ParameterFilterEditor({ dataset, parameters, calculations, dispatch }: { dataset?: AuthorDataset; parameters: AuthorParameter[]; calculations: CalculatedField[]; dispatch: Dispatch<AuthorAction> }) {
   const [name, setName] = useState(''), [column, setColumn] = useState('region'), [operator, setOperator] = useState<'EQUALS' | 'GREATER_THAN_OR_EQUAL_TO' | 'LESS_THAN_OR_EQUAL_TO'>('EQUALS');
   const parameter = parameters.find(p => p.name === name) ?? parameters[0];
-  const fields = dataFields(calculations).filter(f => parameter?.type === (f.type === 'STRING' ? 'string' : f.type === 'DATETIME' ? 'datetime' : 'number'));
+  const fields = dataFields(calculations, dataset).filter(f => parameter?.type === (f.type === 'STRING' ? 'string' : f.type === 'DATETIME' ? 'datetime' : 'number'));
   const field = fields.find(f => f.name === column) ?? fields[0];
   if (!parameters.length) return <details className="property-section"><summary>Parameter bindings</summary><p>Create an analysis parameter to bind a filter to this visual.</p></details>;
   return <details className="property-section"><summary>Parameter bindings</summary>

@@ -3,7 +3,7 @@ import { AccessProvider, demoAccess, type Session, type Access } from './access.
 import { ApiError, type createApiClient } from './api-client.js';
 import { FirstRun, type StartupIssue } from './FirstRun.js';
 
-type Client = Pick<ReturnType<typeof createApiClient>, 'getSession'> & Access['aiClient'];
+type Client = Pick<ReturnType<typeof createApiClient>, 'getSession'> & Partial<Pick<ReturnType<typeof createApiClient>, 'getLocalData'>> & Access['aiClient'];
 export const SESSION_TIMEOUT_MS = 10_000;
 
 function startupIssue(error: unknown): StartupIssue {
@@ -18,6 +18,7 @@ function startupIssue(error: unknown): StartupIssue {
 export function SessionGate({ client, offline, children }: { client: Client; offline: boolean; children: ReactNode }) {
   const [demo, setDemo] = useState(false);
   const [session, setSession] = useState<Session>();
+  const [local, setLocal] = useState(false);
   const [issue, setIssue] = useState<StartupIssue>();
   const [checking, setChecking] = useState(true);
   const [attempt, setAttempt] = useState(0);
@@ -34,9 +35,13 @@ export function SessionGate({ client, offline, children }: { client: Client; off
       deadline = window.setTimeout(() => controller.abort(), SESSION_TIMEOUT_MS);
       try {
         const value = await client.getSession(controller.signal);
-        if (active) { setSession(value); setIssue(undefined); }
+        if (active) { setSession(value); setLocal(false); setIssue(undefined); }
       } catch (error: unknown) {
-        if (active) { setSession(undefined); setIssue(startupIssue(error)); }
+        let localData = false;
+        if (error instanceof ApiError && error.errorCode === 'SECURITY_NOT_CONFIGURED' && client.getLocalData) {
+          try { localData = await client.getLocalData(controller.signal); } catch { /* A failed probe never enables local access. */ }
+        }
+        if (active) { setSession(undefined); setLocal(localData); setIssue(startupIssue(error)); }
       } finally {
         window.clearTimeout(deadline);
         request = undefined;
@@ -63,6 +68,7 @@ export function SessionGate({ client, offline, children }: { client: Client; off
     </aside>
     <AccessProvider access={demoAccess}>{children}</AccessProvider>
   </>;
+  if (local) return <AccessProvider access={{ mode: 'local' }}>{children}</AccessProvider>;
   if (!session) return <FirstRun issue={issue} checking={checking} onRetry={() => setAttempt(n => n + 1)} onDemo={() => setDemo(true)} />;
   return <AccessProvider access={{ mode: 'hosted', session, aiClient: client }}>{children}</AccessProvider>;
 }

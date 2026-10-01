@@ -69,3 +69,23 @@ test('staging isolates sessions, escapes SQL identifiers/values, and recovers af
     await assert.rejects(a.preview('upload_unknown'), { code: 'UPLOAD_NOT_FOUND' });
   } finally { a.close(); b.close(); }
 });
+
+test('explicit upload lifetime hides expired sources and reclaims the session capacity', async () => {
+  let now = Date.parse('2026-01-01T00:00:00Z');
+  const stage = await UploadStaging.create({ ttlMs: 1000, now: () => now });
+  try {
+    const first = await stage.ingest(input('name,value\nNorth,2'));
+    assert.equal(first.expiresAt, '2026-01-01T00:00:01.000Z');
+    for (let i = 1; i < 20; i++) await stage.ingest(input('name,value\nNorth,2'));
+    await assert.rejects(stage.ingest(input('name,value\nNorth,2')), { code: 'UPLOAD_LIMIT_EXCEEDED' });
+    now += 999;
+    assert.equal(stage.prepSources().length, 20);
+    now++;
+    assert.deepEqual(stage.prepSources(), []);
+    await assert.rejects(stage.previewPrep({ version: 1, input: first.id, steps: [] }), { code: 'PREP_SOURCE_NOT_FOUND' });
+    await assert.rejects(stage.preview(first.id), { code: 'UPLOAD_NOT_FOUND' });
+    const replacement = await stage.ingest(input('name,value\nSouth,3'));
+    assert.equal(replacement.expiresAt, '2026-01-01T00:00:02.000Z');
+    assert.equal(stage.prepSources().length, 1);
+  } finally { stage.close(); }
+});
