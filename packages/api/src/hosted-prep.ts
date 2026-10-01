@@ -10,7 +10,7 @@ import { materializationReason } from './blaze-policy.js';
 import { validateQuery } from './query.js';
 
 const references = (p: PrepPipeline): PrepInput[] => [p.input, ...p.steps.flatMap(s => s.kind === 'append' ? [s.config.source] : s.kind === 'join' && !(typeof s.config.source !== 'string' && 'step' in s.config.source) ? [s.config.source as PrepInput] : [])];
-interface Graph { pipeline: PrepPipeline; datasets: PrepDataset[]; leaves: Admission[]; revisions: Revisions; reason: string | null }
+interface Graph { pipeline: PrepPipeline; datasets: PrepDataset[]; leaves: Admission[]; revisions: Revisions; reason: string | null; modes: Map<string, { version: number; execution: ExecutionSettings }> }
 /** Owner-only durable recipes. The complete graph is checked even when reading a cached output. */
 export class HostedPrep {
   readonly blaze = new BlazeStore();
@@ -27,7 +27,7 @@ export class HostedPrep {
   private async graph(context: TenantContext, id: string, pipeline: PrepPipeline): Promise<Graph> {
     const revisions = await this.data.sources.metadata.revisions(context);
     await this.data.sources.capability(context, 'build');
-    const datasets: PrepDataset[] = [], leaves: Admission[] = [], done = new Set<string>(), active = new Set<string>(), modes = new Map<string, ExecutionSettings['mode']>();
+    const datasets: PrepDataset[] = [], leaves: Admission[] = [], done = new Set<string>(), active = new Set<string>(), modes = new Map<string, { version: number; execution: ExecutionSettings }>();
     let steps = 0;
     const visit = async (key: string, p: PrepPipeline, depth: number) => {
       if (active.has(key)) sourceError('INVALID_PREP_PIPELINE');
@@ -40,7 +40,7 @@ export class HostedPrep {
         } else {
           if (ref.dataset === id || active.has(ref.dataset)) sourceError('INVALID_PREP_PIPELINE');
           const stored = await this.stored(context, ref.dataset), child = stored.resource.opensightPrep!;
-          modes.set(ref.dataset, stored.execution.mode);
+          modes.set(ref.dataset, { version: stored.version, execution: stored.execution });
           if (!datasets.some(d => d.id === ref.dataset)) datasets.push({ id: ref.dataset, pipeline: child });
           await visit(ref.dataset, child, depth + 1);
         }
@@ -48,8 +48,8 @@ export class HostedPrep {
       active.delete(key); done.add(key);
     };
     await visit(id, pipeline, 0);
-    const reason = materializationReason(id, [{ id, pipeline, mode: 'DIRECT_QUERY' }, ...datasets.map(d => ({ ...d, mode: modes.get(d.id)! }))]);
-    const graph = { pipeline, datasets, leaves, revisions, reason };
+    const reason = materializationReason(id, [{ id, pipeline, mode: 'DIRECT_QUERY' }, ...datasets.map(d => ({ ...d, mode: modes.get(d.id)!.execution.mode }))]);
+    const graph = { pipeline, datasets, leaves, revisions, reason, modes };
     this.plan(graph, id); // Validate every stage, including branches outside the selected output.
     await this.data.finish(context, leaves, revisions); return graph;
   }
@@ -58,14 +58,30 @@ export class HostedPrep {
     return compilePrep(g.pipeline, this.sources(g), { datasets: g.datasets, datasetId: id, ...(through === undefined ? {} : { through }) });
   }
   private async load(context: TenantContext, id: string, g: Graph, output: BlazeTable, through?: string | null) {
-    const tables: PrepMemoryTable[] = [], sources = this.sources(g);
-    // The graph and full-stage compiler have succeeded before the first connector or artifact read.
-    for (const [i, a] of g.leaves.entries()) {
+    const tables: PrepMemoryTable[] = [], sources = this.sources(g), datasets = structuredClone(g.datasets), needed = new Set<string>(), visited = new Set<string>();
+    const visit = (p: PrepPipeline): void => {
+      for (const ref of references(p)) {
+        if (typeof ref === 'string') { needed.add(ref); continue; }
+        if (visited.has(ref.dataset)) continue;
+        visited.add(ref.dataset);
+        const d = datasets.find(d => d.id === ref.dataset)!, mode = g.modes.get(ref.dataset)!;
+        if (mode.execution.mode === 'BLAZE') {
+          const key = this.cacheKey(context, ref.dataset), stamp = JSON.stringify([mode.version, g.revisions]);
+          if (this.cacheRevisions.get(key) !== stamp) { this.blaze.invalidate(key); throw new BlazeError('BLAZE_NOT_READY', 'Dependency changed; refresh required'); }
+          const table = this.blaze.read(key).table;
+          d.materialized = { id: `cached_${tables.length}`, table: `cached_${tables.length}`, connectorId: 'file', columns: table.columns, security: 'unrestricted' };
+          tables.push({ source: d.materialized, rowCount: table.rowCount, value: table.value });
+        } else visit(d.pipeline);
+      }
+    };
+    // Check every cache dependency before opening any leaf. Full graph policy checks already ran.
+    visit(g.pipeline);
+    for (const [i, a] of g.leaves.entries()) if (needed.has(a.source.id)) {
       const table = await this.data.table(context, a, a.physical.columns.map(c => c.name));
       tables.push({ source: sources[i]!, rowCount: table.rowCount, value: table.value });
     }
     await this.data.finish(context, g.leaves, g.revisions);
-    await withPrepMemory(tables, c => streamPrepDuckDb(c, g.pipeline, sources, { datasets: g.datasets, datasetId: id, ...(through === undefined ? {} : { through }) }, this.blaze.limits, output));
+    await withPrepMemory(tables, c => streamPrepDuckDb(c, g.pipeline, sources, { datasets, datasetId: id, ...(through === undefined ? {} : { through }) }, this.blaze.limits, output));
     await this.data.finish(context, g.leaves, g.revisions);
   }
   async save(context: TenantContext, id: string, input: unknown) {

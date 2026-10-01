@@ -62,7 +62,11 @@ test('H2 no unauthenticated fallback exists on fixture, embed, source, automatio
   const f = await authFixture(t), { request, operator } = await serving(t, f), session = await f.login();
   for (const path of ['/api/session', '/api/assets', '/analyses', '/api/datasets/sales/query', '/api/prep-sources', '/embed/forged', '/api/automation-status', '/unknown']) {
     for (const headers of [{}, { authorization: 'Bearer forged' }, operator]) assert.equal((await request(path, { headers })).status, 401, path);
-    if (path !== '/api/session') assert.equal((await request(path, { headers: { authorization: `Bearer ${session.token}` } })).body.errorCode, 'HOSTED_CAPABILITY_UNAVAILABLE');
+    if (path !== '/api/session') {
+      const authorized = await request(path, { headers: { authorization: `Bearer ${session.token}` } });
+      if (path === '/api/prep-sources') assert.deepEqual(authorized.body, []);
+      else assert.equal(authorized.body.errorCode, path === '/api/datasets/sales/query' ? 'HOSTED_REQUEST_INVALID' : 'HOSTED_CAPABILITY_UNAVAILABLE');
+    }
   }
 });
 test('H2 tenant administrators cannot provision or use operator credentials as tenant sessions', async t => {

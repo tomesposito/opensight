@@ -17,6 +17,9 @@ export interface Admission {
 export class HostedData {
   readonly blaze = new BlazeStore();
   private readonly cacheRevisions = new Map<string, string>();
+  private readonly admitted = new WeakMap<TenantContext, Set<Admission>>();
+  begin(context: TenantContext): void { this.admitted.set(context, new Set()); }
+  async publication(context: TenantContext, revisions: Revisions): Promise<void> { await this.finish(context, [...this.admitted.get(context) ?? []], revisions); }
   constructor(readonly sources: HostedSources, private readonly postgres = streamSourcePostgres) {}
   async admit(context: TenantContext, id: string, path: DataPath): Promise<Admission> {
     const revisions = await this.sources.metadata.revisions(context);
@@ -37,11 +40,13 @@ export class HostedData {
     // Validate the immutable predicate even on schema/discovery paths.
     planSourceRead(this.read(admission), this.blaze.limits, 'postgres');
     await this.finish(context, [admission]);
+    this.admitted.get(context)?.add(admission);
     return admission;
   }
   async finish(context: TenantContext, admissions: readonly Admission[], expected?: Revisions): Promise<void> {
-    for (const a of admissions) { this.sources.active(a.source); await this.sources.metadata.assertRevisions(context, a.revisions); }
+    for (const a of admissions) await this.sources.metadata.assertRevisions(context, a.revisions);
     if (expected) await this.sources.metadata.assertRevisions(context, expected);
+    for (const a of admissions) this.sources.active(a.source);
   }
   read(a: Admission, columns = a.physical.columns.filter(c => !a.deniedColumns.includes(c.name)).map(c => c.name)): SourceRead {
     return { source: a.physical, security: a.security, columns, ...(a.tenantPredicate ? { tenantPredicate: a.tenantPredicate } : {}) };
