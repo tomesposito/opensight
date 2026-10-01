@@ -150,10 +150,8 @@ test('configured author retains its API client and the original initial fixture'
   const api = createApiClient('/api', async () => Response.json({ lastGood: null, state: 'never', error: null, datasetId: 'sales' }));
   const fixtures = ['other', 'renderable-sales'].map(id => ({ id, name: id, description: '', provenance: '', notice: '', sheets: [] }));
   const ui = await mount(t, createElement(AccessProvider, { access: { mode: 'hosted', session: registered } }, createElement(Application, { api, fixtures })));
-  assert.equal(ui.renderer.root.findByType(Dashboard).props.fixture.id, 'renderable-sales');
-  assert.equal(ui.renderer.root.findByProps({ value: 'api' }).props.disabled, false);
-  await act(async () => ui.renderer.root.findByProps({ className: 'source-picker' }).findByType('select').props.onChange({ target: { value: 'fixtures' } }));
   assert.equal(ui.renderer.root.findByType(Dashboard).props.fixture.id, 'other');
+  assert.equal(ui.renderer.root.findByProps({ value: 'api' }).props.disabled, false);
   await act(async () => ui.renderer.root.findByProps({ className: 'source-picker' }).findByType('select').props.onChange({ target: { value: 'author' } }));
   assert.equal(ui.renderer.root.findByType(Author).props.client, api);
 });

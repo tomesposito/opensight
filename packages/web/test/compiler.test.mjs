@@ -74,7 +74,7 @@ test('KPI uses an ECharts graphic with exactly the reference aggregate', () => {
 });
 test('KPI distinguishes zero, null, empty results and unavailable data', () => {
   const input = sample('KPIVisual');
-  for (const [rows, label, state] of [[[{ revenue: 0 }], '0', 'ready'], [[{ revenue: null }], 'No value', 'ready'], [[], 'No results', 'empty'], [null, 'Needs data', 'unavailable']]) {
+  for (const [rows, label, state] of [[[{ revenue: 0 }], '0', 'ready'], [[{ revenue: null }], 'No value', 'ready'], [[], 'No results', 'empty'], [null, 'Data unavailable', 'unavailable']]) {
     input.rows = rows;
     const compiled = compileVisual(input);
     assert.equal(compiled.option.graphic[0].style.text, label);

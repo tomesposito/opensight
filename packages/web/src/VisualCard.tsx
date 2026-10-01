@@ -3,7 +3,7 @@ import { fieldRule } from './formatting.js';
 import { rowSelection, brushSelection, type VisualInteraction } from './visual-selection.js';
 import { useEffect, useId, useMemo, useRef, useState, type CSSProperties } from 'react';
 import type { EChartsOption } from 'echarts';
-import { compileVisual, DATA_REQUIRED_LABEL, displayCell, rowGroupKey, rowGroupVisibility } from './compiler.js';
+import { compileVisual, displayCell, rowGroupKey, rowGroupVisibility } from './compiler.js';
 import type { CompiledVisual } from './compiler.js';
 import type { FixtureVisual } from './model.js';
 import { init } from './echarts.js';
@@ -64,7 +64,7 @@ function DataTable({ compiled, interaction }: { compiled: CompiledVisual; intera
   </table></div>;
 }
 
-export function VisualCard({ visual, dataMessage, loading = false, definitionPreview = false, interaction }: { visual: FixtureVisual; dataMessage?: string; loading?: boolean; definitionPreview?: boolean; interaction?: VisualInteraction }) {
+export function VisualCard({ visual, dataMessage, loading = false, interaction }: { visual: FixtureVisual; dataMessage?: string; loading?: boolean; interaction?: VisualInteraction }) {
   const headingId = useId();
   const theme = visual.theme ?? LIGHT_THEME;
   const result = useMemo(() => {
@@ -84,12 +84,11 @@ export function VisualCard({ visual, dataMessage, loading = false, definitionPre
     {error && <div className="visual-error" role="alert"><strong>Unable to render</strong><p>{error}</p></div>}
     {compiled && <>
       <div className="visual-content">
-        {!loading && compiled.state === 'ready' && ((compiled.model.kind === 'table' || compiled.model.kind === 'pivot') ? <DataTable compiled={compiled} interaction={interaction} /> : <Chart option={compiled.option} title={compiled.model.title} compiled={compiled} interaction={interaction} />)}
+        {!loading && ((compiled.model.kind === 'table' || compiled.model.kind === 'pivot') ? <DataTable compiled={compiled} interaction={interaction} /> : <Chart option={compiled.option} title={compiled.model.title} compiled={compiled} interaction={interaction} />)}
         {compiled.state !== 'ready' && <div className="empty-state" role="status">
           <span className="empty-symbol" aria-hidden="true">◌</span>
-          <strong>{loading ? 'Loading data…' : compiled.state === 'unavailable' ? definitionPreview ? 'Definition only' : dataMessage ? 'Unable to load data' : DATA_REQUIRED_LABEL : 'No results'}</strong>
-          <p>{loading ? 'Waiting for query results. No data is shown until the query completes.' : compiled.state === 'empty' ? 'The result set contains no rows. Review the filters and source data for matching records.' : definitionPreview ? 'This preview has no sample results. Live data requires a hosted API with a configured source and access permissions. No query runs in this preview.' : dataMessage ? 'Review the details below, check the selected fields and data access, then retry.' : 'No data is attached to this visual. Choose a supported sample, or query a configured dataset through a hosted API.'}</p>
-          {!loading && dataMessage && <p>{dataMessage}</p>}
+          <strong>{loading ? 'Loading data…' : compiled.state === 'unavailable' ? 'Data unavailable' : 'No results'}</strong>
+          <p>{loading ? 'Computing the assigned fields from local sales data.' : dataMessage ?? (compiled.state === 'unavailable' ? 'The chart definition is loaded. No matching precomputed fixture rows are available.' : 'The supplied result set is empty.')}</p>
           <small>{compiled.model.measures.map(f => `SUM(${f.column})`).join(', ')}{compiled.model.dimensions[0] && ` by ${compiled.model.dimensions[0].column}`}</small>
         </div>}
       </div>
