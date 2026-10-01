@@ -124,7 +124,8 @@ test('Analyses reads only its mode/identity collection and reports corrupt stora
   assert.equal(ui.root.findByType(LocalDrafts).props.entries.length, 0);
   ui.storage.setItem('opensight.author.drafts.v1.demo', '{broken');
   await act(() => ui.root.findByType(LocalDrafts).props.onRefresh());
-  assert.match(ui.text(), /Saved drafts are corrupt or unsupported/);
+  assert.match(ui.text(), /Saved analyses on this device could not be read/);
+  assert.match(ui.text(), /Reload to retry, or import an exported/);
   assert.equal(ui.storage.getItem('opensight.author.drafts.v1.demo'), '{broken');
 });
 

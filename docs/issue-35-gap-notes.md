@@ -148,3 +148,11 @@ verification run. The unchanged flood test subsequently passed in isolation:
 competitor latency 2860.4 ms (limit 6000 ms), and event-loop delay 35.9 ms (limit
 250 ms). No timing limit, security assertion or runtime implementation changed.
 Browser/media work finished before the final full-suite rerun.
+
+The next completed workspace run (`full-tests-copy-expectations.log`, exit 1)
+reported **1,579 passed / 7 failed / 0 skipped**; root conformance did not run.
+All seven failures were old copy assertions in the Analyses navigation, legacy
+migration and imported-bundle storage tests. They now require the new
+reload/import guidance while retaining the existing rejection and identity
+isolation checks. The focused three-suite rerun passed; application behavior
+and browser captures did not change. The full root command is rerun below.
