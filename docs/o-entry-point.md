@@ -1,17 +1,23 @@
 # O entry point — Phase 4, issue #6
 
 The builder chrome contains **Ask a question**. This is a local deterministic
-interpreter, not an LLM. It interprets the local sales schema (including locally
-available calculated fields), renders the selected answer through the existing
-visual compiler, and shows its explanation and grammar-match confidence.
+interpreter, not an LLM. It interprets the active prepared dataset or the local
+sales schema (including locally available calculated fields), renders the
+selected answer through the existing visual compiler, and shows its explanation
+and grammar-match confidence.
 **Did you mean…?** cards select other interpretations. **ADD TO ANALYSIS** adds
 the selected visual and its helper calculations to the active sheet in one edit.
 The normal draft save and bundle/JSON export paths retain that definition.
 
-The input uses local sales even when other imported resources are present.
-Imported unresolved datasets are not queried. O previews use synthetic fixture
-rows offline, or the existing local sales query endpoint when API mode is selected.
-An API failure is displayed; it never falls back to fixtures. Sheet controls and
+In the local workspace, O uses the visual builder's `queryDataset` path and
+current dataset schema. Sales questions query `/api/datasets/sales/query`;
+uploaded CSVs query their prepared dataset ID, including their own field names,
+types and date grains. The source label names the queried dataset. Imported
+unresolved datasets are not queried. O previews use synthetic fixture rows
+offline; hosted O continues to use `/api/o/query` with its dashboard scope and
+existing authorization checks. An API failure is displayed; it never falls back
+to fixtures. Expired uploads retain the re-upload, prepare and reconnect guidance
+described in [local drafts](local-drafts.md). Sheet controls and
 inherited filters apply to added visuals through the existing authoring path.
 
 ## Supported question grammar
@@ -117,10 +123,12 @@ separate save action. Editing the request clears any stale suggestion.
 
 ## Hosted roles and generative mode (Issue #7)
 
-The entire ask-a-question bar is restricted to administrator, author_ai and
-reader_ai, including deterministic mode. Reader AI is available on accessible
-published dashboards and has no ADD TO ANALYSIS action. The offline public
+In hosted mode, the entire ask-a-question bar is restricted to administrator,
+author_ai and reader_ai, including deterministic mode. Reader AI is available on
+accessible published dashboards and has no ADD TO ANALYSIS action. The offline public
 sample preview uses a fixed author_ai persona and cannot access hosted features.
+The local workspace exposes deterministic questions without hosted AI access;
+generative mode stays disabled there.
 
 Hosted generative mode enables only when both AI capability and a configured
 non-Bedrock provider are present. The provider translates a question into O's
