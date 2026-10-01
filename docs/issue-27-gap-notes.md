@@ -72,3 +72,34 @@ Local evidence: `/tmp/issue-27-targeted.log`, `/tmp/issue-27-browser.log`,
 `/tmp/issue-27-readme-gif.mjs`, `/tmp/issue-27-gif.log`, and
 `/tmp/issue-27-gif-assembly.log`. The capture harness uses the existing screenshot
 tool installation; it downloads no browser or package.
+
+## Full verification
+
+Root `npm test` exited **0** with **1,469 passed / 0 failed / 9 skipped**.
+All skips are live PostgreSQL integration tests (seven API, two query engine)
+because `DATABASE_URL` is not set. Strict TypeScript and package public-entry
+checks run through the existing workspace commands.
+
+| Runner | Passed | Failed | Skipped |
+| --- | ---: | ---: | ---: |
+| API | 242 | 0 | 7 |
+| Bundle parser | 197 | 0 | 0 |
+| Embedding SDK | 4 | 0 | 0 |
+| O interpreter | 32 | 0 | 0 |
+| Query engine | 496 | 0 | 2 |
+| Web | 495 | 0 | 0 |
+| Root conformance | 3 | 0 | 0 |
+| **Total** | **1,469** | **0** | **9** |
+
+An earlier full invocation printed the same green totals, but its supervising
+shell ended with a termination status before recording its exit file. The full
+suite was repeated with an isolated subprocess group and durable exit recording;
+that run returned 0. No runtime or test changes were needed between runs.
+Evidence: `/tmp/issue-27-verified-tests.log` and
+`/tmp/issue-27-verified-tests.exit`.
+
+`npm run build:demo --workspace @opensight/web` also exited 0. `git diff --check`
+passes. The final full run verifies implementation commit `46334786`; later
+commits contain the capture harness, documentation, reviewed images and these
+verification notes. All work is committed on the requested branch; merge,
+publication and issue closure remain with the runner.
