@@ -34,3 +34,26 @@ brief is the polish contract; `SOLUTION_DESIGN.md` remains unchanged.
   Missing data, empty results, definition previews and query failures remain
   settled text states. Focused empty-state tests: 12 passed / 0 failed / 0 skipped.
   Browser checks also require no active animations in settled definition cards.
+- **3 — Already fixed by #29/#33, verified:** No auth/runtime changes. The
+  endpoint matrix covers both queries, O query/generate, upload creation/read,
+  prep source/dataset lists, prep GET/PUT/DELETE/preview, execution GET/PUT,
+  cached rows and refresh. Forged identity headers fail on every route; adding
+  a bearer string cannot turn a local request into a hosted identity.
+
+## Access rules verified for item 3
+
+| Surface | Local workspace (default fixture CLI) | Fixture-only library API (`localData: false`) | Static/explicit sample demo | Hosted API |
+| --- | --- | --- | --- | --- |
+| Sales dataset query | Public synthetic rows, HTTP 200 | Public synthetic rows, HTTP 200 | Computes bundled rows; no API | Verified session, tenant dataset and existing grants required |
+| Prepared dataset query | Actual local upload/pipeline; no sign-in | No prepared registry; HTTP 404 | Unavailable; no API | Verified session and existing source/grant checks |
+| Deterministic O | Uses the same dataset query as Author (#33) | Sample UI runs locally | Computes synthetic sales, labeled offline | Uses gated `/api/o/query`; no fallback |
+| `/api/o/query`, `/api/o/generate` | HTTP 503 `SECURITY_NOT_CONFIGURED` | Same | Never called | HTTP 401 without verified tenant session; existing AI gates still apply |
+| Uploads and all prep routes | Explicit single-user local access (#29), actual upload/preview/save/query/Blaze/refresh | HTTP 503 `SECURITY_NOT_CONFIGURED` | Disabled with API prerequisite | HTTP 401 without verified tenant session, then existing role/ownership/grant checks |
+
+The default CLI's `OPENSIGHT_MODE=fixture` enables the local workspace. The
+library's fixture-only mode intentionally exposes public fixture queries but
+no upload/prep workspace. `/api/o/*` is a hosted capability, not the transport
+for local deterministic interpretation. These are capability boundaries, not
+a general “all writes need auth” rule: local workspace writes are explicit.
+No route was opened and no hosted error was replaced by sample data. Existing
+hosted source, role, RLS/CLS and ownership suites remain part of mandatory tests.

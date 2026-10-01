@@ -179,3 +179,18 @@ test('H2 hosted CLI starts with private durable storage and its key-rotation com
   assert.equal(await new Promise(resolve => rotation.once('exit', resolve)), 0);
   assert.equal(await inspect(), 401);
 });
+
+import { polishEndpoints } from './polish-endpoints.mjs';
+test('Issue #35: every query, O, upload and prep endpoint requires a verified hosted tenant session', async t => {
+  const f = await authFixture(t), { request, operator } = await serving(t, f);
+  for (const [path, method] of polishEndpoints) {
+    const body = method === 'POST' || method === 'PUT' ? {} : undefined;
+    for (const headers of [{}, { authorization: 'Bearer local' }, operator]) {
+      const denied = await request(path, { method, body, headers });
+      assert.equal(denied.status, 401, `${method} ${path}`);
+      assert.equal(denied.body.errorCode, 'AUTHENTICATION_FAILED', path);
+    }
+    const forged = await request(path, { method, body, headers: { 'x-user-id': 'local' } });
+    assert.equal(forged.status, 403, path); assert.equal(forged.body.errorCode, 'FORGED_PRINCIPAL', path);
+  }
+});
