@@ -11,7 +11,7 @@ no AWS required.
 ![OpenSight tour: dashboard, ask a question, data preparation, data sources](docs/images/opensight-tour.gif)
 
 *Above: the offline demo — a dashboard, the O natural-language bar answering
-"revenue by region", branching data preparation, and the connector gallery.*
+"revenue by region", the data preparation canvas, and the connector gallery.*
 
 ## Features
 
@@ -20,6 +20,14 @@ no AWS required.
 Author on a QuickSight-style canvas: 18 visual types (bar, line, pie/donut,
 KPI, table, pivot, scatter, combo, maps and more), parameters and controls,
 filter actions, drill-down, themes, and `.qs` bundle import/export round trips.
+
+The app opens to a working sales dashboard using pinned synthetic sample results
+(fixed East-region filter; no live query). Choose **Author** to build an analysis,
+or **Developer fixture preview** to inspect exported definitions. All existing
+modes remain available under their role permissions. See
+[sample dashboard and preview semantics](docs/issue-28-gap-notes.md).
+
+![Default sales dashboard rendered from pinned sample results](docs/images/sample-dashboard.png)
 
 ![Authoring canvas with the O bar in the toolbar](docs/images/author.png)
 
@@ -30,7 +38,7 @@ add calculated columns, change types, rename, filter — and combine sources
 with join/append steps. Branch from an earlier step, choose the output, and
 preview each path against a local or hosted API.
 
-![Data preparation with summary and detail branches](docs/images/data-prep.png)
+![Data preparation canvas with hosted preview requirements](docs/images/data-prep.png)
 
 ### ⚡ Blaze cached datasets
 

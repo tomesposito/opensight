@@ -6,7 +6,8 @@
     "outDir": "../build/test",
     "rootDir": "../src",
     "types": [
-      "node"
+      "node",
+      "vite/client"
     ]
   },
   "include": [
@@ -31,6 +32,7 @@
     "../src/AISettings.tsx",
     "../src/UserManagement.tsx",
     "../src/Dashboard.tsx",
+    "../src/App.tsx",
     "../src/DataSources.tsx",
     "../src/DataPrep.tsx",
     "../src/EmbedFrame.tsx",
