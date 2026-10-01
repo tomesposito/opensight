@@ -1,4 +1,5 @@
 import { loadBudgets } from './budget-store.js';
+import { embeddingPolicy, expectedEmbedRevision, HostedEmbedding, initializeEmbedding } from './embedding-config.js';
 import { assertHostedSourcesReady, expireUploads } from './source-maintenance.js';
 import { HostedSources } from './hosted-sources.js';
 import { HostedData } from './hosted-data.js';
@@ -48,13 +49,14 @@ function code(value: unknown): string {
 }
 function idempotency(request: IncomingMessage): string { return identifier(request.headers['idempotency-key']); }
 function boundary(request: IncomingMessage, origin: string): void {
-  for (const header of ['host', 'authorization', 'origin', 'idempotency-key']) {
+  for (const header of ['host', 'authorization', 'origin', 'idempotency-key', 'if-match']) {
     let count = 0;
     for (let i = 0; i < request.rawHeaders.length; i += 2) if (request.rawHeaders[i]!.toLowerCase() === header) count++;
     if (count > 1) throw new MetadataError('HOSTED_REQUEST_INVALID', 400);
   }
   if (request.headers.host !== new URL(origin).host || request.headers.origin !== undefined && request.headers.origin !== origin
-    || request.headers.forwarded !== undefined || request.headers['x-forwarded-host'] !== undefined) throw new MetadataError('UNTRUSTED_ORIGIN', 403);
+    || request.headers.forwarded !== undefined || request.headers['x-forwarded-host'] !== undefined) throw new MetadataError(
+      /^\/api\/(?:namespaces\/[^/]+\/)?embedding(?:\/|$)/.test(request.url ?? '') ? 'EMBED_ORIGIN_DENIED' : 'UNTRUSTED_ORIGIN', 403);
   if (forgedHeaders.some(h => request.headers[h] !== undefined)) throw new MetadataError('FORGED_PRINCIPAL', 403);
   if (['GET', 'HEAD'].includes(request.method ?? '') && (request.headers['transfer-encoding'] || request.headers['content-length'] && request.headers['content-length'] !== '0')) throw new MetadataError('HOSTED_REQUEST_INVALID', 400);
   if (!request.url?.startsWith('/') || request.url.startsWith('//') || request.url.includes('?') || request.url.includes('#')) throw new MetadataError('HOSTED_REQUEST_INVALID', 400);
@@ -67,6 +69,9 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
   if (typeof options.security?.authenticate !== 'function') throw new MetadataError('HOSTED_VERIFIER_REQUIRED', 503);
   const authenticate = options.security.authenticate;
   const metadata = new TenantMetadata(options.tenantDatabase, options.membershipDatabase);
+  const policy = embeddingPolicy(options.env ?? process.env, config.origin);
+  await initializeEmbedding(options.membershipDatabase);
+  const embedding = new HostedEmbedding(options.membershipDatabase, metadata, policy);
   const budgets = await loadBudgets(options.membershipDatabase, metadata);
   const data = new HostedDataRoutes(new HostedData(new HostedSources(metadata, config.encryptionKey.toString('base64'), sourceEndpoints(options.env)), undefined, budgets));
   const provisioning = new HostedProvisioning(options.membershipDatabase, config, options.mailTransport ?? smtpFromEnvironment(options.env));
@@ -162,6 +167,15 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
         send(response, 200, resources.map(r => ({ id: r.id, namespaceId: context.namespaceId, ...r.body }))); return;
       }
       if (/^\/api\/(namespaces|users|invitations)(?:\/|$)/.test(path)) throw new MetadataError('OPERATOR_REQUIRED', 403);
+      if (path === '/api/embedding/config') {
+        method(request, response, ['GET', 'PUT']);
+        const result = request.method === 'GET' ? await embedding.get(context)
+          : await embedding.put(context, await body(request, ['enabled', 'allowedParentOrigins', 'embedOriginId', 'maxSessionSeconds', 'appearance', 'features']), expectedEmbedRevision(request.headers['if-match']));
+        response.setHeader('ETag', `"${result.revision}"`);
+        send(response, 200, result); return;
+      }
+      if (/^\/api\/embedding\/domains(?:\/|$)/.test(path)) throw new MetadataError('EMBED_FEATURE_UNSUPPORTED', 422);
+      if (/^\/api\/embedding\/sessions(?:\/|$)/.test(path)) throw new MetadataError('EMBEDDING_NOT_CONFIGURED', 503);
       const cancellation = new AbortController();
       request.once('aborted', () => cancellation.abort());
       response.once('close', () => { if (!response.writableFinished) cancellation.abort(); });
