@@ -155,3 +155,27 @@ test('configured author retains its API client and the original initial fixture'
   await act(async () => ui.renderer.root.findByProps({ className: 'source-picker' }).findByType('select').props.onChange({ target: { value: 'author' } }));
   assert.equal(ui.renderer.root.findByType(Author).props.client, api);
 });
+
+test('explicit local capability opens file workspace without inventing a session or AI identity', async t => {
+  let available = true;
+  const ui = await mount(t, gate({ getSession: missing, async getLocalData() { return available; } }));
+  assert.deepEqual(ui.renderer.root.findByType('output').props['data-access'], { mode: 'local' });
+  available = false;
+  await ui.focus();
+  assert.equal(first(ui).props.issue, 'not-configured');
+  assert.equal(ui.renderer.root.findAllByType(Probe).length, 0);
+});
+test('rejected hosted sessions never probe or fall back to local data', async t => {
+  const ui = await mount(t, gate({ getSession() { throw new ApiError('Rejected', 401, 'AUTHENTICATION_FAILED'); }, getLocalData() { assert.fail('No local fallback for rejected auth'); } }));
+  assert.equal(first(ui).props.issue, 'sign-in');
+});
+test('local capability transport validates explicit mode and respects abort', async () => {
+  const signal = new AbortController().signal;
+  for (const [body, status, expected] of [[{ mode: 'local', maxUploadBytes: 8388608, uploadTtlSeconds: 86400 }, 200, true], [{ mode: 'hosted' }, 200, false], [{ mode: 'local' }, 200, false], [{}, 503, false]]) {
+    const client = createApiClient('/', async (url, options) => {
+      assert.equal(url, '/api/local-data'); assert.equal(options.signal, signal);
+      return Response.json(body, { status });
+    });
+    assert.equal(await client.getLocalData(signal), expected);
+  }
+});

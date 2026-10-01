@@ -38,7 +38,7 @@ function OEntryContent({ draft, dispatch, client, renderBar, dashboardId }: OEnt
   }, [interpretation, draft.calculatedFields]);
   const submit = async () => {
     const current = ++revision.current; setSelected(0); setAdded(''); setError(''); setAnswer(undefined);
-    if (!generative) { setAnswer({ schema, result: interpretQuestion(question, dataFields(draft.calculatedFields)) }); return; }
+    if (!generative) { setAnswer({ schema, result: interpretQuestion(question, dataFields(draft.calculatedFields, draft.dataset)) }); return; }
     if (!ai.available || !ai.client) return;
     setPending(true);
     try {

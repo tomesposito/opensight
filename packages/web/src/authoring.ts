@@ -25,7 +25,7 @@ export const SALES_FIELDS = [
   { name: 'profit', role: 'measure', type: 'DECIMAL' },
 ] as const;
 export interface CalculatedField { name: string; expression: string; role: 'dimension' | 'measure' }
-export const FIELD_GROUPS = ['Geography', 'Metadata', 'Sales', 'Calculated'] as const;
+export const FIELD_GROUPS = ['Geography', 'Metadata', 'Sales', 'Columns', 'Calculated'] as const;
 export type FieldGroup = typeof FIELD_GROUPS[number];
 export interface DataField { name: string; role: 'dimension' | 'measure'; type: string; group?: FieldGroup }
 /** Presentation only: never persisted in a draft or bundle definition. */
@@ -49,7 +49,7 @@ export function calculationInfo(name: string, calculations: readonly CalculatedF
   return bind(name);
 }
 export const dataFields = (calculations: readonly CalculatedField[] = [], dataset?: AuthorDataset): DataField[] => [
-  ...datasetFields(dataset).map(f => ({ ...f, group: fieldGroup(f) })), ...calculations.map(f => {
+  ...datasetFields(dataset).map(f => ({ ...f, group: dataset && fieldGroup(f) === 'Sales' ? 'Columns' as const : fieldGroup(f) })), ...calculations.map(f => {
     let type = f.role === 'measure' ? 'DECIMAL' : 'STRING';
     try { const info = calculationInfo(f.name, calculations, dataset); if (info.scalarType === 'datetime') type = 'DATETIME'; } catch { /* Invalid imported expressions remain in the import report. */ }
     return { name: f.name, role: f.role, type, group: 'Calculated' as const };

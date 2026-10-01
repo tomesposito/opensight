@@ -12,7 +12,7 @@ export function ActionEditor({ draft, visual, dispatch }: { draft: AuthorDraft; 
       <label>Affected visuals<select value={action.targets === 'all' ? 'all' : 'selected'} onChange={e => save({ ...action, targets: e.target.value === 'all' ? 'all' : [] })}><option value="all">All compatible visuals</option><option value="selected">Selected visuals</option></select></label>
       {action.targets !== 'all' && action.targets.filter(id => !sheet.visuals.some(v => v.id === id)).map(id => <p key={id}>Cannot receive: {id.replace(/^unresolved:/, '')} is not on this sheet.</p>)}
       {sheet.visuals.map(target => {
-        const reason = targetProblem(visual, target, action, draft.calculatedFields), field = action.mappings[target.id] ?? action.sourceField;
+        const reason = targetProblem(visual, target, action, draft.calculatedFields, draft.dataset), field = action.mappings[target.id] ?? action.sourceField;
         return <div key={target.id} className="action-target"><strong>{target.title || target.id} ({target.kind})</strong>
           {action.targets !== 'all' && <label><input type="checkbox" disabled={!!reason} checked={action.targets.includes(target.id)} onChange={e => save({ ...action, targets: e.target.checked ? [...action.targets as string[], target.id] : (action.targets as string[]).filter(id => id !== target.id) })} />Receive action</label>}
           <label>Map {action.sourceField} to<select aria-label={`Target field for ${target.id}`} value={field} disabled={!actionDimensions(target).length || target.id === visual.id} onChange={e => save({ ...action, mappings: { ...action.mappings, [target.id]: e.target.value } })}>{[...new Set([field, ...actionDimensions(target)])].map(f => <option key={f}>{f}</option>)}</select></label>
