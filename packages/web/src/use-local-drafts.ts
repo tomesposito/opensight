@@ -3,15 +3,15 @@ import { authorReducer, emptyDraft, type AuthorDataset, type AuthorDraft } from 
 import { browserDraftStorage, createDraftStore, draftStorageError, draftStorageKey, type DraftSummary } from './local-drafts.js';
 import type { Access } from './access.js';
 
-export function useLocalDrafts(access: Access, dataset?: AuthorDataset) {
+export function useLocalDrafts(access: Access, dataset?: AuthorDataset, opening?: { draftId?: string; newAnalysis?: boolean }) {
   const key = draftStorageKey(access);
   const store = useMemo(() => createDraftStore(browserDraftStorage, access), [key]);
-  const [initial] = useState<{ id?: string; draft: AuthorDraft; saved?: string; message: string }>(() => {
+  const [initial] = useState<{ id?: string; draft: AuthorDraft; saved?: string; message: string; openingError?: string }>(() => {
     try {
-      const restored = store.restore();
-      if (restored && (!dataset || JSON.stringify(restored.draft.dataset) === JSON.stringify(dataset))) return { ...restored, saved: JSON.stringify(restored.draft), message: 'Draft restored from this device.' };
+      const restored = opening?.draftId ? { id: opening.draftId, draft: store.open(opening.draftId) } : opening?.newAnalysis ? undefined : store.restore();
+      if (restored && (opening?.draftId || !dataset || JSON.stringify(restored.draft.dataset) === JSON.stringify(dataset))) return { ...restored, saved: JSON.stringify(restored.draft), message: 'Draft restored from this device.' };
       return { draft: { ...emptyDraft(), ...(dataset ? { dataset } : {}) }, message: 'Save this analysis on this device.' };
-    } catch (error) { return { draft: { ...emptyDraft(), ...(dataset ? { dataset } : {}) }, message: draftStorageError(error) }; }
+    } catch (error) { return { draft: { ...emptyDraft(), ...(dataset ? { dataset } : {}) }, message: draftStorageError(error), ...(opening?.draftId ? { openingError: draftStorageError(error) } : {}) }; }
   });
   const [draft, dispatch] = useReducer(authorReducer, initial.draft);
   const [id, setId] = useState(initial.id);
@@ -55,5 +55,5 @@ export function useLocalDrafts(access: Access, dataset?: AuthorDataset) {
       setMessage('Draft deleted from this device.'); refresh(); return true;
     } catch (error) { setMessage(draftStorageError(error)); return false; }
   };
-  return { draft, dispatch, id, dirty, message, entries, refresh, save, keepCurrent, replace, open, rename, remove };
+  return { draft, dispatch, id, dirty, message, entries, refresh, save, keepCurrent, replace, open, rename, remove, openingError: initial.openingError };
 }

@@ -38,16 +38,20 @@ import {
 } from './authoring.js';
 import type { AuthorAction, AuthorDataset, AuthorDraft, AuthorVisual, CalculatedField, FieldGroup, VisualKind, Well } from './authoring.js';
 
-export function Author(props: { onSources?: () => void; onDatasetChange?: (dataset?: AuthorDataset) => void; dataset?: AuthorDataset; client?: QueryClient; modePicker?: ReactNode; onPrep?: () => void }) {
+interface AuthorProps { onSources?: () => void; onDatasetChange?: (dataset?: AuthorDataset) => void; dataset?: AuthorDataset; client?: QueryClient; onPrep?: () => void; inApp?: boolean; draftId?: string; newAnalysis?: boolean; onDraftChange?: (id?: string) => void }
+export function Author(props: AuthorProps) {
   const access = useAccess();
   return allowed(access, 'build') ? <AuthorWorkspace key={draftStorageKey(access)} {...props} /> : <p role="alert">SECURITY_BUILD_REQUIRED: Author access required.</p>;
 }
 
 type EditorProps = { draft: AuthorDraft; dispatch: Dispatch<AuthorAction>; client?: QueryClient };
-function AuthorWorkspace({ client: apiClient, dataset, onDatasetChange, modePicker, onPrep, onSources }: { onSources?: () => void; onDatasetChange?: (dataset?: AuthorDataset) => void; dataset?: AuthorDataset; client?: QueryClient; modePicker?: ReactNode; onPrep?: () => void }) {
+function AuthorWorkspace({ client: apiClient, dataset, onDatasetChange, onPrep, onSources, inApp, draftId, newAnalysis, onDraftChange }: AuthorProps) {
   const access = useAccess();
-  const drafts = useLocalDrafts(access, dataset);
+  const drafts = useLocalDrafts(access, dataset, { draftId, newAnalysis });
   const { draft, dispatch } = drafts;
+  const changed = useRef(onDraftChange);
+  changed.current = onDraftChange;
+  useEffect(() => { if (!drafts.openingError) changed.current?.(drafts.id); }, [drafts.id, drafts.openingError]);
   // Storage reads create fresh objects. Renaming a draft must not cancel and
   // restart an identical data query while the server is still executing it.
   const datasetKey = JSON.stringify(draft.dataset);
@@ -95,11 +99,11 @@ function AuthorWorkspace({ client: apiClient, dataset, onDatasetChange, modePick
       setExportStatus('Export downloaded: opensight-analysis.json');
     } catch { setExportStatus('Export could not be downloaded. Please try again.'); }
   };
+  if (drafts.openingError) return <section><h1>Unable to open analysis</h1><p role="alert">{drafts.openingError}</p><p>Return to My analyses to refresh the list or choose another draft.</p></section>;
   return <div className="author-workspace" data-chrome={draft.chrome ?? 'light'}>
     <header className="author-topbar app-header">
-      <a className="brand" href="./"><span className="brand-mark" aria-hidden="true">◈</span>OpenSight</a>
+      {!inApp && <a className="brand" href="./"><span className="brand-mark" aria-hidden="true">◈</span>OpenSight</a>}
       <label className="analysis-title"><span className="sr-only">Analysis title</span><input value={draft.title} onChange={e => dispatch({ type: 'analysis-title', title: e.target.value })} /></label>
-      {modePicker}
     </header>
     <OEntry draft={draft} dispatch={dispatch} client={client} renderBar={bar => <AuthorToolbar onPrep={onPrep ? () => { if (drafts.keepCurrent()) onPrep(); } : undefined} draft={draft} dispatch={dispatch} oEntry={bar} fit={fit} onFit={() => setFit(value => !value)} onJson={download} onBundle={() => { if (!busy) void downloadQs(); }} onImport={() => fileInput.current?.click()} busy={busy} jsonDisabled={!!exported.error} />} />
     <div className="author-utilities">
