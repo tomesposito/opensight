@@ -3,22 +3,24 @@ import assert from 'node:assert/strict';
 import { act, createElement } from 'react';
 import { create } from 'react-test-renderer';
 import { assembleQsBundle, parseQsBundle } from '@opensight/bundle-parser/browser';
+import { createDraftStore } from '../build/test/local-drafts.js';
 import { Author } from '../build/test/Author.js';
 import { authorReducer, emptyDraft, serializeDraft } from '../build/test/authoring.js';
 
 async function mount(t) {
   const oldWindow = globalThis.window, oldDocument = globalThis.document, oldAct = globalThis.IS_REACT_ACT_ENVIRONMENT;
   const oldCreate = URL.createObjectURL, oldRevoke = URL.revokeObjectURL;
-  let saved, downloaded, renderer, clicks = 0;
+  let downloaded, renderer, clicks = 0;
+  const values = new Map(), storage = { getItem: k => values.get(k) ?? null, setItem: (k, v) => values.set(k, v) };
   globalThis.IS_REACT_ACT_ENVIRONMENT = true;
-  globalThis.window = { localStorage: { getItem: () => saved ?? null, setItem: (_, value) => { saved = value; } }, matchMedia: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }) };
+  globalThis.window = { localStorage: storage, matchMedia: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }) };
   globalThis.document = { body: { append() {} }, createElement: () => ({ click() { clicks++; }, remove() {} }) };
   URL.createObjectURL = blob => { downloaded = blob; return 'blob:local-test'; };
   URL.revokeObjectURL = () => {};
   await act(() => { renderer = create(createElement(Author)); });
   t.after(async () => { await act(() => renderer.unmount()); globalThis.window = oldWindow; globalThis.document = oldDocument; globalThis.IS_REACT_ACT_ENVIRONMENT = oldAct; URL.createObjectURL = oldCreate; URL.revokeObjectURL = oldRevoke; });
   const find = (type, predicate) => renderer.root.findAllByType(type).find(n => predicate(n.props));
-  return { renderer, find, saved: () => JSON.parse(saved), download: () => downloaded, clicks: () => clicks,
+  return { renderer, find, saved: () => createDraftStore(() => storage, { mode: 'demo' }).restore()?.draft, download: () => downloaded, clicks: () => clicks,
     text: () => JSON.stringify(renderer.toJSON()),
     button: label => find('button', p => p.children === label),
   };
@@ -54,6 +56,7 @@ test('drag/drop handles JSON members and malformed imports leave the previous dr
   let prevented = false;
   await act(async () => drop.props.onDrop({ preventDefault() { prevented = true; }, dataTransfer: { files: [file('member.json', bytes)] } }));
   assert.equal(prevented, true);
+  await act(() => ui.button('Save draft').props.onClick());
   const saved = ui.saved();
   await act(() => ui.button('Close import report').props.onClick());
   await act(async () => drop.props.onDrop({ preventDefault() {}, dataTransfer: { files: [file('bad.qs', new TextEncoder().encode('broken'))] } }));
@@ -71,6 +74,7 @@ test('per-card remap action updates the stored binding and leaves unmatched assi
   await act(async () => ui.find('input', p => p.type === 'file').props.onChange({ currentTarget: { files: [file('import.qs', bytes)], value: '' } }));
   await act(() => ui.button('Close import report').props.onClick());
   await act(() => ui.button('Remap to local dataset').props.onClick({ stopPropagation() {} }));
+  await act(() => ui.button('Save draft').props.onClick());
   const visual = ui.saved().sheets[0].visuals[0];
   assert.equal(visual.imported.local, true); assert.equal(visual.dimension, null);
   assert.deepEqual(visual.imported.unmappedFields, ['remote_region']);
@@ -83,6 +87,7 @@ test('sheet remap button updates every unresolved card in that sheet', async t =
   await act(async () => ui.find('input', p => p.type === 'file').props.onChange({ currentTarget: { files: [file('import.qs', bytes)], value: '' } }));
   await act(() => ui.button('Close import report').props.onClick());
   await act(() => ui.button('Remap sheet to local dataset').props.onClick());
+  await act(() => ui.button('Save draft').props.onClick());
   assert.ok(ui.saved().sheets[0].visuals.every(v => v.imported.local));
   assert.match(ui.text(), /Unsupported visual type: futureVisual/);
 });

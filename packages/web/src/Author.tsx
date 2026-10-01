@@ -3,6 +3,10 @@ import { ThemeEditor } from './ThemeEditor.js';
 import { DatasetHeader } from './DatasetHeader.js';
 import { FieldIcon } from './FieldIcon.js';
 import { AuthorToolbar } from './AuthorToolbar.js';
+import { DraftSourceRecovery, useDraftSource } from './DraftSource.js';
+import { LocalDrafts } from './LocalDrafts.js';
+import { useLocalDrafts } from './use-local-drafts.js';
+import { draftStorageKey } from './local-drafts.js';
 import { OEntry } from './OEntry.js';
 import { BuildForMe } from './BuildForMe.js';
 import { FormattingEditor } from './FormattingEditor.js';
@@ -19,7 +23,7 @@ import type { VisualInteraction } from './visual-selection.js';
 import { ControlsStrip } from './ControlsStrip.js';
 import type { AuthorParameter } from './parameters.js';
 import { ParameterEditor } from './ParameterEditor.js';
-import { useEffect, useId, useMemo, useReducer, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { Dispatch, ReactNode } from 'react';
 import { GridLayout, noCompactor, useContainerWidth } from 'react-grid-layout';
 import { downloadBundleBytes, exportBundle, importBundleFile, importedFilterProblem, withInheritedParameterFilters } from './bundle-authoring.js';
@@ -29,28 +33,23 @@ import { LiveAuthorVisual } from './LiveAuthorVisual.js';
 import { buildDistinctQuery, loadAuthorRows } from './author-query.js';
 import type { QueryClient } from './author-query.js';
 import {
-  authorVisualProblem, VISUAL_TYPES, GRID_COLUMNS, FIELD_GROUPS, fieldGroup, activeSheet, authorReducer, calculationError, dataFields, dimensionLabel,
-  emptyDraft, loadDraft, saveDraft, serializeDraft, sheetParameters, singleMeasure, tabular, visualDimensions, grouped, splitDimensions, noDimensions, capabilityNote,
+  authorVisualProblem, VISUAL_TYPES, GRID_COLUMNS, FIELD_GROUPS, fieldGroup, activeSheet, calculationError, dataFields, dimensionLabel,
+  emptyDraft, serializeDraft, sheetParameters, singleMeasure, tabular, visualDimensions, grouped, splitDimensions, noDimensions, capabilityNote,
 } from './authoring.js';
 import type { AuthorAction, AuthorDataset, AuthorDraft, AuthorVisual, CalculatedField, FieldGroup, VisualKind, Well } from './authoring.js';
 
-export function Author(props: { onDatasetChange?: (dataset?: AuthorDataset) => void; dataset?: AuthorDataset; client?: QueryClient; modePicker?: ReactNode; onPrep?: () => void }) {
+export function Author(props: { onSources?: () => void; onDatasetChange?: (dataset?: AuthorDataset) => void; dataset?: AuthorDataset; client?: QueryClient; modePicker?: ReactNode; onPrep?: () => void }) {
   const access = useAccess();
-  return allowed(access, 'build') ? <AuthorWorkspace {...props} /> : <p role="alert">SECURITY_BUILD_REQUIRED: Author access required.</p>;
+  return allowed(access, 'build') ? <AuthorWorkspace key={draftStorageKey(access)} {...props} /> : <p role="alert">SECURITY_BUILD_REQUIRED: Author access required.</p>;
 }
 
-const browserStorage = () => window.localStorage;
 type EditorProps = { draft: AuthorDraft; dispatch: Dispatch<AuthorAction>; client?: QueryClient };
-function AuthorWorkspace({ client: apiClient, dataset, onDatasetChange, modePicker, onPrep }: { onDatasetChange?: (dataset?: AuthorDataset) => void; dataset?: AuthorDataset; client?: QueryClient; modePicker?: ReactNode; onPrep?: () => void }) {
+function AuthorWorkspace({ client: apiClient, dataset, onDatasetChange, modePicker, onPrep, onSources }: { onSources?: () => void; onDatasetChange?: (dataset?: AuthorDataset) => void; dataset?: AuthorDataset; client?: QueryClient; modePicker?: ReactNode; onPrep?: () => void }) {
   const access = useAccess();
-  const storage = useMemo(() => access.mode === 'local' ? () => ({ getItem: (key: string) => window.localStorage.getItem(`local.${key}`), setItem: (key: string, value: string) => window.localStorage.setItem(`local.${key}`, value) }) : browserStorage, [access.mode]);
-  const [restored] = useState(() => {
-    const saved = loadDraft(storage);
-    return dataset && JSON.stringify(saved.draft.dataset) !== JSON.stringify(dataset) ? { draft: { ...emptyDraft(), dataset } } : saved;
-  });
-  const [draft, dispatch] = useReducer(authorReducer, restored.draft);
+  const drafts = useLocalDrafts(access, dataset);
+  const { draft, dispatch } = drafts;
   const client = useMemo(() => apiClient ? { ...apiClient, dataset: draft.dataset } : undefined, [apiClient, draft.dataset]);
-  const [storageStatus, setStorageStatus] = useState(restored.warning ?? 'Draft saved on this device.');
+  const source = useDraftSource(draft.dataset, client, access.mode === 'local');
   const [exportStatus, setExportStatus] = useState('');
   const [importStatus, setImportStatus] = useState('');
   const [busy, setBusy] = useState(false);
@@ -62,7 +61,8 @@ function AuthorWorkspace({ client: apiClient, dataset, onDatasetChange, modePick
     setBusy(true); setImportStatus(`Importing ${file.name}…`);
     try {
       const imported = await importBundleFile(file);
-      dispatch({ type: 'import', draft: imported }); setReportOpen(true);
+      if (!drafts.replace(imported)) { setImportStatus('Import paused. Save or export your current work first.'); return; }
+      onDatasetChange?.(undefined); setReportOpen(true);
       setImportStatus(`Imported ${file.name}. Review the import report for unsupported features.`);
     } catch (error) { setImportStatus(`Import failed: ${error instanceof Error ? error.message : String(error)}`); }
     finally { setBusy(false); }
@@ -76,10 +76,6 @@ function AuthorWorkspace({ client: apiClient, dataset, onDatasetChange, modePick
     } catch (error) { setExportStatus(`Export blocked: ${error instanceof Error ? error.message : String(error)}`); }
     finally { setBusy(false); }
   };
-  useEffect(() => {
-    if (restored.warning && draft === restored.draft) return;
-    setStorageStatus(saveDraft(draft, storage));
-  }, [draft, restored, storage]);
   const exported = useMemo(() => {
     try {
       const members = draft.bundle ? exportBundle(draft).members : undefined;
@@ -101,27 +97,31 @@ function AuthorWorkspace({ client: apiClient, dataset, onDatasetChange, modePick
       <label className="analysis-title"><span className="sr-only">Analysis title</span><input value={draft.title} onChange={e => dispatch({ type: 'analysis-title', title: e.target.value })} /></label>
       {modePicker}
     </header>
-    <OEntry draft={draft} dispatch={dispatch} client={client} renderBar={bar => <AuthorToolbar onPrep={onPrep} draft={draft} dispatch={dispatch} oEntry={bar} fit={fit} onFit={() => setFit(value => !value)} onJson={download} onBundle={() => { if (!busy) void downloadQs(); }} onImport={() => fileInput.current?.click()} busy={busy} jsonDisabled={!draft.sheets.some(s => s.visuals.length) || !!exported.error} />} />
+    <OEntry draft={draft} dispatch={dispatch} client={client} renderBar={bar => <AuthorToolbar onPrep={onPrep ? () => { if (drafts.keepCurrent()) onPrep(); } : undefined} draft={draft} dispatch={dispatch} oEntry={bar} fit={fit} onFit={() => setFit(value => !value)} onJson={download} onBundle={() => { if (!busy) void downloadQs(); }} onImport={() => fileInput.current?.click()} busy={busy} jsonDisabled={!!exported.error} />} />
     <div className="author-utilities">
       <span className="mode-badge">{client ? `API · ${draft.dataset?.name ?? 'Local sales'}` : 'Fixtures · Offline'}</span><span className="phase-badge">Builder v1</span>
+      <button type="button" onClick={drafts.save}>Save draft</button>
+      <button type="button" onClick={() => { if (drafts.replace({ ...emptyDraft(), ...(draft.dataset ? { dataset: draft.dataset } : {}) })) onDatasetChange?.(draft.dataset); }}>New analysis</button>
       <button type="button" onClick={() => void downloadQs()} disabled={busy} aria-describedby="export-help">Download .qs</button>
-      <button type="button" className="primary-button" onClick={download} disabled={!draft.sheets.some(s => s.visuals.length) || !!exported.error} aria-describedby="export-help">Export JSON</button>
+      <button type="button" className="primary-button" onClick={download} disabled={!!exported.error} aria-describedby="export-help">Export JSON</button>
     </div>
+    <LocalDrafts entries={drafts.entries} activeId={drafts.id} onRefresh={drafts.refresh} onOpen={id => { const opened = drafts.open(id); if (opened) onDatasetChange?.(opened.dataset); }} onRename={drafts.rename} onDelete={id => { if (drafts.remove(id) && id === drafts.id) onDatasetChange?.(undefined); }} />
     <div className="bundle-import" onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; }} onDrop={e => { e.preventDefault(); if (e.dataTransfer.files.length !== 1) setImportStatus('Drop one .qs ZIP or one bundle .json member.'); else void importFile(e.dataTransfer.files[0]); }} aria-label="Bundle drop zone">
       <details><summary>Import bundle</summary>
       <label>Import .qs or bundle JSON<input ref={fileInput} type="file" accept=".qs,.json,application/zip,application/json" disabled={busy} onChange={e => { const file = e.currentTarget.files?.[0]; e.currentTarget.value = ''; void importFile(file); }} /></label>
-      <p>Drop one .qs ZIP or JSON member here. Import replaces the current draft. Download your work first to keep it.</p>
+      <p>Drop one .qs ZIP or JSON member here. Import opens a new draft and saves existing edits first.</p>
       </details>
       {importStatus && <p role={importStatus.startsWith('Import failed') ? 'alert' : 'status'}>{importStatus}</p>}
       {draft.bundle && <button type="button" onClick={() => setReportOpen(true)}>View import report</button>}
     </div>
-    {access.mode === 'local' && <LocalDatasetPicker client={client} dataset={draft.dataset} onSelect={dataset => { dispatch({ type: 'import', draft: { ...emptyDraft(), ...(dataset ? { dataset } : {}) } }); onDatasetChange?.(dataset); }} />}
+    {access.mode === 'local' && <LocalDatasetPicker client={client} dataset={draft.dataset} onSelect={dataset => { if (drafts.replace({ ...emptyDraft(), ...(dataset ? { dataset } : {}) })) onDatasetChange?.(dataset); }} />}
     <p className="fixture-notice">{draft.dataset ? 'Live prepared data · Field assignments query the local API. Uploads expire after 24 hours or API restart.' : client ? 'Live local sales data · All regions, dates grouped in UTC (month by default). Field assignments query the API; unsupported queries show their error details and guidance.' : draft.calculatedFields.length || draft.parameters.length || draft.sheets.some(s => s.visuals.some(v => v.filterActions?.length || v.hierarchy)) ? 'Offline demo: controls, calculated fields and interactions recompute pinned synthetic sales rows locally across all regions. No live queries run.' : 'Offline demo: manual visual previews use fixed sample results: region = East, dates grouped by UTC month. Only revenue totals by region, category, month, or overall are available. Other manual selections need a supported sample or a hosted API. O recomputes synthetic sales rows locally across all regions. No live queries run.'}</p>
-    <div className="author-save"><p role="status">{storageStatus}</p>
+    <div className="author-save"><p role="status">{drafts.message}</p>{drafts.dirty && <p>Unsaved changes · Save draft before leaving Author or reloading.</p>}
       <p id="export-help">{exported.error ?? (client ? 'Downloads analysis definitions and sheet layouts; query results are not included.' : 'Downloads analysis definitions and sheet layouts; sample rows and the fixed East preview filter are not included.')}</p>
       {exportStatus && <p role="status">{exportStatus}</p>}
     </div>
-    <AuthorCanvas draft={draft} dispatch={dispatch} client={client} fit={fit} />
+    {source.problem && <DraftSourceRecovery draft={draft} sources={source.sources} problem={source.problem} onRetry={source.retry} onSources={onSources ? () => { if (drafts.keepCurrent()) onSources(); } : undefined} onReconnect={next => { dispatch({ type: 'import', draft: next }); onDatasetChange?.(next.dataset); }} />}
+    <AuthorCanvas draft={draft} dispatch={dispatch} client={client} fit={fit} sourceProblem={source.problem} />
     {reportOpen && draft.bundle && <ImportReport draft={draft} onClose={() => setReportOpen(false)} />}
   </div>;
 }
@@ -160,7 +160,7 @@ function Panel({ title, className, children }: { title: string; className: strin
   </details>;
 }
 
-export function AuthorCanvas({ draft, dispatch, client, fit = true }: EditorProps & { fit?: boolean }) {
+export function AuthorCanvas({ draft, dispatch, client, fit = true, sourceProblem }: EditorProps & { fit?: boolean; sourceProblem?: string }) {
   const [newKind, setNewKind] = useState<VisualKind>('bar');
   const [search, setSearch] = useState('');
   const [collapsedGroups, setCollapsedGroups] = useState<Partial<Record<FieldGroup, boolean>>>({});
@@ -262,7 +262,7 @@ export function AuthorCanvas({ draft, dispatch, client, fit = true }: EditorProp
                     <button type="button" disabled={path.length >= hierarchy.levels.length - 1} aria-pressed={armed === visual.id} onClick={() => setDrillState({ key: interactionKey, paths, armed: armed === visual.id ? undefined : visual.id })}>Drill down</button>
                     {armed === visual.id && <span role="status">Select a category or data row to drill.</span>}
                   </nav>}
-                  visual={withActionFilters(sheet, projected, selections, draft.calculatedFields, draft.dataset)} index={index} count={sheet.visuals.length} selected={visual.id === sheet.selectedId} filterProblem={draft.dataset && !client ? 'Local dataset needs its local API; no sample data is substituted.' : importedFilterProblem(draft, sheet, visual)} dispatch={dispatch} client={client} calculations={draft.calculatedFields} parameters={sheetParameters(draft)} />
+                  visual={withActionFilters(sheet, projected, selections, draft.calculatedFields, draft.dataset)} index={index} count={sheet.visuals.length} selected={visual.id === sheet.selectedId} filterProblem={sourceProblem ?? (draft.dataset && !client ? 'Local dataset needs its local API; no sample data is substituted.' : importedFilterProblem(draft, sheet, visual))} dispatch={dispatch} client={client} calculations={draft.calculatedFields} parameters={sheetParameters(draft)} />
                 </div>;
               })}
             </GridLayout>

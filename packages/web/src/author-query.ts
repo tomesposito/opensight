@@ -48,7 +48,8 @@ export async function loadAuthorRows(client: QueryClient, request: QueryRequest,
     return { rows: result.rows };
   } catch (error) {
     signal.throwIfAborted();
-    return { rows: null, message: error instanceof Error ? error.message : String(error) };
+    const message = error instanceof Error ? error.message : String(error);
+    return { rows: null, message: client.dataset && /PREP_SOURCE_NOT_FOUND|PREP_NOT_FOUND/.test(message) ? `Source data expired or is unavailable — re-upload the file, prepare it, then reopen and reconnect this draft. ${message}` : message };
   }
 }
 
