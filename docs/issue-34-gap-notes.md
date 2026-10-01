@@ -87,3 +87,46 @@ completed test run. Chromium capture initially failed because the sandbox
 blocked its socket setup; the permitted run outside the sandbox succeeded.
 The final root-suite run is recorded separately in `full-tests-final.log` and
 `full-tests-final.exit`.
+
+The first run outside the sandbox completed the workspace suites with 1,574
+passed / 2 failed / 0 skipped (`full-tests-initial.log`, exit 1); root conformance
+did not run because the workspace command failed. Both failures were fixed in
+separate checkpoints before the final full rerun:
+
+- The existing H4 worker-cancellation test could finish a small job between its
+  start event and the next 2 ms polling tick, producing **Missing expected
+  rejection**. The test now aborts synchronously when the real worker-start
+  notification is recorded and awaits the rejection immediately. It still
+  checks worker admission, cancellation, no persisted upload, released resource
+  slots and the 750 ms cancellation limit. Runtime code is unchanged. Its
+  focused run passed with a maximum cancellation time of 29.2 ms
+  (`cancellation-test.log`).
+- The existing local-upload UI test still expected the old demo wording. It now
+  requires both the API prerequisite and the explicit static-demo limitation,
+  preserving its disabled-file, local-size-limit and expiry checks. All four
+  local-data tests passed (`local-data-tests.log`).
+
+## Final full-suite result
+
+The exact command
+`TZ=UTC DATABASE_URL=postgresql://postgres@localhost:5433/opensight npm test`
+ran from the repository root and exited **0**: **1,582 passed / 0 failed /
+0 skipped**, with no cancelled tests. All live PostgreSQL checks ran. Strict
+TypeScript checks and workspace builds ran through the standard test scripts.
+
+| Runner | Passed | Failed | Skipped |
+| --- | ---: | ---: | ---: |
+| API | 255 | 0 | 0 |
+| Bundle parser | 197 | 0 | 0 |
+| Embedding SDK | 4 | 0 | 0 |
+| O interpreter | 32 | 0 | 0 |
+| Query engine | 514 | 0 | 0 |
+| Web | 574 | 0 | 0 |
+| Root conformance | 6 | 0 | 0 |
+| **Total** | **1,582** | **0** | **0** |
+
+The cancellation test also passed in this complete run, with an 8.2 ms maximum
+cancellation time. API build, static-demo build, real-stack and static browser
+acceptance, README capture and GIF assembly passed. The browser scripts pass
+syntax checks and `git diff --check` is clean. No merge, push, public history
+change or issue closure was performed.
