@@ -4,7 +4,8 @@
 `UploadStaging.create()` / `ingest(...)` materializes a session-owned in-memory
 DuckDB table and returns `{ id, rowCount, columns, delimiter?, sheet? }`.
 `preview(id)` reads up to 20 rows from that table; `close()` discards the session.
-This is staging, not publication into the analysis builder or persistent storage.
+Staging is ephemeral. In the [local file workspace](local-data.md), save a prep
+pipeline to chart its output through the DuckDB-backed query API.
 No filesystem path, URL, or SQL is accepted from an upload. DuckDB extension
 installation and external access are disabled. Values use bound parameters.
 Failed ingestion drops its private table before returning a named error.
@@ -48,8 +49,9 @@ Authenticated users with `build` capability can use:
   optional exact column schema; returns HTTP 201 with the staging summary.
 - `GET /api/uploads/:id`: summary and up to 20 rows from the staged DuckDB table.
 
-These routes require hosted authentication even when fixture endpoints are
-available without it. Reader access is denied. Upload IDs are scoped to both the
+These legacy authenticated routes retain their existing limits. The default
+fixture CLI separately enables [local uploads](local-data.md), with an 8 MiB
+file cap and explicit 24-hour expiry; remote connectors remain gated. Reader access is denied. Upload IDs are scoped to both the
 verified user and namespace; another principal receives `UPLOAD_NOT_FOUND`.
 Request bodies cannot assert identity, credentials, paths or SQL. The HTTP JSON
 envelope is capped at 1 MiB; the browser form limits files to 640 KiB to leave

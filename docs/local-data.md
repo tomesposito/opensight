@@ -32,7 +32,8 @@ DuckDB executor. Save the pipeline, then choose **Build a chart**. The author
 uses the prepared output's actual fields and queries its dataset ID. A new
 dataset starts a new analysis draft; the dataset picker can reopen saved local
 pipelines. Direct queries execute preparation against DuckDB on each request.
-Existing Blaze requirements still apply to transformations that need cached
+Boolean fields remain supported in prep; convert them to text or numbers before
+charting. Existing Blaze requirements still apply to transformations that need cached
 output; refresh those datasets before charting. Blaze snapshots retain their
 existing lifetime and visibly labeled refresh time.
 

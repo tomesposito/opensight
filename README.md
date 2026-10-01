@@ -28,7 +28,7 @@ filter actions, drill-down, themes, and `.qs` bundle import/export round trips.
 Build your own datasets on a transformation pipeline canvas: select fields,
 add calculated columns, change types, rename, filter — and combine sources
 with join/append steps. Branch from an earlier step, choose the output, and
-preview each path against the hosted API.
+preview each path against a local or hosted API.
 
 ![Data preparation with summary and detail branches](docs/images/data-prep.png)
 
@@ -50,6 +50,12 @@ with honest availability states — unimplemented sources say so instead of
 failing silently.
 
 ![Data source connector gallery](docs/images/data-sources.png)
+
+The local stack accepts files without hosted authentication. Upload a CSV,
+prepare its columns, save the pipeline and select **Build a chart**. See
+[local data](docs/local-data.md) for size limits and expiry.
+
+![Live chart from a locally uploaded and prepared CSV](docs/images/local-data.png)
 
 ### 💬 Ask O
 
@@ -86,10 +92,12 @@ npm test
 
 Start the local API with `npm start --workspace @opensight/api` and, in a second
 terminal, run `npm run dev --workspace @opensight/web`. Open
-`http://127.0.0.1:5173`. With no authentication configured, the welcome screen
-offers setup guidance and **Explore sample data**, an explicit fixture-only demo
-with no hosted session. See the [first-run guide](docs/first-run.md) for the
-existing auth settings, integration steps and demo security boundaries.
+`http://127.0.0.1:5173`. The default **Local workspace** supports file upload →
+data preparation → live charts without hosted authentication. Uploads stay in
+local DuckDB memory, are limited to 8 MiB, and expire after 24 hours or restart.
+See [local data](docs/local-data.md) for the workflow and limits, and the
+[first-run guide](docs/first-run.md) for hosted setup and the separate static demo.
+An API without local-data support or authentication shows the setup screen below.
 
 ![OpenSight first run with authentication setup and a public sample demo](docs/images/first-run.png)
 

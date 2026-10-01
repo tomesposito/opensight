@@ -6,10 +6,15 @@ beside the gallery on desktop and flow below it on narrow screens. All controls
 have labels; cards are keyboard-accessible buttons with selected state.
 
 The static demo uses the browser-safe registry without loading database drivers
-or the Excel parser. It shows **Needs hosted API / not configured** for file,
-credentialed and hosted connectors, and **Not yet implemented** for other database
+or the Excel parser. It shows **Needs local or hosted API** for files,
+**Needs hosted API / not configured** for credentialed and hosted connectors, and **Not yet implemented** for other database
 connections. Its upload and validation controls are disabled. There are no
 simulated connections, sample upload success messages, or network requests.
+
+The default fixture API enables a [local file workspace](local-data.md): upload
+files up to 8 MiB, inspect their expiry and choose **Prepare this upload**.
+After saving a prep pipeline, **Build a chart** opens its fields in Author.
+Credentialed connector validation stays disabled in local mode.
 
 The hosted app exposes this mode to users with build capability. Its file form
 sends selected bytes to the authenticated upload API, reports actual staged row

@@ -1,8 +1,9 @@
-# First run: choose samples or an authenticated workspace
+# First run: local data, samples or an authenticated workspace
 
 OpenSight is open-source, QuickSight-compatible BI for dashboards, analysis
 authoring, data preparation, connectors and embedding. The default local API
-serves fixtures; it does **not** configure authentication or issue sessions.
+serves fixtures and a [local file workspace](local-data.md); it does **not**
+configure authentication or issue sessions.
 
 ## Run locally
 
@@ -19,10 +20,14 @@ In a second terminal, run `npm run dev --workspace @opensight/web`, then open
 The API's logical session route is `/api/session`; the default web client requests
 `/api/api/session` and the dev proxy strips the first `/api` prefix.
 
-With no verifier, the API returns `503 SECURITY_NOT_CONFIGURED`. The web app
-explains the missing authentication and offers setup instructions and an explicit
-**Explore sample data** action. Unreachable APIs, invalid responses and rejected
-sessions also get recovery guidance. Requests time out after ten seconds; Retry
+The default CLI advertises an explicit local-data capability. The web app opens
+a **Local workspace**, where files can be uploaded, prepared and charted without
+a hosted session. Uploads expire after 24 hours or restart. `/api/session` still
+returns `503 SECURITY_NOT_CONFIGURED`; local capability discovery is separate.
+
+A library API without either local-data opt-in or authentication instead shows
+setup instructions and an explicit **Explore sample data** action. Unreachable
+APIs, invalid responses and rejected sessions also get recovery guidance. Requests time out after ten seconds; Retry
 connection, window focus and a thirty-second refresh can recover once the session
 is available. A valid session opens the existing application with its registered
 role. No fallback to samples happens automatically.
@@ -45,7 +50,8 @@ choice is not stored in a URL, cookie or local storage. Locally saved drafts are
 subject to the demo's existing persistence behavior.
 
 There is **no development sign-in endpoint or authentication bypass**, and no new
-dev-sign-in environment variable. Local exploration is the opt-in alternative.
+dev-sign-in environment variable. Local file access is a separate, explicitly
+enabled API mode; sample exploration is also available from the setup screen.
 `/api/session` remains fail-closed, including requests with forged credentials or
 demo-related query parameters. The existing
 `VITE_OPENSIGHT_OFFLINE_DEMO=true` build setting selects a fixture-only web build;

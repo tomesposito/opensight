@@ -248,8 +248,11 @@ after a valid applied change and ignores stale asynchronous responses.
 
 ## Authenticated HTTP resources
 
-Every route requires hosted authentication and the `build` capability. Datasets
-and upload sources are private to the verified user and namespace. Reader access,
+Hosted routes require authentication and the `build` capability. The explicitly
+enabled [local file workspace](local-data.md) also exposes these prep resources
+to its single shared workspace, with expiring DuckDB uploads and no remote
+bindings. In authenticated mode, datasets and upload sources are private to the
+verified user and namespace. Reader access,
 cross-user/namespace references, and caller-supplied authorization assertions are
 rejected. Protected or unresolved sources fail closed with
 `PREP_SECURITY_REJECTED`; prep does not strip or bypass dataset security rules.
@@ -295,8 +298,8 @@ establish a database connection. Library hosts configure authentication using th
 existing `security` option; the basic CLI does not invent an authentication service.
 
 Saving a pipeline persists metadata. A Blaze pipeline must be refreshed before
-it can be reused as a cached prep input. Analysis dataset publication into field
-wells remains separate hosted integration work.
+it can be reused as a cached prep input. The local workspace can open saved
+prepared output in the analysis field wells and query it live. Hosted analysis publication remains separate integration work.
 Imported prepared datasets are never substituted with untransformed local fixture
 rows. The UI states this boundary. Preview and export are available as documented;
 no deployed-server or measured visual-parity claim is made.
