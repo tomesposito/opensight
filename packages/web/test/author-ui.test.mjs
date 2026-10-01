@@ -78,3 +78,13 @@ test('Author discloses fixture boundaries and recovers when browser storage is u
   assert.match(html, /aria-describedby="export-help">Export JSON/);
   assert.match(html, /sample rows and the fixed East preview filter are not included/);
 });
+
+
+test('Issue #35: each export action has exactly one home in the File menu', () => {
+  const html = renderToStaticMarkup(createElement(Author));
+  const fileMenu = html.match(/<summary>File<\/summary>([\s\S]*?)<\/details>/)[1];
+  for (const label of ['Export JSON', 'Download .qs']) {
+    assert.equal(html.split(`>${label}</button>`).length - 1, 1, label);
+    assert.ok(fileMenu.includes(`aria-describedby="export-help">${label}</button>`));
+  }
+});

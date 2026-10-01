@@ -171,9 +171,10 @@ try {
   await navigate(demo, 'author');
   await demo.getByRole('button', { name: 'Save draft', exact: true }).click();
   await demo.getByText(/Browser storage is blocked/).waitFor();
-  assert.equal(await demo.getByRole('button', { name: 'Export JSON', exact: true }).last().isDisabled(), false);
+  await demo.locator('.author-menu summary').filter({ hasText: /^File$/ }).click();
+  assert.equal(await demo.getByRole('button', { name: 'Export JSON', exact: true }).isDisabled(), false);
   const download = demo.waitForEvent('download');
-  await demo.getByRole('button', { name: 'Export JSON', exact: true }).last().click();
+  await demo.getByRole('button', { name: 'Export JSON', exact: true }).click();
   assert.equal((await download).suggestedFilename(), 'opensight-analysis.json');
 
   assert.deepEqual(errors, []); assert.deepEqual(external, []);
