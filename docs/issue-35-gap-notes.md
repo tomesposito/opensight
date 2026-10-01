@@ -58,7 +58,7 @@ a general “all writes need auth” rule: local workspace writes are explicit.
 No route was opened and no hosted error was replaced by sample data. Existing
 hosted source, role, RLS/CLS and ownership suites remain part of mandatory tests.
 
-## Remaining checkpoints
+## Header, questions and notices
 
 - **4 — Already fixed by #31, verified:** Header regression asserts OpenSight,
   product links and page captions in local, demo and hosted Author access.
@@ -156,3 +156,31 @@ migration and imported-bundle storage tests. They now require the new
 reload/import guidance while retaining the existing rejection and identity
 isolation checks. The focused three-suite rerun passed; application behavior
 and browser captures did not change. The full root command is rerun below.
+
+
+## Final result
+
+The exact root command
+`TZ=UTC DATABASE_URL=postgresql://postgres@localhost:5433/opensight npm test`
+exited **0**: **1,592 passed / 0 failed / 0 skipped / 0 cancelled**. All live
+PostgreSQL checks ran. Strict TypeScript checks and workspace builds passed.
+The three corrected legacy test files also passed separately: 72 / 0 / 0.
+
+| Runner | Passed | Failed | Skipped |
+| --- | ---: | ---: | ---: |
+| API | 258 | 0 | 0 |
+| Bundle parser | 197 | 0 | 0 |
+| Embedding SDK | 4 | 0 | 0 |
+| O interpreter | 32 | 0 | 0 |
+| Query engine | 514 | 0 | 0 |
+| Web | 581 | 0 | 0 |
+| Root conformance | 6 | 0 | 0 |
+| **Total** | **1,592** | **0** | **0** |
+
+Final evidence: `full-tests-final.log`, `full-tests-final.exit` (0),
+`test-summary.json`, `demo-build-final.log`, `browser-final.log`,
+`readme-captures.log`, `gif-capture.log` and `gif-assembly.log`. Both browser
+scripts and the refreshed demo passed; browser script syntax and
+`git diff --check` are clean. Master remains `a91cd789`; no merge, push,
+public-history edit or issue closure was performed. No dependency, server
+authorization implementation or `SOLUTION_DESIGN.md` change was made.
