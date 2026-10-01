@@ -105,10 +105,11 @@ See [Blaze configuration and limits](docs/blaze.md).
 
 ### 🔌 Data source connectors
 
-A 23-connector gallery: CSV/TSV/JSON/Excel file uploads into DuckDB staging,
-MySQL and PostgreSQL with bounded execution, plus SaaS and AWS connectors
-with honest availability states — unimplemented sources say so instead of
-failing silently.
+Start with CSV/TSV/JSON/Excel file uploads into DuckDB staging, then prepare
+your data and build a chart. **Show unavailable connectors** reveals the rest
+of the 23-entry catalog with honest setup and implementation states. PostgreSQL
+requires an operator-provisioned hosted source; MySQL has no product API path.
+The static demo shows the file setup with uploads disabled.
 
 ![Data source connector gallery](docs/images/data-sources.png)
 
