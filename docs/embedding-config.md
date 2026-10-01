@@ -147,3 +147,24 @@ session, so H5 does not display simulated controls.
 
 No dependencies are added. Tests run under root `npm test`, including v1
 regressions and explicit appearance/origin/ownership bypass attempts.
+
+## Offline preview and capture
+
+`npm run build:demo --workspace=@opensight/web` builds the main static demo, v1
+renderer and `packages/web/dist/opensight-embed-preview.html`. Open that last file
+locally: it has four real iframes for loading, empty, permission error and expiry.
+The OpenSight and synthetic Atlas presets exercise approved palette/font/layout
+choices, plain product/title text and local validated-format logo/favicon PNGs.
+The v1 renderer shares these state components with its fixed default appearance;
+H5 tenant branding is not silently applied to legacy v1 URLs.
+
+`node packages/web/scripts/capture-embed-preview.mjs` uses the loop's existing
+`playwright-core` and Chromium installation, blocks all external HTTP requests,
+asserts frame titles, state/permission text, notices, raster assets, forbidden
+controls and overflow, and writes twelve screenshots to `/tmp/h5-embed-preview`.
+The eight per-state/brand captures, two full matrices, alternate palette and
+mobile-width view cover the acceptance states. Override the tool directory,
+browser executable or output directory with `OPENSIGHT_SCREENSHOT_TOOLS`,
+`OPENSIGHT_CHROMIUM` or `OPENSIGHT_SCREENSHOT_OUTPUT`. No package/browser download
+is part of this command. Shared component and injection regression tests run in
+root `npm test`; browser assertions run separately using this local harness.

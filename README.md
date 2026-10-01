@@ -64,6 +64,16 @@ Five roles (administrator, author, author_ai, reader, reader_ai), single-use
 invitations, row/column security with namespaces, folders, asset sharing, an
 embedding SDK with signed URLs, scheduled refreshes, and dashboard reports.
 
+### 🖼️ Embed appearance preview
+
+Tenant administrators can configure exact parent origins, bounded lifetimes and
+safe appearance tokens within operator policy. An offline preview covers loading,
+empty, permission-error and expiry states with sample branding. Hosted embed
+sessions and custom domains remain gated; the existing signed-URL SDK keeps its
+v1 behavior. See [embedding configuration](docs/embedding-config.md).
+
+![Offline embed appearance fixture showing four states with synthetic Atlas branding](docs/images/embed-preview.png)
+
 ## Quick start
 
 Requires Node 24+ and npm. From the repository root:
@@ -123,6 +133,7 @@ architecture, decisions and phased plan. Feature guides live in
 [scheduled refresh, reports and alerts](docs/scheduled-refresh-reports-alerts.md),
 [security and namespaces](docs/security-namespaces.md),
 [folders, sharing and embedding](docs/folders-sharing-embedding.md),
+[tenant embed configuration and appearance](docs/embedding-config.md),
 [data preparation](docs/data-prep.md), and the
 [connector gallery](docs/connector-gallery.md). The hosted metadata foundation and
 offline migration runbook are in [H1 tenant metadata](docs/h1-tenant-metadata.md);
