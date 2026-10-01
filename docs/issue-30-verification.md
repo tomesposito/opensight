@@ -11,6 +11,7 @@ The static demo remains a separate no-backend preview.
 On 2026-10-01, a tracked-file export of `87efc191` into a new temporary directory
 had no `node_modules`, compiled output, generated web fixtures, `.env` files or
 saved pipelines. With Node 24.20.0 and npm 10.9.4, `npm ci` passed (91 packages).
+The host's existing Node/npm installation and package cache were reused.
 `npm run build --workspace @opensight/api` then failed with TS2307:
 `packages/web/src/api-client.ts` could not resolve `@opensight/o-interpreter`.
 
@@ -101,3 +102,43 @@ npm run summarize --workspace @opensight/bundle-parser -- ../../fixtures/real-bu
 
 The README now links to this archive's expected JSON summary and identifies the
 existing synthetic CLI snapshots separately. No CLI behavior change was needed.
+
+## Static preview
+
+`npm run build:demo --workspace @opensight/web` exits 0 and rebuilds
+`packages/web/dist/opensight-demo.html`. Chromium opened this local file in a
+fresh context with both temporary verification servers stopped. Home rendered
+five sample visuals; Upload to staging and Save pipeline were disabled. The run
+reported zero page errors and zero HTTP requests. Its Home capture was visually
+compared with `docs/images/sample-dashboard.png`: navigation, sample notices,
+layout and chart values agree. This is a local static preview, not a deployed
+server or a visual-parity measurement. The existing README images are unchanged.
+
+## Final full-suite results
+
+The required command ran from the repository root after the implementation,
+documentation corrections, builds and browser acceptance:
+
+```bash
+TZ=UTC DATABASE_URL=postgresql://postgres@localhost:5433/opensight npm test
+```
+
+It exits 0: **1,560 passed / 0 failed / 0 skipped**, with no cancelled tests.
+All live PostgreSQL checks ran. Strict TypeScript checks and workspace builds
+are included in the test scripts.
+
+| Runner | Passed | Failed | Skipped |
+| --- | ---: | ---: | ---: |
+| API | 255 | 0 | 0 |
+| Bundle parser | 197 | 0 | 0 |
+| Embedding SDK | 4 | 0 | 0 |
+| O interpreter | 32 | 0 | 0 |
+| Query engine | 512 | 0 | 0 |
+| Web | 554 | 0 | 0 |
+| Root conformance | 6 | 0 | 0 |
+| **Total** | **1,560** | **0** | **0** |
+
+The full suite covers implementation through `d68a8430`; the final checkpoint
+only records verification evidence. `git diff --check` passes. Temporary servers
+and clean-copy files were removed, and the pre-existing default development API
+was restored on port 3000. No merge, push, deployment or issue closure was made.
