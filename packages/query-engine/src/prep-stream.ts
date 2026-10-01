@@ -1,5 +1,5 @@
 import { DuckDBInstance, type DuckDBConnection } from '@duckdb/node-api';
-import { Client } from 'pg';
+import { Client, type ClientConfig } from 'pg';
 import { PrepError, prepFail, type PrepColumn, type PrepType } from '@opensight/bundle-parser/prep';
 import { compilePrep, type PrepSource, type PrepPlan } from './prep.js';
 import { normalizePrepScalar, type PrepPreviewOptions } from './prep-executor.js';
@@ -38,17 +38,20 @@ export async function withPrepMemory<T>(tables: readonly PrepMemoryTable[], run:
   try { const connection = await instance.connect(); try { return await withPrepTables(connection, tables, () => run(connection)); } finally { connection.closeSync(); } } finally { instance.closeSync(); }
 }
 /** A per-row guard bounds driver allocation even for unexpectedly large source text. */
-export function boundedPrepSql(plan: PrepPlan, limits: PrepReadLimits): string {
+export function boundedPrepSql(plan: Pick<PrepPlan, 'columns' | 'sql' | 'parameters'>, limits: PrepReadLimits): string {
   const checks = plan.columns.map(c => `COALESCE(LENGTH(CAST(${q(c.name)} AS VARCHAR)), 0)`);
   const oversized = `(${checks.join(' + ')}) > ${limits.cellChars}`;
   return `SELECT ${plan.columns.map((c, i) => `CASE WHEN ${oversized} THEN NULL ELSE ${q(c.name)} END AS ${q(`v${i}`)}`).join(', ')}, ${oversized} AS "oversized" FROM (${plan.sql}) AS "bounded_prep"`;
 }
-function intake(plan: PrepPlan, raw: readonly unknown[], sink: PrepSink): void {
+function intake(plan: Pick<PrepPlan, 'columns'>, raw: readonly unknown[], sink: PrepSink): void {
   if (raw[plan.columns.length] === true || raw[plan.columns.length] === 't') sink.oversized();
   sink.row(plan.columns.map((c, i) => normalizePrepScalar(raw[i], c)));
 }
 export async function streamPrepDuckDb(connection: DuckDBConnection, raw: unknown, sources: readonly PrepSource[], options: PrepPreviewOptions, limits: PrepReadLimits, sink: PrepSink): Promise<void> {
   const plan = compilePrep(raw, sources, { ...options, dialect: 'duckdb', executionLimit: limits.maxRows + 1 });
+  return streamDuckDbPlan(connection, plan, limits, sink);
+}
+export async function streamDuckDbPlan(connection: DuckDBConnection, plan: Pick<PrepPlan, 'columns' | 'sql' | 'parameters'>, limits: PrepReadLimits, sink: PrepSink): Promise<void> {
   sink.start(plan.columns);
   let consumerError: unknown;
   const timer = setTimeout(() => connection.interrupt(), 10_000);
@@ -70,10 +73,13 @@ export async function streamPrepPostgres(raw: unknown, sources: readonly PrepSou
   const plan = compilePrep(raw, sources, { ...options, dialect: 'postgres', executionLimit: limits.maxRows + 1 });
   const validated = validateConnectorConfig('postgresql', config), connectionString = process.env[validated.connectionEnv!];
   if (!connectionString) prepFail('PREP_SOURCE_NOT_FOUND', '$.source', 'Postgres connection environment variable is not configured');
+  return streamPostgresPlan(plan, { connectionString }, limits, sink);
+}
+export async function streamPostgresPlan(plan: Pick<PrepPlan, 'columns' | 'sql' | 'parameters'>, config: ClientConfig, limits: PrepReadLimits, sink: PrepSink): Promise<void> {
   sink.start(plan.columns);
   let consumerError: unknown;
   try {
-    const client = new Client({ connectionString, connectionTimeoutMillis: 5000, query_timeout: 10_000 });
+    const client = new Client({ ...config, connectionTimeoutMillis: 5000, query_timeout: 10_000 });
     try {
       await client.connect(); await client.query('BEGIN READ ONLY');
       await client.query("SET LOCAL TIME ZONE 'UTC'"); await client.query("SET LOCAL statement_timeout = '10s'");
