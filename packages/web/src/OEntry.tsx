@@ -10,7 +10,7 @@ import { OModeNotice } from './OModeNotice.js';
 interface OEntryProps { draft: AuthorDraft; dispatch?: Dispatch<AuthorAction>; client?: QueryClient; dashboardId?: string; renderBar?: (bar: ReactNode) => ReactNode }
 export function OEntry(props: OEntryProps) {
   const access = useAccess();
-  if (!allowed(access, 'ai')) return <>{props.renderBar?.(null)}</>;
+  if (access.mode !== 'local' && !allowed(access, 'ai')) return <>{props.renderBar?.(null)}</>;
   return <OEntryContent {...props} />;
 }
 function OEntryContent({ draft, dispatch, client, renderBar, dashboardId }: OEntryProps) {
@@ -19,23 +19,24 @@ function OEntryContent({ draft, dispatch, client, renderBar, dashboardId }: OEnt
   const [generative, setGenerative] = useState(false), [pending, setPending] = useState(false), [error, setError] = useState('');
   const revision = useRef(0);
   useEffect(() => () => { revision.current++; }, []);
-  const previewClient = useMemo<QueryClient | undefined>(() => client ? { queryDataset: (_id, query, signal) => {
+  const previewClient = useMemo<QueryClient | undefined>(() => client ? { dataset: client.dataset, queryDataset: (id, query, signal) => {
+    if (access.mode !== 'hosted') return client.queryDataset(id, query, signal);
     if (!client.queryO) return Promise.reject(new Error('SECURITY_AI_REQUIRED: Hosted O endpoint required.'));
     return client.queryO(query, dashboardId, signal);
-  } } : undefined, [client, dashboardId]);
+  } } : undefined, [access.mode, client, dashboardId]);
   const [question, setQuestion] = useState('');
   const [answer, setAnswer] = useState<{ result: InterpretationResult; schema: string }>();
   const [selected, setSelected] = useState(0);
   const [added, setAdded] = useState('');
-  const schema = JSON.stringify(draft.calculatedFields);
+  const schema = JSON.stringify([draft.calculatedFields, draft.dataset]);
   useEffect(() => { revision.current++; setPending(false); setError(''); }, [schema, generative]);
   const result = answer?.schema === schema ? answer.result : undefined;
   const interpretation = result?.interpretations[selected];
   const prepared = useMemo(() => {
     if (!interpretation) return;
-    try { return { value: prepareOVisual(interpretation, draft.calculatedFields) }; }
+    try { return { value: prepareOVisual(interpretation, draft.calculatedFields, draft.dataset) }; }
     catch (e) { return { error: e instanceof Error ? e.message : String(e) }; }
-  }, [interpretation, draft.calculatedFields]);
+  }, [interpretation, draft.calculatedFields, draft.dataset]);
   const submit = async () => {
     const current = ++revision.current; setSelected(0); setAdded(''); setError(''); setAnswer(undefined);
     if (!generative) { setAnswer({ schema, result: interpretQuestion(question, dataFields(draft.calculatedFields, draft.dataset)) }); return; }
@@ -50,7 +51,7 @@ function OEntryContent({ draft, dispatch, client, renderBar, dashboardId }: OEnt
   const bar = <form className="o-bar" onSubmit={e => { e.preventDefault(); void submit(); }}>
       {renderBar && <span className="o-mark" aria-hidden="true">O</span>}
       <label htmlFor="o-question">Ask a question</label>
-      <input id="o-question" type="search" maxLength={2000} value={question} placeholder={renderBar ? 'Ask a question about Local sales' : 'Sum of revenue by region'} onChange={e => { revision.current++; setPending(false); setError(''); setQuestion(e.target.value); setAnswer(undefined); setAdded(''); }} />
+      <input id="o-question" type="search" maxLength={2000} value={question} placeholder={renderBar ? `Ask a question about ${draft.dataset?.name ?? 'Local sales'}` : 'Sum of revenue by region'} onChange={e => { revision.current++; setPending(false); setError(''); setQuestion(e.target.value); setAnswer(undefined); setAdded(''); }} />
       <button type="submit" disabled={pending}>Ask</button>
     </form>;
   return <>
@@ -67,7 +68,7 @@ function OEntryContent({ draft, dispatch, client, renderBar, dashboardId }: OEnt
         <p className="o-explanation">{interpretation.explanation} <span>Confidence {Math.round(interpretation.confidence * 100)}% (grammar match)</span></p>
         {prepared?.error && <p role="alert">{prepared.error}</p>}
         {prepared?.value && <div className="o-result"><LiveAuthorVisual visual={prepared.value.visual} calculations={[...draft.calculatedFields, ...prepared.value.calculatedFields]} client={previewClient} theme={draft.theme} /></div>}
-        <p className="o-source">{client ? 'Local sales API query.' : 'Offline demo: recomputed synthetic sales rows across all regions. No live queries run.'}</p>
+        <p className="o-source">{client ? `${client.dataset?.name ?? 'Local sales'} API query.` : 'Offline demo: recomputed synthetic sales rows across all regions. No live queries run.'}</p>
         {dispatch && allowed(access, 'build') && <button type="button" className="primary-button" disabled={!prepared?.value} onClick={() => {
           if (!prepared?.value) return;
           dispatch({ type: 'o-add', ...prepared.value }); setAnswer(undefined); setAdded('Added to the active analysis sheet.');

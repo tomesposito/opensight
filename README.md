@@ -8,10 +8,11 @@ bidirectional asset compatibility — connect data, prepare datasets, build
 analyses and dashboards, and ask questions in natural language. Self-hosted;
 no AWS required.
 
-![OpenSight tour: dashboard, ask a question, data preparation, data sources](docs/images/opensight-tour.gif)
+![OpenSight tour: dashboard, O answer, add to analysis, saved drafts, and data tools](docs/images/opensight-tour.gif)
 
-*Above: the offline demo — a dashboard, the O natural-language bar answering
-"revenue by region", the data preparation canvas, and the connector gallery.*
+*Above: the offline demo — a dashboard, O answering "revenue by region" and
+adding the chart to an analysis, saved drafts, data preparation, connectors,
+and administration.*
 
 ## Run it
 
@@ -120,9 +121,13 @@ prepare its columns, save the pipeline and select **Build a chart**. See
 ### 💬 Ask O
 
 A natural-language entry point over your data. A local deterministic
-interpreter answers offline; administrators can configure a real AI provider
+interpreter queries the active dataset in the local workspace, including prepared
+CSV uploads. The static demo answers using synthetic rows. Administrators can
+configure a real AI provider
 (OpenAI, Anthropic, Bedrock, or a custom endpoint) for generative answers,
 gated by role.
+
+![O answer querying a locally uploaded CSV: North 6 and South 3](docs/images/o-answer.png)
 
 ### 👥 Built for teams
 

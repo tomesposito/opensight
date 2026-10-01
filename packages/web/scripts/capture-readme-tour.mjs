@@ -46,12 +46,18 @@ try {
   }
   await hold(500);
   await page.press('#o-question', 'Enter'); // 3. answer renders
+  await page.locator('.o-result .chart svg').waitFor();
+  assert.match(await page.locator('.o-source').innerText(), /^Offline demo:/);
   await hold(2800);
   await hold(1200);
 
   // Author and its Analyses home share the same device-local store.
   await setMode('author');
-  await page.getByRole('button', { name: 'Add visual', exact: true }).click();
+  await page.locator('#o-question').fill('revenue by region');
+  await page.locator('#o-question').press('Enter');
+  await page.locator('.o-result .chart svg').waitFor();
+  await hold(1400);
+  await page.getByRole('button', { name: 'ADD TO ANALYSIS', exact: true }).click();
   await page.getByLabel('Analysis title', { exact: true }).fill('Revenue analysis');
   await page.getByRole('button', { name: 'Save draft', exact: true }).click();
   await page.locator('.author-card .chart svg').waitFor();

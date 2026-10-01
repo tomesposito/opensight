@@ -1,14 +1,14 @@
 import { datetime, numeric, type Interpretation } from '@opensight/o-interpreter';
-import { calculationInfo, dataFields, defaults, type AuthorVisual, type CalculatedField } from './authoring.js';
+import { calculationInfo, dataFields, defaults, type AuthorDataset, type AuthorVisual, type CalculatedField } from './authoring.js';
 
 export interface PreparedOVisual { visual: AuthorVisual; calculatedFields: CalculatedField[] }
 /** O compiles into ordinary Phase 2c expressions and scoped filters, shared by all engines. */
-export function prepareOVisual(interpretation: Interpretation, existing: readonly CalculatedField[] = []): PreparedOVisual {
-  const fields = dataFields(existing), calculatedFields: CalculatedField[] = [];
+export function prepareOVisual(interpretation: Interpretation, existing: readonly CalculatedField[] = [], dataset?: AuthorDataset): PreparedOVisual {
+  const fields = dataFields(existing, dataset), calculatedFields: CalculatedField[] = [];
   const field = (name: string) => {
     const f = fields.find(f => f.name === name);
     if (!f || /[{}\0]/.test(name)) throw new Error(`O_UNKNOWN_FIELD: ${name}`);
-    if (existing.some(c => c.name === name) && ![undefined, 'row'].includes(calculationInfo(name, existing).level)) throw new Error(`O_UNSUPPORTED_CALCULATION: ${name} is already an aggregate or table calculation.`);
+    if (existing.some(c => c.name === name) && ![undefined, 'row'].includes(calculationInfo(name, existing, dataset).level)) throw new Error(`O_UNSUPPORTED_CALCULATION: ${name} is already an aggregate or table calculation.`);
     return f;
   };
   const ref = (name: string) => { field(name); return `{${name}}`; };
