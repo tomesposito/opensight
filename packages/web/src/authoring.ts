@@ -542,14 +542,17 @@ function migrateDraft(value: unknown): unknown {
   return { ...draft, sheets: [{ ...draft.sheets[0], visuals, selectedId: value.selectedId, layout: visuals.map((v, index) => ({ i: v.id, x: 0, y: index * 8, w: 12, h: 8 })) }] };
 }
 export const DRAFT_KEY = 'opensight.author.v0';
+export function parseDraft(saved: string): AuthorDraft {
+  const draft: unknown = migrateDraft(JSON.parse(saved));
+  validateDraft(draft);
+  return draft;
+}
 type GetStorage = () => Pick<Storage, 'getItem' | 'setItem'>;
 export function loadDraft(getStorage: GetStorage): { draft: AuthorDraft; warning?: string } {
   try {
     const saved = getStorage().getItem(DRAFT_KEY);
     if (saved === null) return { draft: emptyDraft() };
-    const draft: unknown = migrateDraft(JSON.parse(saved));
-    validateDraft(draft);
-    return { draft };
+    return { draft: parseDraft(saved) };
   } catch { return { draft: emptyDraft(), warning: 'The saved draft could not be restored. Your next edit will start a new draft.' }; }
 }
 export function saveDraft(draft: AuthorDraft, getStorage: GetStorage): string {

@@ -21,6 +21,7 @@
     "../src/api-preview.ts",
     "../src/definition-converter.ts",
     "../src/authoring.ts",
+    "../src/local-drafts.ts",
     "../src/author-preview.ts",
     "../src/Author.tsx",
     "../src/VisualCard.tsx",
