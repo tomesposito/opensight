@@ -12,6 +12,7 @@ import { StubMailTransport } from '../dist/mail.js';
 import { hostedConfig } from '../dist/hosted-config.js';
 import { environment, decode32 } from './hosted-helpers.mjs';
 import { totp } from '../dist/auth-crypto.js';
+import { HostedEmbedding, initializeEmbedding, embeddingPolicy, defaultEmbedConfig } from '../dist/embedding-config.js';
 
 test('H2 live Postgres: private credentials, concurrent onboarding/MFA/switch, cross-pool revocation and tenant RLS', { skip: process.env.DATABASE_URL ? false : 'DATABASE_URL is not set' }, async t => {
   const schema = `h2_test_${randomUUID().replaceAll('-', '')}`, role = `${schema}_tenant`;
@@ -45,6 +46,14 @@ test('H2 live Postgres: private credentials, concurrent onboarding/MFA/switch, c
   assert.equal(switches.find(r => r.status === 'rejected').reason.code, 'AUTHENTICATION_FAILED');
   const switched = switches.find(r => r.status === 'fulfilled').value;
   await second.logout(switched.token); await assert.rejects(auth.verify(switched.token), { code: 'AUTHENTICATION_FAILED' });
+  // H5 uses operator-owned config metadata and the same tenant lock on Postgres.
+  await initializeEmbedding(db);
+  await assert.rejects(tenantPool.query('SELECT * FROM h5_embedding_config'), { code: '42501' });
+  const embedding = new HostedEmbedding(db, repository, embeddingPolicy({}, config.origin));
+  const replacements = await Promise.allSettled([embedding.put(context, defaultEmbedConfig(), 0), embedding.put(context, defaultEmbedConfig(), 0)]);
+  assert.equal(replacements.filter(r => r.status === 'fulfilled').length, 1);
+  assert.equal(replacements.find(r => r.status === 'rejected').reason.status, 412);
+  assert.equal((await embedding.get(context)).revision, 1);
   now += 30000; const fresh = await auth.login(input.administrator.email, password, code(), tenant.tenantId, 'local');
   const current = await provisioning.operator.tenant(tenant.tenantId);
   await provisioning.operator.transition('suspend', tenant.tenantId, 'suspend', current.version);

@@ -2,7 +2,9 @@ import { createRoot } from 'react-dom/client';
 import { useEffect, useState } from 'react';
 import { VisualCard } from './VisualCard.js';
 import type { FixtureVisual } from './model.js';
+import { EmbedFrame } from './EmbedFrame.js';
 import './style.css';
+import './embed.css';
 
 interface EmbedData { dashboardId: string; visualId?: string; title: string; parentOrigin: string; expiresAt: number; visuals: (FixtureVisual & { id: string; sheet: string })[] }
 const data = JSON.parse(document.getElementById('opensight-embed-data')?.textContent ?? 'null') as EmbedData | null;
@@ -18,11 +20,10 @@ function EmbeddedDashboard({ data }: { data: EmbedData }) {
     }, Math.max(0, data.expiresAt * 1000 - Date.now()));
     return () => window.clearTimeout(timer);
   }, [data]);
-  if (expired) return <p role="status">Embed URL expired. Request a fresh URL through the hosted API.</p>;
-  return <main className="embedded-dashboard"><h1>{data.title}</h1><p>Dashboard snapshot · rendered with your data access permissions</p>
+  if (expired) return <EmbedFrame state="expired" />;
+  return <EmbedFrame state={data.visuals.length ? 'ready' : 'empty'} title={data.title}>
     <div className="dashboard-grid">{data.visuals.map(visual => <VisualCard key={visual.id} visual={visual} />)}</div>
-    {!data.visuals.length && <p>No visuals in this dashboard.</p>}
-  </main>;
+  </EmbedFrame>;
 }
 const root = createRoot(document.getElementById('root')!);
-root.render(data ? <EmbeddedDashboard data={data} /> : <p role="alert">Embed data is unavailable. Generate an embed URL through the hosted API.</p>);
+root.render(data ? <EmbeddedDashboard data={data} /> : <EmbedFrame state="error" detail="Embed data is unavailable. Generate an embed URL through the hosted API." />);

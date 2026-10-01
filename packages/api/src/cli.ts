@@ -17,7 +17,7 @@ try {
   const portText = process.env.PORT ?? '3000';
   if (!/^\d+$/u.test(portText) || Number(portText) > 65535) throw new Error('PORT must be an integer from 0 to 65535');
   const mode = process.env.OPENSIGHT_MODE ?? 'fixture';
-  const hostedSettings = ['OPENSIGHT_PUBLIC_ORIGIN', 'OPENSIGHT_OPERATOR_KEY', 'OPENSIGHT_SESSION_SECONDS', 'OPENSIGHT_INVITATION_SECONDS', 'OPENSIGHT_METADATA_DATABASE', 'OPENSIGHT_NODE_LIMITS', 'OPENSIGHT_TENANT_LIMIT_DEFAULTS', 'OPENSIGHT_TENANT_LIMIT_OVERRIDES'];
+  const hostedSettings = ['OPENSIGHT_EMBEDDING_POLICY', 'OPENSIGHT_PUBLIC_ORIGIN', 'OPENSIGHT_OPERATOR_KEY', 'OPENSIGHT_SESSION_SECONDS', 'OPENSIGHT_INVITATION_SECONDS', 'OPENSIGHT_METADATA_DATABASE', 'OPENSIGHT_NODE_LIMITS', 'OPENSIGHT_TENANT_LIMIT_DEFAULTS', 'OPENSIGHT_TENANT_LIMIT_OVERRIDES'];
   if (!['fixture', 'hosted'].includes(mode) || mode !== 'hosted' && Object.keys(process.env).some(k => k.startsWith('OPENSIGHT_AUTH_') || k.startsWith('OPENSIGHT_SOURCE_') || hostedSettings.includes(k))) throw new Error('HOSTED_MODE_REQUIRED');
   if (process.argv.length > 2 && (mode !== 'hosted' || process.argv.length !== 3 || process.argv[2] !== 'rotate-auth-key')) throw new Error('CLI_ARGUMENT_INVALID');
   const server = await (async () => {

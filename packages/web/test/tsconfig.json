@@ -29,6 +29,8 @@
     "../src/UserManagement.tsx",
     "../src/Dashboard.tsx",
     "../src/DataSources.tsx",
-    "../src/DataPrep.tsx"
+    "../src/DataPrep.tsx",
+    "../src/EmbedFrame.tsx",
+    "../src/embed-preview-fixtures.ts"
   ]
 }
