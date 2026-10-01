@@ -1,3 +1,4 @@
+import { sourceBody, sourcePolicyLinks } from './source-schema.js';
 import { parseBundleResource } from '@opensight/bundle-parser';
 import { isRole } from '@opensight/query-engine';
 import { executionSettings } from './blaze.js';
@@ -82,7 +83,7 @@ export function resourceLinks(key: ResourceKey, raw: JsonObject): ResourceKey[] 
       if (r.resourceType !== 'dataset' || r.dataSetId !== key.id || !r.opensightPrep) invalidMetadata();
       if (body.execution !== undefined) executionSettings(body.execution);
       const p = r.opensightPrep;
-      for (const input of [p.input, ...p.steps.flatMap(s => s.kind === 'join' && !(typeof s.config.source !== 'string' && 'step' in s.config.source) ? [s.config.source] : [])]) {
+      for (const input of [p.input, ...p.steps.flatMap(s => s.kind === 'append' ? [s.config.source] : s.kind === 'join' && !(typeof s.config.source !== 'string' && 'step' in s.config.source) ? [s.config.source] : [])]) {
         if (typeof input === 'string') add('source', input, key.ownerId);
         else if ('dataset' in input) add('prepared-dataset', input.dataset, key.ownerId);
       }
@@ -101,7 +102,8 @@ export function resourceLinks(key: ResourceKey, raw: JsonObject): ResourceKey[] 
       break;
     }
     case 'source': {
-      object(body, ['binding', 'secretId']); object(body.binding);
+      object(body, ['binding', 'secretId', 'policy']); object(body.binding);
+      if (object(body.binding).version === 3) links.push(...sourcePolicyLinks(sourceBody(body)));
       if (body.secretId !== undefined) add('secret', body.secretId, key.ownerId);
       break;
     }
