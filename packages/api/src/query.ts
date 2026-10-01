@@ -96,7 +96,7 @@ export async function readBody(request: IncomingMessage, maxBytes = BODY_BYTES):
     for await (const chunk of request.iterator({ destroyOnReturn: false })) {
       const bytes = chunk as Buffer;
       size += bytes.length;
-      if (size > maxBytes) throw new RequestError(413, `Request body exceeds ${maxBytes / (1024 * 1024)} MiB limit`);
+      if (size > maxBytes) throw new RequestError(413, maxBytes === BODY_BYTES ? 'Query body exceeds 1 MiB limit' : `Request body exceeds ${maxBytes / (1024 * 1024)} MiB limit`);
       chunks.push(bytes);
     }
     return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks, size))) as unknown;

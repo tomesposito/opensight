@@ -62,7 +62,12 @@ test('unconfigured and authenticated servers never gain local upload through req
   await assert.rejects(createApiServer({ dataRoot, localData: true, prepPostgresBindings: [{}] }), /LOCAL_DATA_MODE_CONFLICT/);
   const original = process.env.OPENSIGHT_MODE;
   process.env.OPENSIGHT_MODE = 'hosted';
-  try { await assert.rejects(createApiServer({ dataRoot, localData: true }), /LOCAL_DATA_MODE_CONFLICT/); }
+  try {
+    await assert.rejects(createApiServer({ dataRoot, localData: true }), /LOCAL_DATA_MODE_CONFLICT/);
+    const hostedUnconfigured = await api(t, { localData: false });
+    const denied = await hostedUnconfigured('/api/uploads', 'POST', input);
+    assert.equal(denied.status, 503); assert.equal(denied.body.errorCode, 'SECURITY_NOT_CONFIGURED');
+  }
   finally { if (original === undefined) delete process.env.OPENSIGHT_MODE; else process.env.OPENSIGHT_MODE = original; }
 });
 test('local intake accepts more than the hosted envelope but caps bytes and safely rejects malformed data', async t => {
@@ -82,8 +87,8 @@ test('local uploads expire at the boundary, reclaim staging and fail closed for 
   const call = await api(t), staged = await call('/api/uploads', 'POST', input), path = '/api/datasets/expires/prep';
   await call(path, 'PUT', { name: 'Expires', pipeline: pipeline(staged.body.id) });
   t.mock.timers.tick(86400000);
-  assert.equal((await call(`/api/uploads/${staged.body.id}`)).body.errorCode, 'UPLOAD_NOT_FOUND');
   assert.equal((await call('/api/datasets/expires/query', 'POST', query)).body.errorCode, 'PREP_SOURCE_NOT_FOUND');
+  assert.equal((await call(`/api/uploads/${staged.body.id}`)).body.errorCode, 'UPLOAD_NOT_FOUND');
   const source = (await call('/api/prep-sources')).body.find(s => s.id === 'expires');
   assert.equal(source.available, false); assert.equal(source.errorCode, 'PREP_SOURCE_NOT_FOUND');
   assert.equal((await call('/api/uploads', 'POST', input)).status, 201);

@@ -14,7 +14,7 @@ export function DataSources({ client, local = false, onPrep }: { client?: Client
     <div className="connector-layout"><div className="connector-picker"><label className="connector-search">Find a data source<input type="search" value={search} placeholder="Search files, databases, AWS or SaaS" onChange={e => setSearch(e.target.value)} /></label>
       <div className="connector-grid">{visible.map(c => <button type="button" key={c.id} className={`connector-card${selected === c.id ? ' selected' : ''}`} aria-pressed={selected === c.id} onClick={() => setSelected(c.id)}>
         <span className={`connector-symbol category-${c.category.toLowerCase()}`} aria-hidden="true">{c.category === 'File' ? '↑' : c.category === 'AWS' ? '☁' : c.category === 'SaaS' ? '◇' : '▤'}</span>
-        <span className="connector-name">{c.name}</span><span className="connector-category">{c.category}</span><span className="connector-state">{c.implementation === 'upload' && client ? 'Upload available' : c.implementation === 'unimplemented' ? 'Not yet implemented' : 'Needs hosted API / not configured'}</span>
+        <span className="connector-name">{c.name}</span><span className="connector-category">{c.category}</span><span className="connector-state">{c.implementation === 'upload' ? client ? 'Upload available' : 'Needs local or hosted API' : c.implementation === 'unimplemented' ? 'Not yet implemented' : 'Needs hosted API / not configured'}</span>
       </button>)}</div>{visible.length === 0 && <p role="status">No data sources match your search.</p>}</div>
       <ConnectorDetails key={selected} id={selected} client={client} local={local} onPrep={onPrep} />
     </div>
@@ -26,10 +26,11 @@ function ConnectorDetails({ id, client, local, onPrep }: { id: string; client?: 
   const [config, setConfig] = useState<Record<string, string>>(fileSource ? { format: 'csv' } : {});
   const [file, setFile] = useState<File>();
   const [busy, setBusy] = useState(false);
-  const [status, setStatus] = useState<ConnectorState>(() => connectorState(id, !!client));
+  const availability = (): ConnectorState => fileSource && !client ? { state: 'not_configured', message: 'Needs local or hosted API · Uploads are unavailable in the static demo.' } : connectorState(id, !!client);
+  const [status, setStatus] = useState<ConnectorState>(availability);
   const [error, setError] = useState('');
   const [upload, setUpload] = useState<UploadSummary>();
-  const update = (key: string, value: string) => { setError(''); setUpload(undefined); setStatus(connectorState(id, !!client)); setConfig(current => { const next = { ...current }; if (value) next[key] = value; else delete next[key]; if (key === 'format') { delete next.delimiter; delete next.sheet; } return next; }); };
+  const update = (key: string, value: string) => { setError(''); setUpload(undefined); setStatus(availability()); setConfig(current => { const next = { ...current }; if (value) next[key] = value; else delete next[key]; if (key === 'format') { delete next.delimiter; delete next.sheet; } return next; }); };
   const submit = async () => {
     if (!client || !enabled || busy) return;
     setBusy(true); setError(''); setUpload(undefined);

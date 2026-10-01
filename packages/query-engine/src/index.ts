@@ -26,7 +26,7 @@ export { ExpressionBinder } from './expressions.js';
 export { connectors, connectorDefinition, validateConnectorConfig, connectorState, connectConnector, connectorDialect, ConnectorError } from './connectors.js';
 export type { ConnectorDefinition, ConnectorConfig, ConnectorField, ConnectorState } from './connectors.js';
 export { parseUpload, UploadStaging, UploadError } from './upload.js';
-export type { UploadColumn, UploadRequest, UploadSummary, UploadType } from './upload.js';
+export type { UploadColumn, UploadRequest, UploadSummary, UploadType, UploadLifetime } from './upload.js';
 export { executeMySql, executeConnector } from './mysql-executor.js';
 export type { MySqlExecuteOptions } from './mysql-executor.js';
 
