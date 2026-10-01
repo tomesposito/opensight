@@ -90,7 +90,18 @@ try {
     assert.equal(await card.locator('.empty-symbol').count(), 0);
     assert.equal(await card.evaluate(node => node.getAnimations({ subtree: true }).length), 0);
     assert.equal(await card.locator('.chart').count(), 0);
+    assert.equal(await page.locator('#o-question').count(), 0);
+    await page.getByText('Questions are unavailable for definition previews.', { exact: false }).waitFor();
     await capture(`${label}-definition`);
+    if (label === 'demo') {
+      await page.getByRole('link', { name: 'Open Home to ask about sample sales data.' }).click();
+      await page.locator('#o-question').fill('revenue by region');
+      await page.locator('#o-question').press('Enter');
+      await page.locator('.o-result .chart svg').waitFor();
+      await page.locator('.o-result summary').filter({ hasText: 'View data' }).click();
+      assert.deepEqual(await page.locator('.o-result tbody tr').evaluateAll(nodes => nodes.map(node => [...node.querySelectorAll('td')].map(cell => cell.textContent))), [['East', '500'], ['West', '400']]);
+      assert.match(await page.locator('.o-source').innerText(), /^Offline demo:/);
+    }
     console.log(`PASS: ${label}: settled definition preview has no spinner or animation`);
   };
   page = await localPage();

@@ -65,3 +65,8 @@ hosted source, role, RLS/CLS and ownership suites remain part of mandatory tests
   Navigation tests: 19 passed / 0 failed / 0 skipped. Browser acceptance checks
   the actual Author caption and absence of the old phrase in both render modes.
   No product/header implementation change.
+- **5 — Changed:** Definition previews hide O in every mode and link to Home
+  for sample sales questions. Home and Author retain their existing O routing;
+  hosted published dashboards retain their existing dashboard and AI gates.
+  Regressions cover all bundled fixtures plus the sample and hosted exceptions.
+  The browser follows the Home link and checks actual offline East 500 / West 400.
