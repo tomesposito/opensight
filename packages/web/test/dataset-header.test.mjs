@@ -47,7 +47,7 @@ test('live header requests secured unfiltered counts and actual refresh metadata
 test('zero visible rows and no refresh history remain honest', async t => {
   const ui = await mount(t, { queryDataset: async () => rows(0), getDatasetRefreshStatus: async () => status({ state: 'never', lastGood: null }) });
   assert.match(ui.text(), /0 rows · live query/);
-  assert.match(ui.text(), /No successful refresh recorded/);
+  assert.doesNotMatch(ui.text(), /No successful refresh recorded|Last successful refresh/);
   assert.doesNotMatch(ui.text(), /dateTime|sample rows/);
 });
 
@@ -112,4 +112,13 @@ test('refresh client rejects HTTP errors, invalid JSON and invalid IDs and propa
   const client = createApiClient('/', async () => { calls++; return Response.json(status()); });
   for (const id of ['', '../sales', 'sales?x=1', 'x'.repeat(513)]) await assert.rejects(client.getDatasetRefreshStatus(id), /Invalid dataset ID/);
   assert.equal(calls, 0);
+});
+
+
+test('Issue #35: refresh activity and failures remain visible without a prior success', async t => {
+  const ui = await mount(t, { queryDataset: async () => rows(8), getDatasetRefreshStatus: async () => status({ state: 'running', lastGood: null }) });
+  assert.match(ui.text(), /Refresh running/);
+  await ui.update({ queryDataset: async () => rows(8), getDatasetRefreshStatus: async () => status({ state: 'error', lastGood: null, error: { code: 'SOURCE_UNREACHABLE' } }) });
+  assert.match(ui.text(), /Refresh failed:.*SOURCE_UNREACHABLE/);
+  assert.doesNotMatch(ui.text(), /No successful refresh recorded|Last successful refresh/);
 });

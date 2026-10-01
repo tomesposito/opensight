@@ -70,3 +70,10 @@ hosted source, role, RLS/CLS and ownership suites remain part of mandatory tests
   hosted published dashboards retain their existing dashboard and AI gates.
   Regressions cover all bundled fixtures plus the sample and hosted exceptions.
   The browser follows the Home link and checks actual offline East 500 / West 400.
+- **6 — Fixed:** A direct-query dataset with no refresh history omits the idle
+  diagnostic. Real refresh timestamps, running state and named failures remain.
+  An empty Blaze cache says **Choose Refresh Blaze to prepare data for your
+  charts**; an active refresh says **Preparing cached data…**. Unreadable saved
+  analyses explain reload/import recovery and preserve the stored value, including
+  malformed legacy JSON. Existing source retry/re-upload/reconnect controls remain.
+  Focused refresh, authoring and draft tests: 69 passed / 0 failed / 0 skipped.

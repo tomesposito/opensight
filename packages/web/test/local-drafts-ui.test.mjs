@@ -7,8 +7,8 @@ import { Author, AuthorCanvas } from '../build/test/Author.js';
 import { AuthorToolbar } from '../build/test/AuthorToolbar.js';
 import { LocalDrafts } from '../build/test/LocalDrafts.js';
 import { AccessProvider } from '../build/test/access.js';
-import { authorReducer, emptyDraft } from '../build/test/authoring.js';
-import { createDraftStore } from '../build/test/local-drafts.js';
+import { authorReducer, emptyDraft, DRAFT_KEY } from '../build/test/authoring.js';
+import { createDraftStore, draftStorageKey } from '../build/test/local-drafts.js';
 import { draftSourceProblem, reconnectDraft } from '../build/test/draft-source.js';
 const dataset = { id: 'prepared-old', name: 'Uploaded data', columns: [{ name: 'team', type: 'STRING' }, { name: 'amount', type: 'INTEGER' }] };
 const authored = () => authorReducer({ ...emptyDraft(), dataset }, { type: 'add', kind: 'bar' });
@@ -65,6 +65,8 @@ test('expired upload blocks live charts, preserves definitions and reconnects co
   const client = { async listPrepSources() { return [{ ...source, id: dataset.id, ref: { dataset: dataset.id }, available: false, errorCode: 'PREP_SOURCE_NOT_FOUND', columns: [] }, source]; }, async queryDataset(id) { calls.push(id); return { rows: [{ team: 'North', amount: 6 }] }; } };
   const ui = await mount(t, { client });
   assert.match(ui.text(), /Source data expired/); assert.deepEqual(calls, []);
+  assert.ok(ui.button('Retry source data')); assert.ok(ui.button('Reconnect draft'));
+  assert.match(ui.text(), /Re-upload and prepare the file/);
   const before = ui.store.restore().draft;
   await act(() => ui.find('select', p => p.children?.[0]?.props?.children === 'Choose a compatible dataset…').props.onChange({ target: { value: source.id } }));
   await ui.click('Reconnect draft'); await ui.click('Save draft');
@@ -107,4 +109,21 @@ for (const mode of ['local', 'demo', 'hosted']) test(`Publish copy is accurate i
 test('draft names render as escaped text, never executable HTML', () => {
   const html = renderToStaticMarkup(createElement(LocalDrafts, { entries: [{ id: 'draft', name: '<img src=x onerror=alert(1)>', updatedAt: new Date().toISOString() }], onRefresh() {}, onOpen() {}, onDelete() {}, onRename() {} }));
   assert.doesNotMatch(html, /<img/); assert.match(html, /&lt;img/);
+});
+
+
+test('Issue #35: first-run Author has no restore failure; unreadable drafts explain recovery', async t => {
+  const ui = await mount(t);
+  ui.values.clear(); await ui.reload();
+  assert.match(ui.text(), /Save this analysis on this device/);
+  assert.doesNotMatch(ui.text(), /could not be restored|could not be read|No successful refresh recorded/);
+  const key = draftStorageKey({ mode: 'local' });
+  for (const [storageKey, value] of [[key, 'broken JSON'], [`local.${DRAFT_KEY}`, '{'], [`local.${DRAFT_KEY}`, '{"version":99}']]) {
+    ui.values.clear(); ui.values.set(storageKey, value); await ui.reload();
+    assert.match(ui.text(), /Saved analyses on this device could not be read/);
+    assert.match(ui.text(), /Reload to retry, or import an exported .qs or JSON copy/);
+    assert.doesNotMatch(ui.text(), /SyntaxError|Unexpected|Invalid or unsupported author draft|could not be restored/);
+    assert.equal(ui.values.get(storageKey), value, 'Opening must preserve unreadable saved data');
+    assert.equal(ui.button('Export JSON').props.disabled, false);
+  }
 });

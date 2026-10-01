@@ -257,17 +257,17 @@ for (const [name, corrupt] of [
     const store = memoryStorage(saved);
     const restored = loadDraft(() => store);
     assert.deepEqual(restored.draft, emptyDraft());
-    assert.match(restored.warning, /could not be restored/);
+    assert.match(restored.warning, /Check browser storage permissions and reload, or import an exported/);
     assert.equal(store.getItem(DRAFT_KEY), saved);
   });
 }
 
 test('malformed JSON and denied storage access are recoverable; quota errors suggest export', () => {
   for (const text of ['{broken', 'null', '[]']) {
-    assert.match(loadDraft(() => memoryStorage(text)).warning, /could not be restored/);
+    assert.match(loadDraft(() => memoryStorage(text)).warning, /Check browser storage permissions and reload, or import an exported/);
   }
   const denied = () => { throw new Error('Storage disabled'); };
-  assert.match(loadDraft(denied).warning, /could not be restored/);
+  assert.match(loadDraft(denied).warning, /Check browser storage permissions and reload, or import an exported/);
   assert.match(saveDraft(add(), denied), /Export JSON/);
   assert.match(saveDraft(add(), () => ({ setItem() { throw new Error('QuotaExceededError'); } })), /Export JSON/);
 });
