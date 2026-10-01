@@ -57,3 +57,11 @@ for local deterministic interpretation. These are capability boundaries, not
 a general “all writes need auth” rule: local workspace writes are explicit.
 No route was opened and no hosted error was replaced by sample data. Existing
 hosted source, role, RLS/CLS and ownership suites remain part of mandatory tests.
+
+## Remaining checkpoints
+
+- **4 — Already fixed by #31, verified:** Header regression asserts OpenSight,
+  product links and page captions in local, demo and hosted Author access.
+  Navigation tests: 19 passed / 0 failed / 0 skipped. Browser acceptance checks
+  the actual Author caption and absence of the old phrase in both render modes.
+  No product/header implementation change.

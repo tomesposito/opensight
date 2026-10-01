@@ -62,6 +62,9 @@ try {
   };
   const exports = async label => {
     await navigate(page, 'author');
+    assert.equal(await page.locator('.header-caption').innerText(), 'Author');
+    assert.match(await page.locator('.product-header .brand').innerText(), /OpenSight/);
+    assert.doesNotMatch(await page.locator('.product-header').innerText(), /Definition explorer/);
     const file = page.locator('.author-menu summary').filter({ hasText: /^File$/ });
     for (const [action, filename] of [['Export JSON', 'opensight-analysis.json'], ['Download .qs', 'opensight-analysis.qs']]) {
       // Count DOM nodes, including closed menus, then verify the actual download.
