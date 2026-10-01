@@ -14,3 +14,7 @@ export { MetadataMigration } from './metadata-migration.js';
 export type { LegacyMigrationConfig, MigrationReport, MigrationCheckpoint } from './metadata-migration.js';
 export type { MetadataKind, ResourceKey, MetadataResource } from './metadata-resources.js';
 export { encryptMetadataSecret, decryptMetadataSecret } from './metadata-secrets.js';
+
+export { SourceMigration } from './source-migration.js';
+export type { SourceMigrationConfig, SourceMigrationInput } from './source-migration.js';
+export { assertHostedSourcesReady, expireUploads } from './source-maintenance.js';

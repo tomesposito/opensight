@@ -82,11 +82,12 @@ export class TenantMetadata {
   async remove(context: TenantContext, key: ResourceKey, expectedVersion: number): Promise<void> {
     await this.batch(context, [{ key, body: null, expectedVersion }]);
   }
-  async batch(context: TenantContext, edits: readonly MetadataEdit[]): Promise<void> {
+  async batch(context: TenantContext, edits: readonly MetadataEdit[], expectedRevisions?: Revisions): Promise<void> {
     this.context(context);
     // Snapshot before awaiting; caller mutation cannot change a checked write mid-transaction.
     const changes = structuredClone(edits);
     await this.checked(context, async (c, _revisions, user) => {
+      if (expectedRevisions && Object.keys(expectedRevisions).some(k => expectedRevisions[k as keyof Revisions] !== _revisions[k as keyof Revisions])) throw new MetadataError('METADATA_REVISED', 403);
       const seen = new Set<string>();
       for (const edit of changes) {
         const key = this.key(context, edit.key), encoded = JSON.stringify(keyValues(context, key));
@@ -110,7 +111,7 @@ export class TenantMetadata {
       }
       if (changes.length) {
         const authorization = changes.some(e => ['user', 'group', 'folder', 'analysis', 'dashboard', 'policy', 'invitation'].includes(e.key.kind)) ? 1 : 0;
-        const policy = changes.some(e => e.key.kind === 'policy') ? 1 : 0;
+        const policy = changes.some(e => e.key.kind === 'policy' || e.key.kind === 'source') ? 1 : 0;
         const configuration = changes.some(e => ['dataset', 'prepared-dataset', 'source', 'secret', 'ai-config'].includes(e.key.kind)) ? 1 : 0;
         await c.query('UPDATE h1_revisions SET "authorization" = "authorization" + ?, policy = policy + ?, configuration = configuration + ? WHERE tenant_id = ? AND namespace_id = ?',
           [authorization, policy, configuration, ...scopeValues(context)]);

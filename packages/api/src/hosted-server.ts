@@ -1,3 +1,11 @@
+import { assertHostedSourcesReady, expireUploads } from './source-maintenance.js';
+import { HostedSources } from './hosted-sources.js';
+import { HostedData } from './hosted-data.js';
+import { HostedDataRoutes } from './hosted-data-routes.js';
+import { sourceEndpoints } from './source-schema.js';
+import { QueryEngineError, UploadError } from '@opensight/query-engine';
+import { PrepError } from '@opensight/bundle-parser/prep';
+import { BlazeError } from './blaze.js';
 import { createServer, type IncomingMessage, type Server } from 'node:http';
 import { hasCapability } from '@opensight/query-engine';
 import { HostedAuth } from './hosted-auth.js';
@@ -48,16 +56,19 @@ function boundary(request: IncomingMessage, origin: string): void {
   if (!request.url?.startsWith('/') || request.url.startsWith('//') || request.url.includes('?') || request.url.includes('#')) throw new MetadataError('HOSTED_REQUEST_INVALID', 400);
 }
 
-/** H2 tenant plane intentionally exposes no legacy fixture stores or ownerless scheduler. */
+/** Hosted tenant plane never exposes legacy fixture stores or ownerless schedulers. */
 export async function createHostedApiServer(options: HostedServerOptions): Promise<Server> {
   const config = hostedConfig(options.env);
   if (options.membershipDatabase?.durable !== true || options.tenantDatabase?.durable !== true) throw new MetadataError('DURABLE_MEMBERSHIP_STORE_REQUIRED', 503);
   if (typeof options.security?.authenticate !== 'function') throw new MetadataError('HOSTED_VERIFIER_REQUIRED', 503);
   const authenticate = options.security.authenticate;
   const metadata = new TenantMetadata(options.tenantDatabase, options.membershipDatabase);
+  const data = new HostedDataRoutes(new HostedData(new HostedSources(metadata, config.encryptionKey.toString('base64'), sourceEndpoints(options.env))));
   const provisioning = new HostedProvisioning(options.membershipDatabase, config, options.mailTransport ?? smtpFromEnvironment(options.env));
   // Prove that the durable H1/H2 schema is reachable before binding a socket.
   await options.membershipDatabase.transaction(async c => { await c.query('SELECT tenant_id FROM h1_tenants WHERE 1 = 0'); await c.query('SELECT subject FROM h2_memberships WHERE 1 = 0'); });
+  await assertHostedSourcesReady(options.membershipDatabase);
+  await expireUploads(options.membershipDatabase);
   const server = createServer((request, response) => {
     void (async () => {
       boundary(request, config.origin);
@@ -109,7 +120,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
         return;
       }
       // Every other request, including unknown, embed and legacy routes, must verify first.
-      const context = await metadata.authenticate(request, async req => {
+      const verified = async (req: IncomingMessage) => {
         try {
           const identity = await authenticate(req);
           if (!identity) return undefined;
@@ -118,7 +129,8 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
           return identity;
         }
         catch (error) { if (error instanceof MetadataError) throw error; throw new MetadataError('AUTHENTICATION_FAILED', 401); }
-      });
+      };
+      const context = await metadata.authenticate(request, verified);
       path = scopePath(path, context);
       if (path === '/api/session') {
         method(request, response, ['GET']);
@@ -145,14 +157,22 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
         send(response, 200, resources.map(r => ({ id: r.id, namespaceId: context.namespaceId, ...r.body }))); return;
       }
       if (/^\/api\/(namespaces|users|invitations)(?:\/|$)/.test(path)) throw new MetadataError('OPERATOR_REQUIRED', 403);
+      if (await data.route(request, response, path, context, async () => {
+        const current = await metadata.authenticate(request, verified);
+        if (current.tenantId !== context.tenantId || current.userId !== context.userId) throw new MetadataError('AUTHENTICATION_FAILED', 401);
+        await metadata.revisions(context);
+      })) return;
       throw new MetadataError('HOSTED_CAPABILITY_UNAVAILABLE', 503);
     })().catch((error: unknown) => {
       request.resume();
-      const status = error instanceof MetadataError || error instanceof RequestError ? error.status : 500;
-      const errorCode = error instanceof MetadataError || error instanceof SecurityError ? error.code : error instanceof RequestError ? 'HOSTED_REQUEST_INVALID' : 'HOSTED_INTERNAL_ERROR';
+      const dataError = error instanceof QueryEngineError || error instanceof PrepError || error instanceof UploadError || error instanceof BlazeError;
+      const status = dataError ? 422 : error instanceof MetadataError || error instanceof RequestError ? error.status : 500;
+      const errorCode = dataError ? error.code : error instanceof MetadataError || error instanceof SecurityError ? error.code : error instanceof RequestError ? 'HOSTED_REQUEST_INVALID' : 'HOSTED_INTERNAL_ERROR';
       send(response, status, { errorCode });
     });
   });
+  const expiryTimer = setInterval(() => { void expireUploads(options.membershipDatabase).catch(() => { /* Reads still fail closed on expiry. */ }); }, 60000);
+  expiryTimer.unref(); server.once('close', () => clearInterval(expiryTimer));
   server.requestTimeout = 15000; server.headersTimeout = 10000;
   return server;
 }

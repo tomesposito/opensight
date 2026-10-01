@@ -1,3 +1,4 @@
+import type { SecurityContext } from './security.js';
 import type { PrepColumn } from '@opensight/bundle-parser/prep';
 import { interactiveRequest, type InteractiveQuery } from './interactive.js';
 import { planVisual } from './planner.js';
@@ -7,7 +8,7 @@ import type { ResultRow } from './types.js';
 import type { PrepScalar } from './prep-stream.js';
 
 /** Trusted, already-authorized in-memory data; this function never opens a source. */
-export function queryPrepared(columns: readonly PrepColumn[], rowCount: number, value: (row: number, column: number) => PrepScalar, body: InteractiveQuery) {
+export function planPreparedQuery(columns: readonly PrepColumn[], body: InteractiveQuery, security?: SecurityContext) {
   const supported = columns.filter(c => c.type !== 'BOOLEAN');
   if (!supported.length) fail('UNSUPPORTED_FEATURE', '$.columns', 'Visual queries require numeric, string or datetime columns; Boolean fields are supported in prep');
   const schema = supported.map(c => ({ Name: c.name, Type: c.type }));
@@ -19,7 +20,12 @@ export function queryPrepared(columns: readonly PrepColumn[], rowCount: number, 
     dataSource: { DataSource: { Arn: sourceArn, DataSourceId: 'memory', Name: 'Memory', Type: 'POSTGRESQL', Status: 'CREATION_SUCCESSFUL', DataSourceParameters: { PostgreSqlParameters: { Host: 'unused', Port: 1, Database: 'unused' } } } },
     localData: { provenance: 'Authorized prepared output; no source access', dataSetArn: arn, physicalTableId: 'output', csv: 'unused.csv', nullEncoding: 'empty cell', timezone: 'UTC', security: { dataset: 'unrestricted', source: 'unrestricted' } },
   });
-  const plan = planVisual(request), indexes = supported.map(c => columns.indexOf(c));
+  return planVisual({ ...request, ...(security ? { security: { ...security, policy: { ...security.policy, dataSetArn: arn } } } : {}) });
+}
+
+export function queryPrepared(columns: readonly PrepColumn[], rowCount: number, value: (row: number, column: number) => PrepScalar, body: InteractiveQuery) {
+  const supported = columns.filter(c => c.type !== 'BOOLEAN');
+  const plan = planPreparedQuery(columns, body), indexes = supported.map(c => columns.indexOf(c));
   const rows: ResultRow[] = Array.from({ length: rowCount }, (_, r) => Object.fromEntries(supported.map((c, i) => {
     const cell = value(r, indexes[i]!);
     // SQL BIGINT outside JS's exact range cannot safely enter numeric evaluation.

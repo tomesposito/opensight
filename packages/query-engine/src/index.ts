@@ -38,3 +38,6 @@ export type { PrepPreview, PrepPreviewOptions } from './prep-executor.js';
 export { streamPrepDuckDb, streamPrepPostgres, withPrepTables, withPrepMemory } from './prep-stream.js';
 export type { PrepScalar, PrepSink, PrepReadLimits, PrepMemoryTable } from './prep-stream.js';
 export { queryPrepared } from './prepared-query.js';
+export { planPreparedQuery } from './prepared-query.js';
+export { planSourceRead, streamSourcePostgres, streamSourceMemory } from './source-read.js';
+export type { SourceRead, SourceConnection } from './source-read.js';
