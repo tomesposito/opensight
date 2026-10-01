@@ -95,8 +95,10 @@ try {
     assert.equal(await page.locator('#o-question').count(), 0);
     await page.getByText('Questions are unavailable for definition previews.', { exact: false }).waitFor();
     await capture(`${label}-definition`);
+    await page.getByRole('link', { name: 'Open Home to explore sample sales data.' }).click();
+    await page.locator('.dashboard-heading h1').filter({ hasText: 'Renderable Sales' }).waitFor();
+    await page.locator('.dashboard-grid .chart svg').first().waitFor();
     if (label === 'demo') {
-      await page.getByRole('link', { name: 'Open Home to ask about sample sales data.' }).click();
       await page.locator('#o-question').fill('revenue by region');
       await page.locator('#o-question').press('Enter');
       await page.locator('.o-result .chart svg').waitFor();

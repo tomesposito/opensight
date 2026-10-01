@@ -86,7 +86,7 @@ test('Issue #35: definition previews never invite questions about unavailable da
       const html = renderToStaticMarkup(createElement(AccessProvider, { access }, createElement(Dashboard, { fixture })));
       assert.doesNotMatch(html, /id="o-question"|class="o-result"/);
       assert.match(html, /Questions are unavailable for definition previews/);
-      assert.match(html, /href="#\/home">Open Home to ask about sample sales data/);
+      assert.match(html, /href="#\/home">Open Home to explore sample sales data/);
     }
   }
   const sample = renderToStaticMarkup(createElement(Dashboard, { fixture: sales, sample: true }));
