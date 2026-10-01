@@ -7,6 +7,8 @@ import { EXTRA_VISUALS, extraKind, variantKinds } from './visual-catalog.js';
 import { compileExtra } from './extra-charts.js';
 import { applyDisplayOptions } from './display-options.js';
 
+export const DATA_REQUIRED_LABEL = 'Needs data';
+
 type ObjectValue = Record<string, unknown>;
 type Input = Pick<FixtureVisual, 'source' | 'rows' | 'bindings' | 'path' | 'theme'> & { definition: unknown };
 export interface CompiledVisual {
@@ -331,7 +333,7 @@ export function compileVisual(input: Input): CompiledVisual {
     if (rows.length > 1) fail(input.path, 'KPI expects exactly one aggregate row, not a client-side sum');
     const row = rows[0];
     const value = row ? number(row, model.measures[0]!) : null;
-    const label = state === 'unavailable' ? 'Data unavailable' : state === 'empty' ? 'No results' : value === null ? 'No value' : displayCell(value);
+    const label = state === 'unavailable' ? DATA_REQUIRED_LABEL : state === 'empty' ? 'No results' : value === null ? 'No value' : displayCell(value);
     option.tooltip = { show: false };
     option.graphic = [{ type: 'text', left: 'center', top: 'middle', style: { text: label, fill: (model.palette ?? theme.palette)[0], fontSize: value === null ? 22 : 56, fontWeight: 600, fontFamily: theme.fontFamily } }];
   }

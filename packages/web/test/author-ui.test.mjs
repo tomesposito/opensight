@@ -52,7 +52,7 @@ test('only the selected card exposes configuration and titles are escaped', () =
 test('shared VisualCard shows ready, unavailable, empty and compiler error states', () => {
   const preview = buildAuthorPreview(activeSheet(add()).visuals[0]);
   assert.match(renderCard(preview), /View data · 1 row/);
-  assert.match(renderCard({ ...preview, rows: null }), /Data unavailable/);
+  assert.match(renderCard({ ...preview, rows: null }), /Needs data/);
   assert.match(renderCard({ ...preview, rows: [] }), /No results/);
   const incomplete = authorReducer(add(), { type: 'unassign', field: 'revenue' });
   const error = renderCard(buildAuthorPreview(activeSheet(incomplete).visuals[0]));

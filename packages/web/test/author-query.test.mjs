@@ -46,7 +46,7 @@ test('live Author POST uses the definition client base, JSON headers and cancell
   const html = render(item, data);
   assert.match(html, /<td>East<\/td><td>500<\/td><td>65<\/td>/);
   assert.match(html, /<td>West<\/td><td>400<\/td><td>70<\/td>/);
-  assert.doesNotMatch(html, /Data unavailable/);
+  assert.doesNotMatch(html, /Unable to load data/);
 });
 
 test('default, blank, origin and root API bases route queries through the same mount as definitions', async () => {
@@ -70,7 +70,7 @@ test('MONTH results bind the engine month alias; zero rows show No results', asy
   }
 });
 
-test('422 preserves engine details and reuses Data unavailable with the engine message, never fixture rows', async () => {
+test('422 preserves engine details and shows recovery guidance with the engine message, never fixture rows', async () => {
   const item = visual('bar');
   const error = { errorCode: 'UNSUPPORTED_FEATURE', message: 'Unsupported aggregation <MEDIAN>', path: '$.analysis.Definition.Sheets' };
   const client = createApiClient('/', async () => Response.json(error, { status: 422 }));
@@ -79,8 +79,9 @@ test('422 preserves engine details and reuses Data unavailable with the engine m
   const data = await loadAuthorRows(client, request, controller().signal);
   assert.deepEqual(data, { rows: null, message: error.message });
   const html = render(item, data);
-  assert.match(html, /Data unavailable/);
+  assert.match(html, /Unable to load data/);
   assert.match(html, /Unsupported aggregation &lt;MEDIAN&gt;/);
+  assert.match(html, /check the selected fields and data access, then retry/);
   assert.doesNotMatch(html, /View data|No matching precomputed|<MEDIAN>/);
 });
 
@@ -97,7 +98,7 @@ test('network, HTTP and malformed successes leave live data unavailable', async 
     const data = await loadAuthorRows(createApiClient('/', fetcher), buildAuthorQuery(item), controller().signal);
     assert.equal(data.rows, null);
     assert.ok(data.message);
-    assert.match(render(item, data), /Data unavailable/);
+    assert.match(render(item, data), /Unable to load data/);
     assert.doesNotMatch(render(item, data), /View data/);
   }
 });
