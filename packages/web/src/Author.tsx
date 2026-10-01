@@ -171,7 +171,7 @@ export function AuthorCanvas({ draft, dispatch, client, fit = true }: EditorProp
   const sheet = activeSheet(draft), fields = dataFields(draft.calculatedFields, draft.dataset);
   const query = search.trim().toLowerCase();
   const matchingFields = fields.filter(f => f.name.toLowerCase().includes(query));
-  const interactionKey = JSON.stringify([sheet.id, sheet.visuals.map(v => [v.id, v.kind, v.dimension, v.rows, v.columns, v.measures, v.filters, v.filterActions, v.hierarchy, v.imported]), draft.parameters, draft.calculatedFields, !!client]);
+  const interactionKey = JSON.stringify([draft.dataset?.id, sheet.id, sheet.visuals.map(v => [v.id, v.kind, v.dimension, v.rows, v.columns, v.measures, v.filters, v.filterActions, v.hierarchy, v.imported]), draft.parameters, draft.calculatedFields, !!client]);
   const [interactionState, setInteractionState] = useState<{ key: string; selections: ActionSelections }>({ key: interactionKey, selections: {} });
   const selections = interactionState.key === interactionKey ? interactionState.selections : {};
   const [drillState, setDrillState] = useState<{ key: string; paths: Record<string, DrillPath>; armed?: string }>({ key: interactionKey, paths: {} });
@@ -375,8 +375,8 @@ function Properties({ visual, draft, dispatch, client }: EditorProps & { visual:
 function FilterEditor({ dataset, visual, calculations, dispatch, client, parameters }: { dataset?: AuthorDataset; parameters: AuthorParameter[]; visual: AuthorVisual; calculations: CalculatedField[]; dispatch: Dispatch<AuthorAction>; client?: QueryClient }) {
   const [column, setColumn] = useState(() => dataFields(calculations, dataset).find(f => f.type === 'STRING')?.name ?? '');
   const [result, setResult] = useState<{ key: string; values: string[]; error?: string }>();
-  const key = JSON.stringify(buildDistinctQuery(column, calculations, parameters, dataset));
-  const request = useMemo(() => JSON.parse(key) as ReturnType<typeof buildDistinctQuery>, [key]);
+  const key = JSON.stringify([dataset?.id, buildDistinctQuery(column, calculations, parameters, dataset)]);
+  const request = useMemo(() => (JSON.parse(key) as [unknown, ReturnType<typeof buildDistinctQuery>])[1], [key]);
   useEffect(() => {
     if (!client || !column) return;
     const controller = new AbortController();
