@@ -64,3 +64,15 @@ test('mandatory materialization explains why direct query is disabled', async t 
   assert.equal(ui.renderer.root.findAllByType('option').find(o => o.props.value === 'DIRECT_QUERY').props.disabled, true);
   assert.equal(ui.renderer.root.findByType('select').props.value, 'BLAZE');
 });
+
+
+test('Issue #35: a first Blaze refresh gives a concrete action, then truthful progress', async t => {
+  const client = { getDatasetExecution: async () => ({ ...ready, state: 'empty', rowCount: null, lastRefreshedAt: null }) };
+  const ui = await mount(t, { client, datasetId: 'prepared' });
+  assert.match(ui.text(), /Choose Refresh Blaze to prepare data for your charts/);
+  assert.doesNotMatch(ui.text(), /No successful refresh recorded/);
+  assert.equal(ui.renderer.root.findAllByType('button').find(b => b.props.children === 'Refresh Blaze').props.disabled, false);
+  await ui.update({ client: { getDatasetExecution: async () => ({ ...ready, state: 'running', lastRefreshedAt: null }) }, datasetId: 'prepared' });
+  assert.match(ui.text(), /Preparing cached data/);
+  assert.doesNotMatch(ui.text(), /Choose Refresh Blaze/);
+});

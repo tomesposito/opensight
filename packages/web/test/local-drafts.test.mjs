@@ -57,9 +57,9 @@ test('corrupt definitions and attempted executable content never become editor s
   const original = values.get(key);
   for (const bad of [null, { ...draft('Bad'), dataset: { id: '../escape', columns: [] } }, { ...draft('Bad'), __proto__: null, execute: 'globalThis.compromised = true' }, { ...draft('Bad'), theme: { callback: 'alert(1)' } }]) {
     const collection = JSON.parse(original); collection.entries[0].draft = bad; values.set(key, JSON.stringify(collection));
-    assert.match(store.list()[0].problem, /corrupt/);
-    assert.throws(() => store.open(id), /corrupt/);
-    assert.throws(() => store.restore(), /corrupt/);
+    assert.match(store.list()[0].problem, /unreadable/);
+    assert.throws(() => store.open(id), /unreadable/);
+    assert.throws(() => store.restore(), /unreadable/);
     assert.equal(values.get(key), JSON.stringify(collection));
   }
   store.delete(id); assert.deepEqual(store.list(), []); assert.equal(globalThis.compromised, undefined);
@@ -70,7 +70,7 @@ test('malformed collection metadata is rejected without overwrite', () => {
   const { store, values } = setup(), key = draftStorageKey(access);
   for (const saved of ['{', 'null', JSON.stringify({ version: 99, entries: [] }), JSON.stringify({ version: 1, activeId: 'missing', entries: [] }), JSON.stringify({ version: 1, activeId: null, entries: [{ id: '__proto__', updatedAt: 'yesterday' }] })]) {
     values.set(key, saved);
-    assert.throws(() => store.list(), /corrupt/); assert.throws(() => store.save(draft('New')), /corrupt/);
+    assert.throws(() => store.list(), /Reload to retry, or import an exported/); assert.throws(() => store.save(draft('New')), /Existing saved data has not been changed/);
     assert.equal(values.get(key), saved);
   }
 });

@@ -5,6 +5,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import fixtures from '../build/test/fixtures.generated.json' with { type: 'json' };
 import { VisualCard } from '../build/test/VisualCard.js';
 import { Dashboard } from '../build/test/Dashboard.js';
+import { AccessProvider, demoAccess } from '../build/test/access.js';
 import { Author } from '../build/test/Author.js';
 
 const sales = fixtures.find(f => f.id === 'renderable-sales');
@@ -65,4 +66,33 @@ test('author notices distinguish unsupported samples from hosted query errors', 
   const hosted = renderToStaticMarkup(createElement(Author, { client: { queryDataset() { throw new Error('SSR must not query'); } } }));
   assert.match(hosted, /unsupported queries show their error details and guidance/);
   assert.doesNotMatch(offline + hosted, /Data unavailable/);
+});
+
+
+test('Issue #35: settled missing, empty, failed and definition states have no loading symbol', () => {
+  const visual = sales.sheets[0].visuals[0];
+  for (const [rows, props] of [[null, {}], [[], {}], [null, { dataMessage: 'Query failed' }], [null, { definitionPreview: true }]]) {
+    const html = card({ ...visual, rows }, props);
+    assert.match(html, /aria-busy="false"/);
+    assert.doesNotMatch(html, /empty-symbol|◌|Loading data/);
+  }
+  assert.match(card({ ...visual, rows: null }, { loading: true }), /class="empty-symbol"/);
+});
+
+
+test('Issue #35: definition previews never invite questions about unavailable data', () => {
+  for (const access of [demoAccess, { mode: 'local' }, { mode: 'hosted', session: { role: 'author_ai' } }]) {
+    for (const fixture of fixtures) {
+      const html = renderToStaticMarkup(createElement(AccessProvider, { access }, createElement(Dashboard, { fixture })));
+      assert.doesNotMatch(html, /id="o-question"|class="o-result"/);
+      assert.match(html, /Questions are unavailable for definition previews/);
+      assert.match(html, /href="#\/home">Open Home to explore sample sales data/);
+    }
+  }
+  const sample = renderToStaticMarkup(createElement(Dashboard, { fixture: sales, sample: true }));
+  assert.match(sample, /id="o-question"/);
+  assert.doesNotMatch(sample, /Questions are unavailable/);
+  const hosted = renderToStaticMarkup(createElement(AccessProvider, { access: { mode: 'hosted', session: { role: 'author_ai' } } }, createElement(Dashboard, { fixture: sales, hosted: true, dashboardId: 'published' })));
+  assert.match(hosted, /id="o-question"/);
+  assert.doesNotMatch(hosted, /Questions are unavailable/);
 });

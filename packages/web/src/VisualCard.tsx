@@ -86,7 +86,7 @@ export function VisualCard({ visual, dataMessage, loading = false, definitionPre
       <div className="visual-content">
         {!loading && compiled.state === 'ready' && ((compiled.model.kind === 'table' || compiled.model.kind === 'pivot') ? <DataTable compiled={compiled} interaction={interaction} /> : <Chart option={compiled.option} title={compiled.model.title} compiled={compiled} interaction={interaction} />)}
         {compiled.state !== 'ready' && <div className="empty-state" role="status">
-          <span className="empty-symbol" aria-hidden="true">◌</span>
+          {loading && <span className="empty-symbol" aria-hidden="true">◌</span>}
           <strong>{loading ? 'Loading data…' : compiled.state === 'unavailable' ? definitionPreview ? 'Definition only' : dataMessage ? 'Unable to load data' : DATA_REQUIRED_LABEL : 'No results'}</strong>
           <p>{loading ? 'Waiting for query results. No data is shown until the query completes.' : compiled.state === 'empty' ? 'The result set contains no rows. Review the filters and source data for matching records.' : definitionPreview ? 'This preview has no sample results. Live data requires a hosted API with a configured source and access permissions. No query runs in this preview.' : dataMessage ? 'Review the details below, check the selected fields and data access, then retry.' : 'No data is attached to this visual. Choose a supported sample, or query a configured dataset through a hosted API.'}</p>
           {!loading && dataMessage && <p>{dataMessage}</p>}

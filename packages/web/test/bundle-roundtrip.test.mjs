@@ -326,7 +326,7 @@ for (const [name, corrupt] of [
 ]) test(`untrusted imported storage rejects ${name}`, () => {
   const draft = importBundle(fixture()); corrupt(draft);
   assert.throws(() => validateDraft(draft));
-  assert.match(loadDraft(() => ({ getItem: () => JSON.stringify(draft) })).warning, /could not be restored/);
+  assert.match(loadDraft(() => ({ getItem: () => JSON.stringify(draft) })).warning, /Check browser storage permissions and reload, or import an exported/);
 });
 
 test('empty imported definitions retain absent sheets, but explicit sheet additions and renames export', () => {

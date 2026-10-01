@@ -11,7 +11,7 @@ interface Collection { version: 1; activeId: string | null; entries: Entry[] }
 export interface DraftSummary { id: string; name: string; updatedAt: string; problem?: string }
 const object = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 const keys = (v: Record<string, unknown>, allowed: string[]) => Object.keys(v).every(k => allowed.includes(k));
-const invalid = () => new Error('Saved drafts are corrupt or unsupported. Stored data was left unchanged.');
+const invalid = () => new Error('Saved analyses on this device could not be read. Reload to retry, or import an exported .qs or JSON copy. Existing saved data has not been changed.');
 
 export const browserDraftStorage: DraftStorage = () => {
   if (typeof window === 'undefined') throw new Error('Browser storage is unavailable outside a browser.');
@@ -42,7 +42,8 @@ export function createDraftStore(storage: DraftStorage, access: Access) {
       const legacy = access.mode === 'hosted' ? null : storage().getItem(access.mode === 'local' ? `local.${DRAFT_KEY}` : DRAFT_KEY);
       if (legacy === null) return { version: 1, activeId: null, entries: [] };
       if (legacy.length > MAX_DRAFT_CHARS) throw invalid();
-      const draft = parseDraft(legacy);
+      let draft: AuthorDraft;
+      try { draft = parseDraft(legacy); } catch { throw invalid(); }
       return { version: 1, activeId: 'legacy', entries: [{ id: 'legacy', updatedAt: new Date(0).toISOString(), draft }] };
     }
     if (saved.length > MAX_DRAFT_CHARS) throw invalid();
@@ -69,7 +70,7 @@ export function createDraftStore(storage: DraftStorage, access: Access) {
   };
   const checked = (e: Entry): AuthorDraft => {
     try { validateDraft(e.draft); return e.draft; }
-    catch { throw new Error('This saved draft is corrupt or unsupported and cannot be opened. You can delete it from Local drafts.'); }
+    catch { throw new Error('This saved analysis is unreadable in this version of OpenSight. Import an exported .qs or JSON copy, or choose another analysis. You can delete this entry from Local drafts.'); }
   };
   const list = (): DraftSummary[] => read().entries.map(e => {
     try { return { id: e.id, name: checked(e).title.trim() || 'Untitled analysis', updatedAt: e.updatedAt }; }

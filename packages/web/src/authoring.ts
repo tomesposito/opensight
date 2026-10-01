@@ -553,7 +553,7 @@ export function loadDraft(getStorage: GetStorage): { draft: AuthorDraft; warning
     const saved = getStorage().getItem(DRAFT_KEY);
     if (saved === null) return { draft: emptyDraft() };
     return { draft: parseDraft(saved) };
-  } catch { return { draft: emptyDraft(), warning: 'The saved draft could not be restored. Your next edit will start a new draft.' }; }
+  } catch { return { draft: emptyDraft(), warning: 'OpenSight could not read the saved analysis on this device. Check browser storage permissions and reload, or import an exported .qs or JSON copy.' }; }
 }
 export function saveDraft(draft: AuthorDraft, getStorage: GetStorage): string {
   try { validateDraft(draft); getStorage().setItem(DRAFT_KEY, JSON.stringify(draft)); return 'Draft saved on this device.'; }

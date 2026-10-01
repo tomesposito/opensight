@@ -66,7 +66,7 @@ test('legacy drafts migrate wells, selection and order to a full-width first she
   assert.deepEqual(activeSheet(restored.draft).visuals[0].rows, ['region']);
   assert.deepEqual(activeSheet(restored.draft).layout.map(p => [p.i, p.y, p.w]), [['visual-2', 0, 12], ['visual-1', 8, 12]]);
   legacy.visuals[0].rows = [];
-  assert.match(loadDraft(() => ({ getItem: () => JSON.stringify(legacy) })).warning, /could not be restored/);
+  assert.match(loadDraft(() => ({ getItem: () => JSON.stringify(legacy) })).warning, /Check browser storage permissions and reload, or import an exported/);
 });
 
 test('pivot pills append once, move a dimension between axes and remove only the targeted well', () => {

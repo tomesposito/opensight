@@ -110,8 +110,6 @@ function AuthorWorkspace({ client: apiClient, dataset, onDatasetChange, onPrep, 
       <span className="mode-badge">{client ? `API · ${draft.dataset?.name ?? 'Local sales'}` : 'Fixtures · Offline'}</span><span className="phase-badge">Builder v1</span>
       <button type="button" onClick={drafts.save}>Save draft</button>
       <button type="button" onClick={() => { if (drafts.replace({ ...emptyDraft(), ...(draft.dataset ? { dataset: draft.dataset } : {}) })) onDatasetChange?.(draft.dataset); }}>New analysis</button>
-      <button type="button" onClick={() => void downloadQs()} disabled={busy} aria-describedby="export-help">Download .qs</button>
-      <button type="button" className="primary-button" onClick={download} disabled={!!exported.error} aria-describedby="export-help">Export JSON</button>
     </div>
     <LocalDrafts entries={drafts.entries} activeId={drafts.id} onRefresh={drafts.refresh} onOpen={id => { const opened = drafts.open(id); if (opened) { source.retry(); onDatasetChange?.(opened.dataset); } }} onRename={drafts.rename} onDelete={id => { if (drafts.remove(id) && id === drafts.id) onDatasetChange?.(undefined); }} />
     <div className="bundle-import" onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; }} onDrop={e => { e.preventDefault(); if (e.dataTransfer.files.length !== 1) setImportStatus('Drop one .qs ZIP or one bundle .json member.'); else void importFile(e.dataTransfer.files[0]); }} aria-label="Bundle drop zone">

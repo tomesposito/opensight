@@ -102,3 +102,50 @@ test('local restart retains only pipeline metadata and never resolves old upload
   const restarted = await api(t, { prepStorePath });
   assert.equal((await restarted('/api/datasets/restarted/query', 'POST', query)).body.errorCode, 'PREP_SOURCE_NOT_FOUND');
 });
+
+import { polishEndpoints } from './polish-endpoints.mjs';
+const salesQuery = { dimensions: [], measures: [{ fieldId: 'total', columnName: 'revenue', aggregation: 'SUM' }], filters: [] };
+test('Issue #35: fixture-only API deliberately exposes sample queries, not local upload/prep or hosted O', async t => {
+  const call = await api(t, { localData: false });
+  for (const [path, method] of polishEndpoints) {
+    const body = method === 'POST' || method === 'PUT' ? salesQuery : undefined;
+    const result = await call(path, method, body);
+    if (path === '/api/datasets/sales/query') {
+      assert.equal(result.status, 200); assert.deepEqual(result.body.rows, [{ total: 900 }]);
+    } else if (path === '/api/datasets/polish/query') {
+      assert.equal(result.status, 404, 'Fixture-only API has no prepared dataset registry');
+    } else {
+      assert.equal(result.status, 503, path); assert.equal(result.body.errorCode, 'SECURITY_NOT_CONFIGURED', path);
+    }
+    assert.equal((await call(path, method, body, { 'x-user-id': 'local' })).body.errorCode, 'FORGED_PRINCIPAL', path);
+  }
+});
+test('Issue #35: local upload, all prep operations and dataset queries share explicit local access', async t => {
+  const call = await api(t);
+  assert.deepEqual((await call('/api/datasets/sales/query', 'POST', salesQuery)).body.rows, [{ total: 900 }]);
+  const staged = await call('/api/uploads', 'POST', input);
+  assert.equal(staged.status, 201);
+  assert.equal((await call(`/api/uploads/${staged.body.id}`)).status, 200);
+  assert.equal((await call('/api/prep-sources')).status, 200);
+  const path = '/api/datasets/polish', p = pipeline(staged.body.id);
+  assert.equal((await call(`${path}/prep/preview`, 'POST', { pipeline: p })).status, 200);
+  assert.equal((await call(`${path}/prep`, 'PUT', { name: 'Polish audit', pipeline: p })).status, 201);
+  assert.equal((await call(`${path}/prep`, 'GET')).status, 200);
+  assert.equal((await call('/api/prep-datasets')).body.datasets.length, 1);
+  assert.equal((await call(`${path}/execution`)).body.mode, 'DIRECT_QUERY');
+  assert.deepEqual((await call(`${path}/query`, 'POST', query)).body.rows, [{ team: 'North', total: 12 }]);
+  assert.equal((await call(`${path}/execution`, 'PUT', { mode: 'BLAZE', intervalMinutes: null })).status, 200);
+  assert.equal((await call(`${path}/refresh`, 'POST', {})).status, 200);
+  assert.equal((await call(`${path}/rows`)).body.rowCount, 2);
+  assert.equal((await call(`${path}/prep`, 'DELETE')).status, 200);
+  for (const path of ['/api/o/query', '/api/o/generate']) {
+    const result = await call(path, 'POST', salesQuery);
+    assert.equal(result.status, 503); assert.equal(result.body.errorCode, 'SECURITY_NOT_CONFIGURED');
+    assert.match(result.body.Message, /Hosted authentication required/);
+  }
+  for (const [path, method] of polishEndpoints) {
+    const body = method === 'POST' || method === 'PUT' ? {} : undefined;
+    assert.equal((await call(path, method, body, { 'x-user-id': 'local' })).body.errorCode, 'FORGED_PRINCIPAL', path);
+    assert.equal((await call(path, method, body, { Authorization: 'Bearer local' })).body.errorCode, 'SECURITY_NOT_CONFIGURED', path);
+  }
+});
