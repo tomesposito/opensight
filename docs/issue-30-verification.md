@@ -84,3 +84,20 @@ URLs and ports with the API CLI defaults and resolved Vite configuration, and
 require the first-run command sequence and local-data links to agree. All three
 targeted checks pass. The guard complements the real fresh-build/browser check;
 it does not claim that script existence alone proves a runnable product.
+
+## Contributor commands
+
+`npm run build` from the repository root exits 0. The first attempt was
+terminated with exit 143 during compilation; a complete retry outside the
+sandbox passed. The normal Vite bundle-size advisory remains unchanged.
+
+The previous README bundle-parser command failed with ENOENT: npm changes to
+`packages/bundle-parser` when running the workspace script. The corrected command
+is verified from the root and exits 0:
+
+```bash
+npm run summarize --workspace @opensight/bundle-parser -- ../../fixtures/real-bundle-sample/TotalDeathByCountry.sanitized.qs
+```
+
+The README now links to this archive's expected JSON summary and identifies the
+existing synthetic CLI snapshots separately. No CLI behavior change was needed.

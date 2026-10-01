@@ -156,15 +156,18 @@ workspace:
 
 ![OpenSight first run with authentication setup and a public sample demo](docs/images/first-run.png)
 
-Parse a real QuickSight export:
+Parse a real QuickSight export. npm runs this script inside
+`packages/bundle-parser`, so the input path is relative to that workspace:
 
 ```bash
-npm run summarize --workspace @opensight/bundle-parser -- fixtures/real-bundle-sample/TotalDeathByCountry.sanitized.qs
+npm run summarize --workspace @opensight/bundle-parser -- ../../fixtures/real-bundle-sample/TotalDeathByCountry.sanitized.qs
 ```
 
-Expected [CLI output](fixtures/sample-sales-analysis.summary.txt) and
-[JSON summary](fixtures/sample-sales-analysis.summary.json) are checked by
-tests. The suite includes malformed-input regressions, public-entry
+The expected [archive summary](fixtures/real-bundle-sample/summary.json) is checked
+by tests, alongside the synthetic sample's
+[CLI output](fixtures/sample-sales-analysis.summary.txt) and
+[JSON summary](fixtures/sample-sales-analysis.summary.json).
+The suite includes malformed-input regressions, public-entry
 typechecking, local SQL data-oracle checks, generated DuckDB query/result
 comparisons, and fail-closed execution checks for unsupported features and
 protected/unresolved datasets.
