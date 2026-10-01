@@ -5,6 +5,32 @@ import { ApiError, createApiClient } from '../build/test/api-client.js';
 const definition = { DataSetIdentifierDeclarations: [], Sheets: [] };
 const response = body => Response.json(body);
 
+test('session errors preserve structured reason and HTTP status without leaking response bodies', async () => {
+  for (const [reply, code] of [
+    [Response.json({ errorCode: 'SECURITY_NOT_CONFIGURED', Message: 'private details' }, { status: 503 }), 'SECURITY_NOT_CONFIGURED'],
+    [new Response('<h1>proxy failure</h1>', { status: 502 }), undefined],
+    [Response.json(null, { status: 401 }), undefined],
+    [Response.json({ errorCode: 42 }, { status: 403 }), undefined],
+  ]) {
+    const client = createApiClient('/api', async () => reply);
+    await assert.rejects(client.getSession(), error => error instanceof ApiError && error.status === reply.status && error.errorCode === code && error.message === 'Session request failed.');
+  }
+});
+
+test('session success keeps the existing request transport and rejects malformed identities', async () => {
+  const controller = new AbortController();
+  const session = { id: 'u', namespaceId: 'n', name: 'User', role: 'author' };
+  const client = createApiClient('/api', async (url, options) => {
+    assert.equal(url, '/api/api/session');
+    assert.deepEqual(options, { signal: controller.signal, credentials: 'same-origin', headers: { Accept: 'application/json' } });
+    return Response.json(session);
+  });
+  assert.deepEqual(await client.getSession(controller.signal), session);
+  for (const body of [{ ...session, role: 'admin' }, { ...session, id: undefined }, { mode: 'demo' }, null]) {
+    await assert.rejects(createApiClient('/api', async () => Response.json(body)).getSession());
+  }
+});
+
 for (const [kind, route, key] of [['Analysis', 'analyses', 'AnalysisId'], ['Dashboard', 'dashboards', 'DashboardId']]) {
   test(`fetches ${kind.toLowerCase()} definitions with configured prefix, headers and cancellation signal`, async () => {
     const controller = new AbortController();
