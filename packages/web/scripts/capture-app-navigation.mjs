@@ -103,7 +103,10 @@ try {
   } } });
   for (const role of roles) {
     await context.setExtraHTTPHeaders({ Authorization: `Bearer browser-${role}` });
-    await page.goto(connected); await product().waitFor();
+    // Removing a fragment with goto may be same-document navigation. Reload
+    // explicitly so SessionGate resolves the new server/principal immediately.
+    await page.goto(connected); await page.reload(); await product().waitFor();
+    assert.equal(await page.getByRole('complementary', { name: 'Local data workspace' }).count(), 0);
     const build = !role.startsWith('reader'), admin = role === 'administrator';
     assert.deepEqual(await product().getByRole('link').allTextContents(), build ? ['Home', 'Analyses', 'Data', 'Admin'] : ['Home', 'Admin']);
     await navigate(page, 'security');
