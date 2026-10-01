@@ -12,8 +12,8 @@ export function Dashboard({ fixture, hosted = false, dashboardId, client, sample
   const sheet = fixture.sheets.find(s => s.id === sheetId);
   return <>
     {(access.mode === 'demo' || hosted && dashboardId !== undefined) && <OEntry draft={emptyDraft()} client={hosted ? client : undefined} dashboardId={dashboardId} />}
-    <div className="dashboard-heading"><div><p className="eyebrow">{fixture.description}</p><h1>{fixture.name}</h1></div><span className="phase-badge">{sample ? 'Pinned sample data' : 'Phase 0 preview'}</span></div>
-    <p className="fixture-notice">{sample && <>Pinned synthetic sales data. No live query is run. </>}{fixture.notice}</p>
+    <div className="dashboard-heading"><div><p className="eyebrow">{fixture.description}</p><h1>{fixture.name}</h1></div><span className="phase-badge">{sample ? 'Pinned sample data' : 'Definition preview'}</span></div>
+    <p className="fixture-notice">{sample ? <>Pinned synthetic sales data. No live query is run. </> : <>Developer tool: inspect chart definitions and pinned sample results. </>}{fixture.notice}</p>
     <nav className="sheet-tabs" aria-label="Sheets">{fixture.sheets.map(s => <button key={s.id} aria-current={s.id === sheetId ? 'page' : undefined} onClick={() => setSheetId(s.id)}>{s.name}<span>{s.visuals.length} {s.visuals.length === 1 ? 'visual' : 'visuals'}</span></button>)}</nav>
     {sheet ? <div className="dashboard-grid" aria-label={sheet.name}>{sheet.visuals.map(v => <VisualCard key={v.path} visual={v} />)}</div> : <p>No sheets in this fixture.</p>}
     <p className="provenance">Source: <code>{fixture.provenance}</code></p>

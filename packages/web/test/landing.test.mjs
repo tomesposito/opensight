@@ -63,6 +63,8 @@ test('switching to definition fixtures and back restores the sales dashboard', a
   assert.deepEqual(renderer.root.findByType(Dashboard).props.fixture, sales);
   await act(() => picker().props.onChange({ target: { value: 'fixtures' } }));
   assert.equal(picker().props.value, 'fixtures');
+  assert.equal(picker().findAllByType('option').find(o => o.props.value === 'fixtures').props.children, 'Developer fixture preview');
+  assert.equal(renderer.root.findByProps({ className: 'header-caption' }).props.children, 'Developer tools');
   assert.deepEqual(renderer.root.findByType(Dashboard).props.fixture, fixtures[0]);
   await act(() => picker().props.onChange({ target: { value: 'sample' } }));
   assert.equal(picker().props.value, 'sample');
@@ -76,4 +78,17 @@ test('hosted entry still resolves a session before exposing the application', t 
   const html = renderToStaticMarkup(createElement(App));
   assert.match(html, /Resolving hosted session/);
   assert.doesNotMatch(html, /visual-card|Sample dashboard|source-picker/);
+});
+
+
+test('fixture definitions are explicitly a developer preview while the landing stays a sample dashboard', () => {
+  const preview = renderToStaticMarkup(createElement(Dashboard, { fixture: fixtures[0] }));
+  assert.match(preview, /Developer tool: inspect chart definitions and pinned sample results/);
+  assert.match(preview, /class="phase-badge">Definition preview/);
+  assert.match(preview, /Definition preview only/);
+  assert.match(preview, /No query is run/);
+  const landing = render();
+  assert.match(landing, /Developer fixture preview/);
+  assert.match(landing, /API definition preview/);
+  assert.doesNotMatch(landing, /Developer tool:|Phase 0 preview|Definition preview only/);
 });
