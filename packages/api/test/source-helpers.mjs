@@ -27,7 +27,7 @@ export async function sourceFixture(t, options = {}) {
   const dir = await mkdtemp(join(tmpdir(), 'opensight-h3-')), path = join(dir, 'metadata.sqlite'), key = randomBytes(32).toString('base64');
   let db = new SqliteMetadataDatabase(path), now = Date.now();
   await initializeMetadata(db); await seedSources(db);
-  const f = { path, key, get db() { return db; }, advance(ms) { now += ms; }, endpoints: options.endpoints ?? endpoints,
+  const f = { path, key, get db() { return db; }, clock: () => now, advance(ms) { now += ms; }, endpoints: options.endpoints ?? endpoints,
     async restart() { await db.close(); db = new SqliteMetadataDatabase(path); setup(); } };
   function setup() {
     f.metadata = new TenantMetadata(db, db); f.budgets = new TenantBudgets(budgetConfig, c => f.metadata.assertContext(c)); f.sources = new HostedSources(f.metadata, key, f.endpoints, () => now);

@@ -181,3 +181,17 @@ test('H5 tenant membership and policy responses never expose foreign configurati
   await f.provisioning.removeMember(f.tenant.tenantId, f.context.userId);
   await assert.rejects(service.get(f.context), { code: 'AUTHORIZATION_REVISED' });
 });
+
+test('H5 transaction failure rolls back config, revisions, revocations and outbox publication', async t => {
+  const f = await fixture(t), before = await f.metadata.revisions(f.context);
+  const failingDatabase = { transaction: work => f.db.transaction(c => work({ query: async (sql, values) => {
+    if (sql.startsWith('INSERT INTO h1_outbox')) throw new Error('injected outbox failure');
+    return c.query(sql, values);
+  } })) };
+  const service = new HostedEmbedding(failingDatabase, f.metadata, f.policy);
+  await assert.rejects(service.put(f.context, config(), 0), /injected outbox failure/);
+  assert.equal((await f.service.get(f.context)).revision, 0);
+  assert.deepEqual(await f.metadata.revisions(f.context), before);
+  assert.deepEqual(await f.auth.verify(f.token), f.identity);
+  const events = await f.db.transaction(c => c.query("SELECT * FROM h1_outbox WHERE event_type = 'embedding.config.changed'")); assert.equal(events.length, 0);
+});

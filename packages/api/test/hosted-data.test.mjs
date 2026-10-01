@@ -50,7 +50,8 @@ test('H3 source rotation, retirement, expiry and policy changes invalidate cache
   await data.refresh(a, u.id); assert.deepEqual((await data.execute(a, u.id, 'query', { query, mode: 'BLAZE' })).rows, [{ total: 40 }]);
   await f.sources.retire(a, u.id, 2);
   await assert.rejects(data.execute(a, u.id, 'output', { mode: 'BLAZE' }), { code: 'SOURCE_RETIRED' });
-  const exp = await f.sources.upload(a, upload(undefined, new Date(Date.now() + 60000).toISOString())); await data.refresh(a, exp.id); f.advance(61000);
+  // Expiry and advancement must use the same injected clock; real worker time is unrelated.
+  const exp = await f.sources.upload(a, upload(undefined, new Date(f.clock() + 60000).toISOString())); await data.refresh(a, exp.id); f.advance(61000);
   for (const mode of ['DIRECT_QUERY', 'BLAZE']) await assert.rejects(data.execute(a, exp.id, 'output', { mode }), { code: 'UPLOAD_EXPIRED' });
 });
 test('H3 asynchronous rotation, policy revision and owner removal prevent result publication', async t => {
