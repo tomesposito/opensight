@@ -17,7 +17,7 @@ process.once('message', (request: WorkerRequest) => {
       const parsed = parseUpload(task.request); output.start(parsed.columns); for (const row of parsed.rows) output.row(row);
       result = { columns: output.columns, rows: parsed.rows };
     } else if (task.kind === 'query') { const t = table(task.table); result = queryPrepared(t.source.columns, t.rowCount, t.value, task.query); }
-    else if (task.kind === 'visual') { const t = table(task.table); result = queryPreparedVisual(t.source.columns, t.rowCount, t.value, task.analysis, task.visualId, task.dataSetArn); }
+    else if (task.kind === 'visual') { const t = table(task.table); result = queryPreparedVisual(t.source.columns, t.rowCount, t.value, task.analysis, task.visualId, task.dataSetArn, task.period); }
     else {
       if (task.kind === 'source') await streamSourceMemory(task.read, table(task.table), limits, output, { memoryMb });
       else await withPrepMemory(task.tables.map(table), c => streamPrepDuckDb(c, task.pipeline, task.sources,

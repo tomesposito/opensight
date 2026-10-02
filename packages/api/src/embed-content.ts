@@ -107,7 +107,7 @@ export class EmbedContent {
       if (g.anonymous && !g.authorizedResources.includes(resourceArn(g.namespaceId, 'dashboard', e.dashboardId))) embedFailure('EMBED_SCOPE_DENIED', 403);
     }
   }
-  async admission(context: TenantContext, g: SessionGrant, datasetId: string) {
+  async admission(context: TenantContext, g: Pick<SessionGrant, 'anonymous' | 'tags'>, datasetId: string) {
     const { dataset, sourceId } = await this.dataset(context, datasetId);
     const policies = (await this.metadata.list(context, 'policy')).filter(p => p.body.datasetId === datasetId);
     if (policies.length > 1) embedFailure('EMBED_DATASET_UNSUPPORTED', 422);
@@ -130,7 +130,7 @@ export class EmbedContent {
         protectedColumns: [...new Set([...first.deniedColumns, ...second.deniedColumns])], columnGrants: [] } };
     });
   }
-  async visuals(context: TenantContext, g: SessionGrant, asset: MetadataResource) {
+  async visuals(context: TenantContext, g: Pick<SessionGrant, 'anonymous' | 'tags' | 'experience'>, asset: MetadataResource) {
     const stored = object(asset.body.definition), definition = object(stored.Definition), e = g.experience;
     const analysis = { ResourceType: 'Analysis', AnalysisId: asset.id, Name: String(stored.Name ?? asset.id), Definition: definition };
     const visuals = embedVisuals(definition).filter(v => e.kind !== 'visual' || v.id === e.visualId && v.sheetId === e.sheetId);
