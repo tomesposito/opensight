@@ -1,4 +1,3 @@
-import type { AuditWriter } from './hosted-events.js';
 import { randomUUID } from 'node:crypto';
 import { hasCapability, isRole, parseUpload, type UploadColumn, type UploadRequest } from '@opensight/query-engine';
 import { TenantMetadata, type TenantContext } from './metadata.js';
@@ -12,7 +11,7 @@ const json = (value: unknown): JsonObject => object(value);
 /** Tenant/owner-scoped records and encrypted payloads share H1's atomic durable store. */
 export class HostedSources {
   readonly endpoints: readonly SourceEndpoint[];
-  constructor(readonly metadata: TenantMetadata, protected readonly encryptionKey: string, endpoints: readonly SourceEndpoint[], readonly clock = Date.now, protected readonly audit?: AuditWriter) {
+  constructor(readonly metadata: TenantMetadata, protected readonly encryptionKey: string, endpoints: readonly SourceEndpoint[], readonly clock = Date.now) {
     this.endpoints = structuredClone(endpoints);
   }
   async capability(context: TenantContext, capability: 'build' | 'view' | 'ai'): Promise<void> {
@@ -47,11 +46,7 @@ export class HostedSources {
     this.active(source);
     if (!source.secretId) sourceError('SOURCE_SECRET_REQUIRED', 403);
     const key = this.key(context, 'secret', source.secretId), r = await this.metadata.get(context, key);
-    try {
-      const payload: unknown = JSON.parse(decryptMetadataSecret(String(r.body.ciphertext), this.encryptionKey, context, key));
-      await this.audit?.({ operation: 'secret.read', ...context, resourceRevision: r.version, outcome: 'succeeded' });
-      return payload;
-    }
+    try { return JSON.parse(decryptMetadataSecret(String(r.body.ciphertext), this.encryptionKey, context, key)) as unknown; }
     catch { return sourceError('SOURCE_SECRET_UNAVAILABLE', 503); }
   }
   async create(context: TenantContext, id: string, raw: unknown): Promise<ReturnType<HostedSources['summary']>> {
@@ -103,7 +98,6 @@ export class HostedSources {
       { key, body: this.seal(context, source.secretId, sourceCredentials(r.credentials)), expectedVersion: secret.version },
       { key: this.key(context, 'source', id), body: json({ binding: source.binding, policy: source.policy, secretId: source.secretId }), expectedVersion: r.expectedVersion as number },
     ]);
-    await this.audit?.({ operation: 'secret.rotate', ...context, resourceRevision: secret.version + 1, outcome: 'succeeded' });
   }
   async retire(context: TenantContext, id: string, expectedVersion: number): Promise<void> {
     await this.capability(context, 'build');

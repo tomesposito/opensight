@@ -45,7 +45,7 @@ export function readOccurrence(r: SqlRow): Occurrence {
     errorCode: r.error_code as string | null, createdAt: String(r.created_at), finishedAt: r.finished_at as string | null };
 }
 export async function lockTenant(c: SqlConnection, s: Scope): Promise<void> {
-  if (!(await c.query("UPDATE h1_tenants SET version = version WHERE tenant_id = ? AND state = 'active' AND NOT EXISTS (SELECT 1 FROM h8_restore_holds h WHERE h.tenant_id = h1_tenants.tenant_id) RETURNING tenant_id", [s.tenantId])).length) throw new MetadataError('TENANT_UNAVAILABLE', 403);
+  if (!(await c.query("UPDATE h1_tenants SET version = version WHERE tenant_id = ? AND state = 'active' RETURNING tenant_id", [s.tenantId])).length) throw new MetadataError('TENANT_UNAVAILABLE', 403);
   if (!(await c.query(`SELECT namespace_id FROM h1_namespaces WHERE ${scoped}`, scopeArgs(s))).length) missing();
 }
 export async function member(c: SqlConnection, s: Scope, userId: string) {

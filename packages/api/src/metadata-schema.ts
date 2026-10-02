@@ -46,13 +46,8 @@ const schema = [
 
 export async function initializeMetadata(database: Database, dialect: 'sqlite' | 'postgres' = 'sqlite'): Promise<void> {
   await database.transaction(async c => {
-    await c.query('CREATE TABLE IF NOT EXISTS h8_restore_holds (tenant_id TEXT PRIMARY KEY, restored_at TEXT NOT NULL, backup_id TEXT NOT NULL)');
     for (const sql of schema) await c.query(sql);
     if (dialect === 'postgres') {
-      await c.query('ALTER TABLE h8_restore_holds ENABLE ROW LEVEL SECURITY');
-      await c.query('ALTER TABLE h8_restore_holds FORCE ROW LEVEL SECURITY');
-      await c.query('DROP POLICY IF EXISTS h8_hold_scope ON h8_restore_holds');
-      await c.query("CREATE POLICY h8_hold_scope ON h8_restore_holds FOR SELECT USING (tenant_id = current_setting('opensight.tenant_id', true))");
       await c.query('ALTER TABLE h1_tenants ENABLE ROW LEVEL SECURITY');
       await c.query('ALTER TABLE h1_tenants FORCE ROW LEVEL SECURITY');
       await c.query('DROP POLICY IF EXISTS h1_scope ON h1_tenants');

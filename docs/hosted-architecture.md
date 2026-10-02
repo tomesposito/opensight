@@ -5,9 +5,6 @@ The hosted and embeddable/white-label direction is accepted; the recommendations
 API additions, operating targets and rollout below still need design approval.
 Single-node self-hosting remains the default product.
 
-H8 implementation and operating instructions: [single-node reference runbook](hosted-operation.md).
-The reference remains a local harness; its [verification record](h8-reference-verification.md) distinguishes native tests from the Compose gate.
-
 This draft reads [SOLUTION_DESIGN.md](../SOLUTION_DESIGN.md) as the contract,
 especially D13, Phase 5, Phases 3b/3c and §§12–14. It does not amend that document.
 Its older §2 hosted non-goal and D11/D12 deployment assumptions need reconciliation

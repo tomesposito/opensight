@@ -31,11 +31,6 @@ export function hostedConfig(env: NodeJS.ProcessEnv = process.env): HostedConfig
   try { identifier(keyId); } catch { configError(); }
   const signingKey = secretKey(env.OPENSIGHT_AUTH_SIGNING_KEY), encryptionKey = secretKey(env.OPENSIGHT_AUTH_ENCRYPTION_KEY), operatorKey = secretKey(env.OPENSIGHT_OPERATOR_KEY);
   if (signingKey.equals(encryptionKey) || signingKey.equals(operatorKey) || encryptionKey.equals(operatorKey)) configError();
-  if (env.OPENSIGHT_AUDIT_OPERATOR_KEY) {
-    const audit = secretKey(env.OPENSIGHT_AUDIT_OPERATOR_KEY);
-    if ([signingKey, encryptionKey, operatorKey].some(k => k.equals(audit))) configError();
-  }
-  if (env.OPENSIGHT_EMBED_SESSION_KEY === encryptionKey.toString('base64')) configError();
   return Object.freeze({ origin: origin!, issuer, audience, keyId: keyId!, signingKey, encryptionKey, operatorKey,
     sessionSeconds: seconds(env.OPENSIGHT_SESSION_SECONDS, 86400), invitationSeconds: seconds(env.OPENSIGHT_INVITATION_SECONDS, 604800) });
 }

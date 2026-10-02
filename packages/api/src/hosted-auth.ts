@@ -1,4 +1,3 @@
-import { eventContext } from './hosted-events.js';
 import { createHmac, randomBytes } from 'node:crypto';
 import type { IncomingMessage } from 'node:http';
 import type { SecurityOptions, Identity } from './security.js';
@@ -71,12 +70,10 @@ export class HostedAuth {
   }
   private async membership(c: SqlConnection, subject: string, tenantId: string, invited = false): Promise<SqlRow> {
     // Same lock order as H1 admission: tenant first. A committed suspension wins subsequent admission.
-    const lock = await c.query("UPDATE h1_tenants SET version = version WHERE tenant_id = ? AND state = 'active' AND NOT EXISTS (SELECT 1 FROM h8_restore_holds h WHERE h.tenant_id = h1_tenants.tenant_id) RETURNING version", [tenantId]);
+    const lock = await c.query("UPDATE h1_tenants SET version = version WHERE tenant_id = ? AND state = 'active' RETURNING version", [tenantId]);
     if (!lock.length) denied();
     const row = (await c.query(`${membershipSelect} WHERE m.subject = ? AND m.tenant_id = ?`, [subject, tenantId]))[0];
     if (!row || row.state !== 'active' || row.status !== 'active' && !(invited && row.status === 'invited')) denied();
-    const event = eventContext.getStore();
-    if (event) { event.tenantId = tenantId; event.namespaceId = String(row.namespace_id); event.resourceRevision = Number(row.authorization); }
     return row;
   }
   private async invitation(c: SqlConnection, token: string): Promise<SqlRow> {

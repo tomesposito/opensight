@@ -1,4 +1,3 @@
-import { eventContext } from './hosted-events.js';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { performance } from 'node:perf_hooks';
 import { MetadataError } from './metadata-db.js';
@@ -77,13 +76,6 @@ export class TenantBudgets {
   async shutdown(): Promise<void> { this.close(); if (this.running) await new Promise<void>(resolve => this.drained.push(resolve)); }
   constructor(config: BudgetConfig, private readonly context: (context: TenantContext) => void) { this.config = validateBudgets(config); }
   limits(tenantId: string): WorkLimits { return Object.hasOwn(this.config.tenants, tenantId) ? this.config.tenants[tenantId]! : this.config.defaults; }
-  aggregate(): Usage {
-    const total = usage();
-    for (const entry of this.accounts.values()) for (const key of Object.keys(total) as (keyof Usage)[]) {
-      total[key] = key.startsWith('peak') || key.startsWith('max') ? Math.max(total[key], entry[key]) : total[key] + entry[key];
-    }
-    return total;
-  }
   snapshot(tenantId: string): Usage { return { ...this.account(tenantId) }; }
   node(): { running: number; queued: number } { return { running: this.running, queued: this.queued }; }
   private account(id: string): Usage { let a = this.accounts.get(id); if (!a) { a = usage(); this.accounts.set(id, a); } return a; }
@@ -130,7 +122,7 @@ export class TenantBudgets {
   }
   run<T>(context: TenantContext, refresh: boolean, recheck: () => Promise<void>, work: () => Promise<T>, signal?: AbortSignal): Promise<T> {
     this.context(context); // Reject copied/missing contexts synchronously, before any allocation.
-    const id = context.tenantId, a = this.account(id), limits = this.limits(id), telemetry = eventContext.getStore();
+    const id = context.tenantId, a = this.account(id), limits = this.limits(id);
     const reject = (code: string): never => { a.rejected++; budgetError(code); };
     if (this.closed) reject('NODE_ADMISSION_REFUSED');
     if (signal?.aborted) reject('EXECUTION_CANCELLED');
@@ -168,7 +160,6 @@ export class TenantBudgets {
             finally {
               clearTimeout(timer); signal?.removeEventListener('abort', abort); state = 'done';
               const elapsed = performance.now() - scope!.started; a.executionMs += elapsed; a.maxExecutionMs = Math.max(a.maxExecutionMs, elapsed);
-              if (telemetry?.usage) { telemetry.usage.executionMs += elapsed; telemetry.usage.sourceRows += scope!.sourceRows; telemetry.usage.workingBytes += scope!.workingBytes; }
               this.scopes.delete(scope!); a.running--; this.running--; if (!refresh) this.queries--; this.drain();
               if (!this.running) for (const resolve of this.drained.splice(0)) resolve();
             }

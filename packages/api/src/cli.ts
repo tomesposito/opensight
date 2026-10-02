@@ -2,7 +2,7 @@ import { maintenanceLock } from './metadata-maintenance.js';
 import { fileURLToPath } from 'node:url';
 import { createApiServer } from './index.js';
 import { createBuiltinHostedServer, drainHostedServer } from './hosted-server.js';
-import { MetadataError, SqliteMetadataDatabase } from './metadata-db.js';
+import { SqliteMetadataDatabase } from './metadata-db.js';
 import { initializeMetadata } from './metadata-schema.js';
 import { initializeAuth } from './auth-schema.js';
 import { hostedConfig } from './hosted-config.js';
@@ -46,7 +46,7 @@ try {
   if (server) {
     server.once('close', () => { void drainHostedServer(server).finally(async () => { await database?.close(); unlock?.(); }); });
     server.on('error', error => {
-      console.error(mode === 'hosted' ? 'HOSTED_SERVER_FAILED' : error.message);
+      console.error(error.message);
       process.exitCode = 1;
     });
     server.listen(Number(portText), process.env.HOST ?? '127.0.0.1', () => {
@@ -55,15 +55,13 @@ try {
     });
     for (const signal of ['SIGINT', 'SIGTERM'] as const) {
       process.once(signal, () => {
-        const deadline = setTimeout(() => process.exit(1), 30000);
-        const draining = drainHostedServer(server);
         server.close();
-        void draining.then(() => { server.closeAllConnections(); clearTimeout(deadline); }, () => process.exit(1));
+        server.closeAllConnections();
       });
     }
   }
 } catch (error) {
   await database?.close(); unlock?.(); await lock;
-  console.error(error instanceof MetadataError ? error.code : process.env.OPENSIGHT_MODE === 'hosted' ? 'HOSTED_START_FAILED' : error instanceof Error ? error.message : String(error));
+  console.error(error instanceof Error ? error.message : String(error));
   process.exitCode = 1;
 }

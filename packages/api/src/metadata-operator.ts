@@ -91,7 +91,6 @@ export class MetadataOperator {
       const prior = await existing(c, operationId, hash); if (prior) return prior;
       const rows = await c.query('SELECT t.*, n.namespace_id FROM h1_tenants t JOIN h1_namespaces n ON n.tenant_id = t.tenant_id WHERE t.tenant_id = ?', [tenantId]);
       const tenant = rows[0]; if (!tenant) missing();
-      if (action === 'resume' && (await c.query('SELECT tenant_id FROM h8_restore_holds WHERE tenant_id = ?', [tenantId])).length) throw new MetadataError('RESTORE_RECONCILIATION_REQUIRED', 403);
       const target = action === 'suspend' ? 'suspended' : action === 'resume' ? 'active' : 'deleting';
       if (tenant.state === 'deleted' || action === 'resume' && tenant.state !== 'suspended' || action === 'suspend' && tenant.state !== 'active' || action === 'delete' && !['active', 'suspended', 'provisioning'].includes(String(tenant.state))) throw new MetadataError('OPERATION_TRANSITION_INVALID');
       const changed = await c.query('UPDATE h1_tenants SET state = ?, version = version + 1 WHERE tenant_id = ? AND version = ? RETURNING version', [target, tenantId, expectedVersion]);

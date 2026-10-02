@@ -1,11 +1,3 @@
-import { readFile, statfs } from 'node:fs/promises';
-import { digest } from './auth-crypto.js';
-import { HostedLifecycle, boundedSetting } from './hosted-lifecycle.js';
-import { randomUUID } from 'node:crypto';
-import { performance } from 'node:perf_hooks';
-import { eventContext, requestOperation, type EventInput, type EventScope } from './hosted-events.js';
-import { HostedObservability, initializeObservability, authorizeAuditOperator } from './hosted-observability.js';
-import { assertEncryptionKey } from './hosted-key-rotation.js';
 import { EmbedSessions, embedSessionKey } from './embed-sessions.js';
 import { EmbedContent } from './embed-content.js';
 import { EmbedSources } from './embed-sources.js';
@@ -54,7 +46,6 @@ export interface HostedServerOptions {
   builtinAuth?: HostedAuth;
   env?: NodeJS.ProcessEnv;
   mailTransport?: MailTransport;
-  roleProbe?: () => Promise<void>;
 }
 const forgedHeaders = ['x-user', 'x-user-id', 'x-principal', 'x-groups', 'x-group-ids', 'x-namespace', 'x-namespace-id', 'x-tenant', 'x-tenant-id', 'x-subject', 'x-role', 'x-roles', 'x-capabilities'];
 const forgedFields = ['subject', 'principal', 'userId', 'namespaceId', 'groups', 'security', 'capabilities', 'issuer', 'audience'];
@@ -87,28 +78,22 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
   const config = hostedConfig(options.env);
   if (options.membershipDatabase?.durable !== true || options.tenantDatabase?.durable !== true) throw new MetadataError('DURABLE_MEMBERSHIP_STORE_REQUIRED', 503);
   if (typeof options.security?.authenticate !== 'function') throw new MetadataError('HOSTED_VERIFIER_REQUIRED', 503);
-  await assertEncryptionKey(options.membershipDatabase, config.encryptionKey.toString('base64'));
   const authenticate = options.security.authenticate;
   const metadata = new TenantMetadata(options.tenantDatabase, options.membershipDatabase);
-  await initializeObservability(options.membershipDatabase);
-  const observability = new HostedObservability(options.membershipDatabase, metadata), audit = observability.write;
-  const auditKey = (options.env ?? process.env).OPENSIGHT_AUDIT_OPERATOR_KEY;
-  if (auditKey && [config.operatorKey, config.signingKey, config.encryptionKey].some(k => k.toString('base64') === auditKey)) throw new MetadataError('HOSTED_CONFIG_INVALID', 503);
   const policy = embeddingPolicy(options.env ?? process.env, config.origin);
   await initializeEmbedding(options.membershipDatabase);
   const embedding = new HostedEmbedding(options.membershipDatabase, metadata, policy);
   const budgets = await loadBudgets(options.membershipDatabase, metadata);
   const jobs = new JobStore(options.membershipDatabase, metadata);
-  const data = new HostedDataRoutes(new HostedData(new HostedSources(metadata, config.encryptionKey.toString('base64'), sourceEndpoints(options.env), Date.now, audit), undefined, budgets), jobs);
-  const embedContent = new EmbedContent(new HostedData(new EmbedSources(metadata, config.encryptionKey.toString('base64'), sourceEndpoints(options.env), Date.now, audit), undefined, budgets));
+  const data = new HostedDataRoutes(new HostedData(new HostedSources(metadata, config.encryptionKey.toString('base64'), sourceEndpoints(options.env)), undefined, budgets), jobs);
+  const embedContent = new EmbedContent(new HostedData(new EmbedSources(metadata, config.encryptionKey.toString('base64'), sourceEndpoints(options.env)), undefined, budgets));
   const mail = options.mailTransport ?? smtpFromEnvironment(options.env);
   await initializeJobs(options.membershipDatabase);
   const unmigrated = await options.membershipDatabase.transaction(c => c.query(`SELECT j.resource_id FROM h1_resources j WHERE j.kind = 'job'
     AND NOT EXISTS (SELECT 1 FROM h7_migrations m WHERE m.tenant_id = j.tenant_id AND m.namespace_id = j.namespace_id)`));
   if (unmigrated.length) throw new MetadataError('JOB_MIGRATION_REQUIRED', 503);
-  const renderer = new JobRenderer(data.data, embedContent), runner = new JobRunner(jobs, renderer, mail, audit);
-  let schedulerHealthy = true;
-  const ownership = new JobOwnership(jobs, renderer), scheduler = new Scheduler(async () => { await runner.tick(); schedulerHealthy = true; }, () => { schedulerHealthy = false; });
+  const renderer = new JobRenderer(data.data, embedContent), runner = new JobRunner(jobs, renderer, mail);
+  const ownership = new JobOwnership(jobs, renderer), scheduler = new Scheduler(() => runner.tick());
   const sessions = new EmbedSessions(options.membershipDatabase, metadata, policy, embedSessionKey(options.env ?? process.env), (context, grant) => embedContent.authorize(context, grant));
   await sessions.initialize();
   const provisioning = new HostedProvisioning(options.membershipDatabase, config, mail, Date.now, ownership);
@@ -116,51 +101,10 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
   await options.membershipDatabase.transaction(async c => { await c.query('SELECT tenant_id FROM h1_tenants WHERE 1 = 0'); await c.query('SELECT subject FROM h2_memberships WHERE 1 = 0'); });
   await assertHostedSourcesReady(options.membershipDatabase);
   await expireUploads(options.membershipDatabase);
-  const runtimeEnv = options.env ?? process.env;
-  const lifecycle = new HostedLifecycle(async () => {
-    await options.membershipDatabase.transaction(async c => {
-      await c.query('SELECT subject FROM h2_memberships WHERE 1 = 0');
-      await c.query('SELECT tenant_id FROM h7_jobs WHERE 1 = 0');
-      const key = (await c.query('SELECT fingerprint, active FROM h2_keys WHERE key_id = ?', [config.keyId]))[0];
-      if (options.builtinAuth && (!key || Number(key.active) !== 1 || key.fingerprint !== digest(config.signingKey))) throw new MetadataError('AUTH_KEY_REVOKED', 503);
-      const encryption = (await c.query('SELECT fingerprint FROM h8_encryption WHERE id = 1'))[0];
-      if (encryption?.fingerprint !== digest(config.encryptionKey)) throw new MetadataError('ENCRYPTION_KEY_VERSION_MISMATCH', 503);
-    });
-    await options.tenantDatabase.transaction(async c => { await c.query('SELECT tenant_id FROM h1_tenants WHERE 1 = 0'); }, { tenantId: 'health', namespaceId: 'health' });
-    await readFile('/proc/self/stat');
-    if (!observability.healthy) throw new MetadataError('AUDIT_UNAVAILABLE', 503);
-    if (!schedulerHealthy) throw new MetadataError('SCHEDULER_UNAVAILABLE', 503);
-    await options.roleProbe?.();
-  }, boundedSetting(runtimeEnv, 'OPENSIGHT_HTTP_MAX_INFLIGHT', 64, 4096));
   const server = createServer((request, response) => {
-    let release: (() => void) | undefined;
-    const requestId = randomUUID(), started = performance.now(), usage = { executionMs: 0, sourceRows: 0, workingBytes: 0 };
-    const telemetry: EventScope = { requestId, usage };
-    const event: EventInput = { operation: requestOperation(request.url ?? '', request.method ?? ''), requestId, outcome: 'succeeded', usage };
-    response.setHeader('X-Request-ID', requestId);
-    void eventContext.run(telemetry, async () => {
-      if (request.url === '/health/live' || request.url === '/health/ready') {
-        method(request, response, ['GET']);
-        const ready = request.url === '/health/live' || await lifecycle.ready();
-        send(response, ready ? 200 : 503, { status: ready ? 'ok' : 'unavailable' }); return;
-      }
-      release = lifecycle.admit();
+    void (async () => {
       boundary(request, config.origin);
       let path = request.url!;
-      if (path === '/api/host/audit' || path === '/api/host/metrics') {
-        method(request, response, ['GET']);
-        if (request.headers.origin !== undefined) throw new MetadataError('AUDIT_OPERATOR_REQUIRED', 403);
-        authorizeAuditOperator(request.headers.authorization, runtimeEnv);
-        if (path.endsWith('/audit')) {
-          await audit({ operation: 'audit.read', requestId, outcome: 'succeeded' });
-          const rows = await options.membershipDatabase.transaction(c => c.query('SELECT body FROM h8_audit ORDER BY created_at DESC, event_id DESC LIMIT 100'));
-          send(response, 200, rows.map(r => JSON.parse(String(r.body)) as unknown));
-        } else {
-          const disk = await statfs('/tmp');
-          send(response, 200, { ...observability.metrics(), admission: budgets.aggregate(), cache: data.data.cache?.metrics(), embedCache: embedContent.data.cache?.metrics(), scheduler: runner.metrics(), temporaryDiskAvailableBytes: disk.bavail * disk.bsize });
-        }
-        return;
-      }
       if (path === '/api/host' || path.startsWith('/api/host/')) {
         const authorization = request.headers.authorization;
         const browserMembership = /^\/api\/host\/tenants\/[A-Za-z0-9_-]+\/users(?:\/[A-Za-z0-9_-]+)?$/.test(path);
@@ -169,7 +113,6 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
           method(request, response, ['POST']);
           const input = await body(request, ['name', 'administrator']), administrator = object(input.administrator, ['email', 'name']);
           const result = await provisioning.provision(idempotency(request), { name: input.name as string, administrator: { email: administrator.email as string, name: administrator.name as string } });
-          event.tenantId = result.tenantId; event.namespaceId = result.namespaceId;
           send(response, 201, { ...result, state: (await provisioning.operator.tenant(result.tenantId)).state }); return;
         }
         const operation = /^\/api\/host\/operations\/([A-Za-z0-9_-]+)$/.exec(path);
@@ -228,9 +171,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
         catch (error) { if (error instanceof MetadataError) throw error; throw new MetadataError('AUTHENTICATION_FAILED', 401); }
       };
       const context = await metadata.authenticate(request, verified);
-      event.tenantId = context.tenantId; event.namespaceId = context.namespaceId; event.resourceRevision = context.authorizationRevision;
       path = scopePath(path, context);
-      if (path === '/api/audit') { method(request, response, ['GET']); send(response, 200, await observability.tenantAudit(context)); return; }
       if (path === '/api/session') {
         method(request, response, ['GET']);
         const user = await metadata.get(context, { kind: 'user', id: context.userId });
@@ -285,41 +226,25 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
       response.once('close', () => { if (!response.writableFinished) cancellation.abort(); });
       data.data.begin(context, cancellation.signal);
       if (await data.route(request, response, path, context, async () => {
-        lifecycle.assertServing();
         const current = await metadata.authenticate(request, verified);
         if (current.tenantId !== context.tenantId || current.userId !== context.userId) throw new MetadataError('AUTHENTICATION_FAILED', 401);
         await metadata.revisions(context);
       })) return;
       throw new MetadataError('HOSTED_CAPABILITY_UNAVAILABLE', 503);
-    }).catch((error: unknown) => {
+    })().catch((error: unknown) => {
       request.resume();
       const dataError = error instanceof QueryEngineError || error instanceof PrepError || error instanceof UploadError || error instanceof BlazeError;
       const status = dataError ? 422 : error instanceof MetadataError || error instanceof RequestError ? error.status : 500;
       const errorCode = dataError ? error.code : error instanceof MetadataError || error instanceof SecurityError ? error.code : error instanceof RequestError ? 'HOSTED_REQUEST_INVALID' : 'HOSTED_INTERNAL_ERROR';
-      event.outcome = status === 401 || status === 403 ? 'denied' : 'failed'; event.errorCode = errorCode;
       send(response, status, { errorCode });
-    }).finally(async () => {
-      if (!request.url?.startsWith('/health/')) {
-        event.tenantId ??= telemetry.tenantId; event.namespaceId ??= telemetry.namespaceId; event.resourceRevision ??= telemetry.resourceRevision;
-        event.latencyMs = performance.now() - started;
-        try { await audit(event); } catch { /* Readiness fails; no raw storage error escapes. */ }
-      }
-      release?.();
     });
   });
   const expiryTimer = setInterval(() => { void expireUploads(options.membershipDatabase).catch(() => { /* Reads still fail closed on expiry. */ }); }, 60000);
   await runner.recover();
-  server.once('listening', () => { lifecycle.start(); scheduler.start(); });
-  expiryTimer.unref();
-  const beginDrain = () => { lifecycle.beginDrain(); clearInterval(expiryTimer); scheduler.stop(); runner.stop(); budgets.close(); };
-  server.once('close', beginDrain);
-  let draining: Promise<void> | undefined;
-  drains.set(server, () => draining ??= (async () => {
-    beginDrain();
-    const complete = await lifecycle.drain(boundedSetting(runtimeEnv, 'OPENSIGHT_DRAIN_MS', 20000, 60000), async () => { await Promise.all([scheduler.idle(), budgets.shutdown()]); });
-    if (!complete) { server.closeAllConnections(); throw new MetadataError('DRAIN_DEADLINE_EXCEEDED', 503); }
-  })());
-  server.requestTimeout = 15000; server.headersTimeout = 10000; server.maxConnections = lifecycle.maximum + 16;
+  server.once('listening', () => scheduler.start());
+  expiryTimer.unref(); server.once('close', () => { clearInterval(expiryTimer); scheduler.stop(); budgets.close(); });
+  drains.set(server, async () => { scheduler.stop(); await scheduler.idle(); await budgets.shutdown(); });
+  server.requestTimeout = 15000; server.headersTimeout = 10000;
   return server;
 }
 

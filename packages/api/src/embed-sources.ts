@@ -27,11 +27,7 @@ export class EmbedSources extends HostedSources {
     const current = await this.metadata.embedDatasetSource(context, this.dataset(context, source.id));
     if (current.source.version !== source.version || !current.secret) embedFailure('SOURCE_SECRET_UNAVAILABLE', 503);
     const secret = current.secret;
-    try {
-      const payload = object(JSON.parse(decryptMetadataSecret(String(secret.body.ciphertext), this.encryptionKey, context, { kind: 'secret', id: secret.id, ownerId: secret.ownerId })));
-      await this.audit?.({ operation: 'secret.read', ...context, resourceRevision: secret.version, outcome: 'succeeded' });
-      return payload;
-    }
+    try { return object(JSON.parse(decryptMetadataSecret(String(secret.body.ciphertext), this.encryptionKey, context, { kind: 'secret', id: secret.id, ownerId: secret.ownerId }))); }
     catch { return embedFailure('SOURCE_SECRET_UNAVAILABLE', 503); }
   }
 }
