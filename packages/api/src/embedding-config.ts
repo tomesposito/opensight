@@ -27,8 +27,8 @@ export function defaultEmbedConfig(): TenantEmbedConfig {
     features: { registeredDashboards: true, registeredVisuals: true, parameterControls: false, filtering: false, anonymous: false, authoring: false, export: false, download: false, persistentReaderState: false } };
 }
 export const embedCapabilities = Object.freeze({ registeredDashboards: true, registeredVisuals: true, parameterControls: false, filtering: false,
-  anonymous: false, authoring: false, export: false, download: false, persistentReaderState: false,
-  sessionIssuance: false, customDomains: false, appearancePreview: true, brandingRemoval: false });
+  anonymous: true, authoring: true, export: false, download: false, persistentReaderState: false,
+  sessionIssuance: true, customDomains: false, appearancePreview: true, brandingRemoval: false });
 function fields(raw: unknown, allowed?: readonly string[]): Record<string, unknown> {
   try { return object(raw, allowed); } catch { return fail(); }
 }

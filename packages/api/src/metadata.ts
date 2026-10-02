@@ -63,6 +63,25 @@ export class TenantMetadata {
       return rows[0] ? resource(rows[0]) : missing();
     });
   }
+  /** Trusted embedded asset reader: follows only durable dataset links in this tenant.
+   * There is no HTTP route for this method, and no prepared-dataset traversal. */
+  async embedDatasetSource(context: TenantContext, datasetId: string): Promise<{ source: MetadataResource; secret?: MetadataResource }> {
+    return this.checked(context, async c => {
+      const rows = await c.query(`SELECT * FROM h1_resources WHERE ${predicates}`, keyValues(context, { kind: 'dataset', id: identifier(datasetId) }));
+      if (!rows[0]) missing();
+      const body = resource(rows[0]).body;
+      if (!Array.isArray(body.sources) || body.sources.length !== 1) throw new MetadataError('EMBED_DATASET_UNSUPPORTED', 422);
+      const ref = resourceKey(body.sources[0] as ResourceKey);
+      if (ref.kind !== 'source' || !ref.ownerId) throw new MetadataError('EMBED_SOURCE_UNRESOLVED', 403);
+      const sources = await c.query(`SELECT * FROM h1_resources WHERE ${predicates}`, keyValues(context, ref));
+      if (!sources[0]) missing();
+      const source = resource(sources[0]);
+      if (typeof source.body.secretId !== 'string') throw new MetadataError('SOURCE_SECRET_REQUIRED', 403);
+      const secrets = await c.query(`SELECT * FROM h1_resources WHERE ${predicates}`, keyValues(context, { kind: 'secret', id: identifier(source.body.secretId), ownerId: ref.ownerId }));
+      if (!secrets[0]) missing();
+      return { source, secret: resource(secrets[0]) };
+    });
+  }
   async list(context: TenantContext, kind: MetadataKind): Promise<MetadataResource[]> {
     return this.checked(context, async c => {
       if (!resourceKinds.includes(kind)) throw new MetadataError('METADATA_INVALID', 400);
@@ -81,6 +100,37 @@ export class TenantMetadata {
   }
   async remove(context: TenantContext, key: ResourceKey, expectedVersion: number): Promise<void> {
     await this.batch(context, [{ key, body: null, expectedVersion }]);
+  }
+  /** Author-only definition edits. Callers cannot replace grants or folder placement. */
+  async saveEmbeddedAnalysis(context: TenantContext, asset: MetadataResource, expected: Revisions): Promise<void> {
+    await this.checked(context, async (c, revisions, user) => {
+      if (!hasCapability(user.role as Parameters<typeof hasCapability>[0], 'build') || asset.kind !== 'analysis') throw new MetadataError('METADATA_WRITE_FORBIDDEN', 403);
+      if (JSON.stringify(revisions) !== JSON.stringify(expected)) throw new MetadataError('METADATA_REVISED', 403);
+      const key = resourceKey({ kind: 'analysis', id: asset.id });
+      const prior = (await c.query(`SELECT * FROM h1_resources WHERE ${predicates}`, keyValues(context, key)))[0];
+      if (Number(prior?.version ?? 0) !== asset.version) throw new MetadataError('METADATA_CONFLICT');
+      const old = prior ? JSON.parse(String(prior.body)) as JsonObject : { folderId: null };
+      const groups = await c.query("SELECT resource_id, body FROM h1_resources WHERE tenant_id = ? AND namespace_id = ? AND kind = 'group'", scopeValues(context));
+      const memberships = groups.filter(g => (JSON.parse(String(g.body)) as { userIds: string[] }).userIds.includes(context.userId)).map(g => String(g.resource_id));
+      const allows = (grants: unknown): boolean => user.role === 'administrator' || grants === undefined || Array.isArray(grants) && grants.some((value: unknown) => {
+        const g = value as { role: string; principal: { type: string; id: string } };
+        return g.role === 'co-owner' && (g.principal.type === 'user' ? g.principal.id === context.userId : memberships.includes(g.principal.id));
+      });
+      if (!allows(old.grants)) throw new MetadataError('METADATA_WRITE_FORBIDDEN', 403);
+      if (old.folderId) {
+        const folder = (await c.query(`SELECT body FROM h1_resources WHERE ${predicates}`, keyValues(context, { kind: 'folder', id: String(old.folderId) })))[0];
+        if (!folder || !allows((JSON.parse(String(folder.body)) as JsonObject).grants)) throw new MetadataError('METADATA_WRITE_FORBIDDEN', 403);
+      }
+      const body: JsonObject = { ...old, definition: asset.body.definition, datasets: asset.body.datasets };
+      if (!prior) await insertResource(c, context, key, body);
+      else {
+        await c.query(`DELETE FROM h1_links WHERE ${predicates}`, keyValues(context, key));
+        await c.query(`UPDATE h1_resources SET body = ?, version = version + 1 WHERE ${predicates}`, [JSON.stringify(body), ...keyValues(context, key)]);
+        await insertLinks(c, context, key, resourceLinks(key, body));
+      }
+      await c.query('UPDATE h1_revisions SET "authorization" = "authorization" + 1 WHERE tenant_id = ? AND namespace_id = ?', scopeValues(context));
+      await appendMetadataEvent(c, context, 'analysis.saved');
+    });
   }
   async batch(context: TenantContext, edits: readonly MetadataEdit[], expectedRevisions?: Revisions): Promise<void> {
     this.assertContext(context);

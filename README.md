@@ -140,11 +140,17 @@ embedding SDK with signed URLs, scheduled refreshes, and dashboard reports.
 
 Tenant administrators can configure exact parent origins, bounded lifetimes and
 safe appearance tokens within operator policy. An offline preview covers loading,
-empty, permission-error and expiry states with sample branding. Hosted embed
-sessions and custom domains remain gated; the existing signed-URL SDK keeps its
-v1 behavior. See [embedding configuration](docs/embedding-config.md).
+empty, permission-error and expiry states with sample branding. Hosted sessions
+now support registered dashboard/visual/Q/authoring experiences and anonymous
+tag-scoped embeds, with single-use bootstrap URLs and a cookie-free SDK. Custom
+domains remain separate, and the signed-URL SDK keeps its v1 behavior. See
+[embedding configuration](docs/embedding-config.md) and
+[session contracts and limits](docs/embed-sessions.md).
 
-![Offline embed appearance fixture showing four states with synthetic Atlas branding](docs/images/embed-preview.png)
+![Registered hosted embed using synthetic viewer-filtered data](docs/images/embed-session.png)
+
+The separate [offline appearance preview](docs/images/embed-preview.png) shows
+loading, empty, permission-error and expiry states.
 
 ## Contributor quickstart
 
@@ -215,6 +221,7 @@ architecture, decisions and phased plan. Feature guides live in
 [security and namespaces](docs/security-namespaces.md),
 [folders, sharing and embedding](docs/folders-sharing-embedding.md),
 [tenant embed configuration and appearance](docs/embedding-config.md),
+[hosted embed sessions](docs/embed-sessions.md),
 [data preparation](docs/data-prep.md), and the
 [connector gallery](docs/connector-gallery.md). The hosted metadata foundation and
 offline migration runbook are in [H1 tenant metadata](docs/h1-tenant-metadata.md);

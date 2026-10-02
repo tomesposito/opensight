@@ -5,7 +5,7 @@ import { build } from 'vite';
 // Build two independent single-file entries: the hosted renderer (verified API data)
 // and the explicitly offline appearance fixture (synthetic states only).
 const root = fileURLToPath(new URL('../', import.meta.url));
-for (const [entry, filename] of [['embed.html', 'opensight-embed.html'], ['embed-preview.html', 'opensight-embed-preview.html']]) {
+for (const [entry, filename] of [['embed.html', 'opensight-embed.html'], ['embed-session.html', 'opensight-embed-session.html'], ['embed-preview.html', 'opensight-embed-preview.html']]) {
   const result = await build({
     root, configFile: false, base: './',
     build: {

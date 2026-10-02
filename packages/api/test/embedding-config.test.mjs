@@ -53,7 +53,8 @@ async function serving(t, f) {
 test('H5 strict configuration, feature capabilities and operator lifetime ceilings', () => {
   const policy = parsePolicy(policyInput());
   assert.deepEqual(validateEmbedConfig(config(), 'tenant-one', policy), config());
-  for (const field of ['anonymous', 'authoring', 'export', 'download', 'persistentReaderState', 'filtering', 'parameterControls', 'madeUp']) {
+  for (const name of ['anonymous', 'authoring']) { const input = config(); input.features[name] = true; assert.equal(validateEmbedConfig(input, 'tenant-one', policy).features[name], true); }
+  for (const field of ['export', 'download', 'persistentReaderState', 'filtering', 'parameterControls', 'madeUp']) {
     const input = config(); input.features[field] = true;
     assert.throws(() => validateEmbedConfig(input, 'tenant-one', policy), { code: 'EMBED_FEATURE_UNSUPPORTED', status: 422 });
   }
@@ -143,7 +144,7 @@ test('H5 rejected config is atomic and policy reductions fail closed until expli
 test('H5 HTTP config enforces If-Match, admin scope, exact browser origin and named failures', async t => {
   const f = await fixture(t), request = await serving(t, f);
   const initial = await request(); assert.equal(initial.status, 200); assert.equal(initial.headers.etag, '"0"'); assert.equal(initial.headers['cache-control'], 'no-store');
-  assert.equal(initial.body.capabilities.sessionIssuance, false);
+  assert.equal(initial.body.capabilities.sessionIssuance, true);
   for (const value of [undefined, '*', '0', 'W/"0"', '"0", "1"', '"9007199254740992"']) {
     const response = await request(undefined, { method: 'PUT', headers: value === undefined ? {} : { 'if-match': value }, body: config() }); assert.equal(response.status, value === undefined ? 428 : 400);
   }

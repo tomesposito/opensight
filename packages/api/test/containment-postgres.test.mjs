@@ -25,9 +25,16 @@ test('H4 live PostgreSQL cancels the running backend and closes both connections
     await delay(5);
   }
   const started = performance.now(); controller.abort(); await rejected;
+  assert.equal(rows, 0);
+  // Client.end observes the local socket close before PostgreSQL necessarily
+  // removes its backend from pg_stat_activity. Require both connections to
+  // disappear within the same cancellation deadline, including server cleanup.
+  while ((await pool.query('SELECT pid FROM pg_stat_activity WHERE application_name = $1', [application_name])).rows.length) {
+    assert.ok(performance.now() - started < 1500, 'cancelled PostgreSQL connections did not close');
+    await delay(5);
+  }
   const cancellationMs = performance.now() - started;
-  assert.equal(rows, 0); assert.ok(cancellationMs < 1500);
-  assert.equal((await pool.query('SELECT pid FROM pg_stat_activity WHERE application_name = $1', [application_name])).rows.length, 0);
+  assert.ok(cancellationMs < 1500);
   t.diagnostic(JSON.stringify({ postgresCancellationMs: cancellationMs, publishedRows: rows }));
 });
 

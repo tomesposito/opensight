@@ -12,6 +12,7 @@ export type WorkerTask =
   | { kind: 'source'; read: SourceRead; table: WireTable }
   | { kind: 'prep'; pipeline: PrepPipeline; sources: PrepSource[]; datasets: PrepDataset[]; id: string; through?: string | null; tables: WireTable[] }
   | { kind: 'upload'; request: UploadRequest }
+  | { kind: 'visual'; table: WireTable; analysis: unknown; visualId: string; dataSetArn: string }
   | { kind: 'query'; table: WireTable; query: InteractiveQuery };
 export interface WorkerRequest { task: WorkerTask; limits: BlazeLimits; memoryMb: number; resultBytes: number; deadline: number; rssBytes: number }
 export interface TableResult { columns: PrepColumn[]; rows: PrepScalar[][] }

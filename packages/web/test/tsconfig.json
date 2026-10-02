@@ -37,6 +37,8 @@
     "../src/DataSources.tsx",
     "../src/DataPrep.tsx",
     "../src/EmbedFrame.tsx",
+    "../src/embed-transport.ts",
+    "../src/EmbeddedAuthor.tsx",
     "../src/embed-preview-fixtures.ts"
   ]
 }

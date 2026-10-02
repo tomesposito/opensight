@@ -11,7 +11,7 @@ const json = (value: unknown): JsonObject => object(value);
 /** Tenant/owner-scoped records and encrypted payloads share H1's atomic durable store. */
 export class HostedSources {
   readonly endpoints: readonly SourceEndpoint[];
-  constructor(readonly metadata: TenantMetadata, private readonly encryptionKey: string, endpoints: readonly SourceEndpoint[], readonly clock = Date.now) {
+  constructor(readonly metadata: TenantMetadata, protected readonly encryptionKey: string, endpoints: readonly SourceEndpoint[], readonly clock = Date.now) {
     this.endpoints = structuredClone(endpoints);
   }
   async capability(context: TenantContext, capability: 'build' | 'view' | 'ai'): Promise<void> {
