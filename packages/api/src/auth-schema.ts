@@ -1,4 +1,5 @@
 import { MetadataError, type Database } from './metadata-db.js';
+import { initializeJobs } from './job-schema.js';
 
 /** Operator/membership database only. Never grant tenant SQL roles access to h2_* tables. */
 export async function initializeAuth(database: Database): Promise<void> {
@@ -32,4 +33,5 @@ export async function initializeAuth(database: Database): Promise<void> {
       `CREATE TABLE IF NOT EXISTS h2_requests (operation_id TEXT PRIMARY KEY, request_hash TEXT NOT NULL)`
     ]) await c.query(sql);
   });
+  await initializeJobs(database);
 }

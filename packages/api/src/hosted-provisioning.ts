@@ -8,6 +8,7 @@ import type { HostedConfig } from './hosted-config.js';
 import type { MailTransport } from './mail.js';
 import { digest, seal, unseal } from './auth-crypto.js';
 import { normalizedEmail } from './hosted-auth.js';
+import { applyDisposition, disposition, type JobDisposition, type JobOwnership } from './job-ownership.js';
 
 export interface OnboardingInput { name: string; administrator: { email: string; name: string } }
 export interface InvitationInput { email: string; name: string; role: Role }
@@ -20,7 +21,7 @@ export const operatorOperationId = (key: string): string => checksum(['deploymen
 
 export class HostedProvisioning {
   readonly operator: MetadataOperator;
-  constructor(private readonly database: Database, private readonly config: HostedConfig, private readonly mail: MailTransport, private readonly clock = Date.now) {
+  constructor(private readonly database: Database, private readonly config: HostedConfig, private readonly mail: MailTransport, private readonly clock = Date.now, private readonly jobs?: JobOwnership) {
     this.operator = new MetadataOperator(database);
   }
   private async reserve(operationId: string, hash: string): Promise<void> {
@@ -120,11 +121,21 @@ export class HostedProvisioning {
     return { operationId, tenantId };
   }
   /** Removal is an admission tombstone, preserving referenced owners/assets until their lifecycle handles them. */
-  async removeMember(tenantId: string, userId: string): Promise<void> {
+  async removeMember(tenantId: string, userId: string, raw?: JobDisposition): Promise<void> {
     identifier(tenantId); identifier(userId);
+    const choice = disposition(raw);
+    if (choice?.action === 'transfer') {
+      // Completed removal is idempotent even with the original transfer request.
+      const removed = await this.database.transaction(c => c.query("SELECT user_id FROM h2_memberships WHERE tenant_id = ? AND user_id = ? AND status = 'removed'", [tenantId, userId]));
+      if (removed.length) return;
+      if (!this.jobs) throw new MetadataError('JOB_TRANSFER_UNAVAILABLE', 503);
+      await this.jobs.validateTransfer(tenantId, userId, choice);
+    }
     await this.database.transaction(async c => {
       const tenant = await c.query("UPDATE h1_tenants SET version = version WHERE tenant_id = ? AND state = 'active' RETURNING tenant_id", [tenantId]);
       if (!tenant.length) throw new MetadataError('TENANT_UNAVAILABLE', 403);
+      const namespace = (await c.query('SELECT namespace_id FROM h1_namespaces WHERE tenant_id = ?', [tenantId]))[0]!;
+      await applyDisposition(c, { tenantId, namespaceId: String(namespace.namespace_id) }, userId, choice, new Date(this.clock()).toISOString());
       const rows = await c.query("UPDATE h2_memberships SET status = 'removed', version = version + 1 WHERE tenant_id = ? AND user_id = ? AND status <> 'removed' RETURNING namespace_id", [tenantId, userId]);
       if (!rows.length) {
         if (!(await c.query("SELECT user_id FROM h2_memberships WHERE tenant_id = ? AND user_id = ? AND status = 'removed'", [tenantId, userId])).length) missing();
