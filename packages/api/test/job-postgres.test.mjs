@@ -1,0 +1,46 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
+import { Pool } from 'pg';
+import { PostgresMetadataDatabase } from '../dist/metadata-db.js';
+import { initializeMetadata, metadataTables } from '../dist/metadata-schema.js';
+import { initializeAuth } from '../dist/auth-schema.js';
+import { TenantMetadata } from '../dist/metadata.js';
+import { seedSources } from './source-helpers.mjs';
+import { JobStore } from '../dist/job-store.js';
+import { JobRunner } from '../dist/job-runner.js';
+import { executor, report } from './job-helpers.mjs';
+import { StubMailTransport } from '../dist/mail.js';
+import { JobOwnership } from '../dist/job-ownership.js';
+import { HostedProvisioning } from '../dist/hosted-provisioning.js';
+import { hostedConfig } from '../dist/hosted-config.js';
+import { environment } from './hosted-helpers.mjs';
+
+test('H7 live Postgres: private job tables, scoped history, durable claims and transactional owner transfer', { skip: process.env.DATABASE_URL ? false : 'DATABASE_URL is not set' }, async t => {
+  const schema = `h7_test_${randomUUID().replaceAll('-', '')}`, role = `${schema}_tenant`;
+  const pool = new Pool({ connectionString: process.env.DATABASE_URL, options: `-c search_path=${schema}` }); let tenantPool;
+  t.after(async () => { await tenantPool?.end(); await pool.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`); await pool.query(`DROP ROLE IF EXISTS ${role}`); await pool.end(); });
+  await pool.query(`CREATE SCHEMA ${schema}`); await pool.query(`CREATE ROLE ${role} LOGIN NOINHERIT NOSUPERUSER NOBYPASSRLS`);
+  const db = new PostgresMetadataDatabase(pool); await initializeMetadata(db, 'postgres'); await initializeAuth(db); await seedSources(db);
+  await pool.query(`GRANT USAGE ON SCHEMA ${schema} TO ${role}`);
+  for (const table of metadataTables.filter(t => t !== 'migrations')) await pool.query(`GRANT SELECT, INSERT, UPDATE, DELETE ON h1_${table} TO ${role}`);
+  const url = new URL(process.env.DATABASE_URL); url.username = role; url.password = '';
+  tenantPool = new Pool({ connectionString: url.href, options: `-c search_path=${schema}` });
+  for (const table of ['jobs', 'occurrences', 'deliveries', 'migrations']) await assert.rejects(tenantPool.query(`SELECT * FROM h7_${table}`), { code: '42501' });
+  await db.transaction(async c => { for (const ns of ['one', 'two']) for (const user of ['admin', 'other']) {
+    await c.query("INSERT INTO h2_identities (subject,email,status) VALUES (?,?,'active')", [`${ns}-${user}`, `${ns}-${user}@example.test`]);
+    await c.query("INSERT INTO h2_memberships (subject,tenant_id,namespace_id,user_id,status) VALUES (?,?,?,?,'active')", [`${ns}-${user}`, `tenant-${ns}`, ns, user]);
+  } });
+  const metadata = new TenantMetadata(new PostgresMetadataDatabase(tenantPool, true), db), store = new JobStore(db, metadata), execute = executor(), mail = new StubMailTransport(), runner = new JobRunner(store, execute, mail);
+  const login = (ns = 'one', user = 'admin') => store.context({ tenantId: `tenant-${ns}`, namespaceId: ns }, user);
+  const one = await login(), two = await login('two');
+  for (const c of [one, two]) await store.put(c, 'same', report, 0, execute.authorize);
+  const claims = await Promise.all([store.enqueue(one, 'same'), store.enqueue(one, 'same')]); assert.equal(claims[0].id, claims[1].id);
+  await runner.tick(); assert.equal(mail.messages.length, 1); assert.equal((await store.history(two, 'same')).length, 0);
+  await assert.rejects(pool.query("INSERT INTO h7_occurrences SELECT tenant_id, 'two', occurrence_id, job_id, owner_id, initiated_by, job_version, due, spec, revisions, state, error_code, created_at, finished_at FROM h7_occurrences"), { code: '23503' });
+  const ownership = new JobOwnership(store, execute), p = new HostedProvisioning(db, hostedConfig(environment()), mail, Date.now, ownership);
+  const preview = await ownership.preview(one.tenantId, one.userId);
+  await p.removeMember(one.tenantId, one.userId, { action: 'transfer', transferTo: 'other', preview: preview.preview });
+  assert.equal((await store.get(await login('one', 'other'), 'same')).ownerId, 'other');
+  assert.equal((await store.get(two, 'same')).ownerId, 'admin');
+});

@@ -21,9 +21,10 @@ export interface Admission {
 export class HostedData {
   readonly cache?: HostedCache;
   private readonly verifiers = new WeakMap<TenantContext, () => Promise<void>>();
+  private readonly publicationChecks = new WeakMap<TenantContext, () => Promise<void>>();
   private readonly signals = new WeakMap<TenantContext, AbortSignal>();
   private readonly admitted = new WeakMap<TenantContext, Set<Admission>>();
-  begin(context: TenantContext, signal?: AbortSignal, verify?: () => Promise<void>): void { if (verify) this.verifiers.set(context, verify); this.admitted.set(context, new Set()); if (signal) this.signals.set(context, signal); }
+  begin(context: TenantContext, signal?: AbortSignal, verify?: () => Promise<void>, beforePublication?: () => Promise<void>): void { if (verify) this.verifiers.set(context, verify); if (beforePublication) this.publicationChecks.set(context, beforePublication); this.admitted.set(context, new Set()); if (signal) this.signals.set(context, signal); }
   async publication(context: TenantContext, revisions: Revisions): Promise<void> { await this.finish(context, [...this.admitted.get(context) ?? []], revisions); }
   constructor(readonly sources: HostedSources, private readonly postgres = streamSourcePostgres, readonly budgets?: TenantBudgets) { if (budgets) this.cache = new HostedCache(budgets); }
   scope(context: TenantContext): WorkScope {
@@ -102,6 +103,7 @@ export class HostedData {
     for (const a of admissions) await this.sources.metadata.assertRevisions(context, a.revisions);
     if (expected) await this.sources.metadata.assertRevisions(context, expected);
     for (const a of admissions) this.sources.active(a.source);
+    await this.publicationChecks.get(context)?.();
   }
   read(a: Admission, columns = a.physical.columns.filter(c => !a.deniedColumns.includes(c.name)).map(c => c.name)): SourceRead {
     return { source: a.physical, security: a.security, columns, ...(a.tenantPredicate ? { tenantPredicate: a.tenantPredicate } : {}) };

@@ -28,6 +28,14 @@ export class JobRunner {
         await this.store.db.transaction(async c => {
           await lockTenant(c, job); const current = await this.store.find(c, job, job.id);
           if (current.version !== job.version || current.nextRun !== job.nextRun || current.stopped || current.spec.kind === 'alert') return;
+          if (current.spec.kind === 'refresh' && current.spec.target.kind === 'prepared-dataset' && current.id === checksum(['prepared-refresh', current.ownerId, current.spec.target.id])) {
+            const target = (await c.query(`SELECT body FROM h1_resources WHERE ${scoped} AND kind = 'prepared-dataset' AND owner_id = ? AND resource_id = ?`, [...scopeArgs(current), current.ownerId, current.spec.target.id]))[0];
+            const execution = target ? (JSON.parse(String(target.body)) as { execution?: { mode?: string; intervalMinutes?: number } }).execution : undefined;
+            if (!execution || execution.mode !== 'BLAZE' || current.spec.schedule.kind !== 'interval' || execution.intervalMinutes !== current.spec.schedule.minutes) {
+              await cancelJob(c, current, current.id, 'JOB_SCHEDULE_REVISED', this.store.clock().toISOString());
+              await c.query(`UPDATE h7_jobs SET stopped = 1, next_run = NULL, version = version + 1 WHERE ${scoped} AND job_id = ?`, [...scopeArgs(current), current.id]); return;
+            }
+          }
           await this.store.claim(c, current, current.nextRun!);
           await c.query(`UPDATE h7_jobs SET next_run = ? WHERE ${scoped} AND job_id = ?`, [nextRun(current.spec.schedule, this.store.clock()), ...scopeArgs(job), job.id]);
         });
@@ -42,6 +50,9 @@ export class JobRunner {
     }
   }
   private async work(): Promise<void> {
+    // The prior single-flight tick may have lost a receipt transaction. There
+    // cannot be a live claim in this process while a new tick starts.
+    await this.recover();
     await this.claimDue();
     // Include alert occurrences enqueued by refresh completion in this tick.
     const queued = async () => (await this.store.db.transaction(c => c.query("SELECT * FROM h7_occurrences WHERE state = 'queued' ORDER BY created_at, occurrence_id"))).map(readOccurrence);
@@ -71,7 +82,7 @@ export class JobRunner {
         if (run.spec.kind === 'refresh') {
           await c.query(`UPDATE h7_jobs SET next_run = ? WHERE ${scoped} AND job_id = ?`, [nextRun(run.spec.schedule, this.store.clock()), ...scopeArgs(run), run.jobId]);
           const alerts = (await c.query(`SELECT * FROM h7_jobs WHERE ${scoped} AND owner_id = ? AND stopped = 0`, [...scopeArgs(run), run.ownerId])).map(readJob);
-          for (const alert of alerts) if (alert.spec.kind === 'alert' && alert.spec.enabled && alert.spec.datasetId === run.spec.target.id) await this.store.claim(c, alert, `refresh:${run.id}`);
+          for (const alert of alerts) if (run.spec.target.kind === 'dataset' && alert.spec.kind === 'alert' && alert.spec.enabled && alert.spec.datasetId === run.spec.target.id) await this.store.claim(c, alert, `refresh:${run.id}`);
         }
       });
     } catch (error) {

@@ -7,10 +7,11 @@ import { HostedData } from './hosted-data.js';
 import { HostedPrep } from './hosted-prep.js';
 import type { TenantContext } from './metadata.js';
 import { sourceError } from './source-schema.js';
+import type { JobStore } from './job-store.js';
 
 export class HostedDataRoutes {
   readonly prep: HostedPrep;
-  constructor(readonly data: HostedData) { this.prep = new HostedPrep(data); }
+  constructor(readonly data: HostedData, jobs?: JobStore) { this.prep = new HostedPrep(data, jobs); }
   async route(request: IncomingMessage, response: ServerResponse, path: string, context: TenantContext, recheck: () => Promise<void>): Promise<boolean> {
     this.data.begin(context, undefined, recheck);
     const revisions = await this.data.sources.metadata.revisions(context);

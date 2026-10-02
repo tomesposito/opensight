@@ -72,21 +72,25 @@ export async function initializeJobs(db: Database): Promise<void> {
       tenant_id TEXT NOT NULL, namespace_id TEXT NOT NULL, job_id TEXT NOT NULL, owner_id TEXT NOT NULL,
       version INTEGER NOT NULL CHECK (version > 0), spec TEXT NOT NULL, next_run TEXT, stopped INTEGER NOT NULL DEFAULT 0 CHECK (stopped IN (0,1)),
       alert_state TEXT NOT NULL DEFAULT 'ok' CHECK (alert_state IN ('ok','triggered')),
-      PRIMARY KEY (tenant_id, namespace_id, job_id), FOREIGN KEY (tenant_id, namespace_id) REFERENCES h1_namespaces(tenant_id, namespace_id))`);
+      PRIMARY KEY (tenant_id, namespace_id, job_id), FOREIGN KEY (tenant_id, namespace_id) REFERENCES h1_namespaces(tenant_id, namespace_id),
+      FOREIGN KEY (tenant_id, namespace_id, owner_id) REFERENCES h2_memberships(tenant_id, namespace_id, user_id))`);
     await c.query(`CREATE TABLE IF NOT EXISTS h7_occurrences (
       tenant_id TEXT NOT NULL, namespace_id TEXT NOT NULL, occurrence_id TEXT NOT NULL, job_id TEXT NOT NULL,
       owner_id TEXT NOT NULL, initiated_by TEXT NOT NULL, job_version INTEGER NOT NULL, due TEXT NOT NULL, spec TEXT NOT NULL, revisions TEXT NOT NULL,
       state TEXT NOT NULL CHECK (state IN ('queued','running','delivering','succeeded','failed','cancelled')), error_code TEXT,
       created_at TEXT NOT NULL, finished_at TEXT, PRIMARY KEY (tenant_id, namespace_id, occurrence_id),
       UNIQUE (tenant_id, namespace_id, job_id, job_version, due),
-      FOREIGN KEY (tenant_id, namespace_id, job_id) REFERENCES h7_jobs(tenant_id, namespace_id, job_id))`);
+      FOREIGN KEY (tenant_id, namespace_id, job_id) REFERENCES h7_jobs(tenant_id, namespace_id, job_id),
+      FOREIGN KEY (tenant_id, namespace_id, owner_id) REFERENCES h2_memberships(tenant_id, namespace_id, user_id),
+      FOREIGN KEY (tenant_id, namespace_id, initiated_by) REFERENCES h2_memberships(tenant_id, namespace_id, user_id))`);
     await c.query(`CREATE TABLE IF NOT EXISTS h7_deliveries (
       tenant_id TEXT NOT NULL, namespace_id TEXT NOT NULL, delivery_id TEXT NOT NULL, job_id TEXT NOT NULL, occurrence_id TEXT NOT NULL, recipient_id TEXT NOT NULL,
-      state TEXT NOT NULL CHECK (state IN ('pending','sending','sent','cancelled')), attempts INTEGER NOT NULL DEFAULT 0, next_attempt TEXT NOT NULL,
+      state TEXT NOT NULL CHECK (state IN ('pending','sending','sent','cancelled')), attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0), next_attempt TEXT NOT NULL,
       error_code TEXT, message TEXT, sent_at TEXT, PRIMARY KEY (tenant_id, namespace_id, delivery_id),
       UNIQUE (tenant_id, namespace_id, occurrence_id, recipient_id),
       FOREIGN KEY (tenant_id, namespace_id, occurrence_id) REFERENCES h7_occurrences(tenant_id, namespace_id, occurrence_id),
-      FOREIGN KEY (tenant_id, namespace_id, job_id) REFERENCES h7_jobs(tenant_id, namespace_id, job_id))`);
+      FOREIGN KEY (tenant_id, namespace_id, job_id) REFERENCES h7_jobs(tenant_id, namespace_id, job_id),
+      FOREIGN KEY (tenant_id, namespace_id, recipient_id) REFERENCES h2_memberships(tenant_id, namespace_id, user_id))`);
     await c.query(`CREATE TABLE IF NOT EXISTS h7_migrations (tenant_id TEXT NOT NULL, namespace_id TEXT NOT NULL, checksum TEXT NOT NULL,
       PRIMARY KEY (tenant_id, namespace_id), FOREIGN KEY (tenant_id, namespace_id) REFERENCES h1_namespaces(tenant_id, namespace_id))`);
   });

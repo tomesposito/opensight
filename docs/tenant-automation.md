@@ -74,6 +74,30 @@ Creation derives the owner from the verified session; updates require the job's
 current version. Histories and recipients are tenant scoped. The hosted
 automation page displays jobs, recipients and their run/delivery histories.
 
+`PUT /api/jobs/:id` accepts `{ "expectedVersion": 0, "spec": ... }` for
+creation (the current version for replacement). A report spec has `kind:
+"report"`, `dashboardId`, `recipients` (user IDs), `enabled` and the existing
+interval/daily/weekly `schedule`. A refresh spec instead has `kind: "refresh"`
+and `target: { "kind": "source" | "prepared-dataset" | "dataset", "id": ... }`.
+Alerts use `kind: "alert"` and the existing dataset/dashboard/visual/field,
+dimensions and condition fields; they run after successful imported-dataset
+refresh rather than a timer. `POST .../runs` with `{}` queues a manual occurrence;
+GET returns history. DELETE with `expectedVersion` stops a job and retains history.
+
+Hosted prepared execution settings now accept Blaze `intervalMinutes`. Updating
+the setting and its owner schedule commits atomically. Switching to direct mode
+stops that schedule. Saving or deleting its recipe invalidates queued work;
+the next claim stops a schedule whose saved execution settings no longer match.
+Manual Blaze refresh retains the existing shared cache admission/fencing gates.
+
+For migrated stores, stop the API and run `npm run jobs:migrate -w @opensight/api`
+after H1–H4 migration, with `OPENSIGHT_METADATA_DATABASE`, the existing hosted
+configuration, and `OPENSIGHT_JOB_MIGRATION_CONFIG` pointing to a JSON file with
+`tenantId`, `namespaceId`, and `defaultOwner`. The command acquires the API's
+maintenance lock. It neither edits legacy files nor sends email. H1 records
+remain the exact archived state/status/transition evidence; migrated occurrence
+histories expose execution status, without old metric values or email bodies.
+
 Operator routes: `/api/host/tenants/:tenant/users` and
 `/api/host/tenants/:tenant/users/:user` (GET preview, DELETE disposition).
 The `#operator-users` browser page uses an operator credential held only in
