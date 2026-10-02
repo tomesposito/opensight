@@ -18,3 +18,5 @@ export { encryptMetadataSecret, decryptMetadataSecret } from './metadata-secrets
 export { SourceMigration } from './source-migration.js';
 export type { SourceMigrationConfig, SourceMigrationInput } from './source-migration.js';
 export { assertHostedSourcesReady, expireUploads } from './source-maintenance.js';
+
+export { activateEmbedKey, embedSessionKey } from './embed-sessions.js';

@@ -1,3 +1,7 @@
+import { EmbedSessions, embedSessionKey } from './embed-sessions.js';
+import { EmbedContent } from './embed-content.js';
+import { EmbedSources } from './embed-sources.js';
+import { embedSessionRoute } from './embed-session-routes.js';
 import { loadBudgets } from './budget-store.js';
 import { embeddingPolicy, expectedEmbedRevision, HostedEmbedding, initializeEmbedding } from './embedding-config.js';
 import { assertHostedSourcesReady, expireUploads } from './source-maintenance.js';
@@ -74,6 +78,9 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
   const embedding = new HostedEmbedding(options.membershipDatabase, metadata, policy);
   const budgets = await loadBudgets(options.membershipDatabase, metadata);
   const data = new HostedDataRoutes(new HostedData(new HostedSources(metadata, config.encryptionKey.toString('base64'), sourceEndpoints(options.env)), undefined, budgets));
+  const embedContent = new EmbedContent(new HostedData(new EmbedSources(metadata, config.encryptionKey.toString('base64'), sourceEndpoints(options.env)), undefined, budgets));
+  const sessions = new EmbedSessions(options.membershipDatabase, metadata, policy, embedSessionKey(options.env ?? process.env), (context, grant) => embedContent.authorize(context, grant));
+  await sessions.initialize();
   const provisioning = new HostedProvisioning(options.membershipDatabase, config, options.mailTransport ?? smtpFromEnvironment(options.env));
   // Prove that the durable H1/H2 schema is reachable before binding a socket.
   await options.membershipDatabase.transaction(async c => { await c.query('SELECT tenant_id FROM h1_tenants WHERE 1 = 0'); await c.query('SELECT subject FROM h2_memberships WHERE 1 = 0'); });
@@ -129,7 +136,8 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
         }
         return;
       }
-      // Every other request, including unknown, embed and legacy routes, must verify first.
+      if (await embedSessionRoute(request, response, path, sessions, embedContent)) return;
+      // Every other request, including unknown and legacy routes, must verify first.
       const verified = async (req: IncomingMessage) => {
         try {
           const identity = await authenticate(req);
@@ -175,7 +183,21 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
         send(response, 200, result); return;
       }
       if (/^\/api\/embedding\/domains(?:\/|$)/.test(path)) throw new MetadataError('EMBED_FEATURE_UNSUPPORTED', 422);
-      if (/^\/api\/embedding\/sessions(?:\/|$)/.test(path)) throw new MetadataError('EMBEDDING_NOT_CONFIGURED', 503);
+      if (['/api/embedding/sessions', '/api/embedding/GenerateEmbedUrlForRegisteredUser', '/api/embedding/GenerateEmbedUrlForAnonymousUser'].includes(path)) {
+        method(request, response, ['POST']);
+        if (request.headers.origin !== undefined) throw new MetadataError('EMBED_BACKEND_REQUIRED', 403);
+        const anonymous = path.endsWith('GenerateEmbedUrlForAnonymousUser');
+        send(response, 200, await sessions.issue(context, await readBody(request), anonymous)); return;
+      }
+      const embedSession = /^\/api\/embedding\/sessions\/([A-Za-z0-9_-]{32})(?:\/(renew))?$/.exec(path);
+      if (embedSession) {
+        method(request, response, [embedSession[2] ? 'POST' : 'DELETE']);
+        if (request.headers.origin !== undefined) throw new MetadataError('EMBED_BACKEND_REQUIRED', 403);
+        await body(request, []);
+        if (embedSession[2]) send(response, 200, await sessions.renew(context, embedSession[1]!));
+        else { await sessions.revoke(context, embedSession[1]!); send(response, 200, { revoked: true }); }
+        return;
+      }
       const cancellation = new AbortController();
       request.once('aborted', () => cancellation.abort());
       response.once('close', () => { if (!response.writableFinished) cancellation.abort(); });

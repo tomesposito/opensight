@@ -83,3 +83,6 @@ export function createEmbeddingClient(options: EmbeddingClientOptions) {
     embedVisual(container: HTMLElement, request: EmbedRequest & { visualId: string }, callbacks: EmbedCallbacks = {}): Promise<EmbeddedContent> { return mount(container, request, callbacks); },
   };
 }
+
+export { createSessionEmbeddingClient } from './session.js';
+export type { GenerateEmbedUrlForRegisteredUser, GenerateEmbedUrlForAnonymousUser, ExperienceConfiguration, SessionEmbedUrl, SessionEmbeddingOptions, SessionCallbacks } from './session.js';

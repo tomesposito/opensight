@@ -174,6 +174,7 @@ export class EmbedSessions {
       const grant: SessionGrant = { tenantId: context.tenantId, namespaceId: context.namespaceId, issuerId: context.userId, userId, anonymous,
         ...(virtualNamespace ? { virtualNamespace } : {}), tags, authorizedResources, experience, allowedDomains: domains,
         origin: this.policy.origins.get(current.config.embedOriginId!)!, configRevision: current.revision, revisions: current.revisions, durationMinutes: Number(minutes), request: input };
+      if (domains.includes(grant.origin)) embedFailure('EMBED_ORIGIN_DENIED', 403);
       this.features(current.config, grant); return grant;
     });
     await this.authorize(await this.context(snapshot), snapshot);
