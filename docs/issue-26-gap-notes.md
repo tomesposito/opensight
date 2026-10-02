@@ -35,7 +35,7 @@ Measured browser checks:
 - Two frames racing the same bootstrap produce one ready frame and one rejection.
   A subsequent replay is rejected. Actual forged `postMessage` calls from the
   parent, a sibling at the embed origin, and an obsolete channel are ignored.
-- Explicit revocation removes protected content in 18,445 ms; expiry,
+- Explicit revocation removes protected content in 17,248 ms; expiry,
   tenant suspension and key retirement also clear the frame. Retired keys reject
   unspent bootstraps. Resuming a tenant does not restore a cleared credential.
 - Frame credentials never appear in parent events/DOM, browser console/errors,
@@ -84,10 +84,10 @@ the supplied ffmpeg palette/assembly commands. The script's retired source-picke
 selector was adapted to the current hash routes. Unchanged feature screenshots
 retain their matching UI. Static assets are not presented as a deployed service.
 
-Local evidence: `/tmp/issue26-full-tests-verified.log`, `/tmp/issue26-browser-final.log`,
-`/tmp/h6-embed-browser/evidence.json`, `/tmp/h6-embed-browser/*.png`,
-`/tmp/issue26-static/evidence.json`, `/tmp/issue26-demo-build-final.log`,
-`/tmp/issue26-gif-capture.log`, `/tmp/issue26-gif-assembly.log`.
+Local evidence from the resumed run: `/tmp/issue26-resume-full-tests-verified.log`,
+`/tmp/issue26-resume-browser.log`, `/tmp/h6-embed-browser-resume/evidence.json`,
+`/tmp/h6-embed-browser-resume/*.png`, `/tmp/issue26-resume-static/evidence.json`,
+`/tmp/issue26-resume-static/author.png`, `/tmp/issue26-resume-demo-build.log`.
 The checked-in browser harness reproduces the assertions without downloads.
 
 ## Full test run
@@ -112,3 +112,29 @@ TZ=UTC DATABASE_URL=postgresql://postgres@localhost:5433/opensight npm test
 No tests were cancelled or marked todo. Live Postgres tests ran rather than
 skipping. The browser harness and demo rebuild also completed successfully; their
 separate checks are not added to the root test tally.
+
+## Verification after the VM reboot (2026-10-02)
+
+Resumption found a clean branch at `e6edbf66`, with all eight implementation and
+documentation checkpoints already committed. No completed checkpoint was redone.
+The required root command completed again with exit status 0 and the exact tally
+above. The real-stack browser harness also completed with exit status 0, including
+the cookie-blocking probe, replay/race/forged-message checks, viewer and anonymous
+RLS/CLS, author save, revocation, expiry, suspension, key retirement and v1 visual.
+H5 configuration checks passed in the root suite.
+
+An earlier resumed suite process exited with SIGTERM before finishing; the signal
+sender was not identified. Another attempt exceeded the existing H4 three-second
+worker-execution assertion (4.303 seconds) while unrelated host package setup was
+running. Once that setup finished, all six containment tests passed unchanged;
+the final full run measured 1.696 seconds for the same peak-execution assertion.
+No test limits were relaxed. The interrupted attempts are not included in the
+successful full-run tally.
+
+The static demo was rebuilt and captured again: zero page errors, zero external
+HTTP requests and no horizontal overflow. Its comparison with the existing author
+and QuickSight references reproduced the visual findings above. The registered
+embed capture is byte-for-byte identical to `docs/images/embed-session.png`.
+The previously refreshed README screenshots and tour GIF remain current; no
+application code, tests, dependencies or checked-in images changed during this
+resumption. Only this verification record was updated.
