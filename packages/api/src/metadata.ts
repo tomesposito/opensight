@@ -1,3 +1,4 @@
+import { eventContext } from './hosted-events.js';
 import { hasCapability } from '@opensight/query-engine';
 import { MetadataError, missing, type Database, type SqlConnection, type SqlRow } from './metadata-db.js';
 import { identifier, insertLinks, insertResource, resourceKey, resourceKinds, resourceLinks, type MetadataKind, type MetadataResource, type ResourceKey, type Scope } from './metadata-resources.js';
@@ -29,10 +30,13 @@ export class TenantMetadata {
         JOIN h1_tenants t ON t.tenant_id = n.tenant_id
         JOIN h1_revisions r ON r.tenant_id = n.tenant_id AND r.namespace_id = n.namespace_id
         JOIN h1_resources u ON u.tenant_id = n.tenant_id AND u.namespace_id = n.namespace_id AND u.kind = 'user' AND u.owner_id = ''
-        WHERE n.namespace_id = ? AND u.resource_id = ? AND t.state = 'active'`, [namespaceId, userId]);
+        WHERE n.namespace_id = ? AND u.resource_id = ? AND t.state = 'active' AND NOT EXISTS (SELECT 1 FROM h8_restore_holds h WHERE h.tenant_id = t.tenant_id)`, [namespaceId, userId]);
       if (!rows[0]) throw new MetadataError('UNKNOWN_PRINCIPAL', 403);
       const context = Object.freeze({ tenantId: String(rows[0].tenant_id), namespaceId, userId, authorizationRevision: Number(rows[0].authorization) });
-      this.#contexts.add(context); return context;
+      this.#contexts.add(context);
+      const event = eventContext.getStore();
+      if (event) { event.tenantId = context.tenantId; event.namespaceId = context.namespaceId; event.resourceRevision = context.authorizationRevision; }
+      return context;
     });
   }
   assertContext(context: TenantContext): void {

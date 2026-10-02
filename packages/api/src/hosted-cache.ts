@@ -5,6 +5,13 @@ interface Entry { tenant: string; stamp: string; bytes: number; table?: BlazeTab
 export class HostedCache {
   private readonly entries = new Map<string, Entry>();
   private sequence = 0;
+  private hits = 0;
+  private misses = 0;
+  private successes = 0;
+  private failures = 0;
+  private refreshedAt?: number;
+  metrics() { return { bytes: this.bytes(), hits: this.hits, misses: this.misses, refreshSuccesses: this.successes, refreshFailures: this.failures,
+    refreshAgeMs: this.refreshedAt === undefined ? null : Date.now() - this.refreshedAt, hydration: 'unsupported' }; }
   constructor(private readonly budgets: TenantBudgets) {}
   private size(tenant?: string): number { return [...this.entries.values()].reduce((n, e) => n + (tenant === undefined || e.tenant === tenant ? e.bytes : 0), 0); }
   private reserve(scope: WorkScope, key: string, bytes: number): void {
@@ -19,9 +26,9 @@ export class HostedCache {
   invalidate(key: string): void { this.entries.delete(key); }
   read(scope: WorkScope, key: string, stamp: string): BlazeTable {
     scope.check(); const e = this.entries.get(key);
-    if (!e || e.tenant !== scope.tenantId || e.stamp !== stamp) { if (e?.tenant === scope.tenantId) this.entries.delete(key); budgetError('BLAZE_NOT_READY'); }
+    if (!e || e.tenant !== scope.tenantId || e.stamp !== stamp) { this.misses++; if (e?.tenant === scope.tenantId) this.entries.delete(key); budgetError('BLAZE_NOT_READY'); }
     if (!e.table) budgetError(e.error);
-    e.used = ++this.sequence; return e.table;
+    this.hits++; e.used = ++this.sequence; return e.table;
   }
   async refresh(scope: WorkScope, key: string, stamp: string, load: () => Promise<BlazeTable>): Promise<void> {
     scope.check();
@@ -35,8 +42,9 @@ export class HostedCache {
       const result = await load(); scope.check();
       if (this.entries.get(key) !== e) budgetError('BLAZE_INVALIDATED');
       this.reserve(scope, key, result.bytes + overhead); scope.check();
-      e.bytes = result.bytes + overhead; e.table = result; e.error = ''; e.used = ++this.sequence;
+      e.bytes = result.bytes + overhead; e.table = result; e.error = ''; e.used = ++this.sequence; this.successes++; this.refreshedAt = Date.now();
     } catch (error) {
+      this.failures++;
       e.table = undefined; e.bytes = overhead;
       e.error = scope.signal.aborted ? 'EXECUTION_CANCELLED' : error && typeof error === 'object' && 'code' in error ? String(error.code) : 'BLAZE_REFRESH_FAILED';
       throw error;
