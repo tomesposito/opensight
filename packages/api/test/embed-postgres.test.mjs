@@ -1,0 +1,35 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { randomBytes, randomUUID } from 'node:crypto';
+import { Pool } from 'pg';
+import { PostgresMetadataDatabase } from '../dist/metadata-db.js';
+import { EmbedSessions, activateEmbedKey } from '../dist/embed-sessions.js';
+import { realEmbedFixture } from './embed-real-fixture.mjs';
+import { request, parentOrigin } from './embed-session-helpers.mjs';
+
+test('H6 live Postgres: multi-pool single redemption, renewal race, revocation and key retirement', { skip: !process.env.DATABASE_URL && 'DATABASE_URL is not set' }, async t => {
+  const schema = `h6_test_${randomUUID().replaceAll('-', '')}`;
+  const pool = new Pool({ connectionString: process.env.DATABASE_URL, options: `-c search_path=${schema}`, max: 4 });
+  const secondPool = new Pool({ connectionString: process.env.DATABASE_URL, options: `-c search_path=${schema}`, max: 4 });
+  t.after(async () => { await secondPool.end(); await pool.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`); await pool.end(); });
+  await pool.query(`CREATE SCHEMA ${schema}`);
+  const db = new PostgresMetadataDatabase(pool), f = await realEmbedFixture(db, 'postgres', 'https://embed.example', parentOrigin); t.after(() => f.budgets.close());
+  const second = new EmbedSessions(new PostgresMetadataDatabase(secondPool), f.metadata, f.policy, f.key, (c, g) => f.content.authorize(c, g)); await second.initialize();
+  const context = await f.context(), issued = await f.sessions.issue(context, request({ UserArn: f.arn('user', f.reader.identity.userId) }));
+  const input = { bootstrap: new URL(issued.EmbedUrl).hash.slice(11), parentOrigin, channelId: randomBytes(24).toString('base64url') };
+  const race = await Promise.allSettled([f.sessions.redeem(issued.sessionId, input), second.redeem(issued.sessionId, input)]);
+  assert.equal(race.filter(r => r.status === 'fulfilled').length, 1); assert.equal(race.find(r => r.status === 'rejected').reason.code, 'EMBED_BOOTSTRAP_REPLAY');
+  const credential = race.find(r => r.status === 'fulfilled').value.credential;
+  const verified = await second.verify(issued.sessionId, credential); f.content.data.begin(verified.context);
+  assert.deepEqual((await f.content.content(verified.context, verified.session)).visuals[0].rows, [{ amount: 40 }]);
+  const renewed = await Promise.allSettled([f.sessions.renew(context, issued.sessionId), second.renew(context, issued.sessionId)]);
+  assert.equal(renewed.filter(r => r.status === 'fulfilled').length, 1);
+  await assert.rejects(second.verify(issued.sessionId, credential), { code: 'EMBED_SESSION_REVOKED' });
+  const next = renewed.find(r => r.status === 'fulfilled').value;
+  const active = await second.redeem(next.sessionId, { ...input, bootstrap: new URL(next.EmbedUrl).hash.slice(11) });
+  await f.sessions.revoke(context, next.sessionId);
+  await assert.rejects(second.verify(next.sessionId, active.credential), { code: 'EMBED_SESSION_REVOKED' });
+  const last = await f.sessions.issue(context, request());
+  await activateEmbedKey(db, { id: 'rotated', secret: randomBytes(32) });
+  await assert.rejects(second.redeem(last.sessionId, { ...input, bootstrap: new URL(last.EmbedUrl).hash.slice(11) }), { code: 'EMBED_KEY_REVOKED' });
+});

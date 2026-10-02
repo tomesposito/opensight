@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { sessionFixture, request } from './embed-session-helpers.mjs';
 import { readerMember, seedEmbedContent, assetDefinition } from './embed-content-helpers.mjs';
+import { tagSecurity } from '../dist/embed-content.js';
 import { EmbedSessions } from '../dist/embed-sessions.js';
 
 async function fixture(t) {
@@ -93,4 +94,15 @@ test('H6 revocation during contained source work prevents asynchronous result pu
   const original = f.content.data.table.bind(f.content.data);
   f.content.data.table = async (...args) => { const table = await original(...args); await f.sessions.revoke(await f.context(), opened.issued.sessionId); return table; };
   await assert.rejects(f.content.content(opened.context, opened.session), { code: 'EMBED_SESSION_REVOKED' });
+});
+
+test('H6 anonymous tag configuration fails closed on absent, malformed, duplicate and unknown rule keys', () => {
+  const base = { namespaceId: 'namespace', userId: 'issuer', users: [{ id: 'issuer', namespaceId: 'namespace' }], groups: [], policy: { namespaceId: 'namespace', dataSetArn: 'dataset', rowLevel: true, rowRules: [] } };
+  const rule = { TagKey: 'region', ColumnName: 'region' }, config = { Status: 'ENABLED', TagRules: [rule] };
+  for (const raw of [undefined, { ...config, TagRules: [{ ColumnName: 'region' }] }, { ...config, TagRules: [rule, rule] }, { ...config, TagRuleConfigurations: [['unknown'], ['region']] }, { ...config, Status: 'DISABLED' }]) {
+    assert.throws(() => tagSecurity(base, raw === undefined ? {} : { RowLevelPermissionTagConfiguration: raw }, { region: 'east' }), { code: 'EMBED_TAG_CONFIGURATION_REQUIRED' });
+  }
+  const resolved = tagSecurity(base, { RowLevelPermissionTagConfiguration: { ...config, TagRules: [{ ...rule, TagMultiValueDelimiter: '|', MatchAllValue: '*' }] } }, { region: 'east|west' });
+  assert.deepEqual(resolved.policy.rowRules[0].predicate, { any: [{ all: [{ column: 'region', operator: 'in', values: ['east', 'west'] }] }] });
+  assert.equal(resolved.userId, 'anonymous'); assert.deepEqual(resolved.policy.columnGrants, []);
 });

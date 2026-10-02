@@ -40,15 +40,16 @@ export function tagSecurity(base: SecurityContext, dataset: JsonObject, tags: Re
   const required = base.policy.rowLevel || Object.keys(tags).length > 0 || raw !== undefined;
   let predicate: RowPredicate | undefined;
   if (required) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) embedFailure('EMBED_TAG_CONFIGURATION_REQUIRED', 403);
     const config = object(raw, ['Status', 'TagRules', 'TagRuleConfigurations']);
     if (config.Status !== 'ENABLED' || !Array.isArray(config.TagRules) || !config.TagRules.length || config.TagRules.length > 50) embedFailure('EMBED_TAG_CONFIGURATION_REQUIRED', 403);
-    const rules = new Map<string, RowPredicate>();
+    const rules = new Map<string, RowPredicate>(), declared = new Set<string>();
     for (const value of config.TagRules) {
       const r = object(value, ['TagKey', 'ColumnName', 'TagMultiValueDelimiter', 'MatchAllValue']);
-      const name = String(r.TagKey), tag = Object.hasOwn(tags, name) ? tags[name] : undefined;
-      if (!name || rules.has(name) || typeof r.ColumnName !== 'string') embedFailure('EMBED_TAG_CONFIGURATION_REQUIRED', 403);
-      if (tag === undefined) continue;
+      if (typeof r.TagKey !== 'string' || !r.TagKey || r.TagKey.length > 128 || /[\x00-\x1f]/.test(r.TagKey) || declared.has(r.TagKey) || typeof r.ColumnName !== 'string' || !r.ColumnName) embedFailure('EMBED_TAG_CONFIGURATION_REQUIRED', 403);
+      const name = r.TagKey, tag = Object.hasOwn(tags, name) ? tags[name] : undefined; declared.add(name);
       if (r.MatchAllValue !== undefined && typeof r.MatchAllValue !== 'string' || r.TagMultiValueDelimiter !== undefined && (typeof r.TagMultiValueDelimiter !== 'string' || !r.TagMultiValueDelimiter || r.TagMultiValueDelimiter.length > 10)) embedFailure('EMBED_TAG_CONFIGURATION_REQUIRED', 403);
+      if (tag === undefined) continue;
       const column = r.ColumnName;
       rules.set(name, tag === r.MatchAllValue ? { any: [{ column, operator: 'is-null' }, { column, operator: 'is-not-null' }] }
         : r.TagMultiValueDelimiter ? { column, operator: 'in', values: tag.split(String(r.TagMultiValueDelimiter)) } : { column, operator: 'eq', value: tag });
@@ -58,7 +59,7 @@ export function tagSecurity(base: SecurityContext, dataset: JsonObject, tags: Re
     if (!Array.isArray(combinations) || !combinations.length || combinations.length > 50) embedFailure('EMBED_TAG_CONFIGURATION_REQUIRED', 403);
     const matches: RowPredicate[] = [];
     for (const group of combinations) {
-      if (!Array.isArray(group) || !group.length || group.length > 50 || group.some(k => typeof k !== 'string')) embedFailure('EMBED_TAG_CONFIGURATION_REQUIRED', 403);
+      if (!Array.isArray(group) || !group.length || group.length > 50 || group.some(k => typeof k !== 'string' || !declared.has(k))) embedFailure('EMBED_TAG_CONFIGURATION_REQUIRED', 403);
       if (group.every(k => rules.has(String(k)))) matches.push({ all: group.map(k => rules.get(String(k))!) });
     }
     if (!matches.length) embedFailure('ROW_ACCESS_DENIED', 403);
