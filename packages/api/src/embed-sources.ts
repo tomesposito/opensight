@@ -1,3 +1,4 @@
+import { digest } from './auth-crypto.js';
 import { HostedSources, type HostedSource } from './hosted-sources.js';
 import { type TenantContext } from './metadata.js';
 import { decryptMetadataSecret } from './metadata-secrets.js';
@@ -11,8 +12,7 @@ export class EmbedSources extends HostedSources {
   private readonly bindings = new WeakMap<TenantContext, Map<string, string>>();
   async bindDataset(context: TenantContext, datasetId: string): Promise<string> {
     const { source } = await this.metadata.embedDatasetSource(context, datasetId);
-    const id = identifier(source.id), bound = this.bindings.get(context) ?? new Map<string, string>();
-    if (bound.has(id) && bound.get(id) !== datasetId) embedFailure('EMBED_DATASET_UNSUPPORTED', 422);
+    const id = `embed_${digest(JSON.stringify([datasetId, source.ownerId, identifier(source.id)]))}`, bound = this.bindings.get(context) ?? new Map<string, string>();
     bound.set(id, datasetId); this.bindings.set(context, bound); return id;
   }
   private dataset(context: TenantContext, id: string): string {
@@ -20,7 +20,7 @@ export class EmbedSources extends HostedSources {
   }
   override async stored(context: TenantContext, id: string): Promise<HostedSource> {
     const { source } = await this.metadata.embedDatasetSource(context, this.dataset(context, id));
-    return { ...sourceBody(source.body), id: source.id, version: source.version };
+    return { ...sourceBody(source.body), id, version: source.version };
   }
   override async payload(context: TenantContext, source: HostedSource): Promise<unknown> {
     this.active(source);

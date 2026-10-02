@@ -25,7 +25,7 @@ export interface SessionEmbeddingOptions {
 function exactOrigin(raw: string): string {
   let url: URL;
   try { url = new URL(raw); } catch { throw new EmbeddingError('INVALID_ORIGIN', 'Expected an exact HTTPS origin'); }
-  if (url.origin !== raw || url.username || url.password || url.protocol !== 'https:') throw new EmbeddingError('INVALID_ORIGIN', 'Expected an exact HTTPS origin');
+  if (url.origin !== raw || url.username || url.password || (!/^[a-z0-9.-]+$/i.test(url.hostname) && !/^\[[a-f0-9:]+\]$/i.test(url.hostname)) || (url.protocol !== 'https:' && !(url.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)))) throw new EmbeddingError('INVALID_ORIGIN', 'Expected an exact HTTPS origin');
   return raw;
 }
 /** v2 transport is intentionally separate from the unchanged Phase 3c client. */
@@ -43,12 +43,19 @@ export function createSessionEmbeddingClient(options: SessionEmbeddingOptions) {
       iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin');
       iframe.style.width = '100%'; iframe.style.height = '100%'; iframe.style.border = '0';
       let destroyed = false, generation = 0, active: { id: string; origin: string; channelId: string } | undefined;
-      let controller: AbortController | undefined, timer: ReturnType<typeof setTimeout> | undefined;
-      const clear = () => { if (timer !== undefined) clearTimeout(timer); timer = undefined; };
+      let controller: AbortController | undefined, timer: ReturnType<typeof setTimeout> | undefined, handshakeTimer: ReturnType<typeof setInterval> | undefined;
+      const clear = () => { if (timer !== undefined) clearTimeout(timer); if (handshakeTimer !== undefined) clearInterval(handshakeTimer); timer = undefined; handshakeTimer = undefined; };
       const failed = () => { clear(); callbacks.onError?.(new EmbeddingError('FRAME_LOAD_FAILED', 'Unable to load the hosted embed')); };
       const initialize = () => {
         if (!active || destroyed) return;
         iframe.contentWindow?.postMessage({ version: 2, type: 'opensight:initialize', sessionId: active.id, channelId: active.channelId }, active.origin);
+      };
+      const loaded = () => {
+        if (handshakeTimer !== undefined) clearInterval(handshakeTimer);
+        initialize();
+        // React effects may attach after iframe load. Retry the same nonce until
+        // the frame acknowledges; its one-shot receiver cannot redeem twice.
+        handshakeTimer = setInterval(initialize, 250);
       };
       const message = (event: MessageEvent<unknown>) => {
         if (destroyed || !active || event.source !== iframe.contentWindow || event.origin !== active.origin || !event.data || typeof event.data !== 'object') return;
@@ -64,7 +71,7 @@ export function createSessionEmbeddingClient(options: SessionEmbeddingOptions) {
       const destroy = () => {
         if (destroyed) return;
         destroyed = true; active = undefined; generation++; controller?.abort(); clear();
-        view.removeEventListener('message', message); iframe.removeEventListener('load', initialize); iframe.removeEventListener('error', failed); iframe.remove();
+        view.removeEventListener('message', message); iframe.removeEventListener('load', loaded); iframe.removeEventListener('error', failed); iframe.remove();
       };
       const refresh = async () => {
         if (destroyed) throw new EmbeddingError('EMBED_DESTROYED', 'The embed has been destroyed');
@@ -79,9 +86,9 @@ export function createSessionEmbeddingClient(options: SessionEmbeddingOptions) {
         const bytes = new Uint8Array(24); view.crypto.getRandomValues(bytes);
         active = { id: result.sessionId, origin: url.origin, channelId: [...bytes].map(b => b.toString(16).padStart(2, '0')).join('') };
         iframe.src = url.href;
-        timer = setTimeout(() => callbacks.onError?.(new EmbeddingError('FRAME_NOT_READY', 'The embedded session did not become ready')), 30000);
+        timer = setTimeout(() => { clear(); callbacks.onError?.(new EmbeddingError('FRAME_NOT_READY', 'The embedded session did not become ready')); }, 30000);
       };
-      view.addEventListener('message', message); iframe.addEventListener('load', initialize); iframe.addEventListener('error', failed);
+      view.addEventListener('message', message); iframe.addEventListener('load', loaded); iframe.addEventListener('error', failed);
       try { await refresh(); container.appendChild(iframe); } catch (error) { destroy(); throw error; }
       return { iframe, refresh, destroy };
     },

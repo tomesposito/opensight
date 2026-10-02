@@ -15,10 +15,11 @@ window.history.replaceState(null, '', window.location.pathname);
 document.getElementById('opensight-embed-data')?.remove();
 function Question({ transport, columns }: { transport: EmbedTransport; columns: { name: string; type: string }[] }) {
   const [question, setQuestion] = useState(''), [rows, setRows] = useState<Record<string, unknown>[]>([]), [busy, setBusy] = useState(false);
-  return <section className="embed-question"><form onSubmit={event => { event.preventDefault(); setBusy(true); void transport.request<{ rows: Record<string, unknown>[] }>('question', { Question: question }).then(r => setRows(r.rows)).catch(() => {}).finally(() => setBusy(false)); }}>
-    <label>Question<input value={question} onChange={e => setQuestion(e.target.value)} placeholder="total amount by region" maxLength={1000} /></label><button disabled={busy || !question.trim()}>Ask</button>
+  const ask = () => { if (busy || !question.trim()) return; setBusy(true); void transport.request<{ rows: Record<string, unknown>[] }>('question', { Question: question }).then(r => setRows(r.rows)).catch(() => {}).finally(() => setBusy(false)); };
+  return <section className="embed-question"><div role="search">
+    <label>Question<input value={question} onChange={e => setQuestion(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); ask(); } }} placeholder="total amount by region" maxLength={1000} /></label><button type="button" onClick={ask} disabled={busy || !question.trim()}>Ask</button>
     <p>Use sum, total, average, min, max, or count followed by a field, optionally “by” another field.</p><p>Available fields: {columns.map(c => c.name).join(', ')}</p>
-  </form>{rows.length > 0 && <table><thead><tr>{Object.keys(rows[0]!).map(k => <th key={k}>{k}</th>)}</tr></thead><tbody>{rows.map((row, i) => <tr key={i}>{Object.values(row).map((value, j) => <td key={j}>{String(value ?? '')}</td>)}</tr>)}</tbody></table>}</section>;
+  </div>{rows.length > 0 && <table><thead><tr>{Object.keys(rows[0]!).map(k => <th key={k}>{k}</th>)}</tr></thead><tbody>{rows.map((row, i) => <tr key={i}>{Object.values(row).map((value, j) => <td key={j}>{String(value ?? '')}</td>)}</tr>)}</tbody></table>}</section>;
 }
 function SessionFrame({ shell }: { shell: Shell }) {
   const [state, setState] = useState<SessionState>('loading'), [content, setContent] = useState<Content | null>(null), transport = useRef<EmbedTransport | null>(null);
@@ -34,7 +35,8 @@ function SessionFrame({ shell }: { shell: Shell }) {
   }, [shell]);
   const ready = state === 'ready' && content, empty = ready && ['dashboard', 'visual'].includes(content.kind) && !content.visuals?.length;
   const frameState = ready ? empty ? 'empty' : 'ready' : state === 'expired' || state === 'saved' ? 'expired' : state === 'revoked' || state === 'error' ? 'error' : 'loading';
-  return <EmbedFrame state={frameState} appearance={shell.appearance} assets={shell.assets} title={content?.title} viewLabel={content?.kind === 'console' ? 'Analysis editor' : content?.kind === 'q' ? 'Q search' : 'Embedded view'} description="Session view · using your current data permissions"
+  const statusTitle = state === 'saved' ? 'Analysis saved' : state === 'expired' ? 'Session expired' : state === 'revoked' ? 'Access revoked' : state === 'error' ? 'Embedded content unavailable' : state === 'loading' ? 'Loading embedded content' : undefined;
+  return <EmbedFrame state={frameState} statusTitle={statusTitle} appearance={shell.appearance} assets={shell.assets} title={content?.title} viewLabel={content?.kind === 'console' ? 'Analysis editor' : content?.kind === 'q' ? 'Q search' : 'Embedded view'} description="Session view · using your current data permissions"
     detail={state === 'revoked' ? 'Access has been revoked. Request a new session from your application.' : state === 'saved' ? 'Analysis saved. Request a new session to continue editing.' : state === 'expired' ? 'This session has expired. Request a new session from your application.' : undefined}>
     {ready && content.kind === 'q' && transport.current && <Question transport={transport.current} columns={content.columns ?? []} />}
     {ready && content.kind === 'console' && transport.current && <EmbeddedAuthor initial={content as ConsoleContent} transport={transport.current} />}

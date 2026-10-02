@@ -112,7 +112,7 @@ export class EmbedSessions {
   private features(config: TenantEmbedConfig, g: SessionGrant): void {
     const e = g.experience;
     if (g.anonymous && !config.features.anonymous || e.kind === 'console' && !config.features.authoring
-      || e.kind === 'dashboard' && !config.features.registeredDashboards || e.kind === 'visual' && !config.features.registeredVisuals) embedFailure('EMBED_FEATURE_UNSUPPORTED', 422);
+      || !g.anonymous && (e.kind === 'dashboard' && !config.features.registeredDashboards || e.kind === 'visual' && !config.features.registeredVisuals)) embedFailure('EMBED_FEATURE_UNSUPPORTED', 422);
   }
   private async check(c: SqlConnection, row: SqlRow): Promise<SessionGrant> {
     await this.checkKey(c, String(row.key_id));

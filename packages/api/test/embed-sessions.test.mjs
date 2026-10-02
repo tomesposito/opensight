@@ -89,3 +89,14 @@ test('H6 authorization is rechecked after asynchronous asset checks before issua
   mutate = () => f.db.transaction(c => c.query('UPDATE h1_revisions SET policy = policy + 1 WHERE tenant_id = ?', [f.tenant.tenantId]));
   await assert.rejects(f.redeem(issued), { code: 'EMBED_SESSION_REVOKED' });
 });
+
+test('H6 cross-tenant handles and reduced operator origins cannot revoke, renew or redeem', async t => {
+  const f = await sessionFixture(t), issued = await f.issue();
+  const other = await f.provisioning.provision('other-tenant', { name: 'Other', administrator: { email: 'different@example.test', name: 'Other administrator' } });
+  const user = await f.db.transaction(c => c.query("SELECT resource_id FROM h1_resources WHERE tenant_id = ? AND kind = 'user'", [other.tenantId]));
+  const foreign = await f.metadata.authenticate(null, async () => ({ namespaceId: other.namespaceId, userId: user[0].resource_id }));
+  await assert.rejects(f.sessions.revoke(foreign, issued.sessionId), { code: 'RESOURCE_NOT_FOUND' });
+  await assert.rejects(f.sessions.renew(foreign, issued.sessionId), { code: 'RESOURCE_NOT_FOUND' });
+  const reduced = new EmbedSessions(f.db, f.metadata, { ...f.policy, tenants: new Map() }, f.key, async () => {}, f.clock);
+  await assert.rejects(reduced.redeem(issued.sessionId, { bootstrap: new URL(issued.EmbedUrl).hash.slice(11), parentOrigin, channelId: randomBytes(24).toString('base64url') }), { code: 'EMBED_ORIGIN_DENIED' });
+});

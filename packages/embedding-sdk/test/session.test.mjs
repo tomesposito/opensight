@@ -40,3 +40,20 @@ test('H6 SDK racing refresh completion cannot overwrite a newer frame or survive
   pending[1](newest); await second; pending[0](issued()); await first; assert.equal(handle.iframe.src, newest.EmbedUrl);
   const last = handle.refresh(); handle.destroy(); pending[2](issued()); await last; assert.equal(d.frames.length, 0);
 });
+
+test('H6 SDK retries initialization when the iframe attaches its listener after load', async t => {
+  t.mock.timers.enable({ apis: ['setInterval', 'setTimeout'] });
+  const d = dom(), handle = await createSessionEmbeddingClient({ allowedEmbedOrigins: [origin], getEmbedUrl: async () => issued() }).mount(d.container);
+  d.loaded(); assert.equal(d.messages.length, 1); t.mock.timers.tick(250); assert.equal(d.messages.length, 2);
+  assert.deepEqual(d.messages[0], d.messages[1]);
+  d.emit({ origin, source: handle.iframe.contentWindow, data: { ...d.messages[0].data, type: 'opensight:session', event: 'ready' } });
+  t.mock.timers.tick(1000); assert.equal(d.messages.length, 2); handle.destroy();
+});
+
+test('H6 SDK stops handshake retries after a frame readiness timeout', async t => {
+  t.mock.timers.enable({ apis: ['setInterval', 'setTimeout'] });
+  const d = dom(); let errors = 0;
+  const handle = await createSessionEmbeddingClient({ allowedEmbedOrigins: [origin], getEmbedUrl: async () => issued() }).mount(d.container, { onError: () => errors++ });
+  d.loaded(); t.mock.timers.tick(30000); assert.equal(errors, 1);
+  const sent = d.messages.length; t.mock.timers.tick(1000); assert.equal(d.messages.length, sent); handle.destroy();
+});

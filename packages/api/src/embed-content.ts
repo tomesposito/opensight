@@ -120,7 +120,8 @@ export class EmbedContent {
         return tagSecurity({ ...base, policy: { ...base.policy, rowLevel: base.policy.rowLevel || policy?.rowLevel === true, protectedColumns } }, definition, g.tags);
       }
       if (!policy) return base;
-      const scoped = { ...base, policy: { ...policy, namespaceId: context.namespaceId, dataSetArn: base.policy.dataSetArn } } as SecurityContext;
+      const { datasetId: _datasetId, ...datasetPolicy } = policy;
+      const scoped = { ...base, policy: { ...datasetPolicy, namespaceId: context.namespaceId, dataSetArn: base.policy.dataSetArn } } as SecurityContext;
       const first = resolveSecurity(base, boundColumns(source.binding.columns), base.policy.dataSetArn), second = resolveSecurity(scoped, boundColumns(source.binding.columns), base.policy.dataSetArn);
       const predicates = [first.rowPredicate, second.rowPredicate].filter((p): p is RowPredicate => p !== undefined);
       return { ...base, policy: { namespaceId: context.namespaceId, dataSetArn: base.policy.dataSetArn, rowLevel: !!predicates.length,

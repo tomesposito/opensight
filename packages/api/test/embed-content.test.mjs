@@ -78,3 +78,19 @@ test('H6 console authors save real definitions with version checks; reader and v
   const viewer = await f.open({ ...body, UserArn: f.arn('user', f.reader.identity.userId) });
   await assert.rejects(f.content.save(viewer.context, viewer.session, { analysisId: 'analysis', definition, datasetId: 'dataset', expectedVersion: 3 }), { code: 'RESOURCE_NOT_FOUND' });
 });
+
+test('H6 source and dataset row restrictions intersect before aggregation; dataset CLS cannot be bypassed', async t => {
+  const f = await fixture(t), readerId = f.reader.identity.userId;
+  await f.metadata.put(await f.context(), { kind: 'policy', id: 'dataset-policy' }, { datasetId: 'dataset', dataSetArn: 'urn:opensight:dataset', rowLevel: true,
+    rowRules: [{ id: 'large', principals: [{ type: 'user', id: readerId }], predicate: { column: 'amount', operator: 'gte', value: 30 } }], protectedColumns: ['private'], columnGrants: [] });
+  const opened = await f.open(request({ UserArn: f.arn('user', readerId) }));
+  assert.deepEqual((await f.content.content(opened.context, opened.session)).visuals[0].rows, [{ amount: 30 }]);
+  const a = await f.content.admission(opened.context, opened.session, 'dataset'); assert.deepEqual(a.deniedColumns, ['private']);
+});
+
+test('H6 revocation during contained source work prevents asynchronous result publication', async t => {
+  const f = await fixture(t), opened = await f.open(request({ UserArn: f.arn('user', f.reader.identity.userId) }));
+  const original = f.content.data.table.bind(f.content.data);
+  f.content.data.table = async (...args) => { const table = await original(...args); await f.sessions.revoke(await f.context(), opened.issued.sessionId); return table; };
+  await assert.rejects(f.content.content(opened.context, opened.session), { code: 'EMBED_SESSION_REVOKED' });
+});
