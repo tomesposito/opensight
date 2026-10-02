@@ -1,10 +1,11 @@
 # Scheduled refresh, reports and alerts (Phase 3a)
 
-These are OpenSight resources served by the existing local `node:http` API. They
-are not AWS API compatibility claims. The API still has no authentication; user
-IDs identify subscription owners, not authenticated principals. Keep deployment
-behind a trusted access boundary. No AWS/source connections are inferred from
-imported definitions.
+This page describes the legacy local/fixture resources and file store. Hosted
+tenant automation uses the authenticated H7 job API, durable occurrences and
+recipient outbox described in [tenant automation](tenant-automation.md).
+The legacy default-namespace handlers are not used for hosted rendering or
+delivery. Neither surface infers AWS/source connections from definitions or
+claims AWS API compatibility.
 
 ## Refresh
 

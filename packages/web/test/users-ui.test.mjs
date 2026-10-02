@@ -14,6 +14,11 @@ test('user management is hidden for all non-admin roles and static preview', () 
   }
   assert.match(renderToStaticMarkup(createElement(UserManagement, { client: {} })), /Hosted administrator/);
 });
+test('H7 tenant membership administration links to the operator transfer-or-stop surface', () => {
+  const a = access('administrator'); a.session.tenantId = 'tenant';
+  const html = renderToStaticMarkup(createElement(AccessProvider, { access: a }, createElement(UserManagement, { client: {} })));
+  assert.match(html, /#operator-users/); assert.match(html, /transferring or stopping/); assert.doesNotMatch(html, /Create invitation/);
+});
 test('administrator invite, role edit and revocation use server API and never invent delivery', async t => {
   const old = globalThis.IS_REACT_ACT_ENVIRONMENT, oldWindow = globalThis.window; globalThis.IS_REACT_ACT_ENVIRONMENT = true;
   globalThis.window = { location: { href: 'https://example.test/app' } };

@@ -130,6 +130,8 @@ key; changing that key without reencrypting records makes credentials unavailabl
 Hosted H2 exposes session reporting and scoped namespace/user/group reads.
 Legacy fixtures, sources, prep, queries, embedding and automation have no hosted
 fallback: unauthenticated requests are denied, and authenticated unsupported
-operations return `HOSTED_CAPABILITY_UNAVAILABLE`. H3/H6/H7 own their integration;
-no ownerless scheduler runs in the hosted composition. The static demo remains
-a local artifact, not a deployed server.
+operations return `HOSTED_CAPABILITY_UNAVAILABLE`. H3 and H6 provide their scoped
+data and embed paths; [H7](tenant-automation.md) now provides owned recurring jobs,
+durable histories/outbox and the operator transfer-or-stop removal choice. No
+ownerless scheduler runs in the hosted composition. The static demo remains a
+local artifact, not a deployed server.

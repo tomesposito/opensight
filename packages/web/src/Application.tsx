@@ -11,6 +11,7 @@ import type { AuthorDataset } from './authoring.js';
 import { Author } from './Author.js';
 import { SecurityNotice } from './SecurityNotice.js';
 import { AutomationNotice } from './AutomationNotice.js';
+import { JobManagement } from './JobManagement.js';
 import type { createApiClient } from './api-client.js';
 import type { ResourceKind } from './api-client.js';
 import { buildApiPreview } from './api-preview.js';
@@ -49,7 +50,7 @@ function ApplicationWorkspace({ api, fixtures }: { api: ReturnType<typeof create
       case 'ai-settings': return <AISettings client={api} />;
       case 'organization': return <OrganizationNotice />;
       case 'security': return <SecurityNotice />;
-      case 'automation': return <AutomationNotice />;
+      case 'automation': return access.mode === 'hosted' ? <JobManagement client={api} /> : <AutomationNotice />;
       case 'api': return <ApiExplorer key={fixtureId} example={fixture} api={api} fixtures={fixtures} />;
       case 'fixtures': return fixture ? <Dashboard key={fixture.id} fixture={fixture} /> : <p role="status">No definition examples are included in this build. Use API definition preview to load a definition from a hosted API.</p>;
     }

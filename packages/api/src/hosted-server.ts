@@ -27,6 +27,13 @@ import { scopePath } from './namespace-routes.js';
 import { readBody, RequestError, SecurityError } from './query.js';
 import { method, send } from './automation-routes.js';
 import { smtpFromEnvironment, type MailTransport } from './mail.js';
+import { initializeJobs } from './job-schema.js';
+import { JobStore } from './job-store.js';
+import { JobRenderer } from './job-renderer.js';
+import { JobRunner } from './job-runner.js';
+import { JobOwnership, disposition } from './job-ownership.js';
+import { jobRoute } from './job-routes.js';
+import { Scheduler } from './schedule.js';
 
 const drains = new WeakMap<Server, () => Promise<void>>();
 export async function drainHostedServer(server: Server): Promise<void> { await drains.get(server)?.(); }
@@ -77,11 +84,19 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
   await initializeEmbedding(options.membershipDatabase);
   const embedding = new HostedEmbedding(options.membershipDatabase, metadata, policy);
   const budgets = await loadBudgets(options.membershipDatabase, metadata);
-  const data = new HostedDataRoutes(new HostedData(new HostedSources(metadata, config.encryptionKey.toString('base64'), sourceEndpoints(options.env)), undefined, budgets));
+  const jobs = new JobStore(options.membershipDatabase, metadata);
+  const data = new HostedDataRoutes(new HostedData(new HostedSources(metadata, config.encryptionKey.toString('base64'), sourceEndpoints(options.env)), undefined, budgets), jobs);
   const embedContent = new EmbedContent(new HostedData(new EmbedSources(metadata, config.encryptionKey.toString('base64'), sourceEndpoints(options.env)), undefined, budgets));
+  const mail = options.mailTransport ?? smtpFromEnvironment(options.env);
+  await initializeJobs(options.membershipDatabase);
+  const unmigrated = await options.membershipDatabase.transaction(c => c.query(`SELECT j.resource_id FROM h1_resources j WHERE j.kind = 'job'
+    AND NOT EXISTS (SELECT 1 FROM h7_migrations m WHERE m.tenant_id = j.tenant_id AND m.namespace_id = j.namespace_id)`));
+  if (unmigrated.length) throw new MetadataError('JOB_MIGRATION_REQUIRED', 503);
+  const renderer = new JobRenderer(data.data, embedContent), runner = new JobRunner(jobs, renderer, mail);
+  const ownership = new JobOwnership(jobs, renderer), scheduler = new Scheduler(() => runner.tick());
   const sessions = new EmbedSessions(options.membershipDatabase, metadata, policy, embedSessionKey(options.env ?? process.env), (context, grant) => embedContent.authorize(context, grant));
   await sessions.initialize();
-  const provisioning = new HostedProvisioning(options.membershipDatabase, config, options.mailTransport ?? smtpFromEnvironment(options.env));
+  const provisioning = new HostedProvisioning(options.membershipDatabase, config, mail, Date.now, ownership);
   // Prove that the durable H1/H2 schema is reachable before binding a socket.
   await options.membershipDatabase.transaction(async c => { await c.query('SELECT tenant_id FROM h1_tenants WHERE 1 = 0'); await c.query('SELECT subject FROM h2_memberships WHERE 1 = 0'); });
   await assertHostedSourcesReady(options.membershipDatabase);
@@ -92,7 +107,8 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
       let path = request.url!;
       if (path === '/api/host' || path.startsWith('/api/host/')) {
         const authorization = request.headers.authorization;
-        if (request.headers.origin !== undefined || !authorization?.startsWith('Operator ') || !equal(authorization.slice(9), config.operatorKey.toString('base64url'))) throw new MetadataError('OPERATOR_REQUIRED', 403);
+        const browserMembership = /^\/api\/host\/tenants\/[A-Za-z0-9_-]+\/users(?:\/[A-Za-z0-9_-]+)?$/.test(path);
+        if (request.headers.origin !== undefined && !browserMembership || !authorization?.startsWith('Operator ') || !equal(authorization.slice(9), config.operatorKey.toString('base64url'))) throw new MetadataError('OPERATOR_REQUIRED', 403);
         if (path === '/api/host/tenants') {
           method(request, response, ['POST']);
           const input = await body(request, ['name', 'administrator']), administrator = object(input.administrator, ['email', 'name']);
@@ -109,9 +125,15 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
             method(request, response, ['POST']); const input = await body(request, ['email', 'name', 'role']);
             send(response, 201, await provisioning.inviteMember(idempotency(request), tenantId, { email: input.email as string, name: input.name as string, role: input.role as Parameters<HostedProvisioning['inviteMember']>[2]['role'] })); return;
           }
-          if (action === 'users' && tenant[3]) {
-            method(request, response, ['DELETE']); await body(request, []);
-            await provisioning.removeMember(tenantId, identifier(tenant[3])); send(response, 200, { removed: true }); return;
+          if (action === 'users') {
+            if (!tenant[3]) { method(request, response, ['GET']); send(response, 200, await ownership.users(tenantId)); return; }
+            method(request, response, ['GET', 'DELETE']);
+            if (request.method === 'GET') send(response, 200, await ownership.preview(tenantId, identifier(tenant[3])));
+            else {
+              const input = await body(request, ['jobs']);
+              await provisioning.removeMember(tenantId, identifier(tenant[3]), disposition(input.jobs)); send(response, 200, { removed: true });
+            }
+            return;
           }
           if (!action || action === 'suspend' || action === 'resume') {
             method(request, response, [action ? 'POST' : 'DELETE']);
@@ -167,6 +189,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
         method(request, response, ['GET']); await metadata.revisions(context);
         send(response, 200, [{ id: context.namespaceId, tenantId: context.tenantId }]); return;
       }
+      if (await jobRoute(request, response, path, context, jobs, renderer, mail)) return;
       if (path === '/api/users' || path === '/api/groups') {
         method(request, response, ['GET']);
         const user = await metadata.get(context, { kind: 'user', id: context.userId });
@@ -217,8 +240,10 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
     });
   });
   const expiryTimer = setInterval(() => { void expireUploads(options.membershipDatabase).catch(() => { /* Reads still fail closed on expiry. */ }); }, 60000);
-  expiryTimer.unref(); server.once('close', () => { clearInterval(expiryTimer); budgets.close(); });
-  drains.set(server, () => budgets.shutdown());
+  await runner.recover();
+  server.once('listening', () => scheduler.start());
+  expiryTimer.unref(); server.once('close', () => { clearInterval(expiryTimer); scheduler.stop(); budgets.close(); });
+  drains.set(server, async () => { scheduler.stop(); await scheduler.idle(); await budgets.shutdown(); });
   server.requestTimeout = 15000; server.headersTimeout = 10000;
   return server;
 }

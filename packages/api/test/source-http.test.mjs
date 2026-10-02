@@ -55,7 +55,8 @@ test('H3 HTTP durable source lifecycle, policy gates, uploads, owner prep and un
   assert.equal((await call('/api/datasets/private/embed', 'POST', {}, token)).body.errorCode, 'PREP_EMBED_REFUSED');
   assert.equal((await call('/api/namespaces/foreign/sources', 'GET', undefined, token)).body.errorCode, 'RESOURCE_NOT_FOUND');
   assert.equal((await call('/api/sources/foreign', 'GET', undefined, token)).body.errorCode, 'RESOURCE_NOT_FOUND');
-  for (const path of ['/api/automation-status', '/api/assets', '/api/o/generate', '/embed/foreign']) assert.equal((await call(path, 'GET', undefined, token)).body.errorCode, 'HOSTED_CAPABILITY_UNAVAILABLE');
+  assert.equal((await call('/api/automation-status', 'GET', undefined, token)).body.persistence, 'durable');
+  for (const path of ['/api/assets', '/api/o/generate', '/embed/foreign']) assert.equal((await call(path, 'GET', undefined, token)).body.errorCode, 'HOSTED_CAPABILITY_UNAVAILABLE');
   for (const changes of [{ secretId: 'foreign' }, { tenantId: 'foreign' }, { policy: undefined }, { credentials: { ...raw.credentials, host: 'unapproved.example' } }]) {
     r = await call('/api/sources/invalid', 'PUT', { ...raw, ...changes }, token); assert.ok(r.status >= 400); assert.equal(JSON.stringify(r.body).includes(raw.credentials.password), false);
   }

@@ -25,11 +25,16 @@ export function planPreparedQuery(columns: readonly PrepColumn[], body: Interact
   const request = interactiveRequest(body, preparedMetadata(columns));
   return planVisual({ ...request, ...(security ? { security: { ...security, policy: { ...security.policy, dataSetArn: 'urn:opensight:prepared' } } } : {}) });
 }
-export function planPreparedVisual(columns: readonly PrepColumn[], analysis: unknown, visualId: string, dataSetArn: string, security?: SecurityContext) {
-  return planVisual({ ...preparedMetadata(columns, dataSetArn), analysis, visualId, ...(security ? { security: { ...security, policy: { ...security.policy, dataSetArn } } } : {}) });
+export interface VisualPeriod { columnName: string; start: string; end: string }
+export function planPreparedVisual(columns: readonly PrepColumn[], analysis: unknown, visualId: string, dataSetArn: string, security?: SecurityContext, period?: VisualPeriod) {
+  return planVisual({ ...preparedMetadata(columns, dataSetArn), analysis, visualId, ...(security ? { security: { ...security, policy: { ...security.policy, dataSetArn } } } : {}),
+    ...(period ? { parameterDeclarations: [{ name: 'OSPeriodStart', type: 'datetime' as const, multiple: false }, { name: 'OSPeriodEnd', type: 'datetime' as const, multiple: false }],
+      parameterBindings: { OSPeriodStart: [period.start], OSPeriodEnd: [period.end] }, parameterFilters: [
+        { columnName: period.columnName, parameterName: 'OSPeriodStart', operator: 'GREATER_THAN_OR_EQUAL_TO' as const },
+        { columnName: period.columnName, parameterName: 'OSPeriodEnd', operator: 'LESS_THAN_OR_EQUAL_TO' as const }] } : {}) });
 }
-export function queryPreparedVisual(columns: readonly PrepColumn[], rowCount: number, value: (row: number, column: number) => PrepScalar, analysis: unknown, visualId: string, dataSetArn: string) {
-  return evaluatePrepared(columns, rowCount, value, planPreparedVisual(columns, analysis, visualId, dataSetArn));
+export function queryPreparedVisual(columns: readonly PrepColumn[], rowCount: number, value: (row: number, column: number) => PrepScalar, analysis: unknown, visualId: string, dataSetArn: string, period?: VisualPeriod) {
+  return evaluatePrepared(columns, rowCount, value, planPreparedVisual(columns, analysis, visualId, dataSetArn, undefined, period));
 }
 
 export function queryPrepared(columns: readonly PrepColumn[], rowCount: number, value: (row: number, column: number) => PrepScalar, body: InteractiveQuery) {

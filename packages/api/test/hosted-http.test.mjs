@@ -65,6 +65,7 @@ test('H2 no unauthenticated fallback exists on fixture, embed, source, automatio
     if (path !== '/api/session') {
       const authorized = await request(path, { headers: { authorization: `Bearer ${session.token}` } });
       if (path === '/api/prep-sources') assert.deepEqual(authorized.body, []);
+      else if (path === '/api/automation-status') { assert.equal(authorized.status, 200); assert.equal(authorized.body.persistence, 'durable'); }
       else assert.equal(authorized.body.errorCode, path === '/api/datasets/sales/query' ? 'HOSTED_REQUEST_INVALID' : 'HOSTED_CAPABILITY_UNAVAILABLE');
     }
   }

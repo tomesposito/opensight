@@ -10,12 +10,13 @@ import { sourceError } from './source-schema.js';
 import { BlazeTable, executionSettings, directSettings, type ExecutionSettings } from './blaze.js';
 import { materializationReason } from './blaze-policy.js';
 import { validateQuery } from './query.js';
+import type { JobStore } from './job-store.js';
 
 const references = (p: PrepPipeline): PrepInput[] => [p.input, ...p.steps.flatMap(s => s.kind === 'append' ? [s.config.source] : s.kind === 'join' && !(typeof s.config.source !== 'string' && 'step' in s.config.source) ? [s.config.source as PrepInput] : [])];
 interface Graph { pipeline: PrepPipeline; datasets: PrepDataset[]; leaves: Admission[]; revisions: Revisions; reason: string | null; modes: Map<string, { version: number; execution: ExecutionSettings }> }
 /** Owner-only durable recipes. The complete graph is checked even when reading a cached output. */
 export class HostedPrep {
-  constructor(readonly data: HostedData) {}
+  constructor(readonly data: HostedData, private readonly jobs?: JobStore) {}
   private key(context: TenantContext, id: string) { return { kind: 'prepared-dataset' as const, id: identifier(id), ownerId: context.userId }; }
   private cacheKey(context: TenantContext, id: string) { return JSON.stringify([context.tenantId, context.namespaceId, context.userId, 'prep', id]); }
   private async stored(context: TenantContext, id: string) {
@@ -129,10 +130,11 @@ export class HostedPrep {
   }
   async configure(context: TenantContext, id: string, input: unknown) {
     const raw = object(structuredClone(input), ['expectedVersion', 'mode', 'intervalMinutes']), settings = executionSettings({ mode: raw.mode, intervalMinutes: raw.intervalMinutes });
-    if (settings.intervalMinutes !== null) sourceError('HOSTED_AUTOMATION_UNAVAILABLE', 503);
+    if (settings.intervalMinutes !== null && !this.jobs) sourceError('HOSTED_AUTOMATION_UNAVAILABLE', 503);
     const stored = await this.stored(context, id), graph = await this.graph(context, id, stored.resource.opensightPrep!);
     if (settings.mode === 'DIRECT_QUERY' && graph.reason) sourceError('BLAZE_MATERIALIZATION_REQUIRED', 409);
-    await this.data.sources.metadata.batch(context, [{ key: this.key(context, id), body: { resource: stored.resource, execution: settings }, expectedVersion: raw.expectedVersion as number }], graph.revisions);
+    if (this.jobs) await this.jobs.configurePrepared(context, id, settings, raw.expectedVersion as number, graph.revisions);
+    else await this.data.sources.metadata.batch(context, [{ key: this.key(context, id), body: { resource: stored.resource, execution: settings }, expectedVersion: raw.expectedVersion as number }], graph.revisions);
     this.data.cache?.invalidate(this.cacheKey(context, id)); return settings;
   }
   async execute(context: TenantContext, id: string, path: 'rows' | 'query' | 'refresh', input: unknown = {}) {
