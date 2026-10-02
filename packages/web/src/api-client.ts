@@ -51,6 +51,9 @@ export interface DefinitionResponse {
 export const DEFAULT_API_URL = '/api';
 
 export interface Invitation { id: string; namespaceId: string; name: string; role: Role; invitedBy: string; expiresAt: string }
+export interface TenantJob { id: string; ownerId: string; version: number; spec: { kind: 'refresh' | 'report' | 'alert'; enabled: boolean }; stopped: boolean; nextRun: string | null }
+export interface JobHistory { id: string; state: string; errorCode: string | null; createdAt: string; finishedAt: string | null }
+export interface JobDelivery { delivery_id: string; recipient_id: string; state: string; attempts: number; error_code: string | null }
 export interface AIStatus { configured: boolean; state: 'configured' | 'not-configured' | 'needs-approval' }
 export interface ORequest { question: string; dashboardId?: string; calculatedFields?: readonly CalculatedField[] }
 export interface AIConfig {
@@ -99,6 +102,11 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
   const uploadFile = (body: { config: Readonly<Record<string, string>>; base64: string }) => resource<UploadSummary>('/api/uploads', 'POST', body);
   const validateConnector = (id: string, config: Readonly<Record<string, string>>) => resource<ConnectorState>(`/api/connectors/${encodeURIComponent(id)}/connect`, 'POST', { config });
   const listUsers = () => resource<Session[]>('/api/users');
+  const listJobs = () => resource<TenantJob[]>('/api/jobs');
+  const jobRecipients = () => resource<{ id: string; name: string; email: string }[]>('/api/job-recipients');
+  const jobHistory = (id: string) => resource<JobHistory[]>(`/api/jobs/${encodeURIComponent(id)}/runs`);
+  const jobDeliveries = (id: string) => resource<JobDelivery[]>(`/api/jobs/${encodeURIComponent(id)}/deliveries`);
+  const runJob = (id: string) => resource<JobHistory>(`/api/jobs/${encodeURIComponent(id)}/runs`, 'POST', {});
   const saveUser = (id: string, body: { name: string; role: Role }) => resource<Session>(`/api/users/${encodeURIComponent(id)}`, 'PUT', body);
   const deleteUser = (id: string) => resource<{ deleted: true }>(`/api/users/${encodeURIComponent(id)}`, 'DELETE');
   const listInvitations = () => resource<Invitation[]>('/api/invitations');
@@ -123,7 +131,7 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
     }
     const body = object(await response.json(), 'Session');
     if (!isRole(body.role) || typeof body.id !== 'string' || typeof body.namespaceId !== 'string' || typeof body.name !== 'string') throw new ApiError('Invalid session.');
-    return { id: body.id, namespaceId: body.namespaceId, name: body.name, role: body.role };
+    return { id: body.id, namespaceId: body.namespaceId, name: body.name, role: body.role, ...(typeof body.tenantId === 'string' ? { tenantId: body.tenantId } : {}) };
   }
   async function getDatasetRefreshStatus(id: string, signal?: AbortSignal): Promise<DatasetRefreshStatus> {
     if (!/^[A-Za-z0-9_-]{1,512}$/.test(id)) throw new ApiError('Invalid dataset ID.');
@@ -206,6 +214,7 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
     }
   }
   return {
+    listJobs, jobRecipients, jobHistory, jobDeliveries, runJob,
     getLocalData, getDatasetExecution, setDatasetExecution, refreshBlaze, getPreparedRows, listPrepSources, listPrepDatasets, savePrep, deletePrep, previewPrep, uploadFile, validateConnector, listUsers, saveUser, deleteUser, listInvitations, inviteUser, revokeInvitation, acceptInvitation, getAIStatus, generateO, generateCalculation, getAIConfig, saveAIConfig, saveAIKey, testAIConnection, getSession, queryO, getDatasetRefreshStatus,
     queryDataset,
     getAnalysisDefinition: (id: string, signal?: AbortSignal) => getDefinition('analysis', id, signal),

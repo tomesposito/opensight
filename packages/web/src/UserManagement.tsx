@@ -10,6 +10,10 @@ function RoleSelect({ value, onChange, disabled }: { value: Role; onChange: (rol
 export function UserManagement({ client }: { client: Client }) {
   const access = useAccess();
   if (access.mode !== 'hosted' || !allowed(access, 'admin')) return <p role="alert">SECURITY_ADMIN_REQUIRED: Hosted administrator access required.</p>;
+  if (access.session?.tenantId) return <section className="admin-settings"><h1>Users and invitations</h1>
+    <p>Membership in this hosted tenant is managed by the operator. Removing a user requires transferring or stopping their refresh, report and alert schedules.</p>
+    <a href="#operator-users">Open operator user removal</a><p>The operator credential is required. Tenant administrator sessions cannot remove members.</p>
+  </section>;
   return <Users client={client} />;
 }
 function Users({ client }: { client: Client }) {

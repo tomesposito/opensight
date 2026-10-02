@@ -589,3 +589,13 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .draft-source-recovery { margin: 8px 20px; padding: 12px; border: 1px solid #b97715; background: #fff8e6; color: #34280c; }
 .draft-source-recovery button, .draft-source-recovery label { margin: 4px 8px 4px 0; }
 .draft-source-recovery select { max-width: 100%; }
+/* Durable automation histories contain long occurrence IDs. Keep them in the
+   page's content column, including on narrow operator screens. */
+.job-management table { width: 100%; table-layout: fixed; border-collapse: collapse; margin: 16px 0; }
+.job-management td, .job-management th { padding: 8px; text-align: left; overflow-wrap: anywhere; vertical-align: top; border-bottom: 1px solid #cbd5e1; }
+.job-management button { white-space: normal; overflow-wrap: anywhere; }
+.admin-settings [role="dialog"] { margin-top: 24px; overflow-wrap: anywhere; }
+.admin-settings [role="dialog"] fieldset { display: grid; gap: 12px; }
+.admin-settings [role="dialog"] select { max-width: 100%; }
+.admin-settings [role="dialog"] label:has(input[type="radio"]) { display: flex; align-items: center; }
+.admin-settings [role="dialog"] input[type="radio"] { width: auto; margin-right: .5rem; }
