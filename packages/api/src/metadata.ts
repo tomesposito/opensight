@@ -29,7 +29,7 @@ export class TenantMetadata {
         JOIN h1_tenants t ON t.tenant_id = n.tenant_id
         JOIN h1_revisions r ON r.tenant_id = n.tenant_id AND r.namespace_id = n.namespace_id
         JOIN h1_resources u ON u.tenant_id = n.tenant_id AND u.namespace_id = n.namespace_id AND u.kind = 'user' AND u.owner_id = ''
-        WHERE n.namespace_id = ? AND u.resource_id = ? AND t.state = 'active'`, [namespaceId, userId]);
+        WHERE n.namespace_id = ? AND u.resource_id = ? AND t.state = 'active' AND NOT EXISTS (SELECT 1 FROM h8_restore_holds h WHERE h.tenant_id = t.tenant_id)`, [namespaceId, userId]);
       if (!rows[0]) throw new MetadataError('UNKNOWN_PRINCIPAL', 403);
       const context = Object.freeze({ tenantId: String(rows[0].tenant_id), namespaceId, userId, authorizationRevision: Number(rows[0].authorization) });
       this.#contexts.add(context); return context;

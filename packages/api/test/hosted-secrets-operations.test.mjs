@@ -36,3 +36,19 @@ test('H8 offline encryption rotation is atomic, versioned, auditable, and reject
   const record = await f.db.transaction(c => c.query('SELECT body FROM h8_audit'));
   assert.equal(JSON.parse(record[0].body).operation, 'key.rotate'); assert.equal(JSON.stringify(record).includes(next), false);
 });
+
+test('H8 encryption rotation preserves MFA and invitation envelopes and rolls back on a corrupt record', async t => {
+  const { authFixture } = await import('./hosted-helpers.mjs');
+  const { HostedAuth } = await import('../dist/hosted-auth.js');
+  const f = await authFixture(t), old = f.config.encryptionKey.toString('base64'), next = randomBytes(32).toString('base64');
+  await assertEncryptionKey(f.db, old);
+  const before = await f.db.transaction(c => c.query('SELECT totp_secret FROM h2_identities'));
+  await f.db.transaction(c => c.query("UPDATE h2_invitations SET token_secret = 'corrupt'"));
+  await assert.rejects(rotateEncryptionKey(f.db, old, next, 'frozen'), { code: 'CREDENTIAL_UNAVAILABLE' });
+  assert.deepEqual(await f.db.transaction(c => c.query('SELECT totp_secret FROM h2_identities')), before); await assertEncryptionKey(f.db, old);
+  const { seal } = await import('../dist/auth-crypto.js');
+  await f.db.transaction(async c => { const r = (await c.query('SELECT invitation_id FROM h2_invitations'))[0]; await c.query('UPDATE h2_invitations SET token_secret = ?', [seal(f.invitation, f.config.encryptionKey, `invitation:${r.invitation_id}`)]); });
+  await rotateEncryptionKey(f.db, old, next, 'frozen');
+  const auth = await HostedAuth.create(f.db, { ...f.config, encryptionKey: Buffer.from(next, 'base64') }, f.clock);
+  const login = await auth.login(f.email, f.password, f.code(), f.tenant.tenantId, 'local'); assert.ok(login.token);
+});

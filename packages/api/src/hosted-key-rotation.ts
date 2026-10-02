@@ -10,7 +10,15 @@ export async function assertEncryptionKey(db: Database, value: string): Promise<
   await db.transaction(async c => {
     // Serializes initial registration and rotation with H2's control row.
     await c.query('UPDATE h2_control SET id = id WHERE id = 1');
-    await c.query('INSERT INTO h8_encryption VALUES (1,1,?) ON CONFLICT (id) DO NOTHING', [fingerprint]);
+    if (!(await c.query('SELECT id FROM h8_encryption WHERE id = 1')).length) {
+      for (const row of await c.query("SELECT * FROM h1_resources WHERE kind = 'secret'")) {
+        const body = JSON.parse(String(row.body)) as { ciphertext: string };
+        decryptMetadataSecret(body.ciphertext, value, { tenantId: String(row.tenant_id), namespaceId: String(row.namespace_id) }, { kind: 'secret', id: String(row.resource_id), ownerId: String(row.owner_id) });
+      }
+      for (const row of await c.query('SELECT subject, totp_secret FROM h2_identities WHERE totp_secret IS NOT NULL')) unseal(String(row.totp_secret), secretKey(value), `totp:${row.subject}`);
+      for (const row of await c.query('SELECT invitation_id, token_secret FROM h2_invitations')) unseal(String(row.token_secret), secretKey(value), `invitation:${row.invitation_id}`);
+      await c.query('INSERT INTO h8_encryption VALUES (1,1,?)', [fingerprint]);
+    }
     const row = (await c.query('SELECT fingerprint FROM h8_encryption WHERE id = 1'))[0];
     if (row?.fingerprint !== fingerprint) throw new MetadataError('ENCRYPTION_KEY_VERSION_MISMATCH', 503);
   });
