@@ -13,7 +13,11 @@ let stopping = false;
 async function stop(): Promise<void> {
   if (stopping) return; stopping = true;
   const deadline = setTimeout(() => { console.error('REFERENCE_SHUTDOWN_TIMEOUT'); process.exit(1); }, 30000);
-  if (server) { server.close(); await drainHostedServer(server); server.closeAllConnections(); }
+  if (server) {
+    const draining = drainHostedServer(server); server.close();
+    try { await draining; } catch { console.error('DRAIN_DEADLINE_EXCEEDED'); process.exit(1); }
+    server.closeAllConnections();
+  }
   await database?.close(); clearTimeout(deadline);
 }
 try {
@@ -30,7 +34,7 @@ try {
     await database.close();
   }
   else {
-    server = await createBuiltinHostedServer({ ...database });
+    server = await createBuiltinHostedServer({ ...database, roleProbe: database.probe });
     server.listen(3000, '0.0.0.0');
     for (const signal of ['SIGINT', 'SIGTERM'] as const) process.once(signal, () => { void stop(); });
     server.on('error', () => { console.error('REFERENCE_SERVER_FAILED'); void stop(); });

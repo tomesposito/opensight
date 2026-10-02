@@ -11,6 +11,9 @@ const retryable = (code: string) => ['SMTP_SEND_FAILED', 'SMTP_NOT_CONFIGURED', 
 /** One scheduler only. Database records make restart durable, not multi-node safe. */
 export class JobRunner {
   private pending?: Promise<void>;
+  private stopped = false;
+  stop(): void { this.stopped = true; }
+  private admission(): void { if (this.stopped) throw new MetadataError('NODE_DRAINING', 503); }
   constructor(readonly store: JobStore, readonly executor: JobExecutor, readonly mail: MailTransport) {}
   async recover(): Promise<void> {
     await this.store.db.transaction(async c => {
@@ -21,6 +24,7 @@ export class JobRunner {
   tick(): Promise<void> { return this.pending ??= this.work().finally(() => { this.pending = undefined; }); }
   async idle(): Promise<void> { await this.pending; }
   async claimDue(): Promise<void> {
+    this.admission();
     const jobs = await this.store.db.transaction(c => c.query("SELECT * FROM h7_jobs WHERE stopped = 0 AND next_run <= ? ORDER BY next_run, tenant_id, job_id", [this.store.clock().toISOString()]));
     for (const raw of jobs) {
       const job = readJob(raw);
@@ -52,24 +56,29 @@ export class JobRunner {
   private async work(): Promise<void> {
     // The prior single-flight tick may have lost a receipt transaction. There
     // cannot be a live claim in this process while a new tick starts.
+    if (this.stopped) return;
     await this.recover();
+    if (this.stopped) return;
     await this.claimDue();
     // Include alert occurrences enqueued by refresh completion in this tick.
     const queued = async () => (await this.store.db.transaction(c => c.query("SELECT * FROM h7_occurrences WHERE state = 'queued' ORDER BY created_at, occurrence_id"))).map(readOccurrence);
-    for (const run of await queued()) await this.execute(run);
-    for (const run of await queued()) await this.execute(run);
+    for (const run of await queued()) { if (this.stopped) return; await this.execute(run); }
+    for (const run of await queued()) { if (this.stopped) return; await this.execute(run); }
     await this.deliver();
   }
   async execute(run: Occurrence): Promise<void> {
     try {
+      this.admission();
       await this.store.db.transaction(async c => {
+        this.admission();
         await this.store.checkRun(c, run);
         await c.query(`UPDATE h7_occurrences SET state = 'running' WHERE ${scoped} AND occurrence_id = ? AND state = 'queued'`, [...scopeArgs(run), run.id]);
       });
       const context = await this.store.context(run, run.ownerId);
-      this.executor.begin(context, () => this.store.recheck(run));
+      this.executor.begin(context, () => { this.admission(); return this.store.recheck(run); });
       const result = await this.executor.execute(context, run.spec, this.store.clock());
       await this.store.db.transaction(async c => {
+        this.admission();
         const job = await this.store.checkRun(c, run), now = this.store.clock().toISOString();
         const notify = run.spec.kind === 'report' || run.spec.kind === 'alert' && result.triggered && job.alertState !== 'triggered';
         if (run.spec.kind === 'alert') await c.query(`UPDATE h7_jobs SET alert_state = ? WHERE ${scoped} AND job_id = ?`, [result.triggered ? 'triggered' : 'ok', ...scopeArgs(run), run.jobId]);
@@ -100,12 +109,14 @@ export class JobRunner {
   async deliver(): Promise<void> {
     const deliveries = await this.store.db.transaction(c => c.query("SELECT * FROM h7_deliveries WHERE state = 'pending' AND next_attempt <= ? ORDER BY next_attempt, delivery_id", [this.store.clock().toISOString()]));
     for (const d of deliveries) {
+      if (this.stopped) return;
       const scope = { tenantId: String(d.tenant_id), namespaceId: String(d.namespace_id) }, id = String(d.delivery_id);
       const row = (await this.store.db.transaction(c => c.query(`SELECT * FROM h7_occurrences WHERE ${scoped} AND occurrence_id = ?`, [...scopeArgs(scope), d.occurrence_id!])))[0]!;
       const run = readOccurrence(row);
       let accepted = false;
       try {
         const verify = async () => {
+          this.admission();
           await this.store.db.transaction(async c => {
             await this.store.checkRun(c, run); await member(c, run, String(d.recipient_id));
             const delivery = (await c.query(`SELECT state FROM h7_deliveries WHERE ${scoped} AND delivery_id = ?`, [...scopeArgs(run), id]))[0];
