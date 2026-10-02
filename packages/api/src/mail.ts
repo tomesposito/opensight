@@ -42,6 +42,7 @@ export function smtpFromEnvironment(env: NodeJS.ProcessEnv = process.env): MailT
     const socket = connect({ host, port, servername: host, minVersion: 'TLSv1.2', rejectUnauthorized: true });
     socket.setTimeout(30000, () => socket.destroy(new Error('SMTP timeout')));
     const deadline = setTimeout(() => socket.destroy(new Error('SMTP deadline')), 60000);
+    let authorizationError: unknown;
     try {
       const lines = smtpLines(socket)[Symbol.asyncIterator]();
       const response = async (expected: number[]) => {
@@ -66,14 +67,14 @@ export function smtpFromEnvironment(env: NodeJS.ProcessEnv = process.env): MailT
       }
       await command(`MAIL FROM:<${from}>`, [250]);
       for (const to of message.to) await command(`RCPT TO:<${to}>`, [250, 251]);
-      await authorize?.();
+      try { await authorize?.(); } catch (error) { authorizationError = error; throw error; }
       await command('DATA', [354]);
       const encoded = Buffer.from(message.html).toString('base64').match(/.{1,76}/g)?.join('\r\n') ?? '';
       socket.write([`From: <${from}>`, `To: ${message.to.map(to => `<${to}>`).join(', ')}`, `Subject: =?UTF-8?B?${Buffer.from(message.subject).toString('base64')}?=`, `Date: ${new Date().toUTCString()}`, `Message-ID: <${message.dedupeKey ?? randomUUID()}@opensight.local>`, 'MIME-Version: 1.0', 'Content-Type: text/html; charset=UTF-8', 'Content-Transfer-Encoding: base64', '', encoded, '.', ''].join('\r\n'));
       await response([250]);
       // Acceptance of DATA is the delivery boundary; a failed QUIT must not duplicate mail.
       socket.end('QUIT\r\n');
-    } catch { throw new MailError('SMTP_SEND_FAILED'); }
+    } catch { if (authorizationError) throw authorizationError; throw new MailError('SMTP_SEND_FAILED'); }
     finally { clearTimeout(deadline); socket.destroy(); }
   } };
 }

@@ -33,6 +33,14 @@ test('H7 histories, recipients, contexts and coincident job IDs remain tenant/ow
   await assert.rejects(f.store.history(await f.login('one', 'other'), 'same'), { code: 'RESOURCE_NOT_FOUND' });
   assert.equal(f.mail.messages[0].html, '<p>one/other</p>');
 });
+test('H7 denied writers cannot probe targets or recipients through schedule validation', async t => {
+  const f = await jobFixture(t); await f.put('owned'); let probes = 0;
+  const authorize = async () => { probes++; };
+  await assert.rejects(f.store.put(await f.login('one', 'other'), 'owned', report, 1, authorize), { code: 'RESOURCE_NOT_FOUND' });
+  await f.metadata.put(await f.login(), { kind: 'user', id: 'other' }, { name: 'Reader', role: 'reader' }, 1);
+  await assert.rejects(f.store.put(await f.login('one', 'other'), 'new', report, 0, authorize), { code: 'JOB_WRITE_FORBIDDEN' });
+  assert.equal(probes, 0);
+});
 test('H7 queued and running permission changes fail closed before publication/outbox', async t => {
   for (const phase of ['queued', 'running']) {
     const execute = executor(), f = await jobFixture(t, execute); await f.put('job'); const c = await f.login();
@@ -84,4 +92,13 @@ test('H7 crash after mail acceptance before receipt commit retries without dupli
   const resumedMail = new StubMailTransport(receipts), restarted = new JobRunner(f.store, f.executor, resumedMail);
   await restarted.recover(); await restarted.deliver();
   assert.equal(resumedMail.messages.length, 0); assert.equal((await f.store.deliveries(c, 'job'))[0].state, 'sent');
+});
+test('H7 an ambiguous transport failure retries with the same dedupe key and no second stub send', async t => {
+  const mail = new StubMailTransport(), f = await jobFixture(t, executor(), mail), original = mail.send.bind(mail), keys = [];
+  mail.send = async (...args) => { keys.push(args[0].dedupeKey); await original(...args); if (keys.length === 1) throw new Error('transport response lost'); };
+  await f.put('job'); const c = await f.login(); await f.store.enqueue(c, 'job'); await f.runner.tick();
+  assert.equal((await f.store.deliveries(c, 'job'))[0].state, 'pending');
+  f.advance(1000); await f.runner.tick();
+  assert.equal(mail.messages.length, 1); assert.equal(keys.length, 2); assert.equal(keys[0], keys[1]);
+  assert.equal((await f.store.deliveries(c, 'job'))[0].state, 'sent');
 });

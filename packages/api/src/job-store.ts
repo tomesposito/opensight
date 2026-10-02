@@ -76,6 +76,14 @@ export class JobStore {
   async put(context: TenantContext, id: string, raw: unknown, expectedVersion: number, authorize: (context: TenantContext, spec: JobSpec) => Promise<void>): Promise<Job> {
     identifier(id); const spec = jobSpec(raw);
     if (!Number.isSafeInteger(expectedVersion) || expectedVersion < 0) throw new MetadataError('JOB_VERSION_REQUIRED', 400);
+    // Reject non-authors and another owner's IDs before target/recipient lookup.
+    await this.checked(context, async c => {
+      const user = await member(c, context, context.userId);
+      if (!hasCapability(user.role as Role, 'build')) throw new MetadataError('JOB_WRITE_FORBIDDEN', 403);
+      const prior = (await c.query(`SELECT owner_id, version FROM h7_jobs WHERE ${scoped} AND job_id = ?`, [...scopeArgs(context), id]))[0];
+      if (prior && prior.owner_id !== context.userId) missing();
+      if (Number(prior?.version ?? 0) !== expectedVersion) throw new MetadataError('JOB_VERSION_CONFLICT');
+    });
     const rev = await this.metadata.revisions(context);
     await authorize(context, spec);
     return this.checked(context, async c => {

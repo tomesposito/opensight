@@ -129,7 +129,7 @@ export function resourceLinks(key: ResourceKey, raw: JsonObject): ResourceKey[] 
       break;
     }
     case 'job': {
-      // H1 preserves legacy execution records only. H7 assigns owners and enables execution.
+      // H1 retains migration evidence. H7 owns execution in its private tables.
       object(body, ['collection', 'record', 'references', 'executionDisabled']);
       label(body.collection); object(body.record); if (body.executionDisabled !== true) invalidMetadata();
       for (const ref of list(body.references)) links.push(reference(ref));

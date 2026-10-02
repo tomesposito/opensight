@@ -1,6 +1,6 @@
 import { checksum } from './metadata-operator.js';
 import { MetadataError } from './metadata-db.js';
-import type { MailMessage, MailTransport } from './mail.js';
+import { MailError, type MailMessage, type MailTransport } from './mail.js';
 import { nextRun } from './schedule.js';
 import { cancelJob, lockTenant, member, readJob, readOccurrence, scoped, scopeArgs, type Occurrence } from './job-schema.js';
 import { JobStore } from './job-store.js';
@@ -113,6 +113,8 @@ export class JobRunner {
           });
         };
         await verify();
+        const claimed = await this.store.db.transaction(c => c.query(`UPDATE h7_deliveries SET state = 'sending', attempts = attempts + 1 WHERE ${scoped} AND delivery_id = ? AND state = 'pending' RETURNING delivery_id`, [...scopeArgs(run), id]));
+        if (!claimed.length) continue;
         const owner = await this.store.context(run, run.ownerId);
         this.executor.begin(owner, verify); await this.executor.authorize(owner, run.spec);
         const recipient = await this.store.context(run, String(d.recipient_id));
@@ -120,10 +122,13 @@ export class JobRunner {
         const rendered = d.message ? JSON.parse(String(d.message)) as Pick<MailMessage, 'subject' | 'html'> : await this.executor.render(recipient, run.spec, new Date(run.createdAt));
         const message = await this.store.db.transaction(async c => {
           await this.store.checkRun(c, run); const user = await member(c, run, recipient.userId);
-          await c.query(`UPDATE h7_deliveries SET state = 'sending', attempts = attempts + 1, message = ? WHERE ${scoped} AND delivery_id = ? AND state = 'pending'`, [JSON.stringify(rendered), ...scopeArgs(run), id]);
+          await c.query(`UPDATE h7_deliveries SET message = ? WHERE ${scoped} AND delivery_id = ? AND state = 'sending'`, [JSON.stringify(rendered), ...scopeArgs(run), id]);
           return { ...rendered, to: [user.email], dedupeKey: id };
         });
-        await verify(); await this.mail.send(message, verify); accepted = true;
+        await verify();
+        try { await this.mail.send(message, verify); }
+        catch (error) { if (!(error instanceof Error && 'code' in error)) throw new MailError('SMTP_SEND_FAILED'); throw error; }
+        accepted = true;
         await this.store.db.transaction(c => c.query(`UPDATE h7_deliveries SET state = 'sent', sent_at = ?, error_code = NULL, message = NULL WHERE ${scoped} AND delivery_id = ?`, [this.store.clock().toISOString(), ...scopeArgs(run), id]));
       } catch (error) {
         // A receipt-store failure after acceptance must leave the durable claim

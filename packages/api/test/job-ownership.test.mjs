@@ -60,3 +60,35 @@ test('H7 legacy migration resolves owners/recipients, preserves histories, is at
   await f.runner.tick(); assert.equal(f.mail.messages.length, 0);
   await assert.rejects(migrateJobs(f.store, f.executor, scope, 'other', 'frozen'), { code: 'JOB_MIGRATION_CHANGED' });
 });
+test('H7 refresh/report/alert migration rolls back interrupted writes and retains archived state and transitions', async t => {
+  const f = await jobFixture(t), c = await f.login(), scope = { tenantId: c.tenantId, namespaceId: c.namespaceId }, state = emptyAutomationState(), now = new Date(f.clock()).toISOString();
+  state.schedules.push({ datasetId: 'dataset', enabled: true, schedule: refresh.schedule, nextRun: '2099-01-01T00:00:00.000Z' });
+  state.datasets.push({ datasetId: 'dataset', lastGood: now, nextRun: state.schedules[0].nextRun, consecutiveFailures: 0, state: 'ready', error: null });
+  state.refreshRuns.push({ id: 'refresh-old', datasetId: 'dataset', startedAt: now, finishedAt: now, state: 'succeeded', rows: 3, error: null });
+  const { kind, ...rule } = alert;
+  state.alertRules.push({ id: 'alert-old', ...rule, recipients: ['one-other@example.test'] });
+  state.alertStates.push({ ruleId: 'alert-old', state: 'triggered', evaluatedAt: now, error: null });
+  state.alertRuns.push({ id: 'evaluation-old', ruleId: 'alert-old', refreshRunId: 'refresh-old', startedAt: now, finishedAt: now, state: 'evaluated', value: 40, previousValue: null, percentChange: null, error: null, notification: 'pending', notificationError: null });
+  state.alertTransitions.push({ version: 1, type: 'opensight.alert.state_changed', eventId: 'event-old', occurredAt: now, ruleId: 'alert-old', datasetId: 'dataset', dashboardId: 'dashboard', visualId: 'visual', fieldId: 'total', refreshRunId: 'refresh-old', from: 'ok', to: 'triggered', value: 40, previousValue: null, percentChange: null, condition: rule.condition });
+  await f.db.transaction(async db => { for (const [collection, list] of Object.entries(state)) if (collection !== 'version') for (const record of list) {
+    await db.query("INSERT INTO h1_resources VALUES (?,?,'job','',?,?,1)", [c.tenantId, c.namespaceId, checksum([collection, record.id ?? record.eventId ?? record.ruleId ?? record.datasetId]), JSON.stringify({ collection, record, references: [], executionDisabled: true })]);
+  } });
+  const transaction = f.db.transaction.bind(f.db); let fault = true;
+  f.db.transaction = work => transaction(c => work({ query(sql, args) { if (fault && sql.startsWith('INSERT INTO h7_occurrences')) { fault = false; throw new Error('interrupted migration'); } return c.query(sql, args); } }));
+  await assert.rejects(migrateJobs(f.store, f.executor, scope, 'admin', 'frozen'), /interrupted migration/);
+  assert.deepEqual(await f.store.list(c), []); assert.equal((await transaction(c => c.query('SELECT * FROM h7_migrations'))).length, 0);
+  await migrateJobs(f.store, f.executor, scope, 'admin', 'frozen');
+  const jobs = await f.store.list(c); assert.equal(jobs.length, 2);
+  const ruleJob = jobs.find(j => j.spec.kind === 'alert'); assert.equal(ruleJob.alertState, 'triggered');
+  assert.equal((await f.store.history(c, ruleJob.id))[0].errorCode, 'LEGACY_JOB_INTERRUPTED');
+  assert.equal((await transaction(c => c.query('SELECT * FROM h7_deliveries'))).length, 0);
+  assert.equal((await transaction(c => c.query("SELECT * FROM h1_resources WHERE kind = 'job'"))).length, 7);
+});
+test('H7 migration refuses unresolved owners and external recipients without activating any schedule', async t => {
+  const f = await jobFixture(t), c = await f.login(), scope = { tenantId: c.tenantId, namespaceId: c.namespaceId };
+  const record = { id: 'outside', userId: 'admin', dashboardId: 'dashboard', recipients: ['external@example.test'], enabled: true, schedule: report.schedule, nextRun: '2099-01-01T00:00:00.000Z' };
+  await f.db.transaction(db => db.query("INSERT INTO h1_resources VALUES (?,?,'job','','legacy',?,1)", [c.tenantId, c.namespaceId, JSON.stringify({ collection: 'subscriptions', record, references: [], executionDisabled: true })]));
+  await assert.rejects(migrateJobs(f.store, f.executor, scope, 'missing', 'frozen'), { code: 'JOB_PRINCIPAL_UNAVAILABLE' });
+  await assert.rejects(migrateJobs(f.store, f.executor, scope, 'admin', 'frozen'), { code: 'JOB_RECIPIENT_UNRESOLVED' });
+  assert.deepEqual(await f.store.list(c), []);
+});
