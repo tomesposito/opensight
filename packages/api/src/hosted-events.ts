@@ -9,7 +9,8 @@ export interface EventInput {
   resourceRevision?: number; outcome: 'succeeded' | 'failed' | 'denied'; errorCode?: string;
   latencyMs?: number; usage?: { executionMs?: number; sourceRows?: number; workingBytes?: number };
 }
-export const eventContext = new AsyncLocalStorage<{ requestId?: string; jobId?: string; usage?: { executionMs: number; sourceRows: number; workingBytes: number } }>();
+export interface EventScope { requestId?: string; jobId?: string; tenantId?: string; namespaceId?: string; resourceRevision?: number; usage?: { executionMs: number; sourceRows: number; workingBytes: number } }
+export const eventContext = new AsyncLocalStorage<EventScope>();
 const opaque = (s: unknown): string | undefined => typeof s === 'string' && /^[A-Za-z0-9_-]{1,512}$/.test(s) ? s : undefined;
 const count = (n: unknown): number => typeof n === 'number' && Number.isFinite(n) && n >= 0 ? n : 0;
 /** An allowlist, not recursive redaction: request/body/error objects never enter telemetry. */
@@ -17,7 +18,7 @@ export function safeEvent(input: EventInput) {
   if (!operations.includes(input.operation) || !['succeeded', 'failed', 'denied'].includes(input.outcome)) throw new MetadataError('AUDIT_EVENT_INVALID');
   return { schemaRevision: 1, eventId: randomUUID(), at: new Date().toISOString(), operation: input.operation,
     requestId: opaque(input.requestId ?? eventContext.getStore()?.requestId), jobId: opaque(input.jobId ?? eventContext.getStore()?.jobId),
-    tenantId: opaque(input.tenantId), namespaceId: opaque(input.namespaceId), resourceRevision: count(input.resourceRevision),
+    tenantId: opaque(input.tenantId ?? eventContext.getStore()?.tenantId), namespaceId: opaque(input.namespaceId ?? eventContext.getStore()?.namespaceId), resourceRevision: count(input.resourceRevision ?? eventContext.getStore()?.resourceRevision),
     outcome: input.outcome, errorCode: typeof input.errorCode === 'string' && /^[A-Z][A-Z0-9_]{0,79}$/.test(input.errorCode) ? input.errorCode : undefined,
     latencyMs: count(input.latencyMs), usage: { executionMs: count(input.usage?.executionMs), sourceRows: count(input.usage?.sourceRows), workingBytes: count(input.usage?.workingBytes) } };
 }
@@ -36,6 +37,7 @@ export async function appendAudit(c: SqlConnection, input: EventInput): Promise<
 export type AuditWriter = (event: EventInput) => Promise<void>;
 export const auditWriter = (db: Database): AuditWriter => async event => { await db.transaction(c => appendAudit(c, event)); };
 export function requestOperation(path: string, method: string): Operation {
+  if (path === '/api/audit') return 'audit.read';
   const auth = /^\/api\/auth\/(login|enroll|accept|logout|switch)$/.exec(path);
   if (auth) return `auth.${auth[1]}` as Operation;
   if (path.startsWith('/api/host/tenants')) return 'tenant.lifecycle';

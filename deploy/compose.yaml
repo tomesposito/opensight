@@ -4,6 +4,7 @@ services:
   metadata:
     image: ${POSTGRES_IMAGE:?Supply a reviewed PostgreSQL image}
     pull_policy: never
+    command: [postgres, -c, log_statement=none, -c, log_min_error_statement=panic, -c, log_error_verbosity=terse, -c, log_parameter_max_length=0, -c, log_parameter_max_length_on_error=0]
     environment:
       POSTGRES_DB: opensight
       POSTGRES_USER: opensight_bootstrap
@@ -20,7 +21,7 @@ services:
       timeout: 3s
       retries: 12
   api:
-    image: opensight-reference:local
+    image: ${OPENSIGHT_APP_IMAGE:-opensight-reference:local}
     pull_policy: never
     build:
       context: ..
@@ -47,7 +48,7 @@ services:
       timeout: 5s
       retries: 3
   ingress:
-    image: opensight-reference:local
+    image: ${OPENSIGHT_APP_IMAGE:-opensight-reference:local}
     pull_policy: never
     command: [node, packages/api/dist/reference-ingress-cli.js]
     environment:

@@ -14,7 +14,12 @@ export async function referenceIngress(env: NodeJS.ProcessEnv = process.env) {
   const origin = new URL(env.OPENSIGHT_PUBLIC_ORIGIN!);
   if (origin.protocol !== 'https:' || origin.origin !== env.OPENSIGHT_PUBLIC_ORIGIN) throw new Error('INGRESS_CONFIG_INVALID');
   const root = resolve(env.OPENSIGHT_WEB_ROOT ?? 'packages/web/dist');
-  return createServer({ cert: await readFile(env.OPENSIGHT_TLS_CERT!), key: await readFile(env.OPENSIGHT_TLS_KEY!), minVersion: 'TLSv1.2' }, (req, res) => {
+  const server = createServer({ cert: await readFile(env.OPENSIGHT_TLS_CERT!), key: await readFile(env.OPENSIGHT_TLS_KEY!), minVersion: 'TLSv1.2' }, (req, res) => {
+    for (const name of ['host', 'authorization', 'origin', 'idempotency-key', 'if-match']) {
+      let count = 0;
+      for (let i = 0; i < req.rawHeaders.length; i += 2) if (req.rawHeaders[i]?.toLowerCase() === name) count++;
+      if (count > 1) { res.writeHead(400).end(); req.resume(); return; }
+    }
     if (req.headers.host !== origin.host) { res.writeHead(421).end(); req.resume(); return; }
     res.setHeader('Strict-Transport-Security', 'max-age=31536000'); res.setHeader('X-Content-Type-Options', 'nosniff');
     const url = req.url ?? '';
@@ -30,4 +35,6 @@ export async function referenceIngress(env: NodeJS.ProcessEnv = process.env) {
     if (!path || !['GET', 'HEAD'].includes(req.method ?? '')) { res.writeHead(404).end(); req.resume(); return; }
     void readFile(path).then(bytes => { res.setHeader('Content-Type', types[extname(path)]!); res.end(req.method === 'HEAD' ? undefined : bytes); }).catch(() => res.writeHead(404).end());
   });
+  server.requestTimeout = 15000; server.headersTimeout = 10000; server.maxConnections = 128;
+  return server;
 }

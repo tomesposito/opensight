@@ -46,3 +46,16 @@ test('H8 request operation names never include route parameters or bootstrap URL
   assert.equal(requestOperation('/api/embedding/sessions/private-id', 'DELETE'), 'embed.revoke');
   assert.equal(requestOperation('/private-connection-string', 'GET'), 'request');
 });
+
+test('H8 verified nested/embed contexts carry tenant attribution while forged input cannot tag events', async t => {
+  const { safeEvent } = await import('../dist/hosted-events.js');
+  const f = await sourceFixture(t);
+  const scopes = await Promise.all(['one', 'two'].map(namespace => eventContext.run({ requestId: namespace }, async () => {
+    const before = safeEvent({ operation: 'embed.redeem', outcome: 'denied' }); assert.equal(before.tenantId, undefined);
+    await f.login(namespace);
+    await new Promise(resolve => setImmediate(resolve));
+    return safeEvent({ operation: 'source.query', outcome: 'succeeded' });
+  })));
+  assert.equal(scopes[0].tenantId, 'tenant-one'); assert.equal(scopes[1].tenantId, 'tenant-two');
+  assert.equal(scopes[0].namespaceId, 'one'); assert.equal(scopes[1].namespaceId, 'two');
+});

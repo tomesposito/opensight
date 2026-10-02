@@ -27,7 +27,7 @@ async function stop(): Promise<void> {
   await database?.close(); clearTimeout(deadline);
 }
 try {
-  process.umask(0o077);
+  process.umask(0o077); hostedConfig();
   const command = process.argv[2] ?? 'serve';
   if (!['serve', 'initialize', 'rotate-encryption', 'rotate-auth-key', 'backup', 'restore', 'reconcile-restore', ...migrationCommands].includes(command) || process.argv.length > 3) throw new MetadataError('REFERENCE_COMMAND_INVALID');
   database = await referenceDatabase(process.env, () => { void stop(); });
@@ -45,13 +45,15 @@ try {
       const raw = object(JSON.parse(await readFile(process.env.OPENSIGHT_RECONCILIATION_CONFIG!, 'utf8')), ['tenantId', 'expectedVersion', 'removedUsers']);
       if (!Array.isArray(raw.removedUsers)) throw new MetadataError('RESTORE_RECONCILIATION_INVALID');
       await reconcileRestore(database.membershipDatabase, identifier(raw.tenantId), raw.expectedVersion as number, raw.removedUsers.map(identifier), 'frozen');
-    } else if (command === 'rotate-encryption') await rotateEncryptionKey(database.membershipDatabase, process.env.OPENSIGHT_AUTH_ENCRYPTION_KEY!, process.env.OPENSIGHT_NEXT_ENCRYPTION_KEY!, 'frozen');
+    } else if (command === 'rotate-encryption') { hostedConfig({ ...process.env, OPENSIGHT_AUTH_ENCRYPTION_KEY: process.env.OPENSIGHT_NEXT_ENCRYPTION_KEY }); await rotateEncryptionKey(database.membershipDatabase, process.env.OPENSIGHT_AUTH_ENCRYPTION_KEY!, process.env.OPENSIGHT_NEXT_ENCRYPTION_KEY!, 'frozen'); }
     else { await activateAuthKey(database.membershipDatabase, hostedConfig()); await auditWriter(database.membershipDatabase)({ operation: 'key.rotate', outcome: 'succeeded' }); }
     await database.close();
   }
   else {
     await assertReferenceSchema(database.membershipDatabase);
     server = await createBuiltinHostedServer({ ...database, roleProbe: database.probe });
+    await database.probe();
+    if (stopping) throw new MetadataError('REFERENCE_OWNERSHIP_LOST', 503);
     server.listen(3000, '0.0.0.0');
     for (const signal of ['SIGINT', 'SIGTERM'] as const) process.once(signal, () => { void stop(); });
     server.on('error', () => { console.error('REFERENCE_SERVER_FAILED'); void stop(); });

@@ -21,16 +21,18 @@ export async function referenceDatabase(env: NodeJS.ProcessEnv, lost: () => void
   const options = { max: 8, connectionTimeoutMillis: 3000, statement_timeout: 10000, idle_in_transaction_session_timeout: 15000 };
   const owner = new Pool({ ...options, connectionString: env.OPENSIGHT_METADATA_URL });
   const tenant = new Pool({ ...options, connectionString: env.OPENSIGHT_TENANT_METADATA_URL });
-  owner.on('error', lost); tenant.on('error', lost);
+  let healthy = true;
+  const failure = () => { healthy = false; lost(); };
+  owner.on('error', failure); tenant.on('error', failure);
   let lock: PoolClient | undefined;
   let closed = false;
   try {
-    lock = await owner.connect(); lock.on('error', lost);
+    lock = await owner.connect(); lock.on('error', failure);
     const result = await lock.query('SELECT pg_try_advisory_lock(8037, 1) AS held');
     if (result.rows[0]?.held !== true) throw new MetadataError('REFERENCE_ALREADY_RUNNING', 503);
     const membershipDatabase = new PostgresMetadataDatabase(owner), tenantDatabase = new PostgresMetadataDatabase(tenant, true);
     return { membershipDatabase, tenantDatabase,
-      async probe() { await lock!.query('SELECT 1'); },
+      async probe() { if (!healthy || closed || !lock) throw new MetadataError('REFERENCE_OWNERSHIP_LOST', 503); await lock.query('SELECT 1'); },
       async close() { if (closed) return; closed = true; lock?.release(true); lock = undefined; await Promise.all([owner.end(), tenant.end()]); },
       async initialize() {
         if (env.OPENSIGHT_MAINTENANCE !== 'frozen') throw new MetadataError('REFERENCE_MAINTENANCE_REQUIRED', 503);

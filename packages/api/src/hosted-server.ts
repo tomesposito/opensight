@@ -3,7 +3,7 @@ import { digest } from './auth-crypto.js';
 import { HostedLifecycle, boundedSetting } from './hosted-lifecycle.js';
 import { randomUUID } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
-import { eventContext, requestOperation, type EventInput } from './hosted-events.js';
+import { eventContext, requestOperation, type EventInput, type EventScope } from './hosted-events.js';
 import { HostedObservability, initializeObservability, authorizeAuditOperator } from './hosted-observability.js';
 import { assertEncryptionKey } from './hosted-key-rotation.js';
 import { EmbedSessions, embedSessionKey } from './embed-sessions.js';
@@ -135,9 +135,10 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
   const server = createServer((request, response) => {
     let release: (() => void) | undefined;
     const requestId = randomUUID(), started = performance.now(), usage = { executionMs: 0, sourceRows: 0, workingBytes: 0 };
+    const telemetry: EventScope = { requestId, usage };
     const event: EventInput = { operation: requestOperation(request.url ?? '', request.method ?? ''), requestId, outcome: 'succeeded', usage };
     response.setHeader('X-Request-ID', requestId);
-    void eventContext.run({ requestId, usage }, async () => {
+    void eventContext.run(telemetry, async () => {
       if (request.url === '/health/live' || request.url === '/health/ready') {
         method(request, response, ['GET']);
         const ready = request.url === '/health/live' || await lifecycle.ready();
@@ -156,7 +157,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
           send(response, 200, rows.map(r => JSON.parse(String(r.body)) as unknown));
         } else {
           const disk = await statfs('/tmp');
-          send(response, 200, { ...observability.metrics(), admission: budgets.aggregate(), cache: data.data.cache?.metrics(), scheduler: runner.metrics(), temporaryDiskAvailableBytes: disk.bavail * disk.bsize });
+          send(response, 200, { ...observability.metrics(), admission: budgets.aggregate(), cache: data.data.cache?.metrics(), embedCache: embedContent.data.cache?.metrics(), scheduler: runner.metrics(), temporaryDiskAvailableBytes: disk.bavail * disk.bsize });
         }
         return;
       }
@@ -168,6 +169,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
           method(request, response, ['POST']);
           const input = await body(request, ['name', 'administrator']), administrator = object(input.administrator, ['email', 'name']);
           const result = await provisioning.provision(idempotency(request), { name: input.name as string, administrator: { email: administrator.email as string, name: administrator.name as string } });
+          event.tenantId = result.tenantId; event.namespaceId = result.namespaceId;
           send(response, 201, { ...result, state: (await provisioning.operator.tenant(result.tenantId)).state }); return;
         }
         const operation = /^\/api\/host\/operations\/([A-Za-z0-9_-]+)$/.exec(path);
@@ -298,6 +300,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
       send(response, status, { errorCode });
     }).finally(async () => {
       if (!request.url?.startsWith('/health/')) {
+        event.tenantId ??= telemetry.tenantId; event.namespaceId ??= telemetry.namespaceId; event.resourceRevision ??= telemetry.resourceRevision;
         event.latencyMs = performance.now() - started;
         try { await audit(event); } catch { /* Readiness fails; no raw storage error escapes. */ }
       }
@@ -316,7 +319,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
     const complete = await lifecycle.drain(boundedSetting(runtimeEnv, 'OPENSIGHT_DRAIN_MS', 20000, 60000), async () => { await Promise.all([scheduler.idle(), budgets.shutdown()]); });
     if (!complete) { server.closeAllConnections(); throw new MetadataError('DRAIN_DEADLINE_EXCEEDED', 503); }
   })());
-  server.requestTimeout = 15000; server.headersTimeout = 10000;
+  server.requestTimeout = 15000; server.headersTimeout = 10000; server.maxConnections = lifecycle.maximum + 16;
   return server;
 }
 

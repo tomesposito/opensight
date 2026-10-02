@@ -61,4 +61,50 @@ rotation also tests actual TOTP/invitation envelopes and corrupted-record rollba
 The affected tenant/auth/scheduler/source PostgreSQL regression run passed
 **100 / 0 / 0** (passed / failed / skipped).
 
-The final full-suite and demo comparison records are added after verification.
+## Final full-suite result
+
+Repository-root `TZ=UTC npm test`, with a local isolated `DATABASE_URL` supplied,
+exited **0**. Strict TypeScript compilation (including `noUncheckedIndexedAccess`)
+and all workspace build/test steps passed.
+
+| Runner | Passed | Failed | Skipped |
+| --- | ---: | ---: | ---: |
+| API | 320 | 0 | 1 |
+| Bundle parser | 197 | 0 | 0 |
+| Embedding SDK | 9 | 0 | 0 |
+| O interpreter | 32 | 0 | 0 |
+| Query engine | 514 | 0 | 0 |
+| Web | 588 | 0 | 0 |
+| Root conformance | 6 | 0 | 0 |
+| **Total** | **1666** | **0** | **1** |
+
+There were 1667 tests, zero cancelled and zero todo. All live PostgreSQL suites
+ran. The only skip was `H8 Docker integration: TLS Compose isolation/load,
+container restart and total-loss restore`, because Docker tooling/daemon was
+unavailable. This is the integration skip explicitly allowed by the build brief.
+
+The final root run repeated the native reference probe: 2 tenants, 4096 rows per
+query, 5 accepted/7 rejected flood requests, 7541 ms flood duration, 0.80 successful
+query requests/second, 144.51 authenticated metadata requests/second and 6.17
+source-refresh jobs/second over two jobs. Accounted Blaze was 264192 bytes; sampled
+worker peak was 158187520 bytes and API RSS was 496046080 bytes. Unlike the initial
+isolated measurement, this API process had already run the preceding test fixtures.
+Neither run measures Docker cgroups or production capacity.
+
+The complete log, exact exit status and parsed counts are retained in ignored
+`.opensight/issue-37/full-tests.log`, `full-tests.exit` and `test-summary.json`.
+Tests used local socket/worker-process access outside the restricted sandbox.
+The temporary PostgreSQL test instance was stopped after verification.
+
+The static demo build passed, and Chromium recorded zero page errors/external
+requests with no horizontal overflow. See the [screenshot gap notes](issue-37-gap-notes.md)
+for comparison against the reference set and current README image. No UI source,
+README media or product UI string changed. No service was deployed.
+
+## Remaining pilot gates
+
+Run the Docker integration on the intended VM with reviewed local image digests,
+then record composed throughput, memory and recovery observations. Decide HQ-10
+and HQ-14 before making the corresponding product/operational commitments.
+There is no HA, RPO/RTO or measured QuickSight-fidelity claim. No code or design
+for H9–H12 was introduced.

@@ -4,8 +4,9 @@ FROM ${NODE_IMAGE} AS build
 WORKDIR /app
 COPY package*.json ./
 COPY packages ./packages
+COPY fixtures ./fixtures
 RUN npm ci --no-audit --no-fund
-RUN npm run build
+RUN --network=none npm run build
 FROM ${NODE_IMAGE}
 WORKDIR /app
 COPY --from=build --chown=node:node /app /app
