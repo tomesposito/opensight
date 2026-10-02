@@ -1,3 +1,7 @@
+import { rotateEncryptionKey } from './hosted-key-rotation.js';
+import { hostedConfig } from './hosted-config.js';
+import { activateAuthKey } from './hosted-auth.js';
+import { initializeEvents, auditWriter } from './hosted-events.js';
 import { createBuiltinHostedServer, drainHostedServer } from './hosted-server.js';
 import { referenceDatabase } from './reference-postgres.js';
 import { MetadataError } from './metadata-db.js';
@@ -15,9 +19,16 @@ async function stop(): Promise<void> {
 try {
   process.umask(0o077);
   const command = process.argv[2] ?? 'serve';
-  if (!['serve', 'initialize'].includes(command) || process.argv.length > 3) throw new MetadataError('REFERENCE_COMMAND_INVALID');
+  if (!['serve', 'initialize', 'rotate-encryption', 'rotate-auth-key'].includes(command) || process.argv.length > 3) throw new MetadataError('REFERENCE_COMMAND_INVALID');
   database = await referenceDatabase(process.env, () => { void stop(); });
   if (command === 'initialize') { await database.initialize(); await database.close(); }
+  else if (command !== 'serve') {
+    if (process.env.OPENSIGHT_MAINTENANCE !== 'frozen') throw new MetadataError('REFERENCE_MAINTENANCE_REQUIRED');
+    await initializeEvents(database.membershipDatabase);
+    if (command === 'rotate-encryption') await rotateEncryptionKey(database.membershipDatabase, process.env.OPENSIGHT_AUTH_ENCRYPTION_KEY!, process.env.OPENSIGHT_NEXT_ENCRYPTION_KEY!, 'frozen');
+    else { await activateAuthKey(database.membershipDatabase, hostedConfig()); await auditWriter(database.membershipDatabase)({ operation: 'key.rotate', outcome: 'succeeded' }); }
+    await database.close();
+  }
   else {
     server = await createBuiltinHostedServer({ ...database });
     server.listen(3000, '0.0.0.0');

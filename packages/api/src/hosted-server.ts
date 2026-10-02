@@ -1,3 +1,5 @@
+import { auditWriter } from './hosted-events.js';
+import { assertEncryptionKey } from './hosted-key-rotation.js';
 import { EmbedSessions, embedSessionKey } from './embed-sessions.js';
 import { EmbedContent } from './embed-content.js';
 import { EmbedSources } from './embed-sources.js';
@@ -78,6 +80,8 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
   const config = hostedConfig(options.env);
   if (options.membershipDatabase?.durable !== true || options.tenantDatabase?.durable !== true) throw new MetadataError('DURABLE_MEMBERSHIP_STORE_REQUIRED', 503);
   if (typeof options.security?.authenticate !== 'function') throw new MetadataError('HOSTED_VERIFIER_REQUIRED', 503);
+  await assertEncryptionKey(options.membershipDatabase, config.encryptionKey.toString('base64'));
+  const audit = auditWriter(options.membershipDatabase);
   const authenticate = options.security.authenticate;
   const metadata = new TenantMetadata(options.tenantDatabase, options.membershipDatabase);
   const policy = embeddingPolicy(options.env ?? process.env, config.origin);
@@ -85,8 +89,8 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
   const embedding = new HostedEmbedding(options.membershipDatabase, metadata, policy);
   const budgets = await loadBudgets(options.membershipDatabase, metadata);
   const jobs = new JobStore(options.membershipDatabase, metadata);
-  const data = new HostedDataRoutes(new HostedData(new HostedSources(metadata, config.encryptionKey.toString('base64'), sourceEndpoints(options.env)), undefined, budgets), jobs);
-  const embedContent = new EmbedContent(new HostedData(new EmbedSources(metadata, config.encryptionKey.toString('base64'), sourceEndpoints(options.env)), undefined, budgets));
+  const data = new HostedDataRoutes(new HostedData(new HostedSources(metadata, config.encryptionKey.toString('base64'), sourceEndpoints(options.env), Date.now, audit), undefined, budgets), jobs);
+  const embedContent = new EmbedContent(new HostedData(new EmbedSources(metadata, config.encryptionKey.toString('base64'), sourceEndpoints(options.env), Date.now, audit), undefined, budgets));
   const mail = options.mailTransport ?? smtpFromEnvironment(options.env);
   await initializeJobs(options.membershipDatabase);
   const unmigrated = await options.membershipDatabase.transaction(c => c.query(`SELECT j.resource_id FROM h1_resources j WHERE j.kind = 'job'
