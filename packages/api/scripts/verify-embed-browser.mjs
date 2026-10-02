@@ -94,7 +94,7 @@ try {
   };
   await page.goto(parentOrigin); await waitReady(0);
   assert.match(await frame().locator('.visual-card svg').textContent(), /40/); assert.equal(new URL(frame().url()).hash, '');
-  assert.ok([0, 'blocked'].includes(await frame().evaluate(() => { try { return localStorage.length + sessionStorage.length; } catch { return 'blocked'; } }))); 
+  assert.ok([0, 'blocked'].includes(await frame().evaluate(() => { try { return localStorage.length + sessionStorage.length; } catch { return 'blocked'; } })));
   const probe = await frame().evaluate(async () => { await fetch('/cookie-probe', { credentials: 'include' }); return (await fetch('/cookie-probe', { credentials: 'include' })).json(); });
   assert.equal(probe.cookie, '', 'Third-party cookie probe must actually be blocked');
   assert.ok(!(await browser.cookies()).some(c => c.name === 'h6_probe')); evidence.checks.push('Registered RLS total 40 with proven blocked third-party cookies; empty browser storage and cleared fragment');
