@@ -1,8 +1,8 @@
 # H5: embedding configuration and appearance (#25)
 
-H5 adds durable tenant configuration and an offline appearance preview. It does
-not issue hosted embed sessions. H6 depends on HQ-7; `enabled: true` is stored
-intent, not a way to bypass that gate. Phase 3c v1 remains separate and unchanged:
+H5 adds durable tenant configuration and an offline appearance preview.
+[H6 (#26)](embed-sessions.md) now supplies hosted sessions under the recorded
+HQ-5/HQ-6/HQ-7/HQ-12 decisions. Phase 3c v1 remains separate and unchanged:
 registered dashboard/visual snapshots, 60–900 second TTL, default 300 seconds,
 existing signatures, SDK, authorization and exact-origin checks.
 
@@ -61,8 +61,8 @@ bump H1 configuration revision, revoke H2 sessions and append
 appearance-only changes, conservatively require fresh login. H3 revision checks
 therefore also reject stale data publication. H4 admission/worker budgets remain
 in force for data execution; config does not execute queries or add a data path.
-Future H6 embed grants must bind to this config revision. H5 has no such grants to
-revoke and makes no claim of recalling an already delivered v1 snapshot.
+H6 embed grants bind to this config revision and are invalidated by replacements.
+This makes no claim of recalling an already delivered v1 snapshot.
 
 ## Operator configuration
 
@@ -105,9 +105,9 @@ Origin or forwarded-host values on embedding routes return 403
 No new CORS transport is introduced.
 
 `maxSessionSeconds` is a positive safe integer at or below the operator's explicit
-finite ceiling. There is no selected H6 default or product cap: null means unset
-and is allowed only while disabled. The example value above is illustrative, not
-a product decision. H5 never applies it to the existing v1 TTL.
+finite ceiling. Null means unset and is allowed only while disabled. H6 requests are 15–600
+minutes, default 600; the example value above predates H6 and must be raised to at
+least 900 to permit a session. H5 never applies it to the existing v1 TTL.
 
 ## Appearance and capability boundary
 
@@ -121,29 +121,25 @@ text; no HTML insertion or dynamic style parser is used. Asset IDs only referenc
 the validated tenant-owned PNG registry described above.
 
 Features describe consumption capabilities and never grant resource or data
-permissions. Only registered dashboard/visual consumption can be true. All
+permissions. Registered dashboard/visual consumption, anonymous embedding and authoring can be
+true; anonymous and authoring still default to false. All
 unsupported true flags and unknown flag names return 422
 `EMBED_FEATURE_UNSUPPORTED`; known unsupported flags must be false. This includes
 parameter controls and filtering: Phase 3c snapshots have no interactive data
 session, so H5 does not display simulated controls.
 
-## Deliberate fail-closed divergences and open decisions
+## Decided scope and remaining boundaries
 
-- **HQ-5:** appearance is configuration plus an explicitly labeled offline iframe
-  theme preview. No authoring-app, email, export, help-link or light/dark policy is
-  inferred. OpenSight attribution, fixture warnings, permission/error details and
-  legal-notice placement cannot be removed by theme fields. This slice does not
-  decide entitlement or branding-removal policy.
-- **HQ-6:** anonymous embedding, embedded authoring, export/download and persistent
-  reader state remain rejected. Registered dashboard/visual consumption is the
-  supported capability scope, still subject to H1–H4 authorization and admission.
-- **HQ-7/H6:** `/api/embedding/sessions` and subresources return 503
-  `EMBEDDING_NOT_CONFIGURED` after authentication. No new signing, bootstrap,
-  renewal, browser credential or lifetime contract is implemented. Hosted mode
-  retains its refusal to fall back to fixture/v1 data stores.
-- **HQ-9/H11:** customer embed origins cannot enter the registry. Authenticated
-  domain operations return 422 `EMBED_FEATURE_UNSUPPORTED`, without disclosing
-  claims or ownership. No DNS, certificates, redirects, AWS or external calls.
+HQ-5 permits narrow appearance/chrome changes; required OpenSight notices remain.
+HQ-6 enables anonymous embedding and registered authoring in H6. Export/download
+and persistent reader state remain rejected. HQ-7/HQ-12 session lifetimes, native
+issuance shapes, single-use bootstrap and versioned browser transport are
+implemented in [H6](embed-sessions.md). The historical H5-only refusal of session
+issuance no longer describes current behavior.
+
+HQ-9/H11 remains separate: custom embed origins cannot enter the registry. Domain
+operations return 422 `EMBED_FEATURE_UNSUPPORTED`. No DNS, certificates, redirects,
+AWS or external calls are part of these implementations.
 
 No dependencies are added. Tests run under root `npm test`, including v1
 regressions and explicit appearance/origin/ownership bypass attempts.
