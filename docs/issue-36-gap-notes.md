@@ -83,7 +83,7 @@ Evidence is retained in ignored `.opensight/issue-36/` (browser captures,
 
 The exact repository-root command
 `TZ=UTC DATABASE_URL=postgresql://postgres@localhost:5433/opensight npm test`
-exited **0**: **1,655 passed / 0 failed / 0 skipped / 0 cancelled**. All live
+exited **0**: **1,643 passed / 0 failed / 0 skipped / 0 cancelled**. All live
 PostgreSQL checks ran. Strict TypeScript checks and workspace builds passed.
 
 | Runner | Passed | Failed | Skipped |
@@ -95,7 +95,7 @@ PostgreSQL checks ran. Strict TypeScript checks and workspace builds passed.
 | Query engine | 514 | 0 | 0 |
 | Web | 588 | 0 | 0 |
 | Root conformance | 6 | 0 | 0 |
-| **Total** | **1,655** | **0** | **0** |
+| **Total** | **1,643** | **0** | **0** |
 
 The complete run passed on its first attempt. Older H2/H3 assertions that
 automation was unavailable were updated to the H7 durable status contract
