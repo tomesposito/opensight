@@ -2,14 +2,14 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomUUID } from 'node:crypto';
 import { MetadataError, type Database, type SqlConnection } from './metadata-db.js';
 
-const operations = ['request', 'job.execute', 'job.deliver', 'secret.read', 'secret.rotate', 'key.rotate', 'backup', 'restore', 'audit.read'] as const;
+const operations = ['request', 'auth.login', 'auth.enroll', 'auth.accept', 'auth.logout', 'auth.switch', 'embed.issue', 'embed.redeem', 'embed.revoke', 'embed.renew', 'source.query', 'source.refresh', 'tenant.lifecycle', 'job.execute', 'job.deliver', 'secret.read', 'secret.rotate', 'key.rotate', 'backup', 'restore', 'audit.read'] as const;
 export type Operation = typeof operations[number];
 export interface EventInput {
   operation: Operation; tenantId?: string; namespaceId?: string; requestId?: string; jobId?: string;
   resourceRevision?: number; outcome: 'succeeded' | 'failed' | 'denied'; errorCode?: string;
   latencyMs?: number; usage?: { executionMs?: number; sourceRows?: number; workingBytes?: number };
 }
-export const eventContext = new AsyncLocalStorage<{ requestId?: string; jobId?: string }>();
+export const eventContext = new AsyncLocalStorage<{ requestId?: string; jobId?: string; usage?: { executionMs: number; sourceRows: number; workingBytes: number } }>();
 const opaque = (s: unknown): string | undefined => typeof s === 'string' && /^[A-Za-z0-9_-]{1,512}$/.test(s) ? s : undefined;
 const count = (n: unknown): number => typeof n === 'number' && Number.isFinite(n) && n >= 0 ? n : 0;
 /** An allowlist, not recursive redaction: request/body/error objects never enter telemetry. */
@@ -28,9 +28,20 @@ export async function initializeEvents(db: Database): Promise<void> {
     await c.query('CREATE TABLE IF NOT EXISTS h8_encryption (id INTEGER PRIMARY KEY CHECK (id = 1), version INTEGER NOT NULL, fingerprint TEXT NOT NULL)');
   });
 }
-export async function appendAudit(c: SqlConnection, input: EventInput): Promise<void> {
+export async function appendAudit(c: SqlConnection, input: EventInput): Promise<ReturnType<typeof safeEvent>> {
   const event = safeEvent(input);
   await c.query('INSERT INTO h8_audit VALUES (?,?,?,?,?)', [event.eventId, event.tenantId ?? null, event.namespaceId ?? null, event.at, JSON.stringify(event)]);
+  return event;
 }
 export type AuditWriter = (event: EventInput) => Promise<void>;
-export const auditWriter = (db: Database): AuditWriter => event => db.transaction(c => appendAudit(c, event));
+export const auditWriter = (db: Database): AuditWriter => async event => { await db.transaction(c => appendAudit(c, event)); };
+export function requestOperation(path: string, method: string): Operation {
+  const auth = /^\/api\/auth\/(login|enroll|accept|logout|switch)$/.exec(path);
+  if (auth) return `auth.${auth[1]}` as Operation;
+  if (path.startsWith('/api/host/tenants')) return 'tenant.lifecycle';
+  if (/\/embedding\/(sessions|GenerateEmbedUrl)/.test(path)) return method === 'DELETE' ? 'embed.revoke' : path.endsWith('/renew') ? 'embed.renew' : 'embed.issue';
+  if (path.endsWith('/redeem')) return 'embed.redeem';
+  if (path.endsWith('/refresh')) return 'source.refresh';
+  if (path.endsWith('/query') || path.endsWith('/preview') || path.endsWith('/rows')) return 'source.query';
+  return 'request';
+}

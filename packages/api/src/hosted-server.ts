@@ -1,7 +1,10 @@
-import { readFile } from 'node:fs/promises';
+import { readFile, statfs } from 'node:fs/promises';
 import { digest } from './auth-crypto.js';
 import { HostedLifecycle, boundedSetting } from './hosted-lifecycle.js';
-import { auditWriter } from './hosted-events.js';
+import { randomUUID } from 'node:crypto';
+import { performance } from 'node:perf_hooks';
+import { eventContext, requestOperation, type EventInput } from './hosted-events.js';
+import { HostedObservability, initializeObservability, authorizeAuditOperator } from './hosted-observability.js';
 import { assertEncryptionKey } from './hosted-key-rotation.js';
 import { EmbedSessions, embedSessionKey } from './embed-sessions.js';
 import { EmbedContent } from './embed-content.js';
@@ -85,9 +88,12 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
   if (options.membershipDatabase?.durable !== true || options.tenantDatabase?.durable !== true) throw new MetadataError('DURABLE_MEMBERSHIP_STORE_REQUIRED', 503);
   if (typeof options.security?.authenticate !== 'function') throw new MetadataError('HOSTED_VERIFIER_REQUIRED', 503);
   await assertEncryptionKey(options.membershipDatabase, config.encryptionKey.toString('base64'));
-  const audit = auditWriter(options.membershipDatabase);
   const authenticate = options.security.authenticate;
   const metadata = new TenantMetadata(options.tenantDatabase, options.membershipDatabase);
+  await initializeObservability(options.membershipDatabase);
+  const observability = new HostedObservability(options.membershipDatabase, metadata), audit = observability.write;
+  const auditKey = (options.env ?? process.env).OPENSIGHT_AUDIT_OPERATOR_KEY;
+  if (auditKey && [config.operatorKey, config.signingKey, config.encryptionKey].some(k => k.toString('base64') === auditKey)) throw new MetadataError('HOSTED_CONFIG_INVALID', 503);
   const policy = embeddingPolicy(options.env ?? process.env, config.origin);
   await initializeEmbedding(options.membershipDatabase);
   const embedding = new HostedEmbedding(options.membershipDatabase, metadata, policy);
@@ -100,7 +106,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
   const unmigrated = await options.membershipDatabase.transaction(c => c.query(`SELECT j.resource_id FROM h1_resources j WHERE j.kind = 'job'
     AND NOT EXISTS (SELECT 1 FROM h7_migrations m WHERE m.tenant_id = j.tenant_id AND m.namespace_id = j.namespace_id)`));
   if (unmigrated.length) throw new MetadataError('JOB_MIGRATION_REQUIRED', 503);
-  const renderer = new JobRenderer(data.data, embedContent), runner = new JobRunner(jobs, renderer, mail);
+  const renderer = new JobRenderer(data.data, embedContent), runner = new JobRunner(jobs, renderer, mail, audit);
   let schedulerHealthy = true;
   const ownership = new JobOwnership(jobs, renderer), scheduler = new Scheduler(async () => { await runner.tick(); schedulerHealthy = true; }, () => { schedulerHealthy = false; });
   const sessions = new EmbedSessions(options.membershipDatabase, metadata, policy, embedSessionKey(options.env ?? process.env), (context, grant) => embedContent.authorize(context, grant));
@@ -122,12 +128,16 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
     });
     await options.tenantDatabase.transaction(async c => { await c.query('SELECT tenant_id FROM h1_tenants WHERE 1 = 0'); }, { tenantId: 'health', namespaceId: 'health' });
     await readFile('/proc/self/stat');
+    if (!observability.healthy) throw new MetadataError('AUDIT_UNAVAILABLE', 503);
     if (!schedulerHealthy) throw new MetadataError('SCHEDULER_UNAVAILABLE', 503);
     await options.roleProbe?.();
   }, boundedSetting(runtimeEnv, 'OPENSIGHT_HTTP_MAX_INFLIGHT', 64, 4096));
   const server = createServer((request, response) => {
     let release: (() => void) | undefined;
-    void (async () => {
+    const requestId = randomUUID(), started = performance.now(), usage = { executionMs: 0, sourceRows: 0, workingBytes: 0 };
+    const event: EventInput = { operation: requestOperation(request.url ?? '', request.method ?? ''), requestId, outcome: 'succeeded', usage };
+    response.setHeader('X-Request-ID', requestId);
+    void eventContext.run({ requestId, usage }, async () => {
       if (request.url === '/health/live' || request.url === '/health/ready') {
         method(request, response, ['GET']);
         const ready = request.url === '/health/live' || await lifecycle.ready();
@@ -136,6 +146,20 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
       release = lifecycle.admit();
       boundary(request, config.origin);
       let path = request.url!;
+      if (path === '/api/host/audit' || path === '/api/host/metrics') {
+        method(request, response, ['GET']);
+        if (request.headers.origin !== undefined) throw new MetadataError('AUDIT_OPERATOR_REQUIRED', 403);
+        authorizeAuditOperator(request.headers.authorization, runtimeEnv);
+        if (path.endsWith('/audit')) {
+          await audit({ operation: 'audit.read', requestId, outcome: 'succeeded' });
+          const rows = await options.membershipDatabase.transaction(c => c.query('SELECT body FROM h8_audit ORDER BY created_at DESC, event_id DESC LIMIT 100'));
+          send(response, 200, rows.map(r => JSON.parse(String(r.body)) as unknown));
+        } else {
+          const disk = await statfs('/tmp');
+          send(response, 200, { ...observability.metrics(), admission: budgets.aggregate(), cache: data.data.cache?.metrics(), scheduler: runner.metrics(), temporaryDiskAvailableBytes: disk.bavail * disk.bsize });
+        }
+        return;
+      }
       if (path === '/api/host' || path.startsWith('/api/host/')) {
         const authorization = request.headers.authorization;
         const browserMembership = /^\/api\/host\/tenants\/[A-Za-z0-9_-]+\/users(?:\/[A-Za-z0-9_-]+)?$/.test(path);
@@ -202,7 +226,9 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
         catch (error) { if (error instanceof MetadataError) throw error; throw new MetadataError('AUTHENTICATION_FAILED', 401); }
       };
       const context = await metadata.authenticate(request, verified);
+      event.tenantId = context.tenantId; event.namespaceId = context.namespaceId; event.resourceRevision = context.authorizationRevision;
       path = scopePath(path, context);
+      if (path === '/api/audit') { method(request, response, ['GET']); send(response, 200, await observability.tenantAudit(context)); return; }
       if (path === '/api/session') {
         method(request, response, ['GET']);
         const user = await metadata.get(context, { kind: 'user', id: context.userId });
@@ -263,13 +289,20 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
         await metadata.revisions(context);
       })) return;
       throw new MetadataError('HOSTED_CAPABILITY_UNAVAILABLE', 503);
-    })().catch((error: unknown) => {
+    }).catch((error: unknown) => {
       request.resume();
       const dataError = error instanceof QueryEngineError || error instanceof PrepError || error instanceof UploadError || error instanceof BlazeError;
       const status = dataError ? 422 : error instanceof MetadataError || error instanceof RequestError ? error.status : 500;
       const errorCode = dataError ? error.code : error instanceof MetadataError || error instanceof SecurityError ? error.code : error instanceof RequestError ? 'HOSTED_REQUEST_INVALID' : 'HOSTED_INTERNAL_ERROR';
+      event.outcome = status === 401 || status === 403 ? 'denied' : 'failed'; event.errorCode = errorCode;
       send(response, status, { errorCode });
-    }).finally(() => release?.());
+    }).finally(async () => {
+      if (!request.url?.startsWith('/health/')) {
+        event.latencyMs = performance.now() - started;
+        try { await audit(event); } catch { /* Readiness fails; no raw storage error escapes. */ }
+      }
+      release?.();
+    });
   });
   const expiryTimer = setInterval(() => { void expireUploads(options.membershipDatabase).catch(() => { /* Reads still fail closed on expiry. */ }); }, 60000);
   await runner.recover();

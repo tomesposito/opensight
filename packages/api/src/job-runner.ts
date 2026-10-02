@@ -1,3 +1,5 @@
+import { performance } from 'node:perf_hooks';
+import { eventContext, type AuditWriter } from './hosted-events.js';
 import { checksum } from './metadata-operator.js';
 import { MetadataError } from './metadata-db.js';
 import { MailError, type MailMessage, type MailTransport } from './mail.js';
@@ -12,9 +14,12 @@ const retryable = (code: string) => ['SMTP_SEND_FAILED', 'SMTP_NOT_CONFIGURED', 
 export class JobRunner {
   private pending?: Promise<void>;
   private stopped = false;
+  private completed = 0;
+  private maxDelayMs = 0;
+  metrics() { return { completed: this.completed, maxDelayMs: this.maxDelayMs }; }
   stop(): void { this.stopped = true; }
   private admission(): void { if (this.stopped) throw new MetadataError('NODE_DRAINING', 503); }
-  constructor(readonly store: JobStore, readonly executor: JobExecutor, readonly mail: MailTransport) {}
+  constructor(readonly store: JobStore, readonly executor: JobExecutor, readonly mail: MailTransport, private readonly audit?: AuditWriter) {}
   async recover(): Promise<void> {
     await this.store.db.transaction(async c => {
       await c.query("UPDATE h7_occurrences SET state = 'queued' WHERE state = 'running'");
@@ -67,6 +72,10 @@ export class JobRunner {
     await this.deliver();
   }
   async execute(run: Occurrence): Promise<void> {
+    const started = performance.now(), usage = { executionMs: 0, sourceRows: 0, workingBytes: 0 };
+    let failure: string | undefined;
+    if (Number.isFinite(Date.parse(run.due))) this.maxDelayMs = Math.max(this.maxDelayMs, this.store.clock().getTime() - Date.parse(run.due));
+    await eventContext.run({ jobId: run.id, usage }, async () => {
     try {
       this.admission();
       await this.store.db.transaction(async c => {
@@ -95,7 +104,7 @@ export class JobRunner {
         }
       });
     } catch (error) {
-      const code = errorCode(error);
+      const code = errorCode(error); failure = code;
       await this.store.db.transaction(async c => {
         await c.query(`UPDATE h7_occurrences SET state = 'failed', error_code = ?, finished_at = ? WHERE ${scoped} AND occurrence_id = ? AND state IN ('queued','running')`, [code, this.store.clock().toISOString(), ...scopeArgs(run), run.id]);
         if (run.spec.kind === 'refresh') await c.query(`UPDATE h7_jobs SET next_run = ? WHERE ${scoped} AND job_id = ? AND version = ? AND stopped = 0`, [nextRun(run.spec.schedule, this.store.clock()), ...scopeArgs(run), run.jobId, run.jobVersion]);
@@ -105,6 +114,10 @@ export class JobRunner {
         }
       });
     }
+    });
+    this.completed++;
+    await this.audit?.({ operation: 'job.execute', tenantId: run.tenantId, namespaceId: run.namespaceId, jobId: run.id, resourceRevision: run.jobVersion,
+      outcome: failure ? 'failed' : 'succeeded', errorCode: failure, latencyMs: performance.now() - started, usage });
   }
   async deliver(): Promise<void> {
     const deliveries = await this.store.db.transaction(c => c.query("SELECT * FROM h7_deliveries WHERE state = 'pending' AND next_attempt <= ? ORDER BY next_attempt, delivery_id", [this.store.clock().toISOString()]));
@@ -140,6 +153,7 @@ export class JobRunner {
         try { await this.mail.send(message, verify); }
         catch (error) { if (!(error instanceof Error && 'code' in error)) throw new MailError('SMTP_SEND_FAILED'); throw error; }
         accepted = true;
+        await this.audit?.({ operation: 'job.deliver', tenantId: run.tenantId, namespaceId: run.namespaceId, jobId: run.id, resourceRevision: run.jobVersion, outcome: 'succeeded' });
         await this.store.db.transaction(c => c.query(`UPDATE h7_deliveries SET state = 'sent', sent_at = ?, error_code = NULL, message = NULL WHERE ${scoped} AND delivery_id = ?`, [this.store.clock().toISOString(), ...scopeArgs(run), id]));
       } catch (error) {
         // A receipt-store failure after acceptance must leave the durable claim
