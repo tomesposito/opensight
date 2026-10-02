@@ -20,5 +20,5 @@ export async function sessionFixture(t, authorize = async () => {}) {
   await sessions.initialize();
   const issue = (body = request(), anonymous = false) => context().then(c => sessions.issue(c, body, anonymous));
   const redeem = (issued, extra = {}) => sessions.redeem(issued.sessionId, { bootstrap: new URL(issued.EmbedUrl).hash.slice('#bootstrap='.length), parentOrigin, channelId: randomBytes(24).toString('base64url'), ...extra });
-  return { ...f, metadata, identity, context, policy, policyInput, embedding, config, key, sessions, issue, redeem, arn: (kind, id) => resourceArn(identity.namespaceId, kind, id) };
+  return { ...f, hostedConfig: f.config, metadata, identity, context, policy, policyInput, embedding, config, key, sessions, issue, redeem, arn: (kind, id) => resourceArn(identity.namespaceId, kind, id) };
 }

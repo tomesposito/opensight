@@ -74,7 +74,7 @@ export function resourceLinks(key: ResourceKey, raw: JsonObject): ResourceKey[] 
     }
     case 'dataset': {
       object(body, ['definition', 'sources']); object(body.definition);
-      for (const value of list(body.sources)) { const ref = reference(value); if (ref.kind !== 'source' || ref.ownerId) invalidMetadata(); links.push(ref); }
+      for (const value of list(body.sources)) { const ref = reference(value); if (ref.kind !== 'source') invalidMetadata(); links.push(ref); }
       break;
     }
     case 'prepared-dataset': {

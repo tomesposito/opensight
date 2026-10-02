@@ -75,7 +75,7 @@ export class HostedData {
       committed = true; return result;
     }, this.signals.get(context));
   }
-  async admit(context: TenantContext, id: string, path: DataPath): Promise<Admission> {
+  async admit(context: TenantContext, id: string, path: DataPath, embedSecurity?: (security: SecurityContext) => SecurityContext): Promise<Admission> {
     const revisions = await this.sources.metadata.revisions(context);
     await this.sources.capability(context, path === 'ai' ? 'ai' : path === 'prep' ? 'build' : 'view');
     const source = await this.sources.get(context, id), b = source.binding;
@@ -84,10 +84,11 @@ export class HostedData {
     const protectedData = source.policy.rowLevel || !!source.policy.protectedColumns?.length || !!tenantPredicate;
     if (path === 'prep' && protectedData) sourceError('PREP_SECURITY_REJECTED', 403);
     const users = await this.sources.metadata.list(context, 'user'), groups = await this.sources.metadata.list(context, 'group');
-    const security: SecurityContext = { namespaceId: context.namespaceId, userId: context.userId,
+    let security: SecurityContext = { namespaceId: context.namespaceId, userId: context.userId,
       users: users.map(u => ({ id: u.id, namespaceId: context.namespaceId })),
       groups: groups.map(g => ({ id: g.id, namespaceId: context.namespaceId, userIds: g.body.userIds as string[] })),
       policy: { ...source.policy, namespaceId: context.namespaceId, dataSetArn: `urn:opensight:source:${source.id}` } };
+    if (embedSecurity) security = embedSecurity(security);
     const resolved = resolveSecurity(security, boundColumns(b.columns), security.policy.dataSetArn);
     const physical: PrepSource = { id, connectorId: b.connectorId, columns: b.columns, table: b.table ?? 'source_rows', ...(b.schema ? { schema: b.schema } : {}), security: protectedData ? 'protected' : 'unrestricted' };
     const admission = { source, security, physical, ...(tenantPredicate ? { tenantPredicate } : {}), deniedColumns: resolved.deniedColumns, revisions };
