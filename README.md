@@ -152,6 +152,18 @@ domains remain separate, and the signed-URL SDK keeps its v1 behavior. See
 The separate [offline appearance preview](docs/images/embed-preview.png) shows
 loading, empty, permission-error and expiry states.
 
+### Tenant schedules and delivery
+
+Hosted refresh, report and alert jobs have durable occurrence and delivery
+histories. Reports render with each recipient's current data permissions.
+Removing an owner requires the operator to transfer or stop their schedules;
+unfinished work is cancelled. One scheduler runs initially, with at-least-once
+delivery and dedupe keys. See [tenant automation](docs/tenant-automation.md).
+
+![Tenant job and delivery history with synthetic recipients](docs/images/tenant-jobs.png)
+
+![Operator transfer-or-stop choice using synthetic users](docs/images/job-owner-removal.png)
+
 ## Contributor quickstart
 
 For development and verification, use Node 24+ and npm. From the repository root:
@@ -218,6 +230,7 @@ architecture, decisions and phased plan. Feature guides live in
 [interactive controls](docs/parameters-controls.md),
 [visuals and themes](docs/phase2d-visuals-themes.md),
 [scheduled refresh, reports and alerts](docs/scheduled-refresh-reports-alerts.md),
+[tenant job ownership and delivery](docs/tenant-automation.md),
 [security and namespaces](docs/security-namespaces.md),
 [folders, sharing and embedding](docs/folders-sharing-embedding.md),
 [tenant embed configuration and appearance](docs/embedding-config.md),

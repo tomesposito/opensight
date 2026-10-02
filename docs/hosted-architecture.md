@@ -63,6 +63,7 @@ inferences from the phase names:
 | [index.ts](../packages/api/src/index.ts), [store.ts](../packages/api/src/store.ts) | Trusted startup data roots per namespace; overlap rejected; unconfigured namespaces have no fallback to default | Dynamic hosted asset storage; the sales bindings still require matching schemas |
 | [prep-routes.ts](../packages/api/src/prep-routes.ts), [connector-routes.ts](../packages/api/src/connector-routes.ts) | Prepared datasets and sources resolve by namespace and owner; Blaze keys encode `[namespaceId, userId, datasetId]`; upload staging is per owner | Shared prepared datasets, durable uploads across nodes or arbitrary protected-source execution |
 | [automation-store.ts](../packages/api/src/automation-store.ts), [automation-state.ts](../packages/api/src/automation-state.ts) | Cloned in-memory state, optional single-process atomic JSON replacement | Database transactions across stores/processes; legacy refresh/report/alert records have no namespace field |
+| [job-store.ts](../packages/api/src/job-store.ts), [job-runner.ts](../packages/api/src/job-runner.ts), [tenant automation](tenant-automation.md) | H7 tenant/namespace/owner jobs, durable occurrences and recipient delivery outbox; transactional transfer-or-stop at member removal; rendering under current recipient permissions | Multi-node scheduler coordination; exactly-once SMTP |
 | [ai-settings.ts](../packages/api/src/ai-settings.ts) | Namespace-local provider configuration and encrypted saved keys | A general tenant secret service or distributed configuration store |
 
 Roles currently include `administrator`, `author`, `author_ai`, `reader` and
@@ -308,9 +309,10 @@ Every job carries tenant, namespace, initiating/owning principal, target revisio
 run ID and due occurrence. Reauthorize at execution and before output delivery;
 never execute as an all-tenant administrator. Tenant suspension/deletion cancels
 admission and publication. Scope recipients, histories, alert state and usage
-records as carefully as data. Legacy automation remains default-only until its
-resources and rendering path are migrated and tested. Do not merely add a
-namespace field to the current unscoped snapshot service.
+records as carefully as data. Legacy default-only records require the offline
+[H7 migration](tenant-automation.md) before hosted execution. The hosted renderer
+uses the durable dataset/source authorization path and recipient identities;
+the unscoped legacy snapshot service is not used.
 
 The hard problems are revocation racing with long queries, security through
 aggregated caches, tenant restore in shared metadata, native-memory fairness,

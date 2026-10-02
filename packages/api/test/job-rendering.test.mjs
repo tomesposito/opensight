@@ -39,6 +39,11 @@ test('H7 real refresh triggers tenant alert transitions once and renders only re
   assert.equal((await f.store.get(await f.context(), 'alert')).alertState, 'triggered');
   await f.store.enqueue(await f.context(), 'refresh'); await f.runner.tick(); assert.equal(f.mail.messages.length, 1);
   assert.equal((await f.store.history(await f.context(), 'alert')).length, 2);
+  // The owner's 60 crosses 50, but the recipient's 40 does not. Never disclose
+  // the owner's trigger/value in an email to that recipient.
+  await f.store.put(await f.context(), 'alert', { ...alert, condition: { kind: 'above', threshold: 50 } }, 1, (c, s) => f.renderer.authorize(c, s));
+  await f.store.enqueue(await f.context(), 'refresh'); await f.runner.tick(); assert.equal(f.mail.messages.length, 1);
+  assert.ok((await f.store.deliveries(await f.context(), 'alert')).some(d => d.error_code === 'JOB_RECIPIENT_NOT_TRIGGERED'));
 });
 test('H7 recipient revocation while rendering suppresses delivery and a tenant suspension blocks queued work', async t => {
   const f = await fixture(t); await f.put('report', f.spec); const run = await f.store.enqueue(await f.context(), 'report'); await f.runner.execute(run);
