@@ -77,5 +77,29 @@ browser harness runs needed HTTPS and explicit DELETE body framing; these were
 harness fixes, without weakening the hosted origin or authorization boundary.
 
 Evidence is retained in ignored `.opensight/issue-36/` (browser captures,
-`browser-final.log`, GIF frames and assembly). The mandatory root-suite result
-is recorded below after completion.
+`browser-final.log`, GIF frames and assembly).
+
+## Final full-suite result
+
+The exact repository-root command
+`TZ=UTC DATABASE_URL=postgresql://postgres@localhost:5433/opensight npm test`
+exited **0**: **1,655 passed / 0 failed / 0 skipped / 0 cancelled**. All live
+PostgreSQL checks ran. Strict TypeScript checks and workspace builds passed.
+
+| Runner | Passed | Failed | Skipped |
+| --- | ---: | ---: | ---: |
+| API | 297 | 0 | 0 |
+| Bundle parser | 197 | 0 | 0 |
+| Embedding SDK | 9 | 0 | 0 |
+| O interpreter | 32 | 0 | 0 |
+| Query engine | 514 | 0 | 0 |
+| Web | 588 | 0 | 0 |
+| Root conformance | 6 | 0 | 0 |
+| **Total** | **1,655** | **0** | **0** |
+
+The complete run passed on its first attempt. Older H2/H3 assertions that
+automation was unavailable were updated to the H7 durable status contract
+before that run; unauthenticated and unsupported-route assertions remain.
+`full-tests.log`, `full-tests.exit` and `test-summary.json` retain the result.
+`git diff --check` is clean. Work is committed only on the requested branch;
+no merge, push, public-history edit or issue closure was performed.
