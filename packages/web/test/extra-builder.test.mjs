@@ -4,7 +4,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { AuthorCanvas } from '../build/test/Author.js';
 import { EXTRA_VISUALS } from '../build/test/visual-catalog.js';
-import { activeSheet, authorReducer, emptyDraft, serializeDraft, serializeVisual, validateDraft, capabilityNote } from '../build/test/authoring.js';
+import { activeSheet, authorReducer, emptyDraft, serializeDraft, serializeVisual, validateDraft, capabilityNote, authorVisualProblem } from '../build/test/authoring.js';
 import { importBundle, exportBundle } from '../build/test/bundle-authoring.js';
 import { buildAuthorQuery } from '../build/test/author-query.js';
 import { executeFixtureQuery } from '../build/test/fixture-query.js';
@@ -51,4 +51,64 @@ test('scatter wells cap at X, Y and size; kind changes cannot silently serialize
   draft = authorReducer(draft, { type: 'kind', kind: 'scatter' });
   assert.equal(visual(draft).measures.length, 3);
   validateDraft(draft);
+});
+
+test('radar exposes Category, optional Color, and Values with independent preview series', () => {
+  let draft = add('radar');
+  const html = renderToStaticMarkup(createElement(AuthorCanvas, { draft, dispatch() {} }));
+  for (const label of ['Category', 'Color', 'Values']) assert.ok(html.includes(`aria-label="Assign ${label}"`));
+  assert.match(html, /Optional color dimension/); assert.ok(html.includes(capabilityNote('radar')));
+  assert.match(html, /Show legend/);
+  for (const [field, well] of [['category', 'rows'], ['region', 'columns'], ['profit', 'values']]) draft = authorReducer(draft, { type: 'assign', field, well });
+  validateDraft(draft);
+  assert.deepEqual(visual(draft).rows, ['category']); assert.deepEqual(visual(draft).columns, ['region']);
+  const query = buildAuthorQuery(visual(draft));
+  assert.deepEqual(query.dimensions.map(d => d.columnName), ['category', 'region']);
+  assert.deepEqual(query.measures.map(m => m.columnName), ['revenue', 'profit']);
+  const result = executeFixtureQuery(query); assert.ok(result.rows, result.message);
+  const definition = serializeVisual(visual(draft));
+  const c = compileVisual({ definition, rows: result.rows, bindings: {}, source: 'bundle', path: '$' });
+  assert.equal(c.option.series.length, new Set(result.rows.map(r => r.region)).size * 2);
+  const bundle = { members: [{ path: 'analysis/authored-analysis.json', resource: serializeDraft(draft) }] };
+  const imported = importBundle(bundle);
+  assert.deepEqual(visual(imported).columns, ['region']); assert.deepEqual(visual(imported).imported.issues, []);
+  assert.deepEqual(exportBundle(imported), bundle);
+  draft = authorReducer(draft, { type: 'unassign', field: 'region', well: 'columns' });
+  assert.deepEqual(visual(draft).columns, []); validateDraft(draft);
+});
+
+test('radar well replacements and type changes cap Category and Color at one dimension', () => {
+  let draft = add('radar');
+  for (const field of ['category', 'order_date']) draft = authorReducer(draft, { type: 'assign', field, well: 'columns' });
+  assert.deepEqual(visual(draft).columns, ['order_date']);
+  draft = authorReducer(draft, { type: 'assign', field: 'category', well: 'rows' });
+  assert.deepEqual(visual(draft).rows, ['category']); validateDraft(draft);
+  draft = authorReducer(draft, { type: 'kind', kind: 'pivot' });
+  draft = authorReducer(draft, { type: 'assign', field: 'region', well: 'rows' });
+  assert.equal(visual(draft).rows.length, 2);
+  draft = authorReducer(draft, { type: 'kind', kind: 'radar' });
+  assert.deepEqual(visual(draft).rows, ['category']); validateDraft(draft);
+  visual(draft).rows.push('region');
+  assert.throws(() => validateDraft(draft), /Invalid or unsupported/);
+});
+
+test('radar import reports unsupported native options and invalid wells, blocks queries, preserves originals', () => {
+  for (const change of [
+    c => { c.shape = 'CIRCLE'; },
+    c => { c.axesRangeScale = 'SHARED'; },
+    c => { c.startAngle = 90; },
+    c => { c.colorAxis = {}; },
+    c => { c.sortConfiguration = { colorSort: [] }; },
+    c => { c.tooltip = { selectedTooltipType: 'DETAILED' }; },
+    c => { c.fieldWells.radarChartAggregatedFieldWells.category = []; },
+    c => { c.fieldWells.radarChartAggregatedFieldWells.values = []; },
+  ]) {
+    const resource = serializeDraft(add('radar'));
+    change(resource.definition.sheets[0].visuals[0].radarChartVisual.chartConfiguration);
+    const bundle = { members: [{ path: 'analysis/authored-analysis.json', resource }] }, imported = importBundle(bundle);
+    assert.match(JSON.stringify(imported.bundle.report), /CompileError.*unsupported property|CompileError.*RADAR_/);
+    assert.match(authorVisualProblem(visual(imported)), /Unsupported features/);
+    assert.equal(buildAuthorQuery(visual(imported)), null);
+    assert.deepEqual(exportBundle(imported), bundle);
+  }
 });

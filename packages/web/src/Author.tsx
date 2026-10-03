@@ -303,14 +303,14 @@ function FieldWells({ visual, draft, dispatch, activeWell, onWell }: { visual: A
   const fields = dataFields(draft.calculatedFields, draft.dataset);
   const wells: { name: Well; label: string; values: string[] }[] = [
     ...(noDimensions(visual.kind) ? [] : grouped(visual.kind) ? [{ name: 'rows' as const, label: visual.kind === 'pointMap' ? 'Latitude' : visual.kind === 'box' ? 'Group / sample dimensions' : dimensionLabel(visual.kind), values: visual.rows }] : [{ name: 'dimension' as const, label: dimensionLabel(visual.kind), values: visual.dimension ? [visual.dimension] : [] }]),
-    ...(splitDimensions(visual.kind) ? [{ name: 'columns' as const, label: visual.kind === 'pointMap' ? 'Longitude' : 'Columns', values: visual.columns }] : []),
+    ...(splitDimensions(visual.kind) ? [{ name: 'columns' as const, label: visual.kind === 'pointMap' ? 'Longitude' : visual.kind === 'radar' ? 'Color' : 'Columns', values: visual.columns }] : []),
     { name: 'values', label: visual.kind === 'scatter' ? 'Values · X, Y, size (in order)' : visual.kind === 'combo' ? 'Values · bar, then lines' : 'Values', values: visual.measures },
   ];
   return <div className="field-wells">{wells.map(w => <fieldset key={w.name} className={activeWell === w.name ? 'active-well' : ''} onFocus={() => onWell(w.name)} onClick={() => onWell(w.name)}>
     <legend>{w.label}{w.name === 'values' && singleMeasure(visual.kind) ? ' · 1 measure' : ''}</legend>
     {w.values.map(field => <button className="field-chip" key={field} type="button" aria-label={`Remove ${field} from ${w.label}`} onClick={() => dispatch({ type: 'unassign', field, well: w.name })}>{w.name === 'values' ? `SUM(${field})` : `${field}${fields.find(f => f.name === field)?.type === 'DATETIME' ? ` · ${visual.hierarchy?.levels[0]?.granularity ?? visual.dateGrain ?? 'MONTH'}` : ''}`} <span aria-hidden="true">×</span></button>)}
     {w.name === 'values' && visual.measures.length > 1 && <div className="measure-order">{visual.measures.map((name, index) => <button type="button" key={name} disabled={!index} aria-label={`Move ${name} measure earlier`} onClick={() => dispatch({ type: 'measure-move', index, offset: -1 })}>↑ {name}</button>)}</div>}
-    {!w.values.length && <p>{w.name === 'columns' ? 'Optional column dimensions' : 'Choose a field'}</p>}
+    {!w.values.length && <p>{w.name === 'columns' ? visual.kind === 'radar' ? 'Optional color dimension' : 'Optional column dimensions' : 'Choose a field'}</p>}
     <label className="well-picker">Assign {w.name === 'values' ? 'measure' : w.name === 'dimension' ? 'dimension' : w.name}<select aria-label={`Assign ${w.label}`} value="" onChange={e => dispatch({ type: 'assign', field: e.target.value, well: w.name })}><option value="" disabled>Choose field…</option>{fields.filter(f => f.role === (w.name === 'values' ? 'measure' : 'dimension')).map(f => <option key={f.name}>{f.name}</option>)}</select></label>
   </fieldset>)}</div>;
 }

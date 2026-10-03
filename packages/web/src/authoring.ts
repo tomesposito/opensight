@@ -110,8 +110,8 @@ export const sheetParameters = (draft: AuthorDraft, sheet = activeSheet(draft)):
 export const dimensionLabel = (kind: VisualKind): string => kind === 'line' ? 'X-axis' : kind === 'table' ? 'Group-by' : kind === 'pivot' ? 'Rows' : 'Category';
 export const singleMeasure = (kind: VisualKind): boolean => ['pie', 'kpi', 'funnel', 'gauge', 'treemap', 'heatmap', 'box', 'wordCloud', 'histogram', 'filledMap', 'pointMap'].includes(kind);
 export const noDimensions = (kind: VisualKind): boolean => kind === 'kpi' || kind === 'gauge';
-export const grouped = (kind: VisualKind): boolean => ['table', 'pivot', 'treemap', 'heatmap', 'box', 'pointMap'].includes(kind);
-export const splitDimensions = (kind: VisualKind): boolean => ['pivot', 'heatmap', 'pointMap'].includes(kind);
+export const grouped = (kind: VisualKind): boolean => ['table', 'pivot', 'treemap', 'heatmap', 'box', 'pointMap', 'radar'].includes(kind);
+export const splitDimensions = (kind: VisualKind): boolean => ['pivot', 'heatmap', 'pointMap', 'radar'].includes(kind);
 export const capabilityNote = (kind: VisualKind): string => extraKind(kind) ? EXTRA_VISUALS[kind].note : kind === 'kpi' ? 'One measure, one aggregate row.' : tabular(kind) ? 'Additive SUM totals over supplied groups; nulls remain null.' : 'One category dimension; measures use SUM. Pie requires nonnegative values.';
 export const tabular = (kind: VisualKind): boolean => kind === 'table' || kind === 'pivot';
 export const visualDimensions = (visual: AuthorVisual): string[] => noDimensions(visual.kind) ? [] : grouped(visual.kind)
@@ -264,7 +264,7 @@ export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorD
       visual.measures = measures.slice(0, ['scatter', 'combo', 'bar100'].includes(action.kind) ? 2 : 1).map(f => f.name);
       visual.rows = grouped(action.kind) && visual.dimension ? [visual.dimension] : [];
       if (['box', 'treemap'].includes(action.kind) && dimensions[1]) visual.rows.push(dimensions[1].name);
-      visual.columns = splitDimensions(action.kind) && dimensions[1] ? [dimensions[1].name] : [];
+      visual.columns = splitDimensions(action.kind) && action.kind !== 'radar' && dimensions[1] ? [dimensions[1].name] : [];
     }
     const bottom = Math.max(0, ...sheet.layout.map(p => p.y + p.h));
     return update({ visuals: [...sheet.visuals, visual], selectedId: id, layout: [...sheet.layout, { i: id, x: 0, y: bottom, w: 6, h: 8 }] });
@@ -295,8 +295,8 @@ export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorD
     switch (action.type) {
       case 'kind': return { ...visual, ...(visual.imported ? { imported: { ...visual.imported, replaced: visual.imported.replaced || action.kind !== visual.kind || visual.imported.issues.some(i => i.startsWith('Unsupported visual type:')) } } : {}), kind: action.kind, donut: action.kind === 'pie' && visual.donut,
         dimension: noDimensions(action.kind) ? null : visual.dimension,
-        rows: grouped(action.kind) ? (grouped(visual.kind) ? visual.rows : visual.dimension ? [visual.dimension] : []) : [],
-        columns: splitDimensions(action.kind) ? visual.columns : [],
+        rows: grouped(action.kind) ? (grouped(visual.kind) ? visual.rows : visual.dimension ? [visual.dimension] : []).slice(0, action.kind === 'radar' ? 1 : undefined) : [],
+        columns: splitDimensions(action.kind) ? visual.columns.slice(0, action.kind === 'radar' ? 1 : undefined) : [],
         measures: singleMeasure(action.kind) ? visual.measures.slice(0, 1) : action.kind === 'scatter' ? visual.measures.slice(0, 3) : visual.measures };
       case 'hierarchy': {
         if (!action.hierarchy) { const { hierarchy: _old, ...rest } = visual; return rest; }
@@ -349,7 +349,7 @@ export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorD
         if (grouped(visual.kind)) {
           const well = splitDimensions(visual.kind) && action.well === 'columns' ? 'columns' : 'rows';
           const other = well === 'rows' ? 'columns' : 'rows';
-          const next = { ...visual, [well]: action.well && !['heatmap', 'pointMap'].includes(visual.kind) ? [...new Set([...visual[well], field.name])] : [field.name], [other]: visual[other].filter(f => f !== field.name) };
+          const next = { ...visual, [well]: action.well && !['heatmap', 'pointMap', 'radar'].includes(visual.kind) ? [...new Set([...visual[well], field.name])] : [field.name], [other]: visual[other].filter(f => f !== field.name) };
           return { ...next, dimension: next.rows[0] ?? null };
         }
         return { ...visual, dimension: field.name };
@@ -503,6 +503,7 @@ export function validateDraft(value: unknown): asserts value is AuthorDraft {
       const fieldNames = (v: unknown, role: string): v is string[] => imported ? Array.isArray(v) && v.every(n => typeof n === 'string' && !!n && !n.includes('\0')) && new Set(v).size === v.length : names(v, role);
 
       if (!isObject(v) || !onlyKeys(v, ['id', 'kind', 'title', 'subtitle', 'subtitleVisible', 'dimension', 'measures', 'donut', 'imported', 'filterActions', 'hierarchy', 'dateGrain', 'palette', 'formatting', 'gauge', 'bins', ...Object.keys(defaults())]) || typeof v.id !== 'string' || !/^visual-[1-9][0-9]*$/.test(v.id) || ids.has(v.id) || !VISUAL_TYPES.some(t => t.kind === v.kind) || typeof v.title !== 'string' || !['donut', 'titleVisible', 'legend', 'labels', 'horizontal', 'stacked', 'totals', 'subtotals'].every(k => typeof v[k] === 'boolean') || !fieldNames(v.measures, 'measure') || !fieldNames(v.rows, 'dimension') || !fieldNames(v.columns, 'dimension') || (v.dimension !== null && !fieldNames([v.dimension], 'dimension')) || !Array.isArray(v.filters)) return fail();
+      if (v.kind === 'radar' && !v.imported && (v.rows.length > 1 || v.columns.length > 1)) return fail();
       if (singleMeasure(v.kind as VisualKind) && v.measures.length > 1 || noDimensions(v.kind as VisualKind) && v.dimension !== null || v.kind !== 'pie' && v.donut || !splitDimensions(v.kind as VisualKind) && v.columns.length || (grouped(v.kind as VisualKind) ? v.dimension !== (v.rows[0] ?? null) : v.rows.length) || v.rows.some(n => (v.columns as string[]).includes(n))) return fail();
       if (v.formatting !== undefined && !formattingValid(v.formatting) || v.gauge !== undefined && !gaugeValid(v.gauge) || v.bins !== undefined && !binsValid(v.bins)) return fail();
       if (v.subtitle !== undefined && typeof v.subtitle !== 'string' || v.subtitleVisible !== undefined && (typeof v.subtitleVisible !== 'boolean' || v.subtitle === undefined)) return fail();
