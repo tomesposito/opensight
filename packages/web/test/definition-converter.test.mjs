@@ -62,9 +62,9 @@ test('preserves absent optional fields and empty arrays, multiple sheets and opa
   });
 });
 test('unknown visual/configuration stays visible to compiler rejection rather than disappearing', () => {
-  const future = { RadarChartVisual: { VisualId: 'heat', ChartConfiguration: { FutureMap: { PascalKey: 1 } } } };
+  const future = { FutureChartVisual: { VisualId: 'heat', ChartConfiguration: { FutureMap: { PascalKey: 1 } } } };
   const converted = convertVisual(future);
-  assert.deepEqual(converted, { RadarChartVisual: { ...future.RadarChartVisual, visualId: 'heat' } });
+  assert.deepEqual(converted, { FutureChartVisual: { ...future.FutureChartVisual, visualId: 'heat' } });
   assert.throws(() => compileVisual({ source: 'bundle', definition: converted, rows: null, bindings: {}, path: '$' }), CompileError);
   const input = structuredClone(fixtures[1].sheets[0].visuals[0]);
   input.definition.BarChartVisual.ChartConfiguration.ReferenceLines = [{ KeyMap: { PascalKey: 1 } }];

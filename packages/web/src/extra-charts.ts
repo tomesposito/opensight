@@ -67,7 +67,7 @@ export function compileExtra(model: VisualModel, rows: Row[], cell: CellReader, 
     option.legend = { show: model.legend, bottom: 0 };
     option.series = polygons.map((polygon): RadarSeriesOption => ({
       type: 'radar', name: polygon.name, data: [polygon], symbol: 'circle', symbolSize: 6,
-      label: { show: model.labels }, areaStyle: { opacity: 0.12 },
+      label: { show: model.labels }, labelLayout: { hideOverlap: true }, areaStyle: { opacity: 0.12 },
     }));
     // Native ECharts radar places nulls at the center. radar-gaps.ts removes
     // those vertices/edges and suppresses the fill of incomplete polygons.

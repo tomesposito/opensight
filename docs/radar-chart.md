@@ -35,10 +35,10 @@ Legend visibility/position, data labels (including decimal formatting), tooltip
 visibility, themes, and per-visual palettes use the existing display controls.
 Category and Color accept one field each; replacing a field replaces that well.
 The live preview queries both dimensions and all Values through the existing
-query path. The static demo retains its existing offline rules: plain manual
-previews use pinned revenue results; calculated fields, controls, and interactions
-recompute synthetic rows locally. Unsupported samples say they need data/API;
-the demo is not a deployed service.
+query path. Radar previews in the static demo use the existing shared fixture evaluator to
+recompute synthetic rows locally across all regions, including Color splits and
+multiple measures. The UI names that offline source; the demo is not a deployed
+service. Missing or unsupported data produces an error, never invented values.
 
 Missing or multiple Category fields raise `CompileError` with
 `RADAR_CATEGORY_REQUIRED`; no Values raises `RADAR_VALUES_REQUIRED`; multiple

@@ -90,21 +90,21 @@ test('sanitized real archive is identical through browser import/export, includi
 
 test('unsupported visual types and each unknown feature are named and retained, including after title edits', () => {
   const bundle = fixture(), raw = bundle.members[0].resource.definition.sheets[0];
-  raw.visuals.push({ radarChartVisual: { visualId: 'heatmap', chartConfiguration: { opaque: { a: [1, false] } }, customBody: 'kept' } });
+  raw.visuals.push({ futureChartVisual: { visualId: 'heatmap', chartConfiguration: { opaque: { a: [1, false] } }, customBody: 'kept' } });
   raw.visuals[0].barChartVisual.chartConfiguration.customAxis = { exact: true };
   raw.visuals[0].barChartVisual.actions = [{ customAction: { label: 'Inspect' } }];
   let draft = importBundle(bundle);
   const report = JSON.stringify(draft.bundle.report);
-  assert.match(report, /Unsupported visual type: radarChartVisual/);
+  assert.match(report, /Unsupported visual type: futureChartVisual/);
   assert.match(report, /customAxis/); assert.match(report, /actions/);
   assert.match(report, /futureEnvelope/); assert.match(report, /Parameter Region/);
   assert.deepEqual(exportBundle(draft), bundle);
   const visual = draft.sheets[0].visuals.at(-1);
   draft = change(draft, { type: 'select', id: visual.id });
   draft = change(draft, { type: 'title', title: 'Retitled unsupported visual' });
-  const exported = exportBundle(draft), heat = exported.members[0].resource.definition.sheets[0].visuals.at(-1).radarChartVisual;
+  const exported = exportBundle(draft), heat = exported.members[0].resource.definition.sheets[0].visuals.at(-1).futureChartVisual;
   assert.equal(heat.title.formatText.plainText, 'Retitled unsupported visual');
-  assert.deepEqual(heat.chartConfiguration, raw.visuals.at(-1).radarChartVisual.chartConfiguration);
+  assert.deepEqual(heat.chartConfiguration, raw.visuals.at(-1).futureChartVisual.chartConfiguration);
   assert.deepEqual(exported.members[0].resource.opensightRoundTrip.originalResource, bundle.members[0].resource);
 });
 

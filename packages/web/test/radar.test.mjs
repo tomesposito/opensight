@@ -106,3 +106,14 @@ test('radar SVG keeps real gaps, omits incomplete fills and restores vertices on
     assert.doesNotMatch(chart.renderToSVGString(), /NaN|Infinity/);
   } finally { chart.dispose(); }
 });
+
+test('radar labels hide overlapping values on coincident polygons', () => {
+  const chart = init(null, undefined, { renderer: 'svg', ssr: true, width: 600, height: 360 });
+  const source = input(['A', 'B', 'C', 'D'].map(category => ({ category, a: 1, b: 1 })), false);
+  config(source).dataLabels = { visibility: 'VISIBLE' };
+  try {
+    chart.setOption(compileVisual(source).option);
+    const labels = chart.getZr().storage.getDisplayList().filter(item => item.type === 'tspan' && item.style.text === '1');
+    assert.equal(labels.length, 4, 'one visible value per axis, rather than two overlapping copies');
+  } finally { chart.dispose(); }
+});
