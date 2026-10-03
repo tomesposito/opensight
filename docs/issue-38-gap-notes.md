@@ -71,9 +71,9 @@ the converter, and the properties audit. Earlier unsupported-type tests used
 radar as their placeholder; they now use a future visual so the same rejection
 coverage continues after radar becomes supported.
 
-The final repository-root command
+The repository-root command
 `TZ=UTC DATABASE_URL=postgresql://postgres@localhost:5433/opensight npm test`
-exited **0** with **1,655 passed / 0 failed / 0 skipped / 0 cancelled**. All
+reported **1,655 passed / 0 failed / 0 skipped / 0 cancelled**. All
 live PostgreSQL checks ran against the existing local test service. Strict
 TypeScript checks and workspace builds passed.
 
@@ -88,9 +88,14 @@ TypeScript checks and workspace builds passed.
 | Root conformance | 6 | 0 | 0 |
 | **Total** | **1,655** | **0** | **0** |
 
-`full-tests-final.log`, `full-tests-final.exit`, and `test-summary.json` retain
-the independent result. The first full run exposed the outdated unsupported
+`full-tests-final.log` retains every passing suite summary, but its command
+wrapper returned 143 before writing an exit marker. A confirming root run uses
+a detached runner and an explicit durable exit record. That run **exited 0**
+and reproduced **1,655 passed / 0 failed / 0 skipped / 0 cancelled**;
+`full-tests-confirmed.log`, `full-tests-confirmed.exit`, and `test-summary.json`
+retain the result. The first full run exposed the outdated unsupported
 radar expectations, the legend capability list, and a notice assertion aimed
 at the inner canvas instead of the author page; all are corrected and covered
-by the final run. `git diff master --check` is clean. No requested work remains
-unfinished; all commits stay on the requested branch and master is unchanged.
+by the confirmed final run. `git diff master --check` is clean. No requested
+work remains unfinished. All commits stay on the requested branch and master
+is unchanged.
