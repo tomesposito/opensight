@@ -70,8 +70,8 @@ how to build and open it.
 
 ### 📊 Dashboards and analyses
 
-Author on a QuickSight-style canvas: 18 visual types (bar, line, pie/donut,
-KPI, table, pivot, scatter, combo, maps and more), parameters and controls,
+Author on a QuickSight-style canvas: 20 visual types (bar, line, pie/donut,
+KPI, table, pivot, radar, scatter, combo, maps and more), parameters and controls,
 filter actions, drill-down, themes, and `.qs` bundle import/export round trips.
 
 The app opens to a working sales dashboard using pinned synthetic sample results
@@ -83,6 +83,12 @@ modes remain available under their role permissions. See
 ![Default sales dashboard rendered from pinned sample results](docs/images/sample-dashboard.png)
 
 ![Authoring canvas with the O bar in the toolbar](docs/images/author.png)
+
+Radar uses Category axes, an optional Color split, and one or more Values
+measures. Nulls remain gaps; unsupported native options appear in the import
+report. See [radar semantics and limits](docs/radar-chart.md).
+
+![Radar preview with revenue and profit by month and region](docs/images/radar.png)
 
 ### 🛠️ Visual data preparation
 

@@ -62,6 +62,19 @@ try {
   await page.getByRole('button', { name: 'Save draft', exact: true }).click();
   await page.locator('.author-card .chart svg').waitFor();
   await hold(1200);
+  // Phase 2d radar: build through the gallery and recompute synthetic rows.
+  await page.locator('.author-card-actions button[aria-label^="Remove "]').click();
+  await page.getByRole('button', { name: 'Radar', exact: true }).click();
+  await page.getByRole('button', { name: 'Add visual', exact: true }).click();
+  await page.getByLabel('Assign Category', { exact: true }).selectOption('order_date');
+  await page.getByLabel('Assign Color', { exact: true }).selectOption('region');
+  const properties = page.locator('.properties-panel:not([open]) > summary');
+  if (await properties.count()) await properties.click();
+  await page.getByLabel('Title', { exact: true }).fill('Revenue by month and region');
+  await page.locator('.author-card .chart svg').waitFor();
+  await page.locator('.author-card').scrollIntoViewIfNeeded();
+  await hold(1800);
+  await page.getByRole('button', { name: 'Save draft', exact: true }).click();
   await setMode('analyses');
   await hold(1800);
 
@@ -80,6 +93,9 @@ try {
   await setMode('security'); await hold(1400);
   assert.deepEqual(errors, []);
   console.log('frames:', n, 'errors:', JSON.stringify(errors.slice(0, 4)));
+} catch (error) {
+  await page.screenshot({ path: resolve(FRAMES, '../failure.png'), fullPage: true });
+  throw error;
 } finally {
   await browser.close();
 }
