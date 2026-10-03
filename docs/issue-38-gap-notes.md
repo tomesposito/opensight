@@ -70,3 +70,27 @@ including radar SVG geometry, overlap hiding, builder wells, import preservation
 the converter, and the properties audit. Earlier unsupported-type tests used
 radar as their placeholder; they now use a future visual so the same rejection
 coverage continues after radar becomes supported.
+
+The final repository-root command
+`TZ=UTC DATABASE_URL=postgresql://postgres@localhost:5433/opensight npm test`
+exited **0** with **1,655 passed / 0 failed / 0 skipped / 0 cancelled**. All
+live PostgreSQL checks ran against the existing local test service. Strict
+TypeScript checks and workspace builds passed.
+
+| Runner | Passed | Failed | Skipped |
+| --- | ---: | ---: | ---: |
+| API | 297 | 0 | 0 |
+| Bundle parser | 197 | 0 | 0 |
+| Embedding SDK | 9 | 0 | 0 |
+| O interpreter | 32 | 0 | 0 |
+| Query engine | 514 | 0 | 0 |
+| Web | 600 | 0 | 0 |
+| Root conformance | 6 | 0 | 0 |
+| **Total** | **1,655** | **0** | **0** |
+
+`full-tests-final.log`, `full-tests-final.exit`, and `test-summary.json` retain
+the independent result. The first full run exposed the outdated unsupported
+radar expectations, the legend capability list, and a notice assertion aimed
+at the inner canvas instead of the author page; all are corrected and covered
+by the final run. `git diff master --check` is clean. No requested work remains
+unfinished; all commits stay on the requested branch and master is unchanged.
