@@ -1,4 +1,4 @@
-import type { EChartsOption, SeriesOption, TreemapSeriesOption } from 'echarts';
+import type { EChartsOption, RadarSeriesOption, SeriesOption, TreemapSeriesOption } from 'echarts';
 import { fieldName } from './formatting.js';
 import type { Cell, Field, Row, VisualModel } from './model.js';
 import { countryNames, WORLD_MAP } from './geo/world.js';
@@ -40,6 +40,37 @@ export function compileExtra(model: VisualModel, rows: Row[], cell: CellReader, 
       return percent || model.kind === 'combo' && i === 0 ? { type: 'bar', name: fieldName(f, model.formatting), data, ...(percent ? { stack: 'percent' } : {}), label: { show: model.labels }, barMaxWidth: 72 }
         : { type: 'line', name: fieldName(f, model.formatting), data, connectNulls: false, ...(model.kind === 'area' ? { areaStyle: { opacity: 0.3 } } : {}), label: { show: model.labels } };
     });
+  } else if (model.kind === 'radar') {
+    const category = model.dimensions[0], color = model.dimensions[1];
+    if (!category) fail('RADAR_CATEGORY_REQUIRED: expected exactly one Category dimension');
+    if (!model.measures.length) fail('RADAR_VALUES_REQUIRED: expected one or more Values measures');
+    // Keep typed identities (null and the literal "(null)" are distinct axes/groups).
+    const categories = [...new Set(rows.map(r => cell(r, category)))];
+    const groups = new Map<Cell, Map<Cell, Row>>();
+    for (const row of rows) {
+      const group = color ? cell(row, color) : null;
+      if (!groups.has(group)) groups.set(group, new Map());
+      groups.get(group)!.set(cell(row, category), row);
+    }
+    const polygons = [...groups].flatMap(([group, byCategory]) => model.measures.map(field => ({
+      name: color ? `${label(group)} · ${fieldName(field, model.formatting)}` : fieldName(field, model.formatting),
+      value: categories.map(category => { const row = byCategory.get(category); return row ? number(row, field) : null; }),
+    })));
+    // Deliberate OpenSight scaling: each indicator uses supplied values, not a
+    // shared QuickSight axis range. Degenerate zero/empty extents use [0, 1].
+    option.radar = { radius: '62%', center: ['50%', '46%'], indicator: categories.map((category, i) => {
+      const values = polygons.map(p => p.value[i]).filter((v): v is number => v !== null && v !== undefined);
+      const min = Math.min(0, ...values), max = Math.max(0, ...values);
+      const bound = Math.max(Math.abs(min), max) || 1;
+      return { name: label(category), min: min < 0 ? -bound : 0, max: min < 0 ? bound : max || 1 };
+    }) };
+    option.legend = { show: model.legend, bottom: 0 };
+    option.series = polygons.map((polygon): RadarSeriesOption => ({
+      type: 'radar', name: polygon.name, data: [polygon], symbol: 'circle', symbolSize: 6,
+      label: { show: model.labels }, areaStyle: { opacity: 0.12 },
+    }));
+    // Native ECharts radar places nulls at the center. radar-gaps.ts removes
+    // those vertices/edges and suppresses the fill of incomplete polygons.
   } else if (model.kind === 'scatter') {
     axes(); option.xAxis = { type: 'value', name: fieldName(model.measures[0]!, model.formatting) }; option.yAxis = { type: 'value', name: fieldName(model.measures[1]!, model.formatting) };
     option.series = [{ type: 'scatter', data: rows.map((r, i) => ({ name: names[i], value: model.measures.map(f => number(r, f)), symbolSize: model.measures[2] ? Math.min(60, 8 + Math.sqrt(nonnegative(r, 2))) : 12 })), label: { show: model.labels, formatter: '{b}' } }];
