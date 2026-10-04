@@ -34,6 +34,7 @@ import { JobRunner } from './job-runner.js';
 import { JobOwnership, disposition } from './job-ownership.js';
 import { jobRoute } from './job-routes.js';
 import { Scheduler } from './schedule.js';
+import { hostedReadiness } from './hosted-health.js';
 
 const drains = new WeakMap<Server, () => Promise<void>>();
 export async function drainHostedServer(server: Server): Promise<void> { await drains.get(server)?.(); }
@@ -101,10 +102,32 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
   await options.membershipDatabase.transaction(async c => { await c.query('SELECT tenant_id FROM h1_tenants WHERE 1 = 0'); await c.query('SELECT subject FROM h2_memberships WHERE 1 = 0'); });
   await assertHostedSourcesReady(options.membershipDatabase);
   await expireUploads(options.membershipDatabase);
+  let draining = false;
+  let drain: Promise<void> | undefined;
+  const active = new Set<Promise<void>>();
+  const operator = (request: IncomingMessage): void => {
+    if (request.headers.origin !== undefined || !request.headers.authorization?.startsWith('Operator ')
+      || !equal(request.headers.authorization.slice(9), config.operatorKey.toString('base64url'))) throw new MetadataError('OPERATOR_REQUIRED', 403);
+  };
   const server = createServer((request, response) => {
-    void (async () => {
+    const work = (async () => {
       boundary(request, config.origin);
       let path = request.url!;
+      if (['/healthz', '/readyz', '/api/host/drain'].includes(path)) {
+        operator(request);
+        method(request, response, [path.endsWith('drain') ? 'POST' : 'GET']);
+        if (path === '/healthz') { send(response, 200, { alive: true }); return; }
+        if (path === '/api/host/drain') {
+          await body(request, []);
+          draining = true; scheduler.stop();
+          send(response, 202, { state: 'draining' });
+          setImmediate(() => { void drainHostedServer(server).catch(() => { console.error('DRAIN_FAILED'); }); }); return;
+        }
+        if (draining) throw new MetadataError('SERVER_DRAINING', 503);
+        await hostedReadiness(options.membershipDatabase, options.tenantDatabase);
+        send(response, 200, { ready: true }); return;
+      }
+      if (draining) throw new MetadataError('SERVER_DRAINING', 503);
       if (path === '/api/host' || path.startsWith('/api/host/')) {
         const authorization = request.headers.authorization;
         const browserMembership = /^\/api\/host\/tenants\/[A-Za-z0-9_-]+\/users(?:\/[A-Za-z0-9_-]+)?$/.test(path);
@@ -237,13 +260,18 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
       const status = dataError ? 422 : error instanceof MetadataError || error instanceof RequestError ? error.status : 500;
       const errorCode = dataError ? error.code : error instanceof MetadataError || error instanceof SecurityError ? error.code : error instanceof RequestError ? 'HOSTED_REQUEST_INVALID' : 'HOSTED_INTERNAL_ERROR';
       send(response, status, { errorCode });
-    });
+    }).finally(() => { active.delete(work); });
+    active.add(work);
   });
   const expiryTimer = setInterval(() => { void expireUploads(options.membershipDatabase).catch(() => { /* Reads still fail closed on expiry. */ }); }, 60000);
   await runner.recover();
   server.once('listening', () => scheduler.start());
   expiryTimer.unref(); server.once('close', () => { clearInterval(expiryTimer); scheduler.stop(); budgets.close(); });
-  drains.set(server, async () => { scheduler.stop(); await scheduler.idle(); await budgets.shutdown(); });
+  drains.set(server, () => drain ??= (async () => {
+    draining = true; scheduler.stop(); clearInterval(expiryTimer);
+    await Promise.all([...active]); await scheduler.idle(); await budgets.shutdown();
+    if (server.listening) await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+  })());
   server.requestTimeout = 15000; server.headersTimeout = 10000;
   return server;
 }
