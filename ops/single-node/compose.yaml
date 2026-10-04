@@ -1,0 +1,50 @@
+# REFERENCE HARNESS: pilot, single-node, no HA claims; Blaze is ephemeral.
+# Actual deployment requires separate authorization. No TLS proxy is supplied.
+services:
+  postgres:
+    image: ${OPENSIGHT_POSTGRES_IMAGE:?Set an operator-approved PostgreSQL image digest}
+    environment:
+      POSTGRES_USER: opensight_operator
+      POSTGRES_DB: opensight
+      POSTGRES_PASSWORD_FILE: /run/opensight-secrets/postgres-operator-password
+      POSTGRES_INITDB_ARGS: --encoding=UTF8
+    volumes:
+      - metadata:/var/lib/postgresql/data
+      - ${OPENSIGHT_SECRETS_DIRECTORY:?Set a private secret directory}:/run/opensight-secrets:ro
+      - ./init-tenant.sh:/docker-entrypoint-initdb.d/20-tenant.sh:ro
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U opensight_operator -d opensight']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+  api:
+    image: ${OPENSIGHT_API_IMAGE:?Set a locally built reference image}
+    build:
+      context: ../..
+      dockerfile: ops/single-node/Dockerfile
+      args:
+        NODE_IMAGE: ${OPENSIGHT_NODE_IMAGE:?Set an operator-approved Node 24 image digest}
+    env_file:
+      - ${OPENSIGHT_RUNTIME_ENV:?Set a private env file}
+    environment:
+      OPENSIGHT_REFERENCE: single-node
+      OPENSIGHT_BACKUP_DIRECTORY: /var/lib/opensight/backups
+      HOST: 0.0.0.0
+      PORT: '3000'
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - '127.0.0.1:${OPENSIGHT_REFERENCE_PORT:-3000}:3000'
+    volumes:
+      - ${OPENSIGHT_SECRETS_DIRECTORY:?Set a private secret directory}:/run/opensight-secrets:ro
+      - ${OPENSIGHT_BACKUP_DIRECTORY:?Set a private backup directory}:/var/lib/opensight/backups
+    read_only: true
+    tmpfs:
+      - /tmp
+    # A single API owns the H7 scheduler and H4 disposable execution workers.
+    # Stop via the drain API and await exit before Compose stop/removal. Docker's
+    # forced stop deadline is not an application recovery or availability target.
+    init: true
+volumes:
+  metadata:
