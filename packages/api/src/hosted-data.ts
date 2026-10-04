@@ -20,6 +20,7 @@ export interface Admission {
 /** Every hosted data path enters here, before payload/connector/cache I/O. */
 export class HostedData {
   readonly cache?: HostedCache;
+  readonly prepaidCompute = new WeakSet<TenantContext>();
   private readonly verifiers = new WeakMap<TenantContext, () => Promise<void>>();
   private readonly publicationChecks = new WeakMap<TenantContext, () => Promise<void>>();
   private readonly signals = new WeakMap<TenantContext, AbortSignal>();
@@ -41,6 +42,7 @@ export class HostedData {
   async work<T>(context: TenantContext, refresh: boolean, admissions: readonly Admission[], run: () => Promise<T>, revisions?: Revisions): Promise<T> {
     if (!this.budgets) throw new MetadataError('BUDGET_MIGRATION_REQUIRED', 503);
     return this.budgets.run(context, refresh, async () => { await this.verifiers.get(context)?.(); await this.finish(context, admissions, revisions); }, async () => {
+      if (refresh && !this.prepaidCompute.has(context)) await this.sources.metadata.usage?.consume(this.sources.metadata, context, 'computeAttempts');
       const result = await run(); const scope = this.scope(context);
       if (Buffer.byteLength(JSON.stringify(result)) > scope.limits.resultBytes) throw new MetadataError('TENANT_BUDGET_EXCEEDED', 429);
       scope.check(); return result;

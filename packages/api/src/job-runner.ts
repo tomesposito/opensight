@@ -67,6 +67,7 @@ export class JobRunner {
         await c.query(`UPDATE h7_occurrences SET state = 'running' WHERE ${scoped} AND occurrence_id = ? AND state = 'queued'`, [...scopeArgs(run), run.id]);
       });
       const context = await this.store.context(run, run.ownerId);
+      await this.store.metadata.usage?.consume(this.store.metadata, context, 'computeAttempts');
       this.executor.begin(context, () => this.store.recheck(run));
       const result = await this.executor.execute(context, run.spec, this.store.clock());
       await this.store.db.transaction(async c => {
@@ -119,6 +120,7 @@ export class JobRunner {
         this.executor.begin(owner, verify); await this.executor.authorize(owner, run.spec);
         const recipient = await this.store.context(run, String(d.recipient_id));
         this.executor.begin(recipient, verify); await this.executor.authorize(recipient, run.spec);
+        if (!d.message) await this.store.metadata.usage?.consume(this.store.metadata, recipient, 'computeAttempts');
         const rendered = d.message ? JSON.parse(String(d.message)) as Pick<MailMessage, 'subject' | 'html'> : await this.executor.render(recipient, run.spec, new Date(run.createdAt));
         const message = await this.store.db.transaction(async c => {
           await this.store.checkRun(c, run); const user = await member(c, run, recipient.userId);

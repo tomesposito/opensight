@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { resourceBytes } from './hosted-usage.js';
 import { hasCapability, type Role } from '@opensight/query-engine';
 import { checksum } from './metadata-operator.js';
 import { MetadataError, missing, type Database, type SqlConnection } from './metadata-db.js';
@@ -56,9 +57,11 @@ export class JobStore {
       const args = [...scopeArgs(context), context.userId, identifier(id)], predicate = `${scoped} AND kind = 'prepared-dataset' AND owner_id = ? AND resource_id = ?`;
       const r = (await c.query(`SELECT body, version FROM h1_resources WHERE ${predicate}`, args))[0];
       if (!r) missing(); if (Number(r.version) !== expectedVersion) throw new MetadataError('METADATA_CONFLICT');
+      const before = this.metadata.usage ? await resourceBytes(c, context) : 0;
       const body = object(JSON.parse(String(r.body)));
       await c.query(`UPDATE h1_resources SET body = ?, version = version + 1 WHERE ${predicate}`, [JSON.stringify({ ...body, execution: settings }), ...args]);
       await c.query(`UPDATE h1_revisions SET configuration = configuration + 1 WHERE ${scoped}`, scopeArgs(context));
+      await this.metadata.usage?.storage(c, context, before);
       await appendMetadataEvent(c, context, 'prepared.execution.changed');
       const jobId = checksum(['prepared-refresh', context.userId, id]);
       const existing = (await c.query(`SELECT * FROM h7_jobs WHERE ${scoped} AND job_id = ?`, [...scopeArgs(context), jobId]))[0];

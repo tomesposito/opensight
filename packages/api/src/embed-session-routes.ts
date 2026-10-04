@@ -33,6 +33,7 @@ export async function embedSessionRoute(request: IncomingMessage, response: Serv
   const authorization = request.headers.authorization;
   if (!authorization?.startsWith('Embed ')) embedFailure('INVALID_EMBED_TOKEN', 401);
   const credential = authorization.slice(6), { session, context } = await sessions.verify(id, credential);
+  await content.metadata.usage?.consume(content.metadata, context, 'apiCalls');
   const revisions = await content.metadata.revisions(context), controller = new AbortController();
   request.once('aborted', () => controller.abort()); response.once('close', () => { if (!response.writableFinished) controller.abort(); });
   const recheck = async () => { await sessions.verify(id, credential); await content.metadata.assertRevisions(context, revisions); };
