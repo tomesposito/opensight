@@ -23,7 +23,7 @@ export interface JobExecutor {
 export class JobRenderer implements JobExecutor {
   readonly prep: HostedPrep;
   constructor(readonly data: HostedData, readonly content: EmbedContent) { this.prep = new HostedPrep(data); }
-  begin(context: TenantContext, recheck: () => Promise<void>): void { this.data.begin(context, undefined, recheck, recheck); this.content.data.begin(context, undefined, recheck, recheck); }
+  begin(context: TenantContext, recheck: () => Promise<void>): void { this.data.prepaidCompute.add(context); this.content.data.prepaidCompute.add(context); this.data.begin(context, undefined, recheck, recheck); this.content.data.begin(context, undefined, recheck, recheck); }
   private async dashboard(context: TenantContext, spec: Exclude<JobSpec, { kind: 'refresh' }>) {
     const asset = await this.content.asset(context, 'dashboard', spec.dashboardId), stored = object(asset.body.definition), definition = object(stored.Definition);
     if (!Array.isArray(asset.body.datasets) || asset.body.datasets.length !== 1 || !Array.isArray(definition.DataSetIdentifierDeclarations) || definition.DataSetIdentifierDeclarations.length !== 1) throw new MetadataError('JOB_DATASET_UNSUPPORTED', 422);

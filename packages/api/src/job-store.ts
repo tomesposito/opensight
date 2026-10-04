@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { resourceBytes } from './hosted-usage.js';
 import { hasCapability, type Role } from '@opensight/query-engine';
 import { checksum } from './metadata-operator.js';
 import { MetadataError, missing, type Database, type SqlConnection } from './metadata-db.js';
@@ -56,9 +57,11 @@ export class JobStore {
       const args = [...scopeArgs(context), context.userId, identifier(id)], predicate = `${scoped} AND kind = 'prepared-dataset' AND owner_id = ? AND resource_id = ?`;
       const r = (await c.query(`SELECT body, version FROM h1_resources WHERE ${predicate}`, args))[0];
       if (!r) missing(); if (Number(r.version) !== expectedVersion) throw new MetadataError('METADATA_CONFLICT');
+      const before = this.metadata.usage ? await resourceBytes(c, context) : 0;
       const body = object(JSON.parse(String(r.body)));
       await c.query(`UPDATE h1_resources SET body = ?, version = version + 1 WHERE ${predicate}`, [JSON.stringify({ ...body, execution: settings }), ...args]);
       await c.query(`UPDATE h1_revisions SET configuration = configuration + 1 WHERE ${scoped}`, scopeArgs(context));
+      await this.metadata.usage?.storage(c, context, before);
       await appendMetadataEvent(c, context, 'prepared.execution.changed');
       const jobId = checksum(['prepared-refresh', context.userId, id]);
       const existing = (await c.query(`SELECT * FROM h7_jobs WHERE ${scoped} AND job_id = ?`, [...scopeArgs(context), jobId]))[0];
@@ -99,6 +102,7 @@ export class JobStore {
         await cancelJob(c, context, id, 'JOB_REVISED', this.clock().toISOString());
         await c.query(`UPDATE h7_jobs SET version = version + 1, spec = ?, next_run = ?, stopped = 0, alert_state = 'ok' WHERE ${scoped} AND job_id = ?`, [JSON.stringify(spec), next, ...scopeArgs(context), id]);
       } else await c.query('INSERT INTO h7_jobs (tenant_id, namespace_id, job_id, owner_id, version, spec, next_run) VALUES (?,?,?,?,1,?,?)', [...scopeArgs(context), id, context.userId, JSON.stringify(spec), next]);
+      await appendMetadataEvent(c, context, row ? 'job.updated' : 'job.created');
       return this.find(c, context, id);
     });
   }
@@ -108,6 +112,7 @@ export class JobStore {
       if (job.version !== expectedVersion) throw new MetadataError('JOB_VERSION_CONFLICT');
       await cancelJob(c, context, id, 'JOB_STOPPED', this.clock().toISOString());
       await c.query(`UPDATE h7_jobs SET stopped = 1, next_run = NULL, version = version + 1 WHERE ${scoped} AND job_id = ?`, [...scopeArgs(context), id]);
+      await appendMetadataEvent(c, context, 'job.stopped');
     });
   }
   async history(context: TenantContext, id: string): Promise<Occurrence[]> {
@@ -135,6 +140,7 @@ export class JobStore {
     const id = checksum([job.tenantId, job.namespaceId, job.id, job.version, due]), now = this.clock().toISOString();
     await c.query(`INSERT INTO h7_occurrences VALUES (?,?,?,?,?,?,?,?,?,?,'queued',NULL,?,NULL) ON CONFLICT (tenant_id,namespace_id,job_id,job_version,due) DO NOTHING`,
       [...scopeArgs(job), id, job.id, job.ownerId, initiatedBy, job.version, due, JSON.stringify(job.spec), JSON.stringify(await revisions(c, job)), now]);
+    await appendMetadataEvent(c, job, 'job.queued');
     return readOccurrence((await c.query(`SELECT * FROM h7_occurrences WHERE ${scoped} AND occurrence_id = ?`, [...scopeArgs(job), id]))[0]!);
   }
   async checkRun(c: SqlConnection, run: Occurrence): Promise<Job> {

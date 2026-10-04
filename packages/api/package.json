@@ -11,7 +11,8 @@
     "metadata:migrate": "node dist/metadata-migrate-cli.js",
     "sources:migrate": "node dist/source-migrate-cli.js",
     "budgets:migrate": "node dist/budget-migrate-cli.js",
-    "jobs:migrate": "node dist/job-migrate-cli.js"
+    "jobs:migrate": "node dist/job-migrate-cli.js",
+    "reference": "node dist/single-node-cli.js"
   },
   "exports": {
     ".": {
@@ -28,11 +29,13 @@
     "@opensight/bundle-parser": "0.0.0",
     "@opensight/o-interpreter": "0.0.0",
     "@opensight/query-engine": "0.0.0",
-    "@opensight/web": "0.0.0"
+    "@opensight/web": "0.0.0",
+    "pg": "^8.23.0"
   },
   "devDependencies": {
     "@types/node": "^26.6.3",
     "fflate": "0.8.3",
-    "typescript": "^5.6.0"
+    "typescript": "^5.6.0",
+    "@types/pg": "^8.23.1"
   }
 }

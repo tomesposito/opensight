@@ -55,8 +55,8 @@ try {
     });
     for (const signal of ['SIGINT', 'SIGTERM'] as const) {
       process.once(signal, () => {
-        server.close();
-        server.closeAllConnections();
+        if (mode === 'hosted') void drainHostedServer(server).catch(() => { console.error('DRAIN_FAILED'); process.exitCode = 1; });
+        else server.close();
       });
     }
   }

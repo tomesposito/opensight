@@ -34,6 +34,9 @@ import { JobRunner } from './job-runner.js';
 import { JobOwnership, disposition } from './job-ownership.js';
 import { jobRoute } from './job-routes.js';
 import { Scheduler } from './schedule.js';
+import { hostedReadiness } from './hosted-health.js';
+import { HostedUsage, appendOperatorAudit } from './hosted-usage.js';
+import { referenceConfig, referenceDisclosure, assertReferenceSurfaces } from './single-node-config.js';
 
 const drains = new WeakMap<Server, () => Promise<void>>();
 export async function drainHostedServer(server: Server): Promise<void> { await drains.get(server)?.(); }
@@ -79,7 +82,15 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
   if (options.membershipDatabase?.durable !== true || options.tenantDatabase?.durable !== true) throw new MetadataError('DURABLE_MEMBERSHIP_STORE_REQUIRED', 503);
   if (typeof options.security?.authenticate !== 'function') throw new MetadataError('HOSTED_VERIFIER_REQUIRED', 503);
   const authenticate = options.security.authenticate;
-  const metadata = new TenantMetadata(options.tenantDatabase, options.membershipDatabase);
+  const reference = referenceConfig(options.env ?? process.env);
+  const usage = reference ? new HostedUsage(options.membershipDatabase, reference.entitlements) : undefined;
+  if (reference) await options.membershipDatabase.transaction(async c => {
+    for (const table of ['h8_usage', 'h8_usage_events', 'h8_audit', 'h8_recovery']) await c.query(`SELECT 1 FROM ${table} WHERE 1 = 0`);
+    const r = (await c.query('SELECT version FROM h8_schema WHERE id = 1'))[0];
+    if (Number(r?.version) !== 1) throw new MetadataError('MIGRATIONS_REQUIRED', 503);
+    await appendOperatorAudit(c, 'reference.started');
+  });
+  const metadata = new TenantMetadata(options.tenantDatabase, options.membershipDatabase, usage);
   const policy = embeddingPolicy(options.env ?? process.env, config.origin);
   await initializeEmbedding(options.membershipDatabase);
   const embedding = new HostedEmbedding(options.membershipDatabase, metadata, policy);
@@ -101,14 +112,55 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
   await options.membershipDatabase.transaction(async c => { await c.query('SELECT tenant_id FROM h1_tenants WHERE 1 = 0'); await c.query('SELECT subject FROM h2_memberships WHERE 1 = 0'); });
   await assertHostedSourcesReady(options.membershipDatabase);
   await expireUploads(options.membershipDatabase);
+  let draining = false;
+  let drain: Promise<void> | undefined;
+  const active = new Set<Promise<void>>();
+  let requests = 0, errors = 0;
+  const operator = (request: IncomingMessage): void => {
+    if (request.headers.origin !== undefined || !request.headers.authorization?.startsWith('Operator ')
+      || !equal(request.headers.authorization.slice(9), config.operatorKey.toString('base64url'))) throw new MetadataError('OPERATOR_REQUIRED', 403);
+  };
   const server = createServer((request, response) => {
-    void (async () => {
+    requests++;
+    const work = (async () => {
       boundary(request, config.origin);
       let path = request.url!;
+      if (['/healthz', '/readyz', '/metrics', '/api/host/drain', '/api/host/reference'].includes(path)) {
+        operator(request);
+        method(request, response, [path.endsWith('drain') ? 'POST' : 'GET']);
+        if (path === '/api/host/reference') { send(response, 200, { disclosure: referenceDisclosure, location: reference?.location ?? null, supported: !!reference }); return; }
+        if (draining && path !== '/healthz' && path !== '/api/host/drain') throw new MetadataError('SERVER_DRAINING', 503);
+        if (path === '/metrics') {
+          const usageMetrics = await usage?.metrics() ?? '';
+          response.writeHead(200, { 'Content-Type': 'text/plain; version=0.0.4', 'Cache-Control': 'no-store' });
+          response.end(`# TYPE opensight_requests_total counter\nopensight_requests_total ${requests}\n# TYPE opensight_request_errors_total counter\nopensight_request_errors_total ${errors}\n${usageMetrics}`); return;
+        }
+        if (path === '/healthz') { send(response, 200, { alive: true }); return; }
+        if (path === '/api/host/drain') {
+          await body(request, []);
+          draining = true; scheduler.stop(); runner.stop();
+          send(response, 202, { state: 'draining' });
+          setImmediate(() => { void drainHostedServer(server).catch(() => { console.error('DRAIN_FAILED'); }); }); return;
+        }
+        if (draining) throw new MetadataError('SERVER_DRAINING', 503);
+        await hostedReadiness(options.membershipDatabase, options.tenantDatabase);
+        if (reference) await options.membershipDatabase.transaction(async c => {
+          for (const table of ['h8_usage', 'h8_usage_events', 'h8_audit', 'h8_recovery']) await c.query(`SELECT 1 FROM ${table} WHERE 1 = 0`);
+          const row = (await c.query('SELECT version FROM h8_schema WHERE id = 1'))[0];
+          if (Number(row?.version) !== 1) throw new MetadataError('MIGRATIONS_REQUIRED', 503);
+        }).catch(() => { throw new MetadataError('MIGRATIONS_REQUIRED', 503); });
+        send(response, 200, { ready: true }); return;
+      }
+      if (draining) throw new MetadataError('SERVER_DRAINING', 503);
       if (path === '/api/host' || path.startsWith('/api/host/')) {
         const authorization = request.headers.authorization;
         const browserMembership = /^\/api\/host\/tenants\/[A-Za-z0-9_-]+\/users(?:\/[A-Za-z0-9_-]+)?$/.test(path);
         if (request.headers.origin !== undefined && !browserMembership || !authorization?.startsWith('Operator ') || !equal(authorization.slice(9), config.operatorKey.toString('base64url'))) throw new MetadataError('OPERATOR_REQUIRED', 403);
+        if (path === '/api/host/reference/surfaces') {
+          operator(request); method(request, response, ['PUT']);
+          assertReferenceSurfaces(await readBody(request));
+          send(response, 200, { disclosure: referenceDisclosure }); return;
+        }
         if (path === '/api/host/tenants') {
           method(request, response, ['POST']);
           const input = await body(request, ['name', 'administrator']), administrator = object(input.administrator, ['email', 'name']);
@@ -138,6 +190,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
           if (!action || action === 'suspend' || action === 'resume') {
             method(request, response, [action ? 'POST' : 'DELETE']);
             const input = await body(request, ['expectedVersion']);
+            if (reference && action === 'resume' && (await options.membershipDatabase.transaction(c => c.query('SELECT tenant_id FROM h8_recovery WHERE tenant_id = ?', [tenantId]))).length) throw new MetadataError('RESTORE_REVIEW_REQUIRED', 409);
             send(response, 200, await provisioning.transition(idempotency(request), tenantId, action === 'suspend' ? 'suspend' : action === 'resume' ? 'resume' : 'delete', input.expectedVersion as number)); return;
           }
         }
@@ -172,6 +225,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
       };
       const context = await metadata.authenticate(request, verified);
       path = scopePath(path, context);
+      await usage?.consume(metadata, context, 'apiCalls');
       if (path === '/api/session') {
         method(request, response, ['GET']);
         const user = await metadata.get(context, { kind: 'user', id: context.userId });
@@ -205,7 +259,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
         response.setHeader('ETag', `"${result.revision}"`);
         send(response, 200, result); return;
       }
-      if (/^\/api\/embedding\/domains(?:\/|$)/.test(path)) throw new MetadataError('EMBED_FEATURE_UNSUPPORTED', 422);
+      if (/^\/api\/embedding\/domains(?:\/|$)/.test(path)) throw new MetadataError(reference ? 'UNSUPPORTED' : 'EMBED_FEATURE_UNSUPPORTED', 422);
       if (['/api/embedding/sessions', '/api/embedding/GenerateEmbedUrlForRegisteredUser', '/api/embedding/GenerateEmbedUrlForAnonymousUser'].includes(path)) {
         method(request, response, ['POST']);
         if (request.headers.origin !== undefined) throw new MetadataError('EMBED_BACKEND_REQUIRED', 403);
@@ -232,18 +286,27 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
       })) return;
       throw new MetadataError('HOSTED_CAPABILITY_UNAVAILABLE', 503);
     })().catch((error: unknown) => {
-      request.resume();
+      errors++; request.resume();
       const dataError = error instanceof QueryEngineError || error instanceof PrepError || error instanceof UploadError || error instanceof BlazeError;
       const status = dataError ? 422 : error instanceof MetadataError || error instanceof RequestError ? error.status : 500;
       const errorCode = dataError ? error.code : error instanceof MetadataError || error instanceof SecurityError ? error.code : error instanceof RequestError ? 'HOSTED_REQUEST_INVALID' : 'HOSTED_INTERNAL_ERROR';
       send(response, status, { errorCode });
-    });
+    }).finally(() => { active.delete(work); });
+    active.add(work);
   });
-  const expiryTimer = setInterval(() => { void expireUploads(options.membershipDatabase).catch(() => { /* Reads still fail closed on expiry. */ }); }, 60000);
+  let expiryWork: Promise<void> | undefined;
+  const expiryTimer = setInterval(() => {
+    expiryWork ??= expireUploads(options.membershipDatabase).catch(() => { /* Reads still fail closed on expiry. */ }).finally(() => { expiryWork = undefined; });
+  }, 60000);
   await runner.recover();
   server.once('listening', () => scheduler.start());
   expiryTimer.unref(); server.once('close', () => { clearInterval(expiryTimer); scheduler.stop(); budgets.close(); });
-  drains.set(server, async () => { scheduler.stop(); await scheduler.idle(); await budgets.shutdown(); });
+  drains.set(server, () => drain ??= (async () => {
+    draining = true; scheduler.stop(); runner.stop(); clearInterval(expiryTimer);
+    await Promise.all([...active]); await scheduler.idle(); await expiryWork; await budgets.shutdown();
+    if (reference) await options.membershipDatabase.transaction(c => appendOperatorAudit(c, 'reference.drained'));
+    if (server.listening) await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+  })());
   server.requestTimeout = 15000; server.headersTimeout = 10000;
   return server;
 }

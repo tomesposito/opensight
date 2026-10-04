@@ -1,0 +1,12 @@
+# Reference build only; actual deployment requires separate authorization.
+# Pilot, single-node, no HA claims; ephemeral Blaze.
+**
+!package.json
+!package-lock.json
+!packages/
+!packages/**
+packages/**/node_modules
+packages/**/dist
+packages/**/.opensight
+packages/**/.env*
+packages/**/*.log

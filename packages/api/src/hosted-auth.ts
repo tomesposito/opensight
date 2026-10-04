@@ -1,3 +1,4 @@
+import { appendMetadataEvent } from './metadata-outbox.js';
 import { createHmac, randomBytes } from 'node:crypto';
 import type { IncomingMessage } from 'node:http';
 import type { SecurityOptions, Identity } from './security.js';
@@ -130,6 +131,8 @@ export class HostedAuth {
       if (Number(current.accepted) !== 1) {
         await c.query("UPDATE h2_identities SET status = 'active' WHERE subject = ?", [String(current.subject)]);
         await c.query("UPDATE h2_memberships SET status = 'active', version = version + 1 WHERE subject = ? AND tenant_id = ? AND status = 'invited'", [String(current.subject), String(current.tenant_id)]);
+        const scope = (await c.query('SELECT namespace_id FROM h1_namespaces WHERE tenant_id = ?', [String(current.tenant_id)]))[0]!;
+        await appendMetadataEvent(c, { tenantId: String(current.tenant_id), namespaceId: String(scope.namespace_id) }, 'membership.accepted');
         await c.query('UPDATE h2_invitations SET accepted = 1 WHERE invitation_id = ?', [String(current.invitation_id)]);
       }
       return { accepted: true };
