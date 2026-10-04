@@ -45,6 +45,7 @@ test('H8 storage gates encrypted sources/uploads and embedded metadata transacti
   const sources = new HostedSources(f.metadata, f.env.OPENSIGHT_AUTH_ENCRYPTION_KEY, endpoints);
   const before = await f.db.transaction(c => resourceBytes(c, context));
   await assert.rejects(sources.create(context, 'oversize', registration()), { code: 'USAGE_LIMIT_EXCEEDED' });
+  await assert.rejects(sources.upload(context, upload()), { code: 'USAGE_LIMIT_EXCEEDED' });
   assert.equal(await f.db.transaction(c => resourceBytes(c, context)), before);
   assert.equal((await f.metadata.list(context, 'secret')).length, 0);
   await f.metadata.put(context, { kind: 'group', id: 'small' }, { name: 'small', userIds: [] });
@@ -92,5 +93,43 @@ test('H8 absent/malformed entitlements fail closed, with no foreign context or H
   assert.equal((await request('/metrics', { headers: { authorization: 'one' } })).body.errorCode, 'OPERATOR_REQUIRED');
   const metrics = await request('/metrics', { headers: operator });
   assert.match(metrics.body, /opensight_usage_admitted.*tenant-one.* 1/); assert.match(metrics.body, /opensight_usage_denied.*tenant-one.* 1/);
+  await drainHostedServer(server);
+});
+
+
+test('H8 admitted scheduled refresh is charged once, manual refresh is charged, corrupt accounting fails closed', async t => {
+  const f = await setup(t), sources = new HostedSources(f.metadata, f.env.OPENSIGHT_AUTH_ENCRYPTION_KEY, endpoints);
+  const c = await f.login(), source = await sources.upload(c, upload());
+  const budgets = new TenantBudgets(budgetConfig, context => f.metadata.assertContext(context)); t.after(() => budgets.close());
+  const data = new HostedData(sources, undefined, budgets);
+  const { EmbedContent } = await import('../dist/embed-content.js');
+  const { JobRenderer } = await import('../dist/job-renderer.js');
+  const renderer = new JobRenderer(data, new EmbedContent(data));
+  const store = new JobStore(f.db, f.metadata, () => new Date(f.usage.clock())), runner = new JobRunner(store, renderer, new StubMailTransport());
+  const spec = { ...refresh, target: { kind: 'source', id: source.id } };
+  await store.put(c, 'refresh-once', spec, 0, (context, job) => renderer.authorize(context, job));
+  await store.enqueue(c, 'refresh-once'); await runner.tick();
+  assert.equal((await store.history(c, 'refresh-once'))[0].state, 'succeeded');
+  assert.equal((await f.db.transaction(c => c.query('SELECT admitted FROM h8_usage')))[0].admitted, 1);
+  await data.refresh(await f.login(), source.id);
+  await assert.rejects(data.refresh(await f.login(), source.id), { code: 'USAGE_LIMIT_EXCEEDED' });
+  await f.db.transaction(c => c.query('UPDATE h8_usage SET admitted = -1'));
+  await assert.rejects(f.usage.consume(f.metadata, await f.login(), 'computeAttempts'), { code: 'ENTITLEMENT_UNRESOLVED' });
+  await f.db.transaction(c => c.query('DROP TABLE h8_usage'));
+  await assert.rejects(f.usage.consume(f.metadata, await f.login(), 'apiCalls'), { code: 'ENTITLEMENT_UNRESOLVED' });
+});
+
+test('H8 verified embed requests share the tenant API limit; frame credentials cannot bypass it', async t => {
+  const { sessionFixture } = await import('./embed-session-helpers.mjs');
+  const { seedEmbedContent } = await import('./embed-content-helpers.mjs');
+  const { serverEnvironment } = await import('./embed-http-helpers.mjs');
+  const f = await sessionFixture(t); await seedEmbedContent(f); await initializeUsage(f.db);
+  const issued = await f.issue(), redeemed = await f.redeem(issued);
+  const h = { ...f, env: serverEnvironment(f, { ...usageEnvironment, OPENSIGHT_ENTITLEMENTS: JSON.stringify({ defaults: { ...limits, apiCalls: 0 }, tenants: {} }) }) };
+  const { server, request } = await serveH8(t, h, { security: { authenticate: f.auth.authenticate } });
+  assert.equal((await request(`/api/embed/sessions/${issued.sessionId}/status`, { headers: { authorization: `Embed ${redeemed.credential}` } })).body.errorCode, 'USAGE_LIMIT_EXCEEDED');
+  assert.equal((await request(`/api/embed/sessions/${issued.sessionId}/content`, { headers: { authorization: `Embed ${redeemed.credential}` } })).body.errorCode, 'USAGE_LIMIT_EXCEEDED');
+  const events = await f.db.transaction(c => c.query('SELECT tenant_id, metric, outcome FROM h8_usage_events'));
+  assert.equal(events.length, 2); assert.ok(events.every(e => e.tenant_id === f.tenant.tenantId && e.metric === 'apiCalls' && e.outcome === 'denied'));
   await drainHostedServer(server);
 });

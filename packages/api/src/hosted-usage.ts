@@ -71,7 +71,9 @@ export class HostedUsage {
       const args = [context.tenantId, context.namespaceId, period, metric];
       await c.query('INSERT INTO h8_usage VALUES (?,?,?,?,0,0) ON CONFLICT (tenant_id, namespace_id, period, metric) DO NOTHING', args);
       const row = (await c.query('SELECT admitted FROM h8_usage WHERE tenant_id = ? AND namespace_id = ? AND period = ? AND metric = ?', args))[0]!;
-      const denied = Number(row.admitted) >= limit[metric];
+      const admitted = Number(row.admitted);
+      if (!Number.isSafeInteger(admitted) || admitted < 0) throw new MetadataError('ENTITLEMENT_UNRESOLVED', 503);
+      const denied = admitted >= limit[metric];
       await c.query(`UPDATE h8_usage SET ${denied ? 'denied = denied + 1' : 'admitted = admitted + 1'} WHERE tenant_id = ? AND namespace_id = ? AND period = ? AND metric = ?`, args);
       await c.query('INSERT INTO h8_usage_events VALUES (?,?,?,?,?,?,?,?)', [randomUUID(), context.tenantId, context.namespaceId, now, metric, metric === 'apiCalls' ? 'call' : 'attempt', 1, denied ? 'denied' : 'admitted']);
       return denied;
