@@ -33,3 +33,18 @@ test('H8 graceful drain denies new work, finishes admitted requests and closes t
   await drainHostedServer(server); assert.equal(server.listening, false);
   await drainHostedServer(server);
 });
+
+test('H8 scheduler drain finishes its executing occurrence and leaves unstarted jobs queued', async t => {
+  t.mock.timers.enable({ apis: ['Date', 'setInterval'], now: Date.UTC(2026, 9, 3) });
+  const { jobFixture, executor, refresh } = await import('./job-helpers.mjs');
+  const e = executor(); let release, entered, executions = 0;
+  const held = new Promise(r => { release = r; }), started = new Promise(r => { entered = r; });
+  e.execute = async () => { executions++; entered(); await held; return {}; };
+  const f = await jobFixture(t, e);
+  const c = await f.login(); await f.put('first', refresh); await f.put('second', refresh);
+  await f.store.enqueue(c, 'first'); await f.store.enqueue(c, 'second');
+  const running = f.runner.tick(); await started; f.runner.stop(); release(); await running;
+  assert.equal(executions, 1);
+  const states = (await f.db.transaction(c => c.query('SELECT state FROM h7_occurrences'))).map(r => r.state).sort();
+  assert.deepEqual(states, ['queued', 'succeeded']);
+});

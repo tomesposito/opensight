@@ -11,6 +11,8 @@ const retryable = (code: string) => ['SMTP_SEND_FAILED', 'SMTP_NOT_CONFIGURED', 
 /** One scheduler only. Database records make restart durable, not multi-node safe. */
 export class JobRunner {
   private pending?: Promise<void>;
+  private stopping = false;
+  stop(): void { this.stopping = true; }
   constructor(readonly store: JobStore, readonly executor: JobExecutor, readonly mail: MailTransport) {}
   async recover(): Promise<void> {
     await this.store.db.transaction(async c => {
@@ -23,6 +25,7 @@ export class JobRunner {
   async claimDue(): Promise<void> {
     const jobs = await this.store.db.transaction(c => c.query("SELECT * FROM h7_jobs WHERE stopped = 0 AND next_run <= ? ORDER BY next_run, tenant_id, job_id", [this.store.clock().toISOString()]));
     for (const raw of jobs) {
+      if (this.stopping) return;
       const job = readJob(raw);
       try {
         await this.store.db.transaction(async c => {
@@ -56,8 +59,8 @@ export class JobRunner {
     await this.claimDue();
     // Include alert occurrences enqueued by refresh completion in this tick.
     const queued = async () => (await this.store.db.transaction(c => c.query("SELECT * FROM h7_occurrences WHERE state = 'queued' ORDER BY created_at, occurrence_id"))).map(readOccurrence);
-    for (const run of await queued()) await this.execute(run);
-    for (const run of await queued()) await this.execute(run);
+    for (const run of await queued()) { if (this.stopping) return; await this.execute(run); }
+    for (const run of await queued()) { if (this.stopping) return; await this.execute(run); }
     await this.deliver();
   }
   async execute(run: Occurrence): Promise<void> {
@@ -101,6 +104,7 @@ export class JobRunner {
   async deliver(): Promise<void> {
     const deliveries = await this.store.db.transaction(c => c.query("SELECT * FROM h7_deliveries WHERE state = 'pending' AND next_attempt <= ? ORDER BY next_attempt, delivery_id", [this.store.clock().toISOString()]));
     for (const d of deliveries) {
+      if (this.stopping) return;
       const scope = { tenantId: String(d.tenant_id), namespaceId: String(d.namespace_id) }, id = String(d.delivery_id);
       const row = (await this.store.db.transaction(c => c.query(`SELECT * FROM h7_occurrences WHERE ${scoped} AND occurrence_id = ?`, [...scopeArgs(scope), d.occurrence_id!])))[0]!;
       const run = readOccurrence(row);

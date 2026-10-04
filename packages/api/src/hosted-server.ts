@@ -85,6 +85,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
   const reference = referenceConfig(options.env ?? process.env);
   const usage = reference ? new HostedUsage(options.membershipDatabase, reference.entitlements) : undefined;
   if (reference) await options.membershipDatabase.transaction(async c => {
+    for (const table of ['h8_usage', 'h8_usage_events', 'h8_audit', 'h8_recovery']) await c.query(`SELECT 1 FROM ${table} WHERE 1 = 0`);
     const r = (await c.query('SELECT version FROM h8_schema WHERE id = 1'))[0];
     if (Number(r?.version) !== 1) throw new MetadataError('MIGRATIONS_REQUIRED', 503);
     await appendOperatorAudit(c, 'reference.started');
@@ -128,6 +129,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
         operator(request);
         method(request, response, [path.endsWith('drain') ? 'POST' : 'GET']);
         if (path === '/api/host/reference') { send(response, 200, { disclosure: referenceDisclosure, location: reference?.location ?? null, supported: !!reference }); return; }
+        if (draining && path !== '/healthz' && path !== '/api/host/drain') throw new MetadataError('SERVER_DRAINING', 503);
         if (path === '/metrics') {
           const usageMetrics = await usage?.metrics() ?? '';
           response.writeHead(200, { 'Content-Type': 'text/plain; version=0.0.4', 'Cache-Control': 'no-store' });
@@ -136,13 +138,14 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
         if (path === '/healthz') { send(response, 200, { alive: true }); return; }
         if (path === '/api/host/drain') {
           await body(request, []);
-          draining = true; scheduler.stop();
+          draining = true; scheduler.stop(); runner.stop();
           send(response, 202, { state: 'draining' });
           setImmediate(() => { void drainHostedServer(server).catch(() => { console.error('DRAIN_FAILED'); }); }); return;
         }
         if (draining) throw new MetadataError('SERVER_DRAINING', 503);
         await hostedReadiness(options.membershipDatabase, options.tenantDatabase);
         if (reference) await options.membershipDatabase.transaction(async c => {
+          for (const table of ['h8_usage', 'h8_usage_events', 'h8_audit', 'h8_recovery']) await c.query(`SELECT 1 FROM ${table} WHERE 1 = 0`);
           const row = (await c.query('SELECT version FROM h8_schema WHERE id = 1'))[0];
           if (Number(row?.version) !== 1) throw new MetadataError('MIGRATIONS_REQUIRED', 503);
         }).catch(() => { throw new MetadataError('MIGRATIONS_REQUIRED', 503); });
@@ -291,13 +294,16 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
     }).finally(() => { active.delete(work); });
     active.add(work);
   });
-  const expiryTimer = setInterval(() => { void expireUploads(options.membershipDatabase).catch(() => { /* Reads still fail closed on expiry. */ }); }, 60000);
+  let expiryWork: Promise<void> | undefined;
+  const expiryTimer = setInterval(() => {
+    expiryWork ??= expireUploads(options.membershipDatabase).catch(() => { /* Reads still fail closed on expiry. */ }).finally(() => { expiryWork = undefined; });
+  }, 60000);
   await runner.recover();
   server.once('listening', () => scheduler.start());
   expiryTimer.unref(); server.once('close', () => { clearInterval(expiryTimer); scheduler.stop(); budgets.close(); });
   drains.set(server, () => drain ??= (async () => {
-    draining = true; scheduler.stop(); clearInterval(expiryTimer);
-    await Promise.all([...active]); await scheduler.idle(); await budgets.shutdown();
+    draining = true; scheduler.stop(); runner.stop(); clearInterval(expiryTimer);
+    await Promise.all([...active]); await scheduler.idle(); await expiryWork; await budgets.shutdown();
     if (reference) await options.membershipDatabase.transaction(c => appendOperatorAudit(c, 'reference.drained'));
     if (server.listening) await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
   })());

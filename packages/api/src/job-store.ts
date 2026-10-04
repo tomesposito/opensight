@@ -102,6 +102,7 @@ export class JobStore {
         await cancelJob(c, context, id, 'JOB_REVISED', this.clock().toISOString());
         await c.query(`UPDATE h7_jobs SET version = version + 1, spec = ?, next_run = ?, stopped = 0, alert_state = 'ok' WHERE ${scoped} AND job_id = ?`, [JSON.stringify(spec), next, ...scopeArgs(context), id]);
       } else await c.query('INSERT INTO h7_jobs (tenant_id, namespace_id, job_id, owner_id, version, spec, next_run) VALUES (?,?,?,?,1,?,?)', [...scopeArgs(context), id, context.userId, JSON.stringify(spec), next]);
+      await appendMetadataEvent(c, context, row ? 'job.updated' : 'job.created');
       return this.find(c, context, id);
     });
   }
@@ -111,6 +112,7 @@ export class JobStore {
       if (job.version !== expectedVersion) throw new MetadataError('JOB_VERSION_CONFLICT');
       await cancelJob(c, context, id, 'JOB_STOPPED', this.clock().toISOString());
       await c.query(`UPDATE h7_jobs SET stopped = 1, next_run = NULL, version = version + 1 WHERE ${scoped} AND job_id = ?`, [...scopeArgs(context), id]);
+      await appendMetadataEvent(c, context, 'job.stopped');
     });
   }
   async history(context: TenantContext, id: string): Promise<Occurrence[]> {
@@ -138,6 +140,7 @@ export class JobStore {
     const id = checksum([job.tenantId, job.namespaceId, job.id, job.version, due]), now = this.clock().toISOString();
     await c.query(`INSERT INTO h7_occurrences VALUES (?,?,?,?,?,?,?,?,?,?,'queued',NULL,?,NULL) ON CONFLICT (tenant_id,namespace_id,job_id,job_version,due) DO NOTHING`,
       [...scopeArgs(job), id, job.id, job.ownerId, initiatedBy, job.version, due, JSON.stringify(job.spec), JSON.stringify(await revisions(c, job)), now]);
+    await appendMetadataEvent(c, job, 'job.queued');
     return readOccurrence((await c.query(`SELECT * FROM h7_occurrences WHERE ${scoped} AND occurrence_id = ?`, [...scopeArgs(job), id]))[0]!);
   }
   async checkRun(c: SqlConnection, run: Occurrence): Promise<Job> {

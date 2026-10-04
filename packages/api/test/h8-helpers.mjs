@@ -30,3 +30,8 @@ export async function serveH8(t, f, extra = {}) {
   });
   return { server, request, operator: { authorization: `Operator ${Buffer.from(f.env.OPENSIGHT_OPERATOR_KEY, 'base64').toString('base64url')}` } };
 }
+
+import { budgetConfig } from './budget-helpers.mjs';
+export const referenceEnv = { OPENSIGHT_REFERENCE: 'single-node', OPENSIGHT_REFERENCE_LOCATION: 'local', OPENSIGHT_MAINTENANCE: 'frozen',
+  OPENSIGHT_ENTITLEMENTS: JSON.stringify({ defaults: { apiCalls: 100, computeAttempts: 5, storageBytes: 100000 }, tenants: {} }),
+  OPENSIGHT_NODE_LIMITS: JSON.stringify(budgetConfig.node), OPENSIGHT_TENANT_LIMIT_DEFAULTS: JSON.stringify(budgetConfig.defaults) };
