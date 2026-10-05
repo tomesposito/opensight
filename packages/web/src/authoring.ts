@@ -1,5 +1,6 @@
 import { paletteValid, themeValid, type AnalysisTheme } from './themes.js';
-import { formattingValid, gaugeValid, binsValid, legendPositionValid, type LegendPosition, type VisualFormatting } from './formatting.js';
+import { formattingValid, gaugeValid, binsValid, legendPositionValid, rowGroupPathValid, type LegendPosition, type VisualFormatting } from './formatting.js';
+import type { Cell } from './model.js';
 import { EXTRA_VISUALS, extraKind, type VisualKind } from './visual-catalog.js';
 export type { VisualKind } from './visual-catalog.js';
 import { parseExpression } from '@opensight/query-engine/browser';
@@ -145,6 +146,7 @@ export type AuthorAction =
   | { type: 'chrome'; mode: 'light' | 'dark' }
   | { type: 'palette'; palette?: string[] }
   | { type: 'formatting'; formatting: VisualFormatting }
+  | { type: 'pivot-row-group'; id: string; path: Cell[]; collapsed: boolean }
   | { type: 'gauge'; min: number; max: number }
   | { type: 'bins'; bins: number }
   | { type: 'hierarchy'; hierarchy: DimensionHierarchy | null }
@@ -225,6 +227,14 @@ export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorD
   }
   const sheet = activeSheet(draft);
   const update = (changes: Partial<AuthorSheet>): AuthorDraft => ({ ...draft, sheets: draft.sheets.map(s => s === sheet ? { ...s, ...changes } : s) });
+  if (action.type === 'pivot-row-group') {
+    const visual = sheet.visuals.find(v => v.id === action.id);
+    if (visual?.kind !== 'pivot' || !rowGroupPathValid(action.path) || action.path.length >= visual.rows.length || typeof action.collapsed !== 'boolean') return draft;
+    const pivot = visual.formatting?.pivot;
+    const groups = (pivot?.collapsedRowGroups ?? []).filter(path => JSON.stringify(path) !== JSON.stringify(action.path));
+    if (action.collapsed) groups.push([...action.path]);
+    return update({ visuals: sheet.visuals.map(v => v === visual ? { ...v, formatting: { ...v.formatting, pivot: { ...pivot, collapsedRowGroups: groups } } } : v) });
+  }
   if (action.type === 'o-add') {
     const id = nextId('visual', [...draft.sheets.flatMap(s => s.visuals.map(v => v.id)), ...originalIds(draft, true)]);
     const visual = structuredClone({ ...action.visual, id });
@@ -286,7 +296,7 @@ export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorD
     const remaining = visuals.map(v => v.filterActions ? { ...v, filterActions: v.filterActions.map(a => ({ ...a, targets: a.targets === 'all' ? 'all' as const : a.targets.filter(id => id !== action.id), mappings: Object.fromEntries(Object.entries(a.mappings).filter(([id]) => id !== action.id)) })) } : v);
     return update({ visuals: remaining, layout: sheet.layout.filter(p => p.i !== action.id), selectedId: sheet.selectedId === action.id ? (visuals[Math.min(index, visuals.length - 1)]?.id ?? null) : sheet.selectedId });
   }
-  return update({ visuals: sheet.visuals.map(item => {
+  const visuals = sheet.visuals.map(item => {
     if (item.id !== sheet.selectedId) return item;
     let visual = item;
     if (visual.hierarchy && (action.type === 'kind' && noDimensions(action.kind) || (action.type === 'assign' || action.type === 'unassign') && action.well !== 'values' && dataFields(draft.calculatedFields, draft.dataset).some(f => f.name === action.field && f.role === 'dimension'))) {
@@ -356,7 +366,13 @@ export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorD
       }
     }
     return visual;
-  }) });
+  }).map((visual, index) => {
+    const previous = sheet.visuals[index]!;
+    if (!visual.formatting?.pivot?.collapsedRowGroups || visual.kind === previous.kind && JSON.stringify(visual.rows) === JSON.stringify(previous.rows)) return visual;
+    const { collapsedRowGroups: _old, ...pivot } = visual.formatting.pivot;
+    return { ...visual, formatting: { ...visual.formatting, pivot } };
+  });
+  return update({ visuals });
 }
 
 /** Explicit remapping authorizes only matching sales columns; it never guesses by ARN. */

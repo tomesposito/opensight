@@ -17,11 +17,17 @@ export interface PivotOptions {
   metricPlacement?: 'columns' | 'rows';
   hideEmptyRows?: boolean; hideEmptyColumns?: boolean;
   wordWrap?: boolean; columnWidth?: number;
+  /** Typed row-dimension prefixes; omitted groups are expanded. */
+  collapsedRowGroups?: Cell[][];
+}
+export function rowGroupPathValid(raw: unknown): raw is Cell[] {
+  return Array.isArray(raw) && raw.length > 0 && raw.every(value => value === null || typeof value === 'string' || typeof value === 'boolean' || typeof value === 'number' && Number.isFinite(value));
 }
 export function pivotOptionsValid(raw: unknown): raw is PivotOptions {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return false;
   const p = raw as Record<string, unknown>;
-  return Object.keys(p).every(k => ['metricPlacement', 'hideEmptyRows', 'hideEmptyColumns', 'wordWrap', 'columnWidth'].includes(k))
+  return Object.keys(p).every(k => ['metricPlacement', 'hideEmptyRows', 'hideEmptyColumns', 'wordWrap', 'columnWidth', 'collapsedRowGroups'].includes(k))
+    && (p.collapsedRowGroups === undefined || Array.isArray(p.collapsedRowGroups) && p.collapsedRowGroups.every(rowGroupPathValid) && new Set(p.collapsedRowGroups.map(path => JSON.stringify(path))).size === p.collapsedRowGroups.length)
     && (p.metricPlacement === undefined || p.metricPlacement === 'columns' || p.metricPlacement === 'rows')
     && ['hideEmptyRows', 'hideEmptyColumns', 'wordWrap'].every(k => p[k] === undefined || typeof p[k] === 'boolean')
     && (p.columnWidth === undefined || Number.isInteger(p.columnWidth) && Number(p.columnWidth) >= 60 && Number(p.columnWidth) <= 400);
