@@ -410,8 +410,23 @@ export const rowGroupKey = (path: Cell[]): string => JSON.stringify(path);
  * stays visible as the collapsed anchor and the grand total never hides.
  */
 export function rowGroupVisibility(paths: Cell[][], collapsed: ReadonlySet<string>): boolean[] {
-  const groups = [...collapsed].map(key => JSON.parse(key) as Cell[]);
-  return paths.map(path => !groups.some(group => group.length < path.length && group.every((cell, i) => cell === path[i])));
+  return paths.map(path => {
+    for (let depth = 1; depth < path.length; depth++) if (collapsed.has(rowGroupKey(path.slice(0, depth)))) return false;
+    return true;
+  });
+}
+
+/** Presentation anchors when subtotals are hidden; never invent aggregate values. */
+export function pivotRowGroupHeaders(table: CompiledVisual['table']): { beforeRow: number; path: Cell[] }[] {
+  const seen = new Set<string>(), headers: { beforeRow: number; path: Cell[] }[] = [];
+  table.rowGroupPaths?.forEach((path, beforeRow) => {
+    if (table.rowKinds?.[beforeRow] !== 'detail') return;
+    for (let depth = 1; depth < path.length; depth++) {
+      const prefix = path.slice(0, depth), key = rowGroupKey(prefix);
+      if (!seen.has(key)) { seen.add(key); headers.push({ beforeRow, path: prefix }); }
+    }
+  });
+  return headers;
 }
 
 /** Native HTML pivot: only additive SUM bindings are accepted, so rollups are exact over the supplied groups. */

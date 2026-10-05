@@ -3,7 +3,7 @@ import type { VisualInteraction } from './visual-selection.js';
 import { executeFixtureQuery } from './fixture-query.js';
 import type { AuthorParameter } from './parameters.js';
 import { useEffect, useMemo, useState } from 'react';
-import { VisualCard } from './VisualCard.js';
+import { VisualCard, type RowGroupToggle } from './VisualCard.js';
 import { buildAuthorVisual } from './author-preview.js';
 import { buildAuthorQuery, loadAuthorRows } from './author-query.js';
 import type { AuthorRows, QueryClient } from './author-query.js';
@@ -12,7 +12,7 @@ import type { QueryRequest } from './api-client.js';
 
 export const PARAMETER_DEBOUNCE_MS = 250;
 
-export function LiveAuthorVisual({ visual, theme, client, calculations, parameters = [], interaction, interactive = false }: { theme?: AnalysisTheme; interaction?: VisualInteraction; interactive?: boolean; parameters?: readonly AuthorParameter[]; visual: AuthorVisual; client?: QueryClient; calculations: readonly CalculatedField[] }) {
+export function LiveAuthorVisual({ visual, theme, client, calculations, parameters = [], interaction, interactive = false, onRowGroupToggle }: { theme?: AnalysisTheme; interaction?: VisualInteraction; interactive?: boolean; parameters?: readonly AuthorParameter[]; visual: AuthorVisual; client?: QueryClient; calculations: readonly CalculatedField[]; onRowGroupToggle?: RowGroupToggle }) {
   const queryKey = JSON.stringify(buildAuthorQuery(visual, calculations, parameters, client?.dataset));
   const request: QueryRequest | null = useMemo(() => JSON.parse(queryKey) as QueryRequest | null, [queryKey]);
   const [state, setState] = useState<{ request: QueryRequest; client: QueryClient; result: AuthorRows }>();
@@ -30,5 +30,5 @@ export function LiveAuthorVisual({ visual, theme, client, calculations, paramete
   const current = client ? state?.request === request && state.client === client ? state.result : undefined : fixture;
   const preview = useMemo(() => ({ ...buildAuthorVisual(visual, calculations, client?.dataset), theme, rows: current?.rows ?? null }), [visual, current, calculations, theme, client?.dataset]);
   // Clear previous results immediately when assignments change, even before the effect runs.
-  return <VisualCard interaction={interaction} visual={preview} loading={!!request && !current} dataMessage={current?.message} />;
+  return <VisualCard interaction={interaction} onRowGroupToggle={onRowGroupToggle} visual={preview} loading={!!request && !current} dataMessage={current?.message} />;
 }

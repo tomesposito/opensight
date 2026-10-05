@@ -7,6 +7,7 @@ import { AuthorCanvas } from '../build/test/Author.js';
 import { activeSheet, authorReducer, emptyDraft, loadDraft, saveDraft } from '../build/test/authoring.js';
 import { buildAuthorQuery } from '../build/test/author-query.js';
 import { createApiClient } from '../build/test/api-client.js';
+import { importBundle, exportBundle } from '../build/test/bundle-authoring.js';
 
 async function mount(t, initial = emptyDraft(), client) {
   const oldWindow = globalThis.window, oldAct = globalThis.IS_REACT_ACT_ENVIRONMENT;
@@ -30,6 +31,38 @@ async function mount(t, initial = emptyDraft(), client) {
   };
 }
 const selected = d => activeSheet(d).visuals.find(v => v.id === activeSheet(d).selectedId);
+
+test('offline pivot toggles persist through authoring, draft reload and bundle import/edit/export', async t => {
+  let initial = authorReducer(emptyDraft(), { type: 'add', kind: 'pivot' });
+  initial = authorReducer(initial, { type: 'assign', well: 'rows', field: 'category' });
+  initial = authorReducer(initial, { type: 'display', property: 'subtotals', value: true });
+  initial = authorReducer(initial, { type: 'add', kind: 'pivot' });
+  const ui = await mount(t, initial);
+  const target = () => activeSheet(ui.state()).visuals[0];
+  await ui.click('Collapse row group East');
+  assert.deepEqual(target().formatting.pivot.collapsedRowGroups, [['East']]);
+  assert.equal(selected(ui.state()).formatting, undefined);
+  assert.deepEqual(activeSheet(loadDraft(() => ui.store).draft).visuals[0].formatting, target().formatting);
+  const imported = importBundle(exportBundle(ui.state()));
+  const edited = authorReducer(imported, { type: 'pivot-row-group', id: target().id, path: ['West'], collapsed: true });
+  assert.deepEqual(activeSheet(importBundle(exportBundle(edited))).visuals[0].formatting.pivot.collapsedRowGroups, [['East'], ['West']]);
+  await ui.click('Expand row group East');
+  assert.deepEqual(target().formatting.pivot.collapsedRowGroups, []);
+});
+
+test('pivot collapse in a live preview does not issue another query', async t => {
+  let initial = authorReducer(emptyDraft(), { type: 'add', kind: 'pivot' });
+  initial = authorReducer(initial, { type: 'assign', well: 'rows', field: 'category' });
+  initial = authorReducer(initial, { type: 'display', property: 'subtotals', value: true });
+  let queries = 0;
+  const client = { queryDataset: async () => { queries++; return { rows: [{ region: 'East', category: 'A', revenue: 100 }, { region: 'East', category: 'B', revenue: 300 }] }; } };
+  const ui = await mount(t, initial, client);
+  const before = queries; // The properties panel also requests distinct filter values.
+  assert.ok(before > 0);
+  await ui.click('Collapse row group East');
+  await ui.click('Expand row group East');
+  assert.equal(queries, before);
+});
 
 test('gallery ADD, field buttons, well pickers and pill removal change the live editor state', async t => {
   const ui = await mount(t);

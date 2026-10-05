@@ -62,10 +62,12 @@ test('pivot with subtotals renders expand/collapse toggles on subtotal rows only
   assert.doesNotMatch(totalRow, /expand-toggle/);
 });
 
-test('pivot without subtotals renders no expand/collapse toggles', () => {
+test('pivot without subtotals renders group headers; single-level pivots have no toggles', () => {
   const v = { ...base(), rows: ['region', 'category'], totals: true };
   const html = renderToStaticMarkup(createElement(VisualCard, { visual: input(v, sales) }));
-  assert.doesNotMatch(html, /expand-toggle/);
+  assert.equal((html.match(/class="expand-toggle"/g) ?? []).length, 2);
+  assert.equal((html.match(/class="row-group"/g) ?? []).length, 2);
+  assert.doesNotMatch(html, /class="subtotal"/);
   const single = { ...base(), rows: ['region'], subtotals: true };
   const singleHtml = renderToStaticMarkup(createElement(VisualCard, { visual: input(single, sales) }));
   assert.doesNotMatch(singleHtml, /expand-toggle/);
@@ -92,4 +94,78 @@ test('toggle click collapses and re-expands a row group in the rendered table', 
   await click(toggle('Expand row group East'));
   assert.equal(bodyRows().length, 6);
   assert.ok(toggle('Collapse row group East'));
+});
+
+async function mount(t, visual, rows = sales, extras = {}) {
+  const oldAct = globalThis.IS_REACT_ACT_ENVIRONMENT;
+  globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+  let renderer;
+  const render = v => createElement(VisualCard, { visual: input(v, rows), ...extras });
+  await act(() => { renderer = create(render(visual)); });
+  t.after(async () => { await act(() => renderer.unmount()); globalThis.IS_REACT_ACT_ENVIRONMENT = oldAct; });
+  const toggles = () => renderer.root.findAllByType('button').filter(b => b.props.className === 'expand-toggle');
+  const toggle = label => toggles().find(b => b.props['aria-label'] === label);
+  return {
+    toggles, toggle, rows: () => renderer.root.findAllByType('tr').filter(tr => tr.parent?.type === 'tbody'),
+    update: async v => { await act(() => renderer.update(render(v))); },
+    click: async label => { const b = toggle(label); assert.ok(b, label); await act(() => b.props.onClick({ stopPropagation() {} })); },
+  };
+}
+
+test('nested groups preserve independent state when parents collapse, including without subtotals', async t => {
+  for (const subtotals of [true, false]) await t.test(`subtotals ${subtotals}`, async t => {
+    const v = { ...base(), rows: ['region', 'category', 'order_id'], subtotals, totals: true };
+    const rows = [...sales.map((r, i) => ({ ...r, order_id: i + 1 })), { region: 'West', category: 'Software', order_id: 4, revenue: 25 }];
+    const ui = await mount(t, v, rows);
+    const initial = ui.rows().length;
+    assert.equal(ui.toggles().length, 6);
+    await ui.click('Collapse row group East / Hardware');
+    assert.equal(ui.rows().length, initial - 1);
+    await ui.click('Collapse row group East');
+    assert.equal(ui.rows().length, initial - 4);
+    assert.equal(ui.toggle('Expand row group East / Hardware'), undefined);
+    await ui.click('Collapse row group West');
+    assert.equal(ui.rows().length, 3); // Two anchors and the grand total.
+    await ui.click('Expand row group East');
+    assert.ok(ui.toggle('Expand row group East / Hardware'));
+    assert.ok(ui.toggle('Expand row group West'));
+    await ui.click('Expand row group East / Hardware');
+    await ui.click('Expand row group West');
+    assert.equal(ui.rows().length, initial);
+  });
+});
+
+test('saved state renders immediately and local viewer state survives recompilation', async t => {
+  const v = { ...base(), rows: ['region', 'category'], subtotals: true, totals: true, formatting: { pivot: { collapsedRowGroups: [['East']] } } };
+  const ui = await mount(t, v);
+  assert.equal(ui.rows().length, 4);
+  await ui.click('Collapse row group West');
+  await ui.update({ ...v, title: 'New title', formatting: { ...v.formatting, decimalPlaces: 2 } });
+  assert.equal(ui.rows().length, 3);
+  assert.ok(ui.toggle('Expand row group East'));
+  assert.ok(ui.toggle('Expand row group West'));
+  await ui.update({ ...v, formatting: { pivot: { collapsedRowGroups: [] } } });
+  assert.equal(ui.rows().length, 6);
+});
+
+test('metric rows use one focusable toggle per group and retain every subtotal measure', async t => {
+  const v = { ...base(), rows: ['region', 'category'], measures: ['revenue', 'profit'], subtotals: true, totals: true,
+    formatting: { pivot: { metricPlacement: 'rows', hideEmptyRows: true, hideEmptyColumns: true } } };
+  const ui = await mount(t, v, sales.map(r => ({ ...r, profit: r.revenue / 10 })), { interaction: { onSelect() { assert.fail('toggle must not trigger a data selection'); } } });
+  assert.equal(ui.toggles().length, 2);
+  for (const button of ui.toggles()) { assert.equal(button.props.type, 'button'); assert.notEqual(button.props.tabIndex, -1); }
+  await ui.click('Collapse row group East');
+  assert.equal(ui.rows().length, 8);
+  assert.equal(ui.rows().filter(r => r.props.className === 'subtotal').length, 4);
+  assert.equal(ui.toggle('Expand row group East').props['aria-expanded'], false);
+  await ui.click('Expand row group East');
+  assert.equal(ui.rows().length, 12);
+});
+
+test('hide-empty options only create headers for surviving children and typed keys stay distinct', async t => {
+  const v = { ...base(), rows: ['region', 'category'], formatting: { pivot: { hideEmptyRows: true, collapsedRowGroups: [[1]] } } };
+  const ui = await mount(t, v, [{ region: 1, category: 'A', revenue: 2 }, { region: '1', category: 'B', revenue: 3 }, { region: null, category: 'C', revenue: null }]);
+  assert.equal(ui.toggles().length, 2);
+  assert.equal(ui.rows().length, 3);
+  assert.equal(ui.rows().filter(r => r.props.className === 'detail').length, 1);
 });

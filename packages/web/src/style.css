@@ -210,6 +210,8 @@ button:disabled { cursor: default; opacity: .5; }
 tr.subtotal, tr.total { font-weight: 650; background: #edf6f6; }
 .expand-toggle { font-weight: 700; min-width: 1.5em; padding: 0 0.3em; margin-right: 0.45em; border: 1px solid #b9cdd4; border-radius: 4px; background: #fff; color: #126e76; cursor: pointer; line-height: 1.5; }
 .expand-toggle:hover { background: #e3f0f1; }
+.expand-toggle:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+tr.row-group { font-weight: 650; }
 textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 @media (min-width: 1101px) {
   .builder-panel:not([open]) > summary { writing-mode: vertical-rl; width: 100%; min-height: 120px; padding: 12px 8px; line-height: 24px; border-bottom: 0; }
