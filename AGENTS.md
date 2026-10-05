@@ -62,12 +62,15 @@ These principles resolve trade-offs. In order:
    private hostnames, account IDs, or unsanitized exports in the repo.
    Configuration comes strictly from environment variables.
 
-**Decisions are IDDs.** Consequential product/design decisions are
-recorded as IDD files under `docs/idd/` following `docs/idd/README.md`
-(CONTEXT → THE PROBLEM → OPTIONS CONSIDERED → REASONING →
-IMPLICATIONS), with stable IDs that continue the existing `HQ-N` /
-`D-N` numbering. Drafts are marked 🚧, confirmed decisions ✅.
-The `docs/hosted-architecture.md` §7 register links to the IDD file
+**Decisions are IDDs and ITDs.** Consequential decisions are recorded
+as decision files following `docs/decisions/README.md` (CONTEXT → THE
+PROBLEM → OPTIONS CONSIDERED → REASONING → IMPLICATIONS), with stable
+IDs that continue the existing `HQ-N` / `D-N` numbering. **IDD**
+(Important Design Decision) covers customer experience and business
+decisions; **ITD** (Important Technical Decision) covers how we
+accomplish and build. IDDs live under `docs/idd/`, ITDs under
+`docs/itd/`. Drafts are marked 🚧, confirmed decisions ✅. The
+`docs/hosted-architecture.md` §7 register links to the decision file
 once a decision is recorded there.
 
 ## 3. Code style
