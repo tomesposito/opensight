@@ -1,5 +1,5 @@
 ---
-status: 🚧 Draft
+status: ✅ Confirmed
 owner: Tom Esposito
 date: 2026-10-05
 labels: [idd]
@@ -24,7 +24,7 @@ per HQ-14 B). Availability/recovery commitments (decided in HQ-10 B:
 best-effort, no SLA/RPO/RTO). Custom embed domains (HQ-9, separate
 decision).
 
-### 🚧 IDD HQ-11 — How should D11 serverless hosting, D12 production Postgres/local-only DuckDB and D13 local Parquet readers be reconciled?
+### ✅ IDD HQ-11 — How should D11 serverless hosting, D12 production Postgres/local-only DuckDB and D13 local Parquet readers be reconciled?
 
 #### CONTEXT
 
@@ -48,7 +48,7 @@ How should D11 serverless hosting, D12 production Postgres/local-only DuckDB and
 
 #### OPTIONS CONSIDERED
 
-1. Serverless-first stands: short-lived API containers; DuckDB in-process is the analytical executor, reading shared Parquet artifacts on cache miss; Postgres remains the metadata plane; cold-start and artifact-loading behavior is measured before deployment lifetimes are locked in. [WIP: measurements not yet taken]
+1. ✅ **Serverless-first stands: short-lived API containers; DuckDB in-process is the analytical executor, reading shared Parquet artifacts on cache miss; Postgres remains the metadata plane; cold-start and artifact-loading behavior is measured before deployment lifetimes are locked in.**
 2. Long-lived workers: the hosted executor runs in always-on containers with a warm in-process Blaze cache; Parquet artifacts remain the shared source of truth for multi-node; the always-on cost is accepted.
 3. Defer: make no executor decision now; the H8 Compose reference remains the only deployment story until the §5 scale-out trigger fires on measured load.
 
@@ -67,17 +67,19 @@ production workload, no measured p95/p99 latency, and no evidence
 that cold starts are a binding constraint. Accepting the cost without
 that evidence would be a commitment without a reason.
 
-Option 1 is the current leaning because it keeps all three prior
-decisions intact — D11's serverless target, D12's Postgres metadata
-plane, D13's Parquet-artifact sharing — and resolves the apparent
-D12/D13 tension by scoping "local-only" to mean DuckDB is not the
-production *metadata* store, while it is the per-node *analytical*
-reader D13 already names. The trade-off knowingly accepted: cache
-behavior on cold starts is unproven, so deployment lifetimes stay
-provisional until loading/mapping measurements exist. [WIP: the
-measurements in §5 — query/refresh p95/p99, artifact load time,
-memory working set — must be defined and run before lifetimes are
-locked.]
+Option 1 is selected because it keeps all three prior decisions intact
+— D11's serverless target, D12's Postgres metadata plane, D13's
+Parquet-artifact sharing — and resolves the apparent D12/D13 tension
+by scoping "local-only" to mean DuckDB is not the production
+*metadata* store, while it is the per-node *analytical* reader D13
+already names. The evidence for it is continuity: no prior decision is
+overturned, and H9 gets the declared executor direction its
+specification needs. The trade-off knowingly accepted: cache behavior
+on cold starts is unproven, so deployment lifetimes stay provisional
+until loading/mapping measurements exist — the measurements in §5
+(query/refresh p95/p99, artifact load time, memory working set) are
+now required work before lifetimes are locked, not an open decision
+element.
 
 #### IMPLICATIONS
 
