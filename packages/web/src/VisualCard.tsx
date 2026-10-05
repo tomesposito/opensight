@@ -1,11 +1,11 @@
 import { LIGHT_THEME } from './themes.js';
 import { fieldRule } from './formatting.js';
 import { rowSelection, brushSelection, type VisualInteraction } from './visual-selection.js';
-import { useEffect, useId, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { Fragment, useEffect, useId, useMemo, useRef, useState, type CSSProperties } from 'react';
 import type { EChartsOption } from 'echarts';
-import { compileVisual, DATA_REQUIRED_LABEL, displayCell, rowGroupKey, rowGroupVisibility } from './compiler.js';
+import { compileVisual, DATA_REQUIRED_LABEL, displayCell, rowGroupKey, rowGroupVisibility, pivotRowGroupHeaders } from './compiler.js';
 import type { CompiledVisual } from './compiler.js';
-import type { FixtureVisual } from './model.js';
+import type { Cell, FixtureVisual } from './model.js';
 import { init } from './echarts.js';
 
 function Chart({ option, title, compiled, interaction }: { option: EChartsOption; title: string; compiled: CompiledVisual; interaction?: VisualInteraction }) {
@@ -29,42 +29,62 @@ function Chart({ option, title, compiled, interaction }: { option: EChartsOption
   return <div ref={container} className="chart" role="img" aria-label={title} />;
 }
 
-function DataTable({ compiled, interaction }: { compiled: CompiledVisual; interaction?: VisualInteraction }) {
+export type RowGroupToggle = (path: Cell[], collapsed: boolean) => void;
+
+function DataTable({ compiled, interaction, onRowGroupToggle }: { compiled: CompiledVisual; interaction?: VisualInteraction; onRowGroupToggle?: RowGroupToggle }) {
   const { model, table } = compiled, f = model.formatting;
   const dimensionCount = table.dimensionCount ?? (model.kind === 'pivot' ? model.rowDimensions.length : model.dimensions.length);
   const pivot = model.kind === 'pivot' ? f?.pivot : undefined;
   const width = pivot?.columnWidth ?? (pivot?.wordWrap ? 140 : undefined);
   const cellStyle: CSSProperties = { ...(pivot?.wordWrap !== undefined ? { whiteSpace: pivot.wordWrap ? 'normal' : 'nowrap', overflowWrap: pivot.wordWrap ? 'anywhere' : undefined } : {}), ...(width ? { width, minWidth: width, maxWidth: width } : {}) };
   const formatted = (value: import('./model.js').Cell, index: number) => typeof value === 'number' && index >= dimensionCount && f?.decimalPlaces !== undefined ? value.toLocaleString('en-US', { minimumFractionDigits: f.decimalPlaces, maximumFractionDigits: f.decimalPlaces }) : displayCell(value);
-  // Issue #5: pivot row-group expand/collapse. Requires subtotals: the subtotal row is the
-  // collapsed group's anchor, as in QuickSight. State resets when the compiled visual changes.
-  const expandable = model.kind === 'pivot' && model.subtotals && model.rowDimensions.length >= 2 && Array.isArray(table.rowGroupPaths);
-  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
-  useEffect(() => { setCollapsed(new Set()); }, [compiled]);
+  const expandable = model.kind === 'pivot' && model.rowDimensions.length >= 2 && Array.isArray(table.rowGroupPaths);
+  const signature = JSON.stringify([model.id, model.rowDimensions, pivot?.collapsedRowGroups ?? []]);
+  const saved = useMemo(() => new Set((pivot?.collapsedRowGroups ?? []).map(rowGroupKey)), [signature]);
+  // Authors write the definition; read-only viewers keep an independent local override.
+  // Recompiles for formatting, results or theme changes do not reset that override.
+  const [local, setLocal] = useState<{ signature: string; groups: Set<string> }>();
+  const collapsed = !onRowGroupToggle && local?.signature === signature ? local.groups : saved;
   const visible = useMemo(() => expandable ? rowGroupVisibility(table.rowGroupPaths!, collapsed) : table.rows.map(() => true), [table, collapsed, expandable]);
-  const indices = table.rows.map((_, i) => i).filter(i => visible[i]);
-  const toggle = (i: number) => {
-    const path = table.rowGroupPaths?.[i];
-    if (!expandable || table.rowKinds?.[i] !== 'subtotal' || !path?.length) return null;
+  const headers = useMemo(() => {
+    const groups = new Map<number, Cell[][]>();
+    if (expandable && !model.subtotals) {
+      const anchors = pivotRowGroupHeaders(table), shown = rowGroupVisibility(anchors.map(a => a.path), collapsed);
+      anchors.forEach((anchor, i) => { if (shown[i]) groups.set(anchor.beforeRow, [...(groups.get(anchor.beforeRow) ?? []), anchor.path]); });
+    }
+    return groups;
+  }, [table, collapsed, expandable, model.subtotals]);
+  const subtotalAnchors = new Set<string>();
+  const toggle = (path: Cell[]) => {
     const key = rowGroupKey(path);
     const isCollapsed = collapsed.has(key);
     return <button type="button" className="expand-toggle" aria-expanded={!isCollapsed}
       aria-label={`${isCollapsed ? 'Expand' : 'Collapse'} row group ${path.map(displayCell).join(' / ')}`}
-      onClick={event => { event.stopPropagation(); setCollapsed(previous => { const next = new Set(previous); if (next.has(key)) next.delete(key); else next.add(key); return next; }); }}>{isCollapsed ? '+' : '−'}</button>;
+      onClick={event => {
+        event.stopPropagation();
+        if (onRowGroupToggle) onRowGroupToggle(path, !isCollapsed);
+        else { const groups = new Set(collapsed); if (isCollapsed) groups.delete(key); else groups.add(key); setLocal({ signature, groups }); }
+      }}>{isCollapsed ? '+' : '−'}</button>;
   };
   return <div className="table-scroll"><table style={{ fontSize: f?.fontSize, color: f?.cellColor, background: f?.cellBackground, ...(width ? { tableLayout: 'fixed', width: width * table.columns.length } : {}) }}>
     <caption className="sr-only">{compiled.model.title} — result data</caption>
     <thead className={f?.headersVisible === false ? 'sr-only' : undefined}><tr>{table.columns.map((column, i) => <th key={i} scope="col" style={{ ...cellStyle, color: f?.headerColor, background: f?.headerBackground }}>{table.visibleColumns?.[i] === '' ? <span className="sr-only">{column}</span> : table.visibleColumns?.[i] ?? column}</th>)}</tr></thead>
-    <tbody>{indices.map(i => { const row = table.rows[i]!; const path = table.rowGroupPaths?.[i]; const toggleCell = (path?.length ?? 0) - 1; return <tr key={i} className={table.rowKinds?.[i]} onClick={interaction && rowSelection(compiled, i) ? () => interaction.onSelect(rowSelection(compiled, i)!) : undefined}>{row.map((cell, j) => {
+    <tbody>{table.rows.map((row, i) => {
+      const path = table.rowGroupPaths?.[i], key = path && rowGroupKey(path);
+      const isAnchor = expandable && table.rowKinds?.[i] === 'subtotal' && !!path?.length && !subtotalAnchors.has(key!);
+      if (isAnchor) subtotalAnchors.add(key!);
+      const toggleCell = isAnchor ? path!.length - 1 : -1;
+      return <Fragment key={i}>{headers.get(i)?.map(path => <tr key={rowGroupKey(path)} className="row-group">{table.columns.map((_, j) => <td key={j} style={cellStyle}>{j === path.length - 1 ? <>{toggle(path)} {displayCell(path[j]!)}</> : j < path.length ? displayCell(path[j]!) : ''}</td>)}</tr>)}
+      {visible[i] && <tr className={table.rowKinds?.[i]} onClick={interaction && rowSelection(compiled, i) ? () => interaction.onSelect(rowSelection(compiled, i)!) : undefined}>{row.map((cell, j) => {
       const measure = j >= dimensionCount ? model.measures[table.measureIndices?.[i]?.[j] ?? (j - dimensionCount) % model.measures.length] : undefined;
       const rule = measure && fieldRule(f, measure, cell);
-      const toggleButton = j === toggleCell ? toggle(i) : null;
+      const toggleButton = j === toggleCell ? toggle(path!) : null;
       return <td key={j} style={{ ...cellStyle, ...(rule ? { color: rule.color, background: rule.background } : {}) }}>{toggleButton}{toggleButton ? ' ' : null}{pivot?.metricPlacement === 'rows' && j === dimensionCount - 1 && f?.valueNamesVisible === false ? <span className="sr-only">{formatted(cell, j)}</span> : j === 0 && interaction && rowSelection(compiled, i) ? <button type="button" onClick={event => { event.stopPropagation(); interaction.onSelect(rowSelection(compiled, i)!); }}>{formatted(cell, j)}</button> : formatted(cell, j)}</td>;
-    })}</tr>; })}</tbody>
+    })}</tr>}</Fragment>; })}</tbody>
   </table></div>;
 }
 
-export function VisualCard({ visual, dataMessage, loading = false, definitionPreview = false, interaction }: { visual: FixtureVisual; dataMessage?: string; loading?: boolean; definitionPreview?: boolean; interaction?: VisualInteraction }) {
+export function VisualCard({ visual, dataMessage, loading = false, definitionPreview = false, interaction, onRowGroupToggle }: { visual: FixtureVisual; dataMessage?: string; loading?: boolean; definitionPreview?: boolean; interaction?: VisualInteraction; onRowGroupToggle?: RowGroupToggle }) {
   const headingId = useId();
   const theme = visual.theme ?? LIGHT_THEME;
   const result = useMemo(() => {
@@ -84,7 +104,7 @@ export function VisualCard({ visual, dataMessage, loading = false, definitionPre
     {error && <div className="visual-error" role="alert"><strong>Unable to render</strong><p>{error}</p></div>}
     {compiled && <>
       <div className="visual-content">
-        {!loading && compiled.state === 'ready' && ((compiled.model.kind === 'table' || compiled.model.kind === 'pivot') ? <DataTable compiled={compiled} interaction={interaction} /> : <Chart option={compiled.option} title={compiled.model.title} compiled={compiled} interaction={interaction} />)}
+        {!loading && compiled.state === 'ready' && ((compiled.model.kind === 'table' || compiled.model.kind === 'pivot') ? <DataTable compiled={compiled} interaction={interaction} onRowGroupToggle={onRowGroupToggle} /> : <Chart option={compiled.option} title={compiled.model.title} compiled={compiled} interaction={interaction} />)}
         {compiled.state !== 'ready' && <div className="empty-state" role="status">
           {loading && <span className="empty-symbol" aria-hidden="true">◌</span>}
           <strong>{loading ? 'Loading data…' : compiled.state === 'unavailable' ? definitionPreview ? 'Definition only' : dataMessage ? 'Unable to load data' : DATA_REQUIRED_LABEL : 'No results'}</strong>

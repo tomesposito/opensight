@@ -27,7 +27,7 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { Dispatch, ReactNode } from 'react';
 import { GridLayout, noCompactor, useContainerWidth } from 'react-grid-layout';
 import { downloadBundleBytes, exportBundle, importBundleFile, importedFilterProblem, withInheritedParameterFilters } from './bundle-authoring.js';
-import { VisualCard } from './VisualCard.js';
+import { VisualCard, type RowGroupToggle } from './VisualCard.js';
 import { buildAuthorPreview, fixtureCategoryValues } from './author-preview.js';
 import { LiveAuthorVisual } from './LiveAuthorVisual.js';
 import { buildDistinctQuery, loadAuthorRows } from './author-query.js';
@@ -121,7 +121,7 @@ function AuthorWorkspace({ client: apiClient, dataset, onDatasetChange, onPrep, 
       {draft.bundle && <button type="button" onClick={() => setReportOpen(true)}>View import report</button>}
     </div>
     {access.mode === 'local' && <LocalDatasetPicker client={client} dataset={draft.dataset} onSelect={dataset => { if (drafts.replace({ ...emptyDraft(), ...(dataset ? { dataset } : {}) })) onDatasetChange?.(dataset); }} />}
-    <p className="fixture-notice">{draft.dataset ? 'Live prepared data · Field assignments query the local API. Uploads expire after 24 hours or API restart.' : client ? 'Live local sales data · All regions, dates grouped in UTC (month by default). Field assignments query the API; unsupported queries show their error details and guidance.' : draft.sheets.some(s => s.visuals.some(v => v.kind === 'radar')) ? 'Offline demo: radar previews recompute pinned synthetic sales rows locally across all regions. No live queries run.' : draft.calculatedFields.length || draft.parameters.length || draft.sheets.some(s => s.visuals.some(v => v.filterActions?.length || v.hierarchy)) ? 'Offline demo: controls, calculated fields and interactions recompute pinned synthetic sales rows locally across all regions. No live queries run.' : 'Offline demo: manual visual previews use fixed sample results: region = East, dates grouped by UTC month. Only revenue totals by region, category, month, or overall are available. Other manual selections need a supported sample or a hosted API. O recomputes synthetic sales rows locally across all regions. No live queries run.'}</p>
+    <p className="fixture-notice">{draft.dataset ? 'Live prepared data · Field assignments query the local API. Uploads expire after 24 hours or API restart.' : client ? 'Live local sales data · All regions, dates grouped in UTC (month by default). Field assignments query the API; unsupported queries show their error details and guidance.' : draft.sheets.some(s => s.visuals.some(v => v.kind === 'pivot')) ? 'Offline demo: pivot previews recompute pinned synthetic sales rows locally across all regions. Row groups expand and collapse locally. No live queries run.' : draft.sheets.some(s => s.visuals.some(v => v.kind === 'radar')) ? 'Offline demo: radar previews recompute pinned synthetic sales rows locally across all regions. No live queries run.' : draft.calculatedFields.length || draft.parameters.length || draft.sheets.some(s => s.visuals.some(v => v.filterActions?.length || v.hierarchy)) ? 'Offline demo: controls, calculated fields and interactions recompute pinned synthetic sales rows locally across all regions. No live queries run.' : 'Offline demo: manual visual previews use fixed sample results: region = East, dates grouped by UTC month. Only revenue totals by region, category, month, or overall are available. Other manual selections need a supported sample or a hosted API. O recomputes synthetic sales rows locally across all regions. No live queries run.'}</p>
     <div className="author-save"><p role="status">{drafts.message}</p>{drafts.dirty && <p>Unsaved changes · Save draft before leaving Author or reloading.</p>}
       <p id="export-help">{exported.error ?? (client ? 'Downloads analysis definitions and sheet layouts; query results are not included.' : 'Downloads analysis definitions and sheet layouts; sample rows and the fixed East preview filter are not included.')}</p>
       {exportStatus && <p role="status">{exportStatus}</p>}
@@ -438,7 +438,8 @@ function AuthorCard({ visual, theme, index, count, selected, dispatch, client, c
 }) {
   const problem = authorVisualProblem(visual) ?? filterProblem;
   const hasCalculation = [...visualDimensions(visual), ...visual.measures].some(name => calculations.some(c => c.name === name));
-  const extended = !['bar', 'line', 'pie', 'kpi', 'table', 'pivot'].includes(visual.kind);
+  const extended = !['bar', 'line', 'pie', 'kpi', 'table'].includes(visual.kind);
+  const onRowGroupToggle: RowGroupToggle = (path, collapsed) => dispatch({ type: 'pivot-row-group', id: visual.id, path, collapsed });
   const preview = useMemo(() => extended || client || interactive || parameters.length || hasCalculation || problem ? undefined : buildAuthorPreview(visual), [visual, client, interactive, problem, parameters.length, hasCalculation, extended]);
   const label = visual.title || `Visual ${index + 1}`;
   return <section className={`author-card${selected ? ' is-selected' : ''}`} aria-label={label} onClick={() => { if (!selected) dispatch({ type: 'select', id: visual.id }); }}>
@@ -454,7 +455,7 @@ function AuthorCard({ visual, theme, index, count, selected, dispatch, client, c
     {drillNavigation}
     {problem ? <div className="bundle-placeholder" role="status"><p>{problem}</p>
       {visual.imported && !visual.imported.local && <button type="button" onClick={e => { e.stopPropagation(); dispatch({ type: 'remap', id: visual.id }); }}>Remap to local dataset</button>}
-    </div> : extended || client || interactive || parameters.length || hasCalculation ? <LiveAuthorVisual theme={theme} interactive={interactive} interaction={interaction} visual={visual} client={client} calculations={calculations} parameters={parameters} /> : preview && <VisualCard visual={{ ...preview, theme }} />}
+    </div> : extended || client || interactive || parameters.length || hasCalculation ? <LiveAuthorVisual theme={theme} interactive={interactive} interaction={interaction} onRowGroupToggle={onRowGroupToggle} visual={visual} client={client} calculations={calculations} parameters={parameters} /> : preview && <VisualCard visual={{ ...preview, theme }} onRowGroupToggle={onRowGroupToggle} />}
   </section>;
 }
 

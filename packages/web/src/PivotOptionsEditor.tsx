@@ -11,6 +11,6 @@ export function PivotOptionsEditor({ visual, dispatch }: { visual: AuthorVisual;
     {([{ key: 'hideEmptyRows', label: 'Hide empty rows' }, { key: 'hideEmptyColumns', label: 'Hide empty columns' }, { key: 'wordWrap', label: 'Wrap cell text' }] as const).map(({ key, label }) => <label className="toggle" key={key}><input type="checkbox" checked={options[key] ?? false} onChange={e => set({ [key]: e.target.checked })} />{label}</label>)}
     <label>Column width (px)<input type="number" min="60" max="400" value={options.columnWidth ?? 140} onChange={e => set({ columnWidth: Number(e.target.value) })} /></label>
     <p>Empty means all values are null or missing; zero values stay visible. Width applies to every column when set or when wrapping is enabled.</p>
-    <p>Expand/collapse (+/−) toggles appear on row-group subtotal rows. Enable Subtotals in the Totals &amp; subtotals section above to use them.</p>
+    <p>Use +/− on row groups to expand or collapse their children. Subtotals stay visible when enabled. Group state is saved with the analysis.</p>
   </details>;
 }

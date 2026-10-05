@@ -75,6 +75,21 @@ try {
   await page.locator('.author-card').scrollIntoViewIfNeeded();
   await hold(1800);
   await page.getByRole('button', { name: 'Save draft', exact: true }).click();
+  // Issue #40: row groups run against local synthetic data and save in the bundle.
+  await page.locator('.author-card-actions button[aria-label^="Remove "]').click();
+  await page.getByRole('button', { name: 'Pivot', exact: true }).click();
+  await page.getByRole('button', { name: 'Add visual', exact: true }).click();
+  await page.getByLabel('Assign Rows', { exact: true }).selectOption('category');
+  await page.getByLabel('Title', { exact: true }).fill('Revenue by region and category');
+  await page.locator('details.property-section').filter({ has: page.locator('summary', { hasText: /^Subtotal$/ }) }).locator('summary').click();
+  await page.getByLabel('Show subtotals', { exact: true }).check();
+  await page.locator('.author-card').scrollIntoViewIfNeeded();
+  await hold(1000);
+  await page.getByRole('button', { name: 'Collapse row group East', exact: true }).click();
+  await hold(1200);
+  await page.getByRole('button', { name: 'Expand row group East', exact: true }).press('Space');
+  await hold(800);
+  await page.getByRole('button', { name: 'Save draft', exact: true }).click();
   await setMode('analyses');
   await hold(1800);
 
