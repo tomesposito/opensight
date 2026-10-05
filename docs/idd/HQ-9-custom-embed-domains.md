@@ -1,5 +1,5 @@
 ---
-status: 🚧 Draft
+status: ✅ Confirmed
 owner: Tom Esposito
 date: 2026-10-05
 labels: [idd]
@@ -24,7 +24,7 @@ automation, routing implementation) — that becomes a follow-on ITD
 only if custom domains are approved. Embed session shapes and the
 `AllowedDomains` contract (decided: HQ-6, HQ-7, HQ-12).
 
-### 🚧 IDD HQ-9 — Are custom embed domains required at launch, and who owns verification, certificates, renewal, and DNS support?
+### ✅ IDD HQ-9 — Are custom embed domains required at launch, and who owns verification, certificates, renewal, and DNS support?
 
 #### CONTEXT
 
@@ -46,19 +46,22 @@ Are custom embed domains required at launch, and who owns verification, certific
 
 #### OPTIONS CONSIDERED
 
-1. Canonical origin only: no customer hostnames at launch; embeds run on the OpenSight canonical origin under the existing `AllowedDomains` origin policy; custom domains explicitly unscheduled until a customer requires them.
+1. ✅ **Canonical origin only: no customer hostnames at launch; embeds run on the OpenSight canonical origin under the existing `AllowedDomains` origin policy; custom domains explicitly unscheduled until a customer requires them.**
 2. Operator-managed custom domains: OpenSight owns domain verification, certificate issuance and renewal, routing, and DNS support; customers register hostnames against their tenant.
 3. Customer-managed (bring-your-own): the customer owns DNS and certificates; OpenSight verifies proof-of-control, routes verified hostnames only, and surfaces renewal failures as safe errors (`EMBED_DOMAIN_UNVERIFIED`); renewal risk stays with the customer.
 
 #### REASONING
 
-Option 1 is the lowest operational surface and the current de facto
-posture: H6's `AllowedDomains` already answers the embed-origin need
-for most integrations, and HQ-7's in-memory credentials removed the
-strongest technical driver for same-origin domains. It is rejected
-only if a launch customer requires their own hostname for brand or
-policy reasons — no such requirement exists today. [WIP: confirm no
-launch customer needs this.]
+Option 1 is selected: the lowest operational surface and the current
+de facto posture. H6's `AllowedDomains` already answers the
+embed-origin need for most integrations, and HQ-7's in-memory
+credentials removed the strongest technical driver for same-origin
+domains. No launch customer requires a custom hostname, so there is
+no reason to take on certificate renewal, DNS support, and the
+takeover-attack surface now. The trade-off knowingly accepted: if a
+future customer requires their own hostname for brand or policy
+reasons, this decision reopens — the revisit trigger is explicit: a
+customer requirement, not speculation.
 
 Option 2 gives customers full brand control but makes every
 certificate renewal an operator incident: issuance/renewal automation,
