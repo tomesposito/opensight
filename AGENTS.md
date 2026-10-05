@@ -62,6 +62,14 @@ These principles resolve trade-offs. In order:
    private hostnames, account IDs, or unsanitized exports in the repo.
    Configuration comes strictly from environment variables.
 
+**Decisions are IDDs.** Consequential product/design decisions are
+recorded as IDD files under `docs/idd/` following `docs/idd/README.md`
+(CONTEXT → THE PROBLEM → OPTIONS CONSIDERED → REASONING →
+IMPLICATIONS), with stable IDs that continue the existing `HQ-N` /
+`D-N` numbering. Drafts are marked 🚧, confirmed decisions ✅.
+The `docs/hosted-architecture.md` §7 register links to the IDD file
+once a decision is recorded there.
+
 ## 3. Code style
 
 - **TypeScript strict** everywhere. No `any` without justification.
