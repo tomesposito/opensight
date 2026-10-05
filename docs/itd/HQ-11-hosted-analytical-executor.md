@@ -2,7 +2,7 @@
 status: ✅ Confirmed
 owner: Tom Esposito
 date: 2026-10-05
-labels: [idd]
+labels: [itd]
 ---
 
 ## Purpose
@@ -24,7 +24,7 @@ per HQ-14 B). Availability/recovery commitments (decided in HQ-10 B:
 best-effort, no SLA/RPO/RTO). Custom embed domains (HQ-9, separate
 decision).
 
-### ✅ IDD HQ-11 — How should D11 serverless hosting, D12 production Postgres/local-only DuckDB and D13 local Parquet readers be reconciled?
+### ✅ ITD HQ-11 — How should D11 serverless hosting, D12 production Postgres/local-only DuckDB and D13 local Parquet readers be reconciled?
 
 #### CONTEXT
 

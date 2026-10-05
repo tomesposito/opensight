@@ -1,7 +1,6 @@
-# IDD — Important Design Decision
+# ITD — Important Technical Decision
 
-Customer-experience and business decisions: what the customer
-experiences or what the business commits to. See
+Technical decisions for how we accomplish and build. See
 [the shared format guide](../decisions/README.md).
 
 Files here are named `<ID>-<short-slug>.md` and keep the existing
