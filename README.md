@@ -90,6 +90,12 @@ report. See [radar semantics and limits](docs/radar-chart.md).
 
 ![Radar preview with revenue and profit by month and region](docs/images/radar.png)
 
+Pivot row groups expand and collapse with +/−, Enter or Space. Enabled subtotals
+stay visible, and group state survives draft saves and bundle round trips.
+Works in the offline demo. See [pivot row groups](docs/pivot-row-groups.md).
+
+![Pivot with the East row group collapsed and its subtotal visible](docs/images/pivot.png)
+
 ### 🛠️ Visual data preparation
 
 Build your own datasets on a transformation pipeline canvas: select fields,
