@@ -7,9 +7,11 @@ export function publishNotice(mode: Access['mode']): string {
     : `${mode === 'local' ? 'This local workspace' : 'This static demo'} has no publication destination. Drafts are device-local, not synced or shared. Export .qs or JSON to share an analysis definition; data is not included. Nothing has been published.`;
 }
 /** Moves keyboard focus to an editor control: opens any collapsed ancestor
- *  panel, scrolls the control into view, then focuses it. Exported for tests. */
+ *  panel, scrolls the control into view, then focuses it. Exported for tests.
+ *  No-op when there is no real DOM (react-test-renderer refs are not elements). */
 export function focusAuthorControl(nav: HTMLElement | null, selector: string) {
-  const target = nav?.closest('.author-workspace')?.querySelector<HTMLElement>(selector);
+  if (typeof nav?.closest !== 'function') return;
+  const target = nav.closest('.author-workspace')?.querySelector<HTMLElement>(selector);
   const panel = target?.closest('details'); if (panel) panel.open = true;
   target?.scrollIntoView?.({ block: 'nearest' });
   target?.focus();
