@@ -110,3 +110,42 @@ test('Issue #35: each export action has exactly one home in the File menu', () =
     assert.ok(fileMenu.includes(`aria-describedby="export-help">${label}</button>`));
   }
 });
+
+test('Issue #44: toolbar carries an Add visual entry point next to the primary actions', () => {
+  const html = renderToStaticMarkup(createElement(Author));
+  assert.equal(html.split('>Add visual</button>').length - 1, 1, 'exactly one Add visual button');
+  assert.ok(html.includes('<button type="button">Add visual</button>'), 'native keyboard-operable button');
+  const addIdx = html.indexOf('>Add visual</button>');
+  assert.ok(html.indexOf('>FIT TO WIDTH</button>', addIdx) > addIdx, 'sits before FIT TO WIDTH');
+  assert.ok(html.indexOf('>PUBLISH</button>', addIdx) > addIdx, 'sits before PUBLISH');
+  assert.doesNotMatch(html, /disabled=""[^>]*>Add visual</);
+});
+
+test('Issue #44: clicking Add visual focuses the visual-type gallery, not a blank visual', async () => {
+  const { focusAuthorControl } = await import('../build/test/AuthorToolbar.js');
+  const events = [];
+  const galleryPanel = { set open(v) { events.push(['panel.open', v]); }, get open() { return false; } };
+  const galleryButton = {
+    closest() { return galleryPanel; },
+    scrollIntoView(options) { events.push(['scrollIntoView', options]); },
+    focus() { events.push('focus'); },
+  };
+  const workspace = { querySelector(selector) { events.push(['querySelector', selector]); return galleryButton; } };
+  const nav = { closest(selector) { events.push(['closest', selector]); return workspace; } };
+  focusAuthorControl(nav, '.visual-gallery button');
+  assert.deepEqual(events, [
+    ['closest', '.author-workspace'],
+    ['querySelector', '.visual-gallery button'],
+    ['panel.open', true],
+    ['scrollIntoView', { block: 'nearest' }],
+    'focus',
+  ], 'opens the collapsed gallery panel, scrolls it into view, then moves keyboard focus');
+});
+
+test('Issue #44: focusing is a no-op when the gallery is absent', async () => {
+  const { focusAuthorControl } = await import('../build/test/AuthorToolbar.js');
+  const workspace = { querySelector() { return null; } };
+  const nav = { closest() { return workspace; } };
+  assert.doesNotThrow(() => focusAuthorControl(nav, '.visual-gallery button'));
+  assert.doesNotThrow(() => focusAuthorControl(null, '.visual-gallery button'));
+});
