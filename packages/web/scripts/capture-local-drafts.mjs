@@ -80,7 +80,9 @@ try {
   };
   await prepare('Local team totals');
   await page.getByRole('button', { name: 'Assign doubled', exact: true }).waitFor();
-  await page.getByRole('button', { name: 'Add visual', exact: true }).click();
+  // Issue #43: create the live visual by assigning fields, before using ADD.
+  await page.getByRole('button', { name: 'Assign units', exact: true }).click();
+  await page.getByRole('button', { name: 'Assign team', exact: true }).click();
   await page.getByRole('button', { name: 'Assign doubled', exact: true }).click();
   await page.locator('.author-card summary').filter({ hasText: 'View data' }).click();
   await page.getByRole('cell', { name: 'North', exact: true }).waitFor();
