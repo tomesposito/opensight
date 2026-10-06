@@ -6,7 +6,7 @@ export type { VisualKind } from './visual-catalog.js';
 import { parseExpression } from '@opensight/query-engine/browser';
 import { serializeInteractions } from './bundle-interactions.js';
 import { hierarchyError, type DimensionHierarchy, type DateGrain } from './drill.js';
-import { validFilterActions, type FilterAction, type InteractionFilter } from './interactions.js';
+import { validFilterActions, urlActionDefinitionsValid, type UrlAction, type FilterAction, type InteractionFilter } from './interactions.js';
 import { serializeControl, serializeFilter } from './bundle-controls.js';
 import { controlError, validateControls, type AuthorControl } from './controls.js';
 import { parameterError, parameterValueError, validateAuthorParameters, serializeParameter } from './parameters.js';
@@ -91,6 +91,7 @@ export interface AuthorVisual {
   horizontal: boolean; stacked: boolean; totals: boolean; subtotals: boolean;
   filters: CategoryFilter[];
   filterActions?: FilterAction[];
+  urlActions?: UrlAction[];
   hierarchy?: DimensionHierarchy;
   dateGrain?: DateGrain;
   interactionFilters?: InteractionFilter[];
@@ -151,6 +152,7 @@ export type AuthorAction =
   | { type: 'bins'; bins: number }
   | { type: 'hierarchy'; hierarchy: DimensionHierarchy | null }
   | { type: 'filter-actions'; actions: FilterAction[] }
+  | { type: 'url-actions'; actions: UrlAction[] }
   | { type: 'import'; draft: AuthorDraft }
   | { type: 'parameter-add'; parameter: Omit<AuthorParameter, 'id'> }
   | { type: 'parameter-value'; id: string; values: ParameterValue[] }
@@ -328,6 +330,7 @@ export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorD
         const root = action.hierarchy.levels[0]!.columnName;
         return { ...visual, hierarchy: action.hierarchy, dimension: root, ...(grouped(visual.kind) ? { rows: [root, ...visual.rows.slice(1).filter(f => f !== root)], columns: visual.columns.filter(f => f !== root) } : {}) };
       }
+      case 'url-actions': return urlActionDefinitionsValid(action.actions) ? { ...visual, urlActions: action.actions } : visual;
       case 'filter-actions': return validFilterActions(action.actions) ? { ...visual, filterActions: action.actions } : visual;
       case 'measure-move': {
         const measures = [...visual.measures], target = action.index + action.offset;
@@ -532,7 +535,7 @@ export function validateDraft(value: unknown): asserts value is AuthorDraft {
       }
       const fieldNames = (v: unknown, role: string): v is string[] => imported ? Array.isArray(v) && v.every(n => typeof n === 'string' && !!n && !n.includes('\0')) && new Set(v).size === v.length : names(v, role);
 
-      if (!isObject(v) || !onlyKeys(v, ['id', 'kind', 'title', 'subtitle', 'subtitleVisible', 'dimension', 'measures', 'donut', 'imported', 'filterActions', 'hierarchy', 'dateGrain', 'palette', 'formatting', 'gauge', 'bins', ...Object.keys(defaults())]) || typeof v.id !== 'string' || !/^visual-[1-9][0-9]*$/.test(v.id) || ids.has(v.id) || !VISUAL_TYPES.some(t => t.kind === v.kind) || typeof v.title !== 'string' || !['donut', 'titleVisible', 'legend', 'labels', 'horizontal', 'stacked', 'totals', 'subtotals'].every(k => typeof v[k] === 'boolean') || !fieldNames(v.measures, 'measure') || !fieldNames(v.rows, 'dimension') || !fieldNames(v.columns, 'dimension') || (v.dimension !== null && !fieldNames([v.dimension], 'dimension')) || !Array.isArray(v.filters)) return fail();
+      if (!isObject(v) || !onlyKeys(v, ['id', 'kind', 'title', 'subtitle', 'subtitleVisible', 'dimension', 'measures', 'donut', 'imported', 'filterActions', 'urlActions', 'hierarchy', 'dateGrain', 'palette', 'formatting', 'gauge', 'bins', ...Object.keys(defaults())]) || typeof v.id !== 'string' || !/^visual-[1-9][0-9]*$/.test(v.id) || ids.has(v.id) || !VISUAL_TYPES.some(t => t.kind === v.kind) || typeof v.title !== 'string' || !['donut', 'titleVisible', 'legend', 'labels', 'horizontal', 'stacked', 'totals', 'subtotals'].every(k => typeof v[k] === 'boolean') || !fieldNames(v.measures, 'measure') || !fieldNames(v.rows, 'dimension') || !fieldNames(v.columns, 'dimension') || (v.dimension !== null && !fieldNames([v.dimension], 'dimension')) || !Array.isArray(v.filters)) return fail();
       if (v.kind === 'radar' && !v.imported && (v.rows.length > 1 || v.columns.length > 1)) return fail();
       if (singleMeasure(v.kind as VisualKind) && v.measures.length > 1 || noDimensions(v.kind as VisualKind) && v.dimension !== null || v.kind !== 'pie' && v.donut || !splitDimensions(v.kind as VisualKind) && v.columns.length || (grouped(v.kind as VisualKind) ? v.dimension !== (v.rows[0] ?? null) : v.rows.length) || v.rows.some(n => (v.columns as string[]).includes(n))) return fail();
       if (v.formatting !== undefined && !formattingValid(v.formatting) || v.gauge !== undefined && !gaugeValid(v.gauge) || v.bins !== undefined && !binsValid(v.bins)) return fail();
@@ -540,6 +543,7 @@ export function validateDraft(value: unknown): asserts value is AuthorDraft {
       if (v.palette !== undefined && !paletteValid(v.palette)) return fail();
       if (v.dateGrain !== undefined && !['YEAR','QUARTER','MONTH','DAY'].includes(String(v.dateGrain))) return fail();
       if (v.hierarchy !== undefined && hierarchyError(v.hierarchy as DimensionHierarchy, calculations, !!imported, dataset)) return fail();
+      if (v.urlActions !== undefined && !urlActionDefinitionsValid(v.urlActions)) return fail();
       if (v.filterActions !== undefined && !validFilterActions(v.filterActions)) return fail();
       const filters = new Set<string>();
       for (const f of v.filters) {

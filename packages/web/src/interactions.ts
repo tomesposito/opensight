@@ -5,6 +5,55 @@ export interface FilterAction {
   id: string; name: string; sourceField: string; targets: 'all' | string[];
   mappings: Record<string, string>;
 }
+export interface UrlAction {
+  id: string; name: string; sourceField: string; urlTemplate: string; target?: '_blank' | '_self';
+}
+type ActionResult<T> = { value: T; problem?: never } | { problem: string; value?: never };
+const record = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
+/** Shape validation keeps unfinished/invalid templates editable, with diagnostics below. */
+export function urlActionDefinitionsValid(raw: unknown): raw is UrlAction[] {
+  return Array.isArray(raw) && raw.every(a => record(a) && Object.keys(a).every(k => ['id', 'name', 'sourceField', 'urlTemplate', 'target'].includes(k)) && typeof a.id === 'string' && !!a.id && typeof a.name === 'string' && typeof a.sourceField === 'string' && !!a.sourceField && typeof a.urlTemplate === 'string' && (a.target === undefined || a.target === '_blank' || a.target === '_self')) && new Set(raw.map(a => a.id)).size === raw.length;
+}
+function interpolateUrl(template: string, values: Selection['values']): ActionResult<string> {
+  if (!template.trim()) return { problem: 'URL_TEMPLATE_EMPTY: Enter an HTTP(S) URL template.' };
+  if (/[{}]/.test(template.replace(/\{([^{}]+)\}/g, ''))) return { problem: 'URL_PLACEHOLDER_INVALID: Use {FieldName} placeholders.' };
+  let problem: string | undefined;
+  const url = template.replace(/\{([^{}]+)\}/g, (_, field: string) => {
+    const value = values[field];
+    if (!Object.hasOwn(values, field) || (typeof value !== 'string' && typeof value !== 'number') || typeof value === 'number' && !Number.isFinite(value)) {
+      problem = `URL_SELECTION_MISSING: No clicked value for ${field}.`; return '';
+    }
+    try { return encodeURIComponent(String(value)); }
+    catch { problem = `URL_SELECTION_INVALID: Cannot encode ${field}.`; return ''; }
+  });
+  if (problem) return { problem };
+  try {
+    const parsed = new URL(url);
+    if (!/^https?:\/\//i.test(url) || !['http:', 'https:'].includes(parsed.protocol) || !parsed.hostname || /[\s\\\u0000-\u001f\u007f]/.test(url)) throw new Error('invalid URL');
+    return { value: parsed.href };
+  } catch { return { problem: 'URL_INVALID: The interpolated URL must be an absolute HTTP(S) URL.' }; }
+}
+export function urlActionProblem(source: AuthorVisual, action: UrlAction, selection?: Selection): string | undefined {
+  const origin = originProblem(source);
+  if (origin) return `URL_ORIGIN_INVALID: ${origin}`;
+  const dimensions = actionDimensions(source);
+  if (!dimensions.includes(action.sourceField)) return `URL_SOURCE_UNKNOWN: Source does not group by ${action.sourceField}.`;
+  for (const [, field] of action.urlTemplate.matchAll(/\{([^{}]+)\}/g)) {
+    if (!dimensions.includes(field!)) return `URL_FIELD_UNKNOWN: Source does not group by ${field}.`;
+  }
+  if (selection && (!Object.hasOwn(selection.values, action.sourceField) || selection.values[action.sourceField] === undefined)) return `URL_SELECTION_MISSING: No clicked value for ${action.sourceField}.`;
+  return interpolateUrl(action.urlTemplate, selection?.values ?? Object.fromEntries(dimensions.map(field => [field, 'value']))).problem;
+}
+export function validUrlActions(raw: unknown, source?: AuthorVisual): raw is UrlAction[] {
+  return urlActionDefinitionsValid(raw) && raw.every(action => source ? !urlActionProblem(source, action) : !interpolateUrl(action.urlTemplate, Object.fromEntries([...action.urlTemplate.matchAll(/\{([^{}]+)\}/g)].map(([, field]) => [field!, 'value']))).problem);
+}
+export function resolveUrlAction(source: AuthorVisual, action: UrlAction, selection: Selection): ActionResult<string> {
+  const problem = urlActionProblem(source, action, selection);
+  return problem ? { problem } : interpolateUrl(action.urlTemplate, selection.values);
+}
+export function hasVisualActions(visual: AuthorVisual): boolean {
+  return !!(visual.filterActions?.length || visual.urlActions?.length);
+}
 export interface Selection { values: Record<string, string | number>; range?: [string, string] }
 export interface InteractionFilter { columnName: string; type: ParameterDeclaration['type']; values: ParameterValue[]; operator?: 'EQUALS' | 'GREATER_THAN_OR_EQUAL_TO' | 'LESS_THAN_OR_EQUAL_TO' }
 export type ActionSelections = Record<string, Selection>;

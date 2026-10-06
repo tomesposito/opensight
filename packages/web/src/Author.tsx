@@ -18,7 +18,7 @@ import { expressionError } from './authoring.js';
 import { HierarchyEditor } from './HierarchyEditor.js';
 import { withDrill, drillDown, drillUp, drillBreadcrumbs, levelLabel, type DrillPath } from './drill.js';
 import { ActionEditor } from './ActionEditor.js';
-import { toggleSelection, withActionFilters, originProblem, type ActionSelections } from './interactions.js';
+import { toggleSelection, withActionFilters, originProblem, hasVisualActions, resolveUrlAction, type ActionSelections } from './interactions.js';
 import type { VisualInteraction } from './visual-selection.js';
 import { ControlsStrip } from './ControlsStrip.js';
 import type { AuthorParameter } from './parameters.js';
@@ -122,7 +122,7 @@ function AuthorWorkspace({ client: apiClient, dataset, onDatasetChange, onPrep, 
       </div>
     </div>
     {access.mode === 'local' && <LocalDatasetPicker client={client} dataset={draft.dataset} onSelect={dataset => { if (drafts.replace({ ...emptyDraft(), ...(dataset ? { dataset } : {}) })) onDatasetChange?.(dataset); }} />}
-    <p className="fixture-notice">{draft.dataset ? 'Live prepared data · Field assignments query the local API. Uploads expire after 24 hours or API restart.' : client ? 'Live local sales data · All regions, dates grouped in UTC (month by default). Field assignments query the API; unsupported queries show their error details and guidance.' : draft.sheets.some(s => s.visuals.some(v => v.kind === 'pivot')) ? 'Offline demo: pivot previews recompute pinned synthetic sales rows locally across all regions. Row groups expand and collapse locally. No live queries run.' : draft.sheets.some(s => s.visuals.some(v => v.kind === 'radar')) ? 'Offline demo: radar previews recompute pinned synthetic sales rows locally across all regions. No live queries run.' : draft.calculatedFields.length || draft.parameters.length || draft.sheets.some(s => s.visuals.some(v => v.filterActions?.length || v.hierarchy)) ? 'Offline demo: controls, calculated fields and interactions recompute pinned synthetic sales rows locally across all regions. No live queries run.' : 'Offline demo: manual visual previews use fixed sample results: region = East, dates grouped by UTC month. Only revenue totals by region, category, month, or overall are available. Other manual selections need a supported sample or a hosted API. O recomputes synthetic sales rows locally across all regions. No live queries run.'}</p>
+    <p className="fixture-notice">{draft.dataset ? 'Live prepared data · Field assignments query the local API. Uploads expire after 24 hours or API restart.' : client ? 'Live local sales data · All regions, dates grouped in UTC (month by default). Field assignments query the API; unsupported queries show their error details and guidance.' : draft.sheets.some(s => s.visuals.some(v => v.kind === 'pivot')) ? 'Offline demo: pivot previews recompute pinned synthetic sales rows locally across all regions. Row groups expand and collapse locally. No live queries run.' : draft.sheets.some(s => s.visuals.some(v => v.kind === 'radar')) ? 'Offline demo: radar previews recompute pinned synthetic sales rows locally across all regions. No live queries run.' : draft.calculatedFields.length || draft.parameters.length || draft.sheets.some(s => s.visuals.some(v => hasVisualActions(v) || v.hierarchy)) ? 'Offline demo: controls, calculated fields and interactions recompute pinned synthetic sales rows locally across all regions. No live queries run.' : 'Offline demo: manual visual previews use fixed sample results: region = East, dates grouped by UTC month. Only revenue totals by region, category, month, or overall are available. Other manual selections need a supported sample or a hosted API. O recomputes synthetic sales rows locally across all regions. No live queries run.'}</p>
     <div className="author-save"><p role="status">{drafts.message}</p>{drafts.dirty && <p>Unsaved changes · Save draft before leaving Author or reloading.</p>}
       <p id="export-help">{exported.error ?? (client ? 'Downloads analysis definitions and sheet layouts; query results are not included.' : 'Downloads analysis definitions and sheet layouts; sample rows and the fixed East preview filter are not included.')}</p>
       {exportStatus && <p role="status">{exportStatus}</p>}
@@ -182,13 +182,15 @@ export function AuthorCanvas({ draft, dispatch, client, fit = true, sourceProble
   const sheet = activeSheet(draft), fields = dataFields(draft.calculatedFields, draft.dataset);
   const query = search.trim().toLowerCase();
   const matchingFields = fields.filter(f => f.name.toLowerCase().includes(query));
-  const interactionKey = JSON.stringify([draft.dataset?.id, sheet.id, sheet.visuals.map(v => [v.id, v.kind, v.dimension, v.rows, v.columns, v.measures, v.filters, v.filterActions, v.hierarchy, v.imported]), draft.parameters, draft.calculatedFields, !!client]);
+  const interactionKey = JSON.stringify([draft.dataset?.id, sheet.id, sheet.visuals.map(v => [v.id, v.kind, v.dimension, v.rows, v.columns, v.measures, v.filters, v.filterActions, v.urlActions, v.hierarchy, v.imported]), draft.parameters, draft.calculatedFields, !!client]);
   const [interactionState, setInteractionState] = useState<{ key: string; selections: ActionSelections }>({ key: interactionKey, selections: {} });
+  const [actionProblems, setActionProblems] = useState<{ key: string; visuals: Record<string, Record<string, string>> }>({ key: interactionKey, visuals: {} });
+  const runtimeProblems = actionProblems.key === interactionKey ? actionProblems.visuals : {};
   const selections = interactionState.key === interactionKey ? interactionState.selections : {};
   const [drillState, setDrillState] = useState<{ key: string; paths: Record<string, DrillPath>; armed?: string }>({ key: interactionKey, paths: {} });
   const paths = drillState.key === interactionKey ? drillState.paths : {};
   const armed = drillState.key === interactionKey ? drillState.armed : undefined;
-  const interactive = sheet.visuals.some(v => v.filterActions?.length || v.hierarchy);
+  const interactive = sheet.visuals.some(v => hasVisualActions(v) || v.hierarchy);
   const clearSource = (id: string) => setInteractionState({ key: interactionKey, selections: Object.fromEntries(Object.entries(selections).filter(([key]) => key !== id)) });
   const setPath = (id: string, path: DrillPath) => { setDrillState({ key: interactionKey, paths: { ...paths, [id]: path } }); clearSource(id); };
   const clearActions = () => setInteractionState({ key: interactionKey, selections: {} });
@@ -260,12 +262,24 @@ export function AuthorCanvas({ draft, dispatch, client, fit = true, sourceProble
               {sheet.visuals.map((visual, index) => {
                 const path = paths[visual.id] ?? [], projected = withDrill(withInheritedParameterFilters(draft, sheet, visual), path, draft.calculatedFields, draft.dataset);
                 const hierarchy = visual.kind !== 'kpi' ? visual.hierarchy : undefined;
-                const interaction: VisualInteraction | undefined = (visual.filterActions?.length || hierarchy) && (hierarchy ? !authorVisualProblem(projected) && projected.measures.length > 0 : !originProblem(projected)) ? {
+                const interaction: VisualInteraction | undefined = (hasVisualActions(visual) || hierarchy) && (hierarchy ? !authorVisualProblem(projected) && projected.measures.length > 0 : !originProblem(projected)) ? {
                   brush: visual.kind === 'line' && !!visual.filterActions?.length && armed !== visual.id,
                   onClear: () => clearSource(visual.id),
                   onSelect: selection => {
                     if (armed === visual.id && hierarchy) setPath(visual.id, drillDown(visual, path, selection));
-                    else if (visual.filterActions?.length) setInteractionState({ key: interactionKey, selections: toggleSelection(selections, visual.id, { ...selection, values: Object.fromEntries([...path.flatMap(p => Object.entries(p.values)), ...Object.entries(selection.values)]) }) });
+                    else {
+                      const clicked = { ...selection, values: Object.fromEntries([...path.flatMap(p => Object.entries(p.values)), ...Object.entries(selection.values)]) };
+                      if (visual.filterActions?.length) setInteractionState({ key: interactionKey, selections: toggleSelection(selections, visual.id, clicked) });
+                      if (!selection.range) {
+                        const problems: Record<string, string> = {};
+                        for (const action of visual.urlActions ?? []) {
+                          const result = resolveUrlAction(visual, action, clicked);
+                          if (result.problem !== undefined) problems[action.id] = result.problem;
+                          else window.open(result.value, action.target ?? '_blank', 'noopener,noreferrer');
+                        }
+                        setActionProblems({ key: interactionKey, visuals: { ...runtimeProblems, [visual.id]: problems } });
+                      }
+                    }
                   },
                 } : undefined;
                 return <div key={visual.id}><AuthorCard theme={theme} interactive={interactive} interaction={interaction}
@@ -284,7 +298,7 @@ export function AuthorCanvas({ draft, dispatch, client, fit = true, sourceProble
         </div>
       </div></div>
       <Panel title="Properties" className="properties-panel">
-        {selected ? <Properties key={selected.id} visual={selected} draft={draft} dispatch={dispatch} client={client} /> : <><p>Select a visual to edit its display settings.</p><ThemeEditor draft={draft} dispatch={dispatch} /></>}
+        {selected ? <Properties key={selected.id} runtimeProblems={runtimeProblems[selected.id]} visual={selected} draft={draft} dispatch={dispatch} client={client} /> : <><p>Select a visual to edit its display settings.</p><ThemeEditor draft={draft} dispatch={dispatch} /></>}
       </Panel>
     </div>
     {calculationOpen && <CalculationDialog dataset={draft.dataset} fields={draft.calculatedFields} onClose={() => setCalculationOpen(false)} onSave={field => { dispatch({ type: 'calculation-add', field }); setCalculationOpen(false); }} />}
@@ -327,7 +341,7 @@ function FieldWells({ visual, draft, dispatch, activeWell, onWell }: { visual?: 
   </fieldset>)}</div>;
 }
 
-function Properties({ visual, draft, dispatch, client }: EditorProps & { visual: AuthorVisual }) {
+function Properties({ visual, draft, dispatch, client, runtimeProblems }: EditorProps & { visual: AuthorVisual; runtimeProblems?: Record<string, string> }) {
   const [tab, setTab] = useState<'Visual' | 'Interaction'>('Visual');
   const tabId = useId();
   const formatting = visual.formatting ?? {};
@@ -382,7 +396,7 @@ function Properties({ visual, draft, dispatch, client }: EditorProps & { visual:
     <div role="tabpanel" id={`${tabId}-panel-Interaction`} aria-labelledby={`${tabId}-Interaction`} hidden={tab !== 'Interaction'}>
       {tab === 'Interaction' && <>
         <FilterEditor dataset={draft.dataset} visual={visual} parameters={sheetParameters(draft)} calculations={draft.calculatedFields} dispatch={dispatch} client={visual.imported && !visual.imported.local ? undefined : client} />
-        <ActionEditor draft={draft} visual={visual} dispatch={dispatch} />
+        <ActionEditor runtimeProblems={runtimeProblems} draft={draft} visual={visual} dispatch={dispatch} />
         <HierarchyEditor draft={draft} visual={visual} dispatch={dispatch} />
         <ParameterFilterEditor dataset={draft.dataset} parameters={sheetParameters(draft)} calculations={draft.calculatedFields} dispatch={dispatch} />
       </>}
