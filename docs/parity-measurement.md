@@ -109,3 +109,8 @@ Writes `report.json` + `report.md`. Exit non-zero with a named
   baseline. Empty wells are present in both editor captures; assigned pills
   remain absent in these empty-analysis pairings. Pixel diffs increased; see
   the report's comparison rather than interpreting presence as pixel parity.
+- `docs/parity-baseline-2026-10-06-issue-45.md` / `.json` — shared ASK Q
+  side panel. The Home pairing now opens Q and submits `revenue by region`
+  so the panel, preview and alternatives are visible. Reference pixels,
+  regions, exclusions, tolerance and viewports are unchanged. This closes
+  the structural panel gap; its pixel diff increased from 48.8% to 61.8%.

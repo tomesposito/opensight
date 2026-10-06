@@ -61,6 +61,7 @@ try {
     await page.screenshot({ path: `${output}/${name}.png`, fullPage });
   };
   const ask = async question => {
+    if (!await page.locator('.q-side-panel').count()) await page.getByRole('button', { name: /^Ask a question about / }).click();
     await page.locator('#o-question').fill(question);
     await page.locator('#o-question').press('Enter');
   };
@@ -81,6 +82,7 @@ try {
   assert.equal(await page.locator('.o-source').innerText(), 'Local sales API query.');
   await capture('o-sales');
   await page.getByRole('button', { name: 'ADD TO ANALYSIS', exact: true }).click();
+  await page.getByRole('button', { name: 'Close Ask Q', exact: true }).click();
   await chart('.author-card', [['East', '500'], ['West', '400']]);
   assert.deepEqual(queries.at(-1).body.rows, sales);
   console.log('PASS: local sales O chart and ADD TO ANALYSIS: East 500, West 400, real HTTP 200 dataset queries');
@@ -110,6 +112,7 @@ try {
   assert.equal(await page.locator('.o-source').innerText(), 'Team totals API query.');
   await capture('o-uploaded', false);
   await page.getByRole('button', { name: 'ADD TO ANALYSIS', exact: true }).click();
+  await page.getByRole('button', { name: 'Close Ask Q', exact: true }).click();
   await chart('.author-card', [['North', '6'], ['South', '3']]);
   assert.equal(queries.at(-1).path, preparedPath); assert.deepEqual(queries.at(-1).body.rows, teams);
   await page.getByRole('button', { name: 'Save draft', exact: true }).click();
@@ -151,6 +154,7 @@ try {
   await ask('revenue by region');
   await page.locator('.o-result .chart svg').waitFor();
   await page.getByRole('button', { name: 'ADD TO ANALYSIS', exact: true }).click();
+  await page.getByRole('button', { name: 'Close Ask Q', exact: true }).click();
   await chart('.author-card', [['East', '500'], ['West', '400']]);
   await page.getByRole('button', { name: 'Save draft', exact: true }).click();
   await page.getByText('Draft saved on this device.', { exact: true }).waitFor();

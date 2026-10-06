@@ -405,7 +405,7 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .automation-notice h2 { margin-top: 0; }
 .automation-notice p { line-height: 1.6; }
 .automation-notice button:disabled { cursor: not-allowed; opacity: .6; }
-/* Q stays in the document flow; opening an answer never covers the analysis sheet. */
+/* Interpreter content is shared by the Author and Home ASK Q panel. */
 .o-entry { margin: 8px 0; padding: 10px 14px; border: 1px solid var(--border, #cbd5e1); border-radius: 6px; background: var(--panel, #fff); color: var(--text, #15283d); }
 .o-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 .o-bar label { font-weight: 650; }
@@ -426,6 +426,25 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .author-workspace[data-chrome] .o-entry-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; margin: 0; padding: 8px 0; border: 0; border-radius: 0; background: var(--chrome-bg); color: var(--chrome-muted); }
 .o-entry-toolbar .o-mode-notice { margin: 0; }
 .o-entry-toolbar .o-answer { flex-basis: 100%; color: var(--chrome-text); }
+/* Non-modal, right-docked Q panel; the sheet remains available alongside it. */
+.q-entry { margin: 8px 0; }
+.q-trigger { display: flex; align-items: center; gap: 8px; min-height: 28px; max-width: 100%; padding: 4px 8px; border: 1px solid #c9d8de; border-radius: 5px; background: #fff; color: #19384a; text-align: left; font: 12px Arial, "Helvetica Neue", Helvetica, sans-serif; }
+.author-workspace .author-menu > .q-trigger { flex: 0 1 420px; min-width: 0; margin: 4px 8px; padding: 4px 8px; border: 1px solid var(--header-border); border-radius: 20px; background: var(--header-pressed); }
+.q-side-panel { position: fixed; z-index: 40; inset: 0 0 0 auto; display: flex; flex-direction: column; width: min(400px, 100%); border-left: 1px solid var(--chrome-border, #c9d8de); background: var(--chrome-surface, #fff); color: var(--chrome-text, #15283d); box-shadow: -4px 0 16px #15283d26; font: 12px Arial, "Helvetica Neue", Helvetica, sans-serif; }
+.q-panel-heading { display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; gap: 8px; padding: 8px; border-bottom: 1px solid var(--chrome-border, #c9d8de); }
+.q-panel-heading h2, .q-side-panel .o-alternatives h3 { margin: 0; font-size: 13px; }
+.q-panel-content { min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 8px; }
+.q-side-panel .o-entry { margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent; color: inherit; }
+.q-side-panel .o-bar { margin-bottom: 8px; }
+.q-side-panel .o-bar label { flex-basis: 100%; }
+.q-side-panel .o-bar input { flex: 1 1 0; width: 0; }
+.q-side-panel :is(button, input) { min-height: 28px; padding: 4px 8px; font: inherit; }
+.q-side-panel button { border: 1px solid var(--chrome-border, #c9d8de); border-radius: 5px; background: var(--chrome-surface, #fff); color: inherit; }
+.q-side-panel button:hover:not(:disabled) { background: var(--chrome-menu-hover, #edf7f7); }
+.q-side-panel .o-answer { margin-top: 8px; padding-top: 8px; border-color: var(--chrome-border, #c9d8de); }
+.q-side-panel .o-alternatives { margin-top: 8px; }
+.q-side-panel .o-alternatives h3 { margin-bottom: 8px; }
+.q-side-panel :focus-visible, .q-trigger:focus-visible { outline: 2px solid #499de3; outline-offset: 2px; }
 .o-build-for-me { margin: 10px 0; padding: 10px; border: 1px solid #a9c5d2; border-radius: 4px; }
 .o-build-for-me summary { font-weight: 600; cursor: pointer; }
 .o-build-for-me pre { white-space: pre-wrap; overflow-wrap: anywhere; }

@@ -82,7 +82,7 @@ modes remain available under their role permissions. See
 
 ![Default sales dashboard rendered from pinned sample results](docs/images/sample-dashboard.png)
 
-![Authoring canvas with assigned fields and the O bar in the toolbar](docs/images/author.png)
+![Authoring canvas with assigned fields and the Ask a question trigger in the toolbar](docs/images/author.png)
 
 Field wells stay visible before a visual is selected. Choose a Data field to
 create a bar, then keep assigning fields or change its type.
@@ -136,14 +136,19 @@ prepare its columns, save the pipeline and select **Build a chart**. See
 
 ![Live chart from a locally uploaded and prepared CSV](docs/images/local-data.png)
 
-### 💬 Ask O
+### 💬 Ask Q
 
-A natural-language entry point over your data. A local deterministic
+A shared right-side panel opens from **Ask a question** in Home and Author.
+The panel contains the interpreted question, chart preview and alternatives;
+Author also offers **ADD TO ANALYSIS**. Escape or Close returns focus to the
+trigger. A local deterministic
 interpreter queries the active dataset in the local workspace, including prepared
 CSV uploads. The static demo answers using synthetic rows. Administrators can
 configure a real AI provider
 (OpenAI, Anthropic, Bedrock, or a custom endpoint) for generative answers,
 gated by role.
+
+![ASK Q side panel in Author with a synthetic sales preview and ADD TO ANALYSIS](docs/images/q-side-panel.png)
 
 ![O answer querying a locally uploaded CSV: North 6 and South 3](docs/images/o-answer.png)
 

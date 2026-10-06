@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useAccess } from './access.js';
 import type { Fixture } from './model.js';
 import type { QueryClient } from './author-query.js';
-import { OEntry } from './OEntry.js';
+import { QSidePanel } from './QSidePanel.js';
 import { emptyDraft } from './authoring.js';
 import { VisualCard } from './VisualCard.js';
 
@@ -11,7 +11,7 @@ export function Dashboard({ fixture, hosted = false, dashboardId, client, sample
   const [sheetId, setSheetId] = useState(fixture.sheets[0]?.id);
   const sheet = fixture.sheets.find(s => s.id === sheetId);
   return <>
-    {(access.mode === 'demo' && sample || hosted && dashboardId !== undefined) && <OEntry draft={emptyDraft()} client={hosted ? client : undefined} dashboardId={dashboardId} />}
+    {(access.mode === 'demo' && sample || hosted && dashboardId !== undefined) && <QSidePanel draft={emptyDraft()} client={hosted ? client : undefined} dashboardId={dashboardId} />}
     {!sample && !hosted && <p className="fixture-notice">Questions are unavailable for definition previews. <a href="#/home">Open Home to explore sample sales data.</a></p>}
     <div className="dashboard-heading"><div><p className="eyebrow">{fixture.description}</p><h1>{fixture.name}</h1></div><span className="phase-badge">{sample ? 'Pinned sample data' : 'Definition preview'}</span></div>
     <p className="fixture-notice">{sample ? <>Pinned synthetic sales data. No live query is run. </> : <>Developer tool: inspect chart definitions and pinned sample results. </>}{fixture.notice}</p>
