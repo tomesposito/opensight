@@ -11,12 +11,13 @@ const add = (kind = 'bar') => authorReducer(emptyDraft(), { type: 'add', kind })
 const renderCanvas = draft => renderToStaticMarkup(createElement(AuthorCanvas, { draft, dispatch() {} }));
 const renderCard = visual => renderToStaticMarkup(createElement(VisualCard, { visual }));
 
-test('empty canvas exposes all visual types and typed fields with assignment disabled', () => {
+test('empty canvas exposes all visual types and enables assignable typed fields', () => {
   const html = renderCanvas(emptyDraft());
   assert.match(html, /Your canvas is ready/);
   for (const kind of ['bar', 'line', 'pie', 'kpi', 'table']) assert.match(html, new RegExp(`value="${kind}"`));
   for (const field of ['order_id', 'order_date', 'region', 'category', 'revenue', 'profit']) {
-    assert.match(html, new RegExp(`disabled="" aria-label="Assign ${field}"`));
+    assert.match(html, new RegExp(`aria-label="Assign ${field}"`));
+    assert.doesNotMatch(html, new RegExp(`disabled="" aria-label="Assign ${field}"`));
   }
   for (const label of ['Geography', 'Metadata', 'Sales', 'INTEGER', 'DATETIME', 'STRING', 'DECIMAL']) assert.ok(html.includes(label));
 });

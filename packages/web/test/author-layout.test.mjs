@@ -103,11 +103,11 @@ test('card selection keeps docked wells, Data assignments and Properties on the 
   assert.equal(activeSheet(ui.state()).visuals[0].dimension, 'category');
 });
 
-test('sheet switches and removal refresh docked editors and the empty-state assignment guard', async t => {
+test('sheet switches and removal refresh docked editors and the always-visible empty wells', async t => {
   const ui = await mount(t, twoVisuals());
   await ui.click('+ Add sheet');
   assert.equal(ui.panel('build').find(n => n.props.className === 'visual-config').props.id, undefined);
-  assert.equal(ui.find('button', p => p['aria-label'] === 'Assign revenue').props.disabled, true);
+  assert.equal(ui.find('button', p => p['aria-label'] === 'Assign revenue').props.disabled, false);
   assert.ok(ui.panel('properties').findAllByType('p').some(n => n.props.children === 'Select a visual to edit its display settings.'));
   await ui.click('Sheet 1');
   assert.equal(ui.panel('build').find(n => n.props.className === 'visual-config').props.id, 'configure-visual-2');
@@ -115,7 +115,7 @@ test('sheet switches and removal refresh docked editors and the empty-state assi
   assert.equal(ui.panel('build').find(n => n.props.className === 'visual-config').props.id, 'configure-visual-1');
   await ui.click('Remove Sales by category');
   assert.equal(ui.panel('build').findAllByType('fieldset').length, 3);
-  assert.equal(ui.find('button', p => p['aria-label'] === 'Assign revenue').props.disabled, true);
+  assert.equal(ui.find('button', p => p['aria-label'] === 'Assign revenue').props.disabled, false);
 });
 
 test('panel disclosure and narrow-screen defaults do not mutate sheet selection or saved layout', async t => {

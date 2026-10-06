@@ -32,6 +32,41 @@ async function mount(t, initial = emptyDraft(), client) {
 }
 const selected = d => activeSheet(d).visuals.find(v => v.id === activeSheet(d).selectedId);
 
+test('empty wells select the destination and Data assignment creates a bar, then edits it in place', async t => {
+  const ui = await mount(t);
+  await ui.click('Select COLUMNS well');
+  assert.equal(ui.button('Select COLUMNS well').props['aria-pressed'], true);
+  assert.equal(activeSheet(ui.state()).visuals.length, 0);
+  const hint = ui.find('p', p => p.className === 'field-hint');
+  assert.ok(hint.props.children.includes('COLUMNS (bar category)'));
+  await ui.click('Assign category');
+  assert.equal(selected(ui.state()).kind, 'bar');
+  assert.equal(selected(ui.state()).dimension, 'category');
+  assert.deepEqual(selected(ui.state()).measures, []);
+  await ui.click('Assign profit');
+  assert.equal(activeSheet(ui.state()).visuals.length, 1);
+  assert.deepEqual(selected(ui.state()).measures, ['profit']);
+  await ui.click('Remove category from Category');
+  assert.equal(selected(ui.state()).dimension, null);
+  await ui.click('Assign region');
+  assert.deepEqual(loadDraft(() => ui.store).draft, ui.state());
+  await ui.click('Remove Visual 1');
+  assert.ok(ui.button('Select VALUES well'));
+  await ui.click('Select VALUES well');
+  await ui.click('Assign revenue');
+  assert.equal(selected(ui.state()).dimension, null);
+  assert.deepEqual(selected(ui.state()).measures, ['revenue']);
+});
+
+test('empty dataset fields retain BOOLEAN refusal and tooltip while valid fields create a visual', async t => {
+  const ui = await mount(t, { ...emptyDraft(), dataset: { id: 'custom', name: 'Custom', columns: [{ name: 'enabled', type: 'BOOLEAN' }, { name: 'amount', type: 'DECIMAL' }] } });
+  assert.equal(ui.button('Assign enabled').props.disabled, true);
+  assert.match(ui.button('Assign enabled').props.title, /convert to text or number/);
+  assert.equal(ui.button('Assign amount').props.disabled, false);
+  await ui.click('Assign amount');
+  assert.deepEqual(selected(ui.state()).measures, ['amount']);
+});
+
 test('offline pivot toggles persist through authoring, draft reload and bundle import/edit/export', async t => {
   let initial = authorReducer(emptyDraft(), { type: 'add', kind: 'pivot' });
   initial = authorReducer(initial, { type: 'assign', well: 'rows', field: 'category' });
@@ -66,7 +101,7 @@ test('pivot collapse in a live preview does not issue another query', async t =>
 
 test('gallery ADD, field buttons, well pickers and pill removal change the live editor state', async t => {
   const ui = await mount(t);
-  assert.equal(ui.button('Assign region').props.disabled, true);
+  assert.equal(ui.button('Assign region').props.disabled, false);
   assert.equal(activeSheet(ui.state()).visuals.length, 0);
   await ui.click('Pivot');
   await ui.submit(ui.find('form', p => p.className === 'add-visual'));

@@ -169,6 +169,7 @@ export type AuthorAction =
   | { type: 'calculation-add'; field: CalculatedField }
   | { type: 'o-add'; visual: AuthorVisual; calculatedFields: CalculatedField[] }
   | { type: 'add'; kind: VisualKind }
+  | { type: 'assign-with-no-selection'; field: string; well?: Well }
   | { type: 'select' | 'remove'; id: string }
   | { type: 'move'; id: string; offset: -1 | 1 }
   | { type: 'kind'; kind: VisualKind }
@@ -262,6 +263,19 @@ export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorD
     if (i < 0 || j < 0 || j >= controls.length) return draft;
     [controls[i], controls[j]] = [controls[j]!, controls[i]!]; return update({ controls });
   }
+  if (action.type === 'assign-with-no-selection') {
+    // One atomic edit, with no seeded fields. Stale UI events must not create
+    // another visual after selection has changed or leave an empty orphan.
+    if (sheet.visuals.some(v => v.id === sheet.selectedId)) return draft;
+    const field = dataFields(draft.calculatedFields, draft.dataset).find(f => f.name === action.field);
+    if (!field || field.type === 'BOOLEAN' || (field.role === 'measure' ? action.well && action.well !== 'values' : action.well === 'values')) return draft;
+    const id = nextId('visual', [...draft.sheets.flatMap(s => s.visuals.map(v => v.id)), ...originalIds(draft, true)]);
+    // ROWS/COLUMNS both map to the default bar's single category dimension.
+    const visual: AuthorVisual = { ...defaults(), id, kind: 'bar', title: '', donut: false,
+      dimension: field.role === 'dimension' ? field.name : null, measures: field.role === 'measure' ? [field.name] : [] };
+    const bottom = Math.max(0, ...sheet.layout.map(p => p.y + p.h));
+    return update({ visuals: [...sheet.visuals, visual], selectedId: id, layout: [...sheet.layout, { i: id, x: 0, y: bottom, w: 6, h: 8 }] });
+  }
   if (action.type === 'add') {
     const id = nextId('visual', [...draft.sheets.flatMap(s => s.visuals.map(v => v.id)), ...originalIds(draft, true)]);
     const dimension = noDimensions(action.kind) ? null : ['line', 'area'].includes(action.kind) ? 'order_date' : action.kind === 'pie' ? 'category' : 'region';
@@ -353,7 +367,7 @@ export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorD
       }
       case 'assign': {
         const field = dataFields(draft.calculatedFields, draft.dataset).find(f => f.name === action.field);
-        if (!field) return visual;
+        if (!field || field.type === 'BOOLEAN') return visual;
         if (field.role === 'measure') return action.well && action.well !== 'values' || visual.kind === 'scatter' && visual.measures.length >= 3 ? visual : { ...visual, measures: singleMeasure(visual.kind) ? [field.name] : [...new Set([...visual.measures, field.name])] };
         if (noDimensions(visual.kind) || action.well === 'values') return visual;
         if (grouped(visual.kind)) {

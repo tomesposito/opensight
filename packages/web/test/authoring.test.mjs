@@ -19,6 +19,58 @@ const unassign = field => ({ type: 'unassign', field });
 const visual = draft => activeSheet(draft).visuals.find(v => v.id === activeSheet(draft).selectedId);
 const body = definition => Object.values(definition)[0];
 
+test('first dimension or measure assignment creates and selects one bar with only that field', () => {
+  for (const [field, well] of [['region', 'rows'], ['category', 'columns'], ['order_date', 'dimension'], ['profit', 'values']]) {
+    const before = emptyDraft(), snapshot = structuredClone(before);
+    const draft = authorReducer(before, { type: 'assign-with-no-selection', field, well });
+    assert.deepEqual(before, snapshot);
+    assert.equal(activeSheet(draft).visuals.length, 1);
+    assert.equal(visual(draft).kind, 'bar');
+    assert.equal(visual(draft).dimension, well === 'values' ? null : field);
+    assert.deepEqual(visual(draft).measures, well === 'values' ? [field] : []);
+    assert.deepEqual(visual(draft).rows, []);
+    assert.deepEqual(visual(draft).columns, []);
+    assert.deepEqual(activeSheet(draft).layout, [{ i: 'visual-1', x: 0, y: 0, w: 6, h: 8 }]);
+    validateDraft(draft);
+    const complete = edit(draft, assign(well === 'values' ? 'region' : 'revenue'));
+    assert.equal(serializeDraft(complete).length, 1);
+  }
+});
+
+test('invalid first assignments and stale no-selection events never create orphan visuals', () => {
+  const draft = { ...emptyDraft(), dataset: { id: 'custom', name: 'Custom', columns: [{ name: 'enabled', type: 'BOOLEAN' }, { name: 'label', type: 'STRING' }, { name: 'amount', type: 'DECIMAL' }] } };
+  for (const [field, well] of [['missing', 'rows'], ['enabled', 'rows'], ['label', 'values'], ['amount', 'rows'], ['amount', 'columns']]) {
+    assert.equal(authorReducer(draft, { type: 'assign-with-no-selection', field, well }), draft);
+  }
+  const selected = add();
+  assert.equal(authorReducer(selected, { type: 'assign-with-no-selection', field: 'profit', well: 'values' }), selected);
+  assert.equal(activeSheet(authorReducer(emptyDraft(), assign('region'))).visuals.length, 0, 'ordinary assign keeps its selected-only contract');
+});
+
+test('first assignment respects dataset/calculated fields and survives draft reload', () => {
+  let draft = { ...emptyDraft(), dataset: { id: 'custom', name: 'Custom', columns: [{ name: 'label', type: 'STRING' }, { name: 'amount', type: 'DECIMAL' }] } };
+  draft = edit(draft, { type: 'calculation-add', field: { name: 'Net', expression: '{amount} * 0.9', role: 'measure' } }, { type: 'assign-with-no-selection', field: 'Net', well: 'values' });
+  assert.deepEqual(visual(draft).measures, ['Net']);
+  assert.equal(visual(draft).dimension, null);
+  draft = edit(draft, assign('label'));
+  let saved;
+  const storage = { getItem: () => saved, setItem: (_, value) => { saved = value; } };
+  saveDraft(draft, () => storage);
+  assert.deepEqual(loadDraft(() => storage).draft, draft);
+  assert.equal(serializeDraft(draft).length, 1);
+});
+
+test('auto-created visuals reserve IDs across sheets and append below existing unselected cards', () => {
+  let draft = edit(add(), { type: 'sheet-add' }, { type: 'add', kind: 'line' });
+  const before = structuredClone(draft);
+  draft = { ...draft, sheets: draft.sheets.map(s => s.id === draft.activeSheetId ? { ...s, selectedId: null } : s) };
+  const created = authorReducer(draft, { type: 'assign-with-no-selection', field: 'category', well: 'rows' });
+  assert.equal(visual(created).id, 'visual-3');
+  assert.deepEqual(created.sheets[0], before.sheets[0]);
+  assert.deepEqual(activeSheet(created).visuals[0], activeSheet(before).visuals[0]);
+  assert.deepEqual(activeSheet(created).layout[1], { i: 'visual-3', x: 0, y: 8, w: 6, h: 8 });
+});
+
 test('sales field names and type badges match the pinned dataset', async () => {
   const dataset = JSON.parse(await readFile(new URL('../../../fixtures/renderable-sales/describe-data-set.response.json', import.meta.url), 'utf8'));
   assert.deepEqual(SALES_FIELDS.map(f => ({ Name: f.name, Type: f.type })), dataset.DataSet.OutputColumns);
