@@ -99,6 +99,7 @@ try {
   await page.getByText(/Dataset pipeline saved/).waitFor();
   await page.getByRole('button', { name: 'Build a chart', exact: true }).click();
   await page.getByRole('button', { name: 'Assign amount', exact: true }).waitFor();
+  await page.getByRole('button', { name: /^Ask a question about / }).click();
   await page.locator('#o-question').fill('amount by team'); await page.locator('#o-question').press('Enter');
   await page.locator('.o-result .chart svg').waitFor();
   await page.getByRole('button', { name: 'ADD TO ANALYSIS', exact: true }).click();

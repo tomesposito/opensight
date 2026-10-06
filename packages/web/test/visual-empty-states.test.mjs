@@ -84,15 +84,15 @@ test('Issue #35: definition previews never invite questions about unavailable da
   for (const access of [demoAccess, { mode: 'local' }, { mode: 'hosted', session: { role: 'author_ai' } }]) {
     for (const fixture of fixtures) {
       const html = renderToStaticMarkup(createElement(AccessProvider, { access }, createElement(Dashboard, { fixture })));
-      assert.doesNotMatch(html, /id="o-question"|class="o-result"/);
+      assert.doesNotMatch(html, /class="q-trigger"|id="o-question"|class="o-result"/);
       assert.match(html, /Questions are unavailable for definition previews/);
       assert.match(html, /href="#\/home">Open Home to explore sample sales data/);
     }
   }
   const sample = renderToStaticMarkup(createElement(Dashboard, { fixture: sales, sample: true }));
-  assert.match(sample, /id="o-question"/);
+  assert.match(sample, /class="q-trigger"/);
   assert.doesNotMatch(sample, /Questions are unavailable/);
   const hosted = renderToStaticMarkup(createElement(AccessProvider, { access: { mode: 'hosted', session: { role: 'author_ai' } } }, createElement(Dashboard, { fixture: sales, hosted: true, dashboardId: 'published' })));
-  assert.match(hosted, /id="o-question"/);
+  assert.match(hosted, /class="q-trigger"/);
   assert.doesNotMatch(hosted, /Questions are unavailable/);
 });

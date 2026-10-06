@@ -1,5 +1,5 @@
 // Captures an animated GIF storyboard for the repo README hero.
-// Adapted from ~/workspace/tools/screenshots/readme-gif.mjs.
+// Adapted from ~/workspace/tools/screenshots/readme-gif-44.mjs.
 // Drives the rebuilt file:// demo through Home, O, Author, Analyses, Data, Admin.
 // Frames land in OPENSIGHT_SCREENSHOT_OUTPUT/frames;
 // assemble with: ffmpeg -framerate 10 -i .opensight/issue-31/gif/frames/f%03d.png ...
@@ -37,6 +37,7 @@ try {
   await hold(1500); // 1. dashboard with charts
 
   // 2. Ask the O bar a question, typing visibly.
+  await page.getByRole('button', { name: /^Ask a question about / }).click();
   await page.click('#o-question');
   await hold(400);
   for (const ch of 'revenue by region') {
@@ -60,11 +61,13 @@ try {
   await page.locator('.author-card .chart svg').waitFor();
   await hold(1400);
   await page.locator('.author-card-actions button[aria-label^="Remove "]').click();
+  await page.getByRole('button', { name: /^Ask a question about / }).click();
   await page.locator('#o-question').fill('revenue by region');
   await page.locator('#o-question').press('Enter');
   await page.locator('.o-result .chart svg').waitFor();
   await hold(1400);
   await page.getByRole('button', { name: 'ADD TO ANALYSIS', exact: true }).click();
+  await page.getByRole('button', { name: 'Close Ask Q', exact: true }).click();
   await page.getByLabel('Analysis title', { exact: true }).fill('Revenue analysis');
   await page.getByRole('button', { name: 'Save draft', exact: true }).click();
   await page.locator('.author-card .chart svg').waitFor();
@@ -72,7 +75,7 @@ try {
   // Phase 2d radar: build through the gallery and recompute synthetic rows.
   await page.locator('.author-card-actions button[aria-label^="Remove "]').click();
   await page.getByRole('button', { name: 'Radar', exact: true }).click();
-  await page.getByRole('button', { name: 'Add visual', exact: true }).click();
+  await page.locator('.build-panel').getByRole('button', { name: 'Add visual', exact: true }).click();
   await page.getByLabel('Assign Category', { exact: true }).selectOption('order_date');
   await page.getByLabel('Assign Color', { exact: true }).selectOption('region');
   const properties = page.locator('.properties-panel:not([open]) > summary');
@@ -86,7 +89,7 @@ try {
   // Issue #40: row groups run against local synthetic data and save in the bundle.
   await page.locator('.author-card-actions button[aria-label^="Remove "]').click();
   await page.getByRole('button', { name: 'Pivot', exact: true }).click();
-  await page.getByRole('button', { name: 'Add visual', exact: true }).click();
+  await page.locator('.build-panel').getByRole('button', { name: 'Add visual', exact: true }).click();
   await page.getByLabel('Assign Rows', { exact: true }).selectOption('category');
   await page.getByLabel('Title', { exact: true }).fill('Revenue by region and category');
   await page.locator('details.property-section').filter({ has: page.locator('summary', { hasText: /^Subtotal$/ }) }).locator('summary').click();

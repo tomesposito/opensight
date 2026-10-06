@@ -70,6 +70,7 @@ try {
   await mode('security');
   assert.equal(await page.getByText('API definition preview · Needs hosted API', { exact: true }).getAttribute('aria-disabled'), 'true');
   await mode('sample');
+  await page.getByRole('button', { name: /^Ask a question about / }).click();
   await page.locator('#o-question').fill('revenue by region');
   await page.locator('#o-question').press('Enter');
   await page.locator('.o-answer').waitFor();

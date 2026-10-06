@@ -92,13 +92,14 @@ try {
     assert.equal(await card.locator('.empty-symbol').count(), 0);
     assert.equal(await card.evaluate(node => node.getAnimations({ subtree: true }).length), 0);
     assert.equal(await card.locator('.chart').count(), 0);
-    assert.equal(await page.locator('#o-question').count(), 0);
+    assert.equal(await page.locator('.q-trigger, #o-question').count(), 0);
     await page.getByText('Questions are unavailable for definition previews.', { exact: false }).waitFor();
     await capture(`${label}-definition`);
     await page.getByRole('link', { name: 'Open Home to explore sample sales data.' }).click();
     await page.locator('.dashboard-heading h1').filter({ hasText: 'Renderable Sales' }).waitFor();
     await page.locator('.dashboard-grid .chart svg').first().waitFor();
     if (label === 'demo') {
+      await page.getByRole('button', { name: /^Ask a question about / }).click();
       await page.locator('#o-question').fill('revenue by region');
       await page.locator('#o-question').press('Enter');
       await page.locator('.o-result .chart svg').waitFor();
@@ -129,12 +130,14 @@ try {
   await page.getByText(/Dataset pipeline saved/).waitFor();
   await page.getByRole('button', { name: 'Build a chart', exact: true }).click();
   const ask = async () => {
+    if (!await page.locator('.q-side-panel').count()) await page.getByRole('button', { name: /^Ask a question about / }).click();
     await page.locator('#o-question').fill('amount by team');
     await page.locator('#o-question').press('Enter');
   };
   await ask(); await page.locator('.o-result .chart svg').waitFor();
   assert.deepEqual(queries.at(-1).body.rows, [{ team: 'North', 'O sum amount': 6 }, { team: 'South', 'O sum amount': 3 }]);
   await page.getByRole('button', { name: 'ADD TO ANALYSIS', exact: true }).click();
+  await page.getByRole('button', { name: 'Close Ask Q', exact: true }).click();
   await page.locator('.author-card .chart svg').waitFor();
   await page.getByRole('button', { name: 'Save draft', exact: true }).click();
   await page.getByText('Draft saved on this device.', { exact: true }).waitFor();

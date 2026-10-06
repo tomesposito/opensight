@@ -67,7 +67,7 @@ try {
   const navBox = await menu.boundingBox();
   assert.equal(navBox.x, 0); assert.equal(navBox.width, 1440);
   assert.equal(await menu.evaluate(n => getComputedStyle(n).borderRadius), '0px');
-  const positions = await page.locator('.author-menu > details:last-of-type, .author-menu .o-bar, .author-menu > button, .chrome-switch').evaluateAll(nodes => nodes.map(n => ({ x: n.getBoundingClientRect().x, y: n.getBoundingClientRect().y })));
+  const positions = await page.locator('.author-menu > details:last-of-type, .author-menu .q-trigger, .author-menu > button, .chrome-switch').evaluateAll(nodes => nodes.map(n => ({ x: n.getBoundingClientRect().x, y: n.getBoundingClientRect().y })));
   assert.ok(positions.every((p, i) => i === 0 || p.x > positions[i - 1].x), 'desktop control order');
   assert.ok(positions.every(p => p.y >= navBox.y && p.y < navBox.y + navBox.height));
   const headerClip = { x: 0, y: 0, width: 1440, height: Math.ceil(navBox.y + navBox.height) };
@@ -78,9 +78,7 @@ try {
     await checkContrast(page.locator('.analysis-title input'), `${theme} identity title`);
     await checkContrast(toggle, `${theme} NEW LOOK`);
     await checkContrast(page.locator('.chrome-switch'), `${theme} NEW LOOK label`);
-    await checkContrast(page.locator('#o-question'), `${theme} Q input`);
-    await checkContrast(page.locator('#o-question'), `${theme} Q placeholder`, '::placeholder');
-    await checkContrast(menu.locator('.o-bar button'), `${theme} Ask`);
+    await checkContrast(menu.locator('.q-trigger'), `${theme} Ask Q`);
     await checkContrast(file.locator('summary'), `${theme} menu`);
     await file.locator('summary').hover();
     await checkContrast(file.locator('summary'), `${theme} menu hover`);
@@ -138,13 +136,14 @@ try {
   await menu.locator('summary').filter({ hasText: /^Edit$/ }).click();
   await page.getByRole('button', { name: 'Rename analysis', exact: true }).click();
   assert.equal(await page.locator('.analysis-title input').evaluate(n => n === document.activeElement), true);
-  // Q still submits from the header and renders an answer below it.
+  // The toolbar opens Q in the shared side panel.
+  await menu.getByRole('button', { name: /^Ask a question about / }).click();
   await page.getByRole('searchbox', { name: 'Ask a question', exact: true }).fill('sum revenue by region');
-  await menu.getByRole('button', { name: 'Ask', exact: true }).click();
+  await page.getByRole('dialog', { name: 'ASK Q', exact: true }).getByRole('button', { name: 'Ask', exact: true }).click();
   await page.locator('.o-result .chart svg').waitFor();
-  assert.ok((await page.locator('.o-answer').boundingBox()).y > navBox.y + navBox.height);
+  assert.equal(await page.locator('.q-side-panel .o-answer').count(), 1);
   await page.getByRole('button', { name: 'Close answer', exact: true }).click();
-  await page.getByRole('searchbox', { name: 'Ask a question', exact: true }).fill('');
+  await page.getByRole('button', { name: 'Close Ask Q', exact: true }).click();
   await toggle.selectOption('light');
   await page.evaluate(() => document.activeElement?.blur()); await settle();
   await page.locator('.author-card').scrollIntoViewIfNeeded(); await settle();

@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type ComponentProps, type ReactNode } from 'react';
+import { useCallback, useEffect, useId, useRef, useState, type ComponentProps, type ReactNode } from 'react';
 import { allowed, useAccess } from './access.js';
 import { OEntry } from './OEntry.js';
 
@@ -18,21 +18,28 @@ function QSidePanelContent({ renderTrigger, ...entry }: QSidePanelProps) {
   const id = useId();
   const triggerRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (open) panelRef.current?.querySelector<HTMLInputElement>('input[type="search"]')?.focus();
-  }, [open]);
-  const close = () => {
+  const close = useCallback(() => {
     setOpen(false);
     triggerRef.current?.focus();
-  };
+  }, []);
+  useEffect(() => {
+    if (!open) return;
+    const panel = panelRef.current;
+    panel?.querySelector<HTMLInputElement>('input[type="search"]')?.focus();
+    // Non-modal: Escape still works after an answer action removes its focused
+    // button, or after the user moves focus back into the analysis.
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !event.defaultPrevented) { event.preventDefault(); close(); }
+    };
+    panel?.ownerDocument.addEventListener('keydown', escape);
+    return () => panel?.ownerDocument.removeEventListener('keydown', escape);
+  }, [open, close]);
   const trigger = <button ref={triggerRef} type="button" className="q-trigger" aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? id : undefined} onClick={() => setOpen(true)}>
     <span className="o-mark" aria-hidden="true">Q</span> Ask a question about {entry.draft.dataset?.name ?? 'Local sales'}
   </button>;
   return <>
     {renderTrigger ? renderTrigger(trigger) : <div className="q-entry">{trigger}</div>}
-    {open && <div ref={panelRef} id={id} className="q-side-panel" role="dialog" aria-labelledby={`${id}-heading`} onKeyDown={event => {
-      if (event.key === 'Escape' && !event.defaultPrevented) { event.preventDefault(); event.stopPropagation(); close(); }
-    }}>
+    {open && <div ref={panelRef} id={id} className="q-side-panel" role="dialog" aria-labelledby={`${id}-heading`}>
       <header className="q-panel-heading"><h2 id={`${id}-heading`}>ASK Q</h2><button type="button" aria-label="Close Ask Q" onClick={close}>Close <span aria-hidden="true">×</span></button></header>
       <div className="q-panel-content"><OEntry {...entry} /></div>
     </div>}
