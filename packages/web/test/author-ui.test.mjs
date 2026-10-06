@@ -64,6 +64,13 @@ test('only the selected card exposes configuration and titles are escaped', () =
   assert.doesNotMatch(html, /<img/);
 });
 
+test('Data hints name the actual dimension well, including specialized visual types', () => {
+  for (const [kind, label] of [['bar', 'Category'], ['line', 'X-axis'], ['table', 'Group-by'], ['pivot', 'Rows'], ['radar', 'Category'], ['pointMap', 'Latitude'], ['box', 'Group / sample dimensions'], ['kpi', 'unavailable for this visual']]) {
+    const html = renderCanvas(add(kind));
+    assert.ok(html.includes(`Dimensions: ${label}. Measures: VALUES.`), kind);
+  }
+});
+
 test('shared VisualCard shows ready, unavailable, empty and compiler error states', () => {
   const preview = buildAuthorPreview(activeSheet(add()).visuals[0]);
   assert.match(renderCard(preview), /View data · 1 row/);
