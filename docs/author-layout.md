@@ -33,8 +33,11 @@ and start collapsed, with horizontal summary labels. Opening a panel takes
 space in the page; it does not overlay the sheet. Disclosure state is temporary
 and does not change the saved analysis or grid layout.
 
-The import drop zone remains above the workspace, with its file picker and
-instructions under **Import bundle**. Dropping a file still works while the
+The import drop zone shares a compact utility row with Save/New and Local
+drafts above the workspace, with its file picker and instructions under
+**Import bundle**. Expanded disclosures remain in document flow. See
+[Author density and typography](author-density.md) for the issue #41 spacing
+and type scale. Dropping a file still works while the
 disclosure is closed; import status and the report button remain visible.
 The offline preview boundary and device-save status remain visible. Toolbar
 menus and the explicitly opened calculated-field/import-report dialogs retain
