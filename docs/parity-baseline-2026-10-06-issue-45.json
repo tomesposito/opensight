@@ -1,0 +1,423 @@
+{
+  "tool": "@opensight/parity",
+  "generatedAt": "2026-10-06T19:20:40.171Z",
+  "tolerance": 16,
+  "equivalentThreshold": 0.05,
+  "interpretation": "Scores are pixel-difference fractions, not fidelity grades: layouts, copy, data and fonts legitimately differ between a QuickSight product screenshot and the OpenSight demo, so absolute values are expected to be high. Use baseline-to-baseline deltas of the same pairing to judge whether a change moved fidelity; a region below the equivalent threshold reads as visually equivalent at this protocol.",
+  "pairings": [
+    {
+      "id": "editor-classic",
+      "title": "Classic analysis editor vs demo Author view",
+      "reference": "qs-editor-classic.prep.png",
+      "capture": "editor-author-classic.png",
+      "referenceSize": {
+        "w": 1206,
+        "h": 783
+      },
+      "captureSize": {
+        "w": 1440,
+        "h": 935
+      },
+      "normalizedTo": {
+        "w": 1206,
+        "h": 783
+      },
+      "scale": 0.8375,
+      "crop": {
+        "x": 0,
+        "y": 0
+      },
+      "aspectMismatch": false,
+      "regions": [
+        {
+          "name": "header-toolbar",
+          "description": "Dark QS title bar + blue menu toolbar (File..Search, Add visual, PUBLISH).",
+          "pixels": 94068,
+          "diffPixels": 81246,
+          "diffFraction": 0.8636943487689757,
+          "excludedPixels": 1206,
+          "clamped": false,
+          "verdict": "different"
+        },
+        {
+          "name": "data-panel",
+          "description": "Data panel: dataset selector, field list with type icons.",
+          "pixels": 69460,
+          "diffPixels": 28960,
+          "diffFraction": 0.41693060754391015,
+          "excludedPixels": 0,
+          "clamped": false,
+          "verdict": "different"
+        },
+        {
+          "name": "visuals-panel",
+          "description": "Visuals panel: visual-type picker and field wells.",
+          "pixels": 77312,
+          "diffPixels": 26920,
+          "diffFraction": 0.34819950331125826,
+          "excludedPixels": 0,
+          "clamped": false,
+          "verdict": "different"
+        },
+        {
+          "name": "canvas",
+          "description": "Analysis canvas: bar, line, stacked bar, geospatial map.",
+          "pixels": 582860,
+          "diffPixels": 246306,
+          "diffFraction": 0.42258175205023507,
+          "excludedPixels": 0,
+          "clamped": false,
+          "verdict": "different"
+        }
+      ],
+      "overallDiffFraction": 0.4654995750880175,
+      "structural": [
+        {
+          "item": "Blue menu toolbar with File/Edit/Data/Insert/Sheets/Objects/Search",
+          "note": "Demo toolbar carries the same menu items.",
+          "present": true
+        },
+        {
+          "item": "Add visual CTA in toolbar",
+          "note": "Demo toolbar now carries a native 'Add visual' button ahead of FIT TO WIDTH (issue #44); clicking opens the visual-type gallery in the Visuals dock, scrolls it into view and moves keyboard focus there. Visual creation stays field-first (D-15): no orphan blank visuals.",
+          "present": true
+        },
+        {
+          "item": "PUBLISH button",
+          "note": "Present in demo toolbar (honest stub until hosted).",
+          "present": true
+        },
+        {
+          "item": "Data panel with field list and type icons",
+          "note": "Present; demo groups fields (Geography/Metadata/Sales).",
+          "present": true
+        },
+        {
+          "item": "Visuals panel with field wells",
+          "note": "Empty ROWS/COLUMNS/VALUES wells and dimension/measure placeholders are visible in this capture; no visual is selected.",
+          "present": true
+        },
+        {
+          "item": "Canvas populated with bar/line/stacked/map visuals",
+          "note": "Demo capture shows an empty new-analysis canvas.",
+          "present": false
+        },
+        {
+          "item": "Dark header with QuickSight logo",
+          "note": "Demo uses the light OpenSight product header and a dark analysis bar. This brand/layout difference remains included in the measured regions.",
+          "present": false
+        }
+      ]
+    },
+    {
+      "id": "editor-newlook",
+      "title": "New-look editor vs demo Author view",
+      "reference": "qs-editor-newlook.prep.png",
+      "capture": "editor-author-newlook.png",
+      "referenceSize": {
+        "w": 1206,
+        "h": 676
+      },
+      "captureSize": {
+        "w": 1440,
+        "h": 807
+      },
+      "normalizedTo": {
+        "w": 1206,
+        "h": 676
+      },
+      "scale": 0.8376703841387856,
+      "crop": {
+        "x": 0,
+        "y": 0
+      },
+      "aspectMismatch": false,
+      "regions": [
+        {
+          "name": "header",
+          "description": "Dark navy header with QuickSight logo.",
+          "pixels": 39798,
+          "diffPixels": 39569,
+          "diffFraction": 0.994245942007136,
+          "excludedPixels": 0,
+          "clamped": false,
+          "verdict": "different"
+        },
+        {
+          "name": "toolbar",
+          "description": "Blue menu toolbar: File..Search, Ask a question, FIT TO WIDTH, PUBLISH, NEW LOOK.",
+          "pixels": 43416,
+          "diffPixels": 43349,
+          "diffFraction": 0.9984567901234568,
+          "excludedPixels": 0,
+          "clamped": false,
+          "verdict": "different"
+        },
+        {
+          "name": "data-panel",
+          "description": "Data panel: SPICE badge, Search Fields, CALCULATED FIELD, grouped fields.",
+          "pixels": 84651,
+          "diffPixels": 45306,
+          "diffFraction": 0.5352092710068398,
+          "excludedPixels": 0,
+          "clamped": false,
+          "verdict": "different"
+        },
+        {
+          "name": "visuals-panel",
+          "description": "Visuals panel: ADD, CHANGE VISUAL TYPE gallery, ROWS/COLUMNS/VALUES field wells.",
+          "pixels": 92568,
+          "diffPixels": 40902,
+          "diffFraction": 0.44185895773917555,
+          "excludedPixels": 0,
+          "clamped": false,
+          "verdict": "different"
+        },
+        {
+          "name": "canvas",
+          "description": "Canvas: donut chart + pivot table with expand/collapse groups.",
+          "pixels": 422646,
+          "diffPixels": 152265,
+          "diffFraction": 0.3602660382447722,
+          "excludedPixels": 0,
+          "clamped": false,
+          "verdict": "different"
+        },
+        {
+          "name": "properties-panel",
+          "description": "Properties panel: Visual/Interaction tabs, Display settings, Pivot options.",
+          "pixels": 136416,
+          "diffPixels": 40487,
+          "diffFraction": 0.29679069903823596,
+          "excludedPixels": 0,
+          "clamped": false,
+          "verdict": "different"
+        }
+      ],
+      "overallDiffFraction": 0.44158658686142077,
+      "structural": [
+        {
+          "item": "Dark navy header",
+          "note": "Demo has a dark navy analysis bar; not a full product dark header.",
+          "present": true
+        },
+        {
+          "item": "Blue toolbar with Ask a question entry",
+          "note": "Demo toolbar has 'Ask a question about Local sales'.",
+          "present": true
+        },
+        {
+          "item": "FIT TO WIDTH / PUBLISH / NEW LOOK controls",
+          "note": "All present in demo toolbar, including theme select.",
+          "present": true
+        },
+        {
+          "item": "Dataset badge in Data panel",
+          "note": "Demo shows a BLAZE badge where QS shows SPICE; intentional, declared.",
+          "present": true
+        },
+        {
+          "item": "Grouped fields with type icons",
+          "note": "Geography/Metadata/Sales groups present.",
+          "present": true
+        },
+        {
+          "item": "Visual-type gallery in Visuals panel",
+          "note": "Demo gallery covers the shipped visual types.",
+          "present": true
+        },
+        {
+          "item": "Field wells (ROWS/COLUMNS/VALUES)",
+          "note": "All three empty wells and dimension/measure placeholders are visible; this pairing still uses an empty analysis.",
+          "present": true
+        },
+        {
+          "item": "Assigned field pills",
+          "present": false,
+          "note": "No pills in this empty-analysis pairing. Selected-visual pill behavior is verified separately by the acceptance tour."
+        },
+        {
+          "item": "Canvas with donut + pivot table",
+          "note": "Demo capture shows an empty new-analysis canvas.",
+          "present": false
+        },
+        {
+          "item": "Properties panel with Visual/Interaction tabs",
+          "note": "Demo shows a 'select a visual' empty state.",
+          "present": false
+        }
+      ]
+    },
+    {
+      "id": "q-generative",
+      "title": "Q generative BI vs demo Ask-a-question",
+      "reference": "qs-q-generative.prep.png",
+      "capture": "home-q.png",
+      "referenceSize": {
+        "w": 1206,
+        "h": 820
+      },
+      "captureSize": {
+        "w": 1440,
+        "h": 979
+      },
+      "normalizedTo": {
+        "w": 1206,
+        "h": 820
+      },
+      "scale": 0.8375893769152196,
+      "crop": {
+        "x": 0,
+        "y": 0
+      },
+      "aspectMismatch": false,
+      "regions": [
+        {
+          "name": "header-toolbar",
+          "description": "Dark header + blue toolbar with 'Ask Q to build a visual'.",
+          "pixels": 59086,
+          "diffPixels": 57947,
+          "diffFraction": 0.980723013911925,
+          "excludedPixels": 953,
+          "clamped": false,
+          "verdict": "different"
+        },
+        {
+          "name": "data-panel",
+          "description": "Data panel field list.",
+          "pixels": 57129,
+          "diffPixels": 22197,
+          "diffFraction": 0.3885417213674316,
+          "excludedPixels": 0,
+          "clamped": false,
+          "verdict": "different"
+        },
+        {
+          "name": "canvas",
+          "description": "Canvas: radar, scatter, donut, KPI.",
+          "pixels": 334965,
+          "diffPixels": 98846,
+          "diffFraction": 0.29509351723314375,
+          "excludedPixels": 0,
+          "clamped": false,
+          "verdict": "different"
+        },
+        {
+          "name": "ask-q-panel",
+          "description": "ASK Q side panel: NL query, 'Interpreted as', preview, ADD TO ANALYSIS, 'Did you mean'.",
+          "pixels": 119888,
+          "diffPixels": 74123,
+          "diffFraction": 0.6182687174696383,
+          "excludedPixels": 254,
+          "clamped": false,
+          "verdict": "different"
+        },
+        {
+          "name": "build-for-me",
+          "description": "'Build for me' dialog: NL expression, INSERT EXPRESSION / TRY AGAIN / DISCARD.",
+          "pixels": 232360,
+          "diffPixels": 76221,
+          "diffFraction": 0.3280297813737304,
+          "excludedPixels": 0,
+          "clamped": false,
+          "verdict": "different"
+        }
+      ],
+      "overallDiffFraction": 0.4099110312311744,
+      "structural": [
+        {
+          "item": "Ask Q entry in toolbar",
+          "note": "Demo toolbar and home page both have an 'Ask a question' entry.",
+          "present": true
+        },
+        {
+          "item": "ASK Q side panel with NL query box",
+          "note": "Shared right-docked ASK Q dialog contains the question box and full answer. Captured open on Home; Author and Home keyboard opening, Escape and focus restoration pass browser checks.",
+          "present": true
+        },
+        {
+          "item": "'Interpreted as' query interpretation",
+          "note": "The answer visibly shows Interpreted question and confidence labeled grammar match. Exact QuickSight wording is deliberately not used; the local deterministic interpreter remains labeled No AI.",
+          "present": false
+        },
+        {
+          "item": "ADD TO ANALYSIS action",
+          "note": "Absent on this Home dashboard pairing because no author dispatch exists. Present and verified in the same QSidePanel in Author; adding the selected alternative creates a visual on the active sheet.",
+          "present": false
+        },
+        {
+          "item": "'Did you mean' alternatives",
+          "note": "The submitted revenue by region question shows sum and average alternatives in the Home panel; selecting the alternative changes the preview. Existing interpreter behavior is unchanged.",
+          "present": true
+        },
+        {
+          "item": "Build-for-me expression dialog (INSERT EXPRESSION)",
+          "note": "Not present; generative mode needs hosted API (honest stub).",
+          "present": false
+        }
+      ]
+    }
+  ],
+  "topGaps": [
+    {
+      "pairing": "editor-newlook",
+      "region": "toolbar",
+      "description": "Blue menu toolbar: File..Search, Ask a question, FIT TO WIDTH, PUBLISH, NEW LOOK.",
+      "diffFraction": 0.9984567901234568
+    },
+    {
+      "pairing": "editor-newlook",
+      "region": "header",
+      "description": "Dark navy header with QuickSight logo.",
+      "diffFraction": 0.994245942007136
+    },
+    {
+      "pairing": "q-generative",
+      "region": "header-toolbar",
+      "description": "Dark header + blue toolbar with 'Ask Q to build a visual'.",
+      "diffFraction": 0.980723013911925
+    },
+    {
+      "pairing": "editor-classic",
+      "region": "header-toolbar",
+      "description": "Dark QS title bar + blue menu toolbar (File..Search, Add visual, PUBLISH).",
+      "diffFraction": 0.8636943487689757
+    },
+    {
+      "pairing": "q-generative",
+      "region": "ask-q-panel",
+      "description": "ASK Q side panel: NL query, 'Interpreted as', preview, ADD TO ANALYSIS, 'Did you mean'.",
+      "diffFraction": 0.6182687174696383
+    },
+    {
+      "pairing": "editor-newlook",
+      "region": "data-panel",
+      "description": "Data panel: SPICE badge, Search Fields, CALCULATED FIELD, grouped fields.",
+      "diffFraction": 0.5352092710068398
+    },
+    {
+      "pairing": "editor-newlook",
+      "region": "visuals-panel",
+      "description": "Visuals panel: ADD, CHANGE VISUAL TYPE gallery, ROWS/COLUMNS/VALUES field wells.",
+      "diffFraction": 0.44185895773917555
+    },
+    {
+      "pairing": "editor-classic",
+      "region": "canvas",
+      "description": "Analysis canvas: bar, line, stacked bar, geospatial map.",
+      "diffFraction": 0.42258175205023507
+    },
+    {
+      "pairing": "editor-classic",
+      "region": "data-panel",
+      "description": "Data panel: dataset selector, field list with type icons.",
+      "diffFraction": 0.41693060754391015
+    },
+    {
+      "pairing": "q-generative",
+      "region": "data-panel",
+      "description": "Data panel field list.",
+      "diffFraction": 0.3885417213674316
+    }
+  ]
+}
