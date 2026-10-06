@@ -49,7 +49,7 @@ with your own CSV:
    if needed), then select **Upload to staging**.
 2. Select **Prepare this upload** to open **Data preparation**. Review the
    columns and preview rows, make any transformations, then **Save pipeline**.
-3. Select **Build a chart**, then **Add visual** in Author and assign fields.
+3. Select **Build a chart**, then choose a Data field in Author to create a bar visual. Use **Add visual** to choose another type first.
 4. Select **Save draft**. Reopen it through **Analyses → My analyses** in the
    same browser and origin. Draft definitions stay on this device; they are
    not synced or published and do not preserve uploaded rows.
@@ -82,13 +82,18 @@ modes remain available under their role permissions. See
 
 ![Default sales dashboard rendered from pinned sample results](docs/images/sample-dashboard.png)
 
-![Authoring canvas with the O bar in the toolbar](docs/images/author.png)
+![Authoring canvas with assigned fields and the O bar in the toolbar](docs/images/author.png)
+
+Field wells stay visible before a visual is selected. Choose a Data field to
+create a bar, then keep assigning fields or change its type.
+
+![Empty Author canvas with ROWS, COLUMNS and VALUES field wells](docs/images/author-empty.png)
 
 Radar uses Category axes, an optional Color split, and one or more Values
 measures. Nulls remain gaps; unsupported native options appear in the import
 report. See [radar semantics and limits](docs/radar-chart.md).
 
-![Radar preview with revenue and profit by month and region](docs/images/radar.png)
+![Radar preview with revenue by month and region](docs/images/radar.png)
 
 Pivot row groups expand and collapse with +/−, Enter or Space. Enabled subtotals
 stay visible, and group state survives draft saves and bundle round trips.
