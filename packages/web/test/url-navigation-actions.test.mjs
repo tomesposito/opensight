@@ -92,11 +92,11 @@ const navigation = { id: 'nav-1', name: 'See details', sourceField: 'region', ta
 function navigationDraft() {
   let d = sourceDraft();
   d = authorReducer(d, { type: 'parameter-add', parameter: { name: 'Region', type: 'string', multiple: false, values: ['East'], defaultValues: ['East'] } });
-  d = authorReducer(d, { type: 'navigation-actions', actions: [navigation] });
   d = authorReducer(d, { type: 'sheet-add' });
   d = authorReducer(d, { type: 'add', kind: 'table' });
   d = authorReducer(d, { type: 'filter-parameter', columnName: 'region', parameterName: 'Region' });
-  return authorReducer(d, { type: 'sheet-select', id: 'sheet-1' });
+  d = authorReducer(d, { type: 'sheet-select', id: 'sheet-1' });
+  return authorReducer(d, { type: 'navigation-actions', actions: [navigation] });
 }
 test('navigation applies parameters through the existing reducer path and filters destination fixture rows', () => {
   const draft = navigationDraft(), source = activeSheet(draft).visuals[0];
@@ -183,4 +183,44 @@ test('navigation authoring provides sheet and mapping controls, and real row cli
   assert.deepEqual(ui.draft().parameters[0].values, ['West']);
   assert.deepEqual(ui.cards()[0].props.visual.rows, [{ region: 'West', revenue: 400 }]);
   assert.equal(ui.opened.length, 0);
+});
+
+test('mixed action kinds reject duplicate identities and null arrays in persisted drafts', () => {
+  const draft = authorReducer(sourceDraft(), { type: 'url-actions', actions: [url] });
+  const next = authorReducer(draft, { type: 'navigation-actions', actions: [{ ...navigation, id: url.id }] });
+  assert.equal(activeSheet(next).visuals[0].navigationActions, undefined);
+  for (const kind of ['urlActions', 'navigationActions', 'filterActions']) {
+    const invalid = structuredClone(draft); invalid.sheets[0].visuals[0][kind] = null;
+    assert.throws(() => validateDraft(invalid));
+  }
+  const invalid = structuredClone(draft); invalid.sheets[0].visuals[0].navigationActions = [{ ...navigation, id: url.id }];
+  assert.throws(() => validateDraft(invalid));
+});
+test('URL actions reject missing scalar source values even for constant URLs and reject range selections', () => {
+  const action = { ...url, urlTemplate: 'https://example.com' };
+  for (const region of [null, undefined, NaN, Infinity, {}]) assert.match(resolveUrlAction(sourceVisual(), action, { values: { region } }).problem, /URL_SELECTION_MISSING/);
+  assert.match(resolveUrlAction(sourceVisual(), action, { values: { region: 'East' }, range: ['a', 'b'] }).problem, /URL_SELECTION_RANGE/);
+  assert.match(resolveUrlAction(sourceVisual(), url, { values: { region: '\uD800', category: 'A' } }).problem, /URL_SELECTION_INVALID/);
+  assert.equal(validUrlActions([{ ...url, urlTemplate: 'https://example.com:{region}' }], sourceVisual()), true);
+});
+test('importable action IDs that match prototype properties still display named runtime errors safely', async t => {
+  const draft = authorReducer(sourceDraft(), { type: 'url-actions', actions: [{ ...url, id: '__proto__', urlTemplate: 'https://example.com/{region}' }] });
+  const ui = await mount(t, draft);
+  await ui.click('Interaction');
+  await act(() => ui.cards()[0].props.interaction.onSelect({ values: {} }));
+  assert.equal(ui.opened.length, 0);
+  assert.ok(ui.renderer.root.findAllByType('p').some(p => p.children.join('').includes('URL_SELECTION_MISSING')));
+});
+test('deleted navigation targets cannot silently bind to a newly created sheet', () => {
+  const deleted = authorReducer(navigationDraft(), { type: 'sheet-delete', id: 'sheet-2' });
+  const created = authorReducer(deleted, { type: 'sheet-add' });
+  assert.equal(created.activeSheetId, 'sheet-3');
+  const returned = authorReducer(created, { type: 'sheet-select', id: 'sheet-1' });
+  assert.match(navigationActionProblem(returned, activeSheet(returned).visuals[0], navigation), /NAVIGATION_TARGET_UNKNOWN/);
+});
+test('templated schemes remain HTTP(S)-only after interpolation', () => {
+  const action = { ...url, urlTemplate: '{region}://example.com/{category}' };
+  assert.equal(validUrlActions([action], sourceVisual()), true);
+  assert.equal(resolveUrlAction(sourceVisual(), action, { values: { region: 'https', category: 'A' } }).value, 'https://example.com/A');
+  assert.match(resolveUrlAction(sourceVisual(), action, { values: { region: 'javascript', category: 'A' } }).problem, /URL_INVALID/);
 });

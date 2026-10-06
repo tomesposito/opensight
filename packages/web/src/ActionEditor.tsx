@@ -2,6 +2,7 @@ import { useState, type Dispatch } from 'react';
 import { activeSheet, sheetParameters, type AuthorDraft, type AuthorVisual, type AuthorAction } from './authoring.js';
 import { actionDimensions, originProblem, targetProblem, urlActionProblem, navigationActionProblem, navigationSheets, type NavigationAction, type UrlAction, type FilterAction } from './interactions.js';
 export function ActionEditor({ draft, visual, dispatch, runtimeProblems = {} }: { draft: AuthorDraft; visual: AuthorVisual; dispatch: Dispatch<AuthorAction>; runtimeProblems?: Record<string, string> }) {
+  const runtimeProblem = (id: string) => Object.hasOwn(runtimeProblems, id) ? runtimeProblems[id] : undefined;
   const [actionType, setActionType] = useState('Filter');
   const navigations = visual.navigationActions ?? [], sheets = navigationSheets(draft), parameters = sheetParameters(draft);
   const saveNavigation = (action: NavigationAction) => dispatch({ type: 'navigation-actions', actions: navigations.map(a => a.id === action.id ? action : a) });
@@ -31,7 +32,7 @@ export function ActionEditor({ draft, visual, dispatch, runtimeProblems = {} }: 
       <label>Source field<select value={action.sourceField} onChange={e => saveUrl({ ...action, sourceField: e.target.value })}>{[...new Set([action.sourceField, ...actionDimensions(visual)])].map(f => <option key={f}>{f}</option>)}</select></label>
       <label>URL template<input value={action.urlTemplate} placeholder="https://example.com/{region}" onChange={e => saveUrl({ ...action, urlTemplate: e.target.value })} /></label>
       <label>Open in<select value={action.target ?? '_blank'} onChange={e => saveUrl({ ...action, target: e.target.value as '_blank' | '_self' })}><option value="_blank">New tab</option><option value="_self">Current tab</option></select></label>
-      {(urlActionProblem(visual, action) ?? runtimeProblems[action.id]) && <p role="status">Action disabled: {urlActionProblem(visual, action) ?? runtimeProblems[action.id]}</p>}
+      {(urlActionProblem(visual, action) ?? runtimeProblem(action.id)) && <p role="status">Action disabled: {urlActionProblem(visual, action) ?? runtimeProblem(action.id)}</p>}
       <button type="button" onClick={() => dispatch({ type: 'url-actions', actions: urls.filter(a => a.id !== action.id) })}>Remove action</button>
     </fieldset>)}
     {navigations.map(action => <fieldset key={action.id}><legend>{action.name || 'Navigation action'}</legend>
@@ -53,7 +54,7 @@ export function ActionEditor({ draft, visual, dispatch, runtimeProblems = {} }: 
         const field = actionDimensions(visual).find(f => !Object.hasOwn(action.parameterMappings, f));
         if (field) saveNavigation({ ...action, parameterMappings: { ...action.parameterMappings, [field]: '' } });
       }}>Add parameter mapping</button>
-      {(navigationActionProblem(draft, visual, action) ?? runtimeProblems[action.id]) && <p role="status">Action disabled: {navigationActionProblem(draft, visual, action) ?? runtimeProblems[action.id]}</p>}
+      {(navigationActionProblem(draft, visual, action) ?? runtimeProblem(action.id)) && <p role="status">Action disabled: {navigationActionProblem(draft, visual, action) ?? runtimeProblem(action.id)}</p>}
       <button type="button" onClick={() => dispatch({ type: 'navigation-actions', actions: navigations.filter(a => a.id !== action.id) })}>Remove action</button>
     </fieldset>)}
     <label>Action type<select value={actionType} onChange={e => setActionType(e.target.value)}><option>Filter</option><option>URL</option><option>Navigation</option></select></label>
@@ -63,7 +64,7 @@ export function ActionEditor({ draft, visual, dispatch, runtimeProblems = {} }: 
       if (actionType === 'URL') dispatch({ type: 'url-actions', actions: [...urls, { ...common, urlTemplate: '' }] });
       else if (actionType === 'Navigation') dispatch({ type: 'navigation-actions', actions: [...navigations, { ...common, targetSheetId: sheets.find(s => s.id !== sheet.id)?.id ?? '', parameterMappings: {} }] });
       else dispatch({ type: 'filter-actions', actions: [...actions, { ...common, targets: 'all', mappings: {} }] });
-    }}>Add {actionType.toLowerCase()} action</button>
+    }}>{`Add ${actionType.toLowerCase()} action`}</button>
     <p>Click a bar, slice, or data row. URL placeholders use grouped dimension names and encode clicked values. Hierarchy fields apply when selected at that level. Brush a line chart for filter actions. Click the same selection again or use Reset actions to clear filters.</p>
   </details>;
 }

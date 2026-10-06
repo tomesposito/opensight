@@ -182,7 +182,7 @@ export function AuthorCanvas({ draft, dispatch, client, fit = true, sourceProble
   const sheet = activeSheet(draft), fields = dataFields(draft.calculatedFields, draft.dataset);
   const query = search.trim().toLowerCase();
   const matchingFields = fields.filter(f => f.name.toLowerCase().includes(query));
-  const interactionKey = JSON.stringify([draft.dataset?.id, sheet.id, sheet.visuals.map(v => [v.id, v.kind, v.dimension, v.rows, v.columns, v.measures, v.filters, v.filterActions, v.urlActions, v.navigationActions, v.hierarchy, v.imported]), draft.parameters, draft.calculatedFields, !!client]);
+  const interactionKey = JSON.stringify([draft.dataset?.id, sheet.id, sheet.visuals.map(v => [v.id, v.kind, v.dimension, v.rows, v.columns, v.measures, v.filters, v.filterActions, v.urlActions, v.navigationActions, v.hierarchy, v.imported]), draft.sheets.map(s => [s.id, s.imported?.memberPath]), draft.parameters, draft.calculatedFields, !!client]);
   const [interactionState, setInteractionState] = useState<{ key: string; selections: ActionSelections }>({ key: interactionKey, selections: {} });
   const [actionProblems, setActionProblems] = useState<{ key: string; visuals: Record<string, Record<string, string>> }>({ key: interactionKey, visuals: {} });
   const runtimeProblems = actionProblems.key === interactionKey ? actionProblems.visuals : {};
@@ -271,7 +271,7 @@ export function AuthorCanvas({ draft, dispatch, client, fit = true, sourceProble
                       const clicked = { ...selection, values: Object.fromEntries([...path.flatMap(p => Object.entries(p.values)), ...Object.entries(selection.values)]) };
                       if (visual.filterActions?.length) setInteractionState({ key: interactionKey, selections: toggleSelection(selections, visual.id, clicked) });
                       if (!selection.range) {
-                        const problems: Record<string, string> = {};
+                        const problems: Record<string, string> = Object.create(null);
                         for (const action of visual.urlActions ?? []) {
                           const result = resolveUrlAction(visual, action, clicked);
                           if (result.problem !== undefined) problems[action.id] = result.problem;

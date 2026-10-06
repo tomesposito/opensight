@@ -22,7 +22,7 @@ async function mount(t, initial) {
   return { renderer, state: () => state, dispatch: async action => act(() => dispatch(action)), tab, panel, click, change, switch: async name => act(() => tab(name).props.onClick()) };
 }
 const visualSections = ['Display settings', 'Pivot options', 'Headers', 'Cells', 'Total', 'Subtotal', 'Row names', 'Column names', 'Value names', 'Conditional formatting', 'Visual palette', 'Analysis theme'];
-const interactionSections = ['Filters', 'Filter actions', 'Drill-down hierarchy', 'Parameter bindings'];
+const interactionSections = ['Filters', 'Custom actions', 'Drill-down hierarchy', 'Parameter bindings'];
 
 test('every reference section uses uniform details; tabs expose the correct panel and keyboard navigation', async t => {
   const ui = await mount(t, add('pivot'));

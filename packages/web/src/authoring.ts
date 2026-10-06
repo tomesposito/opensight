@@ -6,7 +6,7 @@ export type { VisualKind } from './visual-catalog.js';
 import { parseExpression } from '@opensight/query-engine/browser';
 import { serializeInteractions } from './bundle-interactions.js';
 import { hierarchyError, type DimensionHierarchy, type DateGrain } from './drill.js';
-import { validFilterActions, urlActionDefinitionsValid, navigationActionDefinitionsValid, resolveNavigationAction, type NavigationAction, type Selection, type UrlAction, type FilterAction, type InteractionFilter } from './interactions.js';
+import { visualActionsValid, resolveNavigationAction, type NavigationAction, type Selection, type UrlAction, type FilterAction, type InteractionFilter } from './interactions.js';
 import { serializeControl, serializeFilter } from './bundle-controls.js';
 import { controlError, validateControls, type AuthorControl } from './controls.js';
 import { parameterError, parameterValueError, validateAuthorParameters, serializeParameter } from './parameters.js';
@@ -221,7 +221,7 @@ export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorD
     return { ...draft, calculatedFields: [...draft.calculatedFields, { ...action.field, name: action.field.name.trim() }] };
   }
   if (action.type === 'sheet-add') {
-    const id = nextId('sheet', [...draft.sheets.map(s => s.id), ...originalIds(draft, false)]);
+    const id = nextId('sheet', [...draft.sheets.map(s => s.id), ...originalIds(draft, false), ...draft.sheets.flatMap(s => s.visuals.flatMap(v => (v.navigationActions ?? []).map(a => a.targetSheetId)))]);
     return { ...draft, sheets: [...draft.sheets, newSheet(id, `Sheet ${id.slice(6)}`)], activeSheetId: id };
   }
   if (action.type === 'sheet-select') return draft.sheets.some(s => s.id === action.id) ? { ...draft, activeSheetId: action.id } : draft;
@@ -342,9 +342,13 @@ export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorD
         const root = action.hierarchy.levels[0]!.columnName;
         return { ...visual, hierarchy: action.hierarchy, dimension: root, ...(grouped(visual.kind) ? { rows: [root, ...visual.rows.slice(1).filter(f => f !== root)], columns: visual.columns.filter(f => f !== root) } : {}) };
       }
-      case 'navigation-actions': return navigationActionDefinitionsValid(action.actions) ? { ...visual, navigationActions: action.actions } : visual;
-      case 'url-actions': return urlActionDefinitionsValid(action.actions) ? { ...visual, urlActions: action.actions } : visual;
-      case 'filter-actions': return validFilterActions(action.actions) ? { ...visual, filterActions: action.actions } : visual;
+      case 'navigation-actions':
+      case 'url-actions':
+      case 'filter-actions': {
+        const updated = action.type === 'filter-actions' ? { ...visual, filterActions: action.actions }
+          : action.type === 'url-actions' ? { ...visual, urlActions: action.actions } : { ...visual, navigationActions: action.actions };
+        return visualActionsValid(updated) ? updated : visual;
+      }
       case 'measure-move': {
         const measures = [...visual.measures], target = action.index + action.offset;
         if (action.index < 0 || target < 0 || action.index >= measures.length || target >= measures.length) return visual;
@@ -556,9 +560,7 @@ export function validateDraft(value: unknown): asserts value is AuthorDraft {
       if (v.palette !== undefined && !paletteValid(v.palette)) return fail();
       if (v.dateGrain !== undefined && !['YEAR','QUARTER','MONTH','DAY'].includes(String(v.dateGrain))) return fail();
       if (v.hierarchy !== undefined && hierarchyError(v.hierarchy as DimensionHierarchy, calculations, !!imported, dataset)) return fail();
-      if (v.navigationActions !== undefined && !navigationActionDefinitionsValid(v.navigationActions)) return fail();
-      if (v.urlActions !== undefined && !urlActionDefinitionsValid(v.urlActions)) return fail();
-      if (v.filterActions !== undefined && !validFilterActions(v.filterActions)) return fail();
+      if (!visualActionsValid(v)) return fail();
       const filters = new Set<string>();
       for (const f of v.filters) {
         if (!isObject(f) || !onlyKeys(f, ['columnName', 'values', 'parameterName', 'operator']) || typeof f.columnName !== 'string' || filters.has(f.columnName) || (!imported && !fields.some(field => field.name === f.columnName && (f.parameterName !== undefined || field.type === 'STRING'))) || !Array.isArray(f.values) || !f.values.every(n => typeof n === 'string' && !n.includes('\0')) || new Set(f.values).size !== f.values.length) return fail();

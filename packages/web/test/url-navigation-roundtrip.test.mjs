@@ -15,9 +15,9 @@ function fixture() {
   d = authorReducer(d, { type: 'parameter-add', parameter: { name: 'Region', type: 'string', multiple: false, values: ['East'], defaultValues: ['East'] } });
   d = authorReducer(d, { type: 'filter-actions', actions: [{ id: 'filter', name: 'Filter', sourceField: 'region', targets: 'all', mappings: {} }] });
   d = authorReducer(d, { type: 'url-actions', actions: [url] });
-  d = authorReducer(d, { type: 'navigation-actions', actions: [nav] });
   d = authorReducer(d, { type: 'sheet-add' });
-  return authorReducer(d, { type: 'sheet-select', id: 'sheet-1' });
+  d = authorReducer(d, { type: 'sheet-select', id: 'sheet-1' });
+  return authorReducer(d, { type: 'navigation-actions', actions: [nav] });
 }
 test('URL and navigation serialization import back to the exact model, including optional targets and mappings', () => {
   assert.deepEqual(importUrlAction(serializeUrlAction(url), fields), url);

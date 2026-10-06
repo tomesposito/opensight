@@ -14,6 +14,13 @@ export interface NavigationAction {
 }
 type ActionResult<T> = { value: T; problem?: never } | { problem: string; value?: never };
 const record = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
+const selectedValue = (values: Selection['values'], field: string): boolean => Object.hasOwn(values, field) && (typeof values[field] === 'string' || typeof values[field] === 'number' && Number.isFinite(values[field]));
+export function visualActionsValid(visual: { filterActions?: unknown; urlActions?: unknown; navigationActions?: unknown }): boolean {
+  const filters = visual.filterActions === undefined ? [] : visual.filterActions, urls = visual.urlActions === undefined ? [] : visual.urlActions, navigations = visual.navigationActions === undefined ? [] : visual.navigationActions;
+  if (!validFilterActions(filters) || !urlActionDefinitionsValid(urls) || !navigationActionDefinitionsValid(navigations)) return false;
+  const ids = [...filters, ...urls, ...navigations].map(action => action.id);
+  return new Set(ids).size === ids.length;
+}
 /** Shape validation keeps unfinished/invalid templates editable, with diagnostics below. */
 export function urlActionDefinitionsValid(raw: unknown): raw is UrlAction[] {
   return Array.isArray(raw) && raw.every(a => record(a) && Object.keys(a).every(k => ['id', 'name', 'sourceField', 'urlTemplate', 'target'].includes(k)) && typeof a.id === 'string' && !!a.id && typeof a.name === 'string' && typeof a.sourceField === 'string' && !!a.sourceField && typeof a.urlTemplate === 'string' && (a.target === undefined || a.target === '_blank' || a.target === '_self')) && new Set(raw.map(a => a.id)).size === raw.length;
@@ -24,7 +31,7 @@ function interpolateUrl(template: string, values: Selection['values']): ActionRe
   let problem: string | undefined;
   const url = template.replace(/\{([^{}]+)\}/g, (_, field: string) => {
     const value = values[field];
-    if (!Object.hasOwn(values, field) || (typeof value !== 'string' && typeof value !== 'number') || typeof value === 'number' && !Number.isFinite(value)) {
+    if (!selectedValue(values, field)) {
       problem = `URL_SELECTION_MISSING: No clicked value for ${field}.`; return '';
     }
     try { return encodeURIComponent(String(value)); }
@@ -37,6 +44,19 @@ function interpolateUrl(template: string, values: Selection['values']): ActionRe
     return { value: parsed.href };
   } catch { return { problem: 'URL_INVALID: The interpolated URL must be an absolute HTTP(S) URL.' }; }
 }
+function urlTemplateProblem(template: string): string | undefined {
+  // Probe syntax with safe placeholders; the clicked values are always checked separately.
+  // A numeric probe also permits placeholders in a port. A templated scheme must
+  // be capable of becoming http/https, and is revalidated after actual interpolation.
+  let probe = template;
+  const separator = template.indexOf('://'), scheme = template.slice(0, separator);
+  if (separator >= 0 && /\{[^{}]+\}/.test(scheme)) {
+    const pattern = new RegExp(`^${scheme.split(/(\{[^{}]+\})/).map(part => /^\{[^{}]+\}$/.test(part) ? '.*' : part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('')}$`, 'i');
+    const supported = ['http', 'https'].find(value => pattern.test(value));
+    if (supported) probe = supported + template.slice(separator);
+  }
+  return interpolateUrl(probe, Object.fromEntries([...probe.matchAll(/\{([^{}]+)\}/g)].map(([, field]) => [field!, '1']))).problem;
+}
 export function urlActionProblem(source: AuthorVisual, action: UrlAction, selection?: Selection): string | undefined {
   const origin = originProblem(source);
   if (origin) return `URL_ORIGIN_INVALID: ${origin}`;
@@ -45,13 +65,14 @@ export function urlActionProblem(source: AuthorVisual, action: UrlAction, select
   for (const [, field] of action.urlTemplate.matchAll(/\{([^{}]+)\}/g)) {
     if (!dimensions.includes(field!)) return `URL_FIELD_UNKNOWN: Source does not group by ${field}.`;
   }
-  if (selection && (!Object.hasOwn(selection.values, action.sourceField) || selection.values[action.sourceField] === undefined)) return `URL_SELECTION_MISSING: No clicked value for ${action.sourceField}.`;
-  return interpolateUrl(action.urlTemplate, selection?.values ?? Object.fromEntries(dimensions.map(field => [field, 'value']))).problem;
+  if (selection && !selectedValue(selection.values, action.sourceField)) return `URL_SELECTION_MISSING: No clicked value for ${action.sourceField}.`;
+  return selection ? interpolateUrl(action.urlTemplate, selection.values).problem : urlTemplateProblem(action.urlTemplate);
 }
 export function validUrlActions(raw: unknown, source?: AuthorVisual): raw is UrlAction[] {
-  return urlActionDefinitionsValid(raw) && raw.every(action => source ? !urlActionProblem(source, action) : !interpolateUrl(action.urlTemplate, Object.fromEntries([...action.urlTemplate.matchAll(/\{([^{}]+)\}/g)].map(([, field]) => [field!, 'value']))).problem);
+  return urlActionDefinitionsValid(raw) && raw.every(action => source ? !urlActionProblem(source, action) : !urlTemplateProblem(action.urlTemplate));
 }
 export function resolveUrlAction(source: AuthorVisual, action: UrlAction, selection: Selection): ActionResult<string> {
+  if (selection.range) return { problem: 'URL_SELECTION_RANGE: URL actions require a data point click.' };
   const problem = urlActionProblem(source, action, selection);
   return problem ? { problem } : interpolateUrl(action.urlTemplate, selection.values);
 }
@@ -93,7 +114,7 @@ export function resolveNavigationAction(draft: AuthorDraft, source: AuthorVisual
   const parameters = [];
   for (const field of new Set([action.sourceField, ...Object.keys(action.parameterMappings)])) {
     const value = selection.values[field];
-    if (!Object.hasOwn(selection.values, field) || (typeof value !== 'string' && typeof value !== 'number') || typeof value === 'number' && !Number.isFinite(value)) return { problem: `NAVIGATION_SELECTION_MISSING: No clicked value for ${field}.` };
+    if (value === undefined || !selectedValue(selection.values, field)) return { problem: `NAVIGATION_SELECTION_MISSING: No clicked value for ${field}.` };
     if (!Object.hasOwn(action.parameterMappings, field)) continue;
     const parameter = sheetParameters(draft).find(p => p.name === action.parameterMappings[field])!;
     // A grouped datetime denotes its bucket's UTC start, using the existing filter date semantics.
