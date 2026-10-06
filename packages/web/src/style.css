@@ -119,9 +119,8 @@ button:disabled { cursor: default; opacity: .5; }
 .author-topbar { display: flex; align-items: center; flex-wrap: wrap; gap: 14px; }
 .author-topbar .analysis-title { flex: 1; min-width: 200px; }
 .author-topbar .analysis-title input { font-size: 23px; font-weight: 600; background: transparent; border-color: transparent; padding-left: 0; }
-.mode-badge { color: #126e76; font-size: 12px; font-weight: 650; }
-.author-workspace .fixture-notice { margin: 10px 0; padding: 8px 12px; }
-.author-save { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 16px; margin-bottom: 14px; }
+.author-workspace .fixture-notice { margin: 8px 0; padding: 6px 10px; font-size: 12px; line-height: 1.5; }
+.author-save { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 12px; margin-bottom: 8px; }
 .author-save p { margin: 0; color: #526c7a; font-size: 11px; line-height: 1.5; }
 .author-layout { --data-width: 190px; --build-width: 216px; --properties-width: 220px; display: grid; grid-template-columns: var(--data-width) var(--build-width) minmax(0, 1fr) var(--properties-width); gap: 8px; align-items: start; }
 .author-layout:has(> .fields-panel:not([open])) { --data-width: 44px; }
@@ -299,7 +298,7 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 }
 .author-workspace[data-chrome=dark] { color-scheme: dark; --chrome-surface: #202e40; --chrome-bg: #141e2c; --chrome-text: #e7eef7; --chrome-muted: #adc0d5; --chrome-border: #45566d; --chrome-icon: #7dd4df; --chrome-menu-hover: #293f55; --chrome-menu-shadow: #00000080; }
 .author-workspace[data-chrome=dark] :is(.builder-panel, .controls-strip, button, input, select, textarea, .author-card-toolbar, .bundle-import) { color: var(--chrome-text); background-color: var(--chrome-surface); border-color: var(--chrome-border); }
-.author-workspace[data-chrome=dark] :is(label, .field-hint, .field-type, .author-save p, .canvas-label span, .mode-badge, .field-wells legend) { color: var(--chrome-muted); }
+.author-workspace[data-chrome=dark] :is(label, .field-hint, .field-type, .author-save p, .canvas-label span, .field-wells legend) { color: var(--chrome-muted); }
 .author-workspace[data-chrome=dark] .field-wells .active-well { background: #293f50; }
 .author-workspace[data-chrome=dark] .fixture-notice { background: #223b4a; color: #c4dce7; }
 .author-workspace[data-chrome=dark] button[aria-pressed=true] { background: #28586a; color: #fff; }
@@ -370,8 +369,13 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .author-workspace .author-topbar .analysis-title input:hover { border-color: var(--header-border); }
 .author-workspace[data-chrome] .author-topbar select { min-height: 32px; padding: 4px 8px; border-radius: 3px; border-color: var(--header-border); background: var(--header-bg); color: var(--header-text); font-size: 12px; }
 .author-workspace .author-topbar :focus-visible { outline-color: var(--header-focus); outline-offset: 1px; }
-.author-utilities { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px; margin: 8px 0; }
-.author-utilities > button:first-of-type { margin-left: auto; }
+/* Keep native disclosures in document order; expanded content stays in flow. */
+.author-tools { display: flex; flex-wrap: wrap; align-items: start; gap: 6px 12px; margin: 4px 0 8px; }
+.author-utilities { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.author-tools > :is(.local-drafts, .bundle-import) { min-width: 0; max-width: 100%; margin: 0; padding: 6px 8px; font-size: 12px; }
+.author-tools > .local-drafts[open], .author-tools > .bundle-import:has(details[open]) { flex-basis: 100%; }
+.author-tools input[type=file] { max-width: 100%; }
+.author-tools .local-drafts { border-color: var(--chrome-border); }
 .author-workspace .author-utilities > button { min-height: 30px; padding: 5px 10px; font-size: 12px; }
 .author-menu .o-bar { display: flex; flex: 0 1 420px; flex-wrap: nowrap; gap: 4px; min-width: 240px; margin: 5px 12px; padding: 0 4px 0 10px; border: 1px solid var(--header-border); border-radius: 20px; background: var(--header-pressed); }
 .author-menu .o-bar label { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
