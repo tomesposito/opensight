@@ -53,6 +53,13 @@ try {
 
   // Author and its Analyses home share the same device-local store.
   await setMode('author');
+  // Issue #43: show empty wells, then create a visual by assigning its fields.
+  await hold(1000);
+  await page.getByRole('button', { name: 'Assign region', exact: true }).click();
+  await page.getByRole('button', { name: 'Assign revenue', exact: true }).click();
+  await page.locator('.author-card .chart svg').waitFor();
+  await hold(1400);
+  await page.locator('.author-card-actions button[aria-label^="Remove "]').click();
   await page.locator('#o-question').fill('revenue by region');
   await page.locator('#o-question').press('Enter');
   await page.locator('.o-result .chart svg').waitFor();
@@ -74,6 +81,7 @@ try {
   await page.locator('.author-card .chart svg').waitFor();
   await page.locator('.author-card').scrollIntoViewIfNeeded();
   await hold(1800);
+  await page.screenshot({ path: resolve(FRAMES, '../radar.png'), fullPage: true });
   await page.getByRole('button', { name: 'Save draft', exact: true }).click();
   // Issue #40: row groups run against local synthetic data and save in the bundle.
   await page.locator('.author-card-actions button[aria-label^="Remove "]').click();
@@ -87,6 +95,7 @@ try {
   await hold(1000);
   await page.getByRole('button', { name: 'Collapse row group East', exact: true }).click();
   await hold(1200);
+  await page.screenshot({ path: resolve(FRAMES, '../pivot.png'), fullPage: true });
   await page.getByRole('button', { name: 'Expand row group East', exact: true }).press('Space');
   await hold(800);
   await page.getByRole('button', { name: 'Save draft', exact: true }).click();

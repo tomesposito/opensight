@@ -153,14 +153,17 @@ button:disabled { cursor: default; opacity: .5; }
 .author-center, .author-canvas, .visual-config { min-width: 0; }
 .add-visual { display: flex; flex-direction: column; gap: 6px; }
 .visual-gallery { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; max-height: 168px; overflow: auto; padding: 2px; }
+.build-panel:has(.well-placeholder) .visual-gallery { max-height: 136px; }
 .visual-gallery button { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; font-size: 10px; padding: 4px 2px; }
 .visual-gallery button span { font-size: 20px; line-height: 1; min-height: 20px; }
 .visual-gallery button[value=kpi] span { font-size: 16px; padding-top: 4px; }
 .change-type { margin-top: 8px; max-width: 230px; }
 .visual-config { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--chrome-border, #c9d8de); }
+.visual-config h3 { font-size: 13px; }
 .selected-visual { overflow-wrap: anywhere; margin: 0 0 8px; }
-.field-wells { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
-.field-wells fieldset { min-width: 0; border: 1px dashed #a6bec7; border-radius: 5px; padding: 6px; margin: 0; }
+.field-wells { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+.field-wells fieldset { min-width: 0; border: 1px dashed #a6bec7; border-radius: 5px; padding: 4px; margin: 0; }
+.author-layout .well-placeholder { width: 100%; text-align: left; font-size: 12px; color: var(--chrome-muted, #526c7a); background: transparent; border-color: transparent; }
 .field-wells .active-well { border-color: #157f88; background: #f8fcfc; }
 .field-wells legend { font-size: 11px; font-weight: 650; color: #526c7a; text-transform: uppercase; }
 .field-wells p, .field-hint { font-size: 11px; line-height: 1.4; margin: 6px 0; color: #526c7a; }

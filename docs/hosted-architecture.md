@@ -765,6 +765,11 @@ for bundled commercial licenses.
 
 ## 7. Open questions
 
+Related confirmed editor decision: [IDD D-15 — field assignment creates a
+visual](idd/D-15-field-assignment-creates-visual.md) (issue #43, 2026-10-06).
+It applies to the shared Author UI, including hosted authoring, and creates
+no additional hosting requirement.
+
 The hosted/white-label direction and D13 are accepted inputs. Everything in this
 register is unresolved **except HQ-1, HQ-2, HQ-3, HQ-4, HQ-12, HQ-15 and HQ-16, decided 2026-09-30, and HQ-5, HQ-6, HQ-7 and HQ-13, decided 2026-10-02**; recommendations above do not imply product approval. The
 product owner decides product scope and operating commitments. Engineering supplies

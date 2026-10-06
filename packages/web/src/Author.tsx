@@ -167,6 +167,10 @@ function Panel({ title, className, children }: { title: string; className: strin
   </details>;
 }
 
+const dimensionWellLabel = (kind: VisualKind, well: Well): string => well === 'columns'
+  ? kind === 'pointMap' ? 'Longitude' : kind === 'radar' ? 'Color' : 'Columns'
+  : kind === 'pointMap' ? 'Latitude' : kind === 'box' ? 'Group / sample dimensions' : dimensionLabel(kind);
+
 export function AuthorCanvas({ draft, dispatch, client, fit = true, sourceProblem }: EditorProps & { fit?: boolean; sourceProblem?: string }) {
   const [newKind, setNewKind] = useState<VisualKind>('bar');
   const [search, setSearch] = useState('');
@@ -189,6 +193,8 @@ export function AuthorCanvas({ draft, dispatch, client, fit = true, sourceProble
   const setPath = (id: string, path: DrillPath) => { setDrillState({ key: interactionKey, paths: { ...paths, [id]: path } }); clearSource(id); };
   const clearActions = () => setInteractionState({ key: interactionKey, selections: {} });
   const selected = sheet.visuals.find(v => v.id === sheet.selectedId);
+  const dimensionWell: Well = selected ? grouped(selected.kind) ? (well === 'columns' && splitDimensions(selected.kind) ? 'columns' : 'rows') : 'dimension' : well === 'columns' ? 'columns' : 'rows';
+  const dimensionDestination = selected ? noDimensions(selected.kind) ? 'unavailable for this visual' : dimensionWellLabel(selected.kind, dimensionWell) : `${dimensionWell.toUpperCase()} (bar category)`;
   const { width, containerRef } = useContainerWidth({ initialWidth: 900 });
   const original = draft.bundle?.original.members.find(m => m.path === sheet.imported?.memberPath)?.resource;
   const originalTheme = original && (original.resourceType === 'analysis' || original.resourceType === 'dashboard') ? original.definition.opensightTheme : undefined;
@@ -201,7 +207,7 @@ export function AuthorCanvas({ draft, dispatch, client, fit = true, sourceProble
         <DatasetHeader datasetId={draft.dataset?.id} datasetName={draft.dataset?.name} client={client} />
         <label>Search fields<input type="search" value={search} onChange={e => { setSearch(e.target.value); setSearchCollapsedGroups({}); }} placeholder="Find a field…" /></label>
         <button type="button" className="calculation-button" onClick={() => setCalculationOpen(true)}>+ CALCULATED FIELD</button>
-        <p className="field-hint">{selected ? 'Click a field to assign it. Select a well to choose its destination.' : 'Add a visual to start assigning fields.'}</p>
+        <p className="field-hint">{selected ? 'Click a field to assign it.' : 'Click a field to create a bar.'} Dimensions: {dimensionDestination}. Measures: VALUES.</p>
         {FIELD_GROUPS.filter(group => matchingFields.some(f => fieldGroup(f) === group)).map(group => <details key={group} className="field-group" open={!(query ? searchCollapsedGroups : collapsedGroups)[group]} onToggle={e => {
           const collapsed = !e.currentTarget.open;
           (query ? setSearchCollapsedGroups : setCollapsedGroups)(previous => previous[group] === collapsed ? previous : { ...previous, [group]: collapsed });
@@ -209,10 +215,10 @@ export function AuthorCanvas({ draft, dispatch, client, fit = true, sourceProble
           <summary><svg className="field-folder" viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 4V2.5h5l2 2h6V13h-13V4Z" /></svg>{group}</summary>
           {matchingFields.filter(f => fieldGroup(f) === group).map(field => <button key={field.name} type="button"
             title={field.type === 'BOOLEAN' ? 'Boolean fields are supported in preparation; convert to text or number before charting.' : undefined}
-            disabled={field.type === 'BOOLEAN' || !selected || (field.role === 'dimension' && noDimensions(selected.kind))}
+            disabled={field.type === 'BOOLEAN' || (field.role === 'dimension' && !!selected && noDimensions(selected.kind))}
             aria-label={`Assign ${field.name}`} aria-pressed={selected?.dimension === field.name || selected?.rows.includes(field.name) || selected?.columns.includes(field.name) || !!selected?.measures.includes(field.name)}
             aria-describedby={`${fieldIconId}-${encodeURIComponent(field.name)}`}
-            onClick={() => dispatch({ type: 'assign', field: field.name, well: field.role === 'measure' ? 'values' : selected && grouped(selected.kind) ? (well === 'columns' && splitDimensions(selected.kind) ? 'columns' : 'rows') : 'dimension' })}>
+            onClick={() => dispatch({ type: selected ? 'assign' : 'assign-with-no-selection', field: field.name, well: field.role === 'measure' ? 'values' : dimensionWell })}>
             <FieldIcon field={field} id={`${fieldIconId}-${encodeURIComponent(field.name)}`} />
             <span className="field-name">{field.name}</span><span className="field-type">{field.type}</span>
           </button>)}
@@ -228,13 +234,14 @@ export function AuthorCanvas({ draft, dispatch, client, fit = true, sourceProble
             </button>)}</div>
             <button type="submit" className="primary-button" aria-label="Add visual">ADD</button>
           </form>
-          {selected ? <div className="visual-config" id={`configure-${selected.id}`}>
+          <div className="visual-config" id={selected ? `configure-${selected.id}` : undefined}>
             <h3>Field wells</h3>
-            <p className="selected-visual">{selected.title || `Visual ${sheet.visuals.indexOf(selected) + 1}`}</p>
+            {selected && <><p className="selected-visual">{selected.title || `Visual ${sheet.visuals.indexOf(selected) + 1}`}</p>
             <label className="change-type">Change visual type<select value={selected.imported?.issues.some(i => i.startsWith('Unsupported visual type:')) && !selected.imported.replaced ? '' : selected.kind} onChange={e => dispatch({ type: 'kind', kind: e.target.value as VisualKind })}>{selected.imported?.issues.some(i => i.startsWith('Unsupported visual type:')) && !selected.imported.replaced && <option value="" disabled>{selected.imported.variant} (unsupported)</option>}{VISUAL_TYPES.map(type => <option value={type.kind} key={type.kind}>{type.label}</option>)}</select></label>
-            <FieldWells visual={selected} draft={draft} dispatch={dispatch} activeWell={well} onWell={setWell} />
-            <p className="capability-note" role="note">{capabilityNote(selected.kind)}</p>
-          </div> : <p className="field-hint">Choose a visual type and select ADD.</p>}
+            </>}
+            <FieldWells visual={selected} draft={draft} dispatch={dispatch} activeWell={well === 'values' ? 'values' : dimensionWell} onWell={setWell} />
+            {selected && <p className="capability-note" role="note">{capabilityNote(selected.kind)}</p>}
+          </div>
       </Panel>
       <div className="author-center" role="region" aria-label="Analysis sheet">
         <SheetTabs draft={draft} dispatch={dispatch} />
@@ -243,7 +250,7 @@ export function AuthorCanvas({ draft, dispatch, client, fit = true, sourceProble
         <div className="canvas-viewport" data-fit={fit ? 'width' : 'actual'} aria-label={fit ? 'Canvas fits available width' : 'Canvas at 1200 pixel width'}>
         <div className="author-canvas" style={{ width: fit ? '100%' : 1200, backgroundColor: theme.background, color: theme.textColor, fontFamily: theme.fontFamily }} ref={containerRef}>
           <div className="canvas-label"><strong>{sheet.name}</strong><span>{sheet.visuals.length} {sheet.visuals.length === 1 ? 'visual' : 'visuals'} · {mobile ? 'Mobile preview' : 'Drag the handle to move · Drag a corner to resize'}</span></div>
-          {!sheet.visuals.length && <div className="canvas-empty"><h2>Your canvas is ready</h2><p>Add a visual, then choose fields from the Data panel.</p></div>}
+          {!sheet.visuals.length && <div className="canvas-empty"><h2>Your canvas is ready</h2><p>Choose a field from the Data panel to create a visual, or select a type and ADD.</p></div>}
           <div aria-label="Authoring canvas">
             <GridLayout key={sheet.id} width={width} layout={layout} compactor={noCompactor}
               gridConfig={{ cols: GRID_COLUMNS, rowHeight: 42, margin: [12, 12], containerPadding: [0, 0] }}
@@ -300,11 +307,15 @@ function SheetTabs({ draft, dispatch }: Omit<EditorProps, 'client'>) {
   </div>;
 }
 
-function FieldWells({ visual, draft, dispatch, activeWell, onWell }: { visual: AuthorVisual; draft: AuthorDraft; dispatch: Dispatch<AuthorAction>; activeWell: Well; onWell: (well: Well) => void }) {
+function FieldWells({ visual, draft, dispatch, activeWell, onWell }: { visual?: AuthorVisual; draft: AuthorDraft; dispatch: Dispatch<AuthorAction>; activeWell: Well; onWell: (well: Well) => void }) {
+  if (!visual) return <div className="field-wells">{(['rows', 'columns', 'values'] as const).map(name => <fieldset key={name} className={activeWell === name ? 'active-well' : ''} onFocus={() => onWell(name)} onClick={() => onWell(name)}>
+    <legend>{name.toUpperCase()}</legend>
+    <button type="button" className="well-placeholder" aria-label={`Select ${name.toUpperCase()} well`} aria-pressed={activeWell === name} onClick={() => onWell(name)}>Add a {name === 'values' ? 'measure' : 'dimension'}</button>
+  </fieldset>)}</div>;
   const fields = dataFields(draft.calculatedFields, draft.dataset);
   const wells: { name: Well; label: string; values: string[] }[] = [
-    ...(noDimensions(visual.kind) ? [] : grouped(visual.kind) ? [{ name: 'rows' as const, label: visual.kind === 'pointMap' ? 'Latitude' : visual.kind === 'box' ? 'Group / sample dimensions' : dimensionLabel(visual.kind), values: visual.rows }] : [{ name: 'dimension' as const, label: dimensionLabel(visual.kind), values: visual.dimension ? [visual.dimension] : [] }]),
-    ...(splitDimensions(visual.kind) ? [{ name: 'columns' as const, label: visual.kind === 'pointMap' ? 'Longitude' : visual.kind === 'radar' ? 'Color' : 'Columns', values: visual.columns }] : []),
+    ...(noDimensions(visual.kind) ? [] : grouped(visual.kind) ? [{ name: 'rows' as const, label: dimensionWellLabel(visual.kind, 'rows'), values: visual.rows }] : [{ name: 'dimension' as const, label: dimensionLabel(visual.kind), values: visual.dimension ? [visual.dimension] : [] }]),
+    ...(splitDimensions(visual.kind) ? [{ name: 'columns' as const, label: dimensionWellLabel(visual.kind, 'columns'), values: visual.columns }] : []),
     { name: 'values', label: visual.kind === 'scatter' ? 'Values · X, Y, size (in order)' : visual.kind === 'combo' ? 'Values · bar, then lines' : 'Values', values: visual.measures },
   ];
   return <div className="field-wells">{wells.map(w => <fieldset key={w.name} className={activeWell === w.name ? 'active-well' : ''} onFocus={() => onWell(w.name)} onClick={() => onWell(w.name)}>
@@ -312,7 +323,7 @@ function FieldWells({ visual, draft, dispatch, activeWell, onWell }: { visual: A
     {w.values.map(field => <button className="field-chip" key={field} type="button" aria-label={`Remove ${field} from ${w.label}`} onClick={() => dispatch({ type: 'unassign', field, well: w.name })}>{w.name === 'values' ? `SUM(${field})` : `${field}${fields.find(f => f.name === field)?.type === 'DATETIME' ? ` · ${visual.hierarchy?.levels[0]?.granularity ?? visual.dateGrain ?? 'MONTH'}` : ''}`} <span aria-hidden="true">×</span></button>)}
     {w.name === 'values' && visual.measures.length > 1 && <div className="measure-order">{visual.measures.map((name, index) => <button type="button" key={name} disabled={!index} aria-label={`Move ${name} measure earlier`} onClick={() => dispatch({ type: 'measure-move', index, offset: -1 })}>↑ {name}</button>)}</div>}
     {!w.values.length && <p>{w.name === 'columns' ? visual.kind === 'radar' ? 'Optional color dimension' : 'Optional column dimensions' : 'Choose a field'}</p>}
-    <label className="well-picker">Assign {w.name === 'values' ? 'measure' : visual.kind === 'radar' ? w.label.toLowerCase() : w.name === 'dimension' ? 'dimension' : w.name}<select aria-label={`Assign ${w.label}`} value="" onChange={e => dispatch({ type: 'assign', field: e.target.value, well: w.name })}><option value="" disabled>Choose field…</option>{fields.filter(f => f.role === (w.name === 'values' ? 'measure' : 'dimension')).map(f => <option key={f.name}>{f.name}</option>)}</select></label>
+    <label className="well-picker">Assign {w.name === 'values' ? 'measure' : visual.kind === 'radar' ? w.label.toLowerCase() : w.name === 'dimension' ? 'dimension' : w.name}<select aria-label={`Assign ${w.label}`} value="" onChange={e => dispatch({ type: 'assign', field: e.target.value, well: w.name })}><option value="" disabled>Choose field…</option>{fields.filter(f => f.type !== 'BOOLEAN' && f.role === (w.name === 'values' ? 'measure' : 'dimension')).map(f => <option key={f.name}>{f.name}</option>)}</select></label>
   </fieldset>)}</div>;
 }
 
