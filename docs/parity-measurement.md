@@ -104,3 +104,8 @@ Writes `report.json` + `report.md`. Exit non-zero with a named
   (paths reduced to basenames; full local paths stay in `hidden_files/`).
   Re-run and commit a new dated baseline after visual-parity slices land;
   the top-gaps ranking tells the next sweep what to close first.
+- `docs/parity-baseline-2026-10-06-issue-43.md` / `.json` — same-day
+  rerun after always-visible empty wells. The suffix preserves the first
+  baseline. Empty wells are present in both editor captures; assigned pills
+  remain absent in these empty-analysis pairings. Pixel diffs increased; see
+  the report's comparison rather than interpreting presence as pixel parity.
