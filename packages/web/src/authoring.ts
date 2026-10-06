@@ -6,7 +6,7 @@ export type { VisualKind } from './visual-catalog.js';
 import { parseExpression } from '@opensight/query-engine/browser';
 import { serializeInteractions } from './bundle-interactions.js';
 import { hierarchyError, type DimensionHierarchy, type DateGrain } from './drill.js';
-import { validFilterActions, type FilterAction, type InteractionFilter } from './interactions.js';
+import { visualActionsValid, resolveNavigationAction, type NavigationAction, type Selection, type UrlAction, type FilterAction, type InteractionFilter } from './interactions.js';
 import { serializeControl, serializeFilter } from './bundle-controls.js';
 import { controlError, validateControls, type AuthorControl } from './controls.js';
 import { parameterError, parameterValueError, validateAuthorParameters, serializeParameter } from './parameters.js';
@@ -91,6 +91,8 @@ export interface AuthorVisual {
   horizontal: boolean; stacked: boolean; totals: boolean; subtotals: boolean;
   filters: CategoryFilter[];
   filterActions?: FilterAction[];
+  urlActions?: UrlAction[];
+  navigationActions?: NavigationAction[];
   hierarchy?: DimensionHierarchy;
   dateGrain?: DateGrain;
   interactionFilters?: InteractionFilter[];
@@ -151,6 +153,9 @@ export type AuthorAction =
   | { type: 'bins'; bins: number }
   | { type: 'hierarchy'; hierarchy: DimensionHierarchy | null }
   | { type: 'filter-actions'; actions: FilterAction[] }
+  | { type: 'url-actions'; actions: UrlAction[] }
+  | { type: 'navigation-actions'; actions: NavigationAction[] }
+  | { type: 'navigate'; sourceId: string; actionId: string; selection: Selection }
   | { type: 'import'; draft: AuthorDraft }
   | { type: 'parameter-add'; parameter: Omit<AuthorParameter, 'id'> }
   | { type: 'parameter-value'; id: string; values: ParameterValue[] }
@@ -201,13 +206,22 @@ export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorD
     return { ...draft, parameters: [...draft.parameters, p] };
   }
   if (action.type === 'parameter-value' || action.type === 'parameter-default') return { ...draft, parameters: draft.parameters.map(p => p.id !== action.id || parameterValueError(p, action.values) ? p : { ...p, [action.type === 'parameter-value' ? 'values' : 'defaultValues']: [...action.values] }) };
+  if (action.type === 'navigate') {
+    const source = activeSheet(draft).visuals.find(v => v.id === action.sourceId);
+    const navigation = source?.navigationActions?.find(a => a.id === action.actionId);
+    if (!source || !navigation) return draft;
+    const result = resolveNavigationAction(draft, source, navigation, action.selection);
+    if (result.problem !== undefined) return draft;
+    const updated = result.value.parameters.reduce((next, parameter) => authorReducer(next, { type: 'parameter-value', ...parameter }), draft);
+    return authorReducer(updated, { type: 'sheet-select', id: result.value.targetSheetId });
+  }
   if (action.type === 'analysis-title') return { ...draft, title: action.title };
   if (action.type === 'calculation-add') {
     if (calculationError(action.field, dataFields(draft.calculatedFields, draft.dataset))) return draft;
     return { ...draft, calculatedFields: [...draft.calculatedFields, { ...action.field, name: action.field.name.trim() }] };
   }
   if (action.type === 'sheet-add') {
-    const id = nextId('sheet', [...draft.sheets.map(s => s.id), ...originalIds(draft, false)]);
+    const id = nextId('sheet', [...draft.sheets.map(s => s.id), ...originalIds(draft, false), ...draft.sheets.flatMap(s => s.visuals.flatMap(v => (v.navigationActions ?? []).map(a => a.targetSheetId)))]);
     return { ...draft, sheets: [...draft.sheets, newSheet(id, `Sheet ${id.slice(6)}`)], activeSheetId: id };
   }
   if (action.type === 'sheet-select') return draft.sheets.some(s => s.id === action.id) ? { ...draft, activeSheetId: action.id } : draft;
@@ -328,7 +342,13 @@ export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorD
         const root = action.hierarchy.levels[0]!.columnName;
         return { ...visual, hierarchy: action.hierarchy, dimension: root, ...(grouped(visual.kind) ? { rows: [root, ...visual.rows.slice(1).filter(f => f !== root)], columns: visual.columns.filter(f => f !== root) } : {}) };
       }
-      case 'filter-actions': return validFilterActions(action.actions) ? { ...visual, filterActions: action.actions } : visual;
+      case 'navigation-actions':
+      case 'url-actions':
+      case 'filter-actions': {
+        const updated = action.type === 'filter-actions' ? { ...visual, filterActions: action.actions }
+          : action.type === 'url-actions' ? { ...visual, urlActions: action.actions } : { ...visual, navigationActions: action.actions };
+        return visualActionsValid(updated) ? updated : visual;
+      }
       case 'measure-move': {
         const measures = [...visual.measures], target = action.index + action.offset;
         if (action.index < 0 || target < 0 || action.index >= measures.length || target >= measures.length) return visual;
@@ -532,7 +552,7 @@ export function validateDraft(value: unknown): asserts value is AuthorDraft {
       }
       const fieldNames = (v: unknown, role: string): v is string[] => imported ? Array.isArray(v) && v.every(n => typeof n === 'string' && !!n && !n.includes('\0')) && new Set(v).size === v.length : names(v, role);
 
-      if (!isObject(v) || !onlyKeys(v, ['id', 'kind', 'title', 'subtitle', 'subtitleVisible', 'dimension', 'measures', 'donut', 'imported', 'filterActions', 'hierarchy', 'dateGrain', 'palette', 'formatting', 'gauge', 'bins', ...Object.keys(defaults())]) || typeof v.id !== 'string' || !/^visual-[1-9][0-9]*$/.test(v.id) || ids.has(v.id) || !VISUAL_TYPES.some(t => t.kind === v.kind) || typeof v.title !== 'string' || !['donut', 'titleVisible', 'legend', 'labels', 'horizontal', 'stacked', 'totals', 'subtotals'].every(k => typeof v[k] === 'boolean') || !fieldNames(v.measures, 'measure') || !fieldNames(v.rows, 'dimension') || !fieldNames(v.columns, 'dimension') || (v.dimension !== null && !fieldNames([v.dimension], 'dimension')) || !Array.isArray(v.filters)) return fail();
+      if (!isObject(v) || !onlyKeys(v, ['id', 'kind', 'title', 'subtitle', 'subtitleVisible', 'dimension', 'measures', 'donut', 'imported', 'filterActions', 'urlActions', 'navigationActions', 'hierarchy', 'dateGrain', 'palette', 'formatting', 'gauge', 'bins', ...Object.keys(defaults())]) || typeof v.id !== 'string' || !/^visual-[1-9][0-9]*$/.test(v.id) || ids.has(v.id) || !VISUAL_TYPES.some(t => t.kind === v.kind) || typeof v.title !== 'string' || !['donut', 'titleVisible', 'legend', 'labels', 'horizontal', 'stacked', 'totals', 'subtotals'].every(k => typeof v[k] === 'boolean') || !fieldNames(v.measures, 'measure') || !fieldNames(v.rows, 'dimension') || !fieldNames(v.columns, 'dimension') || (v.dimension !== null && !fieldNames([v.dimension], 'dimension')) || !Array.isArray(v.filters)) return fail();
       if (v.kind === 'radar' && !v.imported && (v.rows.length > 1 || v.columns.length > 1)) return fail();
       if (singleMeasure(v.kind as VisualKind) && v.measures.length > 1 || noDimensions(v.kind as VisualKind) && v.dimension !== null || v.kind !== 'pie' && v.donut || !splitDimensions(v.kind as VisualKind) && v.columns.length || (grouped(v.kind as VisualKind) ? v.dimension !== (v.rows[0] ?? null) : v.rows.length) || v.rows.some(n => (v.columns as string[]).includes(n))) return fail();
       if (v.formatting !== undefined && !formattingValid(v.formatting) || v.gauge !== undefined && !gaugeValid(v.gauge) || v.bins !== undefined && !binsValid(v.bins)) return fail();
@@ -540,7 +560,7 @@ export function validateDraft(value: unknown): asserts value is AuthorDraft {
       if (v.palette !== undefined && !paletteValid(v.palette)) return fail();
       if (v.dateGrain !== undefined && !['YEAR','QUARTER','MONTH','DAY'].includes(String(v.dateGrain))) return fail();
       if (v.hierarchy !== undefined && hierarchyError(v.hierarchy as DimensionHierarchy, calculations, !!imported, dataset)) return fail();
-      if (v.filterActions !== undefined && !validFilterActions(v.filterActions)) return fail();
+      if (!visualActionsValid(v)) return fail();
       const filters = new Set<string>();
       for (const f of v.filters) {
         if (!isObject(f) || !onlyKeys(f, ['columnName', 'values', 'parameterName', 'operator']) || typeof f.columnName !== 'string' || filters.has(f.columnName) || (!imported && !fields.some(field => field.name === f.columnName && (f.parameterName !== undefined || field.type === 'STRING'))) || !Array.isArray(f.values) || !f.values.every(n => typeof n === 'string' && !n.includes('\0')) || new Set(f.values).size !== f.values.length) return fail();
