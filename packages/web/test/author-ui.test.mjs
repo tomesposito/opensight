@@ -21,6 +21,20 @@ test('empty canvas exposes all visual types and typed fields with assignment dis
   for (const label of ['Geography', 'Metadata', 'Sales', 'INTEGER', 'DATETIME', 'STRING', 'DECIMAL']) assert.ok(html.includes(label));
 });
 
+test('empty and newly emptied canvases retain ordered, labeled, keyboard-native field wells', () => {
+  const populated = add();
+  const emptied = authorReducer(populated, { type: 'remove', id: activeSheet(populated).selectedId });
+  for (const draft of [emptyDraft(), emptied]) {
+    const html = renderCanvas(draft);
+    assert.match(html, /<h3>Field wells<\/h3>/);
+    assert.deepEqual([...html.matchAll(/<legend>(ROWS|COLUMNS|VALUES)<\/legend>/g)].map(m => m[1]), ['ROWS', 'COLUMNS', 'VALUES']);
+    for (const name of ['ROWS', 'COLUMNS', 'VALUES']) {
+      assert.match(html, new RegExp(`<button type="button" class="well-placeholder" aria-label="Select ${name} well" aria-pressed="${name === 'ROWS'}">Add a ${name === 'VALUES' ? 'measure' : 'dimension'}</button>`));
+    }
+    assert.doesNotMatch(html, /Choose a visual type and select ADD/);
+  }
+});
+
 for (const [kind, well] of [['bar', 'Category'], ['line', 'X-axis'], ['pie', 'Category'], ['kpi', null], ['table', 'Group-by']]) {
   test(`${kind} configuration exposes its wells, removable assignments and move boundaries`, () => {
     const html = renderCanvas(add(kind));

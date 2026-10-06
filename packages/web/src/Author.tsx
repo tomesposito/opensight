@@ -228,13 +228,14 @@ export function AuthorCanvas({ draft, dispatch, client, fit = true, sourceProble
             </button>)}</div>
             <button type="submit" className="primary-button" aria-label="Add visual">ADD</button>
           </form>
-          {selected ? <div className="visual-config" id={`configure-${selected.id}`}>
+          <div className="visual-config" id={selected ? `configure-${selected.id}` : undefined}>
             <h3>Field wells</h3>
-            <p className="selected-visual">{selected.title || `Visual ${sheet.visuals.indexOf(selected) + 1}`}</p>
+            {selected && <><p className="selected-visual">{selected.title || `Visual ${sheet.visuals.indexOf(selected) + 1}`}</p>
             <label className="change-type">Change visual type<select value={selected.imported?.issues.some(i => i.startsWith('Unsupported visual type:')) && !selected.imported.replaced ? '' : selected.kind} onChange={e => dispatch({ type: 'kind', kind: e.target.value as VisualKind })}>{selected.imported?.issues.some(i => i.startsWith('Unsupported visual type:')) && !selected.imported.replaced && <option value="" disabled>{selected.imported.variant} (unsupported)</option>}{VISUAL_TYPES.map(type => <option value={type.kind} key={type.kind}>{type.label}</option>)}</select></label>
+            </>}
             <FieldWells visual={selected} draft={draft} dispatch={dispatch} activeWell={well} onWell={setWell} />
-            <p className="capability-note" role="note">{capabilityNote(selected.kind)}</p>
-          </div> : <p className="field-hint">Choose a visual type and select ADD.</p>}
+            {selected && <p className="capability-note" role="note">{capabilityNote(selected.kind)}</p>}
+          </div>
       </Panel>
       <div className="author-center" role="region" aria-label="Analysis sheet">
         <SheetTabs draft={draft} dispatch={dispatch} />
@@ -300,7 +301,11 @@ function SheetTabs({ draft, dispatch }: Omit<EditorProps, 'client'>) {
   </div>;
 }
 
-function FieldWells({ visual, draft, dispatch, activeWell, onWell }: { visual: AuthorVisual; draft: AuthorDraft; dispatch: Dispatch<AuthorAction>; activeWell: Well; onWell: (well: Well) => void }) {
+function FieldWells({ visual, draft, dispatch, activeWell, onWell }: { visual?: AuthorVisual; draft: AuthorDraft; dispatch: Dispatch<AuthorAction>; activeWell: Well; onWell: (well: Well) => void }) {
+  if (!visual) return <div className="field-wells">{(['rows', 'columns', 'values'] as const).map(name => <fieldset key={name} className={activeWell === name ? 'active-well' : ''} onFocus={() => onWell(name)} onClick={() => onWell(name)}>
+    <legend>{name.toUpperCase()}</legend>
+    <button type="button" className="well-placeholder" aria-label={`Select ${name.toUpperCase()} well`} aria-pressed={activeWell === name} onClick={() => onWell(name)}>Add a {name === 'values' ? 'measure' : 'dimension'}</button>
+  </fieldset>)}</div>;
   const fields = dataFields(draft.calculatedFields, draft.dataset);
   const wells: { name: Well; label: string; values: string[] }[] = [
     ...(noDimensions(visual.kind) ? [] : grouped(visual.kind) ? [{ name: 'rows' as const, label: visual.kind === 'pointMap' ? 'Latitude' : visual.kind === 'box' ? 'Group / sample dimensions' : dimensionLabel(visual.kind), values: visual.rows }] : [{ name: 'dimension' as const, label: dimensionLabel(visual.kind), values: visual.dimension ? [visual.dimension] : [] }]),
