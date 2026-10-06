@@ -18,7 +18,7 @@ import { expressionError } from './authoring.js';
 import { HierarchyEditor } from './HierarchyEditor.js';
 import { withDrill, drillDown, drillUp, drillBreadcrumbs, levelLabel, type DrillPath } from './drill.js';
 import { ActionEditor } from './ActionEditor.js';
-import { toggleSelection, withActionFilters, originProblem, hasVisualActions, resolveUrlAction, type ActionSelections } from './interactions.js';
+import { toggleSelection, withActionFilters, originProblem, hasVisualActions, resolveUrlAction, resolveNavigationAction, type ActionSelections } from './interactions.js';
 import type { VisualInteraction } from './visual-selection.js';
 import { ControlsStrip } from './ControlsStrip.js';
 import type { AuthorParameter } from './parameters.js';
@@ -182,7 +182,7 @@ export function AuthorCanvas({ draft, dispatch, client, fit = true, sourceProble
   const sheet = activeSheet(draft), fields = dataFields(draft.calculatedFields, draft.dataset);
   const query = search.trim().toLowerCase();
   const matchingFields = fields.filter(f => f.name.toLowerCase().includes(query));
-  const interactionKey = JSON.stringify([draft.dataset?.id, sheet.id, sheet.visuals.map(v => [v.id, v.kind, v.dimension, v.rows, v.columns, v.measures, v.filters, v.filterActions, v.urlActions, v.hierarchy, v.imported]), draft.parameters, draft.calculatedFields, !!client]);
+  const interactionKey = JSON.stringify([draft.dataset?.id, sheet.id, sheet.visuals.map(v => [v.id, v.kind, v.dimension, v.rows, v.columns, v.measures, v.filters, v.filterActions, v.urlActions, v.navigationActions, v.hierarchy, v.imported]), draft.parameters, draft.calculatedFields, !!client]);
   const [interactionState, setInteractionState] = useState<{ key: string; selections: ActionSelections }>({ key: interactionKey, selections: {} });
   const [actionProblems, setActionProblems] = useState<{ key: string; visuals: Record<string, Record<string, string>> }>({ key: interactionKey, visuals: {} });
   const runtimeProblems = actionProblems.key === interactionKey ? actionProblems.visuals : {};
@@ -276,6 +276,11 @@ export function AuthorCanvas({ draft, dispatch, client, fit = true, sourceProble
                           const result = resolveUrlAction(visual, action, clicked);
                           if (result.problem !== undefined) problems[action.id] = result.problem;
                           else window.open(result.value, action.target ?? '_blank', 'noopener,noreferrer');
+                        }
+                        for (const action of visual.navigationActions ?? []) {
+                          const result = resolveNavigationAction(draft, visual, action, clicked);
+                          if (result.problem !== undefined) problems[action.id] = result.problem;
+                          else { dispatch({ type: 'navigate', sourceId: visual.id, actionId: action.id, selection: clicked }); break; }
                         }
                         setActionProblems({ key: interactionKey, visuals: { ...runtimeProblems, [visual.id]: problems } });
                       }

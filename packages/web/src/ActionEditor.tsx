@@ -1,8 +1,10 @@
 import { useState, type Dispatch } from 'react';
-import { activeSheet, type AuthorDraft, type AuthorVisual, type AuthorAction } from './authoring.js';
-import { actionDimensions, originProblem, targetProblem, urlActionProblem, type UrlAction, type FilterAction } from './interactions.js';
+import { activeSheet, sheetParameters, type AuthorDraft, type AuthorVisual, type AuthorAction } from './authoring.js';
+import { actionDimensions, originProblem, targetProblem, urlActionProblem, navigationActionProblem, navigationSheets, type NavigationAction, type UrlAction, type FilterAction } from './interactions.js';
 export function ActionEditor({ draft, visual, dispatch, runtimeProblems = {} }: { draft: AuthorDraft; visual: AuthorVisual; dispatch: Dispatch<AuthorAction>; runtimeProblems?: Record<string, string> }) {
   const [actionType, setActionType] = useState('Filter');
+  const navigations = visual.navigationActions ?? [], sheets = navigationSheets(draft), parameters = sheetParameters(draft);
+  const saveNavigation = (action: NavigationAction) => dispatch({ type: 'navigation-actions', actions: navigations.map(a => a.id === action.id ? action : a) });
   const urls = visual.urlActions ?? [];
   const saveUrl = (action: UrlAction) => dispatch({ type: 'url-actions', actions: urls.map(a => a.id === action.id ? action : a) });
   const sheet = activeSheet(draft), actions = visual.filterActions ?? [], problem = originProblem(visual);
@@ -32,11 +34,34 @@ export function ActionEditor({ draft, visual, dispatch, runtimeProblems = {} }: 
       {(urlActionProblem(visual, action) ?? runtimeProblems[action.id]) && <p role="status">Action disabled: {urlActionProblem(visual, action) ?? runtimeProblems[action.id]}</p>}
       <button type="button" onClick={() => dispatch({ type: 'url-actions', actions: urls.filter(a => a.id !== action.id) })}>Remove action</button>
     </fieldset>)}
-    <label>Action type<select value={actionType} onChange={e => setActionType(e.target.value)}><option>Filter</option><option>URL</option></select></label>
+    {navigations.map(action => <fieldset key={action.id}><legend>{action.name || 'Navigation action'}</legend>
+      <label>Action name<input value={action.name} onChange={e => saveNavigation({ ...action, name: e.target.value })} /></label>
+      <label>Source field<select value={action.sourceField} onChange={e => saveNavigation({ ...action, sourceField: e.target.value })}>{[...new Set([action.sourceField, ...actionDimensions(visual)])].map(f => <option key={f}>{f}</option>)}</select></label>
+      <label>Target sheet<select value={action.targetSheetId} onChange={e => saveNavigation({ ...action, targetSheetId: e.target.value })}>
+        {!sheets.some(s => s.id === action.targetSheetId) && <option value={action.targetSheetId}>{action.targetSheetId || 'Choose a sheet'}</option>}
+        {sheets.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+      </select></label>
+      {Object.entries(action.parameterMappings).map(([field, name]) => <div key={field} className="action-target">
+        <label>Mapped source field<select value={field} onChange={e => saveNavigation({ ...action, parameterMappings: Object.fromEntries(Object.entries(action.parameterMappings).map(([f, p]) => [f === field ? e.target.value : f, p])) })}>{[...new Set([field, ...actionDimensions(visual).filter(f => !Object.hasOwn(action.parameterMappings, f))])].map(f => <option key={f}>{f}</option>)}</select></label>
+        <label>Target parameter<select value={name} onChange={e => saveNavigation({ ...action, parameterMappings: { ...action.parameterMappings, [field]: e.target.value } })}>
+          {!parameters.some(p => p.name === name) && <option value={name}>{name || 'Choose a parameter'}</option>}
+          {parameters.map(p => <option key={p.id} value={p.name}>{p.name} ({p.type})</option>)}
+        </select></label>
+        <button type="button" onClick={() => saveNavigation({ ...action, parameterMappings: Object.fromEntries(Object.entries(action.parameterMappings).filter(([f]) => f !== field)) })}>Remove mapping</button>
+      </div>)}
+      <button type="button" disabled={actionDimensions(visual).every(f => Object.hasOwn(action.parameterMappings, f))} onClick={() => {
+        const field = actionDimensions(visual).find(f => !Object.hasOwn(action.parameterMappings, f));
+        if (field) saveNavigation({ ...action, parameterMappings: { ...action.parameterMappings, [field]: '' } });
+      }}>Add parameter mapping</button>
+      {(navigationActionProblem(draft, visual, action) ?? runtimeProblems[action.id]) && <p role="status">Action disabled: {navigationActionProblem(draft, visual, action) ?? runtimeProblems[action.id]}</p>}
+      <button type="button" onClick={() => dispatch({ type: 'navigation-actions', actions: navigations.filter(a => a.id !== action.id) })}>Remove action</button>
+    </fieldset>)}
+    <label>Action type<select value={actionType} onChange={e => setActionType(e.target.value)}><option>Filter</option><option>URL</option><option>Navigation</option></select></label>
     <button type="button" disabled={!!problem} onClick={() => {
-      let n = 1; while ([...actions, ...urls].some(a => a.id === `action-${n}`)) n++;
+      let n = 1; while ([...actions, ...urls, ...navigations].some(a => a.id === `action-${n}`)) n++;
       const common = { id: `action-${n}`, name: `${actionType} action ${n}`, sourceField: actionDimensions(visual)[0]! };
       if (actionType === 'URL') dispatch({ type: 'url-actions', actions: [...urls, { ...common, urlTemplate: '' }] });
+      else if (actionType === 'Navigation') dispatch({ type: 'navigation-actions', actions: [...navigations, { ...common, targetSheetId: sheets.find(s => s.id !== sheet.id)?.id ?? '', parameterMappings: {} }] });
       else dispatch({ type: 'filter-actions', actions: [...actions, { ...common, targets: 'all', mappings: {} }] });
     }}>Add {actionType.toLowerCase()} action</button>
     <p>Click a bar, slice, or data row. URL placeholders use grouped dimension names and encode clicked values. Hierarchy fields apply when selected at that level. Brush a line chart for filter actions. Click the same selection again or use Reset actions to clear filters.</p>

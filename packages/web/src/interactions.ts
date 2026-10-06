@@ -1,4 +1,5 @@
-import { authorVisualProblem, dataFields, visualDimensions, type AuthorDataset, type AuthorSheet, type AuthorVisual, type CalculatedField } from './authoring.js';
+import { activeSheet, authorVisualProblem, dataFields, sheetParameters, visualDimensions, type AuthorDraft, type AuthorDataset, type AuthorSheet, type AuthorVisual, type CalculatedField } from './authoring.js';
+import { parameterValueError } from './parameters.js';
 import type { ParameterDeclaration, ParameterValue } from './parameters.js';
 
 export interface FilterAction {
@@ -7,6 +8,9 @@ export interface FilterAction {
 }
 export interface UrlAction {
   id: string; name: string; sourceField: string; urlTemplate: string; target?: '_blank' | '_self';
+}
+export interface NavigationAction {
+  id: string; name: string; sourceField: string; targetSheetId: string; parameterMappings: Record<string, string>;
 }
 type ActionResult<T> = { value: T; problem?: never } | { problem: string; value?: never };
 const record = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
@@ -52,7 +56,53 @@ export function resolveUrlAction(source: AuthorVisual, action: UrlAction, select
   return problem ? { problem } : interpolateUrl(action.urlTemplate, selection.values);
 }
 export function hasVisualActions(visual: AuthorVisual): boolean {
-  return !!(visual.filterActions?.length || visual.urlActions?.length);
+  return !!(visual.filterActions?.length || visual.urlActions?.length || visual.navigationActions?.length);
+}
+/** Definition shape only: unresolved destinations/mappings stay editable and visibly disabled. */
+export function navigationActionDefinitionsValid(raw: unknown): raw is NavigationAction[] {
+  return Array.isArray(raw) && raw.every(a => record(a) && Object.keys(a).every(k => ['id', 'name', 'sourceField', 'targetSheetId', 'parameterMappings'].includes(k)) && typeof a.id === 'string' && !!a.id && typeof a.name === 'string' && typeof a.sourceField === 'string' && !!a.sourceField && typeof a.targetSheetId === 'string' && record(a.parameterMappings) && Object.values(a.parameterMappings).every(p => typeof p === 'string')) && new Set(raw.map(a => a.id)).size === raw.length;
+}
+export function navigationSheets(draft: AuthorDraft): AuthorSheet[] {
+  const memberPath = activeSheet(draft).imported?.memberPath ?? draft.bundle?.primaryPath;
+  // Cross-analysis/dashboard navigation is out of scope: no dashboard registry can resolve it.
+  return draft.sheets.filter(sheet => (sheet.imported?.memberPath ?? draft.bundle?.primaryPath) === memberPath);
+}
+export function navigationActionProblem(draft: AuthorDraft, source: AuthorVisual, action: NavigationAction): string | undefined {
+  const origin = originProblem(source);
+  if (origin) return `NAVIGATION_ORIGIN_INVALID: ${origin}`;
+  const dimensions = actionDimensions(source);
+  if (!dimensions.includes(action.sourceField)) return `NAVIGATION_SOURCE_UNKNOWN: Source does not group by ${action.sourceField}.`;
+  if (!navigationSheets(draft).some(s => s.id === action.targetSheetId)) return 'NAVIGATION_TARGET_UNKNOWN: Choose an existing sheet in this analysis.';
+  const parameters = sheetParameters(draft), mapped = new Set<string>();
+  for (const [field, name] of Object.entries(action.parameterMappings)) {
+    if (!dimensions.includes(field)) return `NAVIGATION_FIELD_UNKNOWN: Source does not group by ${field}.`;
+    const matches = parameters.filter(p => p.name === name), parameter = matches[0];
+    if (matches.length !== 1 || !parameter) return `NAVIGATION_PARAMETER_UNKNOWN: ${name || '(missing)'} must name one declared analysis parameter.`;
+    if (mapped.has(name)) return `NAVIGATION_PARAMETER_DUPLICATE: Map only one source field to ${name}.`;
+    mapped.add(name);
+    if (fieldType(field, draft.calculatedFields, draft.dataset) !== parameter.type) return `NAVIGATION_TYPE_MISMATCH: ${field} and ${name} must have the same supported type.`;
+  }
+}
+export function validNavigationActions(raw: unknown, draft: AuthorDraft, source: AuthorVisual): raw is NavigationAction[] {
+  return navigationActionDefinitionsValid(raw) && raw.every(action => !navigationActionProblem(draft, source, action));
+}
+export function resolveNavigationAction(draft: AuthorDraft, source: AuthorVisual, action: NavigationAction, selection: Selection): ActionResult<{ targetSheetId: string; parameters: { id: string; values: ParameterValue[] }[] }> {
+  const problem = navigationActionProblem(draft, source, action);
+  if (problem) return { problem };
+  if (selection.range) return { problem: 'NAVIGATION_SELECTION_RANGE: Navigation requires a data point click.' };
+  const parameters = [];
+  for (const field of new Set([action.sourceField, ...Object.keys(action.parameterMappings)])) {
+    const value = selection.values[field];
+    if (!Object.hasOwn(selection.values, field) || (typeof value !== 'string' && typeof value !== 'number') || typeof value === 'number' && !Number.isFinite(value)) return { problem: `NAVIGATION_SELECTION_MISSING: No clicked value for ${field}.` };
+    if (!Object.hasOwn(action.parameterMappings, field)) continue;
+    const parameter = sheetParameters(draft).find(p => p.name === action.parameterMappings[field])!;
+    // A grouped datetime denotes its bucket's UTC start, using the existing filter date semantics.
+    const values = [parameter.type === 'datetime' ? dateBounds(String(value))?.[0] ?? value : value];
+    const error = parameterValueError(parameter, values);
+    if (error) return { problem: `NAVIGATION_VALUE_INVALID: ${parameter.name}: ${error}.` };
+    parameters.push({ id: parameter.id, values });
+  }
+  return { value: { targetSheetId: action.targetSheetId, parameters } };
 }
 export interface Selection { values: Record<string, string | number>; range?: [string, string] }
 export interface InteractionFilter { columnName: string; type: ParameterDeclaration['type']; values: ParameterValue[]; operator?: 'EQUALS' | 'GREATER_THAN_OR_EQUAL_TO' | 'LESS_THAN_OR_EQUAL_TO' }
