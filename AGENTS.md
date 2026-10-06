@@ -99,6 +99,11 @@ The builder models the QuickSight analysis editor:
 - **Chrome.** Dark navy menu toolbar (File Edit Data Insert Sheets
   Objects Search), FIT TO WIDTH, PUBLISH (honest stub until hosted),
   NEW LOOK light/dark theme toggle, per-visual palettes.
+- **Editor typography.** Use `Arial, "Helvetica Neue", Helvetica, sans-serif`
+  for editor chrome, docks and card controls: a compact system-font
+  approximation of the reference, with no bundled or downloaded font. Use
+  12px body/control text, 13px dock headings and 4/8px spacing. Analysis
+  themes still own chart and table typefaces and explicit text sizes.
 - **Properties panel** mirrors QuickSight's sections: Display settings,
   Headers/Cells, Totals/Subtotals, Row/Column/Value names, Conditional
   formatting, Analysis theme.

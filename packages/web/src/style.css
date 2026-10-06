@@ -173,7 +173,7 @@ button:disabled { cursor: default; opacity: .5; }
 .canvas-empty { padding: 65px 24px; border: 1px dashed #b1c9ce; border-radius: 6px; text-align: center; color: #526c7a; background: #f8fbfcdd; }
 .author-card { height: 100%; display: flex; flex-direction: column; border: 1px solid #c9d8de; border-radius: 6px; background: white; overflow: hidden; }
 .author-card.is-selected { border-color: #157f88; box-shadow: 0 0 0 1px #157f88; }
-.author-card-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; padding: 4px; background: #f3f7f8; }
+.author-card-toolbar { font-family: var(--editor-font-family); display: flex; align-items: center; flex-wrap: wrap; gap: 4px; padding: 4px; background: #f3f7f8; }
 .author-card-toolbar strong { font-size: 11px; overflow-wrap: anywhere; min-width: 0; flex: 1; }
 .drag-handle { cursor: grab; touch-action: none; padding: 4px; font-size: 16px; }
 .drag-handle:active { cursor: grabbing; }
@@ -288,6 +288,8 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 
 /* NEW LOOK controls the editor; the analysis theme independently styles its canvas. */
 .author-workspace {
+  --editor-font-family: Arial, "Helvetica Neue", Helvetica, sans-serif;
+  font-family: var(--editor-font-family); font-size: 12px; line-height: 1.4;
   --chrome-surface: #fff; --chrome-bg: #f3f6f7; --chrome-text: #19384a; --chrome-muted: #526c7a; --chrome-border: #c9d8de; --chrome-menu-hover: #eaf3f8; --chrome-menu-shadow: #14253633;
   /* Both editor themes share the NEW LOOK identity and menu bands. */
   --header-bg: #142536; --header-text: #ffffff; --header-muted: #c8eafa;
