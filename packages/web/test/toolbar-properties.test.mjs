@@ -32,9 +32,10 @@ test('header keeps identity, menus, working O entry, canvas actions and NEW LOOK
   await ui.click('Save draft');
   assert.equal(ui.saved().title, 'Sales analysis');
   const nav = ui.find('nav', p => p['aria-label'] === 'Analysis menu');
-  assert.deepEqual(nav.children.map(n => n.type), [...Array(7).fill('details'), 'form', 'div', 'button', 'button', 'label']);
-  assert.equal(nav.children[9].props.children, 'FIT TO WIDTH');
-  assert.equal(nav.children[10].props.children, 'PUBLISH');
+  assert.deepEqual(nav.children.map(n => n.type), [...Array(7).fill('details'), 'form', 'div', 'button', 'button', 'button', 'label']);
+  assert.equal(nav.children[9].props.children, 'Add visual');
+  assert.equal(nav.children[10].props.children, 'FIT TO WIDTH');
+  assert.equal(nav.children[11].props.children, 'PUBLISH');
   const toggle = nav.findByType('select');
   assert.equal(toggle.props['aria-label'], 'NEW LOOK');
   const before = serializeDraft(ui.saved());
@@ -62,6 +63,8 @@ test('toolbar exposes all seven menus, callbacks, busy guards and honest publish
   assert.deepEqual(calls, ['import', 'bundle', 'json', 'fit']);
   await ui.click('Add bar visual'); await ui.click('Add sheet'); await ui.click('Remove selected visual');
   assert.deepEqual(calls.slice(4), [{ type: 'add', kind: 'bar' }, { type: 'sheet-add' }, { type: 'remove', id: 'visual-1' }]);
+  await ui.click('Add visual');
+  assert.equal(calls.length, 7, 'Add visual focuses the gallery instead of dispatching a visual action');
   await ui.click('PUBLISH');
   assert.match(ui.find('div', p => p.role === 'status').props.children[0], /This static demo has no publication destination/);
   await ui.click('Dismiss'); assert.equal(ui.find('div', p => p.role === 'status'), undefined);
