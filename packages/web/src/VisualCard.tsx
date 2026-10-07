@@ -15,7 +15,7 @@ function Chart({ option, title, compiled, interaction }: { option: EChartsOption
     const chart = init(container.current, undefined, { renderer: 'svg' });
     chart.setOption(interaction?.brush ? { ...option, brush: { toolbox: ['lineX', 'clear'], xAxisIndex: 0, brushMode: 'single', throttleType: 'debounce', throttleDelay: 100 } } : option, { notMerge: true });
     if (interaction) {
-      chart.on('click', event => { if (!['wordCloud', 'histogram', 'box', 'treemap', 'filledMap'].includes(compiled.model.kind) && (event.componentType === 'series' && typeof event.dataIndex === 'number')) { const selection = rowSelection(compiled, event.dataIndex); if (selection) interaction.onSelect(selection); } });
+      chart.on('click', event => { if (!['wordCloud', 'histogram', 'box', 'treemap', 'filledMap', 'sankey'].includes(compiled.model.kind) && (event.componentType === 'series' && typeof event.dataIndex === 'number')) { const selection = rowSelection(compiled, event.dataIndex); if (selection) interaction.onSelect(selection); } });
       if (interaction.brush) chart.on('brushEnd', (event: unknown) => {
         const areas = (event as { areas?: { coordRange?: unknown }[] }).areas;
         if (!areas?.length) interaction.onClear?.();

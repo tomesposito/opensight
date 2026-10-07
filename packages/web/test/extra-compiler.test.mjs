@@ -8,14 +8,14 @@ const dim = name => ({ categoricalDimensionField: { fieldId: name, column: { col
 const measure = name => ({ numericalMeasureField: { fieldId: name, column: { columnName: name, dataSetIdentifier: 'data' }, aggregationFunction: { simpleNumericalAggregation: 'SUM' } } });
 export function input(kind, rows) {
   const spec = EXTRA_VISUALS[kind];
-  const dims = kind === 'heatmap' ? ['group', 'column'] : kind === 'pointMap' ? ['lat', 'lon'] : kind === 'gauge' ? [] : ['group'];
+  const dims = kind === 'heatmap' || kind === 'sankey' ? ['group', 'column'] : kind === 'pointMap' ? ['lat', 'lon'] : kind === 'gauge' ? [] : ['group'];
   const measures = ['scatter', 'combo', 'bar100'].includes(kind) ? ['a', 'b'] : ['a'];
   const wells = {};
   spec.dimensions.forEach((key, i) => { wells[key] = (spec.dimensions.length === 1 ? dims : dims.slice(i, i + 1)).map(dim); });
   spec.measures.forEach((key, i) => { wells[key] = (spec.measures.length === 1 ? measures : measures.slice(i, i + 1)).map(measure); });
   return { source: 'bundle', path: '$.test', bindings: {}, rows: rows ?? (kind === 'gauge' ? [{ a: 42 }] : [{ group: kind === 'filledMap' ? 'France' : 'A', column: 'X', lat: 48, lon: 2, a: 10, b: 30 }, { group: kind === 'filledMap' ? 'Germany' : 'B', column: 'Y', lat: 52, lon: 13, a: 20, b: 20 }]), definition: { [spec.variant]: { visualId: kind, chartConfiguration: { fieldWells: spec.wells ? { [spec.wells]: wells } : wells, ...(kind === 'bar100' ? { barsArrangement: 'STACKED_PERCENT' } : {}), ...(kind === 'area' ? { type: 'AREA' } : {}) } } } };
 }
-const seriesTypes = { radar: 'radar', scatter: 'scatter', combo: 'bar', bar100: 'bar', area: 'line', funnel: 'funnel', gauge: 'gauge', treemap: 'treemap', heatmap: 'heatmap', box: 'boxplot', wordCloud: 'scatter', histogram: 'bar', filledMap: 'map', pointMap: 'scatter' };
+const seriesTypes = { sankey: 'sankey', radar: 'radar', scatter: 'scatter', combo: 'bar', bar100: 'bar', area: 'line', funnel: 'funnel', gauge: 'gauge', treemap: 'treemap', heatmap: 'heatmap', box: 'boxplot', wordCloud: 'scatter', histogram: 'bar', filledMap: 'map', pointMap: 'scatter' };
 for (const kind of Object.keys(EXTRA_VISUALS)) test(`${kind}: pinned rows compile, render to SVG, and retain accessible data`, () => {
   const source = input(kind), before = structuredClone(source), c = compileVisual(source);
   assert.equal(c.model.kind, kind); assert.equal(c.state, 'ready'); assert.equal(c.option.series[0].type, seriesTypes[kind]);

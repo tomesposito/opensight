@@ -8,7 +8,7 @@ bidirectional asset compatibility — connect data, prepare datasets, build
 analyses and dashboards, and ask questions in natural language. Self-hosted;
 no AWS required.
 
-![OpenSight tour: dashboard, O answer, add to analysis, saved drafts, and data tools](docs/images/opensight-tour.gif)
+![OpenSight tour: dashboard, O answer, authoring, radar, Sankey, pivot, saved drafts, and data tools](docs/images/opensight-tour.gif)
 
 *Above: the offline demo — a dashboard, O answering "revenue by region" and
 adding the chart to an analysis, saved drafts, data preparation, connectors,
@@ -70,8 +70,8 @@ how to build and open it.
 
 ### 📊 Dashboards and analyses
 
-Author on a QuickSight-style canvas: 20 visual types (bar, line, pie/donut,
-KPI, table, pivot, radar, scatter, combo, maps and more), parameters and controls,
+Author on a QuickSight-style canvas: 21 visual types (bar, line, pie/donut,
+KPI, table, pivot, radar, sankey, scatter, combo, maps and more), parameters and controls,
 filter actions, drill-down, themes, and `.qs` bundle import/export round trips.
 
 The app opens to a working sales dashboard using pinned synthetic sample results
@@ -94,6 +94,12 @@ measures. Nulls remain gaps; unsupported native options appear in the import
 report. See [radar semantics and limits](docs/radar-chart.md).
 
 ![Radar preview with revenue by month and region](docs/images/radar.png)
+
+Sankey connects Source and Destination dimensions using one Weight measure.
+Equal values share nodes and duplicate links are summed; unsupported graph
+shapes and native options fail closed. See [Sankey semantics and limits](docs/sankey-diagram.md).
+
+![Sankey preview with revenue flowing from region to category](docs/images/sankey.png)
 
 Pivot row groups expand and collapse with +/−, Enter or Space. Enabled subtotals
 stay visible, and group state survives draft saves and bundle round trips.

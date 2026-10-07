@@ -25,6 +25,12 @@ export function applyDisplayOptions(model: VisualModel, option: EChartsOption): 
         series.center = ['50%', '50%'];
         series.label = { ...series.label, overflow: 'break' };
       }
+      if (model.kind === 'sankey' && Array.isArray(option.series)) for (const series of option.series) if (series.type === 'sankey') {
+        series.left = position === 'LEFT' ? 130 : 24;
+        series.right = position === 'RIGHT' ? 150 : 100;
+        series.top = position === 'TOP' ? 48 : 24;
+        series.bottom = !side && position !== 'TOP' ? 48 : 24;
+      }
     }
   }
   if (!Array.isArray(option.series)) return;
@@ -38,9 +44,13 @@ export function applyDisplayOptions(model: VisualModel, option: EChartsOption): 
       series.barMaxWidth = undefined;
     }
     if (decimals === undefined || !hasDataLabels(model.kind) || !('label' in series)) continue;
-    series.label = { ...series.label, formatter: (params: { value?: unknown; percent?: number; name?: string }): string => {
+    series.label = { ...series.label, formatter: (params: { value?: unknown; percent?: number; name?: string; data?: unknown }): string => {
       if (model.kind === 'pie') return `${params.name ?? ''}: ${formatNumber(params.percent)}%`;
       if (model.kind === 'scatter') return `${params.name ?? ''}: ${Array.isArray(params.value) ? params.value.map(formatNumber).join(', ') : formatNumber(params.value)}`;
+      if (model.kind === 'sankey') {
+        const name = params.data && typeof params.data === 'object' && 'name' in params.data ? String(params.data.name) : '';
+        return `${name}: ${formatNumber(params.value)}`;
+      }
       const value = model.kind === 'heatmap' && Array.isArray(params.value) ? params.value[2] : params.value;
       const formatted = formatNumber(value);
       if (!formatted) return '';

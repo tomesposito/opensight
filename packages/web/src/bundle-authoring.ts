@@ -64,7 +64,7 @@ function importVisual(raw: BundleVisual, id: string, definition: BundleDefinitio
     return typeof column.columnName === 'string' ? [column.columnName] : [];
   }))];
   const rows = names(wells[extra?.dimensions[0] ?? (kind === 'pivot' ? 'rows' : kind === 'table' ? 'groupBy' : 'category')]);
-  const columns = kind === 'pivot' || kind === 'heatmap' || kind === 'pointMap' || kind === 'radar' ? names(wells[kind === 'pointMap' ? 'longitude' : kind === 'radar' ? 'color' : 'columns']).filter(n => !rows.includes(n)) : [];
+  const columns = kind === 'pivot' || kind === 'heatmap' || kind === 'pointMap' || kind === 'radar' || kind === 'sankey' ? names(wells[kind === 'sankey' ? 'destination' : kind === 'pointMap' ? 'longitude' : kind === 'radar' ? 'color' : 'columns']).filter(n => !rows.includes(n)) : [];
   const measures = extra ? extra.measures.flatMap(name => names(wells[name])) : names(wells.values);
   const total = obj(config.totalOptions);
   const subtitle = obj(body.subtitle), legendPosition = obj(config.legend).position;
@@ -91,7 +91,7 @@ function importVisual(raw: BundleVisual, id: string, definition: BundleDefinitio
   const checked = { [variant]: checkedBody };
   const dataSets = [...new Set(references(body))].map(identifier => ({ identifier, arn: definition.dataSetIdentifierDeclarations.find(d => d.identifier === identifier)?.dataSetArn }));
   const issues = Object.hasOwn(kinds, variant) ? differences(checked, projectVisual(visual, raw, (definition.calculatedFields ?? []).map(c => ({ name: string(obj(c).name), expression: string(obj(c).expression), role: 'dimension' }))), variant) : [`Unsupported visual type: ${variant}`];
-  if (kind === 'radar') {
+  if (kind === 'radar' || kind === 'sankey') {
     try { normalizeVisual('bundle', checked); }
     catch (error) { issues.push(error instanceof Error ? `${error.name}: ${error.message}` : String(error)); }
   }
