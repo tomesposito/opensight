@@ -1,3 +1,4 @@
+import { relativeDifference } from './numeric-summary.js';
 import { fail } from './validation.js';
 import type { QueryPlan, ResultRow, ResultValue, RowExpression, RowFilter, ExpressionLevel } from './types.js';
 import { aggregateValue } from './aggregate.js';
@@ -99,7 +100,7 @@ export function evaluateSqlPlan(plan: QueryPlan, input: readonly ResultRow[]): R
         const previous = peers.find(g => { const value = run(dateArg, g); return value !== null && asDate(value).toISOString() === target; });
         if (!previous) return null;
         const a = run(node.args[0]!, group), b = run(node.args[0]!, previous);
-        return a === null || b === null || node.name.endsWith('PercentDifference') && b === 0 ? null : node.name.endsWith('PercentDifference') ? (Number(a) - Number(b)) / Number(b) : Number(a) - Number(b);
+        return a === null || b === null || node.name.endsWith('PercentDifference') && b === 0 ? null : node.name.endsWith('PercentDifference') ? relativeDifference(Number(a), Number(b)) : Number(a) - Number(b);
       }
       if (node.name === 'percentOfTotal') {
         const a = run(node.args[0]!, group), total = aggregateValue('sum', peers.map(g => run(node.args[0]!, g)));
@@ -116,7 +117,7 @@ export function evaluateSqlPlan(plan: QueryPlan, input: readonly ResultRow[]): R
       const index = peers.indexOf(group) + Number(node.args[2] ? evaluate(node.args[2]) : 1), previous = peers[index];
       if (!previous) return null;
       const a = run(node.args[0]!, group), b = run(node.args[0]!, previous);
-      return a === null || b === null || node.name === 'percentDifference' && b === 0 ? null : node.name === 'percentDifference' ? (Number(a) - Number(b)) / Math.abs(Number(b)) : Number(a) - Number(b);
+      return a === null || b === null || node.name === 'percentDifference' && b === 0 ? null : node.name === 'percentDifference' ? relativeDifference(Number(a), Number(b), true) : Number(a) - Number(b);
     });
     results.set(group, value); return value;
   };
