@@ -124,6 +124,7 @@ const visualBody: Schema = {
   ColumnHierarchies: ['columnHierarchies', { DateTimeHierarchy: ['dateTimeHierarchy', members('HierarchyId DrillDownFilters')] }],
   ChartConfiguration: ['chartConfiguration', {
     FieldWells: ['fieldWells', {
+      WaterfallChartAggregatedFieldWells: ['waterfallChartAggregatedFieldWells', { ...wells, Categories: ['category', dimension], Breakdowns: ['breakdowns', dimension] }],
       SankeyDiagramAggregatedFieldWells: ['sankeyDiagramAggregatedFieldWells', wells],
       ...Object.fromEntries(['RadarChartAggregatedFieldWells', 'FunnelChartAggregatedFieldWells', 'TreeMapAggregatedFieldWells', 'HeatMapAggregatedFieldWells', 'BoxPlotAggregatedFieldWells', 'WordCloudAggregatedFieldWells', 'HistogramAggregatedFieldWells', 'FilledMapAggregatedFieldWells', 'GeospatialMapAggregatedFieldWells'].map(name => [name, [name[0]!.toLowerCase() + name.slice(1), wells] as Rule])),
       PieChartAggregatedFieldWells: ['pieChartAggregatedFieldWells', wells],
@@ -220,6 +221,7 @@ const definition: Schema = {
       }],
     }] }],
     Visuals: ['visuals', {
+      WaterfallVisual: ['waterfallChartVisual', visualBody],
       ...Object.fromEntries(['FunnelChartVisual', 'GaugeChartVisual', 'TreeMapVisual', 'HeatMapVisual', 'BoxPlotVisual', 'WordCloudVisual', 'HistogramVisual', 'FilledMapVisual', 'GeospatialMapVisual'].map(name => [name, [name[0]!.toLowerCase() + name.slice(1), visualBody] as Rule])),
       PieChartVisual: ['pieChartVisual', visualBody], BarChartVisual: ['barChartVisual', visualBody],
       SankeyDiagramVisual: ['sankeyDiagramVisual', visualBody],
