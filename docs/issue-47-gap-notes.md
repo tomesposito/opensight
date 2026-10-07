@@ -78,3 +78,43 @@ The README media refresh itself is complete.
 Evidence is retained under ignored `.opensight/issue-47/`: the pre-build demo,
 browser captures, comparison JSON, README frames, and verification logs. Only
 synthetic OpenSight screenshots are committed.
+
+## Tests
+
+The final repository-root `npm test` exited **0**, with **1,729 passed / 0
+failed / 12 skipped / 0 cancelled**. All 12 skips are live-Postgres checks
+because `DATABASE_URL` was not set; no other tests were skipped. Strict
+TypeScript checks and workspace builds passed.
+
+| Runner | Passed | Failed | Skipped |
+| --- | ---: | ---: | ---: |
+| API | 303 | 0 | 10 |
+| Bundle parser | 197 | 0 | 0 |
+| Embedding SDK | 9 | 0 | 0 |
+| O interpreter | 32 | 0 | 0 |
+| Parity | 11 | 0 | 0 |
+| Query engine | 499 | 0 | 2 |
+| Web | 672 | 0 | 0 |
+| Root conformance | 6 | 0 | 0 |
+| **Total** | **1,729** | **0** | **12** |
+
+Waterfall coverage includes assist/delta arithmetic, running and final totals,
+semantic colors, signed decimal labels, explicit ordering, unchanged View data,
+empty/unavailable states, and actual rendered SVG bar coordinates for negative
+starts, zero crossings and negative/zero totals. Native API conversion, gallery
+and well assignment/removal/type changes, pinned/API preview rows, import-report
+errors, query blocking and unchanged bundle export are also covered.
+
+Earlier verification found an outdated properties-panel audit list; it was
+updated to expect the implemented Waterfall legend control and passed its
+focused rerun. One initial tool session terminated with code 143. A later run
+alongside browser captures exceeded the API contention test's six-second
+competitor-latency ceiling (7.55 seconds), so it was stopped. The final full run
+was performed alone after all captures and GIF encoding finished; the latency
+check and every other non-Postgres test passed without changing test thresholds.
+
+`verification/root-npm-test.log` and `verification/test-summary.json` retain the
+final evidence. Earlier interrupted/failed logs are retained separately.
+`git diff 34c73eff --check` is clean. The demo checksum still matches the artifact
+used for the captures. All commits remain on the requested issue branch; master
+is unchanged and nothing was pushed.
