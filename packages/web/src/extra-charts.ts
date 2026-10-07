@@ -6,6 +6,10 @@ import { countryNames, WORLD_MAP } from './geo/world.js';
 type CellReader = (row: Row, field: Field) => Cell;
 type NumberReader = (row: Row, field: Field) => number | null;
 const label = (v: Cell) => v === null ? '(null)' : String(v);
+// ECharts uses graph IDs as default labels and numeric link endpoints in its
+// tooltip. Display the raw names instead, keeping internal identities private.
+const sankeyName = (params: { data?: unknown }): string => params.data && typeof params.data === 'object' && 'name' in params.data ? String(params.data.name) : '';
+const sankeyTooltip = (params: { data?: unknown; value?: unknown }): string => `${sankeyName(params)}: ${String(params.value ?? '')}`;
 const quartile = (values: number[], p: number): number => {
   const position = (values.length - 1) * p, lo = Math.floor(position), hi = Math.ceil(position);
   return values[lo]! * (1 - position + lo) + values[hi]! * (position - lo);
@@ -40,6 +44,53 @@ export function compileExtra(model: VisualModel, rows: Row[], cell: CellReader, 
       return percent || model.kind === 'combo' && i === 0 ? { type: 'bar', name: fieldName(f, model.formatting), data, ...(percent ? { stack: 'percent' } : {}), label: { show: model.labels }, barMaxWidth: 72 }
         : { type: 'line', name: fieldName(f, model.formatting), data, connectNulls: false, ...(model.kind === 'area' ? { areaStyle: { opacity: 0.3 } } : {}), label: { show: model.labels } };
     });
+  } else if (model.kind === 'sankey') {
+    const source = model.dimensions[0], destination = model.dimensions[1], weight = model.measures[0];
+    if (!source) fail('SANKEY_SOURCE_REQUIRED: expected exactly one Source dimension');
+    if (!destination) fail('SANKEY_DESTINATION_REQUIRED: expected exactly one Destination dimension');
+    if (!weight) fail('SANKEY_WEIGHT_REQUIRED: expected exactly one Weight measure');
+    // Typed identities share nodes across wells without conflating null with
+    // the literal "(null)", or numbers with strings. Labels remain human-readable.
+    const nodes = new Map<Cell, number>();
+    const node = (value: Cell): number => {
+      if (!nodes.has(value)) nodes.set(value, nodes.size);
+      return nodes.get(value)!;
+    };
+    const pairs = new Map<number, Map<number, number>>();
+    let total = 0;
+    for (const row of rows) {
+      const from = node(cell(row, source)), to = node(cell(row, destination)), value = number(row, weight);
+      if (value === null || value < 0) fail('SANKEY_WEIGHT_INVALID: weights must be nonnegative, non-null numbers');
+      if (!pairs.has(from)) pairs.set(from, new Map());
+      const outgoing = pairs.get(from)!;
+      outgoing.set(to, (outgoing.get(to) ?? 0) + value);
+      total += value;
+      if (!Number.isFinite(total)) fail('SANKEY_WEIGHT_OVERFLOW: total flow must be finite');
+    }
+    // Deliberate OpenSight behavior: sum duplicate supplied pairs; retain first
+    // occurrence order (after an explicit field sort), then use ECharts' DAG
+    // layout. No QuickSight node ordering or geometry parity is claimed.
+    const nodeNames = [...nodes.keys()].map(label);
+    const links = [...pairs].flatMap(([source, outgoing]) => [...outgoing].map(([target, value]) => ({ source, target, value, name: `${nodeNames[source]} → ${nodeNames[target]}` })));
+    const indegrees = Array<number>(nodes.size).fill(0);
+    for (const link of links) indegrees[link.target]!++;
+    const queue = indegrees.flatMap((degree, i) => degree === 0 ? [i] : []);
+    for (let i = 0; i < queue.length; i++) for (const target of pairs.get(queue[i]!)?.keys() ?? []) {
+      if (--indegrees[target]! === 0) queue.push(target);
+    }
+    // Native Sankey cannot lay out cycles or all-zero flows. Reject them before
+    // rendering instead of dropping edges, splitting shared nodes or inventing weights.
+    if (queue.length !== nodes.size) fail('SANKEY_CYCLE_UNSUPPORTED: flows must be acyclic, including self-links');
+    if (rows.length && total === 0) fail('SANKEY_ZERO_FLOW_UNSUPPORTED: at least one weight must be positive');
+    option.legend = { show: model.legend, bottom: 0 };
+    option.series = [{ type: 'sankey', name: fieldName(weight, model.formatting),
+      left: 24, right: 100, top: 24, bottom: model.legend ? 48 : 24,
+      nodeWidth: 16, nodeGap: 12, draggable: false,
+      data: [...nodes].map(([value, index]) => ({ id: `node-${index}`, name: label(value), ...(Array.isArray(option.color) ? { itemStyle: { color: option.color[index % option.color.length] as string } } : {}) })), links,
+      label: { show: model.labels, formatter: sankeyName, color: option.textStyle?.color }, labelLayout: { hideOverlap: true },
+      tooltip: { formatter: sankeyTooltip },
+      lineStyle: { color: 'source', opacity: 0.35 }, emphasis: { focus: 'adjacency' },
+    }];
   } else if (model.kind === 'radar') {
     const category = model.dimensions[0], color = model.dimensions[1];
     if (!category) fail('RADAR_CATEGORY_REQUIRED: expected exactly one Category dimension');

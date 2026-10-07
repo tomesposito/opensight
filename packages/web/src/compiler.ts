@@ -140,12 +140,17 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
   const measures = measureNames.flatMap(name => list(wells[name], `${wpath}.${name}`).map((v, i) => field(v, true, `${wpath}.${name}[${i}]`)));
   if (extra) {
     const d = dimensions.length, m = measures.length;
+    if (kind === 'sankey') {
+      if (list(wells[wellKey('source')], wpath).length !== 1) fail(wpath, 'SANKEY_SOURCE_REQUIRED: expected exactly one Source dimension');
+      if (list(wells[wellKey('destination')], wpath).length !== 1) fail(wpath, 'SANKEY_DESTINATION_REQUIRED: expected exactly one Destination dimension');
+      if (m !== 1) fail(wpath, 'SANKEY_WEIGHT_REQUIRED: expected exactly one Weight measure');
+    }
     if (kind === 'radar') {
       if (list(wells[wellKey('category')], wpath).length !== 1) fail(wpath, 'RADAR_CATEGORY_REQUIRED: expected exactly one Category dimension');
       if (list(wells[wellKey('color')], wpath).length > 1) fail(wpath, 'RADAR_COLOR_LIMIT: expected at most one Color dimension');
       if (!m) fail(wpath, 'RADAR_VALUES_REQUIRED: expected one or more Values measures');
     }
-    const validDimensions = kind === 'radar' ? d >= 1 && d <= 2 : kind === 'gauge' ? d === 0 : kind === 'scatter' || kind === 'histogram' ? d <= 1 : kind === 'heatmap' || kind === 'pointMap' ? d === 2 && dimensionNames.every(n => list(wells[n], wpath).length === 1) : kind === 'treemap' || kind === 'box' ? d >= 1 : d === 1;
+    const validDimensions = kind === 'radar' ? d >= 1 && d <= 2 : kind === 'gauge' ? d === 0 : kind === 'scatter' || kind === 'histogram' ? d <= 1 : kind === 'heatmap' || kind === 'pointMap' || kind === 'sankey' ? d === 2 && dimensionNames.every(n => list(wells[n], wpath).length === 1) : kind === 'treemap' || kind === 'box' ? d >= 1 : d === 1;
     const validMeasures = kind === 'scatter' ? m >= 2 && m <= 3 && measureNames.slice(0, 2).every(n => list(wells[n], wpath).length === 1) && list(wells[measureNames[2]!], wpath).length <= 1 : kind === 'combo' ? m >= 2 && list(wells[measureNames[0]!], wpath).length === 1 && measureNames.every(n => list(wells[n], wpath).length >= 1) : kind === 'radar' || kind === 'bar100' || kind === 'area' ? m >= 1 : m === 1;
     if (!validDimensions || !validMeasures) fail(wpath, extra.note);
   } else {
@@ -201,7 +206,7 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
   keys(labels, [key('visibility', 'Visibility'), key('overlap', 'Overlap')], cpath);
   enumValue(labels[key('overlap', 'Overlap')], ['DISABLE_OVERLAP'], 'DISABLE_OVERLAP', cpath);
   const tooltip = object(config[key('tooltip', 'Tooltip')] ?? {}, cpath);
-  keys(tooltip, kind === 'radar' ? [key('tooltipVisibility', 'TooltipVisibility')] : [key('tooltipVisibility', 'TooltipVisibility'), key('selectedTooltipType', 'SelectedTooltipType'), key('fieldBasedTooltip', 'FieldBasedTooltip')], `${cpath}.${key('tooltip', 'Tooltip')}`);
+  keys(tooltip, kind === 'radar' || kind === 'sankey' ? [key('tooltipVisibility', 'TooltipVisibility')] : [key('tooltipVisibility', 'TooltipVisibility'), key('selectedTooltipType', 'SelectedTooltipType'), key('fieldBasedTooltip', 'FieldBasedTooltip')], `${cpath}.${key('tooltip', 'Tooltip')}`);
   if (tooltip[key('fieldBasedTooltip', 'FieldBasedTooltip')] !== undefined || tooltip[key('selectedTooltipType', 'SelectedTooltipType')] !== undefined) warnings.push(`${cpath}.${key('tooltip', 'Tooltip')}: detailed tooltip formatting is approximated with category and value.`);
   const legend = object(config[key('legend', 'Legend')] ?? {}, cpath);
   keys(legend, [key('visibility', 'Visibility'), key('position', 'Position')], cpath);
@@ -217,7 +222,7 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
   }
   const sort = object(config[key('sortConfiguration', 'SortConfiguration')] ?? {}, cpath);
   const sortsKey = key('categorySort', 'CategorySort');
-  keys(sort, kind === 'radar' ? [sortsKey] : [sortsKey, key('categoryItemsLimit', 'CategoryItemsLimit'), key('smallMultiplesLimitConfiguration', 'SmallMultiplesLimitConfiguration')], `${cpath}.${key('sortConfiguration', 'SortConfiguration')}`);
+  keys(sort, kind === 'radar' || kind === 'sankey' ? [sortsKey] : [sortsKey, key('categoryItemsLimit', 'CategoryItemsLimit'), key('smallMultiplesLimitConfiguration', 'SmallMultiplesLimitConfiguration')], `${cpath}.${key('sortConfiguration', 'SortConfiguration')}`);
   for (const limitKey of [key('categoryItemsLimit', 'CategoryItemsLimit'), key('smallMultiplesLimitConfiguration', 'SmallMultiplesLimitConfiguration')]) {
     if (sort[limitKey] !== undefined) {
       const limit = object(sort[limitKey], `${cpath}.${limitKey}`);
@@ -291,7 +296,7 @@ export function compileVisual(input: Input): CompiledVisual {
       return sort.direction === 'DESC' ? -cmp : cmp;
     });
   }
-  if (model.dimensions[0] && !['box', 'histogram', 'scatter', 'pointMap'].includes(model.kind)) {
+  if (model.dimensions[0] && !['box', 'histogram', 'scatter', 'pointMap', 'sankey'].includes(model.kind)) {
     const categories = rows.map(row => JSON.stringify(model.dimensions.map(f => cell(row, f))));
     if (new Set(categories).size !== categories.length) fail(input.path, 'duplicate categories: expected aggregated result rows');
   }

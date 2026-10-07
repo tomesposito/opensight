@@ -1,7 +1,7 @@
 import { colorValid } from './themes.js';
 import type { Cell, Field } from './model.js';
 import type { VisualKind } from './visual-catalog.js';
-export const hasLegend = (kind: VisualKind): boolean => ['bar', 'line', 'pie', 'combo', 'area', 'bar100', 'radar'].includes(kind);
+export const hasLegend = (kind: VisualKind): boolean => ['bar', 'line', 'pie', 'combo', 'area', 'bar100', 'radar', 'sankey'].includes(kind);
 export const hasDataLabels = (kind: VisualKind): boolean => !['table', 'pivot', 'kpi', 'gauge', 'box', 'wordCloud', 'pointMap'].includes(kind);
 export const LEGEND_POSITIONS = ['AUTO', 'TOP', 'BOTTOM', 'LEFT', 'RIGHT'] as const;
 export type LegendPosition = typeof LEGEND_POSITIONS[number];
