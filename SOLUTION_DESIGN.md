@@ -1084,7 +1084,7 @@ gallery grows to QuickSight's catalog and analyses get themes.
 
 **Scope:**
 - Renderer: add scatter plot, combo (bar+line), stacked 100% bar,
-  area, funnel, gauge, treemap, heatmap, box plot, word cloud, radar chart,
+  area, funnel, gauge, treemap, heatmap, box plot, word cloud, radar chart, sankey diagram,
   histogram, and geospatial (filled/point map — dependency-free or
   MIT/Apache-2.0 only; no commercial map tiles at runtime).
 - Builder: all new types in the visual-type gallery with field-well
