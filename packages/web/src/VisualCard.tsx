@@ -1,3 +1,4 @@
+import { insightGraphic } from './insight-graphic.js';
 import { LIGHT_THEME } from './themes.js';
 import { fieldRule } from './formatting.js';
 import { rowSelection, brushSelection, type VisualInteraction } from './visual-selection.js';
@@ -22,11 +23,20 @@ function Chart({ option, title, compiled, interaction }: { option: EChartsOption
         else { const selection = brushSelection(compiled, areas[0]?.coordRange); if (selection) interaction.onSelect(selection); }
       });
     }
-    const observer = new ResizeObserver(() => chart.resize());
+    const resize = () => {
+      if (compiled.narrative && container.current) {
+        const style = option.textStyle as { fontFamily?: string; color?: string };
+        const layout = insightGraphic(compiled.narrative, { ...LIGHT_THEME, fontFamily: style.fontFamily ?? LIGHT_THEME.fontFamily, textColor: style.color ?? LIGHT_THEME.textColor }, compiled.model.formatting?.fontSize, container.current.clientWidth);
+        chart.resize({ width: container.current.clientWidth, height: Math.max(container.current.clientHeight, layout.height) });
+        chart.setOption({ graphic: layout.graphic }, { replaceMerge: ['graphic'] });
+      } else chart.resize();
+    };
+    resize();
+    const observer = new ResizeObserver(resize);
     observer.observe(container.current);
     return () => { observer.disconnect(); chart.dispose(); };
   }, [option, compiled, interaction]);
-  return <div ref={container} className="chart" role="img" aria-label={title} />;
+  return <div ref={container} className={`chart${compiled.narrative ? ' insight-chart' : ''}`} role="img" aria-label={compiled.narrative ? `${title}. ${compiled.narrative.text}` : title} />;
 }
 
 export type RowGroupToggle = (path: Cell[], collapsed: boolean) => void;

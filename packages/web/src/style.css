@@ -636,3 +636,6 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .admin-settings [role="dialog"] select { max-width: 100%; }
 .admin-settings [role="dialog"] label:has(input[type="radio"]) { display: flex; align-items: center; }
 .admin-settings [role="dialog"] input[type="radio"] { width: auto; margin-right: .5rem; }
+
+/* Narratives share KPI graphics; long computations remain readable by scrolling. */
+.chart.insight-chart { overflow: auto; }
