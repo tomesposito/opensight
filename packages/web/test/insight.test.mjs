@@ -4,6 +4,7 @@ import { compileVisual, CompileError } from '../build/test/compiler.js';
 import { init } from '../build/test/echarts.js';
 import { insightGraphic } from '../build/test/insight-graphic.js';
 import { DARK_THEME } from '../build/test/themes.js';
+import { buildAuthorVisual } from '../build/test/author-preview.js';
 import { buildAuthorQuery } from '../build/test/author-query.js';
 import { executeFixtureQuery } from '../build/test/fixture-query.js';
 import { activeSheet, authorReducer, emptyDraft, serializeVisual } from '../build/test/authoring.js';
@@ -56,4 +57,17 @@ test('narrative layout wraps long categories and treats markup as plain text', (
   assert.equal(layout.graphic.map(g => g.style.text).join('').includes('<script>'), true);
   const grouped = insightGraphic(compileVisual(input()).narrative, DARK_THEME, 16, 342);
   for (const g of grouped.graphic) if (g.style.text === ').' || g.style.text === '.') assert.ok(g.x > 16, 'punctuation must stay with its word');
+});
+
+test('period preview consumes real grouped-date aliases from the pinned query engine', () => {
+  let draft = authorReducer(emptyDraft(), { type: 'add', kind: 'insight' });
+  draft = authorReducer(draft, { type: 'assign', field: 'order_date', well: 'dimension' });
+  draft = authorReducer(draft, { type: 'insight', configuration: { computations: [{ growthRate: { computationId: 'growth' } }] } });
+  for (const dateGrain of ['DAY', 'MONTH', 'QUARTER', 'YEAR']) {
+    const visual = { ...activeSheet(draft).visuals[0], dateGrain };
+    const result = executeFixtureQuery(buildAuthorQuery(visual)); assert.ok(result.rows, result.message);
+    const c = compileVisual({ ...buildAuthorVisual(visual), rows: result.rows });
+    assert.equal(c.state, 'ready'); assert.match(c.narrative.text, /Growth rate for revenue/);
+    if (dateGrain === 'MONTH') assert.match(c.narrative.text, /2025-04 vs 2025-03: 250 vs 50; change 200 \(400.00%\)/);
+  }
 });

@@ -43,4 +43,4 @@ export { planSourceRead, streamSourcePostgres, streamSourceMemory } from './sour
 export type { SourceRead, SourceConnection } from './source-read.js';
 
 export { aggregateValue } from './aggregate.js';
-export { relativeDifference, formatNumber, shiftDate, resultDate } from './numeric-summary.js';
+export { relativeDifference, formatNumber, shiftDate, resultDate, groupedPeriodDate } from './numeric-summary.js';

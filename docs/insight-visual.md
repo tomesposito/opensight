@@ -34,6 +34,8 @@ when two measures are bound. The Properties panel can select a total, ranked
 list, growth, period or metric comparison and configure rank count and decimals.
 
 Period comparisons use UTC calendar arithmetic shared with query expressions.
+The shared decoder accepts query labels (`YYYY`, `YYYY-Qn`, `YYYY-MM`,
+`YYYY-MM-DD`) at their bound grain as well as ISO dates.
 A missing preceding period is reported as unavailable, even if an older period
 exists. Period percentage uses `(current - previous) / previous`; metric
 percentage uses `(from - target) / abs(target)`, matching the query engine's

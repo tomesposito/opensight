@@ -1,4 +1,4 @@
-import { aggregateValue, formatNumber, relativeDifference, shiftDate, resultDate } from '@opensight/query-engine/browser';
+import { aggregateValue, formatNumber, relativeDifference, shiftDate, resultDate, groupedPeriodDate } from '@opensight/query-engine/browser';
 import type { Cell, Field } from './model.js';
 import type { VisualFormatting } from './formatting.js';
 import { fieldName } from './formatting.js';
@@ -58,9 +58,8 @@ export function insightNarrative(rows: readonly InsightRow[], input: InsightInpu
       parts = [text(`${name} vs ${targetName}: `), value(total), text(' vs '), value(target), text('; difference '), value(total === null || target === null ? null : total - target), text(' ('), value(relativeDifference(total, target, true), true), text(').')];
     } else {
       const dated = rows.map(row => {
-        if (typeof row.category !== 'string' || !/^\d{4}-\d{2}-\d{2}(?:T.*)?$/.test(row.category)) return insightFail('INSIGHT_TIME_REQUIRED', 'period rows require ISO date/time categories');
-        const date = resultDate(row.category);
-        if (!Number.isFinite(date.getTime()) || date.toISOString().slice(0, 10) !== row.category.slice(0, 10)) return insightFail('INSIGHT_TIME_REQUIRED', 'invalid date/time category');
+        const date = groupedPeriodDate(row.category, input.category!.dateGranularity!);
+        if (!date) return insightFail('INSIGHT_TIME_REQUIRED', 'invalid date/time category for the bound grain');
         return { row, date };
       }).sort((a, b) => a.date.getTime() - b.date.getTime());
       if (new Set(dated.map(r => r.date.getTime())).size !== dated.length) insightFail('INSIGHT_CATEGORY_INVALID', 'duplicate date/time periods');

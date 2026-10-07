@@ -18,4 +18,4 @@ export { compilePrep, prepSource, prepColumns } from './prep.js';
 export type { PrepSource, PrepPlan, PrepDataset, PrepCompileOptions } from './prep.js';
 
 export { aggregateValue } from './aggregate.js';
-export { relativeDifference, formatNumber, shiftDate, resultDate } from './numeric-summary.js';
+export { relativeDifference, formatNumber, shiftDate, resultDate, groupedPeriodDate } from './numeric-summary.js';
