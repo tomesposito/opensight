@@ -108,7 +108,8 @@ test('display audit shows only controls implemented for each visual kind', () =>
     for (const text of ['Subtitle', 'Show subtitle', 'Title font size']) assert.ok(html.includes(text), `${kind}: ${text}`);
     assert.equal(html.includes('Legend position'), ['bar', 'line', 'pie', 'combo', 'area', 'bar100', 'radar', 'sankey', 'waterfall'].includes(kind), kind);
     assert.equal(html.includes('Category spacing (%)'), ['bar', 'bar100', 'combo'].includes(kind), kind);
-    assert.equal(html.includes('Data label decimal places'), !['table', 'pivot', 'kpi', 'gauge', 'box', 'wordCloud', 'pointMap'].includes(kind), kind);
+    assert.equal(html.includes('Data label decimal places'), !['insight', 'table', 'pivot', 'kpi', 'gauge', 'box', 'wordCloud', 'pointMap'].includes(kind), kind);
+    assert.equal(html.includes('Narrative decimal places'), kind === 'insight', kind);
     assert.equal(html.includes('Stack values'), kind === 'bar', kind);
   }
 });

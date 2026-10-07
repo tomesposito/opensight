@@ -81,7 +81,7 @@ export function normalizeInsight(config: unknown, dimensions: Field[], measures:
       const agg = insightObject(f.aggregationFunction); allowed(agg, ['simpleNumericalAggregation']);
       if (agg.simpleNumericalAggregation !== 'SUM') insightFail('INSIGHT_FIELD_UNBOUND', 'only explicit SUM bindings are supported');
     }
-    const index = fields.findIndex(field => field.id === f.fieldId && field.column === column.columnName && field.dataSet === column.dataSetIdentifier
+    const index = fields.findIndex(field => (variant === 'dateDimensionField') === !!field.dateGranularity && field.id === f.fieldId && field.column === column.columnName && field.dataSet === column.dataSetIdentifier
       && (variant !== 'dateDimensionField' || field.dateGranularity === (f.dateGranularity ?? 'DAY')));
     if (index < 0) insightFail('INSIGHT_FIELD_UNBOUND', 'computation references an unbound or conflicting field');
     return index;
@@ -105,6 +105,7 @@ export function normalizeInsight(config: unknown, dimensions: Field[], measures:
 
 /** Rebind imported computation fields when the author changes wells; preserve other options. */
 export function rebindInsight(config: Obj, category: unknown[], values: unknown[]): Obj {
+  try {
   const original = insightWells(config);
   const name = (raw: unknown) => Object.values(insightObject(raw))[0];
   const column = (raw: unknown) => insightObject(insightObject(name(raw)).column).columnName;
@@ -113,4 +114,5 @@ export function rebindInsight(config: Obj, category: unknown[], values: unknown[
     if (['value', 'fromValue', 'targetValue'].includes(k)) return [k, values[original.values.findIndex(f => column(f) === column(v))] ?? v];
     return [k, v];
   }))]))) } : {}) };
+  } catch (error) { if (error instanceof InsightError) return config; throw error; }
 }

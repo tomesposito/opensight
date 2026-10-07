@@ -23,7 +23,7 @@ for (const kind of Object.keys(EXTRA_VISUALS)) test(`${kind}: gallery, wells, pr
   const result = executeFixtureQuery(query); assert.ok(result.rows, result.message);
   const input = { source: 'bundle', definition: serializeVisual(v, false), rows: result.rows, bindings: kind === 'area' ? { order_date: 'month' } : {}, path: '$' };
   if (kind.endsWith('Map')) assert.throws(() => compileVisual(input), /geo fields|country fields/);
-  else { const c = compileVisual(input); assert.equal(c.state, 'ready'); assert.ok(c.option.series.length); }
+  else { const c = compileVisual(input); assert.equal(c.state, 'ready'); assert.ok(kind === 'insight' ? c.narrative.text && c.option.graphic.length : c.option.series.length); }
 });
 test('heatmap wells assign separate dimensions; gauge rejects dimension assignment; scatter measure order is editable', () => {
   let d = add('heatmap');
