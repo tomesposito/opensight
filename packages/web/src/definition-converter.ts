@@ -122,8 +122,17 @@ const visualBody: Schema = {
   }],
   ConditionalFormatting: ['conditionalFormatting', conditionalFormatting],
   ColumnHierarchies: ['columnHierarchies', { DateTimeHierarchy: ['dateTimeHierarchy', members('HierarchyId DrillDownFilters')] }],
+  DataSetIdentifier: ['dataSetIdentifier'],
+  InsightConfiguration: ['insightConfiguration', {
+    CustomNarrative: ['customNarrative', members('Narrative')], Interactions: ['interactions', interactions],
+    Computations: ['computations', Object.fromEntries(['TotalAggregation', 'MaximumMinimum', 'TopBottomRanked', 'GrowthRate', 'PeriodOverPeriod', 'MetricComparison', 'Forecast', 'PeriodToDate', 'TopBottomMovers', 'UniqueValues'].map(name => [name, [name[0]!.toLowerCase() + name.slice(1), {
+      ...members('ComputationId Name Type ResultSize PeriodSize PeriodsForward PeriodsBackward PredictionInterval Seasonality CustomSeasonalityValue LowerBoundary UpperBoundary'),
+      Time: ['time', dimension], Category: ['category', dimension], Value: ['value', measure], FromValue: ['fromValue', measure], TargetValue: ['targetValue', measure],
+    }] as Rule]))],
+  }],
   ChartConfiguration: ['chartConfiguration', {
     FieldWells: ['fieldWells', {
+      InsightAggregatedFieldWells: ['insightAggregatedFieldWells', wells],
       WaterfallChartAggregatedFieldWells: ['waterfallChartAggregatedFieldWells', { ...wells, Categories: ['category', dimension], Breakdowns: ['breakdowns', dimension] }],
       SankeyDiagramAggregatedFieldWells: ['sankeyDiagramAggregatedFieldWells', wells],
       ...Object.fromEntries(['RadarChartAggregatedFieldWells', 'FunnelChartAggregatedFieldWells', 'TreeMapAggregatedFieldWells', 'HeatMapAggregatedFieldWells', 'BoxPlotAggregatedFieldWells', 'WordCloudAggregatedFieldWells', 'HistogramAggregatedFieldWells', 'FilledMapAggregatedFieldWells', 'GeospatialMapAggregatedFieldWells'].map(name => [name, [name[0]!.toLowerCase() + name.slice(1), wells] as Rule])),
@@ -221,6 +230,7 @@ const definition: Schema = {
       }],
     }] }],
     Visuals: ['visuals', {
+      InsightVisual: ['insightVisual', visualBody],
       WaterfallVisual: ['waterfallChartVisual', visualBody],
       ...Object.fromEntries(['FunnelChartVisual', 'GaugeChartVisual', 'TreeMapVisual', 'HeatMapVisual', 'BoxPlotVisual', 'WordCloudVisual', 'HistogramVisual', 'FilledMapVisual', 'GeospatialMapVisual'].map(name => [name, [name[0]!.toLowerCase() + name.slice(1), visualBody] as Rule])),
       PieChartVisual: ['pieChartVisual', visualBody], BarChartVisual: ['barChartVisual', visualBody],
