@@ -18,7 +18,7 @@ export function input(kind, rows) {
 const seriesTypes = { waterfall: 'bar', sankey: 'sankey', radar: 'radar', scatter: 'scatter', combo: 'bar', bar100: 'bar', area: 'line', funnel: 'funnel', gauge: 'gauge', treemap: 'treemap', heatmap: 'heatmap', box: 'boxplot', wordCloud: 'scatter', histogram: 'bar', filledMap: 'map', pointMap: 'scatter' };
 for (const kind of Object.keys(EXTRA_VISUALS)) test(`${kind}: pinned rows compile, render to SVG, and retain accessible data`, () => {
   const source = input(kind), before = structuredClone(source), c = compileVisual(source);
-  assert.equal(c.model.kind, kind); assert.equal(c.state, 'ready'); assert.equal(c.option.series[0].type, seriesTypes[kind]);
+  assert.equal(c.model.kind, kind); assert.equal(c.state, 'ready'); if (kind === 'insight') { assert.equal(c.option.series, undefined); assert.match(c.narrative.text, /Total a: 30/); } else assert.equal(c.option.series[0].type, seriesTypes[kind]);
   assert.equal(c.table.rows.length, source.rows.length); assert.deepEqual(source, before);
   const chart = init(null, undefined, { renderer: 'svg', ssr: true, width: 600, height: 360 });
   try { chart.setOption(c.option); const svg = chart.renderToSVGString(); assert.match(svg, /<svg/); assert.match(svg, /<path|<text|<polygon/); assert.doesNotMatch(svg, /NaN|Infinity/); }

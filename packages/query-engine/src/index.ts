@@ -41,3 +41,6 @@ export { queryPrepared } from './prepared-query.js';
 export { planPreparedQuery, planPreparedVisual, queryPreparedVisual } from './prepared-query.js';
 export { planSourceRead, streamSourcePostgres, streamSourceMemory } from './source-read.js';
 export type { SourceRead, SourceConnection } from './source-read.js';
+
+export { aggregateValue } from './aggregate.js';
+export { relativeDifference, formatNumber, shiftDate, resultDate, groupedPeriodDate } from './numeric-summary.js';

@@ -8,7 +8,7 @@ bidirectional asset compatibility — connect data, prepare datasets, build
 analyses and dashboards, and ask questions in natural language. Self-hosted;
 no AWS required.
 
-![OpenSight tour: dashboard, O answer, authoring, radar, Sankey, waterfall, pivot, saved drafts, and data tools](docs/images/opensight-tour.gif)
+![OpenSight tour: dashboard, O answer, authoring, radar, Sankey, waterfall, insight, pivot, saved drafts, and data tools](docs/images/opensight-tour.gif)
 
 *Above: the offline demo — a dashboard, O answering "revenue by region" and
 adding the chart to an analysis, saved drafts, data preparation, connectors,
@@ -70,8 +70,8 @@ how to build and open it.
 
 ### 📊 Dashboards and analyses
 
-Author on a QuickSight-style canvas: 22 visual types (bar, line, pie/donut,
-KPI, table, pivot, radar, sankey, waterfall, scatter, combo, maps and more), parameters and controls,
+Author on a QuickSight-style canvas: 23 visual types (bar, line, pie/donut,
+KPI, table, pivot, radar, sankey, waterfall, insight, scatter, combo, maps and more), parameters and controls,
 filter actions, drill-down, themes, and `.qs` bundle import/export round trips.
 
 The app opens to a working sales dashboard using pinned synthetic sample results
@@ -107,6 +107,13 @@ accept one field; breakdowns and unsupported native options fail closed.
 See [Waterfall semantics and limits](docs/waterfall-chart.md).
 
 ![Waterfall preview with synthetic positive and negative revenue adjustments](docs/images/waterfall.png)
+
+Insight writes rule-based narratives from your aggregated data: totals, contributor
+shares, ranked categories, date-period changes and optional measure comparisons.
+Forecasts, anomalies and custom narrative templates fail with named errors.
+See [Insight semantics and limits](docs/insight-visual.md).
+
+![Insight narrative showing revenue totals and category contributors](docs/images/insight.png)
 
 Pivot row groups expand and collapse with +/−, Enter or Space. Enabled subtotals
 stay visible, and group state survives draft saves and bundle round trips.

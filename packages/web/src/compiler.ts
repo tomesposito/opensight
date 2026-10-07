@@ -1,3 +1,8 @@
+import { formatNumber } from '@opensight/query-engine/browser';
+import { convertDefinition } from './definition-converter.js';
+import { InsightError, projectInsightBody, normalizeInsight } from './insight-configuration.js';
+import { insightNarrative, type InsightNarrative } from './insight-narrative.js';
+import { insightGraphic } from './insight-graphic.js';
 import { LIGHT_THEME, themeValid, paletteValid } from './themes.js';
 import { formattingValid, fieldName, matchingRule, LEGEND_POSITIONS, type LegendPosition } from './formatting.js';
 import type { EChartsOption, BarSeriesOption, LineSeriesOption } from 'echarts';
@@ -13,6 +18,7 @@ type ObjectValue = Record<string, unknown>;
 type Input = Pick<FixtureVisual, 'source' | 'rows' | 'bindings' | 'path' | 'theme'> & { definition: unknown };
 export interface CompiledVisual {
   model: VisualModel;
+  narrative?: InsightNarrative;
   option: EChartsOption;
   /** Ordered, validated cells also used by the accessible HTML data table. */
   table: { columns: string[]; visibleColumns?: string[]; rows: Cell[][]; rowKinds?: ('detail' | 'subtotal' | 'total')[];
@@ -57,6 +63,10 @@ function enumValue(value: unknown, choices: string[], fallback: string, path: st
 /** Explicit dialect selection; camelCase includes the API converter's projections. */
 export function normalizeVisual(source: Input['source'], definition: Input['definition'], path = '$'): VisualModel {
   if (source !== 'api' && source !== 'bundle') fail(path, 'unknown definition dialect');
+  if (source === 'api' && definition && typeof definition === 'object' && Object.hasOwn(definition, 'InsightVisual')) {
+    const converted = convertDefinition({ DataSetIdentifierDeclarations: [], Sheets: [{ SheetId: 'insight', Visuals: [definition] }] });
+    return normalizeVisual('bundle', converted.sheets![0]!.visuals![0], path);
+  }
   const bundle = source === 'bundle';
   const key = (archive: string, api: string): string => bundle ? archive : api;
   const visual = object(definition, path);
@@ -67,8 +77,11 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
   let kind = Object.hasOwn(kinds, variant) ? kinds[variant] : undefined;
   if (!kind) fail(`${path}.${variant}`, 'unsupported visual variant in this dialect');
   const p = `${path}.${variant}`;
-  const body = object(raw, p);
-  keys(body, [key('opensightFormatting', 'OpenSightFormatting'), key('opensightPalette', 'OpenSightPalette'), key('visualId', 'VisualId'), key('title', 'Title'), key('subtitle', 'Subtitle'), key('chartConfiguration', 'ChartConfiguration'), key('actions', 'Actions'), key('columnHierarchies', 'ColumnHierarchies')], p);
+  let body = object(raw, p);
+  if (kind === 'insight') {
+    try { body = projectInsightBody(body); } catch (error) { if (error instanceof InsightError) fail(p, error.message); throw error; }
+  }
+  keys(body, [...(kind === 'insight' ? ['insightConfiguration', 'dataSetIdentifier'] : []), key('opensightFormatting', 'OpenSightFormatting'), key('opensightPalette', 'OpenSightPalette'), key('visualId', 'VisualId'), key('title', 'Title'), key('subtitle', 'Subtitle'), key('chartConfiguration', 'ChartConfiguration'), key('actions', 'Actions'), key('columnHierarchies', 'ColumnHierarchies')], p);
   for (const name of [key('actions', 'Actions'), key('columnHierarchies', 'ColumnHierarchies')]) {
     if (list(body[name], `${p}.${name}`).length) fail(`${p}.${name}`, 'actions and drill hierarchies are not supported');
   }
@@ -83,7 +96,7 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
   if (kind === 'line' && config[key('type', 'Type')] === 'AREA') kind = 'area';
   const extra = extraKind(kind) ? EXTRA_VISUALS[kind] : undefined;
   const common = [key('fieldWells', 'FieldWells')];
-  if (kind !== 'kpi' && kind !== 'table' && kind !== 'pivot') common.push(key('sortConfiguration', 'SortConfiguration'), key('dataLabels', 'DataLabels'), key('tooltip', 'Tooltip'), key('legend', 'Legend'));
+  if (kind !== 'insight' && kind !== 'kpi' && kind !== 'table' && kind !== 'pivot') common.push(key('sortConfiguration', 'SortConfiguration'), key('dataLabels', 'DataLabels'), key('tooltip', 'Tooltip'), key('legend', 'Legend'));
   if (kind === 'pie') common.push(key('donutOptions', 'DonutOptions'));
   if (kind === 'bar' || kind === 'bar100') common.push(key('orientation', 'Orientation'), key('barsArrangement', 'BarsArrangement'));
   if (kind === 'table' || kind === 'pivot') common.push(key('totalOptions', 'TotalOptions'));
@@ -131,6 +144,7 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
       id: text(f[key('fieldId', 'FieldId')], fp),
       column: text(column[key('columnName', 'ColumnName')], fp),
       dataSet: text(column[key('dataSetIdentifier', 'DataSetIdentifier')], fp),
+      ...(name === key('dateDimensionField', 'DateDimensionField') ? { dateGranularity: (f[key('dateGranularity', 'DateGranularity')] ?? 'DAY') as Field['dateGranularity'] } : {}),
     };
   };
   const dimensionNames = extra ? extra.dimensions.map(wellKey) : [categoryKey];
@@ -141,6 +155,13 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
   const measures = measureNames.flatMap(name => list(wells[name], `${wpath}.${name}`).map((v, i) => field(v, true, `${wpath}.${name}[${i}]`)));
   if (extra) {
     const d = dimensions.length, m = measures.length;
+    if (kind === 'insight') {
+      if (d !== 1) fail(wpath, 'INSIGHT_CATEGORY_REQUIRED: expected exactly one Category dimension');
+      if (m < 1 || m > 2) fail(wpath, 'INSIGHT_VALUES_REQUIRED: expected one Values measure, or two for comparison');
+      try { normalizeInsight(body.insightConfiguration ?? {}, dimensions, measures); }
+      catch (error) { if (error instanceof InsightError) fail(cpath, error.message); throw error; }
+      if (body.dataSetIdentifier !== undefined && measures.some(f => f.dataSet !== body.dataSetIdentifier)) fail(p, 'INSIGHT_FIELD_UNBOUND: dataset does not match computation fields');
+    }
     if (kind === 'waterfall') {
       if (d !== 1) fail(wpath, 'WATERFALL_CATEGORY_REQUIRED: expected exactly one Categories dimension');
       if (m !== 1) fail(wpath, 'WATERFALL_VALUES_REQUIRED: expected exactly one Values measure');
@@ -156,7 +177,7 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
       if (!m) fail(wpath, 'RADAR_VALUES_REQUIRED: expected one or more Values measures');
     }
     const validDimensions = kind === 'radar' ? d >= 1 && d <= 2 : kind === 'gauge' ? d === 0 : kind === 'scatter' || kind === 'histogram' ? d <= 1 : kind === 'heatmap' || kind === 'pointMap' || kind === 'sankey' ? d === 2 && dimensionNames.every(n => list(wells[n], wpath).length === 1) : kind === 'treemap' || kind === 'box' ? d >= 1 : d === 1;
-    const validMeasures = kind === 'scatter' ? m >= 2 && m <= 3 && measureNames.slice(0, 2).every(n => list(wells[n], wpath).length === 1) && list(wells[measureNames[2]!], wpath).length <= 1 : kind === 'combo' ? m >= 2 && list(wells[measureNames[0]!], wpath).length === 1 && measureNames.every(n => list(wells[n], wpath).length >= 1) : kind === 'radar' || kind === 'bar100' || kind === 'area' ? m >= 1 : m === 1;
+    const validMeasures = kind === 'insight' ? m >= 1 && m <= 2 : kind === 'scatter' ? m >= 2 && m <= 3 && measureNames.slice(0, 2).every(n => list(wells[n], wpath).length === 1) && list(wells[measureNames[2]!], wpath).length <= 1 : kind === 'combo' ? m >= 2 && list(wells[measureNames[0]!], wpath).length === 1 && measureNames.every(n => list(wells[n], wpath).length >= 1) : kind === 'radar' || kind === 'bar100' || kind === 'area' ? m >= 1 : m === 1;
     if (!validDimensions || !validMeasures) fail(wpath, extra.note);
   } else {
     if (kind === 'kpi' ? dimensions.length !== 0 : kind === 'pivot' || kind === 'table' ? dimensions.length < 1 : dimensions.length !== 1) fail(wpath, kind === 'kpi' ? 'KPI must have no category' : 'exactly one category/group field is supported');
@@ -251,7 +272,7 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
     fieldSort = { fieldId, direction };
   }
   return {
-    id, kind, ...(formattingValid(formatting) ? { formatting } : {}), ...(palette ? { palette: palette as string[] } : {}), gaugeMin, gaugeMax, bins, title: plain as string | undefined ?? `${measures.map(f => fieldName(f, formattingValid(formatting) ? formatting : undefined)).join(', ')}${dimensions[0] ? ` by ${fieldName(dimensions[0], formattingValid(formatting) ? formatting : undefined)}` : ''}`,
+    id, kind, ...(kind === 'insight' ? { insightConfiguration: object(body.insightConfiguration ?? {}, p) } : {}), ...(formattingValid(formatting) ? { formatting } : {}), ...(palette ? { palette: palette as string[] } : {}), gaugeMin, gaugeMax, bins, title: plain as string | undefined ?? `${measures.map(f => fieldName(f, formattingValid(formatting) ? formatting : undefined)).join(', ')}${dimensions[0] ? ` by ${fieldName(dimensions[0], formattingValid(formatting) ? formatting : undefined)}` : ''}`,
     titleVisible: visibility(title, key('visibility', 'Visibility')),
     subtitle: subtitleText, subtitleVisible: visibility(subtitle, key('visibility', 'Visibility')),
     legendPosition: enumValue(legend[key('position', 'Position')] ?? (formattingValid(formatting) ? formatting.legendPosition : undefined), [...LEGEND_POSITIONS], 'BOTTOM', `${cpath}.legend.position`) as LegendPosition,
@@ -314,7 +335,13 @@ export function compileVisual(input: Input): CompiledVisual {
     tooltip: { show: model.tooltip, trigger: model.kind === 'pie' ? 'item' : 'axis', renderMode: 'richText', confine: true },
     aria: { enabled: true },
   };
-  if (extraKind(model.kind)) {
+  let narrative: InsightNarrative | undefined;
+  if (model.kind === 'insight') {
+    try { narrative = insightNarrative(rows.map(row => ({ category: cell(row, model.dimensions[0]!), values: model.measures.map(f => number(row, f)) })), { category: model.dimensions[0], measures: model.measures, computations: model.insightConfiguration, formatting: model.formatting }); }
+    catch (error) { if (error instanceof InsightError) fail(input.path, error.message); throw error; }
+    option.tooltip = { show: false };
+    option.graphic = insightGraphic(narrative, theme, model.formatting?.fontSize).graphic;
+  } else if (extraKind(model.kind)) {
     compileExtra(model, rows, cell, number, option, message => fail(input.path, message));
   } else if (model.kind === 'pie') {
     const measure = model.measures[0]!;
@@ -381,13 +408,13 @@ export function compileVisual(input: Input): CompiledVisual {
     const table = compilePivotTable(model, rows, cell, number, input.path);
     return { model, option, state: state === 'ready' && !table.rows.length ? 'empty' : state, table };
   }
-  return { model, option, state, table: { columns: fields.map(f => fieldName(f, model.formatting)), rows: rows.map(row => fields.map(field => cell(row, field))),
+  return { model, option, state, ...(narrative ? { narrative } : {}), table: { columns: fields.map(f => fieldName(f, model.formatting)), rows: rows.map(row => fields.map(field => cell(row, field))),
     ...(model.formatting ? { visibleColumns: fields.map(f => (model.measures.includes(f) ? model.formatting?.valueNamesVisible : model.formatting?.rowNamesVisible) === false ? '' : fieldName(f, model.formatting)) } : {}),
   } };
 }
 
 export function displayCell(value: Cell): string {
-  return value === null ? '(null)' : typeof value === 'number' ? new Intl.NumberFormat('en-US', { maximumFractionDigits: 12 }).format(value) : String(value);
+  return value === null ? '(null)' : typeof value === 'number' ? formatNumber(value) : String(value);
 }
 
 interface AxisEntry { cells: Cell[]; kind: 'detail' | 'subtotal' | 'total' }

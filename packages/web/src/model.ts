@@ -10,6 +10,7 @@ export interface Field {
   id: string;
   column: string;
   dataSet: string;
+  dateGranularity?: 'DAY' | 'MONTH' | 'QUARTER' | 'YEAR';
 }
 export interface VisualModel {
   id: string;
@@ -38,6 +39,7 @@ export interface VisualModel {
   legend: boolean;
   sort?: { fieldId: string; direction: 'ASC' | 'DESC' };
   warnings: string[];
+  insightConfiguration?: Record<string, unknown>;
 }
 export interface FixtureVisual {
   theme?: AnalysisTheme;

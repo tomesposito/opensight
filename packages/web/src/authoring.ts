@@ -1,3 +1,4 @@
+import { rebindInsight } from './insight-configuration.js';
 import { paletteValid, themeValid, type AnalysisTheme } from './themes.js';
 import { formattingValid, gaugeValid, binsValid, legendPositionValid, rowGroupPathValid, type LegendPosition, type VisualFormatting } from './formatting.js';
 import type { Cell } from './model.js';
@@ -84,6 +85,7 @@ export interface AuthorVisual {
   formatting?: VisualFormatting;
   gauge?: { min: number; max: number };
   bins?: number;
+  insightConfiguration?: Record<string, unknown>;
   id: string; kind: VisualKind; title: string;
   subtitle?: string; subtitleVisible?: boolean;
   dimension: string | null; measures: string[]; rows: string[]; columns: string[];
@@ -151,6 +153,7 @@ export type AuthorAction =
   | { type: 'pivot-row-group'; id: string; path: Cell[]; collapsed: boolean }
   | { type: 'gauge'; min: number; max: number }
   | { type: 'bins'; bins: number }
+  | { type: 'insight'; configuration: Record<string, unknown> }
   | { type: 'hierarchy'; hierarchy: DimensionHierarchy | null }
   | { type: 'filter-actions'; actions: FilterAction[] }
   | { type: 'url-actions'; actions: UrlAction[] }
@@ -335,7 +338,7 @@ export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorD
         dimension: noDimensions(action.kind) ? null : visual.dimension,
         rows: grouped(action.kind) ? (grouped(visual.kind) ? visual.rows : visual.dimension ? [visual.dimension] : []).slice(0, ['radar', 'sankey'].includes(action.kind) ? 1 : undefined) : [],
         columns: splitDimensions(action.kind) ? visual.columns.slice(0, ['radar', 'sankey'].includes(action.kind) ? 1 : undefined) : [],
-        measures: singleMeasure(action.kind) ? visual.measures.slice(0, 1) : action.kind === 'scatter' ? visual.measures.slice(0, 3) : visual.measures };
+        measures: singleMeasure(action.kind) ? visual.measures.slice(0, 1) : action.kind === 'scatter' ? visual.measures.slice(0, 3) : action.kind === 'insight' ? visual.measures.slice(0, 2) : visual.measures };
       case 'hierarchy': {
         if (!action.hierarchy) { const { hierarchy: _old, ...rest } = visual; return rest; }
         if (noDimensions(visual.kind) || hierarchyError(action.hierarchy, draft.calculatedFields, false, draft.dataset)) return visual;
@@ -362,6 +365,7 @@ export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorD
       }
       case 'formatting': return formattingValid(action.formatting) ? { ...visual, formatting: structuredClone(action.formatting) } : visual;
       case 'gauge': return gaugeValid({ min: action.min, max: action.max }) ? { ...visual, gauge: { min: action.min, max: action.max } } : visual;
+      case 'insight': return visual.kind === 'insight' ? { ...visual, insightConfiguration: structuredClone(action.configuration) } : visual;
       case 'bins': return binsValid(action.bins) ? { ...visual, bins: action.bins } : visual;
       case 'title': return { ...visual, title: action.title };
       case 'subtitle': return typeof action.subtitle === 'string' && typeof action.visible === 'boolean' ? { ...visual, subtitle: action.subtitle, subtitleVisible: action.visible } : visual;
@@ -388,7 +392,7 @@ export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorD
       case 'assign': {
         const field = dataFields(draft.calculatedFields, draft.dataset).find(f => f.name === action.field);
         if (!field || field.type === 'BOOLEAN') return visual;
-        if (field.role === 'measure') return action.well && action.well !== 'values' || visual.kind === 'scatter' && visual.measures.length >= 3 ? visual : { ...visual, measures: singleMeasure(visual.kind) ? [field.name] : [...new Set([...visual.measures, field.name])] };
+        if (field.role === 'measure') return action.well && action.well !== 'values' || (visual.kind === 'scatter' && visual.measures.length >= 3 || visual.kind === 'insight' && visual.measures.length >= 2) ? visual : { ...visual, measures: singleMeasure(visual.kind) ? [field.name] : [...new Set([...visual.measures, field.name])] };
         if (noDimensions(visual.kind) || action.well === 'values') return visual;
         if (grouped(visual.kind)) {
           const well = splitDimensions(visual.kind) && action.well === 'columns' ? 'columns' : 'rows';
@@ -458,7 +462,7 @@ export function serializeVisual(visual: AuthorVisual, includeInteractions = true
     const wells: Record<string, unknown> = {};
     spec.dimensions.forEach((name, i) => { wells[name] = spec.dimensions.length === 1 ? category : (i === 0 ? visual.rows : visual.columns).map(n => dimensionField(n, visual.dateGrain, calculations, dataset)); });
     spec.measures.forEach((name, i) => { wells[name] = spec.measures.length === 1 ? values : visual.kind === 'combo' && i === 1 ? values.slice(1) : values.slice(i, i + 1); });
-    return { [spec.variant]: { ...body, chartConfiguration: { ...display, fieldWells: spec.wells ? { [spec.wells]: wells } : wells,
+    return { [spec.variant]: { ...body, ...(visual.kind === 'insight' && visual.insightConfiguration ? { insightConfiguration: rebindInsight(visual.insightConfiguration, category, values) } : {}), chartConfiguration: { ...(visual.kind === 'insight' ? {} : display), fieldWells: spec.wells ? { [spec.wells]: wells } : wells,
       ...(visual.kind === 'bar100' ? { barsArrangement: 'STACKED_PERCENT', orientation: visual.horizontal ? 'HORIZONTAL' : 'VERTICAL' } : {}),
       ...(visual.kind === 'area' ? { type: 'AREA' } : {}),
       ...(visual.kind === 'gauge' && visual.gauge ? { opensightGauge: visual.gauge } : {}),
@@ -552,9 +556,10 @@ export function validateDraft(value: unknown): asserts value is AuthorDraft {
       }
       const fieldNames = (v: unknown, role: string): v is string[] => imported ? Array.isArray(v) && v.every(n => typeof n === 'string' && !!n && !n.includes('\0')) && new Set(v).size === v.length : names(v, role);
 
-      if (!isObject(v) || !onlyKeys(v, ['id', 'kind', 'title', 'subtitle', 'subtitleVisible', 'dimension', 'measures', 'donut', 'imported', 'filterActions', 'urlActions', 'navigationActions', 'hierarchy', 'dateGrain', 'palette', 'formatting', 'gauge', 'bins', ...Object.keys(defaults())]) || typeof v.id !== 'string' || !/^visual-[1-9][0-9]*$/.test(v.id) || ids.has(v.id) || !VISUAL_TYPES.some(t => t.kind === v.kind) || typeof v.title !== 'string' || !['donut', 'titleVisible', 'legend', 'labels', 'horizontal', 'stacked', 'totals', 'subtotals'].every(k => typeof v[k] === 'boolean') || !fieldNames(v.measures, 'measure') || !fieldNames(v.rows, 'dimension') || !fieldNames(v.columns, 'dimension') || (v.dimension !== null && !fieldNames([v.dimension], 'dimension')) || !Array.isArray(v.filters)) return fail();
+      if (!isObject(v) || !onlyKeys(v, ['id', 'kind', 'title', 'subtitle', 'subtitleVisible', 'dimension', 'measures', 'donut', 'imported', 'filterActions', 'urlActions', 'navigationActions', 'hierarchy', 'dateGrain', 'palette', 'formatting', 'gauge', 'bins', 'insightConfiguration', ...Object.keys(defaults())]) || typeof v.id !== 'string' || !/^visual-[1-9][0-9]*$/.test(v.id) || ids.has(v.id) || !VISUAL_TYPES.some(t => t.kind === v.kind) || typeof v.title !== 'string' || !['donut', 'titleVisible', 'legend', 'labels', 'horizontal', 'stacked', 'totals', 'subtotals'].every(k => typeof v[k] === 'boolean') || !fieldNames(v.measures, 'measure') || !fieldNames(v.rows, 'dimension') || !fieldNames(v.columns, 'dimension') || (v.dimension !== null && !fieldNames([v.dimension], 'dimension')) || !Array.isArray(v.filters)) return fail();
       if ((v.kind === 'radar' || v.kind === 'sankey') && !v.imported && (v.rows.length > 1 || v.columns.length > 1)) return fail();
       if (singleMeasure(v.kind as VisualKind) && v.measures.length > 1 || noDimensions(v.kind as VisualKind) && v.dimension !== null || v.kind !== 'pie' && v.donut || !splitDimensions(v.kind as VisualKind) && v.columns.length || (grouped(v.kind as VisualKind) ? v.dimension !== (v.rows[0] ?? null) : v.rows.length) || v.rows.some(n => (v.columns as string[]).includes(n))) return fail();
+      if (v.insightConfiguration !== undefined && !isObject(v.insightConfiguration) || v.kind === 'insight' && !v.imported && v.measures.length > 2) return fail();
       if (v.formatting !== undefined && !formattingValid(v.formatting) || v.gauge !== undefined && !gaugeValid(v.gauge) || v.bins !== undefined && !binsValid(v.bins)) return fail();
       if (v.subtitle !== undefined && typeof v.subtitle !== 'string' || v.subtitleVisible !== undefined && (typeof v.subtitleVisible !== 'boolean' || v.subtitle === undefined)) return fail();
       if (v.palette !== undefined && !paletteValid(v.palette)) return fail();

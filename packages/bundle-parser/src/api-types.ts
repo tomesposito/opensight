@@ -658,3 +658,56 @@ export interface WordCloudAggregatedFieldWells extends UnknownProperties {
 export type WordCloudFieldWells = OneOf<{
   WordCloudAggregatedFieldWells: WordCloudAggregatedFieldWells;
 }>;
+
+/** @see https://docs.aws.amazon.com/quicksight/latest/APIReference/API_InsightVisual.html */
+export interface InsightVisual extends UnknownProperties {
+  VisualId: string;
+  DataSetIdentifier?: string;
+  InsightConfiguration?: InsightConfiguration;
+  Title?: import('./types.js').VisualTitle;
+  Subtitle?: import('./types.js').VisualTitle;
+  Actions?: UnknownProperties[];
+  TopicIdentifier?: string;
+  VisualContentAltText?: string;
+}
+/** Native insight fields belong to computations, not chart field wells. */
+export interface InsightConfiguration extends UnknownProperties {
+  Computations?: Computation[];
+  CustomNarrative?: CustomNarrativeOptions;
+  Interactions?: UnknownProperties;
+}
+export interface CustomNarrativeOptions extends UnknownProperties { Narrative: string }
+export interface TotalAggregationComputation extends UnknownProperties {
+  ComputationId: string; Name?: string; Value?: MeasureField;
+}
+export interface MaximumMinimumComputation extends TotalAggregationComputation {
+  Type: 'MAXIMUM' | 'MINIMUM'; Time?: DimensionField;
+}
+export interface TopBottomRankedComputation extends TotalAggregationComputation {
+  Type: 'TOP' | 'BOTTOM'; Category?: DimensionField; ResultSize?: number;
+}
+export interface GrowthRateComputation extends TotalAggregationComputation {
+  Time?: DimensionField; PeriodSize?: number;
+}
+export interface PeriodOverPeriodComputation extends TotalAggregationComputation { Time?: DimensionField }
+export interface MetricComparisonComputation extends UnknownProperties {
+  ComputationId: string; Name?: string; Time?: DimensionField; FromValue?: MeasureField; TargetValue?: MeasureField;
+}
+export interface ForecastComputation extends TotalAggregationComputation {
+  Time?: DimensionField; PeriodsForward?: number; PeriodsBackward?: number;
+  PredictionInterval?: number; Seasonality?: 'AUTOMATIC' | 'CUSTOM';
+  CustomSeasonalityValue?: number; LowerBoundary?: number; UpperBoundary?: number;
+}
+/** Additional documented computation variants remain opaque and cannot execute. */
+export type Computation = OneOf<{
+  TotalAggregation: TotalAggregationComputation;
+  MaximumMinimum: MaximumMinimumComputation;
+  TopBottomRanked: TopBottomRankedComputation;
+  GrowthRate: GrowthRateComputation;
+  PeriodOverPeriod: PeriodOverPeriodComputation;
+  MetricComparison: MetricComparisonComputation;
+  Forecast: ForecastComputation;
+  PeriodToDate: UnknownProperties;
+  TopBottomMovers: UnknownProperties;
+  UniqueValues: UnknownProperties;
+}>;

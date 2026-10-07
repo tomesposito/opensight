@@ -122,7 +122,7 @@ function AuthorWorkspace({ client: apiClient, dataset, onDatasetChange, onPrep, 
       </div>
     </div>
     {access.mode === 'local' && <LocalDatasetPicker client={client} dataset={draft.dataset} onSelect={dataset => { if (drafts.replace({ ...emptyDraft(), ...(dataset ? { dataset } : {}) })) onDatasetChange?.(dataset); }} />}
-    <p className="fixture-notice">{draft.dataset ? 'Live prepared data · Field assignments query the local API. Uploads expire after 24 hours or API restart.' : client ? 'Live local sales data · All regions, dates grouped in UTC (month by default). Field assignments query the API; unsupported queries show their error details and guidance.' : draft.sheets.some(s => s.visuals.some(v => v.kind === 'pivot')) ? 'Offline demo: pivot previews recompute pinned synthetic sales rows locally across all regions. Row groups expand and collapse locally. No live queries run.' : draft.sheets.some(s => s.visuals.some(v => v.kind === 'waterfall')) ? 'Offline demo: waterfall previews recompute pinned synthetic sales rows locally across all regions. No live queries run.' : draft.sheets.some(s => s.visuals.some(v => v.kind === 'sankey')) ? 'Offline demo: sankey previews recompute pinned synthetic sales rows locally across all regions. No live queries run.' : draft.sheets.some(s => s.visuals.some(v => v.kind === 'radar')) ? 'Offline demo: radar previews recompute pinned synthetic sales rows locally across all regions. No live queries run.' : draft.calculatedFields.length || draft.parameters.length || draft.sheets.some(s => s.visuals.some(v => hasVisualActions(v) || v.hierarchy)) ? 'Offline demo: controls, calculated fields and interactions recompute pinned synthetic sales rows locally across all regions. No live queries run.' : 'Offline demo: manual visual previews use fixed sample results: region = East, dates grouped by UTC month. Only revenue totals by region, category, month, or overall are available. Other manual selections need a supported sample or a hosted API. O recomputes synthetic sales rows locally across all regions. No live queries run.'}</p>
+    <p className="fixture-notice">{draft.dataset ? 'Live prepared data · Field assignments query the local API. Uploads expire after 24 hours or API restart.' : client ? 'Live local sales data · All regions, dates grouped in UTC (month by default). Field assignments query the API; unsupported queries show their error details and guidance.' : draft.sheets.some(s => s.visuals.some(v => v.kind === 'pivot')) ? 'Offline demo: pivot previews recompute pinned synthetic sales rows locally across all regions. Row groups expand and collapse locally. No live queries run.' : draft.sheets.some(s => s.visuals.some(v => v.kind === 'insight')) ? 'Offline demo: insight narratives recompute pinned synthetic sales rows locally across all regions. Rule-based computations; no ML or live queries.' : draft.sheets.some(s => s.visuals.some(v => v.kind === 'waterfall')) ? 'Offline demo: waterfall previews recompute pinned synthetic sales rows locally across all regions. No live queries run.' : draft.sheets.some(s => s.visuals.some(v => v.kind === 'sankey')) ? 'Offline demo: sankey previews recompute pinned synthetic sales rows locally across all regions. No live queries run.' : draft.sheets.some(s => s.visuals.some(v => v.kind === 'radar')) ? 'Offline demo: radar previews recompute pinned synthetic sales rows locally across all regions. No live queries run.' : draft.calculatedFields.length || draft.parameters.length || draft.sheets.some(s => s.visuals.some(v => hasVisualActions(v) || v.hierarchy)) ? 'Offline demo: controls, calculated fields and interactions recompute pinned synthetic sales rows locally across all regions. No live queries run.' : 'Offline demo: manual visual previews use fixed sample results: region = East, dates grouped by UTC month. Only revenue totals by region, category, month, or overall are available. Other manual selections need a supported sample or a hosted API. O recomputes synthetic sales rows locally across all regions. No live queries run.'}</p>
     <div className="author-save"><p role="status">{drafts.message}</p>{drafts.dirty && <p>Unsaved changes · Save draft before leaving Author or reloading.</p>}
       <p id="export-help">{exported.error ?? (client ? 'Downloads analysis definitions and sheet layouts; query results are not included.' : 'Downloads analysis definitions and sheet layouts; sample rows and the fixed East preview filter are not included.')}</p>
       {exportStatus && <p role="status">{exportStatus}</p>}
@@ -340,6 +340,7 @@ function FieldWells({ visual, draft, dispatch, activeWell, onWell }: { visual?: 
   return <div className="field-wells">{wells.map(w => <fieldset key={w.name} className={activeWell === w.name ? 'active-well' : ''} onFocus={() => onWell(w.name)} onClick={() => onWell(w.name)}>
     <legend>{w.label}{w.name === 'values' && singleMeasure(visual.kind) ? ' · 1 measure' : ''}</legend>
     {w.values.map(field => <button className="field-chip" key={field} type="button" aria-label={`Remove ${field} from ${w.label}`} onClick={() => dispatch({ type: 'unassign', field, well: w.name })}>{w.name === 'values' ? `SUM(${field})` : `${field}${fields.find(f => f.name === field)?.type === 'DATETIME' ? ` · ${visual.hierarchy?.levels[0]?.granularity ?? visual.dateGrain ?? 'MONTH'}` : ''}`} <span aria-hidden="true">×</span></button>)}
+    {w.name === 'values' && visual.kind === 'insight' && <p>One measure; optional second measure for comparison (first minus second).</p>}
     {w.name === 'values' && visual.measures.length > 1 && <div className="measure-order">{visual.measures.map((name, index) => <button type="button" key={name} disabled={!index} aria-label={`Move ${name} measure earlier`} onClick={() => dispatch({ type: 'measure-move', index, offset: -1 })}>↑ {name}</button>)}</div>}
     {!w.values.length && <p>{visual.kind === 'sankey' ? 'Choose a field' : w.name === 'columns' ? visual.kind === 'radar' ? 'Optional color dimension' : 'Optional column dimensions' : 'Choose a field'}</p>}
     <label className="well-picker">Assign {w.name === 'values' ? 'measure' : ['radar', 'sankey'].includes(visual.kind) ? w.label.toLowerCase() : w.name === 'dimension' ? 'dimension' : w.name}<select aria-label={`Assign ${w.label}`} value="" onChange={e => dispatch({ type: 'assign', field: e.target.value, well: w.name })}><option value="" disabled>Choose field…</option>{fields.filter(f => f.type !== 'BOOLEAN' && f.role === (w.name === 'values' ? 'measure' : 'dimension')).map(f => <option key={f.name}>{f.name}</option>)}</select></label>
@@ -376,7 +377,8 @@ function Properties({ visual, draft, dispatch, client, runtimeProblems }: Editor
     <label className="toggle"><input type="checkbox" checked={visual.subtitleVisible !== false} onChange={e => dispatch({ type: 'subtitle', subtitle: visual.subtitle ?? '', visible: e.target.checked })} />Show subtitle</label>
     {toggles.map(({ property, label }) => <label className="toggle" key={property}><input type="checkbox" checked={visual[property]} onChange={e => dispatch({ type: 'display', property, value: e.target.checked })} />{label}</label>)}
     {hasLegend(visual.kind) && <label>Legend position<select value={formatting.legendPosition ?? 'BOTTOM'} onChange={e => dispatch({ type: 'legend-position', position: e.target.value as LegendPosition })}>{LEGEND_POSITIONS.map(position => <option key={position} value={position}>{position === 'AUTO' ? 'Auto (bottom)' : position[0] + position.slice(1).toLowerCase()}</option>)}</select></label>}
-    {hasDataLabels(visual.kind) && <label>Data label decimal places<input type="number" min="0" max="12" placeholder="Automatic" value={formatting.decimalPlaces ?? ''} onChange={e => {
+    {visual.kind === 'insight' && <InsightOptions visual={visual} dispatch={dispatch} />}
+    {(hasDataLabels(visual.kind) || visual.kind === 'insight') && <label>{visual.kind === 'insight' ? 'Narrative decimal places' : 'Data label decimal places'}<input type="number" min="0" max="12" placeholder="Automatic" value={formatting.decimalPlaces ?? ''} onChange={e => {
       if (e.target.value === '') { const { decimalPlaces: _old, ...rest } = formatting; dispatch({ type: 'formatting', formatting: rest }); }
       else setFormatting({ decimalPlaces: Number(e.target.value) });
     }} /></label>}
@@ -539,4 +541,28 @@ function ParameterFilterEditor({ dataset, parameters, calculations, dispatch }: 
     <label>Comparison<select value={operator} onChange={e => setOperator(e.target.value as typeof operator)}><option value="EQUALS">Equals</option>{parameter?.type !== 'string' && !parameter?.multiple && <><option value="GREATER_THAN_OR_EQUAL_TO">At least / on or after</option><option value="LESS_THAN_OR_EQUAL_TO">At most / on or before</option></>}</select></label>
     <button type="button" disabled={!field || !parameter} onClick={() => { if (parameter && field) dispatch({ type: 'filter-parameter', columnName: field.name, parameterName: parameter.name, operator }); }}>Apply parameter filter</button>
   </details>;
+}
+
+function InsightOptions({ visual, dispatch }: { visual: AuthorVisual; dispatch: Dispatch<AuthorAction> }) {
+  const raw = visual.insightConfiguration?.computations;
+  const computations = Array.isArray(raw) ? raw as Record<string, Record<string, unknown>>[] : [];
+  const first = computations[0];
+  const kind = first ? Object.keys(first)[0] : 'summary';
+  const size = Number(first?.topBottomRanked?.resultSize ?? 3);
+  const preset = (kind: string, n = size): Record<string, unknown> => kind === 'summary' ? {} : { computations: kind === 'topBottomRanked'
+    ? ['TOP', 'BOTTOM'].map(type => ({ topBottomRanked: { computationId: type.toLowerCase(), type, resultSize: n } }))
+    : [{ [kind]: { computationId: kind } }] };
+  const selected = JSON.stringify(visual.insightConfiguration ?? {}) === JSON.stringify(preset(kind ?? 'summary')) ? kind : 'imported';
+  return <>
+    <label>Narrative computation<select aria-label="Narrative computation" value={selected} onChange={e => dispatch({ type: 'insight', configuration: preset(e.target.value) })}>
+      <option value="summary">Summary (total, contributors, available comparisons)</option>
+      <option value="totalAggregation">Total aggregation</option><option value="topBottomRanked">Top and bottom ranked</option>
+      <option value="growthRate">Growth rate (date required)</option><option value="periodOverPeriod">Period over period (date required)</option>
+      <option value="metricComparison">Metric comparison (two measures)</option>
+      {selected === 'imported' && <option value="imported" disabled>Imported computations (choose to replace)</option>}
+    </select></label>
+    {selected === 'topBottomRanked' && <label>Ranked categories<input type="number" min="1" max="20" value={size} onChange={e => {
+      const n = Number(e.target.value); if (Number.isInteger(n) && n >= 1 && n <= 20) dispatch({ type: 'insight', configuration: preset('topBottomRanked', n) });
+    }} /></label>}
+  </>;
 }

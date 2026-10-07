@@ -15,6 +15,7 @@
     "../src/SessionGate.tsx",
     "../src/Application.tsx",
     "../src/compiler.ts",
+    "../src/insight-narrative.ts",
     "../src/model.ts",
     "../src/echarts.ts",
     "../src/api-client.ts",

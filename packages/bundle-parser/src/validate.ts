@@ -1,3 +1,4 @@
+import { validateInsightConfiguration } from './insight-validation.js';
 import type { SyntheticAnalysisDocument } from './types.js';
 
 import { array, enumeration, fail, nonempty, object, optional, required, singleVariant, string, type Validator } from './validation.js';
@@ -19,6 +20,7 @@ const visual: Validator = (value, path) => {
   required(body, 'VisualId', bodyPath, nonempty);
   optional(body, 'Title', bodyPath, title);
   optional(body, 'Subtitle', bodyPath, title);
+  if (kind === 'InsightVisual') optional(body, 'InsightConfiguration', bodyPath, (value, path) => validateInsightConfiguration(value, path, true));
 };
 
 const parameter: Validator = (value, path) => {
