@@ -552,15 +552,16 @@ function InsightOptions({ visual, dispatch }: { visual: AuthorVisual; dispatch: 
   const preset = (kind: string, n = size): Record<string, unknown> => kind === 'summary' ? {} : { computations: kind === 'topBottomRanked'
     ? ['TOP', 'BOTTOM'].map(type => ({ topBottomRanked: { computationId: type.toLowerCase(), type, resultSize: n } }))
     : [{ [kind]: { computationId: kind } }] };
+  const selected = JSON.stringify(visual.insightConfiguration ?? {}) === JSON.stringify(preset(kind ?? 'summary')) ? kind : 'imported';
   return <>
-    <label>Narrative computation<select value={kind} onChange={e => dispatch({ type: 'insight', configuration: preset(e.target.value) })}>
+    <label>Narrative computation<select aria-label="Narrative computation" value={selected} onChange={e => dispatch({ type: 'insight', configuration: preset(e.target.value) })}>
       <option value="summary">Summary (total, contributors, available comparisons)</option>
       <option value="totalAggregation">Total aggregation</option><option value="topBottomRanked">Top and bottom ranked</option>
       <option value="growthRate">Growth rate (date required)</option><option value="periodOverPeriod">Period over period (date required)</option>
       <option value="metricComparison">Metric comparison (two measures)</option>
-      {kind === 'maximumMinimum' && <option value="maximumMinimum" disabled>Imported maximum / minimum</option>}
+      {selected === 'imported' && <option value="imported" disabled>Imported computations (choose to replace)</option>}
     </select></label>
-    {kind === 'topBottomRanked' && <label>Ranked categories<input type="number" min="1" max="20" value={size} onChange={e => {
+    {selected === 'topBottomRanked' && <label>Ranked categories<input type="number" min="1" max="20" value={size} onChange={e => {
       const n = Number(e.target.value); if (Number.isInteger(n) && n >= 1 && n <= 20) dispatch({ type: 'insight', configuration: preset('topBottomRanked', n) });
     }} /></label>}
   </>;

@@ -68,3 +68,38 @@ test('unsupported native computations and properties appear in import reports, b
     assert.equal(buildAuthorQuery(visual(imported)), null); assert.deepEqual(exportBundle(imported), bundle);
   }
 });
+test('native time and metric computations retain field identities and cannot reference unbound fields', () => {
+  const api = nativeApi(), b = api.Sheets[0].Visuals[0].InsightVisual;
+  const first = b.InsightConfiguration.Computations[0].TopBottomRanked;
+  const Time = { DateDimensionField: { FieldId: 'month', DateGranularity: 'MONTH', Column: { ColumnName: 'order_date', DataSetIdentifier: 'opensight_local_sales' } } };
+  const Value = first.Value, TargetValue = structuredClone(Value);
+  TargetValue.NumericalMeasureField.FieldId = 'profit'; TargetValue.NumericalMeasureField.Column.ColumnName = 'profit';
+  b.InsightConfiguration.Computations = [
+    { TotalAggregation: { ComputationId: 'total', Value } },
+    { MaximumMinimum: { ComputationId: 'max', Type: 'MAXIMUM', Time, Value } },
+    { GrowthRate: { ComputationId: 'growth', PeriodSize: 2, Time, Value } },
+    { PeriodOverPeriod: { ComputationId: 'period', Time, Value } },
+    { MetricComparison: { ComputationId: 'comparison', Time, FromValue: Value, TargetValue } },
+  ];
+  const rows = [{ month: '2024-01-01', revenue: 100, profit: 20 }, { month: '2024-02-01', revenue: 150, profit: 30 }];
+  const input = { source: 'api', definition: api.Sheets[0].Visuals[0], rows, path: '$', bindings: { month: 'month' } };
+  const c = compileVisual(input); assert.match(c.narrative.text, /change 50 \(50.00%\)/); assert.match(c.narrative.text, /difference 200 \(400.00%\)/);
+  const resource = serializeDraft(add()); resource.definition = convertDefinition(api);
+  const bundle = bundleOf(resource), imported = importBundle(bundle);
+  assert.deepEqual(visual(imported).imported.issues, []); assert.equal(visual(imported).dateGrain ?? 'MONTH', 'MONTH');
+  assert.deepEqual(exportBundle(imported), bundle);
+  const projection = JSON.parse(JSON.stringify(serializeVisual(visual(imported))));
+  projection.insightVisual.insightConfiguration.computations[0].totalAggregation.value.numericalMeasureField.column.columnName = 'missing';
+  assert.throws(() => compileVisual({ source: 'bundle', definition: projection, rows: null, path: '$', bindings: {} }), /INSIGHT_FIELD_UNBOUND/);
+});
+test('builder insight presets persist ranked N and block unsupported definitions during compilation', () => {
+  let draft = add();
+  draft = authorReducer(draft, { type: 'insight', configuration: { computations: [{ topBottomRanked: { computationId: 'top', type: 'TOP', resultSize: 7 } }] } });
+  validateDraft(draft);
+  const bundle = bundleOf(serializeDraft(draft)); const imported = importBundle(bundle);
+  assert.deepEqual(visual(imported).imported.issues, []); assert.deepEqual(exportBundle(imported), bundle);
+  assert.equal(visual(imported).insightConfiguration.computations[0].topBottomRanked.resultSize, 7);
+  draft = authorReducer(draft, { type: 'insight', configuration: { computations: [{ forecast: { computationId: 'f' } }] } });
+  assert.doesNotThrow(() => serializeVisual(visual(draft)));
+  assert.throws(() => compile(draft), /INSIGHT_FORECAST_UNSUPPORTED/);
+});

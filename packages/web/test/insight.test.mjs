@@ -54,4 +54,6 @@ test('narrative layout wraps long categories and treats markup as plain text', (
   const c = compileVisual(source), layout = insightGraphic(c.narrative, DARK_THEME, 20, 180);
   assert.ok(layout.height > 300); assert.ok(layout.graphic.every(g => !g.style.rich && g.x >= 16));
   assert.equal(layout.graphic.map(g => g.style.text).join('').includes('<script>'), true);
+  const grouped = insightGraphic(compileVisual(input()).narrative, DARK_THEME, 16, 342);
+  for (const g of grouped.graphic) if (g.style.text === ').' || g.style.text === '.') assert.ok(g.x > 16, 'punctuation must stay with its word');
 });
