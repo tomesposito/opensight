@@ -63,7 +63,7 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
   const entries = Object.entries(visual);
   if (entries.length !== 1) fail(path, 'expected exactly one visual variant');
   const [variant, raw] = entries[0]!;
-  const kinds = bundle ? variantKinds : Object.fromEntries(Object.entries(variantKinds).map(([name, kind]) => [name === 'kpiVisual' ? 'KPIVisual' : name[0]!.toUpperCase() + name.slice(1), kind]));
+  const kinds = bundle ? variantKinds : Object.fromEntries(Object.entries(variantKinds).map(([name, kind]) => [kind === 'waterfall' ? 'WaterfallVisual' : name === 'kpiVisual' ? 'KPIVisual' : name[0]!.toUpperCase() + name.slice(1), kind]));
   let kind = Object.hasOwn(kinds, variant) ? kinds[variant] : undefined;
   if (!kind) fail(`${path}.${variant}`, 'unsupported visual variant in this dialect');
   const p = `${path}.${variant}`;
@@ -103,7 +103,8 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
   const valueKey = key('values', 'Values');
   // Empty optional wells are harmless; nonempty colors/targets/trends change semantics.
   const unused = [key('colors', 'Colors'), key('smallMultiples', 'SmallMultiples'), key('targetValues', 'TargetValues'), key('trendGroups', 'TrendGroups')];
-  const wellKey = (name: string) => key(name, name.startsWith('opensight') ? `OpenSight${name.slice(9)}` : name[0]!.toUpperCase() + name.slice(1));
+  const wellKey = (name: string) => key(name, kind === 'waterfall' && name === 'category' ? 'Categories' : name.startsWith('opensight') ? `OpenSight${name.slice(9)}` : name[0]!.toUpperCase() + name.slice(1));
+  if (kind === 'waterfall' && Object.hasOwn(wells, key('breakdowns', 'Breakdowns'))) fail(`${wpath}.${key('breakdowns', 'Breakdowns')}`, 'WATERFALL_BREAKDOWN_UNSUPPORTED: breakdowns are not yet supported');
   keys(wells, [...(extra ? [...extra.dimensions, ...extra.measures].map(wellKey) : [categoryKey, valueKey]), ...(kind === 'pivot' ? [key('columns', 'Columns')] : []), ...unused], wpath);
   for (const name of unused) if (list(wells[name], `${wpath}.${name}`).length) fail(`${wpath}.${name}`, 'field well not supported');
   const field = (value: unknown, measure: boolean, fp: string): Field => {
@@ -140,6 +141,10 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
   const measures = measureNames.flatMap(name => list(wells[name], `${wpath}.${name}`).map((v, i) => field(v, true, `${wpath}.${name}[${i}]`)));
   if (extra) {
     const d = dimensions.length, m = measures.length;
+    if (kind === 'waterfall') {
+      if (d !== 1) fail(wpath, 'WATERFALL_CATEGORY_REQUIRED: expected exactly one Categories dimension');
+      if (m !== 1) fail(wpath, 'WATERFALL_VALUES_REQUIRED: expected exactly one Values measure');
+    }
     if (kind === 'sankey') {
       if (list(wells[wellKey('source')], wpath).length !== 1) fail(wpath, 'SANKEY_SOURCE_REQUIRED: expected exactly one Source dimension');
       if (list(wells[wellKey('destination')], wpath).length !== 1) fail(wpath, 'SANKEY_DESTINATION_REQUIRED: expected exactly one Destination dimension');
@@ -206,7 +211,7 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
   keys(labels, [key('visibility', 'Visibility'), key('overlap', 'Overlap')], cpath);
   enumValue(labels[key('overlap', 'Overlap')], ['DISABLE_OVERLAP'], 'DISABLE_OVERLAP', cpath);
   const tooltip = object(config[key('tooltip', 'Tooltip')] ?? {}, cpath);
-  keys(tooltip, kind === 'radar' || kind === 'sankey' ? [key('tooltipVisibility', 'TooltipVisibility')] : [key('tooltipVisibility', 'TooltipVisibility'), key('selectedTooltipType', 'SelectedTooltipType'), key('fieldBasedTooltip', 'FieldBasedTooltip')], `${cpath}.${key('tooltip', 'Tooltip')}`);
+  keys(tooltip, ['radar', 'sankey', 'waterfall'].includes(kind) ? [key('tooltipVisibility', 'TooltipVisibility')] : [key('tooltipVisibility', 'TooltipVisibility'), key('selectedTooltipType', 'SelectedTooltipType'), key('fieldBasedTooltip', 'FieldBasedTooltip')], `${cpath}.${key('tooltip', 'Tooltip')}`);
   if (tooltip[key('fieldBasedTooltip', 'FieldBasedTooltip')] !== undefined || tooltip[key('selectedTooltipType', 'SelectedTooltipType')] !== undefined) warnings.push(`${cpath}.${key('tooltip', 'Tooltip')}: detailed tooltip formatting is approximated with category and value.`);
   const legend = object(config[key('legend', 'Legend')] ?? {}, cpath);
   keys(legend, [key('visibility', 'Visibility'), key('position', 'Position')], cpath);
@@ -222,7 +227,7 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
   }
   const sort = object(config[key('sortConfiguration', 'SortConfiguration')] ?? {}, cpath);
   const sortsKey = key('categorySort', 'CategorySort');
-  keys(sort, kind === 'radar' || kind === 'sankey' ? [sortsKey] : [sortsKey, key('categoryItemsLimit', 'CategoryItemsLimit'), key('smallMultiplesLimitConfiguration', 'SmallMultiplesLimitConfiguration')], `${cpath}.${key('sortConfiguration', 'SortConfiguration')}`);
+  keys(sort, ['radar', 'sankey', 'waterfall'].includes(kind) ? [sortsKey] : [sortsKey, key('categoryItemsLimit', 'CategoryItemsLimit'), key('smallMultiplesLimitConfiguration', 'SmallMultiplesLimitConfiguration')], `${cpath}.${key('sortConfiguration', 'SortConfiguration')}`);
   for (const limitKey of [key('categoryItemsLimit', 'CategoryItemsLimit'), key('smallMultiplesLimitConfiguration', 'SmallMultiplesLimitConfiguration')]) {
     if (sort[limitKey] !== undefined) {
       const limit = object(sort[limitKey], `${cpath}.${limitKey}`);
