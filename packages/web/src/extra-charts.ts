@@ -10,6 +10,8 @@ const label = (v: Cell) => v === null ? '(null)' : String(v);
 // tooltip. Display the raw names instead, keeping internal identities private.
 const sankeyName = (params: { data?: unknown }): string => params.data && typeof params.data === 'object' && 'name' in params.data ? String(params.data.name) : '';
 const sankeyTooltip = (params: { data?: unknown; value?: unknown }): string => `${sankeyName(params)}: ${String(params.value ?? '')}`;
+const waterfallLabel = (params: { data?: unknown }): string => params.data && typeof params.data === 'object' && 'delta' in params.data ? String(params.data.delta) : '';
+const waterfallTooltip = (params: { data?: unknown; name?: string }): string => `${params.name ?? ''}: ${waterfallLabel(params)}`;
 const quartile = (values: number[], p: number): number => {
   const position = (values.length - 1) * p, lo = Math.floor(position), hi = Math.ceil(position);
   return values[lo]! * (1 - position + lo) + values[hi]! * (position - lo);
@@ -44,6 +46,41 @@ export function compileExtra(model: VisualModel, rows: Row[], cell: CellReader, 
       return percent || model.kind === 'combo' && i === 0 ? { type: 'bar', name: fieldName(f, model.formatting), data, ...(percent ? { stack: 'percent' } : {}), label: { show: model.labels }, barMaxWidth: 72 }
         : { type: 'line', name: fieldName(f, model.formatting), data, connectNulls: false, ...(model.kind === 'area' ? { areaStyle: { opacity: 0.3 } } : {}), label: { show: model.labels } };
     });
+  } else if (model.kind === 'waterfall') {
+    if (model.dimensions.length !== 1) fail('WATERFALL_CATEGORY_REQUIRED: expected exactly one Categories dimension');
+    const measure = model.measures[0];
+    if (!measure || model.measures.length !== 1) fail('WATERFALL_VALUES_REQUIRED: expected exactly one Values measure');
+    const assist: number[] = [];
+    let running = 0;
+    // Deliberate OpenSight semantics: start at zero, retain supplied (or explicit
+    // field-sort) order, and append one Total. Native starting values, breakdowns,
+    // intermediate totals, color configuration and category limits are rejected.
+    const data = rows.map((row, i) => {
+      const delta = number(row, measure);
+      if (delta === null) fail('WATERFALL_VALUE_INVALID: deltas must be finite, non-null numbers');
+      const previous = running;
+      running += delta;
+      if (!Number.isFinite(running)) fail('WATERFALL_TOTAL_OVERFLOW: running totals must be finite');
+      assist.push(Math.min(previous, running));
+      return { name: names[i]!, value: Math.abs(delta), delta, itemStyle: { color: delta < 0 ? '#d64545' : '#2e8b57' } };
+    });
+    if (rows.length) {
+      assist.push(Math.min(0, running));
+      names.push('Total');
+      data.push({ name: 'Total', value: Math.abs(running), delta: running, itemStyle: { color: '#2673c9' } });
+    }
+    axes();
+    option.legend = { show: model.legend, bottom: 0, data: [fieldName(measure, model.formatting)] };
+    option.series = [
+      { type: 'bar', stack: 'waterfall', stackStrategy: 'all', data: assist, silent: true,
+        itemStyle: { color: 'transparent', borderColor: 'transparent' }, emphasis: { disabled: true },
+        tooltip: { show: false }, label: { show: false }, barMaxWidth: 72 },
+      // 'all' is essential: ECharts' default same-sign stacking would move a
+      // positive-height delta off its negative base when the total crosses zero.
+      { type: 'bar', name: fieldName(measure, model.formatting), stack: 'waterfall', stackStrategy: 'all', data,
+        itemStyle: { color: '#2673c9' }, barMaxWidth: 72, label: { show: model.labels, position: 'top', formatter: waterfallLabel },
+        labelLayout: { hideOverlap: true }, tooltip: { formatter: waterfallTooltip } },
+    ];
   } else if (model.kind === 'sankey') {
     const source = model.dimensions[0], destination = model.dimensions[1], weight = model.measures[0];
     if (!source) fail('SANKEY_SOURCE_REQUIRED: expected exactly one Source dimension');

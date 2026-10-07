@@ -51,6 +51,7 @@ export function applyDisplayOptions(model: VisualModel, option: EChartsOption): 
         const name = params.data && typeof params.data === 'object' && 'name' in params.data ? String(params.data.name) : '';
         return `${name}: ${formatNumber(params.value)}`;
       }
+      if (model.kind === 'waterfall') return formatNumber(params.data && typeof params.data === 'object' && 'delta' in params.data ? params.data.delta : undefined);
       const value = model.kind === 'heatmap' && Array.isArray(params.value) ? params.value[2] : params.value;
       const formatted = formatNumber(value);
       if (!formatted) return '';

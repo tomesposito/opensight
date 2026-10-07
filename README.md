@@ -8,7 +8,7 @@ bidirectional asset compatibility — connect data, prepare datasets, build
 analyses and dashboards, and ask questions in natural language. Self-hosted;
 no AWS required.
 
-![OpenSight tour: dashboard, O answer, authoring, radar, Sankey, pivot, saved drafts, and data tools](docs/images/opensight-tour.gif)
+![OpenSight tour: dashboard, O answer, authoring, radar, Sankey, waterfall, pivot, saved drafts, and data tools](docs/images/opensight-tour.gif)
 
 *Above: the offline demo — a dashboard, O answering "revenue by region" and
 adding the chart to an analysis, saved drafts, data preparation, connectors,
@@ -70,8 +70,8 @@ how to build and open it.
 
 ### 📊 Dashboards and analyses
 
-Author on a QuickSight-style canvas: 21 visual types (bar, line, pie/donut,
-KPI, table, pivot, radar, sankey, scatter, combo, maps and more), parameters and controls,
+Author on a QuickSight-style canvas: 22 visual types (bar, line, pie/donut,
+KPI, table, pivot, radar, sankey, waterfall, scatter, combo, maps and more), parameters and controls,
 filter actions, drill-down, themes, and `.qs` bundle import/export round trips.
 
 The app opens to a working sales dashboard using pinned synthetic sample results
@@ -100,6 +100,13 @@ Equal values share nodes and duplicate links are summed; unsupported graph
 shapes and native options fail closed. See [Sankey semantics and limits](docs/sankey-diagram.md).
 
 ![Sankey preview with revenue flowing from region to category](docs/images/sankey.png)
+
+Waterfall accumulates signed Values from zero in category order, with green
+increases, red decreases and a blue final Total. Categories and Values each
+accept one field; breakdowns and unsupported native options fail closed.
+See [Waterfall semantics and limits](docs/waterfall-chart.md).
+
+![Waterfall preview with synthetic positive and negative revenue adjustments](docs/images/waterfall.png)
 
 Pivot row groups expand and collapse with +/−, Enter or Space. Enabled subtotals
 stay visible, and group state survives draft saves and bundle round trips.
