@@ -116,6 +116,17 @@ try {
   await hold(1800);
   await page.screenshot({ path: resolve(FRAMES, '../waterfall.png'), fullPage: true });
   await page.getByRole('button', { name: 'Save draft', exact: true }).click();
+  // Insight uses the same pinned rows and text-graphic pipeline as the compiler.
+  await page.locator('.author-card-actions button[aria-label^="Remove "]').click();
+  await page.getByRole('button', { name: 'Insight', exact: true }).click();
+  await page.locator('.build-panel').getByRole('button', { name: 'Add visual', exact: true }).click();
+  await page.getByLabel('Title', { exact: true }).fill('Revenue contributors by region');
+  await page.locator('.author-card .chart svg').waitFor();
+  assert.match(await page.locator('.author-card .chart').getAttribute('aria-label'), /Total revenue: 900/);
+  await page.locator('.author-card').scrollIntoViewIfNeeded();
+  await hold(1800);
+  await page.screenshot({ path: resolve(FRAMES, '../insight.png'), fullPage: true });
+  await page.getByRole('button', { name: 'Save draft', exact: true }).click();
   // Issue #40: row groups run against local synthetic data and save in the bundle.
   await page.locator('.author-card-actions button[aria-label^="Remove "]').click();
   await page.getByRole('button', { name: 'Pivot', exact: true }).click();

@@ -44,7 +44,7 @@ try {
   await page.getByLabel('Title', { exact: true }).fill('Revenue contributors by region');
   const chart = page.locator('.author-card .chart');
   await chart.locator('svg').waitFor(); assert.match(await chart.getAttribute('aria-label'), /Total revenue: 900/);
-  assert.ok(await chart.locator('text[font-weight="700"]').count());
+  assert.ok(await chart.locator('text').evaluateAll(nodes => nodes.some(node => getComputedStyle(node).fontWeight === '700')));
   await capture(page, 'insight-summary');
   await page.getByLabel('Assign Values', { exact: true }).selectOption('profit');
   assert.match(await chart.getAttribute('aria-label'), /revenue vs profit/);
