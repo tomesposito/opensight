@@ -1,3 +1,4 @@
+import { projectInsightBody } from './insight-configuration.js';
 import { normalizeVisual } from './compiler.js';
 import { themeValid, paletteValid } from './themes.js';
 import { formattingValid, gaugeValid, binsValid, legendPositionValid } from './formatting.js';
@@ -53,7 +54,12 @@ function localBinding(arn: string | undefined, bundle: QsBundle, identifier: str
 }
 function importVisual(raw: BundleVisual, id: string, definition: BundleDefinition, bundle: QsBundle): AuthorVisual {
   const [variant, value] = Object.entries(raw)[0]!;
-  const body = obj(value), config = obj(body.chartConfiguration), outer = obj(config.fieldWells);
+  const body = obj(value);
+  let projectedBody = body, validInsight = false;
+  if (variant === 'insightVisual') {
+    try { projectedBody = projectInsightBody(body); normalizeVisual('bundle', { insightVisual: body }); validInsight = true; } catch { /* The compiler below supplies the named import-report error. */ }
+  }
+  const config = obj(projectedBody.chartConfiguration), outer = obj(config.fieldWells);
   let kind = Object.hasOwn(kinds, variant) ? kinds[variant]! : 'bar';
   if (kind === 'bar' && config.barsArrangement === 'STACKED_PERCENT') kind = 'bar100';
   if (kind === 'line' && config.type === 'AREA') kind = 'area';
@@ -68,7 +74,7 @@ function importVisual(raw: BundleVisual, id: string, definition: BundleDefinitio
   const measures = extra ? extra.measures.flatMap(name => names(wells[name])) : names(wells.values);
   const total = obj(config.totalOptions);
   const subtitle = obj(body.subtitle), legendPosition = obj(config.legend).position;
-  const visual: AuthorVisual = { ...defaults(), ...(paletteValid(body.opensightPalette) ? { palette: [...body.opensightPalette] } : {}), id, kind, title: string(obj(obj(body.title).formatText).plainText),
+  const visual: AuthorVisual = { ...defaults(), ...(validInsight && body.insightConfiguration !== undefined ? { insightConfiguration: copy(obj(body.insightConfiguration)) } : {}), ...(paletteValid(body.opensightPalette) ? { palette: [...body.opensightPalette] } : {}), id, kind, title: string(obj(obj(body.title).formatText).plainText),
     ...(formattingValid(body.opensightFormatting) ? { formatting: copy(body.opensightFormatting) } : {}),
     ...(body.subtitle !== undefined ? { subtitle: string(obj(subtitle.formatText).plainText), subtitleVisible: subtitle.visibility !== 'HIDDEN' } : {}),
     ...(legendPositionValid(legendPosition) ? { formatting: { ...(formattingValid(body.opensightFormatting) ? copy(body.opensightFormatting) : {}), legendPosition } } : {}),
@@ -91,7 +97,7 @@ function importVisual(raw: BundleVisual, id: string, definition: BundleDefinitio
   const checked = { [variant]: checkedBody };
   const dataSets = [...new Set(references(body))].map(identifier => ({ identifier, arn: definition.dataSetIdentifierDeclarations.find(d => d.identifier === identifier)?.dataSetArn }));
   const issues = Object.hasOwn(kinds, variant) ? differences(checked, projectVisual(visual, raw, (definition.calculatedFields ?? []).map(c => ({ name: string(obj(c).name), expression: string(obj(c).expression), role: 'dimension' }))), variant) : [`Unsupported visual type: ${variant}`];
-  if (kind === 'radar' || kind === 'sankey' || kind === 'waterfall') {
+  if (kind === 'insight' || kind === 'radar' || kind === 'sankey' || kind === 'waterfall') {
     try { normalizeVisual('bundle', checked); }
     catch (error) { issues.push(error instanceof Error ? `${error.name}: ${error.message}` : String(error)); }
   }
@@ -311,12 +317,14 @@ function projectVisual(visual: AuthorVisual, raw: BundleVisual, calculations: re
     Object.values(o).forEach(v => { if (Array.isArray(v)) v.forEach(collect); else if (v && typeof v === 'object') collect(v); });
   };
   collect(originalWells);
+  if (visual.kind === 'insight') collect(original.insightConfiguration);
   const assign = (value: unknown): void => {
     const o = obj(value), column = obj(o.column);
     if (typeof column.columnName === 'string') column.dataSetIdentifier = identifiers.get(column.columnName) ?? [...identifiers.values()][0] ?? 'sales_data';
     Object.values(o).forEach(v => { if (Array.isArray(v)) v.forEach(assign); else if (v && typeof v === 'object') assign(v); });
   };
   assign(config.fieldWells);
+  if (visual.kind === 'insight') assign(body.insightConfiguration);
   if (visual.kind === 'kpi' && Object.hasOwn(originalWells, 'kpiFieldWells')) config.fieldWells = { kpiFieldWells: config.fieldWells };
   return projected;
 }
