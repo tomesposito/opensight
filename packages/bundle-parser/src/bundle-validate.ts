@@ -1,3 +1,4 @@
+import { validateInsightConfiguration } from './insight-validation.js';
 import { validatePrepPipeline } from './prep.js';
 import type { BundleResource } from './bundle-types.js';
 import { bundleCalculation, bundleColumn, bundleFilterGroup, bundleParameter } from './bundle-features.js';
@@ -65,6 +66,7 @@ const visual: Validator = (value, path) => {
   required(body, 'visualId', p, nonempty);
   optional(body, 'title', p, title);
   optional(body, 'subtitle', p, title);
+  if (kind === 'insightVisual') optional(body, 'insightConfiguration', p, (value, path) => validateInsightConfiguration(value, path, false));
   if (!Object.hasOwn(wellKinds, kind)) return;
   optional(body, 'actions', p, opaqueArray);
   optional(body, 'columnHierarchies', p, opaqueArray);
