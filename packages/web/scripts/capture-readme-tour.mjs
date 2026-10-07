@@ -98,6 +98,24 @@ try {
   await hold(1800);
   await page.screenshot({ path: resolve(FRAMES, '../sankey.png'), fullPage: true });
   await page.getByRole('button', { name: 'Save draft', exact: true }).click();
+  // Issue #47: calculate signed synthetic adjustments, then accumulate from zero.
+  await page.locator('.author-card-actions button[aria-label^="Remove "]').click();
+  await page.getByRole('button', { name: 'Waterfall', exact: true }).click();
+  await page.locator('.build-panel').getByRole('button', { name: 'Add visual', exact: true }).click();
+  await page.getByRole('button', { name: '+ CALCULATED FIELD', exact: true }).click();
+  const calculation = page.getByRole('dialog', { name: 'Calculated field', exact: true });
+  await calculation.getByLabel('Name', { exact: true }).fill('Adjustment');
+  await calculation.getByLabel('Expression', { exact: true }).fill("ifelse({region} = 'East', {revenue}, -{revenue} * 2)");
+  await calculation.getByRole('button', { name: 'Create field', exact: true }).click();
+  await page.getByLabel('Assign Values', { exact: true }).selectOption('Adjustment');
+  await page.getByLabel('Title', { exact: true }).fill('Synthetic revenue adjustments');
+  await page.getByLabel('Show data labels', { exact: true }).check();
+  await page.locator('.author-card .chart svg').waitFor();
+  assert.match(await page.locator('.author-card .chart svg').textContent(), /-800/);
+  await page.locator('.author-card').scrollIntoViewIfNeeded();
+  await hold(1800);
+  await page.screenshot({ path: resolve(FRAMES, '../waterfall.png'), fullPage: true });
+  await page.getByRole('button', { name: 'Save draft', exact: true }).click();
   // Issue #40: row groups run against local synthetic data and save in the bundle.
   await page.locator('.author-card-actions button[aria-label^="Remove "]').click();
   await page.getByRole('button', { name: 'Pivot', exact: true }).click();
