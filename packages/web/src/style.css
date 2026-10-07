@@ -4,7 +4,7 @@ body { margin: 0; }
 button, select, input { font: inherit; }
 button, select, summary { cursor: pointer; }
 button:focus-visible, select:focus-visible, input:focus-visible, summary:focus-visible, a:focus-visible { outline: 3px solid #e5a046; outline-offset: 4px; }
-.app-header { display: flex; flex-wrap: wrap; align-items: center; gap: 24px; padding: 20px 36px; background: #fff; border-bottom: 1px solid #dce5e9; }
+.app-header { position: sticky; top: 0; z-index: 60; display: flex; flex-wrap: wrap; align-items: center; gap: 24px; padding: 20px 36px; background: #fff; border-bottom: 1px solid #dce5e9; }
 .brand { color: #153c4a; text-decoration: none; font-size: 23px; font-weight: 750; letter-spacing: -.8px; display: flex; align-items: center; gap: 10px; }
 .brand-mark { color: #157f88; font-size: 32px; }
 .header-caption { color: #687e89; border-left: 1px solid #dce5e9; padding-left: 24px; font-size: 14px; }
