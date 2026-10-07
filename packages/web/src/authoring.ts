@@ -110,8 +110,8 @@ const newSheet = (id: string, name: string): AuthorSheet => ({ id, name, control
 export const emptyDraft = (): AuthorDraft => ({ version: 2, parameters: [], title: 'Untitled analysis', sheets: [newSheet('sheet-1', 'Sheet 1')], activeSheetId: 'sheet-1', calculatedFields: [] });
 export const activeSheet = (draft: AuthorDraft): AuthorSheet => draft.sheets.find(s => s.id === draft.activeSheetId)!;
 export const sheetParameters = (draft: AuthorDraft, sheet = activeSheet(draft)): AuthorParameter[] => draft.parameters.filter(p => !p.memberPath || p.memberPath === (sheet.imported?.memberPath ?? draft.bundle?.primaryPath));
-export const dimensionLabel = (kind: VisualKind): string => kind === 'sankey' ? 'Source' : kind === 'line' ? 'X-axis' : kind === 'table' ? 'Group-by' : kind === 'pivot' ? 'Rows' : 'Category';
-export const singleMeasure = (kind: VisualKind): boolean => ['sankey', 'pie', 'kpi', 'funnel', 'gauge', 'treemap', 'heatmap', 'box', 'wordCloud', 'histogram', 'filledMap', 'pointMap'].includes(kind);
+export const dimensionLabel = (kind: VisualKind): string => kind === 'waterfall' ? 'Categories' : kind === 'sankey' ? 'Source' : kind === 'line' ? 'X-axis' : kind === 'table' ? 'Group-by' : kind === 'pivot' ? 'Rows' : 'Category';
+export const singleMeasure = (kind: VisualKind): boolean => ['waterfall', 'sankey', 'pie', 'kpi', 'funnel', 'gauge', 'treemap', 'heatmap', 'box', 'wordCloud', 'histogram', 'filledMap', 'pointMap'].includes(kind);
 export const noDimensions = (kind: VisualKind): boolean => kind === 'kpi' || kind === 'gauge';
 export const grouped = (kind: VisualKind): boolean => ['table', 'pivot', 'treemap', 'heatmap', 'box', 'pointMap', 'radar', 'sankey'].includes(kind);
 export const splitDimensions = (kind: VisualKind): boolean => ['pivot', 'heatmap', 'pointMap', 'radar', 'sankey'].includes(kind);

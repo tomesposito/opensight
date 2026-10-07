@@ -91,7 +91,7 @@ function importVisual(raw: BundleVisual, id: string, definition: BundleDefinitio
   const checked = { [variant]: checkedBody };
   const dataSets = [...new Set(references(body))].map(identifier => ({ identifier, arn: definition.dataSetIdentifierDeclarations.find(d => d.identifier === identifier)?.dataSetArn }));
   const issues = Object.hasOwn(kinds, variant) ? differences(checked, projectVisual(visual, raw, (definition.calculatedFields ?? []).map(c => ({ name: string(obj(c).name), expression: string(obj(c).expression), role: 'dimension' }))), variant) : [`Unsupported visual type: ${variant}`];
-  if (kind === 'radar' || kind === 'sankey') {
+  if (kind === 'radar' || kind === 'sankey' || kind === 'waterfall') {
     try { normalizeVisual('bundle', checked); }
     catch (error) { issues.push(error instanceof Error ? `${error.name}: ${error.message}` : String(error)); }
   }
