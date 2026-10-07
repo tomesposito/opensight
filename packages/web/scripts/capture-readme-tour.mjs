@@ -86,6 +86,18 @@ try {
   await hold(1800);
   await page.screenshot({ path: resolve(FRAMES, '../radar.png'), fullPage: true });
   await page.getByRole('button', { name: 'Save draft', exact: true }).click();
+  // Issue #46: shared-node flow diagram through Source / Destination / Weight.
+  await page.locator('.author-card-actions button[aria-label^="Remove "]').click();
+  await page.getByRole('button', { name: 'Sankey', exact: true }).click();
+  await page.locator('.build-panel').getByRole('button', { name: 'Add visual', exact: true }).click();
+  await page.getByLabel('Title', { exact: true }).fill('Revenue from region to category');
+  await page.getByLabel('Show data labels', { exact: true }).check();
+  await page.locator('.author-card .chart svg').waitFor();
+  assert.match(await page.locator('.author-card .chart svg').textContent(), /East/);
+  await page.locator('.author-card').scrollIntoViewIfNeeded();
+  await hold(1800);
+  await page.screenshot({ path: resolve(FRAMES, '../sankey.png'), fullPage: true });
+  await page.getByRole('button', { name: 'Save draft', exact: true }).click();
   // Issue #40: row groups run against local synthetic data and save in the bundle.
   await page.locator('.author-card-actions button[aria-label^="Remove "]').click();
   await page.getByRole('button', { name: 'Pivot', exact: true }).click();
