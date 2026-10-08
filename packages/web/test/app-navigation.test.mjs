@@ -25,7 +25,7 @@ for (const access of accesses) test(`product and secondary navigation preserve g
   const product = home.match(/<nav class="app-nav"[\s\S]*?<\/nav>/)[0];
   const canBuild = access.mode === 'local' || hasCapability(access.session?.role, 'build');
   assert.match(product, />Home<\/a>/); assert.match(product, />Admin<\/a>/);
-  for (const label of ['Analyses', 'Reports', 'Data']) assert.equal(product.includes(`>${label}</a>`), canBuild);
+  for (const label of ['Analyses', 'Data']) assert.equal(product.includes(`>${label}</a>`), canBuild);
   assert.doesNotMatch(product, /Developer|fixtures|definition|AI provider|Users|Mode/);
   assert.equal(shell(access, 'author').includes('aria-label="Analyses"'), canBuild);
   assert.match(home, /href="#\/home" aria-current="page"/);
@@ -131,7 +131,7 @@ test('Analyses reads only its mode/identity collection and reports corrupt stora
 
 for (const role of ['reader', 'reader_ai', undefined]) test(`direct URLs cannot bypass hosted role gates: ${role}`, async t => {
   const ui = await mount(t, role ? hosted(role) : { mode: 'hosted' });
-  for (const page of ['reports', 'analyses', 'author', 'data-prep', 'data-sources', 'fixtures', 'ai-settings', 'users']) {
+  for (const page of ['analyses', 'author', 'data-prep', 'data-sources', 'fixtures', 'ai-settings', 'users']) {
     await ui.navigate({ page });
     assert.match(ui.text(), /SECURITY_(BUILD|ADMIN)_REQUIRED/);
     for (const Component of [AuthorCanvas, LocalDrafts, DataPrep, DataSources, AISettings, UserManagement]) assert.equal(ui.root.findAllByType(Component).length, 0);

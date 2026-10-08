@@ -8,10 +8,11 @@ bidirectional asset compatibility — connect data, prepare datasets, build
 analyses and dashboards, and ask questions in natural language. Self-hosted;
 no AWS required.
 
-![OpenSight tour: sample dashboard, O answer, data tools and paginated reports](docs/images/opensight-tour.gif)
+![OpenSight tour: dashboard, back to top, O answer, command palette, authoring, auto-save recovery, radar, Sankey, waterfall, insight, pivot, saved drafts, and data tools](docs/images/opensight-tour.gif)
 
-*Above: the offline demo — a sample dashboard, O answering "revenue by region",
-data preparation, connectors and paginated report preview.*
+*Above: the offline demo — a dashboard, O answering "revenue by region" and
+adding the chart to an analysis, saved drafts, data preparation, connectors,
+and administration.*
 
 ## Run it
 
@@ -69,17 +70,6 @@ it cannot upload files or run live queries and is not a deployed server. The
 how to build and open it.
 
 ## Features
-
-### Paginated reports
-
-Open **Reports** to save local definitions, preview pages and export a real PDF.
-Text and dataset-bound table bands flow across A4, Letter or Legal pages, with
-repeated column headers and final page numbers. The offline demo uses labeled
-synthetic sample rows; live queries, visual snapshots and scheduled distribution
-are later slices. Text measurement is approximate. See
-[paginated report semantics and limits](docs/paginated-reports.md).
-
-![Reports with local drafts, page setup, paged sample preview and PDF export](docs/images/reports.png)
 
 ### 📊 Dashboards and analyses
 
@@ -179,7 +169,7 @@ of the 23-entry catalog with honest setup and implementation states. PostgreSQL
 requires an operator-provisioned hosted source; MySQL has no product API path.
 The static demo shows the file setup with uploads disabled.
 
-![Local Data sources view with a staged synthetic file and unavailable connectors hidden](docs/images/data-sources.png)
+![Local Data sources view featuring file upload with unavailable connectors hidden](docs/images/data-sources.png)
 
 The local stack accepts files without hosted authentication. Upload a CSV,
 prepare its columns, save the pipeline and select **Build a chart**. See
@@ -239,13 +229,12 @@ delivery and dedupe keys. See [tenant automation](docs/tenant-automation.md).
 
 ## Contributor quickstart
 
-For development and verification, use Node 24+, npm and local Poppler
-(`pdftotext`, for the PDF extraction tests). From the repository root:
+For development and verification, use Node 24+ and npm. From the repository root:
 
 ```bash
 npm ci
 npm run build
-TZ=UTC npm test
+npm test
 ```
 
 To use the app, follow [Run it](#run-it) above. An API without local-data support
@@ -290,7 +279,6 @@ packages/bundle-parser  Observed .qs archive import + synthetic JSON inventory
 packages/api            Local definition and dataset-query API
 packages/web            React renderer + authoring and bundle round trips
 packages/query-engine   Typed synthetic planner + local DuckDB CSV executor
-packages/reports        Report definitions, shared page layout and real PDF export
 packages/cli            Archive import/export/validate (planned)
 docs/research           Observed format and API contract research
 fixtures                Sanitized real export + synthetic regression specifications
@@ -304,7 +292,6 @@ architecture, decisions and phased plan. Feature guides live in
 [docs/](docs/): [bundle round trips](docs/bundle-roundtrip.md),
 [interactive controls](docs/parameters-controls.md),
 [visuals and themes](docs/phase2d-visuals-themes.md),
-[paginated reports](docs/paginated-reports.md),
 [scheduled refresh, reports and alerts](docs/scheduled-refresh-reports-alerts.md),
 [tenant job ownership and delivery](docs/tenant-automation.md),
 [security and namespaces](docs/security-namespaces.md),

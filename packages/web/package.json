@@ -5,7 +5,7 @@
   "license": "Apache-2.0",
   "type": "module",
   "scripts": {
-    "prepare:fixtures": "npm run build --workspace @opensight/reports && npm run build --workspace @opensight/bundle-parser && npm run build --workspace @opensight/query-engine && npm run build --workspace @opensight/o-interpreter && node scripts/prepare-fixtures.mjs",
+    "prepare:fixtures": "npm run build --workspace @opensight/bundle-parser && npm run build --workspace @opensight/query-engine && npm run build --workspace @opensight/o-interpreter && node scripts/prepare-fixtures.mjs",
     "dev": "npm run prepare:fixtures && vite --host 127.0.0.1",
     "build": "npm run prepare:fixtures && tsc --noEmit && vite build && npm run build:embed",
     "build:demo": "npm run prepare:fixtures && tsc --noEmit && node scripts/build-demo.mjs && npm run build:embed",
@@ -21,8 +21,7 @@
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-grid-layout": "^2.2.4",
-    "@opensight/query-engine": "0.0.0",
-    "@opensight/reports": "0.0.0"
+    "@opensight/query-engine": "0.0.0"
   },
   "devDependencies": {
     "@types/node": "^26.6.3",

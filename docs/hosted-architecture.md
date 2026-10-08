@@ -765,9 +765,6 @@ for bundled commercial licenses.
 
 ## 7. Open questions
 
-Related confirmed report implementation decision: [ITD D-18 — report PDF rendering](itd/D-18-report-pdf-rendering.md)
-(Phase 4 slice 1, 2026-10-08; local/stateless export only).
-
 Related confirmed editor decision: [IDD D-15 — field assignment creates a
 visual](idd/D-15-field-assignment-creates-visual.md) (issue #43, 2026-10-06).
 

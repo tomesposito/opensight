@@ -1,4 +1,3 @@
-import { paginatedReportRoute } from './paginated-report-routes.js';
 import { EmbedSessions, embedSessionKey } from './embed-sessions.js';
 import { EmbedContent } from './embed-content.js';
 import { EmbedSources } from './embed-sources.js';
@@ -227,12 +226,6 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
       const context = await metadata.authenticate(request, verified);
       path = scopePath(path, context);
       await usage?.consume(metadata, context, 'apiCalls');
-      if (await paginatedReportRoute(request, response, path, '', async () => {
-        const current = await metadata.authenticate(request, verified);
-        if (current.tenantId !== context.tenantId || current.namespaceId !== context.namespaceId || current.userId !== context.userId) throw new MetadataError('AUTHENTICATION_FAILED', 401);
-        const user = await metadata.get(current, { kind: 'user', id: current.userId });
-        if (!hasCapability(user.body.role as Parameters<typeof hasCapability>[0], 'build')) throw new MetadataError('SECURITY_BUILD_REQUIRED', 403);
-      })) return;
       if (path === '/api/session') {
         method(request, response, ['GET']);
         const user = await metadata.get(context, { kind: 'user', id: context.userId });
