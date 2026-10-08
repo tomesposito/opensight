@@ -4,15 +4,24 @@ The shared [app navigation](app-navigation.md) header identifies OpenSight and
 the active product section. Inside Analyses, Author uses two full-width,
 square-edged bands: the editable analysis title above the blue analysis toolbar.
 The toolbar orders File, Edit, Data, Insert, Sheets, Objects, Search, the
-existing Q form, FIT TO WIDTH, PUBLISH, and NEW LOOK. Narrow viewports wrap
-controls without changing their reading or keyboard order.
+Q trigger, Add visual, FIT TO WIDTH, PUBLISH, and NEW LOOK. At desktop widths,
+the identity band is 32px high and the menu strip is 36px; title and controls
+use 12px type. Q uses a flexible 220–280px pill centered between the menus
+and actions. Narrow viewports wrap controls without changing their reading
+or keyboard order. Long analysis and dataset names truncate visually while
+their full values remain available to editing and accessibility APIs.
+
+The app already supplies its brand in the product navigation. Its analysis
+title therefore has no standalone brand separator. Standalone Author retains
+the compact OpenSight logo/name block. Neither surface changes dock widths.
 
 Native `details`/`summary` menus keep keyboard activation, exclusive opening,
 Escape-to-close with focus restoration, outside-click closure and action
 closure. Popovers anchor below the menu, above the sheet, with a themed border,
 shadow and surface. `aria-label="Analysis menu"` and the existing selectors
-remain available to tours. Q answers and hosted-service disclosures stay in
-the document flow below the toolbar.
+remain available to tours. Q opens the shared right-hand panel above sticky
+headers so Close remains clickable. Its dimensions and answer layout are
+unchanged. Hosted-service and static-demo disclosures remain visible in flow.
 
 NEW LOOK remains the native Light/Dark select with `aria-label="NEW LOOK"`.
 It dispatches the existing `chrome` action, persists in the local draft, and
@@ -39,7 +48,7 @@ WCAG relative luminance and are rounded here, not in the assertions.
 `--header-border` is `#c8eafa`; `--header-focus` is white. Open menus have an
 underline as well as a darker background. The active FIT TO WIDTH button has
 a pale fill and dark underline; focus rings remain visible in both themes.
-The Q field uses the pressed background with opaque white placeholder text.
+The Q trigger uses the pressed background with opaque white text.
 
 | Popover token | Light | Dark |
 | --- | --- | --- |
@@ -62,17 +71,14 @@ Internal references, screenshots and tour scripts stay outside version control.
 
 ## Screenshot validation
 
-The private 1440×900 tour captures light/dark headers, both File popovers, an
-Author overview and a full-page view. Its 46 computed-color checks have a
-minimum text contrast of 5.44:1. Keyboard menus, Q, FIT TO WIDTH, PUBLISH,
-theme persistence, other-mode chrome and narrow layouts pass with no browser
-errors or external requests.
+The [toolbar/header geometry notes](parity-toolbar-header-gap-notes.md) record
+1440×900 light/dark captures, reference-region diffs, responsive checks and
+full-suite results. The header tour's 34 computed-color checks have a minimum
+contrast of 5.44:1. Keyboard menus, Q, FIT TO WIDTH, PUBLISH, theme persistence,
+other-mode chrome and narrow layouts pass with no browser errors or external
+requests. Geometry tests run in offline Chromium through root `npm test`.
 
-Compared with the prior data-panel tour, the sheet/docks start 167 pixels
-higher; the four columns retain their 190 / 216 / 758 / 220 pixel widths.
-No new visual regression was found. The QuickSight reference remains denser
-and uses different typography and data; full visual fidelity is not claimed.
-
-Final root `npm test` on 2026-09-28 exited 0: **1,089 passed / 0 failed /
-1 skipped**. The only skip is the live PostgreSQL executor without
-`DATABASE_URL`. The API suites ran with localhost socket access.
+The compact bands and disclosure spacing move the docks 42px higher while
+retaining their 190 / 216 / 758 / 220px desktop widths. The extra product
+navigation, visible local-mode disclosures, reference colors and different
+canvas content remain measured gaps; visual equivalence is not claimed.
