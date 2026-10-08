@@ -1,0 +1,637 @@
+{
+  "tolerance": 16,
+  "equivalentThreshold": 0.05,
+  "viewport": "1440x900",
+  "referenceCoordinates": {
+    "classic": {
+      "identity": [
+        104,
+        123
+      ],
+      "menu": [
+        123,
+        148
+      ],
+      "window": [
+        104,
+        181
+      ]
+    },
+    "newlook": {
+      "identity": [
+        8,
+        34
+      ],
+      "menu": [
+        34,
+        67
+      ],
+      "window": [
+        8,
+        98
+      ]
+    }
+  },
+  "phases": {
+    "before": {
+      "parity": [
+        {
+          "id": "editor-classic",
+          "overallDiffFraction": 0.468995993687022,
+          "aspectMismatch": false,
+          "regions": {
+            "header-toolbar": 0.8647680401411745,
+            "data-panel": 0.41631154621364813,
+            "visuals-panel": 0.3491437293046358,
+            "canvas": 0.4272981504992623
+          }
+        },
+        {
+          "id": "editor-newlook",
+          "overallDiffFraction": 0.44469459850273646,
+          "aspectMismatch": false,
+          "regions": {
+            "header": 0.994245942007136,
+            "toolbar": 0.9984567901234568,
+            "data-panel": 0.5341815217776518,
+            "visuals-panel": 0.4432309221329185,
+            "canvas": 0.36516138801739517,
+            "properties-panel": 0.30000146610368283
+          }
+        },
+        {
+          "id": "q-generative",
+          "overallDiffFraction": 0.4103640898748861,
+          "aspectMismatch": false,
+          "regions": {
+            "header-toolbar": 0.9831093660088684,
+            "data-panel": 0.3885417213674316,
+            "canvas": 0.29509351723314375,
+            "ask-q-panel": 0.6200954223942347,
+            "build-for-me": 0.3280469960406266
+          }
+        }
+      ],
+      "aligned-parity": [
+        {
+          "id": "classic-light",
+          "overallDiffFraction": 0.9416338222308371,
+          "aspectMismatch": false,
+          "regions": {
+            "identity": 0.7652526839486776,
+            "menu": 0.9993698175787729,
+            "below-menu": 0.9994472084024323
+          }
+        },
+        {
+          "id": "classic-dark",
+          "overallDiffFraction": 0.9416338222308371,
+          "aspectMismatch": false,
+          "regions": {
+            "identity": 0.7652526839486776,
+            "menu": 0.9993698175787729,
+            "below-menu": 0.9994472084024323
+          }
+        },
+        {
+          "id": "newlook-light",
+          "overallDiffFraction": 0.7676361780839392,
+          "aspectMismatch": false,
+          "regions": {
+            "identity": 0.9999681081770634,
+            "menu": 0.6616183786947615,
+            "below-menu": 0.6890547263681592
+          }
+        },
+        {
+          "id": "newlook-dark",
+          "overallDiffFraction": 0.8721866856195214,
+          "aspectMismatch": false,
+          "regions": {
+            "identity": 0.9999681081770634,
+            "menu": 0.6616183786947615,
+            "below-menu": 0.995961054940352
+          }
+        }
+      ],
+      "browser": {
+        "pageErrors": [],
+        "externalRequests": [],
+        "responsive": [
+          {
+            "name": "header-light",
+            "width": 1440,
+            "scrollWidth": 1440,
+            "identityHeight": 50,
+            "menuHeight": 44
+          },
+          {
+            "name": "header-light-1100",
+            "width": 1100,
+            "scrollWidth": 1100,
+            "identityHeight": 50,
+            "menuHeight": 84
+          },
+          {
+            "name": "header-light-760",
+            "width": 760,
+            "scrollWidth": 760,
+            "identityHeight": 50,
+            "menuHeight": 116
+          },
+          {
+            "name": "header-light-390",
+            "width": 390,
+            "scrollWidth": 390,
+            "identityHeight": 50,
+            "menuHeight": 146
+          },
+          {
+            "name": "header-dark",
+            "width": 1440,
+            "scrollWidth": 1440,
+            "identityHeight": 50,
+            "menuHeight": 44
+          },
+          {
+            "name": "header-dark-1100",
+            "width": 1100,
+            "scrollWidth": 1100,
+            "identityHeight": 50,
+            "menuHeight": 84
+          },
+          {
+            "name": "header-dark-760",
+            "width": 760,
+            "scrollWidth": 760,
+            "identityHeight": 50,
+            "menuHeight": 116
+          },
+          {
+            "name": "header-dark-390",
+            "width": 390,
+            "scrollWidth": 390,
+            "identityHeight": 50,
+            "menuHeight": 146
+          }
+        ],
+        "desktop": {
+          "rectColumns": [
+            "x",
+            "y",
+            "width",
+            "height"
+          ],
+          "regions": {
+            ".product-header": [
+              0,
+              0,
+              1440,
+              67
+            ],
+            ".product-header .brand": [
+              36,
+              11.5,
+              147.53125,
+              43
+            ],
+            ".section-nav": [
+              0,
+              67,
+              1440,
+              46
+            ],
+            ".author-topbar": [
+              0,
+              113,
+              1440,
+              50
+            ],
+            ".analysis-title": [
+              16,
+              122,
+              1408,
+              32
+            ],
+            ".analysis-title input": [
+              35,
+              122,
+              1389,
+              32
+            ],
+            ".author-menu": [
+              0,
+              163,
+              1440,
+              44
+            ],
+            ".q-trigger": [
+              403.484375,
+              170,
+              420,
+              30
+            ],
+            ".chrome-switch": [
+              1287.296875,
+              170,
+              136.703125,
+              30
+            ],
+            ".author-tools": [
+              16,
+              211,
+              1408,
+              30.796875
+            ],
+            ".fixture-notice": [
+              16,
+              249.796875,
+              1408,
+              48
+            ],
+            ".author-layout": [
+              16,
+              330.296875,
+              1408,
+              670.59375
+            ]
+          },
+          "controls": {
+            "File": [
+              16,
+              163,
+              39.34375,
+              44
+            ],
+            "Edit": [
+              59.34375,
+              163,
+              40.6875,
+              44
+            ],
+            "Data": [
+              104.03125,
+              163,
+              45.359375,
+              44
+            ],
+            "Insert": [
+              153.390625,
+              163,
+              50.015625,
+              44
+            ],
+            "Sheets": [
+              207.40625,
+              163,
+              57.359375,
+              44
+            ],
+            "Objects": [
+              268.765625,
+              163,
+              60.6875,
+              44
+            ],
+            "Search": [
+              333.453125,
+              163,
+              58.03125,
+              44
+            ],
+            "Q Ask a question about Local sales": [
+              403.484375,
+              170,
+              420,
+              30
+            ],
+            "Add visual": [
+              1023.734375,
+              170,
+              74.953125,
+              30
+            ],
+            "FIT TO WIDTH": [
+              1102.6875,
+              170,
+              97.984375,
+              30
+            ],
+            "PUBLISH": [
+              1204.671875,
+              170,
+              70.625,
+              30
+            ],
+            "LightDark": [
+              1366,
+              170,
+              58,
+              30
+            ]
+          }
+        }
+      }
+    },
+    "after": {
+      "parity": [
+        {
+          "id": "editor-classic",
+          "overallDiffFraction": 0.4419788758042977,
+          "aspectMismatch": false,
+          "regions": {
+            "header-toolbar": 0.66663477484373,
+            "data-panel": 0.44147710912755544,
+            "visuals-panel": 0.33733443708609273,
+            "canvas": 0.4196616683251553
+          }
+        },
+        {
+          "id": "editor-newlook",
+          "overallDiffFraction": 0.4215205705953056,
+          "aspectMismatch": false,
+          "regions": {
+            "header": 0.994245942007136,
+            "toolbar": 0.9984567901234568,
+            "data-panel": 0.5039987714262087,
+            "visuals-panel": 0.4223165672802696,
+            "canvas": 0.3405497745157886,
+            "properties-panel": 0.2699610016420361
+          }
+        },
+        {
+          "id": "q-generative",
+          "overallDiffFraction": 0.4099160098975888,
+          "aspectMismatch": false,
+          "regions": {
+            "header-toolbar": 0.980723013911925,
+            "data-panel": 0.3885417213674316,
+            "canvas": 0.29509351723314375,
+            "ask-q-panel": 0.6182687174696383,
+            "build-for-me": 0.3280469960406266
+          }
+        }
+      ],
+      "aligned-parity": [
+        {
+          "id": "classic-light",
+          "overallDiffFraction": 0.7650922874803472,
+          "aspectMismatch": false,
+          "regions": {
+            "identity": 0.7691804137208693,
+            "menu": 0.9940298507462687,
+            "below-menu": 0.5893009698979849
+          }
+        },
+        {
+          "id": "classic-dark",
+          "overallDiffFraction": 0.9331804182550452,
+          "aspectMismatch": false,
+          "regions": {
+            "identity": 0.7691804137208693,
+            "menu": 0.9940298507462687,
+            "below-menu": 0.98150660837228
+          }
+        },
+        {
+          "id": "newlook-light",
+          "overallDiffFraction": 0.5441747307418949,
+          "aspectMismatch": false,
+          "regions": {
+            "identity": 0.9997767572394438,
+            "menu": 0.4291288654765389,
+            "below-menu": 0.2882362381640186
+          }
+        },
+        {
+          "id": "newlook-dark",
+          "overallDiffFraction": 0.7838281121863211,
+          "aspectMismatch": false,
+          "regions": {
+            "identity": 0.9997767572394438,
+            "menu": 0.4291044776119403,
+            "below-menu": 0.9917616219975391
+          }
+        }
+      ],
+      "browser": {
+        "pageErrors": [],
+        "externalRequests": [],
+        "responsive": [
+          {
+            "name": "header-light",
+            "width": 1440,
+            "scrollWidth": 1440,
+            "identityHeight": 32,
+            "menuHeight": 36
+          },
+          {
+            "name": "header-light-1100",
+            "width": 1100,
+            "scrollWidth": 1100,
+            "identityHeight": 32,
+            "menuHeight": 40
+          },
+          {
+            "name": "header-light-760",
+            "width": 760,
+            "scrollWidth": 760,
+            "identityHeight": 32,
+            "menuHeight": 76
+          },
+          {
+            "name": "header-light-390",
+            "width": 390,
+            "scrollWidth": 390,
+            "identityHeight": 32,
+            "menuHeight": 112
+          },
+          {
+            "name": "header-dark",
+            "width": 1440,
+            "scrollWidth": 1440,
+            "identityHeight": 32,
+            "menuHeight": 36
+          },
+          {
+            "name": "header-dark-1100",
+            "width": 1100,
+            "scrollWidth": 1100,
+            "identityHeight": 32,
+            "menuHeight": 40
+          },
+          {
+            "name": "header-dark-760",
+            "width": 760,
+            "scrollWidth": 760,
+            "identityHeight": 32,
+            "menuHeight": 76
+          },
+          {
+            "name": "header-dark-390",
+            "width": 390,
+            "scrollWidth": 390,
+            "identityHeight": 32,
+            "menuHeight": 112
+          }
+        ],
+        "desktop": {
+          "rectColumns": [
+            "x",
+            "y",
+            "width",
+            "height"
+          ],
+          "regions": {
+            ".product-header": [
+              0,
+              0,
+              1440,
+              67
+            ],
+            ".product-header .brand": [
+              36,
+              11.5,
+              147.53125,
+              43
+            ],
+            ".section-nav": [
+              0,
+              67,
+              1440,
+              46
+            ],
+            ".author-topbar": [
+              0,
+              113,
+              1440,
+              32
+            ],
+            ".analysis-title": [
+              16,
+              115,
+              608,
+              28
+            ],
+            ".analysis-title input": [
+              16,
+              115,
+              608,
+              28
+            ],
+            ".author-menu": [
+              0,
+              145,
+              1440,
+              36
+            ],
+            ".q-trigger": [
+              552.4375,
+              149,
+              259.1875,
+              28
+            ],
+            ".chrome-switch": [
+              1285.3125,
+              149,
+              138.6875,
+              28
+            ],
+            ".author-tools": [
+              16,
+              185,
+              1408,
+              30.796875
+            ],
+            ".fixture-notice": [
+              16,
+              219.796875,
+              1408,
+              44
+            ],
+            ".author-layout": [
+              16,
+              288.296875,
+              1408,
+              670.59375
+            ]
+          },
+          "controls": {
+            "File": [
+              16,
+              145,
+              35.34375,
+              36
+            ],
+            "Edit": [
+              51.34375,
+              145,
+              36.6875,
+              36
+            ],
+            "Data": [
+              88.03125,
+              145,
+              41.359375,
+              36
+            ],
+            "Insert": [
+              129.390625,
+              145,
+              46.015625,
+              36
+            ],
+            "Sheets": [
+              175.40625,
+              145,
+              53.359375,
+              36
+            ],
+            "Objects": [
+              228.765625,
+              145,
+              56.6875,
+              36
+            ],
+            "Search": [
+              285.453125,
+              145,
+              54.03125,
+              36
+            ],
+            "QAsk a question about Local sales": [
+              552.4375,
+              149,
+              259.1875,
+              28
+            ],
+            "Add visual": [
+              1028.578125,
+              149,
+              73.375,
+              28
+            ],
+            "FIT TO WIDTH": [
+              1105.953125,
+              149,
+              98,
+              28
+            ],
+            "PUBLISH": [
+              1207.953125,
+              149,
+              69.359375,
+              28
+            ],
+            "LightDark": [
+              1367,
+              149,
+              57,
+              28
+            ]
+          }
+        }
+      }
+    }
+  }
+}

@@ -64,6 +64,38 @@ try {
   await page.locator('#o-question').press('Enter');
   await page.locator('.o-result .chart svg').waitFor();
   await capture('home-q');
+  if (process.env.OPENSIGHT_CAPTURE_README === '1') {
+    await navigate(page, 'author');
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await capture('author-empty');
+    await page.getByRole('button', { name: 'Assign region', exact: true }).click();
+    await page.getByRole('button', { name: 'Assign revenue', exact: true }).click();
+    await page.locator('.author-card .chart svg').waitFor();
+    const manual = page.locator('.author-utilities').getByRole('button', { name: 'Save draft', exact: true });
+    await page.getByLabel('Analysis title', { exact: true }).fill('Revenue analysis');
+    await manual.click();
+    await page.locator('.toast').getByRole('button', { name: /^Dismiss notification/ }).click();
+    await capture('author');
+    await page.clock.setFixedTime(new Date('2026-10-08T12:01:00Z'));
+    await page.getByLabel('Analysis title', { exact: true }).fill('Auto-saved revenue analysis');
+    await page.waitForFunction(() => /^Saved · /.test(document.querySelector('.save-indicator')?.textContent ?? ''));
+    await page.reload(); await page.locator('.draft-recovery').waitFor();
+    await capture('auto-save');
+    await page.locator('.draft-recovery').getByRole('button', { name: 'Dismiss', exact: true }).click();
+    await manual.focus(); await page.keyboard.press('Control+k');
+    await page.getByRole('dialog', { name: 'Command palette', exact: true }).waitFor();
+    await capture('command-palette'); await page.keyboard.press('Escape');
+    await manual.focus(); await page.keyboard.press('Shift+?');
+    await page.getByRole('dialog', { name: 'Keyboard shortcuts', exact: true }).waitFor();
+    await capture('keyboard-shortcuts'); await page.keyboard.press('Escape');
+    await page.getByRole('tab', { name: 'Interaction', exact: true }).click();
+    await page.getByLabel('Action type').selectOption('URL');
+    await page.getByRole('button', { name: 'Add url action', exact: true }).click();
+    await page.getByLabel('URL template', { exact: true }).fill('https://example.com/region/{region}');
+    await page.waitForFunction(() => /^Saved · /.test(document.querySelector('.save-indicator')?.textContent ?? ''));
+    await capture('url-actions');
+    await manual.click(); await capture('toasts');
+  }
   assert.deepEqual(errors, []); assert.deepEqual(requests, []);
   await writeFile(resolve(output, 'geometry.json'), JSON.stringify({ measurements, pageErrors: errors, externalRequests: requests }, null, 2) + '\n');
   console.log(JSON.stringify({ output, measurements: measurements.length, pageErrors: errors.length, externalRequests: requests.length }));

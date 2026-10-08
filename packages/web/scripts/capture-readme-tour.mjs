@@ -17,9 +17,9 @@ mkdirSync(FRAMES, { recursive: true });
 
 const browser = await chromium.launch({ executablePath: '/opt/meta-chromium/chrome', args: ['--no-sandbox', '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
 const page = await (await browser.newContext({ viewport: { width: 1280, height: 800 } })).newPage();
-const errors = [];
+const errors = [], external = [];
 page.on('pageerror', e => errors.push(String(e && e.message || e).slice(0, 120)));
-await page.route(/^https?:/, r => r.abort());
+await page.route(/^https?:/, r => { external.push(r.request().url()); return r.abort(); });
 
 let n = 0;
 const snap = async () => {
@@ -27,6 +27,7 @@ const snap = async () => {
 };
 // Hold for ms, snapping roughly every 200ms (screenshot time included).
 const hold = async ms => {
+  if (process.env.OPENSIGHT_CAPTURE_STILLS_ONLY === '1') { await page.waitForTimeout(300); return; }
   for (let i = 0; i < Math.ceil(ms / 200); i++) await snap();
 };
 const setMode = mode => navigate(page, mode);
@@ -159,7 +160,7 @@ try {
   await hold(1600);
 
   await setMode('security'); await hold(1400);
-  assert.deepEqual(errors, []);
+  assert.deepEqual(errors, []); assert.deepEqual(external, []);
   console.log('frames:', n, 'errors:', JSON.stringify(errors.slice(0, 4)));
 } catch (error) {
   await page.screenshot({ path: resolve(FRAMES, '../failure.png'), fullPage: true });
