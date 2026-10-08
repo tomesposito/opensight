@@ -78,7 +78,7 @@ test('Issue #35: settled missing, empty, failed and definition states have no lo
     assert.match(html, /aria-busy="false"/);
     assert.doesNotMatch(html, /empty-symbol|◌|Loading data|visual-skeleton/);
   }
-  assert.match(card({ ...visual, rows: null }, { loading: true }), /class="visual-skeleton"/);
+  assert.match(card({ ...visual, rows: null }, { loading: true }), /class="visual-skeleton /);
 });
 
 
@@ -138,8 +138,11 @@ test('Issue #49: skeletons never get stuck on screen after load and never mask e
   // Settled visuals: no skeleton, no stuck loading state.
   assert.doesNotMatch(card({ ...visual }), /visual-skeleton/);
   assert.doesNotMatch(card({ ...visual, rows: [] }), /visual-skeleton/);
-  // Loading flag with data already ready: the result renders, no skeleton on top.
-  const ready = card({ ...visual }, { loading: true });
+  // Loading flag with ready data: the pending visual clears for the skeleton only when no results are current.
+  const loading = card({ ...visual, rows: null }, { loading: true });
+  assert.doesNotMatch(loading, /class="chart"/);
+  assert.match(loading, /visual-skeleton/);
+  const ready = card({ ...visual });
   assert.match(ready, /class="chart"/);
   assert.doesNotMatch(ready, /visual-skeleton/);
   // Compile errors win over loading: the error alert renders, not the skeleton.
