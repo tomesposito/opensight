@@ -767,6 +767,9 @@ for bundled commercial licenses.
 
 Related confirmed editor decision: [IDD D-15 — field assignment creates a
 visual](idd/D-15-field-assignment-creates-visual.md) (issue #43, 2026-10-06).
+
+Related confirmed persistence decision: [ITD D-17 — local draft auto-save](itd/D-17-local-draft-autosave.md)
+(issue #54, 2026-10-08); browser storage only, with no hosted persistence change.
 It applies to the shared Author UI, including hosted authoring, and creates
 no additional hosting requirement.
 
