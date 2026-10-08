@@ -49,6 +49,33 @@ legible enough for a reliable control measurement. New-look's NEW LOOK
 control is on its separate action row; OpenSight preserves the existing
 menu order and native Light/Dark selector.
 
+The clearer new-look reference also permits approximate control measurements
+(±2 source pixels; source width 1206px). Text starts, rather than invisible
+hit-area edges, are used for menu spacing:
+
+| New-look reference at 1440px width | Reference | Before | After |
+| --- | ---: | ---: | ---: |
+| File text x | 25.1 | 26.0 | 24.0 |
+| Edit text x | 60.9 | 69.3 | 59.3 |
+| Data text x | 97.9 | 114.0 | 96.0 |
+| Insert text x | 138.5 | 163.4 | 137.4 |
+| Sheets text x | 187.5 | 217.4 | 183.4 |
+| Objects text x | 240.0 | 278.8 | 236.8 |
+| Search text x | 297.3 | 343.5 | 293.5 |
+| Menu center y relative to identity top | 50.7 | 72 | 50 |
+| Q entry width / height | 223.3 / 19.1 | 420 / 30 | 259.2 / 28 |
+| FIT TO WIDTH left edge | 1251.3 | 1102.7 | 1106.0 |
+| PUBLISH left edge | 1356.4 | 1204.7 | 1208.0 |
+
+The reference logo starts near x=23.9px and title text near x=162.4px after
+normalization; its combined logo/title content spans roughly 227px. OpenSight's
+product logo and editable title occupy separate rows. The final title's 608px
+maximum bounds its editing area, not the text length. PUBLISH/FIT remain left
+of the reference positions because the native NEW LOOK selector stays after
+them in the existing strip. Reference NEW LOOK starts near x=1331.3px on the
+separate row below; moving it there would change the specified control order.
+The reference Q hit area is smaller than the retained 28px native button.
+
 The shared product/section navigation and visible static-demo disclosures
 account for additional vertical offsets. They must remain usable and honest.
 Dock widths, gallery shape, canvas content and Q answer layout are outside
@@ -159,6 +186,38 @@ The uploaded Q tour passes **17 real local dataset queries**, no hosted O
 queries, and zero browser errors/external requests. The local draft media
 flow passes five prepared-data queries with zero browser errors/external
 requests. All use synthetic fixtures.
+
+## Independent verification
+
+Final root `TZ=UTC npm test` exited **0** on 2026-10-08:
+**1,869 passed / 0 failed / 12 skipped / 0 cancelled**. Every skip requires
+live PostgreSQL because `DATABASE_URL` is unset. Strict TypeScript, the twelve
+new offline Chromium geometry/stacking cases and root conformance all pass.
+
+| Runner | Passed | Failed | Skipped |
+| --- | ---: | ---: | ---: |
+| API | 303 | 0 | 10 |
+| Bundle parser | 199 | 0 | 0 |
+| Embedding SDK | 9 | 0 | 0 |
+| Interpreter | 32 | 0 | 0 |
+| Parity | 11 | 0 | 0 |
+| Query engine | 500 | 0 | 2 |
+| Web | 809 | 0 | 0 |
+| Root conformance | 6 | 0 | 0 |
+| Total | 1869 | 0 | 12 |
+
+An initial run concurrent with captures hit `EXECUTION_CANCELLED` in the
+existing cached-preparation API test's 10-second execution budget. The final
+suite ran without concurrent captures and passed unchanged. A second complete
+green run also resolved an ambiguous command-runner signal status by recording
+npm's own exit code in a durable local file: **0**, elapsed **426.15 seconds**.
+No production timeout, test assertion or dependency was changed to obtain a pass.
+
+`npm run build:demo --workspace @opensight/web` exited **0** and rebuilt the
+single-file demo plus embed artifacts. No build output, private reference
+pixels or reference-derived captures are committed. `SOLUTION_DESIGN.md` and
+dependency manifests are unchanged. All checkpoint commits stay on
+`work/parity-toolbar-header`; nothing was pushed or merged.
 
 ## README media
 

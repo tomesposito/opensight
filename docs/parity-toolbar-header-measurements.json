@@ -29,7 +29,28 @@
       "window": [
         8,
         98
-      ]
+      ],
+      "menuTextStarts": [
+        21,
+        51,
+        82,
+        116,
+        157,
+        201,
+        249
+      ],
+      "qRect": [
+        500,
+        43,
+        187,
+        16
+      ],
+      "fitLeft": 1048,
+      "publishLeft": 1136,
+      "newLookLeft": 1115,
+      "logoLeft": 20,
+      "titleTextLeft": 136,
+      "measurementUncertainty": 2
     }
   },
   "phases": {
