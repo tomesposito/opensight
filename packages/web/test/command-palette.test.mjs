@@ -95,7 +95,8 @@ test('Author commands use the latest save path, NEW LOOK action, and current she
 });
 test('storage failures keep recovery details and emit a failure toast, never Draft saved', async t => {
   const ui = await mountPalette(t, { blocked: true }); await ui.open(); await ui.run('Save draft');
-  assert.equal(ui.saved(), undefined); assert.match(ui.messages().join(' '), /could not be saved/);
+  assert.equal(ui.saved(), undefined); assert.equal(ui.messages().length, 1);
+  assert.match(ui.messages()[0], /Browser storage is blocked.*Export JSON/);
   assert.ok(!ui.messages().includes('Draft saved')); assert.match(JSON.stringify(ui.renderer.toJSON()), /Browser storage is blocked/);
 });
 test('Q&A opens its existing panel from Home and Author, including when already open', async t => {

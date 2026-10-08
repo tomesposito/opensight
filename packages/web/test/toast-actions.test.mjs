@@ -57,7 +57,7 @@ test('real Save draft control confirms persisted data, dedupes clicks and fades 
 test('failed draft storage never shows a success toast', async t => {
   const ui = await mount(t, { blocked: true });
   await ui.click('Save draft');
-  assert.deepEqual(ui.messages(), []);
+  assert.equal(ui.messages().length, 1); assert.match(ui.messages()[0], /Browser storage is blocked.*Export JSON/);
   assert.match(JSON.stringify(ui.renderer.toJSON()), /Browser storage is blocked/);
   assert.equal(ui.button('Copy draft link').props.disabled, true);
 });
@@ -129,7 +129,7 @@ test('invalid and paused imports never claim success or replace the current draf
   assert.deepEqual(ui.messages(), []);
   assert.match(JSON.stringify(ui.renderer.toJSON()), /Import failed/);
   await importFile(ui, 'good.json', new TextEncoder().encode(JSON.stringify(resource())));
-  assert.deepEqual(ui.messages(), []);
+  assert.equal(ui.messages().length, 1); assert.match(ui.messages()[0], /Browser storage is blocked.*Export JSON/);
   assert.match(JSON.stringify(ui.renderer.toJSON()), /Import paused/);
   assert.equal(ui.renderer.root.findByType(AuthorCanvas).props.draft.title, 'Keep these edits');
 });

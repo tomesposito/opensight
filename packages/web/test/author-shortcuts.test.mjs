@@ -90,7 +90,8 @@ for (const modifier of ['metaKey', 'ctrlKey']) test(`${modifier}+S saves the lat
 test('shortcut storage failure preserves the error and never announces a save', async t => {
   const ui = await mount(t, { blocked: true });
   assert.equal((await ui.key({ key: 's', ctrlKey: true })).defaultPrevented, true);
-  assert.equal(ui.saved(), undefined); assert.deepEqual(ui.messages(), []);
+  assert.equal(ui.saved(), undefined); assert.equal(ui.messages().length, 1);
+  assert.match(ui.messages()[0], /Browser storage is blocked.*Export JSON/);
   assert.match(JSON.stringify(ui.renderer.toJSON()), /Browser storage is blocked/);
 });
 

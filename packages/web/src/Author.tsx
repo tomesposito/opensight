@@ -49,6 +49,7 @@ export function Author(props: AuthorProps) {
 }
 
 type EditorProps = { draft: AuthorDraft; dispatch: Dispatch<AuthorAction>; client?: QueryClient };
+const saveTime = (iso: string) => new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
 function AuthorWorkspace({ client: apiClient, dataset, onDatasetChange, onPrep, onSources, inApp, draftId, newAnalysis, onDraftChange }: AuthorProps) {
   const access = useAccess();
   const notify = useToast();
@@ -56,6 +57,13 @@ function AuthorWorkspace({ client: apiClient, dataset, onDatasetChange, onPrep, 
   const { draft, dispatch } = drafts;
   const workspace = useRef<HTMLDivElement>(null);
   const saveDraft = () => { const saved = !!drafts.save(); if (saved) notify('Draft saved'); return saved; };
+  const notifiedError = useRef<string | null>(null);
+  useEffect(() => {
+    if (drafts.autoState !== 'error') { notifiedError.current = null; return; }
+    if (drafts.autoError && notifiedError.current !== drafts.autoError) {
+      notifiedError.current = drafts.autoError; notify(drafts.autoError);
+    }
+  }, [drafts.autoState, drafts.autoError, notify]);
   const changed = useRef(onDraftChange);
   changed.current = onDraftChange;
   useEffect(() => { if (!drafts.openingError) changed.current?.(drafts.id); }, [drafts.id, drafts.openingError]);
@@ -136,9 +144,15 @@ function AuthorWorkspace({ client: apiClient, dataset, onDatasetChange, onPrep, 
     <div className="author-tools">
       <div className="author-utilities">
         <button type="button" aria-keyshortcuts="Meta+S Control+S" onClick={saveDraft}>Save draft</button>
+        {(drafts.id || drafts.savedAt || drafts.autoState === 'saving' || drafts.autoState === 'error') && <span className="save-indicator" role="status">{drafts.autoState === 'saving' ? 'Saving…' : drafts.autoState === 'unsaved' || drafts.autoState === 'error' ? 'Unsaved changes' : drafts.savedAt ? `Saved · ${saveTime(drafts.savedAt)}` : null}</span>}
         {inApp && <button type="button" disabled={!drafts.id || drafts.dirty || copying} aria-describedby={copyHelpId} onClick={() => { void copyDraftLink(); }}>Copy draft link</button>}
         <button type="button" onClick={() => { if (drafts.replace({ ...emptyDraft(), ...(draft.dataset ? { dataset: draft.dataset } : {}) })) onDatasetChange?.(draft.dataset); }}>New analysis</button>
       </div>
+      {drafts.recoveredAt && <div className="draft-recovery">
+        <span role="status">Recovered auto-saved work from {saveTime(drafts.recoveredAt)} — it was never manually saved.</span>
+        <button type="button" onClick={saveDraft}>Save draft</button>
+        <button type="button" onClick={drafts.dismissRecovery}>Dismiss</button>
+      </div>}
       {inApp && <p id={copyHelpId} className="draft-link-help">Draft links open only in this browser on this device; they do not share the analysis. Save changes before copying.</p>}
       {copyError && <p role="alert">{copyError}</p>}
       <LocalDrafts entries={drafts.entries} activeId={drafts.id} onRefresh={drafts.refresh} onOpen={id => { const opened = drafts.open(id); if (opened) { source.retry(); onDatasetChange?.(opened.dataset); } }} onRename={drafts.rename} onDelete={id => { if (drafts.remove(id) && id === drafts.id) onDatasetChange?.(undefined); }} />
@@ -153,7 +167,7 @@ function AuthorWorkspace({ client: apiClient, dataset, onDatasetChange, onPrep, 
     </div>
     {access.mode === 'local' && <LocalDatasetPicker client={client} dataset={draft.dataset} onSelect={dataset => { if (drafts.replace({ ...emptyDraft(), ...(dataset ? { dataset } : {}) })) onDatasetChange?.(dataset); }} />}
     <p className="fixture-notice">{draft.dataset ? 'Live prepared data · Field assignments query the local API. Uploads expire after 24 hours or API restart.' : client ? 'Live local sales data · All regions, dates grouped in UTC (month by default). Field assignments query the API; unsupported queries show their error details and guidance.' : draft.sheets.some(s => s.visuals.some(v => v.kind === 'pivot')) ? 'Offline demo: pivot previews recompute pinned synthetic sales rows locally across all regions. Row groups expand and collapse locally. No live queries run.' : draft.sheets.some(s => s.visuals.some(v => v.kind === 'insight')) ? 'Offline demo: insight narratives recompute pinned synthetic sales rows locally across all regions. Rule-based computations; no ML or live queries.' : draft.sheets.some(s => s.visuals.some(v => v.kind === 'waterfall')) ? 'Offline demo: waterfall previews recompute pinned synthetic sales rows locally across all regions. No live queries run.' : draft.sheets.some(s => s.visuals.some(v => v.kind === 'sankey')) ? 'Offline demo: sankey previews recompute pinned synthetic sales rows locally across all regions. No live queries run.' : draft.sheets.some(s => s.visuals.some(v => v.kind === 'radar')) ? 'Offline demo: radar previews recompute pinned synthetic sales rows locally across all regions. No live queries run.' : draft.calculatedFields.length || draft.parameters.length || draft.sheets.some(s => s.visuals.some(v => hasVisualActions(v) || v.hierarchy)) ? 'Offline demo: controls, calculated fields and interactions recompute pinned synthetic sales rows locally across all regions. No live queries run.' : 'Offline demo: manual visual previews use fixed sample results: region = East, dates grouped by UTC month. Only revenue totals by region, category, month, or overall are available. Other manual selections need a supported sample or a hosted API. O recomputes synthetic sales rows locally across all regions. No live queries run.'}</p>
-    <div className="author-save"><p role="status">{drafts.message}</p>{drafts.dirty && <p>Unsaved changes · Save draft before leaving Author or reloading.</p>}
+    <div className="author-save"><p role="status">{drafts.message}</p>
       <p id="export-help">{exported.error ?? (client ? 'Downloads analysis definitions and sheet layouts; query results are not included.' : 'Downloads analysis definitions and sheet layouts; sample rows and the fixed East preview filter are not included.')}</p>
       {exportStatus && <p role="status">{exportStatus}</p>}
     </div>
@@ -171,7 +185,7 @@ function AuthorCommands({ draft, dispatch, onSave }: EditorProps & { onSave: () 
   usePaletteCommands(useMemo(() => ({
     chrome: draft.chrome ?? 'light',
     commands: [
-      { id: 'save-draft', label: 'Save draft', run: () => { if (!onSave()) notify('Draft could not be saved. See the draft storage message for recovery options.'); } },
+      { id: 'save-draft', label: 'Save draft', run: () => { onSave(); } },
       { id: 'toggle-theme', label: 'Toggle theme', keywords: 'new look light dark', run: () => {
         const mode = draft.chrome === 'dark' ? 'light' : 'dark';
         dispatch({ type: 'chrome', mode }); notify(`Editor theme changed to ${mode}`);
