@@ -21,6 +21,8 @@ visible focus outline. When hidden it is absent from the DOM and tab order.
 It uses navy chrome, 12px Arial/system fallback text, and 4/8px spacing.
 It needs no backend, configuration, toast, or additional dependency.
 
+![Back to top visible near the bottom of the sample sales dashboard](images/back-to-top.png)
+
 The component and application integration tests in
 `packages/web/test/back-to-top.test.mjs` run through the existing web test glob
 and root `npm test`. They cover the threshold in both directions, initial scroll
