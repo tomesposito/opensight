@@ -63,3 +63,25 @@ under ignored `.opensight/issue-51/`. No reference screenshots or personal data
 were committed. The demo is a static artifact, not a deployed server. Nothing
 was merged, pushed, published, or closed remotely. The palette remains deferred
 to #53 as required; there are no other outstanding implementation items.
+
+## Final full-suite results
+
+The repository-root `npm test` run passed **1,814 / failed 0 / skipped 12 /
+cancelled 0**. All skips require live PostgreSQL with `DATABASE_URL`; no web
+test was skipped. Strict TypeScript checks and workspace builds passed.
+
+| Runner | Passed | Failed | Skipped |
+| --- | ---: | ---: | ---: |
+| API | 303 | 0 | 10 |
+| Bundle parser | 199 | 0 | 0 |
+| Embedding SDK | 9 | 0 | 0 |
+| O interpreter | 32 | 0 | 0 |
+| Parity | 11 | 0 | 0 |
+| Query engine | 500 | 0 | 2 |
+| Web | 754 | 0 | 0 |
+| Root conformance | 6 | 0 | 0 |
+| **Total** | **1,814** | **0** | **12** |
+
+The full log and independently tallied runner counts are retained in
+`.opensight/issue-51/root-npm-test.log` and `review-test-summary.json`.
+`git diff 669fd7b8 --check` is clean.
