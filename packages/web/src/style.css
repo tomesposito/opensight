@@ -66,6 +66,12 @@ h3 { font-size: 14px; font-weight: 650; margin: 0; }
 .visual-content:has(> .table-scroll) { display: flex; flex-direction: column; min-height: 0; }
 .visual-content > .table-scroll { flex: 1; min-height: 0; }
 .table-scroll thead th { position: sticky; top: 0; z-index: 2; }
+/* Carry the card/table background through to frozen cells, including formatting. */
+.visual-card :is(.visual-content, .card-footer, details, .table-scroll),
+.table-scroll :is(table, tbody, tr) { background-color: inherit; }
+.table-scroll tr > :is(th, td):first-child { position: sticky; left: 0; z-index: 1; }
+.table-scroll tbody tr > :is(th, td):first-child { background-color: inherit; }
+.table-scroll thead th:first-child { z-index: 3; }
 table { width: 100%; border-collapse: collapse; font-size: 13px; text-align: left; }
 th { padding: 12px; background: #f3f7f8; color: #526c7a; font-weight: 600; }
 td { padding: 14px 12px; border-bottom: 1px solid #e7edef; font-variant-numeric: tabular-nums; }
