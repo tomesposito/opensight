@@ -19,10 +19,11 @@ import { Analyses } from './Analyses.js';
 import { AppLink, AppNavigation, useAppRoute } from './AppNavigation.js';
 import { pages, routeProblem } from './app-navigation.js';
 import { draftStorageKey } from './local-drafts.js';
+import { ToastProvider } from './Toasts.js';
 
 export function Application(props: { api: ReturnType<typeof createApiClient>; fixtures: Fixture[] }) {
   const access = useAccess();
-  return <ApplicationWorkspace key={draftStorageKey(access)} {...props} />;
+  return <ToastProvider key={draftStorageKey(access)}><ApplicationWorkspace {...props} /></ToastProvider>;
 }
 
 function ApplicationWorkspace({ api, fixtures }: { api: ReturnType<typeof createApiClient>; fixtures: Fixture[] }) {
