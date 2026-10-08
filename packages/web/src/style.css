@@ -341,14 +341,13 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .shortcuts-dialog::backdrop { background: #14253688; }
 .shortcuts-dialog header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .shortcuts-dialog h2 { margin: 0; font-size: 16px; }
-.shortcuts-dialog p, .shortcut-coming { color: var(--chrome-muted); }
+.shortcuts-dialog p { color: var(--chrome-muted); }
 .shortcuts-dialog section { margin-top: 16px; border-top: 1px solid var(--chrome-border); }
 .shortcuts-dialog h3 { margin: 12px 0 8px; font-size: 13px; }
 .shortcuts-dialog dl { margin: 0; }
 .shortcuts-dialog dl > div { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 8px 0; }
 .shortcuts-dialog dd { margin: 0; flex-shrink: 0; }
 .shortcuts-dialog kbd { padding: 2px 4px; border: 1px solid var(--chrome-border); border-radius: 4px; background: var(--chrome-bg); font: inherit; }
-.shortcut-coming { display: block; margin-top: 4px; }
 .command-palette { --palette-surface: #fff; --palette-text: #19384a; --palette-muted: #526c7a; --palette-border: #c9d8de; --palette-selected: #e2f2fa; width: min(520px, calc(100% - 32px)); max-height: calc(100dvh - 32px); padding: 0; border: 1px solid var(--palette-border); border-radius: 8px; background: var(--palette-surface); color: var(--palette-text); box-shadow: 0 8px 32px #14253644; font: 12px/1.4 Arial, "Helvetica Neue", Helvetica, sans-serif; overflow: auto; }
 .command-palette[data-chrome=dark] { color-scheme: dark; --palette-surface: #202e40; --palette-text: #e7eef7; --palette-muted: #adc0d5; --palette-border: #45566d; --palette-selected: #293f55; }
 .command-palette::backdrop { background: #14253688; }

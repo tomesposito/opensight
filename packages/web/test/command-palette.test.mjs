@@ -147,3 +147,21 @@ test('thrown and rejected commands close the palette and report failure through 
   assert.equal(ui.renderer.root.findAllByType('dialog').length, 0);
   assert.deepEqual(ui.messages(), ['Could not run Fail synchronously: COMMAND_FAILED', 'Could not run Fail asynchronously: ASYNC_COMMAND_FAILED']);
 });
+
+
+test('Tab and Shift+Tab wrap between search and Close without leaving the modal', async t => {
+  const ui = await mountPalette(t); await ui.open();
+  let prevented = 0;
+  const tab = shiftKey => act(() => ui.renderer.root.findByType('dialog').props.onKeyDown({ key: 'Tab', shiftKey, preventDefault() { prevented++; } }));
+  await tab(false); assert.equal(ui.document.activeElement, ui.close);
+  await tab(true); assert.equal(ui.document.activeElement, ui.search);
+  assert.equal(prevented, 2);
+});
+
+test('removing a command context while open removes options and resets the active descendant', async t => {
+  const ui = await mountPalette(t); await ui.open(); await ui.press('ArrowUp');
+  assert.notEqual(ui.selected(), 'Go to Home');
+  await ui.navigate('data-prep'); assert.equal(ui.labels().length, 5);
+  assert.equal(ui.selected(), 'Go to Home');
+  assert.equal(ui.input().props['aria-activedescendant'], ui.options()[0].props.id);
+});

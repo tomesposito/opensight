@@ -42,6 +42,7 @@ export function CommandPaletteProvider({ navigate, children }: { navigate: Navig
 
 export function CommandPaletteDialog({ commands, chrome = 'light', onClose }: { commands: readonly Command[]; chrome?: 'light' | 'dark'; onClose: () => void }) {
   const dialogRef = useRef<HTMLDialogElement>(null), inputRef = useRef<HTMLInputElement>(null);
+  const closeRef = useRef<HTMLButtonElement>(null);
   const previous = useRef<HTMLElement | null>(null), composing = useRef(false), running = useRef(false);
   const restored = useRef(false);
   const id = useId(), notify = useToast();
@@ -85,8 +86,13 @@ export function CommandPaletteDialog({ commands, chrome = 'light', onClose }: { 
     }
   };
   return <dialog ref={dialogRef} className="command-palette" data-chrome={chrome} role="dialog" aria-modal="true" aria-labelledby={`${id}-title`}
-    onCancel={onClose}>
-    <header><h2 id={`${id}-title`}>Command palette</h2><button type="button" aria-label="Close command palette" aria-keyshortcuts="Escape" onClick={onClose}>Close <span aria-hidden="true">×</span></button></header>
+    onCancel={onClose} onKeyDown={event => {
+      if (event.key !== 'Tab' || event.altKey || event.ctrlKey || event.metaKey) return;
+      const focused = dialogRef.current?.ownerDocument.activeElement;
+      if (event.shiftKey && focused === closeRef.current) { event.preventDefault(); inputRef.current?.focus(); }
+      else if (!event.shiftKey && focused === inputRef.current) { event.preventDefault(); closeRef.current?.focus(); }
+    }}>
+    <header><h2 id={`${id}-title`}>Command palette</h2><button ref={closeRef} type="button" aria-label="Close command palette" aria-keyshortcuts="Escape" onClick={onClose}>Close <span aria-hidden="true">×</span></button></header>
     <label className="sr-only" htmlFor={`${id}-search`}>Search commands</label>
     <input ref={inputRef} id={`${id}-search`} type="text" role="combobox" autoComplete="off" spellCheck={false}
       aria-autocomplete="list" aria-expanded="true" aria-controls={`${id}-results`} aria-activedescendant={active ? optionId(active) : undefined}

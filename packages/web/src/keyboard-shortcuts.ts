@@ -5,7 +5,6 @@ type Shortcut = {
   key: string;
   modifier?: boolean;
   native?: boolean;
-  coming?: string;
 };
 
 /** The single source for Author key matching and the shortcuts help dialog. */
@@ -45,7 +44,8 @@ export function shortcutForEvent(event: KeyboardEvent): typeof AUTHOR_SHORTCUTS[
   });
 }
 
-/** Attach only while Author is mounted. Composition tracking also covers IMEs
+/** Author binds its actions while mounted; the shared palette binds only K.
+ * Composition tracking also covers IMEs
  * whose keydown events omit isComposing. Return a complete listener cleanup. */
 export function listenForAuthorShortcuts(document: Document, actions: Partial<AuthorShortcutActions>): () => void {
   let composing = false;

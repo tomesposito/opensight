@@ -20,7 +20,7 @@ export async function mountPalette(t, { route = '#/analyses/new', access = demoA
   document.defaultView = new EventTarget();
   const node = (typing = false) => ({ nodeType: 1, isConnected: true, closest: selector => typing && selector.includes('input') ? {} : null,
     focus() { document.activeElement = this; } });
-  const trigger = node(), search = node(true), question = node(true), home = node();
+  const trigger = node(), search = node(true), question = node(true), home = node(), close = node();
   document.activeElement = trigger;
   document.getElementById = () => ({ scrollIntoView() {} });
   document.querySelector = selector => selector === 'dialog[open]' ? [...dialogs.values()].find(d => d.open) ?? null : selector === '.product-header .brand' ? home : null;
@@ -40,6 +40,7 @@ export async function mountPalette(t, { route = '#/analyses/new', access = demoA
       if (element.props.className === 'q-trigger') return trigger;
       if (element.props.className === 'q-side-panel') return { ownerDocument: document, querySelector: () => question };
       if (element.props.role === 'combobox') return search;
+      if (element.props['aria-label'] === 'Close command palette') return close;
       if (element.type === 'dialog') {
         const dialog = { ownerDocument: document, open: false, showModal() { this.open = true; }, close() { this.open = false; } };
         dialogs.set(element.props.className, dialog); return dialog;
@@ -56,7 +57,7 @@ export async function mountPalette(t, { route = '#/analyses/new', access = demoA
     await act(() => document.dispatchEvent(event)); return event;
   };
   return {
-    renderer, document, listeners, trigger, search, question, home, input, options, key,
+    renderer, document, listeners, trigger, search, question, home, close, input, options, key,
     labels: () => options().map(option => option.props.children),
     selected: () => options().find(option => option.props['aria-selected'])?.props.children,
     saved: () => createDraftStore(() => storage, access).restore(),
