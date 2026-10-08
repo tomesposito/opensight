@@ -14,7 +14,7 @@ test('local drafts round trip edits, reopen independent analyses, rename, delete
   const first = store.save(a), second = store.save(b);
   assert.notEqual(first, second);
   assert.deepEqual(store.open(first), a);
-  assert.deepEqual(createDraftStore(storage, access).restore(), { id: first, draft: a });
+  assert.deepEqual(createDraftStore(storage, access).restore(), { id: first, draft: a, manualSavedAt: store.list().find(e => e.id === first).updatedAt, autoSavedAt: undefined });
   store.rename(second, 'Renamed');
   assert.equal(store.restore().id, first, 'Renaming another draft does not change the active analysis');
   assert.equal(store.open(second).title, 'Renamed');
@@ -83,4 +83,83 @@ test('storage limits never evict old drafts and write failures preserve saved ve
   assert.throws(() => store.save(draft('x'.repeat(MAX_DRAFT_CHARS)), id), /4 MiB/); assert.deepEqual(values, before);
   const failing = createDraftStore(() => ({ ...storage(), setItem() { throw new DOMException('', 'QuotaExceededError'); } }), access);
   assert.throws(() => failing.rename(id, 'Lost'), /QuotaExceededError/); assert.deepEqual(values, before);
+});
+
+const start = '2026-10-08T12:00:00.000Z';
+test('auto-save metadata round trips one copy, preserves the manual checkpoint and lists pending work', t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse(start) });
+  const { store, storage } = setup(), manual = draft('Manual');
+  const id = store.save(manual);
+  assert.equal(store.restore().manualSavedAt, start);
+  assert.equal(store.list()[0].hasPendingAutosave, false);
+  t.mock.timers.tick(2000);
+  const autoSavedAt = new Date().toISOString(), edited = draft('Auto-saved');
+  assert.equal(store.autosave(edited, id, start), id);
+  assert.deepEqual(createDraftStore(storage, access).restore(), { id, draft: edited, manualSavedAt: start, autoSavedAt });
+  assert.deepEqual(store.list(), [{ id, name: 'Auto-saved', updatedAt: autoSavedAt, hasPendingAutosave: true }]);
+  t.mock.timers.tick(2000);
+  store.save(edited, id);
+  assert.deepEqual(store.restore(), { id, draft: edited, manualSavedAt: new Date().toISOString(), autoSavedAt: undefined });
+  assert.equal(store.list()[0].hasPendingAutosave, false);
+});
+test('id-less auto-save creates an entry without a manual checkpoint; dismiss keeps its content', t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse(start) });
+  const { store, values } = setup(), content = draft('Recovered');
+  const id = store.autosave(content);
+  assert.match(id, /^[0-9a-f-]{36}$/);
+  assert.deepEqual(store.restore(), { id, draft: content, manualSavedAt: undefined, autoSavedAt: start });
+  assert.equal(store.list()[0].hasPendingAutosave, true);
+  const updatedAt = store.list()[0].updatedAt;
+  store.discardAutosave(id);
+  assert.deepEqual(store.restore(), { id, draft: content, manualSavedAt: undefined, autoSavedAt: undefined });
+  assert.equal(store.list()[0].updatedAt, updatedAt);
+  assert.equal(store.list()[0].hasPendingAutosave, false);
+  assert.equal('autoSavedAt' in JSON.parse(values.get(draftStorageKey(access))).entries[0], false);
+});
+test('another tab manual save rejects a stale auto-save without changing stored content', t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse(start) });
+  const { store, storage, values } = setup(), id = store.save(draft('Original'));
+  t.mock.timers.tick(2000);
+  createDraftStore(storage, access).save(draft('Other tab checkpoint'), id);
+  const before = new Map(values);
+  for (const lastSyncedAt of [start, undefined]) {
+    assert.throws(() => store.autosave(draft('Stale'), id, lastSyncedAt), { message: 'This draft was saved in another tab. Reload to keep editing.' });
+    assert.deepEqual(values, before);
+  }
+  store.autosave(draft('Reloaded edits'), id, store.restore().manualSavedAt);
+  assert.equal(store.restore().draft.title, 'Reloaded edits', 'An equal timestamp is synced');
+  assert.equal(store.list()[0].hasPendingAutosave, false, 'Equal save-kind timestamps are not pending');
+});
+test('auto-save never resurrects deleted entries and observes existing collection limits', () => {
+  const { store, values } = setup(), id = store.autosave(draft('Deleted'));
+  store.delete(id);
+  const before = new Map(values);
+  assert.throws(() => store.autosave(draft('Stale'), id), /no longer exists/);
+  assert.throws(() => store.discardAutosave(id), /no longer exists/);
+  assert.deepEqual(values, before);
+  for (let n = 0; n < MAX_DRAFTS; n++) store.autosave(draft(String(n)));
+  const full = new Map(values);
+  assert.throws(() => store.autosave(draft('Overflow')), /limit \(20\)/);
+  assert.throws(() => store.autosave(draft('x'.repeat(MAX_DRAFT_CHARS)), store.list()[0].id), /4 MiB/);
+  assert.deepEqual(values, full);
+});
+test('old entries without save-kind metadata validate, restore and accept auto-save', () => {
+  const { store, values } = setup(), content = draft('Old entry'), id = 'old';
+  values.set(draftStorageKey(access), JSON.stringify({ version: 1, activeId: id, entries: [{ id, updatedAt: start, draft: content }] }));
+  assert.deepEqual(store.restore(), { id, draft: content, manualSavedAt: undefined, autoSavedAt: undefined });
+  assert.equal(store.list()[0].hasPendingAutosave, false);
+  store.autosave(content, id);
+  assert.equal(store.list()[0].hasPendingAutosave, true);
+});
+test('save-kind metadata rejects non-ISO strings and unknown keys without overwriting', () => {
+  const { store, values } = setup(), id = store.save(draft('Valid')), key = draftStorageKey(access), original = values.get(key);
+  for (const field of ['manualSavedAt', 'autoSavedAt', 'shadowSnapshot']) {
+    for (const value of [null, 123, '', 'yesterday', '2026-10-08', '2026-02-30T12:00:00.000Z', '9999-invalid']) {
+      const collection = JSON.parse(original); collection.entries[0][field] = value;
+      const corrupt = JSON.stringify(collection); values.set(key, corrupt);
+      assert.throws(() => store.restore(), /could not be read/);
+      assert.throws(() => store.autosave(draft('New'), id, start), /could not be read/);
+      assert.equal(values.get(key), corrupt);
+    }
+  }
 });
