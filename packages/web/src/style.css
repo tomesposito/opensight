@@ -45,7 +45,7 @@ h1 { margin: 0; font-size: clamp(23px, 3vw, 32px); font-weight: 650; letter-spac
 .sheet-tabs button[aria-current] { color: #126e76; border-color: #157f88; }
 .sheet-tabs span { font-size: 11px; margin-left: 10px; font-weight: 400; color: #687e89; }
 .dashboard-grid { display: grid; grid-template-columns: repeat(36, minmax(0, 1fr)); grid-auto-rows: 46px; gap: 10px; }
-.visual-card { min-width: 0; min-height: 0; display: flex; flex-direction: column; border: 1px solid #dce5e9; border-radius: 8px; background: white; box-shadow: 0 2px 5px #183b4b05; overflow: auto; }
+.visual-card { position: relative; min-width: 0; min-height: 0; display: flex; flex-direction: column; border: 1px solid #dce5e9; border-radius: 8px; background: white; box-shadow: 0 2px 5px #183b4b05; overflow: auto; }
 .card-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 18px 20px 4px; }
 .card-titles { min-width: 0; overflow-wrap: anywhere; }
 .card-subtitle { margin: 4px 0 0; font-size: 12px; white-space: pre-wrap; }
@@ -57,14 +57,14 @@ h3 { font-size: 14px; font-weight: 650; margin: 0; }
 .empty-state strong { font-size: 16px; }
 /* Shimmer skeleton placeholders inside visual cards while data loads. Static under prefers-reduced-motion. */
 .visual-skeleton { position: absolute; inset: 0; display: flex; padding: 12px 4px; }
-.skeleton-bars { flex: 1; display: flex; align-items: flex-end; gap: 4%; }
+.skeleton-bars { position: absolute; inset: 12px 4px; display: flex; align-items: flex-end; gap: 4%; }
 .skeleton-bars .skeleton-shape { flex: 1; border-radius: 3px 3px 0 0; }
 .skeleton-pie { flex: 1; display: flex; align-items: center; justify-content: center; }
 .skeleton-disc { width: min(60%, 150px); aspect-ratio: 1; border-radius: 50%; }
 .skeleton-rows { flex: 1; display: flex; flex-direction: column; gap: 10px; }
 .skeleton-row-head { height: 16px; border-radius: 3px; }
 .skeleton-row { height: 13px; border-radius: 3px; }
-.skeleton-kpi { flex: 1; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 10px; }
+.skeleton-kpi { position: absolute; inset: 12px 4px; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 10px; }
 .skeleton-kpi-value { width: 45%; height: 40px; border-radius: 4px; }
 .skeleton-kpi-label { width: 65%; height: 14px; border-radius: 3px; }
 .skeleton-kpi-delta { width: 30%; height: 12px; border-radius: 3px; }
