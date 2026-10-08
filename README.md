@@ -8,7 +8,7 @@ bidirectional asset compatibility — connect data, prepare datasets, build
 analyses and dashboards, and ask questions in natural language. Self-hosted;
 no AWS required.
 
-![OpenSight tour: dashboard, back to top, O answer, command palette, authoring, radar, Sankey, waterfall, insight, pivot, saved drafts, and data tools](docs/images/opensight-tour.gif)
+![OpenSight tour: dashboard, back to top, O answer, command palette, authoring, auto-save recovery, radar, Sankey, waterfall, insight, pivot, saved drafts, and data tools](docs/images/opensight-tour.gif)
 
 *Above: the offline demo — a dashboard, O answering "revenue by region" and
 adding the chart to an analysis, saved drafts, data preparation, connectors,
@@ -50,13 +50,16 @@ with your own CSV:
 2. Select **Prepare this upload** to open **Data preparation**. Review the
    columns and preview rows, make any transformations, then **Save pipeline**.
 3. Select **Build a chart**, then choose a Data field in Author to create a bar visual. Use **Add visual** to choose another type first.
-4. Select **Save draft**. Reopen it through **Analyses → My analyses** in the
-   same browser and origin. Draft definitions stay on this device; they are
-   not synced or published and do not preserve uploaded rows.
+4. Edits **auto-save after 2 seconds**; wait for **Saved · HH:MM**, or select
+   **Save draft** for an explicit checkpoint. Reopen through **Analyses → My
+   analyses** in the same browser and origin. Draft definitions stay on this
+   device; they are not synced or published and do not preserve uploaded rows.
 
 Uploads stay in local DuckDB memory, are limited to **8 MiB**, and expire after
 **24 hours or an API restart**. See [local data](docs/local-data.md) for the
 workflow and limits, and [local drafts](docs/local-drafts.md) for source recovery.
+See [auto-save drafts](docs/auto-save-drafts.md) for save indicators, storage
+failure guidance and the recovery notice for work that was never manually saved.
 If the API is unavailable, the first-run screen offers recovery guidance; an API
 without local-data support or authentication instead offers setup and explicit
 **Explore sample data**. See the [first-run guide](docs/first-run.md).
@@ -93,6 +96,12 @@ between analysis sheets, or open Q&A. Use arrows, Enter, and Esc from the keyboa
 ![Command palette with navigation and current analysis actions](docs/images/command-palette.png)
 
 ![Authoring canvas with assigned fields and the Ask a question trigger in the toolbar](docs/images/author.png)
+
+Author quietly auto-saves local edits and restores them on reload. The recovery
+notice offers **Save draft** to checkpoint restored work or **Dismiss** to keep
+the content and clear the notice.
+
+![Auto-saved work restored with a saved indicator and recovery notice](docs/images/auto-save.png)
 
 Field wells stay visible before a visual is selected. Choose a Data field to
 create a bar, then keep assigning fields or change its type.

@@ -7,9 +7,10 @@ edit arms a new attempt, and **Save draft** remains available at any time.
 
 The quiet indicator beside Save draft shows **Unsaved changes**, **Saving…**,
 then **Saved · HH:MM** in 24-hour local time. It remains Unsaved changes after
-a failure. A never-saved draft has no indicator until its first successful
-save. Auto-save successes do not toast; failures toast once per attempt with
-storage recovery guidance and the Export JSON fallback.
+a failure. A never-saved draft has no indicator while waiting for its first save;
+saving and failure states are still shown. Auto-save successes do not toast;
+failures toast once per attempt with storage recovery guidance and the Export
+JSON fallback.
 
 Each entry holds one draft, an `updatedAt` timestamp, and optional ISO
 `manualSavedAt` and `autoSavedAt` timestamps. Manual Save draft sets
@@ -39,8 +40,8 @@ Storage stays in the existing version-1 collection:
 - Demo: `opensight.author.drafts.v1.demo`.
 - Local workspace: `opensight.author.drafts.v1.local`.
 - Hosted identity: `opensight.author.drafts.v1.hosted.<encoded namespaceId>.<encoded principalId>`.
-- Legacy read fallback: `opensight.author.draft.v1` in demo and
-  `local.opensight.author.draft.v1` in local mode; never assigned to hosted users.
+- Legacy read fallback: `opensight.author.v0` in demo and
+  `local.opensight.author.v0` in local mode; never assigned to hosted users.
 
 Older entries without save-kind timestamps remain readable. Existing limits
 and validation still apply: 20 entries, 4 MiB of UTF-16 text, no silent eviction,
