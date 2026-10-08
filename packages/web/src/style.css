@@ -436,6 +436,8 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 /* Keep native disclosures in document order; expanded content stays in flow. */
 .author-tools { display: flex; flex-wrap: wrap; align-items: start; gap: 6px 12px; margin: 4px 0 8px; }
 .author-utilities { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.save-indicator { color: var(--chrome-muted); font-size: 12px; }
+.draft-recovery { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; flex-basis: 100%; padding: 8px; border: 1px solid var(--chrome-border); color: var(--chrome-muted); font-size: 12px; }
 .draft-link-help { margin: 4px 0; font-size: 12px; color: var(--chrome-muted); }
 .author-tools > :is(.local-drafts, .bundle-import) { min-width: 0; max-width: 100%; margin: 0; padding: 6px 8px; font-size: 12px; }
 .author-tools > .local-drafts[open], .author-tools > .bundle-import:has(details[open]) { flex-basis: 100%; }
