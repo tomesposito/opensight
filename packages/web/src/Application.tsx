@@ -20,6 +20,7 @@ import { AppLink, AppNavigation, useAppRoute } from './AppNavigation.js';
 import { pages, routeProblem } from './app-navigation.js';
 import { draftStorageKey } from './local-drafts.js';
 import { ToastProvider } from './Toasts.js';
+import { BackToTop } from './BackToTop.js';
 
 export function Application(props: { api: ReturnType<typeof createApiClient>; fixtures: Fixture[] }) {
   const access = useAccess();
@@ -61,6 +62,7 @@ function ApplicationWorkspace({ api, fixtures }: { api: ReturnType<typeof create
     {access.mode === 'local' && <aside className="fixture-demo-banner" aria-label="Local data workspace"><span><strong>Local workspace</strong> · Files stay in this API process · Uploads expire after 24 hours or restart</span></aside>}
     <main className={mode === 'author' ? 'author-main' : undefined}>{content()}</main>
     <footer className="app-footer">OpenSight · Local rendering preview · visual fidelity not measured</footer>
+    <BackToTop />
   </div>;
 }
 
