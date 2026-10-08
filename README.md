@@ -8,7 +8,7 @@ bidirectional asset compatibility — connect data, prepare datasets, build
 analyses and dashboards, and ask questions in natural language. Self-hosted;
 no AWS required.
 
-![OpenSight tour: dashboard, back to top, O answer, authoring, radar, Sankey, waterfall, insight, pivot, saved drafts, and data tools](docs/images/opensight-tour.gif)
+![OpenSight tour: dashboard, back to top, O answer, command palette, authoring, radar, Sankey, waterfall, insight, pivot, saved drafts, and data tools](docs/images/opensight-tour.gif)
 
 *Above: the offline demo — a dashboard, O answering "revenue by region" and
 adding the chart to an analysis, saved drafts, data preparation, connectors,
@@ -85,6 +85,12 @@ modes remain available under their role permissions. See
 Long dashboards and the connector gallery show a keyboard-accessible
 [Back to top button](docs/back-to-top.md) after 600px of page scrolling, with
 an instant jump when reduced motion is preferred.
+
+Press **Cmd/Ctrl+K** for the [command palette](docs/command-palette.md): search
+navigation and available actions, save the current draft, switch NEW LOOK, jump
+between analysis sheets, or open Q&A. Use arrows, Enter, and Esc from the keyboard.
+
+![Command palette with navigation and current analysis actions](docs/images/command-palette.png)
 
 ![Authoring canvas with assigned fields and the Ask a question trigger in the toolbar](docs/images/author.png)
 

@@ -25,10 +25,13 @@ link. Opening Q&A then focuses its question input. Failed commands use the toast
 host; successful saves retain the existing **Draft saved** notification.
 
 The search is an accessible combobox controlling a labelled listbox, with an
-active descendant and selected options. The native dialog contains Tab focus.
+active descendant and selected options. Tab and Shift+Tab wrap between Search
+and Close inside the native dialog.
 Editor typography, 4/8px spacing, navy chrome, and the current Author light/dark
 treatment apply; the analysis chart theme is independent.
 
 Unit and component tests run with the web workspace and root `npm test`.
 Browser checks cover native focus, keyboard operation, context changes and
 viewport fit against the freshly rebuilt static demo.
+
+![Command palette in Author](images/command-palette.png)
