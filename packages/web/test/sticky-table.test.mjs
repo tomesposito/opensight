@@ -1,8 +1,7 @@
 import { after, before, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { createRequire } from 'node:module';
-import { resolve } from 'node:path';
+import { chromiumPage } from './chromium.mjs';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { activeSheet, authorReducer, emptyDraft } from '../build/test/authoring.js';
@@ -10,15 +9,6 @@ import { buildAuthorVisual } from '../build/test/author-preview.js';
 import { VisualCard } from '../build/test/VisualCard.js';
 import { DARK_THEME } from '../build/test/themes.js';
 
-// Reuse the optional local browser tooling used by the screenshot scripts.
-// Missing tooling is a failure, not a silently skipped browser regression test.
-const require = createRequire(import.meta.url);
-const { chromium } = (() => {
-  try { return require('playwright-core'); }
-  catch {
-    return createRequire(resolve(process.env.OPENSIGHT_SCREENSHOT_TOOLS ?? '/home/hatch/workspace/tools/screenshots', 'package.json'))('playwright-core');
-  }
-})();
 const css = await readFile(new URL('../src/style.css', import.meta.url), 'utf8');
 const rows = Array.from({ length: 64 }, (_, i) => ({
   region: `Region_${String(Math.floor(i / 2)).padStart(2, '0')}`, category: `Category_${i % 8}`,
@@ -32,14 +22,11 @@ const visual = (kind, formatting = {}, theme) => {
 };
 
 describe('table and pivot freeze panes in Chromium', () => {
-  let browser, page;
+  let page;
   before(async () => {
-    browser = await chromium.launch({ executablePath: process.env.OPENSIGHT_CHROMIUM ?? '/opt/meta-chromium/chrome', args: ['--no-sandbox'] });
-    page = await browser.newPage({ viewport: { width: 1100, height: 800 } });
-    page.setDefaultTimeout(5000);
-    await page.route(/^https?:/, route => route.abort());
+    page = await chromiumPage();
   });
-  after(async () => { await browser?.close(); });
+  after(async () => { await page?.close(); });
 
   async function render(input, surface) {
     const card = renderToStaticMarkup(createElement(VisualCard, { visual: input }));
@@ -54,7 +41,8 @@ describe('table and pivot freeze panes in Chromium', () => {
       await page.setViewportSize({ width: variant === 'mobile' ? 650 : 1100, height: 800 });
       const formatting = variant === 'formatted' ? { headerBackground: '#ccddee', cellBackground: '#ffeedd' } : {};
       await render(visual(kind, formatting, variant === 'dark' ? DARK_THEME : undefined), surface);
-      const result = await page.locator('.table-scroll').evaluate(scroll => {
+      const result = await page.evaluate(() => {
+        const scroll = document.querySelector('.table-scroll');
         const headers = [...scroll.querySelectorAll('thead th')];
         const labels = [...scroll.querySelectorAll('tbody tr > :first-child')];
         const movingCell = scroll.querySelector('tbody tr > :nth-child(2)');
@@ -103,17 +91,17 @@ describe('table and pivot freeze panes in Chromium', () => {
     const input = { ...buildAuthorVisual({ ...base, rows: ['region'], measures: ['revenue', 'profit'],
       formatting: { rules: [{ fieldId: 'revenue', operator: 'gt', threshold: 0, color: '#112233', background: '#abcdef' }] } }), rows: [rows[0]] };
     await render(input, 'dashboard');
-    const style = await page.locator('tbody tr').first().locator('td').nth(1).evaluate(el => {
-      const s = getComputedStyle(el); return [s.position, s.left, s.backgroundColor];
+    const style = await page.evaluate(() => {
+      const s = getComputedStyle(document.querySelector('tbody tr td:nth-child(2)')); return [s.position, s.left, s.backgroundColor];
     });
     assert.deepEqual(style, ['static', 'auto', 'rgb(171, 205, 239)']);
   });
 
   test('hidden headers stay hidden and unrelated tables retain their existing layout', async () => {
     await render(visual('pivot', { headersVisible: false }), 'author');
-    assert.equal(await page.locator('thead').evaluate(el => getComputedStyle(el).clip), 'rect(0px, 0px, 0px, 0px)');
+    assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('thead')).clip), 'rect(0px, 0px, 0px, 0px)');
     await page.setContent(`<style>${css}</style><table><thead><tr><th>Admin</th></tr></thead><tbody><tr><td>Row</td></tr></tbody></table>`);
-    assert.deepEqual(await page.locator('th, td').evaluateAll(cells => cells.map(el => getComputedStyle(el).position)), ['static', 'static']);
-    assert.equal(await page.locator('table').evaluate(el => getComputedStyle(el).borderCollapse), 'collapse');
+    assert.deepEqual(await page.evaluate(() => [...document.querySelectorAll('th, td')].map(el => getComputedStyle(el).position)), ['static', 'static']);
+    assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('table')).borderCollapse), 'collapse');
   });
 });
