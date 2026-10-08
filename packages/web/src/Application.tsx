@@ -1,3 +1,4 @@
+import { Reports } from './Reports.js';
 import { DataPrep } from './DataPrep.js';
 import { DataSources } from './DataSources.js';
 import { UserManagement } from './UserManagement.js';
@@ -45,6 +46,7 @@ function ApplicationWorkspace({ api, fixtures }: { api: ReturnType<typeof create
     if (problem) return <p role="alert">{problem}</p>;
     switch (route.page) {
       case 'home': return sample ? <Dashboard key="sample" fixture={sample} sample /> : <p role="status">The sample dashboard is not included in this build. Ask the operator to restore the pinned sales sample.</p>;
+      case 'reports': return <Reports />;
       case 'analyses': return <Analyses navigate={navigate} />;
       case 'author': return <Author key={entry} inApp draftId={route.draftId} newAnalysis={route.newAnalysis} onDraftChange={draftId => navigate({ page: 'author', draftId }, true)} onSources={() => navigate({ page: 'data-sources' })} onDatasetChange={setAuthorDataset} dataset={route.draftId || route.newAnalysis ? undefined : authorDataset} onPrep={() => navigate({ page: 'data-prep' })} client={connected ? api : undefined} />;
       case 'data-prep': return <DataPrep initialSource={uploadedSource} onBuild={access.mode === 'local' ? dataset => { setAuthorDataset(dataset); navigate({ page: 'author' }); } : undefined} client={connected ? api : undefined} onSources={() => navigate({ page: 'data-sources' })} onAuthor={() => navigate({ page: 'author' })} />;
