@@ -1,9 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import fixtures from '../build/test/fixtures.generated.json' with { type: 'json' };
 import { VisualCard } from '../build/test/VisualCard.js';
+import { VisualSkeleton, skeletonVariant } from '../build/test/VisualSkeleton.js';
 import { Dashboard } from '../build/test/Dashboard.js';
 import { AccessProvider, demoAccess } from '../build/test/access.js';
 import { Author } from '../build/test/Author.js';
@@ -69,14 +71,14 @@ test('author notices distinguish unsupported samples from hosted query errors', 
 });
 
 
-test('Issue #35: settled missing, empty, failed and definition states have no loading symbol', () => {
+test('Issue #35: settled missing, empty, failed and definition states have no loading indicator', () => {
   const visual = sales.sheets[0].visuals[0];
   for (const [rows, props] of [[null, {}], [[], {}], [null, { dataMessage: 'Query failed' }], [null, { definitionPreview: true }]]) {
     const html = card({ ...visual, rows }, props);
     assert.match(html, /aria-busy="false"/);
-    assert.doesNotMatch(html, /empty-symbol|◌|Loading data/);
+    assert.doesNotMatch(html, /empty-symbol|◌|Loading data|visual-skeleton/);
   }
-  assert.match(card({ ...visual, rows: null }, { loading: true }), /class="empty-symbol"/);
+  assert.match(card({ ...visual, rows: null }, { loading: true }), /class="visual-skeleton"/);
 });
 
 
@@ -95,4 +97,66 @@ test('Issue #35: definition previews never invite questions about unavailable da
   const hosted = renderToStaticMarkup(createElement(AccessProvider, { access: { mode: 'hosted', session: { role: 'author_ai' } } }, createElement(Dashboard, { fixture: sales, hosted: true, dashboardId: 'published' })));
   assert.match(hosted, /class="q-trigger"/);
   assert.doesNotMatch(hosted, /Questions are unavailable/);
+});
+
+
+test('Issue #49: loading skeletons roughly match the visual shape', () => {
+  const byVariant = variant => sales.sheets[0].visuals.find(v => v.definition[variant]);
+  for (const [variant, shape] of [['BarChartVisual', 'skeleton-bars'], ['LineChartVisual', 'skeleton-bars'], ['PieChartVisual', 'skeleton-pie'], ['TableVisual', 'skeleton-rows'], ['KPIVisual', 'skeleton-kpi']]) {
+    const html = card({ ...byVariant(variant), rows: null }, { loading: true });
+    assert.match(html, /aria-busy="true"/);
+    assert.match(html, new RegExp(`class="visual-skeleton ${shape}"`));
+    assert.match(html, /role="status" aria-label="Loading data"/);
+    assert.doesNotMatch(html, /class="chart"|<table|View data|Needs data/);
+  }
+});
+
+test('Issue #49: every visual kind maps to a skeleton variant', () => {
+  assert.equal(skeletonVariant('bar'), 'bars');
+  assert.equal(skeletonVariant('line'), 'bars');
+  assert.equal(skeletonVariant('bar100'), 'bars');
+  assert.equal(skeletonVariant('combo'), 'bars');
+  assert.equal(skeletonVariant('waterfall'), 'bars');
+  assert.equal(skeletonVariant('histogram'), 'bars');
+  assert.equal(skeletonVariant('area'), 'bars');
+  assert.equal(skeletonVariant('funnel'), 'bars');
+  assert.equal(skeletonVariant('pie'), 'pie');
+  assert.equal(skeletonVariant('gauge'), 'pie');
+  assert.equal(skeletonVariant('table'), 'rows');
+  assert.equal(skeletonVariant('pivot'), 'rows');
+  assert.equal(skeletonVariant('kpi'), 'kpi');
+  assert.equal(skeletonVariant('insight'), 'block');
+  assert.equal(skeletonVariant('sankey'), 'block');
+  assert.equal(skeletonVariant('radar'), 'block');
+  assert.equal(skeletonVariant('treemap'), 'block');
+  assert.equal(skeletonVariant('filledMap'), 'block');
+  assert.equal(renderToStaticMarkup(createElement(VisualSkeleton, { kind: 'insight' })), '<div class="visual-skeleton skeleton-block" role="status" aria-label="Loading data"><span class="sr-only">Waiting for query results. No data is shown until the query completes.</span><div class="skeleton-block" aria-hidden="true"><span class="skeleton-shape skeleton-fill"></span></div></div>');
+});
+
+test('Issue #49: skeletons never get stuck on screen after load and never mask errors', () => {
+  const visual = sales.sheets[0].visuals[0];
+  // Settled visuals: no skeleton, no stuck loading state.
+  assert.doesNotMatch(card({ ...visual }), /visual-skeleton/);
+  assert.doesNotMatch(card({ ...visual, rows: [] }), /visual-skeleton/);
+  // Loading flag with data already ready: the result renders, no skeleton on top.
+  const ready = card({ ...visual }, { loading: true });
+  assert.match(ready, /class="chart"/);
+  assert.doesNotMatch(ready, /visual-skeleton/);
+  // Compile errors win over loading: the error alert renders, not the skeleton.
+  const broken = card({ ...visual, definition: { BogusVisual: {} } }, { loading: true });
+  assert.match(broken, /role="alert"|Unable to render/);
+  assert.doesNotMatch(broken, /visual-skeleton/);
+  // Loading still announces itself and hides stale failure copy.
+  const pending = card({ ...visual, rows: null }, { loading: true, dataMessage: 'Previous failure' });
+  assert.match(pending, /aria-busy="true"/);
+  assert.match(pending, /visual-skeleton/);
+  assert.doesNotMatch(pending, /Previous failure/);
+});
+
+test('Issue #49: shimmer motion is static under prefers-reduced-motion', () => {
+  const css = readFileSync(new URL('../src/style.css', import.meta.url), 'utf8');
+  assert.match(css, /@keyframes skeleton-shimmer/);
+  assert.match(css, /@media \(prefers-reduced-motion: reduce\)/);
+  const reduced = css.slice(css.indexOf('prefers-reduced-motion'));
+  assert.match(reduced, /\.skeleton-shape \{ animation: none; background: #e6edf0; \}/);
 });

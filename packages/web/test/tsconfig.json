@@ -26,6 +26,7 @@
     "../src/author-preview.ts",
     "../src/Author.tsx",
     "../src/VisualCard.tsx",
+    "../src/VisualSkeleton.tsx",
     "../src/ControlInput.tsx",
     "../src/fixture-query.ts",
     "../src/AutomationNotice.tsx",
