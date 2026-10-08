@@ -256,6 +256,7 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
   .phase-badge { display: none; }
   .dashboard-grid { display: flex; flex-direction: column; gap: 16px; }
   .visual-card { min-height: 340px; }
+  .visual-card:has(> .visual-content > .table-scroll) { height: 340px; }
   .visual-content { min-height: 235px; }
 }
 
