@@ -29,7 +29,9 @@ function QSidePanelContent({ renderTrigger, ...entry }: QSidePanelProps) {
     // Non-modal: Escape still works after an answer action removes its focused
     // button, or after the user moves focus back into the analysis.
     const escape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !event.defaultPrevented) { event.preventDefault(); close(); }
+      // A native modal above this non-modal panel owns Escape (for example the
+      // Author shortcuts help). Leave its cancel event and focus handling intact.
+      if (event.key === 'Escape' && !event.defaultPrevented && !event.isComposing && event.keyCode !== 229 && !panel?.ownerDocument.querySelector?.('dialog[open]')) { event.preventDefault(); close(); }
     };
     panel?.ownerDocument.addEventListener('keydown', escape);
     return () => panel?.ownerDocument.removeEventListener('keydown', escape);

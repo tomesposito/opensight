@@ -3,6 +3,7 @@ import { ThemeEditor } from './ThemeEditor.js';
 import { DatasetHeader } from './DatasetHeader.js';
 import { FieldIcon } from './FieldIcon.js';
 import { AuthorToolbar } from './AuthorToolbar.js';
+import { AuthorShortcuts } from './AuthorShortcuts.js';
 import { DraftSourceRecovery, useDraftSource } from './DraftSource.js';
 import { LocalDrafts } from './LocalDrafts.js';
 import { useLocalDrafts } from './use-local-drafts.js';
@@ -52,6 +53,8 @@ function AuthorWorkspace({ client: apiClient, dataset, onDatasetChange, onPrep, 
   const notify = useToast();
   const drafts = useLocalDrafts(access, dataset, { draftId, newAnalysis });
   const { draft, dispatch } = drafts;
+  const workspace = useRef<HTMLDivElement>(null);
+  const saveDraft = () => { if (drafts.save()) notify('Draft saved'); };
   const changed = useRef(onDraftChange);
   changed.current = onDraftChange;
   useEffect(() => { if (!drafts.openingError) changed.current?.(drafts.id); }, [drafts.id, drafts.openingError]);
@@ -121,7 +124,8 @@ function AuthorWorkspace({ client: apiClient, dataset, onDatasetChange, onPrep, 
     } catch { setExportStatus('Export could not be downloaded. Please try again.'); }
   };
   if (drafts.openingError) return <section><h1>Unable to open analysis</h1><p role="alert">{drafts.openingError}</p><p>Return to My analyses to refresh the list or choose another draft.</p></section>;
-  return <div className="author-workspace" data-chrome={draft.chrome ?? 'light'}>
+  return <div ref={workspace} className="author-workspace" data-chrome={draft.chrome ?? 'light'}>
+    <AuthorShortcuts workspace={workspace} onSave={saveDraft} />
     <header className="author-topbar app-header">
       {!inApp && <a className="brand" href="./"><span className="brand-mark" aria-hidden="true">◈</span>OpenSight</a>}
       <label className="analysis-title"><span className="sr-only">Analysis title</span><input value={draft.title} onChange={e => dispatch({ type: 'analysis-title', title: e.target.value })} /></label>
@@ -129,7 +133,7 @@ function AuthorWorkspace({ client: apiClient, dataset, onDatasetChange, onPrep, 
     <QSidePanel draft={draft} dispatch={dispatch} client={client} renderTrigger={trigger => <AuthorToolbar onPrep={onPrep ? () => { if (drafts.keepCurrent()) onPrep(); } : undefined} draft={draft} dispatch={dispatch} oEntry={trigger} fit={fit} onFit={() => setFit(value => !value)} onJson={download} onBundle={() => { if (!busy) void downloadQs(); }} onImport={() => fileInput.current?.click()} busy={busy} jsonDisabled={!!exported.error} />} />
     <div className="author-tools">
       <div className="author-utilities">
-        <button type="button" onClick={() => { if (drafts.save()) notify('Draft saved'); }}>Save draft</button>
+        <button type="button" aria-keyshortcuts="Meta+S Control+S" onClick={saveDraft}>Save draft</button>
         {inApp && <button type="button" disabled={!drafts.id || drafts.dirty || copying} aria-describedby={copyHelpId} onClick={() => { void copyDraftLink(); }}>Copy draft link</button>}
         <button type="button" onClick={() => { if (drafts.replace({ ...emptyDraft(), ...(draft.dataset ? { dataset: draft.dataset } : {}) })) onDatasetChange?.(draft.dataset); }}>New analysis</button>
       </div>

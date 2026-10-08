@@ -337,6 +337,18 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
   color: var(--chrome-text); background: var(--chrome-bg);
 }
 .author-workspace[data-chrome=dark] { color-scheme: dark; --chrome-surface: #202e40; --chrome-bg: #141e2c; --chrome-text: #e7eef7; --chrome-muted: #adc0d5; --chrome-border: #45566d; --chrome-icon: #7dd4df; --chrome-menu-hover: #293f55; --chrome-menu-shadow: #00000080; }
+.shortcuts-dialog { box-sizing: border-box; width: min(480px, calc(100% - 32px)); max-height: calc(100dvh - 32px); overflow: auto; padding: 24px; border: 1px solid var(--chrome-border); border-radius: 8px; color: var(--chrome-text); background: var(--chrome-surface); font: inherit; }
+.shortcuts-dialog::backdrop { background: #14253688; }
+.shortcuts-dialog header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.shortcuts-dialog h2 { margin: 0; font-size: 16px; }
+.shortcuts-dialog p, .shortcut-coming { color: var(--chrome-muted); }
+.shortcuts-dialog section { margin-top: 16px; border-top: 1px solid var(--chrome-border); }
+.shortcuts-dialog h3 { margin: 12px 0 8px; font-size: 13px; }
+.shortcuts-dialog dl { margin: 0; }
+.shortcuts-dialog dl > div { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 8px 0; }
+.shortcuts-dialog dd { margin: 0; flex-shrink: 0; }
+.shortcuts-dialog kbd { padding: 2px 4px; border: 1px solid var(--chrome-border); border-radius: 4px; background: var(--chrome-bg); font: inherit; }
+.shortcut-coming { display: block; margin-top: 4px; }
 .author-workspace[data-chrome=dark] :is(.builder-panel, .controls-strip, button, input, select, textarea, .author-card-toolbar, .bundle-import) { color: var(--chrome-text); background-color: var(--chrome-surface); border-color: var(--chrome-border); }
 .author-workspace[data-chrome=dark] :is(label, .field-hint, .field-type, .author-save p, .canvas-label span, .field-wells legend) { color: var(--chrome-muted); }
 .author-workspace[data-chrome=dark] .field-wells .active-well { background: #293f50; }
