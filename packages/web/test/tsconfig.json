@@ -11,6 +11,7 @@
     ]
   },
   "include": [
+    "../src/keyboard-shortcuts.ts",
     "../src/FirstRun.tsx",
     "../src/SessionGate.tsx",
     "../src/Application.tsx",
