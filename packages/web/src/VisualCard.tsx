@@ -3,6 +3,7 @@ import { LIGHT_THEME } from './themes.js';
 import { fieldRule } from './formatting.js';
 import { rowSelection, brushSelection, type VisualInteraction } from './visual-selection.js';
 import { Fragment, useEffect, useId, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { VisualSkeleton } from './VisualSkeleton.js';
 import type { EChartsOption } from 'echarts';
 import { compileVisual, DATA_REQUIRED_LABEL, displayCell, rowGroupKey, rowGroupVisibility, pivotRowGroupHeaders } from './compiler.js';
 import type { CompiledVisual } from './compiler.js';
@@ -115,11 +116,11 @@ export function VisualCard({ visual, dataMessage, loading = false, definitionPre
     {compiled && <>
       <div className="visual-content">
         {!loading && compiled.state === 'ready' && ((compiled.model.kind === 'table' || compiled.model.kind === 'pivot') ? <DataTable compiled={compiled} interaction={interaction} onRowGroupToggle={onRowGroupToggle} /> : <Chart option={compiled.option} title={compiled.model.title} compiled={compiled} interaction={interaction} />)}
-        {compiled.state !== 'ready' && <div className="empty-state" role="status">
-          {loading && <span className="empty-symbol" aria-hidden="true">◌</span>}
-          <strong>{loading ? 'Loading data…' : compiled.state === 'unavailable' ? definitionPreview ? 'Definition only' : dataMessage ? 'Unable to load data' : DATA_REQUIRED_LABEL : 'No results'}</strong>
-          <p>{loading ? 'Waiting for query results. No data is shown until the query completes.' : compiled.state === 'empty' ? 'The result set contains no rows. Review the filters and source data for matching records.' : definitionPreview ? 'This preview has no sample results. Live data requires a hosted API with a configured source and access permissions. No query runs in this preview.' : dataMessage ? 'Review the details below, check the selected fields and data access, then retry.' : 'No data is attached to this visual. Choose a supported sample, or query a configured dataset through a hosted API.'}</p>
-          {!loading && dataMessage && <p>{dataMessage}</p>}
+        {loading && compiled.state !== 'ready' && <VisualSkeleton kind={compiled.model.kind} />}
+        {!loading && compiled.state !== 'ready' && <div className="empty-state" role="status">
+          <strong>{compiled.state === 'unavailable' ? definitionPreview ? 'Definition only' : dataMessage ? 'Unable to load data' : DATA_REQUIRED_LABEL : 'No results'}</strong>
+          <p>{compiled.state === 'empty' ? 'The result set contains no rows. Review the filters and source data for matching records.' : definitionPreview ? 'This preview has no sample results. Live data requires a hosted API with a configured source and access permissions. No query runs in this preview.' : dataMessage ? 'Review the details below, check the selected fields and data access, then retry.' : 'No data is attached to this visual. Choose a supported sample, or query a configured dataset through a hosted API.'}</p>
+          {dataMessage && <p>{dataMessage}</p>}
           <small>{compiled.model.measures.map(f => `SUM(${f.column})`).join(', ')}{compiled.model.dimensions[0] && ` by ${compiled.model.dimensions[0].column}`}</small>
         </div>}
       </div>
