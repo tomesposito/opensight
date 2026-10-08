@@ -28,9 +28,8 @@ Twenty new tests run in the existing Node/React test harness without a browser:
 Registry tests also cover input/textarea/select/contenteditable targets,
 descendants, text nodes, shadow event paths, extra modifiers, repeats, consumed
 events, IME flags, composition lifecycle, modal guards, and listener cleanup.
-Integration tests verify that a rerender during composition retains protection,
-navigation removes listeners, and failed draft opens or missing build access
-never activate shortcuts. The focused run, including existing toast-action and
+Integration tests verify that a rerender during composition retains protection
+and navigation removes listeners. The focused run, including existing toast-action and
 Ask Q tests, passed **37 / failed 0 / skipped 0**.
 
 ## Demo and visual review
