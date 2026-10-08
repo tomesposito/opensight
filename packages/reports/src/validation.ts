@@ -60,6 +60,7 @@ export function validateDefinition(value: unknown): asserts value is ReportDefin
     if (isRecord(band) && typeof band.kind === 'string' && !['text', 'table'].includes(band.kind)) fail('REPORT_UNSUPPORTED_BAND', `$.body[${i}].kind`, 'Only text and table bands are supported');
   }
   if (!validate(value)) fail('REPORT_INVALID_DEFINITION', schemaValidator.errors?.[0]?.instanceLocation || '$', 'Definition does not match report JSON Schema');
+  if (JSON.stringify(value).length > 2000000) fail('REPORT_LIMIT_EXCEEDED', '$', 'At most 2 million definition characters');
   if (!Number.isFinite(Date.parse(value.date)) || new Date(value.date).toISOString().slice(0, 10) !== value.date) fail('REPORT_INVALID_DEFINITION', '$.date', 'Expected a valid calendar date');
   const ids = new Set<string>();
   for (const [i, band] of value.body.entries()) {

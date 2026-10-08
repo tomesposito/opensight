@@ -114,8 +114,12 @@ export function layoutReport(definition: ReportDefinition, rowsByBand: RowsByBan
   }
   for (const p of pages) {
     p.totalPages = pages.length;
-    paintLines(p, repeated('header', p.number, pages.length), m.left, m.top, 'header', '$header');
-    paintLines(p, repeated('footer', p.number, pages.length), m.left, height - m.bottom - footerHeight, 'footer', '$footer');
+    const header = repeated('header', p.number, pages.length), footer = repeated('footer', p.number, pages.length);
+    // Mixed-size runs can change line heights when placeholders become shorter.
+    // Never let final substitution overlap body content or the bottom margin.
+    if (heightOf(header) > headerHeight + EPS || heightOf(footer) > footerHeight + EPS) fail('REPORT_PAGE_OVERFLOW', '$.header/footer', 'Resolved placeholders exceed the reserved repeating band height');
+    paintLines(p, header, m.left, m.top, 'header', '$header');
+    paintLines(p, footer, m.left, height - m.bottom - footerHeight, 'footer', '$footer');
   }
   return pages;
 }

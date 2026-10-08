@@ -29,6 +29,7 @@ export function Reports() {
   }, [definition]);
   const current = result.pages[Math.min(pageNumber, result.pages.length - 1)];
   const sample = definition.body.some(b => b.kind === 'table' && b.datasetId === 'sample-report-sales');
+  const hasTable = definition.body.some(b => b.kind === 'table');
   const refresh = () => { try { setSaved({ reports: store.list(), error: '' }); } catch (e) { setSaved({ reports: [], error: (e as Error).message }); } };
   const attempt = (fn: () => void) => { setError(''); setNotice(''); try { fn(); } catch (e) { setError((e as Error).message); } };
   const change = (d: ReportDefinition) => { setDefinition(d); setPageNumber(0); setDirty(true); setNotice(''); };
@@ -65,7 +66,7 @@ export function Reports() {
         <button type="button" onClick={() => attempt(() => { validateDefinition(definition); download(JSON.stringify(definition, null, 2), 'application/json', `${definition.id}.json`); })}>Export definition JSON</button>
       </aside>
       <div className="report-preview">
-        <div className="report-preview-toolbar"><div><strong>{definition.title || 'Untitled report'}</strong><span>{dirty ? 'Unsaved changes' : 'Saved on this device'}{sample ? ' · Sample data' : ' · Text document'}</span></div>
+        <div className="report-preview-toolbar"><div><strong>{definition.title || 'Untitled report'}</strong><span>{dirty ? 'Unsaved changes' : 'Saved on this device'}{sample ? ' · Sample data' : hasTable ? ' · Rows required' : ' · Text document'}</span></div>
           {current && <button type="button" className="report-export" onClick={() => attempt(() => { const pdf = renderPdf(definition, result.pages); download(new Uint8Array(pdf).buffer, 'application/pdf', `${definition.id}.pdf`); setNotice('PDF exported.'); })}>Export PDF</button>}
         </div>
         <p className="report-disclosure">{sample ? 'Sample data: 72 bundled synthetic orders. ' : ''}Approximate text layout. Live dataset queries, visual snapshots and scheduled distribution are not connected.</p>

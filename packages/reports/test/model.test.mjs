@@ -29,3 +29,11 @@ test('rows require explicit bindings and declared column types; no silent missin
   for (const r of [{}, { sales: [{ region: 'x' }] }, { sales: [{ region: 'x', amount: '1' }] }, { sales: [{ region: 'x', amount: Infinity }] }, { sales: [], other: [] }]) assert.throws(() => validateRows(d, r), { code: 'REPORT_INVALID_ROWS' });
   assert.throws(() => validateRows(d, rows(10001)), { code: 'REPORT_LIMIT_EXCEEDED' });
 });
+test('non-finite geometry and excessive definition text fail closed', () => {
+  for (const n of [NaN, Infinity, -Infinity]) {
+    const d = definition(); d.pageSetup.margins.top = n;
+    assert.throws(() => validateDefinition(d), { code: 'REPORT_INVALID_DEFINITION' });
+  }
+  const d = definition(); d.body = [{ kind: 'text', id: 'large', runs: Array.from({ length: 21 }, () => ({ text: 'x'.repeat(100000) })) }];
+  assert.throws(() => validateDefinition(d), { code: 'REPORT_LIMIT_EXCEEDED' });
+});

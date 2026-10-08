@@ -1,9 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
+import { request as httpRequest } from 'node:http';
 import { fileURLToPath } from 'node:url';
 import { createApiServer, emptySecurityState, StubMailTransport } from '../dist/index.js';
 import { definition, rows } from '../../reports/test/fixture.mjs';
+import { createHostedApiServer } from '../dist/hosted-server.js';
+import { authFixture } from './hosted-helpers.mjs';
 const root = fileURLToPath(new URL('../../../fixtures/', import.meta.url));
 const body = () => ({ definition: definition(), rowsByBand: rows(90) });
 async function serve(t, secure = false) {
@@ -49,4 +52,24 @@ test('authenticated report renderer requires build capability and rejects bypass
   assert.equal((await request(body(), undefined, { headers: { authorization: 'Bearer author' } })).status, 200);
   assert.equal((await request(body(), undefined, { headers: { authorization: 'Bearer author', 'x-role': 'admin' } })).status, 403);
   assert.equal((await request(body(), '/api/namespaces/foreign/reports/synthetic/pdf', { headers: { authorization: 'Bearer author' } })).status, 404);
+});
+test('hosted report PDF uses the normal verified session and origin boundary', async t => {
+  const f = await authFixture(t), c = f.config;
+  const env = { OPENSIGHT_PUBLIC_ORIGIN: c.origin, OPENSIGHT_AUTH_ISSUER: c.issuer, OPENSIGHT_AUTH_AUDIENCE: c.audience,
+    OPENSIGHT_AUTH_KEY_ID: c.keyId, OPENSIGHT_AUTH_SIGNING_KEY: c.signingKey.toString('base64'), OPENSIGHT_AUTH_ENCRYPTION_KEY: c.encryptionKey.toString('base64'),
+    OPENSIGHT_OPERATOR_KEY: c.operatorKey.toString('base64'), OPENSIGHT_SESSION_SECONDS: String(c.sessionSeconds), OPENSIGHT_INVITATION_SECONDS: String(c.invitationSeconds) };
+  const server = await createHostedApiServer({ membershipDatabase: f.db, tenantDatabase: f.db, security: { authenticate: f.auth.authenticate }, builtinAuth: f.auth, mailTransport: f.mail, env });
+  server.listen(0, '127.0.0.1'); await once(server, 'listening');
+  t.after(() => new Promise(resolve => { server.close(resolve); server.closeAllConnections(); }));
+  const request = headers => new Promise((resolve, reject) => {
+    const bytes = JSON.stringify(body());
+    const req = httpRequest({ host: '127.0.0.1', port: server.address().port, path: '/api/reports/synthetic/pdf', method: 'POST', headers: { Host: new URL(c.origin).host, 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(bytes), ...headers } }, res => {
+      const chunks = []; res.on('data', b => chunks.push(b)); res.on('end', () => resolve({ status: res.statusCode, text: () => Buffer.concat(chunks).toString() }));
+    }); req.on('error', reject); req.end(bytes);
+  });
+  assert.equal((await request({})).status, 401);
+  const session = await f.login(), headers = { authorization: `Bearer ${session.token}` };
+  const exported = await request(headers); assert.equal(exported.status, 200); assert.ok((await exported.text()).startsWith('%PDF'));
+  const forged = await request({ ...headers, 'x-tenant': 'forged' }); assert.equal(forged.status, 403);
+  assert.equal((await request({ ...headers, origin: 'https://foreign.example' })).status, 403);
 });
