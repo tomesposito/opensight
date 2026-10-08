@@ -43,7 +43,7 @@ function QSidePanelContent({ renderTrigger, ...entry }: QSidePanelProps) {
     return () => panel?.ownerDocument.removeEventListener('keydown', escape);
   }, [open, close]);
   const trigger = <button ref={triggerRef} type="button" className="q-trigger" aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? id : undefined} onClick={openPanel}>
-    <span className="o-mark" aria-hidden="true">Q</span> Ask a question about {entry.draft.dataset?.name ?? 'Local sales'}
+    <span className="o-mark" aria-hidden="true">Q</span><span className="q-trigger-label">Ask a question about {entry.draft.dataset?.name ?? 'Local sales'}</span>
   </button>;
   return <>
     {renderTrigger ? renderTrigger(trigger) : <div className="q-entry">{trigger}</div>}

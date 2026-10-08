@@ -10,6 +10,9 @@ const output = resolve(process.env.OPENSIGHT_SCREENSHOT_OUTPUT ?? '.opensight/pa
 await mkdir(output, { recursive: true });
 const browser = await chromium.launch({ executablePath: '/opt/meta-chromium/chrome', args: ['--no-sandbox', '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce' });
+// Stable saved timestamps and a settled auto-save keep before/after pixels
+// independent of capture speed; timers still run normally.
+await page.clock.setFixedTime(new Date('2026-10-08T12:00:00Z'));
 const errors = [], requests = [], measurements = [];
 page.on('pageerror', error => errors.push(error.message));
 await page.route(/^https?:/, route => { requests.push(route.request().url()); return route.abort(); });
@@ -36,6 +39,7 @@ try {
   const toggle = page.getByLabel('NEW LOOK', { exact: true });
   for (const theme of ['light', 'dark']) {
     await toggle.selectOption(theme);
+    await page.waitForTimeout(1600);
     await capture(`header-${theme}`);
     measurements.push({ name: `header-${theme}`, ...await measure() });
     for (const width of [1100, 760, 390]) {
@@ -48,6 +52,7 @@ try {
     await page.setViewportSize({ width: 1440, height: 900 });
   }
   await toggle.selectOption('light');
+  await page.waitForTimeout(1600);
   for (const [name, height] of [['editor-author-classic', 935], ['editor-author-newlook', 807]]) {
     await page.setViewportSize({ width: 1440, height });
     await capture(name);
