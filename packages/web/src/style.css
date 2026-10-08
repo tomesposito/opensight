@@ -62,6 +62,10 @@ h3 { font-size: 14px; font-weight: 650; margin: 0; }
 .card-footer details { border-top: 1px solid #edf1f3; padding: 9px 0; }
 .render-notes li { line-height: 1.6; overflow-wrap: anywhere; padding: 4px 0; }
 .table-scroll { overflow: auto; margin: 12px 0; }
+/* Keep scrolling inside table/pivot cards so their headers can freeze. */
+.visual-content:has(> .table-scroll) { display: flex; flex-direction: column; min-height: 0; }
+.visual-content > .table-scroll { flex: 1; min-height: 0; }
+.table-scroll thead th { position: sticky; top: 0; z-index: 2; }
 table { width: 100%; border-collapse: collapse; font-size: 13px; text-align: left; }
 th { padding: 12px; background: #f3f7f8; color: #526c7a; font-weight: 600; }
 td { padding: 14px 12px; border-bottom: 1px solid #e7edef; font-variant-numeric: tabular-nums; }
