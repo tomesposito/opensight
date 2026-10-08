@@ -54,3 +54,33 @@ ignored `.opensight/issue-52/`. Chromium required permissions for local sockets
 outside the filesystem sandbox; its capture scripts block external HTTP
 requests. No reference images or private data were committed. The demo is a
 static artifact, not a deployed server.
+
+## Final full-suite results
+
+`TZ=UTC npm test` from the repository root exited **0**:
+**1,821 passed / 0 failed / 12 skipped / 0 cancelled**. All skips require live
+PostgreSQL with `DATABASE_URL`; no web test was skipped. Workspace builds and
+strict TypeScript checks passed.
+
+| Runner | Passed | Failed | Skipped |
+| --- | ---: | ---: | ---: |
+| API | 303 | 0 | 10 |
+| Bundle parser | 199 | 0 | 0 |
+| Embedding SDK | 9 | 0 | 0 |
+| O interpreter | 32 | 0 | 0 |
+| Parity | 11 | 0 | 0 |
+| Query engine | 500 | 0 | 2 |
+| Web | 761 | 0 | 0 |
+| Root conformance | 6 | 0 | 0 |
+| **Total** | **1,821** | **0** | **12** |
+
+The first full-suite attempt ran alongside another test run and a package
+installation. The existing containment timing check exceeded its 3,000ms
+execution limit at 4,020ms, and this attempt was stopped. After the competing
+test run finished, the complete retry above passed; the same containment check
+measured 2,587ms. No implementation or timing assertion was changed for the
+retry. Both attempt logs and the final machine-readable totals are retained
+under `.opensight/issue-52/`.
+
+`git diff 2456861f --check` is clean. All committed changes are scoped to
+issue #52. Nothing was merged, pushed, or published.
