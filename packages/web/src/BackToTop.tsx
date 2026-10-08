@@ -12,10 +12,11 @@ export function BackToTop() {
   const [visible, setVisible] = useState(() => scrollPosition() > SHOW_AFTER_PX);
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    const onScroll = () => setVisible(window.scrollY > SHOW_AFTER_PX);
+    const win = window;
+    const onScroll = () => setVisible(win.scrollY > SHOW_AFTER_PX);
     onScroll();
-    window.addEventListener('scroll', onScroll, { passive: true });
-    return () => window.removeEventListener('scroll', onScroll);
+    win.addEventListener('scroll', onScroll, { passive: true });
+    return () => win.removeEventListener('scroll', onScroll);
   }, []);
   const scrollToTop = useCallback(() => {
     if (typeof window === 'undefined') return;

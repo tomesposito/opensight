@@ -689,7 +689,5 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .chart.insight-chart { overflow: auto; }
 
 /* Floating back-to-top control on long dashboard/sample pages. */
-.back-to-top { position: fixed; z-index: 90; bottom: 24px; right: 24px; padding: 10px 16px; border: 1px solid #526c7a; border-radius: 999px; background: #19384a; color: #fff; font: 600 12px/1.5 Arial, "Helvetica Neue", Helvetica, sans-serif; box-shadow: 0 4px 16px #19384a33; cursor: pointer; transition: opacity 180ms ease; }
+.back-to-top { position: fixed; z-index: 30; bottom: 24px; right: 24px; min-height: 40px; padding: 8px 16px; border: 1px solid #526c7a; border-radius: 6px; background: #19384a; color: #fff; font: 600 12px/1.5 Arial, "Helvetica Neue", Helvetica, sans-serif; box-shadow: 0 4px 16px #19384a33; }
 .back-to-top:hover { background: #254a5e; }
-.back-to-top:focus-visible { outline: 2px solid #3b9bd4; outline-offset: 2px; }
-@media (prefers-reduced-motion: reduce) { .back-to-top { transition: none; } }
