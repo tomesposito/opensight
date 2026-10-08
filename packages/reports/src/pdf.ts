@@ -27,7 +27,8 @@ export function renderPdf(definition: ReportDefinition, layoutResult: readonly P
     }
   }
   const pdf = new jsPDF({ orientation: definition.pageSetup.orientation, unit: 'mm', format: [width, height], compress: false, putOnlyUsedFonts: true });
-  pdf.setCreationDate(new Date(`${definition.date}T00:00:00.000Z`));
+  // Fixed UTC metadata epoch; the caller's report date lives in page content.
+  pdf.setCreationDate("D:19700101000000+00'00'");
   // Stable PDF document ID, not a security hash. Reproducible for identical inputs.
   let hash = 2166136261;
   for (const c of JSON.stringify([definition, layoutResult])) hash = Math.imul(hash ^ c.charCodeAt(0), 16777619);

@@ -11,6 +11,7 @@ test('real PDF has matching page objects, repeatable bytes and extractable escap
   const d = definition(); d.body.unshift({ kind: 'text', id: 'title', runs: [{ text: 'Synthetic (sample) \\ report', style: { bold: true } }] });
   const pages = layoutReport(d, rows(90)), bytes = renderPdf(d, pages), raw = Buffer.from(bytes).toString('latin1');
   assert.ok(bytes instanceof Uint8Array); assert.ok(raw.startsWith('%PDF-'));
+  assert.ok(raw.includes("/CreationDate (D:19700101000000+00'00')"));
   assert.equal([...raw.matchAll(/\/Type \/Page\b/g)].length, pages.length);
   assert.deepEqual(renderPdf(d, pages), bytes);
   // Poppler is an independent local reader, not a shipped/bundled dependency.

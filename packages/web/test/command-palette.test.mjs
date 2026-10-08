@@ -27,9 +27,9 @@ test('substring and word-boundary bonuses rank results with stable ties and sear
 });
 test('navigation commands use existing destinations and hide routes denied to readers', () => {
   const calls = [], all = navigationCommands(demoAccess, route => calls.push(route));
-  assert.deepEqual(all.map(c => c.label), ['Go to Home', 'Go to Analyses', 'Go to Data', 'Go to Admin', 'Go to Author']);
+  assert.deepEqual(all.map(c => c.label), ['Go to Home', 'Go to Analyses', 'Go to Reports', 'Go to Data', 'Go to Admin', 'Go to Author']);
   all.forEach(c => c.run());
-  assert.deepEqual(calls.map(c => c.page), ['home', 'analyses', 'data-prep', 'security', 'author']);
+  assert.deepEqual(calls.map(c => c.page), ['home', 'analyses', 'reports', 'data-prep', 'security', 'author']);
   const reader = { mode: 'hosted', session: { role: 'reader' } };
   assert.deepEqual(navigationCommands(reader, () => {}).map(c => c.label), ['Go to Home', 'Go to Admin']);
 });
@@ -111,13 +111,13 @@ test('Q&A opens its existing panel from Home and Author, including when already 
 });
 test('commands unregister on route changes and unavailable Author or Q contexts add none', async t => {
   const ui = await mountPalette(t);
-  for (const page of ['analyses', 'data-prep', 'security', 'fixtures']) {
+  for (const page of ['reports', 'analyses', 'data-prep', 'security', 'fixtures']) {
     await ui.navigate(page); await ui.open();
-    assert.deepEqual(ui.labels(), ['Go to Home', 'Go to Analyses', 'Go to Data', 'Go to Admin', 'Go to Author']);
+    assert.deepEqual(ui.labels(), ['Go to Home', 'Go to Analyses', 'Go to Reports', 'Go to Data', 'Go to Admin', 'Go to Author']);
     await ui.cancel(); assert.equal((await ui.key('s', { ctrlKey: true })).defaultPrevented, false);
   }
   await act(() => ui.renderer.root.findByType(AppNavigation).props.navigate({ page: 'author', draftId: 'missing' }));
-  await ui.open(); assert.equal(ui.labels().length, 5);
+  await ui.open(); assert.equal(ui.labels().length, 6);
 });
 for (const role of ['author', 'reader', 'reader_ai']) test(`hosted ${role} sees only commands its available UI can run`, async t => {
   const ui = await mountPalette(t, { access: { mode: 'hosted', session: { role, id: 'test', namespaceId: 'test' } } });
@@ -162,7 +162,7 @@ test('Tab and Shift+Tab wrap between search and Close without leaving the modal'
 test('removing a command context while open removes options and resets the active descendant', async t => {
   const ui = await mountPalette(t); await ui.open(); await ui.press('ArrowUp');
   assert.notEqual(ui.selected(), 'Go to Home');
-  await ui.navigate('data-prep'); assert.equal(ui.labels().length, 5);
+  await ui.navigate('data-prep'); assert.equal(ui.labels().length, 6);
   assert.equal(ui.selected(), 'Go to Home');
   assert.equal(ui.input().props['aria-activedescendant'], ui.options()[0].props.id);
 });
