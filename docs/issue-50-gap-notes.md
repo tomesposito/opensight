@@ -81,3 +81,31 @@ Screenshots, reference comparisons, capture scripts, and logs are retained
 locally under ignored `.opensight/issue-50/`. No reference images, credentials,
 or customer data are committed. The demo remains a static artifact, not a
 deployed server. Nothing was merged, pushed, published, or closed remotely.
+
+## Final full-suite results
+
+`TZ=UTC npm test` from the repository root exited **0**:
+**1,794 passed / 0 failed / 12 skipped / 0 cancelled**. All skips require live
+PostgreSQL with `DATABASE_URL`; no web or browser test was skipped. Strict
+TypeScript checks and workspace builds passed.
+
+| Runner | Passed | Failed | Skipped |
+| --- | ---: | ---: | ---: |
+| API | 303 | 0 | 10 |
+| Bundle parser | 199 | 0 | 0 |
+| Embedding SDK | 9 | 0 | 0 |
+| O interpreter | 32 | 0 | 0 |
+| Parity | 11 | 0 | 0 |
+| Query engine | 500 | 0 | 2 |
+| Web | 734 | 0 | 0 |
+| Root conformance | 6 | 0 | 0 |
+| **Total** | **1,794** | **0** | **12** |
+
+The first attempt was stopped after sandbox socket restrictions prevented the
+existing API tests from listening. A second attempt overlapped browser/media
+capture and exceeded the existing containment test's 3-second execution limit
+(5,610 ms); it was stopped as well. The final run used the required local socket
+permissions and ran independently after captures finished. That containment
+check passed at 1,543 ms; no implementation or assertion was changed to obtain
+the pass. Logs of all attempts and machine-readable final totals remain in
+`.opensight/issue-50/`. `git diff 7f8c1203 --check` is clean.
