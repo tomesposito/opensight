@@ -7,6 +7,8 @@ import { DraftSourceRecovery, useDraftSource } from './DraftSource.js';
 import { LocalDrafts } from './LocalDrafts.js';
 import { useLocalDrafts } from './use-local-drafts.js';
 import { draftStorageKey } from './local-drafts.js';
+import { routeHash } from './app-navigation.js';
+import { useToast } from './Toasts.js';
 import { QSidePanel } from './QSidePanel.js';
 import { BuildForMe } from './BuildForMe.js';
 import { FormattingEditor } from './FormattingEditor.js';
@@ -47,6 +49,7 @@ export function Author(props: AuthorProps) {
 type EditorProps = { draft: AuthorDraft; dispatch: Dispatch<AuthorAction>; client?: QueryClient };
 function AuthorWorkspace({ client: apiClient, dataset, onDatasetChange, onPrep, onSources, inApp, draftId, newAnalysis, onDraftChange }: AuthorProps) {
   const access = useAccess();
+  const notify = useToast();
   const drafts = useLocalDrafts(access, dataset, { draftId, newAnalysis });
   const { draft, dispatch } = drafts;
   const changed = useRef(onDraftChange);
@@ -61,7 +64,10 @@ function AuthorWorkspace({ client: apiClient, dataset, onDatasetChange, onPrep, 
   const [exportStatus, setExportStatus] = useState('');
   const [importStatus, setImportStatus] = useState('');
   const [busy, setBusy] = useState(false);
+  const [copying, setCopying] = useState(false), [copyError, setCopyError] = useState('');
+  const copyHelpId = useId();
   const [reportOpen, setReportOpen] = useState(false);
+  const importConfirmation = useRef(false);
   const [fit, setFit] = useState(true);
   const fileInput = useRef<HTMLInputElement>(null);
   const importFile = async (file: File | undefined) => {
@@ -72,8 +78,23 @@ function AuthorWorkspace({ client: apiClient, dataset, onDatasetChange, onPrep, 
       if (!drafts.replace(imported)) { setImportStatus('Import paused. Save or export your current work first.'); return; }
       onDatasetChange?.(undefined); setReportOpen(true);
       setImportStatus(`Imported ${file.name}. Review the import report for unsupported features.`);
+      // The modal makes the app shell inert. Announce success after it closes
+      // so the toast is visible and its dismiss button is keyboard accessible.
+      importConfirmation.current = true;
     } catch (error) { setImportStatus(`Import failed: ${error instanceof Error ? error.message : String(error)}`); }
     finally { setBusy(false); }
+  };
+  const copyDraftLink = async () => {
+    if (!drafts.id || drafts.dirty || copying) return;
+    setCopying(true); setCopyError('');
+    try {
+      const url = new URL(window.location.href);
+      url.search = '';
+      url.hash = routeHash({ page: 'author', draftId: drafts.id });
+      await navigator.clipboard.writeText(url.href);
+      notify('Link copied');
+    } catch { setCopyError('Could not copy the link. Copy the saved draft URL from your browser’s address bar.'); }
+    finally { setCopying(false); }
   };
   const downloadQs = async () => {
     setBusy(true);
@@ -108,9 +129,12 @@ function AuthorWorkspace({ client: apiClient, dataset, onDatasetChange, onPrep, 
     <QSidePanel draft={draft} dispatch={dispatch} client={client} renderTrigger={trigger => <AuthorToolbar onPrep={onPrep ? () => { if (drafts.keepCurrent()) onPrep(); } : undefined} draft={draft} dispatch={dispatch} oEntry={trigger} fit={fit} onFit={() => setFit(value => !value)} onJson={download} onBundle={() => { if (!busy) void downloadQs(); }} onImport={() => fileInput.current?.click()} busy={busy} jsonDisabled={!!exported.error} />} />
     <div className="author-tools">
       <div className="author-utilities">
-        <button type="button" onClick={drafts.save}>Save draft</button>
+        <button type="button" onClick={() => { if (drafts.save()) notify('Draft saved'); }}>Save draft</button>
+        {inApp && <button type="button" disabled={!drafts.id || drafts.dirty || copying} aria-describedby={copyHelpId} onClick={() => { void copyDraftLink(); }}>Copy draft link</button>}
         <button type="button" onClick={() => { if (drafts.replace({ ...emptyDraft(), ...(draft.dataset ? { dataset: draft.dataset } : {}) })) onDatasetChange?.(draft.dataset); }}>New analysis</button>
       </div>
+      {inApp && <p id={copyHelpId} className="draft-link-help">Draft links open only in this browser on this device; they do not share the analysis. Save changes before copying.</p>}
+      {copyError && <p role="alert">{copyError}</p>}
       <LocalDrafts entries={drafts.entries} activeId={drafts.id} onRefresh={drafts.refresh} onOpen={id => { const opened = drafts.open(id); if (opened) { source.retry(); onDatasetChange?.(opened.dataset); } }} onRename={drafts.rename} onDelete={id => { if (drafts.remove(id) && id === drafts.id) onDatasetChange?.(undefined); }} />
       <div className="bundle-import" onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; }} onDrop={e => { e.preventDefault(); if (e.dataTransfer.files.length !== 1) setImportStatus('Drop one .qs ZIP or one bundle .json member.'); else void importFile(e.dataTransfer.files[0]); }} aria-label="Bundle drop zone">
         <details><summary>Import bundle</summary>
@@ -129,7 +153,10 @@ function AuthorWorkspace({ client: apiClient, dataset, onDatasetChange, onPrep, 
     </div>
     {source.problem && <DraftSourceRecovery draft={draft} sources={source.sources} problem={source.problem} onRetry={source.retry} onSources={onSources ? () => { if (drafts.keepCurrent()) onSources(); } : undefined} onReconnect={next => { dispatch({ type: 'import', draft: next }); onDatasetChange?.(next.dataset); }} />}
     <AuthorCanvas draft={draft} dispatch={dispatch} client={client} fit={fit} sourceProblem={source.problem} />
-    {reportOpen && draft.bundle && <ImportReport draft={draft} onClose={() => setReportOpen(false)} />}
+    {reportOpen && draft.bundle && <ImportReport draft={draft} onClose={() => {
+      setReportOpen(false);
+      if (importConfirmation.current) { importConfirmation.current = false; notify('Bundle imported'); }
+    }} />}
   </div>;
 }
 
