@@ -5,7 +5,9 @@ analysis** to start blank. Reopen opens the selected draft in Author with a
 reloadable URL. The list also remains available inside Author. See
 [app navigation](app-navigation.md) for routes and role visibility.
 
-In Author, use **Save draft** before leaving the editor or reloading. **Local
+In Author, use **Save draft** or **Cmd/Ctrl+S** before leaving the editor or
+reloading (keyboard shortcuts pause while typing in a field). Press **?** for
+the [shortcut list](keyboard-shortcuts.md). **Local
 drafts** lists saved analyses by name and updated time, most recent first. Each
 entry offers **Reopen**, **Rename**, and **Delete**. **New analysis**, choosing
 another dataset, importing a bundle, and reopening another draft checkpoint
