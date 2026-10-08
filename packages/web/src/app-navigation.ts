@@ -2,6 +2,7 @@ import { allowed, type Access } from './access.js';
 
 export const pages = {
   home: { path: '/home', section: 'Home', title: 'Home' },
+  reports: { path: '/reports', section: 'Reports', title: 'Reports' },
   analyses: { path: '/analyses', section: 'Analyses', title: 'My analyses' },
   author: { path: '/analyses/author', section: 'Analyses', title: 'Author' },
   'data-prep': { path: '/data/preparation', section: 'Data', title: 'Data preparation' },
@@ -18,14 +19,14 @@ export type Page = keyof typeof pages;
 export type AppRoute = { page: Page; draftId?: string; newAnalysis?: boolean };
 export const productSections = [
   { title: 'Home', page: 'home' }, { title: 'Analyses', page: 'analyses' },
-  { title: 'Data', page: 'data-prep' }, { title: 'Admin', page: 'security' },
+  { title: 'Reports', page: 'reports' }, { title: 'Data', page: 'data-prep' }, { title: 'Admin', page: 'security' },
 ] as const;
 export const dataPages: Page[] = ['data-prep', 'data-sources'];
 export const adminPages: Page[] = ['security', 'organization', 'automation', 'ai-settings', 'users'];
 export const developerPages: Page[] = ['fixtures', 'api'];
 
 export function visiblePage(access: Access, page: Page): boolean {
-  if (page === 'analyses' || page === 'author' || dataPages.includes(page)) return allowed(access, 'build');
+  if (page === 'reports' || page === 'analyses' || page === 'author' || dataPages.includes(page)) return allowed(access, 'build');
   if (page === 'ai-settings' || page === 'users') return access.mode === 'hosted' && allowed(access, 'admin');
   if (page === 'fixtures') return access.mode === 'demo' || allowed(access, 'build');
   return true;
