@@ -18,6 +18,7 @@ async function mount(t, { blocked = false } = {}) {
   } };
   const document = new EventTarget(), dialogs = new Map();
   document.defaultView = new EventTarget();
+  document.getElementById = () => null;
   document.querySelector = selector => selector === 'dialog[open]' ? [...dialogs.values()].find(d => d.open) ?? null : null;
   const node = extra => ({ nodeType: 1, isConnected: true, closest: () => null,
     focus() { document.activeElement = this; }, ...extra });
@@ -116,7 +117,7 @@ test('? opens grouped help for the whole registry; Escape cancels and restores f
     const content = node => typeof node === 'string' ? node : node.children.map(content).join(' ');
     const text = dialog.findAllByType('dt').map(content).join(' ');
     for (const shortcut of AUTHOR_SHORTCUTS) assert.ok(text.includes(shortcut.label), shortcut.id);
-    assert.match(text, /coming in #53/);
+    assert.doesNotMatch(text, /coming in #53/);
     assert.deepEqual(dialog.findAllByType('kbd').map(n => n.props.children), ['Cmd/Ctrl', 'S', 'Cmd/Ctrl', 'F', 'Cmd/Ctrl', 'K', 'Shift', '/', 'Esc']);
     for (const options of [{ key: 's', ctrlKey: true }, { key: 'f', metaKey: true }, { key: '?' }]) {
       assert.equal((await ui.key(options)).defaultPrevented, false, 'modal owns keyboard input');
@@ -132,11 +133,14 @@ test('? opens grouped help for the whole registry; Escape cancels and restores f
   assert.equal(ui.document.activeElement, ui.canvas);
 });
 
-test('Cmd/Ctrl+K reserves the future palette without opening UI, saving, or showing a success toast', async t => {
-  const ui = await mount(t), before = ui.renderer.toJSON();
-  for (const modifier of ['metaKey', 'ctrlKey']) assert.equal((await ui.key({ key: 'k', [modifier]: true })).defaultPrevented, true);
-  assert.deepEqual(ui.renderer.toJSON(), before); assert.equal(ui.saved(), undefined);
-  assert.deepEqual(ui.messages(), []);
+test('Cmd/Ctrl+K opens the real palette without saving or announcing a toggle', async t => {
+  const ui = await mount(t);
+  for (const modifier of ['metaKey', 'ctrlKey']) {
+    assert.equal((await ui.key({ key: 'k', [modifier]: true })).defaultPrevented, true);
+    assert.equal(ui.renderer.root.findByType('dialog').props.className, 'command-palette');
+    assert.equal(ui.saved(), undefined); assert.deepEqual(ui.messages(), []);
+    await ui.cancel(); assert.equal(ui.document.activeElement, ui.canvas);
+  }
 });
 
 test('Author leaves typing and composition alone, retaining composition state across draft updates', async t => {

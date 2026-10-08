@@ -4,6 +4,7 @@ import { DatasetHeader } from './DatasetHeader.js';
 import { FieldIcon } from './FieldIcon.js';
 import { AuthorToolbar } from './AuthorToolbar.js';
 import { AuthorShortcuts } from './AuthorShortcuts.js';
+import { usePaletteCommands } from './CommandPalette.js';
 import { DraftSourceRecovery, useDraftSource } from './DraftSource.js';
 import { LocalDrafts } from './LocalDrafts.js';
 import { useLocalDrafts } from './use-local-drafts.js';
@@ -54,7 +55,7 @@ function AuthorWorkspace({ client: apiClient, dataset, onDatasetChange, onPrep, 
   const drafts = useLocalDrafts(access, dataset, { draftId, newAnalysis });
   const { draft, dispatch } = drafts;
   const workspace = useRef<HTMLDivElement>(null);
-  const saveDraft = () => { if (drafts.save()) notify('Draft saved'); };
+  const saveDraft = () => { const saved = !!drafts.save(); if (saved) notify('Draft saved'); return saved; };
   const changed = useRef(onDraftChange);
   changed.current = onDraftChange;
   useEffect(() => { if (!drafts.openingError) changed.current?.(drafts.id); }, [drafts.id, drafts.openingError]);
@@ -126,6 +127,7 @@ function AuthorWorkspace({ client: apiClient, dataset, onDatasetChange, onPrep, 
   if (drafts.openingError) return <section><h1>Unable to open analysis</h1><p role="alert">{drafts.openingError}</p><p>Return to My analyses to refresh the list or choose another draft.</p></section>;
   return <div ref={workspace} className="author-workspace" data-chrome={draft.chrome ?? 'light'}>
     <AuthorShortcuts workspace={workspace} onSave={saveDraft} />
+    <AuthorCommands draft={draft} dispatch={dispatch} onSave={saveDraft} />
     <header className="author-topbar app-header">
       {!inApp && <a className="brand" href="./"><span className="brand-mark" aria-hidden="true">◈</span>OpenSight</a>}
       <label className="analysis-title"><span className="sr-only">Analysis title</span><input value={draft.title} onChange={e => dispatch({ type: 'analysis-title', title: e.target.value })} /></label>
@@ -162,6 +164,22 @@ function AuthorWorkspace({ client: apiClient, dataset, onDatasetChange, onPrep, 
       if (importConfirmation.current) { importConfirmation.current = false; notify('Bundle imported'); }
     }} />}
   </div>;
+}
+
+function AuthorCommands({ draft, dispatch, onSave }: EditorProps & { onSave: () => boolean }) {
+  const notify = useToast();
+  usePaletteCommands(useMemo(() => ({
+    chrome: draft.chrome ?? 'light',
+    commands: [
+      { id: 'save-draft', label: 'Save draft', run: () => { if (!onSave()) notify('Draft could not be saved. See the draft storage message for recovery options.'); } },
+      { id: 'toggle-theme', label: 'Toggle theme', keywords: 'new look light dark', run: () => {
+        const mode = draft.chrome === 'dark' ? 'light' : 'dark';
+        dispatch({ type: 'chrome', mode }); notify(`Editor theme changed to ${mode}`);
+      } },
+      ...draft.sheets.map(sheet => ({ id: `sheet-${sheet.id}`, label: `Go to sheet: ${sheet.name}`, run: () => dispatch({ type: 'sheet-select', id: sheet.id }) })),
+    ],
+  }), [draft, dispatch, onSave, notify]));
+  return null;
 }
 
 function LocalDatasetPicker({ client, dataset, onSelect }: { client?: QueryClient; dataset?: AuthorDataset; onSelect: (dataset?: AuthorDataset) => void }) {

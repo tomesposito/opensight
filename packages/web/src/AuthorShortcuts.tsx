@@ -1,9 +1,11 @@
 import { useEffect, useId, useRef, useState, type RefObject } from 'react';
 import { focusAuthorControl } from './AuthorToolbar.js';
 import { AUTHOR_SHORTCUTS, listenForAuthorShortcuts, shortcutKeys } from './keyboard-shortcuts.js';
+import { useCommandPalette } from './CommandPalette.js';
 
 export function AuthorShortcuts({ workspace, onSave }: { workspace: RefObject<HTMLDivElement | null>; onSave: () => void }) {
   const [helpOpen, setHelpOpen] = useState(false);
+  const palette = useCommandPalette();
   // Keep a single listener (and its IME state) while using the latest draft.
   const save = useRef(onSave);
   save.current = onSave;
@@ -14,11 +16,9 @@ export function AuthorShortcuts({ workspace, onSave }: { workspace: RefObject<HT
       'save-draft': () => save.current(),
       'focus-search': () => focusAuthorControl(workspace.current, '.analysis-search'),
       'shortcuts-help': () => setHelpOpen(true),
-      // Issue #53 owns the future command palette. Reserve the binding without
-      // opening substitute UI or announcing a successful toggle.
-      'toggle-command-palette': () => {},
+      'toggle-command-palette': palette?.open,
     });
-  }, [workspace]);
+  }, [workspace, palette]);
   return helpOpen ? <ShortcutsHelpDialog onClose={() => setHelpOpen(false)} /> : null;
 }
 
@@ -40,7 +40,7 @@ export function ShortcutsHelpDialog({ onClose }: { onClose: () => void }) {
     {[...new Set(AUTHOR_SHORTCUTS.map(shortcut => shortcut.group))].map(group => <section key={group}>
       <h3>{group}</h3>
       <dl>{AUTHOR_SHORTCUTS.filter(shortcut => shortcut.group === group).map(shortcut => <div key={shortcut.id}>
-        <dt>{shortcut.label}{'coming' in shortcut && <span className="shortcut-coming">{shortcut.coming}</span>}</dt>
+        <dt>{shortcut.label}</dt>
         <dd>{shortcutKeys(shortcut).map((key, index) => <span key={key}>{index > 0 && <span aria-hidden="true"> + </span>}<kbd>{key}</kbd></span>)}</dd>
       </div>)}</dl>
     </section>)}

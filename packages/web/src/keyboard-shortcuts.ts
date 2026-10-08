@@ -5,14 +5,13 @@ type Shortcut = {
   key: string;
   modifier?: boolean;
   native?: boolean;
-  coming?: string;
 };
 
 /** The single source for Author key matching and the shortcuts help dialog. */
 export const AUTHOR_SHORTCUTS = [
   { id: 'save-draft', label: 'Save draft', group: 'Analysis', key: 's', modifier: true },
   { id: 'focus-search', label: 'Focus search', group: 'Navigation', key: 'f', modifier: true },
-  { id: 'toggle-command-palette', label: 'Toggle command palette', group: 'Navigation', key: 'k', modifier: true, coming: 'coming in #53' },
+  { id: 'toggle-command-palette', label: 'Open command palette', group: 'Navigation', key: 'k', modifier: true },
   { id: 'shortcuts-help', label: 'Keyboard shortcuts', group: 'Help', key: '?' },
   // Native <dialog> cancel and the existing non-modal panel/menu handlers own
   // dismissal and focus restoration. Never consume Escape ahead of them.
@@ -45,9 +44,10 @@ export function shortcutForEvent(event: KeyboardEvent): typeof AUTHOR_SHORTCUTS[
   });
 }
 
-/** Attach only while Author is mounted. Composition tracking also covers IMEs
+/** Author binds its actions while mounted; the shared palette binds only K.
+ * Composition tracking also covers IMEs
  * whose keydown events omit isComposing. Return a complete listener cleanup. */
-export function listenForAuthorShortcuts(document: Document, actions: AuthorShortcutActions): () => void {
+export function listenForAuthorShortcuts(document: Document, actions: Partial<AuthorShortcutActions>): () => void {
   let composing = false;
   const start = () => { composing = true; };
   const end = () => { composing = false; };
@@ -55,11 +55,13 @@ export function listenForAuthorShortcuts(document: Document, actions: AuthorShor
     if (composing) return;
     const shortcut = shortcutForEvent(event);
     if (!shortcut || shortcut.id === 'close-dialog') return;
+    const action = actions[shortcut.id];
+    if (!action) return;
     // Do not save the background analysis, move focus behind a modal, or stack
     // help over another modal. Escape remains the browser's cancel action.
     if (document.querySelector('dialog[open]')) return;
     event.preventDefault();
-    actions[shortcut.id]();
+    action();
   };
   document.addEventListener('keydown', keydown);
   document.addEventListener('compositionstart', start);

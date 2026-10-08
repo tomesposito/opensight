@@ -21,6 +21,7 @@ import { pages, routeProblem } from './app-navigation.js';
 import { draftStorageKey } from './local-drafts.js';
 import { ToastProvider } from './Toasts.js';
 import { BackToTop } from './BackToTop.js';
+import { CommandPaletteProvider } from './CommandPalette.js';
 
 export function Application(props: { api: ReturnType<typeof createApiClient>; fixtures: Fixture[] }) {
   const access = useAccess();
@@ -57,13 +58,13 @@ function ApplicationWorkspace({ api, fixtures }: { api: ReturnType<typeof create
       case 'fixtures': return fixture ? <Dashboard key={fixture.id} fixture={fixture} /> : <p role="status">No definition examples are included in this build. Use API definition preview to load a definition from a hosted API.</p>;
     }
   };
-  return <div className="app-shell">
+  return <CommandPaletteProvider navigate={navigate}><div className="app-shell">
     <AppNavigation route={route} navigate={navigate}>{!problem && (mode === 'fixtures' || mode === 'api') && <label className="fixture-picker">Definition example<select value={fixtureId} onChange={event => setFixtureId(event.target.value)}>{fixtures.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}</select></label>}</AppNavigation>
     {access.mode === 'local' && <aside className="fixture-demo-banner" aria-label="Local data workspace"><span><strong>Local workspace</strong> · Files stay in this API process · Uploads expire after 24 hours or restart</span></aside>}
     <main className={mode === 'author' ? 'author-main' : undefined}>{content()}</main>
     <footer className="app-footer">OpenSight · Local rendering preview · visual fidelity not measured</footer>
     <BackToTop />
-  </div>;
+  </div></CommandPaletteProvider>;
 }
 
 function ApiExplorer({ example, api, fixtures }: { example?: Fixture; api: ReturnType<typeof createApiClient>; fixtures: Fixture[] }) {
