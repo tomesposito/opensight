@@ -56,7 +56,7 @@ const checkContrast = async (locator, name, pseudo) => {
 try {
   await page.goto(new URL('../dist/opensight-demo.html', import.meta.url).href, { waitUntil: 'networkidle' });
   await navigate(page, 'author');
-  await page.getByRole('button', { name: 'Add visual', exact: true }).click();
+  await menu.getByRole('button', { name: 'Add visual', exact: true }).click();
   await page.getByRole('button', { name: 'Assign region', exact: true }).click();
   await page.getByRole('button', { name: 'Assign revenue', exact: true }).click();
   await page.locator('.author-card .chart svg').waitFor();
@@ -142,6 +142,7 @@ try {
   await page.getByRole('dialog', { name: 'ASK Q', exact: true }).getByRole('button', { name: 'Ask', exact: true }).click();
   await page.locator('.o-result .chart svg').waitFor();
   assert.equal(await page.locator('.q-side-panel .o-answer').count(), 1);
+  assert.match(await page.locator('.o-mode-notice').innerText(), /Needs hosted API/);
   await page.getByRole('button', { name: 'Close answer', exact: true }).click();
   await page.getByRole('button', { name: 'Close Ask Q', exact: true }).click();
   await toggle.selectOption('light');
@@ -163,7 +164,6 @@ try {
   }
   assert.match(await page.locator('.fixture-notice').innerText(), /fixed sample results.*region = East.*No live queries run/s);
   assert.match(await page.locator('.dataset-metadata').innerText(), /sample rows.*offline demo.*needs hosted API/s);
-  assert.match(await page.locator('.o-mode-notice').innerText(), /Needs hosted API/);
   assert.match(await page.locator('.app-footer').innerText(), /visual fidelity not measured/i);
   for (const width of [1920, 1440, 1400, 1399, 1366, 1280, 1101, 1100, 760, 390]) {
     await page.setViewportSize({ width, height: 900 }); await settle();

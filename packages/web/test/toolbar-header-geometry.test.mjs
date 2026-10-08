@@ -88,4 +88,22 @@ describe('toolbar/header geometry in offline Chromium', () => {
     assert.equal(result.right, 1424);
     assert.ok(result.spacer > 0);
   });
+  test('the Q close control stays above the sticky product and editor headers', async () => {
+    for (const width of [1440, 390]) {
+      await render(width, 'light');
+      const result = await page.evaluate(() => {
+        const product = document.createElement('header'); product.className = 'app-header product-header';
+        product.textContent = 'Product navigation'; document.body.prepend(product);
+        // Reproduce the panel's fixed top edge; assert actual hit testing, not
+        // just a numeric z-index, against both real sticky header selectors.
+        const panel = document.createElement('div'); panel.className = 'q-side-panel';
+        panel.innerHTML = '<header class="q-panel-heading"><h2>ASK Q</h2><button>Close</button></header>';
+        document.querySelector('.author-workspace').append(panel);
+        const close = panel.querySelector('button');
+        const hit = () => { const r = close.getBoundingClientRect(); return document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2) === close; };
+        const before = hit(); window.scrollTo(0, 200); return { before, after: hit() };
+      });
+      assert.deepEqual(result, { before: true, after: true });
+    }
+  });
 });

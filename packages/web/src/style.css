@@ -500,7 +500,8 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 @media (max-width: 1100px) {
   .author-workspace[data-chrome] .author-menu > .q-trigger { flex: 1 1 240px; }
 }
-.q-side-panel { position: fixed; z-index: 40; inset: 0 0 0 auto; display: flex; flex-direction: column; width: min(400px, 100%); border-left: 1px solid var(--chrome-border, #c9d8de); background: var(--chrome-surface, #fff); color: var(--chrome-text, #15283d); box-shadow: -4px 0 16px #15283d26; font: 12px Arial, "Helvetica Neue", Helvetica, sans-serif; }
+/* Above sticky app/editor headers (60), below notifications and native modals. */
+.q-side-panel { position: fixed; z-index: 70; inset: 0 0 0 auto; display: flex; flex-direction: column; width: min(400px, 100%); border-left: 1px solid var(--chrome-border, #c9d8de); background: var(--chrome-surface, #fff); color: var(--chrome-text, #15283d); box-shadow: -4px 0 16px #15283d26; font: 12px Arial, "Helvetica Neue", Helvetica, sans-serif; }
 .q-panel-heading { display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; gap: 8px; padding: 8px; border-bottom: 1px solid var(--chrome-border, #c9d8de); }
 .q-panel-heading h2, .q-side-panel .o-alternatives h3 { margin: 0; font-size: 13px; }
 .q-panel-content { min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 8px; }
