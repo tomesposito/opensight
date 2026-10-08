@@ -349,6 +349,19 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .shortcuts-dialog dd { margin: 0; flex-shrink: 0; }
 .shortcuts-dialog kbd { padding: 2px 4px; border: 1px solid var(--chrome-border); border-radius: 4px; background: var(--chrome-bg); font: inherit; }
 .shortcut-coming { display: block; margin-top: 4px; }
+.command-palette { --palette-surface: #fff; --palette-text: #19384a; --palette-muted: #526c7a; --palette-border: #c9d8de; --palette-selected: #e2f2fa; width: min(520px, calc(100% - 32px)); max-height: calc(100dvh - 32px); padding: 0; border: 1px solid var(--palette-border); border-radius: 8px; background: var(--palette-surface); color: var(--palette-text); box-shadow: 0 8px 32px #14253644; font: 12px/1.4 Arial, "Helvetica Neue", Helvetica, sans-serif; overflow: auto; }
+.command-palette[data-chrome=dark] { color-scheme: dark; --palette-surface: #202e40; --palette-text: #e7eef7; --palette-muted: #adc0d5; --palette-border: #45566d; --palette-selected: #293f55; }
+.command-palette::backdrop { background: #14253688; }
+.command-palette header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 16px; background: #142536; color: #fff; }
+.command-palette h2 { margin: 0; font-size: 13px; }
+.command-palette header button { padding: 4px 8px; color: inherit; background: transparent; border: 1px solid #adc0d5; border-radius: 4px; }
+.command-palette input { display: block; width: calc(100% - 32px); margin: 16px; padding: 8px; background: var(--palette-surface); color: var(--palette-text); border: 1px solid var(--palette-border); border-radius: 4px; }
+.command-palette input::placeholder { color: var(--palette-muted); }
+.command-palette ul { list-style: none; max-height: min(320px, 40dvh); overflow-y: auto; padding: 4px 8px; margin: 0; border-block: 1px solid var(--palette-border); }
+.command-palette li { padding: 8px; border-radius: 4px; overflow-wrap: anywhere; cursor: pointer; border-left: 4px solid transparent; }
+.command-palette li[aria-selected=true] { background: var(--palette-selected); border-left-color: #187199; }
+.command-palette li:hover { text-decoration: underline; }
+.command-palette p { margin: 8px 16px; color: var(--palette-muted); }
 .author-workspace[data-chrome=dark] :is(.builder-panel, .controls-strip, button, input, select, textarea, .author-card-toolbar, .bundle-import) { color: var(--chrome-text); background-color: var(--chrome-surface); border-color: var(--chrome-border); }
 .author-workspace[data-chrome=dark] :is(label, .field-hint, .field-type, .author-save p, .canvas-label span, .field-wells legend) { color: var(--chrome-muted); }
 .author-workspace[data-chrome=dark] .field-wells .active-well { background: #293f50; }

@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useId, useRef, useState, type ComponentProps, type ReactNode } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type ComponentProps, type ReactNode } from 'react';
 import { allowed, useAccess } from './access.js';
 import { OEntry } from './OEntry.js';
+import { usePaletteCommands } from './CommandPalette.js';
 
 type QSidePanelProps = Omit<ComponentProps<typeof OEntry>, 'renderBar'> & {
   renderTrigger?: (trigger: ReactNode) => ReactNode;
@@ -18,6 +19,11 @@ function QSidePanelContent({ renderTrigger, ...entry }: QSidePanelProps) {
   const id = useId();
   const triggerRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+  const openPanel = useCallback(() => {
+    setOpen(true);
+    panelRef.current?.querySelector<HTMLInputElement>('input[type="search"]')?.focus();
+  }, []);
+  usePaletteCommands(useMemo(() => ({ commands: [{ id: 'open-qa', label: 'Open Q&A panel', keywords: 'ask question', run: openPanel }] }), [openPanel]));
   const close = useCallback(() => {
     setOpen(false);
     triggerRef.current?.focus();
@@ -36,7 +42,7 @@ function QSidePanelContent({ renderTrigger, ...entry }: QSidePanelProps) {
     panel?.ownerDocument.addEventListener('keydown', escape);
     return () => panel?.ownerDocument.removeEventListener('keydown', escape);
   }, [open, close]);
-  const trigger = <button ref={triggerRef} type="button" className="q-trigger" aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? id : undefined} onClick={() => setOpen(true)}>
+  const trigger = <button ref={triggerRef} type="button" className="q-trigger" aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? id : undefined} onClick={openPanel}>
     <span className="o-mark" aria-hidden="true">Q</span> Ask a question about {entry.draft.dataset?.name ?? 'Local sales'}
   </button>;
   return <>

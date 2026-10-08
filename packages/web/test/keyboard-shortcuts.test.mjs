@@ -53,7 +53,7 @@ test('consumed events, repeats and IME keydown variants never run actions', () =
   assert.equal(shortcutForEvent(consumed), undefined);
 });
 
-test('document dispatch handles every action, reserves the future palette and preserves native Escape', () => {
+test('document dispatch handles every action, opens the palette and preserves native Escape', () => {
   const document = new EventTarget(); document.querySelector = () => null;
   const calls = [];
   const actions = Object.fromEntries(AUTHOR_SHORTCUTS.filter(s => !s.native).map(s => [s.id, () => calls.push(s.id)]));
@@ -64,7 +64,7 @@ test('document dispatch handles every action, reserves the future palette and pr
     assert.equal(event.defaultPrevented, !shortcut.native, shortcut.id);
   }
   assert.deepEqual(calls, ['save-draft', 'focus-search', 'toggle-command-palette', 'shortcuts-help']);
-  assert.equal(AUTHOR_SHORTCUTS.find(s => s.id === 'toggle-command-palette').coming, 'coming in #53');
+  assert.equal(AUTHOR_SHORTCUTS.find(s => s.id === 'toggle-command-palette').coming, undefined);
   cleanup(); document.dispatchEvent(key({ key: 's', ctrlKey: true }));
   assert.equal(calls.length, 4);
 });
