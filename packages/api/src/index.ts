@@ -1,3 +1,4 @@
+import { paginatedReportRoute } from './paginated-report-routes.js';
 import { PrepRoutes, type PrepPostgresBinding } from './prep-routes.js';
 import { ConnectorRoutes } from './connector-routes.js';
 import { invitationRoute } from './invitations.js';
@@ -130,6 +131,7 @@ export async function createApiServer(options: ApiOptions): Promise<Server> {
         send(response, 200, security.user(identity)); return;
       }
       if (security && identity && (/^\/(?:api\/)?analyses(?:\/|$)/.test(path) || /^\/api\/datasets(?:\/sales\/query)?$/.test(path))) security.require(identity, 'build');
+      if (await paginatedReportRoute(request, response, path, query, () => { if (security && identity) security.require(identity, 'build'); })) return;
       const namespaceId = identity?.namespaceId ?? 'default';
       const scopedStore = namespaceStores.get(namespaceId), scopedSales = namespaceQueries.get(namespaceId);
       const preparedResource = /^\/api\/(prep-sources|prep-datasets)(?:\/|$)/.test(path)
