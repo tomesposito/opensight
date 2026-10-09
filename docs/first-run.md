@@ -108,13 +108,14 @@ implemented configuration and API request shapes:
    Follow H2's `/api/host/tenants`, `/api/auth/enroll`, `/api/auth/accept` and
    `/api/auth/login` workflow: invitation, password, TOTP and verified membership
    are required. Operator credentials grant no tenant data access.
-6. Connect your authentication integration so browser API requests carry the
-   verified bearer credential. H2 has no browser login form, sets no session
-   cookies, and this onboarding screen does not add token entry or persistence.
-   Configuring environment variables alone does not sign a user in. The web
-   client's existing same-origin credential behavior is unchanged. A deployment
-   integration must provide authenticated request transport and route the API
-   prefix correctly. Once `/api/session` succeeds, choose **Retry connection**.
+6. Open the hosted web app and sign in with your email, password and workspace
+   ID. Continue to the authenticator step, then enter its six-digit code. Both
+   steps are submitted together to `/api/auth/login`; `/api/session` verifies
+   the returned identity before the workspace opens. The client sends login
+   without cookies or bearer credentials and holds the resulting bearer only
+   in memory. Route the API prefix correctly at the trusted HTTPS proxy.
+   **Sign out** is in the hosted header. See [the sign-in guide](issue-63-signin-screen.md)
+   for session duration, expiry and error behavior.
 
 Library-based self-hosting can instead use
 `createApiServer({ security: { authenticate, initialState, storePath }, ... })`.
