@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type Dispatch, type ReactNode } from 'reac
 import { activeSheet, type AuthorAction, type AuthorDraft } from './authoring.js';
 import { useAccess, type Access } from './access.js';
 import { useToast } from './Toasts.js';
+import { AnalysisPdfDialog } from './AnalysisPdfDialog.js';
 import { AuthorMenu, AuthorMenuItem } from './AuthorMenuItem.js';
 import { flushSync } from 'react-dom';
 import { useCommandPalette } from './CommandPalette.js';
@@ -37,6 +38,7 @@ export function AuthorToolbar({ onPrep, onSources, draft, dispatch, fit, onFit, 
   const [notice, setNotice] = useState('');
   const palette = useCommandPalette();
   const [exportsOpen, setExportsOpen] = useState(false);
+  const [pdfOpen, setPdfOpen] = useState(false);
   const sheet = activeSheet(draft), selected = sheet.visuals.find(v => v.id === sheet.selectedId);
   const nav = useRef<HTMLElement>(null);
   useEffect(() => {
@@ -51,6 +53,7 @@ export function AuthorToolbar({ onPrep, onSources, draft, dispatch, fit, onFit, 
   const needsVisual = needsData ?? (!selected ? 'Select a visual first.' : undefined);
   const publish = () => { setNotice(publishNotice(access.mode)); notify('Publishing is unavailable in this editor. Nothing has been published.'); };
   return <>
+    {pdfOpen && <AnalysisPdfDialog onClose={() => setPdfOpen(false)} onContinue={() => { flushSync(() => setPdfOpen(false)); onPrint?.(); }} />}
     <nav ref={nav} className="author-menu" aria-label="Analysis menu" onKeyDown={e => {
       if (e.key === 'Escape') { const menu = (e.target as HTMLElement).closest('details'); if (menu) { e.preventDefault(); e.stopPropagation(); menu.open = false; menu.querySelector('summary')?.focus(); } }
     }} onClick={e => { const button = (e.target as HTMLElement).closest('button'); if (button && button.getAttribute('aria-disabled') !== 'true' && !button.hasAttribute('data-menu-keep-open')) { const menu = button.closest('details'); if (menu) { if (menu.contains(menu.ownerDocument.activeElement)) menu.querySelector('summary')?.focus(); menu.open = false; } } }}>
@@ -70,7 +73,7 @@ export function AuthorToolbar({ onPrep, onSources, draft, dispatch, fit, onFit, 
           <AuthorMenuItem label="Export JSON" descriptionId="export-help" reason={jsonDisabled ? 'The analysis definition cannot be exported. Review the export status below the toolbar.' : undefined} run={onJson} />
           <p>Definitions only; data is not included.</p>
         </div>
-        <AuthorMenuItem label="Export to PDF" reason="PDF export is not supported in this editor yet." />
+        <AuthorMenuItem label="Export to PDF" run={() => setPdfOpen(true)} reason={busy ? "Wait for the current import or export to finish." : !onPrint ? "Open an analysis in a browser with printing and Save as PDF support." : undefined} />
         <hr />
         <AuthorMenuItem label="Autosave On" checked reason={autosaveError ? `Autosave could not save: ${autosaveError}` : 'Autosave is always on for this device. Drafts are not synced or shared.'} />
       </AuthorMenu>

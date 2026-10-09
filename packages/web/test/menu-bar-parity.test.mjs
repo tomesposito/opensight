@@ -144,3 +144,23 @@ test('Objects exposes every reference item, retains selection/removal and gates 
   await ui.update({ draft: emptyDraft() });
   for (const label of objectItems) { assert.equal(ui.item('Objects', label).props['aria-disabled'], true); assert.match(ui.item('Objects', label).props.title, /Select a visual/); }
 });
+
+test('Print calls the browser action, PDF explains its destination and Cancel never prints', async t => {
+  let prints = 0;
+  const ui = await mount(t, { onPrint: () => prints++ });
+  await ui.click('File', 'Print'); assert.equal(prints, 1);
+  await ui.click('File', 'Export to PDF');
+  let dialog = ui.renderer.root.findByType('dialog');
+  assert.match(JSON.stringify(ui.renderer.toJSON()), /Save as PDF.*current sheet.*visible table rows/);
+  assert.equal(prints, 1);
+  await act(() => dialog.findAllByType('button').find(b => b.props.children === 'Cancel').props.onClick());
+  assert.equal(ui.renderer.root.findAllByType('dialog').length, 0); assert.equal(prints, 1);
+  await ui.click('File', 'Export to PDF'); dialog = ui.renderer.root.findByType('dialog');
+  await act(() => dialog.findAllByType('button').find(b => b.props.children === 'Continue to Save as PDF').props.onClick());
+  assert.equal(prints, 2); assert.equal(ui.renderer.root.findAllByType('dialog').length, 0);
+  await ui.update({ busy: true });
+  for (const label of ['Print', 'Export to PDF', 'Save as Analysis']) {
+    assert.equal(ui.item('File', label).props['aria-disabled'], true); await ui.click('File', label);
+  }
+  assert.equal(prints, 2);
+});

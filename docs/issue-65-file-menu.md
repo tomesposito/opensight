@@ -54,3 +54,11 @@ is scaled to fit one page. Browser settings can override the paper choice.
 The root-wired offline Chromium tests verify native-print invocation/cleanup,
 blocked states, literal titles, SVG fragment isolation, controls/table state,
 print CSS and real single-page PDF output.
+
+Export to PDF first explains the browser's Save as PDF/system PDF destination,
+then opens that same snapshot in native printing. The user chooses Save as PDF
+and completes Save in the browser; no download-success claim is made by the app.
+Cancel never prints. Browsers without a PDF destination need one with PDF support.
+No client PDF dependency is added, so there is no new license or renderer blocker.
+This is a single current-sheet snapshot, not parked paginated reports, scheduling,
+or a report designer. Print/PDF and menu checks: 13 passed, 0 failed, 0 skipped.
