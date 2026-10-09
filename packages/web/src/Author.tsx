@@ -208,8 +208,8 @@ function AuthorWorkspace({ renderIdentity, sampleLoaded = false, onTrySample, cl
       setReportOpen(false);
       if (importConfirmation.current) { importConfirmation.current = false; notify('Bundle imported'); }
     }} />}
-  </div>
     {saveCopyOpen && <SaveAnalysisCopy name={draft.title} onClose={() => setSaveCopyOpen(false)} onSave={name => { const error = drafts.saveCopy(name); if (!error) { setSaveCopyOpen(false); notify('Separate analysis copy saved on this device'); } return error; }} />}
+  </div>
     {createOpen && <CreateAnalysisDialog client={apiClient} sampleAvailable={access.mode === 'demo' || sampleLoaded} offline={!apiClient} selectionError={drafts.autoError ?? undefined}
       onClose={() => setCreateOpen(false)} onCreateDataset={apiClient && onPrep ? () => { if (drafts.keepCurrent()) { setCreateOpen(false); onPrep(); } } : undefined}
       onSelect={dataset => {

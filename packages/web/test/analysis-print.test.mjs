@@ -11,7 +11,7 @@ before(async () => { page = await chromiumPage(); });
 after(async () => { await page?.close(); });
 const evaluate = body => page.evaluate(new Function(`${prepareAnalysisPrint.toString()}; ${printAnalysis.toString()}; ${body}`));
 async function render() {
-  await page.setContent(`<title>OpenSight</title><style>${css}</style><main><div class="author-workspace"><nav>File menu</nav><p class="fixture-notice">Synthetic offline sample. No live queries.</p><div class="author-center" style="width:700px;height:650px"><div class="sheet-toolbar">Other sheet and edit actions</div><label>Region<select><option>East</option><option selected>West</option></select></label><div class="author-canvas"><div class="author-card" style="height:400px"><div class="author-card-toolbar">Delete visual</div><h3>Current revenue</h3><svg width="300" height="150"><defs><clipPath id="clip"><rect width="300" height="150"/></clipPath></defs><rect width="200" height="100" fill="teal" clip-path="url(#clip)"/></svg><div class="table-scroll" style="height:80px"><table><tbody>${Array.from({ length: 20 }, (_, i) => `<tr><td><button>Group ${i}</button></td><td>${i * 100}</td></tr>`).join('')}</tbody></table></div></div></div></div></div></main>`);
+  await page.setContent(`<title>OpenSight</title><style>${css}</style><main><div class="author-workspace"><nav>File menu</nav><p class="fixture-notice">Synthetic offline sample. No live queries.</p><div class="author-center" style="width:700px;height:650px"><div class="sheet-toolbar">Other sheet and edit actions</div><section class="controls-strip"><div class="controls-heading"><button>Add control</button></div><p>No controls</p></section><label>Region<select><option>East</option><option selected>West</option></select></label><div class="author-canvas"><div class="author-card" style="height:400px"><div class="author-card-toolbar">Delete visual</div><h3>Current revenue</h3><svg width="300" height="150"><defs><clipPath id="clip"><rect width="300" height="150"/></clipPath></defs><rect width="200" height="100" fill="teal" clip-path="url(#clip)"/></svg><div class="table-scroll" style="height:80px"><table><tbody>${Array.from({ length: 20 }, (_, i) => `<tr><td><button>Group ${i}</button></td><td>${i * 100}</td></tr>`).join('')}</tbody></table></div></div></div></div></div></main>`);
 }
 
 test('print snapshot preserves current controls, SVG references, table scroll and literal title while excluding editor actions', async () => {
@@ -19,6 +19,7 @@ test('print snapshot preserves current controls, SVG references, table scroll an
   const result = await evaluate(`
     const workspace = document.querySelector('.author-workspace');
     workspace.querySelector('.table-scroll').scrollTop = 75;
+    workspace.querySelector('select').value = 'East';
     const cleanup = prepareAnalysisPrint(workspace, '<img src=x onerror=alert(1)>', 'Current sheet');
     const root = document.querySelector('.analysis-print-root');
     const result = { text: root.textContent, title: root.querySelector('h1').textContent,
@@ -28,8 +29,8 @@ test('print snapshot preserves current controls, SVG references, table scroll an
       scroll: root.querySelector('.table-scroll').scrollTop, inert: root.inert };
     cleanup(); return result;`);
   assert.equal(result.title, '<img src=x onerror=alert(1)>');
-  assert.match(result.text, /West.*Current revenue.*Group 19/s);
-  assert.doesNotMatch(result.text, /File menu|Other sheet|Delete visual|East/);
+  assert.match(result.text, /East.*Current revenue.*Group 19/s);
+  assert.doesNotMatch(result.text, /File menu|Other sheet|Delete visual|West|Add control|No controls/);
   assert.equal(result.controls, 0); assert.equal(result.injected, 0); assert.equal(result.inert, true);
   assert.notEqual(result.clip, 'clip'); assert.equal(result.reference, `url(#${result.clip})`);
   assert.ok(Math.abs(result.scroll - 75) < 1, 'Zoom rounding must preserve the displayed scroll offset');

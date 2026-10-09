@@ -20,16 +20,20 @@ export function prepareAnalysisPrint(workspace: HTMLElement, title: string, shee
   clone.className = 'analysis-print-sheet';
   clone.style.width = `${width}px`;
   clone.style.zoom = String(Math.min(1, 980 / width, 550 / height));
-  clone.querySelectorAll('.sheet-toolbar, .author-card-toolbar, .react-resizable-handle, .canvas-label, .card-footer, script, iframe').forEach(node => node.remove());
-  clone.querySelectorAll('input, select, textarea, button').forEach(control => {
+  const originalControls = center.querySelectorAll('input, select, textarea, button');
+  clone.querySelectorAll('input, select, textarea, button').forEach((control, index) => {
+    const original = originalControls[index]!;
+    if (control.tagName === 'BUTTON' && !control.closest('.table-scroll')) { control.remove(); return; }
     const text = doc.createElement('span');
-    if (control.tagName === 'SELECT') text.textContent = Array.from((control as HTMLSelectElement).selectedOptions).map(option => option.textContent).join(', ');
+    if (control.tagName === 'SELECT') text.textContent = Array.from((original as HTMLSelectElement).selectedOptions).map(option => option.textContent).join(', ');
     else if (control.tagName === 'INPUT') {
-      const input = control as HTMLInputElement;
+      const input = original as HTMLInputElement;
       text.textContent = ['checkbox', 'radio'].includes(input.type) ? (input.checked ? 'Yes' : 'No') : input.value;
-    } else text.textContent = control.tagName === 'TEXTAREA' ? (control as HTMLTextAreaElement).value : control.textContent;
+    } else text.textContent = control.tagName === 'TEXTAREA' ? (original as HTMLTextAreaElement).value : original.textContent;
     control.replaceWith(text);
   });
+  clone.querySelectorAll('.sheet-toolbar, .author-card-toolbar, .react-resizable-handle, .canvas-label, .card-footer, .controls-heading, .control-settings, .control-form, script, iframe').forEach(node => node.remove());
+  clone.querySelectorAll('.controls-strip').forEach(strip => { if (!strip.querySelector('.control-container')) strip.remove(); });
   // Isolate SVG clip paths and other fragment references from the live editor.
   const ids = new Map<string, string>();
   let sequence = 0;

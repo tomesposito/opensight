@@ -62,3 +62,10 @@ Cancel never prints. Browsers without a PDF destination need one with PDF suppor
 No client PDF dependency is added, so there is no new license or renderer blocker.
 This is a single current-sheet snapshot, not parked paginated reports, scheduling,
 or a report designer. Print/PDF and menu checks: 13 passed, 0 failed, 0 skipped.
+
+The visual review removed empty control-editing prompts from print output and
+confirmed that changed dropdown values come from the live controls, not their
+initial HTML attributes. Copy/PDF dialogs follow editor typography, theme and
+spacing. Additional copy tests retain imported unknown bundle fields and prepared
+dataset references while proving later copy edits leave the source untouched.
+Focused store/UI/Chromium checks: 48 passed, 0 failed, 0 skipped.

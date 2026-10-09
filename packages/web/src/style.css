@@ -917,10 +917,11 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
   .prep-join-key { gap: 4px; }
 }
 
-.analysis-file-dialog { box-sizing: border-box; width: min(480px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); overflow: auto; font: 12px Arial, "Helvetica Neue", Helvetica, sans-serif; }
-.analysis-file-dialog h2 { font-size: 16px; }
+.analysis-file-dialog { box-sizing: border-box; width: min(480px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); overflow: auto; padding: 24px; border: 1px solid var(--chrome-border, #c9d8de); border-radius: 8px; color: var(--chrome-text, #19384a); background: var(--chrome-surface, #fff); box-shadow: 0 8px 32px #14253644; font: 12px/1.5 Arial, "Helvetica Neue", Helvetica, sans-serif; }
+.analysis-file-dialog::backdrop { background: #14253688; }
+.analysis-file-dialog h2 { font-size: 16px; margin: 0 0 8px; }
 .analysis-file-dialog label { display: grid; gap: 4px; }
-.analysis-file-dialog input { min-width: 0; }
+.analysis-file-dialog input { width: 100%; min-width: 0; padding: 4px 8px; border: 1px solid var(--chrome-border, #c9d8de); border-radius: 5px; background: var(--chrome-surface, #fff); color: inherit; }
 .analysis-file-dialog .dialog-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
 
 /* Keep the snapshot laid out for accurate scroll offsets, out of screen view. */

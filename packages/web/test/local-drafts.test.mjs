@@ -211,3 +211,21 @@ test('Save as Analysis has a new identity and name, retains all definition state
   assert.throws(() => store.copy(original, 'Overflow'), /limit \(20\)/);
   assert.deepEqual(values, full);
 });
+
+test('copies keep imported bundle metadata and prepared-data references without mutating source snapshots', async () => {
+  const { importBundle, exportBundle } = await import('../build/test/bundle-authoring.js');
+  const { serializeDraft } = await import('../build/test/authoring.js');
+  const resource = serializeDraft(draft('Imported analysis'));
+  resource.definition.options = { futureSetting: ['preserved'] };
+  const imported = importBundle({ members: [{ path: `analysis/${resource.analysisId}.json`, resource }] });
+  const prepared = { ...draft('Prepared analysis'), dataset: { id: 'prepared-copy', name: 'Prepared data', columns: [{ name: 'region', type: 'STRING' }, { name: 'revenue', type: 'DECIMAL' }] } };
+  for (const original of [imported, prepared].map(value => JSON.parse(JSON.stringify(value)))) {
+    const { store } = setup(), originalId = store.save(original), copyId = store.copy(original, 'Independent copy');
+    const copied = store.restore().draft;
+    assert.deepEqual(copied, { ...original, title: 'Independent copy' });
+    assert.equal(copied.dataset?.id, original.dataset?.id);
+    if (original.bundle) assert.deepEqual(exportBundle(copied).members[0].resource.definition.options, { futureSetting: ['preserved'] });
+    copied.sheets[0].name = 'Changed only in copy'; store.save(copied, copyId);
+    assert.deepEqual(store.open(originalId), original);
+  }
+});
