@@ -8,7 +8,7 @@ const TYPES: Record<string, { glyph: string; label: string }> = {
   BOOLEAN: { glyph: 'T/F', label: 'Boolean' },
 };
 
-export function FieldIcon({ field, id }: { field: DataField; id?: string }) {
+export function FieldIcon({ field, id, pill = false }: { field: DataField; id?: string; pill?: boolean }) {
   const calculated = fieldGroup(field) === 'Calculated';
   const geography = !calculated && fieldGroup(field) === 'Geography';
   const type = TYPES[field.type] ?? { glyph: '?', label: `Unknown type (${field.type})` };
@@ -19,6 +19,6 @@ export function FieldIcon({ field, id }: { field: DataField; id?: string }) {
       <circle cx="10" cy="10" r="5" /><path d="M5 10h10M10 5c-3 3-3 7 0 10M10 5c3 3 3 7 0 10" />
     </svg> : field.type === 'DATETIME' ? <svg viewBox="0 0 20 20" aria-hidden="true">
       <rect x="2.5" y="4" width="15" height="13.5" rx="1" /><path d="M6 2v5M14 2v5M3 9h14M6 12h2M11 12h2M6 15h2" />
-    </svg> : type.glyph}
+    </svg> : pill && (field.type === 'INTEGER' || field.type === 'DECIMAL') ? '#' : type.glyph}
   </span>;
 }

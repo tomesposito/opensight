@@ -282,8 +282,8 @@ export function AuthorCanvas({ draft, dispatch, client, fit = true, sourceProble
     <div className="author-layout">
       <Panel title="Data" className="fields-panel">
         <DatasetHeader datasetId={draft.dataset?.id} datasetName={draft.dataset?.name} client={client} />
-        <label>Search fields<input type="search" value={search} onChange={e => { setSearch(e.target.value); setSearchCollapsedGroups({}); }} placeholder="Find a field…" /></label>
-        <button type="button" className="calculation-button" onClick={() => setCalculationOpen(true)}>+ CALCULATED FIELD</button>
+        <label>Search fields<input type="search" value={search} onChange={e => { setSearch(e.target.value); setSearchCollapsedGroups({}); }} placeholder="Search fields" /></label>
+        <button type="button" className="calculation-button" onClick={() => setCalculationOpen(true)}>+ Calculated field</button>
         <p className="field-hint">{selected ? 'Click a field to assign it.' : 'Click a field to create a bar.'} Dimensions: {dimensionDestination}. Measures: VALUES.</p>
         {FIELD_GROUPS.filter(group => matchingFields.some(f => fieldGroup(f) === group)).map(group => <details key={group} className="field-group" open={!(query ? searchCollapsedGroups : collapsedGroups)[group]} onToggle={e => {
           const collapsed = !e.currentTarget.open;
@@ -414,10 +414,10 @@ function FieldWells({ visual, draft, dispatch, activeWell, onWell }: { visual?: 
   ];
   return <div className="field-wells">{wells.map(w => <fieldset key={w.name} className={activeWell === w.name ? 'active-well' : ''} onFocus={() => onWell(w.name)} onClick={() => onWell(w.name)}>
     <legend>{w.label}{w.name === 'values' && singleMeasure(visual.kind) ? ' · 1 measure' : ''}</legend>
-    {w.values.map(field => <button className="field-chip" key={field} type="button" aria-label={`Remove ${field} from ${w.label}`} onClick={() => dispatch({ type: 'unassign', field, well: w.name })}>{w.name === 'values' ? `SUM(${field})` : `${field}${fields.find(f => f.name === field)?.type === 'DATETIME' ? ` · ${visual.hierarchy?.levels[0]?.granularity ?? visual.dateGrain ?? 'MONTH'}` : ''}`} <span aria-hidden="true">×</span></button>)}
+    {w.values.map(field => <button className="field-chip" key={field} type="button" aria-label={`Remove ${field} from ${w.label}`} onClick={() => dispatch({ type: 'unassign', field, well: w.name })}><FieldIcon pill field={fields.find(f => f.name === field) ?? { name: field, type: 'UNKNOWN', role: w.name === 'values' ? 'measure' : 'dimension' }} /><span className="field-chip-name">{w.name === 'values' ? `SUM(${field})` : `${field}${fields.find(f => f.name === field)?.type === 'DATETIME' ? ` · ${visual.hierarchy?.levels[0]?.granularity ?? visual.dateGrain ?? 'MONTH'}` : ''}`}</span><span aria-hidden="true">×</span></button>)}
     {w.name === 'values' && visual.kind === 'insight' && <p>One measure; optional second measure for comparison (first minus second).</p>}
     {w.name === 'values' && visual.measures.length > 1 && <div className="measure-order">{visual.measures.map((name, index) => <button type="button" key={name} disabled={!index} aria-label={`Move ${name} measure earlier`} onClick={() => dispatch({ type: 'measure-move', index, offset: -1 })}>↑ {name}</button>)}</div>}
-    {!w.values.length && <p>{visual.kind === 'sankey' ? 'Choose a field' : w.name === 'columns' ? visual.kind === 'radar' ? 'Optional color dimension' : 'Optional column dimensions' : 'Choose a field'}</p>}
+    {!w.values.length && <button type="button" className="well-placeholder" aria-label={`Select ${w.label.toUpperCase()} well`} aria-pressed={activeWell === w.name} onClick={() => onWell(w.name)}>Add a {w.name === 'values' ? 'measure' : 'dimension'}</button>}
     <label className="well-picker">Assign {w.name === 'values' ? 'measure' : ['radar', 'sankey'].includes(visual.kind) ? w.label.toLowerCase() : w.name === 'dimension' ? 'dimension' : w.name}<select aria-label={`Assign ${w.label}`} value="" onChange={e => dispatch({ type: 'assign', field: e.target.value, well: w.name })}><option value="" disabled>Choose field…</option>{fields.filter(f => f.type !== 'BOOLEAN' && f.role === (w.name === 'values' ? 'measure' : 'dimension')).map(f => <option key={f.name}>{f.name}</option>)}</select></label>
   </fieldset>)}</div>;
 }

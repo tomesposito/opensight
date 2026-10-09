@@ -196,13 +196,13 @@ button:disabled { cursor: default; opacity: .5; }
 .visual-config h3 { font-size: 13px; }
 .selected-visual { overflow-wrap: anywhere; margin: 0 0 8px; }
 .field-wells { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
-.field-wells fieldset { min-width: 0; border: 1px dashed #a6bec7; border-radius: 5px; padding: 4px; margin: 0; }
-.author-layout .well-placeholder { width: 100%; text-align: left; font-size: 12px; color: var(--chrome-muted, #526c7a); background: transparent; border-color: transparent; }
+.field-wells fieldset { min-width: 0; border: 1px solid transparent; border-radius: 4px; padding: 4px; margin: 0; }
+.author-layout .well-placeholder { width: 100%; text-align: left; font-size: 12px; color: var(--chrome-muted, #526c7a); background: transparent; border: 1px dashed #9a782b; border-radius: 12px; padding: 4px 8px; }
 .field-wells .active-well { border-color: #157f88; background: #f8fcfc; }
 .field-wells legend { font-size: 11px; font-weight: 650; color: #526c7a; text-transform: uppercase; }
 .field-wells p, .field-hint { font-size: 11px; line-height: 1.4; margin: 6px 0; color: #526c7a; }
-.author-layout .field-chip { background: #eaf5f5; color: #126e76; border: 0; margin: 0 4px 4px 0; font-size: 11px; max-width: 100%; overflow-wrap: anywhere; }
-.field-chip span { margin-left: 6px; }
+.author-layout .field-chip { display: flex; align-items: center; gap: 4px; width: 100%; background: #eaf5f5; color: #126e76; border: 1px solid #7daeba; border-radius: 12px; padding: 4px; margin: 0 0 4px; font-size: 12px; text-align: left; }
+.field-chip-name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .well-picker { margin: 6px 0 0 !important; }
 .canvas-label { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; padding: 4px 8px; margin: 0 0 6px; font-size: 12px; }
 .canvas-label span { font-size: 10px; color: #526c7a; }

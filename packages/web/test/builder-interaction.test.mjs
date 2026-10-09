@@ -150,7 +150,7 @@ test('calculated field dialog validates, creates a pill and submits expression t
     return Response.json({ columns: [...body.dimensions.map(d => ({ name: d.fieldId, type: 'string' })), ...body.measures.map(m => ({ name: m.fieldId, type: 'number' }))], rows: [] });
   });
   const ui = await mount(t, authorReducer(emptyDraft(), { type: 'add', kind: 'kpi' }), client);
-  await ui.click('+ CALCULATED FIELD');
+  await ui.click('+ Calculated field');
   const dialogForm = () => ui.renderer.root.findByType('dialog').findByType('form');
   await ui.submit(dialogForm());
   assert.ok(ui.find('p', p => p.role === 'alert'));
