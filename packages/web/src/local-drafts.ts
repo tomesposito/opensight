@@ -8,7 +8,7 @@ export const MAX_DRAFT_CHARS = 2 * 1024 * 1024;
 export type DraftStorage = () => Pick<Storage, 'getItem' | 'setItem'>;
 interface Entry { id: string; updatedAt: string; draft: unknown; manualSavedAt?: string; autoSavedAt?: string }
 interface Collection { version: 1; activeId: string | null; entries: Entry[] }
-export interface DraftSummary { id: string; name: string; updatedAt: string; hasPendingAutosave: boolean; problem?: string }
+export interface DraftSummary { id: string; name: string; updatedAt: string; hasPendingAutosave: boolean; sample?: boolean; problem?: string }
 const object = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 const keys = (v: Record<string, unknown>, allowed: string[]) => Object.keys(v).every(k => allowed.includes(k));
 const isoDate = (v: unknown): v is string => typeof v === 'string' && Number.isFinite(Date.parse(v)) && new Date(v).toISOString() === v;
@@ -77,7 +77,7 @@ export function createDraftStore(storage: DraftStorage, access: Access) {
   };
   const list = (): DraftSummary[] => read().entries.map(e => {
     const summary = { id: e.id, updatedAt: e.updatedAt, hasPendingAutosave: pendingAutosave(e) };
-    try { return { ...summary, name: checked(e).title.trim() || 'Untitled analysis' }; }
+    try { const draft = checked(e); return { ...summary, name: draft.title.trim() || 'Untitled analysis', ...(access.mode === 'local' && !draft.dataset && !draft.bundle && draft.sheets.some(s => s.visuals.length) ? { sample: true } : {}) }; }
     catch (error) { return { ...summary, name: 'Unreadable draft', problem: (error as Error).message }; }
   }).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.id.localeCompare(b.id));
   const restore = () => {

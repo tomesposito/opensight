@@ -1,5 +1,6 @@
 import { DatasetExecution, type ExecutionClient } from './DatasetExecution.js';
 import { useEffect, useState } from 'react';
+import { useAccess } from './access.js';
 import type { QueryClient } from './author-query.js';
 import type { DatasetRefreshStatus } from './api-client.js';
 import sales from './sales.generated.json' with { type: 'json' };
@@ -13,6 +14,7 @@ export function DatasetHeader({ client, datasetId = 'sales', datasetName = 'Loca
   return <section className="dataset-header" aria-label="Dataset metadata"><span className="dataset-label">Dataset</span><strong className="dataset-name">{datasetName}</strong><DatasetExecution key={datasetId} client={execution} datasetId={datasetId} compact /></section>;
 }
 function SalesDatasetHeader({ client }: { client?: QueryClient }) {
+  const localSample = useAccess().mode === 'local';
   const [count, setCount] = useState<Result<number>>();
   const [refresh, setRefresh] = useState<Result<DatasetRefreshStatus>>();
   useEffect(() => {
@@ -39,10 +41,10 @@ function SalesDatasetHeader({ client }: { client?: QueryClient }) {
   const currentCount = count?.client === client ? count : undefined;
   const currentRefresh = refresh?.client === client ? refresh : undefined;
   const status = currentRefresh?.value;
-  const rows = !client ? `${sales.rows.length} sample rows · offline demo` : currentCount?.value !== undefined ? `${currentCount.value} rows · live query` : currentCount?.error ?? 'Loading row count…';
+  const rows = !client ? `${sales.rows.length} sample rows · offline demo` : currentCount?.value !== undefined ? `${currentCount.value} ${localSample ? 'sample rows' : 'rows'} · live query` : currentCount?.error ?? 'Loading row count…';
   return <section className="dataset-header" aria-label="Dataset metadata">
     <span className="dataset-label">Dataset</span>
-    <strong className="dataset-name">Local sales dataset</strong>
+    <strong className="dataset-name">{localSample ? 'Sample sales data' : 'Local sales dataset'}</strong>
     <span className="dataset-badge" data-mode={client ? 'direct' : 'blaze'} title={client ? 'Queries the hosted API' : 'Local in-memory sample import · offline demo'}>{client ? 'DIRECT QUERY' : 'BLAZE'}</span>
     <p className="dataset-metadata" role="status">{rows}<br />
       {!client || !client.getDatasetRefreshStatus ? 'Refresh info needs hosted API' : currentRefresh?.error ?? (status ? <>

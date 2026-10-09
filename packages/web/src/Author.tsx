@@ -1,4 +1,5 @@
 import { useAccess, allowed } from './access.js';
+import { LocalEmptyState } from './LocalEmptyState.js';
 import { ThemeEditor } from './ThemeEditor.js';
 import { DatasetHeader } from './DatasetHeader.js';
 import { FieldIcon } from './FieldIcon.js';
@@ -42,7 +43,7 @@ import {
 } from './authoring.js';
 import type { AuthorAction, AuthorDataset, AuthorDraft, AuthorVisual, CalculatedField, FieldGroup, VisualKind, Well } from './authoring.js';
 
-interface AuthorProps { onSources?: () => void; onDatasetChange?: (dataset?: AuthorDataset) => void; dataset?: AuthorDataset; client?: QueryClient; onPrep?: () => void; inApp?: boolean; draftId?: string; newAnalysis?: boolean; onDraftChange?: (id?: string) => void }
+interface AuthorProps { sampleLoaded?: boolean; onTrySample?: () => void; onSources?: () => void; onDatasetChange?: (dataset?: AuthorDataset) => void; dataset?: AuthorDataset; client?: QueryClient; onPrep?: () => void; inApp?: boolean; draftId?: string; newAnalysis?: boolean; onDraftChange?: (id?: string) => void }
 export function Author(props: AuthorProps) {
   const access = useAccess();
   return allowed(access, 'build') ? <AuthorWorkspace key={draftStorageKey(access)} {...props} /> : <p role="alert">SECURITY_BUILD_REQUIRED: Author access required.</p>;
@@ -50,11 +51,12 @@ export function Author(props: AuthorProps) {
 
 type EditorProps = { draft: AuthorDraft; dispatch: Dispatch<AuthorAction>; client?: QueryClient };
 const saveTime = (iso: string) => new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
-function AuthorWorkspace({ client: apiClient, dataset, onDatasetChange, onPrep, onSources, inApp, draftId, newAnalysis, onDraftChange }: AuthorProps) {
+function AuthorWorkspace({ sampleLoaded = false, onTrySample, client: apiClient, dataset, onDatasetChange, onPrep, onSources, inApp, draftId, newAnalysis, onDraftChange }: AuthorProps) {
   const access = useAccess();
   const notify = useToast();
   const drafts = useLocalDrafts(access, dataset, { draftId, newAnalysis });
   const { draft, dispatch } = drafts;
+  const noData = access.mode === 'local' && !draft.dataset && !sampleLoaded;
   const workspace = useRef<HTMLDivElement>(null);
   const saveDraft = () => { const saved = !!drafts.save(); if (saved) notify('Draft saved'); return saved; };
   const notifiedError = useRef<string | null>(null);
@@ -132,6 +134,12 @@ function AuthorWorkspace({ client: apiClient, dataset, onDatasetChange, onPrep, 
       setExportStatus('Export downloaded: opensight-analysis.json');
     } catch { setExportStatus('Export could not be downloaded. Please try again.'); }
   };
+  const renderToolbar = (trigger?: ReactNode) => <AuthorToolbar
+    onPrep={onPrep ? () => { if (drafts.keepCurrent()) onPrep(); } : undefined}
+    draft={draft} dispatch={dispatch} oEntry={trigger} dataAvailable={!noData} fit={fit}
+    onFit={() => setFit(value => !value)} onJson={download}
+    onBundle={() => { if (!busy) void downloadQs(); }} onImport={() => fileInput.current?.click()}
+    busy={busy} jsonDisabled={!!exported.error} />;
   if (drafts.openingError) return <section><h1>Unable to open analysis</h1><p role="alert">{drafts.openingError}</p><p>Return to My analyses to refresh the list or choose another draft.</p></section>;
   return <div ref={workspace} className="author-workspace" data-chrome={draft.chrome ?? 'light'}>
     <AuthorShortcuts workspace={workspace} onSave={saveDraft} />
@@ -140,7 +148,7 @@ function AuthorWorkspace({ client: apiClient, dataset, onDatasetChange, onPrep, 
       {!inApp && <a className="brand" href="./"><span className="brand-mark" aria-hidden="true">◈</span>OpenSight</a>}
       <label className="analysis-title"><span className="sr-only">Analysis title</span><input value={draft.title} onChange={e => dispatch({ type: 'analysis-title', title: e.target.value })} /></label>
     </header>
-    <QSidePanel draft={draft} dispatch={dispatch} client={client} renderTrigger={trigger => <AuthorToolbar onPrep={onPrep ? () => { if (drafts.keepCurrent()) onPrep(); } : undefined} draft={draft} dispatch={dispatch} oEntry={trigger} fit={fit} onFit={() => setFit(value => !value)} onJson={download} onBundle={() => { if (!busy) void downloadQs(); }} onImport={() => fileInput.current?.click()} busy={busy} jsonDisabled={!!exported.error} />} />
+    {noData ? renderToolbar() : <QSidePanel draft={draft} dispatch={dispatch} client={client} renderTrigger={renderToolbar} />}
     <div className="author-tools">
       <div className="author-utilities">
         <button type="button" aria-keyshortcuts="Meta+S Control+S" onClick={saveDraft}>Save draft</button>
@@ -165,14 +173,18 @@ function AuthorWorkspace({ client: apiClient, dataset, onDatasetChange, onPrep, 
         {draft.bundle && <button type="button" onClick={() => setReportOpen(true)}>View import report</button>}
       </div>
     </div>
-    {access.mode === 'local' && <LocalDatasetPicker client={client} dataset={draft.dataset} onSelect={dataset => { if (drafts.replace({ ...emptyDraft(), ...(dataset ? { dataset } : {}) })) onDatasetChange?.(dataset); }} />}
-    <p className="fixture-notice">{draft.dataset ? 'Live prepared data · Field assignments query the local API. Uploads expire after 24 hours or API restart.' : client ? 'Live local sales data · All regions, dates grouped in UTC (month by default). Field assignments query the API; unsupported queries show their error details and guidance.' : draft.sheets.some(s => s.visuals.some(v => v.kind === 'pivot')) ? 'Offline demo: pivot previews recompute pinned synthetic sales rows locally across all regions. Row groups expand and collapse locally. No live queries run.' : draft.sheets.some(s => s.visuals.some(v => v.kind === 'insight')) ? 'Offline demo: insight narratives recompute pinned synthetic sales rows locally across all regions. Rule-based computations; no ML or live queries.' : draft.sheets.some(s => s.visuals.some(v => v.kind === 'waterfall')) ? 'Offline demo: waterfall previews recompute pinned synthetic sales rows locally across all regions. No live queries run.' : draft.sheets.some(s => s.visuals.some(v => v.kind === 'sankey')) ? 'Offline demo: sankey previews recompute pinned synthetic sales rows locally across all regions. No live queries run.' : draft.sheets.some(s => s.visuals.some(v => v.kind === 'radar')) ? 'Offline demo: radar previews recompute pinned synthetic sales rows locally across all regions. No live queries run.' : draft.calculatedFields.length || draft.parameters.length || draft.sheets.some(s => s.visuals.some(v => hasVisualActions(v) || v.hierarchy)) ? 'Offline demo: controls, calculated fields and interactions recompute pinned synthetic sales rows locally across all regions. No live queries run.' : 'Offline demo: manual visual previews use fixed sample results: region = East, dates grouped by UTC month. Only revenue totals by region, category, month, or overall are available. Other manual selections need a supported sample or a hosted API. O recomputes synthetic sales rows locally across all regions. No live queries run.'}</p>
+    {access.mode === 'local' && <LocalDatasetPicker sampleLoaded={sampleLoaded} client={client} dataset={draft.dataset} onSelect={dataset => { if (drafts.replace({ ...emptyDraft(), ...(dataset ? { dataset } : {}) })) onDatasetChange?.(dataset); }} />}
+    <p className="fixture-notice">{noData ? 'No dataset selected. Add data to start building.' : draft.dataset ? (access.mode === 'local' ? 'Live prepared data · Field assignments query the local API. Uploads survive API restarts and expire after 24 hours.' : 'Live prepared data · Field assignments query the local API. Uploads expire after 24 hours or API restart.') : access.mode === 'local' ? 'Sample sales data · 8 synthetic rows. Field assignments query the local sample dataset.' : client ? 'Live local sales data · All regions, dates grouped in UTC (month by default). Field assignments query the API; unsupported queries show their error details and guidance.' : draft.sheets.some(s => s.visuals.some(v => v.kind === 'pivot')) ? 'Offline demo: pivot previews recompute pinned synthetic sales rows locally across all regions. Row groups expand and collapse locally. No live queries run.' : draft.sheets.some(s => s.visuals.some(v => v.kind === 'insight')) ? 'Offline demo: insight narratives recompute pinned synthetic sales rows locally across all regions. Rule-based computations; no ML or live queries.' : draft.sheets.some(s => s.visuals.some(v => v.kind === 'waterfall')) ? 'Offline demo: waterfall previews recompute pinned synthetic sales rows locally across all regions. No live queries run.' : draft.sheets.some(s => s.visuals.some(v => v.kind === 'sankey')) ? 'Offline demo: sankey previews recompute pinned synthetic sales rows locally across all regions. No live queries run.' : draft.sheets.some(s => s.visuals.some(v => v.kind === 'radar')) ? 'Offline demo: radar previews recompute pinned synthetic sales rows locally across all regions. No live queries run.' : draft.calculatedFields.length || draft.parameters.length || draft.sheets.some(s => s.visuals.some(v => hasVisualActions(v) || v.hierarchy)) ? 'Offline demo: controls, calculated fields and interactions recompute pinned synthetic sales rows locally across all regions. No live queries run.' : 'Offline demo: manual visual previews use fixed sample results: region = East, dates grouped by UTC month. Only revenue totals by region, category, month, or overall are available. Other manual selections need a supported sample or a hosted API. O recomputes synthetic sales rows locally across all regions. No live queries run.'}</p>
     <div className="author-save"><p role="status">{drafts.message}</p>
       <p id="export-help">{exported.error ?? (client ? 'Downloads analysis definitions and sheet layouts; query results are not included.' : 'Downloads analysis definitions and sheet layouts; sample rows and the fixed East preview filter are not included.')}</p>
       {exportStatus && <p role="status">{exportStatus}</p>}
     </div>
     {source.problem && <DraftSourceRecovery draft={draft} sources={source.sources} problem={source.problem} onRetry={source.retry} onSources={onSources ? () => { if (drafts.keepCurrent()) onSources(); } : undefined} onReconnect={next => { dispatch({ type: 'import', draft: next }); onDatasetChange?.(next.dataset); }} />}
-    <AuthorCanvas draft={draft} dispatch={dispatch} client={client} fit={fit} sourceProblem={source.problem} />
+    {noData ? <div className="author-layout author-layout-empty">
+      <Panel title="Data" className="fields-panel"><p>No dataset selected.</p>{onSources && <button type="button" onClick={() => { if (drafts.keepCurrent()) onSources(); }}>Add data</button>}</Panel>
+      <Panel title="Visuals" className="build-panel"><p>Add data to see fields and create visuals.</p></Panel>
+      <div className="author-center" role="region" aria-label="Analysis sheet"><div className="author-canvas"><LocalEmptyState title="Add data to your analysis" onSources={onSources ? () => { if (drafts.keepCurrent()) onSources(); } : undefined} onSample={onTrySample} /></div></div>
+    </div> : <AuthorCanvas draft={draft} dispatch={dispatch} client={client} fit={fit} sourceProblem={source.problem} />}
     {reportOpen && draft.bundle && <ImportReport draft={draft} onClose={() => {
       setReportOpen(false);
       if (importConfirmation.current) { importConfirmation.current = false; notify('Bundle imported'); }
@@ -196,7 +208,7 @@ function AuthorCommands({ draft, dispatch, onSave }: EditorProps & { onSave: () 
   return null;
 }
 
-function LocalDatasetPicker({ client, dataset, onSelect }: { client?: QueryClient; dataset?: AuthorDataset; onSelect: (dataset?: AuthorDataset) => void }) {
+function LocalDatasetPicker({ sampleLoaded, client, dataset, onSelect }: { sampleLoaded: boolean; client?: QueryClient; dataset?: AuthorDataset; onSelect: (dataset?: AuthorDataset) => void }) {
   const [sources, setSources] = useState<Awaited<ReturnType<NonNullable<QueryClient['listPrepSources']>>>>([]);
   const [error, setError] = useState('');
   const [reload, setReload] = useState(0);
@@ -206,11 +218,11 @@ function LocalDatasetPicker({ client, dataset, onSelect }: { client?: QueryClien
     if (list) void list().then(value => { if (active) { setSources(value.filter(s => typeof s.ref === 'object' && 'dataset' in s.ref)); setError(''); } }).catch(e => { if (active) setError(String(e)); });
     return () => { active = false; };
   }, [list, reload]);
-  return <div className="api-picker"><label>Analysis dataset<select value={dataset?.id ?? 'sales'} onChange={e => {
+  return <div className="api-picker"><label>Analysis dataset<select value={dataset?.id ?? (sampleLoaded ? 'sales' : '')} onChange={e => {
     const selected = sources.find(s => s.id === e.target.value);
-    if (e.target.value === 'sales') onSelect();
+    if (e.target.value === 'sales' && sampleLoaded) onSelect();
     else if (selected?.available) onSelect({ id: selected.id, name: selected.name ?? selected.id, columns: selected.columns });
-  }}><option value="sales">Local sales (fixture)</option>{dataset && !sources.some(s => s.id === dataset.id) && <option value={dataset.id}>{dataset.name} (unavailable)</option>}{sources.map(s => <option key={s.id} value={s.id} disabled={!s.available}>{s.name ?? s.id}{!s.available ? ` · ${s.errorCode ?? 'Unavailable'}` : ''}</option>)}</select></label><button onClick={() => setReload(n => n + 1)}>Refresh datasets</button><span>Choosing a dataset starts a new analysis draft.</span>{error && <p role="alert">{error}</p>}</div>;
+  }}><option value="" disabled>Choose prepared data…</option>{sampleLoaded && <option value="sales">Sample sales data</option>}{dataset && !sources.some(s => s.id === dataset.id) && <option value={dataset.id}>{dataset.name} (unavailable)</option>}{sources.map(s => <option key={s.id} value={s.id} disabled={!s.available}>{s.name ?? s.id}{!s.available ? ` · ${s.errorCode ?? 'Unavailable'}` : ''}</option>)}</select></label><button onClick={() => setReload(n => n + 1)}>Refresh datasets</button><span>Choosing a dataset starts a new analysis draft.</span>{error && <p role="alert">{error}</p>}</div>;
 }
 
 function Panel({ title, className, children }: { title: string; className: string; children: ReactNode }) {

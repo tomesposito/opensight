@@ -2,6 +2,7 @@ import { allowed, type Access } from './access.js';
 
 export const pages = {
   home: { path: '/home', section: 'Home', title: 'Home' },
+  dashboards: { path: '/dashboards', section: 'Dashboards', title: 'Dashboards' },
   analyses: { path: '/analyses', section: 'Analyses', title: 'My analyses' },
   author: { path: '/analyses/author', section: 'Analyses', title: 'Author' },
   'data-prep': { path: '/data/preparation', section: 'Data', title: 'Data preparation' },
@@ -17,7 +18,7 @@ export const pages = {
 export type Page = keyof typeof pages;
 export type AppRoute = { page: Page; draftId?: string; newAnalysis?: boolean };
 export const productSections = [
-  { title: 'Home', page: 'home' }, { title: 'Analyses', page: 'analyses' },
+  { title: 'Home', page: 'home' }, { title: 'Analyses', page: 'analyses' }, { title: 'Dashboards', page: 'dashboards' },
   { title: 'Data', page: 'data-prep' }, { title: 'Admin', page: 'security' },
 ] as const;
 export const dataPages: Page[] = ['data-prep', 'data-sources'];
@@ -25,12 +26,14 @@ export const adminPages: Page[] = ['security', 'organization', 'automation', 'ai
 export const developerPages: Page[] = ['fixtures', 'api'];
 
 export function visiblePage(access: Access, page: Page): boolean {
+  if (page === 'dashboards') return access.mode === 'local';
   if (page === 'analyses' || page === 'author' || dataPages.includes(page)) return allowed(access, 'build');
   if (page === 'ai-settings' || page === 'users') return access.mode === 'hosted' && allowed(access, 'admin');
   if (page === 'fixtures') return access.mode === 'demo' || allowed(access, 'build');
   return true;
 }
 export function routeProblem(access: Access, page: Page): string | undefined {
+  if (page === 'dashboards' && access.mode !== 'local') return 'This page is available in the local workspace.';
   if (page === 'api' && access.mode === 'demo') return 'Needs hosted API · The fixture demo does not connect to the API.';
   if (visiblePage(access, page)) return;
   return page === 'ai-settings' || page === 'users'

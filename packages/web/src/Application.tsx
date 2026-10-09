@@ -22,6 +22,7 @@ import { draftStorageKey } from './local-drafts.js';
 import { ToastProvider } from './Toasts.js';
 import { BackToTop } from './BackToTop.js';
 import { CommandPaletteProvider } from './CommandPalette.js';
+import { LocalEmptyState } from './LocalEmptyState.js';
 
 export function Application(props: { api: ReturnType<typeof createApiClient>; fixtures: Fixture[] }) {
   const access = useAccess();
@@ -34,6 +35,7 @@ function ApplicationWorkspace({ api, fixtures }: { api: ReturnType<typeof create
   const { route, navigate, entry } = useAppRoute();
   const [uploadedSource, setUploadedSource] = useState<string>();
   const [authorDataset, setAuthorDataset] = useState<AuthorDataset>();
+  const [sampleLoaded, setSampleLoaded] = useState(false);
   const [fixtureId, setFixtureId] = useState(access.mode === 'demo' ? fixtures.find(f => f.id === 'renderable-sales')?.id ?? fixtures[0]?.id : fixtures[0]?.id);
   const fixture = fixtures.find(f => f.id === fixtureId);
   const sample = fixtures.find(f => f.id === 'renderable-sales');
@@ -44,9 +46,10 @@ function ApplicationWorkspace({ api, fixtures }: { api: ReturnType<typeof create
     if (!route) return <section><h1>Page not found</h1><p>Choose a section above to continue.</p><AppLink to={{ page: 'home' }} navigate={navigate}>Go to Home</AppLink></section>;
     if (problem) return <p role="alert">{problem}</p>;
     switch (route.page) {
-      case 'home': return sample ? <Dashboard key="sample" fixture={sample} sample /> : <p role="status">The sample dashboard is not included in this build. Ask the operator to restore the pinned sales sample.</p>;
+      case 'home': return access.mode === 'local' && !sampleLoaded ? <LocalEmptyState onSources={() => navigate({ page: 'data-sources' })} onSample={() => setSampleLoaded(true)} /> : sample ? <Dashboard key="sample" fixture={sample} sample /> : <p role="status">The sample dashboard is not included in this build. Ask the operator to restore the pinned sales sample.</p>;
+      case 'dashboards': return <section className="local-empty-state"><h1>Dashboards</h1><h2>No dashboards yet</h2><p>Build an analysis to get started. Publishing dashboards needs a hosted API.</p><AppLink className="primary-button" to={{ page: 'analyses' }} navigate={navigate}>My analyses</AppLink></section>;
       case 'analyses': return <Analyses navigate={navigate} />;
-      case 'author': return <Author key={entry} inApp draftId={route.draftId} newAnalysis={route.newAnalysis} onDraftChange={draftId => navigate({ page: 'author', draftId }, true)} onSources={() => navigate({ page: 'data-sources' })} onDatasetChange={setAuthorDataset} dataset={route.draftId || route.newAnalysis ? undefined : authorDataset} onPrep={() => navigate({ page: 'data-prep' })} client={connected ? api : undefined} />;
+      case 'author': return <Author key={entry} sampleLoaded={sampleLoaded} onTrySample={() => setSampleLoaded(true)} inApp draftId={route.draftId} newAnalysis={route.newAnalysis} onDraftChange={draftId => navigate({ page: 'author', draftId }, true)} onSources={() => navigate({ page: 'data-sources' })} onDatasetChange={setAuthorDataset} dataset={route.draftId || route.newAnalysis ? undefined : authorDataset} onPrep={() => navigate({ page: 'data-prep' })} client={connected ? api : undefined} />;
       case 'data-prep': return <DataPrep initialSource={uploadedSource} onBuild={access.mode === 'local' ? dataset => { setAuthorDataset(dataset); navigate({ page: 'author' }); } : undefined} client={connected ? api : undefined} onSources={() => navigate({ page: 'data-sources' })} onAuthor={() => navigate({ page: 'author' })} />;
       case 'data-sources': return <DataSources local={access.mode === 'local'} onPrep={source => { setUploadedSource(source); navigate({ page: 'data-prep' }); }} client={connected ? api : undefined} />;
       case 'users': return <UserManagement client={api} />;
@@ -58,9 +61,9 @@ function ApplicationWorkspace({ api, fixtures }: { api: ReturnType<typeof create
       case 'fixtures': return fixture ? <Dashboard key={fixture.id} fixture={fixture} /> : <p role="status">No definition examples are included in this build. Use API definition preview to load a definition from a hosted API.</p>;
     }
   };
-  return <CommandPaletteProvider navigate={navigate}><div className="app-shell">
+  return <CommandPaletteProvider navigate={navigate}><div className="app-shell" data-workspace={access.mode}>
     <AppNavigation route={route} navigate={navigate}>{!problem && (mode === 'fixtures' || mode === 'api') && <label className="fixture-picker">Definition example<select value={fixtureId} onChange={event => setFixtureId(event.target.value)}>{fixtures.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}</select></label>}</AppNavigation>
-    {access.mode === 'local' && <aside className="fixture-demo-banner" aria-label="Local data workspace"><span><strong>Local workspace</strong> · Files stay in this API process · Uploads expire after 24 hours or restart</span></aside>}
+    {access.mode === 'local' && <aside className="fixture-demo-banner" aria-label="Local data workspace"><span><strong>Local workspace</strong> · Files stay on this computer · Uploads survive restarts and expire after 24 hours</span>{sampleLoaded && <><span>Sample sales data loaded · Synthetic data</span><button type="button" onClick={() => setSampleLoaded(false)}>Remove sample data</button></>}</aside>}
     <main className={mode === 'author' ? 'author-main' : undefined}>{content()}</main>
     <footer className="app-footer">OpenSight · Local rendering preview · visual fidelity not measured</footer>
     <BackToTop />

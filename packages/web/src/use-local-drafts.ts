@@ -49,6 +49,8 @@ export function useLocalDrafts(access: Access, dataset?: AuthorDataset, opening?
   useEffect(() => {
     clearTimer();
     if (initial.openingError) return;
+    // Visiting a fresh local canvas must not create a phantom analysis.
+    if (access.mode === 'local' && !id && snapshot === JSON.stringify(emptyDraft())) return;
     if (snapshot === saved) { setAutoState('clean'); return; }
     setAutoState('unsaved'); setAutoError(null);
     timer.current = setTimeout(() => {
@@ -56,7 +58,7 @@ export function useLocalDrafts(access: Access, dataset?: AuthorDataset, opening?
       if (JSON.stringify(draftRef.current) !== savedRef.current) setAutoState('saving');
     }, 2000);
     return clearTimer;
-  }, [snapshot, saved, store, initial.openingError]);
+  }, [snapshot, saved, store, initial.openingError, access.mode, id]);
   // Commit the Saving… status before the synchronous storage write. This effect
   // reads current refs, so manual saves and edits never leave a stale payload.
   useEffect(() => {

@@ -96,7 +96,7 @@ test('auto-save metadata round trips one copy, preserves the manual checkpoint a
   const autoSavedAt = new Date().toISOString(), edited = draft('Auto-saved');
   assert.equal(store.autosave(edited, id, start), id);
   assert.deepEqual(createDraftStore(storage, access).restore(), { id, draft: edited, manualSavedAt: start, autoSavedAt });
-  assert.deepEqual(store.list(), [{ id, name: 'Auto-saved', updatedAt: autoSavedAt, hasPendingAutosave: true }]);
+  assert.deepEqual(store.list(), [{ id, name: 'Auto-saved', updatedAt: autoSavedAt, hasPendingAutosave: true, sample: true }]);
   t.mock.timers.tick(2000);
   store.save(edited, id);
   assert.deepEqual(store.restore(), { id, draft: edited, manualSavedAt: new Date().toISOString(), autoSavedAt: undefined });

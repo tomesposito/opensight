@@ -714,3 +714,16 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 /* Floating back-to-top control on long dashboard/sample pages. */
 .back-to-top { position: fixed; z-index: 30; bottom: 24px; right: 24px; min-height: 40px; padding: 8px 16px; border: 1px solid #526c7a; border-radius: 6px; background: #19384a; color: #fff; font: 600 12px/1.5 Arial, "Helvetica Neue", Helvetica, sans-serif; box-shadow: 0 4px 16px #19384a33; }
 .back-to-top:hover { background: #254a5e; }
+
+/* The real local workspace starts empty; demo/hosted chrome retains its styling. */
+.app-shell[data-workspace="local"] { font: 12px/1.5 Arial, "Helvetica Neue", Helvetica, sans-serif; }
+.local-empty-state { padding: 32px; font: 12px/1.5 Arial, "Helvetica Neue", Helvetica, sans-serif; }
+.local-empty-state h2 { margin: 0 0 8px; font-size: 20px; }
+.local-empty-state p { margin: 8px 0 16px; }
+.local-empty-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.local-empty-state button, .local-empty-state .primary-button { display: inline-block; padding: 8px 16px; border: 1px solid #a9bdc7; border-radius: 4px; background: #fff; color: #19384a; text-decoration: none; }
+.local-empty-state .primary-button { border-color: #157f88; background: #157f88; color: #fff; }
+.author-center > .author-canvas > .local-empty-state { min-height: 480px; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+.author-layout-empty > .author-center { grid-column: 3 / -1; }
+.app-shell[data-workspace="local"] > .fixture-demo-banner { font-size: 12px; gap: 8px; padding: 8px 24px; }
+.app-shell[data-workspace="local"] > .fixture-demo-banner button { min-height: 28px; padding: 4px 8px; }
