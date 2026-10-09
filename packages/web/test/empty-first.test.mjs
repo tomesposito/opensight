@@ -33,7 +33,7 @@ async function mount(t, access = { mode: 'local' }) {
 test('fresh local Home, Author, Analyses and Dashboards contain no staged content or implicit sales requests', async t => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
   const ui = await mount(t);
-  assert.match(ui.text(), /Start with your data/); assert.match(ui.text(), /Upload or connect data/);
+  assert.match(ui.text(), /Add your data to build your first analysis/); assert.match(ui.text(), /Upload or connect data/);
   assert.doesNotMatch(ui.text(), /Pinned synthetic sales|fixed East/);
   await ui.navigate('author');
   assert.match(ui.text(), /Add data to your analysis/);
@@ -41,11 +41,11 @@ test('fresh local Home, Author, Analyses and Dashboards contain no staged conten
   assert.doesNotMatch(ui.text(), /Local sales dataset|Assign revenue|Assign region|8 sample rows/);
   await act(() => t.mock.timers.tick(5000));
   assert.deepEqual(ui.store.list(), [], 'Opening an untouched empty canvas must not auto-save an analysis');
-  await ui.navigate('analyses'); assert.match(ui.text(), /No saved analyses yet/);
-  await ui.navigate('dashboards'); assert.match(ui.text(), /No dashboards yet/);
+  await ui.navigate('analyses'); assert.match(ui.text(), /Create your first analysis and find it here/);
+  await ui.navigate('dashboards'); assert.match(ui.text(), /Build an analysis to get started/);
   assert.match(ui.text(), /Publishing dashboards needs a hosted API/);
   assert.deepEqual(ui.queries, []);
-  await ui.navigate('home'); await ui.reload(); assert.match(ui.text(), /Start with your data/);
+  await ui.navigate('home'); await ui.reload(); assert.match(ui.text(), /Add your data to build your first analysis/);
 });
 
 test('sample data is explicit, labeled across routes and drafts, removable, and off after reload', async t => {
@@ -62,7 +62,7 @@ test('sample data is explicit, labeled across routes and drafts, removable, and 
   assert.match(ui.text(), /Add data to your analysis/);
   assert.equal(ui.root.findAllByType(AuthorCanvas).length, 0);
   const count = ui.queries.length;
-  await ui.navigate('home'); assert.match(ui.text(), /Start with your data/);
+  await ui.navigate('home'); assert.match(ui.text(), /Add your data to build your first analysis/);
   await ui.navigate('author'); assert.equal(ui.queries.length, count, 'A restored sample draft cannot opt in on its own');
   await ui.click('Try sample data'); assert.equal(ui.root.findAllByType(AuthorCanvas).length, 1);
   await ui.reload(); assert.match(ui.text(), /Add data to your analysis/);

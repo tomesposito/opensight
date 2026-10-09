@@ -545,10 +545,13 @@ function AuthorCard({ visual, theme, index, count, selected, dispatch, client, c
   theme?: AnalysisTheme; drillNavigation?: ReactNode; interaction?: VisualInteraction; interactive?: boolean; visual: AuthorVisual; index: number; count: number; selected: boolean; filterProblem?: string; dispatch: Dispatch<AuthorAction>; client?: QueryClient; calculations: CalculatedField[]; parameters: AuthorParameter[];
 }) {
   const problem = authorVisualProblem(visual) ?? filterProblem;
+  const noFields = !visualDimensions(visual).length && !visual.measures.length;
+  const typeName = VISUAL_TYPES.find(type => type.kind === visual.kind)?.label ?? 'Visual';
+  const emptyTitle = visual.kind === 'pie' ? visual.donut ? 'Donut chart' : 'Pie chart' : visual.kind === 'pivot' ? 'Pivot table' : ['bar', 'line'].includes(visual.kind) ? `${typeName} chart` : typeName;
   const hasCalculation = [...visualDimensions(visual), ...visual.measures].some(name => calculations.some(c => c.name === name));
   const extended = !['bar', 'line', 'pie', 'kpi', 'table'].includes(visual.kind);
   const onRowGroupToggle: RowGroupToggle = (path, collapsed) => dispatch({ type: 'pivot-row-group', id: visual.id, path, collapsed });
-  const preview = useMemo(() => extended || client || interactive || parameters.length || hasCalculation || problem ? undefined : buildAuthorPreview(visual), [visual, client, interactive, problem, parameters.length, hasCalculation, extended]);
+  const preview = useMemo(() => noFields || extended || client || interactive || parameters.length || hasCalculation || problem ? undefined : buildAuthorPreview(visual), [visual, client, interactive, problem, parameters.length, hasCalculation, extended, noFields]);
   const label = visual.title || `Visual ${index + 1}`;
   return <section className={`author-card${selected ? ' is-selected' : ''}`} aria-label={label} onClick={() => { if (!selected) dispatch({ type: 'select', id: visual.id }); }}>
     <div className="author-card-toolbar">
@@ -563,7 +566,7 @@ function AuthorCard({ visual, theme, index, count, selected, dispatch, client, c
     {drillNavigation}
     {problem ? <div className="bundle-placeholder" role="status"><p>{problem}</p>
       {visual.imported && !visual.imported.local && <button type="button" onClick={e => { e.stopPropagation(); dispatch({ type: 'remap', id: visual.id }); }}>Remap to local dataset</button>}
-    </div> : extended || client || interactive || parameters.length || hasCalculation ? <LiveAuthorVisual theme={theme} interactive={interactive} interaction={interaction} onRowGroupToggle={onRowGroupToggle} visual={visual} client={client} calculations={calculations} parameters={parameters} /> : preview && <VisualCard visual={{ ...preview, theme }} onRowGroupToggle={onRowGroupToggle} />}
+    </div> : noFields ? <div className="author-visual-empty" role="status"><h3>{emptyTitle}</h3><p>Add 1 or more fields to build a visual.</p></div> : extended || client || interactive || parameters.length || hasCalculation ? <LiveAuthorVisual theme={theme} interactive={interactive} interaction={interaction} onRowGroupToggle={onRowGroupToggle} visual={visual} client={client} calculations={calculations} parameters={parameters} /> : preview && <VisualCard visual={{ ...preview, theme }} onRowGroupToggle={onRowGroupToggle} />}
   </section>;
 }
 
