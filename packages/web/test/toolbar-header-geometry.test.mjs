@@ -45,6 +45,10 @@ describe('toolbar/header geometry in offline Chromium', () => {
       for (const box of [...result.positions, ...result.menus]) {
         assert.ok(box.x >= 0 && box.right <= width, `control/popover fits ${JSON.stringify(box)}`);
       }
+      for (const box of result.menus) {
+        assert.ok(box.bottom <= 900, 'menu remains within the viewport');
+        if (width <= 760) assert.ok(box.height <= 360, 'wrapped toolbars leave room for a scrollable menu');
+      }
       for (const box of result.positions) {
         assert.ok(box.y >= result.nav.y && box.bottom <= result.nav.bottom);
         assert.ok(box.height >= 28);

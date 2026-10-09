@@ -95,14 +95,16 @@ test('shortcut storage failure preserves the error and never announces a save', 
   assert.match(JSON.stringify(ui.renderer.toJSON()), /Browser storage is blocked/);
 });
 
-test('Cmd/Ctrl+F opens the existing Search menu and focuses its analysis search', async t => {
+test('Cmd/Ctrl+F opens the existing palette for analysis actions', async t => {
   const ui = await mount(t);
-  assert.equal(ui.renderer.root.findByProps({ className: 'analysis-search' }).props.type, 'search');
   for (const modifier of ['metaKey', 'ctrlKey']) {
-    ui.canvas.focus(); ui.searchMenu.open = false;
+    ui.canvas.focus();
     assert.equal((await ui.key({ key: 'f', [modifier]: true })).defaultPrevented, true);
-    assert.equal(ui.searchMenu.open, true); assert.equal(ui.document.activeElement, ui.search);
-    assert.equal((await ui.key({ key: 'f', [modifier]: true })).defaultPrevented, false, 'typing in search is left alone');
+    assert.equal(ui.renderer.root.findByType('dialog').props.className, 'command-palette');
+    const input = ui.renderer.root.findByProps({ role: 'combobox' });
+    assert.equal(input.props.placeholder, 'Search analysis actions…');
+    assert.equal((await ui.key({ key: 'f', [modifier]: true, target: ui.search })).defaultPrevented, false);
+    await ui.cancel();
   }
 });
 

@@ -8,7 +8,7 @@ bidirectional asset compatibility — connect data, prepare datasets, build
 analyses and dashboards, and ask questions in natural language. Self-hosted;
 no AWS required.
 
-![OpenSight tour: dashboard, back to top, O answer, command palette, authoring, auto-save recovery, radar, Sankey, waterfall, insight, pivot, saved drafts, and data tools](docs/images/opensight-tour.gif)
+![OpenSight tour: sample dashboard, O answer, Author File and Objects menus, command palette, and data tools](docs/images/opensight-tour.gif)
 
 *Above: the offline demo — a dashboard, O answering "revenue by region" and
 adding the chart to an analysis, saved drafts, data preparation, connectors,
@@ -104,6 +104,11 @@ navigation and available actions, save the current draft, switch NEW LOOK, jump
 between analysis sheets, or open Q&A. Use arrows, Enter, and Esc from the keyboard.
 
 ![Command palette with navigation and current analysis actions](docs/images/command-palette.png)
+
+The Author menus expose File, Edit, Data, Insert, Sheets and Objects actions.
+**Search** and **Cmd/Ctrl+F** open the same command palette; unavailable menu
+actions explain their limits on focus or hover. Publish remains an honest
+hosted-service notice. See [menu behavior and limitations](docs/issue-60-menu-bar-parity.md).
 
 ![Authoring canvas with assigned fields and the Ask a question trigger in the toolbar](docs/images/author.png)
 

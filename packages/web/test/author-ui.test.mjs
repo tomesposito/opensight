@@ -27,7 +27,7 @@ test('empty and newly emptied canvases retain ordered, labeled, keyboard-native 
   const emptied = authorReducer(populated, { type: 'remove', id: activeSheet(populated).selectedId });
   for (const draft of [emptyDraft(), emptied]) {
     const html = renderCanvas(draft);
-    assert.match(html, /<h3>Field wells<\/h3>/);
+    assert.match(html, /<h3[^>]*>Field wells<\/h3>/);
     assert.deepEqual([...html.matchAll(/<legend>(GROUP\/COLOR|VALUE|SMALL MULTIPLES)<\/legend>/g)].map(m => m[1]), ['GROUP/COLOR', 'VALUE', 'SMALL MULTIPLES']);
     for (const name of ['GROUP/COLOR', 'VALUE', 'SMALL MULTIPLES']) {
       assert.match(html, new RegExp(`<button type="button" class="well-placeholder" aria-label="Select ${name} well" aria-pressed="${name === 'GROUP/COLOR'}">Add a ${name === 'VALUE' ? 'measure' : 'dimension'}</button>`));

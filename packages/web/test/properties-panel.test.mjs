@@ -81,7 +81,7 @@ test('section visibility remains specific to each kind; no selected visual retai
   }
   const html = renderToStaticMarkup(createElement(AuthorCanvas, { draft: emptyDraft(), dispatch() {} }));
   assert.ok(html.includes('Select a visual to edit its display settings.'));
-  assert.ok(html.includes('<summary>Analysis theme</summary>'));
+  assert.match(html, /<summary[^>]*>Analysis theme<\/summary>/);
   assert.ok(!html.includes('aria-label="Properties tabs"'));
 });
 
@@ -123,7 +123,7 @@ test('issue 57 section order and control names remain specific to each visual ki
     assert.equal(html.includes('Number of slices displayed'), kind === 'pie', kind);
     assert.equal((html.match(/aria-label="Title"/g) ?? []).length, 1, `${kind}: card title has a unique accessible name`);
     if (kind === 'pie') {
-      const sections = [...html.matchAll(/<summary>([^<]+)<\/summary>/g)].map(match => match[1]);
+      const sections = [...html.matchAll(/<summary[^>]*>([^<]+)<\/summary>/g)].map(match => match[1]);
       const start = sections.indexOf('Display settings');
       assert.deepEqual(sections.slice(start, start + 5), ['Display settings', 'Multiples Options', 'Group/Color', 'Legend', 'Data labels']);
       assert.ok(html.includes('aria-label="Show Group/Color title"'));

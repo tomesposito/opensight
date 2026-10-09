@@ -6,7 +6,7 @@ Use **Cmd** on macOS or **Ctrl** on Windows/Linux; both modifiers are accepted.
 | Shortcut | Action |
 | --- | --- |
 | Cmd/Ctrl+S | Save the current device-local draft; show **Draft saved** through the existing toast host only after success. |
-| Cmd/Ctrl+F | Open the toolbar's **Search** menu and focus **Search analysis**. |
+| Cmd/Ctrl+F | Open the existing command palette and focus **Search analysis actions**. |
 | Cmd/Ctrl+K | Open the [command palette](command-palette.md) for navigation and available actions. |
 | ? (Shift+/) | Open **Keyboard shortcuts**. |
 | Esc | Close the current dialog through its existing dismissal handler. |

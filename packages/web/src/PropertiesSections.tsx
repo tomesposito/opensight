@@ -119,7 +119,7 @@ export function GroupColorOptions({ visual, dispatch }: SectionProps) {
 
 export function LegendOptions({ visual, dispatch }: SectionProps) {
   if (!hasLegend(visual.kind)) return null;
-  return <details className="property-section"><summary>Legend</summary>
+  return <details className="property-section"><summary data-author-control="legend">Legend</summary>
     <label className="toggle"><input type="checkbox" checked={visual.legend} onChange={e => dispatch({ type: 'display', property: 'legend', value: e.target.checked })} />Show legend</label>
     <label>Legend position<select aria-label="Legend position" value={visual.formatting?.legendPosition ?? 'AUTO'} onChange={e => dispatch({ type: 'legend-position', position: e.target.value as LegendPosition })}>
       {LEGEND_POSITIONS.map(position => <option key={position} value={position}>{position[0] + position.slice(1).toLowerCase()}</option>)}
@@ -142,7 +142,7 @@ export function LegendOptions({ visual, dispatch }: SectionProps) {
 
 export function DataLabelsOptions({ visual, dispatch }: SectionProps) {
   if (!hasDataLabels(visual.kind)) return null;
-  return <details className="property-section"><summary>Data labels</summary>
+  return <details className="property-section"><summary data-author-control="data-labels">Data labels</summary>
     <label className="toggle"><input type="checkbox" checked={visual.labels} onChange={e => dispatch({ type: 'display', property: 'labels', value: e.target.checked })} />Show data labels</label>
     <Unavailable label="Data label content and styling controls" reason="Independent category/metric, position, typography and overlap settings are not supported yet. Labels follow the visual type and analysis theme; Outside is a reference default.">
       <label className="toggle"><input type="checkbox" />Category</label>

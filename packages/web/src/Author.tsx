@@ -4,7 +4,7 @@ import { ThemeEditor } from './ThemeEditor.js';
 import { DatasetHeader } from './DatasetHeader.js';
 import { CreateAnalysisDialog } from './CreateAnalysisDialog.js';
 import { FieldIcon } from './FieldIcon.js';
-import { AuthorToolbar } from './AuthorToolbar.js';
+import { AuthorToolbar, focusAuthorControl } from './AuthorToolbar.js';
 import { AuthorShortcuts } from './AuthorShortcuts.js';
 import { usePaletteCommands } from './CommandPalette.js';
 import { DraftSourceRecovery, useDraftSource } from './DraftSource.js';
@@ -139,10 +139,11 @@ function AuthorWorkspace({ sampleLoaded = false, onTrySample, client: apiClient,
   };
   const renderToolbar = (trigger?: ReactNode) => <AuthorToolbar
     onPrep={onPrep ? () => { if (drafts.keepCurrent()) onPrep(); } : undefined}
+    onSources={onSources ? () => { if (drafts.keepCurrent()) onSources(); } : undefined}
     draft={draft} dispatch={dispatch} oEntry={trigger} dataAvailable={!noData} fit={fit}
     onFit={() => setFit(value => !value)} onJson={download}
     onBundle={() => { if (!busy) void downloadQs(); }} onImport={() => fileInput.current?.click()}
-    busy={busy} jsonDisabled={!!exported.error} />;
+    busy={busy} jsonDisabled={!!exported.error} autosaveError={drafts.autoError ?? undefined} />;
   if (drafts.openingError) return <section><h1>Unable to open analysis</h1><p role="alert">{drafts.openingError}</p><p>Return to My analyses to refresh the list or choose another draft.</p></section>;
   return <><div ref={workspace} className="author-workspace" data-chrome={draft.chrome ?? 'light'}>
     <AuthorShortcuts workspace={workspace} onSave={saveDraft} />
@@ -186,7 +187,7 @@ function AuthorWorkspace({ sampleLoaded = false, onTrySample, client: apiClient,
     {noData ? <div className="author-layout author-layout-empty">
       <Panel title="Data" className="fields-panel"><p>No dataset selected.</p>{onSources && <button type="button" onClick={() => { if (drafts.keepCurrent()) onSources(); }}>Add data</button>}</Panel>
       <Panel title="Visuals" className="build-panel"><p>Add data to see fields and create visuals.</p></Panel>
-      <div className="author-center" role="region" aria-label="Analysis sheet"><div className="author-canvas"><LocalEmptyState title="Add data to your analysis" onSources={onSources ? () => { if (drafts.keepCurrent()) onSources(); } : undefined} onSample={onTrySample} /></div></div>
+      <div className="author-center" role="region" aria-label="Analysis sheet"><SheetTabs draft={draft} dispatch={dispatch} /><div className="author-canvas"><LocalEmptyState title="Add data to your analysis" onSources={onSources ? () => { if (drafts.keepCurrent()) onSources(); } : undefined} onSample={onTrySample} /></div></div>
     </div> : <AuthorCanvas draft={draft} dispatch={dispatch} client={client} fit={fit} sourceProblem={source.problem} />}
     {reportOpen && draft.bundle && <ImportReport draft={draft} onClose={() => {
       setReportOpen(false);
@@ -212,6 +213,10 @@ function AuthorCommands({ draft, dispatch, onSave }: EditorProps & { onSave: () 
         dispatch({ type: 'chrome', mode }); notify(`Editor theme changed to ${mode}`);
       } },
       ...draft.sheets.map(sheet => ({ id: `sheet-${sheet.id}`, label: `Go to sheet: ${sheet.name}`, run: () => dispatch({ type: 'sheet-select', id: sheet.id }) })),
+      ...draft.sheets.flatMap(sheet => sheet.visuals.map(visual => ({
+        id: `visual-${sheet.id}-${visual.id}`, label: `Go to visual: ${sheet.name} / ${visual.title || visual.id}`,
+        keywords: `${visual.kind} ${visual.id}`, run: () => { dispatch({ type: 'sheet-select', id: sheet.id }); dispatch({ type: 'select', id: visual.id }); },
+      }))),
     ],
   }), [draft, dispatch, onSave, notify]));
   return null;
@@ -259,12 +264,17 @@ const FIELD_DRAG_TYPE = 'application/x-opensight-field';
 export function AuthorCanvas({ draft, dispatch, client, fit = true, sourceProblem }: EditorProps & { fit?: boolean; sourceProblem?: string }) {
   const [newKind, setNewKind] = useState<VisualKind>('bar');
   const [search, setSearch] = useState('');
+  const fieldSearch = useRef<HTMLInputElement>(null);
   const [collapsedGroups, setCollapsedGroups] = useState<Partial<Record<FieldGroup, boolean>>>({});
   const [searchCollapsedGroups, setSearchCollapsedGroups] = useState<Partial<Record<FieldGroup, boolean>>>({});
   const fieldIconId = useId();
   const [well, setWell] = useState<Well>('rows');
   const [calculationOpen, setCalculationOpen] = useState(false);
   const sheet = activeSheet(draft), fields = dataFields(draft.calculatedFields, draft.dataset);
+  usePaletteCommands(useMemo(() => ({ commands: dataFields(draft.calculatedFields, draft.dataset).map(field => ({
+    id: `field-${field.name}`, label: `Find field: ${field.name}`, keywords: field.type,
+    run: () => { setSearch(field.name); setSearchCollapsedGroups({}); focusAuthorControl(fieldSearch.current, '[data-author-control="field-search"]'); },
+  })) }), [draft.calculatedFields, draft.dataset]));
   const query = search.trim().toLowerCase();
   const matchingFields = fields.filter(f => f.name.toLowerCase().includes(query));
   const interactionKey = JSON.stringify([draft.dataset?.id, sheet.id, sheet.visuals.map(v => [v.id, v.kind, v.dimension, v.rows, v.columns, v.measures, v.smallMultiples, v.filters, v.filterActions, v.urlActions, v.navigationActions, v.hierarchy, v.imported]), draft.sheets.map(s => [s.id, s.imported?.memberPath]), draft.parameters, draft.calculatedFields, !!client]);
@@ -292,7 +302,7 @@ export function AuthorCanvas({ draft, dispatch, client, fit = true, sourceProble
     <div className="author-layout">
       <Panel title="Data" className="fields-panel">
         <DatasetHeader datasetId={draft.dataset?.id} datasetName={draft.dataset?.name} client={client} />
-        <label>Search fields<input type="search" value={search} onChange={e => { setSearch(e.target.value); setSearchCollapsedGroups({}); }} placeholder="Search fields" /></label>
+        <label>Search fields<input ref={fieldSearch} data-author-control="field-search" type="search" value={search} onChange={e => { setSearch(e.target.value); setSearchCollapsedGroups({}); }} placeholder="Search fields" /></label>
         <button type="button" className="calculation-button" onClick={() => setCalculationOpen(true)}>+ Calculated field</button>
         <p className="field-hint">{selected ? 'Click a field to assign it.' : 'Click a field to create a bar.'} Dimensions: {dimensionDestination}. Measures: VALUE.</p>
         {FIELD_GROUPS.filter(group => matchingFields.some(f => fieldGroup(f) === group)).map(group => <details key={group} className="field-group" open={!(query ? searchCollapsedGroups : collapsedGroups)[group]} onToggle={e => {
@@ -323,7 +333,7 @@ export function AuthorCanvas({ draft, dispatch, client, fit = true, sourceProble
             <button type="submit" className="primary-button" aria-label="Add visual">ADD</button>
           </form>
           <div className="visual-config" id={selected ? `configure-${selected.id}` : undefined}>
-            <h3>Field wells</h3>
+            <h3 tabIndex={-1}>Field wells</h3>
             {selected && <><p className="selected-visual">{selected.title || `Visual ${sheet.visuals.indexOf(selected) + 1}`}</p>
             <label className="change-type">Change visual type<select value={selected.imported?.issues.some(i => i.startsWith('Unsupported visual type:')) && !selected.imported.replaced ? '' : selected.kind} onChange={e => dispatch({ type: 'kind', kind: e.target.value as VisualKind })}>{selected.imported?.issues.some(i => i.startsWith('Unsupported visual type:')) && !selected.imported.replaced && <option value="" disabled>{selected.imported.variant} (unsupported)</option>}{VISUAL_TYPES.map(type => <option value={type.kind} key={type.kind}>{type.label}</option>)}</select></label>
             </>}
@@ -402,7 +412,7 @@ function SheetTabs({ draft, dispatch }: Omit<EditorProps, 'client'>) {
   return <div className="sheet-toolbar">
     <div className="sheet-tabs" role="tablist" aria-label="Analysis sheets">{draft.sheets.map(s => <button key={s.id} type="button" role="tab" aria-selected={s.id === sheet.id} onClick={() => { dispatch({ type: 'sheet-select', id: s.id }); setRename(undefined); }}>{s.name}</button>)}</div>
     <button type="button" onClick={() => dispatch({ type: 'sheet-add' })}>+ Add sheet</button>
-    <button type="button" onClick={() => setRename({ id: sheet.id, name: sheet.name })}>Rename sheet</button>
+    <button type="button" data-author-control="rename-sheet" onClick={() => setRename({ id: sheet.id, name: sheet.name })}>Rename sheet</button>
     <button type="button" disabled={draft.sheets.length === 1} onClick={() => { dispatch({ type: 'sheet-delete', id: sheet.id }); setRename(undefined); }}>Delete sheet</button>
     {sheet.visuals.some(v => v.imported && !v.imported.local) && <button type="button" onClick={() => dispatch({ type: 'sheet-remap', id: sheet.id })}>Remap sheet to local dataset</button>}
     {rename && <form className="rename-sheet" onSubmit={e => { e.preventDefault(); if (rename.name.trim()) { dispatch({ type: 'sheet-rename', ...rename }); setRename(undefined); } }}>
@@ -447,7 +457,7 @@ function Properties({ visual, draft, dispatch, client, runtimeProblems }: Editor
   ];
   return <>
     <div className="properties-tabs" role="tablist" aria-label="Properties tabs">
-      {(['Visual', 'Interaction'] as const).map(name => <button type="button" key={name} role="tab" id={`${tabId}-${name}`} aria-controls={`${tabId}-panel-${name}`} aria-selected={tab === name} tabIndex={tab === name ? 0 : -1} onClick={() => setTab(name)} onKeyDown={e => {
+      {(['Visual', 'Interaction'] as const).map(name => <button type="button" key={name} role="tab" data-properties-tab={name} id={`${tabId}-${name}`} aria-controls={`${tabId}-panel-${name}`} aria-selected={tab === name} tabIndex={tab === name ? 0 : -1} onClick={() => setTab(name)} onKeyDown={e => {
         if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return;
         e.preventDefault();
         const next = e.key === 'Home' ? 'Visual' : e.key === 'End' ? 'Interaction' : name === 'Visual' ? 'Interaction' : 'Visual';
@@ -516,7 +526,7 @@ function FilterEditor({ dataset, visual, calculations, dispatch, client, paramet
   const filter = visual.filters.find(f => f.columnName === column);
   const filterValues = filter?.parameterName ? parameters.find(p => p.name === filter.parameterName)?.values.map(String) ?? [] : filter?.values;
   const values = [...new Set([...(current?.values ?? []), ...(filterValues ?? [])])];
-  return <details className="property-section" open><summary>Filters</summary>
+  return <details className="property-section" open><summary data-author-control="filters">Filters</summary>
     {visual.filters.map(f => <button className="field-chip filter-pill" type="button" key={f.columnName} aria-label={`Remove ${f.columnName} filter`} onClick={() => dispatch({ type: 'filter', columnName: f.columnName, values: null })}>{f.columnName}: {f.parameterName ? `$${f.parameterName}` : f.values.length ? f.values.join(', ') : 'None'} <span aria-hidden="true">×</span></button>)}
     <label>Category field<select value={column} onChange={e => setColumn(e.target.value)}>{dataFields(calculations, dataset).filter(f => f.type === 'STRING').map(f => <option key={f.name}>{f.name}</option>)}</select></label>
     {!current && <p role="status">Loading values…</p>}

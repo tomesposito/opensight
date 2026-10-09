@@ -19,7 +19,7 @@ export function FormattingEditor({ visual, dispatch }: { visual: AuthorVisual; d
       {group.fields.map(field => <label key={field}>{field} display name<input value={f.names?.[field] ?? ''} placeholder={field} maxLength={128} onChange={e => { const names = { ...f.names }; if (e.target.value.trim()) Object.defineProperty(names, field, { value: e.target.value, enumerable: true, writable: true, configurable: true }); else delete names[field]; set({ names }); }} /></label>)}
       {!group.fields.length && <p>No fields in this well.</p>}
     </details>)}
-    <details className="property-section"><summary>Conditional formatting</summary>
+    <details className="property-section"><summary data-author-control="conditional-formatting">Conditional formatting</summary>
       <p>First matching rule colors numeric cells, including totals. Bar, line, area, combo, pie, scatter and funnel marks also use the rule color. Percentage bars compare the original values. Other charts show rules in their result table.</p>
       <ol>{rules.map((rule, i) => <li key={i}>{rule.fieldId} {rule.operator} {rule.threshold} <span style={{ color: rule.color, background: rule.background }}>Aa</span><button type="button" aria-label={`Remove formatting rule ${i + 1}`} onClick={() => set({ rules: rules.filter((_, j) => i !== j) })}>Remove</button></li>)}</ol>
       <label>Rule measure<select aria-label="Rule measure" value={visual.measures.includes(field) ? field : visual.measures[0] ?? ''} onChange={e => setField(e.target.value)}>{visual.measures.map(name => <option key={name}>{name}</option>)}</select></label>

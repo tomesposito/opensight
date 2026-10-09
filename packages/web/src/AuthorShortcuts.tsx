@@ -1,5 +1,4 @@
 import { useEffect, useId, useRef, useState, type RefObject } from 'react';
-import { focusAuthorControl } from './AuthorToolbar.js';
 import { AUTHOR_SHORTCUTS, listenForAuthorShortcuts, shortcutKeys } from './keyboard-shortcuts.js';
 import { useCommandPalette } from './CommandPalette.js';
 
@@ -14,7 +13,7 @@ export function AuthorShortcuts({ workspace, onSave }: { workspace: RefObject<HT
     if (!document) return;
     return listenForAuthorShortcuts(document, {
       'save-draft': () => save.current(),
-      'focus-search': () => focusAuthorControl(workspace.current, '.analysis-search'),
+      'focus-search': palette ? () => palette.open('Search analysis actions') : undefined,
       'shortcuts-help': () => setHelpOpen(true),
       'toggle-command-palette': palette?.open,
     });

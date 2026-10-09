@@ -10,7 +10,7 @@ export function ActionEditor({ draft, visual, dispatch, runtimeProblems = {} }: 
   const saveUrl = (action: UrlAction) => dispatch({ type: 'url-actions', actions: urls.map(a => a.id === action.id ? action : a) });
   const sheet = activeSheet(draft), actions = visual.filterActions ?? [], problem = originProblem(visual);
   const save = (action: FilterAction) => dispatch({ type: 'filter-actions', actions: actions.map(a => a.id === action.id ? action : a) });
-  return <details className="property-section" open><summary>Custom actions</summary>
+  return <details className="property-section" open><summary data-author-control="actions">Custom actions</summary>
     {problem && <p role="status">Cannot originate: {problem}</p>}
     {actions.map(action => <fieldset key={action.id}><legend>{action.name}</legend>
       <label>Action name<input value={action.name} onChange={e => save({ ...action, name: e.target.value })} /></label>
