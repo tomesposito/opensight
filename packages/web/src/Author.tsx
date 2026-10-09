@@ -8,6 +8,7 @@ import { AuthorToolbar, focusAuthorControl } from './AuthorToolbar.js';
 import { AuthorShortcuts } from './AuthorShortcuts.js';
 import { usePaletteCommands } from './CommandPalette.js';
 import { DraftSourceRecovery, useDraftSource } from './DraftSource.js';
+import { printAnalysis } from './analysis-print.js';
 import { SaveAnalysisCopy } from './SaveAnalysisCopy.js';
 import { LocalDrafts } from './LocalDrafts.js';
 import { useLocalDrafts } from './use-local-drafts.js';
@@ -139,13 +140,23 @@ function AuthorWorkspace({ renderIdentity, sampleLoaded = false, onTrySample, cl
       setExportStatus('Export downloaded: opensight-analysis.json');
     } catch { setExportStatus('Export could not be downloaded. Please try again.'); }
   };
+  const finishPrint = useRef<(() => void) | undefined>(undefined);
+  useEffect(() => () => finishPrint.current?.(), []);
+  const printCurrentSheet = () => {
+    try {
+      if (!workspace.current) throw new Error('The analysis sheet is unavailable.');
+      finishPrint.current?.();
+      finishPrint.current = printAnalysis(workspace.current, draft.title, activeSheet(draft).name);
+      setExportStatus('Print dialog opened for the current sheet. Printing or saving is completed in your browser.');
+    } catch (error) { setExportStatus(`Print blocked: ${error instanceof Error ? error.message : String(error)}`); }
+  };
   const renderToolbar = (trigger?: ReactNode) => <AuthorToolbar
     onPrep={onPrep ? () => { if (drafts.keepCurrent()) onPrep(); } : undefined}
     onSources={onSources ? () => { if (drafts.keepCurrent()) onSources(); } : undefined}
     draft={draft} dispatch={dispatch} oEntry={trigger} dataAvailable={!noData} fit={fit}
     onFit={() => setFit(value => !value)} onJson={download}
     onBundle={() => { if (!busy) void downloadQs(); }} onImport={() => fileInput.current?.click()}
-    onSaveCopy={() => setSaveCopyOpen(true)} favorite={drafts.favorite} onFavorite={() => { if (drafts.toggleFavorite()) notify(drafts.favorite ? 'Removed from Favorites' : 'Added to Favorites on this device'); }}
+    onPrint={printCurrentSheet} onSaveCopy={() => setSaveCopyOpen(true)} favorite={drafts.favorite} onFavorite={() => { if (drafts.toggleFavorite()) notify(drafts.favorite ? 'Removed from Favorites' : 'Added to Favorites on this device'); }}
     busy={busy} jsonDisabled={!!exported.error} autosaveError={drafts.autoError ?? undefined} />;
   if (drafts.openingError) return <>{renderIdentity?.(null)}<section><h1>Unable to open analysis</h1><p role="alert">{drafts.openingError}</p><p>Return to My analyses to refresh the list or choose another draft.</p></section></>;
   const titleControl = <label className="analysis-title"><span className="sr-only">Analysis title</span><input value={draft.title} onChange={e => dispatch({ type: 'analysis-title', title: e.target.value })} /></label>;

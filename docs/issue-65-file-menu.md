@@ -40,3 +40,17 @@ The existing hosted sharing API and HQ-2/HQ-6 decisions do not make a local draf
 a hosted asset. Namespace-local user/group resolution, folder restrictions and
 viewer row/column policies remain the required hosted semantics. The separate
 embedded-author surface and server APIs are unchanged.
+
+Print invokes native browser printing for a snapshot of the active sheet. The
+snapshot retains current controls, rendered SVGs, tables, selection state,
+errors/empty states and the existing data-source disclosure. It excludes menus,
+editor docks, card actions, other sheets and definition/debug footers. Table
+scroll positions are preserved: this is the visible view, not an all-rows report.
+Pending visuals block printing with a retry explanation. Browser failures show
+a reason. The temporary snapshot and document title are cleaned up after print
+preview closes or the editor is left. Default paper is A4 landscape; the sheet
+is scaled to fit one page. Browser settings can override the paper choice.
+
+The root-wired offline Chromium tests verify native-print invocation/cleanup,
+blocked states, literal titles, SVG fragment isolation, controls/table state,
+print CSS and real single-page PDF output.

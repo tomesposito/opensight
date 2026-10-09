@@ -922,3 +922,19 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .analysis-file-dialog label { display: grid; gap: 4px; }
 .analysis-file-dialog input { min-width: 0; }
 .analysis-file-dialog .dialog-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+
+/* Keep the snapshot laid out for accurate scroll offsets, out of screen view. */
+.analysis-print-root { position: fixed; left: -100000px; top: 0; width: 1000px; visibility: hidden; pointer-events: none; }
+@media print {
+  @page { size: A4 landscape; margin: 12mm; }
+  body:has(> .analysis-print-root) { margin: 0 !important; padding: 0 !important; background: white !important; color: #111 !important; }
+  body:has(> .analysis-print-root) > :not(.analysis-print-root) { display: none !important; }
+  .analysis-print-root { position: static; width: 1000px; visibility: visible; font: 12px Arial, "Helvetica Neue", Helvetica, sans-serif; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+  .analysis-print-root h1 { font-size: 18px; margin: 0 0 4px; }
+  .analysis-print-root p { margin: 4px 0; }
+  .analysis-print-notice { font-size: 10px; margin-bottom: 12px !important; }
+  .analysis-print-sheet .author-canvas { min-height: 0; background-image: none; }
+  .analysis-print-sheet .canvas-viewport { overflow: visible; }
+  .analysis-print-sheet .author-card.is-selected { border-color: #c9d8de; box-shadow: none; }
+  .analysis-print-sheet .react-grid-item { transition: none !important; }
+}

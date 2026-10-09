@@ -31,7 +31,7 @@ export function focusAuthorControl(nav: HTMLElement | null, selector: string, ta
   target?.focus();
   return target;
 }
-export function AuthorToolbar({ onPrep, onSources, draft, dispatch, fit, onFit, onJson, onBundle, onImport, oEntry, dataAvailable = true, busy = false, jsonDisabled = false, autosaveError, favorite = false, onFavorite, onSaveCopy }: { onSaveCopy?: () => void; favorite?: boolean; onFavorite?: () => void; autosaveError?: string; dataAvailable?: boolean; onSources?: () => void; onPrep?: () => void; oEntry?: ReactNode; busy?: boolean; jsonDisabled?: boolean; draft: AuthorDraft; dispatch: Dispatch<AuthorAction>; fit: boolean; onFit: () => void; onJson: () => void; onBundle: () => void; onImport: () => void }) {
+export function AuthorToolbar({ onPrep, onSources, draft, dispatch, fit, onFit, onJson, onBundle, onImport, oEntry, dataAvailable = true, busy = false, jsonDisabled = false, autosaveError, favorite = false, onFavorite, onSaveCopy, onPrint }: { onPrint?: () => void; onSaveCopy?: () => void; favorite?: boolean; onFavorite?: () => void; autosaveError?: string; dataAvailable?: boolean; onSources?: () => void; onPrep?: () => void; oEntry?: ReactNode; busy?: boolean; jsonDisabled?: boolean; draft: AuthorDraft; dispatch: Dispatch<AuthorAction>; fit: boolean; onFit: () => void; onJson: () => void; onBundle: () => void; onImport: () => void }) {
   const access = useAccess();
   const notify = useToast();
   const [notice, setNotice] = useState('');
@@ -63,7 +63,7 @@ export function AuthorToolbar({ onPrep, onSources, draft, dispatch, fit, onFit, 
         <AuthorMenuItem label="Rename" run={() => focus('.analysis-title input')} />
         <AuthorMenuItem label="Import" reason={busy ? 'Wait for the current import or export to finish.' : undefined} run={onImport} />
         <hr />
-        <AuthorMenuItem label="Print" reason="Analysis print layout is not supported yet." />
+        <AuthorMenuItem label="Print" run={onPrint} reason={busy ? "Wait for the current import or export to finish." : !onPrint ? "Open an analysis to print its current sheet." : undefined} />
         <AuthorMenuItem label="Exports" keepOpen run={() => { setExportsOpen(value => !value); focus('[data-author-menu="File"] > summary'); }} />
         <div hidden={!exportsOpen} className="menu-exports" role="group" aria-label="Analysis definition exports">
           <AuthorMenuItem label="Download .qs" descriptionId="export-help" reason={busy ? 'Wait for the current import or export to finish.' : undefined} run={onBundle} />
