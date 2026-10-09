@@ -63,7 +63,7 @@ export const VISUAL_TYPES = [
   { kind: 'table', label: 'Table', icon: '▤' }, { kind: 'pivot', label: 'Pivot', icon: '▦' },
   ...Object.entries(EXTRA_VISUALS).map(([kind, type]) => ({ kind: kind as VisualKind, label: type.label, icon: type.icon })),
 ] as const;
-export type Well = 'dimension' | 'rows' | 'columns' | 'values';
+export type Well = 'dimension' | 'rows' | 'columns' | 'values' | 'smallMultiples';
 export interface CategoryFilter { columnName: string; values: string[]; parameterName?: string; operator?: 'EQUALS' | 'GREATER_THAN_OR_EQUAL_TO' | 'LESS_THAN_OR_EQUAL_TO' }
 export interface ImportedVisual {
   visualId: string; variant: string; local: boolean; replaced?: boolean; remapped?: boolean;
@@ -89,6 +89,7 @@ export interface AuthorVisual {
   id: string; kind: VisualKind; title: string;
   subtitle?: string; subtitleVisible?: boolean;
   dimension: string | null; measures: string[]; rows: string[]; columns: string[];
+  smallMultiples?: string[];
   donut: boolean; titleVisible: boolean; legend: boolean; labels: boolean;
   horizontal: boolean; stacked: boolean; totals: boolean; subtotals: boolean;
   filters: CategoryFilter[];
@@ -117,6 +118,7 @@ export const singleMeasure = (kind: VisualKind): boolean => ['waterfall', 'sanke
 export const noDimensions = (kind: VisualKind): boolean => kind === 'kpi' || kind === 'gauge';
 export const grouped = (kind: VisualKind): boolean => ['table', 'pivot', 'treemap', 'heatmap', 'box', 'pointMap', 'radar', 'sankey'].includes(kind);
 export const splitDimensions = (kind: VisualKind): boolean => ['pivot', 'heatmap', 'pointMap', 'radar', 'sankey'].includes(kind);
+export const hasSmallMultiplesWell = (kind: VisualKind): boolean => ['bar', 'bar100', 'line', 'area', 'combo', 'pie'].includes(kind);
 export const capabilityNote = (kind: VisualKind): string => extraKind(kind) ? EXTRA_VISUALS[kind].note : kind === 'kpi' ? 'One measure, one aggregate row.' : tabular(kind) ? 'Additive SUM totals over supplied groups; nulls remain null.' : 'One category dimension; measures use SUM. Pie requires nonnegative values.';
 export const tabular = (kind: VisualKind): boolean => kind === 'table' || kind === 'pivot';
 export const visualDimensions = (visual: AuthorVisual): string[] => noDimensions(visual.kind) ? [] : grouped(visual.kind)
@@ -176,7 +178,7 @@ export type AuthorAction =
   | { type: 'layout'; sheetId: string; layout: readonly Placement[] }
   | { type: 'calculation-add'; field: CalculatedField }
   | { type: 'o-add'; visual: AuthorVisual; calculatedFields: CalculatedField[] }
-  | { type: 'add'; kind: VisualKind }
+  | { type: 'add'; kind: VisualKind; empty?: boolean }
   | { type: 'assign-with-no-selection'; field: string; well?: Well }
   | { type: 'select' | 'remove'; id: string }
   | { type: 'move'; id: string; offset: -1 | 1 }
@@ -289,7 +291,8 @@ export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorD
     const id = nextId('visual', [...draft.sheets.flatMap(s => s.visuals.map(v => v.id)), ...originalIds(draft, true)]);
     // ROWS/COLUMNS both map to the default bar's single category dimension.
     const visual: AuthorVisual = { ...defaults(), id, kind: 'bar', title: '', donut: false,
-      dimension: field.role === 'dimension' ? field.name : null, measures: field.role === 'measure' ? [field.name] : [] };
+      dimension: field.role === 'dimension' && action.well !== 'smallMultiples' ? field.name : null, measures: field.role === 'measure' ? [field.name] : [],
+      ...(action.well === 'smallMultiples' ? { smallMultiples: [field.name] } : {}) };
     const bottom = Math.max(0, ...sheet.layout.map(p => p.y + p.h));
     return update({ visuals: [...sheet.visuals, visual], selectedId: id, layout: [...sheet.layout, { i: id, x: 0, y: bottom, w: 6, h: 8 }] });
   }
@@ -307,6 +310,7 @@ export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorD
       if (['box', 'treemap'].includes(action.kind) && dimensions[1]) visual.rows.push(dimensions[1].name);
       visual.columns = splitDimensions(action.kind) && action.kind !== 'radar' && dimensions[1] ? [dimensions[1].name] : [];
     }
+    if (action.empty) { visual.dimension = null; visual.rows = []; visual.columns = []; visual.measures = []; }
     const bottom = Math.max(0, ...sheet.layout.map(p => p.y + p.h));
     return update({ visuals: [...sheet.visuals, visual], selectedId: id, layout: [...sheet.layout, { i: id, x: 0, y: bottom, w: 6, h: 8 }] });
   }
@@ -330,7 +334,7 @@ export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorD
   const visuals = sheet.visuals.map(item => {
     if (item.id !== sheet.selectedId) return item;
     let visual = item;
-    if (visual.hierarchy && (action.type === 'kind' && noDimensions(action.kind) || (action.type === 'assign' || action.type === 'unassign') && action.well !== 'values' && dataFields(draft.calculatedFields, draft.dataset).some(f => f.name === action.field && f.role === 'dimension'))) {
+    if (visual.hierarchy && (action.type === 'kind' && noDimensions(action.kind) || (action.type === 'assign' || action.type === 'unassign') && action.well !== 'values' && action.well !== 'smallMultiples' && dataFields(draft.calculatedFields, draft.dataset).some(f => f.name === action.field && f.role === 'dimension'))) {
       const { hierarchy: _hierarchy, ...rest } = visual; visual = rest;
     }
     switch (action.type) {
@@ -384,14 +388,17 @@ export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorD
         return { ...visual, filters: action.values === null ? filters : [...filters, { columnName: action.columnName, values: [...new Set(action.values)] }] };
       }
       case 'unassign': {
+        if (action.well === 'smallMultiples') return { ...visual, smallMultiples: visual.smallMultiples?.filter(f => f !== action.field) };
         const rows = (!action.well || action.well === 'rows') ? visual.rows.filter(f => f !== action.field) : visual.rows;
         return { ...visual, rows, columns: !action.well || action.well === 'columns' ? visual.columns.filter(f => f !== action.field) : visual.columns,
+          ...(!action.well && visual.smallMultiples ? { smallMultiples: visual.smallMultiples.filter(f => f !== action.field) } : {}),
           dimension: grouped(visual.kind) ? rows[0] ?? null : visual.dimension === action.field ? null : visual.dimension,
           measures: !action.well || action.well === 'values' ? visual.measures.filter(f => f !== action.field) : visual.measures };
       }
       case 'assign': {
         const field = dataFields(draft.calculatedFields, draft.dataset).find(f => f.name === action.field);
         if (!field || field.type === 'BOOLEAN') return visual;
+        if (action.well === 'smallMultiples') return field.role === 'dimension' && hasSmallMultiplesWell(visual.kind) ? { ...visual, smallMultiples: [field.name] } : visual;
         if (field.role === 'measure') return action.well && action.well !== 'values' || (visual.kind === 'scatter' && visual.measures.length >= 3 || visual.kind === 'insight' && visual.measures.length >= 2) ? visual : { ...visual, measures: singleMeasure(visual.kind) ? [field.name] : [...new Set([...visual.measures, field.name])] };
         if (noDimensions(visual.kind) || action.well === 'values') return visual;
         if (grouped(visual.kind)) {
@@ -433,10 +440,12 @@ export function remapVisual(visual: AuthorVisual): AuthorVisual {
   return { ...visual, rows, columns, dimension, measures, filters, imported: { ...visual.imported, local: true, remapped: true, unmappedFields: [...missing] } };
 }
 export function authorVisualProblem(visual: AuthorVisual): string | undefined {
-  if (!visual.imported) return;
-  if (!visual.imported.local) return `Unresolved dataset: ${visual.imported.dataSets.map(d => d.arn ?? d.identifier).join(', ') || 'no dataset binding'}`;
-  const issues = visual.imported.replaced ? visual.imported.issues.filter(i => i.startsWith('Filter group ') || i.startsWith('Calculated field ')) : visual.imported.issues;
-  if (issues.length) return `Unsupported features: ${issues.join('; ')}`;
+  if (visual.imported) {
+    if (!visual.imported.local) return `Unresolved dataset: ${visual.imported.dataSets.map(d => d.arn ?? d.identifier).join(', ') || 'no dataset binding'}`;
+    const issues = visual.imported.replaced ? visual.imported.issues.filter(i => i.startsWith('Filter group ') || i.startsWith('Calculated field ')) : visual.imported.issues;
+    if (issues.length) return `Unsupported features: ${issues.join('; ')}`;
+  }
+  if (visual.smallMultiples?.length) return 'SMALL_MULTIPLES_UNSUPPORTED: Small multiples are saved in this draft. Faceted preview is not supported yet; remove the Small multiples field to preview this visual.';
 }
 
 function columnField(name: string): BundleColumnField {
@@ -448,6 +457,8 @@ function dimensionField(name: string, granularity: DateGrain = 'MONTH', calculat
 }
 /** Typed camelCase projection, including the parser's opaque extensions. */
 export function serializeVisual(visual: AuthorVisual, includeInteractions = true, calculations: readonly CalculatedField[] = [], dataset?: AuthorDataset): BundleVisual {
+  if (visual.smallMultiples?.length && !hasSmallMultiplesWell(visual.kind)) throw new Error('SMALL_MULTIPLES_UNSUPPORTED: Remove Small multiples fields before exporting this visual type.');
+  const multiples = visual.smallMultiples?.length ? { smallMultiples: visual.smallMultiples.map(name => dimensionField(name, visual.dateGrain, calculations, dataset)) } : {};
   const category = visualDimensions(visual).map(name => dimensionField(name, visual.dateGrain, calculations, dataset));
   const values: BundleMeasureField[] = visual.measures.map(name => ({ numericalMeasureField: { ...columnField(name), aggregationFunction: { simpleNumericalAggregation: 'SUM' } } }));
   const visibility = (show: boolean) => ({ visibility: show ? 'VISIBLE' : 'HIDDEN' });
@@ -459,7 +470,7 @@ export function serializeVisual(visual: AuthorVisual, includeInteractions = true
     rowSubtotalOptions: totalVisibility(visual.subtotals), columnSubtotalOptions: totalVisibility(visual.subtotals) } };
   if (extraKind(visual.kind)) {
     const spec = EXTRA_VISUALS[visual.kind];
-    const wells: Record<string, unknown> = {};
+    const wells: Record<string, unknown> = { ...multiples };
     spec.dimensions.forEach((name, i) => { wells[name] = spec.dimensions.length === 1 ? category : (i === 0 ? visual.rows : visual.columns).map(n => dimensionField(n, visual.dateGrain, calculations, dataset)); });
     spec.measures.forEach((name, i) => { wells[name] = spec.measures.length === 1 ? values : visual.kind === 'combo' && i === 1 ? values.slice(1) : values.slice(i, i + 1); });
     return { [spec.variant]: { ...body, ...(visual.kind === 'insight' && visual.insightConfiguration ? { insightConfiguration: rebindInsight(visual.insightConfiguration, category, values) } : {}), chartConfiguration: { ...(visual.kind === 'insight' ? {} : display), fieldWells: spec.wells ? { [spec.wells]: wells } : wells,
@@ -471,10 +482,10 @@ export function serializeVisual(visual: AuthorVisual, includeInteractions = true
   }
   switch (visual.kind) {
     case 'pie': return { pieChartVisual: { ...body, chartConfiguration: { ...display,
-      fieldWells: { pieChartAggregatedFieldWells: { category, values } }, donutOptions: { arcOptions: { arcThickness: visual.donut ? 'MEDIUM' : 'WHOLE' } },
+      fieldWells: { pieChartAggregatedFieldWells: { category, values, ...multiples } }, donutOptions: { arcOptions: { arcThickness: visual.donut ? 'MEDIUM' : 'WHOLE' } },
     } } };
-    case 'bar': return { barChartVisual: { ...body, chartConfiguration: { ...display, orientation: visual.horizontal ? 'HORIZONTAL' : 'VERTICAL', barsArrangement: visual.stacked ? 'STACKED' : 'CLUSTERED', fieldWells: { barChartAggregatedFieldWells: { category, values } } } } };
-    case 'line': return { lineChartVisual: { ...body, chartConfiguration: { ...display, fieldWells: { lineChartAggregatedFieldWells: { category, values } } } } };
+    case 'bar': return { barChartVisual: { ...body, chartConfiguration: { ...display, orientation: visual.horizontal ? 'HORIZONTAL' : 'VERTICAL', barsArrangement: visual.stacked ? 'STACKED' : 'CLUSTERED', fieldWells: { barChartAggregatedFieldWells: { category, values, ...multiples } } } } };
+    case 'line': return { lineChartVisual: { ...body, chartConfiguration: { ...display, fieldWells: { lineChartAggregatedFieldWells: { category, values, ...multiples } } } } };
     case 'table': return { tableVisual: { ...body, chartConfiguration: { ...tableTotals, fieldWells: { tableAggregatedFieldWells: { groupBy: category, values } } } } };
     case 'pivot': return { pivotTableVisual: { ...body, chartConfiguration: { ...pivotTotals, fieldWells: { pivotTableAggregatedFieldWells: { rows: visual.rows.map(name => dimensionField(name, visual.dateGrain, calculations, dataset)), columns: visual.columns.map(name => dimensionField(name, visual.dateGrain, calculations, dataset)), values } } } } };
     case 'kpi': return { kpiVisual: { ...body, chartConfiguration: { fieldWells: { values } } } };
@@ -494,6 +505,7 @@ export function serializeDraft(draft: AuthorDraft): BundleAnalysis {
       filters: [serializeFilter(filter, `${visual.id}-filter-${index}`, 'sales_data', sheetParameters(draft, sheet))],
     })))),
     sheets: draft.sheets.map(sheet => ({ sheetId: sheet.id, name: sheet.name, ...(sheet.controls.length ? { parameterControls: sheet.controls.map(c => serializeControl(c, sheetParameters(draft, sheet), sheet.controls)) } : {}), visuals: sheet.visuals.map(visual => {
+      if (visual.smallMultiples?.length) throw new Error('SMALL_MULTIPLES_UNSUPPORTED: Remove Small multiples fields before exporting; the draft retains them.');
       const definition = serializeVisual(visual, true, draft.calculatedFields, draft.dataset);
       normalizeVisual('bundle', serializeVisual(visual, false, draft.calculatedFields, draft.dataset), `sheets.${sheet.id}.${visual.id}`);
       return definition;
@@ -556,7 +568,8 @@ export function validateDraft(value: unknown): asserts value is AuthorDraft {
       }
       const fieldNames = (v: unknown, role: string): v is string[] => imported ? Array.isArray(v) && v.every(n => typeof n === 'string' && !!n && !n.includes('\0')) && new Set(v).size === v.length : names(v, role);
 
-      if (!isObject(v) || !onlyKeys(v, ['id', 'kind', 'title', 'subtitle', 'subtitleVisible', 'dimension', 'measures', 'donut', 'imported', 'filterActions', 'urlActions', 'navigationActions', 'hierarchy', 'dateGrain', 'palette', 'formatting', 'gauge', 'bins', 'insightConfiguration', ...Object.keys(defaults())]) || typeof v.id !== 'string' || !/^visual-[1-9][0-9]*$/.test(v.id) || ids.has(v.id) || !VISUAL_TYPES.some(t => t.kind === v.kind) || typeof v.title !== 'string' || !['donut', 'titleVisible', 'legend', 'labels', 'horizontal', 'stacked', 'totals', 'subtotals'].every(k => typeof v[k] === 'boolean') || !fieldNames(v.measures, 'measure') || !fieldNames(v.rows, 'dimension') || !fieldNames(v.columns, 'dimension') || (v.dimension !== null && !fieldNames([v.dimension], 'dimension')) || !Array.isArray(v.filters)) return fail();
+      if (!isObject(v) || !onlyKeys(v, ['id', 'kind', 'title', 'subtitle', 'subtitleVisible', 'dimension', 'measures', 'smallMultiples', 'donut', 'imported', 'filterActions', 'urlActions', 'navigationActions', 'hierarchy', 'dateGrain', 'palette', 'formatting', 'gauge', 'bins', 'insightConfiguration', ...Object.keys(defaults())]) || typeof v.id !== 'string' || !/^visual-[1-9][0-9]*$/.test(v.id) || ids.has(v.id) || !VISUAL_TYPES.some(t => t.kind === v.kind) || typeof v.title !== 'string' || !['donut', 'titleVisible', 'legend', 'labels', 'horizontal', 'stacked', 'totals', 'subtotals'].every(k => typeof v[k] === 'boolean') || !fieldNames(v.measures, 'measure') || !fieldNames(v.rows, 'dimension') || !fieldNames(v.columns, 'dimension') || (v.dimension !== null && !fieldNames([v.dimension], 'dimension')) || !Array.isArray(v.filters)) return fail();
+      if (v.smallMultiples !== undefined && (!names(v.smallMultiples, 'dimension') || v.smallMultiples.length > 1 || v.smallMultiples.some(name => fields.find(f => f.name === name)?.type === 'BOOLEAN'))) return fail();
       if ((v.kind === 'radar' || v.kind === 'sankey') && !v.imported && (v.rows.length > 1 || v.columns.length > 1)) return fail();
       if (singleMeasure(v.kind as VisualKind) && v.measures.length > 1 || noDimensions(v.kind as VisualKind) && v.dimension !== null || v.kind !== 'pie' && v.donut || !splitDimensions(v.kind as VisualKind) && v.columns.length || (grouped(v.kind as VisualKind) ? v.dimension !== (v.rows[0] ?? null) : v.rows.length) || v.rows.some(n => (v.columns as string[]).includes(n))) return fail();
       if (v.insightConfiguration !== undefined && !isObject(v.insightConfiguration) || v.kind === 'insight' && !v.imported && v.measures.length > 2) return fail();

@@ -28,23 +28,23 @@ test('empty and newly emptied canvases retain ordered, labeled, keyboard-native 
   for (const draft of [emptyDraft(), emptied]) {
     const html = renderCanvas(draft);
     assert.match(html, /<h3>Field wells<\/h3>/);
-    assert.deepEqual([...html.matchAll(/<legend>(ROWS|COLUMNS|VALUES)<\/legend>/g)].map(m => m[1]), ['ROWS', 'COLUMNS', 'VALUES']);
-    for (const name of ['ROWS', 'COLUMNS', 'VALUES']) {
-      assert.match(html, new RegExp(`<button type="button" class="well-placeholder" aria-label="Select ${name} well" aria-pressed="${name === 'ROWS'}">Add a ${name === 'VALUES' ? 'measure' : 'dimension'}</button>`));
+    assert.deepEqual([...html.matchAll(/<legend>(GROUP\/COLOR|VALUE|SMALL MULTIPLES)<\/legend>/g)].map(m => m[1]), ['GROUP/COLOR', 'VALUE', 'SMALL MULTIPLES']);
+    for (const name of ['GROUP/COLOR', 'VALUE', 'SMALL MULTIPLES']) {
+      assert.match(html, new RegExp(`<button type="button" class="well-placeholder" aria-label="Select ${name} well" aria-pressed="${name === 'GROUP/COLOR'}">Add a ${name === 'VALUE' ? 'measure' : 'dimension'}</button>`));
     }
     assert.doesNotMatch(html, /Choose a visual type and select ADD/);
   }
 });
 
-for (const [kind, well] of [['bar', 'Category'], ['line', 'X-axis'], ['pie', 'Category'], ['kpi', null], ['table', 'Group-by']]) {
+for (const [kind, well] of [['bar', 'Group/Color'], ['line', 'X-axis'], ['pie', 'Group/Color'], ['kpi', null], ['table', 'Group-by']]) {
   test(`${kind} configuration exposes its wells, removable assignments and move boundaries`, () => {
     const html = renderCanvas(add(kind));
     assert.match(html, /aria-expanded="true"/);
-    assert.match(html, /<legend>Values/);
-    assert.match(html, /aria-label="Remove revenue from Values"/);
+    assert.match(html, /<legend>VALUES?</);
+    assert.match(html, /aria-label="Remove revenue from Values?"/);
     assert.match(html, /disabled="" aria-label="Move Visual 1 up"/);
     assert.match(html, /disabled="" aria-label="Move Visual 1 down"/);
-    if (well) assert.ok(html.includes(`<legend>${well}`));
+    if (well) assert.ok(html.includes(`<legend>${well.toUpperCase()}`));
     else {
       assert.doesNotMatch(html, /Assign dimension/);
       assert.match(html, /disabled="" aria-label="Assign region"/);
@@ -65,9 +65,9 @@ test('only the selected card exposes configuration and titles are escaped', () =
 });
 
 test('Data hints name the actual dimension well, including specialized visual types', () => {
-  for (const [kind, label] of [['bar', 'Category'], ['line', 'X-axis'], ['table', 'Group-by'], ['pivot', 'Rows'], ['radar', 'Category'], ['pointMap', 'Latitude'], ['box', 'Group / sample dimensions'], ['kpi', 'unavailable for this visual']]) {
+  for (const [kind, label] of [['bar', 'Group/Color'], ['line', 'X-axis'], ['table', 'Group-by'], ['pivot', 'Rows'], ['radar', 'Category'], ['pointMap', 'Latitude'], ['box', 'Group / sample dimensions'], ['kpi', 'unavailable for this visual']]) {
     const html = renderCanvas(add(kind));
-    assert.ok(html.includes(`Dimensions: ${label}. Measures: VALUES.`), kind);
+    assert.ok(html.includes(`Dimensions: ${label}. Measures: VALUE.`), kind);
   }
 });
 

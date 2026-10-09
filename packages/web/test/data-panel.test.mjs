@@ -59,7 +59,7 @@ test('folder sections default expanded, contain each field once, and collapse in
 
 test('semantic folders preserve assignment to the selected columns well and numeric values', async t => {
   const ui = await mount(t);
-  const columnsWell = ui.renderer.root.findAllByType('fieldset').find(f => f.findByType('legend').children.includes('Columns'));
+  const columnsWell = ui.renderer.root.findAllByType('fieldset').find(f => f.findByType('legend').children.includes('COLUMNS'));
   await act(() => columnsWell.props.onClick());
   await ui.click('Assign category');
   await ui.click('Assign profit');

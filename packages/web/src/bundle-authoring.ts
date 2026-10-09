@@ -383,6 +383,7 @@ function generatedFilters(sheet: AuthorSheet, visual: AuthorVisual, identifier: 
 
 export function exportBundle(draft: AuthorDraft): QsBundle {
   validateDraft(draft);
+  if (draft.sheets.some(s => s.visuals.some(v => v.smallMultiples?.length))) throw new Error('SMALL_MULTIPLES_UNSUPPORTED: Remove Small multiples fields before exporting; the draft retains them.');
   if (!draft.bundle) {
     const resource = serializeDraft(draft), bundle = { members: [{ path: `analysis/${resource.analysisId}.json`, resource }] };
     summarizeQsBundle(bundle); return bundle;

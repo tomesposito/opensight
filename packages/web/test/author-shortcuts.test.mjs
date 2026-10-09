@@ -163,7 +163,7 @@ test('Author leaves typing and composition alone, retaining composition state ac
 
 test('Escape closes existing calculation/import dialogs through cancel and closes Ask Q from its input', async t => {
   const ui = await mount(t);
-  await ui.click('+ CALCULATED FIELD');
+  await ui.click('+ Calculated field');
   assert.equal(ui.renderer.root.findByType('dialog').props.className, 'calculation-dialog');
   assert.equal((await ui.key({ key: 'Escape', target: ui.search })).defaultPrevented, false);
   await ui.cancel(); assert.equal(ui.renderer.root.findAllByType('dialog').length, 0);
