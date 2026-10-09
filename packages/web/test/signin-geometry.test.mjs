@@ -3,9 +3,11 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { createElement as h } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { AccessProvider } from '../build/test/access.js';
+import { AppNavigation } from '../build/test/AppNavigation.js';
 import { SignIn } from '../build/test/SignIn.js';
 import { chromiumPage } from './chromium.mjs';
-const css=(await Promise.all(['style.css','sign-in.css'].map(name=>readFile(new URL(`../src/${name}`,import.meta.url),'utf8')))).join('\n');
+const css=(await Promise.all(['style.css','sign-in.css','app-chrome.css'].map(name=>readFile(new URL(`../src/${name}`,import.meta.url),'utf8')))).join('\n');
 describe('Issue #63: hosted sign-in layout',()=>{
   let page;
   before(async()=>{page=await chromiumPage();});
@@ -23,5 +25,18 @@ describe('Issue #63: hosted sign-in layout',()=>{
     assert.equal(actual.card.width,Math.min(360,width-32));
     assert.ok(actual.fields.every(field=>field.label>0));
     assert.equal(actual.password,'password');
+  });
+  for(const width of [1440,390,320]) test(`${width}px hosted header keeps Sign out visible with a long account name`,async()=>{
+    await page.setViewportSize({width,height:900});
+    const html=renderToStaticMarkup(h(AccessProvider,{access:{mode:'hosted',session:{id:'u',namespaceId:'n',name:'Long synthetic account display name',role:'author'},signOut:async()=>{}}},
+      h('div',{className:'app-shell'},h(AppNavigation,{route:{page:'home'},navigate(){}}))));
+    await page.setContent(`<style>${css}\nhtml { scrollbar-width: none; }</style>${html}`);
+    const actual=await page.evaluate(()=>{
+      const button=document.querySelector('.hosted-account button').getBoundingClientRect();
+      return {width:document.documentElement.scrollWidth,button:{left:button.left,right:button.right,height:button.height}};
+    });
+    assert.equal(actual.width,width);
+    assert.ok(actual.button.left>=0&&actual.button.right<=width);
+    assert.ok(actual.button.height>=24);
   });
 });

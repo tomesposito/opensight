@@ -120,7 +120,7 @@ export function SessionGate({ client, offline, children }: { client: Client; off
     try {
       if (!client.logout) throw new ApiError('Unavailable', 503, 'BUILTIN_AUTH_UNAVAILABLE');
       await client.logout(controller.signal);
-      if (!controller.signal.aborted) setNotice({ message: 'You have signed out.' });
+      if (!controller.signal.aborted) setNotice({ message: 'You have signed out.', kind: 'info' });
     } catch (error: unknown) {
       setNotice({ ...authNotice(error), message: `Sign-out could not be confirmed by the server. This page has cleared your sign-in. ${authNotice(error).message}` });
     } finally {

@@ -1,6 +1,6 @@
 import { ApiError } from './api-client.js';
 
-export interface AuthNotice { message: string; code?: string }
+export interface AuthNotice { message: string; code?: string; kind?: 'info' }
 const messages: Readonly<Record<string, string>> = {
   AUTHENTICATION_FAILED: 'Invalid email or password. Check your sign-in details and authenticator code. If you still cannot sign in, contact your administrator.',
   AUTH_RATE_LIMITED: 'Too many sign-in attempts. Wait 15 minutes before trying again.',

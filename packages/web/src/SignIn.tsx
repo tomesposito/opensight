@@ -36,7 +36,7 @@ export function SignIn({ onSignIn, notice, onRetry, onDemo }: {
         <div className="sign-in-brand"><span className="brand-mark" aria-hidden="true">◈</span><span>OpenSight</span></div>
         <p className="sign-in-kicker">YOUR HOSTED WORKSPACE</p>
         <h1 id="sign-in-title">{step === 'credentials' ? 'Sign in' : 'Verify your identity'}</h1>
-        {message && <div ref={alert} className="sign-in-alert" role="alert" tabIndex={-1}><p>{message.message}</p>{message.code && <span className="sign-in-error-code">{message.code}</span>}</div>}
+        {message && <div ref={alert} className="sign-in-alert" data-kind={message.kind} role={message.kind === 'info' ? 'status' : 'alert'} tabIndex={-1}><p>{message.message}</p>{message.code && <span className="sign-in-error-code">{message.code}</span>}</div>}
         <form onSubmit={submit} aria-busy={busy}>
           {step === 'credentials' ? <>
             <label className="sign-in-field" htmlFor="signin-email">Email address<input ref={emailField} id="signin-email" type="email" autoComplete="username" required maxLength={320} value={email} onChange={event => setEmail(event.target.value)} /></label>

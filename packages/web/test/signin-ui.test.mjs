@@ -119,6 +119,7 @@ test('Issue #63: full gate flow establishes session and sign-out removes the app
   const ui=await signedIn(t);
   await act(async()=>button(ui,'Sign out').props.onClick());
   assert.equal(ui.renderer.root.findAllByType(Probe).length,0);
+  assert.equal(ui.renderer.root.findByProps({role:'status'}).props['data-kind'],'info');
   assert.match(JSON.stringify(ui.renderer.toJSON()),/You have signed out/);
   await ui.client.getSession().catch(()=>{});
   assert.equal(ui.calls.at(-1).options.headers.Authorization,undefined);
