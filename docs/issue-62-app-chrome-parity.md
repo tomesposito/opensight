@@ -59,3 +59,13 @@ removal, search, corrupt drafts and existing creation/reopen flows. The offline
 browser tour exercised dataset selection, save, search, rename, reload, delete,
 banner focus, navigation Escape/backdrop, and 1440/1100/760/390px screenshots,
 with zero page errors or external requests.
+
+### Dashboards
+
+The existing local-only page now shares the collection heading, introduction
+banner and centered empty-state card. The publishing requirement remains visible
+after dismissing the banner, and My analyses opens the real draft collection.
+No dashboard rows, owners, favorites or publication features are simulated.
+Seven targeted behavior tests passed; the real local API browser tour captured
+Home and Dashboards at 1440/1100/760/390px and checked dismissal and navigation
+without page overflow, page errors or external requests.

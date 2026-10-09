@@ -55,3 +55,14 @@ test('corrupt draft table rows cannot be opened or renamed, but can be deleted',
   assert.equal(row.findByProps({ role: 'alert' }).props.children, 'Corrupt draft');
   assert.deepEqual(row.findAllByType('button').map(b => Boolean(b.props.disabled)), [true, true, false]);
 });
+
+test('Dashboards retains its empty collection and publishing explanation after banner dismissal', async t => {
+  const { Dashboards } = await import('../build/test/Dashboards.js');
+  const routes = [];
+  const ui = await mount(t, Dashboards, { navigate: route => routes.push(route) });
+  assert.equal(ui.root.findAllByType('table').length, 0, 'No placeholder dashboards are invented');
+  await act(() => ui.root.findByType('button').props.onClick());
+  assert.ok(ui.root.findAllByType('p').some(p => p.props.children === 'Publishing dashboards needs a hosted API.'));
+  await act(() => ui.root.findByType('a').props.onClick({ button: 0, preventDefault() {} }));
+  assert.deepEqual(routes, [{ page: 'analyses' }]);
+});

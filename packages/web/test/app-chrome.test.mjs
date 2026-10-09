@@ -67,3 +67,24 @@ describe('application shell geometry in offline Chromium', () => {
     });
   }
 });
+
+describe('collection card responsiveness', () => {
+  let page;
+  before(async () => { page = await chromiumPage(); });
+  after(async () => { await page?.close(); });
+  for (const width of [1440, 1100, 760, 390]) test(`collection cards and long draft names fit at ${width}px`, async () => {
+    const { CollectionPage } = await import('../build/test/CollectionPage.js');
+    const { LocalDrafts } = await import('../build/test/LocalDrafts.js');
+    const { Dashboards } = await import('../build/test/Dashboards.js');
+    const { AccessProvider } = await import('../build/test/access.js');
+    await page.setViewportSize({ width, height: 900 });
+    for (const name of ['analyses', 'dashboards']) {
+      const content = name === 'dashboards' ? h(Dashboards, { navigate() {} }) : h(CollectionPage, { title: 'Analyses', introduction: 'Create analyses', description: 'Save drafts on this device.' }, h(LocalDrafts, { expanded: true, entries: [{ id: 'long', name: 'LongAnalysis'.repeat(30), updatedAt: '2026-01-01T12:00:00Z' }], onOpen() {}, onRename() {}, onDelete() {}, onRefresh() {} }));
+      const html = renderToStaticMarkup(h(AccessProvider, { access: { mode: 'local' } }, h('div', { className: 'app-shell', 'data-page': name }, h(AppNavigation, { route: { page: name }, navigate() {} }), h('main', {}, content))));
+      await page.setContent(`<style>${css}\nhtml { scrollbar-width: none; }</style>${html}`);
+      const actual = await page.evaluate(() => ({ width: document.documentElement.scrollWidth, cardRight: document.querySelector('.collection-card').getBoundingClientRect().right, tableScroll: document.querySelector('.collection-table-scroll') && getComputedStyle(document.querySelector('.collection-table-scroll')).overflowX }));
+      assert.equal(actual.width, width); assert.ok(actual.cardRight <= width);
+      if (name === 'analyses') assert.equal(actual.tableScroll, 'auto');
+    }
+  });
+});

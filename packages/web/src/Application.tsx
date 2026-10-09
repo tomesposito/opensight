@@ -23,7 +23,8 @@ import { draftStorageKey } from './local-drafts.js';
 import { ToastProvider } from './Toasts.js';
 import { BackToTop } from './BackToTop.js';
 import { CommandPaletteProvider } from './CommandPalette.js';
-import { EmptyPageState, LocalEmptyState } from './LocalEmptyState.js';
+import { LocalEmptyState } from './LocalEmptyState.js';
+import { Dashboards } from './Dashboards.js';
 
 export function Application(props: { api: ReturnType<typeof createApiClient>; fixtures: Fixture[] }) {
   const access = useAccess();
@@ -50,7 +51,7 @@ function ApplicationWorkspace({ api, fixtures }: { api: ReturnType<typeof create
     if (problem) return <p role="alert">{problem}</p>;
     switch (route.page) {
       case 'home': return <section className="home-page" aria-label="Home">{access.mode === 'local' && !sampleLoaded ? <LocalEmptyState onSources={() => navigate({ page: 'data-sources' })} onSample={() => setSampleLoaded(true)} /> : sample ? <Dashboard key="sample" fixture={sample} sample /> : <p role="status">The sample dashboard is not included in this build. Ask the operator to restore the pinned sales sample.</p>}</section>;
-      case 'dashboards': return <section className="local-empty-state"><h1>Dashboards</h1><EmptyPageState guidance="Build an analysis to get started."><AppLink className="primary-button" to={{ page: 'analyses' }} navigate={navigate}>My analyses</AppLink></EmptyPageState><p className="empty-page-note">Publishing dashboards needs a hosted API.</p></section>;
+      case 'dashboards': return <Dashboards navigate={navigate} />;
       case 'analyses': return <Analyses navigate={navigate} />;
       case 'author': return choosingDataset ? <Analyses navigate={navigate} /> : <Author key={entry} sampleLoaded={sampleLoaded} onTrySample={() => setSampleLoaded(true)} inApp draftId={route.draftId} newAnalysis={route.newAnalysis} onDraftChange={draftId => navigate({ page: 'author', draftId }, true)} onSources={() => navigate({ page: 'data-sources' })} onDatasetChange={setAuthorDataset} dataset={route.draftId ? undefined : route.newAnalysis ? newAnalysisChoice?.dataset : authorDataset} onPrep={() => navigate({ page: 'data-prep' })} client={connected ? api : undefined} />;
       case 'data-prep': return <DataPrep initialSource={uploadedSource} onBuild={access.mode === 'local' ? dataset => { setAuthorDataset(dataset); navigate({ page: 'author' }); } : undefined} client={connected ? api : undefined} onSources={() => navigate({ page: 'data-sources' })} onAuthor={() => navigate({ page: 'author' })} />;
