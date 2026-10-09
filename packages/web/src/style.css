@@ -497,7 +497,7 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .visual-card .table-scroll td button { color: inherit; background: transparent; }
 @media (max-width: 760px) {
   .author-menu > details { position: static; }
-  .menu-popover { left: 0; width: min(320px, 90vw); }
+  .menu-popover { left: 0; width: min(320px, 90vw); max-height: min(360px, 45vh); }
   .author-menu { gap: 0; }
   .author-menu summary { padding: 8px; }
 }
