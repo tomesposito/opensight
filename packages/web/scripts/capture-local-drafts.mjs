@@ -172,7 +172,7 @@ try {
   await demo.evaluate(() => Object.defineProperty(window, 'localStorage', { get() { throw new DOMException('Denied for acceptance test', 'SecurityError'); } }));
   await navigate(demo, 'author');
   await demo.getByRole('button', { name: 'Save draft', exact: true }).click();
-  await demo.getByText(/Browser storage is blocked/).waitFor();
+  await demo.getByText(/Browser storage is blocked/).first().waitFor();
   await demo.locator('.author-menu summary').filter({ hasText: /^File$/ }).click();
   assert.equal(await demo.getByRole('button', { name: 'Export JSON', exact: true }).isDisabled(), false);
   const download = demo.waitForEvent('download');

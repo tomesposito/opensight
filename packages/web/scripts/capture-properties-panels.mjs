@@ -92,7 +92,9 @@ try {
   await page.locator('.author-card .chart svg').waitFor();
   await page.getByLabel('NEW LOOK', { exact: true }).selectOption('light');
   await page.setViewportSize({ width: 390, height: 844 });
-  if (await panel.getAttribute('open') === null) await panel.locator(':scope > summary').click();
+  await page.locator('.properties-panel:not([open])').waitFor();
+  await panel.locator(':scope > summary').click();
+  await panel.locator('.properties-tabs').waitFor();
   await openSection('Legend');
   await panel.scrollIntoViewIfNeeded();
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), 390);
