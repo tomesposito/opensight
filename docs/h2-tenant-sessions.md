@@ -22,11 +22,11 @@ metadata, a verifier and the following environment configuration:
 | `OPENSIGHT_AUTH_SIGNING_KEY` | Random 32-byte key, canonical base64 |
 | `OPENSIGHT_AUTH_ENCRYPTION_KEY` | Separate random 32-byte key, canonical base64 |
 | `OPENSIGHT_OPERATOR_KEY` | Third random 32-byte key, canonical base64 |
-| `OPENSIGHT_SESSION_SECONDS` | Explicit integer, 1–86400; no default |
+| `OPENSIGHT_SESSION_SECONDS` | Explicit integer, 900–36000; no default |
 | `OPENSIGHT_INVITATION_SECONDS` | Explicit integer, 1–604800; no default |
 
-The lifetime ceilings are implementation guards, not an HQ-7 embed lifetime
-decision. Existing environment-only SMTP configuration delivers invitations;
+Issue #63 applies the settled HQ-7 15–600 minute range to hosted sessions.
+Existing environment-only SMTP configuration delivers invitations;
 provisioning refuses when SMTP is unconfigured. Tests inject the stub transport.
 Store configuration and private runtime files outside the repository or under
 ignored `.opensight/`. The CLI creates its database with private permissions.
@@ -86,7 +86,8 @@ The invitation email supplies a token and tenant ID for the API workflow:
    `{email,password,code,tenantId}`. The result is `{token,expiresAt,tenantId}`;
    `expiresAt` is Unix milliseconds. Email is normalized to lowercase.
 
-Enrollment/login are API flows; this phase adds no browser login screen.
+Enrollment remains an API flow. [Issue #63](issue-63-signin-screen.md) adds a
+browser sign-in screen for preprovisioned users with completed enrollment.
 
 ## Sessions, storage and revocation
 

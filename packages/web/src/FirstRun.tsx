@@ -45,7 +45,7 @@ export function FirstRun({ issue, checking, onRetry, onDemo }: {
           <ol>
             <li><strong>Select the hosted API.</strong> Set <code>OPENSIGHT_MODE=hosted</code> in the API process environment. The default fixture mode has no credential verifier.</li>
             <li><strong>Set up durable storage and keys.</strong> Configure the existing variables below, keep secrets on the server, and restart the API. Hosted mode requires HTTPS through a trusted reverse proxy.</li>
-            <li><strong>Provision a tenant and sign in.</strong> Configure SMTP for invitations, use the operator API to invite an administrator, then enroll a password and TOTP. The existing H2 API issues a bearer token; your authentication integration must supply it on browser API requests. There is no built-in browser login form.</li>
+            <li><strong>Provision a tenant and sign in.</strong> Configure SMTP for invitations, use the operator API to invite an administrator, then enroll a password and TOTP. Use the hosted sign-in screen with your email, password, workspace ID and authenticator code.</li>
           </ol>
           <details><summary>Required API environment variables</summary>
             <dl className="first-run-config">
@@ -54,7 +54,7 @@ export function FirstRun({ issue, checking, onRetry, onDemo }: {
               <dt><code>OPENSIGHT_AUTH_ISSUER</code><br /><code>OPENSIGHT_AUTH_AUDIENCE</code></dt><dd>Explicit nonempty identifiers without whitespace.</dd>
               <dt><code>OPENSIGHT_AUTH_KEY_ID</code></dt><dd>Unique identifier for the active signing key.</dd>
               <dt><code>OPENSIGHT_AUTH_SIGNING_KEY</code><br /><code>OPENSIGHT_AUTH_ENCRYPTION_KEY</code><br /><code>OPENSIGHT_OPERATOR_KEY</code></dt><dd>Three distinct random 32-byte keys, each in canonical base64. Never put secrets in <code>VITE_*</code> variables.</dd>
-              <dt><code>OPENSIGHT_SESSION_SECONDS</code><br /><code>OPENSIGHT_INVITATION_SECONDS</code></dt><dd>Explicit lifetimes: 1–86400 and 1–604800 seconds respectively.</dd>
+              <dt><code>OPENSIGHT_SESSION_SECONDS</code><br /><code>OPENSIGHT_INVITATION_SECONDS</code></dt><dd>Explicit lifetimes: 900–36000 and 1–604800 seconds respectively.</dd>
               <dt><code>OPENSIGHT_SMTP_HOST</code><br /><code>OPENSIGHT_SMTP_FROM</code></dt><dd>Invitation delivery. <code>OPENSIGHT_SMTP_PORT</code> defaults to 465 (implicit TLS). If needed, set both <code>OPENSIGHT_SMTP_USER</code> and <code>OPENSIGHT_SMTP_PASSWORD</code>.</dd>
             </dl>
           </details>

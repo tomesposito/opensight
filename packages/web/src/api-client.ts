@@ -63,6 +63,11 @@ export interface AIConfig {
   keyStorage: 'ephemeral' | 'encrypted-file'; canSaveKey: boolean; compatibleBaseUrls: string[];
 }
 
+export interface LoginInput { email: string; password: string; code: string; tenantId: string }
+export interface SignedIn { session: Session; expiresAt: number }
+export const SHORT_SESSION_MS = 15 * 60_000;
+export const MAX_SESSION_MS = 600 * 60_000;
+
 export class ApiError extends Error {
   constructor(message: string, readonly status?: number, readonly errorCode?: string) { super(message); this.name = 'ApiError'; }
 }
@@ -75,18 +80,76 @@ export class QueryError extends ApiError {
 
 export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch = globalThis.fetch) {
   const base = (baseUrl.trim() || DEFAULT_API_URL).replace(/\/+$/, '');
+  // This closure is the only bearer store. Never persist it in browser storage.
+  let credential: { token: string; expiresAt: number } | undefined;
+  let generation = 0;
+  function clearSession() { credential = undefined; generation++; }
+  async function authenticatedFetch(url: string, options: RequestInit): Promise<Response> {
+    const current = generation;
+    if (credential && credential.expiresAt <= Date.now()) {
+      clearSession();
+      throw new ApiError('Your session has expired.', 401, 'SESSION_EXPIRED');
+    }
+    const response = await fetcher(url, credential ? { ...options, credentials: 'omit', headers: { ...options.headers, Authorization: `Bearer ${credential.token}` } } : options);
+    if (current !== generation) throw new ApiError('Session changed during request.', 401, 'AUTH_REQUEST_SUPERSEDED');
+    return response;
+  }
+  async function authResponse(response: Response): Promise<Record<string, unknown>> {
+    const value: unknown = await response.json().catch(() => undefined);
+    const body = value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
+    if (!response.ok) throw new ApiError('Authentication request failed.', response.status, typeof body?.errorCode === 'string' ? body.errorCode : undefined);
+    if (!body) throw new ApiError('Invalid authentication response.', response.status, 'AUTH_RESPONSE_INVALID');
+    return body;
+  }
+  async function login(input: LoginInput, remember: boolean, signal?: AbortSignal): Promise<SignedIn> {
+    clearSession();
+    const current = generation, started = Date.now();
+    try {
+      // The login boundary rejects BOTH cookies and Authorization, even stale ones.
+      const body = await authResponse(await fetcher(`${base}/api/auth/login`, {
+        method: 'POST', credentials: 'omit', signal,
+        headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: input.email, password: input.password, code: input.code, tenantId: input.tenantId }),
+      }));
+      if (current !== generation || signal?.aborted) throw new ApiError('Sign-in cancelled.', undefined, 'AUTH_REQUEST_SUPERSEDED');
+      if (typeof body.token !== 'string' || !/^[A-Za-z0-9_.-]{1,1017}$/.test(body.token) ||
+          typeof body.expiresAt !== 'number' || !Number.isSafeInteger(body.expiresAt) || body.expiresAt <= Date.now() || body.tenantId !== input.tenantId) {
+        throw new ApiError('Invalid authentication response.', undefined, 'AUTH_RESPONSE_INVALID');
+      }
+      const expiresAt = Math.min(body.expiresAt, started + (remember ? MAX_SESSION_MS : SHORT_SESSION_MS));
+      credential = { token: body.token, expiresAt };
+      const session = await getSession(signal);
+      if (current !== generation || signal?.aborted) throw new ApiError('Sign-in cancelled.', undefined, 'AUTH_REQUEST_SUPERSEDED');
+      if (session.tenantId !== input.tenantId) throw new ApiError('Invalid authentication response.', undefined, 'AUTH_RESPONSE_INVALID');
+      if (expiresAt <= Date.now()) throw new ApiError('Your session has expired.', 401, 'SESSION_EXPIRED');
+      return { session, expiresAt };
+    } catch (error) {
+      if (current === generation) clearSession();
+      throw error;
+    }
+  }
+  async function logout(signal?: AbortSignal): Promise<void> {
+    const current = generation;
+    try {
+      const body = await authResponse(await authenticatedFetch(`${base}/api/auth/logout`, {
+        method: 'POST', credentials: 'omit', signal,
+        headers: { Accept: 'application/json', 'Content-Type': 'application/json' }, body: '{}',
+      }));
+      if (body.loggedOut !== true) throw new ApiError('Invalid sign-out response.', undefined, 'AUTH_RESPONSE_INVALID');
+    } finally { if (current === generation) clearSession(); }
+  }
   async function resource<T>(route: string, method = 'GET', body?: unknown): Promise<T> {
-    const response = await fetcher(`${base}${route}`, { method, credentials: 'same-origin', headers: { Accept: 'application/json', ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+    const response = await authenticatedFetch(`${base}${route}`, { method, credentials: 'same-origin', headers: { Accept: 'application/json', ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
     const value: unknown = await response.json();
     if (!response.ok) {
       const error = object(value, 'API error');
-      throw new ApiError(`${typeof error.errorCode === 'string' ? `${error.errorCode}: ` : ''}${typeof error.Message === 'string' ? error.Message : 'Request failed'}`, response.status);
+      throw new ApiError(`${typeof error.errorCode === 'string' ? `${error.errorCode}: ` : ''}${typeof error.Message === 'string' ? error.Message : 'Request failed'}`, response.status, typeof error.errorCode === 'string' ? error.errorCode : undefined);
     }
     return value as T;
   }
   const getDatasetExecution = (id: string) => resource<ExecutionStatus>(`/api/datasets/${encodeURIComponent(id)}/execution`);
   async function getLocalData(signal?: AbortSignal): Promise<boolean> {
-    const response = await fetcher(`${base}/api/local-data`, { signal, credentials: 'same-origin', headers: { Accept: 'application/json' } });
+    const response = await authenticatedFetch(`${base}/api/local-data`, { signal, credentials: 'same-origin', headers: { Accept: 'application/json' } });
     if (!response.ok) return false;
     const value = object(await response.json(), 'Local data capability');
     return value.mode === 'local' && value.maxUploadBytes === 8388608 && value.uploadTtlSeconds === 86400;
@@ -121,7 +184,7 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
   const saveAIKey = (key: string) => resource<AIConfig>('/api/admin/ai/key', 'POST', { key });
   const testAIConnection = () => resource<{ ok: true }>('/api/admin/ai/test', 'POST', {});
   async function getSession(signal?: AbortSignal): Promise<Session> {
-    const response = await fetcher(`${base}/api/session`, { signal, credentials: 'same-origin', headers: { Accept: 'application/json' } });
+    const response = await authenticatedFetch(`${base}/api/session`, { signal, credentials: 'same-origin', headers: { Accept: 'application/json' } });
     if (!response.ok) {
       // Keep the machine-readable reason without exposing backend messages or
       // proxy HTML in startup guidance. Some outages do not return JSON at all.
@@ -135,7 +198,7 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
   }
   async function getDatasetRefreshStatus(id: string, signal?: AbortSignal): Promise<DatasetRefreshStatus> {
     if (!/^[A-Za-z0-9_-]{1,512}$/.test(id)) throw new ApiError('Invalid dataset ID.');
-    const response = await fetcher(`${base}/api/datasets/${encodeURIComponent(id)}/refresh-status`, { signal, headers: { Accept: 'application/json' } });
+    const response = await authenticatedFetch(`${base}/api/datasets/${encodeURIComponent(id)}/refresh-status`, { signal, headers: { Accept: 'application/json' } });
     let raw: unknown;
     try { raw = await response.json(); }
     catch { throw new ApiError(`Refresh status returned invalid JSON (HTTP ${response.status}).`, response.status); }
@@ -157,7 +220,7 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
     return runQuery('/api/o/query', query, signal, { query, ...(dashboardId ? { dashboardId } : {}) });
   }
   async function runQuery(route: string, query: QueryRequest, signal?: AbortSignal, payload: unknown = query): Promise<QueryResponse> {
-    const response = await fetcher(`${base}${route}`, {
+    const response = await authenticatedFetch(`${base}${route}`, {
       method: 'POST', signal, headers: { Accept: 'application/json', 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
     });
     let raw: unknown;
@@ -194,7 +257,7 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
     if (!/^[A-Za-z0-9_-]{1,512}$/.test(id)) throw new ApiError('Resource ID must contain 1–512 letters, digits, underscores or hyphens.');
     const route = kind === 'analysis' ? 'analyses' : 'dashboards';
     // Network failures and AbortError retain their original cause/name.
-    const response = await fetcher(`${base}/${route}/${encodeURIComponent(id)}/definition`, { signal, headers: { Accept: 'application/json' } });
+    const response = await authenticatedFetch(`${base}/${route}/${encodeURIComponent(id)}/definition`, { signal, headers: { Accept: 'application/json' } });
     let raw: unknown;
     try { raw = await response.json(); }
     catch { throw new ApiError(response.ok ? 'API returned invalid JSON.' : `API request failed (HTTP ${response.status}).`, response.status); }
@@ -214,6 +277,7 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
     }
   }
   return {
+    login, logout, clearSession,
     listJobs, jobRecipients, jobHistory, jobDeliveries, runJob,
     getLocalData, getDatasetExecution, setDatasetExecution, refreshBlaze, getPreparedRows, listPrepSources, listPrepDatasets, savePrep, deletePrep, previewPrep, uploadFile, validateConnector, listUsers, saveUser, deleteUser, listInvitations, inviteUser, revokeInvitation, acceptInvitation, getAIStatus, generateO, generateCalculation, getAIConfig, saveAIConfig, saveAIKey, testAIConnection, getSession, queryO, getDatasetRefreshStatus,
     queryDataset,

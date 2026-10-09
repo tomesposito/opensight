@@ -30,12 +30,13 @@ test('analysis table searches, paginates, clamps after deletion and dispatches e
   assert.equal(button('Previous page').props.disabled, true);
   await act(() => button('Next page').props.onClick());
   assert.equal(rows().length, 1);
-  await act(() => button('Reopen').props.onClick());
+  await act(() => button('Open').props.onClick());
+  await act(() => button('Open Analysis 25').props.onClick());
   await act(() => button('Rename').props.onClick());
   await act(() => ui.root.findByProps({ autoFocus: true }).props.onChange({ target: { value: 'Renamed' } }));
   await act(() => ui.root.findByType('form').props.onSubmit({ preventDefault() {} }));
   await act(() => button('Delete').props.onClick());
-  assert.deepEqual(calls, [['open', 'draft-25'], ['rename', 'draft-25', 'Renamed'], ['delete', 'draft-25']]);
+  assert.deepEqual(calls, [['open', 'draft-25'], ['open', 'draft-25'], ['rename', 'draft-25', 'Renamed'], ['delete', 'draft-25']]);
   await ui.update({ ...props, entries: entries.slice(0, 25) });
   assert.equal(rows().length, 25); assert.equal(button('Next page').props.disabled, true);
   await act(() => ui.root.findByProps({ type: 'search' }).props.onChange({ target: { value: '  ANALYSIS 04  ' } }));
@@ -53,7 +54,9 @@ test('corrupt draft table rows cannot be opened or renamed, but can be deleted',
   const ui = await mount(t, LocalDrafts, { expanded: true, entries: [{ ...entries[0], problem: 'Corrupt draft' }], onOpen() { assert.fail('opened corrupt draft'); }, onRename() {}, onDelete() {}, onRefresh() {} });
   const row = ui.root.findByType('tbody');
   assert.equal(row.findByProps({ role: 'alert' }).props.children, 'Corrupt draft');
-  assert.deepEqual(row.findAllByType('button').map(b => Boolean(b.props.disabled)), [true, true, false]);
+  const buttons = row.findAllByType('button');
+  for (const label of ['Open Analysis 00', 'Open', 'Rename']) assert.equal(buttons.find(b => b.props['aria-label'] === label || b.props.children === label).props.disabled, true);
+  assert.equal(Boolean(buttons.find(b => b.props.children === 'Delete').props.disabled), false);
 });
 
 test('Dashboards retains its empty collection and publishing explanation after banner dismissal', async t => {
