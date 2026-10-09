@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { act, createElement, useReducer } from 'react';
 import { create } from 'react-test-renderer';
-import { CardTitle, CardStyle, CardLayout, MultiplesOptions, GroupColorOptions } from '../build/test/PropertiesSections.js';
+import { CardTitle, CardStyle, CardLayout, MultiplesOptions, GroupColorOptions, LegendOptions } from '../build/test/PropertiesSections.js';
 import { activeSheet, authorReducer, emptyDraft, parseDraft } from '../build/test/authoring.js';
 import { compileVisual } from '../build/test/compiler.js';
 import { buildAuthorVisual } from '../build/test/author-preview.js';
@@ -101,4 +101,21 @@ test('Group/Color field name updates the compiled title and table without renami
   ui.verifySaved();
   await ui.change('Field name', '');
   assert.equal(ui.compile().table.columns[0], sourceField); ui.verifySaved();
+});
+
+
+test('Legend visibility and every position compile, persist, and retain unsupported title/value controls', async t => {
+  const ui = await mount(t, LegendOptions);
+  assert.equal(ui.root.findAllByType('select')[0].props.value, 'AUTO');
+  for (const position of ['AUTO', 'TOP', 'BOTTOM', 'LEFT', 'RIGHT']) {
+    await ui.change('Legend position', position, 'select');
+    const option = ui.compile().option;
+    assert.equal(option.legend[position === 'AUTO' ? 'bottom' : position.toLowerCase()], 0);
+    ui.verifySaved();
+  }
+  await ui.change('Show legend', false); assert.equal(ui.compile().option.legend.show, false);
+  await ui.change('Show legend', true); assert.equal(ui.compile().option.legend.show, true);
+  unavailable(ui.root, 'Legend title controls', /not supported/);
+  unavailable(ui.root, 'Legend value controls', /Font and color follow the analysis theme/);
+  ui.verifySaved();
 });

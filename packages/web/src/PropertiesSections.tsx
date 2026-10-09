@@ -1,6 +1,7 @@
 import { useId, type Dispatch, type ReactNode } from 'react';
 import type { AuthorAction, AuthorVisual } from './authoring.js';
 import { hasSmallMultiplesWell } from './authoring.js';
+import { hasLegend, LEGEND_POSITIONS, type LegendPosition } from './formatting.js';
 
 type SectionProps = { visual: AuthorVisual; dispatch: Dispatch<AuthorAction> };
 
@@ -113,5 +114,28 @@ export function GroupColorOptions({ visual, dispatch }: SectionProps) {
     {visual.kind === 'pie' && <Unavailable label="Slice limit controls" reason="Slice limits are not supported yet; all supplied result rows are shown.">
       <label>Number of slices displayed<input placeholder="Default: 20" /></label>
     </Unavailable>}
+  </details>;
+}
+
+export function LegendOptions({ visual, dispatch }: SectionProps) {
+  if (!hasLegend(visual.kind)) return null;
+  return <details className="property-section"><summary>Legend</summary>
+    <label className="toggle"><input type="checkbox" checked={visual.legend} onChange={e => dispatch({ type: 'display', property: 'legend', value: e.target.checked })} />Show legend</label>
+    <label>Legend position<select value={visual.formatting?.legendPosition ?? 'AUTO'} onChange={e => dispatch({ type: 'legend-position', position: e.target.value as LegendPosition })}>
+      {LEGEND_POSITIONS.map(position => <option key={position} value={position}>{position[0] + position.slice(1).toLowerCase()}</option>)}
+    </select></label>
+    <p className="field-hint">Auto places the legend at the bottom.</p>
+    <section className="property-group" aria-label="Legend title"><h4>LEGEND TITLE</h4>
+      <Unavailable label="Legend title controls" reason="A separate legend title and its text styling are not supported yet.">
+        <label className="toggle"><input type="checkbox" />Show legend title</label>
+        <label>Legend title<input placeholder="Legend" /></label>
+        <TextStyling label="Legend title" size={14} />
+      </Unavailable>
+    </section>
+    <section className="property-group" aria-label="Legend value"><h4>LEGEND VALUE</h4>
+      <Unavailable label="Legend value controls" reason="Per-visual legend value styling is not supported yet. Font and color follow the analysis theme.">
+        <TextStyling label="Legend value" size={12} />
+      </Unavailable>
+    </section>
   </details>;
 }
