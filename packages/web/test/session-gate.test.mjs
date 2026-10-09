@@ -100,7 +100,9 @@ test('slow session requests time out into actionable recovery and abort on unmou
   t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
   let signal;
   const ui = await mount(t, gate({ getSession(value) { signal = value; return new Promise((_, reject) => value.addEventListener('abort', () => reject(new Error('aborted')), { once: true })); } }));
-  assert.equal(first(ui).props.checking, true);
+  // The landing page must not flash during the first check — a minimal loading state shows instead.
+  assert.equal(ui.renderer.root.findAllByType(FirstRun).length, 0);
+  assert.match(JSON.stringify(ui.renderer.toJSON()), /Checking your workspace/);
   await ui.focus(); // Does not start a duplicate request.
   await act(async () => t.mock.timers.tick(SESSION_TIMEOUT_MS));
   assert.equal(signal.aborted, true);
@@ -115,7 +117,10 @@ test('slow session requests time out into actionable recovery and abort on unmou
 test('late hosted responses cannot replace an opted-in demo or a newer request', async t => {
   const requests = [];
   const ui = await mount(t, gate({ getSession(signal) { const value = deferred(); requests.push({ ...value, signal }); return value.promise; } }));
-  await act(async () => first(ui).props.onDemo());
+  // The demo escape hatch is available in the loading state during the first check.
+  const demoButton = ui.renderer.root.findAllByType('button').find(b => b.children?.includes('Explore sample data'));
+  assert.ok(demoButton, 'loading state offers the sample-data escape hatch');
+  await act(async () => demoButton.props.onClick());
   assert.equal(requests[0].signal.aborted, true);
   await act(async () => ui.renderer.root.findByType('button').props.onClick());
   assert.equal(requests.length, 2);

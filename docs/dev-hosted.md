@@ -9,7 +9,8 @@ built web client served on the same origin.
 1. Run `npm run dev:hosted`.
 2. It generates `.env` (gitignored, mode 600) with fresh dev keys and a dev password.
 3. It provisions a dev tenant and admin user in `.opensight/dev-hosted.sqlite` (gitignored).
-4. It prints a TOTP setup URI — scan it with any authenticator app (one time only).
+4. It prints a QR code — scan it with any authenticator app (one time only).
+   The `otpauth://` URI is also printed for manual entry.
 5. Open http://localhost:3001. The sign-in screen appears. Sign in with the printed
    workspace ID, email, password, and a TOTP code from your authenticator app.
 

@@ -142,6 +142,13 @@ export function SessionGate({ client, offline, children }: { client: Client; off
   if (local) return <AccessProvider access={{ mode: 'local' }}>{children}</AccessProvider>;
   if (signingOut) return <div className="sign-in-page"><main className="sign-in-main"><p role="status">Signing out…</p></main></div>;
   if (!session && issue === 'sign-in') return <SignIn notice={notice} onSignIn={signIn} onRetry={retry} onDemo={explore} />;
+  // While the first session check is in flight we know nothing yet — render a minimal
+  // loading state in the sign-in shell so the landing page never flashes before auth.
+  // The sample-data escape hatch stays available for slow checks.
+  if (!session && checking && !issue) return <div className="sign-in-page"><main className="sign-in-main">
+    <p role="status">Checking your workspace…</p>
+    <nav className="sign-in-links" aria-label="Startup options"><button type="button" onClick={explore}>Explore sample data</button></nav>
+  </main></div>;
   if (!session) return <FirstRun issue={issue} checking={checking} onRetry={retry} onDemo={explore} />;
   return <AccessProvider access={{ mode: 'hosted', session, aiClient: client, ...(client.logout ? { signOut } : {}) }}>{children}</AccessProvider>;
 }

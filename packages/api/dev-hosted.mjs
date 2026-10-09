@@ -191,7 +191,7 @@ async function main() {
   });
 
   const port = Number(new URL(env.OPENSIGHT_PUBLIC_ORIGIN).port || 3000);
-  server.listen(port, '127.0.0.1', () => {
+  server.listen(port, '127.0.0.1', async () => {
     console.log('');
     console.log(`OpenSight hosted dev server: ${env.OPENSIGHT_PUBLIC_ORIGIN}`);
     console.log(`  Workspace ID: ${tenantId}`);
@@ -199,8 +199,10 @@ async function main() {
     console.log(`  Password:     ${env.OPENSIGHT_DEV_PASSWORD}`);
     if (printedTotpUri) {
       console.log('');
-      console.log('  TOTP setup URI (scan with your authenticator app, first run only):');
-      console.log(`  ${printedTotpUri}`);
+      console.log('  Scan with your authenticator app (first run only):');
+      const { default: qrcode } = await import('qrcode-terminal');
+      await new Promise(resolve => qrcode.generate(printedTotpUri, { small: true }, resolve));
+      console.log(`  Or enter manually: ${printedTotpUri}`);
     }
     console.log('');
     console.log('Local-only credentials from .env (gitignored). Ctrl+C to stop.');
