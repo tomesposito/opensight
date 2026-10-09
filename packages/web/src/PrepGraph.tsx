@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import type { PrepPipeline, PrepStep } from '@opensight/bundle-parser/prep';
-import { prepLeftInput, prepStepLabel } from './data-prep.js';
+import { PrepJoinIcon, PrepStepIcon } from './PrepIcons.js';
+import { prepLeftInput, prepStepLabel, prepRefKey } from './data-prep.js';
 
 /** Left inputs form a tree within the DAG. Secondary join edges remain labeled
  *  links on their target nodes. Flex branches keep connectors aligned at any
@@ -27,14 +28,15 @@ export function PrepGraph({ pipeline, selected, issues, input, output, secondary
   };
   const node = (step: PrepStep): ReactNode => {
     const i = pipeline.steps.findIndex(s => s.id === step.id), issue = issues[i] ?? '', parent = prepLeftInput(pipeline, step);
-    return <li className="prep-node-wrap" key={step.id}>
-      <span className="prep-edge" aria-label={`Left input: ${parent ?? 'Input'} to ${step.id}`} data-from={parent ?? 'input'} data-to={step.id} />
+    return <li className="prep-node-wrap" key={step.id} data-combine={step.kind === 'join' || step.kind === 'append' || undefined}>
+      <span className="prep-edge" aria-label={`Left input: ${parent ?? 'Input'} to ${step.id}`} data-from={parent ?? 'input'} data-to={step.id}>{step.kind === 'join' && <span className="prep-port-label">LEFT</span>}</span>
       <div className="prep-step-node" data-step-id={step.id}>
         {secondary(step, i)}
+        {(step.kind === 'join' || step.kind === 'append') && <span className="prep-right-edge" aria-label={`${step.kind === 'join' ? 'Right' : 'Append'} input to ${step.id}`} data-right-from={prepRefKey(step.config.source)} data-right-to={step.id}><span className="prep-port-label">{step.kind === 'join' ? 'RIGHT' : 'APPEND'}</span></span>}
         <button className={`prep-node${selected === step.id ? ' selected' : ''}${issue ? ' unconfigured' : ''}`} aria-pressed={selected === step.id} title={issue || undefined} onClick={() => select(step.id)}>
-          <span className="prep-node-icon">{i + 1}</span><strong>{prepStepLabel(step)}</strong>
+          <span className="prep-node-icon">{step.kind === 'join' ? <PrepJoinIcon type={step.config.joinType} /> : <PrepStepIcon kind={step.kind} />}</span><strong>{prepStepLabel(step)}</strong>
           {outputId === step.id && <span className="prep-output-marker">Output</span>}
-          <span>Configure · Preview</span>{issue && <span className="prep-flag">{issue}</span>}
+          <span className="sr-only">Configure · Preview</span>{issue && <span className="prep-flag">{issue}</span>}
         </button>
         <div className="prep-node-actions"><button disabled={disabled} onClick={() => branch(step.id)}>Add branch</button><button disabled={outputId === step.id} onClick={() => setOutput(step.id)}>Set as output</button></div>
       </div>{descendants(step.id)}

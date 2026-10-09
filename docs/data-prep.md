@@ -1,13 +1,27 @@
-# Dataset preparation (issues #9, #11, #14, #17, and #18)
+# Dataset preparation (issues #9, #11, #14, #17, #18, and #58)
 
 The Data preparation view builds a branching transformation pipeline over sources
 from the connector registry. Open it from Data sources → Prepare data, the mode
-picker, or the analysis editor's Data → Prepare data menu. The left panel contains
-configuration and the transformation catalog; the graph shows resolved left-input paths and
-one node per connected or prepared input, with labeled connections to the steps
-that use it. Repeated joins show distinct source instances; an earlier-step reference points
-back to that result. Select a node to preview that stage. Steps
-can be edited, reordered, or removed. Downstream schema errors remain visible.
+picker, or the analysis editor's Data → Prepare data menu. The persistent left
+**Steps** panel groups Input, Column transformations, Combine transformations
+and Other. The canvas shows resolved left-input paths and one
+node per connected or prepared input, with LEFT/RIGHT labels on join connections.
+Secondary source nodes sit above their consuming step; earlier-step right inputs
+remain selectable links to their existing result. Repeated joins show distinct
+source instances. Select a node, then use the bottom **Configure** or
+**Preview** tab for that stage. Configure step opens the editor; steps can also
+be reordered or removed. Switching tabs retains an unapplied configuration.
+Downstream schema errors remain visible.
+
+Join configuration shows left/right table column lists with type icons and
+column search, a keyboard-operable left/inner/right/full join selector, and
+paired key selectors. Click a column or choose a dashed “Add a column from
+left/right table” placeholder to add a key. A partially filled key blocks Apply;
+remove the pair or choose both columns to continue. Right output columns expands
+the existing prefix/explicit-alias controls. Arrow keys and Home/End work in both
+the join selector and Configure/Preview tabs. Live rows and saves require an API;
+the static demo retains its schema-only preview. Dataset execution controls remain
+available in the expandable section above the Steps workspace.
 
 Adding data is a distinct action: **＋ Add data** stages a source (dataset,
 connector table, uploaded file, or an earlier step's result) as an input node on
@@ -63,7 +77,7 @@ Each step may include an optional top-level `name`, for example
 `{"id":"join-products","name":"Product Join","kind":"join","config":{...}}`.
 Select **Configure step** and edit **Step name (optional)** to name or rename it.
 The canvas uses this name when set and otherwise falls back to the kind's
-automatic label, such as **Join** or **Rename column**. Clearing the field removes
+automatic label, such as **Join** or **Rename columns**. Clearing the field removes
 the name and restores that fallback; the stable step ID and configuration stay
 unchanged.
 

@@ -2,7 +2,7 @@
 // Adapted from ~/workspace/tools/screenshots/readme-gif-44.mjs.
 // Drives the rebuilt file:// demo through Home, O, Author, Analyses, Data, Admin.
 // Frames land in OPENSIGHT_SCREENSHOT_OUTPUT/frames;
-// assemble with: ffmpeg -framerate 10 -i .opensight/issue-57/gif/frames/f%03d.png ...
+// assemble with: ffmpeg -framerate 10 -i .opensight/issue-58/gif/frames/f%03d.png ...
 // (see the bottom of this file for the exact assembly command).
 import assert from 'node:assert/strict';
 import { resolve } from 'node:path';
@@ -12,7 +12,7 @@ const { chromium } = createRequire(resolve(process.env.OPENSIGHT_SCREENSHOT_TOOL
 import { mkdirSync } from 'fs';
 
 const DEMO = new URL('../dist/opensight-demo.html', import.meta.url).href;
-const FRAMES = resolve(process.env.OPENSIGHT_SCREENSHOT_OUTPUT ?? '.opensight/issue-57/gif', 'frames');
+const FRAMES = resolve(process.env.OPENSIGHT_SCREENSHOT_OUTPUT ?? '.opensight/issue-58/gif', 'frames');
 mkdirSync(FRAMES, { recursive: true });
 
 const browser = await chromium.launch({ executablePath: '/opt/meta-chromium/chrome', args: ['--no-sandbox', '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
@@ -188,9 +188,21 @@ try {
   await setMode('analyses');
   await hold(1800);
 
-  // 4. Data preparation pipeline canvas.
+  // 4. Data preparation: type conversion, second input and bottom join editor.
   await setMode('data-prep');
-  await page.waitForTimeout(900);
+  await page.getByRole('button', { name: 'New', exact: true }).click();
+  await page.getByLabel('Dataset name', { exact: true }).fill('Regional sales preparation');
+  await page.getByRole('button', { name: '＋ Add data', exact: true }).click();
+  await page.getByLabel('Stage a source', { exact: true }).selectOption(JSON.stringify('demo-regions'));
+  await page.getByRole('button', { name: 'Stage input', exact: true }).click();
+  await page.getByRole('button', { name: '＋ Change data type', exact: true }).click();
+  await page.getByLabel('Column', { exact: true }).selectOption('revenue');
+  await page.getByLabel('New type', { exact: true }).selectOption('INTEGER');
+  await page.getByRole('button', { name: 'Apply step', exact: true }).click();
+  await page.getByRole('button', { name: '＋ Join', exact: true }).click();
+  await page.getByRole('button', { name: 'Apply step', exact: true }).click();
+  await page.getByRole('button', { name: 'Configure step', exact: true }).click();
+  await page.locator('.prep-workspace').scrollIntoViewIfNeeded();
   await hold(2200);
 
   // 5. Data source connector gallery. End.
@@ -212,5 +224,5 @@ try {
 }
 
 // Assembly (run after):
-// ffmpeg -y -framerate 10 -i .opensight/issue-57/gif/frames/f%03d.png -vf "scale=960:-1:flags=lanczos,palettegen" .opensight/issue-57/gif/palette.png
-// ffmpeg -y -framerate 10 -i .opensight/issue-57/gif/frames/f%03d.png -i .opensight/issue-57/gif/palette.png -lavfi "scale=960:-1:flags=lanczos[x];[x][1:v]paletteuse" .opensight/issue-57/gif/opensight-tour.gif
+// ffmpeg -y -framerate 10 -i .opensight/issue-58/gif/frames/f%03d.png -vf "scale=960:-1:flags=lanczos,palettegen" .opensight/issue-58/gif/palette.png
+// ffmpeg -y -framerate 10 -i .opensight/issue-58/gif/frames/f%03d.png -i .opensight/issue-58/gif/palette.png -lavfi "scale=960:-1:flags=lanczos[x];[x][1:v]paletteuse" .opensight/issue-58/gif/opensight-tour.gif
