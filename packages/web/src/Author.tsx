@@ -16,6 +16,7 @@ import { QSidePanel } from './QSidePanel.js';
 import { BuildForMe } from './BuildForMe.js';
 import { FormattingEditor } from './FormattingEditor.js';
 import { PivotOptionsEditor } from './PivotOptionsEditor.js';
+import { CardTitle } from './PropertiesSections.js';
 import { hasLegend, hasDataLabels, LEGEND_POSITIONS, type LegendPosition, type VisualFormatting } from './formatting.js';
 import { LIGHT_THEME, themeValid, type AnalysisTheme } from './themes.js';
 import { functionCatalog } from '@opensight/query-engine/browser';
@@ -433,7 +434,6 @@ function Properties({ visual, draft, dispatch, client, runtimeProblems }: Editor
   const formatting = visual.formatting ?? {};
   const setFormatting = (patch: Partial<VisualFormatting>) => dispatch({ type: 'formatting', formatting: { ...formatting, ...patch } });
   const toggles: { property: 'titleVisible' | 'legend' | 'labels' | 'horizontal' | 'stacked' | 'totals' | 'subtotals'; label: string }[] = [
-    { property: 'titleVisible', label: 'Show title' },
     ...(hasLegend(visual.kind) ? [{ property: 'legend' as const, label: 'Show legend' }] : []),
     ...(hasDataLabels(visual.kind) ? [{ property: 'labels' as const, label: 'Show data labels' }] : []),
     ...(['bar', 'bar100'].includes(visual.kind) ? [{ property: 'horizontal' as const, label: 'Horizontal bars' }] : []),
@@ -451,10 +451,7 @@ function Properties({ visual, draft, dispatch, client, runtimeProblems }: Editor
     </div>
     <div role="tabpanel" id={`${tabId}-panel-Visual`} aria-labelledby={`${tabId}-Visual`} hidden={tab !== 'Visual'}>
     <details className="property-section" open><summary>Display settings</summary>
-    <label>Title<input value={visual.title} placeholder="Generated from fields" onChange={e => dispatch({ type: 'title', title: e.target.value })} /></label>
-    <label>Title font size<input type="number" min="8" max="48" value={formatting.titleFontSize ?? 14} onChange={e => setFormatting({ titleFontSize: Number(e.target.value) })} /></label>
-    <label>Subtitle<input value={visual.subtitle ?? ''} onChange={e => dispatch({ type: 'subtitle', subtitle: e.target.value, visible: visual.subtitleVisible !== false })} /></label>
-    <label className="toggle"><input type="checkbox" checked={visual.subtitleVisible !== false} onChange={e => dispatch({ type: 'subtitle', subtitle: visual.subtitle ?? '', visible: e.target.checked })} />Show subtitle</label>
+    <CardTitle visual={visual} dispatch={dispatch} />
     {toggles.map(({ property, label }) => <label className="toggle" key={property}><input type="checkbox" checked={visual[property]} onChange={e => dispatch({ type: 'display', property, value: e.target.checked })} />{label}</label>)}
     {hasLegend(visual.kind) && <label>Legend position<select value={formatting.legendPosition ?? 'BOTTOM'} onChange={e => dispatch({ type: 'legend-position', position: e.target.value as LegendPosition })}>{LEGEND_POSITIONS.map(position => <option key={position} value={position}>{position === 'AUTO' ? 'Auto (bottom)' : position[0] + position.slice(1).toLowerCase()}</option>)}</select></label>}
     {visual.kind === 'insight' && <InsightOptions visual={visual} dispatch={dispatch} />}

@@ -48,7 +48,7 @@ test('visual formatting and interaction edits survive tab switches and stay on t
   d = authorReducer(d, { type: 'parameter-add', parameter: { name: 'Region', type: 'string', multiple: false, defaultValues: ['East'], values: ['East'] } });
   const untouched = structuredClone(activeSheet(d).visuals[0]);
   const ui = await mount(t, d);
-  await ui.change('Title', 'Selected pivot');
+  await ui.change('Edit title', 'Selected pivot');
   await ui.change('region', 'Territory'); await ui.change('revenue', 'Sales');
   await ui.change('Metric placement', 'rows', 'select');
   await ui.switch('Interaction');
@@ -87,7 +87,7 @@ test('section visibility remains specific to each kind; no selected visual retai
 
 test('display controls update rendered settings and retain independent interaction state', async t => {
   const ui = await mount(t, add('bar'));
-  await ui.change('Subtitle', 'Regional sales');
+  await ui.change('Edit subtitle', 'Regional sales');
   await ui.change('Title font size', '24');
   await ui.change('Legend position', 'RIGHT', 'select');
   await ui.change('Data label decimal places', '3');
