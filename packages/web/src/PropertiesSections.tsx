@@ -1,5 +1,6 @@
 import { useId, type Dispatch, type ReactNode } from 'react';
 import type { AuthorAction, AuthorVisual } from './authoring.js';
+import { hasSmallMultiplesWell } from './authoring.js';
 
 type SectionProps = { visual: AuthorVisual; dispatch: Dispatch<AuthorAction> };
 
@@ -41,4 +42,37 @@ export function CardLayout() {
       <label>Padding<select defaultValue="24px"><option>24px</option></select></label>
     </Unavailable>
   </section>;
+}
+
+function TextButtons({ label, alignment = false }: { label: string; alignment?: boolean }) {
+  return <>
+    <div className="property-inline" role="group" aria-label={`${label} emphasis`}>
+      <button type="button" aria-label={`${label} bold`}><b>B</b></button>
+      <button type="button" aria-label={`${label} italic`}><i>I</i></button>
+      <button type="button" aria-label={`${label} underline`}><u>U</u></button>
+    </div>
+    {alignment && <div className="property-inline" role="group" aria-label={`${label} alignment`}>
+      {['Left', 'Center', 'Right'].map(value => <button type="button" key={value} aria-label={`${label} align ${value.toLowerCase()}`}>{value}</button>)}
+    </div>}
+  </>;
+}
+
+export function MultiplesOptions({ visual }: Pick<SectionProps, 'visual'>) {
+  if (!hasSmallMultiplesWell(visual.kind) && !visual.smallMultiples?.length) return null;
+  return <details className="property-section"><summary>Multiples Options</summary>
+    <Unavailable label="Multiples options controls" reason="Faceted preview and panel styling are not supported yet. These reference defaults are not applied; Small multiples field assignments remain saved in the draft.">
+      <h4 className="property-caption">Layout</h4>
+      <div className="property-inline">
+        <label>Visible rows<input placeholder="Auto" /></label><label>Visible columns<input placeholder="Auto" /></label>
+      </div>
+      <label>Number of panels<input placeholder="20 (Default)" /></label>
+      <label className="toggle"><input type="checkbox" />Panel title</label>
+      <label>Title options<select defaultValue="Small"><option>Small</option></select></label>
+      <TextButtons label="Panel title" alignment />
+      <label className="toggle"><input type="checkbox" />Panel border</label>
+      <label>Border options<select defaultValue="1px"><option>1px</option></select></label>
+      <label className="toggle"><input type="checkbox" />Panel gutter</label>
+      <label className="toggle"><input type="checkbox" />Panel background</label>
+    </Unavailable>
+  </details>;
 }

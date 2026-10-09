@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { act, createElement, useReducer } from 'react';
 import { create } from 'react-test-renderer';
-import { CardTitle, CardStyle, CardLayout } from '../build/test/PropertiesSections.js';
+import { CardTitle, CardStyle, CardLayout, MultiplesOptions } from '../build/test/PropertiesSections.js';
 import { activeSheet, authorReducer, emptyDraft, parseDraft } from '../build/test/authoring.js';
 import { compileVisual } from '../build/test/compiler.js';
 import { buildAuthorVisual } from '../build/test/author-preview.js';
@@ -74,4 +74,15 @@ test('CARD LAYOUT exposes disabled 24px reference padding with an accessible rea
   const group = unavailable(ui.root, 'Card layout controls', /Per-card padding is not supported/);
   assert.equal(group.findByType('select').props.defaultValue, '24px');
   assert.equal(ui.visual().formatting, undefined); ui.verifySaved();
+});
+
+
+test('Multiples Options provides the complete disabled layout and typography controls', async t => {
+  const ui = await mount(t, MultiplesOptions);
+  const group = unavailable(ui.root, 'Multiples options controls', /Faceted preview and panel styling are not supported/);
+  const labels = group.findAllByType('label').map(n => n.children.filter(c => typeof c === 'string').join(''));
+  assert.deepEqual(labels, ['Visible rows', 'Visible columns', 'Number of panels', 'Panel title', 'Title options', 'Panel border', 'Border options', 'Panel gutter', 'Panel background']);
+  assert.equal(group.findByProps({ placeholder: '20 (Default)' }).type, 'input');
+  for (const action of ['bold', 'italic', 'underline', 'align left', 'align center', 'align right']) assert.ok(group.findByProps({ 'aria-label': `Panel title ${action}` }));
+  assert.equal(ui.visual().smallMultiples, undefined); ui.verifySaved();
 });

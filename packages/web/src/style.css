@@ -425,6 +425,8 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .property-inline > * { flex: 1; min-width: 0; }
 .property-inline input[type=color] { flex: 0 0 24px; width: 24px; height: 24px; padding: 0; }
 .property-control-row { display: grid; gap: 4px; margin: 8px 0; }
+.property-caption { margin: 8px 0; font-size: 12px; font-weight: 600; }
+.property-inline + .property-inline { margin-top: 4px; }
 .properties-tabs { display: flex; gap: 12px; margin-bottom: 8px; }
 .properties-tabs button { border: 0; border-radius: 0; padding: 4px 2px; background: transparent; color: inherit; font-size: 12px; }
 .properties-tabs button[aria-selected=true] { border-bottom: 3px solid #16859b; font-weight: 700; }
