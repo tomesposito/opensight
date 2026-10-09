@@ -19,10 +19,12 @@ const preview = () => page.getByRole('tab', { name: 'Preview', exact: true });
 const drag = async (source, target, { indicator, valid = true, after = false } = {}) => {
   await source.scrollIntoViewIfNeeded(); await target.scrollIntoViewIfNeeded();
   const a = await source.boundingBox(), b = await target.boundingBox();
+  const horizontal = await target.evaluate(n => n.tagName === 'TH');
+  const targetX = b.x + (horizontal ? (after ? b.width - 3 : 3) : b.width / 2);
   await page.mouse.move(a.x + a.width / 2, a.y + a.height / 2); await page.mouse.down();
   await page.mouse.move(a.x + a.width / 2 + 8, a.y + a.height / 2, { steps: 4 });
-  await page.mouse.move(b.x + b.width / 2, b.y + (after ? b.height - 3 : 3), { steps: 10 });
-  await page.mouse.move(b.x + b.width / 2 + 1, b.y + (after ? b.height - 3 : 3));
+  await page.mouse.move(targetX, b.y + (after ? b.height - 3 : 3), { steps: 10 });
+  await page.mouse.move(targetX + 1, b.y + (after ? b.height - 3 : 3));
   if (valid) await page.locator('[data-prep-drop]').waitFor();
   else assert.equal(await page.locator('[data-prep-drop]').count(), 0);
   if (indicator) await page.screenshot({ path: resolve(out, `${indicator}.png`), fullPage: true });
@@ -168,6 +170,14 @@ try {
   });
   assert.deepEqual(overlaps, []);
   await button('Fit pipeline to view').click();
+  const fittedBounds = await page.locator('.prep-viewport').evaluate(viewport => {
+    const outer = viewport.getBoundingClientRect();
+    return [...viewport.querySelectorAll('.prep-node, .prep-output')].every(node => {
+      const box = node.getBoundingClientRect();
+      return box.left >= outer.left - 1 && box.right <= outer.right + 1 && box.top >= outer.top - 1 && box.bottom <= outer.bottom + 1;
+    });
+  });
+  assert.equal(fittedBounds, true, 'fit includes every node across the branches');
   await capture('prep-branches');
   await button('New').click();
   await button('＋ Select columns').click();
