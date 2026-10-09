@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { request as httpRequest } from 'node:http';
-import { createApiClient } from '../build/test/api-client.js';
-import { authFixture } from '../../api/test/hosted-helpers.mjs';
-import { createHostedApiServer } from '../../api/dist/hosted-server.js';
+import { createApiClient } from '../packages/web/build/test/api-client.js';
+import { authFixture } from '../packages/api/test/hosted-helpers.mjs';
+import { createHostedApiServer } from '../packages/api/dist/hosted-server.js';
 
 // Real durable SQLite + password verifier + TOTP. The adapter only supplies the
 // trusted reverse-proxy Host; route bodies and authorization are the web client's.
