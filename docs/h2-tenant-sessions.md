@@ -22,7 +22,7 @@ metadata, a verifier and the following environment configuration:
 | `OPENSIGHT_AUTH_SIGNING_KEY` | Random 32-byte key, canonical base64 |
 | `OPENSIGHT_AUTH_ENCRYPTION_KEY` | Separate random 32-byte key, canonical base64 |
 | `OPENSIGHT_OPERATOR_KEY` | Third random 32-byte key, canonical base64 |
-| `OPENSIGHT_SESSION_SECONDS` | Explicit integer, 1–86400; no default |
+| `OPENSIGHT_SESSION_SECONDS` | Explicit integer, 900–36000; no default |
 | `OPENSIGHT_INVITATION_SECONDS` | Explicit integer, 1–604800; no default |
 
 The lifetime ceilings are implementation guards, not an HQ-7 embed lifetime

@@ -98,7 +98,7 @@ implemented configuration and API request shapes:
    `OPENSIGHT_AUTH_SIGNING_KEY`, `OPENSIGHT_AUTH_ENCRYPTION_KEY` and
    `OPENSIGHT_OPERATOR_KEY`. Use your environment/secret manager, never the repo,
    browser storage, URLs or `VITE_*` variables.
-4. Set explicit integer lifetimes: `OPENSIGHT_SESSION_SECONDS` (1–86400) and
+4. Set explicit integer lifetimes: `OPENSIGHT_SESSION_SECONDS` (900–36000) and
    `OPENSIGHT_INVITATION_SECONDS` (1–604800). Configure invitation SMTP with
    `OPENSIGHT_SMTP_HOST` and `OPENSIGHT_SMTP_FROM`; `OPENSIGHT_SMTP_PORT` defaults
    to 465 for implicit TLS. If authentication is needed, supply both

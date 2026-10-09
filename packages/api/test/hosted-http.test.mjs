@@ -31,6 +31,13 @@ async function serving(t, f, options = {}) {
   });
   return { request, operator: { authorization: `Operator ${f.config.operatorKey.toString('base64url')}` } };
 }
+test('Issue #63: HQ-7 bounds hosted sessions to 15–600 minutes', () => {
+  const env = environment();
+  for (const seconds of ['900', '3600', '36000']) assert.equal(hostedConfig({ ...env, OPENSIGHT_SESSION_SECONDS: seconds }).sessionSeconds, Number(seconds));
+  for (const seconds of [undefined, '0', '1', '899', '36001', '86400', '900.5', '0900']) {
+    assert.throws(() => hostedConfig({ ...env, OPENSIGHT_SESSION_SECONDS: seconds }), { code: 'HOSTED_CONFIG_INVALID' });
+  }
+});
 test('H2 hosted startup refuses missing verifier, durable stores, trusted origin and missing schema', async t => {
   const f = await database(t), env = configEnv(f.config);
   await assert.rejects(createHostedApiServer({ membershipDatabase: f.db, tenantDatabase: f.db, env }), { code: 'HOSTED_VERIFIER_REQUIRED' });
