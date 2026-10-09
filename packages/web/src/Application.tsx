@@ -16,6 +16,7 @@ import type { createApiClient } from './api-client.js';
 import type { ResourceKind } from './api-client.js';
 import { buildApiPreview } from './api-preview.js';
 import { Analyses } from './Analyses.js';
+import { CreateAnalysisDialog } from './CreateAnalysisDialog.js';
 import { AppLink, AppNavigation, useAppRoute } from './AppNavigation.js';
 import { pages, routeProblem } from './app-navigation.js';
 import { draftStorageKey } from './local-drafts.js';
@@ -35,12 +36,14 @@ function ApplicationWorkspace({ api, fixtures }: { api: ReturnType<typeof create
   const { route, navigate, entry } = useAppRoute();
   const [uploadedSource, setUploadedSource] = useState<string>();
   const [authorDataset, setAuthorDataset] = useState<AuthorDataset>();
+  const [newAnalysisChoice, setNewAnalysisChoice] = useState<{ entry: number; dataset?: AuthorDataset }>();
   const [sampleLoaded, setSampleLoaded] = useState(false);
   const [fixtureId, setFixtureId] = useState(access.mode === 'demo' ? fixtures.find(f => f.id === 'renderable-sales')?.id ?? fixtures[0]?.id : fixtures[0]?.id);
   const fixture = fixtures.find(f => f.id === fixtureId);
   const sample = fixtures.find(f => f.id === 'renderable-sales');
   const mode = route?.page;
   const problem = mode && routeProblem(access, mode);
+  const choosingDataset = !problem && route?.page === 'author' && route.newAnalysis && newAnalysisChoice?.entry !== entry;
   useEffect(() => { if (typeof document !== 'undefined') document.title = `${route ? pages[route.page].title : 'Page not found'} · OpenSight`; }, [mode]);
   const content = () => {
     if (!route) return <section><h1>Page not found</h1><p>Choose a section above to continue.</p><AppLink to={{ page: 'home' }} navigate={navigate}>Go to Home</AppLink></section>;
@@ -49,7 +52,7 @@ function ApplicationWorkspace({ api, fixtures }: { api: ReturnType<typeof create
       case 'home': return access.mode === 'local' && !sampleLoaded ? <LocalEmptyState onSources={() => navigate({ page: 'data-sources' })} onSample={() => setSampleLoaded(true)} /> : sample ? <Dashboard key="sample" fixture={sample} sample /> : <p role="status">The sample dashboard is not included in this build. Ask the operator to restore the pinned sales sample.</p>;
       case 'dashboards': return <section className="local-empty-state"><h1>Dashboards</h1><EmptyPageState guidance="Build an analysis to get started."><AppLink className="primary-button" to={{ page: 'analyses' }} navigate={navigate}>My analyses</AppLink></EmptyPageState><p className="empty-page-note">Publishing dashboards needs a hosted API.</p></section>;
       case 'analyses': return <Analyses navigate={navigate} />;
-      case 'author': return <Author key={entry} sampleLoaded={sampleLoaded} onTrySample={() => setSampleLoaded(true)} inApp draftId={route.draftId} newAnalysis={route.newAnalysis} onDraftChange={draftId => navigate({ page: 'author', draftId }, true)} onSources={() => navigate({ page: 'data-sources' })} onDatasetChange={setAuthorDataset} dataset={route.draftId || route.newAnalysis ? undefined : authorDataset} onPrep={() => navigate({ page: 'data-prep' })} client={connected ? api : undefined} />;
+      case 'author': return choosingDataset ? <Analyses navigate={navigate} /> : <Author key={entry} sampleLoaded={sampleLoaded} onTrySample={() => setSampleLoaded(true)} inApp draftId={route.draftId} newAnalysis={route.newAnalysis} onDraftChange={draftId => navigate({ page: 'author', draftId }, true)} onSources={() => navigate({ page: 'data-sources' })} onDatasetChange={setAuthorDataset} dataset={route.draftId ? undefined : route.newAnalysis ? newAnalysisChoice?.dataset : authorDataset} onPrep={() => navigate({ page: 'data-prep' })} client={connected ? api : undefined} />;
       case 'data-prep': return <DataPrep initialSource={uploadedSource} onBuild={access.mode === 'local' ? dataset => { setAuthorDataset(dataset); navigate({ page: 'author' }); } : undefined} client={connected ? api : undefined} onSources={() => navigate({ page: 'data-sources' })} onAuthor={() => navigate({ page: 'author' })} />;
       case 'data-sources': return <DataSources local={access.mode === 'local'} onPrep={source => { setUploadedSource(source); navigate({ page: 'data-prep' }); }} client={connected ? api : undefined} />;
       case 'users': return <UserManagement client={api} />;
@@ -64,7 +67,11 @@ function ApplicationWorkspace({ api, fixtures }: { api: ReturnType<typeof create
   return <CommandPaletteProvider navigate={navigate}><div className="app-shell" data-workspace={access.mode}>
     <AppNavigation route={route} navigate={navigate}>{!problem && (mode === 'fixtures' || mode === 'api') && <label className="fixture-picker">Definition example<select value={fixtureId} onChange={event => setFixtureId(event.target.value)}>{fixtures.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}</select></label>}</AppNavigation>
     {access.mode === 'local' && <aside className="fixture-demo-banner" aria-label="Local data workspace"><span><strong>Local workspace</strong> · Files stay on this computer · Uploads survive restarts and expire after 24 hours</span>{sampleLoaded && <><span>Sample sales data loaded · Synthetic data</span><button type="button" onClick={() => setSampleLoaded(false)}>Remove sample data</button></>}</aside>}
-    <main className={mode === 'author' ? 'author-main' : undefined}>{content()}</main>
+    <main className={mode === 'author' && !choosingDataset ? 'author-main' : undefined}>{content()}</main>
+    {choosingDataset && <CreateAnalysisDialog client={connected ? api : undefined} sampleAvailable={access.mode === 'demo' || sampleLoaded} offline={!connected}
+      onSelect={dataset => { setAuthorDataset(dataset); setNewAnalysisChoice({ entry, dataset }); }}
+      onCreateDataset={connected ? () => navigate({ page: 'data-prep' }) : undefined}
+      onClose={() => navigate({ page: 'analyses' }, true)} />}
     <footer className="app-footer">OpenSight · Local rendering preview · visual fidelity not measured</footer>
     <BackToTop />
   </div></CommandPaletteProvider>;

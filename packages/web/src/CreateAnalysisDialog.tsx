@@ -7,6 +7,7 @@ interface Props {
   client?: Pick<QueryClient, 'listPrepSources'>;
   sampleAvailable?: boolean;
   offline?: boolean;
+  selectionError?: string;
   onSelect: (dataset?: AuthorDataset) => void;
   onCreateDataset?: () => void;
   onClose: () => void;
@@ -43,7 +44,7 @@ function SourceIcon({ source }: { source: Choice['source'] }) {
   </svg>;
 }
 
-export function CreateAnalysisDialog({ client, sampleAvailable = false, offline = false, onSelect, onCreateDataset, onClose }: Props) {
+export function CreateAnalysisDialog({ client, sampleAvailable = false, offline = false, selectionError, onSelect, onCreateDataset, onClose }: Props) {
   const id = useId(), ref = useRef<HTMLDialogElement>(null), searchRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState(''), [selected, setSelected] = useState('');
   const [page, setPage] = useState(0), [pageSize, setPageSize] = useState(25), [revision, setRevision] = useState(0);
@@ -101,6 +102,7 @@ export function CreateAnalysisDialog({ client, sampleAvailable = false, offline 
         </div>
       </div>
       <p id={`${id}-topics`} className="dataset-picker-note">Topics need a hosted API with topic support.{!onCreateDataset && ' Creating datasets needs a local or hosted API.'}</p>
+      {selectionError && <p role="alert">{selectionError}</p>}
       <footer className="create-analysis-actions"><button type="button" onClick={onClose}>Cancel</button><button type="submit" className="dataset-picker-select" disabled={!selection}>Select</button></footer>
     </form>
   </dialog>;

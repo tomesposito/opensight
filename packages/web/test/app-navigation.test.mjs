@@ -98,6 +98,9 @@ test('Analyses lists the #32 collection, renames/deletes it, and opens its exact
 test('New analysis starts blank, saves a new entry and updates its reloadable URL without remounting the editor', async t => {
   const ui = await mount(t, demoAccess, '#/analyses', store => store.save(authored('Existing chart')));
   await ui.link('New analysis');
+  assert.equal(ui.root.findAllByType(AuthorCanvas).length, 0, 'The dataset dialog precedes the Author');
+  await act(() => ui.root.findByProps({ type: 'radio' }).props.onChange());
+  await act(() => ui.root.findByType('dialog').findByType('form').props.onSubmit({ preventDefault() {} }));
   const canvas = ui.root.findByType(AuthorCanvas);
   assert.equal(canvas.props.draft.title, 'Untitled analysis');
   assert.equal(canvas.props.draft.sheets[0].visuals.length, 0);

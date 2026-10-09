@@ -31,11 +31,13 @@ async function mount(t, props = {}, access = { mode: 'local' }, blocked = false)
   };
 }
 test('Save, reload, reopen, rename and delete work through the author UI', async t => {
-  const ui = await mount(t);
+  const ui = await mount(t, { sampleLoaded: true });
   await act(() => ui.find('input', p => p.value === 'Untitled analysis').props.onChange({ target: { value: 'Saved chart' } }));
   await ui.click('Save draft'); assert.equal(ui.store.restore().draft.title, 'Saved chart');
   await ui.reload(); assert.match(ui.text(), /Saved chart/);
   await ui.click('New analysis');
+  await act(() => ui.renderer.root.findByType('dialog').findByProps({ type: 'radio' }).props.onChange());
+  await act(() => ui.renderer.root.findByType('dialog').findByType('form').props.onSubmit({ preventDefault() {} }));
   await act(() => ui.find('input', p => p.value === 'Untitled analysis').props.onChange({ target: { value: 'Second chart' } }));
   await ui.click('Save draft'); assert.equal(ui.store.list().length, 2);
   const row = name => ui.renderer.root.findByType(LocalDrafts).findAllByType('li').find(n => n.findByType('strong').props.children === name);
