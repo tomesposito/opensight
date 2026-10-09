@@ -421,6 +421,10 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .property-section .property-unavailable { border: 0; padding: 0; margin: 0; min-width: 0; }
 .property-unavailable .field-hint { margin: 4px 0 8px; }
 .property-unavailable :is(input, select, textarea, button):disabled { cursor: not-allowed; opacity: .65; }
+.property-inline { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.property-inline > * { flex: 1; min-width: 0; }
+.property-inline input[type=color] { flex: 0 0 24px; width: 24px; height: 24px; padding: 0; }
+.property-control-row { display: grid; gap: 4px; margin: 8px 0; }
 .properties-tabs { display: flex; gap: 12px; margin-bottom: 8px; }
 .properties-tabs button { border: 0; border-radius: 0; padding: 4px 2px; background: transparent; color: inherit; font-size: 12px; }
 .properties-tabs button[aria-selected=true] { border-bottom: 3px solid #16859b; font-weight: 700; }

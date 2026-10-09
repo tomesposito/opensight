@@ -23,3 +23,14 @@ export function CardTitle({ visual, dispatch }: SectionProps) {
     </Unavailable>
   </section>;
 }
+
+export function CardStyle() {
+  return <section className="property-group" aria-label="Card style"><h4>CARD STYLE</h4>
+    <Unavailable label="Card style controls" reason="Per-card background, border, selection and loading animation settings are not supported yet. Shown placeholders are reference defaults, not applied settings.">
+      <div className="property-control-row"><span>Background</span><div className="property-inline"><input type="color" aria-label="Background color" defaultValue="#ffffff" /><input aria-label="Background opacity (%)" placeholder="85%" /></div></div>
+      <div className="property-control-row"><span>Border</span><div className="property-inline"><input type="color" aria-label="Border color" defaultValue="#cccccc" /><input aria-label="Border opacity (%)" placeholder="100%" /><select aria-label="Border width" defaultValue="1px"><option>1px</option></select></div></div>
+      <div className="property-control-row"><span>Selection</span><div className="property-inline"><input type="color" aria-label="Selection color" defaultValue="#000000" /><input aria-label="Selection opacity (%)" placeholder="100%" /></div></div>
+      <label className="toggle"><input type="checkbox" />Loading animation</label>
+    </Unavailable>
+  </section>;
+}

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { act, createElement, useReducer } from 'react';
 import { create } from 'react-test-renderer';
-import { CardTitle } from '../build/test/PropertiesSections.js';
+import { CardTitle, CardStyle } from '../build/test/PropertiesSections.js';
 import { activeSheet, authorReducer, emptyDraft, parseDraft } from '../build/test/authoring.js';
 import { compileVisual } from '../build/test/compiler.js';
 import { buildAuthorVisual } from '../build/test/author-preview.js';
@@ -56,4 +56,14 @@ test('CARD TITLE edits survive storage, affect compilation, and leave the other 
   assert.equal(model.formatting.titleFontSize, 24);
   unavailable(ui.root, 'Alt text', /Custom alt text is not supported/);
   ui.verifySaved();
+});
+
+
+test('CARD STYLE shows reference controls without handlers or persisted fake settings', async t => {
+  const ui = await mount(t, CardStyle);
+  const before = structuredClone(ui.visual());
+  const group = unavailable(ui.root, 'Card style controls', /not supported yet.*reference defaults, not applied/);
+  for (const label of ['Background opacity (%)', 'Border opacity (%)', 'Border width', 'Selection opacity (%)']) assert.ok(group.findByProps({ 'aria-label': label }));
+  assert.equal(group.findAllByType('label').filter(n => n.children.includes('Loading animation')).length, 1);
+  assert.deepEqual(ui.visual(), before); ui.verifySaved();
 });
