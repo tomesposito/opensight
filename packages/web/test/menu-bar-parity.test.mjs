@@ -112,3 +112,18 @@ test('Insert adds sheets, empty visuals and insights through the reducer and gua
   }
   assert.equal(ui.calls.length, 3, 'disabled insert actions do not dispatch');
 });
+
+test('Sheets retains add and switching, offers rename, and explains unsupported sheet features', async t => {
+  const draft = authorReducer(emptyDraft(), { type: 'sheet-add' });
+  const ui = await mount(t, { draft });
+  assert.deepEqual(ui.labels('Sheets'), ['Add Sheet', 'Duplicate Sheet', 'Rename Sheet', 'Add Title', 'Add Description', 'Layout Settings', 'Sheet 1', 'Sheet 2']);
+  await ui.click('Sheets', 'Add Sheet'); await ui.click('Sheets', 'Sheet 1');
+  assert.deepEqual(ui.calls, [{ type: 'sheet-add' }, { type: 'sheet-select', id: 'sheet-1' }]);
+  for (const label of ['Duplicate Sheet', 'Add Title', 'Add Description', 'Layout Settings']) {
+    assert.equal(ui.item('Sheets', label).props['aria-disabled'], true); assert.match(ui.item('Sheets', label).props.title, /not supported/);
+    await ui.click('Sheets', label);
+  }
+  assert.equal(ui.calls.length, 2);
+  await ui.update({ dataAvailable: false });
+  assert.equal(ui.item('Sheets', 'Rename Sheet').props['aria-disabled'], false, 'sheet tabs also exist before adding data');
+});

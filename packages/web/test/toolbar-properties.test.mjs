@@ -70,7 +70,7 @@ test('toolbar exposes all seven menus, callbacks, busy guards and honest publish
   assert.deepEqual(ui.renderer.root.findAllByType('summary').map(n => n.props.children), ['File', 'Edit', 'Data', 'Insert', 'Sheets', 'Objects', 'Search']);
   for (const label of ['Import', 'Exports', 'Download .qs', 'Export JSON', 'FIT TO WIDTH']) await ui.click(label);
   assert.deepEqual(calls, ['import', 'bundle', 'json', 'fit']);
-  await ui.click('Add Visual'); await ui.click('Add sheet'); await ui.click('Remove selected visual');
+  await ui.click('Add Visual'); await ui.click('Add Sheet'); await ui.click('Remove selected visual');
   assert.deepEqual(calls.slice(4), [{ type: 'add', kind: 'bar' }, { type: 'sheet-add' }, { type: 'remove', id: 'visual-1' }]);
   await ui.click('Add visual');
   assert.equal(calls.length, 7, 'Add visual focuses the gallery instead of dispatching a visual action');

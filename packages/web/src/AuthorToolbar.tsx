@@ -93,7 +93,18 @@ export function AuthorToolbar({ onPrep, onSources, draft, dispatch, fit, onFit, 
         <AuthorMenuItem label="Add Filter" reason={needsData ?? (!selected ? 'Select a visual to add a filter.' : undefined)} run={() => focus('[data-author-control="filters"]', 'Interaction')} />
         <AuthorMenuItem label="Add Parameter" reason={needsData} run={() => activate('[data-author-control="add-parameter"]')} />
       </div></details>
-      <details name="analysis-menu"><summary>Sheets</summary><div className="menu-popover">{draft.sheets.map(s => <button type="button" key={s.id} onClick={() => dispatch({ type: 'sheet-select', id: s.id })}>{s.name}</button>)}<button type="button" onClick={() => dispatch({ type: 'sheet-add' })}>Add sheet</button></div></details>
+      <details name="analysis-menu"><summary>Sheets</summary><div className="menu-popover">
+        <AuthorMenuItem label="Add Sheet" run={() => dispatch({ type: 'sheet-add' })} />
+        <AuthorMenuItem label="Duplicate Sheet" reason="Sheet duplication is not supported yet." />
+        <AuthorMenuItem label="Rename Sheet" run={() => activate('[data-author-control="rename-sheet"]')} />
+        <hr />
+        <AuthorMenuItem label="Add Title" reason="Sheet title objects are not supported yet. Rename Sheet changes the sheet name." />
+        <AuthorMenuItem label="Add Description" reason="Sheet descriptions are not supported yet." />
+        <hr />
+        <AuthorMenuItem label="Layout Settings" reason="Sheet layout settings are not supported yet. Drag or resize visuals on the canvas; FIT TO WIDTH changes the preview width." />
+        <hr />
+        <div role="group" aria-label="Switch sheet">{draft.sheets.map(s => <AuthorMenuItem key={s.id} label={s.name} run={() => dispatch({ type: 'sheet-select', id: s.id })} />)}</div>
+      </div></details>
       <details name="analysis-menu"><summary>Objects</summary><div className="menu-popover">{sheet.visuals.map(v => <button key={v.id} type="button" onClick={() => dispatch({ type: 'select', id: v.id })}>{v.title || v.id} · {v.kind}</button>)}{selected && <button type="button" onClick={() => dispatch({ type: 'remove', id: selected.id })}>Remove selected visual</button>}{!sheet.visuals.length && <p>No visuals on this sheet.</p>}</div></details>
       <details name="analysis-menu"><summary>Search</summary><div className="menu-popover"><label>Search analysis<input className="analysis-search" aria-keyshortcuts="Meta+F Control+F" type="search" value={search} onChange={e => setSearch(e.target.value)} /></label>{draft.sheets.flatMap(s => s.visuals.filter(v => `${v.title} ${v.kind} ${v.id}`.toLowerCase().includes(search.toLowerCase())).map(v => <button key={v.id} type="button" onClick={() => { dispatch({ type: 'sheet-select', id: s.id }); dispatch({ type: 'select', id: v.id }); }}>{s.name} / {v.title || v.id}</button>))}<p>Fields: {(dataAvailable ? dataFields(draft.calculatedFields, draft.dataset) : []).filter(f => f.name.toLowerCase().includes(search.toLowerCase())).map(f => f.name).join(', ') || 'No matches'}</p></div></details>
       {oEntry}<div className="menu-spacer" /><button type="button" disabled={!dataAvailable} onClick={() => focus('.visual-gallery button')}>Add visual</button><button type="button" aria-pressed={fit} title={fit ? 'Fit is on; switch to 1200 pixel canvas' : 'Fit canvas to available width'} onClick={onFit}>FIT TO WIDTH</button><button type="button" onClick={publish}>PUBLISH</button>

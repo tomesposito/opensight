@@ -32,3 +32,9 @@ visuals. Q opens the existing local deterministic question panel, preserving
 its no-AI/hosted disclosures. Calculated fields, filters and parameters open
 their existing editors; filters require a selected visual. Text and image
 objects remain unavailable. Data-dependent actions are disabled without data.
+
+Sheets adds and renames sheets using the existing controls and retains sheet
+switching below the reference items. Sheet tabs also appear before data is
+added, so these actions have a visible result. Duplication, separate sheet
+title/description objects, and layout settings remain unavailable. Existing
+canvas dragging/resizing and FIT TO WIDTH are unchanged.

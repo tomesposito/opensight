@@ -187,7 +187,7 @@ function AuthorWorkspace({ sampleLoaded = false, onTrySample, client: apiClient,
     {noData ? <div className="author-layout author-layout-empty">
       <Panel title="Data" className="fields-panel"><p>No dataset selected.</p>{onSources && <button type="button" onClick={() => { if (drafts.keepCurrent()) onSources(); }}>Add data</button>}</Panel>
       <Panel title="Visuals" className="build-panel"><p>Add data to see fields and create visuals.</p></Panel>
-      <div className="author-center" role="region" aria-label="Analysis sheet"><div className="author-canvas"><LocalEmptyState title="Add data to your analysis" onSources={onSources ? () => { if (drafts.keepCurrent()) onSources(); } : undefined} onSample={onTrySample} /></div></div>
+      <div className="author-center" role="region" aria-label="Analysis sheet"><SheetTabs draft={draft} dispatch={dispatch} /><div className="author-canvas"><LocalEmptyState title="Add data to your analysis" onSources={onSources ? () => { if (drafts.keepCurrent()) onSources(); } : undefined} onSample={onTrySample} /></div></div>
     </div> : <AuthorCanvas draft={draft} dispatch={dispatch} client={client} fit={fit} sourceProblem={source.problem} />}
     {reportOpen && draft.bundle && <ImportReport draft={draft} onClose={() => {
       setReportOpen(false);
@@ -403,7 +403,7 @@ function SheetTabs({ draft, dispatch }: Omit<EditorProps, 'client'>) {
   return <div className="sheet-toolbar">
     <div className="sheet-tabs" role="tablist" aria-label="Analysis sheets">{draft.sheets.map(s => <button key={s.id} type="button" role="tab" aria-selected={s.id === sheet.id} onClick={() => { dispatch({ type: 'sheet-select', id: s.id }); setRename(undefined); }}>{s.name}</button>)}</div>
     <button type="button" onClick={() => dispatch({ type: 'sheet-add' })}>+ Add sheet</button>
-    <button type="button" onClick={() => setRename({ id: sheet.id, name: sheet.name })}>Rename sheet</button>
+    <button type="button" data-author-control="rename-sheet" onClick={() => setRename({ id: sheet.id, name: sheet.name })}>Rename sheet</button>
     <button type="button" disabled={draft.sheets.length === 1} onClick={() => { dispatch({ type: 'sheet-delete', id: sheet.id }); setRename(undefined); }}>Delete sheet</button>
     {sheet.visuals.some(v => v.imported && !v.imported.local) && <button type="button" onClick={() => dispatch({ type: 'sheet-remap', id: sheet.id })}>Remap sheet to local dataset</button>}
     {rename && <form className="rename-sheet" onSubmit={e => { e.preventDefault(); if (rename.name.trim()) { dispatch({ type: 'sheet-rename', ...rename }); setRename(undefined); } }}>
