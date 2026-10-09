@@ -97,3 +97,19 @@ is a local artifact, not a deployed server.
 Full-suite logs and exact totals are retained in ignored
 `.opensight/issue-61/verification/`; the suite runs without concurrent browser
 capture or GIF assembly.
+
+`TZ=UTC npm test` from the repository root exited **0**:
+**1,950 passed / 0 failed / 12 skipped / 0 cancelled**. Every skip requires
+live PostgreSQL (`DATABASE_URL` is not set); all web tests ran.
+
+| Runner | Passed | Failed | Skipped |
+| --- | ---: | ---: | ---: |
+| api | 304 | 0 | 10 |
+| bundle-parser | 199 | 0 | 0 |
+| embedding-sdk | 9 | 0 | 0 |
+| o-interpreter | 32 | 0 | 0 |
+| parity | 11 | 0 | 0 |
+| query-engine | 502 | 0 | 2 |
+| web | 887 | 0 | 0 |
+| root-conformance | 6 | 0 | 0 |
+| **Total** | **1,950** | **0** | **12** |
