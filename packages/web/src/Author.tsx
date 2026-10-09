@@ -4,7 +4,7 @@ import { ThemeEditor } from './ThemeEditor.js';
 import { DatasetHeader } from './DatasetHeader.js';
 import { CreateAnalysisDialog } from './CreateAnalysisDialog.js';
 import { FieldIcon } from './FieldIcon.js';
-import { AuthorToolbar } from './AuthorToolbar.js';
+import { AuthorToolbar, focusAuthorControl } from './AuthorToolbar.js';
 import { AuthorShortcuts } from './AuthorShortcuts.js';
 import { usePaletteCommands } from './CommandPalette.js';
 import { DraftSourceRecovery, useDraftSource } from './DraftSource.js';
@@ -213,6 +213,10 @@ function AuthorCommands({ draft, dispatch, onSave }: EditorProps & { onSave: () 
         dispatch({ type: 'chrome', mode }); notify(`Editor theme changed to ${mode}`);
       } },
       ...draft.sheets.map(sheet => ({ id: `sheet-${sheet.id}`, label: `Go to sheet: ${sheet.name}`, run: () => dispatch({ type: 'sheet-select', id: sheet.id }) })),
+      ...draft.sheets.flatMap(sheet => sheet.visuals.map(visual => ({
+        id: `visual-${sheet.id}-${visual.id}`, label: `Go to visual: ${sheet.name} / ${visual.title || visual.id}`,
+        keywords: `${visual.kind} ${visual.id}`, run: () => { dispatch({ type: 'sheet-select', id: sheet.id }); dispatch({ type: 'select', id: visual.id }); },
+      }))),
     ],
   }), [draft, dispatch, onSave, notify]));
   return null;
@@ -260,12 +264,17 @@ const FIELD_DRAG_TYPE = 'application/x-opensight-field';
 export function AuthorCanvas({ draft, dispatch, client, fit = true, sourceProblem }: EditorProps & { fit?: boolean; sourceProblem?: string }) {
   const [newKind, setNewKind] = useState<VisualKind>('bar');
   const [search, setSearch] = useState('');
+  const fieldSearch = useRef<HTMLInputElement>(null);
   const [collapsedGroups, setCollapsedGroups] = useState<Partial<Record<FieldGroup, boolean>>>({});
   const [searchCollapsedGroups, setSearchCollapsedGroups] = useState<Partial<Record<FieldGroup, boolean>>>({});
   const fieldIconId = useId();
   const [well, setWell] = useState<Well>('rows');
   const [calculationOpen, setCalculationOpen] = useState(false);
   const sheet = activeSheet(draft), fields = dataFields(draft.calculatedFields, draft.dataset);
+  usePaletteCommands(useMemo(() => ({ commands: dataFields(draft.calculatedFields, draft.dataset).map(field => ({
+    id: `field-${field.name}`, label: `Find field: ${field.name}`, keywords: field.type,
+    run: () => { setSearch(field.name); setSearchCollapsedGroups({}); focusAuthorControl(fieldSearch.current, '[data-author-control="field-search"]'); },
+  })) }), [draft.calculatedFields, draft.dataset]));
   const query = search.trim().toLowerCase();
   const matchingFields = fields.filter(f => f.name.toLowerCase().includes(query));
   const interactionKey = JSON.stringify([draft.dataset?.id, sheet.id, sheet.visuals.map(v => [v.id, v.kind, v.dimension, v.rows, v.columns, v.measures, v.smallMultiples, v.filters, v.filterActions, v.urlActions, v.navigationActions, v.hierarchy, v.imported]), draft.sheets.map(s => [s.id, s.imported?.memberPath]), draft.parameters, draft.calculatedFields, !!client]);
@@ -293,7 +302,7 @@ export function AuthorCanvas({ draft, dispatch, client, fit = true, sourceProble
     <div className="author-layout">
       <Panel title="Data" className="fields-panel">
         <DatasetHeader datasetId={draft.dataset?.id} datasetName={draft.dataset?.name} client={client} />
-        <label>Search fields<input type="search" value={search} onChange={e => { setSearch(e.target.value); setSearchCollapsedGroups({}); }} placeholder="Search fields" /></label>
+        <label>Search fields<input ref={fieldSearch} data-author-control="field-search" type="search" value={search} onChange={e => { setSearch(e.target.value); setSearchCollapsedGroups({}); }} placeholder="Search fields" /></label>
         <button type="button" className="calculation-button" onClick={() => setCalculationOpen(true)}>+ Calculated field</button>
         <p className="field-hint">{selected ? 'Click a field to assign it.' : 'Click a field to create a bar.'} Dimensions: {dimensionDestination}. Measures: VALUE.</p>
         {FIELD_GROUPS.filter(group => matchingFields.some(f => fieldGroup(f) === group)).map(group => <details key={group} className="field-group" open={!(query ? searchCollapsedGroups : collapsedGroups)[group]} onToggle={e => {

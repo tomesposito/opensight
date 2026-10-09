@@ -166,3 +166,25 @@ test('removing a command context while open removes options and resets the activ
   assert.equal(ui.selected(), 'Go to Home');
   assert.equal(ui.input().props['aria-activedescendant'], ui.options()[0].props.id);
 });
+
+test('Search uses the single existing palette with guarded menu actions and resets its label on global open', async t => {
+  const ui = await mountPalette(t);
+  await ui.click('Search');
+  assert.equal(ui.renderer.root.findAllByType('dialog').length, 1);
+  assert.equal(ui.input().props.placeholder, 'Search analysis actions…');
+  assert.ok(ui.labels().includes('Insert: Add Visual'));
+  assert.ok(ui.labels().includes('File: Download .qs'), 'downloads are searchable before Exports is expanded');
+  for (const label of ['File: Share', 'Edit: Undo', 'Sheets: Duplicate Sheet', 'Objects: Format Object']) assert.ok(!ui.labels().includes(label), label);
+  await ui.run('Insert: Add Visual');
+  await ui.open(); assert.equal(ui.input().props.placeholder, 'Search commands…');
+  for (const label of ['Objects: Title', 'Objects: Actions', 'Objects: Legend']) assert.ok(ui.labels().includes(label));
+  await ui.run('Sheets: Add Sheet');
+  await ui.open(); assert.ok(!ui.labels().includes('Objects: Title'));
+  await ui.run('Go to visual: Sheet 1 / visual-1');
+  await ui.open(); assert.ok(ui.labels().includes('Objects: Title'));
+  await ui.run('Find field: revenue');
+  assert.equal(ui.renderer.root.findByProps({ 'data-author-control': 'field-search' }).props.value, 'revenue');
+  await ui.open(); await ui.run('Save draft');
+  const draft = ui.saved().draft;
+  assert.equal(draft.activeSheetId, 'sheet-1'); assert.equal(draft.sheets[0].selectedId, 'visual-1');
+});

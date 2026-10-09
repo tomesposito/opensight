@@ -27,7 +27,7 @@ retained below the reference items. Navigation checkpoints unsaved work using
 the existing draft guard. Add Parameter opens the existing editor and focuses
 the name; repeated activation keeps it open, with an explicit Cancel action.
 
-Insert creates sheets, empty bar visuals (change type in Visuals), and insight
+Insert creates sheets, bar visuals (change type in Visuals), and insight
 visuals. Q opens the existing local deterministic question panel, preserving
 its no-AI/hosted disclosures. Calculated fields, filters and parameters open
 their existing editors; filters require a selected visual. Text and image
@@ -47,3 +47,11 @@ require a selected visual. Visual selection and removal remain below them.
 Tooltips customization, highlights, reference lines, numeric placement,
 per-card style, visibility rules, forecast/anomaly authoring and CSV/Excel
 query-result exports explain their missing editor support.
+
+Search and Cmd/Ctrl+F open the #53 command palette with “Search analysis
+actions”. Cmd/Ctrl+K retains its global entry point. Enabled menu items
+register their own guarded callbacks with the same palette; unavailable
+commands are omitted. Sheet/visual navigation and field search are retained
+as commands, including finding visuals on another sheet. Menu registrations
+are removed on navigation. Search restores focus through the existing modal
+lifecycle; no second search implementation or dependency was added.

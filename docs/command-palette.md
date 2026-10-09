@@ -35,3 +35,9 @@ Browser checks cover native focus, keyboard operation, context changes and
 viewport fit against the freshly rebuilt static demo.
 
 ![Command palette in Author](images/command-palette.png)
+
+Issue #60 connects the Author **Search** entry and **Cmd/Ctrl+F** to this same
+palette, labelled **Search analysis actions**. It also registers enabled menu
+actions using their original callbacks, current visuals across sheets, and
+field lookup. Unavailable menu actions are omitted. Definitions exports are
+searchable even while File → Exports is collapsed.

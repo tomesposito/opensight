@@ -32,7 +32,8 @@ test('header keeps identity, menus, working O entry, canvas actions and NEW LOOK
   await ui.click('Save draft');
   assert.equal(ui.saved().title, 'Sales analysis');
   const nav = ui.find('nav', p => p['aria-label'] === 'Analysis menu');
-  assert.deepEqual(nav.children.map(n => n.type), [...Array(7).fill('details'), 'button', 'div', 'button', 'button', 'button', 'label']);
+  assert.deepEqual(nav.findAllByType('summary').map(n => n.props.children), ['File', 'Edit', 'Data', 'Insert', 'Sheets', 'Objects']);
+  assert.equal(nav.findByProps({ className: 'analysis-search' }).props.children, 'Search');
   assert.equal(nav.children[9].props.children, 'Add visual');
   assert.equal(nav.children[10].props.children, 'FIT TO WIDTH');
   assert.equal(nav.children[11].props.children, 'PUBLISH');
@@ -67,7 +68,7 @@ test('toolbar exposes all seven menus, callbacks, busy guards and honest publish
   let calls = [];
   const props = { draft: add('bar'), dispatch: a => calls.push(a), fit: true, onFit: () => calls.push('fit'), onJson: () => calls.push('json'), onBundle: () => calls.push('bundle'), onImport: () => calls.push('import') };
   const ui = await mount(t, createElement(AuthorToolbar, props));
-  assert.deepEqual(ui.renderer.root.findAllByType('summary').map(n => n.props.children), ['File', 'Edit', 'Data', 'Insert', 'Sheets', 'Objects', 'Search']);
+  assert.deepEqual(ui.renderer.root.findAllByType('summary').map(n => n.props.children), ['File', 'Edit', 'Data', 'Insert', 'Sheets', 'Objects']);
   for (const label of ['Import', 'Exports', 'Download .qs', 'Export JSON', 'FIT TO WIDTH']) await ui.click(label);
   assert.deepEqual(calls, ['import', 'bundle', 'json', 'fit']);
   await ui.click('Add Visual'); await ui.click('Add Sheet'); await ui.click('Remove selected visual');
@@ -79,19 +80,6 @@ test('toolbar exposes all seven menus, callbacks, busy guards and honest publish
   await ui.click('Dismiss'); assert.equal(ui.find('div', p => p.role === 'status'), undefined);
   await act(() => ui.renderer.update(createElement(AuthorToolbar, { ...props, busy: true, jsonDisabled: true })));
   for (const label of ['Import', 'Download .qs', 'Export JSON']) assert.equal(ui.find('button', p => p.children === label).props['aria-disabled'], true);
-});
-
-test('search selects a matching visual on another sheet in order', async t => {
-  let draft = authorReducer(add('bar'), { type: 'sheet-add' });
-  draft = authorReducer(draft, { type: 'add', kind: 'gauge' });
-  draft = authorReducer(draft, { type: 'title', title: 'Revenue target' });
-  const calls = [];
-  const ui = await mount(t, createElement(AuthorToolbar, { draft, dispatch: a => calls.push(a), onFit() {}, onJson() {}, onBundle() {}, onImport() {}, fit: true }));
-  await act(() => ui.find('input', p => p.type === 'search').props.onChange({ target: { value: 'target' } }));
-  const searchMenu = ui.renderer.root.findAllByType('details').find(n => n.findByType('summary').props.children === 'Search');
-  const button = searchMenu.findAllByType('button').find(n => Array.isArray(n.props.children) && n.props.children.includes('Revenue target'));
-  assert.ok(button); await act(() => button.props.onClick());
-  assert.deepEqual(calls, [{ type: 'sheet-select', id: 'sheet-2' }, { type: 'select', id: 'visual-2' }]);
 });
 
 test('FIT TO WIDTH changes canvas width and preserves the persisted grid', async t => {
@@ -107,7 +95,7 @@ test('FIT TO WIDTH changes canvas width and preserves the persisted grid', async
 
 test('Properties exposes display, table formatting, total and naming sections without duplicate toggles', () => {
   const html = renderToStaticMarkup(createElement(AuthorCanvas, { draft: add('pivot'), dispatch() {} }));
-  for (const title of ['Display settings', 'Headers', 'Cells', 'Total', 'Subtotal', 'Row names', 'Column names', 'Value names', 'Conditional formatting']) assert.ok(html.includes(`<summary>${title}</summary>`), title);
+  for (const title of ['Display settings', 'Headers', 'Cells', 'Total', 'Subtotal', 'Row names', 'Column names', 'Value names', 'Conditional formatting']) assert.ok(new RegExp(`<summary[^>]*>${title}</summary>`).test(html), title);
   assert.equal((html.match(/Show totals/g) ?? []).length, 1);
   assert.equal((html.match(/Show subtotals/g) ?? []).length, 1);
   for (const [kind, label] of [['gauge', 'Gauge maximum'], ['histogram', 'Histogram bins'], ['bar100', 'Horizontal bars']]) assert.ok(renderToStaticMarkup(createElement(AuthorCanvas, { draft: add(kind), dispatch() {} })).includes(label));

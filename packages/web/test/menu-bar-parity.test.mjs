@@ -18,7 +18,7 @@ async function mount(t, overrides = {}) {
   const menu = name => renderer.root.findAllByType('details').find(n => n.findByType('summary').props.children === name);
   const item = (name, label) => menu(name).findAllByType(AuthorMenuItem).find(n => n.props.label === label).findByType('button');
   return { renderer, calls, props, menu, item,
-    labels: name => menu(name).findAllByType(AuthorMenuItem).map(n => n.props.label),
+    labels: name => menu(name).findAllByType(AuthorMenuItem).filter(n => !n.parent?.props.hidden).map(n => n.props.label),
     click: (name, label) => act(() => item(name, label).props.onClick()),
     update: updates => act(() => renderer.update(createElement(AuthorToolbar, { ...props, ...updates }))),
   };
@@ -95,7 +95,7 @@ test('Data exposes all reference actions, retains preparation, and routes Add da
   assert.equal(ui.item('Data', 'Data').props['aria-disabled'], false, 'the empty data dock is still available');
 });
 
-test('Insert adds sheets, empty visuals and insights through the reducer and guards unavailable editors', async t => {
+test('Insert adds sheets, visuals and insights through the reducer and guards unavailable editors', async t => {
   const ui = await mount(t, { oEntry: createElement('button', { className: 'q-trigger' }, 'Q') });
   assert.deepEqual(ui.labels('Insert'), ['Add Sheet', 'Add Visual', 'Add Text', 'Add Image', 'Add Insight', 'Build visual with Q', 'Add Calculated Field', 'Add Filter', 'Add Parameter']);
   for (const label of ['Add Sheet', 'Add Visual', 'Add Insight']) await ui.click('Insert', label);

@@ -7,7 +7,7 @@ import { listenForAuthorShortcuts } from './keyboard-shortcuts.js';
 import { useToast } from './Toasts.js';
 
 type CommandGroup = { commands: readonly Command[]; chrome?: 'light' | 'dark' };
-type PaletteContext = { open: () => void; register: (id: string, group: CommandGroup) => () => void };
+type PaletteContext = { open: (searchLabel?: string) => void; register: (id: string, group: CommandGroup) => () => void };
 const Context = createContext<PaletteContext | undefined>(undefined);
 export const useCommandPalette = () => useContext(Context);
 
@@ -21,12 +21,13 @@ export function usePaletteCommands(group: CommandGroup) {
 export function CommandPaletteProvider({ navigate, children }: { navigate: Navigate; children: ReactNode }) {
   const access = useAccess();
   const [open, setOpen] = useState(false);
+  const [searchLabel, setSearchLabel] = useState('Search commands');
   const [groups, setGroups] = useState<ReadonlyMap<string, CommandGroup>>(new Map());
   const register = useCallback((id: string, group: CommandGroup) => {
     setGroups(current => new Map(current).set(id, group));
     return () => setGroups(current => { const next = new Map(current); next.delete(id); return next; });
   }, []);
-  const palette = useMemo(() => ({ open: () => setOpen(true), register }), [register]);
+  const palette = useMemo(() => ({ open: (label = 'Search commands') => { setSearchLabel(label); setOpen(true); }, register }), [register]);
   useEffect(() => {
     if (typeof document === 'undefined') return;
     return listenForAuthorShortcuts(document, { 'toggle-command-palette': palette.open });
@@ -36,11 +37,11 @@ export function CommandPaletteProvider({ navigate, children }: { navigate: Navig
   const chrome = registered.find(group => group.chrome)?.chrome ?? 'light';
   return <Context.Provider value={palette}>
     {children}
-    {open && <CommandPaletteDialog commands={commands} chrome={chrome} onClose={() => setOpen(false)} />}
+    {open && <CommandPaletteDialog commands={commands} chrome={chrome} searchLabel={searchLabel} onClose={() => setOpen(false)} />}
   </Context.Provider>;
 }
 
-export function CommandPaletteDialog({ commands, chrome = 'light', onClose }: { commands: readonly Command[]; chrome?: 'light' | 'dark'; onClose: () => void }) {
+export function CommandPaletteDialog({ commands, chrome = 'light', searchLabel = 'Search commands', onClose }: { commands: readonly Command[]; chrome?: 'light' | 'dark'; searchLabel?: string; onClose: () => void }) {
   const dialogRef = useRef<HTMLDialogElement>(null), inputRef = useRef<HTMLInputElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
   const previous = useRef<HTMLElement | null>(null), composing = useRef(false), running = useRef(false);
@@ -93,10 +94,10 @@ export function CommandPaletteDialog({ commands, chrome = 'light', onClose }: { 
       else if (!event.shiftKey && focused === inputRef.current) { event.preventDefault(); closeRef.current?.focus(); }
     }}>
     <header><h2 id={`${id}-title`}>Command palette</h2><button ref={closeRef} type="button" aria-label="Close command palette" aria-keyshortcuts="Escape" onClick={onClose}>Close <span aria-hidden="true">×</span></button></header>
-    <label className="sr-only" htmlFor={`${id}-search`}>Search commands</label>
+    <label className="sr-only" htmlFor={`${id}-search`}>{searchLabel}</label>
     <input ref={inputRef} id={`${id}-search`} type="text" role="combobox" autoComplete="off" spellCheck={false}
       aria-autocomplete="list" aria-expanded="true" aria-controls={`${id}-results`} aria-activedescendant={active ? optionId(active) : undefined}
-      aria-describedby={`${id}-help`} aria-keyshortcuts="Meta+K Control+K" placeholder="Search commands…" value={query}
+      aria-describedby={`${id}-help`} aria-keyshortcuts="Meta+K Control+K" placeholder={`${searchLabel}…`} value={query}
       onChange={event => { setQuery(event.target.value); setSelected(undefined); }}
       onCompositionStart={() => { composing.current = true; }} onCompositionEnd={() => { composing.current = false; }}
       onKeyDown={event => {

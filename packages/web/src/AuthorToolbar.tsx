@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState, type Dispatch, type ReactNode } from 'react';
-import { activeSheet, dataFields, type AuthorAction, type AuthorDraft } from './authoring.js';
+import { activeSheet, type AuthorAction, type AuthorDraft } from './authoring.js';
 import { useAccess, type Access } from './access.js';
 import { useToast } from './Toasts.js';
-import { AuthorMenuItem } from './AuthorMenuItem.js';
+import { AuthorMenu, AuthorMenuItem } from './AuthorMenuItem.js';
 import { flushSync } from 'react-dom';
+import { useCommandPalette } from './CommandPalette.js';
 import { hasDataLabels, hasLegend } from './formatting.js';
 export function publishNotice(mode: Access['mode']): string {
   return mode === 'hosted'
@@ -27,7 +28,8 @@ export function focusAuthorControl(nav: HTMLElement | null, selector: string, ta
 export function AuthorToolbar({ onPrep, onSources, draft, dispatch, fit, onFit, onJson, onBundle, onImport, oEntry, dataAvailable = true, busy = false, jsonDisabled = false, autosaveError }: { autosaveError?: string; dataAvailable?: boolean; onSources?: () => void; onPrep?: () => void; oEntry?: ReactNode; busy?: boolean; jsonDisabled?: boolean; draft: AuthorDraft; dispatch: Dispatch<AuthorAction>; fit: boolean; onFit: () => void; onJson: () => void; onBundle: () => void; onImport: () => void }) {
   const access = useAccess();
   const notify = useToast();
-  const [notice, setNotice] = useState(''), [search, setSearch] = useState('');
+  const [notice, setNotice] = useState('');
+  const palette = useCommandPalette();
   const [exportsOpen, setExportsOpen] = useState(false);
   const sheet = activeSheet(draft), selected = sheet.visuals.find(v => v.id === sheet.selectedId);
   const nav = useRef<HTMLElement>(null);
@@ -44,9 +46,9 @@ export function AuthorToolbar({ onPrep, onSources, draft, dispatch, fit, onFit, 
   const publish = () => { setNotice(publishNotice(access.mode)); notify('Publishing is unavailable in this editor. Nothing has been published.'); };
   return <>
     <nav ref={nav} className="author-menu" aria-label="Analysis menu" onKeyDown={e => {
-      if (e.key === 'Escape') { const menu = (e.target as HTMLElement).closest('details'); if (menu) { menu.open = false; menu.querySelector('summary')?.focus(); } }
-    }} onClick={e => { const button = (e.target as HTMLElement).closest('button'); if (button && button.getAttribute('aria-disabled') !== 'true' && !button.hasAttribute('data-menu-keep-open')) { const menu = button.closest('details'); if (menu) menu.open = false; } }}>
-      <details name="analysis-menu"><summary>File</summary><div className="menu-popover">
+      if (e.key === 'Escape') { const menu = (e.target as HTMLElement).closest('details'); if (menu) { e.preventDefault(); e.stopPropagation(); menu.open = false; menu.querySelector('summary')?.focus(); } }
+    }} onClick={e => { const button = (e.target as HTMLElement).closest('button'); if (button && button.getAttribute('aria-disabled') !== 'true' && !button.hasAttribute('data-menu-keep-open')) { const menu = button.closest('details'); if (menu) { if (menu.contains(menu.ownerDocument.activeElement)) menu.querySelector('summary')?.focus(); menu.open = false; } } }}>
+      <AuthorMenu name="File">
         <AuthorMenuItem label="Add to Favorites" reason="Analysis favorites are not supported yet." />
         <AuthorMenuItem label="Publish" run={publish} />
         <AuthorMenuItem label="Save as Analysis" reason="Saving a separate analysis copy is not supported yet. Save draft updates the draft on this device." />
@@ -56,24 +58,24 @@ export function AuthorToolbar({ onPrep, onSources, draft, dispatch, fit, onFit, 
         <AuthorMenuItem label="Import" reason={busy ? 'Wait for the current import or export to finish.' : undefined} run={onImport} />
         <hr />
         <AuthorMenuItem label="Print" reason="Analysis print layout is not supported yet." />
-        <AuthorMenuItem label="Exports" keepOpen run={() => setExportsOpen(value => !value)} />
-        {exportsOpen && <div className="menu-exports" role="group" aria-label="Analysis definition exports">
-          <AuthorMenuItem label="Download .qs" reason={busy ? 'Wait for the current import or export to finish.' : undefined} run={onBundle} />
-          <AuthorMenuItem label="Export JSON" reason={jsonDisabled ? 'The analysis definition cannot be exported. Review the export status below the toolbar.' : undefined} run={onJson} />
+        <AuthorMenuItem label="Exports" keepOpen run={() => { setExportsOpen(value => !value); focus('[data-author-menu="File"] > summary'); }} />
+        <div hidden={!exportsOpen} className="menu-exports" role="group" aria-label="Analysis definition exports">
+          <AuthorMenuItem label="Download .qs" descriptionId="export-help" reason={busy ? 'Wait for the current import or export to finish.' : undefined} run={onBundle} />
+          <AuthorMenuItem label="Export JSON" descriptionId="export-help" reason={jsonDisabled ? 'The analysis definition cannot be exported. Review the export status below the toolbar.' : undefined} run={onJson} />
           <p>Definitions only; data is not included.</p>
-        </div>}
+        </div>
         <AuthorMenuItem label="Export to PDF" reason="PDF export is not supported in this editor yet." />
         <hr />
         <AuthorMenuItem label="Autosave On" checked reason={autosaveError ? `Autosave could not save: ${autosaveError}` : 'Autosave is always on for this device. Drafts are not synced or shared.'} />
-      </div></details>
-      <details name="analysis-menu"><summary>Edit</summary><div className="menu-popover">
+      </AuthorMenu>
+      <AuthorMenu name="Edit">
         <AuthorMenuItem label="Undo" reason="Undo history is not supported yet. Export a checkpoint to keep a copy." />
         <AuthorMenuItem label="Redo" reason="Redo history is not supported yet." />
         <hr />
         <AuthorMenuItem label="Themes" reason={!dataAvailable ? 'Add data to open the analysis theme editor.' : undefined} run={() => focus('[data-author-control="theme"]', 'Visual')} />
         <AuthorMenuItem label="Analysis Settings" reason="Analysis-level settings are not supported in this editor yet." />
-      </div></details>
-      <details name="analysis-menu"><summary>Data</summary><div className="menu-popover">
+      </AuthorMenu>
+      <AuthorMenu name="Data">
         <AuthorMenuItem label="Data" run={() => focus('.fields-panel > summary')} />
         <AuthorMenuItem label="Add data" reason={!onSources && !onPrep ? 'Adding datasets needs a connected data workspace.' : undefined} run={onSources ?? onPrep} />
         <hr />
@@ -82,8 +84,8 @@ export function AuthorToolbar({ onPrep, onSources, draft, dispatch, fit, onFit, 
         <AuthorMenuItem label="Parameters" reason={needsData} run={() => focus('.parameter-editor > summary')} />
         <AuthorMenuItem label="Add Parameter" reason={needsData} run={() => activate('[data-author-control="add-parameter"]')} />
         {onPrep && <><hr /><AuthorMenuItem label="Prepare data…" run={onPrep} /></>}
-      </div></details>
-      <details name="analysis-menu"><summary>Insert</summary><div className="menu-popover">
+      </AuthorMenu>
+      <AuthorMenu name="Insert">
         <AuthorMenuItem label="Add Sheet" run={() => dispatch({ type: 'sheet-add' })} />
         <AuthorMenuItem label="Add Visual" reason={needsData} run={() => dispatch({ type: 'add', kind: 'bar' })} />
         <AuthorMenuItem label="Add Text" reason="Text boxes are not supported yet." />
@@ -94,8 +96,8 @@ export function AuthorToolbar({ onPrep, onSources, draft, dispatch, fit, onFit, 
         <AuthorMenuItem label="Add Calculated Field" reason={needsData} run={() => activate('.calculation-button')} />
         <AuthorMenuItem label="Add Filter" reason={needsData ?? (!selected ? 'Select a visual to add a filter.' : undefined)} run={() => focus('[data-author-control="filters"]', 'Interaction')} />
         <AuthorMenuItem label="Add Parameter" reason={needsData} run={() => activate('[data-author-control="add-parameter"]')} />
-      </div></details>
-      <details name="analysis-menu"><summary>Sheets</summary><div className="menu-popover">
+      </AuthorMenu>
+      <AuthorMenu name="Sheets">
         <AuthorMenuItem label="Add Sheet" run={() => dispatch({ type: 'sheet-add' })} />
         <AuthorMenuItem label="Duplicate Sheet" reason="Sheet duplication is not supported yet." />
         <AuthorMenuItem label="Rename Sheet" run={() => activate('[data-author-control="rename-sheet"]')} />
@@ -106,8 +108,8 @@ export function AuthorToolbar({ onPrep, onSources, draft, dispatch, fit, onFit, 
         <AuthorMenuItem label="Layout Settings" reason="Sheet layout settings are not supported yet. Drag or resize visuals on the canvas; FIT TO WIDTH changes the preview width." />
         <hr />
         <div role="group" aria-label="Switch sheet">{draft.sheets.map(s => <AuthorMenuItem key={s.id} label={s.name} run={() => dispatch({ type: 'sheet-select', id: s.id })} />)}</div>
-      </div></details>
-      <details name="analysis-menu"><summary>Objects</summary><div className="menu-popover">
+      </AuthorMenu>
+      <AuthorMenu name="Objects">
         <AuthorMenuItem label="Format Object" reason={needsVisual} run={() => focus('.properties-panel > summary', 'Visual')} />
         <AuthorMenuItem label="Field Wells" reason={needsVisual} run={() => focus('.visual-config h3')} />
         <hr />
@@ -134,8 +136,11 @@ export function AuthorToolbar({ onPrep, onSources, draft, dispatch, fit, onFit, 
         {!!sheet.visuals.length && <><hr /><div role="group" aria-label="Select visual">{sheet.visuals.map(v => <AuthorMenuItem key={v.id} label={`${v.title || v.id} · ${v.kind}`} run={() => dispatch({ type: 'select', id: v.id })} />)}</div></>}
         {selected && <AuthorMenuItem label="Remove selected visual" run={() => dispatch({ type: 'remove', id: selected.id })} />}
         {!sheet.visuals.length && <p>No visuals on this sheet.</p>}
-      </div></details>
-      <details name="analysis-menu"><summary>Search</summary><div className="menu-popover"><label>Search analysis<input className="analysis-search" aria-keyshortcuts="Meta+F Control+F" type="search" value={search} onChange={e => setSearch(e.target.value)} /></label>{draft.sheets.flatMap(s => s.visuals.filter(v => `${v.title} ${v.kind} ${v.id}`.toLowerCase().includes(search.toLowerCase())).map(v => <button key={v.id} type="button" onClick={() => { dispatch({ type: 'sheet-select', id: s.id }); dispatch({ type: 'select', id: v.id }); }}>{s.name} / {v.title || v.id}</button>))}<p>Fields: {(dataAvailable ? dataFields(draft.calculatedFields, draft.dataset) : []).filter(f => f.name.toLowerCase().includes(search.toLowerCase())).map(f => f.name).join(', ') || 'No matches'}</p></div></details>
+      </AuthorMenu>
+      <button type="button" className="analysis-search" aria-haspopup="dialog" aria-keyshortcuts="Meta+F Control+F" disabled={!palette} title={!palette ? 'Action search needs the application command palette.' : 'Search analysis actions'} onClick={() => {
+        nav.current?.querySelectorAll('details[open]').forEach(menu => menu.removeAttribute('open'));
+        palette?.open('Search analysis actions');
+      }}>Search</button>
       {oEntry}<div className="menu-spacer" /><button type="button" disabled={!dataAvailable} onClick={() => focus('.visual-gallery button')}>Add visual</button><button type="button" aria-pressed={fit} title={fit ? 'Fit is on; switch to 1200 pixel canvas' : 'Fit canvas to available width'} onClick={onFit}>FIT TO WIDTH</button><button type="button" onClick={publish}>PUBLISH</button>
       <label className="chrome-switch">NEW LOOK<select aria-label="NEW LOOK" value={draft.chrome ?? 'light'} onChange={e => dispatch({ type: 'chrome', mode: e.target.value as 'light' | 'dark' })}><option value="light">Light</option><option value="dark">Dark</option></select></label>
     </nav>
