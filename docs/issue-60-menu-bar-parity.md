@@ -55,3 +55,66 @@ commands are omitted. Sheet/visual navigation and field search are retained
 as commands, including finding visuals on another sheet. Menu registrations
 are removed on navigation. Search restores focus through the existing modal
 lifecycle; no second search implementation or dependency was added.
+
+## Browser verification and media
+
+The rebuilt static demo was compared qualitatively with all seven supplied
+local menu references. Reference images were viewed locally and were never
+copied into the repository. The implementation retains the navy/blue toolbar,
+Arial system font stack, 12px controls and 4/8px spacing. Dropdown order and
+separators follow the reference. OpenSight retains its product navigation,
+explicit demo disclosures, and existing sheet/visual selection actions.
+
+Objects now exposes all reference actions in a taller desktop dropdown.
+Menus scroll on narrow screens to fit below the wrapped toolbar. The desktop
+menu is wider and more spacious than the reference; icons and exact pixel
+fidelity remain unmeasured. Search deliberately opens the shipped command
+palette instead of adding another search popover. Unsupported feature work
+remains identified by the disabled item explanations above; no GitHub calls
+or phase-plan edits were made under the offline/no-spec-edit brief.
+
+The final browser tour passed with **27 recorded checks, zero page errors,
+and zero external HTTP requests**. It exercised menu order, disabled reasons,
+Escape and outside-click dismissal, focus across collapsed docks and both
+Properties tabs, calculation/parameter/Q dialogs, sheet actions, palette
+execution and focus return, field and cross-sheet visual lookup, definition
+exports and .qs import, and preparation navigation. Viewports: 1440, 760 and
+390px in both light and dark themes. The separate root-wired Chromium geometry
+suite also covers 1100px and checks the mobile menu height limit.
+
+Captures and logs stay in ignored `.opensight/issue-60/browser/`. The supplied
+demo shim was used with only its output destination redirected there to
+respect the capture-location constraint; `packages/web/dist` was rebuilt from
+source. This is a local static demo, not a deployed server.
+
+The supplied fixed README capture script was adapted to this demo and capture
+directory, with File, Objects and Search scenes added. Capture and the supplied
+ffmpeg palette/assembly workflow passed: **59 frames, 960×600, 10fps, 5.9s**;
+no page errors. The hero GIF, Author screenshot and command-palette screenshot
+were refreshed, and the new Objects menu screenshot is shown below.
+
+![Objects menu in the local static demo](images/menu-bar.png)
+
+## Final verification
+
+Root `TZ=UTC npm test` exited 0: **1,941 passed / 0 failed / 12 skipped /
+0 cancelled** (1,953 tests). Every skip requires live PostgreSQL; no database
+was configured. Strict TypeScript checks passed as part of the workspace run.
+
+| Suite | Passed | Failed | Skipped |
+| --- | ---: | ---: | ---: |
+| API | 304 | 0 | 10 |
+| Bundle parser | 199 | 0 | 0 |
+| Embedding SDK | 9 | 0 | 0 |
+| Interpreter | 32 | 0 | 0 |
+| Parity | 11 | 0 | 0 |
+| Query engine | 502 | 0 | 2 |
+| Web | 878 | 0 | 0 |
+| Root conformance | 6 | 0 | 0 |
+
+The initial foreground run was terminated by the execution environment. A
+complete rerun identified two old assertions reading the native `disabled`
+property instead of the menu's keyboard-reachable `aria-disabled` state. Both
+were updated without changing availability checks; the final full rerun above
+passed. Logs and machine-readable counts are in the ignored issue directory.
+No dependency, backend service, or solution-design change was required.
