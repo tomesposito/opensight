@@ -831,7 +831,15 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 }
 .prep-catalog-group > button { display: flex; align-items: center; gap: 8px; }
 .prep-catalog-group > button > span { width: 16px; text-align: center; color: #536879; }
-.prep-canvas { height: 320px; min-height: 0; overflow: auto; padding: 16px 24px; background-color: #fafbfc; background-size: 12px 12px; }
+.prep-canvas { height: 320px; min-height: 0; overflow: hidden; padding: 0; position: relative; background-color: #fafbfc; background-size: 12px 12px; }
+.prep-viewport-shell { height: 100%; position: relative; }
+.prep-viewport { height: 100%; overflow: hidden; cursor: grab; touch-action: none; }
+.prep-viewport.panning { cursor: grabbing; user-select: none; }
+.prep-viewport:focus-visible { outline: 2px solid #087caa; outline-offset: -2px; }
+.prep-viewport-content { width: max-content; padding-bottom: 40px; transform-origin: 0 0; }
+.prep-zoom { position: absolute; bottom: 8px; right: 8px; display: flex; gap: 4px; }
+.prep-zoom button { padding: 4px 8px; background: #fff; }
+.prep-canvas-hint { position: absolute; bottom: 40px; left: 24px; pointer-events: none; }
 .prep-nodes { margin: 8px 0; }
 .data-prep .prep-node { width: 148px; min-height: 56px; display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 4px 8px; border: 1px solid #c0c8ce; padding: 8px; border-radius: 6px; background: #fff; }
 .prep-node .prep-node-icon { grid-row: 1 / span 3; align-self: stretch; height: auto; min-height: 24px; margin: -8px 0 -8px -8px; border-radius: 6px 0 0 6px; background: #f0f2f4; color: #536879; }

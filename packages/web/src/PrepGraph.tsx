@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import type { PrepPipeline, PrepStep } from '@opensight/bundle-parser/prep';
 import { PrepJoinIcon, PrepStepIcon } from './PrepIcons.js';
 import { prepLeftInput, prepStepLabel, prepRefKey } from './data-prep.js';
+import { PrepViewport } from './PrepViewport.js';
 
 /** Left inputs form a tree within the DAG. Secondary join edges remain labeled
  *  links on their target nodes. Flex branches keep connectors aligned at any
@@ -42,7 +43,7 @@ export function PrepGraph({ pipeline, selected, issues, input, output, secondary
       </div>{descendants(step.id)}
     </li>;
   };
-  return <div className="prep-graph"><ul className="prep-nodes"><li className="prep-node-wrap"><div>{input}</div>{descendants(null)}</li></ul>
+  return <PrepViewport><div className="prep-graph"><ul className="prep-nodes"><li className="prep-node-wrap"><div>{input}</div>{descendants(null)}</li></ul>
     {detached.length > 0 && <div className="prep-detached"><p>Invalid left input — configure the affected step to repair its reference.</p><ul className="prep-nodes">{detached.map(node)}</ul></div>}
-  </div>;
+  </div></PrepViewport>;
 }
