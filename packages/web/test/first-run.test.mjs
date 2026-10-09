@@ -8,7 +8,7 @@ test('first-run explains the product, existing auth configuration and two honest
   const html = renderToStaticMarkup(createElement(FirstRun, { issue: 'not-configured', checking: false, onRetry() {}, onDemo() {} }));
   for (const text of ['QuickSight-compatible BI', 'dashboards', 'analysis authoring', 'data preparation', 'connectors', 'embedding',
     'Authentication is not configured', 'SECURITY_NOT_CONFIGURED', 'Explore sample data', 'Retry connection',
-    'Public, bundled samples only', 'does not create a hosted session', 'no built-in browser login form',
+    'Public, bundled samples only', 'does not create a hosted session', 'hosted sign-in screen',
     'OPENSIGHT_MODE=hosted', 'OPENSIGHT_METADATA_DATABASE', 'OPENSIGHT_PUBLIC_ORIGIN', 'OPENSIGHT_AUTH_ISSUER',
     'OPENSIGHT_AUTH_AUDIENCE', 'OPENSIGHT_AUTH_KEY_ID', 'OPENSIGHT_AUTH_SIGNING_KEY', 'OPENSIGHT_AUTH_ENCRYPTION_KEY',
     'OPENSIGHT_OPERATOR_KEY', 'OPENSIGHT_SESSION_SECONDS', 'OPENSIGHT_INVITATION_SECONDS', 'OPENSIGHT_SMTP_HOST',

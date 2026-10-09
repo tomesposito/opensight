@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { act, createElement } from 'react';
 import { create } from 'react-test-renderer';
 import { SessionGate, SESSION_TIMEOUT_MS } from '../build/test/SessionGate.js';
+import { SignIn } from '../build/test/SignIn.js';
 import { FirstRun } from '../build/test/FirstRun.js';
 import { Application } from '../build/test/Application.js';
 import { AppNavigation } from '../build/test/AppNavigation.js';
@@ -37,6 +38,7 @@ async function mount(t, element) {
 }
 const gate = (client, offline = false) => createElement(SessionGate, { client, offline }, createElement(Probe));
 const first = ui => ui.renderer.root.findByType(FirstRun);
+const signin = ui => ui.renderer.root.findByType(SignIn);
 
 test('missing security blocks application mount until the user explicitly chooses samples', async t => {
   let calls = 0;
@@ -66,29 +68,29 @@ test('valid configured session preserves registered identity, capabilities and c
 test('rejected credentials and outages get distinct recovery screens; explicit retry succeeds', async t => {
   let failure = new ApiError('private session details', 401);
   const ui = await mount(t, gate({ async getSession() { if (failure) throw failure; return registered; } }));
-  assert.equal(first(ui).props.issue, 'sign-in');
+  assert.equal(signin(ui).props.onSignIn instanceof Function, true);
   failure = new TypeError('connection refused');
-  await act(async () => first(ui).props.onRetry());
+  await act(async () => signin(ui).props.onRetry());
   assert.equal(first(ui).props.issue, 'unavailable');
   failure = undefined;
   await act(async () => first(ui).props.onRetry());
   assert.equal(ui.renderer.root.findByType('output').props['data-access'].mode, 'hosted');
 });
 
-test('focus revocation removes the app, periodic refresh recovers, and demo stops polling', async t => {
+test('focus revocation removes the app, explicit retry recovers, and demo stops polling', async t => {
   t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
   let valid = true, calls = 0;
   const ui = await mount(t, gate({ async getSession() { calls++; if (valid) return registered; throw new ApiError('Expired', 403); } }));
   valid = false;
   await ui.focus();
-  assert.equal(first(ui).props.issue, 'sign-in');
+  assert.equal(signin(ui).props.onSignIn instanceof Function, true);
   assert.equal(ui.renderer.root.findAllByType(Probe).length, 0);
   valid = true;
-  await act(async () => t.mock.timers.tick(30_000));
+  await act(async () => signin(ui).props.onRetry());
   assert.equal(ui.renderer.root.findAllByType(Probe).length, 1);
   valid = false;
   await ui.focus();
-  await act(async () => first(ui).props.onDemo());
+  await act(async () => signin(ui).props.onDemo());
   const before = calls;
   await act(async () => t.mock.timers.tick(90_000));
   assert.equal(calls, before);
@@ -172,7 +174,7 @@ test('explicit local capability opens file workspace without inventing a session
 });
 test('rejected hosted sessions never probe or fall back to local data', async t => {
   const ui = await mount(t, gate({ getSession() { throw new ApiError('Rejected', 401, 'AUTHENTICATION_FAILED'); }, getLocalData() { assert.fail('No local fallback for rejected auth'); } }));
-  assert.equal(first(ui).props.issue, 'sign-in');
+  assert.equal(signin(ui).props.onSignIn instanceof Function, true);
 });
 test('local capability transport validates explicit mode and respects abort', async () => {
   const signal = new AbortController().signal;

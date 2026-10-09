@@ -61,6 +61,7 @@ export function AppNavigation({ route, navigate, children }: { route?: AppRoute;
       <AppLink className="brand" to={{ page: 'home' }} navigate={navigate}><span className="brand-mark" aria-hidden="true">◈</span>OpenSight</AppLink>
       <span className="header-caption">{route ? pages[route.page].title : 'Page not found'}</span>
       {children}
+      {access.mode === 'hosted' && access.signOut && <div className="hosted-account"><span>{access.session?.name}</span><button type="button" onClick={() => void access.signOut?.()}>Sign out</button></div>}
     </header>
     {navigationOpen && <button type="button" className="navigation-scrim" aria-label="Close navigation" onClick={closeNavigation} />}
     <div id="product-navigation" className="product-navigation" data-open={navigationOpen} onKeyDown={event => { if (navigationOpen && event.key === 'Escape') { event.preventDefault(); closeNavigation(); } }}>
