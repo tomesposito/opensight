@@ -81,7 +81,18 @@ export function AuthorToolbar({ onPrep, onSources, draft, dispatch, fit, onFit, 
         <AuthorMenuItem label="Add Parameter" reason={needsData} run={() => activate('[data-author-control="add-parameter"]')} />
         {onPrep && <><hr /><AuthorMenuItem label="Prepare data…" run={onPrep} /></>}
       </div></details>
-      <details name="analysis-menu"><summary>Insert</summary><div className="menu-popover"><button type="button" disabled={!dataAvailable} onClick={() => dispatch({ type: 'add', kind: 'bar' })}>Add bar visual</button><button type="button" disabled={!dataAvailable} onClick={() => focus('.visual-gallery button')}>Choose visual type</button><p>Text boxes and images are not available yet.</p></div></details>
+      <details name="analysis-menu"><summary>Insert</summary><div className="menu-popover">
+        <AuthorMenuItem label="Add Sheet" run={() => dispatch({ type: 'sheet-add' })} />
+        <AuthorMenuItem label="Add Visual" reason={needsData} run={() => dispatch({ type: 'add', kind: 'bar' })} />
+        <AuthorMenuItem label="Add Text" reason="Text boxes are not supported yet." />
+        <AuthorMenuItem label="Add Image" reason="Image objects are not supported yet." />
+        <AuthorMenuItem label="Add Insight" reason={needsData} run={() => dispatch({ type: 'add', kind: 'insight' })} />
+        <AuthorMenuItem label="Build visual with Q" reason={needsData ?? (!oEntry ? 'Q is unavailable for this session.' : undefined)} run={() => activate('.q-trigger')} />
+        <hr />
+        <AuthorMenuItem label="Add Calculated Field" reason={needsData} run={() => activate('.calculation-button')} />
+        <AuthorMenuItem label="Add Filter" reason={needsData ?? (!selected ? 'Select a visual to add a filter.' : undefined)} run={() => focus('[data-author-control="filters"]', 'Interaction')} />
+        <AuthorMenuItem label="Add Parameter" reason={needsData} run={() => activate('[data-author-control="add-parameter"]')} />
+      </div></details>
       <details name="analysis-menu"><summary>Sheets</summary><div className="menu-popover">{draft.sheets.map(s => <button type="button" key={s.id} onClick={() => dispatch({ type: 'sheet-select', id: s.id })}>{s.name}</button>)}<button type="button" onClick={() => dispatch({ type: 'sheet-add' })}>Add sheet</button></div></details>
       <details name="analysis-menu"><summary>Objects</summary><div className="menu-popover">{sheet.visuals.map(v => <button key={v.id} type="button" onClick={() => dispatch({ type: 'select', id: v.id })}>{v.title || v.id} · {v.kind}</button>)}{selected && <button type="button" onClick={() => dispatch({ type: 'remove', id: selected.id })}>Remove selected visual</button>}{!sheet.visuals.length && <p>No visuals on this sheet.</p>}</div></details>
       <details name="analysis-menu"><summary>Search</summary><div className="menu-popover"><label>Search analysis<input className="analysis-search" aria-keyshortcuts="Meta+F Control+F" type="search" value={search} onChange={e => setSearch(e.target.value)} /></label>{draft.sheets.flatMap(s => s.visuals.filter(v => `${v.title} ${v.kind} ${v.id}`.toLowerCase().includes(search.toLowerCase())).map(v => <button key={v.id} type="button" onClick={() => { dispatch({ type: 'sheet-select', id: s.id }); dispatch({ type: 'select', id: v.id }); }}>{s.name} / {v.title || v.id}</button>))}<p>Fields: {(dataAvailable ? dataFields(draft.calculatedFields, draft.dataset) : []).filter(f => f.name.toLowerCase().includes(search.toLowerCase())).map(f => f.name).join(', ') || 'No matches'}</p></div></details>

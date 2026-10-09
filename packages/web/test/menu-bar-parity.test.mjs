@@ -94,3 +94,21 @@ test('Data exposes all reference actions, retains preparation, and routes Add da
   }
   assert.equal(ui.item('Data', 'Data').props['aria-disabled'], false, 'the empty data dock is still available');
 });
+
+test('Insert adds sheets, empty visuals and insights through the reducer and guards unavailable editors', async t => {
+  const ui = await mount(t, { oEntry: createElement('button', { className: 'q-trigger' }, 'Q') });
+  assert.deepEqual(ui.labels('Insert'), ['Add Sheet', 'Add Visual', 'Add Text', 'Add Image', 'Add Insight', 'Build visual with Q', 'Add Calculated Field', 'Add Filter', 'Add Parameter']);
+  for (const label of ['Add Sheet', 'Add Visual', 'Add Insight']) await ui.click('Insert', label);
+  assert.deepEqual(ui.calls, [{ type: 'sheet-add' }, { type: 'add', kind: 'bar' }, { type: 'add', kind: 'insight' }]);
+  assert.equal(ui.item('Insert', 'Build visual with Q').props['aria-disabled'], false);
+  for (const label of ['Add Text', 'Add Image']) assert.equal(ui.item('Insert', label).props['aria-disabled'], true);
+  await ui.update({ draft: emptyDraft(), oEntry: undefined });
+  assert.match(ui.item('Insert', 'Add Filter').props.title, /Select a visual/);
+  assert.match(ui.item('Insert', 'Build visual with Q').props.title, /unavailable/);
+  await ui.update({ dataAvailable: false });
+  for (const label of ['Add Visual', 'Add Insight', 'Build visual with Q', 'Add Calculated Field', 'Add Filter', 'Add Parameter']) {
+    assert.equal(ui.item('Insert', label).props['aria-disabled'], true);
+    await ui.click('Insert', label);
+  }
+  assert.equal(ui.calls.length, 3, 'disabled insert actions do not dispatch');
+});

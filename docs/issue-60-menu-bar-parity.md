@@ -26,3 +26,9 @@ available entry point), calculated fields, and parameters. Prepare data is
 retained below the reference items. Navigation checkpoints unsaved work using
 the existing draft guard. Add Parameter opens the existing editor and focuses
 the name; repeated activation keeps it open, with an explicit Cancel action.
+
+Insert creates sheets, empty bar visuals (change type in Visuals), and insight
+visuals. Q opens the existing local deterministic question panel, preserving
+its no-AI/hosted disclosures. Calculated fields, filters and parameters open
+their existing editors; filters require a selected visual. Text and image
+objects remain unavailable. Data-dependent actions are disabled without data.

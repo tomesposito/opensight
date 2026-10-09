@@ -517,7 +517,7 @@ function FilterEditor({ dataset, visual, calculations, dispatch, client, paramet
   const filter = visual.filters.find(f => f.columnName === column);
   const filterValues = filter?.parameterName ? parameters.find(p => p.name === filter.parameterName)?.values.map(String) ?? [] : filter?.values;
   const values = [...new Set([...(current?.values ?? []), ...(filterValues ?? [])])];
-  return <details className="property-section" open><summary>Filters</summary>
+  return <details className="property-section" open><summary data-author-control="filters">Filters</summary>
     {visual.filters.map(f => <button className="field-chip filter-pill" type="button" key={f.columnName} aria-label={`Remove ${f.columnName} filter`} onClick={() => dispatch({ type: 'filter', columnName: f.columnName, values: null })}>{f.columnName}: {f.parameterName ? `$${f.parameterName}` : f.values.length ? f.values.join(', ') : 'None'} <span aria-hidden="true">×</span></button>)}
     <label>Category field<select value={column} onChange={e => setColumn(e.target.value)}>{dataFields(calculations, dataset).filter(f => f.type === 'STRING').map(f => <option key={f.name}>{f.name}</option>)}</select></label>
     {!current && <p role="status">Loading values…</p>}
