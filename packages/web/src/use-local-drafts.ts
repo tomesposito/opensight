@@ -92,7 +92,7 @@ export function useLocalDrafts(access: Access, dataset?: AuthorDataset, opening?
     try {
       const next = store.open(nextId), metadata = store.restore();
       clearTimer(); dispatch({ type: 'import', draft: next }); synced(nextId, JSON.stringify(next), metadata); setRecoveredAt(recoveryTime(metadata));
-      setMessage('Draft reopened from this device.'); refresh(); return next;
+      setMessage('Draft opened from this device.'); refresh(); return next;
     } catch (error) { setMessage(draftStorageError(error)); }
   };
   const rename = (target: string, name: string) => {
