@@ -31,6 +31,9 @@ test('navigation opens, closes with Escape, and closes after route changes', asy
   await act(() => toggle().props.onClick());
   await act(() => renderer.root.findByProps({ className: 'navigation-scrim' }).props.onClick());
   assert.equal(panel().props['data-open'], false); assert.equal(focuses, 2);
+  await act(() => toggle().props.onClick());
+  await act(() => toggle().props.onKeyDown({ key: 'Escape', preventDefault() {} }));
+  assert.equal(panel().props['data-open'], false); assert.equal(focuses, 3);
 });
 
 describe('application shell geometry in offline Chromium', () => {

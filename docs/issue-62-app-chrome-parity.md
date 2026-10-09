@@ -126,3 +126,20 @@ wrapped developer controls: the rail/backdrop follows the measured identity-band
 bottom on resize and scroll, so Home remains reachable. The dedicated browser
 check passed at 1440px and 390px before/after scrolling; 58 focused shell and
 navigation tests passed. Final rebuilt surface geometry remains unchanged.
+
+### Final verification
+
+Root `TZ=UTC npm test` exited 0: **1,993 passed / 0 failed / 12 skipped /
+0 cancelled** (2,005 tests). All skips require live PostgreSQL. Pass totals:
+API 304, bundle parser 199, embedding SDK 9, interpreter 32, parity 11,
+query engine 502, web 930, root conformance 6. Browser checks also cover Escape from the navigation toggle
+itself as well as the links, and no focus change for Escape in the
+always-visible desktop rail.
+
+An earlier overlapping capture run exceeded the existing containment test's
+3-second execution ceiling (3.89s). The unchanged isolated check passed at
+1.41s; no test limits were relaxed. A stopped detached runner was replaced by
+an actively attached full run. Final source/demo checks, responsive tours and
+media refreshes passed. No new dependencies, reference assets or personal data
+were committed; `SOLUTION_DESIGN.md` is untouched. Work stays on the requested
+branch; nothing was merged, pushed, published or opened as a PR.

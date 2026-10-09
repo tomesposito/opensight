@@ -57,13 +57,13 @@ export function AppNavigation({ route, navigate, children }: { route?: AppRoute;
     : <AppLink key={page} to={{ page }} navigate={navigate} current={route?.page === page}>{pages[page].title}</AppLink>;
   return <>
     <header ref={header} className="app-header product-header">
-      <button ref={toggle} className="navigation-toggle" type="button" aria-label="Toggle navigation" aria-expanded={navigationOpen} aria-controls="product-navigation" onClick={() => setNavigationOpen(open => !open)}>☰</button>
+      <button ref={toggle} className="navigation-toggle" type="button" aria-label="Toggle navigation" aria-expanded={navigationOpen} aria-controls="product-navigation" onClick={() => setNavigationOpen(open => !open)} onKeyDown={event => { if (navigationOpen && event.key === 'Escape') { event.preventDefault(); closeNavigation(); } }}>☰</button>
       <AppLink className="brand" to={{ page: 'home' }} navigate={navigate}><span className="brand-mark" aria-hidden="true">◈</span>OpenSight</AppLink>
       <span className="header-caption">{route ? pages[route.page].title : 'Page not found'}</span>
       {children}
     </header>
     {navigationOpen && <button type="button" className="navigation-scrim" aria-label="Close navigation" onClick={closeNavigation} />}
-    <div id="product-navigation" className="product-navigation" data-open={navigationOpen} onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); closeNavigation(); } }}>
+    <div id="product-navigation" className="product-navigation" data-open={navigationOpen} onKeyDown={event => { if (navigationOpen && event.key === 'Escape') { event.preventDefault(); closeNavigation(); } }}>
       <nav className="app-nav" aria-label="Product">{productSections.filter(item => visiblePage(access, item.page)).map(item => <AppLink key={item.title} to={{ page: item.page }} navigate={navigate} current={section === item.title}>{item.title}</AppLink>)}</nav>
     {section === 'Analyses' && visiblePage(access, 'analyses') && <nav className="section-nav" aria-label="Analyses"><AppLink to={{ page: 'analyses' }} navigate={navigate} current={route?.page === 'analyses'}>My analyses</AppLink><AppLink to={{ page: 'author' }} navigate={navigate} current={route?.page === 'author'}>Author</AppLink></nav>}
     </div>
