@@ -8,7 +8,7 @@ bidirectional asset compatibility — connect data, prepare datasets, build
 analyses and dashboards, and ask questions in natural language. Self-hosted;
 no AWS required.
 
-![OpenSight tour: sample dashboard, O answer, Author File and Objects menus, command palette, and data tools](docs/images/opensight-tour.gif)
+![OpenSight tour: Home, O answer, Analyses, Author, command palette, and data tools](docs/images/opensight-tour.gif)
 
 *Above: the offline demo — a dashboard, O answering "revenue by region" and
 adding the chart to an analysis, saved drafts, data preparation, connectors,
@@ -185,7 +185,7 @@ pivot, unpivot, append and aggregate on the output path require Blaze; simple
 single-source pipelines can use direct query. The static demo keeps these hosted controls disabled.
 See [Blaze configuration and limits](docs/blaze.md).
 
-![Blaze refresh controls and cached output from a local hosted API using synthetic data](docs/images/blaze.png)
+![Blaze refresh controls and cached output from a local API using synthetic data](docs/images/blaze.png)
 
 ### 🔌 Data source connectors
 
@@ -249,7 +249,7 @@ Removing an owner requires the operator to transfer or stop their schedules;
 unfinished work is cancelled. One scheduler runs initially, with at-least-once
 delivery and dedupe keys. See [tenant automation](docs/tenant-automation.md).
 
-![Tenant job and delivery history with synthetic recipients](docs/images/tenant-jobs.png)
+![Hosted jobs UI with synthetic documentation data](docs/images/tenant-jobs.png)
 
 ![Operator transfer-or-stop choice using synthetic users](docs/images/job-owner-removal.png)
 

@@ -104,3 +104,25 @@ Validation: 66 targeted existing/header tests passed. The browser tour verified
 Rename focus, title save/reload, menus, command palette, Q, dataset modal and
 navigation in both themes. The band stays 48px and long titles fit at
 1920/1440/1100/760/390px; no page overflow, page errors or external requests.
+
+### Review media
+
+Current captures: [Home](images/sample-dashboard.png),
+[empty Home](images/home-empty.png), [Analyses](images/analyses.png),
+[Dashboards](images/dashboards.png), [Data sources](images/data-sources.png),
+[Data preparation](images/data-prep.png), and [Author](images/author.png).
+The README hero is refreshed at 960×600, 10fps, 11.3 seconds. Feature captures
+include both empty/populated authoring, chart types, properties, menus, shortcuts,
+save/recovery, local upload/query, Blaze and Q. The hosted jobs screenshot uses
+an explicitly labeled synthetic documentation harness; no jobs or messages run.
+Standalone operator, first-run and embed media are unaffected by the app shell.
+
+The real isolated local API tour verified upload → preparation → Blaze refresh
+and cached output → live chart → O answer (North 6, South 3), plus missing-source
+draft recovery. All tour HTTP traffic was local; external requests were blocked.
+
+Final shell review also covers the setup page's explicit fixture-demo banner and
+wrapped developer controls: the rail/backdrop follows the measured identity-band
+bottom on resize and scroll, so Home remains reachable. The dedicated browser
+check passed at 1440px and 390px before/after scrolling; 58 focused shell and
+navigation tests passed. Final rebuilt surface geometry remains unchanged.
