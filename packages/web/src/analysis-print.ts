@@ -13,6 +13,12 @@ export function prepareAnalysisPrint(workspace: HTMLElement, title: string, shee
   const notice = doc.createElement('p'); notice.className = 'analysis-print-notice';
   notice.textContent = workspace.querySelector('.fixture-notice')?.textContent ?? '';
   const clone = center.cloneNode(true) as HTMLElement;
+  // Pair scrollers before removing debug footers, which can themselves contain
+  // tables ahead of the visible table visuals in document order.
+  const originalScrollers = center.querySelectorAll('.table-scroll');
+  const scrollPositions = Array.from(clone.querySelectorAll('.table-scroll'), (node, index) => ({
+    node, top: originalScrollers[index]!.scrollTop, left: originalScrollers[index]!.scrollLeft,
+  }));
   // Keep the captured width, so SVG geometry and grid placements cannot reflow
   // when the browser changes media. Fit this snapshot on one landscape page.
   const width = Math.max(center.getBoundingClientRect().width, center.scrollWidth, 1);
@@ -56,11 +62,9 @@ export function prepareAnalysisPrint(workspace: HTMLElement, title: string, shee
   root.append(heading, sheet, notice, clone); doc.body.append(root);
   // cloneNode does not preserve scroll offsets. Keep the table viewport shown
   // to the user, rather than silently replacing it with its first rows.
-  const originalScrollers = center.querySelectorAll('.table-scroll');
-  clone.querySelectorAll('.table-scroll').forEach((node, index) => {
-    const original = originalScrollers[index];
-    if (original) { node.scrollTop = original.scrollTop; node.scrollLeft = original.scrollLeft; }
-  });
+  for (const { node, top, left } of scrollPositions) {
+    if (node.isConnected) { node.scrollTop = top; node.scrollLeft = left; }
+  }
   return () => root.remove();
 }
 

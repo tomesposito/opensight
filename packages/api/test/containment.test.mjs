@@ -165,7 +165,12 @@ test('H4 an independent watchdog kills blocked evaluators on deadline and parent
     try {
       const status = await readFile(`/proc/${pid}/status`, 'utf8');
       if (/^State:\s+Z/m.test(status)) break;
-    } catch (e) { if (e.code === 'ENOENT') break; throw e; }
+    } catch (e) {
+      // /proc can disappear before open (ENOENT) or during read (ESRCH).
+      // Both mean the watchdog has already terminated the orphan.
+      if (e.code === 'ENOENT' || e.code === 'ESRCH') break;
+      throw e;
+    }
     if (performance.now() - start > 1000) { process.kill(pid, 'SIGKILL'); assert.fail('orphan survived'); }
     await delay(5);
   }
