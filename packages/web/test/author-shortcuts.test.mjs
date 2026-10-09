@@ -28,7 +28,7 @@ async function mount(t, { blocked = false } = {}) {
   const trigger = node({});
   const workspace = { ownerDocument: document, closest: () => workspace, querySelector: selector => selector === '.analysis-search' ? search : null };
   document.activeElement = canvas;
-  const location = new URL('https://opensight.example/demo.html#/analyses/new');
+  const location = new URL('https://opensight.example/demo.html#/analyses/author');
   globalThis.window = { location, localStorage: storage,
     history: { replaceState(_s, _t, hash) { location.hash = hash; }, pushState(_s, _t, hash) { location.hash = hash; } },
     addEventListener() {}, removeEventListener() {}, matchMedia: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }),

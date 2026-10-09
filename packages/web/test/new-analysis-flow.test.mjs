@@ -78,6 +78,10 @@ test('empty direct new-analysis route has no staged sample, phantom draft or Aut
   assert.match(ui.text(), /No datasets yet/); assert.doesNotMatch(ui.text(), /Sample sales data/);
   await act(() => t.mock.timers.tick(5000)); assert.deepEqual(ui.store.list(), []);
   await ui.click('Cancel'); assert.equal(ui.location.hash, '#/analyses');
+  await ui.navigate({ page: 'author' }); await ui.click('New analysis');
+  assert.match(ui.text(), /No datasets yet/);
+  await act(() => t.mock.timers.tick(5000)); assert.deepEqual(ui.store.list(), []);
+  await ui.click('Cancel'); await ui.navigate({ page: 'analyses' });
   await ui.link('New analysis'); await ui.click('Create dataset');
   assert.equal(ui.location.hash, '#/data/preparation'); assert.equal(ui.requests.includes('sales'), false);
 });

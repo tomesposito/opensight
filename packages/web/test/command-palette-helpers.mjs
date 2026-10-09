@@ -6,7 +6,8 @@ import { AppNavigation } from '../build/test/AppNavigation.js';
 import { AccessProvider, demoAccess } from '../build/test/access.js';
 import { createDraftStore } from '../build/test/local-drafts.js';
 
-export async function mountPalette(t, { route = '#/analyses/new', access = demoAccess, blocked = false, element } = {}) {
+// These tests exercise an open editor; /analyses/new now starts at the dataset dialog.
+export async function mountPalette(t, { route = '#/analyses/author', access = demoAccess, blocked = false, element } = {}) {
   const old = { window: globalThis.window, document: globalThis.document, act: globalThis.IS_REACT_ACT_ENVIRONMENT };
   const values = new Map(), dialogs = new Map(), listeners = new Set();
   const storage = { getItem: key => values.get(key) ?? null, setItem(key, value) {
