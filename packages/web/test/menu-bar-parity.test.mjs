@@ -54,3 +54,28 @@ test('File unavailable items expose reasons and cannot invoke actions; export/im
   assert.deepEqual(ui.calls, []);
   assert.match(ui.item('File', 'Autosave On').props.title, /could not save.*Browser storage is blocked/);
 });
+
+test('Edit has Themes and explicit unavailable history/settings actions', async t => {
+  const ui = await mount(t);
+  assert.deepEqual(ui.labels('Edit'), ['Undo', 'Redo', 'Themes', 'Analysis Settings']);
+  assert.equal(ui.item('Edit', 'Themes').props['aria-disabled'], false);
+  for (const label of ['Undo', 'Redo', 'Analysis Settings']) {
+    assert.equal(ui.item('Edit', label).props['aria-disabled'], true);
+    await ui.click('Edit', label);
+  }
+  assert.deepEqual(ui.calls, []);
+  await ui.update({ dataAvailable: false });
+  assert.match(ui.item('Edit', 'Themes').props.title, /Add data/);
+});
+
+test('control focus opens nested sections and their dock, switches tabs, and tolerates missing DOM', async () => {
+  const { focusAuthorControl } = await import('../build/test/AuthorToolbar.js');
+  const calls = [], outer = { open: false }, inner = { open: false, parentElement: { closest: () => outer } };
+  const target = { closest: () => inner, focus: () => calls.push('focus'), scrollIntoView: () => calls.push('scroll') };
+  const workspace = { querySelector: selector => selector.includes('data-properties-tab') ? { click: () => calls.push('tab') } : target };
+  assert.equal(focusAuthorControl({ closest: () => workspace }, '[data-author-control="theme"]', 'Visual'), target);
+  assert.deepEqual(calls, ['tab', 'scroll', 'focus']);
+  assert.equal(inner.open, true); assert.equal(outer.open, true);
+  assert.doesNotThrow(() => focusAuthorControl(null, 'missing'));
+  assert.doesNotThrow(() => focusAuthorControl({}, 'missing'));
+});

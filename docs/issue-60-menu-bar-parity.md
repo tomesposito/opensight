@@ -15,3 +15,8 @@ Unavailable actions remain keyboard reachable with `aria-disabled`, cannot
 run a handler, and explain why on focus or hover and through their accessible
 description. Menus retain native disclosure keyboard behavior, Escape and
 outside-click closure. No reference screenshots belong in this repository.
+
+Edit opens Analysis theme in Properties, even from the Interaction tab or a
+collapsed dock. Undo, Redo and Analysis Settings explain their missing editor
+support. Theme controls require a dataset because the empty editor has no
+Properties dock.

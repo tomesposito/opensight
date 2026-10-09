@@ -3,6 +3,7 @@ import { activeSheet, dataFields, type AuthorAction, type AuthorDraft } from './
 import { useAccess, type Access } from './access.js';
 import { useToast } from './Toasts.js';
 import { AuthorMenuItem } from './AuthorMenuItem.js';
+import { flushSync } from 'react-dom';
 export function publishNotice(mode: Access['mode']): string {
   return mode === 'hosted'
     ? 'Publishing needs a hosted deployment with dashboard publication enabled. It is not available in this editor yet; nothing has been published.'
@@ -11,12 +12,16 @@ export function publishNotice(mode: Access['mode']): string {
 /** Moves keyboard focus to an editor control: opens any collapsed ancestor
  *  panel, scrolls the control into view, then focuses it. Exported for tests.
  *  No-op when there is no real DOM (react-test-renderer refs are not elements). */
-export function focusAuthorControl(nav: HTMLElement | null, selector: string) {
+export function focusAuthorControl(nav: HTMLElement | null, selector: string, tab?: 'Visual' | 'Interaction') {
   if (typeof nav?.closest !== 'function') return;
-  const target = nav.closest('.author-workspace')?.querySelector<HTMLElement>(selector);
-  const panel = target?.closest('details'); if (panel) panel.open = true;
+  const workspace = nav.closest('.author-workspace');
+  if (tab) flushSync(() => workspace?.querySelector<HTMLButtonElement>(`[data-properties-tab="${tab}"]`)?.click());
+  const target = workspace?.querySelector<HTMLElement>(selector);
+  // Sections can be nested inside a collapsed dock. Open every ancestor.
+  for (let panel = target?.closest('details'); panel; panel = panel.parentElement?.closest('details')) panel.open = true;
   target?.scrollIntoView?.({ block: 'nearest' });
   target?.focus();
+  return target;
 }
 export function AuthorToolbar({ onPrep, draft, dispatch, fit, onFit, onJson, onBundle, onImport, oEntry, dataAvailable = true, busy = false, jsonDisabled = false, autosaveError }: { autosaveError?: string; dataAvailable?: boolean; onPrep?: () => void; oEntry?: ReactNode; busy?: boolean; jsonDisabled?: boolean; draft: AuthorDraft; dispatch: Dispatch<AuthorAction>; fit: boolean; onFit: () => void; onJson: () => void; onBundle: () => void; onImport: () => void }) {
   const access = useAccess();
@@ -31,7 +36,7 @@ export function AuthorToolbar({ onPrep, draft, dispatch, fit, onFit, onJson, onB
     document.addEventListener?.('pointerdown', close);
     return () => document.removeEventListener?.('pointerdown', close);
   }, []);
-  const focus = (selector: string) => focusAuthorControl(nav.current, selector);
+  const focus = (selector: string, tab?: 'Visual' | 'Interaction') => { focusAuthorControl(nav.current, selector, tab); };
   const publish = () => { setNotice(publishNotice(access.mode)); notify('Publishing is unavailable in this editor. Nothing has been published.'); };
   return <>
     <nav ref={nav} className="author-menu" aria-label="Analysis menu" onKeyDown={e => {
@@ -57,7 +62,13 @@ export function AuthorToolbar({ onPrep, draft, dispatch, fit, onFit, onJson, onB
         <hr />
         <AuthorMenuItem label="Autosave On" checked reason={autosaveError ? `Autosave could not save: ${autosaveError}` : 'Autosave is always on for this device. Drafts are not synced or shared.'} />
       </div></details>
-      <details name="analysis-menu"><summary>Edit</summary><div className="menu-popover"><button type="button" onClick={() => focus('.analysis-title input')}>Rename analysis</button><p>Undo / redo is not available yet. Export a checkpoint to keep a copy.</p></div></details>
+      <details name="analysis-menu"><summary>Edit</summary><div className="menu-popover">
+        <AuthorMenuItem label="Undo" reason="Undo history is not supported yet. Export a checkpoint to keep a copy." />
+        <AuthorMenuItem label="Redo" reason="Redo history is not supported yet." />
+        <hr />
+        <AuthorMenuItem label="Themes" reason={!dataAvailable ? 'Add data to open the analysis theme editor.' : undefined} run={() => focus('[data-author-control="theme"]', 'Visual')} />
+        <AuthorMenuItem label="Analysis Settings" reason="Analysis-level settings are not supported in this editor yet." />
+      </div></details>
       <details name="analysis-menu"><summary>Data</summary><div className="menu-popover">{onPrep && <button type="button" onClick={onPrep}>Prepare data…</button>}<button type="button" disabled={!dataAvailable} onClick={() => nav.current?.closest('.author-workspace')?.querySelector<HTMLButtonElement>('.calculation-button')?.click()}>Calculated field…</button><p>{!dataAvailable ? 'Add data to start building.' : draft.dataset ? `Using ${draft.dataset.name}. Prepare data to transform its columns.` : access.mode === 'local' ? 'Using sample sales data (8 synthetic rows).' : 'Local synthetic sales is available. Adding remote data sources requires a configured backend.'}</p></div></details>
       <details name="analysis-menu"><summary>Insert</summary><div className="menu-popover"><button type="button" disabled={!dataAvailable} onClick={() => dispatch({ type: 'add', kind: 'bar' })}>Add bar visual</button><button type="button" disabled={!dataAvailable} onClick={() => focus('.visual-gallery button')}>Choose visual type</button><p>Text boxes and images are not available yet.</p></div></details>
       <details name="analysis-menu"><summary>Sheets</summary><div className="menu-popover">{draft.sheets.map(s => <button type="button" key={s.id} onClick={() => dispatch({ type: 'sheet-select', id: s.id })}>{s.name}</button>)}<button type="button" onClick={() => dispatch({ type: 'sheet-add' })}>Add sheet</button></div></details>

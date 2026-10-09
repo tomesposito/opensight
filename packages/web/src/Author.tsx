@@ -447,7 +447,7 @@ function Properties({ visual, draft, dispatch, client, runtimeProblems }: Editor
   ];
   return <>
     <div className="properties-tabs" role="tablist" aria-label="Properties tabs">
-      {(['Visual', 'Interaction'] as const).map(name => <button type="button" key={name} role="tab" id={`${tabId}-${name}`} aria-controls={`${tabId}-panel-${name}`} aria-selected={tab === name} tabIndex={tab === name ? 0 : -1} onClick={() => setTab(name)} onKeyDown={e => {
+      {(['Visual', 'Interaction'] as const).map(name => <button type="button" key={name} role="tab" data-properties-tab={name} id={`${tabId}-${name}`} aria-controls={`${tabId}-panel-${name}`} aria-selected={tab === name} tabIndex={tab === name ? 0 : -1} onClick={() => setTab(name)} onKeyDown={e => {
         if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return;
         e.preventDefault();
         const next = e.key === 'Home' ? 'Visual' : e.key === 'End' ? 'Interaction' : name === 'Visual' ? 'Interaction' : 'Visual';
