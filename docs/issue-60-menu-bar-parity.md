@@ -20,3 +20,9 @@ Edit opens Analysis theme in Properties, even from the Interaction tab or a
 collapsed dock. Undo, Redo and Analysis Settings explain their missing editor
 support. Theme controls require a dataset because the empty editor has no
 Properties dock.
+
+Data opens the Data dock, data sources (or preparation when that is the
+available entry point), calculated fields, and parameters. Prepare data is
+retained below the reference items. Navigation checkpoints unsaved work using
+the existing draft guard. Add Parameter opens the existing editor and focuses
+the name; repeated activation keeps it open, with an explicit Cancel action.

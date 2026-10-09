@@ -8,7 +8,7 @@ export function ParameterEditor({ draft, dispatch }: { draft: AuthorDraft; dispa
     {sheetParameters(draft).map(p => <div key={p.id}><strong>{p.name}</strong> · {p.integer ? 'integer' : p.type} · {p.multiple ? 'multiple' : 'single'}
       <p>Default: {p.defaultValues.join(', ') || '(none)'}</p><button type="button" onClick={() => dispatch({ type: 'parameter-default', id: p.id, values: p.values })}>Use current values as default for {p.name}</button>
     </div>)}
-    <button type="button" onClick={() => setOpen(!open)}>+ Parameter</button>
+    <button type="button" data-author-control="add-parameter" onClick={() => setOpen(true)}>+ Parameter</button>
     {open && <form aria-label="Create parameter" onSubmit={e => {
       e.preventDefault();
       const values: ParameterValue[] = defaults === '' ? [] : (multiple ? defaults.split('\n') : [defaults]).map(v => type === 'number' ? Number(v) : v);
@@ -16,12 +16,12 @@ export function ParameterEditor({ draft, dispatch }: { draft: AuthorDraft; dispa
       const problem = parameterError(p) ?? (sheetParameters(draft).some(p => p.name === name) ? 'A parameter with that name already exists.' : undefined);
       if (problem) setError(problem); else { dispatch({ type: 'parameter-add', parameter: p }); setOpen(false); setError(''); setName(''); setDefaults(''); }
     }}>
-      <label>Parameter name<input value={name} onChange={e => setName(e.target.value)} /></label>
+      <label>Parameter name<input autoFocus value={name} onChange={e => setName(e.target.value)} /></label>
       <label>Parameter type<select value={type} onChange={e => { setType(e.target.value as AuthorParameter['type']); setMultiple(false); }}><option value="string">String</option><option value="number">Number</option><option value="datetime">Datetime</option></select></label>
       {type !== 'datetime' && <label><input type="checkbox" checked={multiple} onChange={e => setMultiple(e.target.checked)} />Multiple values</label>}
       {type === 'number' && <label><input type="checkbox" checked={integer} onChange={e => setInteger(e.target.checked)} />Integer</label>}
       <label>Default values{multiple ? ' (one per line)' : ''}<textarea value={defaults} onChange={e => setDefaults(e.target.value)} /></label>
-      {error && <p role="alert">{error}</p>}<button type="submit">Create parameter</button>
+      {error && <p role="alert">{error}</p>}<button type="submit">Create parameter</button><button type="button" onClick={() => setOpen(false)}>Cancel parameter</button>
     </form>}
   </details>;
 }

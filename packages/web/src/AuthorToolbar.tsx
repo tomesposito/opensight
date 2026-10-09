@@ -23,7 +23,7 @@ export function focusAuthorControl(nav: HTMLElement | null, selector: string, ta
   target?.focus();
   return target;
 }
-export function AuthorToolbar({ onPrep, draft, dispatch, fit, onFit, onJson, onBundle, onImport, oEntry, dataAvailable = true, busy = false, jsonDisabled = false, autosaveError }: { autosaveError?: string; dataAvailable?: boolean; onPrep?: () => void; oEntry?: ReactNode; busy?: boolean; jsonDisabled?: boolean; draft: AuthorDraft; dispatch: Dispatch<AuthorAction>; fit: boolean; onFit: () => void; onJson: () => void; onBundle: () => void; onImport: () => void }) {
+export function AuthorToolbar({ onPrep, onSources, draft, dispatch, fit, onFit, onJson, onBundle, onImport, oEntry, dataAvailable = true, busy = false, jsonDisabled = false, autosaveError }: { autosaveError?: string; dataAvailable?: boolean; onSources?: () => void; onPrep?: () => void; oEntry?: ReactNode; busy?: boolean; jsonDisabled?: boolean; draft: AuthorDraft; dispatch: Dispatch<AuthorAction>; fit: boolean; onFit: () => void; onJson: () => void; onBundle: () => void; onImport: () => void }) {
   const access = useAccess();
   const notify = useToast();
   const [notice, setNotice] = useState(''), [search, setSearch] = useState('');
@@ -37,6 +37,8 @@ export function AuthorToolbar({ onPrep, draft, dispatch, fit, onFit, onJson, onB
     return () => document.removeEventListener?.('pointerdown', close);
   }, []);
   const focus = (selector: string, tab?: 'Visual' | 'Interaction') => { focusAuthorControl(nav.current, selector, tab); };
+  const activate = (selector: string) => { focusAuthorControl(nav.current, selector)?.click(); };
+  const needsData = !dataAvailable ? 'Add data to start building.' : undefined;
   const publish = () => { setNotice(publishNotice(access.mode)); notify('Publishing is unavailable in this editor. Nothing has been published.'); };
   return <>
     <nav ref={nav} className="author-menu" aria-label="Analysis menu" onKeyDown={e => {
@@ -69,7 +71,16 @@ export function AuthorToolbar({ onPrep, draft, dispatch, fit, onFit, onJson, onB
         <AuthorMenuItem label="Themes" reason={!dataAvailable ? 'Add data to open the analysis theme editor.' : undefined} run={() => focus('[data-author-control="theme"]', 'Visual')} />
         <AuthorMenuItem label="Analysis Settings" reason="Analysis-level settings are not supported in this editor yet." />
       </div></details>
-      <details name="analysis-menu"><summary>Data</summary><div className="menu-popover">{onPrep && <button type="button" onClick={onPrep}>Prepare data…</button>}<button type="button" disabled={!dataAvailable} onClick={() => nav.current?.closest('.author-workspace')?.querySelector<HTMLButtonElement>('.calculation-button')?.click()}>Calculated field…</button><p>{!dataAvailable ? 'Add data to start building.' : draft.dataset ? `Using ${draft.dataset.name}. Prepare data to transform its columns.` : access.mode === 'local' ? 'Using sample sales data (8 synthetic rows).' : 'Local synthetic sales is available. Adding remote data sources requires a configured backend.'}</p></div></details>
+      <details name="analysis-menu"><summary>Data</summary><div className="menu-popover">
+        <AuthorMenuItem label="Data" run={() => focus('.fields-panel > summary')} />
+        <AuthorMenuItem label="Add data" reason={!onSources && !onPrep ? 'Adding datasets needs a connected data workspace.' : undefined} run={onSources ?? onPrep} />
+        <hr />
+        <AuthorMenuItem label="Add Calculated Field" reason={needsData} run={() => activate('.calculation-button')} />
+        <hr />
+        <AuthorMenuItem label="Parameters" reason={needsData} run={() => focus('.parameter-editor > summary')} />
+        <AuthorMenuItem label="Add Parameter" reason={needsData} run={() => activate('[data-author-control="add-parameter"]')} />
+        {onPrep && <><hr /><AuthorMenuItem label="Prepare data…" run={onPrep} /></>}
+      </div></details>
       <details name="analysis-menu"><summary>Insert</summary><div className="menu-popover"><button type="button" disabled={!dataAvailable} onClick={() => dispatch({ type: 'add', kind: 'bar' })}>Add bar visual</button><button type="button" disabled={!dataAvailable} onClick={() => focus('.visual-gallery button')}>Choose visual type</button><p>Text boxes and images are not available yet.</p></div></details>
       <details name="analysis-menu"><summary>Sheets</summary><div className="menu-popover">{draft.sheets.map(s => <button type="button" key={s.id} onClick={() => dispatch({ type: 'sheet-select', id: s.id })}>{s.name}</button>)}<button type="button" onClick={() => dispatch({ type: 'sheet-add' })}>Add sheet</button></div></details>
       <details name="analysis-menu"><summary>Objects</summary><div className="menu-popover">{sheet.visuals.map(v => <button key={v.id} type="button" onClick={() => dispatch({ type: 'select', id: v.id })}>{v.title || v.id} · {v.kind}</button>)}{selected && <button type="button" onClick={() => dispatch({ type: 'remove', id: selected.id })}>Remove selected visual</button>}{!sheet.visuals.length && <p>No visuals on this sheet.</p>}</div></details>

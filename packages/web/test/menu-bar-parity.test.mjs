@@ -79,3 +79,18 @@ test('control focus opens nested sections and their dock, switches tabs, and tol
   assert.doesNotThrow(() => focusAuthorControl(null, 'missing'));
   assert.doesNotThrow(() => focusAuthorControl({}, 'missing'));
 });
+
+test('Data exposes all reference actions, retains preparation, and routes Add data to sources', async t => {
+  const calls = [];
+  const ui = await mount(t, { onSources: () => calls.push('sources'), onPrep: () => calls.push('prep') });
+  assert.deepEqual(ui.labels('Data'), ['Data', 'Add data', 'Add Calculated Field', 'Parameters', 'Add Parameter', 'Prepare data…']);
+  await ui.click('Data', 'Add data'); await ui.click('Data', 'Prepare data…');
+  assert.deepEqual(calls, ['sources', 'prep']);
+  await ui.update({ onSources: undefined }); await ui.click('Data', 'Add data');
+  assert.deepEqual(calls, ['sources', 'prep', 'prep']);
+  await ui.update({ dataAvailable: false, onSources: undefined, onPrep: undefined });
+  for (const label of ['Add data', 'Add Calculated Field', 'Parameters', 'Add Parameter']) {
+    assert.equal(ui.item('Data', label).props['aria-disabled'], true); assert.ok(ui.item('Data', label).props.title);
+  }
+  assert.equal(ui.item('Data', 'Data').props['aria-disabled'], false, 'the empty data dock is still available');
+});

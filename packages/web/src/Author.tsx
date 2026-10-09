@@ -139,6 +139,7 @@ function AuthorWorkspace({ sampleLoaded = false, onTrySample, client: apiClient,
   };
   const renderToolbar = (trigger?: ReactNode) => <AuthorToolbar
     onPrep={onPrep ? () => { if (drafts.keepCurrent()) onPrep(); } : undefined}
+    onSources={onSources ? () => { if (drafts.keepCurrent()) onSources(); } : undefined}
     draft={draft} dispatch={dispatch} oEntry={trigger} dataAvailable={!noData} fit={fit}
     onFit={() => setFit(value => !value)} onJson={download}
     onBundle={() => { if (!busy) void downloadQs(); }} onImport={() => fileInput.current?.click()}
