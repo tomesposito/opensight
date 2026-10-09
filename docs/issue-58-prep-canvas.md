@@ -74,3 +74,30 @@ script now builds a type-change/join flow and opens its Configure panel. The
 207-frame tour was assembled with the documented ffmpeg palette workflow at
 960×600 and 10fps. The external local-only LOOKFEEL_GAP section also records the
 comparison and remaining work.
+
+`TZ=UTC npm test` from the repository root exited **0**:
+**1,917 passed / 0 failed / 12 skipped / 0 cancelled**. Every skip requires live
+PostgreSQL with `DATABASE_URL`; no web test was skipped.
+
+| Runner | Passed | Failed | Skipped |
+| --- | ---: | ---: | ---: |
+| API | 304 | 0 | 10 |
+| Bundle parser | 199 | 0 | 0 |
+| Embedding SDK | 9 | 0 | 0 |
+| O interpreter | 32 | 0 | 0 |
+| Parity | 11 | 0 | 0 |
+| Query engine | 502 | 0 | 2 |
+| Web | 854 | 0 | 0 |
+| Root conformance | 6 | 0 | 0 |
+| **Total** | **1,917** | **0** | **12** |
+
+The complete log is `.opensight/issue-58/full-suite.log`; the matching
+`full-suite.exit` records exit 0. The full run was isolated from browser captures
+and GIF assembly. The two-tenant load check passed without changing its limits.
+
+Final canvas review replaced fixed join-source spacing with equal rows sized
+from their contents. This keeps the left connection centered and prevents a
+secondary source from overlapping a neighboring branch. The final browser run
+also built two join branches with a plain transformation between them and
+verified that no node rectangles overlap. The rebuilt captures pass the same
+keyboard, mobile, typography and error checks after that CSS-only adjustment.
