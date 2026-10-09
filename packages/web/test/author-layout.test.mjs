@@ -89,14 +89,14 @@ test('card selection keeps docked wells, Data assignments and Properties on the 
   assert.equal(activeSheet(ui.state()).selectedId, 'visual-1');
   assert.equal(ui.panel('build').find(n => n.props.className === 'visual-config').props.id, 'configure-visual-1');
   assert.equal(ui.panel('build').find(n => n.props.className === 'selected-visual').props.children, 'Sales by category');
-  assert.ok(ui.panel('build').findAllByType('button').some(n => n.props['aria-label'] === 'Remove category from Category'));
+  assert.ok(ui.panel('build').findAllByType('button').some(n => n.props['aria-label'] === 'Remove category from Group/Color'));
   assert.equal(ui.panel('properties').findAllByType('input').find(n => n.props.placeholder === 'Generated from fields').props.value, 'Sales by category');
   await ui.click('Assign profit');
   assert.deepEqual(activeSheet(ui.state()).visuals.map(v => v.measures), [['revenue', 'profit'], ['revenue']]);
   const configure = ui.find('button', p => p['aria-expanded'] === false);
   await act(() => configure.props.onClick());
   assert.equal(ui.panel('build').find(n => n.props.className === 'visual-config').props.id, 'configure-visual-2');
-  const columns = ui.panel('build').findAllByType('fieldset').find(n => n.findByType('legend').props.children[0] === 'Columns');
+  const columns = ui.panel('build').findAllByType('fieldset').find(n => n.findByType('legend').props.children === 'COLUMNS');
   await act(() => columns.props.onFocus());
   await ui.click('Assign category');
   assert.deepEqual(activeSheet(ui.state()).visuals[1].columns, ['category']);

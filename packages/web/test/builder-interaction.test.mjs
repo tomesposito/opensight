@@ -34,11 +34,11 @@ const selected = d => activeSheet(d).visuals.find(v => v.id === activeSheet(d).s
 
 test('empty wells select the destination and Data assignment creates a bar, then edits it in place', async t => {
   const ui = await mount(t);
-  await ui.click('Select COLUMNS well');
-  assert.equal(ui.button('Select COLUMNS well').props['aria-pressed'], true);
+  await ui.click('Select GROUP/COLOR well');
+  assert.equal(ui.button('Select GROUP/COLOR well').props['aria-pressed'], true);
   assert.equal(activeSheet(ui.state()).visuals.length, 0);
   const hint = ui.find('p', p => p.className === 'field-hint');
-  assert.ok(hint.props.children.includes('COLUMNS (bar category)'));
+  assert.ok(hint.props.children.includes('Group/Color'));
   await ui.click('Assign category');
   assert.equal(selected(ui.state()).kind, 'bar');
   assert.equal(selected(ui.state()).dimension, 'category');
@@ -46,13 +46,13 @@ test('empty wells select the destination and Data assignment creates a bar, then
   await ui.click('Assign profit');
   assert.equal(activeSheet(ui.state()).visuals.length, 1);
   assert.deepEqual(selected(ui.state()).measures, ['profit']);
-  await ui.click('Remove category from Category');
+  await ui.click('Remove category from Group/Color');
   assert.equal(selected(ui.state()).dimension, null);
   await ui.click('Assign region');
   assert.deepEqual(loadDraft(() => ui.store).draft, ui.state());
   await ui.click('Remove Visual 1');
-  assert.ok(ui.button('Select VALUES well'));
-  await ui.click('Select VALUES well');
+  assert.ok(ui.button('Select VALUE well'));
+  await ui.click('Select VALUE well');
   await ui.click('Assign revenue');
   assert.equal(selected(ui.state()).dimension, null);
   assert.deepEqual(selected(ui.state()).measures, ['revenue']);
@@ -106,6 +106,8 @@ test('gallery ADD, field buttons, well pickers and pill removal change the live 
   await ui.click('Pivot');
   await ui.submit(ui.find('form', p => p.className === 'add-visual'));
   assert.equal(selected(ui.state()).kind, 'pivot');
+  assert.deepEqual(selected(ui.state()).measures, []);
+  await ui.click('Assign revenue');
   await ui.change(ui.find('select', p => p['aria-label'] === 'Assign Columns'), 'category');
   await ui.click('Assign profit');
   assert.deepEqual(selected(ui.state()).columns, ['category']);
@@ -177,4 +179,46 @@ test('filter checkboxes, select-none and removable pills apply static filters to
   assert.deepEqual(buildAuthorQuery(selected(ui.state())).filters, [{ columnName: 'region', values: ['East'] }]);
   await ui.click('Remove region filter');
   assert.deepEqual(buildAuthorQuery(selected(ui.state())).filters, []);
+});
+
+test('Small multiples placeholder routes Data clicks and pickers to a saved removable pill', async t => {
+  const ui = await mount(t);
+  await ui.click('Select SMALL MULTIPLES well');
+  await ui.click('Assign category');
+  assert.equal(selected(ui.state()).dimension, null);
+  assert.deepEqual(selected(ui.state()).smallMultiples, ['category']);
+  assert.deepEqual(loadDraft(() => ui.store).draft, ui.state());
+  await ui.change(ui.find('select', p => p['aria-label'] === 'Assign Small multiples'), 'order_date');
+  assert.deepEqual(selected(ui.state()).smallMultiples, ['order_date']);
+  await ui.click('Remove order_date from Small multiples');
+  assert.ok(ui.button('Select SMALL MULTIPLES well'));
+  assert.ok(ui.renderer.root.findAll(n => n.props.className === 'author-visual-empty').length);
+  await ui.click('Select VALUE well');
+  await ui.click('Assign revenue');
+  assert.equal(ui.button('Select VALUE well'), undefined);
+  await ui.click('Remove revenue from Value');
+  assert.ok(ui.button('Select VALUE well'));
+});
+
+test('field drag-and-drop assigns the selected well and refuses external text and incompatible fields', async t => {
+  const ui = await mount(t);
+  const drag = { types: [], data: {}, setData(type, value) { this.types.push(type); this.data[type] = value; }, getData(type) { return this.data[type] ?? ''; } };
+  await act(() => ui.button('Assign revenue').props.onDragStart({ dataTransfer: drag }));
+  assert.equal(drag.effectAllowed, 'copy');
+  const well = label => ui.renderer.root.findAllByType('fieldset').find(n => n.findByType('legend').children.includes(label));
+  let prevented = false;
+  await act(() => well('VALUE').props.onDragOver({ dataTransfer: drag, preventDefault() { prevented = true; } }));
+  assert.equal(prevented, true);
+  await act(() => well('VALUE').props.onDrop({ dataTransfer: drag, preventDefault() {}, stopPropagation() {} }));
+  assert.deepEqual(selected(ui.state()).measures, ['revenue']);
+  assert.equal(ui.button('Select VALUE well'), undefined);
+  await act(() => well('SMALL MULTIPLES').props.onDrop({ dataTransfer: drag, preventDefault() {}, stopPropagation() {} }));
+  assert.equal(selected(ui.state()).smallMultiples, undefined);
+  const before = ui.state();
+  await act(() => well('GROUP/COLOR').props.onDrop({ dataTransfer: { types: ['text/plain'], getData: () => 'category' }, preventDefault() { assert.fail('External drag must be ignored'); } }));
+  assert.equal(ui.state(), before);
+  await act(() => ui.button('Assign order_date').props.onDragStart({ dataTransfer: drag }));
+  await act(() => well('SMALL MULTIPLES').props.onDrop({ dataTransfer: drag, preventDefault() {}, stopPropagation() {} }));
+  assert.deepEqual(selected(ui.state()).smallMultiples, ['order_date']);
+  assert.equal(ui.button('Select SMALL MULTIPLES well'), undefined);
 });
