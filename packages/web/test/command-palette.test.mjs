@@ -5,6 +5,7 @@ import { fuzzyScore, filterCommands, navigationCommands } from '../build/test/co
 import { CommandPaletteProvider, usePaletteCommands } from '../build/test/CommandPalette.js';
 import { ToastProvider } from '../build/test/Toasts.js';
 import { AppNavigation } from '../build/test/AppNavigation.js';
+import { pages, routeProblem } from '../build/test/app-navigation.js';
 import { demoAccess } from '../build/test/access.js';
 import { mountPalette } from './command-palette-helpers.mjs';
 
@@ -27,11 +28,26 @@ test('substring and word-boundary bonuses rank results with stable ties and sear
 });
 test('navigation commands use existing destinations and hide routes denied to readers', () => {
   const calls = [], all = navigationCommands(demoAccess, route => calls.push(route));
-  assert.deepEqual(all.map(c => c.label), ['Go to Home', 'Go to Analyses', 'Go to Data', 'Go to Admin', 'Go to Author']);
+  for (const label of ['Go to Home', 'Go to My stuff', 'Go to Analyses', 'Go to Data', 'Go to Admin', 'Go to Author', 'Go to My folders', 'Go to Shared folders']) assert.ok(all.some(command => command.label === label));
   all.forEach(c => c.run());
-  assert.deepEqual(calls.map(c => c.page), ['home', 'analyses', 'data-prep', 'security', 'author']);
+  assert.deepEqual(calls.map(c => c.page).sort(), Object.keys(pages).filter(page => !routeProblem(demoAccess, page)).sort());
+  assert.equal(new Set(all.map(command => command.id)).size, all.length);
   const reader = { mode: 'hosted', session: { role: 'reader' } };
-  assert.deepEqual(navigationCommands(reader, () => {}).map(c => c.label), ['Go to Home', 'Go to Admin']);
+  const readerCalls = [];
+  navigationCommands(reader, route => readerCalls.push(route.page)).forEach(command => command.run());
+  assert.deepEqual(readerCalls.sort(), Object.keys(pages).filter(page => !routeProblem(reader, page)).sort());
+});
+test('rail Search closes the navigation overlay and opens the existing global palette', async t => {
+  const ui = await mountPalette(t, { route: '#/my-stuff' });
+  await ui.click('Toggle navigation');
+  assert.equal(ui.renderer.root.findByProps({ id: 'product-navigation' }).props['data-open'], true);
+  await ui.click('Search navigation and commands');
+  assert.equal(ui.renderer.root.findByProps({ id: 'product-navigation' }).props['data-open'], false);
+  assert.equal(ui.renderer.root.findAllByType('dialog').length, 1);
+  assert.equal(ui.input().props.placeholder, 'Search commands…');
+  await ui.run('Go to Shared folders');
+  assert.equal(globalThis.window.location.hash, '#/folders/shared');
+  assert.equal(ui.renderer.root.findAllByType('dialog').length, 0);
 });
 for (const modifier of ['metaKey', 'ctrlKey']) test(`${modifier}+K opens a labelled modal with active option, and Escape restores focus`, async t => {
   const ui = await mountPalette(t);
@@ -113,11 +129,11 @@ test('commands unregister on route changes and unavailable Author or Q contexts 
   const ui = await mountPalette(t);
   for (const page of ['analyses', 'data-prep', 'security', 'fixtures']) {
     await ui.navigate(page); await ui.open();
-    assert.deepEqual(ui.labels(), ['Go to Home', 'Go to Analyses', 'Go to Data', 'Go to Admin', 'Go to Author']);
+    assert.deepEqual(ui.labels(), navigationCommands(demoAccess, () => {}).map(command => command.label));
     await ui.cancel(); assert.equal((await ui.key('s', { ctrlKey: true })).defaultPrevented, false);
   }
   await act(() => ui.renderer.root.findByType(AppNavigation).props.navigate({ page: 'author', draftId: 'missing' }));
-  await ui.open(); assert.equal(ui.labels().length, 5);
+  await ui.open(); assert.equal(ui.labels().length, navigationCommands(demoAccess, () => {}).length);
 });
 for (const role of ['author', 'reader', 'reader_ai']) test(`hosted ${role} sees only commands its available UI can run`, async t => {
   const ui = await mountPalette(t, { access: { mode: 'hosted', session: { role, id: 'test', namespaceId: 'test' } } });
@@ -162,7 +178,7 @@ test('Tab and Shift+Tab wrap between search and Close without leaving the modal'
 test('removing a command context while open removes options and resets the active descendant', async t => {
   const ui = await mountPalette(t); await ui.open(); await ui.press('ArrowUp');
   assert.notEqual(ui.selected(), 'Go to Home');
-  await ui.navigate('data-prep'); assert.equal(ui.labels().length, 5);
+  await ui.navigate('data-prep'); assert.equal(ui.labels().length, navigationCommands(demoAccess, () => {}).length);
   assert.equal(ui.selected(), 'Go to Home');
   assert.equal(ui.input().props['aria-activedescendant'], ui.options()[0].props.id);
 });

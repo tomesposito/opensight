@@ -21,8 +21,10 @@ export const pages = {
 export type Page = keyof typeof pages;
 export type AppRoute = { page: Page; draftId?: string; newAnalysis?: boolean };
 export const productSections = [
-  { title: 'Home', page: 'home' }, { title: 'Analyses', page: 'analyses' }, { title: 'Dashboards', page: 'dashboards' },
-  { title: 'Data', page: 'data-prep' }, { title: 'Admin', page: 'security' },
+  { title: 'My stuff', page: 'my-stuff' },
+  { title: 'Analyses', page: 'analyses' }, { title: 'Dashboards', page: 'dashboards' },
+  { title: 'Data', page: 'data-prep' },
+  { title: 'My folders', page: 'my-folders' }, { title: 'Shared folders', page: 'shared-folders' },
 ] as const;
 export const dataPages: Page[] = ['data-prep', 'data-sources'];
 export const adminPages: Page[] = ['security', 'organization', 'automation', 'ai-settings', 'users'];

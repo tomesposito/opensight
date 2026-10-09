@@ -26,12 +26,13 @@ describe('Issue #63: hosted sign-in layout',()=>{
     assert.ok(actual.fields.every(field=>field.label>0));
     assert.equal(actual.password,'password');
   });
-  for(const width of [1440,390,320]) test(`${width}px hosted header keeps Sign out visible with a long account name`,async()=>{
+  for(const width of [1440,390,320]) test(`${width}px account menu keeps Sign out reachable with a long account name`,async()=>{
     await page.setViewportSize({width,height:900});
     const html=renderToStaticMarkup(h(AccessProvider,{access:{mode:'hosted',session:{id:'u',namespaceId:'n',name:'Long synthetic account display name',role:'author'},signOut:async()=>{}}},
       h('div',{className:'app-shell'},h(AppNavigation,{route:{page:'home'},navigate(){}}))));
     await page.setContent(`<style>${css}\nhtml { scrollbar-width: none; }</style>${html}`);
     const actual=await page.evaluate(()=>{
+      document.querySelector('.account-menu').open = true;
       const button=document.querySelector('.hosted-account button').getBoundingClientRect();
       return {width:document.documentElement.scrollWidth,button:{left:button.left,right:button.right,height:button.height}};
     });

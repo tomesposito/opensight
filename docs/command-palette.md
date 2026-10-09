@@ -10,8 +10,11 @@ word starts and consecutive matches rank higher. Equal scores retain menu order.
 Use **Up/Down** to wrap through results, **Enter** to run the selected command,
 and **Esc** or **Close** to dismiss. Empty results never execute a command.
 
-Navigation uses the existing application routes and access checks: **Home**,
-**Analyses**, **Data**, **Admin**, and **Author**. Only a loaded Author workspace
+Navigation uses application routes and access checks. Issue #64 adds rail
+**Search**, **My stuff**, folder entry screens, and permitted secondary routes
+to the same palette. **Home**, **Analyses**, **Data**, **Admin**, and **Author**
+keep their existing command IDs; unavailable routes are omitted. Search is for
+navigation and commands, not a hosted asset search. Only a loaded Author workspace
 registers **Save draft**, **Toggle theme**, and its current sheets. Saving uses
 the manual device-local save path; theme changes use the NEW LOOK chrome action.
 **Open Q&A panel** is registered by an available Q panel, including the sample

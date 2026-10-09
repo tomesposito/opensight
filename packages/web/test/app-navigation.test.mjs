@@ -25,7 +25,8 @@ for (const access of accesses) test(`product and secondary navigation preserve g
   const home = shell(access, 'home');
   const product = home.match(/<nav class="app-nav"[\s\S]*?<\/nav>/)[0];
   const canBuild = access.mode === 'local' || hasCapability(access.session?.role, 'build');
-  assert.match(product, />Home<\/a>/); assert.match(product, />Admin<\/a>/);
+  assert.match(product, />My stuff<\/a>/); assert.doesNotMatch(product, />Home<\/a>|>Admin<\/a>/);
+  assert.match(home, /aria-controls="more-navigation"/);
   for (const label of ['Analyses', 'Data']) assert.equal(product.includes(`>${label}</a>`), canBuild);
   assert.doesNotMatch(product, /Developer|fixtures|definition|AI provider|Users|Mode/);
   assert.equal(shell(access, 'author').includes('aria-label="Analyses"'), canBuild);
@@ -80,7 +81,7 @@ async function mount(t, access = demoAccess, hash = '#/home', seed) {
   t.after(async () => { await act(() => renderer.unmount()); globalThis.window = oldWindow; globalThis.IS_REACT_ACT_ENVIRONMENT = oldAct; });
   return { store, seeded, storage, location, get root() { return renderer.root; }, text: () => JSON.stringify(renderer.toJSON()),
     navigate: route => act(() => renderer.root.findByType(AppNavigation).props.navigate(route)),
-    link: async label => { const a = renderer.root.findAllByType('a').find(a => a.props.children === label); assert.ok(a, label); await act(() => a.props.onClick({ button: 0, preventDefault() {} })); },
+    link: async label => { const a = renderer.root.findAllByType('a').find(a => a.children.includes(label)); assert.ok(a, label); await act(() => a.props.onClick({ button: 0, preventDefault() {} })); },
     back: () => act(() => { location.hash = history[--position]; events.dispatchEvent(new Event('hashchange')); }),
     forward: () => act(() => { location.hash = history[++position]; events.dispatchEvent(new Event('hashchange')); }),
     reload: async () => { await act(() => renderer.unmount()); await act(() => { renderer = create(element); }); },
@@ -116,6 +117,41 @@ test('My stuff starts empty and shows only real session visits with gated collec
     assert.equal(html.includes('href="#/analyses"'), access.mode === 'demo');
     assert.doesNotMatch(html, /href="#\/dashboards"/);
   }
+});
+
+test('rail preserves reference order, groups Admin under More, and puts Recents last', async t => {
+  const ui = await mount(t, { mode: 'local' }, '#/my-stuff');
+  const navigation = () => ui.root.findByType(AppNavigation);
+  const rail = () => navigation().findByProps({ id: 'product-navigation' });
+  const product = rail().findByProps({ 'aria-label': 'Product' });
+  assert.deepEqual(product.findAllByType('a').map(link => link.children.at(-1)), ['My stuff', 'Analyses', 'Dashboards', 'Data', 'My folders', 'Shared folders']);
+  assert.equal(product.findAllByType('button')[0].props['aria-label'], 'Search navigation and commands');
+  assert.equal(rail().children.at(-1).props['aria-label'], 'Recents');
+  assert.equal(rail().findByProps({ id: 'more-navigation' }).props.hidden, true);
+  await act(() => rail().findByProps({ className: 'rail-more' }).props.onClick());
+  assert.equal(rail().findByProps({ id: 'more-navigation' }).props.hidden, false);
+  await ui.link('Security & namespaces');
+  assert.equal(ui.location.hash, '#/admin/security');
+  assert.equal(rail().findByProps({ id: 'more-navigation' }).props.hidden, false);
+  assert.deepEqual(navigation().props.recentPages, ['my-stuff']);
+  const breadcrumb = navigation().findByProps({ 'aria-label': 'Breadcrumb' });
+  assert.deepEqual(breadcrumb.findAllByType('a').map(link => link.children[0]), ['Home', 'Admin']);
+  assert.equal(breadcrumb.findByProps({ className: 'header-caption' }).props.children, 'Security & namespaces');
+  await ui.reload(); assert.equal(rail().findByProps({ id: 'more-navigation' }).props.hidden, false);
+});
+
+test('account disclosure presents the real hosted identity and invokes existing sign out', async t => {
+  let signOuts = 0;
+  const ui = await mount(t, { ...hosted('author'), signOut: async () => { signOuts++; } }, '#/my-stuff');
+  const account = ui.root.findByType(AppNavigation).findByType('details');
+  assert.equal(account.findByType('summary').props['aria-label'], 'Account');
+  assert.equal(account.findByType('strong').props.children, 'User');
+  await act(() => account.findByType('button').props.onClick());
+  assert.equal(signOuts, 1);
+  let focused = false;
+  const node = { open: true, querySelector: () => ({ focus() { focused = true; } }) };
+  account.props.onKeyDown({ key: 'Escape', currentTarget: node });
+  assert.equal(node.open, false); assert.equal(focused, true);
 });
 
 test('Analyses lists the #32 collection, renames/deletes it, and opens its exact saved chart', async t => {
@@ -191,7 +227,7 @@ for (const role of ['reader', 'reader_ai', undefined]) test(`direct URLs cannot 
 test('unknown URLs have recovery links and product navigation works through browser history', async t => {
   const ui = await mount(t, demoAccess, '#/unknown');
   assert.match(ui.text(), /Page not found/);
-  await ui.link('Home'); await ui.link('Analyses'); await ui.link('Data'); await ui.link('Admin');
+  await ui.link('Home'); await ui.link('Analyses'); await ui.link('Data'); await ui.link('Security & namespaces');
   assert.match(ui.text(), /Security & namespaces/);
   await ui.back(); assert.equal(ui.location.hash, '#/data/preparation');
   await ui.back(); assert.equal(ui.location.hash, '#/analyses');
@@ -203,8 +239,9 @@ test('Issue #35: the product header names OpenSight and the current page after #
     for (const page of ['home', 'author', 'fixtures']) {
       const html = shell(access, page);
       assert.match(html, /class="brand"[^>]*>[\s\S]*?OpenSight<\/a>/);
-      assert.ok(html.includes(`<span class="header-caption">${pages[page].title}</span>`));
-      for (const label of ['Home', 'Analyses', 'Data', 'Admin']) assert.ok(html.includes(`>${label}</a>`));
+      assert.match(html, /aria-label="Breadcrumb"/);
+      if (page !== 'home') assert.ok(html.includes(`<span class="header-caption" aria-current="page">${pages[page].title}</span>`));
+      for (const label of ['Home', 'My stuff', 'Analyses', 'Data']) assert.ok(html.includes(`>${label}</a>`));
       assert.doesNotMatch(html, /Definition explorer/);
     }
   }

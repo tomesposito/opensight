@@ -2,21 +2,38 @@
 
 The local application opens an empty **Home**, ready to upload data. **Try sample
 data** explicitly enables the labeled sales sample from issue #28. The static
-demo retains its staged showcase. The shared header provides Home, Analyses,
-Data, and Admin, plus **Dashboards** in local mode, with an active section and a
-title for the current screen. Issues #31 and #55 define this navigation;
-`SOLUTION_DESIGN.md` is unchanged.
+demo retains its staged showcase. The issue #64 left rail provides **Search**,
+**My stuff**, **Analyses**, **Dashboards** (local only), **Data**, **My folders**,
+**Shared folders**, and **More**, followed by **Recents**. Build-only links keep
+their permission gates. Search opens the existing #53 command palette. More
+expands the Admin and developer links. The top band has a breadcrumb and an
+account disclosure; hosted users can sign out there. Home remains accessible
+through the brand, breadcrumb, and command palette. `SOLUTION_DESIGN.md` is
+unchanged. See the [reference mapping and gap notes](issue-64-gap-notes.md).
 
 | Section | Screen | Former mode |
 | --- | --- | --- |
 | Home | Local: add data or opt into a sample; demo: sample dashboard | sample |
+| My stuff | Available collection links and pages visited this session | — |
 | Dashboards (local only) | Empty list; publishing needs hosted API | — |
 | Analyses | My analyses: device-local draft list | Local drafts in Author (#32) |
 | Analyses | Author workspace | author |
 | Data | Data preparation; Data sources | data-prep; data-sources |
+| My folders / Shared folders | Honest folder-browsing empty states; link to folder/sharing guidance | — |
 | Admin | Security & namespaces; Folders, sharing & embedding; Schedules & alerts | security; organization; automation |
 | Admin | AI provider settings; Users and invitations | ai-settings; users |
 | Admin → Developer tools | Fixture preview; API definition preview | fixtures; api |
+
+Recents shows up to five distinct previously visited pages, newest first. It
+contains no staged assets, draft IDs, or persisted browsing history, and resets
+on reload or identity changes. Author is excluded so a recent link cannot
+restore a different draft. My stuff shows the same session history. Folder
+screens do not fetch or manage folders; in hosted mode they explicitly say
+folders have not been loaded, rather than claiming that the account is empty.
+
+Below 761px, and in Author at all widths, the rail opens with **Toggle
+navigation**. It closes on a route change, Search, Escape, or backdrop click.
+Long rail contents scroll. More opens automatically for an Admin deep link.
 
 Analyses lists drafts by name and updated time, newest first, with Reopen,
 Rename, Delete, and Refresh drafts. New analysis starts a blank analysis.
@@ -29,7 +46,8 @@ or shared analyses. See [local drafts](local-drafts.md).
 
 ## Visibility and permissions
 
-Home and Admin are available in all three modes. Dashboards is local-only. Analyses and Data require
+Home, My stuff, folder entry screens, and Admin are available in all three modes.
+Dashboards is local-only. Analyses and Data require
 the existing `allowed(access, 'build')` check: local and demo users can build;
 hosted authors and administrators can build; hosted readers cannot.
 
@@ -44,7 +62,8 @@ the default landing. Direct links apply the same gates before mounting a screen.
 
 ## URLs and browser history
 
-Routes use URL fragments (`#/home`, `#/dashboards` (local only), `#/analyses`, `#/analyses/new`,
+Routes use URL fragments (`#/home`, `#/my-stuff`, `#/folders/mine`,
+`#/folders/shared`, `#/dashboards` (local only), `#/analyses`, `#/analyses/new`,
 `#/analyses/author`, `#/analyses/drafts/<id>`, `#/data/preparation`,
 `#/data/sources`, and `#/admin/...`). They work in both the static single-file
 demo and the connected app without server rewrite rules or a routing dependency.

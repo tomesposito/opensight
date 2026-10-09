@@ -42,6 +42,17 @@ folder CRUD, or hosted resource listing are included. Session recents contain
 navigation locations, not asset activity. Existing role gates also filter
 recents and command-palette destinations.
 
-Implementation and verification results will be recorded at each checkpoint.
+Checkpoints:
+
+- Reference mapping recorded before implementation.
+- Added My stuff and folder entry routes, retaining all legacy paths. The 26
+  focused route tests passed, including hosted-reader bypass checks, draft
+  restoration, reload, Back/Forward, honest folder guidance, and session recents.
+- Implemented ordered rail links, Search, More, Recents, breadcrumb, and account
+  disclosure. Command-palette indexing includes every permitted destination,
+  preserving existing command IDs. Shared capture navigation follows the new
+  rail and opens its responsive overlay when needed.
+
+Full-suite and visual verification results will follow.
 Demo rebuild, final README media refresh, merge, and publication belong to the
 sweep runner per the run brief; this build branch is not pushed.
