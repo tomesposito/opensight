@@ -91,6 +91,22 @@ try {
   assert.match(await page.locator('.prep-configure').innerText(), /PREP_SCHEMA_MISMATCH/);
   assert.equal(await button('Apply step').isDisabled(), true);
   await capture('prep-append-mismatch');
+  await button('Cancel').click();
+  // A plain branch between two join branches must not overlap a secondary source.
+  const base = page.locator('.prep-step-node').first();
+  const baseId = await base.getAttribute('data-step-id');
+  await base.locator(':scope > .prep-node').click();
+  await base.getByRole('button', { name: 'Add branch', exact: true }).click();
+  await button('Apply step').click();
+  await button('＋ Join').click();
+  await page.getByLabel('Left table', { exact: true }).selectOption(baseId);
+  await button('Apply step').click();
+  const overlaps = await page.locator('.prep-graph .prep-node').evaluateAll(nodes => {
+    const boxes = nodes.map(node => node.getBoundingClientRect());
+    return boxes.flatMap((a, i) => boxes.slice(i + 1).flatMap((b, j) => Math.min(a.right, b.right) > Math.max(a.left, b.left) && Math.min(a.bottom, b.bottom) > Math.max(a.top, b.top) ? [[i, i + j + 1]] : []));
+  });
+  assert.deepEqual(overlaps, []);
+  await capture('prep-branches');
   assert.deepEqual(errors, []); assert.deepEqual(external, []);
   await writeFile(resolve(out, 'verification.json'), JSON.stringify({ errors, external, geometry, passed: true }, null, 2));
   console.log(JSON.stringify({ errors, external, geometry, passed: true }));

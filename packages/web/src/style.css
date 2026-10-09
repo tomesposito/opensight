@@ -786,14 +786,18 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .prep-branches::before { width: 24px; border-top-width: 1px; }
 .prep-branches > li::before { border-left-width: 1px; }
 .prep-branches > li { padding-block: 12px; }
-.prep-branches > li[data-combine] { padding-block: 80px; }
+/* Equal intrinsic rows reserve room for secondary inputs without moving the
+   main node off its left edge or overlapping an adjacent branch. */
+.prep-step-node:has(.prep-secondary-source) { display: grid; grid-template-columns: 148px; grid-template-rows: 1fr auto 1fr; }
+.prep-step-node:has(.prep-secondary-source) > .prep-node { grid-column: 1; grid-row: 2; }
+.prep-step-node:has(.prep-secondary-source) > .prep-node-actions { position: static; grid-column: 1; grid-row: 3; align-self: start; }
 .prep-node-actions { position: absolute; top: 100%; left: 0; width: 148px; flex-direction: row; gap: 4px; margin-top: 8px; opacity: 0; pointer-events: none; }
 .prep-step-node:hover > .prep-node-actions, .prep-step-node:focus-within > .prep-node-actions, .prep-step-node:has(.selected) > .prep-node-actions { opacity: 1; pointer-events: auto; }
 .prep-node-actions button { font-size: 12px; padding: 4px; }
 .prep-node .prep-output-marker { font-size: 9px; padding: 2px 4px; justify-self: start; }
-.prep-secondary-source { position: absolute; bottom: calc(100% + 48px); left: 0; width: 148px; margin: 0; }
+.prep-secondary-source { position: static; grid-column: 1; grid-row: 1; align-self: end; width: 148px; margin: 0; padding-bottom: 48px; }
 .prep-secondary-source > button { width: 100%; font-size: 12px; }
-.prep-right-edge { position: absolute; height: 48px; bottom: 100%; left: 24px; border-left: 1px solid #7d94a5; }
+.prep-right-edge { position: relative; grid-column: 1; grid-row: 1; align-self: end; justify-self: start; height: 48px; margin-left: 24px; border-left: 1px solid #7d94a5; }
 .prep-right-edge::after { content: ''; position: absolute; bottom: 0; left: -4px; border-top: 6px solid #7d94a5; border-inline: 3px solid transparent; }
 .prep-port-label { font-size: 9px; position: absolute; top: -14px; left: 0; color: #536879; background: #fafbfc; }
 .prep-right-edge .prep-port-label { left: 4px; top: 18px; }
