@@ -2,14 +2,16 @@
 
 The Data preparation view builds a branching transformation pipeline over sources
 from the connector registry. Open it from Data sources → Prepare data, the mode
-picker, or the analysis editor's Data → Prepare data menu. The persistent left **Steps** panel groups Input, Column transformations, Combine
-transformations and Other. The canvas shows resolved left-input paths and one
+picker, or the analysis editor's Data → Prepare data menu. The persistent left
+**Steps** panel groups Input, Column transformations, Combine transformations
+and Other. The canvas shows resolved left-input paths and one
 node per connected or prepared input, with LEFT/RIGHT labels on join connections.
 Secondary source nodes sit above their consuming step; earlier-step right inputs
-remain selectable links to their existing result. Repeated joins show distinct source instances; an earlier-step reference points
-back to that result. Select a node, then use the bottom **Configure** or
+remain selectable links to their existing result. Repeated joins show distinct
+source instances. Select a node, then use the bottom **Configure** or
 **Preview** tab for that stage. Configure step opens the editor; steps can also
-be reordered or removed. Switching tabs retains an unapplied configuration. Downstream schema errors remain visible.
+be reordered or removed. Switching tabs retains an unapplied configuration.
+Downstream schema errors remain visible.
 
 Join configuration shows left/right table column lists with type icons and
 column search, a keyboard-operable left/inner/right/full join selector, and

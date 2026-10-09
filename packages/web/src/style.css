@@ -789,10 +789,10 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .prep-branches > li[data-combine] { padding-block: 80px; }
 .prep-node-actions { position: absolute; top: 100%; left: 0; width: 148px; flex-direction: row; gap: 4px; margin-top: 8px; opacity: 0; pointer-events: none; }
 .prep-step-node:hover > .prep-node-actions, .prep-step-node:focus-within > .prep-node-actions, .prep-step-node:has(.selected) > .prep-node-actions { opacity: 1; pointer-events: auto; }
-.prep-node-actions button { font-size: 10px; padding: 4px; }
+.prep-node-actions button { font-size: 12px; padding: 4px; }
 .prep-node .prep-output-marker { font-size: 9px; padding: 2px 4px; justify-self: start; }
 .prep-secondary-source { position: absolute; bottom: calc(100% + 48px); left: 0; width: 148px; margin: 0; }
-.prep-secondary-source > button { width: 100%; font-size: 11px; }
+.prep-secondary-source > button { width: 100%; font-size: 12px; }
 .prep-right-edge { position: absolute; height: 48px; bottom: 100%; left: 24px; border-left: 1px solid #7d94a5; }
 .prep-right-edge::after { content: ''; position: absolute; bottom: 0; left: -4px; border-top: 6px solid #7d94a5; border-inline: 3px solid transparent; }
 .prep-port-label { font-size: 9px; position: absolute; top: -14px; left: 0; color: #536879; background: #fafbfc; }
@@ -809,7 +809,7 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .prep-join-type button + button { margin-left: -1px; }
 .prep-join-type button[aria-checked="true"] { color: #087caa; background: #e5f3fa; border-color: #087caa; z-index: 1; }
 .prep-join-key { display: grid; grid-template-columns: minmax(0, 1fr) 8px minmax(0, 1fr) 24px; align-items: center; gap: 8px; margin: 8px 0; }
-.data-prep .prep-key-column select { border-radius: 16px; border-color: #85adc1; background: #f5fbff; font-weight: normal; padding: 4px 8px; width: 100%; font-size: 11px; }
+.data-prep .prep-key-column select { border-radius: 16px; border-color: #85adc1; background: #f5fbff; font-weight: normal; padding: 4px 8px; width: 100%; font-size: 12px; }
 .data-prep .prep-key-column.empty select { border-style: dashed; border-color: #929da5; background: #fff; color: #536879; }
 .data-prep .prep-remove-key { border: 0; padding: 0; font-size: 20px; }
 .prep-join-columns { list-style: none; padding: 0; margin: 4px 0; max-height: 300px; overflow: auto; }
@@ -829,7 +829,7 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 @media (max-width: 700px) {
   .prep-join-editor { display: flex; flex-direction: column; }
   .prep-join-settings { border: 0; padding: 8px; }
-  .prep-join-table:last-child { order: -1; }
+  .prep-join-settings { order: 1; }
   .prep-join-columns { max-height: 140px; }
   .prep-join-key { gap: 4px; }
 }
