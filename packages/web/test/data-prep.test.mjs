@@ -50,7 +50,7 @@ async function mount(t, client) {
   const old = globalThis.IS_REACT_ACT_ENVIRONMENT; globalThis.IS_REACT_ACT_ENVIRONMENT = true;
   let renderer; await act(async () => { renderer = create(createElement(DataPrep, { client })); });
   t.after(async () => { await act(async () => renderer.unmount()); globalThis.IS_REACT_ACT_ENVIRONMENT = old; });
-  const button = name => renderer.root.findAllByType('button').find(b => (Array.isArray(b.props.children) ? b.props.children.join('') : b.props.children) === name);
+  const button = name => renderer.root.findAllByType('button').find(b => (b.props['aria-label'] ?? (Array.isArray(b.props.children) ? b.props.children.join('') : b.props.children)) === name);
   const click = async name => { const b = button(name); assert.ok(b, name); await act(async () => { await b.props.onClick(); await new Promise(resolve => setTimeout(resolve, 0)); }); };
   return { renderer, click, button };
 }
@@ -109,7 +109,7 @@ test('numeric filter editing preserves partially typed negative values until App
 });
 
 async function field(renderer, label, value) {
-  const holder = renderer.root.findAllByType('label').find(l => typeof l.props.children[0] === 'string' && l.props.children[0].startsWith(label));
+  const holder = renderer.root.findAllByType('label').find(l => (typeof l.props.children[0] === 'string' ? l.props.children[0] : l.findAllByType('span').map(n => [].concat(n.props.children).join('')).join('')).startsWith(label));
   assert.ok(holder, label);
   const input = holder.findAll(n => typeof n.type === 'string' && ['input', 'select', 'textarea'].includes(n.type))[0];
   await act(async () => input.props.onChange({ target: { value } }));
@@ -184,7 +184,7 @@ test('join editor shows types, blocks mismatched keys and collisions, and render
   await ui.click('＋ Join');
   const stepOption = ui.renderer.root.findAllByType('option').find(n => typeof n.props.value === 'string' && n.props.value.startsWith('{"step":'));
   assert.ok(stepOption);
-  await field(ui.renderer, 'Right source', stepOption.props.value);
+  await field(ui.renderer, 'Right table', stepOption.props.value);
   await field(ui.renderer, 'Right column prefix', 'again_');
   await submitStep(ui.renderer);
   assert.match(JSON.stringify(ui.renderer.toJSON()), /again_lookup_region/);
@@ -197,11 +197,11 @@ test('join editor shows types, blocks mismatched keys and collisions, and render
 test('self-join instances render distinct canvas nodes with (2), (3) counters', async t => {
   const ui = await mount(t);
   await ui.click('\uFF0B Join');
-  await field(ui.renderer, 'Right source', JSON.stringify('demo-sales'));
-  assert.match(JSON.stringify(ui.renderer.toJSON()), /Right source \u00B7 demo-sales \(2\)/);
+  await field(ui.renderer, 'Right table', JSON.stringify('demo-sales'));
+  assert.match(JSON.stringify(ui.renderer.toJSON()), /Right table \u00B7 demo-sales \(2\)/);
   await submitStep(ui.renderer);
   await ui.click('\uFF0B Join');
-  await field(ui.renderer, 'Right source', JSON.stringify('demo-sales'));
+  await field(ui.renderer, 'Right table', JSON.stringify('demo-sales'));
   await field(ui.renderer, 'Right column prefix', 'again_');
   await submitStep(ui.renderer);
   const html = JSON.stringify(ui.renderer.toJSON());
@@ -220,7 +220,7 @@ test('hosted prepared joins preview before save and preserve refs and aliases in
   const ui = await mount(t, client);
   await ui.click('＋ Join');
   assert.match(JSON.stringify(ui.renderer.toJSON()), /Prepared dataset · Lookup/);
-  await field(ui.renderer, 'Join type', 'full');
+  await act(async () => ui.renderer.root.findByProps({ role: 'radio', 'aria-label': 'Full join' }).props.onClick());
   await submitStep(ui.renderer);
   await act(async () => new Promise(resolve => setTimeout(resolve, 340)));
   assert.equal(saves.length, 0); assert.match(JSON.stringify(ui.renderer.toJSON()), /JOINED ROW/);
@@ -444,4 +444,76 @@ test('Steps stays grouped while Configure and Preview switch without losing edit
   assert.equal(sidebar.findAllByType(PrepStepEditor).length, 0);
   await submitStep(ui.renderer);
   assert.equal(graphPipeline(ui).steps[0].config.name, 'territory');
+});
+
+test('join icons, searchable typed columns and dashed key placeholders edit real join configuration', async t => {
+  const ui = await mount(t);
+  await ui.click('＋ Join');
+  const radios = () => ui.renderer.root.findAllByProps({ role: 'radio' });
+  assert.deepEqual(radios().map(n => n.props['aria-label']), ['Left join', 'Inner join', 'Right join', 'Full join']);
+  for (const label of ['Full join', 'Right join', 'Inner join', 'Left join']) {
+    await act(async () => radios().find(n => n.props['aria-label'] === label).props.onClick());
+    assert.equal(radios().filter(n => n.props['aria-checked']).length, 1);
+    assert.equal(radios().find(n => n.props['aria-checked']).props['aria-label'], label);
+  }
+  assert.ok(ui.renderer.root.findAllByProps({ role: 'img', 'aria-label': 'STRING' }).length > 0);
+  const placeholder = () => ui.renderer.root.findAllByProps({ className: 'prep-key-column empty' });
+  assert.equal(placeholder().length, 2);
+  await act(async () => placeholder()[0].findByType('select').props.onChange({ target: { value: 'category' } }));
+  assert.equal(ui.button('Apply step').props.disabled, true, 'half a key cannot be applied');
+  await submitStep(ui.renderer);
+  assert.equal(graphPipeline(ui).steps.length, 0);
+  await act(async () => ui.renderer.root.findByProps({ 'aria-label': 'Use right column manager' }).props.onClick());
+  assert.equal(ui.button('Apply step').props.disabled, false);
+  await field(ui.renderer, 'Search left table columns', 'revenue');
+  const list = ui.renderer.root.findByProps({ 'aria-label': 'Left table columns' });
+  assert.equal(list.findAllByType('button').length, 1);
+  assert.equal(list.findByType('button').props['aria-label'], 'Use left column revenue');
+  await submitStep(ui.renderer);
+  assert.deepEqual(graphPipeline(ui).steps[0].config.keys, [{ left: 'region', right: 'region' }, { left: 'category', right: 'manager' }]);
+  const join = graphPipeline(ui).steps[0];
+  assert.equal(ui.renderer.root.findByProps({ 'data-to': join.id }).findByProps({ className: 'prep-port-label' }).props.children, 'LEFT');
+  assert.equal(ui.renderer.root.findByProps({ 'data-right-to': join.id }).props['data-right-from'], JSON.stringify('demo-regions'));
+  assert.equal(ui.renderer.root.findByProps({ 'data-right-to': join.id }).findByProps({ className: 'prep-port-label' }).props.children, 'RIGHT');
+});
+
+test('add data → change type → join executes the same prepared dataset as the existing pipeline contract', async t => {
+  const { UploadStaging } = await import('@opensight/query-engine');
+  const staging = await UploadStaging.create();
+  t.after(() => staging.close());
+  const sales = await staging.ingest({ config: { format: 'csv' }, data: new TextEncoder().encode('region,amount\nEast,2.9\nWest,3.1\nEast,4.8\n') });
+  const regions = await staging.ingest({ config: { format: 'csv' }, data: new TextEncoder().encode('region,manager\nEast,Ada\nWest,Sam\n') });
+  const sources = staging.prepSources().map(s => ({ ...s, available: true }));
+  const client = { async listPrepSources() { return sources; }, async listPrepDatasets() { return { datasets: [], persistence: 'file' }; }, async previewPrep(id, p, through) { return staging.previewPrep(p, { through }); } };
+  const ui = await mount(t, client);
+  await ui.click('＋ Add data'); await field(ui.renderer, 'Stage a source', JSON.stringify(regions.id)); await ui.click('Stage input');
+  await ui.click('＋ Change data type'); await field(ui.renderer, 'Column', 'amount'); await field(ui.renderer, 'New type', 'INTEGER'); await submitStep(ui.renderer);
+  await ui.click('＋ Join'); await submitStep(ui.renderer);
+  const p = graphPipeline(ui);
+  assert.equal(p.input, sales.id);
+  const contract = { version: 1, input: sales.id, steps: [
+    { id: p.steps[0].id, kind: 'changeType', config: { column: 'amount', type: 'INTEGER' } },
+    { id: p.steps[1].id, kind: 'join', config: { source: regions.id, joinType: 'left', keys: [{ left: 'region', right: 'region' }], prefix: 'joined_' } },
+  ] };
+  assert.deepEqual(p, contract);
+  const actual = await staging.previewPrep(p), expected = await staging.previewPrep(contract);
+  assert.deepEqual(actual.rows, expected.rows);
+  assert.deepEqual(actual.rows.map(r => ({ amount: r.amount, manager: r.joined_manager })).sort((a, b) => a.amount - b.amount), [{ amount: 2, manager: 'Ada' }, { amount: 3, manager: 'Sam' }, { amount: 4, manager: 'Ada' }]);
+  assert.equal(ui.renderer.root.findAll(n => n.type === 'button' && n.props.className?.includes('input-node')).length, 2);
+  assert.equal(ui.renderer.root.findByProps({ 'data-to': p.steps[1].id }).props['data-from'], p.steps[0].id);
+});
+
+test('append still rejects missing or differently typed columns with PREP_SCHEMA_MISMATCH', async t => {
+  const ui = await mount(t);
+  await ui.click('＋ Add data'); await field(ui.renderer, 'Stage a source', JSON.stringify('demo-regions')); await ui.click('Stage input');
+  await ui.click('＋ Append');
+  assert.match(JSON.stringify(ui.renderer.toJSON()), /PREP_SCHEMA_MISMATCH/);
+  assert.equal(ui.button('Apply step').props.disabled, true);
+  await submitStep(ui.renderer); assert.equal(graphPipeline(ui).steps.length, 0);
+  await ui.click('Cancel');
+  await ui.click('＋ Change data type'); await field(ui.renderer, 'Column', 'revenue'); await field(ui.renderer, 'New type', 'INTEGER'); await submitStep(ui.renderer);
+  await ui.click('＋ Append'); await field(ui.renderer, 'Append source', 'demo-sales');
+  assert.match(JSON.stringify(ui.renderer.toJSON()), /PREP_SCHEMA_MISMATCH/);
+  assert.equal(ui.button('Apply step').props.disabled, true);
+  await submitStep(ui.renderer); assert.equal(graphPipeline(ui).steps.length, 1);
 });

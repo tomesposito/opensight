@@ -1,19 +1,17 @@
 import { useState, type ReactNode } from 'react';
+import { PrepJoinEditor } from './PrepJoinEditor.js';
 import { prepName, prepTypes, type PrepColumn, type PrepStep, type PrepAggregation, type PrepJoinInput, type PrepPipeline } from '@opensight/bundle-parser/prep';
-import { prepLabel, prepRefKey, prepRefLabel, prepSourceRef, prepSourceLabel, prepInstanceLabel, prepStepSourceInstance, prepMessage, type PrepSourceSummary } from './data-prep.js';
+import { prepStepLabel, prepLabel, prepRefKey, prepRefLabel, prepSourceRef, prepSourceLabel, prepInstanceLabel, prepStepSourceInstance, prepMessage, type PrepSourceSummary } from './data-prep.js';
 const aggregations: PrepAggregation[] = ['SUM', 'AVG', 'COUNT', 'MIN', 'MAX'];
 function Select({ label, value, values, change }: { label: string; value: string; values: readonly string[]; change: (v: string) => void }) {
-  return <label>{label}<select value={value} onChange={e => change(e.target.value)}>{!values.includes(value) && <option value={value}>{value || 'Choose a column'}</option>}{values.map(v => <option key={v} value={v}>{v}</option>)}</select></label>;
+  return <label>{label}<select aria-label={label} value={value} onChange={e => change(e.target.value)}>{!values.includes(value) && <option value={value}>{value || 'Choose a column'}</option>}{values.map(v => <option key={v} value={v}>{v}</option>)}</select></label>;
 }
 export function PrepSourcePicker({ label, value, sources, change }: { label: string; value: PrepJoinInput; sources: readonly PrepSourceSummary[]; change: (ref: PrepJoinInput) => void }) {
   const key = prepRefKey(value);
-  return <label>{label}<select value={key} onChange={e => { const source = sources.find(s => prepRefKey(prepSourceRef(s)) === e.target.value); if (source) change(prepSourceRef(source)); }}>
+  return <label>{label}<select aria-label={label} value={key} onChange={e => { const source = sources.find(s => prepRefKey(prepSourceRef(s)) === e.target.value); if (source) change(prepSourceRef(source)); }}>
     {!sources.some(s => prepRefKey(prepSourceRef(s)) === key) && <option value={key}>{prepRefLabel(value) || 'Choose a source'}</option>}
     {sources.map(s => <option key={prepRefKey(prepSourceRef(s))} value={prepRefKey(prepSourceRef(s))} disabled={!s.available}>{prepSourceLabel(s)}{!s.available ? ` (${s.errorCode ?? 'unavailable'})` : ''}</option>)}
   </select></label>;
-}
-function KeyColumn({ label, value, columns, change }: { label: string; value: string; columns: readonly PrepColumn[]; change: (value: string) => void }) {
-  return <label>{label}<select value={value} onChange={e => change(e.target.value)}>{!columns.some(c => c.name === value) && <option value={value}>{value || 'Choose a column'}</option>}{columns.map(c => <option key={c.name} value={c.name}>{c.name} · {c.type}</option>)}</select></label>;
 }
 function Text({ label, value, change }: { label: string; value: string; change: (v: string) => void }) { return <label>{label}<input value={value} onChange={e => change(e.target.value)} /></label>; }
 function Columns({ label, columns, selected, change }: { label: string; columns: readonly PrepColumn[]; selected: string[]; change: (v: string[]) => void }) {
@@ -26,6 +24,12 @@ export function PrepStepEditor({ step, columns: inputColumns, sources, pipeline,
   const left = edited.from ?? earlier.at(-1)?.id;
   const columns = sources.find(s => left === undefined && pipeline ? prepRefKey(prepSourceRef(s)) === prepRefKey(pipeline.input) : typeof s.ref === 'object' && 'step' in s.ref && s.ref.step === left)?.columns ?? inputColumns;
   const names = columns.map(c => c.name), sourceIds = sources.filter(s => !s.ref || typeof s.ref === 'string').map(s => s.id);
+  const leftInput = pipeline ? <label>{edited.kind === 'join' ? 'Left table' : 'Left input'}<select aria-label={edited.kind === 'join' ? 'Left table' : 'Left input'} value={edited.from ?? ''} onChange={e => {
+    const next = { ...edited };
+    if (e.target.value === '') delete next.from;
+    else next.from = e.target.value;
+    setEdited(next);
+  }}><option value="">{earlier.length ? `Previous step · ${prepStepLabel(earlier.at(-1)!)} (default)` : `${prepRefLabel(pipeline.input)} (default)`}</option>{edited.from && !earlier.some(s => s.id === edited.from) && <option value={edited.from}>Invalid reference · {edited.from}</option>}{earlier.map(s => <option key={s.id} value={s.id}>{prepLabel(s.kind)} · {s.name ?? s.id}</option>)}</select></label> : <span>Left table</span>;
   let fields: ReactNode;
   switch (edited.kind) {
     case 'changeType': { const c = edited.config; fields = <><Select label="Column" value={c.column} values={names} change={column => setEdited({ ...edited, config: { ...c, column } })} /><Select label="New type" value={c.type} values={prepTypes} change={type => setEdited({ ...edited, config: { ...c, type: type as typeof c.type } })} /><p>Invalid text conversions become null. Integer conversion truncates decimals.</p></>; break; }
@@ -53,16 +57,15 @@ export function PrepStepEditor({ step, columns: inputColumns, sources, pipeline,
       const rightSourceName = pipeline ? prepInstanceLabel(prepRefLabel(c.source), prepStepSourceInstance(pipeline, edited)) : prepRefLabel(c.source);
       const outputs = c.columns ?? right.map(column => ({ column, name: `${c.prefix}${column}` }));
       const explicit = (columns: { column: string; name: string }[]) => setEdited({ ...edited, config: { source: c.source, joinType: c.joinType, keys: c.keys, columns } });
-      fields = <><PrepSourcePicker label={`Right source · ${rightSourceName}`} value={c.source} sources={sources} change={source => setEdited({ ...edited, config: { ...c, source } })} /><Select label="Join type" value={c.joinType} values={['inner','left','right','full']} change={joinType => setEdited({ ...edited, config: { ...c, joinType: joinType as typeof c.joinType } })} />{c.keys.map((k, i) => {
-        const update = (next: typeof k) => setEdited({ ...edited, config: { ...c, keys: c.keys.map((v, n) => n === i ? next : v) } });
-        return <fieldset key={i}><legend>Join key {i + 1}</legend><KeyColumn label="Left column" value={k.left} columns={columns} change={left => update({ ...k, left })} /><KeyColumn label={`Right column · ${rightSourceName}`} value={k.right} columns={rightColumns} change={right => update({ ...k, right })} /><button type="button" onClick={() => setEdited({ ...edited, config: { ...c, keys: c.keys.filter((_, n) => n !== i) } })}>Remove key</button></fieldset>;
-      })}<button type="button" onClick={() => setEdited({ ...edited, config: { ...c, keys: [...c.keys, { left: names[0] ?? '', right: right[0] ?? '' }] } })}>Add key</button>
+      fields = <PrepJoinEditor config={c} leftColumns={columns} rightColumns={rightColumns} leftInput={leftInput}
+        rightInput={<PrepSourcePicker label={`Right table · ${rightSourceName}`} value={c.source} sources={sources} change={source => setEdited({ ...edited, config: { ...c, source } })} />}
+        change={config => setEdited({ ...edited, config })} outputs={<>
       <Select label="Right output mode" value={c.columns ? 'Explicit aliases' : 'All columns with prefix'} values={['All columns with prefix', 'Explicit aliases']} change={mode => mode === 'Explicit aliases' ? explicit(outputs) : setEdited({ ...edited, config: { source: c.source, joinType: c.joinType, keys: c.keys, prefix: 'joined_' } })} />
       {c.columns ? <>{c.columns.map((col, i) => {
         const update = (next: typeof col) => explicit(outputs.map((v, n) => n === i ? next : v));
         return <fieldset key={i}><legend>Right output {i + 1}</legend><Select label="Right column to include" value={col.column} values={right} change={column => update({ ...col, column })} /><Text label="Output name" value={col.name} change={name => update({ ...col, name })} /><button type="button" onClick={() => explicit(outputs.filter((_, n) => n !== i))}>Remove output</button></fieldset>;
       })}<button type="button" onClick={() => explicit([...outputs, { column: right[0] ?? '', name: `joined_${outputs.length + 1}` }])}>Add right output</button></> : <><Text label="Right column prefix" value={c.prefix} change={prefix => setEdited({ ...edited, config: { ...c, prefix } })} /><p className="prep-output-names">Right output columns: {outputs.map(c => c.name).join(', ') || 'Choose a right source'}</p></>}
-      <p>Key types must match exactly; use Change type to convert them. Null keys do not match; duplicate keys multiply rows. Output names must be unique, including letter case.</p></>; break;
+      </>} />; break;
     }
     case 'pivot': {
       const c = edited.config, numeric = ['INTEGER','DECIMAL'].includes(columns.find(col => col.name === c.column)?.type ?? '');
@@ -84,15 +87,10 @@ export function PrepStepEditor({ step, columns: inputColumns, sources, pipeline,
     if (Object.hasOwn(edited, 'name')) prepName(edited.name, 'Step name');
     if (validate) validate(configured());
   } catch (e) { problem = prepMessage(e); }
-  return <form className="prep-step-editor" onSubmit={e => { e.preventDefault(); if (!problem) apply(configured()); }}><h3>{prepLabel(edited.kind)}</h3><label>Step name (optional)<input type="text" value={edited.name ?? ''} maxLength={128} placeholder={prepLabel(edited.kind)} onChange={e => {
+  return <form className="prep-step-editor" onSubmit={e => { e.preventDefault(); if (!problem) apply(configured()); }}><h3>{prepLabel(edited.kind)}</h3><label>Step name (optional)<input type="text" value={edited.name ?? ''} title="Leave blank for the automatic label. Names must be 1–128 characters with no control characters or leading/trailing whitespace." maxLength={128} placeholder={prepLabel(edited.kind)} onChange={e => {
     const next = { ...edited };
     if (e.target.value === '') delete next.name;
     else next.name = e.target.value;
     setEdited(next);
-  }} /></label><p>Leave blank to use the automatic label. Names must be 1–128 characters, with no control characters or leading/trailing whitespace.</p>{pipeline && <label>Left input<select value={edited.from ?? ''} onChange={e => {
-    const next = { ...edited };
-    if (e.target.value === '') delete next.from;
-    else next.from = e.target.value;
-    setEdited(next);
-  }}><option value="">{earlier.length ? 'Previous step (default)' : 'Pipeline input (default)'}</option>{edited.from && !earlier.some(s => s.id === edited.from) && <option value={edited.from}>Invalid reference · {edited.from}</option>}{earlier.map(s => <option key={s.id} value={s.id}>{prepLabel(s.kind)} · {s.name ?? s.id}</option>)}</select></label>}{fields}{problem && <p className="prep-error" role="alert">{problem}</p>}<div className="prep-actions"><button type="submit" disabled={!!problem}>Apply step</button><button type="button" onClick={cancel}>Cancel</button></div></form>;
+  }} /></label>{edited.kind !== 'join' && leftInput}{fields}{problem && <p className="prep-error" role="alert">{problem}</p>}<div className="prep-actions"><button type="submit" disabled={!!problem}>Apply step</button><button type="button" onClick={cancel}>Cancel</button></div></form>;
 }
