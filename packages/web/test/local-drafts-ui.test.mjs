@@ -56,7 +56,7 @@ test('blocked storage keeps the editor usable and Export JSON available with a s
   const ui = await mount(t, { sampleLoaded: true }, { mode: 'local' }, true);
   await ui.click('Save draft');
   assert.match(ui.text(), /Browser storage is blocked/); assert.match(ui.text(), /Export JSON to keep your work/);
-  assert.equal(ui.button('Export JSON').props.disabled, false);
+  assert.equal(ui.button('Export JSON').props['aria-disabled'], false);
   await act(() => ui.find('form', p => p.className === 'add-visual').props.onSubmit({ preventDefault() {} }));
   await ui.click('New analysis');
   assert.equal(ui.renderer.root.findByType(AuthorCanvas).props.draft.sheets[0].visuals.length, 1, 'Failed checkpoint keeps unsaved work in the editor');
@@ -126,6 +126,6 @@ test('Issue #35: first-run Author has no restore failure; unreadable drafts expl
     assert.match(ui.text(), /Reload to retry, or import an exported .qs or JSON copy/);
     assert.doesNotMatch(ui.text(), /SyntaxError|Unexpected|Invalid or unsupported author draft|could not be restored/);
     assert.equal(ui.values.get(storageKey), value, 'Opening must preserve unreadable saved data');
-    assert.equal(ui.button('Export JSON').props.disabled, false);
+    assert.equal(ui.button('Export JSON').props['aria-disabled'], false);
   }
 });
