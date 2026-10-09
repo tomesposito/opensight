@@ -441,9 +441,9 @@ export function remapVisual(visual: AuthorVisual): AuthorVisual {
 }
 export function authorVisualProblem(visual: AuthorVisual): string | undefined {
   if (visual.imported) {
-  if (!visual.imported.local) return `Unresolved dataset: ${visual.imported.dataSets.map(d => d.arn ?? d.identifier).join(', ') || 'no dataset binding'}`;
-  const issues = visual.imported.replaced ? visual.imported.issues.filter(i => i.startsWith('Filter group ') || i.startsWith('Calculated field ')) : visual.imported.issues;
-  if (issues.length) return `Unsupported features: ${issues.join('; ')}`;
+    if (!visual.imported.local) return `Unresolved dataset: ${visual.imported.dataSets.map(d => d.arn ?? d.identifier).join(', ') || 'no dataset binding'}`;
+    const issues = visual.imported.replaced ? visual.imported.issues.filter(i => i.startsWith('Filter group ') || i.startsWith('Calculated field ')) : visual.imported.issues;
+    if (issues.length) return `Unsupported features: ${issues.join('; ')}`;
   }
   if (visual.smallMultiples?.length) return 'SMALL_MULTIPLES_UNSUPPORTED: Small multiples are saved in this draft. Faceted preview is not supported yet; remove the Small multiples field to preview this visual.';
 }
@@ -457,6 +457,7 @@ function dimensionField(name: string, granularity: DateGrain = 'MONTH', calculat
 }
 /** Typed camelCase projection, including the parser's opaque extensions. */
 export function serializeVisual(visual: AuthorVisual, includeInteractions = true, calculations: readonly CalculatedField[] = [], dataset?: AuthorDataset): BundleVisual {
+  if (visual.smallMultiples?.length && !hasSmallMultiplesWell(visual.kind)) throw new Error('SMALL_MULTIPLES_UNSUPPORTED: Remove Small multiples fields before exporting this visual type.');
   const multiples = visual.smallMultiples?.length ? { smallMultiples: visual.smallMultiples.map(name => dimensionField(name, visual.dateGrain, calculations, dataset)) } : {};
   const category = visualDimensions(visual).map(name => dimensionField(name, visual.dateGrain, calculations, dataset));
   const values: BundleMeasureField[] = visual.measures.map(name => ({ numericalMeasureField: { ...columnField(name), aggregationFunction: { simpleNumericalAggregation: 'SUM' } } }));

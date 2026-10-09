@@ -203,7 +203,7 @@ button:disabled { cursor: default; opacity: .5; }
 .field-wells p, .field-hint { font-size: 11px; line-height: 1.4; margin: 6px 0; color: #526c7a; }
 .author-layout .field-chip { display: flex; align-items: center; gap: 4px; width: 100%; background: #eaf5f5; color: #126e76; border: 1px solid #7daeba; border-radius: 12px; padding: 4px; margin: 0 0 4px; font-size: 12px; text-align: left; }
 .field-chip-name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
-.well-picker { margin: 6px 0 0 !important; }
+.well-picker { margin: 4px 0 0 !important; }
 .canvas-label { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; padding: 4px 8px; margin: 0 0 6px; font-size: 12px; }
 .canvas-label span { font-size: 10px; color: #526c7a; }
 .author-canvas { background-image: radial-gradient(#cddde0 1px, transparent 1px); background-size: 16px 16px; min-height: max(540px, 65vh); margin-inline: auto; }
