@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import { PrepJoinEditor } from './PrepJoinEditor.js';
+import { PrepColumns as Columns } from './PrepColumns.js';
 import { prepName, prepTypes, type PrepColumn, type PrepStep, type PrepAggregation, type PrepJoinInput, type PrepPipeline } from '@opensight/bundle-parser/prep';
 import { prepStepLabel, prepLabel, prepRefKey, prepRefLabel, prepSourceRef, prepSourceLabel, prepInstanceLabel, prepStepSourceInstance, prepMessage, type PrepSourceSummary } from './data-prep.js';
 const aggregations: PrepAggregation[] = ['SUM', 'AVG', 'COUNT', 'MIN', 'MAX'];
@@ -14,9 +15,6 @@ export function PrepSourcePicker({ label, value, sources, change }: { label: str
   </select></label>;
 }
 function Text({ label, value, change }: { label: string; value: string; change: (v: string) => void }) { return <label>{label}<input value={value} onChange={e => change(e.target.value)} /></label>; }
-function Columns({ label, columns, selected, change }: { label: string; columns: readonly PrepColumn[]; selected: string[]; change: (v: string[]) => void }) {
-  return <fieldset className="prep-columns"><legend>{label}</legend>{columns.map(c => <label key={c.name}><input type="checkbox" checked={selected.includes(c.name)} onChange={e => change(e.target.checked ? [...selected, c.name] : selected.filter(n => n !== c.name))} />{c.name}<small>{c.type}</small></label>)}</fieldset>;
-}
 export function PrepStepEditor({ step, columns: inputColumns, sources, pipeline, apply, cancel, validate }: { step: PrepStep; columns: readonly PrepColumn[]; sources: readonly PrepSourceSummary[]; pipeline?: PrepPipeline; apply: (step: PrepStep) => void; cancel: () => void; validate?: (step: PrepStep) => void }) {
   const [edited, setEdited] = useState<PrepStep>(() => structuredClone(step));
   const index = pipeline?.steps.findIndex(s => s.id === step.id) ?? -1;
@@ -57,7 +55,7 @@ export function PrepStepEditor({ step, columns: inputColumns, sources, pipeline,
       const rightSourceName = pipeline ? prepInstanceLabel(prepRefLabel(c.source), prepStepSourceInstance(pipeline, edited)) : prepRefLabel(c.source);
       const outputs = c.columns ?? right.map(column => ({ column, name: `${c.prefix}${column}` }));
       const explicit = (columns: { column: string; name: string }[]) => setEdited({ ...edited, config: { source: c.source, joinType: c.joinType, keys: c.keys, columns } });
-      fields = <PrepJoinEditor config={c} leftColumns={columns} rightColumns={rightColumns} leftInput={leftInput}
+      fields = <PrepJoinEditor key={JSON.stringify([left, c.source])} config={c} leftColumns={columns} rightColumns={rightColumns} leftInput={leftInput}
         rightInput={<PrepSourcePicker label={`Right table · ${rightSourceName}`} value={c.source} sources={sources} change={source => setEdited({ ...edited, config: { ...c, source } })} />}
         change={config => setEdited({ ...edited, config })} outputs={<>
       <Select label="Right output mode" value={c.columns ? 'Explicit aliases' : 'All columns with prefix'} values={['All columns with prefix', 'Explicit aliases']} change={mode => mode === 'Explicit aliases' ? explicit(outputs) : setEdited({ ...edited, config: { source: c.source, joinType: c.joinType, keys: c.keys, prefix: 'joined_' } })} />

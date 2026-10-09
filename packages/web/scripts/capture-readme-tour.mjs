@@ -1,8 +1,8 @@
 // Captures an animated GIF storyboard for the repo README hero.
-// Adapted from ~/workspace/tools/screenshots/readme-gif-44.mjs.
+// Adapted from ~/workspace/tools/screenshots/readme-gif.mjs and its later tours.
 // Drives the rebuilt file:// demo through Home, O, Author, Analyses, Data, Admin.
 // Frames land in OPENSIGHT_SCREENSHOT_OUTPUT/frames;
-// assemble with: ffmpeg -framerate 10 -i .opensight/issue-59/gif/frames/f%03d.png ...
+// assemble with: ffmpeg -framerate 10 -i .opensight/issue-61/gif/frames/f%03d.png ...
 // (see the bottom of this file for the exact assembly command).
 import assert from 'node:assert/strict';
 import { resolve } from 'node:path';
@@ -12,7 +12,7 @@ const { chromium } = createRequire(resolve(process.env.OPENSIGHT_SCREENSHOT_TOOL
 import { mkdirSync } from 'fs';
 
 const DEMO = new URL('../dist/opensight-demo.html', import.meta.url).href;
-const FRAMES = resolve(process.env.OPENSIGHT_SCREENSHOT_OUTPUT ?? '.opensight/issue-59/gif', 'frames');
+const FRAMES = resolve(process.env.OPENSIGHT_SCREENSHOT_OUTPUT ?? '.opensight/issue-61/gif', 'frames');
 mkdirSync(FRAMES, { recursive: true });
 
 const browser = await chromium.launch({ executablePath: '/opt/meta-chromium/chrome', args: ['--no-sandbox', '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
@@ -211,6 +211,21 @@ try {
   await page.getByRole('button', { name: 'Apply step', exact: true }).click();
   await page.getByRole('button', { name: 'Configure step', exact: true }).click();
   await page.locator('.prep-workspace').scrollIntoViewIfNeeded();
+  await page.getByRole('searchbox', { name: 'Search steps', exact: true }).fill('join');
+  await hold(1200);
+  await page.getByRole('searchbox', { name: 'Search steps', exact: true }).press('Escape');
+  await page.getByRole('button', { name: 'Zoom out', exact: true }).click();
+  await hold(1000);
+  await page.getByRole('button', { name: 'Fit pipeline to view', exact: true }).click();
+  await hold(1000);
+  await page.getByRole('button', { name: 'Use left column category', exact: true }).dragTo(page.locator('[data-key-side="left"][data-key-index="1"]'));
+  await hold(1000);
+  assert.equal(await page.getByRole('button', { name: 'Apply step', exact: true }).isDisabled(), true);
+  await page.getByRole('button', { name: 'Use right column manager', exact: true }).dragTo(page.locator('[data-key-side="right"][data-key-index="1"]'));
+  assert.equal(await page.getByRole('button', { name: 'Apply step', exact: true }).isDisabled(), false);
+  await hold(1800);
+  await page.getByRole('button', { name: 'Apply step', exact: true }).click();
+  await page.getByRole('button', { name: 'Configure step', exact: true }).click();
   await hold(2200);
 
   // 5. Data source connector gallery. End.
@@ -232,5 +247,5 @@ try {
 }
 
 // Assembly (run after):
-// ffmpeg -y -framerate 10 -i .opensight/issue-59/gif/frames/f%03d.png -vf "scale=960:-1:flags=lanczos,palettegen" .opensight/issue-59/gif/palette.png
-// ffmpeg -y -framerate 10 -i .opensight/issue-59/gif/frames/f%03d.png -i .opensight/issue-59/gif/palette.png -lavfi "scale=960:-1:flags=lanczos[x];[x][1:v]paletteuse" .opensight/issue-59/gif/opensight-tour.gif
+// ffmpeg -y -framerate 10 -i .opensight/issue-61/gif/frames/f%03d.png -vf "scale=960:-1:flags=lanczos,palettegen" .opensight/issue-61/gif/palette.png
+// ffmpeg -y -framerate 10 -i .opensight/issue-61/gif/frames/f%03d.png -i .opensight/issue-61/gif/palette.png -lavfi "scale=960:-1:flags=lanczos[x];[x][1:v]paletteuse" .opensight/issue-61/gif/opensight-tour.gif
