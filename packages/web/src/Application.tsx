@@ -18,13 +18,14 @@ import { buildApiPreview } from './api-preview.js';
 import { Analyses } from './Analyses.js';
 import { CreateAnalysisDialog } from './CreateAnalysisDialog.js';
 import { AppLink, AppNavigation, useAppRoute } from './AppNavigation.js';
-import { pages, routeProblem } from './app-navigation.js';
+import { pages, recordRecentPage, routeProblem, type Page } from './app-navigation.js';
 import { draftStorageKey } from './local-drafts.js';
 import { ToastProvider } from './Toasts.js';
 import { BackToTop } from './BackToTop.js';
 import { CommandPaletteProvider } from './CommandPalette.js';
 import { LocalEmptyState } from './LocalEmptyState.js';
 import { Dashboards } from './Dashboards.js';
+import { FolderEmptyState, MyStuff } from './NavigationPages.js';
 
 export function Application(props: { api: ReturnType<typeof createApiClient>; fixtures: Fixture[] }) {
   const access = useAccess();
@@ -44,6 +45,9 @@ function ApplicationWorkspace({ api, fixtures }: { api: ReturnType<typeof create
   const sample = fixtures.find(f => f.id === 'renderable-sales');
   const mode = route?.page;
   const problem = mode && routeProblem(access, mode);
+  const [visitedPages, setVisitedPages] = useState<Page[]>([]);
+  useEffect(() => { setVisitedPages(previous => recordRecentPage(previous, mode, access)); }, [mode, access]);
+  const recentPages = visitedPages.filter(page => page !== mode && !routeProblem(access, page)).slice(0, 5);
   const choosingDataset = !problem && route?.page === 'author' && route.newAnalysis && newAnalysisChoice?.entry !== entry;
   useEffect(() => { if (typeof document !== 'undefined') document.title = `${route ? pages[route.page].title : 'Page not found'} · OpenSight`; }, [mode]);
   const editing = mode === 'author' && !choosingDataset && !problem;
@@ -57,6 +61,9 @@ function ApplicationWorkspace({ api, fixtures }: { api: ReturnType<typeof create
     switch (route.page) {
       case 'home': return <section className="home-page" aria-label="Home">{access.mode === 'local' && !sampleLoaded ? <LocalEmptyState onSources={() => navigate({ page: 'data-sources' })} onSample={() => setSampleLoaded(true)} /> : sample ? <Dashboard key="sample" fixture={sample} sample /> : <p role="status">The sample dashboard is not included in this build. Ask the operator to restore the pinned sales sample.</p>}</section>;
       case 'dashboards': return <Dashboards navigate={navigate} />;
+      case 'my-stuff': return <MyStuff recentPages={recentPages} navigate={navigate} />;
+      case 'my-folders': return <FolderEmptyState shared={false} navigate={navigate} />;
+      case 'shared-folders': return <FolderEmptyState shared navigate={navigate} />;
       case 'analyses': return <Analyses navigate={navigate} />;
       case 'author': return choosingDataset ? <Analyses navigate={navigate} /> : <Author key={entry} renderIdentity={identity} sampleLoaded={sampleLoaded} onTrySample={() => setSampleLoaded(true)} inApp draftId={route.draftId} newAnalysis={route.newAnalysis} onDraftChange={draftId => navigate({ page: 'author', draftId }, true)} onSources={() => navigate({ page: 'data-sources' })} onDatasetChange={setAuthorDataset} dataset={route.draftId ? undefined : route.newAnalysis ? newAnalysisChoice?.dataset : authorDataset} onPrep={() => navigate({ page: 'data-prep' })} client={connected ? api : undefined} />;
       case 'data-prep': return <DataPrep initialSource={uploadedSource} onBuild={access.mode === 'local' ? dataset => { setAuthorDataset(dataset); navigate({ page: 'author' }); } : undefined} client={connected ? api : undefined} onSources={() => navigate({ page: 'data-sources' })} onAuthor={() => navigate({ page: 'author' })} />;

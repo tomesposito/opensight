@@ -7,7 +7,7 @@ import { ROLES, hasCapability } from '@opensight/query-engine/browser';
 import { AccessProvider, demoAccess } from '../build/test/access.js';
 import { Application } from '../build/test/Application.js';
 import { AppNavigation } from '../build/test/AppNavigation.js';
-import { pages, parseRoute, routeHash } from '../build/test/app-navigation.js';
+import { pages, parseRoute, recordRecentPage, routeHash } from '../build/test/app-navigation.js';
 import { AuthorCanvas } from '../build/test/Author.js';
 import { LocalDrafts } from '../build/test/LocalDrafts.js';
 import { DataPrep } from '../build/test/DataPrep.js';
@@ -16,6 +16,7 @@ import { AISettings } from '../build/test/AISettings.js';
 import { UserManagement } from '../build/test/UserManagement.js';
 import { createDraftStore } from '../build/test/local-drafts.js';
 import { authorReducer, emptyDraft } from '../build/test/authoring.js';
+import { MyStuff, FolderEmptyState } from '../build/test/NavigationPages.js';
 
 const hosted = role => ({ mode: 'hosted', session: { id: 'test-user', namespaceId: 'test-workspace', name: 'User', role } });
 const accesses = [{ mode: 'local' }, demoAccess, ...ROLES.map(hosted), { mode: 'hosted' }, hosted('admin')];
@@ -43,6 +44,19 @@ test('routes round-trip explicit draft URLs and reject malformed or unknown link
   for (const route of [{ page: 'author', draftId: 'saved-123' }, { page: 'author', newAnalysis: true }]) assert.deepEqual(parseRoute(routeHash(route)), route);
   assert.deepEqual(parseRoute(''), { page: 'home' });
   for (const hash of ['#/unknown', '#/analyses/drafts/', '#/analyses/drafts/%2F', '#/analyses/drafts/<script>', '#invite=abc']) assert.equal(parseRoute(hash), undefined);
+});
+
+test('session recents deduplicate, cap history, and exclude editor state and denied pages', () => {
+  const access = { mode: 'local' };
+  let history = [];
+  for (const page of ['home', 'my-stuff', 'analyses', 'data-prep', 'data-sources', 'my-folders', 'shared-folders']) history = recordRecentPage(history, page, access);
+  assert.deepEqual(history, ['shared-folders', 'my-folders', 'data-sources', 'data-prep', 'analyses', 'my-stuff']);
+  history = recordRecentPage(history, 'analyses', access);
+  assert.equal(history[0], 'analyses'); assert.equal(history.filter(page => page === 'analyses').length, 1);
+  assert.deepEqual(recordRecentPage(history, 'author', access), history);
+  assert.deepEqual(recordRecentPage(history, undefined, access), history);
+  assert.deepEqual(recordRecentPage(history, 'analyses', hosted('reader')), ['shared-folders', 'my-folders', 'my-stuff']);
+  assert.deepEqual(recordRecentPage([], 'api', demoAccess), []);
 });
 
 async function mount(t, access = demoAccess, hash = '#/home', seed) {
@@ -73,6 +87,36 @@ async function mount(t, access = demoAccess, hash = '#/home', seed) {
   };
 }
 const authored = title => authorReducer({ ...emptyDraft(), title }, { type: 'add', kind: 'bar' });
+
+for (const access of [{ mode: 'local' }, demoAccess, hosted('reader'), hosted('admin')]) test(`folder entry routes are honest and do not request data in ${access.mode}/${access.session?.role}`, async t => {
+  const ui = await mount(t, access, '#/folders/mine');
+  assert.equal(ui.root.findByType(FolderEmptyState).props.shared, false);
+  assert.match(ui.text(), /Folder browsing is not available here yet/);
+  assert.match(ui.text(), access.mode === 'hosted' ? /Your hosted folders have not been loaded/ : /need a hosted API/);
+  await ui.navigate({ page: 'shared-folders' });
+  assert.equal(ui.location.hash, '#/folders/shared');
+  assert.equal(ui.root.findByType(FolderEmptyState).props.shared, true);
+  await ui.reload(); assert.equal(ui.root.findByType(FolderEmptyState).props.shared, true);
+  await ui.link('About folders and sharing'); assert.equal(ui.location.hash, '#/admin/organization');
+  await ui.back(); assert.equal(ui.location.hash, '#/folders/shared');
+});
+
+test('My stuff starts empty and shows only real session visits with gated collection links', async t => {
+  const ui = await mount(t, { mode: 'local' }, '#/my-stuff');
+  const recent = () => ui.root.findByType(MyStuff).props.recentPages;
+  assert.deepEqual(recent(), []);
+  assert.match(ui.text(), /No recent pages yet/);
+  await ui.navigate({ page: 'my-folders' });
+  await ui.navigate({ page: 'shared-folders' });
+  await ui.navigate({ page: 'my-stuff' });
+  assert.deepEqual(recent(), ['shared-folders', 'my-folders']);
+  await ui.reload(); assert.deepEqual(recent(), []);
+  for (const access of [demoAccess, hosted('reader')]) {
+    const html = renderToStaticMarkup(createElement(AccessProvider, { access }, createElement(MyStuff, { recentPages: [], navigate() {} })));
+    assert.equal(html.includes('href="#/analyses"'), access.mode === 'demo');
+    assert.doesNotMatch(html, /href="#\/dashboards"/);
+  }
+});
 
 test('Analyses lists the #32 collection, renames/deletes it, and opens its exact saved chart', async t => {
   const ui = await mount(t, demoAccess, '#/analyses', store => [store.save(authored('First chart')), store.save(authored('Second chart'))]);
