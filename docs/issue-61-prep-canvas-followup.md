@@ -12,3 +12,8 @@ keys, zoom with +/−, reset with 0 or fit with F. Node controls retain their
 selection and branching behavior.
 
 Verification and reference comparison are recorded after the final build.
+
+Steps search matches transformation names (including Add data), ignores case
+and surrounding whitespace, and retains only groups containing matches.
+No matches shows a clear message. Escape clears the search and focuses the
+Steps dock without changing the pipeline or current editor.

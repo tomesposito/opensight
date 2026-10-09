@@ -55,3 +55,22 @@ test('canvas buttons, wheel, drag/cancel and keyboard work without intercepting 
   await act(async () => ui.update(createElement(PrepViewport, {}, createElement('button', {}, 'Selected node'))));
   assert.equal(transform(ui), fitted, 'step rerenders preserve the view');
 });
+
+import { DataPrep } from '../build/test/DataPrep.js';
+test('Steps search filters names live, preserves only matching groups, and Escape clears and focuses the dock', async t => {
+  let focused = 0;
+  const ui = await mount(t, DataPrep, {}, { createNodeMock: node => node.props['aria-label'] === 'Steps' ? { focus() { focused++; } } : null });
+  const input = () => ui.root.findByProps({ placeholder: 'Search steps' });
+  const groups = () => ui.root.findByProps({ 'aria-label': 'Steps' }).findAllByType('h3').map(n => n.props.children);
+  for (const [query, expected] of [['JOIN', ['Combine transformations']], ['  column ', ['Column transformations']], ['pivot', ['Other']], ['add', ['Input', 'Column transformations']]]) {
+    await act(async () => input().props.onChange({ target: { value: query } })); assert.deepEqual(groups(), expected);
+  }
+  await act(async () => input().props.onChange({ target: { value: 'does not exist' } }));
+  assert.deepEqual(groups(), []); assert.match(JSON.stringify(ui.toJSON()), /No matching steps/);
+  await act(async () => input().props.onKeyDown({ key: 'Escape', preventDefault() {}, stopPropagation() {} }));
+  assert.equal(input().props.value, ''); assert.equal(focused, 1);
+  assert.deepEqual(groups(), ['Input', 'Column transformations', 'Combine transformations', 'Other']);
+  await act(async () => input().props.onChange({ target: { value: 'join' } }));
+  await click(ui, '＋ Join');
+  assert.ok(ui.root.findByProps({ className: 'prep-join-editor' }), 'filtered transformation remains usable');
+});

@@ -38,6 +38,10 @@ export function DataPrep({ client, initialSource, onSources, onAuthor, onBuild }
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [reload, setReload] = useState(0);
+  const [stepSearch, setStepSearch] = useState('');
+  const stepsPanel = useRef<HTMLElement>(null);
+  const matchesStep = (label: string) => label.toLowerCase().includes(stepSearch.trim().toLowerCase());
+  const matchingSteps = prepCatalog.filter(c => matchesStep(c.label));
   const [preview, setPreview] = useState<{ key: string; result?: PrepPreview; error?: string }>();
   const file = useRef<HTMLInputElement>(null);
   const pipeline = resource.opensightPrep!, index = pipeline.steps.findIndex(s => s.id === selected);
@@ -189,9 +193,12 @@ export function DataPrep({ client, initialSource, onSources, onAuthor, onBuild }
     <p className="prep-notice">Cross-source joins, pivot, unpivot, append and aggregate on the output path require Blaze. Save and refresh to query their cached output.</p>
     <details className="prep-execution"><summary>Dataset execution · mode, refresh and cached output</summary><DatasetExecution key={resource.dataSetId} client={executionClient} datasetId={resource.dataSetId} saved={!!storedResource} dirty={dirty} onChanged={() => setReload(n => n + 1)} /></details>
     {message && <p role="status">{message}</p>}{error && <p className="prep-error" role="alert">{error}</p>}
-    <div className="prep-workspace"><aside className="prep-sidebar" aria-label="Steps"><h2>Steps</h2><p>Select a step to add a transformation</p><div className="prep-catalog-group"><h3>Input</h3>
+    <div className="prep-workspace"><aside className="prep-sidebar" aria-label="Steps" tabIndex={-1} ref={stepsPanel}><h2>Steps</h2><p>Select a step to add a transformation</p>
+      <label className="prep-steps-search"><span className="sr-only">Search steps</span><input type="search" placeholder="Search steps" value={stepSearch} onChange={e => setStepSearch(e.target.value)} onKeyDown={e => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setStepSearch(''); stepsPanel.current?.focus(); } }} /></label>
+      {matchesStep('Add data') && <div className="prep-catalog-group"><h3>Input</h3>
 
-      <button className="prep-add-data" onClick={() => { const first = editorSources()[0]; setPending(staged ?? (first ? prepSourceRef(first) : null)); setStaging(true); setSelected(null); setEditing(undefined); setTab('configure'); }}>＋ Add data</button></div>{['Column transformations','Combine transformations','Other'].map(group => <div className="prep-catalog-group" key={group}><h3>{group}</h3>{prepCatalog.filter(c => c.group === group).map(c => <button key={c.kind} disabled={!pipeline.input || !!problem} title={(c.kind === 'join' || c.kind === 'append') && staged ? `Uses the staged input (${prepRefLabel(staged)})` : undefined} aria-label={`＋ ${c.label}`} onClick={() => add(c.kind)}><PrepStepIcon kind={c.kind} /> {c.label}</button>)}</div>)}
+      <button className="prep-add-data" onClick={() => { const first = editorSources()[0]; setPending(staged ?? (first ? prepSourceRef(first) : null)); setStaging(true); setSelected(null); setEditing(undefined); setTab('configure'); }}>＋ Add data</button></div>}{['Column transformations','Combine transformations','Other'].filter(group => matchingSteps.some(c => c.group === group)).map(group => <div className="prep-catalog-group" key={group}><h3>{group}</h3>{matchingSteps.filter(c => c.group === group).map(c => <button key={c.kind} disabled={!pipeline.input || !!problem} title={(c.kind === 'join' || c.kind === 'append') && staged ? `Uses the staged input (${prepRefLabel(staged)})` : undefined} aria-label={`＋ ${c.label}`} onClick={() => add(c.kind)}><PrepStepIcon kind={c.kind} /> {c.label}</button>)}</div>)}
+      {!matchesStep('Add data') && matchingSteps.length === 0 && <p role="status">No matching steps. Try another name.</p>}
     </aside><div className="prep-main"><div className="prep-canvas-heading"><h2>Pipeline canvas</h2><span>{pipeline.steps.length} steps · left to right</span></div><div className="prep-canvas" aria-label="Transformation DAG">{staged && <div className="prep-input-rail" aria-label="Staged input sources">{stagedNode()}</div>}<PrepGraph pipeline={pipeline} selected={selected} issues={stepIssues} disabled={!!problem}
       select={id => { setSelected(id); setEditing(undefined); setStaging(false); setTab('configure'); }} branch={branch} setOutput={output => change({ ...pipeline, output })}
       input={<button className={`prep-node input-node${selected === null ? ' selected' : ''}`} aria-pressed={selected === null} onClick={() => { setSelected(null); setEditing(undefined); setStaging(false); setTab('configure'); }}><span className="prep-node-icon">▤</span><strong>Input · Source 1</strong><span>{prepRefLabel(pipeline.input) || 'Add data'}</span>{executionFor(pipeline.input) && <ExecutionBadge status={executionFor(pipeline.input)} />}</button>}
