@@ -1,0 +1,32 @@
+.sign-in-page { min-height: 100dvh; display: flex; flex-direction: column; color: #19384a; background: radial-gradient(ellipse at 0 100%, #dceeee 0, transparent 45%), radial-gradient(ellipse at 100% 0, #e7eef4 0, transparent 40%), #f5f7f9; font: 12px/1.5 Arial, "Helvetica Neue", Helvetica, sans-serif; }
+.sign-in-main { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100%; max-width: none; margin: 0; padding: 40px 16px 24px; }
+.sign-in-card { width: 360px; max-width: 100%; padding: 28px; border: 1px solid #dce5e9; border-radius: 7px; background: #fff; box-shadow: 0 2px 5px #19384a1f; }
+.sign-in-brand { display: flex; align-items: center; justify-content: center; gap: 10px; margin-bottom: 24px; font-size: 28px; font-weight: 650; letter-spacing: -.8px; }
+.sign-in-brand .brand-mark { font-size: 38px; line-height: 1; }
+.sign-in-kicker { margin: 0 0 4px; color: #526c7a; font-size: 10px; letter-spacing: 1px; }
+.sign-in-card h1 { margin: 0 0 20px; font-size: 18px; line-height: 1.4; letter-spacing: 0; }
+.sign-in-field { display: flex; flex-direction: column; gap: 4px; margin: 16px 0 0; font-weight: bold; }
+.sign-in-field input { width: 100%; min-width: 0; height: 36px; padding: 6px 8px; border: 1px solid #91a5af; border-radius: 3px; color: #19384a; background: #fff; font-weight: normal; }
+.sign-in-check { display: flex; align-items: flex-start; gap: 8px; margin: 8px 0; cursor: pointer; }
+.sign-in-check input { margin: 3px 0 0; accent-color: #157f88; }
+.sign-in-help { color: #526c7a; font-size: 11px; margin: 4px 0 16px; }
+.sign-in-primary, .sign-in-secondary { width: 100%; min-height: 36px; padding: 7px 12px; border: 1px solid #126e76; border-radius: 4px; font-weight: bold; }
+.sign-in-primary { margin-top: 16px; background: #126e76; color: #fff; }
+.sign-in-primary:hover:not(:disabled) { background: #0e5960; }
+.sign-in-secondary { margin-top: 12px; background: #fff; color: #126e76; }
+.sign-in-secondary:hover:not(:disabled) { background: #eaf4f4; }
+.sign-in-card button:disabled { opacity: .65; cursor: wait; }
+.sign-in-assistance { margin: 20px 0 0; padding-top: 16px; border-top: 1px solid #e2e9ed; color: #526c7a; font-size: 11px; }
+.sign-in-alert { margin-bottom: 16px; padding: 10px 12px; border: 1px solid #dcb2a9; border-left: 3px solid #ad372a; border-radius: 3px; color: #852d22; background: #fff5f2; overflow-wrap: anywhere; }
+.sign-in-alert p { margin: 0; }
+.sign-in-error-code { display: block; margin-top: 4px; font-size: 10px; }
+.sign-in-identity { margin: 0 0 12px; font-weight: bold; overflow-wrap: anywhere; }
+.sign-in-description { margin: 0; color: #526c7a; }
+.sign-in-field .sign-in-code { letter-spacing: 6px; font-size: 20px; }
+.sign-in-links { display: flex; justify-content: center; flex-wrap: wrap; gap: 8px 20px; margin-top: 20px; }
+.sign-in-links button { padding: 4px 0; border: 0; background: transparent; color: #126e76; text-decoration: underline; font-size: 11px; }
+.sign-in-footer { padding: 16px; text-align: center; color: #526c7a; font-size: 11px; }
+.hosted-account { display: flex; align-items: center; gap: 12px; margin-left: auto; font: 12px Arial, "Helvetica Neue", Helvetica, sans-serif; }
+.hosted-account span { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hosted-account button { padding: 5px 10px; border: 1px solid #91a5af; border-radius: 4px; background: transparent; color: inherit; }
+@media (max-width: 400px) { .sign-in-card { padding: 24px; } .sign-in-main { padding-top: 24px; } .hosted-account span { max-width: 100px; } }
