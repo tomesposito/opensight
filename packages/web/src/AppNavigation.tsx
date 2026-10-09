@@ -34,13 +34,29 @@ export function AppNavigation({ route, navigate, children }: { route?: AppRoute;
   const access = useAccess(), section = route && pages[route.page].section;
   const [navigationOpen, setNavigationOpen] = useState(false);
   const toggle = useRef<HTMLButtonElement>(null);
+  const header = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const band = header.current;
+    const shell = band?.closest<HTMLElement>('.app-shell');
+    if (!band || !shell) return;
+    // Setup's explicit demo banner and wrapped developer controls can move the
+    // identity band. Keep the rail and its backdrop below the actual band.
+    const align = () => shell.style.setProperty('--app-navigation-top', `${band.getBoundingClientRect().bottom}px`);
+    align();
+    const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(align) : undefined;
+    observer?.observe(band);
+    if (shell.previousElementSibling) observer?.observe(shell.previousElementSibling);
+    window.addEventListener('resize', align);
+    window.addEventListener('scroll', align, { passive: true });
+    return () => { observer?.disconnect(); window.removeEventListener('resize', align); window.removeEventListener('scroll', align); shell.style.removeProperty('--app-navigation-top'); };
+  }, []);
   useEffect(() => { setNavigationOpen(false); }, [route]);
   const closeNavigation = () => { setNavigationOpen(false); toggle.current?.focus(); };
   const link = (page: Page) => access.mode === 'demo' && page === 'api'
     ? <span key={page} aria-disabled="true">API definition preview · Needs hosted API</span>
     : <AppLink key={page} to={{ page }} navigate={navigate} current={route?.page === page}>{pages[page].title}</AppLink>;
   return <>
-    <header className="app-header product-header">
+    <header ref={header} className="app-header product-header">
       <button ref={toggle} className="navigation-toggle" type="button" aria-label="Toggle navigation" aria-expanded={navigationOpen} aria-controls="product-navigation" onClick={() => setNavigationOpen(open => !open)}>☰</button>
       <AppLink className="brand" to={{ page: 'home' }} navigate={navigate}><span className="brand-mark" aria-hidden="true">◈</span>OpenSight</AppLink>
       <span className="header-caption">{route ? pages[route.page].title : 'Page not found'}</span>

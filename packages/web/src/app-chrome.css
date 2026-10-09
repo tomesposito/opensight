@@ -7,7 +7,7 @@
 .product-header .header-caption { font-size: 12px; padding-left: 16px; color: #d0e0e8; border-color: #526c7a; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .product-header .fixture-picker { min-width: 0; color: #d0e0e8; }
 .product-header .fixture-picker select { min-width: 0; max-width: 260px; padding: 4px 8px; font-size: 12px; }
-.product-navigation { position: fixed; z-index: 59; left: 0; top: var(--app-band); bottom: 0; width: var(--app-rail); padding: 16px 8px; overflow-y: auto; background: #edf3f5; border-right: 1px solid #d1e0e5; }
+.product-navigation { position: fixed; z-index: 59; left: 0; top: var(--app-navigation-top, var(--app-band)); bottom: 0; width: var(--app-rail); padding: 16px 8px; overflow-y: auto; background: #edf3f5; border-right: 1px solid #d1e0e5; }
 .product-navigation .app-nav { display: flex; flex-direction: column; align-items: stretch; gap: 4px; }
 .product-navigation .app-nav a { display: block; font-size: 13px; font-weight: 500; padding: 8px 12px; min-height: 36px; border: 1px solid transparent; border-radius: 5px; }
 .product-navigation .app-nav a[aria-current] { border-color: #157f88; background: #dceff0; color: #126e76; font-weight: 600; }
@@ -33,7 +33,7 @@
 .app-shell .empty-page-state .primary-button:hover { background: #126e76; }
 .app-shell .empty-page-state .empty-state-secondary { color: #126e76; }
 .navigation-toggle { display: none; align-items: center; justify-content: center; flex: none; width: 32px; height: 32px; padding: 0; font-size: 18px; border: 1px solid #526c7a; border-radius: 4px; background: transparent; color: #fff; }
-.navigation-scrim { display: none; position: fixed; inset: var(--app-band) 0 0; border: 0; padding: 0; background: #14253655; z-index: 58; }
+.navigation-scrim { display: none; position: fixed; inset: var(--app-navigation-top, var(--app-band)) 0 0; border: 0; padding: 0; background: #14253655; z-index: 58; }
 .app-shell[data-page=author] { --app-rail: 0px; }
 .app-shell[data-page=author] .product-navigation { display: none; width: 224px; }
 .app-shell[data-page=author] .navigation-toggle { display: inline-flex; }

@@ -134,3 +134,21 @@ describe('integrated Author identity geometry', () => {
     assert.equal(actual.color, 'rgb(255, 255, 255)'); assert.equal(actual.duplicate, false);
   });
 });
+
+test('navigation follows the actual band below a demo banner and after scrolling', async t => {
+  const previous = globalThis.IS_REACT_ACT_ENVIRONMENT, oldWindow = globalThis.window;
+  globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+  const listeners = new Map(), values = new Map(); let bottom = 114;
+  globalThis.window = { addEventListener: (name, fn) => listeners.set(name, fn), removeEventListener: name => listeners.delete(name) };
+  const band = { closest: () => ({ style: { setProperty: (key, value) => values.set(key, value), removeProperty: key => values.delete(key) } }), getBoundingClientRect: () => ({ bottom }) };
+  let renderer;
+  t.after(async () => { if (renderer) await act(() => renderer.unmount()); globalThis.IS_REACT_ACT_ENVIRONMENT = previous; globalThis.window = oldWindow; });
+  await act(() => { renderer = create(h(AppNavigation, { route: { page: 'home' }, navigate() {} }), { createNodeMock: node => node.type === 'header' ? band : null }); });
+  assert.equal(values.get('--app-navigation-top'), '114px');
+  bottom = 48; listeners.get('scroll')();
+  assert.equal(values.get('--app-navigation-top'), '48px');
+  bottom = 88; listeners.get('resize')();
+  assert.equal(values.get('--app-navigation-top'), '88px');
+  await act(() => renderer.unmount()); renderer = undefined;
+  assert.equal(listeners.size, 0); assert.equal(values.size, 0);
+});
