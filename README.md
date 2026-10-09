@@ -41,9 +41,10 @@ Open **[http://127.0.0.1:5173](http://127.0.0.1:5173)**. Leave both terminals
 running; stop each with Ctrl+C when finished.
 
 On first load, the app checks the API and opens **Local workspace** without
-sign-in. **Home** shows a sales dashboard with pinned synthetic sample results
-and a fixed East-region filter; it does not query your uploaded data. To build
-with your own CSV:
+sign-in. **Home**, **Author**, **Analyses** and **Dashboards** start empty.
+Choose **Upload or connect data** to begin, or explicitly **Try sample data**
+for the labeled synthetic sales dataset. **Remove sample data** returns to the
+empty state. To build with your own CSV:
 
 1. Open **Data → Data sources → Upload a file**, choose your CSV (and delimiter
    if needed), then select **Upload to staging**.
@@ -55,8 +56,8 @@ with your own CSV:
    analyses** in the same browser and origin. Draft definitions stay on this
    device; they are not synced or published and do not preserve uploaded rows.
 
-Uploads stay in local DuckDB memory, are limited to **8 MiB**, and expire after
-**24 hours or an API restart**. See [local data](docs/local-data.md) for the
+Uploads stay in a local DuckDB file, are limited to **8 MiB**, survive API
+restarts, and expire after **24 hours**. See [local data](docs/local-data.md) for the
 workflow and limits, and [local drafts](docs/local-drafts.md) for source recovery.
 See [auto-save drafts](docs/auto-save-drafts.md) for save indicators, storage
 failure guidance and the recovery notice for work that was never manually saved.
@@ -77,13 +78,13 @@ Author on a QuickSight-style canvas: 23 visual types (bar, line, pie/donut,
 KPI, table, pivot, radar, sankey, waterfall, insight, scatter, combo, maps and more), parameters and controls,
 filter actions, drill-down, themes, and `.qs` bundle import/export round trips.
 
-The app opens to a working sales dashboard using pinned synthetic sample results
+The static demo, and local **Try sample data**, show a sales dashboard using pinned synthetic sample results
 (fixed East-region filter; no live query). Choose **Author** to build an analysis,
 or **Developer fixture preview** to inspect exported definitions. All existing
 modes remain available under their role permissions. See
 [sample dashboard and preview semantics](docs/issue-28-gap-notes.md).
 
-![Default sales dashboard rendered from pinned sample results](docs/images/sample-dashboard.png)
+![Opt-in sales dashboard rendered from pinned sample results](docs/images/sample-dashboard.png)
 
 Long dashboards and the connector gallery show a keyboard-accessible
 [Back to top button](docs/back-to-top.md) after 600px of page scrolling, with

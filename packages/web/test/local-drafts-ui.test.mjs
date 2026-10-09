@@ -51,7 +51,7 @@ test('Save, reload, reopen, rename and delete work through the author UI', async
   assert.match(ui.text(), /Draft deleted/);
 });
 test('blocked storage keeps the editor usable and Export JSON available with a specific reason', async t => {
-  const ui = await mount(t, {}, { mode: 'local' }, true);
+  const ui = await mount(t, { sampleLoaded: true }, { mode: 'local' }, true);
   await ui.click('Save draft');
   assert.match(ui.text(), /Browser storage is blocked/); assert.match(ui.text(), /Export JSON to keep your work/);
   assert.equal(ui.button('Export JSON').props.disabled, false);

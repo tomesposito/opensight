@@ -89,3 +89,65 @@ test('explicit upload lifetime hides expired sources and reclaims the session ca
     assert.equal(stage.prepSources().length, 1);
   } finally { stage.close(); }
 });
+
+test('durable staging restores rows, schema, expiry and the upload cap, then reclaims expired tables', async t => {
+  const { mkdtemp, rm, stat } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const dir = await mkdtemp(join(tmpdir(), 'opensight-uploads-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const path = join(dir, 'uploads.duckdb');
+  let now = Date.parse('2026-01-01T00:00:00Z');
+  const lifetime = { ttlMs: 1000, now: () => now };
+  let stage = await UploadStaging.create(lifetime, path);
+  t.after(() => stage.close());
+  const first = await stage.ingest(input('name,amount,day,active\nNorth,2.5,2026-01-01,true\nSouth,,2026-01-02,false'));
+  const before = await stage.preview(first.id);
+  for (let i = 1; i < 20; i++) await stage.ingest(input('name,value\nNorth,2'));
+  stage.close(); now += 999;
+  stage = await UploadStaging.create(lifetime, path);
+  assert.deepEqual(await stage.preview(first.id), before);
+  assert.equal(stage.prepSources().length, 20);
+  assert.equal((await stat(path)).mode & 0o777, 0o600);
+  await assert.rejects(stage.ingest(input('name,value\nNorth,2')), { code: 'UPLOAD_LIMIT_EXCEEDED' });
+  stage.close(); now++;
+  stage = await UploadStaging.create(lifetime, path);
+  assert.deepEqual(stage.prepSources(), []);
+  await assert.rejects(stage.preview(first.id), { code: 'UPLOAD_NOT_FOUND' });
+  await assert.rejects(stage.previewPrep({ version: 1, input: first.id, steps: [] }), { code: 'PREP_SOURCE_NOT_FOUND' });
+  assert.equal((await stage.ingest(input('name,value\nNew,3'))).rowCount, 1);
+  const { DuckDBInstance } = await import('@duckdb/node-api');
+  stage.close();
+  const db = await DuckDBInstance.create(path), c = await db.connect();
+  try { assert.equal((await c.runAndReadAll('SELECT table_name FROM information_schema.tables')).getRows().some(row => row[0] === first.id), false); }
+  finally { c.closeSync(); db.closeSync(); }
+  stage = await UploadStaging.create(lifetime, path);
+});
+
+test('a committed local upload survives abrupt process death through DuckDB WAL recovery', async t => {
+  const { mkdtemp, rm, readFile } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { spawn } = await import('node:child_process');
+  const dir = await mkdtemp(join(tmpdir(), 'opensight-crash-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const path = join(dir, 'uploads.duckdb');
+  const child = spawn(process.execPath, ['--input-type=module', '-e', `
+    import { UploadStaging } from '@opensight/query-engine';
+    import { writeFile } from 'node:fs/promises';
+    const stage = await UploadStaging.create({ ttlMs: 86400000 }, process.argv[1]);
+    const upload = await stage.ingest({ config: { format: 'csv' }, data: Buffer.from('team,amount\\nNorth,7') });
+    await writeFile(process.argv[1] + '.summary', JSON.stringify(upload));
+    process.kill(process.pid, 'SIGKILL');
+  `, path], { stdio: ['ignore', 'pipe', 'pipe'] });
+  let errors = '';
+  child.stderr.on('data', chunk => { errors += chunk; });
+  const ended = await new Promise((resolve, reject) => { child.once('error', reject); child.once('close', (code, signal) => resolve({ code, signal })); });
+  assert.equal(ended.signal, 'SIGKILL', errors);
+  const uploaded = JSON.parse(await readFile(path + '.summary', 'utf8')), stage = await UploadStaging.create({ ttlMs: 86400000 }, path);
+  try {
+    const result = await stage.preview(uploaded.id);
+    assert.deepEqual(result.upload, uploaded);
+    assert.deepEqual(result.rows, [{ team: 'North', amount: 7 }]);
+  } finally { stage.close(); }
+});

@@ -2,6 +2,8 @@ import { streamPrepDuckDb, withPrepTables, type PrepSink, type PrepReadLimits, t
 import { previewPrepDuckDb, type PrepPreview, type PrepPreviewOptions } from './prep-executor.js';
 import type { PrepSource } from './prep.js';
 import { randomUUID } from 'node:crypto';
+import { mkdir, chmod } from 'node:fs/promises';
+import { dirname } from 'node:path';
 import { DuckDBInstance, type DuckDBConnection } from '@duckdb/node-api';
 import * as XLSX from 'xlsx';
 import { validateConnectorConfig } from './connectors.js';
@@ -181,20 +183,45 @@ export function parseUpload(request: UploadRequest): { columns: UploadColumn[]; 
 }
 
 const sqlTypes: Record<UploadType, string> = { INTEGER: 'BIGINT', DECIMAL: 'DOUBLE', STRING: 'VARCHAR', DATETIME: 'TIMESTAMP', BOOLEAN: 'BOOLEAN' };
-/** One staging session per owner. Tables live until close; no paths or SQL from uploads execute. */
+/** One staging session per owner. Only a trusted startup path can enable persistence. */
 export class UploadStaging {
   private readonly uploads = new Map<string, UploadSummary>();
-  private constructor(private readonly instance: DuckDBInstance, private readonly connection: DuckDBConnection, private readonly lifetime?: UploadLifetime) {}
-  static async create(lifetime?: UploadLifetime): Promise<UploadStaging> {
+  private constructor(private readonly instance: DuckDBInstance, private readonly connection: DuckDBConnection, private readonly lifetime?: UploadLifetime, private readonly durable = false) {}
+  static async create(lifetime?: UploadLifetime, databasePath?: string): Promise<UploadStaging> {
     if (lifetime && (!Number.isSafeInteger(lifetime.ttlMs) || lifetime.ttlMs <= 0)) throw new Error('Invalid upload lifetime');
-    const instance = await DuckDBInstance.create(':memory:', { enable_external_access: 'false', autoinstall_known_extensions: 'false', autoload_known_extensions: 'false', threads: '1', memory_limit: '256MB', max_temp_directory_size: '0B' });
-    try { return new UploadStaging(instance, await instance.connect(), lifetime); } catch (e) { instance.closeSync(); throw e; }
+    let instance: DuckDBInstance | undefined, connection: DuckDBConnection | undefined;
+    try {
+      if (databasePath) await mkdir(dirname(databasePath), { recursive: true, mode: 0o700 });
+      instance = await DuckDBInstance.create(databasePath ?? ':memory:', { enable_external_access: 'false', autoinstall_known_extensions: 'false', autoload_known_extensions: 'false', threads: '1', memory_limit: '256MB', max_temp_directory_size: '0B' });
+      connection = await instance.connect();
+      const stage = new UploadStaging(instance, connection, lifetime, !!databasePath);
+      if (databasePath) {
+        await chmod(databasePath, 0o600);
+        await connection.run('CREATE TABLE IF NOT EXISTS opensight_uploads (id VARCHAR PRIMARY KEY, summary VARCHAR NOT NULL)');
+        const reader = await connection.runAndReadAll('SELECT id, summary FROM opensight_uploads');
+        for (const row of reader.getRows()) {
+          const summary = JSON.parse(String(row[1])) as UploadSummary;
+          if (summary.id !== row[0] || !/^upload_[a-f0-9]{32}$/.test(summary.id) || !summary.expiresAt || !Number.isFinite(Date.parse(summary.expiresAt))) throw new Error('Invalid stored upload');
+          stage.uploads.set(summary.id, summary);
+        }
+        await stage.expire();
+      }
+      return stage;
+    } catch {
+      connection?.closeSync(); instance?.closeSync();
+      throw new UploadError('UPLOAD_STAGING_FAILED', '$.uploads', 'Unable to open upload staging');
+    }
   }
   private now(): number { return this.lifetime?.now?.() ?? Date.now(); }
   private expired(upload: UploadSummary): boolean { return !!upload.expiresAt && Date.parse(upload.expiresAt) <= this.now(); }
   async expire(): Promise<void> {
     for (const [id, upload] of this.uploads) if (this.expired(upload)) {
-      await this.connection.run(`DROP TABLE IF EXISTS ${q(id)}`);
+      await this.connection.run('BEGIN TRANSACTION');
+      try {
+        await this.connection.run(`DROP TABLE IF EXISTS ${q(id)}`);
+        if (this.durable) await this.connection.run('DELETE FROM opensight_uploads WHERE id = ?', [id]);
+        await this.connection.run('COMMIT');
+      } catch (error) { await this.connection.run('ROLLBACK'); throw error; }
       this.uploads.delete(id);
     }
   }
@@ -204,6 +231,7 @@ export class UploadStaging {
     if (this.uploads.size >= 20) throw new UploadError('UPLOAD_LIMIT_EXCEEDED', '$.uploads', 'Staging holds at most 20 uploads per session');
     const id = `upload_${randomUUID().replaceAll('-', '')}`;
     try {
+      await this.connection.run('BEGIN TRANSACTION');
       await this.connection.run(`CREATE TABLE ${q(id)} (${parsed.columns.map(c => `${q(c.name)} ${sqlTypes[c.type]}`).join(', ')})`);
       // Bound batches avoid per-row SQL calls and never interpret file values as SQL.
       for (let i = 0; i < parsed.rows.length; i += 100) {
@@ -213,9 +241,11 @@ export class UploadStaging {
       const reader = await this.connection.runAndReadAll(`SELECT COUNT(*) FROM ${q(id)}`);
       const rowCount = Number(reader.getRows()[0]![0]);
       const summary: UploadSummary = { id, rowCount, columns: parsed.columns, ...(parsed.delimiter ? { delimiter: parsed.delimiter } : {}), ...(parsed.sheet ? { sheet: parsed.sheet } : {}), ...(this.lifetime ? { expiresAt: new Date(this.now() + this.lifetime.ttlMs).toISOString() } : {}) };
+      if (this.durable) await this.connection.run('INSERT INTO opensight_uploads VALUES (?, ?)', [id, JSON.stringify(summary)]);
+      await this.connection.run('COMMIT');
       this.uploads.set(id, structuredClone(summary)); return summary;
     } catch {
-      await this.connection.run(`DROP TABLE IF EXISTS ${q(id)}`).catch(() => undefined);
+      await this.connection.run('ROLLBACK').catch(() => undefined);
       throw new UploadError('UPLOAD_STAGING_FAILED', '$.data', 'DuckDB staging failed; no upload was published');
     }
   }

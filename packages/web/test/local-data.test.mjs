@@ -50,7 +50,7 @@ test('local draft validation and export preserve the binding without inventing a
 });
 test('local file UI discloses its cap and expiry while the static demo stays disabled', () => {
   const html = renderToStaticMarkup(createElement(DataSources, { local: true, client: { uploadFile() {}, validateConnector() {} } }));
-  assert.match(html, /Local form limit: 8 MiB/); assert.match(html, /expire after 24 hours or restart/); assert.doesNotMatch(html, /type="file"[^>]*disabled/);
+  assert.match(html, /Local form limit: 8 MiB/); assert.match(html, /survive API restarts and expire after 24 hours/); assert.doesNotMatch(html, /type="file"[^>]*disabled/);
   const demo = renderToStaticMarkup(createElement(DataSources));
   assert.match(demo, /Needs local or hosted API/); assert.match(demo, /Uploads are unavailable in the static demo/);
   assert.match(demo, /type="file"[^>]*disabled/);

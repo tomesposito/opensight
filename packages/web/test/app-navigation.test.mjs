@@ -120,10 +120,12 @@ test('Analyses reads only its mode/identity collection and reports corrupt stora
   const ui = await mount(t, demoAccess, '#/analyses');
   createDraftStore(() => ui.storage, { mode: 'local' }).save(authored('Local only'));
   createDraftStore(() => ui.storage, hosted('author')).save(authored('Hosted only'));
-  await act(() => ui.root.findByType(LocalDrafts).props.onRefresh());
-  assert.equal(ui.root.findByType(LocalDrafts).props.entries.length, 0);
+  const refresh = () => act(() => ui.root.findAllByType('button').find(button => button.props.children === 'Refresh drafts').props.onClick());
+  await refresh();
+  assert.match(ui.text(), /Create your first analysis and find it here/);
+  assert.doesNotMatch(ui.text(), /Local only|Hosted only/);
   ui.storage.setItem('opensight.author.drafts.v1.demo', '{broken');
-  await act(() => ui.root.findByType(LocalDrafts).props.onRefresh());
+  await refresh();
   assert.match(ui.text(), /Saved analyses on this device could not be read/);
   assert.match(ui.text(), /Reload to retry, or import an exported/);
   assert.equal(ui.storage.getItem('opensight.author.drafts.v1.demo'), '{broken');

@@ -228,6 +228,9 @@ button:disabled { cursor: default; opacity: .5; }
 .author-card .empty-state { padding: 10px; overflow: auto; }
 .author-card .visual-skeleton { padding: 6px 2px; }
 .author-card .empty-state p { margin: 8px 0; font-size: 11px; }
+.author-visual-empty { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 16px; overflow: auto; text-align: center; font: 12px/1.5 Arial, "Helvetica Neue", Helvetica, sans-serif; }
+.author-visual-empty h3 { margin: 0; font-size: 24px; font-weight: 400; }
+.author-visual-empty p { margin: 0; }
 .author-card .chart { min-height: 140px; }
 .react-grid-item > .react-resizable-handle { z-index: 2; }
 .author-layout .toggle { flex-direction: row; align-items: center; gap: 6px; margin: 6px 0; }
@@ -714,3 +717,19 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 /* Floating back-to-top control on long dashboard/sample pages. */
 .back-to-top { position: fixed; z-index: 30; bottom: 24px; right: 24px; min-height: 40px; padding: 8px 16px; border: 1px solid #526c7a; border-radius: 6px; background: #19384a; color: #fff; font: 600 12px/1.5 Arial, "Helvetica Neue", Helvetica, sans-serif; box-shadow: 0 4px 16px #19384a33; }
 .back-to-top:hover { background: #254a5e; }
+
+/* The real local workspace starts empty; demo/hosted chrome retains its styling. */
+.app-shell[data-workspace="local"] { font: 12px/1.5 Arial, "Helvetica Neue", Helvetica, sans-serif; }
+.local-empty-state { padding: 32px; font: 12px/1.5 Arial, "Helvetica Neue", Helvetica, sans-serif; }
+.local-empty-state h2 { margin: 0 0 8px; font-size: 20px; }
+.empty-page-state { min-height: 360px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; padding: 32px 16px; text-align: center; font: 12px/1.5 Arial, "Helvetica Neue", Helvetica, sans-serif; }
+.empty-page-illustration { width: 120px; height: 104px; flex: none; }
+.empty-page-state p { margin: 0; }
+.empty-page-state .primary-button { display: inline-block; padding: 8px 16px; border: 1px solid #176fa1; border-radius: 4px; background: #176fa1; color: #fff; text-decoration: none; }
+.empty-page-state .primary-button:hover { border-color: #125881; background: #125881; }
+.empty-page-state .empty-state-secondary { padding: 4px 8px; border: 0; background: transparent; color: #176fa1; text-decoration: underline; }
+.empty-page-note { margin: 8px 0 0; text-align: center; }
+.author-center > .author-canvas > .local-empty-state { min-height: 480px; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+.author-layout-empty > .author-center { grid-column: 3 / -1; }
+.app-shell[data-workspace="local"] > .fixture-demo-banner { font-size: 12px; gap: 8px; padding: 8px 24px; }
+.app-shell[data-workspace="local"] > .fixture-demo-banner button { min-height: 28px; padding: 4px 8px; }
