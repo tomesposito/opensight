@@ -444,7 +444,13 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .author-menu summary:active, .author-menu details[open] > summary { background: var(--header-pressed); box-shadow: inset 0 -3px var(--header-focus); }
 .author-workspace .author-menu summary:focus-visible { outline: 2px solid var(--header-focus); outline-offset: -4px; }
 .menu-popover { position: absolute; z-index: 30; top: 100%; left: 0; width: 270px; max-width: 85vw; max-height: min(360px, 60vh); overflow: auto; padding: 6px; border: 1px solid var(--chrome-border); border-top: 2px solid var(--header-menu-bg); border-radius: 0 0 4px 4px; box-shadow: 0 8px 24px var(--chrome-menu-shadow); color: var(--chrome-text); background: var(--chrome-surface); }
-.author-workspace[data-chrome] .menu-popover button { display: block; width: 100%; min-height: 34px; padding: 8px 10px; text-align: left; margin: 0; border: 1px solid transparent; border-radius: 2px; background: var(--chrome-surface); color: var(--chrome-text); font-size: 12px; }
+.author-workspace[data-chrome] .menu-popover button { display: block; width: 100%; min-height: 28px; padding: 4px 8px; text-align: left; margin: 0; border: 1px solid transparent; border-radius: 2px; background: var(--chrome-surface); color: var(--chrome-text); font-size: 12px; }
+.menu-popover hr { border: 0; border-top: 1px solid var(--chrome-border); margin: 4px 8px; }
+.author-workspace[data-chrome] .menu-popover button[aria-disabled=true] { color: var(--chrome-muted); cursor: not-allowed; }
+.menu-item-reason { display: none; margin: 0 8px 4px; font-size: 12px; line-height: 1.4; color: var(--chrome-muted); }
+.author-menu-item:hover .menu-item-reason, .author-menu-item:focus-within .menu-item-reason { display: block; }
+.menu-check { display: inline-block; width: 16px; margin-left: -4px; }
+.menu-exports { margin-left: 16px; border-left: 1px solid var(--chrome-border); }
 .author-workspace[data-chrome] .menu-popover button:hover:not(:disabled), .author-workspace[data-chrome] .menu-popover button:focus-visible { background: var(--chrome-menu-hover); color: var(--chrome-text); border-color: var(--chrome-border); }
 .menu-popover p { margin: 8px 10px; font-size: 12px; line-height: 1.5; color: var(--chrome-muted); }
 .author-workspace[data-chrome] .menu-popover label { display: grid; gap: 6px; padding: 6px; font-size: 12px; color: var(--chrome-text); }

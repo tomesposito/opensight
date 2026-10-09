@@ -142,7 +142,7 @@ function AuthorWorkspace({ sampleLoaded = false, onTrySample, client: apiClient,
     draft={draft} dispatch={dispatch} oEntry={trigger} dataAvailable={!noData} fit={fit}
     onFit={() => setFit(value => !value)} onJson={download}
     onBundle={() => { if (!busy) void downloadQs(); }} onImport={() => fileInput.current?.click()}
-    busy={busy} jsonDisabled={!!exported.error} />;
+    busy={busy} jsonDisabled={!!exported.error} autosaveError={drafts.autoError ?? undefined} />;
   if (drafts.openingError) return <section><h1>Unable to open analysis</h1><p role="alert">{drafts.openingError}</p><p>Return to My analyses to refresh the list or choose another draft.</p></section>;
   return <><div ref={workspace} className="author-workspace" data-chrome={draft.chrome ?? 'light'}>
     <AuthorShortcuts workspace={workspace} onSave={saveDraft} />

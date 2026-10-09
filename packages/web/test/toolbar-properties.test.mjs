@@ -68,7 +68,7 @@ test('toolbar exposes all seven menus, callbacks, busy guards and honest publish
   const props = { draft: add('bar'), dispatch: a => calls.push(a), fit: true, onFit: () => calls.push('fit'), onJson: () => calls.push('json'), onBundle: () => calls.push('bundle'), onImport: () => calls.push('import') };
   const ui = await mount(t, createElement(AuthorToolbar, props));
   assert.deepEqual(ui.renderer.root.findAllByType('summary').map(n => n.props.children), ['File', 'Edit', 'Data', 'Insert', 'Sheets', 'Objects', 'Search']);
-  for (const label of ['Import bundle…', 'Download .qs', 'Export JSON', 'FIT TO WIDTH']) await ui.click(label);
+  for (const label of ['Import', 'Exports', 'Download .qs', 'Export JSON', 'FIT TO WIDTH']) await ui.click(label);
   assert.deepEqual(calls, ['import', 'bundle', 'json', 'fit']);
   await ui.click('Add bar visual'); await ui.click('Add sheet'); await ui.click('Remove selected visual');
   assert.deepEqual(calls.slice(4), [{ type: 'add', kind: 'bar' }, { type: 'sheet-add' }, { type: 'remove', id: 'visual-1' }]);
@@ -78,7 +78,7 @@ test('toolbar exposes all seven menus, callbacks, busy guards and honest publish
   assert.match(ui.find('div', p => p.role === 'status').props.children[0], /This static demo has no publication destination/);
   await ui.click('Dismiss'); assert.equal(ui.find('div', p => p.role === 'status'), undefined);
   await act(() => ui.renderer.update(createElement(AuthorToolbar, { ...props, busy: true, jsonDisabled: true })));
-  for (const label of ['Import bundle…', 'Download .qs', 'Export JSON']) assert.equal(ui.find('button', p => p.children === label).props.disabled, true);
+  for (const label of ['Import', 'Download .qs', 'Export JSON']) assert.equal(ui.find('button', p => p.children === label).props['aria-disabled'], true);
 });
 
 test('search selects a matching visual on another sheet in order', async t => {

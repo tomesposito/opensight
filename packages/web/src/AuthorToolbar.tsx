@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type Dispatch, type ReactNode } from 'reac
 import { activeSheet, dataFields, type AuthorAction, type AuthorDraft } from './authoring.js';
 import { useAccess, type Access } from './access.js';
 import { useToast } from './Toasts.js';
+import { AuthorMenuItem } from './AuthorMenuItem.js';
 export function publishNotice(mode: Access['mode']): string {
   return mode === 'hosted'
     ? 'Publishing needs a hosted deployment with dashboard publication enabled. It is not available in this editor yet; nothing has been published.'
@@ -17,10 +18,11 @@ export function focusAuthorControl(nav: HTMLElement | null, selector: string) {
   target?.scrollIntoView?.({ block: 'nearest' });
   target?.focus();
 }
-export function AuthorToolbar({ onPrep, draft, dispatch, fit, onFit, onJson, onBundle, onImport, oEntry, dataAvailable = true, busy = false, jsonDisabled = false }: { dataAvailable?: boolean; onPrep?: () => void; oEntry?: ReactNode; busy?: boolean; jsonDisabled?: boolean; draft: AuthorDraft; dispatch: Dispatch<AuthorAction>; fit: boolean; onFit: () => void; onJson: () => void; onBundle: () => void; onImport: () => void }) {
+export function AuthorToolbar({ onPrep, draft, dispatch, fit, onFit, onJson, onBundle, onImport, oEntry, dataAvailable = true, busy = false, jsonDisabled = false, autosaveError }: { autosaveError?: string; dataAvailable?: boolean; onPrep?: () => void; oEntry?: ReactNode; busy?: boolean; jsonDisabled?: boolean; draft: AuthorDraft; dispatch: Dispatch<AuthorAction>; fit: boolean; onFit: () => void; onJson: () => void; onBundle: () => void; onImport: () => void }) {
   const access = useAccess();
   const notify = useToast();
   const [notice, setNotice] = useState(''), [search, setSearch] = useState('');
+  const [exportsOpen, setExportsOpen] = useState(false);
   const sheet = activeSheet(draft), selected = sheet.visuals.find(v => v.id === sheet.selectedId);
   const nav = useRef<HTMLElement>(null);
   useEffect(() => {
@@ -30,18 +32,38 @@ export function AuthorToolbar({ onPrep, draft, dispatch, fit, onFit, onJson, onB
     return () => document.removeEventListener?.('pointerdown', close);
   }, []);
   const focus = (selector: string) => focusAuthorControl(nav.current, selector);
+  const publish = () => { setNotice(publishNotice(access.mode)); notify('Publishing is unavailable in this editor. Nothing has been published.'); };
   return <>
     <nav ref={nav} className="author-menu" aria-label="Analysis menu" onKeyDown={e => {
       if (e.key === 'Escape') { const menu = (e.target as HTMLElement).closest('details'); if (menu) { menu.open = false; menu.querySelector('summary')?.focus(); } }
-    }} onClick={e => { if ((e.target as HTMLElement).closest('button')) { const menu = (e.target as HTMLElement).closest('details'); if (menu) menu.open = false; } }}>
-      <details name="analysis-menu"><summary>File</summary><div className="menu-popover"><button type="button" disabled={busy} onClick={onImport}>Import bundle…</button><button type="button" disabled={busy} onClick={onBundle} aria-describedby="export-help">Download .qs</button><button type="button" disabled={jsonDisabled} onClick={onJson} aria-describedby="export-help">Export JSON</button><p>Use Save draft to keep changes on this device. Drafts are not synced or shared.</p></div></details>
+    }} onClick={e => { const button = (e.target as HTMLElement).closest('button'); if (button && button.getAttribute('aria-disabled') !== 'true' && !button.hasAttribute('data-menu-keep-open')) { const menu = button.closest('details'); if (menu) menu.open = false; } }}>
+      <details name="analysis-menu"><summary>File</summary><div className="menu-popover">
+        <AuthorMenuItem label="Add to Favorites" reason="Analysis favorites are not supported yet." />
+        <AuthorMenuItem label="Publish" run={publish} />
+        <AuthorMenuItem label="Save as Analysis" reason="Saving a separate analysis copy is not supported yet. Save draft updates the draft on this device." />
+        <hr />
+        <AuthorMenuItem label="Share" reason="Sharing needs hosted API support. Device-local drafts are not synced or shared; Exports downloads definitions without data." />
+        <AuthorMenuItem label="Rename" run={() => focus('.analysis-title input')} />
+        <AuthorMenuItem label="Import" reason={busy ? 'Wait for the current import or export to finish.' : undefined} run={onImport} />
+        <hr />
+        <AuthorMenuItem label="Print" reason="Analysis print layout is not supported yet." />
+        <AuthorMenuItem label="Exports" keepOpen run={() => setExportsOpen(value => !value)} />
+        {exportsOpen && <div className="menu-exports" role="group" aria-label="Analysis definition exports">
+          <AuthorMenuItem label="Download .qs" reason={busy ? 'Wait for the current import or export to finish.' : undefined} run={onBundle} />
+          <AuthorMenuItem label="Export JSON" reason={jsonDisabled ? 'The analysis definition cannot be exported. Review the export status below the toolbar.' : undefined} run={onJson} />
+          <p>Definitions only; data is not included.</p>
+        </div>}
+        <AuthorMenuItem label="Export to PDF" reason="PDF export is not supported in this editor yet." />
+        <hr />
+        <AuthorMenuItem label="Autosave On" checked reason={autosaveError ? `Autosave could not save: ${autosaveError}` : 'Autosave is always on for this device. Drafts are not synced or shared.'} />
+      </div></details>
       <details name="analysis-menu"><summary>Edit</summary><div className="menu-popover"><button type="button" onClick={() => focus('.analysis-title input')}>Rename analysis</button><p>Undo / redo is not available yet. Export a checkpoint to keep a copy.</p></div></details>
       <details name="analysis-menu"><summary>Data</summary><div className="menu-popover">{onPrep && <button type="button" onClick={onPrep}>Prepare data…</button>}<button type="button" disabled={!dataAvailable} onClick={() => nav.current?.closest('.author-workspace')?.querySelector<HTMLButtonElement>('.calculation-button')?.click()}>Calculated field…</button><p>{!dataAvailable ? 'Add data to start building.' : draft.dataset ? `Using ${draft.dataset.name}. Prepare data to transform its columns.` : access.mode === 'local' ? 'Using sample sales data (8 synthetic rows).' : 'Local synthetic sales is available. Adding remote data sources requires a configured backend.'}</p></div></details>
       <details name="analysis-menu"><summary>Insert</summary><div className="menu-popover"><button type="button" disabled={!dataAvailable} onClick={() => dispatch({ type: 'add', kind: 'bar' })}>Add bar visual</button><button type="button" disabled={!dataAvailable} onClick={() => focus('.visual-gallery button')}>Choose visual type</button><p>Text boxes and images are not available yet.</p></div></details>
       <details name="analysis-menu"><summary>Sheets</summary><div className="menu-popover">{draft.sheets.map(s => <button type="button" key={s.id} onClick={() => dispatch({ type: 'sheet-select', id: s.id })}>{s.name}</button>)}<button type="button" onClick={() => dispatch({ type: 'sheet-add' })}>Add sheet</button></div></details>
       <details name="analysis-menu"><summary>Objects</summary><div className="menu-popover">{sheet.visuals.map(v => <button key={v.id} type="button" onClick={() => dispatch({ type: 'select', id: v.id })}>{v.title || v.id} · {v.kind}</button>)}{selected && <button type="button" onClick={() => dispatch({ type: 'remove', id: selected.id })}>Remove selected visual</button>}{!sheet.visuals.length && <p>No visuals on this sheet.</p>}</div></details>
       <details name="analysis-menu"><summary>Search</summary><div className="menu-popover"><label>Search analysis<input className="analysis-search" aria-keyshortcuts="Meta+F Control+F" type="search" value={search} onChange={e => setSearch(e.target.value)} /></label>{draft.sheets.flatMap(s => s.visuals.filter(v => `${v.title} ${v.kind} ${v.id}`.toLowerCase().includes(search.toLowerCase())).map(v => <button key={v.id} type="button" onClick={() => { dispatch({ type: 'sheet-select', id: s.id }); dispatch({ type: 'select', id: v.id }); }}>{s.name} / {v.title || v.id}</button>))}<p>Fields: {(dataAvailable ? dataFields(draft.calculatedFields, draft.dataset) : []).filter(f => f.name.toLowerCase().includes(search.toLowerCase())).map(f => f.name).join(', ') || 'No matches'}</p></div></details>
-      {oEntry}<div className="menu-spacer" /><button type="button" disabled={!dataAvailable} onClick={() => focus('.visual-gallery button')}>Add visual</button><button type="button" aria-pressed={fit} title={fit ? 'Fit is on; switch to 1200 pixel canvas' : 'Fit canvas to available width'} onClick={onFit}>FIT TO WIDTH</button><button type="button" onClick={() => { setNotice(publishNotice(access.mode)); notify('Publishing is unavailable in this editor. Nothing has been published.'); }}>PUBLISH</button>
+      {oEntry}<div className="menu-spacer" /><button type="button" disabled={!dataAvailable} onClick={() => focus('.visual-gallery button')}>Add visual</button><button type="button" aria-pressed={fit} title={fit ? 'Fit is on; switch to 1200 pixel canvas' : 'Fit canvas to available width'} onClick={onFit}>FIT TO WIDTH</button><button type="button" onClick={publish}>PUBLISH</button>
       <label className="chrome-switch">NEW LOOK<select aria-label="NEW LOOK" value={draft.chrome ?? 'light'} onChange={e => dispatch({ type: 'chrome', mode: e.target.value as 'light' | 'dark' })}><option value="light">Light</option><option value="dark">Dark</option></select></label>
     </nav>
     {notice && <div className="toolbar-notice" role="status">{notice}<button type="button" onClick={() => setNotice('')}>Dismiss</button></div>}
