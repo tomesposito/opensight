@@ -104,10 +104,14 @@ the content and clear the notice.
 
 ![Auto-saved work restored with a saved indicator and recovery notice](docs/images/auto-save.png)
 
-Field wells stay visible before a visual is selected. Choose a Data field to
-create a bar, then keep assigning fields or change its type.
+Field wells stay visible before a visual is selected. Fresh bar and pie visuals
+show **GROUP/COLOR**, **VALUE**, and **SMALL MULTIPLES**. Drag fields, use the
+pickers, or select a well and click a Data field. Empty VALUE wells show
+“Add a measure”; assigned pills show their field types. Small multiples fields
+save in drafts, with an explicit preview/export limitation until faceted rendering
+is supported. See [field wells](docs/field-wells.md).
 
-![Empty Author canvas with ROWS, COLUMNS and VALUES field wells](docs/images/author-empty.png)
+![Empty Author visual with GROUP/COLOR, VALUE and SMALL MULTIPLES field wells](docs/images/author-empty.png)
 
 Radar uses Category axes, an optional Color split, and one or more Values
 measures. Nulls remain gaps; unsupported native options appear in the import

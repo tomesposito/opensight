@@ -11,7 +11,7 @@ await mkdir(out, { recursive: true });
 const browser = await chromium.launch({ executablePath: process.env.OPENSIGHT_CHROMIUM ?? '/opt/meta-chromium/chrome', args: ['--no-sandbox', '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
 const errors = [], requests = [], geometry = [];
 const demo = new URL('../dist/opensight-demo.html', import.meta.url).href;
-const page = await browser.newPage({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' });
+const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce' });
 page.setDefaultTimeout(10000);
 page.on('pageerror', e => errors.push(e.message));
 await page.route(/^https?:/, r => { requests.push(r.request().url()); return r.abort(); });
@@ -41,7 +41,7 @@ try {
       return { viewport: innerWidth, pageWidth: document.documentElement.scrollWidth, wellsBottom: wells.bottom, border: style.borderStyle, font: style.fontFamily, size: style.fontSize };
     });
     geometry.push({ theme, ...dimensions });
-    assert.equal(dimensions.pageWidth, 1440); assert.equal(dimensions.border, 'dashed');
+    assert.equal(dimensions.pageWidth, 1440); assert.ok(dimensions.wellsBottom <= 900, 'all three fresh wells fit the viewport'); assert.equal(dimensions.border, 'dashed');
     assert.match(dimensions.font, /Arial/); assert.equal(dimensions.size, '12px');
     await page.getByRole('button', { name: 'Select GROUP/COLOR well', exact: true }).press('Enter');
     await page.getByRole('button', { name: 'Assign order_date', exact: true }).press('Space');
