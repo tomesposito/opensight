@@ -60,7 +60,21 @@ Checkpoints:
 - The first full run found one inherited landing assertion that searched the
   entire DOM for developer links. The links now live in collapsed More. The
   assertion now verifies that they remain inside that hidden group and outside
-  landing content. The six landing tests pass. Full-suite rerun pending.
+  landing content. The six landing tests pass.
+
+## Final full-suite verification
+
+Root `npm test` completed with **exit 0** on 2026-10-09:
+**2,079 passed / 0 failed / 12 skipped** (2,091 total).
+All twelve skips require live PostgreSQL (`DATABASE_URL` is unset); there are no
+other skips. The web suite passed all 1,013 tests and the root conformance suite
+passed all seven. Browser captures ran between the two full-suite runs, never
+alongside the containment timing tests. `git diff --check` passed.
+
+The build is ready for the sweep runner. Checkpoint commits preserve the
+reference mapping, route implementation, rail implementation, and visual/test
+verification separately. No new dependencies or changes to `SOLUTION_DESIGN.md`
+were introduced.
 
 ## Visual comparison
 
