@@ -2,12 +2,13 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 
 type View = { x: number; y: number; scale: number };
 const initialView: View = { x: 24, y: 16, scale: 1 };
+const minScale = 0.001;
 export function zoomPrepView(view: View, scale: number, x: number, y: number): View {
-  const next = Math.max(0.1, Math.min(2, scale)), ratio = next / view.scale;
+  const next = Math.max(minScale, Math.min(2, scale)), ratio = next / view.scale;
   return { scale: next, x: x - (x - view.x) * ratio, y: y - (y - view.y) * ratio };
 }
 export function fitPrepView(width: number, height: number, contentWidth: number, contentHeight: number): View {
-  const scale = Math.max(0.1, Math.min(1, (width - 48) / Math.max(1, contentWidth), (height - 64) / Math.max(1, contentHeight)));
+  const scale = Math.max(minScale, Math.min(1, (width - 48) / Math.max(1, contentWidth), (height - 64) / Math.max(1, contentHeight)));
   return { scale, x: (width - contentWidth * scale) / 2, y: Math.max(16, (height - 32 - contentHeight * scale) / 2) };
 }
 /** View state belongs to the mounted prep session, independent of step edits. */
@@ -37,7 +38,7 @@ export function PrepViewport({ children }: { children: ReactNode }) {
   return <div className="prep-viewport-shell">
     <div className={`prep-viewport${panning ? ' panning' : ''}`} ref={viewport} tabIndex={0} role="region" aria-label="Pipeline canvas" aria-description="Drag the canvas to pan. Scroll to zoom. Arrow keys pan; plus and minus zoom; 0 resets; F fits the pipeline."
       onPointerDown={e => {
-        if (e.button !== 0 || (e.target as Element).closest('button, input, select, a, textarea')) return;
+        if (e.button !== 0 || e.isPrimary === false || (e.target as Element).closest('button, input, select, a, textarea')) return;
         e.preventDefault(); e.currentTarget.focus(); e.currentTarget.setPointerCapture(e.pointerId);
         drag.current = { id: e.pointerId, x: e.clientX, y: e.clientY, view }; setPanning(true);
       }}
@@ -61,8 +62,8 @@ export function PrepViewport({ children }: { children: ReactNode }) {
     </div>
     <div className="prep-zoom" role="group" aria-label="Canvas zoom">
       <button type="button" aria-label="Fit pipeline to view" onClick={fit}>Fit</button>
-      <button type="button" aria-label="Zoom out" disabled={view.scale <= 0.1} onClick={() => zoom(1 / 1.2)}>−</button>
-      <button type="button" aria-label="Reset canvas view" title="Reset zoom and pan" onClick={() => setView(initialView)}>{Math.round(view.scale * 100)}%</button>
+      <button type="button" aria-label="Zoom out" disabled={view.scale <= minScale} onClick={() => zoom(1 / 1.2)}>−</button>
+      <button type="button" aria-label="Reset canvas view" title="Reset zoom and pan" onClick={() => setView(initialView)}>{Number((view.scale * 100).toFixed(1))}%</button>
       <button type="button" aria-label="Zoom in" disabled={view.scale >= 2} onClick={() => zoom(1.2)}>+</button>
     </div>
   </div>;
