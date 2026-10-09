@@ -165,3 +165,19 @@ test('Issue #35: the product header names OpenSight and the current page after #
     }
   }
 });
+
+test('Author puts its editable title in the product band and keeps Rename and draft identity intact', async t => {
+  const ui = await mount(t, demoAccess, '#/analyses/author');
+  const navigation = ui.root.findByType(AppNavigation);
+  const header = navigation.findByProps({ className: 'app-header product-header' });
+  const title = header.findByProps({ className: 'analysis-title' }).findByType('input');
+  assert.equal(ui.root.findAllByProps({ className: 'author-topbar app-header' }).length, 0);
+  const canvas = ui.root.findByType(AuthorCanvas);
+  await act(() => title.props.onChange({ target: { value: 'Integrated title' } }));
+  assert.equal(ui.root.findByType(AuthorCanvas), canvas, 'Title editing must not remount the workspace');
+  assert.equal(canvas.props.draft.title, 'Integrated title');
+  await act(() => ui.root.findAllByType('button').find(b => b.props.children === 'Save draft').props.onClick());
+  assert.equal(ui.root.findByType(AuthorCanvas), canvas, 'Saving the new URL must retain the editor');
+  await ui.reload();
+  assert.equal(ui.root.findByProps({ className: 'analysis-title' }).findByType('input').props.value, 'Integrated title');
+});

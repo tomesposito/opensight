@@ -3,6 +3,7 @@ import { useAccess } from './access.js';
 import { AppLink, type Navigate } from './AppNavigation.js';
 import { LocalDrafts } from './LocalDrafts.js';
 import { EmptyPageState } from './LocalEmptyState.js';
+import { CollectionPage } from './CollectionPage.js';
 import { browserDraftStorage, createDraftStore, draftStorageError, draftStorageKey } from './local-drafts.js';
 
 export function Analyses({ navigate }: { navigate: Navigate }) {
@@ -19,10 +20,9 @@ export function Analyses({ navigate }: { navigate: Navigate }) {
   };
   const empty = !state.entries.length && !state.message;
   const createAnalysis = <AppLink className="primary-button" to={{ page: 'author', newAnalysis: true }} navigate={navigate}>New analysis</AppLink>;
-  return <section className="analyses-home">
-    <div className="dashboard-heading"><div><p className="eyebrow">Analyses</p><h1>My analyses</h1></div>{!empty && createAnalysis}</div>
-    {empty ? <EmptyPageState guidance="Create your first analysis and find it here.">{createAnalysis}<button type="button" className="empty-state-secondary" onClick={() => setState(read())}>Refresh drafts</button></EmptyPageState> : <p>Open a saved analysis or start a new one. Drafts stay in this browser on this device.</p>}
+  return <div className="analyses-home"><CollectionPage title="My analyses" introduction="Create interactive analyses" description="Explore your data with charts and tables. Save drafts on this device and export definitions to share your work." actions={!empty && createAnalysis}>
+    {empty && <EmptyPageState guidance="Create your first analysis and find it here.">{createAnalysis}<button type="button" className="empty-state-secondary" onClick={() => setState(read())}>Refresh drafts</button></EmptyPageState>}
     {state.message && <p role="alert">{state.message}</p>}
     {!empty && <LocalDrafts expanded entries={state.entries} onRefresh={() => setState(read())} onOpen={draftId => navigate({ page: 'author', draftId })} onRename={(id, name) => change(() => { store.rename(id, name); })} onDelete={id => change(() => store.delete(id))} />}
-  </section>;
+  </CollectionPage></div>;
 }

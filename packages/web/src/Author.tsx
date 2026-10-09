@@ -45,7 +45,7 @@ import {
 } from './authoring.js';
 import type { AuthorAction, AuthorDataset, AuthorDraft, AuthorVisual, CalculatedField, FieldGroup, VisualKind, Well } from './authoring.js';
 
-interface AuthorProps { sampleLoaded?: boolean; onTrySample?: () => void; onSources?: () => void; onDatasetChange?: (dataset?: AuthorDataset) => void; dataset?: AuthorDataset; client?: QueryClient; onPrep?: () => void; inApp?: boolean; draftId?: string; newAnalysis?: boolean; onDraftChange?: (id?: string) => void }
+interface AuthorProps { renderIdentity?: (title: ReactNode) => ReactNode; sampleLoaded?: boolean; onTrySample?: () => void; onSources?: () => void; onDatasetChange?: (dataset?: AuthorDataset) => void; dataset?: AuthorDataset; client?: QueryClient; onPrep?: () => void; inApp?: boolean; draftId?: string; newAnalysis?: boolean; onDraftChange?: (id?: string) => void }
 export function Author(props: AuthorProps) {
   const access = useAccess();
   return allowed(access, 'build') ? <AuthorWorkspace key={draftStorageKey(access)} {...props} /> : <p role="alert">SECURITY_BUILD_REQUIRED: Author access required.</p>;
@@ -53,7 +53,7 @@ export function Author(props: AuthorProps) {
 
 type EditorProps = { draft: AuthorDraft; dispatch: Dispatch<AuthorAction>; client?: QueryClient };
 const saveTime = (iso: string) => new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
-function AuthorWorkspace({ sampleLoaded = false, onTrySample, client: apiClient, dataset, onDatasetChange, onPrep, onSources, inApp, draftId, newAnalysis, onDraftChange }: AuthorProps) {
+function AuthorWorkspace({ renderIdentity, sampleLoaded = false, onTrySample, client: apiClient, dataset, onDatasetChange, onPrep, onSources, inApp, draftId, newAnalysis, onDraftChange }: AuthorProps) {
   const access = useAccess();
   const notify = useToast();
   const drafts = useLocalDrafts(access, dataset, { draftId, newAnalysis });
@@ -144,14 +144,15 @@ function AuthorWorkspace({ sampleLoaded = false, onTrySample, client: apiClient,
     onFit={() => setFit(value => !value)} onJson={download}
     onBundle={() => { if (!busy) void downloadQs(); }} onImport={() => fileInput.current?.click()}
     busy={busy} jsonDisabled={!!exported.error} autosaveError={drafts.autoError ?? undefined} />;
-  if (drafts.openingError) return <section><h1>Unable to open analysis</h1><p role="alert">{drafts.openingError}</p><p>Return to My analyses to refresh the list or choose another draft.</p></section>;
+  if (drafts.openingError) return <>{renderIdentity?.(null)}<section><h1>Unable to open analysis</h1><p role="alert">{drafts.openingError}</p><p>Return to My analyses to refresh the list or choose another draft.</p></section></>;
+  const titleControl = <label className="analysis-title"><span className="sr-only">Analysis title</span><input value={draft.title} onChange={e => dispatch({ type: 'analysis-title', title: e.target.value })} /></label>;
   return <><div ref={workspace} className="author-workspace" data-chrome={draft.chrome ?? 'light'}>
     <AuthorShortcuts workspace={workspace} onSave={saveDraft} />
     <AuthorCommands draft={draft} dispatch={dispatch} onSave={saveDraft} />
-    <header className="author-topbar app-header">
+    {renderIdentity ? renderIdentity(titleControl) : <header className="author-topbar app-header">
       {!inApp && <a className="brand" href="./"><span className="brand-mark" aria-hidden="true">◈</span>OpenSight</a>}
-      <label className="analysis-title"><span className="sr-only">Analysis title</span><input value={draft.title} onChange={e => dispatch({ type: 'analysis-title', title: e.target.value })} /></label>
-    </header>
+      {titleControl}
+    </header>}
     {noData ? renderToolbar() : <QSidePanel draft={draft} dispatch={dispatch} client={client} renderTrigger={renderToolbar} />}
     <div className="author-tools">
       <div className="author-utilities">
