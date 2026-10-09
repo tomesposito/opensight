@@ -69,3 +69,18 @@ No dashboard rows, owners, favorites or publication features are simulated.
 Seven targeted behavior tests passed; the real local API browser tour captured
 Home and Dashboards at 1440/1100/760/390px and checked dismissal and navigation
 without page overflow, page errors or external requests.
+
+### Data
+
+Data preparation and Data sources share the shell's compact secondary tabs and
+32/24/16px page gutters. Removing nested outer padding aligns their headings
+and actions with the collection pages. Source selection and setup now sit in
+one flat card with compact search, connector tiles and form controls; setup
+stacks beneath selection at 1100px. The preparation document toolbar, Steps
+dock, graph and Configure/Preview panels retain their existing interactions.
+
+The rebuilt demo was compared with the Data and preparation references. The
+source page's content height fell from 835px (after the shared shell) to 684px
+at 1440px. All 78 targeted shell/connector/preparation tests passed, including
+browser bounds at 1440/1100/760/390px. The capture reported zero page errors and
+external requests. A new dataset catalog or assistant pane is outside scope.

@@ -88,3 +88,26 @@ describe('collection card responsiveness', () => {
     }
   });
 });
+
+describe('Data surface geometry', () => {
+  let page;
+  before(async () => { page = await chromiumPage(); });
+  after(async () => { await page?.close(); });
+  for (const width of [1440, 1100, 760, 390]) test(`Data sources and preparation fit at ${width}px`, async () => {
+    const { DataSources } = await import('../build/test/DataSources.js');
+    const { DataPrep } = await import('../build/test/DataPrep.js');
+    await page.setViewportSize({ width, height: 900 });
+    for (const [name, Component] of [['data-sources', DataSources], ['data-prep', DataPrep]]) {
+      const html = renderToStaticMarkup(h('div', { className: 'app-shell', 'data-page': name }, h(AppNavigation, { route: { page: name }, navigate() {} }), h('main', {}, h(Component))));
+      await page.setContent(`<style>${css}\nhtml { scrollbar-width: none; }</style>${html}`);
+      const actual = await page.evaluate(() => {
+        const content = document.querySelector('.data-sources, .data-prep');
+        const main = document.querySelector('main');
+        return { width: document.documentElement.scrollWidth, inset: content.getBoundingClientRect().x - main.getBoundingClientRect().x, controls: [...content.querySelectorAll('input, select, button')].filter(n => n.getBoundingClientRect().width).map(n => ({ right: n.getBoundingClientRect().right, x: n.getBoundingClientRect().x })) };
+      });
+      assert.equal(actual.width, width, name);
+      assert.equal(actual.inset, width <= 760 ? 16 : width <= 1100 ? 24 : 32);
+      for (const box of actual.controls) assert.ok(box.x >= 0 && box.right <= width, `${name} control outside viewport: ${JSON.stringify(box)}`);
+    }
+  });
+});
