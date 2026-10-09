@@ -42,7 +42,7 @@ test('Save, reload, reopen, rename and delete work through the author UI', async
   await ui.click('Save draft'); assert.equal(ui.store.list().length, 2);
   const row = name => ui.renderer.root.findByType(LocalDrafts).findAllByType('li').find(n => n.findByType('strong').props.children === name);
   const clickRow = async (name, action) => { await act(() => row(name).findAllByType('button').find(b => b.props.children === action).props.onClick()); };
-  await clickRow('Saved chart', 'Reopen');
+  await clickRow('Saved chart', 'Open');
   assert.equal(ui.store.restore().draft.title, 'Saved chart');
   await clickRow('Saved chart', 'Rename');
   await act(() => ui.find('input', p => p.autoFocus).props.onChange({ target: { value: 'Renamed chart' } }));
