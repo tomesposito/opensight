@@ -5,7 +5,7 @@ import { createRequire } from 'node:module';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { navigate } from './app-navigation.mjs';
+import { navigate, openPropertySection } from './app-navigation.mjs';
 import { activeSheet, authorReducer, emptyDraft, serializeDraft } from '../build/test/authoring.js';
 
 const { chromium } = createRequire(resolve(process.env.OPENSIGHT_SCREENSHOT_TOOLS ?? '/home/hatch/workspace/tools/screenshots', 'package.json'))('playwright-core');
@@ -52,6 +52,7 @@ try {
   const properties = page.locator('.properties-panel:not([open]) > summary');
   if (await properties.count()) await properties.click();
   await page.getByLabel('Title', { exact: true }).fill('Revenue accumulation by region');
+  await openPropertySection(page, 'Data labels');
   await page.getByLabel('Show data labels', { exact: true }).check();
   const chart = page.locator('.author-card .chart svg'); await chart.waitFor();
   assert.match(await chart.textContent(), /Total/);
@@ -70,11 +71,14 @@ try {
   const fills = await chart.locator('path').evaluateAll(paths => paths.map(p => p.getAttribute('fill')));
   for (const color of ['#2e8b57', '#d64545', '#2673c9']) assert.ok(fills.includes(color), color);
   await capture(page, 'waterfall-signed');
+  await openPropertySection(page, 'Data labels');
   await page.getByLabel('Data label decimal places', { exact: true }).fill('2');
   assert.match(await chart.textContent(), /-800.00/);
   await capture(page, 'waterfall-labels');
+  await openPropertySection(page, 'Legend');
   await page.getByLabel('Show legend', { exact: true }).uncheck();
   assert.ok(!(await chart.textContent()).includes('Adjustment'));
+  await openPropertySection(page, 'Legend');
   await page.getByLabel('Show legend', { exact: true }).check();
   await page.getByLabel('NEW LOOK', { exact: true }).selectOption('dark');
   await capture(page, 'waterfall-dark');

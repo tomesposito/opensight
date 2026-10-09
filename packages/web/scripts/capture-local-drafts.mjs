@@ -162,7 +162,7 @@ try {
   assert.equal(await demo.getByRole('button', { name: 'Save pipeline', exact: true }).isDisabled(), true);
   await demoCapture('demo-data-prep');
   await navigate(demo, 'author');
-  await demo.getByRole('button', { name: 'Add visual', exact: true }).click();
+  await demo.locator('.build-panel').getByRole('button', { name: 'Add visual', exact: true }).click();
   await demo.getByRole('button', { name: 'Save draft', exact: true }).click();
   await demo.getByText('Draft saved on this device.', { exact: true }).waitFor();
   await demoCapture('demo-author');

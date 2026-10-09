@@ -95,7 +95,7 @@ export function GroupColorOptions({ visual, dispatch }: SectionProps) {
   const names = visual.formatting?.names;
   return <details className="property-section"><summary>Group/Color</summary>
     <Unavailable label="Group title controls" reason="A separate Group/Color title and its text styling are not supported yet.">
-      <label className="toggle"><input type="checkbox" />Title</label>
+      <label className="toggle"><input type="checkbox" aria-label="Show Group/Color title" />Title</label>
       <TextStyling label="Group title" size={14} />
     </Unavailable>
     <label>Field name<input aria-label="Group/Color field name" disabled={!field} title={!field ? 'Assign a Group/Color field first.' : 'Display name used in generated titles and result tables.'} placeholder={field ?? 'Assign a Group/Color field first'} maxLength={128}
@@ -121,7 +121,7 @@ export function LegendOptions({ visual, dispatch }: SectionProps) {
   if (!hasLegend(visual.kind)) return null;
   return <details className="property-section"><summary>Legend</summary>
     <label className="toggle"><input type="checkbox" checked={visual.legend} onChange={e => dispatch({ type: 'display', property: 'legend', value: e.target.checked })} />Show legend</label>
-    <label>Legend position<select value={visual.formatting?.legendPosition ?? 'AUTO'} onChange={e => dispatch({ type: 'legend-position', position: e.target.value as LegendPosition })}>
+    <label>Legend position<select aria-label="Legend position" value={visual.formatting?.legendPosition ?? 'AUTO'} onChange={e => dispatch({ type: 'legend-position', position: e.target.value as LegendPosition })}>
       {LEGEND_POSITIONS.map(position => <option key={position} value={position}>{position[0] + position.slice(1).toLowerCase()}</option>)}
     </select></label>
     <p className="field-hint">Auto places the legend at the bottom.</p>

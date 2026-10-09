@@ -6,7 +6,7 @@
 // (see the bottom of this file for the exact assembly command).
 import assert from 'node:assert/strict';
 import { resolve } from 'node:path';
-import { navigate } from './app-navigation.mjs';
+import { navigate, openPropertySection } from './app-navigation.mjs';
 import { createRequire } from 'node:module';
 const { chromium } = createRequire(resolve(process.env.OPENSIGHT_SCREENSHOT_TOOLS ?? '/home/hatch/workspace/tools/screenshots', 'package.json'))('playwright-core');
 import { mkdirSync } from 'fs';
@@ -122,6 +122,7 @@ try {
   await page.getByLabel('Assign Destination', { exact: true }).selectOption('category');
   await page.getByLabel('Assign Weight', { exact: true }).selectOption('revenue');
   await page.getByLabel('Title', { exact: true }).fill('Revenue from region to category');
+  await openPropertySection(page, 'Data labels');
   await page.getByLabel('Show data labels', { exact: true }).check();
   await page.locator('.author-card .chart svg').waitFor();
   assert.match(await page.locator('.author-card .chart svg').textContent(), /East/);
@@ -142,6 +143,7 @@ try {
   await calculation.getByRole('button', { name: 'Create field', exact: true }).click();
   await page.getByLabel('Assign Values', { exact: true }).selectOption('Adjustment');
   await page.getByLabel('Title', { exact: true }).fill('Synthetic revenue adjustments');
+  await openPropertySection(page, 'Data labels');
   await page.getByLabel('Show data labels', { exact: true }).check();
   await page.locator('.author-card .chart svg').waitFor();
   assert.match(await page.locator('.author-card .chart svg').textContent(), /-800/);

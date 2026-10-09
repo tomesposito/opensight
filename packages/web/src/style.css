@@ -421,9 +421,11 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .property-section .property-unavailable { border: 0; padding: 0; margin: 0; min-width: 0; }
 .property-unavailable .field-hint { margin: 4px 0 8px; }
 .property-unavailable :is(input, select, textarea, button):disabled { cursor: not-allowed; opacity: .65; }
+.property-section textarea { width: 100%; max-width: 100%; min-width: 0; resize: vertical; font: inherit; padding: 4px; border: 1px solid var(--chrome-border, #c9d8de); border-radius: 3px; }
 .property-inline { display: flex; align-items: center; gap: 4px; min-width: 0; }
 .property-inline > * { flex: 1; min-width: 0; }
 .property-inline input[type=color] { flex: 0 0 24px; width: 24px; height: 24px; padding: 0; }
+.property-inline input[aria-label$="font size"] { flex: 0 0 48px; width: 48px; }
 .property-control-row { display: grid; gap: 4px; margin: 8px 0; }
 .property-caption { margin: 8px 0; font-size: 12px; font-weight: 600; }
 .property-inline + .property-inline { margin-top: 4px; }
