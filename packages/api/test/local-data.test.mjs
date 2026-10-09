@@ -13,10 +13,15 @@ async function api(t, options = {}) {
   const server = await createApiServer({ dataRoot, localData: true, mailTransport: new StubMailTransport(), ...options });
   server.listen(0, '127.0.0.1'); await once(server, 'listening');
   t.after(() => { server.close(); server.closeAllConnections(); });
-  return async (path, method = 'GET', body, headers = {}) => {
+  const call = async (path, method = 'GET', body, headers = {}) => {
     const r = await fetch(`http://127.0.0.1:${server.address().port}${path}`, { method, headers: { 'Content-Type': 'application/json', ...headers }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
     return { status: r.status, body: await r.json() };
   };
+  call.close = async () => {
+    await new Promise(resolve => { server.close(resolve); server.closeAllConnections(); });
+    await new Promise(setImmediate); // Allow the close listener to drain idle staging.
+  };
+  return call;
 }
 const query = { dimensions: [{ fieldId: 'team', columnName: 'team' }], measures: [{ fieldId: 'total', columnName: 'doubled', aggregation: 'SUM' }], filters: [] };
 const pipeline = input => ({ version: 1, input, steps: [
@@ -93,14 +98,26 @@ test('local uploads expire at the boundary, reclaim staging and fail closed for 
   assert.equal(source.available, false); assert.equal(source.errorCode, 'PREP_SOURCE_NOT_FOUND');
   assert.equal((await call('/api/uploads', 'POST', input)).status, 201);
 });
-test('local restart retains only pipeline metadata and never resolves old uploads to fixture data', async t => {
+test('local restart restores upload preview, preparation and direct chart queries with the original expiry', async t => {
   const dir = await mkdtemp(join(tmpdir(), 'opensight-local-')); t.after(() => rm(dir, { recursive: true, force: true }));
-  const prepStorePath = join(dir, 'prep.json'), call = await api(t, { prepStorePath });
-  const staged = await call('/api/uploads', 'POST', input);
+  const options = { prepStorePath: join(dir, 'prep.json'), localUploadPath: join(dir, 'uploads.duckdb') };
+  const call = await api(t, options);
+  const staged = await call('/api/uploads', 'POST', input), preview = await call(`/api/uploads/${staged.body.id}`);
   await call('/api/datasets/restarted/prep', 'PUT', { name: 'Local', pipeline: pipeline(staged.body.id) });
-  assert.doesNotMatch(await readFile(prepStorePath, 'utf8'), /South|2026-01-03|base64/);
-  const restarted = await api(t, { prepStorePath });
-  assert.equal((await restarted('/api/datasets/restarted/query', 'POST', query)).body.errorCode, 'PREP_SOURCE_NOT_FOUND');
+  assert.doesNotMatch(await readFile(options.prepStorePath, 'utf8'), /South|2026-01-03|base64/);
+  await call.close();
+  const restarted = await api(t, options);
+  assert.deepEqual(await restarted(`/api/uploads/${staged.body.id}`), preview);
+  assert.equal((await restarted('/api/prep-sources')).body.find(s => s.id === 'restarted').available, true);
+  const prepared = await restarted('/api/datasets/restarted/prep/preview', 'POST', { pipeline: pipeline(staged.body.id) });
+  assert.deepEqual(prepared.body.rows.map(r => r.doubled), [4, 8]);
+  assert.deepEqual((await restarted('/api/datasets/restarted/query', 'POST', query)).body.rows, [{ team: 'North', total: 12 }]);
+  await restarted.close();
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse(staged.body.expiresAt) });
+  const expired = await api(t, options);
+  assert.equal((await expired(`/api/uploads/${staged.body.id}`)).body.errorCode, 'UPLOAD_NOT_FOUND');
+  assert.equal((await expired('/api/datasets/restarted/query', 'POST', query)).body.errorCode, 'PREP_SOURCE_NOT_FOUND');
+  await expired.close();
 });
 
 import { polishEndpoints } from './polish-endpoints.mjs';

@@ -17,6 +17,11 @@ function send(response: ServerResponse, status: number, body: unknown): void {
 /** Authenticated owner staging, or an explicitly enabled shared local workspace. */
 export class ConnectorRoutes {
   constructor(private readonly local = false) {}
+  async openLocal(databasePath: string): Promise<void> {
+    if (!this.local) throw new Error('LOCAL_DATA_MODE_CONFLICT');
+    const session = await UploadStaging.create({ ttlMs: 24 * 60 * 60 * 1000 }, databasePath);
+    this.sessions.set(JSON.stringify(['local', 'local']), Promise.resolve(session));
+  }
   private readonly sessions = new Map<string, Promise<UploadStaging>>();
   private readonly queues = new Map<string, Promise<unknown>>();
   async route(request: IncomingMessage, response: ServerResponse, path: string, query: string, identity: Identity): Promise<void> {

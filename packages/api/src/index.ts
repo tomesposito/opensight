@@ -30,6 +30,8 @@ export type { HostedServerOptions } from './hosted-server.js';
 export interface ApiOptions {
   /** Explicit single-user local file workspace; never a hosted auth fallback. */
   localData?: boolean;
+  /** Trusted local DuckDB path. Omit for ephemeral library/test staging. */
+  localUploadPath?: string;
   prepStorePath?: string;
   prepPostgresBindings?: readonly PrepPostgresBinding[];
   ai?: AIOptions;
@@ -47,6 +49,7 @@ export interface ApiOptions {
 
 /** Loads a complete snapshot before returning an unbound HTTP server. */
 export async function createApiServer(options: ApiOptions): Promise<Server> {
+  if (options.localUploadPath && !options.localData) throw new Error('LOCAL_DATA_MODE_CONFLICT');
   if (options.localData && (options.security || options.prepPostgresBindings?.length || process.env.OPENSIGHT_MODE === 'hosted')) throw new Error('LOCAL_DATA_MODE_CONFLICT');
   const localIdentity = options.localData ? { namespaceId: 'local', userId: 'local' } : undefined;
   // The recursive default scan must never absorb another tenant's directory.
@@ -93,6 +96,7 @@ export async function createApiServer(options: ApiOptions): Promise<Server> {
   const scheduler = new Scheduler(async () => { await connectorRoutes.expire(); await refresh.tick(); await reports.tick(); await prepRoutes.tick(identity => { if (localIdentity && identity.namespaceId === localIdentity.namespaceId && identity.userId === localIdentity.userId) return; if (!security) throw new SecurityError(503, 'SECURITY_NOT_CONFIGURED', 'Authentication required'); security.require(identity, 'build'); }); });
   const connectorRoutes = new ConnectorRoutes(!!localIdentity);
   const prepRoutes = await PrepRoutes.create(connectorRoutes, options.prepStorePath, options.prepPostgresBindings);
+  if (options.localUploadPath) await connectorRoutes.openLocal(options.localUploadPath);
   const server = createServer((request, response) => {
     void (async () => {
       const requestId = randomUUID();
