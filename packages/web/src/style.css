@@ -916,3 +916,9 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
   .prep-join-columns { max-height: 140px; }
   .prep-join-key { gap: 4px; }
 }
+
+.analysis-file-dialog { box-sizing: border-box; width: min(480px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); overflow: auto; font: 12px Arial, "Helvetica Neue", Helvetica, sans-serif; }
+.analysis-file-dialog h2 { font-size: 16px; }
+.analysis-file-dialog label { display: grid; gap: 4px; }
+.analysis-file-dialog input { min-width: 0; }
+.analysis-file-dialog .dialog-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }

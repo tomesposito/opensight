@@ -109,6 +109,11 @@ export function createDraftStore(storage: DraftStorage, access: Access) {
     return saved.id;
   };
   return { list, restore, save, autosave,
+    copy(draft: AuthorDraft, name: string) {
+      if (!name.trim()) throw new Error('Enter an analysis name.');
+      if (name.trim() === draft.title.trim()) throw new Error('Choose a different name for the separate copy.');
+      return save({ ...structuredClone(draft), title: name.trim() });
+    },
     favorite(draft: AuthorDraft, id: string | undefined, value: boolean) { return save(draft, id, value); },
     discardAutosave(id: string) {
       const collection = read(), e = entry(collection, id);

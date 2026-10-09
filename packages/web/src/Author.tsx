@@ -8,6 +8,7 @@ import { AuthorToolbar, focusAuthorControl } from './AuthorToolbar.js';
 import { AuthorShortcuts } from './AuthorShortcuts.js';
 import { usePaletteCommands } from './CommandPalette.js';
 import { DraftSourceRecovery, useDraftSource } from './DraftSource.js';
+import { SaveAnalysisCopy } from './SaveAnalysisCopy.js';
 import { LocalDrafts } from './LocalDrafts.js';
 import { useLocalDrafts } from './use-local-drafts.js';
 import { draftStorageKey } from './local-drafts.js';
@@ -84,6 +85,7 @@ function AuthorWorkspace({ renderIdentity, sampleLoaded = false, onTrySample, cl
   const copyHelpId = useId();
   const [reportOpen, setReportOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
+  const [saveCopyOpen, setSaveCopyOpen] = useState(false);
   const importConfirmation = useRef(false);
   const [fit, setFit] = useState(true);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -143,7 +145,7 @@ function AuthorWorkspace({ renderIdentity, sampleLoaded = false, onTrySample, cl
     draft={draft} dispatch={dispatch} oEntry={trigger} dataAvailable={!noData} fit={fit}
     onFit={() => setFit(value => !value)} onJson={download}
     onBundle={() => { if (!busy) void downloadQs(); }} onImport={() => fileInput.current?.click()}
-    favorite={drafts.favorite} onFavorite={() => { if (drafts.toggleFavorite()) notify(drafts.favorite ? 'Removed from Favorites' : 'Added to Favorites on this device'); }}
+    onSaveCopy={() => setSaveCopyOpen(true)} favorite={drafts.favorite} onFavorite={() => { if (drafts.toggleFavorite()) notify(drafts.favorite ? 'Removed from Favorites' : 'Added to Favorites on this device'); }}
     busy={busy} jsonDisabled={!!exported.error} autosaveError={drafts.autoError ?? undefined} />;
   if (drafts.openingError) return <>{renderIdentity?.(null)}<section><h1>Unable to open analysis</h1><p role="alert">{drafts.openingError}</p><p>Return to My analyses to refresh the list or choose another draft.</p></section></>;
   const titleControl = <label className="analysis-title"><span className="sr-only">Analysis title</span><input value={draft.title} onChange={e => dispatch({ type: 'analysis-title', title: e.target.value })} /></label>;
@@ -196,6 +198,7 @@ function AuthorWorkspace({ renderIdentity, sampleLoaded = false, onTrySample, cl
       if (importConfirmation.current) { importConfirmation.current = false; notify('Bundle imported'); }
     }} />}
   </div>
+    {saveCopyOpen && <SaveAnalysisCopy name={draft.title} onClose={() => setSaveCopyOpen(false)} onSave={name => { const error = drafts.saveCopy(name); if (!error) { setSaveCopyOpen(false); notify('Separate analysis copy saved on this device'); } return error; }} />}
     {createOpen && <CreateAnalysisDialog client={apiClient} sampleAvailable={access.mode === 'demo' || sampleLoaded} offline={!apiClient} selectionError={drafts.autoError ?? undefined}
       onClose={() => setCreateOpen(false)} onCreateDataset={apiClient && onPrep ? () => { if (drafts.keepCurrent()) { setCreateOpen(false); onPrep(); } } : undefined}
       onSelect={dataset => {

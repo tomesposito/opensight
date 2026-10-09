@@ -192,3 +192,22 @@ test('favorites follow mode, namespace and principal isolation; corrupt metadata
   assert.throws(() => store.favorite(draft('Overwrite'), id, true), /could not be read/);
   assert.equal(values.get(key), JSON.stringify(collection));
 });
+
+test('Save as Analysis has a new identity and name, retains all definition state, and never changes the original', () => {
+  const { store, storage, values } = setup(), original = draft('Original'), first = store.favorite(original, undefined, true);
+  const edited = structuredClone(original); edited.sheets[0].visuals[0].title = 'Unsaved edit';
+  const second = store.copy(edited, '  Separate copy  ');
+  assert.notEqual(first, second);
+  assert.deepEqual(createDraftStore(storage, access).restore().draft, { ...edited, title: 'Separate copy' });
+  assert.equal(store.list().find(e => e.id === second).favorite, undefined);
+  assert.deepEqual(store.open(first), original);
+  store.save({ ...store.open(second), title: 'Edited copy' }, second);
+  assert.deepEqual(store.open(first), original);
+  const before = new Map(values);
+  for (const name of [' ', 'Original']) assert.throws(() => store.copy(original, name), /name/);
+  assert.deepEqual(values, before);
+  for (let n = store.list().length; n < MAX_DRAFTS; n++) store.save(draft(String(n)));
+  const full = new Map(values);
+  assert.throws(() => store.copy(original, 'Overflow'), /limit \(20\)/);
+  assert.deepEqual(values, full);
+});

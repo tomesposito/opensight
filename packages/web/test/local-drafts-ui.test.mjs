@@ -150,3 +150,28 @@ test('favorite storage failure keeps the current analysis and never claims succe
   assert.ok(ui.button('Add to Favorites'));
   assert.doesNotMatch(ui.text(), /Saved to Favorites/);
 });
+
+test('Save as Analysis opens the separate copy, keeps the original and cancels without creating entries', async t => {
+  const ui = await mount(t), original = ui.store.restore();
+  await ui.click('Save as Analysis');
+  await ui.click('Cancel'); assert.equal(ui.store.list().length, 1);
+  await act(() => ui.find('input', p => p.value === 'Untitled analysis').props.onChange({ target: { value: 'Current edits' } }));
+  await ui.click('Save as Analysis');
+  const dialog = ui.renderer.root.findByType('dialog');
+  await act(() => dialog.findByType('input').props.onChange({ target: { value: 'My separate copy' } }));
+  await act(() => dialog.findByType('form').props.onSubmit({ preventDefault() {} }));
+  assert.equal(ui.renderer.root.findAllByType('dialog').length, 0);
+  const copy = ui.store.restore(); assert.notEqual(copy.id, original.id); assert.equal(copy.draft.title, 'My separate copy');
+  assert.deepEqual(ui.store.open(original.id), original.draft);
+  await ui.click('Save draft'); assert.equal(ui.store.restore().id, copy.id);
+  await ui.reload(); assert.match(ui.text(), /My separate copy/);
+});
+test('failed copy keeps its dialog, draft identity and edits for retry', async t => {
+  const ui = await mount(t, {}, { mode: 'local' }, true);
+  await ui.click('Save as Analysis');
+  const dialog = ui.renderer.root.findByType('dialog');
+  await act(() => dialog.findByType('form').props.onSubmit({ preventDefault() {} }));
+  assert.match(JSON.stringify(dialog.toJSON?.() ?? ui.renderer.toJSON()), /Browser storage is blocked/);
+  assert.equal(ui.store.list().length, 1);
+  assert.equal(ui.store.restore().id, ui.id);
+});

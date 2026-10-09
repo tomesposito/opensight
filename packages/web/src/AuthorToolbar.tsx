@@ -25,7 +25,7 @@ export function focusAuthorControl(nav: HTMLElement | null, selector: string, ta
   target?.focus();
   return target;
 }
-export function AuthorToolbar({ onPrep, onSources, draft, dispatch, fit, onFit, onJson, onBundle, onImport, oEntry, dataAvailable = true, busy = false, jsonDisabled = false, autosaveError, favorite = false, onFavorite }: { favorite?: boolean; onFavorite?: () => void; autosaveError?: string; dataAvailable?: boolean; onSources?: () => void; onPrep?: () => void; oEntry?: ReactNode; busy?: boolean; jsonDisabled?: boolean; draft: AuthorDraft; dispatch: Dispatch<AuthorAction>; fit: boolean; onFit: () => void; onJson: () => void; onBundle: () => void; onImport: () => void }) {
+export function AuthorToolbar({ onPrep, onSources, draft, dispatch, fit, onFit, onJson, onBundle, onImport, oEntry, dataAvailable = true, busy = false, jsonDisabled = false, autosaveError, favorite = false, onFavorite, onSaveCopy }: { onSaveCopy?: () => void; favorite?: boolean; onFavorite?: () => void; autosaveError?: string; dataAvailable?: boolean; onSources?: () => void; onPrep?: () => void; oEntry?: ReactNode; busy?: boolean; jsonDisabled?: boolean; draft: AuthorDraft; dispatch: Dispatch<AuthorAction>; fit: boolean; onFit: () => void; onJson: () => void; onBundle: () => void; onImport: () => void }) {
   const access = useAccess();
   const notify = useToast();
   const [notice, setNotice] = useState('');
@@ -51,7 +51,7 @@ export function AuthorToolbar({ onPrep, onSources, draft, dispatch, fit, onFit, 
       <AuthorMenu name="File">
         <AuthorMenuItem label={favorite ? "Remove from Favorites" : "Add to Favorites"} run={onFavorite} reason={!onFavorite ? "Favorites need an open analysis on this device." : undefined} />
         <AuthorMenuItem label="Publish" run={publish} />
-        <AuthorMenuItem label="Save as Analysis" reason="Saving a separate analysis copy is not supported yet. Save draft updates the draft on this device." />
+        <AuthorMenuItem label="Save as Analysis" run={onSaveCopy} reason={busy ? "Wait for the current import or export to finish." : !onSaveCopy ? "Open an analysis to save a separate copy on this device." : undefined} />
         <hr />
         <AuthorMenuItem label="Share" reason="Sharing needs hosted API support. Device-local drafts are not synced or shared; Exports downloads definitions without data." />
         <AuthorMenuItem label="Rename" run={() => focus('.analysis-title input')} />
