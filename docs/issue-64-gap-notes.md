@@ -53,6 +53,37 @@ Checkpoints:
   preserving existing command IDs. Shared capture navigation follows the new
   rail and opens its responsive overlay when needed.
 
-Full-suite and visual verification results will follow.
+- Focused navigation, command-palette, account, and responsive geometry checks:
+  **114 passed / 0 failed / 0 skipped**. Viewports cover 1920, 1440, 1100,
+  760, and 390px; account controls also fit at 320px. A short viewport test
+  verifies scrolling to the last recent link.
+- The first full run found one inherited landing assertion that searched the
+  entire DOM for developer links. The links now live in collapsed More. The
+  assertion now verifies that they remain inside that hidden group and outside
+  landing content. The six landing tests pass. Full-suite rerun pending.
+
+## Visual comparison
+
+`node packages/web/scripts/capture-nav-rail.mjs` passed against a real local API
+and Vite, producing nine captures with **0 page errors / 0 external requests**.
+The walkthrough exercises rail routes, Search, More, account disclosure, Author,
+mobile collapse and Escape focus, Back/Forward, and deep-link reload. Captures
+live under ignored `.opensight/issue-64/browser/`; the sanitized My stuff view is
+also recorded as `docs/images/navigation-rail.png`.
+
+Compared the captures with the local Home, My stuff, Spaces, My folders, and
+Shared folders references. The retained entries follow the reference order;
+More precedes Recents, and the top band carries breadcrumb and account controls.
+OpenSight retains its navy header, teal selection, and existing page gutters.
+The desktop rail stays clear of the content; the 390px rail overlays and closes
+after navigation. The new folder pages and account disclosure fit without
+horizontal overflow. Author retains its full-width canvas and editable title.
+
+The reference's global-chat/knowledge surfaces, activity widgets, and folder
+tables are intentionally absent under the mapping above. Folder browsing remains
+an explicit limitation, not an empty fetched collection. This is a structural
+sanity check, not a pixel-fidelity measurement. No reference image was copied into
+the repository. Follow-up editor menu issues #65–#69 remain outside this change.
+
 Demo rebuild, final README media refresh, merge, and publication belong to the
 sweep runner per the run brief; this build branch is not pushed.

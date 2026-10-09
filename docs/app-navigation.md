@@ -11,6 +11,8 @@ account disclosure; hosted users can sign out there. Home remains accessible
 through the brand, breadcrumb, and command palette. `SOLUTION_DESIGN.md` is
 unchanged. See the [reference mapping and gap notes](issue-64-gap-notes.md).
 
+![My stuff and the navigation rail in a local workspace](images/navigation-rail.png)
+
 | Section | Screen | Former mode |
 | --- | --- | --- |
 | Home | Local: add data or opt into a sample; demo: sample dashboard | sample |
