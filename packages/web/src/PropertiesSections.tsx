@@ -76,3 +76,42 @@ export function MultiplesOptions({ visual }: Pick<SectionProps, 'visual'>) {
     </Unavailable>
   </details>;
 }
+
+function TextStyling({ label, size }: { label: string; size: number }) {
+  return <>
+    <h4 className="property-caption">Text styling</h4>
+    <div className="property-inline">
+      <select aria-label={`${label} font`} defaultValue="Analysis theme"><option>Analysis theme</option></select>
+      <input aria-label={`${label} font size`} type="number" placeholder={String(size)} />
+    </div>
+    <TextButtons label={label} />
+  </>;
+}
+
+export function GroupColorOptions({ visual, dispatch }: SectionProps) {
+  if (!['bar', 'bar100', 'pie'].includes(visual.kind)) return null;
+  const field = visual.dimension;
+  const names = visual.formatting?.names;
+  return <details className="property-section"><summary>Group/Color</summary>
+    <Unavailable label="Group title controls" reason="A separate Group/Color title and its text styling are not supported yet.">
+      <label className="toggle"><input type="checkbox" />Title</label>
+      <TextStyling label="Group title" size={14} />
+    </Unavailable>
+    <label>Field name<input aria-label="Group/Color field name" disabled={!field} title={!field ? 'Assign a Group/Color field first.' : 'Display name used in generated titles and result tables.'} placeholder={field ?? 'Assign a Group/Color field first'} maxLength={128}
+      value={field && names && Object.hasOwn(names, field) ? names[field] : ''}
+      onChange={e => {
+        if (!field) return;
+        const next = { ...names };
+        if (e.target.value.trim()) Object.defineProperty(next, field, { value: e.target.value, enumerable: true, writable: true, configurable: true });
+        else delete next[field];
+        dispatch({ type: 'formatting', formatting: { ...visual.formatting, names: next } });
+      }} /></label>
+    <p className="field-hint">{field ? `Source field: ${field}. Display names appear in generated titles and result tables.` : 'Assign a Group/Color field first.'}</p>
+    <Unavailable label="Group sort controls" reason="Sort editing is not supported in Author yet; imported sort settings are retained.">
+      <label>Sort<select defaultValue="Not editable"><option>Not editable</option></select></label>
+    </Unavailable>
+    {visual.kind === 'pie' && <Unavailable label="Slice limit controls" reason="Slice limits are not supported yet; all supplied result rows are shown.">
+      <label>Number of slices displayed<input placeholder="Default: 20" /></label>
+    </Unavailable>}
+  </details>;
+}

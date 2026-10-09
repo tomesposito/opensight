@@ -16,7 +16,7 @@ import { QSidePanel } from './QSidePanel.js';
 import { BuildForMe } from './BuildForMe.js';
 import { FormattingEditor } from './FormattingEditor.js';
 import { PivotOptionsEditor } from './PivotOptionsEditor.js';
-import { CardTitle, CardStyle, CardLayout, MultiplesOptions } from './PropertiesSections.js';
+import { CardTitle, CardStyle, CardLayout, MultiplesOptions, GroupColorOptions } from './PropertiesSections.js';
 import { hasLegend, hasDataLabels, LEGEND_POSITIONS, type LegendPosition, type VisualFormatting } from './formatting.js';
 import { LIGHT_THEME, themeValid, type AnalysisTheme } from './themes.js';
 import { functionCatalog } from '@opensight/query-engine/browser';
@@ -471,6 +471,7 @@ function Properties({ visual, draft, dispatch, client, runtimeProblems }: Editor
     {visual.kind === 'histogram' && <label>Histogram bins<input type="number" min="1" max="100" value={visual.bins ?? 10} onChange={e => dispatch({ type: 'bins', bins: Number(e.target.value) })} /></label>}
     </details>
     <MultiplesOptions visual={visual} />
+    <GroupColorOptions visual={visual} dispatch={dispatch} />
     <PivotOptionsEditor visual={visual} dispatch={dispatch} />
     <FormattingEditor visual={visual} dispatch={dispatch} />
     {visual.imported && <div className="dataset-binding"><h3>Dataset binding</h3><p>{visual.imported.local ? 'Local sales dataset' : authorVisualProblem(visual)}</p>

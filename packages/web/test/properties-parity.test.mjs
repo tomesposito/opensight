@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { act, createElement, useReducer } from 'react';
 import { create } from 'react-test-renderer';
-import { CardTitle, CardStyle, CardLayout, MultiplesOptions } from '../build/test/PropertiesSections.js';
+import { CardTitle, CardStyle, CardLayout, MultiplesOptions, GroupColorOptions } from '../build/test/PropertiesSections.js';
 import { activeSheet, authorReducer, emptyDraft, parseDraft } from '../build/test/authoring.js';
 import { compileVisual } from '../build/test/compiler.js';
 import { buildAuthorVisual } from '../build/test/author-preview.js';
@@ -85,4 +85,20 @@ test('Multiples Options provides the complete disabled layout and typography con
   assert.equal(group.findByProps({ placeholder: '20 (Default)' }).type, 'input');
   for (const action of ['bold', 'italic', 'underline', 'align left', 'align center', 'align right']) assert.ok(group.findByProps({ 'aria-label': `Panel title ${action}` }));
   assert.equal(ui.visual().smallMultiples, undefined); ui.verifySaved();
+});
+
+
+test('Group/Color field name updates the compiled title and table without renaming source data', async t => {
+  const ui = await mount(t, GroupColorOptions);
+  const sourceField = ui.visual().dimension;
+  await ui.change('Field name', 'Territory');
+  assert.equal(ui.visual().dimension, sourceField);
+  assert.match(ui.compile().model.title, /by Territory$/);
+  assert.equal(ui.compile().table.columns[0], 'Territory');
+  unavailable(ui.root, 'Group title controls', /separate Group\/Color title.*not supported/);
+  unavailable(ui.root, 'Group sort controls', /Sort editing is not supported/);
+  unavailable(ui.root, 'Slice limit controls', /all supplied result rows are shown/);
+  ui.verifySaved();
+  await ui.change('Field name', '');
+  assert.equal(ui.compile().table.columns[0], sourceField); ui.verifySaved();
 });
