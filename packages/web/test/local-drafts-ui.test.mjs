@@ -175,3 +175,16 @@ test('failed copy keeps its dialog, draft identity and edits for retry', async t
   assert.equal(ui.store.list().length, 1);
   assert.equal(ui.store.restore().id, ui.id);
 });
+
+for (const access of [{ mode: 'local' }, { mode: 'demo' }, { mode: 'hosted' }, { mode: 'hosted', session: { id: 'admin', namespaceId: 'team-one', role: 'admin' } }, { mode: 'hosted', session: { id: 'author', namespaceId: 'team-two', role: 'author' } }]) test(`Share explains its mode and namespace without making requests: ${JSON.stringify(access)}`, async t => {
+  const oldAct = globalThis.IS_REACT_ACT_ENVIRONMENT; globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+  let requests = 0; const oldFetch = globalThis.fetch; globalThis.fetch = () => { requests++; throw new Error('Unexpected request'); };
+  let renderer;
+  t.after(async () => { if (renderer) await act(() => renderer.unmount()); globalThis.fetch = oldFetch; globalThis.IS_REACT_ACT_ENVIRONMENT = oldAct; });
+  await act(() => { renderer = create(createElement(AccessProvider, { access }, createElement(AuthorToolbar, { draft: emptyDraft(), dispatch() {}, onFit() {}, onJson() {}, onBundle() {}, onImport() {}, fit: true }))); });
+  const share = renderer.root.findAllByType('button').find(b => b.props.children === 'Share');
+  assert.equal(share.props['aria-disabled'], true); assert.equal(share.props.disabled, undefined);
+  assert.equal(renderer.root.findByProps({ id: share.props['aria-describedby'] }).props.children, share.props.title);
+  assert.match(share.props.title, access.mode !== 'hosted' ? /needs hosted API/ : access.session ? new RegExp(`namespace “${access.session.namespaceId}”.*saved hosted analysis`) : /resolved hosted session and namespace/);
+  await act(() => share.props.onClick()); assert.equal(requests, 0);
+});

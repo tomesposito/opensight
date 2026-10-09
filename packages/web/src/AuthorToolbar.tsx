@@ -11,6 +11,12 @@ export function publishNotice(mode: Access['mode']): string {
     ? 'Publishing needs a hosted deployment with dashboard publication enabled. It is not available in this editor yet; nothing has been published.'
     : `${mode === 'local' ? 'This local workspace' : 'This static demo'} has no publication destination. Drafts are device-local, not synced or shared. Export .qs or JSON to share an analysis definition; data is not included. Nothing has been published.`;
 }
+/** Local draft IDs and imported resource IDs are never proof of a hosted asset. */
+export function sharingUnavailableReason(access: Access): string {
+  if (access.mode !== 'hosted') return `Sharing needs hosted API support. ${access.mode === 'local' ? 'This local workspace' : 'This static demo'} saves device-local drafts, not shared assets. Exports downloads definitions without data.`;
+  if (!access.session?.namespaceId || !access.session.id) return 'Sharing needs a resolved hosted session and namespace. No sharing request can be made from this editor.';
+  return `Sharing in namespace “${access.session.namespaceId}” needs a saved hosted analysis and share-management integration. This editor only saves device-local drafts, so Share is unavailable. Hosted grants must resolve users or groups in this namespace; namespace, folder, row and column permissions still apply.`;
+}
 /** Moves keyboard focus to an editor control: opens any collapsed ancestor
  *  panel, scrolls the control into view, then focuses it. Exported for tests.
  *  No-op when there is no real DOM (react-test-renderer refs are not elements). */
@@ -53,7 +59,7 @@ export function AuthorToolbar({ onPrep, onSources, draft, dispatch, fit, onFit, 
         <AuthorMenuItem label="Publish" run={publish} />
         <AuthorMenuItem label="Save as Analysis" run={onSaveCopy} reason={busy ? "Wait for the current import or export to finish." : !onSaveCopy ? "Open an analysis to save a separate copy on this device." : undefined} />
         <hr />
-        <AuthorMenuItem label="Share" reason="Sharing needs hosted API support. Device-local drafts are not synced or shared; Exports downloads definitions without data." />
+        <AuthorMenuItem label="Share" reason={sharingUnavailableReason(access)} />
         <AuthorMenuItem label="Rename" run={() => focus('.analysis-title input')} />
         <AuthorMenuItem label="Import" reason={busy ? 'Wait for the current import or export to finish.' : undefined} run={onImport} />
         <hr />

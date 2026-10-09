@@ -27,3 +27,16 @@ available for retry. Save draft subsequently updates the copy.
 
 Focused Favorites/copy/menu verification: 37 passed, 0 failed, 0 skipped;
 strict TypeScript checks passed.
+
+Share remains keyboard-reachable with `aria-disabled` and a focus/hover/accessibility
+explanation. Local and demo modes explicitly say sharing needs hosted API support.
+Hosted mode requires a resolved session and identifies the current namespace, but
+also explains the missing saved-hosted-analysis/share-management integration:
+this Author editor still edits device-local drafts. A draft UUID, imported bundle
+ID, or Copy draft link is never used as a hosted permission target. No sharing
+request or fake grant/link is produced, including for administrators.
+
+The existing hosted sharing API and HQ-2/HQ-6 decisions do not make a local draft
+a hosted asset. Namespace-local user/group resolution, folder restrictions and
+viewer row/column policies remain the required hosted semantics. The separate
+embedded-author surface and server APIs are unchanged.
