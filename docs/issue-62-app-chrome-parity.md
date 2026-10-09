@@ -29,3 +29,17 @@ or working-looking controls.
 ## Results
 
 Implementation and measured results will be recorded with each checkpoint.
+
+### Home and shared shell
+
+The 48px OpenSight navy identity band replaces the 67px horizontal navigation
+header. Landing pages use a 192px left rail (168px from 761–1100px); at 760px
+and below, navigation opens from a labeled toggle and closes on selection,
+Escape or the backdrop. Author uses that same toggle at all widths, keeping
+its full-width canvas. Existing role and mode gates remain authoritative.
+
+Home keeps the pinned synthetic dashboard and explicit local sample opt-in.
+Its compact heading, notice, tabs and flat cards follow the landing reference's
+content rhythm. At 1440×900 its chart cards start at y=301 instead of y=377.
+The 2026 reference's chat-first Home and tasks/activity widgets have no
+corresponding shipped capability; no simulated widgets were introduced.

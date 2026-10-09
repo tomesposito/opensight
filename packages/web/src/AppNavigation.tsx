@@ -1,4 +1,4 @@
-import { useEffect, useState, type MouseEvent, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import { useAccess } from './access.js';
 import { adminPages, dataPages, developerPages, pages, parseRoute, productSections, routeHash, visiblePage, type AppRoute, type Page } from './app-navigation.js';
 
@@ -32,17 +32,25 @@ export function AppLink({ to, navigate, children, current, className }: { to: Ap
 }
 export function AppNavigation({ route, navigate, children }: { route?: AppRoute; navigate: Navigate; children?: ReactNode }) {
   const access = useAccess(), section = route && pages[route.page].section;
+  const [navigationOpen, setNavigationOpen] = useState(false);
+  const toggle = useRef<HTMLButtonElement>(null);
+  useEffect(() => { setNavigationOpen(false); }, [route]);
+  const closeNavigation = () => { setNavigationOpen(false); toggle.current?.focus(); };
   const link = (page: Page) => access.mode === 'demo' && page === 'api'
     ? <span key={page} aria-disabled="true">API definition preview · Needs hosted API</span>
     : <AppLink key={page} to={{ page }} navigate={navigate} current={route?.page === page}>{pages[page].title}</AppLink>;
   return <>
     <header className="app-header product-header">
+      <button ref={toggle} className="navigation-toggle" type="button" aria-label="Toggle navigation" aria-expanded={navigationOpen} aria-controls="product-navigation" onClick={() => setNavigationOpen(open => !open)}>☰</button>
       <AppLink className="brand" to={{ page: 'home' }} navigate={navigate}><span className="brand-mark" aria-hidden="true">◈</span>OpenSight</AppLink>
-      <nav className="app-nav" aria-label="Product">{productSections.filter(item => visiblePage(access, item.page)).map(item => <AppLink key={item.title} to={{ page: item.page }} navigate={navigate} current={section === item.title}>{item.title}</AppLink>)}</nav>
       <span className="header-caption">{route ? pages[route.page].title : 'Page not found'}</span>
       {children}
     </header>
+    {navigationOpen && <button type="button" className="navigation-scrim" aria-label="Close navigation" onClick={closeNavigation} />}
+    <div id="product-navigation" className="product-navigation" data-open={navigationOpen} onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); closeNavigation(); } }}>
+      <nav className="app-nav" aria-label="Product">{productSections.filter(item => visiblePage(access, item.page)).map(item => <AppLink key={item.title} to={{ page: item.page }} navigate={navigate} current={section === item.title}>{item.title}</AppLink>)}</nav>
     {section === 'Analyses' && visiblePage(access, 'analyses') && <nav className="section-nav" aria-label="Analyses"><AppLink to={{ page: 'analyses' }} navigate={navigate} current={route?.page === 'analyses'}>My analyses</AppLink><AppLink to={{ page: 'author' }} navigate={navigate} current={route?.page === 'author'}>Author</AppLink></nav>}
+    </div>
     {section === 'Data' && <nav className="section-nav" aria-label="Data">{dataPages.filter(page => visiblePage(access, page)).map(link)}</nav>}
     {section === 'Admin' && <div className="admin-navigation"><nav className="section-nav" aria-label="Admin">{adminPages.filter(page => visiblePage(access, page)).map(link)}</nav><nav className="section-nav developer-nav" aria-label="Developer tools"><span>Developer tools</span>{developerPages.filter(page => visiblePage(access, page)).map(link)}</nav></div>}
   </>;

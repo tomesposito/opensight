@@ -1,0 +1,60 @@
+/* Application layout: OpenSight palette, compact identity band and landing rail.
+   Keep chart/theme typography and standalone/embedded editors independent. */
+.app-shell { --app-rail: 192px; --app-band: 48px; padding-left: var(--app-rail); min-height: 100dvh; font: 13px/1.5 Arial, "Helvetica Neue", Helvetica, sans-serif; }
+.app-shell .product-header { height: var(--app-band); min-height: var(--app-band); padding: 4px 20px; margin-left: calc(-1 * var(--app-rail)); gap: 16px; flex-wrap: nowrap; background: #162e40; color: #fff; }
+.product-header .brand { font-size: 18px; letter-spacing: -.4px; color: #fff; gap: 8px; flex-shrink: 0; }
+.product-header .brand-mark { font-size: 24px; color: #72d3d4; }
+.product-header .header-caption { font-size: 12px; padding-left: 16px; color: #d0e0e8; border-color: #526c7a; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.product-header .fixture-picker { min-width: 0; color: #d0e0e8; }
+.product-header .fixture-picker select { min-width: 0; max-width: 260px; padding: 4px 8px; font-size: 12px; }
+.product-navigation { position: fixed; z-index: 59; left: 0; top: var(--app-band); bottom: 0; width: var(--app-rail); padding: 16px 8px; overflow-y: auto; background: #edf3f5; border-right: 1px solid #d1e0e5; }
+.product-navigation .app-nav { display: flex; flex-direction: column; align-items: stretch; gap: 4px; }
+.product-navigation .app-nav a { display: block; font-size: 13px; font-weight: 500; padding: 8px 12px; min-height: 36px; border: 1px solid transparent; border-radius: 5px; }
+.product-navigation .app-nav a[aria-current] { border-color: #157f88; background: #dceff0; color: #126e76; font-weight: 600; }
+.product-navigation .section-nav { margin-top: 16px; padding: 12px 4px; border-top: 1px solid #d1e0e5; border-bottom: 0; background: transparent; gap: 4px; flex-direction: column; align-items: stretch; }
+.product-navigation .section-nav a { padding: 6px 8px; border: 0; border-radius: 4px; font-size: 12px; }
+.app-shell > .section-nav, .app-shell > .admin-navigation .section-nav { padding: 0 32px; gap: 8px 24px; }
+.app-shell > .section-nav a, .app-shell > .admin-navigation .section-nav a { padding: 8px 0; font-size: 12px; }
+.app-shell > main { width: 100%; padding: 32px; min-width: 0; }
+.app-shell h1 { font-size: 24px; line-height: 1.25; font-weight: 500; letter-spacing: -.4px; }
+.app-shell .dashboard-heading { gap: 16px; margin-bottom: 20px; }
+.app-shell .dashboard-heading .eyebrow { margin: 0 0 4px; font-size: 11px; }
+.app-shell .phase-badge { font-size: 11px; padding: 4px 8px; }
+.app-shell > .fixture-demo-banner { font-size: 12px; padding: 6px 32px; gap: 8px; background: #eaf4f4; color: #365764; border-bottom: 1px solid #c9d8de; }
+.app-shell > .fixture-demo-banner button { min-height: 28px; padding: 4px 8px; font-size: 12px; }
+.home-page > .fixture-notice { margin: 16px 0; padding: 8px 12px; font-size: 12px; }
+.home-page > .sheet-tabs { margin-bottom: 16px; gap: 24px; }
+.home-page > .sheet-tabs button { padding: 8px 0; font-size: 13px; }
+.home-page .visual-card { border-radius: 6px; box-shadow: 0 1px 3px #183b4b0a; }
+.home-page .card-heading { padding: 12px 16px 4px; }
+.home-page > .local-empty-state { margin: max(24px, 8vh) auto; max-width: 720px; background: #fff; border: 1px solid #d1e0e5; border-radius: 8px; }
+.home-page > .local-empty-state .empty-page-state { min-height: 320px; }
+.app-shell .empty-page-state .primary-button { background: #157f88; border-color: #157f88; }
+.app-shell .empty-page-state .primary-button:hover { background: #126e76; }
+.app-shell .empty-page-state .empty-state-secondary { color: #126e76; }
+.navigation-toggle { display: none; align-items: center; justify-content: center; flex: none; width: 32px; height: 32px; padding: 0; font-size: 18px; border: 1px solid #526c7a; border-radius: 4px; background: transparent; color: #fff; }
+.navigation-scrim { display: none; position: fixed; inset: var(--app-band) 0 0; border: 0; padding: 0; background: #14253655; z-index: 58; }
+.app-shell[data-page=author] { --app-rail: 0px; }
+.app-shell[data-page=author] .product-navigation { display: none; width: 224px; }
+.app-shell[data-page=author] .navigation-toggle { display: inline-flex; }
+.app-shell[data-page=author] .product-navigation[data-open=true], .app-shell[data-page=author] .navigation-scrim { display: block; }
+.app-shell > main.author-main { padding: 0 16px 16px; }
+@media (max-width: 1100px) {
+  .app-shell { --app-rail: 168px; }
+  .app-shell > main { padding: 24px; }
+}
+@media (max-width: 760px) {
+  .app-shell { --app-rail: 0px; }
+  .app-shell .product-header { padding: 4px 12px; gap: 12px; }
+  .product-header .brand { font-size: 16px; }
+  .product-header .header-caption { padding-left: 12px; }
+  .navigation-toggle { display: inline-flex; }
+  .product-navigation { display: none; width: 224px; }
+  .product-navigation[data-open=true], .navigation-scrim { display: block; }
+  .app-shell > main { padding: 24px 16px; }
+  .app-shell > .section-nav, .app-shell > .admin-navigation .section-nav { padding: 0 16px; gap: 8px 16px; }
+  .app-shell > .fixture-demo-banner { padding: 8px 16px; }
+  .product-header:has(.fixture-picker) { height: auto; flex-wrap: wrap; }
+  .product-header .fixture-picker { flex-basis: 100%; justify-content: space-between; }
+  .home-page > .local-empty-state { margin: 24px 0; padding: 16px; }
+}
