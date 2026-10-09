@@ -20,7 +20,9 @@ shows the email and one six-digit field, and supplies the outlined Back action.
 Errors appear below the heading, above the fields, with an accessible alert and
 safe named error code. No distinction between bad password, rejected TOTP and
 blocked account is invented. Known expiry and confirmed sign-out have their own
-messages. There is no simulated password-reset link; assistance directs the user
+messages; confirmed sign-out uses a neutral status rather than an error alert.
+The hosted header keeps Sign out visible with long account names at 320px.
+There is no simulated password-reset link; assistance directs the user
 to the administrator, consistent with preprovisioned accounts.
 
 Captures: `signin-desktop.png`, `signin-760.png`, `signin-390.png`,
@@ -46,3 +48,8 @@ are pixel-identical (zero differing pixels). The tour reported zero page errors
 and zero external requests. No demo-visible UI changed, so the README hero GIF
 and existing feature screenshots were not regenerated. The hosted sign-in
 captures remain local review artifacts.
+
+Final verification: root `TZ=UTC npm test` exited 0 with **2,053 passed /
+0 failed / 12 skipped / 0 cancelled**. All skips require live PostgreSQL.
+The final static demo and embed artifacts were rebuilt; the final hosted
+browser tour and all ten demo image comparisons passed.

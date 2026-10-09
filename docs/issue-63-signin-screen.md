@@ -90,4 +90,19 @@ external requests. Static-demo captures for five surfaces at two viewport widths
 were pixel-identical to the pre-change baseline. No demo-visible UI changed;
 README media was therefore not refreshed.
 
-Final full-suite counts are recorded after validation.
+The first full-suite run exposed three inherited draft-test assertions left
+stale by the preceding `8e86d6d4` copy/UX commit: two expected “Reopen” and one
+assumed the analysis name was not a button. The tests now target “Open”, verify
+that the name opens the same draft, and check disabled controls by name.
+No draft implementation changed. All 53 targeted checks passed after correction.
+
+Final root `TZ=UTC npm test` exited 0: **2,053 passed / 0 failed / 12 skipped /
+0 cancelled** (2,065 tests). All skips require live PostgreSQL. Passing counts:
+API 305, bundle parser 199, embedding SDK 9, interpreter 32, parity 11,
+query engine 502, web 988 and root conformance 7. The final static-demo/embed
+build completed successfully. Final desktop/mobile demo comparisons remain
+pixel-identical, and the refreshed hosted browser tour passed all steps with
+zero page errors or external requests.
+
+Work is checkpointed on the issue branch. No merge, push, PR, deployment,
+new dependency, private reference or personal data is included.
