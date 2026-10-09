@@ -111,3 +111,26 @@ describe('Data surface geometry', () => {
     }
   });
 });
+
+describe('integrated Author identity geometry', () => {
+  let page;
+  before(async () => { page = await chromiumPage(); });
+  after(async () => { await page?.close(); });
+  for (const theme of ['light', 'dark']) for (const width of [1440, 1100, 760, 390]) test(`${theme} Author has one title band at ${width}px`, async () => {
+    const { Author } = await import('../build/test/Author.js');
+    await page.setViewportSize({ width, height: 900 });
+    const html = renderToStaticMarkup(h('div', { className: 'app-shell', 'data-page': 'author' }, h('main', { className: 'author-main' }, h(Author, { inApp: true, renderIdentity: title => h(AppNavigation, { route: { page: 'author' }, navigate() {} }, title) }))));
+    await page.setContent(`<style>${css}\nhtml { scrollbar-width: none; }</style>${html}`);
+    const actual = await page.evaluate(theme => {
+      document.querySelector('.author-workspace').dataset.chrome = theme;
+      const title = document.querySelector('.analysis-title input');
+      title.value = 'Long analysis name '.repeat(30);
+      const rect = n => { const { x, y, width, height, right, bottom } = n.getBoundingClientRect(); return { x, y, width, height, right, bottom }; };
+      return { width: document.documentElement.scrollWidth, header: rect(document.querySelector('.product-header')), title: rect(title), menu: rect(document.querySelector('.author-menu')), color: getComputedStyle(title).color, duplicate: document.querySelector('.author-topbar') !== null };
+    }, theme);
+    assert.equal(actual.width, width); assert.equal(actual.header.height, 48); assert.equal(actual.header.x, 0);
+    assert.equal(actual.menu.y, actual.header.bottom); assert.equal(actual.title.height, 28);
+    assert.ok(actual.title.width > 100 && actual.title.right <= width);
+    assert.equal(actual.color, 'rgb(255, 255, 255)'); assert.equal(actual.duplicate, false);
+  });
+});

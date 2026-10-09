@@ -5,7 +5,7 @@ import { AISettings } from './AISettings.js';
 import { Dashboard } from './Dashboard.js';
 import { useAccess, allowed } from './access.js';
 import { OrganizationNotice } from './OrganizationNotice.js';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import type { Fixture } from './model.js';
 import type { AuthorDataset } from './authoring.js';
 import { Author } from './Author.js';
@@ -46,6 +46,11 @@ function ApplicationWorkspace({ api, fixtures }: { api: ReturnType<typeof create
   const problem = mode && routeProblem(access, mode);
   const choosingDataset = !problem && route?.page === 'author' && route.newAnalysis && newAnalysisChoice?.entry !== entry;
   useEffect(() => { if (typeof document !== 'undefined') document.title = `${route ? pages[route.page].title : 'Page not found'} · OpenSight`; }, [mode]);
+  const editing = mode === 'author' && !choosingDataset && !problem;
+  const identity = (title?: ReactNode) => <>
+    <AppNavigation route={route} navigate={navigate}>{title}{!problem && (mode === 'fixtures' || mode === 'api') && <label className="fixture-picker">Definition example<select value={fixtureId} onChange={event => setFixtureId(event.target.value)}>{fixtures.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}</select></label>}</AppNavigation>
+    {access.mode === 'local' && <aside className="fixture-demo-banner workspace-banner" aria-label="Local data workspace"><span><strong>Local workspace</strong> · Files stay on this computer · Uploads survive restarts and expire after 24 hours</span>{sampleLoaded && <><span>Sample sales data loaded · Synthetic data</span><button type="button" onClick={() => setSampleLoaded(false)}>Remove sample data</button></>}</aside>}
+  </>;
   const content = () => {
     if (!route) return <section><h1>Page not found</h1><p>Choose a section above to continue.</p><AppLink to={{ page: 'home' }} navigate={navigate}>Go to Home</AppLink></section>;
     if (problem) return <p role="alert">{problem}</p>;
@@ -53,7 +58,7 @@ function ApplicationWorkspace({ api, fixtures }: { api: ReturnType<typeof create
       case 'home': return <section className="home-page" aria-label="Home">{access.mode === 'local' && !sampleLoaded ? <LocalEmptyState onSources={() => navigate({ page: 'data-sources' })} onSample={() => setSampleLoaded(true)} /> : sample ? <Dashboard key="sample" fixture={sample} sample /> : <p role="status">The sample dashboard is not included in this build. Ask the operator to restore the pinned sales sample.</p>}</section>;
       case 'dashboards': return <Dashboards navigate={navigate} />;
       case 'analyses': return <Analyses navigate={navigate} />;
-      case 'author': return choosingDataset ? <Analyses navigate={navigate} /> : <Author key={entry} sampleLoaded={sampleLoaded} onTrySample={() => setSampleLoaded(true)} inApp draftId={route.draftId} newAnalysis={route.newAnalysis} onDraftChange={draftId => navigate({ page: 'author', draftId }, true)} onSources={() => navigate({ page: 'data-sources' })} onDatasetChange={setAuthorDataset} dataset={route.draftId ? undefined : route.newAnalysis ? newAnalysisChoice?.dataset : authorDataset} onPrep={() => navigate({ page: 'data-prep' })} client={connected ? api : undefined} />;
+      case 'author': return choosingDataset ? <Analyses navigate={navigate} /> : <Author key={entry} renderIdentity={identity} sampleLoaded={sampleLoaded} onTrySample={() => setSampleLoaded(true)} inApp draftId={route.draftId} newAnalysis={route.newAnalysis} onDraftChange={draftId => navigate({ page: 'author', draftId }, true)} onSources={() => navigate({ page: 'data-sources' })} onDatasetChange={setAuthorDataset} dataset={route.draftId ? undefined : route.newAnalysis ? newAnalysisChoice?.dataset : authorDataset} onPrep={() => navigate({ page: 'data-prep' })} client={connected ? api : undefined} />;
       case 'data-prep': return <DataPrep initialSource={uploadedSource} onBuild={access.mode === 'local' ? dataset => { setAuthorDataset(dataset); navigate({ page: 'author' }); } : undefined} client={connected ? api : undefined} onSources={() => navigate({ page: 'data-sources' })} onAuthor={() => navigate({ page: 'author' })} />;
       case 'data-sources': return <DataSources local={access.mode === 'local'} onPrep={source => { setUploadedSource(source); navigate({ page: 'data-prep' }); }} client={connected ? api : undefined} />;
       case 'users': return <UserManagement client={api} />;
@@ -66,8 +71,7 @@ function ApplicationWorkspace({ api, fixtures }: { api: ReturnType<typeof create
     }
   };
   return <CommandPaletteProvider navigate={navigate}><div className="app-shell" data-workspace={access.mode} data-page={mode}>
-    <AppNavigation route={route} navigate={navigate}>{!problem && (mode === 'fixtures' || mode === 'api') && <label className="fixture-picker">Definition example<select value={fixtureId} onChange={event => setFixtureId(event.target.value)}>{fixtures.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}</select></label>}</AppNavigation>
-    {access.mode === 'local' && <aside className="fixture-demo-banner" aria-label="Local data workspace"><span><strong>Local workspace</strong> · Files stay on this computer · Uploads survive restarts and expire after 24 hours</span>{sampleLoaded && <><span>Sample sales data loaded · Synthetic data</span><button type="button" onClick={() => setSampleLoaded(false)}>Remove sample data</button></>}</aside>}
+    {!editing && identity()}
     <main className={mode === 'author' && !choosingDataset ? 'author-main' : undefined}>{content()}</main>
     {choosingDataset && <CreateAnalysisDialog client={connected ? api : undefined} sampleAvailable={access.mode === 'demo' || sampleLoaded} offline={!connected}
       onSelect={dataset => { setAuthorDataset(dataset); setNewAnalysisChoice({ entry, dataset }); }}

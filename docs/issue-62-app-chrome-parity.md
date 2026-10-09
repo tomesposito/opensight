@@ -84,3 +84,23 @@ source page's content height fell from 835px (after the shared shell) to 684px
 at 1440px. All 78 targeted shell/connector/preparation tests passed, including
 browser bounds at 1440/1100/760/390px. The capture reported zero page errors and
 external requests. A new dataset catalog or assistant pane is outside scope.
+
+### Author and dialogs
+
+Author composes the shared navigation and its live title input into one 48px
+identity band. Its 36px desktop menu strip follows directly, retaining menu
+order, the question trigger and right-aligned canvas/publishing/theme actions.
+The product rail stays collapsed while editing. Standalone and embedded Author
+keep their own identity band. Failed draft URLs retain product navigation.
+The dataset dialog keeps its native focus containment and table/footer pattern,
+with OpenSight teal selection and button colors inside the application.
+
+At 1440×900, docks start at y=191 instead of the baseline y=288: 97px more
+vertical space. Data / Visuals / sheet / Properties remain 190 / 216 / 758 /
+220px. Synthetic-data, device-save and export limitations stay visible. No
+saved layout, chart font, chart palette or data semantics changed.
+
+Validation: 66 targeted existing/header tests passed. The browser tour verified
+Rename focus, title save/reload, menus, command palette, Q, dataset modal and
+navigation in both themes. The band stays 48px and long titles fit at
+1920/1440/1100/760/390px; no page overflow, page errors or external requests.

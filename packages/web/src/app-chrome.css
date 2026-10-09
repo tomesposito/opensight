@@ -20,8 +20,8 @@
 .app-shell .dashboard-heading { gap: 16px; margin-bottom: 20px; }
 .app-shell .dashboard-heading .eyebrow { margin: 0 0 4px; font-size: 11px; }
 .app-shell .phase-badge { font-size: 11px; padding: 4px 8px; }
-.app-shell > .fixture-demo-banner { font-size: 12px; padding: 6px 32px; gap: 8px; background: #eaf4f4; color: #365764; border-bottom: 1px solid #c9d8de; }
-.app-shell > .fixture-demo-banner button { min-height: 28px; padding: 4px 8px; font-size: 12px; }
+.app-shell .workspace-banner { font-size: 12px; padding: 6px 32px; gap: 8px; background: #eaf4f4; color: #365764; border-bottom: 1px solid #c9d8de; }
+.app-shell .workspace-banner button { min-height: 28px; padding: 4px 8px; font-size: 12px; }
 .home-page > .fixture-notice { margin: 16px 0; padding: 8px 12px; font-size: 12px; }
 .home-page > .sheet-tabs { margin-bottom: 16px; gap: 24px; }
 .home-page > .sheet-tabs button { padding: 8px 0; font-size: 13px; }
@@ -53,7 +53,7 @@
   .product-navigation[data-open=true], .navigation-scrim { display: block; }
   .app-shell > main { padding: 24px 16px; }
   .app-shell > .section-nav, .app-shell > .admin-navigation .section-nav { padding: 0 16px; gap: 8px 16px; }
-  .app-shell > .fixture-demo-banner { padding: 8px 16px; }
+  .app-shell .workspace-banner { padding: 8px 16px; }
   .product-header:has(.fixture-picker) { height: auto; flex-wrap: wrap; }
   .product-header .fixture-picker { flex-basis: 100%; justify-content: space-between; }
   .home-page > .local-empty-state { margin: 24px 0; padding: 16px; }
@@ -139,3 +139,27 @@
   .app-shell .connector-layout { padding: 12px; gap: 16px; }
   .app-shell .data-sources-heading, .app-shell .prep-heading { gap: 12px; }
 }
+
+/* Author identity and editable title share one band; the menu follows directly. */
+.app-shell[data-page=author] main .product-header { margin: 0 -16px; }
+.app-shell[data-page=author] main .workspace-banner { margin: 0 -16px; padding: 6px 16px; }
+.product-header .analysis-title { flex: 0 1 600px; min-width: 0; margin: 0; }
+.author-workspace[data-chrome] .product-header .analysis-title input { width: 100%; min-width: 0; height: 28px; padding: 4px 8px; border: 1px solid transparent; border-radius: 3px; background: transparent; color: #fff; font-size: 12px; line-height: 18px; text-overflow: ellipsis; }
+.author-workspace[data-chrome] .product-header .analysis-title input:hover { border-color: #526c7a; }
+.author-workspace[data-chrome] .product-header .navigation-toggle { width: 32px; height: 32px; padding: 0; border: 1px solid #526c7a; background: transparent; color: #fff; font-size: 18px; }
+.author-workspace[data-chrome] .product-header :focus-visible { outline: 2px solid #e5a046; outline-offset: 2px; }
+.author-workspace .product-navigation { font: 13px/1.5 Arial, "Helvetica Neue", Helvetica, sans-serif; }
+.app-shell .create-analysis-dialog { color: #19384a; border-color: #c9d8de; }
+.app-shell .create-analysis-dialog button, .app-shell .create-analysis-dialog select { color: #126e76; border-color: #9dbfc4; }
+.app-shell .create-analysis-actions .dataset-picker-select { background: #157f88; color: #fff; }
+.app-shell .create-analysis-actions .dataset-picker-select:disabled { background: #e0e1e4; color: #767b80; }
+.app-shell .dataset-picker-table th { background: #eaf4f4; color: #365764; }
+.app-shell .dataset-picker-table td { color: #19384a; }
+.app-shell .dataset-picker-table tr[data-selected] { background: #edf7f7; }
+.app-shell .dataset-picker-table input { accent-color: #157f88; }
+@media (max-width: 760px) {
+  .app-shell[data-page=author] .product-header .header-caption { display: none; }
+  .product-header .analysis-title { flex: 1; }
+}
+
+.author-workspace[data-chrome] .navigation-scrim { background: #14253655; border: 0; padding: 0; }
