@@ -16,7 +16,8 @@ import { QSidePanel } from './QSidePanel.js';
 import { BuildForMe } from './BuildForMe.js';
 import { FormattingEditor } from './FormattingEditor.js';
 import { PivotOptionsEditor } from './PivotOptionsEditor.js';
-import { hasLegend, hasDataLabels, LEGEND_POSITIONS, type LegendPosition, type VisualFormatting } from './formatting.js';
+import { CardTitle, CardStyle, CardLayout, MultiplesOptions, GroupColorOptions, LegendOptions, DataLabelsOptions } from './PropertiesSections.js';
+import { type VisualFormatting } from './formatting.js';
 import { LIGHT_THEME, themeValid, type AnalysisTheme } from './themes.js';
 import { functionCatalog } from '@opensight/query-engine/browser';
 import { expressionError } from './authoring.js';
@@ -433,9 +434,6 @@ function Properties({ visual, draft, dispatch, client, runtimeProblems }: Editor
   const formatting = visual.formatting ?? {};
   const setFormatting = (patch: Partial<VisualFormatting>) => dispatch({ type: 'formatting', formatting: { ...formatting, ...patch } });
   const toggles: { property: 'titleVisible' | 'legend' | 'labels' | 'horizontal' | 'stacked' | 'totals' | 'subtotals'; label: string }[] = [
-    { property: 'titleVisible', label: 'Show title' },
-    ...(hasLegend(visual.kind) ? [{ property: 'legend' as const, label: 'Show legend' }] : []),
-    ...(hasDataLabels(visual.kind) ? [{ property: 'labels' as const, label: 'Show data labels' }] : []),
     ...(['bar', 'bar100'].includes(visual.kind) ? [{ property: 'horizontal' as const, label: 'Horizontal bars' }] : []),
     ...(visual.kind === 'bar' ? [{ property: 'stacked' as const, label: 'Stack values' }] : []),
   ];
@@ -451,14 +449,12 @@ function Properties({ visual, draft, dispatch, client, runtimeProblems }: Editor
     </div>
     <div role="tabpanel" id={`${tabId}-panel-Visual`} aria-labelledby={`${tabId}-Visual`} hidden={tab !== 'Visual'}>
     <details className="property-section" open><summary>Display settings</summary>
-    <label>Title<input value={visual.title} placeholder="Generated from fields" onChange={e => dispatch({ type: 'title', title: e.target.value })} /></label>
-    <label>Title font size<input type="number" min="8" max="48" value={formatting.titleFontSize ?? 14} onChange={e => setFormatting({ titleFontSize: Number(e.target.value) })} /></label>
-    <label>Subtitle<input value={visual.subtitle ?? ''} onChange={e => dispatch({ type: 'subtitle', subtitle: e.target.value, visible: visual.subtitleVisible !== false })} /></label>
-    <label className="toggle"><input type="checkbox" checked={visual.subtitleVisible !== false} onChange={e => dispatch({ type: 'subtitle', subtitle: visual.subtitle ?? '', visible: e.target.checked })} />Show subtitle</label>
+    <CardTitle visual={visual} dispatch={dispatch} />
+    <CardStyle />
+    <CardLayout />
     {toggles.map(({ property, label }) => <label className="toggle" key={property}><input type="checkbox" checked={visual[property]} onChange={e => dispatch({ type: 'display', property, value: e.target.checked })} />{label}</label>)}
-    {hasLegend(visual.kind) && <label>Legend position<select value={formatting.legendPosition ?? 'BOTTOM'} onChange={e => dispatch({ type: 'legend-position', position: e.target.value as LegendPosition })}>{LEGEND_POSITIONS.map(position => <option key={position} value={position}>{position === 'AUTO' ? 'Auto (bottom)' : position[0] + position.slice(1).toLowerCase()}</option>)}</select></label>}
     {visual.kind === 'insight' && <InsightOptions visual={visual} dispatch={dispatch} />}
-    {(hasDataLabels(visual.kind) || visual.kind === 'insight') && <label>{visual.kind === 'insight' ? 'Narrative decimal places' : 'Data label decimal places'}<input type="number" min="0" max="12" placeholder="Automatic" value={formatting.decimalPlaces ?? ''} onChange={e => {
+    {visual.kind === 'insight' && <label>Narrative decimal places<input type="number" min="0" max="12" placeholder="Automatic" value={formatting.decimalPlaces ?? ''} onChange={e => {
       if (e.target.value === '') { const { decimalPlaces: _old, ...rest } = formatting; dispatch({ type: 'formatting', formatting: rest }); }
       else setFormatting({ decimalPlaces: Number(e.target.value) });
     }} /></label>}
@@ -471,6 +467,10 @@ function Properties({ visual, draft, dispatch, client, runtimeProblems }: Editor
     {visual.kind === 'gauge' && <>{(['min', 'max'] as const).map(bound => <label key={bound}>Gauge {bound === 'min' ? 'minimum' : 'maximum'}<input type="number" step="any" value={visual.gauge?.[bound] ?? (bound === 'min' ? 0 : 100)} onChange={e => { if (e.target.value.trim()) dispatch({ type: 'gauge', min: visual.gauge?.min ?? 0, max: visual.gauge?.max ?? 100, [bound]: Number(e.target.value) }); }} /></label>)}<p>Minimum must be smaller than maximum.</p></>}
     {visual.kind === 'histogram' && <label>Histogram bins<input type="number" min="1" max="100" value={visual.bins ?? 10} onChange={e => dispatch({ type: 'bins', bins: Number(e.target.value) })} /></label>}
     </details>
+    <MultiplesOptions visual={visual} />
+    <GroupColorOptions visual={visual} dispatch={dispatch} />
+    <LegendOptions visual={visual} dispatch={dispatch} />
+    <DataLabelsOptions visual={visual} dispatch={dispatch} />
     <PivotOptionsEditor visual={visual} dispatch={dispatch} />
     <FormattingEditor visual={visual} dispatch={dispatch} />
     {visual.imported && <div className="dataset-binding"><h3>Dataset binding</h3><p>{visual.imported.local ? 'Local sales dataset' : authorVisualProblem(visual)}</p>

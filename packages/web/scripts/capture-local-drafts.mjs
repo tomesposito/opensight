@@ -162,7 +162,7 @@ try {
   assert.equal(await demo.getByRole('button', { name: 'Save pipeline', exact: true }).isDisabled(), true);
   await demoCapture('demo-data-prep');
   await navigate(demo, 'author');
-  await demo.getByRole('button', { name: 'Add visual', exact: true }).click();
+  await demo.locator('.build-panel').getByRole('button', { name: 'Add visual', exact: true }).click();
   await demo.getByRole('button', { name: 'Save draft', exact: true }).click();
   await demo.getByText('Draft saved on this device.', { exact: true }).waitFor();
   await demoCapture('demo-author');
@@ -172,7 +172,7 @@ try {
   await demo.evaluate(() => Object.defineProperty(window, 'localStorage', { get() { throw new DOMException('Denied for acceptance test', 'SecurityError'); } }));
   await navigate(demo, 'author');
   await demo.getByRole('button', { name: 'Save draft', exact: true }).click();
-  await demo.getByText(/Browser storage is blocked/).waitFor();
+  await demo.getByText(/Browser storage is blocked/).first().waitFor();
   await demo.locator('.author-menu summary').filter({ hasText: /^File$/ }).click();
   assert.equal(await demo.getByRole('button', { name: 'Export JSON', exact: true }).isDisabled(), false);
   const download = demo.waitForEvent('download');

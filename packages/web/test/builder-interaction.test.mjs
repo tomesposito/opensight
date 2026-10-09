@@ -157,7 +157,7 @@ test('calculated field dialog validates, creates a pill and submits expression t
   await ui.submit(dialogForm());
   assert.ok(ui.find('p', p => p.role === 'alert'));
   await ui.change(ui.find('input', p => p.autoFocus), 'Net');
-  await ui.change(ui.find('textarea', () => true), '{revenue} - {profit}');
+  await ui.change(dialogForm().findByType('textarea'), '{revenue} - {profit}');
   await ui.submit(dialogForm());
   assert.equal(ui.renderer.root.findAllByType('dialog').length, 0);
   await ui.click('Assign Net');

@@ -113,6 +113,13 @@ is supported. See [field wells](docs/field-wells.md).
 
 ![Empty Author visual with GROUP/COLOR, VALUE and SMALL MULTIPLES field wells](docs/images/author-empty.png)
 
+The Properties dock groups card title/style/layout, Multiples Options,
+Group/Color, Legend and Data labels. Existing title, display-name, legend and
+label settings work; unsupported controls are disabled with visible reasons.
+See [properties controls and limits](docs/properties-panels.md).
+
+![Group/Color properties with a working display name and explicit unsupported controls](docs/images/properties-panels.png)
+
 Radar uses Category axes, an optional Color split, and one or more Values
 measures. Nulls remain gaps; unsupported native options appear in the import
 report. See [radar semantics and limits](docs/radar-chart.md).

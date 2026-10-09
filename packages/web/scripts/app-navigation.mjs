@@ -12,3 +12,8 @@ export async function navigate(page, mode) {
   await page.getByRole('navigation', { name: 'Product', exact: true }).getByRole('link', { name: target[0], exact: true }).click();
   if (target[1]) await page.locator('.section-nav').getByRole('link', { name: target[1], exact: true }).click();
 }
+
+export async function openPropertySection(page, name) {
+  const section = page.locator('.properties-panel details.property-section').filter({ has: page.locator('summary', { hasText: new RegExp(`^${name}$`) }) });
+  if (await section.getAttribute('open') === null) await section.locator('summary').click();
+}

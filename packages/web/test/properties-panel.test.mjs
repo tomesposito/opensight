@@ -48,7 +48,7 @@ test('visual formatting and interaction edits survive tab switches and stay on t
   d = authorReducer(d, { type: 'parameter-add', parameter: { name: 'Region', type: 'string', multiple: false, defaultValues: ['East'], values: ['East'] } });
   const untouched = structuredClone(activeSheet(d).visuals[0]);
   const ui = await mount(t, d);
-  await ui.change('Title', 'Selected pivot');
+  await ui.change('Edit title', 'Selected pivot');
   await ui.change('region', 'Territory'); await ui.change('revenue', 'Sales');
   await ui.change('Metric placement', 'rows', 'select');
   await ui.switch('Interaction');
@@ -87,7 +87,7 @@ test('section visibility remains specific to each kind; no selected visual retai
 
 test('display controls update rendered settings and retain independent interaction state', async t => {
   const ui = await mount(t, add('bar'));
-  await ui.change('Subtitle', 'Regional sales');
+  await ui.change('Edit subtitle', 'Regional sales');
   await ui.change('Title font size', '24');
   await ui.change('Legend position', 'RIGHT', 'select');
   await ui.change('Data label decimal places', '3');
@@ -111,5 +111,22 @@ test('display audit shows only controls implemented for each visual kind', () =>
     assert.equal(html.includes('Data label decimal places'), !['insight', 'table', 'pivot', 'kpi', 'gauge', 'box', 'wordCloud', 'pointMap'].includes(kind), kind);
     assert.equal(html.includes('Narrative decimal places'), kind === 'insight', kind);
     assert.equal(html.includes('Stack values'), kind === 'bar', kind);
+  }
+});
+
+test('issue 57 section order and control names remain specific to each visual kind', () => {
+  for (const { kind } of VISUAL_TYPES) {
+    const html = renderToStaticMarkup(createElement(AuthorCanvas, { draft: add(kind), dispatch() {} }));
+    for (const heading of ['CARD TITLE', 'CARD STYLE', 'CARD LAYOUT']) assert.ok(html.includes(`<h4>${heading}</h4>`), `${kind}: ${heading}`);
+    assert.equal(html.includes('<summary>Multiples Options</summary>'), ['bar', 'bar100', 'line', 'area', 'combo', 'pie'].includes(kind), kind);
+    assert.equal(html.includes('<summary>Group/Color</summary>'), ['bar', 'bar100', 'pie'].includes(kind), kind);
+    assert.equal(html.includes('Number of slices displayed'), kind === 'pie', kind);
+    assert.equal((html.match(/aria-label="Title"/g) ?? []).length, 1, `${kind}: card title has a unique accessible name`);
+    if (kind === 'pie') {
+      const sections = [...html.matchAll(/<summary>([^<]+)<\/summary>/g)].map(match => match[1]);
+      const start = sections.indexOf('Display settings');
+      assert.deepEqual(sections.slice(start, start + 5), ['Display settings', 'Multiples Options', 'Group/Color', 'Legend', 'Data labels']);
+      assert.ok(html.includes('aria-label="Show Group/Color title"'));
+    }
   }
 });

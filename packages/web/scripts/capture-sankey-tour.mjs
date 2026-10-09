@@ -5,7 +5,7 @@ import { createRequire } from 'node:module';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { navigate } from './app-navigation.mjs';
+import { navigate, openPropertySection } from './app-navigation.mjs';
 import { activeSheet, authorReducer, emptyDraft, serializeDraft } from '../build/test/authoring.js';
 
 const { chromium } = createRequire(resolve(process.env.OPENSIGHT_SCREENSHOT_TOOLS ?? '/home/hatch/workspace/tools/screenshots', 'package.json'))('playwright-core');
@@ -52,15 +52,19 @@ try {
   const properties = page.locator('.properties-panel:not([open]) > summary');
   if (await properties.count()) await properties.click();
   await page.getByLabel('Title', { exact: true }).fill('Revenue from region to category');
+  await openPropertySection(page, 'Data labels');
   await page.getByLabel('Show data labels', { exact: true }).check();
   const chart = page.locator('.author-card .chart svg'); await chart.waitFor();
   assert.match(await chart.textContent(), /East/); assert.doesNotMatch(await chart.textContent(), /node-\d/);
   await capture(page, 'sankey-flows');
+  await openPropertySection(page, 'Data labels');
   await page.getByLabel('Data label decimal places', { exact: true }).fill('0');
   assert.match(await chart.textContent(), /East: [\d,]+/);
   await capture(page, 'sankey-labels');
+  await openPropertySection(page, 'Legend');
   await page.getByLabel('Show legend', { exact: true }).uncheck();
   assert.ok(!(await chart.textContent()).includes('revenue'));
+  await openPropertySection(page, 'Legend');
   await page.getByLabel('Show legend', { exact: true }).check();
   await page.getByLabel('NEW LOOK', { exact: true }).selectOption('dark');
   await capture(page, 'sankey-dark');
