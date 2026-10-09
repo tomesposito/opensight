@@ -15,7 +15,7 @@ export function LocalDrafts({ entries, activeId, onOpen, onRename, onDelete, onR
   const currentPage = Math.min(page, pages - 1);
   const updated = (entry: DraftSummary) => entry.updatedAt === new Date(0).toISOString() ? 'Before draft history was available' : <time dateTime={entry.updatedAt}>{new Date(entry.updatedAt).toLocaleString()}</time>;
   const actions = (entry: DraftSummary) => <>
-    <button type="button" disabled={!!entry.problem} onClick={() => onOpen(entry.id)}>Reopen</button>
+    <button type="button" disabled={!!entry.problem} onClick={() => onOpen(entry.id)}>Open</button>
     <button type="button" disabled={!!entry.problem} onClick={() => setRename({ id: entry.id, name: entry.name })}>Rename</button>
     <button type="button" onClick={() => { onDelete(entry.id); setRename(undefined); }}>Delete</button>
   </>;
@@ -28,7 +28,7 @@ export function LocalDrafts({ entries, activeId, onOpen, onRename, onDelete, onR
     <div className="collection-table-scroll" role="region" aria-label="Saved analyses" tabIndex={0}><table>
       <thead><tr><th scope="col">Name</th><th scope="col">Last updated</th><th scope="col">Actions</th></tr></thead>
       <tbody>{matches.slice(currentPage * pageSize, (currentPage + 1) * pageSize).map(entry => <tr key={entry.id}>
-        <td><strong>{entry.name}</strong>{entry.sample && <span className="collection-badge">Sample data</span>}{entry.problem && <p role="alert">{entry.problem}</p>}</td>
+        <td><button type="button" className="draft-name-link" disabled={!!entry.problem} onClick={() => onOpen(entry.id)} aria-label={`Open ${entry.name}`}><strong>{entry.name}</strong></button>{entry.sample && <span className="collection-badge">Sample data</span>}{entry.problem && <p role="alert">{entry.problem}</p>}</td>
         <td>{updated(entry)}</td><td><div className="collection-row-actions" aria-label={`Actions for ${entry.name}`}>{actions(entry)}</div></td>
       </tr>)}</tbody>
     </table>{!matches.length && <p className="collection-no-results" role="status">{entries.length ? 'No analyses match your search.' : 'No saved analyses yet. Use Save draft to keep your work.'}</p>}</div>

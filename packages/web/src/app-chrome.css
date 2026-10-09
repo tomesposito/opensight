@@ -86,6 +86,9 @@
 .collection-table-scroll td:first-child { width: 48%; overflow-wrap: anywhere; max-width: 360px; }
 .collection-table-scroll td:nth-child(2) { white-space: nowrap; }
 .collection-table-scroll strong { font-weight: 500; }
+.draft-name-link { all: unset; cursor: pointer; font: inherit; color: inherit; }
+.draft-name-link:hover:not(:disabled) strong, .draft-name-link:focus-visible:not(:disabled) strong { text-decoration: underline; }
+.draft-name-link:disabled { cursor: default; }
 .collection-row-actions { display: flex; gap: 8px; }
 .collection-badge { display: inline-block; font-size: 10px; margin-left: 8px; padding: 1px 6px; background: #eaf4f4; border-radius: 3px; color: #126e76; }
 .collection-pagination { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 16px; font-size: 12px; }
