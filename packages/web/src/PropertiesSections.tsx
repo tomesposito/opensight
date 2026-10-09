@@ -34,3 +34,11 @@ export function CardStyle() {
     </Unavailable>
   </section>;
 }
+
+export function CardLayout() {
+  return <section className="property-group" aria-label="Card layout"><h4>CARD LAYOUT</h4>
+    <Unavailable label="Card layout controls" reason="Per-card padding is not supported yet. 24px is a reference default, not the current canvas padding.">
+      <label>Padding<select defaultValue="24px"><option>24px</option></select></label>
+    </Unavailable>
+  </section>;
+}

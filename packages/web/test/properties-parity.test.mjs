@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { act, createElement, useReducer } from 'react';
 import { create } from 'react-test-renderer';
-import { CardTitle, CardStyle } from '../build/test/PropertiesSections.js';
+import { CardTitle, CardStyle, CardLayout } from '../build/test/PropertiesSections.js';
 import { activeSheet, authorReducer, emptyDraft, parseDraft } from '../build/test/authoring.js';
 import { compileVisual } from '../build/test/compiler.js';
 import { buildAuthorVisual } from '../build/test/author-preview.js';
@@ -66,4 +66,12 @@ test('CARD STYLE shows reference controls without handlers or persisted fake set
   for (const label of ['Background opacity (%)', 'Border opacity (%)', 'Border width', 'Selection opacity (%)']) assert.ok(group.findByProps({ 'aria-label': label }));
   assert.equal(group.findAllByType('label').filter(n => n.children.includes('Loading animation')).length, 1);
   assert.deepEqual(ui.visual(), before); ui.verifySaved();
+});
+
+
+test('CARD LAYOUT exposes disabled 24px reference padding with an accessible reason', async t => {
+  const ui = await mount(t, CardLayout);
+  const group = unavailable(ui.root, 'Card layout controls', /Per-card padding is not supported/);
+  assert.equal(group.findByType('select').props.defaultValue, '24px');
+  assert.equal(ui.visual().formatting, undefined); ui.verifySaved();
 });

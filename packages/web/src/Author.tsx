@@ -16,7 +16,7 @@ import { QSidePanel } from './QSidePanel.js';
 import { BuildForMe } from './BuildForMe.js';
 import { FormattingEditor } from './FormattingEditor.js';
 import { PivotOptionsEditor } from './PivotOptionsEditor.js';
-import { CardTitle, CardStyle } from './PropertiesSections.js';
+import { CardTitle, CardStyle, CardLayout } from './PropertiesSections.js';
 import { hasLegend, hasDataLabels, LEGEND_POSITIONS, type LegendPosition, type VisualFormatting } from './formatting.js';
 import { LIGHT_THEME, themeValid, type AnalysisTheme } from './themes.js';
 import { functionCatalog } from '@opensight/query-engine/browser';
@@ -453,6 +453,7 @@ function Properties({ visual, draft, dispatch, client, runtimeProblems }: Editor
     <details className="property-section" open><summary>Display settings</summary>
     <CardTitle visual={visual} dispatch={dispatch} />
     <CardStyle />
+    <CardLayout />
     {toggles.map(({ property, label }) => <label className="toggle" key={property}><input type="checkbox" checked={visual[property]} onChange={e => dispatch({ type: 'display', property, value: e.target.checked })} />{label}</label>)}
     {hasLegend(visual.kind) && <label>Legend position<select value={formatting.legendPosition ?? 'BOTTOM'} onChange={e => dispatch({ type: 'legend-position', position: e.target.value as LegendPosition })}>{LEGEND_POSITIONS.map(position => <option key={position} value={position}>{position === 'AUTO' ? 'Auto (bottom)' : position[0] + position.slice(1).toLowerCase()}</option>)}</select></label>}
     {visual.kind === 'insight' && <InsightOptions visual={visual} dispatch={dispatch} />}
