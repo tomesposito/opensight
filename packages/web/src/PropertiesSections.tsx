@@ -1,7 +1,7 @@
 import { useId, type Dispatch, type ReactNode } from 'react';
 import type { AuthorAction, AuthorVisual } from './authoring.js';
 import { hasSmallMultiplesWell } from './authoring.js';
-import { hasLegend, LEGEND_POSITIONS, type LegendPosition } from './formatting.js';
+import { hasDataLabels, hasLegend, LEGEND_POSITIONS, type LegendPosition } from './formatting.js';
 
 type SectionProps = { visual: AuthorVisual; dispatch: Dispatch<AuthorAction> };
 
@@ -137,5 +137,25 @@ export function LegendOptions({ visual, dispatch }: SectionProps) {
         <TextStyling label="Legend value" size={12} />
       </Unavailable>
     </section>
+  </details>;
+}
+
+export function DataLabelsOptions({ visual, dispatch }: SectionProps) {
+  if (!hasDataLabels(visual.kind)) return null;
+  return <details className="property-section"><summary>Data labels</summary>
+    <label className="toggle"><input type="checkbox" checked={visual.labels} onChange={e => dispatch({ type: 'display', property: 'labels', value: e.target.checked })} />Show data labels</label>
+    <Unavailable label="Data label content and styling controls" reason="Independent category/metric, position, typography and overlap settings are not supported yet. Labels follow the visual type and analysis theme; Outside is a reference default.">
+      <label className="toggle"><input type="checkbox" />Category</label>
+      <label className="toggle"><input type="checkbox" />Metric</label>
+      <label>Position<select aria-label="Data label position" defaultValue="Outside"><option>Outside</option></select></label>
+      <TextStyling label="Data label" size={12} />
+      <label className="toggle"><input type="checkbox" />Allow labels to overlap</label>
+    </Unavailable>
+    <label>Data label decimal places<input type="number" min="0" max="12" placeholder="Automatic" value={visual.formatting?.decimalPlaces ?? ''} onChange={e => {
+      if (e.target.value === '') {
+        const { decimalPlaces: _old, ...rest } = visual.formatting ?? {};
+        dispatch({ type: 'formatting', formatting: rest });
+      } else dispatch({ type: 'formatting', formatting: { ...visual.formatting, decimalPlaces: Number(e.target.value) } });
+    }} /></label>
   </details>;
 }

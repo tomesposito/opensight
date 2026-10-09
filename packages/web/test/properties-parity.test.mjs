@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { act, createElement, useReducer } from 'react';
 import { create } from 'react-test-renderer';
-import { CardTitle, CardStyle, CardLayout, MultiplesOptions, GroupColorOptions, LegendOptions } from '../build/test/PropertiesSections.js';
+import { CardTitle, CardStyle, CardLayout, MultiplesOptions, GroupColorOptions, LegendOptions, DataLabelsOptions } from '../build/test/PropertiesSections.js';
 import { activeSheet, authorReducer, emptyDraft, parseDraft } from '../build/test/authoring.js';
 import { compileVisual } from '../build/test/compiler.js';
 import { buildAuthorVisual } from '../build/test/author-preview.js';
@@ -117,5 +117,22 @@ test('Legend visibility and every position compile, persist, and retain unsuppor
   await ui.change('Show legend', true); assert.equal(ui.compile().option.legend.show, true);
   unavailable(ui.root, 'Legend title controls', /not supported/);
   unavailable(ui.root, 'Legend value controls', /Font and color follow the analysis theme/);
+  ui.verifySaved();
+});
+
+
+test('Data labels visibility and precision reach the compiler while content/layout controls stay disabled', async t => {
+  const ui = await mount(t, DataLabelsOptions);
+  await ui.change('Show data labels', true);
+  await ui.change('Data label decimal places', '3');
+  assert.equal(ui.compile().option.series[0].label.show, true);
+  assert.equal(ui.compile().option.series[0].label.formatter({ name: 'A', percent: 12.3456 }), 'A: 12.346%');
+  await ui.change('Data label decimal places', '-1');
+  assert.equal(ui.visual().formatting.decimalPlaces, 3, 'invalid precision is rejected');
+  await ui.change('Show data labels', false); assert.equal(ui.compile().option.series[0].label.show, false);
+  await ui.change('Data label decimal places', ''); assert.equal(ui.visual().formatting.decimalPlaces, undefined);
+  const group = unavailable(ui.root, 'Data label content and styling controls', /not supported yet/);
+  for (const label of ['Category', 'Metric', 'Allow labels to overlap']) assert.ok(group.findAllByType('label').some(n => n.children.includes(label)));
+  assert.equal(group.findByProps({ 'aria-label': 'Data label position' }).props.defaultValue, 'Outside');
   ui.verifySaved();
 });
