@@ -56,7 +56,7 @@ async function mount(t, client) {
 }
 test('offline step addition, configuration, reordering and removal change the graph/schema', async t => {
   const ui = await mount(t);
-  await ui.click('＋ Rename column');
+  await ui.click('＋ Rename columns');
   const form = () => ui.renderer.root.findByType(PrepStepEditor);
   await field(ui.renderer, 'New name', 'area');
   await act(async () => form().findByType('form').props.onSubmit({ preventDefault() {} }));
@@ -76,7 +76,7 @@ test('hosted previews discard late responses after switching pipeline stage', as
   const ui = await mount(t, client);
   await act(async () => new Promise(resolve => setTimeout(resolve, 340)));
   assert.equal(pending.length, 1);
-  await ui.click('＋ Rename column');
+  await ui.click('＋ Rename columns');
   await act(async () => ui.renderer.root.findByType(PrepStepEditor).findByType('form').props.onSubmit({ preventDefault() {} }));
   await act(async () => new Promise(resolve => setTimeout(resolve, 340)));
   assert.equal(pending.length, 2);
@@ -291,7 +291,7 @@ test('join nodes flag stale keys on the canvas', async t => {
   await ui.click('＋ Join');
   await submitStep(ui.renderer);
   assert.doesNotMatch(JSON.stringify(ui.renderer.toJSON()), /unconfigured/);
-  await ui.click('＋ Rename column');
+  await ui.click('＋ Rename columns');
   const form = () => ui.renderer.root.findByType(PrepStepEditor);
   await field(ui.renderer, 'New name', 'area');
   await act(async () => form().findByType('form').props.onSubmit({ preventDefault() {} }));
@@ -426,4 +426,22 @@ test('multiple dangling branches can be repaired in order while the entire draft
   await field(ui.renderer, 'Left input', first); await submitStep(ui.renderer);
   assert.doesNotMatch(JSON.stringify(ui.renderer.toJSON()), /INVALID_PREP_PIPELINE/);
   assert.equal(graphPipeline(ui).steps[1].from, first);
+});
+
+test('Steps stays grouped while Configure and Preview switch without losing edits', async t => {
+  const ui = await mount(t);
+  const sidebar = ui.renderer.root.findByProps({ 'aria-label': 'Steps' });
+  assert.deepEqual(sidebar.findAllByType('h3').map(n => n.props.children), ['Input', 'Column transformations', 'Combine transformations', 'Other']);
+  assert.deepEqual(prepCatalog.map(c => c.label), ['Add calculated columns', 'Change data type', 'Rename columns', 'Select columns', 'Append', 'Join', 'Aggregate', 'Filter', 'Pivot', 'Unpivot']);
+  await ui.click('＋ Rename columns');
+  await field(ui.renderer, 'New name', 'territory');
+  await ui.click('Preview');
+  assert.equal(ui.renderer.root.findByProps({ id: 'prep-configure-panel' }).props.hidden, true);
+  assert.equal(ui.renderer.root.findByProps({ id: 'prep-preview-tab' }).props['aria-selected'], true);
+  await ui.click('Configure');
+  assert.equal(ui.renderer.root.findByProps({ id: 'prep-preview-panel' }).props.hidden, true);
+  assert.equal(ui.renderer.root.findByType(PrepStepEditor).findAllByType('input').some(n => n.props.value === 'territory'), true);
+  assert.equal(sidebar.findAllByType(PrepStepEditor).length, 0);
+  await submitStep(ui.renderer);
+  assert.equal(graphPipeline(ui).steps[0].config.name, 'territory');
 });

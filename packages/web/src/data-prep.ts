@@ -57,11 +57,11 @@ export function prepStepSourceInstance(pipeline: PrepPipeline, step: PrepStep): 
   return n + 1;
 }
 export const prepCatalog: { kind: PrepStep['kind']; label: string; group: string }[] = [
-  { kind: 'calculate', label: 'Add calculated column', group: 'Column transformations' },
+  { kind: 'calculate', label: 'Add calculated columns', group: 'Column transformations' },
   { kind: 'changeType', label: 'Change data type', group: 'Column transformations' },
-  { kind: 'rename', label: 'Rename column', group: 'Column transformations' },
+  { kind: 'rename', label: 'Rename columns', group: 'Column transformations' },
   { kind: 'select', label: 'Select columns', group: 'Column transformations' },
-  { kind: 'append', label: 'Append', group: 'Combine' }, { kind: 'join', label: 'Join', group: 'Combine' },
+  { kind: 'append', label: 'Append', group: 'Combine transformations' }, { kind: 'join', label: 'Join', group: 'Combine transformations' },
   { kind: 'aggregate', label: 'Aggregate', group: 'Other' }, { kind: 'filter', label: 'Filter', group: 'Other' },
   { kind: 'pivot', label: 'Pivot', group: 'Other' }, { kind: 'unpivot', label: 'Unpivot', group: 'Other' },
 ];
