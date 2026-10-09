@@ -103,7 +103,11 @@ test('fixture definitions are explicitly a developer preview while the landing s
   assert.match(preview, /Definition preview only/);
   assert.match(preview, /No query is run/);
   const landing = render();
-  assert.doesNotMatch(landing, /Developer fixture preview|API definition preview/);
+  const more = /<div id="more-navigation" hidden="">[\s\S]*?<\/div>/;
+  assert.match(landing.match(more)?.[0] ?? '', /Developer fixture preview|API definition preview/);
+  assert.doesNotMatch(landing.replace(more, ''), /Developer fixture preview|API definition preview/);
   assert.doesNotMatch(landing, /Developer tool:|Phase 0 preview|Definition preview only/);
-  assert.doesNotMatch(render(hosted('author')), /API definition preview/);
+  const hostedLanding = render(hosted('author'));
+  assert.match(hostedLanding, more);
+  assert.doesNotMatch(hostedLanding.replace(more, ''), /API definition preview/);
 });

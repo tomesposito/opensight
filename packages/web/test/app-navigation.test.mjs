@@ -7,7 +7,7 @@ import { ROLES, hasCapability } from '@opensight/query-engine/browser';
 import { AccessProvider, demoAccess } from '../build/test/access.js';
 import { Application } from '../build/test/Application.js';
 import { AppNavigation } from '../build/test/AppNavigation.js';
-import { pages, parseRoute, routeHash } from '../build/test/app-navigation.js';
+import { pages, parseRoute, recordRecentPage, routeHash } from '../build/test/app-navigation.js';
 import { AuthorCanvas } from '../build/test/Author.js';
 import { LocalDrafts } from '../build/test/LocalDrafts.js';
 import { DataPrep } from '../build/test/DataPrep.js';
@@ -16,6 +16,7 @@ import { AISettings } from '../build/test/AISettings.js';
 import { UserManagement } from '../build/test/UserManagement.js';
 import { createDraftStore } from '../build/test/local-drafts.js';
 import { authorReducer, emptyDraft } from '../build/test/authoring.js';
+import { MyStuff, FolderEmptyState } from '../build/test/NavigationPages.js';
 
 const hosted = role => ({ mode: 'hosted', session: { id: 'test-user', namespaceId: 'test-workspace', name: 'User', role } });
 const accesses = [{ mode: 'local' }, demoAccess, ...ROLES.map(hosted), { mode: 'hosted' }, hosted('admin')];
@@ -24,7 +25,8 @@ for (const access of accesses) test(`product and secondary navigation preserve g
   const home = shell(access, 'home');
   const product = home.match(/<nav class="app-nav"[\s\S]*?<\/nav>/)[0];
   const canBuild = access.mode === 'local' || hasCapability(access.session?.role, 'build');
-  assert.match(product, />Home<\/a>/); assert.match(product, />Admin<\/a>/);
+  assert.match(product, />My stuff<\/a>/); assert.doesNotMatch(product, />Home<\/a>|>Admin<\/a>/);
+  assert.match(home, /aria-controls="more-navigation"/);
   for (const label of ['Analyses', 'Data']) assert.equal(product.includes(`>${label}</a>`), canBuild);
   assert.doesNotMatch(product, /Developer|fixtures|definition|AI provider|Users|Mode/);
   assert.equal(shell(access, 'author').includes('aria-label="Analyses"'), canBuild);
@@ -43,6 +45,19 @@ test('routes round-trip explicit draft URLs and reject malformed or unknown link
   for (const route of [{ page: 'author', draftId: 'saved-123' }, { page: 'author', newAnalysis: true }]) assert.deepEqual(parseRoute(routeHash(route)), route);
   assert.deepEqual(parseRoute(''), { page: 'home' });
   for (const hash of ['#/unknown', '#/analyses/drafts/', '#/analyses/drafts/%2F', '#/analyses/drafts/<script>', '#invite=abc']) assert.equal(parseRoute(hash), undefined);
+});
+
+test('session recents deduplicate, cap history, and exclude editor state and denied pages', () => {
+  const access = { mode: 'local' };
+  let history = [];
+  for (const page of ['home', 'my-stuff', 'analyses', 'data-prep', 'data-sources', 'my-folders', 'shared-folders']) history = recordRecentPage(history, page, access);
+  assert.deepEqual(history, ['shared-folders', 'my-folders', 'data-sources', 'data-prep', 'analyses', 'my-stuff']);
+  history = recordRecentPage(history, 'analyses', access);
+  assert.equal(history[0], 'analyses'); assert.equal(history.filter(page => page === 'analyses').length, 1);
+  assert.deepEqual(recordRecentPage(history, 'author', access), history);
+  assert.deepEqual(recordRecentPage(history, undefined, access), history);
+  assert.deepEqual(recordRecentPage(history, 'analyses', hosted('reader')), ['shared-folders', 'my-folders', 'my-stuff']);
+  assert.deepEqual(recordRecentPage([], 'api', demoAccess), []);
 });
 
 async function mount(t, access = demoAccess, hash = '#/home', seed) {
@@ -66,13 +81,78 @@ async function mount(t, access = demoAccess, hash = '#/home', seed) {
   t.after(async () => { await act(() => renderer.unmount()); globalThis.window = oldWindow; globalThis.IS_REACT_ACT_ENVIRONMENT = oldAct; });
   return { store, seeded, storage, location, get root() { return renderer.root; }, text: () => JSON.stringify(renderer.toJSON()),
     navigate: route => act(() => renderer.root.findByType(AppNavigation).props.navigate(route)),
-    link: async label => { const a = renderer.root.findAllByType('a').find(a => a.props.children === label); assert.ok(a, label); await act(() => a.props.onClick({ button: 0, preventDefault() {} })); },
+    link: async label => { const a = renderer.root.findAllByType('a').find(a => a.children.includes(label)); assert.ok(a, label); await act(() => a.props.onClick({ button: 0, preventDefault() {} })); },
     back: () => act(() => { location.hash = history[--position]; events.dispatchEvent(new Event('hashchange')); }),
     forward: () => act(() => { location.hash = history[++position]; events.dispatchEvent(new Event('hashchange')); }),
     reload: async () => { await act(() => renderer.unmount()); await act(() => { renderer = create(element); }); },
   };
 }
 const authored = title => authorReducer({ ...emptyDraft(), title }, { type: 'add', kind: 'bar' });
+
+for (const access of [{ mode: 'local' }, demoAccess, hosted('reader'), hosted('admin')]) test(`folder entry routes are honest and do not request data in ${access.mode}/${access.session?.role}`, async t => {
+  const ui = await mount(t, access, '#/folders/mine');
+  assert.equal(ui.root.findByType(FolderEmptyState).props.shared, false);
+  assert.match(ui.text(), /Folder browsing is not available here yet/);
+  assert.match(ui.text(), access.mode === 'hosted' ? /Your hosted folders have not been loaded/ : /need a hosted API/);
+  await ui.navigate({ page: 'shared-folders' });
+  assert.equal(ui.location.hash, '#/folders/shared');
+  assert.equal(ui.root.findByType(FolderEmptyState).props.shared, true);
+  await ui.reload(); assert.equal(ui.root.findByType(FolderEmptyState).props.shared, true);
+  await ui.link('About folders and sharing'); assert.equal(ui.location.hash, '#/admin/organization');
+  await ui.back(); assert.equal(ui.location.hash, '#/folders/shared');
+});
+
+test('My stuff starts empty and shows only real session visits with gated collection links', async t => {
+  const ui = await mount(t, { mode: 'local' }, '#/my-stuff');
+  const recent = () => ui.root.findByType(MyStuff).props.recentPages;
+  assert.deepEqual(recent(), []);
+  assert.match(ui.text(), /No recent pages yet/);
+  await ui.navigate({ page: 'my-folders' });
+  await ui.navigate({ page: 'shared-folders' });
+  await ui.navigate({ page: 'my-stuff' });
+  assert.deepEqual(recent(), ['shared-folders', 'my-folders']);
+  await ui.reload(); assert.deepEqual(recent(), []);
+  for (const access of [demoAccess, hosted('reader')]) {
+    const html = renderToStaticMarkup(createElement(AccessProvider, { access }, createElement(MyStuff, { recentPages: [], navigate() {} })));
+    assert.equal(html.includes('href="#/analyses"'), access.mode === 'demo');
+    assert.doesNotMatch(html, /href="#\/dashboards"/);
+  }
+});
+
+test('rail preserves reference order, groups Admin under More, and puts Recents last', async t => {
+  const ui = await mount(t, { mode: 'local' }, '#/my-stuff');
+  const navigation = () => ui.root.findByType(AppNavigation);
+  const rail = () => navigation().findByProps({ id: 'product-navigation' });
+  const product = rail().findByProps({ 'aria-label': 'Product' });
+  assert.deepEqual(product.findAllByType('a').map(link => link.children.at(-1)), ['My stuff', 'Analyses', 'Dashboards', 'Data', 'My folders', 'Shared folders']);
+  assert.equal(product.findAllByType('button')[0].props['aria-label'], 'Search navigation and commands');
+  assert.equal(rail().children.at(-1).props['aria-label'], 'Recents');
+  assert.equal(rail().findByProps({ id: 'more-navigation' }).props.hidden, true);
+  await act(() => rail().findByProps({ className: 'rail-more' }).props.onClick());
+  assert.equal(rail().findByProps({ id: 'more-navigation' }).props.hidden, false);
+  await ui.link('Security & namespaces');
+  assert.equal(ui.location.hash, '#/admin/security');
+  assert.equal(rail().findByProps({ id: 'more-navigation' }).props.hidden, false);
+  assert.deepEqual(navigation().props.recentPages, ['my-stuff']);
+  const breadcrumb = navigation().findByProps({ 'aria-label': 'Breadcrumb' });
+  assert.deepEqual(breadcrumb.findAllByType('a').map(link => link.children[0]), ['Home', 'Admin']);
+  assert.equal(breadcrumb.findByProps({ className: 'header-caption' }).props.children, 'Security & namespaces');
+  await ui.reload(); assert.equal(rail().findByProps({ id: 'more-navigation' }).props.hidden, false);
+});
+
+test('account disclosure presents the real hosted identity and invokes existing sign out', async t => {
+  let signOuts = 0;
+  const ui = await mount(t, { ...hosted('author'), signOut: async () => { signOuts++; } }, '#/my-stuff');
+  const account = ui.root.findByType(AppNavigation).findByType('details');
+  assert.equal(account.findByType('summary').props['aria-label'], 'Account');
+  assert.equal(account.findByType('strong').props.children, 'User');
+  await act(() => account.findByType('button').props.onClick());
+  assert.equal(signOuts, 1);
+  let focused = false;
+  const node = { open: true, querySelector: () => ({ focus() { focused = true; } }) };
+  account.props.onKeyDown({ key: 'Escape', currentTarget: node });
+  assert.equal(node.open, false); assert.equal(focused, true);
+});
 
 test('Analyses lists the #32 collection, renames/deletes it, and opens its exact saved chart', async t => {
   const ui = await mount(t, demoAccess, '#/analyses', store => [store.save(authored('First chart')), store.save(authored('Second chart'))]);
@@ -147,7 +227,7 @@ for (const role of ['reader', 'reader_ai', undefined]) test(`direct URLs cannot 
 test('unknown URLs have recovery links and product navigation works through browser history', async t => {
   const ui = await mount(t, demoAccess, '#/unknown');
   assert.match(ui.text(), /Page not found/);
-  await ui.link('Home'); await ui.link('Analyses'); await ui.link('Data'); await ui.link('Admin');
+  await ui.link('Home'); await ui.link('Analyses'); await ui.link('Data'); await ui.link('Security & namespaces');
   assert.match(ui.text(), /Security & namespaces/);
   await ui.back(); assert.equal(ui.location.hash, '#/data/preparation');
   await ui.back(); assert.equal(ui.location.hash, '#/analyses');
@@ -159,8 +239,9 @@ test('Issue #35: the product header names OpenSight and the current page after #
     for (const page of ['home', 'author', 'fixtures']) {
       const html = shell(access, page);
       assert.match(html, /class="brand"[^>]*>[\s\S]*?OpenSight<\/a>/);
-      assert.ok(html.includes(`<span class="header-caption">${pages[page].title}</span>`));
-      for (const label of ['Home', 'Analyses', 'Data', 'Admin']) assert.ok(html.includes(`>${label}</a>`));
+      assert.match(html, /aria-label="Breadcrumb"/);
+      if (page !== 'home') assert.ok(html.includes(`<span class="header-caption" aria-current="page">${pages[page].title}</span>`));
+      for (const label of ['Home', 'My stuff', 'Analyses', 'Data']) assert.ok(html.includes(`>${label}</a>`));
       assert.doesNotMatch(html, /Definition explorer/);
     }
   }

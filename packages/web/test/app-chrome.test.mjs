@@ -40,7 +40,7 @@ describe('application shell geometry in offline Chromium', () => {
   let page;
   before(async () => { page = await chromiumPage(); });
   after(async () => { await page?.close(); });
-  for (const width of [1920, 1440, 1100, 760, 390]) for (const route of ['home', 'analyses', 'data-prep', 'author']) {
+  for (const width of [1920, 1440, 1100, 760, 390]) for (const route of ['home', 'my-stuff', 'my-folders', 'shared-folders', 'analyses', 'data-prep', 'author']) {
     test(`${route} at ${width}px keeps navigation and content within the viewport`, async () => {
       await page.setViewportSize({ width, height: 900 });
       const html = renderToStaticMarkup(h('div', { className: 'app-shell', 'data-page': route },
@@ -69,6 +69,19 @@ describe('application shell geometry in offline Chromium', () => {
       }
     });
   }
+  test('a short viewport scrolls the expanded rail through its last recent link', async () => {
+    await page.setViewportSize({ width: 390, height: 360 });
+    const html = renderToStaticMarkup(h('div', { className: 'app-shell' }, h(AppNavigation, { route: { page: 'security' }, recentPages: ['home', 'analyses', 'my-stuff', 'my-folders', 'shared-folders'], navigate() {} })));
+    await page.setContent(`<style>${css}</style>${html}`);
+    const actual = await page.evaluate(() => {
+      const rail = document.querySelector('.product-navigation'); rail.dataset.open = 'true';
+      const last = rail.querySelector('.rail-recents a:last-child'); last.scrollIntoView({ block: 'end' });
+      const box = last.getBoundingClientRect();
+      return { scrollable: rail.scrollHeight > rail.clientHeight, scroll: rail.scrollTop, bottom: box.bottom, top: box.top, overflow: getComputedStyle(rail).overflowY };
+    });
+    assert.equal(actual.scrollable, true); assert.ok(actual.scroll > 0); assert.equal(actual.overflow, 'auto');
+    assert.ok(actual.bottom <= 360 && actual.top >= 48);
+  });
 });
 
 describe('collection card responsiveness', () => {

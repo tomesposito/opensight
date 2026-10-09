@@ -2,6 +2,9 @@ import { allowed, type Access } from './access.js';
 
 export const pages = {
   home: { path: '/home', section: 'Home', title: 'Home' },
+  'my-stuff': { path: '/my-stuff', section: 'My stuff', title: 'My stuff' },
+  'my-folders': { path: '/folders/mine', section: 'My folders', title: 'My folders' },
+  'shared-folders': { path: '/folders/shared', section: 'Shared folders', title: 'Shared folders' },
   dashboards: { path: '/dashboards', section: 'Dashboards', title: 'Dashboards' },
   analyses: { path: '/analyses', section: 'Analyses', title: 'My analyses' },
   author: { path: '/analyses/author', section: 'Analyses', title: 'Author' },
@@ -18,12 +21,21 @@ export const pages = {
 export type Page = keyof typeof pages;
 export type AppRoute = { page: Page; draftId?: string; newAnalysis?: boolean };
 export const productSections = [
-  { title: 'Home', page: 'home' }, { title: 'Analyses', page: 'analyses' }, { title: 'Dashboards', page: 'dashboards' },
-  { title: 'Data', page: 'data-prep' }, { title: 'Admin', page: 'security' },
+  { title: 'My stuff', page: 'my-stuff' },
+  { title: 'Analyses', page: 'analyses' }, { title: 'Dashboards', page: 'dashboards' },
+  { title: 'Data', page: 'data-prep' },
+  { title: 'My folders', page: 'my-folders' }, { title: 'Shared folders', page: 'shared-folders' },
 ] as const;
 export const dataPages: Page[] = ['data-prep', 'data-sources'];
 export const adminPages: Page[] = ['security', 'organization', 'automation', 'ai-settings', 'users'];
 export const developerPages: Page[] = ['fixtures', 'api'];
+
+/** Session-only page history. Never retain a draft URL or imply asset activity. */
+export function recordRecentPage(recents: readonly Page[], page: Page | undefined, access: Access): Page[] {
+  const permitted = recents.filter(item => item !== 'author' && !routeProblem(access, item));
+  if (!page || page === 'author' || routeProblem(access, page)) return permitted;
+  return [page, ...permitted.filter(item => item !== page)].slice(0, 6);
+}
 
 export function visiblePage(access: Access, page: Page): boolean {
   if (page === 'dashboards') return access.mode === 'local';
