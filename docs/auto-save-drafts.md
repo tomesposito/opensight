@@ -4,6 +4,8 @@ Author saves local draft definitions 2 seconds after the last change. Further
 edits restart the timer; leaving Author cancels it. The current draft is read
 when the timer fires. There is no background retry after a failure: another
 edit arms a new attempt, and **Save draft** remains available at any time.
+An untouched, unbound local canvas is not auto-saved: visiting Author leaves
+My analyses empty until you edit or explicitly save an analysis.
 
 The quiet indicator beside Save draft shows **Unsaved changes**, **Saving…**,
 then **Saved · HH:MM** in 24-hour local time. It remains Unsaved changes after

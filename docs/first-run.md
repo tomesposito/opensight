@@ -32,13 +32,17 @@ The API's logical session route is `/api/session`; the default web client reques
 `/api/api/session` and the dev proxy strips the first `/api` prefix.
 
 The default CLI advertises an explicit local-data capability. The web app opens
-a **Local workspace**, where **Home** displays the pinned synthetic sales sample
-(fixed East-region filter, no live query). Open **Data → Data sources** to upload
+a **Local workspace** with empty Home, Author, Analyses and Dashboards pages.
+Use **Upload or connect data**, or explicitly **Try sample data** to explore the
+labeled synthetic sales dataset. **Remove sample data** restores the empty
+Home and unbound Author; saved drafts and uploaded data are retained. The sample
+opt-in lasts until this tab reloads. Open **Data → Data sources** to upload
 a CSV, select **Prepare this upload**, then **Save pipeline → Build a chart**.
 In Author, **Add visual**, assign fields, and **Save draft**; reopen through
 **Analyses → My analyses**. [Draft definitions](local-drafts.md) stay in this
 browser and origin, without uploaded rows, sync or publication. This local path
-needs no hosted session. Uploads expire after 24 hours or restart. `/api/session` still
+needs no hosted session. Uploads survive API restarts and expire after 24 hours; see the
+[local database location](local-data.md). `/api/session` still
 returns `503 SECURITY_NOT_CONFIGURED`; local capability discovery is separate.
 
 A library API without either local-data opt-in or authentication instead shows

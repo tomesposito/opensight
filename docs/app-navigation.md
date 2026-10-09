@@ -1,13 +1,16 @@
 # App navigation
 
-The application opens **Home**, the pinned sample dashboard from issue #28.
-The shared header provides Home, Analyses, Data, and Admin, with an active
-section and a title for the current screen. This implements the issue #31 run
-brief; `SOLUTION_DESIGN.md` is unchanged.
+The local application opens an empty **Home**, ready to upload data. **Try sample
+data** explicitly enables the labeled sales sample from issue #28. The static
+demo retains its staged showcase. The shared header provides Home, Analyses,
+Data, and Admin, plus **Dashboards** in local mode, with an active section and a
+title for the current screen. Issues #31 and #55 define this navigation;
+`SOLUTION_DESIGN.md` is unchanged.
 
 | Section | Screen | Former mode |
 | --- | --- | --- |
-| Home | Sample dashboard | sample |
+| Home | Local: add data or opt into a sample; demo: sample dashboard | sample |
+| Dashboards (local only) | Empty list; publishing needs hosted API | — |
 | Analyses | My analyses: device-local draft list | Local drafts in Author (#32) |
 | Analyses | Author workspace | author |
 | Data | Data preparation; Data sources | data-prep; data-sources |
@@ -26,7 +29,7 @@ or shared analyses. See [local drafts](local-drafts.md).
 
 ## Visibility and permissions
 
-Home and Admin are available in all three modes. Analyses and Data require
+Home and Admin are available in all three modes. Dashboards is local-only. Analyses and Data require
 the existing `allowed(access, 'build')` check: local and demo users can build;
 hosted authors and administrators can build; hosted readers cannot.
 
@@ -41,7 +44,7 @@ the default landing. Direct links apply the same gates before mounting a screen.
 
 ## URLs and browser history
 
-Routes use URL fragments (`#/home`, `#/analyses`, `#/analyses/new`,
+Routes use URL fragments (`#/home`, `#/dashboards` (local only), `#/analyses`, `#/analyses/new`,
 `#/analyses/author`, `#/analyses/drafts/<id>`, `#/data/preparation`,
 `#/data/sources`, and `#/admin/...`). They work in both the static single-file
 demo and the connected app without server rewrite rules or a routing dependency.
