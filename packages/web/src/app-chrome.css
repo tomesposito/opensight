@@ -58,3 +58,47 @@
   .product-header .fixture-picker { flex-basis: 100%; justify-content: space-between; }
   .home-page > .local-empty-state { margin: 24px 0; padding: 16px; }
 }
+
+/* Collection pages share a heading, introductory banner and a flat content card. */
+.collection-page > h1 { margin: 0 0 20px; }
+.collection-banner { display: flex; align-items: center; justify-content: space-between; gap: 24px; min-height: 168px; padding: 24px; margin-bottom: 24px; border-radius: 6px; background: #162e40; color: #fff; }
+.collection-banner > div { max-width: 620px; }
+.collection-banner h2 { font-size: 16px; font-weight: 500; margin: 0 0 8px; }
+.collection-banner p { font-size: 13px; color: #d0e0e8; margin: 0 0 12px; }
+.collection-banner > svg { flex: 0 1 240px; width: 28%; min-width: 140px; max-height: 120px; }
+.collection-banner button { border: 1px solid #72d3d4; border-radius: 4px; background: transparent; color: #fff; min-height: 28px; padding: 4px 12px; font-size: 12px; }
+.collection-banner button:hover { background: #365764; }
+.collection-card { padding: 16px; background: #fff; border: 1px solid #d1e0e5; border-radius: 6px; box-shadow: 0 1px 3px #183b4b0a; min-width: 0; }
+.collection-tools { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-bottom: 16px; }
+.collection-tools .primary-button, .collection-card .primary-button { display: inline-block; padding: 6px 12px; border: 1px solid #157f88; border-radius: 4px; background: #157f88; color: #fff; font-size: 12px; text-decoration: none; }
+.collection-card button, .collection-card select, .collection-card input { min-height: 28px; padding: 4px 8px; border: 1px solid #b9ced5; border-radius: 4px; background: #fff; color: #19384a; font: inherit; font-size: 12px; }
+.collection-card button:hover:not(:disabled) { background: #eaf4f4; }
+.collection-card .empty-state-secondary { border: 0; }
+.collection-card .empty-page-state { min-height: 300px; }
+.analyses-home .draft-collection { margin: 0; padding: 0; border: 0; }
+.draft-collection-tools { display: flex; align-items: end; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
+.draft-collection-tools label { display: grid; gap: 4px; font-size: 12px; width: min(360px, 65%); }
+.collection-card input { min-width: 0; width: 100%; }
+.collection-table-scroll { overflow: auto; }
+.collection-table-scroll table { min-width: 600px; font-size: 12px; }
+.collection-table-scroll th { padding: 8px 12px; background: #f3f7f8; border-bottom: 1px solid #d1e0e5; color: #365764; }
+.collection-table-scroll td { padding: 8px 12px; }
+.collection-table-scroll td:first-child { width: 48%; overflow-wrap: anywhere; max-width: 360px; }
+.collection-table-scroll td:nth-child(2) { white-space: nowrap; }
+.collection-table-scroll strong { font-weight: 500; }
+.collection-row-actions { display: flex; gap: 8px; }
+.collection-badge { display: inline-block; font-size: 10px; margin-left: 8px; padding: 1px 6px; background: #eaf4f4; border-radius: 3px; color: #126e76; }
+.collection-pagination { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 16px; font-size: 12px; }
+.collection-pagination > span:first-child { margin-right: auto; }
+.collection-pagination label { display: flex; align-items: center; gap: 8px; }
+.collection-pagination button { min-width: 28px; }
+.collection-note { color: #526c7a; margin: 16px 0 0; font-size: 11px; }
+.collection-no-results { text-align: center; padding: 32px 16px; }
+.collection-card .draft-rename { margin-top: 16px; padding-top: 16px; border-top: 1px solid #d1e0e5; }
+.collection-card .draft-rename label { display: grid; gap: 4px; }
+@media (max-width: 760px) {
+  .collection-banner { padding: 20px; gap: 16px; }
+  .collection-banner > svg { display: none; }
+  .collection-card { padding: 12px; }
+  .collection-pagination > span:first-child { flex-basis: 100%; }
+}

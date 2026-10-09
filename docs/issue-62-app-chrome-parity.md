@@ -43,3 +43,19 @@ Its compact heading, notice, tabs and flat cards follow the landing reference's
 content rhythm. At 1440×900 its chart cards start at y=301 instead of y=377.
 The 2026 reference's chat-first Home and tasks/activity widgets have no
 corresponding shipped capability; no simulated widgets were introduced.
+
+### Analyses
+
+The page now has a single heading, a dismissible OpenSight introduction banner
+and a white collection card. Populated drafts use Name / Last updated / Actions
+columns, name search and real 25/50-item pagination. Device-local storage and
+sample labels remain explicit. Empty and corrupt collections keep their prior
+recovery guidance. The Author's small draft disclosure keeps its list format.
+Banner dismissal returns keyboard focus to the heading; table overflow stays
+inside a labeled scroll region on narrow screens.
+
+Validation: 38 targeted tests passed, including row actions, pagination after
+removal, search, corrupt drafts and existing creation/reopen flows. The offline
+browser tour exercised dataset selection, save, search, rename, reload, delete,
+banner focus, navigation Escape/backdrop, and 1440/1100/760/390px screenshots,
+with zero page errors or external requests.
