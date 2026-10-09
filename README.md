@@ -40,6 +40,12 @@ npm run dev --workspace @opensight/web
 Open **[http://127.0.0.1:5173](http://127.0.0.1:5173)**. Leave both terminals
 running; stop each with Ctrl+C when finished.
 
+**To test the hosted sign-in screen locally** (email/password + TOTP, real auth
+flow, no hosted deployment): run `npm run dev:hosted` from the repository root
+instead of the two terminals above. It generates gitignored `.env` dev
+credentials, provisions a local dev tenant and admin, and serves the app and API
+on one port. See `docs/dev-hosted.md` for the URL and TOTP setup.
+
 On first load, the app checks the API and opens **Local workspace** without
 sign-in. **Home**, **Author**, **Analyses** and **Dashboards** start empty.
 Choose **Upload or connect data** to begin, or explicitly **Try sample data**
