@@ -119,3 +119,16 @@ test('Issue #63: cancelled or superseded login responses cannot restore credenti
     assert.equal(seen.headers.Authorization, undefined);
   }
 });
+
+test('Issue #63: session verification completing after its deadline cannot establish access', async t => {
+  t.mock.timers.enable({apis:['Date'],now:1_800_000_000_000});
+  let calls=0;
+  const client=createApiClient('/',async(url)=>{
+    calls++;
+    if(url.endsWith('/login'))return Response.json({token:token(),expiresAt:Date.now()+SHORT_SESSION_MS,tenantId:'workspace'});
+    t.mock.timers.tick(SHORT_SESSION_MS);
+    return Response.json(identity);
+  });
+  await assert.rejects(client.login(input(),false),{errorCode:'SESSION_EXPIRED'});
+  assert.equal(calls,2);
+});

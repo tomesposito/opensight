@@ -121,6 +121,7 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
       const session = await getSession(signal);
       if (current !== generation || signal?.aborted) throw new ApiError('Sign-in cancelled.', undefined, 'AUTH_REQUEST_SUPERSEDED');
       if (session.tenantId !== input.tenantId) throw new ApiError('Invalid authentication response.', undefined, 'AUTH_RESPONSE_INVALID');
+      if (expiresAt <= Date.now()) throw new ApiError('Your session has expired.', 401, 'SESSION_EXPIRED');
       return { session, expiresAt };
     } catch (error) {
       if (current === generation) clearSession();
