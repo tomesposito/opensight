@@ -143,6 +143,7 @@ function AuthorWorkspace({ renderIdentity, sampleLoaded = false, onTrySample, cl
     draft={draft} dispatch={dispatch} oEntry={trigger} dataAvailable={!noData} fit={fit}
     onFit={() => setFit(value => !value)} onJson={download}
     onBundle={() => { if (!busy) void downloadQs(); }} onImport={() => fileInput.current?.click()}
+    favorite={drafts.favorite} onFavorite={() => { if (drafts.toggleFavorite()) notify(drafts.favorite ? 'Removed from Favorites' : 'Added to Favorites on this device'); }}
     busy={busy} jsonDisabled={!!exported.error} autosaveError={drafts.autoError ?? undefined} />;
   if (drafts.openingError) return <>{renderIdentity?.(null)}<section><h1>Unable to open analysis</h1><p role="alert">{drafts.openingError}</p><p>Return to My analyses to refresh the list or choose another draft.</p></section></>;
   const titleControl = <label className="analysis-title"><span className="sr-only">Analysis title</span><input value={draft.title} onChange={e => dispatch({ type: 'analysis-title', title: e.target.value })} /></label>;

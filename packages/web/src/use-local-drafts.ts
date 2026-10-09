@@ -79,6 +79,15 @@ export function useLocalDrafts(access: Access, dataset?: AuthorDataset, opening?
       setMessage('Draft saved on this device.'); refresh(); return true;
     } catch (error) { failed(error); return false; }
   };
+  const favorite = !!entries.find(entry => entry.id === id)?.favorite;
+  const toggleFavorite = () => {
+    clearTimer();
+    try {
+      const current = draftRef.current, next = store.favorite(current, idRef.current, !favorite);
+      synced(next, JSON.stringify(current), store.restore()); setRecoveredAt(null);
+      setMessage(favorite ? 'Removed from Favorites on this device.' : 'Saved to Favorites on this device.'); refresh(); return true;
+    } catch (error) { failed(error); return false; }
+  };
   // Switching analyses checkpoints meaningful edits; failed saves keep the editor intact.
   const keepCurrent = () => !dirty || (!id && JSON.stringify({ ...draft, dataset: undefined }) === JSON.stringify(emptyDraft())) || save();
   const replace = (next: AuthorDraft) => {
@@ -118,5 +127,5 @@ export function useLocalDrafts(access: Access, dataset?: AuthorDataset, opening?
     try { store.discardAutosave(id); setRecoveredAt(null); refresh(); }
     catch (error) { failed(error); }
   };
-  return { draft, dispatch, id, dirty, message, entries, refresh, save, keepCurrent, replace, open, rename, remove, autoState, savedAt, autoError, recoveredAt, dismissRecovery, openingError: initial.openingError };
+  return { draft, dispatch, id, favorite, toggleFavorite, dirty, message, entries, refresh, save, keepCurrent, replace, open, rename, remove, autoState, savedAt, autoError, recoveredAt, dismissRecovery, openingError: initial.openingError };
 }

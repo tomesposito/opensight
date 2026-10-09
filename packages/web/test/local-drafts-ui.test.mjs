@@ -129,3 +129,24 @@ test('Issue #35: first-run Author has no restore failure; unreadable drafts expl
     assert.equal(ui.button('Export JSON').props['aria-disabled'], false);
   }
 });
+
+test('File favorites save current edits, survive reload, filter the collection and can be removed', async t => {
+  const ui = await mount(t);
+  await act(() => ui.find('input', p => p.value === 'Untitled analysis').props.onChange({ target: { value: 'Favorite analysis' } }));
+  await ui.click('Add to Favorites');
+  assert.equal(ui.store.restore().draft.title, 'Favorite analysis');
+  assert.equal(ui.store.list()[0].favorite, true);
+  await ui.reload(); assert.ok(ui.button('Remove from Favorites'));
+  await act(() => ui.renderer.root.findByType(LocalDrafts).findByProps({ type: 'checkbox' }).props.onChange({ target: { checked: true } }));
+  assert.equal(ui.renderer.root.findByType(LocalDrafts).findAllByType('li').length, 1);
+  await ui.click('Remove from Favorites');
+  assert.equal(ui.renderer.root.findByType(LocalDrafts).findAllByType('li').length, 0);
+  assert.match(ui.text(), /No favorite analyses yet/);
+});
+test('favorite storage failure keeps the current analysis and never claims success', async t => {
+  const ui = await mount(t, {}, { mode: 'local' }, true);
+  await ui.click('Add to Favorites');
+  assert.match(ui.text(), /Browser storage is blocked/);
+  assert.ok(ui.button('Add to Favorites'));
+  assert.doesNotMatch(ui.text(), /Saved to Favorites/);
+});

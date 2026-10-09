@@ -163,3 +163,32 @@ test('save-kind metadata rejects non-ISO strings and unknown keys without overwr
     }
   }
 });
+
+test('favorites start empty, persist through edits and reload, and disappear on deletion', () => {
+  const { store, storage } = setup();
+  assert.deepEqual(store.list(), []);
+  const id = store.favorite(draft('Favorite'), undefined, true);
+  assert.equal(createDraftStore(storage, access).list()[0].favorite, true);
+  store.autosave(draft('Edited'), id, store.restore().manualSavedAt);
+  store.save(draft('Saved'), id); store.rename(id, 'Renamed');
+  assert.equal(store.list()[0].favorite, true);
+  store.favorite(draft('Removed'), id, false);
+  assert.equal(store.list()[0].favorite, undefined);
+  store.favorite(draft('Again'), id, true); store.delete(id);
+  assert.deepEqual(store.list(), []);
+  assert.throws(() => store.favorite(draft('Deleted'), id, true), /no longer exists/);
+});
+test('favorites follow mode, namespace and principal isolation; corrupt metadata and failed writes are preserved', () => {
+  const { storage, values, store } = setup();
+  const hosted = { mode: 'hosted', session: { namespaceId: 'one', id: 'alice' } };
+  createDraftStore(storage, hosted).favorite(draft('Private'), undefined, true);
+  for (const scope of [access, { mode: 'demo' }, { ...hosted, session: { namespaceId: 'two', id: 'alice' } }, { ...hosted, session: { namespaceId: 'one', id: 'bob' } }]) assert.deepEqual(createDraftStore(storage, scope).list(), []);
+  const id = store.save(draft('Original')), before = new Map(values);
+  const failing = createDraftStore(() => ({ ...storage(), setItem() { throw new DOMException('', 'QuotaExceededError'); } }), access);
+  assert.throws(() => failing.favorite(draft('Unsaved edit'), id, true), /QuotaExceededError/);
+  assert.deepEqual(values, before);
+  const key = draftStorageKey(access), collection = JSON.parse(values.get(key));
+  collection.entries[0].favorite = 'true'; values.set(key, JSON.stringify(collection));
+  assert.throws(() => store.favorite(draft('Overwrite'), id, true), /could not be read/);
+  assert.equal(values.get(key), JSON.stringify(collection));
+});

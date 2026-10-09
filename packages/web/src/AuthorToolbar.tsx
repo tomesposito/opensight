@@ -25,7 +25,7 @@ export function focusAuthorControl(nav: HTMLElement | null, selector: string, ta
   target?.focus();
   return target;
 }
-export function AuthorToolbar({ onPrep, onSources, draft, dispatch, fit, onFit, onJson, onBundle, onImport, oEntry, dataAvailable = true, busy = false, jsonDisabled = false, autosaveError }: { autosaveError?: string; dataAvailable?: boolean; onSources?: () => void; onPrep?: () => void; oEntry?: ReactNode; busy?: boolean; jsonDisabled?: boolean; draft: AuthorDraft; dispatch: Dispatch<AuthorAction>; fit: boolean; onFit: () => void; onJson: () => void; onBundle: () => void; onImport: () => void }) {
+export function AuthorToolbar({ onPrep, onSources, draft, dispatch, fit, onFit, onJson, onBundle, onImport, oEntry, dataAvailable = true, busy = false, jsonDisabled = false, autosaveError, favorite = false, onFavorite }: { favorite?: boolean; onFavorite?: () => void; autosaveError?: string; dataAvailable?: boolean; onSources?: () => void; onPrep?: () => void; oEntry?: ReactNode; busy?: boolean; jsonDisabled?: boolean; draft: AuthorDraft; dispatch: Dispatch<AuthorAction>; fit: boolean; onFit: () => void; onJson: () => void; onBundle: () => void; onImport: () => void }) {
   const access = useAccess();
   const notify = useToast();
   const [notice, setNotice] = useState('');
@@ -49,7 +49,7 @@ export function AuthorToolbar({ onPrep, onSources, draft, dispatch, fit, onFit, 
       if (e.key === 'Escape') { const menu = (e.target as HTMLElement).closest('details'); if (menu) { e.preventDefault(); e.stopPropagation(); menu.open = false; menu.querySelector('summary')?.focus(); } }
     }} onClick={e => { const button = (e.target as HTMLElement).closest('button'); if (button && button.getAttribute('aria-disabled') !== 'true' && !button.hasAttribute('data-menu-keep-open')) { const menu = button.closest('details'); if (menu) { if (menu.contains(menu.ownerDocument.activeElement)) menu.querySelector('summary')?.focus(); menu.open = false; } } }}>
       <AuthorMenu name="File">
-        <AuthorMenuItem label="Add to Favorites" reason="Analysis favorites are not supported yet." />
+        <AuthorMenuItem label={favorite ? "Remove from Favorites" : "Add to Favorites"} run={onFavorite} reason={!onFavorite ? "Favorites need an open analysis on this device." : undefined} />
         <AuthorMenuItem label="Publish" run={publish} />
         <AuthorMenuItem label="Save as Analysis" reason="Saving a separate analysis copy is not supported yet. Save draft updates the draft on this device." />
         <hr />

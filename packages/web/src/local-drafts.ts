@@ -6,9 +6,9 @@ export const MAX_DRAFTS = 20;
 // UTF-16 strings: at most 4 MiB, leaving room under typical 5 MiB quotas.
 export const MAX_DRAFT_CHARS = 2 * 1024 * 1024;
 export type DraftStorage = () => Pick<Storage, 'getItem' | 'setItem'>;
-interface Entry { id: string; updatedAt: string; draft: unknown; manualSavedAt?: string; autoSavedAt?: string }
+interface Entry { id: string; updatedAt: string; draft: unknown; manualSavedAt?: string; autoSavedAt?: string; favorite?: boolean }
 interface Collection { version: 1; activeId: string | null; entries: Entry[] }
-export interface DraftSummary { id: string; name: string; updatedAt: string; hasPendingAutosave: boolean; sample?: boolean; problem?: string }
+export interface DraftSummary { id: string; name: string; updatedAt: string; hasPendingAutosave: boolean; sample?: boolean; favorite?: boolean; problem?: string }
 const object = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 const keys = (v: Record<string, unknown>, allowed: string[]) => Object.keys(v).every(k => allowed.includes(k));
 const isoDate = (v: unknown): v is string => typeof v === 'string' && Number.isFinite(Date.parse(v)) && new Date(v).toISOString() === v;
@@ -54,8 +54,8 @@ export function createDraftStore(storage: DraftStorage, access: Access) {
     if (!object(value) || !keys(value, ['version', 'activeId', 'entries']) || value.version !== 1 || !Array.isArray(value.entries) || value.entries.length > MAX_DRAFTS) throw invalid();
     const ids = new Set<string>();
     for (const e of value.entries) {
-      if (!object(e) || !keys(e, ['id', 'updatedAt', 'draft', 'manualSavedAt', 'autoSavedAt']) || typeof e.id !== 'string' || !/^[a-zA-Z0-9-]{1,80}$/.test(e.id) || ids.has(e.id) || !isoDate(e.updatedAt)
-        || ('manualSavedAt' in e && !isoDate(e.manualSavedAt)) || ('autoSavedAt' in e && !isoDate(e.autoSavedAt))) throw invalid();
+      if (!object(e) || !keys(e, ['id', 'updatedAt', 'draft', 'manualSavedAt', 'autoSavedAt', 'favorite']) || typeof e.id !== 'string' || !/^[a-zA-Z0-9-]{1,80}$/.test(e.id) || ids.has(e.id) || !isoDate(e.updatedAt)
+        || ('manualSavedAt' in e && !isoDate(e.manualSavedAt)) || ('autoSavedAt' in e && !isoDate(e.autoSavedAt)) || ('favorite' in e && typeof e.favorite !== 'boolean')) throw invalid();
       ids.add(e.id);
     }
     if (value.activeId !== null && (typeof value.activeId !== 'string' || !ids.has(value.activeId))) throw invalid();
@@ -76,7 +76,7 @@ export function createDraftStore(storage: DraftStorage, access: Access) {
     catch { throw new Error('This saved analysis is unreadable in this version of OpenSight. Import an exported .qs or JSON copy, or choose another analysis. You can delete this entry from Local drafts.'); }
   };
   const list = (): DraftSummary[] => read().entries.map(e => {
-    const summary = { id: e.id, updatedAt: e.updatedAt, hasPendingAutosave: pendingAutosave(e) };
+    const summary = { id: e.id, updatedAt: e.updatedAt, hasPendingAutosave: pendingAutosave(e), ...(e.favorite ? { favorite: true } : {}) };
     try { const draft = checked(e); return { ...summary, name: draft.title.trim() || 'Untitled analysis', ...(access.mode === 'local' && !draft.dataset && !draft.bundle && draft.sheets.some(s => s.visuals.length) ? { sample: true } : {}) }; }
     catch (error) { return { ...summary, name: 'Unreadable draft', problem: (error as Error).message }; }
   }).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.id.localeCompare(b.id));
@@ -86,13 +86,14 @@ export function createDraftStore(storage: DraftStorage, access: Access) {
     const e = entry(collection, collection.activeId);
     return { id: e.id, draft: checked(e), manualSavedAt: e.manualSavedAt, autoSavedAt: e.autoSavedAt };
   };
-  const save = (draft: AuthorDraft, id?: string) => {
+  const save = (draft: AuthorDraft, id?: string, favorite?: boolean) => {
     validateDraft(draft);
     const collection = read();
+    const previous = id ? entry(collection, id) : undefined;
     if (id) entry(collection, id); // Deleted in another tab: never silently resurrect it.
     else if (collection.entries.length >= MAX_DRAFTS) throw new Error(`Local draft limit (${MAX_DRAFTS}) reached. Delete a draft before saving a new analysis.`);
     const now = new Date().toISOString();
-    const saved: Entry = { id: id ?? crypto.randomUUID(), updatedAt: now, manualSavedAt: now, draft };
+    const saved: Entry = { id: id ?? crypto.randomUUID(), updatedAt: now, manualSavedAt: now, draft, ...((favorite ?? previous?.favorite) ? { favorite: true } : {}) };
     write({ version: 1, activeId: saved.id, entries: [...collection.entries.filter(e => e.id !== saved.id), saved] });
     return saved.id;
   };
@@ -103,11 +104,12 @@ export function createDraftStore(storage: DraftStorage, access: Access) {
     if (previous?.manualSavedAt && (!lastSyncedAt || previous.manualSavedAt > lastSyncedAt)) throw new Error('This draft was saved in another tab. Reload to keep editing.');
     if (!id && collection.entries.length >= MAX_DRAFTS) throw new Error(`Local draft limit (${MAX_DRAFTS}) reached. Delete a draft before saving a new analysis.`);
     const now = new Date().toISOString();
-    const saved: Entry = { id: id ?? crypto.randomUUID(), updatedAt: now, autoSavedAt: now, ...(previous?.manualSavedAt ? { manualSavedAt: previous.manualSavedAt } : {}), draft };
+    const saved: Entry = { id: id ?? crypto.randomUUID(), updatedAt: now, autoSavedAt: now, ...(previous?.manualSavedAt ? { manualSavedAt: previous.manualSavedAt } : {}), ...(previous?.favorite ? { favorite: true } : {}), draft };
     write({ version: 1, activeId: saved.id, entries: [...collection.entries.filter(e => e.id !== saved.id), saved] });
     return saved.id;
   };
   return { list, restore, save, autosave,
+    favorite(draft: AuthorDraft, id: string | undefined, value: boolean) { return save(draft, id, value); },
     discardAutosave(id: string) {
       const collection = read(), e = entry(collection, id);
       const { autoSavedAt: _autoSavedAt, ...saved } = e;
