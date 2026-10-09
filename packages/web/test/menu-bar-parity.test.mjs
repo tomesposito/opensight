@@ -127,3 +127,20 @@ test('Sheets retains add and switching, offers rename, and explains unsupported 
   await ui.update({ dataAvailable: false });
   assert.equal(ui.item('Sheets', 'Rename Sheet').props['aria-disabled'], false, 'sheet tabs also exist before adding data');
 });
+
+const objectItems = ['Format Object', 'Field Wells', 'Title', 'Subtitle', 'Data Labels', 'Legend', 'Conditional Formatting', 'Tooltips', 'Highlights', 'Reference Lines', 'Actions', 'Placement', 'Style', 'Rules', 'Forecast', 'Anomaly', 'Export Visual to CSV', 'Export Table to Excel'];
+test('Objects exposes every reference item, retains selection/removal and gates absent visual capabilities', async t => {
+  const ui = await mount(t);
+  assert.deepEqual(ui.labels('Objects').slice(0, 18), objectItems);
+  for (const label of ['Format Object', 'Field Wells', 'Title', 'Subtitle', 'Data Labels', 'Legend', 'Conditional Formatting', 'Actions']) assert.equal(ui.item('Objects', label).props['aria-disabled'], false, label);
+  for (const label of ['Tooltips', 'Highlights', 'Reference Lines', 'Placement', 'Style', 'Rules', 'Forecast', 'Anomaly', 'Export Visual to CSV', 'Export Table to Excel']) {
+    assert.equal(ui.item('Objects', label).props['aria-disabled'], true); assert.match(ui.item('Objects', label).props.title, /not supported/);
+    await ui.click('Objects', label);
+  }
+  await ui.click('Objects', 'visual-1 · bar'); await ui.click('Objects', 'Remove selected visual');
+  assert.deepEqual(ui.calls, [{ type: 'select', id: 'visual-1' }, { type: 'remove', id: 'visual-1' }]);
+  await ui.update({ draft: authorReducer(emptyDraft(), { type: 'add', kind: 'table' }) });
+  for (const label of ['Data Labels', 'Legend']) assert.match(ui.item('Objects', label).props.title, /this visual type/);
+  await ui.update({ draft: emptyDraft() });
+  for (const label of objectItems) { assert.equal(ui.item('Objects', label).props['aria-disabled'], true); assert.match(ui.item('Objects', label).props.title, /Select a visual/); }
+});

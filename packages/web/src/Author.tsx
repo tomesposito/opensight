@@ -324,7 +324,7 @@ export function AuthorCanvas({ draft, dispatch, client, fit = true, sourceProble
             <button type="submit" className="primary-button" aria-label="Add visual">ADD</button>
           </form>
           <div className="visual-config" id={selected ? `configure-${selected.id}` : undefined}>
-            <h3>Field wells</h3>
+            <h3 tabIndex={-1}>Field wells</h3>
             {selected && <><p className="selected-visual">{selected.title || `Visual ${sheet.visuals.indexOf(selected) + 1}`}</p>
             <label className="change-type">Change visual type<select value={selected.imported?.issues.some(i => i.startsWith('Unsupported visual type:')) && !selected.imported.replaced ? '' : selected.kind} onChange={e => dispatch({ type: 'kind', kind: e.target.value as VisualKind })}>{selected.imported?.issues.some(i => i.startsWith('Unsupported visual type:')) && !selected.imported.replaced && <option value="" disabled>{selected.imported.variant} (unsupported)</option>}{VISUAL_TYPES.map(type => <option value={type.kind} key={type.kind}>{type.label}</option>)}</select></label>
             </>}

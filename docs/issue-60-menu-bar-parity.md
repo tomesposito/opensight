@@ -38,3 +38,12 @@ switching below the reference items. Sheet tabs also appear before data is
 added, so these actions have a visible result. Duplication, separate sheet
 title/description objects, and layout settings remain unavailable. Existing
 canvas dragging/resizing and FIT TO WIDTH are unchanged.
+
+Objects opens Format Object, Field Wells, Title, Subtitle, Data Labels, Legend,
+Conditional Formatting and Actions. It reveals the correct Properties tab and
+all collapsed ancestors, then moves keyboard focus. Label/legend availability
+matches the renderer's visual-type capability checks. All reference actions
+require a selected visual. Visual selection and removal remain below them.
+Tooltips customization, highlights, reference lines, numeric placement,
+per-card style, visibility rules, forecast/anomaly authoring and CSV/Excel
+query-result exports explain their missing editor support.

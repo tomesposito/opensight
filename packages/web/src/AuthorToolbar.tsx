@@ -4,6 +4,7 @@ import { useAccess, type Access } from './access.js';
 import { useToast } from './Toasts.js';
 import { AuthorMenuItem } from './AuthorMenuItem.js';
 import { flushSync } from 'react-dom';
+import { hasDataLabels, hasLegend } from './formatting.js';
 export function publishNotice(mode: Access['mode']): string {
   return mode === 'hosted'
     ? 'Publishing needs a hosted deployment with dashboard publication enabled. It is not available in this editor yet; nothing has been published.'
@@ -39,6 +40,7 @@ export function AuthorToolbar({ onPrep, onSources, draft, dispatch, fit, onFit, 
   const focus = (selector: string, tab?: 'Visual' | 'Interaction') => { focusAuthorControl(nav.current, selector, tab); };
   const activate = (selector: string) => { focusAuthorControl(nav.current, selector)?.click(); };
   const needsData = !dataAvailable ? 'Add data to start building.' : undefined;
+  const needsVisual = needsData ?? (!selected ? 'Select a visual first.' : undefined);
   const publish = () => { setNotice(publishNotice(access.mode)); notify('Publishing is unavailable in this editor. Nothing has been published.'); };
   return <>
     <nav ref={nav} className="author-menu" aria-label="Analysis menu" onKeyDown={e => {
@@ -105,7 +107,34 @@ export function AuthorToolbar({ onPrep, onSources, draft, dispatch, fit, onFit, 
         <hr />
         <div role="group" aria-label="Switch sheet">{draft.sheets.map(s => <AuthorMenuItem key={s.id} label={s.name} run={() => dispatch({ type: 'sheet-select', id: s.id })} />)}</div>
       </div></details>
-      <details name="analysis-menu"><summary>Objects</summary><div className="menu-popover">{sheet.visuals.map(v => <button key={v.id} type="button" onClick={() => dispatch({ type: 'select', id: v.id })}>{v.title || v.id} · {v.kind}</button>)}{selected && <button type="button" onClick={() => dispatch({ type: 'remove', id: selected.id })}>Remove selected visual</button>}{!sheet.visuals.length && <p>No visuals on this sheet.</p>}</div></details>
+      <details name="analysis-menu"><summary>Objects</summary><div className="menu-popover">
+        <AuthorMenuItem label="Format Object" reason={needsVisual} run={() => focus('.properties-panel > summary', 'Visual')} />
+        <AuthorMenuItem label="Field Wells" reason={needsVisual} run={() => focus('.visual-config h3')} />
+        <hr />
+        <AuthorMenuItem label="Title" reason={needsVisual} run={() => focus('input[aria-label="Title"]', 'Visual')} />
+        <AuthorMenuItem label="Subtitle" reason={needsVisual} run={() => focus('input[aria-label="Subtitle"]', 'Visual')} />
+        <AuthorMenuItem label="Data Labels" reason={needsVisual ?? (selected && !hasDataLabels(selected.kind) ? 'Data labels are not supported for this visual type.' : undefined)} run={() => focus('[data-author-control="data-labels"]', 'Visual')} />
+        <AuthorMenuItem label="Legend" reason={needsVisual ?? (selected && !hasLegend(selected.kind) ? 'Legends are not supported for this visual type.' : undefined)} run={() => focus('[data-author-control="legend"]', 'Visual')} />
+        <hr />
+        <AuthorMenuItem label="Conditional Formatting" reason={needsVisual} run={() => focus('[data-author-control="conditional-formatting"]', 'Visual')} />
+        <AuthorMenuItem label="Tooltips" reason={needsVisual ?? 'Tooltip customization is not supported yet. Charts use default tooltips.'} />
+        <AuthorMenuItem label="Highlights" reason={needsVisual ?? 'Highlight settings are not supported yet.'} />
+        <AuthorMenuItem label="Reference Lines" reason={needsVisual ?? 'Reference line authoring is not supported yet.'} />
+        <AuthorMenuItem label="Actions" reason={needsVisual} run={() => focus('[data-author-control="actions"]', 'Interaction')} />
+        <hr />
+        <AuthorMenuItem label="Placement" reason={needsVisual ?? 'Numeric placement settings are not supported yet. Drag or resize the visual on the canvas.'} />
+        <AuthorMenuItem label="Style" reason={needsVisual ?? 'Per-card style settings are not supported yet. Analysis themes and visual palettes are available in Properties.'} />
+        <AuthorMenuItem label="Rules" reason={needsVisual ?? 'Object visibility rules are not supported yet.'} />
+        <hr />
+        <AuthorMenuItem label="Forecast" reason={needsVisual ?? 'Forecast authoring is not supported yet.'} />
+        <AuthorMenuItem label="Anomaly" reason={needsVisual ?? 'Anomaly detection authoring is not supported yet.'} />
+        <hr />
+        <AuthorMenuItem label="Export Visual to CSV" reason={needsVisual ?? 'Visual query-result export to CSV is not supported in this editor yet.'} />
+        <AuthorMenuItem label="Export Table to Excel" reason={needsVisual ?? 'Table query-result export to Excel is not supported in this editor yet.'} />
+        {!!sheet.visuals.length && <><hr /><div role="group" aria-label="Select visual">{sheet.visuals.map(v => <AuthorMenuItem key={v.id} label={`${v.title || v.id} · ${v.kind}`} run={() => dispatch({ type: 'select', id: v.id })} />)}</div></>}
+        {selected && <AuthorMenuItem label="Remove selected visual" run={() => dispatch({ type: 'remove', id: selected.id })} />}
+        {!sheet.visuals.length && <p>No visuals on this sheet.</p>}
+      </div></details>
       <details name="analysis-menu"><summary>Search</summary><div className="menu-popover"><label>Search analysis<input className="analysis-search" aria-keyshortcuts="Meta+F Control+F" type="search" value={search} onChange={e => setSearch(e.target.value)} /></label>{draft.sheets.flatMap(s => s.visuals.filter(v => `${v.title} ${v.kind} ${v.id}`.toLowerCase().includes(search.toLowerCase())).map(v => <button key={v.id} type="button" onClick={() => { dispatch({ type: 'sheet-select', id: s.id }); dispatch({ type: 'select', id: v.id }); }}>{s.name} / {v.title || v.id}</button>))}<p>Fields: {(dataAvailable ? dataFields(draft.calculatedFields, draft.dataset) : []).filter(f => f.name.toLowerCase().includes(search.toLowerCase())).map(f => f.name).join(', ') || 'No matches'}</p></div></details>
       {oEntry}<div className="menu-spacer" /><button type="button" disabled={!dataAvailable} onClick={() => focus('.visual-gallery button')}>Add visual</button><button type="button" aria-pressed={fit} title={fit ? 'Fit is on; switch to 1200 pixel canvas' : 'Fit canvas to available width'} onClick={onFit}>FIT TO WIDTH</button><button type="button" onClick={publish}>PUBLISH</button>
       <label className="chrome-switch">NEW LOOK<select aria-label="NEW LOOK" value={draft.chrome ?? 'light'} onChange={e => dispatch({ type: 'chrome', mode: e.target.value as 'light' | 'dark' })}><option value="light">Light</option><option value="dark">Dark</option></select></label>
