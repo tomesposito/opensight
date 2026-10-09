@@ -2,7 +2,7 @@
 // Adapted from ~/workspace/tools/screenshots/readme-gif-44.mjs.
 // Drives the rebuilt file:// demo through Home, O, Author, Analyses, Data, Admin.
 // Frames land in OPENSIGHT_SCREENSHOT_OUTPUT/frames;
-// assemble with: ffmpeg -framerate 10 -i .opensight/issue-58/gif/frames/f%03d.png ...
+// assemble with: ffmpeg -framerate 10 -i .opensight/issue-59/gif/frames/f%03d.png ...
 // (see the bottom of this file for the exact assembly command).
 import assert from 'node:assert/strict';
 import { resolve } from 'node:path';
@@ -12,7 +12,7 @@ const { chromium } = createRequire(resolve(process.env.OPENSIGHT_SCREENSHOT_TOOL
 import { mkdirSync } from 'fs';
 
 const DEMO = new URL('../dist/opensight-demo.html', import.meta.url).href;
-const FRAMES = resolve(process.env.OPENSIGHT_SCREENSHOT_OUTPUT ?? '.opensight/issue-58/gif', 'frames');
+const FRAMES = resolve(process.env.OPENSIGHT_SCREENSHOT_OUTPUT ?? '.opensight/issue-59/gif', 'frames');
 mkdirSync(FRAMES, { recursive: true });
 
 const browser = await chromium.launch({ executablePath: '/opt/meta-chromium/chrome', args: ['--no-sandbox', '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
@@ -187,6 +187,14 @@ try {
   await page.getByRole('button', { name: 'Save draft', exact: true }).click();
   await setMode('analyses');
   await hold(1800);
+  // Issue #59: new analyses start with an explicit dataset choice.
+  await page.getByRole('link', { name: 'New analysis', exact: true }).click();
+  await page.getByRole('dialog', { name: 'Create Analysis', exact: true }).waitFor();
+  await hold(2000);
+  await page.screenshot({ path: resolve(FRAMES, '../create-analysis.png') });
+  await page.getByRole('radio', { name: 'Sample sales data', exact: true }).check();
+  await hold(800);
+  await page.getByRole('button', { name: 'Select', exact: true }).click();
 
   // 4. Data preparation: type conversion, second input and bottom join editor.
   await setMode('data-prep');
@@ -224,5 +232,5 @@ try {
 }
 
 // Assembly (run after):
-// ffmpeg -y -framerate 10 -i .opensight/issue-58/gif/frames/f%03d.png -vf "scale=960:-1:flags=lanczos,palettegen" .opensight/issue-58/gif/palette.png
-// ffmpeg -y -framerate 10 -i .opensight/issue-58/gif/frames/f%03d.png -i .opensight/issue-58/gif/palette.png -lavfi "scale=960:-1:flags=lanczos[x];[x][1:v]paletteuse" .opensight/issue-58/gif/opensight-tour.gif
+// ffmpeg -y -framerate 10 -i .opensight/issue-59/gif/frames/f%03d.png -vf "scale=960:-1:flags=lanczos,palettegen" .opensight/issue-59/gif/palette.png
+// ffmpeg -y -framerate 10 -i .opensight/issue-59/gif/frames/f%03d.png -i .opensight/issue-59/gif/palette.png -lavfi "scale=960:-1:flags=lanczos[x];[x][1:v]paletteuse" .opensight/issue-59/gif/opensight-tour.gif

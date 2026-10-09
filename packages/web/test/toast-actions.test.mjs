@@ -17,7 +17,7 @@ async function mount(t, { blocked = false, clipboard } = {}) {
   const oldNavigator = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
   const values = new Map(), copied = [];
   const storage = { getItem: key => values.get(key) ?? null, setItem(key, value) { if (blocked) throw new DOMException('Denied', 'SecurityError'); values.set(key, value); } };
-  const location = new URL('https://opensight.example/demo.html?unused=value#/analyses/new');
+  const location = new URL('https://opensight.example/demo.html?unused=value#/analyses/author');
   globalThis.window = { location, localStorage: storage,
     history: { replaceState(_s, _t, hash) { location.hash = hash; }, pushState(_s, _t, hash) { location.hash = hash; } },
     addEventListener() {}, removeEventListener() {}, matchMedia: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }),

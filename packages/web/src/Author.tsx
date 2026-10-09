@@ -2,6 +2,7 @@ import { useAccess, allowed } from './access.js';
 import { LocalEmptyState } from './LocalEmptyState.js';
 import { ThemeEditor } from './ThemeEditor.js';
 import { DatasetHeader } from './DatasetHeader.js';
+import { CreateAnalysisDialog } from './CreateAnalysisDialog.js';
 import { FieldIcon } from './FieldIcon.js';
 import { AuthorToolbar } from './AuthorToolbar.js';
 import { AuthorShortcuts } from './AuthorShortcuts.js';
@@ -82,6 +83,7 @@ function AuthorWorkspace({ sampleLoaded = false, onTrySample, client: apiClient,
   const [copying, setCopying] = useState(false), [copyError, setCopyError] = useState('');
   const copyHelpId = useId();
   const [reportOpen, setReportOpen] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
   const importConfirmation = useRef(false);
   const [fit, setFit] = useState(true);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -142,7 +144,7 @@ function AuthorWorkspace({ sampleLoaded = false, onTrySample, client: apiClient,
     onBundle={() => { if (!busy) void downloadQs(); }} onImport={() => fileInput.current?.click()}
     busy={busy} jsonDisabled={!!exported.error} />;
   if (drafts.openingError) return <section><h1>Unable to open analysis</h1><p role="alert">{drafts.openingError}</p><p>Return to My analyses to refresh the list or choose another draft.</p></section>;
-  return <div ref={workspace} className="author-workspace" data-chrome={draft.chrome ?? 'light'}>
+  return <><div ref={workspace} className="author-workspace" data-chrome={draft.chrome ?? 'light'}>
     <AuthorShortcuts workspace={workspace} onSave={saveDraft} />
     <AuthorCommands draft={draft} dispatch={dispatch} onSave={saveDraft} />
     <header className="author-topbar app-header">
@@ -155,7 +157,7 @@ function AuthorWorkspace({ sampleLoaded = false, onTrySample, client: apiClient,
         <button type="button" aria-keyshortcuts="Meta+S Control+S" onClick={saveDraft}>Save draft</button>
         {(drafts.id || drafts.savedAt || drafts.autoState === 'saving' || drafts.autoState === 'error') && <span className="save-indicator" role="status">{drafts.autoState === 'saving' ? 'Saving…' : drafts.autoState === 'unsaved' || drafts.autoState === 'error' ? 'Unsaved changes' : drafts.savedAt ? `Saved · ${saveTime(drafts.savedAt)}` : null}</span>}
         {inApp && <button type="button" disabled={!drafts.id || drafts.dirty || copying} aria-describedby={copyHelpId} onClick={() => { void copyDraftLink(); }}>Copy draft link</button>}
-        <button type="button" onClick={() => { if (drafts.replace({ ...emptyDraft(), ...(draft.dataset ? { dataset: draft.dataset } : {}) })) onDatasetChange?.(draft.dataset); }}>New analysis</button>
+        <button type="button" onClick={() => { if (drafts.keepCurrent()) setCreateOpen(true); }}>New analysis</button>
       </div>
       {drafts.recoveredAt && <div className="draft-recovery">
         <span role="status">Recovered auto-saved work from {saveTime(drafts.recoveredAt)} — it was never manually saved.</span>
@@ -190,7 +192,13 @@ function AuthorWorkspace({ sampleLoaded = false, onTrySample, client: apiClient,
       setReportOpen(false);
       if (importConfirmation.current) { importConfirmation.current = false; notify('Bundle imported'); }
     }} />}
-  </div>;
+  </div>
+    {createOpen && <CreateAnalysisDialog client={apiClient} sampleAvailable={access.mode === 'demo' || sampleLoaded} offline={!apiClient} selectionError={drafts.autoError ?? undefined}
+      onClose={() => setCreateOpen(false)} onCreateDataset={apiClient && onPrep ? () => { if (drafts.keepCurrent()) { setCreateOpen(false); onPrep(); } } : undefined}
+      onSelect={dataset => {
+        if (drafts.replace({ ...emptyDraft(), ...(dataset ? { dataset } : {}) })) { onDatasetChange?.(dataset); setCreateOpen(false); }
+      }} />}
+  </>;
 }
 
 function AuthorCommands({ draft, dispatch, onSave }: EditorProps & { onSave: () => boolean }) {

@@ -11,6 +11,7 @@
     ]
   },
   "include": [
+    "../src/CreateAnalysisDialog.tsx",
     "../src/keyboard-shortcuts.ts",
     "../src/FirstRun.tsx",
     "../src/SessionGate.tsx",
