@@ -50,7 +50,9 @@ empty state. To build with your own CSV:
    if needed), then select **Upload to staging**.
 2. Select **Prepare this upload** to open **Data preparation**. Review the
    columns and preview rows, make any transformations, then **Save pipeline**.
-3. Select **Build a chart**, then choose a Data field in Author to create a bar visual. Use **Add visual** to choose another type first.
+3. Select **Build a chart**, or open **Analyses → New analysis**, choose your
+   prepared dataset, and press **Select**. Choose a Data field in Author to
+   create a bar visual. Use **Add visual** to choose another type first.
 4. Edits **auto-save after 2 seconds**; wait for **Saved · HH:MM**, or select
    **Save draft** for an explicit checkpoint. Reopen through **Analyses → My
    analyses** in the same browser and origin. Draft definitions stay on this
@@ -61,6 +63,13 @@ restarts, and expire after **24 hours**. See [local data](docs/local-data.md) fo
 workflow and limits, and [local drafts](docs/local-drafts.md) for source recovery.
 See [auto-save drafts](docs/auto-save-drafts.md) for save indicators, storage
 failure guidance and the recovery notice for work that was never manually saved.
+
+![Create Analysis dataset picker in the local static demo](docs/images/create-analysis.png)
+
+The [dataset picker](docs/issue-59-dataset-picker.md) searches prepared datasets
+by name. Topics needs a hosted API with topic support; the static demo offers
+its labeled synthetic sample.
+
 If the API is unavailable, the first-run screen offers recovery guidance; an API
 without local-data support or authentication instead offers setup and explicit
 **Explore sample data**. See the [first-run guide](docs/first-run.md).

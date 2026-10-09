@@ -78,6 +78,7 @@ select { background: #fff; border: 1px solid #c9d8de; border-radius: 6px; paddin
   .create-analysis-tools { flex-wrap: wrap; }
   .dataset-picker-search { order: 3; flex-basis: 100%; max-width: none; }
   .dataset-picker-pagination { gap: 4px; }
+  .dataset-picker-pagination .dataset-picker-refresh { flex-basis: 100%; text-align: left; }
 }
 @media (max-width: 760px) {
   .product-header .app-nav { order: 3; flex-basis: 100%; gap: 4px 12px; }
