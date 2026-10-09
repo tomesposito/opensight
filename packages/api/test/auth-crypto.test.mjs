@@ -15,6 +15,15 @@ test('H2 config requires HTTPS origin, explicit lifetimes, issuer/audience and s
   assert.throws(() => hostedConfig({ ...env, OPENSIGHT_AUTH_SIGNING_KEY: env.OPENSIGHT_OPERATOR_KEY }), { code: 'HOSTED_CONFIG_INVALID' });
   assert.throws(() => hostedConfig({ ...env, OPENSIGHT_AUTH_ENCRYPTION_KEY: 'short' }), { code: 'HOSTED_CONFIG_INVALID' });
 });
+test('H2 config permits http loopback origins for local development, still rejects anything else', () => {
+  const env = environment();
+  for (const origin of ['http://localhost:3000', 'http://127.0.0.1:3000', 'http://[::1]:3000']) {
+    assert.equal(hostedConfig({ ...env, OPENSIGHT_PUBLIC_ORIGIN: origin }).origin, origin);
+  }
+  for (const origin of ['http://localhost', 'http://localhost:3000/', 'http://localhost:3000/path', 'http://user@localhost:3000', 'http://192.168.1.10:3000', 'http://[::1]/', 'https://localhost:3000/']) {
+    assert.throws(() => hostedConfig({ ...env, OPENSIGHT_PUBLIC_ORIGIN: origin }), { code: 'HOSTED_CONFIG_INVALID' });
+  }
+});
 test('H2 authentication schema refuses ephemeral storage and is idempotent on durable storage', async t => {
   const memory = new SqliteMetadataDatabase(':memory:');
   await assert.rejects(initializeAuth(memory), { code: 'DURABLE_MEMBERSHIP_STORE_REQUIRED' }); await memory.close();

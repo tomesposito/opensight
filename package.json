@@ -5,7 +5,8 @@
   "private": true,
   "scripts": {
     "build": "npm run build --workspaces",
-    "test": "npm run test --workspaces && node --test --test-isolation=none conformance/*.test.mjs"
+    "test": "npm run test --workspaces && node --test --test-isolation=none conformance/*.test.mjs",
+    "dev:hosted": "node packages/api/dev-hosted.mjs"
   },
   "version": "0.0.0",
   "workspaces": [
