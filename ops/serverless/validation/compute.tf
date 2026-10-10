@@ -16,6 +16,24 @@ locals {
     OPENSIGHT_OPERATOR_SECRET_ARN = aws_secretsmanager_secret.runtime["operator"].arn
     OPENSIGHT_TENANT_SECRET_ARN   = aws_secretsmanager_secret.runtime["tenant"].arn
   })
+  # Keep each function's credential references explicit and separate.
+  function_environment = {
+    request = local.environment
+    migration = merge(local.environment, {
+      OPENSIGHT_BOOTSTRAP_SECRET_ARN = aws_rds_cluster.validation.master_user_secret[0].secret_arn
+    })
+    probe = merge(local.environment, {
+      OPENSIGHT_VALIDATION              = "isolated"
+      OPENSIGHT_BOOTSTRAP_SECRET_ARN    = aws_rds_cluster.validation.master_user_secret[0].secret_arn
+      OPENSIGHT_ARTIFACT_BUCKET         = aws_s3_bucket.artifacts.id
+      OPENSIGHT_PROBE_QUEUE_URL         = aws_sqs_queue.probe.url
+      OPENSIGHT_PROBE_SCHEDULE_GROUP    = aws_scheduler_schedule_group.probe.name
+      OPENSIGHT_PROBE_SCHEDULE_ROLE_ARN = aws_iam_role.schedule.arn
+      OPENSIGHT_SMTP_SECRET_ARN         = aws_secretsmanager_secret.runtime["smtp"].arn
+      OPENSIGHT_PROBE_MAIL_FROM         = var.alert_email
+      OPENSIGHT_PROBE_MAIL_TO           = var.alert_email
+    })
+  }
 }
 resource "aws_sqs_queue" "dead" {
   name                      = "${var.deployment}-probe-dead"
@@ -66,7 +84,7 @@ resource "aws_iam_role_policy" "lambda" {
   ] : statement if each.key == "probe"]) })
 }
 resource "aws_lambda_function" "validation" {
-  for_each                       = local.functions
+  for_each                       = var.enable_runtime ? local.functions : {}
   function_name                  = "${var.deployment}-${each.key}"
   role                           = aws_iam_role.lambda[each.key].arn
   package_type                   = "Image"
@@ -83,17 +101,7 @@ resource "aws_lambda_function" "validation" {
     ipv6_allowed_for_dual_stack = true
   }
   environment {
-    variables = merge(local.environment, each.key == "migration" ? { OPENSIGHT_BOOTSTRAP_SECRET_ARN = aws_rds_cluster.validation.master_user_secret[0].secret_arn } : {}, each.key == "probe" ? {
-      OPENSIGHT_VALIDATION              = "isolated"
-      OPENSIGHT_BOOTSTRAP_SECRET_ARN    = aws_rds_cluster.validation.master_user_secret[0].secret_arn
-      OPENSIGHT_ARTIFACT_BUCKET         = aws_s3_bucket.artifacts.id
-      OPENSIGHT_PROBE_QUEUE_URL         = aws_sqs_queue.probe.url
-      OPENSIGHT_PROBE_SCHEDULE_GROUP    = aws_scheduler_schedule_group.probe.name
-      OPENSIGHT_PROBE_SCHEDULE_ROLE_ARN = aws_iam_role.schedule.arn
-      OPENSIGHT_SMTP_SECRET_ARN         = aws_secretsmanager_secret.runtime["smtp"].arn
-      OPENSIGHT_PROBE_MAIL_FROM         = var.alert_email
-      OPENSIGHT_PROBE_MAIL_TO           = var.alert_email
-    } : {})
+    variables = local.function_environment[each.key]
   }
   depends_on = [aws_iam_role_policy.lambda, aws_cloudwatch_log_group.lambda, aws_route_table_association.private]
   lifecycle {

@@ -70,7 +70,13 @@ No real values belong in this repository. Run commands from the repository root:
 4. `... plan` writes private saved-plan/evidence files and prints a sanitized
    resource/cap summary and plan SHA-256. Inspect the full private plan and IAM
    policies. `... apply <reviewed-sha256>` applies only those exact bytes after
-   the plan-policy checks. It creates no public ingress or consumer mappings.
+   the plan-policy checks. A new operator configuration first creates the
+   dependencies with `enable_runtime=false`. After that apply completes, run
+   `... enable-runtime`, then `... plan` and `... apply <new-reviewed-sha256>`
+   again. Generated database/secret references are now known, so the checker can
+   inspect every Lambda environment value before creating functions. Unknown
+   maintenance gates still fail closed. Neither apply creates public ingress or
+   consumer mappings. Failed OpenTofu output stays in private `*.failed.log` files.
 5. `... secrets` populates absent operator/tenant versions with random material.
    Existing current versions are preserved. It never prints plaintext credentials
    or puts payloads in Terraform state. The same command creates the isolated SMTP key, derives the regional password

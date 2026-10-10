@@ -47,9 +47,12 @@ export function smtpPassword(secret, region) {
   return Buffer.concat([Buffer.from([4]), key]).toString('base64');
 }
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
-function command(binary, args, env = process.env) {
+function command(binary, args, env = process.env, failed = () => {}) {
   try { return execFileSync(binary, args, { encoding: 'utf8', env, maxBuffer: 32 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'] }); }
-  catch { throw Error(`${binary === 'aws' ? 'AWS' : 'TOFU'}_COMMAND_FAILED`); }
+  catch (error) {
+    failed(`${error.stdout ?? ''}${error.stderr ?? ''}`);
+    throw Error(`${binary === 'aws' ? 'AWS' : 'TOFU'}_COMMAND_FAILED`);
+  }
 }
 export async function main(args = process.argv.slice(2), environment = process.env) {
   process.umask(0o077);
@@ -80,7 +83,7 @@ export async function main(args = process.argv.slice(2), environment = process.e
     const stateTags = tags.map(t => t.Key === 'OpenSightPurpose' ? { ...t, Value: 'protected-state' } : t);
     const stateBucket = `${deployment}-state-${sha(account).slice(0, 10)}`, keyAlias = `alias/${deployment}-state`;
     const root = name => join(repository, 'ops/serverless', name);
-    const tofu = (name, args) => command('tofu', [`-chdir=${root(name)}`, ...args], { ...environment, TF_IN_AUTOMATION: '1', TF_DATA_DIR: path(`tofu-${name}`) });
+    const tofu = (name, args) => command('tofu', [`-chdir=${root(name)}`, ...args], { ...environment, TF_IN_AUTOMATION: '1', TF_DATA_DIR: path(`tofu-${name}`) }, detail => write(`${name}.failed.log`, detail));
     const vars = name => `-var-file=${path(`${name}.tfvars.json`)}`;
     const init = name => {
       // OpenTofu 1.13.1 adds a synthetic predecessor-registry entry in memory,
@@ -108,7 +111,7 @@ export async function main(args = process.argv.slice(2), environment = process.e
         OPENSIGHT_AUTH_ISSUER: operator.public_origin, OPENSIGHT_AUTH_AUDIENCE: 'opensight', OPENSIGHT_AUTH_KEY_ID: 'validation', OPENSIGHT_SESSION_SECONDS: '900', OPENSIGHT_INVITATION_SECONDS: '86400',
         OPENSIGHT_TENANT_LIMIT_DEFAULTS: JSON.stringify(tenant), OPENSIGHT_NODE_LIMITS: JSON.stringify({ ...tenant, running: 3, queued: 12, refreshSlots: 1, workingBytes: 67108864, cacheBytes: 67108864, workerRssBytes: 1610612736 }) };
       write('bootstrap.tfvars.json', { region: operator.region, account_id: account, deployment, state_bucket: stateBucket });
-      write('validation.tfvars.json', { region: operator.region, account_id: account, deployment, availability_zones: zones, artifact_bucket: `${deployment}-artifacts-${sha(account).slice(0, 10)}`, image_uri: operator.image_uri, alert_email: operator.alert_email, runtime_environment: runtime });
+      write('validation.tfvars.json', { region: operator.region, account_id: account, deployment, availability_zones: zones, artifact_bucket: `${deployment}-artifacts-${sha(account).slice(0, 10)}`, image_uri: operator.image_uri, alert_email: operator.alert_email, runtime_environment: runtime, enable_runtime: operator.enable_runtime === true });
       for (const name of ['bootstrap', 'validation']) write(`${name}.backend.hcl`, `bucket = "${stateBucket}"\nkey = "${name}/terraform.tfstate"\nregion = "${operator.region}"\nencrypt = true\nuse_lockfile = true\nkms_key_id = "${keyAlias}"\nallowed_account_ids = ["${account}"]\n`);
       console.log('Private inputs prepared. No AWS resource was created.'); return;
     }
@@ -178,6 +181,13 @@ export async function main(args = process.argv.slice(2), environment = process.e
     }
     const state = inventory();
     if (state.deployment !== deployment) throw Error('RESOURCE_NOT_OWNED');
+    if (operation === 'enable-runtime') {
+      // Dependency outputs must exist before requesting a fully resolved plan.
+      if (!state.cluster || !state.writer || !state.bootstrap_secret || !state.secrets?.operator || !state.secrets?.tenant || !state.secrets?.smtp) throw Error('DEPENDENCIES_REQUIRED');
+      write('operator.json', { ...operator, enable_runtime: true });
+      write('validation.tfvars.json', { ...read('validation.tfvars.json'), enable_runtime: true });
+      console.log('Runtime selected. Create and review a new saved plan before applying functions.'); return;
+    }
     if (operation === 'secrets') {
       for (const kind of ['operator', 'tenant']) {
         const arn = state.secrets[kind], description = aws('secretsmanager', 'describe-secret', ['--secret-id', arn]);

@@ -67,6 +67,18 @@ test('SR4a saved-plan policy rejects cost, public access, secret and destruction
   for (const type of ['aws_nat_gateway', 'aws_lambda_function_url', 'aws_apigatewayv2_api', 'aws_cloudfront_distribution', 'aws_lambda_event_source_mapping', 'aws_scheduler_schedule', 'aws_secretsmanager_secret_version']) mutate(r => r.push({ mode: 'managed', address: `${type}.forbidden`, type, change: { actions: ['create'], after: {} } }));
   mutate(r => r.push({ mode: 'managed', address: 'aws_vpc_endpoint.bad', type: 'aws_vpc_endpoint', change: { actions: ['create'], after: { vpc_endpoint_type: 'Interface' } } }));
 });
+test('SR4a dependency staging cannot create unchecked functions or accept unresolved runtime gates', () => {
+  const dependency = plan();
+  dependency.variables = { enable_runtime: { value: false } };
+  assert.throws(() => checkPlan(dependency), /INVENTORY/);
+  dependency.resource_changes = dependency.resource_changes.filter(r => r.type !== 'aws_lambda_function');
+  assert.equal(checkPlan(dependency).functions, 0);
+  dependency.variables.enable_runtime.value = true;
+  assert.throws(() => checkPlan(dependency), /INVENTORY/);
+  const unresolved = plan();
+  unresolved.resource_changes.find(r => r.type === 'aws_lambda_function').change.after.environment = [{}];
+  assert.throws(() => checkPlan(unresolved), /MAINTENANCE_GATE/);
+});
 
 test('SR4a SMTP password matches an independently computed synthetic SigV4 fixture and is region-bound', () => {
   assert.equal(smtpPassword('synthetic-test-signing-material', 'us-east-1'), 'BLx9Xl2cx6a1qqegunq70TY2VPa/s8QAokeDXRLDd0Qt');
