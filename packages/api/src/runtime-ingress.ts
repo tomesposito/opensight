@@ -36,6 +36,7 @@ export function publicPath(path: unknown): string {
   if (path.startsWith('/api/api/')) internal = path.slice(4);
   else if (/^\/api\/embed\/sessions\/[A-Za-z0-9_-]+\/(redeem|status|content|question|analysis|save)$/.test(path) || /^\/embed\/sessions\/[A-Za-z0-9_-]+$/.test(path)) internal = path;
   else throw new MetadataError('RESOURCE_NOT_FOUND', 404);
+  if (path.startsWith('/api/api/embed/') || /^\/api\/namespaces\/[^/]+\/(startup|auth|embed)(?:\/|$)/.test(internal)) throw new MetadataError('RESOURCE_NOT_FOUND', 404);
   if (/^\/api\/(?:host|api|healthz|readyz|metrics|migrate|migration|drain)(?:\/|$)/.test(internal)) throw new MetadataError('RESOURCE_NOT_FOUND', 404);
   const unscoped = internal.replace(/^\/api\/namespaces\/[A-Za-z0-9_-]+\//, '/api/');
   if (!/^\/embed\/sessions\/[A-Za-z0-9_-]+$/.test(unscoped)
@@ -48,6 +49,23 @@ export function publicPath(path: unknown): string {
     && !/^\/api\/embedding\/(?:config|sessions(?:\/[A-Za-z0-9_-]+(?:\/renew)?)?|GenerateEmbedUrlForRegisteredUser|GenerateEmbedUrlForAnonymousUser)$/.test(unscoped)
     && !/^\/api\/embed\/sessions\/[A-Za-z0-9_-]+\/(?:redeem|status|content|question|analysis|save)$/.test(unscoped)) throw new MetadataError('RESOURCE_NOT_FOUND', 404);
   return internal;
+}
+
+function routeMethod(path: string, method: string): void {
+  const p = path.replace(/^\/api\/namespaces\/[A-Za-z0-9_-]+\//, '/api/');
+  let allowed: readonly string[] = ['GET'];
+  if (p === '/api/startup' || p.startsWith('/api/auth/') || /^\/api\/embedding\/(?:sessions$|Generate)/.test(p) || p.endsWith('/renew')) allowed = ['POST'];
+  else if (p === '/api/embedding/config') allowed = ['GET', 'PUT'];
+  else if (/^\/api\/embedding\/sessions\//.test(p)) allowed = ['DELETE'];
+  else if (/^\/api\/embed\/sessions\//.test(p)) allowed = /\/(status|content)$/.test(p) ? ['GET'] : ['POST'];
+  else if (p === '/api/uploads' || p === '/api/prep-datasets/import') allowed = ['POST'];
+  else if (/^\/api\/uploads\//.test(p)) allowed = ['GET'];
+  else if (/^\/api\/jobs\/[A-Za-z0-9_-]+$/.test(p)) allowed = ['GET', 'PUT', 'DELETE'];
+  else if (/^\/api\/jobs\/[A-Za-z0-9_-]+\/runs$/.test(p)) allowed = ['GET', 'POST'];
+  else if (/^\/api\/sources\/[A-Za-z0-9_-]+$/.test(p)) allowed = ['GET', 'PUT', 'DELETE'];
+  else if (/^\/api\/sources\/[^/]+\//.test(p)) allowed = p.endsWith('/policy') ? ['GET'] : ['POST'];
+  else if (/^\/api\/datasets\//.test(p)) allowed = p.endsWith('/prep') ? ['GET', 'PUT', 'DELETE'] : p.endsWith('/rows') ? ['GET'] : p.endsWith('/execution') ? ['GET', 'PUT'] : ['POST'];
+  if (!allowed.includes(method)) invalid();
 }
 
 function headers(raw: unknown): Record<string, string> {
@@ -116,9 +134,11 @@ export function adaptGatewayRequest(raw: unknown, env: NodeJS.ProcessEnv): Runti
   if (event.isBase64Encoded && body.toString('base64') !== rawBody) invalid();
   if (body.length > 4 * 1024 * 1024) throw new MetadataError('REQUEST_TOO_LARGE', 413);
   if (['GET', 'HEAD'].includes(method) && body.length || h['content-length'] !== undefined && (!/^\d+$/.test(h['content-length']) || Number(h['content-length']) !== body.length)) invalid();
+  routeMethod(path, method);
   const forwarded: Record<string, string> = { host: new URL(config.origin).host, 'content-length': String(body.length) };
   for (const name of ['authorization', 'content-type', 'origin', 'idempotency-key', 'if-match', 'if-none-match', 'if-modified-since', 'if-unmodified-since', 'range', 'accept']) if (h[name] !== undefined) forwarded[name] = h[name];
   if (event.cookies !== undefined) {
+    if (h.cookie !== undefined) invalid();
     if (!Array.isArray(event.cookies) || event.cookies.some(c => typeof c !== 'string' || /[\r\n\x00]/.test(c)) || Buffer.byteLength(event.cookies.join('; ')) > 8192) invalid();
     forwarded.cookie = event.cookies.join('; ');
   } else if (h.cookie) forwarded.cookie = h.cookie;
@@ -132,7 +152,8 @@ export function validateLocalRequest(request: RuntimeRequest, origin: string): v
   if (!['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'].includes(request.method)
     || ['GET', 'HEAD'].includes(request.method) && request.body.length
     || h['content-length'] !== undefined && (!/^\d+$/.test(h['content-length']) || Number(h['content-length']) !== request.body.length)) invalid();
-  publicPath(request.path.startsWith('/embed/') || request.path.startsWith('/api/embed/') ? request.path : `/api${request.path}`);
+  const path = publicPath(request.path.startsWith('/embed/') || request.path.startsWith('/api/embed/') ? request.path : `/api${request.path}`);
+  routeMethod(path, request.method);
 }
 
 /** Pure viewer-boundary contract for the later CloudFront packaging slice. */

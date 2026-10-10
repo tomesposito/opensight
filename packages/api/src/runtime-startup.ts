@@ -12,7 +12,8 @@ export function deploymentId(env: NodeJS.ProcessEnv): string {
 }
 export async function checkRuntimeControl(c: SqlConnection, deployment: string): Promise<void> {
   const row = (await c.query('SELECT state, schema_min, schema_max, protocol_min, protocol_max FROM sr_control WHERE deployment = ?', [deployment]))[0];
-  if (!row || row.state !== 'open' || Number(row.schema_min) > runtimeProtocol || Number(row.schema_max) < runtimeProtocol
+  if (!row || row.state !== 'open' || !['schema_min', 'schema_max', 'protocol_min', 'protocol_max'].every(k => Number.isSafeInteger(Number(row[k])) && Number(row[k]) > 0)
+    || Number(row.schema_min) > runtimeProtocol || Number(row.schema_max) < runtimeProtocol
     || Number(row.protocol_min) > runtimeProtocol || Number(row.protocol_max) < runtimeProtocol) throw new MetadataError('WORKSPACE_MAINTENANCE', 503);
 }
 /** No DDL, keys, tenant enumeration, recovery or diagnostic payloads. */

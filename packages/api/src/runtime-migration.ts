@@ -24,8 +24,9 @@ export async function migrateRuntime(db: Database, env: NodeJS.ProcessEnv, diale
       schema_min INTEGER NOT NULL, schema_max INTEGER NOT NULL, protocol_min INTEGER NOT NULL, protocol_max INTEGER NOT NULL,
       state TEXT NOT NULL CHECK (state IN ('open','draining','maintenance')))`);
     await c.query("INSERT INTO sr_control VALUES (?,1,?,?,?,?, 'maintenance') ON CONFLICT (deployment) DO NOTHING", [deployment, runtimeProtocol, runtimeProtocol, runtimeProtocol, runtimeProtocol]);
-    const row = (await c.query(`SELECT state, epoch FROM sr_control WHERE deployment = ?${dialect === 'postgres' ? ' FOR UPDATE' : ''}`, [deployment]))[0];
+    const row = (await c.query(`SELECT state, epoch, schema_min, schema_max, protocol_min, protocol_max FROM sr_control WHERE deployment = ?${dialect === 'postgres' ? ' FOR UPDATE' : ''}`, [deployment]))[0];
     if (row?.state !== 'maintenance') throw new MetadataError('WORKSPACE_MAINTENANCE_REQUIRED', 503);
+    if (!['schema_min', 'schema_max', 'protocol_min', 'protocol_max'].every(k => Number(row[k]) === runtimeProtocol)) throw new MetadataError('MIGRATION_SCHEMA_INCOMPATIBLE', 503);
     // All initializers share this transaction: an exception rolls back the
     // schema and audit together, rather than leaving half-applied migrations.
     const transaction: Database = { durable: true, transaction: work => work(c), close: async () => {} };

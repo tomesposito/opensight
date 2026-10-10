@@ -6,7 +6,7 @@ import { runtimeEnv, event, context } from './runtime-helpers.mjs';
 
 test('SR1 authoring and embed routing preserves authorization and trusted normalized viewer peer', () => {
   for (const path of ['/api/api/session', '/api/api/auth/login', '/api/api/sources', '/api/api/uploads', '/api/api/datasets/example/prep', '/api/api/embedding/sessions', '/api/embed/sessions/id/status', '/embed/sessions/id']) {
-    const e = event(path), input = adaptGatewayRequest(e, runtimeEnv());
+    const e = event(path, ['/api/api/auth/login', '/api/api/uploads', '/api/api/embedding/sessions'].includes(path) ? 'POST' : 'GET'), input = adaptGatewayRequest(e, runtimeEnv());
     assert.equal(input.path, path.startsWith('/api/api/') ? path.slice(4) : path);
     assert.equal(input.headers.authorization, 'one'); assert.equal(input.headers.host, 'opensight.example'); assert.equal(input.peer, '192.0.2.1');
     assert.equal(input.headers['x-forwarded-for'], undefined); assert.equal(input.headers['x-opensight-ingress-secret'], undefined);
@@ -20,7 +20,7 @@ test('SR1 ingress rejects route, header, encoding and gateway bypasses without c
   let opened = 0;
   const runtime = createRuntime(runtimeEnv, { databases() { opened++; assert.fail('rejected ingress touched SQL'); } });
   const bad = [];
-  for (const path of ['/api/host', '/api/api/host', '/api/api/host/drain', '/api/api/namespaces/test/host', '/healthz', '/readyz', '/metrics', '/api/api/api/session', '/api/api/../host', '/api//api/session', '/api/api/%2fhost', '/api/api/%252fhost', '/api/api/%', '/api/api/\\host', '/api/api/session?x=1', '/api/api/session#fragment', '/unknown', '/api/api/auth/unknown']) bad.push(event(path));
+  for (const path of ['/api/host', '/api/api/host', '/api/api/host/drain', '/api/api/namespaces/test/host', '/api/api/namespaces/test/startup', '/api/api/namespaces/test/auth/login', '/api/api/embed/sessions/id/redeem', '/healthz', '/readyz', '/metrics', '/api/api/api/session', '/api/api/../host', '/api//api/session', '/api/api/%2fhost', '/api/api/%252fhost', '/api/api/%', '/api/api/\\host', '/api/api/session?x=1', '/api/api/session#fragment', '/unknown', '/api/api/auth/unknown']) bad.push(event(path));
   for (const [key, value] of [['host', 'opensight.example'], ['host', 'distribution.example.test'], ['origin', 'null'], ['origin', 'https://opensight.example/'], ['origin', 'https://other.example'], ['authorization', 'one,two'], ['Authorization', 'two'], ['content-type', 'application/json,text/plain'], ['idempotency-key', 'a,b'], ['if-match', '"a","b"'], ['forwarded', 'for=192.0.2.1'], ['x-forwarded-host', 'opensight.example'], ['x-tenant-id', 'other'], ['x-opensight-ingress-unknown', '1'], ['cloudfront-viewer-address', 'bad'], ['transfer-encoding', 'chunked'], ['content-length', '1'], ['x-forwarded-proto', 'http'], ['x-opensight-ingress-secret', 'wrong'], ['x-opensight-ingress-key-id', 'retired'], ['authorization', 'one\r\ninjected: true']]) {
     const e = event(); e.headers[key] = value; bad.push(e);
   }
@@ -53,4 +53,13 @@ test('SR1 edge contract rejects caller forwarding/identity headers, duplicate si
     const v = viewer(); change(v); assert.throws(() => validateViewerRequest(v, 'https://opensight.example'));
   }
   assert.throws(() => publicPath('/api/api/migrations'));
+});
+
+test('SR1 pre-DB method validation matches existing data and job routes', () => {
+  for (const [path, methods] of [['/api/api/sources/id/rows', ['POST']], ['/api/api/sources/id/output', ['POST']], ['/api/api/sources/id/policy', ['GET']], ['/api/api/uploads/upload_id', ['GET']], ['/api/api/jobs/id/runs', ['GET', 'POST']], ['/api/api/auth/login', ['POST']]]) {
+    for (const method of ['GET', 'POST', 'PUT', 'DELETE']) {
+      if (methods.includes(method)) assert.equal(adaptGatewayRequest(event(path, method), runtimeEnv()).method, method);
+      else assert.throws(() => adaptGatewayRequest(event(path, method), runtimeEnv()));
+    }
+  }
 });

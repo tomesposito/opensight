@@ -9,6 +9,9 @@ import { runtimeEnv, event, startupEvent, context, payload } from './runtime-hel
 import { StubMailTransport } from '../dist/mail.js';
 import { HostedAuth } from '../dist/hosted-auth.js';
 import { hostedConfig } from '../dist/hosted-config.js';
+import { drainHostedServer } from '../dist/hosted-server.js';
+import { dispatchRuntimeRequest } from '../dist/runtime-http-bridge.js';
+import { EmbedSessions } from '../dist/embed-sessions.js';
 
 test('SR1 HTTP and Lambda share hosted routing, with clean per-request teardown and no interval work', async t => {
   const f = await h8Fixture(t), queries = []; let opened = 0, closed = 0;
@@ -20,6 +23,7 @@ test('SR1 HTTP and Lambda share hosted routing, with clean per-request teardown 
   const env = { ...f.env, ...runtimeEnv() }, runtime = createRuntime(() => env, deps);
   const first = await runtime.lambda(event(), context);
   assert.equal(first.statusCode, 200); assert.equal(payload(first).tenantId, 'tenant-one'); assert.equal(opened, closed);
+  assert.match(first.headers['content-type'], /application\/json/); assert.equal(first.headers['cache-control'], 'no-store');
   const second = event(); second.headers.authorization = 'unverified';
   assert.equal((await runtime.lambda(second, context)).statusCode, 401); assert.equal(opened, closed);
   assert.equal(payload(await runtime.lambda(event('/api/api/sources'), context)).errorCode, 'SERVERLESS_STORAGE_REQUIRED');
@@ -53,4 +57,51 @@ test('SR1 mode selection and startup validation reject configuration and bodies 
     const e = startupEvent(); change(e); assert.equal((await runtime.lambda(e, context)).statusCode, 400);
   }
   assert.equal(opened, 0);
+});
+
+test('SR1 in-memory HTTP response retains embed CSP/nonces and no-store across separate responses', async t => {
+  const f = await h8Fixture(t);
+  t.mock.method(EmbedSessions.prototype, 'shell', async () => ({ allowedDomains: ['https://parent.example'] }));
+  const server = await createHostedApiServer({ membershipDatabase: f.db, tenantDatabase: f.db, env: f.env, security: { authenticate: async () => undefined }, mailTransport: new StubMailTransport() });
+  t.after(() => drainHostedServer(server));
+  const request = { method: 'GET', path: `/embed/sessions/${'a'.repeat(32)}`, headers: { host: 'opensight.example' }, body: Buffer.alloc(0), peer: '192.0.2.1', requestTime: Date.now() };
+  const first = await dispatchRuntimeRequest(server, request, new AbortController().signal), second = await dispatchRuntimeRequest(server, request, new AbortController().signal);
+  for (const result of [first, second]) {
+    assert.equal(result.statusCode, 200); assert.equal(result.headers['cache-control'], 'no-store'); assert.equal(result.headers['referrer-policy'], 'no-referrer');
+    assert.match(result.headers['content-type'], /text\/html/); assert.match(result.headers['content-security-policy'], /frame-ancestors https:\/\/parent.example/);
+    const nonce = /nonce-([^']+)/.exec(result.headers['content-security-policy'])[1];
+    assert.ok(Buffer.from(result.body, 'base64').toString().includes(`nonce="${nonce}"`));
+  }
+  assert.notEqual(first.headers['content-security-policy'], second.headers['content-security-policy']);
+});
+
+test('SR1 built-in Lambda auth receives canonical peer without starting timers or reactivating keys', async t => {
+  const f = await h8Fixture(t), env = { ...f.env, ...runtimeEnv() };
+  await HostedAuth.create(f.db, hostedConfig(f.env));
+  let peer, closed = 0;
+  t.mock.method(HostedAuth.prototype, 'login', async (_email, _password, _code, _tenant, value) => { peer = value; return { token: 'synthetic' }; });
+  t.mock.method(globalThis, 'setInterval', () => assert.fail('invocation started an interval'));
+  const runtime = createRuntime(() => env, { databases(scope) {
+    scope.own({ close: async () => { closed++; }, force() {} }); return { membership: f.db, tenant: f.db };
+  }, readiness: async () => {} });
+  const e = event('/api/api/auth/login', 'POST', { email: 'synthetic@example.test', password: 'synthetic', code: '123456', tenantId: 'tenant-one' });
+  delete e.headers.authorization; e.headers['cloudfront-viewer-address'] = '[::ffff:192.0.2.10]:1234';
+  assert.equal((await runtime.lambda(e, context)).statusCode, 200); assert.equal(peer, '192.0.2.10'); assert.equal(closed, 1);
+  await f.db.transaction(c => c.query('UPDATE h2_keys SET active = 0'));
+  assert.equal((await runtime.lambda(e, context)).statusCode, 401); assert.equal(closed, 2);
+  assert.equal((await f.db.transaction(c => c.query('SELECT active FROM h2_keys')))[0].active, 0);
+});
+
+test('SR1 local HTTP client abort cancels admitted work and closes owned resources', async t => {
+  let entered, disposed;
+  const ready = new Promise(resolve => { entered = resolve; }), closed = new Promise(resolve => { disposed = resolve; });
+  const runtime = createRuntime(() => ({ ...runtimeEnv(), OPENSIGHT_RUNTIME: 'http' }), {
+    databases(scope) { scope.own({ close: async () => disposed(), force() {} }); return {}; },
+    readiness: (_db, scope) => new Promise((_, reject) => { scope.signal.addEventListener('abort', () => reject(Error('client disconnected')), { once: true }); entered(); }),
+  });
+  const server = runtime.http(); server.listen(0, '127.0.0.1'); await once(server, 'listening');
+  t.after(() => new Promise(resolve => server.close(resolve)));
+  const req = request({ host: '127.0.0.1', port: server.address().port, path: '/api/session', headers: { host: 'opensight.example' } });
+  req.on('error', () => {}); req.end(); await ready; req.destroy();
+  await closed;
 });

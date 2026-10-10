@@ -39,11 +39,18 @@ export async function dispatchRuntimeRequest(server: Server, input: RuntimeReque
     if (outputError) throw outputError;
     const raw = Buffer.concat(chunks), separator = raw.indexOf('\r\n\r\n');
     if (separator < 0) throw new MetadataError('HOSTED_RESPONSE_INVALID', 503);
-    const headers: Record<string, string> = {};
-    for (const [name, value] of Object.entries(response.getHeaders())) if (value !== undefined && name !== 'set-cookie') headers[name] = Array.isArray(value) ? value.join(', ') : String(value);
+    // writeHead(status, headers) need not populate getHeaders(). Read the wire
+    // headers so CSP, nonce, referrer policy and content type survive unchanged.
+    const headers: Record<string, string> = {}, cookies: string[] = [];
+    for (const line of raw.subarray(0, separator).toString('latin1').split('\r\n').slice(1)) {
+      const colon = line.indexOf(':');
+      if (colon < 1) throw new MetadataError('HOSTED_RESPONSE_INVALID', 503);
+      const name = line.slice(0, colon).toLowerCase(), value = line.slice(colon + 1).trim();
+      if (name === 'set-cookie') cookies.push(value);
+      else if (!['connection', 'keep-alive', 'transfer-encoding'].includes(name)) headers[name] = headers[name] === undefined ? value : `${headers[name]}, ${value}`;
+    }
     headers['cache-control'] = 'no-store';
-    const cookies = response.getHeader('set-cookie');
     return { statusCode: response.statusCode, headers, body: raw.subarray(separator + 4).toString('base64'), isBase64Encoded: true,
-      ...(cookies === undefined ? {} : { cookies: Array.isArray(cookies) ? cookies : [String(cookies)] }) };
+      ...(cookies.length ? { cookies } : {}) };
   } finally { signal.removeEventListener('abort', abort); response.detachSocket(output); request.destroy(); socket.destroy(); output.destroy(); }
 }

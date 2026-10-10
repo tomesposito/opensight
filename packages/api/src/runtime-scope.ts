@@ -11,6 +11,24 @@ const current = new AsyncLocalStorage<InvocationScope>();
 const directories = new Set<string>();
 let poisoned = false;
 let directoryWork: Promise<unknown> = Promise.resolve();
+const temporaryRoot = join(tmpdir(), 'opensight-invocations');
+function serializeDirectory<T>(work: () => Promise<T>): Promise<T> {
+  const result = directoryWork.then(work); directoryWork = result.catch(() => {}); return result;
+}
+async function clearRemnants(): Promise<void> {
+  let entries: string[];
+  try { entries = await readdir(temporaryRoot); }
+  catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return; throw error; }
+  for (const entry of entries) {
+    const match = /^inv-(\d+)-[A-Za-z0-9]+$/.exec(entry), path = join(temporaryRoot, entry);
+    if (!match || directories.has(path)) continue;
+    if (Number(match[1]) !== process.pid) {
+      try { process.kill(Number(match[1]), 0); continue; }
+      catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ESRCH') continue; }
+    }
+    await rm(path, { recursive: true, force: true });
+  }
+}
 
 /** No success may escape this scope until every owned resource has settled. */
 export class InvocationScope {
@@ -22,6 +40,7 @@ export class InvocationScope {
   private closing?: Promise<void>;
   private stopped = false;
   private directory?: string;
+  private cleanupFailed = false;
   constructor(readonly deadline: number, readonly cleanupMs = 3000) {
     if (poisoned) throw new MetadataError('RUNTIME_QUARANTINED', 503);
     if (!Number.isFinite(deadline) || !Number.isInteger(cleanupMs) || cleanupMs < 1 || cleanupMs > 3000) throw new MetadataError('RUNTIME_CONFIG_INVALID', 503);
@@ -33,7 +52,11 @@ export class InvocationScope {
   }
   remaining(): number { this.check(); return this.deadline - this.cleanupMs - Date.now(); }
   own<T extends InvocationResource>(resource: T): T {
-    try { this.check(); } catch (error) { resource.force(); this.track(resource.close()); throw error; }
+    try { this.check(); } catch (error) {
+      try { resource.force(); } catch { this.cleanupFailed = true; }
+      this.track(Promise.resolve().then(() => resource.close()).catch(() => { this.cleanupFailed = true; }));
+      throw error;
+    }
     this.resources.push(resource); return resource;
   }
   track<T>(promise: Promise<T>): Promise<T> {
@@ -61,23 +84,22 @@ export class InvocationScope {
   }
   async temporaryDirectory(): Promise<string> {
     this.check();
-    const create = directoryWork.then(async () => {
+    const create = serializeDirectory(async () => {
       this.check();
       if (this.directory) return this.directory;
-      const root = join(tmpdir(), 'opensight-invocations');
-      await mkdir(root, { recursive: true, mode: 0o700 });
-      // Lambda /tmp can survive process replacement. Only this runtime's private
-      // namespace is swept, and live local invocations are never touched.
-      for (const entry of await readdir(root)) if (entry.startsWith('inv-') && !directories.has(join(root, entry))) await rm(join(root, entry), { recursive: true, force: true });
-      this.directory = await mkdtemp(join(root, 'inv-')); directories.add(this.directory);
+      await mkdir(temporaryRoot, { recursive: true, mode: 0o700 });
+      this.directory = await mkdtemp(join(temporaryRoot, `inv-${process.pid}-`)); directories.add(this.directory);
       return this.directory;
     });
-    directoryWork = create.catch(() => {});
     return this.track(create);
   }
   async run<T>(work: (scope: InvocationScope) => Promise<T>): Promise<T> {
     return current.run(this, async () => {
-      try { this.check(); return await this.stage(() => work(this), this.remaining(), () => this.controller.abort()); }
+      try { this.check(); return await this.stage(async () => {
+        // /tmp survives Lambda process replacement. Clear interrupted work before
+        // admission, preserving any other live local process/invocation.
+        await serializeDirectory(clearRemnants); this.check(); return work(this);
+      }, this.remaining(), () => this.controller.abort()); }
       finally { await this.close(); }
     });
   }
@@ -93,9 +115,11 @@ export class InvocationScope {
     try {
       const cleanup = (async () => {
         const results = await Promise.allSettled(this.resources.map(r => Promise.resolve().then(() => r.close())));
-        await Promise.allSettled([...this.pending]);
+        // Late connect/work settlement can register its own close operation.
+        // Drain repeatedly so that cleanup never loses that final owner.
+        while (this.pending.size) await Promise.allSettled([...this.pending]);
         if (this.directory) { await rm(this.directory, { recursive: true, force: true }); directories.delete(this.directory); }
-        if (results.some(r => r.status === 'rejected')) throw new MetadataError('INVOCATION_CLEANUP_FAILED', 503);
+        if (this.cleanupFailed || results.some(r => r.status === 'rejected')) throw new MetadataError('INVOCATION_CLEANUP_FAILED', 503);
       })();
       await Promise.race([cleanup, new Promise<never>((_, reject) => {
         deadlineTimer = setTimeout(() => reject(new MetadataError('INVOCATION_CLEANUP_FAILED', 503)), remaining);

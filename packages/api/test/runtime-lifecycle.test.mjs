@@ -2,7 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter, once } from 'node:events';
 import { createServer } from 'node:net';
-import { access, writeFile } from 'node:fs/promises';
+import { access, writeFile, mkdir } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { InvocationScope, invocationDeadline } from '../dist/runtime-scope.js';
 import { InvocationPool, invocationDatabases } from '../dist/runtime-postgres.js';
 import { PostgresMetadataDatabase } from '../dist/metadata-db.js';
@@ -100,4 +102,29 @@ test('SR1 deadline arithmetic consumes ingress/init overhead; cleanup removes pr
   let directory;
   await scope().run(async s => { directory = await s.temporaryDirectory(); await writeFile(`${directory}/sensitive`, 'synthetic'); });
   await assert.rejects(access(directory), { code: 'ENOENT' });
+});
+
+test('SR1 cleanup waits for resource disposal registered by late cancelled work', async () => {
+  let closed = false, forced = false;
+  const invocation = new InvocationScope(Date.now() + 10000);
+  const run = invocation.run(async s => {
+    s.controller.abort();
+    await new Promise(resolve => setTimeout(resolve, 5));
+    s.own({ force: () => { forced = true; }, close: async () => { await new Promise(resolve => setTimeout(resolve, 5)); closed = true; } });
+  });
+  await assert.rejects(run, { code: 'INVOCATION_DEADLINE_EXCEEDED' });
+  assert.equal(forced, true); assert.equal(closed, true);
+});
+
+test('SR1 entry clears interrupted temporary files while preserving other active scopes', async () => {
+  const stale = join(tmpdir(), 'opensight-invocations', `inv-${process.pid}-stale`);
+  await mkdir(stale, { recursive: true, mode: 0o700 }); await writeFile(join(stale, 'sensitive'), 'synthetic');
+  let one, two;
+  await scope().run(async first => {
+    await assert.rejects(access(stale), { code: 'ENOENT' });
+    one = await first.temporaryDirectory();
+    await scope().run(async second => { two = await second.temporaryDirectory(); assert.notEqual(one, two); await access(one); });
+    await access(one); await assert.rejects(access(two), { code: 'ENOENT' });
+  });
+  await assert.rejects(access(one), { code: 'ENOENT' });
 });

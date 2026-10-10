@@ -23,7 +23,7 @@ export class InvocationPool implements MetadataPool {
       lock_timeout: 500, idle_in_transaction_session_timeout: 3000, options: '-c idle_session_timeout=5000',
       stream: () => {
         const socket = new Socket(); this.sockets.add(socket);
-        const closed = new Promise<void>(resolve => socket.once('close', () => { this.sockets.delete(socket); resolve(); }));
+        const closed = scope.track(new Promise<void>(resolve => socket.once('close', () => { this.sockets.delete(socket); resolve(); })));
         this.socketClosures.add(closed); void closed.then(() => this.socketClosures.delete(closed));
         if (this.closed || scope.signal.aborted) socket.destroy();
         return socket;

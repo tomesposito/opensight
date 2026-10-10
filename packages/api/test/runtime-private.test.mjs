@@ -50,6 +50,9 @@ test('SR1 bootstrap migration is transactional, audited, repeatable and leaves m
   assert.equal((await db.transaction(c => c.query('SELECT state FROM sr_control')))[0].state, 'maintenance');
   assert.equal((await db.transaction(c => c.query('SELECT * FROM h8_audit'))).length, 2);
   assert.deepEqual(await db.transaction(c => c.query('SELECT * FROM h2_keys')), [], 'migration must not activate keys');
+  await db.transaction(c => c.query('UPDATE sr_control SET schema_max = 2'));
+  await assert.rejects(runtime.migration(command(e), context), { code: 'MIGRATION_SCHEMA_INCOMPATIBLE' });
+  assert.equal((await db.transaction(c => c.query('SELECT schema_max FROM sr_control')))[0].schema_max, 2);
   await db.transaction(c => c.query("UPDATE sr_control SET state = 'open'"));
   await assert.rejects(runtime.migration(command(e), context), { code: 'WORKSPACE_MAINTENANCE_REQUIRED' });
   assert.equal((await db.transaction(c => c.query('SELECT * FROM h8_audit'))).length, 2);
