@@ -5,6 +5,14 @@ an IPv6-first AWS validation plan. This is not AWS access/spending authorization
 for ordinary builds. Follow `AGENTS.md`; freeze each slice's complete contract in
 `SOLUTION_DESIGN.md` in a separate spec commit before implementing it.
 
+**SR4a update, 2026-10-10:** the image, generic OpenTofu modules and private
+operator harness are implemented. A separately authorized isolated AWS run
+proved both subnet transports, real synthetic SMTP, Aurora roles/RLS and short
+pause/resume. [Validation evidence](issue-83-gap-notes.md) records exact tests,
+image provenance and remaining checks. Long-idle resume is still pending;
+maintenance remains frozen and there is no public site. SR2, SR3 and SR4b remain
+open. The baseline below describes the earlier SR1 handoff.
+
 ## Current baseline
 
 - Issue #81 produced draft D-19 through D-25 contracts.

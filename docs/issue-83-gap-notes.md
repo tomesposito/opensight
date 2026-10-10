@@ -9,9 +9,9 @@ are still pending. It is not a deployed public site.
 ## Tests and artifacts
 
 On 2026-10-10, root `npm test` ran offline in the pinned Linux ARM64 Lambda base,
-Node **24.21.0**: **2,250 passed / 0 failed / 12 skipped / 0 cancelled**,
-2,262 total. Every skip is an existing live-Postgres integration test with
-`DATABASE_URL` unset. The upstream issue #76 layout-export and #77 reference-line fixes are included.
+Node **24.21.0**: **2,256 passed / 0 failed / 12 skipped / 0 cancelled**,
+2,268 total. Every skip is an existing live-Postgres integration test with
+`DATABASE_URL` unset. The upstream issue #76 layout-export, #77 reference-line and #78 bundle-import fixes are included.
 
 | Suite | Passed | Failed | Skipped |
 | --- | ---: | ---: | ---: |
@@ -21,7 +21,7 @@ Node **24.21.0**: **2,250 passed / 0 failed / 12 skipped / 0 cancelled**,
 | O interpreter | 32 | 0 | 0 |
 | Parity | 11 | 0 | 0 |
 | Query engine | 502 | 0 | 2 |
-| Web | 1,139 | 0 | 0 |
+| Web | 1,145 | 0 | 0 |
 | Root conformance | 14 | 0 | 0 |
 
 Both OpenTofu roots validate. All **5 mocked-provider tests pass**, checking the
@@ -36,6 +36,9 @@ handshake without quarantining a clean runtime.
 
 The production image is approximately **201 MiB**, ARM64, pinned at
 `sha256:50acb0d77973e607e9490d9ddd5c94ec80c741af655243e8341e7a24e77f05c1`.
+It was built from `61ce9e6` before the later #78 frontend import fix; its own full
+root suite passed **2,250 / 0 / 12**. The merged-source counts above include six
+additional upstream web tests. No public frontend is deployed by this experiment.
 Nine image checks passed with no networking, an unprivileged user, read-only root
 and a 512 MiB `/tmp`: filesystem limits, production modules, embed assets,
 native success/failure/cancellation, worker reaping and temporary-file cleanup.
@@ -73,6 +76,8 @@ Measured on the pinned image and its immediately preceding build:
   role's required BYPASSRLS configuration worked on Aurora. Restricted tenant role,
   namespace isolation and attempted cross-scope access passed using rolled-back
   synthetic rows, including each subnet independently. Maintenance stayed frozen.
+- The final pinned image repeated the database isolation probe from zero ACUs
+  in 13.274 seconds; native work and maintenance startup passed again.
 - CloudWatch showed Aurora returning to zero ACUs after SQL activity stopped;
   observation used service metrics and did not connect to PostgreSQL.
 - A deliberately blocked TLS route returned `PROBE_TLS_TIMEOUT`; restoring the
@@ -87,6 +92,10 @@ environment values during initial dependency creation, managed Aurora credential
 ARN validation, implicit CLI retries and a stalled TLS handshake that previously
 left cleanup pending. Regression tests cover those failures; the strict plan,
 maintenance, tenant-role and invocation accounting checks were retained.
+
+A final refreshed plan reported no infrastructure changes. All three functions
+use the pinned image, both original subnets and frozen maintenance; none has a
+function URL or event-source mapping.
 
 Raw inventory, plans, logs, policy results, counters and address-bearing evidence
 are private operator files outside Git. Synthetic object versions and one-shot
