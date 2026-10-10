@@ -10,11 +10,3 @@ build/
 coverage/
 
 .opensight/
-
-# Operator deployment inputs, backend state and saved plans never belong in Git.
-.terraform/
-*.tfstate
-*.tfstate.*
-*.tfplan
-*.tfvars
-*.tfvars.json

@@ -43,10 +43,6 @@
   },
   "types": "./dist/index.d.ts",
   "dependencies": {
-    "@aws-sdk/client-s3": "3.1149.0",
-    "@aws-sdk/client-scheduler": "3.1149.0",
-    "@aws-sdk/client-secrets-manager": "3.1149.0",
-    "@aws-sdk/client-sqs": "3.1149.0",
     "@opensight/bundle-parser": "0.0.0",
     "@opensight/o-interpreter": "0.0.0",
     "@opensight/query-engine": "0.0.0",

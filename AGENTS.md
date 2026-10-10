@@ -58,9 +58,6 @@ These principles resolve trade-offs. In order:
    operator installs and configures (e.g. Postgres) is not bundled: it must be
    open-source and freely available — the PostgreSQL License qualifies;
    SSPL/RSAL/BSL-style terms do not.
-   **Approved exception (2026-10-10, D-27):** `tslib` 2.8.1 may use its
-   0BSD license for the standard AWS SDK. This narrowly updates the existing
-   `tslib` helper; it does not permit other dependencies or licenses generally.
 6. **Nothing personal, ever.** No credentials, tokens, customer data,
    private hostnames, account IDs, or unsanitized exports in the repo.
    Configuration comes strictly from environment variables.
