@@ -14,5 +14,8 @@
   ],
   "engines": {
     "node": ">=24"
+  },
+  "overrides": {
+    "tslib": "2.8.1"
   }
 }

@@ -28,7 +28,8 @@ export class StubMailTransport implements MailTransport {
 }
 
 /** Environment is the ONLY SMTP configuration source. No HTTP or resource config. */
-export function smtpFromEnvironment(env: NodeJS.ProcessEnv = process.env): MailTransport {
+export interface SmtpInvocationOptions { signal?: AbortSignal; timeoutMs?: number; family?: 4 | 6; ownSocket?: (socket: import('node:tls').TLSSocket) => void }
+export function smtpFromEnvironment(env: NodeJS.ProcessEnv = process.env, options: SmtpInvocationOptions = {}): MailTransport {
   const host = env.OPENSIGHT_SMTP_HOST, from = env.OPENSIGHT_SMTP_FROM;
   const portText = env.OPENSIGHT_SMTP_PORT ?? '465';
   const user = env.OPENSIGHT_SMTP_USER, password = env.OPENSIGHT_SMTP_PASSWORD;
@@ -39,9 +40,15 @@ export function smtpFromEnvironment(env: NodeJS.ProcessEnv = process.env): MailT
   const port = Number(portText);
   return { configured: true, async send(message, authorize) {
     // Implicit TLS only, with certificate verification. No plaintext downgrade.
-    const socket = connect({ host, port, servername: host, minVersion: 'TLSv1.2', rejectUnauthorized: true });
-    socket.setTimeout(30000, () => socket.destroy(new Error('SMTP timeout')));
-    const deadline = setTimeout(() => socket.destroy(new Error('SMTP deadline')), 60000);
+    if (options.signal?.aborted) throw new MailError('SMTP_SEND_FAILED');
+    const connection: import('node:tls').ConnectionOptions & import('node:net').TcpNetConnectOpts = { host, port, servername: host, family: options.family, minVersion: 'TLSv1.2', rejectUnauthorized: true };
+    const socket = connect(connection);
+    const closed = new Promise<void>(resolve => socket.once('close', () => resolve()));
+    const abort = () => socket.destroy(new Error('SMTP cancelled'));
+    options.signal?.addEventListener('abort', abort, { once: true });
+    options.ownSocket?.(socket);
+    socket.setTimeout(Math.min(options.timeoutMs ?? 30000, 30000), () => socket.destroy(new Error('SMTP timeout')));
+    const deadline = setTimeout(() => socket.destroy(new Error('SMTP deadline')), Math.min(options.timeoutMs ?? 60000, 60000));
     let authorizationError: unknown;
     try {
       const lines = smtpLines(socket)[Symbol.asyncIterator]();
@@ -75,7 +82,7 @@ export function smtpFromEnvironment(env: NodeJS.ProcessEnv = process.env): MailT
       // Acceptance of DATA is the delivery boundary; a failed QUIT must not duplicate mail.
       socket.end('QUIT\r\n');
     } catch { if (authorizationError) throw authorizationError; throw new MailError('SMTP_SEND_FAILED'); }
-    finally { clearTimeout(deadline); socket.destroy(); }
+    finally { clearTimeout(deadline); options.signal?.removeEventListener('abort', abort); socket.destroy(); await closed; }
   } };
 }
 async function* smtpLines(stream: AsyncIterable<Buffer>): AsyncGenerator<string> {
