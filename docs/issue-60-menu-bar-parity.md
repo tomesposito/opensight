@@ -33,11 +33,12 @@ its no-AI/hosted disclosures. Calculated fields, filters and parameters open
 their existing editors; filters require a selected visual. Text and image
 objects remain unavailable. Data-dependent actions are disabled without data.
 
-Sheets adds and renames sheets using the existing controls and retains sheet
+Sheets adds, duplicates, and renames sheets using the existing controls and retains sheet
 switching below the reference items. Sheet tabs also appear before data is
-added, so these actions have a visible result. Duplication, separate sheet
-title/description objects, and layout settings remain unavailable. Existing
-canvas dragging/resizing and FIT TO WIDTH are unchanged.
+added, so these actions have a visible result. Add Title and Add Description
+create styled text objects at the top of the sheet; Layout Settings configures
+per-sheet row height and item spacing, persisted in the analysis definition.
+Existing canvas dragging/resizing and FIT TO WIDTH are unchanged.
 
 Objects opens Format Object, Field Wells, Title, Subtitle, Data Labels, Legend,
 Conditional Formatting and Actions. It reveals the correct Properties tab and
