@@ -58,4 +58,26 @@ foreign HTML rendering remain unavailable. Autosave uses existing browser
 storage; quota failures retain the editor state and report the existing
 export-to-keep-your-work explanation.
 
-Browser and README verification results will be recorded below after capture.
+Browser and README verification results (recorded 2026-10-10 after capture):
+
+- `packages/web/scripts/capture-text-image-objects.mjs` (new): 7 recorded
+  checks against the rebuilt static demo, zero page errors, zero external
+  HTTP requests. Insert -> Add Text / Add Image are enabled; text box content
+  edits in place with font size/bold/alignment persisted; arrow-key move and
+  Shift+arrow resize undo/redo step by step through the Edit menu; a generated
+  SVG embeds from the device picker with description and opacity; the Objects
+  menu selects the image and Placement focuses its numeric controls; removal
+  via the Objects menu and undo restore. Raw captures stay in ignored
+  `.opensight/issue-67/browser/`.
+- The Codex run left 8 web-package test failures (two file inputs colliding
+  in test selectors; empty-state copy changed to "Select a visual or object").
+  Fixed in commit e9ce132c: tests disambiguate the bundle-import input by its
+  `.qs` accept attribute, the image picker handler uses `e.currentTarget`
+  like the import input, and the copy assertions match the new text.
+- README media refreshed: hero GIF regenerated from the current demo
+  (`docs/images/opensight-tour.gif`) and new feature screenshot
+  `docs/images/text-image-objects.png` with a short README section. Note:
+  `~/workspace/tools/screenshots/readme-gif-44.mjs` broke again on the
+  ambiguous `page.click('text=Data')` (15 matches); `setMode` now uses the
+  role-scoped product-nav selectors from
+  `packages/web/scripts/app-navigation.mjs`.

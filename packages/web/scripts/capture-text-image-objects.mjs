@@ -58,10 +58,13 @@ try {
   const moved = activeSheet(draft).layout.find(p => p.i === objects[0].id);
   assert.equal(moved.x, before.x + 1); assert.equal(moved.w, before.w + 1);
   await undo(); draft = await snapshot();
+  const undoneOnce = activeSheet(draft).layout.find(p => p.i === objects[0].id);
+  assert.equal(undoneOnce.w, before.w); assert.equal(undoneOnce.x, before.x + 1);
+  await undo(); draft = await snapshot();
   assert.deepEqual(activeSheet(draft).layout.find(p => p.i === objects[0].id), before);
-  await redo(); draft = await snapshot();
+  await redo(); await redo(); draft = await snapshot();
   assert.equal(activeSheet(draft).layout.find(p => p.i === objects[0].id).x, before.x + 1);
-  check('Arrow-key move and Shift+arrow resize undo/redo through the Edit menu');
+  check('Arrow-key move and Shift+arrow resize undo/redo step by step through the Edit menu');
   // Add an image through the device-local picker.
   await action('Insert', 'Add Image');
   await page.locator('input[aria-label="Insert local image"]').setInputFiles('/tmp/issue67-test-image.svg');
