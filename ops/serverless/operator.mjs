@@ -29,6 +29,16 @@ export function safeProbeResult(response) {
     || Object.keys(response).sort().join() !== 'command,durationMs,passed,version') throw Error('PROBE_FAILED');
   return response;
 }
+export function stateAddresses(state) {
+  if (state?.format_version !== '1.0') throw Error('STATE_FORMAT_UNSUPPORTED');
+  const addresses = new Set();
+  const visit = module => {
+    for (const resource of module?.resources ?? []) addresses.add(resource.address);
+    for (const child of module?.child_modules ?? []) visit(child);
+  };
+  visit(state.values?.root_module);
+  return addresses;
+}
 /** AWS's documented regional SMTP derivation; the IAM signing key is never stored. */
 export function smtpPassword(secret, region) {
   if (typeof secret !== 'string' || secret.length < 16 || region !== 'us-east-1') throw Error('SMTP_KEY_INVALID');
@@ -133,7 +143,9 @@ export async function main(args = process.argv.slice(2), environment = process.e
       aws('s3api', 'put-bucket-encryption', [...bucketArgs, '--server-side-encryption-configuration', JSON.stringify({ Rules: [{ ApplyServerSideEncryptionByDefault: { SSEAlgorithm: 'aws:kms', KMSMasterKeyID: key.Arn }, BucketKeyEnabled: true }] })]);
       aws('s3api', 'put-bucket-policy', [...bucketArgs, '--policy', JSON.stringify({ Version: '2012-10-17', Statement: [{ Sid: 'RequireTLS', Effect: 'Deny', Principal: '*', Action: 's3:*', Resource: [`arn:aws:s3:::${stateBucket}`, `arn:aws:s3:::${stateBucket}/*`], Condition: { Bool: { 'aws:SecureTransport': 'false' } } }] })]);
       init('bootstrap');
-      const current = new Set(tofu('bootstrap', ['state', 'list']).trim().split('\n'));
+      // `state list` fails before the first import; `show -json` explicitly
+      // represents an initialized backend with no state yet.
+      const current = stateAddresses(JSON.parse(tofu('bootstrap', ['show', '-json'])));
       for (const [address, id] of [['aws_kms_key.state', key.KeyId], ['aws_kms_alias.state', keyAlias], ...['aws_s3_bucket', 'aws_s3_bucket_public_access_block', 'aws_s3_bucket_versioning', 'aws_s3_bucket_server_side_encryption_configuration', 'aws_s3_bucket_policy'].map(type => [`${type}.state`, stateBucket])]) {
         if (!current.has(address)) tofu('bootstrap', ['import', '-input=false', vars('bootstrap'), address, id]);
       }
@@ -144,7 +156,7 @@ export async function main(args = process.argv.slice(2), environment = process.e
       if (existing) owned(aws('ecr', 'list-tags-for-resource', ['--resource-arn', existing.repositoryArn]).tags.map(t => ({ Key: t.Key ?? t.key, Value: t.Value ?? t.value })), deployment);
       else aws('ecr', 'create-repository', ['--repository-name', deployment, '--image-tag-mutability', 'IMMUTABLE', '--image-scanning-configuration', 'scanOnPush=true', '--tags', JSON.stringify(tags)]);
       init('validation');
-      if (!tofu('validation', ['state', 'list']).split('\n').includes('aws_ecr_repository.runtime')) tofu('validation', ['import', '-input=false', vars('validation'), 'aws_ecr_repository.runtime', deployment]);
+      if (!stateAddresses(JSON.parse(tofu('validation', ['show', '-json']))).has('aws_ecr_repository.runtime')) tofu('validation', ['import', '-input=false', vars('validation'), 'aws_ecr_repository.runtime', deployment]);
       console.log('Owned immutable image repository is ready. Push the reviewed image digest before planning functions.'); return;
     }
     if (operation === 'plan') {

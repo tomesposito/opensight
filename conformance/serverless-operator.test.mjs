@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, chmod, rm, mkdir, symlink, realpath } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { privateDirectory, reserveInvocation, owned, safeProbeResult, smtpPassword } from '../ops/serverless/operator.mjs';
+import { privateDirectory, reserveInvocation, owned, safeProbeResult, smtpPassword, stateAddresses } from '../ops/serverless/operator.mjs';
 import { checkPlan } from '../ops/serverless/plan-policy.mjs';
 
 test('SR4a private operator paths exclude the checkout, relative paths, symlinks and permissive directories', async () => {
@@ -38,6 +38,12 @@ test('SR4a cleanup ownership and probe output reject foreign resources and secre
   const response = { version: 1, command: 'native', passed: true, durationMs: 42 };
   assert.deepEqual(safeProbeResult(response), response);
   for (const bad of [{ ...response, password: 'synthetic' }, { ...response, passed: false }, { ...response, durationMs: -1 }, { ...response, errorMessage: 'provider details' }]) assert.throws(() => safeProbeResult(bad));
+});
+test('SR4a bootstrap accepts a new empty backend and preserves already imported resources', () => {
+  assert.deepEqual([...stateAddresses({ format_version: '1.0' })], []);
+  const state = { format_version: '1.0', values: { root_module: { resources: [{ address: 'aws_kms_key.state' }], child_modules: [{ resources: [{ address: 'module.nested.aws_s3_bucket.state' }] }] } } };
+  assert.deepEqual([...stateAddresses(state)], ['aws_kms_key.state', 'module.nested.aws_s3_bucket.state']);
+  for (const invalid of [null, {}, { format_version: '2.0' }]) assert.throws(() => stateAddresses(invalid), /STATE_FORMAT_UNSUPPORTED/);
 });
 function plan() {
   const resources = [];
