@@ -11,10 +11,8 @@ reviewed deployment plan; this document does not authorize spending.
 **Post-SR1 update, 2026-10-10:** SR0 drafts and SR1 runtime composition have landed.
 The operator approved advancing [SR2–SR4 preparation](phase5-developer-handoff.md)
 alongside an [IPv6-first isolated validation plan](phase5-aws-validation-plan.md).
-SR4a packaging and a separately authorized isolated AWS run have since proved
-selected transport, SQL and short pause/resume assumptions; see the
-[validation evidence](issue-83-gap-notes.md). Long-idle resume and full application
-acceptance remain pending. This does not open SR1's deliberately closed storage/job paths.
+The latter is pending resource/cost approval and proves only selected platform
+assumptions. It does not open SR1's deliberately closed storage/job paths.
 
 ## 1. Scope and expected experience
 
@@ -275,7 +273,7 @@ product choices or AWS spending.
 | VPC egress and real mail | [D-19](itd/D-19-serverless-egress.md) | IPv6-first validation selected; exact resource/cost approval and live proof pending; source scope reviewed before pilot |
 | Trusted ingress | [D-20](itd/D-20-serverless-ingress.md) | Review origin-secret custody and authoring/embed routing proof |
 | Startup and idle clients | [D-21](itd/D-21-aurora-readiness.md) | [D-26](idd/D-26-idle-embed-reconnect.md) confirms 45s idle embed expiry/Connect; tester allowlist/WAF cost and remaining technical details stay open |
-| Uploads and bounded results | [D-22](itd/D-22-serverless-object-transfers.md) | D-28 confirms asynchronous UX/1 MiB control ceiling; freeze detailed immutable version and authorization protocol |
+| Uploads and bounded results | [D-22](itd/D-22-serverless-object-transfers.md) | Tom: asynchronous UX/control ceiling; review immutable version and authorization protocol |
 | SQL/admission/artifacts | [D-23](itd/D-23-serverless-state-and-fencing.md) | Review transaction schema, hard-deadline containment and H9/H10 failure proof |
 | Event work and delivery | [D-24](itd/D-24-serverless-job-dispatch.md) | Review prearmed recovery proof, retention and H7 delivery ambiguity |
 | Terraform/build artifacts and release | [D-25](itd/D-25-serverless-release-artifacts.md) | Tom: tooling/licenses, private workflow protections, secret-state custody and retention/cost; review migration/rollback proof |

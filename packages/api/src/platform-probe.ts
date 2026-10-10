@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { Resolver } from 'node:dns/promises';
-import { connect, type TLSSocket } from 'node:tls';
+import { connect } from 'node:tls';
 import { access, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
@@ -22,15 +22,6 @@ import { ingressConfig } from './runtime-ingress.js';
 export const probeCommands = ['network', 'mail', 'bootstrap', 'database', 'native', 'startup'] as const;
 export type ProbeCommand = typeof probeCommands[number];
 const fail = (code: string): never => { throw new MetadataError(code, 503); };
-export function probeFailure(error: unknown): MetadataError {
-  if (error instanceof MetadataError) return new MetadataError(error.code, 503);
-  // SQLSTATE is safe diagnostic evidence; SQL text, detail and credentials are not.
-  if (error && typeof error === 'object' && 'severity' in error && 'code' in error
-    && ['ERROR', 'FATAL', 'PANIC'].includes(String(error.severity)) && typeof error.code === 'string' && error.code.length === 5 && /^[A-Z0-9]{5}$/.test(error.code)) {
-    return new MetadataError(`PROBE_SQL_${error.code}`, 503);
-  }
-  return new MetadataError('PROBE_FAILED', 503);
-}
 export function probeCommand(raw: unknown, env: NodeJS.ProcessEnv): ProbeCommand {
   if (env.OPENSIGHT_VALIDATION !== 'isolated' || env.OPENSIGHT_MAINTENANCE !== 'frozen' || env.OPENSIGHT_RUNTIME !== 'lambda' || env.OPENSIGHT_MODE !== 'hosted') return fail('PROBE_DISABLED');
   if (!raw || typeof raw !== 'object' || Array.isArray(raw) || Object.keys(raw).sort().join() !== 'command,version') return fail('PROBE_COMMAND_INVALID');
@@ -44,18 +35,12 @@ async function tlsCheck(scope: InvocationScope, host: string): Promise<void> {
   const addresses = await scope.stage(() => resolver.resolve6(host), 2000, () => resolver.cancel(), 'PROBE_DNS_FAILED');
   if (!addresses.length) fail('PROBE_IPV6_REQUIRED');
   const socket = connect({ host: addresses[0]!, port: 443, servername: host, rejectUnauthorized: true, minVersion: 'TLSv1.2' });
-  await probeTlsSocket(scope, socket);
-}
-export async function probeTlsSocket(scope: InvocationScope, socket: TLSSocket, timeoutMs = 3000): Promise<void> {
   const closed = new Promise<void>(resolve => socket.once('close', () => resolve()));
   scope.own({ force: () => socket.destroy(), close: async () => { socket.destroy(); await closed; } });
   await scope.stage(() => new Promise<void>((resolve, reject) => {
     socket.once('error', () => reject(new MetadataError('PROBE_TLS_FAILED', 503)));
-    // destroy() during a blackholed connect can emit only close, not error.
-    // Settle the tracked work as well as its socket so cleanup can complete.
-    socket.once('close', () => reject(new MetadataError('PROBE_TLS_FAILED', 503)));
     socket.once('secureConnect', () => socket.authorized && socket.remoteFamily === 'IPv6' ? resolve() : reject(new MetadataError('PROBE_IPV6_REQUIRED', 503)));
-  }), timeoutMs, () => socket.destroy(), 'PROBE_TLS_TIMEOUT');
+  }), 3000, () => socket.destroy(), 'PROBE_TLS_TIMEOUT');
   socket.destroy(); await closed;
 }
 function destinations(env: NodeJS.ProcessEnv, aws: InvocationAws) {
@@ -239,5 +224,5 @@ export async function handler(raw: unknown, context: InvocationContext) {
       if (!missing) fail('PROBE_TEMPORARY_FILES_REMAIN');
     }
     return { version: 1, command, passed: true, durationMs: Date.now() - started };
-  } catch (error) { throw probeFailure(error); }
+  } catch (error) { throw new MetadataError(error instanceof MetadataError ? error.code : 'PROBE_FAILED', 503); }
 }
