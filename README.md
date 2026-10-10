@@ -205,10 +205,13 @@ scrolling in dashboard and Author previews, including the offline demo.
 
 ### 🛠️ Visual data preparation
 
-Build your own datasets on a transformation pipeline canvas: select fields,
-add calculated columns, change types, rename, filter — and combine sources
-with join/append steps. Branch from an earlier step, choose the output, and
-preview each path against a local or hosted API.
+The **Data** page lists your datasets and data sources — creating a dataset or
+editing one opens the preparation canvas: select fields, add calculated columns,
+change types, rename, filter — and combine sources with join/append steps. Branch
+from an earlier step, choose the output, and preview each path against a local or
+hosted API.
+
+![Data landing page with datasets, topics, and data sources tabs](docs/images/data-landing.png)
 
 ![Data preparation canvas with hosted preview requirements](docs/images/data-prep.png)
 
@@ -225,12 +228,12 @@ See [Blaze configuration and limits](docs/blaze.md).
 ### 🔌 Data source connectors
 
 Start with CSV/TSV/JSON/Excel file uploads into DuckDB staging, then prepare
-your data and build a chart. **Show unavailable connectors** reveals the rest
-of the 23-entry catalog with honest setup and implementation states. PostgreSQL
-requires an operator-provisioned hosted source; MySQL has no product API path.
-The static demo shows the file setup with uploads disabled.
+your data and build a chart. The **Create data source** dialog lists only
+connectors OpenSight can actually use — no AWS-only services. PostgreSQL uses
+operator-provisioned hosted sources; MySQL is shown honestly as not yet
+implemented. The static demo shows the connector tiles with uploads disabled.
 
-![Local Data sources view featuring file upload with unavailable connectors hidden](docs/images/data-sources.png)
+![Create data source dialog with the connector tile grid](docs/images/data-sources.png)
 
 The local stack accepts files without hosted authentication. Upload a CSV,
 prepare its columns, save the pipeline and select **Build a chart**. See
