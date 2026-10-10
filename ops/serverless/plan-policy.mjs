@@ -1,5 +1,6 @@
 /** Inspect a fully resolved saved plan. Unknown cost/security settings fail closed. */
 export function checkPlan(plan) {
+  const runtime = plan.variables?.enable_runtime?.value ?? true;
   const issues = [], allowed = new Set([
     'aws_vpc', 'aws_subnet', 'aws_egress_only_internet_gateway', 'aws_route_table', 'aws_route_table_association', 'aws_vpc_endpoint',
     'aws_security_group', 'aws_vpc_security_group_ingress_rule', 'aws_vpc_security_group_egress_rule', 'aws_db_subnet_group',
@@ -9,6 +10,7 @@ export function checkPlan(plan) {
   ]);
   const resources = (plan.resource_changes ?? []).filter(r => r.mode === 'managed');
   const check = (condition, code) => { if (!condition) issues.push(code); };
+  check(typeof runtime === 'boolean', 'RUNTIME_STAGE');
   check(resources.length > 0 && resources.length <= 70, 'RESOURCE_COUNT');
   for (const resource of resources) {
     const value = resource.change?.after ?? {}, type = resource.type;
@@ -39,7 +41,7 @@ export function checkPlan(plan) {
     if (type === 'aws_s3_bucket') check(value.force_destroy === false, 'DATA_DESTRUCTION');
     if (type === 'aws_s3_bucket_public_access_block') check(['block_public_acls', 'block_public_policy', 'ignore_public_acls', 'restrict_public_buckets'].every(k => value[k] === true), 'PUBLIC_BUCKET');
   }
-  for (const [type, count] of [['aws_rds_cluster', 1], ['aws_rds_cluster_instance', 1], ['aws_lambda_function', 3], ['aws_subnet', 2]]) check(resources.filter(r => r.type === type).length === count, 'INVENTORY');
+  for (const [type, count] of [['aws_rds_cluster', 1], ['aws_rds_cluster_instance', 1], ['aws_lambda_function', runtime ? 3 : 0], ['aws_subnet', 2]]) check(resources.filter(r => r.type === type).length === count, 'INVENTORY');
   if (issues.length) throw new Error(`PLAN_REJECTED:${[...new Set(issues)].sort().join(',')}`);
-  return { resources: resources.length, database: '0–2 ACU / 300s pause', functions: 3, publicIngress: false };
+  return { resources: resources.length, database: '0–2 ACU / 300s pause', functions: runtime ? 3 : 0, publicIngress: false };
 }

@@ -11,8 +11,10 @@ reviewed deployment plan; this document does not authorize spending.
 **Post-SR1 update, 2026-10-10:** SR0 drafts and SR1 runtime composition have landed.
 The operator approved advancing [SR2–SR4 preparation](phase5-developer-handoff.md)
 alongside an [IPv6-first isolated validation plan](phase5-aws-validation-plan.md).
-The latter is pending resource/cost approval and proves only selected platform
-assumptions. It does not open SR1's deliberately closed storage/job paths.
+SR4a packaging and a separately authorized isolated AWS run have since proved
+selected transport, SQL and short pause/resume assumptions; see the
+[validation evidence](issue-83-gap-notes.md). Long-idle resume and full application
+acceptance remain pending. This does not open SR1's deliberately closed storage/job paths.
 
 ## 1. Scope and expected experience
 

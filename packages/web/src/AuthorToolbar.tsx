@@ -11,7 +11,7 @@ import { AnalysisPdfDialog } from './AnalysisPdfDialog.js';
 import { AuthorMenu, AuthorMenuItem } from './AuthorMenuItem.js';
 import { flushSync } from 'react-dom';
 import { useCommandPalette } from './CommandPalette.js';
-import { hasDataLabels, hasLegend } from './formatting.js';
+import { hasDataLabels, hasLegend, hasReferenceLines } from './formatting.js';
 export function publishNotice(mode: Access['mode']): string {
   return mode === 'hosted'
     ? 'Publishing needs a hosted deployment with dashboard publication enabled. It is not available in this editor yet; nothing has been published.'
@@ -160,7 +160,7 @@ export function AuthorToolbar({ canUndo = false, canRedo = false, onUndo, onRedo
         <AuthorMenuItem label="Conditional Formatting" reason={needsVisual} run={() => focus('[data-author-control="conditional-formatting"]', 'Visual')} />
         <AuthorMenuItem label="Tooltips" reason={needsVisual} run={() => focus('[data-author-control="tooltips"]', 'Visual')} />
         <AuthorMenuItem label="Highlights" reason={needsVisual ?? 'Highlight rules are not supported yet. Use Conditional Formatting for data-driven emphasis.'} />
-        <AuthorMenuItem label="Reference Lines" reason={needsVisual} run={() => focus('[data-author-control="reference-lines"]', 'Visual')} />
+        <AuthorMenuItem label="Reference Lines" reason={needsVisual ?? (selected && !hasReferenceLines(selected.kind) ? 'Reference lines are not supported for this visual type.' : undefined)} run={() => focus('[data-author-control="reference-lines"]', 'Visual')} />
         <AuthorMenuItem label="Actions" reason={needsVisual} run={() => focus('[data-author-control="actions"]', 'Interaction')} />
         <hr />
         <AuthorMenuItem label="Placement" run={() => focus(selectedObject ? '.object-placement input' : '[data-author-control="visual-placement"]', 'Visual')} reason={selectedObject ? undefined : needsVisual} />
