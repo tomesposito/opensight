@@ -35,7 +35,7 @@ export function SheetObjectProperties({ object, draft, dispatch }: { object: She
         <label>Font size<input aria-label="Text font size" type="number" min="8" max="96" value={object.style.fontSize} onChange={e => style({ fontSize: Number(e.target.value) })} /></label>
         <div className="object-text-style" role="group" aria-label="Text style">{(['bold', 'italic', 'underline'] as const).map(key => <button type="button" key={key} aria-pressed={object.style[key]} onClick={() => style({ [key]: !object.style[key] })}>{key[0]!.toUpperCase() + key.slice(1)}</button>)}</div>
         <label>Text color<input type="color" value={object.style.color} onChange={e => style({ color: e.target.value })} /></label>
-        <label>Text alignment<select value={object.style.alignment} onChange={e => style({ alignment: e.target.value as TextStyle['alignment'] })}><option value="left">Left</option><option value="center">Center</option><option value="right">Right</option></select></label>
+        <label>Text alignment<select aria-label="Text alignment" value={object.style.alignment} onChange={e => style({ alignment: e.target.value as TextStyle['alignment'] })}><option value="left">Left</option><option value="center">Center</option><option value="right">Right</option></select></label>
         <fieldset disabled aria-describedby="text-unavailable"><button type="button">Hyperlink</button><button type="button">Insert parameter</button></fieldset><p id="text-unavailable" className="field-hint">Text hyperlinks and parameters-in-text are not supported yet.</p>
       </> : <>
         <p className="field-hint">Embedded on this device, up to 4 MiB per image. No upload or hosted image service. Exported definitions include the image bytes.</p>

@@ -957,4 +957,4 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .sheet-image-frame { flex: 1; min-height: 0; padding: 8px; background: white; }
 .sheet-image-frame img { display: block; width: 100%; height: 100%; }
 .object-text-style { display: flex; flex-wrap: wrap; gap: 4px; margin: 8px 0; }
-.object-text-style button[aria-pressed="true"] { background: #166f7a; color: white; }
+.author-layout .object-text-style button[aria-pressed="true"], .author-layout .object-text-style button[aria-pressed="true"]:hover { background: #166f7a; color: white; }
