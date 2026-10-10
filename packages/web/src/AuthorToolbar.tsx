@@ -1,11 +1,12 @@
 import { readEmbeddedImage } from './sheet-objects.js';
 import { objectLabel } from './SheetObjectCard.js';
 import { useEffect, useRef, useState, type Dispatch, type ReactNode } from 'react';
-import { activeSheet, type AuthorAction, type AuthorDraft } from './authoring.js';
+import { activeSheet, tabular, type AuthorAction, type AuthorDraft } from './authoring.js';
 import { useAccess, type Access } from './access.js';
 import { useToast } from './Toasts.js';
 import { AnalysisSettings } from './AnalysisSettings.js';
 import { SheetLayoutSettings } from './SheetLayoutSettings.js';
+import { exportVisualCsv, exportVisualExcel } from './visual-export.js';
 import { AnalysisPdfDialog } from './AnalysisPdfDialog.js';
 import { AuthorMenu, AuthorMenuItem } from './AuthorMenuItem.js';
 import { flushSync } from 'react-dom';
@@ -169,8 +170,16 @@ export function AuthorToolbar({ canUndo = false, canRedo = false, onUndo, onRedo
         <AuthorMenuItem label="Forecast" reason={needsVisual ?? 'Forecast authoring is not supported yet.'} />
         <AuthorMenuItem label="Anomaly" reason={needsVisual ?? 'Anomaly detection authoring is not supported yet.'} />
         <hr />
-        <AuthorMenuItem label="Export Visual to CSV" reason={needsVisual ?? 'Visual query-result export to CSV is not supported in this editor yet.'} />
-        <AuthorMenuItem label="Export Table to Excel" reason={needsVisual ?? 'Table query-result export to Excel is not supported in this editor yet.'} />
+        <AuthorMenuItem label="Export Visual to CSV" reason={needsVisual} run={() => {
+          if (!selected) return;
+          const problem = exportVisualCsv(selected.id, selected.title);
+          setNotice(problem ?? `Downloaded ${selected.title || selected.id} as CSV.`);
+        }} />
+        <AuthorMenuItem label="Export Table to Excel" reason={needsVisual ?? (selected && !tabular(selected.kind) ? 'Excel export is available for table and pivot visuals.' : undefined)} run={() => {
+          if (!selected) return;
+          const problem = exportVisualExcel(selected.id, selected.title);
+          setNotice(problem ?? `Downloaded ${selected.title || selected.id} as Excel.`);
+        }} />
         {!!sheet.visuals.length && <><hr /><div role="group" aria-label="Select visual">{sheet.visuals.map(v => <AuthorMenuItem key={v.id} label={`${v.title || v.id} · ${v.kind}`} run={() => dispatch({ type: 'select', id: v.id })} />)}</div></>}
         {selected && <AuthorMenuItem label="Remove selected visual" run={() => dispatch({ type: 'remove', id: selected.id })} />}
         {!!sheet.objects?.length && <><hr /><div role="group" aria-label="Select object">{sheet.objects.map(o => <AuthorMenuItem key={o.id} label={objectLabel(o)} run={() => dispatch({ type: 'select', id: o.id })} />)}</div></>}
