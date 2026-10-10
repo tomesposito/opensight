@@ -81,13 +81,25 @@ Implement generic OpenTofu roots for protected bootstrap state and the isolated
 validation inventory, with exact provider lockfiles. Account/region/AZs/names/
 identity addresses and references are environment inputs. Runtime resources
 include the planned dual-stack VPC/S3 gateway, private 0–2 ACU Aurora writer,
-three IAM-only functions, secret containers, ECR, versioned synthetic bucket,
+three IAM-only functions (request, migration and probe), secret containers, ECR, versioned synthetic bucket,
 test queues/group, scoped roles and bounded logs. No NAT/interface endpoints,
 public IP database, provisioned concurrency, reader or public ingress resource.
 
 Use RDS-managed master credentials; secret resources contain no secret payloads.
 Populate application/SMTP secret versions through an explicit private operator
-step outside Terraform. Request-role policies cannot read the bootstrap secret;
+step outside Terraform. For an account without an existing isolated SMTP login,
+create one tagged IAM SMTP user (no console access) and a policy limited to
+`ses:SendRawEmail`, the configured sender identity and the operator-approved
+recipient. Terraform manages the user/policy and sandbox email identity, never
+an access-key resource or secret version. The private operator command creates
+one access key, derives the regional SES SMTP password in memory, stores only
+the SMTP username/password in Secrets Manager and discards the original key
+material. Refuse an unexplained existing key when no current SMTP secret exists;
+never silently rotate or delete it. Verification mail is sent only to the
+operator-approved address. Never request SES production access. Bound all mail
+attempts, including ambiguous failures, to twenty per experiment; cleanup has an
+explicit credential-revocation selection. These identities have no fixed hourly
+charge and do not increase the $25 working budget. Request-role policies cannot read the bootstrap secret;
 each execution role and Scheduler target role has its own scoped policy. Protect
 data/state/KMS resources from routine destruction and test the intended cleanup
 procedure separately. Budget notifications use operator-supplied addresses.
