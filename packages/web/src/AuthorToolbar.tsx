@@ -159,16 +159,16 @@ export function AuthorToolbar({ canUndo = false, canRedo = false, onUndo, onRedo
         <hr />
         <AuthorMenuItem label="Conditional Formatting" reason={needsVisual} run={() => focus('[data-author-control="conditional-formatting"]', 'Visual')} />
         <AuthorMenuItem label="Tooltips" reason={needsVisual} run={() => focus('[data-author-control="tooltips"]', 'Visual')} />
-        <AuthorMenuItem label="Highlights" reason={needsVisual ?? 'Highlight settings are not supported yet.'} />
+        <AuthorMenuItem label="Highlights" reason={needsVisual ?? 'Highlight rules are not supported yet. Use Conditional Formatting for data-driven emphasis.'} />
         <AuthorMenuItem label="Reference Lines" reason={needsVisual} run={() => focus('[data-author-control="reference-lines"]', 'Visual')} />
         <AuthorMenuItem label="Actions" reason={needsVisual} run={() => focus('[data-author-control="actions"]', 'Interaction')} />
         <hr />
         <AuthorMenuItem label="Placement" run={() => focus(selectedObject ? '.object-placement input' : '[data-author-control="visual-placement"]', 'Visual')} reason={selectedObject ? undefined : needsVisual} />
-        <AuthorMenuItem label="Style" run={() => focus('.sheet-object-properties input')} reason={selectedObject ? undefined : needsVisual ?? 'Per-card style settings are not supported yet. Analysis themes and visual palettes are available in Properties.'} />
-        <AuthorMenuItem label="Rules" reason={needsVisual ?? 'Object visibility rules are not supported yet.'} />
+        <AuthorMenuItem label="Style" run={() => focus('.sheet-object-properties input')} reason={selectedObject ? undefined : needsVisual ?? 'Per-visual card styling is not supported yet. Use Analysis themes and visual palettes in Properties.'} />
+        <AuthorMenuItem label="Rules" reason={needsVisual ?? 'Visibility rules need a hosted rule engine. All visuals are always visible in this editor.'} />
         <hr />
-        <AuthorMenuItem label="Forecast" reason={needsVisual ?? 'Forecast authoring is not supported yet.'} />
-        <AuthorMenuItem label="Anomaly" reason={needsVisual ?? 'Anomaly detection authoring is not supported yet.'} />
+        <AuthorMenuItem label="Forecast" reason={needsVisual ?? 'Forecasting needs an ML backend, which OpenSight does not include. No forecast is computed or shown.'} />
+        <AuthorMenuItem label="Anomaly" reason={needsVisual ?? 'Anomaly detection needs an ML backend, which OpenSight does not include. No anomalies are computed or shown.'} />
         <hr />
         <AuthorMenuItem label="Export Visual to CSV" reason={needsVisual} run={() => {
           if (!selected) return;
