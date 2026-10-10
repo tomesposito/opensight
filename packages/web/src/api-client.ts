@@ -1,5 +1,4 @@
 import type { PrepPipeline } from '@opensight/bundle-parser/prep';
-import type { BundleDataSet } from '@opensight/bundle-parser';
 import type { PrepPreview } from '@opensight/query-engine';
 import type { PrepSourceSummary } from './data-prep.js';
 import type { ConnectorState } from '@opensight/query-engine/browser';
@@ -11,6 +10,7 @@ import type { Session } from './access.js';
 import type { BundleDefinition } from '@opensight/bundle-parser';
 import { convertDefinition, object } from './definition-converter.js';
 import type { Row } from './model.js';
+import { hostedExecution, prepSources, type HostedPrepDataset, type PrepDatasetsResponse, type PrepSaveResponse } from './prep-contracts.js';
 
 /** OpenSight HTTP projection; the API supplies the engine's trusted metadata. */
 export type { InteractiveQuery as QueryRequest } from '@opensight/query-engine/browser';
@@ -22,9 +22,10 @@ export interface QueryResponse {
 }
 export interface ExecutionSettings { mode: 'DIRECT_QUERY' | 'BLAZE'; intervalMinutes: number | null }
 export interface ExecutionStatus extends ExecutionSettings {
+  version?: number;
   materializationReason?: string | null;
-  state: 'direct' | 'empty' | 'running' | 'ready' | 'error' | 'evicted' | 'invalidated';
-  lastRefreshedAt: string | null; rowCount: number | null; bytes: number; nextRefreshAt: string | null;
+  state: 'direct' | 'empty' | 'running' | 'ready' | 'error' | 'evicted' | 'invalidated' | 'unknown';
+  lastRefreshedAt: string | null; rowCount: number | null; bytes: number | null; nextRefreshAt: string | null;
   error: { code: string; message: string; causeCode?: string } | null;
 }
 export interface ExecutionProvenance {
@@ -34,7 +35,7 @@ export interface ExecutionProvenance {
 export interface PreparedRows {
   columns: import('@opensight/bundle-parser/prep').PrepColumn[];
   rows: Record<string, string | number | boolean | null>[];
-  rowCount: number; truncated: boolean; execution: ExecutionProvenance;
+  rowCount: number; truncated: boolean; execution?: ExecutionProvenance;
 }
 export interface DatasetRefreshStatus {
   lastGood: string | null;
@@ -147,20 +148,38 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
     }
     return value as T;
   }
-  const getDatasetExecution = (id: string) => resource<ExecutionStatus>(`/api/datasets/${encodeURIComponent(id)}/execution`);
+  const getDatasetExecution = async (id: string): Promise<ExecutionStatus> => {
+    const status = await resource<ExecutionStatus | ExecutionSettings>(`/api/datasets/${encodeURIComponent(id)}/execution`);
+    if ('state' in status) return status;
+    // Read configuration and its optimistic version together; /execution alone
+    // supplies no version in hosted mode.
+    const saved = await resource<HostedPrepDataset>(`/api/datasets/${encodeURIComponent(id)}/prep`);
+    return hostedExecution(saved.execution, saved.version);
+  };
   async function getLocalData(signal?: AbortSignal): Promise<boolean> {
     const response = await authenticatedFetch(`${base}/api/local-data`, { signal, credentials: 'same-origin', headers: { Accept: 'application/json' } });
     if (!response.ok) return false;
     const value = object(await response.json(), 'Local data capability');
     return value.mode === 'local' && value.maxUploadBytes === 8388608 && value.uploadTtlSeconds === 86400;
   }
-  const setDatasetExecution = (id: string, settings: ExecutionSettings) => resource<ExecutionStatus>(`/api/datasets/${encodeURIComponent(id)}/execution`, 'PUT', settings);
-  const refreshBlaze = (id: string) => resource<ExecutionStatus>(`/api/datasets/${encodeURIComponent(id)}/refresh`, 'POST', {});
+  const setDatasetExecution = async (id: string, settings: ExecutionSettings & { expectedVersion?: number }): Promise<ExecutionStatus> => {
+    const result = await resource<ExecutionStatus | ExecutionSettings>(`/api/datasets/${encodeURIComponent(id)}/execution`, 'PUT', settings);
+    return 'state' in result ? result : hostedExecution(result, settings.expectedVersion === undefined ? undefined : settings.expectedVersion + 1);
+  };
+  const refreshBlaze = async (id: string): Promise<ExecutionStatus> => {
+    const result = await resource<ExecutionStatus | { mode: 'BLAZE'; state: 'ready' }>(`/api/datasets/${encodeURIComponent(id)}/refresh`, 'POST', {});
+    // Hosted refresh acknowledges completion, but supplies neither configuration
+    // nor cache telemetry. Do not present its partial body as a local status.
+    return 'intervalMinutes' in result ? result : getDatasetExecution(id);
+  };
   const getPreparedRows = (id: string) => resource<PreparedRows>(`/api/datasets/${encodeURIComponent(id)}/rows`);
-  const listPrepSources = () => resource<PrepSourceSummary[]>('/api/prep-sources');
-  const listPrepDatasets = () => resource<{ datasets: BundleDataSet[]; persistence: 'file' | 'ephemeral' }>('/api/prep-datasets');
-  const savePrep = (id: string, name: string, pipeline: PrepPipeline) => resource<{ resource: BundleDataSet; persistence: 'file' | 'ephemeral' }>(`/api/datasets/${encodeURIComponent(id)}/prep`, 'PUT', { name, pipeline });
-  const deletePrep = (id: string) => resource<{ deleted: true }>(`/api/datasets/${encodeURIComponent(id)}/prep`, 'DELETE');
+  const listPrepDatasets = () => resource<PrepDatasetsResponse>('/api/prep-datasets');
+  const listPrepSources = async (saved?: PrepDatasetsResponse) => {
+    const [catalog, sources] = await Promise.all([saved ?? listPrepDatasets(), resource<PrepSourceSummary[]>('/api/prep-sources')]);
+    return prepSources(catalog, sources);
+  };
+  const savePrep = (id: string, name: string, pipeline: PrepPipeline, expectedVersion?: number) => resource<PrepSaveResponse>(`/api/datasets/${encodeURIComponent(id)}/prep`, 'PUT', { name, pipeline, ...(expectedVersion === undefined ? {} : { expectedVersion }) });
+  const deletePrep = (id: string, expectedVersion?: number) => resource<{ deleted: true } | { removed: true }>(`/api/datasets/${encodeURIComponent(id)}/prep`, 'DELETE', expectedVersion === undefined ? undefined : { expectedVersion });
   const previewPrep = (id: string, pipeline: PrepPipeline, through: string | null, limit = 100) => resource<PrepPreview>(`/api/datasets/${encodeURIComponent(id)}/prep/preview`, 'POST', { pipeline, through, limit });
   const uploadFile = (body: { config: Readonly<Record<string, string>>; base64: string }) => resource<UploadSummary>('/api/uploads', 'POST', body);
   const validateConnector = (id: string, config: Readonly<Record<string, string>>) => resource<ConnectorState>(`/api/connectors/${encodeURIComponent(id)}/connect`, 'POST', { config });

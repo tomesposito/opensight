@@ -61,7 +61,7 @@ export function CreateAnalysisDialog({ client, sampleAvailable = false, offline 
   useEffect(() => {
     let active = true;
     setSelected(''); setPage(0);
-    if (list) void Promise.resolve().then(list).then(sources => {
+    if (list) void Promise.resolve().then(() => list()).then(sources => {
       if (active) setState({ list, revision, sources });
     }).catch((error: unknown) => { if (active) setState({ list, revision, sources: [], error: prepMessage(error) }); });
     return () => { active = false; };

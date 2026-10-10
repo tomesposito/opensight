@@ -2,9 +2,16 @@ import { useEffect, useState } from 'react';
 import type { BundleDataSet } from '@opensight/bundle-parser';
 import type { createApiClient } from './api-client.js';
 import { prepMessage, type PrepSourceSummary } from './data-prep.js';
+import { prepResources, prepSources } from './prep-contracts.js';
 
 export type DataCatalogClient = Pick<ReturnType<typeof createApiClient>, 'listPrepDatasets' | 'listPrepSources'>;
-export interface DataCatalog { datasets: BundleDataSet[]; sources: PrepSourceSummary[] }
+export interface DataCatalog { datasets: BundleDataSet[]; sources: PrepSourceSummary[]; versions?: Record<string, number>; persistence?: 'file' | 'ephemeral' | 'durable' }
+export async function loadDataCatalog(client: DataCatalogClient): Promise<DataCatalog> {
+  const saved = await client.listPrepDatasets();
+  const sources = await client.listPrepSources(saved);
+  return { datasets: prepResources(saved), sources: prepSources(saved, sources), persistence: saved.persistence,
+    ...(saved.persistence === 'durable' ? { versions: Object.fromEntries(saved.datasets.map(entry => [entry.resource.dataSetId, entry.version])) } : {}) };
+}
 /** Discard old catalogs immediately when the client or revision changes. */
 export function useDataCatalog(client?: DataCatalogClient) {
   const [revision, setRevision] = useState(0);
@@ -12,8 +19,8 @@ export function useDataCatalog(client?: DataCatalogClient) {
   useEffect(() => {
     if (!client) return;
     let active = true;
-    void Promise.all([client.listPrepDatasets(), client.listPrepSources()]).then(([saved, sources]) => {
-      if (active) setResult({ client, revision, data: { datasets: saved.datasets, sources } });
+    void loadDataCatalog(client).then(data => {
+      if (active) setResult({ client, revision, data });
     }).catch((error: unknown) => { if (active) setResult({ client, revision, error: prepMessage(error) }); });
     return () => { active = false; };
   }, [client, revision]);
