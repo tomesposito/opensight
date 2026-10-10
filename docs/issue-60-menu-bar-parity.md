@@ -43,11 +43,12 @@ Existing canvas dragging/resizing and FIT TO WIDTH are unchanged.
 Objects opens Format Object, Field Wells, Title, Subtitle, Data Labels, Legend,
 Conditional Formatting and Actions. It reveals the correct Properties tab and
 all collapsed ancestors, then moves keyboard focus. Label/legend availability
-matches the renderer's visual-type capability checks. All reference actions
-require a selected visual. Visual selection and removal remain below them.
-Tooltips customization, highlights, reference lines, numeric placement,
-per-card style, visibility rules, forecast/anomaly authoring and CSV/Excel
-query-result exports explain their missing editor support.
+matches the renderer's visual-type capability checks. Reference lines, numeric
+visual placement, tooltip visibility, and CSV/Excel exports now work; highlights,
+per-card style, visibility rules, forecast and anomaly remain honestly disabled
+with reasons. All reference actions require a selected visual. Visual selection
+and removal remain below them. Tooltips customization beyond show/hide explains
+its limited editor support.
 
 Search and Cmd/Ctrl+F open the #53 command palette with “Search analysis
 actions”. Cmd/Ctrl+K retains its global entry point. Enabled menu items
