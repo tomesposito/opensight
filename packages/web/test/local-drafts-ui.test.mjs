@@ -188,3 +188,30 @@ for (const access of [{ mode: 'local' }, { mode: 'demo' }, { mode: 'hosted' }, {
   assert.match(share.props.title, access.mode !== 'hosted' ? /needs hosted API/ : access.session ? new RegExp(`namespace “${access.session.namespaceId}”.*saved hosted analysis`) : /resolved hosted session and namespace/);
   await act(() => share.props.onClick()); assert.equal(requests, 0);
 });
+
+test('history changes drive autosave; manual save keeps history and document boundaries clear it', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const ui = await mount(t);
+  const draft = () => ui.renderer.root.findByType(AuthorToolbar).props.draft;
+  const dispatch = action => act(() => ui.renderer.root.findByType(AuthorToolbar).props.dispatch(action));
+  const original = structuredClone(draft());
+  assert.equal(ui.button('Undo').props['aria-disabled'], true);
+  await dispatch({ type: 'assign', field: 'amount', well: 'values' });
+  assert.equal(ui.button('Undo').props['aria-disabled'], true, 'identical assignment is not an edit');
+  await dispatch({ type: 'unassign', field: 'amount', well: 'values' });
+  await dispatch({ type: 'title', title: 'Changed visual' });
+  await ui.click('Undo'); await ui.click('Undo'); assert.deepEqual(draft(), original);
+  assert.equal(ui.button('Undo').props['aria-disabled'], true);
+  await ui.click('Redo'); await ui.click('Save draft'); assert.equal(ui.button('Undo').props['aria-disabled'], false);
+  await ui.click('Undo');
+  await act(() => t.mock.timers.tick(2000));
+  assert.deepEqual(ui.store.restore().draft, original, 'undo result is the actual autosaved draft');
+  await ui.click('Redo'); await ui.click('Save as Analysis');
+  await act(() => ui.renderer.root.findByType('dialog').findByType('form').props.onSubmit({ preventDefault() {} }));
+  assert.equal(ui.button('Undo').props['aria-disabled'], true); assert.equal(ui.button('Redo').props['aria-disabled'], true);
+  await dispatch({ type: 'title', title: 'Copy edit' });
+  await act(() => ui.renderer.root.findByType(LocalDrafts).props.onOpen(ui.id));
+  assert.equal(ui.button('Undo').props['aria-disabled'], true);
+  await dispatch({ type: 'title', title: 'Original edit' });
+  await ui.reload(); assert.equal(ui.button('Undo').props['aria-disabled'], true); assert.equal(ui.button('Redo').props['aria-disabled'], true);
+});

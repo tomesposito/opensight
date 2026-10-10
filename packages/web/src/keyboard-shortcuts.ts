@@ -4,12 +4,18 @@ type Shortcut = {
   group: 'Analysis' | 'Navigation' | 'Help';
   key: string;
   modifier?: boolean;
+  shift?: boolean;
+  controlOnly?: boolean;
+  history?: boolean;
   native?: boolean;
 };
 
 /** The single source for Author key matching and the shortcuts help dialog. */
 export const AUTHOR_SHORTCUTS = [
   { id: 'save-draft', label: 'Save draft', group: 'Analysis', key: 's', modifier: true },
+  { id: 'undo', label: 'Undo', group: 'Analysis', key: 'z', modifier: true, history: true },
+  { id: 'redo', label: 'Redo', group: 'Analysis', key: 'z', modifier: true, shift: true, history: true },
+  { id: 'redo-alternate', label: 'Redo (alternate)', group: 'Analysis', key: 'y', modifier: true, controlOnly: true, history: true },
   { id: 'focus-search', label: 'Focus search', group: 'Navigation', key: 'f', modifier: true },
   { id: 'toggle-command-palette', label: 'Open command palette', group: 'Navigation', key: 'k', modifier: true },
   { id: 'shortcuts-help', label: 'Keyboard shortcuts', group: 'Help', key: '?' },
@@ -22,7 +28,7 @@ export type AuthorShortcutId = typeof AUTHOR_SHORTCUTS[number]['id'];
 export type AuthorShortcutActions = Record<Exclude<AuthorShortcutId, 'close-dialog'>, () => void>;
 
 export function shortcutKeys(shortcut: Shortcut): string[] {
-  if (shortcut.modifier) return ['Cmd/Ctrl', shortcut.key.toUpperCase()];
+  if (shortcut.modifier) return [shortcut.controlOnly ? 'Ctrl' : 'Cmd/Ctrl', ...(shortcut.shift ? ['Shift'] : []), shortcut.key.toUpperCase()];
   return shortcut.key === '?' ? ['Shift', '/'] : [shortcut.key === 'Escape' ? 'Esc' : shortcut.key];
 }
 
@@ -35,9 +41,9 @@ function isTypingTarget(target: EventTarget | null): boolean {
 
 export function shortcutForEvent(event: KeyboardEvent): typeof AUTHOR_SHORTCUTS[number] | undefined {
   if (event.defaultPrevented || event.repeat || event.isComposing || event.keyCode === 229 || event.altKey) return;
-  if (event.key !== 'Escape' && [event.target, ...(event.composedPath?.() ?? [])].some(isTypingTarget)) return;
   return AUTHOR_SHORTCUTS.find((shortcut: Shortcut) => {
-    if (shortcut.modifier) return !!event.metaKey !== !!event.ctrlKey && !event.shiftKey && event.key.toLowerCase() === shortcut.key;
+    if (!shortcut.history && event.key !== 'Escape' && [event.target, ...(event.composedPath?.() ?? [])].some(isTypingTarget)) return false;
+    if (shortcut.modifier) return !!event.metaKey !== !!event.ctrlKey && (!shortcut.controlOnly || !!event.ctrlKey) && !!event.shiftKey === !!shortcut.shift && event.key.toLowerCase() === shortcut.key;
     if (event.metaKey || event.ctrlKey) return false;
     if (shortcut.key === '?') return event.key === '?' || (event.key === '/' && event.shiftKey);
     return !event.shiftKey && event.key === shortcut.key;

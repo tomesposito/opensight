@@ -121,7 +121,7 @@ test('? opens grouped help for the whole registry; Escape cancels and restores f
     const text = dialog.findAllByType('dt').map(content).join(' ');
     for (const shortcut of AUTHOR_SHORTCUTS) assert.ok(text.includes(shortcut.label), shortcut.id);
     assert.doesNotMatch(text, /coming in #53/);
-    assert.deepEqual(dialog.findAllByType('kbd').map(n => n.props.children), ['Cmd/Ctrl', 'S', 'Cmd/Ctrl', 'F', 'Cmd/Ctrl', 'K', 'Shift', '/', 'Esc']);
+    assert.deepEqual(dialog.findAllByType('kbd').map(n => n.props.children), ['Cmd/Ctrl', 'S', 'Cmd/Ctrl', 'Z', 'Cmd/Ctrl', 'Shift', 'Z', 'Ctrl', 'Y', 'Cmd/Ctrl', 'F', 'Cmd/Ctrl', 'K', 'Shift', '/', 'Esc']);
     for (const options of [{ key: 's', ctrlKey: true }, { key: 'f', metaKey: true }, { key: '?' }]) {
       assert.equal((await ui.key(options)).defaultPrevented, false, 'modal owns keyboard input');
     }
@@ -205,4 +205,21 @@ test('leaving Author removes the listener so browser shortcuts work on other pag
     assert.equal((await ui.key(options)).defaultPrevented, false);
   }
   assert.equal(ui.saved(), undefined); assert.deepEqual(ui.messages(), []);
+});
+
+for (const modifier of ['ctrlKey', 'metaKey']) test(`${modifier}: history shortcuts change real editor state, including focused property inputs`, async t => {
+  const ui = await mount(t);
+  const title = () => ui.renderer.root.findByProps({ className: 'analysis-title' }).findByType('input').props.value;
+  await ui.title('First'); await ui.title('Second');
+  assert.equal((await ui.key({ key: 'z', [modifier]: true, target: ui.search })).defaultPrevented, true);
+  assert.equal(title(), 'First');
+  await ui.key({ key: 'z', [modifier]: true }); assert.equal(title(), 'Untitled analysis');
+  await ui.key({ key: 'z', [modifier]: true, shiftKey: true }); assert.equal(title(), 'First');
+  await ui.key({ key: 'y', ctrlKey: true }); assert.equal(title(), 'Second');
+  await ui.key({ key: 'z', [modifier]: true }); await ui.title('Branched');
+  await ui.key({ key: 'y', ctrlKey: true }); assert.equal(title(), 'Branched');
+  await ui.key({ key: 's', ctrlKey: true }); assert.equal(ui.saved().draft.title, 'Branched');
+  await ui.key({ key: '?' });
+  assert.equal((await ui.key({ key: 'z', ctrlKey: true })).defaultPrevented, false);
+  assert.equal(title(), 'Branched');
 });

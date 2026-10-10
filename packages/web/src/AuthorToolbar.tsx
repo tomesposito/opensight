@@ -32,7 +32,7 @@ export function focusAuthorControl(nav: HTMLElement | null, selector: string, ta
   target?.focus();
   return target;
 }
-export function AuthorToolbar({ onPrep, onSources, draft, dispatch, fit, onFit, onJson, onBundle, onImport, oEntry, dataAvailable = true, busy = false, jsonDisabled = false, autosaveError, favorite = false, onFavorite, onSaveCopy, onPrint }: { onPrint?: () => void; onSaveCopy?: () => void; favorite?: boolean; onFavorite?: () => void; autosaveError?: string; dataAvailable?: boolean; onSources?: () => void; onPrep?: () => void; oEntry?: ReactNode; busy?: boolean; jsonDisabled?: boolean; draft: AuthorDraft; dispatch: Dispatch<AuthorAction>; fit: boolean; onFit: () => void; onJson: () => void; onBundle: () => void; onImport: () => void }) {
+export function AuthorToolbar({ canUndo = false, canRedo = false, onUndo, onRedo, onPrep, onSources, draft, dispatch, fit, onFit, onJson, onBundle, onImport, oEntry, dataAvailable = true, busy = false, jsonDisabled = false, autosaveError, favorite = false, onFavorite, onSaveCopy, onPrint }: { canUndo?: boolean; canRedo?: boolean; onUndo?: () => void; onRedo?: () => void; onPrint?: () => void; onSaveCopy?: () => void; favorite?: boolean; onFavorite?: () => void; autosaveError?: string; dataAvailable?: boolean; onSources?: () => void; onPrep?: () => void; oEntry?: ReactNode; busy?: boolean; jsonDisabled?: boolean; draft: AuthorDraft; dispatch: Dispatch<AuthorAction>; fit: boolean; onFit: () => void; onJson: () => void; onBundle: () => void; onImport: () => void }) {
   const access = useAccess();
   const notify = useToast();
   const [notice, setNotice] = useState('');
@@ -78,8 +78,8 @@ export function AuthorToolbar({ onPrep, onSources, draft, dispatch, fit, onFit, 
         <AuthorMenuItem label="Autosave On" checked reason={autosaveError ? `Autosave could not save: ${autosaveError}` : 'Autosave is always on for this device. Drafts are not synced or shared.'} />
       </AuthorMenu>
       <AuthorMenu name="Edit">
-        <AuthorMenuItem label="Undo" reason="Undo history is not supported yet. Export a checkpoint to keep a copy." />
-        <AuthorMenuItem label="Redo" reason="Redo history is not supported yet." />
+        <AuthorMenuItem label="Undo" run={onUndo} keyShortcuts="Control+Z Meta+Z" reason={!canUndo || !onUndo ? "Nothing to undo in this analysis session." : undefined} />
+        <AuthorMenuItem label="Redo" run={onRedo} keyShortcuts="Control+Shift+Z Meta+Shift+Z Control+Y" reason={!canRedo || !onRedo ? "Nothing to redo. Undo an edit first; a new edit clears redo history." : undefined} />
         <hr />
         <AuthorMenuItem label="Themes" reason={!dataAvailable ? 'Add data to open the analysis theme editor.' : undefined} run={() => focus('[data-author-control="theme"]', 'Visual')} />
         <AuthorMenuItem label="Analysis Settings" reason="Analysis-level settings are not supported in this editor yet." />

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
-import { authorReducer, emptyDraft, type AuthorDataset, type AuthorDraft } from './authoring.js';
+import { emptyDraft, type AuthorDataset, type AuthorDraft } from './authoring.js';
+import { authorHistoryReducer, createAuthorHistory } from './author-history.js';
 import { browserDraftStorage, createDraftStore, draftStorageError, draftStorageKey, type DraftSummary } from './local-drafts.js';
 import type { Access } from './access.js';
 
@@ -19,7 +20,8 @@ export function useLocalDrafts(access: Access, dataset?: AuthorDataset, opening?
       return { draft: { ...emptyDraft(), ...(dataset ? { dataset } : {}) }, message: 'Save this analysis on this device.' };
     } catch (error) { return { draft: { ...emptyDraft(), ...(dataset ? { dataset } : {}) }, message: draftStorageError(error), ...(opening?.draftId ? { openingError: draftStorageError(error) } : {}) }; }
   });
-  const [draft, dispatch] = useReducer(authorReducer, initial.draft);
+  const [history, dispatch] = useReducer(authorHistoryReducer, initial.draft, createAuthorHistory);
+  const { draft } = history;
   const [id, setId] = useState(initial.id);
   const [saved, setSaved] = useState(initial.saved);
   const [message, setMessage] = useState(initial.message);
@@ -116,7 +118,7 @@ export function useLocalDrafts(access: Access, dataset?: AuthorDataset, opening?
     if (target === id && !keepCurrent()) return;
     try {
       const next = store.rename(target, name);
-      if (target === id) { clearTimer(); dispatch({ type: 'import', draft: next }); synced(target, JSON.stringify(next), store.restore()); }
+      if (target === id) { clearTimer(); dispatch({ type: 'analysis-title', title: next.title }); synced(target, JSON.stringify(next), store.restore()); }
       setMessage('Draft renamed on this device.'); refresh();
     } catch (error) { setMessage(draftStorageError(error)); }
   };
@@ -135,5 +137,5 @@ export function useLocalDrafts(access: Access, dataset?: AuthorDataset, opening?
     try { store.discardAutosave(id); setRecoveredAt(null); refresh(); }
     catch (error) { failed(error); }
   };
-  return { draft, dispatch, id, favorite, toggleFavorite, saveCopy, dirty, message, entries, refresh, save, keepCurrent, replace, open, rename, remove, autoState, savedAt, autoError, recoveredAt, dismissRecovery, openingError: initial.openingError };
+  return { draft, dispatch, canUndo: history.undo.length > 0, canRedo: history.redo.length > 0, id, favorite, toggleFavorite, saveCopy, dirty, message, entries, refresh, save, keepCurrent, replace, open, rename, remove, autoState, savedAt, autoError, recoveredAt, dismissRecovery, openingError: initial.openingError };
 }

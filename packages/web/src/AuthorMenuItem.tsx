@@ -16,10 +16,11 @@ export interface AuthorMenuAction {
   checked?: boolean;
   keepOpen?: boolean;
   descriptionId?: string;
+  keyShortcuts?: string;
 }
 
 /** Unavailable actions stay keyboard reachable so their reason can be read. */
-export function AuthorMenuItem({ label, run, reason, checked, keepOpen, descriptionId }: AuthorMenuAction) {
+export function AuthorMenuItem({ label, run, reason, checked, keepOpen, descriptionId, keyShortcuts }: AuthorMenuAction) {
   const id = useId();
   const menu = useContext(MenuName);
   // Search and the menus execute the same callbacks with the same guards.
@@ -27,7 +28,7 @@ export function AuthorMenuItem({ label, run, reason, checked, keepOpen, descript
     { id: `menu-${id}`, label: `${menu}: ${label}`, run },
   ] : [] }), [id, menu, label, run, reason]));
   return <div className="author-menu-item">
-    <button type="button" aria-disabled={!!reason} aria-describedby={reason ? id : descriptionId}
+    <button type="button" aria-keyshortcuts={keyShortcuts} aria-disabled={!!reason} aria-describedby={reason ? id : descriptionId}
       role={checked === undefined ? undefined : 'checkbox'} aria-checked={checked} aria-readonly={checked === undefined ? undefined : true}
       title={reason} data-menu-keep-open={keepOpen || undefined}
       onClick={() => { if (!reason) run?.(); }}>
