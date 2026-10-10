@@ -32,3 +32,23 @@ redirected in a temporary copy to this checkout's demo and `/tmp` artifacts.
 
 The static demo remains an offline rendering preview. The hosted browser checks
 use fixtures and are separate from the static demo screenshots.
+
+Full verification on 2026-10-10: root `npm test` exited **0**, with **2,195 passed /
+0 failed / 12 skipped / 0 cancelled** (2,207 tests total).
+
+| Suite | Passed | Failed | Skipped |
+| --- | ---: | ---: | ---: |
+| API | 306 | 0 | 10 |
+| Bundle parser | 199 | 0 | 0 |
+| Embedding SDK | 9 | 0 | 0 |
+| O interpreter | 32 | 0 | 0 |
+| Parity | 11 | 0 | 0 |
+| Query engine | 502 | 0 | 2 |
+| Web | 1,129 | 0 | 0 |
+| Root conformance | 7 | 0 | 0 |
+
+Every skip is a live-Postgres integration test (`DATABASE_URL` unset). The full
+suite includes all 11 new hosted Data regression tests. Strict TypeScript checks,
+the demo build and the nine browser acceptance checks passed. The first root run
+was interrupted by signal 143 between packages after its API suite passed; the
+complete rerun in a persistent local process produced the totals above.
