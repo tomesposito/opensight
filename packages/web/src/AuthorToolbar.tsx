@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type Dispatch, type ReactNode } from 'reac
 import { activeSheet, type AuthorAction, type AuthorDraft } from './authoring.js';
 import { useAccess, type Access } from './access.js';
 import { useToast } from './Toasts.js';
+import { AnalysisSettings } from './AnalysisSettings.js';
 import { AnalysisPdfDialog } from './AnalysisPdfDialog.js';
 import { AuthorMenu, AuthorMenuItem } from './AuthorMenuItem.js';
 import { flushSync } from 'react-dom';
@@ -39,6 +40,7 @@ export function AuthorToolbar({ canUndo = false, canRedo = false, onUndo, onRedo
   const palette = useCommandPalette();
   const [exportsOpen, setExportsOpen] = useState(false);
   const [pdfOpen, setPdfOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const sheet = activeSheet(draft), selected = sheet.visuals.find(v => v.id === sheet.selectedId);
   const nav = useRef<HTMLElement>(null);
   useEffect(() => {
@@ -53,6 +55,7 @@ export function AuthorToolbar({ canUndo = false, canRedo = false, onUndo, onRedo
   const needsVisual = needsData ?? (!selected ? 'Select a visual first.' : undefined);
   const publish = () => { setNotice(publishNotice(access.mode)); notify('Publishing is unavailable in this editor. Nothing has been published.'); };
   return <>
+    {settingsOpen && <AnalysisSettings draft={draft} dispatch={dispatch} onClose={() => setSettingsOpen(false)} />}
     {pdfOpen && <AnalysisPdfDialog onClose={() => setPdfOpen(false)} onContinue={() => { flushSync(() => setPdfOpen(false)); onPrint?.(); }} />}
     <nav ref={nav} className="author-menu" aria-label="Analysis menu" onKeyDown={e => {
       if (e.key === 'Escape') { const menu = (e.target as HTMLElement).closest('details'); if (menu) { e.preventDefault(); e.stopPropagation(); menu.open = false; menu.querySelector('summary')?.focus(); } }
@@ -82,7 +85,7 @@ export function AuthorToolbar({ canUndo = false, canRedo = false, onUndo, onRedo
         <AuthorMenuItem label="Redo" run={onRedo} keyShortcuts="Control+Shift+Z Meta+Shift+Z Control+Y" reason={!canRedo || !onRedo ? "Nothing to redo. Undo an edit first; a new edit clears redo history." : undefined} />
         <hr />
         <AuthorMenuItem label="Themes" reason={!dataAvailable ? 'Add data to open the analysis theme editor.' : undefined} run={() => focus('[data-author-control="theme"]', 'Visual')} />
-        <AuthorMenuItem label="Analysis Settings" reason="Analysis-level settings are not supported in this editor yet." />
+        <AuthorMenuItem label="Analysis Settings" run={() => setSettingsOpen(true)} />
       </AuthorMenu>
       <AuthorMenu name="Data">
         <AuthorMenuItem label="Data" run={() => focus('.fields-panel > summary')} />

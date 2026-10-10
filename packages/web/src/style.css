@@ -939,3 +939,11 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
   .analysis-print-sheet .author-card.is-selected { border-color: #c9d8de; box-shadow: none; }
   .analysis-print-sheet .react-grid-item { transition: none !important; }
 }
+
+.analysis-settings-dialog label { margin-top: 12px; }
+.analysis-settings-dialog textarea, .analysis-settings-dialog select { box-sizing: border-box; width: 100%; min-width: 0; padding: 4px 8px; border: 1px solid var(--chrome-border, #c9d8de); border-radius: 5px; background: var(--chrome-surface, #fff); color: inherit; font: inherit; }
+.analysis-settings-dialog textarea { resize: vertical; }
+.analysis-settings-dialog .author-menu-item > button { width: 100%; text-align: left; margin-top: 4px; }
+.settings-palette { display: flex; gap: 4px; margin-top: 8px; }
+.settings-palette span { width: 24px; height: 16px; border: 1px solid var(--chrome-border, #c9d8de); }
+.analysis-settings-dialog button[aria-disabled="true"] { color: var(--chrome-muted, #536879); cursor: not-allowed; }

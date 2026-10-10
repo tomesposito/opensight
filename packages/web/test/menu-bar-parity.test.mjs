@@ -55,16 +55,22 @@ test('File unavailable items expose reasons and cannot invoke actions; export/im
   assert.match(ui.item('File', 'Autosave On').props.title, /could not save.*Browser storage is blocked/);
 });
 
-test('Edit has Themes and explicit unavailable history/settings actions', async t => {
+test('Edit has Themes, real settings and unavailable empty history', async t => {
   const ui = await mount(t);
   assert.deepEqual(ui.labels('Edit'), ['Undo', 'Redo', 'Themes', 'Analysis Settings']);
   assert.equal(ui.item('Edit', 'Themes').props['aria-disabled'], false);
-  for (const label of ['Undo', 'Redo', 'Analysis Settings']) {
+  for (const label of ['Undo', 'Redo']) {
     assert.equal(ui.item('Edit', label).props['aria-disabled'], true);
     await ui.click('Edit', label);
   }
   assert.deepEqual(ui.calls, []);
+  await ui.update({ canUndo: true, canRedo: true, onUndo: () => ui.calls.push('undo'), onRedo: () => ui.calls.push('redo') });
+  await ui.click('Edit', 'Undo'); await ui.click('Edit', 'Redo');
+  assert.deepEqual(ui.calls, ['undo', 'redo']);
   await ui.update({ dataAvailable: false });
+  assert.equal(ui.item('Edit', 'Analysis Settings').props['aria-disabled'], false);
+  await ui.click('Edit', 'Analysis Settings');
+  assert.equal(ui.renderer.root.findByType('dialog').findByType('h2').props.children, 'Analysis Settings');
   assert.match(ui.item('Edit', 'Themes').props.title, /Add data/);
 });
 

@@ -30,7 +30,8 @@ test('commands reverse field creation/assignment/removal, properties and complet
 test('visual deletion restores action targets/mappings, selection and layout in its inverse', () => {
   let draft = authorReducer(authorReducer(emptyDraft(), { type: 'add', kind: 'bar' }), { type: 'add', kind: 'bar' });
   const sheet = activeSheet(draft);
-  sheet.visuals[0].filterActions = [{ id: 'filter', name: 'Filter', trigger: 'select', targets: ['visual-2'], mappings: { 'visual-2': { region: 'region' } } }];
+  sheet.visuals[0].filterActions = [{ id: 'filter', name: 'Filter', sourceField: 'region', targets: ['visual-2'], mappings: { 'visual-2': 'region' } }];
+  validateDraft(draft);
   let state = createAuthorHistory(draft);
   state = reduce(state, { type: 'remove', id: 'visual-2' });
   assert.deepEqual(activeSheet(state.draft).visuals[0].filterActions[0].targets, []);

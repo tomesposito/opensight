@@ -104,6 +104,7 @@ export interface AuthorVisual {
 export interface Placement { i: string; x: number; y: number; w: number; h: number }
 export interface AuthorSheet { controls: AuthorControl[]; id: string; name: string; visuals: AuthorVisual[]; layout: Placement[]; selectedId: string | null; imported?: ImportedSheet }
 export interface AuthorDraft {
+  description?: string;
   dataset?: AuthorDataset;
   theme?: AnalysisTheme; chrome?: 'light' | 'dark';
   version: 2; parameters: AuthorParameter[]; title: string; sheets: AuthorSheet[]; activeSheetId: string; calculatedFields: CalculatedField[]; bundle?: BundleOrigin;
@@ -148,6 +149,7 @@ export function calculationError(field: CalculatedField, existing: readonly Data
   return expressionError(field.expression, existing);
 }
 export type AuthorAction =
+  | { type: 'analysis-settings'; title: string; description: string; theme?: AnalysisTheme }
   | { type: 'theme'; theme: AnalysisTheme }
   | { type: 'chrome'; mode: 'light' | 'dark' }
   | { type: 'palette'; palette?: string[] }
@@ -202,6 +204,12 @@ const cleanLayout = (layout: readonly Placement[]): Placement[] => layout.map(({
 
 /** Immutable transitions shared by field buttons, pills, sheet tabs and drag/resize callbacks. */
 export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorDraft {
+  if (action.type === 'analysis-settings') {
+    if (analysisSettingsError(action)) return draft;
+    return { ...draft, title: action.title.trim(),
+      ...(action.description || draft.description !== undefined ? { description: action.description } : {}),
+      ...(action.theme ? { theme: structuredClone(action.theme) } : {}) };
+  }
   if (action.type === 'theme') return themeValid(action.theme) ? { ...draft, theme: structuredClone(action.theme) } : draft;
   if (action.type === 'chrome') return { ...draft, chrome: action.mode };
   if (action.type === 'import') { validateDraft(action.draft); return action.draft; }
@@ -495,6 +503,7 @@ export function serializeVisual(visual: AuthorVisual, includeInteractions = true
 export function serializeDraft(draft: AuthorDraft): BundleAnalysis {
   validateDraft(draft);
   return { resourceType: 'analysis', analysisId: 'authored-analysis', name: draft.title.trim() || 'Untitled analysis', definition: {
+    ...(draft.description !== undefined ? { opensightDescription: draft.description } : {}),
     ...(draft.theme ? { opensightTheme: draft.theme } : {}),
     dataSetIdentifierDeclarations: [{ identifier: 'sales_data', dataSetArn: draft.dataset ? `opensight:dataset:${draft.dataset.id}` : 'arn:aws:quicksight:us-east-1:123456789012:dataset/renderable-sales' }],
     ...(draft.parameters.length ? { parameterDeclarations: draft.parameters.map(serializeParameter) } : {}),
@@ -515,10 +524,17 @@ export function serializeDraft(draft: AuthorDraft): BundleAnalysis {
 
 const isObject = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 const onlyKeys = (v: Record<string, unknown>, keys: string[]): boolean => Object.keys(v).every(k => keys.includes(k));
+export const analysisDescriptionValid = (value: unknown): value is string => typeof value === 'string' && value.length <= 4000 && !value.includes('\0');
+export function analysisSettingsError(settings: { title: string; description: string; theme?: AnalysisTheme }): string | undefined {
+  if (typeof settings.title !== 'string' || !settings.title.trim() || settings.title.trim().length > 256 || /[\x00-\x1f]/.test(settings.title)) return 'Use an analysis name of 1–256 characters without control characters.';
+  if (!analysisDescriptionValid(settings.description)) return 'Use a description of at most 4,000 characters without null characters.';
+  if (settings.theme !== undefined && !themeValid(settings.theme)) return 'Choose a supported analysis theme.';
+}
 /** localStorage is untrusted: validate every identity, field, layout and display option. */
 export function validateDraft(value: unknown): asserts value is AuthorDraft {
   const fail = (): never => { throw new Error('Invalid or unsupported author draft.'); };
-  if (!isObject(value) || !onlyKeys(value, ['version', 'title', 'sheets', 'activeSheetId', 'calculatedFields', 'parameters', 'bundle', 'theme', 'chrome', 'dataset']) || value.version !== 2 || typeof value.title !== 'string' || !Array.isArray(value.sheets) || !value.sheets.length || !Array.isArray(value.calculatedFields)) return fail();
+  if (!isObject(value) || !onlyKeys(value, ['version', 'title', 'description', 'sheets', 'activeSheetId', 'calculatedFields', 'parameters', 'bundle', 'theme', 'chrome', 'dataset']) || value.version !== 2 || typeof value.title !== 'string' || !Array.isArray(value.sheets) || !value.sheets.length || !Array.isArray(value.calculatedFields)) return fail();
+  if (value.description !== undefined && !analysisDescriptionValid(value.description)) return fail();
   if (value.theme !== undefined && !themeValid(value.theme) || value.chrome !== undefined && !['light', 'dark'].includes(String(value.chrome))) return fail();
   const dataset = value.dataset as AuthorDataset | undefined;
   if (dataset !== undefined) {

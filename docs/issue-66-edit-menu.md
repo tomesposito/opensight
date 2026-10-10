@@ -28,3 +28,25 @@ and already-consumed keys are ignored. The shortcuts help lists these keys.
 
 No dependency, hosted service, environment variable or solution-design change
 is required.
+
+## Analysis Settings
+
+Edit → Analysis Settings opens a native modal even on an analysis without data.
+It edits the name (1–256 characters), description (up to 4,000 characters), and
+analysis theme (keep the current custom theme, Light or Dark). Apply validates
+and commits all three as one command; Cancel/Escape discard staged changes and
+return focus. Themes drive the existing chart/canvas renderer and preserve
+per-visual palette overrides. Custom colors and fonts remain in Edit → Themes.
+
+The settings persist in device-local drafts and copies. Definition JSON and
+.qs downloads include the name and the `definition.opensightDescription` and
+`definition.opensightTheme` extensions; reimport restores them. Older drafts
+need no migration. Imported secondary resources remain unchanged, and unknown
+imported description extensions are retained read-only until explicitly edited.
+Dataset-only imports gain an analysis resource when settings are authored.
+
+Locale/date-format defaults and sharing/permissions remain individually
+`aria-disabled`, keyboard reachable, with focus/hover explanations. The former
+is not supported consistently by the current rendering paths; UTC date grouping
+is unchanged. Sharing requires a hosted analysis and API integration. Neither
+limitation disables the feasible local settings surface.

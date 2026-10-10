@@ -215,3 +215,25 @@ test('history changes drive autosave; manual save keeps history and document bou
   await dispatch({ type: 'title', title: 'Original edit' });
   await ui.reload(); assert.equal(ui.button('Undo').props['aria-disabled'], true); assert.equal(ui.button('Redo').props['aria-disabled'], true);
 });
+
+test('Analysis Settings apply, undo, autosave and reload the actual analysis with no dataset required', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const ui = await mount(t);
+  ui.values.clear(); await ui.reload();
+  assert.equal(ui.renderer.root.findAllByType(AuthorCanvas).length, 0);
+  await ui.click('Analysis Settings');
+  const dialog = () => ui.renderer.root.findByType('dialog');
+  await act(() => dialog().findByType('input').props.onChange({ target: { value: 'Analysis metadata' } }));
+  await act(() => dialog().findByType('textarea').props.onChange({ target: { value: 'Saved description' } }));
+  await act(() => dialog().findByType('select').props.onChange({ target: { value: 'dark' } }));
+  await act(() => dialog().findByType('form').props.onSubmit({ preventDefault() {} }));
+  await act(() => t.mock.timers.tick(2000));
+  assert.equal(ui.store.restore().draft.title, 'Analysis metadata'); assert.equal(ui.store.restore().draft.description, 'Saved description');
+  assert.equal(ui.store.restore().draft.theme.background, '#141e2c');
+  await ui.click('Undo'); await act(() => t.mock.timers.tick(2000));
+  assert.deepEqual(ui.store.restore().draft, emptyDraft());
+  await ui.click('Redo'); await ui.click('Save draft'); await ui.reload(); await ui.click('Analysis Settings');
+  assert.equal(dialog().findByType('input').props.value, 'Analysis metadata'); assert.equal(dialog().findByType('textarea').props.value, 'Saved description');
+  await act(() => dialog().findByType('textarea').props.onChange({ target: { value: 'Discarded' } }));
+  await ui.click('Cancel'); await ui.click('Save draft'); assert.equal(ui.store.restore().draft.description, 'Saved description');
+});

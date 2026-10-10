@@ -1,3 +1,4 @@
+import { analysisDescriptionValid } from './authoring.js';
 import { projectInsightBody } from './insight-configuration.js';
 import { normalizeVisual } from './compiler.js';
 import { themeValid, paletteValid } from './themes.js';
@@ -155,6 +156,7 @@ export function importBundle(bundle: QsBundle): AuthorDraft {
   let visualIndex = 0;
   const primary = original.members.find(m => m.resource.resourceType === 'analysis') ?? original.members.find(m => m.resource.resourceType === 'dashboard');
   draft.title = primary?.resource.name ?? 'Imported resources';
+  if (primary && (primary.resource.resourceType === 'analysis' || primary.resource.resourceType === 'dashboard') && analysisDescriptionValid(primary.resource.definition.opensightDescription)) draft.description = primary.resource.definition.opensightDescription;
   if (primary && (primary.resource.resourceType === 'analysis' || primary.resource.resourceType === 'dashboard') && themeValid(primary.resource.definition.opensightTheme)) draft.theme = copy(primary.resource.definition.opensightTheme);
   for (const member of original.members) {
     const r = member.resource, messages: string[] = [];
@@ -164,6 +166,7 @@ export function importBundle(bundle: QsBundle): AuthorDraft {
       for (const key of Object.keys(r)) if (!['resourceType', 'dataSetId', 'dataSourceId', 'name'].includes(key)) messages.push(`${r.resourceType}.${key}: retained, read-only; not executed.`);
       continue;
     }
+    if (r.definition.opensightDescription !== undefined) messages.push(analysisDescriptionValid(r.definition.opensightDescription) ? 'Analysis description: editable in Analysis Settings.' : 'Analysis description: unsupported definition retained, read-only.');
     if (r.definition.opensightTheme !== undefined) messages.push(themeValid(r.definition.opensightTheme) ? 'Analysis theme: palette, font and background supported.' : 'Analysis theme: unsupported definition retained, read-only.');
     const d = r.definition, calculationProblems = new Map<string, string>(), addedCalculations = new Set<CalculatedField>();
     for (const key of Object.keys(r)) if (!['resourceType', 'analysisId', 'dashboardId', 'name', 'definition'].includes(key)) messages.push(`${key}: retained, read-only.`);
@@ -393,6 +396,7 @@ export function exportBundle(draft: AuthorDraft): QsBundle {
     const r = member.resource;
     if (r.resourceType !== 'analysis' && r.resourceType !== 'dashboard') continue;
     const d = r.definition, primary = member.path === origin.primaryPath;
+    if (primary && draft.description !== undefined && draft.description !== d.opensightDescription) d.opensightDescription = draft.description;
     if (primary && draft.theme && !equal(draft.theme, d.opensightTheme)) d.opensightTheme = copy(draft.theme);
     const parameters = draft.parameters.filter(p => !p.memberPath || p.memberPath === member.path);
     const declarations = d.parameterDeclarations ?? [];
@@ -512,7 +516,7 @@ export function exportBundle(draft: AuthorDraft): QsBundle {
     }
   }
   // A dataset-only import can still become an authored analysis without losing dependency members.
-  if (!origin.primaryPath && (draft.sheets.some(s => s.visuals.length || s.id !== origin.emptySheetId || s.name !== 'Sheet 1') || draft.calculatedFields.length || draft.parameters.length || draft.sheets.some(s => s.controls.length) || draft.title !== origin.title)) {
+  if (!origin.primaryPath && (draft.sheets.some(s => s.visuals.length || s.id !== origin.emptySheetId || s.name !== 'Sheet 1') || draft.calculatedFields.length || draft.parameters.length || draft.sheets.some(s => s.controls.length) || draft.title !== origin.title || draft.description !== undefined || draft.theme !== undefined)) {
     const resource = serializeDraft({ ...draft, bundle: undefined });
     bundle.members.push({ path: `analysis/${resource.analysisId}.json`, resource });
   }
