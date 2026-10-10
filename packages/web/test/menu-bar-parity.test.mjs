@@ -141,14 +141,19 @@ test('Objects exposes every reference item, retains selection/removal and gates 
   const ui = await mount(t);
   assert.deepEqual(ui.labels('Objects').slice(0, 18), objectItems);
   for (const label of ['Format Object', 'Field Wells', 'Title', 'Subtitle', 'Data Labels', 'Legend', 'Conditional Formatting', 'Actions']) assert.equal(ui.item('Objects', label).props['aria-disabled'], false, label);
-  for (const label of ['Tooltips', 'Highlights', 'Reference Lines', 'Placement', 'Style', 'Rules', 'Forecast', 'Anomaly', 'Export Visual to CSV', 'Export Table to Excel']) {
-    assert.equal(ui.item('Objects', label).props['aria-disabled'], true); assert.match(ui.item('Objects', label).props.title, /not supported/);
+  for (const label of ['Tooltips', 'Reference Lines', 'Placement', 'Export Visual to CSV']) assert.equal(ui.item('Objects', label).props['aria-disabled'], false, `${label} is enabled`);
+  for (const label of ['Highlights', 'Style', 'Rules', 'Forecast', 'Anomaly']) {
+    assert.equal(ui.item('Objects', label).props['aria-disabled'], true); assert.match(ui.item('Objects', label).props.title, /not supported|need/);
     await ui.click('Objects', label);
   }
+  // Export Table to Excel is gated to table/pivot visuals.
+  assert.equal(ui.item('Objects', 'Export Table to Excel').props['aria-disabled'], true);
+  assert.match(ui.item('Objects', 'Export Table to Excel').props.title, /table and pivot/);
   await ui.click('Objects', 'visual-1 · bar'); await ui.click('Objects', 'Remove selected visual');
   assert.deepEqual(ui.calls, [{ type: 'select', id: 'visual-1' }, { type: 'remove', id: 'visual-1' }]);
   await ui.update({ draft: authorReducer(emptyDraft(), { type: 'add', kind: 'table' }) });
   for (const label of ['Data Labels', 'Legend']) assert.match(ui.item('Objects', label).props.title, /this visual type/);
+  assert.equal(ui.item('Objects', 'Export Table to Excel').props['aria-disabled'], false, 'Excel export enabled for tables');
   await ui.update({ draft: emptyDraft() });
   for (const label of objectItems) { assert.equal(ui.item('Objects', label).props['aria-disabled'], true); assert.match(ui.item('Objects', label).props.title, /Select an? (visual|object)/); }
 });

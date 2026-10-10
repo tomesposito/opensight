@@ -21,7 +21,7 @@ async function mount(t, initial) {
   const change = async (label, value, kind = 'input') => { const n = panel().findAllByType('label').find(n => n.children.includes(label)); assert.ok(n, label); await act(() => n.findByType(kind).props.onChange({ target: { value, checked: value } })); };
   return { renderer, state: () => state, dispatch: async action => act(() => dispatch(action)), tab, panel, click, change, switch: async name => act(() => tab(name).props.onClick()) };
 }
-const visualSections = ['Display settings', 'Pivot options', 'Headers', 'Cells', 'Total', 'Subtotal', 'Row names', 'Column names', 'Value names', 'Conditional formatting', 'Visual palette', 'Analysis theme'];
+const visualSections = ['Display settings', 'Placement', 'Pivot options', 'Headers', 'Cells', 'Total', 'Subtotal', 'Row names', 'Column names', 'Value names', 'Conditional formatting', 'Visual palette', 'Analysis theme'];
 const interactionSections = ['Filters', 'Custom actions', 'Drill-down hierarchy', 'Parameter bindings'];
 
 test('every reference section uses uniform details; tabs expose the correct panel and keyboard navigation', async t => {
