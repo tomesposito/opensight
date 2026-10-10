@@ -370,7 +370,7 @@ export function AuthorCanvas({ draft, dispatch, client, fit = true, sourceProble
           {!sheet.visuals.length && !sheet.objects?.length && <div className="canvas-empty"><h2>Your canvas is ready</h2><p>Choose a field from the Data panel to create a visual, or select a type and ADD.</p></div>}
           <div aria-label="Authoring canvas">
             <GridLayout key={sheet.id} width={width} layout={layout} compactor={noCompactor}
-              gridConfig={{ cols: GRID_COLUMNS, rowHeight: 42, margin: [12, 12], containerPadding: [0, 0] }}
+              gridConfig={{ cols: GRID_COLUMNS, rowHeight: sheet.layoutSettings?.rowHeight ?? 42, margin: [sheet.layoutSettings?.margin ?? 12, sheet.layoutSettings?.margin ?? 12], containerPadding: [0, 0] }}
               dragConfig={{ enabled: !mobile, handle: '.drag-handle' }} resizeConfig={{ enabled: !mobile, handles: ['se', 'sw'] }}
               onDragStop={next => { if (!mobile) dispatch({ type: 'layout', sheetId: sheet.id, layout: next }); }}
               onResizeStop={next => { if (!mobile) dispatch({ type: 'layout', sheetId: sheet.id, layout: next }); }}>
