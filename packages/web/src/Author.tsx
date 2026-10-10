@@ -471,7 +471,8 @@ function Properties({ visual, draft, dispatch, client, runtimeProblems }: Editor
   const tabId = useId();
   const formatting = visual.formatting ?? {};
   const setFormatting = (patch: Partial<VisualFormatting>) => dispatch({ type: 'formatting', formatting: { ...formatting, ...patch } });
-  const toggles: { property: 'titleVisible' | 'legend' | 'labels' | 'horizontal' | 'stacked' | 'totals' | 'subtotals'; label: string }[] = [
+  const toggles: { property: 'titleVisible' | 'legend' | 'labels' | 'tooltipVisible' | 'horizontal' | 'stacked' | 'totals' | 'subtotals'; label: string }[] = [
+    { property: 'tooltipVisible' as const, label: 'Show tooltips' },
     ...(['bar', 'bar100'].includes(visual.kind) ? [{ property: 'horizontal' as const, label: 'Horizontal bars' }] : []),
     ...(visual.kind === 'bar' ? [{ property: 'stacked' as const, label: 'Stack values' }] : []),
   ];
@@ -490,7 +491,7 @@ function Properties({ visual, draft, dispatch, client, runtimeProblems }: Editor
     <CardTitle visual={visual} dispatch={dispatch} />
     <CardStyle />
     <CardLayout />
-    {toggles.map(({ property, label }) => <label className="toggle" key={property}><input type="checkbox" checked={visual[property]} onChange={e => dispatch({ type: 'display', property, value: e.target.checked })} />{label}</label>)}
+    {toggles.map(({ property, label }) => <label className="toggle" key={property}><input type="checkbox" {...(property === 'tooltipVisible' ? { 'data-author-control': 'tooltips' } : {})} checked={visual[property]} onChange={e => dispatch({ type: 'display', property, value: e.target.checked })} />{label}</label>)}
     {visual.kind === 'insight' && <InsightOptions visual={visual} dispatch={dispatch} />}
     {visual.kind === 'insight' && <label>Narrative decimal places<input type="number" min="0" max="12" placeholder="Automatic" value={formatting.decimalPlaces ?? ''} onChange={e => {
       if (e.target.value === '') { const { decimalPlaces: _old, ...rest } = formatting; dispatch({ type: 'formatting', formatting: rest }); }
