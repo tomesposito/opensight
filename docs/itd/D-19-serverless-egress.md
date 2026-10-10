@@ -157,3 +157,17 @@ Evidence: [Lambda egress](https://docs.aws.amazon.com/lambda/latest/dg/configura
 [SQS endpoints](https://docs.aws.amazon.com/general/latest/gr/sqs-service.html),
 [Scheduler endpoints](https://docs.aws.amazon.com/general/latest/gr/eventbridgescheduler.html),
 [SES SMTP endpoints](https://docs.aws.amazon.com/general/latest/gr/ses.html).
+
+
+### SR4a SMTP credential custody (2026-10-10)
+
+The operator approved one private notification/test address. Account inspection
+found no reusable isolated SMTP secret and SES remains in sandbox mode. Follow
+[the frozen SR4a contract](../phase5-sr4a-packaging.md): one tagged IAM SMTP user,
+no console access, SendRawEmail restricted to the approved sender/recipient,
+private in-memory regional password derivation and Secrets Manager storage.
+No access-key resource or secret value enters Terraform state. Count at most
+twenty mail attempts including ambiguous outcomes; explicitly revoke credentials
+on cleanup. Verify the approved email identity without requesting production
+access. This fills the existing SES validation inventory; it does not authorize
+public email delivery or relax the runtime's recipient authorization rules.
