@@ -105,9 +105,11 @@ the existing Blaze interval on the dataset's execution record.
 
 Built by Codex (landing, dialogs, and most of the detail page) and finished by Muse
 after the run hit its usage limit and a VM reboot marked it interrupted. Muse's
-finish: `docs/issue-70-data-section.md`, plus two suite-greening fixes —
+finish: `docs/issue-70-data-section.md`, plus three suite-greening fixes —
 (1) `dataset-detail.test.mjs` now restores the file's original `window` from every
 mount's after-hook (Node runs `t.after` hooks in registration order, so the old
 per-mount restore leaked a `localStorage`-only stub into `waterfall-builder.test.mjs`
 under `--test-isolation=none`); (2) `back-to-top`/`session-gate` tests updated for
-the `#/data/sources` → landing-tab routing.
+the `#/data/sources` → landing-tab routing; (3) `command-palette.test.mjs` "Go to
+Data" now expects `#/data` (the Data landing route) instead of the pre-#70
+`#/data/preparation`.
