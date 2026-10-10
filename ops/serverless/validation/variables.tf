@@ -5,11 +5,6 @@ variable "region" {
     error_message = "This measured validation profile is limited to us-east-1."
   }
 }
-variable "enable_runtime" {
-  type        = bool
-  default     = true
-  description = "The operator first applies dependencies with this false, then plans fully resolved Lambda environments."
-}
 variable "account_id" {
   type      = string
   sensitive = true

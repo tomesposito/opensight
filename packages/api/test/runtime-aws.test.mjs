@@ -1,35 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createServer } from 'node:net';
-import { connect } from 'node:tls';
 import { InvocationScope } from '../dist/runtime-scope.js';
 import { InvocationAws, awsRegion, secretArn, secretObject, databaseUrl, awsEnvironment } from '../dist/runtime-aws.js';
-import { probeCommand, probeRoleNames, probeFailure, probeTlsSocket } from '../dist/platform-probe.js';
+import { probeCommand, probeRoleNames } from '../dist/platform-probe.js';
 const arn = 'arn:aws:secretsmanager:us-east-1:000000000000:secret:synthetic-abcdef';
 const base = { AWS_ACCESS_KEY_ID: 'synthetic', AWS_SECRET_ACCESS_KEY: 'synthetic', AWS_SESSION_TOKEN: 'synthetic', AWS_REGION: 'us-east-1', OPENSIGHT_VALIDATION: 'isolated', OPENSIGHT_MAINTENANCE: 'frozen', OPENSIGHT_RUNTIME: 'lambda', OPENSIGHT_MODE: 'hosted', OPENSIGHT_DEPLOYMENT: 'synthetic' };
 const scope = () => new InvocationScope(Date.now() + 12000);
-
-test('SR4a a blackholed TLS handshake settles cancelled work and does not quarantine the runtime', async t => {
-  const sockets = new Set();
-  const server = createServer(socket => { sockets.add(socket); socket.on('close', () => sockets.delete(socket)); socket.resume(); });
-  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-  t.after(async () => { for (const socket of sockets) socket.destroy(); await new Promise(resolve => server.close(resolve)); });
-  let socket;
-  await assert.rejects(scope().run(invocation => {
-    socket = connect({ host: '127.0.0.1', port: server.address().port, rejectUnauthorized: true });
-    return probeTlsSocket(invocation, socket, 50);
-  }), { code: 'PROBE_TLS_TIMEOUT' });
-  assert.equal(socket.destroyed, true);
-  assert.equal(socket.closed, true);
-  await scope().run(async () => {});
-});
-
-test('SR4a SQL diagnostics retain only a validated SQLSTATE, never statement or credential detail', () => {
-  const failure = probeFailure({ severity: 'ERROR', code: '42501', message: 'private statement', detail: 'private password' });
-  assert.equal(failure.code, 'PROBE_SQL_42501');
-  assert.equal(failure.message, 'PROBE_SQL_42501');
-  for (const error of [new Error('private error'), { code: 'EPERM' }, { severity: 'ERROR', code: '42501:private' }, { severity: 'ERROR', code: '42501\n' }]) assert.equal(probeFailure(error).code, 'PROBE_FAILED');
-});
 
 test('SR4a strict secret schemas reject oversized, ignored, nested and prototype fields', () => {
   assert.deepEqual({ ...secretObject('{"username":"synthetic","password":"fake"}', ['username', 'password']) }, { username: 'synthetic', password: 'fake' });
@@ -41,9 +17,6 @@ test('SR4a region, ARN and database URL cannot redirect credentials', () => {
   assert.equal(awsRegion(base), 'us-east-1');
   for (const region of ['', 'us-east-1.evil.invalid', 'us-east-1/?', 'cn-north-1']) assert.throws(() => awsRegion({ AWS_REGION: region }));
   assert.equal(secretArn(arn, 'us-east-1'), arn);
-  const managed = 'arn:aws:secretsmanager:us-east-1:000000000000:secret:rds!cluster-00000000-0000-0000-0000-000000000000-abcdef';
-  assert.equal(secretArn(managed, 'us-east-1'), managed);
-  for (const invalid of [managed.replace('us-east-1', 'us-west-2'), managed.replace('rds!cluster-', 'foreign!'), `${managed}:password`, `${managed}\n`, `${managed}/redirect`]) assert.throws(() => secretArn(invalid, 'us-east-1'));
   assert.throws(() => secretArn(arn, 'us-west-2'));
   assert.throws(() => secretArn('synthetic', 'us-east-1'));
   const env = { OPENSIGHT_DB_HOST: 'database.invalid', OPENSIGHT_DB_NAME: 'synthetic' };

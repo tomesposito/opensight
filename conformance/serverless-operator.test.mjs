@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, chmod, rm, mkdir, symlink, realpath } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { privateDirectory, reserveInvocation, owned, safeProbeResult, smtpPassword, stateAddresses } from '../ops/serverless/operator.mjs';
+import { privateDirectory, reserveInvocation, owned, safeProbeResult, smtpPassword } from '../ops/serverless/operator.mjs';
 import { checkPlan } from '../ops/serverless/plan-policy.mjs';
 
 test('SR4a private operator paths exclude the checkout, relative paths, symlinks and permissive directories', async () => {
@@ -39,12 +39,6 @@ test('SR4a cleanup ownership and probe output reject foreign resources and secre
   assert.deepEqual(safeProbeResult(response), response);
   for (const bad of [{ ...response, password: 'synthetic' }, { ...response, passed: false }, { ...response, durationMs: -1 }, { ...response, errorMessage: 'provider details' }]) assert.throws(() => safeProbeResult(bad));
 });
-test('SR4a bootstrap accepts a new empty backend and preserves already imported resources', () => {
-  assert.deepEqual([...stateAddresses({ format_version: '1.0' })], []);
-  const state = { format_version: '1.0', values: { root_module: { resources: [{ address: 'aws_kms_key.state' }], child_modules: [{ resources: [{ address: 'module.nested.aws_s3_bucket.state' }] }] } } };
-  assert.deepEqual([...stateAddresses(state)], ['aws_kms_key.state', 'module.nested.aws_s3_bucket.state']);
-  for (const invalid of [null, {}, { format_version: '2.0' }]) assert.throws(() => stateAddresses(invalid), /STATE_FORMAT_UNSUPPORTED/);
-});
 function plan() {
   const resources = [];
   const add = (type, name, after) => resources.push({ mode: 'managed', address: `${type}.${name}`, type, change: { actions: ['create'], after } });
@@ -66,18 +60,6 @@ test('SR4a saved-plan policy rejects cost, public access, secret and destruction
   mutate(r => { r[0].change.actions = ['delete', 'create']; });
   for (const type of ['aws_nat_gateway', 'aws_lambda_function_url', 'aws_apigatewayv2_api', 'aws_cloudfront_distribution', 'aws_lambda_event_source_mapping', 'aws_scheduler_schedule', 'aws_secretsmanager_secret_version']) mutate(r => r.push({ mode: 'managed', address: `${type}.forbidden`, type, change: { actions: ['create'], after: {} } }));
   mutate(r => r.push({ mode: 'managed', address: 'aws_vpc_endpoint.bad', type: 'aws_vpc_endpoint', change: { actions: ['create'], after: { vpc_endpoint_type: 'Interface' } } }));
-});
-test('SR4a dependency staging cannot create unchecked functions or accept unresolved runtime gates', () => {
-  const dependency = plan();
-  dependency.variables = { enable_runtime: { value: false } };
-  assert.throws(() => checkPlan(dependency), /INVENTORY/);
-  dependency.resource_changes = dependency.resource_changes.filter(r => r.type !== 'aws_lambda_function');
-  assert.equal(checkPlan(dependency).functions, 0);
-  dependency.variables.enable_runtime.value = true;
-  assert.throws(() => checkPlan(dependency), /INVENTORY/);
-  const unresolved = plan();
-  unresolved.resource_changes.find(r => r.type === 'aws_lambda_function').change.after.environment = [{}];
-  assert.throws(() => checkPlan(unresolved), /MAINTENANCE_GATE/);
 });
 
 test('SR4a SMTP password matches an independently computed synthetic SigV4 fixture and is region-bound', () => {

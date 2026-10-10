@@ -111,15 +111,6 @@ Backend configuration and plan bytes are private mode-0600 files outside Git.
 Use S3 native locking and TLS; no `-lock=false` or fallback local state.
 
 The CLI harness has separate prepare/plan/invoke/observe/cleanup operations.
-For a new environment, run `prepare`, `bootstrap`, `repository`, then upload the
-verified image. `plan` initially selects only the dependencies (`enable_runtime`
-is false); review its saved-plan digest and run `apply <digest>`. Then run
-`enable-runtime`, create a fresh `plan`, review it and apply its new digest.
-The pinned provider marks an entire Lambda environment map unknown while any
-generated reference is unresolved. Dependency staging makes every runtime value
-reviewable before function creation; it never relaxes the maintenance/secret
-checks or adds resources. Failed OpenTofu diagnostics stay in the private
-operator directory. Empty new remote state is a supported bootstrap condition.
 It does not assume that a budget alert stops spend. Keep a durable private ledger
 of at most 1,000 function invocations and a 72-hour experiment window. Observe
 Aurora through service metrics only; no periodic SQL pings. Cleanup requires an

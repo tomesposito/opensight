@@ -29,16 +29,6 @@ export function safeProbeResult(response) {
     || Object.keys(response).sort().join() !== 'command,durationMs,passed,version') throw Error('PROBE_FAILED');
   return response;
 }
-export function stateAddresses(state) {
-  if (state?.format_version !== '1.0') throw Error('STATE_FORMAT_UNSUPPORTED');
-  const addresses = new Set();
-  const visit = module => {
-    for (const resource of module?.resources ?? []) addresses.add(resource.address);
-    for (const child of module?.child_modules ?? []) visit(child);
-  };
-  visit(state.values?.root_module);
-  return addresses;
-}
 /** AWS's documented regional SMTP derivation; the IAM signing key is never stored. */
 export function smtpPassword(secret, region) {
   if (typeof secret !== 'string' || secret.length < 16 || region !== 'us-east-1') throw Error('SMTP_KEY_INVALID');
@@ -47,12 +37,9 @@ export function smtpPassword(secret, region) {
   return Buffer.concat([Buffer.from([4]), key]).toString('base64');
 }
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
-function command(binary, args, env = process.env, failed = () => {}) {
+function command(binary, args, env = process.env) {
   try { return execFileSync(binary, args, { encoding: 'utf8', env, maxBuffer: 32 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'] }); }
-  catch (error) {
-    failed(`${error.stdout ?? ''}${error.stderr ?? ''}`);
-    throw Error(`${binary === 'aws' ? 'AWS' : 'TOFU'}_COMMAND_FAILED`);
-  }
+  catch { throw Error(`${binary === 'aws' ? 'AWS' : 'TOFU'}_COMMAND_FAILED`); }
 }
 export async function main(args = process.argv.slice(2), environment = process.env) {
   process.umask(0o077);
@@ -73,9 +60,7 @@ export async function main(args = process.argv.slice(2), environment = process.e
   try {
     const operator = read('operator.json');
     if (operator.region !== 'us-east-1') throw Error('REGION_UNVALIDATED');
-    // An ambiguous invocation must consume one recorded attempt, never an
-    // unrecorded CLI retry (especially for SMTP). Retry explicitly via the ledger.
-    const aws = (service, action, extra = []) => JSON.parse(command('aws', [service, action, '--region', operator.region, '--output', 'json', '--no-cli-pager', ...extra], { ...environment, AWS_MAX_ATTEMPTS: '1', AWS_RETRY_MODE: 'standard' }) || '{}');
+    const aws = (service, action, extra = []) => JSON.parse(command('aws', [service, action, '--region', operator.region, '--output', 'json', '--no-cli-pager', ...extra]) || '{}');
     const account = aws('sts', 'get-caller-identity').Account;
     if (!/^\d{12}$/.test(account)) throw Error('ACCOUNT_INVALID');
     const deployment = operator.deployment;
@@ -85,7 +70,7 @@ export async function main(args = process.argv.slice(2), environment = process.e
     const stateTags = tags.map(t => t.Key === 'OpenSightPurpose' ? { ...t, Value: 'protected-state' } : t);
     const stateBucket = `${deployment}-state-${sha(account).slice(0, 10)}`, keyAlias = `alias/${deployment}-state`;
     const root = name => join(repository, 'ops/serverless', name);
-    const tofu = (name, args) => command('tofu', [`-chdir=${root(name)}`, ...args], { ...environment, TF_IN_AUTOMATION: '1', TF_DATA_DIR: path(`tofu-${name}`) }, detail => write(`${name}.failed.log`, detail));
+    const tofu = (name, args) => command('tofu', [`-chdir=${root(name)}`, ...args], { ...environment, TF_IN_AUTOMATION: '1', TF_DATA_DIR: path(`tofu-${name}`) });
     const vars = name => `-var-file=${path(`${name}.tfvars.json`)}`;
     const init = name => {
       // OpenTofu 1.13.1 adds a synthetic predecessor-registry entry in memory,
@@ -113,7 +98,7 @@ export async function main(args = process.argv.slice(2), environment = process.e
         OPENSIGHT_AUTH_ISSUER: operator.public_origin, OPENSIGHT_AUTH_AUDIENCE: 'opensight', OPENSIGHT_AUTH_KEY_ID: 'validation', OPENSIGHT_SESSION_SECONDS: '900', OPENSIGHT_INVITATION_SECONDS: '86400',
         OPENSIGHT_TENANT_LIMIT_DEFAULTS: JSON.stringify(tenant), OPENSIGHT_NODE_LIMITS: JSON.stringify({ ...tenant, running: 3, queued: 12, refreshSlots: 1, workingBytes: 67108864, cacheBytes: 67108864, workerRssBytes: 1610612736 }) };
       write('bootstrap.tfvars.json', { region: operator.region, account_id: account, deployment, state_bucket: stateBucket });
-      write('validation.tfvars.json', { region: operator.region, account_id: account, deployment, availability_zones: zones, artifact_bucket: `${deployment}-artifacts-${sha(account).slice(0, 10)}`, image_uri: operator.image_uri, alert_email: operator.alert_email, runtime_environment: runtime, enable_runtime: operator.enable_runtime === true });
+      write('validation.tfvars.json', { region: operator.region, account_id: account, deployment, availability_zones: zones, artifact_bucket: `${deployment}-artifacts-${sha(account).slice(0, 10)}`, image_uri: operator.image_uri, alert_email: operator.alert_email, runtime_environment: runtime });
       for (const name of ['bootstrap', 'validation']) write(`${name}.backend.hcl`, `bucket = "${stateBucket}"\nkey = "${name}/terraform.tfstate"\nregion = "${operator.region}"\nencrypt = true\nuse_lockfile = true\nkms_key_id = "${keyAlias}"\nallowed_account_ids = ["${account}"]\n`);
       console.log('Private inputs prepared. No AWS resource was created.'); return;
     }
@@ -148,9 +133,7 @@ export async function main(args = process.argv.slice(2), environment = process.e
       aws('s3api', 'put-bucket-encryption', [...bucketArgs, '--server-side-encryption-configuration', JSON.stringify({ Rules: [{ ApplyServerSideEncryptionByDefault: { SSEAlgorithm: 'aws:kms', KMSMasterKeyID: key.Arn }, BucketKeyEnabled: true }] })]);
       aws('s3api', 'put-bucket-policy', [...bucketArgs, '--policy', JSON.stringify({ Version: '2012-10-17', Statement: [{ Sid: 'RequireTLS', Effect: 'Deny', Principal: '*', Action: 's3:*', Resource: [`arn:aws:s3:::${stateBucket}`, `arn:aws:s3:::${stateBucket}/*`], Condition: { Bool: { 'aws:SecureTransport': 'false' } } }] })]);
       init('bootstrap');
-      // `state list` fails before the first import; `show -json` explicitly
-      // represents an initialized backend with no state yet.
-      const current = stateAddresses(JSON.parse(tofu('bootstrap', ['show', '-json'])));
+      const current = new Set(tofu('bootstrap', ['state', 'list']).trim().split('\n'));
       for (const [address, id] of [['aws_kms_key.state', key.KeyId], ['aws_kms_alias.state', keyAlias], ...['aws_s3_bucket', 'aws_s3_bucket_public_access_block', 'aws_s3_bucket_versioning', 'aws_s3_bucket_server_side_encryption_configuration', 'aws_s3_bucket_policy'].map(type => [`${type}.state`, stateBucket])]) {
         if (!current.has(address)) tofu('bootstrap', ['import', '-input=false', vars('bootstrap'), address, id]);
       }
@@ -161,7 +144,7 @@ export async function main(args = process.argv.slice(2), environment = process.e
       if (existing) owned(aws('ecr', 'list-tags-for-resource', ['--resource-arn', existing.repositoryArn]).tags.map(t => ({ Key: t.Key ?? t.key, Value: t.Value ?? t.value })), deployment);
       else aws('ecr', 'create-repository', ['--repository-name', deployment, '--image-tag-mutability', 'IMMUTABLE', '--image-scanning-configuration', 'scanOnPush=true', '--tags', JSON.stringify(tags)]);
       init('validation');
-      if (!stateAddresses(JSON.parse(tofu('validation', ['show', '-json']))).has('aws_ecr_repository.runtime')) tofu('validation', ['import', '-input=false', vars('validation'), 'aws_ecr_repository.runtime', deployment]);
+      if (!tofu('validation', ['state', 'list']).split('\n').includes('aws_ecr_repository.runtime')) tofu('validation', ['import', '-input=false', vars('validation'), 'aws_ecr_repository.runtime', deployment]);
       console.log('Owned immutable image repository is ready. Push the reviewed image digest before planning functions.'); return;
     }
     if (operation === 'plan') {
@@ -183,13 +166,6 @@ export async function main(args = process.argv.slice(2), environment = process.e
     }
     const state = inventory();
     if (state.deployment !== deployment) throw Error('RESOURCE_NOT_OWNED');
-    if (operation === 'enable-runtime') {
-      // Dependency outputs must exist before requesting a fully resolved plan.
-      if (!state.cluster || !state.writer || !state.bootstrap_secret || !state.secrets?.operator || !state.secrets?.tenant || !state.secrets?.smtp) throw Error('DEPENDENCIES_REQUIRED');
-      write('operator.json', { ...operator, enable_runtime: true });
-      write('validation.tfvars.json', { ...read('validation.tfvars.json'), enable_runtime: true });
-      console.log('Runtime selected. Create and review a new saved plan before applying functions.'); return;
-    }
     if (operation === 'secrets') {
       for (const kind of ['operator', 'tenant']) {
         const arn = state.secrets[kind], description = aws('secretsmanager', 'describe-secret', ['--secret-id', arn]);
@@ -222,7 +198,7 @@ export async function main(args = process.argv.slice(2), environment = process.e
       if (selection === 'network' && aws('scheduler', 'list-schedules', ['--group-name', state.schedule_group]).Schedules.length >= 20) throw Error('SCHEDULE_BUDGET_EXHAUSTED');
       write('ledger.json', next); // Reserve before dispatch, including ambiguous transport failures.
       write('probe-request.json', { version: 1, command: selection });
-      const response = aws('lambda', 'invoke', ['--function-name', state.functions.probe, '--invocation-type', 'RequestResponse', '--cli-connect-timeout', '10', '--cli-read-timeout', '130', '--cli-binary-format', 'raw-in-base64-out', '--payload', `file://${path('probe-request.json')}`, path('probe-response.json')]);
+      const response = aws('lambda', 'invoke', ['--function-name', state.functions.probe, '--invocation-type', 'RequestResponse', '--cli-binary-format', 'raw-in-base64-out', '--payload', `file://${path('probe-request.json')}`, path('probe-response.json')]);
       const result = read('probe-response.json');
       if (response.FunctionError) {
         const code = /^[A-Z][A-Z0-9_]{1,79}$/.test(result.errorMessage ?? '') ? result.errorMessage : 'PROBE_FAILED';
