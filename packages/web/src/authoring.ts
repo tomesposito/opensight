@@ -291,12 +291,10 @@ export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorD
     copy.id = fresh('sheet', source.id);
     copy.name = `${source.name} (copy)`;
     copy.selectedId = null;
-    delete copy.imported;
     for (const visual of copy.visuals) {
       visual.id = fresh('visual', visual.id);
       for (const item of [...visual.filterActions ?? [], ...visual.urlActions ?? [], ...visual.navigationActions ?? []]) item.id = fresh('action', item.id);
       for (const nav of visual.navigationActions ?? []) if (nav.targetSheetId === source.id) nav.targetSheetId = copy.id;
-      delete visual.imported;
     }
     for (const object of copy.objects ?? []) { object.id = fresh('object', object.id); delete object.importedId; }
     for (const control of copy.controls) control.id = fresh('control', control.id);
