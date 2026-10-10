@@ -39,7 +39,7 @@ admission tables to turn a platform probe into a nominally working application.
 | Images | 1 private ECR repository; exact image digest, at most 2 retained images / 2 GB estimated total; explicit cleanup after the experiment |
 | Secrets | At most 4 Secrets Manager secrets: bootstrap DB, application operator DB, restricted tenant DB, SES SMTP; injected privately, not through IaC values/state; AWS-managed encryption keys |
 | Event transport | 1 test SQS queue + 1 DLQ, 1 Scheduler group, at most 20 one-shot schedules; delete-after-completion; 1 scoped Scheduler-to-SQS role; no Lambda event-source mapping or recurring schedules |
-| Email | SES sandbox; verified test sender and designated test recipient or mailbox simulator; at most 20 synthetic deliveries; no production-access request |
+| Email | SES sandbox; one verified operator-approved test identity and one tagged IAM SMTP user with sender/recipient-restricted SendRawEmail policy; access key generated privately outside Terraform; at most 20 synthetic mail attempts; no production-access request |
 | Logs/metrics | 3 log groups, 3-day retention, no payload/secret logging; AWS service metrics and at most 4 alarms; no monitoring SQL queries |
 | Operator/state foundation | 1 private versioned S3 state/evidence bucket, 1 customer-managed KMS key for state, separate lock/state access, scoped operator permissions; import bootstrap resources into their protected root |
 | Cost notification | 1 experiment budget with proposed $10 and $20 notifications to an operator-supplied address; notifications do not stop spend |
@@ -53,7 +53,7 @@ existing operator CLI session. No long-lived AWS keys enter a workflow.
 Execution roles are separate for request, migration and probe functions. The
 request role cannot read the bootstrap DDL credential. The probe gets only
 synthetic bucket/queue/schedule/secret access; `PassRole` is limited to its named
-Scheduler target role. The experiment adds no general administrative role.
+Scheduler target role. The experiment adds no general administrative role. The dedicated SMTP user has no console access; its key is created outside Terraform, with the derived regional SMTP password stored only in Secrets Manager. Cleanup explicitly revokes that key; state contains no access-key resource or secret payload.
 
 Exact image/action/tool/provider versions and checksums, IAM documents, resource
 names, secret references, subnet/AZ availability and the rendered IaC plan must
