@@ -252,6 +252,23 @@ deletion requires a separate explicit operation and verified retention behavior.
 
 ## 8. Sequenced work and acceptance gates
 
+### SR0 contract review — issue #81
+
+Detailed SR0 contracts are draft ITDs. Draft does not mean implemented or
+approved: Tom retains cost and product decisions. The register distinguishes a
+concrete proposal from a frozen build gate. `SOLUTION_DESIGN.md` is unchanged
+by this work; its approval requirement remains.
+
+| Contract | Record | Decision gate |
+| --- | --- | --- |
+| VPC egress and real mail | [D-19](itd/D-19-serverless-egress.md) | Tom: route profile, source scope, endpoint AZ count and fixed cost |
+| Trusted ingress | [D-20](itd/D-20-serverless-ingress.md) | Review origin-secret custody and authoring/embed routing proof |
+| Startup and idle clients | [D-21](itd/D-21-aurora-readiness.md) | Tom: tester allowlist/WAF cost and protected display expiry while idle |
+| Uploads and bounded results | [D-22](itd/D-22-serverless-object-transfers.md) | Tom: asynchronous UX/control ceiling; review immutable version and authorization protocol |
+| SQL/admission/artifacts | [D-23](itd/D-23-serverless-state-and-fencing.md) | Review transaction schema, hard-deadline containment and H9/H10 failure proof |
+| Event work and delivery | [D-24](itd/D-24-serverless-job-dispatch.md) | Review prearmed recovery proof, retention and H7 delivery ambiguity |
+| Terraform/build artifacts and release | [D-25](itd/D-25-serverless-release-artifacts.md) | Tom: tooling/licenses, private workflow protections, secret-state custody and retention/cost; review migration/rollback proof |
+
 Each implementation slice requires a frozen, buildable contract in
 `SOLUTION_DESIGN.md` before its build branch. The unresolved choices below block
 their dependent slices, not unrelated local design/implementation work.

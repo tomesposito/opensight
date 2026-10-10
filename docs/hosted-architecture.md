@@ -773,6 +773,18 @@ for bundled commercial licenses.
 
 ## 7. Open questions
 
+SR0 implementation decision register (issue #81; proposals, no AWS authorization):
+
+| ID | Contract | Status / gate |
+| --- | --- | --- |
+| [D-19](itd/D-19-serverless-egress.md) | Egress and real mail | 🚧 Tom: network profile, source scope, endpoint AZ count and fixed cost |
+| [D-20](itd/D-20-serverless-ingress.md) | Trusted routing and peer | 🚧 Origin trust, prefix and embed contract review |
+| [D-21](itd/D-21-aurora-readiness.md) | Wake and idle behavior | 🚧 Tom: pre-DB abuse cost/access and idle embed UX; preserve HQ-7 |
+| [D-22](itd/D-22-serverless-object-transfers.md) | Upload and result transfers | 🚧 Immutable/version-bound protocol; control ceiling/async UX review |
+| [D-23](itd/D-23-serverless-state-and-fencing.md) | SQL/admission/claims/artifacts | 🚧 H9/H10 transaction and failure-proof review |
+| [D-24](itd/D-24-serverless-job-dispatch.md) | Event work and delivery | 🚧 Commit recovery, cancellation, DLQ and H7 authorization review |
+| [D-25](itd/D-25-serverless-release-artifacts.md) | Terraform/artifacts and private releases | 🚧 Tom: tooling/licenses, OIDC protections, secret-state custody and retention/cost; migration/rollback review |
+
 Related confirmed deployment decision: [ITD D-18 — serverless development
 deployment](itd/D-18-serverless-development-deployment.md) (2026-10-10). Lambda
 and Aurora zero-ACU auto-pause are selected; detailed SR0–SR6 contracts remain
