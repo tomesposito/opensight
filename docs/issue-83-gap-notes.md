@@ -61,8 +61,11 @@ external QuickSight capture scripts/reference files are not present on this
 workstation, so no new QuickSight fidelity measurement is claimed.
 
 This package changes no web UI source relative to the integrated upstream
-revision. No new application layout gap was identified. Existing README media
-remain representative; no hero GIF refresh is needed for this backend phase.
+revision. A second offline capture from the pinned Linux test image retained the
+layout but lacked three existing Unicode icon glyphs (brand, dropdown and empty
+state). This font-coverage dependency is tracked in [#87](https://github.com/tomesposito/opensight/issues/87)
+for the SR3 browser slice. Existing README media remain representative of normal
+desktop rendering; no hero GIF refresh is needed for this backend phase.
 The rebuilt demo remains an offline preview, not a hosted server.
 
 ## Dependency and publication checks

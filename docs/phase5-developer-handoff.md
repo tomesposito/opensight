@@ -89,6 +89,9 @@ the 45-second passive embed display expiry and explicit Connect behavior in
 tests in a separate spec commit, then implement that SR3 UI slice; this product
 choice no longer needs approval. Preserve HQ-7, session/bootstrap semantics and
 zero idle polling; test expiry, hidden/frozen pages and failed reconnection.
+The same browser slice includes [#87](https://github.com/tomesposito/opensight/issues/87):
+replace the existing font-dependent navigation/data-state icon glyphs with
+offline vectors and verify minimal Linux/desktop browser rendering.
 The tester IP allowlist and WAF cost remain separate unapproved choices. This
 does not block backend SR2/SR3 work.
 
