@@ -163,7 +163,7 @@ export function AuthorToolbar({ canUndo = false, canRedo = false, onUndo, onRedo
         <AuthorMenuItem label="Reference Lines" reason={needsVisual} run={() => focus('[data-author-control="reference-lines"]', 'Visual')} />
         <AuthorMenuItem label="Actions" reason={needsVisual} run={() => focus('[data-author-control="actions"]', 'Interaction')} />
         <hr />
-        <AuthorMenuItem label="Placement" run={() => focus('.object-placement input')} reason={selectedObject ? undefined : needsVisual ?? 'Numeric placement settings are not supported yet. Drag or resize the visual on the canvas.'} />
+        <AuthorMenuItem label="Placement" run={() => focus(selectedObject ? '.object-placement input' : '[data-author-control="visual-placement"]', 'Visual')} reason={selectedObject ? undefined : needsVisual} />
         <AuthorMenuItem label="Style" run={() => focus('.sheet-object-properties input')} reason={selectedObject ? undefined : needsVisual ?? 'Per-card style settings are not supported yet. Analysis themes and visual palettes are available in Properties.'} />
         <AuthorMenuItem label="Rules" reason={needsVisual ?? 'Object visibility rules are not supported yet.'} />
         <hr />
