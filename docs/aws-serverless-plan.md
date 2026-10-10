@@ -8,12 +8,6 @@ workflow, dependency or application change is implemented by this design commit.
 Resource creation, publishing and cloud acceptance runs need a separately
 reviewed deployment plan; this document does not authorize spending.
 
-**Post-SR1 update, 2026-10-10:** SR0 drafts and SR1 runtime composition have landed.
-The operator approved advancing [SR2–SR4 preparation](phase5-developer-handoff.md)
-alongside an [IPv6-first isolated validation plan](phase5-aws-validation-plan.md).
-The latter is pending resource/cost approval and proves only selected platform
-assumptions. It does not open SR1's deliberately closed storage/job paths.
-
 ## 1. Scope and expected experience
 
 The first audience is an operator and an authorized test agent using synthetic
@@ -106,10 +100,8 @@ Networking is a pre-build design gate, not an assumed free route:
   proof, not a drop-in configuration for `pg`; its row/result limits conflict
   with existing large metadata/upload envelopes. Do not use it implicitly.
 
-Before deploying SR1 or building network-dependent adapters, resolve the egress
-matrix and record transport, supported destinations, recurring cost and license
-implications. D-19 now proposes IPv6 egress plus the S3 gateway for validation;
-do not retain the earlier paid-interface-endpoint profile as an implicit default.
+Before SR1 implementation, resolve the egress matrix and record the chosen
+transport, supported destinations, recurring cost and license implications.
 If that changes product scope, obtain a scope decision rather than silently
 disabling a required feature. No cloud experiments are authorized by this file.
 
@@ -262,15 +254,14 @@ deletion requires a separate explicit operation and verified retention behavior.
 
 ### SR0 contract review — issue #81
 
-Detailed SR0 contracts remain draft ITDs. Draft does not mean implemented or
+Detailed SR0 contracts are draft ITDs. Draft does not mean implemented or
 approved: Tom retains cost and product decisions. The register distinguishes a
-concrete proposal from a frozen build gate. `SOLUTION_DESIGN.md` now records the
-post-SR1 handoff and validation direction; it does not approve the unresolved
-product choices or AWS spending.
+concrete proposal from a frozen build gate. `SOLUTION_DESIGN.md` is unchanged
+by this work; its approval requirement remains.
 
 | Contract | Record | Decision gate |
 | --- | --- | --- |
-| VPC egress and real mail | [D-19](itd/D-19-serverless-egress.md) | IPv6-first validation selected; exact resource/cost approval and live proof pending; source scope reviewed before pilot |
+| VPC egress and real mail | [D-19](itd/D-19-serverless-egress.md) | Tom: route profile, source scope, endpoint AZ count and fixed cost |
 | Trusted ingress | [D-20](itd/D-20-serverless-ingress.md) | Review origin-secret custody and authoring/embed routing proof |
 | Startup and idle clients | [D-21](itd/D-21-aurora-readiness.md) | Tom: tester allowlist/WAF cost and protected display expiry while idle |
 | Uploads and bounded results | [D-22](itd/D-22-serverless-object-transfers.md) | Tom: asynchronous UX/control ceiling; review immutable version and authorization protocol |
@@ -288,8 +279,7 @@ their dependent slices, not unrelated local design/implementation work.
 | SR1 — runtime | Separate HTTP/Lambda composition, scheduler and migration entrypoints; invocation-scoped SQL lifecycle; trusted ingress and startup behavior | Local lifecycle/header/timeout/bypass tests; Linux native-worker checks; no open SQL connections or workers after completion |
 | SR2 — H9/H10 storage and safety | Artifact adapter, upload protocol, durable admission, fencing, invalidation and recovery | Differential results; cold hydration; duplicate/late/crashed worker and two-instance isolation tests; old bytes never regain authority |
 | SR3 — background work | Durable async operations, due-event dispatch, retry/dead-letter/cancellation, real email integration | H7 permissions/ownership/delivery tests; crash-gap reconciliation; idle deployment has no unconditional DB polling |
-| SR4a — validation packaging | SR1 image, isolated IAM-only probe, generic experiment IaC and cleanup harness | Local image/worker proof, offline IaC validation, exact pins/licenses and reviewable plan; no cloud apply |
-| SR4b — release automation | Full public modules, reproducible artifacts, private workflow templates, migration/restore/rollback runbooks | IaC validation and reviewed plan; no secrets/account configuration in public artifacts; OIDC and resource policies reviewed |
+| SR4 — packaging and automation | Public modules, reproducible artifacts, private workflow templates, migration/restore/rollback runbooks | IaC validation and reviewed plan; no secrets/account configuration in public artifacts; OIDC and resource policies reviewed |
 | SR5 — authorized AWS validation | Provision isolated test resources only after resource/cost approval; deploy and test selected workflows | Real Aurora role/RLS proof; resume after short and >24h pause; cold-start, payload, memory and artifact-load measurements; restore/deletion and rollback drills |
 | SR6 — pilot release | Promote verified artifacts, configure canonical DNS/TLS, enroll operator/test identities, set budgets and retention | Human/agent smoke tests, measured idle pause, cost report, exact test counts and operating instructions |
 

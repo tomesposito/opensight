@@ -298,6 +298,21 @@ export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorD
     }
     for (const object of copy.objects ?? []) { object.id = fresh('object', object.id); delete object.importedId; }
     for (const control of copy.controls) control.id = fresh('control', control.id);
+    // Every ID is allocated now, so rewrite intra-sheet references to the
+    // copies. References that were never allocated (genuinely external
+    // targets) are preserved as-is.
+    for (const visual of copy.visuals) {
+      for (const filter of visual.filterActions ?? []) {
+        if (filter.targets !== 'all') filter.targets = filter.targets.map(id => remap.get(id) ?? id);
+        filter.mappings = Object.fromEntries(Object.entries(filter.mappings).map(([id, field]) => [remap.get(id) ?? id, field]));
+      }
+    }
+    for (const control of copy.controls) {
+      if (control.cascade) control.cascade = control.cascade.map(parent => ({ ...parent, controlId: remap.get(parent.controlId) ?? parent.controlId }));
+      // Like objects above: the copy is a new control identity, so an
+      // importedId would collide with the original on export.
+      delete control.importedId;
+    }
     copy.layout = copy.layout.map(p => ({ ...p, i: remap.get(p.i) ?? p.i }));
     if (source.selectedId && remap.has(source.selectedId)) copy.selectedId = remap.get(source.selectedId)!;
     return { ...draft, sheets: [...draft.sheets, copy], activeSheetId: copy.id };

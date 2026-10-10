@@ -777,7 +777,7 @@ SR0 implementation decision register (issue #81; proposals, no AWS authorization
 
 | ID | Contract | Status / gate |
 | --- | --- | --- |
-| [D-19](itd/D-19-serverless-egress.md) | Egress and real mail | 🚧 IPv6-first validation selected; resource/cost approval and transport proof pending; confirm source scope before pilot |
+| [D-19](itd/D-19-serverless-egress.md) | Egress and real mail | 🚧 Tom: network profile, source scope, endpoint AZ count and fixed cost |
 | [D-20](itd/D-20-serverless-ingress.md) | Trusted routing and peer | 🚧 Origin trust, prefix and embed contract review |
 | [D-21](itd/D-21-aurora-readiness.md) | Wake and idle behavior | 🚧 Tom: pre-DB abuse cost/access and idle embed UX; preserve HQ-7 |
 | [D-22](itd/D-22-serverless-object-transfers.md) | Upload and result transfers | 🚧 Immutable/version-bound protocol; control ceiling/async UX review |

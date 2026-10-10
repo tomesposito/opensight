@@ -6,6 +6,8 @@ import {
   serializeDraft as serializeAnalysis,
 } from '../build/test/authoring.js';
 import { importBundle } from '../build/test/bundle-authoring.js';
+import { withActionFilters, toggleSelection } from '../build/test/interactions.js';
+import { buildControlQuery } from '../build/test/author-query.js';
 
 const edit = (draft, ...actions) => actions.reduce(authorReducer, draft);
 const withVisual = () => edit(emptyDraft(), { type: 'assign-with-no-selection', field: 'region', well: 'rows' });
@@ -71,6 +73,66 @@ test('sheet-duplicate remaps navigation targets that pointed at the source sheet
 test('sheet-duplicate on a missing sheet id leaves the draft unchanged', () => {
   const before = emptyDraft();
   assert.deepEqual(authorReducer(before, { type: 'sheet-duplicate', id: 'sheet-999' }), before);
+});
+
+test('sheet-duplicate remaps filter action targets and mappings to the copied visuals', () => {
+  let draft = edit(emptyDraft(), { type: 'add', kind: 'bar' }, { type: 'add', kind: 'table' });
+  const sheet = activeSheet(draft), [source, target] = sheet.visuals;
+  draft = { ...draft, sheets: draft.sheets.map(s => s.id === sheet.id ? { ...s, visuals: s.visuals.map(v => v.id === source.id
+    ? { ...v, filterActions: [{ id: 'action-1', name: 'Filter', sourceField: 'region', targets: [target.id], mappings: { [target.id]: 'region' } }] } : v) } : s) };
+  const duplicated = authorReducer(draft, { type: 'sheet-duplicate', id: sheet.id });
+  const copy = duplicated.sheets[1], [copiedSource, copiedTarget] = copy.visuals;
+  // Targets and mappings point at the copied target, never the original.
+  assert.deepEqual(copiedSource.filterActions[0].targets, [copiedTarget.id]);
+  assert.deepEqual(copiedSource.filterActions[0].mappings, { [copiedTarget.id]: 'region' });
+  // The original sheet keeps its original references.
+  assert.deepEqual(duplicated.sheets[0].visuals[0].filterActions[0].targets, [target.id]);
+  // A selection on the copy's source filters the copy's target only.
+  const state = toggleSelection({}, copiedSource.id, { values: { region: 'West' } });
+  assert.equal(withActionFilters(copy, copiedTarget, state).interactionFilters?.length, 1);
+  const original = duplicated.sheets[0];
+  assert.equal(withActionFilters(original, original.visuals[1], state).interactionFilters?.length ?? 0, 0);
+  validateDraft(duplicated);
+});
+
+const cascadingDraft = () => {
+  let draft = emptyDraft();
+  for (const parameter of [
+    { name: 'Region', type: 'string', multiple: false, values: ['East'], defaultValues: ['East'] },
+    { name: 'Category', type: 'string', multiple: false, values: ['Hardware'], defaultValues: ['Hardware'] },
+  ]) draft = authorReducer(draft, { type: 'parameter-add', parameter });
+  draft = authorReducer(draft, { type: 'control-add', control: { label: 'Region', kind: 'dropdown', parameterId: 'parameter-1', source: { columnName: 'region', dataSetIdentifier: 'sales_data', local: true } } });
+  return authorReducer(draft, { type: 'control-add', control: { label: 'Category', kind: 'dropdown', parameterId: 'parameter-2', source: { columnName: 'category', dataSetIdentifier: 'sales_data', local: true }, cascade: [{ controlId: 'control-1', columnName: 'region' }] } });
+};
+
+test('sheet-duplicate remaps cascading control references to the copied controls', () => {
+  const draft = cascadingDraft(), sheet = activeSheet(draft);
+  const duplicated = authorReducer(draft, { type: 'sheet-duplicate', id: sheet.id });
+  const copy = duplicated.sheets[1], [copiedParent, copiedChild] = copy.controls;
+  assert.notEqual(copiedParent.id, 'control-1');
+  assert.deepEqual(copiedChild.cascade, [{ controlId: copiedParent.id, columnName: 'region' }]);
+  // The original sheet is untouched.
+  assert.deepEqual(duplicated.sheets[0].controls[1].cascade, [{ controlId: 'control-1', columnName: 'region' }]);
+  // The copied cascade resolves to the copied parent's parameter when executed.
+  const query = buildControlQuery(copiedChild, copy.controls, duplicated.parameters);
+  assert.ok(query);
+  assert.deepEqual(query.filters, [{ columnName: 'region', parameterName: 'Region' }]);
+  validateDraft(duplicated);
+});
+
+test('sheet-duplicate clears imported control identities so export assigns distinct control ids', () => {
+  let draft = cascadingDraft();
+  const sheet = activeSheet(draft);
+  // The parent came from an imported bundle, so it carries the bundle identity.
+  draft = { ...draft, sheets: draft.sheets.map(s => s.id === sheet.id ? { ...s, controls: s.controls.map(c => c.id === 'control-1' ? { ...c, importedId: 'imported-control-1' } : c) } : s) };
+  const duplicated = authorReducer(draft, { type: 'sheet-duplicate', id: sheet.id });
+  const copy = duplicated.sheets[1];
+  assert.ok(copy.controls.every(c => c.importedId === undefined));
+  validateDraft(duplicated);
+  const resource = serializeAnalysis(duplicated);
+  const controlIds = resource.definition.sheets.flatMap(s => (s.parameterControls ?? []).map(variant => Object.values(variant)[0].parameterControlId));
+  assert.equal(controlIds.length, 4);
+  assert.equal(new Set(controlIds).size, controlIds.length);
 });
 
 test('sheet-title adds a styled title object at the top and shifts the canvas down', () => {
