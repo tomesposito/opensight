@@ -64,3 +64,31 @@ palette and disabled explanations across four viewport widths in both themes.
 See [visual verification and gap notes](issue-66-gap-notes.md) for the reference
 comparison, capture workflow and refreshed README media. Raw artifacts remain
 in ignored `.opensight/issue-66/browser/`.
+
+## Final verification
+
+Root `TZ=UTC npm test` exited 0: **2,129 passed / 0 failed / 12 skipped /
+0 cancelled** (2,141 tests). Every skip requires live PostgreSQL; no database
+was configured. Strict TypeScript checks passed as part of the workspace run.
+
+| Suite | Passed | Failed | Skipped |
+| --- | ---: | ---: | ---: |
+| API | 306 | 0 | 10 |
+| Bundle parser | 199 | 0 | 0 |
+| Embedding SDK | 9 | 0 | 0 |
+| Interpreter | 32 | 0 | 0 |
+| Parity | 11 | 0 | 0 |
+| Query engine | 502 | 0 | 2 |
+| Web | 1,063 | 0 | 0 |
+| Root conformance | 7 | 0 | 0 |
+
+History coverage includes five seeded, 800-operation interleaving sequences,
+exact inverse/forward comparisons and depth-limit checks. Settings tests cover
+atomic application, validation, cancellation, persistence, definition/.qs
+round-trips and preservation of imported secondary resources. The 20-test
+Chromium geometry suite also passed independently before the full run.
+
+The execution environment terminated the first foreground full-suite run;
+the complete rerun used a detached local runner and recorded exit 0. Logs and
+machine-readable totals stay in ignored `.opensight/issue-66/verification/`.
+The demo rebuild, offline browser tour and ffmpeg media assembly all passed.
