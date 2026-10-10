@@ -163,3 +163,69 @@ test('save-kind metadata rejects non-ISO strings and unknown keys without overwr
     }
   }
 });
+
+test('favorites start empty, persist through edits and reload, and disappear on deletion', () => {
+  const { store, storage } = setup();
+  assert.deepEqual(store.list(), []);
+  const id = store.favorite(draft('Favorite'), undefined, true);
+  assert.equal(createDraftStore(storage, access).list()[0].favorite, true);
+  store.autosave(draft('Edited'), id, store.restore().manualSavedAt);
+  store.save(draft('Saved'), id); store.rename(id, 'Renamed');
+  assert.equal(store.list()[0].favorite, true);
+  store.favorite(draft('Removed'), id, false);
+  assert.equal(store.list()[0].favorite, undefined);
+  store.favorite(draft('Again'), id, true); store.delete(id);
+  assert.deepEqual(store.list(), []);
+  assert.throws(() => store.favorite(draft('Deleted'), id, true), /no longer exists/);
+});
+test('favorites follow mode, namespace and principal isolation; corrupt metadata and failed writes are preserved', () => {
+  const { storage, values, store } = setup();
+  const hosted = { mode: 'hosted', session: { namespaceId: 'one', id: 'alice' } };
+  createDraftStore(storage, hosted).favorite(draft('Private'), undefined, true);
+  for (const scope of [access, { mode: 'demo' }, { ...hosted, session: { namespaceId: 'two', id: 'alice' } }, { ...hosted, session: { namespaceId: 'one', id: 'bob' } }]) assert.deepEqual(createDraftStore(storage, scope).list(), []);
+  const id = store.save(draft('Original')), before = new Map(values);
+  const failing = createDraftStore(() => ({ ...storage(), setItem() { throw new DOMException('', 'QuotaExceededError'); } }), access);
+  assert.throws(() => failing.favorite(draft('Unsaved edit'), id, true), /QuotaExceededError/);
+  assert.deepEqual(values, before);
+  const key = draftStorageKey(access), collection = JSON.parse(values.get(key));
+  collection.entries[0].favorite = 'true'; values.set(key, JSON.stringify(collection));
+  assert.throws(() => store.favorite(draft('Overwrite'), id, true), /could not be read/);
+  assert.equal(values.get(key), JSON.stringify(collection));
+});
+
+test('Save as Analysis has a new identity and name, retains all definition state, and never changes the original', () => {
+  const { store, storage, values } = setup(), original = draft('Original'), first = store.favorite(original, undefined, true);
+  const edited = structuredClone(original); edited.sheets[0].visuals[0].title = 'Unsaved edit';
+  const second = store.copy(edited, '  Separate copy  ');
+  assert.notEqual(first, second);
+  assert.deepEqual(createDraftStore(storage, access).restore().draft, { ...edited, title: 'Separate copy' });
+  assert.equal(store.list().find(e => e.id === second).favorite, undefined);
+  assert.deepEqual(store.open(first), original);
+  store.save({ ...store.open(second), title: 'Edited copy' }, second);
+  assert.deepEqual(store.open(first), original);
+  const before = new Map(values);
+  for (const name of [' ', 'Original']) assert.throws(() => store.copy(original, name), /name/);
+  assert.deepEqual(values, before);
+  for (let n = store.list().length; n < MAX_DRAFTS; n++) store.save(draft(String(n)));
+  const full = new Map(values);
+  assert.throws(() => store.copy(original, 'Overflow'), /limit \(20\)/);
+  assert.deepEqual(values, full);
+});
+
+test('copies keep imported bundle metadata and prepared-data references without mutating source snapshots', async () => {
+  const { importBundle, exportBundle } = await import('../build/test/bundle-authoring.js');
+  const { serializeDraft } = await import('../build/test/authoring.js');
+  const resource = serializeDraft(draft('Imported analysis'));
+  resource.definition.options = { futureSetting: ['preserved'] };
+  const imported = importBundle({ members: [{ path: `analysis/${resource.analysisId}.json`, resource }] });
+  const prepared = { ...draft('Prepared analysis'), dataset: { id: 'prepared-copy', name: 'Prepared data', columns: [{ name: 'region', type: 'STRING' }, { name: 'revenue', type: 'DECIMAL' }] } };
+  for (const original of [imported, prepared].map(value => JSON.parse(JSON.stringify(value)))) {
+    const { store } = setup(), originalId = store.save(original), copyId = store.copy(original, 'Independent copy');
+    const copied = store.restore().draft;
+    assert.deepEqual(copied, { ...original, title: 'Independent copy' });
+    assert.equal(copied.dataset?.id, original.dataset?.id);
+    if (original.bundle) assert.deepEqual(exportBundle(copied).members[0].resource.definition.options, { futureSetting: ['preserved'] });
+    copied.sheets[0].name = 'Changed only in copy'; store.save(copied, copyId);
+    assert.deepEqual(store.open(originalId), original);
+  }
+});

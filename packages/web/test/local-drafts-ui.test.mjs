@@ -129,3 +129,62 @@ test('Issue #35: first-run Author has no restore failure; unreadable drafts expl
     assert.equal(ui.button('Export JSON').props['aria-disabled'], false);
   }
 });
+
+test('File favorites save current edits, survive reload, filter the collection and can be removed', async t => {
+  const ui = await mount(t);
+  await act(() => ui.find('input', p => p.value === 'Untitled analysis').props.onChange({ target: { value: 'Favorite analysis' } }));
+  await ui.click('Add to Favorites');
+  assert.equal(ui.store.restore().draft.title, 'Favorite analysis');
+  assert.equal(ui.store.list()[0].favorite, true);
+  await ui.reload(); assert.ok(ui.button('Remove from Favorites'));
+  await act(() => ui.renderer.root.findByType(LocalDrafts).findByProps({ type: 'checkbox' }).props.onChange({ target: { checked: true } }));
+  assert.equal(ui.renderer.root.findByType(LocalDrafts).findAllByType('li').length, 1);
+  await ui.click('Remove from Favorites');
+  assert.equal(ui.renderer.root.findByType(LocalDrafts).findAllByType('li').length, 0);
+  assert.match(ui.text(), /No favorite analyses yet/);
+});
+test('favorite storage failure keeps the current analysis and never claims success', async t => {
+  const ui = await mount(t, {}, { mode: 'local' }, true);
+  await ui.click('Add to Favorites');
+  assert.match(ui.text(), /Browser storage is blocked/);
+  assert.ok(ui.button('Add to Favorites'));
+  assert.doesNotMatch(ui.text(), /Saved to Favorites/);
+});
+
+test('Save as Analysis opens the separate copy, keeps the original and cancels without creating entries', async t => {
+  const ui = await mount(t), original = ui.store.restore();
+  await ui.click('Save as Analysis');
+  await ui.click('Cancel'); assert.equal(ui.store.list().length, 1);
+  await act(() => ui.find('input', p => p.value === 'Untitled analysis').props.onChange({ target: { value: 'Current edits' } }));
+  await ui.click('Save as Analysis');
+  const dialog = ui.renderer.root.findByType('dialog');
+  await act(() => dialog.findByType('input').props.onChange({ target: { value: 'My separate copy' } }));
+  await act(() => dialog.findByType('form').props.onSubmit({ preventDefault() {} }));
+  assert.equal(ui.renderer.root.findAllByType('dialog').length, 0);
+  const copy = ui.store.restore(); assert.notEqual(copy.id, original.id); assert.equal(copy.draft.title, 'My separate copy');
+  assert.deepEqual(ui.store.open(original.id), original.draft);
+  await ui.click('Save draft'); assert.equal(ui.store.restore().id, copy.id);
+  await ui.reload(); assert.match(ui.text(), /My separate copy/);
+});
+test('failed copy keeps its dialog, draft identity and edits for retry', async t => {
+  const ui = await mount(t, {}, { mode: 'local' }, true);
+  await ui.click('Save as Analysis');
+  const dialog = ui.renderer.root.findByType('dialog');
+  await act(() => dialog.findByType('form').props.onSubmit({ preventDefault() {} }));
+  assert.match(JSON.stringify(dialog.toJSON?.() ?? ui.renderer.toJSON()), /Browser storage is blocked/);
+  assert.equal(ui.store.list().length, 1);
+  assert.equal(ui.store.restore().id, ui.id);
+});
+
+for (const access of [{ mode: 'local' }, { mode: 'demo' }, { mode: 'hosted' }, { mode: 'hosted', session: { id: 'admin', namespaceId: 'team-one', role: 'admin' } }, { mode: 'hosted', session: { id: 'author', namespaceId: 'team-two', role: 'author' } }]) test(`Share explains its mode and namespace without making requests: ${JSON.stringify(access)}`, async t => {
+  const oldAct = globalThis.IS_REACT_ACT_ENVIRONMENT; globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+  let requests = 0; const oldFetch = globalThis.fetch; globalThis.fetch = () => { requests++; throw new Error('Unexpected request'); };
+  let renderer;
+  t.after(async () => { if (renderer) await act(() => renderer.unmount()); globalThis.fetch = oldFetch; globalThis.IS_REACT_ACT_ENVIRONMENT = oldAct; });
+  await act(() => { renderer = create(createElement(AccessProvider, { access }, createElement(AuthorToolbar, { draft: emptyDraft(), dispatch() {}, onFit() {}, onJson() {}, onBundle() {}, onImport() {}, fit: true }))); });
+  const share = renderer.root.findAllByType('button').find(b => b.props.children === 'Share');
+  assert.equal(share.props['aria-disabled'], true); assert.equal(share.props.disabled, undefined);
+  assert.equal(renderer.root.findByProps({ id: share.props['aria-describedby'] }).props.children, share.props.title);
+  assert.match(share.props.title, access.mode !== 'hosted' ? /needs hosted API/ : access.session ? new RegExp(`namespace “${access.session.namespaceId}”.*saved hosted analysis`) : /resolved hosted session and namespace/);
+  await act(() => share.props.onClick()); assert.equal(requests, 0);
+});

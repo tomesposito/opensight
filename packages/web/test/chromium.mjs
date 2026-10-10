@@ -64,6 +64,8 @@ export async function chromiumPage() {
     };
     return {
       evaluate, close,
+      emulateMedia: media => send('Emulation.setEmulatedMedia', { media }, sessionId),
+      printToPDF: () => send('Page.printToPDF', { printBackground: true, preferCSSPageSize: true }, sessionId),
       setViewportSize: size => send('Emulation.setDeviceMetricsOverride', { ...size, deviceScaleFactor: 1, mobile: false }, sessionId),
       setContent: html => evaluate(content => { document.open(); document.write(content); document.close(); },
         `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'">${html}`),

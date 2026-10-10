@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type Dispatch, type ReactNode } from 'reac
 import { activeSheet, type AuthorAction, type AuthorDraft } from './authoring.js';
 import { useAccess, type Access } from './access.js';
 import { useToast } from './Toasts.js';
+import { AnalysisPdfDialog } from './AnalysisPdfDialog.js';
 import { AuthorMenu, AuthorMenuItem } from './AuthorMenuItem.js';
 import { flushSync } from 'react-dom';
 import { useCommandPalette } from './CommandPalette.js';
@@ -10,6 +11,12 @@ export function publishNotice(mode: Access['mode']): string {
   return mode === 'hosted'
     ? 'Publishing needs a hosted deployment with dashboard publication enabled. It is not available in this editor yet; nothing has been published.'
     : `${mode === 'local' ? 'This local workspace' : 'This static demo'} has no publication destination. Drafts are device-local, not synced or shared. Export .qs or JSON to share an analysis definition; data is not included. Nothing has been published.`;
+}
+/** Local draft IDs and imported resource IDs are never proof of a hosted asset. */
+export function sharingUnavailableReason(access: Access): string {
+  if (access.mode !== 'hosted') return `Sharing needs hosted API support. ${access.mode === 'local' ? 'This local workspace' : 'This static demo'} saves device-local drafts, not shared assets. Exports downloads definitions without data.`;
+  if (!access.session?.namespaceId || !access.session.id) return 'Sharing needs a resolved hosted session and namespace. No sharing request can be made from this editor.';
+  return `Sharing in namespace “${access.session.namespaceId}” needs a saved hosted analysis and share-management integration. This editor only saves device-local drafts, so Share is unavailable. Hosted grants must resolve users or groups in this namespace; namespace, folder, row and column permissions still apply.`;
 }
 /** Moves keyboard focus to an editor control: opens any collapsed ancestor
  *  panel, scrolls the control into view, then focuses it. Exported for tests.
@@ -25,12 +32,13 @@ export function focusAuthorControl(nav: HTMLElement | null, selector: string, ta
   target?.focus();
   return target;
 }
-export function AuthorToolbar({ onPrep, onSources, draft, dispatch, fit, onFit, onJson, onBundle, onImport, oEntry, dataAvailable = true, busy = false, jsonDisabled = false, autosaveError }: { autosaveError?: string; dataAvailable?: boolean; onSources?: () => void; onPrep?: () => void; oEntry?: ReactNode; busy?: boolean; jsonDisabled?: boolean; draft: AuthorDraft; dispatch: Dispatch<AuthorAction>; fit: boolean; onFit: () => void; onJson: () => void; onBundle: () => void; onImport: () => void }) {
+export function AuthorToolbar({ onPrep, onSources, draft, dispatch, fit, onFit, onJson, onBundle, onImport, oEntry, dataAvailable = true, busy = false, jsonDisabled = false, autosaveError, favorite = false, onFavorite, onSaveCopy, onPrint }: { onPrint?: () => void; onSaveCopy?: () => void; favorite?: boolean; onFavorite?: () => void; autosaveError?: string; dataAvailable?: boolean; onSources?: () => void; onPrep?: () => void; oEntry?: ReactNode; busy?: boolean; jsonDisabled?: boolean; draft: AuthorDraft; dispatch: Dispatch<AuthorAction>; fit: boolean; onFit: () => void; onJson: () => void; onBundle: () => void; onImport: () => void }) {
   const access = useAccess();
   const notify = useToast();
   const [notice, setNotice] = useState('');
   const palette = useCommandPalette();
   const [exportsOpen, setExportsOpen] = useState(false);
+  const [pdfOpen, setPdfOpen] = useState(false);
   const sheet = activeSheet(draft), selected = sheet.visuals.find(v => v.id === sheet.selectedId);
   const nav = useRef<HTMLElement>(null);
   useEffect(() => {
@@ -45,26 +53,27 @@ export function AuthorToolbar({ onPrep, onSources, draft, dispatch, fit, onFit, 
   const needsVisual = needsData ?? (!selected ? 'Select a visual first.' : undefined);
   const publish = () => { setNotice(publishNotice(access.mode)); notify('Publishing is unavailable in this editor. Nothing has been published.'); };
   return <>
+    {pdfOpen && <AnalysisPdfDialog onClose={() => setPdfOpen(false)} onContinue={() => { flushSync(() => setPdfOpen(false)); onPrint?.(); }} />}
     <nav ref={nav} className="author-menu" aria-label="Analysis menu" onKeyDown={e => {
       if (e.key === 'Escape') { const menu = (e.target as HTMLElement).closest('details'); if (menu) { e.preventDefault(); e.stopPropagation(); menu.open = false; menu.querySelector('summary')?.focus(); } }
     }} onClick={e => { const button = (e.target as HTMLElement).closest('button'); if (button && button.getAttribute('aria-disabled') !== 'true' && !button.hasAttribute('data-menu-keep-open')) { const menu = button.closest('details'); if (menu) { if (menu.contains(menu.ownerDocument.activeElement)) menu.querySelector('summary')?.focus(); menu.open = false; } } }}>
       <AuthorMenu name="File">
-        <AuthorMenuItem label="Add to Favorites" reason="Analysis favorites are not supported yet." />
+        <AuthorMenuItem label={favorite ? "Remove from Favorites" : "Add to Favorites"} run={onFavorite} reason={!onFavorite ? "Favorites need an open analysis on this device." : undefined} />
         <AuthorMenuItem label="Publish" run={publish} />
-        <AuthorMenuItem label="Save as Analysis" reason="Saving a separate analysis copy is not supported yet. Save draft updates the draft on this device." />
+        <AuthorMenuItem label="Save as Analysis" run={onSaveCopy} reason={busy ? "Wait for the current import or export to finish." : !onSaveCopy ? "Open an analysis to save a separate copy on this device." : undefined} />
         <hr />
-        <AuthorMenuItem label="Share" reason="Sharing needs hosted API support. Device-local drafts are not synced or shared; Exports downloads definitions without data." />
+        <AuthorMenuItem label="Share" reason={sharingUnavailableReason(access)} />
         <AuthorMenuItem label="Rename" run={() => focus('.analysis-title input')} />
         <AuthorMenuItem label="Import" reason={busy ? 'Wait for the current import or export to finish.' : undefined} run={onImport} />
         <hr />
-        <AuthorMenuItem label="Print" reason="Analysis print layout is not supported yet." />
+        <AuthorMenuItem label="Print" run={onPrint} reason={busy ? "Wait for the current import or export to finish." : !onPrint ? "Open an analysis to print its current sheet." : undefined} />
         <AuthorMenuItem label="Exports" keepOpen run={() => { setExportsOpen(value => !value); focus('[data-author-menu="File"] > summary'); }} />
         <div hidden={!exportsOpen} className="menu-exports" role="group" aria-label="Analysis definition exports">
           <AuthorMenuItem label="Download .qs" descriptionId="export-help" reason={busy ? 'Wait for the current import or export to finish.' : undefined} run={onBundle} />
           <AuthorMenuItem label="Export JSON" descriptionId="export-help" reason={jsonDisabled ? 'The analysis definition cannot be exported. Review the export status below the toolbar.' : undefined} run={onJson} />
           <p>Definitions only; data is not included.</p>
         </div>
-        <AuthorMenuItem label="Export to PDF" reason="PDF export is not supported in this editor yet." />
+        <AuthorMenuItem label="Export to PDF" run={() => setPdfOpen(true)} reason={busy ? "Wait for the current import or export to finish." : !onPrint ? "Open an analysis in a browser with printing and Save as PDF support." : undefined} />
         <hr />
         <AuthorMenuItem label="Autosave On" checked reason={autosaveError ? `Autosave could not save: ${autosaveError}` : 'Autosave is always on for this device. Drafts are not synced or shared.'} />
       </AuthorMenu>

@@ -114,7 +114,14 @@ between analysis sheets, or open Q&A. Use arrows, Enter, and Esc from the keyboa
 The Author menus expose File, Edit, Data, Insert, Sheets and Objects actions.
 **Search** and **Cmd/Ctrl+F** open the same command palette; unavailable menu
 actions explain their limits on focus or hover. Publish remains an honest
-hosted-service notice. See [menu behavior and limitations](docs/issue-60-menu-bar-parity.md).
+hosted-service notice. File also supports device-local **Favorites**, **Save as
+Analysis** to open an independent copy, **Print**, and **Export to PDF** through
+the browser’s Save as PDF destination. Print/PDF capture the current sheet and
+visible table rows. Share explains why it needs a saved hosted analysis and
+sharing integration. See [File menu semantics](docs/issue-65-file-menu.md) and
+[other menu behavior and limitations](docs/issue-60-menu-bar-parity.md).
+
+![File menu in the local static demo](docs/images/file-menu.png)
 
 ![Authoring canvas with assigned fields and the Ask a question trigger in the toolbar](docs/images/author.png)
 
