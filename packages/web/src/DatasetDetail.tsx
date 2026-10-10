@@ -25,6 +25,7 @@ function DatasetDetailContent({ dataset, data, client, navigate, onGenerate, onC
   const [tab, setTab] = useState<'Summary' | 'Refresh' | 'Permissions' | 'Usage'>('Summary');
   const [query, setQuery] = useState(''), [dialog, setDialog] = useState<'duplicate' | 'delete'>(), [name, setName] = useState(`${dataset.name} copy`);
   const [busy, setBusy] = useState(false), [error, setError] = useState('');
+  const [version, setVersion] = useState(data.versions?.[dataset.dataSetId]);
   const acting = useRef(false), mounted = useRef(true);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const source = datasetSource(dataset, data.sources), columns = source?.columns ?? [];
@@ -52,8 +53,8 @@ function DatasetDetailContent({ dataset, data, client, navigate, onGenerate, onC
     if (dialog === 'duplicate' && (!name.trim() || !dataset.opensightPrep || name.trim().length > 128 || !!objectValue(dataset.rowLevelPermissionDataSet) || dataset.useAs === 'RLS_RULES' || dataset.columnLevelPermissionRules)) return;
     acting.current = true; setBusy(true); setError('');
     try {
-      if (dialog === 'delete') { await client.deletePrep(dataset.dataSetId); if (mounted.current) navigate({ page: 'data' }); }
-      else { const result = await client.savePrep(`prepared-${globalThis.crypto.randomUUID()}`, name.trim(), structuredClone(dataset.opensightPrep!)); if (mounted.current) navigate({ page: 'data', datasetId: result.resource.dataSetId }); }
+      if (dialog === 'delete') { await client.deletePrep(dataset.dataSetId, version); if (mounted.current) navigate({ page: 'data' }); }
+      else { const result = await client.savePrep(`prepared-${globalThis.crypto.randomUUID()}`, name.trim(), structuredClone(dataset.opensightPrep!), data.persistence === 'durable' ? 0 : undefined); if (mounted.current) navigate({ page: 'data', datasetId: result.resource.dataSetId }); }
       setDialog(undefined);
     } catch (error) { setError(prepMessage(error)); }
     finally { acting.current = false; setBusy(false); }
@@ -80,7 +81,7 @@ function DatasetDetailContent({ dataset, data, client, navigate, onGenerate, onC
       <section className="data-card"><h2>Sources</h2>{sourceNames.length ? <ul>{[...new Set(sourceNames)].map(name => <li key={name}>{name}</li>)}</ul> : <p>Source details unavailable.</p>}</section>
       <section className="data-card"><h2>Usage</h2><p>Analyses on this device: {usage.error ? 'Unavailable' : usage.analyses.length}</p><p>Dashboards: Not available</p><p>Datasets in this catalog: {dependents.length}</p><button onClick={() => setTab('Usage')}>View usage</button></section>
     </aside></div>}
-    {tab === 'Refresh' && <DatasetRefresh client={client} datasetId={dataset.dataSetId} />}
+    {tab === 'Refresh' && <DatasetRefresh client={client} datasetId={dataset.dataSetId} onChanged={status => setVersion(status.version)} />}
     {tab === 'Permissions' && <section className="data-card"><div className="data-toolbar"><div><h2>Manage dataset permissions</h2><p>{permissionNote}</p></div><button disabled title={permissionNote}>Add users &amp; groups</button></div>
       <DataTable headings={['Username/Group name', 'Permissions', 'Actions']} empty={access.mode !== 'hosted' || !access.session ? 'Local datasets have no user or group grants. This workspace is shared by its users.' : undefined}>
         {access.mode === 'hosted' && access.session && <tr><td>{access.session.name}</td><td><select aria-label={`Permissions for ${access.session.name}`} value="Owner" disabled title={permissionNote}><option>Owner</option><option>Viewer</option></select></td><td><button disabled title="The dataset owner cannot revoke their own access">Revoke access</button></td></tr>}

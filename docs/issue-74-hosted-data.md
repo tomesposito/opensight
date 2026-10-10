@@ -22,6 +22,19 @@ as unknown and leaves bytes, row counts, timestamps and next-run times unavailab
 It reads the prepared resource to obtain configuration and its version together.
 Local cache status keeps its existing fields.
 
+Duplicate and new recipes send `expectedVersion: 0`. Edits and deletes send the
+version of the loaded recipe. Storage and refresh schedule changes send the
+execution version read with their settings, then advance it from the acknowledged
+write. A schedule dialog retains its opening version across background polls;
+concurrent changes produce `METADATA_CONFLICT`, with no automatic overwrite or
+retry. Successful schedule changes update the detail page's delete version.
+Local requests omit version fields, preserving the local API's strict bodies.
+
+Hosted refresh acknowledgements are followed by a settings read, never treated
+as complete local cache status. Add/edit/remove schedules use the real hosted job
+store; a host without automation exposes `HOSTED_AUTOMATION_UNAVAILABLE`. Missing
+history, cache provenance and email support remain explicitly unavailable.
+
 `packages/web/test/hosted-data-section.test.mjs` uses the real hosted route handlers,
 `HostedData`, `HostedPrep`, SQLite metadata and existing source/job fixtures. Only
 HTTP byte transport is replaced. Fresh fixture contexts model request admission;

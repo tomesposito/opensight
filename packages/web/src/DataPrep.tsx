@@ -33,6 +33,7 @@ export function DataPrep({ client, initialSource, initialDatasetId, onSources, o
   const [imported, setImported] = useState<QsBundle>();
   const [sources, setSources] = useState<PrepSourceSummary[]>(client ? [] : [demoSource, demoLookup]);
   const [saved, setSaved] = useState<BundleDataSet[]>([]);
+  const [versions, setVersions] = useState<Record<string, number>>();
   const [selected, setSelected] = useState<string | null>(null);
   const [editing, setEditing] = useState<PrepStep>();
   const [tab, setTab] = useState<'configure' | 'preview'>('configure');
@@ -77,7 +78,7 @@ export function DataPrep({ client, initialSource, initialDatasetId, onSources, o
     let cancelled = false;
     loadDataCatalog(client).then(stored => {
       const sources = stored.sources;
-      if (cancelled) return; setSources(sources); setSaved(stored.datasets);
+      if (cancelled) return; setSources(sources); setSaved(stored.datasets); setVersions(stored.versions);
       if (initialDatasetId && !openedDataset.current) {
         const existing = stored.datasets.find(dataset => dataset.dataSetId === initialDatasetId);
         if (!existing?.opensightPrep) { setOpeningError('PREP_NOT_FOUND: This dataset is unavailable or was deleted.'); return; }
@@ -160,7 +161,12 @@ export function DataPrep({ client, initialSource, initialDatasetId, onSources, o
   const load = (r: BundleDataSet, bundle?: QsBundle) => { setResource(structuredClone(r)); setOriginal(bundle); setStaged(null); setStaging(false); setPending(null); setTab('configure'); setSelected(null); setEditing(undefined); setMessage(''); setError(''); };
   const save = async () => {
     if (!client || busy || problem) return; setBusy(true); setError('');
-    try { const result = await client.savePrep(resource.dataSetId, resource.name, pipeline); setMessage(result.persistence === 'file' ? 'Dataset pipeline saved.' : 'Dataset pipeline saved for this API session; export a bundle to keep a portable copy.'); setReload(n => n + 1); onSaved?.(result.resource); }
+    try {
+      const result = await client.savePrep(resource.dataSetId, resource.name, pipeline, versions ? versions[resource.dataSetId] ?? 0 : undefined);
+      if ('version' in result) setVersions(current => ({ ...current, [resource.dataSetId]: result.version }));
+      setMessage('version' in result || result.persistence === 'file' ? 'Dataset pipeline saved.' : 'Dataset pipeline saved for this API session; export a bundle to keep a portable copy.');
+      setReload(n => n + 1); onSaved?.(result.resource);
+    }
     catch (e) { setError(prepMessage(e)); } finally { setBusy(false); }
   };
   const buildChart = async () => {
@@ -174,7 +180,7 @@ export function DataPrep({ client, initialSource, initialDatasetId, onSources, o
   };
   const deleteSaved = async () => {
     if (!client || busy) return; setBusy(true); setError('');
-    try { await client.deletePrep(resource.dataSetId); load(fresh(true)); setReload(n => n + 1); setMessage('Saved pipeline deleted.'); } catch (e) { setError(prepMessage(e)); } finally { setBusy(false); }
+    try { await client.deletePrep(resource.dataSetId, versions?.[resource.dataSetId]); load(fresh(true)); setReload(n => n + 1); setMessage('Saved pipeline deleted.'); } catch (e) { setError(prepMessage(e)); } finally { setBusy(false); }
   };
   const download = async () => {
     setError('');
