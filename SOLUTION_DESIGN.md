@@ -13,6 +13,7 @@
 | Date       | Change |
 |------------|--------|
 | 2026-10-10 | D-18 confirms Lambda + Aurora Serverless v2 with zero-ACU auto-pause for the first developer/tester deployment. Supersedes the old RDS-free-tier and stateless-API assumptions in D11/D12 and §11; proposes SR0–SR6 readiness/deployment gates, H9/H10 correctness work, and public code/private Terraform and GitHub Actions operations. Design only; no resources or spending authorized. |
+| 2026-10-10 | After SR1, proceed with SR2–SR4 preparation and an IPv6-first isolated AWS validation plan. Split minimal image/probe packaging (SR4a) from full release automation (SR4b). Exact resource/cost approval remains pending; this does not approve draft idle-embed UX or bypass durable storage/job gates. |
 | 2026-09-26 | Docs-only definition API catalog: 25 visual variants, 41 field-well structures, 8 filter variants, 4 parameter declarations and calculation/context helpers. Additive provisional API types remain separate from validated synthetic inventory and observed bundle types; endpoint contracts remain open. |
 | 2026-09-26 | Real bundle grounding: sanitized AWS sample confirms four resource directories, lowercase envelopes and camelCase definitions; separate archive types, ZIP reader, acceptance/preservation tests and format notes. Complex exports and source conformance remain open. |
 | 2026-09-26 | Query-engine slice: D10 records the local DuckDB architecture, typed planning stages, explicit synthetic security binding and deferred semantic gates. |
@@ -1210,11 +1211,23 @@ even though demand-driven horizontal scale and HA have not been requested.
 
 **Sequence:** SR0–SR6 in [AWS serverless readiness](docs/aws-serverless-plan.md)
 cover detailed contracts, runtime, H9/H10 safety, background work, packaging/CI,
-authorized AWS validation and pilot release. These slices are proposed for review,
-not implemented or cloud-authorized by this document. Each build requires its
-complete approved contract first, including exact transport/admission behavior
+authorized AWS validation and pilot release. SR0 contracts are drafted and SR1
+runtime composition shipped in issue #82; SR2–SR4 remain to be built. The operator
+approved continued developer preparation alongside an IPv6-first validation
+plan. This does not authorize AWS resources or waive the remaining contracts.
+Each build requires its complete approved contract first, including exact
+transport/admission behavior
 and dependency choices. The substantive existing H9/H10 isolation and failure
 acceptance gates remain mandatory; this is not a packaging shortcut.
+
+**Current handoff:** [SR2–SR4 developer work](docs/phase5-developer-handoff.md)
+defines dependencies and local acceptance. SR4a supplies the minimal image,
+isolated probe and IaC needed to review the
+[AWS validation experiment](docs/phase5-aws-validation-plan.md); it can progress
+alongside SR2 design. The experiment tests transport, SQL and idle/resume only,
+with SR1's maintenance/storage guards intact. SR4b supplies full release
+automation after the durable application interfaces exist. D-21's idle embed
+display change remains a product decision; backend work need not wait on it.
 
 ---
 
@@ -1329,6 +1342,14 @@ deployment](docs/aws-serverless-plan.md), proposed for review. It defines SR0–
 acceptance evidence and unresolved implementation gates. This section supersedes
 the original free-tier/RDS-first plan and its assumptions that the hosted API was
 stateless and DuckDB would be removed from production.
+
+**Next deployment review:** prepare the
+[isolated validation plan](docs/phase5-aws-validation-plan.md) with IPv6 egress
+and S3 gateway access, one private zero-to-two-ACU writer and IAM-only test
+functions. D-19 selects this as the candidate to validate, with no automatic NAT
+or interface-endpoint fallback. Review the exact image, IaC, IAM diff, cost and
+cleanup plan before provisioning. A platform-only experiment does not complete
+SR5 or authorize canonical DNS/TLS/public ingress changes.
 
 **Required behavior:**
 - The hosted web application loads independently of database compute. A bounded
