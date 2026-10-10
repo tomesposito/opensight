@@ -18,7 +18,9 @@ coordination checkpoint. It binds existing H4 budget versions in `sr_limits`
 rather than duplicating per-tenant budget configuration, preserves existing H8
 refresh accounting and named admission errors, and leaves queues/artifacts and
 runtime integration to subsequent contracts. Its exact schema/interfaces govern
-that checkpoint; the broader artifact/invalidation proposal below remains draft.
+that checkpoint. The [SR2b artifact transfer contract](../phase5-sr2b-artifact-transfer.md)
+freezes the bounded codec and immutable-object mechanism. The broader
+manifest/invalidation and runtime-integration proposal below remains draft.
 
 ## Out of Scope
 
