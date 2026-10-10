@@ -5,13 +5,14 @@
 > with its options and reasoning, so nobody has to hold the whole design in memory.
 >
 > - **Status:** Draft — Phase 0 (research)
-> - **Last updated:** 2026-09-26
+> - **Last updated:** 2026-10-10
 > - **Name:** OpenSight *(decided 2026-09-26 — see OQ-1)*
 
 ## Changelog
 
 | Date       | Change |
 |------------|--------|
+| 2026-10-10 | D-18 confirms Lambda + Aurora Serverless v2 with zero-ACU auto-pause for the first developer/tester deployment. Supersedes the old RDS-free-tier and stateless-API assumptions in D11/D12 and §11; proposes SR0–SR6 readiness/deployment gates, H9/H10 correctness work, and public code/private Terraform and GitHub Actions operations. Design only; no resources or spending authorized. |
 | 2026-09-26 | Docs-only definition API catalog: 25 visual variants, 41 field-well structures, 8 filter variants, 4 parameter declarations and calculation/context helpers. Additive provisional API types remain separate from validated synthetic inventory and observed bundle types; endpoint contracts remain open. |
 | 2026-09-26 | Real bundle grounding: sanitized AWS sample confirms four resource directories, lowercase envelopes and camelCase definitions; separate archive types, ZIP reader, acceptance/preservation tests and format notes. Complex exports and source conformance remain open. |
 | 2026-09-26 | Query-engine slice: D10 records the local DuckDB architecture, typed planning stages, explicit synthetic security binding and deferred semantic gates. |
@@ -583,55 +584,41 @@ boundary testable without implying archive, API or source compatibility.
 
 ### D11 — Hosting target
 
-**Context:** Where OpenSight runs once there is something to deploy. Owner direction
-(2026-09-26): assume the owner's AWS account when available; prefer free-tier and
-serverless services where possible.
+**Decision:** AWS serverless-first. [ITD D-18](docs/itd/D-18-serverless-development-deployment.md)
+(2026-10-10) confirms Lambda + API Gateway, S3 + CloudFront, and Aurora Serverless
+v2 for the first developer/tester deployment. Skip interim EC2/Fargate hosting.
+Low idle cost and automatic wake-up take precedence over minimizing the initial
+adaptation work. Free-tier eligibility is not assumed.
 
-**Options:**
-- **AWS serverless-first** — Lambda (TypeScript API) + API Gateway, S3 + CloudFront
-  (frontend), RDS free tier (Postgres metadata), DuckDB inside the Lambda package or
-  as a sidecar for the SPICE-equivalent cache on S3/Parquet.
-- **Single VPS / Docker Compose** — simplest self-host story, but not the owner's
-  target and a worse fit for the OSS "deploy to your own AWS" narrative.
-- **ECS Fargate** — middle ground if Lambda packaging (native DuckDB bindings,
-  250 MB limit) proves painful.
+**Implementation boundary:** the shipped H8 API is not stateless: it has a
+lifetime database lock, timer-driven scheduler, process-local budgets and Blaze.
+Lambda requires the lifecycle, durable coordination and artifact work in §11;
+a thin HTTP adapter alone is insufficient. DuckDB remains the hosted analytical
+executor per HQ-11, packaged and measured on the selected Lambda platform.
+H8 remains the local/self-hosted reference. A failed serverless feasibility gate
+requires a design decision, not a silent switch to persistent hosting.
 
-**Decision:** AWS serverless-first; free tier where it exists.
-**Reasoning:** The architecture (stateless TypeScript API, DuckDB-in-process,
-Postgres for metadata, static frontend) maps cleanly onto Lambda + S3 + CloudFront +
-RDS. Serverless keeps idle cost near zero, which matters for the owner's cost
-constraint. Fargate stays as the fallback if Lambda packaging fights the native
-DuckDB bindings.
-**Status:** decided as target; no infrastructure code until a later phase.
+**Status:** direction confirmed; detailed readiness specification proposed for
+review. No cloud deployment or spending authorized by this design change.
 
-### D12 — Production data plane: Postgres, not DynamoDB; DuckDB stays local-only
+### D12 — Hosted data plane: PostgreSQL metadata and DuckDB analytics
 
-**Context:** Owner direction (2026-09-26): for the hosted deployment DuckDB will
-likely need swapping for DynamoDB or Aurora Serverless.
+**Current decision (HQ-11, D-18):** PostgreSQL is the hosted metadata plane;
+DuckDB is the hosted analytical executor as well as a local dev/test engine.
+The historical "local-only" wording does not prohibit DuckDB in Lambda or select
+PostgreSQL as a replacement for the shared analytical path. DynamoDB remains
+unselected; SQL dialect and shared post-processing semantics still apply.
 
-**Options:**
-- **DynamoDB** — generous free tier and truly serverless, but it is a
-  key-value/document store with no engine for ad-hoc GROUP BY and aggregation.
-  Every analytical query would become a full-table scan aggregated in Lambda —
-  reimplementing, worse, what DuckDB already does. PartiQL is not OLAP.
-- **Aurora Serverless v2 (Postgres)** — best technical fit: real Postgres, and
-  the query engine's generated SQL translates with dialect adjustments. But the
-  ~0.5 ACU floor is roughly $43/month — real money against the owner's cost
-  constraint.
-- **RDS free tier (db.t3.micro Postgres)** — $0 for 12 months, real Postgres,
-  and the same engine as Aurora, so graduating to Serverless v2 later is
-  trivial. Not serverless (always on), but free beats serverless while learning.
-- **S3 + Athena** — near-zero idle cost and pay-per-query, but multi-second
-  latency and a different execution story; revisit for the SPICE-equivalent
-  cache layer, not the primary query path.
+Use Aurora Serverless v2 PostgreSQL from the first AWS deployment, on a supported
+engine version with minimum zero ACUs and automatic pause/resume. The earlier
+0.5-ACU-floor and RDS-free-year assumptions are superseded. Storage, I/O, secrets,
+maintenance and related services remain chargeable while usage is light.
+Prove pause/resume, SQL role safety and transaction/RLS behavior on Aurora before
+release. Keep operator and tenant roles separate; do not weaken isolation to
+accommodate a different connection transport.
 
-**Decision:** Postgres in production — RDS free tier first, Aurora Serverless v2
-when the free year ends or load demands it. DynamoDB is rejected for the
-analytical query path (wrong data model; it would force scan-and-aggregate in
-Lambda). DuckDB remains the local dev/test engine (zero setup, fast): the
-query engine's planner/executor split absorbs the dialect difference through a
-Postgres executor, and the engine's SQL is already the portability seam.
-**Status:** decided; no infrastructure code yet.
+**Status:** direction confirmed 2026-10-10; deployment settings and maximum
+capacity require measurement and resource-plan review. See §11 and D-18.
 
 ### D13 — Blaze horizontal-scaling architecture
 
@@ -669,6 +656,10 @@ shipped in #12/#15; distributed backend is a future phase with a defined seam.
 Trigger: multi-instance deployment.
 
 ### D14 — Hosted multi-tenant direction accepted; rollout slices defined
+
+**Historical decision record (2026-09-30):** subsequent HQ decisions are in the
+hosted register. D-18, Phase 5 and §11 supersede the deployment sequencing and
+old unresolved executor status below; HQ-11 is confirmed, not open.
 
 **Context:** Owner decision 2026-09-30: hosted, horizontally scalable,
 embeddable/white-label OpenSight is the project's most important long-term
@@ -709,8 +700,8 @@ executor reconciliation), HQ-13 (job ownership), HQ-14 (metering units), HQ-16
 
 **D11 relationship:** D11 (AWS serverless-first) stands as the deployment target.
 The spec's Docker Compose reference is a local reference/test harness, not a
-reversal of the cloud decision. The executor question (long-lived workers vs
-short-lived containers) is HQ-11 and explicitly unresolved.
+reversal of the cloud decision. HQ-11 subsequently confirmed the hosted DuckDB
+executor; D-18 selects the first Lambda/Aurora deployment (see §11).
 
 **Pilot scope (first hosted release):** H1 tenant metadata/migration, H2 verified
 tenant sessions and provisioning, H3 durable sources and complete data
@@ -1196,36 +1187,34 @@ signing tests, API validation tests; full suite green; demo rebuilt.
   isolation, embedding API, scaling plan), then slice into buildable issues. This overlaps
   the Phase 5 trigger ("decision to operate OpenSight as a hosted service").
 
-### Phase 5 — Hosted & scale-out — FIRST TRIGGER MET, SCALE-OUT NOT SCHEDULED
+### Phase 5 — Hosted correctness and serverless readiness
 
-The first trigger was met 2026-09-30: the owner decided to operate OpenSight as
-a hosted multi-tenant service (D14). Per the hosted spec's §5, that trigger
-schedules the *hosted correctness foundation* (H1–H8: tenant metadata, verified
-sessions, data authorization, budgets, embedding, automation, single-node
-reference) — not the distributed implementation. The remaining triggers are not
-met: H9–H12 (shared Parquet artifacts, distributed refresh, replica safety,
-supporting-service HA) stay unscheduled until measured load or an approved
-availability target demands them.
+The hosted-business trigger was met 2026-09-30 (D14), leading to the H1–H8
+foundation and single-node reference. D-18 (2026-10-10) now selects an initial
+Lambda/Aurora deployment with automatic idle pause. That activates the artifact
+and coordination correctness work required by ephemeral/overlapping invocations,
+even though demand-driven horizontal scale and HA have not been requested.
 
-**Triggers:** decision to operate OpenSight as a hosted service — met 2026-09-30,
-schedules H1–H8; a deployment whose concurrent query load exceeds one node —
-not met, schedules H9–H10; an HA requirement no single node can meet — not met,
-schedules H12.
+**Triggers and scope:**
+- H1–H8 remain the shipped hosted foundation/reference; this design change does
+  not alter the local reference runtime.
+- H9/H10 become serverless-readiness prerequisites: durable Parquet artifacts,
+  manifests, leases/fencing, invalidation, aggregate admission and durable job
+  dispatch must work across process replacement and overlapping invocations.
+  Do not use low traffic or reserved concurrency of one to claim replica safety.
+- DuckDB executes analytics and reads artifacts; PostgreSQL holds authoritative
+  metadata, security and coordination. No always-on coordination service is
+  selected for the initial profile.
+- H11 customer domains and H12 supporting-service HA remain unscheduled. No
+  availability or recovery target is created by choosing managed services.
 
-**Scope when triggered (per D13):**
-- Blaze snapshots move from in-process heap to content-addressed Parquet
-  artifacts on shared object storage (`blaze/{dataset}/{generation}.parquet`),
-  loaded into per-node local memory (DuckDB memory-map, already a dependency).
-  The `refresh(key, load)` / `read(key)` seam is the portability boundary —
-  execution modes, refresh lifecycle, named errors, and UI do not change.
-- Refresh coordination: distributed locks so one node runs each scheduled
-  refresh; invalidation pub/sub so one node's invalidation reaches all nodes
-  (Redis or equivalent — coordination only, never the snapshot store).
-- Same treatment for the other single-process state: metadata store, session/
-  auth state, refresh scheduler.
-
-**Explicitly not in scope now:** no distributed-systems work is scheduled in
-Phases 0–4. D13 exists so this phase is a swap, not a redesign.
+**Sequence:** SR0–SR6 in [AWS serverless readiness](docs/aws-serverless-plan.md)
+cover detailed contracts, runtime, H9/H10 safety, background work, packaging/CI,
+authorized AWS validation and pilot release. These slices are proposed for review,
+not implemented or cloud-authorized by this document. Each build requires its
+complete approved contract first, including exact transport/admission behavior
+and dependency choices. The substantive existing H9/H10 isolation and failure
+acceptance gates remain mandatory; this is not a packaging shortcut.
 
 ---
 
@@ -1325,53 +1314,47 @@ consumer typechecks and fixture account/ARN hygiene checks cover this import bou
 
 ---
 
-## 11. Deployment (AWS) — spec, 2026-09-26
+## 11. Deployment (AWS) — serverless direction, 2026-10-10
 
-**Target:** a live OpenSight Tom can open on his phone — no tunnels, no local
-servers. Owner-approved direction; not yet built.
+**Confirmed direction:** [ITD D-18](docs/itd/D-18-serverless-development-deployment.md)
+selects Lambda + API Gateway, a private S3/CloudFront frontend, Aurora Serverless
+v2 PostgreSQL metadata with zero-ACU auto-pause, and private S3 analytical artifacts.
+The first audience is an operator and an authorized test agent. The objective is
+low idle running cost and automatic wake-up; cold-start latency is acceptable.
+Skip the interim EC2/Fargate deployment. No monthly budget or AWS resource
+creation is authorized by this design change.
 
-**Topology (all free-tier to start):**
-- **Frontend** (`packages/web`): S3 static hosting + CloudFront. The Vite build
-  already produces a static bundle; the single-file demo build proves the app
-  runs with no server beyond API calls.
-- **API** (`packages/api` + `@opensight/query-engine` with the Postgres
-  executor): Lambda + API Gateway (HTTP API). The API is already stateless
-  plain `node:http` with no framework — it ports to a Lambda handler with a
-  thin adapter. No DuckDB native module in the Lambda package (that was the
-  D11 packaging risk; D12 removes it).
-- **Data** (D12): RDS `db.t3.micro` Postgres, free tier for 12 months. Holds
-  datasets (migrated from local CSVs) and, later, metadata. Aurora Serverless
-  v2 is the graduation path, same engine.
-- **Total idle cost:** ~$0 (S3/CloudFront/Lambda/API Gateway free tiers;
-  RDS free tier). The only metered cost is real usage.
+**Detailed phase specification:** [AWS serverless readiness and development
+deployment](docs/aws-serverless-plan.md), proposed for review. It defines SR0–SR6,
+acceptance evidence and unresolved implementation gates. This section supersedes
+the original free-tier/RDS-first plan and its assumptions that the hosted API was
+stateless and DuckDB would be removed from production.
 
-**Deploy pipeline — two routes, owner's choice:**
-1. **GitHub Actions (recommended):** push to `master` → build workspaces →
-   run full test suite → deploy frontend to S3 + invalidate CloudFront →
-   package and deploy Lambda → run smoke tests against the live URL. Push-to-
-   deploy, full history, no local AWS tooling needed after setup.
-2. **AWS CLI (manual):** same steps run by hand from an authorized machine.
-   Faster to first deploy, but every release is manual.
+**Required behavior:**
+- The hosted web application loads independently of database compute. A bounded
+  startup flow handles Aurora resume without blindly replaying writes or MFA.
+- Invocation-scoped database connections, durable artifact/claim/admission state
+  and externally triggered jobs replace H8's lifetime connection, ephemeral
+  cache authority and interval scheduler. Keep all current isolation semantics.
+- Native DuckDB, uploads/results, HTTP deadlines and worker cancellation are
+  validated against the deployed Lambda platform before release.
+- Terraform and GitHub Actions use reusable public modules/builds and private
+  environment/deploy control with OIDC. Credentials, state, plans, backups and
+  account-specific configuration never enter public source or build artifacts;
+  secret values and state are excluded from both repositories.
+- A reviewed egress plan and itemized estimate account for network services,
+  database idle tails, storage, secrets, requests and backups. Free-tier credits,
+  zero total idle cost and automatic budget enforcement are not assumed.
+- Deployment follows a reviewed resource plan and explicit authorization.
+  Migrations, alias/frontend promotion, rollback and fail-closed restore are
+  tested; no auto-deploy from public merges is implied.
 
-**Prerequisites (owner actions):**
-- AWS account access for deployments. No keys in chat, no keys in the repo —
-  GitHub Actions uses OIDC (short-lived credentials, no stored secrets) where
-  possible; the CLI route uses a named profile on an authorized machine.
-- GitHub Actions workflow files cannot be pushed with the current PAT
-  (`public_repo` scope only — API 404s on `.github/workflows/*`). The workflow
-  must be added through the GitHub web UI or a re-scoped token. The pending
-  CI workflow precedent is documented in `~/workspace/goals/opensight/
-  hidden_files/ci-workflow-pending.yml`.
-- Nothing is provisioned and no money is spent until the owner explicitly
-  approves the build phase.
-
-**Build order when approved:**
-1. Query-engine Postgres executor + dialect pass (replaces DuckDB for the
-   hosted path; DuckDB stays for local dev/test).
-2. Lambda handler adapter for `packages/api` (keep `node:http` locally).
-3. IaC for S3/CloudFront/API Gateway/Lambda/RDS (CDK or Terraform — decide at
-   build time; keep it minimal and free-tier-pinned).
-4. GitHub Actions pipeline (or AWS CLI runbook) + live smoke tests.
+**First engineering gate (SR0):** resolve networking/email reachability, trusted
+proxy/wake handling, upload reservation and durable claim contracts. The detailed
+plan may not invent successful transport or weaken tenant roles to close a gate.
+Local builds remain subject to AGENTS.md's network rules; AWS validation is a
+separate, authorized activity. Publishing still follows the Git Database API
+workflow, with workflow-file permissions checked before publishing `.github` files.
 
 ## 12. Issue #11 — multi-input dataset preparation (decided 2026-09-29)
 

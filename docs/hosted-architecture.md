@@ -5,12 +5,19 @@ The hosted and embeddable/white-label direction is accepted; the recommendations
 API additions, operating targets and rollout below still need design approval.
 Single-node self-hosting remains the default product.
 
+**2026-10-10 deployment update:** [ITD D-18](itd/D-18-serverless-development-deployment.md)
+confirms Lambda/Aurora automatic idle pause for the first developer/tester AWS
+deployment. [The serverless phase specification](aws-serverless-plan.md) is proposed
+for review and activates H9/H10 correctness work for ephemeral/overlapping
+invocations. Older unscheduled-scale-out language below is the historical survey
+baseline, not permission to skip these gates. H11/H12 remain unscheduled, and this
+document does not authorize cloud resources or spending.
+
 This draft reads [SOLUTION_DESIGN.md](../SOLUTION_DESIGN.md) as the contract,
 especially D13, Phase 5, Phases 3b/3c and §§12–14. It does not amend that document.
-Its older §2 hosted non-goal and D11/D12 deployment assumptions need reconciliation
-with the later hosted direction when this draft is reviewed. Phase 5's business
-trigger has been met by that direction; scale-out implementation is not thereby
-scheduled. Statements labeled **Current** describe surveyed code. **Proposed** and
+The original survey predates the H1–H8 implementation and D-18's revision of
+D11/D12. Read its baseline statements with the dated decisions and rollout
+updates. Statements labeled **Current** describe surveyed code. **Proposed** and
 **Recommendation** describe future work. `HQ-*` references identify open questions
 collected in §7; proposed error codes and environment variables are not shipped.
 
@@ -467,6 +474,7 @@ the license constraint and a permissively licensed candidate are discussed in §
 | --- | --- | --- | --- |
 | Default self-hosted | Existing local workload fits one node | Nothing: file/ephemeral stores, host auth callback, in-process Blaze and scheduler remain supported | Everything; restart empties Blaze |
 | Hosted correctness foundation | Decision to admit independent hosted tenants, already made in direction | Durable tenant metadata, verified auth, tenant-bound data paths, limits, lifecycle and embed configuration; storage migration required before real tenant admission | One API/query node, one scheduler, in-process Blaze; no coordinator or distributed artifact backend required yet |
+| Serverless development deployment | D-18 selected Lambda/Aurora automatic pause, 2026-10-10 | H9/H10 durability and replica-safety prerequisites; invocation-scoped SQL connections, externally dispatched jobs and reviewed AWS packaging (SR0–SR6) | H8 stays a separate single-node reference; low Lambda concurrency does not establish single-process semantics |
 | Worker separation/fairness | Load tests show refresh/query contention, event-loop stalls, inadequate cancellation or memory isolation | Bounded worker processes and tenant admission; durable jobs if workers run independently | One placement/node may still suffice; this is not distributed analytical execution |
 | Shared Blaze backend and multiple instances | A second serving instance, an HA requirement, or measured concurrent load exceeds a node at approved limits | D13 artifacts, shared manifests, distributed coordination, node caches; shared identity/asset/source state must already be complete | Each individual query still executes on one worker; metadata and object services may initially have a single endpoint, which is not HA |
 | Operational HA and later placement | Approved availability/recovery targets or measured single-service bottlenecks | Redundant supporting services, tested failover, optional tenant placement pools; Helm only when operators need it | No multi-region or distributed query engine is implied |
@@ -607,12 +615,12 @@ duplicates. Promise at-least-once processing with deduplication where supported,
 not exactly-once email. Delivery retry/ambiguity policy is HQ-13. Metering events
 are similarly idempotent; no billing vendor is integrated.
 
-D11's serverless deployment preference and D12's production Postgres/local-only
-DuckDB decision are not silently overturned. The current prep/Blaze path uses
-DuckDB locally, and D13 names it as an artifact reader. Selecting a hosted cached
-executor and long-lived workers versus short-lived API containers needs explicit
-reconciliation (HQ-11) before implementation. This draft specifies the portable
-artifact and security contract without declaring a new production query engine.
+HQ-11 confirms DuckDB as the hosted analytical executor and PostgreSQL as the
+metadata plane. D-18 now selects Lambda/Aurora for the first developer/tester
+deployment, without changing the artifact and authorization contract above.
+Measure cold starts, artifact hydration and memory before setting deployment
+limits. The H8 lifetime-lock launcher remains a separate reference; the proposed
+SR0–SR6 work must replace its guarantees before ephemeral execution is safe.
 
 ## 6. Operational concerns
 
@@ -765,6 +773,13 @@ for bundled commercial licenses.
 
 ## 7. Open questions
 
+Related confirmed deployment decision: [ITD D-18 — serverless development
+deployment](itd/D-18-serverless-development-deployment.md) (2026-10-10). Lambda
+and Aurora zero-ACU auto-pause are selected; detailed SR0–SR6 contracts remain
+proposed in [the phase specification](aws-serverless-plan.md). This supersedes
+D12's RDS-first assumption and activates H9/H10 correctness prerequisites without
+claiming production HA or authorizing infrastructure creation.
+
 Related confirmed editor decision: [IDD D-15 — field assignment creates a
 visual](idd/D-15-field-assignment-creates-visual.md) (issue #43, 2026-10-06).
 
@@ -806,6 +821,12 @@ identity onboarding or customer service commitments.
 
 ## 8. Phased rollout
 
+**Sequencing update, 2026-10-10:** D-18 activates H9/H10 as prerequisites for the
+serverless deployment, including all artifact/security/failure gates below.
+SR0–SR6 in [the AWS phase specification](aws-serverless-plan.md#8-sequenced-work-and-acceptance-gates)
+sequence this work with runtime adaptation, background dispatch and CI/CD. Their
+contracts need approval before builds. H11/H12 are not activated by this choice.
+
 These are proposed slice names for later planning, not scheduled work or GitHub
 issues. Each needs an approved contract in SOLUTION_DESIGN before its build branch.
 Dependency order is explicit; optional slices do not become launch requirements
@@ -823,8 +844,8 @@ dependent slice, rather than inventing answers during implementation.
 | H6 — Registered embed sessions and SDK evolution | H5; HQ-7 and required HQ-12 contracts | Scoped bootstrap redemption, revocation/renewal, verified backend subject mapping if selected, versioned SDK events/transport | Replay/race/key-rotation/suspension tests; viewer RLS/CLS; forged postMessage tests; browser checks with third-party cookies blocked; credentials never escape to parent or logs |
 | H7 — Tenant automation and durable job ownership | H2–H4; HQ-13 | Migrate legacy refresh/report/alert resources and rendering identities; durable occurrence records and delivery outbox; retain single scheduler initially | Fake-timer coalescing, permission changes while queued/running, tenant-scoped histories/recipients, orphaned jobs, interrupted delivery and stub-mail duplicate policy |
 | H8 — Single-node hosted reference and pilot gate | H1–H7 for selected features; HQ-10; HQ-14 only for selected usage hooks | Compose reference, environment/secret injection, health/drain, audit/metrics, backup/restore and operator runbook; unsupported optional surfaces disabled | Fresh install/migration/restart/restore and tenant deletion drills; full isolation/load suite; documented measured limits. Single node and ephemeral Blaze are disclosed; actual deployment requires separate authorization |
-| H9 — Shared Parquet artifact adapter | H8; scale-out trigger in §5, HQ-11/HQ-15 | Bounded artifact writer/reader, digest/schema manifests, async hydration adapter, local cache/GC and backup linkage behind D13 seam; test with one serving node first | Differential output versus in-process Blaze; oversize/corrupt/partial artifact handling; no stale fallback; restart hydration and bounded memory measurements |
-| H10 — Distributed refresh and replica safety | H9 and H7; multi-instance/HA trigger | Verified coordination adapter, leases/fencing, manifest CAS, outbox invalidation/reconciliation, durable scheduler claims; remove every remaining startup/file-only serving dependency | Two nodes with identical tenant IDs/resource IDs, dropped pub/sub, partitioned/paused workers, lease expiry, crashes at each publication step, concurrent delete/save/refresh, manual-versus-scheduled contention and authoritative-store outage; no obsolete publication or cross-tenant read |
+| H9 — Shared Parquet artifact adapter | H8; D-18 serverless trigger in §5, HQ-11/HQ-15 | Bounded artifact writer/reader, digest/schema manifests, async hydration adapter, local cache/GC and backup linkage behind D13 seam; test with one serving node first | Differential output versus in-process Blaze; oversize/corrupt/partial artifact handling; no stale fallback; restart hydration and bounded memory measurements |
+| H10 — Distributed refresh and replica safety | H9 and H7; D-18 ephemeral/overlapping invocation requirement | Verified coordination adapter, leases/fencing, manifest CAS, outbox invalidation/reconciliation, durable scheduler claims; remove every remaining startup/file-only serving dependency | Two nodes with identical tenant IDs/resource IDs, dropped pub/sub where used, partitioned/paused workers, lease expiry, crashes at each publication step, concurrent delete/save/refresh, manual-versus-scheduled contention and authoritative-store outage; no obsolete publication or cross-tenant read |
 | H11 — Verified customer embed domains (optional) | H6 and H8; HQ-9 | Domain registry, proof of control, certificate/routing lifecycle and explicit SDK trusted-origin support | Unknown-host and tenant mismatch denial, DNS reassignment/takeover attempts, revoked-domain sessions, certificate failure/renewal and browser origin tests |
 | H12 — Supporting-service HA and later packaging | H10; approved HQ-10 targets and measured demand | Redundant supporting state/services, tested failover and recovery, optional placement pools; Helm reference only if needed | Dependency-failure and rolling-upgrade drills against stated targets; no HA claim with a single metadata/object/coordination failure point |
 
