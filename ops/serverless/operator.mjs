@@ -73,7 +73,9 @@ export async function main(args = process.argv.slice(2), environment = process.e
   try {
     const operator = read('operator.json');
     if (operator.region !== 'us-east-1') throw Error('REGION_UNVALIDATED');
-    const aws = (service, action, extra = []) => JSON.parse(command('aws', [service, action, '--region', operator.region, '--output', 'json', '--no-cli-pager', ...extra]) || '{}');
+    // An ambiguous invocation must consume one recorded attempt, never an
+    // unrecorded CLI retry (especially for SMTP). Retry explicitly via the ledger.
+    const aws = (service, action, extra = []) => JSON.parse(command('aws', [service, action, '--region', operator.region, '--output', 'json', '--no-cli-pager', ...extra], { ...environment, AWS_MAX_ATTEMPTS: '1', AWS_RETRY_MODE: 'standard' }) || '{}');
     const account = aws('sts', 'get-caller-identity').Account;
     if (!/^\d{12}$/.test(account)) throw Error('ACCOUNT_INVALID');
     const deployment = operator.deployment;
@@ -220,7 +222,7 @@ export async function main(args = process.argv.slice(2), environment = process.e
       if (selection === 'network' && aws('scheduler', 'list-schedules', ['--group-name', state.schedule_group]).Schedules.length >= 20) throw Error('SCHEDULE_BUDGET_EXHAUSTED');
       write('ledger.json', next); // Reserve before dispatch, including ambiguous transport failures.
       write('probe-request.json', { version: 1, command: selection });
-      const response = aws('lambda', 'invoke', ['--function-name', state.functions.probe, '--invocation-type', 'RequestResponse', '--cli-binary-format', 'raw-in-base64-out', '--payload', `file://${path('probe-request.json')}`, path('probe-response.json')]);
+      const response = aws('lambda', 'invoke', ['--function-name', state.functions.probe, '--invocation-type', 'RequestResponse', '--cli-connect-timeout', '10', '--cli-read-timeout', '130', '--cli-binary-format', 'raw-in-base64-out', '--payload', `file://${path('probe-request.json')}`, path('probe-response.json')]);
       const result = read('probe-response.json');
       if (response.FunctionError) {
         const code = /^[A-Z][A-Z0-9_]{1,79}$/.test(result.errorMessage ?? '') ? result.errorMessage : 'PROBE_FAILED';

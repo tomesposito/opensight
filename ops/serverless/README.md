@@ -91,7 +91,10 @@ No real values belong in this repository. Run commands from the repository root:
    in the private directory. A successful local check is not AWS proof.
 
 The ledger reserves each Lambda attempt before dispatch, including failures,
-with at most 1,000 invocations and twenty mail attempts within 72 hours. The exclusive directory lock
+with at most 1,000 invocations and twenty mail attempts within 72 hours. AWS CLI
+automatic retries are disabled; ambiguous calls require a separately counted
+explicit retry. Invoke transport allows 130 seconds for the bounded 120-second
+function. The exclusive directory lock
 rejects concurrent operator processes. If a process dies, inspect its outcome
 before removing the stale lock; do not reset the ledger. Probe network calls
 require fewer than 20 outstanding synthetic schedules. The module has three
