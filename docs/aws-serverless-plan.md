@@ -264,6 +264,7 @@ by this work; its approval requirement remains.
 | VPC egress and real mail | [D-19](itd/D-19-serverless-egress.md) | Tom: route profile, source scope, endpoint AZ count and fixed cost |
 | Trusted ingress | [D-20](itd/D-20-serverless-ingress.md) | Review origin-secret custody and authoring/embed routing proof |
 | Startup and idle clients | [D-21](itd/D-21-aurora-readiness.md) | Tom: tester allowlist/WAF cost and protected display expiry while idle |
+| Uploads and bounded results | [D-22](itd/D-22-serverless-object-transfers.md) | Tom: asynchronous UX/control ceiling; review immutable version and authorization protocol |
 
 Each implementation slice requires a frozen, buildable contract in
 `SOLUTION_DESIGN.md` before its build branch. The unresolved choices below block
