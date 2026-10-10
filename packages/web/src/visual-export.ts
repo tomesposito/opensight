@@ -11,6 +11,10 @@ export function getVisualRows(visualId: string): Row[] | null | undefined {
   return rowsByVisualId.get(visualId);
 }
 
+export function clearVisualRows(visualId: string): void {
+  rowsByVisualId.delete(visualId);
+}
+
 const csvCell = (value: unknown): string => {
   if (value === null || value === undefined) return '';
   const text = String(value);
