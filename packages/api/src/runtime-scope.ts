@@ -10,6 +10,7 @@ export interface InvocationResource { close(): Promise<void>; force(): void }
 const current = new AsyncLocalStorage<InvocationScope>();
 const directories = new Set<string>();
 let poisoned = false;
+let directoryWork: Promise<unknown> = Promise.resolve();
 
 /** No success may escape this scope until every owned resource has settled. */
 export class InvocationScope {
@@ -27,6 +28,7 @@ export class InvocationScope {
   }
   static current(): InvocationScope | undefined { return current.getStore(); }
   check(): void {
+    if (poisoned) throw new MetadataError('RUNTIME_QUARANTINED', 503);
     if (this.stopped || this.signal.aborted || Date.now() >= this.deadline - this.cleanupMs) throw new MetadataError('INVOCATION_DEADLINE_EXCEEDED', 503);
   }
   remaining(): number { this.check(); return this.deadline - this.cleanupMs - Date.now(); }
@@ -59,14 +61,19 @@ export class InvocationScope {
   }
   async temporaryDirectory(): Promise<string> {
     this.check();
-    if (this.directory) return this.directory;
-    const root = join(tmpdir(), 'opensight-invocations');
-    await mkdir(root, { recursive: true, mode: 0o700 });
-    // Lambda /tmp can survive process replacement. Only this runtime's private
-    // namespace is swept, and live local invocations are never touched.
-    for (const entry of await readdir(root)) if (entry.startsWith('inv-') && !directories.has(join(root, entry))) await rm(join(root, entry), { recursive: true, force: true });
-    this.directory = await mkdtemp(join(root, 'inv-')); directories.add(this.directory);
-    return this.directory;
+    const create = directoryWork.then(async () => {
+      this.check();
+      if (this.directory) return this.directory;
+      const root = join(tmpdir(), 'opensight-invocations');
+      await mkdir(root, { recursive: true, mode: 0o700 });
+      // Lambda /tmp can survive process replacement. Only this runtime's private
+      // namespace is swept, and live local invocations are never touched.
+      for (const entry of await readdir(root)) if (entry.startsWith('inv-') && !directories.has(join(root, entry))) await rm(join(root, entry), { recursive: true, force: true });
+      this.directory = await mkdtemp(join(root, 'inv-')); directories.add(this.directory);
+      return this.directory;
+    });
+    directoryWork = create.catch(() => {});
+    return this.track(create);
   }
   async run<T>(work: (scope: InvocationScope) => Promise<T>): Promise<T> {
     return current.run(this, async () => {
