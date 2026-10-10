@@ -1,3 +1,4 @@
+import { defaultTextStyle, sheetObjectValid, serializeObjects, objectElementType, type SheetObject, type TextStyle } from './sheet-objects.js';
 import { rebindInsight } from './insight-configuration.js';
 import { paletteValid, themeValid, type AnalysisTheme } from './themes.js';
 import { formattingValid, gaugeValid, binsValid, legendPositionValid, rowGroupPathValid, type LegendPosition, type VisualFormatting } from './formatting.js';
@@ -73,7 +74,7 @@ export interface ImportedVisual {
   filterGroups: { id: string; columnName: string }[];
 }
 export interface ImportedSheet {
-  memberPath: string; sheetId: string; name: string; layout: Placement[]; controls?: AuthorControl[];
+  memberPath: string; sheetId: string; name: string; layout: Placement[]; controls?: AuthorControl[]; objects?: SheetObject[];
 }
 export interface ImportResult { path: string; name: string; messages: string[] }
 export interface BundleOrigin {
@@ -102,7 +103,7 @@ export interface AuthorVisual {
   imported?: ImportedVisual;
 }
 export interface Placement { i: string; x: number; y: number; w: number; h: number }
-export interface AuthorSheet { controls: AuthorControl[]; id: string; name: string; visuals: AuthorVisual[]; layout: Placement[]; selectedId: string | null; imported?: ImportedSheet }
+export interface AuthorSheet { objects?: SheetObject[]; controls: AuthorControl[]; id: string; name: string; visuals: AuthorVisual[]; layout: Placement[]; selectedId: string | null; imported?: ImportedSheet }
 export interface AuthorDraft {
   description?: string;
   dataset?: AuthorDataset;
@@ -149,6 +150,11 @@ export function calculationError(field: CalculatedField, existing: readonly Data
   return expressionError(field.expression, existing);
 }
 export type AuthorAction =
+  | { type: 'object-add'; kind: 'text' }
+  | { type: 'object-add'; kind: 'image'; dataUri: string; alt?: string; sheetId?: string }
+  | { type: 'object-text'; id: string; content: string }
+  | { type: 'object-style'; id: string; style: Partial<TextStyle> }
+  | { type: 'object-image'; id: string; alt?: string; keepAspectRatio?: boolean; opacity?: number }
   | { type: 'analysis-settings'; title: string; description: string; theme?: AnalysisTheme }
   | { type: 'theme'; theme: AnalysisTheme }
   | { type: 'chrome'; mode: 'light' | 'dark' }
@@ -195,7 +201,7 @@ export type AuthorAction =
   | { type: 'filter'; columnName: string; values: string[] | null }
   | { type: 'assign' | 'unassign'; field: string; well?: Well };
 
-function validLayout(layout: readonly Placement[], visuals: readonly AuthorVisual[]): boolean {
+function validLayout(layout: readonly Placement[], visuals: readonly { id: string }[]): boolean {
   return layout.length === visuals.length && new Set(layout.map(p => p.i)).size === layout.length && layout.every(p =>
     visuals.some(v => v.id === p.i) && [p.x, p.y, p.w, p.h].every(Number.isSafeInteger) && p.x >= 0 && p.y >= 0 &&
     p.w >= 3 && p.h >= 4 && p.x + p.w <= GRID_COLUMNS && p.y + p.h <= 10000);
@@ -250,11 +256,34 @@ export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorD
   if (action.type === 'layout') {
     const sheet = draft.sheets.find(s => s.id === action.sheetId);
     const layout = cleanLayout(action.layout);
-    if (!sheet || !validLayout(layout, sheet.visuals) || JSON.stringify(layout) === JSON.stringify(sheet.layout)) return draft;
+    if (!sheet || !validLayout(layout, [...sheet.visuals, ...sheet.objects ?? []]) || JSON.stringify(layout) === JSON.stringify(sheet.layout)) return draft;
     return { ...draft, sheets: draft.sheets.map(s => s === sheet ? { ...s, layout } : s) };
   }
-  const sheet = activeSheet(draft);
+  const sheet = action.type === 'object-add' && action.kind === 'image' && action.sheetId ? draft.sheets.find(s => s.id === action.sheetId) : activeSheet(draft);
+  if (!sheet) return draft;
   const update = (changes: Partial<AuthorSheet>): AuthorDraft => ({ ...draft, sheets: draft.sheets.map(s => s === sheet ? { ...s, ...changes } : s) });
+  const objects = sheet.objects ?? [];
+  if (action.type === 'object-add') {
+    const reserved = (draft.bundle?.original.members ?? []).flatMap(({ resource }) => resource.resourceType === 'analysis' || resource.resourceType === 'dashboard' ? (resource.definition.sheets ?? []).flatMap(s => [...(Array.isArray(s.textBoxes) ? s.textBoxes : []), ...(Array.isArray(s.images) ? s.images : [])].flatMap(o => isObject(o) ? [String(o.sheetTextBoxId ?? o.sheetImageId)] : [])) : []);
+    const id = nextId('object', [...draft.sheets.flatMap(s => [...s.visuals, ...s.objects ?? []].flatMap(o => [o.id, 'importedId' in o ? o.importedId ?? '' : ''])), ...reserved, ...originalIds(draft, true)]);
+    const object: SheetObject = action.kind === 'text' ? { id, kind: 'text', content: 'Add text', style: defaultTextStyle() }
+      : { id, kind: 'image', dataUri: action.dataUri, alt: action.alt ?? 'Embedded image', keepAspectRatio: true, opacity: 1 };
+    if (!sheetObjectValid(object)) return draft;
+    const bottom = Math.max(0, ...sheet.layout.map(p => p.y + p.h));
+    return update({ objects: [...objects, object], selectedId: id, layout: [...sheet.layout, { i: id, x: 0, y: bottom, w: 6, h: 4 }] });
+  }
+  if (action.type === 'object-text' || action.type === 'object-style' || action.type === 'object-image') {
+    const object = objects.find(o => o.id === action.id);
+    if (!object) return draft;
+    const next = action.type === 'object-text' && object.kind === 'text' ? { ...object, content: action.content }
+      : action.type === 'object-style' && object.kind === 'text' ? { ...object, style: { ...object.style, ...action.style } }
+      : action.type === 'object-image' && object.kind === 'image' ? { ...object, ...(action.alt !== undefined ? { alt: action.alt } : {}), ...(action.keepAspectRatio !== undefined ? { keepAspectRatio: action.keepAspectRatio } : {}), ...(action.opacity !== undefined ? { opacity: action.opacity } : {}) } : object;
+    return sheetObjectValid(next) ? update({ objects: objects.map(o => o === object ? next : o) }) : draft;
+  }
+  if (action.type === 'remove' && objects.some(o => o.id === action.id)) {
+    const remaining = objects.filter(o => o.id !== action.id);
+    return update({ objects: remaining, layout: sheet.layout.filter(p => p.i !== action.id), selectedId: sheet.selectedId === action.id ? remaining[0]?.id ?? sheet.visuals[0]?.id ?? null : sheet.selectedId });
+  }
   if (action.type === 'pivot-row-group') {
     const visual = sheet.visuals.find(v => v.id === action.id);
     if (visual?.kind !== 'pivot' || !rowGroupPathValid(action.path) || action.path.length >= visual.rows.length || typeof action.collapsed !== 'boolean') return draft;
@@ -323,7 +352,7 @@ export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorD
     return update({ visuals: [...sheet.visuals, visual], selectedId: id, layout: [...sheet.layout, { i: id, x: 0, y: bottom, w: 6, h: 8 }] });
   }
   if (action.type === 'remap') return update({ visuals: sheet.visuals.map(v => v.id === action.id ? remapVisual(v) : v) });
-  if (action.type === 'select') return sheet.visuals.some(v => v.id === action.id) ? update({ selectedId: action.id }) : draft;
+  if (action.type === 'select') return [...sheet.visuals, ...objects].some(v => v.id === action.id) ? update({ selectedId: action.id }) : draft;
   if (action.type === 'remove' || action.type === 'move') {
     const index = sheet.visuals.findIndex(v => v.id === action.id);
     if (index < 0) return draft;
@@ -337,7 +366,7 @@ export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorD
     }
     visuals.splice(index, 1);
     const remaining = visuals.map(v => v.filterActions ? { ...v, filterActions: v.filterActions.map(a => ({ ...a, targets: a.targets === 'all' ? 'all' as const : a.targets.filter(id => id !== action.id), mappings: Object.fromEntries(Object.entries(a.mappings).filter(([id]) => id !== action.id)) })) } : v);
-    return update({ visuals: remaining, layout: sheet.layout.filter(p => p.i !== action.id), selectedId: sheet.selectedId === action.id ? (visuals[Math.min(index, visuals.length - 1)]?.id ?? null) : sheet.selectedId });
+    return update({ visuals: remaining, layout: sheet.layout.filter(p => p.i !== action.id), selectedId: sheet.selectedId === action.id ? (visuals[Math.min(index, visuals.length - 1)]?.id ?? objects[0]?.id ?? null) : sheet.selectedId });
   }
   const visuals = sheet.visuals.map(item => {
     if (item.id !== sheet.selectedId) return item;
@@ -513,12 +542,12 @@ export function serializeDraft(draft: AuthorDraft): BundleAnalysis {
       scopeConfiguration: { selectedSheets: { sheetVisualScopingConfigurations: [{ sheetId: sheet.id, scope: 'SELECTED_VISUALS', visualIds: [visual.id] }] } },
       filters: [serializeFilter(filter, `${visual.id}-filter-${index}`, 'sales_data', sheetParameters(draft, sheet))],
     })))),
-    sheets: draft.sheets.map(sheet => ({ sheetId: sheet.id, name: sheet.name, ...(sheet.controls.length ? { parameterControls: sheet.controls.map(c => serializeControl(c, sheetParameters(draft, sheet), sheet.controls)) } : {}), visuals: sheet.visuals.map(visual => {
+    sheets: draft.sheets.map(sheet => ({ sheetId: sheet.id, name: sheet.name, ...serializeObjects(sheet.objects), ...(sheet.controls.length ? { parameterControls: sheet.controls.map(c => serializeControl(c, sheetParameters(draft, sheet), sheet.controls)) } : {}), visuals: sheet.visuals.map(visual => {
       if (visual.smallMultiples?.length) throw new Error('SMALL_MULTIPLES_UNSUPPORTED: Remove Small multiples fields before exporting; the draft retains them.');
       const definition = serializeVisual(visual, true, draft.calculatedFields, draft.dataset);
       normalizeVisual('bundle', serializeVisual(visual, false, draft.calculatedFields, draft.dataset), `sheets.${sheet.id}.${visual.id}`);
       return definition;
-    }), layouts: [{ configuration: { gridLayout: { elements: sheet.layout.map(p => ({ elementId: p.i, elementType: 'VISUAL', columnIndex: p.x * 3, columnSpan: p.w * 3, rowIndex: p.y, rowSpan: p.h })) } } }] })),
+    }), layouts: [{ configuration: { gridLayout: { elements: sheet.layout.map(p => ({ elementId: p.i, elementType: objectElementType(sheet.objects?.find(o => o.id === p.i)), columnIndex: p.x * 3, columnSpan: p.w * 3, rowIndex: p.y, rowSpan: p.h })) } } }] })),
   } };
 }
 
@@ -562,7 +591,7 @@ export function validateDraft(value: unknown): asserts value is AuthorDraft {
   const fields = dataFields(calculations, dataset), ids = new Set<string>(), sheetIds = new Set<string>();
   const names = (v: unknown, role: string): v is string[] => Array.isArray(v) && v.every(n => fields.some(f => f.name === n && f.role === role)) && new Set(v).size === v.length;
   for (const sheet of value.sheets) {
-    if (!isObject(sheet) || !onlyKeys(sheet, ['id', 'name', 'controls', 'visuals', 'layout', 'selectedId', 'imported']) || typeof sheet.id !== 'string' || !/^sheet-[1-9][0-9]*$/.test(sheet.id) || sheetIds.has(sheet.id) || typeof sheet.name !== 'string' || !sheet.name.trim() || !Array.isArray(sheet.visuals) || !Array.isArray(sheet.layout)) return fail();
+    if (!isObject(sheet) || !onlyKeys(sheet, ['id', 'name', 'controls', 'visuals', 'objects', 'layout', 'selectedId', 'imported']) || typeof sheet.id !== 'string' || !/^sheet-[1-9][0-9]*$/.test(sheet.id) || sheetIds.has(sheet.id) || typeof sheet.name !== 'string' || !sheet.name.trim() || !Array.isArray(sheet.visuals) || !Array.isArray(sheet.layout)) return fail();
     if (sheet.imported !== undefined && (!value.bundle || !isObject(sheet.imported) || typeof sheet.imported.memberPath !== 'string' || typeof sheet.imported.sheetId !== 'string' || typeof sheet.imported.name !== 'string' || !Array.isArray(sheet.imported.layout))) return fail();
     const origin = isObject(value.bundle) ? value.bundle.original as QsBundle : undefined;
     const source = isObject(sheet.imported) ? origin?.members.find(m => m.path === (sheet.imported as Record<string, unknown>).memberPath)?.resource : undefined;
@@ -608,8 +637,13 @@ export function validateDraft(value: unknown): asserts value is AuthorDraft {
       }
       ids.add(v.id);
     }
-    if (sheet.visuals.length ? !sheet.visuals.some(v => v.id === sheet.selectedId) : sheet.selectedId !== null) return fail();
-    if (!sheet.layout.every(p => isObject(p) && onlyKeys(p, ['i', 'x', 'y', 'w', 'h'])) || !validLayout(sheet.layout as Placement[], sheet.visuals as AuthorVisual[])) return fail();
+    if (sheet.objects !== undefined && !Array.isArray(sheet.objects)) return fail();
+    const objects = (sheet.objects ?? []) as unknown[];
+    for (const object of objects) { if (!sheetObjectValid(object) || ids.has(object.id)) return fail(); ids.add(object.id); }
+    if (isObject(sheet.imported) && sheet.imported.objects !== undefined && (!Array.isArray(sheet.imported.objects) || !sheet.imported.objects.every(sheetObjectValid))) return fail();
+    const elements = [...sheet.visuals, ...objects as SheetObject[]];
+    if (elements.length ? !elements.some(v => v.id === sheet.selectedId) : sheet.selectedId !== null) return fail();
+    if (!sheet.layout.every(p => isObject(p) && onlyKeys(p, ['i', 'x', 'y', 'w', 'h'])) || !validLayout(sheet.layout as Placement[], elements)) return fail();
   }
   if (typeof value.activeSheetId !== 'string' || !sheetIds.has(value.activeSheetId)) fail();
 }

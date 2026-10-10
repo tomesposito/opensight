@@ -223,7 +223,8 @@ const definition: Schema = {
   DataSetIdentifierDeclarations: ['dataSetIdentifierDeclarations', { Identifier: ['identifier'], DataSetArn: ['dataSetArn'] }],
   Sheets: ['sheets', {
     SheetId: ['sheetId'], Name: ['name'], ContentType: ['contentType'], ...members('Title Description'),
-    TextBoxes: ['textBoxes', { ...members('SheetTextBoxId Content'), Interactions: ['interactions', interactions] }],
+    TextBoxes: ['textBoxes', { OpenSightText: ['opensightText'], ...members('SheetTextBoxId Content'), Interactions: ['interactions', interactions] }],
+    Images: ['images', { ...members('SheetImageId ImageContentAltText'), OpenSightOpacity: ['opensightOpacity'], Source: ['source', { OpenSightDataUri: ['opensightDataUri'], CustomContentConfiguration: ['customContentConfiguration', members('ContentUrl')] }], Scaling: ['scaling', members('ScalingType')] }],
     ParameterControls: ['parameterControls', { DateTimePicker: ['dateTimePicker', {
       ...members('ParameterControlId SourceParameterName Title'), DisplayOptions: ['displayOptions', {
         TitleOptions: ['titleOptions', { FontConfiguration: ['fontConfiguration', font] }],
