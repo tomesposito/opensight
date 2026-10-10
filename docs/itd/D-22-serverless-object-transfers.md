@@ -47,7 +47,9 @@ machine but makes overwrite and completion races testable. Option 2 changes
 accepted files without product justification. Option 3 makes object possession
 authority and cannot reauthorize protected results after revocation. Short-lived
 download signatures still have an irrevocable validity window; no such relaxation
-is proposed. Tom reviews the new asynchronous UX and control-envelope limit.
+is proposed. Tom confirmed the asynchronous UX and 1 MiB control-envelope limit
+on 2026-10-10 in [IDD D-28](../idd/D-28-serverless-upload-experience.md).
+This record remains draft for the detailed transfer implementation contract.
 
 #### IMPLICATIONS
 
@@ -129,8 +131,8 @@ mandatory even with conditional writes. Object events are hints only.
 decoding, with a separate 2 MiB entire event/response envelope check; header budget
 16 KiB at the application boundary (stricter upstream limits still apply). A
 larger imported definition must receive `CONTROL_PAYLOAD_TOO_LARGE` (413), not
-truncation; Tom must approve this ceiling or specify a scoped definition-transfer
-extension before release. Existing 8 MiB file, 100,000-row, 256-column and H4
+truncation; D-28 explicitly approves this ceiling without a separate definition
+transfer extension in the initial deployment. Existing 8 MiB file, 100,000-row, 256-column and H4
 cell/decoded-memory caps remain. XLSX compression never bypasses decoded bounds.
 
 Inline results fit 1 MiB including JSON escaping; larger legal results become

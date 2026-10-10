@@ -780,12 +780,13 @@ SR0 implementation decision register (issue #81; proposals, no AWS authorization
 | [D-19](itd/D-19-serverless-egress.md) | Egress and real mail | 🚧 IPv6-first validation selected; resource/cost approval and transport proof pending; confirm source scope before pilot |
 | [D-20](itd/D-20-serverless-ingress.md) | Trusted routing and peer | 🚧 Origin trust, prefix and embed contract review |
 | [D-21](itd/D-21-aurora-readiness.md) | Wake and idle behavior | 🚧 Pre-DB abuse cost/access and remaining technical review; D-26 confirms idle embed UX; preserve HQ-7 |
-| [D-22](itd/D-22-serverless-object-transfers.md) | Upload and result transfers | 🚧 Immutable/version-bound protocol; control ceiling/async UX review |
-| [D-23](itd/D-23-serverless-state-and-fencing.md) | SQL/admission/claims/artifacts | 🚧 H9/H10 transaction and failure-proof review |
+| [D-22](itd/D-22-serverless-object-transfers.md) | Upload and result transfers | 🚧 Detailed transfer implementation contract; D-28 confirms control ceiling/async UX |
+| [D-23](itd/D-23-serverless-state-and-fencing.md) | SQL/admission/claims/artifacts | 🚧 SR2a coordination contract frozen; artifact/integration checkpoints remain |
 | [D-24](itd/D-24-serverless-job-dispatch.md) | Event work and delivery | 🚧 Commit recovery, cancellation, DLQ and H7 authorization review |
 | [D-25](itd/D-25-serverless-release-artifacts.md) | Terraform/artifacts and private releases | 🚧 Tom: tooling/licenses, OIDC protections, secret-state custody and retention/cost; migration/rollback review |
 | [D-26](idd/D-26-idle-embed-reconnect.md) | Initial test deployment's idle embed experience | ✅ Hide after maximum 45s authority display lease; explicit Connect and successful authorization before redisplay |
 | [D-27](itd/D-27-serverless-build-tooling.md) | SR4a tooling and dependency pins | ✅ OpenTofu/AWS provider operator tools, ARM64 Node 24 image, standard AWS SDK and explicit tslib 2.8.1 exception |
+| [D-28](idd/D-28-serverless-upload-experience.md) | Initial serverless upload experience | ✅ Preserve 8 MiB files through direct transfer, asynchronous status, 1 MiB control JSON ceiling |
 
 Related confirmed deployment decision: [ITD D-18 — serverless development
 deployment](itd/D-18-serverless-development-deployment.md) (2026-10-10). Lambda

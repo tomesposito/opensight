@@ -13,6 +13,13 @@ Replace H8 process-lifetime guarantees before Lambda can serve tenant work.
 
 SQL cleanup, durable admission/claims, asynchronous artifacts and invalidation.
 
+The [SR2a build contract](../phase5-sr2a-coordination.md) now freezes the first
+coordination checkpoint. It binds existing H4 budget versions in `sr_limits`
+rather than duplicating per-tenant budget configuration, preserves existing H8
+refresh accounting and named admission errors, and leaves queues/artifacts and
+runtime integration to subsequent contracts. Its exact schema/interfaces govern
+that checkpoint; the broader artifact/invalidation proposal below remains draft.
+
 ## Out of Scope
 
 Changing query semantics, metadata engines, owner-only prep or HA commitments.

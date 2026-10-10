@@ -13,6 +13,7 @@
 | Date       | Change |
 |------------|--------|
 | 2026-10-10 | SR4a SMTP validation specifies a tagged sender/recipient-restricted IAM login, private key derivation outside Terraform, SES sandbox identity verification and a twenty-attempt mail cap. Request, migration and probe remain the three isolated functions; no public ingress is added. |
+| 2026-10-10 | D-28 confirms 8 MiB direct uploads, asynchronous ingestion status and the 1 MiB control JSON ceiling. Freeze SR2a's SQL admission/fencing foundation as a separate implementation checkpoint; all application storage/dispatch gates remain closed. |
 | 2026-10-10 | D-18 confirms Lambda + Aurora Serverless v2 with zero-ACU auto-pause for the first developer/tester deployment. Supersedes the old RDS-free-tier and stateless-API assumptions in D11/D12 and §11; proposes SR0–SR6 readiness/deployment gates, H9/H10 correctness work, and public code/private Terraform and GitHub Actions operations. Design only; no resources or spending authorized. |
 | 2026-10-10 | After SR1, proceed with SR2–SR4 preparation and an IPv6-first isolated AWS validation plan. Split minimal image/probe packaging (SR4a) from full release automation (SR4b). Exact resource/cost approval remains pending; this does not approve draft idle-embed UX or bypass durable storage/job gates. |
 | 2026-10-10 | IDD D-26 confirms hiding idle embed data after a maximum 45-second authority display lease and requiring explicit Connect for the first test deployment. Preserve HQ-7 revocation and existing session rules; WAF/IP allowlist and AWS spending remain separate decisions. |
@@ -1215,7 +1216,8 @@ even though demand-driven horizontal scale and HA have not been requested.
 **Sequence:** SR0–SR6 in [AWS serverless readiness](docs/aws-serverless-plan.md)
 cover detailed contracts, runtime, H9/H10 safety, background work, packaging/CI,
 authorized AWS validation and pilot release. SR0 contracts are drafted and SR1
-runtime composition shipped in issue #82; SR2–SR4 remain to be built. The operator
+runtime composition shipped in issue #82; SR4a packaging and selected isolated
+AWS evidence are now recorded in issue #83. SR2/SR3/SR4b remain to be built. The operator
 approved continued developer preparation alongside an IPv6-first validation
 plan. This does not authorize AWS resources or waive the remaining contracts.
 Each build requires its complete approved contract first, including exact
@@ -1246,6 +1248,20 @@ do not change this specification within the build. Tooling and the explicitly
 approved dependency exception are recorded in
 [D-27](docs/itd/D-27-serverless-build-tooling.md). SR1's maintenance/storage guards
 remain mandatory; this package does not implement SR2/SR3 or a public pilot.
+
+**SR2 product decision and first build checkpoint (frozen 2026-10-10):**
+[IDD D-28](docs/idd/D-28-serverless-upload-experience.md) confirms preserving
+8 MiB files through direct transfer, asynchronous ingestion status, and an
+explicit 1 MiB control JSON ceiling. No separate large-definition transfer path
+is included in the initial deployment. The detailed D-22 protocol must retain
+the existing parser limits and fail closed on ownership, expiry and integrity.
+[SR2a coordination](docs/phase5-sr2a-coordination.md) freezes the first technical
+checkpoint: SQL-authoritative admission, aggregate budgets, attempt accounting,
+monotonic claims, lease/containment separation and fenced publication callbacks.
+Implement it on its own build branch with no new dependencies. It does not wire
+tenant compute, uploads or events into Lambda. Freeze subsequent artifact,
+transfer and application-integration checkpoints separately before building;
+SR1 maintenance/storage/dispatch guards remain until those contracts are complete.
 
 ---
 
