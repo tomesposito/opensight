@@ -190,7 +190,8 @@ test('Search uses the single existing palette with guarded menu actions and rese
   assert.equal(ui.input().props.placeholder, 'Search analysis actions…');
   assert.ok(ui.labels().includes('Insert: Add Visual'));
   assert.ok(ui.labels().includes('File: Download .qs'), 'downloads are searchable before Exports is expanded');
-  for (const label of ['File: Share', 'Edit: Undo', 'Sheets: Duplicate Sheet', 'Objects: Format Object']) assert.ok(!ui.labels().includes(label), label);
+  for (const label of ['File: Share', 'Edit: Undo', 'Objects: Format Object']) assert.ok(!ui.labels().includes(label), label);
+  assert.ok(ui.labels().includes('Sheets: Duplicate Sheet'), 'enabled Sheets actions are searchable');
   await ui.run('Insert: Add Visual');
   await ui.open(); assert.equal(ui.input().props.placeholder, 'Search commands…');
   for (const label of ['Objects: Title', 'Objects: Actions', 'Objects: Legend']) assert.ok(ui.labels().includes(label));
