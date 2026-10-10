@@ -22,6 +22,15 @@ import { ingressConfig } from './runtime-ingress.js';
 export const probeCommands = ['network', 'mail', 'bootstrap', 'database', 'native', 'startup'] as const;
 export type ProbeCommand = typeof probeCommands[number];
 const fail = (code: string): never => { throw new MetadataError(code, 503); };
+export function probeFailure(error: unknown): MetadataError {
+  if (error instanceof MetadataError) return new MetadataError(error.code, 503);
+  // SQLSTATE is safe diagnostic evidence; SQL text, detail and credentials are not.
+  if (error && typeof error === 'object' && 'severity' in error && 'code' in error
+    && ['ERROR', 'FATAL', 'PANIC'].includes(String(error.severity)) && typeof error.code === 'string' && error.code.length === 5 && /^[A-Z0-9]{5}$/.test(error.code)) {
+    return new MetadataError(`PROBE_SQL_${error.code}`, 503);
+  }
+  return new MetadataError('PROBE_FAILED', 503);
+}
 export function probeCommand(raw: unknown, env: NodeJS.ProcessEnv): ProbeCommand {
   if (env.OPENSIGHT_VALIDATION !== 'isolated' || env.OPENSIGHT_MAINTENANCE !== 'frozen' || env.OPENSIGHT_RUNTIME !== 'lambda' || env.OPENSIGHT_MODE !== 'hosted') return fail('PROBE_DISABLED');
   if (!raw || typeof raw !== 'object' || Array.isArray(raw) || Object.keys(raw).sort().join() !== 'command,version') return fail('PROBE_COMMAND_INVALID');
@@ -224,5 +233,5 @@ export async function handler(raw: unknown, context: InvocationContext) {
       if (!missing) fail('PROBE_TEMPORARY_FILES_REMAIN');
     }
     return { version: 1, command, passed: true, durationMs: Date.now() - started };
-  } catch (error) { throw new MetadataError(error instanceof MetadataError ? error.code : 'PROBE_FAILED', 503); }
+  } catch (error) { throw probeFailure(error); }
 }
