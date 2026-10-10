@@ -282,6 +282,7 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
     labels: visibility(labels, key('visibility', 'Visibility'), kind === 'pie' ? 'VISIBLE' : 'HIDDEN'),
     tooltip: visibility(tooltip, key('tooltipVisibility', 'TooltipVisibility')),
     legend: visibility(legend, key('visibility', 'Visibility')),
+    ...((body as Record<string, unknown>).referenceLines !== undefined && Array.isArray((body as Record<string, unknown>).referenceLines) ? { referenceLines: ((body as Record<string, unknown>).referenceLines as { value: number; label: string; color: string }[]).filter(l => typeof l.value === 'number' && Number.isFinite(l.value)).map(l => ({ value: l.value, label: String(l.label ?? ''), color: String(l.color ?? '#c0392b') })) } : {}),
   };
 }
 

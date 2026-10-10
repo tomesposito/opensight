@@ -159,3 +159,20 @@ export function DataLabelsOptions({ visual, dispatch }: SectionProps) {
     }} /></label>
   </details>;
 }
+
+export function ReferenceLinesEditor({ visual, dispatch }: SectionProps) {
+  const lines = visual.referenceLines ?? [];
+  return <details className="property-section"><summary data-author-control="reference-lines">Reference lines</summary>
+    <p className="field-hint">Dashed lines at fixed values on the value axis.</p>
+    {lines.map(line => <fieldset key={line.id} className="property-group" aria-label={`Reference line ${line.id}`}>
+      <label>Value<input type="number" step="any" value={line.value} onChange={e => {
+        const value = Number(e.target.value);
+        if (Number.isFinite(value)) dispatch({ type: 'reference-line-update', id: line.id, patch: { value } });
+      }} /></label>
+      <label>Label<input value={line.label} maxLength={128} placeholder={String(line.value)} onChange={e => dispatch({ type: 'reference-line-update', id: line.id, patch: { label: e.target.value } })} /></label>
+      <label>Color<input type="color" value={line.color} onChange={e => dispatch({ type: 'reference-line-update', id: line.id, patch: { color: e.target.value } })} /></label>
+      <button type="button" onClick={() => dispatch({ type: 'reference-line-remove', id: line.id })}>Remove line</button>
+    </fieldset>)}
+    <button type="button" onClick={() => dispatch({ type: 'reference-line-add' })}>Add reference line</button>
+  </details>;
+}

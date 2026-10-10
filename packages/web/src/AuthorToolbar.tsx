@@ -159,7 +159,7 @@ export function AuthorToolbar({ canUndo = false, canRedo = false, onUndo, onRedo
         <AuthorMenuItem label="Conditional Formatting" reason={needsVisual} run={() => focus('[data-author-control="conditional-formatting"]', 'Visual')} />
         <AuthorMenuItem label="Tooltips" reason={needsVisual ?? 'Tooltip customization is not supported yet. Charts use default tooltips.'} />
         <AuthorMenuItem label="Highlights" reason={needsVisual ?? 'Highlight settings are not supported yet.'} />
-        <AuthorMenuItem label="Reference Lines" reason={needsVisual ?? 'Reference line authoring is not supported yet.'} />
+        <AuthorMenuItem label="Reference Lines" reason={needsVisual} run={() => focus('[data-author-control="reference-lines"]', 'Visual')} />
         <AuthorMenuItem label="Actions" reason={needsVisual} run={() => focus('[data-author-control="actions"]', 'Interaction')} />
         <hr />
         <AuthorMenuItem label="Placement" run={() => focus('.object-placement input')} reason={selectedObject ? undefined : needsVisual ?? 'Numeric placement settings are not supported yet. Drag or resize the visual on the canvas.'} />

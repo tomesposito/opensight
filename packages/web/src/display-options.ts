@@ -58,4 +58,24 @@ export function applyDisplayOptions(model: VisualModel, option: EChartsOption): 
       return ['funnel', 'treemap', 'filledMap'].includes(model.kind) ? `${params.name ?? ''}: ${formatted}` : `${formatted}${model.kind === 'bar100' ? '%' : ''}`;
     } };
   }
+  // Reference lines as ECharts markLines on cartesian charts.
+  if (model.referenceLines?.length && ['bar', 'bar100', 'line', 'area', 'combo', 'scatter'].includes(model.kind) && Array.isArray(option.series)) {
+    const markLine = {
+      silent: true,
+      symbol: 'none',
+      label: { formatter: '{b}', color: '#202938', fontSize: 11 },
+      lineStyle: { type: 'dashed' as const },
+      data: model.referenceLines.map(line => ({
+        name: line.label || String(line.value),
+        yAxis: line.value,
+        label: { color: line.color },
+        lineStyle: { color: line.color },
+      })),
+    };
+    for (const series of option.series) {
+      if (series.type === 'bar' || series.type === 'line' || series.type === 'scatter') {
+        (series as Record<string, unknown>).markLine = markLine;
+      }
+    }
+  }
 }

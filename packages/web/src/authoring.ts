@@ -81,12 +81,21 @@ export interface BundleOrigin {
   original: QsBundle; primaryPath: string; title: string;
   report: ImportResult[]; calculations: CalculatedField[]; emptySheetId?: string;
 }
+export interface ReferenceLine { id: string; value: number; label: string; color: string }
+export function referenceLineValid(value: unknown): value is ReferenceLine {
+  return !!value && typeof value === 'object' && !Array.isArray(value) &&
+    typeof (value as Record<string, unknown>).id === 'string' && /^refline-[1-9][0-9]*$/.test((value as Record<string, unknown>).id as string) &&
+    typeof (value as Record<string, unknown>).value === 'number' && Number.isFinite((value as Record<string, unknown>).value) &&
+    typeof (value as Record<string, unknown>).label === 'string' && ((value as Record<string, unknown>).label as string).length <= 128 &&
+    typeof (value as Record<string, unknown>).color === 'string' && /^#[0-9a-f]{6}$/i.test((value as Record<string, unknown>).color as string);
+}
 export interface AuthorVisual {
   palette?: string[];
   formatting?: VisualFormatting;
   gauge?: { min: number; max: number };
   bins?: number;
   insightConfiguration?: Record<string, unknown>;
+  referenceLines?: ReferenceLine[];
   id: string; kind: VisualKind; title: string;
   subtitle?: string; subtitleVisible?: boolean;
   dimension: string | null; measures: string[]; rows: string[]; columns: string[];
@@ -207,6 +216,9 @@ export type AuthorAction =
   | { type: 'legend-position'; position: LegendPosition }
   | { type: 'donut'; donut: boolean }
   | { type: 'display'; property: 'titleVisible' | 'legend' | 'labels' | 'horizontal' | 'stacked' | 'totals' | 'subtotals'; value: boolean }
+  | { type: 'reference-line-add' }
+  | { type: 'reference-line-update'; id: string; patch: Partial<Omit<ReferenceLine, 'id'>> }
+  | { type: 'reference-line-remove'; id: string }
   | { type: 'filter-parameter'; columnName: string; parameterName: string; operator?: CategoryFilter['operator'] }
   | { type: 'filter'; columnName: string; values: string[] | null }
   | { type: 'assign' | 'unassign'; field: string; well?: Well };
@@ -471,6 +483,25 @@ export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorD
       case 'legend-position': return legendPositionValid(action.position) ? { ...visual, formatting: { ...visual.formatting, legendPosition: action.position } } : visual;
       case 'donut': return { ...visual, donut: visual.kind === 'pie' && action.donut };
       case 'display': return { ...visual, [action.property]: action.value };
+      case 'reference-line-add': {
+        const lines = visual.referenceLines ?? [];
+        let n = 1; while (lines.some(l => l.id === `refline-${n}`)) n++;
+        const line: ReferenceLine = { id: `refline-${n}`, value: 0, label: '', color: '#c0392b' };
+        return { ...visual, referenceLines: [...lines, line] };
+      }
+      case 'reference-line-update': {
+        const lines = visual.referenceLines ?? [];
+        const line = lines.find(l => l.id === action.id);
+        if (!line) return visual;
+        const updated = { ...line, ...action.patch };
+        if (!referenceLineValid(updated)) return visual;
+        return { ...visual, referenceLines: lines.map(l => l === line ? updated : l) };
+      }
+      case 'reference-line-remove': {
+        const lines = (visual.referenceLines ?? []).filter(l => l.id !== action.id);
+        return lines.length === (visual.referenceLines ?? []).length ? visual
+          : lines.length ? { ...visual, referenceLines: lines } : (({ referenceLines: _old, ...rest }) => rest)(visual);
+      }
       case 'filter-parameter': {
         const p = sheetParameters(draft).find(p => p.name === action.parameterName), field = dataFields(draft.calculatedFields, draft.dataset).find(f => f.name === action.columnName);
         const type = field?.type === 'STRING' ? 'string' : field?.type === 'DATETIME' ? 'datetime' : 'number';
@@ -557,7 +588,7 @@ export function serializeVisual(visual: AuthorVisual, includeInteractions = true
   const category = visualDimensions(visual).map(name => dimensionField(name, visual.dateGrain, calculations, dataset));
   const values: BundleMeasureField[] = visual.measures.map(name => ({ numericalMeasureField: { ...columnField(name), aggregationFunction: { simpleNumericalAggregation: 'SUM' } } }));
   const visibility = (show: boolean) => ({ visibility: show ? 'VISIBLE' : 'HIDDEN' });
-  const body = { ...(visual.subtitle !== undefined ? { subtitle: { ...visibility(visual.subtitleVisible !== false), formatText: { plainText: visual.subtitle } } } : {}), ...(visual.formatting ? { opensightFormatting: visual.formatting } : {}), ...(visual.palette ? { opensightPalette: visual.palette } : {}), ...(includeInteractions ? serializeInteractions(visual) : {}), visualId: visual.id, ...(visual.title.trim() || !visual.titleVisible ? { title: { ...visibility(visual.titleVisible), ...(visual.title.trim() ? { formatText: { plainText: visual.title.trim() } } : {}) } } : {}) } satisfies BundleVisualBody;
+  const body = { ...(visual.subtitle !== undefined ? { subtitle: { ...visibility(visual.subtitleVisible !== false), formatText: { plainText: visual.subtitle } } } : {}), ...(visual.formatting ? { opensightFormatting: visual.formatting } : {}), ...(visual.palette ? { opensightPalette: visual.palette } : {}), ...(visual.referenceLines?.length ? { opensightReferenceLines: visual.referenceLines.map(l => ({ value: l.value, label: l.label, color: l.color })) } : {}), ...(includeInteractions ? serializeInteractions(visual) : {}), visualId: visual.id, ...(visual.title.trim() || !visual.titleVisible ? { title: { ...visibility(visual.titleVisible), ...(visual.title.trim() ? { formatText: { plainText: visual.title.trim() } } : {}) } } : {}) } satisfies BundleVisualBody;
   const display = { legend: { ...visibility(visual.legend), ...(visual.formatting?.legendPosition ? { position: visual.formatting.legendPosition } : {}) }, dataLabels: visibility(visual.labels) };
   const totalVisibility = (show: boolean) => ({ totalsVisibility: show ? 'VISIBLE' : 'HIDDEN' });
   const tableTotals = { totalOptions: totalVisibility(visual.totals), opensightSubtotalOptions: totalVisibility(visual.subtotals) };
@@ -672,7 +703,8 @@ export function validateDraft(value: unknown): asserts value is AuthorDraft {
       }
       const fieldNames = (v: unknown, role: string): v is string[] => imported ? Array.isArray(v) && v.every(n => typeof n === 'string' && !!n && !n.includes('\0')) && new Set(v).size === v.length : names(v, role);
 
-      if (!isObject(v) || !onlyKeys(v, ['id', 'kind', 'title', 'subtitle', 'subtitleVisible', 'dimension', 'measures', 'smallMultiples', 'donut', 'imported', 'filterActions', 'urlActions', 'navigationActions', 'hierarchy', 'dateGrain', 'palette', 'formatting', 'gauge', 'bins', 'insightConfiguration', ...Object.keys(defaults())]) || typeof v.id !== 'string' || !/^visual-[1-9][0-9]*$/.test(v.id) || ids.has(v.id) || !VISUAL_TYPES.some(t => t.kind === v.kind) || typeof v.title !== 'string' || !['donut', 'titleVisible', 'legend', 'labels', 'horizontal', 'stacked', 'totals', 'subtotals'].every(k => typeof v[k] === 'boolean') || !fieldNames(v.measures, 'measure') || !fieldNames(v.rows, 'dimension') || !fieldNames(v.columns, 'dimension') || (v.dimension !== null && !fieldNames([v.dimension], 'dimension')) || !Array.isArray(v.filters)) return fail();
+      if (!isObject(v) || !onlyKeys(v, ['id', 'kind', 'title', 'subtitle', 'subtitleVisible', 'dimension', 'measures', 'smallMultiples', 'donut', 'imported', 'filterActions', 'urlActions', 'navigationActions', 'hierarchy', 'dateGrain', 'palette', 'formatting', 'gauge', 'bins', 'insightConfiguration', 'referenceLines', ...Object.keys(defaults())]) || typeof v.id !== 'string' || !/^visual-[1-9][0-9]*$/.test(v.id) || ids.has(v.id) || !VISUAL_TYPES.some(t => t.kind === v.kind) || typeof v.title !== 'string' || !['donut', 'titleVisible', 'legend', 'labels', 'horizontal', 'stacked', 'totals', 'subtotals'].every(k => typeof v[k] === 'boolean') || !fieldNames(v.measures, 'measure') || !fieldNames(v.rows, 'dimension') || !fieldNames(v.columns, 'dimension') || (v.dimension !== null && !fieldNames([v.dimension], 'dimension')) || !Array.isArray(v.filters)) return fail();
+      if (v.referenceLines !== undefined && (!Array.isArray(v.referenceLines) || !v.referenceLines.every(referenceLineValid))) return fail();
       if (v.smallMultiples !== undefined && (!names(v.smallMultiples, 'dimension') || v.smallMultiples.length > 1 || v.smallMultiples.some(name => fields.find(f => f.name === name)?.type === 'BOOLEAN'))) return fail();
       if ((v.kind === 'radar' || v.kind === 'sankey') && !v.imported && (v.rows.length > 1 || v.columns.length > 1)) return fail();
       if (singleMeasure(v.kind as VisualKind) && v.measures.length > 1 || noDimensions(v.kind as VisualKind) && v.dimension !== null || v.kind !== 'pie' && v.donut || !splitDimensions(v.kind as VisualKind) && v.columns.length || (grouped(v.kind as VisualKind) ? v.dimension !== (v.rows[0] ?? null) : v.rows.length) || v.rows.some(n => (v.columns as string[]).includes(n))) return fail();
