@@ -7,6 +7,7 @@
   "scripts": {
     "build": "npm run build --workspace=@opensight/bundle-parser && npm run build --workspace=@opensight/query-engine && npm run build --workspace=@opensight/o-interpreter && npm run build:compiler --workspace=@opensight/web && tsc && npm run build:embed --workspace=@opensight/web",
     "start": "node dist/cli.js",
+    "start:runtime": "node dist/runtime-cli.js",
     "test": "npm run build && tsc -p test/tsconfig.json && node --test --test-isolation=none test/*.test.mjs",
     "metadata:migrate": "node dist/metadata-migrate-cli.js",
     "sources:migrate": "node dist/source-migrate-cli.js",
@@ -18,6 +19,22 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./runtime": {
+      "types": "./dist/runtime.d.ts",
+      "import": "./dist/runtime.js"
+    },
+    "./lambda": {
+      "types": "./dist/lambda.d.ts",
+      "import": "./dist/lambda.js"
+    },
+    "./scheduler-lambda": {
+      "types": "./dist/scheduler-lambda.d.ts",
+      "import": "./dist/scheduler-lambda.js"
+    },
+    "./migration-lambda": {
+      "types": "./dist/migration-lambda.d.ts",
+      "import": "./dist/migration-lambda.js"
     },
     "./metadata": {
       "types": "./dist/metadata-entry.d.ts",
