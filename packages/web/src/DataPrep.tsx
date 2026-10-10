@@ -23,8 +23,11 @@ function initial(hosted: boolean): BundleDataSet {
   } catch { /* Invalid local drafts never execute. Start an empty draft. */ }
   return fresh(hosted);
 }
-export function DataPrep({ client, initialSource, onSources, onAuthor, onBuild }: { client?: PrepClient; initialSource?: string; onSources?: () => void; onAuthor?: () => void; onBuild?: (dataset: AuthorDataset) => void }) {
+export function DataPrep({ client, initialSource, initialDatasetId, onSources, onAuthor, onBuild, onDatasets, onSaved }: { client?: PrepClient; initialSource?: PrepInput; initialDatasetId?: string; onDatasets?: () => void; onSaved?: (dataset: BundleDataSet) => void; onSources?: () => void; onAuthor?: () => void; onBuild?: (dataset: AuthorDataset) => void }) {
   const [resource, setResource] = useState<BundleDataSet>(() => { const r = initial(!!client); if (initialSource && client) r.opensightPrep!.input = initialSource; return r; });
+  const openedDataset = useRef(false);
+  const [opening, setOpening] = useState(!!initialDatasetId);
+  const [openingError, setOpeningError] = useState('');
   const [original, setOriginal] = useState<QsBundle>();
   const [imported, setImported] = useState<QsBundle>();
   const [sources, setSources] = useState<PrepSourceSummary[]>(client ? [] : [demoSource, demoLookup]);
@@ -73,22 +76,27 @@ export function DataPrep({ client, initialSource, onSources, onAuthor, onBuild }
     let cancelled = false;
     Promise.all([client.listPrepSources(), client.listPrepDatasets()]).then(([sources, stored]) => {
       if (cancelled) return; setSources(sources); setSaved(stored.datasets);
+      if (initialDatasetId && !openedDataset.current) {
+        const existing = stored.datasets.find(dataset => dataset.dataSetId === initialDatasetId);
+        if (!existing?.opensightPrep) { setOpeningError('PREP_NOT_FOUND: This dataset is unavailable or was deleted.'); return; }
+        openedDataset.current = true; setResource(structuredClone(existing)); setOpening(false); setOpeningError(''); return;
+      }
       setResource(r => r.opensightPrep!.input ? r : { ...r, opensightPrep: { ...r.opensightPrep!, input: sources[0] ? prepSourceRef(sources[0]) as PrepInput : '' } });
-    }).catch(e => { if (!cancelled) setError(prepMessage(e)); });
+    }).catch(e => { if (!cancelled) { setError(prepMessage(e)); if (initialDatasetId && !openedDataset.current) setOpeningError(prepMessage(e)); } });
     return () => { cancelled = true; };
-  }, [client, reload]);
+  }, [client, reload, initialDatasetId]);
   useEffect(() => {
     if (client || original || typeof localStorage === 'undefined') return;
     try { validatePrepPipeline(resource.opensightPrep); localStorage.setItem('opensight-prep-draft', JSON.stringify(resource)); } catch { /* Invalid edits are shown in the inspector and not persisted. */ }
   }, [client, resource, original]);
   useEffect(() => {
-    if (!client || problem) return;
+    if (!client || problem || opening) return;
     let cancelled = false;
     const timer = setTimeout(() => {
       client.previewPrep(resource.dataSetId, pipeline, selected).then(result => { if (!cancelled) setPreview({ key: previewKey, result }); }).catch(e => { if (!cancelled) setPreview({ key: previewKey, error: prepMessage(e) }); });
     }, 300);
     return () => { cancelled = true; clearTimeout(timer); };
-  }, [client, pipeline, selected, previewKey, problem, resource.dataSetId]);
+  }, [client, pipeline, selected, previewKey, problem, resource.dataSetId, opening]);
   const current = preview?.key === previewKey ? preview : undefined;
   const change = (next: PrepPipeline) => { setResource(r => ({ ...r, opensightPrep: next })); setMessage(''); setError(''); };
   const inputColumns = (): PrepColumn[] => {
@@ -150,7 +158,7 @@ export function DataPrep({ client, initialSource, onSources, onAuthor, onBuild }
   const load = (r: BundleDataSet, bundle?: QsBundle) => { setResource(structuredClone(r)); setOriginal(bundle); setStaged(null); setStaging(false); setPending(null); setTab('configure'); setSelected(null); setEditing(undefined); setMessage(''); setError(''); };
   const save = async () => {
     if (!client || busy || problem) return; setBusy(true); setError('');
-    try { const result = await client.savePrep(resource.dataSetId, resource.name, pipeline); setMessage(result.persistence === 'file' ? 'Dataset pipeline saved.' : 'Dataset pipeline saved for this API session; export a bundle to keep a portable copy.'); setReload(n => n + 1); }
+    try { const result = await client.savePrep(resource.dataSetId, resource.name, pipeline); setMessage(result.persistence === 'file' ? 'Dataset pipeline saved.' : 'Dataset pipeline saved for this API session; export a bundle to keep a portable copy.'); setReload(n => n + 1); onSaved?.(result.resource); }
     catch (e) { setError(prepMessage(e)); } finally { setBusy(false); }
   };
   const buildChart = async () => {
@@ -186,8 +194,9 @@ export function DataPrep({ client, initialSource, onSources, onAuthor, onBuild }
       else setMessage('Choose a prepared dataset from the imported bundle.');
     } catch (e) { setError(prepMessage(e)); }
   };
+  if (initialDatasetId && opening) return <section className="data-page"><button onClick={onDatasets}>‹ Datasets</button>{!client ? <p role="alert">Needs local or hosted API · Saved datasets are unavailable in the static demo.</p> : openingError ? <><p role="alert">{openingError}</p><button onClick={() => setReload(n => n + 1)}>Retry</button></> : <p role="status">Loading dataset…</p>}</section>;
   return <section className="data-prep" aria-labelledby="prep-title">
-    <header className="prep-heading"><div><p className="eyebrow">DATA PREPARATION</p><h1 id="prep-title">Transformation pipeline</h1><p>Connect data, build branching paths, and preview each result.</p></div><div className="prep-actions"><button onClick={onSources}>Data sources</button>{onAuthor && <button onClick={onAuthor}>Back to analysis</button>}</div></header>
+    <header className="prep-heading"><div><p className="eyebrow">DATA PREPARATION</p><h1 id="prep-title">Transformation pipeline</h1><p>Connect data, build branching paths, and preview each result.</p></div><div className="prep-actions">{onDatasets && <button onClick={onDatasets}>‹ Datasets</button>}<button onClick={onSources}>Data sources</button>{onAuthor && <button onClick={onAuthor}>Back to analysis</button>}</div></header>
     <div className="prep-document-bar"><label>Dataset name<input value={resource.name} onChange={e => setResource(r => ({ ...r, name: e.target.value }))} /></label>{client && <label>Saved datasets<select value={saved.some(r => r.dataSetId === resource.dataSetId) ? resource.dataSetId : ''} onChange={e => { const r = saved.find(r => r.dataSetId === e.target.value); if (r) load(r); }}><option value="">Unsaved dataset</option>{saved.map(r => <option key={r.dataSetId} value={r.dataSetId}>{r.name}</option>)}</select></label>}<div className="prep-actions"><button onClick={() => load(fresh(!!client))}>New</button><button onClick={() => file.current?.click()}>Import bundle</button><button onClick={() => void download()}>Export bundle</button><button disabled={!client || busy || !!problem} onClick={() => void save()}>Save pipeline</button>{onBuild && <button disabled={!storedResource || dirty || busy || !!problem} onClick={() => void buildChart()}>Build a chart</button>}{saved.some(r => r.dataSetId === resource.dataSetId) && <button disabled={busy} onClick={() => void deleteSaved()}>Delete saved pipeline</button>}</div><input hidden ref={file} type="file" accept=".qs,.json" onChange={e => { void importFile(e.target.files?.[0]); e.target.value = ''; }} /></div>
     {imported && imported.members.filter(m => m.resource.resourceType === 'dataset' && m.resource.opensightPrep).length > 1 && <label>Imported dataset<select value={resource.dataSetId} onChange={e => { const r = imported.members.find(m => m.resource.resourceType === 'dataset' && m.resource.dataSetId === e.target.value)?.resource; if (r?.resourceType === 'dataset') load(r, imported); }}><option value="">Choose dataset</option>{imported.members.flatMap(m => m.resource.resourceType === 'dataset' && m.resource.opensightPrep ? [<option key={m.path} value={m.resource.dataSetId}>{m.resource.name}</option>] : [])}</select></label>}
     {!client && <p className="prep-notice">Static demo · Configure and export a pipeline using sample schema. Live rows and server saves need a local or hosted API. No source data runs in this demo.</p>}

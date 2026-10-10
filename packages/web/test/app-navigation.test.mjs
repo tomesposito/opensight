@@ -229,9 +229,9 @@ test('unknown URLs have recovery links and product navigation works through brow
   assert.match(ui.text(), /Page not found/);
   await ui.link('Home'); await ui.link('Analyses'); await ui.link('Data'); await ui.link('Security & namespaces');
   assert.match(ui.text(), /Security & namespaces/);
-  await ui.back(); assert.equal(ui.location.hash, '#/data/preparation');
+  await ui.back(); assert.equal(ui.location.hash, '#/data');
   await ui.back(); assert.equal(ui.location.hash, '#/analyses');
-  await ui.forward(); assert.equal(ui.location.hash, '#/data/preparation');
+  await ui.forward(); assert.equal(ui.location.hash, '#/data');
 });
 
 test('Issue #35: the product header names OpenSight and the current page after #31', () => {

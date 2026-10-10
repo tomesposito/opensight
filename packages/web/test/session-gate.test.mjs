@@ -9,7 +9,7 @@ import { Application } from '../build/test/Application.js';
 import { AppNavigation } from '../build/test/AppNavigation.js';
 import { Author } from '../build/test/Author.js';
 import { DataPrep } from '../build/test/DataPrep.js';
-import { DataSources } from '../build/test/DataSources.js';
+import { DataLanding } from '../build/test/DataLanding.js';
 import { Dashboard } from '../build/test/Dashboard.js';
 import { AccessProvider, demoAccess, useAccess } from '../build/test/access.js';
 import { ApiError, createApiClient } from '../build/test/api-client.js';
@@ -145,7 +145,8 @@ test('fixture application never supplies API clients, even when API/admin modes 
   const choose = mode => act(async () => ui.renderer.root.findByType(AppNavigation).props.navigate({ page: mode }));
   await choose('security');
   assert.equal(ui.renderer.root.findByProps({ 'aria-disabled': 'true' }).props.children, 'API definition preview · Needs hosted API');
-  for (const [mode, Component] of [['author', Author], ['data-prep', DataPrep], ['data-sources', DataSources]]) {
+  // data-sources renders the Data landing page's Data sources tab (issue #70); it must not get an API client either.
+  for (const [mode, Component] of [['author', Author], ['data-prep', DataPrep], ['data-sources', DataLanding]]) {
     await choose(mode);
     assert.equal(ui.renderer.root.findByType(Component).props.client, undefined);
   }

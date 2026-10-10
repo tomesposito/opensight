@@ -109,6 +109,7 @@ export function createDraftStore(storage: DraftStorage, access: Access) {
     return saved.id;
   };
   return { list, restore, save, autosave,
+    peek(id: string) { return checked(entry(read(), id)); },
     copy(draft: AuthorDraft, name: string) {
       if (!name.trim()) throw new Error('Enter an analysis name.');
       if (name.trim() === draft.title.trim()) throw new Error('Choose a different name for the separate copy.');
