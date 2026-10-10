@@ -1,11 +1,28 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { createServer } from 'node:net';
+import { connect } from 'node:tls';
 import { InvocationScope } from '../dist/runtime-scope.js';
 import { InvocationAws, awsRegion, secretArn, secretObject, databaseUrl, awsEnvironment } from '../dist/runtime-aws.js';
-import { probeCommand, probeRoleNames, probeFailure } from '../dist/platform-probe.js';
+import { probeCommand, probeRoleNames, probeFailure, probeTlsSocket } from '../dist/platform-probe.js';
 const arn = 'arn:aws:secretsmanager:us-east-1:000000000000:secret:synthetic-abcdef';
 const base = { AWS_ACCESS_KEY_ID: 'synthetic', AWS_SECRET_ACCESS_KEY: 'synthetic', AWS_SESSION_TOKEN: 'synthetic', AWS_REGION: 'us-east-1', OPENSIGHT_VALIDATION: 'isolated', OPENSIGHT_MAINTENANCE: 'frozen', OPENSIGHT_RUNTIME: 'lambda', OPENSIGHT_MODE: 'hosted', OPENSIGHT_DEPLOYMENT: 'synthetic' };
 const scope = () => new InvocationScope(Date.now() + 12000);
+
+test('SR4a a blackholed TLS handshake settles cancelled work and does not quarantine the runtime', async t => {
+  const sockets = new Set();
+  const server = createServer(socket => { sockets.add(socket); socket.on('close', () => sockets.delete(socket)); socket.resume(); });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(async () => { for (const socket of sockets) socket.destroy(); await new Promise(resolve => server.close(resolve)); });
+  let socket;
+  await assert.rejects(scope().run(invocation => {
+    socket = connect({ host: '127.0.0.1', port: server.address().port, rejectUnauthorized: true });
+    return probeTlsSocket(invocation, socket, 50);
+  }), { code: 'PROBE_TLS_TIMEOUT' });
+  assert.equal(socket.destroyed, true);
+  assert.equal(socket.closed, true);
+  await scope().run(async () => {});
+});
 
 test('SR4a SQL diagnostics retain only a validated SQLSTATE, never statement or credential detail', () => {
   const failure = probeFailure({ severity: 'ERROR', code: '42501', message: 'private statement', detail: 'private password' });

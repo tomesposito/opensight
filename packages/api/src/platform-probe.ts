@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { Resolver } from 'node:dns/promises';
-import { connect } from 'node:tls';
+import { connect, type TLSSocket } from 'node:tls';
 import { access, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
@@ -44,12 +44,18 @@ async function tlsCheck(scope: InvocationScope, host: string): Promise<void> {
   const addresses = await scope.stage(() => resolver.resolve6(host), 2000, () => resolver.cancel(), 'PROBE_DNS_FAILED');
   if (!addresses.length) fail('PROBE_IPV6_REQUIRED');
   const socket = connect({ host: addresses[0]!, port: 443, servername: host, rejectUnauthorized: true, minVersion: 'TLSv1.2' });
+  await probeTlsSocket(scope, socket);
+}
+export async function probeTlsSocket(scope: InvocationScope, socket: TLSSocket, timeoutMs = 3000): Promise<void> {
   const closed = new Promise<void>(resolve => socket.once('close', () => resolve()));
   scope.own({ force: () => socket.destroy(), close: async () => { socket.destroy(); await closed; } });
   await scope.stage(() => new Promise<void>((resolve, reject) => {
     socket.once('error', () => reject(new MetadataError('PROBE_TLS_FAILED', 503)));
+    // destroy() during a blackholed connect can emit only close, not error.
+    // Settle the tracked work as well as its socket so cleanup can complete.
+    socket.once('close', () => reject(new MetadataError('PROBE_TLS_FAILED', 503)));
     socket.once('secureConnect', () => socket.authorized && socket.remoteFamily === 'IPv6' ? resolve() : reject(new MetadataError('PROBE_IPV6_REQUIRED', 503)));
-  }), 3000, () => socket.destroy(), 'PROBE_TLS_TIMEOUT');
+  }), timeoutMs, () => socket.destroy(), 'PROBE_TLS_TIMEOUT');
   socket.destroy(); await closed;
 }
 function destinations(env: NodeJS.ProcessEnv, aws: InvocationAws) {
