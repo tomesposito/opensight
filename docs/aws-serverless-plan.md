@@ -267,6 +267,7 @@ by this work; its approval requirement remains.
 | Uploads and bounded results | [D-22](itd/D-22-serverless-object-transfers.md) | Tom: asynchronous UX/control ceiling; review immutable version and authorization protocol |
 | SQL/admission/artifacts | [D-23](itd/D-23-serverless-state-and-fencing.md) | Review transaction schema, hard-deadline containment and H9/H10 failure proof |
 | Event work and delivery | [D-24](itd/D-24-serverless-job-dispatch.md) | Review prearmed recovery proof, retention and H7 delivery ambiguity |
+| Terraform/build artifacts and release | [D-25](itd/D-25-serverless-release-artifacts.md) | Tom: tooling/licenses, private workflow protections, secret-state custody and retention/cost; review migration/rollback proof |
 
 Each implementation slice requires a frozen, buildable contract in
 `SOLUTION_DESIGN.md` before its build branch. The unresolved choices below block
