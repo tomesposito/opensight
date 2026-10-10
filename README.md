@@ -8,7 +8,7 @@ bidirectional asset compatibility — connect data, prepare datasets, build
 analyses and dashboards, and ask questions in natural language. Self-hosted;
 no AWS required.
 
-![OpenSight tour: Home, O answer, Analyses, Author, command palette, and data tools](docs/images/opensight-tour.gif)
+![OpenSight tour: Home, O answer, Author, Edit menu, Analysis Settings, command palette, and data tools](docs/images/opensight-tour.gif)
 
 *Above: the offline demo — a dashboard, O answering "revenue by region" and
 adding the chart to an analysis, saved drafts, data preparation, connectors,
@@ -122,6 +122,18 @@ sharing integration. See [File menu semantics](docs/issue-65-file-menu.md) and
 [other menu behavior and limitations](docs/issue-60-menu-bar-parity.md).
 
 ![File menu in the local static demo](docs/images/file-menu.png)
+
+Edit supports **Undo/Redo** for field assignments, visual add/remove, properties
+and other authoring changes, with 50 commands per editor session. Use
+**Cmd/Ctrl+Z**, **Cmd/Ctrl+Shift+Z**, or **Ctrl+Y**. **Analysis Settings** edits the
+name, description and analysis theme as one undoable change. Settings persist
+on this device and round-trip in definition exports. Locale/date defaults and
+hosted sharing remain individually unavailable with explanations. See
+[Edit menu semantics](docs/issue-66-edit-menu.md).
+
+![Edit menu with working Undo and Analysis Settings](docs/images/edit-menu.png)
+
+![Analysis Settings in the local static demo](docs/images/analysis-settings.png)
 
 ![Authoring canvas with assigned fields and the Ask a question trigger in the toolbar](docs/images/author.png)
 

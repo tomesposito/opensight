@@ -53,3 +53,14 @@ to keep the modal stable as focus changes. The former
 is not supported consistently by the current rendering paths; UTC date grouping
 is unchanged. Sharing requires a hosted analysis and API integration. Neither
 limitation disables the feasible local settings surface.
+
+## Browser verification and media
+
+The rebuilt static demo passed an offline Chromium tour with **23 recorded
+checks, zero page errors and zero external HTTP requests**. The tour compares
+actual saved drafts through field, visual and property history chains; verifies
+settings application, cancellation, export and reload; and checks keyboard,
+palette and disabled explanations across four viewport widths in both themes.
+See [visual verification and gap notes](issue-66-gap-notes.md) for the reference
+comparison, capture workflow and refreshed README media. Raw artifacts remain
+in ignored `.opensight/issue-66/browser/`.
