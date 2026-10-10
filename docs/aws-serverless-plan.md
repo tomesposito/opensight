@@ -252,6 +252,17 @@ deletion requires a separate explicit operation and verified retention behavior.
 
 ## 8. Sequenced work and acceptance gates
 
+### SR0 contract review — issue #81
+
+Detailed SR0 contracts are draft ITDs. Draft does not mean implemented or
+approved: Tom retains cost and product decisions. The register distinguishes a
+concrete proposal from a frozen build gate. `SOLUTION_DESIGN.md` is unchanged
+by this work; its approval requirement remains.
+
+| Contract | Record | Decision gate |
+| --- | --- | --- |
+| VPC egress and real mail | [D-19](itd/D-19-serverless-egress.md) | Tom: route profile, source scope, endpoint AZ count and fixed cost |
+
 Each implementation slice requires a frozen, buildable contract in
 `SOLUTION_DESIGN.md` before its build branch. The unresolved choices below block
 their dependent slices, not unrelated local design/implementation work.
