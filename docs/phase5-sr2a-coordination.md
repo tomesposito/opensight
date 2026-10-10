@@ -109,8 +109,12 @@ durable queue admission and expiry rather than process-local waiting closures.
 Compute time comes from SQL (`clock_timestamp` in PostgreSQL, `julianday('now')`
 in SQLite), not a caller clock. Execution deadline is SQL now plus the smaller of
 the tenant execution cap and platform remaining time minus the reserved final
-3 seconds. Refuse nonpositive remaining work. Hold-until is SQL now plus the
-unchanged platform remaining time plus 10 seconds of quarantine. The lease is
+3 seconds. Subtract monotonic time spent waiting for admission from the supplied
+platform remaining duration before calculating those deadlines; a lock wait must
+not grant extra platform time. This elapsed duration is a containment adjustment,
+not a replacement for SQL time as lease authority. Refuse nonpositive remaining
+work and recheck SQL time before committing an admission. Hold-until is SQL now
+plus the adjusted platform remaining time plus 10 seconds of quarantine. The lease is
 the smaller of execution deadline and SQL now + 30 seconds; renewal cannot move
 the execution or containment deadlines. Only a confirmed release or the hard
 deadline plus quarantine permits aggregate capacity reuse.
@@ -141,7 +145,10 @@ Losing workers cannot publish success or failure. Unexpected database/driver
 failures surface as `COORDINATION_UNAVAILABLE`, without raw SQL diagnostics.
 
 Revocation uses token/attempt CAS and increments only its still-current claim's
-fence, clears its attempt binding, and leaves capacity reserved. Release is
+fence, clears its attempt binding, and leaves capacity reserved. Revocation is
+idempotent. At the maximum BIGINT fence, revocation still clears the binding and
+revokes the admission without wrapping the counter; further admissions fail
+closed with fence exhaustion. Release is
 idempotent by token CAS, works even after authority has been revoked, and cannot
 release a different attempt's row. Release also prevents later publication and
 clears only its own claim binding while retaining its monotonic tombstone.
@@ -155,6 +162,8 @@ limits, reserved refresh capacity, atomic resource weights and exact usage,
 duplicate attempts, admission rollback, caller mutation, forged/cross-instance
 handles, tenant/owner/member/role/revision changes, maintenance/config changes,
 lease loss, containment retention, replacement fencing and obsolete release.
+Include exhausted-fence cancellation, admission lock-wait deadline loss and
+expiry during a publication transaction.
 Exercise actual callback rollback and simulated authoritative-store failure;
 no successful stale response or partial reservation is permitted.
 
