@@ -70,7 +70,7 @@ test('arrows wrap, filtering resets selection, Enter navigates and each open sta
   await ui.press('ArrowDown'); assert.equal(ui.selected(), ui.labels()[1]);
   await ui.filter('go to data'); assert.equal(ui.selected(), 'Go to Data');
   await ui.press('Enter');
-  assert.equal(globalThis.window.location.hash, '#/data/preparation');
+  assert.equal(globalThis.window.location.hash, '#/data');
   assert.equal(ui.document.activeElement, ui.trigger);
   await ui.open(); assert.equal(ui.input().props.value, ''); assert.equal(ui.selected(), 'Go to Home');
 });
