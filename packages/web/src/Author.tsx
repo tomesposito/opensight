@@ -1,3 +1,4 @@
+import { SheetObjectCard, SheetObjectProperties } from './SheetObjectCard.js';
 import { useAccess, allowed } from './access.js';
 import { LocalEmptyState } from './LocalEmptyState.js';
 import { ThemeEditor } from './ThemeEditor.js';
@@ -307,6 +308,7 @@ export function AuthorCanvas({ draft, dispatch, client, fit = true, sourceProble
   const setPath = (id: string, path: DrillPath) => { setDrillState({ key: interactionKey, paths: { ...paths, [id]: path } }); clearSource(id); };
   const clearActions = () => setInteractionState({ key: interactionKey, selections: {} });
   const selected = sheet.visuals.find(v => v.id === sheet.selectedId);
+  const selectedObject = sheet.objects?.find(o => o.id === sheet.selectedId);
   const dimensionWell: Well = well === 'smallMultiples' && (!selected || hasSmallMultiplesWell(selected.kind)) ? 'smallMultiples' : selected ? grouped(selected.kind) ? (well === 'columns' && splitDimensions(selected.kind) ? 'columns' : 'rows') : 'dimension' : 'dimension';
   const dimensionDestination = selected ? noDimensions(selected.kind) ? 'unavailable for this visual' : dimensionWellLabel(selected.kind, dimensionWell) : dimensionWellLabel('bar', dimensionWell);
   const { width, containerRef } = useContainerWidth({ initialWidth: 900 });
@@ -364,8 +366,8 @@ export function AuthorCanvas({ draft, dispatch, client, fit = true, sourceProble
         <ControlsStrip key={sheet.id} draft={draft} dispatch={dispatch} client={client} />
         <div className="canvas-viewport" data-fit={fit ? 'width' : 'actual'} aria-label={fit ? 'Canvas fits available width' : 'Canvas at 1200 pixel width'}>
         <div className="author-canvas" style={{ width: fit ? '100%' : 1200, backgroundColor: theme.background, color: theme.textColor, fontFamily: theme.fontFamily }} ref={containerRef}>
-          <div className="canvas-label"><strong>{sheet.name}</strong><span>{sheet.visuals.length} {sheet.visuals.length === 1 ? 'visual' : 'visuals'} · {mobile ? 'Mobile preview' : 'Drag the handle to move · Drag a corner to resize'}</span></div>
-          {!sheet.visuals.length && <div className="canvas-empty"><h2>Your canvas is ready</h2><p>Choose a field from the Data panel to create a visual, or select a type and ADD.</p></div>}
+          <div className="canvas-label"><strong>{sheet.name}</strong><span>{sheet.visuals.length} {sheet.visuals.length === 1 ? 'visual' : 'visuals'} · {sheet.objects?.length ? `${sheet.objects.length} objects · ` : ''}{mobile ? 'Mobile preview' : 'Drag the handle to move · Drag a corner to resize'}</span></div>
+          {!sheet.visuals.length && !sheet.objects?.length && <div className="canvas-empty"><h2>Your canvas is ready</h2><p>Choose a field from the Data panel to create a visual, or select a type and ADD.</p></div>}
           <div aria-label="Authoring canvas">
             <GridLayout key={sheet.id} width={width} layout={layout} compactor={noCompactor}
               gridConfig={{ cols: GRID_COLUMNS, rowHeight: 42, margin: [12, 12], containerPadding: [0, 0] }}
@@ -411,12 +413,13 @@ export function AuthorCanvas({ draft, dispatch, client, fit = true, sourceProble
                   visual={withActionFilters(sheet, projected, selections, draft.calculatedFields, draft.dataset)} index={index} count={sheet.visuals.length} selected={visual.id === sheet.selectedId} filterProblem={sourceProblem ?? (draft.dataset && !client ? 'Local dataset needs its local API; no sample data is substituted.' : importedFilterProblem(draft, sheet, visual))} dispatch={dispatch} client={client} calculations={draft.calculatedFields} parameters={sheetParameters(draft)} />
                 </div>;
               })}
+              {sheet.objects?.map(object => <div key={object.id}><SheetObjectCard object={object} selected={object.id === sheet.selectedId} sheet={sheet} dispatch={dispatch} /></div>)}
             </GridLayout>
           </div>
         </div>
       </div></div>
       <Panel title="Properties" className="properties-panel">
-        {selected ? <Properties key={selected.id} runtimeProblems={runtimeProblems[selected.id]} visual={selected} draft={draft} dispatch={dispatch} client={client} /> : <><p>Select a visual to edit its display settings.</p><ThemeEditor draft={draft} dispatch={dispatch} /></>}
+        {selectedObject ? <SheetObjectProperties object={selectedObject} draft={draft} dispatch={dispatch} /> : selected ? <Properties key={selected.id} runtimeProblems={runtimeProblems[selected.id]} visual={selected} draft={draft} dispatch={dispatch} client={client} /> : <><p>Select a visual or object to edit its display settings.</p><ThemeEditor draft={draft} dispatch={dispatch} /></>}
       </Panel>
     </div>
     {calculationOpen && <CalculationDialog dataset={draft.dataset} fields={draft.calculatedFields} onClose={() => setCalculationOpen(false)} onSave={field => { dispatch({ type: 'calculation-add', field }); setCalculationOpen(false); }} />}
