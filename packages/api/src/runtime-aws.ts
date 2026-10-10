@@ -15,7 +15,9 @@ export function awsRegion(env: NodeJS.ProcessEnv): string {
   return region;
 }
 export function secretArn(value: string | undefined, region: string): string {
-  if (!value || !new RegExp(`^arn:aws:secretsmanager:${region}:\\d{12}:secret:[A-Za-z0-9/_+=.@-]{1,512}$`).test(value)) return fail();
+  // Aurora-managed credentials use the service-owned rds!cluster- prefix;
+  // ordinary user-created secret names cannot contain an exclamation mark.
+  if (!value || value.trim() !== value || !new RegExp(`^arn:aws:secretsmanager:${region}:\\d{12}:secret:(?:[A-Za-z0-9/_+=.@-]{1,512}|rds!cluster-[A-Za-z0-9-]{1,500})$`).test(value)) return fail();
   return value;
 }
 /** Strict JSON and bounded values; neither prototype keys nor ignored fields survive. */

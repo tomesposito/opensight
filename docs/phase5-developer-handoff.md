@@ -5,6 +5,14 @@ an IPv6-first AWS validation plan. This is not AWS access/spending authorization
 for ordinary builds. Follow `AGENTS.md`; freeze each slice's complete contract in
 `SOLUTION_DESIGN.md` in a separate spec commit before implementing it.
 
+**SR4a update, 2026-10-10:** the image, generic OpenTofu modules and private
+operator harness are implemented. A separately authorized isolated AWS run
+proved both subnet transports, real synthetic SMTP, Aurora roles/RLS and short
+pause/resume. [Validation evidence](issue-83-gap-notes.md) records exact tests,
+image provenance and remaining checks. Long-idle resume is still pending;
+maintenance remains frozen and there is no public site. SR2, SR3 and SR4b remain
+open. The baseline below describes the earlier SR1 handoff.
+
 ## Current baseline
 
 - Issue #81 produced draft D-19 through D-25 contracts.
@@ -89,6 +97,9 @@ the 45-second passive embed display expiry and explicit Connect behavior in
 tests in a separate spec commit, then implement that SR3 UI slice; this product
 choice no longer needs approval. Preserve HQ-7, session/bootstrap semantics and
 zero idle polling; test expiry, hidden/frozen pages and failed reconnection.
+The same browser slice includes [#87](https://github.com/tomesposito/opensight/issues/87):
+replace the existing font-dependent navigation/data-state icon glyphs with
+offline vectors and verify minimal Linux/desktop browser rendering.
 The tester IP allowlist and WAF cost remain separate unapproved choices. This
 does not block backend SR2/SR3 work.
 
