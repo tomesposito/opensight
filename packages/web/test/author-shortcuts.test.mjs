@@ -170,7 +170,7 @@ test('Escape closes existing calculation/import dialogs through cancel and close
   assert.equal((await ui.key({ key: 'Escape', target: ui.search })).defaultPrevented, false);
   await ui.cancel(); assert.equal(ui.renderer.root.findAllByType('dialog').length, 0);
   const bytes = new TextEncoder().encode(JSON.stringify(serializeDraft(emptyDraft())));
-  await act(async () => ui.renderer.root.findAllByType('input').find(n => n.props.type === 'file').props.onChange({ currentTarget: { value: 'analysis.json', files: [{ name: 'analysis.json', size: bytes.length, arrayBuffer: async () => bytes.buffer }] } }));
+  await act(async () => ui.renderer.root.findAllByType('input').find(n => n.props.type === 'file' && String(n.props.accept).includes('.qs')).props.onChange({ currentTarget: { value: 'analysis.json', files: [{ name: 'analysis.json', size: bytes.length, arrayBuffer: async () => bytes.buffer }] } }));
   assert.equal(ui.renderer.root.findByType('dialog').props.className, 'import-report');
   assert.equal((await ui.key({ key: 'Escape' })).defaultPrevented, false);
   await ui.cancel(); assert.equal(ui.renderer.root.findAllByType('dialog').length, 0);

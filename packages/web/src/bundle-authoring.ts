@@ -1,3 +1,4 @@
+import { importObjects, serializeObject, objectElementType, type SheetObject } from './sheet-objects.js';
 import { analysisDescriptionValid } from './authoring.js';
 import { projectInsightBody } from './insight-configuration.js';
 import { normalizeVisual } from './compiler.js';
@@ -38,10 +39,10 @@ function references(raw: unknown): string[] {
   const o = obj(raw);
   return [...(typeof o.dataSetIdentifier === 'string' ? [o.dataSetIdentifier] : []), ...Object.values(o).flatMap(v => v && typeof v === 'object' ? references(v) : [])];
 }
-function grid(sheet: BundleSheet, visuals: AuthorVisual[]): Placement[] {
+function grid(sheet: BundleSheet, visuals: (AuthorVisual | SheetObject)[]): Placement[] {
   const elements = list(obj(obj(obj(sheet.layouts?.[0]).configuration).gridLayout).elements);
   return visuals.map((v, index) => {
-    const e = obj(elements.find(e => obj(e).elementId === v.imported?.visualId));
+    const e = obj(elements.find(e => obj(e).elementId === ('importedId' in v ? v.importedId : 'imported' in v ? v.imported?.visualId : v.id)));
     const x = Number(e.columnIndex) / 3, w = Number(e.columnSpan) / 3, y = Number(e.rowIndex), h = Number(e.rowSpan);
     return [x, w, y, h].every(Number.isSafeInteger) && x >= 0 && w >= 3 && x + w <= 12 && y >= 0 && h >= 4 && y + h <= 10000
       ? { i: v.id, x, y, w, h } : { i: v.id, x: 0, y: index * 8, w: 6, h: 8 };
@@ -153,7 +154,7 @@ function parameterGroup(group: Obj, parameters: readonly AuthorParameter[], iden
 export function importBundle(bundle: QsBundle): AuthorDraft {
   const summary = summarizeQsBundle(bundle);
   const original = copy(bundle), draft = emptyDraft(), sheets: AuthorSheet[] = [], report: ImportResult[] = [];
-  let visualIndex = 0;
+  let visualIndex = 0, objectIndex = 0;
   const primary = original.members.find(m => m.resource.resourceType === 'analysis') ?? original.members.find(m => m.resource.resourceType === 'dashboard');
   draft.title = primary?.resource.name ?? 'Imported resources';
   if (primary && (primary.resource.resourceType === 'analysis' || primary.resource.resourceType === 'dashboard') && analysisDescriptionValid(primary.resource.definition.opensightDescription)) draft.description = primary.resource.definition.opensightDescription;
@@ -222,15 +223,16 @@ export function importBundle(bundle: QsBundle): AuthorDraft {
       const localId = (rawId: string): string => visuals.find(v => v.imported?.visualId === rawId)?.id ?? `unresolved:${rawId}`;
       for (const visual of visuals) if (visual.filterActions) visual.filterActions = visual.filterActions.map(a => ({ ...a, targets: a.targets === 'all' ? 'all' : a.targets.map(localId), mappings: Object.fromEntries(Object.entries(a.mappings).map(([id, field]) => [localId(id), field])) }));
       for (const visual of visuals) if (visual.navigationActions) visual.navigationActions = visual.navigationActions.map(a => ({ ...a, targetSheetId: memberSheetIds.get(a.targetSheetId) ?? `unresolved:${a.targetSheetId}` }));
-      const layout = grid(s, visuals);
-      const sheet: AuthorSheet = { id, controls: [], name: s.name?.trim() || 'Untitled sheet', visuals, layout, selectedId: visuals[0]?.id ?? null,
-        imported: { memberPath: member.path, sheetId: s.sheetId, name: s.name?.trim() || 'Untitled sheet', layout: copy(layout) } };
+      const objects = importObjects(s, () => `object-${++objectIndex}`, messages);
+      const layout = grid(s, [...visuals, ...objects]);
+      const sheet: AuthorSheet = { id, controls: [], name: s.name?.trim() || 'Untitled sheet', visuals, ...(objects.length ? { objects } : {}), layout, selectedId: visuals[0]?.id ?? objects[0]?.id ?? null,
+        imported: { ...(objects.length ? { objects: copy(objects) } : {}), memberPath: member.path, sheetId: s.sheetId, name: s.name?.trim() || 'Untitled sheet', layout: copy(layout) } };
       const parameters = draft.parameters.filter(p => p.memberPath === member.path);
       sheet.controls = importControls(s.parameterControls, parameters, identifier => localBinding(d.dataSetIdentifierDeclarations.find(ds => ds.identifier === identifier)?.dataSetArn, original, identifier), messages, s.sheetId);
       sheet.imported!.controls = copy(sheet.controls);
       sheets.push(sheet);
       messages.push(`Sheet ${s.name ?? s.sheetId}: ${visuals.length} visual(s) imported.`);
-      for (const key of Object.keys(s)) if (!['sheetId', 'name', 'visuals', 'layouts', 'parameterControls'].includes(key)) messages.push(`Sheet ${s.sheetId}.${key}: retained, read-only.`);
+      for (const key of Object.keys(s)) if (!['sheetId', 'name', 'visuals', 'layouts', 'parameterControls', 'textBoxes', 'images'].includes(key)) messages.push(`Sheet ${s.sheetId}.${key}: retained, read-only.`);
       if (s.layouts?.length) messages.push(`Sheet ${s.sheetId}.layouts: grid geometry projected where compatible; original layouts and other layout features retained until edited.`);
       for (const v of visuals) {
         const meta = v.imported!;
@@ -364,9 +366,10 @@ function exportLayout(sheet: AuthorSheet, raw: BundleSheet): void {
   // paginated variant; the extension preserves the complete original layout.
   delete config.freeFormLayout; delete config.sectionBasedLayout;
   const old = list(grid.elements);
-  grid.elements = [...old.filter(e => obj(e).elementType !== 'VISUAL'), ...sheet.layout.map(p => {
-    const id = sheet.visuals.find(v => v.id === p.i)?.imported?.visualId ?? p.i;
-    return { ...obj(old.find(e => obj(e).elementId === id)), elementId: id, elementType: 'VISUAL', columnIndex: p.x * 3, columnSpan: p.w * 3, rowIndex: p.y, rowSpan: p.h };
+  grid.elements = [...old.filter(e => obj(e).elementType !== 'VISUAL' && !sheet.imported?.objects?.some(o => o.importedId === obj(e).elementId)), ...sheet.layout.map(p => {
+    const object = sheet.objects?.find(o => o.id === p.i);
+    const id = sheet.visuals.find(v => v.id === p.i)?.imported?.visualId ?? object?.importedId ?? p.i;
+    return { ...obj(old.find(e => obj(e).elementId === id)), elementId: id, elementType: objectElementType(object), columnIndex: p.x * 3, columnSpan: p.w * 3, rowIndex: p.y, rowSpan: p.h };
   })];
   config.gridLayout = grid; first.configuration = config; layouts[0] = first; raw.layouts = layouts;
 }
@@ -414,7 +417,7 @@ export function exportBundle(draft: AuthorDraft): QsBundle {
     }
     if (declarations.length || d.parameterDeclarations !== undefined) d.parameterDeclarations = declarations;
     if (primary && draft.title !== origin.title) r.name = draft.title.trim() || 'Untitled analysis';
-    const sheets = draft.sheets.filter(s => s.imported ? s.imported.memberPath === member.path : primary && (s.id !== origin.emptySheetId || s.visuals.length > 0 || s.name !== 'Sheet 1'));
+    const sheets = draft.sheets.filter(s => s.imported ? s.imported.memberPath === member.path : primary && (s.id !== origin.emptySheetId || (s.visuals.length > 0 || !!s.objects?.length) || s.name !== 'Sheet 1'));
     if (d.sheets !== undefined || sheets.length) d.sheets = sheets.map(sheet => {
       const raw = copy(d.sheets?.find(s => s.sheetId === sheet.imported?.sheetId) ?? { sheetId: sheet.id, name: sheet.name });
       if (!sheet.imported || sheet.name !== sheet.imported.name) raw.name = sheet.name;
@@ -434,6 +437,15 @@ export function exportBundle(draft: AuthorDraft): QsBundle {
         exportInteractions(obj(Object.values(result)[0]), v, id => { const target = sheet.visuals.find(t => t.id === id); return target?.imported?.visualId ?? (id.startsWith('unresolved:') ? id.slice(11) : id); }, identifier, id => { const target = sheets.find(s => s.id === id); return target?.imported?.sheetId ?? (id.startsWith('unresolved:') ? id.slice(11) : id); });
         return result;
       });
+      for (const [key, kind, idKey] of [['textBoxes', 'text', 'sheetTextBoxId'], ['images', 'image', 'sheetImageId']] as const) {
+        const baseline = (sheet.imported?.objects ?? []).filter(o => o.kind === kind), current = (sheet.objects ?? []).filter(o => o.kind === kind);
+        if (equal(baseline, current)) continue;
+        const originals = list(raw[key]);
+        raw[key] = [...originals.filter(r => !baseline.some(o => o.importedId === obj(r)[idKey])), ...current.map(o => {
+          const before = baseline.find(b => b.id === o.id), original = originals.find(r => obj(r)[idKey] === o.importedId);
+          return before && original ? patch(original, serializeObject(before), serializeObject(o)) : serializeObject(o);
+        })];
+      }
       exportLayout(sheet, raw);
       return raw;
     });
@@ -516,7 +528,7 @@ export function exportBundle(draft: AuthorDraft): QsBundle {
     }
   }
   // A dataset-only import can still become an authored analysis without losing dependency members.
-  if (!origin.primaryPath && (draft.sheets.some(s => s.visuals.length || s.id !== origin.emptySheetId || s.name !== 'Sheet 1') || draft.calculatedFields.length || draft.parameters.length || draft.sheets.some(s => s.controls.length) || draft.title !== origin.title || draft.description !== undefined || draft.theme !== undefined)) {
+  if (!origin.primaryPath && (draft.sheets.some(s => s.visuals.length || s.objects?.length || s.id !== origin.emptySheetId || s.name !== 'Sheet 1') || draft.calculatedFields.length || draft.parameters.length || draft.sheets.some(s => s.controls.length) || draft.title !== origin.title || draft.description !== undefined || draft.theme !== undefined)) {
     const resource = serializeDraft({ ...draft, bundle: undefined });
     bundle.members.push({ path: `analysis/${resource.analysisId}.json`, resource });
   }

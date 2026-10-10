@@ -35,7 +35,7 @@ const file = (name, bytes) => ({ name, size: bytes.length, arrayBuffer: async ()
 
 test('file picker opens the per-resource report, displays unresolved cards and downloads a real ZIP without a server', async t => {
   const ui = await mount(t), bundle = makeBundle();
-  const input = ui.find('input', p => p.type === 'file');
+  const input = ui.find('input', p => p.type === 'file' && String(p.accept).includes('.qs'));
   assert.ok(input.props.accept.includes('.qs'));
   await act(async () => { input.props.onChange({ currentTarget: { files: [file('import.qs', await assembleQsBundle(bundle))], value: 'import.qs' } }); });
   assert.ok(ui.find('dialog', p => p['aria-labelledby'] === 'import-report-title'));
@@ -71,7 +71,7 @@ test('per-card remap action updates the stored binding and leaves unmatched assi
   const wells = bundle.members[0].resource.definition.sheets[0].visuals[0].barChartVisual.chartConfiguration.fieldWells.barChartAggregatedFieldWells;
   wells.category[0].categoricalDimensionField.column.columnName = 'remote_region';
   const bytes = await assembleQsBundle(bundle);
-  await act(async () => ui.find('input', p => p.type === 'file').props.onChange({ currentTarget: { files: [file('import.qs', bytes)], value: '' } }));
+  await act(async () => ui.find('input', p => p.type === 'file' && String(p.accept).includes('.qs')).props.onChange({ currentTarget: { files: [file('import.qs', bytes)], value: '' } }));
   await act(() => ui.button('Close import report').props.onClick());
   await act(() => ui.button('Remap to local dataset').props.onClick({ stopPropagation() {} }));
   await act(() => ui.button('Save draft').props.onClick());
@@ -84,7 +84,7 @@ test('per-card remap action updates the stored binding and leaves unmatched assi
 test('sheet remap button updates every unresolved card in that sheet', async t => {
   const ui = await mount(t), bundle = makeBundle();
   const bytes = await assembleQsBundle(bundle);
-  await act(async () => ui.find('input', p => p.type === 'file').props.onChange({ currentTarget: { files: [file('import.qs', bytes)], value: '' } }));
+  await act(async () => ui.find('input', p => p.type === 'file' && String(p.accept).includes('.qs')).props.onChange({ currentTarget: { files: [file('import.qs', bytes)], value: '' } }));
   await act(() => ui.button('Close import report').props.onClick());
   await act(() => ui.button('Remap sheet to local dataset').props.onClick());
   await act(() => ui.button('Save draft').props.onClick());

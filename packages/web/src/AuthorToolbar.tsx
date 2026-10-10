@@ -1,3 +1,5 @@
+import { readEmbeddedImage } from './sheet-objects.js';
+import { objectLabel } from './SheetObjectCard.js';
 import { useEffect, useRef, useState, type Dispatch, type ReactNode } from 'react';
 import { activeSheet, type AuthorAction, type AuthorDraft } from './authoring.js';
 import { useAccess, type Access } from './access.js';
@@ -41,7 +43,15 @@ export function AuthorToolbar({ canUndo = false, canRedo = false, onUndo, onRedo
   const [exportsOpen, setExportsOpen] = useState(false);
   const [pdfOpen, setPdfOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const imageInput = useRef<HTMLInputElement>(null);
+  const imageSheetId = useRef<string | undefined>(undefined);
+  const imageDraft = useRef<AuthorDraft | null>(null);
+  const currentDraft = useRef(draft); currentDraft.current = draft;
+  const [imageBusy, setImageBusy] = useState(false);
   const sheet = activeSheet(draft), selected = sheet.visuals.find(v => v.id === sheet.selectedId);
+  const selectedObject = sheet.objects?.find(o => o.id === sheet.selectedId);
+  const needsCanvas = !dataAvailable ? 'NO_SHEET_CANVAS: Add data or open an analysis to show a sheet canvas before inserting objects.' : undefined;
+  const needsObject = needsCanvas ?? (!selected && !selectedObject ? 'Select an object first.' : undefined);
   const nav = useRef<HTMLElement>(null);
   useEffect(() => {
     const close = (event: Event) => { if (event.target instanceof Node && !nav.current?.contains(event.target)) nav.current?.querySelectorAll('details[open]').forEach(d => d.removeAttribute('open')); };
@@ -55,6 +65,19 @@ export function AuthorToolbar({ canUndo = false, canRedo = false, onUndo, onRedo
   const needsVisual = needsData ?? (!selected ? 'Select a visual first.' : undefined);
   const publish = () => { setNotice(publishNotice(access.mode)); notify('Publishing is unavailable in this editor. Nothing has been published.'); };
   return <>
+    <input ref={imageInput} type="file" accept="image/*" hidden aria-label="Insert local image" onChange={async e => {
+      const file = e.currentTarget.files?.[0], sheetId = imageSheetId.current, openedDraft = imageDraft.current; e.currentTarget.value = '';
+      if (!file || !sheetId) return;
+      setImageBusy(true);
+      try {
+        const dataUri = await readEmbeddedImage(file);
+        // Reading/decoding is asynchronous: never insert into a switched document.
+        if (currentDraft.current !== openedDraft) throw new Error('IMAGE_INSERT_CANCELLED: The analysis changed while choosing the image. Insert it again on the intended sheet.');
+        dispatch({ type: 'object-add', kind: 'image', dataUri, alt: 'Embedded image', sheetId });
+        setNotice('Image embedded on this device. No image was uploaded; exported definitions include its bytes.');
+      } catch (error) { setNotice(error instanceof Error ? error.message : String(error)); }
+      finally { setImageBusy(false); }
+    }} />
     {settingsOpen && <AnalysisSettings draft={draft} dispatch={dispatch} onClose={() => setSettingsOpen(false)} />}
     {pdfOpen && <AnalysisPdfDialog onClose={() => setPdfOpen(false)} onContinue={() => { flushSync(() => setPdfOpen(false)); onPrint?.(); }} />}
     <nav ref={nav} className="author-menu" aria-label="Analysis menu" onKeyDown={e => {
@@ -100,8 +123,8 @@ export function AuthorToolbar({ canUndo = false, canRedo = false, onUndo, onRedo
       <AuthorMenu name="Insert">
         <AuthorMenuItem label="Add Sheet" run={() => dispatch({ type: 'sheet-add' })} />
         <AuthorMenuItem label="Add Visual" reason={needsData} run={() => dispatch({ type: 'add', kind: 'bar' })} />
-        <AuthorMenuItem label="Add Text" reason="Text boxes are not supported yet." />
-        <AuthorMenuItem label="Add Image" reason="Image objects are not supported yet." />
+        <AuthorMenuItem label="Add Text" reason={needsCanvas} run={() => dispatch({ type: 'object-add', kind: 'text' })} />
+        <AuthorMenuItem label="Add Image" reason={needsCanvas ?? (imageBusy ? 'Wait for this device to finish reading the image.' : undefined)} run={() => { imageSheetId.current = sheet.id; imageDraft.current = draft; imageInput.current?.click(); }} />
         <AuthorMenuItem label="Add Insight" reason={needsData} run={() => dispatch({ type: 'add', kind: 'insight' })} />
         <AuthorMenuItem label="Build visual with Q" reason={needsData ?? (!oEntry ? 'Q is unavailable for this session.' : undefined)} run={() => activate('.q-trigger')} />
         <hr />
@@ -122,7 +145,7 @@ export function AuthorToolbar({ canUndo = false, canRedo = false, onUndo, onRedo
         <div role="group" aria-label="Switch sheet">{draft.sheets.map(s => <AuthorMenuItem key={s.id} label={s.name} run={() => dispatch({ type: 'sheet-select', id: s.id })} />)}</div>
       </AuthorMenu>
       <AuthorMenu name="Objects">
-        <AuthorMenuItem label="Format Object" reason={needsVisual} run={() => focus('.properties-panel > summary', 'Visual')} />
+        <AuthorMenuItem label="Format Object" reason={needsObject} run={() => focus('.properties-panel > summary', 'Visual')} />
         <AuthorMenuItem label="Field Wells" reason={needsVisual} run={() => focus('.visual-config h3')} />
         <hr />
         <AuthorMenuItem label="Title" reason={needsVisual} run={() => focus('input[aria-label="Title"]', 'Visual')} />
@@ -136,8 +159,8 @@ export function AuthorToolbar({ canUndo = false, canRedo = false, onUndo, onRedo
         <AuthorMenuItem label="Reference Lines" reason={needsVisual ?? 'Reference line authoring is not supported yet.'} />
         <AuthorMenuItem label="Actions" reason={needsVisual} run={() => focus('[data-author-control="actions"]', 'Interaction')} />
         <hr />
-        <AuthorMenuItem label="Placement" reason={needsVisual ?? 'Numeric placement settings are not supported yet. Drag or resize the visual on the canvas.'} />
-        <AuthorMenuItem label="Style" reason={needsVisual ?? 'Per-card style settings are not supported yet. Analysis themes and visual palettes are available in Properties.'} />
+        <AuthorMenuItem label="Placement" run={() => focus('.object-placement input')} reason={selectedObject ? undefined : needsVisual ?? 'Numeric placement settings are not supported yet. Drag or resize the visual on the canvas.'} />
+        <AuthorMenuItem label="Style" run={() => focus('.sheet-object-properties input')} reason={selectedObject ? undefined : needsVisual ?? 'Per-card style settings are not supported yet. Analysis themes and visual palettes are available in Properties.'} />
         <AuthorMenuItem label="Rules" reason={needsVisual ?? 'Object visibility rules are not supported yet.'} />
         <hr />
         <AuthorMenuItem label="Forecast" reason={needsVisual ?? 'Forecast authoring is not supported yet.'} />
@@ -147,7 +170,9 @@ export function AuthorToolbar({ canUndo = false, canRedo = false, onUndo, onRedo
         <AuthorMenuItem label="Export Table to Excel" reason={needsVisual ?? 'Table query-result export to Excel is not supported in this editor yet.'} />
         {!!sheet.visuals.length && <><hr /><div role="group" aria-label="Select visual">{sheet.visuals.map(v => <AuthorMenuItem key={v.id} label={`${v.title || v.id} · ${v.kind}`} run={() => dispatch({ type: 'select', id: v.id })} />)}</div></>}
         {selected && <AuthorMenuItem label="Remove selected visual" run={() => dispatch({ type: 'remove', id: selected.id })} />}
-        {!sheet.visuals.length && <p>No visuals on this sheet.</p>}
+        {!!sheet.objects?.length && <><hr /><div role="group" aria-label="Select object">{sheet.objects.map(o => <AuthorMenuItem key={o.id} label={objectLabel(o)} run={() => dispatch({ type: 'select', id: o.id })} />)}</div></>}
+        {selectedObject && <AuthorMenuItem label="Remove selected object" run={() => dispatch({ type: 'remove', id: selectedObject.id })} />}
+        {!sheet.visuals.length && !sheet.objects?.length && <p>No objects on this sheet.</p>}
       </AuthorMenu>
       <button type="button" className="analysis-search" aria-haspopup="dialog" aria-keyshortcuts="Meta+F Control+F" disabled={!palette} title={!palette ? 'Action search needs the application command palette.' : 'Search analysis actions'} onClick={() => {
         nav.current?.querySelectorAll('details[open]').forEach(menu => menu.removeAttribute('open'));

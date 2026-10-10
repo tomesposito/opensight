@@ -107,12 +107,12 @@ test('Insert adds sheets, visuals and insights through the reducer and guards un
   for (const label of ['Add Sheet', 'Add Visual', 'Add Insight']) await ui.click('Insert', label);
   assert.deepEqual(ui.calls, [{ type: 'sheet-add' }, { type: 'add', kind: 'bar' }, { type: 'add', kind: 'insight' }]);
   assert.equal(ui.item('Insert', 'Build visual with Q').props['aria-disabled'], false);
-  for (const label of ['Add Text', 'Add Image']) assert.equal(ui.item('Insert', label).props['aria-disabled'], true);
+  for (const label of ['Add Text', 'Add Image']) assert.equal(ui.item('Insert', label).props['aria-disabled'], false);
   await ui.update({ draft: emptyDraft(), oEntry: undefined });
   assert.match(ui.item('Insert', 'Add Filter').props.title, /Select a visual/);
   assert.match(ui.item('Insert', 'Build visual with Q').props.title, /unavailable/);
   await ui.update({ dataAvailable: false });
-  for (const label of ['Add Visual', 'Add Insight', 'Build visual with Q', 'Add Calculated Field', 'Add Filter', 'Add Parameter']) {
+  for (const label of ['Add Visual', 'Add Text', 'Add Image', 'Add Insight', 'Build visual with Q', 'Add Calculated Field', 'Add Filter', 'Add Parameter']) {
     assert.equal(ui.item('Insert', label).props['aria-disabled'], true);
     await ui.click('Insert', label);
   }
@@ -148,7 +148,7 @@ test('Objects exposes every reference item, retains selection/removal and gates 
   await ui.update({ draft: authorReducer(emptyDraft(), { type: 'add', kind: 'table' }) });
   for (const label of ['Data Labels', 'Legend']) assert.match(ui.item('Objects', label).props.title, /this visual type/);
   await ui.update({ draft: emptyDraft() });
-  for (const label of objectItems) { assert.equal(ui.item('Objects', label).props['aria-disabled'], true); assert.match(ui.item('Objects', label).props.title, /Select a visual/); }
+  for (const label of objectItems) { assert.equal(ui.item('Objects', label).props['aria-disabled'], true); assert.match(ui.item('Objects', label).props.title, /Select an? (visual|object)/); }
 });
 
 test('Print calls the browser action, PDF explains its destination and Cancel never prints', async t => {

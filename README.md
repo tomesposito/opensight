@@ -135,6 +135,16 @@ hosted sharing remain individually unavailable with explanations. See
 
 ![Analysis Settings in the local static demo](docs/images/analysis-settings.png)
 
+Insert adds **text boxes** and **images** to the sheet canvas. Text boxes edit
+in place with font size, bold, italic, underline, color and alignment; images
+are embedded from this device (up to 4 MiB per image, no upload or hosted
+service) with a description, opacity and aspect-ratio options. Both move,
+resize, undo and round-trip in definition exports. Text hyperlinks,
+parameters-in-text and remote image URLs stay unavailable with explanations.
+See [text and image objects](docs/issue-67-gap-notes.md).
+
+![Text box and embedded image on the authoring canvas](docs/images/text-image-objects.png)
+
 ![Authoring canvas with assigned fields and the Ask a question trigger in the toolbar](docs/images/author.png)
 
 Author quietly auto-saves local edits and restores them on reload. The recovery

@@ -80,7 +80,7 @@ test('section visibility remains specific to each kind; no selected visual retai
     assert.ok(html.includes('aria-label="Properties tabs"'));
   }
   const html = renderToStaticMarkup(createElement(AuthorCanvas, { draft: emptyDraft(), dispatch() {} }));
-  assert.ok(html.includes('Select a visual to edit its display settings.'));
+  assert.ok(html.includes('Select a visual or object to edit its display settings.'));
   assert.match(html, /<summary[^>]*>Analysis theme<\/summary>/);
   assert.ok(!html.includes('aria-label="Properties tabs"'));
 });
