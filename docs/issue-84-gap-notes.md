@@ -75,8 +75,8 @@ pool/concurrency and RLS evidence. Neither is a claim of SR2 Aurora acceptance.
 
 ### Remaining #84 work
 
-- Durable immutable/version-bound S3 artifacts and bounded Parquet hydration;
-  replace synchronous cache access with the specified asynchronous interface.
+- Durable authoritative manifests/invalidation and the asynchronous hosted-cache
+  adapter connecting SR2b's artifact mechanism to actual analytical callers.
 - Upload reservation/completion/cancellation and current-authority checks at
   HEAD, ingest and source publication, following confirmed D-28 limits/UX.
 - Durable operation/result framing, storage reservations and expiry, with D-24
@@ -94,3 +94,63 @@ Later limit changes need a drained migration contract, not edits to the bound
 configuration during active work. SR3 must also specify a background cold-wake
 budget: SR1's short ordinary connection attempt is not by itself evidence that
 an event can resume a sleeping database and complete.
+
+## SR2b bounded artifact transfer
+
+The [frozen transfer contract](phase5-sr2b-artifact-transfer.md) is implemented in
+the query engine's `artifact-parquet.ts` and the API's `artifact-schema.ts` /
+`artifact-transfer.ts`. The existing contained worker performs native encode and
+decode. Artifacts preserve logical columns, original row order, numeric scalar
+types, large integer strings, timestamp text and cached-input provenance.
+Explicit DOUBLE parameter binding preserves negative zero, which DuckDB's
+default integer inference otherwise changed in the round-trip test.
+
+The native connection allows only its parent-created private file, disables
+external access/extension installation and locks configuration. Heap, DuckDB
+memory, RSS, row/text/decoded-byte and execution limits remain enforced by H4.
+The parent checks file length and SHA-256 before native decode. Branded immutable
+handles belong to one invocation, support idempotent disposal and expose no path.
+Invocation cleanup owns all streams and removes remaining private directories.
+
+The S3 transport derives keys from full scope/owner/resource identity and a UUID.
+It sends conditional, checksummed PUTs; requires a real version ID; verifies that
+exact version with HEAD; and pins GET to it. Streaming reads enforce the exact
+length/checksum and discard partial files. Invalid references are denied before
+I/O. Ambiguous writes are neither retried nor deleted speculatively. No endpoint,
+bucket, credential or object path is accepted from an application request.
+
+All **12 focused tests passed / 0 failed / 0 skipped** in the pinned Linux ARM64
+environment. They exercise actual native round trips and file allowlisting,
+scope/handle boundaries, caller mutation, corrupt physical schema and ordinals,
+descriptor count/size mismatch, malformed/corrupt/truncated/surplus object bodies,
+conditional/version-pinned SDK commands, cancellation and confirmed file/stream
+cleanup. S3 responses are injected protocol fixtures; no cloud calls occurred.
+No dependency was added.
+
+Before integrating the subsequent upstream export fix, the full root `npm test`
+run on artifact implementation `31f0bd2` passed **2,286 / 0 failed / 13 skipped /
+0 cancelled**, 2,299 total. API: 372 passed and 11 live-PostgreSQL skips;
+query engine: 504 passed and 2 live-PostgreSQL skips. All other suite counts
+match the SR2a table above. No new skip was introduced. The pinned build also
+rebuilt the hosted frontend and offline demo with networking disabled for build
+and test execution.
+
+The rebuilt 1280×800 data landing capture is byte-identical to SR2a and was
+visually inspected. The existing Linux-font gaps remain tracked in #87. SR2b
+changes no UI source, so no README image refresh is needed for its own changes.
+This static demo comparison is not public deployment or a visual-fidelity claim.
+
+After merging upstream issue #79's Excel-export escaping fix, the full root suite
+on combined source `133b4f5` passed **2,290 / 0 failed / 13 skipped /
+0 cancelled**, 2,303 total. Web now has 1,149 passing tests; other counts are
+unchanged. The hosted frontend and demo rebuilt successfully again; the combined
+source's inspected demo capture matches the preceding SR2b PNG byte for byte. No test
+threshold or skip policy was relaxed. Staged secret and cross-platform path
+checks passed at each implementation checkpoint.
+
+This mechanism is intentionally not connected to a runtime route or factory.
+SR2a admission, current SQL authority, durable manifests, storage reservations
+and prearmed D-24 recovery must be integrated before accepting production
+transfers. No successful upload alone makes a dataset readable. The isolated
+AWS stack is unchanged, and this checkpoint supplies no browser CORS/signing or
+real S3/Aurora acceptance evidence.

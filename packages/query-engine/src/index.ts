@@ -36,6 +36,7 @@ export type { PrepSource, PrepPlan, PrepDataset, PrepCompileOptions } from './pr
 export { previewPrepDuckDb, previewPrepPostgres, prepPreviewResult } from './prep-executor.js';
 export type { PrepPreview, PrepPreviewOptions } from './prep-executor.js';
 export { streamPrepDuckDb, streamPrepPostgres, withPrepTables, withPrepMemory } from './prep-stream.js';
+export { artifactColumns, artifactScalar, writeArtifactParquet, readArtifactParquet } from './artifact-parquet.js';
 export type { PrepScalar, PrepSink, PrepReadLimits, PrepMemoryTable } from './prep-stream.js';
 export { queryPrepared } from './prepared-query.js';
 export { planPreparedQuery, planPreparedVisual, queryPreparedVisual } from './prepared-query.js';
