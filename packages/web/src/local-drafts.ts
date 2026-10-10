@@ -72,7 +72,7 @@ export function createDraftStore(storage: DraftStorage, access: Access) {
     return found;
   };
   const checked = (e: Entry): AuthorDraft => {
-    try { validateDraft(e.draft); return e.draft; }
+    try { const draft = parseDraft(JSON.stringify(e.draft)); return draft; }
     catch { throw new Error('This saved analysis is unreadable in this version of OpenSight. Import an exported .qs or JSON copy, or choose another analysis. You can delete this entry from Local drafts.'); }
   };
   const list = (): DraftSummary[] => read().entries.map(e => {

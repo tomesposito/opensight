@@ -741,7 +741,7 @@ export function validateDraft(value: unknown): asserts value is AuthorDraft {
 
 /** Keep the original storage key and migrate v0 drafts only after checking their complete shape. */
 function migrateDraft(value: unknown): unknown {
-  if (isObject(value) && value.version === 2) return { parameters: [], ...value, sheets: Array.isArray(value.sheets) ? value.sheets.map(s => isObject(s) ? { controls: [], ...s } : s) : value.sheets };
+  if (isObject(value) && value.version === 2) return { parameters: [], ...value, sheets: Array.isArray(value.sheets) ? value.sheets.map(s => isObject(s) ? { controls: [], ...s, visuals: Array.isArray(s.visuals) ? s.visuals.map(v => isObject(v) && v.tooltipVisible === undefined ? { tooltipVisible: true, ...v } : v) : s.visuals } : s) : value.sheets };
   if (!isObject(value) || value.version !== 1) return value;
   if (!onlyKeys(value, ['version', 'visuals', 'selectedId']) || !Array.isArray(value.visuals)) throw new Error('Invalid legacy draft');
   const draft = emptyDraft();
