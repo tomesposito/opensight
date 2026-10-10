@@ -83,7 +83,7 @@ test('empty direct new-analysis route has no staged sample, phantom draft or Aut
   await act(() => t.mock.timers.tick(5000)); assert.deepEqual(ui.store.list(), []);
   await ui.click('Cancel'); await ui.navigate({ page: 'analyses' });
   await ui.link('New analysis'); await ui.click('Create dataset');
-  assert.equal(ui.location.hash, '#/data/preparation'); assert.equal(ui.requests.includes('sales'), false);
+  assert.equal(ui.location.hash, '#/data/new'); assert.equal(ui.requests.includes('sales'), false);
 });
 
 test('explicit local sample opt-in enables Select and keeps the sales query binding', async t => {

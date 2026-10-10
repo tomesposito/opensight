@@ -45,7 +45,7 @@ export function DataSources({ client, local = false, onPrep }: { client?: Client
     </div>
   </section>;
 }
-function ConnectorDetails({ id, client, local, postgresSource, onPrep }: { id: string; client?: Client; local: boolean; postgresSource?: string; onPrep?: (source?: string) => void }) {
+export function ConnectorDetails({ id, client, local, postgresSource, onPrep, onUploaded }: { id: string; client?: Client; local: boolean; postgresSource?: string; onPrep?: (source?: string) => void; onUploaded?: (source: string) => void }) {
   const connector = connectorDefinition(id), fileSource = id === 'file';
   const enabled = !!client && fileSource;
   const [config, setConfig] = useState<Record<string, string>>(fileSource ? { format: 'csv' } : {});
@@ -69,7 +69,8 @@ function ConnectorDetails({ id, client, local, postgresSource, onPrep }: { id: s
         const chunks: string[] = [];
         for (let offset = 0; offset < bytes.length; offset += 8192) chunks.push(String.fromCharCode(...bytes.subarray(offset, offset + 8192)));
         const binary = chunks.join('');
-        setUpload(await client.uploadFile({ config: validated, base64: btoa(binary) }));
+        const uploaded = await client.uploadFile({ config: validated, base64: btoa(binary) });
+        setUpload(uploaded); onUploaded?.(uploaded.id);
       } else setStatus(await client.validateConnector(id, validated));
     } catch (e) { setError(e instanceof Error ? e.message : 'Unable to process the source.'); }
     finally { setBusy(false); }

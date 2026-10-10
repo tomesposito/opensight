@@ -48,3 +48,13 @@
 .data-dialog-tools > input { margin-right: auto; }
 .data-dialog footer { display: flex; justify-content: flex-end; gap: 8px; padding: 16px; border-top: 1px solid #d9e1e5; }
 @media (max-width: 700px) { .data-page { padding: 16px 8px; } .data-toolbar { align-items: start; } .data-badges { display: flex; margin: 4px 0 0; } .data-dialog { width: calc(100vw - 16px); } }
+.data-connector-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.data-connector-tile { display: flex; gap: 12px; align-items: center; padding: 16px 12px; border: 1px solid #d3dfe5; border-radius: 4px; cursor: pointer; }
+.data-connector-tile[data-selected=true] { border-color: #176b88; background: #f0f8fb; }
+.data-connector-tile > span:first-child { font-size: 24px; color: #387d99; }
+.data-connector-tile strong { font-weight: 500; }
+.data-connector-tile small { display: block; color: #5a6d78; }
+.data-connector-tile input { margin-left: auto; }
+.data-dialog .connector-details { margin-top: 16px; box-shadow: none; }
+.data-dialog .connector-details form { max-width: 480px; }
+@media (max-width: 700px) { .data-connector-grid { grid-template-columns: 1fr; } }
