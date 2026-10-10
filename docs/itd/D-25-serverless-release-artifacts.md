@@ -56,6 +56,12 @@ can bootstrap the system, but independently rebuilt bytes and workstation state
 are a weak recurring release boundary. Tom retains the tooling-license, protection
 and retention decisions below; none prevents completing this design proposal.
 
+**SR4a implementation update:** [D-27](D-27-serverless-build-tooling.md) resolves
+the initial tooling/pinning choice using OpenTofu and records the explicitly
+approved tslib helper exception. The [frozen SR4a contract](../phase5-sr4a-packaging.md)
+governs the isolated validation package. Full private release protections,
+retention and migration/restore orchestration remain SR4b work.
+
 #### IMPLICATIONS
 
 **Repository and artifact boundary (proposed SR4 deliverables):**

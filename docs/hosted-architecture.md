@@ -785,6 +785,7 @@ SR0 implementation decision register (issue #81; proposals, no AWS authorization
 | [D-24](itd/D-24-serverless-job-dispatch.md) | Event work and delivery | 🚧 Commit recovery, cancellation, DLQ and H7 authorization review |
 | [D-25](itd/D-25-serverless-release-artifacts.md) | Terraform/artifacts and private releases | 🚧 Tom: tooling/licenses, OIDC protections, secret-state custody and retention/cost; migration/rollback review |
 | [D-26](idd/D-26-idle-embed-reconnect.md) | Initial test deployment's idle embed experience | ✅ Hide after maximum 45s authority display lease; explicit Connect and successful authorization before redisplay |
+| [D-27](itd/D-27-serverless-build-tooling.md) | SR4a tooling and dependency pins | ✅ OpenTofu/AWS provider operator tools, ARM64 Node 24 image, standard AWS SDK and explicit tslib 2.8.1 exception |
 
 Related confirmed deployment decision: [ITD D-18 — serverless development
 deployment](itd/D-18-serverless-development-deployment.md) (2026-10-10). Lambda
