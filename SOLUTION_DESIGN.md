@@ -12,11 +12,8 @@
 
 | Date       | Change |
 |------------|--------|
-| 2026-10-10 | SR4a SMTP validation specifies a tagged sender/recipient-restricted IAM login, private key derivation outside Terraform, SES sandbox identity verification and a twenty-attempt mail cap. Request, migration and probe remain the three isolated functions; no public ingress is added. |
 | 2026-10-10 | D-18 confirms Lambda + Aurora Serverless v2 with zero-ACU auto-pause for the first developer/tester deployment. Supersedes the old RDS-free-tier and stateless-API assumptions in D11/D12 and §11; proposes SR0–SR6 readiness/deployment gates, H9/H10 correctness work, and public code/private Terraform and GitHub Actions operations. Design only; no resources or spending authorized. |
 | 2026-10-10 | After SR1, proceed with SR2–SR4 preparation and an IPv6-first isolated AWS validation plan. Split minimal image/probe packaging (SR4a) from full release automation (SR4b). Exact resource/cost approval remains pending; this does not approve draft idle-embed UX or bypass durable storage/job gates. |
-| 2026-10-10 | IDD D-26 confirms hiding idle embed data after a maximum 45-second authority display lease and requiring explicit Connect for the first test deployment. Preserve HQ-7 revocation and existing session rules; WAF/IP allowlist and AWS spending remain separate decisions. |
-| 2026-10-10 | Freeze SR4a's isolated Lambda image/probe/IaC contract for implementation. D-27 selects pinned OpenTofu tooling and ARM64 Node 24; the product owner approves only tslib 2.8.1's 0BSD dependency exception. No application admission or cloud-spending gate is bypassed. |
 | 2026-09-26 | Docs-only definition API catalog: 25 visual variants, 41 field-well structures, 8 filter variants, 4 parameter declarations and calculation/context helpers. Additive provisional API types remain separate from validated synthetic inventory and observed bundle types; endpoint contracts remain open. |
 | 2026-09-26 | Real bundle grounding: sanitized AWS sample confirms four resource directories, lowercase envelopes and camelCase definitions; separate archive types, ZIP reader, acceptance/preservation tests and format notes. Complex exports and source conformance remain open. |
 | 2026-09-26 | Query-engine slice: D10 records the local DuckDB architecture, typed planning stages, explicit synthetic security binding and deferred semantic gates. |
@@ -1229,23 +1226,8 @@ isolated probe and IaC needed to review the
 [AWS validation experiment](docs/phase5-aws-validation-plan.md); it can progress
 alongside SR2 design. The experiment tests transport, SQL and idle/resume only,
 with SR1's maintenance/storage guards intact. SR4b supplies full release
-automation after the durable application interfaces exist.
-[IDD D-26](docs/idd/D-26-idle-embed-reconnect.md) confirms the initial test
-deployment's idle embed behavior: hide protected data no later than 45 seconds
-after the last successful authority check (or session expiry, if sooner), without
-background polling. Require explicit Connect and successful current authorization
-before showing it again. Hidden/frozen pages cannot extend that lease. Preserve
-HQ-7 and existing session/bootstrap rules. Specify SDK/client details before the
-UI build; D-21's other transport/abuse choices remain draft.
-
-**SR4a build contract (frozen 2026-10-10):**
-[Lambda validation packaging](docs/phase5-sr4a-packaging.md) specifies exact
-entrypoints, secret/configuration boundaries, probe commands, infrastructure,
-operator harness and acceptance. Implement that contract on its own build branch;
-do not change this specification within the build. Tooling and the explicitly
-approved dependency exception are recorded in
-[D-27](docs/itd/D-27-serverless-build-tooling.md). SR1's maintenance/storage guards
-remain mandatory; this package does not implement SR2/SR3 or a public pilot.
+automation after the durable application interfaces exist. D-21's idle embed
+display change remains a product decision; backend work need not wait on it.
 
 ---
 

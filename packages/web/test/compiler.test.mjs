@@ -1,8 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { compileVisual, CompileError } from '../build/test/compiler.js';
+import { compileVisual, normalizeVisual, CompileError } from '../build/test/compiler.js';
 import { init } from '../build/test/echarts.js';
+import { authorReducer, emptyDraft, activeSheet, serializeVisual } from '../build/test/authoring.js';
 
 const fixtures = JSON.parse(await readFile(new URL('../src/fixtures.generated.json', import.meta.url), 'utf8'));
 const real = fixtures[0].sheets[0].visuals[0];
@@ -165,6 +166,57 @@ test('date aliases are explicit and cannot silently fall back to a different col
   const input = sample('LineChartVisual');
   input.bindings = {};
   assert.throws(() => compileVisual(input), /missing result column order_date/);
+});
+
+// Issue #77: reference lines must survive the serialize → normalize round trip and render end to end.
+test('OpenSightReferenceLines normalizes through the validated extension key on API definitions', () => {
+  const input = sample('BarChartVisual');
+  body(input).OpenSightReferenceLines = [
+    { value: 250, label: 'Goal', color: '#c0392b' },
+    { value: 'oops', label: 'Bad' },
+    { value: Infinity, label: 'Inf' },
+    null,
+  ];
+  const { model } = compileVisual(input);
+  assert.deepEqual(model.referenceLines, [{ value: 250, label: 'Goal', color: '#c0392b' }]);
+});
+test('OpenSightReferenceLines rejects a non-array extension value', () => {
+  const input = sample('BarChartVisual');
+  body(input).OpenSightReferenceLines = { value: 250 };
+  assert.throws(() => compileVisual(input), CompileError);
+});
+test('serialized reference lines round-trip through bundle normalization', () => {
+  let draft = authorReducer(emptyDraft(), { type: 'assign-with-no-selection', field: 'revenue', well: 'values' });
+  draft = authorReducer(draft, { type: 'assign', field: 'region', well: 'rows' });
+  draft = authorReducer(draft, { type: 'reference-line-add' });
+  const visual = activeSheet(draft).visuals.find(v => v.id === activeSheet(draft).selectedId);
+  const model = normalizeVisual('bundle', serializeVisual(visual, false), '$');
+  assert.deepEqual(model.referenceLines, [{ value: 0, label: '', color: '#c0392b' }]);
+});
+test('reference lines render as markLines on vertical bars', () => {
+  const input = sample('BarChartVisual');
+  body(input).OpenSightReferenceLines = [{ value: 250, label: 'Goal', color: '#c0392b' }];
+  const { option } = compileVisual(input);
+  assert.deepEqual(option.series[0].markLine.data, [{ name: 'Goal', yAxis: 250, label: { color: '#c0392b' }, lineStyle: { color: '#c0392b' } }]);
+  const chart = init(null, undefined, { renderer: 'svg', ssr: true, width: 600, height: 320 });
+  try {
+    chart.setOption(option);
+    assert.match(chart.renderToSVGString(), /Goal/);
+  } finally { chart.dispose(); }
+});
+test('reference lines use the value axis on horizontal bars', () => {
+  const input = sample('BarChartVisual');
+  body(input).ChartConfiguration.Orientation = 'HORIZONTAL';
+  body(input).OpenSightReferenceLines = [{ value: 250, label: 'Goal', color: '#c0392b' }];
+  const { model, option } = compileVisual(input);
+  assert.equal(model.horizontal, true);
+  assert.equal(option.series[0].markLine.data[0].xAxis, 250);
+  assert.equal(option.series[0].markLine.data[0].yAxis, undefined);
+  const chart = init(null, undefined, { renderer: 'svg', ssr: true, width: 600, height: 320 });
+  try {
+    chart.setOption(option);
+    assert.match(chart.renderToSVGString(), /Goal/);
+  } finally { chart.dispose(); }
 });
 
 for (const input of [real, ...sales.filter(v => !v.definition.TableVisual)]) {

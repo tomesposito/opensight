@@ -59,6 +59,14 @@ function enumValue(value: unknown, choices: string[], fallback: string, path: st
   if (typeof value !== 'string' || !choices.includes(value)) fail(path, `unsupported value; expected ${choices.join(', ')}`);
   return value;
 }
+/** OpenSight extension: persisted reference lines must be validated before they reach the model. */
+function extensionReferenceLines(value: unknown, path: string): { referenceLines?: VisualModel['referenceLines'] } {
+  if (value === undefined) return {};
+  if (!Array.isArray(value)) fail(path, 'expected an array');
+  return { referenceLines: value
+    .filter(line => !!line && typeof line === 'object' && !Array.isArray(line) && typeof (line as { value?: unknown }).value === 'number' && Number.isFinite((line as { value: number }).value))
+    .map(line => { const raw = line as { value: number; label?: unknown; color?: unknown }; return { value: raw.value, label: String(raw.label ?? ''), color: String(raw.color ?? '#c0392b') }; }) };
+}
 
 /** Explicit dialect selection; camelCase includes the API converter's projections. */
 export function normalizeVisual(source: Input['source'], definition: Input['definition'], path = '$'): VisualModel {
@@ -282,7 +290,7 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
     labels: visibility(labels, key('visibility', 'Visibility'), kind === 'pie' ? 'VISIBLE' : 'HIDDEN'),
     tooltip: visibility(tooltip, key('tooltipVisibility', 'TooltipVisibility')),
     legend: visibility(legend, key('visibility', 'Visibility')),
-    ...((body as Record<string, unknown>).referenceLines !== undefined && Array.isArray((body as Record<string, unknown>).referenceLines) ? { referenceLines: ((body as Record<string, unknown>).referenceLines as { value: number; label: string; color: string }[]).filter(l => typeof l.value === 'number' && Number.isFinite(l.value)).map(l => ({ value: l.value, label: String(l.label ?? ''), color: String(l.color ?? '#c0392b') })) } : {}),
+    ...extensionReferenceLines(body[key('opensightReferenceLines', 'OpenSightReferenceLines')], `${p}.${key('opensightReferenceLines', 'OpenSightReferenceLines')}`),
   };
 }
 
