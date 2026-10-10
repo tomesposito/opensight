@@ -81,7 +81,7 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
   if (kind === 'insight') {
     try { body = projectInsightBody(body); } catch (error) { if (error instanceof InsightError) fail(p, error.message); throw error; }
   }
-  keys(body, [...(kind === 'insight' ? ['insightConfiguration', 'dataSetIdentifier'] : []), key('opensightFormatting', 'OpenSightFormatting'), key('opensightPalette', 'OpenSightPalette'), key('visualId', 'VisualId'), key('title', 'Title'), key('subtitle', 'Subtitle'), key('chartConfiguration', 'ChartConfiguration'), key('actions', 'Actions'), key('columnHierarchies', 'ColumnHierarchies')], p);
+  keys(body, [...(kind === 'insight' ? ['insightConfiguration', 'dataSetIdentifier'] : []), key('opensightFormatting', 'OpenSightFormatting'), key('opensightPalette', 'OpenSightPalette'), key('opensightReferenceLines', 'OpenSightReferenceLines'), key('visualId', 'VisualId'), key('title', 'Title'), key('subtitle', 'Subtitle'), key('chartConfiguration', 'ChartConfiguration'), key('actions', 'Actions'), key('columnHierarchies', 'ColumnHierarchies')], p);
   for (const name of [key('actions', 'Actions'), key('columnHierarchies', 'ColumnHierarchies')]) {
     if (list(body[name], `${p}.${name}`).length) fail(`${p}.${name}`, 'actions and drill hierarchies are not supported');
   }
@@ -282,6 +282,7 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
     labels: visibility(labels, key('visibility', 'Visibility'), kind === 'pie' ? 'VISIBLE' : 'HIDDEN'),
     tooltip: visibility(tooltip, key('tooltipVisibility', 'TooltipVisibility')),
     legend: visibility(legend, key('visibility', 'Visibility')),
+    ...((body as Record<string, unknown>).referenceLines !== undefined && Array.isArray((body as Record<string, unknown>).referenceLines) ? { referenceLines: ((body as Record<string, unknown>).referenceLines as { value: number; label: string; color: string }[]).filter(l => typeof l.value === 'number' && Number.isFinite(l.value)).map(l => ({ value: l.value, label: String(l.label ?? ''), color: String(l.color ?? '#c0392b') })) } : {}),
   };
 }
 

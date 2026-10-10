@@ -1,11 +1,12 @@
 import { readEmbeddedImage } from './sheet-objects.js';
 import { objectLabel } from './SheetObjectCard.js';
 import { useEffect, useRef, useState, type Dispatch, type ReactNode } from 'react';
-import { activeSheet, type AuthorAction, type AuthorDraft } from './authoring.js';
+import { activeSheet, tabular, type AuthorAction, type AuthorDraft } from './authoring.js';
 import { useAccess, type Access } from './access.js';
 import { useToast } from './Toasts.js';
 import { AnalysisSettings } from './AnalysisSettings.js';
 import { SheetLayoutSettings } from './SheetLayoutSettings.js';
+import { exportVisualCsv, exportVisualExcel } from './visual-export.js';
 import { AnalysisPdfDialog } from './AnalysisPdfDialog.js';
 import { AuthorMenu, AuthorMenuItem } from './AuthorMenuItem.js';
 import { flushSync } from 'react-dom';
@@ -157,20 +158,28 @@ export function AuthorToolbar({ canUndo = false, canRedo = false, onUndo, onRedo
         <AuthorMenuItem label="Legend" reason={needsVisual ?? (selected && !hasLegend(selected.kind) ? 'Legends are not supported for this visual type.' : undefined)} run={() => focus('[data-author-control="legend"]', 'Visual')} />
         <hr />
         <AuthorMenuItem label="Conditional Formatting" reason={needsVisual} run={() => focus('[data-author-control="conditional-formatting"]', 'Visual')} />
-        <AuthorMenuItem label="Tooltips" reason={needsVisual ?? 'Tooltip customization is not supported yet. Charts use default tooltips.'} />
-        <AuthorMenuItem label="Highlights" reason={needsVisual ?? 'Highlight settings are not supported yet.'} />
-        <AuthorMenuItem label="Reference Lines" reason={needsVisual ?? 'Reference line authoring is not supported yet.'} />
+        <AuthorMenuItem label="Tooltips" reason={needsVisual} run={() => focus('[data-author-control="tooltips"]', 'Visual')} />
+        <AuthorMenuItem label="Highlights" reason={needsVisual ?? 'Highlight rules are not supported yet. Use Conditional Formatting for data-driven emphasis.'} />
+        <AuthorMenuItem label="Reference Lines" reason={needsVisual} run={() => focus('[data-author-control="reference-lines"]', 'Visual')} />
         <AuthorMenuItem label="Actions" reason={needsVisual} run={() => focus('[data-author-control="actions"]', 'Interaction')} />
         <hr />
-        <AuthorMenuItem label="Placement" run={() => focus('.object-placement input')} reason={selectedObject ? undefined : needsVisual ?? 'Numeric placement settings are not supported yet. Drag or resize the visual on the canvas.'} />
-        <AuthorMenuItem label="Style" run={() => focus('.sheet-object-properties input')} reason={selectedObject ? undefined : needsVisual ?? 'Per-card style settings are not supported yet. Analysis themes and visual palettes are available in Properties.'} />
-        <AuthorMenuItem label="Rules" reason={needsVisual ?? 'Object visibility rules are not supported yet.'} />
+        <AuthorMenuItem label="Placement" run={() => focus(selectedObject ? '.object-placement input' : '[data-author-control="visual-placement"]', 'Visual')} reason={selectedObject ? undefined : needsVisual} />
+        <AuthorMenuItem label="Style" run={() => focus('.sheet-object-properties input')} reason={selectedObject ? undefined : needsVisual ?? 'Per-visual card styling is not supported yet. Use Analysis themes and visual palettes in Properties.'} />
+        <AuthorMenuItem label="Rules" reason={needsVisual ?? 'Visibility rules need a hosted rule engine. All visuals are always visible in this editor.'} />
         <hr />
-        <AuthorMenuItem label="Forecast" reason={needsVisual ?? 'Forecast authoring is not supported yet.'} />
-        <AuthorMenuItem label="Anomaly" reason={needsVisual ?? 'Anomaly detection authoring is not supported yet.'} />
+        <AuthorMenuItem label="Forecast" reason={needsVisual ?? 'Forecasting needs an ML backend, which OpenSight does not include. No forecast is computed or shown.'} />
+        <AuthorMenuItem label="Anomaly" reason={needsVisual ?? 'Anomaly detection needs an ML backend, which OpenSight does not include. No anomalies are computed or shown.'} />
         <hr />
-        <AuthorMenuItem label="Export Visual to CSV" reason={needsVisual ?? 'Visual query-result export to CSV is not supported in this editor yet.'} />
-        <AuthorMenuItem label="Export Table to Excel" reason={needsVisual ?? 'Table query-result export to Excel is not supported in this editor yet.'} />
+        <AuthorMenuItem label="Export Visual to CSV" reason={needsVisual} run={() => {
+          if (!selected) return;
+          const problem = exportVisualCsv(selected.id, selected.title);
+          setNotice(problem ?? `Downloaded ${selected.title || selected.id} as CSV.`);
+        }} />
+        <AuthorMenuItem label="Export Table to Excel" reason={needsVisual ?? (selected && !tabular(selected.kind) ? 'Excel export is available for table and pivot visuals.' : undefined)} run={() => {
+          if (!selected) return;
+          const problem = exportVisualExcel(selected.id, selected.title);
+          setNotice(problem ?? `Downloaded ${selected.title || selected.id} as Excel.`);
+        }} />
         {!!sheet.visuals.length && <><hr /><div role="group" aria-label="Select visual">{sheet.visuals.map(v => <AuthorMenuItem key={v.id} label={`${v.title || v.id} · ${v.kind}`} run={() => dispatch({ type: 'select', id: v.id })} />)}</div></>}
         {selected && <AuthorMenuItem label="Remove selected visual" run={() => dispatch({ type: 'remove', id: selected.id })} />}
         {!!sheet.objects?.length && <><hr /><div role="group" aria-label="Select object">{sheet.objects.map(o => <AuthorMenuItem key={o.id} label={objectLabel(o)} run={() => dispatch({ type: 'select', id: o.id })} />)}</div></>}

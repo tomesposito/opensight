@@ -1,6 +1,6 @@
 import { useId, type Dispatch, type ReactNode } from 'react';
-import type { AuthorAction, AuthorVisual } from './authoring.js';
-import { hasSmallMultiplesWell } from './authoring.js';
+import type { AuthorAction, AuthorDraft, AuthorVisual } from './authoring.js';
+import { GRID_COLUMNS, hasSmallMultiplesWell } from './authoring.js';
 import { hasDataLabels, hasLegend, LEGEND_POSITIONS, type LegendPosition } from './formatting.js';
 
 type SectionProps = { visual: AuthorVisual; dispatch: Dispatch<AuthorAction> };
@@ -157,5 +157,41 @@ export function DataLabelsOptions({ visual, dispatch }: SectionProps) {
         dispatch({ type: 'formatting', formatting: rest });
       } else dispatch({ type: 'formatting', formatting: { ...visual.formatting, decimalPlaces: Number(e.target.value) } });
     }} /></label>
+  </details>;
+}
+
+export function ReferenceLinesEditor({ visual, dispatch }: SectionProps) {
+  const lines = visual.referenceLines ?? [];
+  return <details className="property-section"><summary data-author-control="reference-lines">Reference lines</summary>
+    <p className="field-hint">Dashed lines at fixed values on the value axis.</p>
+    {lines.map(line => <fieldset key={line.id} className="property-group" aria-label={`Reference line ${line.id}`}>
+      <label>Value<input type="number" step="any" value={line.value} onChange={e => {
+        const value = Number(e.target.value);
+        if (Number.isFinite(value)) dispatch({ type: 'reference-line-update', id: line.id, patch: { value } });
+      }} /></label>
+      <label>Label<input value={line.label} maxLength={128} placeholder={String(line.value)} onChange={e => dispatch({ type: 'reference-line-update', id: line.id, patch: { label: e.target.value } })} /></label>
+      <label>Color<input type="color" value={line.color} onChange={e => dispatch({ type: 'reference-line-update', id: line.id, patch: { color: e.target.value } })} /></label>
+      <button type="button" onClick={() => dispatch({ type: 'reference-line-remove', id: line.id })}>Remove line</button>
+    </fieldset>)}
+    <button type="button" onClick={() => dispatch({ type: 'reference-line-add' })}>Add reference line</button>
+  </details>;
+}
+
+export function VisualPlacement({ visual, draft, dispatch }: SectionProps & { draft: AuthorDraft }) {
+  const sheet = draft.sheets.find(s => s.id === draft.activeSheetId);
+  const placement = sheet?.layout.find(p => p.i === visual.id);
+  if (!placement) return null;
+  const keys = ['x', 'y', 'w', 'h'] as const;
+  const labels: Record<(typeof keys)[number], string> = { x: 'Column', y: 'Row', w: 'Width', h: 'Height' };
+  return <details className="property-section" open><summary data-author-control="visual-placement">Placement</summary>
+    <p className="field-hint">Grid cells. Drag the handle to move; drag a corner to resize.</p>
+    {keys.map(key => <label key={key}>{labels[key]}<input aria-label={`Visual ${labels[key].toLowerCase()}`} type="number"
+      min={key === 'w' ? 3 : key === 'h' ? 4 : 0}
+      max={key === 'x' ? GRID_COLUMNS - placement.w : key === 'w' ? GRID_COLUMNS - placement.x : 10000 - (key === 'y' ? placement.h : placement.y)}
+      value={placement[key]} onChange={e => {
+        const value = Number(e.target.value);
+        if (!Number.isSafeInteger(value)) return;
+        dispatch({ type: 'layout', sheetId: sheet!.id, layout: sheet!.layout.map(p => p.i === visual.id ? { ...p, [key]: value } : p) });
+      }} /></label>)}
   </details>;
 }

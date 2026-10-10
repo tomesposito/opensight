@@ -9,6 +9,7 @@ import { buildAuthorQuery, loadAuthorRows } from './author-query.js';
 import type { AuthorRows, QueryClient } from './author-query.js';
 import type { AuthorVisual, CalculatedField } from './authoring.js';
 import type { QueryRequest } from './api-client.js';
+import { storeVisualRows } from './visual-export.js';
 
 export const PARAMETER_DEBOUNCE_MS = 250;
 
@@ -29,6 +30,7 @@ export function LiveAuthorVisual({ visual, theme, client, calculations, paramete
   const fixture = useMemo(() => !client && request ? executeFixtureQuery(request) : undefined, [client, request]);
   const current = client ? state?.request === request && state.client === client ? state.result : undefined : fixture;
   const preview = useMemo(() => ({ ...buildAuthorVisual(visual, calculations, client?.dataset), theme, rows: current?.rows ?? null }), [visual, current, calculations, theme, client?.dataset]);
+  useEffect(() => { storeVisualRows(visual.id, preview.rows); }, [visual.id, preview.rows]);
   // Clear previous results immediately when assignments change, even before the effect runs.
   return <VisualCard interaction={interaction} onRowGroupToggle={onRowGroupToggle} visual={preview} loading={!!request && !current} dataMessage={current?.message} />;
 }

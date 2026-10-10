@@ -85,7 +85,7 @@ test('assignment replaces the dimension, appends unique measures, and preserves 
   assert.equal(visual(draft).dimension, 'category');
   assert.deepEqual(visual(draft).measures, ['revenue', 'profit']);
   assert.deepEqual(serializeDraft(draft), [{ barChartVisual: {
-    visualId: 'visual-1', chartConfiguration: { legend: { visibility: 'VISIBLE' }, dataLabels: { visibility: 'HIDDEN' }, orientation: 'VERTICAL', barsArrangement: 'CLUSTERED', fieldWells: { barChartAggregatedFieldWells: {
+    visualId: 'visual-1', chartConfiguration: { legend: { visibility: 'VISIBLE' }, dataLabels: { visibility: 'HIDDEN' }, tooltip: { tooltipVisibility: 'VISIBLE' }, orientation: 'VERTICAL', barsArrangement: 'CLUSTERED', fieldWells: { barChartAggregatedFieldWells: {
       category: [{ categoricalDimensionField: { fieldId: 'category', column: { dataSetIdentifier: 'sales_data', columnName: 'category' } } }],
       values: ['revenue', 'profit'].map(name => ({ numericalMeasureField: {
         fieldId: name, column: { dataSetIdentifier: 'sales_data', columnName: name },

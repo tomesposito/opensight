@@ -37,6 +37,7 @@ export interface VisualModel {
   labels: boolean;
   tooltip: boolean;
   legend: boolean;
+  referenceLines?: { value: number; label: string; color: string }[];
   sort?: { fieldId: string; direction: 'ASC' | 'DESC' };
   warnings: string[];
   insightConfiguration?: Record<string, unknown>;
