@@ -5,7 +5,7 @@ import {
   layoutSettingsValid, DEFAULT_LAYOUT_SETTINGS,
   serializeDraft as serializeAnalysis,
 } from '../build/test/authoring.js';
-import { importBundle } from '../build/test/bundle-authoring.js';
+import { importBundle, exportBundle } from '../build/test/bundle-authoring.js';
 import { withActionFilters, toggleSelection } from '../build/test/interactions.js';
 import { buildControlQuery } from '../build/test/author-query.js';
 
@@ -199,4 +199,34 @@ test('layout settings survive a bundle round-trip', () => {
   assert.deepEqual(sheetDef.opensightLayoutSettings, { rowHeight: 60, margin: 4 });
   const imported = importBundle({ members: [{ path: `analysis/${resource.analysisId}.json`, resource }] });
   assert.deepEqual(imported.sheets[0].layoutSettings, { rowHeight: 60, margin: 4 });
+});
+
+test('layout settings edits survive export of an imported analysis (issue #76)', () => {
+  const before = emptyDraft();
+  const id = activeSheet(before).id;
+  const draft = authorReducer(before, { type: 'sheet-layout-settings', id, settings: { rowHeight: 60, margin: 4 } });
+  const resource = serializeAnalysis(draft);
+  const imported = importBundle({ members: [{ path: `analysis/${resource.analysisId}.json`, resource }] });
+  const edited = authorReducer(imported, {
+    type: 'sheet-layout-settings', id: imported.sheets[0].id, settings: { rowHeight: 80, margin: 8 },
+  });
+  const exported = exportBundle(edited);
+  const rawSheet = exported.members[0].resource.definition.sheets[0];
+  assert.deepEqual(rawSheet.opensightLayoutSettings, { rowHeight: 80, margin: 8 });
+  const reimported = importBundle(exported);
+  assert.deepEqual(reimported.sheets[0].layoutSettings, { rowHeight: 80, margin: 8 });
+});
+
+test('layout settings export for an imported analysis with no original settings (issue #76)', () => {
+  const resource = serializeAnalysis(emptyDraft());
+  assert.equal(resource.definition.sheets[0].opensightLayoutSettings, undefined);
+  const imported = importBundle({ members: [{ path: `analysis/${resource.analysisId}.json`, resource }] });
+  const edited = authorReducer(imported, {
+    type: 'sheet-layout-settings', id: imported.sheets[0].id, settings: { rowHeight: 60, margin: 4 },
+  });
+  const exported = exportBundle(edited);
+  const rawSheet = exported.members[0].resource.definition.sheets[0];
+  assert.deepEqual(rawSheet.opensightLayoutSettings, { rowHeight: 60, margin: 4 });
+  const reimported = importBundle(exported);
+  assert.deepEqual(reimported.sheets[0].layoutSettings, { rowHeight: 60, margin: 4 });
 });
