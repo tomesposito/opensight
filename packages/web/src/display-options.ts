@@ -1,6 +1,6 @@
 import type { EChartsOption } from 'echarts';
 import type { VisualModel } from './model.js';
-import { hasDataLabels } from './formatting.js';
+import { hasDataLabels, hasReferenceLines } from './formatting.js';
 
 /** Layout and label presentation only; result values and field identities stay unchanged. */
 export function applyDisplayOptions(model: VisualModel, option: EChartsOption): void {
@@ -58,8 +58,9 @@ export function applyDisplayOptions(model: VisualModel, option: EChartsOption): 
       return ['funnel', 'treemap', 'filledMap'].includes(model.kind) ? `${params.name ?? ''}: ${formatted}` : `${formatted}${model.kind === 'bar100' ? '%' : ''}`;
     } };
   }
-  // Reference lines as ECharts markLines on cartesian charts.
-  if (model.referenceLines?.length && ['bar', 'bar100', 'line', 'area', 'combo', 'scatter'].includes(model.kind) && Array.isArray(option.series)) {
+  // Reference lines as ECharts markLines on cartesian charts; horizontal bars use the x axis for values.
+  if (model.referenceLines?.length && hasReferenceLines(model.kind) && Array.isArray(option.series)) {
+    const axis = model.horizontal ? 'xAxis' : 'yAxis';
     const markLine = {
       silent: true,
       symbol: 'none',
@@ -67,7 +68,7 @@ export function applyDisplayOptions(model: VisualModel, option: EChartsOption): 
       lineStyle: { type: 'dashed' as const },
       data: model.referenceLines.map(line => ({
         name: line.label || String(line.value),
-        yAxis: line.value,
+        [axis]: line.value,
         label: { color: line.color },
         lineStyle: { color: line.color },
       })),
