@@ -3,7 +3,7 @@ import { analysisDescriptionValid, layoutSettingsValid } from './authoring.js';
 import { projectInsightBody } from './insight-configuration.js';
 import { normalizeVisual } from './compiler.js';
 import { themeValid, paletteValid } from './themes.js';
-import { formattingValid, gaugeValid, binsValid, legendPositionValid } from './formatting.js';
+import { formattingValid, gaugeValid, binsValid, legendPositionValid, hasReferenceLines } from './formatting.js';
 import { EXTRA_VISUALS, extraKind, variantKinds } from './visual-catalog.js';
 import { unsupportedFunctions } from '@opensight/query-engine/browser';
 import { importInteractions, exportInteractions } from './bundle-interactions.js';
@@ -54,6 +54,15 @@ function localBinding(arn: string | undefined, bundle: QsBundle, identifier: str
   // Otherwise an imported dependency cannot inherit the example ARN's binding.
   return arn === LOCAL_SALES_ARN && (identifier === LOCAL_IDENTIFIER || !bundle.members.some(m => m.resource.resourceType === 'dataset' && m.resource.dataSetId === 'renderable-sales'));
 }
+/** A serialized reference line entry is valid only when it carries exactly { value, label, color } in bounds. */
+function serializedReferenceLine(entry: unknown): { value: number; label: string; color: string } | undefined {
+  const o = obj(entry);
+  if (!Object.keys(o).every(k => ['value', 'label', 'color'].includes(k)) ||
+      typeof o.value !== 'number' || !Number.isFinite(o.value) ||
+      typeof o.label !== 'string' || o.label.length > 128 ||
+      typeof o.color !== 'string' || !/^#[0-9a-f]{6}$/i.test(o.color)) return undefined;
+  return { value: o.value, label: o.label, color: o.color };
+}
 function importVisual(raw: BundleVisual, id: string, definition: BundleDefinition, bundle: QsBundle): AuthorVisual {
   const [variant, value] = Object.entries(raw)[0]!;
   const body = obj(value);
@@ -76,16 +85,19 @@ function importVisual(raw: BundleVisual, id: string, definition: BundleDefinitio
   const measures = extra ? extra.measures.flatMap(name => names(wells[name])) : names(wells.values);
   const total = obj(config.totalOptions);
   const subtitle = obj(body.subtitle), legendPosition = obj(config.legend).position;
+  const validLines = list(body.opensightReferenceLines).map(serializedReferenceLine).filter((line): line is { value: number; label: string; color: string } => line !== undefined);
   const visual: AuthorVisual = { ...defaults(), ...(validInsight && body.insightConfiguration !== undefined ? { insightConfiguration: copy(obj(body.insightConfiguration)) } : {}), ...(paletteValid(body.opensightPalette) ? { palette: [...body.opensightPalette] } : {}), id, kind, title: string(obj(obj(body.title).formatText).plainText),
     ...(formattingValid(body.opensightFormatting) ? { formatting: copy(body.opensightFormatting) } : {}),
     ...(body.subtitle !== undefined ? { subtitle: string(obj(subtitle.formatText).plainText), subtitleVisible: subtitle.visibility !== 'HIDDEN' } : {}),
     ...(legendPositionValid(legendPosition) ? { formatting: { ...(formattingValid(body.opensightFormatting) ? copy(body.opensightFormatting) : {}), legendPosition } } : {}),
     ...(kind === 'gauge' && gaugeValid(config.opensightGauge) ? { gauge: copy(config.opensightGauge) } : {}),
     ...(kind === 'histogram' && binsValid(config.opensightBins) ? { bins: config.opensightBins } : {}),
+    ...(validLines.length > 0 && hasReferenceLines(kind) ? { referenceLines: validLines.map((line, index) => ({ id: `refline-${index + 1}`, ...line })) } : {}),
     titleVisible: obj(body.title).visibility !== 'HIDDEN', dimension: noDimensions(kind) ? null : rows[0] ?? null,
     rows: grouped(kind) ? rows : [], columns, measures: singleMeasure(kind) ? measures.slice(0, 1) : measures,
     donut: kind === 'pie' && ['SMALL', 'MEDIUM', 'LARGE'].includes(string(obj(obj(config.donutOptions).arcOptions).arcThickness)),
     legend: obj(config.legend).visibility !== 'HIDDEN', labels: obj(config.dataLabels).visibility === 'VISIBLE' || kind === 'pie' && obj(config.dataLabels).visibility === undefined,
+    tooltipVisible: obj(config.tooltip).tooltipVisibility !== 'HIDDEN',
     horizontal: config.orientation === 'HORIZONTAL', stacked: config.barsArrangement === 'STACKED',
     totals: (kind === 'pivot' ? obj(total.rowTotalOptions) : total).totalsVisibility === 'VISIBLE',
     subtotals: (kind === 'pivot' ? obj(total.rowSubtotalOptions) : obj(config.opensightSubtotalOptions)).totalsVisibility === 'VISIBLE',
