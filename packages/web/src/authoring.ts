@@ -291,12 +291,10 @@ export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorD
     copy.id = fresh('sheet', source.id);
     copy.name = `${source.name} (copy)`;
     copy.selectedId = null;
-    delete copy.imported;
     for (const visual of copy.visuals) {
       visual.id = fresh('visual', visual.id);
       for (const item of [...visual.filterActions ?? [], ...visual.urlActions ?? [], ...visual.navigationActions ?? []]) item.id = fresh('action', item.id);
       for (const nav of visual.navigationActions ?? []) if (nav.targetSheetId === source.id) nav.targetSheetId = copy.id;
-      delete visual.imported;
     }
     for (const object of copy.objects ?? []) { object.id = fresh('object', object.id); delete object.importedId; }
     for (const control of copy.controls) control.id = fresh('control', control.id);
@@ -741,7 +739,7 @@ export function validateDraft(value: unknown): asserts value is AuthorDraft {
 
 /** Keep the original storage key and migrate v0 drafts only after checking their complete shape. */
 function migrateDraft(value: unknown): unknown {
-  if (isObject(value) && value.version === 2) return { parameters: [], ...value, sheets: Array.isArray(value.sheets) ? value.sheets.map(s => isObject(s) ? { controls: [], ...s } : s) : value.sheets };
+  if (isObject(value) && value.version === 2) return { parameters: [], ...value, sheets: Array.isArray(value.sheets) ? value.sheets.map(s => isObject(s) ? { controls: [], ...s, visuals: Array.isArray(s.visuals) ? s.visuals.map(v => isObject(v) && v.tooltipVisible === undefined ? { tooltipVisible: true, ...v } : v) : s.visuals } : s) : value.sheets };
   if (!isObject(value) || value.version !== 1) return value;
   if (!onlyKeys(value, ['version', 'visuals', 'selectedId']) || !Array.isArray(value.visuals)) throw new Error('Invalid legacy draft');
   const draft = emptyDraft();
