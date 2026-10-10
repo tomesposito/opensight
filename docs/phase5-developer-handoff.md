@@ -49,6 +49,11 @@ deployment is authorized by this handoff.
 Use [D-22](itd/D-22-serverless-object-transfers.md),
 [D-23](itd/D-23-serverless-state-and-fencing.md) and H9/H10 as the contract inputs.
 
+The operator confirmed the upload/status and 1 MiB control JSON product choice
+in [D-28](idd/D-28-serverless-upload-experience.md). The first build checkpoint is
+[SR2a durable coordination](phase5-sr2a-coordination.md); subsequent artifact,
+transfer and application-integration contracts must be frozen before those builds.
+
 - Finalize SQL schema, migration compatibility and lock ordering; durable
   aggregate admission, claims, fencing tokens and authoritative publication.
 - Implement private immutable/version-bound S3 artifacts and asynchronous
