@@ -1,0 +1,50 @@
+.data-page, .data-dialog { font: 12px/1.5 Arial, "Helvetica Neue", Helvetica, sans-serif; color: #233b49; }
+.data-page { max-width: 1440px; margin: 0 auto; padding: 24px 32px; }
+.data-page h1 { font-size: 24px; font-weight: 400; margin: 0 0 16px; }
+.data-page h2, .data-dialog h2 { font-size: 16px; font-weight: 500; margin: 0 0 8px; }
+.data-card { padding: 16px; background: white; border: 1px solid #d9e1e5; border-radius: 6px; box-shadow: 0 1px 2px #19384a14; }
+.data-toolbar, .data-tools, .data-dialog-tools, .data-detail-heading { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.data-toolbar { justify-content: space-between; margin-bottom: 16px; }
+.data-page button, .data-dialog button, .data-page select, .data-dialog select, .data-page input, .data-dialog input { font: inherit; }
+.data-page button, .data-dialog button { border: 1px solid #8ca6b4; border-radius: 3px; padding: 4px 12px; background: white; color: #176482; }
+.data-page button:disabled, .data-dialog button:disabled { color: #65737b; border-color: #c7cfd3; background: #f0f2f3; cursor: not-allowed; }
+.data-page .data-primary, .data-dialog .data-primary { color: white; background: #176b88; border-color: #176b88; }
+.data-page input, .data-dialog input, .data-page select, .data-dialog select { padding: 4px 8px; border: 1px solid #9eb0ba; border-radius: 3px; background: white; color: inherit; }
+.data-tools { margin: 0 0 12px; }
+.data-tools input[type=search], .data-dialog-tools input[type=search] { width: 260px; max-width: 100%; }
+.data-reload { margin-left: auto; }
+.data-tabs { display: flex; gap: 4px; }
+.data-tabs button { border: 0; border-radius: 0; padding: 8px 12px; color: #233b49; background: transparent; border-bottom: 2px solid transparent; }
+.data-tabs button[aria-selected=true] { border-bottom-color: #176b88; background: #eff4f6; font-weight: bold; }
+.data-split { display: flex; align-items: stretch; }
+.data-split > button { border-radius: 3px 0 0 3px; }
+.data-split > .data-menu > summary { background: #176b88; color: white; border-radius: 0 3px 3px 0; border-left: 1px solid #7facbd; padding: 4px 8px; height: 100%; }
+.data-menu { position: relative; display: inline-block; }
+.data-menu > summary { list-style: none; padding: 0 8px; font-size: 16px; cursor: pointer; }
+.data-menu > summary::-webkit-details-marker { display: none; }
+.data-menu-items { position: absolute; right: 0; top: 100%; z-index: 15; width: max-content; max-width: 300px; background: white; border: 1px solid #bbcbd3; box-shadow: 0 4px 12px #19384a33; padding: 4px; }
+.data-menu-items button { display: block; border: 0; text-align: left; width: 100%; }
+.data-menu-items button:hover { background: #eaf3f7; }
+.data-table-scroll { overflow-x: auto; }
+.data-table { width: 100%; border-collapse: collapse; text-align: left; }
+.data-table th { font-size: 12px; padding: 8px; border-bottom: 1px solid #c8d5dc; font-weight: bold; white-space: nowrap; }
+.data-table td { padding: 8px; border-bottom: 1px solid #e4eaee; overflow-wrap: anywhere; }
+.data-table th:first-child { width: 55%; }
+.data-table .data-name { border: 0; padding: 0; text-align: left; background: transparent; }
+.data-badges { display: inline-flex; gap: 4px; margin-left: 12px; }
+.data-badge { display: inline-block; border: 1px solid #b5cbd3; border-radius: 12px; padding: 0 6px; font-size: 11px; background: #edf5f7; white-space: nowrap; }
+.data-empty { text-align: center; padding: 64px 16px; }
+.data-empty > span { display: block; font-size: 36px; color: #548599; margin-bottom: 12px; }
+.data-empty p, .data-note { color: #596c78; }
+.data-table .data-table-empty { padding: 40px 8px; text-align: center; color: #596c78; }
+.data-note { margin: 16px 0 0; }
+.data-dialog { width: min(960px, calc(100vw - 48px)); max-height: calc(100vh - 48px); padding: 0; border: 1px solid #a7b6bf; border-radius: 6px; box-shadow: 0 16px 48px #172d3c55; }
+.data-dialog::backdrop { background: #172d3c66; }
+.data-dialog > header { display: flex; justify-content: space-between; padding: 16px; border-bottom: 1px solid #d9e1e5; }
+.data-dialog header p { margin: 0; }
+.data-dialog header > button { align-self: start; border: 0; font-size: 20px; padding: 0 4px; }
+.data-dialog-body { padding: 16px; min-height: 320px; }
+.data-dialog-tools { margin-bottom: 16px; }
+.data-dialog-tools > input { margin-right: auto; }
+.data-dialog footer { display: flex; justify-content: flex-end; gap: 8px; padding: 16px; border-top: 1px solid #d9e1e5; }
+@media (max-width: 700px) { .data-page { padding: 16px 8px; } .data-toolbar { align-items: start; } .data-badges { display: flex; margin: 4px 0 0; } .data-dialog { width: calc(100vw - 16px); } }

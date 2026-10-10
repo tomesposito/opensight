@@ -8,6 +8,7 @@ export const pages = {
   dashboards: { path: '/dashboards', section: 'Dashboards', title: 'Dashboards' },
   analyses: { path: '/analyses', section: 'Analyses', title: 'My analyses' },
   author: { path: '/analyses/author', section: 'Analyses', title: 'Author' },
+  data: { path: '/data', section: 'Data', title: 'Data' },
   'data-prep': { path: '/data/preparation', section: 'Data', title: 'Data preparation' },
   'data-sources': { path: '/data/sources', section: 'Data', title: 'Data sources' },
   security: { path: '/admin/security', section: 'Admin', title: 'Security & namespaces' },
@@ -23,10 +24,10 @@ export type AppRoute = { page: Page; draftId?: string; newAnalysis?: boolean };
 export const productSections = [
   { title: 'My stuff', page: 'my-stuff' },
   { title: 'Analyses', page: 'analyses' }, { title: 'Dashboards', page: 'dashboards' },
-  { title: 'Data', page: 'data-prep' },
+  { title: 'Data', page: 'data' },
   { title: 'My folders', page: 'my-folders' }, { title: 'Shared folders', page: 'shared-folders' },
 ] as const;
-export const dataPages: Page[] = ['data-prep', 'data-sources'];
+export const dataPages: Page[] = ['data', 'data-prep', 'data-sources'];
 export const adminPages: Page[] = ['security', 'organization', 'automation', 'ai-settings', 'users'];
 export const developerPages: Page[] = ['fixtures', 'api'];
 

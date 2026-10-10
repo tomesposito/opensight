@@ -1,4 +1,5 @@
 import { DataPrep } from './DataPrep.js';
+import { DataLanding } from './DataLanding.js';
 import { DataSources } from './DataSources.js';
 import { UserManagement } from './UserManagement.js';
 import { AISettings } from './AISettings.js';
@@ -66,6 +67,7 @@ function ApplicationWorkspace({ api, fixtures }: { api: ReturnType<typeof create
       case 'shared-folders': return <FolderEmptyState shared navigate={navigate} />;
       case 'analyses': return <Analyses navigate={navigate} />;
       case 'author': return choosingDataset ? <Analyses navigate={navigate} /> : <Author key={entry} renderIdentity={identity} sampleLoaded={sampleLoaded} onTrySample={() => setSampleLoaded(true)} inApp draftId={route.draftId} newAnalysis={route.newAnalysis} onDraftChange={draftId => navigate({ page: 'author', draftId }, true)} onSources={() => navigate({ page: 'data-sources' })} onDatasetChange={setAuthorDataset} dataset={route.draftId ? undefined : route.newAnalysis ? newAnalysisChoice?.dataset : authorDataset} onPrep={() => navigate({ page: 'data-prep' })} client={connected ? api : undefined} />;
+      case 'data': return <DataLanding client={connected ? api : undefined} onCreate={() => navigate({ page: 'data-sources' })} onCreateSource={() => navigate({ page: 'data-sources' })} onOpen={() => navigate({ page: 'data-prep' })} onEdit={() => navigate({ page: 'data-prep' })} onPrep={source => { setUploadedSource(source.id); navigate({ page: 'data-prep' }); }} />;
       case 'data-prep': return <DataPrep initialSource={uploadedSource} onBuild={access.mode === 'local' ? dataset => { setAuthorDataset(dataset); navigate({ page: 'author' }); } : undefined} client={connected ? api : undefined} onSources={() => navigate({ page: 'data-sources' })} onAuthor={() => navigate({ page: 'author' })} />;
       case 'data-sources': return <DataSources local={access.mode === 'local'} onPrep={source => { setUploadedSource(source); navigate({ page: 'data-prep' }); }} client={connected ? api : undefined} />;
       case 'users': return <UserManagement client={api} />;
