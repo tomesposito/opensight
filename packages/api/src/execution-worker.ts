@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { Worker } from 'node:worker_threads';
-import { parseUpload, streamSourceMemory, withPrepMemory, streamPrepDuckDb, queryPrepared, queryPreparedVisual, type PrepMemoryTable } from '@opensight/query-engine';
+import { parseUpload, streamSourceMemory, withPrepMemory, streamPrepDuckDb, queryPrepared, queryPreparedVisual,
+  artifactScalar, writeArtifactParquet, readArtifactParquet, type PrepMemoryTable } from '@opensight/query-engine';
 import { BlazeTable } from './blaze.js';
 import type { WorkerRequest, WireTable } from './contained-work.js';
 const table = (t: WireTable): PrepMemoryTable => ({ source: t.source, rowCount: t.rows.length, value: (r, c) => t.rows[r]![c]! });
@@ -16,6 +17,16 @@ process.once('message', (request: WorkerRequest) => {
     if (task.kind === 'upload') {
       const parsed = parseUpload(task.request); output.start(parsed.columns); for (const row of parsed.rows) output.row(row);
       result = { columns: output.columns, rows: parsed.rows };
+    } else if (task.kind === 'parquet-write') {
+      output.start(task.columns); output.setCachedInputs(task.cachedInputs);
+      for (const row of task.rows) output.row(row.map((value, i) => artifactScalar(value, task.columns[i]!)));
+      await writeArtifactParquet(task.path, output.columns, task.rows, memoryMb);
+      result = { rowCount: output.rowCount, decodedBytes: output.bytes };
+    } else if (task.kind === 'parquet-read') {
+      await readArtifactParquet(task.path, task.columns, task.rowCount, limits.cellChars, output, memoryMb);
+      output.setCachedInputs(task.cachedInputs);
+      if (output.bytes !== task.decodedBytes) throw Object.assign(new Error(), { code: 'ARTIFACT_INVALID' });
+      result = { columns: output.columns, rows: Array.from({ length: output.rowCount }, (_, r) => output.columns.map((_, c) => output.value(r, c))) };
     } else if (task.kind === 'query') { const t = table(task.table); result = queryPrepared(t.source.columns, t.rowCount, t.value, task.query); }
     else if (task.kind === 'visual') { const t = table(task.table); result = queryPreparedVisual(t.source.columns, t.rowCount, t.value, task.analysis, task.visualId, task.dataSetArn, task.period); }
     else {
@@ -29,7 +40,8 @@ process.once('message', (request: WorkerRequest) => {
     if (bytes > ((task.kind === 'query' || task.kind === 'visual') ? request.resultBytes : limits.datasetBytes)) throw Object.assign(new Error(), { code: 'TENANT_BUDGET_EXCEEDED' });
     process.send?.({ result, bytes: (task.kind === 'query' || task.kind === 'visual') ? bytes * 4 : output.bytes }, () => process.disconnect?.());
   })().catch((error: unknown) => {
-    const code = error && typeof error === 'object' && 'code' in error && typeof error.code === 'string' ? error.code : 'WORKER_EXECUTION_FAILED';
+    const code = error && typeof error === 'object' && 'code' in error && typeof error.code === 'string' ? error.code
+      : request.task.kind === 'parquet-read' || request.task.kind === 'parquet-write' ? 'ARTIFACT_INVALID' : 'WORKER_EXECUTION_FAILED';
     process.send?.({ errorCode: code }, () => process.disconnect?.());
   });
 });
