@@ -778,6 +778,7 @@ SR0 implementation decision register (issue #81; proposals, no AWS authorization
 | ID | Contract | Status / gate |
 | --- | --- | --- |
 | [D-19](itd/D-19-serverless-egress.md) | Egress and real mail | 🚧 Tom: network profile, source scope, endpoint AZ count and fixed cost |
+| [D-20](itd/D-20-serverless-ingress.md) | Trusted routing and peer | 🚧 Origin trust, prefix and embed contract review |
 
 Related confirmed deployment decision: [ITD D-18 — serverless development
 deployment](itd/D-18-serverless-development-deployment.md) (2026-10-10). Lambda
