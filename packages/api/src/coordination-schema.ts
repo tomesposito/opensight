@@ -19,7 +19,8 @@ const schema = [
     working_bytes BIGINT NOT NULL CHECK (working_bytes > 0), rss_bytes BIGINT NOT NULL CHECK (rss_bytes > 0),
     execution_deadline BIGINT NOT NULL, hold_until BIGINT NOT NULL, lease_until BIGINT NOT NULL, next_renew BIGINT NOT NULL,
     state TEXT NOT NULL CHECK (state IN ('held','released')), revoked INTEGER NOT NULL CHECK (revoked IN (0,1)),
-    PRIMARY KEY (deployment, attempt_id), FOREIGN KEY (tenant_id, namespace_id) REFERENCES h1_namespaces(tenant_id, namespace_id),
+    PRIMARY KEY (deployment, attempt_id), UNIQUE (deployment, attempt_id, tenant_id, namespace_id, owner_id),
+    FOREIGN KEY (tenant_id, namespace_id) REFERENCES h1_namespaces(tenant_id, namespace_id),
     CHECK (hold_until > execution_deadline AND lease_until <= execution_deadline))`,
   `CREATE INDEX sr_admission_capacity ON sr_admission(deployment, state, hold_until)`,
   `CREATE TABLE sr_claim (
@@ -29,7 +30,7 @@ const schema = [
     resource_version INTEGER NOT NULL CHECK (resource_version > 0), attempt_id TEXT,
     PRIMARY KEY (deployment, tenant_id, namespace_id, owner_id, kind, resource_id),
     FOREIGN KEY (tenant_id, namespace_id) REFERENCES h1_namespaces(tenant_id, namespace_id),
-    FOREIGN KEY (deployment, attempt_id) REFERENCES sr_admission(deployment, attempt_id))`,
+    FOREIGN KEY (deployment, attempt_id, tenant_id, namespace_id, owner_id) REFERENCES sr_admission(deployment, attempt_id, tenant_id, namespace_id, owner_id))`,
 ];
 export const coordinationChecksum = createHash('sha256').update(schema.join('\n')).digest('hex');
 export function coordinationDeployment(value: string): string {

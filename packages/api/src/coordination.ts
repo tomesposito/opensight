@@ -25,6 +25,7 @@ interface Attempt {
 }
 interface Locked { epoch: string; revision: number; budgets: BudgetConfig; entitlements: Entitlements }
 const maximumFence = '9223372036854775807';
+const attemptPredicate = 'deployment = ? AND attempt_id = ? AND token = ? AND tenant_id = ? AND namespace_id = ? AND owner_id = ?';
 const integer = (v: SqlValue | undefined): number => {
   const n = Number(v);
   if (!Number.isSafeInteger(n) || n < 0) throw new MetadataError('COORDINATION_UNAVAILABLE', 503);
@@ -105,12 +106,17 @@ export class DurableCoordinator {
     if (!attempt) throw new MetadataError('ATTEMPT_HANDLE_REQUIRED', 403);
     return attempt;
   }
+  private attemptValues(attempt: Attempt): SqlValue[] {
+    return [this.deployment, attempt.input.attemptId, attempt.token, attempt.context.tenantId, attempt.context.namespaceId, attempt.context.userId];
+  }
   async admit(context: TenantContext, raw: AdmissionInput): Promise<AttemptHandle> {
     this.metadata.assertContext(context);
-    const input = inputSnapshot(raw), token = randomUUID();
+    const entered = performance.now(), input = inputSnapshot(raw), token = randomUUID();
     const admitted = await this.transaction(async c => {
       const configuration = await this.locked(c); await this.authority(c, context, input);
-      const now = await coordinationNow(c, this.dialect), limits = configuration.budgets.tenants[context.tenantId] ?? configuration.budgets.defaults;
+      const now = await coordinationNow(c, this.dialect), limits = Object.hasOwn(configuration.budgets.tenants, context.tenantId) ? configuration.budgets.tenants[context.tenantId]! : configuration.budgets.defaults;
+      const remaining = input.platformRemainingMs - Math.ceil(performance.now() - entered);
+      if (remaining <= 3000) throw new MetadataError('EXECUTION_CANCELLED', 409);
       const entitlement = Object.hasOwn(configuration.entitlements.tenants, context.tenantId) ? configuration.entitlements.tenants[context.tenantId] : configuration.entitlements.defaults;
       if (!entitlement) throw new MetadataError('ENTITLEMENT_UNRESOLVED', 503);
       const claim = input.claim ? await this.claim(c, { context, input }) : undefined;
@@ -123,7 +129,7 @@ export class DurableCoordinator {
       if (!fits(tenant, limits)) throw new MetadataError('TENANT_BUDGET_EXCEEDED', 429);
       if (!fits(active, node) || input.class === 'query' && active.filter(r => r.class === 'query').length >= node.running - node.refreshSlots) throw new MetadataError('NODE_ADMISSION_REFUSED', 429);
       if (claim?.attempt_id) {
-        const prior = (await c.query('SELECT state, revoked, lease_until, execution_deadline FROM sr_admission WHERE deployment = ? AND attempt_id = ?', [this.deployment, claim.attempt_id]))[0];
+        const prior = (await c.query('SELECT state, revoked, lease_until, execution_deadline FROM sr_admission WHERE deployment = ? AND attempt_id = ? AND tenant_id = ? AND namespace_id = ? AND owner_id = ?', [this.deployment, claim.attempt_id, context.tenantId, context.namespaceId, context.userId]))[0];
         if (prior?.state === 'held' && integer(prior.revoked) === 0 && integer(prior.lease_until) > now && integer(prior.execution_deadline) > now) throw new MetadataError('BLAZE_BUSY', 409);
       }
       if (claim && (counter(claim.fence) === maximumFence || counter(claim.generation) === maximumFence)) throw new MetadataError('CLAIM_FENCE_EXHAUSTED', 503);
@@ -136,8 +142,8 @@ export class DurableCoordinator {
         await c.query('INSERT INTO h8_usage_events VALUES (?,?,?,?,?,?,?,?)', [randomUUID(), context.tenantId, context.namespaceId, timestamp, 'computeAttempts', 'attempt', 1, denied ? 'denied' : 'admitted']);
         if (denied) return undefined;
       }
-      const executionDeadline = now + Math.min(limits.executionMs, input.platformRemainingMs - 3000);
-      const holdUntil = now + input.platformRemainingMs + 10000, leaseUntil = Math.min(executionDeadline, now + 30000);
+      const executionDeadline = now + Math.min(limits.executionMs, remaining - 3000);
+      const holdUntil = now + remaining + 10000, leaseUntil = Math.min(executionDeadline, now + 30000);
       await c.query(`INSERT INTO sr_admission VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'held',0)`, [this.deployment, input.attemptId, token,
         context.tenantId, context.namespaceId, context.userId, input.class, configuration.epoch, configuration.revision,
         input.revisions.authorization, input.revisions.policy, input.revisions.configuration, limits.workingBytes, limits.workerRssBytes,
@@ -149,6 +155,7 @@ export class DurableCoordinator {
         else await c.query('INSERT INTO sr_claim VALUES (?,?,?,?,?,?,1,1,?,?)', [...this.claimValues({ context, input }), input.claim.expectedVersion, input.attemptId]);
         const allocated = await this.claim(c, { context, input }); fence = counter(allocated?.fence); generation = counter(allocated?.generation);
       }
+      if (await coordinationNow(c, this.dialect) >= executionDeadline) throw new MetadataError('EXECUTION_CANCELLED', 409);
       return { configuration, executionDeadline, holdUntil, leaseUntil, fence, generation };
     });
     if (!admitted) throw new MetadataError('USAGE_LIMIT_EXCEEDED', 429);
@@ -167,7 +174,7 @@ export class DurableCoordinator {
       if (claim?.attempt_id !== attempt.input.attemptId || counter(claim?.fence) !== attempt.fence || counter(claim?.generation) !== attempt.generation
         || integer(claim?.resource_version) !== attempt.input.claim.expectedVersion) throw new MetadataError('CLAIM_LOST', 409);
     }
-    const row = (await c.query('SELECT state, revoked, lease_until, execution_deadline, next_renew FROM sr_admission WHERE deployment = ? AND attempt_id = ? AND token = ?', [this.deployment, attempt.input.attemptId, attempt.token]))[0];
+    const row = (await c.query(`SELECT state, revoked, lease_until, execution_deadline, next_renew FROM sr_admission WHERE ${attemptPredicate}`, this.attemptValues(attempt)))[0];
     if (!row || row.state !== 'held' || integer(row.revoked) !== 0) throw new MetadataError('ATTEMPT_REVOKED', 409);
     this.unexpired(row, await coordinationNow(c, this.dialect)); return row;
   }
@@ -180,7 +187,7 @@ export class DurableCoordinator {
       const row = await this.live(c, attempt), now = await coordinationNow(c, this.dialect); this.unexpired(row, now);
       if (now < integer(row.next_renew)) return integer(row.lease_until);
       const lease = Math.min(integer(row.execution_deadline), now + 30000);
-      await c.query('UPDATE sr_admission SET lease_until = ?, next_renew = ? WHERE deployment = ? AND attempt_id = ? AND token = ?', [lease, now + 10000, this.deployment, attempt.input.attemptId, attempt.token]);
+      await c.query(`UPDATE sr_admission SET lease_until = ?, next_renew = ? WHERE ${attemptPredicate}`, [lease, now + 10000, ...this.attemptValues(attempt)]);
       return lease;
     });
   }
@@ -198,13 +205,13 @@ export class DurableCoordinator {
       // Lock order is retained, but cleanup must work after membership revocation.
       await c.query('UPDATE h1_tenants SET version = version WHERE tenant_id = ?', [attempt.context.tenantId]);
       const claim = attempt.input.claim ? await this.claim(c, attempt) : undefined;
-      const row = (await c.query('SELECT state, revoked FROM sr_admission WHERE deployment = ? AND attempt_id = ? AND token = ?', [this.deployment, attempt.input.attemptId, attempt.token]))[0];
+      const row = (await c.query(`SELECT state, revoked FROM sr_admission WHERE ${attemptPredicate}`, this.attemptValues(attempt)))[0];
       if (!row || row.state === 'released' || !release && integer(row.revoked) !== 0) return;
       if (claim?.attempt_id === attempt.input.attemptId) {
-        if (!release && counter(claim.fence) === maximumFence) throw new MetadataError('CLAIM_FENCE_EXHAUSTED', 503);
-        await c.query(`UPDATE sr_claim SET attempt_id = NULL${release ? '' : ', fence = fence + 1'} WHERE deployment = ? AND tenant_id = ? AND namespace_id = ? AND owner_id = ? AND kind = ? AND resource_id = ? AND attempt_id = ?`, [...this.claimValues(attempt), attempt.input.attemptId]);
+        const advance = !release && counter(claim.fence) !== maximumFence;
+        await c.query(`UPDATE sr_claim SET attempt_id = NULL${advance ? ', fence = fence + 1' : ''} WHERE deployment = ? AND tenant_id = ? AND namespace_id = ? AND owner_id = ? AND kind = ? AND resource_id = ? AND attempt_id = ?`, [...this.claimValues(attempt), attempt.input.attemptId]);
       }
-      await c.query(`UPDATE sr_admission SET ${release ? "state = 'released'" : 'revoked = 1'} WHERE deployment = ? AND attempt_id = ? AND token = ?`, [this.deployment, attempt.input.attemptId, attempt.token]);
+      await c.query(`UPDATE sr_admission SET ${release ? "state = 'released'" : 'revoked = 1'} WHERE ${attemptPredicate}`, this.attemptValues(attempt));
     });
   }
   revoke(handle: AttemptHandle): Promise<void> { return this.retire(handle, false); }

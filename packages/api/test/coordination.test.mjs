@@ -22,9 +22,10 @@ test('SR2a overlapping coordinator instances serialize tenant capacity and queri
 });
 
 test('SR2a deployment reserves refresh slots and accounts complete worker memory across tenants', async t => {
-  for (const weight of [false, true]) {
+  for (const weight of [false, 'working', 'rss']) {
     const budgets = structuredClone(budgetConfig); budgets.node.running = 2;
-    if (weight) budgets.node.workingBytes = budgets.defaults.workingBytes;
+    if (weight === 'working') budgets.node.workingBytes = budgets.defaults.workingBytes;
+    if (weight === 'rss') budgets.node.workerRssBytes = budgets.defaults.workerRssBytes;
     const f = await coordinationFixture(t, { budgets }); await f.open(); const c = coordinator(f);
     const first = await c.admit(f.contexts[0], await f.input());
     await assert.rejects(c.admit(f.contexts[1], await f.input(1)), { code: 'NODE_ADMISSION_REFUSED' });
@@ -73,6 +74,13 @@ test('SR2a admission snapshots input before awaiting its transaction', async t =
   assert.equal((await rows(f, 'sr_admission'))[0].class, 'query'); await c.release(handle);
 });
 
+test('SR2a composite claim references reject a foreign-scope attempt even through the control SQL role', async t => {
+  const f = await coordinationFixture(t); await f.open(); const c = coordinator(f), handle = await c.admit(f.contexts[0], await f.input(0, true));
+  await assert.rejects(f.db.transaction(sql => sql.query('INSERT INTO sr_claim VALUES (?,?,?,?,?,?,1,1,1,?)',
+    ['test', f.contexts[1].tenantId, f.contexts[1].namespaceId, 'admin', 'source', f.uploaded[1].id, handle.attemptId])), { code: 'METADATA_REFERENCE_INVALID' });
+  assert.equal((await rows(f, 'sr_claim')).length, 1); await c.release(handle);
+});
+
 test('SR2a SQL failures and publication callback failures roll back charges, reservations and business writes', async t => {
   const f = await coordinationFixture(t); await f.open();
   const broken = { durable: true, close: async () => {}, transaction: work => f.db.transaction(c => work({ query: (sql, values) => {
@@ -100,6 +108,7 @@ test('SR2a every publication rechecks tenant, identity, membership, role, revisi
     ['UPDATE h1_resources SET version = version + 1 WHERE kind = \'source\'', 'METADATA_REVISED'],
     ["UPDATE sr_control SET state = 'draining'", 'WORKSPACE_MAINTENANCE'],
     ['UPDATE sr_control SET epoch = epoch + 1', 'WORKSPACE_MAINTENANCE'],
+    ['UPDATE sr_limits SET revision = revision + 1', 'WORKSPACE_MAINTENANCE'],
     ['UPDATE h4_budget_config SET version = version + 1', 'COORDINATION_CONFIG_CHANGED'],
   ];
   for (const [sql, code] of changes) {
@@ -155,4 +164,48 @@ test('SR2a durable claims survive a new SQL connection and fences preserve BIGIN
   await f.db.transaction(sql => sql.query('UPDATE sr_claim SET fence = 9223372036854775807'));
   await assert.rejects(next.admit(context, await f.input(0, true)), { code: 'CLAIM_FENCE_EXHAUSTED' });
   assert.equal((await rows(f, 'sr_admission')).length, 2);
+});
+
+test('SR2a exhausted fences still permit revocation and never wrap or regain publication', async t => {
+  const f = await coordinationFixture(t); await f.open(); const c = coordinator(f), first = await c.admit(f.contexts[0], await f.input(0, true)); await c.release(first);
+  await f.db.transaction(db => db.query('UPDATE sr_claim SET fence = 9223372036854775806'));
+  const last = await c.admit(f.contexts[0], await f.input(0, true)); assert.equal(last.fence, '9223372036854775807');
+  await c.revoke(last);
+  await assert.rejects(c.publish(last, () => assert.fail('cancelled publication')), { code: 'CLAIM_LOST' });
+  const claim = (await f.db.transaction(db => db.query('SELECT CAST(fence AS TEXT) AS fence, attempt_id FROM sr_claim')))[0];
+  assert.equal(claim.fence, last.fence); assert.equal(claim.attempt_id, null);
+  await c.release(last);
+  await assert.rejects(c.admit(f.contexts[0], await f.input(0, true)), { code: 'CLAIM_FENCE_EXHAUSTED' });
+});
+
+test('SR2a waiting for admission consumes platform remaining time without reserving or charging work', async t => {
+  const f = await coordinationFixture(t); await f.open();
+  const db = { durable: true, close: async () => {}, transaction: async work => {
+    await new Promise(resolve => setTimeout(resolve, 20)); return f.db.transaction(work);
+  } };
+  const input = await f.input(0, true); input.platformRemainingMs = 3010;
+  await assert.rejects(coordinator(f, db).admit(f.contexts[0], input), { code: 'EXECUTION_CANCELLED' });
+  assert.deepEqual(await rows(f, 'sr_admission'), []); assert.deepEqual(await rows(f, 'h8_usage'), []);
+});
+
+test('SR2a SQL-time expiry before admission commit or after publication callback rolls back all effects', async t => {
+  for (const stage of ['admission', 'publication']) {
+    const f = await coordinationFixture(t); await f.open(); let offset = 0;
+    const db = { durable: true, close: async () => {}, transaction: work => f.db.transaction(c => work({ query: async (sql, values) => {
+      const result = await c.query(sql, values);
+      if (stage === 'admission' && sql.startsWith('INSERT INTO sr_admission')) offset = 1000000;
+      return sql.includes(' AS now_ms') ? result.map(row => ({ now_ms: Number(row.now_ms) + offset })) : result;
+    } })) };
+    const c = coordinator(f, db);
+    if (stage === 'admission') {
+      await assert.rejects(c.admit(f.contexts[0], await f.input(0, true)), { code: 'EXECUTION_CANCELLED' });
+      assert.deepEqual(await rows(f, 'sr_admission'), []); assert.deepEqual(await rows(f, 'h8_usage'), []); assert.deepEqual(await rows(f, 'sr_claim'), []);
+    } else {
+      const handle = await c.admit(f.contexts[0], await f.input(0, true)), before = await rows(f, 'h8_audit');
+      await assert.rejects(c.publish(handle, async sql => {
+        await sql.query("INSERT INTO h8_audit VALUES ('expired','synthetic','test')"); offset = 1000000;
+      }), { code: 'ATTEMPT_EXPIRED' });
+      assert.deepEqual(await rows(f, 'h8_audit'), before); offset = 0; await c.release(handle);
+    }
+  }
 });

@@ -50,6 +50,10 @@ test('SR2a live Postgres: independent pools serialize admission and restricted S
     assert.equal(results.find(r => r.status === 'rejected').reason.code, 'TENANT_BUDGET_EXCEEDED');
     const [winner, handle] = results[0].status === 'fulfilled' ? [a, results[0].value] : [b, results[1].value];
     assert.equal(handle.fence, '1');
+    await assert.rejects(db.transaction(c => c.query('INSERT INTO sr_claim VALUES (?,?,?,?,?,?,1,1,1,?)',
+      ['test', 'tenant-two', 'two', 'admin', 'source', 'foreign', handle.attemptId])), { code: 'METADATA_REFERENCE_INVALID' });
+    const rls = await pool.query("SELECT relrowsecurity, relforcerowsecurity FROM pg_class WHERE relnamespace = current_schema()::regnamespace AND relname IN ('sr_claim','sr_admission')");
+    assert.equal(rls.rows.length, 2); assert.ok(rls.rows.every(row => row.relrowsecurity && row.relforcerowsecurity));
     await pool.query(`CREATE ROLE ${role} NOLOGIN NOINHERIT NOSUPERUSER NOBYPASSRLS`);
     await pool.query(`GRANT USAGE ON SCHEMA ${schema} TO ${role}`);
     // Test-only SELECT grants exercise forced RLS even if a future grant widens access.
