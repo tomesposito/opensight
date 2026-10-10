@@ -83,11 +83,14 @@ Finalize [D-24](itd/D-24-serverless-job-dispatch.md) against SR2, then implement
   obligation, obsolete publication or unauthorized mail. Record the existing
   at-least-once SMTP ambiguity honestly.
 
-Browser startup/idle behavior is a separate visible change. D-21's proposed
-45-second passive embed display expiry and tester IP allowlist have not been
-explicitly accepted in the latest discussion. Do not silently ship either as
-an approved product decision. Preserve HQ-7; document the narrow decision needed
-before that UI slice. This does not block backend SR2/SR3 work.
+Browser startup/idle behavior is a separate visible change. The operator confirmed
+the 45-second passive embed display expiry and explicit Connect behavior in
+[IDD D-26](idd/D-26-idle-embed-reconnect.md). Finalize the SDK/client contract and
+tests in a separate spec commit, then implement that SR3 UI slice; this product
+choice no longer needs approval. Preserve HQ-7, session/bootstrap semantics and
+zero idle polling; test expiry, hidden/frozen pages and failed reconnection.
+The tester IP allowlist and WAF cost remain separate unapproved choices. This
+does not block backend SR2/SR3 work.
 
 ## SR4: packaging and deployment automation
 
