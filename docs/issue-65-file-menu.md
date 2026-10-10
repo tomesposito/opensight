@@ -1,6 +1,7 @@
 # Issue #65 — File menu follow-up
 
-The source of truth is GitHub issue #65 and its empty comment thread, read on
+The source of truth is [GitHub issue #65](https://github.com/tomesposito/opensight/issues/65)
+and its empty comment thread, read on
 2026-10-09. This work follows its Favorites, separate-copy, namespace-aware
 Share, Print and current-analysis PDF scope. It does not change
 `SOLUTION_DESIGN.md` or add paginated reports.
@@ -24,9 +25,6 @@ sources. They start unfavorited. The new identity is a device-local draft ID;
 this does not create a hosted resource or rewrite imported bundle resource IDs.
 Cancel and failed writes create no copy; failures leave the dialog and edits
 available for retry. Save draft subsequently updates the copy.
-
-Focused Favorites/copy/menu verification: 37 passed, 0 failed, 0 skipped;
-strict TypeScript checks passed.
 
 Share remains keyboard-reachable with `aria-disabled` and a focus/hover/accessibility
 explanation. Local and demo modes explicitly say sharing needs hosted API support.
@@ -61,7 +59,7 @@ and completes Save in the browser; no download-success claim is made by the app.
 Cancel never prints. Browsers without a PDF destination need one with PDF support.
 No client PDF dependency is added, so there is no new license or renderer blocker.
 This is a single current-sheet snapshot, not parked paginated reports, scheduling,
-or a report designer. Print/PDF and menu checks: 13 passed, 0 failed, 0 skipped.
+or a report designer.
 
 The visual review removed empty control-editing prompts from print output and
 confirmed that changed dropdown values come from the live controls, not their
@@ -69,3 +67,35 @@ initial HTML attributes. Copy/PDF dialogs follow editor typography, theme and
 spacing. Additional copy tests retain imported unknown bundle fields and prepared
 dataset references while proving later copy edits leave the source untouched.
 Focused store/UI/Chromium checks: 48 passed, 0 failed, 0 skipped.
+
+## Final verification
+
+Root `TZ=UTC npm test` exited **0** on 2026-10-10:
+**2,097 passed / 0 failed / 12 skipped / 0 cancelled** (2,109 tests).
+Every skip requires live PostgreSQL; `DATABASE_URL` was unset. Strict TypeScript
+checks passed in the workspace run.
+
+| Suite | Passed | Failed | Skipped |
+| --- | ---: | ---: | ---: |
+| API | 306 | 0 | 10 |
+| Bundle parser | 199 | 0 | 0 |
+| Embedding SDK | 9 | 0 | 0 |
+| Interpreter | 32 | 0 | 0 |
+| Parity | 11 | 0 | 0 |
+| Query engine | 502 | 0 | 2 |
+| Web | 1,031 | 0 | 0 |
+| Root conformance | 7 | 0 | 0 |
+
+The initial full run exposed an existing watchdog-test cleanup race: a child
+exited while `/proc/<pid>/status` was being read, producing `ESRCH` instead of
+`ENOENT`. The test now accepts both ways the process can disappear. Production
+watchdog behavior, SIGKILL expectations and deadline assertions are unchanged.
+The isolated test and complete rerun passed. Logs and counts are retained in
+ignored `.opensight/issue-65/`.
+
+The final demo rebuild, 24-check offline browser tour, real one-page PDF output,
+reference comparison and refreshed README media are recorded in
+[the visual gap notes](issue-65-gap-notes.md). The tour had zero page errors and
+zero external HTTP requests. No new dependency, solution-design change, CI
+change, merge or publication was needed. Hosted Share integration remains the
+explicitly explained limitation; no Tom decision is needed for this slice.
