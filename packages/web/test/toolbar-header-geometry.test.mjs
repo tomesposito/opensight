@@ -71,22 +71,25 @@ describe('toolbar/header geometry in offline Chromium', () => {
       document.querySelector('.author-workspace').insertAdjacentHTML('beforeend', markup);
       document.querySelector('dialog').showModal();
     }, renderToStaticMarkup(createElement(AnalysisSettings, { draft: emptyDraft(), dispatch() {}, onClose() {} })));
-    const dialog = page.getByRole('dialog', { name: 'Analysis Settings', exact: true });
-    assert.equal(await dialog.getByLabel('Analysis theme', { exact: true }).count(), 1);
-    const box = await dialog.boundingBox();
+    const result = await page.evaluate(() => {
+      const dialog = document.querySelector('dialog');
+      const rect = node => { const { x, y, width, height } = node.getBoundingClientRect(); return { x, y, width, height }; };
+      const cancel = [...dialog.querySelectorAll('button')].find(button => button.textContent === 'Cancel');
+      return { box: rect(dialog), themeLabel: dialog.querySelector('select').getAttribute('aria-label'), paths:
+        [...dialog.querySelectorAll('button[aria-disabled="true"]')].map(unavailable => {
+          unavailable.focus(); const before = rect(cancel);
+          // Pointer-down transfers focus before click. The explanation used to
+          // collapse here, moving the click target within the centered modal.
+          cancel.focus();
+          const reason = document.getElementById(unavailable.getAttribute('aria-describedby'));
+          return { before, after: rect(cancel), visible: getComputedStyle(reason).display !== 'none' };
+        }) };
+    });
+    assert.equal(result.themeLabel, 'Analysis theme');
+    const { box } = result;
     assert.ok(box.x >= 0 && box.x + box.width <= width && box.y >= 0 && box.y + box.height <= 900);
-    for (const label of ['Locale and date-format defaults', 'Sharing and permissions']) {
-      const unavailable = dialog.getByRole('button', { name: label, exact: true });
-      await unavailable.hover(); await unavailable.focus();
-      const cancel = dialog.getByRole('button', { name: 'Cancel', exact: true });
-      const before = await cancel.boundingBox();
-      // Pointer-down focuses the button before click. Both focus and hover
-      // leave the reason; its disappearance used to move the click target.
-      await cancel.hover(); await cancel.focus();
-      assert.deepEqual(await cancel.boundingBox(), before);
-      const reason = dialog.locator(`[id="${await unavailable.getAttribute('aria-describedby')}"]`);
-      assert.equal(await reason.isVisible(), true);
-    }
+    assert.equal(result.paths.length, 2);
+    for (const path of result.paths) { assert.deepEqual(path.after, path.before); assert.equal(path.visible, true); }
   });
   for (const inApp of [true, false]) test(`${inApp ? 'app' : 'standalone'}: long names fit at 390px without losing accessible text`, async () => {
     await render(390, 'light', inApp);
