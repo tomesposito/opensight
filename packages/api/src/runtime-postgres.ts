@@ -15,6 +15,7 @@ export class InvocationPool implements MetadataPool {
   private readonly clients = new Set<Client>();
   private closed = false;
   private ending?: Promise<void>;
+  private prepared?: Client;
   constructor(readonly scope: InvocationScope, config: PoolConfig, readonly connectMs = 3000, factory: PoolFactory = c => new Pool(c)) {
     scope.check();
     this.pool = factory({ ...config, max: 1, min: 0, idleTimeoutMillis: 0, keepAlive: false,
@@ -31,9 +32,11 @@ export class InvocationPool implements MetadataPool {
     scope.own(this);
   }
   force = (): void => { this.closed = true; for (const socket of this.sockets) socket.destroy(); };
+  async prepare(): Promise<void> { this.prepared = await this.connect(); }
   async connect(): Promise<Client> {
     this.scope.check();
     if (this.closed) throw new MetadataError('METADATA_TRANSACTION_CLOSED', 503);
+    if (this.prepared) { const client = this.prepared; this.prepared = undefined; return client; }
     const client = await this.scope.stage(async () => {
       const client = await this.pool.connect();
       if (this.closed || this.scope.signal.aborted) { client.release(new Error('INVOCATION_CANCELLED')); throw new MetadataError('INVOCATION_DEADLINE_EXCEEDED', 503); }
@@ -63,7 +66,7 @@ export class InvocationPool implements MetadataPool {
   }
 }
 
-export interface InvocationDatabases { membership: Database; tenant: Database }
+export interface InvocationDatabases { membership: Database; tenant: Database; prepare?(): Promise<void> }
 export function invocationDatabases(scope: InvocationScope, env: NodeJS.ProcessEnv, connectMs = 3000, factory?: PoolFactory): InvocationDatabases {
   const operator = env.OPENSIGHT_POSTGRES_OPERATOR_URL, tenant = env.OPENSIGHT_POSTGRES_TENANT_URL, ca = env.OPENSIGHT_POSTGRES_CA;
   try {
@@ -75,5 +78,5 @@ export function invocationDatabases(scope: InvocationScope, env: NodeJS.ProcessE
   const config = (connectionString: string): PoolConfig => ({ connectionString, ssl: { ca, rejectUnauthorized: true } });
   const membership = new InvocationPool(scope, config(operator!), connectMs, factory);
   const restricted = new InvocationPool(scope, config(tenant!), connectMs, factory);
-  return { membership: new PostgresMetadataDatabase(membership), tenant: new PostgresMetadataDatabase(restricted, true) };
+  return { membership: new PostgresMetadataDatabase(membership), tenant: new PostgresMetadataDatabase(restricted, true), prepare: async () => { await Promise.all([membership.prepare(), restricted.prepare()]); } };
 }

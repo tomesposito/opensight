@@ -12,7 +12,7 @@ import { sourceEndpoints } from './source-schema.js';
 import { QueryEngineError, UploadError } from '@opensight/query-engine';
 import { PrepError } from '@opensight/bundle-parser/prep';
 import { BlazeError } from './blaze.js';
-import { createServer, type IncomingMessage, type Server } from 'node:http';
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { hasCapability } from '@opensight/query-engine';
 import { HostedAuth } from './hosted-auth.js';
 import { initializeAuth } from './auth-schema.js';
@@ -39,7 +39,14 @@ import { HostedUsage, appendOperatorAudit } from './hosted-usage.js';
 import { referenceConfig, referenceDisclosure, assertReferenceSurfaces } from './single-node-config.js';
 
 const drains = new WeakMap<Server, () => Promise<void>>();
+const handlers = new WeakMap<Server, (request: IncomingMessage, response: ServerResponse) => Promise<void>>();
 export async function drainHostedServer(server: Server): Promise<void> { await drains.get(server)?.(); }
+/** Invoke the exact HTTP handler without binding a listener or creating a loopback request. */
+export async function dispatchHostedRequest(server: Server, request: IncomingMessage, response: ServerResponse): Promise<void> {
+  const handle = handlers.get(server);
+  if (!handle) throw new MetadataError('HOSTED_HANDLER_REQUIRED', 503);
+  await handle(request, response);
+}
 
 export interface HostedServerOptions {
   membershipDatabase: Database;
@@ -49,6 +56,8 @@ export interface HostedServerOptions {
   builtinAuth?: HostedAuth;
   env?: NodeJS.ProcessEnv;
   mailTransport?: MailTransport;
+  /** Invocation mode never runs DDL, activates keys, recovers jobs or starts interval work. */
+  invocation?: { signal: AbortSignal };
 }
 const forgedHeaders = ['x-user', 'x-user-id', 'x-principal', 'x-groups', 'x-group-ids', 'x-namespace', 'x-namespace-id', 'x-tenant', 'x-tenant-id', 'x-subject', 'x-role', 'x-roles', 'x-capabilities'];
 const forgedFields = ['subject', 'principal', 'userId', 'namespaceId', 'groups', 'security', 'capabilities', 'issuer', 'audience'];
@@ -83,6 +92,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
   if (typeof options.security?.authenticate !== 'function') throw new MetadataError('HOSTED_VERIFIER_REQUIRED', 503);
   const authenticate = options.security.authenticate;
   const reference = referenceConfig(options.env ?? process.env);
+  if (options.invocation && reference) throw new MetadataError('SERVERLESS_REFERENCE_FORBIDDEN', 503);
   const usage = reference ? new HostedUsage(options.membershipDatabase, reference.entitlements) : undefined;
   if (reference) await options.membershipDatabase.transaction(async c => {
     for (const table of ['h8_usage', 'h8_usage_events', 'h8_audit', 'h8_recovery']) await c.query(`SELECT 1 FROM ${table} WHERE 1 = 0`);
@@ -92,26 +102,26 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
   });
   const metadata = new TenantMetadata(options.tenantDatabase, options.membershipDatabase, usage);
   const policy = embeddingPolicy(options.env ?? process.env, config.origin);
-  await initializeEmbedding(options.membershipDatabase);
+  if (!options.invocation) await initializeEmbedding(options.membershipDatabase);
   const embedding = new HostedEmbedding(options.membershipDatabase, metadata, policy);
   const budgets = await loadBudgets(options.membershipDatabase, metadata);
   const jobs = new JobStore(options.membershipDatabase, metadata);
   const data = new HostedDataRoutes(new HostedData(new HostedSources(metadata, config.encryptionKey.toString('base64'), sourceEndpoints(options.env)), undefined, budgets), jobs);
   const embedContent = new EmbedContent(new HostedData(new EmbedSources(metadata, config.encryptionKey.toString('base64'), sourceEndpoints(options.env)), undefined, budgets));
   const mail = options.mailTransport ?? smtpFromEnvironment(options.env);
-  await initializeJobs(options.membershipDatabase);
+  if (!options.invocation) await initializeJobs(options.membershipDatabase);
   const unmigrated = await options.membershipDatabase.transaction(c => c.query(`SELECT j.resource_id FROM h1_resources j WHERE j.kind = 'job'
     AND NOT EXISTS (SELECT 1 FROM h7_migrations m WHERE m.tenant_id = j.tenant_id AND m.namespace_id = j.namespace_id)`));
   if (unmigrated.length) throw new MetadataError('JOB_MIGRATION_REQUIRED', 503);
   const renderer = new JobRenderer(data.data, embedContent), runner = new JobRunner(jobs, renderer, mail);
   const ownership = new JobOwnership(jobs, renderer), scheduler = new Scheduler(() => runner.tick());
   const sessions = new EmbedSessions(options.membershipDatabase, metadata, policy, embedSessionKey(options.env ?? process.env), (context, grant) => embedContent.authorize(context, grant));
-  await sessions.initialize();
+  await sessions.initialize(!options.invocation);
   const provisioning = new HostedProvisioning(options.membershipDatabase, config, mail, Date.now, ownership);
   // Prove that the durable H1/H2 schema is reachable before binding a socket.
   await options.membershipDatabase.transaction(async c => { await c.query('SELECT tenant_id FROM h1_tenants WHERE 1 = 0'); await c.query('SELECT subject FROM h2_memberships WHERE 1 = 0'); });
   await assertHostedSourcesReady(options.membershipDatabase);
-  await expireUploads(options.membershipDatabase);
+  if (!options.invocation) await expireUploads(options.membershipDatabase);
   let draining = false;
   let drain: Promise<void> | undefined;
   const active = new Set<Promise<void>>();
@@ -120,11 +130,12 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
     if (request.headers.origin !== undefined || !request.headers.authorization?.startsWith('Operator ')
       || !equal(request.headers.authorization.slice(9), config.operatorKey.toString('base64url'))) throw new MetadataError('OPERATOR_REQUIRED', 403);
   };
-  const server = createServer((request, response) => {
+  const handle = (request: IncomingMessage, response: ServerResponse): Promise<void> => {
     requests++;
     const work = (async () => {
       boundary(request, config.origin);
       let path = request.url!;
+      if (options.invocation && (path.startsWith('/api/host') || ['/healthz', '/readyz', '/metrics'].includes(path))) throw new MetadataError('RESOURCE_NOT_FOUND', 404);
       if (['/healthz', '/readyz', '/metrics', '/api/host/drain', '/api/host/reference'].includes(path)) {
         operator(request);
         method(request, response, [path.endsWith('drain') ? 'POST' : 'GET']);
@@ -211,6 +222,9 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
         }
         return;
       }
+      // SR2/SR3 supply durable admission/artifacts and event claims. Never run
+      // the single-node data/job/embedding plane just because Lambda can invoke it.
+      if (options.invocation && !['/api/session', '/api/auth/switch', '/api/auth/logout', '/api/namespaces', '/api/users', '/api/groups'].includes(path)) throw new MetadataError('SERVERLESS_STORAGE_REQUIRED', 503);
       if (await embedSessionRoute(request, response, path, sessions, embedContent)) return;
       // Every other request, including unknown and legacy routes, must verify first.
       const verified = async (req: IncomingMessage) => {
@@ -276,6 +290,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
         return;
       }
       const cancellation = new AbortController();
+      options.invocation?.signal.addEventListener('abort', () => cancellation.abort(), { once: true });
       request.once('aborted', () => cancellation.abort());
       response.once('close', () => { if (!response.writableFinished) cancellation.abort(); });
       data.data.begin(context, cancellation.signal);
@@ -293,14 +308,16 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
       send(response, status, { errorCode });
     }).finally(() => { active.delete(work); });
     active.add(work);
-  });
+    return work;
+  };
+  const server = createServer((request, response) => { void handle(request, response); });
+  handlers.set(server, handle);
   let expiryWork: Promise<void> | undefined;
-  const expiryTimer = setInterval(() => {
+  const expiryTimer = options.invocation ? undefined : setInterval(() => {
     expiryWork ??= expireUploads(options.membershipDatabase).catch(() => { /* Reads still fail closed on expiry. */ }).finally(() => { expiryWork = undefined; });
   }, 60000);
-  await runner.recover();
-  server.once('listening', () => scheduler.start());
-  expiryTimer.unref(); server.once('close', () => { clearInterval(expiryTimer); scheduler.stop(); budgets.close(); });
+  if (!options.invocation) { await runner.recover(); server.once('listening', () => scheduler.start()); }
+  expiryTimer?.unref(); server.once('close', () => { clearInterval(expiryTimer); scheduler.stop(); budgets.close(); });
   drains.set(server, () => drain ??= (async () => {
     draining = true; scheduler.stop(); runner.stop(); clearInterval(expiryTimer);
     await Promise.all([...active]); await scheduler.idle(); await expiryWork; await budgets.shutdown();
@@ -314,7 +331,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
 /** Selected built-in verifier, composed through the same seam as future verifier routers. */
 export async function createBuiltinHostedServer(options: Omit<HostedServerOptions, 'security' | 'builtinAuth'>): Promise<Server> {
   const config = hostedConfig(options.env);
-  await initializeAuth(options.membershipDatabase);
-  const builtinAuth = await HostedAuth.create(options.membershipDatabase, config);
+  if (!options.invocation) await initializeAuth(options.membershipDatabase);
+  const builtinAuth = await HostedAuth.create(options.membershipDatabase, config, Date.now, !options.invocation);
   return createHostedApiServer({ ...options, builtinAuth, security: { authenticate: builtinAuth.authenticate } });
 }

@@ -39,12 +39,12 @@ export async function activateAuthKey(database: Database, config: HostedConfig):
 
 export class HostedAuth {
   private constructor(private readonly database: Database, private readonly config: HostedConfig, private readonly clock: () => number) {}
-  static async create(database: Database, config: HostedConfig, clock = Date.now): Promise<HostedAuth> {
+  static async create(database: Database, config: HostedConfig, clock = Date.now, initializeKey = true): Promise<HostedAuth> {
     if (database.durable !== true) throw new MetadataError('DURABLE_MEMBERSHIP_STORE_REQUIRED', 503);
     const auth = new HostedAuth(database, config, clock);
     await database.transaction(async c => {
       await c.query('UPDATE h2_control SET id = id WHERE id = 1');
-      if (!(await c.query('SELECT * FROM h2_keys')).length) await c.query('INSERT INTO h2_keys VALUES (?,?,1)', [config.keyId, digest(config.signingKey)]);
+      if (initializeKey && !(await c.query('SELECT * FROM h2_keys')).length) await c.query('INSERT INTO h2_keys VALUES (?,?,1)', [config.keyId, digest(config.signingKey)]);
       await auth.key(c);
     });
     return auth;

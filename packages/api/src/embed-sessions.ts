@@ -79,12 +79,12 @@ export type AuthorizeEmbed = (context: TenantContext, grant: SessionGrant) => Pr
 export class EmbedSessions {
   constructor(readonly database: Database, readonly metadata: TenantMetadata, readonly policy: EmbedPolicy,
     private readonly key: EmbedKey | undefined, private readonly authorize: AuthorizeEmbed, readonly clock = Date.now) {}
-  async initialize(): Promise<void> {
-    await initializeEmbedSessions(this.database);
+  async initialize(initialize = true): Promise<void> {
+    if (initialize) await initializeEmbedSessions(this.database);
     if (!this.key) return;
     await this.database.transaction(async c => {
       await c.query('UPDATE h2_control SET id = id WHERE id = 1');
-      if (!(await c.query('SELECT key_id FROM h6_keys')).length) await c.query('INSERT INTO h6_keys VALUES (?,?,1)', [this.key!.id, digest(this.key!.secret)]);
+      if (initialize && !(await c.query('SELECT key_id FROM h6_keys')).length) await c.query('INSERT INTO h6_keys VALUES (?,?,1)', [this.key!.id, digest(this.key!.secret)]);
       await this.checkKey(c, this.key!.id);
     });
   }
