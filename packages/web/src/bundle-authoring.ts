@@ -1,5 +1,5 @@
 import { importObjects, serializeObject, objectElementType, type SheetObject } from './sheet-objects.js';
-import { analysisDescriptionValid } from './authoring.js';
+import { analysisDescriptionValid, layoutSettingsValid } from './authoring.js';
 import { projectInsightBody } from './insight-configuration.js';
 import { normalizeVisual } from './compiler.js';
 import { themeValid, paletteValid } from './themes.js';
@@ -226,13 +226,14 @@ export function importBundle(bundle: QsBundle): AuthorDraft {
       const objects = importObjects(s, () => `object-${++objectIndex}`, messages);
       const layout = grid(s, [...visuals, ...objects]);
       const sheet: AuthorSheet = { id, controls: [], name: s.name?.trim() || 'Untitled sheet', visuals, ...(objects.length ? { objects } : {}), layout, selectedId: visuals[0]?.id ?? objects[0]?.id ?? null,
+        ...(layoutSettingsValid(s.opensightLayoutSettings) ? { layoutSettings: { ...s.opensightLayoutSettings } } : {}),
         imported: { ...(objects.length ? { objects: copy(objects) } : {}), memberPath: member.path, sheetId: s.sheetId, name: s.name?.trim() || 'Untitled sheet', layout: copy(layout) } };
       const parameters = draft.parameters.filter(p => p.memberPath === member.path);
       sheet.controls = importControls(s.parameterControls, parameters, identifier => localBinding(d.dataSetIdentifierDeclarations.find(ds => ds.identifier === identifier)?.dataSetArn, original, identifier), messages, s.sheetId);
       sheet.imported!.controls = copy(sheet.controls);
       sheets.push(sheet);
       messages.push(`Sheet ${s.name ?? s.sheetId}: ${visuals.length} visual(s) imported.`);
-      for (const key of Object.keys(s)) if (!['sheetId', 'name', 'visuals', 'layouts', 'parameterControls', 'textBoxes', 'images'].includes(key)) messages.push(`Sheet ${s.sheetId}.${key}: retained, read-only.`);
+      for (const key of Object.keys(s)) if (!['sheetId', 'name', 'visuals', 'layouts', 'parameterControls', 'textBoxes', 'images', 'opensightLayoutSettings'].includes(key)) messages.push(`Sheet ${s.sheetId}.${key}: retained, read-only.`);
       if (s.layouts?.length) messages.push(`Sheet ${s.sheetId}.layouts: grid geometry projected where compatible; original layouts and other layout features retained until edited.`);
       for (const v of visuals) {
         const meta = v.imported!;

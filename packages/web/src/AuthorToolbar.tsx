@@ -5,6 +5,7 @@ import { activeSheet, type AuthorAction, type AuthorDraft } from './authoring.js
 import { useAccess, type Access } from './access.js';
 import { useToast } from './Toasts.js';
 import { AnalysisSettings } from './AnalysisSettings.js';
+import { SheetLayoutSettings } from './SheetLayoutSettings.js';
 import { AnalysisPdfDialog } from './AnalysisPdfDialog.js';
 import { AuthorMenu, AuthorMenuItem } from './AuthorMenuItem.js';
 import { flushSync } from 'react-dom';
@@ -43,6 +44,7 @@ export function AuthorToolbar({ canUndo = false, canRedo = false, onUndo, onRedo
   const [exportsOpen, setExportsOpen] = useState(false);
   const [pdfOpen, setPdfOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [layoutOpen, setLayoutOpen] = useState(false);
   const imageInput = useRef<HTMLInputElement>(null);
   const imageSheetId = useRef<string | undefined>(undefined);
   const imageDraft = useRef<AuthorDraft | null>(null);
@@ -79,6 +81,7 @@ export function AuthorToolbar({ canUndo = false, canRedo = false, onUndo, onRedo
       finally { setImageBusy(false); }
     }} />
     {settingsOpen && <AnalysisSettings draft={draft} dispatch={dispatch} onClose={() => setSettingsOpen(false)} />}
+    {layoutOpen && <SheetLayoutSettings sheet={sheet} dispatch={dispatch} onClose={() => setLayoutOpen(false)} />}
     {pdfOpen && <AnalysisPdfDialog onClose={() => setPdfOpen(false)} onContinue={() => { flushSync(() => setPdfOpen(false)); onPrint?.(); }} />}
     <nav ref={nav} className="author-menu" aria-label="Analysis menu" onKeyDown={e => {
       if (e.key === 'Escape') { const menu = (e.target as HTMLElement).closest('details'); if (menu) { e.preventDefault(); e.stopPropagation(); menu.open = false; menu.querySelector('summary')?.focus(); } }
@@ -134,13 +137,13 @@ export function AuthorToolbar({ canUndo = false, canRedo = false, onUndo, onRedo
       </AuthorMenu>
       <AuthorMenu name="Sheets">
         <AuthorMenuItem label="Add Sheet" run={() => dispatch({ type: 'sheet-add' })} />
-        <AuthorMenuItem label="Duplicate Sheet" reason="Sheet duplication is not supported yet." />
+        <AuthorMenuItem label="Duplicate Sheet" run={() => dispatch({ type: 'sheet-duplicate', id: sheet.id })} />
         <AuthorMenuItem label="Rename Sheet" run={() => activate('[data-author-control="rename-sheet"]')} />
         <hr />
-        <AuthorMenuItem label="Add Title" reason="Sheet title objects are not supported yet. Rename Sheet changes the sheet name." />
-        <AuthorMenuItem label="Add Description" reason="Sheet descriptions are not supported yet." />
+        <AuthorMenuItem label="Add Title" run={() => dispatch({ type: 'sheet-title' })} />
+        <AuthorMenuItem label="Add Description" run={() => dispatch({ type: 'sheet-description' })} />
         <hr />
-        <AuthorMenuItem label="Layout Settings" reason="Sheet layout settings are not supported yet. Drag or resize visuals on the canvas; FIT TO WIDTH changes the preview width." />
+        <AuthorMenuItem label="Layout Settings" run={() => setLayoutOpen(true)} />
         <hr />
         <div role="group" aria-label="Switch sheet">{draft.sheets.map(s => <AuthorMenuItem key={s.id} label={s.name} run={() => dispatch({ type: 'sheet-select', id: s.id })} />)}</div>
       </AuthorMenu>

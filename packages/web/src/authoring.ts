@@ -103,7 +103,14 @@ export interface AuthorVisual {
   imported?: ImportedVisual;
 }
 export interface Placement { i: string; x: number; y: number; w: number; h: number }
-export interface AuthorSheet { objects?: SheetObject[]; controls: AuthorControl[]; id: string; name: string; visuals: AuthorVisual[]; layout: Placement[]; selectedId: string | null; imported?: ImportedSheet }
+export interface SheetLayoutSettings { rowHeight: number; margin: number }
+export const DEFAULT_LAYOUT_SETTINGS = (): SheetLayoutSettings => ({ rowHeight: 42, margin: 12 });
+export function layoutSettingsValid(value: unknown): value is SheetLayoutSettings {
+  return !!value && typeof value === 'object' && !Array.isArray(value) &&
+    Number.isInteger((value as Record<string, unknown>).rowHeight) && Number((value as Record<string, unknown>).rowHeight) >= 20 && Number((value as Record<string, unknown>).rowHeight) <= 120 &&
+    Number.isInteger((value as Record<string, unknown>).margin) && Number((value as Record<string, unknown>).margin) >= 0 && Number((value as Record<string, unknown>).margin) <= 48;
+}
+export interface AuthorSheet { objects?: SheetObject[]; controls: AuthorControl[]; id: string; name: string; visuals: AuthorVisual[]; layout: Placement[]; selectedId: string | null; imported?: ImportedSheet; layoutSettings?: SheetLayoutSettings }
 export interface AuthorDraft {
   description?: string;
   dataset?: AuthorDataset;
@@ -182,7 +189,10 @@ export type AuthorAction =
   | { type: 'control-move'; id: string; offset: -1 | 1 }
   | { type: 'control-bind'; id: string; parameterId: string }
   | { type: 'sheet-select' | 'sheet-delete'; id: string }
+  | { type: 'sheet-duplicate'; id: string }
   | { type: 'sheet-rename'; id: string; name: string }
+  | { type: 'sheet-title' | 'sheet-description' }
+  | { type: 'sheet-layout-settings'; id: string; settings: SheetLayoutSettings }
   | { type: 'layout'; sheetId: string; layout: readonly Placement[] }
   | { type: 'calculation-add'; field: CalculatedField }
   | { type: 'o-add'; visual: AuthorVisual; calculatedFields: CalculatedField[] }
@@ -253,6 +263,42 @@ export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorD
     const sheets = draft.sheets.filter(s => s.id !== action.id);
     return { ...draft, sheets, activeSheetId: draft.activeSheetId === action.id ? sheets[Math.min(index, sheets.length - 1)]!.id : draft.activeSheetId };
   }
+  if (action.type === 'sheet-duplicate') {
+    const source = draft.sheets.find(s => s.id === action.id);
+    if (!source) return draft;
+    const used = new Set([...draft.sheets.flatMap(s => [s.id,
+      ...s.visuals.flatMap(v => [v.id, ...(v.filterActions ?? []).map(a => a.id), ...(v.urlActions ?? []).map(a => a.id), ...(v.navigationActions ?? []).map(a => a.id)]),
+      ...s.controls.map(c => c.id), ...(s.objects ?? []).map(o => o.id)]), ...originalIds(draft, true), ...originalIds(draft, false)]);
+    const remap = new Map<string, string>();
+    const fresh = (prefix: string, old: string): string => {
+      let id = remap.get(old);
+      if (!id) { let n = 1; while (used.has(`${prefix}-${n}`)) n++; id = `${prefix}-${n}`; used.add(id); remap.set(old, id); }
+      return id;
+    };
+    const copy: AuthorSheet = structuredClone(source);
+    copy.id = fresh('sheet', source.id);
+    copy.name = `${source.name} (copy)`;
+    copy.selectedId = null;
+    delete copy.imported;
+    for (const visual of copy.visuals) {
+      visual.id = fresh('visual', visual.id);
+      for (const item of [...visual.filterActions ?? [], ...visual.urlActions ?? [], ...visual.navigationActions ?? []]) item.id = fresh('action', item.id);
+      for (const nav of visual.navigationActions ?? []) if (nav.targetSheetId === source.id) nav.targetSheetId = copy.id;
+      delete visual.imported;
+    }
+    for (const object of copy.objects ?? []) { object.id = fresh('object', object.id); delete object.importedId; }
+    for (const control of copy.controls) control.id = fresh('control', control.id);
+    copy.layout = copy.layout.map(p => ({ ...p, i: remap.get(p.i) ?? p.i }));
+    if (source.selectedId && remap.has(source.selectedId)) copy.selectedId = remap.get(source.selectedId)!;
+    return { ...draft, sheets: [...draft.sheets, copy], activeSheetId: copy.id };
+  }
+  if (action.type === 'sheet-layout-settings') {
+    const target = draft.sheets.find(s => s.id === action.id);
+    if (!target || !layoutSettingsValid(action.settings)) return draft;
+    const settings = { ...action.settings };
+    if (JSON.stringify(settings) === JSON.stringify(target.layoutSettings ?? DEFAULT_LAYOUT_SETTINGS())) return draft;
+    return { ...draft, sheets: draft.sheets.map(s => s.id === action.id ? { ...s, layoutSettings: settings } : s) };
+  }
   if (action.type === 'layout') {
     const sheet = draft.sheets.find(s => s.id === action.sheetId);
     const layout = cleanLayout(action.layout);
@@ -271,6 +317,18 @@ export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorD
     if (!sheetObjectValid(object)) return draft;
     const bottom = Math.max(0, ...sheet.layout.map(p => p.y + p.h));
     return update({ objects: [...objects, object], selectedId: id, layout: [...sheet.layout, { i: id, x: 0, y: bottom, w: 6, h: 4 }] });
+  }
+  if (action.type === 'sheet-title' || action.type === 'sheet-description') {
+    const reserved = (draft.bundle?.original.members ?? []).flatMap(({ resource }) => resource.resourceType === 'analysis' || resource.resourceType === 'dashboard' ? (resource.definition.sheets ?? []).flatMap(s => [...(Array.isArray(s.textBoxes) ? s.textBoxes : []), ...(Array.isArray(s.images) ? s.images : [])].flatMap(o => isObject(o) ? [String(o.sheetTextBoxId ?? o.sheetImageId)] : [])) : []);
+    const id = nextId('object', [...draft.sheets.flatMap(s => [...s.visuals, ...s.objects ?? []].flatMap(o => [o.id, 'importedId' in o ? o.importedId ?? '' : ''])), ...reserved, ...originalIds(draft, true)]);
+    const isTitle = action.type === 'sheet-title';
+    const object: SheetObject = { id, kind: 'text', content: isTitle ? sheet.name : 'Add description',
+      style: isTitle ? { fontSize: 24, bold: true, italic: false, underline: false, color: '#202938', alignment: 'left' }
+        : { fontSize: 14, bold: false, italic: false, underline: false, color: '#202938', alignment: 'left' } };
+    if (!sheetObjectValid(object)) return draft;
+    const height = 4;
+    const shifted = sheet.layout.map(p => ({ ...p, y: p.y + height }));
+    return update({ objects: [...objects, object], selectedId: id, layout: [{ i: id, x: 0, y: 0, w: 12, h: height }, ...shifted] });
   }
   if (action.type === 'object-text' || action.type === 'object-style' || action.type === 'object-image') {
     const object = objects.find(o => o.id === action.id);
@@ -542,7 +600,7 @@ export function serializeDraft(draft: AuthorDraft): BundleAnalysis {
       scopeConfiguration: { selectedSheets: { sheetVisualScopingConfigurations: [{ sheetId: sheet.id, scope: 'SELECTED_VISUALS', visualIds: [visual.id] }] } },
       filters: [serializeFilter(filter, `${visual.id}-filter-${index}`, 'sales_data', sheetParameters(draft, sheet))],
     })))),
-    sheets: draft.sheets.map(sheet => ({ sheetId: sheet.id, name: sheet.name, ...serializeObjects(sheet.objects), ...(sheet.controls.length ? { parameterControls: sheet.controls.map(c => serializeControl(c, sheetParameters(draft, sheet), sheet.controls)) } : {}), visuals: sheet.visuals.map(visual => {
+    sheets: draft.sheets.map(sheet => ({ sheetId: sheet.id, name: sheet.name, ...serializeObjects(sheet.objects), ...(sheet.layoutSettings ? { opensightLayoutSettings: sheet.layoutSettings } : {}), ...(sheet.controls.length ? { parameterControls: sheet.controls.map(c => serializeControl(c, sheetParameters(draft, sheet), sheet.controls)) } : {}), visuals: sheet.visuals.map(visual => {
       if (visual.smallMultiples?.length) throw new Error('SMALL_MULTIPLES_UNSUPPORTED: Remove Small multiples fields before exporting; the draft retains them.');
       const definition = serializeVisual(visual, true, draft.calculatedFields, draft.dataset);
       normalizeVisual('bundle', serializeVisual(visual, false, draft.calculatedFields, draft.dataset), `sheets.${sheet.id}.${visual.id}`);
@@ -591,7 +649,8 @@ export function validateDraft(value: unknown): asserts value is AuthorDraft {
   const fields = dataFields(calculations, dataset), ids = new Set<string>(), sheetIds = new Set<string>();
   const names = (v: unknown, role: string): v is string[] => Array.isArray(v) && v.every(n => fields.some(f => f.name === n && f.role === role)) && new Set(v).size === v.length;
   for (const sheet of value.sheets) {
-    if (!isObject(sheet) || !onlyKeys(sheet, ['id', 'name', 'controls', 'visuals', 'objects', 'layout', 'selectedId', 'imported']) || typeof sheet.id !== 'string' || !/^sheet-[1-9][0-9]*$/.test(sheet.id) || sheetIds.has(sheet.id) || typeof sheet.name !== 'string' || !sheet.name.trim() || !Array.isArray(sheet.visuals) || !Array.isArray(sheet.layout)) return fail();
+    if (!isObject(sheet) || !onlyKeys(sheet, ['id', 'name', 'controls', 'visuals', 'objects', 'layout', 'selectedId', 'imported', 'layoutSettings']) || typeof sheet.id !== 'string' || !/^sheet-[1-9][0-9]*$/.test(sheet.id) || sheetIds.has(sheet.id) || typeof sheet.name !== 'string' || !sheet.name.trim() || !Array.isArray(sheet.visuals) || !Array.isArray(sheet.layout)) return fail();
+    if (sheet.layoutSettings !== undefined && !layoutSettingsValid(sheet.layoutSettings)) return fail();
     if (sheet.imported !== undefined && (!value.bundle || !isObject(sheet.imported) || typeof sheet.imported.memberPath !== 'string' || typeof sheet.imported.sheetId !== 'string' || typeof sheet.imported.name !== 'string' || !Array.isArray(sheet.imported.layout))) return fail();
     const origin = isObject(value.bundle) ? value.bundle.original as QsBundle : undefined;
     const source = isObject(sheet.imported) ? origin?.members.find(m => m.path === (sheet.imported as Record<string, unknown>).memberPath)?.resource : undefined;
