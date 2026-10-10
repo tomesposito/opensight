@@ -42,15 +42,12 @@ without turning an idle page into a database keep-alive?
 
 #### REASONING
 
-Option 1 meets the no-idle-keep-alive constraint and preserves the revocation
-bound, but changes passive embed viewing: content becomes hidden until the user
-reconnects. Tom accepted that product behavior on 2026-10-10 in
-[IDD D-26](../idd/D-26-idle-embed-reconnect.md). Option 2
+Option 1 is proposed to meet the no-idle-keep-alive constraint and preserve the
+revocation bound, but it changes passive embed viewing: content becomes covered
+until the user reconnects. Tom must approve that product behavior. Option 2
 preserves passive dashboards but needs an explicit change to the idle requirement
 and estimate. Option 3 violates HQ-7 and is rejected; timer removal alone is not
-a safe serverless adaptation. This technical record remains draft for the other
-startup/abuse controls; the accepted idle-embed product choice does not approve
-WAF costs, an IP allowlist or infrastructure creation.
+a safe serverless adaptation.
 
 #### IMPLICATIONS
 
@@ -131,14 +128,12 @@ For embeds, retain a maximum 45-second authorization display lease from the last
 successful current-authority check, capped by session expiry. Real interactions
 may reauthorize; pointer motion/timers do not count. At lease expiry, cover/remove
 protected data locally and offer Connect, without a request. Hide immediately
-on visibility loss; on resume keep it hidden until an explicit Connect action and
+on visibility loss; on resume keep it hidden until an explicit interaction and
 successful current-authority check. Check elapsed wall time before painting or
 handling input after frozen/background timers. Retain 15–600 minute session
 lifetime, single-use bootstrap, memory-only credentials and HQ-7's 60-second
-revocation ceiling. Never replay redeem after an ambiguous response. The idle UX
-is confirmed by D-26 for the initial test deployment. Specify any new SDK state/
-event and client acceptance tests before SR3 UI work; no further product approval
-is required for the accepted hide-and-Connect behavior.
+revocation ceiling. Never replay redeem after an ambiguous response. The changed
+idle UX and any new SDK state/event need Tom's acceptance before SR1/SR3 UI work.
 
 **Acceptance:** fake time for 15s, 35s and never-resolving connections; no SQL
 socket left by abandoned connects; deadline exhaustion during init/query/cleanup;
