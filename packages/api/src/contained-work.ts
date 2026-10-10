@@ -6,6 +6,7 @@ import type { PrepSource, PrepDataset, SourceRead, PrepScalar, InteractiveQuery,
 import { BlazeTable, type BlazeLimits } from './blaze.js';
 import { MetadataError } from './metadata-db.js';
 import type { WorkScope } from './budgets.js';
+import { InvocationScope } from './runtime-scope.js';
 
 export interface WireTable { source: PrepSource; rows: PrepScalar[][] }
 export type WorkerTask =
@@ -42,6 +43,7 @@ export async function containedWork<T extends TableResult | QueryResult>(scope: 
       // No operator credentials, metadata paths or source secrets enter the compute worker.
       env: { TZ: 'UTC', PATH: process.env.PATH },
     });
+    InvocationScope.current()?.worker(child);
     let result: T | undefined, error: unknown, sampling = false;
     const kill = () => { error = new MetadataError('EXECUTION_CANCELLED'); child.kill('SIGKILL'); };
     scope.signal.addEventListener('abort', kill, { once: true });
