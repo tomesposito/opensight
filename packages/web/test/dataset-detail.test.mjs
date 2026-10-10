@@ -10,6 +10,12 @@ import { createDraftStore } from '../build/test/local-drafts.js';
 import { emptyDraft } from '../build/test/authoring.js';
 import { parseRoute, routeHash } from '../build/test/app-navigation.js';
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+// The mount helper swaps globalThis.window per mount. Node's t.after hooks run in
+// registration order, so restoring a per-mount "previous" value leaves a stale stub
+// behind when a test mounts more than once — and with --test-isolation=none that stub
+// leaks into later test files. Restore the file's original window from every hook
+// instead; the target is order-independent.
+const originalWindow = globalThis.window;
 const columns = [{ name: 'region', type: 'STRING' }, { name: 'amount', type: 'DECIMAL' }];
 const dataset = { resourceType: 'dataset', dataSetId: 'orders', name: 'Orders', physicalTableMap: {}, importMode: 'DIRECT_QUERY', opensightPrep: { version: 1, input: 'upload-1', steps: [] } };
 const execution = { mode: 'BLAZE', intervalMinutes: null, state: 'ready', rowCount: 12, bytes: 1024, lastRefreshedAt: '2026-10-01T12:00:00Z', nextRefreshAt: null, error: null };
@@ -19,13 +25,13 @@ const client = { listPrepDatasets: async () => ({ datasets: [dataset] }), listPr
   setDatasetExecution: async (_id, settings) => ({ ...execution, ...settings }), refreshBlaze: async () => execution,
   getPreparedRows: async () => ({ columns, rows: [], rowCount: 0 }), savePrep: async (id, name, pipeline) => ({ resource: { ...dataset, dataSetId: id, name, opensightPrep: pipeline } }), deletePrep: async () => ({ deleted: true }), previewPrep: async () => ({ columns, rows: [], returnedRows: 0, totalRows: 0, limit: 100 }) };
 async function mount(t, props = {}, Component = DatasetDetail, access = { mode: 'local' }, seed) {
-  const previous = globalThis.window, storage = new Map();
+  const storage = new Map();
   globalThis.window = { localStorage: { getItem: key => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, value) } };
   const store = createDraftStore(() => window.localStorage, access); seed?.(store);
   let ui;
   const element = props => createElement(AccessProvider, { access }, createElement(Component, { client, datasetId: dataset.dataSetId, navigate() {}, onGenerate() {}, ...props }));
   await act(() => { ui = create(element(props)); });
-  t.after(async () => { await act(() => ui.unmount()); globalThis.window = previous; });
+  t.after(async () => { await act(() => ui.unmount()); globalThis.window = originalWindow; });
   return { get root() { return ui.root; }, store, text: () => JSON.stringify(ui.toJSON()), update: props => act(() => ui.update(element(props))) };
 }
 const button = (ui, label) => ui.root.findAllByType('button').find(node => node.children.join('') === label);

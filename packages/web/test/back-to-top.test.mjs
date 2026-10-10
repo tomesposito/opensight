@@ -7,7 +7,7 @@ import { Application } from '../build/test/Application.js';
 import { AppNavigation } from '../build/test/AppNavigation.js';
 import { AccessProvider, demoAccess } from '../build/test/access.js';
 import { Dashboard } from '../build/test/Dashboard.js';
-import { DataSources } from '../build/test/DataSources.js';
+import { DataLanding } from '../build/test/DataLanding.js';
 
 function mockWindow({ reducedMotion = false, scrollY = 0 } = {}) {
   const events = new EventTarget(), scrollListeners = new Set();
@@ -110,7 +110,8 @@ test('one shared control covers sample dashboards, definition previews and the c
   const fixtures = [{ id: 'renderable-sales', name: 'Sample', sheets: [], notice: 'Synthetic test fixture', provenance: 'test' }];
   const ui = await mount(t, win, createElement(AccessProvider, { access: demoAccess }, createElement(Application, { api: {}, fixtures })));
   const shared = ui.renderer.root.findByType(BackToTop);
-  for (const [page, Component] of [['home', Dashboard], ['fixtures', Dashboard], ['data-sources', DataSources]]) {
+  // data-sources is a bookmarkable tab of the Data landing page (issue #70).
+  for (const [page, Component] of [['home', Dashboard], ['fixtures', Dashboard], ['data-sources', DataLanding]]) {
     await act(() => ui.renderer.root.findByType(AppNavigation).props.navigate({ page }));
     assert.equal(ui.renderer.root.findAllByType(Component).length, 1);
     assert.equal(ui.renderer.root.findByType(BackToTop), shared);
