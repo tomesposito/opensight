@@ -72,9 +72,10 @@ No real values belong in this repository. Run commands from the repository root:
    policies. `... apply <reviewed-sha256>` applies only those exact bytes after
    the plan-policy checks. It creates no public ingress or consumer mappings.
 5. `... secrets` populates absent operator/tenant versions with random material.
-   Existing current versions are preserved. It does not fetch/print plaintext
-   credentials or put payloads in Terraform state. Provide SMTP credentials via
-   a private Secrets Manager write; missing SMTP credentials fail the mail probe.
+   Existing current versions are preserved. It never prints plaintext credentials
+   or puts payloads in Terraform state. The same command creates the isolated SMTP key, derives the regional password
+   in memory and stores it in Secrets Manager. An unexplained existing key fails
+   closed; no key payload enters Terraform state.
 6. `... invoke native`, `... invoke network`, `... invoke bootstrap`,
    `... invoke database`, and `... invoke startup` run explicit commands. Run
    `... invoke mail` only for the operator-approved synthetic message; configure
@@ -84,7 +85,7 @@ No real values belong in this repository. Run commands from the repository root:
    in the private directory. A successful local check is not AWS proof.
 
 The ledger reserves each Lambda attempt before dispatch, including failures,
-with at most 1,000 invocations within 72 hours. The exclusive directory lock
+with at most 1,000 invocations and twenty mail attempts within 72 hours. The exclusive directory lock
 rejects concurrent operator processes. If a process dies, inspect its outcome
 before removing the stale lock; do not reset the ledger. Probe network calls
 require fewer than 20 outstanding synthetic schedules. The module has three
@@ -96,8 +97,9 @@ not isolated attribution, immediate notifications or a spending stop.
 
 ## Cleanup
 
-Select one category explicitly with `... cleanup schedules|objects|compute|database`.
-Ownership tags are checked before every selection. Objects are limited to the
+Select one category explicitly with `... cleanup schedules|objects|compute|database|credentials`.
+Ownership tags are checked before every selection. Credential cleanup revokes
+all keys on the dedicated SMTP user; the user and its policy remain for audit. Objects are limited to the
 synthetic `probe/` UUID namespace, including versions; unexpected keys fail
 closed. Compute cleanup disables concurrency before deleting functions. Database
 cleanup requires exactly the owned writer, disables deletion protection explicitly,
@@ -137,3 +139,6 @@ migration remains frozen and refuses foreign schema/role ownership; the tenant
 role receives only RLS metadata-table DML and control-state read access. The
 operator role's required Aurora BYPASSRLS behavior remains a cloud acceptance
 check, never a reason to weaken the tenant role or its policies.
+
+SMTP derivation follows the [AWS SES credential algorithm](https://docs.aws.amazon.com/ses/latest/dg/smtp-credentials.html).
+The SMTP user cannot send to arbitrary recipients or use any other AWS service.

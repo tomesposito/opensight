@@ -13,6 +13,15 @@ resource "aws_rds_cluster_parameter_group" "validation" {
     name  = "log_statement"
     value = "none"
   }
+  # Bootstrap DDL contains password literals. Never retain failed statements.
+  parameter {
+    name  = "log_min_error_statement"
+    value = "panic"
+  }
+  parameter {
+    name  = "log_parameter_max_length_on_error"
+    value = "0"
+  }
 }
 resource "aws_rds_cluster" "validation" {
   cluster_identifier              = var.deployment

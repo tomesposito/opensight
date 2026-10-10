@@ -1,7 +1,7 @@
 locals {
   functions = {
     request   = { timeout = 28, handler = "packages/api/dist/aws-lambda.handler" }
-    scheduler = { timeout = 120, handler = "packages/api/dist/aws-lambda.scheduler" }
+    migration = { timeout = 120, handler = "packages/api/dist/aws-lambda.migration" }
     probe     = { timeout = 120, handler = "packages/api/dist/platform-probe.handler" }
   }
   assume_lambda = jsonencode({ Version = "2012-10-17", Statement = [{ Effect = "Allow", Principal = { Service = "lambda.amazonaws.com" }, Action = "sts:AssumeRole" }] })
@@ -56,7 +56,7 @@ resource "aws_iam_role_policy" "lambda" {
     { Effect = "Allow", Action = ["ec2:CreateNetworkInterface", "ec2:DescribeNetworkInterfaces", "ec2:DescribeSubnets", "ec2:DeleteNetworkInterface", "ec2:AssignPrivateIpAddresses", "ec2:UnassignPrivateIpAddresses"], Resource = "*" },
     # Lambda's service needs ENI permissions; application code may not use them.
     { Effect = "Deny", Action = ["ec2:CreateNetworkInterface", "ec2:DeleteNetworkInterface", "ec2:AssignPrivateIpAddresses", "ec2:UnassignPrivateIpAddresses"], Resource = "*", Condition = { ArnEquals = { "lambda:SourceFunctionArn" = "arn:aws:lambda:${var.region}:${var.account_id}:function:${var.deployment}-${each.key}" } } },
-    { Effect = "Allow", Action = "secretsmanager:GetSecretValue", Resource = [aws_secretsmanager_secret.runtime["operator"].arn, aws_secretsmanager_secret.runtime["tenant"].arn] }
+    { Effect = "Allow", Action = "secretsmanager:GetSecretValue", Resource = concat([aws_secretsmanager_secret.runtime["operator"].arn, aws_secretsmanager_secret.runtime["tenant"].arn], each.key == "migration" ? [aws_rds_cluster.validation.master_user_secret[0].secret_arn] : []) }
     ], [for statement in [
       { Effect = "Allow", Action = "secretsmanager:GetSecretValue", Resource = [aws_rds_cluster.validation.master_user_secret[0].secret_arn, aws_secretsmanager_secret.runtime["smtp"].arn] },
       { Effect = "Allow", Action = ["s3:GetObject", "s3:GetObjectVersion", "s3:PutObject", "s3:DeleteObject", "s3:DeleteObjectVersion"], Resource = "${aws_s3_bucket.artifacts.arn}/probe/*" },
@@ -83,7 +83,7 @@ resource "aws_lambda_function" "validation" {
     ipv6_allowed_for_dual_stack = true
   }
   environment {
-    variables = merge(local.environment, each.key == "probe" ? {
+    variables = merge(local.environment, each.key == "migration" ? { OPENSIGHT_BOOTSTRAP_SECRET_ARN = aws_rds_cluster.validation.master_user_secret[0].secret_arn } : {}, each.key == "probe" ? {
       OPENSIGHT_VALIDATION              = "isolated"
       OPENSIGHT_BOOTSTRAP_SECRET_ARN    = aws_rds_cluster.validation.master_user_secret[0].secret_arn
       OPENSIGHT_ARTIFACT_BUCKET         = aws_s3_bucket.artifacts.id

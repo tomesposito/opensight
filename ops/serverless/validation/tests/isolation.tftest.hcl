@@ -48,12 +48,12 @@ run "isolated_validation" {
 run "least_privilege_secrets" {
   command = plan
   assert {
-    condition     = !strcontains(aws_iam_role_policy.lambda["request"].policy, "synthetic-master") && !strcontains(aws_iam_role_policy.lambda["scheduler"].policy, "synthetic-master") && strcontains(aws_iam_role_policy.lambda["probe"].policy, "synthetic-master")
-    error_message = "Only the private probe role may read the bootstrap credential."
+    condition     = !strcontains(aws_iam_role_policy.lambda["request"].policy, "synthetic-master") && strcontains(aws_iam_role_policy.lambda["migration"].policy, "synthetic-master") && strcontains(aws_iam_role_policy.lambda["probe"].policy, "synthetic-master")
+    error_message = "Only the migration and probe roles may read the bootstrap credential."
   }
   assert {
-    condition     = !contains(keys(aws_lambda_function.validation["request"].environment[0].variables), "OPENSIGHT_BOOTSTRAP_SECRET_ARN") && !contains(keys(aws_lambda_function.validation["scheduler"].environment[0].variables), "OPENSIGHT_BOOTSTRAP_SECRET_ARN")
-    error_message = "Ordinary entrypoints must not receive bootstrap secret references."
+    condition     = !contains(keys(aws_lambda_function.validation["request"].environment[0].variables), "OPENSIGHT_BOOTSTRAP_SECRET_ARN") && contains(keys(aws_lambda_function.validation["migration"].environment[0].variables), "OPENSIGHT_BOOTSTRAP_SECRET_ARN")
+    error_message = "Only private migration/probe entrypoints receive bootstrap references."
   }
 }
 run "forbid_plaintext_environment" {
@@ -65,4 +65,12 @@ run "forbid_unpinned_image" {
   command = plan
   variables { image_uri = "000000000000.dkr.ecr.us-east-1.amazonaws.com/synthetic:latest" }
   expect_failures = [var.image_uri]
+}
+
+run "restrict_synthetic_mail" {
+  command = plan
+  assert {
+    condition     = aws_iam_user.smtp.path == "/opensight-validation/" && !aws_iam_user.smtp.force_destroy && jsondecode(aws_iam_user_policy.smtp.policy).Statement[0].Action == "ses:SendRawEmail" && jsondecode(aws_iam_user_policy.smtp.policy).Statement[0].Condition.StringEquals["ses:FromAddress"] == var.alert_email && jsondecode(aws_iam_user_policy.smtp.policy).Statement[0].Condition["ForAllValues:StringEquals"]["ses:Recipients"] == [var.alert_email]
+    error_message = "The isolated SMTP identity may send only the approved synthetic message."
+  }
 }

@@ -11,5 +11,6 @@ output "inventory" {
     bootstrap_secret = aws_rds_cluster.validation.master_user_secret[0].secret_arn
     schedule_group   = aws_scheduler_schedule_group.probe.name
     queue_url        = aws_sqs_queue.probe.url
+    smtp_user        = aws_iam_user.smtp.name
   }
 }

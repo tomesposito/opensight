@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { execFileSync } from 'node:child_process';
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash, createHmac, randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, realpathSync, lstatSync, readFileSync, writeFileSync, openSync, closeSync, unlinkSync } from 'node:fs';
 import { dirname, join, resolve, relative, isAbsolute } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -16,7 +16,9 @@ export function reserveInvocation(ledger, command, now = Date.now()) {
   if (!['network', 'mail', 'bootstrap', 'database', 'native', 'startup'].includes(command)) throw Error('PROBE_COMMAND_INVALID');
   if (!Number.isSafeInteger(ledger.startedAt) || now < ledger.startedAt || now - ledger.startedAt >= 72 * 3600000 || ledger.retired) throw Error('EXPERIMENT_EXPIRED');
   if (!Number.isSafeInteger(ledger.invocations) || ledger.invocations < 0 || ledger.invocations >= 1000) throw Error('INVOCATION_BUDGET_EXHAUSTED');
-  return { ...ledger, invocations: ledger.invocations + 1 };
+  const mailAttempts = ledger.mailAttempts ?? 0;
+  if (!Number.isSafeInteger(mailAttempts) || mailAttempts < 0 || command === 'mail' && mailAttempts >= 20) throw Error('MAIL_BUDGET_EXHAUSTED');
+  return { ...ledger, invocations: ledger.invocations + 1, mailAttempts: mailAttempts + (command === 'mail' ? 1 : 0) };
 }
 export function owned(tags, deployment, purpose = 'isolated-validation') {
   const map = Array.isArray(tags) ? Object.fromEntries(tags.map(t => [t.Key, t.Value])) : tags;
@@ -26,6 +28,13 @@ export function safeProbeResult(response) {
   if (response?.passed !== true || response.version !== 1 || !Number.isSafeInteger(response.durationMs) || response.durationMs < 0 || !['network', 'mail', 'bootstrap', 'database', 'native', 'startup'].includes(response.command)
     || Object.keys(response).sort().join() !== 'command,durationMs,passed,version') throw Error('PROBE_FAILED');
   return response;
+}
+/** AWS's documented regional SMTP derivation; the IAM signing key is never stored. */
+export function smtpPassword(secret, region) {
+  if (typeof secret !== 'string' || secret.length < 16 || region !== 'us-east-1') throw Error('SMTP_KEY_INVALID');
+  let key = Buffer.from(`AWS4${secret}`);
+  for (const value of ['11111111', region, 'ses', 'aws4_request', 'SendRawEmail']) key = createHmac('sha256', key).update(value).digest();
+  return Buffer.concat([Buffer.from([4]), key]).toString('base64');
 }
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 function command(binary, args, env = process.env) {
@@ -169,7 +178,19 @@ export async function main(args = process.argv.slice(2), environment = process.e
         try { aws('secretsmanager', 'put-secret-value', ['--secret-id', arn, '--secret-string', `file://${path(temporary)}`]); }
         finally { unlinkSync(path(temporary)); }
       }
-      console.log('Application secret versions populated. Supply approved SMTP credentials privately before the separate mail probe.'); return;
+      const smtp = aws('secretsmanager', 'describe-secret', ['--secret-id', state.secrets.smtp]);
+      owned(smtp.Tags, deployment);
+      if (!Object.values(smtp.VersionIdsToStages ?? {}).some(stages => stages.includes('AWSCURRENT'))) {
+        const user = aws('iam', 'get-user', ['--user-name', state.smtp_user]).User; owned(user.Tags, deployment);
+        if (aws('iam', 'list-access-keys', ['--user-name', state.smtp_user]).AccessKeyMetadata.length) throw Error('SMTP_CREDENTIALS_REPAIR_REQUIRED');
+        const key = aws('iam', 'create-access-key', ['--user-name', state.smtp_user]).AccessKey;
+        write('smtp-key-reference.json', { user: state.smtp_user, id: key.AccessKeyId });
+        write('smtp-secret.json', { username: key.AccessKeyId, password: smtpPassword(key.SecretAccessKey, operator.region) });
+        try { aws('secretsmanager', 'put-secret-value', ['--secret-id', state.secrets.smtp, '--secret-string', `file://${path('smtp-secret.json')}`]); }
+        catch (error) { aws('iam', 'delete-access-key', ['--user-name', state.smtp_user, '--access-key-id', key.AccessKeyId]); throw error; }
+        finally { unlinkSync(path('smtp-secret.json')); }
+      }
+      console.log('Application and isolated SMTP secrets populated privately. Verify the approved SES email identity before the separate mail probe.'); return;
     }
     if (operation === 'invoke') {
       const next = reserveInvocation(ledger(), selection);
@@ -192,8 +213,11 @@ export async function main(args = process.argv.slice(2), environment = process.e
       console.log(JSON.stringify({ samples: metrics.Datapoints.length, pausedSamples: metrics.Datapoints.filter(p => p.Maximum === 0).length, maximumACU: Math.max(0, ...metrics.Datapoints.map(p => p.Maximum)) })); return;
     }
     if (operation === 'cleanup') {
-      if (!['schedules', 'objects', 'compute', 'database'].includes(selection)) throw Error('CLEANUP_SELECTION_REQUIRED');
-      if (selection === 'schedules') {
+      if (!['schedules', 'objects', 'compute', 'database', 'credentials'].includes(selection)) throw Error('CLEANUP_SELECTION_REQUIRED');
+      if (selection === 'credentials') {
+        const user = aws('iam', 'get-user', ['--user-name', state.smtp_user]).User; owned(user.Tags, deployment);
+        for (const key of aws('iam', 'list-access-keys', ['--user-name', state.smtp_user]).AccessKeyMetadata) aws('iam', 'delete-access-key', ['--user-name', state.smtp_user, '--access-key-id', key.AccessKeyId]);
+      } else if (selection === 'schedules') {
         const group = aws('scheduler', 'get-schedule-group', ['--name', state.schedule_group]);
         owned(aws('scheduler', 'list-tags-for-resource', ['--resource-arn', group.Arn]).Tags, deployment);
         for (const schedule of aws('scheduler', 'list-schedules', ['--group-name', state.schedule_group]).Schedules) aws('scheduler', 'delete-schedule', ['--group-name', state.schedule_group, '--name', schedule.Name]);
