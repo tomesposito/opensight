@@ -10,6 +10,7 @@ import type { createApiClient } from './api-client.js';
 import { prepCatalog, prepStepLabel, prepSchema, prepPlan, prepRefKey, prepRefLabel, prepSourceRef, prepInputNodes, prepInstanceLabel, prepStepSourceInstance, prepStepIssue, prepMessage, newPrepStep, prepBundle, prepPrefix, prepLeftInput, removePrepStep, type PrepSourceSummary } from './data-prep.js';
 import { PrepStepEditor, PrepSourcePicker } from './PrepStepEditor.js';
 import { PrepPreviewTable } from './PrepPreviewTable.js';
+import { loadDataCatalog } from './data-section.js';
 export type PrepClient = Pick<ReturnType<typeof createApiClient>, 'listPrepSources' | 'listPrepDatasets' | 'savePrep' | 'deletePrep' | 'previewPrep'> & Partial<ExecutionClient>;
 const demoSource: PrepSourceSummary = { id: 'demo-sales', connectorId: 'file', available: true, columns: [{ name: 'region', type: 'STRING' }, { name: 'category', type: 'STRING' }, { name: 'revenue', type: 'DECIMAL' }, { name: 'order_date', type: 'DATETIME' }] };
 const demoLookup: PrepSourceSummary = { id: 'demo-regions', name: 'Regions (sample schema)', connectorId: 'file', available: true, columns: [{ name: 'region', type: 'STRING' }, { name: 'manager', type: 'STRING' }] };
@@ -74,7 +75,8 @@ export function DataPrep({ client, initialSource, initialDatasetId, onSources, o
   useEffect(() => {
     if (!client) return;
     let cancelled = false;
-    Promise.all([client.listPrepSources(), client.listPrepDatasets()]).then(([sources, stored]) => {
+    loadDataCatalog(client).then(stored => {
+      const sources = stored.sources;
       if (cancelled) return; setSources(sources); setSaved(stored.datasets);
       if (initialDatasetId && !openedDataset.current) {
         const existing = stored.datasets.find(dataset => dataset.dataSetId === initialDatasetId);

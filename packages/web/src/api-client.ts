@@ -11,6 +11,7 @@ import type { Session } from './access.js';
 import type { BundleDefinition } from '@opensight/bundle-parser';
 import { convertDefinition, object } from './definition-converter.js';
 import type { Row } from './model.js';
+import { hostedExecution, prepSources, type HostedPrepDataset, type PrepDatasetsResponse } from './prep-contracts.js';
 
 /** OpenSight HTTP projection; the API supplies the engine's trusted metadata. */
 export type { InteractiveQuery as QueryRequest } from '@opensight/query-engine/browser';
@@ -22,9 +23,10 @@ export interface QueryResponse {
 }
 export interface ExecutionSettings { mode: 'DIRECT_QUERY' | 'BLAZE'; intervalMinutes: number | null }
 export interface ExecutionStatus extends ExecutionSettings {
+  version?: number;
   materializationReason?: string | null;
-  state: 'direct' | 'empty' | 'running' | 'ready' | 'error' | 'evicted' | 'invalidated';
-  lastRefreshedAt: string | null; rowCount: number | null; bytes: number; nextRefreshAt: string | null;
+  state: 'direct' | 'empty' | 'running' | 'ready' | 'error' | 'evicted' | 'invalidated' | 'unknown';
+  lastRefreshedAt: string | null; rowCount: number | null; bytes: number | null; nextRefreshAt: string | null;
   error: { code: string; message: string; causeCode?: string } | null;
 }
 export interface ExecutionProvenance {
@@ -147,7 +149,14 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
     }
     return value as T;
   }
-  const getDatasetExecution = (id: string) => resource<ExecutionStatus>(`/api/datasets/${encodeURIComponent(id)}/execution`);
+  const getDatasetExecution = async (id: string): Promise<ExecutionStatus> => {
+    const status = await resource<ExecutionStatus | ExecutionSettings>(`/api/datasets/${encodeURIComponent(id)}/execution`);
+    if ('state' in status) return status;
+    // Read configuration and its optimistic version together; /execution alone
+    // supplies no version in hosted mode.
+    const saved = await resource<HostedPrepDataset>(`/api/datasets/${encodeURIComponent(id)}/prep`);
+    return hostedExecution(saved.execution, saved.version);
+  };
   async function getLocalData(signal?: AbortSignal): Promise<boolean> {
     const response = await authenticatedFetch(`${base}/api/local-data`, { signal, credentials: 'same-origin', headers: { Accept: 'application/json' } });
     if (!response.ok) return false;
@@ -157,8 +166,11 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
   const setDatasetExecution = (id: string, settings: ExecutionSettings) => resource<ExecutionStatus>(`/api/datasets/${encodeURIComponent(id)}/execution`, 'PUT', settings);
   const refreshBlaze = (id: string) => resource<ExecutionStatus>(`/api/datasets/${encodeURIComponent(id)}/refresh`, 'POST', {});
   const getPreparedRows = (id: string) => resource<PreparedRows>(`/api/datasets/${encodeURIComponent(id)}/rows`);
-  const listPrepSources = () => resource<PrepSourceSummary[]>('/api/prep-sources');
-  const listPrepDatasets = () => resource<{ datasets: BundleDataSet[]; persistence: 'file' | 'ephemeral' }>('/api/prep-datasets');
+  const listPrepDatasets = () => resource<PrepDatasetsResponse>('/api/prep-datasets');
+  const listPrepSources = async (saved?: PrepDatasetsResponse) => {
+    const [catalog, sources] = await Promise.all([saved ?? listPrepDatasets(), resource<PrepSourceSummary[]>('/api/prep-sources')]);
+    return prepSources(catalog, sources);
+  };
   const savePrep = (id: string, name: string, pipeline: PrepPipeline) => resource<{ resource: BundleDataSet; persistence: 'file' | 'ephemeral' }>(`/api/datasets/${encodeURIComponent(id)}/prep`, 'PUT', { name, pipeline });
   const deletePrep = (id: string) => resource<{ deleted: true }>(`/api/datasets/${encodeURIComponent(id)}/prep`, 'DELETE');
   const previewPrep = (id: string, pipeline: PrepPipeline, through: string | null, limit = 100) => resource<PrepPreview>(`/api/datasets/${encodeURIComponent(id)}/prep/preview`, 'POST', { pipeline, through, limit });
