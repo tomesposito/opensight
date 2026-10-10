@@ -119,17 +119,19 @@ test('Insert adds sheets, visuals and insights through the reducer and guards un
   assert.equal(ui.calls.length, 3, 'disabled insert actions do not dispatch');
 });
 
-test('Sheets retains add and switching, offers rename, and explains unsupported sheet features', async t => {
+test('Sheets retains add and switching, and the follow-up items dispatch real actions', async t => {
   const draft = authorReducer(emptyDraft(), { type: 'sheet-add' });
   const ui = await mount(t, { draft });
   assert.deepEqual(ui.labels('Sheets'), ['Add Sheet', 'Duplicate Sheet', 'Rename Sheet', 'Add Title', 'Add Description', 'Layout Settings', 'Sheet 1', 'Sheet 2']);
   await ui.click('Sheets', 'Add Sheet'); await ui.click('Sheets', 'Sheet 1');
   assert.deepEqual(ui.calls, [{ type: 'sheet-add' }, { type: 'sheet-select', id: 'sheet-1' }]);
-  for (const label of ['Duplicate Sheet', 'Add Title', 'Add Description', 'Layout Settings']) {
-    assert.equal(ui.item('Sheets', label).props['aria-disabled'], true); assert.match(ui.item('Sheets', label).props.title, /not supported/);
-    await ui.click('Sheets', label);
+  for (const label of ['Duplicate Sheet', 'Add Title', 'Add Description']) {
+    assert.equal(ui.item('Sheets', label).props['aria-disabled'], false, `${label} is enabled`);
   }
-  assert.equal(ui.calls.length, 2);
+  await ui.click('Sheets', 'Duplicate Sheet');
+  await ui.click('Sheets', 'Add Title');
+  await ui.click('Sheets', 'Add Description');
+  assert.deepEqual(ui.calls.slice(2), [{ type: 'sheet-duplicate', id: 'sheet-2' }, { type: 'sheet-title' }, { type: 'sheet-description' }]);
   await ui.update({ dataAvailable: false });
   assert.equal(ui.item('Sheets', 'Rename Sheet').props['aria-disabled'], false, 'sheet tabs also exist before adding data');
 });
