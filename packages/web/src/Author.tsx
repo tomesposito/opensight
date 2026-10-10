@@ -153,6 +153,7 @@ function AuthorWorkspace({ renderIdentity, sampleLoaded = false, onTrySample, cl
   const renderToolbar = (trigger?: ReactNode) => <AuthorToolbar
     onPrep={onPrep ? () => { if (drafts.keepCurrent()) onPrep(); } : undefined}
     onSources={onSources ? () => { if (drafts.keepCurrent()) onSources(); } : undefined}
+    canUndo={drafts.canUndo} canRedo={drafts.canRedo} onUndo={() => dispatch({ type: 'undo' })} onRedo={() => dispatch({ type: 'redo' })}
     draft={draft} dispatch={dispatch} oEntry={trigger} dataAvailable={!noData} fit={fit}
     onFit={() => setFit(value => !value)} onJson={download}
     onBundle={() => { if (!busy) void downloadQs(); }} onImport={() => fileInput.current?.click()}
@@ -161,7 +162,7 @@ function AuthorWorkspace({ renderIdentity, sampleLoaded = false, onTrySample, cl
   if (drafts.openingError) return <>{renderIdentity?.(null)}<section><h1>Unable to open analysis</h1><p role="alert">{drafts.openingError}</p><p>Return to My analyses to refresh the list or choose another draft.</p></section></>;
   const titleControl = <label className="analysis-title"><span className="sr-only">Analysis title</span><input value={draft.title} onChange={e => dispatch({ type: 'analysis-title', title: e.target.value })} /></label>;
   return <><div ref={workspace} className="author-workspace" data-chrome={draft.chrome ?? 'light'}>
-    <AuthorShortcuts workspace={workspace} onSave={saveDraft} />
+    <AuthorShortcuts workspace={workspace} onSave={saveDraft} onUndo={() => dispatch({ type: 'undo' })} onRedo={() => dispatch({ type: 'redo' })} />
     <AuthorCommands draft={draft} dispatch={dispatch} onSave={saveDraft} />
     {renderIdentity ? renderIdentity(titleControl) : <header className="author-topbar app-header">
       {!inApp && <a className="brand" href="./"><span className="brand-mark" aria-hidden="true">◈</span>OpenSight</a>}

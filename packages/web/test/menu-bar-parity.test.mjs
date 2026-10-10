@@ -55,16 +55,22 @@ test('File unavailable items expose reasons and cannot invoke actions; export/im
   assert.match(ui.item('File', 'Autosave On').props.title, /could not save.*Browser storage is blocked/);
 });
 
-test('Edit has Themes and explicit unavailable history/settings actions', async t => {
+test('Edit has Themes, real settings and unavailable empty history', async t => {
   const ui = await mount(t);
   assert.deepEqual(ui.labels('Edit'), ['Undo', 'Redo', 'Themes', 'Analysis Settings']);
   assert.equal(ui.item('Edit', 'Themes').props['aria-disabled'], false);
-  for (const label of ['Undo', 'Redo', 'Analysis Settings']) {
+  for (const label of ['Undo', 'Redo']) {
     assert.equal(ui.item('Edit', label).props['aria-disabled'], true);
     await ui.click('Edit', label);
   }
   assert.deepEqual(ui.calls, []);
+  await ui.update({ canUndo: true, canRedo: true, onUndo: () => ui.calls.push('undo'), onRedo: () => ui.calls.push('redo') });
+  await ui.click('Edit', 'Undo'); await ui.click('Edit', 'Redo');
+  assert.deepEqual(ui.calls, ['undo', 'redo']);
   await ui.update({ dataAvailable: false });
+  assert.equal(ui.item('Edit', 'Analysis Settings').props['aria-disabled'], false);
+  await ui.click('Edit', 'Analysis Settings');
+  assert.equal(ui.renderer.root.findByType('dialog').findByType('h2').props.children, 'Analysis Settings');
   assert.match(ui.item('Edit', 'Themes').props.title, /Add data/);
 });
 
@@ -163,4 +169,18 @@ test('Print calls the browser action, PDF explains its destination and Cancel ne
     assert.equal(ui.item('File', label).props['aria-disabled'], true); await ui.click('File', label);
   }
   assert.equal(prints, 2);
+});
+
+test('disabled reasons stay expanded until closing so focus transfer cannot move the next click target', async t => {
+  const ui = await mount(t);
+  const item = ui.menu('Edit').findAllByType(AuthorMenuItem).find(node => node.props.label === 'Undo');
+  const wrapper = () => item.findByProps({ className: 'author-menu-item' });
+  assert.equal(wrapper().props['data-reason-revealed'], undefined);
+  await act(() => wrapper().props.onFocus()); assert.equal(wrapper().props['data-reason-revealed'], true);
+  await ui.click('Edit', 'Undo'); assert.deepEqual(ui.calls, []);
+  await ui.click('Edit', 'Analysis Settings'); assert.equal(ui.renderer.root.findByType('dialog').findByType('h2').props.children, 'Analysis Settings');
+  assert.equal(wrapper().props['data-reason-revealed'], true);
+  await act(() => ui.menu('Edit').props.onToggle({ currentTarget: { open: false } }));
+  assert.equal(wrapper().props['data-reason-revealed'], undefined);
+  await act(() => wrapper().props.onPointerEnter()); assert.equal(wrapper().props['data-reason-revealed'], true);
 });

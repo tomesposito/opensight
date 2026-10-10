@@ -11,12 +11,12 @@ const input = tag => ({ nodeType: 1, closest: selector => selector.includes(tag)
 
 for (const shortcut of AUTHOR_SHORTCUTS) test(`${shortcut.id}: matches its registered keys and renders a combo`, () => {
   if (shortcut.modifier) {
-    for (const modifier of ['metaKey', 'ctrlKey']) for (const value of [shortcut.key, shortcut.key.toUpperCase()]) {
-      assert.equal(shortcutForEvent(key({ key: value, [modifier]: true }))?.id, shortcut.id);
+    for (const modifier of (shortcut.controlOnly ? ['ctrlKey'] : ['metaKey', 'ctrlKey'])) for (const value of [shortcut.key, shortcut.key.toUpperCase()]) {
+      assert.equal(shortcutForEvent(key({ key: value, [modifier]: true, shiftKey: !!shortcut.shift }))?.id, shortcut.id);
     }
-    assert.deepEqual(shortcutKeys(shortcut), ['Cmd/Ctrl', shortcut.key.toUpperCase()]);
+    assert.deepEqual(shortcutKeys(shortcut), [shortcut.controlOnly ? 'Ctrl' : 'Cmd/Ctrl', ...(shortcut.shift ? ['Shift'] : []), shortcut.key.toUpperCase()]);
   } else {
-    assert.equal(shortcutForEvent(key({ key: shortcut.key, shiftKey: shortcut.key === '?' }))?.id, shortcut.id);
+    assert.equal(shortcutForEvent(key({ key: shortcut.key, shiftKey: shortcut.key === '?' || !!shortcut.shift }))?.id, shortcut.id);
     assert.deepEqual(shortcutKeys(shortcut), shortcut.key === '?' ? ['Shift', '/'] : ['Esc']);
   }
 });
@@ -33,13 +33,13 @@ test('question mark works by character and Shift+/; bare slash and extra modifie
   ]) assert.equal(shortcutForEvent(key(options)), undefined, JSON.stringify(options));
 });
 
-test('all actions ignore editable targets, ancestors, text nodes and shadow event paths; Escape passes through', () => {
+test('history is global; other actions ignore editable targets, ancestors, text nodes and shadow event paths; Escape passes through', () => {
   const inherited = { nodeType: 1, closest: () => ({}) };
   for (const target of [input('input'), input('textarea'), input('select'), inherited,
     { nodeType: 1, isContentEditable: true }, { parentElement: inherited }]) {
     for (const shortcut of AUTHOR_SHORTCUTS) {
-      const event = key({ target, key: shortcut.key, ctrlKey: !!shortcut.modifier, shiftKey: shortcut.key === '?' });
-      assert.equal(shortcutForEvent(event)?.id, shortcut.id === 'close-dialog' ? shortcut.id : undefined);
+      const event = key({ target, key: shortcut.key, ctrlKey: !!shortcut.modifier, shiftKey: shortcut.key === '?' || !!shortcut.shift });
+      assert.equal(shortcutForEvent(event)?.id, shortcut.id === 'close-dialog' || shortcut.history ? shortcut.id : undefined);
     }
   }
   assert.equal(shortcutForEvent(key({ key: 's', ctrlKey: true, composedPath: () => [input('input')] })), undefined);
@@ -59,14 +59,14 @@ test('document dispatch handles every action, opens the palette and preserves na
   const actions = Object.fromEntries(AUTHOR_SHORTCUTS.filter(s => !s.native).map(s => [s.id, () => calls.push(s.id)]));
   const cleanup = listenForAuthorShortcuts(document, actions);
   for (const shortcut of AUTHOR_SHORTCUTS) {
-    const event = key({ key: shortcut.key, ctrlKey: !!shortcut.modifier });
+    const event = key({ key: shortcut.key, ctrlKey: !!shortcut.modifier, shiftKey: !!shortcut.shift });
     document.dispatchEvent(event);
     assert.equal(event.defaultPrevented, !shortcut.native, shortcut.id);
   }
-  assert.deepEqual(calls, ['save-draft', 'focus-search', 'toggle-command-palette', 'shortcuts-help']);
+  assert.deepEqual(calls, ['save-draft', 'undo', 'redo', 'redo-alternate', 'focus-search', 'toggle-command-palette', 'shortcuts-help']);
   assert.equal(AUTHOR_SHORTCUTS.find(s => s.id === 'toggle-command-palette').coming, undefined);
   cleanup(); document.dispatchEvent(key({ key: 's', ctrlKey: true }));
-  assert.equal(calls.length, 4);
+  assert.equal(calls.length, 7);
 });
 
 test('composition lifecycle, window blur, modal guards and cleanup apply to the document listener', () => {

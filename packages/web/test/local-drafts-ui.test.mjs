@@ -188,3 +188,52 @@ for (const access of [{ mode: 'local' }, { mode: 'demo' }, { mode: 'hosted' }, {
   assert.match(share.props.title, access.mode !== 'hosted' ? /needs hosted API/ : access.session ? new RegExp(`namespace “${access.session.namespaceId}”.*saved hosted analysis`) : /resolved hosted session and namespace/);
   await act(() => share.props.onClick()); assert.equal(requests, 0);
 });
+
+test('history changes drive autosave; manual save keeps history and document boundaries clear it', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const ui = await mount(t);
+  const draft = () => ui.renderer.root.findByType(AuthorToolbar).props.draft;
+  const dispatch = action => act(() => ui.renderer.root.findByType(AuthorToolbar).props.dispatch(action));
+  const original = structuredClone(draft());
+  assert.equal(ui.button('Undo').props['aria-disabled'], true);
+  await dispatch({ type: 'assign', field: 'amount', well: 'values' });
+  assert.equal(ui.button('Undo').props['aria-disabled'], true, 'identical assignment is not an edit');
+  await dispatch({ type: 'unassign', field: 'amount', well: 'values' });
+  await dispatch({ type: 'title', title: 'Changed visual' });
+  await ui.click('Undo'); await ui.click('Undo'); assert.deepEqual(draft(), original);
+  assert.equal(ui.button('Undo').props['aria-disabled'], true);
+  await ui.click('Redo'); await ui.click('Save draft'); assert.equal(ui.button('Undo').props['aria-disabled'], false);
+  await ui.click('Undo');
+  await act(() => t.mock.timers.tick(2000));
+  assert.deepEqual(ui.store.restore().draft, original, 'undo result is the actual autosaved draft');
+  await ui.click('Redo'); await ui.click('Save as Analysis');
+  await act(() => ui.renderer.root.findByType('dialog').findByType('form').props.onSubmit({ preventDefault() {} }));
+  assert.equal(ui.button('Undo').props['aria-disabled'], true); assert.equal(ui.button('Redo').props['aria-disabled'], true);
+  await dispatch({ type: 'title', title: 'Copy edit' });
+  await act(() => ui.renderer.root.findByType(LocalDrafts).props.onOpen(ui.id));
+  assert.equal(ui.button('Undo').props['aria-disabled'], true);
+  await dispatch({ type: 'title', title: 'Original edit' });
+  await ui.reload(); assert.equal(ui.button('Undo').props['aria-disabled'], true); assert.equal(ui.button('Redo').props['aria-disabled'], true);
+});
+
+test('Analysis Settings apply, undo, autosave and reload the actual analysis with no dataset required', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const ui = await mount(t);
+  ui.values.clear(); await ui.reload();
+  assert.equal(ui.renderer.root.findAllByType(AuthorCanvas).length, 0);
+  await ui.click('Analysis Settings');
+  const dialog = () => ui.renderer.root.findByType('dialog');
+  await act(() => dialog().findByType('input').props.onChange({ target: { value: 'Analysis metadata' } }));
+  await act(() => dialog().findByType('textarea').props.onChange({ target: { value: 'Saved description' } }));
+  await act(() => dialog().findByType('select').props.onChange({ target: { value: 'dark' } }));
+  await act(() => dialog().findByType('form').props.onSubmit({ preventDefault() {} }));
+  await act(() => t.mock.timers.tick(2000));
+  assert.equal(ui.store.restore().draft.title, 'Analysis metadata'); assert.equal(ui.store.restore().draft.description, 'Saved description');
+  assert.equal(ui.store.restore().draft.theme.background, '#141e2c');
+  await ui.click('Undo'); await act(() => t.mock.timers.tick(2000));
+  assert.deepEqual(ui.store.restore().draft, emptyDraft());
+  await ui.click('Redo'); await ui.click('Save draft'); await ui.reload(); await ui.click('Analysis Settings');
+  assert.equal(dialog().findByType('input').props.value, 'Analysis metadata'); assert.equal(dialog().findByType('textarea').props.value, 'Saved description');
+  await act(() => dialog().findByType('textarea').props.onChange({ target: { value: 'Discarded' } }));
+  await ui.click('Cancel'); await ui.click('Save draft'); assert.equal(ui.store.restore().draft.description, 'Saved description');
+});

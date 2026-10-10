@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { AnalysisSettings } from '../build/test/AnalysisSettings.js';
+import { emptyDraft } from '../build/test/authoring.js';
 import { Author } from '../build/test/Author.js';
 import { chromiumPage } from './chromium.mjs';
 
@@ -63,6 +65,32 @@ describe('toolbar/header geometry in offline Chromium', () => {
       }
     });
   }
+  for (const theme of ['light', 'dark']) for (const width of [1440, 1100, 760, 390]) test(`settings at ${width}px ${theme}: reasons cannot move Apply/Cancel during a click`, async () => {
+    await render(width, theme);
+    await page.evaluate(markup => {
+      document.querySelector('.author-workspace').insertAdjacentHTML('beforeend', markup);
+      document.querySelector('dialog').showModal();
+    }, renderToStaticMarkup(createElement(AnalysisSettings, { draft: emptyDraft(), dispatch() {}, onClose() {} })));
+    const result = await page.evaluate(() => {
+      const dialog = document.querySelector('dialog');
+      const rect = node => { const { x, y, width, height } = node.getBoundingClientRect(); return { x, y, width, height }; };
+      const cancel = [...dialog.querySelectorAll('button')].find(button => button.textContent === 'Cancel');
+      return { box: rect(dialog), themeLabel: dialog.querySelector('select').getAttribute('aria-label'), paths:
+        [...dialog.querySelectorAll('button[aria-disabled="true"]')].map(unavailable => {
+          unavailable.focus(); const before = rect(cancel);
+          // Pointer-down transfers focus before click. The explanation used to
+          // collapse here, moving the click target within the centered modal.
+          cancel.focus();
+          const reason = document.getElementById(unavailable.getAttribute('aria-describedby'));
+          return { before, after: rect(cancel), visible: getComputedStyle(reason).display !== 'none' };
+        }) };
+    });
+    assert.equal(result.themeLabel, 'Analysis theme');
+    const { box } = result;
+    assert.ok(box.x >= 0 && box.x + box.width <= width && box.y >= 0 && box.y + box.height <= 900);
+    assert.equal(result.paths.length, 2);
+    for (const path of result.paths) { assert.deepEqual(path.after, path.before); assert.equal(path.visible, true); }
+  });
   for (const inApp of [true, false]) test(`${inApp ? 'app' : 'standalone'}: long names fit at 390px without losing accessible text`, async () => {
     await render(390, 'light', inApp);
     const result = await page.evaluate(() => {
