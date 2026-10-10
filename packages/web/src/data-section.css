@@ -58,3 +58,23 @@
 .data-dialog .connector-details { margin-top: 16px; box-shadow: none; }
 .data-dialog .connector-details form { max-width: 480px; }
 @media (max-width: 700px) { .data-connector-grid { grid-template-columns: 1fr; } }
+.data-breadcrumb { display: flex; gap: 8px; margin-bottom: 16px; color: #596c78; }
+.data-detail-heading { justify-content: space-between; margin: 8px 0 16px; }
+.data-detail-heading h1 { margin: 0; overflow-wrap: anywhere; }
+.data-detail-actions { display: flex; gap: 8px; align-items: center; }
+.data-detail > section[role=tabpanel] { margin-top: 16px; }
+.data-summary { display: grid; grid-template-columns: minmax(0, 2fr) minmax(260px, 1fr); gap: 12px; align-items: start; }
+.data-summary > .data-card { min-height: 440px; }
+.data-summary-cards { display: grid; gap: 12px; }
+.data-summary-cards p { margin: 8px 0; }
+.data-summary-cards ul { padding-left: 16px; margin-bottom: 0; }
+.data-summary-cards button { border: 0; padding: 0; }
+.data-summary-cards .dataset-execution { padding: 8px 0; }
+.data-summary-cards .execution-controls { flex-direction: column; align-items: start; }
+.data-refresh { display: grid; gap: 16px; }
+.data-refresh .data-email { justify-self: end; }
+.data-dialog label { display: block; }
+.data-dialog label > input:not([type=radio]) { display: block; margin-top: 4px; }
+.data-dialog .data-connector-tile { display: flex; }
+@media (max-width: 900px) { .data-summary { grid-template-columns: 1fr; } .data-detail-actions { flex-wrap: wrap; } }
+.data-refresh .data-table th:first-child, .data-dialog .data-table th:first-child { width: auto; }

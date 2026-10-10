@@ -1,4 +1,6 @@
 import { DataPrep } from './DataPrep.js';
+import { DatasetDetail } from './DatasetDetail.js';
+import { emptyDraft } from './authoring.js';
 import { DataLanding } from './DataLanding.js';
 import { CreateDatasetDialog } from './CreateDatasetDialog.js';
 import { UserManagement } from './UserManagement.js';
@@ -20,7 +22,7 @@ import { Analyses } from './Analyses.js';
 import { CreateAnalysisDialog } from './CreateAnalysisDialog.js';
 import { AppLink, AppNavigation, useAppRoute } from './AppNavigation.js';
 import { pages, recordRecentPage, routeProblem, type Page } from './app-navigation.js';
-import { draftStorageKey } from './local-drafts.js';
+import { browserDraftStorage, createDraftStore, draftStorageKey } from './local-drafts.js';
 import { ToastProvider } from './Toasts.js';
 import { BackToTop } from './BackToTop.js';
 import { CommandPaletteProvider } from './CommandPalette.js';
@@ -68,9 +70,11 @@ function ApplicationWorkspace({ api, fixtures }: { api: ReturnType<typeof create
       case 'shared-folders': return <FolderEmptyState shared navigate={navigate} />;
       case 'analyses': return <Analyses navigate={navigate} />;
       case 'author': return choosingDataset ? <Analyses navigate={navigate} /> : <Author key={entry} renderIdentity={identity} sampleLoaded={sampleLoaded} onTrySample={() => setSampleLoaded(true)} inApp draftId={route.draftId} newAnalysis={route.newAnalysis} onDraftChange={draftId => navigate({ page: 'author', draftId }, true)} onSources={() => navigate({ page: 'data-sources' })} onDatasetChange={setAuthorDataset} dataset={route.draftId ? undefined : route.newAnalysis ? newAnalysisChoice?.dataset : authorDataset} onPrep={() => navigate({ page: 'data-prep' })} client={connected ? api : undefined} />;
-      case 'data':
-      case 'data-sources': return <DataLanding key={route.page} initialTab={route.page === 'data-sources' ? 'Data sources' : 'Datasets'} client={connected ? api : undefined} onCreate={() => setCreation('dataset')} onCreateSource={() => setCreation('source')} onOpen={() => navigate({ page: 'data-prep' })} onEdit={() => navigate({ page: 'data-prep' })} onPrep={source => navigate({ page: 'data-prep', sourceId: source.id })} />;
-      case 'data-prep': return <DataPrep key={entry} initialSource={route.sourceId} onBuild={access.mode === 'local' ? dataset => { setAuthorDataset(dataset); navigate({ page: 'author' }); } : undefined} client={connected ? api : undefined} onSources={() => navigate({ page: 'data-sources' })} onAuthor={() => navigate({ page: 'author' })} />;
+      case 'data': if (route.datasetId) return <DatasetDetail key={route.datasetId} datasetId={route.datasetId} client={connected ? api : undefined} navigate={navigate} onGenerate={dataset => { const draftId = createDraftStore(browserDraftStorage, access).save({ ...emptyDraft(), dataset }); navigate({ page: 'author', draftId }); }} />;
+      // Data sources is a bookmarkable tab of the Data landing page.
+      // falls through
+      case 'data-sources': return <DataLanding key={route.page} initialTab={route.page === 'data-sources' ? 'Data sources' : 'Datasets'} client={connected ? api : undefined} onCreate={() => setCreation('dataset')} onCreateSource={() => setCreation('source')} onOpen={dataset => navigate({ page: 'data', datasetId: dataset.dataSetId })} onEdit={dataset => navigate({ page: 'data-prep', datasetId: dataset.dataSetId })} onPrep={source => navigate({ page: 'data-prep', sourceId: source.id })} />;
+      case 'data-prep': return <DataPrep key={entry} initialSource={route.baseDatasetId ? { dataset: route.baseDatasetId } : route.sourceId} initialDatasetId={route.datasetId} onDatasets={() => navigate({ page: 'data' })} onSaved={dataset => navigate({ page: 'data', datasetId: dataset.dataSetId })} onBuild={access.mode === 'local' ? dataset => { setAuthorDataset(dataset); navigate({ page: 'author' }); } : undefined} client={connected ? api : undefined} onSources={() => navigate({ page: 'data-sources' })} onAuthor={() => navigate({ page: 'author' })} />;
       case 'users': return <UserManagement client={api} />;
       case 'ai-settings': return <AISettings client={api} />;
       case 'organization': return <OrganizationNotice />;

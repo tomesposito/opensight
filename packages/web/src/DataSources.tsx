@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { connectors, connectorDefinition, connectorState, validateConnectorConfig, type ConnectorState } from '@opensight/query-engine/browser';
 import type { createApiClient } from './api-client.js';
 import type { UploadSummary } from '@opensight/query-engine';
@@ -46,6 +46,8 @@ export function DataSources({ client, local = false, onPrep }: { client?: Client
   </section>;
 }
 export function ConnectorDetails({ id, client, local, postgresSource, onPrep, onUploaded }: { id: string; client?: Client; local: boolean; postgresSource?: string; onPrep?: (source?: string) => void; onUploaded?: (source: string) => void }) {
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const connector = connectorDefinition(id), fileSource = id === 'file';
   const enabled = !!client && fileSource;
   const [config, setConfig] = useState<Record<string, string>>(fileSource ? { format: 'csv' } : {});
@@ -70,7 +72,7 @@ export function ConnectorDetails({ id, client, local, postgresSource, onPrep, on
         for (let offset = 0; offset < bytes.length; offset += 8192) chunks.push(String.fromCharCode(...bytes.subarray(offset, offset + 8192)));
         const binary = chunks.join('');
         const uploaded = await client.uploadFile({ config: validated, base64: btoa(binary) });
-        setUpload(uploaded); onUploaded?.(uploaded.id);
+        if (mounted.current) { setUpload(uploaded); onUploaded?.(uploaded.id); }
       } else setStatus(await client.validateConnector(id, validated));
     } catch (e) { setError(e instanceof Error ? e.message : 'Unable to process the source.'); }
     finally { setBusy(false); }
