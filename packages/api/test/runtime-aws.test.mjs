@@ -4,7 +4,7 @@ import { InvocationScope } from '../dist/runtime-scope.js';
 import { InvocationAws, awsRegion, secretArn, secretObject, databaseUrl, awsEnvironment } from '../dist/runtime-aws.js';
 import { probeCommand, probeRoleNames } from '../dist/platform-probe.js';
 const arn = 'arn:aws:secretsmanager:us-east-1:000000000000:secret:synthetic-abcdef';
-const base = { AWS_REGION: 'us-east-1', OPENSIGHT_VALIDATION: 'isolated', OPENSIGHT_MAINTENANCE: 'frozen', OPENSIGHT_RUNTIME: 'lambda', OPENSIGHT_MODE: 'hosted', OPENSIGHT_DEPLOYMENT: 'synthetic' };
+const base = { AWS_ACCESS_KEY_ID: 'synthetic', AWS_SECRET_ACCESS_KEY: 'synthetic', AWS_SESSION_TOKEN: 'synthetic', AWS_REGION: 'us-east-1', OPENSIGHT_VALIDATION: 'isolated', OPENSIGHT_MAINTENANCE: 'frozen', OPENSIGHT_RUNTIME: 'lambda', OPENSIGHT_MODE: 'hosted', OPENSIGHT_DEPLOYMENT: 'synthetic' };
 const scope = () => new InvocationScope(Date.now() + 12000);
 
 test('SR4a strict secret schemas reject oversized, ignored, nested and prototype fields', () => {
@@ -26,6 +26,7 @@ test('SR4a region, ARN and database URL cannot redirect credentials', () => {
   for (const host of ['database.invalid/?sslmode=disable', 'database.invalid@evil.invalid', 'database.invalid:123']) assert.throws(() => databaseUrl({ ...env, OPENSIGHT_DB_HOST: host }, { username: 'synthetic', password: 'fake' }));
 });
 test('SR4a clients pin regional endpoints, one attempt and queue routing; close prevents reuse', async () => {
+  assert.throws(() => new InvocationAws(scope(), { AWS_REGION: 'us-east-1' }), { code: 'AWS_CREDENTIALS_REQUIRED' });
   let aws;
   await scope().run(async invocation => {
     aws = new InvocationAws(invocation, base);

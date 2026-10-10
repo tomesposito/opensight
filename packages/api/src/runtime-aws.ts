@@ -45,12 +45,17 @@ export class InvocationAws {
   private closing?: Promise<void>;
   constructor(readonly scope: InvocationScope, env: NodeJS.ProcessEnv) {
     this.region = awsRegion(env);
+    // Lambda supplies these temporary credentials. Never search local profiles,
+    // container credentials or IMDS outside this invocation's owned transports.
+    const accessKeyId = env.AWS_ACCESS_KEY_ID, secretAccessKey = env.AWS_SECRET_ACCESS_KEY, sessionToken = env.AWS_SESSION_TOKEN;
+    if (![accessKeyId, secretAccessKey, sessionToken].every(value => typeof value === 'string' && value.length > 0 && value.length <= 16384 && !/[\s\x00-\x1f]/.test(value))) fail('AWS_CREDENTIALS_REQUIRED');
+    const credentials = { accessKeyId: accessKeyId!, secretAccessKey: secretAccessKey!, sessionToken: sessionToken! };
     this.hosts = { secrets: `secretsmanager.${this.region}.amazonaws.com`, sqs: `sqs.${this.region}.api.aws`,
       scheduler: `scheduler.${this.region}.api.aws`, s3: `s3.${this.region}.amazonaws.com`, smtp: `email-smtp.${this.region}.api.aws` };
     const options = (host: string, family: 4 | 6) => {
       const httpsAgent = new Agent({ family, keepAlive: false, maxSockets: 2, maxFreeSockets: 0, rejectUnauthorized: true, minVersion: 'TLSv1.2' });
       this.agents.push(httpsAgent);
-      return { region: this.region, endpoint: `https://${host}`, maxAttempts: 1,
+      return { region: this.region, credentials, endpoint: `https://${host}`, maxAttempts: 1,
         requestHandler: { httpsAgent, connectionTimeout: 2000, requestTimeout: 5000, throwOnRequestTimeout: true } };
     };
     this.secrets = new SecretsManagerClient(options(this.hosts.secrets, 6));
