@@ -12,6 +12,7 @@
 
 | Date       | Change |
 |------------|--------|
+| 2026-10-10 | SR4a SMTP validation specifies a tagged sender/recipient-restricted IAM login, private key derivation outside Terraform, SES sandbox identity verification and a twenty-attempt mail cap. Request, migration and probe remain the three isolated functions; no public ingress is added. |
 | 2026-10-10 | D-18 confirms Lambda + Aurora Serverless v2 with zero-ACU auto-pause for the first developer/tester deployment. Supersedes the old RDS-free-tier and stateless-API assumptions in D11/D12 and §11; proposes SR0–SR6 readiness/deployment gates, H9/H10 correctness work, and public code/private Terraform and GitHub Actions operations. Design only; no resources or spending authorized. |
 | 2026-10-10 | After SR1, proceed with SR2–SR4 preparation and an IPv6-first isolated AWS validation plan. Split minimal image/probe packaging (SR4a) from full release automation (SR4b). Exact resource/cost approval remains pending; this does not approve draft idle-embed UX or bypass durable storage/job gates. |
 | 2026-10-10 | IDD D-26 confirms hiding idle embed data after a maximum 45-second authority display lease and requiring explicit Connect for the first test deployment. Preserve HQ-7 revocation and existing session rules; WAF/IP allowlist and AWS spending remain separate decisions. |
