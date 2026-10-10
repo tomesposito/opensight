@@ -27,7 +27,7 @@ export function AnalysisSettings({ draft, dispatch, onClose }: { draft: AuthorDr
       <p id={`${id}-help`}>Settings belong to this analysis and are saved on this device. Apply changes together; Undo restores the previous settings.</p>
       <label>Analysis name<input autoFocus value={title} maxLength={256} onChange={event => setTitle(event.target.value)} /></label>
       <label>Description<textarea value={description} rows={3} maxLength={4000} onChange={event => setDescription(event.target.value)} /></label>
-      <label>Analysis theme<select value={preset} onChange={event => setPreset(event.target.value)}>
+      <label>Analysis theme<select aria-label="Analysis theme" value={preset} onChange={event => setPreset(event.target.value)}>
         <option value="current">Keep current theme</option><option value="light">Light theme</option><option value="dark">Dark theme</option>
       </select></label>
       <div className="settings-palette" aria-label="Analysis palette preview">{(theme ?? LIGHT_THEME).palette.map((color, index) => <span key={index} style={{ backgroundColor: color }} title={color} />)}</div>

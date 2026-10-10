@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { AnalysisSettings } from '../build/test/AnalysisSettings.js';
+import { emptyDraft } from '../build/test/authoring.js';
 import { Author } from '../build/test/Author.js';
 import { chromiumPage } from './chromium.mjs';
 
@@ -63,6 +65,29 @@ describe('toolbar/header geometry in offline Chromium', () => {
       }
     });
   }
+  for (const theme of ['light', 'dark']) for (const width of [1440, 1100, 760, 390]) test(`settings at ${width}px ${theme}: reasons cannot move Apply/Cancel during a click`, async () => {
+    await render(width, theme);
+    await page.evaluate(markup => {
+      document.querySelector('.author-workspace').insertAdjacentHTML('beforeend', markup);
+      document.querySelector('dialog').showModal();
+    }, renderToStaticMarkup(createElement(AnalysisSettings, { draft: emptyDraft(), dispatch() {}, onClose() {} })));
+    const dialog = page.getByRole('dialog', { name: 'Analysis Settings', exact: true });
+    assert.equal(await dialog.getByLabel('Analysis theme', { exact: true }).count(), 1);
+    const box = await dialog.boundingBox();
+    assert.ok(box.x >= 0 && box.x + box.width <= width && box.y >= 0 && box.y + box.height <= 900);
+    for (const label of ['Locale and date-format defaults', 'Sharing and permissions']) {
+      const unavailable = dialog.getByRole('button', { name: label, exact: true });
+      await unavailable.hover(); await unavailable.focus();
+      const cancel = dialog.getByRole('button', { name: 'Cancel', exact: true });
+      const before = await cancel.boundingBox();
+      // Pointer-down focuses the button before click. Both focus and hover
+      // leave the reason; its disappearance used to move the click target.
+      await cancel.hover(); await cancel.focus();
+      assert.deepEqual(await cancel.boundingBox(), before);
+      const reason = dialog.locator(`[id="${await unavailable.getAttribute('aria-describedby')}"]`);
+      assert.equal(await reason.isVisible(), true);
+    }
+  });
   for (const inApp of [true, false]) test(`${inApp ? 'app' : 'standalone'}: long names fit at 390px without losing accessible text`, async () => {
     await render(390, 'light', inApp);
     const result = await page.evaluate(() => {

@@ -449,7 +449,7 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .menu-popover hr { border: 0; border-top: 1px solid var(--chrome-border); margin: 4px 8px; }
 .author-workspace[data-chrome] .menu-popover button[aria-disabled=true] { color: var(--chrome-muted); cursor: not-allowed; }
 .menu-item-reason { display: none; margin: 0 8px 4px; font-size: 12px; line-height: 1.4; color: var(--chrome-muted); }
-.author-menu-item:hover .menu-item-reason, .author-menu-item:focus-within .menu-item-reason { display: block; }
+.author-menu-item:hover .menu-item-reason, .author-menu-item:focus-within .menu-item-reason, .author-menu-item[data-reason-revealed] .menu-item-reason { display: block; }
 .menu-check { display: inline-block; width: 16px; margin-left: -4px; }
 .menu-exports { margin-left: 16px; border-left: 1px solid var(--chrome-border); }
 .author-workspace[data-chrome] .menu-popover button:hover:not(:disabled), .author-workspace[data-chrome] .menu-popover button:focus-visible { background: var(--chrome-menu-hover); color: var(--chrome-text); border-color: var(--chrome-border); }
@@ -947,3 +947,6 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .settings-palette { display: flex; gap: 4px; margin-top: 8px; }
 .settings-palette span { width: 24px; height: 16px; border: 1px solid var(--chrome-border, #c9d8de); }
 .analysis-settings-dialog button[aria-disabled="true"] { color: var(--chrome-muted, #536879); cursor: not-allowed; }
+/* Keep the modal geometry stable when focus leaves an unavailable setting.
+   Collapsing a reason on pointer-down can move Apply/Cancel before the click. */
+.analysis-settings-dialog .menu-item-reason { display: block; margin: 4px 0 8px; }

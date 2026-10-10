@@ -170,3 +170,17 @@ test('Print calls the browser action, PDF explains its destination and Cancel ne
   }
   assert.equal(prints, 2);
 });
+
+test('disabled reasons stay expanded until closing so focus transfer cannot move the next click target', async t => {
+  const ui = await mount(t);
+  const item = ui.menu('Edit').findAllByType(AuthorMenuItem).find(node => node.props.label === 'Undo');
+  const wrapper = () => item.findByProps({ className: 'author-menu-item' });
+  assert.equal(wrapper().props['data-reason-revealed'], undefined);
+  await act(() => wrapper().props.onFocus()); assert.equal(wrapper().props['data-reason-revealed'], true);
+  await ui.click('Edit', 'Undo'); assert.deepEqual(ui.calls, []);
+  await ui.click('Edit', 'Analysis Settings'); assert.equal(ui.renderer.root.findByType('dialog').findByType('h2').props.children, 'Analysis Settings');
+  assert.equal(wrapper().props['data-reason-revealed'], true);
+  await act(() => ui.menu('Edit').props.onToggle({ currentTarget: { open: false } }));
+  assert.equal(wrapper().props['data-reason-revealed'], undefined);
+  await act(() => wrapper().props.onPointerEnter()); assert.equal(wrapper().props['data-reason-revealed'], true);
+});

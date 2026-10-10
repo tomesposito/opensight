@@ -1,11 +1,15 @@
-import { createContext, useContext, useId, useMemo, type ReactNode } from 'react';
+import { createContext, useContext, useId, useMemo, useState, type ReactNode } from 'react';
 import { usePaletteCommands } from './CommandPalette.js';
 
 const MenuName = createContext('');
+const MenuReasons = createContext<{ revealed: readonly string[]; reveal: (id: string) => void } | undefined>(undefined);
 
 export function AuthorMenu({ name, children }: { name: string; children: ReactNode }) {
-  return <details name="analysis-menu" data-author-menu={name}><summary>{name}</summary><div className="menu-popover">
-    <MenuName.Provider value={name}>{children}</MenuName.Provider>
+  const [revealed, setRevealed] = useState<readonly string[]>([]);
+  // A reason must not collapse between pointer-down (focus transfer) and click
+  // on a lower item. Keep revealed reasons until the disclosure closes.
+  return <details name="analysis-menu" data-author-menu={name} onToggle={event => { if (!event.currentTarget.open) setRevealed([]); }}><summary>{name}</summary><div className="menu-popover">
+    <MenuName.Provider value={name}><MenuReasons.Provider value={{ revealed, reveal: id => setRevealed(previous => previous.includes(id) ? previous : [...previous, id]) }}>{children}</MenuReasons.Provider></MenuName.Provider>
   </div></details>;
 }
 
@@ -23,11 +27,12 @@ export interface AuthorMenuAction {
 export function AuthorMenuItem({ label, run, reason, checked, keepOpen, descriptionId, keyShortcuts }: AuthorMenuAction) {
   const id = useId();
   const menu = useContext(MenuName);
+  const reasons = useContext(MenuReasons);
   // Search and the menus execute the same callbacks with the same guards.
   usePaletteCommands(useMemo(() => ({ commands: menu && run && !reason ? [
     { id: `menu-${id}`, label: `${menu}: ${label}`, run },
   ] : [] }), [id, menu, label, run, reason]));
-  return <div className="author-menu-item">
+  return <div className="author-menu-item" data-reason-revealed={reasons?.revealed.includes(id) || undefined} onPointerEnter={() => { if (reason) reasons?.reveal(id); }} onFocus={() => { if (reason) reasons?.reveal(id); }}>
     <button type="button" aria-keyshortcuts={keyShortcuts} aria-disabled={!!reason} aria-describedby={reason ? id : descriptionId}
       role={checked === undefined ? undefined : 'checkbox'} aria-checked={checked} aria-readonly={checked === undefined ? undefined : true}
       title={reason} data-menu-keep-open={keepOpen || undefined}
