@@ -140,6 +140,14 @@ visually inspected. The existing Linux-font gaps remain tracked in #87. SR2b
 changes no UI source, so no README image refresh is needed for its own changes.
 This static demo comparison is not public deployment or a visual-fidelity claim.
 
+After merging upstream issue #79's Excel-export escaping fix, the full root suite
+on combined source `133b4f5` passed **2,290 / 0 failed / 13 skipped /
+0 cancelled**, 2,303 total. Web now has 1,149 passing tests; other counts are
+unchanged. The hosted frontend and demo rebuilt successfully again; the combined
+source's inspected demo capture matches the preceding SR2b PNG byte for byte. No test
+threshold or skip policy was relaxed. Staged secret and cross-platform path
+checks passed at each implementation checkpoint.
+
 This mechanism is intentionally not connected to a runtime route or factory.
 SR2a admission, current SQL authority, durable manifests, storage reservations
 and prearmed D-24 recovery must be integrated before accepting production
