@@ -108,7 +108,7 @@ test('sheet switches and removal refresh docked editors and the always-visible e
   await ui.click('+ Add sheet');
   assert.equal(ui.panel('build').find(n => n.props.className === 'visual-config').props.id, undefined);
   assert.equal(ui.find('button', p => p['aria-label'] === 'Assign revenue').props.disabled, false);
-  assert.ok(ui.panel('properties').findAllByType('p').some(n => n.props.children === 'Select a visual to edit its display settings.'));
+  assert.ok(ui.panel('properties').findAllByType('p').some(n => n.props.children === 'Select a visual or object to edit its display settings.'));
   await ui.click('Sheet 1');
   assert.equal(ui.panel('build').find(n => n.props.className === 'visual-config').props.id, 'configure-visual-2');
   await ui.click('Remove Regional detail');

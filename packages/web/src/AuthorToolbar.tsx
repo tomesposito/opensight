@@ -66,7 +66,7 @@ export function AuthorToolbar({ canUndo = false, canRedo = false, onUndo, onRedo
   const publish = () => { setNotice(publishNotice(access.mode)); notify('Publishing is unavailable in this editor. Nothing has been published.'); };
   return <>
     <input ref={imageInput} type="file" accept="image/*" hidden aria-label="Insert local image" onChange={async e => {
-      const file = e.target.files?.[0], sheetId = imageSheetId.current, openedDraft = imageDraft.current; e.target.value = '';
+      const file = e.currentTarget.files?.[0], sheetId = imageSheetId.current, openedDraft = imageDraft.current; e.currentTarget.value = '';
       if (!file || !sheetId) return;
       setImageBusy(true);
       try {

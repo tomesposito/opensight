@@ -104,7 +104,7 @@ const file = (name, bytes) => ({ name, size: bytes.length, arrayBuffer: async ()
 async function importFile(ui, name, bytes, drop = false) {
   await act(async () => {
     if (drop) ui.renderer.root.findByProps({ 'aria-label': 'Bundle drop zone' }).props.onDrop({ preventDefault() {}, dataTransfer: { files: [file(name, bytes)] } });
-    else ui.renderer.root.findAllByType('input').find(n => n.props.type === 'file').props.onChange({ currentTarget: { files: [file(name, bytes)], value: name } });
+    else ui.renderer.root.findAllByType('input').find(n => n.props.type === 'file' && String(n.props.accept).includes('.qs')).props.onChange({ currentTarget: { files: [file(name, bytes)], value: name } });
   });
 }
 
