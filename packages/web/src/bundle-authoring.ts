@@ -422,6 +422,11 @@ export function exportBundle(draft: AuthorDraft): QsBundle {
     if (d.sheets !== undefined || sheets.length) d.sheets = sheets.map(sheet => {
       const raw = copy(d.sheets?.find(s => s.sheetId === sheet.imported?.sheetId) ?? { sheetId: sheet.id, name: sheet.name });
       if (!sheet.imported || sheet.name !== sheet.imported.name) raw.name = sheet.name;
+      // Current layout settings always win on export, in both branches: the
+      // imported branch retains the original raw definition (which would keep
+      // stale opensightLayoutSettings), and locally added/duplicated sheets
+      // start from a bare raw sheet. Issue #76.
+      if (layoutSettingsValid(sheet.layoutSettings)) raw.opensightLayoutSettings = { ...sheet.layoutSettings };
       const baselineControls = sheet.imported?.controls ?? [];
       if (!equal(baselineControls, sheet.controls)) {
         const originals = list(raw.parameterControls), projected = sheet.controls.map(c => {
