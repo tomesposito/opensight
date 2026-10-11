@@ -1,10 +1,12 @@
 # Phase 5 SR4b1 — initial activation evidence
 
-Status on October 11, 2026: the initial promotion implementation and runtime
-candidate are tested. **The public application is not activated.** The existing
-greater-than-24-hour Aurora sleep observation is still in progress. No SQL was
-issued during this implementation window. DNS cutover remains gated by real
-tester, upload, ingestion, query and isolation acceptance.
+Status on October 11, 2026: the pilot infrastructure and initial tester workspaces
+are activated internally. **Apex DNS is not published.** The database resumed
+successfully after nearly 20 hours at zero ACU; the greater-than-24-hour measurement
+is deferred follow-up work. Real HTTPS startup, owner authentication and three
+concurrent reads passed. The first upload reservation exposed a PostgreSQL row-lock
+privilege failure before accepting a file; [SR4b2](phase5-sr4b2-runtime-row-locks.md)
+corrects it. Upload, ingestion, query and isolation acceptance still gate DNS.
 
 ## Implemented and verified locally
 
@@ -50,8 +52,7 @@ checkpoint `d4bf809`: **2,446 passed / 0 failed / 16 skipped / 0 cancelled**,
 Focused private-runtime/initial-setup tests also ran against local PostgreSQL 16.15:
 **12 passed / 0 failed / 0 skipped**. This includes real concurrent bootstrap
 retries, non-owner denial, FORCE RLS owner visibility and transactional rollback
-between the two role-cap changes. Local PostgreSQL does not substitute for the
-remaining managed-Aurora role preparation check.
+between the two role-cap changes. The managed-Aurora initial role preparation subsequently passed during activation.
 
 OpenTofu mock checks: validation/pilot **10 passed / 0 failed**; ingress
 **5 passed / 0 failed**. These cover stages, queue limits, worker/source bindings,
@@ -77,10 +78,9 @@ the last UI phase. Visual fidelity against QuickSight remains unmeasured.
 
 ## Remaining cloud acceptance
 
-Finish and record long-pause resume before promotion. Apply dependencies and the
-tested runtime with consumers off; invoke migration, bootstrap and activation;
-enable consumers and select the numeric request version through ingress. Verify
-the real browser workflow, repeat the concurrent HTTPS case, close clients and
-observe zero ACU. Only then record release-bound acceptance and apply apex DNS.
-The private browser harness is prepared but has not yet run against this candidate.
-General D-25 CI rollout, drain and rollback remain separate work.
+Dependency/runtime/consumer plans and private migration/bootstrap/activation have
+completed. Initial HTTPS startup, authentication and concurrent reads passed.
+Apply the separately tested SR4b2 administration repair, then repeat the complete
+browser upload/ingestion/query/isolation workflow, close clients and observe zero
+ACU. Only then record release-bound acceptance and apply apex DNS. General D-25
+CI rollout, drain and rollback remain separate work.
