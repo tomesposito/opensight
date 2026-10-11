@@ -70,6 +70,15 @@ variable "image_uri" {
     error_message = "An immutable regional ECR digest is required."
   }
 }
+variable "administration_image_uri" {
+  type    = string
+  default = null
+  validation {
+    condition = var.administration_image_uri == null ? true : (var.enable_pilot_runtime && can(regex(
+    "^[0-9]{12}\\.dkr\\.ecr\\.us-east-1\\.amazonaws\\.com/[a-z0-9-]+@sha256:[a-f0-9]{64}$", var.administration_image_uri)))
+    error_message = "A separate administration image requires the pilot runtime and an immutable regional digest."
+  }
+}
 variable "alert_email" {
   type      = string
   sensitive = true

@@ -17,6 +17,8 @@ export function checkPlan(plan, { allowPilot = false } = {}) {
   check(typeof runtime === 'boolean', 'RUNTIME_STAGE');
   check(['validation', 'pilot'].includes(profile) && (!pilot || allowPilot), 'PILOT_OPERATOR_REQUIRED');
   check(typeof pilotRuntime === 'boolean' && typeof consumers === 'boolean' && (!pilotRuntime || pilot && runtime) && (!consumers || pilotRuntime), 'RUNTIME_STAGE');
+  check(input.administration_image_uri == null || pilotRuntime && typeof input.administration_image_uri === 'string' && input.administration_image_uri.startsWith(`${input.account_id}.dkr.ecr.${input.region}.amazonaws.com/${input.deployment}@sha256:`)
+    && /@sha256:[a-f0-9]{64}$/.test(input.administration_image_uri), 'ADMINISTRATION_IMAGE');
   check(resources.length > 0 && resources.length <= (pilot ? 100 : 70), 'RESOURCE_COUNT');
   for (const resource of resources) {
     const value = resource.change?.after ?? {}, type = resource.type;
@@ -26,7 +28,8 @@ export function checkPlan(plan, { allowPilot = false } = {}) {
       const name = /^aws_lambda_function\.validation\["(request|migration|probe|work|recovery)"\]$/.exec(resource.address)?.[1];
       const concurrency = pilotRuntime ? { request: 4, migration: 1, probe: 0, work: 2, recovery: 2 }[name] : 1;
       check(value.timeout <= 120 && value.memory_size === 2048 && value.reserved_concurrent_executions === concurrency, 'LAMBDA_CAP');
-      if (pilot) check(name && value.timeout === (name === 'request' ? 28 : 120) && value.function_name === `${input.deployment}-${name}` && value.image_uri === input.image_uri, 'PILOT_FUNCTION');
+      if (pilot) check(name && value.timeout === (name === 'request' ? 28 : 120) && value.function_name === `${input.deployment}-${name}`
+        && value.image_uri === (name === 'migration' ? input.administration_image_uri ?? input.image_uri : input.image_uri), 'PILOT_FUNCTION');
       check(value.architectures?.join() === 'arm64' && value.ephemeral_storage?.[0]?.size === 512, 'LAMBDA_PLATFORM');
       check(value.vpc_config?.[0]?.ipv6_allowed_for_dual_stack === true, 'LAMBDA_IPV6');
       check(/@sha256:[a-f0-9]{64}$/.test(value.image_uri ?? ''), 'IMAGE_PIN');

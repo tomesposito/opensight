@@ -127,6 +127,24 @@ run "reject_consumers_without_runtime" {
   variables { enable_consumers = true }
   expect_failures = [var.enable_consumers]
 }
+run "separate_initial_administration" {
+  command = plan
+  variables {
+    deployment_profile       = "pilot"
+    enable_pilot_runtime     = true
+    enable_consumers         = true
+    administration_image_uri = "000000000000.dkr.ecr.us-east-1.amazonaws.com/synthetic@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  }
+  assert {
+    condition     = aws_lambda_function.validation["migration"].image_uri == var.administration_image_uri && alltrue([for name in ["request", "work", "recovery", "probe"] : aws_lambda_function.validation[name].image_uri == var.image_uri]) && aws_lambda_function.validation["migration"].environment[0].variables.OPENSIGHT_RELEASE_DIGEST == split("@", var.image_uri)[1]
+    error_message = "Only administration may select its separate artifact; it must remain bound to the application digest."
+  }
+}
+run "reject_administration_before_pilot" {
+  command = plan
+  variables { administration_image_uri = "000000000000.dkr.ecr.us-east-1.amazonaws.com/synthetic@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" }
+  expect_failures = [var.administration_image_uri]
+}
 
 run "pilot_least_privilege" {
   command = plan

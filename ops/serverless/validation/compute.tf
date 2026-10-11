@@ -115,7 +115,7 @@ resource "aws_lambda_function" "validation" {
   function_name                  = "${var.deployment}-${each.key}"
   role                           = aws_iam_role.lambda[each.key].arn
   package_type                   = "Image"
-  image_uri                      = var.image_uri
+  image_uri                      = each.key == "migration" && var.administration_image_uri != null ? var.administration_image_uri : var.image_uri
   architectures                  = ["arm64"]
   timeout                        = each.value.timeout
   memory_size                    = 2048
@@ -133,7 +133,7 @@ resource "aws_lambda_function" "validation" {
   depends_on = [aws_iam_role_policy.lambda, aws_cloudwatch_log_group.lambda, aws_route_table_association.private]
   lifecycle {
     precondition {
-      condition     = startswith(var.image_uri, "${var.account_id}.dkr.ecr.${var.region}.amazonaws.com/${var.deployment}@sha256:")
+      condition     = startswith(var.image_uri, "${var.account_id}.dkr.ecr.${var.region}.amazonaws.com/${var.deployment}@sha256:") && (var.administration_image_uri == null ? true : startswith(var.administration_image_uri, "${var.account_id}.dkr.ecr.${var.region}.amazonaws.com/${var.deployment}@sha256:"))
       error_message = "The image must belong to this exact deployment repository and account."
     }
   }

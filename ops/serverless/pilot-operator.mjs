@@ -16,13 +16,17 @@ export function initialCredentials(ownerEmail, agentEmail = 'automation@example.
     email, name: index === 0 ? 'Workspace owner' : 'Automation tester', password: randomBytes(32).toString('base64url'), totpSecret: randomBytes(20).toString('base64') })) };
 }
 export function safeInitialResult(command, value) {
-  const expected = { migrate: { state: 'migrated', maintenance: true }, 'bootstrap-initial': { state: 'bootstrapped', epoch: 1, tenants: 2 }, 'activate-initial': { state: 'active', epoch: 1 } }[command];
+  const expected = { migrate: { state: 'migrated', maintenance: true }, 'bootstrap-initial': { state: 'bootstrapped', epoch: 1, tenants: 2 }, 'activate-initial': { state: 'active', epoch: 1 }, 'repair-initial-locks': { state: 'locks-repaired', epoch: 1 } }[command];
   if (!expected || !value || Object.keys(value).sort().join() !== Object.keys(expected).sort().join() || Object.entries(expected).some(([key, field]) => value[key] !== field)) throw Error('INITIAL_RESULT_INVALID');
   return expected;
 }
 export function activationRequired(record, release, account, deployment, operationId) {
   if (record?.version !== 1 || record.account !== account || record.deployment !== deployment || record.imageUri !== release.image_uri || record.operationId !== operationId
     || record.result?.state !== 'active' || record.result.epoch !== 1) throw Error('INITIAL_ACTIVATION_REQUIRED');
+}
+export function administrationImage(release, account, deployment) {
+  if (!new RegExp(`^${account}\\.dkr\\.ecr\\.us-east-1\\.amazonaws\\.com/${deployment}@sha256:[a-f0-9]{64}$`).test(release?.image_uri ?? '')) throw Error('PINNED_ADMINISTRATION_REQUIRED');
+  return release.image_uri;
 }
 export async function main(args = process.argv.slice(2), environment = process.env) {
   process.umask(0o077);
@@ -64,7 +68,8 @@ export async function main(args = process.argv.slice(2), environment = process.e
       write('pilot.init.log', tofu(['init', '-input=false', '-reconfigure', `-backend-config=${path('validation.backend.hcl')}`]));
       if (sha256(readFileSync(lockfile)) !== before) throw Error('PROVIDER_LOCK_CHANGED');
     };
-    const configuration = () => sha256(Buffer.concat(['pilot.tfvars.json', 'validation.backend.hcl', 'pilot-release.json'].map(file)));
+    const configuration = () => sha256(Buffer.concat(['pilot.tfvars.json', 'validation.backend.hcl', 'pilot-release.json',
+      ...(read('pilot.tfvars.json').administration_image_uri ? ['pilot-administration-release.json'] : [])].map(file)));
     const state = () => {
       const metadata = aws('s3api', 'get-object', ['--bucket', bootstrap.state_bucket, '--expected-bucket-owner', account, '--key', 'validation/terraform.tfstate', path('pilot.remote-state.json')]);
       const saved = read('pilot.remote-state.json');
@@ -77,10 +82,20 @@ export async function main(args = process.argv.slice(2), environment = process.e
     const activation = () => activationRequired(read('pilot-activation.json'), release, account, deployment, read('initial-testers.json').operationId);
     if (operation === 'prepare') {
       source();
-      if (!['dependencies', 'runtime', 'consumers'].includes(selection)) throw Error('PILOT_STAGE_REQUIRED');
+      if (!['dependencies', 'runtime', 'consumers', 'administration'].includes(selection)) throw Error('PILOT_STAGE_REQUIRED');
       if (selection !== 'dependencies' && !pilot) throw Error('PILOT_DEPENDENCIES_REQUIRED');
       if (selection === 'consumers') activation();
       const current = inventory();
+      if (selection === 'administration') {
+        activation();
+        if (current.deployment !== deployment || !current.pilot_runtime) throw Error('PILOT_DEPENDENCIES_REQUIRED');
+        const image = administrationImage(read('pilot-administration-release.json'), account, deployment), selected = read('pilot.tfvars.json');
+        if (selected.account_id !== account || selected.deployment !== deployment || selected.image_uri !== release.image_uri || !selected.enable_pilot_runtime) throw Error('ACCOUNT_MISMATCH');
+        owned(aws('ecr', 'list-tags-for-resource', ['--resource-arn', `arn:aws:ecr:us-east-1:${account}:repository/${deployment}`]).tags, deployment);
+        aws('ecr', 'describe-images', ['--repository-name', deployment, '--image-ids', `imageDigest=${image.split('@')[1]}`]);
+        write('pilot.tfvars.json', { ...selected, administration_image_uri: image });
+        console.log('Private administration artifact selected; application and consumers are preserved. Review a fresh plan.'); return;
+      }
       if (current.deployment !== deployment || selection === 'dependencies' && current.pilot_runtime || selection === 'runtime' && current.consumers) throw Error('PILOT_STAGE_REGRESSION');
       const base = read('validation.tfvars.json'), ingress = read('ingress-inventory.json');
       if (base.account_id !== account || base.deployment !== deployment || ingress.deployment !== deployment || ingress.public_origin !== operator.public_origin) throw Error('ACCOUNT_MISMATCH');
@@ -90,12 +105,14 @@ export async function main(args = process.argv.slice(2), environment = process.e
         aws('ecr', 'describe-images', ['--repository-name', deployment, '--image-ids', `imageDigest=${release.image_uri.split('@')[1]}`]);
       }
       write('pilot.tfvars.json', { ...base, deployment_profile: 'pilot', enable_runtime: true, enable_pilot_runtime: runtime, enable_consumers: selection === 'consumers',
+        ...(runtime && existsSync(path('pilot.tfvars.json')) ? { administration_image_uri: read('pilot.tfvars.json').administration_image_uri ?? null } : {}),
         image_uri: runtime ? release.image_uri : base.image_uri, runtime_environment: runtime ? { ...base.runtime_environment, ...ingress.runtime_environment } : base.runtime_environment });
       console.log('Private pilot inputs prepared. Create and review a saved plan before applying.'); return;
     }
     const inputs = read('pilot.tfvars.json');
     if (inputs.account_id !== account || inputs.deployment !== deployment || inputs.deployment_profile !== 'pilot') throw Error('ACCOUNT_MISMATCH');
     if (inputs.enable_pilot_runtime && inputs.image_uri !== release.image_uri) throw Error('PINNED_RELEASE_REQUIRED');
+    if (inputs.administration_image_uri && inputs.administration_image_uri !== administrationImage(read('pilot-administration-release.json'), account, deployment)) throw Error('PINNED_ADMINISTRATION_REQUIRED');
     if (operation === 'plan') {
       const sourceDigest = source(), configDigest = configuration(); init();
       if (inputs.enable_consumers) activation();
@@ -124,13 +141,15 @@ export async function main(args = process.argv.slice(2), environment = process.e
     }
     const verifyFunction = name => {
       const fn = aws('lambda', 'get-function', ['--function-name', `${deployment}-${name}`]); owned(fn.Tags, deployment);
-      if (fn.Configuration.State !== 'Active' || fn.Configuration.LastUpdateStatus !== 'Successful' || fn.Code.ResolvedImageUri !== release.image_uri
+      const expectedImage = name === 'migration' ? inputs.administration_image_uri ?? release.image_uri : release.image_uri;
+      if (fn.Configuration.State !== 'Active' || fn.Configuration.LastUpdateStatus !== 'Successful' || fn.Code.ResolvedImageUri !== expectedImage
         || fn.Configuration.Environment?.Variables?.OPENSIGHT_RELEASE_DIGEST !== release.image_uri.split('@')[1]) throw Error('PILOT_FUNCTION_NOT_READY');
       return fn;
     };
     if (operation === 'invoke') {
       source();
-      if (!pilot || !inputs.enable_pilot_runtime || !['migrate', 'bootstrap-initial', 'activate-initial'].includes(selection)) throw Error('INITIAL_COMMAND_INVALID');
+      if (!pilot || !inputs.enable_pilot_runtime || !['migrate', 'bootstrap-initial', 'activate-initial', 'repair-initial-locks'].includes(selection)) throw Error('INITIAL_COMMAND_INVALID');
+      if (selection === 'repair-initial-locks') activation();
       const fn = verifyFunction('migration');
       if (fn.Configuration.ImageConfigResponse?.ImageConfig?.Command?.join() !== 'packages/api/dist/aws-lambda.administration') throw Error('INITIAL_HANDLER_REQUIRED');
       const current = inventory(), secretArn = current.secrets.operator;
@@ -145,7 +164,7 @@ export async function main(args = process.argv.slice(2), environment = process.e
         const response = aws('lambda', 'invoke', ['--function-name', fn.Configuration.FunctionArn, '--invocation-type', 'RequestResponse', '--cli-connect-timeout', '10', '--cli-read-timeout', '130', '--cli-binary-format', 'raw-in-base64-out', '--payload', `file://${path('pilot-command.json')}`, path('pilot-response.json')]);
         const result = read('pilot-response.json');
         if (response.FunctionError) throw Error(/^[A-Z][A-Z0-9_]{1,79}$/.test(result.errorMessage ?? '') ? result.errorMessage : 'INITIAL_COMMAND_FAILED');
-        const safe = safeInitialResult(selection, result), record = { version: 1, account, deployment, imageUri: release.image_uri, operationId: testers?.operationId, completedAt: Date.now(), result: safe };
+        const safe = safeInitialResult(selection, result), record = { version: 1, account, deployment, imageUri: release.image_uri, administrationImageUri: fn.Code.ResolvedImageUri, operationId: testers?.operationId, completedAt: Date.now(), result: safe };
         write(selection === 'activate-initial' ? 'pilot-activation.json' : `pilot-${selection}.json`, record);
         console.log(JSON.stringify(safe)); return;
       } finally { unlinkSync(path('pilot-command.json')); }
