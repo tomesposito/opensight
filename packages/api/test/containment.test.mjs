@@ -145,18 +145,22 @@ test('H4 resource ceilings fail closed and tenant-local cache eviction leaves th
   assert.ok(data.cache.bytes(a.tenantId) <= 2100); assert.ok(data.cache.bytes() <= config.node.cacheBytes);
   assert.equal((await data.execute(b, two.id, 'output', { mode: 'BLAZE' })).rowCount, 3);
   await assert.rejects(data.execute(a, one.id, 'output', { mode: 'BLAZE' }), { code: 'BLAZE_NOT_READY' });
-  const memory = structuredClone(budgetConfig); memory.defaults.workerRssBytes = 96 * 1048576; memory.defaults.workerHeapMb = 64; memory.defaults.duckdbMemoryMb = 32;
-  const contained = dataFor(f, memory);
-  await assert.rejects(contained.execute(a, one.id, 'output', {}), { code: 'EXECUTION_CANCELLED' });
-  assert.deepEqual(contained.budgets.node(), { running: 0, queued: 0 });
 });
 
-test('H4 an independent watchdog kills blocked evaluators on deadline and parent death', async () => {
+test('H4 an independent watchdog kills blocked evaluators on deadline, RSS overrun and parent death', async () => {
   const { fork } = await import('node:child_process'), { readFile } = await import('node:fs/promises');
   const fixture = new URL('./worker-parent-fixture.mjs', import.meta.url);
   const blocked = fork(fixture, ['worker', '200'], { stdio: ['ignore', 'ignore', 'ignore', 'ipc'] });
   const exit = new Promise(resolve => blocked.once('exit', (code, signal) => resolve({ code, signal })));
   assert.deepEqual(await exit, { code: null, signal: 'SIGKILL' });
+  // A three-row query can legitimately stay below 96 MiB on ARM64. Touch a
+  // 128 MiB buffer and block the evaluator instead of assuming its baseline RSS.
+  const memoryStarted = performance.now();
+  const memory = fork(fixture, ['rss', '60000'], { stdio: ['ignore', 'ignore', 'ignore', 'ipc'] });
+  const memoryExit = new Promise(resolve => memory.once('exit', (code, signal) => resolve({ code, signal })));
+  const memoryTimeout = setTimeout(() => memory.kill('SIGKILL'), 5000);
+  try { assert.deepEqual(await memoryExit, { code: null, signal: 'SIGKILL' }); assert.ok(performance.now() - memoryStarted < 4500, 'RSS guard must kill before the deadline or test cleanup'); }
+  finally { clearTimeout(memoryTimeout); }
   const parent = fork(fixture, [], { stdio: ['ignore', 'ignore', 'ignore', 'ipc'] });
   const { pid } = await new Promise((resolve, reject) => { parent.once('message', resolve); parent.once('error', reject); });
   const gone = new Promise(resolve => parent.once('exit', resolve)); parent.kill('SIGKILL'); await gone;
