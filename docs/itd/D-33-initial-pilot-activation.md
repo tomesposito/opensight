@@ -112,3 +112,17 @@ ACU, and a shorter sleep/wake cycle had passed. Preserve those measured facts
 and verify a wake during activation. Defer the greater-than-24-hour measurement
 to a later quiet period; it remains unmeasured until actually completed. Real
 application acceptance, isolation and return to zero ACU remain launch gates.
+
+#### PostgreSQL row-lock correction — 2026-10-11
+
+Initial real-browser acceptance exposed a permission failure at the first upload
+reservation. PostgreSQL row locks require UPDATE on at least one column. Granting
+updates to control/configuration fields would violate the runtime boundary.
+[SR4b2](../phase5-sr4b2-runtime-row-locks.md) instead adds a constrained constant
+column to the three locked configuration tables and grants only that column.
+This preserves existing row-lock serialization and keeps all meaningful fields
+read-only. An initial, receipt-bound owner repair and a separately pinned private
+administration image apply it without reopening admission or changing application
+code. Advisory-lock substitution was rejected because every future owner writer
+would need a separate matching lock discipline; table-wide UPDATE was rejected
+because it would permit configuration/maintenance bypass.

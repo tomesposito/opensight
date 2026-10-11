@@ -1355,6 +1355,17 @@ gate; preserve the measured shorter pause and wake evidence without claiming
 that the longer experiment is complete. This initial transition does not implement D-25's recurring release/rollback
 or CI protocol.
 
+**SR4b2 runtime row-lock correction (frozen 2026-10-11):**
+[Row-lock privileges](docs/phase5-sr4b2-runtime-row-locks.md) correct PostgreSQL
+locking under the non-owner runtime role. Three configuration tables gain a
+constant, constrained lock column with column-only UPDATE for the operator;
+application control/configuration fields remain read-only. A receipt-bound,
+IAM-only initial repair applies this additive correction before accepted durable
+work, without changing admission, epoch, identities or the activated application
+image. A separately pinned administration image retains the existing private
+function and permissions. Real PostgreSQL privilege/serialization tests and
+browser acceptance gate DNS; D-25 general release/maintenance remains separate.
+
 ---
 
 ## 7. Repository Layout
