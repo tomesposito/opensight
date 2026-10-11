@@ -9,7 +9,8 @@ import { appendMetadataEvent } from './metadata-outbox.js';
 import { budgetEnvironment } from './budget-store.js';
 import { appendOperatorAudit, entitlementConfig } from './hosted-usage.js';
 import { deploymentId } from './runtime-startup.js';
-import { serverlessTables, migrateServerless } from './serverless-migration.js';
+import { serverlessTables, migrateServerless, grantServerlessRuntime } from './serverless-migration.js';
+import { verifyRuntimeLocks } from './runtime-row-locks.js';
 import { coordinationChecksum, type CoordinationDialect } from './coordination-schema.js';
 import { manifestChecksum } from './manifest-schema.js';
 import { dispatchChecksum } from './dispatch-schema.js';
@@ -18,8 +19,8 @@ import { operationChecksum } from './operation-schema.js';
 
 interface InitialTester { tenantId: string; namespaceId: string; userId: string; subject: string; email: string; name: string; password: string; totpSecret: string }
 export type InitialCommand = { version: 1; command: 'bootstrap-initial'; operationId: string; testers: InitialTester[] }
-  | { version: 1; command: 'activate-initial'; operationId: string; expectedEpoch: 1; releaseDigest: string };
-export type InitialResult = { state: 'bootstrapped'; epoch: 1; tenants: 2 } | { state: 'active'; epoch: 1 };
+  | { version: 1; command: 'activate-initial' | 'repair-initial-locks'; operationId: string; expectedEpoch: 1; releaseDigest: string };
+export type InitialResult = { state: 'bootstrapped'; epoch: 1; tenants: 2 } | { state: 'active' | 'locks-repaired'; epoch: 1 };
 function fail(code = 'INITIAL_ACTIVATION_INVALID'): never { throw new MetadataError(code, 503); }
 const markers = [['sr_coordination_schema', coordinationChecksum], ['sr_manifest_schema', manifestChecksum], ['sr_dispatch_schema', dispatchChecksum], ['sr_object_schema', objectChecksum], ['sr_operation_schema', operationChecksum]] as const;
 const workTables = serverlessTables.filter(t => t.startsWith('sr_') && !t.endsWith('_schema') && !['sr_control', 'sr_limits'].includes(t));
@@ -45,7 +46,7 @@ export function initialCommand(raw: unknown, env: NodeJS.ProcessEnv): InitialCom
   const input = authorizeInitial(raw, env);
   if (input.version !== 1) fail();
   const operationId = identifier(input.operationId);
-  if (input.command === 'activate-initial') {
+  if (input.command === 'activate-initial' || input.command === 'repair-initial-locks') {
     object(input, ['command', 'authorization', 'version', 'operationId', 'expectedEpoch', 'releaseDigest']);
     if (input.expectedEpoch !== 1 || typeof input.releaseDigest !== 'string' || !/^sha256:[a-f0-9]{64}$/.test(input.releaseDigest) || input.releaseDigest !== env.OPENSIGHT_RELEASE_DIGEST) fail();
     return { command: input.command, version: 1, operationId, expectedEpoch: 1, releaseDigest: input.releaseDigest };
@@ -161,6 +162,21 @@ export async function initialAdministration(database: Database, env: NodeJS.Proc
     if (input.expectedEpoch !== 1 || input.releaseDigest !== env.OPENSIGHT_RELEASE_DIGEST || selected !== selectionHash || typeof prior !== 'string') fail('INITIAL_BOOTSTRAP_REQUIRED');
     await key(c, config, false);
     const activated = await receipt(c, activationId);
+    if (input.command === 'repair-initial-locks') {
+      if (dialect !== 'postgres' || state !== 'open' || activated !== hmac(config, { ...input, command: 'activate-initial' })) fail('INITIAL_LOCK_REPAIR_REQUIRED');
+      await verifyTesters(c, deployment, input.operationId, prior);
+      const repairId = checksum(['initial-row-locks', deployment]), repaired = await receipt(c, repairId);
+      if (repaired) {
+        if (repaired !== requestHash) fail('INITIAL_LOCK_REPAIR_CONFLICT');
+        await verifyRuntimeLocks(c, env);
+      } else {
+        await empty(c, workTables);
+        await grantServerlessRuntime(c, env);
+        await c.query('INSERT INTO h2_requests VALUES (?,?)', [repairId, requestHash]);
+        await appendOperatorAudit(c, 'runtime.initial-locks-repaired');
+      }
+      return { state: 'locks-repaired', epoch: 1 };
+    }
     if (activated) {
       if (activated !== requestHash || state !== 'open') fail('INITIAL_ACTIVATION_CONFLICT');
       return { state: 'active', epoch: 1 };
