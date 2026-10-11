@@ -238,3 +238,16 @@ Upstream integration includes issues #87–#90. Its complete root suite passed
 2,403 / failed 0 / skipped 14, followed by fresh hosted/demo builds and regenerated
 README media. The navigation/data icons now use the upstream SVG fix; the earlier
 glyph note is historical. This does not establish measured visual parity.
+
+## SR3b idle clients
+
+The accepted on-demand connection behavior now removes periodic authoring/session
+and embed-status requests in the serverless profile. Idle embeds remove protected
+data locally after 45 seconds and require Connect. The initial screen reuses the
+existing sign-in styling; the embedded action uses existing embed button styling.
+Synthetic browser checks show no initial/idle API requests, successful explicit
+reconnect and no repeated bootstrap redemption. The refreshed demo tour reports
+251 frames, zero page errors and zero external requests. No new visible layout
+gap was found; QuickSight visual fidelity remains unmeasured. See
+[SR3b evidence](phase5-sr3b-evidence.md) for exact test counts and the distinction
+between local browser acceptance and the remaining public deployment work.

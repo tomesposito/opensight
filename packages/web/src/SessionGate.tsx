@@ -177,10 +177,12 @@ export function SessionGate({ client, offline, children }: { client: Client; off
     <AccessProvider access={demoAccess}>{children}</AccessProvider>
   </>;
   if (client.onDemand && !connected) return <div className="sign-in-page"><main className="sign-in-main">
-    <h1>Connect to OpenSight</h1><p>The workspace sleeps when it is idle. Connecting may take a moment.</p>
-    {connectionError && <p role="alert">{connectionError}</p>}
-    <button type="button" disabled={connecting} onClick={() => void connect()}>{connecting ? 'Connecting…' : 'Connect'}</button>
-    {connecting && <button type="button" onClick={() => { connectRequest.current?.abort(); }}>Cancel</button>}
+    <section className="sign-in-card" aria-labelledby="connect-title">
+    <p className="sign-in-kicker">YOUR HOSTED WORKSPACE</p><h1 id="connect-title">Connect to OpenSight</h1><p className="sign-in-description">The workspace sleeps when it is idle. Connecting may take a moment.</p>
+    {connectionError && <p className="sign-in-alert" role="alert">{connectionError}</p>}
+    <button className="sign-in-primary" type="button" disabled={connecting} onClick={() => void connect()}>{connecting ? 'Connecting…' : 'Connect'}</button>
+    {connecting && <button className="sign-in-secondary" type="button" onClick={() => { connectRequest.current?.abort(); }}>Cancel</button>}
+    </section>
     <nav className="sign-in-links" aria-label="Startup options"><button type="button" onClick={() => { connectRequest.current?.abort(); explore(); }}>Explore sample data</button></nav>
   </main></div>;
   if (local) return <AccessProvider access={{ mode: 'local' }}>{children}</AccessProvider>;
