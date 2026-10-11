@@ -308,3 +308,11 @@ text, 162 pixels at (150,97)–(172,107). All nine hosted frontend files are byt
 identical. No new UI gap or README media change is required. Runtime verification
 and actual AWS deployment status are recorded in the
 [execution evidence](phase5-sr4b5-execution-evidence.md).
+
+## SR4b6 buffered request capture — 2026-10-11
+
+The rebuilt 251-frame demo tour had no errors or external requests. Against
+SR4b5, 130 frames match exactly; the inspected author difference is saved-time
+text only, 158 pixels at (150,97)–(172,107). The hosted frontend's nine files are
+byte-identical. No new UI gap or README media replacement is required. See the
+[request evidence](phase5-sr4b6-request-evidence.md) for tests and cloud status.
