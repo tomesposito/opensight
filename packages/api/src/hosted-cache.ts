@@ -1,14 +1,8 @@
 import { BlazeTable } from './blaze.js';
 import { budgetError, type TenantBudgets, type WorkScope } from './budgets.js';
 interface Entry { tenant: string; stamp: string; bytes: number; table?: BlazeTable; error: string; used: number }
-export interface HostedCacheAdapter {
-  invalidate(key: string): void | Promise<void>;
-  read(scope: WorkScope, key: string, stamp: string): BlazeTable | Promise<BlazeTable>;
-  refresh(scope: WorkScope, key: string, stamp: string, load: () => Promise<BlazeTable>): Promise<void>;
-  verify?(): Promise<void>;
-}
 /** Tenant-local LRU only. Another tenant's snapshots are never eviction victims. */
-export class HostedCache implements HostedCacheAdapter {
+export class HostedCache {
   private readonly entries = new Map<string, Entry>();
   private sequence = 0;
   constructor(private readonly budgets: TenantBudgets) {}

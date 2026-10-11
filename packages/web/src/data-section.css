@@ -20,7 +20,7 @@
 .data-split > button { border-radius: 3px 0 0 3px; }
 .data-split > .data-menu > summary { background: #176b88; color: white; border-radius: 0 3px 3px 0; border-left: 1px solid #7facbd; padding: 4px 8px; height: 100%; }
 .data-menu { position: relative; display: inline-block; }
-.data-menu > summary { list-style: none; padding: 0 8px; font-size: 16px; cursor: pointer; }
+.data-menu > summary { list-style: none; padding: 0 8px; font-size: 16px; cursor: pointer; display: flex; align-items: center; }
 .data-menu > summary::-webkit-details-marker { display: none; }
 .data-menu-items { position: absolute; right: 0; top: 100%; z-index: 15; width: max-content; max-width: 300px; background: white; border: 1px solid #bbcbd3; box-shadow: 0 4px 12px #19384a33; padding: 4px; }
 .data-menu-items button { display: block; border: 0; text-align: left; width: 100%; }

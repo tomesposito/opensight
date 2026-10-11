@@ -69,7 +69,7 @@ export class HostedPrep {
         const d = datasets.find(d => d.id === ref.dataset)!, mode = g.modes.get(ref.dataset)!;
         if (mode.execution.mode === 'BLAZE') {
           const key = this.cacheKey(context, ref.dataset), stamp = JSON.stringify([mode.version, g.revisions]);
-          const table = await this.data.cache!.read(scope, key, stamp); scope.rows(table.rowCount);
+          const table = this.data.cache!.read(scope, key, stamp); scope.rows(table.rowCount);
           d.materialized = { id: `cached_${tables.length}`, table: `cached_${tables.length}`, connectorId: 'file', columns: table.columns, security: 'unrestricted' };
           tables.push(await wireTable(scope, table, d.materialized));
         } else await visit(d.pipeline);
@@ -94,7 +94,7 @@ export class HostedPrep {
     const resource: BundleDataSet = { resourceType: 'dataset', dataSetId: identifier(id), name: raw.name, physicalTableMap: {}, importMode: 'DIRECT_QUERY', opensightPrep: pipeline };
     const execution: ExecutionSettings = graph.reason ? { mode: 'BLAZE', intervalMinutes: null } : directSettings;
     await this.data.sources.metadata.batch(context, [{ key: this.key(context, id), body: { resource, execution }, expectedVersion: raw.expectedVersion as number }], graph.revisions);
-    await this.data.cache?.invalidate(this.cacheKey(context, id)); return { resource, version: Number(raw.expectedVersion) + 1, execution };
+    this.data.cache?.invalidate(this.cacheKey(context, id)); return { resource, version: Number(raw.expectedVersion) + 1, execution };
   }
   async import(context: TenantContext, input: unknown) {
     const raw = object(structuredClone(input), ['resource', 'expectedVersion']), resource = parseBundleResource(raw.resource);
@@ -113,7 +113,7 @@ export class HostedPrep {
     await this.data.sources.metadata.assertRevisions(context, rev); return result;
   }
   async remove(context: TenantContext, id: string, expectedVersion: number) {
-    await this.data.sources.metadata.remove(context, this.key(context, id), expectedVersion); await this.data.cache?.invalidate(this.cacheKey(context, id));
+    await this.data.sources.metadata.remove(context, this.key(context, id), expectedVersion); this.data.cache?.invalidate(this.cacheKey(context, id));
   }
   async preview(context: TenantContext, id: string, input: unknown) {
     const raw = object(structuredClone(input), ['pipeline', 'through', 'limit']);
@@ -135,7 +135,7 @@ export class HostedPrep {
     if (settings.mode === 'DIRECT_QUERY' && graph.reason) sourceError('BLAZE_MATERIALIZATION_REQUIRED', 409);
     if (this.jobs) await this.jobs.configurePrepared(context, id, settings, raw.expectedVersion as number, graph.revisions);
     else await this.data.sources.metadata.batch(context, [{ key: this.key(context, id), body: { resource: stored.resource, execution: settings }, expectedVersion: raw.expectedVersion as number }], graph.revisions);
-    await this.data.cache?.invalidate(this.cacheKey(context, id)); return settings;
+    this.data.cache?.invalidate(this.cacheKey(context, id)); return settings;
   }
   async execute(context: TenantContext, id: string, path: 'rows' | 'query' | 'refresh', input: unknown = {}) {
     const stored = await this.stored(context, id), graph = await this.graph(context, id, stored.resource.opensightPrep!), key = this.cacheKey(context, id);
@@ -156,7 +156,7 @@ export class HostedPrep {
         return { mode: 'BLAZE', state: 'ready' };
       }
       if (stored.execution.mode === 'BLAZE') {
-        table = await this.data.cache!.read(scope, key, stamp); scope.rows(table.rowCount);
+        table = this.data.cache!.read(scope, key, stamp); scope.rows(table.rowCount);
       } else {
         if (graph.reason) sourceError('BLAZE_MATERIALIZATION_REQUIRED', 409);
         table = new BlazeTable(this.data.limits(context)); await this.load(context, id, graph, table);
