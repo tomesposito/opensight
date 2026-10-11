@@ -87,7 +87,7 @@ function handler(event) {
 console.log('EDGE_VIEWER_ENTER');
 try {
 var request = event.request;
-validateViewerRequest(Object.assign({}, request, { protocol: 'https' }), __OPENSIGHT_ORIGIN__);
+validateViewerRequest({ headers: request.headers, uri: request.uri, querystring: request.querystring, protocol: 'https' }, __OPENSIGHT_ORIGIN__);
 if (!event.viewer || typeof event.viewer.ip !== 'string' || !/^[a-fA-F0-9:.]{3,45}$/.test(event.viewer.ip))
 denied();
 request.headers['x-opensight-ingress-peer'] = { value: event.viewer.ip };

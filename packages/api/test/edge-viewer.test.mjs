@@ -15,6 +15,9 @@ test('SR4a generated edge boundary is current, within CloudFront size limit and 
   assert.equal(source, await edgeSource()); assert.ok(Buffer.byteLength(source) < 10000);
   const event = frame(), output = context.handler(event); assert.equal(output.uri, event.request.uri); assert.equal(output.headers['x-opensight-ingress-peer'].value, event.viewer.ip);
   assert.equal(output.headers['x-opensight-ingress-secret'], undefined);
+  const live = frame();
+  Object.defineProperty(live.request, 'unrelatedNativeField', { enumerable: true, get() { throw Error('Unrelated event fields must not be copied'); } });
+  assert.equal(context.handler(live).headers['x-opensight-ingress-peer'].value, live.viewer.ip);
 });
 test('SR4a edge executes shared path/header rejection without Node APIs and cannot accept forged provenance', () => {
   const bad = [];

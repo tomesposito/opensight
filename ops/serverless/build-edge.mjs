@@ -30,7 +30,9 @@ function handler(event) {
   try {
     const request = event.request;
     // Every API behavior enforces HTTPS before forwarding to the origin.
-    validateViewerRequest(Object.assign({}, request, { protocol: 'https' }), __OPENSIGHT_ORIGIN__);
+    // Live CloudFront event objects are not the plain JSON objects supplied to
+    // TestFunction. Read only the fields consumed by the shared boundary.
+    validateViewerRequest({ headers: request.headers, uri: request.uri, querystring: request.querystring, protocol: 'https' }, __OPENSIGHT_ORIGIN__);
     if (!event.viewer || typeof event.viewer.ip !== 'string' || !/^[a-fA-F0-9:.]{3,45}$/.test(event.viewer.ip)) denied();
     request.headers['x-opensight-ingress-peer'] = { value: event.viewer.ip };
     console.log('EDGE_VIEWER_ACCEPT');
