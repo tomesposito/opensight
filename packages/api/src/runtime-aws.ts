@@ -45,7 +45,7 @@ export class InvocationAws {
   private readonly controllers = new Set<AbortController>();
   private closed = false;
   private closing?: Promise<void>;
-  constructor(readonly scope: InvocationScope, env: NodeJS.ProcessEnv) {
+  constructor(readonly scope: InvocationScope, env: NodeJS.ProcessEnv, networkFamily: 4 | 6 = 6) {
     this.region = awsRegion(env);
     // Lambda supplies these temporary credentials. Never search local profiles,
     // container credentials or IMDS outside this invocation's owned transports.
@@ -60,10 +60,10 @@ export class InvocationAws {
       return { region: this.region, credentials, endpoint: `https://${host}`, maxAttempts: 1,
         requestHandler: { httpsAgent, connectionTimeout: 2000, requestTimeout: 5000, throwOnRequestTimeout: true } };
     };
-    this.secrets = new SecretsManagerClient(options(this.hosts.secrets, 6));
+    this.secrets = new SecretsManagerClient(options(this.hosts.secrets, networkFamily));
     this.s3 = new S3Client({ ...options(this.hosts.s3, 4), forcePathStyle: true, followRegionRedirects: false });
-    this.sqs = new SQSClient({ ...options(this.hosts.sqs, 6), useQueueUrlAsEndpoint: false });
-    this.scheduler = new SchedulerClient(options(this.hosts.scheduler, 6));
+    this.sqs = new SQSClient({ ...options(this.hosts.sqs, networkFamily), useQueueUrlAsEndpoint: false });
+    this.scheduler = new SchedulerClient(options(this.hosts.scheduler, networkFamily));
     scope.own(this);
   }
   async call<T>(work: (signal: AbortSignal) => Promise<T>, maximumMs = 6000): Promise<T> {
