@@ -19,8 +19,12 @@ rather than duplicating per-tenant budget configuration, preserves existing H8
 refresh accounting and named admission errors, and leaves queues/artifacts and
 runtime integration to subsequent contracts. Its exact schema/interfaces govern
 that checkpoint. The [SR2b artifact transfer contract](../phase5-sr2b-artifact-transfer.md)
-freezes the bounded codec and immutable-object mechanism. The broader
-manifest/invalidation and runtime-integration proposal below remains draft.
+freezes the bounded codec and immutable-object mechanism. The
+[SR2c manifest/hydration contract](../phase5-sr2c-manifests.md) now implements
+authoritative manifests and asynchronous hosted caches; confirmed
+[D-29](D-29-manifest-dependency-validation.md) supersedes the descendant-walk
+proposal below with complete read-time dependency validation. Storage recovery,
+operation dispatch and production runtime integration remain subsequent work.
 
 ## Out of Scope
 

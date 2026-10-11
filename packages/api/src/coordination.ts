@@ -3,7 +3,7 @@ import { hasCapability, isRole } from '@opensight/query-engine';
 import { MetadataError, type Database, type SqlConnection, type SqlRow, type SqlValue } from './metadata-db.js';
 import { type TenantContext, type Revisions, TenantMetadata } from './metadata.js';
 import { identifier, object } from './metadata-resources.js';
-import { validateBudgets, type BudgetConfig } from './budgets.js';
+import { validateBudgets, type BudgetConfig, type WorkLimits } from './budgets.js';
 import { entitlementConfig, type Entitlements } from './hosted-usage.js';
 import { coordinationChecksum, coordinationDeployment, coordinationFailure, coordinationNow, type CoordinationDialect } from './coordination-schema.js';
 
@@ -19,8 +19,14 @@ export interface AttemptHandle {
   readonly executionDeadline: number; readonly holdUntil: number; readonly leaseUntil: number;
   readonly fence?: string; readonly generation?: string;
 }
+export interface AttemptDetails {
+  readonly context: TenantContext; readonly input: Readonly<AdmissionInput>;
+  readonly epoch: string; readonly limits: Readonly<WorkLimits>;
+  readonly fence?: string; readonly generation?: string;
+}
 interface Attempt {
   context: TenantContext; input: AdmissionInput; token: string; epoch: string; limitsRevision: number;
+  limits: WorkLimits;
   fence?: string; generation?: string;
 }
 interface Locked { epoch: string; revision: number; budgets: BudgetConfig; entitlements: Entitlements }
@@ -106,10 +112,18 @@ export class DurableCoordinator {
     if (!attempt) throw new MetadataError('ATTEMPT_HANDLE_REQUIRED', 403);
     return attempt;
   }
+  private details(attempt: Omit<Attempt, 'token' | 'limitsRevision'>): AttemptDetails {
+    const input = structuredClone(attempt.input);
+    Object.freeze(input.revisions); if (input.claim) Object.freeze(input.claim); Object.freeze(input);
+    return Object.freeze({ context: attempt.context, input, epoch: attempt.epoch, limits: Object.freeze({ ...attempt.limits }),
+      ...(attempt.fence ? { fence: attempt.fence, generation: attempt.generation } : {}) });
+  }
+  /** Immutable server-derived description, not a replacement for a live SQL check. */
+  describe(handle: AttemptHandle): AttemptDetails { return this.details(this.handle(handle)); }
   private attemptValues(attempt: Attempt): SqlValue[] {
     return [this.deployment, attempt.input.attemptId, attempt.token, attempt.context.tenantId, attempt.context.namespaceId, attempt.context.userId];
   }
-  async admit(context: TenantContext, raw: AdmissionInput): Promise<AttemptHandle> {
+  async admit(context: TenantContext, raw: AdmissionInput, admittedWork?: (c: SqlConnection, details: AttemptDetails) => Promise<void>): Promise<AttemptHandle> {
     this.metadata.assertContext(context);
     const entered = performance.now(), input = inputSnapshot(raw), token = randomUUID();
     const admitted = await this.transaction(async c => {
@@ -155,13 +169,14 @@ export class DurableCoordinator {
         else await c.query('INSERT INTO sr_claim VALUES (?,?,?,?,?,?,1,1,?,?)', [...this.claimValues({ context, input }), input.claim.expectedVersion, input.attemptId]);
         const allocated = await this.claim(c, { context, input }); fence = counter(allocated?.fence); generation = counter(allocated?.generation);
       }
+      await admittedWork?.(c, this.details({ context, input, epoch: configuration.epoch, limits, fence, generation }));
       if (await coordinationNow(c, this.dialect) >= executionDeadline) throw new MetadataError('EXECUTION_CANCELLED', 409);
-      return { configuration, executionDeadline, holdUntil, leaseUntil, fence, generation };
+      return { configuration, limits, executionDeadline, holdUntil, leaseUntil, fence, generation };
     });
     if (!admitted) throw new MetadataError('USAGE_LIMIT_EXCEEDED', 429);
     const handle: AttemptHandle = Object.freeze({ attemptId: input.attemptId, token, executionDeadline: admitted.executionDeadline,
       holdUntil: admitted.holdUntil, leaseUntil: admitted.leaseUntil, ...(admitted.fence ? { fence: admitted.fence, generation: admitted.generation } : {}) });
-    this.#attempts.set(handle, { context, input, token, epoch: admitted.configuration.epoch, limitsRevision: admitted.configuration.revision,
+    this.#attempts.set(handle, { context, input, token, epoch: admitted.configuration.epoch, limitsRevision: admitted.configuration.revision, limits: admitted.limits,
       ...(admitted.fence ? { fence: admitted.fence, generation: admitted.generation } : {}) });
     return handle;
   }
