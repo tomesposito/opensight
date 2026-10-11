@@ -299,3 +299,12 @@ SR4b3, 151 frames match exactly; the inspected author frame differs only in
 saved-time text at (160,97)–(172,107). The nine hosted frontend files remain
 byte-identical. No new UI gap was observed; actual AWS acceptance is still
 required separately.
+
+## SR4b5 execution allowance capture — 2026-10-11
+
+The fresh 251-frame demo tour had no errors or external requests. Against SR4b4,
+131 frames match exactly; the inspected author frame differs only in saved-time
+text, 162 pixels at (150,97)–(172,107). All nine hosted frontend files are byte
+identical. No new UI gap or README media change is required. Runtime verification
+and actual AWS deployment status are recorded in the
+[execution evidence](phase5-sr4b5-execution-evidence.md).
