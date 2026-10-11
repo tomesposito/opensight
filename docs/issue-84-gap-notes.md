@@ -211,3 +211,11 @@ cross-platform path and whitespace checks passed at both implementation commits.
 The AWS validation functions remain unchanged and frozen; this local integration
 is not a deployed app. Upload operations, storage reservation/recovery, runtime
 activation and live browser/AWS acceptance remain the immediate deployment work.
+
+Upstream issue #80's CSV-export formula guard was then merged without conflict.
+Only `visual-export.ts`, its tests and web test configuration changed upstream.
+The combined web suite passed **1,157 / 0 failed / 0 skipped / 0 cancelled**;
+the hosted frontend and demo rebuilt offline. The combined demo was captured,
+inspected and is byte-identical to the preceding SR2c PNG. Backend source is
+unchanged from the complete 2,308-pass root run above; that earlier run is not
+presented as a full root rerun of the subsequent upstream merge.
