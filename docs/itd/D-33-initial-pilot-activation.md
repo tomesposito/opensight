@@ -66,8 +66,9 @@ Option 3 weakens the trust boundary or misrepresents email delivery.
   later maintenance, advance epochs or claim to implement D-25 recovery.
 - API/worker secrets and object permissions remain separate from private DDL
   authority; business-object cleanup remains the durable SQL worker's job.
-- The long-pause check and real HTTPS authentication/upload/query/isolation
-  acceptance precede apex DNS publication. A Connect screen alone is not live.
+- Real HTTPS authentication/upload/query/isolation acceptance and return to zero
+  ACU precede apex DNS publication. A Connect screen alone is not live. The
+  greater-than-24-hour pause/resume check is follow-up work.
 - Public code includes only reusable contracts and synthetic fixtures. All
   deployed identities, addresses, credentials, plans and receipts stay private.
 
@@ -102,3 +103,12 @@ change fails closed rather than disabling row policies.
 
 Sources: [Aurora administrative role](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/Appendix.PostgreSQL.CommonDBATasks.Roles.rds_superuser.html),
 [PostgreSQL row security](https://www.postgresql.org/docs/16/ddl-rowsecurity.html).
+
+#### Launch timing correction — 2026-10-11
+
+The owner directed progress toward activation rather than waiting for a full
+24-hour idle interval. CloudWatch had already recorded over 19 hours at zero
+ACU, and a shorter sleep/wake cycle had passed. Preserve those measured facts
+and verify a wake during activation. Defer the greater-than-24-hour measurement
+to a later quiet period; it remains unmeasured until actually completed. Real
+application acceptance, isolation and return to zero ACU remain launch gates.

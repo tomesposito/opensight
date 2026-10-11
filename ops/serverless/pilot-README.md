@@ -6,8 +6,9 @@ tool, not a general redeploy or database recovery command. All commands use the
 same external mode-0700 `OPENSIGHT_OPERATOR_DIR`; files are mode 0600. Never put
 account configuration, credentials, state, plans or service output in the repo.
 
-Finish the greater-than-24-hour database pause measurement first. Build, test,
-scan and publish the immutable ARM64 runtime image. Create private
+Record available database pause/resume evidence. The greater-than-24-hour
+measurement is follow-up work; it does not block this initial activation. Build,
+test, scan and publish the immutable ARM64 runtime image. Create private
 `pilot-release.json` with its exact `image_uri`. Keep the existing
 `validation.tfvars.json`, backend and ingress inventory. Run from clean source.
 

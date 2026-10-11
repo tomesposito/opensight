@@ -1348,9 +1348,11 @@ ensures only its private owner can inspect all tenants under FORCE RLS, proves
 an empty epoch-one deployment, and sets the two existing runtime role connection
 caps to eight without changing their authority. Preparation is transactional and
 unavailable after bootstrap. Existing password/TOTP login remains mandatory. No onboarding mail or public setup
-endpoint is introduced. Complete the long-pause database measurement and real
-HTTPS startup/authentication/upload/ingestion/query/isolation checks before apex
-DNS. This initial transition does not implement D-25's recurring release/rollback
+endpoint is introduced. Complete real HTTPS startup/authentication/upload/
+ingestion/query/isolation checks and observe return to zero ACU before apex DNS.
+The greater-than-24-hour pause/resume measurement is follow-up work, not a launch
+gate; preserve the measured shorter pause and wake evidence without claiming
+that the longer experiment is complete. This initial transition does not implement D-25's recurring release/rollback
 or CI protocol.
 
 ---
