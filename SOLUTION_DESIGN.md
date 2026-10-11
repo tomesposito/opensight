@@ -1198,6 +1198,16 @@ signing tests, API validation tests; full suite green; demo rebuilt.
 
 ### Phase 5 — Hosted correctness and serverless readiness
 
+**SR4c compatible release automation (frozen 2026-10-11):** The operator approved
+public isolated CI, immutable release artifacts, private manual deployment via
+dedicated OIDC roles, and an independently tested access shutoff. Implement
+[SR4c](docs/phase5-sr4c-compatible-releases.md) under
+[D-34](docs/itd/D-34-compatible-release-automation.md). This first recurring path
+promotes only compatible application bytes, preserves the SQL epoch and durable
+work after complete invocation quiescence, and excludes schema/infrastructure
+changes. D-25's general migration/restore protocol remains separate. No local
+operator credential or permanent AWS access key enters GitHub.
+
 The hosted-business trigger was met 2026-09-30 (D14), leading to the H1–H8
 foundation and single-node reference. D-18 (2026-10-10) now selects an initial
 Lambda/Aurora deployment with automatic idle pause. That activates the artifact
