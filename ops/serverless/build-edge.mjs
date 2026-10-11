@@ -10,32 +10,47 @@ export async function edgeSource() {
   const variables = ['record', 'singleton', 'forgedPrincipalHeaders'];
   const selected = [];
   for (const statement of file.statements) {
-    if (ts.isFunctionDeclaration(statement) && functions.includes(statement.name?.text)) selected.push(statement.getText(file).replace(/^export /, ''));
+    if (ts.isFunctionDeclaration(statement) && functions.includes(statement.name?.text)) {
+      let text = statement.getText(file).replace(/^export /, '');
+      // Fuse CloudFront header unwrapping with the shared grammar check. Avoid
+      // allocating and walking a second header map within the edge CPU budget.
+      if (statement.name.text === 'headers') {
+        const loop = statement.body.statements.find(node => ts.isForOfStatement(node) && node.expression.getText(file) === 'Object.entries(record(raw))');
+        if (!loop || !ts.isBlock(loop.statement)) throw Error('EDGE_SOURCE_CHANGED');
+        text = text.replace(loop.getText(file), `for (const key of Object.keys(record(raw))) {
+          const field = record((raw as Record<string, unknown>)[key]);
+          if (field.multiValue !== undefined) invalid();
+          const value = field.value;
+          ${loop.statement.statements.map(node => node.getText(file)).join('\n')}
+        }`);
+      }
+      if (statement.name.text === 'validateViewerRequest') {
+        const loop = statement.body.statements[1];
+        if (!ts.isForOfStatement(loop) || loop.expression.getText(file) !== 'Object.entries(record(request.headers))') throw Error('EDGE_SOURCE_CHANGED');
+        text = text.replace(statement.body.statements[0].getText(file), 'const request = record(raw);')
+          .replace(loop.getText(file), '').replace('headers(values)', 'headers(request.headers)');
+      }
+      selected.push(text);
+    }
     if (ts.isVariableStatement(statement)) for (const declaration of statement.declarationList.declarations) {
       const name = declaration.name.getText(file);
       if (!variables.includes(name)) continue;
       if (name === 'singleton') {
         if (!ts.isNewExpression(declaration.initializer) || declaration.initializer.expression.getText(file) !== 'Set' || declaration.initializer.arguments?.length !== 1) throw Error('EDGE_SOURCE_CHANGED');
-        const names = declaration.initializer.arguments[0];
-        if (!ts.isArrayLiteralExpression(names) || !names.elements.every(ts.isStringLiteral)) throw Error('EDGE_SOURCE_CHANGED');
-        selected.push(`const singleton = { ${names.elements.map(name => `${name.getText(file)}: true`).join(', ')} };`);
+        selected.push(`const singleton = ${declaration.initializer.arguments[0].getText(file)};`);
       } else selected.push(`const ${declaration.getText(file)};`);
     }
   }
   if (selected.length !== functions.length + variables.length) throw Error('EDGE_SOURCE_CHANGED');
-  // Values in the null-prototype result are always strings. Presence checks
-  // therefore need no indirect prototype call; singleton membership is a lookup.
-  const adapted = selected.join('\n').replaceAll('singleton.has(name)', 'singleton[name] === true')
-    .replaceAll('Object.hasOwn(result, name)', 'result[name] !== undefined').replaceAll('Object.hasOwn(result, h)', 'result[h] !== undefined')
+  const adapted = selected.join('\n').replaceAll('singleton.has(name)', 'singleton.includes(name)').replaceAll('Object.hasOwn(', 'Object.prototype.hasOwnProperty.call(')
     .replaceAll('new URL(origin).host', '__OPENSIGHT_HOST__').replaceAll('Buffer.byteLength(', 'byteLength(');
   const wrapper = `function MetadataError(code, status) { this.code = code; this.status = status; }
-function byteLength(value) { return /^[\\x00-\\x7f]*$/.test(value) ? value.length : encodeURIComponent(value).replace(/%[A-Fa-f0-9]{2}/g, 'x').length; }
+function byteLength(value) { return encodeURIComponent(value).replace(/%[A-Fa-f0-9]{2}/g, 'x').length; }
 function handler(event) {
   console.log('EDGE_VIEWER_ENTER');
   try {
     const request = event.request;
     // Every API behavior enforces HTTPS before forwarding to the origin.
-    // Read only the fields consumed by the shared boundary.
     validateViewerRequest({ headers: request.headers, uri: request.uri, querystring: request.querystring, protocol: 'https' }, __OPENSIGHT_ORIGIN__);
     if (!event.viewer || typeof event.viewer.ip !== 'string' || !/^[a-fA-F0-9:.]{3,45}$/.test(event.viewer.ip)) denied();
     request.headers['x-opensight-ingress-peer'] = { value: event.viewer.ip };

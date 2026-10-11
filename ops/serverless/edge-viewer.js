@@ -2,7 +2,8 @@
 function invalid() { throw new MetadataError('HOSTED_REQUEST_INVALID', 400); }
 function denied() { throw new MetadataError('UNTRUSTED_INGRESS', 403); }
 var record = function (v) { return v && typeof v === 'object' && !Array.isArray(v) ? v : invalid(); };
-var singleton = { 'host': true, 'authorization': true, 'origin': true, 'content-type': true, 'content-length': true, 'idempotency-key': true, 'if-match': true, 'if-none-match': true, 'if-modified-since': true, 'if-unmodified-since': true, 'range': true, 'x-opensight-ingress-key-id': true, 'x-opensight-ingress-secret': true, 'x-opensight-ingress-origin': true, 'x-opensight-ingress-peer': true, 'cloudfront-viewer-address': true };
+var singleton = ['host', 'authorization', 'origin', 'content-type', 'content-length', 'idempotency-key', 'if-match', 'if-none-match', 'if-modified-since', 'if-unmodified-since', 'range',
+'x-opensight-ingress-key-id', 'x-opensight-ingress-secret', 'x-opensight-ingress-origin', 'x-opensight-ingress-peer', 'cloudfront-viewer-address'];
 var forgedPrincipalHeaders = ['x-user', 'x-user-id', 'x-principal', 'x-groups', 'x-group-ids', 'x-namespace', 'x-namespace-id', 'x-tenant', 'x-tenant-id', 'x-subject', 'x-role', 'x-roles', 'x-capabilities'];
 function publicPath(path) {
 if (typeof path !== 'string' || path.length > 4096 || !/^\/[A-Za-z0-9_./-]*$/.test(path) || path.includes('//') || path.split('/').some(function (p) { return p === '.' || p === '..'; }))
@@ -35,41 +36,36 @@ return internal;
 function headers(raw) {
 var result = Object.create(null);
 var bytes = 0;
-for (var _i = 0, _a = Object.entries(record(raw)); _i < _a.length; _i++) {
-var _b = _a[_i], key = _b[0], value = _b[1];
-var name = key.toLowerCase();
-if (!/^[a-z0-9-]+$/.test(name) || typeof value !== 'string' || /[\x00-\x1f\x7f]/.test(value) || result[name] !== undefined)
+for (var _i = 0, _a = Object.keys(record(raw)); _i < _a.length; _i++) {
+var key = _a[_i];
+var field = record(raw[key]);
+if (field.multiValue !== undefined)
 invalid();
-if (singleton[name] === true && value.includes(',') && !(['if-modified-since', 'if-unmodified-since'].includes(name) && /^[A-Z][a-z]{2}, \d{2} [A-Z][a-z]{2} \d{4} \d{2}:\d{2}:\d{2} GMT$/.test(value)))
+var value = field.value;
+var name = key.toLowerCase();
+if (!/^[a-z0-9-]+$/.test(name) || typeof value !== 'string' || /[\x00-\x1f\x7f]/.test(value) || Object.prototype.hasOwnProperty.call(result, name))
+invalid();
+if (singleton.includes(name) && value.includes(',') && !(['if-modified-since', 'if-unmodified-since'].includes(name) && /^[A-Z][a-z]{2}, \d{2} [A-Z][a-z]{2} \d{4} \d{2}:\d{2}:\d{2} GMT$/.test(value)))
 invalid();
 bytes += byteLength(key) + byteLength(value);
 if (bytes > 16384)
 invalid();
 result[name] = value;
 }
-if (forgedPrincipalHeaders.some(function (h) { return result[h] !== undefined; }))
+if (forgedPrincipalHeaders.some(function (h) { return Object.prototype.hasOwnProperty.call(result, h); }))
 throw new MetadataError('FORGED_PRINCIPAL', 403);
 if (result.forwarded !== undefined || result['x-forwarded-host'] !== undefined || result['transfer-encoding'] !== undefined)
 invalid();
-for (var _c = 0, _d = Object.keys(result); _c < _d.length; _c++) {
-var name = _d[_c];
+for (var _b = 0, _c = Object.keys(result); _b < _c.length; _b++) {
+var name = _c[_b];
 if (name.startsWith('x-opensight-ingress-') && !['x-opensight-ingress-key-id', 'x-opensight-ingress-secret', 'x-opensight-ingress-origin', 'x-opensight-ingress-peer'].includes(name))
 denied();
 }
 return result;
 }
 function validateViewerRequest(raw, origin) {
-var request = record(raw), values = {};
-for (var _i = 0, _a = Object.entries(record(request.headers)); _i < _a.length; _i++) {
-var _b = _a[_i], key = _b[0], rawValue = _b[1];
-var value = record(rawValue);
-if (value.multiValue !== undefined)
-invalid();
-if (typeof value.value !== 'string')
-invalid();
-values[key] = value.value;
-}
-var h = headers(values);
+var request = record(raw);
+var h = headers(request.headers);
 if (h.host !== __OPENSIGHT_HOST__ || request.protocol !== 'https')
 denied();
 if (Object.keys(h).some(function (k) { return k.startsWith('x-opensight-ingress-') || k === 'cloudfront-viewer-address' || k === 'x-forwarded-for' || k === 'x-forwarded-proto' || k === 'x-forwarded-port'; }))
@@ -81,7 +77,7 @@ if (Object.keys(record(request.querystring)).length)
 invalid();
 }
 function MetadataError(code, status) { this.code = code; this.status = status; }
-function byteLength(value) { return /^[\x00-\x7f]*$/.test(value) ? value.length : encodeURIComponent(value).replace(/%[A-Fa-f0-9]{2}/g, 'x').length; }
+function byteLength(value) { return encodeURIComponent(value).replace(/%[A-Fa-f0-9]{2}/g, 'x').length; }
 function handler(event) {
 console.log('EDGE_VIEWER_ENTER');
 try {
