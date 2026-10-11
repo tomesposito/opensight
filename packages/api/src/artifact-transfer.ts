@@ -15,6 +15,7 @@ import { artifactDescriptor, artifactError, artifactFailure, artifactIdentity, a
   type ArtifactDescriptor, type ArtifactIdentity, type ArtifactLimits, type ArtifactReference } from './artifact-schema.js';
 
 export interface LocalArtifact { readonly descriptor: Readonly<ArtifactDescriptor>; close(): Promise<void> }
+export interface PlannedArtifactWrite { readonly identity: Readonly<ArtifactIdentity>; readonly key: string; readonly descriptor: Readonly<ArtifactDescriptor> }
 interface LocalFile { directory: string; path: string; descriptor: ArtifactDescriptor; closed: boolean; closing?: Promise<void> }
 const contentType = 'application/vnd.apache.parquet';
 const frameLimits = (limits: ArtifactLimits) => ({ maxBytes: limits.decodedBytes, datasetBytes: limits.decodedBytes, maxRows: limits.rows, cellChars: limits.cellChars });
@@ -32,6 +33,7 @@ function freezeDescriptor(descriptor: ArtifactDescriptor): ArtifactDescriptor {
 export class ArtifactTransfer {
   private readonly invocation: InvocationScope;
   private readonly files = new WeakMap<LocalArtifact, LocalFile>();
+  private readonly writes = new WeakMap<PlannedArtifactWrite, { handle: LocalArtifact; started: boolean }>();
   private readonly bucket?: string;
   private readonly prefix?: string;
   constructor(private readonly aws?: InvocationAws, config?: { bucket: string; prefix: string }) {
@@ -123,18 +125,29 @@ export class ArtifactTransfer {
     if (response.VersionId !== version || response.ContentLength !== descriptor.encodedBytes || response.ContentType !== contentType
       || response.ChecksumSHA256 !== checksum(descriptor) || response.ContentRange !== undefined || response.DeleteMarker === true) artifactError();
   }
-  async upload(scope: WorkScope, rawIdentity: ArtifactIdentity, handle: LocalArtifact): Promise<ArtifactReference> {
+  /** Allocate before durable recovery/reservation. The public description cannot mint a write. */
+  planWrite(scope: WorkScope, rawIdentity: ArtifactIdentity, handle: LocalArtifact): PlannedArtifactWrite {
+    this.transport(scope);
+    const { identity, prefix } = this.identity(scope, rawIdentity), file = this.file(scope, handle);
+    const plan = Object.freeze({ identity: Object.freeze(identity), key: `${prefix}${randomUUID()}.parquet`, descriptor: file.descriptor });
+    this.writes.set(plan, { handle, started: false }); return plan;
+  }
+  async upload(scope: WorkScope, rawIdentity: ArtifactIdentity, handle: LocalArtifact, planned?: PlannedArtifactWrite): Promise<ArtifactReference> {
     try {
-      const aws = this.transport(scope), { identity, prefix } = this.identity(scope, rawIdentity), file = this.file(scope, handle), descriptor = structuredClone(file.descriptor);
+      const aws = this.transport(scope), { identity } = this.identity(scope, rawIdentity), file = this.file(scope, handle), descriptor = structuredClone(file.descriptor);
+      const plan = planned ?? this.planWrite(scope, identity, handle), write = this.writes.get(plan);
+      if (!write || write.handle !== handle || write.started || JSON.stringify(identity) !== JSON.stringify(plan.identity)) artifactError('ARTIFACT_WRITE_HANDLE_INVALID');
+      // An uncertain PUT is recovered from its exact durable key, never retried in this invocation.
+      write.started = true;
       const digest = await this.digest(scope, file.path, descriptor.encodedBytes);
       if (digest.sha256 !== descriptor.sha256 || digest.encodedBytes !== descriptor.encodedBytes) artifactError();
-      const key = `${prefix}${randomUUID()}.parquet`, stream = createReadStream(file.path, { highWaterMark: 65536 }), close = this.ownStream(stream);
+      const key = plan.key, stream = createReadStream(file.path, { highWaterMark: 65536 }), close = this.ownStream(stream);
       const abort = () => stream.destroy(); scope.signal.addEventListener('abort', abort, { once: true });
       let version: string;
       try {
         this.check(scope);
         const response = await aws.call(signal => aws.s3.send(new PutObjectCommand({ Bucket: this.bucket, Key: key, Body: stream, ContentLength: descriptor.encodedBytes,
-          ContentType: contentType, ChecksumSHA256: checksum(descriptor), IfNoneMatch: '*' }), { abortSignal: AbortSignal.any([signal, scope.signal]) }));
+          ContentType: contentType, ChecksumSHA256: checksum(descriptor), IfNoneMatch: '*', ServerSideEncryption: 'AES256' }), { abortSignal: AbortSignal.any([signal, scope.signal]) }));
         version = versionId(response.VersionId);
         if (response.ChecksumSHA256 !== checksum(descriptor)) artifactError();
       } finally { scope.signal.removeEventListener('abort', abort); await close(); }

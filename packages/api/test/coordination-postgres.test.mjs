@@ -9,6 +9,10 @@ import { migrateCoordination } from '../dist/coordination-schema.js';
 import { DurableCoordinator } from '../dist/coordination.js';
 import { migrateManifests } from '../dist/manifest-schema.js';
 import { ManifestStore } from '../dist/manifests.js';
+import { migrateDispatch } from '../dist/dispatch-schema.js';
+import { migrateObjects } from '../dist/object-schema.js';
+import { DurableDispatch } from '../dist/dispatch.js';
+import { ObjectLedger } from '../dist/object-ledger.js';
 import { syntheticReference } from './manifest-helpers.mjs';
 import { HostedSources } from '../dist/hosted-sources.js';
 import { environment } from './hosted-helpers.mjs';
@@ -16,7 +20,7 @@ import { runtimeEnv } from './runtime-helpers.mjs';
 import { referenceEnv } from './h8-helpers.mjs';
 import { seedSources, upload } from './source-helpers.mjs';
 
-test('SR2a/SR2c live Postgres: independent pools serialize admission/publication and restricted SQL cannot bypass scope or mutate authority',
+test('SR2a/SR2d live Postgres: independent pools serialize admission, publication, dispatch and storage; restricted SQL cannot bypass scope',
   { skip: process.env.DATABASE_URL ? false : 'DATABASE_URL is not set' }, async t => {
     const schema = `sr2_test_${randomUUID().replaceAll('-', '')}`, role = `${schema}_tenant`;
     const settings = { connectionString: process.env.DATABASE_URL, max: 3, connectionTimeoutMillis: 3000, options: `-c search_path=${schema} -c statement_timeout=2000 -c lock_timeout=500` };
@@ -40,6 +44,8 @@ test('SR2a/SR2c live Postgres: independent pools serialize admission/publication
     await migrateCoordination(db, 'test', entitlements, 'frozen');
     await migrateCoordination(db, 'test', entitlements, 'frozen');
     await migrateManifests(db, 'test', 'frozen'); await migrateManifests(db, 'test', 'frozen');
+    await migrateDispatch(db, 'test', 'frozen'); await migrateDispatch(db, 'test', 'frozen');
+    await migrateObjects(db, 'test', 'frozen'); await migrateObjects(db, 'test', 'frozen');
     const metadata = new TenantMetadata(db, db), otherMetadata = new TenantMetadata(otherDb, otherDb);
     const login = m => m.authenticate(null, async () => ({ namespaceId: 'one', userId: 'admin' }));
     const context = await login(metadata), other = await login(otherMetadata);
@@ -64,12 +70,13 @@ test('SR2a/SR2c live Postgres: independent pools serialize admission/publication
     assert.equal(handle.fence, '1');
     await assert.rejects(db.transaction(c => c.query('INSERT INTO sr_claim VALUES (?,?,?,?,?,?,1,1,1,?)',
       ['test', 'tenant-two', 'two', 'admin', 'source', 'foreign', handle.attemptId])), { code: 'METADATA_REFERENCE_INVALID' });
-    const rls = await pool.query("SELECT relrowsecurity, relforcerowsecurity FROM pg_class WHERE relnamespace = current_schema()::regnamespace AND relname IN ('sr_claim','sr_admission','sr_manifest','sr_manifest_versions')");
-    assert.equal(rls.rows.length, 4); assert.ok(rls.rows.every(row => row.relrowsecurity && row.relforcerowsecurity));
+    const privateTables = ['sr_admission', 'sr_claim', 'sr_manifest', 'sr_manifest_versions', 'sr_dispatch_intent', 'sr_outbox', 'sr_object', 'sr_storage_usage', 'sr_object_pin'];
+    const rls = await pool.query('SELECT relrowsecurity, relforcerowsecurity FROM pg_class WHERE relnamespace = current_schema()::regnamespace AND relname = ANY($1)', [privateTables]);
+    assert.equal(rls.rows.length, 9); assert.ok(rls.rows.every(row => row.relrowsecurity && row.relforcerowsecurity));
     await pool.query(`CREATE ROLE ${role} NOLOGIN NOINHERIT NOSUPERUSER NOBYPASSRLS`);
     await pool.query(`GRANT USAGE ON SCHEMA ${schema} TO ${role}`);
     // Test-only SELECT grants exercise forced RLS even if a future grant widens access.
-    await pool.query(`GRANT SELECT ON sr_admission, sr_claim, sr_manifest, sr_manifest_versions TO ${role}`);
+    await pool.query(`GRANT SELECT ON ${privateTables.join(', ')} TO ${role}`);
     tenantPool = new Pool({ ...settings, max: 1, options: `${settings.options} -c role=${role}` });
     assert.deepEqual((await tenantPool.query('SELECT * FROM sr_admission')).rows, []);
     assert.deepEqual((await tenantPool.query('SELECT * FROM sr_claim')).rows, []);
@@ -92,4 +99,30 @@ test('SR2a/SR2c live Postgres: independent pools serialize admission/publication
     await mb.fail(next, 'BLAZE_REFRESH_FAILED'); await b.release(next);
     const usage = await db.transaction(c => c.query("SELECT admitted FROM h8_usage WHERE metric = 'computeAttempts'"));
     assert.equal(Number(usage[0].admitted), 2);
+
+    const transport = { recover: async () => {}, dispatch: async () => {} };
+    const dispatches = [new DurableDispatch(db, metadata, 'test', transport), new DurableDispatch(otherDb, otherMetadata, 'test', transport)];
+    const ledgers = [new ObjectLedger(metadata, 'test'), new ObjectLedger(otherMetadata, 'test')], contexts = [context, other];
+    const request = { kind: 'upload-reserve', requestDigest: 'a'.repeat(64), idempotencyKey: randomUUID(), revisions: await metadata.revisions(context) };
+    const prepared = await Promise.all(dispatches.map((d, i) => d.prepare(contexts[i], request)));
+    assert.equal(prepared[0].intentId, prepared[1].intentId); let businessCalls = 0;
+    const commit = (i, preparation = prepared[i]) => dispatches[i].commit(preparation, async (c, now) => {
+      businessCalls++;
+      const plan = ledgers[i].plan(contexts[i], { purpose: 'raw-upload', capacityBytes: 700000, mediaType: 'text/csv' });
+      await ledgers[i].reserve(c, contexts[i], request.revisions, preparation.intentId, [plan], now, now + 600000);
+      return { receipt: { id: plan.id, revision: 1 }, events: [{ aggregateId: plan.id, aggregateRevision: 1, kind: 'object-cleanup', dueAt: now + 86400000, expiresAt: now + 172800000 }] };
+    });
+    const receipts = await Promise.all([commit(0), commit(1)]); assert.deepEqual(receipts[0], receipts[1]); assert.equal(businessCalls, 1);
+    const overQuota = await dispatches[1].prepare(other, { ...request, idempotencyKey: randomUUID() });
+    await assert.rejects(commit(1, overQuota), { code: 'USAGE_LIMIT_EXCEEDED' });
+    assert.equal((await db.transaction(c => c.query('SELECT * FROM sr_object'))).length, 1);
+    assert.equal((await db.transaction(c => c.query('SELECT * FROM sr_outbox'))).length, 1);
+    const gauge = await restricted.transaction(c => c.query('SELECT * FROM sr_storage_usage'), context);
+    assert.equal(Number(gauge[0].reserved_bytes), 700000);
+    for (const table of ['sr_dispatch_intent', 'sr_outbox', 'sr_object', 'sr_storage_usage', 'sr_object_pin']) {
+      assert.deepEqual((await tenantPool.query(`SELECT * FROM ${table}`)).rows, []);
+      assert.deepEqual(await restricted.transaction(c => c.query(`SELECT * FROM ${table}`), { tenantId: 'tenant-two', namespaceId: 'two' }), []);
+      await assert.rejects(tenantPool.query(`DELETE FROM ${table}`), { code: '42501' });
+    }
+    await assert.rejects(tenantPool.query('SELECT * FROM sr_object_schema'), { code: '42501' });
   });

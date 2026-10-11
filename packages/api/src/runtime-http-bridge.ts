@@ -2,7 +2,7 @@ import { IncomingMessage, ServerResponse, type Server } from 'node:http';
 import { Socket } from 'node:net';
 import { once } from 'node:events';
 import { dispatchHostedRequest } from './hosted-server.js';
-import type { RuntimeRequest, RuntimeResponse } from './runtime-ingress.js';
+import { applicationEnvelopeBytes, type RuntimeRequest, type RuntimeResponse } from './runtime-ingress.js';
 import { MetadataError } from './metadata-db.js';
 
 /** In-memory Node HTTP streams preserve the existing route/security boundary. */
@@ -16,7 +16,7 @@ export async function dispatchRuntimeRequest(server: Server, input: RuntimeReque
   const response = new ServerResponse(request), chunks: Buffer[] = []; let bytes = 0;
   const capture = (chunk: Buffer, callback: (error?: Error | null) => void) => {
     bytes += chunk.length;
-    if (bytes > 4 * 1024 * 1024) { callback(new MetadataError('RESPONSE_TOO_LARGE', 413)); return; }
+    if (bytes > Math.floor(applicationEnvelopeBytes * 3 / 4) - 16384) { callback(new MetadataError('RESPONSE_TOO_LARGE', 413)); return; }
     chunks.push(Buffer.from(chunk)); callback();
   };
   class MemorySocket extends Socket {
@@ -39,6 +39,7 @@ export async function dispatchRuntimeRequest(server: Server, input: RuntimeReque
     if (outputError) throw outputError;
     const raw = Buffer.concat(chunks), separator = raw.indexOf('\r\n\r\n');
     if (separator < 0) throw new MetadataError('HOSTED_RESPONSE_INVALID', 503);
+    if (separator > 16384) throw new MetadataError('HOSTED_RESPONSE_INVALID', 503);
     // writeHead(status, headers) need not populate getHeaders(). Read the wire
     // headers so CSP, nonce, referrer policy and content type survive unchanged.
     const headers: Record<string, string> = {}, cookies: string[] = [];
@@ -50,7 +51,9 @@ export async function dispatchRuntimeRequest(server: Server, input: RuntimeReque
       else if (!['connection', 'keep-alive', 'transfer-encoding'].includes(name)) headers[name] = headers[name] === undefined ? value : `${headers[name]}, ${value}`;
     }
     headers['cache-control'] = 'no-store';
-    return { statusCode: response.statusCode, headers, body: raw.subarray(separator + 4).toString('base64'), isBase64Encoded: true,
+    const result: RuntimeResponse = { statusCode: response.statusCode, headers, body: raw.subarray(separator + 4).toString('base64'), isBase64Encoded: true,
       ...(cookies.length ? { cookies } : {}) };
+    if (Buffer.byteLength(JSON.stringify(result)) > applicationEnvelopeBytes) throw new MetadataError('RESPONSE_TOO_LARGE', 413);
+    return result;
   } finally { signal.removeEventListener('abort', abort); response.detachSocket(output); request.destroy(); socket.destroy(); output.destroy(); }
 }

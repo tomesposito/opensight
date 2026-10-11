@@ -3,7 +3,7 @@ import { MetadataError, missing, type Database, type SqlConnection, type SqlRow 
 import { identifier, insertLinks, insertResource, resourceKey, resourceKinds, resourceLinks, type MetadataKind, type MetadataResource, type ResourceKey, type Scope } from './metadata-resources.js';
 import type { JsonObject } from './mapping.js';
 import { appendMetadataEvent } from './metadata-outbox.js';
-import { resourceBytes, type HostedUsage } from './hosted-usage.js';
+import type { HostedUsage } from './hosted-usage.js';
 
 export interface TenantContext extends Scope { readonly userId: string; readonly authorizationRevision: number }
 export interface Revisions { authorization: number; policy: number; configuration: number }
@@ -55,7 +55,7 @@ export class TenantMetadata {
       if (!rev || Number(rev.authorization) !== context.authorizationRevision) throw new MetadataError('AUTHORIZATION_REVISED', 403);
       const users = await c.query(`SELECT body FROM h1_resources WHERE ${predicates}`, keyValues(context, { kind: 'user', id: context.userId }));
       if (!users[0]) throw new MetadataError('UNKNOWN_PRINCIPAL', 403);
-      const before = writes && this.usage ? await resourceBytes(c, context) : 0;
+      const before = writes && this.usage ? await this.usage.storageBytes(c, context) : 0;
       const result = await work(c, { authorization: Number(rev.authorization), policy: Number(rev.policy), configuration: Number(rev.configuration) }, JSON.parse(String(users[0].body)) as JsonObject);
       if (writes) await this.usage?.storage(c, context, before);
       return result;

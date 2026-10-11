@@ -186,3 +186,18 @@ test('SR2b descriptors require exact, bounded framing before transfer or native 
     assert.throws(() => artifactDescriptor({ ...value, ...patch }, limits), { code: 'ARTIFACT_INVALID' });
   }
 });
+
+test('SR2d planned writes expose the exact cleanup key before PUT and cannot be forged, redirected or reused', async () => {
+  await runtime(async (scope, invocation) => {
+    const { transfer, calls } = fakeAws(invocation), local = await transfer.encode(scope, table(), limits);
+    const plan = transfer.planWrite(scope, identity, local);
+    assert.ok(Object.isFrozen(plan)); assert.ok(Object.isFrozen(plan.identity)); assert.equal(calls.length, 0);
+    await assert.rejects(transfer.upload(scope, identity, local, { ...plan }), { code: 'ARTIFACT_WRITE_HANDLE_INVALID' });
+    await assert.rejects(transfer.upload(scope, { ...identity, owner: 'other' }, local, plan), { code: 'ARTIFACT_WRITE_HANDLE_INVALID' });
+    const reference = await transfer.upload(scope, identity, local, plan);
+    assert.equal(reference.key, plan.key); assert.equal(calls[0].input.Key, plan.key); assert.equal(calls[0].input.ServerSideEncryption, 'AES256');
+    await assert.rejects(transfer.upload(scope, identity, local, plan), { code: 'ARTIFACT_WRITE_HANDLE_INVALID' });
+    assert.equal(calls.filter(c => c.constructor.name === 'PutObjectCommand').length, 1);
+    await local.close();
+  });
+});

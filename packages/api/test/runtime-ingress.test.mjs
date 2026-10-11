@@ -63,3 +63,24 @@ test('SR1 pre-DB method validation matches existing data and job routes', () => 
     }
   }
 });
+
+test('SR2d control JSON is bounded at 1 MiB before SQL, with a 2 MiB envelope ceiling', async () => {
+  let opened = 0;
+  const runtime = createRuntime(runtimeEnv, { databases() { opened++; assert.fail('oversize request touched SQL'); } });
+  const e = event('/api/api/uploads/reservations', 'POST'); e.body = 'x'.repeat(1024 * 1024);
+  assert.equal(adaptGatewayRequest(e, runtimeEnv()).body.length, 1024 * 1024);
+  e.body += 'x'; assert.equal((await runtime.lambda(e, context)).statusCode, 413);
+  e.isBase64Encoded = true; e.body = Buffer.alloc(1024 * 1024).toString('base64');
+  assert.equal(adaptGatewayRequest(e, runtimeEnv()).body.length, 1024 * 1024);
+  e.body = Buffer.alloc(1024 * 1024 + 1).toString('base64');
+  assert.equal(JSON.parse((await runtime.lambda(e, context)).body).errorCode, 'CONTROL_PAYLOAD_TOO_LARGE');
+  e.body = ''; e.unused = 'x'.repeat(2 * 1024 * 1024);
+  assert.equal((await runtime.lambda(e, context)).statusCode, 413); assert.equal(opened, 0);
+  for (const [path, methods] of [['/api/api/uploads/reservations', ['POST']], ['/api/api/uploads/reservations/id', ['GET', 'DELETE']],
+    ['/api/api/uploads/reservations/id/complete', ['POST']], ['/api/api/operations/id', ['GET', 'DELETE']], ['/api/api/operations/id/result/0', ['GET']]]) {
+    for (const method of ['GET', 'POST', 'PUT', 'DELETE']) {
+      if (methods.includes(method)) assert.equal(adaptGatewayRequest(event(path, method), runtimeEnv()).method, method);
+      else assert.throws(() => adaptGatewayRequest(event(path, method), runtimeEnv()));
+    }
+  }
+});

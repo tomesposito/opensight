@@ -17,7 +17,7 @@ export interface PrivateRuntimeDependencies extends Pick<RuntimeDependencies, 'd
 export function createPrivateRuntime(environment: () => NodeJS.ProcessEnv = () => process.env, dependencies: PrivateRuntimeDependencies = {}) {
   const configured = () => { const env = environment(); if (runtimeMode(env) !== 'lambda') throw new MetadataError('LAMBDA_MODE_REQUIRED', 503); deploymentId(env); return env; };
   const invoke = <T>(env: NodeJS.ProcessEnv, context: InvocationContext, work: (db: InvocationDatabases, scope: InvocationScope) => Promise<T>) =>
-    new InvocationScope(invocationDeadline(context, Date.now(), 110000)).run(scope => work((dependencies.databases ?? invocationDatabases)(scope, env, 3000), scope));
+    new InvocationScope(invocationDeadline(context, Date.now(), 110000)).run(scope => work((dependencies.databases ?? invocationDatabases)(scope, env, 20000), scope));
   return {
     /** Private IAM invocation only; not an HTTP route. Keep the existing operator check. */
     async migration(raw: unknown, context: InvocationContext): Promise<{ state: 'migrated'; maintenance: true }> {
@@ -35,12 +35,14 @@ export function createPrivateRuntime(environment: () => NodeJS.ProcessEnv = () =
       const env = configured(), envelope = object(raw, ['Records']);
       if (!Array.isArray(envelope.Records) || envelope.Records.length !== 1) throw new MetadataError('SCHEDULE_EVENT_INVALID', 400);
       const record = object(envelope.Records[0]), id = identifier(record.messageId);
-      if (!env.OPENSIGHT_WORK_QUEUE_ARN || record.eventSource !== 'aws:sqs' || record.eventSourceARN !== env.OPENSIGHT_WORK_QUEUE_ARN
+      const recovery = !!env.OPENSIGHT_RECOVERY_QUEUE_ARN && record.eventSourceARN === env.OPENSIGHT_RECOVERY_QUEUE_ARN;
+      if (!env.OPENSIGHT_WORK_QUEUE_ARN || env.OPENSIGHT_WORK_QUEUE_ARN === env.OPENSIGHT_RECOVERY_QUEUE_ARN || record.eventSource !== 'aws:sqs' || !recovery && record.eventSourceARN !== env.OPENSIGHT_WORK_QUEUE_ARN
         || typeof record.body !== 'string' || Buffer.byteLength(record.body) > 4096) throw new MetadataError('SCHEDULE_EVENT_INVALID', 400);
       try {
         const body = object(JSON.parse(record.body) as unknown, ['version', 'deploymentEpoch', 'eventId', 'kind']);
         if (body.version !== 1 || !Number.isSafeInteger(body.deploymentEpoch) || Number(body.deploymentEpoch) < 1 || !['due', 'execute', 'recover', 'deliver'].includes(String(body.kind))) throw new MetadataError('SCHEDULE_EVENT_INVALID', 400);
         const event: ScheduledEvent = { version: 1, deploymentEpoch: Number(body.deploymentEpoch), eventId: identifier(body.eventId), kind: body.kind as ScheduledEvent['kind'] };
+        if (recovery !== (event.kind === 'recover')) throw new MetadataError('SCHEDULE_EVENT_INVALID', 400);
         if (!dependencies.scheduled) throw new MetadataError('SERVERLESS_DISPATCH_REQUIRED', 503);
         await invoke(env, context, (db, scope) => dependencies.scheduled!(event, db, scope, env));
         return { batchItemFailures: [] };

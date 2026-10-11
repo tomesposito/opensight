@@ -46,14 +46,24 @@ export async function resourceBytes(c: SqlConnection, scope: Scope): Promise<num
  * Storage uses the caller's H1 tenant transaction; no private SQL grants are needed. */
 export class HostedUsage {
   readonly config: Entitlements;
-  constructor(readonly db: Database, config: Entitlements, readonly clock = Date.now) { this.config = structuredClone(config); }
+  constructor(readonly db: Database, config: Entitlements, readonly clock = Date.now, private readonly objectDeployment?: string) { this.config = structuredClone(config); }
   entitlement(scope: Scope): Entitlement {
     const limit = Object.hasOwn(this.config.tenants, scope.tenantId) ? this.config.tenants[scope.tenantId] : this.config.defaults;
     if (!limit) throw new MetadataError('ENTITLEMENT_UNRESOLVED', 503);
     return limit;
   }
+  async storageBytes(c: SqlConnection, scope: Scope): Promise<number> {
+    const metadata = await resourceBytes(c, scope);
+    if (this.objectDeployment === undefined) return metadata;
+    const row = (await c.query('SELECT reserved_bytes, live_bytes FROM sr_storage_usage WHERE deployment = ? AND tenant_id = ? AND namespace_id = ?',
+      [this.objectDeployment, scope.tenantId, scope.namespaceId]))[0];
+    if (!row) return metadata;
+    const reserved = Number(row.reserved_bytes), live = Number(row.live_bytes);
+    if (![reserved, live, metadata + reserved + live].every(n => Number.isSafeInteger(n) && n >= 0)) throw new MetadataError('ENTITLEMENT_UNRESOLVED', 503);
+    return metadata + reserved + live;
+  }
   async storage(c: SqlConnection, scope: Scope, before: number): Promise<void> {
-    const limit = this.entitlement(scope), bytes = await resourceBytes(c, scope);
+    const limit = this.entitlement(scope), bytes = await this.storageBytes(c, scope);
     if (bytes > limit.storageBytes && bytes > before) throw new MetadataError('USAGE_LIMIT_EXCEEDED', 429);
     // Exact committed logical-byte gauge. Stored in the existing append-only H1
     // stream so the tenant role cannot alter private entitlement counters.
@@ -91,7 +101,7 @@ export class HostedUsage {
         const labels = `tenant=${JSON.stringify(r.tenant_id)},metric=${JSON.stringify(r.metric)},period=${JSON.stringify(period)}`;
         lines.push(`opensight_usage_admitted{${labels}} ${Number(r.admitted)}`, `opensight_usage_denied{${labels}} ${Number(r.denied)}`);
       }
-      for (const r of await c.query('SELECT tenant_id, namespace_id FROM h1_namespaces ORDER BY tenant_id')) lines.push(`opensight_storage_bytes{tenant=${JSON.stringify(r.tenant_id)}} ${await resourceBytes(c, { tenantId: String(r.tenant_id), namespaceId: String(r.namespace_id) })}`);
+      for (const r of await c.query('SELECT tenant_id, namespace_id FROM h1_namespaces ORDER BY tenant_id')) lines.push(`opensight_storage_bytes{tenant=${JSON.stringify(r.tenant_id)}} ${await this.storageBytes(c, { tenantId: String(r.tenant_id), namespaceId: String(r.namespace_id) })}`);
       return `${lines.join('\n')}\n`;
     });
   }

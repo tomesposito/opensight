@@ -4,13 +4,13 @@ import { MetadataError } from './metadata-db.js';
 import { object } from './metadata-resources.js';
 import type { HostedCacheAdapter } from './hosted-cache.js';
 import { ManifestStore, manifestArtifactLimits, type ManifestDefinition, type ManifestRead } from './manifests.js';
-import { ArtifactTransfer, type LocalArtifact } from './artifact-transfer.js';
-import { artifactProvenance, type ArtifactDescriptor, type ArtifactIdentity } from './artifact-schema.js';
+import { ArtifactTransfer, type LocalArtifact, type PlannedArtifactWrite } from './artifact-transfer.js';
+import { artifactProvenance } from './artifact-schema.js';
 import type { AttemptHandle } from './coordination.js';
 
 export interface ArtifactWritePreparation {
   /** Must durably reserve storage and prearm recovery before resolving. */
-  prepareWrite(identity: ArtifactIdentity, descriptor: Readonly<ArtifactDescriptor>): Promise<void>;
+  prepareWrite(write: PlannedArtifactWrite): Promise<void>;
 }
 function invalid(): never { throw new MetadataError('ARTIFACT_CACHE_CONTEXT_INVALID', 403); }
 /** One invocation/attempt. Byte handles never become authorization for another request. */
@@ -71,9 +71,10 @@ export class ArtifactCache implements HostedCacheAdapter {
       const before = table.bytes; table.setCachedInputs(this.provenance(table)); scope.memory(table.bytes - before);
       local = await this.transfer.encode(scope, table, manifestArtifactLimits(details));
       const identity = this.manifests.identity(details, target);
-      await this.preparation.prepareWrite(identity, local.descriptor);
+      const write = this.transfer.planWrite(scope, identity, local);
+      await this.preparation.prepareWrite(write);
       await this.verify(); this.scope(scope);
-      const reference = await this.transfer.upload(scope, identity, local);
+      const reference = await this.transfer.upload(scope, identity, local, write);
       await this.manifests.publish(this.attempt, reference, this.consumed); this.scope(scope);
     } catch (error) {
       const code = error instanceof MetadataError ? error.code : 'BLAZE_REFRESH_FAILED';
