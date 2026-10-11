@@ -62,7 +62,12 @@ and changing bytes under an existing asset key.
 An API-behavior CloudFront Function validates the canonical viewer host, literal
 path, query rejection, singleton headers, origin and forbidden principal/proxy
 headers using the existing SR1 boundary semantics. CloudFront's behavior enforces
-HTTPS. Reject viewer-supplied ingress headers and CloudFront-Viewer-Address.
+HTTPS. Reject viewer-supplied ingress headers. In this explicitly selected
+viewer-function deployment, discard `CloudFront-Viewer-Address` before shared
+viewer validation: the managed policy can supply it before the function runs.
+Whether viewer-supplied or platform-added, that header has no identity authority.
+The shared unselected viewer validator continues to reject it. Other principal,
+proxy and private ingress headers retain their existing rejection semantics.
 The function has no secret and performs no network request. On accepted requests
 it sets `x-opensight-ingress-peer` from the platform's `event.viewer.ip` only.
 Never derive it from X-Forwarded-For or another viewer header. Do not log requests.

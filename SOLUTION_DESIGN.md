@@ -12,6 +12,7 @@
 
 | Date       | Change |
 |------------|--------|
+| 2026-10-11 | SR4a live edge correction discards nonauthoritative CloudFront viewer-address metadata and uses native UTF-8 byte counting; event viewer IP and private origin authorization remain mandatory. |
 | 2026-10-10 | SR4a SMTP validation specifies a tagged sender/recipient-restricted IAM login, private key derivation outside Terraform, SES sandbox identity verification and a twenty-attempt mail cap. Request, migration and probe remain the three isolated functions; no public ingress is added. |
 | 2026-10-10 | D-28 confirms 8 MiB direct uploads, asynchronous ingestion status and the 1 MiB control JSON ceiling. Freeze SR2a's SQL admission/fencing foundation as a separate implementation checkpoint; all application storage/dispatch gates remain closed. |
 | 2026-10-10 | Clarify SR2a deadline accounting before implementation: deduct admission wait time from platform remaining duration, recheck SQL time before committing admission/publication, and allow cancellation at an exhausted fence without wrapping it. |
@@ -1322,6 +1323,14 @@ attempts can wait for a token. URI scope-down eligibility remains unconfirmed;
 actual ACTIVE/FREE acceptance is required. No paid plan is selected. Only an
 owned, empty, rolled-back subscription stack may be removed for retry; all
 serving/data resources and the DNS acceptance gate remain protected.
+
+Live edge evidence confirms the managed policy supplies CloudFront viewer-address
+metadata before the function runs. The selected viewer-function packaging drops
+`CloudFront-Viewer-Address` before shared validation and derives the only trusted
+peer from `event.viewer.ip`. A forged value is also discarded and cannot influence
+identity; all other existing principal/proxy/private-header checks remain. Use
+runtime 2.0 native UTF-8 byte counting to retain the shared 16 KiB limit within
+edge compute. D-32 records the correction; origin authorization remains required.
 
 ---
 
