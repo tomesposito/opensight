@@ -112,12 +112,14 @@ export interface AuthorVisual {
   imported?: ImportedVisual;
 }
 export interface Placement { i: string; x: number; y: number; w: number; h: number }
-export interface SheetLayoutSettings { rowHeight: number; margin: number }
-export const DEFAULT_LAYOUT_SETTINGS = (): SheetLayoutSettings => ({ rowHeight: 42, margin: 12 });
+export interface SheetLayoutSettings { rowHeight: number; margin: number; optimizeWidth?: number }
+export const DEFAULT_LAYOUT_SETTINGS = (): SheetLayoutSettings => ({ rowHeight: 42, margin: 12, optimizeWidth: 1600 });
 export function layoutSettingsValid(value: unknown): value is SheetLayoutSettings {
+  const record = value as Record<string, unknown>;
   return !!value && typeof value === 'object' && !Array.isArray(value) &&
-    Number.isInteger((value as Record<string, unknown>).rowHeight) && Number((value as Record<string, unknown>).rowHeight) >= 20 && Number((value as Record<string, unknown>).rowHeight) <= 120 &&
-    Number.isInteger((value as Record<string, unknown>).margin) && Number((value as Record<string, unknown>).margin) >= 0 && Number((value as Record<string, unknown>).margin) <= 48;
+    Number.isInteger(record.rowHeight) && Number(record.rowHeight) >= 20 && Number(record.rowHeight) <= 120 &&
+    Number.isInteger(record.margin) && Number(record.margin) >= 0 && Number(record.margin) <= 48 &&
+    (record.optimizeWidth === undefined || (Number.isInteger(record.optimizeWidth) && Number(record.optimizeWidth) >= 480 && Number(record.optimizeWidth) <= 4000));
 }
 export interface AuthorSheet { objects?: SheetObject[]; controls: AuthorControl[]; id: string; name: string; visuals: AuthorVisual[]; layout: Placement[]; selectedId: string | null; imported?: ImportedSheet; layoutSettings?: SheetLayoutSettings }
 export interface AuthorDraft {
@@ -193,7 +195,7 @@ export type AuthorAction =
   | { type: 'sheet-remap'; id: string }
   | { type: 'analysis-title'; title: string }
   | { type: 'dataset'; dataset?: AuthorDataset }
-  | { type: 'sheet-add' }
+  | { type: 'sheet-add'; name?: string; settings?: SheetLayoutSettings }
   | { type: 'control-add'; control: Omit<AuthorControl, 'id'> }
   | { type: 'control-remove'; id: string }
   | { type: 'control-move'; id: string; offset: -1 | 1 }
@@ -268,7 +270,9 @@ export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorD
   }
   if (action.type === 'sheet-add') {
     const id = nextId('sheet', [...draft.sheets.map(s => s.id), ...originalIds(draft, false), ...draft.sheets.flatMap(s => s.visuals.flatMap(v => (v.navigationActions ?? []).map(a => a.targetSheetId)))]);
-    return { ...draft, sheets: [...draft.sheets, newSheet(id, `Sheet ${id.slice(6)}`)], activeSheetId: id };
+    const sheet = newSheet(id, action.name?.trim() || `Sheet ${id.slice(6)}`);
+    if (action.settings && layoutSettingsValid(action.settings)) sheet.layoutSettings = { ...action.settings };
+    return { ...draft, sheets: [...draft.sheets, sheet], activeSheetId: id };
   }
   if (action.type === 'sheet-select') return draft.sheets.some(s => s.id === action.id) ? { ...draft, activeSheetId: action.id } : draft;
   if (action.type === 'sheet-remap') return { ...draft, sheets: draft.sheets.map(s => s.id === action.id
