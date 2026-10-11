@@ -32,7 +32,16 @@ export function executionBudgetChange(value) {
     || !Number.isSafeInteger(value.expectedBudgetVersion) || value.expectedBudgetVersion < 2 || value.expectedBudgetVersion >= 2147483647) throw Error('INITIAL_BUDGET_CHANGE_INVALID');
   return { expectedBudgetVersion: value.expectedBudgetVersion, ...initialBudgetChange({ previousBudgetDigest: value.previousBudgetDigest, targetBudgetDigest: value.targetBudgetDigest }) };
 }
-export function activationRequired(record, release, account, deployment, operationId, patch) {
+export function activationRequired(record, release, account, deployment, operationId, patch, requestPatch) {
+  if (requestPatch) {
+    if (!patch || Object.keys(requestPatch).sort().join() !== 'account,activationImageUri,deployment,imageUri,operationId,previousImageUri,purpose,sourceCommit,version'
+      || requestPatch.version !== 1 || requestPatch.account !== account || requestPatch.deployment !== deployment || requestPatch.operationId !== operationId
+      || requestPatch.purpose !== 'complete-buffered-http-requests' || requestPatch.activationImageUri !== record?.imageUri
+      || requestPatch.previousImageUri !== patch.imageUri || requestPatch.imageUri !== release.image_uri || requestPatch.sourceCommit !== release.source_commit
+      || !/^[a-f0-9]{40}$/.test(requestPatch.sourceCommit ?? '') || [requestPatch.previousImageUri, requestPatch.activationImageUri].includes(requestPatch.imageUri)) throw Error('INITIAL_REQUEST_REPAIR_INVALID');
+    activationRequired(record, { image_uri: requestPatch.previousImageUri, source_commit: patch.sourceCommit }, account, deployment, operationId, patch);
+    administrationImage({ image_uri: requestPatch.imageUri }, account, deployment); return;
+  }
   if (record?.version !== 1 || record.account !== account || record.deployment !== deployment || record.imageUri !== (patch?.activationImageUri ?? release.image_uri) || record.operationId !== operationId
     || record.result?.state !== 'active' || record.result.epoch !== 1) throw Error('INITIAL_ACTIVATION_REQUIRED');
   if (patch) {
@@ -90,7 +99,8 @@ export async function main(args = process.argv.slice(2), environment = process.e
     const configuration = () => sha256(Buffer.concat(['pilot.tfvars.json', 'validation.backend.hcl', 'pilot-release.json',
       ...(read('pilot.tfvars.json').administration_image_uri ? ['pilot-administration-release.json'] : []),
       ...(existsSync(path('pilot-connection-repair.json')) ? ['pilot-connection-repair.json'] : []),
-      ...(existsSync(path('pilot-execution-change.json')) ? ['pilot-execution-change.json'] : [])].map(file)));
+      ...(existsSync(path('pilot-execution-change.json')) ? ['pilot-execution-change.json'] : []),
+      ...(existsSync(path('pilot-request-repair.json')) ? ['pilot-request-repair.json'] : [])].map(file)));
     const state = () => {
       const metadata = aws('s3api', 'get-object', ['--bucket', bootstrap.state_bucket, '--expected-bucket-owner', account, '--key', 'validation/terraform.tfstate', path('pilot.remote-state.json')]);
       const saved = read('pilot.remote-state.json');
@@ -101,17 +111,20 @@ export async function main(args = process.argv.slice(2), environment = process.e
     const release = read('pilot-release.json');
     if (!new RegExp(`^${account}\\.dkr\\.ecr\\.us-east-1\\.amazonaws\\.com/${deployment}@sha256:[a-f0-9]{64}$`).test(release.image_uri ?? '')) throw Error('PINNED_RELEASE_REQUIRED');
     const activation = () => activationRequired(read('pilot-activation.json'), release, account, deployment, read('initial-testers.json').operationId,
-      existsSync(path('pilot-connection-repair.json')) ? read('pilot-connection-repair.json') : undefined);
+      existsSync(path('pilot-connection-repair.json')) ? read('pilot-connection-repair.json') : undefined,
+      existsSync(path('pilot-request-repair.json')) ? read('pilot-request-repair.json') : undefined);
     if (operation === 'prepare') {
       source();
-      if (!['dependencies', 'runtime', 'consumers', 'administration', 'connection-repair'].includes(selection)) throw Error('PILOT_STAGE_REQUIRED');
+      if (!['dependencies', 'runtime', 'consumers', 'administration', 'connection-repair', 'request-repair'].includes(selection)) throw Error('PILOT_STAGE_REQUIRED');
       if (selection !== 'dependencies' && !pilot) throw Error('PILOT_DEPENDENCIES_REQUIRED');
       if (selection === 'consumers') activation();
       const current = inventory();
-      if (selection === 'connection-repair') {
+      if (selection === 'connection-repair' || selection === 'request-repair') {
         activation();
-        if (existsSync(path('pilot-connection-repair.json'))) throw Error('INITIAL_CONNECTION_REPAIR_ALREADY_SELECTED');
-        const selected = read('pilot.tfvars.json'), ingress = read('ingress.tfvars.json'), candidate = read('pilot-connection-repair-release.json');
+        const requestRepair = selection === 'request-repair', recordName = requestRepair ? 'pilot-request-repair.json' : 'pilot-connection-repair.json';
+        if (existsSync(path(recordName))) throw Error('INITIAL_REPAIR_ALREADY_SELECTED');
+        if (requestRepair && !existsSync(path('pilot-connection-repair.json'))) throw Error('INITIAL_CONNECTION_REPAIR_REQUIRED');
+        const selected = read('pilot.tfvars.json'), ingress = read('ingress.tfvars.json'), candidate = read(requestRepair ? 'pilot-request-repair-release.json' : 'pilot-connection-repair-release.json');
         if (current.deployment !== deployment || !current.pilot_runtime || !current.consumers || selected.image_uri !== release.image_uri
           || selected.account_id !== account || selected.deployment !== deployment || ingress.publish_site) throw Error('INITIAL_CONNECTION_REPAIR_INVALID');
         const apex = `${new URL(operator.public_origin).hostname}.`;
@@ -125,12 +138,14 @@ export async function main(args = process.argv.slice(2), environment = process.e
           const fn = aws('lambda', 'get-function', ['--function-name', `${deployment}-${name}`]); owned(fn.Tags, deployment);
           if (fn.Code.ResolvedImageUri !== release.image_uri || fn.Configuration.State !== 'Active' || fn.Configuration.LastUpdateStatus !== 'Successful') throw Error('INITIAL_CONNECTION_REPAIR_INVALID');
         }
-        const patch = { version: 1, purpose: 'release-idle-preflight-clients', account, deployment, operationId: read('initial-testers.json').operationId,
-          activationImageUri: release.image_uri, imageUri: image, sourceCommit: candidate.source_commit };
+        const patch = { version: 1, purpose: requestRepair ? 'complete-buffered-http-requests' : 'release-idle-preflight-clients', account, deployment, operationId: read('initial-testers.json').operationId,
+          activationImageUri: requestRepair ? read('pilot-activation.json').imageUri : release.image_uri,
+          ...(requestRepair ? { previousImageUri: release.image_uri } : {}), imageUri: image, sourceCommit: candidate.source_commit };
         const next = { image_uri: image, source_commit: candidate.source_commit };
-        activationRequired(read('pilot-activation.json'), next, account, deployment, patch.operationId, patch);
-        write('pilot-connection-repair.json', patch); write('pilot-release.json', next); write('pilot.tfvars.json', { ...selected, image_uri: image });
-        console.log('Initial connection repair selected; original activation evidence and SQL state are preserved. Review a fresh plan.'); return;
+        activationRequired(read('pilot-activation.json'), next, account, deployment, patch.operationId,
+          requestRepair ? read('pilot-connection-repair.json') : patch, requestRepair ? patch : undefined);
+        write(recordName, patch); write('pilot-release.json', next); write('pilot.tfvars.json', { ...selected, image_uri: image });
+        console.log('Initial compatible repair selected; original activation evidence and SQL state are preserved. Review a fresh plan.'); return;
       }
       if (selection === 'administration') {
         activation();

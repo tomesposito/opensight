@@ -135,3 +135,22 @@ test('SR4b5 operator binds the exact prior and returned execution budget version
   for (const version of [undefined, 1, 3, 2147483647]) assert.throws(() => safeInitialResult('extend-pilot-execution', result, version), /INITIAL_RESULT_INVALID/);
   assert.throws(() => safeInitialResult('extend-pilot-execution', { ...result, extra: true }, 2), /INITIAL_RESULT_INVALID/);
 });
+
+test('SR4b6 request repair binds both prior provenance links and the exact replacement', () => {
+  const account = '000000000000', deployment = 'synthetic', operationId = 'bootstrap', image = `${account}.dkr.ecr.us-east-1.amazonaws.com/${deployment}@sha256:`;
+  const original = image + 'a'.repeat(64), previous = image + 'b'.repeat(64), target = image + 'c'.repeat(64);
+  const activation = { version: 1, account, deployment, operationId, imageUri: original, result: { state: 'active', epoch: 1 } };
+  const connection = { version: 1, account, deployment, operationId, activationImageUri: original, imageUri: previous, sourceCommit: 'd'.repeat(40), purpose: 'release-idle-preflight-clients' };
+  const release = { image_uri: target, source_commit: 'e'.repeat(40) };
+  const patch = { version: 1, account, deployment, operationId, activationImageUri: original, previousImageUri: previous, imageUri: target, sourceCommit: release.source_commit, purpose: 'complete-buffered-http-requests' };
+  const before = structuredClone({ activation, connection });
+  activationRequired(activation, release, account, deployment, operationId, connection, patch);
+  assert.deepEqual({ activation, connection }, before);
+  assert.throws(() => activationRequired(activation, release, account, deployment, operationId, undefined, patch));
+  for (const changed of [{ previousImageUri: original }, { activationImageUri: previous }, { imageUri: previous }, { sourceCommit: 'f'.repeat(40) },
+    { operationId: 'other' }, { purpose: 'arbitrary-upgrade' }, { account: '111111111111' }, { unknown: true }])
+    assert.throws(() => activationRequired(activation, release, account, deployment, operationId, connection, { ...patch, ...changed }));
+  assert.throws(() => activationRequired(activation, release, account, deployment, operationId, { ...connection, activationImageUri: target }, patch));
+  const foreign = target.replace('/synthetic@', '/foreign@');
+  assert.throws(() => activationRequired(activation, { ...release, image_uri: foreign }, account, deployment, operationId, connection, { ...patch, imageUri: foreign }), /PINNED_ADMINISTRATION_REQUIRED/);
+});
