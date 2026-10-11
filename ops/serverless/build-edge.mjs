@@ -50,16 +50,15 @@ export async function edgeSource() {
 function handler(event) {
   try {
     const request = event.request;
+    // D-32: the managed policy also supplies this metadata before the function.
+    // It has no identity authority in viewer-function mode, including when forged.
+    delete request.headers['cloudfront-viewer-address'];
     // Every API behavior enforces HTTPS before forwarding to the origin.
     validateViewerRequest({ headers: request.headers, uri: request.uri, querystring: request.querystring, protocol: 'https' }, __OPENSIGHT_ORIGIN__);
     if (!event.viewer || typeof event.viewer.ip !== 'string' || !/^[a-fA-F0-9:.]{3,45}$/.test(event.viewer.ip)) denied();
     request.headers['x-opensight-ingress-peer'] = { value: event.viewer.ip };
     return request;
   } catch (_) {
-    // Temporary fixed-category diagnostics: never record header names/values.
-    const h = event.request.headers;
-    console.log('EDGE_REJECT_' + (_.code === 'UNTRUSTED_INGRESS' ? 'TRUST' : _.code === 'HOSTED_REQUEST_INVALID' ? 'GRAMMAR' : _.code === 'FORGED_PRINCIPAL' ? 'PRINCIPAL' : 'OTHER'));
-    console.log('EDGE_REJECT_FLAGS_' + [h['cloudfront-viewer-address'] !== undefined, h['x-forwarded-for'] !== undefined, h['x-forwarded-proto'] !== undefined, h['x-forwarded-port'] !== undefined, h.host.value !== __OPENSIGHT_HOST__, h.origin !== undefined && h.origin.value !== __OPENSIGHT_ORIGIN__].map(v => v ? 1 : 0).join(''));
     return { statusCode: 403, statusDescription: 'Forbidden', headers: { 'cache-control': { value: 'no-store' } } };
   }
 }`;

@@ -22,7 +22,7 @@ test('SR4a generated edge boundary is current, within CloudFront size limit and 
 });
 test('SR4a edge executes shared path/header rejection without Node APIs and cannot accept forged provenance', () => {
   const bad = [];
-  for (const name of ['x-user', 'x-role', 'x-tenant-id', 'x-opensight-ingress-peer', 'x-opensight-ingress-secret', 'x-forwarded-for', 'x-forwarded-host', 'forwarded', 'cloudfront-viewer-address']) {
+  for (const name of ['x-user', 'x-role', 'x-tenant-id', 'x-opensight-ingress-peer', 'x-opensight-ingress-secret', 'x-forwarded-for', 'x-forwarded-host', 'forwarded']) {
     const e = frame(); e.request.headers[name] = { value: 'forged' }; bad.push(e);
   }
   for (const path of ['/api/api/host', '/api/api/../session', '/api/api/%73ession', '/api//api/session', '/api/api/namespaces/n/startup', '/api/api/session?token=anything', '/api/api/auth/unknown', '/index.html']) { const e = frame(); e.request.uri = path; bad.push(e); }
@@ -54,5 +54,17 @@ test('SR4a larger header sets preserve UTF-8 byte ceilings, duplicate rejection 
     const e = structuredClone(base); e.request.headers[name] = { value };
     assert.throws(() => validateViewerRequest({ ...e.request, protocol: 'https' }, origin));
     assert.equal(context.handler(e).statusCode, 403);
+  }
+});
+
+test('SR4a edge discards nonauthoritative viewer-address metadata before deriving its own peer', () => {
+  for (const field of [{ value: '198.51.100.199:54321' }, { value: 'malformed,forged' }, { value: 'ignored', multiValue: [{ value: 'forged' }, { value: 'also-forged' }] }]) {
+    const e = frame(); e.request.headers['cloudfront-viewer-address'] = field;
+    // The generic viewer boundary still denies this field. Only selected edge
+    // packaging discards it, independent of its claimed address or provenance.
+    assert.throws(() => validateViewerRequest({ ...e.request, protocol: 'https' }, origin));
+    const result = context.handler(e);
+    assert.equal(result.headers['x-opensight-ingress-peer'].value, e.viewer.ip);
+    assert.equal(result.headers['cloudfront-viewer-address'], undefined);
   }
 });
