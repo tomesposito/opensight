@@ -17,6 +17,9 @@ Prepare `ingress-release.json` there with these fields:
 - `frontend_directory`: the canonical absolute path of the reviewed browser build.
 - `frontend_manifest_sha256`: SHA-256 of that build's `manifest.json`.
 
+Package the frontend into a fresh directory. Reusing a packaging destination can
+retain stale files or an old manifest; the release validator rejects that output.
+
 The image must contain `packages/api/dist/aws-authorizer.js`. The first request
 version remains frozen; activation follows separately. The operator copies only
 the current ingress key from the existing operator secret to private Terraform
