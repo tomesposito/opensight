@@ -70,7 +70,7 @@ resource "aws_lambda_function" "authorizer" {
   architectures                  = ["arm64"]
   timeout                        = 10
   memory_size                    = 256
-  reserved_concurrent_executions = 2
+  reserved_concurrent_executions = var.authorizer_concurrency
   image_config { command = ["packages/api/dist/aws-authorizer.handler"] }
   environment {
     variables = merge(local.ingress_environment, { OPENSIGHT_INGRESS_SECRET_ARN = aws_secretsmanager_secret.ingress.arn })

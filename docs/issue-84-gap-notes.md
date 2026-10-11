@@ -259,3 +259,13 @@ page errors or external requests; 148 frames matched SR3b byte for byte. Visual
 inspection found no new layout gap. README media still reflects the latest UI
 phase. [Ingress evidence](phase5-sr4a-ingress-evidence.md) records the offline
 suite and cloud checks separately; public application activation remains pending.
+
+## SR4b1 initial activation candidate
+
+No product UI source changed; the hosted frontend manifest is byte-identical to
+SR4a. The rebuilt 251-frame tour completed without page errors or external
+requests. Across frames and feature captures, 159 of 257 PNGs match the prior
+capture exactly. Inspected differences are timestamps, focus animation and the
+transient save toast. No new layout gap was found; existing README media remains
+current. [Activation evidence](phase5-sr4b1-activation-evidence.md) records the
+2,446-pass root suite and the remaining cloud activation/acceptance gates.

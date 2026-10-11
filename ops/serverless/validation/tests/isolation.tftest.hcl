@@ -74,3 +74,89 @@ run "restrict_synthetic_mail" {
     error_message = "The isolated SMTP identity may send only the approved synthetic message."
   }
 }
+
+run "pilot_dependencies" {
+  command = plan
+  variables { deployment_profile = "pilot" }
+  assert {
+    condition     = length(aws_lambda_function.validation) == 3 && aws_lambda_function.validation["probe"].reserved_concurrent_executions == 1 && length(aws_sqs_queue.business) == 2 && length(aws_sqs_queue.business_dead) == 3 && length(aws_lambda_event_source_mapping.business) == 0
+    error_message = "Dependencies must preserve the isolated probe and keep consumers absent."
+  }
+  assert {
+    condition     = aws_rds_cluster.validation.tags.OpenSightStage == "pilot" && aws_s3_bucket_lifecycle_configuration.synthetic.rule[0].filter[0].prefix == "probe/"
+    error_message = "Promoted data must be protected from validation cleanup and synthetic expiration."
+  }
+}
+run "pilot_runtime_disabled_consumers" {
+  command = plan
+  variables {
+    deployment_profile   = "pilot"
+    enable_pilot_runtime = true
+  }
+  assert {
+    condition     = length(aws_lambda_function.validation) == 5 && aws_lambda_function.validation["request"].reserved_concurrent_executions == 4 && aws_lambda_function.validation["probe"].reserved_concurrent_executions == 0 && aws_lambda_function.validation["migration"].image_config[0].command == tolist(["packages/api/dist/aws-lambda.administration"])
+    error_message = "Pilot caps must allow four requests and retire the synthetic probe."
+  }
+  assert {
+    condition     = alltrue([for name in ["work", "recovery"] : aws_lambda_function.validation[name].reserved_concurrent_executions == 2 && aws_lambda_function.validation[name].timeout == 120 && aws_lambda_event_source_mapping.business[name].batch_size == 1 && !aws_lambda_event_source_mapping.business[name].enabled && aws_lambda_event_source_mapping.business[name].scaling_config[0].maximum_concurrency == 2])
+    error_message = "Consumers must remain disabled with bounded per-queue concurrency."
+  }
+  assert {
+    condition     = alltrue([for queue in aws_sqs_queue.business : queue.visibility_timeout_seconds == 720 && queue.message_retention_seconds == 345600 && queue.sqs_managed_sse_enabled && jsondecode(queue.redrive_policy).maxReceiveCount == 5]) && alltrue([for queue in aws_sqs_queue.business_dead : queue.message_retention_seconds == 1209600 && queue.sqs_managed_sse_enabled])
+    error_message = "Queue retention, encryption and redrive must match the pilot contract."
+  }
+  assert {
+    condition     = one(aws_s3_bucket_cors_configuration.artifacts[0].cors_rule).allowed_origins == toset([var.runtime_environment.OPENSIGHT_PUBLIC_ORIGIN]) && !contains(one(aws_s3_bucket_cors_configuration.artifacts[0].cors_rule).allowed_headers, "*")
+    error_message = "Object transfers must allow only the exact origin and signed headers."
+  }
+}
+run "pilot_consumers_selected" {
+  command = plan
+  variables {
+    deployment_profile   = "pilot"
+    enable_pilot_runtime = true
+    enable_consumers     = true
+  }
+  assert {
+    condition     = alltrue([for mapping in aws_lambda_event_source_mapping.business : mapping.enabled && mapping.function_response_types == toset(["ReportBatchItemFailures"])])
+    error_message = "Activation selects both partial-failure consumers."
+  }
+}
+run "reject_consumers_without_runtime" {
+  command = plan
+  variables { enable_consumers = true }
+  expect_failures = [var.enable_consumers]
+}
+
+run "pilot_least_privilege" {
+  command = plan
+  variables {
+    deployment_profile   = "pilot"
+    enable_pilot_runtime = true
+  }
+  assert {
+    condition     = alltrue([for name in ["request", "work", "recovery"] : !strcontains(aws_iam_role_policy.lambda[name].policy, "synthetic-master") && !strcontains(aws_iam_role_policy.lambda[name].policy, aws_secretsmanager_secret.runtime["smtp"].arn) && !strcontains(aws_iam_role_policy.lambda[name].policy, "\"s3:DeleteObject\"") && jsondecode(aws_iam_role_policy.lambda[name].policy).Statement[3].Resource == [aws_secretsmanager_secret.runtime["operator"].arn, aws_secretsmanager_secret.runtime["tenant"].arn]])
+    error_message = "Runtime roles must not acquire bootstrap/SMTP credentials or unversioned object deletion."
+  }
+  assert {
+    condition     = alltrue([for name in ["work", "recovery"] : jsondecode(aws_iam_role_policy.lambda[name].policy).Statement[9].Resource == aws_sqs_queue.business[name].arn]) && !strcontains(aws_iam_role_policy.lambda["request"].policy, "sqs:ReceiveMessage") && !strcontains(aws_iam_role_policy.lambda["migration"].policy, "s3:")
+    error_message = "Only workers receive messages from their own queues; administration has no artifact access."
+  }
+  assert {
+    condition     = jsondecode(aws_iam_role_policy.business_schedule[0].policy).Statement[0].Resource == ["arn:aws:sqs:us-east-1:000000000000:synthetic-work", "arn:aws:sqs:us-east-1:000000000000:synthetic-scheduler-dead"] && jsondecode(aws_iam_role.business_schedule[0].assume_role_policy).Statement[0].Condition.ArnEquals["aws:SourceArn"] == "arn:aws:scheduler:us-east-1:000000000000:schedule-group/synthetic-business"
+    error_message = "Scheduler may send only through the exact group to work and its DLQ."
+  }
+}
+
+override_resource {
+  target = aws_secretsmanager_secret.runtime["operator"]
+  values = { arn = "arn:aws:secretsmanager:us-east-1:000000000000:secret:fixture-op" }
+}
+override_resource {
+  target = aws_secretsmanager_secret.runtime["tenant"]
+  values = { arn = "arn:aws:secretsmanager:us-east-1:000000000000:secret:fixture-tenant" }
+}
+override_resource {
+  target = aws_secretsmanager_secret.runtime["smtp"]
+  values = { arn = "arn:aws:secretsmanager:us-east-1:000000000000:secret:fixture-smtp" }
+}

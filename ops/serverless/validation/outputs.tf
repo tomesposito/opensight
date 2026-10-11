@@ -2,6 +2,11 @@ output "inventory" {
   sensitive = true
   value = {
     deployment       = var.deployment
+    profile          = var.deployment_profile
+    pilot_runtime    = var.enable_pilot_runtime
+    consumers        = var.enable_consumers
+    work_queues      = { for name, queue in aws_sqs_queue.business : name => { url = queue.url, arn = queue.arn } }
+    business_group   = local.pilot ? aws_scheduler_schedule_group.business[0].name : null
     cluster          = aws_rds_cluster.validation.id
     writer           = aws_rds_cluster_instance.writer.id
     repository       = aws_ecr_repository.runtime.repository_url

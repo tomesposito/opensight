@@ -1,11 +1,16 @@
-# Isolated AWS validation package
+# Serverless validation and initial pilot deployment
 
 This implements the SR4a packaging contract in
 [`docs/phase5-sr4a-packaging.md`](../../docs/phase5-sr4a-packaging.md).
-It is not a working public deployment. SR2 durable artifacts/admission, SR3 event
-execution/recovery and SR4b public ingress/releases remain separate work. Every
-function keeps maintenance frozen; no public URL, recurring schedule or queue
-consumer is created.
+The default profile creates isolated validation resources. The opt-in initial
+pilot profile adds the durable queues and workers; public ingress has its own
+root and acceptance gate. Lambda configuration stays frozen: the private initial
+activation changes SQL admission only after migration and tester setup. Neither
+profile creates recurring database wakeups.
+
+The initial pilot workflow is documented in
+[`pilot-README.md`](pilot-README.md). General CI deployment, drain and rollback
+remain separate D-25 work.
 
 ## Build and local acceptance
 

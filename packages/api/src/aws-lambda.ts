@@ -23,3 +23,10 @@ export async function migration(event: unknown, context: InvocationContext) {
     return createPrivateRuntime(() => env).migration(event, context);
   }); } catch (error) { throw error instanceof MetadataError ? error : new MetadataError('AWS_RUNTIME_FAILED', 503); }
 }
+
+export async function administration(event: unknown, context: InvocationContext) {
+  try { return await new InvocationScope(invocationDeadline(context, Date.now(), 110000)).run(async scope => {
+    const env = await awsEnvironment(new InvocationAws(scope, process.env), process.env, true);
+    return createPrivateRuntime(() => env).administration(event, context);
+  }); } catch (error) { throw error instanceof MetadataError ? error : new MetadataError('AWS_RUNTIME_FAILED', 503); }
+}

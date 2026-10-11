@@ -1,10 +1,15 @@
 locals {
-  functions = {
-    request   = { timeout = 28, handler = "packages/api/dist/aws-lambda.handler" }
-    migration = { timeout = 120, handler = "packages/api/dist/aws-lambda.migration" }
-    probe     = { timeout = 120, handler = "packages/api/dist/platform-probe.handler" }
-  }
-  assume_lambda = jsonencode({ Version = "2012-10-17", Statement = [{ Effect = "Allow", Principal = { Service = "lambda.amazonaws.com" }, Action = "sts:AssumeRole" }] })
+  pilot = var.deployment_profile == "pilot"
+  functions = merge({
+    request   = { timeout = 28, concurrency = var.enable_pilot_runtime ? 4 : 1, handler = "packages/api/dist/aws-lambda.handler" }
+    migration = { timeout = 120, concurrency = 1, handler = var.enable_pilot_runtime ? "packages/api/dist/aws-lambda.administration" : "packages/api/dist/aws-lambda.migration" }
+    probe     = { timeout = 120, concurrency = var.enable_pilot_runtime ? 0 : 1, handler = "packages/api/dist/platform-probe.handler" }
+    }, local.pilot ? {
+    work     = { timeout = 120, concurrency = 2, handler = "packages/api/dist/aws-lambda.scheduler" }
+    recovery = { timeout = 120, concurrency = 2, handler = "packages/api/dist/aws-lambda.scheduler" }
+  } : {})
+  active_functions = { for name, settings in local.functions : name => settings if !contains(["work", "recovery"], name) || var.enable_pilot_runtime }
+  assume_lambda    = jsonencode({ Version = "2012-10-17", Statement = [{ Effect = "Allow", Principal = { Service = "lambda.amazonaws.com" }, Action = "sts:AssumeRole" }] })
   environment = merge(var.runtime_environment, {
     OPENSIGHT_RUNTIME             = "lambda"
     OPENSIGHT_MODE                = "hosted"
@@ -16,10 +21,24 @@ locals {
     OPENSIGHT_OPERATOR_SECRET_ARN = aws_secretsmanager_secret.runtime["operator"].arn
     OPENSIGHT_TENANT_SECRET_ARN   = aws_secretsmanager_secret.runtime["tenant"].arn
   })
+  pilot_environment = var.enable_pilot_runtime ? merge(local.environment, {
+    OPENSIGHT_SERVERLESS_DATA    = "durable"
+    OPENSIGHT_RELEASE_DIGEST     = split("@", var.image_uri)[1]
+    OPENSIGHT_ARTIFACT_BUCKET    = aws_s3_bucket.artifacts.id
+    OPENSIGHT_WORK_QUEUE_URL     = aws_sqs_queue.business["work"].url
+    OPENSIGHT_WORK_QUEUE_ARN     = aws_sqs_queue.business["work"].arn
+    OPENSIGHT_RECOVERY_QUEUE_URL = aws_sqs_queue.business["recovery"].url
+    OPENSIGHT_RECOVERY_QUEUE_ARN = aws_sqs_queue.business["recovery"].arn
+    OPENSIGHT_SCHEDULER_GROUP    = aws_scheduler_schedule_group.business[0].name
+    OPENSIGHT_SCHEDULER_ROLE_ARN = aws_iam_role.business_schedule[0].arn
+    OPENSIGHT_SCHEDULER_DLQ_ARN  = aws_sqs_queue.business_dead["scheduler"].arn
+  }) : local.environment
   # Keep each function's credential references explicit and separate.
   function_environment = {
-    request = local.environment
-    migration = merge(local.environment, {
+    request  = local.pilot_environment
+    work     = local.pilot_environment
+    recovery = local.pilot_environment
+    migration = merge(local.pilot_environment, {
       OPENSIGHT_BOOTSTRAP_SECRET_ARN = aws_rds_cluster.validation.master_user_secret[0].secret_arn
     })
     probe = merge(local.environment, {
@@ -67,7 +86,7 @@ resource "aws_cloudwatch_log_group" "lambda" {
   retention_in_days = 3
 }
 resource "aws_iam_role_policy" "lambda" {
-  for_each = local.functions
+  for_each = local.active_functions
   role     = aws_iam_role.lambda[each.key].id
   policy = jsonencode({ Version = "2012-10-17", Statement = concat([
     { Effect = "Allow", Action = ["logs:CreateLogStream", "logs:PutLogEvents"], Resource = "${aws_cloudwatch_log_group.lambda[each.key].arn}:*" },
@@ -81,10 +100,18 @@ resource "aws_iam_role_policy" "lambda" {
       { Effect = "Allow", Action = ["sqs:SendMessage", "sqs:ReceiveMessage", "sqs:DeleteMessage"], Resource = aws_sqs_queue.probe.arn },
       { Effect = "Allow", Action = ["scheduler:CreateSchedule", "scheduler:DeleteSchedule"], Resource = "arn:aws:scheduler:${var.region}:${var.account_id}:schedule/${aws_scheduler_schedule_group.probe.name}/*" },
       { Effect = "Allow", Action = "iam:PassRole", Resource = aws_iam_role.schedule.arn, Condition = { StringEquals = { "iam:PassedToService" = "scheduler.amazonaws.com" } } }
-  ] : statement if each.key == "probe"]) })
+      ] : statement if each.key == "probe"], jsondecode(var.enable_pilot_runtime && contains(["request", "work", "recovery"], each.key) ? jsonencode([
+        { Effect = "Allow", Action = ["s3:GetObject", "s3:GetObjectVersion", "s3:PutObject", "s3:DeleteObjectVersion"], Resource = ["${aws_s3_bucket.artifacts.arn}/objects/v1/*", "${aws_s3_bucket.artifacts.arn}/artifacts/v1/*"] },
+        { Effect = "Allow", Action = "s3:ListBucket", Resource = aws_s3_bucket.artifacts.arn },
+        { Effect = "Allow", Action = "sqs:SendMessage", Resource = [aws_sqs_queue.business["work"].arn, aws_sqs_queue.business["recovery"].arn] },
+        { Effect = "Allow", Action = ["scheduler:CreateSchedule", "scheduler:GetSchedule"], Resource = "arn:aws:scheduler:${var.region}:${var.account_id}:schedule/${aws_scheduler_schedule_group.business[0].name}/*" },
+        { Effect = "Allow", Action = "iam:PassRole", Resource = aws_iam_role.business_schedule[0].arn, Condition = { StringEquals = { "iam:PassedToService" = "scheduler.amazonaws.com" } } }
+        ]) : "[]"), jsondecode(var.enable_pilot_runtime && contains(["work", "recovery"], each.key) ? jsonencode([
+        { Effect = "Allow", Action = ["sqs:ReceiveMessage", "sqs:DeleteMessage", "sqs:GetQueueAttributes"], Resource = aws_sqs_queue.business[each.key].arn }
+  ]) : "[]")) })
 }
 resource "aws_lambda_function" "validation" {
-  for_each                       = var.enable_runtime ? local.functions : {}
+  for_each                       = var.enable_runtime ? local.active_functions : {}
   function_name                  = "${var.deployment}-${each.key}"
   role                           = aws_iam_role.lambda[each.key].arn
   package_type                   = "Image"
@@ -92,7 +119,7 @@ resource "aws_lambda_function" "validation" {
   architectures                  = ["arm64"]
   timeout                        = each.value.timeout
   memory_size                    = 2048
-  reserved_concurrent_executions = 1
+  reserved_concurrent_executions = each.value.concurrency
   ephemeral_storage { size = 512 }
   image_config { command = [each.value.handler] }
   vpc_config {
