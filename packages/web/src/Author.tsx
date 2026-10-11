@@ -296,6 +296,7 @@ export function AuthorCanvas({ draft, dispatch, client, fit = true, sourceProble
   const [well, setWell] = useState<Well>('rows');
   const [calculationOpen, setCalculationOpen] = useState(false);
   const sheet = activeSheet(draft), fields = dataFields(draft.calculatedFields, draft.dataset);
+  const canvasWidth = sheet.layoutSettings?.optimizeWidth ?? 1200;
   usePaletteCommands(useMemo(() => ({ commands: dataFields(draft.calculatedFields, draft.dataset).map(field => ({
     id: `field-${field.name}`, label: `Find field: ${field.name}`, keywords: field.type,
     run: () => { setSearch(field.name); setSearchCollapsedGroups({}); focusAuthorControl(fieldSearch.current, '[data-author-control="field-search"]'); },
@@ -371,8 +372,8 @@ export function AuthorCanvas({ draft, dispatch, client, fit = true, sourceProble
         <SheetTabs draft={draft} dispatch={dispatch} />
         {interactive && <div className="action-status"><button type="button" disabled={!Object.keys(selections).length} onClick={clearActions}>Reset actions</button><span role="status">{Object.keys(selections).length} active selection(s) {Object.entries(selections).map(([id, selection]) => `${id}: ${selection.range?.join(' – ') ?? Object.entries(selection.values).map(([field, value]) => `${field} = ${value}`).join(', ')}`).join('; ')} · {client ? 'Live queries' : 'Recomputed synthetic sales across all regions'}</span></div>}
         <ControlsStrip key={sheet.id} draft={draft} dispatch={dispatch} client={client} />
-        <div className="canvas-viewport" data-fit={fit ? 'width' : 'actual'} aria-label={fit ? 'Canvas fits available width' : 'Canvas at 1200 pixel width'}>
-        <div className="author-canvas" style={{ width: fit ? '100%' : 1200, backgroundColor: theme.background, color: theme.textColor, fontFamily: theme.fontFamily }} ref={containerRef}>
+        <div className="canvas-viewport" data-fit={fit ? 'width' : 'actual'} aria-label={fit ? 'Canvas fits available width' : `Canvas at ${canvasWidth} pixel width`}>
+        <div className="author-canvas" style={{ width: fit ? '100%' : canvasWidth, backgroundColor: theme.background, color: theme.textColor, fontFamily: theme.fontFamily }} ref={containerRef}>
           <div className="canvas-label"><strong>{sheet.name}</strong><span>{sheet.visuals.length} {sheet.visuals.length === 1 ? 'visual' : 'visuals'} · {sheet.objects?.length ? `${sheet.objects.length} objects · ` : ''}{mobile ? 'Mobile preview' : 'Drag the handle to move · Drag a corner to resize'}</span></div>
           {!sheet.visuals.length && !sheet.objects?.length && <div className="canvas-empty"><h2>Your canvas is ready</h2><p>Choose a field from the Data panel to create a visual, or select a type and ADD.</p></div>}
           <div aria-label="Authoring canvas">

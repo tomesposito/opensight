@@ -18,7 +18,7 @@ export function SheetLayoutSettings({ sheet, dispatch, onClose }: { sheet: Autho
   return <dialog ref={ref} className="analysis-file-dialog analysis-settings-dialog" aria-labelledby={`${id}-title`} aria-describedby={`${id}-help`} onCancel={event => { event.preventDefault(); onClose(); }}>
     <form onSubmit={event => {
       event.preventDefault();
-      const settings = { rowHeight: Number(rowHeight), margin: Number(margin) };
+      const settings = { rowHeight: Number(rowHeight), margin: Number(margin), ...(sheet.layoutSettings?.optimizeWidth === undefined ? {} : { optimizeWidth: sheet.layoutSettings.optimizeWidth }) };
       if (!layoutSettingsValid(settings)) { setError('Row height must be 20–120 pixels and spacing 0–48 pixels.'); return; }
       dispatch({ type: 'sheet-layout-settings', id: sheet.id, settings }); onClose();
     }}>

@@ -6,6 +6,7 @@ import { useAccess, type Access } from './access.js';
 import { useToast } from './Toasts.js';
 import { AnalysisSettings } from './AnalysisSettings.js';
 import { SheetLayoutSettings } from './SheetLayoutSettings.js';
+import { NewSheetDialog } from './NewSheetDialog.js';
 import { exportVisualCsv, exportVisualExcel } from './visual-export.js';
 import { AnalysisPdfDialog } from './AnalysisPdfDialog.js';
 import { AuthorMenu, AuthorMenuItem } from './AuthorMenuItem.js';
@@ -46,6 +47,11 @@ export function AuthorToolbar({ canUndo = false, canRedo = false, onUndo, onRedo
   const [pdfOpen, setPdfOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [layoutOpen, setLayoutOpen] = useState(false);
+  const [newSheetOpen, setNewSheetOpen] = useState(false);
+  const nextSheetName = () => {
+    const numbers = draft.sheets.map(s => /^Sheet (\d+)$/.exec(s.name)?.[1]).filter((n): n is string => n !== undefined).map(Number);
+    return `Sheet ${numbers.length ? Math.max(...numbers) + 1 : draft.sheets.length + 1}`;
+  };
   const imageInput = useRef<HTMLInputElement>(null);
   const imageSheetId = useRef<string | undefined>(undefined);
   const imageDraft = useRef<AuthorDraft | null>(null);
@@ -83,6 +89,7 @@ export function AuthorToolbar({ canUndo = false, canRedo = false, onUndo, onRedo
     }} />
     {settingsOpen && <AnalysisSettings draft={draft} dispatch={dispatch} onClose={() => setSettingsOpen(false)} />}
     {layoutOpen && <SheetLayoutSettings sheet={sheet} dispatch={dispatch} onClose={() => setLayoutOpen(false)} />}
+    {newSheetOpen && <NewSheetDialog defaultName={nextSheetName()} defaultWidth={sheet.layoutSettings?.optimizeWidth ?? 1600} dispatch={dispatch} onClose={() => setNewSheetOpen(false)} />}
     {pdfOpen && <AnalysisPdfDialog onClose={() => setPdfOpen(false)} onContinue={() => { flushSync(() => setPdfOpen(false)); onPrint?.(); }} />}
     <nav ref={nav} className="author-menu" aria-label="Analysis menu" onKeyDown={e => {
       if (e.key === 'Escape') { const menu = (e.target as HTMLElement).closest('details'); if (menu) { e.preventDefault(); e.stopPropagation(); menu.open = false; menu.querySelector('summary')?.focus(); } }
@@ -126,7 +133,7 @@ export function AuthorToolbar({ canUndo = false, canRedo = false, onUndo, onRedo
         {onPrep && <><hr /><AuthorMenuItem label="Prepare data…" run={onPrep} /></>}
       </AuthorMenu>
       <AuthorMenu name="Insert">
-        <AuthorMenuItem label="Add Sheet" run={() => dispatch({ type: 'sheet-add' })} />
+        <AuthorMenuItem label="Add Sheet" run={() => setNewSheetOpen(true)} />
         <AuthorMenuItem label="Add Visual" reason={needsData} run={() => dispatch({ type: 'add', kind: 'bar' })} />
         <AuthorMenuItem label="Add Text" reason={needsCanvas} run={() => dispatch({ type: 'object-add', kind: 'text' })} />
         <AuthorMenuItem label="Add Image" reason={needsCanvas ?? (imageBusy ? 'Wait for this device to finish reading the image.' : undefined)} run={() => { imageSheetId.current = sheet.id; imageDraft.current = draft; imageInput.current?.click(); }} />
@@ -138,7 +145,7 @@ export function AuthorToolbar({ canUndo = false, canRedo = false, onUndo, onRedo
         <AuthorMenuItem label="Add Parameter" reason={needsData} run={() => activate('[data-author-control="add-parameter"]')} />
       </AuthorMenu>
       <AuthorMenu name="Sheets">
-        <AuthorMenuItem label="Add Sheet" run={() => dispatch({ type: 'sheet-add' })} />
+        <AuthorMenuItem label="Add Sheet" run={() => setNewSheetOpen(true)} />
         <AuthorMenuItem label="Duplicate Sheet" run={() => dispatch({ type: 'sheet-duplicate', id: sheet.id })} />
         <AuthorMenuItem label="Rename Sheet" run={() => activate('[data-author-control="rename-sheet"]')} />
         <hr />
@@ -191,7 +198,7 @@ export function AuthorToolbar({ canUndo = false, canRedo = false, onUndo, onRedo
         nav.current?.querySelectorAll('details[open]').forEach(menu => menu.removeAttribute('open'));
         palette?.open('Search analysis actions');
       }}>Search</button>
-      {oEntry}<div className="menu-spacer" /><button type="button" disabled={!dataAvailable} onClick={() => focus('.visual-gallery button')}>Add visual</button><button type="button" aria-pressed={fit} title={fit ? 'Fit is on; switch to 1200 pixel canvas' : 'Fit canvas to available width'} onClick={onFit}>FIT TO WIDTH</button><button type="button" onClick={publish}>PUBLISH</button>
+      {oEntry}<div className="menu-spacer" /><button type="button" disabled={!dataAvailable} onClick={() => focus('.visual-gallery button')}>Add visual</button><button type="button" aria-pressed={fit} title={fit ? `Fit is on; switch to ${sheet.layoutSettings?.optimizeWidth ?? 1200} pixel canvas` : 'Fit canvas to available width'} onClick={onFit}>FIT TO WIDTH</button><button type="button" onClick={publish}>PUBLISH</button>
       <label className="chrome-switch">NEW LOOK<select aria-label="NEW LOOK" value={draft.chrome ?? 'light'} onChange={e => dispatch({ type: 'chrome', mode: e.target.value as 'light' | 'dark' })}><option value="light">Light</option><option value="dark">Dark</option></select></label>
     </nav>
     {notice && <div className="toolbar-notice" role="status">{notice}<button type="button" onClick={() => setNotice('')}>Dismiss</button></div>}
