@@ -126,3 +126,15 @@ administration image apply it without reopening admission or changing applicatio
 code. Advisory-lock substitution was rejected because every future owner writer
 would need a separate matching lock discipline; table-wide UPDATE was rejected
 because it would permit configuration/maintenance bypass.
+
+#### Initial native memory correction — 2026-10-11
+
+The validation limits failed real 8 MiB ingestion; the same application image
+parsed and encoded it locally with the bounded profile in
+[SR4b3](../phase5-sr4b3-initial-memory.md). Apply only that initial memory change
+under the admission mutex with no live held attempts, preserving the epoch and
+queued cleanup work. Increasing Lambda allocation is unnecessary based on the
+measured run. Reducing the approved upload ceiling would change the customer
+contract. Rebuilding or resetting the database would discard accepted work.
+The one-time receipt and revision checks prevent this correction from becoming
+an unrestricted maintenance interface.

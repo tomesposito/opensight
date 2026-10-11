@@ -1366,6 +1366,15 @@ image. A separately pinned administration image retains the existing private
 function and permissions. Real PostgreSQL privilege/serialization tests and
 browser acceptance gate DNS; D-25 general release/maintenance remains separate.
 
+**SR4b3 initial ingestion memory correction (frozen 2026-10-11):**
+[Initial memory budgets](docs/phase5-sr4b3-initial-memory.md) permits one
+receipt-bound change from budget/configuration revision one to two in the initial
+active deployment. Only the measured native execution memory fields change;
+the existing 2 GiB Lambda allocation, concurrency, quotas, application image,
+epoch, identities and durable work remain intact. The owner transaction holds
+the admission control lock and refuses any live held admission. Actual 8 MiB
+ingestion and query acceptance remain required before DNS.
+
 ---
 
 ## 7. Repository Layout
