@@ -87,8 +87,8 @@ export function ManageDataDialog({ client, datasets, sampleLoaded, onClose, onRe
   };
   return <DataDialog title="Manage data" description="Review the datasets this analysis uses, replace one, or add data." onClose={onClose}>
     <div className="data-dialog-body">
-      {sources === undefined ? <p role="status">Loading datasets…</p>
-        : error ? <p role="alert">Could not load data sources. {error} <button type="button" onClick={() => { setSources(undefined); setError(''); const list = client?.listPrepSources; if (!list) setSources([]); else void list().then(value => setSources(value)).catch((failure: unknown) => setError(failure instanceof Error ? failure.message : String(failure))); }}>Retry</button></p>
+      {error ? <p role="alert">Could not load data sources. {error} <button type="button" onClick={() => { setSources(undefined); setError(''); const list = client?.listPrepSources; if (!list) setSources([]); else void list().then(value => setSources(value)).catch((failure: unknown) => setError(failure instanceof Error ? failure.message : String(failure))); }}>Retry</button></p>
+        : sources === undefined ? <p role="status">Loading datasets…</p>
         : <DataTable headings={['Dataset', 'Type', 'Status', '']} empty={rows.length ? undefined : 'No datasets in this analysis yet.'}>
           {rows.map(dataset => {
             const source = sourceFor(dataset);
