@@ -31,6 +31,11 @@ export function AppLink({ to, navigate, children, current, className }: { to: Ap
   };
   return <a href={routeHash(to)} onClick={click} aria-current={current ? 'page' : undefined} className={className}>{children}</a>;
 }
+function VectorIcon({ path, size = 16, fill = false }: { path: string; size?: number; fill?: boolean }) {
+  return <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+    <path d={path} fill={fill ? 'currentColor' : 'none'} stroke={fill ? 'none' : 'currentColor'} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>;
+}
 function NavigationIcon({ name }: { name: string }) {
   const paths: Record<string, string> = {
     Search: 'm15 15 5 5M17 10a7 7 0 1 1-14 0 7 7 0 0 1 14 0',
@@ -76,8 +81,8 @@ export function AppNavigation({ route, navigate, recentPages = [], children }: {
   const sectionPage = section === 'Admin' ? 'security' : productSections.find(item => item.title === section)?.page;
   return <>
     <header ref={header} className="app-header product-header">
-      <button ref={toggle} className="navigation-toggle" type="button" aria-label="Toggle navigation" aria-expanded={navigationOpen} aria-controls="product-navigation" onClick={() => setNavigationOpen(open => !open)} onKeyDown={event => { if (navigationOpen && event.key === 'Escape') { event.preventDefault(); closeNavigation(); } }}>☰</button>
-      <AppLink className="brand" to={{ page: 'home' }} navigate={navigate}><span className="brand-mark" aria-hidden="true">◈</span>OpenSight</AppLink>
+      <button ref={toggle} className="navigation-toggle" type="button" aria-label="Toggle navigation" aria-expanded={navigationOpen} aria-controls="product-navigation" onClick={() => setNavigationOpen(open => !open)} onKeyDown={event => { if (navigationOpen && event.key === 'Escape') { event.preventDefault(); closeNavigation(); } }}><VectorIcon path="M4 7h16M4 12h16M4 17h16" size={18} /></button>
+      <AppLink className="brand" to={{ page: 'home' }} navigate={navigate}><span className="brand-mark" aria-hidden="true"><VectorIcon path="M12 3l8 9-8 9-8-9z" size={20} fill /></span>OpenSight</AppLink>
       <nav className="breadcrumbs" aria-label="Breadcrumb">
         <AppLink to={{ page: 'home' }} navigate={navigate} current={route?.page === 'home'}>Home</AppLink>
         {route?.page !== 'home' && <>
@@ -103,7 +108,7 @@ export function AppNavigation({ route, navigate, recentPages = [], children }: {
         {productSections.filter(item => visiblePage(access, item.page)).map(item => <AppLink key={item.title} to={{ page: item.page }} navigate={navigate} current={section === item.title}><NavigationIcon name={item.title} />{item.title}</AppLink>)}
       </nav>
       {section === 'Analyses' && visiblePage(access, 'analyses') && <nav className="section-nav" aria-label="Analyses"><AppLink to={{ page: 'analyses' }} navigate={navigate} current={route?.page === 'analyses'}>My analyses</AppLink><AppLink to={{ page: 'author' }} navigate={navigate} current={route?.page === 'author'}>Author</AppLink></nav>}
-      <button type="button" className="rail-more" aria-expanded={moreOpen} aria-controls="more-navigation" onClick={() => setMoreOpen(open => !open)}><NavigationIcon name="More" />More<span className="rail-chevron" aria-hidden="true">{moreOpen ? '⌄' : '›'}</span></button>
+      <button type="button" className="rail-more" aria-expanded={moreOpen} aria-controls="more-navigation" onClick={() => setMoreOpen(open => !open)}><NavigationIcon name="More" />More<span className="rail-chevron" aria-hidden="true"><VectorIcon path={moreOpen ? 'M6 9l6 6 6-6' : 'M9 6l6 6-6 6'} size={12} /></span></button>
       <div id="more-navigation" hidden={!moreOpen}>
         <nav className="section-nav" aria-label="Admin"><span className="rail-group-title">Admin</span>{adminPages.filter(page => visiblePage(access, page)).map(link)}</nav>
         <nav className="section-nav developer-nav" aria-label="Developer tools"><span className="rail-group-title">Developer tools</span>{developerPages.filter(page => visiblePage(access, page)).map(link)}</nav>

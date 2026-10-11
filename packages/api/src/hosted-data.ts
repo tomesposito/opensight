@@ -1,6 +1,6 @@
 import { setImmediate as yieldTurn } from 'node:timers/promises';
 import { TenantBudgets, type WorkScope } from './budgets.js';
-import { HostedCache, type HostedCacheAdapter } from './hosted-cache.js';
+import { HostedCache } from './hosted-cache.js';
 import { containedWork, wireTable, type TableResult, type QueryResult } from './contained-work.js';
 import { resolveSecurity, planSourceRead, planPreparedQuery, streamSourcePostgres,
   type SecurityContext, type RowPredicate, type SourceRead, type PrepSource, type PrepMemoryTable, type InteractiveQuery } from '@opensight/query-engine';
@@ -19,7 +19,7 @@ export interface Admission {
 }
 /** Every hosted data path enters here, before payload/connector/cache I/O. */
 export class HostedData {
-  readonly cache?: HostedCacheAdapter;
+  readonly cache?: HostedCache;
   readonly prepaidCompute = new WeakSet<TenantContext>();
   private readonly verifiers = new WeakMap<TenantContext, () => Promise<void>>();
   private readonly publicationChecks = new WeakMap<TenantContext, () => Promise<void>>();
@@ -27,7 +27,7 @@ export class HostedData {
   private readonly admitted = new WeakMap<TenantContext, Set<Admission>>();
   begin(context: TenantContext, signal?: AbortSignal, verify?: () => Promise<void>, beforePublication?: () => Promise<void>): void { if (verify) this.verifiers.set(context, verify); if (beforePublication) this.publicationChecks.set(context, beforePublication); this.admitted.set(context, new Set()); if (signal) this.signals.set(context, signal); }
   async publication(context: TenantContext, revisions: Revisions): Promise<void> { await this.finish(context, [...this.admitted.get(context) ?? []], revisions); }
-  constructor(readonly sources: HostedSources, private readonly postgres = streamSourcePostgres, readonly budgets?: TenantBudgets, cache?: HostedCacheAdapter) { this.cache = cache ?? (budgets ? new HostedCache(budgets) : undefined); }
+  constructor(readonly sources: HostedSources, private readonly postgres = streamSourcePostgres, readonly budgets?: TenantBudgets) { if (budgets) this.cache = new HostedCache(budgets); }
   scope(context: TenantContext): WorkScope {
     this.sources.metadata.assertContext(context);
     if (!this.budgets) throw new MetadataError('BUDGET_MIGRATION_REQUIRED', 503);
@@ -105,7 +105,6 @@ export class HostedData {
     for (const a of admissions) await this.sources.metadata.assertRevisions(context, a.revisions);
     if (expected) await this.sources.metadata.assertRevisions(context, expected);
     for (const a of admissions) this.sources.active(a.source);
-    await this.cache?.verify?.();
     await this.publicationChecks.get(context)?.();
   }
   read(a: Admission, columns = a.physical.columns.filter(c => !a.deniedColumns.includes(c.name)).map(c => c.name)): SourceRead {
@@ -190,7 +189,7 @@ export class HostedData {
     } else {
       let table: BlazeTable;
       if (mode === 'BLAZE') {
-        table = await this.cache!.read(scope, this.key(context, a.source.id), this.stamp(a)); scope.rows(table.rowCount);
+        table = this.cache!.read(scope, this.key(context, a.source.id), this.stamp(a)); scope.rows(table.rowCount);
       } else { table = new BlazeTable(this.limits(context)); await this.raw(context, a, table); }
       const computed = await containedWork<TableResult>(scope, { kind: 'source', read,
         table: await wireTable(scope, table, this.memory(a, table).source) }, this.limits(context));

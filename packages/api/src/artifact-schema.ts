@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import { artifactColumns } from '@opensight/query-engine';
 import type { PrepColumn } from '@opensight/bundle-parser/prep';
 import type { WorkScope } from './budgets.js';
@@ -49,16 +48,7 @@ export function artifactIdentity(raw: unknown): ArtifactIdentity {
   const value = exactObject(structuredClone(raw), ['tenant', 'namespace', 'owner', 'kind', 'resource']);
   if (value.kind !== 'source' && value.kind !== 'prepared-dataset') artifactError();
   for (const key of ['tenant', 'namespace', 'owner', 'resource']) if (typeof value[key] !== 'string' || !/^[A-Za-z0-9_-]{1,512}$/.test(value[key] as string)) artifactError();
-  return { tenant: String(value.tenant), namespace: String(value.namespace), owner: String(value.owner), kind: value.kind, resource: String(value.resource) };
-}
-/** Shape/integrity metadata only; the caller must establish current SQL authority. */
-export function artifactReference(raw: unknown, limits: ArtifactLimits): ArtifactReference {
-  const value = exactObject(structuredClone(raw), ['identity', 'key', 'version', 'descriptor']);
-  const identity = artifactIdentity(value.identity), descriptor = artifactDescriptor(value.descriptor, limits);
-  const hash = createHash('sha256').update(JSON.stringify([identity.tenant, identity.namespace, identity.owner, identity.kind, identity.resource])).digest('hex');
-  if (typeof value.key !== 'string' || value.key.length > 240 || !new RegExp(`^[A-Za-z0-9_-]+(?:/[A-Za-z0-9_-]+)*/${hash}/[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}\\.parquet$`).test(value.key)
-    || typeof value.version !== 'string' || !value.version.length || value.version === 'null' || value.version.length > 1024 || /[\x00-\x20\x7f]/.test(value.version)) artifactError();
-  return { identity, key: value.key, version: value.version, descriptor };
+  return value as unknown as ArtifactIdentity;
 }
 export function artifactFailure(error: unknown): never {
   if (error instanceof MetadataError && (error.code.startsWith('ARTIFACT_') || ['EXECUTION_CANCELLED', 'TENANT_BUDGET_EXCEEDED', 'NODE_ADMISSION_REFUSED',
