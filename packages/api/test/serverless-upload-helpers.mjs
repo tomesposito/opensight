@@ -10,8 +10,8 @@ import { MetadataError } from '../dist/metadata-db.js';
 const bytes = Buffer.from('name,value\none,1\n');
 export const directRequest = () => ({ config: { format: 'csv' }, byteLength: bytes.length, sha256: createHash('sha256').update(bytes).digest('base64'), mediaType: 'text/csv',
   expiresAt: new Date(Date.now() + 3600000).toISOString(), policy: { rowLevel: false, rowRules: [] } });
-export async function uploadFixture(t) {
-  const f = await manifestFixture(t);
+export async function uploadFixture(t, options = {}) {
+  const f = await manifestFixture(t, options);
   const entitlements = { defaults: { ...f.entitlements.defaults, storageBytes: 128 * 1024 * 1024 }, tenants: {} };
   await f.db.transaction(c => c.query('UPDATE sr_limits SET entitlements = ?', [JSON.stringify(entitlements)]));
   await migrateDispatch(f.db, 'test', 'frozen', 'sqlite'); await migrateObjects(f.db, 'test', 'frozen', 'sqlite'); await migrateOperations(f.db, 'test', 'frozen', 'sqlite');

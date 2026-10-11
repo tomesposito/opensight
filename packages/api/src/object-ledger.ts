@@ -68,7 +68,7 @@ export class ObjectLedger {
   }
   async reserve(c: SqlConnection, context: TenantContext, revisions: Revisions, intentId: string, plans: readonly ObjectPlan[],
     now: number, retentionUntil: number, signatureUntil = now): Promise<void> {
-    await this.schema(c); await currentAuthority(c, this.metadata, context, revisions, true); identifier(intentId);
+    await this.schema(c); await currentAuthority(c, this.metadata, context, revisions, !plans.length || plans.some(p => p.purpose !== 'result')); identifier(intentId);
     if (!plans.length || plans.length > 8 || ![now, retentionUntil, signatureUntil].every(Number.isSafeInteger)
       || now <= 0 || retentionUntil <= now || signatureUntil < now || signatureUntil > now + 60000) throw new MetadataError('OBJECT_INVALID', 400);
     let bytes = 0;

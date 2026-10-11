@@ -192,6 +192,13 @@ export class HostedAuth {
       return { namespaceId: String(session.namespace_id), userId: String(session.user_id) };
     });
   }
+  /** Internal result binding. It contains no credential and never reaches an API response. */
+  async resultSession(request: IncomingMessage): Promise<{ kind: 'author'; id: string; expiresAt: number }> {
+    return this.database.transaction(async c => {
+      const { session } = await this.session(c, this.bearer(request));
+      return { kind: 'author', id: String(session.session_id), expiresAt: Number(session.expires_at) };
+    });
+  }
   async switchTenant(token: string, tenantValue: unknown): Promise<{ token: string; expiresAt: number; tenantId: string }> {
     const tenantId = identifier(tenantValue);
     return this.database.transaction(async c => {

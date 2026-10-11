@@ -7,12 +7,13 @@ import { DurableDispatch, type DispatchPreparation, type EventInput } from './di
 import { ObjectLedger } from './object-ledger.js';
 import { UploadObjects } from './upload-objects.js';
 import { operationChecksum } from './operation-schema.js';
+import type { ResultDescriptor } from './durable-results.js';
 import { canonicalJson, directUploadRequest, requestDigest } from './upload-request.js';
 
 const scoped = 'deployment = ? AND tenant_id = ? AND namespace_id = ? AND owner_id = ?';
 const maxFence = '9223372036854775807';
 export interface UploadStatus { id: string; revision: number; state: string; expiresAt: string; sourceExpiresAt: string; operationId?: string; sourceId?: string }
-export interface OperationStatus { id: string; revision: number; kind: 'ingest' | 'result'; state: string; expiresAt: string; errorCode?: string; sourceId?: string; resultAvailable: boolean }
+export interface OperationStatus { id: string; revision: number; kind: 'ingest' | 'result'; state: string; expiresAt: string; errorCode?: string; sourceId?: string; resultAvailable: boolean; result?: ResultDescriptor }
 
 /** HTTP control operations. Native parsing/publication belongs to the fenced ingestion worker. */
 export class DurableUploads {
@@ -40,7 +41,8 @@ export class DurableUploads {
     const result = row.result ? object(JSON.parse(String(row.result))) : undefined;
     return { id: String(row.operation_id), revision: Number(row.revision), kind: row.kind as OperationStatus['kind'], state, expiresAt: new Date(Number(row.expires_at)).toISOString(),
       ...(row.error_code ? { errorCode: String(row.error_code) } : {}), ...(state === 'completed' && result?.sourceId ? { sourceId: identifier(result.sourceId) } : {}),
-      resultAvailable: state === 'completed' && row.kind === 'result' && Number(row.expires_at) > now };
+      resultAvailable: state === 'completed' && row.kind === 'result' && Number(row.expires_at) > now,
+      ...(state === 'completed' && row.kind === 'result' && Number(row.expires_at) > now && result?.descriptor ? { result: result.descriptor as unknown as ResultDescriptor } : {}) };
   }
   private async flush(preparation: DispatchPreparation): Promise<void> {
     try { await this.dispatch.dispatch(preparation); }

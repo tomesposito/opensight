@@ -7,6 +7,8 @@ import { invocationDatabases, type InvocationDatabases } from './runtime-postgre
 import { runtimeMode, type RuntimeDependencies } from './runtime.js';
 import { migrateRuntime } from './runtime-migration.js';
 import { deploymentId } from './runtime-startup.js';
+import { migrateServerless } from './serverless-migration.js';
+import { runServerlessEvent } from './serverless-worker.js';
 
 export interface ScheduledEvent { version: 1; deploymentEpoch: number; eventId: string; kind: 'due' | 'execute' | 'recover' | 'deliver' }
 export interface PrivateRuntimeDependencies extends Pick<RuntimeDependencies, 'databases'> {
@@ -26,7 +28,7 @@ export function createPrivateRuntime(environment: () => NodeJS.ProcessEnv = () =
         || !equal(input.authorization, `Operator ${secretKey(env.OPENSIGHT_OPERATOR_KEY).toString('base64url')}`)) throw new MetadataError('OPERATOR_REQUIRED', 403);
       if (env.OPENSIGHT_MAINTENANCE !== 'frozen') throw new MetadataError('WORKSPACE_MAINTENANCE_REQUIRED', 503);
       try { return await invoke(env, context, async (db, scope) => {
-        await (dependencies.migrate ?? ((db, _scope, env) => migrateRuntime(db.membership, env)))(db, scope, env);
+        await (dependencies.migrate ?? ((db, _scope, env) => env.OPENSIGHT_SERVERLESS_DATA === 'durable' ? migrateServerless(db.membership, env) : migrateRuntime(db.membership, env)))(db, scope, env);
         return { state: 'migrated', maintenance: true };
       }); } catch (error) { throw error instanceof MetadataError ? error : new MetadataError('RUNTIME_MIGRATION_FAILED', 503); }
     },
@@ -43,8 +45,9 @@ export function createPrivateRuntime(environment: () => NodeJS.ProcessEnv = () =
         if (body.version !== 1 || !Number.isSafeInteger(body.deploymentEpoch) || Number(body.deploymentEpoch) < 1 || !['due', 'execute', 'recover', 'deliver'].includes(String(body.kind))) throw new MetadataError('SCHEDULE_EVENT_INVALID', 400);
         const event: ScheduledEvent = { version: 1, deploymentEpoch: Number(body.deploymentEpoch), eventId: identifier(body.eventId), kind: body.kind as ScheduledEvent['kind'] };
         if (recovery !== (event.kind === 'recover')) throw new MetadataError('SCHEDULE_EVENT_INVALID', 400);
-        if (!dependencies.scheduled) throw new MetadataError('SERVERLESS_DISPATCH_REQUIRED', 503);
-        await invoke(env, context, (db, scope) => dependencies.scheduled!(event, db, scope, env));
+        const scheduled = dependencies.scheduled ?? (env.OPENSIGHT_SERVERLESS_DATA === 'durable' ? runServerlessEvent : undefined);
+        if (!scheduled) throw new MetadataError('SERVERLESS_DISPATCH_REQUIRED', 503);
+        await invoke(env, context, (db, scope) => scheduled(event, db, scope, env));
         return { batchItemFailures: [] };
       } catch (error) {
         if (error instanceof MetadataError && ['INVOCATION_CLEANUP_FAILED', 'RUNTIME_QUARANTINED'].includes(error.code)) throw error;

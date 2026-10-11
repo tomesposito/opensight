@@ -115,6 +115,7 @@ export async function awsEnvironment(aws: InvocationAws, source: NodeJS.ProcessE
   let ca = source.OPENSIGHT_POSTGRES_CA;
   if (!ca) ca = await readFile('/var/task/ops/serverless/rds-ca.pem', 'utf8');
   const env = { ...source, OPENSIGHT_POSTGRES_CA: ca,
+    OPENSIGHT_RUNTIME_OPERATOR_ROLE: operator.username, OPENSIGHT_RUNTIME_TENANT_ROLE: tenant.username,
     OPENSIGHT_POSTGRES_OPERATOR_URL: databaseUrl(source, operator), OPENSIGHT_POSTGRES_TENANT_URL: databaseUrl(source, tenant),
     OPENSIGHT_OPERATOR_KEY: operator.operatorKey, OPENSIGHT_AUTH_SIGNING_KEY: operator.signingKey, OPENSIGHT_AUTH_ENCRYPTION_KEY: operator.encryptionKey,
     OPENSIGHT_INGRESS_KEYS: operator.ingressKeys };

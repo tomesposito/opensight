@@ -25,6 +25,10 @@ import { UploadObjects } from './upload-objects.js';
 import { DurableUploads } from './durable-uploads.js';
 import { DurableUploadRoutes } from './upload-routes.js';
 import { ServerlessWork } from './serverless-work.js';
+import type { HostedAuth } from './hosted-auth.js';
+import { ResultObjects } from './result-objects.js';
+import { DurableResults } from './durable-results.js';
+import { method, send } from './automation-routes.js';
 
 export function serverlessTransport(aws: InvocationAws, env: NodeJS.ProcessEnv): AwsDispatch {
   const required = (key: string) => { const value = env[key]; if (!value) throw new MetadataError('DISPATCH_CONFIG_INVALID', 503); return value; };
@@ -53,7 +57,7 @@ export function serverlessDataPath(raw: string): boolean {
     || /^\/embed\/sessions\/[A-Za-z0-9_-]+$/.test(path);
 }
 export function serverlessAdapters(database: Database, metadata: TenantMetadata, budgets: TenantBudgets, aws: InvocationAws,
-  env: NodeJS.ProcessEnv): HostedInvocationAdapters {
+  env: NodeJS.ProcessEnv, auth?: HostedAuth): HostedInvocationAdapters {
   const deployment = deploymentId(env), config = hostedConfig(env), bucket = env.OPENSIGHT_ARTIFACT_BUCKET;
   if (!bucket) throw new MetadataError('ARTIFACT_CONFIG_INVALID', 503);
   const coordinator = new DurableCoordinator(database, metadata, deployment), manifests = new ManifestStore(coordinator);
@@ -63,14 +67,37 @@ export function serverlessAdapters(database: Database, metadata: TenantMetadata,
   const sourceArtifacts = new SourceArtifacts(coordinator, context => work.attempt(context), transfer, budgets);
   const sources = new HostedSources(metadata, config.encryptionKey.toString('base64'), sourceEndpoints(env), Date.now, sourceArtifacts.read);
   const embedSources = new EmbedSources(metadata, config.encryptionKey.toString('base64'), sourceEndpoints(env), Date.now, sourceArtifacts.read);
-  const data = new HostedDataRoutes(new HostedData(sources, undefined, budgets, work.cache, work));
+  const results = new DurableResults(database, metadata, dispatch, ledger, new ResultObjects(aws, bucket), work, budgets);
+  const authority = (request: Parameters<HostedAuth['resultSession']>[0]) => {
+    if (!auth) throw new MetadataError('RESULT_SESSION_REQUIRED', 503); return auth.resultSession(request);
+  };
+  const data = new HostedDataRoutes(new HostedData(sources, undefined, budgets, work.cache, work), undefined, async (request, context, status, body, recheck) => {
+    if (Buffer.byteLength(JSON.stringify(body)) <= 1024 * 1024) return { status, body };
+    return results.publish(context, body, await authority(request), recheck);
+  });
   const embedContent = new EmbedContent(new HostedData(embedSources, undefined, budgets, work.cache, work));
-  const uploads = new DurableUploadRoutes(new DurableUploads(metadata, dispatch, ledger, new UploadObjects(aws, bucket)));
-  return { data, embedContent, allows: serverlessDataPath, capabilities: { directUploads: { version: 1, maxBytes: 8 * 1024 * 1024 }, controlJsonBytes: 1024 * 1024 },
-    route: (request, response, path, context, recheck) => uploads.route(request, response, path, context, recheck), finish: () => work.finish() };
+  const uploadService = new DurableUploads(metadata, dispatch, ledger, new UploadObjects(aws, bucket)), uploads = new DurableUploadRoutes(uploadService);
+  return { data, embedContent, allows: serverlessDataPath, capabilities: { directUploads: { version: 1, maxBytes: 8 * 1024 * 1024 }, resultChunks: { version: 1, maxBytes: 1024 * 1024, maxResultBytes: budgets.config.node.resultBytes }, controlJsonBytes: 1024 * 1024 },
+    embedResult: (context, session, body, recheck) => results.publish(context, body, { kind: 'embed', id: session.id, expiresAt: session.expiresAt }, recheck),
+    embedOperation: async (request, response, path, sessions) => {
+      const match = /^\/api\/operations\/([A-Za-z0-9_-]+)(?:\/result\/(0|[1-9]\d{0,5}))?$/.exec(path);
+      if (!match || !request.headers.authorization?.startsWith('Embed ')) return false;
+      method(request, response, ['GET']);
+      const id = await results.embedSession(match[1]!), credential = request.headers.authorization.slice(6), { context, session } = await sessions.verify(id, credential);
+      const recheck = async () => { await sessions.verify(id, credential); };
+      const reader = { kind: 'embed' as const, id, expiresAt: session.expiresAt };
+      send(response, 200, match[2] === undefined ? await uploadService.status(context, match[1]!, recheck) : await results.chunk(context, match[1]!, Number(match[2]), reader, recheck)); return true;
+    },
+    route: async (request, response, path, context, recheck) => {
+      const match = /^\/api\/operations\/([A-Za-z0-9_-]+)\/result\/(0|[1-9]\d{0,5})$/.exec(path);
+      if (match) {
+        method(request, response, ['GET']); send(response, 200, await results.chunk(context, match[1]!, Number(match[2]), await authority(request), recheck)); return true;
+      }
+      return uploads.route(request, response, path, context, recheck);
+    }, finish: () => work.finish() };
 }
 export async function createServerlessApplication(db: InvocationDatabases, scope: InvocationScope, env: NodeJS.ProcessEnv) {
   const aws = new InvocationAws(scope, env), usage = await serverlessUsage(db.membership, deploymentId(env));
   return createBuiltinHostedServer({ membershipDatabase: db.membership, tenantDatabase: db.tenant, env,
-    invocation: { signal: scope.signal, usage, compose: (metadata, budgets) => serverlessAdapters(db.membership, metadata, budgets, aws, env) } });
+    invocation: { signal: scope.signal, usage, compose: (metadata, budgets, auth) => serverlessAdapters(db.membership, metadata, budgets, aws, env, auth) } });
 }

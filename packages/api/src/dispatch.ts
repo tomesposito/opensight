@@ -77,7 +77,7 @@ export class DurableDispatch {
     this.metadata.assertContext(context);
     const input = snapshot(raw), idempotencyDigest = createHash('sha256').update(input.idempotencyKey).digest('hex');
     const found = await this.transaction(async c => {
-      const epoch = await this.control(c); await currentAuthority(c, this.metadata, context, input.revisions, true);
+      const epoch = await this.control(c); await currentAuthority(c, this.metadata, context, input.revisions, input.kind !== 'result-write');
       const now = await coordinationNow(c, this.dialect);
       // A crash before recovery send created no accepted obligation. Scoped activity retires it.
       await c.query(`UPDATE sr_dispatch_intent SET state = 'aborted' WHERE ${scoped} AND state = 'prepared' AND commit_until <= ?`, [...this.scope(context), now]);
@@ -109,7 +109,7 @@ export class DurableDispatch {
     if (!prepared) throw new MetadataError('DISPATCH_PREPARATION_REQUIRED', 403);
     const { context, input, epoch } = prepared;
     if (await this.control(c) !== epoch) throw new MetadataError('WORKSPACE_MAINTENANCE', 503);
-    await currentAuthority(c, this.metadata, context, input.revisions, true);
+    await currentAuthority(c, this.metadata, context, input.revisions, input.kind !== 'result-write');
     const row = await this.row(c, context, handle.intentId), now = await coordinationNow(c, this.dialect);
     if (!row || row.request_digest !== input.requestDigest || row.idempotency_digest !== prepared.idempotencyDigest || integer(row.control_epoch) !== epoch) throw new MetadataError('DISPATCH_PREPARATION_REQUIRED', 403);
     if (row.state === 'committed') return receipt(JSON.parse(String(row.receipt)));

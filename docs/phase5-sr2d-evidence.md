@@ -114,3 +114,27 @@ shutdown failure, suspended-owner cleanup, uncertain DELETE, backup continuation
 and duplicate delivery. These changes remain local build work: protected result
 transfer, browser integration, production migration composition and cloud
 acceptance are still required before activation.
+
+## Protected results and private entrypoints checkpoint
+
+Large legal results now reserve and prearm immutable JSON fragments before PUT,
+then publish all verified bindings and the completed operation atomically. Each
+fragment is at most 1 MiB. Authenticated reads check the originating author/embed
+session, exact revisions, expiry, object version/hash and the complete cached
+manifest dependency certificate before and after I/O. Failed partial writes leave
+charged reservations with cleanup obligations and publish no readable result.
+Chunk reads do not allocate a native analytics admission.
+
+The private SQS entrypoint dispatches only recovery, ingestion and object cleanup.
+The owner-only migration composes SR1 bootstrap (only on an empty database) and
+all SR2 schemas in one frozen/drained transaction. Existing deployments retain
+budgets, epoch and maintenance. Explicit runtime grants deny schema changes,
+control/config writes and H7 mutations; the tenant role gets only the private
+storage gauge's RLS-scoped SELECT. Migrations do not activate signing keys.
+
+The focused result/migration/private-runtime/AWS-adapter suites passed **22 /
+failed 0 / skipped 0 / cancelled 0**, including the real PostgreSQL owner migration
+and runtime/tenant permission checks. Result tests cover fresh-invocation
+reassembly, another session/owner, expiry, revocation during GET, a replaced cache
+generation, partial PUT failure and corrupt/oversized streams. Browser integration
+and live cloud acceptance remain in progress.

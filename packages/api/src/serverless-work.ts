@@ -38,6 +38,11 @@ export class ServerlessWork implements HostedWorkAdapter {
     this.invocation.check(); return this.handle;
   }
   sourceExpiry(): number { return this.expiresAt; }
+  resultCertificate() { return this.current().resultCertificate(); }
+  async resultWork<T>(context: TenantContext, work: () => Promise<T>): Promise<T> {
+    this.attempt(context);
+    return this.budgets.run(context, false, () => this.current().verify(), work, this.invocation.signal);
+  }
   async run<T>(context: TenantContext, refresh: boolean, revisions: Revisions, admissions: readonly Admission[], request: HostedWorkRequest | undefined, work: () => Promise<T>): Promise<T> {
     if (this.finished) throw new MetadataError('EXECUTION_CANCELLED', 409);
     this.invocation.check();

@@ -43,6 +43,7 @@ export class ArtifactCache implements HostedCacheAdapter {
   }
   async invalidate(key: string): Promise<void> { this.target(key); }
   async verify(): Promise<void> { await this.manifests.verify(this.attempt, this.consumed); }
+  resultCertificate() { return this.manifests.resultCertificate(this.attempt, this.consumed); }
   async read(scope: WorkScope, key: string, stamp: string): Promise<BlazeTable> {
     this.scope(scope); const target = this.target(key, stamp), details = this.manifests.coordinator.describe(this.attempt);
     const read = await this.manifests.read(this.attempt, target); scope.memory(read.metadataBytes);

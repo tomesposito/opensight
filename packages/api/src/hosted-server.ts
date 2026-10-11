@@ -1,7 +1,7 @@
 import { EmbedSessions, embedSessionKey } from './embed-sessions.js';
 import { EmbedContent } from './embed-content.js';
 import { EmbedSources } from './embed-sources.js';
-import { embedSessionRoute } from './embed-session-routes.js';
+import { embedSessionRoute, type EmbedResult } from './embed-session-routes.js';
 import { loadBudgets } from './budget-store.js';
 import { embeddingPolicy, expectedEmbedRevision, HostedEmbedding, initializeEmbedding } from './embedding-config.js';
 import { assertHostedSourcesReady, expireUploads } from './source-maintenance.js';
@@ -56,6 +56,8 @@ export interface HostedInvocationAdapters {
   embedContent: EmbedContent;
   allows(path: string): boolean;
   capabilities: Readonly<Record<string, unknown>>;
+  embedResult?: EmbedResult;
+  embedOperation?(request: IncomingMessage, response: ServerResponse, path: string, sessions: EmbedSessions): Promise<boolean>;
   route(request: IncomingMessage, response: ServerResponse, path: string, context: TenantContext, recheck: () => Promise<void>): Promise<boolean>;
   finish(): Promise<void>;
 }
@@ -68,7 +70,7 @@ export interface HostedServerOptions {
   env?: NodeJS.ProcessEnv;
   mailTransport?: MailTransport;
   /** Invocation mode never runs DDL, activates keys, recovers jobs or starts interval work. */
-  invocation?: { signal: AbortSignal; usage?: HostedUsage; compose?(metadata: TenantMetadata, budgets: TenantBudgets): HostedInvocationAdapters };
+  invocation?: { signal: AbortSignal; usage?: HostedUsage; compose?(metadata: TenantMetadata, budgets: TenantBudgets, auth?: HostedAuth): HostedInvocationAdapters };
 }
 const forgedHeaders = ['x-user', 'x-user-id', 'x-principal', 'x-groups', 'x-group-ids', 'x-namespace', 'x-namespace-id', 'x-tenant', 'x-tenant-id', 'x-subject', 'x-role', 'x-roles', 'x-capabilities'];
 const forgedFields = ['subject', 'principal', 'userId', 'namespaceId', 'groups', 'security', 'capabilities', 'issuer', 'audience'];
@@ -117,7 +119,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
   const embedding = new HostedEmbedding(options.membershipDatabase, metadata, policy);
   const budgets = await loadBudgets(options.membershipDatabase, metadata);
   const jobs = new JobStore(options.membershipDatabase, metadata);
-  const invocation = options.invocation?.compose?.(metadata, budgets);
+  const invocation = options.invocation?.compose?.(metadata, budgets, options.builtinAuth);
   const data = invocation?.data ?? new HostedDataRoutes(new HostedData(new HostedSources(metadata, config.encryptionKey.toString('base64'), sourceEndpoints(options.env)), undefined, budgets), jobs);
   const embedContent = invocation?.embedContent ?? new EmbedContent(new HostedData(new EmbedSources(metadata, config.encryptionKey.toString('base64'), sourceEndpoints(options.env)), undefined, budgets));
   const mail = options.mailTransport ?? smtpFromEnvironment(options.env);
@@ -237,7 +239,8 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
       // SR2/SR3 supply durable admission/artifacts and event claims. Never run
       // the single-node data/job/embedding plane just because Lambda can invoke it.
       if (options.invocation && !['/api/session', '/api/auth/switch', '/api/auth/logout', '/api/namespaces', '/api/users', '/api/groups'].includes(path) && !invocation?.allows(path)) throw new MetadataError('SERVERLESS_STORAGE_REQUIRED', 503);
-      if (await embedSessionRoute(request, response, path, sessions, embedContent)) return;
+      if (await invocation?.embedOperation?.(request, response, path, sessions)) return;
+      if (await embedSessionRoute(request, response, path, sessions, embedContent, invocation?.embedResult)) return;
       // Every other request, including unknown and legacy routes, must verify first.
       const verified = async (req: IncomingMessage) => {
         try {

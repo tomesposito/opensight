@@ -4,10 +4,12 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { method, send } from './automation-routes.js';
 import { readBody } from './query.js';
 import { object, identifier } from './metadata-resources.js';
-import { EmbedSessions, embedFailure } from './embed-sessions.js';
+import { EmbedSessions, embedFailure, type EmbedSession } from './embed-sessions.js';
 import { EmbedContent } from './embed-content.js';
+import type { TenantContext } from './metadata.js';
 
-export async function embedSessionRoute(request: IncomingMessage, response: ServerResponse, path: string, sessions: EmbedSessions, content: EmbedContent): Promise<boolean> {
+export type EmbedResult = (context: TenantContext, session: EmbedSession, body: unknown, recheck: () => Promise<void>) => Promise<{ status: number; body: unknown }>;
+export async function embedSessionRoute(request: IncomingMessage, response: ServerResponse, path: string, sessions: EmbedSessions, content: EmbedContent, publishResult?: EmbedResult): Promise<boolean> {
   const shell = /^\/embed\/sessions\/([A-Za-z0-9_-]{32})$/.exec(path);
   if (shell) {
     method(request, response, ['GET']);
@@ -55,5 +57,6 @@ export async function embedSessionRoute(request: IncomingMessage, response: Serv
     send(response, 200, result); return true;
   }
   await recheck(); await content.data.publication(context, revisions);
-  send(response, 200, result); return true;
+  const output = publishResult ? await publishResult(context, session, result, recheck) : { status: 200, body: result };
+  send(response, output.status, output.body); return true;
 }

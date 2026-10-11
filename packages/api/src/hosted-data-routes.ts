@@ -11,7 +11,8 @@ import type { JobStore } from './job-store.js';
 
 export class HostedDataRoutes {
   readonly prep: HostedPrep;
-  constructor(readonly data: HostedData, jobs?: JobStore) { this.prep = new HostedPrep(data, jobs); }
+  constructor(readonly data: HostedData, jobs?: JobStore,
+    private readonly result?: (request: IncomingMessage, context: TenantContext, status: number, body: unknown, recheck: () => Promise<void>) => Promise<{ status: number; body: unknown }>) { this.prep = new HostedPrep(data, jobs); }
   async route(request: IncomingMessage, response: ServerResponse, path: string, context: TenantContext, recheck: () => Promise<void>): Promise<boolean> {
     this.data.begin(context, undefined, recheck);
     const revisions = await this.data.sources.metadata.revisions(context);
@@ -26,7 +27,8 @@ export class HostedDataRoutes {
     const publish = async (status: number, body: unknown) => {
       if (read) { await recheck(); await this.data.publication(context, revisions); }
       else await this.data.sources.metadata.revisions(context);
-      send(response, status, body);
+      const output = this.result && read ? await this.result(request, context, status, body, recheck) : { status, body };
+      send(response, output.status, output.body);
     };
     if (path === '/api/connectors') {
       method(request, response, ['GET']); await this.data.sources.capability(context, 'build');
