@@ -1,13 +1,16 @@
 import { assembleResult } from './object-transfers.js';
-export interface EmbedShell { sessionId: string; allowedDomains: string[]; resultMaxBytes?: number }
-export type SessionState = 'loading' | 'ready' | 'error' | 'expired' | 'revoked' | 'saved';
+import { startOnDemandEmbed } from './embed-on-demand.js';
+export interface EmbedShell { sessionId: string; allowedDomains: string[]; resultMaxBytes?: number; idleReconnect?: boolean }
+export type SessionState = 'loading' | 'ready' | 'error' | 'expired' | 'revoked' | 'saved' | 'idle' | 'connecting' | 'unavailable';
 export interface EmbedTransport {
   request<T>(action: 'content' | 'question' | 'analysis' | 'save', body?: unknown): Promise<T>;
   ready(): void; saved(): void; destroy(): void;
+  connect?(): Promise<void>;
 }
 /** No storage, cookies, URL credentials, or credential-bearing parent messages. */
 export function startEmbedTransport(shell: EmbedShell, bootstrapValue: string, changed: (state: SessionState) => void,
   connected: (transport: EmbedTransport) => Promise<void>, view: Window = window, fetcher: typeof fetch = fetch): EmbedTransport {
+  if (shell.idleReconnect) return startOnDemandEmbed(shell, bootstrapValue, changed, connected, view, fetcher);
   let bootstrap = bootstrapValue, credential = '', parentOrigin = '', channelId = '', expiresAt = 0, deadline = 0;
   let destroyed = false, terminal = false, initialized = false;
   let pendingStatus: Promise<void> | undefined;

@@ -57,3 +57,13 @@ test('H6 SDK stops handshake retries after a frame readiness timeout', async t =
   d.loaded(); t.mock.timers.tick(30000); assert.equal(errors, 1);
   const sent = d.messages.length; t.mock.timers.tick(1000); assert.equal(d.messages.length, sent); handle.destroy();
 });
+
+test('on-demand connectionRequired ends readiness timers without requesting a new URL; ready can recur', async t => {
+  t.mock.timers.enable({ apis: ['Date', 'setInterval', 'setTimeout'] });
+  const d = dom(); let issuedCount = 0, idle = 0, ready = 0, errors = 0;
+  const handle = await createSessionEmbeddingClient({ allowedEmbedOrigins: [origin], getEmbedUrl: async () => { issuedCount++; return issued(); } }).mount(d.container, { onConnectionRequired: () => idle++, onReady: () => ready++, onError: () => errors++ });
+  d.loaded(); const event = { origin, source: handle.iframe.contentWindow, data: { ...d.messages[0].data, type: 'opensight:session', event: 'connectionRequired' } };
+  d.emit({ ...event, source: {} }); assert.equal(idle, 0); d.emit(event); assert.equal(idle, 1);
+  t.mock.timers.tick(120000); assert.equal(errors, 0); assert.equal(issuedCount, 1); assert.equal(d.messages.length, 1);
+  d.emit({ ...event, data: { ...event.data, event: 'ready' } }); d.emit(event); d.emit({ ...event, data: { ...event.data, event: 'ready' } }); assert.equal(ready, 2); assert.equal(issuedCount, 1); handle.destroy();
+});

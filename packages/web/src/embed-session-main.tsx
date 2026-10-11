@@ -1,4 +1,5 @@
 import { createRoot } from 'react-dom/client';
+import { flushSync } from 'react-dom';
 import { useEffect, useRef, useState } from 'react';
 import { EmbedFrame, embedAsset, type EmbedBrand } from './EmbedFrame.js';
 import { VisualCard } from './VisualCard.js';
@@ -28,16 +29,20 @@ function SessionFrame({ shell }: { shell: Shell }) {
     const favicon = embedAsset(shell.appearance.faviconAssetId, shell.assets);
     if (favicon) { const link = document.createElement('link'); link.rel = 'icon'; link.href = favicon; document.head.appendChild(link); }
     const value = bootstrap; bootstrap = '';
-    const current = startEmbedTransport(shell, value, state => { setState(state); if (['expired', 'revoked', 'error', 'saved'].includes(state)) setContent(null); }, async t => {
+    const current = startEmbedTransport(shell, value, state => {
+      const update = () => { setState(state); if (shell.idleReconnect ? state !== 'ready' : ['expired', 'revoked', 'error', 'saved'].includes(state)) setContent(null); };
+      if (shell.idleReconnect && state !== 'ready') flushSync(update); else update();
+    }, async t => {
       const result = await t.request<Content>('content'); setContent(result); t.ready();
     });
     transport.current = current; return () => current.destroy();
   }, [shell]);
   const ready = state === 'ready' && content, empty = ready && ['dashboard', 'visual'].includes(content.kind) && !content.visuals?.length;
   const frameState = ready ? empty ? 'empty' : 'ready' : state === 'expired' || state === 'saved' ? 'expired' : state === 'revoked' || state === 'error' ? 'error' : 'loading';
-  const statusTitle = state === 'saved' ? 'Analysis saved' : state === 'expired' ? 'Session expired' : state === 'revoked' ? 'Access revoked' : state === 'error' ? 'Embedded content unavailable' : state === 'loading' ? 'Loading embedded content' : undefined;
+  const statusTitle = state === 'idle' ? 'Connect to view' : state === 'connecting' ? 'Connecting…' : state === 'unavailable' ? 'Connection unavailable' : state === 'saved' ? 'Analysis saved' : state === 'expired' ? 'Session expired' : state === 'revoked' ? 'Access revoked' : state === 'error' ? 'Embedded content unavailable' : state === 'loading' ? 'Loading embedded content' : undefined;
   return <EmbedFrame state={frameState} statusTitle={statusTitle} appearance={shell.appearance} assets={shell.assets} title={content?.title} viewLabel={content?.kind === 'console' ? 'Analysis editor' : content?.kind === 'q' ? 'Q search' : 'Embedded view'} description="Session view · using your current data permissions"
-    detail={state === 'revoked' ? 'Access has been revoked. Request a new session from your application.' : state === 'saved' ? 'Analysis saved. Request a new session to continue editing.' : state === 'expired' ? 'This session has expired. Request a new session from your application.' : undefined}>
+    statusAction={['idle', 'unavailable'].includes(state) ? <button type="button" onClick={() => { void transport.current?.connect?.().catch(() => {}); }}>Connect</button> : undefined}
+    detail={['idle', 'unavailable'].includes(state) ? 'Connect to check access and load current data. Idle views hide their data after 45 seconds.' : state === 'connecting' ? 'The workspace may take a moment to wake up.' : state === 'revoked' ? 'Access has been revoked. Request a new session from your application.' : state === 'saved' ? 'Analysis saved. Request a new session to continue editing.' : state === 'expired' ? 'This session has expired. Request a new session from your application.' : undefined}>
     {ready && content.kind === 'q' && transport.current && <Question transport={transport.current} columns={content.columns ?? []} />}
     {ready && content.kind === 'console' && transport.current && <EmbeddedAuthor initial={content as ConsoleContent} transport={transport.current} />}
     {ready && content.kind !== 'console' && <div className="dashboard-grid">{content.visuals?.map(v => <VisualCard key={v.id} visual={v} />)}</div>}
