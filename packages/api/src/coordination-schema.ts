@@ -78,7 +78,7 @@ export async function migrateCoordination(database: Database, deployment: string
       const marker = (await c.query('SELECT version, checksum FROM sr_coordination_schema WHERE deployment = ?', [deployment]))[0];
       const configured = (await c.query('SELECT revision, budget_version, entitlements FROM sr_limits WHERE deployment = ?', [deployment]))[0];
       if (Number(marker?.version) !== 1 || marker?.checksum !== coordinationChecksum) throw new MetadataError('COORDINATION_FOREIGN_SCHEMA', 503);
-      if (Number(configured?.revision) !== 1 || Number(configured?.budget_version) !== Number(budgets.version) || configured?.entitlements !== serialized) throw new MetadataError('COORDINATION_CONFIG_CHANGED', 503);
+      if (!Number.isSafeInteger(Number(configured?.revision)) || Number(configured?.revision) < 1 || Number(configured?.budget_version) !== Number(budgets.version) || configured?.entitlements !== serialized) throw new MetadataError('COORDINATION_CONFIG_CHANGED', 503);
       return;
     }
     for (const sql of schema) await c.query(sql);

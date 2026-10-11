@@ -20,6 +20,9 @@ import { DurableDispatch } from '../dist/dispatch.js';
 import { ObjectLedger } from '../dist/object-ledger.js';
 import { DurableUploads } from '../dist/durable-uploads.js';
 import { directRequest } from './serverless-upload-helpers.mjs';
+import { budgetEnvironment } from '../dist/budget-store.js';
+import { checksum } from '../dist/metadata-operator.js';
+import { DurableCoordinator } from '../dist/coordination.js';
 
 const env = () => ({ ...environment(), ...referenceEnv, ...runtimeEnv(), OPENSIGHT_REFERENCE: undefined,
   OPENSIGHT_SERVERLESS_DATA: 'durable', OPENSIGHT_RELEASE_DIGEST: 'sha256:' + 'a'.repeat(64) });
@@ -28,6 +31,12 @@ const bootstrap = e => ({ command: 'bootstrap-initial', version: 1, operationId:
   tenantId: randomUUID(), namespaceId: randomUUID(), userId: randomUUID(), subject: randomUUID(), email: `tester${i}@example.test`, name: `Synthetic tester ${i}`,
   password: randomBytes(32).toString('base64url'), totpSecret: randomBytes(20).toString('base64') })) });
 const activate = (e, b) => ({ command: 'activate-initial', version: 1, operationId: b.operationId, expectedEpoch: 1, releaseDigest: e.OPENSIGHT_RELEASE_DIGEST, authorization: auth(e) });
+function budgetTune(e, b) {
+  const old = budgetEnvironment(e), target = structuredClone(old);
+  Object.assign(target.defaults, { workingBytes: 67108864, cacheBytes: 67108864, workerRssBytes: 1073741824, workerHeapMb: 512 }); target.node.workerHeapMb = 512;
+  return { target, environment: { ...e, OPENSIGHT_NODE_LIMITS: JSON.stringify(target.node), OPENSIGHT_TENANT_LIMIT_DEFAULTS: JSON.stringify(target.defaults) },
+    command: { ...activate(e, b), command: 'tune-initial-budgets', previousBudgetDigest: checksum(old), targetBudgetDigest: checksum(target) } };
+}
 async function fixture(t) {
   const dir = await mkdtemp(join(tmpdir(), 'opensight-initial-')), db = new SqliteMetadataDatabase(join(dir, 'metadata.sqlite')), e = env();
   t.after(async () => { await db.close(); await rm(dir, { recursive: true, force: true }); });
@@ -44,9 +53,55 @@ test('SR4b1 private setup rejects authority, unknown fields and unsafe modes bef
   const repair = { ...activate(e, b), command: 'repair-initial-locks' };
   for (const changed of [{ authorization: 'Operator forged' }, { unknown: true }, { expectedEpoch: 2 }, { releaseDigest: 'sha256:' + 'b'.repeat(64) }])
     await assert.rejects(runtime.administration({ ...repair, ...changed }, context));
+  const tune = budgetTune(e, b), tuningRuntime = createPrivateRuntime(() => tune.environment, { databases: () => assert.fail('invalid tuning opened SQL') });
+  for (const changed of [{ authorization: 'Operator forged' }, { unknown: true }, { expectedEpoch: 2 }, { previousBudgetDigest: 'invalid' }, { targetBudgetDigest: 'b'.repeat(64) }, { previousBudgetDigest: tune.command.targetBudgetDigest }])
+    await assert.rejects(tuningRuntime.administration({ ...tune.command, ...changed }, context));
   for (const [field, value] of [['OPENSIGHT_MAINTENANCE', 'open'], ['OPENSIGHT_SERVERLESS_DATA', undefined], ['OPENSIGHT_REFERENCE', 'single-node'], ['OPENSIGHT_MODE', 'demo']]) {
     const changed = { ...e, [field]: value };
     await assert.rejects(createPrivateRuntime(() => changed, { databases: () => assert.fail('unsafe mode opened SQL') }).administration(b, context));
+  }
+});
+test('SR4b3 initial memory correction rejects held work, rolls back, preserves state and verifies retries', async t => {
+  const f = await fixture(t); await f.call(f.b); await f.call(activate(f.e, f.b));
+  const tuning = budgetTune(f.e, f.b), metadata = new TenantMetadata(f.db, f.db), tester = f.b.testers[0];
+  const tenantContext = await metadata.authenticate(null, async () => ({ namespaceId: tester.namespaceId, userId: tester.userId }));
+  const coordinator = new DurableCoordinator(f.db, metadata, 'test', 'sqlite');
+  const attempt = await coordinator.admit(tenantContext, { attemptId: randomUUID(), class: 'query', revisions: await metadata.revisions(tenantContext), platformRemainingMs: 28000 });
+  Object.assign(f.e, tuning.environment);
+  await assert.rejects(f.call(tuning.command), { code: 'WORKSPACE_DRAIN_REQUIRED' });
+  assert.equal((await f.db.transaction(c => c.query('SELECT version FROM h4_budget_config')))[0].version, 1);
+  await coordinator.release(attempt);
+  const snapshot = () => f.db.transaction(async c => ({ identities: await c.query('SELECT * FROM h2_identities ORDER BY subject'), admissions: await c.query('SELECT * FROM sr_admission'), control: await c.query('SELECT * FROM sr_control') }));
+  const before = await snapshot();
+  const broken = { durable: true, close: async () => {}, transaction: work => f.db.transaction(c => work({ query: (sql, args) => {
+    if (sql.startsWith('INSERT INTO h2_requests')) throw Error('synthetic budget interruption'); return c.query(sql, args);
+  } })) };
+  await assert.rejects(initialAdministration(broken, f.e, initialCommand(tuning.command, f.e), 'sqlite'));
+  assert.equal((await f.db.transaction(c => c.query('SELECT version FROM h4_budget_config')))[0].version, 1);
+  assert.equal((await f.db.transaction(c => c.query('SELECT revision FROM sr_limits')))[0].revision, 1);
+  const expected = { state: 'budgets-configured', epoch: 1, budgetVersion: 2 };
+  assert.deepEqual(await f.call(tuning.command), expected); assert.deepEqual(await f.call(tuning.command), expected);
+  assert.deepEqual(await snapshot(), before);
+  assert.equal((await f.db.transaction(c => c.query("SELECT * FROM h8_audit WHERE action = 'runtime.initial-budgets-configured'"))).length, 1);
+  assert.deepEqual(JSON.parse((await f.db.transaction(c => c.query('SELECT body FROM h4_budget_config')))[0].body), tuning.target);
+  await assert.rejects(f.call({ ...tuning.command, previousBudgetDigest: 'c'.repeat(64) }), { code: 'INITIAL_BUDGET_CHANGE_CONFLICT' });
+  await f.db.transaction(c => c.query("UPDATE sr_control SET state = 'maintenance'"));
+  await assert.rejects(f.call(tuning.command), { code: 'INITIAL_BUDGET_CHANGE_INVALID' });
+  await migrateServerless(f.db, f.e, 'sqlite');
+  assert.equal((await f.db.transaction(c => c.query('SELECT revision FROM sr_limits')))[0].revision, 2);
+});
+test('SR4b3 initial tuning refuses changed authority, quotas and stale configuration', async t => {
+  for (const fault of ['release', 'testers', 'previous', 'quota', 'epoch']) {
+    const f = await fixture(t); await f.call(f.b); await f.call(activate(f.e, f.b));
+    const tuning = budgetTune(f.e, f.b); Object.assign(f.e, tuning.environment);
+    if (fault === 'release') { f.e.OPENSIGHT_RELEASE_DIGEST = 'sha256:' + 'b'.repeat(64); tuning.command.releaseDigest = f.e.OPENSIGHT_RELEASE_DIGEST; }
+    if (fault === 'testers') await f.db.transaction(c => c.query("UPDATE h2_memberships SET status = 'removed'"));
+    if (fault === 'previous') tuning.command.previousBudgetDigest = 'c'.repeat(64);
+    if (fault === 'quota') { tuning.target.defaults.sourceRows--; f.e.OPENSIGHT_TENANT_LIMIT_DEFAULTS = JSON.stringify(tuning.target.defaults); tuning.command.targetBudgetDigest = checksum(tuning.target); }
+    if (fault === 'epoch') await f.db.transaction(c => c.query('UPDATE sr_control SET epoch = 2'));
+    await assert.rejects(f.call(tuning.command));
+    assert.equal((await f.db.transaction(c => c.query('SELECT version FROM h4_budget_config')))[0].version, 1);
+    assert.equal((await f.db.transaction(c => c.query('SELECT revision FROM sr_limits')))[0].revision, 1);
   }
 });
 test('SR4b1 atomic bootstrap retries preserve credentials, use opaque receipts and create no invitation or mail', async t => {
@@ -230,6 +285,30 @@ test('SR4b2 live Postgres initial repair enables serialized row locks without wr
     assert.equal(accepted.state, 'queued'); assert.ok(events.length >= 4);
     await assert.rejects(uploads.status(contexts[1], accepted.id, async () => {}), { code: 'RESOURCE_NOT_FOUND' });
     await pool.query('RESET ROLE');
+    // Tuning serializes with actual runtime admission and preserves accepted work.
+    const tuning = budgetTune(e, b), tune = initialCommand(tuning.command, tuning.environment);
+    const workBefore = (await pool.query('SELECT * FROM sr_operation')).rows;
+    const coordinator = new DurableCoordinator(operatorDb, metadata, 'test');
+    const attempt = await coordinator.admit(contexts[0], { attemptId: randomUUID(), class: 'query', revisions: await metadata.revisions(contexts[0]), platformRemainingMs: 28000 });
+    await pool.query('RESET ROLE');
+    await assert.rejects(initialAdministration(db, tuning.environment, tune), { code: 'WORKSPACE_DRAIN_REQUIRED' });
+    await coordinator.release(attempt); await pool.query('RESET ROLE');
+    const held = new Pool({ connectionString: process.env.DATABASE_URL, max: 1, options: `-c search_path=${schema}` });
+    const holder = await held.connect();
+    const limited = { durable: true, close: async () => {}, transaction: work => db.transaction(async c => {
+      await c.query("SET LOCAL lock_timeout = '100ms'"); return work(c);
+    }) };
+    try {
+      await holder.query('BEGIN'); await holder.query('SELECT * FROM sr_control FOR UPDATE');
+      await assert.rejects(initialAdministration(limited, tuning.environment, tune), { code: '55P03' });
+    } finally { await holder.query('ROLLBACK'); holder.release(); await held.end(); }
+    assert.deepEqual(await initialAdministration(db, tuning.environment, tune), { state: 'budgets-configured', epoch: 1, budgetVersion: 2 });
+    assert.deepEqual(await initialAdministration(db, tuning.environment, tune), { state: 'budgets-configured', epoch: 1, budgetVersion: 2 });
+    assert.deepEqual((await pool.query('SELECT * FROM sr_operation')).rows, workBefore);
+    assert.deepEqual((await pool.query('SELECT * FROM h2_identities ORDER BY subject')).rows, before);
+    assert.deepEqual((await pool.query('SELECT revision, budget_version FROM sr_limits')).rows, [{ revision: 2, budget_version: 2 }]);
+    const next = await coordinator.admit(contexts[0], { attemptId: randomUUID(), class: 'query', revisions: await metadata.revisions(contexts[0]), platformRemainingMs: 28000 });
+    assert.equal(coordinator.describe(next).limits.workerHeapMb, 512); await coordinator.release(next); await pool.query('RESET ROLE');
     await pool.query('UPDATE sr_control SET epoch = 2');
     await assert.rejects(initialAdministration(db, e, repair), { code: 'INITIAL_EPOCH_REQUIRED' });
   });

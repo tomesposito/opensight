@@ -67,3 +67,18 @@ operation and application digest, checks initial empty durable work, and records
 the additive privilege repair. Keep both artifact identities in private evidence;
 repeat real browser acceptance. This command cannot repair later populated or
 maintenance deployments.
+
+For [initial memory tuning](../../docs/phase5-sr4b3-initial-memory.md), retain the
+previous canonical budget checksum and prepare only the specified memory changes
+in private `validation.tfvars.json` and `pilot.tfvars.json` runtime environment
+inputs. Save `pilot-budget-change.json` with only `previousBudgetDigest` and
+`targetBudgetDigest` (SHA-256 of the API's canonical budget serialization).
+Select the tested administration artifact with `prepare administration`, review
+and apply the environment/image plan, then `invoke tune-initial-budgets`. A held
+admission causes a refusal; retry only after that bounded attempt retires. Never
+reset accepted work or credentials. The command atomically advances configuration
+revision to two, keeping epoch one and the application image. Republish/select
+the request version when its environment changes, and rerun real acceptance.
+The standalone `upload-smoke.mjs` accepts stdin execution in a read-only,
+network-disabled 2 GiB runtime container and measures exact 8 MiB CSV parse and
+Parquet encoding using the pilot memory limits.

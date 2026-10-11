@@ -16,9 +16,15 @@ export function initialCredentials(ownerEmail, agentEmail = 'automation@example.
     email, name: index === 0 ? 'Workspace owner' : 'Automation tester', password: randomBytes(32).toString('base64url'), totpSecret: randomBytes(20).toString('base64') })) };
 }
 export function safeInitialResult(command, value) {
-  const expected = { migrate: { state: 'migrated', maintenance: true }, 'bootstrap-initial': { state: 'bootstrapped', epoch: 1, tenants: 2 }, 'activate-initial': { state: 'active', epoch: 1 }, 'repair-initial-locks': { state: 'locks-repaired', epoch: 1 } }[command];
+  const expected = { migrate: { state: 'migrated', maintenance: true }, 'bootstrap-initial': { state: 'bootstrapped', epoch: 1, tenants: 2 }, 'activate-initial': { state: 'active', epoch: 1 }, 'repair-initial-locks': { state: 'locks-repaired', epoch: 1 }, 'tune-initial-budgets': { state: 'budgets-configured', epoch: 1, budgetVersion: 2 } }[command];
   if (!expected || !value || Object.keys(value).sort().join() !== Object.keys(expected).sort().join() || Object.entries(expected).some(([key, field]) => value[key] !== field)) throw Error('INITIAL_RESULT_INVALID');
   return expected;
+}
+export function initialBudgetChange(value) {
+  if (!value || Object.keys(value).sort().join() !== 'previousBudgetDigest,targetBudgetDigest'
+    || !Object.values(value).every(v => typeof v === 'string' && /^[a-f0-9]{64}$/.test(v))
+    || value.previousBudgetDigest === value.targetBudgetDigest) throw Error('INITIAL_BUDGET_CHANGE_INVALID');
+  return { previousBudgetDigest: value.previousBudgetDigest, targetBudgetDigest: value.targetBudgetDigest };
 }
 export function activationRequired(record, release, account, deployment, operationId) {
   if (record?.version !== 1 || record.account !== account || record.deployment !== deployment || record.imageUri !== release.image_uri || record.operationId !== operationId
@@ -148,8 +154,8 @@ export async function main(args = process.argv.slice(2), environment = process.e
     };
     if (operation === 'invoke') {
       source();
-      if (!pilot || !inputs.enable_pilot_runtime || !['migrate', 'bootstrap-initial', 'activate-initial', 'repair-initial-locks'].includes(selection)) throw Error('INITIAL_COMMAND_INVALID');
-      if (selection === 'repair-initial-locks') activation();
+      if (!pilot || !inputs.enable_pilot_runtime || !['migrate', 'bootstrap-initial', 'activate-initial', 'repair-initial-locks', 'tune-initial-budgets'].includes(selection)) throw Error('INITIAL_COMMAND_INVALID');
+      if (['repair-initial-locks', 'tune-initial-budgets'].includes(selection)) activation();
       const fn = verifyFunction('migration');
       if (fn.Configuration.ImageConfigResponse?.ImageConfig?.Command?.join() !== 'packages/api/dist/aws-lambda.administration') throw Error('INITIAL_HANDLER_REQUIRED');
       const current = inventory(), secretArn = current.secrets.operator;
@@ -158,7 +164,8 @@ export async function main(args = process.argv.slice(2), environment = process.e
       const key = Buffer.from(secret.operatorKey, 'base64'); if (key.length !== 32) throw Error('OPERATOR_KEY_INVALID');
       const testers = selection === 'migrate' ? null : read('initial-testers.json');
       const input = { command: selection, authorization: `Operator ${key.toString('base64url')}`, ...(testers ? { version: 1, operationId: testers.operationId,
-        ...(selection === 'bootstrap-initial' ? { testers: testers.testers } : { expectedEpoch: 1, releaseDigest: release.image_uri.split('@')[1] }) } : {}) };
+        ...(selection === 'bootstrap-initial' ? { testers: testers.testers } : { expectedEpoch: 1, releaseDigest: release.image_uri.split('@')[1] }),
+        ...(selection === 'tune-initial-budgets' ? initialBudgetChange(read('pilot-budget-change.json')) : {}) } : {}) };
       write('pilot-command.json', input);
       try {
         const response = aws('lambda', 'invoke', ['--function-name', fn.Configuration.FunctionArn, '--invocation-type', 'RequestResponse', '--cli-connect-timeout', '10', '--cli-read-timeout', '130', '--cli-binary-format', 'raw-in-base64-out', '--payload', `file://${path('pilot-command.json')}`, path('pilot-response.json')]);
