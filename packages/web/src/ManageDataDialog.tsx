@@ -52,6 +52,7 @@ export function ManageDataDialog({ client, datasets, sampleLoaded, onClose, onRe
   client?: ManageDataClient;
   /** The analysis's datasets (local author: the single draft dataset, if any). */
   datasets: readonly AuthorDataset[];
+  /** The bundled sample dataset backs this analysis (no draft dataset, fields fall back to the sample). */
   sampleLoaded?: boolean;
   onClose: () => void;
   onReplace: (dataset: AuthorDataset) => void;

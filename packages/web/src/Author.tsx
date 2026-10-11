@@ -214,7 +214,7 @@ function AuthorWorkspace({ renderIdentity, sampleLoaded = false, onTrySample, cl
       if (importConfirmation.current) { importConfirmation.current = false; notify('Bundle imported'); }
     }} />}
     {saveCopyOpen && <SaveAnalysisCopy name={draft.title} onClose={() => setSaveCopyOpen(false)} onSave={name => { const error = drafts.saveCopy(name); if (!error) { setSaveCopyOpen(false); notify('Separate analysis copy saved on this device'); } return error; }} />}
-    {manageOpen && <ManageDataDialog client={apiClient} datasets={draft.dataset ? [draft.dataset] : []} sampleLoaded={sampleLoaded} onClose={() => setManageOpen(false)}
+    {manageOpen && <ManageDataDialog client={apiClient} datasets={draft.dataset ? [draft.dataset] : []} sampleLoaded={sampleLoaded || (access.mode !== 'local' && !draft.dataset)} onClose={() => setManageOpen(false)}
       onReplace={dataset => { dispatch({ type: 'dataset', dataset }); onDatasetChange?.(dataset); setManageOpen(false); notify(`Dataset replaced with ${dataset.name}.`); }}
       onRemove={() => { dispatch({ type: 'dataset', dataset: undefined }); onDatasetChange?.(undefined); setManageOpen(false); notify('Dataset removed. Add data to keep building.'); }}
       onAddData={(onSources ?? onPrep) ? () => { if (drafts.keepCurrent()) { setManageOpen(false); (onSources ?? onPrep)!(); } } : undefined} />}
