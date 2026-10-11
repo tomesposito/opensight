@@ -11,6 +11,11 @@ import { HostedAuth } from '../dist/hosted-auth.js';
 import { hostedConfig } from '../dist/hosted-config.js';
 import { drainHostedServer } from '../dist/hosted-server.js';
 import { dispatchRuntimeRequest } from '../dist/runtime-http-bridge.js';
+import { HostedData } from '../dist/hosted-data.js';
+import { HostedDataRoutes } from '../dist/hosted-data-routes.js';
+import { HostedSources } from '../dist/hosted-sources.js';
+import { TenantMetadata } from '../dist/metadata.js';
+import { upload } from './source-helpers.mjs';
 import { EmbedSessions } from '../dist/embed-sessions.js';
 
 test('SR1 HTTP and Lambda share hosted routing, with clean per-request teardown and no interval work', async t => {
@@ -104,4 +109,30 @@ test('SR1 local HTTP client abort cancels admitted work and closes owned resourc
   const req = request({ host: '127.0.0.1', port: server.address().port, path: '/api/session', headers: { host: 'opensight.example' } });
   req.on('error', () => {}); req.end(); await ready; req.destroy();
   await closed;
+});
+
+test('SR4b6 buffered POST query completes native work, while a real invocation abort still cancels it', async t => {
+  const f = await h8Fixture(t), env = { ...f.env, ...runtimeEnv() }, metadata = new TenantMetadata(f.db, f.db);
+  const sources = new HostedSources(metadata, f.env.OPENSIGHT_AUTH_ENCRYPTION_KEY, []);
+  const owner = await metadata.authenticate(null, async () => ({ namespaceId: 'one', userId: 'admin' }));
+  const source = await sources.upload(owner, upload()); let currentScope, closed = 0;
+  const runtime = createRuntime(() => env, {
+    databases(scope) { currentScope = scope; scope.own({ close: async () => { closed++; }, force() {} }); return { membership: f.db, tenant: f.db }; },
+    readiness: async () => {},
+    application: (db, scope) => createHostedApiServer({ env, membershipDatabase: db.membership, tenantDatabase: db.tenant,
+      security: { authenticate: async req => req.headers.authorization === 'one' ? { namespaceId: 'one', userId: 'admin' } : undefined }, mailTransport: new StubMailTransport(),
+      invocation: { signal: scope.signal, compose: (metadata, budgets) => ({
+        data: new HostedDataRoutes(new HostedData(new HostedSources(metadata, f.env.OPENSIGHT_AUTH_ENCRYPTION_KEY, []), undefined, budgets)),
+        allows: () => true, capabilities: {}, route: async () => false, finish: () => budgets.shutdown(),
+      }) } }),
+  });
+  const request = () => event('/api/api/sources/' + source.id + '/query', 'POST', { query: { dimensions: [], measures: [{ fieldId: 'total', columnName: 'amount', aggregation: 'SUM' }], filters: [] } });
+  const result = await runtime.lambda(request(), context);
+  assert.equal(result.statusCode, 200); assert.deepEqual(payload(result).rows, [{ total: 60 }]); assert.equal(closed, 1);
+  let entered; const ready = new Promise(resolve => { entered = resolve; });
+  t.mock.method(HostedData.prototype, 'computeQuery', async function (context) {
+    const work = this.scope(context); entered(); await once(work.signal, 'abort'); work.check();
+  });
+  const cancelled = runtime.lambda(request(), context); await ready; currentScope.controller.abort();
+  const response = await cancelled; assert.equal(response.statusCode, 503); assert.equal(payload(response).errorCode, 'INVOCATION_DEADLINE_EXCEEDED'); assert.equal(closed, 2);
 });

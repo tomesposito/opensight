@@ -12,6 +12,9 @@ export async function dispatchRuntimeRequest(server: Server, input: RuntimeReque
   const request = new IncomingMessage(socket);
   request.method = input.method; request.url = input.path; request.headers = input.headers;
   request.rawHeaders = Object.entries(input.headers).flat();
+  // Gateway validation already supplied the entire body. Node's IncomingMessage
+  // otherwise treats normal stream EOF as an aborted, incomplete HTTP message.
+  request.complete = true;
   request.push(input.body); request.push(null);
   const response = new ServerResponse(request), chunks: Buffer[] = []; let bytes = 0;
   const capture = (chunk: Buffer, callback: (error?: Error | null) => void) => {
