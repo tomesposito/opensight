@@ -251,3 +251,11 @@ reconnect and no repeated bootstrap redemption. The refreshed demo tour reports
 gap was found; QuickSight visual fidelity remains unmeasured. See
 [SR3b evidence](phase5-sr3b-evidence.md) for exact test counts and the distinction
 between local browser acceptance and the remaining public deployment work.
+
+## SR4a public ingress
+
+No product UI source changed. The rebuilt demo tour completed 251 frames without
+page errors or external requests; 148 frames matched SR3b byte for byte. Visual
+inspection found no new layout gap. README media still reflects the latest UI
+phase. [Ingress evidence](phase5-sr4a-ingress-evidence.md) records the offline
+suite and cloud checks separately; public application activation remains pending.

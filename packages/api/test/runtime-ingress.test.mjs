@@ -84,3 +84,30 @@ test('SR2d control JSON is bounded at 1 MiB before SQL, with a 2 MiB envelope ce
     }
   }
 });
+
+test('SR4a edge-derived peers are opt-in, normalized, never forwarded to application headers and required before SQL', async () => {
+  const env = { ...runtimeEnv(), OPENSIGHT_INGRESS_PEER: 'viewer-function' };
+  for (const [peer, expected] of [['192.0.2.7', '192.0.2.7'], ['2001:0db8:0:0:0:0:0:7', '2001:db8::7'], ['::ffff:192.0.2.7', '192.0.2.7']]) {
+    const e = event(); delete e.headers['cloudfront-viewer-address']; e.headers['x-opensight-ingress-peer'] = peer;
+    assert.equal(authorizeIngress(e, env).isAuthorized, true); const adapted = adaptGatewayRequest(e, env); assert.equal(adapted.peer, expected); assert.equal(adapted.headers['x-opensight-ingress-peer'], undefined);
+    assert.equal(authorizeIngress(e, runtimeEnv()).isAuthorized, false);
+  }
+  const runtime = createRuntime(() => env, { databases() { assert.fail('bad peer opened SQL'); } });
+  for (const peer of [undefined, '', '192.0.2.1:443', '[2001:db8::1]', 'fe80::1%eth0', '192.0.2.1,192.0.2.2', ' 192.0.2.1', 'not-an-ip']) {
+    const e = event(); if (peer !== undefined) e.headers['x-opensight-ingress-peer'] = peer;
+    assert.equal(authorizeIngress(e, env).isAuthorized, false); assert.ok((await runtime.lambda(e, context)).statusCode >= 400);
+  }
+  for (const mode of ['', 'forwarded-for', 'anything']) assert.equal(authorizeIngress(event(), { ...runtimeEnv(), OPENSIGHT_INGRESS_PEER: mode }).isAuthorized, false);
+});
+test('SR4a separate startup route cannot authorize a different method/path or override the gateway context', () => {
+  const env = { ...runtimeEnv(), OPENSIGHT_INGRESS_STARTUP_ROUTE: 'separate' };
+  const startup = event('/api/api/startup', 'POST', {}); startup.routeKey = startup.requestContext.routeKey = 'POST /api/api/startup';
+  assert.equal(authorizeIngress(startup, env).isAuthorized, true); assert.equal(adaptGatewayRequest(startup, env).path, '/api/startup');
+  assert.equal(authorizeIngress(startup, runtimeEnv()).isAuthorized, false);
+  assert.equal(authorizeIngress(event('/api/api/startup', 'POST', {}), env).isAuthorized, false);
+  assert.equal(authorizeIngress(event(), env).isAuthorized, true);
+  for (const mutation of [e => { e.requestContext.http.method = 'GET'; }, e => { e.rawPath = e.requestContext.http.path = '/api/api/session'; }, e => { e.requestContext.routeKey = '$default'; }, e => { e.routeKey = '$default'; }, e => { e.requestContext.http.path = '/api/api/session'; }]) {
+    const e = structuredClone(startup); mutation(e); assert.equal(authorizeIngress(e, env).isAuthorized, false);
+  }
+  for (const mode of ['', '$default', 'anything']) assert.equal(authorizeIngress(startup, { ...env, OPENSIGHT_INGRESS_STARTUP_ROUTE: mode }).isAuthorized, false);
+});

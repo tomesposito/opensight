@@ -4,22 +4,24 @@ import { MetadataError } from './metadata-db.js';
 
 export interface RuntimeRequest { method: string; path: string; headers: Record<string, string>; body: Buffer; peer: string; requestTime: number }
 export interface RuntimeResponse { statusCode: number; headers: Record<string, string>; body: string; isBase64Encoded?: boolean; cookies?: string[] }
-export interface IngressConfig { origin: string; domain: string; apiId: string; stage: string; route: string; keys: ReadonlyMap<string, string> }
+export interface IngressConfig { origin: string; domain: string; apiId: string; stage: string; route: string; keys: ReadonlyMap<string, string>; peer?: 'viewer-function'; separateStartup?: true }
 export const controlBodyBytes = 1024 * 1024;
 export const applicationEnvelopeBytes = 2 * 1024 * 1024;
 function invalid(): never { throw new MetadataError('HOSTED_REQUEST_INVALID', 400); }
 function denied(): never { throw new MetadataError('UNTRUSTED_INGRESS', 403); }
 const record = (v: unknown): Record<string, unknown> => v && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, unknown> : invalid();
 const singleton = new Set(['host', 'authorization', 'origin', 'content-type', 'content-length', 'idempotency-key', 'if-match', 'if-none-match', 'if-modified-since', 'if-unmodified-since', 'range',
-  'x-opensight-ingress-key-id', 'x-opensight-ingress-secret', 'x-opensight-ingress-origin', 'cloudfront-viewer-address']);
+  'x-opensight-ingress-key-id', 'x-opensight-ingress-secret', 'x-opensight-ingress-origin', 'x-opensight-ingress-peer', 'cloudfront-viewer-address']);
 export const forgedPrincipalHeaders = ['x-user', 'x-user-id', 'x-principal', 'x-groups', 'x-group-ids', 'x-namespace', 'x-namespace-id', 'x-tenant', 'x-tenant-id', 'x-subject', 'x-role', 'x-roles', 'x-capabilities'];
 
 export function ingressConfig(env: NodeJS.ProcessEnv): IngressConfig {
   try {
     const origin = env.OPENSIGHT_PUBLIC_ORIGIN!, url = new URL(origin), domain = env.OPENSIGHT_INGRESS_DOMAIN!;
     const apiId = env.OPENSIGHT_INGRESS_API_ID!, stage = env.OPENSIGHT_INGRESS_STAGE!, route = env.OPENSIGHT_INGRESS_ROUTE ?? '$default';
+    const peer = env.OPENSIGHT_INGRESS_PEER, startup = env.OPENSIGHT_INGRESS_STARTUP_ROUTE;
     if (url.protocol !== 'https:' || url.origin !== origin || url.username || url.password || !domain || !/^[a-z0-9.-]+$/.test(domain)
-      || domain === url.hostname || domain.endsWith('.execute-api.amazonaws.com') || !/^[A-Za-z0-9_-]+$/.test(apiId) || !/^[A-Za-z0-9_$-]+$/.test(stage) || route !== '$default') throw Error();
+      || domain === url.hostname || domain.endsWith('.execute-api.amazonaws.com') || !/^[A-Za-z0-9_-]+$/.test(apiId) || !/^[A-Za-z0-9_$-]+$/.test(stage) || route !== '$default'
+      || peer !== undefined && peer !== 'viewer-function' || startup !== undefined && startup !== 'separate') throw Error();
     const raw = JSON.parse(env.OPENSIGHT_INGRESS_KEYS ?? ''), keys = new Map<string, string>();
     if (!Array.isArray(raw) || raw.length < 1 || raw.length > 2) throw Error();
     for (const key of raw) {
@@ -27,7 +29,7 @@ export function ingressConfig(env: NodeJS.ProcessEnv): IngressConfig {
         || typeof key.secret !== 'string' || !/^[A-Za-z0-9_-]{43,128}$/.test(key.secret) || keys.has(key.id)) throw Error();
       keys.set(key.id, key.secret);
     }
-    return { origin, domain, apiId, stage, route, keys };
+    return { origin, domain, apiId, stage, route, keys, ...(peer ? { peer } : {}), ...(startup ? { separateStartup: true } : {}) };
   } catch { throw new MetadataError('INGRESS_CONFIG_INVALID', 503); }
 }
 
@@ -85,10 +87,19 @@ function headers(raw: unknown): Record<string, string> {
   }
   if (forgedPrincipalHeaders.some(h => Object.hasOwn(result, h))) throw new MetadataError('FORGED_PRINCIPAL', 403);
   if (result.forwarded !== undefined || result['x-forwarded-host'] !== undefined || result['transfer-encoding'] !== undefined) invalid();
-  for (const name of Object.keys(result)) if (name.startsWith('x-opensight-ingress-') && !['x-opensight-ingress-key-id', 'x-opensight-ingress-secret', 'x-opensight-ingress-origin'].includes(name)) denied();
+  for (const name of Object.keys(result)) if (name.startsWith('x-opensight-ingress-') && !['x-opensight-ingress-key-id', 'x-opensight-ingress-secret', 'x-opensight-ingress-origin', 'x-opensight-ingress-peer'].includes(name)) denied();
   return result;
 }
 
+export function normalizedViewerIp(ip: unknown): string {
+  if (typeof ip !== 'string') return denied();
+  if (isIP(ip) === 4) return ip;
+  if (isIP(ip) !== 6 || ip.includes('%')) return denied();
+  const normalized = new URL(`http://[${ip}]`).hostname.slice(1, -1);
+  const mapped = /^::ffff:([0-9a-f]+):([0-9a-f]+)$/.exec(normalized);
+  if (mapped) { const a = parseInt(mapped[1]!, 16), b = parseInt(mapped[2]!, 16); return [a >> 8, a & 255, b >> 8, b & 255].join('.'); }
+  return normalized;
+}
 export function viewerPeer(value: unknown): string {
   if (typeof value !== 'string') return denied();
   const match = /^(?:\[([^\]]+)\]|([^:]+)):(\d{1,5})$/.exec(value);
@@ -96,15 +107,18 @@ export function viewerPeer(value: unknown): string {
   const ip = match[1] ?? match[2]!;
   if (isIP(ip) === 4 && !match[1]) return ip;
   if (isIP(ip) !== 6 || !match[1]) return denied();
-  const normalized = new URL(`http://[${ip}]`).hostname.slice(1, -1);
-  const mapped = /^::ffff:([0-9a-f]+):([0-9a-f]+)$/.exec(normalized);
-  if (mapped) { const a = parseInt(mapped[1]!, 16), b = parseInt(mapped[2]!, 16); return [a >> 8, a & 255, b >> 8, b & 255].join('.'); }
-  return normalized;
+  return normalizedViewerIp(ip);
+}
+function trustedPeer(h: Record<string, string>, config: IngressConfig): string {
+  if (config.peer === 'viewer-function') return normalizedViewerIp(h['x-opensight-ingress-peer']);
+  if (h['x-opensight-ingress-peer'] !== undefined) return denied();
+  return viewerPeer(h['cloudfront-viewer-address']);
 }
 
 function trusted(raw: unknown, config: IngressConfig): { event: Record<string, unknown>; context: Record<string, unknown>; h: Record<string, string>; method: string; path: string } {
   const event = record(raw), context = record(event.requestContext), http = record(context.http), h = headers(event.headers);
-  if (event.version !== '2.0' || event.routeKey !== config.route || context.routeKey !== config.route || context.apiId !== config.apiId || context.stage !== config.stage
+  const route = config.separateStartup && event.rawPath === '/api/api/startup' && http.method === 'POST' ? 'POST /api/api/startup' : config.route;
+  if (event.version !== '2.0' || event.routeKey !== route || context.routeKey !== route || context.apiId !== config.apiId || context.stage !== config.stage
     || context.domainName !== config.domain || h.host !== config.domain || h['x-opensight-ingress-origin'] !== config.origin) denied();
   const secret = config.keys.get(h['x-opensight-ingress-key-id'] ?? '');
   const hash = (v: string) => createHash('sha256').update(v).digest();
@@ -116,7 +130,7 @@ function trusted(raw: unknown, config: IngressConfig): { event: Record<string, u
   if (typeof method !== 'string' || !['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'].includes(method)) invalid();
   const path = publicPath(event.rawPath);
   if (http.path !== event.rawPath || event.rawQueryString !== '' || event.queryStringParameters !== undefined || event.multiValueHeaders !== undefined) invalid();
-  viewerPeer(h['cloudfront-viewer-address']);
+  trustedPeer(h, config);
   return { event, context, h, method, path };
 }
 
@@ -149,7 +163,7 @@ export function adaptGatewayRequest(raw: unknown, env: NodeJS.ProcessEnv): Runti
     if (!Array.isArray(event.cookies) || event.cookies.some(c => typeof c !== 'string' || /[\r\n\x00]/.test(c)) || Buffer.byteLength(event.cookies.join('; ')) > 8192) invalid();
     forwarded.cookie = event.cookies.join('; ');
   } else if (h.cookie) forwarded.cookie = h.cookie;
-  return { method, path, headers: forwarded, body, peer: viewerPeer(h['cloudfront-viewer-address']), requestTime: Number(requestTime) };
+  return { method, path, headers: forwarded, body, peer: trustedPeer(h, config), requestTime: Number(requestTime) };
 }
 
 export function validateLocalRequest(request: RuntimeRequest, origin: string): void {
