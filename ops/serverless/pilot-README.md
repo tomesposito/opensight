@@ -82,3 +82,15 @@ the request version when its environment changes, and rerun real acceptance.
 The standalone `upload-smoke.mjs` accepts stdin execution in a read-only,
 network-disabled 2 GiB runtime container and measures exact 8 MiB CSV parse and
 Parquet encoding using the pilot memory limits.
+
+For the one-time [preflight connection repair](../../docs/phase5-sr4b4-preflight-connections.md),
+save the tested immutable `image_uri` and `source_commit` in private
+`pilot-connection-repair-release.json`. Before DNS publication, run
+`prepare connection-repair`. It checks the original active application functions,
+owned artifact and source ancestry, preserves `pilot-activation.json`, and writes
+a separate `pilot-connection-repair.json` linking that activation to the new
+application release. It changes no SQL data. Review/apply the saved image plan,
+publish/select the new numeric request version, and repeat browser acceptance.
+Initial administration commands are closed after this selection; the general
+release protocol remains separate. Do not relabel the old activation as if it
+had run the replacement image.

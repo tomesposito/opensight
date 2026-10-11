@@ -291,3 +291,11 @@ SR4b2, 161 frames matched exactly; the inspected author frame differs only in
 saved-time text at (150,97)–(172,107). Hosted frontend files remain byte-identical.
 No new user-visible UI gap was observed. AWS ingestion acceptance remains
 separate from this static comparison.
+
+## SR4b4 connection correction capture — 2026-10-11
+
+The fresh 251-frame tour completed with zero errors/external requests. Against
+SR4b3, 151 frames match exactly; the inspected author frame differs only in
+saved-time text at (160,97)–(172,107). The nine hosted frontend files remain
+byte-identical. No new UI gap was observed; actual AWS acceptance is still
+required separately.

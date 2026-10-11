@@ -8,25 +8,63 @@ import { join } from 'node:path';
 import { InvocationScope, invocationDeadline } from '../dist/runtime-scope.js';
 import { InvocationPool, invocationDatabases } from '../dist/runtime-postgres.js';
 import { PostgresMetadataDatabase } from '../dist/metadata-db.js';
+import { Pool } from 'pg';
 
 const scope = () => new InvocationScope(Date.now() + 10000);
 function fakePool(fault) {
-  const log = [], pool = new EventEmitter(); let open = 0, ended = 0;
+  const log = [], clients = [], pool = new EventEmitter(); let open = 0, ended = 0;
   pool.connect = async () => {
     if (fault === 'connect') throw Error('private connect diagnostic');
     open++; let released = false;
-    return {
+    const client = Object.assign(new EventEmitter(), {
       async query(sql) {
         log.push(sql);
         if (sql === fault || fault === 'RESET-final' && sql === 'RESET ALL' && log.length > 1) throw Error('private SQL diagnostic');
         return { rows: sql.includes('pg_roles') && fault === 'unsafe' ? [{ unsafe: 1 }] : [] };
       },
       release(error) { assert.equal(released, false); assert.ok(error, 'transactions must discard instead of retaining idle clients'); released = true; open--; },
-    };
+    }); clients.push(client); return client;
   };
   pool.end = async () => { ended++; assert.equal(open, 0); };
-  return { pool, log, stats: () => ({ open, ended }) };
+  return { pool, log, clients, stats: () => ({ open, ended }) };
 }
+
+test('SR4b4 preflight releases unused SQL clients and late disposal errors do not cancel business work', async () => {
+  const f = fakePool(), invocation = scope();
+  await invocation.run(async s => {
+    const pool = new InvocationPool(s, {}, 3000, () => f.pool);
+    await pool.prepare(); assert.equal(f.stats().open, 0);
+    f.clients[0].emit('error', Error('late released connection error')); s.check();
+    const client = await pool.connect(); assert.equal(f.stats().open, 1); await client.query('SELECT later'); client.release();
+    assert.equal(f.stats().open, 0); assert.equal(f.clients.length, 2);
+  });
+  assert.deepEqual(f.stats(), { open: 0, ended: 1 });
+});
+test('SR4b4 checked-out SQL client errors cancel the owning invocation without an unhandled error', async () => {
+  const f = fakePool(), invocation = scope();
+  await assert.rejects(invocation.run(async s => {
+    const pool = new InvocationPool(s, {}, 3000, () => f.pool); await pool.connect();
+    f.clients[0].emit('error', Error('synthetic backend disconnect')); s.check();
+  }), { code: 'INVOCATION_DEADLINE_EXCEEDED' });
+  assert.deepEqual(f.stats(), { open: 0, ended: 1 });
+});
+test('SR4b4 live Postgres preflight survives the idle deadline and checked-out disconnect is contained',
+  { skip: process.env.DATABASE_URL ? false : 'DATABASE_URL is not set' }, async t => {
+    const observer = new Pool({ connectionString: process.env.DATABASE_URL, max: 1 }); t.after(() => observer.end());
+    const name = `preflight_${process.pid}_${Date.now()}`;
+    await new InvocationScope(Date.now() + 20000).run(async s => {
+      const pool = new InvocationPool(s, { connectionString: process.env.DATABASE_URL, application_name: name });
+      await pool.prepare(); await new Promise(resolve => setTimeout(resolve, 6000));
+      assert.equal((await observer.query('SELECT count(*) FROM pg_stat_activity WHERE application_name = $1', [name])).rows[0].count, '0');
+      await new PostgresMetadataDatabase(pool).transaction(async c => assert.equal((await c.query('SELECT 1 AS value'))[0].value, 1));
+    });
+    await assert.rejects(new InvocationScope(Date.now() + 10000).run(async s => {
+      const pool = new InvocationPool(s, { connectionString: process.env.DATABASE_URL });
+      const client = await pool.connect(), pid = (await client.query('SELECT pg_backend_pid() AS pid')).rows[0].pid;
+      const aborted = once(s.signal, 'abort');
+      await observer.query('SELECT pg_terminate_backend($1)', [pid]); await aborted; s.check();
+    }), { code: 'INVOCATION_DEADLINE_EXCEEDED' });
+  });
 
 test('SR1 invocation transactions close clients and pools on success and every SQL fault', async () => {
   for (const fault of [undefined, 'connect', 'RESET ALL', 'BEGIN', 'SELECT business', 'COMMIT', 'ROLLBACK', 'RESET-final', 'unsafe']) {
