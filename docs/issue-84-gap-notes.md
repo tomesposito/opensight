@@ -233,3 +233,8 @@ layout gap was found. The tour harness was updated for the current connector dia
 This is application implementation, not a public deployment. Idle embed/author
 clients, cloud queue/CORS proof, ingress/release configuration and real tester
 acceptance remain on the deployment path.
+
+Upstream integration includes issues #87–#90. Its complete root suite passed
+2,403 / failed 0 / skipped 14, followed by fresh hosted/demo builds and regenerated
+README media. The navigation/data icons now use the upstream SVG fix; the earlier
+glyph note is historical. This does not establish measured visual parity.
