@@ -11,6 +11,7 @@ import { usePaletteCommands } from './CommandPalette.js';
 import { DraftSourceRecovery, useDraftSource } from './DraftSource.js';
 import { printAnalysis } from './analysis-print.js';
 import { SaveAnalysisCopy } from './SaveAnalysisCopy.js';
+import { ManageDataDialog } from './ManageDataDialog.js';
 import { LocalDrafts } from './LocalDrafts.js';
 import { useLocalDrafts } from './use-local-drafts.js';
 import { draftStorageKey } from './local-drafts.js';
@@ -88,6 +89,7 @@ function AuthorWorkspace({ renderIdentity, sampleLoaded = false, onTrySample, cl
   const [reportOpen, setReportOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [saveCopyOpen, setSaveCopyOpen] = useState(false);
+  const [manageOpen, setManageOpen] = useState(false);
   const importConfirmation = useRef(false);
   const [fit, setFit] = useState(true);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -154,6 +156,7 @@ function AuthorWorkspace({ renderIdentity, sampleLoaded = false, onTrySample, cl
   const renderToolbar = (trigger?: ReactNode) => <AuthorToolbar
     onPrep={onPrep ? () => { if (drafts.keepCurrent()) onPrep(); } : undefined}
     onSources={onSources ? () => { if (drafts.keepCurrent()) onSources(); } : undefined}
+    onManageData={() => setManageOpen(true)}
     canUndo={drafts.canUndo} canRedo={drafts.canRedo} onUndo={() => dispatch({ type: 'undo' })} onRedo={() => dispatch({ type: 'redo' })}
     draft={draft} dispatch={dispatch} oEntry={trigger} dataAvailable={!noData} fit={fit}
     onFit={() => setFit(value => !value)} onJson={download}
@@ -211,6 +214,10 @@ function AuthorWorkspace({ renderIdentity, sampleLoaded = false, onTrySample, cl
       if (importConfirmation.current) { importConfirmation.current = false; notify('Bundle imported'); }
     }} />}
     {saveCopyOpen && <SaveAnalysisCopy name={draft.title} onClose={() => setSaveCopyOpen(false)} onSave={name => { const error = drafts.saveCopy(name); if (!error) { setSaveCopyOpen(false); notify('Separate analysis copy saved on this device'); } return error; }} />}
+    {manageOpen && <ManageDataDialog client={apiClient} datasets={draft.dataset ? [draft.dataset] : []} sampleLoaded={sampleLoaded} onClose={() => setManageOpen(false)}
+      onReplace={dataset => { dispatch({ type: 'dataset', dataset }); onDatasetChange?.(dataset); setManageOpen(false); notify(`Dataset replaced with ${dataset.name}.`); }}
+      onRemove={() => { dispatch({ type: 'dataset', dataset: undefined }); onDatasetChange?.(undefined); setManageOpen(false); notify('Dataset removed. Add data to keep building.'); }}
+      onAddData={(onSources ?? onPrep) ? () => { if (drafts.keepCurrent()) { setManageOpen(false); (onSources ?? onPrep)!(); } } : undefined} />}
   </div>
     {createOpen && <CreateAnalysisDialog client={apiClient} sampleAvailable={access.mode === 'demo' || sampleLoaded} offline={!apiClient} selectionError={drafts.autoError ?? undefined}
       onClose={() => setCreateOpen(false)} onCreateDataset={apiClient && onPrep ? () => { if (drafts.keepCurrent()) { setCreateOpen(false); onPrep(); } } : undefined}
