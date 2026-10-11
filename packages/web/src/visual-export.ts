@@ -15,12 +15,34 @@ export function clearVisualRows(visualId: string): void {
   rowsByVisualId.delete(visualId);
 }
 
+/**
+ * OWASP CSV Injection: a string cell that begins with one of these
+ * characters is interpreted as a formula/command when the CSV is opened
+ * in a spreadsheet application. Prefixing with a single quote marks the
+ * cell as text, so the value displays literally instead of executing.
+ * Numeric types are never prefixed (an actual -5 is data, not a formula);
+ * this guard applies to strings only.
+ */
+const CSV_FORMULA_PREFIX = /^[=+\-@\t\r]/;
+const defuseCsvFormula = (text: string): string =>
+  CSV_FORMULA_PREFIX.test(text) ? `'${text}` : text;
+
 const csvCell = (value: unknown): string => {
   if (value === null || value === undefined) return '';
-  const text = String(value);
+  const text = typeof value === 'string' ? defuseCsvFormula(value) : String(value);
   return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 };
 
+/**
+ * Converts rendered rows to a spreadsheet-safe CSV (CRLF line endings).
+ *
+ * Every string header and cell is passed through the CSV-injection guard
+ * above; actual numbers and booleans are emitted verbatim. The export is
+ * intentionally spreadsheet-safe only: OpenSight does not offer a raw,
+ * un-sanitized CSV export, because visual exports are meant to be opened
+ * directly in spreadsheet applications. Data containing formula-like
+ * strings therefore always arrives as text.
+ */
 export function rowsToCsv(rows: Row[]): string {
   if (!rows.length) return '';
   const headers = Object.keys(rows[0]!);
