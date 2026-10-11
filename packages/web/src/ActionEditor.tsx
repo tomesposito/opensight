@@ -47,6 +47,7 @@ export function ActionPanel({ draft, visual, actionId, initialKind = 'filter', o
     return existing ? structuredClone(existing) : nextAction(visual, initialKind);
   });
   const patch = (update: Partial<WorkingAction>) => setWorking(previous => ({ ...previous, ...update }) as WorkingAction);
+  const runtimeProblem = (id: string) => Object.hasOwn(runtimeProblems, id) ? runtimeProblems[id] : undefined;
   const kind = kindOf(working);
   const switchKind = (next: PanelKind) => {
     if (next === kind) return;
@@ -86,8 +87,8 @@ export function ActionPanel({ draft, visual, actionId, initialKind = 'filter', o
         <option value="filter">Filter action</option><option value="navigation">Navigation action</option><option value="url">URL action</option>
       </select></label>
       {kind === 'filter' && <FilterFields draft={draft} visual={visual} action={working as FilterAction} onChange={patch} />}
-      {kind === 'url' && <UrlFields visual={visual} action={working as UrlAction} onChange={patch} problem={runtimeProblems[working.id]} />}
-      {kind === 'navigation' && <NavigationFields draft={draft} visual={visual} action={working as NavigationAction} onChange={patch} problem={runtimeProblems[working.id]} />}
+      {kind === 'url' && <UrlFields visual={visual} action={working as UrlAction} onChange={patch} problem={runtimeProblem(working.id)} />}
+      {kind === 'navigation' && <NavigationFields draft={draft} visual={visual} action={working as NavigationAction} onChange={patch} problem={runtimeProblem(working.id)} />}
     </div>
     <div className="action-panel-footer">
       <button type="button" className="primary-button" onClick={save} disabled={!working.name.trim()}>Save</button>
@@ -107,23 +108,25 @@ function SourceField({ visual, value, onChange }: { visual: AuthorVisual; value:
 function FilterFields({ draft, visual, action, onChange }: { draft: AuthorDraft; visual: AuthorVisual; action: FilterAction; onChange: (update: Partial<FilterAction>) => void }) {
   const sheet = activeSheet(draft), dimensions = actionDimensions(visual);
   const scoped = action.scopeFields !== undefined;
-  const targets = sheet.visuals.filter(v => v.id !== visual.id);
-  const eligible = targets.filter(target => !targetProblem(visual, target, action, draft.calculatedFields, draft.dataset));
+  const eligible = sheet.visuals.filter(target => target.id !== visual.id && !targetProblem(visual, target, action, draft.calculatedFields, draft.dataset));
   return <>
     <SourceField visual={visual} value={action.sourceField} onChange={sourceField => onChange({ sourceField })} />
     <fieldset className="action-radio-group"><legend>Filter scope</legend>
-      <label><input type="radio" name="filter-scope" checked={!scoped} onChange={() => onChange({ scopeFields: undefined })} />All fields</label>
-      <label><input type="radio" name="filter-scope" checked={scoped} onChange={() => onChange({ scopeFields: [action.sourceField] })} />Selected fields</label>
+      <label><input type="radio" name="filter-scope" value="all" checked={!scoped} onChange={() => onChange({ scopeFields: undefined })} />All fields</label>
+      <label><input type="radio" name="filter-scope" value="selected" checked={scoped} onChange={() => onChange({ scopeFields: [action.sourceField] })} />Selected fields</label>
       {scoped && <div className="action-checkbox-list">{dimensions.map(field => <label key={field}><input type="checkbox" checked={(action.scopeFields ?? []).includes(field)} onChange={e => onChange({ scopeFields: e.target.checked ? [...(action.scopeFields ?? []), field] : (action.scopeFields ?? []).filter(f => f !== field) })} />{field}</label>)}</div>}
     </fieldset>
     <fieldset className="action-radio-group"><legend>Target visuals</legend>
-      <label><input type="radio" name="filter-targets" checked={action.targets === 'all'} onChange={() => onChange({ targets: 'all' })} />All visuals</label>
-      <label><input type="radio" name="filter-targets" checked={action.targets !== 'all'} onChange={() => onChange({ targets: [] })} />Select visuals</label>
-      {action.targets === 'all' ? null : eligible.length ? <div className="action-checkbox-list">{eligible.map(target => {
-        const selected = (action.targets as string[]).includes(target.id), field = action.mappings[target.id] ?? action.sourceField;
+      <label><input type="radio" name="filter-targets" value="all" checked={action.targets === 'all'} onChange={() => onChange({ targets: 'all' })} />All visuals</label>
+      <label><input type="radio" name="filter-targets" value="selected" checked={action.targets !== 'all'} onChange={() => onChange({ targets: [] })} />Select visuals</label>
+      {action.targets === 'all' ? null : eligible.length ? <div className="action-checkbox-list">{sheet.visuals.map(target => {
+        const reason = targetProblem(visual, target, action, draft.calculatedFields, draft.dataset);
+        const selected = !reason && (action.targets as string[]).includes(target.id), field = action.mappings[target.id] ?? action.sourceField;
         return <div key={target.id} className="action-target">
-          <label><input type="checkbox" checked={selected} onChange={e => onChange({ targets: e.target.checked ? [...action.targets as string[], target.id] : (action.targets as string[]).filter(id => id !== target.id) })} />{target.title || target.id} ({target.kind})</label>
-          {selected && <label>Map {action.sourceField} to<select aria-label={`Target field for ${target.id}`} value={field} onChange={e => onChange({ mappings: { ...action.mappings, [target.id]: e.target.value } })}>{[...new Set([field, ...actionDimensions(target)])].map(f => <option key={f}>{f}</option>)}</select></label>}
+          <label><input type="checkbox" disabled={!!reason} checked={selected} onChange={e => onChange({ targets: e.target.checked ? [...action.targets as string[], target.id] : (action.targets as string[]).filter(id => id !== target.id) })} />{target.title || target.id} ({target.kind})</label>
+          {selected && !reason && <label>Map {action.sourceField} to<select aria-label={`Target field for ${target.id}`} value={field} onChange={e => onChange({ mappings: { ...action.mappings, [target.id]: e.target.value } })}>{[...new Set([field, ...actionDimensions(target)])].map(f => <option key={f}>{f}</option>)}</select></label>}
+          {reason && <p>Cannot receive: {reason}</p>}
+          {!reason && <p>Can receive this action.</p>}
         </div>;
       })}</div> : <p role="status" className="notice-amber">Sheet contains no visuals that can be selected as targets.</p>}
       {action.targets !== 'all' && (action.targets as string[]).filter(id => !sheet.visuals.some(v => v.id === id)).map(id => <p key={id} role="status" className="notice-amber">Cannot receive: {id.replace(/^unresolved:/, '')} is not on this sheet.</p>)}

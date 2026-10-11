@@ -505,8 +505,8 @@ function FieldWells({ visual, draft, dispatch, activeWell, onWell }: { visual?: 
 function Properties({ visual, draft, dispatch, client, runtimeProblems }: EditorProps & { visual: AuthorVisual; runtimeProblems?: Record<string, string> }) {
   const [tab, setTab] = useState<'Visual' | 'Interaction'>('Visual');
   const [actionPanel, setActionPanel] = useState<{ actionId?: string } | undefined>();
-  if (actionPanel) return <ActionPanel draft={draft} visual={visual} actionId={actionPanel.actionId} onClose={() => setActionPanel(undefined)} dispatch={dispatch} runtimeProblems={runtimeProblems} />;
   const tabId = useId();
+  if (actionPanel) return <ActionPanel draft={draft} visual={visual} actionId={actionPanel.actionId} onClose={() => setActionPanel(undefined)} dispatch={dispatch} runtimeProblems={runtimeProblems} />;
   const formatting = visual.formatting ?? {};
   const setFormatting = (patch: Partial<VisualFormatting>) => dispatch({ type: 'formatting', formatting: { ...formatting, ...patch } });
   const toggles: { property: 'titleVisible' | 'legend' | 'labels' | 'tooltipVisible' | 'horizontal' | 'stacked' | 'totals' | 'subtotals'; label: string }[] = [
