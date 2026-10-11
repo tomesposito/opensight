@@ -64,6 +64,15 @@ export class DurableDispatch {
   private row(c: SqlConnection, context: TenantContext, id: string): Promise<SqlRow | undefined> {
     return c.query(`SELECT * FROM sr_dispatch_intent WHERE ${scoped} AND intent_id = ?${this.dialect === 'postgres' ? ' FOR UPDATE' : ''}`, [...this.scope(context), id]).then(rows => rows[0]);
   }
+  /** Short metadata operations share authority/lock order without reserving a native worker. */
+  async authorized<T>(context: TenantContext, revisions: Revisions, work: (c: SqlConnection, control: { epoch: number; now: number }) => Promise<T>, build = true): Promise<T> {
+    this.metadata.assertContext(context);
+    const expected = structuredClone(revisions);
+    return this.transaction(async c => {
+      const epoch = await this.control(c); await currentAuthority(c, this.metadata, context, expected, build);
+      return work(c, { epoch, now: await coordinationNow(c, this.dialect) });
+    });
+  }
   async prepare(context: TenantContext, raw: IntentRequest): Promise<DispatchPreparation> {
     this.metadata.assertContext(context);
     const input = snapshot(raw), idempotencyDigest = createHash('sha256').update(input.idempotencyKey).digest('hex');
@@ -104,7 +113,7 @@ export class DurableDispatch {
       if (row.state !== 'prepared' || integer(row.commit_until) <= now) throw new MetadataError('DISPATCH_INTENT_EXPIRED', 409);
       if ((['authorization', 'policy', 'configuration'] as const).some(k => integer(row[`${k}_revision`]) !== input.revisions[k])) throw new MetadataError('METADATA_REVISED', 403);
       const result = await work(c, now), saved = receipt(result.receipt);
-      if (!Array.isArray(result.events) || result.events.length < 1 || result.events.length > 8) throw new MetadataError('DISPATCH_INPUT_INVALID', 400);
+      if (!Array.isArray(result.events) || result.events.length > 8) throw new MetadataError('DISPATCH_INPUT_INVALID', 400);
       for (const raw of result.events) {
         const event = object(raw, ['aggregateId', 'aggregateRevision', 'kind', 'dueAt', 'expiresAt']); identifier(event.aggregateId);
         if (!eventKinds.includes(event.kind as DurableEventKind) || !Number.isSafeInteger(event.aggregateRevision) || Number(event.aggregateRevision) < 1

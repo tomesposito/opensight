@@ -125,11 +125,28 @@ export class ArtifactTransfer {
     if (response.VersionId !== version || response.ContentLength !== descriptor.encodedBytes || response.ContentType !== contentType
       || response.ChecksumSHA256 !== checksum(descriptor) || response.ContentRange !== undefined || response.DeleteMarker === true) artifactError();
   }
+  /** Recovery of a server-allocated immutable key. A 404 is absence, never an authorization grant. */
+  async inspect(scope: WorkScope, rawIdentity: ArtifactIdentity, key: string, rawDescriptor: ArtifactDescriptor, limits: ArtifactLimits): Promise<ArtifactReference | undefined> {
+    const aws = this.transport(scope), { identity, prefix } = this.identity(scope, rawIdentity), descriptor = artifactDescriptor(rawDescriptor, artifactLimits(scope, limits));
+    if (!key.startsWith(prefix) || !/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}\.parquet$/.test(key.slice(prefix.length))) artifactError();
+    const response = await aws.call(async signal => {
+      try { return await aws.s3.send(new HeadObjectCommand({ Bucket: this.bucket, Key: key, ChecksumMode: 'ENABLED' }), { abortSignal: AbortSignal.any([signal, scope.signal]) }); }
+      catch (error) {
+        if (error instanceof Error && ['NotFound', 'NoSuchKey'].includes(error.name) && '$metadata' in error && (error.$metadata as { httpStatusCode?: number }).httpStatusCode === 404) return undefined;
+        throw error;
+      }
+    });
+    this.check(scope); if (!response) return undefined;
+    const version = versionId(response.VersionId); this.headers(response, descriptor, version);
+    if (response.ServerSideEncryption !== 'AES256') artifactError();
+    return { identity, key, version, descriptor };
+  }
   /** Allocate before durable recovery/reservation. The public description cannot mint a write. */
-  planWrite(scope: WorkScope, rawIdentity: ArtifactIdentity, handle: LocalArtifact): PlannedArtifactWrite {
+  planWrite(scope: WorkScope, rawIdentity: ArtifactIdentity, handle: LocalArtifact, reservedKey?: string): PlannedArtifactWrite {
     this.transport(scope);
     const { identity, prefix } = this.identity(scope, rawIdentity), file = this.file(scope, handle);
-    const plan = Object.freeze({ identity: Object.freeze(identity), key: `${prefix}${randomUUID()}.parquet`, descriptor: file.descriptor });
+    if (reservedKey !== undefined && (!reservedKey.startsWith(prefix) || !/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}\.parquet$/.test(reservedKey.slice(prefix.length)))) artifactError('ARTIFACT_WRITE_HANDLE_INVALID');
+    const plan = Object.freeze({ identity: Object.freeze(identity), key: reservedKey ?? `${prefix}${randomUUID()}.parquet`, descriptor: file.descriptor });
     this.writes.set(plan, { handle, started: false }); return plan;
   }
   async upload(scope: WorkScope, rawIdentity: ArtifactIdentity, handle: LocalArtifact, planned?: PlannedArtifactWrite): Promise<ArtifactReference> {

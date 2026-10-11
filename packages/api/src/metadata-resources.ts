@@ -103,7 +103,7 @@ export function resourceLinks(key: ResourceKey, raw: JsonObject): ResourceKey[] 
     }
     case 'source': {
       object(body, ['binding', 'secretId', 'policy']); object(body.binding);
-      if (object(body.binding).version === 3) links.push(...sourcePolicyLinks(sourceBody(body)));
+      if ([3, 4].includes(Number(object(body.binding).version))) links.push(...sourcePolicyLinks(sourceBody(body)));
       if (body.secretId !== undefined) add('secret', body.secretId, key.ownerId);
       break;
     }

@@ -7,6 +7,7 @@ import { coordinationDeployment } from './coordination-schema.js';
 import { objectChecksum } from './object-schema.js';
 import { entitlementConfig, resourceBytes } from './hosted-usage.js';
 import type { PlannedArtifactWrite } from './artifact-transfer.js';
+import { artifactIdentity, type ArtifactIdentity } from './artifact-schema.js';
 
 export type ObjectPurpose = 'raw-upload' | 'source' | 'cache' | 'result';
 export interface ObjectPlan { readonly id: string; readonly key: string; readonly capacityBytes: number; readonly purpose: ObjectPurpose; readonly mediaType: string }
@@ -33,12 +34,18 @@ export class ObjectLedger {
   private readonly plans = new WeakMap<ObjectPlan, PlanState>();
   constructor(private readonly metadata: TenantMetadata, deployment: string) { this.deployment = coordinationDeployment(deployment); }
   private scope(context: TenantContext): SqlValue[] { this.metadata.assertContext(context); return [this.deployment, context.tenantId, context.namespaceId, context.userId]; }
-  plan(context: TenantContext, input: { purpose: ObjectPurpose; capacityBytes: number; mediaType: string; checksum?: string; artifact?: PlannedArtifactWrite }): ObjectPlan {
+  plan(context: TenantContext, input: { purpose: ObjectPurpose; capacityBytes: number; mediaType: string; checksum?: string; artifact?: PlannedArtifactWrite; identity?: ArtifactIdentity }): ObjectPlan {
     this.metadata.assertContext(context);
     if (!['raw-upload', 'source', 'cache', 'result'].includes(input.purpose) || !Number.isSafeInteger(input.capacityBytes) || input.capacityBytes < 1 || input.capacityBytes > 512 * 1024 * 1024
       || !/^[a-z0-9.+-]+\/[a-z0-9.+-]+$/.test(input.mediaType) || input.mediaType.length > 128) throw new MetadataError('OBJECT_INVALID', 400);
     const id = randomUUID(), hash = createHash('sha256').update(JSON.stringify([context.tenantId, context.namespaceId, context.userId, input.purpose])).digest('hex');
     let key = `objects/v1/${hash}/${id}`;
+    if (input.identity) {
+      const identity = artifactIdentity(input.identity);
+      if (input.artifact || !['source', 'cache'].includes(input.purpose) || identity.tenant !== context.tenantId || identity.namespace !== context.namespaceId || identity.owner !== context.userId
+        || input.mediaType !== 'application/vnd.apache.parquet') throw new MetadataError('OBJECT_INVALID', 400);
+      key = `artifacts/v1/${createHash('sha256').update(JSON.stringify([identity.tenant, identity.namespace, identity.owner, identity.kind, identity.resource])).digest('hex')}/${id}.parquet`;
+    }
     if (input.artifact) {
       const a = input.artifact, identity = a.identity;
       if (!['source', 'cache'].includes(input.purpose) || identity.tenant !== context.tenantId || identity.namespace !== context.namespaceId || identity.owner !== context.userId
@@ -106,6 +113,13 @@ export class ObjectLedger {
     await c.query(`UPDATE sr_object SET state = 'live', actual_bytes = ?, checksum = ?, object_version = ?, descriptor = ? WHERE ${scoped} AND object_id = ?`, [verified.bytes, verified.checksum, verified.version, verified.descriptor ?? null, ...this.scope(context), id]);
     await c.query('UPDATE sr_storage_usage SET reserved_bytes = reserved_bytes - ?, live_bytes = live_bytes + ? WHERE deployment = ? AND tenant_id = ? AND namespace_id = ?',
       [entry.capacityBytes, verified.bytes, this.deployment, context.tenantId, context.namespaceId]);
+  }
+  /** Immutable pre-PUT description survives an uncertain write and is not a live binding. */
+  async stage(c: SqlConnection, context: TenantContext, id: string, input: { checksum: string; descriptor: string }): Promise<void> {
+    const entry = await this.read(c, context, id); checksum(input.checksum);
+    if (entry.state !== 'reserved' || entry.purpose === 'raw-upload' || Buffer.byteLength(input.descriptor) > 1024 * 1024) throw new MetadataError('OBJECT_BINDING_CONFLICT', 409);
+    if (entry.checksum !== undefined && entry.checksum !== input.checksum || entry.descriptor !== undefined && entry.descriptor !== input.descriptor) throw new MetadataError('OBJECT_BINDING_CONFLICT', 409);
+    await c.query(`UPDATE sr_object SET checksum = ?, descriptor = ? WHERE ${scoped} AND object_id = ?`, [input.checksum, input.descriptor, ...this.scope(context), id]);
   }
   /** Signature renewal is a SQL obligation and must commit before the new capability is returned. */
   async signature(c: SqlConnection, context: TenantContext, id: string, now: number, until: number): Promise<void> {

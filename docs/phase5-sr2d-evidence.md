@@ -47,3 +47,37 @@ entry is tslib 2.8.1 (0BSD), covered by the existing approved exception. Other S
 transitives were already present and did not change. Dependency acquisition used
 npm; compilation and tests had no external network access. This does not resolve
 or suppress the separately recorded runtime base-image findings.
+
+## Upload ingestion checkpoint
+
+The control service now reserves raw/output storage and both cleanup obligations,
+issues renewable short PUT capabilities, validates exact-version completion,
+returns operation status and cancels publication with revision checks. Accepted
+retries share one operation and event, including differently keyed completion
+retries for the same immutable object. The initial profile admits two outstanding
+uploads per owner and eight per tenant.
+
+A contained worker claims the operation under SR2 admission, parses the bound raw
+version, writes a staged immutable Parquet artifact and atomically publishes its
+v4 source binding, usage conversion, operation result and event receipt. A lost
+PUT acknowledgement recovers the stored key/checksum/descriptor without a second
+write. Cancellation and membership revocation during publication create no source.
+Upload ingestion preserves the existing accounting and does not charge a refresh.
+
+Owner and embedded v4 readers resolve the current SQL object binding, verify exact
+version/checksum/schema and recheck authority after hydration. Embedded reads
+follow the existing dataset link to its actual owner; general source access
+remains owner-only. Runtime adapters absent from a self-hosted process fail with
+SOURCE_ARTIFACT_READER_REQUIRED rather than silently returning missing data.
+
+Native ingestion tests passed **5 / failed 0 / skipped 0 / cancelled 0**, including
+an upload → durable source → fresh-invocation SUM query. Control/source tests
+passed **9 / failed 0 / skipped 0 / cancelled 0**. TypeScript passed. These are
+service-level local checks; HTTP composition, protected result chunks, cleanup,
+client integration and cloud deployment are still in progress. The complete root suite passed **2,352 / failed 0 / skipped 13 / cancelled 0**
+(2,365 tests total). All skips are live-PostgreSQL integrations without DATABASE_URL
+in the offline build. Breakdown: API 426 passed / 11 skipped; bundle parser 199;
+embedding SDK 9; O interpreter 32; parity 11; query engine 504 passed / 2 skipped;
+web 1,157; root conformance 14. Hosted frontend and static demo builds also passed.
+The separate real-PostgreSQL dispatch/object checks described above passed without
+skips; local SQL evidence does not replace the pending cloud acceptance.

@@ -4,6 +4,7 @@ import { identifier, insertLinks, insertResource, resourceKey, resourceKinds, re
 import type { JsonObject } from './mapping.js';
 import { appendMetadataEvent } from './metadata-outbox.js';
 import type { HostedUsage } from './hosted-usage.js';
+import { sourceBody } from './source-schema.js';
 
 export interface TenantContext extends Scope { readonly userId: string; readonly authorizationRevision: number }
 export interface Revisions { authorization: number; policy: number; configuration: number }
@@ -80,6 +81,7 @@ export class TenantMetadata {
       const sources = await c.query(`SELECT * FROM h1_resources WHERE ${predicates}`, keyValues(context, ref));
       if (!sources[0]) missing();
       const source = resource(sources[0]);
+      if (sourceBody(source.body).binding.version === 4) return { source };
       if (typeof source.body.secretId !== 'string') throw new MetadataError('SOURCE_SECRET_REQUIRED', 403);
       const secrets = await c.query(`SELECT * FROM h1_resources WHERE ${predicates}`, keyValues(context, { kind: 'secret', id: identifier(source.body.secretId), ownerId: ref.ownerId }));
       if (!secrets[0]) missing();

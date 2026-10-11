@@ -7,11 +7,13 @@ import { sourceBody, sourceCredentials, sourcePolicy, sourceError, type SourceBo
 import type { JsonObject } from './mapping.js';
 
 export interface HostedSource extends SourceBody { id: string; version: number }
+export type SourceArtifactReader = (context: TenantContext, source: MetadataResource, verify: () => Promise<void>) => Promise<unknown>;
 const json = (value: unknown): JsonObject => object(value);
 /** Tenant/owner-scoped records and encrypted payloads share H1's atomic durable store. */
 export class HostedSources {
   readonly endpoints: readonly SourceEndpoint[];
-  constructor(readonly metadata: TenantMetadata, protected readonly encryptionKey: string, endpoints: readonly SourceEndpoint[], readonly clock = Date.now) {
+  constructor(readonly metadata: TenantMetadata, protected readonly encryptionKey: string, endpoints: readonly SourceEndpoint[], readonly clock = Date.now,
+    protected readonly artifacts?: SourceArtifactReader) {
     this.endpoints = structuredClone(endpoints);
   }
   async capability(context: TenantContext, capability: 'build' | 'view' | 'ai'): Promise<void> {
@@ -44,6 +46,18 @@ export class HostedSources {
   }
   async payload(context: TenantContext, source: HostedSource): Promise<unknown> {
     this.active(source);
+    if (source.binding.version === 4) {
+      if (!this.artifacts) sourceError('SOURCE_ARTIFACT_READER_REQUIRED', 503);
+      const revisions = await this.metadata.revisions(context), key = this.key(context, 'source', source.id);
+      const current = await this.metadata.get(context, key);
+      const verify = async () => {
+        await this.metadata.assertRevisions(context, revisions);
+        const actual = await this.metadata.get(context, key), body = sourceBody(actual.body);
+        if (actual.version !== source.version || body.binding.objectId !== source.binding.objectId) sourceError('METADATA_REVISED', 403);
+        this.active({ ...body, id: source.id, version: actual.version });
+      };
+      await verify(); const result = await this.artifacts(context, current, verify); await verify(); return result;
+    }
     if (!source.secretId) sourceError('SOURCE_SECRET_REQUIRED', 403);
     const key = this.key(context, 'secret', source.secretId), r = await this.metadata.get(context, key);
     try { return JSON.parse(decryptMetadataSecret(String(r.body.ciphertext), this.encryptionKey, context, key)) as unknown; }
