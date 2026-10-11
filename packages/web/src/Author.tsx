@@ -28,8 +28,8 @@ import { functionCatalog } from '@opensight/query-engine/browser';
 import { expressionError } from './authoring.js';
 import { HierarchyEditor } from './HierarchyEditor.js';
 import { withDrill, drillDown, drillUp, drillBreadcrumbs, levelLabel, type DrillPath } from './drill.js';
-import { ActionEditor } from './ActionEditor.js';
-import { toggleSelection, withActionFilters, originProblem, hasVisualActions, resolveUrlAction, resolveNavigationAction, type ActionSelections } from './interactions.js';
+import { ActionsSection, ActionPanel } from './ActionEditor.js';
+import { actionActivation, toggleSelection, withActionFilters, originProblem, hasVisualActions, resolveUrlAction, resolveNavigationAction, type ActionSelections, type FilterAction, type NavigationAction, type Selection, type UrlAction } from './interactions.js';
 import type { VisualInteraction } from './visual-selection.js';
 import { ControlsStrip } from './ControlsStrip.js';
 import type { AuthorParameter } from './parameters.js';
@@ -308,17 +308,42 @@ export function AuthorCanvas({ draft, dispatch, client, fit = true, sourceProble
   const [actionProblems, setActionProblems] = useState<{ key: string; visuals: Record<string, Record<string, string>> }>({ key: interactionKey, visuals: {} });
   const runtimeProblems = actionProblems.key === interactionKey ? actionProblems.visuals : {};
   const selections = interactionState.key === interactionKey ? interactionState.selections : {};
+  const [menuActionState, setMenuActionState] = useState<{ key: string; selections: ActionSelections }>({ key: interactionKey, selections: {} });
+  const menuSelections = menuActionState.key === interactionKey ? menuActionState.selections : {};
   const [drillState, setDrillState] = useState<{ key: string; paths: Record<string, DrillPath>; armed?: string }>({ key: interactionKey, paths: {} });
   const paths = drillState.key === interactionKey ? drillState.paths : {};
   const armed = drillState.key === interactionKey ? drillState.armed : undefined;
   const interactive = sheet.visuals.some(v => hasVisualActions(v) || v.hierarchy);
   const clearSource = (id: string) => setInteractionState({ key: interactionKey, selections: Object.fromEntries(Object.entries(selections).filter(([key]) => key !== id)) });
   const setPath = (id: string, path: DrillPath) => { setDrillState({ key: interactionKey, paths: { ...paths, [id]: path } }); clearSource(id); };
-  const clearActions = () => setInteractionState({ key: interactionKey, selections: {} });
+  const clearActions = () => { setInteractionState({ key: interactionKey, selections: {} }); setMenuActionState({ key: interactionKey, selections: {} }); };
   const selected = sheet.visuals.find(v => v.id === sheet.selectedId);
   const selectedObject = sheet.objects?.find(o => o.id === sheet.selectedId);
   const dimensionWell: Well = well === 'smallMultiples' && (!selected || hasSmallMultiplesWell(selected.kind)) ? 'smallMultiples' : selected ? grouped(selected.kind) ? (well === 'columns' && splitDimensions(selected.kind) ? 'columns' : 'rows') : 'dimension' : 'dimension';
   const dimensionDestination = selected ? noDimensions(selected.kind) ? 'unavailable for this visual' : dimensionWellLabel(selected.kind, dimensionWell) : dimensionWellLabel('bar', dimensionWell);
+  const recordProblem = (visualId: string, problems: Record<string, string>) => setActionProblems({ key: interactionKey, visuals: { ...runtimeProblems, [visualId]: problems } });
+  const fireUrlAction = (visual: AuthorVisual, action: UrlAction, selection: Selection): string | undefined => {
+    const result = resolveUrlAction(visual, action, selection);
+    if (result.problem !== undefined) return result.problem;
+    window.open(result.value, action.target ?? '_blank', 'noopener,noreferrer');
+  };
+  const fireNavigationAction = (visual: AuthorVisual, action: NavigationAction, selection: Selection): string | undefined => {
+    const result = resolveNavigationAction(draft, visual, action, selection);
+    if (result.problem !== undefined) return result.problem;
+    dispatch({ type: 'navigate', sourceId: visual.id, actionId: action.id, selection });
+  };
+  /** Menu-option actions run from the visual's ⋯ menu against its current selection. */
+  const runMenuAction = (visual: AuthorVisual, action: FilterAction | UrlAction | NavigationAction) => {
+    const selection = selections[visual.id];
+    if (!selection) return;
+    if ('urlTemplate' in action) {
+      const problem = fireUrlAction(visual, action, selection);
+      recordProblem(visual.id, problem ? { [action.id]: problem } : {});
+    } else if ('targetSheetId' in action) {
+      const problem = fireNavigationAction(visual, action, selection);
+      recordProblem(visual.id, problem ? { [action.id]: problem } : {});
+    } else setMenuActionState({ key: interactionKey, selections: toggleSelection(menuSelections, visual.id, selection) });
+  };
   const { width, containerRef } = useContainerWidth({ initialWidth: 900 });
   const original = draft.bundle?.original.members.find(m => m.path === sheet.imported?.memberPath)?.resource;
   const originalTheme = original && (original.resourceType === 'analysis' || original.resourceType === 'dashboard') ? original.definition.opensightTheme : undefined;
@@ -392,24 +417,26 @@ export function AuthorCanvas({ draft, dispatch, client, fit = true, sourceProble
                     if (armed === visual.id && hierarchy) setPath(visual.id, drillDown(visual, path, selection));
                     else {
                       const clicked = { ...selection, values: Object.fromEntries([...path.flatMap(p => Object.entries(p.values)), ...Object.entries(selection.values)]) };
-                      if (visual.filterActions?.length) setInteractionState({ key: interactionKey, selections: toggleSelection(selections, visual.id, clicked) });
+                      const selectFilters = (visual.filterActions ?? []).filter(action => actionActivation(action) === 'select');
+                      const menuActions = [...visual.filterActions ?? [], ...visual.urlActions ?? [], ...visual.navigationActions ?? []].filter(action => actionActivation(action) === 'menu');
+                      if (selectFilters.length || menuActions.length) setInteractionState({ key: interactionKey, selections: toggleSelection(selections, visual.id, clicked) });
                       if (!selection.range) {
                         const problems: Record<string, string> = Object.create(null);
-                        for (const action of visual.urlActions ?? []) {
-                          const result = resolveUrlAction(visual, action, clicked);
-                          if (result.problem !== undefined) problems[action.id] = result.problem;
-                          else window.open(result.value, action.target ?? '_blank', 'noopener,noreferrer');
+                        for (const action of (visual.urlActions ?? []).filter(action => actionActivation(action) === 'select')) {
+                          const problem = fireUrlAction(visual, action, clicked);
+                          if (problem !== undefined) problems[action.id] = problem;
                         }
-                        for (const action of visual.navigationActions ?? []) {
-                          const result = resolveNavigationAction(draft, visual, action, clicked);
-                          if (result.problem !== undefined) problems[action.id] = result.problem;
-                          else { dispatch({ type: 'navigate', sourceId: visual.id, actionId: action.id, selection: clicked }); break; }
+                        for (const action of (visual.navigationActions ?? []).filter(action => actionActivation(action) === 'select')) {
+                          const problem = fireNavigationAction(visual, action, clicked);
+                          if (problem !== undefined) problems[action.id] = problem;
+                          else break;
                         }
-                        setActionProblems({ key: interactionKey, visuals: { ...runtimeProblems, [visual.id]: problems } });
+                        recordProblem(visual.id, problems);
                       }
                     }
                   },
                 } : undefined;
+                const cardMenuActions = [...visual.filterActions ?? [], ...visual.urlActions ?? [], ...visual.navigationActions ?? []].filter(action => actionActivation(action) === 'menu');
                 return <div key={visual.id}><AuthorCard theme={theme} interactive={interactive} interaction={interaction}
                   drillNavigation={hierarchy && <nav className="drill-navigation" aria-label={`Drill breadcrumb for ${visual.id}`}>
                     {drillBreadcrumbs(visual, path).map((crumb, i) => <button type="button" key={i} onClick={() => setPath(visual.id, drillUp(path, crumb.depth))}>{crumb.label}</button>)}
@@ -418,7 +445,8 @@ export function AuthorCanvas({ draft, dispatch, client, fit = true, sourceProble
                     <button type="button" disabled={path.length >= hierarchy.levels.length - 1} aria-pressed={armed === visual.id} onClick={() => setDrillState({ key: interactionKey, paths, armed: armed === visual.id ? undefined : visual.id })}>Drill down</button>
                     {armed === visual.id && <span role="status">Select a category or data row to drill.</span>}
                   </nav>}
-                  visual={withActionFilters(sheet, projected, selections, draft.calculatedFields, draft.dataset)} index={index} count={sheet.visuals.length} selected={visual.id === sheet.selectedId} filterProblem={sourceProblem ?? (draft.dataset && !client ? 'Local dataset needs its local API; no sample data is substituted.' : importedFilterProblem(draft, sheet, visual))} dispatch={dispatch} client={client} calculations={draft.calculatedFields} parameters={sheetParameters(draft)} />
+                  visual={withActionFilters(sheet, projected, selections, draft.calculatedFields, draft.dataset, menuSelections)} index={index} count={sheet.visuals.length} selected={visual.id === sheet.selectedId} filterProblem={sourceProblem ?? (draft.dataset && !client ? 'Local dataset needs its local API; no sample data is substituted.' : importedFilterProblem(draft, sheet, visual))} dispatch={dispatch} client={client} calculations={draft.calculatedFields} parameters={sheetParameters(draft)}
+                    actionMenu={cardMenuActions.length ? <VisualActionMenu items={cardMenuActions} selection={selections[visual.id]} onInvoke={action => runMenuAction(visual, action)} /> : undefined} />
                 </div>;
               })}
               {sheet.objects?.map(object => <div key={object.id}><SheetObjectCard object={object} selected={object.id === sheet.selectedId} sheet={sheet} dispatch={dispatch} /></div>)}
@@ -476,7 +504,9 @@ function FieldWells({ visual, draft, dispatch, activeWell, onWell }: { visual?: 
 
 function Properties({ visual, draft, dispatch, client, runtimeProblems }: EditorProps & { visual: AuthorVisual; runtimeProblems?: Record<string, string> }) {
   const [tab, setTab] = useState<'Visual' | 'Interaction'>('Visual');
+  const [actionPanel, setActionPanel] = useState<{ actionId?: string } | undefined>();
   const tabId = useId();
+  if (actionPanel) return <ActionPanel draft={draft} visual={visual} actionId={actionPanel.actionId} onClose={() => setActionPanel(undefined)} dispatch={dispatch} runtimeProblems={runtimeProblems} />;
   const formatting = visual.formatting ?? {};
   const setFormatting = (patch: Partial<VisualFormatting>) => dispatch({ type: 'formatting', formatting: { ...formatting, ...patch } });
   const toggles: { property: 'titleVisible' | 'legend' | 'labels' | 'tooltipVisible' | 'horizontal' | 'stacked' | 'totals' | 'subtotals'; label: string }[] = [
@@ -532,7 +562,7 @@ function Properties({ visual, draft, dispatch, client, runtimeProblems }: Editor
     <div role="tabpanel" id={`${tabId}-panel-Interaction`} aria-labelledby={`${tabId}-Interaction`} hidden={tab !== 'Interaction'}>
       {tab === 'Interaction' && <>
         <FilterEditor dataset={draft.dataset} visual={visual} parameters={sheetParameters(draft)} calculations={draft.calculatedFields} dispatch={dispatch} client={visual.imported && !visual.imported.local ? undefined : client} />
-        <ActionEditor runtimeProblems={runtimeProblems} draft={draft} visual={visual} dispatch={dispatch} />
+        <ActionsSection visual={visual} onOpenPanel={actionId => setActionPanel({ actionId })} />
         <HierarchyEditor draft={draft} visual={visual} dispatch={dispatch} />
         <ParameterFilterEditor dataset={draft.dataset} parameters={sheetParameters(draft)} calculations={draft.calculatedFields} dispatch={dispatch} />
       </>}
@@ -595,8 +625,16 @@ export function CalculationDialog({ dataset, fields, onSave, onClose }: { datase
   </dialog>;
 }
 
-function AuthorCard({ visual, theme, index, count, selected, dispatch, client, calculations, filterProblem, parameters, interaction, interactive, drillNavigation }: {
-  theme?: AnalysisTheme; drillNavigation?: ReactNode; interaction?: VisualInteraction; interactive?: boolean; visual: AuthorVisual; index: number; count: number; selected: boolean; filterProblem?: string; dispatch: Dispatch<AuthorAction>; client?: QueryClient; calculations: CalculatedField[]; parameters: AuthorParameter[];
+function VisualActionMenu({ items, selection, onInvoke }: { items: (FilterAction | UrlAction | NavigationAction)[]; selection?: Selection; onInvoke: (action: FilterAction | UrlAction | NavigationAction) => void }) {
+  const [open, setOpen] = useState(false);
+  return <div className="visual-action-menu">
+    <button type="button" aria-haspopup="menu" aria-expanded={open} aria-label="Run action" onClick={e => { e.stopPropagation(); setOpen(value => !value); }}>⋯</button>
+    {open && <div role="menu">{items.map(action => <button key={action.id} type="button" role="menuitem" disabled={!selection} title={selection ? undefined : 'Select a data point first'} onClick={e => { e.stopPropagation(); setOpen(false); onInvoke(action); }}>{action.name}</button>)}</div>}
+  </div>;
+}
+
+function AuthorCard({ visual, theme, index, count, selected, dispatch, client, calculations, filterProblem, parameters, interaction, interactive, drillNavigation, actionMenu }: {
+  theme?: AnalysisTheme; drillNavigation?: ReactNode; interaction?: VisualInteraction; interactive?: boolean; visual: AuthorVisual; index: number; count: number; selected: boolean; filterProblem?: string; dispatch: Dispatch<AuthorAction>; client?: QueryClient; calculations: CalculatedField[]; parameters: AuthorParameter[]; actionMenu?: ReactNode;
 }) {
   const problem = authorVisualProblem(visual) ?? filterProblem;
   const noFields = !visualDimensions(visual).length && !visual.measures.length;
@@ -611,6 +649,7 @@ function AuthorCard({ visual, theme, index, count, selected, dispatch, client, c
     <div className="author-card-toolbar">
       <span className="drag-handle" aria-hidden="true" title="Drag visual">⠿</span><strong>{index + 1}. {visual.title || (visual.imported?.issues.some(i => i.startsWith('Unsupported visual type:')) && !visual.imported.replaced ? visual.imported.variant : VISUAL_TYPES.find(t => t.kind === visual.kind)?.label)}</strong>
       <div className="author-card-actions">
+        {actionMenu}
         <button type="button" aria-expanded={selected} aria-controls={selected ? `configure-${visual.id}` : undefined} onClick={() => dispatch({ type: 'select', id: visual.id })}>Configure<span className="sr-only"> {label}</span></button>
         <button type="button" disabled={index === 0} aria-label={`Move ${label} up`} onClick={e => { e.stopPropagation(); dispatch({ type: 'move', id: visual.id, offset: -1 }); }}>↑</button>
         <button type="button" disabled={index === count - 1} aria-label={`Move ${label} down`} onClick={e => { e.stopPropagation(); dispatch({ type: 'move', id: visual.id, offset: 1 }); }}>↓</button>

@@ -5,8 +5,8 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { activeSheet, authorReducer, emptyDraft, validateDraft } from '../build/test/authoring.js';
 import { buildAuthorQuery } from '../build/test/author-query.js';
 import { executeFixtureQuery } from '../build/test/fixture-query.js';
-import { withActionFilters, toggleSelection, targetProblem, dateBounds } from '../build/test/interactions.js';
-import { ActionEditor } from '../build/test/ActionEditor.js';
+import { withActionFilters, toggleSelection, targetProblem, dateBounds, actionActivation, validFilterActions, urlActionDefinitionsValid, navigationActionDefinitionsValid } from '../build/test/interactions.js';
+import { ActionPanel } from '../build/test/ActionEditor.js';
 import { brushSelection, rowSelection } from '../build/test/visual-selection.js';
 import { compileVisual } from '../build/test/compiler.js';
 import { buildAuthorVisual } from '../build/test/author-preview.js';
@@ -32,6 +32,40 @@ test('action selection filters fixture rows, toggles off, stays on its sheet, an
   assert.deepEqual(executeFixtureQuery(buildAuthorQuery(withActionFilters(s, target, { [source.id]: { values: { region: 'Hardware' } } }))).rows, [{ category: 'Hardware', revenue: 550 }]);
   validateDraft(d);
 });
+test('activation defaults to select, validates, and survives the reducer', () => {
+  const d = actionDraft(), [source] = activeSheet(d).visuals, action = source.filterActions[0];
+  assert.equal(actionActivation(action), 'select');
+  assert.equal(actionActivation({ ...action, activation: 'menu' }), 'menu');
+  assert.equal(validFilterActions([{ ...action, activation: 'menu', scopeFields: ['region'] }]), true);
+  assert.equal(validFilterActions([{ ...action, activation: 'bogus' }]), false);
+  assert.equal(validFilterActions([{ ...action, scopeFields: 'region' }]), false);
+  assert.equal(urlActionDefinitionsValid([{ id: 'u', name: 'U', sourceField: 'region', urlTemplate: 'https://example.com', activation: 'menu' }]), true);
+  assert.equal(urlActionDefinitionsValid([{ id: 'u', name: 'U', sourceField: 'region', urlTemplate: 'https://example.com', activation: 'bogus' }]), false);
+  assert.equal(navigationActionDefinitionsValid([{ id: 'n', name: 'N', sourceField: 'region', targetSheetId: 's', parameterMappings: {}, activation: 'menu' }]), true);
+  assert.equal(navigationActionDefinitionsValid([{ id: 'n', name: 'N', sourceField: 'region', targetSheetId: 's', parameterMappings: {}, activation: 'bogus' }]), false);
+  const onSource = authorReducer(d, { type: 'select', id: source.id });
+  const next = authorReducer(onSource, { type: 'filter-actions', actions: [{ ...action, activation: 'menu' }] });
+  assert.equal(activeSheet(next).visuals[0].filterActions[0].activation, 'menu');
+  validateDraft(next);
+});
+test('menu-option filter actions ignore click selections and apply only from menu selections', () => {
+  const d = actionDraft(), s = activeSheet(d), [source, target] = s.visuals;
+  source.filterActions[0].activation = 'menu';
+  const state = toggleSelection({}, source.id, { values: { region: 'West' } });
+  assert.deepEqual(withActionFilters(s, target, state), target);
+  assert.deepEqual(executeFixtureQuery(buildAuthorQuery(withActionFilters(s, target, {}, [], undefined, state))).rows, [{ region: 'West', revenue: 400 }]);
+  validateDraft(d);
+});
+test('filter scope restricts application to the selected fields', () => {
+  const d = actionDraft(), s = activeSheet(d), [source, target] = s.visuals, action = source.filterActions[0];
+  action.scopeFields = ['category'];
+  const regionOnly = toggleSelection({}, source.id, { values: { region: 'West' } });
+  assert.deepEqual(withActionFilters(s, target, regionOnly), target);
+  const both = toggleSelection({}, source.id, { values: { region: 'West', category: 'Hardware' } });
+  assert.deepEqual(executeFixtureQuery(buildAuthorQuery(withActionFilters(s, target, both))).rows, [{ region: 'West', revenue: 400 }]);
+  action.scopeFields = undefined;
+  assert.deepEqual(executeFixtureQuery(buildAuthorQuery(withActionFilters(s, target, regionOnly))).rows, [{ region: 'West', revenue: 400 }]);
+});
 test('line brush translates inclusive month buckets to typed UTC date filters', () => {
   const d = actionDraft('line'), s = activeSheet(d), [source, target] = s.visuals;
   const compiled = compileVisual({ ...buildAuthorVisual(source), rows: executeFixtureQuery(buildAuthorQuery(source)).rows });
@@ -46,9 +80,11 @@ test('line brush translates inclusive month buckets to typed UTC date filters', 
 test('honest action config retains nonparticipating visuals with reasons', () => {
   const d = authorReducer(actionDraft(), { type: 'add', kind: 'kpi' }), s = activeSheet(d), source = s.visuals[0], kpi = s.visuals[2];
   assert.match(targetProblem(source, kpi, source.filterActions[0]), /KPI has no grouped dimensions/);
-  const html = renderToStaticMarkup(createElement(ActionEditor, { draft: d, visual: source, dispatch() {} }));
+  const panel = (visual, actionId) => renderToStaticMarkup(createElement(ActionPanel, { draft: d, visual, actionId, onClose() {}, dispatch() {} }));
+  source.filterActions[0].targets = [];
+  const html = panel(source, 'action-1');
   assert.match(html, /visual-3/); assert.match(html, /Cannot receive: KPI has no grouped dimensions/);
-  assert.match(renderToStaticMarkup(createElement(ActionEditor, { draft: d, visual: kpi, dispatch() {} })), /Cannot originate: KPI has no selectable dimension/);
+  assert.match(panel(kpi), /Cannot originate: KPI has no selectable dimension/);
 });
 
 import { hierarchyError, withDrill, drillDown, drillUp, drillBreadcrumbs } from '../build/test/drill.js';
@@ -92,7 +128,8 @@ test('honest eligibility names missing dimensions, incompatible types and unreso
   assert.match(targetProblem(source, { ...target, rows: ['order_date'], dimension: 'order_date' }, { ...action, mappings: { [target.id]: 'order_date' } }), /same supported type/);
   assert.match(targetProblem(source, { ...target, imported: { local: false, dataSets: [{ identifier: 'foreign' }] } }, action), /Unresolved dataset/);
   assert.match(targetProblem(source, { ...target, rows: ['order_id'], dimension: 'order_id' }, action), /Numeric grouping/);
-  const html = renderToStaticMarkup(createElement(ActionEditor, { draft: d, visual: source, dispatch() {} }));
+  action.targets = [];
+  const html = renderToStaticMarkup(createElement(ActionPanel, { draft: d, visual: source, actionId: action.id, onClose() {}, dispatch() {} }));
   assert.match(html, /source visual is not its own target/); assert.match(html, /Can receive this action/);
 });
 test('field edits clear conflicting hierarchies, deleting targets prunes action mappings, and invalid date buckets are rejected', () => {

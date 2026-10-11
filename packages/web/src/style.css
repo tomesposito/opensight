@@ -489,6 +489,37 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .property-control-row { display: grid; gap: 4px; margin: 8px 0; }
 .property-caption { margin: 8px 0; font-size: 12px; font-weight: 600; }
 .property-inline + .property-inline { margin-top: 4px; }
+.action-list { list-style: none; margin: 8px 0; padding: 0; display: grid; gap: 4px; }
+.action-row { display: flex; flex-direction: column; align-items: stretch; gap: 2px; width: 100%; padding: 8px; text-align: left; background: var(--chrome-surface, #fff); border: 1px solid var(--chrome-border, #c9d8de); border-radius: 4px; font: inherit; cursor: pointer; color: inherit; }
+.action-row:hover { border-color: #16859b; }
+.action-row-name { font-size: 12px; font-weight: 600; overflow-wrap: anywhere; }
+.action-row-meta { font-size: 11px; color: var(--chrome-muted, #526575); }
+.new-action-button { margin-top: 4px; }
+.action-panel { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.action-panel-header { display: flex; align-items: center; gap: 8px; padding: 4px 0 8px; border-bottom: 1px solid var(--chrome-border, #c9d8de); }
+.action-panel-header h2 { flex: 1; margin: 0; font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.action-panel-header button { border: 1px solid var(--chrome-border, #c9d8de); background: var(--chrome-surface, #fff); border-radius: 4px; padding: 2px 10px; font: inherit; cursor: pointer; color: inherit; }
+.action-panel-body { flex: 1; overflow-y: auto; padding: 8px 0; display: grid; gap: 8px; align-content: start; }
+.action-panel-body label { display: grid; gap: 4px; font-size: 12px; }
+.action-panel-body input:not([type=radio]):not([type=checkbox]), .action-panel-body select { width: 100%; max-width: 100%; min-width: 0; padding: 4px; font: inherit; border: 1px solid var(--chrome-border, #c9d8de); border-radius: 3px; color: inherit; background: var(--chrome-surface, #fff); }
+.action-radio-group { border: 0; padding: 0; margin: 0; min-width: 0; display: grid; gap: 4px; }
+.action-radio-group legend { font-size: 12px; font-weight: 600; padding: 0; margin-bottom: 4px; }
+.action-radio-group label { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+.action-checkbox-list { display: grid; gap: 4px; margin-top: 4px; padding-left: 20px; }
+.action-checkbox-list label { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 400; }
+.action-target { display: grid; gap: 4px; padding: 6px; border: 1px solid var(--chrome-border, #c9d8de); border-radius: 4px; }
+.action-panel-footer { display: grid; gap: 8px; padding: 12px 0 4px; border-top: 1px solid var(--chrome-border, #c9d8de); }
+.action-panel-footer button { padding: 8px; border-radius: 4px; font: inherit; cursor: pointer; }
+.action-panel-footer button:not(.primary-button):not(.danger-button) { background: var(--chrome-surface, #fff); border: 1px solid var(--chrome-border, #c9d8de); color: inherit; }
+.author-layout .danger-button, .author-workspace .danger-button { background: transparent; color: #b4232a; border: 1px solid #b4232a; }
+.author-layout .danger-button:hover:not(:disabled), .author-workspace .danger-button:hover:not(:disabled) { background: #b4232a; color: #fff; }
+.notice-amber { padding: 8px; background: #fef3e2; border: 1px solid #f0c36d; border-radius: 4px; color: #7a4b00; font-size: 12px; }
+.author-workspace[data-chrome=dark] .notice-amber { background: #3a2f16; border-color: #8a6d2b; color: #f5d98b; }
+.visual-action-menu { position: relative; }
+.visual-action-menu [role=menu] { position: absolute; z-index: 5; top: 100%; right: 0; display: grid; min-width: 160px; background: var(--chrome-surface, #fff); border: 1px solid var(--chrome-border, #c9d8de); border-radius: 4px; box-shadow: 0 4px 12px rgb(0 0 0 / .15); padding: 4px; }
+.visual-action-menu [role=menuitem] { text-align: left; padding: 6px 8px; font: inherit; font-size: 12px; background: transparent; border: 0; border-radius: 3px; cursor: pointer; color: inherit; }
+.visual-action-menu [role=menuitem]:hover:not(:disabled) { background: #e8f1f3; }
+.visual-action-menu [role=menuitem]:disabled { opacity: .55; cursor: not-allowed; }
 .properties-tabs { display: flex; gap: 12px; margin-bottom: 8px; }
 .properties-tabs button { border: 0; border-radius: 0; padding: 4px 2px; background: transparent; color: inherit; font-size: 12px; }
 .properties-tabs button[aria-selected=true] { border-bottom: 3px solid #16859b; font-weight: 700; }
