@@ -192,3 +192,23 @@ test('local capability transport validates explicit mode and respects abort', as
     assert.equal(await client.getLocalData(signal), expected);
   }
 });
+
+test('on-demand gate makes zero mount/idle/focus calls and reconnects only explicitly', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
+  let reads = 0, connects = 0, event;
+  const client = { onDemand: true, connect: async () => { connects++; }, getSession: async () => { reads++; return registered; }, subscribeAvailability: listener => { event = listener; return () => { event = undefined; }; } };
+  const ui = await mount(t, gate(client));
+  const connect = () => ui.renderer.root.findAllByType('button').find(b => b.children.includes('Connect')).props.onClick();
+  assert.equal(reads, 0); await ui.focus(); await act(async () => t.mock.timers.tick(180000)); assert.equal(reads, 0);
+  await act(async () => connect()); assert.equal(connects, 1); assert.equal(reads, 1); assert.equal(ui.renderer.root.findAllByType(Probe).length, 1);
+  await ui.focus(); await act(async () => t.mock.timers.tick(180000)); assert.equal(reads, 1);
+  await act(async () => event({ kind: 'connection-required', errorCode: 'WORKSPACE_STARTING' })); assert.equal(ui.renderer.root.findAllByType(Probe).length, 0); assert.equal(connects, 1);
+  await act(async () => connect()); assert.equal(reads, 2); assert.equal(connects, 2);
+  await act(async () => event({ kind: 'authentication-required', errorCode: 'AUTHORIZATION_REVISED' })); assert.equal(ui.renderer.root.findAllByType(Probe).length, 0); assert.equal(signin(ui).props.onSignIn instanceof Function, true);
+});
+test('on-demand unmount cancels startup and late success cannot perform a session read', async t => {
+  let signal, reads = 0; const waiting = deferred();
+  const ui = await mount(t, gate({ onDemand: true, connect: value => { signal = value; return waiting.promise; }, getSession: async () => { reads++; return registered; } }));
+  await act(async () => ui.renderer.root.findAllByType('button').find(b => b.children.includes('Connect')).props.onClick());
+  await act(async () => ui.renderer.unmount()); assert.equal(signal.aborted, true); await act(async () => waiting.resolve()); assert.equal(reads, 0);
+});

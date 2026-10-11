@@ -11,6 +11,7 @@ import type { BundleDefinition } from '@opensight/bundle-parser';
 import { convertDefinition, object } from './definition-converter.js';
 import type { Row } from './model.js';
 import { transportCapabilities, assembleResult, directUpload, operationStatus, reservationStatus, type TransportCapabilities, type UploadProgress } from './object-transfers.js';
+import { createWorkspaceStartup } from './workspace-startup.js';
 import { hostedExecution, prepSources, type HostedPrepDataset, type PrepDatasetsResponse, type PrepSaveResponse } from './prep-contracts.js';
 
 /** OpenSight HTTP projection; the API supplies the engine's trusted metadata. */
@@ -80,8 +81,14 @@ export class QueryError extends ApiError {
   }
 }
 
-export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch = globalThis.fetch) {
+export interface AvailabilityEvent { kind: 'authentication-required' | 'connection-required'; errorCode?: string }
+export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch = globalThis.fetch, options: { onDemand?: boolean } = {}) {
   const base = (baseUrl.trim() || DEFAULT_API_URL).replace(/\/+$/, '');
+  const onDemand = options.onDemand === true, subscribers = new Set<(event: AvailabilityEvent) => void>();
+  let startup: ReturnType<typeof createWorkspaceStartup> | undefined;
+  const connect = (signal?: AbortSignal) => (startup ??= createWorkspaceStartup(fetcher)).connect(signal);
+  const subscribeAvailability = (listener: (event: AvailabilityEvent) => void) => { subscribers.add(listener); return () => { subscribers.delete(listener); }; };
+  const notifyAvailability = (event: AvailabilityEvent) => { if (onDemand) for (const listener of subscribers) listener(event); };
   // This closure is the only bearer store. Never persist it in browser storage.
   let credential: { token: string; expiresAt: number } | undefined;
   let generation = 0;
@@ -90,7 +97,7 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
   function currentSession(expected: number, signal?: AbortSignal) {
     signal?.throwIfAborted();
     if (expected !== generation) throw new ApiError('Session changed during request.', 401, 'AUTH_REQUEST_SUPERSEDED');
-    if (credential && credential.expiresAt <= Date.now()) { clearSession(); throw new ApiError('Your session has expired.', 401, 'SESSION_EXPIRED'); }
+    if (credential && credential.expiresAt <= Date.now()) { clearSession(); notifyAvailability({ kind: 'authentication-required', errorCode: 'SESSION_EXPIRED' }); throw new ApiError('Your session has expired.', 401, 'SESSION_EXPIRED'); }
   }
   function controlBody(body: unknown): string {
     const json = JSON.stringify(body);
@@ -101,10 +108,21 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
     const current = generation;
     if (credential && credential.expiresAt <= Date.now()) {
       clearSession();
+      notifyAvailability({ kind: 'authentication-required', errorCode: 'SESSION_EXPIRED' });
       throw new ApiError('Your session has expired.', 401, 'SESSION_EXPIRED');
     }
     const response = await fetcher(url, credential ? { ...options, credentials: 'omit', headers: { ...options.headers, Authorization: `Bearer ${credential.token}` } } : options);
     if (current !== generation) throw new ApiError('Session changed during request.', 401, 'AUTH_REQUEST_SUPERSEDED');
+    if (onDemand && (response.status === 401 || [502, 503, 504].includes(response.status))) {
+      const body: unknown = await response.clone().json().catch(() => undefined);
+      if (current !== generation) throw new ApiError('Session changed during request.', 401, 'AUTH_REQUEST_SUPERSEDED');
+      const code = body && typeof body === 'object' && 'errorCode' in body && typeof body.errorCode === 'string' ? body.errorCode : undefined;
+      if (response.status === 401 && credential) {
+        clearSession(); notifyAvailability({ kind: 'authentication-required', errorCode: code });
+        throw new ApiError('Your session is no longer valid. Sign in again.', 401, code);
+      }
+      if ([502, 504].includes(response.status) || ['WORKSPACE_STARTING', 'WORKSPACE_UNAVAILABLE', 'WORKSPACE_MAINTENANCE'].includes(code ?? '')) notifyAvailability({ kind: 'connection-required', errorCode: code });
+    }
     return response;
   }
   async function authResponse(response: Response): Promise<Record<string, unknown>> {
@@ -333,6 +351,7 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
     }
   }
   return {
+    onDemand, connect, subscribeAvailability,
     login, logout, clearSession, getTransportCapabilities, uploadDirectFile, getOperation, getUploadReservation, cancelOperation, cancelUploadReservation,
     listJobs, jobRecipients, jobHistory, jobDeliveries, runJob,
     getLocalData, getDatasetExecution, setDatasetExecution, refreshBlaze, getPreparedRows, listPrepSources, listPrepDatasets, savePrep, deletePrep, previewPrep, uploadFile, validateConnector, listUsers, saveUser, deleteUser, listInvitations, inviteUser, revokeInvitation, acceptInvitation, getAIStatus, generateO, generateCalculation, getAIConfig, saveAIConfig, saveAIKey, testAIConnection, getSession, queryO, getDatasetRefreshStatus,

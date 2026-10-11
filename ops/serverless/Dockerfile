@@ -25,7 +25,7 @@ ENV LD_LIBRARY_PATH=/tmp/al2023/lib:/var/lang/lib:/lib64:/usr/lib64:/var/runtime
 FROM browser AS test
 COPY . .
 RUN --network=none npm test
-RUN --network=none npm run build --workspace @opensight/web
+RUN --network=none VITE_OPENSIGHT_SERVERLESS=true npm run build --workspace @opensight/web
 RUN --network=none node ops/serverless/package.mjs frontend /frontend
 RUN --network=none npm run build:demo --workspace @opensight/web
 
