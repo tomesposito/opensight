@@ -72,6 +72,7 @@ invalid();
 values[key] = value.value;
 }
 console.log('EDGE_VALIDATE_VALUES');
+console.log('EDGE_HEADER_SIZES:' + JSON.stringify(Object.keys(values).map(function (k) { return values[k].length; })));
 var h = headers(values);
 console.log('EDGE_VALIDATE_HEADERS');
 if (h.host !== __OPENSIGHT_HOST__ || request.protocol !== 'https')
