@@ -86,3 +86,25 @@ a hard spending cap. No identity/origin gate changes and no paid tier is selecte
 Actual ACTIVE/FREE subscription acceptance is required. A subscription-only
 rolled-back stack may be removed after proving it owns no physical subscription;
 retained ingress/data resources are not part of that repair.
+
+#### Live metadata correction — 2026-10-11
+
+Live requests and AWS's documented edge metadata behavior show that the managed
+origin policy supplies `CloudFront-Viewer-Address` before our viewer function.
+Rejecting its mere presence rejects ordinary requests. In the explicitly selected
+viewer-function packaging only, discard that field before shared validation and
+continue setting the sole trusted peer from `event.viewer.ip`. A client-provided
+value is equally discarded; it can never select the authentication rate-limit
+identity. The origin authorizer and request adapter still require the private
+edge credential and normalize the separately injected peer. Other forged
+principal/proxy/private headers remain denied. No origin-policy, paid-plan or
+application authorization change is needed. Test both platform-added and forged
+address values, including duplicates, against the actual live edge.
+
+Use runtime 2.0's native UTF-8 byte counter for the unchanged shared 16 KiB header
+ceiling. URI encoding plus regex replacement exhausted live edge compute; native
+counting passes the AWS benchmark and preserves multibyte rejection. Remove
+fixed-category diagnostic logging after verification.
+
+Sources: [CloudFront metadata supplied to edge functions](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/adding-cloudfront-headers.html),
+[native Buffer byte counting](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/functions-javascript-runtime-20.html).
