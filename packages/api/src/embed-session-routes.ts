@@ -9,11 +9,11 @@ import { EmbedContent } from './embed-content.js';
 import type { TenantContext } from './metadata.js';
 
 export type EmbedResult = (context: TenantContext, session: EmbedSession, body: unknown, recheck: () => Promise<void>) => Promise<{ status: number; body: unknown }>;
-export async function embedSessionRoute(request: IncomingMessage, response: ServerResponse, path: string, sessions: EmbedSessions, content: EmbedContent, publishResult?: EmbedResult): Promise<boolean> {
+export async function embedSessionRoute(request: IncomingMessage, response: ServerResponse, path: string, sessions: EmbedSessions, content: EmbedContent, publishResult?: EmbedResult, resultMaxBytes?: number): Promise<boolean> {
   const shell = /^\/embed\/sessions\/([A-Za-z0-9_-]{32})$/.exec(path);
   if (shell) {
     method(request, response, ['GET']);
-    const payload = await sessions.shell(shell[1]!);
+    const payload = { ...await sessions.shell(shell[1]!), ...(resultMaxBytes === undefined ? {} : { resultMaxBytes }) };
     let template: string;
     try { template = await readFile(new URL('../../web/dist/opensight-embed-session.html', import.meta.url), 'utf8'); }
     catch { return embedFailure('EMBED_RENDERER_NOT_BUILT', 503); }

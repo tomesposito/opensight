@@ -56,6 +56,7 @@ export interface HostedInvocationAdapters {
   embedContent: EmbedContent;
   allows(path: string): boolean;
   capabilities: Readonly<Record<string, unknown>>;
+  resultMaxBytes?: number;
   embedResult?: EmbedResult;
   embedOperation?(request: IncomingMessage, response: ServerResponse, path: string, sessions: EmbedSessions): Promise<boolean>;
   route(request: IncomingMessage, response: ServerResponse, path: string, context: TenantContext, recheck: () => Promise<void>): Promise<boolean>;
@@ -240,7 +241,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
       // the single-node data/job/embedding plane just because Lambda can invoke it.
       if (options.invocation && !['/api/session', '/api/auth/switch', '/api/auth/logout', '/api/namespaces', '/api/users', '/api/groups'].includes(path) && !invocation?.allows(path)) throw new MetadataError('SERVERLESS_STORAGE_REQUIRED', 503);
       if (await invocation?.embedOperation?.(request, response, path, sessions)) return;
-      if (await embedSessionRoute(request, response, path, sessions, embedContent, invocation?.embedResult)) return;
+      if (await embedSessionRoute(request, response, path, sessions, embedContent, invocation?.embedResult, invocation?.resultMaxBytes)) return;
       // Every other request, including unknown and legacy routes, must verify first.
       const verified = async (req: IncomingMessage) => {
         try {

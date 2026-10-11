@@ -122,3 +122,12 @@ test('connector client sends only config and bytes through existing authenticate
   assert.deepEqual(JSON.parse(calls[0][1].body), { config: { hostEnv: 'MYSQL_HOST' } });
   assert.equal(calls[1][0], '/api/api/uploads'); assert.equal(calls[1][1].credentials, 'same-origin');
 });
+
+test('SR2d negotiated direct upload is available only on the file connector', async () => {
+  const { ConnectorDetails } = await import('../build/test/DataSources.js');
+  const hosted = { ...client, getTransportCapabilities: () => ({ directUploads: { version: 1, maxBytes: 8388608 }, controlJsonBytes: 1048576 }),
+    uploadDirectFile: async () => {}, getOperation: async () => {}, getUploadReservation: async () => {}, cancelOperation: async () => {}, cancelUploadReservation: async () => {} };
+  const html = id => renderToStaticMarkup(createElement(ConnectorDetails, { id, client: hosted, local: false }));
+  assert.match(html('file'), /Data expires/); assert.match(html('file'), /8 MiB maximum/); assert.doesNotMatch(html('file'), /640 KiB|cleared when the API restarts/);
+  for (const id of ['postgresql', 'mysql']) { assert.doesNotMatch(html(id), /Durable file upload|Data expires/); assert.match(html(id), /Validate configuration/); }
+});

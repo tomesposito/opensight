@@ -3,6 +3,11 @@ import type { InvocationDatabases } from './runtime-postgres.js';
 import type { InvocationScope } from './runtime-scope.js';
 import type { RuntimeRequest, RuntimeResponse } from './runtime-ingress.js';
 import { runtimeError } from './runtime-ingress.js';
+import { coordinationChecksum } from './coordination-schema.js';
+import { manifestChecksum } from './manifest-schema.js';
+import { dispatchChecksum } from './dispatch-schema.js';
+import { objectChecksum } from './object-schema.js';
+import { operationChecksum } from './operation-schema.js';
 
 export const runtimeProtocol = 1;
 export function deploymentId(env: NodeJS.ProcessEnv): string {
@@ -22,6 +27,12 @@ export async function runtimeReadiness(db: InvocationDatabases, scope: Invocatio
     await db.membership.transaction(async c => {
       await c.query('SET TRANSACTION READ ONLY');
       await checkRuntimeControl(c, deploymentId(env));
+      if (env.OPENSIGHT_SERVERLESS_DATA === 'durable') {
+        for (const [table, checksum] of [['sr_coordination_schema', coordinationChecksum], ['sr_manifest_schema', manifestChecksum], ['sr_dispatch_schema', dispatchChecksum], ['sr_object_schema', objectChecksum], ['sr_operation_schema', operationChecksum]]) {
+          const marker = (await c.query(`SELECT version, checksum FROM ${table} WHERE deployment = ?`, [deploymentId(env)]))[0];
+          if (Number(marker?.version) !== 1 || marker?.checksum !== checksum) throw new MetadataError('WORKSPACE_MAINTENANCE', 503);
+        }
+      }
       for (const table of ['h1_resources', 'h2_keys', 'h4_budget_config', 'h5_embedding_config', 'h6_sessions', 'h7_jobs']) await c.query(`SELECT 1 FROM ${table} WHERE 1 = 0`);
     });
     await db.tenant.transaction(async c => {

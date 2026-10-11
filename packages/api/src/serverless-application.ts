@@ -78,12 +78,14 @@ export function serverlessAdapters(database: Database, metadata: TenantMetadata,
   const embedContent = new EmbedContent(new HostedData(embedSources, undefined, budgets, work.cache, work));
   const uploadService = new DurableUploads(metadata, dispatch, ledger, new UploadObjects(aws, bucket)), uploads = new DurableUploadRoutes(uploadService);
   return { data, embedContent, allows: serverlessDataPath, capabilities: { directUploads: { version: 1, maxBytes: 8 * 1024 * 1024 }, resultChunks: { version: 1, maxBytes: 1024 * 1024, maxResultBytes: budgets.config.node.resultBytes }, controlJsonBytes: 1024 * 1024 },
+    resultMaxBytes: budgets.config.node.resultBytes,
     embedResult: (context, session, body, recheck) => results.publish(context, body, { kind: 'embed', id: session.id, expiresAt: session.expiresAt }, recheck),
     embedOperation: async (request, response, path, sessions) => {
       const match = /^\/api\/operations\/([A-Za-z0-9_-]+)(?:\/result\/(0|[1-9]\d{0,5}))?$/.exec(path);
       if (!match || !request.headers.authorization?.startsWith('Embed ')) return false;
       method(request, response, ['GET']);
       const id = await results.embedSession(match[1]!), credential = request.headers.authorization.slice(6), { context, session } = await sessions.verify(id, credential);
+      await metadata.usage?.consume(metadata, context, 'apiCalls');
       const recheck = async () => { await sessions.verify(id, credential); };
       const reader = { kind: 'embed' as const, id, expiresAt: session.expiresAt };
       send(response, 200, match[2] === undefined ? await uploadService.status(context, match[1]!, recheck) : await results.chunk(context, match[1]!, Number(match[2]), reader, recheck)); return true;

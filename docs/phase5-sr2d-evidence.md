@@ -138,3 +138,37 @@ and runtime/tenant permission checks. Result tests cover fresh-invocation
 reassembly, another session/owner, expiry, revocation during GET, a replaced cache
 generation, partial PUT failure and corrupt/oversized streams. Browser integration
 and live cloud acceptance remain in progress.
+
+## Client integration and phase verification
+
+Authenticated sessions negotiate the 8 MiB direct path, 1 MiB control limit and
+bounded result fragments. Browser file transfer computes SHA-256 over the actual
+Blob, sends only the five constrained object headers (Fetch supplies length),
+requires the returned version and never forwards the API bearer to S3. The form
+requires an editable retention deadline. Accepted operations have visible status,
+revision-checked cancellation and explicit Check status after a bounded wait.
+Hidden pages and unmount abort local requests without cancelling accepted work.
+Capability and in-flight publication checks follow the original session generation.
+
+Both authoring and embedded result clients validate every fragment and the complete
+digest before publishing data. The embed shell supplies the negotiated result
+ceiling. Startup additionally checks all five durable migration markers before
+reporting ready. Unsupported storage modes fail closed.
+
+Final root `npm test` passed **2,378 / failed 0 / skipped 14 / cancelled 0**
+(2,392 total): API 443 passed / 12 skipped; bundle parser 199; embedding SDK 9;
+O interpreter 32; parity 11; query engine 504 passed / 2 skipped; web 1,166;
+root conformance 14. All skips are live-PostgreSQL integrations without DATABASE_URL
+in the offline run; the separate real-PostgreSQL migration and coordination checks
+are recorded above. Hosted and demo builds passed on pinned ARM64 Node 24.
+The embedded session HTML is approximately 1.42 MB before transport encoding,
+within the existing response envelope for the standard shell.
+
+The real browser, using synthetic HTTP/object responses, confirmed one direct PUT,
+no S3 bearer, exposed-version handling, explicit expiry and queued status with zero
+page errors. This is browser integration evidence, not an AWS signing/CORS proof.
+The README screenshot is labelled synthetic. The maintained README tour now follows
+the connector dialog and accepts an environment-provided browser executable;
+251 frames completed with zero page errors/external requests, then FFmpeg assembled
+the refreshed GIF. Unavailable MySQL remains disabled. The offline demo remains a
+demo; public ingress, idle clients and live tester acceptance are still pending.

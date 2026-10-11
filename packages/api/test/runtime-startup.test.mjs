@@ -90,3 +90,21 @@ test('SR1 readiness timeout cancels ongoing SQL and waits for disposal', async t
   const run = runtime.lambda(startupEvent(), context); await started; t.mock.timers.tick(2000);
   const result = await run; assert.equal(result.statusCode, 503); assert.equal(closed, true); assert.equal(active, false);
 });
+
+test('SR2d startup requires all durable schema markers and never enables a partial migration', async () => {
+  const checksums = await Promise.all(['coordination', 'manifest', 'dispatch', 'object', 'operation'].map(async name => {
+    const module = await import(`../dist/${name}-schema.js`); return [`sr_${name}_schema`, module[`${name}Checksum`]];
+  }));
+  for (const broken of [undefined, ...checksums.map(([table]) => table)]) {
+    const seen = [];
+    const db = { transaction: async work => work({ query: async sql => {
+      seen.push(sql);
+      if (sql.includes('FROM sr_control')) return [{ state: 'open', schema_min: 1, schema_max: 1, protocol_min: 1, protocol_max: 1 }];
+      const match = checksums.find(([table]) => sql.includes(`FROM ${table} `));
+      return match ? [{ version: 1, checksum: match[0] === broken ? 'obsolete' : match[1] }] : [];
+    } }) };
+    const result = new InvocationScope(Date.now() + 10000).run(scope => runtimeReadiness({ membership: db, tenant: db }, scope, { ...runtimeEnv(), OPENSIGHT_SERVERLESS_DATA: 'durable' }));
+    if (broken) await assert.rejects(result, { code: 'WORKSPACE_MAINTENANCE' }); else { await result; assert.ok(checksums.every(([table]) => seen.some(sql => sql.includes(`FROM ${table} `)))); }
+    assert.ok(seen.every(sql => /^(SELECT|SET TRANSACTION READ ONLY)/.test(sql)));
+  }
+});

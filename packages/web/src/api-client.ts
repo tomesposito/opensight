@@ -10,6 +10,7 @@ import type { Session } from './access.js';
 import type { BundleDefinition } from '@opensight/bundle-parser';
 import { convertDefinition, object } from './definition-converter.js';
 import type { Row } from './model.js';
+import { transportCapabilities, assembleResult, directUpload, operationStatus, reservationStatus, type TransportCapabilities, type UploadProgress } from './object-transfers.js';
 import { hostedExecution, prepSources, type HostedPrepDataset, type PrepDatasetsResponse, type PrepSaveResponse } from './prep-contracts.js';
 
 /** OpenSight HTTP projection; the API supplies the engine's trusted metadata. */
@@ -84,7 +85,18 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
   // This closure is the only bearer store. Never persist it in browser storage.
   let credential: { token: string; expiresAt: number } | undefined;
   let generation = 0;
-  function clearSession() { credential = undefined; generation++; }
+  let capabilities: TransportCapabilities | undefined;
+  function clearSession() { credential = undefined; capabilities = undefined; generation++; }
+  function currentSession(expected: number, signal?: AbortSignal) {
+    signal?.throwIfAborted();
+    if (expected !== generation) throw new ApiError('Session changed during request.', 401, 'AUTH_REQUEST_SUPERSEDED');
+    if (credential && credential.expiresAt <= Date.now()) { clearSession(); throw new ApiError('Your session has expired.', 401, 'SESSION_EXPIRED'); }
+  }
+  function controlBody(body: unknown): string {
+    const json = JSON.stringify(body);
+    if (capabilities && new TextEncoder().encode(json).length > capabilities.controlJsonBytes) throw new ApiError('This request exceeds the workspace JSON limit.', 413, 'CONTROL_PAYLOAD_TOO_LARGE');
+    return json;
+  }
   async function authenticatedFetch(url: string, options: RequestInit): Promise<Response> {
     const current = generation;
     if (credential && credential.expiresAt <= Date.now()) {
@@ -139,15 +151,35 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
       if (body.loggedOut !== true) throw new ApiError('Invalid sign-out response.', undefined, 'AUTH_RESPONSE_INVALID');
     } finally { if (current === generation) clearSession(); }
   }
-  async function resource<T>(route: string, method = 'GET', body?: unknown): Promise<T> {
-    const response = await authenticatedFetch(`${base}${route}`, { method, credentials: 'same-origin', headers: { Accept: 'application/json', ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+  async function rawResource(route: string, method = 'GET', body?: unknown, signal?: AbortSignal, key?: string): Promise<unknown> {
+    const expected = generation;
+    const response = await authenticatedFetch(`${base}${route}`, { method, ...(signal ? { signal } : {}), credentials: 'same-origin', headers: { Accept: 'application/json', ...(key ? { 'Idempotency-Key': key } : {}), ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) }, ...(body === undefined ? {} : { body: controlBody(body) }) });
     const value: unknown = await response.json();
     if (!response.ok) {
       const error = object(value, 'API error');
       throw new ApiError(`${typeof error.errorCode === 'string' ? `${error.errorCode}: ` : ''}${typeof error.Message === 'string' ? error.Message : 'Request failed'}`, response.status, typeof error.errorCode === 'string' ? error.errorCode : undefined);
     }
-    return value as T;
+    currentSession(expected, signal); return value;
   }
+  async function resolveResult(value: unknown, expected: number, signal?: AbortSignal): Promise<unknown> {
+    if (!value || typeof value !== 'object' || !('operation' in value)) return value;
+    if (!capabilities?.resultChunks) throw new ApiError('Result transfers are not available in this session.', 503, 'RESULT_TRANSPORT_REQUIRED');
+    return assembleResult(value, capabilities.resultChunks.maxResultBytes, route => rawResource(route, 'GET', undefined, signal), () => currentSession(expected, signal));
+  }
+  async function resource<T>(route: string, method = 'GET', body?: unknown, signal?: AbortSignal): Promise<T> {
+    const expected = generation;
+    return await resolveResult(await rawResource(route, method, body, signal), expected, signal) as T;
+  }
+  const getTransportCapabilities = () => capabilities ? structuredClone(capabilities) : undefined;
+  const getOperation = async (id: string, signal?: AbortSignal) => operationStatus(await rawResource(`/api/operations/${encodeURIComponent(id)}`, 'GET', undefined, signal));
+  const getUploadReservation = async (id: string, signal?: AbortSignal) => reservationStatus(await rawResource(`/api/uploads/reservations/${encodeURIComponent(id)}`, 'GET', undefined, signal));
+  const cancelOperation = async (id: string, expectedRevision: number, signal?: AbortSignal) => operationStatus(await rawResource(`/api/operations/${encodeURIComponent(id)}`, 'DELETE', { expectedRevision }, signal));
+  const cancelUploadReservation = async (id: string, expectedRevision: number, signal?: AbortSignal) => reservationStatus(await rawResource(`/api/uploads/reservations/${encodeURIComponent(id)}`, 'DELETE', { expectedRevision }, signal));
+  const uploadDirectFile = (file: Blob, config: Readonly<Record<string, string>>, expiresAt: string, progress: (value: UploadProgress) => void, signal?: AbortSignal) => {
+    if (!capabilities?.directUploads) throw new ApiError('Direct uploads are not available in this session.', 503, 'UPLOAD_TRANSPORT_REQUIRED');
+    const expected = generation;
+    return directUpload(file, config, expiresAt, rawResource, fetcher, () => currentSession(expected, signal), progress, signal);
+  };
   const getDatasetExecution = async (id: string): Promise<ExecutionStatus> => {
     const status = await resource<ExecutionStatus | ExecutionSettings>(`/api/datasets/${encodeURIComponent(id)}/execution`);
     if ('state' in status) return status;
@@ -203,6 +235,7 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
   const saveAIKey = (key: string) => resource<AIConfig>('/api/admin/ai/key', 'POST', { key });
   const testAIConnection = () => resource<{ ok: true }>('/api/admin/ai/test', 'POST', {});
   async function getSession(signal?: AbortSignal): Promise<Session> {
+    const expected = generation;
     const response = await authenticatedFetch(`${base}/api/session`, { signal, credentials: 'same-origin', headers: { Accept: 'application/json' } });
     if (!response.ok) {
       // Keep the machine-readable reason without exposing backend messages or
@@ -213,6 +246,7 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
     }
     const body = object(await response.json(), 'Session');
     if (!isRole(body.role) || typeof body.id !== 'string' || typeof body.namespaceId !== 'string' || typeof body.name !== 'string') throw new ApiError('Invalid session.');
+    currentSession(expected, signal); capabilities = transportCapabilities(body.capabilities);
     return { id: body.id, namespaceId: body.namespaceId, name: body.name, role: body.role, ...(typeof body.tenantId === 'string' ? { tenantId: body.tenantId } : {}) };
   }
   async function getDatasetRefreshStatus(id: string, signal?: AbortSignal): Promise<DatasetRefreshStatus> {
@@ -239,12 +273,15 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
     return runQuery('/api/o/query', query, signal, { query, ...(dashboardId ? { dashboardId } : {}) });
   }
   async function runQuery(route: string, query: QueryRequest, signal?: AbortSignal, payload: unknown = query): Promise<QueryResponse> {
+    const sessionGeneration = generation;
     const response = await authenticatedFetch(`${base}${route}`, {
-      method: 'POST', signal, headers: { Accept: 'application/json', 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+      method: 'POST', signal, headers: { Accept: 'application/json', 'Content-Type': 'application/json' }, body: controlBody(payload),
     });
     let raw: unknown;
     try { raw = await response.json(); }
     catch { throw new ApiError(`Query returned invalid JSON (HTTP ${response.status}).`, response.status); }
+    if (response.ok) raw = await resolveResult(raw, sessionGeneration, signal);
+    currentSession(sessionGeneration, signal);
     const body = object(raw, 'Query response');
     if (response.status === 422 && typeof body.errorCode === 'string' && typeof body.message === 'string' && typeof body.path === 'string') {
       throw new QueryError(body.message, body.errorCode, body.path);
@@ -296,7 +333,7 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
     }
   }
   return {
-    login, logout, clearSession,
+    login, logout, clearSession, getTransportCapabilities, uploadDirectFile, getOperation, getUploadReservation, cancelOperation, cancelUploadReservation,
     listJobs, jobRecipients, jobHistory, jobDeliveries, runJob,
     getLocalData, getDatasetExecution, setDatasetExecution, refreshBlaze, getPreparedRows, listPrepSources, listPrepDatasets, savePrep, deletePrep, previewPrep, uploadFile, validateConnector, listUsers, saveUser, deleteUser, listInvitations, inviteUser, revokeInvitation, acceptInvitation, getAIStatus, generateO, generateCalculation, getAIConfig, saveAIConfig, saveAIKey, testAIConnection, getSession, queryO, getDatasetRefreshStatus,
     queryDataset,

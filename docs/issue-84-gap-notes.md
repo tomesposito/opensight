@@ -219,3 +219,17 @@ the hosted frontend and demo rebuilt offline. The combined demo was captured,
 inspected and is byte-identical to the preceding SR2c PNG. Backend source is
 unchanged from the complete 2,308-pass root run above; that earlier run is not
 presented as a full root rerun of the subsequent upstream merge.
+
+## SR2d client and runtime integration
+
+Direct upload, bounded operation status/cancellation, source hydration and protected
+result fragments now compose in the serverless runtime and browser. The final root
+suite passed 2,378 / failed 0 / skipped 14 (all live-PostgreSQL-only skips), with
+separate real-PostgreSQL role/migration checks. See the detailed
+[SR2d evidence](phase5-sr2d-evidence.md). Synthetic browser captures and the README
+GIF are current. The existing minimal-Linux font gap (#87) remains; no new product
+layout gap was found. The tour harness was updated for the current connector dialog.
+
+This is application implementation, not a public deployment. Idle embed/author
+clients, cloud queue/CORS proof, ingress/release configuration and real tester
+acceptance remain on the deployment path.

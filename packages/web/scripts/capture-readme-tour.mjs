@@ -15,7 +15,7 @@ const DEMO = new URL('../dist/opensight-demo.html', import.meta.url).href;
 const FRAMES = resolve(process.env.OPENSIGHT_SCREENSHOT_OUTPUT ?? '.opensight/issue-61/gif', 'frames');
 mkdirSync(FRAMES, { recursive: true });
 
-const browser = await chromium.launch({ executablePath: '/opt/meta-chromium/chrome', args: ['--no-sandbox', '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
+const browser = await chromium.launch({ executablePath: process.env.OPENSIGHT_CHROMIUM ?? '/opt/meta-chromium/chrome', args: ['--no-sandbox', '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
 const page = await (await browser.newContext({ viewport: { width: 1280, height: 800 } })).newPage();
 const errors = [], external = [];
 page.on('pageerror', e => errors.push(String(e && e.message || e).slice(0, 120)));
@@ -230,10 +230,13 @@ try {
 
   // 5. Data source connector gallery. End.
   await setMode('data-sources');
+  await page.locator('.data-tools').getByRole('button', { name: 'Create data source', exact: true }).click();
   await page.waitForTimeout(900);
-  assert.deepEqual(await page.locator('.connector-name').allTextContents(), ['Upload a file']);
-  assert.equal(await page.getByRole('checkbox', { name: 'Show unavailable connectors', exact: true }).isChecked(), false);
+  assert.ok((await page.locator('.data-connector-tile strong').allTextContents()).includes('Upload a file'));
+  assert.equal(await page.getByRole('radio', { name: 'MySQL', exact: true }).isDisabled(), true);
   await hold(1600);
+
+  await page.keyboard.press('Escape');
 
   await setMode('security'); await hold(1400);
   assert.deepEqual(errors, []); assert.deepEqual(external, []);

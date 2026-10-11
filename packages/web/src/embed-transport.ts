@@ -1,4 +1,5 @@
-export interface EmbedShell { sessionId: string; allowedDomains: string[] }
+import { assembleResult } from './object-transfers.js';
+export interface EmbedShell { sessionId: string; allowedDomains: string[]; resultMaxBytes?: number }
 export type SessionState = 'loading' | 'ready' | 'error' | 'expired' | 'revoked' | 'saved';
 export interface EmbedTransport {
   request<T>(action: 'content' | 'question' | 'analysis' | 'save', body?: unknown): Promise<T>;
@@ -28,11 +29,18 @@ export function startEmbedTransport(shell: EmbedShell, bootstrapValue: string, c
     const controller = new AbortController(); controllers.add(controller);
     const timeout = view.setTimeout(() => controller.abort(), 8000);
     try {
-      const response = await fetcher(`/api/embed/sessions/${shell.sessionId}/${action}`, { method: body === undefined ? 'GET' : 'POST', credentials: 'omit', cache: 'no-store', redirect: 'error', signal: controller.signal,
+      const route = action.startsWith('/api/operations/') ? `/api${action}` : `/api/embed/sessions/${shell.sessionId}/${action}`;
+      const response = await fetcher(route, { method: body === undefined ? 'GET' : 'POST', credentials: 'omit', cache: 'no-store', redirect: 'error', signal: controller.signal,
         headers: { ...(credential ? { Authorization: `Embed ${credential}` } : {}), ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
       const result = await response.json() as T & { errorCode?: string };
       if (!response.ok) { failure(result.errorCode); throw new Error('EMBED_UNAVAILABLE'); }
       if (destroyed || terminal) throw new Error('EMBED_UNAVAILABLE');
+      if (response.status === 202) {
+        if (!Number.isSafeInteger(shell.resultMaxBytes) || shell.resultMaxBytes! < 1 || shell.resultMaxBytes! > 2147483647) throw new Error('RESULT_TRANSPORT_REQUIRED');
+        return await assembleResult(result, shell.resultMaxBytes!, path => call(path), () => {
+          if (destroyed || terminal || Date.now() >= expiresAt || Date.now() >= deadline || view.document.visibilityState === 'hidden') throw new Error('EMBED_UNAVAILABLE');
+        }) as T;
+      }
       return result;
     } catch { stop('error'); throw new Error('EMBED_UNAVAILABLE'); }
     finally { view.clearTimeout(timeout); controllers.delete(controller); }

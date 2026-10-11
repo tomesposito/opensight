@@ -15,6 +15,7 @@ export interface RuntimeDependencies {
 }
 export function runtimeMode(env: NodeJS.ProcessEnv): 'http' | 'lambda' {
   const mode = env.OPENSIGHT_RUNTIME ?? 'http';
+  if (env.OPENSIGHT_SERVERLESS_DATA !== undefined && env.OPENSIGHT_SERVERLESS_DATA !== 'durable') throw new MetadataError('RUNTIME_CONFIG_INVALID', 503);
   if (!['http', 'lambda'].includes(mode) || mode === 'lambda' && (env.OPENSIGHT_MODE !== 'hosted' || env.OPENSIGHT_REFERENCE !== undefined)) throw new MetadataError('RUNTIME_CONFIG_INVALID', 503);
   return mode as 'http' | 'lambda';
 }
