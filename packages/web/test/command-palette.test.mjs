@@ -196,6 +196,11 @@ test('Search uses the single existing palette with guarded menu actions and rese
   await ui.open(); assert.equal(ui.input().props.placeholder, 'Search commands…');
   for (const label of ['Objects: Title', 'Objects: Actions', 'Objects: Legend']) assert.ok(ui.labels().includes(label));
   await ui.run('Sheets: Add Sheet');
+  await act(() => {
+    const sheetForm = ui.renderer.root.findAllByType('form').find(f => f.findAllByType('h2').some(h => h.props.children === 'New sheet'));
+    assert.ok(sheetForm, 'New sheet dialog');
+    sheetForm.props.onSubmit({ preventDefault() {} });
+  });
   await ui.open(); assert.ok(!ui.labels().includes('Objects: Title'));
   await ui.run('Go to visual: Sheet 1 / visual-1');
   await ui.open(); assert.ok(ui.labels().includes('Objects: Title'));
