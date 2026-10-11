@@ -35,6 +35,8 @@ export function checkIngressPlan(plan, inputs) {
     if (r.type === 'aws_apigatewayv2_api') check(v.disable_execute_api_endpoint === true && v.protocol_type === 'HTTP', 'ORIGIN_BYPASS');
     if (r.type === 'aws_apigatewayv2_authorizer') check(v.authorizer_result_ttl_in_seconds === 0 && v.authorizer_type === 'REQUEST', 'AUTHORIZER_CACHE');
     if (r.type === 'aws_apigatewayv2_route') check(v.authorization_type === 'CUSTOM' && ['$default', 'POST /api/api/startup'].includes(v.route_key), 'ROUTE_AUTH');
+    if (r.type === 'aws_apigatewayv2_stage') check(v.default_route_settings?.[0]?.throttling_rate_limit === 5 && v.default_route_settings[0].throttling_burst_limit === 10
+      && v.route_settings?.length === 1 && v.route_settings[0].route_key === 'POST /api/api/startup' && v.route_settings[0].throttling_rate_limit === 0.5 && v.route_settings[0].throttling_burst_limit === 2, 'GLOBAL_STARTUP_CAP');
     if (r.type === 'aws_cloudwatch_log_group') check(v.retention_in_days === 3, 'LOG_CAP');
     if (r.type === 'aws_s3_bucket') check(v.bucket === inputs.frontend_bucket && v.force_destroy === false, 'BUCKET_CUSTODY');
     if (r.type === 'aws_s3_bucket_public_access_block') check(['block_public_acls', 'block_public_policy', 'ignore_public_acls', 'restrict_public_buckets'].every(k => v[k] === true), 'PUBLIC_BUCKET');
@@ -63,6 +65,12 @@ export function checkReceipt(receipt, actual, now = Date.now()) {
 export function checkFreeSubscription(subscription, expected) {
   if (subscription?.status !== 'ACTIVE' || subscription.planTier !== 'FREE' || subscription.planFamily !== 'CloudFront'
     || JSON.stringify([...(subscription.resourceArns ?? [])].sort()) !== JSON.stringify([...expected].sort()) || subscription.scheduledChange) throw Error('FREE_SUBSCRIPTION_REQUIRED');
+}
+export function checkFailedSubscriptionStack(stack, resources, subscriptions, expectedName, associatedArns) {
+  if (stack?.StackName !== expectedName || stack.StackStatus !== 'ROLLBACK_COMPLETE' || !Array.isArray(resources) || resources.length !== 1
+    || resources[0].LogicalResourceId !== 'Subscription' || resources[0].ResourceType !== 'AWS::PricingPlanManager::Subscription'
+    || resources[0].ResourceStatus !== 'DELETE_COMPLETE' || resources[0].PhysicalResourceId
+    || !Array.isArray(subscriptions) || subscriptions.some(subscription => !Array.isArray(subscription.resourceArns) || subscription.resourceArns.some(arn => associatedArns.includes(arn)))) throw Error('EMPTY_FAILED_STACK_REQUIRED');
 }
 /** Validate every build byte before any S3 write. No links or extra files. */
 export function frontendFiles(directory, manifestDigest) {

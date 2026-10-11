@@ -142,7 +142,7 @@ resource "aws_apigatewayv2_stage" "application" {
   }
   route_settings {
     route_key              = "POST /api/api/startup"
-    throttling_rate_limit  = 1
+    throttling_rate_limit  = 0.5
     throttling_burst_limit = 2
   }
   access_log_settings {
