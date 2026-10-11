@@ -1375,6 +1375,16 @@ epoch, identities and durable work remain intact. The owner transaction holds
 the admission control lock and refuses any live held admission. Actual 8 MiB
 ingestion and query acceptance remain required before DNS.
 
+**SR4b4 invocation preflight connection correction (frozen 2026-10-11):**
+[Connection lifetime](docs/phase5-sr4b4-preflight-connections.md) closes both
+preflight SQL clients immediately and handles checked-out client errors through
+invocation cancellation. Retain the five-second SQL idle timeout. Before initial
+DNS publication, permit one independently tested, protocol-compatible connection
+repair image through a private provenance record binding the original activation
+to the replacement image. Preserve original SQL activation receipts, epoch,
+budgets, identities and queued work; initial administration commands then close.
+Saved-plan and complete application acceptance gates remain mandatory.
+
 ---
 
 ## 7. Repository Layout

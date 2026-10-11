@@ -138,3 +138,13 @@ measured run. Reducing the approved upload ceiling would change the customer
 contract. Rebuilding or resetting the database would discard accepted work.
 The one-time receipt and revision checks prevent this correction from becoming
 an unrestricted maintenance interface.
+
+#### Preflight connection correction — 2026-10-11
+
+The next AWS attempt exposed an unused preflight SQL connection: its five-second
+idle timeout raised an unhandled client error during native work. Close the
+preflight clients and handle owned client errors as specified in
+[SR4b4](../phase5-sr4b4-preflight-connections.md). Raising the idle timeout would
+retain an unnecessary connection and hide the ownership bug. A compatible,
+one-time image replacement before DNS preserves the original activation evidence
+through a separate private provenance record; it changes no SQL state or protocol.
