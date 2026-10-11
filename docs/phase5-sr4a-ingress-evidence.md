@@ -7,7 +7,8 @@ activation and public site DNS are still gated; this is not a live application.
 
 The exact Linux ARM64 candidate image was built from commit `7631145`, with digest
 `sha256:d3455b67956a613228d695675a97c51c02ea3d378f7484b700d1f6a70e5401a8`.
-Subsequent commits in this slice add documentation only.
+Subsequent ingress-only corrections change Terraform/operator guards and test
+fixtures; the application/authorizer image bytes remain unchanged.
 
 Root `npm test` passed **2,433 / failed 0 / skipped 14 / cancelled 0** (2,447 total).
 API: 449 passed / 12 live-PostgreSQL skips; bundle parser: 199; embedding SDK: 10;
@@ -54,11 +55,12 @@ AWS validation so far:
 - CloudWatch observation before ingress validation reports 60 of 60 minute
   samples at 0 ACU. No SQL probe was issued during this slice.
 
-Distribution propagation completed. AWS rejected the initial Free subscription
-because the WAF resource was ineligible; its failed subscription-only stack
-contains no physical subscription. The reviewed correction retains both IP
-rules and tightens global startup throttling at API Gateway. Free subscription
-acceptance is still required. Live edge forwarding, frontend delivery, durable consumers, database
+Distribution propagation completed. AWS rejected both the original WAF rules
+and the IP-only retry that retained URI scope-down statements. Each failed
+subscription-only stack has no physical subscription. The next reviewed profile
+uses one unscoped 600/5-minute IP rule and the tighter global API startup throttle
+of 0.1/second with burst two. Actual Free acceptance is still required.
+Live edge forwarding, frontend delivery, durable consumers, database
 migration/initial activation, tester bootstrap and the real authentication/upload/
 ingestion/query/isolation checks remain before public site DNS publication.
 Private plans, state, account/domain inputs, scan detail and service evidence are

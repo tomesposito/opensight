@@ -80,7 +80,7 @@ run "closed_until_acceptance" {
     error_message = "Frontend storage must remain private and retained."
   }
   assert {
-    condition     = jsondecode(aws_cloudformation_stack.plan.template_body).Resources.Subscription.Properties.PlanTier == "FREE" && jsondecode(aws_cloudformation_stack.plan.template_body).Resources.Subscription.Properties.PlanFamily == "CloudFront" && length(aws_wafv2_web_acl.application.rule) == 2 && alltrue([for rule in aws_wafv2_web_acl.application.rule : !rule.visibility_config[0].sampled_requests_enabled && rule.statement[0].rate_based_statement[0].aggregate_key_type == "IP"]) && one(aws_apigatewayv2_stage.application.route_settings).throttling_rate_limit == 0.5 && one(aws_apigatewayv2_stage.application.route_settings).throttling_burst_limit == 2
+    condition     = jsondecode(aws_cloudformation_stack.plan.template_body).Resources.Subscription.Properties.PlanTier == "FREE" && jsondecode(aws_cloudformation_stack.plan.template_body).Resources.Subscription.Properties.PlanFamily == "CloudFront" && length(aws_wafv2_web_acl.application.rule) == 1 && alltrue([for rule in aws_wafv2_web_acl.application.rule : !rule.visibility_config[0].sampled_requests_enabled && rule.statement[0].rate_based_statement[0].aggregate_key_type == "IP" && rule.statement[0].rate_based_statement[0].limit == 600 && rule.statement[0].rate_based_statement[0].evaluation_window_sec == 300 && length(rule.statement[0].rate_based_statement[0].scope_down_statement) == 0]) && one(aws_apigatewayv2_stage.application.route_settings).throttling_rate_limit == 0.1 && one(aws_apigatewayv2_stage.application.route_settings).throttling_burst_limit == 2
     error_message = "No paid tier, missing rate controls or sampled request bodies may enter the initial profile."
   }
 }

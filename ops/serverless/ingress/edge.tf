@@ -58,44 +58,9 @@ resource "aws_wafv2_web_acl" "application" {
     metric_name                = "${var.deployment}-edge"
     sampled_requests_enabled   = false
   }
-  dynamic "rule" {
-    for_each = { startup_ip = { priority = 0, aggregate = "IP", limit = 30 } }
-    content {
-      name     = rule.key
-      priority = rule.value.priority
-      action {
-        block {}
-      }
-      statement {
-        rate_based_statement {
-          aggregate_key_type    = rule.value.aggregate
-          limit                 = rule.value.limit
-          evaluation_window_sec = 300
-          scope_down_statement {
-            byte_match_statement {
-              positional_constraint = "EXACTLY"
-              search_string         = "/api/api/startup"
-              field_to_match {
-                uri_path {}
-              }
-              text_transformation {
-                priority = 0
-                type     = "NONE"
-              }
-            }
-          }
-        }
-      }
-      visibility_config {
-        cloudwatch_metrics_enabled = true
-        metric_name                = "${var.deployment}-${rule.key}"
-        sampled_requests_enabled   = false
-      }
-    }
-  }
   rule {
-    name     = "dynamic_ip"
-    priority = 2
+    name     = "all_ip"
+    priority = 0
     action {
       block {}
     }
@@ -104,31 +69,11 @@ resource "aws_wafv2_web_acl" "application" {
         aggregate_key_type    = "IP"
         limit                 = 600
         evaluation_window_sec = 300
-        scope_down_statement {
-          or_statement {
-            dynamic "statement" {
-              for_each = ["/api/", "/embed/sessions/"]
-              content {
-                byte_match_statement {
-                  positional_constraint = "STARTS_WITH"
-                  search_string         = statement.value
-                  field_to_match {
-                    uri_path {}
-                  }
-                  text_transformation {
-                    priority = 0
-                    type     = "NONE"
-                  }
-                }
-              }
-            }
-          }
-        }
       }
     }
     visibility_config {
       cloudwatch_metrics_enabled = true
-      metric_name                = "${var.deployment}-dynamic-ip"
+      metric_name                = "${var.deployment}-all-ip"
       sampled_requests_enabled   = false
     }
   }
