@@ -788,6 +788,7 @@ SR0 implementation decision register (issue #81; proposals, no AWS authorization
 | [D-27](itd/D-27-serverless-build-tooling.md) | SR4a tooling and dependency pins | ✅ OpenTofu/AWS provider operator tools, ARM64 Node 24 image, standard AWS SDK and explicit tslib 2.8.1 exception |
 | [D-28](idd/D-28-serverless-upload-experience.md) | Initial serverless upload experience | ✅ Preserve 8 MiB files through direct transfer, asynchronous status, 1 MiB control JSON ceiling |
 | [D-29](itd/D-29-manifest-dependency-validation.md) | Manifest invalidation | ✅ Validate complete dependency certificates at read/publication time; no idle descendant walker |
+| [D-30](itd/D-30-patched-spreadsheet-parser.md) | Patched spreadsheet parser | ✅ Pin the Apache-2.0 maintainer distribution with verified archive and lockfile integrity |
 
 Related confirmed deployment decision: [ITD D-18 — serverless development
 deployment](itd/D-18-serverless-development-deployment.md) (2026-10-10). Lambda

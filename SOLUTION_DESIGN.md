@@ -1284,6 +1284,17 @@ The adapter requires an explicit storage-obligation callback before object write
 SR2d/SR3 must implement that callback and upload/event orchestration before runtime
 activation. No new dependency or cloud mutation belongs to this build.
 
+**SR2d/SR3a upload and operation integration (frozen 2026-10-10):**
+[Durable uploads and operation recovery](docs/phase5-sr2d-operations.md) freezes
+the direct-upload protocol, prearmed event dispatch, storage accounting, immutable
+file-source binding, operation cancellation/results, and hosted client integration.
+It supplies actual runtime composition for supported data routes rather than
+opening SR1 guards globally. [D-30](docs/itd/D-30-patched-spreadsheet-parser.md)
+selects the maintainer's patched Apache-2.0 SheetJS distribution. The standard
+Apache-2.0 S3 presigner uses the existing approved SDK/tslib dependency family.
+H7 recurring-job/delivery integration, idle embed UI, public ingress and release
+automation remain subsequent deployment work; unsupported routes fail explicitly.
+
 ---
 
 ## 7. Repository Layout
