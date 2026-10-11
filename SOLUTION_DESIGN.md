@@ -1341,7 +1341,9 @@ owner/tester provisioning. Preserve the database, VPC and state; actual pilot ta
 block legacy destructive cleanup. IAM-only administration plus current operator
 authorization installs all schema checkpoints, atomically bootstraps two isolated
 workspaces and performs a one-time, receipt-bound epoch-one admission transition.
-Existing password/TOTP login remains mandatory. No onboarding mail or public setup
+Pilot HTTP authorizer/request reserved concurrency is four each, after live
+throttling at the validation caps; workers remain two each and no provisioned
+concurrency is added. Existing password/TOTP login remains mandatory. No onboarding mail or public setup
 endpoint is introduced. Complete the long-pause database measurement and real
 HTTPS startup/authentication/upload/ingestion/query/isolation checks before apex
 DNS. This initial transition does not implement D-25's recurring release/rollback
