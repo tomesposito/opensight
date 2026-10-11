@@ -60,6 +60,7 @@ denied();
 return result;
 }
 function validateViewerRequest(raw, origin) {
+console.log('EDGE_VALIDATE_BEGIN');
 var request = record(raw), values = {};
 for (var _i = 0, _a = Object.entries(record(request.headers)); _i < _a.length; _i++) {
 var _b = _a[_i], key = _b[0], rawValue = _b[1];
@@ -70,7 +71,9 @@ if (typeof value.value !== 'string')
 invalid();
 values[key] = value.value;
 }
+console.log('EDGE_VALIDATE_VALUES');
 var h = headers(values);
+console.log('EDGE_VALIDATE_HEADERS');
 if (h.host !== __OPENSIGHT_HOST__ || request.protocol !== 'https')
 denied();
 if (Object.keys(h).some(function (k) { return k.startsWith('x-opensight-ingress-') || k === 'cloudfront-viewer-address' || k === 'x-forwarded-for' || k === 'x-forwarded-proto' || k === 'x-forwarded-port'; }))
@@ -87,6 +90,7 @@ function handler(event) {
 console.log('EDGE_VIEWER_ENTER');
 try {
 var request = event.request;
+console.log('EDGE_VIEWER_REQUEST');
 validateViewerRequest({ headers: request.headers, uri: request.uri, querystring: request.querystring, protocol: 'https' }, __OPENSIGHT_ORIGIN__);
 if (!event.viewer || typeof event.viewer.ip !== 'string' || !/^[a-fA-F0-9:.]{3,45}$/.test(event.viewer.ip))
 denied();

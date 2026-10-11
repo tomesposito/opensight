@@ -22,13 +22,17 @@ export async function edgeSource() {
   }
   if (selected.length !== functions.length + variables.length) throw Error('EDGE_SOURCE_CHANGED');
   const adapted = selected.join('\n').replaceAll('singleton.has(name)', 'singleton.includes(name)').replaceAll('Object.hasOwn(', 'Object.prototype.hasOwnProperty.call(')
-    .replaceAll('new URL(origin).host', '__OPENSIGHT_HOST__').replaceAll('Buffer.byteLength(', 'byteLength(');
+    .replaceAll('new URL(origin).host', '__OPENSIGHT_HOST__').replaceAll('Buffer.byteLength(', 'byteLength(')
+    .replace('const request = record(raw)', "console.log('EDGE_VALIDATE_BEGIN'); const request = record(raw)")
+    .replace('const h = headers(values)', "console.log('EDGE_VALIDATE_VALUES'); const h = headers(values)")
+    .replace("if (h.host !==", "console.log('EDGE_VALIDATE_HEADERS'); if (h.host !==");
   const wrapper = `function MetadataError(code, status) { this.code = code; this.status = status; }
 function byteLength(value) { return encodeURIComponent(value).replace(/%[A-Fa-f0-9]{2}/g, 'x').length; }
 function handler(event) {
   console.log('EDGE_VIEWER_ENTER');
   try {
     const request = event.request;
+    console.log('EDGE_VIEWER_REQUEST');
     // Every API behavior enforces HTTPS before forwarding to the origin.
     // Live CloudFront event objects are not the plain JSON objects supplied to
     // TestFunction. Read only the fields consumed by the shared boundary.
