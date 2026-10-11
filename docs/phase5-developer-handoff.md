@@ -51,10 +51,8 @@ Use [D-22](itd/D-22-serverless-object-transfers.md),
 
 The operator confirmed the upload/status and 1 MiB control JSON product choice
 in [D-28](idd/D-28-serverless-upload-experience.md). The first build checkpoint is
-[SR2a durable coordination](phase5-sr2a-coordination.md) is implemented and
-published. [SR2b artifact transfer](phase5-sr2b-artifact-transfer.md) freezes the
-contained codec and version-bound S3 mechanism. Subsequent manifest, recovery
-and application-integration contracts must be frozen before those builds.
+[SR2a durable coordination](phase5-sr2a-coordination.md); subsequent artifact,
+transfer and application-integration contracts must be frozen before those builds.
 
 - Finalize SQL schema, migration compatibility and lock ordering; durable
   aggregate admission, claims, fencing tokens and authoritative publication.

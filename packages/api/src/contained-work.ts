@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { setImmediate as yieldTurn } from 'node:timers/promises';
 import type { PrepColumn, PrepPipeline } from '@opensight/bundle-parser/prep';
 import type { PrepSource, PrepDataset, SourceRead, PrepScalar, InteractiveQuery, UploadRequest, queryPrepared } from '@opensight/query-engine';
-import { BlazeTable, type BlazeLimits, type CachedInput } from './blaze.js';
+import { BlazeTable, type BlazeLimits } from './blaze.js';
 import { MetadataError } from './metadata-db.js';
 import type { WorkScope } from './budgets.js';
 import { InvocationScope } from './runtime-scope.js';
@@ -13,13 +13,10 @@ export type WorkerTask =
   | { kind: 'source'; read: SourceRead; table: WireTable }
   | { kind: 'prep'; pipeline: PrepPipeline; sources: PrepSource[]; datasets: PrepDataset[]; id: string; through?: string | null; tables: WireTable[] }
   | { kind: 'upload'; request: UploadRequest }
-  | { kind: 'parquet-write'; path: string; columns: PrepColumn[]; rows: PrepScalar[][]; cachedInputs: CachedInput[] }
-  | { kind: 'parquet-read'; path: string; columns: PrepColumn[]; rowCount: number; decodedBytes: number; cachedInputs: CachedInput[] }
   | { kind: 'visual'; table: WireTable; analysis: unknown; visualId: string; dataSetArn: string; period?: { columnName: string; start: string; end: string } }
   | { kind: 'query'; table: WireTable; query: InteractiveQuery };
 export interface WorkerRequest { task: WorkerTask; limits: BlazeLimits; memoryMb: number; resultBytes: number; deadline: number; rssBytes: number }
 export interface TableResult { columns: PrepColumn[]; rows: PrepScalar[][] }
-export interface ParquetWriteResult { rowCount: number; decodedBytes: number }
 export type QueryResult = ReturnType<typeof queryPrepared>;
 export async function wireTable(scope: WorkScope, table: BlazeTable, source: PrepSource): Promise<WireTable> {
   scope.memory(table.bytes); const rows: PrepScalar[][] = [];
@@ -31,7 +28,7 @@ export async function wireTable(scope: WorkScope, table: BlazeTable, source: Pre
 }
 /** A child owns all untrusted synchronous evaluation and native DuckDB allocation.
  * The parent kills and REAPS it before releasing admission, including IPC/parent death. */
-export async function containedWork<T extends TableResult | QueryResult | ParquetWriteResult = TableResult | QueryResult>(scope: WorkScope, task: WorkerTask, limits: BlazeLimits): Promise<T> {
+export async function containedWork<T extends TableResult | QueryResult>(scope: WorkScope, task: WorkerTask, limits: BlazeLimits): Promise<T> {
   scope.check();
   if (process.platform !== 'linux') throw new MetadataError('WORKER_CONTAINMENT_UNAVAILABLE', 503);
   // A procfs mounted in a different PID namespace cannot observe our children. Fail closed.
