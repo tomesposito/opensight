@@ -12,6 +12,7 @@
 
 | Date       | Change |
 |------------|--------|
+| 2026-10-11 | Freeze SR4b1 initial pilot activation: promote protected resources, privately create isolated testers and open initial admission only after schema/receipt checks; actual application acceptance gates DNS. |
 | 2026-10-11 | SR4a live edge correction discards nonauthoritative CloudFront viewer-address metadata and uses native UTF-8 byte counting; event viewer IP and private origin authorization remain mandatory. |
 | 2026-10-10 | SR4a SMTP validation specifies a tagged sender/recipient-restricted IAM login, private key derivation outside Terraform, SES sandbox identity verification and a twenty-attempt mail cap. Request, migration and probe remain the three isolated functions; no public ingress is added. |
 | 2026-10-10 | D-28 confirms 8 MiB direct uploads, asynchronous ingestion status and the 1 MiB control JSON ceiling. Freeze SR2a's SQL admission/fencing foundation as a separate implementation checkpoint; all application storage/dispatch gates remain closed. |
@@ -1331,6 +1332,20 @@ peer from `event.viewer.ip`. A forged value is also discarded and cannot influen
 identity; all other existing principal/proxy/private-header checks remain. Use
 runtime 2.0 native UTF-8 byte counting to retain the shared 16 KiB limit within
 edge compute. D-32 records the correction; origin authorization remains required.
+
+**SR4b1 initial pilot activation (frozen 2026-10-11):**
+[Initial activation](docs/phase5-sr4b1-initial-activation.md) and
+[D-33](docs/itd/D-33-initial-pilot-activation.md) specify promotion of the existing
+protected inventory, two bounded work/recovery consumers and private initial
+owner/tester provisioning. Preserve the database, VPC and state; actual pilot tags
+block legacy destructive cleanup. IAM-only administration plus current operator
+authorization installs all schema checkpoints, atomically bootstraps two isolated
+workspaces and performs a one-time, receipt-bound epoch-one admission transition.
+Existing password/TOTP login remains mandatory. No onboarding mail or public setup
+endpoint is introduced. Complete the long-pause database measurement and real
+HTTPS startup/authentication/upload/ingestion/query/isolation checks before apex
+DNS. This initial transition does not implement D-25's recurring release/rollback
+or CI protocol.
 
 ---
 
