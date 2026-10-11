@@ -1314,6 +1314,12 @@ retain the existing fail-closed ingress checks. Private encrypted state owns
 origin-secret configuration. This slice preserves the existing database and
 defers public DNS cutover until actual application/tester acceptance.
 
+The initial Free subscription rejected the WAF resource. The reviewed correction
+retains scoped per-IP WAF limits and moves the global startup control to the
+HTTP API's tighter 0.5-request/second, burst-two throttle. No paid plan is selected.
+Only an owned, empty, rolled-back subscription stack may be removed for retry;
+all serving/data resources and the DNS acceptance gate remain protected.
+
 ---
 
 ## 7. Repository Layout
