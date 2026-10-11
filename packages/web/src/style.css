@@ -504,9 +504,9 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .action-panel-body input:not([type=radio]):not([type=checkbox]), .action-panel-body select { width: 100%; max-width: 100%; min-width: 0; padding: 4px; font: inherit; border: 1px solid var(--chrome-border, #c9d8de); border-radius: 3px; color: inherit; background: var(--chrome-surface, #fff); }
 .action-radio-group { border: 0; padding: 0; margin: 0; min-width: 0; display: grid; gap: 4px; }
 .action-radio-group legend { font-size: 12px; font-weight: 600; padding: 0; margin-bottom: 4px; }
-.action-radio-group label { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+.action-radio-group label { display: flex; flex-direction: row; align-items: center; gap: 6px; font-size: 12px; margin-bottom: 0; }
 .action-checkbox-list { display: grid; gap: 4px; margin-top: 4px; padding-left: 20px; }
-.action-checkbox-list label { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 400; }
+.action-checkbox-list label { display: flex; flex-direction: row; align-items: center; gap: 6px; font-size: 12px; font-weight: 400; margin-bottom: 0; }
 .action-target { display: grid; gap: 4px; padding: 6px; border: 1px solid var(--chrome-border, #c9d8de); border-radius: 4px; }
 .action-panel-footer { display: grid; gap: 8px; padding: 12px 0 4px; border-top: 1px solid var(--chrome-border, #c9d8de); }
 .action-panel-footer button { padding: 8px; border-radius: 4px; font: inherit; cursor: pointer; }
