@@ -38,6 +38,22 @@ test('SR4b3 initial budget change input carries only distinct canonical digests'
     assert.throws(() => initialBudgetChange(value), /INITIAL_BUDGET_CHANGE_INVALID/);
   assert.throws(() => safeInitialResult('tune-initial-budgets', { state: 'budgets-configured', epoch: 1, budgetVersion: 3 }), /INITIAL_RESULT_INVALID/);
 });
+test('SR4b4 connection repair preserves activation provenance and binds the exact replacement', () => {
+  const account = '000000000000', deployment = 'synthetic', operationId = 'bootstrap';
+  const image = `${account}.dkr.ecr.us-east-1.amazonaws.com/${deployment}@sha256:`;
+  const release = { image_uri: image + 'b'.repeat(64), source_commit: 'c'.repeat(40) };
+  const record = { version: 1, account, deployment, operationId, imageUri: image + 'a'.repeat(64), result: { state: 'active', epoch: 1 } };
+  const patch = { version: 1, account, deployment, operationId, activationImageUri: record.imageUri, imageUri: release.image_uri,
+    sourceCommit: release.source_commit, purpose: 'release-idle-preflight-clients' };
+  const original = structuredClone(record);
+  activationRequired(record, release, account, deployment, operationId, patch); assert.deepEqual(record, original);
+  assert.throws(() => activationRequired(record, release, account, deployment, operationId), /INITIAL_ACTIVATION_REQUIRED/);
+  for (const change of [{ imageUri: record.imageUri }, { sourceCommit: 'd'.repeat(40) }, { operationId: 'other' }, { account: '111111111111' },
+    { activationImageUri: image + 'd'.repeat(64) }, { purpose: 'arbitrary-upgrade' }, { unknown: true }])
+    assert.throws(() => activationRequired(record, release, account, deployment, operationId, { ...patch, ...change }));
+  const foreign = image.replace('/synthetic@', '/foreign@') + 'b'.repeat(64);
+  assert.throws(() => activationRequired(record, { ...release, image_uri: foreign }, account, deployment, operationId, { ...patch, imageUri: foreign }), /PINNED_ADMINISTRATION_REQUIRED/);
+});
 test('SR4b2 administration artifacts stay pinned to the same deployment and do not replace the application', () => {
   const plan = fixture(true, true), image = plan.variables.image_uri.value.replace(/a{64}$/, 'b'.repeat(64));
   assert.equal(administrationImage({ image_uri: image }, '000000000000', 'synthetic'), image);

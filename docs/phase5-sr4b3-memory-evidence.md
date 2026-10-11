@@ -40,5 +40,11 @@ matched exactly. The inspected author-frame difference is only saved-time text
 at pixels (150,97)–(172,107). No UI change requires README media replacement.
 This static capture is not evidence of a deployed application.
 
-Private AWS application of the budget change and the complete browser workflow
-remain pending at this checkpoint. Apex DNS has not been published.
+The reviewed AWS plan updated only function environment values and the private
+administration image. The private command returned `budgets-configured`, epoch
+one, budget version two, and request version three was selected. Real browser
+8 MiB transfer succeeded again, but ingestion exposed a second fault: a retained
+preflight connection hit its five-second idle timeout and crashed the process.
+SR4b4 corrects that connection lifetime. The prior synthetic operation was
+cancelled through its owner API, preserving cleanup obligations. Complete browser
+acceptance and apex DNS remain pending.

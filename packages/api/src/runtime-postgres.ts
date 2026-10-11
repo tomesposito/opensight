@@ -3,8 +3,8 @@ import { Pool, type PoolConfig } from 'pg';
 import { MetadataError, PostgresMetadataDatabase, type Database, type MetadataPool } from './metadata-db.js';
 import { InvocationScope } from './runtime-scope.js';
 
-type Client = Awaited<ReturnType<MetadataPool['connect']>>;
-export interface OwnedPool extends MetadataPool { end(): Promise<void>; on(event: 'error', listener: (error: Error) => void): unknown }
+type Client = Awaited<ReturnType<MetadataPool['connect']>> & { on?(event: 'error', listener: (error: Error) => void): unknown };
+export interface OwnedPool extends MetadataPool { connect(): Promise<Client>; end(): Promise<void>; on(event: 'error', listener: (error: Error) => void): unknown }
 export type PoolFactory = (config: PoolConfig) => OwnedPool;
 
 /** Register sockets at construction, before pg's connect promise can hang. */
@@ -15,7 +15,6 @@ export class InvocationPool implements MetadataPool {
   private readonly clients = new Set<Client>();
   private closed = false;
   private ending?: Promise<void>;
-  private prepared?: Client;
   constructor(readonly scope: InvocationScope, config: PoolConfig, readonly connectMs = 3000, factory: PoolFactory = c => new Pool(c)) {
     scope.check();
     this.pool = factory({ ...config, max: 1, min: 0, idleTimeoutMillis: 0, keepAlive: false,
@@ -32,17 +31,19 @@ export class InvocationPool implements MetadataPool {
     scope.own(this);
   }
   force = (): void => { this.closed = true; for (const socket of this.sockets) socket.destroy(); };
-  async prepare(): Promise<void> { this.prepared = await this.connect(); }
+  async prepare(): Promise<void> { const client = await this.connect(); client.release(); }
   async connect(): Promise<Client> {
     this.scope.check();
     if (this.closed) throw new MetadataError('METADATA_TRANSACTION_CLOSED', 503);
-    if (this.prepared) { const client = this.prepared; this.prepared = undefined; return client; }
+    let released = false;
     const client = await this.scope.stage(async () => {
       const client = await this.pool.connect();
+      // Pool error listeners cover idle pooled clients, not checked-out clients.
+      // Keep the listener through socket disposal, consuming late release errors.
+      client.on?.('error', () => { if (!released) { this.force(); this.scope.controller.abort(); } });
       if (this.closed || this.scope.signal.aborted) { client.release(new Error('INVOCATION_CANCELLED')); throw new MetadataError('INVOCATION_DEADLINE_EXCEEDED', 503); }
       this.clients.add(client); return client;
     }, this.connectMs, this.force, 'SQL_CONNECT_TIMEOUT');
-    let released = false;
     return {
       query: (sql, values) => this.scope.stage(() => client.query(sql, values), 2000, this.force, 'SQL_STATEMENT_TIMEOUT'),
       release: error => {
