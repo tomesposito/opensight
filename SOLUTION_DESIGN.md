@@ -1304,6 +1304,16 @@ lease and the nonterminal SDK connection-required event. Preserve self-hosted
 compatibility and all authentication/single-use boundaries; no automatic business
 request replay. Ingress, infrastructure and release automation remain separate.
 
+
+**SR4a initial public ingress (frozen 2026-10-11):**
+[Initial public ingress](docs/phase5-sr4a-public-ingress.md) and
+[D-32](docs/itd/D-32-initial-public-ingress.md) select the Free CloudFront profile,
+private static origin, HTTP API custom domain and database-free authorizer.
+Explicit edge-derived IP provenance and a separately throttled startup route
+retain the existing fail-closed ingress checks. Private encrypted state owns
+origin-secret configuration. This slice preserves the existing database and
+defers public DNS cutover until actual application/tester acceptance.
+
 ---
 
 ## 7. Repository Layout
