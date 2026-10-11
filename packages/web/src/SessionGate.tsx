@@ -4,8 +4,9 @@ import { ApiError, type createApiClient, type LoginInput } from './api-client.js
 import { FirstRun, type StartupIssue } from './FirstRun.js';
 import { SignIn } from './SignIn.js';
 import { authNotice, type AuthNotice } from './auth-errors.js';
+import { StartupError } from './workspace-startup.js';
 
-type Client = Pick<ReturnType<typeof createApiClient>, 'getSession'> & Partial<Pick<ReturnType<typeof createApiClient>, 'getLocalData' | 'login' | 'logout' | 'clearSession'>> & Access['aiClient'];
+type Client = Pick<ReturnType<typeof createApiClient>, 'getSession'> & Partial<Pick<ReturnType<typeof createApiClient>, 'getLocalData' | 'login' | 'logout' | 'clearSession' | 'onDemand' | 'connect' | 'subscribeAvailability'>> & Access['aiClient'];
 export const SESSION_TIMEOUT_MS = 10_000;
 
 function startupIssue(error: unknown): StartupIssue {
@@ -22,7 +23,9 @@ export function SessionGate({ client, offline, children }: { client: Client; off
   const [session, setSession] = useState<Session>();
   const [local, setLocal] = useState(false);
   const [issue, setIssue] = useState<StartupIssue>();
-  const [checking, setChecking] = useState(true);
+  const [connected, setConnected] = useState(!client.onDemand);
+  const [connecting, setConnecting] = useState(false), [connectionError, setConnectionError] = useState('');
+  const [checking, setChecking] = useState(!client.onDemand);
   const [attempt, setAttempt] = useState(0);
   const [expiresAt, setExpiresAt] = useState<number>();
   const [notice, setNotice] = useState<AuthNotice>();
@@ -31,6 +34,7 @@ export function SessionGate({ client, offline, children }: { client: Client; off
   const currentExpiry = useRef(expiresAt); currentExpiry.current = expiresAt;
   const refreshRequest = useRef<AbortController | undefined>(undefined);
   const authRequest = useRef<AbortController | undefined>(undefined);
+  const connectRequest = useRef<AbortController | undefined>(undefined);
   const revision = useRef(0), requireSignIn = useRef(false);
   function cancelRefresh() { revision.current++; refreshRequest.current?.abort(); refreshRequest.current = undefined; }
   function expire() {
@@ -38,14 +42,31 @@ export function SessionGate({ client, offline, children }: { client: Client; off
     setSession(undefined); setExpiresAt(undefined); setLocal(false); setChecking(false); setIssue('sign-in');
     setNotice(authNotice(new ApiError('Expired', 401, 'SESSION_EXPIRED')));
   }
-  useEffect(() => () => { authRequest.current?.abort(); client.clearSession?.(); }, [client]);
+  useEffect(() => () => { connectRequest.current?.abort(); authRequest.current?.abort(); client.clearSession?.(); }, [client]);
+  useEffect(() => {
+    if (!client.onDemand || offline || demo) return;
+    const resumed = () => { if (currentExpiry.current !== undefined && Date.now() >= currentExpiry.current) expire(); };
+    window.addEventListener('focus', resumed); window.document?.addEventListener('visibilitychange', resumed);
+    const unsubscribe = client.subscribeAvailability?.(event => {
+      cancelRefresh(); authRequest.current?.abort();
+      setSession(undefined); setLocal(false); setChecking(false);
+      if (event.kind === 'authentication-required') {
+        requireSignIn.current = true; setExpiresAt(undefined); setIssue('sign-in');
+        setNotice(authNotice(new ApiError('Sign in again.', 401, event.errorCode)));
+      } else {
+        setConnected(false); setIssue(undefined);
+        setConnectionError(new StartupError(event.errorCode ?? 'WORKSPACE_UNAVAILABLE').message);
+      }
+    });
+    return () => { unsubscribe?.(); window.removeEventListener('focus', resumed); window.document?.removeEventListener('visibilitychange', resumed); };
+  }, [client, offline, demo]);
   useEffect(() => {
     if (expiresAt === undefined || offline || demo) return;
     const timer = window.setTimeout(expire, Math.max(0, expiresAt - Date.now()));
     return () => window.clearTimeout(timer);
   }, [expiresAt, client, offline, demo]);
   useEffect(() => {
-    if (offline || demo) return;
+    if (offline || demo || !connected) return;
     let active = true;
     let deadline: number | undefined;
     const refresh = async () => {
@@ -84,8 +105,8 @@ export function SessionGate({ client, offline, children }: { client: Client; off
       }
     };
     void refresh();
-    const timer = window.setInterval(() => void refresh(), 30_000);
-    window.addEventListener('focus', refresh);
+    const timer = client.onDemand ? undefined : window.setInterval(() => void refresh(), 30_000);
+    if (!client.onDemand) window.addEventListener('focus', refresh);
     return () => {
       active = false;
       cancelRefresh();
@@ -93,7 +114,23 @@ export function SessionGate({ client, offline, children }: { client: Client; off
       window.clearInterval(timer);
       window.removeEventListener('focus', refresh);
     };
-  }, [client, offline, demo, attempt]);
+  }, [client, offline, demo, attempt, connected]);
+
+  async function connect() {
+    if (connectRequest.current) return;
+    const controller = new AbortController(); connectRequest.current = controller;
+    setConnecting(true); setConnectionError('');
+    try {
+      if (!client.connect) throw new StartupError('WORKSPACE_UNAVAILABLE');
+      await client.connect(controller.signal);
+      if (controller.signal.aborted) return;
+      requireSignIn.current = false; setIssue(undefined); setChecking(true); setConnected(true); setAttempt(n => n + 1);
+    } catch (error) {
+      if (!controller.signal.aborted) setConnectionError(error instanceof StartupError ? error.message : new StartupError('WORKSPACE_UNAVAILABLE').message);
+    } finally {
+      if (connectRequest.current === controller) { connectRequest.current = undefined; setConnecting(false); }
+    }
+  }
 
   async function signIn(input: LoginInput, remember: boolean) {
     if (!client.login) throw new ApiError('Unavailable', 503, 'BUILTIN_AUTH_UNAVAILABLE');
@@ -129,7 +166,7 @@ export function SessionGate({ client, offline, children }: { client: Client; off
       setSigningOut(false); setChecking(false);
     }
   }
-  const retry = () => { requireSignIn.current = false; setAttempt(n => n + 1); };
+  const retry = () => { if (client.onDemand) { setConnected(false); setSession(undefined); setIssue(undefined); } else { requireSignIn.current = false; setAttempt(n => n + 1); } };
   const explore = () => { client.clearSession?.(); setSession(undefined); setExpiresAt(undefined); setDemo(true); };
   if (offline) return <AccessProvider access={demoAccess}>{children}</AccessProvider>;
   if (demo) return <>
@@ -139,6 +176,15 @@ export function SessionGate({ client, offline, children }: { client: Client; off
     </aside>
     <AccessProvider access={demoAccess}>{children}</AccessProvider>
   </>;
+  if (client.onDemand && !connected) return <div className="sign-in-page"><main className="sign-in-main">
+    <section className="sign-in-card" aria-labelledby="connect-title">
+    <p className="sign-in-kicker">YOUR HOSTED WORKSPACE</p><h1 id="connect-title">Connect to OpenSight</h1><p className="sign-in-description">The workspace sleeps when it is idle. Connecting may take a moment.</p>
+    {connectionError && <p className="sign-in-alert" role="alert">{connectionError}</p>}
+    <button className="sign-in-primary" type="button" disabled={connecting} onClick={() => void connect()}>{connecting ? 'Connecting…' : 'Connect'}</button>
+    {connecting && <button className="sign-in-secondary" type="button" onClick={() => { connectRequest.current?.abort(); }}>Cancel</button>}
+    </section>
+    <nav className="sign-in-links" aria-label="Startup options"><button type="button" onClick={() => { connectRequest.current?.abort(); explore(); }}>Explore sample data</button></nav>
+  </main></div>;
   if (local) return <AccessProvider access={{ mode: 'local' }}>{children}</AccessProvider>;
   if (signingOut) return <div className="sign-in-page"><main className="sign-in-main"><p role="status">Signing out…</p></main></div>;
   if (!session && issue === 'sign-in') return <SignIn notice={notice} onSignIn={signIn} onRetry={retry} onDemo={explore} />;

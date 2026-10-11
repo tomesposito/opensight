@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { createApiClient, ExecutionStatus, ExecutionSettings, ExecutionProvenance, PreparedRows } from './api-client.js';
-export type ExecutionClient = Pick<ReturnType<typeof createApiClient>, 'getDatasetExecution' | 'setDatasetExecution' | 'refreshBlaze' | 'getPreparedRows'>;
+export type ExecutionClient = Pick<ReturnType<typeof createApiClient>, 'getDatasetExecution' | 'setDatasetExecution' | 'refreshBlaze' | 'getPreparedRows'> & { readonly onDemand?: boolean };
 const message = (e: unknown) => e instanceof Error ? e.message : 'Execution information unavailable';
 export function CachedProvenance({ execution }: { execution: ExecutionProvenance }) {
   return <span>{execution.cached ? <>Cached · refreshed <time dateTime={execution.refreshedAt!}>{execution.refreshedAt}</time></> : execution.cachedInputs.length ? 'Direct query · includes cached inputs' : 'Direct query · live source'}{execution.cachedInputs.map(input => <span key={`${input.datasetId}:${input.refreshedAt}`}><br />Cached input {input.datasetId} · <time dateTime={input.refreshedAt}>{input.refreshedAt}</time></span>)}</span>;
@@ -15,6 +15,7 @@ export function DatasetExecution({ client, datasetId, saved = true, dirty = fals
   const [busy, setBusy] = useState(false), [actionError, setActionError] = useState('');
   const [interval, setIntervalValue] = useState('');
   const [output, setOutput] = useState<PreparedRows>();
+  const [check, setCheck] = useState(0);
   const generation = useRef(0), requestVersion = useRef(0), acting = useRef(false);
   useEffect(() => {
     const current = ++generation.current;
@@ -28,9 +29,9 @@ export function DatasetExecution({ client, datasetId, saved = true, dirty = fals
       catch (e) { if (generation.current === current && version === requestVersion.current) setResult({ key: datasetId, client, error: message(e) }); }
       finally { pending = false; }
     };
-    void read(); const timer = setInterval(() => void read(), 5000);
+    void read(); const timer = client.onDemand ? undefined : setInterval(() => void read(), 5000);
     return () => { generation.current++; clearInterval(timer); };
-  }, [client, datasetId, saved, dirty]);
+  }, [client, datasetId, saved, dirty, check]);
   const current = result?.key === datasetId && result.client === client && saved ? result : undefined, status = current?.status;
   useEffect(() => setIntervalValue(status?.intervalMinutes?.toString() ?? ''), [status?.intervalMinutes, datasetId]);
   const action = async (run: () => Promise<ExecutionStatus | PreparedRows>) => {
@@ -49,11 +50,12 @@ export function DatasetExecution({ client, datasetId, saved = true, dirty = fals
   };
   const disabled = !client || !saved || dirty || busy || !status;
   const expected = status?.version === undefined ? {} : { expectedVersion: status.version };
-  const select = (mode: ExecutionSettings['mode']) => { if (!client || disabled) return; void action(() => client.setDatasetExecution(datasetId, { mode, intervalMinutes: mode === 'DIRECT_QUERY' ? null : status!.intervalMinutes, ...expected })); };
+  const select = (mode: ExecutionSettings['mode']) => { if (!client || disabled) return; void action(() => client.setDatasetExecution(datasetId, { mode, intervalMinutes: mode === 'DIRECT_QUERY' || client.onDemand ? null : status!.intervalMinutes, ...expected })); };
   return <section className={`dataset-execution${compact ? ' compact' : ''}`} aria-label="Dataset execution">
-    <div className="execution-controls"><label>Execution mode<select aria-label="Execution mode" disabled={disabled} value={status?.mode ?? 'DIRECT_QUERY'} onChange={e => select(e.target.value as ExecutionSettings['mode'])}><option value="DIRECT_QUERY" disabled={!!status?.materializationReason}>DIRECT QUERY</option><option value="BLAZE">BLAZE</option></select></label>
+    {client?.onDemand && <p>Recurring refresh schedules are unavailable in this workspace.</p>}
+    <div className="execution-controls">{client?.onDemand && <button disabled={!saved || busy} onClick={() => setCheck(n => n + 1)}>Check status</button>}<label>Execution mode<select aria-label="Execution mode" disabled={disabled} value={status?.mode ?? 'DIRECT_QUERY'} onChange={e => select(e.target.value as ExecutionSettings['mode'])}><option value="DIRECT_QUERY" disabled={!!status?.materializationReason}>DIRECT QUERY</option><option value="BLAZE">BLAZE</option></select></label>
       <button disabled={disabled || status?.mode !== 'BLAZE'} onClick={() => void action(() => client!.refreshBlaze(datasetId))}>{busy ? 'Working…' : 'Refresh Blaze'}</button>
-      {!compact && <form onSubmit={e => { e.preventDefault(); if (!disabled && status?.mode === 'BLAZE') void action(() => client!.setDatasetExecution(datasetId, { mode: 'BLAZE', intervalMinutes: interval === '' ? null : Number(interval), ...expected })); }}><label>Refresh interval (minutes)<input aria-label="Refresh interval (minutes)" type="number" min="1" max="525600" placeholder="Manual only" disabled={disabled || status?.mode !== 'BLAZE'} value={interval} onChange={e => setIntervalValue(e.target.value)} /></label><button disabled={disabled || status?.mode !== 'BLAZE'}>Apply schedule</button></form>}
+      {!compact && <form onSubmit={e => { e.preventDefault(); if (!client?.onDemand && !disabled && status?.mode === 'BLAZE') void action(() => client!.setDatasetExecution(datasetId, { mode: 'BLAZE', intervalMinutes: interval === '' ? null : Number(interval), ...expected })); }}><label>Refresh interval (minutes)<input aria-label="Refresh interval (minutes)" type="number" min="1" max="525600" placeholder="Manual only" disabled={disabled || client?.onDemand || status?.mode !== 'BLAZE'} value={interval} onChange={e => setIntervalValue(e.target.value)} /></label><button disabled={disabled || client?.onDemand || status?.mode !== 'BLAZE'}>Apply schedule</button></form>}
       {!compact && <button disabled={disabled || status?.mode !== 'BLAZE' || status.state !== 'ready'} onClick={() => void action(() => client!.getPreparedRows(datasetId))}>View cached output</button>}
     </div>
     <p className="execution-status" role="status">{!client ? 'Needs hosted API · Blaze materialization and refresh are unavailable in the offline demo.' : !saved ? 'Save the pipeline to configure dataset execution.' : current?.error ? current.error : !status ? 'Loading execution status…' : <><ExecutionBadge status={status} /> {status.mode === 'DIRECT_QUERY' ? 'Queries execute the saved pipeline.' : status.state === 'unknown' ? 'Cache status is not supplied by the hosted API.' : <>Cached data · {status.state}{status.rowCount !== null ? ` · ${status.rowCount} rows` : ' · no readable snapshot'}<br />{status.lastRefreshedAt ? <>Last successful refresh: <time dateTime={status.lastRefreshedAt}>{status.lastRefreshedAt}</time></> : status.state === 'running' ? 'Preparing cached data…' : 'Choose Refresh Blaze to prepare data for your charts.'}{status.nextRefreshAt && <><br />Next refresh: <time dateTime={status.nextRefreshAt}>{status.nextRefreshAt}</time></>}</>}{status.error && <><br />{status.error.code}{status.error.causeCode ? ` (${status.error.causeCode})` : ''}: {status.error.message}</>}</>}{client && saved && dirty && <><br />Save pipeline changes before changing execution or refreshing.</>}</p>

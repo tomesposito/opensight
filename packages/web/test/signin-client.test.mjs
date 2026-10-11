@@ -132,3 +132,33 @@ test('Issue #63: session verification completing after its deadline cannot estab
   await assert.rejects(client.login(input(),false),{errorCode:'SESSION_EXPIRED'});
   assert.equal(calls,2);
 });
+
+test('on-demand outages retain the memory bearer; a current 401 clears it and requests sign-in', async () => {
+  const events = [], headers = []; let mode = 'ok';
+  const client = createApiClient('/', async (url, options) => {
+    headers.push(options.headers.Authorization);
+    if (url.endsWith('/login')) return Response.json({ token: token(), tenantId: 'workspace', expiresAt: Date.now() + 900000 });
+    if (mode === 'outage') return Response.json({ errorCode: 'WORKSPACE_STARTING' }, { status: 503 });
+    if (mode === 'revoked') return Response.json({ errorCode: 'AUTHORIZATION_REVISED' }, { status: 401 });
+    return Response.json(identity);
+  }, { onDemand: true });
+  const unsubscribe = client.subscribeAvailability(event => events.push(event));
+  await client.login(input(), false); const bearer = headers.at(-1); mode = 'outage'; await assert.rejects(client.getSession());
+  assert.deepEqual(events, [{ kind: 'connection-required', errorCode: 'WORKSPACE_STARTING' }]);
+  mode = 'ok'; await client.getSession(); assert.equal(headers.at(-1), bearer);
+  mode = 'revoked'; await assert.rejects(client.getSession()); assert.equal(events.at(-1).kind, 'authentication-required');
+  mode = 'ok'; await client.getSession(); assert.equal(headers.at(-1), undefined); unsubscribe();
+});
+test('on-demand late prior-session failures cannot hide a replacement session; local expiry emits without a request', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: 1800000000000 });
+  let held = false, resolve, calls = 0; const events = [];
+  const client = createApiClient('/', async url => {
+    calls++;
+    if (url.endsWith('/login')) return Response.json({ token: token(), tenantId: 'workspace', expiresAt: Date.now() + 900000 });
+    if (held) return new Promise(r => { resolve = r; }); return Response.json(identity);
+  }, { onDemand: true });
+  client.subscribeAvailability(event => events.push(event)); await client.login(input(), false);
+  held = true; const old = client.getSession(); held = false; await client.login(input(), false);
+  resolve(Response.json({ errorCode: 'AUTHORIZATION_REVISED' }, { status: 401 })); await assert.rejects(old, { errorCode: 'AUTH_REQUEST_SUPERSEDED' }); assert.equal(events.length, 0);
+  const before = calls; t.mock.timers.tick(900000); await assert.rejects(client.getSession(), { errorCode: 'SESSION_EXPIRED' }); assert.equal(calls, before); assert.deepEqual(events, [{ kind: 'authentication-required', errorCode: 'SESSION_EXPIRED' }]);
+});

@@ -222,6 +222,14 @@ the configured hosted runtime and is unavailable in the static demo.
 
 ![Synthetic hosted upload showing its explicit expiry and queued ingestion](docs/images/durable-upload.png)
 
+The serverless profile connects on demand. Idle embedded views hide their data
+after 45 seconds and offer **Connect** to check access and reload. Self-hosted
+clients retain their existing connection behavior.
+
+![Synthetic serverless workspace waiting for an explicit connection](docs/images/workspace-connect.png)
+
+![Synthetic embedded view with data hidden until reconnect](docs/images/embed-idle.png)
+
 ### ⚡ Blaze cached datasets
 
 Cache prepared datasets in the self-hosted API with manual or scheduled refresh,

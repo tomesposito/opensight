@@ -9,7 +9,7 @@ import generated from './fixtures.generated.json' with { type: 'json' };
 
 // Generated exclusively from the pinned repository fixtures; never external JSON.
 const fixtures = generated as Fixture[];
-const api = createApiClient(import.meta.env?.VITE_OPENSIGHT_API_URL);
+const api = createApiClient(import.meta.env?.VITE_OPENSIGHT_API_URL, globalThis.fetch, { onDemand: import.meta.env?.VITE_OPENSIGHT_SERVERLESS === 'true' });
 
 export default function App() {
   const offline = import.meta.env?.VITE_OPENSIGHT_OFFLINE_DEMO === 'true';

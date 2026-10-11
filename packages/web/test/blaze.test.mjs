@@ -76,3 +76,14 @@ test('Issue #35: a first Blaze refresh gives a concrete action, then truthful pr
   assert.match(ui.text(), /Preparing cached data/);
   assert.doesNotMatch(ui.text(), /Choose Refresh Blaze/);
 });
+
+test('on-demand execution reads only on entry or Check status and disables recurring schedules', async t => {
+  t.mock.timers.enable({ apis: ['setInterval'] }); let reads = 0, writes = 0;
+  const client = { onDemand: true, getDatasetExecution: async () => { reads++; return ready; }, setDatasetExecution: async () => { writes++; return ready; }, refreshBlaze: async () => ready };
+  const ui = await mount(t, { client, datasetId: 'prepared' }); assert.equal(reads, 1);
+  await act(async () => t.mock.timers.tick(180000)); assert.equal(reads, 1); await ui.click('Check status'); assert.equal(reads, 2);
+  assert.equal(ui.renderer.root.findByType('input').props.disabled, true);
+  assert.equal(ui.renderer.root.findAllByType('button').find(b => b.props.children === 'Apply schedule').props.disabled, true);
+  await act(async () => ui.renderer.root.findByType('form').props.onSubmit({ preventDefault() {} })); assert.equal(writes, 0);
+  await ui.click('Refresh Blaze'); assert.match(ui.text(), /Recurring refresh schedules are unavailable/);
+});

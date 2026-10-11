@@ -13,6 +13,7 @@ export interface GenerateEmbedUrlForAnonymousUser {
 export interface SessionEmbedUrl { sessionId: string; EmbedUrl: string; bootstrapExpiresAt: string; SessionLifetimeInMinutes: number; configRevision: number }
 export interface SessionCallbacks {
   onReady?: () => void; onSessionExpired?: () => void; onAuthorizationRevoked?: () => void;
+  onConnectionRequired?: () => void;
   onSaved?: () => void; onError?: (error: EmbeddingError) => void;
 }
 export interface SessionEmbeddingOptions {
@@ -63,6 +64,7 @@ export function createSessionEmbeddingClient(options: SessionEmbeddingOptions) {
         if (Object.keys(data).some(k => !['version', 'type', 'event', 'sessionId', 'channelId', 'errorCode'].includes(k)) || data.version !== 2 || data.type !== 'opensight:session'
           || data.sessionId !== active.id || data.channelId !== active.channelId) return;
         if (data.event === 'ready') { clear(); callbacks.onReady?.(); }
+        else if (data.event === 'connectionRequired') { clear(); callbacks.onConnectionRequired?.(); }
         else if (data.event === 'sessionExpired') { clear(); callbacks.onSessionExpired?.(); }
         else if (data.event === 'authorizationRevoked') { clear(); callbacks.onAuthorizationRevoked?.(); }
         else if (data.event === 'saved') { clear(); callbacks.onSaved?.(); }

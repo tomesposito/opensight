@@ -179,3 +179,11 @@ test('hosted schedule without automation reports the real unavailable error', as
   await click(ui, 'Add new schedule'); await submit(ui); await settled(() => ui.text().includes('HOSTED_AUTOMATION_UNAVAILABLE'));
   assert.equal((await f.prep.get(await f.login(), 'orders')).execution.intervalMinutes, null);
 });
+
+test('on-demand refresh has an explicit check, no interval reads and no recurring schedule actions', async t => {
+  t.mock.timers.enable({ apis: ['setInterval'] }); let reads = 0;
+  const client = { onDemand: true, getDatasetExecution: async () => { reads++; return { mode: 'BLAZE', state: 'ready', intervalMinutes: null }; }, refreshBlaze: async () => ({ mode: 'BLAZE', state: 'ready', intervalMinutes: null }) };
+  const ui = await mount(t, DatasetRefresh, { client, datasetId: 'orders' }); assert.equal(reads, 1);
+  await act(async () => t.mock.timers.tick(180000)); assert.equal(reads, 1); await click(ui, 'Check status'); assert.equal(reads, 2);
+  assert.equal(button(ui, 'Add new schedule').props.disabled, true); await click(ui, 'Refresh now'); assert.match(ui.text(), /Recurring refresh schedules are unavailable/);
+});

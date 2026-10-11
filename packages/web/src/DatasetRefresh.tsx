@@ -2,12 +2,13 @@ import { useEffect, useRef, useState } from 'react';
 import type { createApiClient, ExecutionStatus } from './api-client.js';
 import { prepMessage } from './data-prep.js';
 import { DataDialog, DataTable } from './DataSectionUI.js';
-export type RefreshClient = Pick<ReturnType<typeof createApiClient>, 'getDatasetExecution' | 'setDatasetExecution' | 'refreshBlaze'>;
+export type RefreshClient = Pick<ReturnType<typeof createApiClient>, 'getDatasetExecution' | 'setDatasetExecution' | 'refreshBlaze'> & { readonly onDemand?: boolean };
 
 export function DatasetRefresh({ datasetId, client, onChanged }: { datasetId: string; client?: RefreshClient; onChanged?: (status: ExecutionStatus) => void }) {
   const [result, setResult] = useState<{ client: RefreshClient; id: string; status?: ExecutionStatus; error?: string }>();
   const [actionError, setActionError] = useState(''), [busy, setBusy] = useState(false), [editing, setEditing] = useState(false), [interval, setIntervalValue] = useState('60');
   const [editingVersion, setEditingVersion] = useState<number>();
+  const [check, setCheck] = useState(0);
   const generation = useRef(0), version = useRef(0), acting = useRef(false);
   useEffect(() => {
     const current = ++generation.current; acting.current = false; setBusy(false); setEditing(false); setActionError('');
@@ -19,9 +20,9 @@ export function DatasetRefresh({ datasetId, client, onChanged }: { datasetId: st
       catch (error) { if (generation.current === current && request === version.current) setResult({ client, id: datasetId, error: prepMessage(error) }); }
       finally { pending = false; }
     };
-    void read(); const timer = setInterval(() => void read(), 5000);
+    void read(); const timer = client.onDemand ? undefined : setInterval(() => void read(), 5000);
     return () => { generation.current++; clearInterval(timer); };
-  }, [client, datasetId]);
+  }, [client, datasetId, check]);
   const current = result?.client === client && result?.id === datasetId ? result : undefined, status = current?.status;
   const enabled = !!client && !!status && status.mode === 'BLAZE' && status.state !== 'running' && !busy;
   const action = async (run: () => Promise<ExecutionStatus>) => {
@@ -33,16 +34,17 @@ export function DatasetRefresh({ datasetId, client, onChanged }: { datasetId: st
   };
   const configure = (minutes: number | null) => {
     const expectedVersion = editing ? editingVersion : status?.version;
-    if (client) void action(() => client.setDatasetExecution(datasetId, { mode: 'BLAZE', intervalMinutes: minutes, ...(expectedVersion === undefined ? {} : { expectedVersion }) }));
+    if (client && !client.onDemand) void action(() => client.setDatasetExecution(datasetId, { mode: 'BLAZE', intervalMinutes: minutes, ...(expectedVersion === undefined ? {} : { expectedVersion }) }));
   };
   const editSchedule = (minutes: string) => { setIntervalValue(minutes); setEditingVersion(status?.version); setEditing(true); };
   const intervalValid = Number.isInteger(Number(interval)) && Number(interval) >= 1 && Number(interval) <= 525600;
   return <div className="data-refresh">
-    <div className="data-tools"><span role="status">{!client ? 'Needs local or hosted API.' : current?.error ? current.error : !status ? 'Loading refresh status…' : status.mode === 'DIRECT_QUERY' ? 'Direct query · Enable Blaze in Summary to cache and schedule refreshes.' : status.state === 'unknown' ? 'Blaze · Cache status is not supplied by the hosted API.' : `Blaze · ${status.state}`}</span><button className="data-reload" disabled={!enabled || !!status?.intervalMinutes} onClick={() => { editSchedule('60'); }}>Add new schedule</button><button className="data-primary" disabled={!enabled} onClick={() => { if (client) void action(() => client.refreshBlaze(datasetId)); }}>Refresh now</button></div>
+    {client?.onDemand && <p>Recurring refresh schedules are unavailable in this workspace. <button disabled={busy} onClick={() => setCheck(n => n + 1)}>Check status</button></p>}
+    <div className="data-tools"><span role="status">{!client ? 'Needs local or hosted API.' : current?.error ? current.error : !status ? 'Loading refresh status…' : status.mode === 'DIRECT_QUERY' ? 'Direct query · Enable Blaze in Summary to cache and schedule refreshes.' : status.state === 'unknown' ? 'Blaze · Cache status is not supplied by the hosted API.' : `Blaze · ${status.state}`}</span><button className="data-reload" disabled={!enabled || client?.onDemand || !!status?.intervalMinutes} onClick={() => { editSchedule('60'); }}>Add new schedule</button><button className="data-primary" disabled={!enabled} onClick={() => { if (client) void action(() => client.refreshBlaze(datasetId)); }}>Refresh now</button></div>
     {actionError && <p role="alert">{actionError}</p>}{status?.error && <p role="alert">{status.error.code}: {status.error.message}</p>}
     <label className="data-email"><input type="checkbox" checked={false} disabled aria-describedby="refresh-email-note" /> Email owners when a refresh fails</label><p className="data-note" id="refresh-email-note">Failure emails need a hosted notification API for prepared datasets.</p>
     <section className="data-card"><h2>Schedules</h2><DataTable headings={['Refresh type', 'Occurrence', 'Start time', 'Timezone', 'Actions']} empty={!status?.intervalMinutes ? current?.error ? 'Schedules could not be loaded.' : !status ? 'Schedules unavailable.' : 'No schedules.' : undefined}>
-      {!!status?.intervalMinutes && <tr><td>Full refresh</td><td>Every {status.intervalMinutes} minutes</td><td>Not supplied by API</td><td>UTC</td><td><button disabled={!enabled} onClick={() => { editSchedule(String(status.intervalMinutes)); }}>Edit</button> <button disabled={!enabled} onClick={() => configure(null)}>Remove</button></td></tr>}
+      {!!status?.intervalMinutes && <tr><td>Full refresh</td><td>Every {status.intervalMinutes} minutes</td><td>Not supplied by API</td><td>UTC</td><td><button disabled={!enabled || client?.onDemand} onClick={() => { editSchedule(String(status.intervalMinutes)); }}>Edit</button> <button disabled={!enabled || client?.onDemand} onClick={() => configure(null)}>Remove</button></td></tr>}
     </DataTable>{status?.nextRefreshAt && <p>Next refresh: <time dateTime={status.nextRefreshAt}>{status.nextRefreshAt}</time></p>}<p className="data-note">One interval schedule per dataset. The API schedules full refreshes in UTC.</p></section>
     <section className="data-card"><div className="data-toolbar"><h2>History</h2><div className="data-tools"><label>Show times within <select aria-label="Refresh history time range" disabled defaultValue="90"><option value="7">Last 7 days</option><option value="30">Last 30 days</option><option value="90">Last 90 days</option></select></label><label>with status of <select aria-label="Refresh history status" disabled defaultValue="all"><option value="all">All</option><option>Completed</option><option>Failed</option></select></label></div></div>
       <DataTable headings={['Refresh start', 'Status', 'Duration', 'Skipped rows', 'Ingested rows', 'Dataset rows', 'Refresh type']} empty="Refresh history is not supplied by the prepared dataset API." />
