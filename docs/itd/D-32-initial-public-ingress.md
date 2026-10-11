@@ -73,14 +73,16 @@ Sources: [CloudFront plan features](https://docs.aws.amazon.com/AmazonCloudFront
 
 #### AWS eligibility correction — 2026-10-11
 
-AWS rejected the initial WAF resource for the Free subscription. The documented
-Free capability is IP-based rate limiting; constant global aggregation is the
-suspected incompatible feature. Keep startup-IP 30/5 minutes and dynamic-IP
-600/5 minutes, and use the tighter API Gateway global startup throttle of
-0.5 requests/second with burst two. This supports the two expected testers and
-still bounds application wake traffic. Gateway-rejected traffic can incur API
-charges; neither configuration is a hard spending cap. No identity/origin gate
-changes and no paid tier is selected. Live subscription acceptance must verify
-the corrected feature combination. A subscription-only rolled-back stack may be
-removed after proving it owns no active subscription; retained ingress/data
-resources are not part of that repair.
+AWS rejected the original global/scoped WAF rules and the IP-only retry with URI
+scope-downs. Its error identifies only the ACL, not an exact unsupported field;
+the earlier constant-aggregation hypothesis was insufficient. Select the
+smallest documented feature combination: one unscoped IP rate rule at 600
+requests/five minutes, plus a global API Gateway startup throttle at 0.1
+requests/second with burst two. Static traffic now counts against the IP ceiling.
+Startup admission is stricter globally; concurrent testers may wait for a token
+using the existing bounded 429 retry. This is not a separate per-IP startup
+counter. Gateway-rejected traffic can incur API charges, and no rate control is
+a hard spending cap. No identity/origin gate changes and no paid tier is selected.
+Actual ACTIVE/FREE subscription acceptance is required. A subscription-only
+rolled-back stack may be removed after proving it owns no physical subscription;
+retained ingress/data resources are not part of that repair.

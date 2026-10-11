@@ -101,10 +101,13 @@ startup method/path in authorizer and request adapter; unset retains the origina
 single-route contract. Wrong route/context/domain/API/stage remains denied.
 
 Configure default stage throttling at 5 requests/second, burst 10, and startup at
-0.5/second, burst 2. WAF adds per-IP startup 30 requests/5 minutes and per-IP
-dynamic traffic 600/5 minutes. The global startup control is the tighter API
-Gateway token bucket; it is not a five-minute WAF counter. Scope WAF with literal URI
-byte matches, not regex or arbitrary headers. These are abuse controls, not a
+0.1/second, burst 2. WAF adds one unscoped IP rate rule at 600 requests/5
+minutes, including static requests. Do not use URI scope-down statements, regex,
+header matching or custom aggregation in this initial Free profile. The global
+startup control is the tighter API Gateway token bucket: a token every ten
+seconds after the two-request burst. Concurrent testers can receive 429 and use
+the existing bounded startup retry. This is not a five-minute per-IP startup
+counter. These are abuse controls, not a
 hard account spending cap. No tester-IP allowlist is silently imposed. Disable
 sampled request bodies/logs; retain service counters and safe request outcome
 metadata only. HTTP origin bypass, forged identity, alternate paths and duplicate
@@ -129,12 +132,14 @@ an immutable owned ECR digest and published function version, never latest tags.
 The operator checks ACTIVE/FREE and exact resource association before setting
 publish_site. It never sends a message/email or changes a database in this slice.
 
-The initial AWS subscription attempt rejected the WAF resource as ineligible for
-Free. Its constant/global aggregation is outside the documented IP-based Free
-feature set. Retain both scoped IP rules and enforce global startup admission at
-API Gateway instead. This preserves bounded application wake traffic but does
-not eliminate API Gateway charges for traffic rejected there. Confirm actual
-Free eligibility after the correction rather than inferring it from mock tests.
+AWS rejected the original WAF rules and a subsequent IP-only configuration that
+retained URI scope-down statements. The exact unsupported statement is not
+reported by the subscription API. Use the documented plain IP-rate feature and
+move strict startup admission to API Gateway. Removing scope-down broadens the
+600-request ceiling to all traffic; tightening startup from 0.5 to 0.1/second
+reduces global application wake admission to approximately 30 per five minutes
+plus the two-token burst. Gateway-rejected traffic can still incur API charges.
+Confirm actual Free eligibility rather than inferring it from mock tests.
 
 A failed subscription-only CloudFormation stack may be removed for retry only
 when it is owned by this deployment, is ROLLBACK_COMPLETE, contains no resource
