@@ -37,7 +37,7 @@ export function focusAuthorControl(nav: HTMLElement | null, selector: string, ta
   target?.focus();
   return target;
 }
-export function AuthorToolbar({ canUndo = false, canRedo = false, onUndo, onRedo, onPrep, onSources, draft, dispatch, fit, onFit, onJson, onBundle, onImport, oEntry, dataAvailable = true, busy = false, jsonDisabled = false, autosaveError, favorite = false, onFavorite, onSaveCopy, onPrint }: { canUndo?: boolean; canRedo?: boolean; onUndo?: () => void; onRedo?: () => void; onPrint?: () => void; onSaveCopy?: () => void; favorite?: boolean; onFavorite?: () => void; autosaveError?: string; dataAvailable?: boolean; onSources?: () => void; onPrep?: () => void; oEntry?: ReactNode; busy?: boolean; jsonDisabled?: boolean; draft: AuthorDraft; dispatch: Dispatch<AuthorAction>; fit: boolean; onFit: () => void; onJson: () => void; onBundle: () => void; onImport: () => void }) {
+export function AuthorToolbar({ canUndo = false, canRedo = false, onUndo, onRedo, onPrep, onSources, onManageData, draft, dispatch, fit, onFit, onJson, onBundle, onImport, oEntry, dataAvailable = true, busy = false, jsonDisabled = false, autosaveError, favorite = false, onFavorite, onSaveCopy, onPrint }: { canUndo?: boolean; canRedo?: boolean; onUndo?: () => void; onRedo?: () => void; onPrint?: () => void; onSaveCopy?: () => void; favorite?: boolean; onFavorite?: () => void; autosaveError?: string; dataAvailable?: boolean; onSources?: () => void; onPrep?: () => void; onManageData?: () => void; oEntry?: ReactNode; busy?: boolean; jsonDisabled?: boolean; draft: AuthorDraft; dispatch: Dispatch<AuthorAction>; fit: boolean; onFit: () => void; onJson: () => void; onBundle: () => void; onImport: () => void }) {
   const access = useAccess();
   const notify = useToast();
   const [notice, setNotice] = useState('');
@@ -115,6 +115,7 @@ export function AuthorToolbar({ canUndo = false, canRedo = false, onUndo, onRedo
         <AuthorMenuItem label="Analysis Settings" run={() => setSettingsOpen(true)} />
       </AuthorMenu>
       <AuthorMenu name="Data">
+        <AuthorMenuItem label="Manage data…" run={onManageData} reason={!onManageData ? 'Manage data needs the analysis editor.' : undefined} />
         <AuthorMenuItem label="Data" run={() => focus('.fields-panel > summary')} />
         <AuthorMenuItem label="Add data" reason={!onSources && !onPrep ? 'Adding datasets needs a connected data workspace.' : undefined} run={onSources ?? onPrep} />
         <hr />

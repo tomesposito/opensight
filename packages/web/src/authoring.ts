@@ -192,6 +192,7 @@ export type AuthorAction =
   | { type: 'remap'; id: string }
   | { type: 'sheet-remap'; id: string }
   | { type: 'analysis-title'; title: string }
+  | { type: 'dataset'; dataset?: AuthorDataset }
   | { type: 'sheet-add' }
   | { type: 'control-add'; control: Omit<AuthorControl, 'id'> }
   | { type: 'control-remove'; id: string }
@@ -257,6 +258,10 @@ export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorD
     return authorReducer(updated, { type: 'sheet-select', id: result.value.targetSheetId });
   }
   if (action.type === 'analysis-title') return { ...draft, title: action.title };
+  // Manage data: swap or clear the analysis dataset while keeping sheets,
+  // visuals, parameters and calculated fields. Unlike 'import' this is an
+  // undoable edit, not a document boundary.
+  if (action.type === 'dataset') return { ...draft, dataset: action.dataset };
   if (action.type === 'calculation-add') {
     if (calculationError(action.field, dataFields(draft.calculatedFields, draft.dataset))) return draft;
     return { ...draft, calculatedFields: [...draft.calculatedFields, { ...action.field, name: action.field.name.trim() }] };

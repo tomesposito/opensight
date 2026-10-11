@@ -89,7 +89,7 @@ test('control focus opens nested sections and their dock, switches tabs, and tol
 test('Data exposes all reference actions, retains preparation, and routes Add data to sources', async t => {
   const calls = [];
   const ui = await mount(t, { onSources: () => calls.push('sources'), onPrep: () => calls.push('prep') });
-  assert.deepEqual(ui.labels('Data'), ['Data', 'Add data', 'Add Calculated Field', 'Parameters', 'Add Parameter', 'Prepare data…']);
+  assert.deepEqual(ui.labels('Data'), ['Manage data…', 'Data', 'Add data', 'Add Calculated Field', 'Parameters', 'Add Parameter', 'Prepare data…']);
   await ui.click('Data', 'Add data'); await ui.click('Data', 'Prepare data…');
   assert.deepEqual(calls, ['sources', 'prep']);
   await ui.update({ onSources: undefined }); await ui.click('Data', 'Add data');
