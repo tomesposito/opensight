@@ -87,6 +87,9 @@ request.headers['x-opensight-ingress-peer'] = { value: event.viewer.ip };
 return request;
 }
 catch (_) {
+var h = event.request.headers;
+console.log('EDGE_REJECT_' + (_.code === 'UNTRUSTED_INGRESS' ? 'TRUST' : _.code === 'HOSTED_REQUEST_INVALID' ? 'GRAMMAR' : _.code === 'FORGED_PRINCIPAL' ? 'PRINCIPAL' : 'OTHER'));
+console.log('EDGE_REJECT_FLAGS_' + [h['cloudfront-viewer-address'] !== undefined, h['x-forwarded-for'] !== undefined, h['x-forwarded-proto'] !== undefined, h['x-forwarded-port'] !== undefined, h.host.value !== __OPENSIGHT_HOST__, h.origin !== undefined && h.origin.value !== __OPENSIGHT_ORIGIN__].map(function (v) { return v ? 1 : 0; }).join(''));
 return { statusCode: 403, statusDescription: 'Forbidden', headers: { 'cache-control': { value: 'no-store' } } };
 }
 }
