@@ -24,6 +24,11 @@ export function owned(tags, deployment, purpose = 'isolated-validation') {
   const map = Array.isArray(tags) ? Object.fromEntries(tags.map(t => [t.Key, t.Value])) : tags;
   if (map?.OpenSightDeployment !== deployment || map.OpenSightPurpose !== purpose) throw Error('RESOURCE_NOT_OWNED');
 }
+export function validationCleanupAllowed(tags, deployment) {
+  owned(tags, deployment);
+  const map = Array.isArray(tags) ? Object.fromEntries(tags.map(t => [t.Key, t.Value])) : tags;
+  if (map.OpenSightStage !== undefined && map.OpenSightStage !== 'validation') throw Error('PILOT_CLEANUP_FORBIDDEN');
+}
 export function safeProbeResult(response) {
   if (response?.passed !== true || response.version !== 1 || !Number.isSafeInteger(response.durationMs) || response.durationMs < 0 || !['network', 'mail', 'bootstrap', 'database', 'native', 'startup'].includes(response.command)
     || Object.keys(response).sort().join() !== 'command,durationMs,passed,version') throw Error('PROBE_FAILED');
@@ -238,6 +243,11 @@ export async function main(args = process.argv.slice(2), environment = process.e
     }
     if (operation === 'cleanup') {
       if (!['schedules', 'objects', 'compute', 'database', 'credentials'].includes(selection)) throw Error('CLEANUP_SELECTION_REQUIRED');
+      // Read AWS, not local inputs: an old validation inventory must never
+      // authorize deletion after the same deployment has been promoted.
+      if (state.cluster !== deployment) throw Error('CLEANUP_DATABASE_UNEXPECTED');
+      const actualCluster = aws('rds', 'describe-db-clusters', ['--db-cluster-identifier', deployment]).DBClusters[0];
+      validationCleanupAllowed(aws('rds', 'list-tags-for-resource', ['--resource-name', actualCluster.DBClusterArn]).TagList, deployment);
       if (selection === 'credentials') {
         const user = aws('iam', 'get-user', ['--user-name', state.smtp_user]).User; owned(user.Tags, deployment);
         for (const key of aws('iam', 'list-access-keys', ['--user-name', state.smtp_user]).AccessKeyMetadata) aws('iam', 'delete-access-key', ['--user-name', state.smtp_user, '--access-key-id', key.AccessKeyId]);

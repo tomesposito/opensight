@@ -88,7 +88,7 @@ export async function main(args = process.argv.slice(2), environment = process.e
       if (!Array.isArray(keys) || keys.length !== 1 || !/^[A-Za-z0-9_-]{43,128}$/.test(keys[0].secret)) throw Error('INGRESS_KEY_REVIEW_REQUIRED');
       write('ingress.tfvars.json', { region: operator.region, account_id: account, deployment, public_origin: operator.public_origin, origin_domain: `api.${host}`, zone_id: zoneId,
         frontend_bucket: `${deployment}-frontend-${sha256(account).slice(0, 10)}`, request_function_name: existing.functions.request, request_function_version: release.request_function_version,
-        image_uri: release.image_uri, ingress_key_id: keys[0].id, ingress_secret: keys[0].secret, publish_site: false });
+        image_uri: release.image_uri, ingress_key_id: keys[0].id, ingress_secret: keys[0].secret, authorizer_concurrency: release.authorizer_concurrency ?? 2, publish_site: false });
       write('ingress.backend.hcl', `bucket = "${bootstrap.state_bucket}"\nkey = "ingress/terraform.tfstate"\nregion = "us-east-1"\nencrypt = true\nuse_lockfile = true\nkms_key_id = "alias/${deployment}-state"\nallowed_account_ids = ["${account}"]\n`);
       console.log('Private ingress inputs prepared; public DNS remains gated.'); return;
     }

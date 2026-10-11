@@ -10,6 +10,30 @@ variable "enable_runtime" {
   default     = true
   description = "The operator first applies dependencies with this false, then plans fully resolved Lambda environments."
 }
+variable "deployment_profile" {
+  type    = string
+  default = "validation"
+  validation {
+    condition     = contains(["validation", "pilot"], var.deployment_profile)
+    error_message = "Select the isolated validation or initial pilot profile."
+  }
+}
+variable "enable_pilot_runtime" {
+  type    = bool
+  default = false
+  validation {
+    condition     = !var.enable_pilot_runtime || (var.deployment_profile == "pilot" && var.enable_runtime)
+    error_message = "Pilot runtime requires the pilot profile and existing runtime."
+  }
+}
+variable "enable_consumers" {
+  type    = bool
+  default = false
+  validation {
+    condition     = !var.enable_consumers || var.enable_pilot_runtime
+    error_message = "Consumers require the prepared pilot runtime."
+  }
+}
 variable "account_id" {
   type      = string
   sensitive = true
@@ -60,7 +84,8 @@ variable "runtime_environment" {
     condition = alltrue([for key in keys(var.runtime_environment) : contains([
       "OPENSIGHT_PUBLIC_ORIGIN", "OPENSIGHT_INGRESS_DOMAIN", "OPENSIGHT_INGRESS_API_ID", "OPENSIGHT_INGRESS_STAGE",
       "OPENSIGHT_AUTH_ISSUER", "OPENSIGHT_AUTH_AUDIENCE", "OPENSIGHT_AUTH_KEY_ID", "OPENSIGHT_SESSION_SECONDS", "OPENSIGHT_INVITATION_SECONDS",
-      "OPENSIGHT_NODE_LIMITS", "OPENSIGHT_TENANT_LIMIT_DEFAULTS"
+      "OPENSIGHT_NODE_LIMITS", "OPENSIGHT_TENANT_LIMIT_DEFAULTS", "OPENSIGHT_ENTITLEMENTS",
+      "OPENSIGHT_INGRESS_PEER", "OPENSIGHT_INGRESS_STARTUP_ROUTE"
     ], key)])
     error_message = "Runtime inputs may contain only the documented nonsecret settings."
   }

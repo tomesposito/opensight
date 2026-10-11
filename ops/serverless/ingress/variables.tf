@@ -90,3 +90,11 @@ variable "publish_site" {
   default     = false
   description = "Private release operator enables this only after Free-plan and live application acceptance."
 }
+variable "authorizer_concurrency" {
+  type    = number
+  default = 2
+  validation {
+    condition     = contains([2, 4], var.authorizer_concurrency)
+    error_message = "Use two validation slots or four pilot slots."
+  }
+}

@@ -21,6 +21,7 @@ const allowed = new Set([
 export function checkIngressPlan(plan, inputs) {
   const changes = (plan.resource_changes ?? []).filter(r => r.mode === 'managed'), issues = [];
   const check = (ok, code) => { if (!ok) issues.push(code); };
+  check([2, 4].includes(inputs.authorizer_concurrency ?? 2), 'AUTHORIZER_CAP');
   check(changes.length >= 25 && changes.length <= 45, 'INVENTORY');
   for (const r of changes) {
     const v = r.change?.after ?? {}, address = r.address;
@@ -30,7 +31,7 @@ export function checkIngressPlan(plan, inputs) {
       check(v.zone_id === inputs.zone_id && v.allow_overwrite !== true, 'DNS_SCOPE');
       if (address.startsWith('aws_route53_record.site')) check(inputs.publish_site === true && v.name === new URL(inputs.public_origin).hostname, 'DNS_CUTOVER');
     }
-    if (r.type === 'aws_lambda_function') check(v.function_name === `${inputs.deployment}-ingress` && v.timeout === 10 && v.memory_size === 256 && v.reserved_concurrent_executions === 2 && v.architectures?.join() === 'arm64' && !(v.vpc_config?.length) && v.image_uri === inputs.image_uri, 'AUTHORIZER_CAP');
+    if (r.type === 'aws_lambda_function') check(v.function_name === `${inputs.deployment}-ingress` && v.timeout === 10 && v.memory_size === 256 && v.reserved_concurrent_executions === (inputs.authorizer_concurrency ?? 2) && v.architectures?.join() === 'arm64' && !(v.vpc_config?.length) && v.image_uri === inputs.image_uri, 'AUTHORIZER_CAP');
     if (r.type === 'aws_lambda_alias') check(v.function_name === inputs.request_function_name && v.function_version === inputs.request_function_version && v.name === 'live', 'REQUEST_VERSION');
     if (r.type === 'aws_apigatewayv2_api') check(v.disable_execute_api_endpoint === true && v.protocol_type === 'HTTP', 'ORIGIN_BYPASS');
     if (r.type === 'aws_apigatewayv2_authorizer') check(v.authorizer_result_ttl_in_seconds === 0 && v.authorizer_type === 'REQUEST', 'AUTHORIZER_CACHE');

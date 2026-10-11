@@ -12,6 +12,6 @@ provider "aws" {
   region              = var.region
   allowed_account_ids = [var.account_id]
   default_tags {
-    tags = { OpenSightDeployment = var.deployment, OpenSightPurpose = "isolated-validation", ManagedBy = "OpenTofu" }
+    tags = merge({ OpenSightDeployment = var.deployment, OpenSightPurpose = "isolated-validation", ManagedBy = "OpenTofu" }, var.deployment_profile == "pilot" ? { OpenSightStage = "pilot" } : {})
   }
 }

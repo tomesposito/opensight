@@ -25,6 +25,7 @@ resource "aws_rds_cluster_parameter_group" "validation" {
 }
 resource "aws_rds_cluster" "validation" {
   cluster_identifier              = var.deployment
+  tags                            = var.deployment_profile == "pilot" ? { OpenSightStage = "pilot" } : {}
   engine                          = "aurora-postgresql"
   engine_version                  = "16.15"
   engine_mode                     = "provisioned"

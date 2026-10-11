@@ -66,6 +66,12 @@ test('SR4a ingress plan rejects replacing data, paid plans, caches, unguarded ro
     ...['aws_acm_certificate.site', 'aws_acm_certificate_validation.site', 'aws_secretsmanager_secret.ingress', 'aws_secretsmanager_secret_version.ingress', 'aws_iam_role.authorizer', 'aws_iam_role_policy.authorizer', 'aws_lambda_permission.authorizer', 'aws_lambda_permission.request', 'aws_apigatewayv2_integration.request', 'aws_apigatewayv2_domain_name.origin', 'aws_apigatewayv2_api_mapping.origin', 'aws_s3_bucket_ownership_controls.frontend', 'aws_s3_bucket_policy.frontend', 'aws_cloudfront_function.viewer'].map(address => change(address, {})),
   ];
   checkIngressPlan({ resource_changes: resources }, inputs);
+  const pilot = structuredClone(resources);
+  pilot[0].change.after.reserved_concurrent_executions = 4;
+  checkIngressPlan({ resource_changes: pilot }, { ...inputs, authorizer_concurrency: 4 });
+  assert.throws(() => checkIngressPlan({ resource_changes: pilot }, inputs), /AUTHORIZER_CAP/);
+  assert.throws(() => checkIngressPlan({ resource_changes: resources }, { ...inputs, authorizer_concurrency: 4 }), /AUTHORIZER_CAP/);
+  assert.throws(() => checkIngressPlan({ resource_changes: resources }, { ...inputs, authorizer_concurrency: 3 }), /AUTHORIZER_CAP/);
   const reject = mutate => { const copy = structuredClone(resources); mutate(copy); assert.throws(() => checkIngressPlan({ resource_changes: copy }, inputs), /INGRESS_PLAN_REJECTED/); };
   reject(r => { r[0].change.after.memory_size = 2048; });
   reject(r => { r[0].change.after.vpc_config = [{}]; });

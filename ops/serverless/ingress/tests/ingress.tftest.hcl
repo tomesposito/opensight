@@ -94,3 +94,17 @@ run "reject_other_origin" {
   variables { origin_domain = "unrelated.example" }
   expect_failures = [var.origin_domain]
 }
+
+run "pilot_authorizer_capacity" {
+  command = plan
+  variables { authorizer_concurrency = 4 }
+  assert {
+    condition     = aws_lambda_function.authorizer.reserved_concurrent_executions == 4 && aws_lambda_function.authorizer.memory_size == 256 && aws_lambda_function.authorizer.timeout == 10
+    error_message = "Pilot ingress adds bounded concurrency without provisioned capacity."
+  }
+}
+run "reject_unbounded_authorizer" {
+  command = plan
+  variables { authorizer_concurrency = 5 }
+  expect_failures = [var.authorizer_concurrency]
+}
