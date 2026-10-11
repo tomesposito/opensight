@@ -157,3 +157,12 @@ active work through [SR4b5](../phase5-sr4b5-execution-budget.md). Increasing Lam
 memory to obtain more CPU would not establish that the wall-time limit is enough;
 removing the deadline would discard containment. The bounded operator extension
 preserves invocation deadlines and idle behavior while allowing measured tuning.
+
+#### Buffered HTTP completion — 2026-10-11
+
+Successful ingestion exposed a separate immediate query cancellation: normal EOF
+on a synthetic IncomingMessage was treated as an incomplete transport. Set its
+completion state in [SR4b6](../phase5-sr4b6-request-completion.md), retaining genuine
+abort behavior. Raising deadlines would not address that cause. A second exact
+private provenance link preserves both earlier activation/repair records without
+turning the pilot correction into a general deployment interface.

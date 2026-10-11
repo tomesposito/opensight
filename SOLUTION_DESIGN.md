@@ -1385,6 +1385,17 @@ to the replacement image. Preserve original SQL activation receipts, epoch,
 budgets, identities and queued work; initial administration commands then close.
 Saved-plan and complete application acceptance gates remain mandatory.
 
+**SR4b6 buffered request completion (frozen 2026-10-11):**
+Implement [the request-completion contract](docs/phase5-sr4b6-request-completion.md).
+The Lambda bridge marks its fully validated buffered IncomingMessage complete
+before EOF; normal body consumption must not become client cancellation. Real
+invocation/client aborts still cancel and reap work. Replace the pre-DNS pilot
+application through an exact, private two-step provenance chain preserving the
+original activation and connection repair. No SQL, protocol, deadline, quota,
+allocation, authentication, endpoint or UI change. Verify a real hosted POST
+query through the bridge and explicit cancellation, the full root suite, native
+runtime smoke, unchanged demo and real AWS upload/query/isolation acceptance.
+
 **SR4b5 pilot execution allowance (frozen 2026-10-11):**
 [Execution allowance](docs/phase5-sr4b5-execution-budget.md) adds a private,
 receipt-bound extension of only default/node active execution time, up to 90
