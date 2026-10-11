@@ -41,8 +41,13 @@ OpenTofu mock tests: validation/pilot **12 passed / 0 failed**; ingress
 The immutable administration image is
 `sha256:3d516a40ce19fe3a833d19cf6d5b269042220a575909d55bfa27ec1e73100181`.
 All nine runtime smoke checks passed under an unprivileged identity, read-only
-root, no network, and bounded temporary storage. Registry scan and actual AWS
-repair remain to be recorded. The active application image remains the SR4b1
+root, no network, and bounded temporary storage. Registry scan completed with
+the same reviewed findings as SR4b1 (8 high, 6 medium, 1 low); it is not a clean
+scan. The saved plan changed only the administration image. The actual AWS repair
+returned `locks-repaired` at epoch one. Real browser upload reservation and an
+exact 8 MiB S3 transfer then succeeded. Ingestion exposed insufficient native
+memory limits and remains a separate launch blocker addressed by SR4b3.
+The active application image remains the SR4b1
 candidate; initial activation and tester credentials are preserved.
 
 The hosted frontend and its manifest are byte-identical to SR4b1. The demo was
