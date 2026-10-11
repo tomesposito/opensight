@@ -13,6 +13,9 @@ import { migrateDispatch } from '../dist/dispatch-schema.js';
 import { migrateObjects } from '../dist/object-schema.js';
 import { DurableDispatch } from '../dist/dispatch.js';
 import { ObjectLedger } from '../dist/object-ledger.js';
+import { migrateOperations } from '../dist/operation-schema.js';
+import { DurableUploads } from '../dist/durable-uploads.js';
+import { directRequest } from './serverless-upload-helpers.mjs';
 import { syntheticReference } from './manifest-helpers.mjs';
 import { HostedSources } from '../dist/hosted-sources.js';
 import { environment } from './hosted-helpers.mjs';
@@ -46,6 +49,7 @@ test('SR2a/SR2d live Postgres: independent pools serialize admission, publicatio
     await migrateManifests(db, 'test', 'frozen'); await migrateManifests(db, 'test', 'frozen');
     await migrateDispatch(db, 'test', 'frozen'); await migrateDispatch(db, 'test', 'frozen');
     await migrateObjects(db, 'test', 'frozen'); await migrateObjects(db, 'test', 'frozen');
+    await migrateOperations(db, 'test', 'frozen'); await migrateOperations(db, 'test', 'frozen');
     const metadata = new TenantMetadata(db, db), otherMetadata = new TenantMetadata(otherDb, otherDb);
     const login = m => m.authenticate(null, async () => ({ namespaceId: 'one', userId: 'admin' }));
     const context = await login(metadata), other = await login(otherMetadata);
@@ -70,9 +74,9 @@ test('SR2a/SR2d live Postgres: independent pools serialize admission, publicatio
     assert.equal(handle.fence, '1');
     await assert.rejects(db.transaction(c => c.query('INSERT INTO sr_claim VALUES (?,?,?,?,?,?,1,1,1,?)',
       ['test', 'tenant-two', 'two', 'admin', 'source', 'foreign', handle.attemptId])), { code: 'METADATA_REFERENCE_INVALID' });
-    const privateTables = ['sr_admission', 'sr_claim', 'sr_manifest', 'sr_manifest_versions', 'sr_dispatch_intent', 'sr_outbox', 'sr_object', 'sr_storage_usage', 'sr_object_pin'];
+    const privateTables = ['sr_admission', 'sr_claim', 'sr_manifest', 'sr_manifest_versions', 'sr_dispatch_intent', 'sr_outbox', 'sr_object', 'sr_storage_usage', 'sr_object_pin', 'sr_cleanup_target', 'sr_upload', 'sr_operation', 'sr_result_chunk'];
     const rls = await pool.query('SELECT relrowsecurity, relforcerowsecurity FROM pg_class WHERE relnamespace = current_schema()::regnamespace AND relname = ANY($1)', [privateTables]);
-    assert.equal(rls.rows.length, 9); assert.ok(rls.rows.every(row => row.relrowsecurity && row.relforcerowsecurity));
+    assert.equal(rls.rows.length, 13); assert.ok(rls.rows.every(row => row.relrowsecurity && row.relforcerowsecurity));
     await pool.query(`CREATE ROLE ${role} NOLOGIN NOINHERIT NOSUPERUSER NOBYPASSRLS`);
     await pool.query(`GRANT USAGE ON SCHEMA ${schema} TO ${role}`);
     // Test-only SELECT grants exercise forced RLS even if a future grant widens access.
@@ -125,4 +129,17 @@ test('SR2a/SR2d live Postgres: independent pools serialize admission, publicatio
       await assert.rejects(tenantPool.query(`DELETE FROM ${table}`), { code: '42501' });
     }
     await assert.rejects(tenantPool.query('SELECT * FROM sr_object_schema'), { code: '42501' });
+    await db.transaction(c => c.query('UPDATE sr_limits SET entitlements = ?', [JSON.stringify({ ...entitlements, defaults: { ...entitlements.defaults, storageBytes: 2 * 1024 * 1024 * 1024 } })]));
+    const objects = { capability: async () => ({ url: 'https://synthetic.example/put', headers: {}, method: 'PUT', expiresAt: new Date(Date.now() + 60000).toISOString() }),
+      head: async (entry, version) => ({ version, bytes: entry.capacityBytes, checksum: entry.checksum }) };
+    const uploads = new DurableUploads(metadata, dispatches[0], ledgers[0], objects), recheck = async () => {};
+    const reserved = await uploads.reserve(context, directRequest(), randomUUID(), recheck), completionKey = randomUUID();
+    const operations = await Promise.all([uploads.complete(context, reserved.id, { versionId: 'exact-version' }, completionKey, recheck), uploads.complete(context, reserved.id, { versionId: 'exact-version' }, completionKey, recheck)]);
+    assert.equal(operations[0].id, operations[1].id); assert.equal((await db.transaction(c => c.query('SELECT * FROM sr_operation'))).length, 1);
+    for (const table of ['sr_upload', 'sr_operation', 'sr_result_chunk']) {
+      assert.deepEqual((await tenantPool.query(`SELECT * FROM ${table}`)).rows, []);
+      assert.deepEqual(await restricted.transaction(c => c.query(`SELECT * FROM ${table}`), { tenantId: 'tenant-two', namespaceId: 'two' }), []);
+      await assert.rejects(tenantPool.query(`DELETE FROM ${table}`), { code: '42501' });
+    }
+    const cancelled = await uploads.cancel(context, 'operation', operations[0].id, { expectedRevision: 1 }, recheck); assert.equal(cancelled.state, 'cancelled');
   });

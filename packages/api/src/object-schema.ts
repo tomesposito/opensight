@@ -3,7 +3,7 @@ import { MetadataError, type Database } from './metadata-db.js';
 import { coordinationDeployment, coordinationFailure, coordinationNow, type CoordinationDialect } from './coordination-schema.js';
 import { dispatchChecksum } from './dispatch-schema.js';
 
-export const objectTables = ['sr_object_schema', 'sr_object', 'sr_storage_usage', 'sr_object_pin'] as const;
+export const objectTables = ['sr_object_schema', 'sr_object', 'sr_storage_usage', 'sr_object_pin', 'sr_cleanup_target'] as const;
 const scope = 'deployment, tenant_id, namespace_id, owner_id';
 const columns = 'deployment TEXT NOT NULL REFERENCES sr_control(deployment), tenant_id TEXT NOT NULL, namespace_id TEXT NOT NULL, owner_id TEXT NOT NULL';
 const schema = [
@@ -22,6 +22,9 @@ const schema = [
     CHECK (state <> 'live' OR (actual_bytes IS NOT NULL AND checksum IS NOT NULL AND object_version IS NOT NULL)))`,
   `CREATE TABLE sr_object_pin (${columns}, object_id TEXT NOT NULL, pin_id TEXT NOT NULL, expires_at BIGINT NOT NULL,
     PRIMARY KEY (${scope}, object_id, pin_id), FOREIGN KEY (${scope}, object_id) REFERENCES sr_object(${scope}, object_id))`,
+  `CREATE TABLE sr_cleanup_target (${columns}, cleanup_id TEXT NOT NULL, object_id TEXT NOT NULL, intent_id TEXT NOT NULL,
+    PRIMARY KEY (${scope}, cleanup_id, object_id), FOREIGN KEY (${scope}, object_id) REFERENCES sr_object(${scope}, object_id),
+    FOREIGN KEY (${scope}, intent_id) REFERENCES sr_dispatch_intent(${scope}, intent_id))`,
 ];
 export const objectChecksum = createHash('sha256').update(schema.join('\n')).digest('hex');
 export async function migrateObjects(database: Database, deployment: string, maintenance: string | undefined,
@@ -49,7 +52,7 @@ export async function migrateObjects(database: Database, deployment: string, mai
       return;
     }
     for (const sql of schema) await c.query(sql);
-    if (dialect === 'postgres') for (const table of ['sr_object', 'sr_storage_usage', 'sr_object_pin']) {
+    if (dialect === 'postgres') for (const table of ['sr_object', 'sr_storage_usage', 'sr_object_pin', 'sr_cleanup_target']) {
       await c.query(`ALTER TABLE ${table} ENABLE ROW LEVEL SECURITY`);
       await c.query(`ALTER TABLE ${table} FORCE ROW LEVEL SECURITY`);
       await c.query(`CREATE POLICY sr_scope ON ${table} USING (tenant_id = current_setting('opensight.tenant_id', true) AND namespace_id = current_setting('opensight.namespace_id', true)) WITH CHECK (tenant_id = current_setting('opensight.tenant_id', true) AND namespace_id = current_setting('opensight.namespace_id', true))`);

@@ -81,3 +81,36 @@ embedding SDK 9; O interpreter 32; parity 11; query engine 504 passed / 2 skippe
 web 1,157; root conformance 14. Hosted frontend and static demo builds also passed.
 The separate real-PostgreSQL dispatch/object checks described above passed without
 skips; local SQL evidence does not replace the pending cloud acceptance.
+
+The rebuilt 1280×800 offline data-landing capture is byte-identical to the SR2c
+capture. No user-visible UI changed at this checkpoint, so existing README assets
+remain current. The previously recorded minimal-Linux font gap (#87) is unchanged;
+this is a demo comparison, not deployed-site or visual-parity evidence.
+
+## HTTP admission and cleanup checkpoint
+
+The invocation adapter now composes durable admission, manifests, source hydration,
+cache publication and upload control routes. It negotiates direct-upload capability
+and keeps legacy base64 uploads, H7 scheduling/delivery and operator routes gated.
+An HTTP admission remains held through final response verification. Native workers
+and transfer sockets close before SQL releases capacity; aborted invocations and
+unconfirmed cleanup retain the full containment deadline.
+
+Refresh admission prearms cleanup for the superseded manifest before replacing
+readability. Each new object has a storage reservation and recovery obligation
+before PUT; binding converts the ledger in the same transaction as publication.
+The private collector needs no active owner session. It checks source, manifest,
+result and backup references under the publication locks, fences publication,
+records an ambiguous PUT's exact version and releases quota only after confirmed
+absence. Delayed cleanup commits a continuation and confirms dispatch before
+acknowledging its original queue obligation. No recurring SQL collector is added.
+
+TypeScript passed. The focused dispatch/upload/runtime/cache/cleanup set and its
+separate real-PostgreSQL check passed **40 / failed 0 / skipped 0 / cancelled 0**.
+The PostgreSQL check now covers forced RLS on all thirteen private scoped tables,
+concurrent completion, cancellation and immutable storage. Local tests include
+fresh-invocation hydration, failed recovery before refresh admission, transfer
+shutdown failure, suspended-owner cleanup, uncertain DELETE, backup continuation
+and duplicate delivery. These changes remain local build work: protected result
+transfer, browser integration, production migration composition and cloud
+acceptance are still required before activation.

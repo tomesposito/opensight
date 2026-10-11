@@ -7,10 +7,14 @@ import { ManifestStore, manifestArtifactLimits, type ManifestDefinition, type Ma
 import { ArtifactTransfer, type LocalArtifact, type PlannedArtifactWrite } from './artifact-transfer.js';
 import { artifactProvenance } from './artifact-schema.js';
 import type { AttemptHandle } from './coordination.js';
+import type { SqlConnection } from './metadata-db.js';
+import type { ArtifactReference } from './artifact-schema.js';
 
 export interface ArtifactWritePreparation {
   /** Must durably reserve storage and prearm recovery before resolving. */
   prepareWrite(write: PlannedArtifactWrite): Promise<void>;
+  /** SQL-only conversion commits atomically with the fenced manifest. */
+  publishWrite?(c: SqlConnection, write: PlannedArtifactWrite, reference: ArtifactReference): Promise<void>;
 }
 function invalid(): never { throw new MetadataError('ARTIFACT_CACHE_CONTEXT_INVALID', 403); }
 /** One invocation/attempt. Byte handles never become authorization for another request. */
@@ -75,7 +79,7 @@ export class ArtifactCache implements HostedCacheAdapter {
       await this.preparation.prepareWrite(write);
       await this.verify(); this.scope(scope);
       const reference = await this.transfer.upload(scope, identity, local, write);
-      await this.manifests.publish(this.attempt, reference, this.consumed); this.scope(scope);
+      await this.manifests.publish(this.attempt, reference, this.consumed, c => this.preparation!.publishWrite?.(c, write, reference) ?? Promise.resolve()); this.scope(scope);
     } catch (error) {
       const code = error instanceof MetadataError ? error.code : 'BLAZE_REFRESH_FAILED';
       try { await this.manifests.fail(this.attempt, /^[A-Z][A-Z0-9_]{0,95}$/.test(code) ? code : 'BLAZE_REFRESH_FAILED'); }

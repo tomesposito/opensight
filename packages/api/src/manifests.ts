@@ -80,12 +80,13 @@ export class ManifestStore {
       }
     }
   }
-  async admit(context: TenantContext, input: AdmissionInput, rawDefinitions: readonly ManifestDefinition[] = []): Promise<AttemptHandle> {
+  async admit(context: TenantContext, input: AdmissionInput, rawDefinitions: readonly ManifestDefinition[] = [],
+    admittedWork?: (c: SqlConnection, details: AttemptDetails) => Promise<void>): Promise<AttemptHandle> {
     const request = structuredClone(input), definitions = structuredClone(rawDefinitions).map(definition);
     if (request.class === 'query' && definitions.length) invalid();
     return this.coordinator.admit(context, request, async (c, details) => {
       await this.schema(c);
-      if (!details.input.claim) return;
+      if (!details.input.claim) { await admittedWork?.(c, details); return; }
       const claim = details.input.claim, all = merge([...definitions, { kind: claim.kind, id: claim.id, version: claim.expectedVersion }]);
       const document: Document = { identity: this.identity(details, claim), epoch: details.epoch, attemptId: details.input.attemptId,
         fence: details.fence!, generation: details.generation!, version: claim.expectedVersion, revisions: { ...details.input.revisions },
@@ -95,6 +96,7 @@ export class ManifestStore {
         DO UPDATE SET attempt_id = excluded.attempt_id, generation = excluded.generation, state = excluded.state, body = excluded.body`,
       [...this.values(document.identity), document.attemptId, document.generation, document.state, body]);
       await appendMetadataEvent(c, context, 'artifact:running');
+      await admittedWork?.(c, details);
     });
   }
   private parse(raw: string, details: AttemptDetails): Document {
@@ -158,7 +160,8 @@ export class ManifestStore {
     bounded({ definitions, dependencies }, details);
     await this.coordinator.publish(handle, async c => { await this.schema(c); await this.definitions(c, details, definitions); await this.dependencies(c, details, dependencies); });
   }
-  async publish(handle: AttemptHandle, rawReference: ArtifactReference, reads: readonly ManifestRead[] = []): Promise<void> {
+  async publish(handle: AttemptHandle, rawReference: ArtifactReference, reads: readonly ManifestRead[] = [],
+    publishedWork?: (c: SqlConnection, reference: ArtifactReference) => Promise<void>): Promise<void> {
     const details = this.coordinator.describe(handle), reference = artifactReference(rawReference, manifestArtifactLimits(details));
     const consumed = [...reads].map(read => this.snapshot(handle, read));
     await this.complete(handle, details, async (c, running) => {
@@ -168,6 +171,7 @@ export class ManifestStore {
       if (dependencies.some(d => d.kind === running.identity.kind && d.id === running.identity.resource)) stale();
       bounded({ definitions, dependencies, reference }, details);
       await this.definitions(c, details, definitions); await this.dependencies(c, details, dependencies);
+      await publishedWork?.(c, reference);
       return { ...running, state: 'ready', reference, definitions, dependencies, refreshedAt: new Date(await coordinationNow(c, this.dialect)).toISOString() };
     });
   }

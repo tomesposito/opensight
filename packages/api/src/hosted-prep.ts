@@ -163,6 +163,10 @@ export class HostedPrep {
       }
       const result = query ? await this.data.computeQuery(context, table, query) : { columns: table.columns, rows: table.rows(100), rowCount: table.rowCount, truncated: table.rowCount > 100 };
       await this.data.finish(context, graph.leaves, graph.revisions); return result;
-    }, graph.revisions);
+    }, graph.revisions, path === 'refresh' ? {
+      claim: { kind: 'prepared-dataset', id, version: stored.version },
+      definitions: [...[...graph.modes].map(([id, mode]) => ({ kind: 'prepared-dataset' as const, id, version: mode.version })),
+        ...graph.leaves.map(a => ({ kind: 'source' as const, id: a.source.id, version: a.source.version }))],
+    } : undefined);
   }
 }

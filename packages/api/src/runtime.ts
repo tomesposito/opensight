@@ -1,5 +1,6 @@
 import { createServer, type Server } from 'node:http';
-import { createBuiltinHostedServer, drainHostedServer } from './hosted-server.js';
+import { createServerlessApplication } from './serverless-application.js';
+import { createBuiltinHostedServer, drainHostedServer, finishHostedInvocation } from './hosted-server.js';
 import { MetadataError } from './metadata-db.js';
 import { InvocationScope, invocationDeadline, type InvocationContext } from './runtime-scope.js';
 import { invocationDatabases, type InvocationDatabases } from './runtime-postgres.js';
@@ -22,7 +23,8 @@ export function runtimeMode(env: NodeJS.ProcessEnv): 'http' | 'lambda' {
 export function createRuntime(env: () => NodeJS.ProcessEnv = () => process.env, dependencies: RuntimeDependencies = {}) {
   const databases = dependencies.databases ?? invocationDatabases;
   const readiness = dependencies.readiness ?? runtimeReadiness;
-  const application = dependencies.application ?? ((db, scope, config) => createBuiltinHostedServer({ membershipDatabase: db.membership, tenantDatabase: db.tenant, env: config, invocation: { signal: scope.signal } }));
+  const application = dependencies.application ?? ((db, scope, config) => config.OPENSIGHT_SERVERLESS_DATA === 'durable' ? createServerlessApplication(db, scope, config)
+    : createBuiltinHostedServer({ membershipDatabase: db.membership, tenantDatabase: db.tenant, env: config, invocation: { signal: scope.signal } }));
   const invoke = async (request: RuntimeRequest, context: InvocationContext, config: NodeJS.ProcessEnv, signal?: AbortSignal): Promise<RuntimeResponse> => {
     const startup = request.path === '/api/startup';
     try {
@@ -39,7 +41,8 @@ export function createRuntime(env: () => NodeJS.ProcessEnv = () => process.env, 
         if (startup) return { statusCode: 200, headers: { 'content-type': 'application/json', 'cache-control': 'no-store' }, body: '{"state":"ready"}' };
         const server = await application(db, scope, config);
         scope.own({ close: () => drainHostedServer(server), force: () => server.closeAllConnections() });
-        return dispatchRuntimeRequest(server, request, scope.signal);
+        try { return await dispatchRuntimeRequest(server, request, scope.signal); }
+        finally { await finishHostedInvocation(server); }
       }); } finally { signal?.removeEventListener('abort', abort); }
     } catch (error) {
       if (error instanceof MetadataError && ['INVOCATION_CLEANUP_FAILED', 'RUNTIME_QUARANTINED', 'HOSTED_REQUEST_INVALID'].includes(error.code)) return runtimeError(error);

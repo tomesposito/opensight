@@ -18,7 +18,7 @@ export interface DispatchTransport {
   /** Resolve only after SQS send or exact one-time Scheduler create/GET acknowledgement. */
   dispatch(envelope: DispatchEnvelope, event: DurableEvent): Promise<void>;
 }
-export interface IntentRequest { kind: 'upload-reserve' | 'upload-complete' | 'artifact-write' | 'result-write'; requestDigest: string; idempotencyKey: string; revisions: Revisions }
+export interface IntentRequest { kind: 'upload-reserve' | 'upload-complete' | 'artifact-write' | 'artifact-refresh' | 'result-write'; requestDigest: string; idempotencyKey: string; revisions: Revisions }
 export interface DispatchPreparation { readonly intentId: string }
 export interface DispatchReceipt { id: string; revision: number }
 export type EventInput = Omit<DurableEvent, 'eventId' | 'epoch'>;
@@ -30,7 +30,7 @@ const integer = (value: SqlValue | undefined): number => {
 };
 const snapshot = (raw: IntentRequest): IntentRequest => {
   const input = structuredClone(raw), r = object(input, ['kind', 'requestDigest', 'idempotencyKey', 'revisions']);
-  if (!['upload-reserve', 'upload-complete', 'artifact-write', 'result-write'].includes(String(r.kind))
+  if (!['upload-reserve', 'upload-complete', 'artifact-write', 'artifact-refresh', 'result-write'].includes(String(r.kind))
     || typeof r.requestDigest !== 'string' || !/^[a-f0-9]{64}$/.test(r.requestDigest)
     || typeof r.idempotencyKey !== 'string' || !/^[A-Za-z0-9_-]{16,128}$/.test(r.idempotencyKey)) throw new MetadataError('DISPATCH_INPUT_INVALID', 400);
   const revisions = object(r.revisions, ['authorization', 'policy', 'configuration']);
@@ -101,33 +101,36 @@ export class DurableDispatch {
   }
   /** The callback is internal SQL-only business work; the handle cannot be reconstructed from JSON. */
   async commit(handle: DispatchPreparation, work: (c: SqlConnection, now: number) => Promise<{ receipt: DispatchReceipt; events: EventInput[] }>): Promise<DispatchReceipt> {
+    return this.transaction(c => this.commitOn(c, handle, work));
+  }
+  /** Internal composition with an already control/tenant-locked SR2 admission transaction. */
+  async commitOn(c: SqlConnection, handle: DispatchPreparation, work: (c: SqlConnection, now: number) => Promise<{ receipt: DispatchReceipt; events: EventInput[] }>): Promise<DispatchReceipt> {
     const prepared = this.#preparations.get(handle);
     if (!prepared) throw new MetadataError('DISPATCH_PREPARATION_REQUIRED', 403);
     const { context, input, epoch } = prepared;
-    return this.transaction(async c => {
-      if (await this.control(c) !== epoch) throw new MetadataError('WORKSPACE_MAINTENANCE', 503);
-      await currentAuthority(c, this.metadata, context, input.revisions, true);
-      const row = await this.row(c, context, handle.intentId), now = await coordinationNow(c, this.dialect);
-      if (!row || row.request_digest !== input.requestDigest || row.idempotency_digest !== prepared.idempotencyDigest || integer(row.control_epoch) !== epoch) throw new MetadataError('DISPATCH_PREPARATION_REQUIRED', 403);
-      if (row.state === 'committed') return receipt(JSON.parse(String(row.receipt)));
-      if (row.state !== 'prepared' || integer(row.commit_until) <= now) throw new MetadataError('DISPATCH_INTENT_EXPIRED', 409);
-      if ((['authorization', 'policy', 'configuration'] as const).some(k => integer(row[`${k}_revision`]) !== input.revisions[k])) throw new MetadataError('METADATA_REVISED', 403);
-      const result = await work(c, now), saved = receipt(result.receipt);
-      if (!Array.isArray(result.events) || result.events.length > 8) throw new MetadataError('DISPATCH_INPUT_INVALID', 400);
-      for (const raw of result.events) {
-        const event = object(raw, ['aggregateId', 'aggregateRevision', 'kind', 'dueAt', 'expiresAt']); identifier(event.aggregateId);
-        if (!eventKinds.includes(event.kind as DurableEventKind) || !Number.isSafeInteger(event.aggregateRevision) || Number(event.aggregateRevision) < 1
-          || ![event.dueAt, event.expiresAt].every(Number.isSafeInteger) || Number(event.expiresAt) <= Math.max(Number(event.dueAt), now)
-          || Number(event.dueAt) < now - 1000 || Number(event.expiresAt) - Math.max(now, Number(event.dueAt)) > 86400000) throw new MetadataError('DISPATCH_INPUT_INVALID', 400);
-        await c.query("INSERT INTO sr_outbox VALUES (?,?,?,?,?,?,?,?,?,1,?,?,?,'pending')", [...this.scope(context), randomUUID(), handle.intentId,
-          String(event.aggregateId), Number(event.aggregateRevision), String(event.kind), epoch, Number(event.dueAt), Number(event.expiresAt)]);
-      }
-      // A callback may change its own H1 revisions. It may not commit after intent eligibility.
-      if (await coordinationNow(c, this.dialect) >= integer(row.commit_until)) throw new MetadataError('DISPATCH_INTENT_EXPIRED', 409);
-      await c.query(`UPDATE sr_dispatch_intent SET state = 'committed', receipt = ? WHERE ${scoped} AND intent_id = ?`, [JSON.stringify(saved), ...this.scope(context), handle.intentId]);
-      return saved;
-    });
+    if (await this.control(c) !== epoch) throw new MetadataError('WORKSPACE_MAINTENANCE', 503);
+    await currentAuthority(c, this.metadata, context, input.revisions, true);
+    const row = await this.row(c, context, handle.intentId), now = await coordinationNow(c, this.dialect);
+    if (!row || row.request_digest !== input.requestDigest || row.idempotency_digest !== prepared.idempotencyDigest || integer(row.control_epoch) !== epoch) throw new MetadataError('DISPATCH_PREPARATION_REQUIRED', 403);
+    if (row.state === 'committed') return receipt(JSON.parse(String(row.receipt)));
+    if (row.state !== 'prepared' || integer(row.commit_until) <= now) throw new MetadataError('DISPATCH_INTENT_EXPIRED', 409);
+    if ((['authorization', 'policy', 'configuration'] as const).some(k => integer(row[`${k}_revision`]) !== input.revisions[k])) throw new MetadataError('METADATA_REVISED', 403);
+    const result = await work(c, now), saved = receipt(result.receipt);
+    if (!Array.isArray(result.events) || result.events.length > 8) throw new MetadataError('DISPATCH_INPUT_INVALID', 400);
+    for (const raw of result.events) {
+      const event = object(raw, ['aggregateId', 'aggregateRevision', 'kind', 'dueAt', 'expiresAt']); identifier(event.aggregateId);
+      if (!eventKinds.includes(event.kind as DurableEventKind) || !Number.isSafeInteger(event.aggregateRevision) || Number(event.aggregateRevision) < 1
+        || ![event.dueAt, event.expiresAt].every(Number.isSafeInteger) || Number(event.expiresAt) <= Math.max(Number(event.dueAt), now)
+        || Number(event.dueAt) < now - 1000 || Number(event.expiresAt) - Math.max(now, Number(event.dueAt)) > 86400000) throw new MetadataError('DISPATCH_INPUT_INVALID', 400);
+      await c.query("INSERT INTO sr_outbox VALUES (?,?,?,?,?,?,?,?,?,1,?,?,?,'pending')", [...this.scope(context), randomUUID(), handle.intentId,
+        String(event.aggregateId), Number(event.aggregateRevision), String(event.kind), epoch, Number(event.dueAt), Number(event.expiresAt)]);
+    }
+    // A callback may change its own H1 revisions. It may not commit after intent eligibility.
+    if (await coordinationNow(c, this.dialect) >= integer(row.commit_until)) throw new MetadataError('DISPATCH_INTENT_EXPIRED', 409);
+    await c.query(`UPDATE sr_dispatch_intent SET state = 'committed', receipt = ? WHERE ${scoped} AND intent_id = ?`, [JSON.stringify(saved), ...this.scope(context), handle.intentId]);
+    return saved;
   }
+
   private event(row: SqlRow): DurableEvent {
     if (!eventKinds.includes(row.kind as DurableEventKind) || Number(row.version) !== 1) throw new MetadataError('DISPATCH_UNAVAILABLE', 503);
     return { eventId: identifier(row.event_id), aggregateId: identifier(row.aggregate_id), aggregateRevision: integer(row.aggregate_revision),
