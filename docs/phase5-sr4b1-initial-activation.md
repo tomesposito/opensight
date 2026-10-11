@@ -80,6 +80,26 @@ existing strict `migrate` command, preserving the old migration entrypoint. No H
 SQL command is added. Continue using the existing composed migration function
 for all five schema checkpoints and runtime-role grants.
 
+For this initial administration handler, `migrate` additionally prepares database
+roles in the same owner transaction, before any tester is created. Require the
+single deployment's epoch-one maintenance control, every expected table owned by
+the caller, and no bootstrap or activation receipt. Require an immutable release
+digest in configuration. Managed PostgreSQL schema ownership alone does not imply
+RLS bypass: if the current owner lacks it, grant BYPASSRLS only to CURRENT_USER,
+then inspect all tenant/business tables without row filtering and require them
+to be empty. Any refusal or failed check rolls back the role/schema changes.
+Never disable RLS or FORCE RLS on a table. This is the dedicated deployment's
+existing private schema-owner credential, unavailable to request/worker roles.
+
+After the composed migration validates the two deployment-marked runtime roles,
+set their connection limits to eight each: one connection per role for each of
+four requests, two work consumers and two recovery consumers. Do not change their
+passwords, memberships, role ownership or RLS attributes. The tenant role remains
+NOBYPASSRLS and the operator role remains non-owner BYPASSRLS. Their former limit
+of four was specific to isolated validation. Audit this preparation. Exact empty
+initial retries may repeat it; populated or previously activated deployments
+cannot use it for maintenance. The legacy migration entrypoint is unchanged.
+
 `bootstrap-initial` accepts version one, one private operation ID and exactly two
 explicit tester definitions, each with unique tenant/namespace/user/subject IDs,
 normalized email, display name, password and 20-byte canonical-base64 TOTP secret.

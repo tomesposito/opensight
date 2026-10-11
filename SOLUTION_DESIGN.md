@@ -1343,7 +1343,11 @@ authorization installs all schema checkpoints, atomically bootstraps two isolate
 workspaces and performs a one-time, receipt-bound epoch-one admission transition.
 Pilot HTTP authorizer/request reserved concurrency is four each, after live
 throttling at the validation caps; workers remain two each and no provisioned
-concurrency is added. Existing password/TOTP login remains mandatory. No onboarding mail or public setup
+concurrency is added. Initial private migration validates schema ownership,
+ensures only its private owner can inspect all tenants under FORCE RLS, proves
+an empty epoch-one deployment, and sets the two existing runtime role connection
+caps to eight without changing their authority. Preparation is transactional and
+unavailable after bootstrap. Existing password/TOTP login remains mandatory. No onboarding mail or public setup
 endpoint is introduced. Complete the long-pause database measurement and real
 HTTPS startup/authentication/upload/ingestion/query/isolation checks before apex
 DNS. This initial transition does not implement D-25's recurring release/rollback
