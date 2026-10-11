@@ -24,13 +24,25 @@ the long-pause evidence and before application admission.
 
 Pilot functions use the exact tested immutable ARM64 image. Request and private
 administration remain 2,048 MiB with 512 MiB temporary storage; request timeout is
-28 seconds and reserved concurrency one; administration timeout is 120 seconds
+28 seconds and reserved concurrency four; administration timeout is 120 seconds
 and reserved concurrency one. Add two 120-second, 2,048 MiB private worker
 functions for work and recovery. Each has reserved concurrency two and an SQS
 maximum concurrency of two, the smallest supported event-source cap. No
 provisioned concurrency is configured. This avoids competing SQS pollers causing
 avoidable throttled redeliveries at reserved concurrency one. Existing SQL tenant
 and node budgets still control execution admission.
+
+The pilot ingress selects authorizer reserved concurrency four, retaining its
+256 MiB memory, ten-second timeout, database-free IAM and zero cache. Ingress has
+an explicit `authorizer_concurrency` input limited to two (initial validation,
+default) or four (pilot); saved-plan checks require the selected value. A normal
+browser can issue two catalog requests concurrently, and the two testers can
+overlap. Live three-request validation at the old authorizer-two/request-one caps
+produced an origin 503 and CloudWatch throttles on both functions. Four slots at
+each request boundary admit that small burst without provisioned concurrency.
+API/WAF limits, SQL node/tenant admission and the zero-ACU idle policy remain.
+Repeat concurrent real HTTPS acceptance after promotion; this is a bounded pilot,
+not an unlimited-concurrency promise.
 
 Add separate standard work/recovery queues and DLQs, one Scheduler group and
 Scheduler DLQ. Source queues retain four days, visibility 720 seconds,

@@ -70,3 +70,16 @@ Option 3 weakens the trust boundary or misrepresents email delivery.
   acceptance precede apex DNS publication. A Connect screen alone is not live.
 - Public code includes only reusable contracts and synthetic fixtures. All
   deployed identities, addresses, credentials, plans and receipts stay private.
+
+#### Pilot concurrency correction — 2026-10-11
+
+A real three-request burst against the frozen adapter reproduced an origin 503.
+CloudWatch recorded throttles for both the two-slot authorizer and the one-slot
+request function. The web catalog already issues a two-request parallel read;
+the two testers may overlap. Select four reserved slots at both HTTP boundaries,
+with no provisioned environments. Keep the two-slot worker caps, existing API/WAF
+rate limits and shared SQL admission budgets. Reserved concurrency adds no idle
+charge; simultaneous accepted executions still incur normal usage charges. This
+corrects the validation profile's overly restrictive cap before pilot admission.
+
+Source: [AWS reserved concurrency](https://docs.aws.amazon.com/lambda/latest/dg/configuration-concurrency.html).
