@@ -945,6 +945,12 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .analysis-settings-dialog textarea, .analysis-settings-dialog select { box-sizing: border-box; width: 100%; min-width: 0; padding: 4px 8px; border: 1px solid var(--chrome-border, #c9d8de); border-radius: 5px; background: var(--chrome-surface, #fff); color: inherit; font: inherit; }
 .analysis-settings-dialog textarea { resize: vertical; }
 .analysis-settings-dialog .author-menu-item > button { width: 100%; text-align: left; margin-top: 4px; }
+.sheet-type-cards { display: grid; gap: 8px; margin-top: 12px; }
+.sheet-type-card { display: flex; gap: 10px; align-items: flex-start; margin-top: 0; padding: 10px 12px; border: 1px solid var(--chrome-border, #c9d8de); border-radius: 6px; cursor: pointer; }
+.sheet-type-card input { margin-top: 3px; flex: none; }
+.sheet-type-card strong { display: block; }
+.sheet-type-card span span { display: block; color: var(--chrome-muted, #536879); font-size: 12px; }
+.sheet-type-card-disabled { cursor: not-allowed; opacity: 0.75; background: var(--chrome-subtle, #f2f6f8); }
 .settings-palette { display: flex; gap: 4px; margin-top: 8px; }
 .settings-palette span { width: 24px; height: 16px; border: 1px solid var(--chrome-border, #c9d8de); }
 .analysis-settings-dialog button[aria-disabled="true"] { color: var(--chrome-muted, #536879); cursor: not-allowed; }
