@@ -316,3 +316,20 @@ SR4b5, 130 frames match exactly; the inspected author difference is saved-time
 text only, 158 pixels at (150,97)–(172,107). The hosted frontend's nine files are
 byte-identical. No new UI gap or README media replacement is required. See the
 [request evidence](phase5-sr4b6-request-evidence.md) for tests and cloud status.
+
+
+## Public pilot acceptance — 2026-10-11
+
+The complete real AWS workflow now passes through normal public DNS and verified
+HTTPS: on-demand startup, password/TOTP authentication, 8 MiB S3 upload, durable
+ingestion, prepared-data refresh, aggregate query and workspace isolation.
+Automatic Aurora idle pause reached zero ACU after the complete pre-DNS workload.
+The public browser produced no API calls during its idle observation. This is
+hosted application acceptance, separate from the static demo comparison.
+
+One workspace's new uploads are temporarily quota-limited by retained reservations
+from earlier failed synthetic tests. The independent tester workspace passed the
+public upload workflow. Cleanup remains scheduled under the existing retention
+contract; no counters or limits were bypassed. The private handoff records this
+limitation. See [current evidence](phase5-sr4b6-request-evidence.md). H7 jobs and
+private CI/CD remain separate follow-ups in #85 and #86.
