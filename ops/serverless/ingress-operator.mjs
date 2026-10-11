@@ -4,7 +4,7 @@ import { closeSync, existsSync, lstatSync, openSync, readFileSync, unlinkSync, w
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { owned, privateDirectory } from './operator.mjs';
-import { checkFreeSubscription, checkIngressPlan, checkReceipt, frontendFiles, sha256 } from './ingress-policy.mjs';
+import { checkFailedSubscriptionStack, checkFreeSubscription, checkIngressPlan, checkReceipt, frontendFiles, sha256 } from './ingress-policy.mjs';
 const repository = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 
 export async function main(args = process.argv.slice(2), environment = process.env) {
@@ -94,6 +94,22 @@ export async function main(args = process.argv.slice(2), environment = process.e
     }
     const inputs = read('ingress.tfvars.json');
     if (inputs.account_id !== account || inputs.deployment !== deployment) throw Error('ACCOUNT_MISMATCH');
+    if (operation === 'repair-subscription') {
+      source();
+      const name = `${deployment}-free-edge`, stack = aws('cloudformation', 'describe-stacks', ['--stack-name', name]).Stacks[0];
+      owned(stack.Tags, deployment, 'public-ingress');
+      const distributions = aws('cloudfront', 'list-distributions').DistributionList.Items ?? [];
+      const matching = distributions.filter(item => item.Aliases?.Items?.includes(new URL(inputs.public_origin).hostname));
+      if (matching.length !== 1) throw Error('RESOURCE_NOT_OWNED');
+      const distribution = matching[0];
+      owned(aws('cloudfront', 'list-tags-for-resource', ['--resource', distribution.ARN]).Tags.Items, deployment, 'public-ingress');
+      const resources = aws('cloudformation', 'list-stack-resources', ['--stack-name', stack.StackId]).StackResourceSummaries;
+      const subscriptions = aws('pricing-plan-manager', 'list-subscriptions').subscriptionSummaries;
+      checkFailedSubscriptionStack(stack, resources, subscriptions, name, [distribution.ARN, distribution.WebACLId]);
+      write('ingress-subscription-repair.json', { inspectedAt: Date.now(), stack, resources, subscriptions });
+      aws('cloudformation', 'delete-stack', ['--stack-name', stack.StackId]);
+      console.log('Empty rolled-back subscription stack deletion requested. Retained ingress is unchanged; replan after deletion completes.'); return;
+    }
     if (operation === 'plan') {
       const sourceDigest = source(), configDigest = configuration();
       init();

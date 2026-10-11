@@ -62,3 +62,10 @@ Run a new `plan`, review its digest and `apply` it. Both planning and applying
 cutover read the actual subscription and require ACTIVE/FREE, the exact
 distribution/WAF/zone association and no scheduled plan change. No command
 automatically buys a paid plan or treats a static shell as live acceptance.
+
+If subscription creation ends in ROLLBACK_COMPLETE, first correct the documented
+eligibility issue. `repair-subscription` inspects ownership, the single deleted
+subscription resource, and current subscription associations. It can delete only
+that empty failed stack. Wait for deletion to finish, then create/review a fresh
+plan; serving resources remain in state and are reused. An active subscription
+or any other retained stack resource causes repair to refuse.

@@ -59,7 +59,7 @@ resource "aws_wafv2_web_acl" "application" {
     sampled_requests_enabled   = false
   }
   dynamic "rule" {
-    for_each = { startup_ip = { priority = 0, aggregate = "IP", limit = 30 }, startup_global = { priority = 1, aggregate = "CONSTANT", limit = 300 } }
+    for_each = { startup_ip = { priority = 0, aggregate = "IP", limit = 30 } }
     content {
       name     = rule.key
       priority = rule.value.priority

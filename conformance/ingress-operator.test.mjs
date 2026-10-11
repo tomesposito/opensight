@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { checkFreeSubscription, checkIngressPlan, checkReceipt, frontendFiles, sha256 } from '../ops/serverless/ingress-policy.mjs';
+import { checkFailedSubscriptionStack, checkFreeSubscription, checkIngressPlan, checkReceipt, frontendFiles, sha256 } from '../ops/serverless/ingress-policy.mjs';
 
 test('SR4a ingress receipt rejects expiry, source/configuration changes and remote state movement', () => {
   const now = Date.now(), actual = { plan: sha256('plan'), source: sha256('source'), configuration: sha256('private inputs'), account: '000000000000', deployment: 'synthetic', state: { lineage: 'synthetic', serial: 2, version: 'two' } };
@@ -39,6 +39,14 @@ test('SR4a frontend manifest rejects tampering, missing files, extras and symbol
     assert.throws(() => frontendFiles(directory, manifest), /FRONTEND_PATH_UNSAFE/);
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
+test('SR4a failed-subscription repair refuses live subscriptions, foreign stacks and retained resources', () => {
+  const stack = { StackName: 'synthetic-free-edge', StackStatus: 'ROLLBACK_COMPLETE' }, resources = [{ LogicalResourceId: 'Subscription', ResourceType: 'AWS::PricingPlanManager::Subscription', ResourceStatus: 'DELETE_COMPLETE' }], arns = ['distribution', 'acl'];
+  checkFailedSubscriptionStack(stack, resources, [], stack.StackName, arns);
+  for (const changed of [{ StackStatus: 'CREATE_COMPLETE' }, { StackName: 'foreign' }]) assert.throws(() => checkFailedSubscriptionStack({ ...stack, ...changed }, resources, [], stack.StackName, arns), /EMPTY_FAILED_STACK_REQUIRED/);
+  for (const changed of [{ PhysicalResourceId: 'subscription' }, { ResourceStatus: 'CREATE_FAILED' }, { ResourceType: 'AWS::S3::Bucket' }]) assert.throws(() => checkFailedSubscriptionStack(stack, [{ ...resources[0], ...changed }], [], stack.StackName, arns), /EMPTY_FAILED_STACK_REQUIRED/);
+  assert.throws(() => checkFailedSubscriptionStack(stack, resources, [{ resourceArns: arns }], stack.StackName, arns), /EMPTY_FAILED_STACK_REQUIRED/);
+  assert.throws(() => checkFailedSubscriptionStack(stack, [...resources, resources[0]], [], stack.StackName, arns), /EMPTY_FAILED_STACK_REQUIRED/);
+});
 test('SR4a ingress plan rejects replacing data, paid plans, caches, unguarded routes and unreviewed DNS', () => {
   const inputs = { deployment: 'synthetic', image_uri: 'synthetic@sha256:digest', request_function_name: 'synthetic-request', request_function_version: '1', frontend_bucket: 'synthetic-frontend', public_origin: 'https://opensight.example', zone_id: 'ZSYNTHETIC', publish_site: false };
   const change = (address, after) => ({ mode: 'managed', address, type: address.split('.')[0], change: { actions: ['create'], after } });
@@ -53,7 +61,8 @@ test('SR4a ingress plan rejects replacing data, paid plans, caches, unguarded ro
     change('aws_s3_bucket_versioning.frontend', { versioning_configuration: [{ status: 'Enabled' }] }),
     change('aws_cloudfront_distribution.application', { enabled: true, retain_on_delete: true, aliases: ['opensight.example'], ordered_cache_behavior: [{ target_origin_id: 'frontend' }, ...Array.from({ length: 2 }, () => ({ target_origin_id: 'api', cache_policy_id: '4135ea2d-6df8-44a3-9df3-4b5a84be39ad', origin_request_policy_id: 'b689b0a8-53d0-40ab-baf2-68738e2966ac', viewer_protocol_policy: 'https-only' }))] }),
     change('aws_cloudformation_stack.plan', { template_body: JSON.stringify({ Resources: { Subscription: { Type: 'AWS::PricingPlanManager::Subscription', Properties: { PlanTier: 'FREE' } } } }) }),
-    ...['aws_acm_certificate.site', 'aws_acm_certificate_validation.site', 'aws_secretsmanager_secret.ingress', 'aws_secretsmanager_secret_version.ingress', 'aws_iam_role.authorizer', 'aws_iam_role_policy.authorizer', 'aws_lambda_permission.authorizer', 'aws_lambda_permission.request', 'aws_apigatewayv2_integration.request', 'aws_apigatewayv2_stage.application', 'aws_apigatewayv2_domain_name.origin', 'aws_apigatewayv2_api_mapping.origin', 'aws_s3_bucket_ownership_controls.frontend', 'aws_s3_bucket_policy.frontend', 'aws_cloudfront_function.viewer'].map(address => change(address, {})),
+    change('aws_apigatewayv2_stage.application', { default_route_settings: [{ throttling_rate_limit: 5, throttling_burst_limit: 10 }], route_settings: [{ route_key: 'POST /api/api/startup', throttling_rate_limit: 0.5, throttling_burst_limit: 2 }] }),
+    ...['aws_acm_certificate.site', 'aws_acm_certificate_validation.site', 'aws_secretsmanager_secret.ingress', 'aws_secretsmanager_secret_version.ingress', 'aws_iam_role.authorizer', 'aws_iam_role_policy.authorizer', 'aws_lambda_permission.authorizer', 'aws_lambda_permission.request', 'aws_apigatewayv2_integration.request', 'aws_apigatewayv2_domain_name.origin', 'aws_apigatewayv2_api_mapping.origin', 'aws_s3_bucket_ownership_controls.frontend', 'aws_s3_bucket_policy.frontend', 'aws_cloudfront_function.viewer'].map(address => change(address, {})),
   ];
   checkIngressPlan({ resource_changes: resources }, inputs);
   const reject = mutate => { const copy = structuredClone(resources); mutate(copy); assert.throws(() => checkIngressPlan({ resource_changes: copy }, inputs), /INGRESS_PLAN_REJECTED/); };
@@ -66,6 +75,7 @@ test('SR4a ingress plan rejects replacing data, paid plans, caches, unguarded ro
   reject(r => { r[5].change.actions = ['delete', 'create']; });
   reject(r => { r[8].change.after.ordered_cache_behavior[1].cache_policy_id = 'cached'; });
   reject(r => { r[9].change.after.template_body = r[9].change.after.template_body.replace('FREE', 'PRO'); });
+  reject(r => { r[10].change.after.route_settings[0].throttling_rate_limit = 5; });
   reject(r => { r.push(change('aws_route53_record.site["A"]', { zone_id: inputs.zone_id, name: 'opensight.example' })); });
   reject(r => { r.push(change('aws_rds_cluster.database', {})); });
 });

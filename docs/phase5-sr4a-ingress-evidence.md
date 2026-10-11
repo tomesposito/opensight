@@ -54,8 +54,11 @@ AWS validation so far:
 - CloudWatch observation before ingress validation reports 60 of 60 minute
   samples at 0 ACU. No SQL probe was issued during this slice.
 
-Distribution propagation and the active Free subscription are still being
-verified. Live edge forwarding, frontend delivery, durable consumers, database
+Distribution propagation completed. AWS rejected the initial Free subscription
+because the WAF resource was ineligible; its failed subscription-only stack
+contains no physical subscription. The reviewed correction retains both IP
+rules and tightens global startup throttling at API Gateway. Free subscription
+acceptance is still required. Live edge forwarding, frontend delivery, durable consumers, database
 migration/initial activation, tester bootstrap and the real authentication/upload/
 ingestion/query/isolation checks remain before public site DNS publication.
 Private plans, state, account/domain inputs, scan detail and service evidence are
