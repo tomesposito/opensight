@@ -101,8 +101,9 @@ startup method/path in authorizer and request adapter; unset retains the origina
 single-route contract. Wrong route/context/domain/API/stage remains denied.
 
 Configure default stage throttling at 5 requests/second, burst 10, and startup at
-1/second, burst 2. WAF adds per-IP startup 30 requests/5 minutes, global startup
-300/5 minutes and per-IP dynamic traffic 600/5 minutes. Scope with literal URI
+0.5/second, burst 2. WAF adds per-IP startup 30 requests/5 minutes and per-IP
+dynamic traffic 600/5 minutes. The global startup control is the tighter API
+Gateway token bucket; it is not a five-minute WAF counter. Scope WAF with literal URI
 byte matches, not regex or arbitrary headers. These are abuse controls, not a
 hard account spending cap. No tester-IP allowlist is silently imposed. Disable
 sampled request bodies/logs; retain service counters and safe request outcome
@@ -127,6 +128,21 @@ or existing function replacement/deletion. Authorizer/code release inputs requir
 an immutable owned ECR digest and published function version, never latest tags.
 The operator checks ACTIVE/FREE and exact resource association before setting
 publish_site. It never sends a message/email or changes a database in this slice.
+
+The initial AWS subscription attempt rejected the WAF resource as ineligible for
+Free. Its constant/global aggregation is outside the documented IP-based Free
+feature set. Retain both scoped IP rules and enforce global startup admission at
+API Gateway instead. This preserves bounded application wake traffic but does
+not eliminate API Gateway charges for traffic rejected there. Confirm actual
+Free eligibility after the correction rather than inferring it from mock tests.
+
+A failed subscription-only CloudFormation stack may be removed for retry only
+when it is owned by this deployment, is ROLLBACK_COMPLETE, contains no resource
+other than the subscription, and no subscription currently associates the
+distribution or WAF. Record the inspection privately before deleting that empty
+failed stack. Never delete a live subscription, distribution, ACL, bucket or DNS
+record through this recovery step. Refresh/replan against retained resources;
+the normal destructive-plan prohibition remains in force.
 
 ## Acceptance and sequencing
 

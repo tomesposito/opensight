@@ -70,3 +70,17 @@ Sources: [CloudFront plan features](https://docs.aws.amazon.com/AmazonCloudFront
 [managed origin policies](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/using-managed-origin-request-policies.html),
 [Functions event structure](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/functions-event-structure.html),
 [subscription resource](https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/aws-resource-pricingplanmanager-subscription.html).
+
+#### AWS eligibility correction — 2026-10-11
+
+AWS rejected the initial WAF resource for the Free subscription. The documented
+Free capability is IP-based rate limiting; constant global aggregation is the
+suspected incompatible feature. Keep startup-IP 30/5 minutes and dynamic-IP
+600/5 minutes, and use the tighter API Gateway global startup throttle of
+0.5 requests/second with burst two. This supports the two expected testers and
+still bounds application wake traffic. Gateway-rejected traffic can incur API
+charges; neither configuration is a hard spending cap. No identity/origin gate
+changes and no paid tier is selected. Live subscription acceptance must verify
+the corrected feature combination. A subscription-only rolled-back stack may be
+removed after proving it owns no active subscription; retained ingress/data
+resources are not part of that repair.
