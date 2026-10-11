@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { initialCredentials, safeInitialResult, activationRequired } from '../ops/serverless/pilot-operator.mjs';
+import { initialCredentials, safeInitialResult, activationRequired, administrationImage } from '../ops/serverless/pilot-operator.mjs';
 import { checkPlan } from '../ops/serverless/plan-policy.mjs';
 
 test('SR4b1 private tester generation produces independent workspace and authentication material', () => {
@@ -23,11 +23,27 @@ test('SR4b1 operator accepts only exact administration results and release-bound
   assert.deepEqual(safeInitialResult('activate-initial', active), active);
   safeInitialResult('migrate', { state: 'migrated', maintenance: true });
   safeInitialResult('bootstrap-initial', { state: 'bootstrapped', epoch: 1, tenants: 2 });
+  safeInitialResult('repair-initial-locks', { state: 'locks-repaired', epoch: 1 });
   for (const result of [{ ...active, secret: 'synthetic' }, { ...active, epoch: 2 }, null, {}]) assert.throws(() => safeInitialResult('activate-initial', result), /INITIAL_RESULT_INVALID/);
   const release = { image_uri: `synthetic@sha256:${'a'.repeat(64)}` }, receipt = { version: 1, account: '000000000000', deployment: 'synthetic', imageUri: release.image_uri, operationId: 'initial', result: active };
   activationRequired(receipt, release, receipt.account, receipt.deployment, 'initial');
   for (const change of [{ account: '111111111111' }, { deployment: 'other' }, { operationId: 'changed' }, { imageUri: 'new-image' }, { result: { state: 'active', epoch: 2 } }])
     assert.throws(() => activationRequired({ ...receipt, ...change }, release, receipt.account, receipt.deployment, 'initial'), /INITIAL_ACTIVATION_REQUIRED/);
+});
+test('SR4b2 administration artifacts stay pinned to the same deployment and do not replace the application', () => {
+  const plan = fixture(true, true), image = plan.variables.image_uri.value.replace(/a{64}$/, 'b'.repeat(64));
+  assert.equal(administrationImage({ image_uri: image }, '000000000000', 'synthetic'), image);
+  for (const candidate of [image.replace('000000000000', '111111111111'), image.replace('/synthetic@', '/foreign@'), image.replace(/@sha256:.+$/, ':latest'), undefined])
+    assert.throws(() => administrationImage({ image_uri: candidate }, '000000000000', 'synthetic'), /PINNED_ADMINISTRATION_REQUIRED/);
+  plan.variables.administration_image_uri = { value: image };
+  plan.resource_changes.find(r => r.address === 'aws_lambda_function.validation["migration"]').change.after.image_uri = image;
+  checkPlan(plan, { allowPilot: true });
+  const request = plan.resource_changes.find(r => r.address === 'aws_lambda_function.validation["request"]').change.after;
+  request.image_uri = image;
+  assert.throws(() => checkPlan(plan, { allowPilot: true }), /PILOT_FUNCTION/);
+  request.image_uri = plan.variables.image_uri.value;
+  plan.variables.administration_image_uri.value = image.replace('/synthetic@', '/foreign@');
+  assert.throws(() => checkPlan(plan, { allowPilot: true }), /ADMINISTRATION_IMAGE/);
 });
 function fixture(runtime = true, consumers = false) {
   const input = { deployment_profile: 'pilot', enable_runtime: true, enable_pilot_runtime: runtime, enable_consumers: consumers, region: 'us-east-1', account_id: '000000000000', deployment: 'synthetic',

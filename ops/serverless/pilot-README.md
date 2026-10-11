@@ -11,6 +11,9 @@ measurement is follow-up work; it does not block this initial activation. Build,
 test, scan and publish the immutable ARM64 runtime image. Create private
 `pilot-release.json` with its exact `image_uri`. Keep the existing
 `validation.tfvars.json`, backend and ingress inventory. Run from clean source.
+Set bounded `OPENSIGHT_ENTITLEMENTS` in the private runtime environment before
+runtime preparation; the isolated network probe configuration does not supply
+application usage limits. Missing limits prevent application migration.
 
 1. `node ops/serverless/pilot-operator.mjs prepare dependencies` selects additive
    queues, roles, log groups, CORS and the pilot ownership tag. Existing functions
@@ -54,3 +57,13 @@ Use private command failure logs to diagnose provider refusals. An ambiguous
 administration invocation may be retried with the exact same private payload;
 changing credentials or the operation ID is rejected by SQL receipts. Do not
 rerun initial migration after bootstrap or use activation to reopen maintenance.
+
+For the documented [initial row-lock repair](../../docs/phase5-sr4b2-runtime-row-locks.md),
+build/test/smoke/scan a separate administration image and record its immutable
+`image_uri` in private `pilot-administration-release.json`. Run `prepare administration`,
+review `plan`, and apply its digest. This preserves the activated application and
+current consumers. Then `invoke repair-initial-locks` uses the original bootstrap
+operation and application digest, checks initial empty durable work, and records
+the additive privilege repair. Keep both artifact identities in private evidence;
+repeat real browser acceptance. This command cannot repair later populated or
+maintenance deployments.

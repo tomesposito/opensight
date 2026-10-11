@@ -15,6 +15,11 @@ import { totp } from '../dist/auth-crypto.js';
 import { environment } from './hosted-helpers.mjs';
 import { referenceEnv } from './h8-helpers.mjs';
 import { runtimeEnv, context } from './runtime-helpers.mjs';
+import { TenantMetadata } from '../dist/metadata.js';
+import { DurableDispatch } from '../dist/dispatch.js';
+import { ObjectLedger } from '../dist/object-ledger.js';
+import { DurableUploads } from '../dist/durable-uploads.js';
+import { directRequest } from './serverless-upload-helpers.mjs';
 
 const env = () => ({ ...environment(), ...referenceEnv, ...runtimeEnv(), OPENSIGHT_REFERENCE: undefined,
   OPENSIGHT_SERVERLESS_DATA: 'durable', OPENSIGHT_RELEASE_DIGEST: 'sha256:' + 'a'.repeat(64) });
@@ -36,6 +41,9 @@ test('SR4b1 private setup rejects authority, unknown fields and unsafe modes bef
   for (const raw of [{ command: 'migrate', authorization: 'Operator forged' }, { command: 'migrate', authorization: auth(e), unknown: true }, {}, { ...b, authorization: 'Operator forged' }, { ...b, unknown: true }, { ...b, version: 2 }, { ...b, testers: [] },
     { ...b, testers: [b.testers[0], b.testers[0]] }, { ...b, testers: [{ ...b.testers[0], totpSecret: 'invalid' }, b.testers[1]] },
     { ...activate(e, b), expectedEpoch: 2 }, { ...activate(e, b), releaseDigest: 'sha256:' + 'b'.repeat(64) }]) await assert.rejects(runtime.administration(raw, context));
+  const repair = { ...activate(e, b), command: 'repair-initial-locks' };
+  for (const changed of [{ authorization: 'Operator forged' }, { unknown: true }, { expectedEpoch: 2 }, { releaseDigest: 'sha256:' + 'b'.repeat(64) }])
+    await assert.rejects(runtime.administration({ ...repair, ...changed }, context));
   for (const [field, value] of [['OPENSIGHT_MAINTENANCE', 'open'], ['OPENSIGHT_SERVERLESS_DATA', undefined], ['OPENSIGHT_REFERENCE', 'single-node'], ['OPENSIGHT_MODE', 'demo']]) {
     const changed = { ...e, [field]: value };
     await assert.rejects(createPrivateRuntime(() => changed, { databases: () => assert.fail('unsafe mode opened SQL') }).administration(b, context));
@@ -126,6 +134,104 @@ test('SR4b1 live Postgres initial setup requires schema ownership and preserves 
     assert.equal((await pool.query('SELECT state FROM sr_control')).rows[0].state, 'open');
     await pool.query('RESET ROLE'); await pool.query(`SET ROLE ${operator}`); await assert.rejects(pool.query("UPDATE sr_control SET state = 'maintenance'"), { code: '42501' });
     await pool.query('RESET ROLE');
+  });
+
+test('SR4b2 live Postgres initial repair enables serialized row locks without writable control or configuration',
+  { skip: process.env.DATABASE_URL ? false : 'DATABASE_URL is not set' }, async t => {
+    const schema = 'locks_' + randomUUID().replaceAll('-', ''), operator = schema + '_op', tenant = schema + '_tenant';
+    const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 1, options: `-c search_path=${schema}` });
+    t.after(async () => { await pool.query('RESET ROLE'); await pool.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`); await pool.query(`DROP ROLE IF EXISTS ${operator}, ${tenant}`); await pool.end(); });
+    await pool.query(`CREATE SCHEMA ${schema}`);
+    for (const [kind, role] of [['operator', operator], ['tenant', tenant]]) {
+      await pool.query(`CREATE ROLE ${role} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOINHERIT ${kind === 'operator' ? 'BYPASSRLS' : 'NOBYPASSRLS'}`);
+      await pool.query(`COMMENT ON ROLE ${role} IS 'opensight:test:${kind}'`);
+    }
+    const e = { ...env(), OPENSIGHT_RUNTIME_OPERATOR_ROLE: operator, OPENSIGHT_RUNTIME_TENANT_ROLE: tenant }, db = new PostgresMetadataDatabase(pool), b = bootstrap(e);
+    const tables = ['sr_control', 'sr_limits', 'h4_budget_config'];
+    e.OPENSIGHT_ENTITLEMENTS = JSON.stringify({ defaults: { apiCalls: 1000, computeAttempts: 20, storageBytes: 134217728 }, tenants: {} });
+    const roleQuery = async (role, sql) => {
+      const client = await pool.connect();
+      try { await client.query(`SET ROLE ${role}`); return await client.query(sql); }
+      finally { await client.query('RESET ROLE'); client.release(); }
+    };
+    await migrateServerless(db, e);
+    // Reproduce the already-activated legacy schema and its exact insufficient grants.
+    for (const table of tables) {
+      await pool.query(`REVOKE ALL (runtime_lock) ON ${table} FROM "${operator}"`);
+      await pool.query(`ALTER TABLE ${table} DROP COLUMN runtime_lock`);
+    }
+    await initialAdministration(db, e, initialCommand(b, e));
+    await initialAdministration(db, e, initialCommand(activate(e, b), e));
+    const repair = initialCommand({ ...activate(e, b), command: 'repair-initial-locks' }, e);
+    for (const table of tables) await assert.rejects(roleQuery(operator, `SELECT * FROM ${table} FOR UPDATE`), { code: '42501' }, table);
+    await pool.query(`SET ROLE ${operator}`);
+    await assert.rejects(initialAdministration(db, e, repair), { code: 'INITIAL_SCHEMA_NOT_OWNED' });
+    await pool.query('RESET ROLE');
+    await assert.rejects(initialAdministration(db, { ...e, OPENSIGHT_RELEASE_DIGEST: 'sha256:' + 'b'.repeat(64) }, { ...repair, releaseDigest: 'sha256:' + 'b'.repeat(64) }), { code: 'INITIAL_LOCK_REPAIR_REQUIRED' });
+    const tester = b.testers[0];
+    await pool.query('INSERT INTO sr_storage_usage VALUES ($1,$2,$3,0,0)', ['test', tester.tenantId, tester.namespaceId]);
+    await assert.rejects(initialAdministration(db, e, repair), { code: 'INITIAL_DATABASE_NOT_EMPTY' });
+    await pool.query('DELETE FROM sr_storage_usage');
+    await pool.query("UPDATE sr_control SET state = 'maintenance'");
+    await assert.rejects(initialAdministration(db, e, repair), { code: 'INITIAL_LOCK_REPAIR_REQUIRED' });
+    await pool.query("UPDATE sr_control SET state = 'open'");
+    const broken = { durable: true, close: async () => {}, transaction: work => db.transaction(c => work({ query: (sql, args) => {
+      if (sql.startsWith('ALTER TABLE h4_budget_config ADD')) throw Error('synthetic repair interruption'); return c.query(sql, args);
+    } })) };
+    await assert.rejects(initialAdministration(broken, e, repair));
+    assert.deepEqual((await pool.query("SELECT table_name FROM information_schema.columns WHERE table_schema = $1 AND column_name = 'runtime_lock'", [schema])).rows, []);
+    await pool.query('ALTER TABLE sr_control ADD COLUMN runtime_lock TEXT');
+    await assert.rejects(initialAdministration(db, e, repair), { code: 'RUNTIME_LOCK_SCHEMA_INVALID' });
+    await pool.query('ALTER TABLE sr_control DROP COLUMN runtime_lock');
+    const before = (await pool.query('SELECT * FROM h2_identities ORDER BY subject')).rows;
+    assert.deepEqual(await initialAdministration(db, e, repair), { state: 'locks-repaired', epoch: 1 });
+    assert.deepEqual(await initialAdministration(db, e, repair), { state: 'locks-repaired', epoch: 1 });
+    assert.deepEqual((await pool.query('SELECT * FROM h2_identities ORDER BY subject')).rows, before);
+    assert.deepEqual((await pool.query('SELECT state, epoch FROM sr_control')).rows, [{ state: 'open', epoch: '1' }]);
+    assert.equal((await pool.query("SELECT * FROM h8_audit WHERE action = 'runtime.initial-locks-repaired'")).rows.length, 1);
+    for (const table of tables) {
+      assert.equal((await roleQuery(operator, `SELECT * FROM ${table} FOR UPDATE`)).rows.length, 1);
+      await assert.rejects(roleQuery(operator, `UPDATE ${table} SET runtime_lock = 1`), { code: '23514' });
+      await assert.rejects(roleQuery(operator, `DELETE FROM ${table} WHERE false`), { code: '42501' });
+      await assert.rejects(roleQuery(operator, `TRUNCATE ${table}`), { code: '42501' });
+    }
+    for (const sql of ["UPDATE sr_control SET state = 'maintenance'", 'UPDATE sr_control SET epoch = 2', "UPDATE sr_limits SET entitlements = '{}'", "UPDATE h4_budget_config SET body = '{}'", 'ALTER TABLE sr_control DROP CONSTRAINT sr_control_runtime_lock_zero'])
+      await assert.rejects(roleQuery(operator, sql), { code: '42501' });
+    const other = new Pool({ connectionString: process.env.DATABASE_URL, max: 1, options: `-c search_path=${schema}` });
+    const firstClient = await pool.connect(), secondClient = await other.connect();
+    try {
+      await firstClient.query(`SET ROLE ${operator}`); await secondClient.query(`SET ROLE ${operator}`);
+      for (const table of tables) {
+        await firstClient.query('BEGIN'); await firstClient.query(`SELECT * FROM ${table} FOR UPDATE`);
+        await secondClient.query('BEGIN'); await secondClient.query("SET LOCAL lock_timeout = '100ms'");
+        await assert.rejects(secondClient.query(`SELECT * FROM ${table} FOR UPDATE`), { code: '55P03' });
+        await secondClient.query('ROLLBACK'); await firstClient.query('ROLLBACK');
+        assert.equal((await secondClient.query(`SELECT * FROM ${table} FOR UPDATE`)).rows.length, 1);
+      }
+    } finally {
+      for (const client of [firstClient, secondClient]) { await client.query('ROLLBACK'); await client.query('RESET ROLE'); client.release(); }
+      await other.end();
+    }
+    for (const table of tables) await assert.rejects(roleQuery(tenant, `SELECT * FROM ${table} FOR UPDATE`), { code: '42501' });
+    // Exercise the failed upload path through the real, separate SQL role boundaries.
+    const rolePool = role => ({ connect: async () => { const client = await pool.connect(); await client.query(`SET ROLE ${role}`); return client; } });
+    const operatorDb = new PostgresMetadataDatabase(rolePool(operator)), tenantDb = new PostgresMetadataDatabase(rolePool(tenant), true);
+    const metadata = new TenantMetadata(tenantDb, operatorDb), contexts = [];
+    for (const tester of b.testers) contexts.push(await metadata.authenticate(null, async () => ({ namespaceId: tester.namespaceId, userId: tester.userId })));
+    const events = [], transport = { recover: async e => { events.push(e); }, dispatch: async e => { events.push(e); } };
+    const dispatch = new DurableDispatch(operatorDb, metadata, 'test', transport), ledger = new ObjectLedger(metadata, 'test');
+    const objects = { capability: async (_entry, until) => ({ url: 'https://upload.example.invalid', method: 'PUT', headers: {}, expiresAt: new Date(until).toISOString() }),
+      head: async (entry, version) => ({ version, bytes: entry.capacityBytes, checksum: entry.checksum }) };
+    const uploads = new DurableUploads(metadata, dispatch, ledger, objects), key = randomUUID(), request = directRequest();
+    const reservation = await uploads.reserve(contexts[0], request, key, async () => {});
+    assert.equal(reservation.state, 'reserved');
+    assert.equal((await uploads.reserve(contexts[0], request, key, async () => {})).id, reservation.id);
+    const accepted = await uploads.complete(contexts[0], reservation.id, { versionId: 'synthetic-exact-version' }, randomUUID(), async () => {});
+    assert.equal(accepted.state, 'queued'); assert.ok(events.length >= 4);
+    await assert.rejects(uploads.status(contexts[1], accepted.id, async () => {}), { code: 'RESOURCE_NOT_FOUND' });
+    await pool.query('RESET ROLE');
+    await pool.query('UPDATE sr_control SET epoch = 2');
+    await assert.rejects(initialAdministration(db, e, repair), { code: 'INITIAL_EPOCH_REQUIRED' });
   });
 
 test('SR4b1 live Postgres initial migration rolls back role caps and refuses preparation after bootstrap',

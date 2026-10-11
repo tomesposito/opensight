@@ -269,3 +269,17 @@ capture exactly. Inspected differences are timestamps, focus animation and the
 transient save toast. No new layout gap was found; existing README media remains
 current. [Activation evidence](phase5-sr4b1-activation-evidence.md) records the
 2,446-pass root suite and the remaining cloud activation/acceptance gates.
+
+## SR4b2 row-lock repair comparison — 2026-10-11
+
+The Linux ARM64 phase build rebuilt the demo and retained a byte-identical hosted
+frontend/manifest. The new demo tour completed 251 frames with zero page errors
+and zero external requests. Against SR4b1, 162 frames match byte for byte. The
+inspected author frame differs in 109 pixels confined to the saved-time text
+(x150–172, y97–107); its docks, field wells and sheet canvas match visually. No
+new product UI change was introduced. README media remains current with the last
+UI phase; visual fidelity against QuickSight is still unmeasured.
+
+Real hosted acceptance exposed PostgreSQL row-lock permission denial at upload
+reservation. This is addressed by SR4b2's constrained-column grant and tested
+private repair, with fresh AWS browser acceptance required before DNS.
