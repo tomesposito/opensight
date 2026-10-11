@@ -1295,6 +1295,15 @@ Apache-2.0 S3 presigner uses the existing approved SDK/tslib dependency family.
 H7 recurring-job/delivery integration, idle embed UI, public ingress and release
 automation remain subsequent deployment work; unsupported routes fail explicitly.
 
+**SR3b on-demand clients (frozen 2026-10-11):**
+[On-demand browser and embed connections](docs/phase5-sr3b-idle-clients.md)
+implements D-26's accepted hide-and-Connect experience.
+[D-31](docs/itd/D-31-on-demand-clients.md) selects explicit finite startup,
+serverless-mode session/status behavior, a conservative 45-second embed display
+lease and the nonterminal SDK connection-required event. Preserve self-hosted
+compatibility and all authentication/single-use boundaries; no automatic business
+request replay. Ingress, infrastructure and release automation remain separate.
+
 ---
 
 ## 7. Repository Layout
