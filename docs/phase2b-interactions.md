@@ -74,7 +74,7 @@ Unfinished templates remain editable and can be saved locally. The actual
 interpolated URL is validated again on every click. A brush selection never
 opens a URL. Browser popup settings can still block opening a new tab.
 
-![URL action editor in the Author Interaction panel](../images/url-actions.png)
+![URL action in the New action panel](../images/url-actions.png)
 
 ## Navigation actions
 
