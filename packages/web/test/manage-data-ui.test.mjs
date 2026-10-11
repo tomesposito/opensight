@@ -99,6 +99,12 @@ test('sample dataset row in demo mode; empty state otherwise', async t => {
   assert.match(demo.text(), /Sample/);
   assert.match(demo.text(), /Available/);
 
+  const demoWithSources = await mountDialog(t, {
+    sampleLoaded: true,
+    client: { listPrepSources: async () => [source('d1')] },
+  });
+  assert.match(demoWithSources.text(), /Sample sales data/, 'sample row stands even when the source list has no sales entry');
+
   const empty = await mountDialog(t, { onAddData: () => {} });
   assert.match(empty.text(), /No datasets in this analysis yet/);
   await empty.click('Add data');
