@@ -9,7 +9,7 @@ import { appendMetadataEvent } from './metadata-outbox.js';
 import { budgetEnvironment } from './budget-store.js';
 import { appendOperatorAudit, entitlementConfig } from './hosted-usage.js';
 import { deploymentId } from './runtime-startup.js';
-import { serverlessTables } from './serverless-migration.js';
+import { serverlessTables, migrateServerless } from './serverless-migration.js';
 import { coordinationChecksum, type CoordinationDialect } from './coordination-schema.js';
 import { manifestChecksum } from './manifest-schema.js';
 import { dispatchChecksum } from './dispatch-schema.js';
@@ -23,17 +23,26 @@ export type InitialResult = { state: 'bootstrapped'; epoch: 1; tenants: 2 } | { 
 function fail(code = 'INITIAL_ACTIVATION_INVALID'): never { throw new MetadataError(code, 503); }
 const markers = [['sr_coordination_schema', coordinationChecksum], ['sr_manifest_schema', manifestChecksum], ['sr_dispatch_schema', dispatchChecksum], ['sr_object_schema', objectChecksum], ['sr_operation_schema', operationChecksum]] as const;
 const workTables = serverlessTables.filter(t => t.startsWith('sr_') && !t.endsWith('_schema') && !['sr_control', 'sr_limits'].includes(t));
+const initialEmptyTables = [...workTables, 'h1_tenants', 'h1_resources', 'h1_operations', 'h1_outbox', 'h2_identities', 'h2_memberships', 'h2_invitations', 'h2_sessions', 'h2_onboarding', 'h2_requests', 'h7_jobs', 'h8_usage', 'h8_usage_events', 'h8_recovery'];
 const hmac = (config: HostedConfig, value: unknown) => createHmac('sha256', config.encryptionKey).update(canonical(value)).digest('hex');
 const receipt = async (c: SqlConnection, id: string) => (await c.query('SELECT request_hash FROM h2_requests WHERE operation_id = ?', [id]))[0]?.request_hash;
 const tenantOperation = (deployment: string, operationId: string, index: number) => checksum(['initial-bootstrap-tenant', deployment, operationId, index]);
 
 /** Validate private authority and the entire command before constructing SQL. */
-export function initialCommand(raw: unknown, env: NodeJS.ProcessEnv): InitialCommand {
+function authorizeInitial(raw: unknown, env: NodeJS.ProcessEnv) {
   if (env.OPENSIGHT_RUNTIME !== 'lambda' || env.OPENSIGHT_MODE !== 'hosted' || env.OPENSIGHT_REFERENCE !== undefined || env.OPENSIGHT_SERVERLESS_DATA !== 'durable') fail('INITIAL_ACTIVATION_DISABLED');
   if (env.OPENSIGHT_MAINTENANCE !== 'frozen') fail('WORKSPACE_MAINTENANCE_REQUIRED');
   const config = hostedConfig(env), input = object(raw);
   if (typeof input.authorization !== 'string' || !equal(input.authorization, `Operator ${config.operatorKey.toString('base64url')}`)) throw new MetadataError('OPERATOR_REQUIRED', 403);
   deploymentId(env);
+  return input;
+}
+export function initialMigrationCommand(raw: unknown, env: NodeJS.ProcessEnv): void {
+  const input = object(authorizeInitial(raw, env), ['command', 'authorization']);
+  if (input.command !== 'migrate' || !/^sha256:[a-f0-9]{64}$/.test(env.OPENSIGHT_RELEASE_DIGEST ?? '')) fail();
+}
+export function initialCommand(raw: unknown, env: NodeJS.ProcessEnv): InitialCommand {
+  const input = authorizeInitial(raw, env);
   if (input.version !== 1) fail();
   const operationId = identifier(input.operationId);
   if (input.command === 'activate-initial') {
@@ -56,12 +65,15 @@ export function initialCommand(raw: unknown, env: NodeJS.ProcessEnv): InitialCom
   return { command: input.command, version: 1, operationId, testers };
 }
 
-async function inspect(c: SqlConnection, env: NodeJS.ProcessEnv, dialect: CoordinationDialect): Promise<string> {
-  const deployment = deploymentId(env), lock = dialect === 'postgres' ? ' FOR UPDATE' : '';
+async function ownedSchema(c: SqlConnection, dialect: CoordinationDialect): Promise<void> {
   const tables = await c.query(dialect === 'postgres'
     ? "SELECT c.relname AS name, CASE WHEN c.relowner = (SELECT oid FROM pg_roles WHERE rolname = current_user) THEN 1 ELSE 0 END AS owned FROM pg_class c WHERE c.relnamespace = current_schema()::regnamespace AND c.relkind IN ('r','p')"
     : "SELECT name, 1 AS owned FROM sqlite_master WHERE type = 'table'");
   if (tables.length !== serverlessTables.length || serverlessTables.some(name => !tables.some(t => t.name === name && Number(t.owned) === 1))) fail('INITIAL_SCHEMA_NOT_OWNED');
+}
+async function inspect(c: SqlConnection, env: NodeJS.ProcessEnv, dialect: CoordinationDialect): Promise<string> {
+  const deployment = deploymentId(env), lock = dialect === 'postgres' ? ' FOR UPDATE' : '';
+  await ownedSchema(c, dialect);
   if (dialect === 'postgres') {
     // Empty-database checks must see every tenant, even under FORCE RLS. Schema
     // ownership alone does not imply bypass on managed PostgreSQL.
@@ -129,7 +141,7 @@ export async function initialAdministration(database: Database, env: NodeJS.Proc
         await verifyTesters(c, deployment, input.operationId, requestHash);
         return { state: 'bootstrapped', epoch: 1, tenants: 2 };
       }
-      await empty(c, [...workTables, 'h1_tenants', 'h1_resources', 'h1_operations', 'h1_outbox', 'h2_identities', 'h2_memberships', 'h2_invitations', 'h2_sessions', 'h2_onboarding', 'h2_requests', 'h7_jobs', 'h8_usage', 'h8_usage_events', 'h8_recovery']);
+      await empty(c, initialEmptyTables);
       for (let index = 0; index < input.testers.length; index++) {
         const t = input.testers[index]!, credential = prepared[index]!, scope = { tenantId: t.tenantId, namespaceId: t.namespaceId };
         await c.query("INSERT INTO h1_tenants VALUES (?, 'active', 2, NULL, NULL, NULL)", [t.tenantId]);
@@ -160,5 +172,33 @@ export async function initialAdministration(database: Database, env: NodeJS.Proc
     await c.query('INSERT INTO h2_requests VALUES (?,?)', [activationId, requestHash]);
     await appendOperatorAudit(c, 'runtime.initial-activated');
     return { state: 'active', epoch: 1 };
+  });
+}
+
+/** Schema/role preparation belongs only to the first private administration. */
+export async function prepareInitial(database: Database, env: NodeJS.ProcessEnv, dialect: CoordinationDialect = 'postgres'): Promise<void> {
+  if (!database.durable || env.OPENSIGHT_MAINTENANCE !== 'frozen' || !/^sha256:[a-f0-9]{64}$/.test(env.OPENSIGHT_RELEASE_DIGEST ?? '')) fail('INITIAL_ACTIVATION_DISABLED');
+  await database.transaction(async c => {
+    const nested: Database = { durable: true, transaction: work => work(c), close: async () => {} };
+    await migrateServerless(nested, env, dialect);
+    await ownedSchema(c, dialect);
+    const control = (await c.query('SELECT deployment, epoch, state FROM sr_control'))[0];
+    if (control?.deployment !== deploymentId(env) || Number(control.epoch) !== 1 || control.state !== 'maintenance'
+      || await receipt(c, checksum(['initial-bootstrap-selection', deploymentId(env)])) || await receipt(c, checksum(['activate-initial', deploymentId(env)]))) fail('INITIAL_MAINTENANCE_REQUIRED');
+    if (dialect === 'postgres') {
+      const role = (await c.query('SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user'))[0];
+      if (!role?.rolsuper && !role?.rolbypassrls) await c.query('ALTER ROLE CURRENT_USER BYPASSRLS');
+    }
+    // This now checks actual global emptiness, never RLS-filtered absence.
+    if (await inspect(c, env, dialect) !== 'maintenance') fail('INITIAL_MAINTENANCE_REQUIRED');
+    await empty(c, initialEmptyTables);
+    await key(c, hostedConfig(env), true);
+    if (dialect === 'postgres') for (const role of [env.OPENSIGHT_RUNTIME_OPERATOR_ROLE, env.OPENSIGHT_RUNTIME_TENANT_ROLE]) {
+      if (!role || !/^[a-z][a-z0-9_]{0,62}$/.test(role)) fail('RUNTIME_ROLE_INVALID');
+      // The composed migration has validated exact deployment markers, role
+      // attributes, memberships and absence of ownership before this change.
+      await c.query(`ALTER ROLE "${role}" CONNECTION LIMIT 8`);
+    }
+    await appendOperatorAudit(c, 'runtime.initial-prepared');
   });
 }

@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { Pool } from 'pg';
 import { SqliteMetadataDatabase, PostgresMetadataDatabase } from '../dist/metadata-db.js';
 import { migrateServerless } from '../dist/serverless-migration.js';
-import { initialCommand, initialAdministration } from '../dist/runtime-initial.js';
+import { initialCommand, initialAdministration, prepareInitial } from '../dist/runtime-initial.js';
 import { createPrivateRuntime } from '../dist/runtime-private.js';
 import { HostedAuth } from '../dist/hosted-auth.js';
 import { hostedConfig } from '../dist/hosted-config.js';
@@ -27,13 +27,13 @@ async function fixture(t) {
   const dir = await mkdtemp(join(tmpdir(), 'opensight-initial-')), db = new SqliteMetadataDatabase(join(dir, 'metadata.sqlite')), e = env();
   t.after(async () => { await db.close(); await rm(dir, { recursive: true, force: true }); });
   await migrateServerless(db, e, 'sqlite');
-  const runtime = createPrivateRuntime(() => e, { databases: () => ({ membership: db, tenant: db }), initial: (db, env, input) => initialAdministration(db.membership, env, input, 'sqlite') });
+  const runtime = createPrivateRuntime(() => e, { databases: () => ({ membership: db, tenant: db }), prepareInitial: (db, env) => prepareInitial(db.membership, env, 'sqlite'), initial: (db, env, input) => initialAdministration(db.membership, env, input, 'sqlite') });
   const call = raw => runtime.administration(raw, context);
   return { db, e, call, b: bootstrap(e) };
 }
 test('SR4b1 private setup rejects authority, unknown fields and unsafe modes before SQL', async () => {
   const e = env(), b = bootstrap(e), runtime = createPrivateRuntime(() => e, { databases: () => assert.fail('invalid command opened SQL') });
-  for (const raw of [{}, { ...b, authorization: 'Operator forged' }, { ...b, unknown: true }, { ...b, version: 2 }, { ...b, testers: [] },
+  for (const raw of [{ command: 'migrate', authorization: 'Operator forged' }, { command: 'migrate', authorization: auth(e), unknown: true }, {}, { ...b, authorization: 'Operator forged' }, { ...b, unknown: true }, { ...b, version: 2 }, { ...b, testers: [] },
     { ...b, testers: [b.testers[0], b.testers[0]] }, { ...b, testers: [{ ...b.testers[0], totpSecret: 'invalid' }, b.testers[1]] },
     { ...activate(e, b), expectedEpoch: 2 }, { ...activate(e, b), releaseDigest: 'sha256:' + 'b'.repeat(64) }]) await assert.rejects(runtime.administration(raw, context));
   for (const [field, value] of [['OPENSIGHT_MAINTENANCE', 'open'], ['OPENSIGHT_SERVERLESS_DATA', undefined], ['OPENSIGHT_REFERENCE', 'single-node'], ['OPENSIGHT_MODE', 'demo']]) {
@@ -58,8 +58,10 @@ test('SR4b1 atomic bootstrap retries preserve credentials, use opaque receipts a
 });
 test('SR4b1 initial activation admits real password/TOTP authentication, denies foreign tenancy and cannot reopen', async t => {
   const f = await fixture(t), a = activate(f.e, f.b);
+  assert.deepEqual(await f.call({ command: 'migrate', authorization: auth(f.e) }), { state: 'migrated', maintenance: true });
   await assert.rejects(f.call(a), { code: 'INITIAL_BOOTSTRAP_REQUIRED' });
-  await f.call(f.b); assert.deepEqual(await f.call(a), { state: 'active', epoch: 1 }); assert.deepEqual(await f.call(a), { state: 'active', epoch: 1 });
+  await f.call(f.b); await assert.rejects(f.call({ command: 'migrate', authorization: auth(f.e) }), { code: 'INITIAL_MAINTENANCE_REQUIRED' });
+  assert.deepEqual(await f.call(a), { state: 'active', epoch: 1 }); assert.deepEqual(await f.call(a), { state: 'active', epoch: 1 });
   const service = await HostedAuth.create(f.db, hostedConfig(f.e), Date.now, false);
   for (const [index, tester] of f.b.testers.entries()) {
     const code = totp(Buffer.from(tester.totpSecret, 'base64'), Math.floor(Date.now() / 30000));
@@ -109,6 +111,7 @@ test('SR4b1 live Postgres initial setup requires schema ownership and preserves 
     const e = { ...env(), OPENSIGHT_RUNTIME_OPERATOR_ROLE: operator, OPENSIGHT_RUNTIME_TENANT_ROLE: tenant }, db = new PostgresMetadataDatabase(pool), b = bootstrap(e);
     await pool.query(`SET ROLE ${owner}`); await migrateServerless(db, e); const command = initialCommand(b, e);
     await assert.rejects(initialAdministration(db, e, command), { code: 'INITIAL_OWNER_RLS_REQUIRED' });
+    await assert.rejects(prepareInitial(db, e), { code: '42501' }, 'a restricted owner cannot grant itself bypass');
     await pool.query('RESET ROLE'); await pool.query(`ALTER ROLE ${owner} BYPASSRLS`);
     await pool.query(`SET ROLE ${operator}`);
     await assert.rejects(initialAdministration(db, e, command), { code: 'INITIAL_SCHEMA_NOT_OWNED' });
@@ -123,4 +126,30 @@ test('SR4b1 live Postgres initial setup requires schema ownership and preserves 
     assert.equal((await pool.query('SELECT state FROM sr_control')).rows[0].state, 'open');
     await pool.query('RESET ROLE'); await pool.query(`SET ROLE ${operator}`); await assert.rejects(pool.query("UPDATE sr_control SET state = 'maintenance'"), { code: '42501' });
     await pool.query('RESET ROLE');
+  });
+
+test('SR4b1 live Postgres initial migration rolls back role caps and refuses preparation after bootstrap',
+  { skip: process.env.DATABASE_URL ? false : 'DATABASE_URL is not set' }, async t => {
+    const schema = 'prepare_' + randomUUID().replaceAll('-', ''), operator = schema + '_op', tenant = schema + '_tenant';
+    const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 1, options: `-c search_path=${schema}` });
+    t.after(async () => { await pool.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`); await pool.query(`DROP ROLE IF EXISTS ${operator}, ${tenant}`); await pool.end(); });
+    await pool.query(`CREATE SCHEMA ${schema}`);
+    for (const [kind, role] of [['operator', operator], ['tenant', tenant]]) {
+      await pool.query(`CREATE ROLE ${role} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOINHERIT ${kind === 'operator' ? 'BYPASSRLS' : 'NOBYPASSRLS'} CONNECTION LIMIT 4`);
+      await pool.query(`COMMENT ON ROLE ${role} IS 'opensight:test:${kind}'`);
+    }
+    const e = { ...env(), OPENSIGHT_RUNTIME_OPERATOR_ROLE: operator, OPENSIGHT_RUNTIME_TENANT_ROLE: tenant }, db = new PostgresMetadataDatabase(pool);
+    const broken = { durable: true, transaction: work => db.transaction(c => work({ query: (sql, args) => {
+      if (sql === `ALTER ROLE "${tenant}" CONNECTION LIMIT 8`) throw Error('synthetic role preparation failure'); return c.query(sql, args);
+    } })), close: async () => {} };
+    await assert.rejects(prepareInitial(broken, e));
+    const caps = async () => (await pool.query('SELECT rolname, rolconnlimit, rolbypassrls, rolcreaterole FROM pg_roles WHERE rolname IN ($1,$2) ORDER BY rolname', [operator, tenant])).rows;
+    assert.ok((await caps()).every(r => r.rolconnlimit === 4));
+    assert.deepEqual((await pool.query("SELECT tablename FROM pg_tables WHERE schemaname = $1", [schema])).rows, []);
+    await prepareInitial(db, e); await prepareInitial(db, e);
+    const rows = await caps(); assert.ok(rows.every(r => r.rolconnlimit === 8 && !r.rolcreaterole));
+    assert.equal(rows.find(r => r.rolname === operator).rolbypassrls, true); assert.equal(rows.find(r => r.rolname === tenant).rolbypassrls, false);
+    const b = bootstrap(e); await initialAdministration(db, e, initialCommand(b, e));
+    await assert.rejects(prepareInitial(db, e), { code: 'INITIAL_MAINTENANCE_REQUIRED' });
+    assert.equal((await pool.query('SELECT state FROM sr_control')).rows[0].state, 'maintenance');
   });

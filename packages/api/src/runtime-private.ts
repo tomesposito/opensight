@@ -8,13 +8,14 @@ import { runtimeMode, type RuntimeDependencies } from './runtime.js';
 import { migrateRuntime } from './runtime-migration.js';
 import { deploymentId } from './runtime-startup.js';
 import { migrateServerless } from './serverless-migration.js';
-import { initialCommand, initialAdministration, type InitialResult, type InitialCommand } from './runtime-initial.js';
+import { initialCommand, initialMigrationCommand, initialAdministration, prepareInitial, type InitialResult, type InitialCommand } from './runtime-initial.js';
 import { runServerlessEvent } from './serverless-worker.js';
 
 export interface ScheduledEvent { version: 1; deploymentEpoch: number; eventId: string; kind: 'due' | 'execute' | 'recover' | 'deliver' }
 export interface PrivateRuntimeDependencies extends Pick<RuntimeDependencies, 'databases'> {
   /** SR3 must authorize/claim/fence the referenced durable event before doing work. */
   scheduled?(event: ScheduledEvent, db: InvocationDatabases, scope: InvocationScope, env: NodeJS.ProcessEnv): Promise<void>;
+  prepareInitial?(db: InvocationDatabases, env: NodeJS.ProcessEnv): Promise<void>;
   initial?(db: InvocationDatabases, env: NodeJS.ProcessEnv, input: InitialCommand): Promise<InitialResult>;
   migrate?(db: InvocationDatabases, scope: InvocationScope, env: NodeJS.ProcessEnv): Promise<void>;
 }
@@ -35,8 +36,15 @@ export function createPrivateRuntime(environment: () => NodeJS.ProcessEnv = () =
       }); } catch (error) { throw error instanceof MetadataError ? error : new MetadataError('RUNTIME_MIGRATION_FAILED', 503); }
     },
     async administration(raw: unknown, context: InvocationContext): Promise<InitialResult | { state: 'migrated'; maintenance: true }> {
-      if (raw && typeof raw === 'object' && 'command' in raw && raw.command === 'migrate') return this.migration(raw, context);
-      const env = configured(), input = initialCommand(raw, env);
+      const env = configured();
+      if (raw && typeof raw === 'object' && 'command' in raw && raw.command === 'migrate') {
+        initialMigrationCommand(raw, env);
+        try { return await invoke(env, context, async db => {
+          await (dependencies.prepareInitial ?? ((db, env) => prepareInitial(db.membership, env)))(db, env);
+          return { state: 'migrated', maintenance: true } as const;
+        }); } catch (error) { throw error instanceof MetadataError ? error : new MetadataError('INITIAL_PREPARATION_FAILED', 503); }
+      }
+      const input = initialCommand(raw, env);
       try { return await invoke(env, context, db => (dependencies.initial ?? ((db, env, input) => initialAdministration(db.membership, env, input)))(db, env, input)); }
       catch (error) { throw error instanceof MetadataError ? error : new MetadataError('INITIAL_ACTIVATION_FAILED', 503); }
     },
