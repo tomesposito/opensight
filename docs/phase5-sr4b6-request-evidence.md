@@ -52,4 +52,39 @@ isolation. The workflow included explicit prepared-data refresh and returned the
 expected East=512, West=1,024 totals. Three concurrent catalog reads succeeded;
 idle page observation produced zero API requests or page errors. Startup from
 idle took 20,542 ms. Canonical HTTPS used a private resolver override for this
-pre-DNS check; public DNS verification is the remaining cutover step.
+pre-DNS check; the subsequent public cutover is recorded below.
+
+## Idle and public cutover
+
+After the successful workflow, the last recovery invocation completed at
+22:24:43 UTC. CloudWatch's 22:30 UTC capacity sample had both minimum and maximum
+zero ACU. This confirms automatic idle pause with the complete workload and
+current application image. Control-plane observation did not open SQL sessions.
+
+A fresh reviewed plan created only the apex A and AAAA aliases. It changed no
+other resource or DNS record. Apply completed and the active Free subscription
+was reverified. Public DNS and normal certificate-verified HTTPS returned 200;
+the final browser workflow through normal public DNS completed successfully.
+
+The independent tester workspace passed all six gates through public DNS,
+including another exact 8 MiB direct S3 upload, asynchronous ingestion, explicit
+prepared-data refresh and the expected aggregate query. Three simultaneous catalog
+reads returned 200. Cross-workspace access returned 404. The final 45-second idle
+observation made zero API requests and recorded zero page errors.
+
+The first public repeat using the owner workspace returned
+`USAGE_LIMIT_EXCEEDED` at upload reservation. Earlier synthetic failures retain
+bounded output reservations under the existing 24-hour object retention protocol;
+the configured 256 MiB quota was not raised and ledger counters were not changed.
+This temporary owner upload limit remains visible in the private handoff. The
+separate tester workspace supports new uploads. Enabled one-shot cleanup schedules
+were verified; their future execution is not claimed as completed acceptance.
+
+A separate public-DNS owner check passed sign-in, existing source/prepared-data
+reads and the expected aggregate query. Both tester accounts are usable; the
+owner upload restriction above remains.
+
+The public pilot is live. H7 scheduled refresh/report/alert delivery remains gated
+and tracked in #85. General release/restore operations and private CI/CD remain in
+#86; publishing source does not automatically deploy it. Credentials, tester
+identities, cloud identifiers and raw acceptance reports remain outside Git.
