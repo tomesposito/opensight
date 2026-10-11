@@ -25,7 +25,11 @@ export async function edgeSource() {
     .replaceAll('new URL(origin).host', '__OPENSIGHT_HOST__').replaceAll('Buffer.byteLength(', 'byteLength(')
     .replace('const request = record(raw)', "console.log('EDGE_VALIDATE_BEGIN'); const request = record(raw)")
     .replace('const h = headers(values)', "console.log('EDGE_VALIDATE_VALUES'); console.log('EDGE_HEADER_SIZES:' + JSON.stringify(Object.keys(values).map(k => values[k].length))); const h = headers(values)")
-    .replace("if (h.host !==", "console.log('EDGE_VALIDATE_HEADERS'); if (h.host !==");
+    .replace("if (h.host !==", "console.log('EDGE_VALIDATE_HEADERS'); if (h.host !==")
+    .replace('const result: Record<string, string> = Object.create(null);', "console.log('EDGE_HEADERS_BEGIN'); const result: Record<string, string> = Object.create(null); console.log('EDGE_HEADERS_OBJECT');")
+    .replace('const name = key.toLowerCase();', "console.log('EDGE_HEADER_NEXT'); const name = key.toLowerCase();")
+    .replace('bytes += byteLength(key) + byteLength(value);', "console.log('EDGE_HEADER_GRAMMAR'); bytes += byteLength(key) + byteLength(value); console.log('EDGE_HEADER_LENGTH');")
+    .replace('if (forgedPrincipalHeaders.some', "console.log('EDGE_HEADERS_PARSED'); if (forgedPrincipalHeaders.some");
   const wrapper = `function MetadataError(code, status) { this.code = code; this.status = status; }
 function byteLength(value) { return encodeURIComponent(value).replace(/%[A-Fa-f0-9]{2}/g, 'x').length; }
 function handler(event) {

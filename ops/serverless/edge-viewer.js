@@ -38,16 +38,20 @@ var result = Object.create(null);
 var bytes = 0;
 for (var _i = 0, _a = Object.entries(record(raw)); _i < _a.length; _i++) {
 var _b = _a[_i], key = _b[0], value = _b[1];
+console.log('EDGE_HEADER_NEXT');
 var name = key.toLowerCase();
 if (!/^[a-z0-9-]+$/.test(name) || typeof value !== 'string' || /[\x00-\x1f\x7f]/.test(value) || Object.prototype.hasOwnProperty.call(result, name))
 invalid();
 if (singleton.includes(name) && value.includes(',') && !(['if-modified-since', 'if-unmodified-since'].includes(name) && /^[A-Z][a-z]{2}, \d{2} [A-Z][a-z]{2} \d{4} \d{2}:\d{2}:\d{2} GMT$/.test(value)))
 invalid();
+console.log('EDGE_HEADER_GRAMMAR');
 bytes += byteLength(key) + byteLength(value);
+console.log('EDGE_HEADER_LENGTH');
 if (bytes > 16384)
 invalid();
 result[name] = value;
 }
+console.log('EDGE_HEADERS_PARSED');
 if (forgedPrincipalHeaders.some(function (h) { return Object.prototype.hasOwnProperty.call(result, h); }))
 throw new MetadataError('FORGED_PRINCIPAL', 403);
 if (result.forwarded !== undefined || result['x-forwarded-host'] !== undefined || result['transfer-encoding'] !== undefined)
