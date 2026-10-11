@@ -83,3 +83,22 @@ charge; simultaneous accepted executions still incur normal usage charges. This
 corrects the validation profile's overly restrictive cap before pilot admission.
 
 Source: [AWS reserved concurrency](https://docs.aws.amazon.com/lambda/latest/dg/configuration-concurrency.html).
+
+#### Initial SQL role preparation — 2026-10-11
+
+Pilot concurrency increases the possible runtime SQL connections beyond the
+validation role limit of four. The private initial migration sets eight per role,
+matching the maximum request/work/recovery invocations without adding idle
+connections. Existing invocation cleanup and SQL budgets remain authoritative.
+
+A PostgreSQL owner without BYPASSRLS is still filtered by FORCE RLS. Empty-database
+checks must never mistake filtered rows for absence. Initial administration
+therefore verifies ownership, grants bypass only to its existing private owner
+when needed, and proves global emptiness within the same rollback-safe transaction.
+Runtime roles gain neither schema ownership nor maintenance authority; tenant RLS
+stays forced. This is limited to the dedicated deployment's first preparation and
+must be verified on Aurora before admission. An engine refusing the owner-role
+change fails closed rather than disabling row policies.
+
+Sources: [Aurora administrative role](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/Appendix.PostgreSQL.CommonDBATasks.Roles.rds_superuser.html),
+[PostgreSQL row security](https://www.postgresql.org/docs/16/ddl-rowsecurity.html).
