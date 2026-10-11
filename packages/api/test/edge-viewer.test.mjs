@@ -6,8 +6,9 @@ import { edgeSource } from '../../../ops/serverless/build-edge.mjs';
 import { validateViewerRequest } from '../dist/runtime-ingress.js';
 const origin = 'https://opensight.example', host = 'opensight.example';
 const source = await readFile(new URL('../../../ops/serverless/edge-viewer.js', import.meta.url), 'utf8');
-const context = vm.createContext({});
-// Deliberately no Node objects, URL, Buffer or modern Object.hasOwn/Set in this VM.
+const context = vm.createContext({ Buffer: { byteLength: Buffer.byteLength } });
+// Only CloudFront runtime 2.0's documented Buffer.byteLength is exposed.
+// No other Node APIs, URL or modern Object.hasOwn/Set are available.
 vm.runInContext('Object.hasOwn = undefined; Set = undefined;', context);
 vm.runInContext(source.replaceAll('__OPENSIGHT_ORIGIN__', JSON.stringify(origin)).replaceAll('__OPENSIGHT_HOST__', JSON.stringify(host)), context);
 const frame = () => ({ viewer: { ip: '2001:db8::7' }, request: { method: 'GET', uri: '/api/api/session', querystring: {}, headers: { host: { value: host } } } });
@@ -39,7 +40,7 @@ test('SR4a larger header sets preserve UTF-8 byte ceilings, duplicate rejection 
   const base = frame();
   for (let i = 0; i < 30; i++) base.request.headers[`x-synthetic-${i}`] = { value: 'v'.repeat(36) };
   base.request.headers.constructor = { value: 'ordinary-header' };
-  for (const [value, accept] of [['ascii', true], ['é'.repeat(3000), true], ['é'.repeat(9000), false]]) {
+  for (const [value, accept] of [['ascii', true], ['é'.repeat(3000), true], ['é'.repeat(9000), false], ['😀'.repeat(2000), true], ['😀'.repeat(5000), false]]) {
     const e = structuredClone(base); e.request.headers['x-text'] = { value };
     if (accept) {
       validateViewerRequest({ ...e.request, protocol: 'https' }, origin);

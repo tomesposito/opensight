@@ -47,7 +47,7 @@ if (!/^[a-z0-9-]+$/.test(name) || typeof value !== 'string' || /[\x00-\x1f\x7f]/
 invalid();
 if (singleton.includes(name) && value.includes(',') && !(['if-modified-since', 'if-unmodified-since'].includes(name) && /^[A-Z][a-z]{2}, \d{2} [A-Z][a-z]{2} \d{4} \d{2}:\d{2}:\d{2} GMT$/.test(value)))
 invalid();
-bytes += byteLength(key) + byteLength(value);
+bytes += Buffer.byteLength(key) + Buffer.byteLength(value);
 if (bytes > 16384)
 invalid();
 result[name] = value;
@@ -77,20 +77,16 @@ if (Object.keys(record(request.querystring)).length)
 invalid();
 }
 function MetadataError(code, status) { this.code = code; this.status = status; }
-function byteLength(value) { return encodeURIComponent(value).replace(/%[A-Fa-f0-9]{2}/g, 'x').length; }
 function handler(event) {
-console.log('EDGE_VIEWER_ENTER');
 try {
 var request = event.request;
 validateViewerRequest({ headers: request.headers, uri: request.uri, querystring: request.querystring, protocol: 'https' }, __OPENSIGHT_ORIGIN__);
 if (!event.viewer || typeof event.viewer.ip !== 'string' || !/^[a-fA-F0-9:.]{3,45}$/.test(event.viewer.ip))
 denied();
 request.headers['x-opensight-ingress-peer'] = { value: event.viewer.ip };
-console.log('EDGE_VIEWER_ACCEPT');
 return request;
 }
 catch (_) {
-console.log('EDGE_VIEWER_DENY');
 return { statusCode: 403, statusDescription: 'Forbidden', headers: { 'cache-control': { value: 'no-store' } } };
 }
 }
