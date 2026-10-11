@@ -75,8 +75,8 @@ pool/concurrency and RLS evidence. Neither is a claim of SR2 Aurora acceptance.
 
 ### Remaining #84 work
 
-- Durable authoritative manifests/invalidation and the asynchronous hosted-cache
-  adapter connecting SR2b's artifact mechanism to actual analytical callers.
+- Durable manifests and asynchronous source/prep hydration are implemented in
+  SR2c below; connect their storage preparation and admission to the runtime.
 - Upload reservation/completion/cancellation and current-authority checks at
   HEAD, ingest and source publication, following confirmed D-28 limits/UX.
 - Durable operation/result framing, storage reservations and expiry, with D-24
@@ -154,3 +154,60 @@ and prearmed D-24 recovery must be integrated before accepting production
 transfers. No successful upload alone makes a dataset readable. The isolated
 AWS stack is unchanged, and this checkpoint supplies no browser CORS/signing or
 real S3/Aurora acceptance evidence.
+
+## SR2c authoritative manifests and hosted hydration
+
+The [frozen manifest contract](phase5-sr2c-manifests.md) is implemented in
+`manifest-schema.ts`, `manifests.ts` and `artifact-cache.ts`. Refresh admission
+now supports an internal SQL callback: claim/usage allocation, running state,
+removal of old readable authority and the invalidation outbox commit together.
+Ready publication appends immutable object history; both success and failure
+require the original live attempt, scope, fence, generation and current authority.
+A terminal generation cannot publish again. Released producers leave valid ready
+artifacts available; revoked or replaced claims do not.
+
+[D-29](itd/D-29-manifest-dependency-validation.md) replaces the proposed descendant
+walker with complete, bounded dependency certificates. Reads and publication
+validate all consumed generations, definition versions, namespace revisions and
+SQL-time source expiry. This rejects stale descendants even after outbox loss,
+without a timer that would wake an idle database. Certificates originate from
+branded reads belonging to the same attempt; imported definitions cannot inject
+an object reference or freshness assertion into them.
+
+HostedData and HostedPrep await the cache interface. The local cache remains the
+default. The artifact adapter downloads and decodes the exact current object,
+disposes its local file and rechecks authority after hydration and before result
+publication. Prepared outputs retain original consumed-cache timestamps. Actual
+native Parquet tests compare hosted source/query and prepared results with the
+local executor, including RLS/CLS and revocation during download. Production
+object writes remain gated on explicit durable storage/recovery preparation.
+
+The expanded focused suite passed **37 / 0 failed / 0 skipped / 0 cancelled**.
+It includes the SR2a regressions and the real PostgreSQL integration, extended to
+prove concurrent manifest publication, immutable-history visibility, forced RLS,
+cross-scope denial and private-schema mutation refusal. SQLite coverage also
+proves full rollback, independent store restart, equal IDs across tenants/owners,
+actual delete/recreate without fence reset, expiry, lost notifications, authority
+outage, copied/cross-attempt handles and bounded metadata. No AWS calls or new
+dependencies were used in these tests.
+
+The first full root suite passed **2,305 / 0 failed / 13 skipped / 0 cancelled**,
+2,318 total. It covered all implementation changes; three additional manifest
+acceptance tests were then added and included in the focused result above. The
+hosted frontend and static demo rebuilt in the pinned offline Linux ARM64 build.
+The inspected 1280×800 demo capture is byte-identical to SR2b's final capture.
+The existing minimal-Linux-font gaps remain #87; there is no UI-source change or
+new QuickSight visual-fidelity claim.
+
+Final root `npm test` on complete source/test checkpoint `c62e744` passed
+**2,308 / 0 failed / 13 skipped / 0 cancelled**, 2,321 total. API: 390 passed
+and 11 live-PostgreSQL skips; query engine: 504 passed and 2 live-PostgreSQL skips;
+web: 1,149 passed; bundle parser: 199; embedding SDK: 9; O interpreter: 32;
+parity: 11; root conformance: 14. This run used the same pinned test image with
+the final acceptance test files copied in, root `npm test` and networking disabled.
+No implementation or frontend source changed between the two full runs. Secret,
+cross-platform path and whitespace checks passed at both implementation commits.
+
+The AWS validation functions remain unchanged and frozen; this local integration
+is not a deployed app. Upload operations, storage reservation/recovery, runtime
+activation and live browser/AWS acceptance remain the immediate deployment work.
