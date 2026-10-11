@@ -283,3 +283,11 @@ UI phase; visual fidelity against QuickSight is still unmeasured.
 Real hosted acceptance exposed PostgreSQL row-lock permission denial at upload
 reservation. This is addressed by SR4b2's constrained-column grant and tested
 private repair, with fresh AWS browser acceptance required before DNS.
+
+## SR4b3 memory correction capture — 2026-10-11
+
+The fresh 251-frame demo capture had zero errors and external requests. Against
+SR4b2, 161 frames matched exactly; the inspected author frame differs only in
+saved-time text at (150,97)–(172,107). Hosted frontend files remain byte-identical.
+No new user-visible UI gap was observed. AWS ingestion acceptance remains
+separate from this static comparison.
