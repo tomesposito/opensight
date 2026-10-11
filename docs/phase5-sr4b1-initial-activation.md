@@ -20,7 +20,7 @@ operator checks the actual cluster tags and refuses cleanup when the deployment
 is marked pilot. A stale local inventory cannot bypass that guard. Pilot plans
 keep database deletion protection and retained buckets/state. The old synthetic
 probe and its resources remain isolated; disable its concurrency after completing
-the long-pause evidence and before application admission.
+the available pause/resume evidence and before application admission.
 
 Pilot functions use the exact tested immutable ARM64 image. Request and private
 administration remain 2,048 MiB with 512 MiB temporary storage; request timeout is
@@ -141,8 +141,10 @@ state.
 
 ## Operator sequence and acceptance
 
-1. Complete the existing greater-than-24-hour Aurora pause/resume measurement;
-   use CloudWatch to observe the quiet interval without SQL health checks.
+1. Record the available Aurora pause/resume evidence with CloudWatch, without SQL
+   health checks during the quiet interval. The greater-than-24-hour measurement
+   remains follow-up work and does not block activation. Verify an actual wake
+   now and preserve the measured duration without rounding it up to 24 hours.
 2. Review/apply the additive pilot dependencies with consumers disabled. Publish
    exact function versions; keep the public live alias on the frozen version.
 3. Invoke composed migration, private tester bootstrap and initial activation,
