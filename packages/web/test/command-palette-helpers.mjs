@@ -43,7 +43,7 @@ export async function mountPalette(t, { route = '#/analyses/author', access = de
       if (element.props.role === 'combobox') return search;
       if (element.props['aria-label'] === 'Close command palette') return close;
       if (element.type === 'dialog') {
-        const dialog = { ownerDocument: document, open: false, showModal() { this.open = true; }, close() { this.open = false; }, querySelector: () => null };
+        const dialog = { ownerDocument: document, open: false, showModal() { this.open = true; }, close() { this.open = false; } };
         dialogs.set(element.props.className, dialog); return dialog;
       }
       return null;

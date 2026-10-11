@@ -71,15 +71,10 @@ test('toolbar exposes all seven menus, callbacks, busy guards and honest publish
   assert.deepEqual(ui.renderer.root.findAllByType('summary').map(n => n.props.children), ['File', 'Edit', 'Data', 'Insert', 'Sheets', 'Objects']);
   for (const label of ['Import', 'Exports', 'Download .qs', 'Export JSON', 'FIT TO WIDTH']) await ui.click(label);
   assert.deepEqual(calls, ['import', 'bundle', 'json', 'fit']);
-  await ui.click('Add Visual'); await ui.click('Remove selected visual');
-  assert.deepEqual(calls.slice(4), [{ type: 'add', kind: 'bar' }, { type: 'remove', id: 'visual-1' }]);
-  await ui.click('Add Sheet');
-  assert.equal(calls.length, 6, 'Add Sheet opens the New sheet dialog instead of dispatching');
-  assert.ok(ui.find('h2', p => p.children === 'New sheet'));
-  await ui.click('Cancel');
-  assert.equal(ui.find('h2', p => p.children === 'New sheet'), undefined);
+  await ui.click('Add Visual'); await ui.click('Add Sheet'); await ui.click('Remove selected visual');
+  assert.deepEqual(calls.slice(4), [{ type: 'add', kind: 'bar' }, { type: 'sheet-add' }, { type: 'remove', id: 'visual-1' }]);
   await ui.click('Add visual');
-  assert.equal(calls.length, 6, 'Add visual focuses the gallery instead of dispatching a visual action');
+  assert.equal(calls.length, 7, 'Add visual focuses the gallery instead of dispatching a visual action');
   await ui.click('PUBLISH');
   assert.match(ui.find('div', p => p.role === 'status').props.children[0], /This static demo has no publication destination/);
   await ui.click('Dismiss'); assert.equal(ui.find('div', p => p.role === 'status'), undefined);

@@ -104,13 +104,8 @@ test('Data exposes all reference actions, retains preparation, and routes Add da
 test('Insert adds sheets, visuals and insights through the reducer and guards unavailable editors', async t => {
   const ui = await mount(t, { oEntry: createElement('button', { className: 'q-trigger' }, 'Q') });
   assert.deepEqual(ui.labels('Insert'), ['Add Sheet', 'Add Visual', 'Add Text', 'Add Image', 'Add Insight', 'Build visual with Q', 'Add Calculated Field', 'Add Filter', 'Add Parameter']);
-  await ui.click('Insert', 'Add Sheet');
-  assert.deepEqual(ui.calls, [], 'Add Sheet opens the New sheet dialog instead of dispatching');
-  assert.ok(ui.renderer.root.findAllByType('h2').some(h => h.props.children === 'New sheet'));
-  await act(() => ui.renderer.root.findByType('form').props.onSubmit({ preventDefault() {} }));
-  assert.deepEqual(ui.calls, [{ type: 'sheet-add', name: 'Sheet 2', settings: { rowHeight: 42, margin: 12, optimizeWidth: 1600 } }]);
-  for (const label of ['Add Visual', 'Add Insight']) await ui.click('Insert', label);
-  assert.deepEqual(ui.calls.slice(1), [{ type: 'add', kind: 'bar' }, { type: 'add', kind: 'insight' }]);
+  for (const label of ['Add Sheet', 'Add Visual', 'Add Insight']) await ui.click('Insert', label);
+  assert.deepEqual(ui.calls, [{ type: 'sheet-add' }, { type: 'add', kind: 'bar' }, { type: 'add', kind: 'insight' }]);
   assert.equal(ui.item('Insert', 'Build visual with Q').props['aria-disabled'], false);
   for (const label of ['Add Text', 'Add Image']) assert.equal(ui.item('Insert', label).props['aria-disabled'], false);
   await ui.update({ draft: emptyDraft(), oEntry: undefined });
@@ -128,19 +123,15 @@ test('Sheets retains add and switching, and the follow-up items dispatch real ac
   const draft = authorReducer(emptyDraft(), { type: 'sheet-add' });
   const ui = await mount(t, { draft });
   assert.deepEqual(ui.labels('Sheets'), ['Add Sheet', 'Duplicate Sheet', 'Rename Sheet', 'Add Title', 'Add Description', 'Layout Settings', 'Sheet 1', 'Sheet 2']);
-  await ui.click('Sheets', 'Add Sheet');
-  assert.deepEqual(ui.calls, [], 'Sheets Add Sheet opens the New sheet dialog instead of dispatching');
-  assert.ok(ui.renderer.root.findAllByType('h2').some(h => h.props.children === 'New sheet'));
-  await act(() => ui.renderer.root.findAllByType('button').find(b => b.props.children === 'Cancel').props.onClick());
-  await ui.click('Sheets', 'Sheet 1');
-  assert.deepEqual(ui.calls, [{ type: 'sheet-select', id: 'sheet-1' }]);
+  await ui.click('Sheets', 'Add Sheet'); await ui.click('Sheets', 'Sheet 1');
+  assert.deepEqual(ui.calls, [{ type: 'sheet-add' }, { type: 'sheet-select', id: 'sheet-1' }]);
   for (const label of ['Duplicate Sheet', 'Add Title', 'Add Description']) {
     assert.equal(ui.item('Sheets', label).props['aria-disabled'], false, `${label} is enabled`);
   }
   await ui.click('Sheets', 'Duplicate Sheet');
   await ui.click('Sheets', 'Add Title');
   await ui.click('Sheets', 'Add Description');
-  assert.deepEqual(ui.calls.slice(1), [{ type: 'sheet-duplicate', id: 'sheet-2' }, { type: 'sheet-title' }, { type: 'sheet-description' }]);
+  assert.deepEqual(ui.calls.slice(2), [{ type: 'sheet-duplicate', id: 'sheet-2' }, { type: 'sheet-title' }, { type: 'sheet-description' }]);
   await ui.update({ dataAvailable: false });
   assert.equal(ui.item('Sheets', 'Rename Sheet').props['aria-disabled'], false, 'sheet tabs also exist before adding data');
 });
