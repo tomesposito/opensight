@@ -61,7 +61,8 @@ test('SR4a ingress plan rejects replacing data, paid plans, caches, unguarded ro
     change('aws_s3_bucket_versioning.frontend', { versioning_configuration: [{ status: 'Enabled' }] }),
     change('aws_cloudfront_distribution.application', { enabled: true, retain_on_delete: true, aliases: ['opensight.example'], ordered_cache_behavior: [{ target_origin_id: 'frontend' }, ...Array.from({ length: 2 }, () => ({ target_origin_id: 'api', cache_policy_id: '4135ea2d-6df8-44a3-9df3-4b5a84be39ad', origin_request_policy_id: 'b689b0a8-53d0-40ab-baf2-68738e2966ac', viewer_protocol_policy: 'https-only' }))] }),
     change('aws_cloudformation_stack.plan', { template_body: JSON.stringify({ Resources: { Subscription: { Type: 'AWS::PricingPlanManager::Subscription', Properties: { PlanTier: 'FREE' } } } }) }),
-    change('aws_apigatewayv2_stage.application', { default_route_settings: [{ throttling_rate_limit: 5, throttling_burst_limit: 10 }], route_settings: [{ route_key: 'POST /api/api/startup', throttling_rate_limit: 0.5, throttling_burst_limit: 2 }] }),
+    change('aws_apigatewayv2_stage.application', { default_route_settings: [{ throttling_rate_limit: 5, throttling_burst_limit: 10 }], route_settings: [{ route_key: 'POST /api/api/startup', throttling_rate_limit: 0.1, throttling_burst_limit: 2 }] }),
+    change('aws_wafv2_web_acl.application', { rule: [{ name: 'all_ip', action: [{ block: [{}] }], visibility_config: [{ sampled_requests_enabled: false }], statement: [{ rate_based_statement: [{ aggregate_key_type: 'IP', limit: 600, evaluation_window_sec: 300, scope_down_statement: [] }] }] }] }),
     ...['aws_acm_certificate.site', 'aws_acm_certificate_validation.site', 'aws_secretsmanager_secret.ingress', 'aws_secretsmanager_secret_version.ingress', 'aws_iam_role.authorizer', 'aws_iam_role_policy.authorizer', 'aws_lambda_permission.authorizer', 'aws_lambda_permission.request', 'aws_apigatewayv2_integration.request', 'aws_apigatewayv2_domain_name.origin', 'aws_apigatewayv2_api_mapping.origin', 'aws_s3_bucket_ownership_controls.frontend', 'aws_s3_bucket_policy.frontend', 'aws_cloudfront_function.viewer'].map(address => change(address, {})),
   ];
   checkIngressPlan({ resource_changes: resources }, inputs);
@@ -76,6 +77,8 @@ test('SR4a ingress plan rejects replacing data, paid plans, caches, unguarded ro
   reject(r => { r[8].change.after.ordered_cache_behavior[1].cache_policy_id = 'cached'; });
   reject(r => { r[9].change.after.template_body = r[9].change.after.template_body.replace('FREE', 'PRO'); });
   reject(r => { r[10].change.after.route_settings[0].throttling_rate_limit = 5; });
+  reject(r => { r[11].change.after.rule[0].statement[0].rate_based_statement[0].scope_down_statement = [{}]; });
+  reject(r => { r[11].change.after.rule[0].statement[0].rate_based_statement[0].limit = 10000; });
   reject(r => { r.push(change('aws_route53_record.site["A"]', { zone_id: inputs.zone_id, name: 'opensight.example' })); });
   reject(r => { r.push(change('aws_rds_cluster.database', {})); });
 });

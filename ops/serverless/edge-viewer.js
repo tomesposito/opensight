@@ -36,14 +36,18 @@ return internal;
 function headers(raw) {
 var result = Object.create(null);
 var bytes = 0;
-for (var _i = 0, _a = Object.entries(record(raw)); _i < _a.length; _i++) {
-var _b = _a[_i], key = _b[0], value = _b[1];
+for (var _i = 0, _a = Object.keys(record(raw)); _i < _a.length; _i++) {
+var key = _a[_i];
+var field = record(raw[key]);
+if (field.multiValue !== undefined)
+invalid();
+var value = field.value;
 var name = key.toLowerCase();
 if (!/^[a-z0-9-]+$/.test(name) || typeof value !== 'string' || /[\x00-\x1f\x7f]/.test(value) || Object.prototype.hasOwnProperty.call(result, name))
 invalid();
 if (singleton.includes(name) && value.includes(',') && !(['if-modified-since', 'if-unmodified-since'].includes(name) && /^[A-Z][a-z]{2}, \d{2} [A-Z][a-z]{2} \d{4} \d{2}:\d{2}:\d{2} GMT$/.test(value)))
 invalid();
-bytes += byteLength(key) + byteLength(value);
+bytes += Buffer.byteLength(key) + Buffer.byteLength(value);
 if (bytes > 16384)
 invalid();
 result[name] = value;
@@ -52,25 +56,16 @@ if (forgedPrincipalHeaders.some(function (h) { return Object.prototype.hasOwnPro
 throw new MetadataError('FORGED_PRINCIPAL', 403);
 if (result.forwarded !== undefined || result['x-forwarded-host'] !== undefined || result['transfer-encoding'] !== undefined)
 invalid();
-for (var _c = 0, _d = Object.keys(result); _c < _d.length; _c++) {
-var name = _d[_c];
+for (var _b = 0, _c = Object.keys(result); _b < _c.length; _b++) {
+var name = _c[_b];
 if (name.startsWith('x-opensight-ingress-') && !['x-opensight-ingress-key-id', 'x-opensight-ingress-secret', 'x-opensight-ingress-origin', 'x-opensight-ingress-peer'].includes(name))
 denied();
 }
 return result;
 }
 function validateViewerRequest(raw, origin) {
-var request = record(raw), values = {};
-for (var _i = 0, _a = Object.entries(record(request.headers)); _i < _a.length; _i++) {
-var _b = _a[_i], key = _b[0], rawValue = _b[1];
-var value = record(rawValue);
-if (value.multiValue !== undefined)
-invalid();
-if (typeof value.value !== 'string')
-invalid();
-values[key] = value.value;
-}
-var h = headers(values);
+var request = record(raw);
+var h = headers(request.headers);
 if (h.host !== __OPENSIGHT_HOST__ || request.protocol !== 'https')
 denied();
 if (Object.keys(h).some(function (k) { return k.startsWith('x-opensight-ingress-') || k === 'cloudfront-viewer-address' || k === 'x-forwarded-for' || k === 'x-forwarded-proto' || k === 'x-forwarded-port'; }))
@@ -82,11 +77,11 @@ if (Object.keys(record(request.querystring)).length)
 invalid();
 }
 function MetadataError(code, status) { this.code = code; this.status = status; }
-function byteLength(value) { return encodeURIComponent(value).replace(/%[A-Fa-f0-9]{2}/g, 'x').length; }
 function handler(event) {
 try {
 var request = event.request;
-validateViewerRequest(Object.assign({}, request, { protocol: 'https' }), __OPENSIGHT_ORIGIN__);
+delete request.headers['cloudfront-viewer-address'];
+validateViewerRequest({ headers: request.headers, uri: request.uri, querystring: request.querystring, protocol: 'https' }, __OPENSIGHT_ORIGIN__);
 if (!event.viewer || typeof event.viewer.ip !== 'string' || !/^[a-fA-F0-9:.]{3,45}$/.test(event.viewer.ip))
 denied();
 request.headers['x-opensight-ingress-peer'] = { value: event.viewer.ip };
