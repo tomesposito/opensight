@@ -29,7 +29,7 @@ export function ciPolicy(config, kind) {
   const bucket = `arn:aws:s3:::${c.operationsBucket}`, frontend = `arn:aws:s3:::${c.frontendBucket}`;
   const allow = (Action, Resource, Condition) => ({ Effect: 'Allow', Action, Resource, ...(Condition ? { Condition } : {}) });
   return { Version: '2012-10-17', Statement: [
-    { Effect: 'Deny', Action: ['iam:*', 'sts:AssumeRole', 'secretsmanager:GetSecretValue', 'ssm:GetParameter', 'ssm:GetParameters', 'ssm:GetParametersByPath', 'rds-data:*'], Resource: '*' },
+    { Effect: 'Deny', Action: ['sts:AssumeRole', 'secretsmanager:GetSecretValue', 'ssm:GetParameter', 'ssm:GetParameters', 'ssm:GetParametersByPath', 'rds-data:*'], Resource: '*' },
     allow(['s3:GetObject', 's3:GetObjectVersion'], [`${bucket}/ci/config/*`, `${bucket}/ci/approvals/*`, `${bucket}/ci/releases/*`, `${bucket}/ci/operations/*`]),
     allow(['kms:Decrypt', ...(kind === 'deploy' ? ['kms:GenerateDataKey'] : [])], c.kmsKey,
       { StringEquals: { 'kms:ViaService': `s3.${c.region}.amazonaws.com`, 'kms:EncryptionContext:aws:s3:arn': bucket } }),
@@ -46,6 +46,8 @@ export function ciPolicy(config, kind) {
       allow('ecr:GetAuthorizationToken', '*'),
       allow(['ecr:BatchCheckLayerAvailability', 'ecr:GetDownloadUrlForLayer', 'ecr:BatchGetImage', 'ecr:InitiateLayerUpload', 'ecr:UploadLayerPart', 'ecr:CompleteLayerUpload', 'ecr:PutImage', 'ecr:DescribeImages'], `arn:aws:ecr:${c.region}:${c.account}:repository/${c.deployment}`),
       allow('cloudfront:CreateInvalidation', `arn:aws:cloudfront::${c.account}:distribution/${c.distribution}`),
+      allow(['scheduler:CreateSchedule', 'scheduler:GetSchedule', 'scheduler:DeleteSchedule'], `arn:aws:scheduler:${c.region}:${c.account}:schedule/${c.deployment}-ci-release/release-*`),
+      allow('iam:PassRole', `arn:aws:iam::${c.account}:role/${c.deployment}-ci-watchdog-invoke`, { StringEquals: { 'iam:PassedToService': 'scheduler.amazonaws.com' } }),
     ] : []),
   ] };
 }

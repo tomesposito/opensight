@@ -20,7 +20,9 @@ test('SR4c deployment policy excludes administration, state and tenant data; pre
   const allowed = deploy.Statement.filter(s => s.Effect === 'Allow');
   assert.ok(!JSON.stringify(allowed).includes('-migration'));
   assert.ok(!JSON.stringify(allowed).includes('secretsmanager:'));
-  assert.ok(!JSON.stringify(allowed).includes('iam:'));
+  assert.deepEqual(allowed.filter(s => [s.Action].flat().some(a => a.startsWith('iam:'))).map(s => s.Action), ['iam:PassRole']);
+  assert.ok(allowed.find(s => s.Action === 'iam:PassRole').Resource.endsWith('/synthetic-ci-watchdog-invoke'));
+  assert.deepEqual(allowed.find(s => s.Action === 'iam:PassRole').Condition, { StringEquals: { 'iam:PassedToService': 'scheduler.amazonaws.com' } });
   assert.ok(!JSON.stringify(allowed).includes('UpdateFunctionConfiguration'));
   assert.deepEqual(allowed.filter(s => s.Resource === '*').map(s => s.Action), ['ecr:GetAuthorizationToken']);
   assert.ok(allowed.filter(s => [s.Action].flat().some(a => a.startsWith('s3:'))).every(s => !JSON.stringify(s.Resource).includes('terraform.tfstate')));
