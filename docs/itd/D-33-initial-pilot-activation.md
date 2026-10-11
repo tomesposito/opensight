@@ -148,3 +148,12 @@ preflight clients and handle owned client errors as specified in
 retain an unnecessary connection and hide the ownership bug. A compatible,
 one-time image replacement before DNS preserves the original activation evidence
 through a separate private provenance record; it changes no SQL state or protocol.
+
+#### Active execution allowance — 2026-10-11
+
+The connection-corrected worker reached the ten-second validation execution limit
+on the real 8 MiB file, with memory below its allocation. Select 30 seconds of
+active work through [SR4b5](../phase5-sr4b5-execution-budget.md). Increasing Lambda
+memory to obtain more CPU would not establish that the wall-time limit is enough;
+removing the deadline would discard containment. The bounded operator extension
+preserves invocation deadlines and idle behavior while allowing measured tuning.

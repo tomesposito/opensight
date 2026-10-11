@@ -1385,6 +1385,15 @@ to the replacement image. Preserve original SQL activation receipts, epoch,
 budgets, identities and queued work; initial administration commands then close.
 Saved-plan and complete application acceptance gates remain mandatory.
 
+**SR4b5 pilot execution allowance (frozen 2026-10-11):**
+[Execution allowance](docs/phase5-sr4b5-execution-budget.md) adds a private,
+receipt-bound extension of only default/node active execution time, up to 90
+seconds and within each invocation's existing platform deadline. Select 30 seconds
+for the first measured correction. Serialize with admission, require no live held
+attempt, preserve original activation provenance, and atomically advance matching
+budget/configuration revisions. No memory, concurrency, quota, epoch or idle timer
+change is included. Real AWS acceptance continues to gate DNS.
+
 ---
 
 ## 7. Repository Layout
