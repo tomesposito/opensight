@@ -42,5 +42,8 @@ matched exactly. The inspected author difference is saved-time text only at
 (160,97)–(172,107), 96 changed pixels. No user-visible UI change requires new
 README media. The static demo is not a deployment.
 
-The reviewed AWS image replacement remains pending at this checkpoint. DNS
-remains unpublished until real application and idle acceptance pass.
+The reviewed AWS image replacement was applied and request version four selected.
+The next real 8 MiB ingestion attempt no longer crashed on an idle SQL connection;
+it cancelled cleanly at the ten-second execution limit (11,046 ms Lambda duration,
+884 MiB peak memory). [SR4b5](phase5-sr4b5-execution-budget.md) extends that active
+allowance. DNS remains unpublished until real application and idle acceptance pass.

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { initialCredentials, safeInitialResult, activationRequired, administrationImage, initialBudgetChange } from '../ops/serverless/pilot-operator.mjs';
+import { initialCredentials, safeInitialResult, activationRequired, administrationImage, initialBudgetChange, executionBudgetChange } from '../ops/serverless/pilot-operator.mjs';
 import { checkPlan } from '../ops/serverless/plan-policy.mjs';
 
 test('SR4b1 private tester generation produces independent workspace and authentication material', () => {
@@ -122,4 +122,16 @@ test('SR4b1 pilot plan rejects premature consumers, queue substitution, unbounde
   reject('aws_s3_bucket_cors_configuration.artifacts[0]', value => { value.cors_rule[0].allowed_origins = ['*']; });
   reject('aws_s3_bucket_cors_configuration.artifacts[0]', value => { value.cors_rule[0].allowed_headers = ['*']; });
   const invalid = fixture(false, true); assert.throws(() => checkPlan(invalid, { allowPilot: true }), /RUNTIME_STAGE/);
+});
+
+test('SR4b5 operator binds the exact prior and returned execution budget versions', () => {
+  const change = { expectedBudgetVersion: 2, previousBudgetDigest: 'a'.repeat(64), targetBudgetDigest: 'b'.repeat(64) };
+  assert.deepEqual(executionBudgetChange(change), change);
+  for (const value of [null, {}, { ...change, extra: true }, { ...change, expectedBudgetVersion: 1 }, { ...change, expectedBudgetVersion: 2147483647 },
+    { ...change, expectedBudgetVersion: 2.5 }, { ...change, targetBudgetDigest: change.previousBudgetDigest }])
+    assert.throws(() => executionBudgetChange(value), /INITIAL_BUDGET_CHANGE_INVALID/);
+  const result = { state: 'budgets-configured', epoch: 1, budgetVersion: 3 };
+  assert.deepEqual(safeInitialResult('extend-pilot-execution', result, 2), result);
+  for (const version of [undefined, 1, 3, 2147483647]) assert.throws(() => safeInitialResult('extend-pilot-execution', result, version), /INITIAL_RESULT_INVALID/);
+  assert.throws(() => safeInitialResult('extend-pilot-execution', { ...result, extra: true }, 2), /INITIAL_RESULT_INVALID/);
 });
