@@ -76,3 +76,11 @@ test('sources tab lists only real raw sources and refuses unavailable sources', 
   const rows = ui.root.findByType('tbody').findAllByType('tr'); assert.equal(rows.length, 1);
   assert.equal(rows[0].findByType('button').props.disabled, true);
 });
+
+test('landing icons are font-independent vector graphics', async t => {
+  const ui = await mount(t, {});
+  assert.doesNotMatch(ui.text(), /[◈⌄▤☰›]/);
+  const disclosure = ui.root.findByProps({ 'aria-label': 'More create options' });
+  assert.ok(disclosure.findAllByType('svg').length >= 1, 'create-options disclosure must render an SVG chevron');
+  assert.ok(ui.root.findAllByType('svg').length >= 2, 'empty state and disclosure must both render SVG icons');
+});

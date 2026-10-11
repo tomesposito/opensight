@@ -1,17 +1,26 @@
 # Custom actions and drill-down
 
-In Author mode, select a visual and open **Interaction → Custom actions** in Properties. Choose
-**Filter** in the action-type picker and add an action, choose the source dimension, and choose all compatible targets or
-explicit targets. Each target lists its eligibility and allows an explicit
-field mapping. Mappings require matching types and a dimension grouped by the
+In Author mode, select a visual and open the **Interaction** tab in Properties. The **Actions**
+section lists the visual's custom actions (name, type, activation) with a **New action** button
+(max 10 per visual). Creating or editing an action opens the dedicated **New action** panel in
+the right dock: action name, **Activation** (Select / Menu option), **Action type**
+(Filter / Navigation / URL), per-type configuration, and staged **Save** / **Close** / **Delete**.
+Save commits through the draft reducer; Close discards the staged edits; Delete removes the action.
+Choosing **Filter** shows the source dimension, **Filter scope** (All fields / Selected fields),
+and **Target visuals** (All visuals / Select visuals with per-target eligibility reasons and
+explicit field mappings). Mappings require matching types and a dimension grouped by the
 target or included in its hierarchy. KPIs, unresolved datasets, unsupported numeric grouping, and missing
 fields display their reasons. Filter actions stay on the current sheet.
 
-Click a bar segment, pie slice, or table row to apply its selection. A line
-chart with a datetime axis offers the ECharts range brush. The accessible
-**View data** rows provide another way to select categories. Select the same
-category again or use **Reset actions** to clear it. Multiple source selections
-intersect with each other and with the visual's saved and parameter filters.
+**Activation** controls when an action runs. **Select** is the default and keeps the existing
+behavior: the action fires on click/brush selection. **Menu option** actions never fire on
+selection; instead they are offered from the visual card's **⋯** menu and run against the
+visual's current selection (menu items stay disabled until a data point is selected). A
+menu-option filter action toggles its filter on the target visuals; URL and navigation actions
+execute with the clicked values. Filter scope further restricts a filter action: with
+**Selected fields** the action applies only when the selection holds a value for one of the
+chosen fields; **All fields** keeps the source-field behavior. Activation is optional in
+persisted actions and defaults to select, so existing drafts are unaffected.
 
 Use **Drill hierarchy** to define ordered dimension levels or the built-in
 Year → Quarter → Month sequence. Save the hierarchy, then choose **Drill down**
@@ -51,10 +60,10 @@ No new dependencies were introduced.
 
 ## URL actions
 
-Choose **URL**, add an action, and enter its name, source dimension and absolute
+In the New action panel choose **URL action** and enter its name, source dimension and absolute
 HTTP(S) URL template. `{region}` and other grouped-dimension placeholders use the
 clicked selection, with each value encoded as a URI component. Repeated
-placeholders are supported. The default target is a new tab; the editor also
+placeholders are supported. The default target is a new tab; the panel also
 offers the current tab. Both use `window.open` with `noopener,noreferrer`.
 No hosted API is needed for the browser navigation itself.
 
@@ -69,7 +78,7 @@ opens a URL. Browser popup settings can still block opening a new tab.
 
 ## Navigation actions
 
-Choose **Navigation**, add an action, and choose a target sheet in the current
+In the New action panel choose **Navigation action** and choose a target sheet in the current
 analysis. Optional mapping rows associate source grouped dimensions with declared
 analysis parameter names. Each mapping must resolve to a parameter with the same
 field type. Only one source field can map to a given parameter. Unknown or deleted

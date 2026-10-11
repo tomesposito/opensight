@@ -33,6 +33,31 @@ test('table row action recomputes other cards, toggles off and resets through ac
   await clickWest(); await ui.click('Reset actions'); assert.equal(ui.cards()[1].props.visual.rows.length, 2);
   await ui.click('+ Add sheet'); assert.equal(ui.cards().length, 0);
 });
+test('menu-option filter actions do not fire on click; they apply from the visual menu', async t => {
+  let d = authorReducer(emptyDraft(), { type: 'add', kind: 'table' });
+  d = authorReducer(d, { type: 'filter-actions', actions: [{ id: 'a', name: 'Menu filter', sourceField: 'region', targets: 'all', mappings: {}, activation: 'menu' }] });
+  d = authorReducer(d, { type: 'add', kind: 'bar' });
+  const ui = await mount(t, d);
+  const clickWest = async () => { const row = ui.cards()[0].findAllByType('tr').find(row => row.props.onClick && row.findAllByType('button').some(b => b.props.children === 'West')); assert.ok(row); await act(() => row.props.onClick()); };
+  await clickWest();
+  assert.equal(ui.cards()[1].props.visual.rows.length, 2, 'click alone must not filter a menu-option action');
+  const menuButton = ui.renderer.root.findAllByType('button').find(b => b.props['aria-label'] === 'Run action');
+  assert.ok(menuButton);
+  await act(() => menuButton.props.onClick({ stopPropagation() {} }));
+  const item = ui.renderer.root.findAllByType('button').find(b => b.props.role === 'menuitem');
+  assert.ok(item); assert.equal(item.props.children, 'Menu filter');
+  await act(() => item.props.onClick({ stopPropagation() {} }));
+  assert.deepEqual(ui.cards()[1].props.visual.rows, [{ region: 'West', revenue: 400 }]);
+  await clickWest();
+  assert.deepEqual(ui.cards()[1].props.visual.rows, [{ region: 'West', revenue: 400 }], 'menu-applied filter persists until invoked again');
+  await clickWest();
+  const reopen = ui.renderer.root.findAllByType('button').find(b => b.props['aria-label'] === 'Run action');
+  await act(() => reopen.props.onClick({ stopPropagation() {} }));
+  const toggleOff = ui.renderer.root.findAllByType('button').find(b => b.props.role === 'menuitem' && !b.props.disabled);
+  assert.ok(toggleOff);
+  await act(() => toggleOff.props.onClick({ stopPropagation() {} }));
+  assert.equal(ui.cards()[1].props.visual.rows.length, 2);
+});
 test('drill mode, chart selection, up and breadcrumb controls recompute the rendered grain', async t => {
   let d = authorReducer(emptyDraft(), { type: 'add', kind: 'bar' });
   d = authorReducer(d, { type: 'hierarchy', hierarchy: { id: 'dates', name: 'Order date', levels: ['YEAR','QUARTER','MONTH'].map(granularity => ({ columnName: 'order_date', granularity })) } });

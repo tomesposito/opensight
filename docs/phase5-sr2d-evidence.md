@@ -172,3 +172,14 @@ the connector dialog and accepts an environment-provided browser executable;
 251 frames completed with zero page errors/external requests, then FFmpeg assembled
 the refreshed GIF. Unavailable MySQL remains disabled. The offline demo remains a
 demo; public ingress, idle clients and live tester acceptance are still pending.
+
+## Integration with current upstream editor work
+
+Before publication, upstream master advanced through the navigation icon fixes,
+Manage data, New sheet and New action panels. The integration preserves both
+histories and all SR2 runtime files. The complete root suite on that combined tree
+passed **2,403 / failed 0 / skipped 14 / cancelled 0** (2,417 total); web now has
+1,191 passing tests and all other workspace counts above are unchanged. Hosted and
+demo builds passed again. The README tour and synthetic upload capture were
+regenerated from the combined build. Navigation/data glyphs now use upstream's
+font-independent SVGs; the prior font-glyph finding does not describe this tree.

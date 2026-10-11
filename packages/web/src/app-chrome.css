@@ -3,7 +3,7 @@
 .app-shell { --app-rail: 192px; --app-band: 48px; padding-left: var(--app-rail); min-height: 100dvh; font: 13px/1.5 Arial, "Helvetica Neue", Helvetica, sans-serif; }
 .app-shell .product-header { height: var(--app-band); min-height: var(--app-band); padding: 4px 20px; margin-left: calc(-1 * var(--app-rail)); gap: 16px; flex-wrap: nowrap; background: #162e40; color: #fff; }
 .product-header .brand { font-size: 18px; letter-spacing: -.4px; color: #fff; gap: 8px; flex-shrink: 0; }
-.product-header .brand-mark { font-size: 24px; color: #72d3d4; }
+.product-header .brand-mark { display: inline-flex; color: #72d3d4; }
 .product-header .breadcrumbs { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 12px; color: #a8c1cc; white-space: nowrap; }
 .product-header .breadcrumbs a { color: #d0e0e8; text-decoration: none; }
 .product-header .breadcrumbs a:hover { text-decoration: underline; }
@@ -16,7 +16,7 @@
 .product-navigation .navigation-icon { flex: none; width: 16px; height: 16px; }
 .product-navigation .rail-search:hover, .product-navigation .rail-more:hover { background: #dceff0; }
 .product-navigation .app-nav a[href="#/my-stuff"] { margin-bottom: 12px; }
-.product-navigation .rail-chevron { margin-left: auto; }
+.product-navigation .rail-chevron { margin-left: auto; display: flex; }
 .product-navigation .rail-more { margin-top: 4px; }
 .product-navigation #more-navigation[hidden] { display: none; }
 .product-navigation .rail-group-title { font-size: 11px; color: #526c7a; padding: 4px 8px; }

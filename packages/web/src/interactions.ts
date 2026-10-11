@@ -2,16 +2,22 @@ import { activeSheet, authorVisualProblem, dataFields, sheetParameters, visualDi
 import { parameterValueError } from './parameters.js';
 import type { ParameterDeclaration, ParameterValue } from './parameters.js';
 
+export type ActionActivation = 'select' | 'menu';
 export interface FilterAction {
   id: string; name: string; sourceField: string; targets: 'all' | string[];
-  mappings: Record<string, string>;
+  mappings: Record<string, string>; activation?: ActionActivation; scopeFields?: string[];
 }
 export interface UrlAction {
   id: string; name: string; sourceField: string; urlTemplate: string; target?: '_blank' | '_self';
+  activation?: ActionActivation;
 }
 export interface NavigationAction {
   id: string; name: string; sourceField: string; targetSheetId: string; parameterMappings: Record<string, string>;
+  activation?: ActionActivation;
 }
+/** Menu-option actions do not fire on selection; they run from the visual's ⋯ menu. Unset means 'select'. */
+export const actionActivation = (action: { activation?: ActionActivation }): ActionActivation => action.activation === 'menu' ? 'menu' : 'select';
+const validActivation = (raw: unknown): raw is ActionActivation | undefined => raw === undefined || raw === 'select' || raw === 'menu';
 type ActionResult<T> = { value: T; problem?: never } | { problem: string; value?: never };
 const record = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
 const selectedValue = (values: Selection['values'], field: string): boolean => Object.hasOwn(values, field) && (typeof values[field] === 'string' || typeof values[field] === 'number' && Number.isFinite(values[field]));
@@ -23,7 +29,7 @@ export function visualActionsValid(visual: { filterActions?: unknown; urlActions
 }
 /** Shape validation keeps unfinished/invalid templates editable, with diagnostics below. */
 export function urlActionDefinitionsValid(raw: unknown): raw is UrlAction[] {
-  return Array.isArray(raw) && raw.every(a => record(a) && Object.keys(a).every(k => ['id', 'name', 'sourceField', 'urlTemplate', 'target'].includes(k)) && typeof a.id === 'string' && !!a.id && typeof a.name === 'string' && typeof a.sourceField === 'string' && !!a.sourceField && typeof a.urlTemplate === 'string' && (a.target === undefined || a.target === '_blank' || a.target === '_self')) && new Set(raw.map(a => a.id)).size === raw.length;
+  return Array.isArray(raw) && raw.every(a => record(a) && Object.keys(a).every(k => ['id', 'name', 'sourceField', 'urlTemplate', 'target', 'activation'].includes(k)) && typeof a.id === 'string' && !!a.id && typeof a.name === 'string' && typeof a.sourceField === 'string' && !!a.sourceField && typeof a.urlTemplate === 'string' && validActivation(a.activation) && (a.target === undefined || a.target === '_blank' || a.target === '_self')) && new Set(raw.map(a => a.id)).size === raw.length;
 }
 function interpolateUrl(template: string, values: Selection['values']): ActionResult<string> {
   if (!template.trim()) return { problem: 'URL_TEMPLATE_EMPTY: Enter an HTTP(S) URL template.' };
@@ -81,7 +87,7 @@ export function hasVisualActions(visual: AuthorVisual): boolean {
 }
 /** Definition shape only: unresolved destinations/mappings stay editable and visibly disabled. */
 export function navigationActionDefinitionsValid(raw: unknown): raw is NavigationAction[] {
-  return Array.isArray(raw) && raw.every(a => record(a) && Object.keys(a).every(k => ['id', 'name', 'sourceField', 'targetSheetId', 'parameterMappings'].includes(k)) && typeof a.id === 'string' && !!a.id && typeof a.name === 'string' && typeof a.sourceField === 'string' && !!a.sourceField && typeof a.targetSheetId === 'string' && record(a.parameterMappings) && Object.values(a.parameterMappings).every(p => typeof p === 'string')) && new Set(raw.map(a => a.id)).size === raw.length;
+  return Array.isArray(raw) && raw.every(a => record(a) && Object.keys(a).every(k => ['id', 'name', 'sourceField', 'targetSheetId', 'parameterMappings', 'activation'].includes(k)) && typeof a.id === 'string' && !!a.id && typeof a.name === 'string' && typeof a.sourceField === 'string' && !!a.sourceField && validActivation(a.activation) && typeof a.targetSheetId === 'string' && record(a.parameterMappings) && Object.values(a.parameterMappings).every(p => typeof p === 'string')) && new Set(raw.map(a => a.id)).size === raw.length;
 }
 export function navigationSheets(draft: AuthorDraft): AuthorSheet[] {
   const memberPath = activeSheet(draft).imported?.memberPath ?? draft.bundle?.primaryPath;
@@ -180,14 +186,29 @@ export function selectionFilters(columnName: string, type: ParameterDeclaration[
   }
   return typeof value === (type === 'number' ? 'number' : 'string') ? [{ columnName, type, values: [value] }] : [];
 }
-export function withActionFilters(sheet: AuthorSheet, visual: AuthorVisual, selections: ActionSelections, calculations: readonly CalculatedField[] = [], dataset?: AuthorDataset): AuthorVisual {
-  const filters = sheet.visuals.flatMap(source => (source.filterActions ?? []).flatMap(action => {
-    const selection = selections[source.id], value = selection?.values[action.sourceField];
-    if (!selection || value === undefined || action.targets !== 'all' && !action.targets.includes(visual.id) || targetProblem(source, visual, action, calculations, dataset)) return [];
+/**
+ * Applies filter-action selections to a target visual. `selections` carry the
+ * click/brush selections for select-activated actions; `menuSelections` carry
+ * the menu-invoked applications for menu-activated actions. A filter action
+ * with `scopeFields` applies only when the selection holds a value for one of
+ * those fields; unset means the action's source field (all fields).
+ */
+export function withActionFilters(sheet: AuthorSheet, visual: AuthorVisual, selections: ActionSelections, calculations: readonly CalculatedField[] = [], dataset?: AuthorDataset, menuSelections: ActionSelections = {}): AuthorVisual {
+  const apply = (activation: ActionActivation, selection: Selection | undefined, source: AuthorVisual, action: FilterAction): InteractionFilter[] => {
+    if (!selection || actionActivation(action) !== activation) return [];
+    const value = selection.values[action.sourceField];
+    if (value === undefined) return [];
+    const scoped = action.scopeFields?.length ? action.scopeFields : [action.sourceField];
+    if (!scoped.some(field => selection.values[field] !== undefined && selectedValue(selection.values, field))) return [];
+    if (action.targets !== 'all' && !action.targets.includes(visual.id) || targetProblem(source, visual, action, calculations, dataset)) return [];
     return selectionFilters(action.mappings[visual.id] ?? action.sourceField, fieldType(action.sourceField, calculations, dataset)!, value, selection.range);
-  }));
+  };
+  const filters = sheet.visuals.flatMap(source => (source.filterActions ?? []).flatMap(action => [
+    ...apply('select', selections[source.id], source, action),
+    ...apply('menu', menuSelections[source.id], source, action),
+  ]));
   return filters.length ? { ...visual, interactionFilters: [...(visual.interactionFilters ?? []), ...filters] } : visual;
 }
 export function validFilterActions(raw: unknown): raw is FilterAction[] {
-  return Array.isArray(raw) && new Set(raw.map(a => a?.id)).size === raw.length && raw.every(a => a && typeof a === 'object' && Object.keys(a).every(k => ['id','name','sourceField','targets','mappings'].includes(k)) && typeof a.id === 'string' && !!a.id && typeof a.name === 'string' && typeof a.sourceField === 'string' && !!a.sourceField && (a.targets === 'all' || Array.isArray(a.targets) && a.targets.every((v: unknown) => typeof v === 'string')) && a.mappings && typeof a.mappings === 'object' && !Array.isArray(a.mappings) && Object.values(a.mappings).every(v => typeof v === 'string'));
+  return Array.isArray(raw) && new Set(raw.map(a => a?.id)).size === raw.length && raw.every(a => a && typeof a === 'object' && Object.keys(a).every(k => ['id','name','sourceField','targets','mappings','activation','scopeFields'].includes(k)) && typeof a.id === 'string' && !!a.id && typeof a.name === 'string' && typeof a.sourceField === 'string' && !!a.sourceField && validActivation(a.activation) && (a.scopeFields === undefined || Array.isArray(a.scopeFields) && a.scopeFields.every((f: unknown) => typeof f === 'string')) && (a.targets === 'all' || Array.isArray(a.targets) && a.targets.every((v: unknown) => typeof v === 'string')) && a.mappings && typeof a.mappings === 'object' && !Array.isArray(a.mappings) && Object.values(a.mappings).every(v => typeof v === 'string'));
 }

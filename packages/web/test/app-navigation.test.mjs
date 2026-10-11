@@ -262,3 +262,13 @@ test('Author puts its editable title in the product band and keeps Rename and dr
   await ui.reload();
   assert.equal(ui.root.findByProps({ className: 'analysis-title' }).findByType('input').props.value, 'Integrated title');
 });
+
+test('navigation icons are font-independent vector graphics', () => {
+  const home = shell(demoAccess, 'home');
+  assert.doesNotMatch(home, /[◈⌄☰›]/);
+  const svgs = home.match(/<svg/g) ?? [];
+  assert.ok(svgs.length >= 4, `expected toggle, brand mark, rail chevron and rail icons as SVG, found ${svgs.length}`);
+  assert.match(home, /aria-label="Toggle navigation"/);
+  assert.match(home, /<span class="brand-mark"[^>]*><svg/);
+  assert.match(home, /<span class="rail-chevron"[^>]*><svg/);
+});
