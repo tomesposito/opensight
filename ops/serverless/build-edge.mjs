@@ -16,30 +16,26 @@ export async function edgeSource() {
       if (!variables.includes(name)) continue;
       if (name === 'singleton') {
         if (!ts.isNewExpression(declaration.initializer) || declaration.initializer.expression.getText(file) !== 'Set' || declaration.initializer.arguments?.length !== 1) throw Error('EDGE_SOURCE_CHANGED');
-        selected.push(`const singleton = ${declaration.initializer.arguments[0].getText(file)};`);
+        const names = declaration.initializer.arguments[0];
+        if (!ts.isArrayLiteralExpression(names) || !names.elements.every(ts.isStringLiteral)) throw Error('EDGE_SOURCE_CHANGED');
+        selected.push(`const singleton = { ${names.elements.map(name => `${name.getText(file)}: true`).join(', ')} };`);
       } else selected.push(`const ${declaration.getText(file)};`);
     }
   }
   if (selected.length !== functions.length + variables.length) throw Error('EDGE_SOURCE_CHANGED');
-  const adapted = selected.join('\n').replaceAll('singleton.has(name)', 'singleton.includes(name)').replaceAll('Object.hasOwn(', 'Object.prototype.hasOwnProperty.call(')
-    .replaceAll('new URL(origin).host', '__OPENSIGHT_HOST__').replaceAll('Buffer.byteLength(', 'byteLength(')
-    .replace('const request = record(raw)', "console.log('EDGE_VALIDATE_BEGIN'); const request = record(raw)")
-    .replace('const h = headers(values)', "console.log('EDGE_VALIDATE_VALUES'); console.log('EDGE_HEADER_SIZES:' + JSON.stringify(Object.keys(values).map(k => values[k].length))); const h = headers(values)")
-    .replace("if (h.host !==", "console.log('EDGE_VALIDATE_HEADERS'); if (h.host !==")
-    .replace('const result: Record<string, string> = Object.create(null);', "console.log('EDGE_HEADERS_BEGIN'); const result: Record<string, string> = Object.create(null); console.log('EDGE_HEADERS_OBJECT');")
-    .replace('const name = key.toLowerCase();', "console.log('EDGE_HEADER_NEXT'); const name = key.toLowerCase();")
-    .replace('bytes += byteLength(key) + byteLength(value);', "console.log('EDGE_HEADER_GRAMMAR'); bytes += byteLength(key) + byteLength(value); console.log('EDGE_HEADER_LENGTH');")
-    .replace('if (forgedPrincipalHeaders.some', "console.log('EDGE_HEADERS_PARSED'); if (forgedPrincipalHeaders.some");
+  // Values in the null-prototype result are always strings. Presence checks
+  // therefore need no indirect prototype call; singleton membership is a lookup.
+  const adapted = selected.join('\n').replaceAll('singleton.has(name)', 'singleton[name] === true')
+    .replaceAll('Object.hasOwn(result, name)', 'result[name] !== undefined').replaceAll('Object.hasOwn(result, h)', 'result[h] !== undefined')
+    .replaceAll('new URL(origin).host', '__OPENSIGHT_HOST__').replaceAll('Buffer.byteLength(', 'byteLength(');
   const wrapper = `function MetadataError(code, status) { this.code = code; this.status = status; }
-function byteLength(value) { return encodeURIComponent(value).replace(/%[A-Fa-f0-9]{2}/g, 'x').length; }
+function byteLength(value) { return /^[\\x00-\\x7f]*$/.test(value) ? value.length : encodeURIComponent(value).replace(/%[A-Fa-f0-9]{2}/g, 'x').length; }
 function handler(event) {
   console.log('EDGE_VIEWER_ENTER');
   try {
     const request = event.request;
-    console.log('EDGE_VIEWER_REQUEST');
     // Every API behavior enforces HTTPS before forwarding to the origin.
-    // Live CloudFront event objects are not the plain JSON objects supplied to
-    // TestFunction. Read only the fields consumed by the shared boundary.
+    // Read only the fields consumed by the shared boundary.
     validateViewerRequest({ headers: request.headers, uri: request.uri, querystring: request.querystring, protocol: 'https' }, __OPENSIGHT_ORIGIN__);
     if (!event.viewer || typeof event.viewer.ip !== 'string' || !/^[a-fA-F0-9:.]{3,45}$/.test(event.viewer.ip)) denied();
     request.headers['x-opensight-ingress-peer'] = { value: event.viewer.ip };

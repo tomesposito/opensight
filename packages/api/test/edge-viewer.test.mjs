@@ -35,3 +35,23 @@ test('SR4a edge executes shared path/header rejection without Node APIs and cann
     const e = frame(); e.request.uri = path; assert.equal(context.handler(e).uri, path);
   }
 });
+test('SR4a larger header sets preserve UTF-8 byte ceilings, duplicate rejection and late principal denial', () => {
+  const base = frame();
+  for (let i = 0; i < 30; i++) base.request.headers[`x-synthetic-${i}`] = { value: 'v'.repeat(36) };
+  base.request.headers.constructor = { value: 'ordinary-header' };
+  for (const [value, accept] of [['ascii', true], ['é'.repeat(3000), true], ['é'.repeat(9000), false]]) {
+    const e = structuredClone(base); e.request.headers['x-text'] = { value };
+    if (accept) {
+      validateViewerRequest({ ...e.request, protocol: 'https' }, origin);
+      assert.equal(context.handler(e).uri, e.request.uri);
+    } else {
+      assert.throws(() => validateViewerRequest({ ...e.request, protocol: 'https' }, origin));
+      assert.equal(context.handler(e).statusCode, 403);
+    }
+  }
+  for (const [name, value] of [['Host', host], ['x-tenant-id', 'forged']]) {
+    const e = structuredClone(base); e.request.headers[name] = { value };
+    assert.throws(() => validateViewerRequest({ ...e.request, protocol: 'https' }, origin));
+    assert.equal(context.handler(e).statusCode, 403);
+  }
+});
