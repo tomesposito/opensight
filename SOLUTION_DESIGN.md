@@ -1273,6 +1273,17 @@ dataset authority and does not open application routes. Durable SQL manifests,
 invalidation, storage/recovery obligations and the asynchronous hosted-cache
 adapter are still required before runtime integration.
 
+**SR2c authoritative manifests and hydration (frozen 2026-10-10):**
+[Manifest authority and hydration](docs/phase5-sr2c-manifests.md) specifies atomic
+refresh admission/invalidation, fenced ready/failure publication, retained object
+history, bounded transitive dependency certificates and an asynchronous hosted
+cache adapter. [D-29](docs/itd/D-29-manifest-dependency-validation.md) selects
+read-time validation of complete dependency certificates instead of a background
+descendant walk. Existing H3 security checks and H4 containment remain required.
+The adapter requires an explicit storage-obligation callback before object writes;
+SR2d/SR3 must implement that callback and upload/event orchestration before runtime
+activation. No new dependency or cloud mutation belongs to this build.
+
 ---
 
 ## 7. Repository Layout
