@@ -6,7 +6,7 @@ import { activeSheet, authorReducer, emptyDraft, validateDraft } from '../build/
 import { resolveUrlAction, urlActionProblem, validUrlActions } from '../build/test/interactions.js';
 import { AuthorCanvas } from '../build/test/Author.js';
 import { VisualCard } from '../build/test/VisualCard.js';
-import { ActionEditor } from '../build/test/ActionEditor.js';
+import { ActionPanel } from '../build/test/ActionEditor.js';
 
 const url = { id: 'url-1', name: 'Details', sourceField: 'region', urlTemplate: 'https://example.com/{region}?category={category}' };
 const sourceDraft = (kind = 'table') => authorReducer(emptyDraft(), { type: 'add', kind });
@@ -57,29 +57,40 @@ test('URL draft editing retains invalid templates for diagnostics and validates 
   const copy = structuredClone(draft); copy.sheets[0].visuals[0].urlActions[0].target = 'untrusted';
   assert.throws(() => validateDraft(copy));
 });
-test('URL author picker and editor save invalid input visibly, then click opens safely in a real browser path', async t => {
+test('URL action panel stages edits, saves invalid input visibly, then click opens safely in a real browser path', async t => {
   const ui = await mount(t, sourceDraft());
+  const editAction = async () => { const b = ui.renderer.root.findAllByType('button').find(b => b.props['aria-label'] === 'Edit Details'); assert.ok(b); await act(() => b.props.onClick()); };
+  const panelInput = placeholder => ui.renderer.root.findAllByType('input').find(i => i.props.placeholder === placeholder);
   await ui.click('Interaction');
-  const picker = await ui.select('Action type');
-  await act(() => picker.props.onChange({ target: { value: 'URL' } }));
-  await ui.click('Add url action');
-  const template = ui.renderer.root.findAllByType('input').find(i => i.props.placeholder === 'https://example.com/{region}');
+  await ui.click('New action');
+  await act(() => ui.renderer.root.findAllByType('select').find(s => s.props.value === 'filter').props.onChange({ target: { value: 'url' } }));
+  const nameLabel = ui.renderer.root.findAllByType('label').find(l => l.children[0] === 'Action name');
+  await act(() => nameLabel.findByType('input').props.onChange({ target: { value: 'Details' } }));
+  const template = panelInput('https://example.com/{region}');
+  assert.ok(template);
   assert.ok(ui.renderer.root.findAllByType('p').some(p => p.children.join('').includes('URL_TEMPLATE_EMPTY')));
   await act(() => template.props.onChange({ target: { value: 'https://example.com/{region}' } }));
+  await ui.click('Save');
   validateDraft(ui.draft());
+  assert.equal(activeSheet(ui.draft()).visuals[0].urlActions[0].activation, 'select');
   const select = selection => act(() => ui.cards()[0].props.interaction.onSelect(selection));
   await select({ values: { region: 'West & East' } });
   assert.deepEqual(ui.opened, [['https://example.com/West%20%26%20East', '_blank', 'noopener,noreferrer']]);
   await select({ values: {} });
   assert.equal(ui.opened.length, 1);
-  assert.match(ui.renderer.root.findByType(ActionEditor).props.runtimeProblems['action-1'], /URL_SELECTION_MISSING/);
+  await editAction();
+  assert.match(ui.renderer.root.findByType(ActionPanel).props.runtimeProblems['action-1'], /URL_SELECTION_MISSING/);
+  await ui.click('Close');
   await select({ values: { region: 'East' }, range: ['a', 'b'] });
   assert.equal(ui.opened.length, 1);
-  const target = await ui.select('Open in');
-  await act(() => target.props.onChange({ target: { value: '_self' } }));
+  await editAction();
+  await act(async () => (await ui.select('Open in')).props.onChange({ target: { value: '_self' } }));
+  await ui.click('Save');
   await select({ values: { region: 'West' } });
   assert.deepEqual(ui.opened[1], ['https://example.com/West', '_self', 'noopener,noreferrer']);
-  await act(() => template.props.onChange({ target: { value: 'javascript:alert(1)' } }));
+  await editAction();
+  await act(() => panelInput('https://example.com/{region}').props.onChange({ target: { value: 'javascript:alert(1)' } }));
+  await ui.click('Save');
   await select({ values: { region: 'West' } });
   assert.equal(ui.opened.length, 2);
 });
@@ -162,21 +173,25 @@ test('navigation supports optional mappings and typed numeric/date parameters wi
   assert.deepEqual(resolveNavigationAction(d, source, numericAction, { values: { group: 4 } }).value.parameters[0].values, [4]);
   for (const group of ['4', 1.5, Infinity]) assert.ok(resolveNavigationAction(d, source, numericAction, { values: { group } }).problem);
 });
-test('navigation authoring provides sheet and mapping controls, and real row clicks update destination parameters', async t => {
+test('navigation action panel provides sheet and mapping controls, and real row clicks update destination parameters', async t => {
   let d = navigationDraft();
   d = authorReducer(d, { type: 'navigation-actions', actions: [] });
   const ui = await mount(t, d);
   await ui.click('Interaction');
-  await act(async () => (await ui.select('Action type')).props.onChange({ target: { value: 'Navigation' } }));
-  await ui.click('Add navigation action');
+  await ui.click('New action');
+  await act(() => ui.renderer.root.findAllByType('select').find(s => s.props.value === 'filter').props.onChange({ target: { value: 'navigation' } }));
   assert.equal((await ui.select('Target sheet')).props.value, 'sheet-2');
   await ui.click('Add parameter mapping');
   assert.ok(ui.renderer.root.findAllByType('p').some(p => p.children.join('').includes('NAVIGATION_PARAMETER_UNKNOWN')));
   await act(async () => (await ui.select('Target parameter')).props.onChange({ target: { value: 'Region' } }));
+  await ui.click('Save');
   validateDraft(ui.draft());
   await act(() => ui.cards()[0].props.interaction.onSelect({ values: {} }));
   assert.equal(ui.draft().activeSheetId, 'sheet-1');
-  assert.match(ui.renderer.root.findByType(ActionEditor).props.runtimeProblems['action-1'], /NAVIGATION_SELECTION_MISSING/);
+  const edit = ui.renderer.root.findAllByType('button').find(b => b.props['aria-label'] === 'Edit Filter action 1');
+  assert.ok(edit); await act(() => edit.props.onClick());
+  assert.match(ui.renderer.root.findByType(ActionPanel).props.runtimeProblems['action-1'], /NAVIGATION_SELECTION_MISSING/);
+  await ui.click('Close');
   const row = ui.cards()[0].findAllByType('tr').find(r => r.props.onClick && r.findAllByType('button').some(b => b.props.children === 'West'));
   assert.ok(row); await act(() => row.props.onClick());
   assert.equal(ui.draft().activeSheetId, 'sheet-2');
@@ -209,6 +224,8 @@ test('importable action IDs that match prototype properties still display named 
   await ui.click('Interaction');
   await act(() => ui.cards()[0].props.interaction.onSelect({ values: {} }));
   assert.equal(ui.opened.length, 0);
+  const edit = ui.renderer.root.findAllByType('button').find(b => b.props['aria-label'] === 'Edit Details');
+  assert.ok(edit); await act(() => edit.props.onClick());
   assert.ok(ui.renderer.root.findAllByType('p').some(p => p.children.join('').includes('URL_SELECTION_MISSING')));
 });
 test('deleted navigation targets cannot silently bind to a newly created sheet', () => {
