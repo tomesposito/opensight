@@ -1,0 +1,37 @@
+{
+  "actions/checkout": {
+    "ref": "v4",
+    "sha": "11d5960a326750d5838078e36cf38b85af677262",
+    "license": "MIT"
+  },
+  "actions/upload-artifact": {
+    "ref": "v4",
+    "sha": "ea165f8d65b6e75b540449e92b4886f43607fa02",
+    "license": "MIT"
+  },
+  "actions/download-artifact": {
+    "ref": "v4",
+    "sha": "d3f86a106a0bac45b974a628896c90dbdf5c8093",
+    "license": "MIT"
+  },
+  "docker/setup-buildx-action": {
+    "ref": "v3",
+    "sha": "8d2750c68a42422c14e847fe6c8ac0403b4cbd6f",
+    "license": "Apache-2.0"
+  },
+  "docker/build-push-action": {
+    "ref": "v6",
+    "sha": "10e90e3645eae34f1e60eeb005ba3a3d33f178e8",
+    "license": "Apache-2.0"
+  },
+  "actions/attest-build-provenance": {
+    "ref": "v3",
+    "sha": "977bb373ede98d70efdf65b84cb5f73e068dcc2a",
+    "license": "MIT"
+  },
+  "aws-actions/configure-aws-credentials": {
+    "ref": "v4",
+    "sha": "7474bc4690e29a8392af63c5b98e7449536d5c3a",
+    "license": "MIT"
+  }
+}
