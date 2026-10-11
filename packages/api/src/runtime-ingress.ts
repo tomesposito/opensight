@@ -5,6 +5,8 @@ import { MetadataError } from './metadata-db.js';
 export interface RuntimeRequest { method: string; path: string; headers: Record<string, string>; body: Buffer; peer: string; requestTime: number }
 export interface RuntimeResponse { statusCode: number; headers: Record<string, string>; body: string; isBase64Encoded?: boolean; cookies?: string[] }
 export interface IngressConfig { origin: string; domain: string; apiId: string; stage: string; route: string; keys: ReadonlyMap<string, string> }
+export const controlBodyBytes = 1024 * 1024;
+export const applicationEnvelopeBytes = 2 * 1024 * 1024;
 function invalid(): never { throw new MetadataError('HOSTED_REQUEST_INVALID', 400); }
 function denied(): never { throw new MetadataError('UNTRUSTED_INGRESS', 403); }
 const record = (v: unknown): Record<string, unknown> => v && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, unknown> : invalid();
@@ -44,6 +46,7 @@ export function publicPath(path: unknown): string {
     && !/^\/api\/auth\/(?:enroll|accept|login|switch|logout)$/.test(unscoped)
     && !/^\/api\/sources\/[A-Za-z0-9_-]+(?:\/(?:bind|rotate|preview|rows|output|query|refresh|policy))?$/.test(unscoped)
     && !/^\/api\/(?:uploads\/[A-Za-z0-9_-]+|ai\/sources(?:\/[A-Za-z0-9_-]+\/schema)?|prep-datasets\/import)$/.test(unscoped)
+    && !/^\/api\/(?:uploads\/reservations(?:\/[A-Za-z0-9_-]+(?:\/complete)?)?|operations\/[A-Za-z0-9_-]+(?:\/result\/(?:0|[1-9]\d{0,5}))?)$/.test(unscoped)
     && !/^\/api\/datasets\/[A-Za-z0-9_-]+\/(?:prep(?:\/preview)?|execution|refresh|rows|query|share|permissions|embed)$/.test(unscoped)
     && !/^\/api\/jobs\/[A-Za-z0-9_-]+(?:\/(?:runs|deliveries))?$/.test(unscoped)
     && !/^\/api\/embedding\/(?:config|sessions(?:\/[A-Za-z0-9_-]+(?:\/renew)?)?|GenerateEmbedUrlForRegisteredUser|GenerateEmbedUrlForAnonymousUser)$/.test(unscoped)
@@ -59,6 +62,8 @@ function routeMethod(path: string, method: string): void {
   else if (/^\/api\/embedding\/sessions\//.test(p)) allowed = ['DELETE'];
   else if (/^\/api\/embed\/sessions\//.test(p)) allowed = /\/(status|content)$/.test(p) ? ['GET'] : ['POST'];
   else if (p === '/api/uploads' || p === '/api/prep-datasets/import') allowed = ['POST'];
+  else if (p === '/api/uploads/reservations' || /^\/api\/uploads\/reservations\/[A-Za-z0-9_-]+\/complete$/.test(p)) allowed = ['POST'];
+  else if (/^\/api\/(?:uploads\/reservations|operations)\/[A-Za-z0-9_-]+$/.test(p)) allowed = ['GET', 'DELETE'];
   else if (/^\/api\/uploads\//.test(p)) allowed = ['GET'];
   else if (/^\/api\/jobs\/[A-Za-z0-9_-]+$/.test(p)) allowed = ['GET', 'PUT', 'DELETE'];
   else if (/^\/api\/jobs\/[A-Za-z0-9_-]+\/runs$/.test(p)) allowed = ['GET', 'POST'];
@@ -122,6 +127,8 @@ export function authorizeIngress(event: unknown, env: NodeJS.ProcessEnv = proces
 }
 
 export function adaptGatewayRequest(raw: unknown, env: NodeJS.ProcessEnv): RuntimeRequest {
+  // The SDK event is already decoded JSON. Bound it before headers, credentials or SQL.
+  if (Buffer.byteLength(JSON.stringify(raw) ?? '') > applicationEnvelopeBytes) throw new MetadataError('CONTROL_PAYLOAD_TOO_LARGE', 413);
   const config = ingressConfig(env), { event, context, h, method, path } = trusted(raw, config);
   const authorizer = record(record(context.authorizer).lambda);
   if (authorizer.version !== '1' || authorizer.canonicalOrigin !== config.origin) denied();
@@ -129,10 +136,10 @@ export function adaptGatewayRequest(raw: unknown, env: NodeJS.ProcessEnv): Runti
   if (!Number.isSafeInteger(requestTime) || Number(requestTime) > Date.now()) invalid();
   if (event.body !== undefined && typeof event.body !== 'string' || typeof event.isBase64Encoded !== 'boolean') invalid();
   const rawBody = (event.body ?? '') as string;
-  if (Buffer.byteLength(rawBody) > 6 * 1024 * 1024) throw new MetadataError('REQUEST_TOO_LARGE', 413);
+  if (Buffer.byteLength(rawBody) > Math.ceil(controlBodyBytes / 3) * 4) throw new MetadataError('CONTROL_PAYLOAD_TOO_LARGE', 413);
   const body = Buffer.from(rawBody, event.isBase64Encoded ? 'base64' : 'utf8');
   if (event.isBase64Encoded && body.toString('base64') !== rawBody) invalid();
-  if (body.length > 4 * 1024 * 1024) throw new MetadataError('REQUEST_TOO_LARGE', 413);
+  if (body.length > controlBodyBytes) throw new MetadataError('CONTROL_PAYLOAD_TOO_LARGE', 413);
   if (['GET', 'HEAD'].includes(method) && body.length || h['content-length'] !== undefined && (!/^\d+$/.test(h['content-length']) || Number(h['content-length']) !== body.length)) invalid();
   routeMethod(path, method);
   const forwarded: Record<string, string> = { host: new URL(config.origin).host, 'content-length': String(body.length) };

@@ -2,8 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import { connectors, connectorDefinition, connectorState, validateConnectorConfig, type ConnectorState } from '@opensight/query-engine/browser';
 import type { createApiClient } from './api-client.js';
 import type { UploadSummary } from '@opensight/query-engine';
+import { DirectUpload, type DirectUploadClient } from './DirectUpload.js';
 
-type Client = Pick<ReturnType<typeof createApiClient>, 'uploadFile' | 'validateConnector' | 'listPrepSources'>;
+type Client = Pick<ReturnType<typeof createApiClient>, 'uploadFile' | 'validateConnector' | 'listPrepSources'> & Partial<DirectUploadClient & Pick<ReturnType<typeof createApiClient>, 'getTransportCapabilities'>>;
 export function DataSources({ client, local = false, onPrep }: { client?: Client; local?: boolean; onPrep?: (source?: string) => void }) {
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState('file');
@@ -50,6 +51,7 @@ export function ConnectorDetails({ id, client, local, postgresSource, onPrep, on
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const connector = connectorDefinition(id), fileSource = id === 'file';
   const enabled = !!client && fileSource;
+  const direct = fileSource && !local && !!client?.getTransportCapabilities?.()?.directUploads && !!client.uploadDirectFile && !!client.getOperation && !!client.getUploadReservation && !!client.cancelOperation && !!client.cancelUploadReservation;
   const [config, setConfig] = useState<Record<string, string>>(fileSource ? { format: 'csv' } : {});
   const [file, setFile] = useState<File>();
   const [busy, setBusy] = useState(false);
@@ -80,13 +82,14 @@ export function ConnectorDetails({ id, client, local, postgresSource, onPrep, on
   return <aside className="connector-details" aria-label={`${connector.name} setup`}><p className="eyebrow">SOURCE DETAILS</p><h2>{connector.name}</h2><p className="connector-availability" role="status">{status.message}</p>
     <p>{fileSource ? 'CSV, TSV, JSON, XLS and XLSX. The API validates every row and reports the staged schema and row count.' : id === 'postgresql' ? local ? 'PostgreSQL requires an operator-provisioned hosted source. Connection setup is unavailable in this local workspace.' : 'A hosted operator must provision the source and its credentials. This gallery cannot create a connection.' : 'Configuration is documented for future connection support. This connector has no product API connection path.'}</p>
     {id === 'postgresql' && postgresSource && onPrep && <button onClick={() => onPrep(postgresSource)}>Prepare PostgreSQL data</button>}
-    <form onSubmit={event => { event.preventDefault(); void submit(); }}>
+    <form onSubmit={event => { event.preventDefault(); if (!direct) void submit(); }}>
       {fileSource && <label>File<input type="file" accept=".csv,.tsv,.json,.xls,.xlsx" disabled={!enabled || busy} onChange={e => { const next = e.target.files?.[0]; setFile(next); setUpload(undefined); setError(''); if (next) { const format = next.name.split('.').at(-1)?.toLowerCase(); if (format && ['csv', 'tsv', 'json', 'xls', 'xlsx'].includes(format)) setConfig({ format }); } }} /></label>}
       {Object.entries(connector.schema).filter(([key]) => key !== 'delimiter' || ['csv', 'tsv'].includes(config.format ?? '')).filter(([key]) => key !== 'sheet' || ['xls', 'xlsx'].includes(config.format ?? '')).map(([key, field]) => <label key={key}>{field.label}{field.required ? ' *' : ' (optional)'}{field.kind === 'choice' ? <select value={config[key] ?? ''} disabled={!enabled || busy} required={field.required} onChange={e => update(key, e.target.value)}>{!field.required && <option value="">Automatic</option>}{field.values.map(v => <option key={v} value={v}>{v === '\t' ? 'Tab' : v === ',' ? 'Comma' : v === ';' ? 'Semicolon' : v === '|' ? 'Pipe' : v.toUpperCase()}</option>)}</select> : <input value={config[key] ?? ''} disabled={!enabled || busy} required={field.required} maxLength={256} placeholder={field.kind === 'environment' ? `OPENSIGHT_${key.replace(/Env$/, '').toUpperCase()}` : 'Worksheet name'} onChange={e => update(key, e.target.value)} />}</label>)}
-      <button className="connector-submit" type="submit" disabled={!enabled || busy}>{busy ? 'Processing…' : fileSource ? 'Upload to staging' : 'Validate configuration'}</button>
+      {!direct && <button className="connector-submit" type="submit" disabled={!enabled || busy}>{busy ? 'Processing…' : fileSource ? 'Upload to staging' : 'Validate configuration'}</button>}
     </form>
+    {direct && <DirectUpload client={client as DirectUploadClient} file={file} config={config} onUploaded={onUploaded} onPrep={onPrep} />}
     {error && <p className="connector-error" role="alert">{error}</p>}
     {upload && <div className="upload-result" role="status"><h3>Upload staged</h3><p>{upload.rowCount.toLocaleString()} rows · {upload.columns.length} columns</p><table><thead><tr><th>Column</th><th>Type</th></tr></thead><tbody>{upload.columns.map(c => <tr key={c.name}><td>{c.name}</td><td>{c.type}</td></tr>)}</tbody></table><p>{local ? 'Local staging on this computer.' : 'Private staging for this session.'} Use Data preparation to transform this upload.</p>{upload.expiresAt && <p>Local-only · Expires <time dateTime={upload.expiresAt}>{upload.expiresAt}</time>. Survives API restarts.</p>}{onPrep && <button onClick={() => onPrep(upload.id)}>Prepare this upload</button>}</div>}
-    {fileSource && client && <p className="connector-help">{local ? 'Local form limit: 8 MiB. Files stay on this computer, survive API restarts and expire after 24 hours. This local workspace is shared by its users.' : 'Hosted form limit: 640 KiB. Staging is private to your user and namespace and is cleared when the API restarts.'}</p>}
+    {fileSource && client && !direct && <p className="connector-help">{local ? 'Local form limit: 8 MiB. Files stay on this computer, survive API restarts and expire after 24 hours. This local workspace is shared by its users.' : 'Hosted form limit: 640 KiB. Staging is private to your user and namespace and is cleared when the API restarts.'}</p>}
   </aside>;
 }

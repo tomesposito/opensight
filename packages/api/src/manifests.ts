@@ -1,5 +1,6 @@
 import { MetadataError, type SqlConnection, type SqlValue } from './metadata-db.js';
-import { type TenantContext } from './metadata.js';
+import { type TenantContext, type Revisions } from './metadata.js';
+import type { WorkLimits } from './budgets.js';
 import { identifier } from './metadata-resources.js';
 import { appendMetadataEvent } from './metadata-outbox.js';
 import { DurableCoordinator, type AdmissionInput, type AttemptDetails, type AttemptHandle } from './coordination.js';
@@ -10,6 +11,7 @@ import { artifactIdentity, artifactReference, exactObject, type ArtifactIdentity
 
 export interface ManifestDefinition { kind: 'source' | 'prepared-dataset'; id: string; version: number }
 interface Dependency extends ManifestDefinition { fence: string; generation: string; refreshedAt: string }
+export interface ResultCertificate { definitions: ManifestDefinition[]; dependencies: Dependency[] }
 interface Document {
   identity: ArtifactIdentity; epoch: string; attemptId: string; fence: string; generation: string;
   version: number; revisions: AdmissionInput['revisions']; state: 'running' | 'ready' | 'error';
@@ -80,12 +82,13 @@ export class ManifestStore {
       }
     }
   }
-  async admit(context: TenantContext, input: AdmissionInput, rawDefinitions: readonly ManifestDefinition[] = []): Promise<AttemptHandle> {
+  async admit(context: TenantContext, input: AdmissionInput, rawDefinitions: readonly ManifestDefinition[] = [],
+    admittedWork?: (c: SqlConnection, details: AttemptDetails) => Promise<void>): Promise<AttemptHandle> {
     const request = structuredClone(input), definitions = structuredClone(rawDefinitions).map(definition);
     if (request.class === 'query' && definitions.length) invalid();
     return this.coordinator.admit(context, request, async (c, details) => {
       await this.schema(c);
-      if (!details.input.claim) return;
+      if (!details.input.claim) { await admittedWork?.(c, details); return; }
       const claim = details.input.claim, all = merge([...definitions, { kind: claim.kind, id: claim.id, version: claim.expectedVersion }]);
       const document: Document = { identity: this.identity(details, claim), epoch: details.epoch, attemptId: details.input.attemptId,
         fence: details.fence!, generation: details.generation!, version: claim.expectedVersion, revisions: { ...details.input.revisions },
@@ -95,6 +98,7 @@ export class ManifestStore {
         DO UPDATE SET attempt_id = excluded.attempt_id, generation = excluded.generation, state = excluded.state, body = excluded.body`,
       [...this.values(document.identity), document.attemptId, document.generation, document.state, body]);
       await appendMetadataEvent(c, context, 'artifact:running');
+      await admittedWork?.(c, details);
     });
   }
   private parse(raw: string, details: AttemptDetails): Document {
@@ -158,7 +162,21 @@ export class ManifestStore {
     bounded({ definitions, dependencies }, details);
     await this.coordinator.publish(handle, async c => { await this.schema(c); await this.definitions(c, details, definitions); await this.dependencies(c, details, dependencies); });
   }
-  async publish(handle: AttemptHandle, rawReference: ArtifactReference, reads: readonly ManifestRead[] = []): Promise<void> {
+  resultCertificate(handle: AttemptHandle, reads: readonly ManifestRead[]): ResultCertificate {
+    const saved = [...reads].map(read => this.snapshot(handle, read));
+    const certificate = { definitions: merge(saved.flatMap(d => d.definitions)), dependencies: merge(saved.flatMap(d => [this.token(d), ...d.dependencies])) };
+    bounded(certificate, this.coordinator.describe(handle)); return structuredClone(certificate);
+  }
+  /** SQL-only consumer, inside the caller's current-authority transaction. */
+  async verifyResult(c: SqlConnection, context: TenantContext, revisions: Revisions, epoch: number, limits: WorkLimits, raw: unknown): Promise<void> {
+    const details: AttemptDetails = { context, input: { attemptId: 'result-read', class: 'query', revisions, platformRemainingMs: 28000 }, epoch: String(epoch), limits };
+    bounded(raw, details); const value = exactObject(raw, ['definitions', 'dependencies']);
+    if (!Array.isArray(value.definitions) || !Array.isArray(value.dependencies)) invalid();
+    const definitions = merge(value.definitions.map(definition)), dependencies = merge(value.dependencies.map(dependency));
+    await this.schema(c); await this.definitions(c, details, definitions); await this.dependencies(c, details, dependencies);
+  }
+  async publish(handle: AttemptHandle, rawReference: ArtifactReference, reads: readonly ManifestRead[] = [],
+    publishedWork?: (c: SqlConnection, reference: ArtifactReference) => Promise<void>): Promise<void> {
     const details = this.coordinator.describe(handle), reference = artifactReference(rawReference, manifestArtifactLimits(details));
     const consumed = [...reads].map(read => this.snapshot(handle, read));
     await this.complete(handle, details, async (c, running) => {
@@ -168,6 +186,7 @@ export class ManifestStore {
       if (dependencies.some(d => d.kind === running.identity.kind && d.id === running.identity.resource)) stale();
       bounded({ definitions, dependencies, reference }, details);
       await this.definitions(c, details, definitions); await this.dependencies(c, details, dependencies);
+      await publishedWork?.(c, reference);
       return { ...running, state: 'ready', reference, definitions, dependencies, refreshedAt: new Date(await coordinationNow(c, this.dialect)).toISOString() };
     });
   }

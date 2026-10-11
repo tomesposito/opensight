@@ -25,6 +25,18 @@ export class EmbedSources extends HostedSources {
   override async payload(context: TenantContext, source: HostedSource): Promise<unknown> {
     this.active(source);
     const current = await this.metadata.embedDatasetSource(context, this.dataset(context, source.id));
+    if (source.binding.version === 4) {
+      if (!this.artifacts) embedFailure('SOURCE_ARTIFACT_READER_REQUIRED', 503);
+      const revisions = await this.metadata.revisions(context);
+      const verify = async () => {
+        await this.metadata.assertRevisions(context, revisions);
+        const actual = await this.metadata.embedDatasetSource(context, this.dataset(context, source.id)), body = sourceBody(actual.source.body);
+        if (actual.source.id !== current.source.id || actual.source.ownerId !== current.source.ownerId || actual.source.version !== source.version
+          || body.binding.objectId !== source.binding.objectId) embedFailure('METADATA_REVISED', 403);
+        this.active({ ...body, id: source.id, version: actual.source.version });
+      };
+      await verify(); const result = await this.artifacts(context, current.source, verify); await verify(); return result;
+    }
     if (current.source.version !== source.version || !current.secret) embedFailure('SOURCE_SECRET_UNAVAILABLE', 503);
     const secret = current.secret;
     try { return object(JSON.parse(decryptMetadataSecret(String(secret.body.ciphertext), this.encryptionKey, context, { kind: 'secret', id: secret.id, ownerId: secret.ownerId }))); }

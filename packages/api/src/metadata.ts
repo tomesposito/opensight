@@ -3,7 +3,8 @@ import { MetadataError, missing, type Database, type SqlConnection, type SqlRow 
 import { identifier, insertLinks, insertResource, resourceKey, resourceKinds, resourceLinks, type MetadataKind, type MetadataResource, type ResourceKey, type Scope } from './metadata-resources.js';
 import type { JsonObject } from './mapping.js';
 import { appendMetadataEvent } from './metadata-outbox.js';
-import { resourceBytes, type HostedUsage } from './hosted-usage.js';
+import type { HostedUsage } from './hosted-usage.js';
+import { sourceBody } from './source-schema.js';
 
 export interface TenantContext extends Scope { readonly userId: string; readonly authorizationRevision: number }
 export interface Revisions { authorization: number; policy: number; configuration: number }
@@ -55,7 +56,7 @@ export class TenantMetadata {
       if (!rev || Number(rev.authorization) !== context.authorizationRevision) throw new MetadataError('AUTHORIZATION_REVISED', 403);
       const users = await c.query(`SELECT body FROM h1_resources WHERE ${predicates}`, keyValues(context, { kind: 'user', id: context.userId }));
       if (!users[0]) throw new MetadataError('UNKNOWN_PRINCIPAL', 403);
-      const before = writes && this.usage ? await resourceBytes(c, context) : 0;
+      const before = writes && this.usage ? await this.usage.storageBytes(c, context) : 0;
       const result = await work(c, { authorization: Number(rev.authorization), policy: Number(rev.policy), configuration: Number(rev.configuration) }, JSON.parse(String(users[0].body)) as JsonObject);
       if (writes) await this.usage?.storage(c, context, before);
       return result;
@@ -80,6 +81,7 @@ export class TenantMetadata {
       const sources = await c.query(`SELECT * FROM h1_resources WHERE ${predicates}`, keyValues(context, ref));
       if (!sources[0]) missing();
       const source = resource(sources[0]);
+      if (sourceBody(source.body).binding.version === 4) return { source };
       if (typeof source.body.secretId !== 'string') throw new MetadataError('SOURCE_SECRET_REQUIRED', 403);
       const secrets = await c.query(`SELECT * FROM h1_resources WHERE ${predicates}`, keyValues(context, { kind: 'secret', id: identifier(source.body.secretId), ownerId: ref.ownerId }));
       if (!secrets[0]) missing();

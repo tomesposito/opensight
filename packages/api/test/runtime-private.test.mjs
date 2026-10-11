@@ -69,3 +69,15 @@ test('SR1 migration failure rolls back DDL; PostgreSQL refuses live H8 or an SR2
     await assert.rejects(migrateRuntime(fake, env()), { code }); assert.ok(statements.every(sql => sql.startsWith('SELECT')));
   }
 });
+
+test('SR2d background calls allow Aurora wake and enforce separate recovery/work queue kinds', async () => {
+  const e = { ...env(), OPENSIGHT_RECOVERY_QUEUE_ARN: 'synthetic-recovery-queue' }; let opened = 0;
+  const runtime = createPrivateRuntime(() => e, { databases(_scope, _env, connectMs) { opened++; assert.equal(connectMs, 20000); return {}; }, scheduled: async () => {} });
+  const recovery = occurrence(); recovery.Records[0].eventSourceARN = e.OPENSIGHT_RECOVERY_QUEUE_ARN;
+  recovery.Records[0].body = JSON.stringify({ version: 1, deploymentEpoch: 1, eventId: 'intent-one', kind: 'recover' });
+  assert.deepEqual(await runtime.scheduler(recovery, context), { batchItemFailures: [] });
+  const wrong = structuredClone(recovery); wrong.Records[0].eventSourceARN = e.OPENSIGHT_WORK_QUEUE_ARN;
+  assert.equal((await runtime.scheduler(wrong, context)).batchItemFailures.length, 1);
+  wrong.Records[0].body = occurrence().Records[0].body; wrong.Records[0].eventSourceARN = e.OPENSIGHT_RECOVERY_QUEUE_ARN;
+  assert.equal((await runtime.scheduler(wrong, context)).batchItemFailures.length, 1); assert.equal(opened, 1);
+});

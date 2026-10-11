@@ -215,6 +215,13 @@ hosted API.
 
 ![Data preparation canvas with hosted preview requirements](docs/images/data-prep.png)
 
+The serverless adapter supports **8 MiB direct file uploads** with an explicit
+expiry and durable ingestion status. Status checks stop on hidden pages and after
+a bounded wait; accepted ingestion continues if you close the page. This requires
+the configured hosted runtime and is unavailable in the static demo.
+
+![Synthetic hosted upload showing its explicit expiry and queued ingestion](docs/images/durable-upload.png)
+
 ### ⚡ Blaze cached datasets
 
 Cache prepared datasets in the self-hosted API with manual or scheduled refresh,

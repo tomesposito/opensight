@@ -151,3 +151,27 @@ check, never a reason to weaken the tenant role or its policies.
 
 SMTP derivation follows the [AWS SES credential algorithm](https://docs.aws.amazon.com/ses/latest/dg/smtp-credentials.html).
 The SMTP user cannot send to arbitrary recipients or use any other AWS service.
+
+## Durable application composition (SR2d)
+
+The image now contains the durable adapter, still separately gated from public
+activation. `OPENSIGHT_SERVERLESS_DATA=durable` selects it; omitting the variable
+retains SR1's closed storage gate. Other values are rejected. Startup requires
+exact coordination, manifest, dispatch, object and operation migration markers.
+Run the IAM-only migration with maintenance frozen and admissions drained before
+activating routes; it leaves maintenance, epoch and existing limits unchanged.
+
+The runtime additionally requires `OPENSIGHT_ARTIFACT_BUCKET`, work/recovery queue
+URLs and ARNs, Scheduler group/role/DLQ ARN, and the existing deployment, budget and
+entitlement configuration. `awsEnvironment` supplies the marked runtime role names
+from the private connection secrets; these roles never own or migrate schemas.
+The worker entrypoint handles only ingestion, recovery and object cleanup. Its
+queues require the batch, visibility, retry and delivery contract in
+[SR2d](../../docs/phase5-sr2d-operations.md). H7 recurring jobs remain unavailable.
+
+The operator must separately configure exact-origin S3 PUT CORS, expose version and
+checksum response headers, preserve signed length/type/checksum/conditional/SSE
+constraints, and grant only the owned immutable prefixes. API requests never
+return public or presigned result GETs. The validation root still creates no
+consumer mappings or public ingress; setting an environment flag alone is not a
+complete or verified deployment.

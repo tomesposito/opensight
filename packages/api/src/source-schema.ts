@@ -4,9 +4,9 @@ import { object, identifier, type ResourceKey } from './metadata-resources.js';
 
 export type SourcePolicy = Omit<DatasetPolicy, 'namespaceId' | 'dataSetArn'>;
 export interface SourceBinding {
-  version: 3; connectorId: 'file' | 'postgresql'; state: 'active' | 'retired' | 'expired';
+  version: 3 | 4; connectorId: 'file' | 'postgresql'; state: 'active' | 'retired' | 'expired';
   columns: UploadColumn[]; endpointId?: string; schema?: string; table?: string;
-  expiresAt?: string; rowCount?: number;
+  expiresAt?: string; rowCount?: number; objectId?: string;
 }
 export interface SourceBody { binding: SourceBinding; secretId?: string; policy: SourcePolicy }
 export function sourceError(code = 'SOURCE_INVALID', status = 400): never { throw new MetadataError(code, status); }
@@ -29,8 +29,9 @@ export function sourcePolicy(value: unknown, columns: readonly UploadColumn[]): 
 }
 export function sourceBody(raw: unknown): SourceBody {
   const body = object(raw, ['binding', 'secretId', 'policy']);
-  if (object(body.binding).version !== 3) sourceError('SOURCE_MIGRATION_REQUIRED', 503);
-  const b = object(body.binding, ['version', 'connectorId', 'state', 'columns', 'endpointId', 'schema', 'table', 'expiresAt', 'rowCount']);
+  const version = object(body.binding).version;
+  if (version !== 3 && version !== 4) sourceError('SOURCE_MIGRATION_REQUIRED', 503);
+  const b = object(body.binding, ['version', 'connectorId', 'state', 'columns', 'endpointId', 'schema', 'table', 'expiresAt', 'rowCount', ...(version === 4 ? ['objectId'] : [])]);
   if (!['file', 'postgresql'].includes(String(b.connectorId)) || !['active', 'retired', 'expired'].includes(String(b.state))) sourceError();
   if (!Array.isArray(b.columns)) sourceError();
   for (const column of b.columns) object(column, ['name', 'type']);
@@ -44,7 +45,10 @@ export function sourceBody(raw: unknown): SourceBody {
     if (b.expiresAt !== undefined || b.rowCount !== undefined) sourceError();
   }
   if (body.secretId !== undefined) identifier(body.secretId);
-  if (b.state === 'active' && body.secretId === undefined) sourceError('SOURCE_SECRET_REQUIRED', 403);
+  if (version === 4) {
+    if (b.connectorId !== 'file' || body.secretId !== undefined) sourceError();
+    identifier(b.objectId);
+  } else if (b.state === 'active' && body.secretId === undefined) sourceError('SOURCE_SECRET_REQUIRED', 403);
   return { binding: { ...b, columns } as unknown as SourceBinding, ...(body.secretId === undefined ? {} : { secretId: body.secretId as string }), policy: sourcePolicy(body.policy, columns) };
 }
 export function sourcePolicyLinks(body: SourceBody): ResourceKey[] {

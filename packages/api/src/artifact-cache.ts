@@ -4,13 +4,17 @@ import { MetadataError } from './metadata-db.js';
 import { object } from './metadata-resources.js';
 import type { HostedCacheAdapter } from './hosted-cache.js';
 import { ManifestStore, manifestArtifactLimits, type ManifestDefinition, type ManifestRead } from './manifests.js';
-import { ArtifactTransfer, type LocalArtifact } from './artifact-transfer.js';
-import { artifactProvenance, type ArtifactDescriptor, type ArtifactIdentity } from './artifact-schema.js';
+import { ArtifactTransfer, type LocalArtifact, type PlannedArtifactWrite } from './artifact-transfer.js';
+import { artifactProvenance } from './artifact-schema.js';
 import type { AttemptHandle } from './coordination.js';
+import type { SqlConnection } from './metadata-db.js';
+import type { ArtifactReference } from './artifact-schema.js';
 
 export interface ArtifactWritePreparation {
   /** Must durably reserve storage and prearm recovery before resolving. */
-  prepareWrite(identity: ArtifactIdentity, descriptor: Readonly<ArtifactDescriptor>): Promise<void>;
+  prepareWrite(write: PlannedArtifactWrite): Promise<void>;
+  /** SQL-only conversion commits atomically with the fenced manifest. */
+  publishWrite?(c: SqlConnection, write: PlannedArtifactWrite, reference: ArtifactReference): Promise<void>;
 }
 function invalid(): never { throw new MetadataError('ARTIFACT_CACHE_CONTEXT_INVALID', 403); }
 /** One invocation/attempt. Byte handles never become authorization for another request. */
@@ -39,6 +43,7 @@ export class ArtifactCache implements HostedCacheAdapter {
   }
   async invalidate(key: string): Promise<void> { this.target(key); }
   async verify(): Promise<void> { await this.manifests.verify(this.attempt, this.consumed); }
+  resultCertificate() { return this.manifests.resultCertificate(this.attempt, this.consumed); }
   async read(scope: WorkScope, key: string, stamp: string): Promise<BlazeTable> {
     this.scope(scope); const target = this.target(key, stamp), details = this.manifests.coordinator.describe(this.attempt);
     const read = await this.manifests.read(this.attempt, target); scope.memory(read.metadataBytes);
@@ -71,10 +76,11 @@ export class ArtifactCache implements HostedCacheAdapter {
       const before = table.bytes; table.setCachedInputs(this.provenance(table)); scope.memory(table.bytes - before);
       local = await this.transfer.encode(scope, table, manifestArtifactLimits(details));
       const identity = this.manifests.identity(details, target);
-      await this.preparation.prepareWrite(identity, local.descriptor);
+      const write = this.transfer.planWrite(scope, identity, local);
+      await this.preparation.prepareWrite(write);
       await this.verify(); this.scope(scope);
-      const reference = await this.transfer.upload(scope, identity, local);
-      await this.manifests.publish(this.attempt, reference, this.consumed); this.scope(scope);
+      const reference = await this.transfer.upload(scope, identity, local, write);
+      await this.manifests.publish(this.attempt, reference, this.consumed, c => this.preparation!.publishWrite?.(c, write, reference) ?? Promise.resolve()); this.scope(scope);
     } catch (error) {
       const code = error instanceof MetadataError ? error.code : 'BLAZE_REFRESH_FAILED';
       try { await this.manifests.fail(this.attempt, /^[A-Z][A-Z0-9_]{0,95}$/.test(code) ? code : 'BLAZE_REFRESH_FAILED'); }

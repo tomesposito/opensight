@@ -11,11 +11,16 @@ import { object } from './metadata-resources.js';
 import { BlazeTable } from './blaze.js';
 import { validateQuery } from './query.js';
 import { MetadataError } from './metadata-db.js';
+import type { ManifestDefinition } from './manifests.js';
 
 export type DataPath = 'discovery' | 'query' | 'preview' | 'output' | 'ai' | 'prep';
 export interface Admission {
   source: HostedSource; security: SecurityContext; physical: PrepSource;
   tenantPredicate?: RowPredicate; deniedColumns: string[]; revisions: Revisions;
+}
+export interface HostedWorkRequest { claim: ManifestDefinition; definitions: ManifestDefinition[] }
+export interface HostedWorkAdapter {
+  run<T>(context: TenantContext, refresh: boolean, revisions: Revisions, admissions: readonly Admission[], request: HostedWorkRequest | undefined, work: () => Promise<T>): Promise<T>;
 }
 /** Every hosted data path enters here, before payload/connector/cache I/O. */
 export class HostedData {
@@ -27,7 +32,8 @@ export class HostedData {
   private readonly admitted = new WeakMap<TenantContext, Set<Admission>>();
   begin(context: TenantContext, signal?: AbortSignal, verify?: () => Promise<void>, beforePublication?: () => Promise<void>): void { if (verify) this.verifiers.set(context, verify); if (beforePublication) this.publicationChecks.set(context, beforePublication); this.admitted.set(context, new Set()); if (signal) this.signals.set(context, signal); }
   async publication(context: TenantContext, revisions: Revisions): Promise<void> { await this.finish(context, [...this.admitted.get(context) ?? []], revisions); }
-  constructor(readonly sources: HostedSources, private readonly postgres = streamSourcePostgres, readonly budgets?: TenantBudgets, cache?: HostedCacheAdapter) { this.cache = cache ?? (budgets ? new HostedCache(budgets) : undefined); }
+  constructor(readonly sources: HostedSources, private readonly postgres = streamSourcePostgres, readonly budgets?: TenantBudgets, cache?: HostedCacheAdapter,
+    private readonly durableWork?: HostedWorkAdapter) { this.cache = cache ?? (budgets ? new HostedCache(budgets) : undefined); }
   scope(context: TenantContext): WorkScope {
     this.sources.metadata.assertContext(context);
     if (!this.budgets) throw new MetadataError('BUDGET_MIGRATION_REQUIRED', 503);
@@ -39,14 +45,19 @@ export class HostedData {
     if (!l) throw new MetadataError('BUDGET_MIGRATION_REQUIRED', 503);
     return { maxRows: l.sourceRows, cellChars: l.cellChars, datasetBytes: l.workingBytes, maxBytes: l.cacheBytes };
   }
-  async work<T>(context: TenantContext, refresh: boolean, admissions: readonly Admission[], run: () => Promise<T>, revisions?: Revisions): Promise<T> {
+  async work<T>(context: TenantContext, refresh: boolean, admissions: readonly Admission[], run: () => Promise<T>, revisions?: Revisions, request?: HostedWorkRequest): Promise<T> {
     if (!this.budgets) throw new MetadataError('BUDGET_MIGRATION_REQUIRED', 503);
-    return this.budgets.run(context, refresh, async () => { await this.verifiers.get(context)?.(); await this.finish(context, admissions, revisions); }, async () => {
+    const local = () => this.budgets!.run(context, refresh, async () => { await this.verifiers.get(context)?.(); await this.finish(context, admissions, revisions); }, async () => {
       if (refresh && !this.prepaidCompute.has(context)) await this.sources.metadata.usage?.consume(this.sources.metadata, context, 'computeAttempts');
       const result = await run(); const scope = this.scope(context);
       if (Buffer.byteLength(JSON.stringify(result)) > scope.limits.resultBytes) throw new MetadataError('TENANT_BUDGET_EXCEEDED', 429);
       scope.check(); return result;
     }, this.signals.get(context));
+    if (!this.durableWork) return local();
+    const prepaid = this.prepaidCompute.has(context);
+    if (refresh) this.prepaidCompute.add(context); // SR2 charges the refresh inside durable admission.
+    try { return await this.durableWork.run(context, refresh, revisions ?? admissions[0]?.revisions ?? await this.sources.metadata.revisions(context), admissions, request, local); }
+    finally { if (refresh && !prepaid) this.prepaidCompute.delete(context); }
   }
   sink(context: TenantContext, table: BlazeTable, source = false) {
     const scope = this.scope(context);
@@ -177,7 +188,7 @@ export class HostedData {
         await this.finish(context, [a]); scope.check(); return table;
       });
       return { mode: 'BLAZE', state: 'ready' };
-    });
+    }, a.revisions, { claim: { kind: 'source', id, version: a.source.version }, definitions: [] });
   }
   async table(context: TenantContext, a: Admission, columns: readonly string[], mode: 'DIRECT_QUERY' | 'BLAZE' = 'DIRECT_QUERY'): Promise<BlazeTable> {
     const scope = this.scope(context);

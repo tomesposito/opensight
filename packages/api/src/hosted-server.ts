@@ -1,7 +1,7 @@
 import { EmbedSessions, embedSessionKey } from './embed-sessions.js';
 import { EmbedContent } from './embed-content.js';
 import { EmbedSources } from './embed-sources.js';
-import { embedSessionRoute } from './embed-session-routes.js';
+import { embedSessionRoute, type EmbedResult } from './embed-session-routes.js';
 import { loadBudgets } from './budget-store.js';
 import { embeddingPolicy, expectedEmbedRevision, HostedEmbedding, initializeEmbedding } from './embedding-config.js';
 import { assertHostedSourcesReady, expireUploads } from './source-maintenance.js';
@@ -20,7 +20,8 @@ import { equal } from './auth-crypto.js';
 import { hostedConfig } from './hosted-config.js';
 import { HostedProvisioning } from './hosted-provisioning.js';
 import { MetadataError, type Database } from './metadata-db.js';
-import { TenantMetadata } from './metadata.js';
+import { TenantMetadata, type TenantContext } from './metadata.js';
+import type { TenantBudgets } from './budgets.js';
 import { identifier, object } from './metadata-resources.js';
 import type { SecurityOptions } from './security.js';
 import { scopePath } from './namespace-routes.js';
@@ -38,6 +39,8 @@ import { hostedReadiness } from './hosted-health.js';
 import { HostedUsage, appendOperatorAudit } from './hosted-usage.js';
 import { referenceConfig, referenceDisclosure, assertReferenceSurfaces } from './single-node-config.js';
 
+const invocationFinishes = new WeakMap<Server, () => Promise<void>>();
+export async function finishHostedInvocation(server: Server): Promise<void> { await invocationFinishes.get(server)?.(); }
 const drains = new WeakMap<Server, () => Promise<void>>();
 const handlers = new WeakMap<Server, (request: IncomingMessage, response: ServerResponse) => Promise<void>>();
 export async function drainHostedServer(server: Server): Promise<void> { await drains.get(server)?.(); }
@@ -48,6 +51,17 @@ export async function dispatchHostedRequest(server: Server, request: IncomingMes
   await handle(request, response);
 }
 
+export interface HostedInvocationAdapters {
+  data: HostedDataRoutes;
+  embedContent: EmbedContent;
+  allows(path: string): boolean;
+  capabilities: Readonly<Record<string, unknown>>;
+  resultMaxBytes?: number;
+  embedResult?: EmbedResult;
+  embedOperation?(request: IncomingMessage, response: ServerResponse, path: string, sessions: EmbedSessions): Promise<boolean>;
+  route(request: IncomingMessage, response: ServerResponse, path: string, context: TenantContext, recheck: () => Promise<void>): Promise<boolean>;
+  finish(): Promise<void>;
+}
 export interface HostedServerOptions {
   membershipDatabase: Database;
   tenantDatabase: Database;
@@ -57,7 +71,7 @@ export interface HostedServerOptions {
   env?: NodeJS.ProcessEnv;
   mailTransport?: MailTransport;
   /** Invocation mode never runs DDL, activates keys, recovers jobs or starts interval work. */
-  invocation?: { signal: AbortSignal };
+  invocation?: { signal: AbortSignal; usage?: HostedUsage; compose?(metadata: TenantMetadata, budgets: TenantBudgets, auth?: HostedAuth): HostedInvocationAdapters };
 }
 const forgedHeaders = ['x-user', 'x-user-id', 'x-principal', 'x-groups', 'x-group-ids', 'x-namespace', 'x-namespace-id', 'x-tenant', 'x-tenant-id', 'x-subject', 'x-role', 'x-roles', 'x-capabilities'];
 const forgedFields = ['subject', 'principal', 'userId', 'namespaceId', 'groups', 'security', 'capabilities', 'issuer', 'audience'];
@@ -93,7 +107,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
   const authenticate = options.security.authenticate;
   const reference = referenceConfig(options.env ?? process.env);
   if (options.invocation && reference) throw new MetadataError('SERVERLESS_REFERENCE_FORBIDDEN', 503);
-  const usage = reference ? new HostedUsage(options.membershipDatabase, reference.entitlements) : undefined;
+  const usage = reference ? new HostedUsage(options.membershipDatabase, reference.entitlements) : options.invocation?.usage;
   if (reference) await options.membershipDatabase.transaction(async c => {
     for (const table of ['h8_usage', 'h8_usage_events', 'h8_audit', 'h8_recovery']) await c.query(`SELECT 1 FROM ${table} WHERE 1 = 0`);
     const r = (await c.query('SELECT version FROM h8_schema WHERE id = 1'))[0];
@@ -106,8 +120,9 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
   const embedding = new HostedEmbedding(options.membershipDatabase, metadata, policy);
   const budgets = await loadBudgets(options.membershipDatabase, metadata);
   const jobs = new JobStore(options.membershipDatabase, metadata);
-  const data = new HostedDataRoutes(new HostedData(new HostedSources(metadata, config.encryptionKey.toString('base64'), sourceEndpoints(options.env)), undefined, budgets), jobs);
-  const embedContent = new EmbedContent(new HostedData(new EmbedSources(metadata, config.encryptionKey.toString('base64'), sourceEndpoints(options.env)), undefined, budgets));
+  const invocation = options.invocation?.compose?.(metadata, budgets, options.builtinAuth);
+  const data = invocation?.data ?? new HostedDataRoutes(new HostedData(new HostedSources(metadata, config.encryptionKey.toString('base64'), sourceEndpoints(options.env)), undefined, budgets), jobs);
+  const embedContent = invocation?.embedContent ?? new EmbedContent(new HostedData(new EmbedSources(metadata, config.encryptionKey.toString('base64'), sourceEndpoints(options.env)), undefined, budgets));
   const mail = options.mailTransport ?? smtpFromEnvironment(options.env);
   if (!options.invocation) await initializeJobs(options.membershipDatabase);
   const unmigrated = await options.membershipDatabase.transaction(c => c.query(`SELECT j.resource_id FROM h1_resources j WHERE j.kind = 'job'
@@ -224,8 +239,9 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
       }
       // SR2/SR3 supply durable admission/artifacts and event claims. Never run
       // the single-node data/job/embedding plane just because Lambda can invoke it.
-      if (options.invocation && !['/api/session', '/api/auth/switch', '/api/auth/logout', '/api/namespaces', '/api/users', '/api/groups'].includes(path)) throw new MetadataError('SERVERLESS_STORAGE_REQUIRED', 503);
-      if (await embedSessionRoute(request, response, path, sessions, embedContent)) return;
+      if (options.invocation && !['/api/session', '/api/auth/switch', '/api/auth/logout', '/api/namespaces', '/api/users', '/api/groups'].includes(path) && !invocation?.allows(path)) throw new MetadataError('SERVERLESS_STORAGE_REQUIRED', 503);
+      if (await invocation?.embedOperation?.(request, response, path, sessions)) return;
+      if (await embedSessionRoute(request, response, path, sessions, embedContent, invocation?.embedResult, invocation?.resultMaxBytes)) return;
       // Every other request, including unknown and legacy routes, must verify first.
       const verified = async (req: IncomingMessage) => {
         try {
@@ -243,7 +259,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
       if (path === '/api/session') {
         method(request, response, ['GET']);
         const user = await metadata.get(context, { kind: 'user', id: context.userId });
-        send(response, 200, { id: user.id, namespaceId: context.namespaceId, tenantId: context.tenantId, ...user.body }); return;
+        send(response, 200, { id: user.id, namespaceId: context.namespaceId, tenantId: context.tenantId, ...user.body, ...(invocation ? { capabilities: invocation.capabilities } : {}) }); return;
       }
       if (path === '/api/auth/switch' || path === '/api/auth/logout') {
         if (!options.builtinAuth) throw new MetadataError('BUILTIN_AUTH_UNAVAILABLE', 503);
@@ -257,7 +273,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
         method(request, response, ['GET']); await metadata.revisions(context);
         send(response, 200, [{ id: context.namespaceId, tenantId: context.tenantId }]); return;
       }
-      if (await jobRoute(request, response, path, context, jobs, renderer, mail)) return;
+      if (!options.invocation && await jobRoute(request, response, path, context, jobs, renderer, mail)) return;
       if (path === '/api/users' || path === '/api/groups') {
         method(request, response, ['GET']);
         const user = await metadata.get(context, { kind: 'user', id: context.userId });
@@ -294,11 +310,13 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
       request.once('aborted', () => cancellation.abort());
       response.once('close', () => { if (!response.writableFinished) cancellation.abort(); });
       data.data.begin(context, cancellation.signal);
-      if (await data.route(request, response, path, context, async () => {
+      const recheck = async () => {
         const current = await metadata.authenticate(request, verified);
-        if (current.tenantId !== context.tenantId || current.userId !== context.userId) throw new MetadataError('AUTHENTICATION_FAILED', 401);
+        if (current.tenantId !== context.tenantId || current.namespaceId !== context.namespaceId || current.userId !== context.userId) throw new MetadataError('AUTHENTICATION_FAILED', 401);
         await metadata.revisions(context);
-      })) return;
+      };
+      if (await invocation?.route(request, response, path, context, recheck)) return;
+      if (await data.route(request, response, path, context, recheck)) return;
       throw new MetadataError('HOSTED_CAPABILITY_UNAVAILABLE', 503);
     })().catch((error: unknown) => {
       errors++; request.resume();
@@ -312,6 +330,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
   };
   const server = createServer((request, response) => { void handle(request, response); });
   handlers.set(server, handle);
+  if (invocation) invocationFinishes.set(server, () => invocation.finish());
   let expiryWork: Promise<void> | undefined;
   const expiryTimer = options.invocation ? undefined : setInterval(() => {
     expiryWork ??= expireUploads(options.membershipDatabase).catch(() => { /* Reads still fail closed on expiry. */ }).finally(() => { expiryWork = undefined; });

@@ -31,7 +31,7 @@ export async function expireUploads(database: Database, now = Date.now()): Promi
         await c.query(`DELETE FROM h1_links WHERE ${predicate}`, values);
         await c.query(`UPDATE h1_resources SET body = ?, version = version + 1 WHERE ${predicate}`, [JSON.stringify(retired), ...values]);
         await insertLinks(c, scope, key, resourceLinks(key, retired));
-        await c.query(`DELETE FROM h1_resources WHERE ${predicate}`, [scope.tenantId, scope.namespaceId, 'secret', key.ownerId, body.secretId!]);
+        if (body.secretId) await c.query(`DELETE FROM h1_resources WHERE ${predicate}`, [scope.tenantId, scope.namespaceId, 'secret', key.ownerId, body.secretId]);
         changed = true;
       }
       if (changed) {
