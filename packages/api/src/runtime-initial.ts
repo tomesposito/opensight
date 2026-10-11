@@ -21,9 +21,10 @@ import { operationChecksum } from './operation-schema.js';
 interface InitialTester { tenantId: string; namespaceId: string; userId: string; subject: string; email: string; name: string; password: string; totpSecret: string }
 export type InitialCommand = { version: 1; command: 'bootstrap-initial'; operationId: string; testers: InitialTester[] }
   | { version: 1; command: 'activate-initial' | 'repair-initial-locks'; operationId: string; expectedEpoch: 1; releaseDigest: string }
-  | { version: 1; command: 'tune-initial-budgets'; operationId: string; expectedEpoch: 1; releaseDigest: string; previousBudgetDigest: string; targetBudgetDigest: string };
+  | { version: 1; command: 'tune-initial-budgets'; operationId: string; expectedEpoch: 1; releaseDigest: string; previousBudgetDigest: string; targetBudgetDigest: string }
+  | { version: 1; command: 'extend-pilot-execution'; operationId: string; expectedEpoch: 1; releaseDigest: string; activationReleaseDigest: string; expectedBudgetVersion: number; previousBudgetDigest: string; targetBudgetDigest: string };
 export type InitialResult = { state: 'bootstrapped'; epoch: 1; tenants: 2 } | { state: 'active' | 'locks-repaired'; epoch: 1 }
-  | { state: 'budgets-configured'; epoch: 1; budgetVersion: 2 };
+  | { state: 'budgets-configured'; epoch: 1; budgetVersion: number };
 function fail(code = 'INITIAL_ACTIVATION_INVALID'): never { throw new MetadataError(code, 503); }
 const markers = [['sr_coordination_schema', coordinationChecksum], ['sr_manifest_schema', manifestChecksum], ['sr_dispatch_schema', dispatchChecksum], ['sr_object_schema', objectChecksum], ['sr_operation_schema', operationChecksum]] as const;
 const workTables = serverlessTables.filter(t => t.startsWith('sr_') && !t.endsWith('_schema') && !['sr_control', 'sr_limits'].includes(t));
@@ -49,13 +50,19 @@ export function initialCommand(raw: unknown, env: NodeJS.ProcessEnv): InitialCom
   const input = authorizeInitial(raw, env);
   if (input.version !== 1) fail();
   const operationId = identifier(input.operationId);
-  if (input.command === 'activate-initial' || input.command === 'repair-initial-locks' || input.command === 'tune-initial-budgets') {
-    object(input, ['command', 'authorization', 'version', 'operationId', 'expectedEpoch', 'releaseDigest', ...(input.command === 'tune-initial-budgets' ? ['previousBudgetDigest', 'targetBudgetDigest'] : [])]);
+  if (input.command === 'activate-initial' || input.command === 'repair-initial-locks' || input.command === 'tune-initial-budgets' || input.command === 'extend-pilot-execution') {
+    object(input, ['command', 'authorization', 'version', 'operationId', 'expectedEpoch', 'releaseDigest', ...(['tune-initial-budgets', 'extend-pilot-execution'].includes(String(input.command)) ? ['previousBudgetDigest', 'targetBudgetDigest'] : []), ...(input.command === 'extend-pilot-execution' ? ['activationReleaseDigest', 'expectedBudgetVersion'] : [])]);
     if (input.expectedEpoch !== 1 || typeof input.releaseDigest !== 'string' || !/^sha256:[a-f0-9]{64}$/.test(input.releaseDigest) || input.releaseDigest !== env.OPENSIGHT_RELEASE_DIGEST) fail();
-    if (input.command === 'tune-initial-budgets') {
+    if (input.command === 'tune-initial-budgets' || input.command === 'extend-pilot-execution') {
       if (typeof input.previousBudgetDigest !== 'string' || !/^[a-f0-9]{64}$/.test(input.previousBudgetDigest)
         || typeof input.targetBudgetDigest !== 'string' || !/^[a-f0-9]{64}$/.test(input.targetBudgetDigest)
         || input.targetBudgetDigest !== checksum(budgetEnvironment(env)) || input.previousBudgetDigest === input.targetBudgetDigest) fail('INITIAL_BUDGET_CHANGE_INVALID');
+      if (input.command === 'extend-pilot-execution') {
+        if (typeof input.activationReleaseDigest !== 'string' || !/^sha256:[a-f0-9]{64}$/.test(input.activationReleaseDigest)
+          || !Number.isSafeInteger(input.expectedBudgetVersion) || Number(input.expectedBudgetVersion) < 2 || Number(input.expectedBudgetVersion) >= 2147483647) fail('INITIAL_BUDGET_CHANGE_INVALID');
+        return { command: input.command, version: 1, operationId, expectedEpoch: 1, releaseDigest: input.releaseDigest, activationReleaseDigest: input.activationReleaseDigest,
+          expectedBudgetVersion: Number(input.expectedBudgetVersion), previousBudgetDigest: input.previousBudgetDigest, targetBudgetDigest: input.targetBudgetDigest };
+      }
       return { command: input.command, version: 1, operationId, expectedEpoch: 1, releaseDigest: input.releaseDigest, previousBudgetDigest: input.previousBudgetDigest, targetBudgetDigest: input.targetBudgetDigest };
     }
     return { command: input.command, version: 1, operationId, expectedEpoch: 1, releaseDigest: input.releaseDigest };
@@ -142,7 +149,7 @@ export async function initialAdministration(database: Database, env: NodeJS.Proc
   const prepared: { passwordHash: string; totp: string }[] = [];
   if (input.command === 'bootstrap-initial') for (const tester of input.testers) prepared.push({ passwordHash: await hashPassword(tester.password), totp: seal(tester.totpSecret, config.encryptionKey, `totp:${tester.subject}`) });
   return database.transaction(async c => {
-    const state = await inspect(c, env, dialect, input.command === 'tune-initial-budgets');
+    const state = await inspect(c, env, dialect, input.command === 'tune-initial-budgets' || input.command === 'extend-pilot-execution');
     const selected = await receipt(c, selectionId), prior = await receipt(c, bootstrapId), requestHash = hmac(config, input);
     if (input.command === 'bootstrap-initial') {
       if (state !== 'maintenance' || await receipt(c, activationId)) fail('INITIAL_MAINTENANCE_REQUIRED');
@@ -172,36 +179,44 @@ export async function initialAdministration(database: Database, env: NodeJS.Proc
     if (input.expectedEpoch !== 1 || input.releaseDigest !== env.OPENSIGHT_RELEASE_DIGEST || selected !== selectionHash || typeof prior !== 'string') fail('INITIAL_BOOTSTRAP_REQUIRED');
     await key(c, config, false);
     const activated = await receipt(c, activationId);
-    if (input.command === 'tune-initial-budgets') {
-      const activationInput = { command: 'activate-initial', version: 1, operationId: input.operationId, expectedEpoch: 1, releaseDigest: input.releaseDigest };
+    if (input.command === 'tune-initial-budgets' || input.command === 'extend-pilot-execution') {
+      const execution = input.command === 'extend-pilot-execution', previousVersion = execution ? input.expectedBudgetVersion : 1, nextVersion = previousVersion + 1;
+      const activationInput = { command: 'activate-initial', version: 1, operationId: input.operationId, expectedEpoch: 1, releaseDigest: execution ? input.activationReleaseDigest : input.releaseDigest };
       if (state !== 'open' || activated !== hmac(config, activationInput)) fail('INITIAL_BUDGET_CHANGE_INVALID');
       await verifyTesters(c, deployment, input.operationId, prior, true);
       if (dialect === 'postgres') await verifyRuntimeLocks(c, env);
-      const changeId = checksum(['initial-memory-budgets', deployment]), changed = await receipt(c, changeId);
+      const changeId = checksum(execution ? ['pilot-execution-budget', deployment, previousVersion] : ['initial-memory-budgets', deployment]), changed = await receipt(c, changeId);
       const saved = (await c.query('SELECT version, body FROM h4_budget_config WHERE id = 1'))[0]!;
       const limits = (await c.query('SELECT revision, budget_version FROM sr_limits WHERE deployment = ?', [deployment]))[0]!;
       const target = budgetEnvironment(env), old = validateBudgets(JSON.parse(String(saved.body)));
       if (checksum(target) !== input.targetBudgetDigest) fail('INITIAL_BUDGET_CHANGE_INVALID');
       if (changed) {
-        if (changed !== requestHash || Number(saved.version) !== 2 || Number(limits.revision) !== 2 || checksum(old) !== input.targetBudgetDigest) fail('INITIAL_BUDGET_CHANGE_CONFLICT');
-        return { state: 'budgets-configured', epoch: 1, budgetVersion: 2 };
+        if (changed !== requestHash || Number(saved.version) !== nextVersion || Number(limits.revision) !== nextVersion || checksum(old) !== input.targetBudgetDigest) fail('INITIAL_BUDGET_CHANGE_CONFLICT');
+        return { state: 'budgets-configured', epoch: 1, budgetVersion: nextVersion };
       }
-      if (Number(saved.version) !== 1 || Number(limits.revision) !== 1 || checksum(old) !== input.previousBudgetDigest) fail('INITIAL_BUDGET_CHANGE_CONFLICT');
+      if (Number(saved.version) !== previousVersion || Number(limits.revision) !== previousVersion || checksum(old) !== input.previousBudgetDigest) fail('INITIAL_BUDGET_CHANGE_CONFLICT');
       const expected = structuredClone(old);
-      const memory = { workingBytes: 67108864, cacheBytes: 67108864, workerRssBytes: 1073741824, workerHeapMb: 512 };
-      for (const field of ['workingBytes', 'cacheBytes', 'workerRssBytes', 'workerHeapMb'] as const) {
-        if (old.defaults[field] > memory[field]) fail('INITIAL_BUDGET_CHANGE_INVALID');
-        expected.defaults[field] = memory[field];
+      if (execution) {
+        for (const level of ['defaults', 'node'] as const) {
+          if (target[level].executionMs < old[level].executionMs || target[level].executionMs > 90000) fail('INITIAL_BUDGET_CHANGE_INVALID');
+          expected[level].executionMs = target[level].executionMs;
+        }
+      } else {
+        const memory = { workingBytes: 67108864, cacheBytes: 67108864, workerRssBytes: 1073741824, workerHeapMb: 512 };
+        for (const field of ['workingBytes', 'cacheBytes', 'workerRssBytes', 'workerHeapMb'] as const) {
+          if (old.defaults[field] > memory[field]) fail('INITIAL_BUDGET_CHANGE_INVALID');
+          expected.defaults[field] = memory[field];
+        }
+        if (old.node.workerHeapMb > 512) fail('INITIAL_BUDGET_CHANGE_INVALID');
+        expected.node.workerHeapMb = 512;
       }
-      if (old.node.workerHeapMb > 512) fail('INITIAL_BUDGET_CHANGE_INVALID');
-      expected.node.workerHeapMb = 512;
       if (checksum(expected) !== input.targetBudgetDigest) fail('INITIAL_BUDGET_CHANGE_INVALID');
       if ((await c.query("SELECT 1 FROM sr_admission WHERE deployment = ? AND state = 'held' AND hold_until > ? LIMIT 1", [deployment, await coordinationNow(c, dialect)])).length) fail('WORKSPACE_DRAIN_REQUIRED');
-      await c.query('UPDATE h4_budget_config SET version = 2, body = ? WHERE id = 1', [JSON.stringify(target)]);
-      await c.query('UPDATE sr_limits SET revision = 2, budget_version = 2 WHERE deployment = ?', [deployment]);
+      await c.query('UPDATE h4_budget_config SET version = ?, body = ? WHERE id = 1', [nextVersion, JSON.stringify(target)]);
+      await c.query('UPDATE sr_limits SET revision = ?, budget_version = ? WHERE deployment = ?', [nextVersion, nextVersion, deployment]);
       await c.query('INSERT INTO h2_requests VALUES (?,?)', [changeId, requestHash]);
-      await appendOperatorAudit(c, 'runtime.initial-budgets-configured');
-      return { state: 'budgets-configured', epoch: 1, budgetVersion: 2 };
+      await appendOperatorAudit(c, execution ? 'runtime.pilot-execution-extended' : 'runtime.initial-budgets-configured');
+      return { state: 'budgets-configured', epoch: 1, budgetVersion: nextVersion };
     }
     if (input.command === 'repair-initial-locks') {
       if (dialect !== 'postgres' || state !== 'open' || activated !== hmac(config, { ...input, command: 'activate-initial' })) fail('INITIAL_LOCK_REPAIR_REQUIRED');

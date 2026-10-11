@@ -12,7 +12,7 @@ import { ArtifactTransfer } from './packages/api/dist/artifact-transfer.js';
   const csv = header + prefixes.map((prefix, i) => { const count = pad + (i < remainder ? 1 : 0); return prefix + '漢'.repeat(Math.floor(count / 3)) + 'x'.repeat(count % 3) + '\n'; }).join('');
   const bytes = Buffer.from(csv); assert.equal(bytes.length, maximum);
 
-const tenant = { running:1,queued:4,executionMs:10000,queueMs:30000,sourceRows:100000,resultBytes:1048576,workingBytes:67108864,cacheBytes:67108864,workerRssBytes:1073741824,workerHeapMb:512,duckdbMemoryMb:64,cellChars:16384 };
+const tenant = { running:1,queued:4,executionMs:30000,queueMs:30000,sourceRows:100000,resultBytes:1048576,workingBytes:67108864,cacheBytes:67108864,workerRssBytes:1073741824,workerHeapMb:512,duckdbMemoryMb:64,cellChars:16384 };
 const limits={encodedBytes:tenant.workingBytes,decodedBytes:tenant.workingBytes,rows:tenant.sourceRows,columns:256,cellChars:tenant.cellChars};
 const scope=new InvocationScope(Date.now()+110000), budgets=new TenantBudgets({defaults:tenant,tenants:{},node:{...tenant,running:3,queued:12,refreshSlots:1,workingBytes:67108864,cacheBytes:67108864,workerRssBytes:1610612736}},()=>{}),context={tenantId:'synthetic'};
 try { await scope.run(async()=>budgets.run(context,false,async()=>{},async()=>{

@@ -15,8 +15,9 @@ export function initialCredentials(ownerEmail, agentEmail = 'automation@example.
   return { version: 1, operationId: randomUUID(), testers: emails.map((email, index) => ({ tenantId: randomUUID(), namespaceId: randomUUID(), userId: randomUUID(), subject: randomUUID(),
     email, name: index === 0 ? 'Workspace owner' : 'Automation tester', password: randomBytes(32).toString('base64url'), totpSecret: randomBytes(20).toString('base64') })) };
 }
-export function safeInitialResult(command, value) {
-  const expected = { migrate: { state: 'migrated', maintenance: true }, 'bootstrap-initial': { state: 'bootstrapped', epoch: 1, tenants: 2 }, 'activate-initial': { state: 'active', epoch: 1 }, 'repair-initial-locks': { state: 'locks-repaired', epoch: 1 }, 'tune-initial-budgets': { state: 'budgets-configured', epoch: 1, budgetVersion: 2 } }[command];
+export function safeInitialResult(command, value, expectedBudgetVersion) {
+  if (command === 'extend-pilot-execution' && (!Number.isSafeInteger(expectedBudgetVersion) || expectedBudgetVersion < 2 || expectedBudgetVersion >= 2147483647)) throw Error('INITIAL_RESULT_INVALID');
+  const expected = { 'extend-pilot-execution': { state: 'budgets-configured', epoch: 1, budgetVersion: expectedBudgetVersion + 1 }, migrate: { state: 'migrated', maintenance: true }, 'bootstrap-initial': { state: 'bootstrapped', epoch: 1, tenants: 2 }, 'activate-initial': { state: 'active', epoch: 1 }, 'repair-initial-locks': { state: 'locks-repaired', epoch: 1 }, 'tune-initial-budgets': { state: 'budgets-configured', epoch: 1, budgetVersion: 2 } }[command];
   if (!expected || !value || Object.keys(value).sort().join() !== Object.keys(expected).sort().join() || Object.entries(expected).some(([key, field]) => value[key] !== field)) throw Error('INITIAL_RESULT_INVALID');
   return expected;
 }
@@ -25,6 +26,11 @@ export function initialBudgetChange(value) {
     || !Object.values(value).every(v => typeof v === 'string' && /^[a-f0-9]{64}$/.test(v))
     || value.previousBudgetDigest === value.targetBudgetDigest) throw Error('INITIAL_BUDGET_CHANGE_INVALID');
   return { previousBudgetDigest: value.previousBudgetDigest, targetBudgetDigest: value.targetBudgetDigest };
+}
+export function executionBudgetChange(value) {
+  if (!value || Object.keys(value).sort().join() !== 'expectedBudgetVersion,previousBudgetDigest,targetBudgetDigest'
+    || !Number.isSafeInteger(value.expectedBudgetVersion) || value.expectedBudgetVersion < 2 || value.expectedBudgetVersion >= 2147483647) throw Error('INITIAL_BUDGET_CHANGE_INVALID');
+  return { expectedBudgetVersion: value.expectedBudgetVersion, ...initialBudgetChange({ previousBudgetDigest: value.previousBudgetDigest, targetBudgetDigest: value.targetBudgetDigest }) };
 }
 export function activationRequired(record, release, account, deployment, operationId, patch) {
   if (record?.version !== 1 || record.account !== account || record.deployment !== deployment || record.imageUri !== (patch?.activationImageUri ?? release.image_uri) || record.operationId !== operationId
@@ -83,7 +89,8 @@ export async function main(args = process.argv.slice(2), environment = process.e
     };
     const configuration = () => sha256(Buffer.concat(['pilot.tfvars.json', 'validation.backend.hcl', 'pilot-release.json',
       ...(read('pilot.tfvars.json').administration_image_uri ? ['pilot-administration-release.json'] : []),
-      ...(existsSync(path('pilot-connection-repair.json')) ? ['pilot-connection-repair.json'] : [])].map(file)));
+      ...(existsSync(path('pilot-connection-repair.json')) ? ['pilot-connection-repair.json'] : []),
+      ...(existsSync(path('pilot-execution-change.json')) ? ['pilot-execution-change.json'] : [])].map(file)));
     const state = () => {
       const metadata = aws('s3api', 'get-object', ['--bucket', bootstrap.state_bucket, '--expected-bucket-owner', account, '--key', 'validation/terraform.tfstate', path('pilot.remote-state.json')]);
       const saved = read('pilot.remote-state.json');
@@ -187,9 +194,9 @@ export async function main(args = process.argv.slice(2), environment = process.e
     };
     if (operation === 'invoke') {
       source();
-      if (existsSync(path('pilot-connection-repair.json'))) throw Error('INITIAL_COMMANDS_CLOSED');
-      if (!pilot || !inputs.enable_pilot_runtime || !['migrate', 'bootstrap-initial', 'activate-initial', 'repair-initial-locks', 'tune-initial-budgets'].includes(selection)) throw Error('INITIAL_COMMAND_INVALID');
-      if (['repair-initial-locks', 'tune-initial-budgets'].includes(selection)) activation();
+      if (existsSync(path('pilot-connection-repair.json')) && selection !== 'extend-pilot-execution') throw Error('INITIAL_COMMANDS_CLOSED');
+      if (!pilot || !inputs.enable_pilot_runtime || !['migrate', 'bootstrap-initial', 'activate-initial', 'repair-initial-locks', 'tune-initial-budgets', 'extend-pilot-execution'].includes(selection)) throw Error('INITIAL_COMMAND_INVALID');
+      if (['repair-initial-locks', 'tune-initial-budgets', 'extend-pilot-execution'].includes(selection)) activation();
       const fn = verifyFunction('migration');
       if (fn.Configuration.ImageConfigResponse?.ImageConfig?.Command?.join() !== 'packages/api/dist/aws-lambda.administration') throw Error('INITIAL_HANDLER_REQUIRED');
       const current = inventory(), secretArn = current.secrets.operator;
@@ -199,13 +206,14 @@ export async function main(args = process.argv.slice(2), environment = process.e
       const testers = selection === 'migrate' ? null : read('initial-testers.json');
       const input = { command: selection, authorization: `Operator ${key.toString('base64url')}`, ...(testers ? { version: 1, operationId: testers.operationId,
         ...(selection === 'bootstrap-initial' ? { testers: testers.testers } : { expectedEpoch: 1, releaseDigest: release.image_uri.split('@')[1] }),
-        ...(selection === 'tune-initial-budgets' ? initialBudgetChange(read('pilot-budget-change.json')) : {}) } : {}) };
+        ...(selection === 'tune-initial-budgets' ? initialBudgetChange(read('pilot-budget-change.json')) : {}),
+        ...(selection === 'extend-pilot-execution' ? { ...executionBudgetChange(read('pilot-execution-change.json')), activationReleaseDigest: read('pilot-activation.json').imageUri.split('@')[1] } : {}) } : {}) };
       write('pilot-command.json', input);
       try {
         const response = aws('lambda', 'invoke', ['--function-name', fn.Configuration.FunctionArn, '--invocation-type', 'RequestResponse', '--cli-connect-timeout', '10', '--cli-read-timeout', '130', '--cli-binary-format', 'raw-in-base64-out', '--payload', `file://${path('pilot-command.json')}`, path('pilot-response.json')]);
         const result = read('pilot-response.json');
         if (response.FunctionError) throw Error(/^[A-Z][A-Z0-9_]{1,79}$/.test(result.errorMessage ?? '') ? result.errorMessage : 'INITIAL_COMMAND_FAILED');
-        const safe = safeInitialResult(selection, result), record = { version: 1, account, deployment, imageUri: release.image_uri, administrationImageUri: fn.Code.ResolvedImageUri, operationId: testers?.operationId, completedAt: Date.now(), result: safe };
+        const safe = safeInitialResult(selection, result, input.expectedBudgetVersion), record = { version: 1, account, deployment, imageUri: release.image_uri, administrationImageUri: fn.Code.ResolvedImageUri, operationId: testers?.operationId, completedAt: Date.now(), result: safe };
         write(selection === 'activate-initial' ? 'pilot-activation.json' : `pilot-${selection}.json`, record);
         console.log(JSON.stringify(safe)); return;
       } finally { unlinkSync(path('pilot-command.json')); }
