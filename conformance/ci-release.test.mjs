@@ -12,9 +12,10 @@ test('SR4c source checks reject credential-shaped material, private config and u
 test('SR4c release manifests bind source, workflow, architecture and every artifact', () => {
   const m = { version: 1, platform: 'linux/arm64', repository: 'example/opensight', source: 'a'.repeat(40), runId: '123',
     workflow: '.github/workflows/ci.yml', ref: 'refs/heads/master', compatibility: 'b'.repeat(64), imageDigest: 'sha256:' + 'c'.repeat(64),
+    licenses: 'e'.repeat(64),
     artifacts: Object.fromEntries(['runtime.oci.tar', 'frontend.tar.gz', 'runtime-sbom.json'].map(k => [k, 'd'.repeat(64)])) };
   assert.equal(validateManifest(m), m);
-  for (const patch of [{ source: 'master' }, { ref: 'refs/pull/1/merge' }, { platform: 'linux/amd64' }, { artifacts: {} }, { imageDigest: 'latest' }]) assert.throws(() => validateManifest({ ...m, ...patch }));
+  for (const patch of [{ source: 'master' }, { ref: 'refs/pull/1/merge' }, { platform: 'linux/amd64' }, { artifacts: {} }, { imageDigest: 'latest' }, { licenses: 'zz' }]) assert.throws(() => validateManifest({ ...m, ...patch }));
   assert.equal(compatibility([['b', '2'], ['a', '1']]), compatibility([['a', '1'], ['b', '2']]));
   assert.notEqual(compatibility([['a', '1']]), compatibility([['a', '2']]));
 });
