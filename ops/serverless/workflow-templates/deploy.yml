@@ -1,0 +1,53 @@
+# TEMPLATE — not a live workflow. See README.md.
+# Private deploy workflow: promotes a verified release through the controller.
+name: OpenSight private deploy (template)
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment (e.g. pilot)'
+        required: true
+      release_digest:
+        description: 'SHA-256 of the release manifest to deploy'
+        required: true
+      approval_ref:
+        description: 'Reference to the recorded operator approval'
+        required: true
+permissions:
+  contents: read
+concurrency:
+  group: opensight-deploy-${{ inputs.environment }}
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      id-token: write  # only this job assumes the deploy role
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+        with:
+          persist-credentials: false
+      # 1. Assume the DEPLOY role via short-lived OIDC. May copy verified
+      #    image/assets, update named functions/versions/aliases, control event
+      #    mappings, and invoke the private maintenance entrypoint. No
+      #    tenant-object read, secret fetch, direct SQL, or IAM administration.
+      - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a  # v4
+        with:
+          role-to-assume: ${{ vars.OPENSIGHT_DEPLOY_ROLE_ARN }}
+          aws-region: us-east-1
+      # 2. Download the release manifest by digest; verify repository, workflow,
+      #    ref, source commit, artifact digests, compatibility range, SBOM, and
+      #    provenance (see ops/serverless/release-manifest.mjs).
+      # 3. Verify the approval envelope: approval.manifest == release digest,
+      #    approval.source/configuration/current match, not expired (24h),
+      #    compatibility matches the live deployment.
+      # 4. Run the release controller in preflight mode, then deploy mode
+      #    (ops/serverless/release-controller.mjs): drain, fence epoch, backup
+      #    with registry linkage, migration under advisory lock, alias switch
+      #    as a recorded set, smoke checks, reopen on CAS. The operation record
+      #    is created with If-None-Match and updated with If-Match.
+      # 5. A failed or cancelled workflow never reopens the gate automatically.
+      #    Recovery proves the owning run stopped, advances the fence, and
+      #    reconciles the record before continuing.

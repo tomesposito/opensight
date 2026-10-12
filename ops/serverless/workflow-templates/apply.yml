@@ -1,0 +1,51 @@
+# TEMPLATE — not a live workflow. See README.md.
+# Private apply workflow: applies a REVIEWED plan envelope, nothing else.
+name: OpenSight private apply (template)
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment (e.g. pilot)'
+        required: true
+      plan_envelope_digest:
+        description: 'SHA-256 of the approved plan envelope'
+        required: true
+      approval_ref:
+        description: 'Reference to the recorded operator approval'
+        required: true
+permissions:
+  contents: read
+concurrency:
+  group: opensight-deploy-${{ inputs.environment }}
+  cancel-in-progress: false
+jobs:
+  apply:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      id-token: write  # only this job assumes the apply role
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+        with:
+          persist-credentials: false
+      # 1. Assume the APPLY role via short-lived OIDC. May apply the reviewed
+      #    plan within the environment with limited PassRole; cannot alter its
+      #    own trust, bootstrap state policy, or permissions boundary.
+      - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a  # v4
+        with:
+          role-to-assume: ${{ vars.OPENSIGHT_APPLY_ROLE_ARN }}
+          aws-region: us-east-1
+      # 2. Fetch the plan envelope by digest from restricted operational
+      #    storage. Verify: digest matches approval_ref, envelope not expired
+      #    (24h), envelope commits/locks match the current tree.
+      # 3. Reacquire the state lock (bounded wait; fail if unavailable).
+      # 4. Check resource drift and current configuration/state against the
+      #    envelope. Changed input, expired plan, drift, or stale state ->
+      #    refuse and require a new plan/review. Never synthesize a
+      #    replacement plan.
+      # 5. tofu apply plan.tfplan. Partial apply is reconciled against actual
+      #    resources and current state; never retried as an assumed atomic
+      #    transaction.
+      # 6. Record the apply outcome (envelope digest, state serial before/after)
+      #    in the private audit log.
