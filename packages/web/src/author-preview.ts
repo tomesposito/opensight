@@ -28,6 +28,10 @@ export function buildAuthorPreview(visual: AuthorVisual): FixtureVisual {
 export function buildAuthorVisual(visual: AuthorVisual, calculations: readonly CalculatedField[] = [], dataset?: AuthorDataset): FixtureVisual {
   return {
     source: 'bundle', definition: serializeVisual(visual, false, calculations, dataset), rows: null,
+    // Thread interaction actions so view-mode surfaces can offer them; absent stays absent.
+    ...(visual.filterActions?.length ? { filterActions: [...visual.filterActions] } : {}),
+    ...(visual.urlActions?.length ? { urlActions: [...visual.urlActions] } : {}),
+    ...(visual.navigationActions?.length ? { navigationActions: [...visual.navigationActions] } : {}),
     bindings: Object.fromEntries(visualDimensions(visual).filter(name => dataFields(calculations, dataset).some(f => f.name === name && f.type === 'DATETIME')).map(name => [name, (visual.dateGrain ?? 'MONTH').toLowerCase()])),
     placement: { column: 0, columns: 36, row: 0, rows: 6 },
     path: `author.${visual.id}`,
