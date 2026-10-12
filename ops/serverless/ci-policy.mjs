@@ -22,6 +22,9 @@ export function ciTrust(config) {
     Action: 'sts:AssumeRoleWithWebIdentity', Condition: { StringEquals: { 'token.actions.githubusercontent.com:aud': 'sts.amazonaws.com', 'token.actions.githubusercontent.com:sub': ciSubject(c) } } }] };
 }
 export const ciDeny = Object.freeze({ Version: '2012-10-17', Statement: [{ Effect: 'Deny', Action: '*', Resource: '*' }] });
+export function ciSessionRevocation(now = Date.now()) {
+  return { Version: '2012-10-17', Statement: [{ Effect: 'Deny', Action: '*', Resource: '*', Condition: { DateLessThan: { 'aws:TokenIssueTime': new Date(now).toISOString() } } }] };
+}
 export function ciClosedTrust(config) {
   const trust = ciTrust(config);
   return { Version: trust.Version, Statement: [{ Effect: 'Deny', Principal: trust.Statement[0].Principal, Action: 'sts:AssumeRoleWithWebIdentity' }] };

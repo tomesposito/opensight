@@ -72,8 +72,11 @@ That receipt deliberately does **not** claim propagation is verified: use the
 private `revocation-probe` with an existing session and then a fresh `access-probe`.
 The existing session must report `EXISTING_SESSION_ACCESS_REMOVED`; a new workflow
 must fail at AWS role assumption. Runtime roles and the shared provider remain
-unchanged. `enable-ci` restores only the reviewed trust, verifies it, and removes
-the emergency deny. Verify a fresh access probe after deliberate recovery.
+unchanged. Before recovery, resolve the compromised GitHub access or controller.
+`enable-ci` first writes and verifies `AWSRevokeOlderSessions`, denying every
+session issued before recovery. It then restores the reviewed trust and removes
+only the unconditional incident deny. The issue-time deny stays in place. Verify
+an old session remains denied and a fresh access probe succeeds after recovery.
 
 If CLI access is unavailable, use an independent AWS console identity: add the
 inline `OpenSightEmergencyDeny` policy (`Effect: Deny`, `Action: *`, `Resource: *`)
