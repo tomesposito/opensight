@@ -642,7 +642,7 @@ export function serializeVisual(visual: AuthorVisual, includeInteractions = true
     tooltip: { tooltipVisibility: visual.tooltipVisible ? 'VISIBLE' : 'HIDDEN', ...(visual.tooltipType === 'detailed' && tooltipDetailKinds(visual.kind) ? { selectedTooltipType: 'DETAILED', fieldBasedTooltip: {
       aggregationVisibility: visual.tooltipAggregations ? 'VISIBLE' : 'HIDDEN',
       tooltipTitleType: visual.tooltipTitleType === 'fieldId' ? 'FIELD_ID' : 'PRIMARY_VALUE',
-      tooltipFields: { fieldTooltipItem: [...visualDimensions(visual), ...visual.measures].map(name => ({ fieldId: name, visibility: visual.tooltipHiddenFields.includes(name) ? 'HIDDEN' : 'VISIBLE' })) },
+      tooltipFields: [...visualDimensions(visual), ...visual.measures].map(name => ({ fieldTooltipItem: { fieldId: name, visibility: visual.tooltipHiddenFields.includes(name) ? 'HIDDEN' : 'VISIBLE' } })),
     } } : {}) } };
   const totalVisibility = (show: boolean) => ({ totalsVisibility: show ? 'VISIBLE' : 'HIDDEN' });
   const tableTotals = { totalOptions: totalVisibility(visual.totals), opensightSubtotalOptions: totalVisibility(visual.subtotals) };

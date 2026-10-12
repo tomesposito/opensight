@@ -44,10 +44,10 @@ test('detailed tooltips export to SelectedTooltipType/FieldBasedTooltip and impo
     fieldBasedTooltip: {
       aggregationVisibility: 'HIDDEN',
       tooltipTitleType: 'FIELD_ID',
-      tooltipFields: { fieldTooltipItem: [
-        { fieldId: 'region', visibility: 'VISIBLE' },
-        { fieldId: 'revenue', visibility: 'HIDDEN' },
-      ] },
+      tooltipFields: [
+        { fieldTooltipItem: { fieldId: 'region', visibility: 'VISIBLE' } },
+        { fieldTooltipItem: { fieldId: 'revenue', visibility: 'HIDDEN' } },
+      ],
     },
   });
   // Basic tooltips stay minimal: no detail keys exported.
@@ -86,11 +86,15 @@ test('compiler parses tooltip detail, fails closed on bad enums, warns on unknow
   }
   // A field tooltip item without visibility defaults to visible (lenient default, like other enums).
   const noVisibility = structuredClone(definition);
-  noVisibility.chartConfiguration.tooltip.fieldBasedTooltip = { tooltipFields: { fieldTooltipItem: [{ fieldId: 'region' }] } };
+  noVisibility.chartConfiguration.tooltip.fieldBasedTooltip = { tooltipFields: [{ fieldTooltipItem: { fieldId: 'region' } }] };
   assert.deepEqual(compileVisual({ ...input(bar()), definition: { barChartVisual: noVisibility } }).model.tooltipDetail.hiddenFields, []);
+  // The legacy object shape { fieldTooltipItem: [...] } is accepted too.
+  const legacy = structuredClone(definition);
+  legacy.chartConfiguration.tooltip.fieldBasedTooltip = { tooltipFields: { fieldTooltipItem: [{ fieldId: 'revenue', visibility: 'HIDDEN' }] } };
+  assert.deepEqual(compileVisual({ ...input(bar()), definition: { barChartVisual: legacy } }).model.tooltipDetail.hiddenFields, ['revenue']);
   const unknown = structuredClone(definition);
   unknown.chartConfiguration.tooltip.selectedTooltipType = 'DETAILED';
-  unknown.chartConfiguration.tooltip.fieldBasedTooltip = { tooltipFields: { fieldTooltipItem: [{ fieldId: 'ghost', visibility: 'VISIBLE' }] } };
+  unknown.chartConfiguration.tooltip.fieldBasedTooltip = { tooltipFields: [{ fieldTooltipItem: { fieldId: 'ghost', visibility: 'VISIBLE' } }] };
   const warned = compileVisual({ ...input(bar()), definition: { barChartVisual: unknown } });
   assert.deepEqual(warned.model.tooltipDetail.hiddenFields, []);
   assert.ok(warned.model.warnings.some(w => w.includes('ghost')), JSON.stringify(warned.model.warnings));

@@ -79,13 +79,23 @@ function parseTooltipDetail(tooltip: ObjectValue, key: (archive: string, api: st
   const aggregations = enumValue(fb[key('aggregationVisibility', 'AggregationVisibility')], ['VISIBLE', 'HIDDEN'], 'VISIBLE', `${path}.${fieldKey}`) === 'VISIBLE';
   const titleType = enumValue(fb[key('tooltipTitleType', 'TooltipTitleType')], ['PRIMARY_VALUE', 'FIELD_ID'], 'PRIMARY_VALUE', `${path}.${fieldKey}`) === 'FIELD_ID' ? 'fieldId' : 'primaryValue';
   const fieldsKey = key('tooltipFields', 'TooltipFields');
-  const items = list(fb[fieldsKey] === undefined ? undefined : object(fb[fieldsKey], `${path}.${fieldKey}.${fieldsKey}`)[key('fieldTooltipItem', 'FieldTooltipItem')], `${path}.${fieldKey}.${fieldsKey}`);
+  const itemsPath = `${path}.${fieldKey}.${fieldsKey}`;
+  const rawFields = fb[fieldsKey];
+  // Real QuickSight shape is a list of wrappers: [{ fieldTooltipItem: {...} }, ...].
+  // The object shape { fieldTooltipItem: [...] } is accepted too (never emitted).
+  const wrapped: unknown[] = rawFields === undefined ? []
+    : Array.isArray(rawFields) ? rawFields.map((item, i) => {
+      const o = object(item, `${itemsPath}[${i}]`);
+      keys(o, [key('fieldTooltipItem', 'FieldTooltipItem')], `${itemsPath}[${i}]`);
+      return o[key('fieldTooltipItem', 'FieldTooltipItem')];
+    })
+    : list(object(rawFields, itemsPath)[key('fieldTooltipItem', 'FieldTooltipItem')], itemsPath);
   const hiddenFields: string[] = [], unknownFields: string[] = [];
-  items.forEach((item, i) => {
-    const o = object(item, `${path}.${fieldKey}.${fieldsKey}[${i}]`);
-    keys(o, [key('fieldId', 'FieldId'), key('visibility', 'Visibility')], `${path}.${fieldKey}.${fieldsKey}[${i}]`);
-    const fieldId = text(o[key('fieldId', 'FieldId')], `${path}.${fieldKey}.${fieldsKey}[${i}]`);
-    const visible = enumValue(o[key('visibility', 'Visibility')], ['VISIBLE', 'HIDDEN'], 'VISIBLE', `${path}.${fieldKey}.${fieldsKey}[${i}]`) === 'VISIBLE';
+  wrapped.forEach((item, i) => {
+    const o = object(item, `${itemsPath}[${i}]`);
+    keys(o, [key('fieldId', 'FieldId'), key('visibility', 'Visibility')], `${itemsPath}[${i}]`);
+    const fieldId = text(o[key('fieldId', 'FieldId')], `${itemsPath}[${i}]`);
+    const visible = enumValue(o[key('visibility', 'Visibility')], ['VISIBLE', 'HIDDEN'], 'VISIBLE', `${itemsPath}[${i}]`) === 'VISIBLE';
     if (!fields.some(f => f.id === fieldId)) { unknownFields.push(fieldId); return; }
     if (!visible) hiddenFields.push(fieldId);
   });

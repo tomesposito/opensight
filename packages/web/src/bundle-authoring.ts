@@ -81,10 +81,25 @@ function importTooltipDetail(tooltip: Obj): Partial<Pick<AuthorVisual, 'tooltipT
     if (fieldBased.tooltipTitleType !== 'PRIMARY_VALUE' && fieldBased.tooltipTitleType !== 'FIELD_ID') return {};
     detail.tooltipTitleType = fieldBased.tooltipTitleType === 'FIELD_ID' ? 'fieldId' : 'primaryValue';
   }
-  const items = obj(fieldBased.tooltipFields).fieldTooltipItem;
-  if (items !== undefined) {
+  const rawFields: unknown = fieldBased.tooltipFields;
+  if (rawFields !== undefined) {
+    // Real QuickSight shape is a list of wrappers: [{ fieldTooltipItem: {...} }, ...].
+    // The object shape { fieldTooltipItem: [...] } is accepted too (never emitted).
+    let items: unknown[];
+    if (Array.isArray(rawFields)) {
+      items = [];
+      for (const wrapper of rawFields) {
+        const o = obj(wrapper);
+        if (wrapper === null || typeof wrapper !== 'object' || Array.isArray(wrapper) || !Object.keys(o).every(k => k === 'fieldTooltipItem') || o.fieldTooltipItem === undefined) return {};
+        items.push(o.fieldTooltipItem);
+      }
+    } else if (rawFields !== null && typeof rawFields === 'object') {
+      const o = obj(rawFields);
+      if (!Object.keys(o).every(k => k === 'fieldTooltipItem')) return {};
+      items = list(o.fieldTooltipItem);
+    } else return {};
     const parsed: { fieldId: string; visible: boolean }[] = [];
-    for (const item of list(items)) {
+    for (const item of items) {
       const o = obj(item);
       if (typeof o.fieldId !== 'string' || !o.fieldId || o.fieldId.includes('\0')) return {};
       if (o.visibility !== 'VISIBLE' && o.visibility !== 'HIDDEN') return {};
