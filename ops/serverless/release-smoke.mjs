@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { createHmac, createHash, randomUUID } from 'node:crypto';
+import { smokeRequest } from './release-smoke-request.mjs';
 const c = JSON.parse(process.env.OPENSIGHT_SMOKE_CONFIG ?? '{}');
 if (!c.tester || !/^https:\/\/[a-z0-9.-]+$/.test(c.origin ?? '') || !Array.isArray(c.foreignPaths)) throw Error('SMOKE_CONFIGURATION_REQUIRED');
 const timer = setTimeout(() => { console.error('SMOKE_DEADLINE'); process.exit(1); }, 300000);
@@ -23,8 +24,11 @@ async function authenticate() {
   if(response.status!==200 || typeof response.body.token!=='string')throw Error('SMOKE_AUTHENTICATION_FAILED');({token}=response.body);
 }
 async function call(path,method='GET',body,expected=200,extra={}) {
-  let r=await raw(path,method,body,true,extra);
-  if(r.status===401){await authenticate();r=await raw(path,method,body,true,extra);}
+  const r=await smokeRequest(method,path,async()=>{
+    let response=await raw(path,method,body,true,extra);
+    if(response.status===401){await authenticate();response=await raw(path,method,body,true,extra);}
+    return response;
+  });
   if(r.status!==expected)throw Error('SMOKE_HTTP_'+r.status+'_'+String(r.body.errorCode??'UNEXPECTED').replace(/[^A-Z0-9_]/g,''));
   return r.body;
 }
