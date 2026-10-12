@@ -107,3 +107,63 @@ Keep detailed AWS configuration, test credentials, operation records and logs in
 private storage. Publish only sanitized test counts and completed acceptance
 results. An IAM configuration check is not a successful revocation drill, and a
 published artifact is not a deployed application.
+
+## Acceptance evidence — 2026-10-11
+
+The public CI passed on source `51414a2195b7c07b93203864c18dc9359363d47d`:
+root suite **2,475 passed / 0 failed / 18 skipped**, with only the unavailable
+live-PostgreSQL cases skipped. The separate real PostgreSQL run passed **52 / 0 / 0**.
+Infrastructure validation and mock plans passed. The rebuilt static demo matched
+the prior screenshots; application source and dependencies were unchanged.
+
+Actual AWS access drills denied both already-issued read/deploy sessions and new
+role assumptions after shutoff. An untrusted ref and an unapproved release were
+rejected. Recovery left an old session denied while a fresh approved session
+succeeded. The effective-policy audit passed twelve checks, including denial of
+IAM changes, application-secret/state reads, approval writes, and unrelated
+function updates. No local AWS credential was copied to GitHub.
+
+A deliberate post-promotion failure exercised automatic rollback. The controller
+restored the previous function images, request alias and frontend, reopened
+admission, passed the synthetic application check, and removed its operation lock
+and watchdog. An independent read verified those results. This drill intentionally
+ends with `APPROVED_ROLLBACK_EXERCISE`, so its red workflow status is expected.
+An earlier attempt restored the bytes but failed its verification and held
+admission closed; independent operator recovery verified and reopened that release.
+The controller now preserves named smoke failures for diagnosis. The later drill
+completed automatically. A subsequent normal release exposed a status-poll race:
+ingestion publication changed metadata during the poll's authorization recheck,
+correctly returning `METADATA_REVISED`. The smoke client now retries only that
+operation-status GET with fresh authorization, at most twice. Regression tests
+preserve all other denials and never retry mutations. That failed release also
+rolled back and passed its recovery smoke check automatically.
+
+The corrected controller successfully deployed the attested application release
+from source `4d63778091cf593302b04ad913fe7bb27436dee8`. The private workflow took
+about eight minutes, including preflight, promotion, and the public HTTPS/auth,
+upload, ingestion, refresh, query and isolation smoke check. It required no schema
+migration, infrastructure rebuild, DNS change, or wait for database idle.
+Concurrent dispatch was observed waiting behind the active workflow. Replaying
+the completed release's old approval was rejected during preflight with
+`RELEASE_APPROVAL_REQUIRED`; the deployment job was skipped. Independent reads
+verified the live images, alias, frontend bytes, runtime configuration, admission,
+public HTTPS, and absence of an active operation lock or watchdog schedule.
+
+Refreshed infrastructure plans for CI access, application infrastructure and
+ingress showed no changes after promotion. Application code and alias ownership
+therefore survive the next infrastructure plan, while runtime settings remain
+managed by infrastructure. Aurora retained zero-to-two-ACU scaling and its
+five-minute idle pause; the administration image and disabled probe were unchanged.
+
+Detailed run logs, account/resource identifiers, approvals and operation records
+remain in private operator storage.
+
+## Follow-up gap and phase scheduling
+
+The hosted upload UI pauses after a failed status read and exposes Check status.
+Code inspection indicates that the same metadata-publication race can require an
+extra click there; this UI consequence was not separately browser-reproduced.
+[Issue #92](https://github.com/tomesposito/opensight/issues/92) schedules bounded,
+freshly authorized polling in the next Phase 5 hosted-client polish slice before
+broader tester onboarding. Freeze that contract before its implementation; retain
+all revocation, abort and hidden-tab guarantees. SR4c changes only the smoke client.
