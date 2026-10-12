@@ -184,6 +184,7 @@ try {
   aws('s3api', 'delete-object', { Bucket: bucket, Key: lockKey, IfMatch: etag });
   console.log('DEPLOYMENT_VERIFIED');
 } catch (error) {
+  console.error('RELEASE_FAILURE_' + (/^[A-Z0-9_]+$/.test(error.message) ? error.message : 'UNCLASSIFIED'));
   if (committed || error.message === 'RELEASE_COMMIT_AMBIGUOUS') { stopAdmission(); throw Error('RELEASE_RECOVERY_REQUIRED'); }
   if (changed) {
     try {
