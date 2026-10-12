@@ -63,6 +63,37 @@ function serializedReferenceLine(entry: unknown): { value: number; label: string
       typeof o.color !== 'string' || !/^#[0-9a-f]{6}$/i.test(o.color)) return undefined;
   return { value: o.value, label: o.label, color: o.color };
 }
+/** Import the Interactions-tab tooltip detail; invalid values keep model defaults (fail-closed). */
+function importTooltipDetail(tooltip: Obj): Partial<Pick<AuthorVisual, 'tooltipType' | 'tooltipTitleType' | 'tooltipAggregations' | 'tooltipHiddenFields'>> {
+  const detail: Partial<Pick<AuthorVisual, 'tooltipType' | 'tooltipTitleType' | 'tooltipAggregations' | 'tooltipHiddenFields'>> = {};
+  const selected = tooltip.selectedTooltipType;
+  if (selected !== undefined) {
+    if (selected !== 'BASIC' && selected !== 'DETAILED') return {};
+    if (selected === 'DETAILED') detail.tooltipType = 'detailed';
+  }
+  if (tooltip.fieldBasedTooltip === undefined) return detail;
+  const fieldBased = obj(tooltip.fieldBasedTooltip);
+  if (fieldBased.aggregationVisibility !== undefined) {
+    if (fieldBased.aggregationVisibility !== 'VISIBLE' && fieldBased.aggregationVisibility !== 'HIDDEN') return {};
+    detail.tooltipAggregations = fieldBased.aggregationVisibility === 'VISIBLE';
+  }
+  if (fieldBased.tooltipTitleType !== undefined) {
+    if (fieldBased.tooltipTitleType !== 'PRIMARY_VALUE' && fieldBased.tooltipTitleType !== 'FIELD_ID') return {};
+    detail.tooltipTitleType = fieldBased.tooltipTitleType === 'FIELD_ID' ? 'fieldId' : 'primaryValue';
+  }
+  const items = obj(fieldBased.tooltipFields).fieldTooltipItem;
+  if (items !== undefined) {
+    const parsed: { fieldId: string; visible: boolean }[] = [];
+    for (const item of list(items)) {
+      const o = obj(item);
+      if (typeof o.fieldId !== 'string' || !o.fieldId || o.fieldId.includes('\0')) return {};
+      if (o.visibility !== 'VISIBLE' && o.visibility !== 'HIDDEN') return {};
+      parsed.push({ fieldId: o.fieldId, visible: o.visibility === 'VISIBLE' });
+    }
+    detail.tooltipHiddenFields = parsed.filter(i => !i.visible).map(i => i.fieldId);
+  }
+  return detail;
+}
 function importVisual(raw: BundleVisual, id: string, definition: BundleDefinition, bundle: QsBundle): AuthorVisual {
   const [variant, value] = Object.entries(raw)[0]!;
   const body = obj(value);
@@ -98,6 +129,7 @@ function importVisual(raw: BundleVisual, id: string, definition: BundleDefinitio
     donut: kind === 'pie' && ['SMALL', 'MEDIUM', 'LARGE'].includes(string(obj(obj(config.donutOptions).arcOptions).arcThickness)),
     legend: obj(config.legend).visibility !== 'HIDDEN', labels: obj(config.dataLabels).visibility === 'VISIBLE' || kind === 'pie' && obj(config.dataLabels).visibility === undefined,
     tooltipVisible: obj(config.tooltip).tooltipVisibility !== 'HIDDEN',
+    ...importTooltipDetail(obj(config.tooltip)),
     horizontal: config.orientation === 'HORIZONTAL', stacked: config.barsArrangement === 'STACKED',
     totals: (kind === 'pivot' ? obj(total.rowTotalOptions) : total).totalsVisibility === 'VISIBLE',
     subtotals: (kind === 'pivot' ? obj(total.rowSubtotalOptions) : obj(config.opensightSubtotalOptions)).totalsVisibility === 'VISIBLE',
