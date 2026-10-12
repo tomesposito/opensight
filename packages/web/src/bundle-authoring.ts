@@ -1,7 +1,7 @@
 import { importObjects, serializeObject, objectElementType, type SheetObject } from './sheet-objects.js';
 import { analysisDescriptionValid, layoutSettingsValid } from './authoring.js';
 import { projectInsightBody } from './insight-configuration.js';
-import { normalizeVisual } from './compiler.js';
+import { normalizeVisual, tooltipDetailKinds } from './compiler.js';
 import { themeValid, paletteValid } from './themes.js';
 import { formattingValid, gaugeValid, binsValid, legendPositionValid, hasReferenceLines } from './formatting.js';
 import { EXTRA_VISUALS, extraKind, variantKinds } from './visual-catalog.js';
@@ -129,7 +129,7 @@ function importVisual(raw: BundleVisual, id: string, definition: BundleDefinitio
     donut: kind === 'pie' && ['SMALL', 'MEDIUM', 'LARGE'].includes(string(obj(obj(config.donutOptions).arcOptions).arcThickness)),
     legend: obj(config.legend).visibility !== 'HIDDEN', labels: obj(config.dataLabels).visibility === 'VISIBLE' || kind === 'pie' && obj(config.dataLabels).visibility === undefined,
     tooltipVisible: obj(config.tooltip).tooltipVisibility !== 'HIDDEN',
-    ...importTooltipDetail(obj(config.tooltip)),
+    ...(tooltipDetailKinds(kind) ? importTooltipDetail(obj(config.tooltip)) : {}),
     horizontal: config.orientation === 'HORIZONTAL', stacked: config.barsArrangement === 'STACKED',
     totals: (kind === 'pivot' ? obj(total.rowTotalOptions) : total).totalsVisibility === 'VISIBLE',
     subtotals: (kind === 'pivot' ? obj(total.rowSubtotalOptions) : obj(config.opensightSubtotalOptions)).totalsVisibility === 'VISIBLE',

@@ -17,7 +17,7 @@ import type { BundleAnalysis, BundleColumnField, BundleDimensionField, BundleMea
 import { summarizeQsBundle } from '@opensight/bundle-parser/browser';
 import type { QsBundle } from '@opensight/bundle-parser';
 import type { PrepColumn } from '@opensight/bundle-parser/prep';
-import { normalizeVisual } from './compiler.js';
+import { normalizeVisual, tooltipDetailKinds } from './compiler.js';
 
 export const SALES_FIELDS = [
   { name: 'order_id', role: 'dimension', type: 'INTEGER' },
@@ -639,7 +639,7 @@ export function serializeVisual(visual: AuthorVisual, includeInteractions = true
   const visibility = (show: boolean) => ({ visibility: show ? 'VISIBLE' : 'HIDDEN' });
   const body = { ...(visual.subtitle !== undefined ? { subtitle: { ...visibility(visual.subtitleVisible !== false), formatText: { plainText: visual.subtitle } } } : {}), ...(visual.formatting ? { opensightFormatting: visual.formatting } : {}), ...(visual.palette ? { opensightPalette: visual.palette } : {}), ...(visual.referenceLines?.length ? { opensightReferenceLines: visual.referenceLines.map(l => ({ value: l.value, label: l.label, color: l.color })) } : {}), ...(includeInteractions ? serializeInteractions(visual) : {}), visualId: visual.id, ...(visual.title.trim() || !visual.titleVisible ? { title: { ...visibility(visual.titleVisible), ...(visual.title.trim() ? { formatText: { plainText: visual.title.trim() } } : {}) } } : {}) } satisfies BundleVisualBody;
   const display = { legend: { ...visibility(visual.legend), ...(visual.formatting?.legendPosition ? { position: visual.formatting.legendPosition } : {}) }, dataLabels: visibility(visual.labels),
-    tooltip: { tooltipVisibility: visual.tooltipVisible ? 'VISIBLE' : 'HIDDEN', ...(visual.tooltipType === 'detailed' ? { selectedTooltipType: 'DETAILED', fieldBasedTooltip: {
+    tooltip: { tooltipVisibility: visual.tooltipVisible ? 'VISIBLE' : 'HIDDEN', ...(visual.tooltipType === 'detailed' && tooltipDetailKinds(visual.kind) ? { selectedTooltipType: 'DETAILED', fieldBasedTooltip: {
       aggregationVisibility: visual.tooltipAggregations ? 'VISIBLE' : 'HIDDEN',
       tooltipTitleType: visual.tooltipTitleType === 'fieldId' ? 'FIELD_ID' : 'PRIMARY_VALUE',
       tooltipFields: { fieldTooltipItem: [...visualDimensions(visual), ...visual.measures].map(name => ({ fieldId: name, visibility: visual.tooltipHiddenFields.includes(name) ? 'HIDDEN' : 'VISIBLE' })) },

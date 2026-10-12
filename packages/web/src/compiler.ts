@@ -8,7 +8,7 @@ import { formattingValid, fieldName, matchingRule, LEGEND_POSITIONS, type Legend
 import type { EChartsOption, BarSeriesOption, LineSeriesOption } from 'echarts';
 import type { Cell, Field, FixtureVisual, Row, VisualModel } from './model.js';
 
-import { EXTRA_VISUALS, extraKind, variantKinds } from './visual-catalog.js';
+import { EXTRA_VISUALS, extraKind, variantKinds, type VisualKind } from './visual-catalog.js';
 import { compileExtra } from './extra-charts.js';
 import { applyDisplayOptions } from './display-options.js';
 
@@ -459,6 +459,10 @@ export function compileVisual(input: Input): CompiledVisual {
 
 /** Kinds whose series data maps 1:1 to result rows, so a per-row detailed tooltip is exact. */
 const DETAILED_TOOLTIP_KINDS = ['bar', 'line', 'pie', 'combo', 'area', 'bar100'];
+/** Kinds whose tooltip config accepts the detailed keys (mirrors the chartConfiguration gate). */
+export const tooltipDetailKinds = (kind: VisualKind): boolean => !['insight', 'kpi', 'table', 'pivot', 'radar', 'sankey', 'waterfall'].includes(kind);
+/** Kinds where a detailed tooltip actually renders (others fall back to basic with a warning). */
+export const detailedTooltipKinds = (kind: VisualKind): boolean => DETAILED_TOOLTIP_KINDS.includes(kind);
 
 /** Escape richText markup characters in dynamic tooltip text (display encoding; table data stays exact). */
 const richTextEscape = (value: string): string => value.replace(/[{}]/g, ch => ch === '{' ? '｛' : '｝');

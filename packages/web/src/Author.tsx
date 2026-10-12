@@ -29,6 +29,7 @@ import { expressionError } from './authoring.js';
 import { HierarchyEditor } from './HierarchyEditor.js';
 import { withDrill, drillDown, drillUp, drillBreadcrumbs, levelLabel, type DrillPath } from './drill.js';
 import { ActionsSection, ActionPanel } from './ActionEditor.js';
+import { TooltipSection } from './TooltipEditor.js';
 import { actionActivation, toggleSelection, withActionFilters, originProblem, hasVisualActions, resolveUrlAction, resolveNavigationAction, type ActionSelections, type FilterAction, type NavigationAction, type Selection, type UrlAction } from './interactions.js';
 import type { VisualInteraction } from './visual-selection.js';
 import { ControlsStrip } from './ControlsStrip.js';
@@ -564,6 +565,7 @@ function Properties({ visual, draft, dispatch, client, runtimeProblems }: Editor
       {tab === 'Interaction' && <>
         <FilterEditor dataset={draft.dataset} visual={visual} parameters={sheetParameters(draft)} calculations={draft.calculatedFields} dispatch={dispatch} client={visual.imported && !visual.imported.local ? undefined : client} />
         <ActionsSection visual={visual} onOpenPanel={actionId => setActionPanel({ actionId })} />
+        <TooltipSection visual={visual} dispatch={dispatch} />
         <HierarchyEditor draft={draft} visual={visual} dispatch={dispatch} />
         <ParameterFilterEditor dataset={draft.dataset} parameters={sheetParameters(draft)} calculations={draft.calculatedFields} dispatch={dispatch} />
       </>}
