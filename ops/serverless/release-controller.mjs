@@ -11,7 +11,7 @@ mkdirSync(root, { recursive: true, mode: 0o700 });
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 function run(binary, args, input) {
   try { return execFileSync(binary, args, { input, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024, stdio: ['pipe', 'pipe', 'pipe'] }); }
-  catch (e) { const missing = /\(NoSuchKey\)/.test(String(e.stderr)); throw Error(missing ? 'OBJECT_NOT_FOUND' : /\(AccessDenied\)|\(AccessDeniedException\)/.test(String(e.stderr)) ? 'ACCESS_DENIED' : 'EXTERNAL_COMMAND_FAILED'); }
+  catch (e) { const smoke = String(e.stderr).match(/^SMOKE_[A-Z0-9_]+$/m)?.[0]; if (smoke) throw Error(smoke); const missing = /\(NoSuchKey\)/.test(String(e.stderr)); throw Error(missing ? 'OBJECT_NOT_FOUND' : /\(AccessDenied\)|\(AccessDeniedException\)/.test(String(e.stderr)) ? 'ACCESS_DENIED' : 'EXTERNAL_COMMAND_FAILED'); }
 }
 const region = 'us-east-1';
 function aws(service, action, input = {}, extra = []) {
@@ -195,7 +195,8 @@ try {
       await reopen(); run('node', [new URL('./release-smoke.mjs', import.meta.url).pathname]);
       phase('rolled-back'); cancelWatchdog(); put(`ci/operations/${operationId}.json`, record);
       aws('s3api', 'delete-object', { Bucket: bucket, Key: lockKey, IfMatch: etag });
-    } catch {
+    } catch (rollbackError) {
+      console.error('ROLLBACK_FAILURE_' + (/^[A-Z0-9_]+$/.test(rollbackError.message) ? rollbackError.message : 'UNCLASSIFIED'));
       stopAdmission();
       throw Error('RELEASE_RECOVERY_REQUIRED');
     }
