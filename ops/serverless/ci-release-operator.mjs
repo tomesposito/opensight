@@ -13,13 +13,14 @@ const c=ciConfig(JSON.parse(readFileSync(configPath,'utf8'))), dir=join(root,'ci
 mkdirSync(dir,{recursive:true,mode:0o700});
 function run(bin,args){try{return execFileSync(bin,args,{encoding:'utf8',stdio:['ignore','pipe','pipe'],maxBuffer:16*1024*1024});}catch{throw Error('CI_RELEASE_COMMAND_FAILED');}}
 const gh=args=>run(process.env.OPENSIGHT_GH_BINARY??'gh',args);
-const aws=(s,a,input={},extra=[])=>JSON.parse(run('aws',[s,a,'--region',c.region,'--no-cli-pager','--output','json','--cli-input-json',JSON.stringify(input),...extra])||'{}');
+const aws=(s,a,input={},extra=[])=>JSON.parse(run('aws',[s,a,'--region',c.region,'--no-cli-pager','--output','json',...(s==='s3api'&&a==='get-object'?['--bucket',input.Bucket,'--key',input.Key]:['--cli-input-json',JSON.stringify(input)]),...extra])||'{}');
 const identity=aws('sts','get-caller-identity');
 if(identity.Account!==c.account||/:assumed-role\/[^/]*-ci-(read|deploy)\//.test(identity.Arn))throw Error('INDEPENDENT_OPERATOR_REQUIRED');
 gh(['release','download','build-'+source,'--repo',c.publicRepository,'--pattern','release.json','--dir',dir,'--clobber']);
 const path=join(dir,'release.json'),bytes=readFileSync(path),m=validateManifest(JSON.parse(bytes));
 if(m.source!==source||m.repository!==c.publicRepository)throw Error('RELEASE_SOURCE_MISMATCH');
-gh(['attestation','verify',path,'--repo',c.publicRepository,'--signer-workflow',c.publicRepository+'/.github/workflows/ci.yml','--signer-digest',source,'--source-digest',source,'--source-ref','refs/heads/master','--deny-self-hosted-runners']);
+gh(['release','download','build-'+source,'--repo',c.publicRepository,'--pattern','provenance.jsonl','--dir',dir,'--clobber']);
+gh(['attestation','verify',path,'--bundle',join(dir,'provenance.jsonl'),'--repo',c.publicRepository,'--signer-workflow',c.publicRepository+'/.github/workflows/ci.yml','--signer-digest',source,'--source-digest',source,'--source-ref','refs/heads/master','--deny-self-hosted-runners']);
 const manifest=digest(bytes);
 if(operation.startsWith('approve')){
   const currentPath=join(dir,'current.json');aws('s3api','get-object',{Bucket:c.operationsBucket,Key:'ci/releases/current.json'},[currentPath]);

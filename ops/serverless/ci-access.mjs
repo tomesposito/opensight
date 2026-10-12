@@ -3,7 +3,7 @@ import { readFileSync, writeFileSync, lstatSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { privateDirectory } from './operator.mjs';
-import { ciConfig, ciTrust, ciDeny, ciClosedTrust } from './ci-policy.mjs';
+import { ciConfig, ciTrust, ciDeny, ciClosedTrust, ciSessionRevocation } from './ci-policy.mjs';
 const canonical = value => JSON.stringify(value, (_, v) => v && typeof v === 'object' && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => a.localeCompare(b))) : v);
 
 export async function disableCi(aws, config) {
@@ -21,13 +21,22 @@ export async function disableCi(aws, config) {
 }
 export async function enableCi(aws, config) {
   const c = ciConfig(config), roles = ['read', 'deploy'].map(n => `${c.deployment}-ci-${n}`);
+  const revocation = ciSessionRevocation();
+  for (const role of roles) await aws('iam', 'put-role-policy', { 'role-name': role, 'policy-name': 'AWSRevokeOlderSessions', 'policy-document': JSON.stringify(revocation) });
+  for (const role of roles) {
+    const policy = await aws('iam', 'get-role-policy', { 'role-name': role, 'policy-name': 'AWSRevokeOlderSessions' });
+    if (canonical(policy.PolicyDocument) !== canonical(revocation)) throw Error('CI_SESSION_CUTOFF_UNVERIFIED');
+  }
   for (const role of roles) await aws('iam', 'update-assume-role-policy', { 'role-name': role, 'policy-document': JSON.stringify(ciTrust(c)) });
   for (const role of roles) {
     const trust = await aws('iam', 'get-role', { 'role-name': role });
     if (canonical(trust.Role.AssumeRolePolicyDocument) !== canonical(ciTrust(c))) throw Error('CI_TRUST_UNVERIFIED');
   }
-  for (const role of roles) await aws('iam', 'delete-role-policy', { 'role-name': role, 'policy-name': 'OpenSightEmergencyDeny' });
-  return { configured: true, freshFederationVerificationRequired: true };
+  for (const role of roles) {
+    try { await aws('iam', 'delete-role-policy', { 'role-name': role, 'policy-name': 'OpenSightEmergencyDeny' }); }
+    catch (error) { if (error.message !== 'CI_POLICY_NOT_FOUND') throw error; }
+  }
+  return { configured: true, revokedBefore: revocation.Statement[0].Condition.DateLessThan['aws:TokenIssueTime'], freshFederationVerificationRequired: true };
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   process.umask(0o077);
@@ -37,7 +46,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const aws = async (service, action, args) => {
     const parameters = Object.entries(args).flatMap(([k, v]) => [`--${k}`, String(v)]);
     try { return JSON.parse(execFileSync('aws', [service, action, '--region', c.region, '--output', 'json', '--no-cli-pager', ...parameters], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }) || '{}'); }
-    catch { throw Error('CI_AWS_COMMAND_FAILED'); }
+    catch (error) { throw Error(/\(NoSuchEntity\)/.test(String(error.stderr)) ? 'CI_POLICY_NOT_FOUND' : 'CI_AWS_COMMAND_FAILED'); }
   };
   const identity = await aws('sts', 'get-caller-identity', {});
   if (identity.Account !== c.account || /:assumed-role\/[^/]*-ci-(read|deploy)\//.test(identity.Arn)) throw Error('INDEPENDENT_OPERATOR_REQUIRED');

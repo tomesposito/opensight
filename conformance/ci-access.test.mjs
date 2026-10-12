@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { ciConfig, ciSubject, ciTrust, ciPolicy, ciDeny, ciClosedTrust } from '../ops/serverless/ci-policy.mjs';
+import { ciConfig, ciSubject, ciTrust, ciPolicy, ciDeny, ciClosedTrust, ciSessionRevocation } from '../ops/serverless/ci-policy.mjs';
 import { disableCi, enableCi } from '../ops/serverless/ci-access.mjs';
 const c = { version: 1, account: '000000000000', region: 'us-east-1', deployment: 'synthetic', operationsBucket: 'synthetic-state', frontendBucket: 'synthetic-web',
   kmsKey: 'arn:aws:kms:us-east-1:000000000000:key/00000000-0000-0000-0000-000000000000', distribution: 'SYNTHETICDIST',
@@ -42,8 +42,30 @@ test('SR4c emergency disable denies existing sessions before removing new trust 
   let count = 0; await assert.rejects(disableCi(async () => { if (++count === 3) throw Error('synthetic'); return {}; }, c), /synthetic/);
   assert.equal(count, 3);
 });
-test('SR4c access recovery verifies exact trust before removing emergency denial', async () => {
-  const calls = [];
-  await assert.rejects(enableCi(async (service, action) => { calls.push(action); return action === 'get-role' ? { Role: { AssumeRolePolicyDocument: { Statement: [] } } } : {}; }, c), /CI_TRUST_UNVERIFIED/);
+test('SR4c access recovery verifies session cutoff and exact trust before removing emergency denial', async () => {
+  const calls = [];let cutoff;
+  await assert.rejects(enableCi(async (service, action, args) => {
+    calls.push(action);
+    if(action==='put-role-policy')cutoff=JSON.parse(args['policy-document']);
+    if(action==='get-role-policy')return {PolicyDocument:cutoff};
+    return action==='get-role'?{Role:{AssumeRolePolicyDocument:{Statement:[]}}}:{};
+  }, c), /CI_TRUST_UNVERIFIED/);
   assert.ok(!calls.includes('delete-role-policy'));
+  const calls2=[];
+  const result=await enableCi(async(service,action,args)=>{
+    calls2.push({action,args});
+    if(action==='put-role-policy')cutoff=JSON.parse(args['policy-document']);
+    if(action==='get-role-policy')return {PolicyDocument:cutoff};
+    if(action==='get-role')return {Role:{AssumeRolePolicyDocument:ciTrust(c)}};
+    return {};
+  },c);
+  assert.ok(Date.parse(result.revokedBefore)<=Date.now());
+  assert.ok(calls2.findIndex(v=>v.action==='get-role-policy')<calls2.findIndex(v=>v.action==='update-assume-role-policy'));
+  assert.ok(calls2.filter(v=>v.action==='delete-role-policy').every(v=>v.args['policy-name']==='OpenSightEmergencyDeny'));
+});
+test('SR4c recovery retains an explicit issue-time deny for old sessions',()=>{
+  const now=Date.now(),policy=ciSessionRevocation(now),cutoff=policy.Statement[0].Condition.DateLessThan['aws:TokenIssueTime'];
+  assert.equal(policy.Statement[0].Effect,'Deny');assert.equal(policy.Statement[0].Action,'*');
+  assert.ok(new Date(now-1000).toISOString()<cutoff);
+  assert.ok(!(new Date(now+1000).toISOString()<cutoff));
 });

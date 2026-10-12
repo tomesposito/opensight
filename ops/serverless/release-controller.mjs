@@ -15,6 +15,7 @@ function run(binary, args, input) {
 }
 const region = 'us-east-1';
 function aws(service, action, input = {}, extra = []) {
+  if (service === 's3api' && action === 'get-object') return JSON.parse(run('aws', [service, action, '--bucket', input.Bucket, '--key', input.Key, ...extra, '--region', region, '--no-cli-pager', '--output', 'json']));
   return JSON.parse(run('aws', [service, action, '--region', region, '--no-cli-pager', '--output', 'json', '--cli-input-json', JSON.stringify(input), ...extra]) || '{}');
 }
 function get(bucket, key) {
@@ -61,7 +62,8 @@ const releaseDir = join(root, 'artifacts'); mkdirSync(releaseDir, { recursive: t
 run('gh', ['release', 'download', `build-${selected}`, '--repo', c.publicRepository, '--dir', releaseDir, '--pattern', 'release.json', '--clobber']);
 const manifestBytes = readFileSync(join(releaseDir, 'release.json')), m = validateManifest(JSON.parse(manifestBytes));
 if (digest(manifestBytes) !== selectedDigest || m.source !== selected || m.repository !== c.publicRepository) throw Error('RELEASE_SELECTION_MISMATCH');
-run('gh', ['attestation', 'verify', join(releaseDir, 'release.json'), '--repo', c.publicRepository,
+run('gh', ['release', 'download', `build-${selected}`, '--repo', c.publicRepository, '--dir', releaseDir, '--pattern', 'provenance.jsonl', '--clobber']);
+run('gh', ['attestation', 'verify', join(releaseDir, 'release.json'), '--bundle', join(releaseDir, 'provenance.jsonl'), '--repo', c.publicRepository,
   '--signer-workflow', `${c.publicRepository}/.github/workflows/ci.yml`, '--signer-digest', selected,
   '--source-digest', selected, '--source-ref', 'refs/heads/master', '--deny-self-hosted-runners']);
 const currentObject = get(bucket, 'ci/releases/current.json'), current = JSON.parse(currentObject.bytes);
