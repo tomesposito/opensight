@@ -67,6 +67,7 @@ database migration/restore remain separately controlled D-25 work.
 
 Implementation clarification: a workflow cannot reliably run cleanup after its
 runner disappears. A one-shot AWS watchdog independently stops admission for an
-unfinished matching operation after fifteen minutes. The CI job times out after
+unfinished matching operation on a one-shot schedule set fifteen minutes ahead.
+AWS delivery and control-plane propagation can add delay. The CI job times out after
 twelve minutes. Only independent operator access can change this guard; it has
 no application secrets, database connection, or authority to reopen traffic.
