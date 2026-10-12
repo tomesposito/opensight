@@ -1209,7 +1209,8 @@ changes. D-25's general migration/restore protocol remains separate. No local
 operator credential or permanent AWS access key enters GitHub. A separate one-shot
 AWS watchdog is scheduled fifteen minutes after preparation to stop an unfinished
 deployment if the twelve-minute CI job disappears; AWS delivery can be delayed.
-It never reopens admission.
+It never reopens admission. CI access recovery retains an explicit token-issue-time
+cutoff so it cannot revive pre-recovery AWS sessions.
 
 The hosted-business trigger was met 2026-09-30 (D14), leading to the H1–H8
 foundation and single-node reference. D-18 (2026-10-10) now selects an initial

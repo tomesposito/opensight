@@ -61,6 +61,10 @@ Frozen contract, 2026-10-11. Decision: [D-34](itd/D-34-compatible-release-automa
   uncertainty is a failed drill, not successful revocation. The website's runtime
   roles and the shared OIDC provider are untouched. Re-enable requires an explicit
   operator action restoring only the reviewed policy/trust, with private evidence.
+  Keep an AWS token-issue-time explicit deny after recovery so removing the
+  unconditional incident deny cannot revive older sessions. Before reopening,
+  refresh and verify that cutoff from independent operator access. Test an old
+  session remains denied while a newly issued session succeeds.
 
 ## Compatible application promotion
 
