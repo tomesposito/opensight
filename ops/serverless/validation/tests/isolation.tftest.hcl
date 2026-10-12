@@ -153,8 +153,8 @@ run "pilot_least_privilege" {
     enable_pilot_runtime = true
   }
   assert {
-    condition     = alltrue([for name in ["request", "work", "recovery"] : !strcontains(aws_iam_role_policy.lambda[name].policy, "synthetic-master") && !strcontains(aws_iam_role_policy.lambda[name].policy, aws_secretsmanager_secret.runtime["smtp"].arn) && !strcontains(aws_iam_role_policy.lambda[name].policy, "\"s3:DeleteObject\"") && jsondecode(aws_iam_role_policy.lambda[name].policy).Statement[3].Resource == [aws_secretsmanager_secret.runtime["operator"].arn, aws_secretsmanager_secret.runtime["tenant"].arn]])
-    error_message = "Runtime roles must not acquire bootstrap/SMTP credentials or unversioned object deletion."
+    condition     = alltrue([for name in ["request", "recovery"] : !strcontains(aws_iam_role_policy.lambda[name].policy, "synthetic-master") && !strcontains(aws_iam_role_policy.lambda[name].policy, aws_secretsmanager_secret.runtime["smtp"].arn) && !strcontains(aws_iam_role_policy.lambda[name].policy, "\"s3:DeleteObject\"") && jsondecode(aws_iam_role_policy.lambda[name].policy).Statement[3].Resource == [aws_secretsmanager_secret.runtime["operator"].arn, aws_secretsmanager_secret.runtime["tenant"].arn]]) && !strcontains(aws_iam_role_policy.lambda["work"].policy, "synthetic-master") && !strcontains(aws_iam_role_policy.lambda["work"].policy, "\"s3:DeleteObject\"") && jsondecode(aws_iam_role_policy.lambda["work"].policy).Statement[3].Resource == [aws_secretsmanager_secret.runtime["operator"].arn, aws_secretsmanager_secret.runtime["tenant"].arn, aws_secretsmanager_secret.runtime["smtp"].arn]
+    error_message = "Runtime roles must not acquire bootstrap credentials or unversioned object deletion; only the work function may read the SMTP secret (SR3 email delivery)."
   }
   assert {
     condition     = alltrue([for name in ["work", "recovery"] : jsondecode(aws_iam_role_policy.lambda[name].policy).Statement[9].Resource == aws_sqs_queue.business[name].arn]) && !strcontains(aws_iam_role_policy.lambda["request"].policy, "sqs:ReceiveMessage") && !strcontains(aws_iam_role_policy.lambda["migration"].policy, "s3:")
