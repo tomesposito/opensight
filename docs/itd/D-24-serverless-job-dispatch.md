@@ -179,7 +179,9 @@ rows/DLQs for reauthorization on resume. Empty queues create no SQL invocations.
 `DurableDispatch.prepare/commit/commitOn/dispatch/recover/inspect/terminal`,
 `DispatchTransport.recover/dispatch`, the v1 dispatch schema/checksum and
 `DurableCoordinator.admit/renew/publish/revoke/release`. An additive, frozen/drained
-migration installs `sr_execution_schema` and `sr_execution`; it does not rewrite
+migration installs `sr_execution_schema`, `sr_execution` and immutable
+`sr_job_due` mappings (deployment, opaque due ID, scope/owner, job ID/version and
+due timestamp); it does not rewrite
 SR2 migrations. The execution row is keyed by deployment/event, references its
 outbox row, and records a monotonic fence, random attempt token, attempt count,
 lease deadline, state and safe error code. Claims use database time under the
