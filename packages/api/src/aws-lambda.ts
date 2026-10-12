@@ -26,7 +26,8 @@ export async function migration(event: unknown, context: InvocationContext) {
 
 export async function administration(event: unknown, context: InvocationContext) {
   try { return await new InvocationScope(invocationDeadline(context, Date.now(), 110000)).run(async scope => {
-    const env = await awsEnvironment(new InvocationAws(scope, process.env), process.env, true);
+    const replay = !!event && typeof event === 'object' && 'command' in event && event.command === 'replay-event';
+    const env = await awsEnvironment(new InvocationAws(scope, process.env), process.env, !replay);
     return createPrivateRuntime(() => env).administration(event, context);
   }); } catch (error) { throw error instanceof MetadataError ? error : new MetadataError('AWS_RUNTIME_FAILED', 503); }
 }

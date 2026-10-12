@@ -10,7 +10,7 @@ import type { MailTransport } from './mail.js';
 export async function jobRoute(request: IncomingMessage, response: ServerResponse, path: string, context: TenantContext, store: JobStore, executor: JobExecutor, mail: MailTransport): Promise<boolean> {
   if (path === '/api/automation-status') {
     method(request, response, ['GET']); await store.checked(context, async () => {});
-    send(response, 200, { scheduler: 'single-api-process', smtp: mail.configured ? 'configured' : 'not-configured', persistence: 'durable', delivery: 'at-least-once' }); return true;
+    send(response, 200, { scheduler: store.dispatch ? 'durable-events' : 'single-api-process', smtp: mail.configured ? 'configured' : 'not-configured', persistence: 'durable', delivery: 'at-least-once' }); return true;
   }
   if (path === '/api/job-recipients') { method(request, response, ['GET']); send(response, 200, await store.recipients(context)); return true; }
   if (path === '/api/jobs') { method(request, response, ['GET']); send(response, 200, await store.list(context)); return true; }

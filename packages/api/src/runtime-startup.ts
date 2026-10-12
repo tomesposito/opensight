@@ -8,6 +8,7 @@ import { manifestChecksum } from './manifest-schema.js';
 import { dispatchChecksum } from './dispatch-schema.js';
 import { objectChecksum } from './object-schema.js';
 import { operationChecksum } from './operation-schema.js';
+import { executionChecksum } from './execution-schema.js';
 
 export const runtimeProtocol = 1;
 export function deploymentId(env: NodeJS.ProcessEnv): string {
@@ -28,7 +29,7 @@ export async function runtimeReadiness(db: InvocationDatabases, scope: Invocatio
       await c.query('SET TRANSACTION READ ONLY');
       await checkRuntimeControl(c, deploymentId(env));
       if (env.OPENSIGHT_SERVERLESS_DATA === 'durable') {
-        for (const [table, checksum] of [['sr_coordination_schema', coordinationChecksum], ['sr_manifest_schema', manifestChecksum], ['sr_dispatch_schema', dispatchChecksum], ['sr_object_schema', objectChecksum], ['sr_operation_schema', operationChecksum]]) {
+        for (const [table, checksum] of [['sr_coordination_schema', coordinationChecksum], ['sr_manifest_schema', manifestChecksum], ['sr_dispatch_schema', dispatchChecksum], ['sr_object_schema', objectChecksum], ['sr_operation_schema', operationChecksum], ['sr_execution_schema', executionChecksum]]) {
           const marker = (await c.query(`SELECT version, checksum FROM ${table} WHERE deployment = ?`, [deploymentId(env)]))[0];
           if (Number(marker?.version) !== 1 || marker?.checksum !== checksum) throw new MetadataError('WORKSPACE_MAINTENANCE', 503);
         }

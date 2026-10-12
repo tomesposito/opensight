@@ -164,3 +164,43 @@ test('SR3 expired due work stops that revision with named failure, without stopp
   assert.equal((await f.rows('h7_jobs'))[0].stopped, 1);
   assert.ok((await f.rows('sr_execution')).every(r => r.error_code === 'DISPATCH_EVENT_EXPIRED'));
 });
+
+test('SR3 cancellation after SMTP authorization records the accepted external effect without reviving the occurrence', async t => {
+  const f = await delivery(t);
+  const send = f.mail.send.bind(f.mail);
+  f.mail.send = async (...args) => { await send(...args); await f.store.stop(f.contexts[0], 'report', 1); };
+  await f.jobs.run(f.envelope);
+  assert.equal(f.mail.messages.length, 1);
+  const row = (await f.rows('h7_deliveries'))[0]; assert.equal(row.state, 'sent'); assert.equal(row.error_code, 'DELIVERY_ACCEPTED_AFTER_CANCEL');
+  assert.equal((await f.rows('h7_occurrences'))[0].state, 'cancelled');
+});
+
+test('SR3 final-attempt SMTP ambiguity remains evidence after retry/expiry bounds and can never be replayed', async t => {
+  const f = await delivery(t);
+  // Four claimed attempts failed before SMTP. The fifth has an unknown DATA result.
+  for (let i = 0; i < 4; i++) {
+    const handle = await f.jobs.execution.claim(f.envelope); await f.jobs.execution.failed(handle, new MailError('SMTP_NOT_CONFIGURED'));
+  }
+  f.mail.send = async () => { throw new MailError('SMTP_SEND_FAILED'); };
+  await assert.rejects(f.jobs.run(f.envelope), { code: 'SMTP_SEND_FAILED' });
+  f.time.now += 86400001;
+  await assert.rejects(f.jobs.run(f.envelope), { code: 'DELIVERY_AMBIGUOUS' });
+  assert.equal((await f.rows('sr_execution')).find(r => r.event_id === f.envelope.eventId).state, 'ambiguous');
+  assert.equal((await f.rows('h7_deliveries'))[0].error_code, 'DELIVERY_AMBIGUOUS');
+  await assert.rejects(f.jobs.replay(f.envelope, true), { code: 'DISPATCH_REPLAY_DENIED' });
+});
+test('SR3 operator replay prearms before mutation and an uncertain recovery receipt never reopens ambiguous mail', async t => {
+  const f = await delivery(t);
+  const handle = await f.jobs.execution.claim(f.envelope); await f.jobs.execution.failed(handle, new MailError('SMTP_SEND_FAILED'), true);
+  f.transport.recover = async () => { throw new MetadataError('RECOVERY_ACK_LOST', 503); };
+  await assert.rejects(f.jobs.replay(f.envelope, true), { code: 'RECOVERY_ACK_LOST' });
+  assert.equal((await f.rows('sr_execution')).find(r => r.event_id === f.envelope.eventId).state, 'ambiguous');
+});
+
+test('SR3 delivery rechecks the rendered artifact certificate before SMTP DATA', async t => {
+  const f = await delivery(t);
+  f.executor.verifyDelivery = async () => { throw new MetadataError('BLAZE_INVALIDATED', 409); };
+  await f.jobs.run(f.envelope);
+  assert.equal(f.mail.messages.length, 0);
+  assert.equal((await f.rows('h7_deliveries'))[0].error_code, 'BLAZE_INVALIDATED');
+});

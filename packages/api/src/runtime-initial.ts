@@ -10,6 +10,7 @@ import { budgetEnvironment } from './budget-store.js';
 import { validateBudgets } from './budgets.js';
 import { appendOperatorAudit, entitlementConfig } from './hosted-usage.js';
 import { deploymentId } from './runtime-startup.js';
+import { executionChecksum } from './execution-schema.js';
 import { serverlessTables, migrateServerless, grantServerlessRuntime } from './serverless-migration.js';
 import { verifyRuntimeLocks } from './runtime-row-locks.js';
 import { coordinationChecksum, coordinationNow, type CoordinationDialect } from './coordination-schema.js';
@@ -26,7 +27,7 @@ export type InitialCommand = { version: 1; command: 'bootstrap-initial'; operati
 export type InitialResult = { state: 'bootstrapped'; epoch: 1; tenants: 2 } | { state: 'active' | 'locks-repaired'; epoch: 1 }
   | { state: 'budgets-configured'; epoch: 1; budgetVersion: number };
 function fail(code = 'INITIAL_ACTIVATION_INVALID'): never { throw new MetadataError(code, 503); }
-const markers = [['sr_coordination_schema', coordinationChecksum], ['sr_manifest_schema', manifestChecksum], ['sr_dispatch_schema', dispatchChecksum], ['sr_object_schema', objectChecksum], ['sr_operation_schema', operationChecksum]] as const;
+const markers = [['sr_coordination_schema', coordinationChecksum], ['sr_manifest_schema', manifestChecksum], ['sr_dispatch_schema', dispatchChecksum], ['sr_object_schema', objectChecksum], ['sr_operation_schema', operationChecksum], ['sr_execution_schema', executionChecksum]] as const;
 const workTables = serverlessTables.filter(t => t.startsWith('sr_') && !t.endsWith('_schema') && !['sr_control', 'sr_limits'].includes(t));
 const initialEmptyTables = [...workTables, 'h1_tenants', 'h1_resources', 'h1_operations', 'h1_outbox', 'h2_identities', 'h2_memberships', 'h2_invitations', 'h2_sessions', 'h2_onboarding', 'h2_requests', 'h7_jobs', 'h8_usage', 'h8_usage_events', 'h8_recovery'];
 const hmac = (config: HostedConfig, value: unknown) => createHmac('sha256', config.encryptionKey).update(canonical(value)).digest('hex');

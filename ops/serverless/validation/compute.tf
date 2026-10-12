@@ -23,6 +23,11 @@ locals {
   })
   pilot_environment = var.enable_pilot_runtime ? merge(local.environment, {
     OPENSIGHT_SERVERLESS_DATA    = "durable"
+    OPENSIGHT_EGRESS_PROFILE     = "ipv6"
+    OPENSIGHT_SMTP_HOST          = "email-smtp.${var.region}.api.aws"
+    OPENSIGHT_SMTP_PORT          = "465"
+    OPENSIGHT_SMTP_FROM          = var.alert_email
+    OPENSIGHT_SMTP_SECRET_ARN    = aws_secretsmanager_secret.runtime["smtp"].arn
     OPENSIGHT_RELEASE_DIGEST     = split("@", var.image_uri)[1]
     OPENSIGHT_ARTIFACT_BUCKET    = aws_s3_bucket.artifacts.id
     OPENSIGHT_WORK_QUEUE_URL     = aws_sqs_queue.business["work"].url
@@ -93,7 +98,7 @@ resource "aws_iam_role_policy" "lambda" {
     { Effect = "Allow", Action = ["ec2:CreateNetworkInterface", "ec2:DescribeNetworkInterfaces", "ec2:DescribeSubnets", "ec2:DeleteNetworkInterface", "ec2:AssignPrivateIpAddresses", "ec2:UnassignPrivateIpAddresses"], Resource = "*" },
     # Lambda's service needs ENI permissions; application code may not use them.
     { Effect = "Deny", Action = ["ec2:CreateNetworkInterface", "ec2:DeleteNetworkInterface", "ec2:AssignPrivateIpAddresses", "ec2:UnassignPrivateIpAddresses"], Resource = "*", Condition = { ArnEquals = { "lambda:SourceFunctionArn" = "arn:aws:lambda:${var.region}:${var.account_id}:function:${var.deployment}-${each.key}" } } },
-    { Effect = "Allow", Action = "secretsmanager:GetSecretValue", Resource = concat([aws_secretsmanager_secret.runtime["operator"].arn, aws_secretsmanager_secret.runtime["tenant"].arn], each.key == "migration" ? [aws_rds_cluster.validation.master_user_secret[0].secret_arn] : []) }
+    { Effect = "Allow", Action = "secretsmanager:GetSecretValue", Resource = concat([aws_secretsmanager_secret.runtime["operator"].arn, aws_secretsmanager_secret.runtime["tenant"].arn], each.key == "migration" ? [aws_rds_cluster.validation.master_user_secret[0].secret_arn] : [], each.key == "work" ? [aws_secretsmanager_secret.runtime["smtp"].arn] : []) }
     ], [for statement in [
       { Effect = "Allow", Action = "secretsmanager:GetSecretValue", Resource = [aws_rds_cluster.validation.master_user_secret[0].secret_arn, aws_secretsmanager_secret.runtime["smtp"].arn] },
       { Effect = "Allow", Action = ["s3:GetObject", "s3:GetObjectVersion", "s3:PutObject", "s3:DeleteObject", "s3:DeleteObjectVersion"], Resource = "${aws_s3_bucket.artifacts.arn}/probe/*" },

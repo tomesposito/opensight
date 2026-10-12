@@ -7,6 +7,7 @@ import { SchedulerClient } from '@aws-sdk/client-scheduler';
 import { MetadataError } from './metadata-db.js';
 import { secretKey } from './hosted-config.js';
 import { InvocationScope } from './runtime-scope.js';
+import { egressEndpoints } from './egress.js';
 
 const fail = (code = 'AWS_CONFIG_INVALID'): never => { throw new MetadataError(code, 503); };
 export function awsRegion(env: NodeJS.ProcessEnv): string {
@@ -52,8 +53,7 @@ export class InvocationAws {
     const accessKeyId = env.AWS_ACCESS_KEY_ID, secretAccessKey = env.AWS_SECRET_ACCESS_KEY, sessionToken = env.AWS_SESSION_TOKEN;
     if (![accessKeyId, secretAccessKey, sessionToken].every(value => typeof value === 'string' && value.length > 0 && value.length <= 16384 && !/[\s\x00-\x1f]/.test(value))) fail('AWS_CREDENTIALS_REQUIRED');
     const credentials = { accessKeyId: accessKeyId!, secretAccessKey: secretAccessKey!, sessionToken: sessionToken! };
-    this.hosts = { secrets: `secretsmanager.${this.region}.amazonaws.com`, sqs: `sqs.${this.region}.api.aws`,
-      scheduler: `scheduler.${this.region}.api.aws`, s3: `s3.${this.region}.amazonaws.com`, smtp: `email-smtp.${this.region}.api.aws` };
+    this.hosts = egressEndpoints(env, this.region);
     const options = (host: string, family: 4 | 6) => {
       const httpsAgent = new Agent({ family, keepAlive: false, maxSockets: 2, maxFreeSockets: 0, rejectUnauthorized: true, minVersion: 'TLSv1.2' });
       this.agents.push(httpsAgent);

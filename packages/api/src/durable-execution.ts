@@ -2,19 +2,26 @@ import { randomUUID } from 'node:crypto';
 import { MetadataError, type SqlConnection, type SqlRow } from './metadata-db.js';
 import { DurableDispatch, type DispatchEnvelope, type DurableEvent } from './dispatch.js';
 import { executionChecksum } from './execution-schema.js';
+import { QueryEngineError } from '@opensight/query-engine';
+import { MailError } from './mail.js';
 
 export type ExecutionEvent = DurableEvent & { scope: { tenantId: string; namespaceId: string; userId: string } };
 export interface ExecutionHandle { readonly event: ExecutionEvent; readonly token: string; readonly fence: string; readonly attempts: number }
 export type TerminalWork = (c: SqlConnection, event: ExecutionEvent, code: string, now: number) => Promise<void>;
-const retryable = (error: unknown): boolean => !(error instanceof MetadataError) || error.status >= 500 || error.status === 429
-  || ['OPERATION_BUSY', 'BLAZE_BUSY', 'DISPATCH_EXECUTION_BUSY'].includes(error.code);
+const retryable = (error: unknown): boolean => {
+  if (error instanceof QueryEngineError) return ['WORKER_EXECUTION_FAILED', 'TENANT_BUDGET_EXCEEDED', 'NODE_BUDGET_EXCEEDED'].includes(error.code);
+  if (error instanceof MailError) return error.code !== 'SMTP_CONFIG_INVALID';
+  return !(error instanceof MetadataError) || error.status >= 500 || error.status === 429
+    || ['OPERATION_BUSY', 'BLAZE_BUSY', 'DISPATCH_EXECUTION_BUSY'].includes(error.code);
+};
 const safeCode = (error: unknown): string => error instanceof Error && 'code' in error && typeof error.code === 'string'
   && /^[A-Z][A-Z0-9_]{0,95}$/.test(error.code) ? error.code : 'DISPATCH_EXECUTION_FAILED';
 
 /** SQL owns attempts; the source receipt owns recovery until outcome and children commit. */
 export class DurableExecution {
   readonly #handles = new WeakSet<ExecutionHandle>();
-  constructor(readonly dispatch: DurableDispatch, private readonly terminalWork: TerminalWork = async () => {}) {}
+  constructor(readonly dispatch: DurableDispatch, private readonly terminalWork: TerminalWork = async () => {},
+    private readonly ambiguousWork: (c: SqlConnection, event: ExecutionEvent) => Promise<void> = async () => {}) {}
   private async schema(c: SqlConnection): Promise<void> {
     const row = (await c.query('SELECT version, checksum FROM sr_execution_schema WHERE deployment = ?', [this.dispatch.deployment]))[0];
     if (Number(row?.version) !== 1 || row?.checksum !== executionChecksum) throw new MetadataError('EXECUTION_SCHEMA_REQUIRED', 503);
@@ -30,16 +37,17 @@ export class DurableExecution {
       const row = await this.row(c, event.eventId);
       if (outbox?.state === 'terminal' || row && ['completed', 'failed', 'cancelled'].includes(String(row.state))) return undefined;
       if (row && ['running', 'sending'].includes(String(row.state)) && Number(row.lease_until) > now) throw new MetadataError('DISPATCH_EXECUTION_BUSY', 409);
+      if (row && ['sending', 'ambiguous'].includes(String(row.state))) {
+        await this.ambiguousWork(c, event);
+        await c.query("UPDATE sr_execution SET state = 'ambiguous', error_code = 'DELIVERY_AMBIGUOUS' WHERE deployment = ? AND event_id = ?", [this.dispatch.deployment, event.eventId]);
+        return 'ambiguous' as const;
+      }
       if (event.expiresAt <= now || Number(row?.attempts ?? 0) >= 5) {
         const code = event.expiresAt <= now ? 'DISPATCH_EVENT_EXPIRED' : 'DISPATCH_RETRY_EXHAUSTED';
         await this.terminalWork(c, event, code, now);
         if (row) await c.query("UPDATE sr_execution SET state = 'failed', error_code = ? WHERE deployment = ? AND event_id = ?", [code, this.dispatch.deployment, event.eventId]);
         else await c.query("INSERT INTO sr_execution VALUES (?,?,1,?,1,?,'failed',?)", [this.dispatch.deployment, event.eventId, randomUUID(), now, code]);
         await this.dispatch.terminal(c, event.eventId, epoch); return undefined;
-      }
-      if (row && ['sending', 'ambiguous'].includes(String(row.state))) {
-        await c.query("UPDATE sr_execution SET state = 'ambiguous', error_code = 'DELIVERY_AMBIGUOUS' WHERE deployment = ? AND event_id = ?", [this.dispatch.deployment, event.eventId]);
-        return 'ambiguous' as const;
       }
       if (!Number.isFinite(remainingMs) || remainingMs < 1000) throw new MetadataError('INVOCATION_DEADLINE_EXCEEDED', 503);
       if (row && BigInt(String(row.fence)) >= 9223372036854775807n) throw new MetadataError('CLAIM_FENCE_EXHAUSTED', 503);
@@ -83,6 +91,7 @@ export class DurableExecution {
     return this.checked(handle, async (c, now) => {
       const retry = retryable(error) && handle.attempts < 5;
       const state = ambiguous ? 'ambiguous' : retry ? 'retry' : 'failed';
+      if (ambiguous) await this.ambiguousWork(c, handle.event);
       await c.query('UPDATE sr_execution SET state = ?, error_code = ? WHERE deployment = ? AND event_id = ?', [state, code, this.dispatch.deployment, handle.event.eventId]);
       if (!retry && !ambiguous) {
         await this.terminalWork(c, handle.event, code, now);
@@ -95,12 +104,20 @@ export class DurableExecution {
   async replay(envelope: DispatchEnvelope, authorize: (c: SqlConnection, event: ExecutionEvent) => Promise<void>, acceptAmbiguous = false): Promise<void> {
     const event = await this.dispatch.inspect(envelope, true);
     if (!event) throw new MetadataError('DISPATCH_REPLAY_DENIED', 409);
-    await this.dispatch.system(async (c, { epoch, now }) => {
+    const check = async (c: SqlConnection, epoch: number, now: number) => {
       await this.schema(c); const row = await this.row(c, event.eventId);
       if (epoch !== event.epoch || event.expiresAt <= now || row && (Number(row.attempts) >= 5
         || ['completed', 'failed', 'cancelled'].includes(String(row.state)) || ['running', 'sending'].includes(String(row.state)) && Number(row.lease_until) > now)) throw new MetadataError('DISPATCH_REPLAY_DENIED', 409);
       if (row && ['ambiguous', 'sending'].includes(String(row.state)) && !acceptAmbiguous) throw new MetadataError('DELIVERY_AMBIGUOUS', 409);
       await authorize(c, event);
+      const current = (await c.query('SELECT state FROM sr_outbox WHERE deployment = ? AND event_id = ?', [this.dispatch.deployment, event.eventId]))[0];
+      if (current?.state === 'terminal') throw new MetadataError('DISPATCH_REPLAY_DENIED', 409);
+      return row;
+    };
+    await this.dispatch.system((c, { epoch, now }) => check(c, epoch, now));
+    await this.dispatch.rearmEvent(envelope);
+    await this.dispatch.system(async (c, { epoch, now }) => {
+      const row = await check(c, epoch, now);
       if (row) await c.query("UPDATE sr_execution SET state = 'retry' WHERE deployment = ? AND event_id = ?", [this.dispatch.deployment, event.eventId]);
       await c.query("UPDATE sr_outbox SET state = 'pending' WHERE deployment = ? AND event_id = ? AND state <> 'terminal'", [this.dispatch.deployment, event.eventId]);
     });

@@ -9,13 +9,16 @@ import { hasCapability, type Role } from '@opensight/query-engine';
 import { jobDueEvent, jobExecutionEvent } from './job-dispatch.js';
 import { nextRun } from './schedule.js';
 import { MailError, type MailTransport } from './mail.js';
+import { currentAuthority } from './serverless-authority.js';
 
 /** One source-bound record per invocation; no tick, scan, global reset or timer. */
 export class DurableJobs {
   readonly execution: DurableExecution;
   constructor(readonly store: JobStore, readonly executor: JobExecutor, readonly mail: MailTransport) {
     if (!store.dispatch) throw new MetadataError('DISPATCH_CONFIG_INVALID', 503);
-    this.execution = new DurableExecution(store.dispatch, (c, event, code, now) => this.terminal(c, event, code, now));
+    this.execution = new DurableExecution(store.dispatch, (c, event, code, now) => this.terminal(c, event, code, now), async (c, event) => {
+      if (event.kind === 'job-deliver') await c.query(`UPDATE h7_deliveries SET error_code = 'DELIVERY_AMBIGUOUS' WHERE ${scoped} AND delivery_id = ? AND state = 'sending'`, [...scopeArgs(event.scope), event.aggregateId]);
+    });
   }
   private async due(c: SqlConnection, event: ExecutionEvent) {
     await lockTenant(c, event.scope);
@@ -149,12 +152,13 @@ export class DurableJobs {
       // Full source/RLS/CLS authorization followed by the SQL linearization check.
       this.executor.begin(owner, verify); await this.executor.authorize(owner, run.spec);
       this.executor.begin(recipient, verify); await this.executor.authorize(recipient, run.spec);
+      await this.executor.verifyDelivery?.(recipient);
       await verify();
     });
     accepted();
     await this.execution.complete(handle, async (c, now) => {
       // Record an already accepted effect even if permission changed after DATA.
-      await c.query(`UPDATE h7_deliveries SET state = 'sent', sent_at = ?, error_code = NULL, message = NULL WHERE ${scoped} AND delivery_id = ? AND state = 'sending'`, [new Date(now).toISOString(), ...scopeArgs(run), handle.event.aggregateId]);
+      await c.query(`UPDATE h7_deliveries SET state = 'sent', sent_at = ?, error_code = CASE WHEN state = 'cancelled' THEN 'DELIVERY_ACCEPTED_AFTER_CANCEL' ELSE NULL END, message = NULL WHERE ${scoped} AND delivery_id = ? AND state IN ('sending','cancelled')`, [new Date(now).toISOString(), ...scopeArgs(run), handle.event.aggregateId]);
       await this.settle(c, run, now);
     });
   }
@@ -178,7 +182,13 @@ export class DurableJobs {
   async replay(envelope: DispatchEnvelope, acceptAmbiguous = false): Promise<void> {
     const event = await this.store.dispatch!.inspect(envelope, true);
     if (!event || !event.kind.startsWith('job-')) throw new MetadataError('DISPATCH_REPLAY_DENIED', 409);
-    if (event.kind !== 'job-due') {
+    let dueAuthority: { context: Awaited<ReturnType<JobStore['context']>>; revisions: Occurrence['revisions'] } | undefined;
+    if (event.kind === 'job-due') {
+      const job = await this.store.db.transaction(c => this.due(c, event));
+      if (!job) throw new MetadataError('DISPATCH_REPLAY_DENIED', 409);
+      const context = await this.store.context(job, job.ownerId), revisions = await this.store.metadata.revisions(context);
+      await this.executor.authorize(context, job.spec); dueAuthority = { context, revisions };
+    } else {
       const { run, delivery } = await this.store.db.transaction(c => this.runRow(c, event));
       await this.executor.authorize(await this.store.context(run, run.ownerId), run.spec);
       if (delivery) await this.executor.authorize(await this.store.context(run, String(delivery.recipient_id)), run.spec);
@@ -190,6 +200,7 @@ export class DurableJobs {
         if (Number(usage?.admitted ?? 0) >= limit.computeAttempts) throw new MetadataError('USAGE_LIMIT_EXCEEDED', 429);
       }
       if (event.kind === 'job-due') {
+        await currentAuthority(c, this.store.metadata, dueAuthority!.context, dueAuthority!.revisions, true);
         const job = await this.due(c, event); if (!job) throw new MetadataError('DISPATCH_REPLAY_DENIED', 409);
         if (!hasCapability((await member(c, job, job.ownerId)).role as Role, 'build')) throw new MetadataError('JOB_OWNER_FORBIDDEN', 403);
         return;

@@ -29,6 +29,8 @@ import type { HostedAuth } from './hosted-auth.js';
 import { ResultObjects } from './result-objects.js';
 import { DurableResults } from './durable-results.js';
 import { method, send } from './automation-routes.js';
+import { JobStore } from './job-store.js';
+import { serverlessMail } from './serverless-mail.js';
 
 export function serverlessTransport(aws: InvocationAws, env: NodeJS.ProcessEnv): AwsDispatch {
   const required = (key: string) => { const value = env[key]; if (!value) throw new MetadataError('DISPATCH_CONFIG_INVALID', 503); return value; };
@@ -44,10 +46,11 @@ export async function serverlessUsage(database: Database, deployment: string): P
   });
   return new HostedUsage(database, config, Date.now, deployment);
 }
-/** Literal supported data routes. H7 and the legacy base64 upload remain gated. */
+/** Literal supported data routes. Legacy base64 uploads remain gated. */
 export function serverlessDataPath(raw: string): boolean {
   const path = raw.replace(/^\/api\/namespaces\/[A-Za-z0-9_-]+\//, '/api/');
   return /^\/api\/(?:session|namespaces|users|groups|connectors|sources|prep-sources|prep-datasets)$/.test(path)
+    || /^\/api\/(?:automation-status|job-recipients|jobs(?:\/[A-Za-z0-9_-]{1,512}(?:\/(?:runs|deliveries))?)?)$/.test(path)
     || /^\/api\/sources\/[A-Za-z0-9_-]+(?:\/(?:bind|rotate|preview|rows|output|query|refresh|policy))?$/.test(path)
     || /^\/api\/(?:ai\/sources(?:\/[A-Za-z0-9_-]+\/schema)?|prep-datasets\/import)$/.test(path)
     || /^\/api\/(?:uploads\/reservations(?:\/[A-Za-z0-9_-]+(?:\/complete)?)?|operations\/[A-Za-z0-9_-]+(?:\/result\/(?:0|[1-9]\d{0,5}))?)$/.test(path)
@@ -63,6 +66,7 @@ export function serverlessAdapters(database: Database, metadata: TenantMetadata,
   const coordinator = new DurableCoordinator(database, metadata, deployment), manifests = new ManifestStore(coordinator);
   const transfer = new ArtifactTransfer(aws, { bucket, prefix: 'artifacts/v1' }), ledger = new ObjectLedger(metadata, deployment);
   const dispatch = new DurableDispatch(database, metadata, deployment, serverlessTransport(aws, env));
+  const jobs = new JobStore(database, metadata, () => new Date(), dispatch);
   const work = new ServerlessWork(coordinator, manifests, dispatch, ledger, transfer, budgets, aws.scope, () => aws.close());
   const sourceArtifacts = new SourceArtifacts(coordinator, context => work.attempt(context), transfer, budgets);
   const sources = new HostedSources(metadata, config.encryptionKey.toString('base64'), sourceEndpoints(env), Date.now, sourceArtifacts.read);
@@ -71,13 +75,13 @@ export function serverlessAdapters(database: Database, metadata: TenantMetadata,
   const authority = (request: Parameters<HostedAuth['resultSession']>[0]) => {
     if (!auth) throw new MetadataError('RESULT_SESSION_REQUIRED', 503); return auth.resultSession(request);
   };
-  const data = new HostedDataRoutes(new HostedData(sources, undefined, budgets, work.cache, work), undefined, async (request, context, status, body, recheck) => {
+  const data = new HostedDataRoutes(new HostedData(sources, undefined, budgets, work.cache, work), jobs, async (request, context, status, body, recheck) => {
     if (Buffer.byteLength(JSON.stringify(body)) <= 1024 * 1024) return { status, body };
     return results.publish(context, body, await authority(request), recheck);
   });
   const embedContent = new EmbedContent(new HostedData(embedSources, undefined, budgets, work.cache, work));
   const uploadService = new DurableUploads(metadata, dispatch, ledger, new UploadObjects(aws, bucket)), uploads = new DurableUploadRoutes(uploadService);
-  return { data, embedContent, allows: serverlessDataPath, capabilities: { directUploads: { version: 1, maxBytes: 8 * 1024 * 1024 }, resultChunks: { version: 1, maxBytes: 1024 * 1024, maxResultBytes: budgets.config.node.resultBytes }, controlJsonBytes: 1024 * 1024 },
+  return { data, embedContent, jobs, mail: serverlessMail(aws, env), allows: serverlessDataPath, capabilities: { directUploads: { version: 1, maxBytes: 8 * 1024 * 1024 }, resultChunks: { version: 1, maxBytes: 1024 * 1024, maxResultBytes: budgets.config.node.resultBytes }, controlJsonBytes: 1024 * 1024 },
     resultMaxBytes: budgets.config.node.resultBytes,
     idleReconnect: true,
     embedResult: (context, session, body, recheck) => results.publish(context, body, { kind: 'embed', id: session.id, expiresAt: session.expiresAt }, recheck),

@@ -9,12 +9,13 @@ import { migrateDispatch, dispatchTables } from './dispatch-schema.js';
 import { migrateObjects, objectTables } from './object-schema.js';
 import { migrateOperations, operationTables } from './operation-schema.js';
 import { installRuntimeLocks } from './runtime-row-locks.js';
+import { migrateExecutions, executionTables } from './execution-schema.js';
 
 const baseTables = ['sr_control', 'h1_tenants', 'h1_namespaces', 'h1_revisions', 'h1_resources', 'h1_links', 'h1_operations', 'h1_outbox', 'h1_migrations',
   'h2_control', 'h2_identities', 'h2_memberships', 'h2_invitations', 'h2_keys', 'h2_sessions', 'h2_attempts', 'h2_onboarding', 'h2_requests',
   'h4_budget_config', 'h5_embedding_config', 'h6_keys', 'h6_sessions', 'h7_jobs', 'h7_occurrences', 'h7_deliveries', 'h7_migrations',
   'h8_usage', 'h8_usage_events', 'h8_audit', 'h8_recovery', 'h8_schema'];
-const durableTables = [...coordinationTables, ...manifestTables, ...dispatchTables, ...objectTables, ...operationTables];
+const durableTables = [...coordinationTables, ...manifestTables, ...dispatchTables, ...objectTables, ...operationTables, ...executionTables];
 export const serverlessTables = [...baseTables, ...durableTables];
 export async function grantServerlessRuntime(c: SqlConnection, env: NodeJS.ProcessEnv): Promise<void> {
   const schema = String((await c.query('SELECT current_schema() AS schema'))[0]?.schema);
@@ -31,7 +32,7 @@ export async function grantServerlessRuntime(c: SqlConnection, env: NodeJS.Proce
     await c.query(`REVOKE ALL ON ${[...baseTables, ...durableTables].join(', ')} FROM "${name}"`);
   }
   await c.query(`REVOKE CREATE ON SCHEMA "${schema}" FROM PUBLIC`);
-  const readOnly = ['sr_control', 'sr_limits', 'h4_budget_config', 'h8_schema', 'h1_migrations', 'h7_jobs', 'h7_occurrences', 'h7_deliveries', 'h7_migrations', ...durableTables.filter(t => t.endsWith('_schema'))];
+  const readOnly = ['sr_control', 'sr_limits', 'h4_budget_config', 'h8_schema', 'h1_migrations', 'h7_migrations', ...durableTables.filter(t => t.endsWith('_schema'))];
   const writable = [...baseTables, ...durableTables].filter(t => !readOnly.includes(t));
   await c.query(`GRANT SELECT ON ${readOnly.join(', ')} TO "${roles.operator}"`);
   await c.query(`GRANT SELECT, INSERT, UPDATE, DELETE ON ${writable.join(', ')} TO "${roles.operator}"`);
@@ -67,6 +68,7 @@ export async function migrateServerless(database: Database, env: NodeJS.ProcessE
     await migrateDispatch(nested, deployment, 'frozen', dialect);
     await migrateObjects(nested, deployment, 'frozen', dialect);
     await migrateOperations(nested, deployment, 'frozen', dialect);
+    await migrateExecutions(nested, deployment, 'frozen', dialect);
     if (dialect === 'postgres') await grantServerlessRuntime(c, env);
     await appendOperatorAudit(c, 'serverless.migrated');
   });

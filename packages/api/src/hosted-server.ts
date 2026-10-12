@@ -54,6 +54,8 @@ export async function dispatchHostedRequest(server: Server, request: IncomingMes
 export interface HostedInvocationAdapters {
   data: HostedDataRoutes;
   embedContent: EmbedContent;
+  jobs?: JobStore;
+  mail?: MailTransport;
   allows(path: string): boolean;
   capabilities: Readonly<Record<string, unknown>>;
   resultMaxBytes?: number;
@@ -120,11 +122,11 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
   if (!options.invocation) await initializeEmbedding(options.membershipDatabase);
   const embedding = new HostedEmbedding(options.membershipDatabase, metadata, policy);
   const budgets = await loadBudgets(options.membershipDatabase, metadata);
-  const jobs = new JobStore(options.membershipDatabase, metadata);
   const invocation = options.invocation?.compose?.(metadata, budgets, options.builtinAuth);
+  const jobs = invocation?.jobs ?? new JobStore(options.membershipDatabase, metadata);
   const data = invocation?.data ?? new HostedDataRoutes(new HostedData(new HostedSources(metadata, config.encryptionKey.toString('base64'), sourceEndpoints(options.env)), undefined, budgets), jobs);
   const embedContent = invocation?.embedContent ?? new EmbedContent(new HostedData(new EmbedSources(metadata, config.encryptionKey.toString('base64'), sourceEndpoints(options.env)), undefined, budgets));
-  const mail = options.mailTransport ?? smtpFromEnvironment(options.env);
+  const mail = invocation?.mail ?? options.mailTransport ?? smtpFromEnvironment(options.env);
   if (!options.invocation) await initializeJobs(options.membershipDatabase);
   const unmigrated = await options.membershipDatabase.transaction(c => c.query(`SELECT j.resource_id FROM h1_resources j WHERE j.kind = 'job'
     AND NOT EXISTS (SELECT 1 FROM h7_migrations m WHERE m.tenant_id = j.tenant_id AND m.namespace_id = j.namespace_id)`));
@@ -274,7 +276,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
         method(request, response, ['GET']); await metadata.revisions(context);
         send(response, 200, [{ id: context.namespaceId, tenantId: context.tenantId }]); return;
       }
-      if (!options.invocation && await jobRoute(request, response, path, context, jobs, renderer, mail)) return;
+      if ((!options.invocation || invocation?.jobs) && await jobRoute(request, response, path, context, jobs, renderer, mail)) return;
       if (path === '/api/users' || path === '/api/groups') {
         method(request, response, ['GET']);
         const user = await metadata.get(context, { kind: 'user', id: context.userId });

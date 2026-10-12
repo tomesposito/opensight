@@ -97,6 +97,15 @@ export class DurableDispatch {
     });
     if (intent) await this.flush(String(intent), envelope.deploymentEpoch);
   }
+  /** Operator replay also prearms before changing a dispatched row back to pending. */
+  async rearmEvent(envelope: DispatchEnvelope): Promise<void> {
+    const intent = await this.system(async (c, { epoch }) => {
+      if (epoch !== envelope.deploymentEpoch) throw new MetadataError('DISPATCH_REPLAY_DENIED', 409);
+      const row = (await c.query("SELECT intent_id FROM sr_outbox WHERE deployment = ? AND event_id = ? AND control_epoch = ? AND state <> 'terminal'", [this.deployment, identifier(envelope.eventId), epoch]))[0];
+      if (!row) throw new MetadataError('DISPATCH_REPLAY_DENIED', 409); return String(row.intent_id);
+    });
+    await this.transport.recover({ version: 1, deploymentEpoch: envelope.deploymentEpoch, eventId: intent, kind: 'recover' });
+  }
   private row(c: SqlConnection, context: TenantContext, id: string): Promise<SqlRow | undefined> {
     return c.query(`SELECT * FROM sr_dispatch_intent WHERE ${scoped} AND intent_id = ?${this.dialect === 'postgres' ? ' FOR UPDATE' : ''}`, [...this.scope(context), id]).then(rows => rows[0]);
   }
