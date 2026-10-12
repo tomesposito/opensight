@@ -221,8 +221,8 @@ Private operator replay is identifier-scoped, reauthorizes current business stat
 refuses terminal/obsolete/expired work, and reissues only bounded outstanding work.
 There is no blind queue redrive or automatic revival of failed business work.
 
-Deployment delivery resolves the configured SMTP secret at invocation entry to
-`SMTP_USER`/`SMTP_PASSWORD` options for `smtpFromEnvironment`; missing host, sender
+Deployment delivery resolves the configured SMTP secret within the owning
+invocation at the send boundary to `SMTP_USER`/`SMTP_PASSWORD` options for `smtpFromEnvironment`; missing host, sender
 or secret returns `SMTP_NOT_CONFIGURED`, never `StubMailTransport`. Implicit TLS,
 SNI and certificate verification remain mandatory. A typed egress selector accepts
 only the configured IPv6 profile and exact regional Secrets/SQS/Scheduler/SES
