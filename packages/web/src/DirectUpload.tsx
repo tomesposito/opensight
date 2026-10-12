@@ -5,6 +5,11 @@ import type { OperationStatus, ReservationStatus, UploadProgress } from './objec
 export type DirectUploadClient = Pick<ReturnType<typeof createApiClient>, 'uploadDirectFile' | 'getOperation' | 'getUploadReservation' | 'cancelOperation' | 'cancelUploadReservation'>;
 const pending = (operation?: OperationStatus) => !!operation && ['queued', 'running'].includes(operation.state);
 const message = (error: unknown) => error instanceof Error ? error.message : 'The upload could not be confirmed.';
+/** A stale read the API denies fail-closed; a fresh authorized re-read is safe. Matches only 403/METADATA_REVISED — never mutations, real denials, or revoked sessions. */
+const staleRead = (error: unknown): boolean => typeof error === 'object' && error !== null &&
+  (error as { status?: unknown }).status === 403 && (error as { errorCode?: unknown }).errorCode === 'METADATA_REVISED';
+/** Read per call: narrowing cannot track visibility across awaits in this closure. */
+const pageHidden = () => document.visibilityState === 'hidden';
 /** Polling belongs only to this visible, bounded user action. No accepted work is cancelled on unmount. */
 export function DirectUpload({ client, file, config, onUploaded, onPrep }: { client: DirectUploadClient; file?: File; config: Readonly<Record<string, string>>;
   onUploaded?: (source: string) => void; onPrep?: (source: string) => void }) {
@@ -31,13 +36,32 @@ export function DirectUpload({ client, file, config, onUploaded, onPrep }: { cli
     setPaused(false);
     const read = async () => {
       if (controller.signal.aborted || document.visibilityState === 'hidden') return;
-      if (Date.now() - started >= 120000) { setPaused(true); return; }
-      try {
-        const result = await client.getOperation(pollId, controller.signal);
-        if (controller.signal.aborted || !mounted.current) return;
-        receive(result);
-        if (pending(result)) { delay = Math.min(15000, Math.ceil(delay * 1.5)); timer = setTimeout(() => void read(), delay); }
-      } catch (error) { if (mounted.current) { setPaused(true); if (!controller.signal.aborted) setError(message(error)); } }
+      let revised = 0;
+      for (;;) {
+        if (Date.now() - started >= 120000) { if (mounted.current) setPaused(true); return; }
+        try {
+          const result = await client.getOperation(pollId, controller.signal);
+          if (controller.signal.aborted || !mounted.current) return;
+          receive(result);
+          if (pending(result)) { delay = Math.min(15000, Math.ceil(delay * 1.5)); timer = setTimeout(() => void read(), delay); }
+          return;
+        } catch (error) {
+          if (controller.signal.aborted || !mounted.current) return;
+          // The worker published between this read and its final recheck: the
+          // API fails closed for the stale read, so retry with a fresh
+          // authorized read instead of pausing. At most two fresh reads
+          // (ITD D-35); a real denial, a revoked session, or an exhausted
+          // bound pauses, surfaces the error, and keeps Check status as the
+          // recovery path. Mutations are never retried.
+          if (revised < 2 && staleRead(error)) {
+            revised++;
+            await new Promise<void>(resolve => { timer = setTimeout(resolve, 1000); });
+            if (controller.signal.aborted || !mounted.current || pageHidden()) return;
+            continue;
+          }
+          setPaused(true); setError(message(error)); return;
+        }
+      }
     };
     const deadline = setTimeout(() => controller.abort(), 120000);
     timer = setTimeout(() => void read(), delay);
