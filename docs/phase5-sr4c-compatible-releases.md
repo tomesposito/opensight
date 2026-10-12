@@ -102,7 +102,8 @@ Frozen contract, 2026-10-11. Decision: [D-34](itd/D-34-compatible-release-automa
    Completed/rolled-back or unrelated operations are ignored. Successful completion
    cancels the schedule; schedules otherwise delete themselves after execution.
    A lost runner after reopening can therefore admit traffic until this bounded
-   watchdog deadline, rather than being claimed to stop instantly. An operator
+   scheduled watchdog time plus AWS delivery/propagation delay. This is an
+   independent recovery guard, not a hard real-time availability guarantee. An operator
    investigates and recovers the retained lock; the watchdog never reopens traffic.
    This is a small non-VPC Lambda and one-shot schedule, with no database access,
    recurring polling or standing compute. Its IAM role is distinct from CI roles.

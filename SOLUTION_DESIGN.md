@@ -1207,8 +1207,9 @@ promotes only compatible application bytes, preserves the SQL epoch and durable
 work after complete invocation quiescence, and excludes schema/infrastructure
 changes. D-25's general migration/restore protocol remains separate. No local
 operator credential or permanent AWS access key enters GitHub. A separate one-shot
-AWS watchdog stops an unfinished deployment within its fifteen-minute guard
-deadline if the twelve-minute CI job disappears; it never reopens admission.
+AWS watchdog is scheduled fifteen minutes after preparation to stop an unfinished
+deployment if the twelve-minute CI job disappears; AWS delivery can be delayed.
+It never reopens admission.
 
 The hosted-business trigger was met 2026-09-30 (D14), leading to the H1–H8
 foundation and single-node reference. D-18 (2026-10-10) now selects an initial
