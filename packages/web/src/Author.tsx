@@ -39,7 +39,6 @@ import type { Dispatch, ReactNode } from 'react';
 import { GridLayout, noCompactor, useContainerWidth } from 'react-grid-layout';
 import { downloadBundleBytes, exportBundle, importBundleFile, importedFilterProblem, withInheritedParameterFilters } from './bundle-authoring.js';
 import { VisualCard, type RowGroupToggle } from './VisualCard.js';
-import { VisualActionMenu } from './VisualActionMenu.js';
 import { buildAuthorPreview, fixtureCategoryValues } from './author-preview.js';
 import { LiveAuthorVisual } from './LiveAuthorVisual.js';
 import { buildDistinctQuery, loadAuthorRows } from './author-query.js';
@@ -624,6 +623,14 @@ export function CalculationDialog({ dataset, fields, onSave, onClose }: { datase
       <div className="dialog-actions"><button type="button" onClick={onClose}>Cancel</button><button type="submit" className="primary-button">Create field</button></div>
     </form>
   </dialog>;
+}
+
+function VisualActionMenu({ items, selection, onInvoke }: { items: (FilterAction | UrlAction | NavigationAction)[]; selection?: Selection; onInvoke: (action: FilterAction | UrlAction | NavigationAction) => void }) {
+  const [open, setOpen] = useState(false);
+  return <div className="visual-action-menu">
+    <button type="button" aria-haspopup="menu" aria-expanded={open} aria-label="Run action" onClick={e => { e.stopPropagation(); setOpen(value => !value); }}>⋯</button>
+    {open && <div role="menu">{items.map(action => <button key={action.id} type="button" role="menuitem" disabled={!selection} title={selection ? undefined : 'Select a data point first'} onClick={e => { e.stopPropagation(); setOpen(false); onInvoke(action); }}>{action.name}</button>)}</div>}
+  </div>;
 }
 
 function AuthorCard({ visual, theme, index, count, selected, dispatch, client, calculations, filterProblem, parameters, interaction, interactive, drillNavigation, actionMenu }: {

@@ -3,7 +3,6 @@ import type { LegendPosition, VisualFormatting } from './formatting.js';
 import type { BundleVisual, VisualBody } from '@opensight/bundle-parser';
 import type { VisualKind } from './visual-catalog.js';
 import type { ResourceKind } from './api-client.js';
-import type { FilterAction, NavigationAction, UrlAction } from './interactions.js';
 
 export type Cell = string | number | boolean | null;
 export type Row = Readonly<Record<string, Cell>>;
@@ -52,10 +51,6 @@ export interface FixtureVisual {
   bindings: Record<string, string>;
   placement: { column: number; columns: number; row: number; rows: number };
   path: string;
-  /** Interaction actions threaded from the source definition (author visual or live body). View-mode surfaces consume these; absent means none were recognized. */
-  filterActions?: FilterAction[];
-  urlActions?: UrlAction[];
-  navigationActions?: NavigationAction[];
 }
 export interface Fixture {
   id: string;

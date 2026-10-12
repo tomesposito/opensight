@@ -31,8 +31,7 @@ export function visualActionsValid(visual: { filterActions?: unknown; urlActions
 export function urlActionDefinitionsValid(raw: unknown): raw is UrlAction[] {
   return Array.isArray(raw) && raw.every(a => record(a) && Object.keys(a).every(k => ['id', 'name', 'sourceField', 'urlTemplate', 'target', 'activation'].includes(k)) && typeof a.id === 'string' && !!a.id && typeof a.name === 'string' && typeof a.sourceField === 'string' && !!a.sourceField && typeof a.urlTemplate === 'string' && validActivation(a.activation) && (a.target === undefined || a.target === '_blank' || a.target === '_self')) && new Set(raw.map(a => a.id)).size === raw.length;
 }
-/** Interpolates {Field} placeholders with clicked values; shared by author and view URL firing. */
-export function interpolateUrl(template: string, values: Selection['values']): ActionResult<string> {
+function interpolateUrl(template: string, values: Selection['values']): ActionResult<string> {
   if (!template.trim()) return { problem: 'URL_TEMPLATE_EMPTY: Enter an HTTP(S) URL template.' };
   if (/[{}]/.test(template.replace(/\{([^{}]+)\}/g, ''))) return { problem: 'URL_PLACEHOLDER_INVALID: Use {FieldName} placeholders.' };
   let problem: string | undefined;
