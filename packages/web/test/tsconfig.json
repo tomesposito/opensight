@@ -30,6 +30,7 @@
     "../src/Author.tsx",
     "../src/VisualCard.tsx",
     "../src/VisualActionMenu.tsx",
+    "../src/dashboard-interactions.ts",
     "../src/VisualSkeleton.tsx",
     "../src/ControlInput.tsx",
     "../src/fixture-query.ts",
