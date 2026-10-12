@@ -126,10 +126,49 @@ test('menu-option URL action opens against the stored selection', async t => {
 });
 
 test('menu-option filter action never fires on selection click', async t => {
-  const ui = await mount(t, fixture());
+  const ui = await mount(t, fixture({ filterActions: [menuFilter] }));
   await ui.select('test/s1/source', { values: { region: 'East' } });
+  assert.equal(ui.cardFor('test/s1/target').props.visual.rows.length, 2, 'menu filters wait for the ⋯ menu');
   assert.deepEqual(ui.opened, []);
   assert.equal(ui.cards().length, 4, 'no navigation happened');
+});
+
+test('select-activated filter applies to target visual pinned rows', async t => {
+  const ui = await mount(t, fixture());
+  await ui.select('test/s1/source', { values: { region: 'East' } });
+  assert.deepEqual(ui.cardFor('test/s1/target').props.visual.rows, [{ region: 'East', revenue: 100 }]);
+  assert.equal(ui.cardFor('test/s1/source').props.visual.rows.length, 2, 'the source visual is not its own target');
+});
+
+test('menu-option filter applies from the ⋯ menu and toggles back off', async t => {
+  const ui = await mount(t, fixture({ filterActions: [menuFilter] }));
+  await ui.select('test/s1/source', { values: { region: 'East' } });
+  assert.equal(ui.cardFor('test/s1/target').props.visual.rows.length, 2, 'menu filter waits for the menu');
   const menu = () => ui.menus().find(m => m.props.items.some(i => i.id === 'f2'));
-  await act(() => menu().props.onInvoke(menuFilter)); // stores the menu selection; row filtering lands in item 4
+  await act(() => menu().props.onInvoke(menuFilter));
+  assert.deepEqual(ui.cardFor('test/s1/target').props.visual.rows, [{ region: 'East', revenue: 100 }]);
+  await act(() => menu().props.onInvoke(menuFilter));
+  assert.equal(ui.cardFor('test/s1/target').props.visual.rows.length, 2);
+});
+
+test('unmappable filter column surfaces a problem note instead of filtering silently', async t => {
+  const ui = await mount(t, fixture());
+  await ui.select('test/s1/source', { values: { region: 'East' } });
+  const pie = ui.cardFor('test/s1/pie');
+  assert.match(pie.props.actionNote ?? '', /FILTER_COLUMN_UNMAPPED: region is not a pinned result column for this visual/);
+  assert.equal(pie.props.visual.rows.length, 2, 'rows are never filtered when the column cannot be mapped');
+});
+
+test('Reset actions clears selections and restores pinned rows', async t => {
+  const ui = await mount(t, fixture());
+  const reset = () => ui.renderer.root.findAllByType('button').find(b => b.children?.includes('Reset actions'));
+  assert.equal(reset().props.disabled, true, 'disabled with no active selections');
+  await ui.select('test/s1/source', { values: { region: 'East' } });
+  assert.equal(reset().props.disabled, false);
+  const status = ui.renderer.root.findAllByType('span').find(s => s.props.role === 'status' && typeof s.children?.join === 'function' && s.children.join('').includes('active selection'));
+  assert.match(status.children.join(''), /1 active selection\(s\) revenue-by-region: region = East/);
+  assert.match(status.children.join(''), /Filters apply to pinned rows locally; no queries run/);
+  await act(() => reset().props.onClick());
+  assert.equal(ui.cardFor('test/s1/target').props.visual.rows.length, 2);
+  assert.equal(reset().props.disabled, true);
 });
