@@ -801,6 +801,11 @@ proposed in [the phase specification](aws-serverless-plan.md). This supersedes
 D12's RDS-first assumption and activates H9/H10 correctness prerequisites without
 claiming production HA or authorizing infrastructure creation.
 
+Related confirmed client decision: [ITD D-35 — operation-status poll retry on
+stale reads](itd/D-35-operation-status-poll-retry.md) (issue #92, 2026-10-12);
+the upload UI re-reads status on 403 `METADATA_REVISED` at most twice, never
+retries mutations or other denials, and preserves the fail-closed contract.
+
 Related confirmed editor decision: [IDD D-15 — field assignment creates a
 visual](idd/D-15-field-assignment-creates-visual.md) (issue #43, 2026-10-06).
 

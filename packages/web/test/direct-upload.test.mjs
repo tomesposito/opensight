@@ -53,3 +53,50 @@ test('SR2d explicit cancellation uses the latest revision; terminal completion e
   assert.deepEqual(f.uploaded, ['durable-source']); const complete = f.calls.length;
   await f.tick(3600000); assert.equal(f.calls.length, complete); assert.match(JSON.stringify(f.renderer.toJSON()), /Survives API restarts/);
 });
+test('issue #92 a stale 403 METADATA_REVISED read retries fresh instead of pausing', async t => {
+  const f = await fixture(t);
+  const statusCalls = () => f.calls.filter(c => c[0] === 'status').length;
+  await f.expiry(); await f.click('Upload file');
+  // Publication race: the first status read is denied fail-closed, the fresh re-read succeeds.
+  let stale = true;
+  f.client.getOperation = async id => { f.calls.push(['status', id]); if (stale) { stale = false; throw { status: 403, errorCode: 'METADATA_REVISED', message: 'stale read' }; } return f.op; };
+  await f.tick(2000); assert.equal(statusCalls(), 1);
+  await f.tick(1000); assert.equal(statusCalls(), 2); // one fresh read after the 1s delay
+  assert.ok(!/status checks are paused/.test(JSON.stringify(f.renderer.toJSON()))); // polling continues, not paused
+  await f.tick(3000); assert.equal(statusCalls(), 3); // normal poll cadence resumes
+});
+test('issue #92 repeated revision changes exhaust the retry bound and pause with Check status intact', async t => {
+  const f = await fixture(t);
+  const statusCalls = () => f.calls.filter(c => c[0] === 'status').length;
+  await f.expiry(); await f.click('Upload file');
+  f.client.getOperation = async id => { f.calls.push(['status', id]); throw { status: 403, errorCode: 'METADATA_REVISED', message: 'stale read' }; };
+  await f.tick(2000); assert.equal(statusCalls(), 1);
+  await f.tick(1000); assert.equal(statusCalls(), 2); // first fresh read
+  await f.tick(1000); assert.equal(statusCalls(), 3); // second fresh read — bound exhausted
+  await f.tick(10000); assert.equal(statusCalls(), 3); // pauses: no further reads
+  assert.match(JSON.stringify(f.renderer.toJSON()), /status checks are paused/);
+  // The existing manual recovery path still works after the bound is exhausted.
+  f.client.getOperation = async id => { f.calls.push(['status', id]); return f.op; };
+  f.op.state = 'completed'; f.op.sourceId = 'recovered-source';
+  await f.click('Check status');
+  assert.equal(statusCalls(), 4); assert.deepEqual(f.uploaded, ['recovered-source']);
+});
+test('issue #92 a revoked session is never retried', async t => {
+  const f = await fixture(t);
+  const statusCalls = () => f.calls.filter(c => c[0] === 'status').length;
+  await f.expiry(); await f.click('Upload file');
+  f.client.getOperation = async id => { f.calls.push(['status', id]); throw { status: 401, errorCode: 'SESSION_EXPIRED', message: 'Your session has expired.' }; };
+  await f.tick(2000); assert.equal(statusCalls(), 1);
+  await f.tick(10000); assert.equal(statusCalls(), 1); // no fresh read on a real denial
+  assert.match(JSON.stringify(f.renderer.toJSON()), /status checks are paused/);
+});
+test('issue #92 cancelling during the retry wait issues no further status read', async t => {
+  const f = await fixture(t);
+  const statusCalls = () => f.calls.filter(c => c[0] === 'status').length;
+  await f.expiry(); await f.click('Upload file');
+  f.client.getOperation = async id => { f.calls.push(['status', id]); throw { status: 403, errorCode: 'METADATA_REVISED', message: 'stale read' }; };
+  await f.tick(2000); assert.equal(statusCalls(), 1);
+  await f.click('Cancel upload'); // aborts the poll controller while the 1s retry wait is pending
+  await f.tick(60000); assert.equal(statusCalls(), 1);
+  assert.ok(f.calls.some(c => c[0] === 'cancel')); // the cancellation mutation still ran
+});
