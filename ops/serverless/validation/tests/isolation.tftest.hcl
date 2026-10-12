@@ -33,7 +33,7 @@ run "isolated_validation" {
     error_message = "Database security/protection must remain enabled."
   }
   assert {
-    condition     = length(aws_lambda_function.validation) == 3 && alltrue([for f in aws_lambda_function.validation : f.reserved_concurrent_executions == 1 && f.memory_size == 2048 && f.timeout <= 120 && f.ephemeral_storage[0].size == 512 && f.architectures == tolist(["arm64"]) && f.vpc_config[0].ipv6_allowed_for_dual_stack])
+    condition     = length(local.deployed_functions) == 3 && alltrue([for f in local.deployed_functions : f.reserved_concurrent_executions == 1 && f.memory_size == 2048 && f.timeout <= 120 && f.ephemeral_storage[0].size == 512 && f.architectures == tolist(["arm64"]) && f.vpc_config[0].ipv6_allowed_for_dual_stack])
     error_message = "The isolated functions must retain their concurrency and runtime caps."
   }
   assert {
@@ -52,7 +52,7 @@ run "least_privilege_secrets" {
     error_message = "Only the migration and probe roles may read the bootstrap credential."
   }
   assert {
-    condition     = !contains(keys(aws_lambda_function.validation["request"].environment[0].variables), "OPENSIGHT_BOOTSTRAP_SECRET_ARN") && contains(keys(aws_lambda_function.validation["migration"].environment[0].variables), "OPENSIGHT_BOOTSTRAP_SECRET_ARN")
+    condition     = !contains(keys(local.deployed_functions["request"].environment[0].variables), "OPENSIGHT_BOOTSTRAP_SECRET_ARN") && contains(keys(local.deployed_functions["migration"].environment[0].variables), "OPENSIGHT_BOOTSTRAP_SECRET_ARN")
     error_message = "Only private migration/probe entrypoints receive bootstrap references."
   }
 }
@@ -79,7 +79,7 @@ run "pilot_dependencies" {
   command = plan
   variables { deployment_profile = "pilot" }
   assert {
-    condition     = length(aws_lambda_function.validation) == 3 && aws_lambda_function.validation["probe"].reserved_concurrent_executions == 1 && length(aws_sqs_queue.business) == 2 && length(aws_sqs_queue.business_dead) == 3 && length(aws_lambda_event_source_mapping.business) == 0
+    condition     = length(local.deployed_functions) == 3 && local.deployed_functions["probe"].reserved_concurrent_executions == 1 && length(aws_sqs_queue.business) == 2 && length(aws_sqs_queue.business_dead) == 3 && length(aws_lambda_event_source_mapping.business) == 0
     error_message = "Dependencies must preserve the isolated probe and keep consumers absent."
   }
   assert {
@@ -94,11 +94,11 @@ run "pilot_runtime_disabled_consumers" {
     enable_pilot_runtime = true
   }
   assert {
-    condition     = length(aws_lambda_function.validation) == 5 && aws_lambda_function.validation["request"].reserved_concurrent_executions == 4 && aws_lambda_function.validation["probe"].reserved_concurrent_executions == 0 && aws_lambda_function.validation["migration"].image_config[0].command == tolist(["packages/api/dist/aws-lambda.administration"])
+    condition     = length(local.deployed_functions) == 5 && local.deployed_functions["request"].reserved_concurrent_executions == 4 && local.deployed_functions["probe"].reserved_concurrent_executions == 0 && local.deployed_functions["migration"].image_config[0].command == tolist(["packages/api/dist/aws-lambda.administration"])
     error_message = "Pilot caps must allow four requests and retire the synthetic probe."
   }
   assert {
-    condition     = alltrue([for name in ["work", "recovery"] : aws_lambda_function.validation[name].reserved_concurrent_executions == 2 && aws_lambda_function.validation[name].timeout == 120 && aws_lambda_event_source_mapping.business[name].batch_size == 1 && !aws_lambda_event_source_mapping.business[name].enabled && aws_lambda_event_source_mapping.business[name].scaling_config[0].maximum_concurrency == 2])
+    condition     = alltrue([for name in ["work", "recovery"] : local.deployed_functions[name].reserved_concurrent_executions == 2 && local.deployed_functions[name].timeout == 120 && aws_lambda_event_source_mapping.business[name].batch_size == 1 && !aws_lambda_event_source_mapping.business[name].enabled && aws_lambda_event_source_mapping.business[name].scaling_config[0].maximum_concurrency == 2])
     error_message = "Consumers must remain disabled with bounded per-queue concurrency."
   }
   assert {
@@ -136,7 +136,7 @@ run "separate_initial_administration" {
     administration_image_uri = "000000000000.dkr.ecr.us-east-1.amazonaws.com/synthetic@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
   }
   assert {
-    condition     = aws_lambda_function.validation["migration"].image_uri == var.administration_image_uri && alltrue([for name in ["request", "work", "recovery", "probe"] : aws_lambda_function.validation[name].image_uri == var.image_uri]) && aws_lambda_function.validation["migration"].environment[0].variables.OPENSIGHT_RELEASE_DIGEST == split("@", var.image_uri)[1]
+    condition     = local.deployed_functions["migration"].image_uri == var.administration_image_uri && alltrue([for name in ["request", "work", "recovery", "probe"] : local.deployed_functions[name].image_uri == var.image_uri]) && local.deployed_functions["migration"].environment[0].variables.OPENSIGHT_RELEASE_DIGEST == split("@", var.image_uri)[1]
     error_message = "Only administration may select its separate artifact; it must remain bound to the application digest."
   }
 }

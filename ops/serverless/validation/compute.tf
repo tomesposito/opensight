@@ -111,7 +111,7 @@ resource "aws_iam_role_policy" "lambda" {
   ]) : "[]")) })
 }
 resource "aws_lambda_function" "validation" {
-  for_each                       = var.enable_runtime ? local.active_functions : {}
+  for_each                       = { for name, value in local.active_functions : name => value if var.enable_runtime && !contains(["request", "work", "recovery"], name) }
   function_name                  = "${var.deployment}-${each.key}"
   role                           = aws_iam_role.lambda[each.key].arn
   package_type                   = "Image"
@@ -138,6 +138,50 @@ resource "aws_lambda_function" "validation" {
     }
   }
 }
+resource "aws_lambda_function" "application" {
+  for_each                       = { for name, value in local.active_functions : name => value if var.enable_runtime && contains(["request", "work", "recovery"], name) }
+  function_name                  = "${var.deployment}-${each.key}"
+  role                           = aws_iam_role.lambda[each.key].arn
+  package_type                   = "Image"
+  image_uri                      = each.key == "migration" && var.administration_image_uri != null ? var.administration_image_uri : var.image_uri
+  architectures                  = ["arm64"]
+  timeout                        = each.value.timeout
+  memory_size                    = 2048
+  reserved_concurrent_executions = each.value.concurrency
+  ephemeral_storage { size = 512 }
+  image_config { command = [each.value.handler] }
+  vpc_config {
+    subnet_ids                  = aws_subnet.private[*].id
+    security_group_ids          = [aws_security_group.lambda.id]
+    ipv6_allowed_for_dual_stack = true
+  }
+  environment {
+    variables = local.function_environment[each.key]
+  }
+  depends_on = [aws_iam_role_policy.lambda, aws_cloudwatch_log_group.lambda, aws_route_table_association.private]
+  lifecycle {
+    ignore_changes = [image_uri]
+    precondition {
+      condition     = startswith(var.image_uri, "${var.account_id}.dkr.ecr.${var.region}.amazonaws.com/${var.deployment}@sha256:") && (var.administration_image_uri == null ? true : startswith(var.administration_image_uri, "${var.account_id}.dkr.ecr.${var.region}.amazonaws.com/${var.deployment}@sha256:"))
+      error_message = "The image must belong to this exact deployment repository and account."
+    }
+  }
+}
+moved {
+  from = aws_lambda_function.validation["request"]
+  to   = aws_lambda_function.application["request"]
+}
+
+moved {
+  from = aws_lambda_function.validation["work"]
+  to   = aws_lambda_function.application["work"]
+}
+
+moved {
+  from = aws_lambda_function.validation["recovery"]
+  to   = aws_lambda_function.application["recovery"]
+}
+locals { deployed_functions = merge(aws_lambda_function.validation, aws_lambda_function.application) }
 resource "aws_budgets_budget" "validation" {
   name         = var.deployment
   budget_type  = "COST"

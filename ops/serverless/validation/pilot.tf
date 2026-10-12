@@ -42,7 +42,7 @@ resource "aws_lambda_event_source_mapping" "business" {
   maximum_batching_window_in_seconds = 0
   function_response_types            = ["ReportBatchItemFailures"]
   scaling_config { maximum_concurrency = 2 }
-  depends_on = [aws_lambda_function.validation]
+  depends_on = [aws_lambda_function.validation, aws_lambda_function.application]
 }
 resource "aws_s3_bucket_cors_configuration" "artifacts" {
   count  = local.pilot ? 1 : 0

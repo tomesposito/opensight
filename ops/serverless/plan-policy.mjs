@@ -25,7 +25,7 @@ export function checkPlan(plan, { allowPilot = false } = {}) {
     check(allowed.has(type), 'RESOURCE_TYPE');
     check(!resource.change.actions.includes('delete'), 'DESTRUCTIVE_PLAN');
     if (type === 'aws_lambda_function') {
-      const name = /^aws_lambda_function\.validation\["(request|migration|probe|work|recovery)"\]$/.exec(resource.address)?.[1];
+      const name = /^aws_lambda_function\.(?:validation|application)\["(request|migration|probe|work|recovery)"\]$/.exec(resource.address)?.[1];
       const concurrency = pilotRuntime ? { request: 4, migration: 1, probe: 0, work: 2, recovery: 2 }[name] : 1;
       check(value.timeout <= 120 && value.memory_size === 2048 && value.reserved_concurrent_executions === concurrency, 'LAMBDA_CAP');
       if (pilot) check(name && value.timeout === (name === 'request' ? 28 : 120) && value.function_name === `${input.deployment}-${name}`

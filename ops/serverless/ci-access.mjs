@@ -11,11 +11,11 @@ export async function disableCi(aws, config) {
   // Deny existing credentials first. If a later call fails, already disabled
   // identities stay disabled. No compensating step silently restores access.
   for (const role of roles) await aws('iam', 'put-role-policy', { 'role-name': role, 'policy-name': 'OpenSightEmergencyDeny', 'policy-document': JSON.stringify(ciDeny) });
-  for (const role of roles) await aws('iam', 'update-assume-role-policy', { 'role-name': role, 'policy-document': JSON.stringify(ciClosedTrust) });
+  for (const role of roles) await aws('iam', 'update-assume-role-policy', { 'role-name': role, 'policy-document': JSON.stringify(ciClosedTrust(c)) });
   for (const role of roles) {
     const deny = await aws('iam', 'get-role-policy', { 'role-name': role, 'policy-name': 'OpenSightEmergencyDeny' });
     const trust = await aws('iam', 'get-role', { 'role-name': role });
-    if (canonical(deny.PolicyDocument) !== canonical(ciDeny) || canonical(trust.Role.AssumeRolePolicyDocument) !== canonical(ciClosedTrust)) throw Error('CI_DISABLE_CONFIGURATION_UNVERIFIED');
+    if (canonical(deny.PolicyDocument) !== canonical(ciDeny) || canonical(trust.Role.AssumeRolePolicyDocument) !== canonical(ciClosedTrust(c))) throw Error('CI_DISABLE_CONFIGURATION_UNVERIFIED');
   }
   return { configured: true, activeSessionAndFreshFederationVerificationRequired: true };
 }

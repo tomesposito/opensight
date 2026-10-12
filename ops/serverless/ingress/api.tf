@@ -75,12 +75,14 @@ resource "aws_lambda_function" "authorizer" {
   environment {
     variables = merge(local.ingress_environment, { OPENSIGHT_INGRESS_SECRET_ARN = aws_secretsmanager_secret.ingress.arn })
   }
+  lifecycle { ignore_changes = [image_uri] }
   depends_on = [aws_iam_role_policy.authorizer, aws_secretsmanager_secret_version.ingress]
 }
 resource "aws_lambda_alias" "request" {
   name             = "live"
   function_name    = var.request_function_name
   function_version = var.request_function_version
+  lifecycle { ignore_changes = [function_version] }
 }
 resource "aws_apigatewayv2_api" "application" {
   name                         = "${var.deployment}-application"

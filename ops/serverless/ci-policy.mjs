@@ -22,7 +22,10 @@ export function ciTrust(config) {
     Action: 'sts:AssumeRoleWithWebIdentity', Condition: { StringEquals: { 'token.actions.githubusercontent.com:aud': 'sts.amazonaws.com', 'token.actions.githubusercontent.com:sub': ciSubject(c) } } }] };
 }
 export const ciDeny = Object.freeze({ Version: '2012-10-17', Statement: [{ Effect: 'Deny', Action: '*', Resource: '*' }] });
-export const ciClosedTrust = Object.freeze({ Version: '2012-10-17', Statement: [{ Effect: 'Deny', Principal: '*', Action: 'sts:AssumeRoleWithWebIdentity' }] });
+export function ciClosedTrust(config) {
+  const trust = ciTrust(config);
+  return { Version: trust.Version, Statement: [{ Effect: 'Deny', Principal: trust.Statement[0].Principal, Action: 'sts:AssumeRoleWithWebIdentity' }] };
+}
 export function ciPolicy(config, kind) {
   const c = ciConfig(config); if (!['read', 'deploy'].includes(kind)) fail();
   const lambda = `arn:aws:lambda:${c.region}:${c.account}`, functions = ['request', 'work', 'recovery', 'ingress'].map(n => `${lambda}:function:${c.deployment}-${n}`);
