@@ -2,7 +2,7 @@ import { insightGraphic } from './insight-graphic.js';
 import { LIGHT_THEME } from './themes.js';
 import { fieldRule } from './formatting.js';
 import { rowSelection, brushSelection, type VisualInteraction } from './visual-selection.js';
-import { Fragment, useEffect, useId, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { Fragment, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { VisualSkeleton } from './VisualSkeleton.js';
 import type { EChartsOption } from 'echarts';
 import { compileVisual, DATA_REQUIRED_LABEL, displayCell, rowGroupKey, rowGroupVisibility, pivotRowGroupHeaders } from './compiler.js';
@@ -95,7 +95,7 @@ function DataTable({ compiled, interaction, onRowGroupToggle }: { compiled: Comp
   </table></div>;
 }
 
-export function VisualCard({ visual, dataMessage, loading = false, definitionPreview = false, interaction, onRowGroupToggle }: { visual: FixtureVisual; dataMessage?: string; loading?: boolean; definitionPreview?: boolean; interaction?: VisualInteraction; onRowGroupToggle?: RowGroupToggle }) {
+export function VisualCard({ visual, dataMessage, loading = false, definitionPreview = false, interaction, onRowGroupToggle, actionMenu, actionNote }: { visual: FixtureVisual; dataMessage?: string; loading?: boolean; definitionPreview?: boolean; interaction?: VisualInteraction; onRowGroupToggle?: RowGroupToggle; actionMenu?: ReactNode; actionNote?: string }) {
   const headingId = useId();
   const theme = visual.theme ?? LIGHT_THEME;
   const result = useMemo(() => {
@@ -110,8 +110,10 @@ export function VisualCard({ visual, dataMessage, loading = false, definitionPre
         <h3 id={headingId} style={{ fontSize: compiled?.model.formatting?.titleFontSize }} className={compiled && !compiled.model.titleVisible ? 'sr-only' : ''}>{compiled?.model.title ?? 'Unsupported visual'}</h3>
         {compiled?.model.subtitle && compiled.model.subtitleVisible && <p className="card-subtitle">{compiled.model.subtitle}</p>}
       </div>
+      {actionMenu}
       {compiled && <span className="chart-kind">{compiled.model.kind}</span>}
     </header>
+    {actionNote && <p className="visual-action-problem" role="status">{actionNote}</p>}
     {error && <div className="visual-error" role="alert"><strong>Unable to render</strong><p>{error}</p></div>}
     {compiled && <>
       <div className="visual-content">

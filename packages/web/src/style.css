@@ -520,6 +520,9 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .visual-action-menu [role=menuitem] { text-align: left; padding: 6px 8px; font: inherit; font-size: 12px; background: transparent; border: 0; border-radius: 3px; cursor: pointer; color: inherit; }
 .visual-action-menu [role=menuitem]:hover:not(:disabled) { background: #e8f1f3; }
 .visual-action-menu [role=menuitem]:disabled { opacity: .55; cursor: not-allowed; }
+/* Dashboard (view) cards share the author card's ⋯ action menu. */
+.card-heading .visual-action-menu { margin-left: auto; }
+.visual-action-problem { margin: 4px 20px 0; padding: .5rem .75rem; font-size: .8rem; color: #7a4a00; background: #fdf3e3; border: 1px solid #ecd9ae; border-radius: 4px; }
 .properties-tabs { display: flex; gap: 12px; margin-bottom: 8px; }
 .properties-tabs button { border: 0; border-radius: 0; padding: 4px 2px; background: transparent; color: inherit; font-size: 12px; }
 .properties-tabs button[aria-selected=true] { border-bottom: 3px solid #16859b; font-weight: 700; }

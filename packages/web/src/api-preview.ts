@@ -2,6 +2,9 @@ import { themeValid } from './themes.js';
 import type { BundleSheet } from '@opensight/bundle-parser';
 import type { DefinitionResponse, ResourceKind } from './api-client.js';
 import { convertDefinition } from './definition-converter.js';
+import type { AuthorVisual } from './authoring.js';
+import { importInteractions } from './bundle-interactions.js';
+import { visualActionsValid } from './interactions.js';
 import type { Fixture, FixtureVisual } from './model.js';
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -42,6 +45,7 @@ export function buildApiPreview(response: DefinitionResponse, kind: ResourceKind
   const sheets = response.definition.sheets ?? [];
   const sheetIds = new Set<string>();
   let fallbackLayout = false;
+  let omittedActions = 0;
   const preview: Fixture = {
     id: response.id,
     name: response.name ?? response.id,
@@ -61,8 +65,19 @@ export function buildApiPreview(response: DefinitionResponse, kind: ResourceKind
           if (visualIds.has(id)) throw new Error(`Duplicate visual ID in sheet ${sheet.sheetId}: ${id}`);
           visualIds.add(id);
           const pinned = matches ? fixture?.sheets[si]?.visuals[vi] : undefined;
+          // Reuse the authored strict import path so duplicate or unrecognized action
+          // shapes stay fail-closed (omitted). The stub carries no measures, so every
+          // body field counts as a dimension; structural validation is shared either way.
+          const body = Object.values(definition)[0]!;
+          const stub = { measures: [], kind: 'kpi' } as unknown as AuthorVisual;
+          const unrecognized = importInteractions(body as unknown as Record<string, unknown>, stub);
+          omittedActions += unrecognized.actions.length;
+          const actionsValid = visualActionsValid(stub);
           return {
             source: 'bundle', definition, ...(themeValid(response.definition.opensightTheme) ? { theme: response.definition.opensightTheme } : {}), rows: pinned?.rows ?? null, bindings: pinned?.bindings ?? {},
+            ...(actionsValid && stub.filterActions?.length ? { filterActions: [...stub.filterActions] } : {}),
+            ...(actionsValid && stub.urlActions?.length ? { urlActions: [...stub.urlActions] } : {}),
+            ...(actionsValid && stub.navigationActions?.length ? { navigationActions: [...stub.navigationActions] } : {}),
             placement: grid?.get(id) ?? { column: 0, columns: 36, row: vi * 6, rows: 6 },
             path: `Definition.sheets[${si}].visuals[${vi}]`,
           };
@@ -72,5 +87,6 @@ export function buildApiPreview(response: DefinitionResponse, kind: ResourceKind
   };
   preview.notice += matches ? fixture!.notice : 'No matching reviewed fixture definition: no sample results are attached. These charts do not query live data; use Author with a hosted API for live queries.';
   if (fallbackLayout) preview.notice += ' Missing or unsupported layouts use full-width cards in definition order.';
+  if (omittedActions) preview.notice += ` ${omittedActions} unrecognized action definition(s) were omitted from previews.`;
   return preview;
 }
