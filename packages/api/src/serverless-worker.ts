@@ -5,7 +5,7 @@ import type { InvocationScope } from './runtime-scope.js';
 import type { InvocationDatabases } from './runtime-postgres.js';
 import type { ScheduledEvent } from './runtime-private.js';
 import { deploymentId } from './runtime-startup.js';
-import { serverlessTransport, serverlessUsage } from './serverless-application.js';
+import { serverlessAdapters, serverlessTransport, serverlessUsage } from './serverless-application.js';
 import { DurableDispatch, type DispatchEnvelope } from './dispatch.js';
 import { DurableCoordinator } from './coordination.js';
 import { ObjectLedger } from './object-ledger.js';
@@ -14,6 +14,11 @@ import { UploadObjects } from './upload-objects.js';
 import { IngestionWorker } from './ingestion-worker.js';
 import { ObjectCollector, AwsObjectDeletion } from './object-collector.js';
 import { loadBudgets } from './budget-store.js';
+import { DurableExecution } from './durable-execution.js';
+import { DurableJobs } from './durable-jobs.js';
+import { JobRenderer } from './job-renderer.js';
+import { currentAuthority } from './serverless-authority.js';
+import { expireResultOperation } from './durable-results.js';
 
 /** Event envelopes carry identifiers only; each service reclaims current SQL authority. */
 export async function runServerlessEvent(raw: ScheduledEvent, db: InvocationDatabases, scope: InvocationScope, env: NodeJS.ProcessEnv): Promise<void> {
@@ -24,14 +29,65 @@ export async function runServerlessEvent(raw: ScheduledEvent, db: InvocationData
   const aws = new InvocationAws(scope, env), usage = await serverlessUsage(db.membership, deployment);
   const metadata = new TenantMetadata(db.tenant, db.membership, usage), dispatch = new DurableDispatch(db.membership, metadata, deployment, serverlessTransport(aws, env));
   if (event.kind === 'recover') { await dispatch.recover(event); return; }
-  const inspected = await dispatch.inspect(event); if (!inspected) return;
-  if (['object-cleanup', 'artifact-cleanup'].includes(inspected.kind)) {
-    await new ObjectCollector(db.membership, dispatch, new AwsObjectDeletion(aws, bucket)).run(event); return;
+  const inspected = await dispatch.inspect(event, true);
+  if (!inspected) { await dispatch.flushEvent(event); return; }
+  if (inspected.kind.startsWith('job-')) {
+    const budgets = await loadBudgets(db.membership, metadata); scope.own({ close: () => budgets.shutdown(), force: () => budgets.close() });
+    const adapters = serverlessAdapters(db.membership, metadata, budgets, aws, env);
+    const jobs = new DurableJobs(adapters.jobs!, new JobRenderer(adapters.data.data, adapters.embedContent), adapters.mail!);
+    try { await jobs.run(event, scope.remaining()); } finally { await adapters.finish(); }
+    return;
   }
-  if (inspected.kind !== 'ingest') throw new MetadataError('SERVERLESS_DISPATCH_REQUIRED', 503);
-  const budgets = await loadBudgets(db.membership, metadata); scope.own({ close: () => budgets.shutdown(), force: () => budgets.close() });
-  const worker = new IngestionWorker(db.membership, metadata, new DurableCoordinator(db.membership, metadata, deployment), dispatch,
-    new ObjectLedger(metadata, deployment), new UploadObjects(aws, bucket), new ArtifactTransfer(aws, { bucket, prefix: 'artifacts/v1' }), budgets, () => aws.close());
-  try { await worker.run(event, Math.min(120000, Math.floor(scope.deadline - Date.now()))); }
-  finally { await budgets.shutdown(); }
+  const execution = new DurableExecution(dispatch, async (c, target, code) => {
+    if (target.kind !== 'ingest' && target.kind !== 'result-expire') return;
+    const args = [deployment, target.scope.tenantId, target.scope.namespaceId, target.scope.userId, target.aggregateId];
+    await c.query("UPDATE sr_operation SET state = 'failed', revision = revision + 1, error_code = ? WHERE deployment = ? AND tenant_id = ? AND namespace_id = ? AND owner_id = ? AND operation_id = ? AND state IN ('queued','running')", [code, ...args]);
+    await c.query("UPDATE sr_upload SET state = 'failed', revision = revision + 1 WHERE deployment = ? AND tenant_id = ? AND namespace_id = ? AND owner_id = ? AND operation_id = ? AND state = 'accepted'", args);
+  });
+  const handle = await execution.claim(event, scope.remaining());
+  if (!handle) { await dispatch.flushEvent(event); return; }
+  try {
+    if (['object-cleanup', 'artifact-cleanup'].includes(inspected.kind)) {
+      await new ObjectCollector(db.membership, dispatch, new AwsObjectDeletion(aws, bucket)).run(event);
+    } else if (inspected.kind === 'result-expire') {
+      await execution.checked(handle, (c, now) => expireResultOperation(c, deployment, inspected, now));
+    } else if (inspected.kind === 'ingest') {
+      const budgets = await loadBudgets(db.membership, metadata); scope.own({ close: () => budgets.shutdown(), force: () => budgets.close() });
+      const worker = new IngestionWorker(db.membership, metadata, new DurableCoordinator(db.membership, metadata, deployment), dispatch,
+        new ObjectLedger(metadata, deployment), new UploadObjects(aws, bucket), new ArtifactTransfer(aws, { bucket, prefix: 'artifacts/v1' }), budgets, () => aws.close());
+      try { await worker.run(event, scope.remaining()); } finally { await budgets.shutdown(); }
+    } else throw new MetadataError('SERVERLESS_DISPATCH_REQUIRED', 503);
+    await execution.complete(handle);
+  } catch (error) { if (!await execution.failed(handle, error)) throw error; }
+  await dispatch.flushEvent(event);
+}
+
+/** Only createPrivateRuntime's authenticated operator entrypoint calls this. */
+export async function replayServerlessEvent(event: DispatchEnvelope, db: InvocationDatabases, scope: InvocationScope, env: NodeJS.ProcessEnv, acceptAmbiguous: boolean): Promise<void> {
+  await db.prepare?.();
+  const deployment = deploymentId(env), aws = new InvocationAws(scope, env);
+  const metadata = new TenantMetadata(db.tenant, db.membership, await serverlessUsage(db.membership, deployment));
+  const dispatch = new DurableDispatch(db.membership, metadata, deployment, serverlessTransport(aws, env));
+  const target = await dispatch.inspect(event, true);
+  if (!target) throw new MetadataError('DISPATCH_REPLAY_DENIED', 409);
+  if (target.kind.startsWith('job-')) {
+    const budgets = await loadBudgets(db.membership, metadata); scope.own({ close: () => budgets.shutdown(), force: () => budgets.close() });
+    const adapters = serverlessAdapters(db.membership, metadata, budgets, aws, env);
+    try { await new DurableJobs(adapters.jobs!, new JobRenderer(adapters.data.data, adapters.embedContent), adapters.mail!).replay(event, acceptAmbiguous); }
+    finally { await adapters.finish(); }
+    return;
+  }
+  const context = await metadata.authenticate(null, async () => ({ namespaceId: target.scope.namespaceId, userId: target.scope.userId }));
+  if (context.tenantId !== target.scope.tenantId) throw new MetadataError('DISPATCH_REPLAY_DENIED', 409);
+  const revisions = await metadata.revisions(context);
+  await new DurableExecution(dispatch).replay(event, async c => {
+    await currentAuthority(c, metadata, context, revisions, target.kind === 'ingest');
+    if (target.kind === 'ingest') {
+      const op = (await c.query('SELECT * FROM sr_operation WHERE deployment = ? AND tenant_id = ? AND namespace_id = ? AND owner_id = ? AND operation_id = ?',
+        [deployment, context.tenantId, context.namespaceId, context.userId, target.aggregateId]))[0];
+      if (!op || !['queued', 'running'].includes(String(op.state)) || Number(op.control_epoch) !== target.epoch
+        || Number(op.expires_at) <= await dispatch.time(c)
+        || (['authorization', 'policy', 'configuration'] as const).some(k => Number(op[`${k}_revision`]) !== revisions[k])) throw new MetadataError('DISPATCH_REPLAY_DENIED', 409);
+    }
+  }, acceptAmbiguous);
 }

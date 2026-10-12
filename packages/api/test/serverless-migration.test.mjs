@@ -16,7 +16,7 @@ test('SR2d composed migration installs all checkpoints atomically and replays wi
   await migrateServerless(f.db, env, 'sqlite'); await migrateServerless(f.db, env, 'sqlite');
   assert.deepEqual(await f.db.transaction(c => c.query('SELECT * FROM h4_budget_config')), before);
   assert.equal((await f.db.transaction(c => c.query('SELECT state FROM sr_control')))[0].state, 'maintenance');
-  for (const table of ['sr_coordination_schema', 'sr_manifest_schema', 'sr_dispatch_schema', 'sr_object_schema', 'sr_operation_schema']) assert.equal((await f.db.transaction(c => c.query(`SELECT version FROM ${table}`)))[0].version, 1);
+  for (const table of ['sr_coordination_schema', 'sr_manifest_schema', 'sr_dispatch_schema', 'sr_object_schema', 'sr_operation_schema', 'sr_execution_schema']) assert.equal((await f.db.transaction(c => c.query(`SELECT version FROM ${table}`)))[0].version, 1);
   await f.open();
   const coordinator = new DurableCoordinator(f.db, f.metadata, 'test', 'sqlite'), attempt = await coordinator.admit(f.contexts[0], await f.input());
   await assert.rejects(migrateServerless(f.db, env, 'sqlite'), { code: 'WORKSPACE_MAINTENANCE_REQUIRED' });
@@ -54,11 +54,11 @@ test('SR2d live Postgres composed owner migration grants runtime DML without own
     await client.query('UPDATE sr_object SET object_id = object_id WHERE false');
     await assert.rejects(client.query("UPDATE sr_control SET state = 'open'"), { code: '42501' });
     await assert.rejects(client.query('CREATE TABLE forbidden (value TEXT)'), { code: '42501' });
-    await assert.rejects(client.query('DELETE FROM h7_jobs'), { code: '42501' });
+    await client.query('UPDATE h7_jobs SET version = version WHERE false');
     await client.query('RESET ROLE'); await client.query(`SET ROLE ${tenant}`);
     assert.deepEqual((await client.query('SELECT * FROM sr_storage_usage')).rows, []);
     await assert.rejects(client.query('UPDATE sr_storage_usage SET live_bytes = 0'), { code: '42501' });
-    for (const table of ['sr_object', 'sr_outbox', 'sr_operation', 'sr_dispatch_intent', 'sr_result_chunk', 'h2_sessions']) await assert.rejects(client.query(`SELECT * FROM ${table}`), { code: '42501' });
+    for (const table of ['sr_object', 'sr_outbox', 'sr_operation', 'sr_dispatch_intent', 'sr_result_chunk', 'h2_sessions', 'sr_execution', 'sr_job_due']) await assert.rejects(client.query(`SELECT * FROM ${table}`), { code: '42501' });
 
     } finally { await client.query('RESET ROLE'); client.release(); }
   });

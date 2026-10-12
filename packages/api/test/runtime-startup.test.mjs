@@ -91,8 +91,8 @@ test('SR1 readiness timeout cancels ongoing SQL and waits for disposal', async t
   const result = await run; assert.equal(result.statusCode, 503); assert.equal(closed, true); assert.equal(active, false);
 });
 
-test('SR2d startup requires all durable schema markers and never enables a partial migration', async () => {
-  const checksums = await Promise.all(['coordination', 'manifest', 'dispatch', 'object', 'operation'].map(async name => {
+test('SR3 startup requires all durable schema markers and never enables a partial migration', async () => {
+  const checksums = await Promise.all(['coordination', 'manifest', 'dispatch', 'object', 'operation', 'execution'].map(async name => {
     const module = await import(`../dist/${name}-schema.js`); return [`sr_${name}_schema`, module[`${name}Checksum`]];
   }));
   for (const broken of [undefined, ...checksums.map(([table]) => table)]) {

@@ -782,7 +782,7 @@ SR0 implementation decision register (issue #81; proposals, no AWS authorization
 | [D-21](itd/D-21-aurora-readiness.md) | Wake and idle behavior | 🚧 Pre-DB abuse cost/access and remaining technical review; D-26 confirms idle embed UX; preserve HQ-7 |
 | [D-22](itd/D-22-serverless-object-transfers.md) | Upload and result transfers | 🚧 Detailed transfer implementation contract; D-28 confirms control ceiling/async UX |
 | [D-23](itd/D-23-serverless-state-and-fencing.md) | SQL/admission/claims/artifacts | 🚧 SR2a coordination contract frozen; artifact/integration checkpoints remain |
-| [D-24](itd/D-24-serverless-job-dispatch.md) | Event work and delivery | 🚧 Commit recovery, cancellation, DLQ and H7 authorization review |
+| [D-24](itd/D-24-serverless-job-dispatch.md) | Event work and delivery | ✅ SR3 envelope, prearmed recovery, bounded execution and SMTP contract frozen; cloud evidence remains separate |
 | [D-25](itd/D-25-serverless-release-artifacts.md) | Terraform/artifacts and private releases | 🚧 Tom: tooling/licenses, OIDC protections, secret-state custody and retention/cost; migration/rollback review |
 | [D-26](idd/D-26-idle-embed-reconnect.md) | Initial test deployment's idle embed experience | ✅ Hide after maximum 45s authority display lease; explicit Connect and successful authorization before redisplay |
 | [D-27](itd/D-27-serverless-build-tooling.md) | SR4a tooling and dependency pins | ✅ OpenTofu/AWS provider operator tools, ARM64 Node 24 image, standard AWS SDK and explicit tslib 2.8.1 exception |

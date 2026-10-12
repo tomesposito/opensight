@@ -62,7 +62,7 @@ test('SR2d failed socket shutdown retains admission and an aborted invocation ne
     assert.equal((await f.rows('sr_admission'))[0].state, 'held');
   }
 });
-test('SR2d invocation gate permits implemented data routes and refuses H7, legacy payloads, and operator paths', () => {
-  for (const path of ['/api/uploads/reservations', '/api/namespaces/one/operations/op', '/api/sources/source/query', '/api/datasets/data/prep']) assert.equal(serverlessDataPath(path), true);
-  for (const path of ['/api/uploads', '/api/uploads/upload_old', '/api/jobs', '/api/jobs/job/runs', '/api/host/tenants', '/api/namespaces/one/jobs', '/api/operations/op/secret', '/api/sources/source/query/extra']) assert.equal(serverlessDataPath(path), false);
+test('SR2d invocation gate permits durable data/jobs and refuses legacy payloads and operator paths', () => {
+  for (const path of ['/api/uploads/reservations', '/api/namespaces/one/operations/op', '/api/sources/source/query', '/api/datasets/data/prep', '/api/jobs', '/api/jobs/job/runs', '/api/namespaces/one/jobs']) assert.equal(serverlessDataPath(path), true);
+  for (const path of ['/api/uploads', '/api/uploads/upload_old', '/api/host/tenants', '/api/operations/op/secret', '/api/sources/source/query/extra']) assert.equal(serverlessDataPath(path), false);
 });

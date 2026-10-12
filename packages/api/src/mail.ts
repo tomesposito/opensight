@@ -5,7 +5,7 @@ import { invalid } from './schedule.js';
 export interface MailMessage { to: string[]; subject: string; html: string; dedupeKey?: string }
 export interface MailTransport { readonly configured: boolean; send(message: MailMessage, authorize?: () => Promise<void>): Promise<void> }
 export class MailError extends Error {
-  constructor(readonly code: 'SMTP_NOT_CONFIGURED' | 'SMTP_SEND_FAILED') { super(code === 'SMTP_NOT_CONFIGURED' ? 'SMTP is not configured' : 'SMTP delivery failed'); this.name = 'MailError'; }
+  constructor(readonly code: 'SMTP_NOT_CONFIGURED' | 'SMTP_SEND_FAILED' | 'SMTP_CONFIG_INVALID') { super(code === 'SMTP_NOT_CONFIGURED' ? 'SMTP is not configured' : code === 'SMTP_CONFIG_INVALID' ? 'SMTP configuration is invalid' : 'SMTP delivery failed'); this.name = 'MailError'; }
 }
 export function emailAddress(value: unknown): value is string {
   return typeof value === 'string' && value.length <= 254 && /^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?\.[A-Za-z]{2,63}$/.test(value);
@@ -28,21 +28,23 @@ export class StubMailTransport implements MailTransport {
 }
 
 /** Environment is the ONLY SMTP configuration source. No HTTP or resource config. */
-export interface SmtpInvocationOptions { signal?: AbortSignal; timeoutMs?: number; family?: 4 | 6; ownSocket?: (socket: import('node:tls').TLSSocket) => void }
+export interface SmtpInvocationOptions { signal?: AbortSignal; timeoutMs?: number; family?: 4 | 6; ownSocket?: (socket: import('node:tls').TLSSocket) => void; connect?: typeof connect }
 export function smtpFromEnvironment(env: NodeJS.ProcessEnv = process.env, options: SmtpInvocationOptions = {}): MailTransport {
   const host = env.OPENSIGHT_SMTP_HOST, from = env.OPENSIGHT_SMTP_FROM;
   const portText = env.OPENSIGHT_SMTP_PORT ?? '465';
   const user = env.OPENSIGHT_SMTP_USER, password = env.OPENSIGHT_SMTP_PASSWORD;
   const supplied = Object.keys(env).some(k => k.startsWith('OPENSIGHT_SMTP_') && env[k] !== undefined);
   if (!supplied) return { configured: false, async send() { throw new MailError('SMTP_NOT_CONFIGURED'); } };
-  if (!host || !/^[A-Za-z0-9.-]+$/.test(host) || !emailAddress(from) || !/^\d+$/.test(portText) || Number(portText) < 1 || Number(portText) > 65535 || Boolean(user) !== Boolean(password)) throw new Error('Invalid SMTP environment configuration');
-  if (Object.keys(env).some(k => k.startsWith('OPENSIGHT_SMTP_') && !['HOST', 'FROM', 'PORT', 'USER', 'PASSWORD'].some(n => k === `OPENSIGHT_SMTP_${n}`))) throw new Error('Unsupported SMTP environment setting');
+  if (!host || !/^[A-Za-z0-9.-]+$/.test(host) || !emailAddress(from) || !/^\d+$/.test(portText) || Number(portText) < 1 || Number(portText) > 65535 || Boolean(user) !== Boolean(password)
+    || options.timeoutMs !== undefined && (!Number.isFinite(options.timeoutMs) || options.timeoutMs <= 0)
+    || options.family !== undefined && ![4, 6].includes(options.family)) throw new MailError('SMTP_CONFIG_INVALID');
+  if (Object.keys(env).some(k => k.startsWith('OPENSIGHT_SMTP_') && !['HOST', 'FROM', 'PORT', 'USER', 'PASSWORD'].some(n => k === `OPENSIGHT_SMTP_${n}`))) throw new MailError('SMTP_CONFIG_INVALID');
   const port = Number(portText);
   return { configured: true, async send(message, authorize) {
     // Implicit TLS only, with certificate verification. No plaintext downgrade.
     if (options.signal?.aborted) throw new MailError('SMTP_SEND_FAILED');
-    const connection: import('node:tls').ConnectionOptions & import('node:net').TcpNetConnectOpts = { host, port, servername: host, family: options.family, minVersion: 'TLSv1.2', rejectUnauthorized: true };
-    const socket = connect(connection);
+    const connection: import('node:tls').ConnectionOptions & import('node:net').TcpNetConnectOpts = { host, port, servername: host, family: options.family, autoSelectFamily: false, minVersion: 'TLSv1.2', rejectUnauthorized: true };
+    const socket = (options.connect ?? connect)(connection);
     const closed = new Promise<void>(resolve => socket.once('close', () => resolve()));
     const abort = () => socket.destroy(new Error('SMTP cancelled'));
     options.signal?.addEventListener('abort', abort, { once: true });

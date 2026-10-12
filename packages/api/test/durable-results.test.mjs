@@ -98,3 +98,17 @@ test('SR2d immutable result adapter verifies exact version, AES256, hashes and b
     contents = Buffer.alloc(bytes.length); await assert.rejects(objects.read(entry), { code: 'RESULT_OBJECT_INVALID' });
   });
 });
+
+test('SR3 result expiry is prearmed, scope/epoch-bound, idempotent and clears retained result metadata', async t => {
+  const { expireResultOperation } = await import('../dist/durable-results.js');
+  const f = await fixture(t), session = reader(), response = await f.publish(session);
+  const outbox = (await f.rows('sr_outbox')).find(r => r.kind === 'result-expire');
+  assert.equal(outbox.state, 'dispatched'); assert.equal(outbox.aggregate_id, response.body.operation.id); assert.equal(Number(outbox.due_at), session.expiresAt);
+  const event = { kind: 'result-expire', aggregateId: outbox.aggregate_id, epoch: Number(outbox.control_epoch), scope: { tenantId: 'tenant-one', namespaceId: 'one', userId: 'admin' } };
+  await assert.rejects(f.db.transaction(c => expireResultOperation(c, 'test', event, Date.now())), { code: 'DISPATCH_EVENT_EARLY' });
+  await assert.rejects(f.db.transaction(c => expireResultOperation(c, 'test', { ...event, epoch: event.epoch + 1 }, session.expiresAt)), { code: 'OPERATION_EVENT_INVALID' });
+  await f.db.transaction(c => expireResultOperation(c, 'test', event, session.expiresAt));
+  const row = (await f.rows('sr_operation'))[0]; assert.equal(row.state, 'expired'); assert.equal(row.result, null);
+  await f.db.transaction(c => expireResultOperation(c, 'test', event, session.expiresAt));
+  assert.equal((await f.rows('sr_operation'))[0].revision, row.revision);
+});

@@ -1,7 +1,7 @@
 ---
-status: 🚧 Draft
+status: ✅ Confirmed
 owner: Tom Esposito
-date: 2026-10-10
+date: 2026-10-12
 labels: [itd]
 ---
 
@@ -17,7 +17,7 @@ Outbox dispatch, due occurrences, cancellation, dead letters and real delivery.
 
 Exactly-once email, service-principal continuation and new scheduling semantics.
 
-### 🚧 ITD D-24 — What event protocol closes the commit-to-dispatch crash gap?
+### ✅ ITD D-24 — What event protocol closes the commit-to-dispatch crash gap?
 
 #### CONTEXT
 
@@ -34,14 +34,14 @@ preserving cancellation, current authorization and bounded idle behavior?
 
 #### OPTIONS CONSIDERED
 
-1. [WIP] Arm a delayed recovery event before committing business work; persist
-   outbox/occurrences atomically and use fenced, idempotent event consumers.
-2. [WIP] Poll the outbox on a permanent interval.
-3. [WIP] Send only after commit and recover on the next user request.
+1. ✅ **Arm a delayed recovery event before committing business work; persist
+   outbox/occurrences atomically and use fenced, idempotent event consumers.**
+2. Poll the outbox on a permanent interval.
+3. Send only after commit and recover on the next user request.
 
 #### REASONING
 
-Option 1 is proposed: a redundant event can reconcile the commit after a crash,
+Option 1 is selected: a redundant event can reconcile the commit after a crash,
 and only actual work causes retries. It requires an explicit intent protocol;
 "transactional outbox" alone does not solve external dispatch. Option 2 is
 simpler but conflicts with idle pause. Option 3 leaves schedules/invitations
@@ -53,11 +53,13 @@ hidden fourth choice because it has pause, cost and operational implications.
 **Records and event envelope:** add `sr_dispatch_intent` keyed by random intent
 ID with scope, initiator, canonical request hash, expiry, state
 `prepared/committed/aborted`, and operation/outbox references. It contains no
-plaintext credential or executable caller input. `sr_outbox` has a monotonic
+plaintext credential or executable caller input. `sr_outbox` has an opaque UUID
 event ID, scope, aggregate ID/revision, kind, payload schema version, due time,
-delivery state, attempts and claim fence. Unique `(scope, aggregate, revision,
-kind)` makes repeated publication idempotent. Events ≤4 KiB contain only version,
-deployment epoch, event/intent ID, kind and opaque scope/resource references.
+delivery state. The additive `sr_execution` record owns attempts and claim fence. Unique `(scope, aggregate, revision,
+kind)` makes repeated publication idempotent. Events ≤4 KiB have exactly `{version: 1, deploymentEpoch: positive integer,
+eventId: opaque identifier, kind: "execute" | "due" | "recover"}`. For recovery,
+`eventId` identifies an intent; otherwise it identifies an outbox record. Scope,
+aggregate, revision and business kind are resolved from SQL, never the message.
 Never include rows, tokens, SMTP bodies, recipient addresses or secrets.
 
 **Commit protocol, required for every transition creating an external obligation:**
@@ -97,7 +99,7 @@ intents just to retry dispatch.
 
 **Queues and schedules:** use standard SQS work and recovery queues, each with
 a DLQ, batch size 1, partial-batch failure reporting enabled, bounded Lambda
-concurrency and no in-process consumer loop. Candidate worker timeout is 120s
+concurrency and no in-process consumer loop. Worker timeout is 120s
 (110s work, final 10s cleanup); SQS visibility 720s (six times timeout), max
 receive count 5, source retention 4 days and DLQ retention 14 days. Business
 attempts also stop after 24h or an earlier operation/source expiry. Exceeding
@@ -123,7 +125,7 @@ failure; manual and scheduled refresh share D-23's dataset claim. Alert events
 are tied to refresh occurrence IDs and the existing transition/coalescing rules.
 When a dispatcher finds a due time already past, it sends one coalesced due hint,
 not a catch-up series. A schedule edit creates the new revision's intent/outbox
-and retires the old schedule; stale triggers no-op against current SQL revision.
+and logically retires the old schedule (its one-shot entry expires automatically); stale triggers no-op against current SQL revision.
 
 Upload/result expiry, claim expiry and orphan cleanup use the same per-obligation
 event protocol. A running operation requiring a future recovery step must arm
@@ -136,9 +138,8 @@ correctness mechanism.
 **Execution and cancellation:** D-23 admission/fence protects each attempt;
 never globally reset all running rows as H7's single-process recovery does.
 Cancellation atomically increments the operation/job revision, revokes its claim
-and cancels pending delivery/outbox work. Publish cancellation/cleanup hints for
-in-flight workers; checks at renewals and before every publication are authoritative
-even if the hint is lost. Stop/transfer/delete of an owner retains HQ-13's explicit
+and cancels pending delivery/outbox work. Checks during active work and before every publication are authoritative;
+queued obsolete events become no-ops without requiring a cancellation hint. Stop/transfer/delete of an owner retains HQ-13's explicit
 transfer-or-stop semantics and never creates a service principal. Completed
 external effects cannot be undone by cancellation; expose safe terminal state.
 
@@ -174,13 +175,75 @@ availability limit, not an unconditional poller. Drain stops new admission,
 disables dispatch/event mappings through private operations, and preserves durable
 rows/DLQs for reauthorization on resume. Empty queues create no SQL invocations.
 
-**Acceptance:** terminate at all five commit steps, including lost SQS ack,
+**Frozen SR2 interfaces (issue #85, 2026-10-12):** retain
+`DurableDispatch.prepare/commit/commitOn/dispatch/recover/inspect/terminal`,
+`DispatchTransport.recover/dispatch`, the v1 dispatch schema/checksum and
+`DurableCoordinator.admit/renew/publish/revoke/release`. An additive, frozen/drained
+migration installs `sr_execution_schema`, `sr_execution` and immutable
+`sr_job_due` mappings (deployment, opaque due ID, scope/owner, job ID/version and
+due timestamp); it does not rewrite
+SR2 migrations. The execution row is keyed by deployment/event, references its
+outbox row, and records a monotonic fence, random attempt token, attempt count,
+lease deadline, state and safe error code. Claims use database time under the
+control lock; they live no longer than 110 seconds and are never renewed while
+idle. An overlapping live claim is retryable, never an acknowledged no-op.
+After a crash, the incoming SQS receipt remains the recovery vehicle. Five
+business claims or event expiry ends automated execution, recording terminal
+failure and updating the referenced operation/occurrence/delivery where applicable.
+Transport/store failures remain unacknowledged for the broker DLQ; application
+terminal failures are recorded in SQL. No SQL transaction spans external I/O.
+
+H7 retains its job, occurrence and delivery records and public validation rules.
+Job mutations prearm through `DurableDispatch` before the atomic job/outbox write.
+Business kinds add `job-due`, `job-execute`, and `job-deliver`; the envelope does
+not grow. A job-due aggregate identifies a revision and due instant; execute and
+deliver aggregates identify the occurrence and delivery. Due handling coalesces
+using H7's existing unique keys. Work created while processing an incoming event
+is committed with its outbox under that event's intent and flushed before ack;
+a replay of an already completed parent still flushes pending children. This
+receipt-owned continuation closes the outcome-to-next-event gap without an idle
+poller. It permits up to 50 per-recipient delivery events, published individually.
+Reports arm their next due when claimed; refresh arms its next due from completion
+(including failure). Alert occurrences remain tied to refresh occurrence IDs.
+Configured prepared refresh schedules use the same mechanism. Job stop/revision,
+owner disposition, occurrence state and current H1 revisions fence every attempt.
+The Lambda composition must never instantiate H7's polling recovery as its worker.
+
+The new event runner preserves `JobStore.checkRun`, active membership, owner
+build permission, tenant status, source and recipient RLS/CLS checks. It renders
+fresh for each recipient on every attempt and stores no rendered body in the
+outbox or execution record. The send callback checks the execution token/fence,
+current job/occurrence, current owner and recipient authority, and the recipient's
+current address before DATA. A claimed delivery interrupted after starting SMTP
+is marked ambiguous on recovery; replay requires explicit acceptance of duplicate
+mail, keeps its stable Message-ID, and never resets attempts, expiry or authority.
+Private operator replay is identifier-scoped, reauthorizes current business state,
+refuses terminal/obsolete/expired work, and reissues only bounded outstanding work.
+There is no blind queue redrive or automatic revival of failed business work.
+
+Deployment delivery resolves the configured SMTP secret within the owning
+invocation at the send boundary to `SMTP_USER`/`SMTP_PASSWORD` options for `smtpFromEnvironment`; missing host, sender
+or secret returns `SMTP_NOT_CONFIGURED`, never `StubMailTransport`. Implicit TLS,
+SNI and certificate verification remain mandatory. A typed egress selector accepts
+only the configured IPv6 profile and exact regional Secrets/SQS/Scheduler/SES
+hosts; S3 keeps its gateway route. Invalid profiles/destinations return
+`EGRESS_ROUTE_UNSUPPORTED` / `EGRESS_ENDPOINT_INVALID`; no NAT, paid endpoint,
+IPv4 retry or TLS downgrade is inferred. Transport family and endpoint selection
+are injectable in local tests; only the operator can prove actual reachability.
+Existing non-Lambda local/reference scheduling behavior remains supported.
+
+**Acceptance:** terminate at every commit step, including lost recovery ack,
 concurrent recovery/commit and lost outbox receipt; duplicate/out-of-order hints,
 past-due schedules, edit/cancel while queued/running/sending, expired worker,
 revoked recipient, failed mail authorization, DATA/receipt ambiguity, poisoned
-event/schema, full DLQ and operator replay. Fake-timer idle tests assert zero DB
-queries when no obligation exists. SR5 validates actual redelivery/retention.
+event/schema, broker DLQ routing and operator replay. Fake-timer idle tests assert
+zero DB queries when no obligation exists. Run the full root test suite. Actual
+SQS/Scheduler/SES delivery, IAM, Terraform apply, subnet/IPv6 reachability and
+service alarms/retention remain Tom's cloud evidence. WAF/IP allowlist and
+resource/cost decisions remain separate gates. This freeze authorizes no AWS
+calls, spending, private repository creation or live workflow activation.
 
-Evidence: [Lambda SQS error handling](https://docs.aws.amazon.com/lambda/latest/dg/services-sqs-errorhandling.html),
+Evidence: [SR2 runtime integration](../phase5-developer-handoff.md),
+[Lambda SQS error handling](https://docs.aws.amazon.com/lambda/latest/dg/services-sqs-errorhandling.html),
 [SQS event-source configuration](https://docs.aws.amazon.com/lambda/latest/dg/services-sqs-configure.html),
 [Scheduler retry/DLQ](https://docs.aws.amazon.com/scheduler/latest/UserGuide/configuring-schedule-dlq.html).

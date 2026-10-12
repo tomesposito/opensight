@@ -3,6 +3,7 @@ import { MetadataError, type Database, type SqlConnection, type SqlRow, type Sql
 import { TenantMetadata, type TenantContext, type Revisions } from './metadata.js';
 import { identifier, object } from './metadata-resources.js';
 import { DurableDispatch, type DispatchPreparation, type EventInput } from './dispatch.js';
+import type { ExecutionEvent } from './durable-execution.js';
 import { ObjectLedger, type VerifiedObject } from './object-ledger.js';
 import { ResultObjects, resultChunkBytes } from './result-objects.js';
 import { ServerlessWork } from './serverless-work.js';
@@ -18,6 +19,15 @@ interface StoredResult { reader: ResultReader; descriptor: ResultDescriptor; cer
 const scoped = 'deployment = ? AND tenant_id = ? AND namespace_id = ? AND owner_id = ?';
 const digest = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex');
 const expired = (): never => { throw new MetadataError('RESULT_EXPIRED', 410); };
+/** Called only inside the current event's fenced outcome transaction. */
+export async function expireResultOperation(c: SqlConnection, deployment: string, event: ExecutionEvent, now: number): Promise<void> {
+  if (event.kind !== 'result-expire') throw new MetadataError('OPERATION_EVENT_INVALID', 409);
+  const args = [deployment, event.scope.tenantId, event.scope.namespaceId, event.scope.userId, event.aggregateId, event.epoch];
+  const row = (await c.query(`SELECT expires_at FROM sr_operation WHERE ${scoped} AND operation_id = ? AND control_epoch = ? AND kind = 'result'`, args))[0];
+  if (!row) throw new MetadataError('OPERATION_EVENT_INVALID', 409);
+  if (Number(row.expires_at) > now) throw new MetadataError('DISPATCH_EVENT_EARLY', 409);
+  await c.query(`UPDATE sr_operation SET state = 'expired', revision = revision + 1, result = NULL WHERE ${scoped} AND operation_id = ? AND control_epoch = ? AND kind = 'result' AND state IN ('queued','running','completed')`, args);
+}
 export class DurableResults {
   constructor(private readonly database: Database, private readonly metadata: TenantMetadata, private readonly dispatch: DurableDispatch,
     private readonly ledger: ObjectLedger, private readonly objects: ResultObjects, private readonly work: ServerlessWork,
@@ -53,9 +63,9 @@ export class DurableResults {
       const stored: StoredResult = { reader: { ...reader }, descriptor, certificate: this.work.resultCertificate() };
       if (Buffer.byteLength(JSON.stringify(stored)) > resultChunkBytes) throw new MetadataError('RESULT_METADATA_TOO_LARGE', 429);
       const verified: { id: string; object: VerifiedObject }[] = []; let expiresAt = 0;
-      for (let start = 0; start < chunks.length; start += 8) {
+      for (let start = 0; start < chunks.length; start += 7) {
         local.check(); await recheck();
-        const group = chunks.slice(start, start + 8), plans = group.map(chunk => this.ledger.plan(context, { purpose: 'result', capacityBytes: chunk.length,
+        const group = chunks.slice(start, start + 7), plans = group.map(chunk => this.ledger.plan(context, { purpose: 'result', capacityBytes: chunk.length,
           checksum: createHash('sha256').update(chunk).digest('base64'), mediaType: 'application/octet-stream' }));
         const preparation = await this.dispatch.prepare(context, { kind: 'result-write', idempotencyKey: randomUUID(), requestDigest: requestDigest({ id, start, descriptor }), revisions });
         await recheck();
@@ -70,7 +80,7 @@ export class DurableResults {
             if (row?.state !== 'running' || row.attempt_id !== attempt.attemptId || Number(row.expires_at) !== expiresAt || expiresAt <= now) expired();
           }
           await this.ledger.reserve(c, context, revisions, preparation.intentId, plans, now, expiresAt);
-          const events: EventInput[] = [];
+          const events: EventInput[] = start ? [] : [{ aggregateId: id, aggregateRevision: 1, kind: 'result-expire', dueAt: expiresAt, expiresAt: expiresAt + 86400000 }];
           for (const [index, plan] of plans.entries()) {
             await c.query('INSERT INTO sr_result_chunk VALUES (?,?,?,?,?,?,?)', [...this.scope(context), id, start + index, plan.id]);
             events.push({ aggregateId: plan.id, aggregateRevision: 1, kind: 'object-cleanup', dueAt: now + 86400000, expiresAt: now + 172800000 });
@@ -126,7 +136,7 @@ export class DurableResults {
   /** Session ID lookup grants no read; the embed verifier must authenticate it next. */
   async embedSession(id: string): Promise<string> {
     const row = await this.database.transaction(async c => (await c.query("SELECT result FROM sr_operation WHERE deployment = ? AND operation_id = ? AND kind = 'result'", [this.dispatch.deployment, identifier(id)]))[0]);
-    const bound = row ? object(object(JSON.parse(String(row.result))).reader) : undefined;
+    const bound = row?.result ? object(object(JSON.parse(String(row.result))).reader) : undefined;
     if (bound?.kind !== 'embed' || typeof bound.id !== 'string') throw new MetadataError('INVALID_EMBED_TOKEN', 401); return bound.id;
   }
 }

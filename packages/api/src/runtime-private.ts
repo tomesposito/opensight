@@ -9,12 +9,14 @@ import { migrateRuntime } from './runtime-migration.js';
 import { deploymentId } from './runtime-startup.js';
 import { migrateServerless } from './serverless-migration.js';
 import { initialCommand, initialMigrationCommand, initialAdministration, prepareInitial, type InitialResult, type InitialCommand } from './runtime-initial.js';
-import { runServerlessEvent } from './serverless-worker.js';
+import { runServerlessEvent, replayServerlessEvent } from './serverless-worker.js';
+import { dispatchEnvelope } from './dispatch.js';
 
-export interface ScheduledEvent { version: 1; deploymentEpoch: number; eventId: string; kind: 'due' | 'execute' | 'recover' | 'deliver' }
+export interface ScheduledEvent { version: 1; deploymentEpoch: number; eventId: string; kind: 'due' | 'execute' | 'recover' }
 export interface PrivateRuntimeDependencies extends Pick<RuntimeDependencies, 'databases'> {
   /** SR3 must authorize/claim/fence the referenced durable event before doing work. */
   scheduled?(event: ScheduledEvent, db: InvocationDatabases, scope: InvocationScope, env: NodeJS.ProcessEnv): Promise<void>;
+  replay?(event: ScheduledEvent, db: InvocationDatabases, scope: InvocationScope, env: NodeJS.ProcessEnv, acceptAmbiguous: boolean): Promise<void>;
   prepareInitial?(db: InvocationDatabases, env: NodeJS.ProcessEnv): Promise<void>;
   initial?(db: InvocationDatabases, env: NodeJS.ProcessEnv, input: InitialCommand): Promise<InitialResult>;
   migrate?(db: InvocationDatabases, scope: InvocationScope, env: NodeJS.ProcessEnv): Promise<void>;
@@ -35,8 +37,17 @@ export function createPrivateRuntime(environment: () => NodeJS.ProcessEnv = () =
         return { state: 'migrated', maintenance: true };
       }); } catch (error) { throw error instanceof MetadataError ? error : new MetadataError('RUNTIME_MIGRATION_FAILED', 503); }
     },
-    async administration(raw: unknown, context: InvocationContext): Promise<InitialResult | { state: 'migrated'; maintenance: true }> {
+    async administration(raw: unknown, context: InvocationContext): Promise<InitialResult | { state: 'migrated'; maintenance: true } | { state: 'replayed' }> {
       const env = configured();
+      if (raw && typeof raw === 'object' && 'command' in raw && raw.command === 'replay-event') {
+        const input = object(raw, ['command', 'authorization', 'event', 'acceptAmbiguous']);
+        if (typeof input.authorization !== 'string' || !equal(input.authorization, `Operator ${secretKey(env.OPENSIGHT_OPERATOR_KEY).toString('base64url')}`)) throw new MetadataError('OPERATOR_REQUIRED', 403);
+        if (typeof input.acceptAmbiguous !== 'boolean') throw new MetadataError('SCHEDULE_EVENT_INVALID', 400);
+        const event = dispatchEnvelope(input.event);
+        if (event.kind === 'recover' || env.OPENSIGHT_SERVERLESS_DATA !== 'durable') throw new MetadataError('DISPATCH_REPLAY_DENIED', 409);
+        await invoke(env, context, (db, scope) => (dependencies.replay ?? replayServerlessEvent)(event, db, scope, env, input.acceptAmbiguous as boolean));
+        return { state: 'replayed' };
+      }
       if (raw && typeof raw === 'object' && 'command' in raw && raw.command === 'migrate') {
         initialMigrationCommand(raw, env);
         try { return await invoke(env, context, async db => {
@@ -58,7 +69,7 @@ export function createPrivateRuntime(environment: () => NodeJS.ProcessEnv = () =
         || typeof record.body !== 'string' || Buffer.byteLength(record.body) > 4096) throw new MetadataError('SCHEDULE_EVENT_INVALID', 400);
       try {
         const body = object(JSON.parse(record.body) as unknown, ['version', 'deploymentEpoch', 'eventId', 'kind']);
-        if (body.version !== 1 || !Number.isSafeInteger(body.deploymentEpoch) || Number(body.deploymentEpoch) < 1 || !['due', 'execute', 'recover', 'deliver'].includes(String(body.kind))) throw new MetadataError('SCHEDULE_EVENT_INVALID', 400);
+        if (body.version !== 1 || !Number.isSafeInteger(body.deploymentEpoch) || Number(body.deploymentEpoch) < 1 || !['due', 'execute', 'recover'].includes(String(body.kind))) throw new MetadataError('SCHEDULE_EVENT_INVALID', 400);
         const event: ScheduledEvent = { version: 1, deploymentEpoch: Number(body.deploymentEpoch), eventId: identifier(body.eventId), kind: body.kind as ScheduledEvent['kind'] };
         if (recovery !== (event.kind === 'recover')) throw new MetadataError('SCHEDULE_EVENT_INVALID', 400);
         const scheduled = dependencies.scheduled ?? (env.OPENSIGHT_SERVERLESS_DATA === 'durable' ? runServerlessEvent : undefined);
