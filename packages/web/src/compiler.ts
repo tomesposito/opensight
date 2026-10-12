@@ -68,6 +68,30 @@ function extensionReferenceLines(value: unknown, path: string): { referenceLines
     .map(line => { const raw = line as { value: number; label?: unknown; color?: unknown }; return { value: raw.value, label: String(raw.label ?? ''), color: String(raw.color ?? '#c0392b') }; }) };
 }
 
+/** QuickSight SelectedTooltipType / FieldBasedTooltip → renderer tooltip detail. Fail-closed on bad enums; unknown field ids are reported, never rendered. */
+function parseTooltipDetail(tooltip: ObjectValue, key: (archive: string, api: string) => string, path: string, fields: Field[]): { type: 'basic' | 'detailed'; titleType: 'primaryValue' | 'fieldId'; aggregations: boolean; hiddenFields: string[]; unknownFields: string[] } | undefined {
+  const typeKey = key('selectedTooltipType', 'SelectedTooltipType');
+  const fieldKey = key('fieldBasedTooltip', 'FieldBasedTooltip');
+  if (tooltip[typeKey] === undefined && tooltip[fieldKey] === undefined) return undefined;
+  const type = enumValue(tooltip[typeKey], ['BASIC', 'DETAILED'], 'BASIC', `${path}.${typeKey}`) === 'DETAILED' ? 'detailed' : 'basic';
+  const fb = object(tooltip[fieldKey] ?? {}, `${path}.${fieldKey}`);
+  keys(fb, [key('aggregationVisibility', 'AggregationVisibility'), key('tooltipTitleType', 'TooltipTitleType'), key('tooltipFields', 'TooltipFields')], `${path}.${fieldKey}`);
+  const aggregations = enumValue(fb[key('aggregationVisibility', 'AggregationVisibility')], ['VISIBLE', 'HIDDEN'], 'VISIBLE', `${path}.${fieldKey}`) === 'VISIBLE';
+  const titleType = enumValue(fb[key('tooltipTitleType', 'TooltipTitleType')], ['PRIMARY_VALUE', 'FIELD_ID'], 'PRIMARY_VALUE', `${path}.${fieldKey}`) === 'FIELD_ID' ? 'fieldId' : 'primaryValue';
+  const fieldsKey = key('tooltipFields', 'TooltipFields');
+  const items = list(fb[fieldsKey] === undefined ? undefined : object(fb[fieldsKey], `${path}.${fieldKey}.${fieldsKey}`)[key('fieldTooltipItem', 'FieldTooltipItem')], `${path}.${fieldKey}.${fieldsKey}`);
+  const hiddenFields: string[] = [], unknownFields: string[] = [];
+  items.forEach((item, i) => {
+    const o = object(item, `${path}.${fieldKey}.${fieldsKey}[${i}]`);
+    keys(o, [key('fieldId', 'FieldId'), key('visibility', 'Visibility')], `${path}.${fieldKey}.${fieldsKey}[${i}]`);
+    const fieldId = text(o[key('fieldId', 'FieldId')], `${path}.${fieldKey}.${fieldsKey}[${i}]`);
+    const visible = enumValue(o[key('visibility', 'Visibility')], ['VISIBLE', 'HIDDEN'], 'VISIBLE', `${path}.${fieldKey}.${fieldsKey}[${i}]`) === 'VISIBLE';
+    if (!fields.some(f => f.id === fieldId)) { unknownFields.push(fieldId); return; }
+    if (!visible) hiddenFields.push(fieldId);
+  });
+  return { type, titleType, aggregations, hiddenFields, unknownFields };
+}
+
 /** Explicit dialect selection; camelCase includes the API converter's projections. */
 export function normalizeVisual(source: Input['source'], definition: Input['definition'], path = '$'): VisualModel {
   if (source !== 'api' && source !== 'bundle') fail(path, 'unknown definition dialect');
@@ -241,7 +265,9 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
   enumValue(labels[key('overlap', 'Overlap')], ['DISABLE_OVERLAP'], 'DISABLE_OVERLAP', cpath);
   const tooltip = object(config[key('tooltip', 'Tooltip')] ?? {}, cpath);
   keys(tooltip, ['radar', 'sankey', 'waterfall'].includes(kind) ? [key('tooltipVisibility', 'TooltipVisibility')] : [key('tooltipVisibility', 'TooltipVisibility'), key('selectedTooltipType', 'SelectedTooltipType'), key('fieldBasedTooltip', 'FieldBasedTooltip')], `${cpath}.${key('tooltip', 'Tooltip')}`);
-  if (tooltip[key('fieldBasedTooltip', 'FieldBasedTooltip')] !== undefined || tooltip[key('selectedTooltipType', 'SelectedTooltipType')] !== undefined) warnings.push(`${cpath}.${key('tooltip', 'Tooltip')}: detailed tooltip formatting is approximated with category and value.`);
+  const tooltipPath = `${cpath}.${key('tooltip', 'Tooltip')}`;
+  const tooltipDetail = parseTooltipDetail(tooltip, key, tooltipPath, [...dimensions, ...measures]);
+  for (const fieldId of tooltipDetail?.unknownFields ?? []) warnings.push(`${tooltipPath}: tooltip field '${fieldId}' is not in the visual and will not be shown.`);
   const legend = object(config[key('legend', 'Legend')] ?? {}, cpath);
   keys(legend, [key('visibility', 'Visibility'), key('position', 'Position')], cpath);
   let innerRadius = '0%';
@@ -289,6 +315,7 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
     stacked: kind === 'bar' && enumValue(config[key('barsArrangement', 'BarsArrangement')], ['CLUSTERED', 'STACKED'], 'CLUSTERED', `${cpath}.${key('barsArrangement', 'BarsArrangement')}`) === 'STACKED',
     labels: visibility(labels, key('visibility', 'Visibility'), kind === 'pie' ? 'VISIBLE' : 'HIDDEN'),
     tooltip: visibility(tooltip, key('tooltipVisibility', 'TooltipVisibility')),
+    ...(tooltipDetail ? { tooltipDetail: { type: tooltipDetail.type, titleType: tooltipDetail.titleType, aggregations: tooltipDetail.aggregations, hiddenFields: tooltipDetail.hiddenFields } } : {}),
     legend: visibility(legend, key('visibility', 'Visibility')),
     ...extensionReferenceLines(body[key('opensightReferenceLines', 'OpenSightReferenceLines')], `${p}.${key('opensightReferenceLines', 'OpenSightReferenceLines')}`),
   };
@@ -389,6 +416,14 @@ export function compileVisual(input: Input): CompiledVisual {
     option.graphic = [{ type: 'text', left: 'center', top: 'middle', style: { text: label, fill: (model.palette ?? theme.palette)[0], fontSize: value === null ? 22 : 56, fontWeight: 600, fontFamily: theme.fontFamily } }];
   }
   applyDisplayOptions(model, option);
+  if (model.tooltip && model.tooltipDetail?.type === 'detailed') {
+    if (DETAILED_TOOLTIP_KINDS.includes(model.kind)) {
+      option.tooltip = { ...(typeof option.tooltip === 'object' && !Array.isArray(option.tooltip) ? option.tooltip : {}),
+        formatter: detailedTooltipFormatter(model, rows, cell) };
+    } else {
+      model.warnings.push(`detailed tooltips are not rendered for ${model.kind} visuals; using basic tooltips.`);
+    }
+  }
   if (input.theme || model.palette) {
     for (const axis of [option.xAxis, option.yAxis].flat()) if (axis) { axis.axisLabel = { ...axis.axisLabel, color: theme.textColor }; axis.nameTextStyle = { color: theme.textColor }; }
     if (option.legend && !Array.isArray(option.legend)) option.legend.textStyle = { color: theme.textColor, fontFamily: theme.fontFamily };
@@ -420,6 +455,39 @@ export function compileVisual(input: Input): CompiledVisual {
   return { model, option, state, ...(narrative ? { narrative } : {}), table: { columns: fields.map(f => fieldName(f, model.formatting)), rows: rows.map(row => fields.map(field => cell(row, field))),
     ...(model.formatting ? { visibleColumns: fields.map(f => (model.measures.includes(f) ? model.formatting?.valueNamesVisible : model.formatting?.rowNamesVisible) === false ? '' : fieldName(f, model.formatting)) } : {}),
   } };
+}
+
+/** Kinds whose series data maps 1:1 to result rows, so a per-row detailed tooltip is exact. */
+const DETAILED_TOOLTIP_KINDS = ['bar', 'line', 'pie', 'combo', 'area', 'bar100'];
+
+/** Escape richText markup characters in dynamic tooltip text (display encoding; table data stays exact). */
+const richTextEscape = (value: string): string => value.replace(/[{}]/g, ch => ch === '{' ? '｛' : '｝');
+
+/**
+ * Detailed tooltip: title line plus one row per visible field (QuickSight parity).
+ * Title is the category value (primaryValue) or the field label (fieldId); measures
+ * show the aggregation ("Sum of") unless hidden. All measure bindings are SUM
+ * (enforced at normalization), so the label is exact. Plain text: the richText
+ * parser only treats `{name|...}` as markup, and dynamic braces are escaped below.
+ */
+function detailedTooltipFormatter(model: VisualModel, rows: Row[], cell: (row: Row, field: Field) => Cell): (params: unknown) => string {
+  const detail = model.tooltipDetail!;
+  const fields = [...model.dimensions, ...model.measures].filter(f => !detail.hiddenFields.includes(f.id));
+  return (params: unknown): string => {
+    const first = (Array.isArray(params) ? params[0] : params) as { dataIndex?: unknown } | undefined;
+    const row = typeof first?.dataIndex === 'number' ? rows[first.dataIndex] : undefined;
+    if (!row) return '';
+    const titleField = model.dimensions[0] ?? model.measures[0];
+    const title = detail.titleType === 'primaryValue' && model.dimensions[0]
+      ? displayCell(cell(row, model.dimensions[0]))
+      : titleField ? fieldName(titleField, model.formatting) : model.title;
+    const lines = [richTextEscape(title)];
+    for (const field of fields) {
+      const label = detail.aggregations && model.measures.includes(field) ? `Sum of ${fieldName(field, model.formatting)}` : fieldName(field, model.formatting);
+      lines.push(`${richTextEscape(label)}: ${richTextEscape(displayCell(cell(row, field)))}`);
+    }
+    return lines.join('\n');
+  };
 }
 
 export function displayCell(value: Cell): string {
