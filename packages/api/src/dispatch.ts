@@ -7,7 +7,15 @@ import { coordinationDeployment, coordinationFailure, coordinationNow, type Coor
 import { dispatchChecksum } from './dispatch-schema.js';
 
 export interface DispatchEnvelope { version: 1; deploymentEpoch: number; eventId: string; kind: 'execute' | 'recover' | 'due' }
-export type DurableEventKind = 'ingest' | 'object-cleanup' | 'result-expire' | 'artifact-cleanup';
+export function dispatchEnvelope(raw: unknown): DispatchEnvelope {
+  try {
+    const value = object(raw, ['version', 'deploymentEpoch', 'eventId', 'kind']);
+    if (value.version !== 1 || !Number.isSafeInteger(value.deploymentEpoch) || Number(value.deploymentEpoch) < 1
+      || !['execute', 'recover', 'due'].includes(String(value.kind)) || Buffer.byteLength(JSON.stringify(value)) > 4096) throw Error();
+    return { version: 1, deploymentEpoch: Number(value.deploymentEpoch), eventId: identifier(value.eventId), kind: value.kind as DispatchEnvelope['kind'] };
+  } catch { throw new MetadataError('SCHEDULE_EVENT_INVALID', 400); }
+}
+export type DurableEventKind = 'ingest' | 'object-cleanup' | 'result-expire' | 'artifact-cleanup' | 'job-due' | 'job-execute' | 'job-deliver';
 export interface DurableEvent {
   eventId: string; aggregateId: string; aggregateRevision: number; kind: DurableEventKind;
   dueAt: number; expiresAt: number; epoch: number;
@@ -18,19 +26,19 @@ export interface DispatchTransport {
   /** Resolve only after SQS send or exact one-time Scheduler create/GET acknowledgement. */
   dispatch(envelope: DispatchEnvelope, event: DurableEvent): Promise<void>;
 }
-export interface IntentRequest { kind: 'upload-reserve' | 'upload-complete' | 'artifact-write' | 'artifact-refresh' | 'result-write'; requestDigest: string; idempotencyKey: string; revisions: Revisions }
+export interface IntentRequest { kind: 'upload-reserve' | 'upload-complete' | 'artifact-write' | 'artifact-refresh' | 'result-write' | 'job-write'; requestDigest: string; idempotencyKey: string; revisions: Revisions }
 export interface DispatchPreparation { readonly intentId: string }
 export interface DispatchReceipt { id: string; revision: number }
 export type EventInput = Omit<DurableEvent, 'eventId' | 'epoch'>;
 interface Prepared { context: TenantContext; input: IntentRequest; epoch: number; idempotencyDigest: string }
 const scoped = 'deployment = ? AND tenant_id = ? AND namespace_id = ? AND owner_id = ?';
-const eventKinds: readonly DurableEventKind[] = ['ingest', 'object-cleanup', 'result-expire', 'artifact-cleanup'];
+const eventKinds: readonly DurableEventKind[] = ['ingest', 'object-cleanup', 'result-expire', 'artifact-cleanup', 'job-due', 'job-execute', 'job-deliver'];
 const integer = (value: SqlValue | undefined): number => {
   const n = Number(value); if (!Number.isSafeInteger(n) || n < 1) throw new MetadataError('DISPATCH_UNAVAILABLE', 503); return n;
 };
 const snapshot = (raw: IntentRequest): IntentRequest => {
   const input = structuredClone(raw), r = object(input, ['kind', 'requestDigest', 'idempotencyKey', 'revisions']);
-  if (!['upload-reserve', 'upload-complete', 'artifact-write', 'artifact-refresh', 'result-write'].includes(String(r.kind))
+  if (!['upload-reserve', 'upload-complete', 'artifact-write', 'artifact-refresh', 'result-write', 'job-write'].includes(String(r.kind))
     || typeof r.requestDigest !== 'string' || !/^[a-f0-9]{64}$/.test(r.requestDigest)
     || typeof r.idempotencyKey !== 'string' || !/^[A-Za-z0-9_-]{16,128}$/.test(r.idempotencyKey)) throw new MetadataError('DISPATCH_INPUT_INVALID', 400);
   const revisions = object(r.revisions, ['authorization', 'policy', 'configuration']);
@@ -60,6 +68,34 @@ export class DurableDispatch {
     const marker = (await c.query('SELECT version, checksum FROM sr_dispatch_schema WHERE deployment = ?', [this.deployment]))[0];
     if (Number(marker?.version) !== 1 || marker?.checksum !== dispatchChecksum) throw new MetadataError('DISPATCH_SCHEMA_REQUIRED', 503);
     return integer(row.epoch);
+  }
+  /** Internal worker entry: the caller must validate the referenced business authority. */
+  async system<T>(work: (c: SqlConnection, control: { epoch: number; now: number }) => Promise<T>): Promise<T> {
+    return this.transaction(async c => work(c, { epoch: await this.control(c), now: await coordinationNow(c, this.dialect) }));
+  }
+  time(c: SqlConnection): Promise<number> { return coordinationNow(c, this.dialect); }
+  /** Incoming receipt owns these continuations until every child is externally acknowledged. */
+  async append(c: SqlConnection, parentId: string, events: EventInput[]): Promise<void> {
+    if (events.length > 50) throw new MetadataError('DISPATCH_INPUT_INVALID', 400);
+    const parent = (await c.query('SELECT * FROM sr_outbox WHERE deployment = ? AND event_id = ?', [this.deployment, identifier(parentId)]))[0];
+    if (!parent) throw new MetadataError('DISPATCH_EVENT_UNAVAILABLE', 503);
+    for (const event of events) {
+      identifier(event.aggregateId);
+      if (!eventKinds.includes(event.kind) || !Number.isSafeInteger(event.aggregateRevision) || event.aggregateRevision < 1
+        || !Number.isSafeInteger(event.dueAt) || !Number.isSafeInteger(event.expiresAt) || event.expiresAt <= event.dueAt
+        || event.expiresAt - event.dueAt > 86400000) throw new MetadataError('DISPATCH_INPUT_INVALID', 400);
+      await c.query("INSERT INTO sr_outbox VALUES (?,?,?,?,?,?,?,?,?,1,?,?,?,'pending') ON CONFLICT (deployment, tenant_id, namespace_id, owner_id, aggregate_id, aggregate_revision, kind) DO NOTHING",
+        [this.deployment, parent.tenant_id!, parent.namespace_id!, parent.owner_id!, randomUUID(), parent.intent_id!, event.aggregateId,
+          event.aggregateRevision, event.kind, parent.control_epoch!, event.dueAt, event.expiresAt]);
+    }
+  }
+  async flushEvent(envelope: DispatchEnvelope): Promise<void> {
+    const intent = await this.system(async (c, control) => {
+      if (control.epoch !== envelope.deploymentEpoch) return undefined;
+      return (await c.query('SELECT intent_id FROM sr_outbox WHERE deployment = ? AND event_id = ? AND control_epoch = ?',
+        [this.deployment, identifier(envelope.eventId), envelope.deploymentEpoch]))[0]?.intent_id;
+    });
+    if (intent) await this.flush(String(intent), envelope.deploymentEpoch);
   }
   private row(c: SqlConnection, context: TenantContext, id: string): Promise<SqlRow | undefined> {
     return c.query(`SELECT * FROM sr_dispatch_intent WHERE ${scoped} AND intent_id = ?${this.dialect === 'postgres' ? ' FOR UPDATE' : ''}`, [...this.scope(context), id]).then(rows => rows[0]);
@@ -159,6 +195,7 @@ export class DurableDispatch {
     await this.flush(handle.intentId, prepared.epoch);
   }
   async recover(envelope: DispatchEnvelope): Promise<void> {
+    envelope = dispatchEnvelope(envelope);
     if (envelope.kind !== 'recover') throw new MetadataError('SCHEDULE_EVENT_INVALID', 400);
     identifier(envelope.eventId);
     const committed = await this.transaction(async c => {
@@ -174,7 +211,8 @@ export class DurableDispatch {
     if (committed) await this.flush(envelope.eventId, envelope.deploymentEpoch);
   }
   /** Worker claims must recheck business authority; an event descriptor is not an execution permit. */
-  async inspect(envelope: DispatchEnvelope): Promise<(DurableEvent & { scope: { tenantId: string; namespaceId: string; userId: string } }) | undefined> {
+  async inspect(envelope: DispatchEnvelope, includeExpired = false): Promise<(DurableEvent & { scope: { tenantId: string; namespaceId: string; userId: string } }) | undefined> {
+    envelope = dispatchEnvelope(envelope);
     if (!['execute', 'due'].includes(envelope.kind)) throw new MetadataError('SCHEDULE_EVENT_INVALID', 400);
     identifier(envelope.eventId);
     return this.transaction(async c => {
@@ -183,7 +221,7 @@ export class DurableDispatch {
       if (!row) throw new MetadataError('DISPATCH_EVENT_UNAVAILABLE', 503);
       if (row.state === 'terminal' || integer(row.control_epoch) !== envelope.deploymentEpoch) return undefined;
       const event = this.event(row), now = await coordinationNow(c, this.dialect);
-      if (event.expiresAt <= now) { await this.terminal(c, event.eventId, envelope.deploymentEpoch); return undefined; }
+      if (!includeExpired && event.expiresAt <= now) { await this.terminal(c, event.eventId, envelope.deploymentEpoch); return undefined; }
       if (event.dueAt > now) throw new MetadataError('DISPATCH_EVENT_EARLY', 409);
       return { ...event, scope: { tenantId: String(row.tenant_id), namespaceId: String(row.namespace_id), userId: String(row.owner_id) } };
     });

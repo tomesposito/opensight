@@ -9,10 +9,36 @@ import type { ExecutionSettings } from './blaze.js';
 import { object } from './metadata-resources.js';
 import { appendMetadataEvent } from './metadata-outbox.js';
 import { nextRun } from './schedule.js';
+import { DurableDispatch } from './dispatch.js';
+import { jobDueEvent, jobExecutionEvent } from './job-dispatch.js';
 import { cancelJob, jobSpec, lockTenant, member, readJob, readOccurrence, revisions, scoped, scopeArgs, type Job, type JobSpec, type Occurrence } from './job-schema.js';
 
 export class JobStore {
-  constructor(readonly db: Database, readonly metadata: TenantMetadata, readonly clock = () => new Date()) {}
+  constructor(readonly db: Database, readonly metadata: TenantMetadata, readonly clock = () => new Date(), readonly dispatch?: DurableDispatch) {}
+  private async checkedOn<T>(c: SqlConnection, context: TenantContext, work: (c: SqlConnection, administrator: boolean) => Promise<T>): Promise<T> {
+    await lockTenant(c, context); const user = await member(c, context, context.userId);
+    if ((await revisions(c, context)).authorization !== context.authorizationRevision) throw new MetadataError('AUTHORIZATION_REVISED', 403);
+    return work(c, user.role === 'administrator');
+  }
+  private async change<T>(context: TenantContext, jobId: string, request: unknown, work: (c: SqlConnection, administrator: boolean) => Promise<T>, occurrence = false): Promise<T> {
+    if (!this.dispatch) return this.checked(context, work);
+    const revisions = await this.metadata.revisions(context), key = randomUUID();
+    const preparation = await this.dispatch.prepare(context, { kind: 'job-write', revisions, requestDigest: checksum([jobId, request]), idempotencyKey: key });
+    let result!: T;
+    await this.dispatch.commit(preparation, async (c, now) => {
+      result = await this.checkedOn(c, context, work);
+      const row = (await c.query(`SELECT * FROM h7_jobs WHERE ${scoped} AND job_id = ?`, [...scopeArgs(context), jobId]))[0];
+      const job = row ? readJob(row) : undefined;
+      // The only occurrence-producing caller is enqueue; read its durable ID after the SQL callback.
+      const run = occurrence ? result as Occurrence : undefined;
+      let events = run ? [jobExecutionEvent(run, now)] : job ? await jobDueEvent(c, this.dispatch!.deployment, job) : [];
+      if (run && (await c.query(`SELECT event_id FROM sr_outbox WHERE deployment = ? AND ${scoped} AND owner_id = ? AND aggregate_id = ? AND aggregate_revision = ? AND kind = 'job-execute'`,
+        [this.dispatch!.deployment, ...scopeArgs(context), context.userId, run.id, run.jobVersion])).length) events = [];
+      return { receipt: { id: run?.id ?? jobId, revision: job?.version ?? 1 }, events };
+    });
+    try { await this.dispatch.dispatch(preparation); } catch { /* Prearmed recovery owns publication. */ }
+    return result;
+  }
   async context(s: Scope, userId: string): Promise<TenantContext> {
     await this.db.transaction(async c => { await lockTenant(c, s); await member(c, s, userId); });
     const context = await this.metadata.authenticate(null, async () => ({ namespaceId: s.namespaceId, userId }));
@@ -21,11 +47,7 @@ export class JobStore {
   }
   async checked<T>(context: TenantContext, work: (c: SqlConnection, administrator: boolean) => Promise<T>): Promise<T> {
     this.metadata.assertContext(context);
-    return this.db.transaction(async c => {
-      await lockTenant(c, context); const user = await member(c, context, context.userId);
-      if ((await revisions(c, context)).authorization !== context.authorizationRevision) throw new MetadataError('AUTHORIZATION_REVISED', 403);
-      return work(c, user.role === 'administrator');
-    });
+    return this.db.transaction(c => this.checkedOn(c, context, work));
   }
   async find(c: SqlConnection, s: Scope, id: string): Promise<Job> {
     const row = (await c.query(`SELECT * FROM h7_jobs WHERE ${scoped} AND job_id = ?`, [...scopeArgs(s), identifier(id)]))[0];
@@ -50,7 +72,7 @@ export class JobStore {
   /** Commit a validated prepared execution setting and its owned schedule together.
    * The private H7 tables use the membership pool, never grants to tenant SQL. */
   async configurePrepared(context: TenantContext, id: string, settings: ExecutionSettings, expectedVersion: number, expected: Revisions): Promise<void> {
-    await this.checked(context, async c => {
+    await this.change(context, checksum(['prepared-refresh', context.userId, id]), { settings, expectedVersion, expected }, async c => {
       const user = await member(c, context, context.userId);
       if (!hasCapability(user.role as Role, 'build')) throw new MetadataError('JOB_WRITE_FORBIDDEN', 403);
       if (JSON.stringify(expected) !== JSON.stringify(await revisions(c, context))) throw new MetadataError('METADATA_REVISED', 403);
@@ -89,7 +111,7 @@ export class JobStore {
     });
     const rev = await this.metadata.revisions(context);
     await authorize(context, spec);
-    return this.checked(context, async c => {
+    return this.change(context, id, { spec, expectedVersion }, async c => {
       if (JSON.stringify(rev) !== JSON.stringify(await revisions(c, context))) throw new MetadataError('METADATA_REVISED', 403);
       const user = await member(c, context, context.userId);
       if (!hasCapability(user.role as Role, 'build')) throw new MetadataError('JOB_WRITE_FORBIDDEN', 403);
@@ -126,11 +148,16 @@ export class JobStore {
     });
   }
   async enqueue(context: TenantContext, id: string): Promise<Occurrence> {
-    return this.checked(context, async (c, admin) => {
+    const requested = await this.checked(context, async (c, admin) => {
+      const job = await this.find(c, context, id); if (!admin && job.ownerId !== context.userId) missing(); return job;
+    });
+    const owner = requested.ownerId === context.userId ? context : await this.context(context, requested.ownerId);
+    return this.change(owner, id, { action: 'enqueue', initiatedBy: context.userId, version: requested.version }, c => this.checkedOn(c, context, async (c, admin) => {
       const job = await this.find(c, context, id); if (!admin && job.ownerId !== context.userId) missing();
+      if (job.ownerId !== owner.userId) throw new MetadataError('JOB_REVISED', 403);
       if (job.spec.kind === 'alert') throw new MetadataError('JOB_REFRESH_REQUIRED', 409);
       return this.claim(c, job, `manual:${randomUUID()}`, context.userId);
-    });
+    }), true);
   }
   async claim(c: SqlConnection, job: Job, due: string, initiatedBy = job.ownerId): Promise<Occurrence> {
     if (job.stopped || !job.spec.enabled) throw new MetadataError('JOB_STOPPED', 409);
