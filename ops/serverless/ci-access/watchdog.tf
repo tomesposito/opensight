@@ -33,6 +33,9 @@ resource "aws_iam_role_policy" "watchdog" {
   role  = aws_iam_role.watchdog[0].id
   policy = jsonencode({ Version = "2012-10-17", Statement = [
     { Effect = "Allow", Action = "s3:GetObject", Resource = "arn:aws:s3:::${var.operations_bucket}/ci/operations/active.json" },
+    # S3 requires ListBucket to distinguish a missing lock (404) from denied access.
+    # This guard has no GetObject grant for any other key, including state files.
+    { Effect = "Allow", Action = "s3:ListBucket", Resource = "arn:aws:s3:::${var.operations_bucket}" },
     { Effect = "Allow", Action = "kms:Decrypt", Resource = var.operations_kms_key, Condition = { StringEquals = { "kms:ViaService" = "s3.${var.region}.amazonaws.com", "kms:EncryptionContext:aws:s3:arn" = "arn:aws:s3:::${var.operations_bucket}" } } },
     { Effect = "Allow", Action = "lambda:PutFunctionConcurrency", Resource = local.guard_functions },
     { Effect = "Allow", Action = "lambda:UpdateEventSourceMapping", Resource = [for id in var.event_mappings : "arn:aws:lambda:${var.region}:${var.account_id}:event-source-mapping:${id}"] },

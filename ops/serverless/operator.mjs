@@ -73,6 +73,7 @@ export async function main(args = process.argv.slice(2), environment = process.e
     if (existsSync(target) && (lstatSync(target).isSymbolicLink() || lstatSync(target).mode & 0o077)) throw Error('PRIVATE_FILE_UNSAFE');
     writeFileSync(target, typeof value === 'string' || Buffer.isBuffer(value) ? value : JSON.stringify(value, null, 2) + '\n', { mode: 0o600 });
   };
+  if (existsSync(join(directory, 'ci-adopted.json')) && !['observe', 'verify'].includes(operation)) throw Error('RECURRING_CONTROLLER_REQUIRED');
   let lock;
   try { lock = openSync(path('operator.lock'), 'wx', 0o600); } catch { throw Error('OPERATOR_BUSY'); }
   try {

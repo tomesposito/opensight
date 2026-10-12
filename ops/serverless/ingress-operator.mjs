@@ -24,6 +24,7 @@ export async function main(args = process.argv.slice(2), environment = process.e
     try { return execFileSync(binary, args, { cwd: repository, env: { ...environment, ...extra }, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'] }); }
     catch (error) { write('ingress.failed.log', `${error.stdout ?? ''}${error.stderr ?? ''}`); throw Error('INGRESS_COMMAND_FAILED'); }
   };
+  if (existsSync(join(directory, 'ci-adopted.json')) && !['observe', 'verify'].includes(operation)) throw Error('RECURRING_CONTROLLER_REQUIRED');
   let lock;
   try { lock = openSync(path('operator.lock'), 'wx', 0o600); } catch { throw Error('OPERATOR_BUSY'); }
   try {

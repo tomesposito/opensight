@@ -32,7 +32,7 @@ test('SR4c emergency disable denies existing sessions before removing new trust 
   const aws = async (service, action, args) => {
     calls.push({ service, action, args });
     if (action === 'get-role-policy') return { PolicyDocument: ciDeny };
-    if (action === 'get-role') return { Role: { AssumeRolePolicyDocument: ciClosedTrust } };
+    if (action === 'get-role') return { Role: { AssumeRolePolicyDocument: ciClosedTrust(c) } };
     return {};
   };
   const result = await disableCi(aws, c);
