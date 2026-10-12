@@ -124,7 +124,7 @@ function publishFrontend(files, read) {
   for (const name of Object.keys(files).sort((a, b) => Number(a.endsWith('.html')) - Number(b.endsWith('.html')))) {
     if (!/^[A-Za-z0-9_./-]+$/.test(name) || name.split('/').some(p => !p || p === '.' || p === '..')) throw Error('FRONTEND_PATH_INVALID');
     const bytes = read(name); if (digest(bytes) !== files[name]) throw Error('FRONTEND_DIGEST_MISMATCH');
-    putBytes(c.frontendBucket, name, bytes, { ContentType: contentType(name), CacheControl: name.startsWith('assets/') ? 'public,max-age=31536000,immutable' : 'no-store', ServerSideEncryption: 'AES256' });
+    putBytes(c.frontendBucket, 'frontend/' + name, bytes, { ContentType: contentType(name), CacheControl: name.startsWith('assets/') ? 'public,max-age=31536000,immutable' : 'no-store', ServerSideEncryption: 'AES256' });
   }
   aws('cloudfront', 'create-invalidation', { DistributionId: c.distribution, InvalidationBatch: { CallerReference: operationId + '-' + Date.now(), Paths: { Quantity: 1, Items: ['/*'] } } });
 }
@@ -141,7 +141,7 @@ function stopAdmission() {
 try {
   // Back up only verified public frontend bytes; no state or tenant objects.
   for (const [name, expected] of Object.entries(current.files)) {
-    const object = get(c.frontendBucket, name); if (digest(object.bytes) !== expected) throw Error('FRONTEND_DRIFT');
+    const object = get(c.frontendBucket, 'frontend/' + name); if (digest(object.bytes) !== expected) throw Error('FRONTEND_DRIFT');
     putBytes(bucket, `ci/releases/${current.id}/frontend/${name}`, object.bytes, { ServerSideEncryption: 'aws:kms', SSEKMSKeyId: c.kmsKey, BucketKeyEnabled: true });
   }
   const imageUri = `${c.account}.dkr.ecr.${c.region}.amazonaws.com/${c.deployment}@${m.imageDigest}`;
