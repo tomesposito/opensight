@@ -1,0 +1,53 @@
+# TEMPLATE — not a live workflow. See README.md.
+# Private restore workflow: fail-closed data restore with preserved authority.
+name: OpenSight private restore (template)
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment (e.g. pilot)'
+        required: true
+      backup_ref:
+        description: 'Registered backup reference (registry head, not a bare snapshot)'
+        required: true
+      approval_ref:
+        description: 'Reference to the separately reviewed restore approval'
+        required: true
+permissions:
+  contents: read
+concurrency:
+  group: opensight-deploy-${{ inputs.environment }}
+  cancel-in-progress: false
+jobs:
+  restore:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      id-token: write  # only this job assumes the restore role
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+        with:
+          persist-credentials: false
+      # 1. Assume the RESTORE role via short-lived OIDC (separately authorized;
+      #    never a routine workflow's fallback). Destructive restore requires
+      #    the explicit approval_ref naming this backup_ref.
+      - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a  # v4
+        with:
+          role-to-assume: ${{ vars.OPENSIGHT_RESTORE_ROLE_ARN }}
+          aws-region: us-east-1
+      # 2. Verify the backup registration: metadata/object inventory complete,
+      #    pins cover every retained version, registry head matches backup_ref.
+      #    A snapshot without registry linkage is not acceptance.
+      # 3. Verify key versions and object pins against the independent
+      #    deletion/revocation registry. Missing evidence -> hold, fail closed.
+      # 4. Restore into an ISOLATED target first. Hold tenants suspended,
+      #    revoke sessions/invitations, stop schedules/deliveries.
+      # 5. Reconcile newer deletion/revocation records, membership/policy
+      #    expiry, usage controls. Advance the independently retained
+      #    deployment epoch; preserve/advance fence high-water marks.
+      # 6. Reauthorize retained events individually (including mail ambiguity);
+      #    never blindly redrive queues against restored SQL.
+      # 7. Cutover only after explicit membership/recovery review, recorded
+      #    against the approval_ref. The registry head and deployment epoch
+      #    stay outside the restored database and never travel backward.
