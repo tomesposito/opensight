@@ -166,7 +166,7 @@ export function AuthorToolbar({ canUndo = false, canRedo = false, onUndo, onRedo
         <AuthorMenuItem label="Legend" reason={needsVisual ?? (selected && !hasLegend(selected.kind) ? 'Legends are not supported for this visual type.' : undefined)} run={() => focus('[data-author-control="legend"]', 'Visual')} />
         <hr />
         <AuthorMenuItem label="Conditional Formatting" reason={needsVisual} run={() => focus('[data-author-control="conditional-formatting"]', 'Visual')} />
-        <AuthorMenuItem label="Tooltips" reason={needsVisual} run={() => focus('[data-author-control="tooltips"]', 'Visual')} />
+        <AuthorMenuItem label="Tooltips" reason={needsVisual} run={() => focus('[data-author-control="tooltip-detail"]', 'Interaction')} />
         <AuthorMenuItem label="Highlights" reason={needsVisual ?? 'Highlight rules are not supported yet. Use Conditional Formatting for data-driven emphasis.'} />
         <AuthorMenuItem label="Reference Lines" reason={needsVisual ?? (selected && !hasReferenceLines(selected.kind) ? 'Reference lines are not supported for this visual type.' : undefined)} run={() => focus('[data-author-control="reference-lines"]', 'Visual')} />
         <AuthorMenuItem label="Actions" reason={needsVisual} run={() => focus('[data-author-control="actions"]', 'Interaction')} />

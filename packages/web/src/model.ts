@@ -37,6 +37,14 @@ export interface VisualModel {
   stacked: boolean;
   labels: boolean;
   tooltip: boolean;
+  /** Interactions-tab tooltip detail (QuickSight SelectedTooltipType / FieldBasedTooltip parity). */
+  tooltipDetail?: {
+    type: 'basic' | 'detailed';
+    titleType: 'primaryValue' | 'fieldId';
+    aggregations: boolean;
+    /** Field ids hidden from the detailed tooltip; all visual fields show by default. */
+    hiddenFields: string[];
+  };
   legend: boolean;
   referenceLines?: { value: number; label: string; color: string }[];
   sort?: { fieldId: string; direction: 'ASC' | 'DESC' };
