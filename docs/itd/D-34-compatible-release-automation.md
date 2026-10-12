@@ -56,7 +56,10 @@ Revocation cannot undo previously deployed malicious code.
 An operator command outside GitHub blocks new federation and adds an explicit
 deny for already issued sessions. It checks propagation using an existing session
 and a fresh OIDC attempt. Re-enabling is a separate deliberate operator action;
-failed verification never reports success. The command does not alter runtime
+failed verification never reports success. A token-issue-time denial remains after
+recovery so older credentials cannot regain access when the incident deny is
+removed. Resolve the compromised GitHub access/controller before restoring trust.
+The command does not alter runtime
 roles, existing local credentials, or the account's shared OIDC provider.
 
 No new application dependency, persistent runner, database endpoint, NAT gateway,
