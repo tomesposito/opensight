@@ -152,7 +152,7 @@ test('detailed tooltips on kinds without renderer support fall back to basic wit
   }
   assert.equal(tooltipDetailKinds('radar'), false);
   assert.equal(tooltipDetailKinds('kpi'), false);
-  const v = { ...selected(add('treemap')), dimension: 'region', measures: ['revenue'] };
+  const v = { ...selected(add('treemap')), dimension: 'region', rows: ['region'], measures: ['revenue'] };
   const compiled = compileVisual(input({ ...v, tooltipType: 'detailed' }, [{ region: 'East', revenue: 10 }]));
   assert.equal(compiled.model.tooltipDetail.type, 'detailed');
   assert.equal(typeof compiled.option.tooltip.formatter, 'undefined');
