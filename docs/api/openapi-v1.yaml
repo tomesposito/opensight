@@ -1,0 +1,453 @@
+openapi: 3.1.0
+info:
+  title: OpenSight headless API
+  version: 1.0.0
+  description: >-
+    Builder-shaped REST surface for agents (issue #95, IDD D-37). Versioned
+    and stable: breaking changes need a new version plus migration notes.
+    The web app consumes the same API; existing unversioned routes are
+    untouched. Slices: datasets (shipped), querying, analyses, dashboards,
+    assets, MCP mapping.
+servers:
+  - url: https://{host}/api/v1
+    variables:
+      host:
+        default: opensight.example
+security:
+  - bearerAuth: []
+tags:
+  - name: datasets
+  - name: sources
+paths:
+  /datasets:
+    get:
+      tags: [datasets]
+      summary: List prepared datasets (paginated)
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: Paginated dataset list
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Page'
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: '#/components/schemas/DatasetSummary' }
+        '400': { $ref: '#/components/responses/BadPagination' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+  /datasets/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, pattern: '^[A-Za-z0-9_-]{1,128}$' }
+    get:
+      tags: [datasets]
+      summary: Composed dataset describe (schema + lineage pointers + refresh state)
+      responses:
+        '200':
+          description: Composed describe
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, name, version, execution, schema, lineage, refresh]
+                properties:
+                  id: { type: string }
+                  name: { type: string }
+                  version: { type: integer }
+                  execution:
+                    type: object
+                    properties:
+                      mode: { type: string, enum: [DIRECT_QUERY, BLAZE] }
+                      intervalMinutes: { type: ['integer', 'null'] }
+                  schema:
+                    type: object
+                    properties:
+                      columns:
+                        type: array
+                        items: { $ref: '#/components/schemas/Column' }
+                  lineage:
+                    type: object
+                    properties:
+                      sources:
+                        type: array
+                        items: { type: object, properties: { id: { type: string } } }
+                      datasets:
+                        type: array
+                        items: { type: object, properties: { id: { type: string } } }
+                      steps: { type: integer }
+                  refresh:
+                    type: object
+                    properties:
+                      supported: { type: boolean }
+                      mode: { type: string }
+                      intervalMinutes: { type: ['integer', 'null'] }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [datasets]
+      summary: Create or update a prepared dataset
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, pipeline, expectedVersion]
+              properties:
+                name: { type: string, maxLength: 512 }
+                pipeline:
+                  type: object
+                  description: PrepPipeline (version 1); see bundle-parser prep docs
+                expectedVersion: { type: integer, description: 0 on create }
+      responses:
+        '200':
+          description: Saved dataset
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DatasetSummary' }
+    delete:
+      tags: [datasets]
+      summary: Delete a prepared dataset
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Removed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  removed: { type: boolean, enum: [true] }
+        '428': { $ref: '#/components/responses/IfMatchRequired' }
+  /datasets/{id}/lineage:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, pattern: '^[A-Za-z0-9_-]{1,128}$' }
+    get:
+      tags: [datasets]
+      summary: Full lineage view (steps, resolved sources and datasets, refresh state)
+      responses:
+        '200':
+          description: Lineage view
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [dataset, steps, sources, datasets, refresh]
+                properties:
+                  dataset:
+                    type: object
+                    properties:
+                      id: { type: string }
+                      name: { type: string }
+                      version: { type: integer }
+                  steps:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: string }
+                        kind: { type: string }
+                        name: { type: ['string', 'null'] }
+                        from: { type: ['string', 'null'] }
+                  sources:
+                    type: array
+                    items: { $ref: '#/components/schemas/LineageSource' }
+                  datasets:
+                    type: array
+                    items: { $ref: '#/components/schemas/LineageDataset' }
+                  refresh:
+                    type: object
+                    properties:
+                      mode: { type: string }
+                      intervalMinutes: { type: ['integer', 'null'] }
+                      supported: { type: boolean }
+  /datasets/{id}/refresh:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, pattern: '^[A-Za-z0-9_-]{1,128}$' }
+    post:
+      tags: [datasets]
+      summary: Trigger a refresh (BLAZE datasets only; fail-closed otherwise)
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, maxProperties: 0 }
+      responses:
+        '200':
+          description: Refresh ran
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  datasetId: { type: string }
+                  refreshed: { type: boolean, enum: [true] }
+                  mode: { type: string }
+                  state: { type: string }
+        '409':
+          description: Dataset is not BLAZE-materialized
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Error'
+                  - type: object
+                    properties:
+                      errorCode: { type: string, enum: [BLAZE_MODE_REQUIRED] }
+  /datasets/{id}/refresh-status:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, pattern: '^[A-Za-z0-9_-]{1,128}$' }
+    get:
+      tags: [datasets]
+      summary: Refresh state (mode, schedule, whether refresh is supported)
+      responses:
+        '200':
+          description: Refresh state
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  datasetId: { type: string }
+                  version: { type: integer }
+                  mode: { type: string }
+                  intervalMinutes: { type: ['integer', 'null'] }
+                  supported: { type: boolean }
+  /sources:
+    get:
+      tags: [sources]
+      summary: List sources (paginated)
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: Paginated source list
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Page'
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: '#/components/schemas/SourceSummary' }
+  /sources/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, pattern: '^[A-Za-z0-9_-]{1,512}$' }
+    get:
+      tags: [sources]
+      summary: Schema inspection for one source
+      responses:
+        '200':
+          description: Source schema
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  version: { type: integer }
+                  connectorId: { type: string }
+                  columns:
+                    type: array
+                    items: { $ref: '#/components/schemas/Column' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [sources]
+      summary: Retire a source (fail-closed while datasets reference it)
+      description: >-
+        Refuses with 409 SOURCE_DELETE_BLOCKED_BY_DATASET while any prepared
+        dataset references the source, directly or through nested dataset
+        refs. Interaction with in-flight durable upload reservations stays
+        with #91's protocol work.
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Retired
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  retired: { type: boolean, enum: [true] }
+                  version: { type: integer }
+        '409':
+          description: Still referenced by prepared datasets
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Error'
+                  - type: object
+                    properties:
+                      errorCode: { type: string, enum: [SOURCE_DELETE_BLOCKED_BY_DATASET] }
+        '428': { $ref: '#/components/responses/IfMatchRequired' }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: User-level, tenant-scoped credential minted through the operator invitation path
+  parameters:
+    Limit:
+      name: Limit
+      in: header
+      required: false
+      description: >-
+        Page size, 1–1000 (default 100). The hosted plane rejects query
+        strings at the request boundary, so the frozen limit/cursor/nextCursor
+        convention rides headers.
+      schema: { type: integer, minimum: 1, maximum: 1000, default: 100 }
+    Cursor:
+      name: Cursor
+      in: header
+      required: false
+      description: Opaque page token from a previous nextCursor
+      schema: { type: string }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: Honored on every v1 mutation (10-minute replay window, single node)
+      schema: { type: string, pattern: '^[A-Za-z0-9_-]{1,512}$' }
+    IfMatch:
+      name: If-Match
+      in: header
+      required: true
+      description: Quoted integer version, e.g. "3" (optimistic concurrency)
+      schema: { type: string, pattern: '^"(0|[1-9][0-9]*)"$' }
+  schemas:
+    Error:
+      type: object
+      required: [errorCode]
+      properties:
+        errorCode: { type: string, description: Machine-readable code, stable across versions }
+        message: { type: string, description: Human-readable detail, never a secret }
+    Page:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        nextCursor: { type: ['string', 'null'], description: Opaque token for the next page, null at the end }
+    Column:
+      type: object
+      required: [name, type]
+      properties:
+        name: { type: string }
+        type: { type: string, enum: [INTEGER, DECIMAL, STRING, DATETIME, BOOLEAN] }
+    DatasetSummary:
+      type: object
+      required: [id, name, version, execution]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        version: { type: integer }
+        execution:
+          type: object
+          properties:
+            mode: { type: string, enum: [DIRECT_QUERY, BLAZE] }
+            intervalMinutes: { type: ['integer', 'null'] }
+    SourceSummary:
+      type: object
+      required: [id, available]
+      properties:
+        id: { type: string }
+        version: { type: integer }
+        connectorId: { type: string }
+        available: { type: boolean }
+        errorCode: { type: string }
+    LineageSource:
+      type: object
+      required: [id, available]
+      properties:
+        id: { type: string }
+        connectorId: { type: string }
+        version: { type: integer }
+        available: { type: boolean }
+        errorCode: { type: string }
+    LineageDataset:
+      type: object
+      required: [id, available]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        version: { type: integer }
+        available: { type: boolean }
+        errorCode: { type: string }
+        inputs:
+          type: array
+          items:
+            type: object
+            properties:
+              kind: { type: string, enum: [source, dataset] }
+              id: { type: string }
+  responses:
+    RateLimited:
+      description: Per-tenant rate limit exceeded
+      headers:
+        Retry-After:
+          schema: { type: integer }
+          description: Seconds to wait before retrying
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/Error'
+              - type: object
+                properties:
+                  errorCode: { type: string, enum: [RATE_LIMIT_EXCEEDED] }
+    BadPagination:
+      description: Invalid Limit or Cursor header
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/Error'
+              - type: object
+                properties:
+                  errorCode: { type: string, enum: [INVALID_PAGINATION] }
+    NotFound:
+      description: No such resource
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    IfMatchRequired:
+      description: Optimistic-concurrency version missing or malformed
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/Error'
+              - type: object
+                properties:
+                  errorCode: { type: string, enum: [V1_IF_MATCH_REQUIRED, V1_IF_MATCH_INVALID] }

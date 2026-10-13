@@ -38,6 +38,7 @@ import { Scheduler } from './schedule.js';
 import { hostedReadiness } from './hosted-health.js';
 import { HostedUsage, appendOperatorAudit } from './hosted-usage.js';
 import { referenceConfig, referenceDisclosure, assertReferenceSurfaces } from './single-node-config.js';
+import { V1Routes } from './v1-routes.js';
 
 const invocationFinishes = new WeakMap<Server, () => Promise<void>>();
 export async function finishHostedInvocation(server: Server): Promise<void> { await invocationFinishes.get(server)?.(); }
@@ -125,6 +126,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
   const invocation = options.invocation?.compose?.(metadata, budgets, options.builtinAuth);
   const jobs = invocation?.jobs ?? new JobStore(options.membershipDatabase, metadata);
   const data = invocation?.data ?? new HostedDataRoutes(new HostedData(new HostedSources(metadata, config.encryptionKey.toString('base64'), sourceEndpoints(options.env)), undefined, budgets), jobs);
+  const v1 = new V1Routes(data, options.env ?? process.env);
   const embedContent = invocation?.embedContent ?? new EmbedContent(new HostedData(new EmbedSources(metadata, config.encryptionKey.toString('base64'), sourceEndpoints(options.env)), undefined, budgets));
   const mail = invocation?.mail ?? options.mailTransport ?? smtpFromEnvironment(options.env);
   if (!options.invocation) await initializeJobs(options.membershipDatabase);
@@ -320,6 +322,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
       };
       if (await invocation?.route(request, response, path, context, recheck)) return;
       if (await data.route(request, response, path, context, recheck)) return;
+      if (await v1.route(request, response, path, context, recheck)) return;
       throw new MetadataError('HOSTED_CAPABILITY_UNAVAILABLE', 503);
     })().catch((error: unknown) => {
       errors++; request.resume();
