@@ -6,7 +6,7 @@ import { insightGraphic } from './insight-graphic.js';
 import { LIGHT_THEME, themeValid, paletteValid } from './themes.js';
 import { formattingValid, fieldName, matchingRule, LEGEND_POSITIONS, type LegendPosition } from './formatting.js';
 import type { EChartsOption, BarSeriesOption, LineSeriesOption, PieSeriesOption } from 'echarts';
-import type { Cell, Field, FixtureVisual, Row, VisualModel } from './model.js';
+import type { Cell, Field, FixtureVisual, MultiplesOptions, Row, VisualModel } from './model.js';
 
 import { EXTRA_VISUALS, extraKind, variantKinds, type VisualKind } from './visual-catalog.js';
 import { compileExtra } from './extra-charts.js';
@@ -83,6 +83,54 @@ function extensionTooltipExtras(value: unknown, path: string): Map<string, { lab
     result.set(fieldId, { ...(label ? { label } : {}), aggregation });
   }
   return result;
+}
+
+/** OpenSight extension: QuickSight's "Multiples Options" panel for pie small
+ *  multiples, persisted as chartConfiguration.opensightMultiplesOptions.
+ *  Fail-closed on malformed shapes (named errors); absent keeps today's
+ *  automatic layout exactly. */
+function parseMultiplesOptions(value: unknown, path: string): MultiplesOptions {
+  const o = object(value, path);
+  keys(o, ['visibleRows', 'visibleColumns', 'panelCount', 'title', 'border', 'gutter', 'background'], path);
+  const invalid = (name: string, expected: string): never => fail(name ? `${path}.${name}` : path, `MULTIPLES_OPTIONS_INVALID: expected ${expected}`);
+  const autoOrPositiveInt = (raw: unknown, name: string): 'auto' | number => {
+    if (raw === undefined || raw === 'auto') return 'auto';
+    if (typeof raw === 'number' && Number.isInteger(raw) && raw >= 1) return raw;
+    return invalid(name, '"auto" or a positive integer');
+  };
+  const panelCountRaw = o.panelCount === undefined ? 20 : o.panelCount;
+  const panelCount = typeof panelCountRaw === 'number' && Number.isInteger(panelCountRaw) && panelCountRaw >= 1 && panelCountRaw <= 20
+    ? panelCountRaw : invalid('panelCount', 'an integer from 1 to 20');
+  const title = object(o.title ?? {}, `${path}.title`);
+  keys(title, ['size', 'bold', 'italic', 'underline', 'align'], `${path}.title`);
+  for (const flag of ['bold', 'italic', 'underline'] as const) if (title[flag] !== undefined && typeof title[flag] !== 'boolean') invalid(`title.${flag}`, 'a boolean');
+  const border = object(o.border ?? {}, `${path}.border`);
+  keys(border, ['enabled', 'widthPx', 'style', 'color'], `${path}.border`);
+  if (border.enabled !== undefined && typeof border.enabled !== 'boolean') invalid('border.enabled', 'a boolean');
+  const widthPxRaw = border.widthPx === undefined ? 1 : border.widthPx;
+  const widthPx = typeof widthPxRaw === 'number' && Number.isFinite(widthPxRaw) && widthPxRaw > 0
+    ? widthPxRaw : invalid('border.widthPx', 'a positive number');
+  const colorRaw = border.color === undefined ? '#9aa3b2' : border.color;
+  const color = typeof colorRaw === 'string' && /^#[0-9a-f]{6}$/i.test(colorRaw)
+    ? colorRaw : invalid('border.color', 'a #rrggbb color');
+  for (const flag of ['gutter', 'background'] as const) if (o[flag] !== undefined && typeof o[flag] !== 'boolean') invalid(flag, 'a boolean');
+  return {
+    visibleRows: autoOrPositiveInt(o.visibleRows, 'visibleRows'),
+    visibleColumns: autoOrPositiveInt(o.visibleColumns, 'visibleColumns'),
+    panelCount,
+    title: {
+      size: enumValue(title.size, ['small', 'medium', 'large'], 'small', `${path}.title.size`) as 'small' | 'medium' | 'large',
+      bold: title.bold === true, italic: title.italic === true, underline: title.underline === true,
+      align: enumValue(title.align, ['left', 'center', 'right'], 'center', `${path}.title.align`) as 'left' | 'center' | 'right',
+    },
+    border: {
+      enabled: border.enabled === true, widthPx,
+      style: enumValue(border.style, ['solid', 'dashed', 'dotted'], 'solid', `${path}.border.style`) as 'solid' | 'dashed' | 'dotted',
+      color,
+    },
+    gutter: o.gutter === true,
+    background: o.background === true,
+  };
 }
 
 /** QuickSight SelectedTooltipType / FieldBasedTooltip → renderer tooltip detail. Fail-closed on bad enums; unknown field ids are reported, never rendered. */
@@ -169,7 +217,7 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
   const extra = extraKind(kind) ? EXTRA_VISUALS[kind] : undefined;
   const common = [key('fieldWells', 'FieldWells')];
   if (kind !== 'insight' && kind !== 'kpi' && kind !== 'table' && kind !== 'pivot') common.push(key('sortConfiguration', 'SortConfiguration'), key('dataLabels', 'DataLabels'), key('tooltip', 'Tooltip'), key('legend', 'Legend'));
-  if (kind === 'pie') common.push(key('donutOptions', 'DonutOptions'));
+  if (kind === 'pie') common.push(key('donutOptions', 'DonutOptions'), key('opensightMultiplesOptions', 'OpenSightMultiplesOptions'));
   if (kind === 'bar' || kind === 'bar100') common.push(key('orientation', 'Orientation'), key('barsArrangement', 'BarsArrangement'));
   if (kind === 'table' || kind === 'pivot') common.push(key('totalOptions', 'TotalOptions'));
   if (kind === 'table') common.push(key('opensightSubtotalOptions', 'OpenSightSubtotalOptions'));
@@ -328,6 +376,11 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
     innerRadius = ({ WHOLE: '0%', SMALL: '56%', MEDIUM: '42%', LARGE: '28%' } as const)[thickness as 'WHOLE' | 'SMALL' | 'MEDIUM' | 'LARGE'];
     if (thickness !== 'WHOLE') warnings.push(`${cpath}: donut radii are OpenSight approximations, not measured reference geometry.`);
   }
+  // OpenSight extension: the Multiples Options panel persists its state for pie
+  // only (other kinds fail the chartConfiguration key gate above, like the well).
+  const multiplesKey = key('opensightMultiplesOptions', 'OpenSightMultiplesOptions');
+  const multiplesOptions = kind === 'pie' && config[multiplesKey] !== undefined
+    ? parseMultiplesOptions(config[multiplesKey], `${cpath}.${multiplesKey}`) : undefined;
   const sort = object(config[key('sortConfiguration', 'SortConfiguration')] ?? {}, cpath);
   const sortsKey = key('categorySort', 'CategorySort');
   keys(sort, ['radar', 'sankey', 'waterfall'].includes(kind) ? [sortsKey] : [sortsKey, key('categoryItemsLimit', 'CategoryItemsLimit'), key('smallMultiplesLimitConfiguration', 'SmallMultiplesLimitConfiguration')], `${cpath}.${key('sortConfiguration', 'SortConfiguration')}`);
@@ -360,6 +413,7 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
     legendPosition: enumValue(legend[key('position', 'Position')] ?? (formattingValid(formatting) ? formatting.legendPosition : undefined), [...LEGEND_POSITIONS], 'BOTTOM', `${cpath}.legend.position`) as LegendPosition,
     dimensions, rowDimensions, columnDimensions, measures, totals, subtotals, columnTotals, columnSubtotals, innerRadius, sort: fieldSort, warnings,
     ...(facet ? { facet } : {}),
+    ...(multiplesOptions ? { multiplesOptions } : {}),
     horizontal: (kind === 'bar' || kind === 'bar100') && enumValue(config[key('orientation', 'Orientation')], ['VERTICAL', 'HORIZONTAL'], 'VERTICAL', `${cpath}.${key('orientation', 'Orientation')}`) === 'HORIZONTAL',
     stacked: kind === 'bar' && enumValue(config[key('barsArrangement', 'BarsArrangement')], ['CLUSTERED', 'STACKED'], 'CLUSTERED', `${cpath}.${key('barsArrangement', 'BarsArrangement')}`) === 'STACKED',
     labels: visibility(labels, key('visibility', 'Visibility'), kind === 'pie' ? 'VISIBLE' : 'HIDDEN'),
