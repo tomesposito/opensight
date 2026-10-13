@@ -60,7 +60,7 @@ export function ConnectorDetails({ id, client, local, postgresSource, onPrep, on
   const [status, setStatus] = useState<ConnectorState>(availability);
   const [error, setError] = useState('');
   const [upload, setUpload] = useState<UploadSummary>();
-  const notify = useToast(), notifiedUpload = useRef<string>();
+  const notify = useToast(), notifiedUpload = useRef<string | undefined>(undefined);
   const update = (key: string, value: string) => { setError(''); setUpload(undefined); setStatus(availability()); setConfig(current => { const next = { ...current }; if (value) next[key] = value; else delete next[key]; if (key === 'format') { delete next.delimiter; delete next.sheet; } return next; }); };
   const submit = async () => {
     if (!client || !enabled || busy) return;
