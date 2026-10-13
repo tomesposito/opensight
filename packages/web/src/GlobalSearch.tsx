@@ -54,7 +54,7 @@ export function GlobalSearchDialog({ navigate, onClose }: { navigate: Navigate; 
   const [query, setQuery] = useState(''), [filter, setFilter] = useState<'all' | 'favorites' | 'analysis'>('all');
   const [selected, setSelected] = useState<string>();
   const dialogRef = useRef<HTMLDialogElement>(null), inputRef = useRef<HTMLInputElement>(null), closeRef = useRef<HTMLButtonElement>(null);
-  const previous = useRef<HTMLElement | null>(null), composing = useRef(false), opened = useRef<string>();
+  const previous = useRef<HTMLElement | null>(null), composing = useRef(false), opened = useRef<string | undefined>(undefined);
   const id = useId();
   const results = searchAssets(loaded.assets, query, filter);
   const recents = !query.trim();
