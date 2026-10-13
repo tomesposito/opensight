@@ -1,7 +1,8 @@
 ---
-status: 🚧 Draft
+status: ✅ Confirmed
 owner: Tom Esposito
 date: 2026-10-13
+confirmed: 2026-10-13
 labels: [idd]
 ---
 
@@ -25,7 +26,42 @@ Billing/metering on API usage (gated behind HQ-14 entitlement work);
 multi-region; SLAs. The pilot is single-tenant-scoped like everything
 else (per #95).
 
-### 🚧 IDD D-38 — What should dashboard publish semantics be?
+### ✅ IDD D-38 — Dashboard publish semantics (confirmed 2026-10-13)
+
+#### DECISION (product owner, Tom, 2026-10-13)
+
+A dashboard is a **read-only version of the analysis, made for
+consuming**:
+
+- **Publishing freezes the definition, not the data.** Each publish
+  writes an immutable, versioned snapshot of the dashboard *definition*
+  (layout, visuals, filters/controls). The working analysis stays the
+  draft; editing it never rewrites a published version.
+- **Consumer interactivity is limited to what the author built in.**
+  Readers can use only the filters and controls added during the build —
+  no ad-hoc authoring, no visual changes, no field wells.
+- **Data stays live.** Queries backing a published dashboard run against
+  current data. As the underlying data advances, the dashboard reflects
+  it with no republish needed. Versions store the definition only —
+  never rendered snapshots (those would go stale by design).
+
+In the draft's option terms: the definition follows option 1
+(snapshot-and-version); the data follows option 2 (live reference).
+Because versions are definition-only, the retention question is cheap —
+keeping every version is viable, though an operator-configured cap
+remains sensible at scale.
+
+#### WHAT THIS SETTLES FROM THE OPEN QUESTIONS
+
+1. **Semantics: confirmed** — versioned definition, live data, as above.
+2. **Retention: keep every version by default** (definitions are small);
+   operator-configured cap allowed but not required for v1.
+3. **Rendered snapshots: no.** Definition only — data is live, so
+   rendered snapshots would contradict the decision.
+4. **Who can publish: still open**, carried to the dashboards slice —
+   presumably the analysis owner/editor, and presumably only from a
+   clean (valid) analysis state, but the slice will pin this down
+   rather than this IDD inventing auth rules.
 
 #### CONTEXT
 
@@ -97,17 +133,11 @@ point at published dashboards).
    document (two link behaviors), but it avoids forcing every consumer
    into one semantics.
 
-#### RECOMMENDATION (loop's proposal, not a decision)
+#### RECOMMENDATION — adopted as the decision above (2026-10-13)
 
-Option 1, snapshot-and-version — for the reasons the freeze draft named:
-immutable published artifacts are auditable, shared links are
-trustworthy, and the story composes with SR4b's immutable releases.
-Option 3 is a reasonable fallback if the "always fresh" use case turns
-out to matter more than the audit story; option 2 is the simplest but
-gives up the trust story that makes published dashboards worth sharing.
-
-None of this is decided. The dashboards slice waits on the product
-owner's call.
+The product owner confirmed the hybrid the decision records: versioned
+definition, live data, consumer interactivity limited to built-in
+filters/controls. The loop's option-1 recommendation is superseded.
 
 #### IMPLICATIONS
 

@@ -276,19 +276,15 @@ remains open — see below.
    proposes concrete verbs against the existing `BundleDefinition` shape;
    anything product-shaped comes back for review rather than freezing
    silently.
-6. **Dashboard publish semantics: OPEN.** There is no IDD covering this
-   yet — that is why it was a freeze question, not an oversight. Options:
-   - **Snapshot-and-version** (recommended): publishing captures an
-     immutable, versioned snapshot of the dashboard. Shared links never
-     change under the reader; every publish is auditable. Composes with
-     the SR4b immutable-release thinking already in the repo. Costs some
-     storage per version.
-   - **Live reference**: the dashboard always reflects the current
-     analysis state. Always fresh, simpler to build — but shared links
-     can change under readers and there is no audit trail of what was
-     published when.
-   
-   The dashboards slice is gated on this answer.
+6. **Dashboard publish semantics: FROZEN 2026-10-13 (IDD D-38 ✅).**
+   A dashboard is a read-only version of the analysis for consuming:
+   publishing freezes an immutable versioned *definition* (layout,
+   visuals, filters/controls); consumer interactivity is limited to the
+   filters/controls added at build time; data stays live so no republish
+   is needed as data advances. Versions store the definition only, never
+   rendered snapshots. Retention: keep every version by default;
+   operator-configured cap allowed. Who-can-publish is pinned down by
+   the dashboards slice.
 7. **MCP tool naming: mechanical 1:1 mapping — frozen.** REST is the
    source of truth; tool names (`create_dataset`, `run_query`,
    `add_visual`) are a mechanical mapping, not a second design.
