@@ -1,6 +1,7 @@
 import { useId, type Dispatch, type ReactNode } from 'react';
 import type { AuthorAction, AuthorDraft, AuthorVisual } from './authoring.js';
-import { GRID_COLUMNS, hasSmallMultiplesWell } from './authoring.js';
+import { GRID_COLUMNS, defaultMultiplesOptions, hasSmallMultiplesWell } from './authoring.js';
+import type { MultiplesOptions as MultiplesOptionsState } from './model.js';
 import { hasDataLabels, hasLegend, LEGEND_POSITIONS, type LegendPosition } from './formatting.js';
 
 type SectionProps = { visual: AuthorVisual; dispatch: Dispatch<AuthorAction> };
@@ -58,23 +59,68 @@ function TextButtons({ label, alignment = false }: { label: string; alignment?: 
   </>;
 }
 
-export function MultiplesOptions({ visual }: Pick<SectionProps, 'visual'>) {
+export function MultiplesOptions({ visual, dispatch }: SectionProps) {
   if (!hasSmallMultiplesWell(visual.kind) && !visual.smallMultiples?.length) return null;
+  const current = visual.multiplesOptions ?? defaultMultiplesOptions();
+  const set = (options: MultiplesOptionsState) => dispatch({ type: 'multiples-options', options });
+  const patch = (p: Partial<MultiplesOptionsState>) => set({ ...current, ...p });
+  // Auto-or-number editing: empty means "auto"; anything that is not a positive
+  // integer is ignored so the last valid value stays (fail-closed editing).
+  const autoOrNumber = (raw: string, apply: (value: 'auto' | number) => void) => {
+    const trimmed = raw.trim();
+    if (trimmed === '') { apply('auto'); return; }
+    if (/^\d+$/.test(trimmed) && Number(trimmed) >= 1) apply(Number(trimmed));
+  };
   return <details className="property-section"><summary>Multiples Options</summary>
-    <Unavailable label="Multiples options controls" reason="Faceted preview is supported for pie charts (automatic grid layout, up to 20 panels); other kinds are not supported yet. Panel styling controls are not applied.">
-      <h4 className="property-caption">Layout</h4>
+    <h4 className="property-caption">Layout</h4>
+    <div className="property-inline">
+      <label>Visible rows<input aria-label="Visible rows" placeholder="Auto" inputMode="numeric"
+        value={current.visibleRows === 'auto' ? '' : String(current.visibleRows)}
+        onChange={e => autoOrNumber(e.target.value, value => patch({ visibleRows: value }))} /></label>
+      <label>Visible columns<input aria-label="Visible columns" placeholder="Auto" inputMode="numeric"
+        value={current.visibleColumns === 'auto' ? '' : String(current.visibleColumns)}
+        onChange={e => autoOrNumber(e.target.value, value => patch({ visibleColumns: value }))} /></label>
+    </div>
+    <label>Number of panels<input type="number" min={1} max={20} aria-label="Number of panels" placeholder="20 (Default)"
+      value={current.panelCount}
+      onChange={e => { const n = Number(e.target.value); if (Number.isInteger(n) && n >= 1 && n <= 20) patch({ panelCount: n }); }} /></label>
+    <h4 className="property-caption">Panel title</h4>
+    <label>Title options<select aria-label="Panel title size" value={current.title.size}
+      onChange={e => { const size = e.target.value; if (size === 'small' || size === 'medium' || size === 'large') patch({ title: { ...current.title, size } }); }}>
+      <option value="small">Small</option><option value="medium">Medium</option><option value="large">Large</option>
+    </select></label>
+    <div className="property-inline" role="group" aria-label="Panel title emphasis">
+      {(['bold', 'italic', 'underline'] as const).map(flag => <button type="button" key={flag}
+        aria-label={`Panel title ${flag}`} aria-pressed={current.title[flag]}
+        onClick={() => patch({ title: { ...current.title, [flag]: !current.title[flag] } })}>
+        {flag === 'bold' ? <b>B</b> : flag === 'italic' ? <i>I</i> : <u>U</u>}</button>)}
+    </div>
+    <div className="property-inline" role="group" aria-label="Panel title alignment">
+      {(['left', 'center', 'right'] as const).map(align => <button type="button" key={align}
+        aria-label={`Panel title align ${align}`} aria-pressed={current.title.align === align}
+        onClick={() => patch({ title: { ...current.title, align } })}>{align[0]!.toUpperCase() + align.slice(1)}</button>)}
+    </div>
+    <p className="field-hint">Underline is saved with the visual, but panel titles cannot render it.</p>
+    <label className="toggle"><input type="checkbox" checked={current.border.enabled}
+      onChange={e => patch({ border: { ...current.border, enabled: e.target.checked } })} />Panel border</label>
+    {current.border.enabled && <>
+      <h4 className="property-caption">Border options</h4>
       <div className="property-inline">
-        <label>Visible rows<input placeholder="Auto" /></label><label>Visible columns<input placeholder="Auto" /></label>
+        <label>Width (px)<input type="number" min={1} step={1} aria-label="Panel border width in pixels" value={current.border.widthPx}
+          onChange={e => { const n = Number(e.target.value); if (Number.isFinite(n) && n > 0) patch({ border: { ...current.border, widthPx: n } }); }} /></label>
+        <label>Style<select aria-label="Panel border style" value={current.border.style}
+          onChange={e => { const style = e.target.value; if (style === 'solid' || style === 'dashed' || style === 'dotted') patch({ border: { ...current.border, style } }); }}>
+          <option value="solid">Solid</option><option value="dashed">Dashed</option><option value="dotted">Dotted</option>
+        </select></label>
+        <label>Color<input type="color" aria-label="Panel border color" value={current.border.color}
+          onChange={e => patch({ border: { ...current.border, color: e.target.value } })} /></label>
       </div>
-      <label>Number of panels<input placeholder="20 (Default)" /></label>
-      <label className="toggle"><input type="checkbox" />Panel title</label>
-      <label>Title options<select defaultValue="Small"><option>Small</option></select></label>
-      <TextButtons label="Panel title" alignment />
-      <label className="toggle"><input type="checkbox" />Panel border</label>
-      <label>Border options<select defaultValue="1px"><option>1px</option></select></label>
-      <label className="toggle"><input type="checkbox" />Panel gutter</label>
-      <label className="toggle"><input type="checkbox" />Panel background</label>
-    </Unavailable>
+      <p className="field-hint">Dashed and dotted borders are saved, but render as solid lines.</p>
+    </>}
+    <label className="toggle"><input type="checkbox" checked={current.gutter}
+      onChange={e => patch({ gutter: e.target.checked })} />Panel gutter</label>
+    <label className="toggle"><input type="checkbox" checked={current.background}
+      onChange={e => patch({ background: e.target.checked })} />Panel background</label>
   </details>;
 }
 

@@ -546,7 +546,7 @@ function Properties({ visual, draft, dispatch, client, runtimeProblems }: Editor
     {visual.kind === 'gauge' && <>{(['min', 'max'] as const).map(bound => <label key={bound}>Gauge {bound === 'min' ? 'minimum' : 'maximum'}<input type="number" step="any" value={visual.gauge?.[bound] ?? (bound === 'min' ? 0 : 100)} onChange={e => { if (e.target.value.trim()) dispatch({ type: 'gauge', min: visual.gauge?.min ?? 0, max: visual.gauge?.max ?? 100, [bound]: Number(e.target.value) }); }} /></label>)}<p>Minimum must be smaller than maximum.</p></>}
     {visual.kind === 'histogram' && <label>Histogram bins<input type="number" min="1" max="100" value={visual.bins ?? 10} onChange={e => dispatch({ type: 'bins', bins: Number(e.target.value) })} /></label>}
     </details>
-    <MultiplesOptions visual={visual} />
+    <MultiplesOptions visual={visual} dispatch={dispatch} />
     <GroupColorOptions visual={visual} dispatch={dispatch} />
     <LegendOptions visual={visual} dispatch={dispatch} />
     <DataLabelsOptions visual={visual} dispatch={dispatch} />
