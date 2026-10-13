@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { compileVisual, normalizeVisual, CompileError } from '../build/test/compiler.js';
+import { init } from '../build/test/echarts.js';
 import { authorReducer, emptyDraft, activeSheet, serializeVisual } from '../build/test/authoring.js';
 import { buildAuthorVisual, buildAuthorPreview } from '../build/test/author-preview.js';
 
@@ -75,6 +76,17 @@ test('more than 20 facets truncate with a warning', () => {
   const { model, option } = compileVisual(facetedInput(many));
   assert.equal(option.series.length, 20);
   assert.match(model.warnings.join('\n'), /21 small-multiple panels exceed the 20-panel limit/);
+});
+
+test('facet titles render through the registered ECharts title component', () => {
+  const { option } = compileVisual(facetedInput(rows));
+  const chart = init(null, undefined, { renderer: 'svg', ssr: true, width: 700, height: 400 });
+  try {
+    chart.setOption(option);
+    const svg = chart.renderToSVGString();
+    assert.match(svg, />East</);
+    assert.match(svg, />West</);
+  } finally { chart.dispose(); }
 });
 
 test('detailed tooltips resolve the row inside its own facet', () => {
