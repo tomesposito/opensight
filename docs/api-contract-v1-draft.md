@@ -300,8 +300,15 @@ dependencies are frozen may build; the dashboards slice waits on #6.
 
 ## Slice mapping
 
-- **Datasets slice**: version the dataset/upload/refresh surface; add the
-  lineage view and the source-deletion pin-down; contract tests.
+- **Datasets slice**: ✅ shipped 2026-10-13 (master: `docs/headless-v1-datasets.md`,
+  machine-readable contract `docs/api/openapi-v1.yaml`, contract tests
+  `packages/api/test/v1-datasets.test.mjs`). Versioned dataset/source
+  surface, lineage view, fail-closed source-deletion pin-down, and the v1
+  conventions (named error codes, `Limit`/`Cursor` header pagination —
+  headers, not query strings, because the hosted plane rejects `?…` at the
+  request boundary — `Idempotency-Key` on mutations, per-tenant rate
+  limiting). Upload durability primitives stay unversioned until #91's
+  protocol work lands.
 - **Querying slice**: version the query endpoints; pin the no-raw-SQL
   rule in tests (injection attempts rejected by construction); contract
   tests for the stable result shape.
