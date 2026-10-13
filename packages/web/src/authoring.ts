@@ -738,6 +738,9 @@ export function serializeVisual(visual: AuthorVisual, includeInteractions = true
   switch (visual.kind) {
     case 'pie': return { pieChartVisual: { ...body, chartConfiguration: { ...display,
       fieldWells: { pieChartAggregatedFieldWells: { category, values, ...multiples } }, donutOptions: { arcOptions: { arcThickness: visual.donut ? 'MEDIUM' : 'WHOLE' } },
+      // OpenSight extension: the Multiples Options panel state round-trips
+      // through the bundle; the compiler parses it back into the model.
+      ...(visual.multiplesOptions ? { opensightMultiplesOptions: visual.multiplesOptions } : {}),
     } } };
     case 'bar': return { barChartVisual: { ...body, chartConfiguration: { ...display, orientation: visual.horizontal ? 'HORIZONTAL' : 'VERTICAL', barsArrangement: visual.stacked ? 'STACKED' : 'CLUSTERED', fieldWells: { barChartAggregatedFieldWells: { category, values, ...multiples } } } } };
     case 'line': return { lineChartVisual: { ...body, chartConfiguration: { ...display, fieldWells: { lineChartAggregatedFieldWells: { category, values, ...multiples } } } } };

@@ -11,7 +11,7 @@ import { importControls, importParameterFilter, serializeControl, serializeFilte
 import { importParameter, serializeParameter, type AuthorParameter } from './parameters.js';
 import { assembleQsBundle, parseBundleJson, parseQsBundle, summarizeQsBundle, ZIP_LIMITS } from '@opensight/bundle-parser/browser';
 import type { BundleDefinition, BundleSheet, BundleVisual, QsBundle } from '@opensight/bundle-parser';
-import { defaults, emptyDraft, serializeDraft, serializeVisual, grouped, noDimensions, singleMeasure, validateDraft, dataFields, calculationError, sheetParameters } from './authoring.js';
+import { defaults, emptyDraft, serializeDraft, serializeVisual, grouped, noDimensions, singleMeasure, validateDraft, dataFields, calculationError, sheetParameters, multiplesOptionsValid } from './authoring.js';
 import type { AuthorDraft, AuthorSheet, AuthorVisual, CalculatedField, CategoryFilter, ImportResult, ImportedVisual, Placement, TooltipExtraField } from './authoring.js';
 
 type Obj = Record<string, unknown>;
@@ -168,6 +168,8 @@ function importVisual(raw: BundleVisual, id: string, definition: BundleDefinitio
     ...(legendPositionValid(legendPosition) ? { formatting: { ...(formattingValid(body.opensightFormatting) ? copy(body.opensightFormatting) : {}), legendPosition } } : {}),
     ...(kind === 'gauge' && gaugeValid(config.opensightGauge) ? { gauge: copy(config.opensightGauge) } : {}),
     ...(kind === 'histogram' && binsValid(config.opensightBins) ? { bins: config.opensightBins } : {}),
+    // OpenSight extension: pie Multiples Options panel state imports into the draft.
+    ...(kind === 'pie' && multiplesOptionsValid(config.opensightMultiplesOptions) ? { multiplesOptions: copy(config.opensightMultiplesOptions) } : {}),
     ...(validLines.length > 0 && hasReferenceLines(kind) ? { referenceLines: validLines.map((line, index) => ({ id: `refline-${index + 1}`, ...line })) } : {}),
     titleVisible: obj(body.title).visibility !== 'HIDDEN', dimension: noDimensions(kind) ? null : rows[0] ?? null,
     rows: grouped(kind) ? rows : [], columns, measures: singleMeasure(kind) ? measures.slice(0, 1) : measures,
