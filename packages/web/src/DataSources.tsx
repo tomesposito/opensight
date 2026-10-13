@@ -3,6 +3,7 @@ import { connectors, connectorDefinition, connectorState, validateConnectorConfi
 import type { createApiClient } from './api-client.js';
 import type { UploadSummary } from '@opensight/query-engine';
 import { DirectUpload, type DirectUploadClient } from './DirectUpload.js';
+import { useToast } from './Toasts.js';
 
 type Client = Pick<ReturnType<typeof createApiClient>, 'uploadFile' | 'validateConnector' | 'listPrepSources'> & Partial<DirectUploadClient & Pick<ReturnType<typeof createApiClient>, 'getTransportCapabilities'>>;
 export function DataSources({ client, local = false, onPrep }: { client?: Client; local?: boolean; onPrep?: (source?: string) => void }) {
@@ -59,6 +60,7 @@ export function ConnectorDetails({ id, client, local, postgresSource, onPrep, on
   const [status, setStatus] = useState<ConnectorState>(availability);
   const [error, setError] = useState('');
   const [upload, setUpload] = useState<UploadSummary>();
+  const notify = useToast(), notifiedUpload = useRef<string | undefined>(undefined);
   const update = (key: string, value: string) => { setError(''); setUpload(undefined); setStatus(availability()); setConfig(current => { const next = { ...current }; if (value) next[key] = value; else delete next[key]; if (key === 'format') { delete next.delimiter; delete next.sheet; } return next; }); };
   const submit = async () => {
     if (!client || !enabled || busy) return;
@@ -74,7 +76,14 @@ export function ConnectorDetails({ id, client, local, postgresSource, onPrep, on
         for (let offset = 0; offset < bytes.length; offset += 8192) chunks.push(String.fromCharCode(...bytes.subarray(offset, offset + 8192)));
         const binary = chunks.join('');
         const uploaded = await client.uploadFile({ config: validated, base64: btoa(binary) });
-        if (mounted.current) { setUpload(uploaded); onUploaded?.(uploaded.id); }
+        if (mounted.current) {
+          setUpload(uploaded);
+          if (notifiedUpload.current !== uploaded.id) {
+            notifiedUpload.current = uploaded.id;
+            notify(`Upload staged: ${uploaded.rowCount.toLocaleString()} rows · ${uploaded.columns.length} columns`);
+          }
+          onUploaded?.(uploaded.id);
+        }
       } else setStatus(await client.validateConnector(id, validated));
     } catch (e) { setError(e instanceof Error ? e.message : 'Unable to process the source.'); }
     finally { setBusy(false); }
