@@ -37,16 +37,15 @@ test('navigation commands use existing destinations and hide routes denied to re
   navigationCommands(reader, route => readerCalls.push(route.page)).forEach(command => command.run());
   assert.deepEqual(readerCalls.sort(), Object.keys(pages).filter(page => !routeProblem(reader, page)).sort());
 });
-test('rail Search closes the navigation overlay and opens the existing global palette', async t => {
+test('rail Search closes the navigation overlay and opens the find-anything modal', async t => {
   const ui = await mountPalette(t, { route: '#/my-stuff' });
   await ui.click('Toggle navigation');
   assert.equal(ui.renderer.root.findByProps({ id: 'product-navigation' }).props['data-open'], true);
-  await ui.click('Search navigation and commands');
+  await ui.click('Search');
   assert.equal(ui.renderer.root.findByProps({ id: 'product-navigation' }).props['data-open'], false);
   assert.equal(ui.renderer.root.findAllByType('dialog').length, 1);
-  assert.equal(ui.input().props.placeholder, 'Search commands…');
-  await ui.run('Go to Shared folders');
-  assert.equal(globalThis.window.location.hash, '#/folders/shared');
+  assert.equal(ui.input().props.placeholder, 'Find anything');
+  await ui.cancel();
   assert.equal(ui.renderer.root.findAllByType('dialog').length, 0);
 });
 for (const modifier of ['metaKey', 'ctrlKey']) test(`${modifier}+K opens a labelled modal with active option, and Escape restores focus`, async t => {

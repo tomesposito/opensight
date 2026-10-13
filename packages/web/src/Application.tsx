@@ -26,6 +26,7 @@ import { browserDraftStorage, createDraftStore, draftStorageKey } from './local-
 import { ToastProvider } from './Toasts.js';
 import { BackToTop } from './BackToTop.js';
 import { CommandPaletteProvider } from './CommandPalette.js';
+import { GlobalSearchProvider } from './GlobalSearch.js';
 import { LocalEmptyState } from './LocalEmptyState.js';
 import { Dashboards } from './Dashboards.js';
 import { FolderEmptyState, MyStuff } from './NavigationPages.js';
@@ -84,7 +85,7 @@ function ApplicationWorkspace({ api, fixtures }: { api: ReturnType<typeof create
       case 'fixtures': return fixture ? <Dashboard key={fixture.id} fixture={fixture} /> : <p role="status">No definition examples are included in this build. Use API definition preview to load a definition from a hosted API.</p>;
     }
   };
-  return <CommandPaletteProvider navigate={navigate}><div className="app-shell" data-workspace={access.mode} data-page={mode}>
+  return <CommandPaletteProvider navigate={navigate}><GlobalSearchProvider navigate={navigate}><div className="app-shell" data-workspace={access.mode} data-page={mode}>
     {!editing && identity()}
     <main className={mode === 'author' && !choosingDataset ? 'author-main' : undefined}>{content()}</main>
     {choosingDataset && <CreateAnalysisDialog client={connected ? api : undefined} sampleAvailable={access.mode === 'demo' || sampleLoaded} offline={!connected}
@@ -94,7 +95,7 @@ function ApplicationWorkspace({ api, fixtures }: { api: ReturnType<typeof create
     {!problem && (mode === 'data' || mode === 'data-sources') && (creation || route?.createDataset) && <CreateDatasetDialog client={connected ? api : undefined} start={creation ?? 'dataset'} onClose={() => { setCreation(undefined); if (route?.createDataset) navigate({ page: 'data' }, true); }} onPrep={sourceId => { setCreation(undefined); navigate({ page: 'data-prep', sourceId }); }} />}
     <footer className="app-footer">OpenSight · Local rendering preview · visual fidelity not measured</footer>
     <BackToTop />
-  </div></CommandPaletteProvider>;
+  </div></GlobalSearchProvider></CommandPaletteProvider>;
 }
 
 function ApiExplorer({ example, api, fixtures }: { example?: Fixture; api: ReturnType<typeof createApiClient>; fixtures: Fixture[] }) {
