@@ -1,7 +1,8 @@
 ---
-status: 🚧 Draft
+status: ✅ Confirmed
 owner: Tom Esposito
 date: 2026-10-13
+confirmed: 2026-10-13
 labels: [idd]
 ---
 
@@ -67,17 +68,38 @@ not guesses.
    mechanical projection. Novel, but it inverts the mature contract-testing
    story REST tooling already gives us.
 
-#### REASONING (proposed — awaiting product-owner decision)
+#### REASONING (confirmed by product owner, 2026-10-13)
 
-The proposed lean follows #95: REST+OpenAPI is the foundation because a
-single versioned spec gives SDK/CLI generation and contract tests one source
-of truth; MCP is probably the highest-leverage second shape because coding
-agents call tools directly. UI consuming the same API (no privileged
-internal paths — the web app is just another API client) is what keeps the
-API honest; that principle is load-bearing and should survive whichever
-shape ships first.
+REST+OpenAPI is the foundation because a single versioned spec gives
+SDK/CLI generation and contract tests one source of truth; MCP is the
+second shape because coding agents call tools directly. UI consuming the
+same API (no privileged internal paths — the web app is just another API
+client) is what keeps the API honest; that principle is load-bearing.
 
-#### IMPLICATIONS (apply only if the decisions are confirmed)
+Product-owner decisions (Tom, 2026-10-13, via #95):
+
+1. **Delivery sequencing: confirmed.** REST+OpenAPI first, MCP server
+   second, SDK/CLI generated from the spec (TypeScript first, Python
+   second).
+2. **Querying: no raw SQL through the API.** Agents run the SQL already
+   defined in a dataset, with basic parameterized filters only. This
+   closes the injection surface by construction: the API never accepts
+   arbitrary SQL text.
+3. **Scope: no fixed exclusion list.** The bar is maintaining the correct
+   security level and end-user value — builder-shaped everywhere it is
+   safe, admin-shaped QS behaviors stay out only where they would weaken
+   either.
+4. **Auth: user-level API credentials, scoped to user-tenant.** A
+   credential belongs to a user and can only act within that user's
+   tenant. This coordinates with the hosted identity model (operator-minted
+   invitations today); service-principal provisioning follows the same
+   invitation/minting path rather than inventing a parallel one.
+5. **Rate limiting: yes, from the start.** Every API route is rate-limited
+   to prevent abuse. This also lays the metering foundation for future
+   usage-based monetization to cover service cost — and it composes with
+   HQ-14 (usage events actively gate features/limits; Tom chose option B).
+
+#### IMPLICATIONS
 
 - Slicing: one slice per resource area (datasets, querying, analyses,
   dashboards, assets), each with contract tests; the MCP server as its own
@@ -87,23 +109,19 @@ shape ships first.
   version bump and migration notes.
 - **Machine-readable first.** Schemas, error codes, and pagination designed
   for programmatic use, not adapted from UI needs.
-- **Auth for non-humans.** API keys / service principals with scoped
-  permissions — agents shouldn't need a TOTP and a browser session. Note:
-  this touches the hosted identity model (the live system currently mints
-  no accounts — every auth route needs an operator-minted invitation token).
-  The auth shape for service principals needs a product-owner decision
-  alongside, or as part of, this IDD; this draft does not invent it.
+- **Auth: user-level API credentials scoped to user-tenant**, provisioned
+  through the existing operator invitation/minting path.
+- **Rate limiting on every API route** — abuse prevention now, metering
+  foundation for future usage-based monetization (composes with HQ-14).
 - A **frozen API contract** is required before any slice builds. Confirming
   this IDD removes the product gate; it does not claim any API is shipped.
 
-#### OPEN QUESTIONS FOR THE PRODUCT OWNER
+#### OPEN QUESTIONS — resolved 2026-10-13
 
-1. Delivery-shape sequencing: confirm REST+OpenAPI first, MCP second,
-   SDK/CLI generated — or adjust.
-2. Querying: SQL only, the visual query model only, or both?
-3. What "builder-shaped" excludes: which admin-shaped QS behaviors stay out
-   of v1, if any?
-4. Service-principal auth: API keys scoped per tenant, or a different model
-   tied to the hosted identity work?
+All four questions were answered by the product owner (see REASONING).
+A **frozen API contract** is still required before any slice builds —
+confirming this IDD removes the product gate; it does not claim any API
+is shipped. The contract freeze is the next step; the loop may draft it
+for review but must not invent endpoints.
 
 Related: [#95](https://github.com/tomesposito/opensight/issues/95)
