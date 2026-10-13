@@ -525,29 +525,74 @@ export function compileVisual(input: Input): CompiledVisual {
         if (i === undefined) { i = groups.length; seen.set(k, i); groups.push({ value, rows: [] }); }
         groups[i]!.rows.push(row);
       }
+      const opts = model.multiplesOptions;
       const MAX_FACETS = 20;
-      if (groups.length > MAX_FACETS) model.warnings.push(`${input.path}: ${groups.length} small-multiple panels exceed the 20-panel limit; showing the first ${MAX_FACETS}.`);
-      const shown = groups.slice(0, MAX_FACETS);
-      const n = shown.length;
-      const cols = n <= 1 ? 1 : n <= 4 ? 2 : 3;
-      const gridRows = Math.ceil(n / cols);
-      const topPad = 12, bottomPad = 14, cellH = (100 - topPad - bottomPad) / gridRows;
+      // The panel's Number of panels caps the grid; the 20-panel renderer limit always applies.
+      const panelCap = Math.min(opts?.panelCount ?? MAX_FACETS, MAX_FACETS);
+      if (groups.length > panelCap) model.warnings.push(`${input.path}: ${groups.length} small-multiple panels exceed the ${panelCap}-panel limit; showing the first ${panelCap}.`);
+      let shown = groups.slice(0, panelCap);
+      // Explicit visible rows/columns pin the grid (honored together with the
+      // panel cap); 'auto' keeps today's heuristic.
+      const fixedRows = typeof opts?.visibleRows === 'number' ? opts.visibleRows : undefined;
+      const fixedCols = typeof opts?.visibleColumns === 'number' ? opts.visibleColumns : undefined;
+      let cols: number, gridRows: number;
+      if (fixedRows !== undefined && fixedCols !== undefined) {
+        gridRows = fixedRows; cols = fixedCols;
+        const capacity = gridRows * cols;
+        if (shown.length > capacity) {
+          model.warnings.push(`${input.path}: ${shown.length} small-multiple panels exceed the ${gridRows}x${cols} visible grid; showing the first ${capacity}.`);
+          shown = shown.slice(0, capacity);
+        }
+      } else if (fixedRows !== undefined) { gridRows = fixedRows; cols = Math.max(1, Math.ceil(shown.length / gridRows)); }
+      else if (fixedCols !== undefined) { cols = fixedCols; gridRows = Math.ceil(shown.length / cols); }
+      else { const n = shown.length; cols = n <= 1 ? 1 : n <= 4 ? 2 : 3; gridRows = Math.ceil(n / cols); }
+      const topPad = 12, bottomPad = 14, cellH = (100 - topPad - bottomPad) / gridRows, cellW = 100 / cols;
+      // Gutter opens an inter-panel gap by shrinking each panel's content (and
+      // insetting its chrome below); the factor is an OpenSight approximation
+      // of the reference spacing, not measured QuickSight geometry.
+      const gutterShrink = opts?.gutter ? 0.92 : 1;
       // Radius is % of the container's smaller side; the fit holds for card
       // aspect ratios between roughly 2:3 and 5:2 (checked against the fit math).
-      const outer = `${Math.min(34 / cols, 0.42 * cellH).toFixed(1)}%`;
+      const outer = `${(Math.min(34 / cols, 0.42 * cellH) * gutterShrink).toFixed(1)}%`;
       option.series = shown.map((group, i) => {
         const c = i % cols, r = Math.floor(i / cols);
         return pieSeries(group.rows.map(pieDatum),
           [`${(((c + 0.5) / cols) * 100).toFixed(2)}%`, `${(topPad + (r + 0.5) * cellH).toFixed(2)}%`],
           [model.innerRadius, outer]);
       });
+      // Panel titles: absent options keep today's exact rendering (12px
+      // semibold, centered); explicit options apply the editor typography
+      // scale and alignment. Underline has no ECharts title support and is
+      // never faked — the flag stays in the model only.
+      const titleSize = opts ? { small: 11, medium: 13, large: 15 }[opts.title.size] : 12;
+      const titleWeight = opts ? (opts.title.bold ? 700 : 400) : 600;
+      const titleAlign = opts?.title.align ?? 'center';
       option.title = shown.map((group, i) => {
         const c = i % cols, r = Math.floor(i / cols);
+        // The title anchors to the panel edge matching its alignment.
+        const left = titleAlign === 'left' ? (c / cols) * 100 : titleAlign === 'right' ? ((c + 1) / cols) * 100 : ((c + 0.5) / cols) * 100;
         return {
-          text: displayCell(group.value), left: `${(((c + 0.5) / cols) * 100).toFixed(2)}%`, top: `${(topPad + r * cellH + 1.5).toFixed(2)}%`,
-          textAlign: 'center' as const, textStyle: { fontSize: 12, fontWeight: 600, color: theme.textColor, fontFamily: theme.fontFamily },
+          text: displayCell(group.value), left: `${left.toFixed(2)}%`, top: `${(topPad + r * cellH + 1.5).toFixed(2)}%`,
+          textAlign: titleAlign, textStyle: { fontSize: titleSize, fontWeight: titleWeight, ...(opts?.title.italic ? { fontStyle: 'italic' as const } : {}), color: theme.textColor, fontFamily: theme.fontFamily },
         };
       });
+      // Panel chrome: one ECharts grid per panel draws the border/background.
+      // ECharts grids cannot dash their border, so dashed/dotted render solid
+      // (the choice is preserved in the model and exports).
+      if (opts && (opts.border.enabled || opts.background)) {
+        const inset = opts.gutter ? 1.5 : 0;
+        option.grid = shown.map((_, i) => {
+          const c = i % cols, r = Math.floor(i / cols);
+          return {
+            show: true,
+            left: `${(c * cellW + inset).toFixed(2)}%`, top: `${(topPad + r * cellH + inset).toFixed(2)}%`,
+            width: `${(cellW - inset * 2).toFixed(2)}%`, height: `${(cellH - inset * 2).toFixed(2)}%`,
+            backgroundColor: opts.background ? '#f4f6f8' : 'transparent',
+            borderWidth: opts.border.enabled ? opts.border.widthPx : 0,
+            borderColor: opts.border.color,
+          };
+        });
+      }
       facetRowGroups = shown.map(group => group.rows);
     } else {
       option.series = [pieSeries(rows.map(pieDatum), ['50%', '45%'], [model.innerRadius, '70%'])];
