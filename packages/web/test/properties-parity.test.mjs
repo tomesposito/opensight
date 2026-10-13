@@ -79,7 +79,7 @@ test('CARD LAYOUT exposes disabled 24px reference padding with an accessible rea
 
 test('Multiples Options provides the complete disabled layout and typography controls', async t => {
   const ui = await mount(t, MultiplesOptions);
-  const group = unavailable(ui.root, 'Multiples options controls', /Faceted preview is supported for pie charts/);
+  const group = unavailable(ui.root, 'Multiples options controls', /Faceted preview and panel styling are not supported/);
   const labels = group.findAllByType('label').map(n => n.children.filter(c => typeof c === 'string').join(''));
   assert.deepEqual(labels, ['Visible rows', 'Visible columns', 'Number of panels', 'Panel title', 'Title options', 'Panel border', 'Border options', 'Panel gutter', 'Panel background']);
   assert.equal(group.findByProps({ placeholder: '20 (Default)' }).type, 'input');
