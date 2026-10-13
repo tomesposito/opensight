@@ -107,6 +107,19 @@ export class HostedPrep {
     const stored = await this.stored(context, id), graph = await this.graph(context, id, stored.resource.opensightPrep!);
     await this.data.finish(context, graph.leaves, graph.revisions); return stored;
   }
+  /** Headless v1 building block: schema columns, pipeline references and execution
+   * settings without running any data. `inputs` are the direct PrepInputs
+   * (source ids as strings, nested datasets as `{ dataset }`); callers walk
+   * them transitively with their own cycle guard. */
+  async describe(context: TenantContext, id: string) {
+    const stored = await this.stored(context, id), graph = await this.graph(context, id, stored.resource.opensightPrep!);
+    await this.data.finish(context, graph.leaves, graph.revisions);
+    const pipeline = stored.resource.opensightPrep!;
+    return { resource: stored.resource, version: stored.version, execution: stored.execution,
+      columns: this.plan(graph, id).columns.map(c => ({ name: c.name, type: c.type })),
+      steps: pipeline.steps.map(s => ({ id: s.id, kind: s.kind, name: s.name ?? null, from: s.from ?? null })),
+      inputs: references(pipeline).map(r => typeof r === 'string' ? { kind: 'source' as const, id: r } : { kind: 'dataset' as const, id: r.dataset }) };
+  }
   async list(context: TenantContext) {
     const rev = await this.data.sources.metadata.revisions(context), result = [];
     for (const r of await this.data.sources.metadata.list(context, 'prepared-dataset')) result.push(await this.get(context, r.id));
