@@ -651,7 +651,11 @@ export function authorVisualProblem(visual: AuthorVisual): string | undefined {
     const issues = visual.imported.replaced ? visual.imported.issues.filter(i => i.startsWith('Filter group ') || i.startsWith('Calculated field ')) : visual.imported.issues;
     if (issues.length) return `Unsupported features: ${issues.join('; ')}`;
   }
-  if (visual.smallMultiples?.length) return 'SMALL_MULTIPLES_UNSUPPORTED: Small multiples are saved in this draft. Faceted preview is not supported yet; remove the Small multiples field to preview this visual.';
+  if (visual.smallMultiples?.length) {
+    // Pie renders a faceted preview (QuickSight small-multiples parity); every
+    // other kind still fails closed until its faceted renderer exists.
+    if (visual.kind !== 'pie' || visual.smallMultiples.length !== 1) return 'SMALL_MULTIPLES_UNSUPPORTED: Small multiples are saved in this draft. Faceted preview is not supported yet; remove the Small multiples field to preview this visual.';
+  }
 }
 
 function columnField(name: string): BundleColumnField {
@@ -673,7 +677,7 @@ export function serializeVisual(visual: AuthorVisual, includeInteractions = true
     tooltip: { tooltipVisibility: visual.tooltipVisible ? 'VISIBLE' : 'HIDDEN', ...(visual.tooltipType === 'detailed' && tooltipDetailKinds(visual.kind) ? { selectedTooltipType: 'DETAILED', fieldBasedTooltip: {
       aggregationVisibility: visual.tooltipAggregations ? 'VISIBLE' : 'HIDDEN',
       tooltipTitleType: visual.tooltipTitleType === 'fieldId' ? 'FIELD_ID' : 'PRIMARY_VALUE',
-      tooltipFields: [...[...visualDimensions(visual), ...visual.measures].map(name => ({ fieldTooltipItem: { fieldId: name, visibility: visual.tooltipHiddenFields.includes(name) ? 'HIDDEN' : 'VISIBLE' } })),
+      tooltipFields: [...[...visualDimensions(visual), ...(visual.kind === 'pie' ? visual.smallMultiples ?? [] : []), ...visual.measures].map(name => ({ fieldTooltipItem: { fieldId: name, visibility: visual.tooltipHiddenFields.includes(name) ? 'HIDDEN' : 'VISIBLE' } })),
         ...visual.tooltipExtraFields.map(e => ({ fieldTooltipItem: { fieldId: e.field, visibility: 'VISIBLE' } }))],
       // OpenSight extension: per-extra-field label and aggregation, which the standard shape cannot express.
       ...(visual.tooltipExtraFields.length ? { opensightTooltipExtras: Object.fromEntries(visual.tooltipExtraFields.map(e =>
@@ -721,7 +725,9 @@ export function serializeDraft(draft: AuthorDraft): BundleAnalysis {
       filters: [serializeFilter(filter, `${visual.id}-filter-${index}`, 'sales_data', sheetParameters(draft, sheet))],
     })))),
     sheets: draft.sheets.map(sheet => ({ sheetId: sheet.id, name: sheet.name, ...serializeObjects(sheet.objects), ...(sheet.layoutSettings ? { opensightLayoutSettings: sheet.layoutSettings } : {}), ...(sheet.controls.length ? { parameterControls: sheet.controls.map(c => serializeControl(c, sheetParameters(draft, sheet), sheet.controls)) } : {}), visuals: sheet.visuals.map(visual => {
-      if (visual.smallMultiples?.length) throw new Error('SMALL_MULTIPLES_UNSUPPORTED: Remove Small multiples fields before exporting; the draft retains them.');
+      // Pie small multiples export to real QuickSight bundles (PieChartAggregatedFieldWells.smallMultiples);
+      // other kinds still fail closed until their faceted renderers exist.
+      if (visual.smallMultiples?.length && visual.kind !== 'pie') throw new Error('SMALL_MULTIPLES_UNSUPPORTED: Remove Small multiples fields before exporting; the draft retains them.');
       const definition = serializeVisual(visual, true, draft.calculatedFields, draft.dataset);
       normalizeVisual('bundle', serializeVisual(visual, false, draft.calculatedFields, draft.dataset), `sheets.${sheet.id}.${visual.id}`);
       return definition;

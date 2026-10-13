@@ -5,7 +5,7 @@ import { insightNarrative, type InsightNarrative } from './insight-narrative.js'
 import { insightGraphic } from './insight-graphic.js';
 import { LIGHT_THEME, themeValid, paletteValid } from './themes.js';
 import { formattingValid, fieldName, matchingRule, LEGEND_POSITIONS, type LegendPosition } from './formatting.js';
-import type { EChartsOption, BarSeriesOption, LineSeriesOption } from 'echarts';
+import type { EChartsOption, BarSeriesOption, LineSeriesOption, PieSeriesOption } from 'echarts';
 import type { Cell, Field, FixtureVisual, Row, VisualModel } from './model.js';
 
 import { EXTRA_VISUALS, extraKind, variantKinds, type VisualKind } from './visual-catalog.js';
@@ -187,10 +187,12 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
   const categoryKey = kind === 'pivot' ? key('rows', 'Rows') : kind === 'table' ? key('groupBy', 'GroupBy') : key('category', 'Category');
   const valueKey = key('values', 'Values');
   // Empty optional wells are harmless; nonempty colors/targets/trends change semantics.
-  const unused = [key('colors', 'Colors'), key('smallMultiples', 'SmallMultiples'), key('targetValues', 'TargetValues'), key('trendGroups', 'TrendGroups')];
+  // Pie parses SmallMultiples into model.facet below; every other kind still rejects it.
+  const smallMultiplesKey = key('smallMultiples', 'SmallMultiples');
+  const unused = [key('colors', 'Colors'), key('targetValues', 'TargetValues'), key('trendGroups', 'TrendGroups'), ...(kind === 'pie' ? [] : [smallMultiplesKey])];
   const wellKey = (name: string) => key(name, kind === 'waterfall' && name === 'category' ? 'Categories' : name.startsWith('opensight') ? `OpenSight${name.slice(9)}` : name[0]!.toUpperCase() + name.slice(1));
   if (kind === 'waterfall' && Object.hasOwn(wells, key('breakdowns', 'Breakdowns'))) fail(`${wpath}.${key('breakdowns', 'Breakdowns')}`, 'WATERFALL_BREAKDOWN_UNSUPPORTED: breakdowns are not yet supported');
-  keys(wells, [...(extra ? [...extra.dimensions, ...extra.measures].map(wellKey) : [categoryKey, valueKey]), ...(kind === 'pivot' ? [key('columns', 'Columns')] : []), ...unused], wpath);
+  keys(wells, [...(extra ? [...extra.dimensions, ...extra.measures].map(wellKey) : [categoryKey, valueKey]), ...(kind === 'pivot' ? [key('columns', 'Columns')] : []), ...(kind === 'pie' ? [smallMultiplesKey] : []), ...unused], wpath);
   for (const name of unused) if (list(wells[name], `${wpath}.${name}`).length) fail(`${wpath}.${name}`, 'field well not supported');
   const field = (value: unknown, measure: boolean, fp: string): Field => {
     const wrapper = object(value, fp);
@@ -225,6 +227,13 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
   const columnDimensions = kind === 'pivot' ? list(wells[key('columns', 'Columns')], wpath).map((v, i) => field(v, false, `${wpath}.columns[${i}]`)) : [];
   const dimensions = [...rowDimensions, ...columnDimensions];
   const measures = measureNames.flatMap(name => list(wells[name], `${wpath}.${name}`).map((v, i) => field(v, true, `${wpath}.${name}[${i}]`)));
+  // Pie small multiples: one facet dimension, rendered as a grid of per-facet pies.
+  let facet: Field | undefined;
+  if (kind === 'pie') {
+    const sm = list(wells[smallMultiplesKey], `${wpath}.${smallMultiplesKey}`);
+    if (sm.length > 1) fail(`${wpath}.${smallMultiplesKey}`, 'at most one Small multiples field is supported');
+    if (sm.length) facet = field(sm[0], false, `${wpath}.${smallMultiplesKey}[0]`);
+  }
   if (extra) {
     const d = dimensions.length, m = measures.length;
     if (kind === 'insight') {
@@ -255,7 +264,7 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
     if (kind === 'kpi' ? dimensions.length !== 0 : kind === 'pivot' || kind === 'table' ? dimensions.length < 1 : dimensions.length !== 1) fail(wpath, kind === 'kpi' ? 'KPI must have no category' : 'exactly one category/group field is supported');
     if (!measures.length || ((kind === 'pie' || kind === 'kpi') && measures.length !== 1)) fail(wpath, 'expected supported number of measures (pie/KPI: one)');
   }
-  const fields = [...dimensions, ...measures];
+  const fields = [...dimensions, ...(facet ? [facet] : []), ...measures];
   if (new Set(fields.map(f => f.id)).size !== fields.length) fail(wpath, 'duplicate field IDs');
   if (new Set(fields.map(f => f.dataSet)).size !== 1) fail(wpath, 'multiple datasets are unsupported');
   const warnings: string[] = extra ? [`${p}: ${extra.note}`] : [];
@@ -306,7 +315,7 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
   const tooltip = object(config[key('tooltip', 'Tooltip')] ?? {}, cpath);
   keys(tooltip, ['radar', 'sankey', 'waterfall'].includes(kind) ? [key('tooltipVisibility', 'TooltipVisibility')] : [key('tooltipVisibility', 'TooltipVisibility'), key('selectedTooltipType', 'SelectedTooltipType'), key('fieldBasedTooltip', 'FieldBasedTooltip')], `${cpath}.${key('tooltip', 'Tooltip')}`);
   const tooltipPath = `${cpath}.${key('tooltip', 'Tooltip')}`;
-  const tooltipDetail = parseTooltipDetail(tooltip, key, tooltipPath, [...dimensions, ...measures]);
+  const tooltipDetail = parseTooltipDetail(tooltip, key, tooltipPath, [...dimensions, ...(facet ? [facet] : []), ...measures]);
   const legend = object(config[key('legend', 'Legend')] ?? {}, cpath);
   keys(legend, [key('visibility', 'Visibility'), key('position', 'Position')], cpath);
   let innerRadius = '0%';
@@ -350,6 +359,7 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
     subtitle: subtitleText, subtitleVisible: visibility(subtitle, key('visibility', 'Visibility')),
     legendPosition: enumValue(legend[key('position', 'Position')] ?? (formattingValid(formatting) ? formatting.legendPosition : undefined), [...LEGEND_POSITIONS], 'BOTTOM', `${cpath}.legend.position`) as LegendPosition,
     dimensions, rowDimensions, columnDimensions, measures, totals, subtotals, columnTotals, columnSubtotals, innerRadius, sort: fieldSort, warnings,
+    ...(facet ? { facet } : {}),
     horizontal: (kind === 'bar' || kind === 'bar100') && enumValue(config[key('orientation', 'Orientation')], ['VERTICAL', 'HORIZONTAL'], 'VERTICAL', `${cpath}.${key('orientation', 'Orientation')}`) === 'HORIZONTAL',
     stacked: kind === 'bar' && enumValue(config[key('barsArrangement', 'BarsArrangement')], ['CLUSTERED', 'STACKED'], 'CLUSTERED', `${cpath}.${key('barsArrangement', 'BarsArrangement')}`) === 'STACKED',
     labels: visibility(labels, key('visibility', 'Visibility'), kind === 'pie' ? 'VISIBLE' : 'HIDDEN'),
@@ -366,7 +376,7 @@ export function compileVisual(input: Input): CompiledVisual {
   if (input.theme !== undefined && !themeValid(input.theme)) fail(input.path, 'invalid analysis theme');
   const theme = input.theme ?? LIGHT_THEME;
   const model = normalizeVisual(input.source, input.definition, input.path);
-  const fields = [...model.dimensions, ...model.measures];
+  const fields = [...model.dimensions, ...(model.facet ? [model.facet] : []), ...model.measures];
   // Extra tooltip fields ride the result rows as additional measures; they never join the wells,
   // the series, or the data table. Their column alias is the field id (the query plans outputName = fieldId).
   const extraFields: Field[] = (model.tooltipExtraFields ?? []).map(e =>
@@ -411,7 +421,9 @@ export function compileVisual(input: Input): CompiledVisual {
     });
   }
   if (model.dimensions[0] && !['box', 'histogram', 'scatter', 'pointMap', 'sankey'].includes(model.kind)) {
-    const categories = rows.map(row => JSON.stringify(model.dimensions.map(f => cell(row, f))));
+    // Faceted pies group by (facet, category): the same category may repeat across facets.
+    const keyFields = model.facet ? [model.facet, ...model.dimensions] : model.dimensions;
+    const categories = rows.map(row => JSON.stringify(keyFields.map(f => cell(row, f))));
     if (new Set(categories).size !== categories.length) fail(input.path, 'duplicate categories: expected aggregated result rows');
   }
   const state = input.rows === null ? 'unavailable' : rows.length ? 'ready' : 'empty';
@@ -424,6 +436,9 @@ export function compileVisual(input: Input): CompiledVisual {
     aria: { enabled: true },
   };
   let narrative: InsightNarrative | undefined;
+  // Faceted pies: per-facet row groups, so per-series row lookups (detailed
+  // tooltips, conditional-formatting rules) resolve against the right facet.
+  let facetRowGroups: Row[][] | undefined;
   if (model.kind === 'insight') {
     try { narrative = insightNarrative(rows.map(row => ({ category: cell(row, model.dimensions[0]!), values: model.measures.map(f => number(row, f)) })), { category: model.dimensions[0], measures: model.measures, computations: model.insightConfiguration, formatting: model.formatting }); }
     catch (error) { if (error instanceof InsightError) fail(input.path, error.message); throw error; }
@@ -434,16 +449,55 @@ export function compileVisual(input: Input): CompiledVisual {
   } else if (model.kind === 'pie') {
     const measure = model.measures[0]!;
     option.legend = { show: model.legend, bottom: 4, type: 'scroll' };
-    option.series = [{
-      type: 'pie', name: fieldName(measure, model.formatting), radius: [model.innerRadius, '70%'], center: ['50%', '45%'],
+    const pieDatum = (row: Row): { name: string; value: number } => {
+      const value = number(row, measure);
+      if (value === null || value < 0) fail(input.path, 'pie values must be nonnegative numbers; null slices are unsupported');
+      return { name: displayCell(cell(row, model.dimensions[0]!)), value };
+    };
+    const pieSeries = (data: { name: string; value: number }[], center: [string, string], radius: [string, string]): PieSeriesOption => ({
+      type: 'pie', name: fieldName(measure, model.formatting), radius, center,
       showEmptyCircle: false, stillShowZeroSum: false, avoidLabelOverlap: true,
       label: { show: model.labels, formatter: '{b}: {d}%' }, labelLine: { show: model.labels },
-      data: rows.map(row => {
-        const value = number(row, measure);
-        if (value === null || value < 0) fail(input.path, 'pie values must be nonnegative numbers; null slices are unsupported');
-        return { name: displayCell(cell(row, model.dimensions[0]!)), value };
-      }),
-    }];
+      data,
+    });
+    if (model.facet) {
+      // Small multiples: one pie per facet value on a grid, first-appearance order.
+      const groups: { value: Cell; rows: Row[] }[] = [];
+      const seen = new Map<string, number>();
+      for (const row of rows) {
+        const value = cell(row, model.facet);
+        const k = JSON.stringify(value);
+        let i = seen.get(k);
+        if (i === undefined) { i = groups.length; seen.set(k, i); groups.push({ value, rows: [] }); }
+        groups[i]!.rows.push(row);
+      }
+      const MAX_FACETS = 20;
+      if (groups.length > MAX_FACETS) model.warnings.push(`${input.path}: ${groups.length} small-multiple panels exceed the 20-panel limit; showing the first ${MAX_FACETS}.`);
+      const shown = groups.slice(0, MAX_FACETS);
+      const n = shown.length;
+      const cols = n <= 1 ? 1 : n <= 4 ? 2 : 3;
+      const gridRows = Math.ceil(n / cols);
+      const topPad = 12, bottomPad = 14, cellH = (100 - topPad - bottomPad) / gridRows;
+      // Radius is % of the container's smaller side; the fit holds for card
+      // aspect ratios between roughly 2:3 and 5:2 (checked against the fit math).
+      const outer = `${Math.min(34 / cols, 0.42 * cellH).toFixed(1)}%`;
+      option.series = shown.map((group, i) => {
+        const c = i % cols, r = Math.floor(i / cols);
+        return pieSeries(group.rows.map(pieDatum),
+          [`${(((c + 0.5) / cols) * 100).toFixed(2)}%`, `${(topPad + (r + 0.5) * cellH).toFixed(2)}%`],
+          [model.innerRadius, outer]);
+      });
+      option.title = shown.map((group, i) => {
+        const c = i % cols, r = Math.floor(i / cols);
+        return {
+          text: displayCell(group.value), left: `${(((c + 0.5) / cols) * 100).toFixed(2)}%`, top: `${(topPad + r * cellH + 1.5).toFixed(2)}%`,
+          textAlign: 'center' as const, textStyle: { fontSize: 12, fontWeight: 600, color: theme.textColor, fontFamily: theme.fontFamily },
+        };
+      });
+      facetRowGroups = shown.map(group => group.rows);
+    } else {
+      option.series = [pieSeries(rows.map(pieDatum), ['50%', '45%'], [model.innerRadius, '70%'])];
+    }
   } else if (model.kind === 'bar' || model.kind === 'line') {
     const category = { type: 'category' as const, data: rows.map(row => displayCell(cell(row, model.dimensions[0]!))), axisLabel: { hideOverlap: true }, ...(model.horizontal ? { inverse: true } : {}) };
     const value = { type: 'value' as const, splitLine: { lineStyle: { color: '#e7edef' } } };
@@ -471,7 +525,7 @@ export function compileVisual(input: Input): CompiledVisual {
   if (model.tooltip && model.tooltipDetail?.type === 'detailed') {
     if (DETAILED_TOOLTIP_KINDS.includes(model.kind)) {
       option.tooltip = { ...(typeof option.tooltip === 'object' && !Array.isArray(option.tooltip) ? option.tooltip : {}),
-        formatter: detailedTooltipFormatter(model, rows, cell, availableExtras) };
+        formatter: detailedTooltipFormatter(model, rows, cell, availableExtras, facetRowGroups) };
     } else {
       model.warnings.push(`detailed tooltips are not rendered for ${model.kind} visuals; using basic tooltips.`);
     }
@@ -491,7 +545,7 @@ export function compileVisual(input: Input): CompiledVisual {
       if (!('data' in series) || !Array.isArray(series.data)) return;
       const measures = model.kind === 'scatter' ? model.measures : [model.measures[index] ?? model.measures[0]!];
       series.data = series.data.map((datum: unknown, rowIndex: number) => {
-        const row = rows[rowIndex];
+        const row = (facetRowGroups?.[index] ?? rows)[rowIndex];
         const rule = row && model.formatting?.rules?.find(rule => {
           const field = measures.find(f => f.column === rule.fieldId || f.id === rule.fieldId);
           return field && matchingRule([rule], rule.fieldId, number(row, field));
@@ -533,16 +587,18 @@ const richTextEscape = (value: string): string => value.replace(/[{}]/g, ch => c
  */
 const TOOLTIP_AGGREGATION_WORD: Record<'SUM' | 'AVG' | 'MIN' | 'MAX' | 'COUNT', string> =
   { SUM: 'Sum', AVG: 'Avg', MIN: 'Min', MAX: 'Max', COUNT: 'Count' };
-function detailedTooltipFormatter(model: VisualModel, rows: Row[], cell: (row: Row, field: Field) => Cell, extraFields: Field[]): (params: unknown) => string {
+function detailedTooltipFormatter(model: VisualModel, rows: Row[], cell: (row: Row, field: Field) => Cell, extraFields: Field[], facetRows?: Row[][]): (params: unknown) => string {
   const detail = model.tooltipDetail!;
-  const fields = [...model.dimensions, ...model.measures].filter(f => !detail.hiddenFields.includes(f.id));
+  const fields = [...model.dimensions, ...(model.facet ? [model.facet] : []), ...model.measures].filter(f => !detail.hiddenFields.includes(f.id));
   const extras = (model.tooltipExtraFields ?? []).flatMap(e => {
     const field = extraFields.find(f => f.id === e.id);
     return field ? [{ ...e, field }] : [];
   });
   return (params: unknown): string => {
-    const first = (Array.isArray(params) ? params[0] : params) as { dataIndex?: unknown } | undefined;
-    const row = typeof first?.dataIndex === 'number' ? rows[first.dataIndex] : undefined;
+    const first = (Array.isArray(params) ? params[0] : params) as { dataIndex?: unknown; seriesIndex?: unknown } | undefined;
+    // Faceted pies report a per-series dataIndex; resolve against the facet's rows.
+    const pool = facetRows && typeof first?.seriesIndex === 'number' ? facetRows[first.seriesIndex] ?? rows : rows;
+    const row = typeof first?.dataIndex === 'number' ? pool[first.dataIndex] : undefined;
     if (!row) return '';
     const titleField = model.dimensions[0] ?? model.measures[0];
     const title = detail.titleType === 'primaryValue' && model.dimensions[0]

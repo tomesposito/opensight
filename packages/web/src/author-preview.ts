@@ -22,9 +22,11 @@ export function buildAuthorPreview(visual: AuthorVisual): FixtureVisual {
   const grain = noDimensions(visual.kind) ? 'total-revenue'
     : dimensions.length === 1 ? grains[dimensions[0] as keyof typeof grains] : undefined;
   // Pinned oracles cover only the four reviewed grains and cannot supply extra tooltip
-  // measures. Extras go through the same query-engine evaluation the live fixture path uses,
-  // so the preview shows real values at the visual's grain; failures yield no rows.
-  const rows = visual.tooltipExtraFields.length
+  // measures or facet groupings. Extras and pie small-multiples facets go through the same
+  // query-engine evaluation the live fixture path uses, so the preview shows real values
+  // at the visual's grain; failures yield no rows.
+  const faceted = visual.kind === 'pie' && !!visual.smallMultiples?.length;
+  const rows = visual.tooltipExtraFields.length || faceted
     ? (() => { const request = buildAuthorQuery(visual); return request ? executeFixtureQuery(request).rows : null; })()
     : !authorVisualProblem(visual) && !visual.filters.length && visual.measures.length === 1 && visual.measures[0] === 'revenue' && grain
       ? oracles.get(grain) ?? null : null;
@@ -39,7 +41,7 @@ export function buildAuthorVisual(visual: AuthorVisual, calculations: readonly C
     ...(visual.filterActions?.length ? { filterActions: [...visual.filterActions] } : {}),
     ...(visual.urlActions?.length ? { urlActions: [...visual.urlActions] } : {}),
     ...(visual.navigationActions?.length ? { navigationActions: [...visual.navigationActions] } : {}),
-    bindings: Object.fromEntries(visualDimensions(visual).filter(name => dataFields(calculations, dataset).some(f => f.name === name && f.type === 'DATETIME')).map(name => [name, (visual.dateGrain ?? 'MONTH').toLowerCase()])),
+    bindings: Object.fromEntries([...visualDimensions(visual), ...(visual.kind === 'pie' ? visual.smallMultiples ?? [] : [])].filter(name => dataFields(calculations, dataset).some(f => f.name === name && f.type === 'DATETIME')).map(name => [name, (visual.dateGrain ?? 'MONTH').toLowerCase()])),
     placement: { column: 0, columns: 36, row: 0, rows: 6 },
     path: `author.${visual.id}`,
   };

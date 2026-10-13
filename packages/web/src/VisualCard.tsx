@@ -1,6 +1,6 @@
 import { insightGraphic } from './insight-graphic.js';
 import { LIGHT_THEME } from './themes.js';
-import { fieldRule } from './formatting.js';
+import { fieldName, fieldRule } from './formatting.js';
 import { rowSelection, brushSelection, type VisualInteraction } from './visual-selection.js';
 import { Fragment, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { VisualSkeleton } from './VisualSkeleton.js';
@@ -127,6 +127,7 @@ export function VisualCard({ visual, dataMessage, loading = false, definitionPre
         </div>}
       </div>
       <footer className="card-footer">
+        {compiled.model.facet && <p className="facet-caption">Group by: {fieldName(compiled.model.facet, compiled.model.formatting)}</p>}
         {compiled.state === 'ready' && compiled.model.kind !== 'table' && compiled.model.kind !== 'pivot' && <details><summary>View data · {compiled.table.rows.length} {compiled.table.rows.length === 1 ? 'row' : 'rows'}</summary><DataTable compiled={compiled} interaction={interaction} /></details>}
         {!!compiled.model.warnings.length && <details className="render-notes"><summary>Rendering notes · {compiled.model.warnings.length}</summary><ul>{compiled.model.warnings.map(warning => <li key={warning}>{warning}</li>)}</ul></details>}
       </footer>

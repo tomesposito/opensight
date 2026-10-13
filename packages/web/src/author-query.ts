@@ -12,7 +12,9 @@ export function buildAuthorQuery(visual: AuthorVisual, calculations: readonly Ca
   if (authorVisualProblem(visual)) return null;
   const dimensions = visualDimensions(visual);
   if (!visual.measures.length || (!noDimensions(visual.kind) && !dimensions.length)) return null;
-  const relevant = queryDependencies([...dimensions, ...visual.measures, ...visual.tooltipExtraFields.map(e => e.field), ...visual.filters.map(f => f.columnName), ...(visual.interactionFilters ?? []).map(f => f.columnName)], calculations);
+  // Pie small multiples facet like a second dimension: the query groups by (category, facet).
+  const facetNames = visual.kind === 'pie' ? visual.smallMultiples ?? [] : [];
+  const relevant = queryDependencies([...dimensions, ...facetNames, ...visual.measures, ...visual.tooltipExtraFields.map(e => e.field), ...visual.filters.map(f => f.columnName), ...(visual.interactionFilters ?? []).map(f => f.columnName)], calculations);
   const names = new Set([...visual.filters.flatMap(f => f.parameterName ? [f.parameterName] : []), ...relevant.flatMap(c => [...c.expression.matchAll(/\$\{([^}]+)\}/g)].map(m => m[1]!))]);
   const used = parameters.filter(p => names.has(p.name));
   const dynamic = (visual.interactionFilters ?? []).map((filter, i) => {
@@ -21,8 +23,10 @@ export function buildAuthorQuery(visual: AuthorVisual, calculations: readonly Ca
     return { filter, parameter: { name, type: filter.type, multiple: filter.values.length !== 1, id: name, values: filter.values, defaultValues: filter.values } };
   });
   const bound = [...used, ...dynamic.map(d => d.parameter)];
+  const dimensionDescriptor = (name: string) =>
+    ({ fieldId: name, columnName: name, ...(dataFields(calculations, dataset).find(f => f.name === name)?.type === 'DATETIME' ? { granularity: visual.dateGrain ?? 'MONTH' } : {}) });
   return {
-    dimensions: dimensions.map(name => ({ fieldId: name, columnName: name, ...(dataFields(calculations, dataset).find(f => f.name === name)?.type === 'DATETIME' ? { granularity: visual.dateGrain ?? 'MONTH' } : {}) })),
+    dimensions: [...dimensions.map(dimensionDescriptor), ...facetNames.map(dimensionDescriptor)],
     measures: [...visual.measures.map(name => ({ fieldId: name, columnName: name, aggregation: 'SUM' })),
       // Extra tooltip measures aggregate at the visual's existing grain; they never change grouping.
       ...visual.tooltipExtraFields.map(e => ({ fieldId: e.field, columnName: e.field, aggregation: e.aggregation }))],
