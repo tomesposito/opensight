@@ -12,7 +12,7 @@ export function buildAuthorQuery(visual: AuthorVisual, calculations: readonly Ca
   if (authorVisualProblem(visual)) return null;
   const dimensions = visualDimensions(visual);
   if (!visual.measures.length || (!noDimensions(visual.kind) && !dimensions.length)) return null;
-  const relevant = queryDependencies([...dimensions, ...visual.measures, ...visual.filters.map(f => f.columnName), ...(visual.interactionFilters ?? []).map(f => f.columnName)], calculations);
+  const relevant = queryDependencies([...dimensions, ...visual.measures, ...visual.tooltipExtraFields.map(e => e.field), ...visual.filters.map(f => f.columnName), ...(visual.interactionFilters ?? []).map(f => f.columnName)], calculations);
   const names = new Set([...visual.filters.flatMap(f => f.parameterName ? [f.parameterName] : []), ...relevant.flatMap(c => [...c.expression.matchAll(/\$\{([^}]+)\}/g)].map(m => m[1]!))]);
   const used = parameters.filter(p => names.has(p.name));
   const dynamic = (visual.interactionFilters ?? []).map((filter, i) => {
@@ -23,7 +23,9 @@ export function buildAuthorQuery(visual: AuthorVisual, calculations: readonly Ca
   const bound = [...used, ...dynamic.map(d => d.parameter)];
   return {
     dimensions: dimensions.map(name => ({ fieldId: name, columnName: name, ...(dataFields(calculations, dataset).find(f => f.name === name)?.type === 'DATETIME' ? { granularity: visual.dateGrain ?? 'MONTH' } : {}) })),
-    measures: visual.measures.map(name => ({ fieldId: name, columnName: name, aggregation: 'SUM' })),
+    measures: [...visual.measures.map(name => ({ fieldId: name, columnName: name, aggregation: 'SUM' })),
+      // Extra tooltip measures aggregate at the visual's existing grain; they never change grouping.
+      ...visual.tooltipExtraFields.map(e => ({ fieldId: e.field, columnName: e.field, aggregation: e.aggregation }))],
     filters: [...visual.filters.map(f => f.parameterName ? { columnName: f.columnName, parameterName: f.parameterName, ...(f.operator ? { operator: f.operator } : {}) } : { columnName: f.columnName, values: f.values }), ...dynamic.map(({ filter, parameter }) => ({ columnName: filter.columnName, parameterName: parameter.name, ...(filter.operator ? { operator: filter.operator } : {}) }))],
     ...(relevant.length ? { calculatedFields: relevant.map(({ name, expression }) => ({ name, expression })) } : {}),
     ...(bound.length ? { parameterDeclarations: bound.map(declaration), parameterBindings: Object.fromEntries(bound.map(p => [p.name, p.values])) } : {}),

@@ -68,16 +68,35 @@ function extensionReferenceLines(value: unknown, path: string): { referenceLines
     .map(line => { const raw = line as { value: number; label?: unknown; color?: unknown }; return { value: raw.value, label: String(raw.label ?? ''), color: String(raw.color ?? '#c0392b') }; }) };
 }
 
+/** OpenSight extension: per-extra-tooltip-field label and aggregation annotations. Fail-closed on malformed shape. */
+function extensionTooltipExtras(value: unknown, path: string): Map<string, { label?: string; aggregation: 'SUM' | 'AVG' | 'MIN' | 'MAX' | 'COUNT' }> {
+  const result = new Map<string, { label?: string; aggregation: 'SUM' | 'AVG' | 'MIN' | 'MAX' | 'COUNT' }>();
+  if (value === undefined) return result;
+  const ext = object(value, path);
+  for (const [fieldId, entry] of Object.entries(ext)) {
+    if (!fieldId || fieldId.includes('\0')) fail(path, 'invalid tooltip extra field id');
+    const o = object(entry, `${path}.${fieldId}`);
+    keys(o, ['label', 'aggregation'], `${path}.${fieldId}`);
+    const label = o.label === undefined ? undefined : text(o.label, `${path}.${fieldId}.label`);
+    if (label !== undefined && label.length > 128) fail(`${path}.${fieldId}.label`, 'label is too long');
+    const aggregation = (o.aggregation === undefined ? 'SUM' : enumValue(o.aggregation, ['SUM', 'AVG', 'MIN', 'MAX', 'COUNT'], 'SUM', `${path}.${fieldId}.aggregation`)) as 'SUM' | 'AVG' | 'MIN' | 'MAX' | 'COUNT';
+    result.set(fieldId, { ...(label ? { label } : {}), aggregation });
+  }
+  return result;
+}
+
 /** QuickSight SelectedTooltipType / FieldBasedTooltip → renderer tooltip detail. Fail-closed on bad enums; unknown field ids are reported, never rendered. */
-function parseTooltipDetail(tooltip: ObjectValue, key: (archive: string, api: string) => string, path: string, fields: Field[]): { type: 'basic' | 'detailed'; titleType: 'primaryValue' | 'fieldId'; aggregations: boolean; hiddenFields: string[]; unknownFields: string[] } | undefined {
+function parseTooltipDetail(tooltip: ObjectValue, key: (archive: string, api: string) => string, path: string, fields: Field[]): { type: 'basic' | 'detailed'; titleType: 'primaryValue' | 'fieldId'; aggregations: boolean; hiddenFields: string[]; extraFields: { id: string; label?: string; aggregation: 'SUM' | 'AVG' | 'MIN' | 'MAX' | 'COUNT' }[] } | undefined {
   const typeKey = key('selectedTooltipType', 'SelectedTooltipType');
   const fieldKey = key('fieldBasedTooltip', 'FieldBasedTooltip');
   if (tooltip[typeKey] === undefined && tooltip[fieldKey] === undefined) return undefined;
   const type = enumValue(tooltip[typeKey], ['BASIC', 'DETAILED'], 'BASIC', `${path}.${typeKey}`) === 'DETAILED' ? 'detailed' : 'basic';
   const fb = object(tooltip[fieldKey] ?? {}, `${path}.${fieldKey}`);
-  keys(fb, [key('aggregationVisibility', 'AggregationVisibility'), key('tooltipTitleType', 'TooltipTitleType'), key('tooltipFields', 'TooltipFields')], `${path}.${fieldKey}`);
+  const extrasKey = key('opensightTooltipExtras', 'OpensightTooltipExtras');
+  keys(fb, [key('aggregationVisibility', 'AggregationVisibility'), key('tooltipTitleType', 'TooltipTitleType'), key('tooltipFields', 'TooltipFields'), extrasKey], `${path}.${fieldKey}`);
   const aggregations = enumValue(fb[key('aggregationVisibility', 'AggregationVisibility')], ['VISIBLE', 'HIDDEN'], 'VISIBLE', `${path}.${fieldKey}`) === 'VISIBLE';
   const titleType = enumValue(fb[key('tooltipTitleType', 'TooltipTitleType')], ['PRIMARY_VALUE', 'FIELD_ID'], 'PRIMARY_VALUE', `${path}.${fieldKey}`) === 'FIELD_ID' ? 'fieldId' : 'primaryValue';
+  const annotated = extensionTooltipExtras(fb[extrasKey], `${path}.${fieldKey}.${extrasKey}`);
   const fieldsKey = key('tooltipFields', 'TooltipFields');
   const itemsPath = `${path}.${fieldKey}.${fieldsKey}`;
   const rawFields = fb[fieldsKey];
@@ -90,16 +109,27 @@ function parseTooltipDetail(tooltip: ObjectValue, key: (archive: string, api: st
       return o[key('fieldTooltipItem', 'FieldTooltipItem')];
     })
     : list(object(rawFields, itemsPath)[key('fieldTooltipItem', 'FieldTooltipItem')], itemsPath);
-  const hiddenFields: string[] = [], unknownFields: string[] = [];
+  const hiddenFields: string[] = [];
+  const extraFields: { id: string; label?: string; aggregation: 'SUM' | 'AVG' | 'MIN' | 'MAX' | 'COUNT' }[] = [];
+  const seenExtras = new Set<string>();
   wrapped.forEach((item, i) => {
     const o = object(item, `${itemsPath}[${i}]`);
     keys(o, [key('fieldId', 'FieldId'), key('visibility', 'Visibility')], `${itemsPath}[${i}]`);
     const fieldId = text(o[key('fieldId', 'FieldId')], `${itemsPath}[${i}]`);
     const visible = enumValue(o[key('visibility', 'Visibility')], ['VISIBLE', 'HIDDEN'], 'VISIBLE', `${itemsPath}[${i}]`) === 'VISIBLE';
-    if (!fields.some(f => f.id === fieldId)) { unknownFields.push(fieldId); return; }
+    if (!fields.some(f => f.id === fieldId)) {
+      // A tooltip field outside the visual's wells is an added dataset field (measures only;
+      // dimensions would change the visual's grain and are refused upstream). The OpenSight
+      // extension annotates label/aggregation; foreign bundles without it get SUM defaults.
+      if (seenExtras.has(fieldId)) fail(`${itemsPath}[${i}]`, `duplicate tooltip field '${fieldId}'`);
+      seenExtras.add(fieldId);
+      const annotation = annotated.get(fieldId);
+      extraFields.push({ id: fieldId, ...(annotation?.label ? { label: annotation.label } : {}), aggregation: annotation?.aggregation ?? 'SUM' });
+      return;
+    }
     if (!visible) hiddenFields.push(fieldId);
   });
-  return { type, titleType, aggregations, hiddenFields, unknownFields };
+  return { type, titleType, aggregations, hiddenFields, extraFields };
 }
 
 /** Explicit dialect selection; camelCase includes the API converter's projections. */
@@ -277,7 +307,6 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
   keys(tooltip, ['radar', 'sankey', 'waterfall'].includes(kind) ? [key('tooltipVisibility', 'TooltipVisibility')] : [key('tooltipVisibility', 'TooltipVisibility'), key('selectedTooltipType', 'SelectedTooltipType'), key('fieldBasedTooltip', 'FieldBasedTooltip')], `${cpath}.${key('tooltip', 'Tooltip')}`);
   const tooltipPath = `${cpath}.${key('tooltip', 'Tooltip')}`;
   const tooltipDetail = parseTooltipDetail(tooltip, key, tooltipPath, [...dimensions, ...measures]);
-  for (const fieldId of tooltipDetail?.unknownFields ?? []) warnings.push(`${tooltipPath}: tooltip field '${fieldId}' is not in the visual and will not be shown.`);
   const legend = object(config[key('legend', 'Legend')] ?? {}, cpath);
   keys(legend, [key('visibility', 'Visibility'), key('position', 'Position')], cpath);
   let innerRadius = '0%';
@@ -326,6 +355,7 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
     labels: visibility(labels, key('visibility', 'Visibility'), kind === 'pie' ? 'VISIBLE' : 'HIDDEN'),
     tooltip: visibility(tooltip, key('tooltipVisibility', 'TooltipVisibility')),
     ...(tooltipDetail ? { tooltipDetail: { type: tooltipDetail.type, titleType: tooltipDetail.titleType, aggregations: tooltipDetail.aggregations, hiddenFields: tooltipDetail.hiddenFields } } : {}),
+    ...(tooltipDetail?.extraFields.length ? { tooltipExtraFields: tooltipDetail.extraFields } : {}),
     legend: visibility(legend, key('visibility', 'Visibility')),
     ...extensionReferenceLines(body[key('opensightReferenceLines', 'OpenSightReferenceLines')], `${p}.${key('opensightReferenceLines', 'OpenSightReferenceLines')}`),
   };
@@ -337,7 +367,11 @@ export function compileVisual(input: Input): CompiledVisual {
   const theme = input.theme ?? LIGHT_THEME;
   const model = normalizeVisual(input.source, input.definition, input.path);
   const fields = [...model.dimensions, ...model.measures];
-  for (const fieldId of Object.keys(input.bindings)) if (!fields.some(f => f.id === fieldId)) fail(input.path, `binding references unknown field ${fieldId}`);
+  // Extra tooltip fields ride the result rows as additional measures; they never join the wells,
+  // the series, or the data table. Their column alias is the field id (the query plans outputName = fieldId).
+  const extraFields: Field[] = (model.tooltipExtraFields ?? []).map(e =>
+    ({ id: e.id, column: e.id, dataSet: fields[0]?.dataSet ?? '' }));
+  for (const fieldId of Object.keys(input.bindings)) if (![...fields, ...extraFields].some(f => f.id === fieldId)) fail(input.path, `binding references unknown field ${fieldId}`);
   const cell = (row: Row, field: Field): Cell => {
     const alias = Object.hasOwn(input.bindings, field.id) ? input.bindings[field.id]! : field.column;
     if (!Object.hasOwn(row, alias)) fail(input.path, `missing result column ${alias} for field ${field.id}`);
@@ -355,6 +389,7 @@ export function compileVisual(input: Input): CompiledVisual {
   for (const row of rows) {
     object(row, input.path);
     for (const field of fields) cell(row, field);
+    for (const field of extraFields) cell(row, field);
     for (const field of model.measures) number(row, field);
   }
   if (model.sort) {
@@ -429,7 +464,7 @@ export function compileVisual(input: Input): CompiledVisual {
   if (model.tooltip && model.tooltipDetail?.type === 'detailed') {
     if (DETAILED_TOOLTIP_KINDS.includes(model.kind)) {
       option.tooltip = { ...(typeof option.tooltip === 'object' && !Array.isArray(option.tooltip) ? option.tooltip : {}),
-        formatter: detailedTooltipFormatter(model, rows, cell) };
+        formatter: detailedTooltipFormatter(model, rows, cell, extraFields) };
     } else {
       model.warnings.push(`detailed tooltips are not rendered for ${model.kind} visuals; using basic tooltips.`);
     }
@@ -484,13 +519,17 @@ const richTextEscape = (value: string): string => value.replace(/[{}]/g, ch => c
 /**
  * Detailed tooltip: title line plus one row per visible field (QuickSight parity).
  * Title is the category value (primaryValue) or the field label (fieldId); measures
- * show the aggregation ("Sum of") unless hidden. All measure bindings are SUM
- * (enforced at normalization), so the label is exact. Plain text: the richText
- * parser only treats `{name|...}` as markup, and dynamic braces are escaped below.
+ * show the aggregation ("Sum of") unless hidden. Visual measure bindings are SUM
+ * (enforced at normalization), so the label is exact; extra fields carry their own
+ * aggregation from the model. Plain text: the richText parser only treats
+ * `{name|...}` as markup, and dynamic braces are escaped below.
  */
-function detailedTooltipFormatter(model: VisualModel, rows: Row[], cell: (row: Row, field: Field) => Cell): (params: unknown) => string {
+const TOOLTIP_AGGREGATION_WORD: Record<'SUM' | 'AVG' | 'MIN' | 'MAX' | 'COUNT', string> =
+  { SUM: 'Sum', AVG: 'Avg', MIN: 'Min', MAX: 'Max', COUNT: 'Count' };
+function detailedTooltipFormatter(model: VisualModel, rows: Row[], cell: (row: Row, field: Field) => Cell, extraFields: Field[]): (params: unknown) => string {
   const detail = model.tooltipDetail!;
   const fields = [...model.dimensions, ...model.measures].filter(f => !detail.hiddenFields.includes(f.id));
+  const extras = (model.tooltipExtraFields ?? []).map(e => ({ ...e, field: extraFields.find(f => f.id === e.id)! }));
   return (params: unknown): string => {
     const first = (Array.isArray(params) ? params[0] : params) as { dataIndex?: unknown } | undefined;
     const row = typeof first?.dataIndex === 'number' ? rows[first.dataIndex] : undefined;
@@ -503,6 +542,11 @@ function detailedTooltipFormatter(model: VisualModel, rows: Row[], cell: (row: R
     for (const field of fields) {
       const label = detail.aggregations && model.measures.includes(field) ? `Sum of ${fieldName(field, model.formatting)}` : fieldName(field, model.formatting);
       lines.push(`${richTextEscape(label)}: ${richTextEscape(displayCell(cell(row, field)))}`);
+    }
+    for (const extra of extras) {
+      const name = extra.label ?? fieldName(extra.field, model.formatting);
+      const label = detail.aggregations ? `${TOOLTIP_AGGREGATION_WORD[extra.aggregation]} of ${name}` : name;
+      lines.push(`${richTextEscape(label)}: ${richTextEscape(displayCell(cell(row, extra.field)))}`);
     }
     return lines.join('\n');
   };

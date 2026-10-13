@@ -12,7 +12,7 @@ import { importParameter, serializeParameter, type AuthorParameter } from './par
 import { assembleQsBundle, parseBundleJson, parseQsBundle, summarizeQsBundle, ZIP_LIMITS } from '@opensight/bundle-parser/browser';
 import type { BundleDefinition, BundleSheet, BundleVisual, QsBundle } from '@opensight/bundle-parser';
 import { defaults, emptyDraft, serializeDraft, serializeVisual, grouped, noDimensions, singleMeasure, validateDraft, dataFields, calculationError, sheetParameters } from './authoring.js';
-import type { AuthorDraft, AuthorSheet, AuthorVisual, CalculatedField, CategoryFilter, ImportResult, ImportedVisual, Placement } from './authoring.js';
+import type { AuthorDraft, AuthorSheet, AuthorVisual, CalculatedField, CategoryFilter, ImportResult, ImportedVisual, Placement, TooltipExtraField } from './authoring.js';
 
 type Obj = Record<string, unknown>;
 const obj = (v: unknown): Obj => v !== null && typeof v === 'object' && !Array.isArray(v) ? v as Obj : {};
@@ -63,9 +63,25 @@ function serializedReferenceLine(entry: unknown): { value: number; label: string
       typeof o.color !== 'string' || !/^#[0-9a-f]{6}$/i.test(o.color)) return undefined;
   return { value: o.value, label: o.label, color: o.color };
 }
+/** Parse the OpenSight tooltip-extras extension; undefined when malformed (fail-closed upstream). */
+function importTooltipExtras(value: unknown): Map<string, { label?: string; aggregation: 'SUM' | 'AVG' | 'MIN' | 'MAX' | 'COUNT' }> | undefined {
+  const result = new Map<string, { label?: string; aggregation: 'SUM' | 'AVG' | 'MIN' | 'MAX' | 'COUNT' }>();
+  if (value === undefined) return result;
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  for (const [fieldId, entry] of Object.entries(value as Record<string, unknown>)) {
+    if (!fieldId || fieldId.includes('\0')) return undefined;
+    const o = obj(entry);
+    if (!Object.keys(o).every(k => k === 'label' || k === 'aggregation')) return undefined;
+    const label = o.label === undefined ? undefined : typeof o.label === 'string' ? o.label : undefined;
+    if (o.label !== undefined && (label === undefined || label.length > 128)) return undefined;
+    if (o.aggregation !== undefined && !['SUM', 'AVG', 'MIN', 'MAX', 'COUNT'].includes(o.aggregation as string)) return undefined;
+    result.set(fieldId, { ...(label ? { label } : {}), aggregation: (o.aggregation ?? 'SUM') as 'SUM' | 'AVG' | 'MIN' | 'MAX' | 'COUNT' });
+  }
+  return result;
+}
 /** Import the Interactions-tab tooltip detail; invalid values keep model defaults (fail-closed). */
-function importTooltipDetail(tooltip: Obj): Partial<Pick<AuthorVisual, 'tooltipType' | 'tooltipTitleType' | 'tooltipAggregations' | 'tooltipHiddenFields'>> {
-  const detail: Partial<Pick<AuthorVisual, 'tooltipType' | 'tooltipTitleType' | 'tooltipAggregations' | 'tooltipHiddenFields'>> = {};
+function importTooltipDetail(tooltip: Obj, wellFields: readonly string[]): Partial<Pick<AuthorVisual, 'tooltipType' | 'tooltipTitleType' | 'tooltipAggregations' | 'tooltipHiddenFields' | 'tooltipExtraFields'>> {
+  const detail: Partial<Pick<AuthorVisual, 'tooltipType' | 'tooltipTitleType' | 'tooltipAggregations' | 'tooltipHiddenFields' | 'tooltipExtraFields'>> = {};
   const selected = tooltip.selectedTooltipType;
   if (selected !== undefined) {
     if (selected !== 'BASIC' && selected !== 'DETAILED') return {};
@@ -106,6 +122,20 @@ function importTooltipDetail(tooltip: Obj): Partial<Pick<AuthorVisual, 'tooltipT
       parsed.push({ fieldId: o.fieldId, visible: o.visibility === 'VISIBLE' });
     }
     detail.tooltipHiddenFields = parsed.filter(i => !i.visible).map(i => i.fieldId);
+    // Visible tooltip fields outside the visual's wells are added dataset fields (measures only;
+    // dimensions would change the visual's grain and are refused when added through the UI).
+    // The OpenSight extension annotates label/aggregation; foreign bundles without it get SUM defaults.
+    // Hidden non-well fields stay out (reported as retained, read-only by the differences check).
+    const annotated = importTooltipExtras(fieldBased.opensightTooltipExtras);
+    if (annotated === undefined) return {};
+    const extras: TooltipExtraField[] = [];
+    for (const item of parsed) {
+      if (item.visible && !wellFields.includes(item.fieldId)) {
+        const annotation = annotated.get(item.fieldId);
+        extras.push({ field: item.fieldId, ...(annotation?.label ? { label: annotation.label } : {}), aggregation: annotation?.aggregation ?? 'SUM' });
+      }
+    }
+    if (extras.length) detail.tooltipExtraFields = extras;
   }
   return detail;
 }
@@ -144,7 +174,7 @@ function importVisual(raw: BundleVisual, id: string, definition: BundleDefinitio
     donut: kind === 'pie' && ['SMALL', 'MEDIUM', 'LARGE'].includes(string(obj(obj(config.donutOptions).arcOptions).arcThickness)),
     legend: obj(config.legend).visibility !== 'HIDDEN', labels: obj(config.dataLabels).visibility === 'VISIBLE' || kind === 'pie' && obj(config.dataLabels).visibility === undefined,
     tooltipVisible: obj(config.tooltip).tooltipVisibility !== 'HIDDEN',
-    ...(tooltipDetailKinds(kind) ? importTooltipDetail(obj(config.tooltip)) : {}),
+    ...(tooltipDetailKinds(kind) ? importTooltipDetail(obj(config.tooltip), [...rows, ...columns, ...measures]) : {}),
     horizontal: config.orientation === 'HORIZONTAL', stacked: config.barsArrangement === 'STACKED',
     totals: (kind === 'pivot' ? obj(total.rowTotalOptions) : total).totalsVisibility === 'VISIBLE',
     subtotals: (kind === 'pivot' ? obj(total.rowSubtotalOptions) : obj(config.opensightSubtotalOptions)).totalsVisibility === 'VISIBLE',

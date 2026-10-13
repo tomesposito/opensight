@@ -1,5 +1,7 @@
 import { authorVisualProblem, dataFields, noDimensions, serializeVisual, visualDimensions } from './authoring.js';
 import type { AuthorVisual, AuthorDataset, CalculatedField } from './authoring.js';
+import { buildAuthorQuery } from './author-query.js';
+import { executeFixtureQuery } from './fixture-query.js';
 import { normalizeVisual } from './compiler.js';
 import type { Fixture, FixtureVisual } from './model.js';
 import generated from './fixtures.generated.json' with { type: 'json' };
@@ -19,8 +21,13 @@ export function buildAuthorPreview(visual: AuthorVisual): FixtureVisual {
   const dimensions = visualDimensions(visual);
   const grain = noDimensions(visual.kind) ? 'total-revenue'
     : dimensions.length === 1 ? grains[dimensions[0] as keyof typeof grains] : undefined;
-  const rows = !authorVisualProblem(visual) && !visual.filters.length && visual.measures.length === 1 && visual.measures[0] === 'revenue' && grain
-    ? oracles.get(grain) ?? null : null;
+  // Pinned oracles cover only the four reviewed grains and cannot supply extra tooltip
+  // measures. Extras go through the same query-engine evaluation the live fixture path uses,
+  // so the preview shows real values at the visual's grain; failures yield no rows.
+  const rows = visual.tooltipExtraFields.length
+    ? (() => { const request = buildAuthorQuery(visual); return request ? executeFixtureQuery(request).rows : null; })()
+    : !authorVisualProblem(visual) && !visual.filters.length && visual.measures.length === 1 && visual.measures[0] === 'revenue' && grain
+      ? oracles.get(grain) ?? null : null;
   return { ...buildAuthorVisual(visual), rows };
 }
 

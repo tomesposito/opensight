@@ -565,7 +565,7 @@ function Properties({ visual, draft, dispatch, client, runtimeProblems }: Editor
       {tab === 'Interaction' && <>
         <FilterEditor dataset={draft.dataset} visual={visual} parameters={sheetParameters(draft)} calculations={draft.calculatedFields} dispatch={dispatch} client={visual.imported && !visual.imported.local ? undefined : client} />
         <ActionsSection visual={visual} onOpenPanel={actionId => setActionPanel({ actionId })} />
-        <TooltipSection visual={visual} dispatch={dispatch} />
+        <TooltipSection visual={visual} dispatch={dispatch} dataset={draft.dataset} calculations={draft.calculatedFields} />
         <HierarchyEditor draft={draft} visual={visual} dispatch={dispatch} />
         <ParameterFilterEditor dataset={draft.dataset} parameters={sheetParameters(draft)} calculations={draft.calculatedFields} dispatch={dispatch} />
       </>}

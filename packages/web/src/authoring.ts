@@ -104,6 +104,9 @@ export interface AuthorVisual {
   /** Interactions-tab tooltip detail (QuickSight SelectedTooltipType / FieldBasedTooltip parity). */
   tooltipType: 'basic' | 'detailed'; tooltipTitleType: 'primaryValue' | 'fieldId';
   tooltipAggregations: boolean; tooltipHiddenFields: string[];
+  /** Dataset measure fields added to the detailed tooltip via "Add field to tooltip". Measures only:
+   *  extra measures aggregate at the visual's existing grain, while a dimension would change the grouping. */
+  tooltipExtraFields: TooltipExtraField[];
   horizontal: boolean; stacked: boolean; totals: boolean; subtotals: boolean;
   filters: CategoryFilter[];
   filterActions?: FilterAction[];
@@ -154,17 +157,35 @@ const nextId = (prefix: string, ids: string[]): string => {
 };
 export const defaults = () => ({ rows: [] as string[], columns: [] as string[], titleVisible: true, legend: true, labels: false, tooltipVisible: true,
   tooltipType: 'basic' as const, tooltipTitleType: 'primaryValue' as const, tooltipAggregations: true, tooltipHiddenFields: [] as string[],
+  tooltipExtraFields: [] as TooltipExtraField[],
   horizontal: false, stacked: false, totals: false, subtotals: false, filters: [] as CategoryFilter[] });
+export const TOOLTIP_AGGREGATIONS = ['SUM', 'AVG', 'MIN', 'MAX', 'COUNT'] as const;
+export type TooltipAggregation = typeof TOOLTIP_AGGREGATIONS[number];
+/** A dataset measure field added to the detailed tooltip. Aggregation is per-field; label overrides the field name. */
+export interface TooltipExtraField { field: string; label?: string; aggregation: TooltipAggregation }
+/** Fail-closed structural validation for tooltip extra fields (dataset membership is enforced where the dataset is known). */
+export function tooltipExtraFieldValid(value: unknown): value is TooltipExtraField {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const v = value as Record<string, unknown>;
+  if (!Object.keys(v).every(k => ['field', 'label', 'aggregation'].includes(k))) return false;
+  if (typeof v.field !== 'string' || !v.field || v.field.includes('\0')) return false;
+  if (v.label !== undefined && (typeof v.label !== 'string' || v.label.length > 128)) return false;
+  return v.aggregation !== undefined && (TOOLTIP_AGGREGATIONS as readonly string[]).includes(v.aggregation as string);
+}
+export function tooltipExtraFieldsValid(value: unknown): value is TooltipExtraField[] {
+  return Array.isArray(value) && value.every(tooltipExtraFieldValid) && new Set(value.map(v => (v as TooltipExtraField).field)).size === value.length;
+}
 /** Fail-closed validation for the Interactions-tab tooltip detail patch. */
-export function tooltipPatchValid(patch: unknown): patch is Partial<Pick<AuthorVisual, 'tooltipType' | 'tooltipTitleType' | 'tooltipAggregations' | 'tooltipHiddenFields'>> {
+export function tooltipPatchValid(patch: unknown): patch is Partial<Pick<AuthorVisual, 'tooltipType' | 'tooltipTitleType' | 'tooltipAggregations' | 'tooltipHiddenFields' | 'tooltipExtraFields'>> {
   if (!patch || typeof patch !== 'object' || Array.isArray(patch)) return false;
   const p = patch as Record<string, unknown>;
-  const keys = ['tooltipType', 'tooltipTitleType', 'tooltipAggregations', 'tooltipHiddenFields'];
+  const keys = ['tooltipType', 'tooltipTitleType', 'tooltipAggregations', 'tooltipHiddenFields', 'tooltipExtraFields'];
   if (!Object.keys(p).every(k => keys.includes(k))) return false;
   if (p.tooltipType !== undefined && p.tooltipType !== 'basic' && p.tooltipType !== 'detailed') return false;
   if (p.tooltipTitleType !== undefined && p.tooltipTitleType !== 'primaryValue' && p.tooltipTitleType !== 'fieldId') return false;
   if (p.tooltipAggregations !== undefined && typeof p.tooltipAggregations !== 'boolean') return false;
   if (p.tooltipHiddenFields !== undefined && (!Array.isArray(p.tooltipHiddenFields) || !p.tooltipHiddenFields.every(n => typeof n === 'string' && !!n && !n.includes('\0')) || new Set(p.tooltipHiddenFields).size !== p.tooltipHiddenFields.length)) return false;
+  if (p.tooltipExtraFields !== undefined && !tooltipExtraFieldsValid(p.tooltipExtraFields)) return false;
   return true;
 }
 
@@ -235,7 +256,7 @@ export type AuthorAction =
   | { type: 'legend-position'; position: LegendPosition }
   | { type: 'donut'; donut: boolean }
   | { type: 'display'; property: 'titleVisible' | 'legend' | 'labels' | 'tooltipVisible' | 'horizontal' | 'stacked' | 'totals' | 'subtotals'; value: boolean }
-  | { type: 'tooltip'; patch: Partial<Pick<AuthorVisual, 'tooltipType' | 'tooltipTitleType' | 'tooltipAggregations' | 'tooltipHiddenFields'>> }
+  | { type: 'tooltip'; patch: Partial<Pick<AuthorVisual, 'tooltipType' | 'tooltipTitleType' | 'tooltipAggregations' | 'tooltipHiddenFields' | 'tooltipExtraFields'>> }
   | { type: 'reference-line-add' }
   | { type: 'reference-line-update'; id: string; patch: Partial<Omit<ReferenceLine, 'id'>> }
   | { type: 'reference-line-remove'; id: string }
@@ -530,6 +551,16 @@ export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorD
           const fields = new Set([...visualDimensions(visual), ...visual.measures]);
           patch.tooltipHiddenFields = patch.tooltipHiddenFields.filter(f => fields.has(f));
         }
+        if (patch.tooltipExtraFields !== undefined) {
+          // Extra fields must NOT duplicate the visual's own fields; drop stale ones and dupes.
+          const fields = new Set([...visualDimensions(visual), ...visual.measures]);
+          const seen = new Set<string>();
+          patch.tooltipExtraFields = patch.tooltipExtraFields.filter(e => {
+            if (fields.has(e.field) || seen.has(e.field)) return false;
+            seen.add(e.field);
+            return true;
+          });
+        }
         return { ...visual, ...patch };
       }
       case 'reference-line-add': {
@@ -642,7 +673,11 @@ export function serializeVisual(visual: AuthorVisual, includeInteractions = true
     tooltip: { tooltipVisibility: visual.tooltipVisible ? 'VISIBLE' : 'HIDDEN', ...(visual.tooltipType === 'detailed' && tooltipDetailKinds(visual.kind) ? { selectedTooltipType: 'DETAILED', fieldBasedTooltip: {
       aggregationVisibility: visual.tooltipAggregations ? 'VISIBLE' : 'HIDDEN',
       tooltipTitleType: visual.tooltipTitleType === 'fieldId' ? 'FIELD_ID' : 'PRIMARY_VALUE',
-      tooltipFields: [...visualDimensions(visual), ...visual.measures].map(name => ({ fieldTooltipItem: { fieldId: name, visibility: visual.tooltipHiddenFields.includes(name) ? 'HIDDEN' : 'VISIBLE' } })),
+      tooltipFields: [...[...visualDimensions(visual), ...visual.measures].map(name => ({ fieldTooltipItem: { fieldId: name, visibility: visual.tooltipHiddenFields.includes(name) ? 'HIDDEN' : 'VISIBLE' } })),
+        ...visual.tooltipExtraFields.map(e => ({ fieldTooltipItem: { fieldId: e.field, visibility: 'VISIBLE' } }))],
+      // OpenSight extension: per-extra-field label and aggregation, which the standard shape cannot express.
+      ...(visual.tooltipExtraFields.length ? { opensightTooltipExtras: Object.fromEntries(visual.tooltipExtraFields.map(e =>
+        [e.field, { ...(e.label ? { label: e.label } : {}), aggregation: e.aggregation }])) } : {}),
     } } : {}) } };
   const totalVisibility = (show: boolean) => ({ totalsVisibility: show ? 'VISIBLE' : 'HIDDEN' });
   const tableTotals = { totalOptions: totalVisibility(visual.totals), opensightSubtotalOptions: totalVisibility(visual.subtotals) };
@@ -757,7 +792,7 @@ export function validateDraft(value: unknown): asserts value is AuthorDraft {
       }
       const fieldNames = (v: unknown, role: string): v is string[] => imported ? Array.isArray(v) && v.every(n => typeof n === 'string' && !!n && !n.includes('\0')) && new Set(v).size === v.length : names(v, role);
 
-      if (!isObject(v) || !onlyKeys(v, ['id', 'kind', 'title', 'subtitle', 'subtitleVisible', 'dimension', 'measures', 'smallMultiples', 'donut', 'imported', 'filterActions', 'urlActions', 'navigationActions', 'hierarchy', 'dateGrain', 'palette', 'formatting', 'gauge', 'bins', 'insightConfiguration', 'referenceLines', ...Object.keys(defaults())]) || typeof v.id !== 'string' || !/^visual-[1-9][0-9]*$/.test(v.id) || ids.has(v.id) || !VISUAL_TYPES.some(t => t.kind === v.kind) || typeof v.title !== 'string' || !['donut', 'titleVisible', 'legend', 'labels', 'tooltipVisible', 'horizontal', 'stacked', 'totals', 'subtotals'].every(k => typeof v[k] === 'boolean') || (v.tooltipType !== 'basic' && v.tooltipType !== 'detailed') || (v.tooltipTitleType !== 'primaryValue' && v.tooltipTitleType !== 'fieldId') || typeof v.tooltipAggregations !== 'boolean' || !Array.isArray(v.tooltipHiddenFields) || !v.tooltipHiddenFields.every(n => typeof n === 'string' && !!n && !n.includes('\0')) || new Set(v.tooltipHiddenFields).size !== v.tooltipHiddenFields.length || !fieldNames(v.measures, 'measure') || !fieldNames(v.rows, 'dimension') || !fieldNames(v.columns, 'dimension') || (v.dimension !== null && !fieldNames([v.dimension], 'dimension')) || !Array.isArray(v.filters)) return fail();
+      if (!isObject(v) || !onlyKeys(v, ['id', 'kind', 'title', 'subtitle', 'subtitleVisible', 'dimension', 'measures', 'smallMultiples', 'donut', 'imported', 'filterActions', 'urlActions', 'navigationActions', 'hierarchy', 'dateGrain', 'palette', 'formatting', 'gauge', 'bins', 'insightConfiguration', 'referenceLines', ...Object.keys(defaults())]) || typeof v.id !== 'string' || !/^visual-[1-9][0-9]*$/.test(v.id) || ids.has(v.id) || !VISUAL_TYPES.some(t => t.kind === v.kind) || typeof v.title !== 'string' || !['donut', 'titleVisible', 'legend', 'labels', 'tooltipVisible', 'horizontal', 'stacked', 'totals', 'subtotals'].every(k => typeof v[k] === 'boolean') || (v.tooltipType !== 'basic' && v.tooltipType !== 'detailed') || (v.tooltipTitleType !== 'primaryValue' && v.tooltipTitleType !== 'fieldId') || typeof v.tooltipAggregations !== 'boolean' || !Array.isArray(v.tooltipHiddenFields) || !v.tooltipHiddenFields.every(n => typeof n === 'string' && !!n && !n.includes('\0')) || new Set(v.tooltipHiddenFields).size !== v.tooltipHiddenFields.length || !tooltipExtraFieldsValid(v.tooltipExtraFields) || !fieldNames(v.measures, 'measure') || !fieldNames(v.rows, 'dimension') || !fieldNames(v.columns, 'dimension') || (v.dimension !== null && !fieldNames([v.dimension], 'dimension')) || !Array.isArray(v.filters)) return fail();
       if (v.referenceLines !== undefined && (!Array.isArray(v.referenceLines) || !v.referenceLines.every(referenceLineValid))) return fail();
       if (v.smallMultiples !== undefined && (!names(v.smallMultiples, 'dimension') || v.smallMultiples.length > 1 || v.smallMultiples.some(name => fields.find(f => f.name === name)?.type === 'BOOLEAN'))) return fail();
       if ((v.kind === 'radar' || v.kind === 'sankey') && !v.imported && (v.rows.length > 1 || v.columns.length > 1)) return fail();
@@ -795,7 +830,7 @@ export function validateDraft(value: unknown): asserts value is AuthorDraft {
 
 /** Keep the original storage key and migrate v0 drafts only after checking their complete shape. */
 function migrateDraft(value: unknown): unknown {
-  if (isObject(value) && value.version === 2) return { parameters: [], ...value, sheets: Array.isArray(value.sheets) ? value.sheets.map(s => isObject(s) ? { controls: [], ...s, visuals: Array.isArray(s.visuals) ? s.visuals.map(v => isObject(v) && (v.tooltipVisible === undefined || v.tooltipType === undefined) ? { tooltipVisible: true, tooltipType: 'basic', tooltipTitleType: 'primaryValue', tooltipAggregations: true, tooltipHiddenFields: [], ...v } : v) : s.visuals } : s) : value.sheets };
+  if (isObject(value) && value.version === 2) return { parameters: [], ...value, sheets: Array.isArray(value.sheets) ? value.sheets.map(s => isObject(s) ? { controls: [], ...s, visuals: Array.isArray(s.visuals) ? s.visuals.map(v => isObject(v) && (v.tooltipVisible === undefined || v.tooltipType === undefined || v.tooltipExtraFields === undefined) ? { tooltipVisible: true, tooltipType: 'basic', tooltipTitleType: 'primaryValue', tooltipAggregations: true, tooltipHiddenFields: [], tooltipExtraFields: [], ...v } : v) : s.visuals } : s) : value.sheets };
   if (!isObject(value) || value.version !== 1) return value;
   if (!onlyKeys(value, ['version', 'visuals', 'selectedId']) || !Array.isArray(value.visuals)) throw new Error('Invalid legacy draft');
   const draft = emptyDraft();
