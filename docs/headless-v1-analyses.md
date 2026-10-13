@@ -167,3 +167,33 @@ product answers Q1–Q5, record the approved contract, then implement and
 checkpoint the routes, shared validation, persistence and contract tests.
 The hosted visual-query alias remains deferred; this proposal does not
 silently resolve its binding/access dependency.
+
+## Baseline verification
+
+Full root `npm test` exited 0 on 2026-10-13: **2,646 passed / 0 failed /
+18 skipped / 0 cancelled**. Every skip explicitly requires live PostgreSQL
+(`DATABASE_URL` is unset). These are the existing tests; this documents
+the baseline at the review gate, not implemented analysis API coverage.
+
+| Suite | Passed | Failed | Skipped |
+| --- | ---: | ---: | ---: |
+| API | 513 | 0 | 16 |
+| Bundle parser | 199 | 0 | 0 |
+| Embedding SDK | 10 | 0 | 0 |
+| Interpreter | 32 | 0 | 0 |
+| Parity | 11 | 0 | 0 |
+| Query engine | 504 | 0 | 2 |
+| Web | 1,320 | 0 | 0 |
+| Root conformance | 57 | 0 | 0 |
+
+The initial sandboxed run was interrupted after existing HTTP tests
+reported `listen EPERM` on loopback sockets. The complete rerun outside
+that restriction produced the counts above. Runtime sources, dependency
+manifests, `SOLUTION_DESIGN.md` and the shipped OpenAPI contract match
+the master base; proposal links resolve locally. Nothing has been merged
+or pushed.
+
+The static demo rebuilt successfully. Three offline captures are
+byte-identical to the previous slice's captures; reference comparison
+and local artifact locations are recorded in the
+[gap notes](issue-95-analyses-gap-notes.md).
