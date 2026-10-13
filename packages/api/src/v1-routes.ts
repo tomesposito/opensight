@@ -1,10 +1,10 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { QueryEngineError, UploadError } from '@opensight/query-engine';
+import { planPreparedQuery, QueryEngineError, UploadError } from '@opensight/query-engine';
 import { PrepError } from '@opensight/bundle-parser/prep';
 import { MetadataError } from './metadata-db.js';
 import { identifier, object } from './metadata-resources.js';
 import { method, send } from './automation-routes.js';
-import { readBody, RequestError, SecurityError } from './query.js';
+import { readBody, RequestError, SecurityError, validateQuery } from './query.js';
 import { BlazeError } from './blaze.js';
 import type { HostedDataRoutes } from './hosted-data-routes.js';
 import type { TenantContext } from './metadata.js';
@@ -71,11 +71,11 @@ export class V1Routes {
   async route(request: IncomingMessage, response: ServerResponse, path: string, context: TenantContext, recheck: () => Promise<void>): Promise<boolean> {
     if (!path.startsWith('/api/v1/')) return false;
     try {
-      const gate = this.limiter.take(`${context.tenantId}:${context.userId}`);
+      const gate = this.limiter.take(context.tenantId);
       if (!gate.allowed) { response.setHeader('Retry-After', String(gate.retryAfter)); v1Fail('RATE_LIMIT_EXCEEDED', 429, `Rate limit exceeded; retry after ${gate.retryAfter}s`); }
       this.routes.data.begin(context, undefined, recheck);
       const revisions = await this.routes.data.sources.metadata.revisions(context);
-      const read = request.method === 'GET';
+      const read = request.method === 'GET' || path.endsWith('/query');
       const input = async () => { const body = await readBody(request); if (!read) await recheck(); return body; };
       const publish = async (status: number, body: unknown) => {
         if (read) { await recheck(); await this.routes.data.publication(context, revisions); }
@@ -93,7 +93,9 @@ export class V1Routes {
     const errorCode = dataError ? error.code : error instanceof MetadataError || error instanceof SecurityError ? error.code
       : error instanceof RequestError ? (status === 405 ? 'METHOD_NOT_ALLOWED' : 'HOSTED_REQUEST_INVALID') : 'HOSTED_INTERNAL_ERROR';
     const message = status === 500 ? 'Internal error' : String((error as { detail?: unknown })?.detail ?? (error as Error)?.message ?? errorCode);
-    send(response, status, { errorCode, message });
+    const path = error instanceof QueryEngineError ? error.path : error instanceof RequestError
+      ? /^(\$[^:]*|parameterDeclarations[^:]*|parameterBindings[^:]*):/.exec(error.message)?.[1] : undefined;
+    send(response, status, { errorCode, message, ...(path === undefined ? {} : { path }) });
   }
 
   private header(request: IncomingMessage, name: string): string | undefined {
@@ -133,17 +135,19 @@ export class V1Routes {
 
   /** Replay or record a mutation response for the request's Idempotency-Key. */
   private async idempotent(request: IncomingMessage, response: ServerResponse, context: TenantContext, path: string,
-    run: () => Promise<{ status: number; body: unknown }>): Promise<void> {
+    run: () => Promise<{ status: number; body: unknown }>,
+    publish: (status: number, body: unknown) => void | Promise<void> = (status, body) => send(response, status, body),
+    revisionScope = ''): Promise<void> {
     const key = this.header(request, 'idempotency-key');
-    if (key === undefined) { const r = await run(); send(response, r.status, r.body); return; }
+    if (key === undefined) { const r = await run(); await publish(r.status, r.body); return; }
     const now = Date.now();
     for (const [k, v] of this.idempotency) if (v.expiresAt <= now) this.idempotency.delete(k);
-    const storeKey = `${context.tenantId}:${context.namespaceId}:${context.userId}:${request.method}:${path}:${identifier(key)}`;
+    const storeKey = `${context.tenantId}:${context.namespaceId}:${context.userId}:${request.method}:${path}:${identifier(key)}:${revisionScope}`;
     const seen = this.idempotency.get(storeKey);
-    if (seen) { response.setHeader('Idempotent-Replayed', 'true'); send(response, seen.status, seen.body); return; }
+    if (seen) { response.setHeader('Idempotent-Replayed', 'true'); await publish(seen.status, seen.body); return; }
     const result = await run();
+    await publish(result.status, result.body);
     this.idempotency.set(storeKey, { status: result.status, body: result.body, expiresAt: now + IDEMPOTENCY_TTL_MS });
-    send(response, result.status, result.body);
   }
 
   private datasetId(raw: string): string {
@@ -181,6 +185,22 @@ export class V1Routes {
 
   private async dispatch(request: IncomingMessage, response: ServerResponse, path: string, context: TenantContext,
     input: () => Promise<unknown>, publish: (status: number, body: unknown) => Promise<void>): Promise<void> {
+    const query = /^\/api\/v1\/datasets\/([A-Za-z0-9_-]{1,128})\/query$/.exec(path);
+    if (query) {
+      method(request, response, ['POST']);
+      const id = this.datasetId(query[1]!), body = validateQuery(await input());
+      // Replays must pass current graph/policy admission and query validation.
+      // Revision changes invalidate responses, including changes to leaf policies.
+      const revisions = await this.routes.data.sources.metadata.revisions(context);
+      const dataset = await this.routes.prep.describe(context, id);
+      planPreparedQuery(dataset.columns, body);
+      await this.idempotent(request, response, context, path, async () => {
+        const result = await this.routes.prep.execute(context, id, 'query', body);
+        return { status: 200, body: { ...result, ...(dataset.execution.mode === 'BLAZE'
+          ? { execution: { mode: 'BLAZE', cached: true } } : {}) } };
+      }, publish, JSON.stringify(revisions));
+      return;
+    }
     if (path === '/api/v1/datasets') {
       method(request, response, ['GET']);
       const { limit, offset } = this.paging(request);

@@ -6,7 +6,7 @@ info:
     Builder-shaped REST surface for agents (issue #95, IDD D-37). Versioned
     and stable: breaking changes need a new version plus migration notes.
     The web app consumes the same API; existing unversioned routes are
-    untouched. Slices: datasets (shipped), querying, analyses, dashboards,
+    untouched. Slices: datasets and querying (implemented), analyses, dashboards,
     assets, MCP mapping.
 servers:
   - url: https://{host}/api/v1
@@ -18,6 +18,7 @@ security:
 tags:
   - name: datasets
   - name: sources
+  - name: querying
 paths:
   /datasets:
     get:
@@ -131,6 +132,100 @@ paths:
                   id: { type: string }
                   removed: { type: boolean, enum: [true] }
         '428': { $ref: '#/components/responses/IfMatchRequired' }
+  /datasets/{id}/query:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, pattern: '^[A-Za-z0-9_-]{1,128}$' }
+    post:
+      tags: [querying]
+      operationId: runDatasetQuery
+      summary: Query an owner-scoped prepared dataset using the visual query model
+      description: >-
+        Uses the existing hosted prepared-dataset execution path. The body is
+        the InteractiveQuery sent by the UI, not a query or SQL envelope.
+        Arbitrary SQL, identity assertions and unknown properties are rejected.
+        Filter values and parameter bindings are data; calculated fields use
+        the existing parsed QuickSight expression grammar, never SQL.
+        Results are bounded by hosted execution budgets and are not paginated;
+        Limit/Cursor list headers do not paginate queries. Query strings are
+        rejected at the hosted request boundary. This is a read-only POST:
+        If-Match is not needed. Idempotency replays last ten minutes on one
+        node, are owner-scoped, repeat current graph/policy admission and
+        validation, and are invalidated by metadata revision changes. Auth
+        and publication checks run on original results and replays alike.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/InteractiveQuery' }
+            example:
+              dimensions: [{ fieldId: region, columnName: region }]
+              measures: [{ fieldId: total, columnName: amount, aggregation: SUM }]
+              filters: [{ columnName: region, parameterName: Region }]
+              parameterDeclarations: [{ name: Region, type: string, multiple: false }]
+              parameterBindings: { Region: [east] }
+      responses:
+        '200':
+          description: Complete query result; execution is present for a BLAZE dataset
+          headers:
+            Idempotent-Replayed:
+              description: Present with value true on a successful replay
+              schema: { type: string, enum: ['true'] }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/QueryResult' }
+              example:
+                columns: [{ name: region, type: string }, { name: total, type: number }]
+                rows: [{ region: east, total: 40 }]
+        '400':
+          description: HOSTED_REQUEST_INVALID (malformed query, SQL or extra properties), or METADATA_INVALID (invalid idempotency key)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '401':
+          description: Missing, invalid, expired or revoked credential
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: Forged principal, denied capability, protected prep or revised authorization/metadata
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '405':
+          description: METHOD_NOT_ALLOWED (only POST is supported)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '413':
+          description: HOSTED_REQUEST_INVALID (body exceeds 1 MiB)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '422':
+          description: Named query-engine validation error, including unresolved fields, unsupported expressions and security-policy errors
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '429':
+          description: RATE_LIMIT_EXCEEDED, or an existing hosted budget/cache error (such as BLAZE_NOT_READY)
+          headers:
+            Retry-After:
+              description: Seconds to wait; present for RATE_LIMIT_EXCEEDED
+              schema: { type: integer, minimum: 1 }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        default:
+          description: Named hosted execution or availability error
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
   /datasets/{id}/lineage:
     parameters:
       - name: id
@@ -339,7 +434,7 @@ components:
       name: Idempotency-Key
       in: header
       required: false
-      description: Honored on every v1 mutation (10-minute replay window, single node)
+      description: Honored on every v1 mutation and query POST (10-minute replay window, single node)
       schema: { type: string, pattern: '^[A-Za-z0-9_-]{1,512}$' }
     IfMatch:
       name: If-Match
@@ -354,6 +449,131 @@ components:
       properties:
         errorCode: { type: string, description: Machine-readable code, stable across versions }
         message: { type: string, description: Human-readable detail, never a secret }
+        path: { type: string, description: Failing query field path when validation supplies one }
+    InteractiveQuery:
+      type: object
+      additionalProperties: false
+      required: [dimensions, measures, filters]
+      properties:
+        dimensions:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [fieldId, columnName]
+            properties:
+              fieldId: { type: string, minLength: 1 }
+              columnName: { type: string, minLength: 1 }
+              granularity: { type: string, description: Existing engine date granularity (for example MONTH) }
+        measures:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            additionalProperties: false
+            required: [fieldId, columnName, aggregation]
+            properties:
+              fieldId: { type: string, minLength: 1 }
+              columnName: { type: string, minLength: 1 }
+              aggregation: { type: string, enum: [SUM, AVG, COUNT, MIN, MAX] }
+        filters:
+          type: array
+          items: { $ref: '#/components/schemas/QueryFilter' }
+        calculatedFields:
+          type: array
+          description: Existing parsed QuickSight calculated fields; SQL expressions are not accepted
+          items:
+            type: object
+            additionalProperties: false
+            required: [name, expression]
+            properties:
+              name: { type: string, minLength: 1 }
+              expression: { type: string, minLength: 1 }
+        parameterDeclarations:
+          type: array
+          maxItems: 200
+          items: { $ref: '#/components/schemas/QueryParameter' }
+        parameterBindings:
+          type: object
+          description: >-
+            Exactly the declared names, each bound to an array matching its type.
+            Single-value parameters accept at most one value. An empty array
+            explicitly selects no matches. No extra or missing bindings.
+          additionalProperties:
+            type: array
+            maxItems: 1000
+            uniqueItems: true
+            items: { type: [string, number] }
+    QueryFilter:
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required: [columnName, value]
+          properties:
+            columnName: { type: string, minLength: 1 }
+            value: { type: string }
+        - type: object
+          additionalProperties: false
+          required: [columnName, values]
+          properties:
+            columnName: { type: string, minLength: 1 }
+            values: { type: array, items: { type: string } }
+        - type: object
+          additionalProperties: false
+          required: [columnName, parameterName]
+          properties:
+            columnName: { type: string, minLength: 1 }
+            parameterName: { type: string, pattern: '^[A-Za-z][A-Za-z0-9_]{0,127}$' }
+            operator:
+              type: string
+              enum: [EQUALS, GREATER_THAN_OR_EQUAL_TO, LESS_THAN_OR_EQUAL_TO]
+              default: EQUALS
+              description: Range comparisons require a single number or datetime parameter
+    QueryParameter:
+      type: object
+      additionalProperties: false
+      required: [name, type, multiple]
+      properties:
+        name: { type: string, pattern: '^[A-Za-z][A-Za-z0-9_]{0,127}$' }
+        type: { type: string, enum: [string, number, datetime] }
+        multiple: { type: boolean }
+        integer: { type: boolean, description: Only valid for number parameters; true requires safe integers }
+      description: >-
+        Names must be unique. Datetime parameters must be single-value and
+        bind ISO dates or UTC datetimes. String values exclude NUL and are
+        limited to 10000 characters. Numbers must be finite.
+    QueryResult:
+      type: object
+      additionalProperties: false
+      required: [columns, rows]
+      properties:
+        columns:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [name, type]
+            properties:
+              name: { type: string }
+              type: { type: string, enum: [string, number] }
+        rows:
+          type: array
+          description: Objects keyed by column name, with exactly one cell per column; each cell matches the column type or is null
+          items:
+            type: object
+            additionalProperties: { type: [string, number, 'null'] }
+        execution:
+          type: object
+          additionalProperties: false
+          required: [mode, cached]
+          description: >-
+            Present when the queried dataset is BLAZE-materialized. Describes
+            the dataset execution mode, not source freshness or the modes of
+            nested inputs. Hosted cache adapters do not expose a shared
+            refresh timestamp, so none is fabricated here.
+          properties:
+            mode: { type: string, enum: [BLAZE] }
+            cached: { type: boolean, const: true }
     Page:
       type: object
       required: [items, nextCursor]
