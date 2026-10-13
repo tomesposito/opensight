@@ -773,6 +773,14 @@ for bundled commercial licenses.
 
 ## 7. Open questions
 
+Headless API decision register (issue #95):
+
+| ID | Contract | Status / gate |
+| --- | --- | --- |
+| [D-37](idd/D-37-headless-first-api.md) | Headless-first API foundation | ✅ REST/OpenAPI, no raw SQL, tenant-scoped user credentials and rate limiting |
+| [D-38](idd/D-38-dashboard-publish-semantics.md) | Dashboard publish semantics | ✅ Immutable versioned definition, live data; publish authorization remains with the dashboards slice |
+| [D-39](idd/D-39-headless-analysis-authoring.md) | Analysis authoring verbs and behavior | 🚧 Analyses implementation waits for the [slice proposal](headless-v1-analyses.md#product-questions-requiring-answers): granularity/names, access, concurrency, dataset binding and incomplete drafts |
+
 SR0 implementation decision register (issue #81; proposals, no AWS authorization):
 
 | ID | Contract | Status / gate |
