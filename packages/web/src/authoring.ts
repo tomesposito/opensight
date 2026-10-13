@@ -677,7 +677,7 @@ export function serializeVisual(visual: AuthorVisual, includeInteractions = true
     tooltip: { tooltipVisibility: visual.tooltipVisible ? 'VISIBLE' : 'HIDDEN', ...(visual.tooltipType === 'detailed' && tooltipDetailKinds(visual.kind) ? { selectedTooltipType: 'DETAILED', fieldBasedTooltip: {
       aggregationVisibility: visual.tooltipAggregations ? 'VISIBLE' : 'HIDDEN',
       tooltipTitleType: visual.tooltipTitleType === 'fieldId' ? 'FIELD_ID' : 'PRIMARY_VALUE',
-      tooltipFields: [...[...visualDimensions(visual), ...visual.measures].map(name => ({ fieldTooltipItem: { fieldId: name, visibility: visual.tooltipHiddenFields.includes(name) ? 'HIDDEN' : 'VISIBLE' } })),
+      tooltipFields: [...[...visualDimensions(visual), ...(visual.kind === 'pie' ? visual.smallMultiples ?? [] : []), ...visual.measures].map(name => ({ fieldTooltipItem: { fieldId: name, visibility: visual.tooltipHiddenFields.includes(name) ? 'HIDDEN' : 'VISIBLE' } })),
         ...visual.tooltipExtraFields.map(e => ({ fieldTooltipItem: { fieldId: e.field, visibility: 'VISIBLE' } }))],
       // OpenSight extension: per-extra-field label and aggregation, which the standard shape cannot express.
       ...(visual.tooltipExtraFields.length ? { opensightTooltipExtras: Object.fromEntries(visual.tooltipExtraFields.map(e =>
