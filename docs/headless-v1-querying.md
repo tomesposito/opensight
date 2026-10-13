@@ -107,3 +107,28 @@ revision immediately before result publication.
 
 The datasets and querying suites share their real HTTP harness in
 `packages/api/test/v1-helpers.mjs`.
+
+## Verification
+
+Full root `npm test` exited 0 on 2026-10-13: **2,646 passed / 0 failed /
+18 skipped / 0 cancelled**. Every skip requires live PostgreSQL
+(`DATABASE_URL` is unset).
+
+| Suite | Passed | Failed | Skipped |
+| --- | ---: | ---: | ---: |
+| API | 513 | 0 | 16 |
+| Bundle parser | 199 | 0 | 0 |
+| Embedding SDK | 10 | 0 | 0 |
+| Interpreter | 32 | 0 | 0 |
+| Parity | 11 | 0 | 0 |
+| Query engine | 504 | 0 | 2 |
+| Web | 1,320 | 0 | 0 |
+| Root conformance | 57 | 0 | 0 |
+
+OpenAPI YAML parses with all internal references resolved. The query
+request and direct/cached response examples validate against the JSON
+Schemas; SQL strings and envelopes fail request-schema validation.
+
+The static demo was rebuilt and screenshot-compared against the existing
+reference set; [gap notes](issue-95-querying-gap-notes.md) record the
+offline capture and comparison results.
