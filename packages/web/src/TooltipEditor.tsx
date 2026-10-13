@@ -25,7 +25,7 @@ export function TooltipSection({ visual, dispatch }: { visual: AuthorVisual; dis
       <option value="basic">Basic</option>
       <option value="detailed">Detailed</option>
     </select></label>
-    {detailed && !rendersDetailed && <p className="field-hint">Detailed tooltips render for bar, line, pie, combo and area visuals; this visual type uses basic tooltips.</p>}
+    {detailed && !rendersDetailed && <p className="field-hint">Detailed tooltips render for bar, line, pie, combo, area, 100% bar, scatter, funnel, gauge, heatmap and map visuals; other visual types use basic tooltips.</p>}
     {detailed && <>
       <label className="toggle"><input type="checkbox" checked={visual.tooltipTitleType === 'primaryValue'}
         onChange={e => patch({ tooltipTitleType: e.target.checked ? 'primaryValue' : 'fieldId' })} />Primary value as title</label>

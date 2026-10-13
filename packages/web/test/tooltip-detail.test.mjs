@@ -119,16 +119,44 @@ test('detailed tooltip formatter shows title, fields, aggregations and hidden fi
   assert.equal(format({}), '');
 });
 
+test('detailed tooltips render exact rows for index-mapped extra kinds', () => {
+  // Scatter: one point per row, X/Y/size measures.
+  const scatter = compileVisual(input({ ...selected(add('scatter')), dimension: 'region', measures: ['revenue', 'profit'], tooltipType: 'detailed' }, [{ region: 'East', revenue: 10, profit: 4 }]));
+  assert.equal(typeof scatter.option.tooltip.formatter, 'function');
+  assert.equal(scatter.option.tooltip.formatter({ dataIndex: 0 }), 'East\nregion: East\nSum of revenue: 10\nSum of profit: 4');
+  // Funnel: one stage per row.
+  const funnel = compileVisual(input({ ...selected(add('funnel')), dimension: 'region', measures: ['revenue'], tooltipType: 'detailed' }, [{ region: 'East', revenue: 100 }]));
+  assert.equal(funnel.option.tooltip.formatter({ dataIndex: 0 }), 'East\nregion: East\nSum of revenue: 100');
+  // Gauge: single datum from the single aggregate row; title falls back to the measure name.
+  const gauge = compileVisual(input({ ...selected(add('gauge')), measures: ['revenue'], tooltipType: 'detailed' }, [{ revenue: 42 }]));
+  assert.equal(gauge.option.tooltip.formatter({ dataIndex: 0 }), 'revenue\nSum of revenue: 42');
+  // Heatmap: one cell per row across the rows/columns wells.
+  const heatmap = compileVisual(input({ ...selected(add('heatmap')), rows: ['region'], columns: ['category'], measures: ['revenue'], tooltipType: 'detailed' }, [{ region: 'East', category: 'Hardware', revenue: 100 }]));
+  assert.equal(heatmap.option.tooltip.formatter({ dataIndex: 0 }), 'East\nregion: East\ncategory: Hardware\nSum of revenue: 100');
+  // Filled map: one region per row, matched against the bundled country names.
+  const filledMap = compileVisual(input({ ...selected(add('filledMap')), dimension: 'country', measures: ['revenue'], tooltipType: 'detailed' }, [{ country: 'France', revenue: 100 }]));
+  assert.equal(filledMap.option.tooltip.formatter({ dataIndex: 0 }), 'France\ncountry: France\nSum of revenue: 100');
+  // Point map: one point per row (numeric latitude/longitude dimensions).
+  const pointMap = compileVisual(input({ ...selected(add('pointMap')), rows: ['order_id'], columns: ['region'], measures: ['revenue'], tooltipType: 'detailed' }, [{ order_id: 48, region: 2, revenue: 100 }]));
+  assert.equal(pointMap.option.tooltip.formatter({ dataIndex: 0 }), '48\norder_id: 48\nregion: 2\nSum of revenue: 100');
+});
+
 test('detailed tooltips on kinds without renderer support fall back to basic with a warning', () => {
-  assert.equal(detailedTooltipKinds('scatter'), false);
-  assert.equal(tooltipDetailKinds('scatter'), true);
+  for (const kind of ['scatter', 'funnel', 'gauge', 'heatmap', 'filledMap', 'pointMap']) {
+    assert.equal(detailedTooltipKinds(kind), true, kind);
+    assert.equal(tooltipDetailKinds(kind), true, kind);
+  }
+  for (const kind of ['treemap', 'box', 'histogram', 'wordCloud']) {
+    assert.equal(detailedTooltipKinds(kind), false, kind);
+    assert.equal(tooltipDetailKinds(kind), true, kind);
+  }
   assert.equal(tooltipDetailKinds('radar'), false);
   assert.equal(tooltipDetailKinds('kpi'), false);
-  const v = { ...selected(add('scatter')), dimension: 'region', measures: ['revenue', 'profit'] };
-  const compiled = compileVisual(input({ ...v, tooltipType: 'detailed' }, [{ region: 'East', revenue: 10, profit: 4 }]));
+  const v = { ...selected(add('treemap')), dimension: 'region', measures: ['revenue'] };
+  const compiled = compileVisual(input({ ...v, tooltipType: 'detailed' }, [{ region: 'East', revenue: 10 }]));
   assert.equal(compiled.model.tooltipDetail.type, 'detailed');
   assert.equal(typeof compiled.option.tooltip.formatter, 'undefined');
-  assert.ok(compiled.model.warnings.some(w => w.includes('scatter')), JSON.stringify(compiled.model.warnings));
+  assert.ok(compiled.model.warnings.some(w => w.includes('treemap')), JSON.stringify(compiled.model.warnings));
 });
 
 test('tooltip section renders for supported kinds and hides for others', () => {
@@ -139,4 +167,7 @@ test('tooltip section renders for supported kinds and hides for others', () => {
   assert.equal(kpi, '');
   const radar = renderToStaticMarkup(createElement(TooltipSection, { visual: selected(add('radar')), dispatch() {} }));
   assert.equal(radar, '');
+  // Kinds that accept detailed config but don't render it get the honest hint naming the supported set.
+  const treemapDetailed = renderToStaticMarkup(createElement(TooltipSection, { visual: { ...selected(add('treemap')), tooltipType: 'detailed' }, dispatch() {} }));
+  assert.ok(treemapDetailed.includes('Detailed tooltips render for bar, line, pie, combo, area, 100% bar, scatter, funnel, gauge, heatmap and map visuals'), treemapDetailed.slice(0, 500));
 });
