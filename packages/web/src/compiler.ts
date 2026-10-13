@@ -467,8 +467,12 @@ export function compileVisual(input: Input): CompiledVisual {
   } };
 }
 
-/** Kinds whose series data maps 1:1 to result rows, so a per-row detailed tooltip is exact. */
-const DETAILED_TOOLTIP_KINDS = ['bar', 'line', 'pie', 'combo', 'area', 'bar100'];
+/** Kinds whose series data maps 1:1 to result rows, so a per-row detailed tooltip is exact.
+ *  scatter, funnel, heatmap, filledMap and pointMap build their series with rows.map
+ *  (index-preserving); gauge renders a single datum from the single aggregate row.
+ *  treemap (hierarchy flattens rows), box (per-group quartiles), histogram (bins)
+ *  and wordCloud (sorted/sliced remap) are aggregate and keep the basic fallback. */
+const DETAILED_TOOLTIP_KINDS = ['bar', 'line', 'pie', 'combo', 'area', 'bar100', 'scatter', 'funnel', 'gauge', 'heatmap', 'filledMap', 'pointMap'];
 /** Kinds whose tooltip config accepts the detailed keys (mirrors the chartConfiguration gate). */
 export const tooltipDetailKinds = (kind: VisualKind): boolean => !['insight', 'kpi', 'table', 'pivot', 'radar', 'sankey', 'waterfall'].includes(kind);
 /** Kinds where a detailed tooltip actually renders (others fall back to basic with a warning). */
