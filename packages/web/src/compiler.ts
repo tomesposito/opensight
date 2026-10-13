@@ -315,7 +315,7 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
   const tooltip = object(config[key('tooltip', 'Tooltip')] ?? {}, cpath);
   keys(tooltip, ['radar', 'sankey', 'waterfall'].includes(kind) ? [key('tooltipVisibility', 'TooltipVisibility')] : [key('tooltipVisibility', 'TooltipVisibility'), key('selectedTooltipType', 'SelectedTooltipType'), key('fieldBasedTooltip', 'FieldBasedTooltip')], `${cpath}.${key('tooltip', 'Tooltip')}`);
   const tooltipPath = `${cpath}.${key('tooltip', 'Tooltip')}`;
-  const tooltipDetail = parseTooltipDetail(tooltip, key, tooltipPath, [...dimensions, ...measures]);
+  const tooltipDetail = parseTooltipDetail(tooltip, key, tooltipPath, [...dimensions, ...(facet ? [facet] : []), ...measures]);
   const legend = object(config[key('legend', 'Legend')] ?? {}, cpath);
   keys(legend, [key('visibility', 'Visibility'), key('position', 'Position')], cpath);
   let innerRadius = '0%';
@@ -589,7 +589,7 @@ const TOOLTIP_AGGREGATION_WORD: Record<'SUM' | 'AVG' | 'MIN' | 'MAX' | 'COUNT', 
   { SUM: 'Sum', AVG: 'Avg', MIN: 'Min', MAX: 'Max', COUNT: 'Count' };
 function detailedTooltipFormatter(model: VisualModel, rows: Row[], cell: (row: Row, field: Field) => Cell, extraFields: Field[], facetRows?: Row[][]): (params: unknown) => string {
   const detail = model.tooltipDetail!;
-  const fields = [...model.dimensions, ...model.measures].filter(f => !detail.hiddenFields.includes(f.id));
+  const fields = [...model.dimensions, ...(model.facet ? [model.facet] : []), ...model.measures].filter(f => !detail.hiddenFields.includes(f.id));
   const extras = (model.tooltipExtraFields ?? []).flatMap(e => {
     const field = extraFields.find(f => f.id === e.id);
     return field ? [{ ...e, field }] : [];

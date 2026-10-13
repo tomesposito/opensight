@@ -16,7 +16,9 @@ export function applyDisplayOptions(model: VisualModel, option: EChartsOption): 
       if (option.grid && !Array.isArray(option.grid)) option.grid = { ...option.grid,
         ...(position === 'LEFT' ? { left: 130 } : position === 'RIGHT' ? { right: 130 } : position === 'TOP' ? { top: 48 } : { bottom: 48 }),
       };
-      if (model.kind === 'pie' && Array.isArray(option.series)) for (const series of option.series) if (series.type === 'pie') {
+      // Faceted (small-multiples) pies lay out their own grid with reserved
+      // title/legend padding; the single-pie legend strip must not move them.
+      if (model.kind === 'pie' && !model.facet && Array.isArray(option.series)) for (const series of option.series) if (series.type === 'pie') {
         // Reserve a separate legend strip so it never sits on top of pie marks.
         series.left = position === 'LEFT' ? 120 : 0;
         series.right = position === 'RIGHT' ? 120 : 0;
