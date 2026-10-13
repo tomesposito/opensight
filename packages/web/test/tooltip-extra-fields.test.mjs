@@ -167,9 +167,13 @@ test('detailed tooltip formatter renders extra rows with label and aggregation w
   assert.ok(!plainText.includes('Avg of'), plainText);
 });
 
-test('missing extra result column fails closed with a named error', () => {
+test('missing extra result column warns loudly and skips the row instead of failing', () => {
   const v = withExtra(bar());
-  assert.throws(() => compileVisual(input(v, [{ region: 'East', revenue: 100 }])), /missing result column profit for field profit/);
+  const compiled = compileVisual(input(v, [{ region: 'East', revenue: 100 }]));
+  assert.ok(compiled.model.warnings.some(w => w.includes("tooltip field 'profit' has no data in this result")), JSON.stringify(compiled.model.warnings));
+  const text = compiled.option.tooltip.formatter({ dataIndex: 0 });
+  assert.ok(!text.includes('profit'), text);
+  assert.ok(text.includes('Sum of revenue: 100'), text);
 });
 
 test('author preview computes extras through the query engine instead of pinned oracles', () => {

@@ -96,10 +96,11 @@ test('compiler parses tooltip detail, fails closed on bad enums, treats non-well
   unknown.chartConfiguration.tooltip.selectedTooltipType = 'DETAILED';
   unknown.chartConfiguration.tooltip.fieldBasedTooltip = { tooltipFields: [{ fieldTooltipItem: { fieldId: 'ghost', visibility: 'VISIBLE' } }] };
   // A tooltip field outside the visual's wells is an added dataset field: it becomes an
-  // extra with SUM defaults, and rows that cannot supply it fail closed with a named error.
+  // extra with SUM defaults; rows that cannot supply it warn loudly and skip the row.
   const extra = compileVisual({ ...input(bar(), []), definition: { barChartVisual: unknown } });
   assert.deepEqual(extra.model.tooltipExtraFields, [{ id: 'ghost', aggregation: 'SUM' }]);
-  assert.throws(() => compileVisual({ ...input(bar()), definition: { barChartVisual: unknown } }), /missing result column ghost/);
+  const skipped = compileVisual({ ...input(bar()), definition: { barChartVisual: unknown } });
+  assert.ok(skipped.model.warnings.some(w => w.includes("tooltip field 'ghost' has no data in this result")), JSON.stringify(skipped.model.warnings));
 });
 
 test('detailed tooltip formatter shows title, fields, aggregations and hidden fields', () => {

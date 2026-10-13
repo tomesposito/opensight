@@ -389,8 +389,15 @@ export function compileVisual(input: Input): CompiledVisual {
   for (const row of rows) {
     object(row, input.path);
     for (const field of fields) cell(row, field);
-    for (const field of extraFields) cell(row, field);
     for (const field of model.measures) number(row, field);
+  }
+  // Extra tooltip fields are adornments, not load-bearing: a result set that cannot
+  // supply one (pinned fixtures, hosted plans built from wells) warns loudly and skips
+  // the row instead of failing the visual or showing a wrong value.
+  const extraColumn = (field: Field): string => Object.hasOwn(input.bindings, field.id) ? input.bindings[field.id]! : field.column;
+  const availableExtras = extraFields.filter(field => rows.every(row => Object.hasOwn(row, extraColumn(field))));
+  for (const e of model.tooltipExtraFields ?? []) {
+    if (!availableExtras.some(f => f.id === e.id)) model.warnings.push(`${input.path}: tooltip field '${e.id}' has no data in this result and will not be shown.`);
   }
   if (model.sort) {
     const sort = model.sort;
@@ -464,7 +471,7 @@ export function compileVisual(input: Input): CompiledVisual {
   if (model.tooltip && model.tooltipDetail?.type === 'detailed') {
     if (DETAILED_TOOLTIP_KINDS.includes(model.kind)) {
       option.tooltip = { ...(typeof option.tooltip === 'object' && !Array.isArray(option.tooltip) ? option.tooltip : {}),
-        formatter: detailedTooltipFormatter(model, rows, cell, extraFields) };
+        formatter: detailedTooltipFormatter(model, rows, cell, availableExtras) };
     } else {
       model.warnings.push(`detailed tooltips are not rendered for ${model.kind} visuals; using basic tooltips.`);
     }
@@ -529,7 +536,10 @@ const TOOLTIP_AGGREGATION_WORD: Record<'SUM' | 'AVG' | 'MIN' | 'MAX' | 'COUNT', 
 function detailedTooltipFormatter(model: VisualModel, rows: Row[], cell: (row: Row, field: Field) => Cell, extraFields: Field[]): (params: unknown) => string {
   const detail = model.tooltipDetail!;
   const fields = [...model.dimensions, ...model.measures].filter(f => !detail.hiddenFields.includes(f.id));
-  const extras = (model.tooltipExtraFields ?? []).map(e => ({ ...e, field: extraFields.find(f => f.id === e.id)! }));
+  const extras = (model.tooltipExtraFields ?? []).flatMap(e => {
+    const field = extraFields.find(f => f.id === e.id);
+    return field ? [{ ...e, field }] : [];
+  });
   return (params: unknown): string => {
     const first = (Array.isArray(params) ? params[0] : params) as { dataIndex?: unknown } | undefined;
     const row = typeof first?.dataIndex === 'number' ? rows[first.dataIndex] : undefined;
