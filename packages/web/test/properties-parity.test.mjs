@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { act, createElement, useReducer } from 'react';
 import { create } from 'react-test-renderer';
 import { CardTitle, CardStyle, CardLayout, MultiplesOptions, GroupColorOptions, LegendOptions, DataLabelsOptions } from '../build/test/PropertiesSections.js';
-import { activeSheet, authorReducer, emptyDraft, parseDraft } from '../build/test/authoring.js';
+import { activeSheet, authorReducer, defaultMultiplesOptions, emptyDraft, parseDraft } from '../build/test/authoring.js';
 import { compileVisual } from '../build/test/compiler.js';
 import { buildAuthorVisual } from '../build/test/author-preview.js';
 
@@ -22,6 +22,7 @@ async function mount(t, Component, kind = 'pie') {
   t.after(async () => { await act(() => renderer.unmount()); globalThis.IS_REACT_ACT_ENVIRONMENT = oldAct; });
   return {
     root: renderer.root,
+    draft: () => state,
     visual: () => selected(state),
     compile: () => compileVisual({ ...buildAuthorVisual(selected(state)), rows: [{ region: 'East', category: 'A', revenue: 12.345 }] }),
     verifySaved() { assert.deepEqual(parseDraft(JSON.stringify(state)), state); assert.deepEqual(activeSheet(state).visuals[0], untouched); },
@@ -77,14 +78,25 @@ test('CARD LAYOUT exposes disabled 24px reference padding with an accessible rea
 });
 
 
-test('Multiples Options provides the complete disabled layout and typography controls', async t => {
+test('Multiples Options edits reach the draft, compile, and survive storage', async t => {
   const ui = await mount(t, MultiplesOptions);
-  const group = unavailable(ui.root, 'Multiples options controls', /Faceted preview is supported for pie charts/);
-  const labels = group.findAllByType('label').map(n => n.children.filter(c => typeof c === 'string').join(''));
-  assert.deepEqual(labels, ['Visible rows', 'Visible columns', 'Number of panels', 'Panel title', 'Title options', 'Panel border', 'Border options', 'Panel gutter', 'Panel background']);
-  assert.equal(group.findByProps({ placeholder: '20 (Default)' }).type, 'input');
-  for (const action of ['bold', 'italic', 'underline', 'align left', 'align center', 'align right']) assert.ok(group.findByProps({ 'aria-label': `Panel title ${action}` }));
-  assert.equal(ui.visual().smallMultiples, undefined); ui.verifySaved();
+  for (const label of ['Visible rows', 'Visible columns', 'Number of panels', 'Title options', 'Panel border', 'Panel gutter', 'Panel background']) {
+    assert.ok(ui.root.findAllByType('label').some(n => n.children.includes(label)), `missing control: ${label}`);
+  }
+  for (const action of ['bold', 'italic', 'underline', 'align left', 'align center', 'align right']) assert.ok(ui.root.findByProps({ 'aria-label': `Panel title ${action}` }));
+  assert.equal(ui.visual().multiplesOptions, undefined);
+  await ui.change('Visible rows', '2');
+  await ui.change('Number of panels', '8');
+  await ui.change('Title options', 'medium', 'select');
+  await ui.change('Panel border', true);
+  const defaults = defaultMultiplesOptions();
+  assert.deepEqual(ui.visual().multiplesOptions, { ...defaults, visibleRows: 2, panelCount: 8,
+    title: { ...defaults.title, size: 'medium' }, border: { ...defaults.border, enabled: true } });
+  const model = ui.compile().model;
+  assert.equal(model.multiplesOptions.title.size, 'medium');
+  assert.equal(model.multiplesOptions.visibleRows, 2);
+  assert.equal(model.multiplesOptions.border.enabled, true);
+  assert.deepEqual(parseDraft(JSON.stringify(ui.draft())).sheets[0].visuals[1].multiplesOptions, ui.visual().multiplesOptions);
 });
 
 

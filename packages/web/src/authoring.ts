@@ -2,7 +2,7 @@ import { defaultTextStyle, sheetObjectValid, serializeObjects, objectElementType
 import { rebindInsight } from './insight-configuration.js';
 import { paletteValid, themeValid, type AnalysisTheme } from './themes.js';
 import { formattingValid, gaugeValid, binsValid, legendPositionValid, rowGroupPathValid, type LegendPosition, type VisualFormatting } from './formatting.js';
-import type { Cell } from './model.js';
+import type { Cell, MultiplesOptions } from './model.js';
 import { EXTRA_VISUALS, extraKind, type VisualKind } from './visual-catalog.js';
 export type { VisualKind } from './visual-catalog.js';
 import { parseExpression } from '@opensight/query-engine/browser';
@@ -100,6 +100,8 @@ export interface AuthorVisual {
   subtitle?: string; subtitleVisible?: boolean;
   dimension: string | null; measures: string[]; rows: string[]; columns: string[];
   smallMultiples?: string[];
+  /** Multiples Options panel state (pie small multiples). Inert until a facet is set. */
+  multiplesOptions?: MultiplesOptions;
   donut: boolean; titleVisible: boolean; legend: boolean; labels: boolean; tooltipVisible: boolean;
   /** Interactions-tab tooltip detail (QuickSight SelectedTooltipType / FieldBasedTooltip parity). */
   tooltipType: 'basic' | 'detailed'; tooltipTitleType: 'primaryValue' | 'fieldId';
@@ -159,6 +161,38 @@ export const defaults = () => ({ rows: [] as string[], columns: [] as string[], 
   tooltipType: 'basic' as const, tooltipTitleType: 'primaryValue' as const, tooltipAggregations: true, tooltipHiddenFields: [] as string[],
   tooltipExtraFields: [] as TooltipExtraField[],
   horizontal: false, stacked: false, totals: false, subtotals: false, filters: [] as CategoryFilter[] });
+/** Defaults for the Multiples Options panel: today's automatic behavior
+ *  (auto grid, 20-panel cap, small centered titles, no panel chrome). */
+export const defaultMultiplesOptions = (): MultiplesOptions => ({
+  visibleRows: 'auto', visibleColumns: 'auto', panelCount: 20,
+  title: { size: 'small', bold: false, italic: false, underline: false, align: 'center' },
+  border: { enabled: false, widthPx: 1, style: 'solid', color: '#9aa3b2' },
+  gutter: false, background: false,
+});
+/** Fail-closed structural validation for the Multiples Options panel state
+ *  (localStorage drafts are untrusted; the compiler's parser is the lenient
+ *  counterpart for foreign bundles). Requires the complete shape. */
+export function multiplesOptionsValid(value: unknown): value is MultiplesOptions {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const v = value as Record<string, unknown>;
+  const autoOrInt = (x: unknown): boolean => x === 'auto' || (typeof x === 'number' && Number.isInteger(x) && x >= 1);
+  if (!autoOrInt(v.visibleRows) || !autoOrInt(v.visibleColumns)) return false;
+  if (typeof v.panelCount !== 'number' || !Number.isInteger(v.panelCount) || v.panelCount < 1 || v.panelCount > 20) return false;
+  const title = v.title as Record<string, unknown> | undefined;
+  if (!title || typeof title !== 'object' || Array.isArray(title)) return false;
+  if (title.size !== 'small' && title.size !== 'medium' && title.size !== 'large') return false;
+  if (typeof title.bold !== 'boolean' || typeof title.italic !== 'boolean' || typeof title.underline !== 'boolean') return false;
+  if (title.align !== 'left' && title.align !== 'center' && title.align !== 'right') return false;
+  const border = v.border as Record<string, unknown> | undefined;
+  if (!border || typeof border !== 'object' || Array.isArray(border)) return false;
+  if (typeof border.enabled !== 'boolean') return false;
+  if (typeof border.widthPx !== 'number' || !Number.isFinite(border.widthPx) || border.widthPx <= 0) return false;
+  if (border.style !== 'solid' && border.style !== 'dashed' && border.style !== 'dotted') return false;
+  if (typeof border.color !== 'string' || !/^#[0-9a-f]{6}$/i.test(border.color)) return false;
+  if (typeof v.gutter !== 'boolean' || typeof v.background !== 'boolean') return false;
+  // No unknown keys at any level.
+  return Object.keys(v).length === 7 && Object.keys(title).length === 5 && Object.keys(border).length === 4;
+}
 export const TOOLTIP_AGGREGATIONS = ['SUM', 'AVG', 'MIN', 'MAX', 'COUNT'] as const;
 export type TooltipAggregation = typeof TOOLTIP_AGGREGATIONS[number];
 /** A dataset measure field added to the detailed tooltip. Aggregation is per-field; label overrides the field name. */
@@ -257,6 +291,7 @@ export type AuthorAction =
   | { type: 'donut'; donut: boolean }
   | { type: 'display'; property: 'titleVisible' | 'legend' | 'labels' | 'tooltipVisible' | 'horizontal' | 'stacked' | 'totals' | 'subtotals'; value: boolean }
   | { type: 'tooltip'; patch: Partial<Pick<AuthorVisual, 'tooltipType' | 'tooltipTitleType' | 'tooltipAggregations' | 'tooltipHiddenFields' | 'tooltipExtraFields'>> }
+  | { type: 'multiples-options'; options: MultiplesOptions }
   | { type: 'reference-line-add' }
   | { type: 'reference-line-update'; id: string; patch: Partial<Omit<ReferenceLine, 'id'>> }
   | { type: 'reference-line-remove'; id: string }
@@ -563,6 +598,7 @@ export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorD
         }
         return { ...visual, ...patch };
       }
+      case 'multiples-options': return multiplesOptionsValid(action.options) ? { ...visual, multiplesOptions: structuredClone(action.options) } : visual;
       case 'reference-line-add': {
         const lines = visual.referenceLines ?? [];
         let n = 1; while (lines.some(l => l.id === `refline-${n}`)) n++;
@@ -702,6 +738,9 @@ export function serializeVisual(visual: AuthorVisual, includeInteractions = true
   switch (visual.kind) {
     case 'pie': return { pieChartVisual: { ...body, chartConfiguration: { ...display,
       fieldWells: { pieChartAggregatedFieldWells: { category, values, ...multiples } }, donutOptions: { arcOptions: { arcThickness: visual.donut ? 'MEDIUM' : 'WHOLE' } },
+      // OpenSight extension: the Multiples Options panel state round-trips
+      // through the bundle; the compiler parses it back into the model.
+      ...(visual.multiplesOptions ? { opensightMultiplesOptions: visual.multiplesOptions } : {}),
     } } };
     case 'bar': return { barChartVisual: { ...body, chartConfiguration: { ...display, orientation: visual.horizontal ? 'HORIZONTAL' : 'VERTICAL', barsArrangement: visual.stacked ? 'STACKED' : 'CLUSTERED', fieldWells: { barChartAggregatedFieldWells: { category, values, ...multiples } } } } };
     case 'line': return { lineChartVisual: { ...body, chartConfiguration: { ...display, fieldWells: { lineChartAggregatedFieldWells: { category, values, ...multiples } } } } };
@@ -798,9 +837,10 @@ export function validateDraft(value: unknown): asserts value is AuthorDraft {
       }
       const fieldNames = (v: unknown, role: string): v is string[] => imported ? Array.isArray(v) && v.every(n => typeof n === 'string' && !!n && !n.includes('\0')) && new Set(v).size === v.length : names(v, role);
 
-      if (!isObject(v) || !onlyKeys(v, ['id', 'kind', 'title', 'subtitle', 'subtitleVisible', 'dimension', 'measures', 'smallMultiples', 'donut', 'imported', 'filterActions', 'urlActions', 'navigationActions', 'hierarchy', 'dateGrain', 'palette', 'formatting', 'gauge', 'bins', 'insightConfiguration', 'referenceLines', ...Object.keys(defaults())]) || typeof v.id !== 'string' || !/^visual-[1-9][0-9]*$/.test(v.id) || ids.has(v.id) || !VISUAL_TYPES.some(t => t.kind === v.kind) || typeof v.title !== 'string' || !['donut', 'titleVisible', 'legend', 'labels', 'tooltipVisible', 'horizontal', 'stacked', 'totals', 'subtotals'].every(k => typeof v[k] === 'boolean') || (v.tooltipType !== 'basic' && v.tooltipType !== 'detailed') || (v.tooltipTitleType !== 'primaryValue' && v.tooltipTitleType !== 'fieldId') || typeof v.tooltipAggregations !== 'boolean' || !Array.isArray(v.tooltipHiddenFields) || !v.tooltipHiddenFields.every(n => typeof n === 'string' && !!n && !n.includes('\0')) || new Set(v.tooltipHiddenFields).size !== v.tooltipHiddenFields.length || !tooltipExtraFieldsValid(v.tooltipExtraFields) || !fieldNames(v.measures, 'measure') || !fieldNames(v.rows, 'dimension') || !fieldNames(v.columns, 'dimension') || (v.dimension !== null && !fieldNames([v.dimension], 'dimension')) || !Array.isArray(v.filters)) return fail();
+      if (!isObject(v) || !onlyKeys(v, ['id', 'kind', 'title', 'subtitle', 'subtitleVisible', 'dimension', 'measures', 'smallMultiples', 'multiplesOptions', 'donut', 'imported', 'filterActions', 'urlActions', 'navigationActions', 'hierarchy', 'dateGrain', 'palette', 'formatting', 'gauge', 'bins', 'insightConfiguration', 'referenceLines', ...Object.keys(defaults())]) || typeof v.id !== 'string' || !/^visual-[1-9][0-9]*$/.test(v.id) || ids.has(v.id) || !VISUAL_TYPES.some(t => t.kind === v.kind) || typeof v.title !== 'string' || !['donut', 'titleVisible', 'legend', 'labels', 'tooltipVisible', 'horizontal', 'stacked', 'totals', 'subtotals'].every(k => typeof v[k] === 'boolean') || (v.tooltipType !== 'basic' && v.tooltipType !== 'detailed') || (v.tooltipTitleType !== 'primaryValue' && v.tooltipTitleType !== 'fieldId') || typeof v.tooltipAggregations !== 'boolean' || !Array.isArray(v.tooltipHiddenFields) || !v.tooltipHiddenFields.every(n => typeof n === 'string' && !!n && !n.includes('\0')) || new Set(v.tooltipHiddenFields).size !== v.tooltipHiddenFields.length || !tooltipExtraFieldsValid(v.tooltipExtraFields) || !fieldNames(v.measures, 'measure') || !fieldNames(v.rows, 'dimension') || !fieldNames(v.columns, 'dimension') || (v.dimension !== null && !fieldNames([v.dimension], 'dimension')) || !Array.isArray(v.filters)) return fail();
       if (v.referenceLines !== undefined && (!Array.isArray(v.referenceLines) || !v.referenceLines.every(referenceLineValid))) return fail();
       if (v.smallMultiples !== undefined && (!names(v.smallMultiples, 'dimension') || v.smallMultiples.length > 1 || v.smallMultiples.some(name => fields.find(f => f.name === name)?.type === 'BOOLEAN'))) return fail();
+      if (v.multiplesOptions !== undefined && !multiplesOptionsValid(v.multiplesOptions)) return fail();
       if ((v.kind === 'radar' || v.kind === 'sankey') && !v.imported && (v.rows.length > 1 || v.columns.length > 1)) return fail();
       if (singleMeasure(v.kind as VisualKind) && v.measures.length > 1 || noDimensions(v.kind as VisualKind) && v.dimension !== null || v.kind !== 'pie' && v.donut || !splitDimensions(v.kind as VisualKind) && v.columns.length || (grouped(v.kind as VisualKind) ? v.dimension !== (v.rows[0] ?? null) : v.rows.length) || v.rows.some(n => (v.columns as string[]).includes(n))) return fail();
       if (v.insightConfiguration !== undefined && !isObject(v.insightConfiguration) || v.kind === 'insight' && !v.imported && v.measures.length > 2) return fail();

@@ -28,6 +28,9 @@ export interface VisualModel {
   /** Small-multiples facet dimension (pie only for now). Rendered as a grid of
    *  per-facet charts; part of the view-data table but never a series field. */
   facet?: Field;
+  /** Multiples Options panel state (pie small multiples only). Absent means the
+   *  automatic layout: heuristic grid, up to 20 panels, small centered titles. */
+  multiplesOptions?: MultiplesOptions;
   measures: Field[];
   rowDimensions: Field[];
   columnDimensions: Field[];
@@ -56,6 +59,21 @@ export interface VisualModel {
   sort?: { fieldId: string; direction: 'ASC' | 'DESC' };
   warnings: string[];
   insightConfiguration?: Record<string, unknown>;
+}
+/** QuickSight "Multiples Options" panel settings for pie small multiples
+ *  (OpenSight extension: the bundle carries them as
+ *  chartConfiguration.opensightMultiplesOptions). ECharts titles cannot
+ *  underline and ECharts grid chrome cannot dash, so `title.underline` and
+ *  `border.style` are preserved in the model and exports but not rendered. */
+export interface MultiplesOptions {
+  visibleRows: 'auto' | number;
+  visibleColumns: 'auto' | number;
+  /** Maximum panels rendered; the renderer also enforces the 20-panel cap with a truncation warning. */
+  panelCount: number;
+  title: { size: 'small' | 'medium' | 'large'; bold: boolean; italic: boolean; underline: boolean; align: 'left' | 'center' | 'right' };
+  border: { enabled: boolean; widthPx: number; style: 'solid' | 'dashed' | 'dotted'; color: string };
+  gutter: boolean;
+  background: boolean;
 }
 export interface FixtureVisual {
   theme?: AnalysisTheme;

@@ -6,7 +6,7 @@ import { insightGraphic } from './insight-graphic.js';
 import { LIGHT_THEME, themeValid, paletteValid } from './themes.js';
 import { formattingValid, fieldName, matchingRule, LEGEND_POSITIONS, type LegendPosition } from './formatting.js';
 import type { EChartsOption, BarSeriesOption, LineSeriesOption, PieSeriesOption } from 'echarts';
-import type { Cell, Field, FixtureVisual, Row, VisualModel } from './model.js';
+import type { Cell, Field, FixtureVisual, MultiplesOptions, Row, VisualModel } from './model.js';
 
 import { EXTRA_VISUALS, extraKind, variantKinds, type VisualKind } from './visual-catalog.js';
 import { compileExtra } from './extra-charts.js';
@@ -83,6 +83,59 @@ function extensionTooltipExtras(value: unknown, path: string): Map<string, { lab
     result.set(fieldId, { ...(label ? { label } : {}), aggregation });
   }
   return result;
+}
+
+/** OpenSight extension: QuickSight's "Multiples Options" panel for pie small
+ *  multiples, persisted as chartConfiguration.opensightMultiplesOptions.
+ *  Fail-closed on malformed shapes (named errors); absent keeps today's
+ *  automatic layout exactly. */
+function parseMultiplesOptions(value: unknown, path: string): MultiplesOptions {
+  const o = object(value, path);
+  keys(o, ['visibleRows', 'visibleColumns', 'panelCount', 'title', 'border', 'gutter', 'background'], path);
+  const invalid = (name: string, expected: string): never => fail(name ? `${path}.${name}` : path, `MULTIPLES_OPTIONS_INVALID: expected ${expected}`);
+  const oneOf = <T extends string>(raw: unknown, choices: readonly T[], fallback: T, name: string): T => {
+    if (raw === undefined) return fallback;
+    if (typeof raw === 'string' && (choices as readonly string[]).includes(raw)) return raw as T;
+    return invalid(name, `one of: ${choices.join(', ')}`);
+  };
+  const autoOrPositiveInt = (raw: unknown, name: string): 'auto' | number => {
+    if (raw === undefined || raw === 'auto') return 'auto';
+    if (typeof raw === 'number' && Number.isInteger(raw) && raw >= 1) return raw;
+    return invalid(name, '"auto" or a positive integer');
+  };
+  const panelCountRaw = o.panelCount === undefined ? 20 : o.panelCount;
+  const panelCount = typeof panelCountRaw === 'number' && Number.isInteger(panelCountRaw) && panelCountRaw >= 1 && panelCountRaw <= 20
+    ? panelCountRaw : invalid('panelCount', 'an integer from 1 to 20');
+  const title = object(o.title ?? {}, `${path}.title`);
+  keys(title, ['size', 'bold', 'italic', 'underline', 'align'], `${path}.title`);
+  for (const flag of ['bold', 'italic', 'underline'] as const) if (title[flag] !== undefined && typeof title[flag] !== 'boolean') invalid(`title.${flag}`, 'a boolean');
+  const border = object(o.border ?? {}, `${path}.border`);
+  keys(border, ['enabled', 'widthPx', 'style', 'color'], `${path}.border`);
+  if (border.enabled !== undefined && typeof border.enabled !== 'boolean') invalid('border.enabled', 'a boolean');
+  const widthPxRaw = border.widthPx === undefined ? 1 : border.widthPx;
+  const widthPx = typeof widthPxRaw === 'number' && Number.isFinite(widthPxRaw) && widthPxRaw > 0
+    ? widthPxRaw : invalid('border.widthPx', 'a positive number');
+  const colorRaw = border.color === undefined ? '#9aa3b2' : border.color;
+  const color = typeof colorRaw === 'string' && /^#[0-9a-f]{6}$/i.test(colorRaw)
+    ? colorRaw : invalid('border.color', 'a #rrggbb color');
+  for (const flag of ['gutter', 'background'] as const) if (o[flag] !== undefined && typeof o[flag] !== 'boolean') invalid(flag, 'a boolean');
+  return {
+    visibleRows: autoOrPositiveInt(o.visibleRows, 'visibleRows'),
+    visibleColumns: autoOrPositiveInt(o.visibleColumns, 'visibleColumns'),
+    panelCount,
+    title: {
+      size: oneOf(title.size, ['small', 'medium', 'large'], 'small', 'title.size'),
+      bold: title.bold === true, italic: title.italic === true, underline: title.underline === true,
+      align: oneOf(title.align, ['left', 'center', 'right'], 'center', 'title.align'),
+    },
+    border: {
+      enabled: border.enabled === true, widthPx,
+      style: oneOf(border.style, ['solid', 'dashed', 'dotted'], 'solid', 'border.style'),
+      color,
+    },
+    gutter: o.gutter === true,
+    background: o.background === true,
+  };
 }
 
 /** QuickSight SelectedTooltipType / FieldBasedTooltip → renderer tooltip detail. Fail-closed on bad enums; unknown field ids are reported, never rendered. */
@@ -169,7 +222,7 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
   const extra = extraKind(kind) ? EXTRA_VISUALS[kind] : undefined;
   const common = [key('fieldWells', 'FieldWells')];
   if (kind !== 'insight' && kind !== 'kpi' && kind !== 'table' && kind !== 'pivot') common.push(key('sortConfiguration', 'SortConfiguration'), key('dataLabels', 'DataLabels'), key('tooltip', 'Tooltip'), key('legend', 'Legend'));
-  if (kind === 'pie') common.push(key('donutOptions', 'DonutOptions'));
+  if (kind === 'pie') common.push(key('donutOptions', 'DonutOptions'), key('opensightMultiplesOptions', 'OpenSightMultiplesOptions'));
   if (kind === 'bar' || kind === 'bar100') common.push(key('orientation', 'Orientation'), key('barsArrangement', 'BarsArrangement'));
   if (kind === 'table' || kind === 'pivot') common.push(key('totalOptions', 'TotalOptions'));
   if (kind === 'table') common.push(key('opensightSubtotalOptions', 'OpenSightSubtotalOptions'));
@@ -328,6 +381,11 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
     innerRadius = ({ WHOLE: '0%', SMALL: '56%', MEDIUM: '42%', LARGE: '28%' } as const)[thickness as 'WHOLE' | 'SMALL' | 'MEDIUM' | 'LARGE'];
     if (thickness !== 'WHOLE') warnings.push(`${cpath}: donut radii are OpenSight approximations, not measured reference geometry.`);
   }
+  // OpenSight extension: the Multiples Options panel persists its state for pie
+  // only (other kinds fail the chartConfiguration key gate above, like the well).
+  const multiplesKey = key('opensightMultiplesOptions', 'OpenSightMultiplesOptions');
+  const multiplesOptions = kind === 'pie' && config[multiplesKey] !== undefined
+    ? parseMultiplesOptions(config[multiplesKey], `${cpath}.${multiplesKey}`) : undefined;
   const sort = object(config[key('sortConfiguration', 'SortConfiguration')] ?? {}, cpath);
   const sortsKey = key('categorySort', 'CategorySort');
   keys(sort, ['radar', 'sankey', 'waterfall'].includes(kind) ? [sortsKey] : [sortsKey, key('categoryItemsLimit', 'CategoryItemsLimit'), key('smallMultiplesLimitConfiguration', 'SmallMultiplesLimitConfiguration')], `${cpath}.${key('sortConfiguration', 'SortConfiguration')}`);
@@ -360,6 +418,7 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
     legendPosition: enumValue(legend[key('position', 'Position')] ?? (formattingValid(formatting) ? formatting.legendPosition : undefined), [...LEGEND_POSITIONS], 'BOTTOM', `${cpath}.legend.position`) as LegendPosition,
     dimensions, rowDimensions, columnDimensions, measures, totals, subtotals, columnTotals, columnSubtotals, innerRadius, sort: fieldSort, warnings,
     ...(facet ? { facet } : {}),
+    ...(multiplesOptions ? { multiplesOptions } : {}),
     horizontal: (kind === 'bar' || kind === 'bar100') && enumValue(config[key('orientation', 'Orientation')], ['VERTICAL', 'HORIZONTAL'], 'VERTICAL', `${cpath}.${key('orientation', 'Orientation')}`) === 'HORIZONTAL',
     stacked: kind === 'bar' && enumValue(config[key('barsArrangement', 'BarsArrangement')], ['CLUSTERED', 'STACKED'], 'CLUSTERED', `${cpath}.${key('barsArrangement', 'BarsArrangement')}`) === 'STACKED',
     labels: visibility(labels, key('visibility', 'Visibility'), kind === 'pie' ? 'VISIBLE' : 'HIDDEN'),
@@ -471,29 +530,74 @@ export function compileVisual(input: Input): CompiledVisual {
         if (i === undefined) { i = groups.length; seen.set(k, i); groups.push({ value, rows: [] }); }
         groups[i]!.rows.push(row);
       }
+      const opts = model.multiplesOptions;
       const MAX_FACETS = 20;
-      if (groups.length > MAX_FACETS) model.warnings.push(`${input.path}: ${groups.length} small-multiple panels exceed the 20-panel limit; showing the first ${MAX_FACETS}.`);
-      const shown = groups.slice(0, MAX_FACETS);
-      const n = shown.length;
-      const cols = n <= 1 ? 1 : n <= 4 ? 2 : 3;
-      const gridRows = Math.ceil(n / cols);
-      const topPad = 12, bottomPad = 14, cellH = (100 - topPad - bottomPad) / gridRows;
+      // The panel's Number of panels caps the grid; the 20-panel renderer limit always applies.
+      const panelCap = Math.min(opts?.panelCount ?? MAX_FACETS, MAX_FACETS);
+      if (groups.length > panelCap) model.warnings.push(`${input.path}: ${groups.length} small-multiple panels exceed the ${panelCap}-panel limit; showing the first ${panelCap}.`);
+      let shown = groups.slice(0, panelCap);
+      // Explicit visible rows/columns pin the grid (honored together with the
+      // panel cap); 'auto' keeps today's heuristic.
+      const fixedRows = typeof opts?.visibleRows === 'number' ? opts.visibleRows : undefined;
+      const fixedCols = typeof opts?.visibleColumns === 'number' ? opts.visibleColumns : undefined;
+      let cols: number, gridRows: number;
+      if (fixedRows !== undefined && fixedCols !== undefined) {
+        gridRows = fixedRows; cols = fixedCols;
+        const capacity = gridRows * cols;
+        if (shown.length > capacity) {
+          model.warnings.push(`${input.path}: ${shown.length} small-multiple panels exceed the ${gridRows}x${cols} visible grid; showing the first ${capacity}.`);
+          shown = shown.slice(0, capacity);
+        }
+      } else if (fixedRows !== undefined) { gridRows = fixedRows; cols = Math.max(1, Math.ceil(shown.length / gridRows)); }
+      else if (fixedCols !== undefined) { cols = fixedCols; gridRows = Math.ceil(shown.length / cols); }
+      else { const n = shown.length; cols = n <= 1 ? 1 : n <= 4 ? 2 : 3; gridRows = Math.ceil(n / cols); }
+      const topPad = 12, bottomPad = 14, cellH = (100 - topPad - bottomPad) / gridRows, cellW = 100 / cols;
+      // Gutter opens an inter-panel gap by shrinking each panel's content (and
+      // insetting its chrome below); the factor is an OpenSight approximation
+      // of the reference spacing, not measured QuickSight geometry.
+      const gutterShrink = opts?.gutter ? 0.92 : 1;
       // Radius is % of the container's smaller side; the fit holds for card
       // aspect ratios between roughly 2:3 and 5:2 (checked against the fit math).
-      const outer = `${Math.min(34 / cols, 0.42 * cellH).toFixed(1)}%`;
+      const outer = `${(Math.min(34 / cols, 0.42 * cellH) * gutterShrink).toFixed(1)}%`;
       option.series = shown.map((group, i) => {
         const c = i % cols, r = Math.floor(i / cols);
         return pieSeries(group.rows.map(pieDatum),
           [`${(((c + 0.5) / cols) * 100).toFixed(2)}%`, `${(topPad + (r + 0.5) * cellH).toFixed(2)}%`],
           [model.innerRadius, outer]);
       });
+      // Panel titles: absent options keep today's exact rendering (12px
+      // semibold, centered); explicit options apply the editor typography
+      // scale and alignment. Underline has no ECharts title support and is
+      // never faked — the flag stays in the model only.
+      const titleSize = opts ? { small: 11, medium: 13, large: 15 }[opts.title.size] : 12;
+      const titleWeight = opts ? (opts.title.bold ? 700 : 400) : 600;
+      const titleAlign = opts?.title.align ?? 'center';
       option.title = shown.map((group, i) => {
         const c = i % cols, r = Math.floor(i / cols);
+        // The title anchors to the panel edge matching its alignment.
+        const left = titleAlign === 'left' ? (c / cols) * 100 : titleAlign === 'right' ? ((c + 1) / cols) * 100 : ((c + 0.5) / cols) * 100;
         return {
-          text: displayCell(group.value), left: `${(((c + 0.5) / cols) * 100).toFixed(2)}%`, top: `${(topPad + r * cellH + 1.5).toFixed(2)}%`,
-          textAlign: 'center' as const, textStyle: { fontSize: 12, fontWeight: 600, color: theme.textColor, fontFamily: theme.fontFamily },
+          text: displayCell(group.value), left: `${left.toFixed(2)}%`, top: `${(topPad + r * cellH + 1.5).toFixed(2)}%`,
+          textAlign: titleAlign, textStyle: { fontSize: titleSize, fontWeight: titleWeight, ...(opts?.title.italic ? { fontStyle: 'italic' as const } : {}), color: theme.textColor, fontFamily: theme.fontFamily },
         };
       });
+      // Panel chrome: one ECharts grid per panel draws the border/background.
+      // ECharts grids cannot dash their border, so dashed/dotted render solid
+      // (the choice is preserved in the model and exports).
+      if (opts && (opts.border.enabled || opts.background)) {
+        const inset = opts.gutter ? 1.5 : 0;
+        option.grid = shown.map((_, i) => {
+          const c = i % cols, r = Math.floor(i / cols);
+          return {
+            show: true,
+            left: `${(c * cellW + inset).toFixed(2)}%`, top: `${(topPad + r * cellH + inset).toFixed(2)}%`,
+            width: `${(cellW - inset * 2).toFixed(2)}%`, height: `${(cellH - inset * 2).toFixed(2)}%`,
+            backgroundColor: opts.background ? '#f4f6f8' : 'transparent',
+            borderWidth: opts.border.enabled ? opts.border.widthPx : 0,
+            borderColor: opts.border.color,
+          };
+        });
+      }
       facetRowGroups = shown.map(group => group.rows);
     } else {
       option.series = [pieSeries(rows.map(pieDatum), ['50%', '45%'], [model.innerRadius, '70%'])];
