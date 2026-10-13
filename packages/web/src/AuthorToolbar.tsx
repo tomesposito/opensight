@@ -194,7 +194,7 @@ export function AuthorToolbar({ canUndo = false, canRedo = false, onUndo, onRedo
         {selectedObject && <AuthorMenuItem label="Remove selected object" run={() => dispatch({ type: 'remove', id: selectedObject.id })} />}
         {!sheet.visuals.length && !sheet.objects?.length && <p>No objects on this sheet.</p>}
       </AuthorMenu>
-      <button type="button" className="analysis-search" aria-haspopup="dialog" aria-keyshortcuts="Meta+F Control+F" disabled={!palette} title={!palette ? 'Action search needs the application command palette.' : 'Search analysis actions'} onClick={() => {
+      <button type="button" className="analysis-search" aria-label="Search analysis actions" aria-haspopup="dialog" aria-keyshortcuts="Meta+F Control+F" disabled={!palette} title={!palette ? 'Action search needs the application command palette.' : 'Search analysis actions'} onClick={() => {
         nav.current?.querySelectorAll('details[open]').forEach(menu => menu.removeAttribute('open'));
         palette?.open('Search analysis actions');
       }}>Search</button>

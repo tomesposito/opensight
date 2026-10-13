@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 're
 import { useAccess } from './access.js';
 import { adminPages, dataPages, developerPages, pages, parseRoute, productSections, routeHash, visiblePage, type AppRoute, type Page } from './app-navigation.js';
 import { useCommandPalette } from './CommandPalette.js';
+import { useGlobalSearch } from './GlobalSearch.js';
 
 export function useAppRoute() {
   const [route, setRoute] = useState(() => parseRoute(typeof window === 'undefined' ? '' : window.location?.hash ?? ''));
@@ -53,6 +54,7 @@ function NavigationIcon({ name }: { name: string }) {
 export function AppNavigation({ route, navigate, recentPages = [], children }: { route?: AppRoute; navigate: Navigate; recentPages?: readonly Page[]; children?: ReactNode }) {
   const access = useAccess(), section = route && pages[route.page].section;
   const palette = useCommandPalette();
+  const search = useGlobalSearch();
   const [navigationOpen, setNavigationOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(section === 'Admin');
   const toggle = useRef<HTMLButtonElement>(null);
@@ -104,7 +106,7 @@ export function AppNavigation({ route, navigate, recentPages = [], children }: {
     {navigationOpen && <button type="button" className="navigation-scrim" aria-label="Close navigation" onClick={closeNavigation} />}
     <div id="product-navigation" className="product-navigation" data-open={navigationOpen} onKeyDown={event => { if (navigationOpen && event.key === 'Escape') { event.preventDefault(); closeNavigation(); } }}>
       <nav className="app-nav" aria-label="Product">
-        {palette && <button type="button" className="rail-search" aria-label="Search navigation and commands" onClick={() => { closeNavigation(); palette.open(); }}><NavigationIcon name="Search" />Search</button>}
+        {(search || palette) && <button type="button" className="rail-search" aria-label="Search" onClick={() => { closeNavigation(); if (search) search.open(); else palette?.open(); }}><NavigationIcon name="Search" />Search</button>}
         {productSections.filter(item => visiblePage(access, item.page)).map(item => <AppLink key={item.title} to={{ page: item.page }} navigate={navigate} current={section === item.title}><NavigationIcon name={item.title} />{item.title}</AppLink>)}
       </nav>
       {section === 'Analyses' && visiblePage(access, 'analyses') && <nav className="section-nav" aria-label="Analyses"><AppLink to={{ page: 'analyses' }} navigate={navigate} current={route?.page === 'analyses'}>My analyses</AppLink><AppLink to={{ page: 'author' }} navigate={navigate} current={route?.page === 'author'}>Author</AppLink></nav>}
