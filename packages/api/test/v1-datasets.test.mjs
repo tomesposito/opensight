@@ -1,0 +1,159 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { request as httpRequest } from 'node:http';
+import { createHostedApiServer } from '../dist/hosted-server.js';
+import { authFixture } from './hosted-helpers.mjs';
+import { upload } from './source-helpers.mjs';
+
+/**
+ * Contract tests for the headless v1 datasets slice (issue #95, IDD D-37).
+ * Every assertion is a promise the frozen contract makes to agents:
+ * versioned paths, Bearer tenant auth, named error codes, Limit/Cursor
+ * pagination, Idempotency-Key on mutations, 429 RATE_LIMIT_EXCEEDED, and
+ * the fail-closed source-deletion pin-down.
+ */
+async function serving(t, f, envOverrides = {}) {
+  const c = f.config, env = { OPENSIGHT_PUBLIC_ORIGIN: c.origin, OPENSIGHT_AUTH_ISSUER: c.issuer, OPENSIGHT_AUTH_AUDIENCE: c.audience,
+    OPENSIGHT_AUTH_KEY_ID: c.keyId, OPENSIGHT_AUTH_SIGNING_KEY: c.signingKey.toString('base64'), OPENSIGHT_AUTH_ENCRYPTION_KEY: c.encryptionKey.toString('base64'),
+    OPENSIGHT_OPERATOR_KEY: c.operatorKey.toString('base64'), OPENSIGHT_SESSION_SECONDS: String(c.sessionSeconds), OPENSIGHT_INVITATION_SECONDS: String(c.invitationSeconds),
+    OPENSIGHT_SOURCE_ENDPOINTS: JSON.stringify([{ id: 'reference', host: 'localhost', port: 5433, database: 'opensight', tls: false }]), ...envOverrides };
+  const server = await createHostedApiServer({ membershipDatabase: f.db, tenantDatabase: f.db, security: { authenticate: f.auth.authenticate }, builtinAuth: f.auth, env });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => new Promise(resolve => { server.close(resolve); server.closeAllConnections(); }));
+  return (path, { method = 'GET', body, token, headers = {} } = {}) => new Promise((resolve, reject) => {
+    const bytes = body === undefined ? undefined : JSON.stringify(body);
+    const req = httpRequest({ host: '127.0.0.1', port: server.address().port, path, method, headers: { Host: new URL(c.origin).host,
+      ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(bytes ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(bytes) } : {}), ...headers } }, res => {
+      const chunks = []; res.on('data', b => chunks.push(b));
+      res.on('end', () => { const text = Buffer.concat(chunks).toString(); resolve({ status: res.statusCode, headers: res.headers, body: res.headers['content-type']?.includes('application/json') ? JSON.parse(text) : text }); });
+    }); req.on('error', reject); req.end(bytes);
+  });
+}
+const hasErrorCode = r => { assert.equal(typeof r.body.errorCode, 'string', `expected errorCode in ${JSON.stringify(r.body)}`); return r.body.errorCode; };
+
+test('v1 datasets: list, pagination, composed describe and lineage', async t => {
+  const f = await authFixture(t), call = await serving(t, f);
+  let token = (await f.login()).token;
+  const mutate = async (path, options) => { const r = await call(path, { token, ...options }); if (r.status < 400) token = (await f.login()).token; return r; };
+  assert.equal((await call('/api/v1/datasets', { token: 'forged' })).status, 401);
+  assert.deepEqual((await call('/api/v1/datasets', { token })).body, { items: [], nextCursor: null });
+  const source = (await mutate('/api/uploads', { method: 'POST', body: upload() })).body;
+  assert.equal((await mutate('/api/datasets/base/prep', { method: 'PUT', body: { name: 'Base', pipeline: { version: 1, input: source.id, steps: [] }, expectedVersion: 0 } })).status, 200);
+  assert.equal((await mutate('/api/datasets/child/prep', { method: 'PUT', body: { name: 'Child', pipeline: { version: 1, input: { dataset: 'base' }, steps: [] }, expectedVersion: 0 } })).status, 200);
+
+  let r = await call('/api/v1/datasets', { token });
+  assert.equal(r.status, 200); assert.equal(r.body.items.length, 2); assert.equal(r.body.nextCursor, null);
+  assert.deepEqual(Object.keys(r.body.items[0]).sort(), ['execution', 'id', 'name', 'version']);
+  r = await call('/api/v1/datasets', { token, headers: { Limit: '1' } });
+  assert.equal(r.body.items.length, 1); assert.equal(typeof r.body.nextCursor, 'string');
+  const second = await call('/api/v1/datasets', { token, headers: { Limit: '1', Cursor: r.body.nextCursor } });
+  assert.equal(second.body.items.length, 1); assert.equal(second.body.nextCursor, null);
+  assert.notDeepEqual(r.body.items[0].id, second.body.items[0].id);
+  assert.equal(hasErrorCode(await call('/api/v1/datasets', { token, headers: { Limit: '0' } })), 'INVALID_PAGINATION');
+  assert.equal(hasErrorCode(await call('/api/v1/datasets', { token, headers: { Limit: '1001' } })), 'INVALID_PAGINATION');
+  assert.equal(hasErrorCode(await call('/api/v1/datasets', { token, headers: { Cursor: 'not-a-cursor' } })), 'INVALID_PAGINATION');
+  assert.equal(hasErrorCode(await call('/api/v1/datasets', { token, headers: { Cursor: Buffer.from('{"offset":-1}').toString('base64') } })), 'INVALID_PAGINATION');
+
+  r = await call('/api/v1/datasets/child', { token });
+  assert.equal(r.status, 200);
+  assert.equal(r.body.name, 'Child'); assert.equal(r.body.version, 1);
+  assert.deepEqual(r.body.schema.columns.map(c => c.name), ['region', 'amount', 'private']);
+  assert.deepEqual(r.body.lineage.sources, []); assert.deepEqual(r.body.lineage.datasets, [{ id: 'base' }]); assert.equal(r.body.lineage.steps, 0);
+  assert.deepEqual(r.body.refresh, { supported: false, mode: 'DIRECT_QUERY', intervalMinutes: null });
+  assert.ok(hasErrorCode(await call('/api/v1/datasets/missing', { token })));
+
+  r = await call('/api/v1/datasets/child/lineage', { token });
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.body.dataset, { id: 'child', name: 'Child', version: 1 });
+  assert.equal(r.body.sources.length, 0); assert.equal(r.body.datasets.length, 1);
+  assert.equal(r.body.datasets[0].name, 'Base');
+  assert.deepEqual(r.body.datasets[0].inputs, [{ kind: 'source', id: source.id }]);
+  r = await call('/api/v1/datasets/base/lineage', { token });
+  assert.equal(r.body.sources.length, 1);
+  assert.equal(r.body.sources[0].connectorId, 'file'); assert.equal(r.body.sources[0].available, true);
+
+  r = await call('/api/v1/datasets/child/refresh-status', { token });
+  assert.deepEqual(r.body, { datasetId: 'child', version: 1, mode: 'DIRECT_QUERY', intervalMinutes: null, supported: false });
+  // Refresh on a direct-query dataset fails closed, not silently.
+  r = await mutate('/api/v1/datasets/child/refresh', { method: 'POST', body: {} });
+  assert.equal(r.status, 409); assert.equal(hasErrorCode(r), 'BLAZE_MODE_REQUIRED');
+
+  // Existing unversioned routes keep working for the UI (D-37).
+  r = await call('/api/prep-datasets', { token });
+  assert.equal(r.status, 200); assert.equal(r.body.datasets.length, 2); assert.equal(r.body.persistence, 'durable');
+});
+
+test('v1 datasets: create/update/delete honor Idempotency-Key and If-Match', async t => {
+  const f = await authFixture(t), call = await serving(t, f);
+  let token = (await f.login()).token;
+  const mutate = async (path, options) => { const r = await call(path, { token, ...options }); if (r.status < 400 && !r.headers['idempotent-replayed']) token = (await f.login()).token; return r; };
+  const source = (await mutate('/api/uploads', { method: 'POST', body: upload() })).body;
+  const pipeline = { version: 1, input: source.id, steps: [] };
+
+  let r = await mutate('/api/v1/datasets/agent', { method: 'PUT', body: { name: 'Agent', pipeline, expectedVersion: 0 }, headers: { 'Idempotency-Key': 'create-once' } });
+  assert.equal(r.status, 200); assert.equal(r.body.version, 1);
+  r = await call('/api/v1/datasets/agent', { method: 'PUT', body: { name: 'Agent', pipeline, expectedVersion: 0 }, token, headers: { 'Idempotency-Key': 'create-once' } });
+  assert.equal(r.status, 200); assert.equal(r.headers['idempotent-replayed'], 'true'); assert.equal(r.body.version, 1, 'replay must not bump the version');
+  assert.equal((await call('/api/v1/datasets/agent', { token })).body.version, 1);
+
+  assert.equal(hasErrorCode(await mutate('/api/v1/datasets/agent', { method: 'DELETE' })), 'V1_IF_MATCH_REQUIRED');
+  assert.equal(hasErrorCode(await mutate('/api/v1/datasets/agent', { method: 'DELETE', headers: { 'If-Match': '"abc"' } })), 'V1_IF_MATCH_INVALID');
+  assert.equal(hasErrorCode(await mutate('/api/v1/datasets/agent', { method: 'DELETE', headers: { 'If-Match': '"7"' } })), 'METADATA_CONFLICT');
+  r = await mutate('/api/v1/datasets/agent', { method: 'DELETE', headers: { 'If-Match': '"1"', 'Idempotency-Key': 'delete-once' } });
+  assert.equal(r.status, 200); assert.deepEqual(r.body, { id: 'agent', removed: true });
+  r = await call('/api/v1/datasets/agent', { method: 'DELETE', token, headers: { 'If-Match': '"1"', 'Idempotency-Key': 'delete-once' } });
+  assert.equal(r.headers['idempotent-replayed'], 'true'); assert.deepEqual(r.body, { id: 'agent', removed: true });
+});
+
+test('v1 sources: list, describe, fail-closed deletion pin-down', async t => {
+  const f = await authFixture(t), call = await serving(t, f);
+  let token = (await f.login()).token;
+  const mutate = async (path, options) => { const r = await call(path, { token, ...options }); if (r.status < 400 && !r.headers['idempotent-replayed']) token = (await f.login()).token; return r; };
+  const source = (await mutate('/api/uploads', { method: 'POST', body: upload() })).body;
+  await mutate('/api/datasets/base/prep', { method: 'PUT', body: { name: 'Base', pipeline: { version: 1, input: source.id, steps: [] }, expectedVersion: 0 } });
+  await mutate('/api/datasets/child/prep', { method: 'PUT', body: { name: 'Child', pipeline: { version: 1, input: { dataset: 'base' }, steps: [] }, expectedVersion: 0 } });
+
+  let r = await call('/api/v1/sources', { token });
+  assert.equal(r.status, 200); assert.equal(r.body.nextCursor, null);
+  const listed = r.body.items.find(s => s.id === source.id);
+  assert.equal(listed.available, true); assert.equal(listed.connectorId, 'file'); assert.equal(listed.version, 1);
+  r = await call(`/api/v1/sources/${source.id}`, { token });
+  assert.equal(r.status, 200); assert.deepEqual(r.body.columns.map(c => c.name), ['region', 'amount', 'private']);
+
+  // Deletion is fail-closed while any dataset references the source,
+  // including transitively through nested dataset refs.
+  r = await mutate(`/api/v1/sources/${source.id}`, { method: 'DELETE', headers: { 'If-Match': '"1"', 'Idempotency-Key': 'retire-blocked' } });
+  assert.equal(r.status, 409); assert.equal(hasErrorCode(r), 'SOURCE_DELETE_BLOCKED_BY_DATASET');
+  assert.ok(r.body.message.includes('child'));
+  await mutate('/api/v1/datasets/child', { method: 'DELETE', headers: { 'If-Match': '"1"' } });
+  r = await mutate(`/api/v1/sources/${source.id}`, { method: 'DELETE', headers: { 'If-Match': '"1"', 'Idempotency-Key': 'retire-blocked' } });
+  assert.equal(r.status, 409); assert.equal(hasErrorCode(r), 'SOURCE_DELETE_BLOCKED_BY_DATASET');
+  assert.ok(r.body.message.includes('base'));
+  await mutate('/api/v1/datasets/base', { method: 'DELETE', headers: { 'If-Match': '"1"' } });
+  r = await mutate(`/api/v1/sources/${source.id}`, { method: 'DELETE', headers: { 'If-Match': '"1"', 'Idempotency-Key': 'retire-blocked' } });
+  assert.equal(r.status, 200); assert.deepEqual(r.body, { id: source.id, retired: true, version: 2 });
+  assert.equal(hasErrorCode(await call(`/api/v1/sources/${source.id}`, { token })), 'SOURCE_RETIRED');
+  assert.equal(hasErrorCode(await call('/api/v1/sources/nope', { token })), 'RESOURCE_NOT_FOUND');
+});
+
+test('v1: rate limiting returns 429 RATE_LIMIT_EXCEEDED with Retry-After', async t => {
+  const f = await authFixture(t), call = await serving(t, f, { OPENSIGHT_V1_RATE_LIMIT_PER_MINUTE: '2' });
+  const token = (await f.login()).token;
+  assert.equal((await call('/api/v1/datasets', { token })).status, 200);
+  assert.equal((await call('/api/v1/datasets', { token })).status, 200);
+  const r = await call('/api/v1/datasets', { token });
+  assert.equal(r.status, 429); assert.equal(hasErrorCode(r), 'RATE_LIMIT_EXCEEDED');
+  assert.ok(Number(r.headers['retry-after']) >= 1, 'Retry-After header is set');
+  // Non-v1 routes are unaffected by the v1 limiter.
+  assert.equal((await call('/api/session', { token })).status, 200);
+});
+
+test('v1: unknown routes and bad ids fail with named codes, never bare 500s', async t => {
+  const f = await authFixture(t), call = await serving(t, f);
+  const token = (await f.login()).token;
+  assert.equal(hasErrorCode(await call('/api/v1/nope', { token })), 'RESOURCE_NOT_FOUND');
+  assert.equal((await call('/api/v1/nope', { token })).status, 404);
+  assert.equal((await call('/api/v1/datasets', { token, method: 'POST', body: {} })).status, 405);
+  assert.equal(hasErrorCode(await call('/api/v1/datasets', { token, method: 'POST', body: {} })), 'METHOD_NOT_ALLOWED');
+  assert.equal(hasErrorCode(await call('/api/v1/datasets/child/lineage/extra', { token })), 'RESOURCE_NOT_FOUND');
+});

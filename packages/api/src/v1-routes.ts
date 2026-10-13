@@ -64,9 +64,9 @@ class RateLimiter {
 }
 
 export class V1Routes {
-  private readonly limiter = new RateLimiter();
-  private readonly idempotent = new Map<string, { status: number; body: unknown; expiresAt: number }>();
-  constructor(private readonly routes: HostedDataRoutes) {}
+  private readonly limiter: RateLimiter;
+  private readonly idempotency = new Map<string, { status: number; body: unknown; expiresAt: number }>();
+  constructor(private readonly routes: HostedDataRoutes, env: NodeJS.ProcessEnv = process.env) { this.limiter = new RateLimiter(env); }
 
   async route(request: IncomingMessage, response: ServerResponse, path: string, context: TenantContext, recheck: () => Promise<void>): Promise<boolean> {
     if (!path.startsWith('/api/v1/')) return false;
@@ -96,15 +96,21 @@ export class V1Routes {
     send(response, status, { errorCode, message });
   }
 
+  private header(request: IncomingMessage, name: string): string | undefined {
+    const raw = request.headers[name];
+    if (Array.isArray(raw)) v1Fail('INVALID_HEADER', 400, `Duplicate ${name} header`);
+    return raw;
+  }
+
   private paging(request: IncomingMessage): { limit: number; offset: number } {
-    const rawLimit = request.headers['limit'];
+    const rawLimit = this.header(request, 'limit');
     let limit = DEFAULT_LIMIT;
     if (rawLimit !== undefined) {
       if (!/^\d+$/.test(rawLimit) || Number(rawLimit) < 1 || Number(rawLimit) > MAX_LIMIT) v1Fail('INVALID_PAGINATION', 400, `Limit must be an integer 1–${MAX_LIMIT}`);
       limit = Number(rawLimit);
     }
     let offset = 0;
-    const rawCursor = request.headers['cursor'];
+    const rawCursor = this.header(request, 'cursor');
     if (rawCursor !== undefined) {
       try { offset = (JSON.parse(Buffer.from(rawCursor, 'base64').toString('utf8')) as { offset: unknown }).offset as number; }
       catch { v1Fail('INVALID_PAGINATION', 400, 'Cursor is not a valid opaque page token'); }
@@ -119,7 +125,7 @@ export class V1Routes {
   }
 
   private ifMatch(request: IncomingMessage): number {
-    const raw = request.headers['if-match'];
+    const raw = this.header(request, 'if-match');
     if (raw === undefined) v1Fail('V1_IF_MATCH_REQUIRED', 428, 'If-Match with the current version is required');
     if (typeof raw !== 'string' || !/^"(?:0|[1-9]\d*)"$/.test(raw) || !Number.isSafeInteger(Number(raw.slice(1, -1)))) v1Fail('V1_IF_MATCH_INVALID', 400, 'If-Match must be a quoted integer version');
     return Number((raw as string).slice(1, -1));
@@ -128,15 +134,15 @@ export class V1Routes {
   /** Replay or record a mutation response for the request's Idempotency-Key. */
   private async idempotent(request: IncomingMessage, response: ServerResponse, context: TenantContext, path: string,
     run: () => Promise<{ status: number; body: unknown }>): Promise<void> {
-    const key = request.headers['idempotency-key'];
+    const key = this.header(request, 'idempotency-key');
     if (key === undefined) { const r = await run(); send(response, r.status, r.body); return; }
     const now = Date.now();
-    for (const [k, v] of this.idempotent) if (v.expiresAt <= now) this.idempotent.delete(k);
+    for (const [k, v] of this.idempotency) if (v.expiresAt <= now) this.idempotency.delete(k);
     const storeKey = `${context.tenantId}:${context.namespaceId}:${context.userId}:${request.method}:${path}:${identifier(key)}`;
-    const seen = this.idempotent.get(storeKey);
+    const seen = this.idempotency.get(storeKey);
     if (seen) { response.setHeader('Idempotent-Replayed', 'true'); send(response, seen.status, seen.body); return; }
     const result = await run();
-    this.idempotent.set(storeKey, { status: result.status, body: result.body, expiresAt: now + IDEMPOTENCY_TTL_MS });
+    this.idempotency.set(storeKey, { status: result.status, body: result.body, expiresAt: now + IDEMPOTENCY_TTL_MS });
     send(response, result.status, result.body);
   }
 
@@ -158,18 +164,18 @@ export class V1Routes {
    * through nested `{ dataset }` refs. Unresolvable refs fail closed
    * elsewhere (admission refuses them); they do not block deletion here. */
   private async datasetsReferencingSource(context: TenantContext, sourceId: string): Promise<string[]> {
-    const blocking: string[] = [], seen = new Set<string>();
-    const touches = async (datasetId: string): Promise<boolean> => {
+    const blocking: string[] = [];
+    const touches = async (datasetId: string, seen: Set<string>): Promise<boolean> => {
       if (seen.has(datasetId)) return false; seen.add(datasetId);
       let described: Awaited<ReturnType<HostedDataRoutes['prep']['describe']>>;
       try { described = await this.routes.prep.describe(context, datasetId); } catch { return false; }
       for (const input of described.inputs) {
         if (input.kind === 'source' && input.id === sourceId) return true;
-        if (input.kind === 'dataset' && await touches(input.id)) return true;
+        if (input.kind === 'dataset' && await touches(input.id, seen)) return true;
       }
       return false;
     };
-    for (const d of await this.routes.prep.list(context)) if (await touches(d.resource.dataSetId)) blocking.push(d.resource.dataSetId);
+    for (const d of await this.routes.prep.list(context)) if (await touches(d.resource.dataSetId, new Set())) blocking.push(d.resource.dataSetId);
     return blocking;
   }
 
@@ -188,7 +194,7 @@ export class V1Routes {
         const verb = method(request, response, ['GET', 'PUT', 'DELETE']);
         if (verb === 'GET') {
           const d = await this.routes.prep.describe(context, id);
-          const sources = [], datasets = [];
+          const sources: { id: string }[] = [], datasets: { id: string }[] = [];
           for (const i of d.inputs) (i.kind === 'source' ? sources : datasets).push({ id: i.id });
           await publish(200, { id, name: d.resource.name, version: d.version, execution: { mode: d.execution.mode, intervalMinutes: d.execution.intervalMinutes },
             schema: { columns: d.columns },
@@ -212,13 +218,14 @@ export class V1Routes {
       if (action === 'lineage') {
         method(request, response, ['GET']);
         const d = await this.routes.prep.describe(context, id);
-        const sources = [], datasets = [];
+        const sources: { id: string; connectorId?: string; version?: number; available: boolean; errorCode?: string }[] = [];
+        const datasets: { id: string; name?: string; version?: number; available: boolean; errorCode?: string; inputs?: { kind: 'source' | 'dataset'; id: string }[] }[] = [];
         for (const i of d.inputs) {
           if (i.kind === 'source') {
             try { const s = await this.routes.data.sources.get(context, i.id); sources.push({ id: i.id, connectorId: s.binding.connectorId, version: s.version, available: true }); }
             catch (error) { sources.push({ id: i.id, available: false, errorCode: error instanceof MetadataError ? error.code : 'SOURCE_UNAVAILABLE' }); }
           } else {
-            try { const child = await this.routes.prep.describe(context, i.id); datasets.push({ id: i.id, name: child.resource.name, version: child.version, inputs: child.inputs }); }
+            try { const child = await this.routes.prep.describe(context, i.id); datasets.push({ id: i.id, name: child.resource.name, version: child.version, available: true, inputs: child.inputs }); }
             catch { datasets.push({ id: i.id, available: false, errorCode: 'DATASET_UNAVAILABLE' }); }
           }
         }
