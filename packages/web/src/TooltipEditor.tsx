@@ -6,7 +6,7 @@ import { dataFields, visualDimensions, TOOLTIP_AGGREGATIONS, type AuthorAction, 
 const tooltipFieldNames = (visual: AuthorVisual): string[] => [...visualDimensions(visual), ...visual.measures];
 
 /** Drill-in "Add field to tooltip" panel (QuickSight parity). Staged edits: Save commits via the draft reducer, Cancel discards. */
-function AddFieldPanel({ visual, dataset, calculations, dispatch, onClose }: { visual: AuthorVisual; dataset?: AuthorDataset; calculations: readonly CalculatedField[]; dispatch: Dispatch<AuthorAction>; onClose: () => void }) {
+function AddFieldPanel({ visual, dataset, calculations = [], dispatch, onClose }: { visual: AuthorVisual; dataset?: AuthorDataset; calculations?: readonly CalculatedField[]; dispatch: Dispatch<AuthorAction>; onClose: () => void }) {
   const used = new Set([...tooltipFieldNames(visual), ...visual.tooltipExtraFields.map(e => e.field)]);
   const options = dataFields(calculations, dataset).filter(f => f.role === 'measure' && !used.has(f.name));
   const [field, setField] = useState('');
@@ -41,7 +41,7 @@ function AddFieldPanel({ visual, dataset, calculations, dispatch, onClose }: { v
  * visible field, plus any dataset measure fields added below. Added measures
  * aggregate at the visual's existing grain — no query-shape change.
  */
-export function TooltipSection({ visual, dispatch, dataset, calculations }: { visual: AuthorVisual; dispatch: Dispatch<AuthorAction>; dataset?: AuthorDataset; calculations: readonly CalculatedField[] }) {
+export function TooltipSection({ visual, dispatch, dataset, calculations = [] }: { visual: AuthorVisual; dispatch: Dispatch<AuthorAction>; dataset?: AuthorDataset; calculations?: readonly CalculatedField[] }) {
   const [adding, setAdding] = useState(false);
   if (!tooltipDetailKinds(visual.kind)) return null;
   const fields = tooltipFieldNames(visual);
