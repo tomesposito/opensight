@@ -171,6 +171,8 @@ const visualBody: Schema = {
       FieldBasedTooltip: ['fieldBasedTooltip', {
         AggregationVisibility: ['aggregationVisibility'], TooltipTitleType: ['tooltipTitleType'],
         TooltipFields: ['tooltipFields', { FieldTooltipItem: ['fieldTooltipItem', { FieldId: ['fieldId'], Visibility: ['visibility'] }] }],
+        // OpenSight extension: per-extra-field label/aggregation annotations stay verbatim.
+        OpensightTooltipExtras: ['opensightTooltipExtras'],
       }],
     }],
     SortConfiguration: ['sortConfiguration', {

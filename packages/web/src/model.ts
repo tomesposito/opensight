@@ -45,6 +45,9 @@ export interface VisualModel {
     /** Field ids hidden from the detailed tooltip; all visual fields show by default. */
     hiddenFields: string[];
   };
+  /** Extra dataset measure fields rendered as additional detailed-tooltip rows.
+   *  Not part of the visual's wells: they never affect grouping, series, or the data table. */
+  tooltipExtraFields?: { id: string; label?: string; aggregation: 'SUM' | 'AVG' | 'MIN' | 'MAX' | 'COUNT' }[];
   legend: boolean;
   referenceLines?: { value: number; label: string; color: string }[];
   sort?: { fieldId: string; direction: 'ASC' | 'DESC' };

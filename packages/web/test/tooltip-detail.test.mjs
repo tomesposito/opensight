@@ -65,7 +65,7 @@ test('detailed tooltips export to SelectedTooltipType/FieldBasedTooltip and impo
   assert.deepEqual(exportBundle(restored), bundle);
 });
 
-test('compiler parses tooltip detail, fails closed on bad enums, warns on unknown fields', () => {
+test('compiler parses tooltip detail, fails closed on bad enums, treats non-well fields as extras', () => {
   const compiled = compileVisual(input({ ...bar(), tooltipType: 'detailed', tooltipAggregations: false }));
   assert.deepEqual(compiled.model.tooltipDetail, { type: 'detailed', titleType: 'primaryValue', aggregations: false, hiddenFields: [] });
   assert.equal(typeof compiled.option.tooltip.formatter, 'function');
@@ -95,9 +95,12 @@ test('compiler parses tooltip detail, fails closed on bad enums, warns on unknow
   const unknown = structuredClone(definition);
   unknown.chartConfiguration.tooltip.selectedTooltipType = 'DETAILED';
   unknown.chartConfiguration.tooltip.fieldBasedTooltip = { tooltipFields: [{ fieldTooltipItem: { fieldId: 'ghost', visibility: 'VISIBLE' } }] };
-  const warned = compileVisual({ ...input(bar()), definition: { barChartVisual: unknown } });
-  assert.deepEqual(warned.model.tooltipDetail.hiddenFields, []);
-  assert.ok(warned.model.warnings.some(w => w.includes('ghost')), JSON.stringify(warned.model.warnings));
+  // A tooltip field outside the visual's wells is an added dataset field: it becomes an
+  // extra with SUM defaults; rows that cannot supply it warn loudly and skip the row.
+  const extra = compileVisual({ ...input(bar(), []), definition: { barChartVisual: unknown } });
+  assert.deepEqual(extra.model.tooltipExtraFields, [{ id: 'ghost', aggregation: 'SUM' }]);
+  const skipped = compileVisual({ ...input(bar()), definition: { barChartVisual: unknown } });
+  assert.ok(skipped.model.warnings.some(w => w.includes("tooltip field 'ghost' has no data in this result")), JSON.stringify(skipped.model.warnings));
 });
 
 test('detailed tooltip formatter shows title, fields, aggregations and hidden fields', () => {
