@@ -93,6 +93,11 @@ function parseMultiplesOptions(value: unknown, path: string): MultiplesOptions {
   const o = object(value, path);
   keys(o, ['visibleRows', 'visibleColumns', 'panelCount', 'title', 'border', 'gutter', 'background'], path);
   const invalid = (name: string, expected: string): never => fail(name ? `${path}.${name}` : path, `MULTIPLES_OPTIONS_INVALID: expected ${expected}`);
+  const oneOf = <T extends string>(raw: unknown, choices: readonly T[], fallback: T, name: string): T => {
+    if (raw === undefined) return fallback;
+    if (typeof raw === 'string' && (choices as readonly string[]).includes(raw)) return raw as T;
+    return invalid(name, `one of: ${choices.join(', ')}`);
+  };
   const autoOrPositiveInt = (raw: unknown, name: string): 'auto' | number => {
     if (raw === undefined || raw === 'auto') return 'auto';
     if (typeof raw === 'number' && Number.isInteger(raw) && raw >= 1) return raw;
@@ -119,13 +124,13 @@ function parseMultiplesOptions(value: unknown, path: string): MultiplesOptions {
     visibleColumns: autoOrPositiveInt(o.visibleColumns, 'visibleColumns'),
     panelCount,
     title: {
-      size: enumValue(title.size, ['small', 'medium', 'large'], 'small', `${path}.title.size`) as 'small' | 'medium' | 'large',
+      size: oneOf(title.size, ['small', 'medium', 'large'], 'small', 'title.size'),
       bold: title.bold === true, italic: title.italic === true, underline: title.underline === true,
-      align: enumValue(title.align, ['left', 'center', 'right'], 'center', `${path}.title.align`) as 'left' | 'center' | 'right',
+      align: oneOf(title.align, ['left', 'center', 'right'], 'center', 'title.align'),
     },
     border: {
       enabled: border.enabled === true, widthPx,
-      style: enumValue(border.style, ['solid', 'dashed', 'dotted'], 'solid', `${path}.border.style`) as 'solid' | 'dashed' | 'dotted',
+      style: oneOf(border.style, ['solid', 'dashed', 'dotted'], 'solid', 'border.style'),
       color,
     },
     gutter: o.gutter === true,
