@@ -184,7 +184,7 @@ test('removing a command context while open removes options and resets the activ
 
 test('Search uses the single existing palette with guarded menu actions and resets its label on global open', async t => {
   const ui = await mountPalette(t);
-  await ui.click('Search');
+  await ui.click('Search analysis actions');
   assert.equal(ui.renderer.root.findAllByType('dialog').length, 1);
   assert.equal(ui.input().props.placeholder, 'Search analysis actions…');
   assert.ok(ui.labels().includes('Insert: Add Visual'));
