@@ -255,31 +255,52 @@ entitlement work), multi-region, SLAs. The pilot API is single-tenant-
 scoped like everything else. The operator plane (`/api/host/...`) is not
 in this contract.
 
+## Freeze decisions (product owner, 2026-10-13)
+
+Questions 1–5 and 7 are frozen. Question 6 (dashboard publish semantics)
+remains open — see below.
+
+1. **Versioned path: `/api/v1/...` — frozen.** The headless surface lives
+   under `/api/v1/`; existing unversioned routes are untouched.
+2. **Credential shape: secure refresh token — frozen.** Not a long-lived
+   API key and not a short browser session. BI data can be sensitive, so
+   the security posture must match: a refresh-token flow (short-lived
+   access tokens, rotation, revocation) scoped to user-tenant per D-37.
+   Provisioning still goes through the operator invitation/minting path.
+3. **Pagination: `limit`/`cursor`/`nextCursor` — frozen** on all v1 list
+   endpoints.
+4. **Dataset describe: composed endpoint — frozen.** A single
+   `GET /api/v1/datasets/{id}` returns schema + lineage pointers +
+   refresh state, so agents don't have to compose the pieces.
+5. **Analysis authoring verbs: agreed as proposed.** The analyses slice
+   proposes concrete verbs against the existing `BundleDefinition` shape;
+   anything product-shaped comes back for review rather than freezing
+   silently.
+6. **Dashboard publish semantics: OPEN.** There is no IDD covering this
+   yet — that is why it was a freeze question, not an oversight. Options:
+   - **Snapshot-and-version** (recommended): publishing captures an
+     immutable, versioned snapshot of the dashboard. Shared links never
+     change under the reader; every publish is auditable. Composes with
+     the SR4b immutable-release thinking already in the repo. Costs some
+     storage per version.
+   - **Live reference**: the dashboard always reflects the current
+     analysis state. Always fresh, simpler to build — but shared links
+     can change under readers and there is no audit trail of what was
+     published when.
+   
+   The dashboards slice is gated on this answer.
+7. **MCP tool naming: mechanical 1:1 mapping — frozen.** REST is the
+   source of truth; tool names (`create_dataset`, `run_query`,
+   `add_visual`) are a mechanical mapping, not a second design.
+
 ## Open questions for the freeze
 
-These are the decisions Tom (or the freeze review) must make before any
-slice builds. The draft proposes; the review disposes.
+~~These are the decisions Tom (or the freeze review) must make before any
+slice builds. The draft proposes; the review disposes.~~
 
-1. **Versioned path**: confirm `/api/v1/...` for the headless surface
-   with existing unversioned routes untouched, or choose another scheme.
-2. **Agent credential shape**: long-lived API key minted via the
-   invitation path, or renewable short sessions like today's login flow?
-   Either way user-level and tenant-scoped (D-37); the freeze pins the
-   mechanism.
-3. **Pagination**: confirm `limit`/`cursor`/`nextCursor` on v1 list
-   endpoints, or a different convention.
-4. **Dataset describe**: is a single composed `GET /api/v1/datasets/{id}`
-   (schema + lineage pointers + refresh state) wanted, or do agents
-   compose the existing pieces?
-5. **Analysis authoring verbs**: the slice will propose concrete verbs
-   for visuals/layouts/filters/calculated fields against the existing
-   `BundleDefinition` shape. Anything that smells like a product decision
-   comes back for review rather than being frozen silently.
-6. **Dashboard publish semantics**: snapshot-and-version vs. live
-   reference — needs a product answer before the dashboards slice.
-7. **MCP tool naming**: REST is the source of truth; the MCP slice maps
-   tools 1:1 (e.g. `create_dataset`, `run_query`, `add_visual`). Confirm
-   the tool names are a mechanical mapping, not a second design.
+Resolved 2026-10-13 except #6 above. The remaining freeze questions from
+the original draft are answered in "Freeze decisions". Slices whose
+dependencies are frozen may build; the dashboards slice waits on #6.
 
 ## Slice mapping
 
