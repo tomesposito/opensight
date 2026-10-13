@@ -61,7 +61,7 @@ function TextButtons({ label, alignment = false }: { label: string; alignment?: 
 export function MultiplesOptions({ visual }: Pick<SectionProps, 'visual'>) {
   if (!hasSmallMultiplesWell(visual.kind) && !visual.smallMultiples?.length) return null;
   return <details className="property-section"><summary>Multiples Options</summary>
-    <Unavailable label="Multiples options controls" reason="Faceted preview and panel styling are not supported yet. These reference defaults are not applied; Small multiples field assignments remain saved in the draft.">
+    <Unavailable label="Multiples options controls" reason="Faceted preview is supported for pie charts (automatic grid layout, up to 20 panels); other kinds are not supported yet. Panel styling controls are not applied.">
       <h4 className="property-caption">Layout</h4>
       <div className="property-inline">
         <label>Visible rows<input placeholder="Auto" /></label><label>Visible columns<input placeholder="Auto" /></label>
