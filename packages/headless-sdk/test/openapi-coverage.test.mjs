@@ -36,6 +36,23 @@ const ROUTES = specRoutes();
 
 // The client method that implements each spec route.
 const COVERAGE = {
+  '/assets|GET': 'listAssets',
+  '/assets/analyses|GET': 'listAnalysesSummary',
+  '/assets/dashboards|GET': 'listDashboardsSummary',
+  '/assets/datasets|GET': 'listDatasetsSummary',
+  '/assets/search|POST': 'searchAssets',
+  '/assets/{kind}/{id}/move|POST': 'moveAsset',
+  '/assets/{kind}/{id}/copy|POST': 'copyAsset',
+  '/analyses/{id}/shares/{principalType}/{principalId}|GET': 'getAssetShare',
+  '/analyses/{id}/shares/{principalType}/{principalId}|PUT': 'setAssetShare',
+  '/analyses/{id}/shares/{principalType}/{principalId}|DELETE': 'deleteAssetShare',
+  '/folders|GET': 'listFolders',
+  '/folders/{id}|GET': 'getFolder',
+  '/folders/{id}|PUT': 'renameFolder',
+  '/folders/{id}|DELETE': 'deleteFolder',
+  '/folders/{id}/assets|GET': 'listFolderAssets',
+  '/folders/{id}/permissions|GET': 'getFolderPermissions',
+  '/folders/{id}/permissions|PUT': 'setFolderPermissions',
   '/analyses/{id}/publish|POST': 'publishAnalysis',
   '/dashboards|GET': 'listDashboards',
   '/dashboards/{id}|GET': 'getDashboard',

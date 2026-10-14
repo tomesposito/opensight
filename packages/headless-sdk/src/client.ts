@@ -1,6 +1,7 @@
 import { OpenSightApiError } from './errors.js';
 import type {
   ApiErrorBody,
+  AssetKind, TransferAssetKind, AssetSummary, AssetSearch, AssetMove, AssetCopy, AssetTransfer, AssetPrincipal, AssetRole, AssetShare, AssetGrantWrite, FolderDescribe, FolderPermissions,
   PublishAnalysisBody, PublishAnalysisResult, DashboardSummary, DashboardVersionSummary, DashboardDescribe, DashboardShare, DashboardQueryBody, DashboardExportBody, DashboardExportArtifact, DashboardRemoved,
   AnalysisCalculatedFields, AnalysisDescribe, AnalysisFilterGroup, AnalysisLayouts,
   AnalysisSummary, BundleVisual, CreateAnalysisBody, DeleteAnalysisResult,
@@ -232,13 +233,13 @@ export class OpenSightClient {
   deleteDashboardVersion(id: string, version: number, opts: AnalysisMutationOptions): Promise<DashboardRemoved> {
     return this.request('DELETE', dashboardVersionPath(id, version), { headers: analysisHeaders(opts) });
   }
-  getDashboardShare(id: string, principal: DashboardShare['principal']): Promise<DashboardShare> {
+  getDashboardShare(id: string, principal: AssetPrincipal): Promise<DashboardShare> {
     return this.request('GET', dashboardSharePath(id, principal));
   }
-  setDashboardShare(id: string, principal: DashboardShare['principal'], body: Pick<DashboardShare, 'role'>, opts: Pick<RequestOptions, 'idempotencyKey'> = {}): Promise<DashboardShare> {
-    return this.request('PUT', dashboardSharePath(id, principal), { body, headers: mutationHeaders(opts) });
+  setDashboardShare(id: string, principal: AssetPrincipal, body: { role: AssetRole }, opts: AnalysisMutationOptions): Promise<DashboardShare> {
+    return this.request('PUT', dashboardSharePath(id, principal), { body, headers: analysisHeaders(opts) });
   }
-  deleteDashboardShare(id: string, principal: DashboardShare['principal'], opts: Pick<RequestOptions, 'idempotencyKey'> = {}): Promise<{ deleted: true }> {
+  deleteDashboardShare(id: string, principal: AssetPrincipal, opts: Pick<RequestOptions, 'idempotencyKey'> = {}): Promise<{ Deleted: true }> {
     return this.request('DELETE', dashboardSharePath(id, principal), { headers: mutationHeaders(opts) });
   }
   queryDashboardVisual(id: string, version: number, visualId: string, body: DashboardQueryBody = {}, opts: Pick<RequestOptions, 'idempotencyKey'> = {}): Promise<VersionedResult<QueryResult>> {
@@ -247,6 +248,63 @@ export class OpenSightClient {
   async createDashboardExport(id: string, body: DashboardExportBody, opts: Pick<RequestOptions, 'idempotencyKey'> = {}): Promise<DashboardExportArtifact> {
     const response = await this.response('POST', `${dashboardPath(id)}/exports`, { body, headers: mutationHeaders(opts) });
     return { bytes: new Uint8Array(await response.arrayBuffer()), contentType: response.headers.get('Content-Type') ?? 'application/octet-stream', contentDisposition: response.headers.get('Content-Disposition'), etag: response.headers.get('ETag') };
+  }
+
+  // ---- assets and folders ----
+
+  listAssets(opts: Pick<RequestOptions, 'limit' | 'cursor'> = {}): Promise<Page<AssetSummary>> {
+    return this.request('GET', '/v1/assets', { headers: pageHeaders(opts) });
+  }
+  listAnalysesSummary(opts: Pick<RequestOptions, 'limit' | 'cursor'> = {}): Promise<Page<AssetSummary>> {
+    return this.request('GET', '/v1/assets/analyses', { headers: pageHeaders(opts) });
+  }
+  listDashboardsSummary(opts: Pick<RequestOptions, 'limit' | 'cursor'> = {}): Promise<Page<AssetSummary>> {
+    return this.request('GET', '/v1/assets/dashboards', { headers: pageHeaders(opts) });
+  }
+  listDatasetsSummary(opts: Pick<RequestOptions, 'limit' | 'cursor'> = {}): Promise<Page<AssetSummary>> {
+    return this.request('GET', '/v1/assets/datasets', { headers: pageHeaders(opts) });
+  }
+  searchAssets(body: AssetSearch, opts: Pick<RequestOptions, 'limit' | 'cursor'> = {}): Promise<Page<AssetSummary>> {
+    return this.request('POST', '/v1/assets/search', { body, headers: pageHeaders(opts) });
+  }
+  moveAsset(kind: TransferAssetKind, id: string, body: AssetMove, opts: Pick<RequestOptions, 'idempotencyKey'> = {}): Promise<VersionedResult<AssetTransfer>> {
+    return this.versionedRequest('POST', `/v1/assets/${encode(kind)}/${encode(id)}/move`, { body, headers: mutationHeaders(opts) });
+  }
+  copyAsset(kind: TransferAssetKind, id: string, body: AssetCopy, opts: Pick<RequestOptions, 'idempotencyKey'> = {}): Promise<VersionedResult<AssetTransfer>> {
+    return this.versionedRequest('POST', `/v1/assets/${encode(kind)}/${encode(id)}/copy`, { body, headers: mutationHeaders(opts) });
+  }
+  getAssetShare(kind: TransferAssetKind, id: string, principal: AssetPrincipal): Promise<VersionedResult<AssetShare>> {
+    return this.versionedRequest('GET', assetSharePath(kind, id, principal));
+  }
+  setAssetShare(kind: TransferAssetKind, id: string, principal: AssetPrincipal, body: { role: AssetRole }, opts: AnalysisMutationOptions): Promise<VersionedResult<AssetShare>> {
+    return this.versionedRequest('PUT', assetSharePath(kind, id, principal), { body, headers: analysisHeaders(opts) });
+  }
+  deleteAssetShare(kind: TransferAssetKind, id: string, principal: AssetPrincipal, opts: Pick<RequestOptions, 'idempotencyKey'> = {}): Promise<VersionedResult<{ Deleted: true }>> {
+    return this.versionedRequest('DELETE', assetSharePath(kind, id, principal), { headers: mutationHeaders(opts) });
+  }
+  deleteAsset(kind: AssetKind, id: string, opts: AnalysisMutationOptions): Promise<{ id: string; removed: true }> {
+    return this.request('DELETE', `/v1/${encode(kind)}/${encode(id)}`, { headers: analysisHeaders(opts) });
+  }
+  listFolders(opts: Pick<RequestOptions, 'limit' | 'cursor'> = {}): Promise<Page<FolderDescribe>> {
+    return this.request('GET', '/v1/folders', { headers: pageHeaders(opts) });
+  }
+  getFolder(id: string): Promise<VersionedResult<FolderDescribe>> {
+    return this.versionedRequest('GET', `/v1/folders/${encode(id)}`);
+  }
+  listFolderAssets(id: string, opts: Pick<RequestOptions, 'limit' | 'cursor'> = {}): Promise<Page<AssetSummary>> {
+    return this.request('GET', `/v1/folders/${encode(id)}/assets`, { headers: pageHeaders(opts) });
+  }
+  renameFolder(id: string, body: { name: string }, opts: AnalysisMutationOptions): Promise<VersionedResult<FolderDescribe>> {
+    return this.versionedRequest('PUT', `/v1/folders/${encode(id)}`, { body, headers: analysisHeaders(opts) });
+  }
+  deleteFolder(id: string, opts: Pick<RequestOptions, 'idempotencyKey'> = {}): Promise<{ Id: string; Removed: true }> {
+    return this.request('DELETE', `/v1/folders/${encode(id)}`, { headers: mutationHeaders(opts) });
+  }
+  getFolderPermissions(id: string): Promise<VersionedResult<FolderPermissions>> {
+    return this.versionedRequest('GET', `/v1/folders/${encode(id)}/permissions`);
+  }
+  setFolderPermissions(id: string, body: { grants: AssetGrantWrite[] | null }, opts: AnalysisMutationOptions): Promise<VersionedResult<FolderPermissions>> {
+    return this.versionedRequest('PUT', `/v1/folders/${encode(id)}/permissions`, { body, headers: analysisHeaders(opts) });
   }
 
   // ---- transport ----
@@ -337,6 +395,10 @@ function dashboardVersionPath(id: string, version: number): string {
   if (!Number.isSafeInteger(version) || version < 1) throw new TypeError('version must be a positive integer');
   return `${dashboardPath(id)}/versions/${version}`;
 }
-function dashboardSharePath(id: string, principal: DashboardShare['principal']): string {
+function dashboardSharePath(id: string, principal: AssetPrincipal): string {
   return `${dashboardPath(id)}/shares/${encode(principal.type)}/${encode(principal.id)}`;
+}
+
+function assetSharePath(kind: TransferAssetKind, id: string, principal: AssetPrincipal): string {
+  return `/v1/${encode(kind)}/${encode(id)}/shares/${encode(principal.type)}/${encode(principal.id)}`;
 }

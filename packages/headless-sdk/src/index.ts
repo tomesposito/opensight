@@ -3,6 +3,7 @@ export type { OpenSightClientOptions, RequestOptions, AnalysisMutationOptions } 
 export { OpenSightApiError } from './errors.js';
 export type {
   ApiErrorBody,
+  AssetKind, TransferAssetKind, AssetSummary, AssetSearch, AssetMove, AssetCopy, AssetTransfer, AssetPrincipal, AssetRole, AssetShare, AssetGrantWrite, FolderDescribe, FolderPermissions,
   PublishAnalysisBody, PublishAnalysisResult, DashboardSummary, DashboardVersionSummary, DashboardDescribe, DashboardShare, DashboardQueryBody, DashboardExportBody, DashboardExportArtifact, DashboardRemoved,
   AnalysisCalculatedFields, AnalysisDescribe, AnalysisDiagnostic, AnalysisFilterGroup,
   AnalysisLayouts, AnalysisSummary, BundleDefinition, BundleSheet, BundleVisual,

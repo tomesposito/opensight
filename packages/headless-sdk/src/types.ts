@@ -224,8 +224,23 @@ export interface PublishAnalysisResult { DashboardId: string; Version: number; P
 export interface DashboardSummary { kind: 'dashboard'; id: string; name: string; version: number; publishedAt: string; sourceAnalysisId: string }
 export interface DashboardVersionSummary { version: number; publishedAt: string; publishedBy: string }
 export interface DashboardDescribe { DashboardId: string; Name: string; Definition: Record<string, unknown>; Errors: AnalysisDiagnostic[]; Version: number; PublishedAt: string; SourceAnalysisId: string }
-export interface DashboardShare { principal: { type: 'user' | 'group'; id: string }; role: 'viewer' | 'co-owner' }
+export type DashboardShare = AssetShare;
 export interface DashboardQueryBody { controlValues?: Record<string, Array<string | number>> }
 export interface DashboardExportBody { version?: number; format: 'csv' | 'pdf' }
 export interface DashboardExportArtifact { bytes: Uint8Array; contentType: string; contentDisposition: string | null; etag: string | null }
 export interface DashboardRemoved { id: string; version?: number; removed: true }
+
+/** D-55 explicitly retains lowercase discovery summaries and pagination. */
+export type AssetKind = 'analyses' | 'dashboards' | 'datasets';
+export type TransferAssetKind = 'analyses' | 'dashboards';
+export interface AssetSummary { kind: AssetKind; id: string; name: string; folderId: string | null }
+export interface AssetSearch { query: string; kinds?: AssetKind[] }
+export interface AssetMove { folderId: string | null }
+export interface AssetCopy { newId: string; name?: string; folderId?: string | null }
+export interface AssetTransfer { Kind: TransferAssetKind; Id: string; Name: string; FolderId: string | null }
+export interface AssetPrincipal { type: 'user' | 'group'; id: string }
+export type AssetRole = 'viewer' | 'co-owner';
+export interface AssetShare { Principal: { Type: 'user' | 'group'; Id: string }; Role: AssetRole }
+export interface AssetGrantWrite { principal: AssetPrincipal; role: AssetRole }
+export interface FolderDescribe { Id: string; Name: string; Version: number }
+export interface FolderPermissions { InheritedFrom: string; Grants: AssetShare[] | null }

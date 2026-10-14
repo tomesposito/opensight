@@ -336,3 +336,29 @@ describe('dashboard operations', () => {
     await assert.rejects(client.createDashboardExport('d', { format: 'csv' }, { idempotencyKey: 'export' }), e => e instanceof OpenSightApiError && e.errorCode === 'RATE_LIMIT_EXCEEDED' && e.status === 429 && e.retryAfter === 4 && e.body.Errors.length === 1);
   });
 });
+
+describe('assets and folders', () => {
+  it('maps every asset verb, casing, ETags, pagination and retry headers', async () => {
+    const calls=[];
+    const client=new OpenSightClient({baseUrl:'https://h/api',getToken:'token',fetch:async(url,init)=>{calls.push({url,...init}); return new Response(JSON.stringify({Id:'id'}),{headers:{ETag:'"4"'}});}});
+    const page={limit:2,cursor:'page'}, update={ifMatch:'"3"',idempotencyKey:'retry'}, principal={type:'user',id:'member'};
+    await client.listAssets(page); await client.listAnalysesSummary(page); await client.listDashboardsSummary(page); await client.listDatasetsSummary(page);
+    await client.searchAssets({query:'Sales',kinds:['analyses']},page);
+    assert.equal((await client.moveAsset('analyses','id',{folderId:null},update)).etag,'"4"');
+    await client.copyAsset('dashboards','id',{newId:'copy'},update);
+    await client.getAssetShare('analyses','id',principal); await client.setAssetShare('analyses','id',principal,{role:'viewer'},update); await client.deleteAssetShare('analyses','id',principal,update);
+    await client.deleteAsset('datasets','id',update); await client.renameFolder('f',{name:'Name'},update); await client.deleteFolder('f',update);
+    await client.listFolders(page); await client.getFolder('f'); await client.listFolderAssets('f',page); await client.getFolderPermissions('f'); await client.setFolderPermissions('f',{grants:[{principal,role:'co-owner'}]},update);
+    assert.deepEqual(calls.map(c=>[c.method,new URL(c.url).pathname]),[
+      ['GET','/api/v1/assets'],['GET','/api/v1/assets/analyses'],['GET','/api/v1/assets/dashboards'],['GET','/api/v1/assets/datasets'],['POST','/api/v1/assets/search'],
+      ['POST','/api/v1/assets/analyses/id/move'],['POST','/api/v1/assets/dashboards/id/copy'],
+      ['GET','/api/v1/analyses/id/shares/user/member'],['PUT','/api/v1/analyses/id/shares/user/member'],['DELETE','/api/v1/analyses/id/shares/user/member'],
+      ['DELETE','/api/v1/datasets/id'],['PUT','/api/v1/folders/f'],['DELETE','/api/v1/folders/f'],['GET','/api/v1/folders'],['GET','/api/v1/folders/f'],['GET','/api/v1/folders/f/assets'],['GET','/api/v1/folders/f/permissions'],['PUT','/api/v1/folders/f/permissions'],
+    ]);
+    for(const i of [0,1,2,3,4,13,15]) { assert.equal(calls[i].headers.Limit,'2'); assert.equal(calls[i].headers.Cursor,'page'); }
+    for(const i of [5,6,8,9,10,11,12,17]) assert.equal(calls[i].headers['Idempotency-Key'],'retry');
+    for(const i of [8,10,11,17]) assert.equal(calls[i].headers['If-Match'],'"3"');
+    assert.deepEqual(JSON.parse(calls[8].body),{role:'viewer'});
+    assert.deepEqual(JSON.parse(calls[17].body),{grants:[{principal,role:'co-owner'}]});
+  });
+});
