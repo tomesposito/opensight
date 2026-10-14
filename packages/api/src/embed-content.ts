@@ -136,7 +136,16 @@ export class EmbedContent {
     const visuals = embedVisuals(definition).filter(v => e.kind !== 'visual' || v.id === e.visualId && v.sheetId === e.sheetId);
     if (!visuals.length) return [];
     if (!Array.isArray(definition.DataSetIdentifierDeclarations) || definition.DataSetIdentifierDeclarations.length !== 1 || !Array.isArray(asset.body.datasets) || asset.body.datasets.length !== 1) embedFailure('EMBED_DATASET_UNSUPPORTED', 422);
-    const datasetId = identifier(object(asset.body.datasets[0]).id), dataSetArn = String(object(definition.DataSetIdentifierDeclarations[0]).DataSetArn);
+    const binding = object(asset.body.datasets[0]);
+    // A published prepared binding must never alias a same-ID legacy dataset.
+    if (binding.kind !== 'dataset') embedFailure('EMBED_DATASET_UNSUPPORTED', 422);
+    const datasetId = identifier(binding.id), dataSetArn = String(object(definition.DataSetIdentifierDeclarations[0]).DataSetArn);
+    if (asset.body.published) {
+      if (g.anonymous) embedFailure('DASHBOARD_ANONYMOUS_UNSUPPORTED', 403);
+      const dataset = await this.metadata.get(context, { kind: 'dataset', id: datasetId });
+      const sources = dataset.body.sources;
+      if (!Array.isArray(sources) || sources.length !== 1 || object(sources[0]).ownerId !== context.userId) embedFailure('DASHBOARD_DATASET_ACCESS_DENIED', 403);
+    }
     const a = await this.admission(context, g, datasetId);
     const plans = visuals.map(v => planPreparedVisual(a.physical.columns, analysis, v.id, dataSetArn, a.security));
     return this.data.work(context, false, [a], async () => {

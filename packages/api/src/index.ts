@@ -1,3 +1,8 @@
+import type { Identity } from './security.js';
+import { MetadataError } from './metadata-db.js';
+import { LocalDashboards } from './local-dashboards.js';
+import { V1Routes } from './v1-routes.js';
+import { LocalAnalyses } from './local-analyses.js';
 import { PrepRoutes, type PrepPostgresBinding } from './prep-routes.js';
 import { ConnectorRoutes } from './connector-routes.js';
 import { invitationRoute } from './invitations.js';
@@ -82,7 +87,6 @@ export async function createApiServer(options: ApiOptions): Promise<Server> {
   const ai = await AISettings.load(options.ai ?? aiFromEnvironment());
   const organization = security ? new OrganizationService(security, namespaceStores) : undefined;
   if (options.embedding && !organization) throw new Error('Embedding requires security configuration');
-  const embedding = organization ? new EmbeddingService(options.embedding, organization) : undefined;
   if (security) security.hasAssets = namespaceId => !!namespaceStores.get(namespaceId)?.list().length || !!namespaceQueries.get(namespaceId);
   const automation = await AutomationStore.load(emptyRefreshState(), options.automationStorePath, validateRefreshState);
   const refresh = new RefreshService(automation, new Map(sales ? [['sales', sales]] : []));
@@ -97,6 +101,15 @@ export async function createApiServer(options: ApiOptions): Promise<Server> {
   const connectorRoutes = new ConnectorRoutes(!!localIdentity);
   const prepRoutes = await PrepRoutes.create(connectorRoutes, options.prepStorePath, options.prepPostgresBindings);
   if (options.localUploadPath) await connectorRoutes.openLocal(options.localUploadPath);
+  const dashboardBackend = (identity: Identity) => {
+    const root = identity.namespaceId === 'default' ? options.dataRoot : options.namespaceDataRoots?.[identity.namespaceId];
+    const scopedStore = namespaceStores.get(identity.namespaceId), scopedSales = namespaceQueries.get(identity.namespaceId);
+    const recheck = async () => { security!.user(identity); };
+    const analyses = new LocalAnalyses(scopedStore, scopedSales, prepRoutes, identity, recheck, organization, root, !!options.security?.storePath);
+    return new LocalDashboards(analyses, scopedStore, scopedSales, prepRoutes, identity, recheck, organization, root, !!options.security?.storePath);
+  };
+  const embedding = organization ? new EmbeddingService(options.embedding, organization, dashboardBackend) : undefined;
+  const v1 = new V1Routes();
   const server = createServer((request, response) => {
     void (async () => {
       const requestId = randomUUID();
@@ -107,7 +120,7 @@ export async function createApiServer(options: ApiOptions): Promise<Server> {
       const queryOffset = url.indexOf('?');
       let path = queryOffset === -1 ? url : url.slice(0, queryOffset);
       const query = queryOffset === -1 ? '' : url.slice(queryOffset + 1);
-      if (['x-user', 'x-user-id', 'x-principal', 'x-groups', 'x-group-ids', 'x-namespace', 'x-namespace-id', 'x-role', 'x-roles', 'x-capabilities'].some(k => request.headers[k] !== undefined)) throw new SecurityError(403, 'FORGED_PRINCIPAL', 'Caller-supplied principal headers are not supported');
+      if (['x-user', 'x-user-id', 'x-principal', 'x-groups', 'x-group-ids', 'x-namespace', 'x-namespace-id', 'x-role', 'x-roles', 'x-capabilities', 'x-tenant', 'x-tenant-id', 'x-subject'].some(k => request.headers[k] !== undefined)) throw new SecurityError(403, 'FORGED_PRINCIPAL', 'Caller-supplied principal headers are not supported');
       if (!security && request.headers.authorization) throw new SecurityError(503, 'SECURITY_NOT_CONFIGURED', 'Credential verification is not configured');
       if (path.startsWith('/embed/')) {
         if (!embedding) throw new SecurityError(503, 'EMBEDDING_NOT_CONFIGURED', 'Embedding requires configured authentication');
@@ -136,6 +149,20 @@ export async function createApiServer(options: ApiOptions): Promise<Server> {
       if (security && identity && (/^\/(?:api\/)?analyses(?:\/|$)/.test(path) || /^\/api\/datasets(?:\/sales\/query)?$/.test(path))) security.require(identity, 'build');
       const namespaceId = identity?.namespaceId ?? 'default';
       const scopedStore = namespaceStores.get(namespaceId), scopedSales = namespaceQueries.get(namespaceId);
+      if (path.startsWith('/api/v1/')) {
+        if (query) throw new RequestError(400, 'Query parameters are not supported');
+        const v1Identity = identity ?? localIdentity ?? { namespaceId: 'default', userId: 'local' };
+        const recheck = async () => {
+          if (security) {
+            const current = await security.authenticate(request);
+            if (!current || current.namespaceId !== v1Identity.namespaceId || current.userId !== v1Identity.userId) throw new SecurityError(403, 'UNKNOWN_PRINCIPAL', 'Principal changed');
+            // The individual v1 operation enforces its capability; dashboard readers need no build capability.
+          }
+        };
+        const root = namespaceId === 'default' ? options.dataRoot : options.namespaceDataRoots?.[namespaceId];
+        const analyses = new LocalAnalyses(scopedStore, scopedSales, prepRoutes, v1Identity, recheck, organization, root, !!options.security?.storePath);
+        await v1.local(request, response, path, analyses, new LocalDashboards(analyses, scopedStore, scopedSales, prepRoutes, v1Identity, recheck, organization, root, !!options.security?.storePath)); return;
+      }
       const preparedResource = /^\/api\/(prep-sources|prep-datasets)(?:\/|$)/.test(path)
         || /^\/api\/datasets\/[^/]+\/(prep(?:\/|$)|execution$|rows$)/.test(path)
         || /^\/api\/datasets\/(?!sales\/)[A-Za-z0-9_-]{1,128}\/refresh$/.test(path);
@@ -181,7 +208,7 @@ export async function createApiServer(options: ApiOptions): Promise<Server> {
       }
       if (/^\/(?:api\/)?(analyses|dashboards)\/[^/]+\/(shares|visuals)(?:\/|$)/.test(path)) {
         if (!security || !identity || !organization) throw new SecurityError(503, 'SECURITY_NOT_CONFIGURED', 'Needs a hosted API with authentication configured');
-        if (await sharingRoute(request, response, path, query, identity, organization, scopedSales)) return;
+        if (await sharingRoute(request, response, path, query, identity, organization, scopedSales, dashboardBackend)) return;
       }
       if (['/api/assets', '/analyses', '/dashboards', '/api/datasets'].includes(path)) {
         method(request, response, ['GET']);
@@ -283,7 +310,9 @@ export async function createApiServer(options: ApiOptions): Promise<Server> {
       }
     })().catch(cause => {
       request.resume();
+      if (/^\/api\/(?:namespaces\/[^/]+\/)?v1\//.test(request.url ?? '')) { v1.sendError(response, cause); return; }
       if (cause instanceof QueryEngineError) send(response, 422, { errorCode: cause.code, message: cause.message, path: cause.path });
+      else if (cause instanceof MetadataError) send(response, cause.status, { errorCode: cause.code, Message: cause.message });
       else if (cause instanceof SecurityError) send(response, cause.status, { errorCode: cause.code, Message: cause.message });
       else if (cause instanceof RequestError) send(response, cause.status, { Message: cause.message });
       else send(response, 500, { Message: 'Unable to process request' });

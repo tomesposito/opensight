@@ -1,7 +1,10 @@
+import type { BundleDefinition, BundleSheet, BundleVisual } from '@opensight/bundle-parser/browser';
+export type { BundleDefinition, BundleSheet, BundleVisual } from '@opensight/bundle-parser/browser';
+
 /**
  * Types for the OpenSight headless v1 API, mirroring
  * docs/api/openapi-v1.yaml 1:1. These describe the wire contract of the
- * *implemented* slices (datasets, querying) only.
+ * *implemented* slices (datasets, querying, analyses) only.
  */
 
 export type ColumnType = 'INTEGER' | 'DECIMAL' | 'STRING' | 'DATETIME' | 'BOOLEAN';
@@ -124,6 +127,7 @@ export interface ApiErrorBody {
   errorCode: string;
   message?: string;
   path?: string;
+  Errors?: AnalysisDiagnostic[];
 }
 
 // ---- InteractiveQuery (visual query model, no raw SQL) ----
@@ -187,3 +191,41 @@ export interface QueryResult {
   rows: Array<Record<string, QueryCell>>;
   execution?: { mode: 'BLAZE'; cached: true };
 }
+
+// ---- Analyses (camelCase writes, PascalCase descriptions) ----
+
+export type DatasetBinding = { kind: 'dataset' | 'prepared-dataset'; id: string };
+export type DatasetBindings = Record<string, DatasetBinding>;
+export interface AnalysisSummary { kind: 'analysis'; id: string; name: string }
+export interface AnalysisDiagnostic { errorCode: string; message: string; path: string }
+export interface AnalysisDescribe {
+  AnalysisId: string;
+  Name: string;
+  /** Existing QuickSight PascalCase projection, not the camelCase write shape. */
+  Definition: Record<string, unknown>;
+  Errors: AnalysisDiagnostic[];
+}
+export interface UpdateAnalysisBody {
+  name: string;
+  definition: BundleDefinition;
+  datasetBindings: DatasetBindings;
+}
+export interface CreateAnalysisBody extends UpdateAnalysisBody { analysisId: string }
+export interface DeleteAnalysisResult { id: string; removed: true }
+/** HTTP metadata is separate from the unchanged response body. */
+export interface VersionedResult<T> { value: T; etag: string | null }
+export type AnalysisLayouts = NonNullable<BundleSheet['layouts']>;
+export type AnalysisCalculatedFields = NonNullable<BundleDefinition['calculatedFields']>;
+export interface AnalysisFilterGroup extends Record<string, unknown> { filterGroupId: string; filters: unknown[] }
+
+// ---- Published dashboards ----
+export interface PublishAnalysisBody { dashboardId?: string }
+export interface PublishAnalysisResult { DashboardId: string; Version: number; PublishedAt: string; Errors: AnalysisDiagnostic[] }
+export interface DashboardSummary { kind: 'dashboard'; id: string; name: string; version: number; publishedAt: string; sourceAnalysisId: string }
+export interface DashboardVersionSummary { version: number; publishedAt: string; publishedBy: string }
+export interface DashboardDescribe { DashboardId: string; Name: string; Definition: Record<string, unknown>; Errors: AnalysisDiagnostic[]; Version: number; PublishedAt: string; SourceAnalysisId: string }
+export interface DashboardShare { principal: { type: 'user' | 'group'; id: string }; role: 'viewer' | 'co-owner' }
+export interface DashboardQueryBody { controlValues?: Record<string, Array<string | number>> }
+export interface DashboardExportBody { version?: number; format: 'csv' | 'pdf' }
+export interface DashboardExportArtifact { bytes: Uint8Array; contentType: string; contentDisposition: string | null; etag: string | null }
+export interface DashboardRemoved { id: string; version?: number; removed: true }

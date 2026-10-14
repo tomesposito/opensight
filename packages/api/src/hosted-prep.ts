@@ -1,8 +1,8 @@
 import { setImmediate as yieldTurn } from 'node:timers/promises';
-import { containedWork, wireTable, type WireTable, type TableResult } from './contained-work.js';
+import { containedWork, wireTable, type WireTable, type TableResult, type QueryResult } from './contained-work.js';
 import { parseBundleResource, type BundleDataSet } from '@opensight/bundle-parser';
 import { validatePrepPipeline, type PrepPipeline, type PrepInput } from '@opensight/bundle-parser/prep';
-import { compilePrep, planPreparedQuery, type PrepDataset } from '@opensight/query-engine';
+import { compilePrep, planPreparedQuery, planPreparedVisual, type PrepDataset } from '@opensight/query-engine';
 import { HostedData, type Admission } from './hosted-data.js';
 import { object, identifier } from './metadata-resources.js';
 import { type TenantContext, type Revisions } from './metadata.js';
@@ -150,12 +150,19 @@ export class HostedPrep {
     else await this.data.sources.metadata.batch(context, [{ key: this.key(context, id), body: { resource: stored.resource, execution: settings }, expectedVersion: raw.expectedVersion as number }], graph.revisions);
     await this.data.cache?.invalidate(this.cacheKey(context, id)); return settings;
   }
-  async execute(context: TenantContext, id: string, path: 'rows' | 'query' | 'refresh', input: unknown = {}) {
+  async dashboardVisual(context: TenantContext, id: string, analysis: unknown, visualId: string, dataSetArn: string) {
+    const columns = (await this.describe(context, id)).columns;
+    const plan = planPreparedVisual(columns, analysis, visualId, dataSetArn);
+    const result = await this.execute(context, id, 'rows', {}, { analysis, visualId, dataSetArn }) as QueryResult;
+    return { ...result, bindings: Object.fromEntries([...plan.dimensions, ...plan.measures].map(f => [f.fieldId, f.outputName])) };
+  }
+  async execute(context: TenantContext, id: string, path: 'rows' | 'query' | 'refresh', input: unknown = {}, visual?: { analysis: unknown; visualId: string; dataSetArn: string }) {
     const stored = await this.stored(context, id), graph = await this.graph(context, id, stored.resource.opensightPrep!), key = this.cacheKey(context, id);
     const query = path === 'query' ? validateQuery(input) : undefined;
     if (!query) object(input, []);
     const columns = this.plan(graph, id).columns;
     if (query) planPreparedQuery(columns, query); // Query semantics are checked before loading data.
+    if (visual) planPreparedVisual(columns, visual.analysis, visual.visualId, visual.dataSetArn);
     const stamp = JSON.stringify([stored.version, graph.revisions]);
     return this.data.work(context, path === 'refresh', graph.leaves, async () => {
       const scope = this.data.scope(context);
@@ -174,7 +181,7 @@ export class HostedPrep {
         if (graph.reason) sourceError('BLAZE_MATERIALIZATION_REQUIRED', 409);
         table = new BlazeTable(this.data.limits(context)); await this.load(context, id, graph, table);
       }
-      const result = query ? await this.data.computeQuery(context, table, query) : { columns: table.columns, rows: table.rows(100), rowCount: table.rowCount, truncated: table.rowCount > 100 };
+      const result = visual ? await containedWork<QueryResult>(scope, { kind: 'visual', table: await wireTable(scope, table, { id, table: 'output', connectorId: 'file', columns: table.columns, security: 'unrestricted' }), ...visual }, this.data.limits(context)) : query ? await this.data.computeQuery(context, table, query) : { columns: table.columns, rows: table.rows(100), rowCount: table.rowCount, truncated: table.rowCount > 100 };
       await this.data.finish(context, graph.leaves, graph.revisions); return result;
     }, graph.revisions, path === 'refresh' ? {
       claim: { kind: 'prepared-dataset', id, version: stored.version },

@@ -1,3 +1,4 @@
+import { validateDashboardRecord } from './dashboard-model.js';
 import { hasCapability } from '@opensight/query-engine';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { AutomationStore } from './automation-store.js';
@@ -16,6 +17,13 @@ export interface OrganizedAsset {
   definition?: JsonObject;
   /** Undefined preserves inherited access; an empty list stays private after revocation. */
   grants?: AssetGrant[];
+  /** Durable v1 working-draft state; tombstones hide imported definitions. */
+  analysisVersion?: number;
+  dashboard?: import('./dashboard-model.js').DashboardRecord;
+  datasetBindings?: import('./analysis-model.js').DatasetBindings;
+  /** Server-owned identity pin for local prepared dataset links. */
+  datasetBindingOwnerId?: string;
+  deleted?: boolean;
 }
 export function resourceName(raw: unknown): string {
   if (typeof raw !== 'string' || !raw.trim() || raw.length > 512 || /[\x00-\x1f]/.test(raw)) invalid('$.name', 'expected a name');
@@ -46,7 +54,7 @@ export function validateOrganization(state: SecurityState): void {
     return { id: id(f.id, '$.id'), namespaceId, name: resourceName(f.name), ...(f.grants === undefined ? {} : { grants: validateGrants(f.grants, namespaceId, state) }) };
   });
   const assets = list(state.assets ?? []).map(raw => {
-    const a = record(raw, ['id', 'kind', 'namespaceId', 'folderId', 'definition', 'grants']);
+    const a = record(raw, ['id', 'kind', 'namespaceId', 'folderId', 'definition', 'grants', 'analysisVersion', 'datasetBindings', 'datasetBindingOwnerId', 'deleted', 'dashboard']);
     if (a.kind !== 'analysis' && a.kind !== 'dashboard') invalid('$.kind', 'expected analysis or dashboard');
     const assetId = id(a.id, '$.id'), namespaceId = id(a.namespaceId, '$.namespaceId');
     const folderId = a.folderId === null ? null : id(a.folderId, '$.folderId');
@@ -56,7 +64,12 @@ export function validateOrganization(state: SecurityState): void {
       if (!isObject(d) || d[a.kind === 'analysis' ? 'AnalysisId' : 'DashboardId'] !== assetId || !isObject(d.Definition)
         || !Array.isArray(d.Definition.DataSetIdentifierDeclarations) || d.Definition.DataSetIdentifierDeclarations.some(v => !isObject(v) || typeof v.Identifier !== 'string' || typeof v.DataSetArn !== 'string')) invalid('$.definition', 'invalid copied definition');
     }
-    return { id: assetId, kind: a.kind, namespaceId, folderId, ...(a.grants === undefined ? {} : { grants: validateGrants(a.grants, namespaceId, state) }), ...(a.definition === undefined ? {} : { definition: a.definition as JsonObject }) } as OrganizedAsset;
+    if (a.dashboard !== undefined) { if (a.kind !== 'dashboard') invalid('$.dashboard', 'invalid asset kind'); validateDashboardRecord(a.dashboard, assetId); }
+    if (a.analysisVersion !== undefined && (a.kind !== 'analysis' || !Number.isSafeInteger(a.analysisVersion) || Number(a.analysisVersion) < 1)) invalid('$.analysisVersion', 'invalid version');
+    if (a.deleted !== undefined && (a.deleted !== true)) invalid('$.deleted', 'invalid tombstone');
+    if (a.datasetBindingOwnerId !== undefined) id(a.datasetBindingOwnerId, '$.datasetBindingOwnerId');
+    if (a.datasetBindings !== undefined && !isObject(a.datasetBindings)) invalid('$.datasetBindings', 'invalid bindings');
+    return { ...(a.dashboard === undefined ? {} : { dashboard: a.dashboard }), ...(a.datasetBindingOwnerId === undefined ? {} : { datasetBindingOwnerId: a.datasetBindingOwnerId }), ...(a.analysisVersion === undefined ? {} : { analysisVersion: a.analysisVersion }), ...(a.datasetBindings === undefined ? {} : { datasetBindings: a.datasetBindings }), ...(a.deleted ? { deleted: true } : {}), id: assetId, kind: a.kind, namespaceId, folderId, ...(a.grants === undefined ? {} : { grants: validateGrants(a.grants, namespaceId, state) }), ...(a.definition === undefined ? {} : { definition: a.definition as JsonObject }) } as OrganizedAsset;
   });
   for (const resources of [folders, assets]) {
     if (resources.some(r => !state.namespaces.some(n => n.id === r.namespaceId))) invalid('$.namespaceId', 'unknown namespace');
@@ -70,7 +83,7 @@ export class OrganizationService {
   constructor(readonly security: SecurityService, private readonly sources: ReadonlyMap<string, DefinitionStore>) {
     for (const a of security.store.read().assets ?? []) {
       const imported = sources.get(a.namespaceId)?.get(a.kind, a.id);
-      if (a.definition ? imported : !imported) throw new Error('Unresolved or colliding organized asset');
+      if (!a.analysisVersion && !a.dashboard && !a.deleted && (a.definition ? imported : !imported)) throw new Error('Unresolved or colliding organized asset');
     }
   }
   private store(): AutomationStore<SecurityState> { return this.security.store; }
@@ -78,6 +91,7 @@ export class OrganizationService {
     return state.assets?.find(a => a.namespaceId === namespaceId && a.kind === kind && a.id === assetId);
   }
   definition(namespaceId: string, kind: ResourceKind, assetId: string, state = this.store().read()): JsonObject | undefined {
+    if (this.asset(state, namespaceId, kind, assetId)?.deleted) return undefined;
     return this.asset(state, namespaceId, kind, assetId)?.definition ?? this.sources.get(namespaceId)?.get(kind, assetId);
   }
   grantsAllow(grants: AssetGrant[] | undefined, identity: Identity, state: SecurityState): boolean {
@@ -104,8 +118,8 @@ export class OrganizationService {
   }
   list(identity: Identity) {
     const state = this.store().read();
-    const copies = (state.assets ?? []).filter(a => a.namespaceId === identity.namespaceId && a.definition).map(a => ({ kind: a.kind, id: a.id, name: typeof a.definition!.Name === 'string' ? a.definition!.Name : a.id }));
-    return [...(this.sources.get(identity.namespaceId)?.list() ?? []), ...copies].filter(a => this.canRead(identity, a.kind, a.id, state));
+    const copies = (state.assets ?? []).filter(a => a.namespaceId === identity.namespaceId && a.definition && !a.deleted).map(a => ({ kind: a.kind, id: a.id, name: typeof a.definition!.Name === 'string' ? a.definition!.Name : a.id }));
+    return [...(this.sources.get(identity.namespaceId)?.list() ?? []).filter(a => !copies.some(c => c.kind === a.kind && c.id === a.id)), ...copies].filter(a => this.canRead(identity, a.kind, a.id, state));
   }
   async route(request: IncomingMessage, response: ServerResponse, path: string, query: string, identity: Identity): Promise<boolean> {
     const folderMatch = /^\/api\/folders(?:\/([^/]+)(?:\/(assets|permissions))?)?$/.exec(path);

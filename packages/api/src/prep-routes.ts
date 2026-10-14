@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { materializationReason } from './blaze-policy.js';
 import { BlazeStore, BlazeError, directSettings, executionSettings, type BlazeTable, type ExecutionSettings, type CachedInput } from './blaze.js';
-import { streamPrepPostgres, queryPrepared, type PrepMemoryTable } from '@opensight/query-engine';
+import { streamPrepPostgres, queryPrepared, planPreparedVisual, queryPreparedVisual, type PrepMemoryTable } from '@opensight/query-engine';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { parseBundleResource, type BundleDataSet } from '@opensight/bundle-parser';
 import { PrepError, prepFail, prepName, prepObject, validatePrepPipeline, type PrepInput, type PrepPipeline } from '@opensight/bundle-parser/prep';
@@ -166,6 +166,18 @@ export class PrepRoutes {
     }
   }
 
+  async dashboardVisual(identity: Identity, id: string, definition: unknown, visualId: string, dataSetArn: string) {
+    await this.analysisSchema(identity, id);
+    const analysis = { ResourceType: 'Analysis', AnalysisId: 'published', Name: 'Published dashboard', Definition: definition };
+    const run = (table: BlazeTable) => {
+      const plan = planPreparedVisual(table.columns, analysis, visualId, dataSetArn);
+      return { ...queryPreparedVisual(table.columns, table.rowCount, table.value, analysis, visualId, dataSetArn), bindings: Object.fromEntries([...plan.dimensions, ...plan.measures].map(f => [f.fieldId, f.outputName])) };
+    };
+    if (this.blaze.status(this.key(identity, id)).mode === 'BLAZE') return run(this.blaze.read(this.key(identity, id)).table);
+    this.requireDirect(identity, id);
+    return this.blaze.transient(table => this.materialize(identity, id, table), run);
+  }
+
   private constructor(private readonly store: AutomationStore<State>, private readonly connectors: ConnectorRoutes, private readonly bindings: readonly PrepPostgresBinding[], private readonly persistent: boolean) {}
   static async create(connectors: ConnectorRoutes, path?: string, bindings: readonly PrepPostgresBinding[] = []): Promise<PrepRoutes> {
     const seen = new Set<string>();
@@ -207,6 +219,12 @@ export class PrepRoutes {
     const binding = this.bindings.find(b => this.owned(identity, b) && b.source.id === input);
     const sources = binding ? this.bindings.filter(b => this.owned(identity, b) && b.config.connectionEnv === binding.config.connectionEnv).map(b => b.source) : all.filter(s => s.connectorId === 'file');
     return { sources, binding, dialect: binding ? 'postgres' as const : 'duckdb' as const };
+  }
+  /** Schema-only admission under the existing owner-private prep resolver. */
+  async analysisSchema(identity: Identity, id: string) {
+    const entry = this.find(identity, id), datasets = this.datasets(identity);
+    const context = await this.context(identity, entry.resource.opensightPrep!.input, datasets);
+    return compilePrep(entry.resource.opensightPrep!, context.sources, { datasets, datasetId: id, dialect: context.dialect }).columns;
   }
   async route(request: IncomingMessage, response: ServerResponse, path: string, query: string, identity: Identity): Promise<void> {
     try {

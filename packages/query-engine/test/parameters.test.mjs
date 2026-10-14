@@ -45,3 +45,19 @@ test('string and datetime references bind as typed scalar expressions without in
   assert.deepEqual(result.rows, [{ Label: label, total: 900 }]);
   assert.doesNotMatch(result.plan.sql, /DROP TABLE/); assert.match(result.plan.sql, /AS VARCHAR/); assert.match(result.plan.sql, /AS TIMESTAMP/);
 });
+
+test('published QuickSight parameter defaults share DuckDB and prepared evaluator semantics', async () => {
+  const { queryPreparedVisual } = await import('../dist/index.js');
+  const body = { dimensions: [], measures: [{ fieldId: 'scaled', columnName: 'scaled', aggregation: 'SUM' }], filters: [], calculatedFields: [{ name: 'scaled', expression: '{revenue} * ${Factor}' }], parameterDeclarations: [{ name: 'Factor', type: 'number', integer: true, multiple: false }], parameterBindings: { Factor: [3] } };
+  const request = interactiveRequest(body, metadata);
+  request.analysis.Definition.ParameterDeclarations = [{ IntegerParameterDeclaration: { Name: 'Factor', ParameterValueType: 'SINGLE_VALUED', DefaultValues: { StaticValues: [3] } } }];
+  request.analysis.Definition.Sheets[0].ParameterControls = [{ TextField: { ParameterControlId: 'factor-control', SourceParameterName: 'Factor', Title: 'Factor' } }];
+  delete request.parameterDeclarations; delete request.parameterBindings;
+  const live = await executeLocal(request, { dataRoot: root });
+  const csv = readFileSync(`${root}/sales.csv`, 'utf8').trim().split('\n').map(r => r.split(',')), names = csv.shift();
+  const columns = metadata.dataSet.DataSet.OutputColumns.map(c => ({ name: c.Name, type: c.Type }));
+  const result = queryPreparedVisual(columns, csv.length, (r, c) => { const v = csv[r][names.indexOf(columns[c].name)]; return v === '' ? null : ['INTEGER', 'DECIMAL'].includes(columns[c].type) ? Number(v) : v; }, request.analysis, request.visualId, metadata.localData.dataSetArn);
+  assert.deepEqual(result.rows, live.rows); assert.deepEqual(live.plan.parameters, [3]);
+  request.analysis.Definition.ParameterDeclarations[0].IntegerParameterDeclaration.DefaultValues.StaticValues = ['3; SELECT 1'];
+  assert.throws(() => planVisual(request), /integer/);
+});

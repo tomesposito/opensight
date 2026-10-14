@@ -1,3 +1,4 @@
+import { definitionParameters, validateDefinitionControls } from './definition-parameters.js';
 import { rowFilterSql } from './row-filter.js';
 import { mysqlBindings, mysqlTimestamp, mysqlDateCast } from './mysql-sql.js';
 import { resolveSecurity, rowSecuritySql } from './security.js';
@@ -24,8 +25,8 @@ function visuals(raw: unknown): Visual[] {
     const sheetId = string(sheet.SheetId, `${path}.SheetId`);
     unique(sheetIds, sheetId, `${path}.SheetId`);
     if (sheet.ContentType !== undefined) equals(sheet.ContentType, 'INTERACTIVE', `${path}.ContentType`);
-    emptyArray(sheet.FilterControls, `${path}.FilterControls`);
-    emptyArray(sheet.ParameterControls, `${path}.ParameterControls`);
+    array(sheet.FilterControls ?? [], `${path}.FilterControls`);
+    array(sheet.ParameterControls ?? [], `${path}.ParameterControls`);
     for (const [vi, value] of array(sheet.Visuals === undefined ? [] : sheet.Visuals, `${path}.Visuals`).entries()) {
       const vp = `${path}.Visuals[${vi}]`;
       const [kind, body] = variant(value, vp);
@@ -273,7 +274,7 @@ export function planVisual(request: PlanRequest, options: PlanOptions = {}): Que
   const dp = '$.analysis.Definition';
   const definition = object(analysis.Definition, dp);
   keys(definition, ['DataSetIdentifierDeclarations', 'CalculatedFields', 'FilterGroups', 'Sheets', 'ParameterDeclarations'], dp);
-  emptyArray(definition.ParameterDeclarations, `${dp}.ParameterDeclarations`);
+  const declaredParameters = definitionParameters(definition.ParameterDeclarations);
   const declarations = array(definition.DataSetIdentifierDeclarations, `${dp}.DataSetIdentifierDeclarations`);
   if (declarations.length !== 1) fail('UNSUPPORTED_FEATURE', `${dp}.DataSetIdentifierDeclarations`, 'exactly one dataset is supported');
   const declaration = object(declarations[0], `${dp}.DataSetIdentifierDeclarations[0]`);
@@ -282,12 +283,16 @@ export function planVisual(request: PlanRequest, options: PlanOptions = {}): Que
     fail('UNRESOLVED_BINDING', `${dp}.DataSetIdentifierDeclarations[0].DataSetArn`, 'dataset metadata does not resolve');
   }
   const identifier = string(declaration.Identifier, `${dp}.DataSetIdentifierDeclarations[0].Identifier`);
+  validateDefinitionControls(definition.Sheets, definition.FilterGroups, declaredParameters.declarations);
   const all = visuals(definition.Sheets);
   const visualId = string(r.visualId, '$.visualId');
   const visual = all.find((v) => v.id === visualId);
   if (!visual) fail('UNRESOLVED_BINDING', '$.visualId', `unknown visual: ${visualId}`);
   let parameters: ReturnType<typeof validateParameters>;
-  try { parameters = validateParameters(r.parameterDeclarations, r.parameterBindings); } catch (e) { fail('INVALID_INPUT', '$.parameterBindings', e instanceof Error ? e.message : String(e)); }
+  try {
+    const supplied = validateParameters(r.parameterDeclarations, r.parameterBindings);
+    parameters = validateParameters([...supplied.declarations, ...declaredParameters.declarations], { ...declaredParameters.bindings, ...supplied.bindings });
+  } catch (e) { fail('INVALID_INPUT', '$.parameterBindings', e instanceof Error ? e.message : String(e)); }
   const binder = new ExpressionBinder(identifier, metadata.columns, definition.CalculatedFields, parameters.declarations, parameters.bindings, (name, path) => {
     if (security?.deniedColumns.includes(name)) fail('COLUMN_ACCESS_DENIED', path, `access denied to column: ${name}`);
   });
