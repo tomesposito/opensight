@@ -116,6 +116,19 @@ export class TenantMetadata {
       const prior = (await c.query(`SELECT * FROM h1_resources WHERE ${predicates}`, keyValues(context, key)))[0];
       if (Number(prior?.version ?? 0) !== asset.version) throw new MetadataError('METADATA_CONFLICT');
       const old = prior ? JSON.parse(String(prior.body)) as JsonObject : { folderId: null };
+      await this.analysisWriteAccess(c, context, user, old);
+      const body: JsonObject = { ...old, definition: asset.body.definition, datasets: asset.body.datasets };
+      if (!prior) await insertResource(c, context, key, body);
+      else {
+        await c.query(`DELETE FROM h1_links WHERE ${predicates}`, keyValues(context, key));
+        await c.query(`UPDATE h1_resources SET body = ?, version = version + 1 WHERE ${predicates}`, [JSON.stringify(body), ...keyValues(context, key)]);
+        await insertLinks(c, context, key, resourceLinks(key, body));
+      }
+      await c.query('UPDATE h1_revisions SET "authorization" = "authorization" + 1 WHERE tenant_id = ? AND namespace_id = ?', scopeValues(context));
+      await appendMetadataEvent(c, context, 'analysis.saved');
+    }, true);
+  }
+  private async analysisWriteAccess(c: SqlConnection, context: TenantContext, user: JsonObject, old: JsonObject): Promise<void> {
       const groups = await c.query("SELECT resource_id, body FROM h1_resources WHERE tenant_id = ? AND namespace_id = ? AND kind = 'group'", scopeValues(context));
       const memberships = groups.filter(g => (JSON.parse(String(g.body)) as { userIds: string[] }).userIds.includes(context.userId)).map(g => String(g.resource_id));
       const allows = (grants: unknown): boolean => user.role === 'administrator' || grants === undefined || Array.isArray(grants) && grants.some((value: unknown) => {
@@ -127,15 +140,38 @@ export class TenantMetadata {
         const folder = (await c.query(`SELECT body FROM h1_resources WHERE ${predicates}`, keyValues(context, { kind: 'folder', id: String(old.folderId) })))[0];
         if (!folder || !allows((JSON.parse(String(folder.body)) as JsonObject).grants)) throw new MetadataError('METADATA_WRITE_FORBIDDEN', 403);
       }
-      const body: JsonObject = { ...old, definition: asset.body.definition, datasets: asset.body.datasets };
-      if (!prior) await insertResource(c, context, key, body);
-      else {
+  }
+  /** D-44/D-45: grant-aware author writes, CAS and revision check in one transaction.
+   * Only definitions and server-resolved dataset links may change. */
+  async mutateAnalysis(context: TenantContext, id: string, replacement: Pick<JsonObject, 'definition' | 'datasets'> | null, expectedVersion: number, expected: Revisions): Promise<void> {
+    await this.checked(context, async (c, revisions, user) => {
+      if (!hasCapability(user.role as Parameters<typeof hasCapability>[0], 'build')) throw new MetadataError('METADATA_WRITE_FORBIDDEN', 403);
+      const key = resourceKey({ kind: 'analysis', id });
+      const prior = (await c.query(`SELECT * FROM h1_resources WHERE ${predicates}`, keyValues(context, key)))[0];
+      if (!prior && (expectedVersion !== 0 || replacement === null)) missing();
+      const old = prior ? JSON.parse(String(prior.body)) as JsonObject : { folderId: null, grants: [{ principal: { type: 'user', id: context.userId }, role: 'co-owner' }] };
+      await this.analysisWriteAccess(c, context, user, old);
+      if (Number(prior?.version ?? 0) !== expectedVersion) throw new MetadataError('METADATA_CONFLICT');
+      if (JSON.stringify(revisions) !== JSON.stringify(expected)) throw new MetadataError('METADATA_REVISED', 403);
+      if (replacement === null) {
         await c.query(`DELETE FROM h1_links WHERE ${predicates}`, keyValues(context, key));
-        await c.query(`UPDATE h1_resources SET body = ?, version = version + 1 WHERE ${predicates}`, [JSON.stringify(body), ...keyValues(context, key)]);
-        await insertLinks(c, context, key, resourceLinks(key, body));
+        await c.query(`DELETE FROM h1_resources WHERE ${predicates}`, keyValues(context, key));
+      } else {
+        const body: JsonObject = { ...old, definition: replacement.definition, datasets: replacement.datasets };
+        // Server-owned prepared links cannot adopt another user's owner scope.
+        for (const ref of resourceLinks(key, body)) if (ref.kind === 'prepared-dataset' && ref.ownerId !== context.userId) missing();
+        if (!prior) await insertResource(c, context, key, body);
+        else {
+          await c.query(`DELETE FROM h1_links WHERE ${predicates}`, keyValues(context, key));
+          await c.query(`UPDATE h1_resources SET body = ?, version = version + 1 WHERE ${predicates}`, [JSON.stringify(body), ...keyValues(context, key)]);
+          await insertLinks(c, context, key, resourceLinks(key, body));
+        }
       }
-      await c.query('UPDATE h1_revisions SET "authorization" = "authorization" + 1 WHERE tenant_id = ? AND namespace_id = ?', scopeValues(context));
-      await appendMetadataEvent(c, context, 'analysis.saved');
+      // Working-definition CAS is independent of security/data revisions.
+      // Advancing those would revoke both concurrent writers' bearer sessions
+      // and turn the required stale-version 409 into authentication failures.
+      // Reads always check current asset/folder grants and dataset admission.
+      await appendMetadataEvent(c, context, replacement ? 'analysis.saved' : 'analysis.deleted');
     }, true);
   }
   async batch(context: TenantContext, edits: readonly MetadataEdit[], expectedRevisions?: Revisions): Promise<void> {

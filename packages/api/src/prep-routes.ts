@@ -208,6 +208,12 @@ export class PrepRoutes {
     const sources = binding ? this.bindings.filter(b => this.owned(identity, b) && b.config.connectionEnv === binding.config.connectionEnv).map(b => b.source) : all.filter(s => s.connectorId === 'file');
     return { sources, binding, dialect: binding ? 'postgres' as const : 'duckdb' as const };
   }
+  /** Schema-only admission under the existing owner-private prep resolver. */
+  async analysisSchema(identity: Identity, id: string) {
+    const entry = this.find(identity, id), datasets = this.datasets(identity);
+    const context = await this.context(identity, entry.resource.opensightPrep!.input, datasets);
+    return compilePrep(entry.resource.opensightPrep!, context.sources, { datasets, datasetId: id, dialect: context.dialect }).columns;
+  }
   async route(request: IncomingMessage, response: ServerResponse, path: string, query: string, identity: Identity): Promise<void> {
     try {
       if (query) throw new RequestError(400, 'Query parameters are not supported');

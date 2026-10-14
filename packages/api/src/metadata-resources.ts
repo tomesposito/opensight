@@ -67,7 +67,7 @@ export function resourceLinks(key: ResourceKey, raw: JsonObject): ResourceKey[] 
       if (bindings.length !== declarations.length) invalidMetadata();
       for (let i = 0; i < bindings.length; i++) {
         const decl = object(declarations[i]); label(decl.Identifier); label(decl.DataSetArn);
-        const ref = reference(bindings[i]); if (ref.kind !== 'dataset') invalidMetadata(); links.push(ref);
+        const ref = reference(bindings[i]); if (ref.kind !== 'dataset' && !(key.kind === 'analysis' && ref.kind === 'prepared-dataset')) invalidMetadata(); links.push(ref);
       }
       if (body.folderId !== null) add('folder', body.folderId);
       grants(body.grants); break;
