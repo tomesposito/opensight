@@ -227,11 +227,14 @@ const definition: Schema = {
     SheetId: ['sheetId'], Name: ['name'], ContentType: ['contentType'], ...members('Title Description'),
     TextBoxes: ['textBoxes', { OpenSightText: ['opensightText'], ...members('SheetTextBoxId Content'), Interactions: ['interactions', interactions] }],
     Images: ['images', { ...members('SheetImageId ImageContentAltText'), OpenSightOpacity: ['opensightOpacity'], Source: ['source', { OpenSightDataUri: ['opensightDataUri'], CustomContentConfiguration: ['customContentConfiguration', members('ContentUrl')] }], Scaling: ['scaling', members('ScalingType')] }],
-    ParameterControls: ['parameterControls', { DateTimePicker: ['dateTimePicker', {
-      ...members('ParameterControlId SourceParameterName Title'), DisplayOptions: ['displayOptions', {
+    ParameterControls: ['parameterControls', Object.fromEntries(['DateTimePicker', 'Dropdown', 'List', 'Slider', 'TextField', 'TextArea'].map(kind => [kind, [kind[0]!.toLowerCase() + kind.slice(1), {
+      ...members('ParameterControlId SourceParameterName Title Type'), DisplayOptions: ['displayOptions', {
         TitleOptions: ['titleOptions', { FontConfiguration: ['fontConfiguration', font] }],
       }],
-    }] }],
+    }] as Rule]))],
+    FilterControls: ['filterControls', Object.fromEntries(['DateTimePicker', 'Dropdown', 'List', 'Slider', 'TextField', 'TextArea', 'RelativeDateTime'].map(kind => [kind, [kind[0]!.toLowerCase() + kind.slice(1), {
+      ...members('FilterControlId SourceFilterId Title Type'), DisplayOptions: ['displayOptions'],
+    }] as Rule]))],
     Visuals: ['visuals', {
       InsightVisual: ['insightVisual', visualBody],
       WaterfallVisual: ['waterfallChartVisual', visualBody],
