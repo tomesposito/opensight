@@ -14,6 +14,26 @@ export function gaugeValid(v: unknown): v is { min: number; max: number } {
   return Object.keys(g).every(k => k === 'min' || k === 'max') && typeof g.min === 'number' && typeof g.max === 'number' && Number.isFinite(g.min) && Number.isFinite(g.max) && g.min < g.max;
 }
 export interface ConditionalRule { fieldId: string; operator: 'gt' | 'gte' | 'lt' | 'lte' | 'eq'; threshold: number; color: string; background: string }
+/** Text styling for legend title and legend value entries (QuickSight Legend panel parity). */
+export interface LegendTextStyle { fontSize?: number; color?: string; bold?: boolean; italic?: boolean; underline?: boolean }
+export interface LegendTitle { show?: boolean; text?: string; style?: LegendTextStyle }
+const styleKeys = (v: Record<string, unknown>, allowed: string[]) => Object.keys(v).every(k => allowed.includes(k));
+export function legendTextStyleValid(raw: unknown): raw is LegendTextStyle {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return false;
+  const s = raw as Record<string, unknown>;
+  return styleKeys(s, ['fontSize', 'color', 'bold', 'italic', 'underline'])
+    && (s.fontSize === undefined || Number.isInteger(s.fontSize) && Number(s.fontSize) >= 8 && Number(s.fontSize) <= 32)
+    && (s.color === undefined || colorValid(s.color))
+    && ['bold', 'italic', 'underline'].every(k => s[k] === undefined || typeof s[k] === 'boolean');
+}
+export function legendTitleValid(raw: unknown): raw is LegendTitle {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return false;
+  const t = raw as Record<string, unknown>;
+  return styleKeys(t, ['show', 'text', 'style'])
+    && (t.show === undefined || typeof t.show === 'boolean')
+    && (t.text === undefined || typeof t.text === 'string' && !!t.text.trim() && t.text.length <= 128)
+    && (t.style === undefined || legendTextStyleValid(t.style));
+}
 export interface PivotOptions {
   metricPlacement?: 'columns' | 'rows';
   hideEmptyRows?: boolean; hideEmptyColumns?: boolean;
@@ -36,6 +56,8 @@ export function pivotOptionsValid(raw: unknown): raw is PivotOptions {
 export interface VisualFormatting {
   pivot?: PivotOptions;
   titleFontSize?: number; barCategoryGap?: number; legendPosition?: LegendPosition;
+  /** Legend title (show/text/style) and legend value-entry text styling; absent means theme defaults. */
+  legendTitle?: LegendTitle; legendValueStyle?: LegendTextStyle;
   headersVisible?: boolean; rowNamesVisible?: boolean; columnNamesVisible?: boolean; valueNamesVisible?: boolean;
   headerColor?: string; headerBackground?: string; cellColor?: string; cellBackground?: string;
   fontSize?: number; decimalPlaces?: number; names?: Record<string, string>; rules?: ConditionalRule[];
@@ -45,8 +67,10 @@ export function formattingValid(raw: unknown): raw is VisualFormatting {
   const f = raw as Record<string, unknown>;
   const booleans = ['headersVisible', 'rowNamesVisible', 'columnNamesVisible', 'valueNamesVisible'];
   const colors = ['headerColor', 'headerBackground', 'cellColor', 'cellBackground'];
-  if (Object.keys(f).some(k => ![...booleans, ...colors, 'fontSize', 'decimalPlaces', 'names', 'rules', 'pivot', 'titleFontSize', 'barCategoryGap', 'legendPosition'].includes(k))) return false;
+  if (Object.keys(f).some(k => ![...booleans, ...colors, 'fontSize', 'decimalPlaces', 'names', 'rules', 'pivot', 'titleFontSize', 'barCategoryGap', 'legendPosition', 'legendTitle', 'legendValueStyle'].includes(k))) return false;
   if (f.legendPosition !== undefined && !legendPositionValid(f.legendPosition)) return false;
+  if (f.legendTitle !== undefined && !legendTitleValid(f.legendTitle)) return false;
+  if (f.legendValueStyle !== undefined && !legendTextStyleValid(f.legendValueStyle)) return false;
   if (f.pivot !== undefined && !pivotOptionsValid(f.pivot)) return false;
   if (f.titleFontSize !== undefined && (!Number.isInteger(f.titleFontSize) || Number(f.titleFontSize) < 8 || Number(f.titleFontSize) > 48)) return false;
   if (f.barCategoryGap !== undefined && (!Number.isInteger(f.barCategoryGap) || Number(f.barCategoryGap) < 0 || Number(f.barCategoryGap) > 80)) return false;

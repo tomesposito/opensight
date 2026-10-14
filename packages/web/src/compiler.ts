@@ -10,7 +10,7 @@ import type { Cell, Field, FixtureVisual, MultiplesOptions, Row, VisualModel } f
 
 import { EXTRA_VISUALS, extraKind, variantKinds, type VisualKind } from './visual-catalog.js';
 import { compileExtra } from './extra-charts.js';
-import { applyDisplayOptions } from './display-options.js';
+import { applyDisplayOptions, legendTextStyle } from './display-options.js';
 
 export const DATA_REQUIRED_LABEL = 'Needs data';
 
@@ -625,7 +625,7 @@ export function compileVisual(input: Input): CompiledVisual {
     option.tooltip = { show: false };
     option.graphic = [{ type: 'text', left: 'center', top: 'middle', style: { text: label, fill: (model.palette ?? theme.palette)[0], fontSize: value === null ? 22 : 56, fontWeight: 600, fontFamily: theme.fontFamily } }];
   }
-  applyDisplayOptions(model, option);
+  applyDisplayOptions(model, option, theme);
   if (model.tooltip && model.tooltipDetail?.type === 'detailed') {
     if (DETAILED_TOOLTIP_KINDS.includes(model.kind)) {
       option.tooltip = { ...(typeof option.tooltip === 'object' && !Array.isArray(option.tooltip) ? option.tooltip : {}),
@@ -636,7 +636,8 @@ export function compileVisual(input: Input): CompiledVisual {
   }
   if (input.theme || model.palette) {
     for (const axis of [option.xAxis, option.yAxis].flat()) if (axis) { axis.axisLabel = { ...axis.axisLabel, color: theme.textColor }; axis.nameTextStyle = { color: theme.textColor }; }
-    if (option.legend && !Array.isArray(option.legend)) option.legend.textStyle = { color: theme.textColor, fontFamily: theme.fontFamily };
+    if (option.legend && !Array.isArray(option.legend)) option.legend.textStyle = legendTextStyle(theme, model.formatting?.legendValueStyle,
+      typeof option.legend.textStyle === 'object' && option.legend.textStyle ? option.legend.textStyle as Record<string, unknown> : undefined);
     if (option.visualMap && !Array.isArray(option.visualMap)) { option.visualMap.textStyle = { color: theme.textColor }; option.visualMap.inRange = { color: [theme.surface, ...(model.palette ?? theme.palette)] }; }
     if (Array.isArray(option.series)) for (const series of option.series) {
       if ('label' in series) series.label = { ...series.label, color: theme.textColor };

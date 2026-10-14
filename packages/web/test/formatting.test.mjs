@@ -61,7 +61,9 @@ test('pivot names and visibility preserve values; rules apply by measure across 
 });
 
 test('formatting validation rejects unsafe or malformed styles and finite comparison rules are ordered', () => {
-  for (const invalid of [{ fontSize: 7 }, { decimalPlaces: 13 }, { fontSize: NaN }, { headerColor: 'url(x)' }, { headersVisible: 'false' }, { unknown: 1 }, { names: { revenue: '' } }, { rules: [{ ...rule, threshold: Infinity }] }, { rules: [{ ...rule, operator: 'eval' }] }, { rules: Array(21).fill(rule) }]) {
+  for (const invalid of [{ fontSize: 7 }, { decimalPlaces: 13 }, { fontSize: NaN }, { headerColor: 'url(x)' }, { headersVisible: 'false' }, { unknown: 1 }, { names: { revenue: '' } }, { rules: [{ ...rule, threshold: Infinity }] }, { rules: [{ ...rule, operator: 'eval' }] }, { rules: Array(21).fill(rule) },
+    { legendTitle: { show: 'yes' } }, { legendTitle: { text: '' } }, { legendTitle: { text: 'x'.repeat(129) } }, { legendTitle: { style: { fontSize: 7 } } },
+    { legendTitle: { unknown: 1 } }, { legendValueStyle: { color: 'red' } }, { legendValueStyle: { fontSize: 33 } }, { legendValueStyle: { bold: 1 } }, { legendValueStyle: null }]) {
     assert.equal(formattingValid(invalid), false);
     assert.equal(selected(authorReducer(add(), { type: 'formatting', formatting: invalid })).formatting, undefined);
     assert.throws(() => validateDraft({ ...add(), sheets: [{ ...activeSheet(add()), visuals: [{ ...selected(add()), formatting: invalid }] }] }));
@@ -74,6 +76,23 @@ test('formatting validation rejects unsafe or malformed styles and finite compar
   const rules = [rule, { ...rule, color: '#000000' }];
   assert.equal(matchingRule(rules, 'revenue', 100), rule);
   for (const value of [null, '100', NaN, Infinity]) assert.equal(matchingRule(rules, 'revenue', value), undefined);
+});
+
+test('legend title and value styling validate, round-trip, and compile to legend text style', async () => {
+  const legend = { legendTitle: { show: true, text: 'Channels', style: { fontSize: 15, bold: true } }, legendValueStyle: { fontSize: 13, color: '#112233', italic: true, underline: true } };
+  assert.equal(formattingValid(legend), true);
+  const draft = authorReducer(add('bar'), { type: 'formatting', formatting: legend });
+  validateDraft(draft);
+  const v = selected(draft);
+  assert.deepEqual(v.formatting, legend);
+  const compiled = compileVisual(input(v));
+  // Value styling renders; the title is stored only — ECharts has no legend-title primitive.
+  assert.deepEqual(compiled.option.legend.textStyle, { color: '#112233', fontFamily: 'system-ui, sans-serif', fontSize: 13, fontStyle: 'italic' });
+  const bundle = await parseQsBundle(await downloadBundleBytes(draft));
+  const restored = importBundle(bundle);
+  assert.deepEqual(selected(restored).formatting, legend);
+  assert.deepEqual(selected(restored).imported.issues, []);
+  assert.deepEqual(exportBundle(restored), bundle);
 });
 
 test('chart mark rules use original values, keep null gaps and display names do not rename bindings', () => {
