@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { createHash, randomUUID } from 'node:crypto';
-import { analysisObject, analysisId, validateAnalysisDefinition } from '@opensight/web/analysis';
+import { analysisObject, analysisId, validateAnalysisDefinition, type AnalysisDiagnostic } from '@opensight/web/analysis';
 import { MetadataError } from './metadata-db.js';
 import { identifier } from './metadata-resources.js';
 import { method, send } from './automation-routes.js';
@@ -109,18 +109,19 @@ export class DashboardRoutes {
       let record: DashboardRecord | undefined, change: DashboardChange | undefined, reply: Reply, access: unknown, dataVersion: number | undefined;
       if (publish) {
         const source = await backend.analyses.get(publish[1]!);
+        let diagnostics: AnalysisDiagnostic[];
         try {
-          const validated = validateAnalysisDefinition(source.definition, await backend.analyses.resolve(source.datasetBindings));
-          if (validated.Errors.length) throw Object.assign(new MetadataError('DASHBOARD_ANALYSIS_NOT_EXECUTABLE', 422), { diagnostics: validated.Errors });
+          // D-49: drafts publish with their diagnostics attached; only unvalidatable definitions fail.
+          diagnostics = validateAnalysisDefinition(source.definition, await backend.analyses.resolve(source.datasetBindings)).Errors;
         } catch (e) {
           if (e instanceof Error && !('diagnostics' in e) && 'code' in e) Object.assign(e, { diagnostics: [{ errorCode: e.code, message: e.message, path: 'path' in e ? e.path : '$.datasetBindings' }] });
           throw e;
         }
         if (body.dashboardId !== undefined) record = await backend.get(id);
-        change = { kind: 'publish', dashboardId: id, create: body.dashboardId === undefined, source, publishedAt: new Date().toISOString(), cap: this.cap };
+        change = { kind: 'publish', dashboardId: id, create: body.dashboardId === undefined, source, publishedAt: new Date().toISOString(), cap: this.cap, errors: diagnostics };
         await backend.analyses.check(stamp);
         record = (await backend.change(id, change, stamp))!;
-        const v = dashboardVersion(record); reply = { status: 201, body: { DashboardId: id, Version: v.version, PublishedAt: v.publishedAt }, version: v.version };
+        const v = dashboardVersion(record); reply = { status: 201, body: { DashboardId: id, Version: v.version, PublishedAt: v.publishedAt, Errors: diagnostics }, version: v.version };
       } else {
         record = await backend.get(id);
         if (principalId) {

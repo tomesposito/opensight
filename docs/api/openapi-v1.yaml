@@ -35,8 +35,9 @@ paths:
       - dashboards
       operationId: publish_analysis
       summary: Publish analysis
-      description: Requires build capability and co-owner source access. Validates executability before commit.
-        Omit dashboardId to mint a dashboard; supplying it appends only to the same active source link. Validation
+      description: Requires build capability and co-owner source access. Drafts publish with their validation
+        diagnostics attached to the version (D-49); only unvalidatable definitions fail. Omit dashboardId
+        to mint a dashboard; supplying it appends only to the same active source link. Hard validation
         failures return Errors and publish nothing.
       parameters:
       - $ref: '#/components/parameters/IdempotencyKey'
@@ -1453,6 +1454,7 @@ components:
       - DashboardId
       - Version
       - PublishedAt
+      - Errors
       properties:
         DashboardId:
           type: string
@@ -1463,6 +1465,10 @@ components:
         PublishedAt:
           type: string
           format: date-time
+        Errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/AnalysisDiagnostic'
     DashboardDescription:
       type: object
       additionalProperties: false

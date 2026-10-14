@@ -11,10 +11,10 @@ The frozen conventions and approved resource slices define the versioned API.
 operations. The original unversioned inventory below remains useful context;
 the slice documents identify which versioned operations have shipped.
 
-The dashboard implementation follows the explicit implementation brief for
-the executable-analysis publish gate and synchronous CSV/PDF delivery.
+The dashboard implementation follows D-49 (drafts publish with diagnostics)
+and the explicit implementation brief for synchronous CSV/PDF delivery.
 The [dashboard slice](headless-v1-dashboards.md#contract-and-instruction-precedence)
-records the differing D-49/D-54 decision text without changing those decisions.
+records the differing D-54 decision text without changing that decision.
 
 ## What "frozen" means
 

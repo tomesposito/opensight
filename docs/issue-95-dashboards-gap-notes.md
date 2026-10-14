@@ -75,7 +75,20 @@ contract and slice pages describe what shipped rather than a blocked proposal.
 
 `SOLUTION_DESIGN.md`, `serverless-application.ts`, Lambda composition and
 `.github/workflows/*` are unchanged. No AWS calls, external network builds,
-merge, push or deployment was performed. The D-49/D-54 text discrepancies
-are recorded in the slice's instruction-precedence section; no additional
+merge, push or deployment was performed. The D-54 text discrepancy is
+recorded in the slice's instruction-precedence section; no additional
 product answer was invented. Serverless adapters, anonymous/delegated access,
 job-backed exports, assets and MCP remain explicit follow-ups.
+
+## D-49 correction pass (pre-merge, 2026-10-14)
+
+The implementation brief specified an executable-analysis publish gate, but
+the confirmed D-49 decision says "Drafts permitted with diagnostics." A
+pre-merge correction pass removed the 422 `DASHBOARD_ANALYSIS_NOT_EXECUTABLE`
+gate: drafts now publish with their validation diagnostics attached to the
+version record (`errors` on `DashboardVersion`, surfaced as `Errors` in the
+201 response and `describe_dashboard`) and only unvalidatable definitions
+fail. The contract test was updated to assert the new behavior, the OpenAPI
+`DashboardPublished` schema and SDK `PublishAnalysisResult` type now include
+`Errors`, and the restart validator requires the stored `errors` shape.
+The full suite must be re-run after this pass before merge.

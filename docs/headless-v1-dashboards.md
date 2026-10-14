@@ -9,20 +9,23 @@ hosted metadata. Nothing is pushed or deployed. Lambda composition is unchanged.
 [D-37](idd/D-37-headless-first-api.md), [D-38](idd/D-38-dashboard-publish-semantics.md),
 [D-40](idd/D-40-headless-dashboard-publishing.md), and D-48–D-54 supply the
 published-definition, identity, access, lifecycle and export contract.
-The implementation brief explicitly specifies two details differently from
-the checked-in decision text:
+The implementation brief originally specified an executable-analysis publish
+gate that differs from the checked-in decision text. A pre-merge correction
+pass (same day) brought the implementation in line with the confirmed
+decision:
 
 - [D-49](idd/D-49-dashboard-publish-clean-state.md)'s decision says “Drafts
-  permitted with diagnostics.” The brief explicitly requires an executable
-  analysis and no publication on validation failure. **This implementation
-  follows the brief's executable-analysis gate.** The IDD is unchanged.
+  permitted with diagnostics.” The correction pass removed the brief's
+  executable-analysis gate: drafts now publish with their validation
+  diagnostics attached to the version and returned in the 201 response;
+  only unvalidatable definitions fail. The IDD is unchanged.
 - [D-54](idd/D-54-dashboard-export-shape.md) leaves formats and delivery open
   by format. The brief explicitly selects synchronous CSV and PDF; jobs are
   deferred. This implementation follows those concrete instructions.
 
-These discrepancies are recorded for decision-document reconciliation;
-no new product answer is inferred and neither IDDs nor `SOLUTION_DESIGN.md`
-are edited. [D-48](idd/D-48-dashboard-who-can-publish.md),
+The remaining D-54 discrepancy is recorded for decision-document
+reconciliation; no new product answer is inferred and neither IDDs nor
+`SOLUTION_DESIGN.md` are edited. [D-48](idd/D-48-dashboard-who-can-publish.md),
 [D-50](idd/D-50-dashboard-identity.md), [D-51](idd/D-51-dashboard-version-addressing.md),
 [D-52](idd/D-52-dashboard-lifecycle.md), and [D-53](idd/D-53-dashboard-reader-share-access.md)
 otherwise apply directly.
@@ -31,7 +34,7 @@ otherwise apply directly.
 
 | Method and path | operationId | Shipped behavior |
 | --- | --- | --- |
-| `POST /analyses/{id}/publish` | `publish_analysis` | `{ dashboardId? }`; omit to mint an independent dashboard, supply to append to its active matching source; 201 `{ DashboardId, Version, PublishedAt }` and quoted-integer ETag |
+| `POST /analyses/{id}/publish` | `publish_analysis` | `{ dashboardId? }`; omit to mint an independent dashboard, supply to append to its active matching source; 201 `{ DashboardId, Version, PublishedAt, Errors }` and quoted-integer ETag |
 | `GET /dashboards` | `list_dashboards` | Access-filtered latest-version summaries, sorted by dashboard ID |
 | `GET /dashboards/{id}` | `describe_dashboard` | Latest PascalCase envelope with `Version`, `PublishedAt`, `SourceAnalysisId`, and ETag |
 | `GET /dashboards/{id}/versions` | `list_dashboard_versions` | Retained `{ version, publishedAt, publishedBy }` entries in ascending version order |
@@ -56,7 +59,7 @@ rejects query strings. The complete schemas are in
 | Failure | Status / errorCode |
 | --- | --- |
 | Source mismatch or severed republish link | 409 `DASHBOARD_SOURCE_MISMATCH` |
-| Draft execution diagnostics at publish | 422 `DASHBOARD_ANALYSIS_NOT_EXECUTABLE`, with `Errors` |
+| Unvalidatable definition at publish | Validation's named error, with `Errors` |
 | Missing, malformed or stale dashboard delete precondition | 412 `DASHBOARD_PRECONDITION_FAILED` |
 | Attempt to prune latest | 409 `DASHBOARD_LATEST_VERSION` |
 | Undeclared control, ad-hoc filter, SQL or authority envelope | 422 `DASHBOARD_UNDECLARED_CONTROL` |
@@ -66,8 +69,9 @@ rejects query strings. The complete schemas are in
 | Tenant rate exceeded | 429 `RATE_LIMIT_EXCEEDED`, with `Retry-After` |
 
 Unresolved/denied datasets and invalid calculations preserve their existing
-named admission errors; publication includes located `Errors` diagnostics
-and creates no dashboard/version on failure.
+named admission errors; publication attaches located `Errors` diagnostics to
+the version (drafts publish with diagnostics per D-49) and creates no
+dashboard/version when the definition cannot be validated.
 
 ## Storage, concurrency and authorization
 

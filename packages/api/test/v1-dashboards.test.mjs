@@ -73,13 +73,16 @@ for (const [plane, fixture] of [['hosted', hosted], ['local', local]]) test(`v1 
   error(await f.request(`${dashboards}/${id}/versions/2`), 404, 'RESOURCE_NOT_FOUND');
 });
 
-test('v1 dashboards: clean-state diagnostics, identity mismatch, pagination, retries and concurrent publish', async t => {
+test('v1 dashboards: draft publishes with diagnostics, identity mismatch, pagination, retries and concurrent publish', async t => {
   const f = await hosted(t);
   good(await f.request(analyses, { method: 'POST', body: input() }), 201);
   const bad = input('unfinished'); bad.definition.sheets[0].visuals = [{ kpiVisual: { visualId: 'unfinished' } }];
   good(await f.request(analyses, { method: 'POST', body: bad }), 201);
-  const rejected = await publish(f, 'unfinished'); error(rejected, 422, 'DASHBOARD_ANALYSIS_NOT_EXECUTABLE'); assert.ok(rejected.body.Errors.length);
-  assert.equal((await f.request(dashboards)).body.items.length, 0);
+  // D-49: drafts publish with their diagnostics attached to the version.
+  const draft = good(await publish(f, 'unfinished'), 201); assert.ok(draft.body.Errors.length);
+  const draftId = draft.body.DashboardId;
+  assert.ok(good(await f.request(`${dashboards}/${draftId}`)).body.Errors.length);
+  assert.equal((await f.request(dashboards)).body.items.length, 1);
   const opts = { 'Idempotency-Key': 'one-publication' };
   const replies = await Promise.all([publish(f, 'analysis', undefined, opts), publish(f, 'analysis', undefined, opts)]);
   replies.forEach(r => good(r, 201)); assert.deepEqual(replies[0].body, replies[1].body); assert.equal(replies[1].headers['idempotent-replayed'], 'true');
@@ -92,7 +95,10 @@ test('v1 dashboards: clean-state diagnostics, identity mismatch, pagination, ret
   good(await publish(f, 'other'), 201);
   const page1 = good(await f.request(dashboards, { headers: { Limit: '1' } })).body;
   const page2 = good(await f.request(dashboards, { headers: { Limit: '1', Cursor: page1.nextCursor } })).body;
-  assert.equal(page1.items.length, 1); assert.equal(page2.items.length, 1); assert.notEqual(page1.items[0].id, page2.items[0].id); assert.equal(page2.nextCursor, null);
+  const page3 = good(await f.request(dashboards, { headers: { Limit: '1', Cursor: page2.nextCursor } })).body;
+  assert.equal(page1.items.length, 1); assert.equal(page2.items.length, 1); assert.equal(page3.items.length, 1);
+  assert.notEqual(page1.items[0].id, page2.items[0].id); assert.notEqual(page2.items[0].id, page3.items[0].id);
+  assert.equal(page3.nextCursor, null);
   const versions = good(await f.request(`${dashboards}/${id}/versions`, { headers: { Limit: '1' } })).body;
   assert.equal(versions.items[0].version, 1); assert.equal(typeof versions.items[0].publishedBy, 'string');
   const rest = good(await f.request(`${dashboards}/${id}/versions`, { headers: { Cursor: versions.nextCursor, Limit: '1' } })).body;

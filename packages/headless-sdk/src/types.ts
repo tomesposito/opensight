@@ -220,7 +220,7 @@ export interface AnalysisFilterGroup extends Record<string, unknown> { filterGro
 
 // ---- Published dashboards ----
 export interface PublishAnalysisBody { dashboardId?: string }
-export interface PublishAnalysisResult { DashboardId: string; Version: number; PublishedAt: string }
+export interface PublishAnalysisResult { DashboardId: string; Version: number; PublishedAt: string; Errors: AnalysisDiagnostic[] }
 export interface DashboardSummary { kind: 'dashboard'; id: string; name: string; version: number; publishedAt: string; sourceAnalysisId: string }
 export interface DashboardVersionSummary { version: number; publishedAt: string; publishedBy: string }
 export interface DashboardDescribe { DashboardId: string; Name: string; Definition: Record<string, unknown>; Errors: AnalysisDiagnostic[]; Version: number; PublishedAt: string; SourceAnalysisId: string }
