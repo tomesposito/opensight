@@ -19,3 +19,6 @@ export type { PrepSource, PrepPlan, PrepDataset, PrepCompileOptions } from './pr
 
 export { aggregateValue } from './aggregate.js';
 export { relativeDifference, formatNumber, shiftDate, resultDate, groupedPeriodDate } from './numeric-summary.js';
+export { ExpressionBinder } from './expressions.js';
+export { QueryEngineError } from './validation.js';
+export type { BoundColumn } from './types.js';
