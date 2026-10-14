@@ -1,58 +1,42 @@
-# Issue #95 assets slice — review gate and baseline verification
+# Issue #95 assets — verification and demo comparison
 
-2026-10-13, branch `work/issue-95-assets`. This checkpoint contains a
-contract proposal and draft IDD D-41. **The assets implementation is
-blocked on product review**, as required by the frozen contract's rule
-that product-shaped questions come back for review rather than freezing
-silently. The [slice document](headless-v1-assets.md) names the seven
-questions and the exact resume boundary. No asset endpoint, search
-index, or mutation validation is claimed as implemented.
+The slice changes headless API and SDK behavior. It adds no visible web UI.
+The static demo is rebuilt locally; it is not a deployed server. Capture and
+comparison artifacts are kept outside version control under
+`.opensight/issue-95-assets-impl/`.
 
 ## Verification
 
-Full root `npm test` exited 0: **2,646 passed / 0 failed / 18 skipped /
-0 cancelled**. The slice document records per-suite counts. All skips
-explicitly require live PostgreSQL (`DATABASE_URL` is unset).
+Full root `npm test` is run with the local Postgres service on port 5433.
+Final full-suite counts are recorded after verification.
+The final targeted analyses/assets/dashboard suite passed **54 / 0 / 0**.
+The SDK/OpenAPI guard and transport tests passed **26 / 0 / 0**. The live
+Postgres metadata run passed **3 / 0 / 0**, including asset transactions under
+the restricted row-security role. OpenAPI has no duplicate keys or operation
+IDs, and all local schema references resolve.
 
-`node ~/workspace/goals/opensight/hidden_files/build-demo-shim.mjs`
-rebuilds the static demo after publish. This is not a deployed server.
-Runtime sources, dependency manifests, `SOLUTION_DESIGN.md` and
-`docs/api/openapi-v1.yaml` match the master base (`44bb1099`).
-Document links resolve locally and `git diff --check` passes. Nothing
-was merged or pushed at the time this checkpoint was written; there
-were no new dependencies or AWS calls.
+## Follow-ups
 
-## Corrections to the contract draft
+Search scope JSON and dataset-copy semantics remain unanswered in the confirmed
+DECISION lines; see [slice documentation](headless-v1-assets.md#unanswered-details-and-deferred-work).
+Serverless integration and asset MCP tools remain the explicit remote/later
+handoffs. No GitHub publication or network issue filing is performed in this
+build, consistent with the brief's no-network/no-push boundary.
 
-While grounding the proposal, one gap in
-`docs/api-contract-v1-draft.md` §5 turned out to be stale: **move/copy
-do exist** locally at `POST /api/assets/(analysis|dashboard)/{id}/(move|copy)`
-(`packages/api/src/organization.ts`). The real gap is narrower — the
-verbs are unversioned, admin-only, and limited to analyses/dashboards,
-and there is no rename verb. The slice document corrects this and
-proposes versioning with a changed who-can rule (Q2) and grant-reset
-copy (Q3), rather than versioning the local behavior as-is. The
-draft's search and permissions-beyond-shares gaps stand: there is no
-server search endpoint (the UI search is client-side local drafts
-only), and there are no permission verbs beyond share grants and
-folder permissions.
+## Static demo
 
-## Dependencies restated, not re-decided
+Three offline captures are byte-identical to the previous dashboard-slice
+baseline: classic Author, new-look Author and Home Q. The capture reports
+**0 page errors / 0 external requests**. The reference comparisons retain the
+same viewport, regions, exclusions and tolerance of 16:
 
-- Who-can-grant (Q4) and who-can-move/delete (Q2/Q5) mirror the rule
-  D-39 Q2 proposes for analysis edit/delete; D-39 owns that rule.
-- Published-dashboard preservation on source-analysis delete (Q5)
-  restates D-40 Q5; D-40 owns it.
-- Reader access through shares (Q4) follows D-40 Q6 (readers see data
-  only where they independently have dataset access, per HQ-4).
-- Asset rename is not decided here; it belongs to D-39's authoring
-  verbs for analyses.
+| Reference pairing | Differing pixels |
+| --- | ---: |
+| Classic editor | 41.22% |
+| New-look editor | 33.58% |
+| Q generative | 44.66% |
 
-## Offline capture and reference comparison
-
-This slice changes documentation only, so no new captures were taken:
-there is no UI delta to compare. The demo rebuild is byte-equivalent to
-the dashboards slice's rebuilt demo for the static assets (docs are not
-shipped in the demo bundle). No new user-visible gap was introduced; no
-issue was filed or scheduled by this proposal. No visual-parity claim
-is made and README media is unchanged.
+These are pixel differences, not fidelity grades. Existing gaps remain in the
+[dashboard notes](issue-95-dashboards-gap-notes.md); there is no new visible gap
+to file. README screenshots and GIF remain current because this slice changes
+no visible UI.

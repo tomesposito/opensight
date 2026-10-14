@@ -1,6 +1,6 @@
 # OpenSight headless API contract — v1
 
-Status: **✅ Dashboard slice implemented** (2026-10-14); assets and MCP remain separate slices.
+Status: **✅ Assets decided core implemented** (2026-10-14); scope JSON and dataset-copy follow-ups remain explicit, and MCP is a separate slice.
 Owner: Tom Esposito
 Date: 2026-10-13
 Issue: [#95](https://github.com/tomesposito/opensight/issues/95) — Headless-first: open API for everything so agents can build
@@ -208,8 +208,7 @@ It never copies data authorization.
 Versions start at 1; reads default to latest published; source deletion
 preserves versions and permanently severs the republish link. Retention
 keeps all versions unless an operator cap prunes the oldest non-latest ones.
-Dashboard and version deletes require latest `If-Match` (412 on missing,
-malformed or stale precondition); pruning latest returns 409.
+Dashboard deletion requires the latest asset revision If-Match: missing 428, malformed 400, stale 412 (D-59/D-61). Version pruning retains the published-version precondition and refuses pruning latest with 409.
 
 Reads use PascalCase envelopes with `Version`, `PublishedAt` and
 `SourceAnalysisId`. Lists use `Limit`/`Cursor` headers and `nextCursor`.
@@ -217,7 +216,7 @@ Mutations honor payload-bound idempotency keys, with current access checked
 on replay. All routes have tenant rate limits and named errors.
 
 Reader queries accept only typed values keyed by declared control ID.
-Shares stay admin-managed and definition-only. CSV/PDF exports are synchronous
+Shares require build plus co-owner, including grant reads; PUT requires If-Match (D-58/D-61). Grants remain definition-only. CSV/PDF exports are synchronous
 transient artifacts rendered against live authorized data; no rendered
 snapshot is stored. PDF requires operator-installed Chromium. Existing local
 embed URLs can pin a published version without changing session lifetimes.
@@ -225,37 +224,63 @@ embed URLs can pin a published version without changing session lifetimes.
 The SDK and OpenAPI guard map all twelve operations. The UI's existing
 Publish stub remains unchanged; this slice ships headless operations.
 Job-backed exports, anonymous/delegated data access, Lambda v1 composition,
-assets and dashboard MCP tools are deferred explicitly.
+and dashboard MCP tools are deferred explicitly.
 
-### 5. Assets and admin
+### 5. Assets — implemented decided core (D-55–D-61)
 
-Exists today:
+The [assets slice](headless-v1-assets.md) and [OpenAPI](api/openapi-v1.yaml)
+are the exact operation/schema contracts. Paths below are under `/api/v1`.
 
-- `GET /api/assets` — unified asset list across analyses, dashboards,
-  datasets (`packages/api/src/index.ts`).
-- Namespaces, users, groups: `GET /api/namespaces`,
-  `GET|PUT|DELETE /api/users/{id}`, `/api/groups/{id}`
-  (`namespace-routes.ts`, web `listUsers`/`saveUser`/`deleteUser`).
-- Invitations: `POST|GET /api/invitations`, `DELETE /api/invitations/{id}`,
-  `POST /api/invitations/accept` (`invitations.ts`).
-- Auth: `POST /api/auth/login|logout|enroll|accept|switch`,
-  `GET /api/session` (`hosted-auth.ts`, `namespace-routes.ts`).
-- Embedding (QuickSight-compatible shapes, HQ-6/HQ-12):
-  `POST /api/embedding/GenerateEmbedUrlForRegisteredUser`,
-  `POST /api/embedding/GenerateEmbedUrlForAnonymousUser`,
-  `GET /api/embedding/config`, `GET|POST /api/embedding/sessions`
-  (`embedding.ts`, `embed-session-routes.ts`).
-- AI provider admin: `GET|POST /api/admin/ai`, `POST /api/admin/ai/key`,
-  `POST /api/admin/ai/test` (`ai-providers.ts`, `ai-settings.ts`).
+| Method | Path | operationId |
+| --- | --- | --- |
+| GET | `/assets` | `list_assets` |
+| GET | `/assets/analyses`, `/assets/dashboards`, `/assets/datasets` | `list_analyses_summary`, `list_dashboards_summary`, `list_datasets_summary` |
+| POST | `/assets/search` | `search_assets` |
+| POST | `/assets/{kind}/{id}/move`, `/assets/{kind}/{id}/copy` | `move_asset`, `copy_asset` |
+| GET/PUT/DELETE | `/analyses/{id}/shares/{principalType}/{principalId}` | `get/set/delete_asset_share` |
+| GET/PUT/DELETE | `/dashboards/{id}/shares/{principalType}/{principalId}` | Existing dashboard operationIds, aligned with D-58/D-61 |
+| DELETE | `/analyses/{id}`, `/dashboards/{id}`, `/datasets/{id}` | Existing resource delete operationIds |
+| GET | `/folders`, `/folders/{id}`, `/folders/{id}/assets` | `list_folders`, `describe_folder`, `list_folder_assets` |
+| PUT/DELETE | `/folders/{id}` | `rename_folder`, `delete_folder` |
+| GET/PUT | `/folders/{id}/permissions` | `get/set_folder_permissions` |
 
-Gaps (named, not designed):
+Discovery returns the explicit lowercase D-55 `{ kind, id, name, folderId }`
+summary only for readable assets. Search is case-insensitive name substring,
+ordered by updatedAt descending (historical unknown timestamps last), with
+optional kinds. Limit/Cursor headers and `{ items, nextCursor }` apply after
+filtering. New transfer, share and folder results use PascalCase; writes use
+camelCase. No unreadable names or grants are exposed.
 
-- **Search.** There is a list but no search endpoint (name/type/owner
-  query). The UI's global find-anything search is client-side.
-- **Move.** No asset move/rename endpoint (folders exist as a concept;
-  the API has no verb for moving an asset between them).
-- **Permissions beyond shares.** Dataset row/column grants exist;
-  analysis/dashboard permission verbs beyond share grants do not.
+Moves require build plus co-owner through asset and current folder grants;
+destinations must exist and be readable. Null means root. Copy requires only
+read access, resets grants to creator co-owner, rejects occupied newId (409),
+and copies the latest frozen dashboard definition. Dataset owner pins are
+preserved, so copy/share never widen prepared-data access. Transfers cover
+analyses and dashboards. Folder rename is separate; asset rename is unchanged.
+
+Share GET/PUT/DELETE requires build plus co-owner. Principals resolve in the
+same namespace; duplicate grants reject. Clearing the last grant restores
+inheritance. Asset deletion requires build plus co-owner and If-Match; shares
+die, analysis deletion preserves published definitions and severs republish,
+and any analysis reference blocks dataset deletion with a named 409. Folders
+must be empty. Missing folders deny access, and folder/asset grants intersect.
+
+Idempotency-Key covers every mutation in this slice. If-Match is required on
+asset DELETE, share PUT, folder PUT and folder-permissions PUT: 428 missing,
+400 malformed, 412 stale. Dashboard latest describe ETags identify the mutable
+asset revision; published `Version` and pinned-version ETags remain immutable
+publication identities. Rate limits and named errorCode apply to every route.
+Both local atomic stores and hosted metadata persist operations and validate
+access at commit; receipts remain the bounded process-local ten-minute cache.
+The SDK exposes typed methods for every route and shares the OpenAPI guard.
+
+Unanswered product details: D-55 has no JSON shape for `scope`; explicit scope
+returns 422 `ASSET_SCOPE_UNSPECIFIED` until confirmed, while omission searches
+the namespace. D-57 has no dataset-copy owner-binding contract; dataset copy
+is deferred. These details are recorded rather than inferred from proposal
+recommendations. Namespace/user/group/invitation, embedding and AI-provider
+admin routes stay unversioned (D-60). Lambda composition and asset MCP tools
+remain outside this slice.
 
 ## Out of scope for v1
 
@@ -323,7 +348,7 @@ dashboard review on 2026-10-14. No dashboard implementation gate remains.
   tests for the stable result shape.
 - **Analyses slice**: ✅ implemented; [slice and verification](headless-v1-analyses.md).
 - **Dashboards slice**: ✅ implemented; [slice and verification](headless-v1-dashboards.md).
-- **Assets slice**: search, move, permission verbs; contract tests.
+- **Assets follow-ups**: confirm search scope JSON and dataset-copy semantics; decided core is implemented.
 - **MCP slice**: tool mapping over the frozen REST contract; no new
   semantics.
 
