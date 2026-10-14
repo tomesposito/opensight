@@ -1,3 +1,4 @@
+import { validateDashboardRecord } from './dashboard-model.js';
 import { sourceBody, sourcePolicyLinks } from './source-schema.js';
 import { parseBundleResource } from '@opensight/bundle-parser';
 import { isRole } from '@opensight/query-engine';
@@ -59,7 +60,7 @@ export function resourceLinks(key: ResourceKey, raw: JsonObject): ResourceKey[] 
     }
     case 'folder': object(body, ['name', 'grants']); label(body.name); grants(body.grants); break;
     case 'analysis': case 'dashboard': {
-      object(body, ['definition', 'folderId', 'grants', 'datasets']);
+      object(body, ['definition', 'folderId', 'grants', 'datasets', ...(key.kind === 'dashboard' ? ['published'] : [])]);
       const d = object(body.definition), definition = object(d.Definition);
       if (d[key.kind === 'analysis' ? 'AnalysisId' : 'DashboardId'] !== key.id) invalidMetadata();
       const declarations = list(definition.DataSetIdentifierDeclarations);
@@ -67,7 +68,15 @@ export function resourceLinks(key: ResourceKey, raw: JsonObject): ResourceKey[] 
       if (bindings.length !== declarations.length) invalidMetadata();
       for (let i = 0; i < bindings.length; i++) {
         const decl = object(declarations[i]); label(decl.Identifier); label(decl.DataSetArn);
-        const ref = reference(bindings[i]); if (ref.kind !== 'dataset' && !(key.kind === 'analysis' && ref.kind === 'prepared-dataset')) invalidMetadata(); links.push(ref);
+        const ref = reference(bindings[i]); if (ref.kind !== 'dataset' && ref.kind !== 'prepared-dataset') invalidMetadata(); links.push(ref);
+      }
+      if (key.kind === 'dashboard' && body.published !== undefined) {
+        validateDashboardRecord(body.published, key.id);
+        const published = body.published as import('./dashboard-model.js').DashboardRecord;
+        if (!Array.isArray(published.versions) || published.id !== key.id) invalidMetadata();
+        for (const v of published.versions) for (const binding of Object.values(v.datasetBindings)) {
+          links.push(resourceKey({ ...binding, ...(binding.kind === 'prepared-dataset' ? { ownerId: v.bindingOwnerId } : {}) }));
+        }
       }
       if (body.folderId !== null) add('folder', body.folderId);
       grants(body.grants); break;

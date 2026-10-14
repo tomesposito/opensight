@@ -1,3 +1,4 @@
+import { dashboardVersion, type DashboardBackend } from './dashboard-model.js';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { method, routeId, send } from './automation-routes.js';
 import { validateGrants, validateOrganization, type OrganizationService, type OrganizedAsset } from './organization.js';
@@ -6,7 +7,7 @@ import { record } from './schedule.js';
 import type { Identity } from './security.js';
 
 /** Sharing grants access to the definition, never to the sharer's data-policy context. */
-export async function sharingRoute(request: IncomingMessage, response: ServerResponse, path: string, query: string, identity: Identity, organization: OrganizationService, sales?: SalesQuery): Promise<boolean> {
+export async function sharingRoute(request: IncomingMessage, response: ServerResponse, path: string, query: string, identity: Identity, organization: OrganizationService, sales?: SalesQuery, dashboards?: (identity: Identity) => DashboardBackend): Promise<boolean> {
   const shares = /^\/(?:api\/)?(analyses|dashboards)\/([^/]+)\/shares(?:\/(user|group)\/([^/]+))?$/.exec(path);
   const visual = /^\/(?:api\/)?(analyses|dashboards)\/([^/]+)\/visuals\/([^/]+)\/query$/.exec(path);
   if (!shares && !visual) return false;
@@ -18,6 +19,11 @@ export async function sharingRoute(request: IncomingMessage, response: ServerRes
     const visualId = routeId(visual[3]!);
     record(await readBody(request), []);
     const definition = organization.requireRead(identity, kind, assetId);
+    if (kind === 'dashboard' && dashboards && organization.asset(organization.security.store.read(), identity.namespaceId, kind, assetId)?.dashboard) {
+      const backend = dashboards(identity), record = await backend.get(assetId), stamp = await backend.analyses.stamp();
+      const { bindings: _bindings, ...result } = await backend.query(dashboardVersion(record), definition.Definition as Record<string, unknown>, visualId);
+      await backend.analyses.check(stamp); await backend.authorize(assetId); send(response, 200, result); return true;
+    }
     if (!sales) throw new RequestError(404, 'Dataset has no resolved sales binding');
     const { plan, rows } = await sales.executeVisual(definition.Definition, visualId, undefined, identity);
     send(response, 200, { columns: [...plan.dimensions.map(f => ({ name: f.outputName, type: 'string' })), ...plan.measures.map(f => ({ name: f.outputName, type: 'number' }))], rows });

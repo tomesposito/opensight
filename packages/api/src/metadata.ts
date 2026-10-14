@@ -1,3 +1,5 @@
+import { changeDashboard, changeDashboardGrants, describeDashboard, dashboardVersion, type DashboardRecord, type DashboardChange } from './dashboard-model.js';
+import type { AssetGrant } from './organization.js';
 import { hasCapability } from '@opensight/query-engine';
 import { MetadataError, missing, type Database, type SqlConnection, type SqlRow } from './metadata-db.js';
 import { identifier, insertLinks, insertResource, resourceKey, resourceKinds, resourceLinks, type MetadataKind, type MetadataResource, type ResourceKey, type Scope } from './metadata-resources.js';
@@ -154,6 +156,14 @@ export class TenantMetadata {
       if (Number(prior?.version ?? 0) !== expectedVersion) throw new MetadataError('METADATA_CONFLICT');
       if (JSON.stringify(revisions) !== JSON.stringify(expected)) throw new MetadataError('METADATA_REVISED', 403);
       if (replacement === null) {
+        // Sever the mutable republish link, keeping every frozen definition byte-stable.
+        const dashboards = await c.query("SELECT * FROM h1_resources WHERE tenant_id = ? AND namespace_id = ? AND kind = 'dashboard'", scopeValues(context));
+        for (const row of dashboards) {
+          const dashboard = resource(row), published = dashboard.body.published as DashboardRecord | undefined;
+          if (published?.sourceAnalysisId !== id || !published.sourceActive) continue;
+          published.sourceActive = false;
+          await c.query(`UPDATE h1_resources SET body = ?, version = version + 1 WHERE ${predicates}`, [JSON.stringify(dashboard.body), ...keyValues(context, dashboard)]);
+        }
         await c.query(`DELETE FROM h1_links WHERE ${predicates}`, keyValues(context, key));
         await c.query(`DELETE FROM h1_resources WHERE ${predicates}`, keyValues(context, key));
       } else {
@@ -172,6 +182,45 @@ export class TenantMetadata {
       // and turn the required stale-version 409 into authentication failures.
       // Reads always check current asset/folder grants and dataset admission.
       await appendMetadataEvent(c, context, replacement ? 'analysis.saved' : 'analysis.deleted');
+    }, true);
+  }
+  /** Publication, latest-version CAS, grants and source checks share one transaction. */
+  async mutateDashboard(context: TenantContext, id: string, change: DashboardChange, expected: Revisions): Promise<DashboardRecord | null> {
+    return this.checked(context, async (c, revisions, user) => {
+      if (JSON.stringify(revisions) !== JSON.stringify(expected)) throw new MetadataError('METADATA_REVISED', 403);
+      const key = resourceKey({ kind: 'dashboard', id });
+      const row = (await c.query(`SELECT * FROM h1_resources WHERE ${predicates}`, keyValues(context, key)))[0];
+      const old: JsonObject = row ? resource(row).body : { folderId: null, grants: [{ principal: { type: 'user', id: context.userId }, role: 'co-owner' }] };
+      if (change.kind === 'share') {
+        if (user.role !== 'administrator') throw new MetadataError('METADATA_WRITE_FORBIDDEN', 403);
+      } else {
+        if (!hasCapability(user.role as Parameters<typeof hasCapability>[0], 'build')) throw new MetadataError('METADATA_WRITE_FORBIDDEN', 403);
+        if (change.kind === 'publish') {
+          const source = (await c.query(`SELECT * FROM h1_resources WHERE ${predicates}`, keyValues(context, { kind: 'analysis', id: change.source.id })))[0];
+          if (!source) missing();
+          await this.analysisWriteAccess(c, context, user, resource(source).body);
+          if (Number(source.version) !== change.source.version) throw new MetadataError('METADATA_CONFLICT', 409);
+        } else await this.analysisWriteAccess(c, context, user, old);
+      }
+      if (row && !old.published) throw new MetadataError('DASHBOARD_SOURCE_MISMATCH', 409);
+      const next = changeDashboard(old.published as DashboardRecord | undefined, change, context.userId);
+      if (row) await c.query(`DELETE FROM h1_links WHERE ${predicates}`, keyValues(context, key));
+      if (!next) await c.query(`DELETE FROM h1_resources WHERE ${predicates}`, keyValues(context, key));
+      else {
+        const v = dashboardVersion(next);
+        const body: JsonObject = { ...old, published: next, definition: describeDashboard(next), datasets: v.definition.dataSetIdentifierDeclarations.map(d => {
+          const b = v.datasetBindings[d.identifier]!;
+          return { ...b, ...(b.kind === 'prepared-dataset' ? { ownerId: v.bindingOwnerId } : {}) };
+        }) };
+        if (change.kind === 'share') body.grants = changeDashboardGrants(old.grants as AssetGrant[] | undefined, change);
+        if (!row) await insertResource(c, context, key, body);
+        else {
+          await c.query(`UPDATE h1_resources SET body = ?, version = version + 1 WHERE ${predicates}`, [JSON.stringify(body), ...keyValues(context, key)]);
+          await insertLinks(c, context, key, resourceLinks(key, body));
+        }
+      }
+      await appendMetadataEvent(c, context, `dashboard.${change.kind}`);
+      return next;
     }, true);
   }
   async batch(context: TenantContext, edits: readonly MetadataEdit[], expectedRevisions?: Revisions): Promise<void> {

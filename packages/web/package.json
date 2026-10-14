@@ -39,6 +39,10 @@
     "./analysis": {
       "types": "./build/server/analysis-validation.d.ts",
       "import": "./build/server/analysis-validation.js"
+    },
+    "./exports": {
+      "types": "./build/server/visual-export.d.ts",
+      "import": "./build/server/visual-export.js"
     }
   }
 }

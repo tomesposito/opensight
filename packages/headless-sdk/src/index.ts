@@ -3,6 +3,7 @@ export type { OpenSightClientOptions, RequestOptions, AnalysisMutationOptions } 
 export { OpenSightApiError } from './errors.js';
 export type {
   ApiErrorBody,
+  PublishAnalysisBody, PublishAnalysisResult, DashboardSummary, DashboardVersionSummary, DashboardDescribe, DashboardShare, DashboardQueryBody, DashboardExportBody, DashboardExportArtifact, DashboardRemoved,
   AnalysisCalculatedFields, AnalysisDescribe, AnalysisDiagnostic, AnalysisFilterGroup,
   AnalysisLayouts, AnalysisSummary, BundleDefinition, BundleSheet, BundleVisual,
   CreateAnalysisBody, DatasetBinding, DatasetBindings, DeleteAnalysisResult,

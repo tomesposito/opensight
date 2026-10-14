@@ -1,20 +1,20 @@
-# OpenSight headless API contract — v1 DRAFT
+# OpenSight headless API contract — v1
 
-Status: 🚧 Draft for product-owner review
+Status: **✅ Dashboard slice implemented** (2026-10-14); assets and MCP remain separate slices.
 Owner: Tom Esposito
 Date: 2026-10-13
 Issue: [#95](https://github.com/tomesposito/opensight/issues/95) — Headless-first: open API for everything so agents can build
 Decision: `docs/idd/D-37-headless-first-api.md` (✅ confirmed 2026-10-13)
 
-This draft **freezes the shape of the contract, not its implementation**.
-It says which endpoints v1 has, what they are called, and the conventions
-they share. It is built only from what the codebase already does today —
-no endpoint is invented here. Where the vision needs something that does
-not exist yet, the draft names the gap instead of filling it.
+The frozen conventions and approved resource slices define the versioned API.
+[OpenAPI](api/openapi-v1.yaml) is the machine-readable contract for implemented
+operations. The original unversioned inventory below remains useful context;
+the slice documents identify which versioned operations have shipped.
 
-Nothing in this draft changes the product decisions in D-37 or the issue.
-Where a choice is still open, it is marked **PROPOSAL** and listed in
-[Open questions](#open-questions-for-the-freeze), for Tom to confirm.
+The dashboard implementation follows D-49 (drafts publish with diagnostics)
+and the explicit implementation brief for synchronous CSV/PDF delivery.
+The [dashboard slice](headless-v1-dashboards.md#contract-and-instruction-precedence)
+records the differing D-54 decision text without changing that decision.
 
 ## What "frozen" means
 
@@ -174,49 +174,57 @@ Contract rules (from D-37, decision 2):
   with `execution` provenance when the dataset is cached. Row values are
   `string | number | null` per column type — no surprises for agents.
 
-### 3. Analyses
+### 3. Analyses — ✅ implemented
 
-Exists today:
+The [analyses slice](headless-v1-analyses.md) implements thirteen v1 operations:
+list/describe/create/update/delete, add/update/remove visuals and filter groups,
+set layouts and set calculated fields. CamelCase writes use the canonical
+`BundleDefinition`; descriptions retain the PascalCase envelope. Durable local
+and hosted storage, source ownership, shared validation, quoted-integer ETags,
+mandatory mutation preconditions and typed SDK methods are implemented.
+Existing unversioned list/definition/share/query routes remain available.
 
-- `GET /analyses` — list analyses; `GET /analyses/{id}/definition` —
-  read an analysis definition in the QuickSight-shaped envelope
-  (`{ AnalysisId, Name, Definition, Errors }`, `packages/api/src/index.ts`).
-- `GET|PUT|DELETE /analyses/{id}/shares(/user/{userId}|/group/{groupId})`
-  — share grants (`packages/api/src/sharing.ts`).
-- `POST /analyses/{id}/visuals/{visualId}/query` — run one visual's query
-  (`packages/api/src/sharing.ts`).
+### 4. Dashboards — ✅ implemented
 
-Gaps (named, not designed) — this is the largest one:
+The [dashboard slice](headless-v1-dashboards.md) implements these v1 operations:
 
-- **Create / update / delete an analysis.** The local plane persists
-  through the file-backed `DefinitionStore`; the hosted plane has no
-  write endpoint for analyses at all.
-- **Authoring operations as API calls:** add/modify/remove visuals,
-  layouts, filters, calculated fields. The definition shape agents would
-  manipulate already exists — it is the same `BundleDefinition` the UI
-  reads and writes (`packages/web/src/definition-converter.ts`) — but
-  the mutations are UI-only today. The slice designs the verbs; the
-  freeze does not pre-approve them.
+| Method | Path | operationId |
+| --- | --- | --- |
+| POST | `/analyses/{id}/publish` | `publish_analysis` |
+| GET | `/dashboards` | `list_dashboards` |
+| GET | `/dashboards/{id}` | `describe_dashboard` |
+| GET | `/dashboards/{id}/versions` | `list_dashboard_versions` |
+| GET | `/dashboards/{id}/versions/{version}` | `describe_dashboard_version` |
+| DELETE | `/dashboards/{id}` | `delete_dashboard` |
+| DELETE | `/dashboards/{id}/versions/{version}` | `delete_dashboard_version` |
+| GET / PUT / DELETE | `/dashboards/{id}/shares/{principalType}/{principalId}` | `get_dashboard_share` / `set_dashboard_share` / `delete_dashboard_share` |
+| POST | `/dashboards/{id}/versions/{version}/visuals/{visualId}/query` | `query_dashboard_visual` |
+| POST | `/dashboards/{id}/exports` | `create_dashboard_export` |
 
-### 4. Dashboards
+`principalType` is `user` or `group`. Publish requires source build/co-owner
+access, validates executability, and appends an immutable definition with
+its own owner-pinned dataset bindings. It never copies data authorization.
+Versions start at 1; reads default to latest published; source deletion
+preserves versions and permanently severs the republish link. Retention
+keeps all versions unless an operator cap prunes the oldest non-latest ones.
+Dashboard and version deletes require latest `If-Match` (412 on missing,
+malformed or stale precondition); pruning latest returns 409.
 
-Exists today:
+Reads use PascalCase envelopes with `Version`, `PublishedAt` and
+`SourceAnalysisId`. Lists use `Limit`/`Cursor` headers and `nextCursor`.
+Mutations honor payload-bound idempotency keys, with current access checked
+on replay. All routes have tenant rate limits and named errors.
 
-- `GET /dashboards` — list; `GET /dashboards/{id}/definition` — read in
-  the QuickSight-shaped envelope (`packages/api/src/index.ts`).
-- `GET|PUT|DELETE /dashboards/{id}/shares(/user/{userId}|/group/{groupId})`
-  (`packages/api/src/sharing.ts`).
+Reader queries accept only typed values keyed by declared control ID.
+Shares stay admin-managed and definition-only. CSV/PDF exports are synchronous
+transient artifacts rendered against live authorized data; no rendered
+snapshot is stored. PDF requires operator-installed Chromium. Existing local
+embed URLs can pin a published version without changing session lifetimes.
 
-Gaps (named, not designed):
-
-- **Publish.** The UI's PUBLISH is an honest stub today (AGENTS.md §4:
-  "PUBLISH (honest stub until hosted)"). Publish semantics (snapshot a
-  definition into a read-optimized dashboard, version it) are a
-  product-shaped decision the slice must bring back if anything in it is
-  ambiguous.
-- **Snapshot / export as API calls.** Report rendering and snapshot
-  machinery exist (`packages/api/src/reports.ts`, `job-renderer.ts`);
-  there is no dashboard-scoped endpoint for them.
+The SDK and OpenAPI guard map all twelve operations. The UI's existing
+Publish stub remains unchanged; this slice ships headless operations.
+Job-backed exports, anonymous/delegated data access, Lambda v1 composition,
+assets and dashboard MCP tools are deferred explicitly.
 
 ### 5. Assets and admin
 
@@ -257,8 +265,9 @@ in this contract.
 
 ## Freeze decisions (product owner, 2026-10-13)
 
-Questions 1–5 and 7 are frozen. Question 6 (dashboard publish semantics)
-remains open — see below.
+All seven questions are frozen. Dashboard publish semantics are recorded in
+D-38; the concrete dashboard slice follows D-40 and D-48–D-54 plus the explicit
+implementation brief described above.
 
 1. **Versioned path: `/api/v1/...` — frozen.** The headless surface lives
    under `/api/v1/`; existing unversioned routes are untouched.
@@ -294,9 +303,8 @@ remains open — see below.
 ~~These are the decisions Tom (or the freeze review) must make before any
 slice builds. The draft proposes; the review disposes.~~
 
-Resolved 2026-10-13 except #6 above. The remaining freeze questions from
-the original draft are answered in "Freeze decisions". Slices whose
-dependencies are frozen may build; the dashboards slice waits on #6.
+Resolved. D-38 settled #6 on 2026-10-13; D-48–D-54 settled the per-question
+dashboard review on 2026-10-14. No dashboard implementation gate remains.
 
 ## Slice mapping
 
@@ -312,11 +320,8 @@ dependencies are frozen may build; the dashboards slice waits on #6.
 - **Querying slice**: version the query endpoints; pin the no-raw-SQL
   rule in tests (injection attempts rejected by construction); contract
   tests for the stable result shape.
-- **Analyses slice**: design the authoring verbs against
-  `BundleDefinition`; contract tests; bring product-shaped questions
-  back for review.
-- **Dashboards slice**: publish semantics (after question 6 is answered);
-  snapshot/export endpoints; contract tests.
+- **Analyses slice**: ✅ implemented; [slice and verification](headless-v1-analyses.md).
+- **Dashboards slice**: ✅ implemented; [slice and verification](headless-v1-dashboards.md).
 - **Assets slice**: search, move, permission verbs; contract tests.
 - **MCP slice**: tool mapping over the frozen REST contract; no new
   semantics.
