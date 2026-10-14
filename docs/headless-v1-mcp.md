@@ -28,7 +28,9 @@ Status: **Approved for implementation** (D-42 and D-62–D-69 confirmed
   losslessly as base64 with their media type; no new resources are advertised.
 - The built-in hosted auth currently has no refresh exchange endpoint. The
   MCP client must not invent a REST route or substitute login credentials;
-  the operator refresh-exchange integration remains to be grounded.
+  an explicit operator OAuth exchange URL is required (no default route).
+  See [ITD D-70](itd/D-70-mcp-runtime-boundaries.md) for the adapter wire
+  format, missing hosted integration and audited runtime packaging.
 
 Historical proposal (for the decision trail):
 Prepared on `work/issue-95-mcp`, 2026-10-13. No MCP server, tool, or
