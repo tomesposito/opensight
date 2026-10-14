@@ -418,3 +418,44 @@ test('v1 analyses unsupported query semantics are visible as diagnostics even wh
   assert.ok(valid(d).Errors.length > 0);
   d.filterGroups[0].filters[0].numericRangeFilter.operator = 'OR 1=1'; invalid(d, 'UNSUPPORTED_FEATURE');
 });
+
+
+test('v1 analyses concurrent creates cannot commit different identities under one retry key', async t => {
+  for (const f of [await hosted(t), await local(t)]) {
+    const requests = ['first', 'second'].map(id => ({ method: 'POST', headers: { 'Idempotency-Key': 'one-create-key' }, body: create(id, empty()) }));
+    const replies = await Promise.all(requests.map(options => f.request(base, options)));
+    assert.deepEqual(replies.map(r => r.status).sort(), [201, 409]);
+    const loser = replies.findIndex(r => r.status === 409), winner = 1 - loser;
+    error(replies[loser], 409, 'IDEMPOTENCY_CONFLICT');
+    error(await f.request(`${base}/${requests[loser].body.analysisId}`), 404);
+    const replay = await f.request(base, requests[winner]);
+    assert.equal(replay.status, 201); assert.equal(replay.headers['idempotent-replayed'], 'true');
+    assert.deepEqual(replay.body, replies[winner].body);
+  }
+});
+
+
+test('v1 analyses local prepared owner pins reject same-ID substitution even by administrators', async t => {
+  const f = await local(t, directory => ({ prepStorePath: join(directory, 'prep.json'), security: {
+    storePath: join(directory, 'security.json'),
+    authenticate: req => ['author', 'admin'].includes(req.headers.authorization?.slice(7)) ? { namespaceId: 'default', userId: req.headers.authorization.slice(7) } : undefined,
+    initialState: { version: 1, namespaces: [{ id: 'default', name: 'Default' }], users: ['author', 'admin'].map(id => ({ id, namespaceId: 'default', name: id, role: id === 'admin' ? 'administrator' : 'author' })), groups: [], datasets: [] },
+  } }));
+  const auth = user => ({ Authorization: `Bearer ${user}` });
+  for (const user of ['author', 'admin']) {
+    const source = { config: { format: 'csv' }, base64: Buffer.from('region,amount\nEast,2\n').toString('base64') };
+    const staged = await f.request('/api/uploads', { method: 'POST', body: source, headers: auth(user) }); assert.equal(staged.status, 201, JSON.stringify(staged.body));
+    const prepared = await f.request('/api/datasets/owner-data/prep', { method: 'PUT', body: { name: 'Sales', pipeline: { version: 1, input: staged.body.id, steps: [] } }, headers: auth(user) }); assert.equal(prepared.status, 201, JSON.stringify(prepared.body));
+  }
+  const input = create(); input.datasetBindings.sales.id = 'owner-data';
+  assert.equal((await f.request(base, { method: 'POST', body: input, headers: auth('author') })).status, 201);
+  assert.equal((await f.request(`${base}/analysis`, { headers: auth('author') })).status, 200);
+  const saved = JSON.parse(await readFile(join(f.directory, 'security.json'), 'utf8'));
+  assert.equal(saved.assets.find(a => a.id === 'analysis').datasetBindingOwnerId, 'author');
+  for (const options of [{}, { method: 'PUT', body: { name: 'Rebind', definition: draft(), datasetBindings: input.datasetBindings } }, { method: 'DELETE' }]) {
+    error(await f.request(`${base}/analysis`, { ...options, headers: { ...auth('admin'), ...at(1) } }), 422, 'SECURITY_REJECTED', true);
+  }
+  error(await f.request(base, { method: 'POST', body: { ...create('forged'), definition: { ...draft(), datasetBindingOwnerId: 'author' } }, headers: auth('admin') }), 422, 'SECURITY_REJECTED', true);
+  await f.restart();
+  error(await f.request(`${base}/analysis`, { headers: auth('admin') }), 422, 'SECURITY_REJECTED', true);
+});

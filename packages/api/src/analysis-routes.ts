@@ -71,7 +71,7 @@ export class AnalysisRoutes {
     const key = keyHeader === undefined ? undefined : canonical([backend.scope.tenantId, backend.scope.namespaceId, backend.scope.userId, verb, path, identifier(keyHeader)]);
     const fingerprint = createHash('sha256').update(canonical([raw, version])).digest('hex');
     const scopedId = canonical([backend.scope.tenantId, backend.scope.namespaceId, id]);
-    await this.serial(scopedId, async () => {
+    const execute = () => this.serial(`analysis:${scopedId}`, async () => {
       for (const [k, v] of this.replay) if (v.expires <= Date.now()) this.replay.delete(k);
       const seen = key === undefined ? undefined : this.replay.get(key);
       if (seen) {
@@ -81,8 +81,8 @@ export class AnalysisRoutes {
           if (await backend.exists(id)) conflict();
           await backend.authorizeRemoved(seen.access);
         } else {
-          await backend.authorize(id, true);
-          await this.describe(await backend.get(id), backend);
+          await backend.authorize(seen.record.id, true);
+          await this.describe(await backend.get(seen.record.id), backend);
         }
         // Validate the replay's definition against current data access too.
         await this.describe(seen.record, backend);
@@ -148,6 +148,10 @@ export class AnalysisRoutes {
       await this.describe(record, backend); await backend.check(publication);
       this.publish(response, reply);
     });
+    // Create requests share one route but can target different analysis IDs.
+    // Reserve the retry key before taking the resource lock, so different
+    // payloads cannot both commit while the first response is being recorded.
+    if (key === undefined) await execute(); else await this.serial(`retry:${key}`, execute);
   }
   private publish(response: ServerResponse, reply: Reply) { if (reply.version !== undefined) response.setHeader('ETag', `"${reply.version}"`); send(response, reply.status, reply.body); }
 }

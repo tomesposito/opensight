@@ -48,7 +48,7 @@ function walk(value: unknown, path: string, visit: (o: Obj, p: string) => void, 
 export function checkAnalysisInput(value: unknown, path = '$'): void {
   walk(value, path, (o, p) => {
     for (const k of Object.keys(o)) {
-      if (/^(tenantId|namespaceId|userId|ownerId|principal|principals|security|grants|folderId|capabilities|credentials|role|roles)$/i.test(k)) analysisFail('SECURITY_REJECTED', `${p}.${k}`, 'Caller authority or placement assertions are forbidden');
+      if (/^(tenantId|namespaceId|userId|ownerId|datasetBindingOwnerId|principal|principals|security|grants|folderId|capabilities|credentials|role|roles)$/i.test(k)) analysisFail('SECURITY_REJECTED', `${p}.${k}`, 'Caller authority or placement assertions are forbidden');
       if (/^(sql|rawSql|customSql|sqlExpression|sqlOperator|query|queryString|statement)$/i.test(k)) analysisFail('UNSUPPORTED_FEATURE', `${p}.${k}`, 'SQL and query envelopes are forbidden');
     }
   });

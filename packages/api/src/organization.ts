@@ -19,6 +19,8 @@ export interface OrganizedAsset {
   /** Durable v1 working-draft state; tombstones hide imported definitions. */
   analysisVersion?: number;
   datasetBindings?: import('./analysis-model.js').DatasetBindings;
+  /** Server-owned identity pin for local prepared dataset links. */
+  datasetBindingOwnerId?: string;
   deleted?: boolean;
 }
 export function resourceName(raw: unknown): string {
@@ -50,7 +52,7 @@ export function validateOrganization(state: SecurityState): void {
     return { id: id(f.id, '$.id'), namespaceId, name: resourceName(f.name), ...(f.grants === undefined ? {} : { grants: validateGrants(f.grants, namespaceId, state) }) };
   });
   const assets = list(state.assets ?? []).map(raw => {
-    const a = record(raw, ['id', 'kind', 'namespaceId', 'folderId', 'definition', 'grants', 'analysisVersion', 'datasetBindings', 'deleted']);
+    const a = record(raw, ['id', 'kind', 'namespaceId', 'folderId', 'definition', 'grants', 'analysisVersion', 'datasetBindings', 'datasetBindingOwnerId', 'deleted']);
     if (a.kind !== 'analysis' && a.kind !== 'dashboard') invalid('$.kind', 'expected analysis or dashboard');
     const assetId = id(a.id, '$.id'), namespaceId = id(a.namespaceId, '$.namespaceId');
     const folderId = a.folderId === null ? null : id(a.folderId, '$.folderId');
@@ -62,8 +64,9 @@ export function validateOrganization(state: SecurityState): void {
     }
     if (a.analysisVersion !== undefined && (a.kind !== 'analysis' || !Number.isSafeInteger(a.analysisVersion) || Number(a.analysisVersion) < 1)) invalid('$.analysisVersion', 'invalid version');
     if (a.deleted !== undefined && (a.kind !== 'analysis' || a.deleted !== true)) invalid('$.deleted', 'invalid tombstone');
+    if (a.datasetBindingOwnerId !== undefined) id(a.datasetBindingOwnerId, '$.datasetBindingOwnerId');
     if (a.datasetBindings !== undefined && !isObject(a.datasetBindings)) invalid('$.datasetBindings', 'invalid bindings');
-    return { ...(a.analysisVersion === undefined ? {} : { analysisVersion: a.analysisVersion }), ...(a.datasetBindings === undefined ? {} : { datasetBindings: a.datasetBindings }), ...(a.deleted ? { deleted: true } : {}), id: assetId, kind: a.kind, namespaceId, folderId, ...(a.grants === undefined ? {} : { grants: validateGrants(a.grants, namespaceId, state) }), ...(a.definition === undefined ? {} : { definition: a.definition as JsonObject }) } as OrganizedAsset;
+    return { ...(a.datasetBindingOwnerId === undefined ? {} : { datasetBindingOwnerId: a.datasetBindingOwnerId }), ...(a.analysisVersion === undefined ? {} : { analysisVersion: a.analysisVersion }), ...(a.datasetBindings === undefined ? {} : { datasetBindings: a.datasetBindings }), ...(a.deleted ? { deleted: true } : {}), id: assetId, kind: a.kind, namespaceId, folderId, ...(a.grants === undefined ? {} : { grants: validateGrants(a.grants, namespaceId, state) }), ...(a.definition === undefined ? {} : { definition: a.definition as JsonObject }) } as OrganizedAsset;
   });
   for (const resources of [folders, assets]) {
     if (resources.some(r => !state.namespaces.some(n => n.id === r.namespaceId))) invalid('$.namespaceId', 'unknown namespace');

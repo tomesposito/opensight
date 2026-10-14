@@ -51,6 +51,9 @@ export class LocalAnalyses implements AnalysisBackend {
     if (!wire) throw new MetadataError('RESOURCE_NOT_FOUND', 404);
     const stored = !this.organization && this.store?.analysisRecord(id);
     if (stored) return stored;
+    if (asset?.datasetBindings && Object.values(asset.datasetBindings).some(b => b.kind === 'prepared-dataset') && asset.datasetBindingOwnerId !== this.identity.userId) {
+      analysisFail('SECURITY_REJECTED', '$.datasetBindings', 'Dataset owner does not match authenticated user');
+    }
     const definition = convertDefinition(wire.Definition);
     // Imported local fixtures have one trusted configured sales source, resolved
     // by exact startup ARN. An arbitrary request ARN never selects data.
@@ -99,7 +102,9 @@ export class LocalAnalyses implements AnalysisBackend {
         delete asset.deleted;
         asset.definition = { AnalysisId: id, Name: record.name, Definition: projectDefinition(record.definition) };
         asset.datasetBindings = record.datasetBindings;
-      } else { asset.deleted = true; delete asset.definition; delete asset.datasetBindings; }
+        if (Object.values(record.datasetBindings).some(b => b.kind === 'prepared-dataset')) asset.datasetBindingOwnerId = this.identity.userId;
+        else delete asset.datasetBindingOwnerId;
+      } else { asset.deleted = true; delete asset.definition; delete asset.datasetBindings; delete asset.datasetBindingOwnerId; }
       validateOrganization(state);
     });
     if (this.root) await legacyWrite(this.root, commit); else await commit();
