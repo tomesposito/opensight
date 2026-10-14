@@ -175,7 +175,7 @@ export function GroupColorOptions({ visual, dispatch }: SectionProps) {
     return Object.keys(next).length ? next : undefined;
   };
   const setTitle = (next: GroupTitle | undefined) => dispatch({ type: 'group-title', title: next });
-  return <details className="property-section"><summary data-author-control="group-color">Group/Color</summary>
+  return <details className="property-section"><summary>Group/Color</summary>
     <section className="property-group" aria-label="Group/Color title"><h4>GROUP/COLOR TITLE</h4>
       <label className="toggle"><input type="checkbox" aria-label="Show Group/Color title" checked={!!title.show}
         onChange={e => setTitle(cleanTitle({ ...title, show: e.target.checked }))} />Show Group/Color title</label>
