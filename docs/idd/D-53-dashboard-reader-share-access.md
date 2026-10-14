@@ -1,7 +1,8 @@
 ---
-status: 🚧 Draft
+status: ✅ Confirmed
 owner: Tom Esposito
 date: 2026-10-14
+confirmed: 2026-10-14
 labels: [idd]
 ---
 
@@ -22,7 +23,12 @@ decision); HQ-6 anonymous embedding (separate decision); the
 delegated-data model as a future decision (recorded, not decided
 here).
 
-### 🚧 IDD D-53 — What can dashboard readers and share grants access?
+### ✅ IDD D-53 — What can dashboard readers and share grants access?
+
+#### DECISION (product owner, Tom, 2026-10-14)
+
+Readers see data only where they independently have dataset access; the delegated/published-data model stays a future decision requiring its own security proof; share grants stay admin-managed.
+
 
 #### CONTEXT
 

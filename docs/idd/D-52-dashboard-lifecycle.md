@@ -1,7 +1,8 @@
 ---
-status: 🚧 Draft
+status: ✅ Confirmed
 owner: Tom Esposito
 date: 2026-10-14
+confirmed: 2026-10-14
 labels: [idd]
 ---
 
@@ -21,7 +22,12 @@ Version addressing (D-51); reader/share access (D-53); export (D-54);
 analysis delete semantics (owned by D-44/D-45, restated here only
 where the contracts touch).
 
-### 🚧 IDD D-52 — What is the dashboard lifecycle?
+### ✅ IDD D-52 — What is the dashboard lifecycle?
+
+#### DECISION (product owner, Tom, 2026-10-14)
+
+No separate unpublish verb; per-version delete never removes the latest; source-analysis delete preserves published dashboards and severs the republish link; retention cap prunes oldest non-latest first.
+
 
 #### CONTEXT
 

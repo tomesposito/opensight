@@ -1,7 +1,8 @@
 ---
-status: 🚧 Draft
+status: ✅ Confirmed
 owner: Tom Esposito
 date: 2026-10-14
+confirmed: 2026-10-14
 labels: [idd]
 ---
 
@@ -20,7 +21,12 @@ copy-of-draft, `newId`/`name` rules.
 Move (D-56), delete (D-59). Published-dashboard lifecycle ownership
 (D-40 Q5) — restated here, not re-decided.
 
-### 🚧 IDD D-57 — What copy semantics should assets have?
+### ✅ IDD D-57 — What copy semantics should assets have?
+
+#### DECISION (product owner, Tom, 2026-10-14)
+
+Anyone who can read the asset may copy; grants are NOT cloned (the copy starts with the creator as co-owner and no other grants); copy of a published dashboard copies its latest published definition, not the live draft; newId must be unused (409); name defaults to the source name.
+
 
 #### CONTEXT
 

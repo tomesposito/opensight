@@ -1,7 +1,8 @@
 ---
-status: 🚧 Draft
+status: ✅ Confirmed
 owner: Tom Esposito
 date: 2026-10-14
+confirmed: 2026-10-14
 labels: [idd]
 ---
 
@@ -19,7 +20,12 @@ breaking-change policy.
 The deferred tools' designs (owned by D-39/D-40/D-41 — this IDD only
 governs when they appear).
 
-### 🚧 IDD D-69 — How do agents discover and version MCP tools?
+### ✅ IDD D-69 — How do agents discover and version MCP tools?
+
+#### DECISION (product owner, Tom, 2026-10-14)
+
+tools/list enumerates exactly the implemented tools; tool descriptions quote the REST operation each maps to; the server reports its own version and the targeted v1 API version; breaking changes require a version bump and migration notes.
+
 
 #### CONTEXT
 

@@ -1,7 +1,8 @@
 ---
-status: 🚧 Draft
+status: ✅ Confirmed
 owner: Tom Esposito
 date: 2026-10-14
+confirmed: 2026-10-14
 labels: [idd]
 ---
 
@@ -20,7 +21,12 @@ parameter; reader query constraints on frozen versions.
 Dashboard identity (D-50); lifecycle/delete/retention (D-52);
 reader/share access (D-53).
 
-### 🚧 IDD D-51 — How are dashboard versions addressed?
+### ✅ IDD D-51 — How are dashboard versions addressed?
+
+#### DECISION (product owner, Tom, 2026-10-14)
+
+Latest-published default; embed version parameter; reader queries limited to declared control values.
+
 
 #### CONTEXT
 

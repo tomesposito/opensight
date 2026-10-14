@@ -1,7 +1,8 @@
 ---
-status: 🚧 Draft
+status: ✅ Confirmed
 owner: Tom Esposito
 date: 2026-10-14
+confirmed: 2026-10-14
 labels: [idd]
 ---
 
@@ -18,7 +19,12 @@ The `run_dataset_query` input schema source; result-size behavior.
 Raw SQL (rejected by D-37 decision 2 — never proposed). Query
 execution budgets (existing hosted budgets — unchanged).
 
-### 🚧 IDD D-66 — What shape should the MCP query tool take?
+### ✅ IDD D-66 — What shape should the MCP query tool take?
+
+#### DECISION (product owner, Tom, 2026-10-14)
+
+Tool input schemas generated mechanically from the OpenAPI request schemas; run_dataset_query takes {id, query: InteractiveQuery, idempotencyKey?} validated against the OpenAPI query schema; result size follows existing hosted execution budgets; no invented truncation.
+
 
 #### CONTEXT
 

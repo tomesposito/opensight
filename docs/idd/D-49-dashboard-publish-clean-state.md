@@ -1,7 +1,8 @@
 ---
-status: 🚧 Draft
+status: ✅ Confirmed
 owner: Tom Esposito
 date: 2026-10-14
+confirmed: 2026-10-14
 labels: [idd]
 ---
 
@@ -20,7 +21,12 @@ What may be saved as a draft (D-47 — saving is separate from
 publishing); analysis validation internals (defined by the approved
 analyses contract).
 
-### 🚧 IDD D-49 — Must the analysis be clean to publish?
+### ✅ IDD D-49 — Must the analysis be clean to publish?
+
+#### DECISION (product owner, Tom, 2026-10-14)
+
+Drafts permitted with diagnostics.
+
 
 #### CONTEXT
 

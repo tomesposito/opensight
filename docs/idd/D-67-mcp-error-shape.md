@@ -1,7 +1,8 @@
 ---
-status: 🚧 Draft
+status: ✅ Confirmed
 owner: Tom Esposito
 date: 2026-10-14
+confirmed: 2026-10-14
 labels: [idd]
 ---
 
@@ -17,7 +18,12 @@ API errors vs protocol errors; the error payload shape.
 
 The REST error codes themselves (frozen contract — unchanged).
 
-### 🚧 IDD D-67 — How should MCP surface API errors?
+### ✅ IDD D-67 — How should MCP surface API errors?
+
+#### DECISION (product owner, Tom, 2026-10-14)
+
+API errors are structured tool results (isError: true with {errorCode, message}, the same named code as REST); protocol/transport failures are MCP protocol errors.
+
 
 #### CONTEXT
 

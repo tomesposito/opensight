@@ -1,7 +1,8 @@
 ---
-status: 🚧 Draft
+status: ✅ Confirmed
 owner: Tom Esposito
 date: 2026-10-14
+confirmed: 2026-10-14
 labels: [idd]
 ---
 
@@ -20,7 +21,12 @@ for imported analyses with absent grants.
 Verb granularity/naming (D-43); conflict behavior (D-45); dataset
 bindings (D-46); HQ-4 prepared-dataset sharing (separate decision).
 
-### 🚧 IDD D-44 — Who can create, edit, and delete analyses?
+### ✅ IDD D-44 — Who can create, edit, and delete analyses?
+
+#### DECISION (product owner, Tom, 2026-10-14)
+
+Create requires build capability; new analyses grant the creator co-owner access; edit/delete require build capability + co-owner through asset and folder restrictions; grants/placement cannot be overwritten through definition bodies; imported analyses with absent grants follow existing embedded-console behavior.
+
 
 #### CONTEXT
 

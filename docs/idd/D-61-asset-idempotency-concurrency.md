@@ -1,7 +1,8 @@
 ---
-status: 🚧 Draft
+status: ✅ Confirmed
 owner: Tom Esposito
 date: 2026-10-14
+confirmed: 2026-10-14
 labels: [idd]
 ---
 
@@ -19,7 +20,12 @@ mutations.
 Rate limiting (frozen contract — every route), the verbs' access
 rules (D-56–D-59).
 
-### 🚧 IDD D-61 — How do idempotency and concurrency work for asset verbs?
+### ✅ IDD D-61 — How do idempotency and concurrency work for asset verbs?
+
+#### DECISION (product owner, Tom, 2026-10-14)
+
+Idempotency-Key honored on move, copy, share PUT/DELETE, folder PUT/DELETE, and asset DELETE; If-Match required on asset DELETE, share PUT, and folder PUT /permissions.
+
 
 #### CONTEXT
 

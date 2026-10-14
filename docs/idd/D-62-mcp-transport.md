@@ -1,7 +1,8 @@
 ---
-status: 🚧 Draft
+status: ✅ Confirmed
 owner: Tom Esposito
 date: 2026-10-14
+confirmed: 2026-10-14
 labels: [idd]
 ---
 
@@ -18,7 +19,12 @@ stdio vs Streamable HTTP for the first MCP server.
 Streamable HTTP design (a later slice if approved), MCP prompts/
 resources (a later slice, if ever).
 
-### 🚧 IDD D-62 — What transport should the MCP server use?
+### ✅ IDD D-62 — What transport should the MCP server use?
+
+#### DECISION (product owner, Tom, 2026-10-14)
+
+stdio first; Streamable HTTP later as its own slice.
+
 
 #### CONTEXT
 
