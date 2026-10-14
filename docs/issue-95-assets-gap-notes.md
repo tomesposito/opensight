@@ -10,12 +10,9 @@ index, or mutation validation is claimed as implemented.
 
 ## Verification
 
-Full root `npm test` results: **PENDING — verification run in progress
-at time of writing; counts filled in before merge.**
-All skips, if any, must explicitly require live PostgreSQL
-(`DATABASE_URL`); Postgres is running on :5433 in this environment, so
-0 skips is expected. The slice document records per-suite counts once
-the run completes.
+Full root `npm test` exited 0: **2,646 passed / 0 failed / 18 skipped /
+0 cancelled**. The slice document records per-suite counts. All skips
+explicitly require live PostgreSQL (`DATABASE_URL` is unset).
 
 `node ~/workspace/goals/opensight/hidden_files/build-demo-shim.mjs`
 rebuilds the static demo after publish. This is not a deployed server.

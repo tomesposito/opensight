@@ -219,7 +219,22 @@ The MCP mapping stays mechanical 1:1 from the approved REST operations
 
 ## Baseline verification
 
-Full root `npm test` results are recorded in the
-[gap notes](issue-95-assets-gap-notes.md) once the verification run
-completes. These are the existing tests; this documents the baseline at
-the review gate, not implemented assets API coverage.
+Full root `npm test` exited 0 on 2026-10-13: **2,646 passed / 0 failed /
+18 skipped / 0 cancelled**. Every skip explicitly requires live PostgreSQL
+(`DATABASE_URL` is unset). These are the existing tests; this documents
+the baseline at the review gate, not implemented assets API coverage.
+
+| Suite | Passed | Failed | Skipped |
+| --- | ---: | ---: | ---: |
+| API | 513 | 0 | 16 |
+| Bundle parser | 199 | 0 | 0 |
+| Embedding SDK | 10 | 0 | 0 |
+| Interpreter | 32 | 0 | 0 |
+| Parity | 11 | 0 | 0 |
+| Query engine | 504 | 0 | 2 |
+| Web | 1,320 | 0 | 0 |
+| Root conformance | 57 | 0 | 0 |
+
+The static demo rebuilds after publish via the demo shim (see the
+[gap notes](issue-95-assets-gap-notes.md)). This slice is docs-only, so
+there is no UI delta to compare.
