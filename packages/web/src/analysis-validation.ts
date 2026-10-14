@@ -1,7 +1,8 @@
 /** Shared authoring admission: the UI parser, parameter library and visual compiler
  * remain the semantic authorities. Dataset schemas here are already authorized. */
+import type { PrepColumn } from '@opensight/bundle-parser/prep';
 import type { BundleDefinition } from '@opensight/bundle-parser';
-import { ExpressionBinder, parseExpression, QueryEngineError, type BoundColumn } from '@opensight/query-engine/browser';
+import { ExpressionBinder, parseExpression, planPreparedVisual, QueryEngineError, type BoundColumn } from '@opensight/query-engine/browser';
 import { validateParameters } from '@opensight/query-engine/parameters';
 import { normalizeVisual, CompileError } from './compiler.js';
 import { importParameter, declaration } from './parameters.js';
@@ -61,6 +62,10 @@ export function visualIdentity(raw: unknown, path: string): string {
 export function validateAnalysisDefinition(raw: unknown, schemas: ReadonlyMap<string, AnalysisSchema>): { definition: BundleDefinition; Errors: AnalysisDiagnostic[] } {
   checkAnalysisInput(raw, '$.definition');
   const d = analysisObject(raw, '$.definition'), root = '$.definition';
+  for (const key of ['analysisDefaults', 'options', 'queryExecutionOptions']) if (d[key] !== undefined) analysisObject(d[key], `${root}.${key}`);
+  let apiDefinition: Record<string, unknown>;
+  try { apiDefinition = projectDefinition(d as unknown as BundleDefinition); }
+  catch (error) { analysisFail('INVALID_INPUT', error instanceof Error ? /^(\$[^:]+):/.exec(error.message)?.[1] ?? root : root, String(error)); }
   const declarations = array(d.dataSetIdentifierDeclarations, `${root}.dataSetIdentifierDeclarations`), identifiers = new Set<string>();
   for (const [i, value] of declarations.entries()) {
     const p = `${root}.dataSetIdentifierDeclarations[${i}]`, dec = analysisObject(value, p);
@@ -106,9 +111,23 @@ export function validateAnalysisDefinition(raw: unknown, schemas: ReadonlyMap<st
   const sheetVisuals = new Map<string, Set<string>>(), filterIds = new Set<string>(), groupIds = new Set<string>();
   for (const [i, s] of sheets.entries()) {
     const p = `${root}.sheets[${i}]`, sheet = analysisObject(s, p), id = analysisId(sheet.sheetId, `${p}.sheetId`);
+    for (const key of ['name', 'contentType']) if (sheet[key] !== undefined && typeof sheet[key] !== 'string') analysisFail('INVALID_INPUT', `${p}.${key}`, 'Expected a string');
     unique(sheetIds, id, `${p}.sheetId`); const ids = new Set<string>(); sheetVisuals.set(id, ids);
     for (const [j, v] of array(sheet.visuals ?? [], `${p}.visuals`).entries()) {
       const vp = `${p}.visuals[${j}]`, vid = visualIdentity(v, vp); unique(visualIds, vid, vp); ids.add(vid);
+      const [kind, value] = Object.entries(analysisObject(v, vp))[0]!, body = analysisObject(value, `${vp}.${kind}`);
+      for (const key of ['title', 'subtitle', 'chartConfiguration']) if (body[key] !== undefined) analysisObject(body[key], `${vp}.${kind}.${key}`);
+      for (const key of ['actions', 'columnHierarchies']) if (body[key] !== undefined) array(body[key], `${vp}.${kind}.${key}`);
+      const configuration = body.chartConfiguration as Obj | undefined;
+      if (configuration?.fieldWells !== undefined) {
+        const wp = `${vp}.${kind}.chartConfiguration.fieldWells`, wells = analysisObject(configuration.fieldWells, wp);
+        walk(wells, wp, (o, at) => {
+          for (const [key, value] of Object.entries(o)) {
+            if (/FieldWells$/.test(key)) analysisObject(value, `${at}.${key}`);
+            if (['values', 'category', 'groupBy', 'rows', 'columns', 'color', 'size', 'targetValues', 'trendGroups', 'smallMultiples'].includes(key)) array(value, `${at}.${key}`).forEach((field, i) => analysisObject(field, `${at}.${key}[${i}]`));
+          }
+        });
+      }
     }
   }
   for (const [i, v] of array(d.filterGroups ?? [], `${root}.filterGroups`).entries()) {
@@ -163,6 +182,8 @@ export function validateAnalysisDefinition(raw: unknown, schemas: ReadonlyMap<st
     }
     for (const k of ['parameterName', 'sourceParameterName']) if (k in o && !bound.declarations.some(b => b.name === o[k])) analysisFail('UNRESOLVED_BINDING', `${p}.${k}`, 'Unknown parameter');
     for (const k of ['sourceFilterId']) if (k in o && !filterIds.has(String(o[k]))) analysisFail('UNRESOLVED_BINDING', `${p}.${k}`, 'Unknown filter');
+    if ('sheetId' in o && !sheetIds.has(String(o.sheetId))) analysisFail('UNRESOLVED_BINDING', `${p}.sheetId`, 'Unknown sheet');
+    for (const k of ['targetVisuals', 'visualIds']) if (k in o) array(o[k], `${p}.${k}`).forEach((id, i) => { if (!visualIds.has(String(id))) analysisFail('UNRESOLVED_BINDING', `${p}.${k}[${i}]`, 'Unknown visual'); });
     for (const k of ['sourceVisualId', 'targetVisualId']) if (k in o && !visualIds.has(String(o[k]))) analysisFail('UNRESOLVED_BINDING', `${p}.${k}`, 'Unknown visual');
     if ('matchOperator' in o && !['EQUALS', 'DOES_NOT_EQUAL', 'CONTAINS', 'DOES_NOT_CONTAIN', 'STARTS_WITH', 'ENDS_WITH', 'EXACT'].includes(String(o.matchOperator))) analysisFail('UNSUPPORTED_FEATURE', `${p}.matchOperator`, 'Unknown filter match operator');
     if ('operator' in o && !['EQUALS', 'NOT_EQUALS', 'GREATER_THAN', 'GREATER_THAN_OR_EQUAL_TO', 'LESS_THAN', 'LESS_THAN_OR_EQUAL_TO', 'CONTAINS', 'DOES_NOT_CONTAIN', 'STARTS_WITH', 'ENDS_WITH', 'BETWEEN'].includes(String(o.operator))) analysisFail('UNSUPPORTED_FEATURE', `${p}.operator`, 'Unknown filter operator');
@@ -187,6 +208,7 @@ export function validateAnalysisDefinition(raw: unknown, schemas: ReadonlyMap<st
         if ('fieldId' in o && (at.includes('.fieldWells.') || at.includes('.insightConfiguration.'))) unique(fields, text(o.fieldId, `${at}.fieldId`), `${at}.fieldId`);
       });
       walk(v, vp, (o, at) => {
+        if ('selectedFields' in o) array(o.selectedFields, `${at}.selectedFields`).forEach((id, i) => { if (!fields.has(String(id))) analysisFail('UNRESOLVED_BINDING', `${at}.selectedFields[${i}]`, 'Unknown visual field'); });
         if ('fieldId' in o && !fields.has(String(o.fieldId))) analysisFail('UNRESOLVED_BINDING', `${at}.fieldId`, 'Unknown visual field');
         if ('expression' in o) {
           const id = ids.size === 1 ? [...ids][0]! : ids.size === 0 && identifiers.size === 1 ? [...identifiers][0]! : undefined;
@@ -196,14 +218,18 @@ export function validateAnalysisDefinition(raw: unknown, schemas: ReadonlyMap<st
           if (at.endsWith('.calculatedMeasureField') && expression.scalarType !== 'number') analysisFail('TYPE_MISMATCH', `${at}.expression`, 'Calculated measure must be numeric');
         }
       });
-      try { normalizeVisual('bundle', v, vp); }
+      try {
+        normalizeVisual('bundle', v, vp);
+        if (ids.size > 1 || identifiers.size !== 1) throw new CompileError(vp, 'Current visual query path requires one dataset');
+        const id = [...identifiers][0]!, schema = schemas.get(id)!;
+        planPreparedVisual(schema.columns as readonly PrepColumn[], { ResourceType: 'Analysis', AnalysisId: 'validation', Name: 'Validation', Definition: apiDefinition }, visualIdentity(v, vp), String(analysisObject(declarations[0], root).dataSetArn));
+      }
       catch (error) {
-        if (!(error instanceof CompileError)) throw error;
+        if (!(error instanceof CompileError) && !(error instanceof QueryEngineError)) throw error;
         Errors.push({ errorCode: 'ANALYSIS_VISUAL_NOT_EXECUTABLE', path: error.path, message: error.message });
       }
     }
   }
   const definition = structuredClone(d) as unknown as BundleDefinition;
-  try { projectDefinition(definition); } catch (error) { analysisFail('INVALID_INPUT', root, String(error)); }
   return { definition, Errors };
 }

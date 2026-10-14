@@ -106,7 +106,7 @@ export class V1Routes {
     const dataError = error instanceof QueryEngineError || error instanceof PrepError || error instanceof UploadError || error instanceof BlazeError;
     const status = dataError ? 422 : error instanceof MetadataError || error instanceof RequestError || error instanceof SecurityError ? error.status : 500;
     const errorCode = dataError ? error.code : error instanceof MetadataError || error instanceof SecurityError ? error.code
-      : error instanceof RequestError ? (status === 405 ? 'METHOD_NOT_ALLOWED' : 'HOSTED_REQUEST_INVALID') : 'HOSTED_INTERNAL_ERROR';
+      : error instanceof RequestError ? (status === 405 ? 'METHOD_NOT_ALLOWED' : status === 404 ? 'RESOURCE_NOT_FOUND' : 'HOSTED_REQUEST_INVALID') : 'HOSTED_INTERNAL_ERROR';
     const message = status === 500 ? 'Internal error' : String((error as { detail?: unknown })?.detail ?? (error as Error)?.message ?? errorCode);
     const path = error instanceof QueryEngineError ? error.path : error instanceof RequestError
       ? /^(\$[^:]*|parameterDeclarations[^:]*|parameterBindings[^:]*):/.exec(error.message)?.[1] : error instanceof MetadataError && 'path' in error ? error.path : undefined;

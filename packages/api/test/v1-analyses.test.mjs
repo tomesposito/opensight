@@ -12,7 +12,7 @@ function invalid(d, code) { assert.throws(() => valid(d), e => { assert.equal(e.
 test('v1 analyses shared validation: PascalCase projection round-trips UI fields and opaque values', () => {
   const d = draft(); d.sheets[0].visuals = [visual()]; d.calculatedFields = [calc('twice', '{amount} * 2')]; d.extension = { UserLabel: 'verbatim' };
   assert.deepEqual(convertDefinition(projectDefinition(d)), d);
-  assert.deepEqual(valid(d).Errors, []);
+  delete d.extension; assert.deepEqual(valid(d).Errors, []);
   assert.ok(projectDefinition(d).Sheets[0].Visuals[0].KPIVisual.ChartConfiguration.FieldWells.Values);
   invalid({ ...d, Sheets: [] }, 'INVALID_INPUT');
 });
@@ -301,7 +301,7 @@ test('v1 analyses write admission: HTTP errors, SQL injection, all unused calcul
     const b = await f.request(`${base}/analysis/calculated-fields`, { method: 'PUT', body: fields, headers: at(1) });
     error(a, 422, undefined, true); assert.deepEqual(a.body, b.body);
   }
-  for (const body of [null, [], {}, { ...create('bad'), Name: 'wrong' }, { ...create('bad'), definition: projectDefinition(draft()) }, { ...create('bad'), datasetBindings: {} }, { ...create('bad'), datasetBindings: { sales: { kind: 'prepared-dataset', id: 'sales' }, extra: { kind: 'dataset', id: 'sales' } } }]) error(await f.request(base, { method: 'POST', body }), 422, undefined, true);
+  for (const body of [null, [], {}, { ...create('bad'), definition: { ...draft(), options: 'wrong' } }, { ...create('bad'), definition: { ...draft(), sheets: [{ sheetId: 'bad', name: 1 }] } }, { ...create('bad'), definition: { ...draft(), sheets: [{ sheetId: 'bad', visuals: [{ kpiVisual: { visualId: 'bad', chartConfiguration: { fieldWells: { values: 'wrong' } } } }] }] } }, { ...create('bad'), Name: 'wrong' }, { ...create('bad'), definition: projectDefinition(draft()) }, { ...create('bad'), datasetBindings: {} }, { ...create('bad'), datasetBindings: { sales: { kind: 'prepared-dataset', id: 'sales' }, extra: { kind: 'dataset', id: 'sales' } } }]) error(await f.request(base, { method: 'POST', body }), 422, undefined, true);
   for (const body of [{ ...create('bad'), sql: 'SELECT 1' }, { ...create('bad'), definition: { ...draft(), extension: { customSql: 'SELECT 1' } } }]) error(await f.request(base, { method: 'POST', body }), 422, 'UNSUPPORTED_FEATURE', true);
   error(await f.request(base, { method: 'POST', rawBody: '{' }), 400, 'HOSTED_REQUEST_INVALID');
   error(await f.request(`${base}/analysis`, { method: 'DELETE', body: {}, headers: at(1) }), 422, 'INVALID_INPUT', true);
@@ -373,4 +373,48 @@ test('v1 analyses OpenAPI pins all approved operations and the closed dataset bi
   const bindings = yaml.slice(yaml.indexOf('    DatasetBindings:'), yaml.indexOf('    AnalysisCreate:'));
   assert.match(bindings, /kind: \{ const: dataset \}/); assert.match(bindings, /kind: \{ const: prepared-dataset \}/);
   assert.equal([...bindings.matchAll(/additionalProperties: false/g)].length, 2); assert.equal([...bindings.matchAll(/required: \[kind, id\]/g)].length, 2);
+});
+
+test('v1 analyses every approved mutation replays once, preserves ETags, and requires current preconditions', async t => {
+  const f = await local(t);
+  let version = 0, index = 0;
+  const mutate = async (path, method, body, removed = false) => {
+    const isCreate = path === base;
+    if (!isCreate) {
+      error(await f.request(path, { method, body }), 428, 'V1_IF_MATCH_REQUIRED');
+      error(await f.request(path, { method, body, headers: { 'If-Match': 'bad' } }), 400, 'V1_IF_MATCH_INVALID');
+      error(await f.request(path, { method, body, headers: at(version + 10) }), 409, 'METADATA_CONFLICT');
+    }
+    const options = { method, body, headers: { ...(isCreate ? {} : at(version)), 'Idempotency-Key': `operation-${++index}` } };
+    const [first, replay] = await Promise.all([f.request(path, options), f.request(path, options)]);
+    assert.equal(first.status, isCreate ? 201 : 200, JSON.stringify(first.body)); assert.deepEqual(replay.body, first.body); assert.equal(replay.headers['idempotent-replayed'], 'true');
+    if (!removed) { version++; assert.equal(first.headers.etag, `"${version}"`); assert.equal(replay.headers.etag, first.headers.etag); }
+  };
+  const path = `${base}/replay`, body = create('replay', empty());
+  await mutate(base, 'POST', body);
+  const { analysisId, ...replacement } = body; await mutate(path, 'PUT', { ...replacement, name: 'Changed' });
+  await mutate(`${path}/sheets/sheet/visuals`, 'POST', { kpiVisual: { visualId: 'draft' } });
+  await mutate(`${path}/sheets/sheet/visuals/draft`, 'PUT', { kpiVisual: { visualId: 'draft', chartConfiguration: { fieldWells: { values: [] } } } });
+  await mutate(`${path}/sheets/sheet/layouts`, 'PUT', [{ configuration: { gridLayout: { elements: [{ elementId: 'draft', elementType: 'VISUAL' }] } } }]);
+  const group = { filterGroupId: 'group', status: 'ENABLED', filters: [], scopeConfiguration: { allSheets: {} } };
+  await mutate(`${path}/filter-groups`, 'POST', group); await mutate(`${path}/filter-groups/group`, 'PUT', { ...group, status: 'DISABLED' });
+  await mutate(`${path}/filter-groups/group`, 'DELETE'); await mutate(`${path}/calculated-fields`, 'PUT', []);
+  await mutate(`${path}/sheets/sheet/layouts`, 'PUT', []); await mutate(`${path}/sheets/sheet/visuals/draft`, 'DELETE'); await mutate(path, 'DELETE', undefined, true);
+});
+
+test('v1 analyses dependencies include action targets, selected fields and dangling sort fields', () => {
+  const d = draft(); d.sheets[0].visuals = [visual('source'), visual('target')];
+  d.sheets[0].visuals[0].kpiVisual.actions = [{ customActionId: 'action', name: 'Filter', status: 'ENABLED', trigger: 'DATA_POINT_CLICK', actionOperations: [{ filterOperation: { selectedFieldsConfiguration: { selectedFields: ['value'] }, targetVisualsConfiguration: { sameSheetTargetVisualConfiguration: { targetVisuals: ['target'] } } } }] }];
+  valid(d); d.sheets[0].visuals.pop(); invalid(d, 'UNRESOLVED_BINDING');
+  d.sheets[0].visuals[0].kpiVisual.actions[0].actionOperations[0].filterOperation.targetVisualsConfiguration.sameSheetTargetVisualConfiguration.targetVisuals = ['source'];
+  d.sheets[0].visuals[0].kpiVisual.actions[0].actionOperations[0].filterOperation.selectedFieldsConfiguration.selectedFields = ['gone']; invalid(d, 'UNRESOLVED_BINDING');
+  delete d.sheets[0].visuals[0].kpiVisual.actions;
+  d.sheets[0].visuals[0].kpiVisual.chartConfiguration.sortConfiguration = { fieldSort: { fieldId: 'gone', direction: 'ASC' } }; invalid(d, 'UNRESOLVED_BINDING');
+});
+
+test('v1 analyses unsupported query semantics are visible as diagnostics even when field wells are complete', () => {
+  const d = draft(); d.sheets[0].visuals = [visual()];
+  d.filterGroups = [{ filterGroupId: 'group', status: 'ENABLED', crossDataset: 'SINGLE_DATASET', scopeConfiguration: { allSheets: {} }, filters: [{ numericRangeFilter: { filterId: 'numeric', column: { dataSetIdentifier: 'sales', columnName: 'amount' }, rangeMinimum: { staticValue: 10 } } }] }];
+  assert.ok(valid(d).Errors.length > 0);
+  d.filterGroups[0].filters[0].numericRangeFilter.operator = 'OR 1=1'; invalid(d, 'UNSUPPORTED_FEATURE');
 });
