@@ -1,6 +1,36 @@
 # Headless v1 — MCP slice (issue #95)
 
-Status: **🚧 Contract proposal; implementation blocked on product review.**
+Status: **Approved for implementation** (D-42 and D-62–D-69 confirmed
+2026-10-14). The historical proposal below is superseded by this alignment.
+
+## Implementation alignment (2026-10-14)
+
+- OpenAPI inventories **53 implemented operations**: datasets/querying/sources
+  11, analyses 13, dashboards 12, and asset/folder/share additions 17.
+  All now have unique snake_case operation IDs. The former deferred table is
+  historical: D-39/D-40/D-41 shipped on master `4989fdc1`.
+- Generation must use the OpenAPI operations, parameters and request schemas,
+  not the old proposal tables. No REST wire changes accompany ID alignment.
+- Share operations legitimately name a *target* `principalType`/`principalId`
+  in their documented paths and permission bodies. Those are not caller
+  identity assertions; the authenticated caller remains fixed by the token.
+- Concurrency follows each operation's OpenAPI headers. In particular,
+  dashboard share revocation has no If-Match in the shipped REST contract;
+  MCP must not invent one. Required REST preconditions still return their
+  named 428 errors when omitted.
+- The dataset query keeps D-66's `query` wrapper; other request bodies use a
+  `body` wrapper to preserve arbitrary definition fields without collisions
+  with path/header inputs. Refresh's empty body is generated automatically.
+  This replaces the proposal's flattened dataset-body example.
+- JSON result bodies remain unchanged in structuredContent and text content;
+  response headers (ETag, Idempotent-Replayed, Retry-After and export
+  Content-Disposition) live in result `_meta`. Binary exports are represented
+  losslessly as base64 with their media type; no new resources are advertised.
+- The built-in hosted auth currently has no refresh exchange endpoint. The
+  MCP client must not invent a REST route or substitute login credentials;
+  the operator refresh-exchange integration remains to be grounded.
+
+Historical proposal (for the decision trail):
 Prepared on `work/issue-95-mcp`, 2026-10-13. No MCP server, tool, or
 transport has been implemented. Existing routes and the shipped
 machine-readable contract in `docs/api/openapi-v1.yaml` remain unchanged.
