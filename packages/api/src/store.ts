@@ -6,10 +6,11 @@ import { assertLegacyWritable, legacyWrite } from './metadata-maintenance.js';
 
 import { AutomationStore } from './automation-store.js';
 import { MetadataError } from './metadata-db.js';
+import { validateDashboardRecord, changeDashboard, describeDashboard, type DashboardRecord, type DashboardChange } from './dashboard-model.js';
 import type { AnalysisRecord } from './analysis-model.js';
 import { projectDefinition } from '@opensight/web/analysis';
 
-interface AnalysisOverlay { version: 1; records: Record<string, AnalysisRecord | null> }
+interface AnalysisOverlay { version: 1; records: Record<string, AnalysisRecord | null>; dashboards?: Record<string, DashboardRecord | null> }
 
 export type ResourceKind = 'analysis' | 'dashboard';
 export const RESOURCE_ID = /^[A-Za-z0-9_-]{1,512}$/u;
@@ -33,10 +34,33 @@ export class DefinitionStore {
         const version = previous === null ? 0 : previous?.version ?? (this.get('analysis', id) ? 1 : 0);
         if (version !== expectedVersion) throw new MetadataError('METADATA_CONFLICT');
         if (!version && record === null) throw new MetadataError('RESOURCE_NOT_FOUND', 404);
+        if (!record) for (const dashboard of Object.values(state.dashboards ?? {})) if (dashboard?.sourceAnalysisId === id) dashboard.sourceActive = false;
         Object.defineProperty(state.records, id, { value: record, enumerable: true, configurable: true, writable: true });
       });
       if (record) this.resources.get('analysis')!.set(id, { AnalysisId: id, Name: record.name, Definition: projectDefinition(record.definition) });
       else this.resources.get('analysis')!.delete(id);
+    });
+  }
+  dashboards(): DashboardRecord[] { return Object.values(this.overlay?.read().dashboards ?? {}).filter((v): v is DashboardRecord => v !== null); }
+  async mutateDashboard(id: string, change: DashboardChange, userId: string): Promise<DashboardRecord | null> {
+    if (!this.overlay || !this.root) throw new MetadataError('DASHBOARD_STORE_UNAVAILABLE', 503);
+    return legacyWrite(this.root, async () => {
+      const result = await this.overlay!.change(state => {
+        if (change.kind === 'publish') {
+          const source = Object.hasOwn(state.records, change.source.id) ? state.records[change.source.id] : undefined;
+          if (source === null || !source && !this.get('analysis', change.source.id)) throw new MetadataError('RESOURCE_NOT_FOUND', 404);
+          if ((source?.version ?? 1) !== change.source.version) throw new MetadataError('METADATA_CONFLICT', 409);
+        }
+        const records = state.dashboards ??= {};
+        const prior = Object.hasOwn(records, id) ? records[id] ?? undefined : undefined;
+        if (!prior && this.get('dashboard', id)) throw new MetadataError('DASHBOARD_SOURCE_MISMATCH', 409);
+        const next = changeDashboard(prior, change, userId);
+        Object.defineProperty(records, id, { value: next, enumerable: true, configurable: true, writable: true });
+        return next;
+      });
+      if (result) this.resources.get('dashboard')!.set(id, describeDashboard(result));
+      else this.resources.get('dashboard')!.delete(id);
+      return result;
     });
   }
   list(): { kind: ResourceKind; id: string; name: string }[] {
@@ -126,11 +150,19 @@ export class DefinitionStore {
       for (const [id, value] of Object.entries(raw.records)) {
         if (!RESOURCE_ID.test(id) || value !== null && (!isObject(value) || value.id !== id || !Number.isSafeInteger(value.version) || Number(value.version) < 1 || !isObject(value.definition) || !isObject(value.datasetBindings))) throw new Error('Invalid analysis overlay record');
       }
+      if (raw.dashboards !== undefined) {
+        if (!isObject(raw.dashboards)) throw new Error('Invalid dashboard overlay');
+        for (const [id, record] of Object.entries(raw.dashboards)) if (record !== null) validateDashboardRecord(record, id);
+      }
       return raw as unknown as AnalysisOverlay;
     });
     for (const [id, record] of Object.entries(store.overlay.read().records)) {
       if (record === null) store.resources.get('analysis')!.delete(id);
       else store.resources.get('analysis')!.set(id, { AnalysisId: id, Name: record.name, Definition: projectDefinition(record.definition) });
+    }
+    for (const [id, record] of Object.entries(store.overlay.read().dashboards ?? {})) {
+      if (record) store.resources.get('dashboard')!.set(id, describeDashboard(record));
+      else store.resources.get('dashboard')!.delete(id);
     }
     return store;
   }

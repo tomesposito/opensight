@@ -104,7 +104,9 @@ export class LocalAnalyses implements AnalysisBackend {
         asset.datasetBindings = record.datasetBindings;
         if (Object.values(record.datasetBindings).some(b => b.kind === 'prepared-dataset')) asset.datasetBindingOwnerId = this.identity.userId;
         else delete asset.datasetBindingOwnerId;
-      } else { asset.deleted = true; delete asset.definition; delete asset.datasetBindings; delete asset.datasetBindingOwnerId; }
+      } else {
+        for (const item of state.assets ?? []) if (item.namespaceId === this.identity.namespaceId && item.dashboard?.sourceAnalysisId === id) item.dashboard.sourceActive = false;
+        asset.deleted = true; delete asset.definition; delete asset.datasetBindings; delete asset.datasetBindingOwnerId; }
       validateOrganization(state);
     });
     if (this.root) await legacyWrite(this.root, commit); else await commit();
