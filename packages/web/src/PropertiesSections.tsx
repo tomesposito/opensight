@@ -2,7 +2,8 @@ import { useId, type Dispatch, type ReactNode } from 'react';
 import type { AuthorAction, AuthorDraft, AuthorVisual } from './authoring.js';
 import { GRID_COLUMNS, defaultMultiplesOptions, hasSmallMultiplesWell } from './authoring.js';
 import type { MultiplesOptions as MultiplesOptionsState } from './model.js';
-import { hasDataLabels, hasLegend, LEGEND_POSITIONS, type LegendPosition } from './formatting.js';
+import { hasDataLabels, hasLegend, LEGEND_POSITIONS, type LegendPosition, type LegendTextStyle, type LegendTitle } from './formatting.js';
+import { LIGHT_THEME } from './themes.js';
 
 type SectionProps = { visual: AuthorVisual; dispatch: Dispatch<AuthorAction> };
 
@@ -44,19 +45,6 @@ export function CardLayout() {
       <label>Padding<select defaultValue="24px"><option>24px</option></select></label>
     </Unavailable>
   </section>;
-}
-
-function TextButtons({ label, alignment = false }: { label: string; alignment?: boolean }) {
-  return <>
-    <div className="property-inline" role="group" aria-label={`${label} emphasis`}>
-      <button type="button" aria-label={`${label} bold`}><b>B</b></button>
-      <button type="button" aria-label={`${label} italic`}><i>I</i></button>
-      <button type="button" aria-label={`${label} underline`}><u>U</u></button>
-    </div>
-    {alignment && <div className="property-inline" role="group" aria-label={`${label} alignment`}>
-      {['Left', 'Center', 'Right'].map(value => <button type="button" key={value} aria-label={`${label} align ${value.toLowerCase()}`}>{value}</button>)}
-    </div>}
-  </>;
 }
 
 export function MultiplesOptions({ visual, dispatch }: SectionProps) {
@@ -124,14 +112,40 @@ export function MultiplesOptions({ visual, dispatch }: SectionProps) {
   </details>;
 }
 
-function TextStyling({ label, size }: { label: string; size: number }) {
+/** Wired text-styling controls: font (the analysis theme owns the typeface — no
+ *  fake font list), size, color, and B/I/U. Absent fields mean theme defaults;
+ *  `onChange(undefined)` clears the whole style. Underline is saved but never
+ *  rendered: ECharts text has no underline primitive. */
+function TextStyling({ label, size, value, onChange }: { label: string; size: number; value: LegendTextStyle; onChange: (style: LegendTextStyle | undefined) => void }) {
+  const patch = (p: Partial<LegendTextStyle>) => {
+    const next = { ...value, ...p };
+    for (const flag of ['bold', 'italic', 'underline'] as const) if (!next[flag]) delete next[flag];
+    onChange(Object.keys(next).length ? next : undefined);
+  };
+  const setSize = (raw: string) => {
+    const trimmed = raw.trim();
+    if (trimmed === '') { const { fontSize: _dropped, ...rest } = value; onChange(Object.keys(rest).length ? rest : undefined); return; }
+    if (/^\d+$/.test(trimmed) && Number(trimmed) >= 8 && Number(trimmed) <= 32) patch({ fontSize: Number(trimmed) });
+  };
   return <>
     <h4 className="property-caption">Text styling</h4>
     <div className="property-inline">
-      <select aria-label={`${label} font`} defaultValue="Analysis theme"><option>Analysis theme</option></select>
-      <input aria-label={`${label} font size`} type="number" placeholder={String(size)} />
+      <select aria-label={`${label} font`} value="Analysis theme" onChange={() => {}}><option>Analysis theme</option></select>
+      <input aria-label={`${label} font size`} type="number" min={8} max={32} placeholder={String(size)}
+        value={value.fontSize ?? ''} onChange={e => setSize(e.target.value)} />
     </div>
-    <TextButtons label={label} />
+    <div className="property-inline">
+      <label>Color<input type="color" aria-label={`${label} color`} value={value.color ?? LIGHT_THEME.textColor}
+        onChange={e => patch({ color: e.target.value })} /></label>
+      {value.color !== undefined && <button type="button" aria-label={`${label} reset color to theme default`}
+        onClick={() => { const { color: _dropped, ...rest } = value; onChange(Object.keys(rest).length ? rest : undefined); }}>Reset</button>}
+    </div>
+    <div className="property-inline" role="group" aria-label={`${label} emphasis`}>
+      {(['bold', 'italic', 'underline'] as const).map(flag => <button type="button" key={flag}
+        aria-label={`${label} ${flag}`} aria-pressed={!!value[flag]}
+        onClick={() => { const p: Partial<LegendTextStyle> = {}; p[flag] = !value[flag]; patch(p); }}>
+        {flag === 'bold' ? <b>B</b> : flag === 'italic' ? <i>I</i> : <u>U</u>}</button>)}
+    </div>
   </>;
 }
 
@@ -142,7 +156,7 @@ export function GroupColorOptions({ visual, dispatch }: SectionProps) {
   return <details className="property-section"><summary>Group/Color</summary>
     <Unavailable label="Group title controls" reason="A separate Group/Color title and its text styling are not supported yet.">
       <label className="toggle"><input type="checkbox" aria-label="Show Group/Color title" />Title</label>
-      <TextStyling label="Group title" size={14} />
+      <TextStyling label="Group title" size={14} value={{}} onChange={() => {}} />
     </Unavailable>
     <label>Field name<input aria-label="Group/Color field name" disabled={!field} title={!field ? 'Assign a Group/Color field first.' : 'Display name used in generated titles and result tables.'} placeholder={field ?? 'Assign a Group/Color field first'} maxLength={128}
       value={field && names && Object.hasOwn(names, field) ? names[field] : ''}
@@ -165,6 +179,16 @@ export function GroupColorOptions({ visual, dispatch }: SectionProps) {
 
 export function LegendOptions({ visual, dispatch }: SectionProps) {
   if (!hasLegend(visual.kind)) return null;
+  const title: LegendTitle = visual.formatting?.legendTitle ?? {};
+  const valueStyle: LegendTextStyle = visual.formatting?.legendValueStyle ?? {};
+  const cleanTitle = (t: LegendTitle): LegendTitle | undefined => {
+    const next: LegendTitle = {};
+    if (t.show) next.show = true;
+    if (t.text !== undefined) next.text = t.text;
+    if (t.style !== undefined) next.style = t.style;
+    return Object.keys(next).length ? next : undefined;
+  };
+  const setTitle = (next: LegendTitle | undefined) => dispatch({ type: 'legend-title', title: next });
   return <details className="property-section"><summary data-author-control="legend">Legend</summary>
     <label className="toggle"><input type="checkbox" checked={visual.legend} onChange={e => dispatch({ type: 'display', property: 'legend', value: e.target.checked })} />Show legend</label>
     <label>Legend position<select aria-label="Legend position" value={visual.formatting?.legendPosition ?? 'AUTO'} onChange={e => dispatch({ type: 'legend-position', position: e.target.value as LegendPosition })}>
@@ -172,16 +196,23 @@ export function LegendOptions({ visual, dispatch }: SectionProps) {
     </select></label>
     <p className="field-hint">Auto places the legend at the bottom.</p>
     <section className="property-group" aria-label="Legend title"><h4>LEGEND TITLE</h4>
-      <Unavailable label="Legend title controls" reason="A separate legend title and its text styling are not supported yet.">
-        <label className="toggle"><input type="checkbox" />Show legend title</label>
-        <label>Legend title<input placeholder="Legend" /></label>
-        <TextStyling label="Legend title" size={14} />
-      </Unavailable>
+      <label className="toggle"><input type="checkbox" aria-label="Show legend title" checked={!!title.show}
+        onChange={e => setTitle(cleanTitle({ ...title, show: e.target.checked }))} />Show legend title</label>
+      {title.show && <>
+        <label>Legend title<input aria-label="Legend title" placeholder="Legend" maxLength={128}
+          value={title.text ?? ''} onChange={e => {
+            const text = e.target.value.trim();
+            setTitle(cleanTitle({ ...title, text: text ? e.target.value.slice(0, 128) : undefined }));
+          }} /></label>
+        <TextStyling label="Legend title" size={14} value={title.style ?? {}}
+          onChange={style => setTitle(cleanTitle({ ...title, style }))} />
+        <p className="field-hint">Legend titles are saved with the visual and exports, but the chart does not draw a separate legend title.</p>
+      </>}
     </section>
     <section className="property-group" aria-label="Legend value"><h4>LEGEND VALUE</h4>
-      <Unavailable label="Legend value controls" reason="Per-visual legend value styling is not supported yet. Font and color follow the analysis theme.">
-        <TextStyling label="Legend value" size={12} />
-      </Unavailable>
+      <TextStyling label="Legend value" size={12} value={valueStyle}
+        onChange={style => dispatch({ type: 'legend-value-style', style })} />
+      <p className="field-hint">Underline is saved with the visual, but legend entries cannot render it.</p>
     </section>
   </details>;
 }
@@ -194,7 +225,7 @@ export function DataLabelsOptions({ visual, dispatch }: SectionProps) {
       <label className="toggle"><input type="checkbox" />Category</label>
       <label className="toggle"><input type="checkbox" />Metric</label>
       <label>Position<select aria-label="Data label position" defaultValue="Outside"><option>Outside</option></select></label>
-      <TextStyling label="Data label" size={12} />
+      <TextStyling label="Data label" size={12} value={{}} onChange={() => {}} />
       <label className="toggle"><input type="checkbox" />Allow labels to overlap</label>
     </Unavailable>
     <label>Data label decimal places<input type="number" min="0" max="12" placeholder="Automatic" value={visual.formatting?.decimalPlaces ?? ''} onChange={e => {

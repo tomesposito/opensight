@@ -1,9 +1,23 @@
 import type { EChartsOption } from 'echarts';
 import type { VisualModel } from './model.js';
-import { hasDataLabels, hasReferenceLines } from './formatting.js';
+import { LIGHT_THEME, type AnalysisTheme } from './themes.js';
+import { hasDataLabels, hasReferenceLines, type LegendTextStyle } from './formatting.js';
+
+/** Legend value-entry text style. The analysis theme owns the font family; the
+ *  panel overrides size, color, and emphasis. Underline has no ECharts text
+ *  primitive, so the flag stays in the model and exports but never renders. */
+export function legendTextStyle(theme: AnalysisTheme, style: LegendTextStyle | undefined, base?: Record<string, unknown>): Record<string, unknown> {
+  return { ...base,
+    color: style?.color ?? (typeof base?.color === 'string' ? base.color : theme.textColor),
+    fontFamily: theme.fontFamily,
+    ...(style?.fontSize !== undefined ? { fontSize: style.fontSize } : {}),
+    ...(style?.bold ? { fontWeight: 700 } : {}),
+    ...(style?.italic ? { fontStyle: 'italic' } : {}),
+  };
+}
 
 /** Layout and label presentation only; result values and field identities stay unchanged. */
-export function applyDisplayOptions(model: VisualModel, option: EChartsOption): void {
+export function applyDisplayOptions(model: VisualModel, option: EChartsOption, theme: AnalysisTheme = LIGHT_THEME): void {
   if (option.legend && !Array.isArray(option.legend)) {
     const side = model.legendPosition === 'LEFT' || model.legendPosition === 'RIGHT';
     const position = model.legendPosition;
@@ -12,6 +26,9 @@ export function applyDisplayOptions(model: VisualModel, option: EChartsOption): 
       top: side ? 'middle' : position === 'TOP' ? 0 : undefined, bottom: !side && position !== 'TOP' ? 0 : undefined,
       ...(side ? { width: 100 } : {}),
     };
+    const valueStyle = model.formatting?.legendValueStyle;
+    if (valueStyle) option.legend.textStyle = legendTextStyle(theme, valueStyle,
+      typeof option.legend.textStyle === 'object' && option.legend.textStyle ? option.legend.textStyle as Record<string, unknown> : undefined);
     if (model.legend) {
       if (option.grid && !Array.isArray(option.grid)) option.grid = { ...option.grid,
         ...(position === 'LEFT' ? { left: 130 } : position === 'RIGHT' ? { right: 130 } : position === 'TOP' ? { top: 48 } : { bottom: 48 }),

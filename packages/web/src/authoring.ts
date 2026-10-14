@@ -1,7 +1,7 @@
 import { defaultTextStyle, sheetObjectValid, serializeObjects, objectElementType, type SheetObject, type TextStyle } from './sheet-objects.js';
 import { rebindInsight } from './insight-configuration.js';
 import { paletteValid, themeValid, type AnalysisTheme } from './themes.js';
-import { formattingValid, gaugeValid, binsValid, legendPositionValid, rowGroupPathValid, type LegendPosition, type VisualFormatting } from './formatting.js';
+import { formattingValid, gaugeValid, binsValid, legendPositionValid, legendTitleValid, legendTextStyleValid, rowGroupPathValid, type LegendPosition, type LegendTitle, type LegendTextStyle, type VisualFormatting } from './formatting.js';
 import type { Cell, MultiplesOptions } from './model.js';
 import { EXTRA_VISUALS, extraKind, type VisualKind } from './visual-catalog.js';
 export type { VisualKind } from './visual-catalog.js';
@@ -288,6 +288,8 @@ export type AuthorAction =
   | { type: 'title'; title: string }
   | { type: 'subtitle'; subtitle: string; visible: boolean }
   | { type: 'legend-position'; position: LegendPosition }
+  | { type: 'legend-title'; title: LegendTitle | undefined }
+  | { type: 'legend-value-style'; style: LegendTextStyle | undefined }
   | { type: 'donut'; donut: boolean }
   | { type: 'display'; property: 'titleVisible' | 'legend' | 'labels' | 'tooltipVisible' | 'horizontal' | 'stacked' | 'totals' | 'subtotals'; value: boolean }
   | { type: 'tooltip'; patch: Partial<Pick<AuthorVisual, 'tooltipType' | 'tooltipTitleType' | 'tooltipAggregations' | 'tooltipHiddenFields' | 'tooltipExtraFields'>> }
@@ -305,6 +307,13 @@ function validLayout(layout: readonly Placement[], visuals: readonly { id: strin
     p.w >= 3 && p.h >= 4 && p.x + p.w <= GRID_COLUMNS && p.y + p.h <= 10000);
 }
 const cleanLayout = (layout: readonly Placement[]): Placement[] => layout.map(({ i, x, y, w, h }) => ({ i, x, y, w, h }));
+/** Remove one formatting key; drop the whole formatting object when nothing remains. */
+const stripFormattingKey = (formatting: VisualFormatting | undefined, key: 'legendTitle' | 'legendValueStyle'): VisualFormatting | undefined => {
+  if (!formatting) return undefined;
+  const rest = { ...formatting };
+  delete rest[key];
+  return Object.keys(rest).length ? rest : undefined;
+};
 
 /** Immutable transitions shared by field buttons, pills, sheet tabs and drag/resize callbacks. */
 export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorDraft {
@@ -576,6 +585,18 @@ export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorD
       case 'title': return { ...visual, title: action.title };
       case 'subtitle': return typeof action.subtitle === 'string' && typeof action.visible === 'boolean' ? { ...visual, subtitle: action.subtitle, subtitleVisible: action.visible } : visual;
       case 'legend-position': return legendPositionValid(action.position) ? { ...visual, formatting: { ...visual.formatting, legendPosition: action.position } } : visual;
+      case 'legend-title': {
+        if (action.title !== undefined && !legendTitleValid(action.title)) return visual;
+        const next = { ...visual, formatting: action.title === undefined ? stripFormattingKey(visual.formatting, 'legendTitle') : { ...visual.formatting, legendTitle: structuredClone(action.title) } };
+        if (next.formatting === undefined) delete next.formatting;
+        return next;
+      }
+      case 'legend-value-style': {
+        if (action.style !== undefined && !legendTextStyleValid(action.style)) return visual;
+        const next = { ...visual, formatting: action.style === undefined ? stripFormattingKey(visual.formatting, 'legendValueStyle') : { ...visual.formatting, legendValueStyle: structuredClone(action.style) } };
+        if (next.formatting === undefined) delete next.formatting;
+        return next;
+      }
       case 'donut': return { ...visual, donut: visual.kind === 'pie' && action.donut };
       case 'display': return { ...visual, [action.property]: action.value };
       case 'tooltip': {
