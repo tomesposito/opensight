@@ -1,7 +1,8 @@
 ---
-status: 🚧 Draft
+status: ✅ Confirmed
 owner: Tom Esposito
 date: 2026-10-13
+confirmed: 2026-10-14
 labels: [idd]
 ---
 
@@ -25,7 +26,21 @@ invitations/embedding/AI-admin versioning (a later identity/admin
 slice), MCP tool mapping (mechanical 1:1 per freeze Q7), new SQL
 execution capabilities, deployment and publishing this branch.
 
-### 🚧 IDD D-41 — What asset-management contract should headless v1 expose?
+### ✅ IDD D-41 — What asset-management contract should headless v1 expose?
+
+#### DECISION (product owner, Tom, 2026-10-14)
+
+Option 1 approved: proposal-first, then implement. The seven open
+questions below are now their own IDDs; the assets implementation is
+gated on their answers.
+
+- Q1 (list/search shape) → [D-55](D-55-asset-list-search-shape.md)
+- Q2 (move semantics) → [D-56](D-56-asset-move-semantics.md)
+- Q3 (copy semantics) → [D-57](D-57-asset-copy-semantics.md)
+- Q4 (permission verbs) → [D-58](D-58-asset-permission-verbs.md)
+- Q5 (delete semantics) → [D-59](D-59-asset-delete-semantics.md)
+- Q6 (what versions under v1) → [D-60](D-60-asset-v1-scope-rename.md)
+- Q7 (idempotency and concurrency) → [D-61](D-61-asset-idempotency-concurrency.md)
 
 #### CONTEXT
 
@@ -86,30 +101,11 @@ owner has not approved?
    and the assets questions themselves still need a round after that.
    Benefit: one combined review instead of three.
 
-#### REASONING
+#### REASONING — adopted as the decision above (2026-10-14)
 
-Option 1. The assets slice is where the API either keeps its security
-promises or breaks them: search must not leak unreadable names, copy
-must not silently re-grant viewers, delete must not destroy published
-work. Those are product calls, not implementation details, and the
-D-39/D-40 precedent shows the review round is cheap — Tom answers
-batched questions in one pass. Option 2 ships an API that agents
-cannot use for the job (admin-only organizing) while quietly keeping
-the clone-grants leak. Option 3 stalls the highest-leverage verb
-(search) behind gates it does not depend on: the assets questions are
-answerable now, and the D-39/D-40 touchpoints are restated, not
-re-decided, so no combined review is needed.
-
-The proposal itself takes positions where the existing code already
-supplies the rule (preserve `canRead`/`grantsAllow` exactly; keep the
-both-must-allow folder+asset rule; keep shares definition-only per
-HQ-4; keep the must-be-empty folder-delete 409; fail-closed dataset
-delete mirroring the source-delete pin) and asks where it does not
-(who can move/copy/grant/delete; copy grant handling; search shape and
-transport; what versions under v1; idempotency/concurrency). Where a
-question belongs to another slice — asset rename to D-39, published
-dashboard preservation to D-40 Q5 — the proposal says so instead of
-answering it twice.
+The product owner approved option 1. The loop's recommendation is
+superseded by the decision; the per-question IDDs D-55–D-61 carry the
+remaining calls.
 
 #### IMPLICATIONS
 
