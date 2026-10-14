@@ -1,0 +1,33 @@
+export { OpenSightClient } from './client.js';
+export type { OpenSightClientOptions, RequestOptions } from './client.js';
+export { OpenSightApiError } from './errors.js';
+export type {
+  ApiErrorBody,
+  Column,
+  ColumnType,
+  DatasetDescribe,
+  DatasetExecution,
+  DatasetLineage,
+  DatasetSummary,
+  DeleteDatasetResult,
+  DeleteSourceResult,
+  ExecutionMode,
+  InteractiveQuery,
+  LineageDataset,
+  LineageSource,
+  MeasureAggregation,
+  Page,
+  QueryCell,
+  QueryDimension,
+  QueryFilter,
+  QueryMeasure,
+  QueryParameter,
+  QueryParameterType,
+  QueryResult,
+  QueryResultColumn,
+  RefreshResult,
+  RefreshState,
+  SaveDatasetBody,
+  SourceDescribe,
+  SourceSummary,
+} from './types.js';
