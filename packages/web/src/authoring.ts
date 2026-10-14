@@ -1,7 +1,7 @@
 import { defaultTextStyle, sheetObjectValid, serializeObjects, objectElementType, type SheetObject, type TextStyle } from './sheet-objects.js';
 import { rebindInsight } from './insight-configuration.js';
 import { paletteValid, themeValid, type AnalysisTheme } from './themes.js';
-import { formattingValid, gaugeValid, binsValid, legendPositionValid, legendTitleValid, legendTextStyleValid, dataLabelsValid, rowGroupPathValid, type LegendPosition, type LegendTitle, type LegendTextStyle, type DataLabels, type VisualFormatting } from './formatting.js';
+import { formattingValid, gaugeValid, binsValid, legendPositionValid, legendTitleValid, groupTitleValid, legendTextStyleValid, dataLabelsValid, rowGroupPathValid, type LegendPosition, type LegendTitle, type GroupTitle, type LegendTextStyle, type DataLabels, type VisualFormatting } from './formatting.js';
 import type { Cell, MultiplesOptions } from './model.js';
 import { EXTRA_VISUALS, extraKind, type VisualKind } from './visual-catalog.js';
 export type { VisualKind } from './visual-catalog.js';
@@ -289,6 +289,7 @@ export type AuthorAction =
   | { type: 'subtitle'; subtitle: string; visible: boolean }
   | { type: 'legend-position'; position: LegendPosition }
   | { type: 'legend-title'; title: LegendTitle | undefined }
+  | { type: 'group-title'; title: GroupTitle | undefined }
   | { type: 'legend-value-style'; style: LegendTextStyle | undefined }
   | { type: 'data-labels'; labels: DataLabels | undefined }
   | { type: 'donut'; donut: boolean }
@@ -309,7 +310,7 @@ function validLayout(layout: readonly Placement[], visuals: readonly { id: strin
 }
 const cleanLayout = (layout: readonly Placement[]): Placement[] => layout.map(({ i, x, y, w, h }) => ({ i, x, y, w, h }));
 /** Remove one formatting key; drop the whole formatting object when nothing remains. */
-const stripFormattingKey = (formatting: VisualFormatting | undefined, key: 'legendTitle' | 'legendValueStyle' | 'dataLabels'): VisualFormatting | undefined => {
+const stripFormattingKey = (formatting: VisualFormatting | undefined, key: 'legendTitle' | 'legendValueStyle' | 'groupTitle' | 'dataLabels'): VisualFormatting | undefined => {
   if (!formatting) return undefined;
   const rest = { ...formatting };
   delete rest[key];
@@ -589,6 +590,12 @@ export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorD
       case 'legend-title': {
         if (action.title !== undefined && !legendTitleValid(action.title)) return visual;
         const next = { ...visual, formatting: action.title === undefined ? stripFormattingKey(visual.formatting, 'legendTitle') : { ...visual.formatting, legendTitle: structuredClone(action.title) } };
+        if (next.formatting === undefined) delete next.formatting;
+        return next;
+      }
+      case 'group-title': {
+        if (action.title !== undefined && !groupTitleValid(action.title)) return visual;
+        const next = { ...visual, formatting: action.title === undefined ? stripFormattingKey(visual.formatting, 'groupTitle') : { ...visual.formatting, groupTitle: structuredClone(action.title) } };
         if (next.formatting === undefined) delete next.formatting;
         return next;
       }

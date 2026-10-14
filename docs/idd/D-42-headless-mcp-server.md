@@ -1,8 +1,7 @@
 ---
-status: ✅ Confirmed
+status: 🚧 Draft
 owner: Tom Esposito
 date: 2026-10-13
-confirmed: 2026-10-14
 labels: [idd]
 ---
 
@@ -29,22 +28,7 @@ slices per D-37 sequencing), MCP prompts/resources (a later slice, if
 ever), Streamable HTTP transport (a later slice), new SQL execution
 capabilities, deployment and publishing this branch.
 
-### ✅ IDD D-42 — What MCP server contract should headless v1 expose?
-
-#### DECISION (product owner, Tom, 2026-10-14)
-
-Option 1 approved: proposal-first, then implement. The eight open
-questions below are now their own IDDs; the MCP implementation is
-gated on their answers.
-
-- Q1 (transport) → [D-62](D-62-mcp-transport.md)
-- Q2 (credential) → [D-63](D-63-mcp-credential.md)
-- Q3 (tool scope) → [D-64](D-64-mcp-tool-scope.md)
-- Q4 (header conventions) → [D-65](D-65-mcp-header-conventions.md)
-- Q5 (query tool shape) → [D-66](D-66-mcp-query-tool-shape.md)
-- Q6 (errors) → [D-67](D-67-mcp-error-shape.md)
-- Q7 (packaging) → [D-68](D-68-mcp-packaging.md)
-- Q8 (discovery/versioning) → [D-69](D-69-mcp-discovery-versioning.md)
+### 🚧 IDD D-42 — What MCP server contract should headless v1 expose?
 
 #### CONTEXT
 
@@ -99,11 +83,31 @@ that is still a proposal?
    tools — fully specified by implemented REST — sit unused.
    Benefit: one combined review instead of two.
 
-#### REASONING — adopted as the decision above (2026-10-14)
+#### REASONING
 
-The product owner approved option 1. The loop's recommendation is
-superseded by the decision; the per-question IDDs D-62–D-69 carry the
-remaining calls.
+Option 1. The MCP slice is where the API either keeps its "one
+contract, many clients" promise or breaks it: a server that calls
+route handlers in-process, accepts per-call credentials, or
+advertises proposed tools would be a second, privileged API wearing
+an MCP mask. Those are product calls, not implementation details,
+and the D-39/D-40/D-41 precedent shows the review round is cheap —
+Tom answers batched questions in one pass. Option 2 saves one round
+by freezing exactly the choices (transport, credential carriage)
+that most need a product call. Option 3 stalls the 11 fully
+specified tools behind gates they do not depend on: the MCP
+questions are answerable now, and the deferred tools follow their
+slices' approvals mechanically, so no combined review is needed.
+
+The proposal itself takes positions where the existing contract
+already supplies the rule (mechanical 1:1 naming per freeze Q7;
+server-as-just-another-API-client per D-37; no raw SQL; user-level
+tenant-scoped credentials; named error codes; per-tenant rate
+limiting; HQ-4 no data-access widening) and asks where it does not
+(transport; credential carriage mechanics; header mapping; error
+shape; packaging; discovery/versioning). Where a question belongs
+to another slice — analysis verbs to D-39, publish/share semantics
+to D-40, search/move/share verbs to D-41 — the proposal defers the
+tool instead of answering it twice.
 
 #### IMPLICATIONS
 

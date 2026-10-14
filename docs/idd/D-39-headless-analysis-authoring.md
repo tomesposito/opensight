@@ -1,8 +1,7 @@
 ---
-status: ✅ Confirmed
+status: 🚧 Draft
 owner: Tom Esposito
 date: 2026-10-13
-confirmed: 2026-10-14
 labels: [idd]
 ---
 
@@ -21,20 +20,7 @@ and whether incomplete analysis drafts can be saved.
 Dashboard publishing semantics (D-38), prepared-dataset sharing (HQ-4),
 new SQL execution capabilities, deployment and publishing this branch.
 
-### ✅ IDD D-39 — What analysis authoring contract should headless v1 expose?
-
-#### DECISION (product owner, Tom, 2026-10-14)
-
-Option 2 approved: whole-definition CRUD plus resource operations for
-visuals, layouts, filter groups, and calculated fields — one analysis
-version, one validation path. The five open questions below are now
-their own IDDs; the analyses implementation is gated on their answers.
-
-- Q1 (verb granularity and naming) → [D-43](D-43-analysis-verb-granularity-naming.md)
-- Q2 (who can create, edit, delete) → [D-44](D-44-analysis-authoring-access.md)
-- Q3 (concurrent edits) → [D-45](D-45-analysis-concurrent-edits.md)
-- Q4 (dataset bindings) → [D-46](D-46-analysis-dataset-bindings.md)
-- Q5 (unfinished drafts) → [D-47](D-47-analysis-unfinished-drafts.md)
+### 🚧 IDD D-39 — What analysis authoring contract should headless v1 expose?
 
 #### CONTEXT
 
@@ -64,11 +50,20 @@ semantics should agents receive as stable v1 behavior?
    or automatic merging of unrelated edits. This supports more concurrent
    editors but introduces merge and multi-resource consistency semantics.
 
-#### REASONING — adopted as the decision above (2026-10-14)
+#### REASONING
 
-The product owner approved option 2. The loop's recommendation is
-superseded by the decision; the per-question IDDs D-43–D-47 carry the
-remaining calls.
+[WIP] Option 2 is recommended for review: it lets agents express individual
+builder actions and lets batch changes preserve consistency with a single
+version. Option 1 is smaller but leaves agents doing document surgery;
+option 3 makes concurrent editing more permissive at the cost of a new
+conflict model. No option has been selected by the product owner.
+
+Approval must also answer Q1–Q5 in the slice proposal: route/tool names
+and casing, who may author/delete, conflict behavior, legacy/prepared
+dataset bindings without widening HQ-4, and saving incomplete drafts.
+Existing embedded behavior supplies evidence, not permission to silently
+freeze new product semantics. The run brief's scope §4 explicitly gates
+dependent implementation on this review.
 
 #### IMPLICATIONS
 
