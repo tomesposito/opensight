@@ -7,8 +7,23 @@ comparison artifacts are kept outside version control under
 
 ## Verification
 
-Full root `npm test` is run with the local Postgres service on port 5433.
-Final full-suite counts are recorded after verification.
+Full root `npm test` completed successfully with the local Postgres service on
+port 5433: **2,767 passed / 0 failed / 0 skipped / 0 cancelled**. This includes
+the root conformance suite and live Postgres integration tests.
+
+| Suite | Passed | Failed | Skipped |
+| --- | ---: | ---: | ---: |
+| API | 584 | 0 | 0 |
+| Bundle parser | 199 | 0 | 0 |
+| Embedding SDK | 10 | 0 | 0 |
+| Headless SDK | 26 | 0 | 0 |
+| O interpreter | 32 | 0 | 0 |
+| Parity | 11 | 0 | 0 |
+| Query engine | 520 | 0 | 0 |
+| Web | 1,328 | 0 | 0 |
+| Root conformance | 57 | 0 | 0 |
+| **Total** | **2,767** | **0** | **0** |
+
 The final targeted analyses/assets/dashboard suite passed **54 / 0 / 0**.
 The SDK/OpenAPI guard and transport tests passed **26 / 0 / 0**. The live
 Postgres metadata run passed **3 / 0 / 0**, including asset transactions under

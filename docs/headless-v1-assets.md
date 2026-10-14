@@ -111,8 +111,9 @@ paths on both planes, including restart persistence, reader copies, owner pins,
 co-owner/folder restrictions, duplicate/unresolved grants, reference-safe deletes,
 immutable publications, pagination, concurrent CAS, replay conflict/revocation
 and rate limiting. Existing analyses/dashboard tests are updated only where
-D-58–D-61 deliberately replace their earlier contracts. Full-suite and demo
-verification are recorded in [gap notes](issue-95-assets-gap-notes.md).
+D-58–D-61 deliberately replace their earlier contracts. Full root `npm test`
+passed **2,767 / 0 failed / 0 skipped**, with live Postgres enabled. Full-suite
+and demo verification are recorded in [gap notes](issue-95-assets-gap-notes.md).
 
 ## Unanswered details and deferred work
 
