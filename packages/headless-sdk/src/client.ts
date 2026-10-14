@@ -1,6 +1,7 @@
 import { OpenSightApiError } from './errors.js';
 import type {
   ApiErrorBody,
+  PublishAnalysisBody, PublishAnalysisResult, DashboardSummary, DashboardVersionSummary, DashboardDescribe, DashboardShare, DashboardQueryBody, DashboardExportBody, DashboardExportArtifact, DashboardRemoved,
   AnalysisCalculatedFields, AnalysisDescribe, AnalysisFilterGroup, AnalysisLayouts,
   AnalysisSummary, BundleVisual, CreateAnalysisBody, DeleteAnalysisResult,
   UpdateAnalysisBody, VersionedResult,
@@ -208,6 +209,46 @@ export class OpenSightClient {
     return this.versionedRequest('PUT', `${analysisPath(id)}/calculated-fields`, { body, headers: analysisHeaders(opts) });
   }
 
+  // ---- published dashboards ----
+
+  publishAnalysis(id: string, body: PublishAnalysisBody = {}, opts: Pick<RequestOptions, 'idempotencyKey'> = {}): Promise<VersionedResult<PublishAnalysisResult>> {
+    return this.versionedRequest('POST', `${analysisPath(id)}/publish`, { body, headers: mutationHeaders(opts) });
+  }
+  listDashboards(opts: Pick<RequestOptions, 'limit' | 'cursor'> = {}): Promise<Page<DashboardSummary>> {
+    return this.request('GET', '/v1/dashboards', { headers: pageHeaders(opts) });
+  }
+  getDashboard(id: string): Promise<VersionedResult<DashboardDescribe>> {
+    return this.versionedRequest('GET', dashboardPath(id));
+  }
+  listDashboardVersions(id: string, opts: Pick<RequestOptions, 'limit' | 'cursor'> = {}): Promise<Page<DashboardVersionSummary>> {
+    return this.request('GET', `${dashboardPath(id)}/versions`, { headers: pageHeaders(opts) });
+  }
+  getDashboardVersion(id: string, version: number): Promise<VersionedResult<DashboardDescribe>> {
+    return this.versionedRequest('GET', dashboardVersionPath(id, version));
+  }
+  deleteDashboard(id: string, opts: AnalysisMutationOptions): Promise<DashboardRemoved> {
+    return this.request('DELETE', dashboardPath(id), { headers: analysisHeaders(opts) });
+  }
+  deleteDashboardVersion(id: string, version: number, opts: AnalysisMutationOptions): Promise<DashboardRemoved> {
+    return this.request('DELETE', dashboardVersionPath(id, version), { headers: analysisHeaders(opts) });
+  }
+  getDashboardShare(id: string, principal: DashboardShare['principal']): Promise<DashboardShare> {
+    return this.request('GET', dashboardSharePath(id, principal));
+  }
+  setDashboardShare(id: string, principal: DashboardShare['principal'], body: Pick<DashboardShare, 'role'>, opts: Pick<RequestOptions, 'idempotencyKey'> = {}): Promise<DashboardShare> {
+    return this.request('PUT', dashboardSharePath(id, principal), { body, headers: mutationHeaders(opts) });
+  }
+  deleteDashboardShare(id: string, principal: DashboardShare['principal'], opts: Pick<RequestOptions, 'idempotencyKey'> = {}): Promise<{ deleted: true }> {
+    return this.request('DELETE', dashboardSharePath(id, principal), { headers: mutationHeaders(opts) });
+  }
+  queryDashboardVisual(id: string, version: number, visualId: string, body: DashboardQueryBody = {}, opts: Pick<RequestOptions, 'idempotencyKey'> = {}): Promise<VersionedResult<QueryResult>> {
+    return this.versionedRequest('POST', `${dashboardVersionPath(id, version)}/visuals/${encode(visualId)}/query`, { body, headers: mutationHeaders(opts) });
+  }
+  async createDashboardExport(id: string, body: DashboardExportBody, opts: Pick<RequestOptions, 'idempotencyKey'> = {}): Promise<DashboardExportArtifact> {
+    const response = await this.response('POST', `${dashboardPath(id)}/exports`, { body, headers: mutationHeaders(opts) });
+    return { bytes: new Uint8Array(await response.arrayBuffer()), contentType: response.headers.get('Content-Type') ?? 'application/octet-stream', contentDisposition: response.headers.get('Content-Disposition'), etag: response.headers.get('ETag') };
+  }
+
   // ---- transport ----
 
   private async request<T>(
@@ -289,4 +330,13 @@ function analysisPath(id: string): string { return `/v1/analyses/${encode(id)}`;
 function sheetPath(id: string, sheetId: string): string { return `${analysisPath(id)}/sheets/${encode(sheetId)}`; }
 function analysisHeaders(opts: AnalysisMutationOptions): Record<string, string> {
   return { ...mutationHeaders(opts), 'If-Match': opts.ifMatch };
+}
+
+function dashboardPath(id: string): string { return `/v1/dashboards/${encode(id)}`; }
+function dashboardVersionPath(id: string, version: number): string {
+  if (!Number.isSafeInteger(version) || version < 1) throw new TypeError('version must be a positive integer');
+  return `${dashboardPath(id)}/versions/${version}`;
+}
+function dashboardSharePath(id: string, principal: DashboardShare['principal']): string {
+  return `${dashboardPath(id)}/shares/${encode(principal.type)}/${encode(principal.id)}`;
 }

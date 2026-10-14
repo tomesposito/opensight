@@ -36,6 +36,18 @@ const ROUTES = specRoutes();
 
 // The client method that implements each spec route.
 const COVERAGE = {
+  '/analyses/{id}/publish|POST': 'publishAnalysis',
+  '/dashboards|GET': 'listDashboards',
+  '/dashboards/{id}|GET': 'getDashboard',
+  '/dashboards/{id}|DELETE': 'deleteDashboard',
+  '/dashboards/{id}/versions|GET': 'listDashboardVersions',
+  '/dashboards/{id}/versions/{version}|GET': 'getDashboardVersion',
+  '/dashboards/{id}/versions/{version}|DELETE': 'deleteDashboardVersion',
+  '/dashboards/{id}/shares/{principalType}/{principalId}|GET': 'getDashboardShare',
+  '/dashboards/{id}/shares/{principalType}/{principalId}|PUT': 'setDashboardShare',
+  '/dashboards/{id}/shares/{principalType}/{principalId}|DELETE': 'deleteDashboardShare',
+  '/dashboards/{id}/versions/{version}/visuals/{visualId}/query|POST': 'queryDashboardVisual',
+  '/dashboards/{id}/exports|POST': 'createDashboardExport',
   '/analyses|GET': 'listAnalyses',
   '/analyses|POST': 'createAnalysis',
   '/analyses/{id}|GET': 'getAnalysis',

@@ -127,6 +127,7 @@ export interface ApiErrorBody {
   errorCode: string;
   message?: string;
   path?: string;
+  Errors?: AnalysisDiagnostic[];
 }
 
 // ---- InteractiveQuery (visual query model, no raw SQL) ----
@@ -216,3 +217,15 @@ export interface VersionedResult<T> { value: T; etag: string | null }
 export type AnalysisLayouts = NonNullable<BundleSheet['layouts']>;
 export type AnalysisCalculatedFields = NonNullable<BundleDefinition['calculatedFields']>;
 export interface AnalysisFilterGroup extends Record<string, unknown> { filterGroupId: string; filters: unknown[] }
+
+// ---- Published dashboards ----
+export interface PublishAnalysisBody { dashboardId?: string }
+export interface PublishAnalysisResult { DashboardId: string; Version: number; PublishedAt: string }
+export interface DashboardSummary { kind: 'dashboard'; id: string; name: string; version: number; publishedAt: string; sourceAnalysisId: string }
+export interface DashboardVersionSummary { version: number; publishedAt: string; publishedBy: string }
+export interface DashboardDescribe { DashboardId: string; Name: string; Definition: Record<string, unknown>; Errors: AnalysisDiagnostic[]; Version: number; PublishedAt: string; SourceAnalysisId: string }
+export interface DashboardShare { principal: { type: 'user' | 'group'; id: string }; role: 'viewer' | 'co-owner' }
+export interface DashboardQueryBody { controlValues?: Record<string, Array<string | number>> }
+export interface DashboardExportBody { version?: number; format: 'csv' | 'pdf' }
+export interface DashboardExportArtifact { bytes: Uint8Array; contentType: string; contentDisposition: string | null; etag: string | null }
+export interface DashboardRemoved { id: string; version?: number; removed: true }

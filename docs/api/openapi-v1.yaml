@@ -6,8 +6,8 @@ info:
     Builder-shaped REST surface for agents (issue #95, IDD D-37). Versioned
     and stable: breaking changes need a new version plus migration notes.
     The web app consumes the same API; existing unversioned routes are
-    untouched. Slices: datasets, querying and analyses (implemented), dashboards,
-    assets, MCP mapping.
+    untouched. Implemented slices: datasets, querying, analyses and dashboards.
+    Assets and MCP mapping remain separate slices.
 servers:
   - url: https://{host}/api/v1
     variables:
@@ -20,7 +20,594 @@ tags:
   - name: sources
   - name: querying
   - name: analyses
+  - name: dashboards
 paths:
+  /analyses/{id}/publish:
+    parameters:
+    - name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: ^[A-Za-z0-9_-]{1,512}$
+    post:
+      tags:
+      - dashboards
+      operationId: publish_analysis
+      summary: Publish analysis
+      description: Requires build capability and co-owner source access. Validates executability before commit.
+        Omit dashboardId to mint a dashboard; supplying it appends only to the same active source link. Validation
+        failures return Errors and publish nothing.
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DashboardPublish'
+      responses:
+        '201':
+          description: Success
+          headers:
+            ETag:
+              description: Quoted published version
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardPublished'
+        '400':
+          $ref: '#/components/responses/AnalysisError'
+        '401':
+          $ref: '#/components/responses/AnalysisError'
+        '403':
+          $ref: '#/components/responses/AnalysisError'
+        '404':
+          $ref: '#/components/responses/AnalysisError'
+        '409':
+          $ref: '#/components/responses/AnalysisError'
+        '412':
+          $ref: '#/components/responses/AnalysisError'
+        '413':
+          $ref: '#/components/responses/AnalysisError'
+        '422':
+          $ref: '#/components/responses/AnalysisError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/AnalysisError'
+  /dashboards:
+    get:
+      tags:
+      - dashboards
+      operationId: list_dashboards
+      summary: List dashboards
+      description: Access-filtered latest-published summaries; Limit and Cursor headers.
+      parameters:
+      - $ref: '#/components/parameters/Limit'
+      - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardPage'
+        '400':
+          $ref: '#/components/responses/AnalysisError'
+        '401':
+          $ref: '#/components/responses/AnalysisError'
+        '403':
+          $ref: '#/components/responses/AnalysisError'
+        '404':
+          $ref: '#/components/responses/AnalysisError'
+        '409':
+          $ref: '#/components/responses/AnalysisError'
+        '412':
+          $ref: '#/components/responses/AnalysisError'
+        '413':
+          $ref: '#/components/responses/AnalysisError'
+        '422':
+          $ref: '#/components/responses/AnalysisError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/AnalysisError'
+  /dashboards/{id}:
+    parameters:
+    - name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: ^[A-Za-z0-9_-]{1,512}$
+    get:
+      tags:
+      - dashboards
+      operationId: describe_dashboard
+      summary: Describe dashboard
+      description: Latest published definition; never the working analysis.
+      responses:
+        '200':
+          description: Success
+          headers:
+            ETag:
+              description: Quoted published version
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardDescription'
+        '400':
+          $ref: '#/components/responses/AnalysisError'
+        '401':
+          $ref: '#/components/responses/AnalysisError'
+        '403':
+          $ref: '#/components/responses/AnalysisError'
+        '404':
+          $ref: '#/components/responses/AnalysisError'
+        '409':
+          $ref: '#/components/responses/AnalysisError'
+        '412':
+          $ref: '#/components/responses/AnalysisError'
+        '413':
+          $ref: '#/components/responses/AnalysisError'
+        '422':
+          $ref: '#/components/responses/AnalysisError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/AnalysisError'
+    delete:
+      tags:
+      - dashboards
+      operationId: delete_dashboard
+      summary: Delete dashboard
+      description: Build capability and dashboard co-owner access; removes all versions.
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - name: If-Match
+        in: header
+        required: true
+        description: Quoted latest published version. Missing, malformed or stale precondition returns 412.
+        schema:
+          type: string
+          pattern: ^"[1-9][0-9]*"$
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardRemoved'
+        '400':
+          $ref: '#/components/responses/AnalysisError'
+        '401':
+          $ref: '#/components/responses/AnalysisError'
+        '403':
+          $ref: '#/components/responses/AnalysisError'
+        '404':
+          $ref: '#/components/responses/AnalysisError'
+        '409':
+          $ref: '#/components/responses/AnalysisError'
+        '412':
+          $ref: '#/components/responses/AnalysisError'
+        '413':
+          $ref: '#/components/responses/AnalysisError'
+        '422':
+          $ref: '#/components/responses/AnalysisError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/AnalysisError'
+  /dashboards/{id}/versions:
+    parameters:
+    - name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: ^[A-Za-z0-9_-]{1,512}$
+    get:
+      tags:
+      - dashboards
+      operationId: list_dashboard_versions
+      summary: List dashboard versions
+      description: Retained versions in ascending version order.
+      parameters:
+      - $ref: '#/components/parameters/Limit'
+      - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardVersionPage'
+        '400':
+          $ref: '#/components/responses/AnalysisError'
+        '401':
+          $ref: '#/components/responses/AnalysisError'
+        '403':
+          $ref: '#/components/responses/AnalysisError'
+        '404':
+          $ref: '#/components/responses/AnalysisError'
+        '409':
+          $ref: '#/components/responses/AnalysisError'
+        '412':
+          $ref: '#/components/responses/AnalysisError'
+        '413':
+          $ref: '#/components/responses/AnalysisError'
+        '422':
+          $ref: '#/components/responses/AnalysisError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/AnalysisError'
+  /dashboards/{id}/versions/{version}:
+    parameters:
+    - name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: ^[A-Za-z0-9_-]{1,512}$
+    - name: version
+      in: path
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+    get:
+      tags:
+      - dashboards
+      operationId: describe_dashboard_version
+      summary: Describe dashboard version
+      description: Immutable version definition; data is never stored in versions.
+      responses:
+        '200':
+          description: Success
+          headers:
+            ETag:
+              description: Quoted published version
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardDescription'
+        '400':
+          $ref: '#/components/responses/AnalysisError'
+        '401':
+          $ref: '#/components/responses/AnalysisError'
+        '403':
+          $ref: '#/components/responses/AnalysisError'
+        '404':
+          $ref: '#/components/responses/AnalysisError'
+        '409':
+          $ref: '#/components/responses/AnalysisError'
+        '412':
+          $ref: '#/components/responses/AnalysisError'
+        '413':
+          $ref: '#/components/responses/AnalysisError'
+        '422':
+          $ref: '#/components/responses/AnalysisError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/AnalysisError'
+    delete:
+      tags:
+      - dashboards
+      operationId: delete_dashboard_version
+      summary: Delete dashboard version
+      description: Build capability and dashboard co-owner access. Latest version cannot be pruned (409).
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - name: If-Match
+        in: header
+        required: true
+        description: Quoted latest published version. Missing, malformed or stale precondition returns 412.
+        schema:
+          type: string
+          pattern: ^"[1-9][0-9]*"$
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardRemoved'
+        '400':
+          $ref: '#/components/responses/AnalysisError'
+        '401':
+          $ref: '#/components/responses/AnalysisError'
+        '403':
+          $ref: '#/components/responses/AnalysisError'
+        '404':
+          $ref: '#/components/responses/AnalysisError'
+        '409':
+          $ref: '#/components/responses/AnalysisError'
+        '412':
+          $ref: '#/components/responses/AnalysisError'
+        '413':
+          $ref: '#/components/responses/AnalysisError'
+        '422':
+          $ref: '#/components/responses/AnalysisError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/AnalysisError'
+  /dashboards/{id}/shares/{principalType}/{principalId}:
+    parameters:
+    - name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: ^[A-Za-z0-9_-]{1,512}$
+    - name: principalType
+      in: path
+      required: true
+      schema:
+        type: string
+        enum:
+        - user
+        - group
+    - name: principalId
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: ^[A-Za-z0-9_-]{1,512}$
+    get:
+      tags:
+      - dashboards
+      operationId: get_dashboard_share
+      summary: Get dashboard share
+      description: Admin-managed definition-only grant; never widens underlying dataset access. Shares apply to
+        the dashboard across versions and do not advance the published version.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardShare'
+        '400':
+          $ref: '#/components/responses/AnalysisError'
+        '401':
+          $ref: '#/components/responses/AnalysisError'
+        '403':
+          $ref: '#/components/responses/AnalysisError'
+        '404':
+          $ref: '#/components/responses/AnalysisError'
+        '409':
+          $ref: '#/components/responses/AnalysisError'
+        '412':
+          $ref: '#/components/responses/AnalysisError'
+        '413':
+          $ref: '#/components/responses/AnalysisError'
+        '422':
+          $ref: '#/components/responses/AnalysisError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/AnalysisError'
+    put:
+      tags:
+      - dashboards
+      operationId: set_dashboard_share
+      summary: Set dashboard share
+      description: Admin-managed definition-only grant; never widens underlying dataset access. Shares apply to
+        the dashboard across versions and do not advance the published version.
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DashboardShareWrite'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardShare'
+        '400':
+          $ref: '#/components/responses/AnalysisError'
+        '401':
+          $ref: '#/components/responses/AnalysisError'
+        '403':
+          $ref: '#/components/responses/AnalysisError'
+        '404':
+          $ref: '#/components/responses/AnalysisError'
+        '409':
+          $ref: '#/components/responses/AnalysisError'
+        '412':
+          $ref: '#/components/responses/AnalysisError'
+        '413':
+          $ref: '#/components/responses/AnalysisError'
+        '422':
+          $ref: '#/components/responses/AnalysisError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/AnalysisError'
+    delete:
+      tags:
+      - dashboards
+      operationId: delete_dashboard_share
+      summary: Delete dashboard share
+      description: Admin-managed definition-only grant; never widens underlying dataset access. Shares apply to
+        the dashboard across versions and do not advance the published version.
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardShareDeleted'
+        '400':
+          $ref: '#/components/responses/AnalysisError'
+        '401':
+          $ref: '#/components/responses/AnalysisError'
+        '403':
+          $ref: '#/components/responses/AnalysisError'
+        '404':
+          $ref: '#/components/responses/AnalysisError'
+        '409':
+          $ref: '#/components/responses/AnalysisError'
+        '412':
+          $ref: '#/components/responses/AnalysisError'
+        '413':
+          $ref: '#/components/responses/AnalysisError'
+        '422':
+          $ref: '#/components/responses/AnalysisError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/AnalysisError'
+  /dashboards/{id}/versions/{version}/visuals/{visualId}/query:
+    parameters:
+    - name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: ^[A-Za-z0-9_-]{1,512}$
+    - name: version
+      in: path
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+    - name: visualId
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: ^[A-Za-z0-9_-]{1,512}$
+    post:
+      tags:
+      - dashboards
+      operationId: query_dashboard_visual
+      summary: Query dashboard visual
+      description: Runs against live data under the authenticated reader own dataset access. Values only for controls
+        declared by this frozen version.
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DashboardVisualQuery'
+      responses:
+        '200':
+          description: Success
+          headers:
+            ETag:
+              description: Quoted published version
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QueryResult'
+        '400':
+          $ref: '#/components/responses/AnalysisError'
+        '401':
+          $ref: '#/components/responses/AnalysisError'
+        '403':
+          $ref: '#/components/responses/AnalysisError'
+        '404':
+          $ref: '#/components/responses/AnalysisError'
+        '409':
+          $ref: '#/components/responses/AnalysisError'
+        '412':
+          $ref: '#/components/responses/AnalysisError'
+        '413':
+          $ref: '#/components/responses/AnalysisError'
+        '422':
+          $ref: '#/components/responses/AnalysisError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/AnalysisError'
+  /dashboards/{id}/exports:
+    parameters:
+    - name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: ^[A-Za-z0-9_-]{1,512}$
+    post:
+      tags:
+      - dashboards
+      operationId: create_dashboard_export
+      summary: Create dashboard export
+      description: Synchronous CSV or PDF using live authorized data and a frozen version (latest by default). CSV
+        uses sheetId, visualId, row, column, value columns; spreadsheet-safe cells. PDF uses the existing report
+        tables and requires operator-installed Chromium via OPENSIGHT_PDF_CHROMIUM. Larger/job-backed exports are
+        deferred.
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DashboardExport'
+      responses:
+        '200':
+          description: Transient artifact; never persisted as a snapshot.
+          headers:
+            ETag:
+              description: Quoted published version
+              schema:
+                type: string
+            Content-Disposition:
+              description: Attachment filename
+              schema:
+                type: string
+          content:
+            text/csv:
+              schema:
+                type: string
+                format: binary
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+        '400':
+          $ref: '#/components/responses/AnalysisError'
+        '401':
+          $ref: '#/components/responses/AnalysisError'
+        '403':
+          $ref: '#/components/responses/AnalysisError'
+        '404':
+          $ref: '#/components/responses/AnalysisError'
+        '409':
+          $ref: '#/components/responses/AnalysisError'
+        '412':
+          $ref: '#/components/responses/AnalysisError'
+        '413':
+          $ref: '#/components/responses/AnalysisError'
+        '422':
+          $ref: '#/components/responses/AnalysisError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/AnalysisError'
   /analyses:
     get:
       tags: [analyses]
@@ -844,6 +1431,237 @@ components:
       description: Quoted integer version, e.g. "3" (optimistic concurrency)
       schema: { type: string, pattern: '^"(0|[1-9][0-9]*)"$' }
   schemas:
+    AnalysisDiagnostic:
+      type: object
+      required: [errorCode, message, path]
+      properties:
+        errorCode: { type: string }
+        message: { type: string }
+        path: { type: string }
+    DashboardPublish:
+      type: object
+      additionalProperties: false
+      required: []
+      properties:
+        dashboardId:
+          type: string
+          pattern: ^[A-Za-z0-9_-]{1,512}$
+    DashboardPublished:
+      type: object
+      additionalProperties: false
+      required:
+      - DashboardId
+      - Version
+      - PublishedAt
+      properties:
+        DashboardId:
+          type: string
+          pattern: ^[A-Za-z0-9_-]{1,512}$
+        Version:
+          type: integer
+          minimum: 1
+        PublishedAt:
+          type: string
+          format: date-time
+    DashboardDescription:
+      type: object
+      additionalProperties: false
+      required:
+      - DashboardId
+      - Name
+      - Definition
+      - Errors
+      - Version
+      - PublishedAt
+      - SourceAnalysisId
+      properties:
+        DashboardId:
+          type: string
+          pattern: ^[A-Za-z0-9_-]{1,512}$
+        Name:
+          type: string
+        Definition:
+          type: object
+          additionalProperties: true
+        Errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/AnalysisDiagnostic'
+        Version:
+          type: integer
+          minimum: 1
+        PublishedAt:
+          type: string
+          format: date-time
+        SourceAnalysisId:
+          type: string
+          pattern: ^[A-Za-z0-9_-]{1,512}$
+    DashboardSummary:
+      type: object
+      additionalProperties: false
+      required:
+      - kind
+      - id
+      - name
+      - version
+      - publishedAt
+      - sourceAnalysisId
+      properties:
+        kind:
+          const: dashboard
+        id:
+          type: string
+          pattern: ^[A-Za-z0-9_-]{1,512}$
+        name:
+          type: string
+        version:
+          type: integer
+          minimum: 1
+        publishedAt:
+          type: string
+          format: date-time
+        sourceAnalysisId:
+          type: string
+          pattern: ^[A-Za-z0-9_-]{1,512}$
+    DashboardVersionSummary:
+      type: object
+      additionalProperties: false
+      required:
+      - version
+      - publishedAt
+      - publishedBy
+      properties:
+        version:
+          type: integer
+          minimum: 1
+        publishedAt:
+          type: string
+          format: date-time
+        publishedBy:
+          type: string
+          pattern: ^[A-Za-z0-9_-]{1,512}$
+    DashboardShare:
+      type: object
+      additionalProperties: false
+      required:
+      - principal
+      - role
+      properties:
+        principal:
+          type: object
+          additionalProperties: false
+          required:
+          - type
+          - id
+          properties:
+            type:
+              type: string
+              enum:
+              - user
+              - group
+            id:
+              type: string
+              pattern: ^[A-Za-z0-9_-]{1,512}$
+        role:
+          type: string
+          enum:
+          - viewer
+          - co-owner
+    DashboardShareWrite:
+      type: object
+      additionalProperties: false
+      required:
+      - role
+      properties:
+        role:
+          type: string
+          enum:
+          - viewer
+          - co-owner
+    DashboardShareDeleted:
+      type: object
+      additionalProperties: false
+      required:
+      - deleted
+      properties:
+        deleted:
+          const: true
+    DashboardRemoved:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - removed
+      properties:
+        id:
+          type: string
+          pattern: ^[A-Za-z0-9_-]{1,512}$
+        version:
+          type: integer
+          minimum: 1
+        removed:
+          const: true
+    DashboardVisualQuery:
+      type: object
+      additionalProperties: false
+      required: []
+      properties:
+        controlValues:
+          type: object
+          description: Frozen control IDs map to typed selected values. Undeclared controls, ad-hoc filters, SQL and
+            principal assertions are rejected.
+          additionalProperties:
+            type: array
+            maxItems: 1000
+            uniqueItems: true
+            items:
+              type:
+              - string
+              - number
+    DashboardExport:
+      type: object
+      additionalProperties: false
+      required:
+      - format
+      properties:
+        version:
+          type: integer
+          minimum: 1
+        format:
+          type: string
+          enum:
+          - csv
+          - pdf
+    DashboardPage:
+      type: object
+      additionalProperties: false
+      required:
+      - items
+      - nextCursor
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/DashboardSummary'
+        nextCursor:
+          type:
+          - string
+          - 'null'
+    DashboardVersionPage:
+      type: object
+      additionalProperties: false
+      required:
+      - items
+      - nextCursor
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/DashboardVersionSummary'
+        nextCursor:
+          type:
+          - string
+          - 'null'
     DatasetBindings:
       type: object
       description: >-
@@ -1001,6 +1819,7 @@ components:
         errorCode: { type: string, description: Machine-readable code, stable across versions }
         message: { type: string, description: Human-readable detail, never a secret }
         path: { type: string, description: Failing query field path when validation supplies one }
+        Errors: { type: array, items: { $ref: '#/components/schemas/AnalysisDiagnostic' } }
     InteractiveQuery:
       type: object
       additionalProperties: false
