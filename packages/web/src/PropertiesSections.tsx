@@ -2,7 +2,7 @@ import { useId, type Dispatch, type ReactNode } from 'react';
 import type { AuthorAction, AuthorDraft, AuthorVisual } from './authoring.js';
 import { GRID_COLUMNS, defaultMultiplesOptions, hasSmallMultiplesWell } from './authoring.js';
 import type { MultiplesOptions as MultiplesOptionsState } from './model.js';
-import { hasDataLabels, hasLegend, LEGEND_POSITIONS, DATA_LABEL_POSITIONS, type LegendPosition, type LegendTextStyle, type LegendTitle, type DataLabels, type DataLabelPosition } from './formatting.js';
+import { hasDataLabels, hasLegend, LEGEND_POSITIONS, DATA_LABEL_POSITIONS, type LegendPosition, type LegendTextStyle, type LegendTitle, type GroupTitle, type DataLabels, type DataLabelPosition } from './formatting.js';
 import { LIGHT_THEME } from './themes.js';
 
 type SectionProps = { visual: AuthorVisual; dispatch: Dispatch<AuthorAction> };
@@ -166,11 +166,30 @@ export function GroupColorOptions({ visual, dispatch }: SectionProps) {
   if (!['bar', 'bar100', 'pie'].includes(visual.kind)) return null;
   const field = visual.dimension;
   const names = visual.formatting?.names;
-  return <details className="property-section"><summary>Group/Color</summary>
-    <Unavailable label="Group title controls" reason="A separate Group/Color title and its text styling are not supported yet.">
-      <label className="toggle"><input type="checkbox" aria-label="Show Group/Color title" />Title</label>
-      <TextStyling label="Group title" size={14} />
-    </Unavailable>
+  const title: GroupTitle = visual.formatting?.groupTitle ?? {};
+  const cleanTitle = (t: GroupTitle): GroupTitle | undefined => {
+    const next: GroupTitle = {};
+    if (t.show) next.show = true;
+    if (t.text !== undefined) next.text = t.text;
+    if (t.style !== undefined) next.style = t.style;
+    return Object.keys(next).length ? next : undefined;
+  };
+  const setTitle = (next: GroupTitle | undefined) => dispatch({ type: 'group-title', title: next });
+  return <details className="property-section"><summary data-author-control="group-color">Group/Color</summary>
+    <section className="property-group" aria-label="Group/Color title"><h4>GROUP/COLOR TITLE</h4>
+      <label className="toggle"><input type="checkbox" aria-label="Show Group/Color title" checked={!!title.show}
+        onChange={e => setTitle(cleanTitle({ ...title, show: e.target.checked }))} />Show Group/Color title</label>
+      {title.show && <>
+        <label>Group/Color title<input aria-label="Group/Color title" placeholder={field ?? 'Group/Color title'} maxLength={128}
+          value={title.text ?? ''} onChange={e => {
+            const text = e.target.value.trim();
+            setTitle(cleanTitle({ ...title, text: text ? e.target.value.slice(0, 128) : undefined }));
+          }} /></label>
+        <TextStyling label="Group/Color title" size={14} value={title.style ?? {}}
+          onChange={style => setTitle(cleanTitle({ ...title, style }))} />
+        <p className="field-hint">Group/Color titles are saved with the visual and exports, but the chart does not draw a separate group title.</p>
+      </>}
+    </section>
     <label>Field name<input aria-label="Group/Color field name" disabled={!field} title={!field ? 'Assign a Group/Color field first.' : 'Display name used in generated titles and result tables.'} placeholder={field ?? 'Assign a Group/Color field first'} maxLength={128}
       value={field && names && Object.hasOwn(names, field) ? names[field] : ''}
       onChange={e => {
