@@ -1,3 +1,5 @@
+import { V1Routes } from './v1-routes.js';
+import { LocalAnalyses } from './local-analyses.js';
 import { PrepRoutes, type PrepPostgresBinding } from './prep-routes.js';
 import { ConnectorRoutes } from './connector-routes.js';
 import { invitationRoute } from './invitations.js';
@@ -97,6 +99,7 @@ export async function createApiServer(options: ApiOptions): Promise<Server> {
   const connectorRoutes = new ConnectorRoutes(!!localIdentity);
   const prepRoutes = await PrepRoutes.create(connectorRoutes, options.prepStorePath, options.prepPostgresBindings);
   if (options.localUploadPath) await connectorRoutes.openLocal(options.localUploadPath);
+  const v1 = new V1Routes();
   const server = createServer((request, response) => {
     void (async () => {
       const requestId = randomUUID();
@@ -107,7 +110,7 @@ export async function createApiServer(options: ApiOptions): Promise<Server> {
       const queryOffset = url.indexOf('?');
       let path = queryOffset === -1 ? url : url.slice(0, queryOffset);
       const query = queryOffset === -1 ? '' : url.slice(queryOffset + 1);
-      if (['x-user', 'x-user-id', 'x-principal', 'x-groups', 'x-group-ids', 'x-namespace', 'x-namespace-id', 'x-role', 'x-roles', 'x-capabilities'].some(k => request.headers[k] !== undefined)) throw new SecurityError(403, 'FORGED_PRINCIPAL', 'Caller-supplied principal headers are not supported');
+      if (['x-user', 'x-user-id', 'x-principal', 'x-groups', 'x-group-ids', 'x-namespace', 'x-namespace-id', 'x-role', 'x-roles', 'x-capabilities', 'x-tenant', 'x-tenant-id', 'x-subject'].some(k => request.headers[k] !== undefined)) throw new SecurityError(403, 'FORGED_PRINCIPAL', 'Caller-supplied principal headers are not supported');
       if (!security && request.headers.authorization) throw new SecurityError(503, 'SECURITY_NOT_CONFIGURED', 'Credential verification is not configured');
       if (path.startsWith('/embed/')) {
         if (!embedding) throw new SecurityError(503, 'EMBEDDING_NOT_CONFIGURED', 'Embedding requires configured authentication');
@@ -136,6 +139,19 @@ export async function createApiServer(options: ApiOptions): Promise<Server> {
       if (security && identity && (/^\/(?:api\/)?analyses(?:\/|$)/.test(path) || /^\/api\/datasets(?:\/sales\/query)?$/.test(path))) security.require(identity, 'build');
       const namespaceId = identity?.namespaceId ?? 'default';
       const scopedStore = namespaceStores.get(namespaceId), scopedSales = namespaceQueries.get(namespaceId);
+      if (path.startsWith('/api/v1/')) {
+        if (query) throw new RequestError(400, 'Query parameters are not supported');
+        const v1Identity = identity ?? localIdentity ?? { namespaceId: 'default', userId: 'local' };
+        const recheck = async () => {
+          if (security) {
+            const current = await security.authenticate(request);
+            if (!current || current.namespaceId !== v1Identity.namespaceId || current.userId !== v1Identity.userId) throw new SecurityError(403, 'UNKNOWN_PRINCIPAL', 'Principal changed');
+            security.require(current, 'build');
+          }
+        };
+        await v1.local(request, response, path, new LocalAnalyses(scopedStore, scopedSales, prepRoutes, v1Identity, recheck, organization,
+          namespaceId === 'default' ? options.dataRoot : options.namespaceDataRoots?.[namespaceId], !!options.security?.storePath)); return;
+      }
       const preparedResource = /^\/api\/(prep-sources|prep-datasets)(?:\/|$)/.test(path)
         || /^\/api\/datasets\/[^/]+\/(prep(?:\/|$)|execution$|rows$)/.test(path)
         || /^\/api\/datasets\/(?!sales\/)[A-Za-z0-9_-]{1,128}\/refresh$/.test(path);
@@ -283,6 +299,7 @@ export async function createApiServer(options: ApiOptions): Promise<Server> {
       }
     })().catch(cause => {
       request.resume();
+      if (/^\/api\/(?:namespaces\/[^/]+\/)?v1\//.test(request.url ?? '')) { v1.sendError(response, cause); return; }
       if (cause instanceof QueryEngineError) send(response, 422, { errorCode: cause.code, message: cause.message, path: cause.path });
       else if (cause instanceof SecurityError) send(response, cause.status, { errorCode: cause.code, Message: cause.message });
       else if (cause instanceof RequestError) send(response, cause.status, { Message: cause.message });

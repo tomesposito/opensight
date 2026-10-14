@@ -1,3 +1,6 @@
+import { AnalysisRoutes } from './analysis-routes.js';
+import { HostedAnalyses } from './hosted-analyses.js';
+import type { AnalysisBackend } from './analysis-model.js';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { planPreparedQuery, QueryEngineError, UploadError } from '@opensight/query-engine';
 import { PrepError } from '@opensight/bundle-parser/prep';
@@ -66,7 +69,16 @@ class RateLimiter {
 export class V1Routes {
   private readonly limiter: RateLimiter;
   private readonly idempotency = new Map<string, { status: number; body: unknown; expiresAt: number }>();
-  constructor(private readonly routes: HostedDataRoutes, env: NodeJS.ProcessEnv = process.env) { this.limiter = new RateLimiter(env); }
+  private readonly analyses = new AnalysisRoutes({ paging: r => this.paging(r), ifMatch: r => this.ifMatch(r) });
+  constructor(private readonly hostedRoutes?: HostedDataRoutes, env: NodeJS.ProcessEnv = process.env) { this.limiter = new RateLimiter(env); }
+  private get routes(): HostedDataRoutes { if (!this.hostedRoutes) throw new MetadataError('HOSTED_API_REQUIRED', 503); return this.hostedRoutes; }
+  async local(request: IncomingMessage, response: ServerResponse, path: string, backend: AnalysisBackend): Promise<void> {
+    try {
+      const gate = this.limiter.take(backend.scope.tenantId);
+      if (!gate.allowed) { response.setHeader('Retry-After', String(gate.retryAfter)); v1Fail('RATE_LIMIT_EXCEEDED', 429, 'Rate limit exceeded'); }
+      await this.analyses.route(request, response, path, backend);
+    } catch (error) { request.resume(); this.sendError(response, error); }
+  }
 
   async route(request: IncomingMessage, response: ServerResponse, path: string, context: TenantContext, recheck: () => Promise<void>): Promise<boolean> {
     if (!path.startsWith('/api/v1/')) return false;
@@ -74,6 +86,9 @@ export class V1Routes {
       const gate = this.limiter.take(context.tenantId);
       if (!gate.allowed) { response.setHeader('Retry-After', String(gate.retryAfter)); v1Fail('RATE_LIMIT_EXCEEDED', 429, `Rate limit exceeded; retry after ${gate.retryAfter}s`); }
       this.routes.data.begin(context, undefined, recheck);
+      if (/^\/api\/v1\/analyses(?:\/|$)/.test(path)) {
+        await this.analyses.route(request, response, path, new HostedAnalyses(this.routes, context, recheck)); return true;
+      }
       const revisions = await this.routes.data.sources.metadata.revisions(context);
       const read = request.method === 'GET' || path.endsWith('/query');
       const input = async () => { const body = await readBody(request); if (!read) await recheck(); return body; };
@@ -83,18 +98,18 @@ export class V1Routes {
         send(response, status, body);
       };
       await this.dispatch(request, response, path, context, input, publish);
-    } catch (error) { this.sendError(response, error); }
+    } catch (error) { request.resume(); this.sendError(response, error); }
     return true;
   }
 
-  private sendError(response: ServerResponse, error: unknown): void {
+  sendError(response: ServerResponse, error: unknown): void {
     const dataError = error instanceof QueryEngineError || error instanceof PrepError || error instanceof UploadError || error instanceof BlazeError;
-    const status = dataError ? 422 : error instanceof MetadataError || error instanceof RequestError ? error.status : 500;
+    const status = dataError ? 422 : error instanceof MetadataError || error instanceof RequestError || error instanceof SecurityError ? error.status : 500;
     const errorCode = dataError ? error.code : error instanceof MetadataError || error instanceof SecurityError ? error.code
       : error instanceof RequestError ? (status === 405 ? 'METHOD_NOT_ALLOWED' : 'HOSTED_REQUEST_INVALID') : 'HOSTED_INTERNAL_ERROR';
     const message = status === 500 ? 'Internal error' : String((error as { detail?: unknown })?.detail ?? (error as Error)?.message ?? errorCode);
     const path = error instanceof QueryEngineError ? error.path : error instanceof RequestError
-      ? /^(\$[^:]*|parameterDeclarations[^:]*|parameterBindings[^:]*):/.exec(error.message)?.[1] : undefined;
+      ? /^(\$[^:]*|parameterDeclarations[^:]*|parameterBindings[^:]*):/.exec(error.message)?.[1] : error instanceof MetadataError && 'path' in error ? error.path : undefined;
     send(response, status, { errorCode, message, ...(path === undefined ? {} : { path }) });
   }
 

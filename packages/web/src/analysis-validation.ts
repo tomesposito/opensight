@@ -146,13 +146,25 @@ export function validateAnalysisDefinition(raw: unknown, schemas: ReadonlyMap<st
       if (!identifiers.has(id)) analysisFail('UNRESOLVED_BINDING', `${p}.dataSetIdentifier`, 'Unknown dataset identifier');
       datasetIds?.add(id);
     }
+    for (const [key, value] of Object.entries(o)) {
+      const expected = /^(numericalMeasureField|numericalDimensionField|numericRangeFilter)$/.test(key) ? 'number'
+        : /^(dateDimensionField|dateMeasureField|timeRangeFilter|relativeDatesFilter)$/.test(key) ? 'datetime'
+        : /^(categoricalDimensionField|categoricalMeasureField|categoryFilter)$/.test(key) ? 'string' : undefined;
+      if (expected && value && typeof value === 'object' && 'column' in value) {
+        const c = analysisObject(value.column, `${p}.${key}.column`), binder = binders.get(String(c.dataSetIdentifier));
+        if (!binder) analysisFail('UNRESOLVED_BINDING', `${p}.${key}.column`, 'Unknown dataset identifier');
+        if (binder.bind(text(c.columnName, `${p}.${key}.column.columnName`), `${p}.${key}.column.columnName`).scalarType !== expected) analysisFail('TYPE_MISMATCH', `${p}.${key}.column`, `Expected a ${expected} field`);
+      }
+    }
     if ('columnName' in o) {
       const binder = binders.get(String(o.dataSetIdentifier));
       if (!binder) analysisFail('UNRESOLVED_BINDING', p, 'Column requires a resolved dataset identifier');
       binder.bind(text(o.columnName, `${p}.columnName`), `${p}.columnName`);
     }
     for (const k of ['parameterName', 'sourceParameterName']) if (k in o && !bound.declarations.some(b => b.name === o[k])) analysisFail('UNRESOLVED_BINDING', `${p}.${k}`, 'Unknown parameter');
-    for (const k of ['sourceFilterId', 'filterId']) if (k === 'sourceFilterId' && k in o && !filterIds.has(String(o[k]))) analysisFail('UNRESOLVED_BINDING', `${p}.${k}`, 'Unknown filter');
+    for (const k of ['sourceFilterId']) if (k in o && !filterIds.has(String(o[k]))) analysisFail('UNRESOLVED_BINDING', `${p}.${k}`, 'Unknown filter');
+    for (const k of ['sourceVisualId', 'targetVisualId']) if (k in o && !visualIds.has(String(o[k]))) analysisFail('UNRESOLVED_BINDING', `${p}.${k}`, 'Unknown visual');
+    if ('matchOperator' in o && !['EQUALS', 'DOES_NOT_EQUAL', 'CONTAINS', 'DOES_NOT_CONTAIN', 'STARTS_WITH', 'ENDS_WITH', 'EXACT'].includes(String(o.matchOperator))) analysisFail('UNSUPPORTED_FEATURE', `${p}.matchOperator`, 'Unknown filter match operator');
     if ('operator' in o && !['EQUALS', 'NOT_EQUALS', 'GREATER_THAN', 'GREATER_THAN_OR_EQUAL_TO', 'LESS_THAN', 'LESS_THAN_OR_EQUAL_TO', 'CONTAINS', 'DOES_NOT_CONTAIN', 'STARTS_WITH', 'ENDS_WITH', 'BETWEEN'].includes(String(o.operator))) analysisFail('UNSUPPORTED_FEATURE', `${p}.operator`, 'Unknown filter operator');
   });
   validateReferences(d.filterGroups, `${root}.filterGroups`);
@@ -162,6 +174,7 @@ export function validateAnalysisDefinition(raw: unknown, schemas: ReadonlyMap<st
     for (const [key, idKey] of [['textBoxes', 'sheetTextBoxId'], ['images', 'sheetImageId']] as const) {
       for (const [j, v] of array(sheet[key] ?? [], `${p}.${key}`).entries()) unique(elements, text(analysisObject(v, p)[idKey], `${p}.${key}[${j}].${idKey}`), `${p}.${key}[${j}]`);
     }
+    for (const key of ['parameterControls', 'filterControls']) walk(sheet[key], `${p}.${key}`, (o, at) => { for (const id of ['parameterControlId', 'filterControlId']) if (id in o) unique(elements, text(o[id], `${at}.${id}`), `${at}.${id}`); });
     for (const [j, layout] of array(sheet.layouts ?? [], `${p}.layouts`).entries()) {
       const lp = `${p}.layouts[${j}]`; analysisObject(layout, lp);
       walk(layout, lp, (o, at) => { if ('elementId' in o && !elements.has(String(o.elementId))) analysisFail('UNRESOLVED_BINDING', `${at}.elementId`, 'Unknown sheet element'); });
@@ -169,7 +182,12 @@ export function validateAnalysisDefinition(raw: unknown, schemas: ReadonlyMap<st
     validateReferences(sheet.parameterControls, `${p}.parameterControls`); validateReferences(sheet.filterControls, `${p}.filterControls`);
     for (const [j, v] of array(sheet.visuals ?? [], `${p}.visuals`).entries()) {
       const vp = `${p}.visuals[${j}]`, ids = new Set<string>(); validateReferences(v, vp, ids);
+      const fields = new Set<string>();
       walk(v, vp, (o, at) => {
+        if ('fieldId' in o && (at.includes('.fieldWells.') || at.includes('.insightConfiguration.'))) unique(fields, text(o.fieldId, `${at}.fieldId`), `${at}.fieldId`);
+      });
+      walk(v, vp, (o, at) => {
+        if ('fieldId' in o && !fields.has(String(o.fieldId))) analysisFail('UNRESOLVED_BINDING', `${at}.fieldId`, 'Unknown visual field');
         if ('expression' in o) {
           const id = ids.size === 1 ? [...ids][0]! : ids.size === 0 && identifiers.size === 1 ? [...identifiers][0]! : undefined;
           const binder = id === undefined ? undefined : binders.get(id);
