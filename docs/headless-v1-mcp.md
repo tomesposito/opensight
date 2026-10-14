@@ -22,6 +22,9 @@ Status: **Approved for implementation** (D-42 and D-62–D-69 confirmed
   `body` wrapper to preserve arbitrary definition fields without collisions
   with path/header inputs. Refresh's empty body is generated automatically.
   This replaces the proposal's flattened dataset-body example.
+- Hosted authentication/boundary errors currently return only `errorCode`.
+  MCP preserves that code and supplies it as `message` when REST omits a
+  message; errors with a REST message preserve it. No REST wire change.
 - JSON result bodies remain unchanged in structuredContent and text content;
   response headers (ETag, Idempotent-Replayed, Retry-After and export
   Content-Disposition) live in result `_meta`. Binary exports are represented
