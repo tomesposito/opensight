@@ -182,7 +182,7 @@ test('Legend title and value styling edit, compile, persist, and round-trip', as
 });
 
 
-test('Data labels visibility and precision reach the compiler while content/layout controls stay disabled', async t => {
+test('Data labels content, position, styling and overlap controls are live', async t => {
   const ui = await mount(t, DataLabelsOptions);
   await ui.change('Show data labels', true);
   await ui.change('Data label decimal places', '3');
@@ -190,10 +190,29 @@ test('Data labels visibility and precision reach the compiler while content/layo
   assert.equal(ui.compile().option.series[0].label.formatter({ name: 'A', percent: 12.3456 }), 'A: 12.346%');
   await ui.change('Data label decimal places', '-1');
   assert.equal(ui.visual().formatting.decimalPlaces, 3, 'invalid precision is rejected');
+  // Content toggles choose the label parts; both off hides the labels.
+  await ui.change('Category', false);
+  assert.equal(ui.compile().option.series[0].label.formatter({ name: 'A', percent: 12.3456 }), '12.346%');
+  await ui.change('Category', true);
+  await ui.change('Metric', false);
+  assert.equal(ui.compile().option.series[0].label.formatter({ name: 'A', percent: 12.3456 }), 'A');
+  await ui.change('Category', false);
+  assert.equal(ui.compile().option.series[0].label.show, false);
+  await ui.change('Category', true);
+  await ui.change('Metric', true);
+  // Position and styling reach the series.
+  await ui.change('Position', 'inside', 'select');
+  assert.equal(ui.compile().option.series[0].label.position, 'inside');
+  await act(() => ui.root.findByProps({ 'aria-label': 'Data label font size' }).props.onChange({ target: { value: '16' } }));
+  assert.equal(ui.compile().option.series[0].label.textStyle.fontSize, 16);
+  await act(() => ui.root.findByProps({ 'aria-label': 'Data label bold' }).props.onClick());
+  assert.equal(ui.compile().option.series[0].label.textStyle.fontWeight, 700);
+  // Defaults strip back out of the model so exports stay lean.
+  await ui.change('Position', 'auto', 'select');
+  await act(() => ui.root.findByProps({ 'aria-label': 'Data label font size' }).props.onChange({ target: { value: '' } }));
+  await act(() => ui.root.findByProps({ 'aria-label': 'Data label bold' }).props.onClick());
+  assert.equal(ui.visual().formatting?.dataLabels, undefined);
   await ui.change('Show data labels', false); assert.equal(ui.compile().option.series[0].label.show, false);
   await ui.change('Data label decimal places', ''); assert.equal(ui.visual().formatting.decimalPlaces, undefined);
-  const group = unavailable(ui.root, 'Data label content and styling controls', /not supported yet/);
-  for (const label of ['Category', 'Metric', 'Allow labels to overlap']) assert.ok(group.findAllByType('label').some(n => n.children.includes(label)));
-  assert.equal(group.findByProps({ 'aria-label': 'Data label position' }).props.defaultValue, 'Outside');
   ui.verifySaved();
 });
