@@ -17,6 +17,10 @@ export interface ConditionalRule { fieldId: string; operator: 'gt' | 'gte' | 'lt
 /** Text styling for legend title and legend value entries (QuickSight Legend panel parity). */
 export interface LegendTextStyle { fontSize?: number; color?: string; bold?: boolean; italic?: boolean; underline?: boolean }
 export interface LegendTitle { show?: boolean; text?: string; style?: LegendTextStyle }
+/** Group/Color well title (QuickSight Group/Color panel parity): shown above the
+ *  field entries the way QS shows it in the panel; the chart draws no separate
+ *  group title (no ECharts primitive), so it is saved/exported but not rendered. */
+export interface GroupTitle { show?: boolean; text?: string; style?: LegendTextStyle }
 export const DATA_LABEL_POSITIONS = ['auto', 'inside', 'outside'] as const;
 export type DataLabelPosition = typeof DATA_LABEL_POSITIONS[number];
 export const dataLabelPositionValid = (raw: unknown): raw is DataLabelPosition => DATA_LABEL_POSITIONS.some(p => p === raw);
@@ -58,6 +62,14 @@ export function legendTitleValid(raw: unknown): raw is LegendTitle {
     && (t.text === undefined || typeof t.text === 'string' && !!t.text.trim() && t.text.length <= 128)
     && (t.style === undefined || legendTextStyleValid(t.style));
 }
+export function groupTitleValid(raw: unknown): raw is GroupTitle {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return false;
+  const t = raw as Record<string, unknown>;
+  return styleKeys(t, ['show', 'text', 'style'])
+    && (t.show === undefined || typeof t.show === 'boolean')
+    && (t.text === undefined || typeof t.text === 'string' && !!t.text.trim() && t.text.length <= 128)
+    && (t.style === undefined || legendTextStyleValid(t.style));
+}
 export interface PivotOptions {
   metricPlacement?: 'columns' | 'rows';
   hideEmptyRows?: boolean; hideEmptyColumns?: boolean;
@@ -82,6 +94,8 @@ export interface VisualFormatting {
   titleFontSize?: number; barCategoryGap?: number; legendPosition?: LegendPosition;
   /** Legend title (show/text/style) and legend value-entry text styling; absent means theme defaults. */
   legendTitle?: LegendTitle; legendValueStyle?: LegendTextStyle;
+  /** Group/Color well title (show/text/style); saved with the visual and exports, not drawn by the chart. */
+  groupTitle?: GroupTitle;
   /** Data label content/styling options (QuickSight Data labels panel); absent means today's defaults. */
   dataLabels?: DataLabels;
   headersVisible?: boolean; rowNamesVisible?: boolean; columnNamesVisible?: boolean; valueNamesVisible?: boolean;
@@ -93,9 +107,10 @@ export function formattingValid(raw: unknown): raw is VisualFormatting {
   const f = raw as Record<string, unknown>;
   const booleans = ['headersVisible', 'rowNamesVisible', 'columnNamesVisible', 'valueNamesVisible'];
   const colors = ['headerColor', 'headerBackground', 'cellColor', 'cellBackground'];
-  if (Object.keys(f).some(k => ![...booleans, ...colors, 'fontSize', 'decimalPlaces', 'names', 'rules', 'pivot', 'titleFontSize', 'barCategoryGap', 'legendPosition', 'legendTitle', 'legendValueStyle', 'dataLabels'].includes(k))) return false;
+  if (Object.keys(f).some(k => ![...booleans, ...colors, 'fontSize', 'decimalPlaces', 'names', 'rules', 'pivot', 'titleFontSize', 'barCategoryGap', 'legendPosition', 'legendTitle', 'legendValueStyle', 'groupTitle', 'dataLabels'].includes(k))) return false;
   if (f.legendPosition !== undefined && !legendPositionValid(f.legendPosition)) return false;
   if (f.legendTitle !== undefined && !legendTitleValid(f.legendTitle)) return false;
+  if (f.groupTitle !== undefined && !groupTitleValid(f.groupTitle)) return false;
   if (f.legendValueStyle !== undefined && !legendTextStyleValid(f.legendValueStyle)) return false;
   if (f.dataLabels !== undefined && !dataLabelsValid(f.dataLabels)) return false;
   if (f.pivot !== undefined && !pivotOptionsValid(f.pivot)) return false;

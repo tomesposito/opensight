@@ -100,14 +100,51 @@ test('Multiples Options edits reach the draft, compile, and survive storage', as
 });
 
 
-test('Group/Color field name updates the compiled title and table without renaming source data', async t => {
+test('Group/Color title controls edit, persist, and round-trip; sort and slice limits stay honest stubs', async t => {
   const ui = await mount(t, GroupColorOptions);
   const sourceField = ui.visual().dimension;
   await ui.change('Field name', 'Territory');
   assert.equal(ui.visual().dimension, sourceField);
   assert.match(ui.compile().model.title, /by Territory$/);
   assert.equal(ui.compile().table.columns[0], 'Territory');
-  unavailable(ui.root, 'Group title controls', /separate Group\/Color title.*not supported/);
+  assert.equal(ui.visual().formatting?.groupTitle, undefined);
+
+  // Title: the show toggle reveals text + styling; title state is saved but not
+  // drawn — ECharts has no group-title primitive.
+  await ui.change('Show Group/Color title', true);
+  assert.deepEqual(ui.visual().formatting.groupTitle, { show: true });
+  await ui.change('Group/Color title', 'Client groups');
+  assert.equal(ui.visual().formatting.groupTitle.text, 'Client groups');
+  const titleSize = ui.root.findByProps({ 'aria-label': 'Group/Color title font size' });
+  await act(() => titleSize.props.onChange({ target: { value: '16' } }));
+  await act(() => ui.root.findByProps({ 'aria-label': 'Group/Color title bold' }).props.onClick());
+  assert.deepEqual(ui.visual().formatting.groupTitle.style, { fontSize: 16, bold: true });
+  assert.ok(!JSON.stringify(ui.compile().option).includes('Client groups'), 'group title must not reach the compiled option');
+
+  // Fail-closed editing: out-of-range sizes are ignored, clearing restores defaults.
+  await act(() => titleSize.props.onChange({ target: { value: '200' } }));
+  assert.equal(ui.visual().formatting.groupTitle.style.fontSize, 16);
+  await act(() => titleSize.props.onChange({ target: { value: '' } }));
+  assert.equal(ui.visual().formatting.groupTitle.style.fontSize, undefined);
+  await act(() => ui.root.findByProps({ 'aria-label': 'Group/Color title bold' }).props.onClick());
+  assert.equal(ui.visual().formatting.groupTitle.style, undefined);
+  await ui.change('Show Group/Color title', false);
+  // Unchecking hides the title but retains its text for next time.
+  assert.deepEqual(ui.visual().formatting.groupTitle, { text: 'Client groups' });
+
+  // Reducer rejects invalid group-title actions without touching the visual.
+  const snapshot = ui.visual();
+  const draft = ui.draft();
+  assert.deepEqual(activeSheet(authorReducer(draft, { type: 'group-title', title: { text: 'x'.repeat(200) } })).visuals[1], snapshot);
+  assert.deepEqual(activeSheet(authorReducer(draft, { type: 'group-title', title: { style: { fontSize: 200 } } })).visuals[1], snapshot);
+
+  // Round-trip through storage keeps the group title.
+  await ui.change('Show Group/Color title', true);
+  await ui.change('Group/Color title', 'Persisted');
+  const revived = parseDraft(JSON.stringify(ui.draft())).sheets[0].visuals[1];
+  assert.deepEqual(revived.formatting.groupTitle, { show: true, text: 'Persisted' });
+
+  // Sort and slice limits remain honest stubs.
   unavailable(ui.root, 'Group sort controls', /Sort editing is not supported/);
   unavailable(ui.root, 'Slice limit controls', /all supplied result rows are shown/);
   ui.verifySaved();
