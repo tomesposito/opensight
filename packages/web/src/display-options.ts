@@ -54,28 +54,85 @@ export function applyDisplayOptions(model: VisualModel, option: EChartsOption, t
   }
   if (!Array.isArray(option.series)) return;
   const decimals = model.formatting?.decimalPlaces;
+  const dataLabels = model.formatting?.dataLabels;
   const formatNumber = (value: unknown): string => typeof value === 'number' && Number.isFinite(value)
     ? value.toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals }) : '';
+  type LabelParams = { value?: unknown; percent?: number; name?: string; data?: unknown };
+  const categoryText = (params: LabelParams): string => {
+    if (model.kind === 'sankey') return params.data && typeof params.data === 'object' && 'name' in params.data ? String(params.data.name) : '';
+    return params.name ?? '';
+  };
+  const metricText = (params: LabelParams): string => {
+    if (model.kind === 'pie') return decimals !== undefined ? `${formatNumber(params.percent)}%` : `${params.percent ?? ''}%`;
+    if (model.kind === 'scatter') {
+      const values = Array.isArray(params.value) ? params.value : [params.value];
+      return decimals !== undefined ? values.map(formatNumber).join(', ') : values.map(value => value === null || value === undefined ? '' : String(value)).join(', ');
+    }
+    if (model.kind === 'sankey') return decimals !== undefined ? formatNumber(params.value) : String(params.value ?? '');
+    if (model.kind === 'waterfall') {
+      const delta = params.data && typeof params.data === 'object' && 'delta' in params.data ? (params.data as { delta?: unknown }).delta : undefined;
+      return decimals !== undefined ? formatNumber(delta) : String(delta ?? '');
+    }
+    const value = model.kind === 'heatmap' && Array.isArray(params.value) ? params.value[2] : params.value;
+    const formatted = decimals !== undefined ? formatNumber(value) : (value === null || value === undefined ? '' : String(value));
+    if (!formatted) return '';
+    return `${formatted}${model.kind === 'bar100' ? '%' : ''}`;
+  };
   for (const series of option.series) {
     if (series.type === 'bar' && ['bar', 'bar100', 'combo'].includes(model.kind) && model.formatting?.barCategoryGap !== undefined) {
       series.barCategoryGap = `${model.formatting.barCategoryGap}%`;
       // A width cap would mask the gap setting when only a few categories are shown.
       series.barMaxWidth = undefined;
     }
-    if (decimals === undefined || !hasDataLabels(model.kind) || !('label' in series)) continue;
-    series.label = { ...series.label, formatter: (params: { value?: unknown; percent?: number; name?: string; data?: unknown }): string => {
-      if (model.kind === 'pie') return `${params.name ?? ''}: ${formatNumber(params.percent)}%`;
-      if (model.kind === 'scatter') return `${params.name ?? ''}: ${Array.isArray(params.value) ? params.value.map(formatNumber).join(', ') : formatNumber(params.value)}`;
-      if (model.kind === 'sankey') {
-        const name = params.data && typeof params.data === 'object' && 'name' in params.data ? String(params.data.name) : '';
-        return `${name}: ${formatNumber(params.value)}`;
-      }
-      if (model.kind === 'waterfall') return formatNumber(params.data && typeof params.data === 'object' && 'delta' in params.data ? params.data.delta : undefined);
-      const value = model.kind === 'heatmap' && Array.isArray(params.value) ? params.value[2] : params.value;
-      const formatted = formatNumber(value);
-      if (!formatted) return '';
-      return ['funnel', 'treemap', 'filledMap'].includes(model.kind) ? `${params.name ?? ''}: ${formatted}` : `${formatted}${model.kind === 'bar100' ? '%' : ''}`;
-    } };
+    if (!hasDataLabels(model.kind) || !('label' in series)) continue;
+    const label = series.label as unknown as Record<string, unknown>;
+    // Position: pie renders inside/outside; cartesian charts use top for outside.
+    if (dataLabels?.position === 'inside') label.position = 'inside';
+    else if (dataLabels?.position === 'outside') label.position = model.kind === 'pie' ? 'outside' : 'top';
+    // Text styling: the theme owns the font family; an explicit color rides at the
+    // label top level so the theme pass in compileVisual cannot clobber it.
+    if (dataLabels?.style) {
+      const base = typeof label.textStyle === 'object' && label.textStyle ? label.textStyle as Record<string, unknown> : {};
+      label.textStyle = { ...base, fontFamily: theme.fontFamily,
+        ...(dataLabels.style.fontSize !== undefined ? { fontSize: dataLabels.style.fontSize } : {}),
+        ...(dataLabels.style.bold ? { fontWeight: 700 } : {}),
+        ...(dataLabels.style.italic ? { fontStyle: 'italic' } : {}),
+      };
+      if (dataLabels.style.color !== undefined) label.color = dataLabels.style.color;
+    }
+    // Overlap: pie already avoids label overlap; an explicit choice flips the default.
+    if (dataLabels?.allowOverlap !== undefined) {
+      if (model.kind === 'pie' && series.type === 'pie') (series as unknown as Record<string, unknown>).avoidLabelOverlap = !dataLabels.allowOverlap;
+      else (series as unknown as Record<string, unknown>).labelLayout = { hideOverlap: !dataLabels.allowOverlap };
+    }
+    const content = dataLabels?.content;
+    if (content !== undefined) {
+      // Explicit label content: the category/metric toggles choose the parts. Both
+      // off shows nothing; unset keeps today's default formatter below.
+      const showCategory = content.category ?? true;
+      const showMetric = content.metric ?? true;
+      if (!showCategory && !showMetric) label.show = false;
+      else label.formatter = (params: LabelParams): string => {
+        const parts: string[] = [];
+        if (showCategory) { const text = categoryText(params); if (text) parts.push(text); }
+        if (showMetric) { const text = metricText(params); if (text) parts.push(text); }
+        return parts.join(': ');
+      };
+    } else if (decimals !== undefined) {
+      series.label = { ...series.label, formatter: (params: { value?: unknown; percent?: number; name?: string; data?: unknown }): string => {
+        if (model.kind === 'pie') return `${params.name ?? ''}: ${formatNumber(params.percent)}%`;
+        if (model.kind === 'scatter') return `${params.name ?? ''}: ${Array.isArray(params.value) ? params.value.map(formatNumber).join(', ') : formatNumber(params.value)}`;
+        if (model.kind === 'sankey') {
+          const name = params.data && typeof params.data === 'object' && 'name' in params.data ? String(params.data.name) : '';
+          return `${name}: ${formatNumber(params.value)}`;
+        }
+        if (model.kind === 'waterfall') return formatNumber(params.data && typeof params.data === 'object' && 'delta' in params.data ? params.data.delta : undefined);
+        const value = model.kind === 'heatmap' && Array.isArray(params.value) ? params.value[2] : params.value;
+        const formatted = formatNumber(value);
+        if (!formatted) return '';
+        return ['funnel', 'treemap', 'filledMap'].includes(model.kind) ? `${params.name ?? ''}: ${formatted}` : `${formatted}${model.kind === 'bar100' ? '%' : ''}`;
+      } };
+    }
   }
   // Reference lines as ECharts markLines on cartesian charts; horizontal bars use the x axis for values.
   if (model.referenceLines?.length && hasReferenceLines(model.kind) && Array.isArray(option.series)) {

@@ -640,7 +640,11 @@ export function compileVisual(input: Input): CompiledVisual {
       typeof option.legend.textStyle === 'object' && option.legend.textStyle ? option.legend.textStyle as Record<string, unknown> : undefined);
     if (option.visualMap && !Array.isArray(option.visualMap)) { option.visualMap.textStyle = { color: theme.textColor }; option.visualMap.inRange = { color: [theme.surface, ...(model.palette ?? theme.palette)] }; }
     if (Array.isArray(option.series)) for (const series of option.series) {
-      if ('label' in series) series.label = { ...series.label, color: theme.textColor };
+      if ('label' in series) {
+        // An explicit label color (data-label text styling) survives the theme pass.
+        const explicit = (series.label as { color?: unknown } | undefined)?.color;
+        series.label = { ...series.label, ...(typeof explicit === 'string' ? {} : { color: theme.textColor }) };
+      }
       if (series.type === 'gauge') { series.itemStyle = { color: (model.palette ?? theme.palette)[0] }; series.axisLabel = { color: theme.textColor }; series.detail = { ...series.detail, color: theme.textColor }; series.title = { color: theme.textColor }; }
     }
   }
