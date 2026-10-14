@@ -1,7 +1,8 @@
 ---
-status: 🚧 Draft
+status: ✅ Confirmed
 owner: Tom Esposito
 date: 2026-10-14
+confirmed: 2026-10-14
 labels: [idd]
 ---
 
@@ -20,7 +21,12 @@ The REST auth model itself (D-37 decision 4, frozen contract —
 unchanged). Per-request HTTP bearer (HTTP-only, belongs to the later
 transport slice).
 
-### 🚧 IDD D-63 — How does the MCP server get its credential?
+### ✅ IDD D-63 — How does the MCP server get its credential?
+
+#### DECISION (product owner, Tom, 2026-10-14)
+
+Server started with a refresh token from the operator invitation/minting path via environment/config; never logged, echoed in tool results, or accepted as a per-tool parameter; the server exchanges it for short-lived access tokens and calls v1 as that user in that tenant; no tool accepts a credential, principal, or policy assertion.
+
 
 #### CONTEXT
 

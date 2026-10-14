@@ -1,7 +1,8 @@
 ---
-status: 🚧 Draft
+status: ✅ Confirmed
 owner: Tom Esposito
 date: 2026-10-14
+confirmed: 2026-10-14
 labels: [idd]
 ---
 
@@ -18,7 +19,12 @@ Package location, the MCP SDK choice, server-side state policy.
 Transport (D-62), credential mechanics (D-63) — packaging assumes
 those decisions.
 
-### 🚧 IDD D-68 — How should the MCP server be packaged?
+### ✅ IDD D-68 — How should the MCP server be packaged?
+
+#### DECISION (product owner, Tom, 2026-10-14)
+
+New standalone package (packages/mcp-server) depending on the v1 HTTP API only; the official TypeScript MCP SDK (MIT, license and version verified at implementation); no server-side state.
+
 
 #### CONTEXT
 

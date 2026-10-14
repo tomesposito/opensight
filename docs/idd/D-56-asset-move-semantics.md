@@ -1,7 +1,8 @@
 ---
-status: 🚧 Draft
+status: ✅ Confirmed
 owner: Tom Esposito
 date: 2026-10-14
+confirmed: 2026-10-14
 labels: [idd]
 ---
 
@@ -20,7 +21,12 @@ Rename (D-39/D-60 — move is folder-change only), copy (D-57), delete
 (D-59). Cross-namespace move is forbidden by the namespace asset
 boundary — no question asked.
 
-### 🚧 IDD D-56 — What move semantics should assets have?
+### ✅ IDD D-56 — What move semantics should assets have?
+
+#### DECISION (product owner, Tom, 2026-10-14)
+
+Move is a folder change only (no rename); build capability + co-owner through asset and folder grants; stays in the namespace; destination folder must exist and be readable; folderId null moves to root; datasets, sources, and folders themselves are not movable in v1.
+
 
 #### CONTEXT
 

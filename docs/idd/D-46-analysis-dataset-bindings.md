@@ -1,7 +1,8 @@
 ---
-status: 🚧 Draft
+status: ✅ Confirmed
 owner: Tom Esposito
 date: 2026-10-14
+confirmed: 2026-10-14
 labels: [idd]
 ---
 
@@ -22,7 +23,12 @@ Verb granularity/naming (D-43); access rules (D-44); HQ-4
 prepared-dataset sharing (separate decision); new SQL execution
 capabilities (forbidden by D-37).
 
-### 🚧 IDD D-46 — Which datasets can new analyses bind?
+### ✅ IDD D-46 — Which datasets can new analyses bind?
+
+#### DECISION (product owner, Tom, 2026-10-14)
+
+Explicit bindings keyed by dataset identifier; typed legacy/prepared references; resolved as the authenticated owner only; no sharing or grant-based data access; every declaration must resolve before save; cross-owner queries/edits fail closed.
+
 
 #### CONTEXT
 

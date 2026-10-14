@@ -1,7 +1,8 @@
 ---
-status: 🚧 Draft
+status: ✅ Confirmed
 owner: Tom Esposito
 date: 2026-10-14
+confirmed: 2026-10-14
 labels: [idd]
 ---
 
@@ -20,7 +21,12 @@ match rules, readable-set filtering.
 Move/copy/delete (D-56/D-57/D-59), permission verbs (D-58), asset
 rename (D-39/D-60), MCP tool mapping (mechanical per freeze Q7).
 
-### 🚧 IDD D-55 — What list/search shape should assets expose?
+### ✅ IDD D-55 — What list/search shape should assets expose?
+
+#### DECISION (product owner, Tom, 2026-10-14)
+
+Unified GET /assets returns {kind,id,name,folderId} for the caller's readable set only; kind filter via per-kind paths; POST /assets/search with {query,kinds?,scope?}, case-insensitive substring on name, sorted by updatedAt desc.
+
 
 #### CONTEXT
 

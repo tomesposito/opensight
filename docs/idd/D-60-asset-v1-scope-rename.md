@@ -1,7 +1,8 @@
 ---
-status: 🚧 Draft
+status: ✅ Confirmed
 owner: Tom Esposito
 date: 2026-10-14
+confirmed: 2026-10-14
 labels: [idd]
 ---
 
@@ -19,7 +20,12 @@ ownership.
 The verbs themselves (D-55–D-59, D-61), identity/admin design (a
 later slice), analysis rename semantics (D-39 owns them).
 
-### 🚧 IDD D-60 — What versions under v1, and where does rename live?
+### ✅ IDD D-60 — What versions under v1, and where does rename live?
+
+#### DECISION (product owner, Tom, 2026-10-14)
+
+v1 covers tenant-plane asset verbs only; namespaces/users/groups/invitations, embedding, and AI-provider admin stay unversioned until a dedicated identity/admin slice; folder rename is PUT /folders/{id}; asset rename is decided in D-39, not here.
+
 
 #### CONTEXT
 

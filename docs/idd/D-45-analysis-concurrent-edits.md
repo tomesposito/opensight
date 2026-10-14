@@ -1,7 +1,8 @@
 ---
-status: 🚧 Draft
+status: ✅ Confirmed
 owner: Tom Esposito
 date: 2026-10-14
+confirmed: 2026-10-14
 labels: [idd]
 ---
 
@@ -20,7 +21,12 @@ calculations on mutation.
 Verb granularity/naming (D-43); access rules (D-44); dataset bindings
 (D-46).
 
-### 🚧 IDD D-45 — How should concurrent analysis edits behave?
+### ✅ IDD D-45 — How should concurrent analysis edits behave?
+
+#### DECISION (product owner, Tom, 2026-10-14)
+
+One version for the entire analysis; every update/subresource mutation/delete requires its current If-Match; the loser conflicts and must reread/reapply.
+
 
 #### CONTEXT
 

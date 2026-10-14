@@ -1,7 +1,8 @@
 ---
-status: 🚧 Draft
+status: ✅ Confirmed
 owner: Tom Esposito
 date: 2026-10-14
+confirmed: 2026-10-14
 labels: [idd]
 ---
 
@@ -21,7 +22,12 @@ Verb granularity/naming (D-43); conflict behavior (D-45); dataset
 binding declarations (D-46); dashboard publish clean-state (D-49 —
 what may be published, not what may be saved).
 
-### 🚧 IDD D-47 — Can agents save unfinished analysis drafts?
+### ✅ IDD D-47 — Can agents save unfinished analysis drafts?
+
+#### DECISION (product owner, Tom, 2026-10-14)
+
+Permit empty sheets and incomplete field wells the UI can represent, with validation diagnostics for non-executable visuals; never admit invalid calculations or unresolved/denied dataset bindings.
+
 
 #### CONTEXT
 

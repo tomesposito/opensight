@@ -1,7 +1,8 @@
 ---
-status: 🚧 Draft
+status: ✅ Confirmed
 owner: Tom Esposito
 date: 2026-10-14
+confirmed: 2026-10-14
 labels: [idd]
 ---
 
@@ -22,7 +23,12 @@ Published-dashboard lifecycle ownership (D-40 Q5 owns it — restated
 here, not re-decided). Namespace/user/group delete (stay unversioned,
 D-60).
 
-### 🚧 IDD D-59 — What delete semantics should assets have?
+### ✅ IDD D-59 — What delete semantics should assets have?
+
+#### DECISION (product owner, Tom, 2026-10-14)
+
+Delete requires build + co-owner plus If-Match on the current version; shares die with the asset; published dashboards are preserved and the republish link is severed on source-analysis delete; deleting a dataset an analysis references is refused fail-closed (409); folder delete keeps the must-be-empty 409.
+
 
 #### CONTEXT
 

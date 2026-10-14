@@ -1,7 +1,8 @@
 ---
-status: 🚧 Draft
+status: ✅ Confirmed
 owner: Tom Esposito
 date: 2026-10-14
+confirmed: 2026-10-14
 labels: [idd]
 ---
 
@@ -18,7 +19,12 @@ The initial tool inventory; the deferred-tool policy.
 The deferred tools' designs (owned by D-39/D-40/D-41), composite
 tools (the calling agent's job — never proposed).
 
-### 🚧 IDD D-64 — What tool scope should the MCP server ship?
+### ✅ IDD D-64 — What tool scope should the MCP server ship?
+
+#### DECISION (product owner, Tom, 2026-10-14)
+
+Tools only for implemented REST (the 11 operations); analyses/dashboards/assets tools land when D-39/D-40/D-41 freeze; the MCP server never exposes a tool whose REST operation is still a proposal.
+
 
 #### CONTEXT
 

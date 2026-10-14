@@ -1,7 +1,8 @@
 ---
-status: 🚧 Draft
+status: ✅ Confirmed
 owner: Tom Esposito
 date: 2026-10-14
+confirmed: 2026-10-14
 labels: [idd]
 ---
 
@@ -21,7 +22,12 @@ fields), write/read casing conventions, and how MCP names follow.
 Who can call the verbs (D-44); conflict behavior (D-45); dataset
 bindings (D-46); draft validity (D-47).
 
-### 🚧 IDD D-43 — What verb granularity and naming should analysis authoring use?
+### ✅ IDD D-43 — What verb granularity and naming should analysis authoring use?
+
+#### DECISION (product owner, Tom, 2026-10-14)
+
+Approve the verb table: camelCase writes, existing PascalCase reads; MCP names follow the approved REST operations.
+
 
 #### CONTEXT
 

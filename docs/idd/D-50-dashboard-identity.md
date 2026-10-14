@@ -1,7 +1,8 @@
 ---
-status: 🚧 Draft
+status: ✅ Confirmed
 owner: Tom Esposito
 date: 2026-10-14
+confirmed: 2026-10-14
 labels: [idd]
 ---
 
@@ -19,7 +20,12 @@ analysis can publish many dashboards.
 
 Version addressing (D-51); lifecycle/delete (D-52).
 
-### 🚧 IDD D-50 — What is a dashboard's identity?
+### ✅ IDD D-50 — What is a dashboard's identity?
+
+#### DECISION (product owner, Tom, 2026-10-14)
+
+Own id linked via SourceAnalysisId (one analysis can publish to many dashboards).
+
 
 #### CONTEXT
 

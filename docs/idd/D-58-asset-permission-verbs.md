@@ -1,7 +1,8 @@
 ---
-status: 🚧 Draft
+status: ✅ Confirmed
 owner: Tom Esposito
 date: 2026-10-14
+confirmed: 2026-10-14
 labels: [idd]
 ---
 
@@ -21,7 +22,12 @@ Prepared-dataset sharing (HQ-4 — unchanged by this slice), new roles,
 a reader-role model (D-40 Q6 owns the reader question for
 dashboards), namespaces/users/groups (unversioned, D-60).
 
-### 🚧 IDD D-58 — What permission verbs should assets expose?
+### ✅ IDD D-58 — What permission verbs should assets expose?
+
+#### DECISION (product owner, Tom, 2026-10-14)
+
+Granting requires build + co-owner (replaces admin-only); roles stay viewer|co-owner; grants stay definition-only (never authorize another owner's prepared data, HQ-4); reading grants requires the same access as granting; folder permissions keep the both-must-allow rule; clearing the last grant returns the asset to inherited access.
+
 
 #### CONTEXT
 

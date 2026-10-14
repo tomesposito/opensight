@@ -1,7 +1,8 @@
 ---
-status: 🚧 Draft
+status: ✅ Confirmed
 owner: Tom Esposito
 date: 2026-10-14
+confirmed: 2026-10-14
 labels: [idd]
 ---
 
@@ -19,7 +20,12 @@ grants/placement handling through publish.
 Analysis authoring access (D-44, which this mirrors); clean-state
 rule (D-49); dashboard identity (D-50).
 
-### 🚧 IDD D-48 — Who can publish a dashboard?
+### ✅ IDD D-48 — Who can publish a dashboard?
+
+#### DECISION (product owner, Tom, 2026-10-14)
+
+Build capability + co-owner access on the source analysis.
+
 
 #### CONTEXT
 

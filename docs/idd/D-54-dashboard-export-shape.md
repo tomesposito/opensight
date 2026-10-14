@@ -1,7 +1,8 @@
 ---
-status: 🚧 Draft
+status: ✅ Confirmed
 owner: Tom Esposito
 date: 2026-10-14
+confirmed: 2026-10-14
 labels: [idd]
 ---
 
@@ -19,7 +20,12 @@ polling; which formats v1 commits to.
 Snapshot/export of analyses (not in scope); the report machinery's
 existing email HTML (existing behavior, not redesigned here).
 
-### 🚧 IDD D-54 — What export shape should dashboards offer?
+### ✅ IDD D-54 — What export shape should dashboards offer?
+
+#### DECISION (product owner, Tom, 2026-10-14)
+
+Render-on-demand; formats and delivery decided per format (simple case synchronous, durable-jobs machinery for the large case); no stored snapshots (D-38).
+
 
 #### CONTEXT
 

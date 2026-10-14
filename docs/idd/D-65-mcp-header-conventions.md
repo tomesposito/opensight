@@ -1,7 +1,8 @@
 ---
-status: 🚧 Draft
+status: ✅ Confirmed
 owner: Tom Esposito
 date: 2026-10-14
+confirmed: 2026-10-14
 labels: [idd]
 ---
 
@@ -19,7 +20,12 @@ Input-param-to-header mapping; what surfaces in results.
 The conventions themselves (frozen contract — unchanged).
 MCP-native pagination models (rejected below).
 
-### 🚧 IDD D-65 — How do header-carried v1 conventions travel in MCP tool calls?
+### ✅ IDD D-65 — How do header-carried v1 conventions travel in MCP tool calls?
+
+#### DECISION (product owner, Tom, 2026-10-14)
+
+Header conventions travel as ordinary tool input params mapped to headers by the server (limit/cursor to Limit/Cursor, idempotencyKey to Idempotency-Key, ifMatch to If-Match); responses surface nextCursor and Idempotent-Replayed; the mapping is mechanical and documented per tool.
+
 
 #### CONTEXT
 
