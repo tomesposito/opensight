@@ -1,3 +1,4 @@
+import { AssetCatalog, assetKey } from './asset-model.js';
 import { changeDashboard, changeDashboardGrants, describeDashboard, dashboardVersion, type DashboardRecord, type DashboardChange } from './dashboard-model.js';
 import type { AssetGrant } from './organization.js';
 import { hasCapability } from '@opensight/query-engine';
@@ -167,7 +168,7 @@ export class TenantMetadata {
         await c.query(`DELETE FROM h1_links WHERE ${predicates}`, keyValues(context, key));
         await c.query(`DELETE FROM h1_resources WHERE ${predicates}`, keyValues(context, key));
       } else {
-        const body: JsonObject = { ...old, definition: replacement.definition, datasets: replacement.datasets };
+        const body: JsonObject = { ...old, definition: replacement.definition, datasets: replacement.datasets, updatedAt: new Date().toISOString() };
         // Server-owned prepared links cannot adopt another user's owner scope.
         for (const ref of resourceLinks(key, body)) if (ref.kind === 'prepared-dataset' && ref.ownerId !== context.userId) missing();
         if (!prior) await insertResource(c, context, key, body);
@@ -208,7 +209,7 @@ export class TenantMetadata {
       if (!next) await c.query(`DELETE FROM h1_resources WHERE ${predicates}`, keyValues(context, key));
       else {
         const v = dashboardVersion(next);
-        const body: JsonObject = { ...old, published: next, definition: describeDashboard(next), datasets: v.definition.dataSetIdentifierDeclarations.map(d => {
+        const body: JsonObject = { ...old, updatedAt: new Date().toISOString(), published: next, definition: describeDashboard(next), datasets: v.definition.dataSetIdentifierDeclarations.map(d => {
           const b = v.datasetBindings[d.identifier]!;
           return { ...b, ...(b.kind === 'prepared-dataset' ? { ownerId: v.bindingOwnerId } : {}) };
         }) };
@@ -222,6 +223,39 @@ export class TenantMetadata {
       await appendMetadataEvent(c, context, `dashboard.${change.kind}`);
       return next;
     }, true);
+  }
+  /** Assets use the same tenant lock, links, quota accounting and durable rows as authoring. */
+  async assetTransaction<T>(context: TenantContext, write: boolean, work: (catalog: AssetCatalog) => T): Promise<T> {
+    return this.checked(context, async c => {
+      const rows = await c.query("SELECT * FROM h1_resources WHERE tenant_id = ? AND namespace_id = ? AND kind IN ('user','group','folder','analysis','dashboard','prepared-dataset')", scopeValues(context));
+      const before = rows.map(resource), catalog = new AssetCatalog(context, structuredClone(before));
+      const result = work(catalog);
+      if (!write) return result;
+      const old = new Map(before.map(r => [assetKey(r), r])), next = new Map(catalog.resources.map(r => [assetKey(r), r]));
+      const changed = catalog.resources.filter(r => JSON.stringify(r) !== JSON.stringify(old.get(assetKey(r))));
+      const removed = before.filter(r => !next.has(assetKey(r)));
+      for (const r of [...changed, ...removed]) {
+        if (r.ownerId && r.ownerId !== context.userId) missing();
+        if (!['analysis', 'dashboard', 'folder', 'prepared-dataset'].includes(r.kind)) throw new MetadataError('METADATA_WRITE_FORBIDDEN', 403);
+        await c.query(`DELETE FROM h1_links WHERE ${predicates}`, keyValues(context, r));
+      }
+      for (const r of changed) {
+        const key: ResourceKey = { kind: r.kind, id: r.id, ...(r.ownerId ? { ownerId: r.ownerId } : {}) };
+        const links = resourceLinks(key, r.body);
+        if (!old.has(assetKey(r))) await insertResource(c, context, key, r.body, r.version);
+        else {
+          await c.query(`UPDATE h1_resources SET body = ?, version = ? WHERE ${predicates}`, [JSON.stringify(r.body), r.version, ...keyValues(context, r)]);
+          await insertLinks(c, context, key, links);
+        }
+      }
+      for (const r of removed) {
+        const refs = await c.query('SELECT kind FROM h1_links WHERE tenant_id = ? AND namespace_id = ? AND target_kind = ? AND target_owner = ? AND target_id = ?', [...scopeValues(context), r.kind, r.ownerId ?? '', r.id]);
+        if (refs.length) throw new MetadataError('ASSET_DELETE_REFERENCED', 409);
+        await c.query(`DELETE FROM h1_resources WHERE ${predicates}`, keyValues(context, r));
+      }
+      if (changed.length || removed.length) await appendMetadataEvent(c, context, 'assets.changed');
+      return result;
+    }, write);
   }
   async batch(context: TenantContext, edits: readonly MetadataEdit[], expectedRevisions?: Revisions): Promise<void> {
     this.assertContext(context);

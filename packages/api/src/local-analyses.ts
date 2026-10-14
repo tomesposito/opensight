@@ -97,7 +97,7 @@ export class LocalAnalyses implements AnalysisBackend {
       const asset = exists && prior ? prior : { id, kind: 'analysis' as const, namespaceId: this.identity.namespaceId, folderId: null,
         grants: [{ principal: { type: 'user' as const, id: this.identity.userId }, role: 'co-owner' as const }] };
       if (!prior) (state.assets ??= []).push(asset); else if (asset !== prior) state.assets![state.assets!.indexOf(prior)] = asset;
-      asset.analysisVersion = version + 1;
+      asset.analysisVersion = version + 1; asset.updatedAt = new Date().toISOString();
       if (record) {
         delete asset.deleted;
         asset.definition = { AnalysisId: id, Name: record.name, Definition: projectDefinition(record.definition) };
@@ -106,11 +106,11 @@ export class LocalAnalyses implements AnalysisBackend {
         else delete asset.datasetBindingOwnerId;
       } else {
         for (const item of state.assets ?? []) if (item.namespaceId === this.identity.namespaceId && item.dashboard?.sourceAnalysisId === id) item.dashboard.sourceActive = false;
-        asset.deleted = true; delete asset.definition; delete asset.datasetBindings; delete asset.datasetBindingOwnerId; }
+        asset.deleted = true; delete asset.grants; asset.folderId = null; delete asset.definition; delete asset.datasetBindings; delete asset.datasetBindingOwnerId; }
       validateOrganization(state);
     });
     if (this.root) await legacyWrite(this.root, commit); else await commit();
   }
-  async save(record: AnalysisRecord, version: number, stamp: unknown) { await this.mutation(record.id, record, version, stamp); }
+  async save(record: AnalysisRecord, version: number, stamp: unknown) { await this.mutation(record.id, { ...record, updatedAt: new Date().toISOString() }, version, stamp); }
   async remove(id: string, version: number, stamp: unknown) { await this.mutation(id, null, version, stamp); }
 }

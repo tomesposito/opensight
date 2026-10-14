@@ -26,6 +26,7 @@ export interface DashboardBackend {
   get(id: string): Promise<DashboardRecord>;
   accessSnapshot(id: string): Promise<unknown>;
   authorizeRemoved(snapshot: unknown): Promise<void>;
+  revision(id: string): Promise<number>;
   grants(id: string): Promise<AssetGrant[] | undefined>;
   change(id: string, change: DashboardChange, stamp: unknown): Promise<DashboardRecord | null>;
   query(version: DashboardVersion, definition: JsonObject, visualId: string): Promise<DashboardQuery>;

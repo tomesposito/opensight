@@ -3,7 +3,7 @@ import { analysisFail, analysisId, analysisObject, checkAnalysisInput, type Anal
 import type { JsonObject } from './mapping.js';
 export interface DatasetBinding { kind: 'dataset' | 'prepared-dataset'; id: string }
 export type DatasetBindings = Record<string, DatasetBinding>;
-export interface AnalysisRecord { id: string; name: string; definition: BundleDefinition; datasetBindings: DatasetBindings; version: number }
+export interface AnalysisRecord { id: string; name: string; definition: BundleDefinition; datasetBindings: DatasetBindings; version: number; updatedAt?: string }
 export interface AnalysisBackend {
   /** Scope is trusted and comes only from verified identity or explicit local mode. */
   scope: { tenantId: string; namespaceId: string; userId: string };

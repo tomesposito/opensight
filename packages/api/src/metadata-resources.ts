@@ -58,9 +58,9 @@ export function resourceLinks(key: ResourceKey, raw: JsonObject): ResourceKey[] 
       for (const id of users) add('user', id);
       break;
     }
-    case 'folder': object(body, ['name', 'grants']); label(body.name); grants(body.grants); break;
+    case 'folder': object(body, ['name', 'grants', 'updatedAt']); label(body.name); grants(body.grants); break;
     case 'analysis': case 'dashboard': {
-      object(body, ['definition', 'folderId', 'grants', 'datasets', ...(key.kind === 'dashboard' ? ['published'] : [])]);
+      object(body, ['definition', 'folderId', 'grants', 'datasets', 'updatedAt', ...(key.kind === 'dashboard' ? ['published'] : [])]);
       const d = object(body.definition), definition = object(d.Definition);
       if (d[key.kind === 'analysis' ? 'AnalysisId' : 'DashboardId'] !== key.id) invalidMetadata();
       const declarations = list(definition.DataSetIdentifierDeclarations);
@@ -87,7 +87,7 @@ export function resourceLinks(key: ResourceKey, raw: JsonObject): ResourceKey[] 
       break;
     }
     case 'prepared-dataset': {
-      object(body, ['resource', 'execution']);
+      object(body, ['resource', 'execution', 'updatedAt']);
       const r = parseBundleResource(body.resource);
       if (r.resourceType !== 'dataset' || r.dataSetId !== key.id || !r.opensightPrep) invalidMetadata();
       if (body.execution !== undefined) executionSettings(body.execution);
