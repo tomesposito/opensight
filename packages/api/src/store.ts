@@ -1,8 +1,15 @@
 import { lstat, open, readdir } from 'node:fs/promises';
-import { extname, join, resolve } from 'node:path';
+import { dirname, extname, join, resolve } from 'node:path';
 import { loadQsBundle, parseBundleResource } from '@opensight/bundle-parser';
 import { fromArchive, isObject, type JsonObject } from './mapping.js';
-import { assertLegacyWritable } from './metadata-maintenance.js';
+import { assertLegacyWritable, legacyWrite } from './metadata-maintenance.js';
+
+import { AutomationStore } from './automation-store.js';
+import { MetadataError } from './metadata-db.js';
+import type { AnalysisRecord } from './analysis-model.js';
+import { projectDefinition } from '@opensight/web/analysis';
+
+interface AnalysisOverlay { version: 1; records: Record<string, AnalysisRecord | null> }
 
 export type ResourceKind = 'analysis' | 'dashboard';
 export const RESOURCE_ID = /^[A-Za-z0-9_-]{1,512}$/u;
@@ -14,6 +21,24 @@ export class DefinitionStore {
     ['analysis', new Map()], ['dashboard', new Map()],
   ]);
 
+  private overlay?: AutomationStore<AnalysisOverlay>;
+  private root?: string;
+  analysisRecord(id: string): AnalysisRecord | null | undefined { const records = this.overlay?.read().records; return records && Object.hasOwn(records, id) ? records[id] : undefined; }
+  async mutateAnalysis(id: string, record: AnalysisRecord | null, expectedVersion: number, authorize: () => void): Promise<void> {
+    if (!this.overlay || !this.root) throw new MetadataError('ANALYSIS_STORE_UNAVAILABLE', 503);
+    await legacyWrite(this.root, async () => {
+      await this.overlay!.change(state => {
+        authorize();
+        const previous = Object.hasOwn(state.records, id) ? state.records[id] : undefined;
+        const version = previous === null ? 0 : previous?.version ?? (this.get('analysis', id) ? 1 : 0);
+        if (version !== expectedVersion) throw new MetadataError('METADATA_CONFLICT');
+        if (!version && record === null) throw new MetadataError('RESOURCE_NOT_FOUND', 404);
+        Object.defineProperty(state.records, id, { value: record, enumerable: true, configurable: true, writable: true });
+      });
+      if (record) this.resources.get('analysis')!.set(id, { AnalysisId: id, Name: record.name, Definition: projectDefinition(record.definition) });
+      else this.resources.get('analysis')!.delete(id);
+    });
+  }
   list(): { kind: ResourceKind; id: string; name: string }[] {
     return [...this.resources].flatMap(([kind, resources]) => [...resources].map(([id, body]) => ({ kind, id, name: typeof body.Name === 'string' ? body.Name : id })));
   }
@@ -94,6 +119,19 @@ export class DefinitionStore {
       }
     }
     await visit(root, true);
+    store.root = root;
+    const path = (await lstat(root)).isDirectory() ? join(root, '.opensight-analyses.json') : join(dirname(root), `.${root.slice(root.lastIndexOf('/') + 1)}.analyses.json`);
+    store.overlay = await AutomationStore.load<AnalysisOverlay>({ version: 1, records: {} }, path, raw => {
+      if (!isObject(raw) || raw.version !== 1 || !isObject(raw.records)) throw new Error('Invalid analysis overlay');
+      for (const [id, value] of Object.entries(raw.records)) {
+        if (!RESOURCE_ID.test(id) || value !== null && (!isObject(value) || value.id !== id || !Number.isSafeInteger(value.version) || Number(value.version) < 1 || !isObject(value.definition) || !isObject(value.datasetBindings))) throw new Error('Invalid analysis overlay record');
+      }
+      return raw as unknown as AnalysisOverlay;
+    });
+    for (const [id, record] of Object.entries(store.overlay.read().records)) {
+      if (record === null) store.resources.get('analysis')!.delete(id);
+      else store.resources.get('analysis')!.set(id, { AnalysisId: id, Name: record.name, Definition: projectDefinition(record.definition) });
+    }
     return store;
   }
 }

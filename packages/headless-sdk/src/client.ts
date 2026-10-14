@@ -1,6 +1,9 @@
 import { OpenSightApiError } from './errors.js';
 import type {
   ApiErrorBody,
+  AnalysisCalculatedFields, AnalysisDescribe, AnalysisFilterGroup, AnalysisLayouts,
+  AnalysisSummary, BundleVisual, CreateAnalysisBody, DeleteAnalysisResult,
+  UpdateAnalysisBody, VersionedResult,
   DatasetDescribe,
   DatasetLineage,
   DatasetSummary,
@@ -43,13 +46,16 @@ export interface RequestOptions {
   ifMatch?: string;
 }
 
+/** Every edit/delete needs the current quoted ETag. */
+export type AnalysisMutationOptions = Pick<RequestOptions, 'idempotencyKey'> & { ifMatch: string };
+
 /**
  * Typed client for the OpenSight headless v1 API (issue #95).
  * Maps 1:1 onto docs/api/openapi-v1.yaml — the implemented
- * datasets + querying slices only. Conventions on every call:
+ * datasets, querying and analyses slices. Conventions on every call:
  * named errorCode errors, Limit/Cursor headers (the hosted plane
  * rejects query strings), Idempotency-Key on mutations, If-Match
- * on deletes, and per-tenant rate limiting.
+ * on deletes and analysis edits, and per-tenant rate limiting.
  */
 export class OpenSightClient {
   private readonly baseUrl: string;
@@ -148,6 +154,60 @@ export class OpenSightClient {
     });
   }
 
+  // ---- analyses ----
+
+  listAnalyses(opts: Pick<RequestOptions, 'limit' | 'cursor'> = {}): Promise<Page<AnalysisSummary>> {
+    return this.request('GET', '/v1/analyses', { headers: pageHeaders(opts) });
+  }
+
+  getAnalysis(id: string): Promise<VersionedResult<AnalysisDescribe>> {
+    return this.versionedRequest('GET', analysisPath(id));
+  }
+
+  createAnalysis(body: CreateAnalysisBody, opts: Pick<RequestOptions, 'idempotencyKey'> = {}): Promise<VersionedResult<AnalysisDescribe>> {
+    return this.versionedRequest('POST', '/v1/analyses', { body, headers: mutationHeaders(opts) });
+  }
+
+  updateAnalysis(id: string, body: UpdateAnalysisBody, opts: AnalysisMutationOptions): Promise<VersionedResult<AnalysisDescribe>> {
+    return this.versionedRequest('PUT', analysisPath(id), { body, headers: analysisHeaders(opts) });
+  }
+
+  deleteAnalysis(id: string, opts: AnalysisMutationOptions): Promise<DeleteAnalysisResult> {
+    return this.request('DELETE', analysisPath(id), { headers: analysisHeaders(opts) });
+  }
+
+  addVisual(id: string, sheetId: string, body: BundleVisual, opts: AnalysisMutationOptions): Promise<VersionedResult<AnalysisDescribe>> {
+    return this.versionedRequest('POST', `${sheetPath(id, sheetId)}/visuals`, { body, headers: analysisHeaders(opts) });
+  }
+
+  updateVisual(id: string, sheetId: string, visualId: string, body: BundleVisual, opts: AnalysisMutationOptions): Promise<VersionedResult<AnalysisDescribe>> {
+    return this.versionedRequest('PUT', `${sheetPath(id, sheetId)}/visuals/${encode(visualId)}`, { body, headers: analysisHeaders(opts) });
+  }
+
+  removeVisual(id: string, sheetId: string, visualId: string, opts: AnalysisMutationOptions): Promise<VersionedResult<AnalysisDescribe>> {
+    return this.versionedRequest('DELETE', `${sheetPath(id, sheetId)}/visuals/${encode(visualId)}`, { headers: analysisHeaders(opts) });
+  }
+
+  setLayouts(id: string, sheetId: string, body: AnalysisLayouts, opts: AnalysisMutationOptions): Promise<VersionedResult<AnalysisDescribe>> {
+    return this.versionedRequest('PUT', `${sheetPath(id, sheetId)}/layouts`, { body, headers: analysisHeaders(opts) });
+  }
+
+  addFilterGroup(id: string, body: AnalysisFilterGroup, opts: AnalysisMutationOptions): Promise<VersionedResult<AnalysisDescribe>> {
+    return this.versionedRequest('POST', `${analysisPath(id)}/filter-groups`, { body, headers: analysisHeaders(opts) });
+  }
+
+  updateFilterGroup(id: string, filterGroupId: string, body: AnalysisFilterGroup, opts: AnalysisMutationOptions): Promise<VersionedResult<AnalysisDescribe>> {
+    return this.versionedRequest('PUT', `${analysisPath(id)}/filter-groups/${encode(filterGroupId)}`, { body, headers: analysisHeaders(opts) });
+  }
+
+  removeFilterGroup(id: string, filterGroupId: string, opts: AnalysisMutationOptions): Promise<VersionedResult<AnalysisDescribe>> {
+    return this.versionedRequest('DELETE', `${analysisPath(id)}/filter-groups/${encode(filterGroupId)}`, { headers: analysisHeaders(opts) });
+  }
+
+  setCalculatedFields(id: string, body: AnalysisCalculatedFields, opts: AnalysisMutationOptions): Promise<VersionedResult<AnalysisDescribe>> {
+    return this.versionedRequest('PUT', `${analysisPath(id)}/calculated-fields`, { body, headers: analysisHeaders(opts) });
+  }
+
   // ---- transport ----
 
   private async request<T>(
@@ -155,6 +215,19 @@ export class OpenSightClient {
     path: string,
     opts: { headers?: Record<string, string>; body?: unknown } = {},
   ): Promise<T> {
+    return (await safeJson(await this.response(method, path, opts))) as T;
+  }
+
+  private async versionedRequest<T>(
+    method: string, path: string, opts: { headers?: Record<string, string>; body?: unknown } = {},
+  ): Promise<VersionedResult<T>> {
+    const response = await this.response(method, path, opts);
+    return { value: (await safeJson(response)) as T, etag: response.headers.get('ETag') };
+  }
+
+  private async response(
+    method: string, path: string, opts: { headers?: Record<string, string>; body?: unknown },
+  ): Promise<Response> {
     const token = await this.getToken();
     const headers: Record<string, string> = {
       Authorization: `Bearer ${token}`,
@@ -177,7 +250,7 @@ export class OpenSightClient {
         retryAfter,
       });
     }
-    return (await safeJson(res)) as T;
+    return res;
   }
 }
 
@@ -210,4 +283,10 @@ async function safeJson(res: Response): Promise<unknown> {
   } catch {
     return null;
   }
+}
+
+function analysisPath(id: string): string { return `/v1/analyses/${encode(id)}`; }
+function sheetPath(id: string, sheetId: string): string { return `${analysisPath(id)}/sheets/${encode(sheetId)}`; }
+function analysisHeaders(opts: AnalysisMutationOptions): Record<string, string> {
+  return { ...mutationHeaders(opts), 'If-Match': opts.ifMatch };
 }

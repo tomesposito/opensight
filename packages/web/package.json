@@ -35,6 +35,10 @@
     "./compiler": {
       "types": "./build/server/compiler.d.ts",
       "import": "./build/server/compiler.js"
+    },
+    "./analysis": {
+      "types": "./build/server/analysis-validation.d.ts",
+      "import": "./build/server/analysis-validation.js"
     }
   }
 }

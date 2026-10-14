@@ -230,3 +230,77 @@ describe('named errors', () => {
     assert.equal(err.status, 500);
   });
 });
+
+describe('analyses', () => {
+  const envelope = { AnalysisId: 'a', Name: 'Analysis', Definition: { Sheets: [] }, Errors: [] };
+  const opts = { ifMatch: '"2"', idempotencyKey: 'retry-key' };
+  it('lists with pagination headers and exposes describe ETags separately from the wire envelope', async () => {
+    const page = { items: [{ kind: 'analysis', id: 'a', name: 'Analysis' }], nextCursor: 'next' };
+    const fetchImpl = mockFetch({
+      'GET /api/v1/analyses': jsonOk(page),
+      'GET /api/v1/analyses/a': jsonOk(envelope, { ETag: '"2"' }),
+    });
+    const client = new OpenSightClient({ baseUrl: 'https://h/api', getToken: 't', fetch: fetchImpl });
+    assert.deepEqual(await client.listAnalyses({ limit: 2, cursor: 'cursor' }), page);
+    assert.equal(fetchImpl.calls[0].headers.Limit, '2');
+    assert.equal(fetchImpl.calls[0].headers.Cursor, 'cursor');
+    assert.equal(new URL(fetchImpl.calls[0].url).search, '');
+    assert.deepEqual(await client.getAnalysis('a'), { value: envelope, etag: '"2"' });
+  });
+
+  it('sends every approved mutation body, retry key and required precondition, preserving returned ETags', async () => {
+    const update = { name: 'Analysis', definition: { dataSetIdentifierDeclarations: [], sheets: [] }, datasetBindings: {} };
+    const create = { analysisId: 'a', ...update };
+    const visual = { barChartVisual: { visualId: 'v' } };
+    const group = { filterGroupId: 'g', filters: [] };
+    const cases = [
+      ['POST', '/analyses', 'createAnalysis', [create, opts], create],
+      ['PUT', '/analyses/a', 'updateAnalysis', ['a', update, opts], update],
+      ['POST', '/analyses/a/sheets/s/visuals', 'addVisual', ['a', 's', visual, opts], visual],
+      ['PUT', '/analyses/a/sheets/s/visuals/v', 'updateVisual', ['a', 's', 'v', visual, opts], visual],
+      ['DELETE', '/analyses/a/sheets/s/visuals/v', 'removeVisual', ['a', 's', 'v', opts]],
+      ['PUT', '/analyses/a/sheets/s/layouts', 'setLayouts', ['a', 's', [], opts], []],
+      ['POST', '/analyses/a/filter-groups', 'addFilterGroup', ['a', group, opts], group],
+      ['PUT', '/analyses/a/filter-groups/g', 'updateFilterGroup', ['a', 'g', group, opts], group],
+      ['DELETE', '/analyses/a/filter-groups/g', 'removeFilterGroup', ['a', 'g', opts]],
+      ['PUT', '/analyses/a/calculated-fields', 'setCalculatedFields', ['a', [], opts], []],
+      ['DELETE', '/analyses/a', 'deleteAnalysis', ['a', opts]],
+    ];
+    for (const [method, path, member, args, body] of cases) {
+      const removed = { id: 'a', removed: true };
+      const fetchImpl = mockFetch({ [`${method} /api/v1${path}`]: jsonOk(member === 'deleteAnalysis' ? removed : envelope, { ETag: '"3"' }) });
+      const client = new OpenSightClient({ baseUrl: 'https://h/api', getToken: 't', fetch: fetchImpl });
+      assert.deepEqual(await client[member](...args), member === 'deleteAnalysis' ? removed : { value: envelope, etag: '"3"' }, member);
+      const call = fetchImpl.calls[0];
+      assert.equal(call.headers['Idempotency-Key'], 'retry-key', member);
+      assert.equal(call.headers['If-Match'], member === 'createAnalysis' ? undefined : '"2"', member);
+      assert.equal(call.headers.Authorization, 'Bearer t', member);
+      assert.deepEqual(call.body === undefined ? undefined : JSON.parse(call.body), body, member);
+      assert.equal(call.headers['Content-Type'], body === undefined ? undefined : 'application/json', member);
+    }
+  });
+
+  it('encodes each path identity without creating query parameters or nested paths', async () => {
+    const fetchImpl = mockFetch({
+      'PUT /api/v1/analyses/a%3F/sheets/s%2F/visuals/v%23': jsonOk(envelope, { ETag: '"3"' }),
+      'DELETE /api/v1/analyses/a%3F/filter-groups/g%2F': jsonOk(envelope, { ETag: '"4"' }),
+    });
+    const client = new OpenSightClient({ baseUrl: 'https://h/api', getToken: 't', fetch: fetchImpl });
+    await client.updateVisual('a?', 's/', 'v#', { barChartVisual: { visualId: 'v#' } }, opts);
+    await client.removeFilterGroup('a?', 'g/', opts);
+    assert.ok(fetchImpl.calls.every(call => new URL(call.url).search === ''));
+  });
+
+  it('retains named analysis validation errors and field paths through versioned transport', async () => {
+    const body = { errorCode: 'CALCULATED_FIELD_INVALID', message: 'Invalid expression', path: '$.definition.calculatedFields[0].expression' };
+    const fetchImpl = mockFetch({ 'PUT /api/v1/analyses/a/calculated-fields': { status: 400, body } });
+    const client = new OpenSightClient({ baseUrl: 'https://h/api', getToken: 't', fetch: fetchImpl });
+    await assert.rejects(client.setCalculatedFields('a', [], opts), error => {
+      assert.ok(error instanceof OpenSightApiError);
+      assert.equal(error.status, 400);
+      assert.equal(error.errorCode, body.errorCode);
+      assert.deepEqual(error.body, body);
+      return true;
+    });
+  });
+});

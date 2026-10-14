@@ -1,59 +1,33 @@
 # Headless v1 — analyses slice (issue #95)
 
-Status: **🚧 Contract proposal; implementation blocked on product review.**
-Prepared on `work/issue-95-analyses`, 2026-10-13. No analysis endpoints
-have been added to v1. Existing routes and the shipped machine-readable
-contract in `docs/api/openapi-v1.yaml` remain unchanged.
+Status: **Implemented**, 2026-10-14, on `work/issue-95-analyses-impl`.
+The 13 approved REST operations are implemented for local files and hosted
+metadata. Serverless `/api/v1` integration, dashboards, assets and MCP remain
+separate slices. This branch is not pushed or deployed.
 
-The [frozen contract](api-contract-v1-draft.md#freeze-decisions-product-owner-2026-10-13)
-answers all seven freeze questions, and IDDs [D-37](idd/D-37-headless-first-api.md)
-and [D-38](idd/D-38-dashboard-publish-semantics.md) are confirmed on the
-branch's master base. Freeze Q5 explicitly reserves product review of
-analysis verbs; it does not approve their shape. The run brief, scope §4,
-says to name unresolved product questions here and stop before inventing
-their answers. [Draft IDD D-39](idd/D-39-headless-analysis-authoring.md)
-records this gate. Nothing below is a frozen API commitment.
+## Confirmed contract
 
-## Existing behavior and implementation seams
+Product owner confirmations dated 2026-10-14 were verified against master
+and the fetched `origin/master` before implementation. The branch starts at
+`44ee0e3f`; local master was older and was not used as the build base.
 
-- Local `GET /analyses` and `GET /analyses/{id}/definition` live in
-  `packages/api/src/index.ts`. The definition response uses the existing
-  PascalCase QuickSight envelope. `OrganizationService` filters assets
-  by build capability, asset grants and folder grants when authentication
-  is configured.
-- `packages/api/src/store.ts` is a startup snapshot reader. Despite the
-  brief's description of file-backed persistence, `DefinitionStore`
-  exposes only `load`, `list` and `get`; it has no save or delete method.
-  Browser draft persistence is separate (D-17).
-- There is no general hosted analysis CRUD route, but embedded-console
-  authoring already saves analyses through `EmbedContent.save` and
-  `TenantMetadata.saveEmbeddedAnalysis`. That path accepts one legacy
-  `dataset` binding, uses build capability plus co-owner/folder grants,
-  preserves grants and placement, and checks an integer version. This
-  is evidence to reuse, not an approved v1 access policy.
-- Hosted metadata currently permits analysis `datasets` links only to
-  legacy `dataset` resources. The v1 datasets/querying slices instead
-  expose owner-scoped `prepared-dataset` resources. Substituting those
-  IDs would not create a valid analysis binding. HQ-4 still prohibits
-  prepared-dataset sharing; an analysis grant cannot widen data access.
-- `BundleDefinition` is camelCase and preserves unknown properties.
-  `convertDefinition` projects the PascalCase API representation into
-  that shape; it explicitly is not an execution validator. Bundle
-  validation also preserves opaque configuration. The UI additionally
-  uses `normalizeVisual`/`compileVisual` and `calculationError`, which
-  calls the shared query-engine `parseExpression` function library.
-  Exposing only bundle parsing as mutation validation would be unsound.
+| Decision | Confirmed behavior |
+| --- | --- |
+| [D-39](idd/D-39-headless-analysis-authoring.md) | Whole-definition CRUD plus resource operations; one version and validation path |
+| [D-43](idd/D-43-analysis-verb-granularity-naming.md) | Frozen verbs below; camelCase writes and PascalCase reads |
+| [D-44](idd/D-44-analysis-authoring-access.md) | Build capability, creator co-owner, asset and folder restrictions |
+| [D-45](idd/D-45-analysis-concurrent-edits.md) | Mandatory quoted-integer `If-Match`, one successful version increment, no cascading dependency removal |
+| [D-46](idd/D-46-analysis-dataset-bindings.md) | Explicit typed bindings resolved only as the authenticated owner |
+| [D-47](idd/D-47-analysis-unfinished-drafts.md) | Empty sheets and incomplete field wells persist; calculations and bindings must be valid |
 
-## Proposed endpoints (`/api/v1/...`, both planes) — review required
+[D-37](idd/D-37-headless-first-api.md) remains the REST/OpenAPI, credentials,
+SQL and rate-limit contract. [D-38](idd/D-38-dashboard-publish-semantics.md)
+requires analysis deletion to preserve published dashboard definitions.
+There are no outstanding product questions in this slice.
 
-The recommendation is resource routes with explicit create/update/delete
-operations, plus whole-definition replacement for batch authoring. The
-alternative is whole-definition replacement alone. The latter reduces
-the API surface but requires every agent to construct an entire document
-to change one visual. All names and paths below are proposals, including
-the `operationId` values that would map mechanically to MCP tools.
+## Endpoints (`/api/v1/...`)
 
-| Method and path | Proposed operationId | Proposed body / result |
+| Method and path | operationId | Body / result |
 | --- | --- | --- |
 | `GET /analyses` | `list_analyses` | Paginated existing `{ kind, id, name }` summaries |
 | `GET /analyses/{id}` | `describe_analysis` | `{ AnalysisId, Name, Definition, Errors }` plus version in `ETag` |
@@ -69,111 +43,192 @@ the `operationId` values that would map mechanically to MCP tools.
 | `DELETE /analyses/{id}/filter-groups/{filterGroupId}` | `remove_filter_group` | No body |
 | `PUT /analyses/{id}/calculated-fields` | `set_calculated_fields` | Complete `BundleDefinition.calculatedFields` array; `[]` removes fields |
 
-Subresource mutations would return the updated describe envelope and
-`ETag`. Definitions in mutation requests would be camelCase
-`BundleDefinition`; describe would retain the existing PascalCase
-QuickSight projection. This asymmetric wire representation is explicitly
-part of the review, not an accidental casing conversion. The alternative
-is PascalCase request and response definitions throughout.
 
-Layouts have no required resource ID in `BundleSheet`; replacing their
-array avoids inventing one. Filter groups already have stable identities
-and scope. Calculated fields are identified by dataset identifier and
-name, which may contain characters unsuitable for simple ID routes;
-array replacement also permits coordinated dependency changes. Review
-must confirm that these collection operations satisfy the builder-facing
-granularity requirement. Whole-definition replacement would cover sheet,
-parameter, theme and other document edits without inventing additional
-verbs in this slice.
+Lists return `{ items, nextCursor }`, with pagination applied after current
+asset/folder filtering. Pagination uses `Limit` and `Cursor` request headers.
+Subresource mutations return the updated describe envelope and `ETag`.
+`Errors` is always an array of `{ errorCode, message, path }` diagnostics.
+The complete machine contract, including request schemas and response codes,
+is in [openapi-v1.yaml](api/openapi-v1.yaml).
 
-## Product questions requiring answers
+Whole replacement also covers sheets, parameters, themes and other
+`BundleDefinition` members; no extra resource verbs were introduced.
+The inverse of the UI's named-member converter produces PascalCase reads,
+while opaque non-executable properties retain their spelling and values.
+PascalCase writes are rejected.
 
-| Question | Recommendation for review | Alternative / consequence |
-| --- | --- | --- |
-| Q1 — Verb granularity, naming and wire casing | Approve the proposed table and camelCase writes / existing PascalCase reads | Coarse CRUD only, individual layout/filter/calculation verbs, or a single PascalCase wire shape; MCP names follow the approved REST operations |
-| Q2 — Who can create, edit and delete? | Create requires build capability; new analyses grant the creator co-owner access. Edit/delete require build capability and co-owner access through both asset and folder restrictions, preserving existing administrator behavior. Grants/placement cannot be overwritten through definition bodies | Administrator-only writes or a new owner-private analysis model would have different collaboration behavior. Existing imported analyses with absent grants also need an explicit compatibility rule; proposed rule is the existing embedded-console behavior |
-| Q3 — Concurrent edits to different visuals | One version for the entire analysis; every update/subresource mutation/delete requires its current `If-Match`. One of two edits based on the same version succeeds; the other conflicts and must reread/reapply | Per-visual versions or automatic merging permit more concurrent writes but change the unit of consistency and retry behavior |
-| Q4 — Which datasets can new analyses bind? | Explicit bindings keyed by dataset identifier, with typed legacy/prepared references. Prepared references are resolved as the authenticated owner only, with no sharing or grant-based data access. Every declaration must resolve before save; cross-owner queries/edits fail closed | Legacy-dataset-only authoring follows the embedded path but cannot author against the prepared datasets exposed by v1. Prepared-only authoring cannot round-trip imported legacy bindings. Supporting both requires metadata-link work and security tests |
-| Q5 — Can agents save unfinished UI drafts? | Permit empty sheets and incomplete field wells that the UI can represent, but return validation diagnostics for non-executable visuals. Never admit invalid calculations or unresolved/denied dataset bindings | Require every visual to be executable before saving, or preserve additional opaque imported features as read-only content. This changes whether agents can build incrementally and how imported definitions round-trip |
+## Dataset binding schema and authorization
 
-Q2 does not propose changing HQ-4. Shared analysis visibility and access
-to its underlying prepared data are separate: an analysis grant never
-authorizes another owner's prepared dataset. The review must settle the
-experience when a permitted analysis editor cannot access its bindings.
-Q4 also needs an exact binding JSON schema before implementation; client
-tenant, user or arbitrary ARN assertions cannot be execution authority.
+The binding JSON schema was pinned in OpenAPI before runtime implementation:
 
-For Q3, the recommended HTTP convention is the existing quoted integer
-`ETag`/`If-Match` pattern: missing precondition returns 428
-`V1_IF_MATCH_REQUIRED`, malformed returns 400 `V1_IF_MATCH_INVALID`, and
-stale versions use 409 `METADATA_CONFLICT`. Successful edits increment
-once. There would be no silent cascading removal of dependent visuals,
-filters or calculations; dangling references would reject the mutation.
-Deletes would preserve already-published dashboard definitions per D-38,
-with any remaining reference/retention policy reviewed by its owning slice.
+```json
+{
+  "sales": { "kind": "dataset", "id": "legacy-sales" },
+  "prepared": { "kind": "prepared-dataset", "id": "prepared-sales" }
+}
+```
 
-## Conventions and validation to preserve after review
+Each object contains exactly `kind` and `id`. Keys must match every
+`dataSetIdentifierDeclarations[].identifier` exactly, without missing or
+extra bindings. Legacy IDs use `[A-Za-z0-9_-]{1,512}`; prepared IDs use
+`[A-Za-z0-9_-]{1,128}`. Dataset ARNs remain definition labels; they never
+select an execution principal or source. Tenant, namespace, user, owner,
+principal, grants and folder assertions in request bodies are rejected.
 
-- Extend `V1Routes`; keep unversioned paths working. Use `Limit`/`Cursor`
-  request headers, `{ items, nextCursor }` lists, named `errorCode`
-  failures, per-tenant 429 `RATE_LIMIT_EXCEEDED` with `Retry-After`, and
-  current authorization checks before returning definitions or replays.
-- Honor `Idempotency-Key` on every mutation using the established replay
-  convention. Serialize concurrent edits; replay cannot bypass current
-  access, repeat a write, or silently accept a different payload. The
-  existing cache does not alone prove these properties for new writes.
-- Reuse the UI's expression parser/function library and visual validation
-  through shared modules, not a second validator. Validate **every**
-  calculated field, including unused ones and calculated measure
-  expressions; query-time validation of reachable fields is insufficient
-  for mutation admission. Check dependencies, cycles, parameter bindings,
-  schema types and denied columns against current dataset access.
-- Accept no raw SQL, SQL envelopes, custom SQL operators or forged
-  principal fields. QuickSight expression strings are input to the
-  allowlisted parser only. SQL-looking string literals remain data.
-- Local durable writes need an atomic persistence implementation, restart
-  recovery and the existing maintenance fence; mutating the startup map
-  is not persistence. Local files and hosted metadata must implement the
-  same approved mutation/validation semantics without paths derived from
-  untrusted IDs. No new dependencies are planned.
+Hosted prepared references become metadata links with the authenticated
+user's owner ID supplied by the server. Reading, editing or replaying an
+analysis never grants access to another owner's prepared dataset, even if
+the caller has co-owner or administrator access to the analysis. Legacy
+bindings resolve their existing source link and require the same owner;
+source and dataset policies are intersected for schema admission. Missing
+policies on protected legacy datasets fail closed. Imported local legacy
+bindings resolve only the configured sales fixture's exact startup ARN.
 
-## Tests required after contract approval
+Creation requires build capability and assigns the creator a co-owner
+grant. Edit/delete additionally require co-owner access through both asset
+and folder grants. Administrators retain the existing asset-grant bypass;
+this does not bypass dataset ownership. Imported assets without grants
+retain embedded-console inherited access. Definitions cannot overwrite
+grants or placement. Authorization is checked again before publication.
 
-`packages/api/test/v1-analyses.test.mjs` should use the existing `serving`
-harness plus a local-server harness and run through the API/root suites.
-No analysis contract tests or implementation are claimed by this proposal.
-The build must cover:
+## Validation and unfinished drafts
 
-- List pagination after access filtering, describe envelopes, local/hosted
-  round trips and preservation of unversioned behavior.
-- CRUD and every approved authoring verb, malformed bodies, unknown IDs,
-  duplicate identities, dependency removal and local restart persistence.
-- Role, asset and folder grants; cross-tenant/cross-owner/forged-principal
-  bypass attempts; revocation immediately before save/read/replay.
-- Required/stale `If-Match`, concurrent edits, retry idempotency,
-  conflicting payloads and tenant-wide rate limits on every route.
-- Valid shared-library calculations, unused invalid calculations,
-  calculated measure expressions, cycles, denied columns and SQL attempts
-  such as `SELECT * FROM secrets`, `pg_sleep(1)` and a semicolon followed
-  by `DROP TABLE`; all failures carry named error codes and field paths.
-- Whole-definition and subresource mutations yielding the same validation
-  results, including whatever incomplete-draft policy Q5 approves.
+Whole-definition and resource mutations construct the same candidate
+`BundleDefinition` and enter `validateAnalysisDefinition`. It reuses the
+UI's `parseExpression` function catalog, `ExpressionBinder`, parameter
+library and visual compiler, plus the existing shared visual query planner.
+There is no SQL evaluator or separate expression grammar.
 
-## Resume boundary
+Admission resolves every binding and validates **every** calculated field,
+including unused fields, calculated measure expressions, dependencies,
+cycles, parameter defaults/bindings, schema types and denied columns.
+SQL envelopes and custom operators are rejected. Expressions such as
+`SELECT * FROM secrets`, `pg_sleep(1)` and a semicolon followed by
+`DROP TABLE` fail with named errors and field paths. SQL-looking quoted
+string literals remain ordinary data.
 
-The current checkpoint is contract discovery and a reviewable proposal.
-No proposed mutation has been implemented or published in OpenAPI. After
-product answers Q1–Q5, record the approved contract, then implement and
-checkpoint the routes, shared validation, persistence and contract tests.
-The hosted visual-query alias remains deferred; this proposal does not
-silently resolve its binding/access dependency.
+Sheet, visual, filter-group and field identities must be unique. Layout,
+filter scope, parameter, column, calculation and action references must
+resolve. Removing a referenced item rejects the candidate; no dependent
+content is silently removed. Coordinated changes can use whole replacement.
 
-## Baseline verification
+Empty sheets are valid. Incomplete field wells and unsupported visual query
+semantics are stored with `ANALYSIS_VISUAL_NOT_EXECUTABLE` diagnostics in
+`Errors`. The compiler/planner reports the current execution limitations;
+these diagnostics do not claim broader query or rendering parity. Invalid
+calculations and unresolved/denied bindings remain hard failures.
 
-Full root `npm test` exited 0 on 2026-10-13: **2,646 passed / 0 failed /
-18 skipped / 0 cancelled**. Every skip explicitly requires live PostgreSQL
-(`DATABASE_URL` is unset). These are the existing tests; this documents
-the baseline at the review gate, not implemented analysis API coverage.
+## Versions, retries and persistence
+
+Every update, resource mutation and delete requires the current `If-Match`:
+
+| Condition | Status / errorCode |
+| --- | --- |
+| Missing | 428 `V1_IF_MATCH_REQUIRED` |
+| Malformed or unquoted | 400 `V1_IF_MATCH_INVALID` |
+| Stale | 409 `METADATA_CONFLICT` |
+| Reused idempotency key with different payload/precondition | 409 `IDEMPOTENCY_CONFLICT` |
+| Tenant rate limit exceeded | 429 `RATE_LIMIT_EXCEEDED` plus `Retry-After` |
+
+The analysis version advances exactly once per successful edit. Hosted
+writes check access, data/security revisions and the analysis version in
+the same metadata transaction. Working-definition edits do not advance
+security/data revisions: doing so would invalidate concurrent bearer
+sessions instead of returning the specified version conflict. Access and
+binding checks always use current metadata. The loser rereads and reapplies.
+
+`Idempotency-Key` uses the existing ten-minute, process-local convention.
+The cache is scoped by tenant, namespace, user, method and path, binds the
+payload and precondition, and serializes both the retry key and the analysis.
+Concurrent creates with different IDs cannot commit under the same key.
+Replays recheck current asset/folder and dataset access. Delete replays
+retain the prior access snapshot for checks against current principals and
+folders; recreation of the ID prevents replaying the old delete. Successful
+responses are recorded after commit and before HTTP publication, so a
+connection loss cannot make a retry repeat that write.
+
+Local unauthenticated file workspaces persist an atomic overlay beside the
+trusted startup root: `.opensight-analyses.json` within a directory root,
+or a hidden sibling of a single-file root. No resource ID becomes a path.
+Updates use copy-on-write, file/directory sync and atomic rename under the
+existing legacy maintenance lock/fence. Tombstones prevent deleted imported
+analyses from reappearing after restart. The local store retains its existing
+single-process ownership model.
+
+Authenticated local workspaces store analysis definitions, bindings,
+versions, creator grants and tombstones together in the configured durable
+security store (`SecurityOptions.storePath`). A library configuration that
+omits that path remains ephemeral for existing routes; v1 mutations fail
+with `ANALYSIS_DURABLE_STORE_REQUIRED` rather than claim persistence.
+Local prepared bindings retain a server-owned identity pin: a different user
+with a same-ID prepared dataset cannot substitute their dataset, including
+through administrator access. Prepared bindings use the existing owner-scoped
+prep/source resolver; restartable local uploads/prep additionally require their existing durable
+store paths. Unversioned list/definition routes see the same saved drafts.
+
+Hosted metadata persists both legacy and owner-scoped prepared links with
+referential constraints. Analysis deletion removes only the working
+analysis and its outgoing links; already-published dashboard definitions
+remain unchanged. No Lambda integration or durable distributed replay/rate
+state was added; those remain the remote serverless handoff.
+
+The existing TypeScript headless SDK now maps all 13 operations. Analysis
+reads and edits return `{ value, etag }`, preserving the PascalCase wire
+envelope in `value`; updates require `ifMatch` in their options. Every
+mutation accepts `idempotencyKey`. Pagination remains header-based.
+The SDK imports canonical bundle types through a type-only reference to the
+existing Apache-2.0 `@opensight/bundle-parser` workspace package. No external
+dependencies were added. No AWS calls, network builds, merges or pushes were
+performed. `SOLUTION_DESIGN.md` is unchanged.
+
+## Verification
+
+`packages/api/test/v1-analyses.test.mjs` is included by the existing API
+`test/*.test.mjs` script and therefore by root `npm test`. It uses the shared
+hosted `serving` harness and temporary local servers/stores. Coverage includes
+all approved verbs, access-filtered pagination, every mutation's replay and
+preconditions, concurrent writers, local and hosted recovery, grants,
+revocation, owner/tenant isolation, injection, calculations, draft diagnostics,
+reference removal, dashboard preservation, maintenance fencing and the
+OpenAPI operation/binding contract.
+
+Full root `npm test` exited 0: **2,701 passed / 0 failed / 18 skipped /
+0 cancelled** (2,719 tests). Every skip explicitly requires live PostgreSQL
+(`DATABASE_URL` is unset). These counts come from one complete run of the
+final implementation, including all 24 analysis contracts and 23 SDK tests.
+The SDK OpenAPI coverage test caught the missing analysis client methods in
+an earlier run; those methods and transport tests were added before this
+successful run.
+
+| Suite | Passed | Failed | Skipped |
+| --- | ---: | ---: | ---: |
+| API | 537 | 0 | 16 |
+| Bundle parser | 199 | 0 | 0 |
+| Embedding SDK | 10 | 0 | 0 |
+| Headless SDK | 23 | 0 | 0 |
+| Interpreter | 32 | 0 | 0 |
+| Parity | 11 | 0 | 0 |
+| Query engine | 504 | 0 | 2 |
+| Web | 1,328 | 0 | 0 |
+| Root conformance | 57 | 0 | 0 |
+
+The static demo and required local shim were rebuilt from the tested code.
+All three offline captures are byte-identical to the preceding slice, with
+zero page errors or external requests. Reference differences remain 41.22%
+(classic), 33.58% (new-look), and 44.66% (Q); these are pixel differences,
+not fidelity grades. The [gap notes](issue-95-analyses-gap-notes.md) record
+the capture timing adjustment and unchanged gaps. No new visible issue was
+introduced and README media is unchanged. This is a local static artifact,
+not a deployed server.
+
+OpenAPI internal references and document links resolve. `git diff --check`
+passes. No product-owner action is required for this slice.
+
+### Proposal baseline (2026-10-13)
+
+The proposal's root run had **2,646 passed / 0 failed / 18 skipped**.
+All skips required live PostgreSQL. These counts describe the previous
+review gate, not the implementation's final verification.
 
 | Suite | Passed | Failed | Skipped |
 | --- | ---: | ---: | ---: |
@@ -185,15 +240,3 @@ the baseline at the review gate, not implemented analysis API coverage.
 | Query engine | 504 | 0 | 2 |
 | Web | 1,320 | 0 | 0 |
 | Root conformance | 57 | 0 | 0 |
-
-The initial sandboxed run was interrupted after existing HTTP tests
-reported `listen EPERM` on loopback sockets. The complete rerun outside
-that restriction produced the counts above. Runtime sources, dependency
-manifests, `SOLUTION_DESIGN.md` and the shipped OpenAPI contract match
-the master base; proposal links resolve locally. Nothing has been merged
-or pushed.
-
-The static demo rebuilt successfully. Three offline captures are
-byte-identical to the previous slice's captures; reference comparison
-and local artifact locations are recorded in the
-[gap notes](issue-95-analyses-gap-notes.md).

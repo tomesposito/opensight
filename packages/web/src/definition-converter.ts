@@ -312,3 +312,26 @@ export function convertDefinition(raw: unknown): BundleDefinition {
   }
   return result;
 }
+
+const inverseSchemas = new WeakMap<Schema, Schema>();
+function inverseSchema(schema: Schema): Schema {
+  const cached = inverseSchemas.get(schema); if (cached) return cached;
+  const inverted: Schema = Object.fromEntries(Object.entries(schema).map(([source, [target, children]]) =>
+    [target, children ? [source, inverseSchema(children)] : [source]]));
+  inverseSchemas.set(schema, inverted); return inverted;
+}
+
+/** Inverse of the UI's named-member projection. Opaque subtrees stay verbatim. */
+export function projectDefinition(raw: BundleDefinition): ObjectValue {
+  const check = (value: unknown, schema: Schema, path: string): void => {
+    if (Array.isArray(value)) { value.forEach((v, i) => check(v, schema, `${path}[${i}]`)); return; }
+    if (!value || typeof value !== 'object') return;
+    for (const [key, child] of Object.entries(value)) {
+      if (Object.hasOwn(schema, key) && schema[key]![0] !== key) throw new Error(`${path}.${key}: expected camelCase write member`);
+      const rule = Object.values(schema).find(r => r[0] === key);
+      if (rule?.[1]) check(child, rule[1], `${path}.${key}`);
+    }
+  };
+  check(raw, definition, '$.definition');
+  return object(map(raw, inverseSchema(definition), '$.definition'), '$.definition');
+}

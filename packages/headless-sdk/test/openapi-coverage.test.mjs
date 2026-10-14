@@ -36,6 +36,19 @@ const ROUTES = specRoutes();
 
 // The client method that implements each spec route.
 const COVERAGE = {
+  '/analyses|GET': 'listAnalyses',
+  '/analyses|POST': 'createAnalysis',
+  '/analyses/{id}|GET': 'getAnalysis',
+  '/analyses/{id}|PUT': 'updateAnalysis',
+  '/analyses/{id}|DELETE': 'deleteAnalysis',
+  '/analyses/{id}/sheets/{sheetId}/visuals|POST': 'addVisual',
+  '/analyses/{id}/sheets/{sheetId}/visuals/{visualId}|PUT': 'updateVisual',
+  '/analyses/{id}/sheets/{sheetId}/visuals/{visualId}|DELETE': 'removeVisual',
+  '/analyses/{id}/sheets/{sheetId}/layouts|PUT': 'setLayouts',
+  '/analyses/{id}/filter-groups|POST': 'addFilterGroup',
+  '/analyses/{id}/filter-groups/{filterGroupId}|PUT': 'updateFilterGroup',
+  '/analyses/{id}/filter-groups/{filterGroupId}|DELETE': 'removeFilterGroup',
+  '/analyses/{id}/calculated-fields|PUT': 'setCalculatedFields',
   '/datasets|GET': 'listDatasets',
   '/datasets/{id}|GET': 'getDataset',
   '/datasets/{id}|PUT': 'saveDataset',

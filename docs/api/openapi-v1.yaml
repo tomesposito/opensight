@@ -6,7 +6,7 @@ info:
     Builder-shaped REST surface for agents (issue #95, IDD D-37). Versioned
     and stable: breaking changes need a new version plus migration notes.
     The web app consumes the same API; existing unversioned routes are
-    untouched. Slices: datasets and querying (implemented), analyses, dashboards,
+    untouched. Slices: datasets, querying and analyses (implemented), dashboards,
     assets, MCP mapping.
 servers:
   - url: https://{host}/api/v1
@@ -19,7 +19,408 @@ tags:
   - name: datasets
   - name: sources
   - name: querying
+  - name: analyses
 paths:
+  /analyses:
+    get:
+      tags: [analyses]
+      operationId: list_analyses
+      summary: List analyses
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AnalysisPage' }
+        '400': { $ref: '#/components/responses/AnalysisError' }
+        '403': { $ref: '#/components/responses/AnalysisError' }
+        '404': { $ref: '#/components/responses/AnalysisError' }
+        '409': { $ref: '#/components/responses/AnalysisError' }
+        '422': { $ref: '#/components/responses/AnalysisError' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+    post:
+      tags: [analyses]
+      operationId: create_analysis
+      summary: Create analysis
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AnalysisCreate' }
+      responses:
+        '201':
+          description: Created
+          headers:
+            ETag:
+              description: Quoted integer version of the entire analysis
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AnalysisDescription' }
+        '400': { $ref: '#/components/responses/AnalysisError' }
+        '403': { $ref: '#/components/responses/AnalysisError' }
+        '404': { $ref: '#/components/responses/AnalysisError' }
+        '409': { $ref: '#/components/responses/AnalysisError' }
+        '422': { $ref: '#/components/responses/AnalysisError' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+  /analyses/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, pattern: '^[A-Za-z0-9_-]{1,512}$' }
+    get:
+      tags: [analyses]
+      operationId: describe_analysis
+      summary: Describe analysis
+      responses:
+        '200':
+          description: Success
+          headers:
+            ETag:
+              description: Quoted integer version of the entire analysis
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AnalysisDescription' }
+        '400': { $ref: '#/components/responses/AnalysisError' }
+        '403': { $ref: '#/components/responses/AnalysisError' }
+        '404': { $ref: '#/components/responses/AnalysisError' }
+        '409': { $ref: '#/components/responses/AnalysisError' }
+        '422': { $ref: '#/components/responses/AnalysisError' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+    put:
+      tags: [analyses]
+      operationId: update_analysis
+      summary: Update analysis
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AnalysisUpdate' }
+      responses:
+        '200':
+          description: Success
+          headers:
+            ETag:
+              description: Quoted integer version of the entire analysis
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AnalysisDescription' }
+        '400': { $ref: '#/components/responses/AnalysisError' }
+        '403': { $ref: '#/components/responses/AnalysisError' }
+        '404': { $ref: '#/components/responses/AnalysisError' }
+        '409': { $ref: '#/components/responses/AnalysisError' }
+        '422': { $ref: '#/components/responses/AnalysisError' }
+        '428': { $ref: '#/components/responses/AnalysisError' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+    delete:
+      tags: [analyses]
+      operationId: delete_analysis
+      summary: Delete analysis
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AnalysisRemoved' }
+        '400': { $ref: '#/components/responses/AnalysisError' }
+        '403': { $ref: '#/components/responses/AnalysisError' }
+        '404': { $ref: '#/components/responses/AnalysisError' }
+        '409': { $ref: '#/components/responses/AnalysisError' }
+        '422': { $ref: '#/components/responses/AnalysisError' }
+        '428': { $ref: '#/components/responses/AnalysisError' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+  /analyses/{id}/sheets/{sheetId}/visuals:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, pattern: '^[A-Za-z0-9_-]{1,512}$' }
+      - name: sheetId
+        in: path
+        required: true
+        schema: { type: string, pattern: '^[A-Za-z0-9_-]{1,512}$' }
+    post:
+      tags: [analyses]
+      operationId: add_visual
+      summary: Add visual
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BundleVisual' }
+      responses:
+        '200':
+          description: Success
+          headers:
+            ETag:
+              description: Quoted integer version of the entire analysis
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AnalysisDescription' }
+        '400': { $ref: '#/components/responses/AnalysisError' }
+        '403': { $ref: '#/components/responses/AnalysisError' }
+        '404': { $ref: '#/components/responses/AnalysisError' }
+        '409': { $ref: '#/components/responses/AnalysisError' }
+        '422': { $ref: '#/components/responses/AnalysisError' }
+        '428': { $ref: '#/components/responses/AnalysisError' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+  /analyses/{id}/sheets/{sheetId}/visuals/{visualId}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, pattern: '^[A-Za-z0-9_-]{1,512}$' }
+      - name: sheetId
+        in: path
+        required: true
+        schema: { type: string, pattern: '^[A-Za-z0-9_-]{1,512}$' }
+      - name: visualId
+        in: path
+        required: true
+        schema: { type: string, pattern: '^[A-Za-z0-9_-]{1,512}$' }
+    put:
+      tags: [analyses]
+      operationId: update_visual
+      summary: Update visual
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BundleVisual' }
+      responses:
+        '200':
+          description: Success
+          headers:
+            ETag:
+              description: Quoted integer version of the entire analysis
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AnalysisDescription' }
+        '400': { $ref: '#/components/responses/AnalysisError' }
+        '403': { $ref: '#/components/responses/AnalysisError' }
+        '404': { $ref: '#/components/responses/AnalysisError' }
+        '409': { $ref: '#/components/responses/AnalysisError' }
+        '422': { $ref: '#/components/responses/AnalysisError' }
+        '428': { $ref: '#/components/responses/AnalysisError' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+    delete:
+      tags: [analyses]
+      operationId: remove_visual
+      summary: Remove visual
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Success
+          headers:
+            ETag:
+              description: Quoted integer version of the entire analysis
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AnalysisDescription' }
+        '400': { $ref: '#/components/responses/AnalysisError' }
+        '403': { $ref: '#/components/responses/AnalysisError' }
+        '404': { $ref: '#/components/responses/AnalysisError' }
+        '409': { $ref: '#/components/responses/AnalysisError' }
+        '422': { $ref: '#/components/responses/AnalysisError' }
+        '428': { $ref: '#/components/responses/AnalysisError' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+  /analyses/{id}/sheets/{sheetId}/layouts:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, pattern: '^[A-Za-z0-9_-]{1,512}$' }
+      - name: sheetId
+        in: path
+        required: true
+        schema: { type: string, pattern: '^[A-Za-z0-9_-]{1,512}$' }
+    put:
+      tags: [analyses]
+      operationId: set_layouts
+      summary: Set layouts
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BundleLayouts' }
+      responses:
+        '200':
+          description: Success
+          headers:
+            ETag:
+              description: Quoted integer version of the entire analysis
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AnalysisDescription' }
+        '400': { $ref: '#/components/responses/AnalysisError' }
+        '403': { $ref: '#/components/responses/AnalysisError' }
+        '404': { $ref: '#/components/responses/AnalysisError' }
+        '409': { $ref: '#/components/responses/AnalysisError' }
+        '422': { $ref: '#/components/responses/AnalysisError' }
+        '428': { $ref: '#/components/responses/AnalysisError' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+  /analyses/{id}/filter-groups:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, pattern: '^[A-Za-z0-9_-]{1,512}$' }
+    post:
+      tags: [analyses]
+      operationId: add_filter_group
+      summary: Add filter group
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BundleFilterGroup' }
+      responses:
+        '200':
+          description: Success
+          headers:
+            ETag:
+              description: Quoted integer version of the entire analysis
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AnalysisDescription' }
+        '400': { $ref: '#/components/responses/AnalysisError' }
+        '403': { $ref: '#/components/responses/AnalysisError' }
+        '404': { $ref: '#/components/responses/AnalysisError' }
+        '409': { $ref: '#/components/responses/AnalysisError' }
+        '422': { $ref: '#/components/responses/AnalysisError' }
+        '428': { $ref: '#/components/responses/AnalysisError' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+  /analyses/{id}/filter-groups/{filterGroupId}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, pattern: '^[A-Za-z0-9_-]{1,512}$' }
+      - name: filterGroupId
+        in: path
+        required: true
+        schema: { type: string, pattern: '^[A-Za-z0-9_-]{1,512}$' }
+    put:
+      tags: [analyses]
+      operationId: update_filter_group
+      summary: Update filter group
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BundleFilterGroup' }
+      responses:
+        '200':
+          description: Success
+          headers:
+            ETag:
+              description: Quoted integer version of the entire analysis
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AnalysisDescription' }
+        '400': { $ref: '#/components/responses/AnalysisError' }
+        '403': { $ref: '#/components/responses/AnalysisError' }
+        '404': { $ref: '#/components/responses/AnalysisError' }
+        '409': { $ref: '#/components/responses/AnalysisError' }
+        '422': { $ref: '#/components/responses/AnalysisError' }
+        '428': { $ref: '#/components/responses/AnalysisError' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+    delete:
+      tags: [analyses]
+      operationId: remove_filter_group
+      summary: Remove filter group
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Success
+          headers:
+            ETag:
+              description: Quoted integer version of the entire analysis
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AnalysisDescription' }
+        '400': { $ref: '#/components/responses/AnalysisError' }
+        '403': { $ref: '#/components/responses/AnalysisError' }
+        '404': { $ref: '#/components/responses/AnalysisError' }
+        '409': { $ref: '#/components/responses/AnalysisError' }
+        '422': { $ref: '#/components/responses/AnalysisError' }
+        '428': { $ref: '#/components/responses/AnalysisError' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+  /analyses/{id}/calculated-fields:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, pattern: '^[A-Za-z0-9_-]{1,512}$' }
+    put:
+      tags: [analyses]
+      operationId: set_calculated_fields
+      summary: Set calculated fields
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BundleCalculatedFields' }
+      responses:
+        '200':
+          description: Success
+          headers:
+            ETag:
+              description: Quoted integer version of the entire analysis
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AnalysisDescription' }
+        '400': { $ref: '#/components/responses/AnalysisError' }
+        '403': { $ref: '#/components/responses/AnalysisError' }
+        '404': { $ref: '#/components/responses/AnalysisError' }
+        '409': { $ref: '#/components/responses/AnalysisError' }
+        '422': { $ref: '#/components/responses/AnalysisError' }
+        '428': { $ref: '#/components/responses/AnalysisError' }
+        '429': { $ref: '#/components/responses/RateLimited' }
   /datasets:
     get:
       tags: [datasets]
@@ -443,6 +844,156 @@ components:
       description: Quoted integer version, e.g. "3" (optimistic concurrency)
       schema: { type: string, pattern: '^"(0|[1-9][0-9]*)"$' }
   schemas:
+    DatasetBindings:
+      type: object
+      description: >-
+        Exact map from every BundleDefinition dataSetIdentifierDeclarations
+        identifier to one typed reference. No extra or missing identifiers.
+        Prepared datasets resolve only under the authenticated user's owner
+        scope; legacy dataset source ownership must also match that user.
+        No caller ownerId, tenantId, userId or ARN is execution authority.
+        dataSetArn remains a definition label and is never used for resolution.
+      propertyNames: { type: string, minLength: 1 }
+      additionalProperties:
+        oneOf:
+          - type: object
+            additionalProperties: false
+            required: [kind, id]
+            properties:
+              kind: { const: dataset }
+              id: { type: string, pattern: '^[A-Za-z0-9_-]{1,512}$' }
+          - type: object
+            additionalProperties: false
+            required: [kind, id]
+            properties:
+              kind: { const: prepared-dataset }
+              id: { type: string, pattern: '^[A-Za-z0-9_-]{1,128}$' }
+    AnalysisCreate:
+      type: object
+      additionalProperties: false
+      required: [analysisId, name, definition, datasetBindings]
+      properties:
+        analysisId: { type: string, pattern: '^[A-Za-z0-9_-]{1,512}$' }
+        name: { type: string, minLength: 1, maxLength: 512 }
+        definition: { $ref: '#/components/schemas/BundleDefinition' }
+        datasetBindings: { $ref: '#/components/schemas/DatasetBindings' }
+    AnalysisUpdate:
+      type: object
+      additionalProperties: false
+      required: [name, definition, datasetBindings]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 512 }
+        definition: { $ref: '#/components/schemas/BundleDefinition' }
+        datasetBindings: { $ref: '#/components/schemas/DatasetBindings' }
+    BundleDefinition:
+      type: object
+      required: [dataSetIdentifierDeclarations]
+      description: >-
+        CamelCase BundleDefinition, with opaque non-executable properties
+        preserved. PascalCase writes, SQL envelopes/operators and principal or
+        grant/placement assertions are rejected. All calculated fields,
+        including unused fields and calculated measure expressions, pass the
+        shared allowlisted expression parser against current authorized schema.
+        Dangling dependencies reject all mutation forms. Empty sheets and
+        incomplete field wells persist with located Errors diagnostics.
+      properties:
+        dataSetIdentifierDeclarations:
+          type: array
+          items:
+            type: object
+            required: [identifier, dataSetArn]
+            properties:
+              identifier: { type: string, minLength: 1 }
+              dataSetArn: { type: string, minLength: 1 }
+        sheets:
+          type: array
+          items:
+            type: object
+            required: [sheetId]
+            properties:
+              sheetId: { type: string, pattern: '^[A-Za-z0-9_-]{1,512}$' }
+              name: { type: string }
+              visuals:
+                type: array
+                items: { $ref: '#/components/schemas/BundleVisual' }
+              layouts: { $ref: '#/components/schemas/BundleLayouts' }
+        calculatedFields: { $ref: '#/components/schemas/BundleCalculatedFields' }
+        filterGroups:
+          type: array
+          items: { $ref: '#/components/schemas/BundleFilterGroup' }
+        parameterDeclarations: { type: array, items: { type: object } }
+    BundleVisual:
+      type: object
+      minProperties: 1
+      maxProperties: 1
+      description: One camelCase visual variant; visualId must match the path on replacement
+      additionalProperties:
+        type: object
+        required: [visualId]
+        properties:
+          visualId: { type: string, pattern: '^[A-Za-z0-9_-]{1,512}$' }
+    BundleLayouts:
+      type: array
+      description: Complete BundleSheet.layouts; an empty array removes layouts
+      items: { type: object }
+    BundleFilterGroup:
+      type: object
+      required: [filterGroupId, filters, scopeConfiguration, status]
+      properties:
+        filterGroupId: { type: string, pattern: '^[A-Za-z0-9_-]{1,512}$' }
+        filters: { type: array, items: { type: object } }
+        scopeConfiguration: { type: object }
+        status: { type: string, enum: [ENABLED, DISABLED] }
+        crossDataset: { type: string }
+    BundleCalculatedFields:
+      type: array
+      description: Complete calculatedFields collection; an empty array removes fields
+      items:
+        type: object
+        additionalProperties: false
+        required: [dataSetIdentifier, name, expression]
+        properties:
+          dataSetIdentifier: { type: string, minLength: 1 }
+          name: { type: string, minLength: 1 }
+          expression: { type: string, minLength: 1, maxLength: 10000 }
+    AnalysisDescription:
+      type: object
+      additionalProperties: false
+      required: [AnalysisId, Name, Definition, Errors]
+      properties:
+        AnalysisId: { type: string }
+        Name: { type: string }
+        Definition: { type: object, description: Existing PascalCase QuickSight definition projection }
+        Errors:
+          type: array
+          items:
+            type: object
+            required: [errorCode, message, path]
+            properties:
+              errorCode: { type: string }
+              message: { type: string }
+              path: { type: string }
+    AnalysisPage:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          description: Pagination is applied after current asset and folder access filtering
+          items:
+            type: object
+            required: [kind, id, name]
+            properties:
+              kind: { const: analysis }
+              id: { type: string }
+              name: { type: string }
+        nextCursor: { type: [string, 'null'] }
+    AnalysisRemoved:
+      type: object
+      required: [id, removed]
+      properties:
+        id: { type: string }
+        removed: { const: true }
     Error:
       type: object
       required: [errorCode]
@@ -632,6 +1183,22 @@ components:
               kind: { type: string, enum: [source, dataset] }
               id: { type: string }
   responses:
+    AnalysisError:
+      description: >-
+        Named error. Missing If-Match is 428 V1_IF_MATCH_REQUIRED; malformed
+        If-Match is 400 V1_IF_MATCH_INVALID; stale version is 409
+        METADATA_CONFLICT. Validation errors include a field path. Every
+        update/delete requires the quoted current whole-analysis version.
+        Creates require build capability and grant creator co-owner; edits
+        require build plus co-owner through asset and folder grants. Definition
+        bodies cannot overwrite grants or placement. Deletes retain published
+        dashboard definitions. Idempotency-Key uses the established ten-minute
+        single-node convention, checks current access on replay, rejects
+        conflicting payloads and never repeats a write. Successful edits
+        increment the analysis version exactly once.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
     RateLimited:
       description: Per-tenant rate limit exceeded
       headers:
