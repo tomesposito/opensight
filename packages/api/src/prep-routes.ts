@@ -1,3 +1,4 @@
+import { MetadataError } from './metadata-db.js';
 import { randomUUID } from 'node:crypto';
 import { materializationReason } from './blaze-policy.js';
 import { BlazeStore, BlazeError, directSettings, executionSettings, type BlazeTable, type ExecutionSettings, type CachedInput } from './blaze.js';
@@ -17,7 +18,7 @@ import { RESOURCE_ID } from './store.js';
 export interface PrepPostgresBinding {
   namespaceId: string; userId: string; source: PrepSource; config: { connectionEnv: string };
 }
-export interface StoredPrep { namespaceId: string; userId: string; resource: BundleDataSet; execution?: ExecutionSettings }
+export interface StoredPrep { namespaceId: string; userId: string; resource: BundleDataSet; execution?: ExecutionSettings; version?: number; updatedAt?: string }
 type Stored = StoredPrep;
 export interface PrepState { version: 1; datasets: Stored[] }
 type State = PrepState;
@@ -26,7 +27,7 @@ export function validatePrepState(raw: unknown): State {
   if (s.version !== 1 || !Array.isArray(s.datasets) || s.datasets.length > 1000) prepFail('INVALID_PREP_PIPELINE', '$', 'Invalid prep store');
   const seen = new Set<string>();
   for (const entry of s.datasets) {
-    const v = prepObject(entry, ['namespaceId', 'userId', 'resource', 'execution'], '$.datasets');
+    const v = prepObject(entry, ['namespaceId', 'userId', 'resource', 'execution', 'version', 'updatedAt'], '$.datasets');
     prepName(v.namespaceId, '$.namespaceId'); prepName(v.userId, '$.userId');
     if (v.execution !== undefined) executionSettings(v.execution);
     const r = parseBundleResource(v.resource);
@@ -138,7 +139,7 @@ export class PrepRoutes {
           const e = draft.datasets.find(e => this.owned(identity, e) && e.resource.dataSetId === id);
           if (!e) prepFail('PREP_NOT_FOUND', '$.dataset', 'Prepared dataset not found');
           if (settings.mode === 'DIRECT_QUERY') this.requireDirect(identity, id, draft);
-          e.execution = settings;
+          e.execution = settings; e.version = (e.version ?? 1) + 1; e.updatedAt = new Date().toISOString();
           this.enforceModes(draft);
         });
         const previous = this.blaze.status(key).mode;
@@ -194,6 +195,21 @@ export class PrepRoutes {
     if (current.datasets.some(e => e.execution?.mode !== 'BLAZE' && routes.requirement(e, e.resource.dataSetId, current))) await routes.store.change(draft => routes.enforceModes(draft));
     routes.syncModes();
     return routes;
+  }
+  assetResources(identity: Identity): import('./metadata-resources.js').MetadataResource[] {
+    return this.store.read().datasets.filter(e => this.owned(identity, e)).map(e => ({ kind: 'prepared-dataset', id: e.resource.dataSetId, ownerId: e.userId, version: e.version ?? 1, body: { resource: e.resource, ...(e.updatedAt ? { updatedAt: e.updatedAt } : {}), ...(e.execution ? { execution: e.execution } : {}) } }));
+  }
+  async deleteAsset(identity: Identity, id: string, version: number, check: () => void): Promise<void> {
+    if (!this.persistent) throw new MetadataError('ASSET_DURABLE_STORE_REQUIRED', 503);
+    await this.store.change(state => {
+      check();
+      const entry = state.datasets.find(e => this.owned(identity, e) && e.resource.dataSetId === id);
+      if (!entry) throw new MetadataError('RESOURCE_NOT_FOUND', 404);
+      if ((entry.version ?? 1) !== version) throw new MetadataError('ASSET_PRECONDITION_FAILED', 412);
+      if (this.datasets(identity, state).some(d => this.references(d.pipeline).some(ref => typeof ref !== 'string' && ref.dataset === id))) throw new MetadataError('ASSET_DELETE_REFERENCED', 409);
+      state.datasets = state.datasets.filter(e => e !== entry);
+    });
+    this.blaze.remove(this.key(identity, id)); this.configured.delete(this.key(identity, id));
   }
   private owned(identity: Identity, entry: Pick<Stored, 'namespaceId' | 'userId'>): boolean { return identity.namespaceId === entry.namespaceId && identity.userId === entry.userId; }
   private async sources(identity: Identity): Promise<PrepSource[]> {
@@ -287,17 +303,18 @@ export class PrepRoutes {
           const index = draft.datasets.findIndex(e => this.owned(identity, e) && e.resource.dataSetId === id);
           if (index < 0) {
             if (draft.datasets.length >= 1000 || draft.datasets.filter(e => this.owned(identity, e)).length >= 100) prepFail('PREP_LIMIT_EXCEEDED', '$.datasets', 'Prepared dataset limit reached');
-            draft.datasets.push({ ...identity, resource });
-          } else draft.datasets[index] = { ...draft.datasets[index]!, resource };
+            draft.datasets.push({ ...identity, resource, version: 1, updatedAt: new Date().toISOString() });
+          } else draft.datasets[index] = { ...draft.datasets[index]!, resource, version: (draft.datasets[index]!.version ?? 1) + 1, updatedAt: new Date().toISOString() };
           this.enforceModes(draft);
           return index < 0;
         });
         this.syncModes();
         this.invalidate(identity, id);
+        response.setHeader('ETag', `"${this.find(identity, id).version ?? 1}"`);
         send(response, created ? 201 : 200, { resource, persistence: this.persistent ? 'file' : 'ephemeral' }); return;
       }
       if (!existing) prepFail('PREP_NOT_FOUND', '$.dataset', 'Prepared dataset not found');
-      if (request.method === 'GET') { send(response, 200, { resource: existing.resource, persistence: this.persistent ? 'file' : 'ephemeral' }); return; }
+      if (request.method === 'GET') { response.setHeader('ETag', `"${existing.version ?? 1}"`); send(response, 200, { resource: existing.resource, persistence: this.persistent ? 'file' : 'ephemeral' }); return; }
       this.invalidate(identity, id); this.blaze.remove(this.key(identity, id));
       this.configured.delete(this.key(identity, id));
       await this.store.change(draft => { draft.datasets = draft.datasets.filter(e => !(this.owned(identity, e) && e.resource.dataSetId === id)); });

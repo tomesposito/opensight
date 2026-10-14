@@ -30,20 +30,28 @@ reconciliation; no new product answer is inferred and neither IDDs nor
 [D-52](idd/D-52-dashboard-lifecycle.md), and [D-53](idd/D-53-dashboard-reader-share-access.md)
 otherwise apply directly.
 
+## Assets slice contract update (D-58–D-61)
+
+The [assets slice](headless-v1-assets.md) now owns the shared share/delete
+handlers. Grant GET/PUT/DELETE requires build plus co-owner; PUT requires the
+current asset If-Match. Missing asset-delete preconditions return 428.
+Latest dashboard describe ETags identify the asset revision, while `Version`
+and pinned-version ETags identify the frozen publication. Share reads use PascalCase. These confirmed rules apply to the endpoints below.
+
 ## Endpoints (`/api/v1/...`)
 
 | Method and path | operationId | Shipped behavior |
 | --- | --- | --- |
 | `POST /analyses/{id}/publish` | `publish_analysis` | `{ dashboardId? }`; omit to mint an independent dashboard, supply to append to its active matching source; 201 `{ DashboardId, Version, PublishedAt, Errors }` and quoted-integer ETag |
 | `GET /dashboards` | `list_dashboards` | Access-filtered latest-version summaries, sorted by dashboard ID |
-| `GET /dashboards/{id}` | `describe_dashboard` | Latest PascalCase envelope with `Version`, `PublishedAt`, `SourceAnalysisId`, and ETag |
+| `GET /dashboards/{id}` | `describe_dashboard` | Latest PascalCase envelope with `Version`, `PublishedAt`, `SourceAnalysisId`, and current asset-revision ETag |
 | `GET /dashboards/{id}/versions` | `list_dashboard_versions` | Retained `{ version, publishedAt, publishedBy }` entries in ascending version order |
 | `GET /dashboards/{id}/versions/{version}` | `describe_dashboard_version` | Exact frozen definition and version ETag |
 | `DELETE /dashboards/{id}` | `delete_dashboard` | Removes dashboard and every version; requires latest `If-Match` |
 | `DELETE /dashboards/{id}/versions/{version}` | `delete_dashboard_version` | Removes a non-latest version; requires latest `If-Match` |
-| `GET /dashboards/{id}/shares/{principalType}/{principalId}` | `get_dashboard_share` | Existing `{ principal: { type, id }, role }` grant shape; admin only |
-| `PUT /dashboards/{id}/shares/{principalType}/{principalId}` | `set_dashboard_share` | `{ role: "viewer" \| "co-owner" }`; admin only |
-| `DELETE /dashboards/{id}/shares/{principalType}/{principalId}` | `delete_dashboard_share` | `{ deleted: true }`; admin only |
+| `GET /dashboards/{id}/shares/{principalType}/{principalId}` | `get_dashboard_share` | `{ Principal: { Type, Id }, Role }`; build plus co-owner |
+| `PUT /dashboards/{id}/shares/{principalType}/{principalId}` | `set_dashboard_share` | `{ role: "viewer" \| "co-owner" }`; build plus co-owner and If-Match |
+| `DELETE /dashboards/{id}/shares/{principalType}/{principalId}` | `delete_dashboard_share` | `{ Deleted: true }`; build plus co-owner |
 | `POST /dashboards/{id}/versions/{version}/visuals/{visualId}/query` | `query_dashboard_visual` | Live query with optional `{ controlValues: { controlId: [typedValue] } }` |
 | `POST /dashboards/{id}/exports` | `create_dashboard_export` | `{ version?, format: "csv" \| "pdf" }`; synchronous attachment, default latest |
 
@@ -60,7 +68,8 @@ rejects query strings. The complete schemas are in
 | --- | --- |
 | Source mismatch or severed republish link | 409 `DASHBOARD_SOURCE_MISMATCH` |
 | Unvalidatable definition at publish | Validation's named error, with `Errors` |
-| Missing, malformed or stale dashboard delete precondition | 412 `DASHBOARD_PRECONDITION_FAILED` |
+| Missing, malformed or stale asset delete precondition | 428 `V1_IF_MATCH_REQUIRED`, 400 `V1_IF_MATCH_INVALID`, 412 `ASSET_PRECONDITION_FAILED` |
+| Version-prune precondition | 412 `DASHBOARD_PRECONDITION_FAILED` |
 | Attempt to prune latest | 409 `DASHBOARD_LATEST_VERSION` |
 | Undeclared control, ad-hoc filter, SQL or authority envelope | 422 `DASHBOARD_UNDECLARED_CONTROL` |
 | Invalid typed control value | 422 `DASHBOARD_CONTROL_VALUE_INVALID` |
@@ -81,7 +90,7 @@ co-owner/folder access are checked before publication. Source version and
 current security revisions are checked at commit. Publication preserves
 existing dashboard grants and placement; new dashboards receive the creator's
 co-owner grant. Delete/prune reuse build capability and dashboard co-owner
-access, including folder restrictions. Grant management remains administrator-only.
+access, including folder restrictions. Grant management requires build plus co-owner (D-58).
 
 Local unauthenticated workspaces extend the existing atomic
 `.opensight-analyses.json` overlay with dashboard histories. Authenticated
@@ -204,7 +213,7 @@ comparisons are recorded in [gap notes](issue-95-dashboards-gap-notes.md).
 Deferred by the brief: serverless `/api/v1` integration and durable distributed
 rate/retry adapters (remote handoff; `serverless-application.ts` and Lambda
 composition unchanged), anonymous/delegated data access, stored snapshots,
-job-backed large exports, assets and dashboard MCP tools. No product decision
+job-backed large exports, dashboard MCP tools. The assets decided core is implemented separately. No product decision
 is required to use the implemented slice. Decision-document housekeeping is
 deferred: D-49's recommendation and implications still describe the older
 executable-only gate, and D-54 can record the brief's synchronous CSV/PDF

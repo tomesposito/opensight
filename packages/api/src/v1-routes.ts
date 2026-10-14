@@ -1,3 +1,5 @@
+import { AssetRoutes } from './asset-routes.js';
+import type { AssetBackend } from './asset-model.js';
 import { DashboardRoutes } from './dashboard-routes.js';
 import { HostedDashboards } from './hosted-dashboards.js';
 import type { DashboardBackend } from './dashboard-model.js';
@@ -73,14 +75,16 @@ export class V1Routes {
   private readonly limiter: RateLimiter;
   private readonly idempotency = new Map<string, { status: number; body: unknown; expiresAt: number }>();
   private readonly analyses = new AnalysisRoutes({ paging: r => this.paging(r), ifMatch: r => this.ifMatch(r) });
+  private readonly assets = new AssetRoutes({ paging: r => this.paging(r), ifMatch: r => this.ifMatch(r) });
   private readonly dashboards: DashboardRoutes;
   constructor(private readonly hostedRoutes?: HostedDataRoutes, env: NodeJS.ProcessEnv = process.env) { this.limiter = new RateLimiter(env); this.dashboards = new DashboardRoutes({ paging: r => this.paging(r) }, env); }
   private get routes(): HostedDataRoutes { if (!this.hostedRoutes) throw new MetadataError('HOSTED_API_REQUIRED', 503); return this.hostedRoutes; }
-  async local(request: IncomingMessage, response: ServerResponse, path: string, backend: AnalysisBackend, dashboards: DashboardBackend): Promise<void> {
+  async local(request: IncomingMessage, response: ServerResponse, path: string, backend: AnalysisBackend, dashboards: DashboardBackend, assets: AssetBackend): Promise<void> {
     try {
       const gate = this.limiter.take(backend.scope.tenantId);
       if (!gate.allowed) { response.setHeader('Retry-After', String(gate.retryAfter)); v1Fail('RATE_LIMIT_EXCEEDED', 429, 'Rate limit exceeded'); }
-      if (/^\/api\/v1\/dashboards(?:\/|$)/.test(path) || path.endsWith('/publish')) await this.dashboards.route(request, response, path, dashboards);
+      if (this.assets.matches(path, request.method)) await this.assets.route(request, response, path, assets);
+      else if (/^\/api\/v1\/dashboards(?:\/|$)/.test(path) || path.endsWith('/publish')) await this.dashboards.route(request, response, path, dashboards);
       else await this.analyses.route(request, response, path, backend);
     } catch (error) { request.resume(); this.sendError(response, error); }
   }
@@ -91,6 +95,11 @@ export class V1Routes {
       const gate = this.limiter.take(context.tenantId);
       if (!gate.allowed) { response.setHeader('Retry-After', String(gate.retryAfter)); v1Fail('RATE_LIMIT_EXCEEDED', 429, `Rate limit exceeded; retry after ${gate.retryAfter}s`); }
       this.routes.data.begin(context, undefined, recheck);
+      if (this.assets.matches(path, request.method)) {
+        await this.assets.route(request, response, path, { scope: context, transaction: async (write, work) => {
+          await recheck(); return this.routes.data.sources.metadata.assetTransaction(context, write, work);
+        } }); return true;
+      }
       if (/^\/api\/v1\/dashboards(?:\/|$)/.test(path) || /^\/api\/v1\/analyses\/[^/]+\/publish$/.test(path)) {
         await this.dashboards.route(request, response, path, new HostedDashboards(this.routes, context, recheck)); return true;
       }
@@ -239,6 +248,7 @@ export class V1Routes {
           const d = await this.routes.prep.describe(context, id);
           const sources: { id: string }[] = [], datasets: { id: string }[] = [];
           for (const i of d.inputs) (i.kind === 'source' ? sources : datasets).push({ id: i.id });
+          response.setHeader('ETag', `"${d.version}"`);
           await publish(200, { id, name: d.resource.name, version: d.version, execution: { mode: d.execution.mode, intervalMinutes: d.execution.intervalMinutes },
             schema: { columns: d.columns },
             lineage: { sources, datasets, steps: d.steps.length },

@@ -55,7 +55,8 @@ export class LocalDashboards implements DashboardBackend {
     state.assets = [...(state.assets ?? []).filter(a => !(a.namespaceId === asset.namespaceId && a.kind === 'dashboard' && a.id === asset.id)), asset];
     this.access(asset.id, 'write', state);
   }
-  async grants(id: string) { await this.authorize(id, 'admin'); return (await this.accessSnapshot(id) as OrganizedAsset | null)?.grants; }
+  async revision(id: string) { const asset = await this.accessSnapshot(id) as OrganizedAsset | null; return asset?.assetVersion ?? (this.store?.assetResources().find(r => r.kind === 'dashboard' && r.id === id)?.version) ?? (await this.get(id)).latest; }
+  async grants(id: string) { await this.authorize(id, 'write'); return (await this.accessSnapshot(id) as OrganizedAsset | null)?.grants; }
   async change(id: string, change: DashboardChange, stamp: unknown) {
     await this.recheck();
     if (!this.organization) return this.store!.mutateDashboard(id, change, this.identity.userId);
@@ -74,7 +75,9 @@ export class LocalDashboards implements DashboardBackend {
       const next = changeDashboard(prior?.deleted ? undefined : prior?.dashboard, change, this.identity.userId);
       const asset: OrganizedAsset = prior ?? { id, kind: 'dashboard', namespaceId: this.identity.namespaceId, folderId: null, grants: [{ principal: { type: 'user', id: this.identity.userId }, role: 'co-owner' }] };
       if (!prior) (state.assets ??= []).push(asset);
-      if (!next) { asset.deleted = true; delete asset.dashboard; delete asset.definition; }
+      asset.assetVersion = (prior?.assetVersion ?? prior?.dashboard?.latest ?? 0) + 1;
+      asset.updatedAt = new Date().toISOString();
+      if (!next) { delete asset.grants; asset.deleted = true; delete asset.dashboard; delete asset.definition; }
       else { delete asset.deleted; asset.dashboard = next; asset.definition = describeDashboard(next); }
       if (change.kind === 'share') asset.grants = validateGrants(changeDashboardGrants(asset.grants, change), this.identity.namespaceId, state);
       validateOrganization(state); return next;

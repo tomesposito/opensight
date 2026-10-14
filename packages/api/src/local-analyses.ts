@@ -50,7 +50,11 @@ export class LocalAnalyses implements AnalysisBackend {
     const wire = this.organization ? this.organization.definition(this.identity.namespaceId, 'analysis', id) : this.store?.get('analysis', id);
     if (!wire) throw new MetadataError('RESOURCE_NOT_FOUND', 404);
     const stored = !this.organization && this.store?.analysisRecord(id);
-    if (stored) return stored;
+    if (stored) {
+      const refs = this.store?.assetResources().find(r => r.kind === 'analysis' && r.id === id)?.body.datasets as { kind: string; ownerId?: string }[] | undefined;
+      if (refs?.some(r => r.kind === 'prepared-dataset' && r.ownerId !== this.identity.userId)) analysisFail('SECURITY_REJECTED', '$.datasetBindings', 'Dataset owner does not match authenticated user');
+      return stored;
+    }
     if (asset?.datasetBindings && Object.values(asset.datasetBindings).some(b => b.kind === 'prepared-dataset') && asset.datasetBindingOwnerId !== this.identity.userId) {
       analysisFail('SECURITY_REJECTED', '$.datasetBindings', 'Dataset owner does not match authenticated user');
     }
@@ -97,7 +101,7 @@ export class LocalAnalyses implements AnalysisBackend {
       const asset = exists && prior ? prior : { id, kind: 'analysis' as const, namespaceId: this.identity.namespaceId, folderId: null,
         grants: [{ principal: { type: 'user' as const, id: this.identity.userId }, role: 'co-owner' as const }] };
       if (!prior) (state.assets ??= []).push(asset); else if (asset !== prior) state.assets![state.assets!.indexOf(prior)] = asset;
-      asset.analysisVersion = version + 1;
+      asset.analysisVersion = version + 1; asset.updatedAt = new Date().toISOString();
       if (record) {
         delete asset.deleted;
         asset.definition = { AnalysisId: id, Name: record.name, Definition: projectDefinition(record.definition) };
@@ -106,11 +110,11 @@ export class LocalAnalyses implements AnalysisBackend {
         else delete asset.datasetBindingOwnerId;
       } else {
         for (const item of state.assets ?? []) if (item.namespaceId === this.identity.namespaceId && item.dashboard?.sourceAnalysisId === id) item.dashboard.sourceActive = false;
-        asset.deleted = true; delete asset.definition; delete asset.datasetBindings; delete asset.datasetBindingOwnerId; }
+        asset.deleted = true; delete asset.grants; asset.folderId = null; delete asset.definition; delete asset.datasetBindings; delete asset.datasetBindingOwnerId; }
       validateOrganization(state);
     });
     if (this.root) await legacyWrite(this.root, commit); else await commit();
   }
-  async save(record: AnalysisRecord, version: number, stamp: unknown) { await this.mutation(record.id, record, version, stamp); }
+  async save(record: AnalysisRecord, version: number, stamp: unknown) { await this.mutation(record.id, { ...record, updatedAt: new Date().toISOString(), bindingOwnerId: this.identity.userId }, version, stamp); }
   async remove(id: string, version: number, stamp: unknown) { await this.mutation(id, null, version, stamp); }
 }

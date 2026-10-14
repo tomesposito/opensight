@@ -304,7 +304,7 @@ test('v1 analyses write admission: HTTP errors, SQL injection, all unused calcul
   for (const body of [null, [], {}, { ...create('bad'), definition: { ...draft(), options: 'wrong' } }, { ...create('bad'), definition: { ...draft(), sheets: [{ sheetId: 'bad', name: 1 }] } }, { ...create('bad'), definition: { ...draft(), sheets: [{ sheetId: 'bad', visuals: [{ kpiVisual: { visualId: 'bad', chartConfiguration: { fieldWells: { values: 'wrong' } } } }] }] } }, { ...create('bad'), Name: 'wrong' }, { ...create('bad'), definition: projectDefinition(draft()) }, { ...create('bad'), datasetBindings: {} }, { ...create('bad'), datasetBindings: { sales: { kind: 'prepared-dataset', id: 'sales' }, extra: { kind: 'dataset', id: 'sales' } } }]) error(await f.request(base, { method: 'POST', body }), 422, undefined, true);
   for (const body of [{ ...create('bad'), sql: 'SELECT 1' }, { ...create('bad'), definition: { ...draft(), extension: { customSql: 'SELECT 1' } } }]) error(await f.request(base, { method: 'POST', body }), 422, 'UNSUPPORTED_FEATURE', true);
   error(await f.request(base, { method: 'POST', rawBody: '{' }), 400, 'HOSTED_REQUEST_INVALID');
-  error(await f.request(`${base}/analysis`, { method: 'DELETE', body: {}, headers: at(1) }), 422, 'INVALID_INPUT', true);
+  error(await f.request(`${base}/analysis`, { method: 'DELETE', body: {}, headers: at(1) }), 400, 'ASSET_INVALID_INPUT');
   error(await f.request(`${base}/analysis/sheets/sheet/visuals`, { method: 'PUT', body: visual(), headers: at(1) }), 405, 'METHOD_NOT_ALLOWED');
   error(await f.request(`${base}/analysis/visuals/new`, { method: 'POST', body: visual(), headers: at(1) }), 404, 'RESOURCE_NOT_FOUND');
   for (const header of [{ Limit: '0' }, { Limit: '1001' }, { Cursor: 'not-a-cursor' }]) error(await f.request(base, { headers: header }), 400, 'INVALID_PAGINATION');
@@ -362,7 +362,7 @@ test('v1 analyses replay rechecks current dataset policy, and deletion replay ca
   const del = { method: 'DELETE', headers: { ...at(1), 'Idempotency-Key': 'remove' } };
   assert.equal((await f.request(`${base}/recreated`, del)).status, 200);
   assert.equal((await f.request(base, { method: 'POST', body: clean })).status, 201);
-  error(await f.request(`${base}/recreated`, del), 409, 'METADATA_CONFLICT');
+  error(await f.request(`${base}/recreated`, del), 409, 'IDEMPOTENCY_CONFLICT');
   assert.equal((await f.request(`${base}/recreated`)).status, 200);
 });
 
@@ -383,7 +383,7 @@ test('v1 analyses every approved mutation replays once, preserves ETags, and req
     if (!isCreate) {
       error(await f.request(path, { method, body }), 428, 'V1_IF_MATCH_REQUIRED');
       error(await f.request(path, { method, body, headers: { 'If-Match': 'bad' } }), 400, 'V1_IF_MATCH_INVALID');
-      error(await f.request(path, { method, body, headers: at(version + 10) }), 409, 'METADATA_CONFLICT');
+      error(await f.request(path, { method, body, headers: at(version + 10) }), removed ? 412 : 409, removed ? 'ASSET_PRECONDITION_FAILED' : 'METADATA_CONFLICT');
     }
     const options = { method, body, headers: { ...(isCreate ? {} : at(version)), 'Idempotency-Key': `operation-${++index}` } };
     const [first, replay] = await Promise.all([f.request(path, options), f.request(path, options)]);
@@ -452,10 +452,12 @@ test('v1 analyses local prepared owner pins reject same-ID substitution even by 
   assert.equal((await f.request(`${base}/analysis`, { headers: auth('author') })).status, 200);
   const saved = JSON.parse(await readFile(join(f.directory, 'security.json'), 'utf8'));
   assert.equal(saved.assets.find(a => a.id === 'analysis').datasetBindingOwnerId, 'author');
-  for (const options of [{}, { method: 'PUT', body: { name: 'Rebind', definition: draft(), datasetBindings: input.datasetBindings } }, { method: 'DELETE' }]) {
+  for (const options of [{}, { method: 'PUT', body: { name: 'Rebind', definition: draft(), datasetBindings: input.datasetBindings } }]) {
     error(await f.request(`${base}/analysis`, { ...options, headers: { ...auth('admin'), ...at(1) } }), 422, 'SECURITY_REJECTED', true);
   }
   error(await f.request(base, { method: 'POST', body: { ...create('forged'), definition: { ...draft(), datasetBindingOwnerId: 'author' } }, headers: auth('admin') }), 422, 'SECURITY_REJECTED', true);
   await f.restart();
   error(await f.request(`${base}/analysis`, { headers: auth('admin') }), 422, 'SECURITY_REJECTED', true);
+  // D-59 authorizes definition deletion independently of prepared-data access.
+  assert.equal((await f.request(`${base}/analysis`, { method: 'DELETE', headers: { ...auth('admin'), ...at(1) } })).status, 200);
 });

@@ -6,8 +6,8 @@ info:
     Builder-shaped REST surface for agents (issue #95, IDD D-37). Versioned
     and stable: breaking changes need a new version plus migration notes.
     The web app consumes the same API; existing unversioned routes are
-    untouched. Implemented slices: datasets, querying, analyses and dashboards.
-    Assets and MCP mapping remain separate slices.
+    untouched. Implemented slices: datasets, querying, analyses, dashboards and assets.
+    MCP mapping remains a separate slice.
 servers:
   - url: https://{host}/api/v1
     variables:
@@ -21,6 +21,7 @@ tags:
   - name: querying
   - name: analyses
   - name: dashboards
+  - name: assets
 paths:
   /analyses/{id}/publish:
     parameters:
@@ -164,46 +165,47 @@ paths:
           $ref: '#/components/responses/AnalysisError'
     delete:
       tags:
-      - dashboards
+      - assets
       operationId: delete_dashboard
       summary: Delete dashboard
-      description: Build capability and dashboard co-owner access; removes all versions.
+      description: Build plus co-owner and current asset revision. Analysis delete preserves published dashboards
+        and severs republish; dataset references from any analysis block deletion with DATASET_DELETE_BLOCKED_BY_ANALYSIS
+        (409). Shares are removed with the asset.
       parameters:
       - $ref: '#/components/parameters/IdempotencyKey'
-      - name: If-Match
-        in: header
-        required: true
-        description: Quoted latest published version. Missing, malformed or stale precondition returns 412.
-        schema:
-          type: string
-          pattern: ^"[1-9][0-9]*"$
+      - $ref: '#/components/parameters/IfMatch'
       responses:
         '200':
           description: Success
+          headers:
+            ETag:
+              description: Quoted current asset revision; published definitions keep their own Version.
+              schema:
+                type: string
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/DashboardRemoved'
+                $ref: '#/components/schemas/AnalysisRemoved'
         '400':
-          $ref: '#/components/responses/AnalysisError'
+          $ref: '#/components/responses/AssetError'
         '401':
-          $ref: '#/components/responses/AnalysisError'
+          $ref: '#/components/responses/AssetError'
         '403':
-          $ref: '#/components/responses/AnalysisError'
+          $ref: '#/components/responses/AssetError'
         '404':
-          $ref: '#/components/responses/AnalysisError'
+          $ref: '#/components/responses/AssetError'
         '409':
-          $ref: '#/components/responses/AnalysisError'
+          $ref: '#/components/responses/AssetError'
         '412':
-          $ref: '#/components/responses/AnalysisError'
-        '413':
-          $ref: '#/components/responses/AnalysisError'
+          $ref: '#/components/responses/AssetError'
         '422':
-          $ref: '#/components/responses/AnalysisError'
+          $ref: '#/components/responses/AssetError'
+        '428':
+          $ref: '#/components/responses/IfMatchRequired'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
-          $ref: '#/components/responses/AnalysisError'
+          $ref: '#/components/responses/AssetError'
   /dashboards/{id}/versions:
     parameters:
     - name: id
@@ -366,47 +368,54 @@ paths:
         pattern: ^[A-Za-z0-9_-]{1,512}$
     get:
       tags:
-      - dashboards
+      - assets
       operationId: get_dashboard_share
-      summary: Get dashboard share
-      description: Admin-managed definition-only grant; never widens underlying dataset access. Shares apply to
-        the dashboard across versions and do not advance the published version.
+      summary: Get asset share
+      description: Build plus co-owner through asset and folder grants, including read. Same-namespace resolved principals
+        only. Definition-only grants never authorize prepared data. Last grant removal restores inheritance.
+      parameters: []
       responses:
         '200':
           description: Success
+          headers:
+            ETag:
+              description: Quoted current asset revision; published definitions keep their own Version.
+              schema:
+                type: string
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/DashboardShare'
+                $ref: '#/components/schemas/AssetShare'
         '400':
-          $ref: '#/components/responses/AnalysisError'
+          $ref: '#/components/responses/AssetError'
         '401':
-          $ref: '#/components/responses/AnalysisError'
+          $ref: '#/components/responses/AssetError'
         '403':
-          $ref: '#/components/responses/AnalysisError'
+          $ref: '#/components/responses/AssetError'
         '404':
-          $ref: '#/components/responses/AnalysisError'
+          $ref: '#/components/responses/AssetError'
         '409':
-          $ref: '#/components/responses/AnalysisError'
+          $ref: '#/components/responses/AssetError'
         '412':
-          $ref: '#/components/responses/AnalysisError'
-        '413':
-          $ref: '#/components/responses/AnalysisError'
+          $ref: '#/components/responses/AssetError'
         '422':
-          $ref: '#/components/responses/AnalysisError'
+          $ref: '#/components/responses/AssetError'
+        '428':
+          $ref: '#/components/responses/IfMatchRequired'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
-          $ref: '#/components/responses/AnalysisError'
+          $ref: '#/components/responses/AssetError'
     put:
       tags:
-      - dashboards
+      - assets
       operationId: set_dashboard_share
-      summary: Set dashboard share
-      description: Admin-managed definition-only grant; never widens underlying dataset access. Shares apply to
-        the dashboard across versions and do not advance the published version.
+      summary: Set asset share
+      description: Build plus co-owner through asset and folder grants, including read. Same-namespace resolved principals
+        only. Definition-only grants never authorize prepared data. Last grant removal restores inheritance.
       parameters:
       - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/IfMatch'
       requestBody:
         required: true
         content:
@@ -416,66 +425,76 @@ paths:
       responses:
         '200':
           description: Success
+          headers:
+            ETag:
+              description: Quoted current asset revision; published definitions keep their own Version.
+              schema:
+                type: string
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/DashboardShare'
+                $ref: '#/components/schemas/AssetShare'
         '400':
-          $ref: '#/components/responses/AnalysisError'
+          $ref: '#/components/responses/AssetError'
         '401':
-          $ref: '#/components/responses/AnalysisError'
+          $ref: '#/components/responses/AssetError'
         '403':
-          $ref: '#/components/responses/AnalysisError'
+          $ref: '#/components/responses/AssetError'
         '404':
-          $ref: '#/components/responses/AnalysisError'
+          $ref: '#/components/responses/AssetError'
         '409':
-          $ref: '#/components/responses/AnalysisError'
+          $ref: '#/components/responses/AssetError'
         '412':
-          $ref: '#/components/responses/AnalysisError'
-        '413':
-          $ref: '#/components/responses/AnalysisError'
+          $ref: '#/components/responses/AssetError'
         '422':
-          $ref: '#/components/responses/AnalysisError'
+          $ref: '#/components/responses/AssetError'
+        '428':
+          $ref: '#/components/responses/IfMatchRequired'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
-          $ref: '#/components/responses/AnalysisError'
+          $ref: '#/components/responses/AssetError'
     delete:
       tags:
-      - dashboards
+      - assets
       operationId: delete_dashboard_share
-      summary: Delete dashboard share
-      description: Admin-managed definition-only grant; never widens underlying dataset access. Shares apply to
-        the dashboard across versions and do not advance the published version.
+      summary: Delete asset share
+      description: Build plus co-owner through asset and folder grants, including read. Same-namespace resolved principals
+        only. Definition-only grants never authorize prepared data. Last grant removal restores inheritance.
       parameters:
       - $ref: '#/components/parameters/IdempotencyKey'
       responses:
         '200':
           description: Success
+          headers:
+            ETag:
+              description: Quoted current asset revision; published definitions keep their own Version.
+              schema:
+                type: string
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/DashboardShareDeleted'
+                $ref: '#/components/schemas/AssetShareDeleted'
         '400':
-          $ref: '#/components/responses/AnalysisError'
+          $ref: '#/components/responses/AssetError'
         '401':
-          $ref: '#/components/responses/AnalysisError'
+          $ref: '#/components/responses/AssetError'
         '403':
-          $ref: '#/components/responses/AnalysisError'
+          $ref: '#/components/responses/AssetError'
         '404':
-          $ref: '#/components/responses/AnalysisError'
+          $ref: '#/components/responses/AssetError'
         '409':
-          $ref: '#/components/responses/AnalysisError'
+          $ref: '#/components/responses/AssetError'
         '412':
-          $ref: '#/components/responses/AnalysisError'
-        '413':
-          $ref: '#/components/responses/AnalysisError'
+          $ref: '#/components/responses/AssetError'
         '422':
-          $ref: '#/components/responses/AnalysisError'
+          $ref: '#/components/responses/AssetError'
+        '428':
+          $ref: '#/components/responses/IfMatchRequired'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
-          $ref: '#/components/responses/AnalysisError'
+          $ref: '#/components/responses/AssetError'
   /dashboards/{id}/versions/{version}/visuals/{visualId}/query:
     parameters:
     - name: id
@@ -658,12 +677,15 @@ paths:
         '429': { $ref: '#/components/responses/RateLimited' }
   /analyses/{id}:
     parameters:
-      - name: id
-        in: path
-        required: true
-        schema: { type: string, pattern: '^[A-Za-z0-9_-]{1,512}$' }
+    - name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: ^[A-Za-z0-9_-]{1,512}$
     get:
-      tags: [analyses]
+      tags:
+      - analyses
       operationId: describe_analysis
       summary: Describe analysis
       responses:
@@ -672,65 +694,107 @@ paths:
           headers:
             ETag:
               description: Quoted integer version of the entire analysis
-              schema: { type: string }
+              schema:
+                type: string
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/AnalysisDescription' }
-        '400': { $ref: '#/components/responses/AnalysisError' }
-        '403': { $ref: '#/components/responses/AnalysisError' }
-        '404': { $ref: '#/components/responses/AnalysisError' }
-        '409': { $ref: '#/components/responses/AnalysisError' }
-        '422': { $ref: '#/components/responses/AnalysisError' }
-        '429': { $ref: '#/components/responses/RateLimited' }
+              schema:
+                $ref: '#/components/schemas/AnalysisDescription'
+        '400':
+          $ref: '#/components/responses/AnalysisError'
+        '403':
+          $ref: '#/components/responses/AnalysisError'
+        '404':
+          $ref: '#/components/responses/AnalysisError'
+        '409':
+          $ref: '#/components/responses/AnalysisError'
+        '422':
+          $ref: '#/components/responses/AnalysisError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
     put:
-      tags: [analyses]
+      tags:
+      - analyses
       operationId: update_analysis
       summary: Update analysis
       parameters:
-        - $ref: '#/components/parameters/IfMatch'
-        - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/IfMatch'
+      - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/AnalysisUpdate' }
+            schema:
+              $ref: '#/components/schemas/AnalysisUpdate'
       responses:
         '200':
           description: Success
           headers:
             ETag:
               description: Quoted integer version of the entire analysis
-              schema: { type: string }
+              schema:
+                type: string
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/AnalysisDescription' }
-        '400': { $ref: '#/components/responses/AnalysisError' }
-        '403': { $ref: '#/components/responses/AnalysisError' }
-        '404': { $ref: '#/components/responses/AnalysisError' }
-        '409': { $ref: '#/components/responses/AnalysisError' }
-        '422': { $ref: '#/components/responses/AnalysisError' }
-        '428': { $ref: '#/components/responses/AnalysisError' }
-        '429': { $ref: '#/components/responses/RateLimited' }
+              schema:
+                $ref: '#/components/schemas/AnalysisDescription'
+        '400':
+          $ref: '#/components/responses/AnalysisError'
+        '403':
+          $ref: '#/components/responses/AnalysisError'
+        '404':
+          $ref: '#/components/responses/AnalysisError'
+        '409':
+          $ref: '#/components/responses/AnalysisError'
+        '422':
+          $ref: '#/components/responses/AnalysisError'
+        '428':
+          $ref: '#/components/responses/AnalysisError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
     delete:
-      tags: [analyses]
+      tags:
+      - assets
       operationId: delete_analysis
       summary: Delete analysis
+      description: Build plus co-owner and current asset revision. Analysis delete preserves published dashboards
+        and severs republish; dataset references from any analysis block deletion with DATASET_DELETE_BLOCKED_BY_ANALYSIS
+        (409). Shares are removed with the asset.
       parameters:
-        - $ref: '#/components/parameters/IfMatch'
-        - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/IfMatch'
       responses:
         '200':
           description: Success
+          headers:
+            ETag:
+              description: Quoted current asset revision; published definitions keep their own Version.
+              schema:
+                type: string
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/AnalysisRemoved' }
-        '400': { $ref: '#/components/responses/AnalysisError' }
-        '403': { $ref: '#/components/responses/AnalysisError' }
-        '404': { $ref: '#/components/responses/AnalysisError' }
-        '409': { $ref: '#/components/responses/AnalysisError' }
-        '422': { $ref: '#/components/responses/AnalysisError' }
-        '428': { $ref: '#/components/responses/AnalysisError' }
-        '429': { $ref: '#/components/responses/RateLimited' }
+              schema:
+                $ref: '#/components/schemas/AnalysisRemoved'
+        '400':
+          $ref: '#/components/responses/AssetError'
+        '401':
+          $ref: '#/components/responses/AssetError'
+        '403':
+          $ref: '#/components/responses/AssetError'
+        '404':
+          $ref: '#/components/responses/AssetError'
+        '409':
+          $ref: '#/components/responses/AssetError'
+        '412':
+          $ref: '#/components/responses/AssetError'
+        '422':
+          $ref: '#/components/responses/AssetError'
+        '428':
+          $ref: '#/components/responses/IfMatchRequired'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/AssetError'
   /analyses/{id}/sheets/{sheetId}/visuals:
     parameters:
       - name: id
@@ -1033,12 +1097,15 @@ paths:
         '429': { $ref: '#/components/responses/RateLimited' }
   /datasets/{id}:
     parameters:
-      - name: id
-        in: path
-        required: true
-        schema: { type: string, pattern: '^[A-Za-z0-9_-]{1,128}$' }
+    - name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: ^[A-Za-z0-9_-]{1,128}$
     get:
-      tags: [datasets]
+      tags:
+      - datasets
       summary: Composed dataset describe (schema + lineage pointers + refresh state)
       responses:
         '200':
@@ -1047,80 +1114,148 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [id, name, version, execution, schema, lineage, refresh]
+                required:
+                - id
+                - name
+                - version
+                - execution
+                - schema
+                - lineage
+                - refresh
                 properties:
-                  id: { type: string }
-                  name: { type: string }
-                  version: { type: integer }
+                  id:
+                    type: string
+                  name:
+                    type: string
+                  version:
+                    type: integer
                   execution:
                     type: object
                     properties:
-                      mode: { type: string, enum: [DIRECT_QUERY, BLAZE] }
-                      intervalMinutes: { type: ['integer', 'null'] }
+                      mode:
+                        type: string
+                        enum:
+                        - DIRECT_QUERY
+                        - BLAZE
+                      intervalMinutes:
+                        type:
+                        - integer
+                        - 'null'
                   schema:
                     type: object
                     properties:
                       columns:
                         type: array
-                        items: { $ref: '#/components/schemas/Column' }
+                        items:
+                          $ref: '#/components/schemas/Column'
                   lineage:
                     type: object
                     properties:
                       sources:
                         type: array
-                        items: { type: object, properties: { id: { type: string } } }
+                        items:
+                          type: object
+                          properties:
+                            id:
+                              type: string
                       datasets:
                         type: array
-                        items: { type: object, properties: { id: { type: string } } }
-                      steps: { type: integer }
+                        items:
+                          type: object
+                          properties:
+                            id:
+                              type: string
+                      steps:
+                        type: integer
                   refresh:
                     type: object
                     properties:
-                      supported: { type: boolean }
-                      mode: { type: string }
-                      intervalMinutes: { type: ['integer', 'null'] }
-        '404': { $ref: '#/components/responses/NotFound' }
+                      supported:
+                        type: boolean
+                      mode:
+                        type: string
+                      intervalMinutes:
+                        type:
+                        - integer
+                        - 'null'
+        '404':
+          $ref: '#/components/responses/NotFound'
     put:
-      tags: [datasets]
+      tags:
+      - datasets
       summary: Create or update a prepared dataset
       parameters:
-        - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [name, pipeline, expectedVersion]
+              required:
+              - name
+              - pipeline
+              - expectedVersion
               properties:
-                name: { type: string, maxLength: 512 }
+                name:
+                  type: string
+                  maxLength: 512
                 pipeline:
                   type: object
                   description: PrepPipeline (version 1); see bundle-parser prep docs
-                expectedVersion: { type: integer, description: 0 on create }
+                expectedVersion:
+                  type: integer
+                  description: 0 on create
       responses:
         '200':
           description: Saved dataset
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/DatasetSummary' }
+              schema:
+                $ref: '#/components/schemas/DatasetSummary'
     delete:
-      tags: [datasets]
-      summary: Delete a prepared dataset
+      tags:
+      - assets
+      operationId: delete_dataset
+      summary: Delete dataset
+      description: Build plus co-owner and current asset revision. Analysis delete preserves published dashboards
+        and severs republish; dataset references from any analysis block deletion with DATASET_DELETE_BLOCKED_BY_ANALYSIS
+        (409). Shares are removed with the asset.
       parameters:
-        - $ref: '#/components/parameters/IfMatch'
-        - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/IfMatch'
       responses:
         '200':
-          description: Removed
+          description: Success
+          headers:
+            ETag:
+              description: Quoted current asset revision; published definitions keep their own Version.
+              schema:
+                type: string
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  id: { type: string }
-                  removed: { type: boolean, enum: [true] }
-        '428': { $ref: '#/components/responses/IfMatchRequired' }
+                $ref: '#/components/schemas/AnalysisRemoved'
+        '400':
+          $ref: '#/components/responses/AssetError'
+        '401':
+          $ref: '#/components/responses/AssetError'
+        '403':
+          $ref: '#/components/responses/AssetError'
+        '404':
+          $ref: '#/components/responses/AssetError'
+        '409':
+          $ref: '#/components/responses/AssetError'
+        '412':
+          $ref: '#/components/responses/AssetError'
+        '422':
+          $ref: '#/components/responses/AssetError'
+        '428':
+          $ref: '#/components/responses/IfMatchRequired'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/AssetError'
   /datasets/{id}/query:
     parameters:
       - name: id
@@ -1397,6 +1532,826 @@ paths:
                     properties:
                       errorCode: { type: string, enum: [SOURCE_DELETE_BLOCKED_BY_DATASET] }
         '428': { $ref: '#/components/responses/IfMatchRequired' }
+  /assets:
+    get:
+      tags:
+      - assets
+      operationId: list_assets
+      summary: List assets
+      description: Only the caller-readable namespace set. Folder and asset grants must both allow; analyses require
+        build. Prepared datasets remain owner scoped. Lowercase summary is explicit in D-55.
+      parameters:
+      - $ref: '#/components/parameters/Limit'
+      - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: Success
+          headers:
+            ETag:
+              description: Quoted current asset revision; published definitions keep their own Version.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssetPage'
+        '400':
+          $ref: '#/components/responses/AssetError'
+        '401':
+          $ref: '#/components/responses/AssetError'
+        '403':
+          $ref: '#/components/responses/AssetError'
+        '404':
+          $ref: '#/components/responses/AssetError'
+        '409':
+          $ref: '#/components/responses/AssetError'
+        '412':
+          $ref: '#/components/responses/AssetError'
+        '422':
+          $ref: '#/components/responses/AssetError'
+        '428':
+          $ref: '#/components/responses/IfMatchRequired'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/AssetError'
+  /assets/analyses:
+    get:
+      tags:
+      - assets
+      operationId: list_analyses_summary
+      summary: List analyses summary
+      description: Only the caller-readable namespace set. Folder and asset grants must both allow; analyses require
+        build. Prepared datasets remain owner scoped. Lowercase summary is explicit in D-55.
+      parameters:
+      - $ref: '#/components/parameters/Limit'
+      - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: Success
+          headers:
+            ETag:
+              description: Quoted current asset revision; published definitions keep their own Version.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssetPage'
+        '400':
+          $ref: '#/components/responses/AssetError'
+        '401':
+          $ref: '#/components/responses/AssetError'
+        '403':
+          $ref: '#/components/responses/AssetError'
+        '404':
+          $ref: '#/components/responses/AssetError'
+        '409':
+          $ref: '#/components/responses/AssetError'
+        '412':
+          $ref: '#/components/responses/AssetError'
+        '422':
+          $ref: '#/components/responses/AssetError'
+        '428':
+          $ref: '#/components/responses/IfMatchRequired'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/AssetError'
+  /assets/dashboards:
+    get:
+      tags:
+      - assets
+      operationId: list_dashboards_summary
+      summary: List dashboards summary
+      description: Only the caller-readable namespace set. Folder and asset grants must both allow; analyses require
+        build. Prepared datasets remain owner scoped. Lowercase summary is explicit in D-55.
+      parameters:
+      - $ref: '#/components/parameters/Limit'
+      - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: Success
+          headers:
+            ETag:
+              description: Quoted current asset revision; published definitions keep their own Version.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssetPage'
+        '400':
+          $ref: '#/components/responses/AssetError'
+        '401':
+          $ref: '#/components/responses/AssetError'
+        '403':
+          $ref: '#/components/responses/AssetError'
+        '404':
+          $ref: '#/components/responses/AssetError'
+        '409':
+          $ref: '#/components/responses/AssetError'
+        '412':
+          $ref: '#/components/responses/AssetError'
+        '422':
+          $ref: '#/components/responses/AssetError'
+        '428':
+          $ref: '#/components/responses/IfMatchRequired'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/AssetError'
+  /assets/datasets:
+    get:
+      tags:
+      - assets
+      operationId: list_datasets_summary
+      summary: List datasets summary
+      description: Only the caller-readable namespace set. Folder and asset grants must both allow; analyses require
+        build. Prepared datasets remain owner scoped. Lowercase summary is explicit in D-55.
+      parameters:
+      - $ref: '#/components/parameters/Limit'
+      - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: Success
+          headers:
+            ETag:
+              description: Quoted current asset revision; published definitions keep their own Version.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssetPage'
+        '400':
+          $ref: '#/components/responses/AssetError'
+        '401':
+          $ref: '#/components/responses/AssetError'
+        '403':
+          $ref: '#/components/responses/AssetError'
+        '404':
+          $ref: '#/components/responses/AssetError'
+        '409':
+          $ref: '#/components/responses/AssetError'
+        '412':
+          $ref: '#/components/responses/AssetError'
+        '422':
+          $ref: '#/components/responses/AssetError'
+        '428':
+          $ref: '#/components/responses/IfMatchRequired'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/AssetError'
+  /assets/search:
+    post:
+      tags:
+      - assets
+      operationId: search_assets
+      summary: Search assets
+      description: Case-insensitive name substring, updatedAt descending with ID tie break. Missing historical timestamps
+        sort last. Namespace scope is the decided core; the scope JSON shape remains undecided and explicit scope
+        currently returns ASSET_SCOPE_UNSPECIFIED (422).
+      parameters:
+      - $ref: '#/components/parameters/Limit'
+      - $ref: '#/components/parameters/Cursor'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssetSearch'
+      responses:
+        '200':
+          description: Success
+          headers:
+            ETag:
+              description: Quoted current asset revision; published definitions keep their own Version.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssetPage'
+        '400':
+          $ref: '#/components/responses/AssetError'
+        '401':
+          $ref: '#/components/responses/AssetError'
+        '403':
+          $ref: '#/components/responses/AssetError'
+        '404':
+          $ref: '#/components/responses/AssetError'
+        '409':
+          $ref: '#/components/responses/AssetError'
+        '412':
+          $ref: '#/components/responses/AssetError'
+        '422':
+          $ref: '#/components/responses/AssetError'
+        '428':
+          $ref: '#/components/responses/IfMatchRequired'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/AssetError'
+  /assets/{kind}/{id}/move:
+    parameters:
+    - name: kind
+      in: path
+      required: true
+      schema:
+        type: string
+        enum:
+        - analyses
+        - dashboards
+    - name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: ^[A-Za-z0-9_-]{1,512}$
+    post:
+      tags:
+      - assets
+      operationId: move_asset
+      summary: Move asset
+      description: Build plus co-owner through both current asset and folder grants. Destination must exist and be
+        readable; null means root. No rename.
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssetMove'
+      responses:
+        '200':
+          description: Success
+          headers:
+            ETag:
+              description: Quoted current asset revision; published definitions keep their own Version.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssetTransfer'
+        '400':
+          $ref: '#/components/responses/AssetError'
+        '401':
+          $ref: '#/components/responses/AssetError'
+        '403':
+          $ref: '#/components/responses/AssetError'
+        '404':
+          $ref: '#/components/responses/AssetError'
+        '409':
+          $ref: '#/components/responses/AssetError'
+        '412':
+          $ref: '#/components/responses/AssetError'
+        '422':
+          $ref: '#/components/responses/AssetError'
+        '428':
+          $ref: '#/components/responses/IfMatchRequired'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/AssetError'
+  /assets/{kind}/{id}/copy:
+    parameters:
+    - name: kind
+      in: path
+      required: true
+      schema:
+        type: string
+        enum:
+        - analyses
+        - dashboards
+    - name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: ^[A-Za-z0-9_-]{1,512}$
+    post:
+      tags:
+      - assets
+      operationId: copy_asset
+      summary: Copy asset
+      description: Any definition reader may copy. Only creator co-owner grant; newId must be unused. Omitted folderId
+        means root. Copy uses latest frozen dashboard definition; prepared owner pins remain unchanged. Dataset copy
+        is deferred pending kind confirmation.
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssetCopy'
+      responses:
+        '201':
+          description: Success
+          headers:
+            ETag:
+              description: Quoted current asset revision; published definitions keep their own Version.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssetTransfer'
+        '400':
+          $ref: '#/components/responses/AssetError'
+        '401':
+          $ref: '#/components/responses/AssetError'
+        '403':
+          $ref: '#/components/responses/AssetError'
+        '404':
+          $ref: '#/components/responses/AssetError'
+        '409':
+          $ref: '#/components/responses/AssetError'
+        '412':
+          $ref: '#/components/responses/AssetError'
+        '422':
+          $ref: '#/components/responses/AssetError'
+        '428':
+          $ref: '#/components/responses/IfMatchRequired'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/AssetError'
+  /analyses/{id}/shares/{principalType}/{principalId}:
+    parameters:
+    - name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: ^[A-Za-z0-9_-]{1,512}$
+    - name: principalType
+      in: path
+      required: true
+      schema:
+        type: string
+        enum:
+        - user
+        - group
+    - name: principalId
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: ^[A-Za-z0-9_-]{1,512}$
+    get:
+      tags:
+      - assets
+      operationId: get_asset_share
+      summary: Get asset share
+      description: Build plus co-owner through asset and folder grants, including read. Same-namespace resolved principals
+        only. Definition-only grants never authorize prepared data. Last grant removal restores inheritance.
+      parameters: []
+      responses:
+        '200':
+          description: Success
+          headers:
+            ETag:
+              description: Quoted current asset revision; published definitions keep their own Version.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssetShare'
+        '400':
+          $ref: '#/components/responses/AssetError'
+        '401':
+          $ref: '#/components/responses/AssetError'
+        '403':
+          $ref: '#/components/responses/AssetError'
+        '404':
+          $ref: '#/components/responses/AssetError'
+        '409':
+          $ref: '#/components/responses/AssetError'
+        '412':
+          $ref: '#/components/responses/AssetError'
+        '422':
+          $ref: '#/components/responses/AssetError'
+        '428':
+          $ref: '#/components/responses/IfMatchRequired'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/AssetError'
+    put:
+      tags:
+      - assets
+      operationId: set_asset_share
+      summary: Set asset share
+      description: Build plus co-owner through asset and folder grants, including read. Same-namespace resolved principals
+        only. Definition-only grants never authorize prepared data. Last grant removal restores inheritance.
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DashboardShareWrite'
+      responses:
+        '200':
+          description: Success
+          headers:
+            ETag:
+              description: Quoted current asset revision; published definitions keep their own Version.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssetShare'
+        '400':
+          $ref: '#/components/responses/AssetError'
+        '401':
+          $ref: '#/components/responses/AssetError'
+        '403':
+          $ref: '#/components/responses/AssetError'
+        '404':
+          $ref: '#/components/responses/AssetError'
+        '409':
+          $ref: '#/components/responses/AssetError'
+        '412':
+          $ref: '#/components/responses/AssetError'
+        '422':
+          $ref: '#/components/responses/AssetError'
+        '428':
+          $ref: '#/components/responses/IfMatchRequired'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/AssetError'
+    delete:
+      tags:
+      - assets
+      operationId: delete_asset_share
+      summary: Delete asset share
+      description: Build plus co-owner through asset and folder grants, including read. Same-namespace resolved principals
+        only. Definition-only grants never authorize prepared data. Last grant removal restores inheritance.
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Success
+          headers:
+            ETag:
+              description: Quoted current asset revision; published definitions keep their own Version.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssetShareDeleted'
+        '400':
+          $ref: '#/components/responses/AssetError'
+        '401':
+          $ref: '#/components/responses/AssetError'
+        '403':
+          $ref: '#/components/responses/AssetError'
+        '404':
+          $ref: '#/components/responses/AssetError'
+        '409':
+          $ref: '#/components/responses/AssetError'
+        '412':
+          $ref: '#/components/responses/AssetError'
+        '422':
+          $ref: '#/components/responses/AssetError'
+        '428':
+          $ref: '#/components/responses/IfMatchRequired'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/AssetError'
+  /folders:
+    get:
+      tags:
+      - assets
+      operationId: list_folders
+      summary: List folders
+      description: Readable namespace folders; grants omitted.
+      parameters:
+      - $ref: '#/components/parameters/Limit'
+      - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: Success
+          headers:
+            ETag:
+              description: Quoted current asset revision; published definitions keep their own Version.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FolderPage'
+        '400':
+          $ref: '#/components/responses/AssetError'
+        '401':
+          $ref: '#/components/responses/AssetError'
+        '403':
+          $ref: '#/components/responses/AssetError'
+        '404':
+          $ref: '#/components/responses/AssetError'
+        '409':
+          $ref: '#/components/responses/AssetError'
+        '412':
+          $ref: '#/components/responses/AssetError'
+        '422':
+          $ref: '#/components/responses/AssetError'
+        '428':
+          $ref: '#/components/responses/IfMatchRequired'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/AssetError'
+  /folders/{id}:
+    parameters:
+    - name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: ^[A-Za-z0-9_-]{1,512}$
+    get:
+      tags:
+      - assets
+      operationId: describe_folder
+      summary: Describe folder
+      description: Readable folder and current ETag.
+      parameters: []
+      responses:
+        '200':
+          description: Success
+          headers:
+            ETag:
+              description: Quoted current asset revision; published definitions keep their own Version.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FolderDescription'
+        '400':
+          $ref: '#/components/responses/AssetError'
+        '401':
+          $ref: '#/components/responses/AssetError'
+        '403':
+          $ref: '#/components/responses/AssetError'
+        '404':
+          $ref: '#/components/responses/AssetError'
+        '409':
+          $ref: '#/components/responses/AssetError'
+        '412':
+          $ref: '#/components/responses/AssetError'
+        '422':
+          $ref: '#/components/responses/AssetError'
+        '428':
+          $ref: '#/components/responses/IfMatchRequired'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/AssetError'
+    put:
+      tags:
+      - assets
+      operationId: rename_folder
+      summary: Rename folder
+      description: Rename an existing folder, build plus co-owner. No asset rename.
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FolderRename'
+      responses:
+        '200':
+          description: Success
+          headers:
+            ETag:
+              description: Quoted current asset revision; published definitions keep their own Version.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FolderDescription'
+        '400':
+          $ref: '#/components/responses/AssetError'
+        '401':
+          $ref: '#/components/responses/AssetError'
+        '403':
+          $ref: '#/components/responses/AssetError'
+        '404':
+          $ref: '#/components/responses/AssetError'
+        '409':
+          $ref: '#/components/responses/AssetError'
+        '412':
+          $ref: '#/components/responses/AssetError'
+        '422':
+          $ref: '#/components/responses/AssetError'
+        '428':
+          $ref: '#/components/responses/IfMatchRequired'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/AssetError'
+    delete:
+      tags:
+      - assets
+      operationId: delete_folder
+      summary: Delete folder
+      description: Build plus co-owner; folder must be empty or FOLDER_NOT_EMPTY (409).
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Success
+          headers:
+            ETag:
+              description: Quoted current asset revision; published definitions keep their own Version.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FolderRemoved'
+        '400':
+          $ref: '#/components/responses/AssetError'
+        '401':
+          $ref: '#/components/responses/AssetError'
+        '403':
+          $ref: '#/components/responses/AssetError'
+        '404':
+          $ref: '#/components/responses/AssetError'
+        '409':
+          $ref: '#/components/responses/AssetError'
+        '412':
+          $ref: '#/components/responses/AssetError'
+        '422':
+          $ref: '#/components/responses/AssetError'
+        '428':
+          $ref: '#/components/responses/IfMatchRequired'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/AssetError'
+  /folders/{id}/assets:
+    parameters:
+    - name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: ^[A-Za-z0-9_-]{1,512}$
+    get:
+      tags:
+      - assets
+      operationId: list_folder_assets
+      summary: List folder assets
+      description: Readable assets only, after applying both folder and asset grants.
+      parameters:
+      - $ref: '#/components/parameters/Limit'
+      - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: Success
+          headers:
+            ETag:
+              description: Quoted current asset revision; published definitions keep their own Version.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssetPage'
+        '400':
+          $ref: '#/components/responses/AssetError'
+        '401':
+          $ref: '#/components/responses/AssetError'
+        '403':
+          $ref: '#/components/responses/AssetError'
+        '404':
+          $ref: '#/components/responses/AssetError'
+        '409':
+          $ref: '#/components/responses/AssetError'
+        '412':
+          $ref: '#/components/responses/AssetError'
+        '422':
+          $ref: '#/components/responses/AssetError'
+        '428':
+          $ref: '#/components/responses/IfMatchRequired'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/AssetError'
+  /folders/{id}/permissions:
+    parameters:
+    - name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: ^[A-Za-z0-9_-]{1,512}$
+    get:
+      tags:
+      - assets
+      operationId: get_folder_permissions
+      summary: Get folder permissions
+      description: Build plus co-owner to inspect grants.
+      parameters: []
+      responses:
+        '200':
+          description: Success
+          headers:
+            ETag:
+              description: Quoted current asset revision; published definitions keep their own Version.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FolderPermissions'
+        '400':
+          $ref: '#/components/responses/AssetError'
+        '401':
+          $ref: '#/components/responses/AssetError'
+        '403':
+          $ref: '#/components/responses/AssetError'
+        '404':
+          $ref: '#/components/responses/AssetError'
+        '409':
+          $ref: '#/components/responses/AssetError'
+        '412':
+          $ref: '#/components/responses/AssetError'
+        '422':
+          $ref: '#/components/responses/AssetError'
+        '428':
+          $ref: '#/components/responses/IfMatchRequired'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/AssetError'
+    put:
+      tags:
+      - assets
+      operationId: set_folder_permissions
+      summary: Set folder permissions
+      description: Build plus co-owner; validate namespace principals and reject duplicates. Null clears to inherited
+        access. Folder and asset restrictions continue to intersect.
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FolderPermissionsWrite'
+      responses:
+        '200':
+          description: Success
+          headers:
+            ETag:
+              description: Quoted current asset revision; published definitions keep their own Version.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FolderPermissions'
+        '400':
+          $ref: '#/components/responses/AssetError'
+        '401':
+          $ref: '#/components/responses/AssetError'
+        '403':
+          $ref: '#/components/responses/AssetError'
+        '404':
+          $ref: '#/components/responses/AssetError'
+        '409':
+          $ref: '#/components/responses/AssetError'
+        '412':
+          $ref: '#/components/responses/AssetError'
+        '422':
+          $ref: '#/components/responses/AssetError'
+        '428':
+          $ref: '#/components/responses/IfMatchRequired'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/AssetError'
 components:
   securitySchemes:
     bearerAuth:
@@ -1432,6 +2387,247 @@ components:
       description: Quoted integer version, e.g. "3" (optimistic concurrency)
       schema: { type: string, pattern: '^"(0|[1-9][0-9]*)"$' }
   schemas:
+    AssetSummary:
+      type: object
+      additionalProperties: false
+      required:
+      - kind
+      - id
+      - name
+      - folderId
+      properties:
+        kind:
+          type: string
+          enum:
+          - analyses
+          - dashboards
+          - datasets
+        id:
+          type: string
+        name:
+          type: string
+        folderId:
+          type:
+          - string
+          - 'null'
+    AssetPage:
+      type: object
+      additionalProperties: false
+      required:
+      - items
+      - nextCursor
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AssetSummary'
+        nextCursor:
+          type:
+          - string
+          - 'null'
+    AssetSearch:
+      type: object
+      additionalProperties: false
+      required:
+      - query
+      properties:
+        query:
+          type: string
+          maxLength: 512
+        kinds:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+            enum:
+            - analyses
+            - dashboards
+            - datasets
+        scope:
+          description: Reserved pending confirmed JSON shape; explicit values return 422 ASSET_SCOPE_UNSPECIFIED.
+    AssetMove:
+      type: object
+      additionalProperties: false
+      required:
+      - folderId
+      properties:
+        folderId:
+          type:
+          - string
+          - 'null'
+    AssetCopy:
+      type: object
+      additionalProperties: false
+      required:
+      - newId
+      properties:
+        folderId:
+          type:
+          - string
+          - 'null'
+        newId:
+          type: string
+          pattern: ^[A-Za-z0-9_-]{1,512}$
+        name:
+          type: string
+          minLength: 1
+          maxLength: 512
+    AssetTransfer:
+      type: object
+      additionalProperties: false
+      required:
+      - Kind
+      - Id
+      - Name
+      - FolderId
+      properties:
+        Kind:
+          type: string
+          enum:
+          - analyses
+          - dashboards
+        Id:
+          type: string
+        Name:
+          type: string
+        FolderId:
+          type:
+          - string
+          - 'null'
+    AssetShare:
+      type: object
+      additionalProperties: false
+      required:
+      - Principal
+      - Role
+      properties:
+        Principal:
+          type: object
+          additionalProperties: false
+          required:
+          - Type
+          - Id
+          properties:
+            Type:
+              type: string
+              enum:
+              - user
+              - group
+            Id:
+              type: string
+        Role:
+          type: string
+          enum:
+          - viewer
+          - co-owner
+    AssetShareDeleted:
+      type: object
+      additionalProperties: false
+      required:
+      - Deleted
+      properties:
+        Deleted:
+          const: true
+    FolderDescription:
+      type: object
+      additionalProperties: false
+      required:
+      - Id
+      - Name
+      - Version
+      properties:
+        Id:
+          type: string
+        Name:
+          type: string
+        Version:
+          type: integer
+          minimum: 1
+    FolderRename:
+      type: object
+      additionalProperties: false
+      required:
+      - name
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 512
+    FolderRemoved:
+      type: object
+      additionalProperties: false
+      required:
+      - Id
+      - Removed
+      properties:
+        Id:
+          type: string
+        Removed:
+          const: true
+    FolderPage:
+      type: object
+      additionalProperties: false
+      required:
+      - items
+      - nextCursor
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/FolderDescription'
+        nextCursor:
+          type:
+          - string
+          - 'null'
+    FolderPermissions:
+      type: object
+      additionalProperties: false
+      required:
+      - InheritedFrom
+      - Grants
+      properties:
+        InheritedFrom:
+          type: string
+        Grants:
+          type:
+          - array
+          - 'null'
+          items:
+            $ref: '#/components/schemas/AssetShare'
+    FolderPermissionsWrite:
+      type: object
+      additionalProperties: false
+      required:
+      - grants
+      properties:
+        grants:
+          type:
+          - array
+          - 'null'
+          items:
+            type: object
+            additionalProperties: false
+            required:
+            - principal
+            - role
+            properties:
+              principal:
+                type: object
+                additionalProperties: false
+                required:
+                - type
+                - id
+                properties:
+                  type:
+                    enum:
+                    - user
+                    - group
+                  id:
+                    type: string
+              role:
+                enum:
+                - viewer
+                - co-owner
     AnalysisDiagnostic:
       type: object
       required: [errorCode, message, path]
@@ -1547,32 +2743,7 @@ components:
           type: string
           pattern: ^[A-Za-z0-9_-]{1,512}$
     DashboardShare:
-      type: object
-      additionalProperties: false
-      required:
-      - principal
-      - role
-      properties:
-        principal:
-          type: object
-          additionalProperties: false
-          required:
-          - type
-          - id
-          properties:
-            type:
-              type: string
-              enum:
-              - user
-              - group
-            id:
-              type: string
-              pattern: ^[A-Za-z0-9_-]{1,512}$
-        role:
-          type: string
-          enum:
-          - viewer
-          - co-owner
+      $ref: '#/components/schemas/AssetShare'
     DashboardShareWrite:
       type: object
       additionalProperties: false
@@ -1585,13 +2756,7 @@ components:
           - viewer
           - co-owner
     DashboardShareDeleted:
-      type: object
-      additionalProperties: false
-      required:
-      - deleted
-      properties:
-        deleted:
-          const: true
+      $ref: '#/components/schemas/AssetShareDeleted'
     DashboardRemoved:
       type: object
       additionalProperties: false
@@ -2008,6 +3173,15 @@ components:
               kind: { type: string, enum: [source, dataset] }
               id: { type: string }
   responses:
+    AssetError:
+      description: >-
+        Named errorCode. 403 METADATA_WRITE_FORBIDDEN or ASSET_FOLDER_FORBIDDEN;
+        409 ASSET_ID_CONFLICT, ASSET_FOLDER_NOT_FOUND, FOLDER_NOT_EMPTY,
+        DATASET_DELETE_BLOCKED_BY_ANALYSIS, ASSET_DELETE_REFERENCED, IDEMPOTENCY_CONFLICT;
+        412 ASSET_PRECONDITION_FAILED; 428 V1_IF_MATCH_REQUIRED.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
     AnalysisError:
       description: >-
         Named error. Missing If-Match is 428 V1_IF_MATCH_REQUIRED; malformed

@@ -41,7 +41,8 @@ export class HostedDashboards implements DashboardBackend {
   }
   async accessSnapshot(id: string) { return this.metadata.get(this.context, { kind: 'dashboard', id }); }
   async authorizeRemoved(snapshot: unknown) { await this.authorize(undefined, 'write'); await this.content.access(this.context, snapshot as MetadataResource, true); }
-  async grants(id: string) { await this.authorize(id, 'admin'); return (await this.accessSnapshot(id)).body.grants as AssetGrant[] | undefined; }
+  async revision(id: string) { return (await this.accessSnapshot(id)).version; }
+  async grants(id: string) { await this.authorize(id, 'write'); return (await this.accessSnapshot(id)).body.grants as AssetGrant[] | undefined; }
   async change(id: string, change: DashboardChange, stamp: unknown) { await this.recheck(); return this.metadata.mutateDashboard(this.context, id, change, stamp as Revisions); }
   async query(v: DashboardVersion, definition: JsonObject, visualId: string) {
     const bindings = Object.values(v.datasetBindings);

@@ -80,7 +80,8 @@ test('v1 datasets: create/update/delete honor Idempotency-Key and If-Match', asy
 
   assert.equal(hasErrorCode(await mutate('/api/v1/datasets/agent', { method: 'DELETE' })), 'V1_IF_MATCH_REQUIRED');
   assert.equal(hasErrorCode(await mutate('/api/v1/datasets/agent', { method: 'DELETE', headers: { 'If-Match': '"abc"' } })), 'V1_IF_MATCH_INVALID');
-  assert.equal(hasErrorCode(await mutate('/api/v1/datasets/agent', { method: 'DELETE', headers: { 'If-Match': '"7"' } })), 'METADATA_CONFLICT');
+  const staleDelete = await mutate('/api/v1/datasets/agent', { method: 'DELETE', headers: { 'If-Match': '"7"' } });
+  assert.equal(staleDelete.status, 412); assert.equal(hasErrorCode(staleDelete), 'ASSET_PRECONDITION_FAILED');
   r = await mutate('/api/v1/datasets/agent', { method: 'DELETE', headers: { 'If-Match': '"1"', 'Idempotency-Key': 'delete-once' } });
   assert.equal(r.status, 200); assert.deepEqual(r.body, { id: 'agent', removed: true });
   r = await call('/api/v1/datasets/agent', { method: 'DELETE', token, headers: { 'If-Match': '"1"', 'Idempotency-Key': 'delete-once' } });

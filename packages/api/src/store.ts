@@ -1,3 +1,7 @@
+import { AssetCatalog, assetKey, type AssetScope } from './asset-model.js';
+import { localResource, organizedResource } from './local-assets.js';
+import { resourceLinks, type MetadataResource } from './metadata-resources.js';
+import { convertDefinition } from '@opensight/web/analysis';
 import { lstat, open, readdir } from 'node:fs/promises';
 import { dirname, extname, join, resolve } from 'node:path';
 import { loadQsBundle, parseBundleResource } from '@opensight/bundle-parser';
@@ -10,7 +14,7 @@ import { validateDashboardRecord, changeDashboard, describeDashboard, type Dashb
 import type { AnalysisRecord } from './analysis-model.js';
 import { projectDefinition } from '@opensight/web/analysis';
 
-interface AnalysisOverlay { version: 1; records: Record<string, AnalysisRecord | null>; dashboards?: Record<string, DashboardRecord | null> }
+interface AnalysisOverlay { version: 1; records: Record<string, AnalysisRecord | null>; dashboards?: Record<string, DashboardRecord | null>; assets?: MetadataResource[] }
 
 export type ResourceKind = 'analysis' | 'dashboard';
 export const RESOURCE_ID = /^[A-Za-z0-9_-]{1,512}$/u;
@@ -35,6 +39,12 @@ export class DefinitionStore {
         if (version !== expectedVersion) throw new MetadataError('METADATA_CONFLICT');
         if (!version && record === null) throw new MetadataError('RESOURCE_NOT_FOUND', 404);
         if (!record) for (const dashboard of Object.values(state.dashboards ?? {})) if (dashboard?.sourceAnalysisId === id) dashboard.sourceActive = false;
+        const asset = state.assets?.find(r => r.kind === 'analysis' && r.id === id);
+        if (asset && record) {
+          asset.version = record.version; asset.body.updatedAt = new Date().toISOString();
+          asset.body.definition = { AnalysisId: id, Name: record.name, Definition: projectDefinition(record.definition) };
+          asset.body.datasets = Object.values(record.datasetBindings).map(ref => ({ ...ref, ...(ref.kind === 'prepared-dataset' ? { ownerId: record.bindingOwnerId } : {}) }));
+        } else if (!record) state.assets = state.assets?.filter(r => r.kind !== 'analysis' || r.id !== id);
         Object.defineProperty(state.records, id, { value: record, enumerable: true, configurable: true, writable: true });
       });
       if (record) this.resources.get('analysis')!.set(id, { AnalysisId: id, Name: record.name, Definition: projectDefinition(record.definition) });
@@ -56,10 +66,58 @@ export class DefinitionStore {
         if (!prior && this.get('dashboard', id)) throw new MetadataError('DASHBOARD_SOURCE_MISMATCH', 409);
         const next = changeDashboard(prior, change, userId);
         Object.defineProperty(records, id, { value: next, enumerable: true, configurable: true, writable: true });
+        const asset = state.assets?.find(r => r.kind === 'dashboard' && r.id === id);
+        if (asset && next) { asset.version++; asset.body.published = next; asset.body.definition = describeDashboard(next); asset.body.updatedAt = new Date().toISOString(); }
+        else if (next) (state.assets ??= []).push(localResource(id, 'dashboard', describeDashboard(next), { id, kind: 'dashboard', namespaceId: 'default', folderId: null, dashboard: next, assetVersion: (prior?.latest ?? 0) + 1, updatedAt: new Date().toISOString() }));
+        else state.assets = state.assets?.filter(r => r.kind !== 'dashboard' || r.id !== id);
         return next;
       });
       if (result) this.resources.get('dashboard')!.set(id, describeDashboard(result));
       else this.resources.get('dashboard')!.delete(id);
+      return result;
+    });
+  }
+  assetResources(): MetadataResource[] {
+    const overlay = this.overlay?.read(), stored = overlay?.assets ?? [];
+    return [...this.list().map(a => {
+      const found = stored.find(r => r.kind === a.kind && r.id === a.id);
+      const record = this.analysisRecord(a.id), dashboard = this.dashboards().find(d => d.id === a.id);
+      return found ?? localResource(a.id, a.kind, this.get(a.kind, a.id)!, { id: a.id, kind: a.kind, namespaceId: 'default', folderId: null,
+        ...(a.kind === 'analysis' && record ? { analysisVersion: record.version, updatedAt: record.updatedAt, datasetBindingOwnerId: record.bindingOwnerId, datasetBindings: record.datasetBindings } : {}),
+        ...(a.kind === 'dashboard' && dashboard ? { dashboard } : {}) });
+    }), ...stored.filter(r => r.kind === 'folder')];
+  }
+  async assetTransaction<T>(scope: AssetScope, write: boolean, work: (catalog: AssetCatalog) => T, datasets: MetadataResource[]): Promise<T> {
+    const run = (state: AnalysisOverlay) => {
+      const current = this.assetResources(), catalog = new AssetCatalog(scope, [...current, ...datasets,
+        { kind: 'user', id: scope.userId, version: 1, body: { name: scope.userId, role: 'administrator' } }]);
+      const result = work(catalog);
+      if (write) {
+        const next = catalog.resources.filter(r => ['analysis', 'dashboard', 'folder'].includes(r.kind));
+        if (datasets.some(d => !catalog.resources.some(r => assetKey(r) === assetKey(d)))) throw new MetadataError('ASSET_LOCAL_DATASET_DELETE_UNAVAILABLE', 503);
+        state.assets = next;
+        for (const r of next) {
+          if (r.kind === 'analysis') {
+            const a = organizedResource(r, scope.namespaceId);
+            Object.defineProperty(state.records, r.id, { value: { id: r.id, name: String(a.definition!.Name), definition: convertDefinition(a.definition!.Definition), datasetBindings: a.datasetBindings!, bindingOwnerId: a.datasetBindingOwnerId, updatedAt: a.updatedAt, version: r.version }, configurable: true, enumerable: true, writable: true });
+          }
+          if (r.kind === 'dashboard' && r.body.published) Object.defineProperty(state.dashboards ??= {}, r.id, { value: r.body.published, configurable: true, enumerable: true, writable: true });
+        }
+        for (const old of current.filter(r => !next.some(n => assetKey(n) === assetKey(r)))) {
+          if (old.kind === 'analysis') Object.defineProperty(state.records, old.id, { value: null, configurable: true, enumerable: true, writable: true });
+          if (old.kind === 'dashboard') Object.defineProperty(state.dashboards ??= {}, old.id, { value: null, configurable: true, enumerable: true, writable: true });
+        }
+      }
+      return result;
+    };
+    if (!this.overlay || !this.root) throw new MetadataError('ASSET_STORE_UNAVAILABLE', 503);
+    if (!write) return run(this.overlay.read());
+    return legacyWrite(this.root, async () => {
+      const result = await this.overlay!.change(run);
+      for (const kind of ['analysis', 'dashboard'] as const) {
+        this.resources.get(kind)!.clear();
+        for (const r of this.overlay!.read().assets ?? []) if (r.kind === kind) this.resources.get(kind)!.set(r.id, r.body.definition as JsonObject);
+      }
       return result;
     });
   }
@@ -150,6 +208,15 @@ export class DefinitionStore {
       for (const [id, value] of Object.entries(raw.records)) {
         if (!RESOURCE_ID.test(id) || value !== null && (!isObject(value) || value.id !== id || !Number.isSafeInteger(value.version) || Number(value.version) < 1 || !isObject(value.definition) || !isObject(value.datasetBindings))) throw new Error('Invalid analysis overlay record');
       }
+      if (raw.assets !== undefined) {
+        if (!Array.isArray(raw.assets)) throw new Error('Invalid asset overlay');
+        const seen = new Set<string>();
+        for (const value of raw.assets) {
+          const r = value as MetadataResource;
+          if (!r || !['analysis', 'dashboard', 'folder'].includes(r.kind) || !Number.isSafeInteger(r.version) || r.version < 1 || seen.has(assetKey(r))) throw new Error('Invalid asset overlay');
+          seen.add(assetKey(r)); resourceLinks({ kind: r.kind, id: r.id }, r.body);
+        }
+      }
       if (raw.dashboards !== undefined) {
         if (!isObject(raw.dashboards)) throw new Error('Invalid dashboard overlay');
         for (const [id, record] of Object.entries(raw.dashboards)) if (record !== null) validateDashboardRecord(record, id);
@@ -164,6 +231,7 @@ export class DefinitionStore {
       if (record) store.resources.get('dashboard')!.set(id, describeDashboard(record));
       else store.resources.get('dashboard')!.delete(id);
     }
+    for (const r of store.overlay.read().assets ?? []) if (r.kind === 'analysis' || r.kind === 'dashboard') store.resources.get(r.kind)!.set(r.id, r.body.definition as JsonObject);
     return store;
   }
 }

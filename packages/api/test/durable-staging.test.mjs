@@ -22,21 +22,23 @@ test('durable local routes restore upload → prepare → chart across close/reo
   async function call(path, method = 'GET', body, owner = identity) {
     const request = Readable.from(body === undefined ? [] : [Buffer.from(JSON.stringify(body))]);
     request.method = method; request.headers = { 'content-type': 'application/json' };
-    let status, result;
-    const response = { writeHead(value) { status = value; }, end(value) { result = JSON.parse(value); } };
+    let status, result; const headers = {};
+    const response = { setHeader(name, value) { headers[name] = value; }, writeHead(value) { status = value; }, end(value) { result = JSON.parse(value); } };
     await (path.startsWith('/api/uploads') ? connectors : prep).route(request, response, path, '', owner);
-    return { status, body: result };
+    return { status, body: result, headers };
   }
   await open(); t.after(() => connectors.close());
   const uploaded = await call('/api/uploads', 'POST', { config: { format: 'csv' }, base64: Buffer.from('team,amount\nNorth,2\nSouth,3\nNorth,4').toString('base64') });
   assert.equal(uploaded.status, 201);
   const pipeline = { version: 1, input: uploaded.body.id, steps: [{ id: 'double', kind: 'calculate', config: { name: 'doubled', expression: '{amount} * 2' } }] };
   const query = { dimensions: [{ fieldId: 'team', columnName: 'team' }], measures: [{ fieldId: 'total', columnName: 'doubled', aggregation: 'SUM' }], filters: [] };
-  assert.equal((await call('/api/datasets/chart/prep', 'PUT', { name: 'Uploaded chart', pipeline })).status, 201);
+  const saved = await call('/api/datasets/chart/prep', 'PUT', { name: 'Uploaded chart', pipeline });
+  assert.equal(saved.status, 201); assert.equal(saved.headers.ETag, '"1"');
   const before = await call('/api/datasets/chart/query', 'POST', query);
   assert.equal(before.status, 200);
   assert.deepEqual(before.body.rows, [{ team: 'North', total: 12 }, { team: 'South', total: 6 }]);
   await connectors.close(); await open();
+  assert.equal((await call('/api/datasets/chart/prep')).headers.ETag, saved.headers.ETag);
   assert.deepEqual((await call(`/api/uploads/${uploaded.body.id}`)).body.upload, uploaded.body);
   assert.deepEqual(await call('/api/datasets/chart/query', 'POST', query), before);
   assert.equal((await call('/api/datasets/chart/prep/preview', 'POST', { pipeline })).status, 200);

@@ -61,7 +61,7 @@ export class DashboardRoutes {
           body = (await backend.grants(pathId))?.find(g => g.principal.type === principalType && g.principal.id === principalId);
           if (!body) fail('RESOURCE_NOT_FOUND', 404);
         } else if (versions && !pinned) body = this.page(request, record.versions.map(v => ({ version: v.version, publishedAt: v.publishedAt, publishedBy: v.publishedBy })));
-        else { body = describeDashboard(record, pinned); etag = pinned ?? record.latest; }
+        else { body = describeDashboard(record, pinned); etag = pinned ?? await backend.revision(pathId); }
       }
       await backend.analyses.check(stamp); await backend.authorize(pathId, principalId ? 'admin' : 'read');
       this.send(response, { status: 200, body, version: etag }); return;

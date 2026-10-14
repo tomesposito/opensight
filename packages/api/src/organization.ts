@@ -10,7 +10,7 @@ import type { Identity, SecurityService, SecurityState } from './security.js';
 import type { DefinitionStore, ResourceKind } from './store.js';
 
 export interface AssetGrant { principal: { type: 'user' | 'group'; id: string }; role: 'viewer' | 'co-owner' }
-export interface Folder { id: string; namespaceId: string; name: string; grants?: AssetGrant[] }
+export interface Folder { id: string; namespaceId: string; name: string; grants?: AssetGrant[]; version?: number; updatedAt?: string }
 export interface OrganizedAsset {
   id: string; kind: ResourceKind; namespaceId: string; folderId: string | null;
   /** Copies own an immutable definition snapshot; imported assets stay in the startup store. */
@@ -19,11 +19,19 @@ export interface OrganizedAsset {
   grants?: AssetGrant[];
   /** Durable v1 working-draft state; tombstones hide imported definitions. */
   analysisVersion?: number;
+  assetVersion?: number;
+  updatedAt?: string;
   dashboard?: import('./dashboard-model.js').DashboardRecord;
   datasetBindings?: import('./analysis-model.js').DatasetBindings;
   /** Server-owned identity pin for local prepared dataset links. */
   datasetBindingOwnerId?: string;
   deleted?: boolean;
+}
+/** Keep v1 optimistic revisions current when legacy organization verbs write. */
+export function touchOrganizedAsset(asset: OrganizedAsset): void {
+  if (asset.kind === 'analysis') asset.analysisVersion = (asset.analysisVersion ?? 1) + 1;
+  else asset.assetVersion = (asset.assetVersion ?? asset.dashboard?.latest ?? 1) + 1;
+  asset.updatedAt = new Date().toISOString();
 }
 export function resourceName(raw: unknown): string {
   if (typeof raw !== 'string' || !raw.trim() || raw.length > 512 || /[\x00-\x1f]/.test(raw)) invalid('$.name', 'expected a name');
@@ -49,12 +57,14 @@ export function validateGrants(raw: unknown, namespaceId: string, state: Securit
 /** Called inside the security store transaction and at startup. */
 export function validateOrganization(state: SecurityState): void {
   const folders = list(state.folders ?? []).map(raw => {
-    const f = record(raw, ['id', 'namespaceId', 'name', 'grants']);
+    const f = record(raw, ['id', 'namespaceId', 'name', 'grants', 'version', 'updatedAt']);
+    if (f.version !== undefined && (!Number.isSafeInteger(f.version) || Number(f.version) < 1) || f.updatedAt !== undefined && (typeof f.updatedAt !== 'string' || !Number.isFinite(Date.parse(f.updatedAt)))) invalid('$', 'invalid folder revision');
     const namespaceId = id(f.namespaceId, '$.namespaceId');
-    return { id: id(f.id, '$.id'), namespaceId, name: resourceName(f.name), ...(f.grants === undefined ? {} : { grants: validateGrants(f.grants, namespaceId, state) }) };
+    return { ...(f.version === undefined ? {} : { version: Number(f.version) }), ...(f.updatedAt === undefined ? {} : { updatedAt: String(f.updatedAt) }), id: id(f.id, '$.id'), namespaceId, name: resourceName(f.name), ...(f.grants === undefined ? {} : { grants: validateGrants(f.grants, namespaceId, state) }) };
   });
   const assets = list(state.assets ?? []).map(raw => {
-    const a = record(raw, ['id', 'kind', 'namespaceId', 'folderId', 'definition', 'grants', 'analysisVersion', 'datasetBindings', 'datasetBindingOwnerId', 'deleted', 'dashboard']);
+    const a = record(raw, ['id', 'kind', 'namespaceId', 'folderId', 'definition', 'grants', 'analysisVersion', 'datasetBindings', 'datasetBindingOwnerId', 'deleted', 'dashboard', 'assetVersion', 'updatedAt']);
+    if (a.assetVersion !== undefined && (!Number.isSafeInteger(a.assetVersion) || Number(a.assetVersion) < 1) || a.updatedAt !== undefined && (typeof a.updatedAt !== 'string' || !Number.isFinite(Date.parse(a.updatedAt)))) invalid('$', 'invalid asset revision');
     if (a.kind !== 'analysis' && a.kind !== 'dashboard') invalid('$.kind', 'expected analysis or dashboard');
     const assetId = id(a.id, '$.id'), namespaceId = id(a.namespaceId, '$.namespaceId');
     const folderId = a.folderId === null ? null : id(a.folderId, '$.folderId');
@@ -69,7 +79,7 @@ export function validateOrganization(state: SecurityState): void {
     if (a.deleted !== undefined && (a.deleted !== true)) invalid('$.deleted', 'invalid tombstone');
     if (a.datasetBindingOwnerId !== undefined) id(a.datasetBindingOwnerId, '$.datasetBindingOwnerId');
     if (a.datasetBindings !== undefined && !isObject(a.datasetBindings)) invalid('$.datasetBindings', 'invalid bindings');
-    return { ...(a.dashboard === undefined ? {} : { dashboard: a.dashboard }), ...(a.datasetBindingOwnerId === undefined ? {} : { datasetBindingOwnerId: a.datasetBindingOwnerId }), ...(a.analysisVersion === undefined ? {} : { analysisVersion: a.analysisVersion }), ...(a.datasetBindings === undefined ? {} : { datasetBindings: a.datasetBindings }), ...(a.deleted ? { deleted: true } : {}), id: assetId, kind: a.kind, namespaceId, folderId, ...(a.grants === undefined ? {} : { grants: validateGrants(a.grants, namespaceId, state) }), ...(a.definition === undefined ? {} : { definition: a.definition as JsonObject }) } as OrganizedAsset;
+    return { ...(a.assetVersion === undefined ? {} : { assetVersion: Number(a.assetVersion) }), ...(a.updatedAt === undefined ? {} : { updatedAt: String(a.updatedAt) }), ...(a.dashboard === undefined ? {} : { dashboard: a.dashboard }), ...(a.datasetBindingOwnerId === undefined ? {} : { datasetBindingOwnerId: a.datasetBindingOwnerId }), ...(a.analysisVersion === undefined ? {} : { analysisVersion: a.analysisVersion }), ...(a.datasetBindings === undefined ? {} : { datasetBindings: a.datasetBindings }), ...(a.deleted ? { deleted: true } : {}), id: assetId, kind: a.kind, namespaceId, folderId, ...(a.grants === undefined ? {} : { grants: validateGrants(a.grants, namespaceId, state) }), ...(a.definition === undefined ? {} : { definition: a.definition as JsonObject }) } as OrganizedAsset;
   });
   for (const resources of [folders, assets]) {
     if (resources.some(r => !state.namespaces.some(n => n.id === r.namespaceId))) invalid('$.namespaceId', 'unknown namespace');
@@ -141,6 +151,7 @@ export class OrganizationService {
         let asset = copy ? undefined : this.asset(state, identity.namespaceId, kind, assetId);
         if (!asset) { asset = { id: newId, kind, namespaceId: identity.namespaceId, folderId }; (state.assets ??= []).push(asset); }
         asset.folderId = folderId;
+        if (!copy) touchOrganizedAsset(asset);
         if (copy) {
           const source = this.asset(state, identity.namespaceId, kind, assetId);
           if (source?.grants !== undefined) asset.grants = structuredClone(source.grants);
@@ -178,6 +189,7 @@ export class OrganizationService {
         state.folders = state.folders!.filter(f => f !== existing);
         return { deleted: true };
       }
+      if (existing) { existing.version = (existing.version ?? 1) + 1; existing.updatedAt = new Date().toISOString(); }
       if (sub === 'permissions') {
         if (body!.grants === null) delete existing!.grants;
         else existing!.grants = validateGrants(body!.grants, identity.namespaceId, state);
