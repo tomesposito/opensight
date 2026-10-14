@@ -1,11 +1,46 @@
-# Issue #95 analyses slice — review gate and baseline verification
+# Issue #95 analyses slice — implementation verification and gap notes
+
+## Implementation (2026-10-14)
+
+Branch `work/issue-95-analyses-impl` implements the 13 confirmed analysis
+operations, shared admission, durable local/hosted storage, OpenAPI and
+contract tests. D-39 and D-43–D-47 are confirmed; no product questions remain.
+Serverless integration, dashboards, assets and MCP remain later slices.
+
+The static demo was rebuilt using the web build script and the required
+local shim script. It is a static artifact, not a deployed server. Offline
+captures completed with **0 page errors / 0 external requests**.
+
+All three PNGs are **byte-identical** to the proposal baseline. The initial
+classic capture crossed the existing two-second autosave boundary; the
+capture delay was shortened from 1,600 ms to 500 ms and the unsaved state
+asserted before recapture. No product code or pixels were altered to obtain
+the comparison. New-look and Home Q used the unchanged capture timing.
+The three reference comparisons below retain the same scores, matching
+aspect ratios, regions, exclusions and tolerance of 16.
+
+There are no new visible gaps to file or schedule. Existing gaps remain in
+the querying slice notes linked below. README media is unchanged because
+this slice changes no visible UI. No visual-parity claim is made.
+Implementation scripts, captures and reports remain ignored under
+`.opensight/issue-95-analyses-impl/`.
+
+Full root `npm test` exited 0: **2,701 passed / 0 failed / 18 skipped /
+0 cancelled**. All skips require live PostgreSQL. Per-suite counts are in
+the [slice document](headless-v1-analyses.md). OpenAPI references and document
+links resolve; `git diff --check` passes; `SOLUTION_DESIGN.md` is unchanged.
+No AWS calls, merge, push or deployment was performed.
+
+## Proposal baseline (2026-10-13)
+
+The following records the earlier proposal gate, before the confirmations
+and implementation above.
 
 2026-10-13, branch `work/issue-95-analyses`. This checkpoint contains a
-contract proposal and draft IDD D-39. **The analyses implementation is
+contract proposal and draft IDD D-39. **At that checkpoint, implementation was
 blocked on product review**, as required by the run brief's scope §4 and
-freeze Q5. The [slice document](headless-v1-analyses.md) names the five
-questions and the exact resume boundary. No analysis endpoint or mutation
-validation is claimed as implemented.
+freeze Q5. The proposal named five review questions and a resume boundary. No analysis
+endpoint or mutation validation was implemented by that checkpoint.
 
 ## Verification
 
