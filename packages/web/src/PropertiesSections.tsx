@@ -2,7 +2,7 @@ import { useId, type Dispatch, type ReactNode } from 'react';
 import type { AuthorAction, AuthorDraft, AuthorVisual } from './authoring.js';
 import { GRID_COLUMNS, defaultMultiplesOptions, hasSmallMultiplesWell } from './authoring.js';
 import type { MultiplesOptions as MultiplesOptionsState } from './model.js';
-import { hasDataLabels, hasLegend, LEGEND_POSITIONS, type LegendPosition, type LegendTextStyle, type LegendTitle } from './formatting.js';
+import { hasDataLabels, hasLegend, LEGEND_POSITIONS, DATA_LABEL_POSITIONS, type LegendPosition, type LegendTextStyle, type LegendTitle, type DataLabels, type DataLabelPosition } from './formatting.js';
 import { LIGHT_THEME } from './themes.js';
 
 type SectionProps = { visual: AuthorVisual; dispatch: Dispatch<AuthorAction> };
@@ -232,15 +232,36 @@ export function LegendOptions({ visual, dispatch }: SectionProps) {
 
 export function DataLabelsOptions({ visual, dispatch }: SectionProps) {
   if (!hasDataLabels(visual.kind)) return null;
+  const options: DataLabels = visual.formatting?.dataLabels ?? {};
+  // Strip back-to-default so the model and exports stay lean.
+  const clean = (next: DataLabels): DataLabels | undefined => {
+    const out: DataLabels = {};
+    if (next.content !== undefined && Object.keys(next.content).length && !(next.content.category !== false && next.content.metric !== false)) out.content = next.content;
+    if (next.position !== undefined && next.position !== 'auto') out.position = next.position;
+    if (next.style !== undefined && Object.keys(next.style).length) out.style = next.style;
+    if (next.allowOverlap !== undefined) out.allowOverlap = next.allowOverlap;
+    return Object.keys(out).length ? out : undefined;
+  };
+  const set = (next: DataLabels | undefined) => dispatch({ type: 'data-labels', labels: next });
+  const content = options.content ?? {};
+  const patchContent = (key: 'category' | 'metric', value: boolean) => set(clean({ ...options, content: { ...content, [key]: value } }));
   return <details className="property-section"><summary data-author-control="data-labels">Data labels</summary>
     <label className="toggle"><input type="checkbox" checked={visual.labels} onChange={e => dispatch({ type: 'display', property: 'labels', value: e.target.checked })} />Show data labels</label>
-    <Unavailable label="Data label content and styling controls" reason="Independent category/metric, position, typography and overlap settings are not supported yet. Labels follow the visual type and analysis theme; Outside is a reference default.">
-      <label className="toggle"><input type="checkbox" />Category</label>
-      <label className="toggle"><input type="checkbox" />Metric</label>
-      <label>Position<select aria-label="Data label position" defaultValue="Outside"><option>Outside</option></select></label>
-      <TextStyling label="Data label" size={12} />
-      <label className="toggle"><input type="checkbox" />Allow labels to overlap</label>
-    </Unavailable>
+    <section className="property-group" aria-label="Data label content"><h4>CONTENT</h4>
+      <label className="toggle"><input type="checkbox" aria-label="Show category in data labels" checked={content.category ?? true}
+        onChange={e => patchContent('category', e.target.checked)} />Category</label>
+      <label className="toggle"><input type="checkbox" aria-label="Show metric in data labels" checked={content.metric ?? true}
+        onChange={e => patchContent('metric', e.target.checked)} />Metric</label>
+    </section>
+    <label>Position<select aria-label="Data label position" value={options.position ?? 'auto'}
+      onChange={e => set(clean({ ...options, position: e.target.value as DataLabelPosition }))}>
+      {DATA_LABEL_POSITIONS.map(position => <option key={position} value={position}>{position[0] + position.slice(1)}</option>)}
+    </select></label>
+    <TextStyling label="Data label" size={12} value={options.style ?? {}}
+      onChange={style => set(clean({ ...options, style }))} />
+    <p className="field-hint">Underline is saved with the visual, but labels cannot render it.</p>
+    <label className="toggle"><input type="checkbox" aria-label="Allow labels to overlap" checked={options.allowOverlap ?? false}
+      onChange={e => set(clean({ ...options, allowOverlap: e.target.checked }))} />Allow labels to overlap</label>
     <label>Data label decimal places<input type="number" min="0" max="12" placeholder="Automatic" value={visual.formatting?.decimalPlaces ?? ''} onChange={e => {
       if (e.target.value === '') {
         const { decimalPlaces: _old, ...rest } = visual.formatting ?? {};
