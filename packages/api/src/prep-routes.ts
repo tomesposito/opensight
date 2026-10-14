@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { materializationReason } from './blaze-policy.js';
 import { BlazeStore, BlazeError, directSettings, executionSettings, type BlazeTable, type ExecutionSettings, type CachedInput } from './blaze.js';
-import { streamPrepPostgres, queryPrepared, type PrepMemoryTable } from '@opensight/query-engine';
+import { streamPrepPostgres, queryPrepared, planPreparedVisual, queryPreparedVisual, type PrepMemoryTable } from '@opensight/query-engine';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { parseBundleResource, type BundleDataSet } from '@opensight/bundle-parser';
 import { PrepError, prepFail, prepName, prepObject, validatePrepPipeline, type PrepInput, type PrepPipeline } from '@opensight/bundle-parser/prep';
@@ -164,6 +164,18 @@ export class PrepRoutes {
       this.requireDirect(identity, id);
       send(response, 200, await this.blaze.transient(table => this.materialize(identity, existing.resource.dataSetId, table), table => use(table, null)));
     }
+  }
+
+  async dashboardVisual(identity: Identity, id: string, definition: unknown, visualId: string, dataSetArn: string) {
+    await this.analysisSchema(identity, id);
+    const analysis = { ResourceType: 'Analysis', AnalysisId: 'published', Name: 'Published dashboard', Definition: definition };
+    const run = (table: BlazeTable) => {
+      const plan = planPreparedVisual(table.columns, analysis, visualId, dataSetArn);
+      return { ...queryPreparedVisual(table.columns, table.rowCount, table.value, analysis, visualId, dataSetArn), bindings: Object.fromEntries([...plan.dimensions, ...plan.measures].map(f => [f.fieldId, f.outputName])) };
+    };
+    if (this.blaze.status(this.key(identity, id)).mode === 'BLAZE') return run(this.blaze.read(this.key(identity, id)).table);
+    this.requireDirect(identity, id);
+    return this.blaze.transient(table => this.materialize(identity, id, table), run);
   }
 
   private constructor(private readonly store: AutomationStore<State>, private readonly connectors: ConnectorRoutes, private readonly bindings: readonly PrepPostgresBinding[], private readonly persistent: boolean) {}

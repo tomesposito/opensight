@@ -7,7 +7,7 @@ import { projectDefinition } from '@opensight/web/analysis';
 /** Only definitions and server-owned binding identities are durable. */
 export interface DashboardVersion {
   version: number; publishedAt: string; publishedBy: string;
-  name: string; definition: AnalysisRecord['definition']; datasetBindings: DatasetBindings;
+  name: string; definition: AnalysisRecord['definition']; wireDefinition: JsonObject; datasetBindings: DatasetBindings;
   bindingOwnerId: string; sourceAnalysisId: string;
 }
 export interface DashboardRecord {
@@ -42,7 +42,7 @@ export function dashboardVersion(record: DashboardRecord, version = record.lates
 }
 export function describeDashboard(record: DashboardRecord, version = record.latest): JsonObject {
   const v = dashboardVersion(record, version);
-  return { DashboardId: record.id, Name: v.name, Definition: projectDefinition(v.definition), Errors: [], Version: v.version, PublishedAt: v.publishedAt, SourceAnalysisId: v.sourceAnalysisId };
+  return { DashboardId: record.id, Name: v.name, Definition: structuredClone(v.wireDefinition), Errors: [], Version: v.version, PublishedAt: v.publishedAt, SourceAnalysisId: v.sourceAnalysisId };
 }
 export function changeDashboard(prior: DashboardRecord | undefined, change: DashboardChange, userId: string): DashboardRecord | null {
   if (change.kind === 'publish') {
@@ -52,7 +52,7 @@ export function changeDashboard(prior: DashboardRecord | undefined, change: Dash
     const result: DashboardRecord = structuredClone(prior ?? { id: change.dashboardId, sourceAnalysisId: change.source.id, sourceActive: true, latest: 0, versions: [] });
     if (!Number.isSafeInteger(result.latest + 1)) throw new MetadataError('DASHBOARD_VERSION_EXHAUSTED', 409);
     result.latest++;
-    result.versions.push({ version: result.latest, name: change.source.name, definition: structuredClone(change.source.definition), datasetBindings: structuredClone(change.source.datasetBindings), bindingOwnerId: userId, sourceAnalysisId: change.source.id, publishedAt: change.publishedAt, publishedBy: userId });
+    result.versions.push({ version: result.latest, name: change.source.name, definition: structuredClone(change.source.definition), wireDefinition: projectDefinition(change.source.definition), datasetBindings: structuredClone(change.source.datasetBindings), bindingOwnerId: userId, sourceAnalysisId: change.source.id, publishedAt: change.publishedAt, publishedBy: userId });
     if (change.cap) result.versions = result.versions.slice(-change.cap);
     return result;
   }
@@ -77,7 +77,7 @@ export function validateDashboardRecord(raw: unknown, id: string): asserts raw i
   if (!r || r.id !== id || !validId(id) || !validId(r.sourceAnalysisId) || typeof r.sourceActive !== 'boolean' || !Number.isSafeInteger(r.latest) || r.latest < 1 || !Array.isArray(r.versions) || !r.versions.length) throw new Error('Invalid dashboard history');
   let last = 0;
   for (const v of r.versions) {
-    if (!Number.isSafeInteger(v.version) || v.version <= last || v.version > r.latest || v.sourceAnalysisId !== r.sourceAnalysisId || !validId(v.bindingOwnerId) || !validId(v.publishedBy) || typeof v.name !== 'string' || typeof v.publishedAt !== 'string' || !Number.isFinite(Date.parse(v.publishedAt)) || !v.definition || !Array.isArray(v.definition.dataSetIdentifierDeclarations) || !v.datasetBindings || typeof v.datasetBindings !== 'object') throw new Error('Invalid dashboard version');
+    if (!Number.isSafeInteger(v.version) || v.version <= last || v.version > r.latest || v.sourceAnalysisId !== r.sourceAnalysisId || !validId(v.bindingOwnerId) || !validId(v.publishedBy) || typeof v.name !== 'string' || typeof v.publishedAt !== 'string' || !Number.isFinite(Date.parse(v.publishedAt)) || !v.wireDefinition || !Array.isArray(v.wireDefinition.DataSetIdentifierDeclarations) || !v.definition || !Array.isArray(v.definition.dataSetIdentifierDeclarations) || !v.datasetBindings || typeof v.datasetBindings !== 'object') throw new Error('Invalid dashboard version');
     const names = v.definition.dataSetIdentifierDeclarations.map(d => d.identifier);
     if (new Set(names).size !== names.length || Object.keys(v.datasetBindings).length !== names.length) throw new Error('Invalid dashboard bindings');
     for (const name of names) {

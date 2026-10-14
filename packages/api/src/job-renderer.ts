@@ -31,7 +31,14 @@ export class JobRenderer implements JobExecutor {
   private async dashboard(context: TenantContext, spec: Exclude<JobSpec, { kind: 'refresh' }>) {
     const asset = await this.content.asset(context, 'dashboard', spec.dashboardId), stored = object(asset.body.definition), definition = object(stored.Definition);
     if (!Array.isArray(asset.body.datasets) || asset.body.datasets.length !== 1 || !Array.isArray(definition.DataSetIdentifierDeclarations) || definition.DataSetIdentifierDeclarations.length !== 1) throw new MetadataError('JOB_DATASET_UNSUPPORTED', 422);
-    const datasetId = identifier(object(asset.body.datasets[0]).id);
+    const binding = object(asset.body.datasets[0]);
+    if (binding.kind !== 'dataset') throw new MetadataError('JOB_DATASET_UNSUPPORTED', 422);
+    const datasetId = identifier(binding.id);
+    if (asset.body.published) {
+      const dataset = await this.data.sources.metadata.get(context, { kind: 'dataset', id: datasetId });
+      const sources = dataset.body.sources;
+      if (!Array.isArray(sources) || sources.length !== 1 || object(sources[0]).ownerId !== context.userId) throw new MetadataError('DASHBOARD_DATASET_ACCESS_DENIED', 403);
+    }
     if (spec.kind === 'alert' && datasetId !== spec.datasetId) throw new MetadataError('JOB_DATASET_MISMATCH', 422);
     const admission = await this.content.admission(context, { anonymous: false, tags: {} }, datasetId);
     const analysis = { ResourceType: 'Analysis', AnalysisId: asset.id, Name: String(stored.Name ?? asset.id), Definition: definition };
