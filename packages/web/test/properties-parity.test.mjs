@@ -116,19 +116,68 @@ test('Group/Color field name updates the compiled title and table without renami
 });
 
 
-test('Legend visibility and every position compile, persist, and retain unsupported title/value controls', async t => {
+test('Legend title and value styling edit, compile, persist, and round-trip', async t => {
   const ui = await mount(t, LegendOptions);
   assert.equal(ui.root.findAllByType('select')[0].props.value, 'AUTO');
-  for (const position of ['AUTO', 'TOP', 'BOTTOM', 'LEFT', 'RIGHT']) {
-    await ui.change('Legend position', position, 'select');
-    const option = ui.compile().option;
-    assert.equal(option.legend[position === 'AUTO' ? 'bottom' : position.toLowerCase()], 0);
-    ui.verifySaved();
-  }
+  await ui.change('Legend position', 'RIGHT', 'select');
+  assert.equal(ui.compile().option.legend.right, 0);
   await ui.change('Show legend', false); assert.equal(ui.compile().option.legend.show, false);
   await ui.change('Show legend', true); assert.equal(ui.compile().option.legend.show, true);
-  unavailable(ui.root, 'Legend title controls', /not supported/);
-  unavailable(ui.root, 'Legend value controls', /Font and color follow the analysis theme/);
+  assert.equal(ui.visual().formatting?.legendTitle, undefined);
+  assert.equal(ui.visual().formatting?.legendValueStyle, undefined);
+
+  // Title: the show toggle reveals text + styling; title state is saved but not
+  // drawn — ECharts has no legend-title primitive.
+  await ui.change('Show legend title', true);
+  assert.deepEqual(ui.visual().formatting.legendTitle, { show: true });
+  await ui.change('Legend title', 'My legend');
+  assert.equal(ui.visual().formatting.legendTitle.text, 'My legend');
+  const titleSize = ui.root.findByProps({ 'aria-label': 'Legend title font size' });
+  await act(() => titleSize.props.onChange({ target: { value: '16' } }));
+  await act(() => ui.root.findByProps({ 'aria-label': 'Legend title bold' }).props.onClick());
+  assert.deepEqual(ui.visual().formatting.legendTitle.style, { fontSize: 16, bold: true });
+  assert.equal(ui.compile().option.legend.textStyle, undefined);
+
+  // Value styling renders into the compiled legend text style.
+  const valueSize = ui.root.findByProps({ 'aria-label': 'Legend value font size' });
+  await act(() => valueSize.props.onChange({ target: { value: '18' } }));
+  await act(() => ui.root.findByProps({ 'aria-label': 'Legend value bold' }).props.onClick());
+  await act(() => ui.root.findByProps({ 'aria-label': 'Legend value italic' }).props.onClick());
+  await act(() => ui.root.findByProps({ 'aria-label': 'Legend value underline' }).props.onClick());
+  await act(() => ui.root.findByProps({ 'aria-label': 'Legend value color' }).props.onChange({ target: { value: '#ff0000' } }));
+  assert.deepEqual(ui.visual().formatting.legendValueStyle, { fontSize: 18, color: '#ff0000', bold: true, italic: true, underline: true });
+  const textStyle = ui.compile().option.legend.textStyle;
+  assert.equal(textStyle.fontSize, 18);
+  assert.equal(textStyle.fontWeight, 700);
+  assert.equal(textStyle.fontStyle, 'italic');
+  assert.equal(textStyle.color, '#ff0000');
+  assert.equal(textStyle.textDecoration, undefined);
+
+  // Fail-closed editing: out-of-range sizes are ignored, clearing restores defaults.
+  await act(() => valueSize.props.onChange({ target: { value: '200' } }));
+  assert.equal(ui.visual().formatting.legendValueStyle.fontSize, 18);
+  await act(() => valueSize.props.onChange({ target: { value: '' } }));
+  assert.equal(ui.visual().formatting.legendValueStyle.fontSize, undefined);
+  for (const flag of ['bold', 'italic', 'underline']) await act(() => ui.root.findByProps({ 'aria-label': `Legend value ${flag}` }).props.onClick());
+  await act(() => ui.root.findByProps({ 'aria-label': 'Legend value reset color to theme default' }).props.onClick());
+  assert.equal(ui.visual().formatting.legendValueStyle, undefined);
+  await ui.change('Show legend title', false);
+  // Unchecking hides the title but retains its text and styling for next time.
+  assert.deepEqual(ui.visual().formatting.legendTitle, { text: 'My legend', style: { fontSize: 16, bold: true } });
+
+  // Reducer rejects invalid legend actions without touching the visual.
+  const before = ui.visual();
+  const draft = ui.draft();
+  assert.deepEqual(activeSheet(authorReducer(draft, { type: 'legend-value-style', style: { fontSize: 200 } })).visuals[1], before);
+  assert.deepEqual(activeSheet(authorReducer(draft, { type: 'legend-title', title: { text: 'x'.repeat(200) } })).visuals[1], before);
+
+  // Round-trip through storage keeps both legend formatting fields.
+  await ui.change('Show legend title', true);
+  await ui.change('Legend title', 'Persisted');
+  await act(() => ui.root.findByProps({ 'aria-label': 'Legend value font size' }).props.onChange({ target: { value: '13' } }));
+  const revived = parseDraft(JSON.stringify(ui.draft())).sheets[0].visuals[1];
+  assert.deepEqual(revived.formatting.legendTitle, { show: true, text: 'Persisted', style: { fontSize: 16, bold: true } });
+  assert.deepEqual(revived.formatting.legendValueStyle, { fontSize: 13 });
   ui.verifySaved();
 });
 

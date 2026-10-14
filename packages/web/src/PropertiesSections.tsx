@@ -115,8 +115,21 @@ export function MultiplesOptions({ visual, dispatch }: SectionProps) {
 /** Wired text-styling controls: font (the analysis theme owns the typeface — no
  *  fake font list), size, color, and B/I/U. Absent fields mean theme defaults;
  *  `onChange(undefined)` clears the whole style. Underline is saved but never
- *  rendered: ECharts text has no underline primitive. */
-function TextStyling({ label, size, value, onChange }: { label: string; size: number; value: LegendTextStyle; onChange: (style: LegendTextStyle | undefined) => void }) {
+ *  rendered: ECharts text has no underline primitive. Without `value`/`onChange`
+ *  it renders the unwired reference placeholder for `<Unavailable>` stubs. */
+function TextStyling({ label, size, value, onChange }: { label: string; size: number; value?: LegendTextStyle; onChange?: (style: LegendTextStyle | undefined) => void }) {
+  if (value === undefined || onChange === undefined) return <>
+    <h4 className="property-caption">Text styling</h4>
+    <div className="property-inline">
+      <select aria-label={`${label} font`} defaultValue="Analysis theme"><option>Analysis theme</option></select>
+      <input aria-label={`${label} font size`} type="number" placeholder={String(size)} />
+    </div>
+    <div className="property-inline" role="group" aria-label={`${label} emphasis`}>
+      <button type="button" aria-label={`${label} bold`}><b>B</b></button>
+      <button type="button" aria-label={`${label} italic`}><i>I</i></button>
+      <button type="button" aria-label={`${label} underline`}><u>U</u></button>
+    </div>
+  </>;
   const patch = (p: Partial<LegendTextStyle>) => {
     const next = { ...value, ...p };
     for (const flag of ['bold', 'italic', 'underline'] as const) if (!next[flag]) delete next[flag];
@@ -156,7 +169,7 @@ export function GroupColorOptions({ visual, dispatch }: SectionProps) {
   return <details className="property-section"><summary>Group/Color</summary>
     <Unavailable label="Group title controls" reason="A separate Group/Color title and its text styling are not supported yet.">
       <label className="toggle"><input type="checkbox" aria-label="Show Group/Color title" />Title</label>
-      <TextStyling label="Group title" size={14} value={{}} onChange={() => {}} />
+      <TextStyling label="Group title" size={14} />
     </Unavailable>
     <label>Field name<input aria-label="Group/Color field name" disabled={!field} title={!field ? 'Assign a Group/Color field first.' : 'Display name used in generated titles and result tables.'} placeholder={field ?? 'Assign a Group/Color field first'} maxLength={128}
       value={field && names && Object.hasOwn(names, field) ? names[field] : ''}
@@ -225,7 +238,7 @@ export function DataLabelsOptions({ visual, dispatch }: SectionProps) {
       <label className="toggle"><input type="checkbox" />Category</label>
       <label className="toggle"><input type="checkbox" />Metric</label>
       <label>Position<select aria-label="Data label position" defaultValue="Outside"><option>Outside</option></select></label>
-      <TextStyling label="Data label" size={12} value={{}} onChange={() => {}} />
+      <TextStyling label="Data label" size={12} />
       <label className="toggle"><input type="checkbox" />Allow labels to overlap</label>
     </Unavailable>
     <label>Data label decimal places<input type="number" min="0" max="12" placeholder="Automatic" value={visual.formatting?.decimalPlaces ?? ''} onChange={e => {
