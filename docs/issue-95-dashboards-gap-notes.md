@@ -6,7 +6,7 @@ operations, storage and access rules, renderer configuration, and deferred work.
 
 ## Test verification
 
-The final root `npm test` exited successfully: **2,720 passed / 0 failed /
+The post-D-49-correction root `npm test` exited successfully: **2,720 passed / 0 failed /
 18 skipped / 0 cancelled** (2,738 total). All 18 skips are live-Postgres
 integration tests because `DATABASE_URL` is unset. All 16 dashboard contract
 tests passed in this full run.
@@ -66,6 +66,13 @@ media is unchanged because this slice changes no visible UI. Captures,
 reference configuration and reports stay ignored under
 `.opensight/issue-95-dashboards-impl/`; reference pixels are not committed.
 
+After the D-49 correction and reboot, `npm run build:demo --workspace
+@opensight/web` passed again. Fresh captures are byte-identical to both the
+earlier dashboard captures and the analyses baseline, with zero page errors
+or external requests. The same reference comparison produced the percentages
+above. This rerun's captures, pairings and reports stay ignored under
+`.opensight/issue-95-dashboards-resume/`.
+
 ## Contract and scope checks
 
 OpenAPI contains all twelve dashboard operations with unique operation IDs,
@@ -91,4 +98,17 @@ version record (`errors` on `DashboardVersion`, surfaced as `Errors` in the
 fail. The contract test was updated to assert the new behavior, the OpenAPI
 `DashboardPublished` schema and SDK `PublishAnalysisResult` type now include
 `Errors`, and the restart validator requires the stored `errors` shape.
-The full suite must be re-run after this pass before merge.
+The post-reboot full root `npm test` rerun on `fd709523` passed with the exact
+per-suite counts above, including all 16 dashboard contracts. The log and
+aggregated counts are ignored under `.opensight/issue-95-dashboards-resume/`
+(`npm-test-verified.log` and `root-test-counts.json`).
+
+This run required execution outside the restricted sandbox: its procfs uses
+a different PID namespace, so the existing worker-containment check returns
+`WORKER_CONTAINMENT_UNAVAILABLE`. The same isolated test passed unchanged
+outside that sandbox before the full rerun. No guard was weakened and no
+additional test was skipped.
+
+The frozen-contract and slice descriptions now consistently distinguish
+published visual diagnostics from hard structure, binding and access errors.
+No implementation checkpoint was repeated and no product decision changed.

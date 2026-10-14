@@ -202,8 +202,9 @@ The [dashboard slice](headless-v1-dashboards.md) implements these v1 operations:
 | POST | `/dashboards/{id}/exports` | `create_dashboard_export` |
 
 `principalType` is `user` or `group`. Publish requires source build/co-owner
-access, validates executability, and appends an immutable definition with
-its own owner-pinned dataset bindings. It never copies data authorization.
+access, records validation diagnostics (drafts may publish per D-49), and
+appends an immutable definition with its own owner-pinned dataset bindings.
+It never copies data authorization.
 Versions start at 1; reads default to latest published; source deletion
 preserves versions and permanently severs the republish link. Retention
 keeps all versions unless an operator cap prunes the oldest non-latest ones.

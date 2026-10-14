@@ -127,8 +127,10 @@ Reader bodies contain values keyed by **frozen control ID**, never raw SQL,
 columns, expressions, parameter declarations or ad-hoc predicates. Parameter
 control values are validated against the declared scalar type/multiplicity.
 Supported category filter controls replace the frozen filter's value list on
-a request-local clone. Defaults use the frozen declarations. Unsupported
-execution semantics fail the shared publish-time validator.
+a request-local clone. Defaults use the frozen declarations. The shared
+validator retains its hard errors for invalid structure, unresolved bindings
+and denied access. Visual execution diagnostics are frozen with the version
+under D-49; publication does not make an incomplete visual executable.
 
 QuickSight parameter defaults now enter the same typed binding and expression
 path as interactive queries; DuckDB and prepared/fixture execution share it.
@@ -192,7 +194,8 @@ CSV/PDF output. PDF protocol tests use a local fixture; a real Chromium
 render was also exercised. Shared engine tests compare parameter semantics
 between DuckDB and the prepared evaluator.
 
-The final root `npm test` passed: **2,720 passed / 0 failed / 18 skipped**.
+The full root `npm test` rerun after the D-49 correction passed:
+**2,720 passed / 0 failed / 18 skipped**.
 All skips require live Postgres (`DATABASE_URL` is unset). The static demo
 was rebuilt; all three captures are byte-identical to the analyses baseline,
 with zero page errors or external requests. Per-suite counts and reference
@@ -202,5 +205,7 @@ Deferred by the brief: serverless `/api/v1` integration and durable distributed
 rate/retry adapters (remote handoff; `serverless-application.ts` and Lambda
 composition unchanged), anonymous/delegated data access, stored snapshots,
 job-backed large exports, assets and dashboard MCP tools. No product decision
-is required to use the implemented slice; the D-49/D-54 text discrepancies
-above remain documentation follow-ups.
+is required to use the implemented slice. Decision-document housekeeping is
+deferred: D-49's recommendation and implications still describe the older
+executable-only gate, and D-54 can record the brief's synchronous CSV/PDF
+choices. The confirmed decisions are unchanged.
