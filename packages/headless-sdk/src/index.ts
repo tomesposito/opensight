@@ -1,8 +1,12 @@
 export { OpenSightClient } from './client.js';
-export type { OpenSightClientOptions, RequestOptions } from './client.js';
+export type { OpenSightClientOptions, RequestOptions, AnalysisMutationOptions } from './client.js';
 export { OpenSightApiError } from './errors.js';
 export type {
   ApiErrorBody,
+  AnalysisCalculatedFields, AnalysisDescribe, AnalysisDiagnostic, AnalysisFilterGroup,
+  AnalysisLayouts, AnalysisSummary, BundleDefinition, BundleSheet, BundleVisual,
+  CreateAnalysisBody, DatasetBinding, DatasetBindings, DeleteAnalysisResult,
+  UpdateAnalysisBody, VersionedResult,
   Column,
   ColumnType,
   DatasetDescribe,
