@@ -17,6 +17,30 @@ export interface ConditionalRule { fieldId: string; operator: 'gt' | 'gte' | 'lt
 /** Text styling for legend title and legend value entries (QuickSight Legend panel parity). */
 export interface LegendTextStyle { fontSize?: number; color?: string; bold?: boolean; italic?: boolean; underline?: boolean }
 export interface LegendTitle { show?: boolean; text?: string; style?: LegendTextStyle }
+export const DATA_LABEL_POSITIONS = ['auto', 'inside', 'outside'] as const;
+export type DataLabelPosition = typeof DATA_LABEL_POSITIONS[number];
+export const dataLabelPositionValid = (raw: unknown): raw is DataLabelPosition => DATA_LABEL_POSITIONS.some(p => p === raw);
+/** Which parts of a data label are shown (QuickSight Data labels panel parity). */
+export interface DataLabelContent { category?: boolean; metric?: boolean }
+export function dataLabelContentValid(raw: unknown): raw is DataLabelContent {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return false;
+  const c = raw as Record<string, unknown>;
+  return styleKeys(c, ['category', 'metric'])
+    && (c.category === undefined || typeof c.category === 'boolean')
+    && (c.metric === undefined || typeof c.metric === 'boolean');
+}
+/** Data label content/styling options; absent means today's defaults. Underline has no
+ *  ECharts label primitive, so the flag stays in the model and exports but never renders. */
+export interface DataLabels { content?: DataLabelContent; position?: DataLabelPosition; style?: LegendTextStyle; allowOverlap?: boolean }
+export function dataLabelsValid(raw: unknown): raw is DataLabels {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return false;
+  const d = raw as Record<string, unknown>;
+  return styleKeys(d, ['content', 'position', 'style', 'allowOverlap'])
+    && (d.content === undefined || dataLabelContentValid(d.content))
+    && (d.position === undefined || dataLabelPositionValid(d.position))
+    && (d.style === undefined || legendTextStyleValid(d.style))
+    && (d.allowOverlap === undefined || typeof d.allowOverlap === 'boolean');
+}
 const styleKeys = (v: Record<string, unknown>, allowed: string[]) => Object.keys(v).every(k => allowed.includes(k));
 export function legendTextStyleValid(raw: unknown): raw is LegendTextStyle {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return false;
@@ -58,6 +82,8 @@ export interface VisualFormatting {
   titleFontSize?: number; barCategoryGap?: number; legendPosition?: LegendPosition;
   /** Legend title (show/text/style) and legend value-entry text styling; absent means theme defaults. */
   legendTitle?: LegendTitle; legendValueStyle?: LegendTextStyle;
+  /** Data label content/styling options (QuickSight Data labels panel); absent means today's defaults. */
+  dataLabels?: DataLabels;
   headersVisible?: boolean; rowNamesVisible?: boolean; columnNamesVisible?: boolean; valueNamesVisible?: boolean;
   headerColor?: string; headerBackground?: string; cellColor?: string; cellBackground?: string;
   fontSize?: number; decimalPlaces?: number; names?: Record<string, string>; rules?: ConditionalRule[];
@@ -67,10 +93,11 @@ export function formattingValid(raw: unknown): raw is VisualFormatting {
   const f = raw as Record<string, unknown>;
   const booleans = ['headersVisible', 'rowNamesVisible', 'columnNamesVisible', 'valueNamesVisible'];
   const colors = ['headerColor', 'headerBackground', 'cellColor', 'cellBackground'];
-  if (Object.keys(f).some(k => ![...booleans, ...colors, 'fontSize', 'decimalPlaces', 'names', 'rules', 'pivot', 'titleFontSize', 'barCategoryGap', 'legendPosition', 'legendTitle', 'legendValueStyle'].includes(k))) return false;
+  if (Object.keys(f).some(k => ![...booleans, ...colors, 'fontSize', 'decimalPlaces', 'names', 'rules', 'pivot', 'titleFontSize', 'barCategoryGap', 'legendPosition', 'legendTitle', 'legendValueStyle', 'dataLabels'].includes(k))) return false;
   if (f.legendPosition !== undefined && !legendPositionValid(f.legendPosition)) return false;
   if (f.legendTitle !== undefined && !legendTitleValid(f.legendTitle)) return false;
   if (f.legendValueStyle !== undefined && !legendTextStyleValid(f.legendValueStyle)) return false;
+  if (f.dataLabels !== undefined && !dataLabelsValid(f.dataLabels)) return false;
   if (f.pivot !== undefined && !pivotOptionsValid(f.pivot)) return false;
   if (f.titleFontSize !== undefined && (!Number.isInteger(f.titleFontSize) || Number(f.titleFontSize) < 8 || Number(f.titleFontSize) > 48)) return false;
   if (f.barCategoryGap !== undefined && (!Number.isInteger(f.barCategoryGap) || Number(f.barCategoryGap) < 0 || Number(f.barCategoryGap) > 80)) return false;
