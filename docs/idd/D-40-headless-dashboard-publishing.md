@@ -1,7 +1,8 @@
 ---
-status: 🚧 Draft
+status: ✅ Confirmed
 owner: Tom Esposito
 date: 2026-10-13
+confirmed: 2026-10-14
 labels: [idd]
 ---
 
@@ -23,7 +24,22 @@ asset search/move/permission verbs (assets slice), MCP tool mapping
 (mechanical 1:1 per freeze Q7), new SQL execution capabilities,
 deployment and publishing this branch.
 
-### 🚧 IDD D-40 — What dashboard publishing contract should headless v1 expose?
+### ✅ IDD D-40 — What dashboard publishing contract should headless v1 expose?
+
+#### DECISION (product owner, Tom, 2026-10-14)
+
+Option 2 approved: publish under the analysis, versions under the
+dashboard, with the access, lifecycle, and export semantics in the
+slice proposal. The seven open questions below are now their own IDDs;
+the dashboards implementation is gated on their answers.
+
+- Q1 (who can publish) → [D-48](D-48-dashboard-who-can-publish.md)
+- Q2 (clean state) → [D-49](D-49-dashboard-publish-clean-state.md)
+- Q3 (dashboard identity) → [D-50](D-50-dashboard-identity.md)
+- Q4 (version addressing) → [D-51](D-51-dashboard-version-addressing.md)
+- Q5 (lifecycle) → [D-52](D-52-dashboard-lifecycle.md)
+- Q6 (reader/share access) → [D-53](D-53-dashboard-reader-share-access.md)
+- Q7 (export shape) → [D-54](D-54-dashboard-export-shape.md)
 
 #### CONTEXT
 
@@ -78,14 +94,12 @@ model the product owner has not approved?
    own product decision and security proof; it must not arrive as a
    default inside this slice.
 
-#### REASONING
+#### REASONING — adopted as the decision above (2026-10-14)
 
-[WIP] Option 2 is recommended for review: it implements D-38 exactly,
-keeps the tenant boundary intact (a dashboard grant never authorizes
-another owner's prepared data), and leaves the delegation model of
-option 3 as an explicit future decision rather than a silent default.
-Option 1 is excluded by D-38. No option has been selected by the
-product owner.
+The product owner approved option 2. The loop's recommendation is
+superseded by the decision; the per-question IDDs D-48–D-54 carry the
+remaining calls. Option 1 remains excluded by D-38; option 3 remains a
+future decision, not a silent default.
 
 #### IMPLICATIONS
 
@@ -106,7 +120,11 @@ product owner.
   re-derived from D-39 if D-39 lands a different access or validation
   model. Q6 (reader/share access) does not change HQ-4.
 
-#### OPEN QUESTIONS (for the product owner)
+#### OPEN QUESTIONS — each now its own IDD (decided 2026-10-14)
+
+The questions below were split into per-question IDDs D-48–D-54; the
+original wording is preserved there. This section is kept for the
+record.
 
 1. Who can publish — build capability + co-owner access on the source
    analysis, administrator-only, or a separate publish grant?
