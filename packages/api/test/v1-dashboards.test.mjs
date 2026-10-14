@@ -59,8 +59,8 @@ for (const [plane, fixture] of [['hosted', hosted], ['local', local]]) test(`v1 
   assert.equal((await f.request(`${dashboards}/${id}`)).body.Name, 'Second name');
   if (f.restart) { await f.restart(); assert.equal(JSON.stringify((await f.request(`${dashboards}/${id}/versions/1`)).body), JSON.stringify(v1.body)); }
   else { const call = await serving(t, f); assert.deepEqual((await call(`${dashboards}/${id}/versions/1`, { token: (await f.login()).token })).body, v1.body); }
-  error(await f.request(`${dashboards}/${id}`, { method: 'DELETE', headers: at(1) }), 412, 'DASHBOARD_PRECONDITION_FAILED');
-  error(await f.request(`${dashboards}/${id}`, { method: 'DELETE' }), 412, 'DASHBOARD_PRECONDITION_FAILED');
+  error(await f.request(`${dashboards}/${id}`, { method: 'DELETE', headers: at(1) }), 412, 'ASSET_PRECONDITION_FAILED');
+  error(await f.request(`${dashboards}/${id}`, { method: 'DELETE' }), 428, 'V1_IF_MATCH_REQUIRED');
   error(await f.request(`${dashboards}/${id}/versions/2`, { method: 'DELETE', headers: at(2) }), 409, 'DASHBOARD_LATEST_VERSION');
   good(await f.request(`${dashboards}/${id}/versions/1`, { method: 'DELETE', headers: at(2) }));
   error(await f.request(`${dashboards}/${id}/versions/1`), 404, 'RESOURCE_NOT_FOUND');
@@ -68,8 +68,9 @@ for (const [plane, fixture] of [['hosted', hosted], ['local', local]]) test(`v1 
   good(await f.request(`${dashboards}/${id}`)); error(await publish(f, 'analysis', id), 404, plane === 'local' ? 'RESOURCE_NOT_FOUND' : 'RESOURCE_NOT_FOUND');
   good(await f.request(analyses, { method: 'POST', body: original }), 201);
   error(await publish(f, 'analysis', id), 409, 'DASHBOARD_SOURCE_MISMATCH');
-  good(await f.request(`${dashboards}/${id}`, { method: 'DELETE', headers: { ...at(2), 'Idempotency-Key': 'delete' } }));
-  assert.equal(good(await f.request(`${dashboards}/${id}`, { method: 'DELETE', headers: { ...at(2), 'Idempotency-Key': 'delete' } })).headers['idempotent-replayed'], 'true');
+  const currentETag = good(await f.request(`${dashboards}/${id}`)).headers.etag;
+  good(await f.request(`${dashboards}/${id}`, { method: 'DELETE', headers: { 'If-Match': currentETag, 'Idempotency-Key': 'delete' } }));
+  assert.equal(good(await f.request(`${dashboards}/${id}`, { method: 'DELETE', headers: { 'If-Match': currentETag, 'Idempotency-Key': 'delete' } })).headers['idempotent-replayed'], 'true');
   error(await f.request(`${dashboards}/${id}/versions/2`), 404, 'RESOURCE_NOT_FOUND');
 });
 
@@ -130,13 +131,13 @@ test('v1 dashboards: admin user/group shares are definition-only, readers cannot
   const path = `${dashboards}/${id}`, userShare = `${path}/shares/user/${reader.identity.userId}`;
   let token = (await reader.login()).token;
   error(await f.call(path, { token }), 404, 'RESOURCE_NOT_FOUND');
-  const shared = good(await f.request(userShare, { method: 'PUT', body: { role: 'viewer' }, headers: { 'Idempotency-Key': 'grant' } }));
+  const shared = good(await f.request(userShare, { method: 'PUT', body: { role: 'viewer' }, headers: { ...at(1), 'Idempotency-Key': 'grant' } }));
   assert.deepEqual(good(await f.request(userShare)).body, shared.body);
-  assert.equal(good(await f.request(userShare, { method: 'PUT', body: { role: 'viewer' }, headers: { 'Idempotency-Key': 'grant' } })).headers['idempotent-replayed'], 'true');
+  assert.equal(good(await f.request(userShare, { method: 'PUT', body: { role: 'viewer' }, headers: { ...at(1), 'Idempotency-Key': 'grant' } })).headers['idempotent-replayed'], 'true');
   assert.equal(good(await f.call(path, { token })).body.Version, 1);
   error(await f.call(`${path}/versions/1/visuals/total/query`, { token, method: 'POST', body: {} }), 403, 'DASHBOARD_DATASET_ACCESS_DENIED');
   error(await f.call(`${path}/exports`, { token, method: 'POST', body: { format: 'csv' } }), 403, 'DASHBOARD_DATASET_ACCESS_DENIED');
-  for (const method of ['GET', 'PUT', 'DELETE']) error(await f.call(userShare, { token, method, ...(method === 'PUT' ? { body: { role: 'co-owner' } } : {}) }), 403, 'METADATA_WRITE_FORBIDDEN');
+  for (const method of ['GET', 'PUT', 'DELETE']) error(await f.call(userShare, { token, method, ...(method === 'PUT' ? { body: { role: 'co-owner' }, headers: at(2) } : {}) }), 403, 'METADATA_WRITE_FORBIDDEN');
   assert.equal((await publish({ request: (p, o) => f.call(p, { ...o, token }) })).status, 403);
   good(await publish(f, 'analysis', id), 201); assert.deepEqual((await f.request(userShare)).body, shared.body);
   good(await f.request(userShare, { method: 'DELETE', headers: { 'Idempotency-Key': 'revoke' } }));
@@ -144,7 +145,7 @@ test('v1 dashboards: admin user/group shares are definition-only, readers cannot
   error(await f.call(path, { token }), 404, 'RESOURCE_NOT_FOUND');
   await put(f, 'group', 'readers', { name: 'Readers', userIds: [reader.identity.userId] }); await f.renew(); token = (await reader.login()).token;
   const group = `${path}/shares/group/readers`;
-  good(await f.request(group, { method: 'PUT', body: { role: 'viewer' } })); assert.equal(good(await f.request(group)).body.principal.type, 'group');
+  good(await f.request(group, { method: 'PUT', body: { role: 'viewer' }, headers: { 'If-Match': good(await f.request(path)).headers.etag } })); assert.equal(good(await f.request(group)).body.Principal.Type, 'group');
   good(await f.call(path, { token }));
   good(await f.request(group, { method: 'DELETE' })); error(await f.request(group), 404, 'RESOURCE_NOT_FOUND');
   error(await f.call(path, { token }), 404, 'RESOURCE_NOT_FOUND');
@@ -241,9 +242,9 @@ test('v1 dashboards: source co-owner and folder checks, access-filtered lists, r
   await put(f, 'dashboard', id, { ...asset.body, folderId: 'private' }); await f.renew(); token = (await member.login()).token;
   error(await call(`${dashboards}/${id}`), 404, 'RESOURCE_NOT_FOUND');
   error(await publish({ request: call }, 'analysis', undefined, options), 404, 'RESOURCE_NOT_FOUND');
-  error(await call(`${dashboards}/${id}`, { method: 'DELETE', headers: at(1) }), 404, 'RESOURCE_NOT_FOUND');
+  error(await call(`${dashboards}/${id}`, { method: 'DELETE', headers: at(1) }), 403, 'METADATA_WRITE_FORBIDDEN');
   await put(f, 'folder', 'private', { name: 'Private', grants: [grant('viewer')] }); await f.renew(); token = (await member.login()).token;
-  good(await call(`${dashboards}/${id}`)); error(await call(`${dashboards}/${id}`, { method: 'DELETE', headers: at(1) }), 404, 'RESOURCE_NOT_FOUND');
+  good(await call(`${dashboards}/${id}`)); error(await call(`${dashboards}/${id}`, { method: 'DELETE', headers: at(1) }), 403, 'METADATA_WRITE_FORBIDDEN');
   for (const header of ['x-user-id', 'x-tenant-id', 'x-namespace-id', 'x-role']) error(await f.request(dashboards, { headers: { [header]: 'forged' } }), 403, 'FORGED_PRINCIPAL');
 });
 
@@ -281,9 +282,9 @@ test('v1 dashboards local authenticated: grants and frozen versions survive rest
   const render = async value => { const u = new URL(value); return f.request(u.pathname + u.search); };
   assert.match(good(await render(signed)).body, /Published analysis/); assert.match(good(await render(latest)).body, /Second/);
   const share = `${dashboards}/${id}/shares/group/readers`;
-  good(await request(share, { method: 'PUT', body: { role: 'viewer' } }, 'admin'));
+  good(await request(share, { method: 'PUT', body: { role: 'viewer' }, headers: at(2) }, 'admin'));
   good(await request(`${dashboards}/${id}`, {}, 'reader'));
-  error(await request(share, {}, 'author'), 403, 'SECURITY_ADMIN_REQUIRED');
+  good(await request(share, {}, 'author')); // D-58: a build-capable co-owner manages grants.
   await f.restart(); good(await request(share, {}, 'admin')); good(await request(`${dashboards}/${id}`, {}, 'reader'));
   assert.equal((await request(`/dashboards/${id}/definition`)).body.Name, 'Second');
   good(await request(`${dashboards}/${id}/versions/1`, { method: 'DELETE', headers: at(2) }));
@@ -337,7 +338,7 @@ test('v1 dashboards: tenant boundaries apply to versions, shares, queries, expor
     [`${dashboards}/${id}`, 'GET'], [`${dashboards}/${id}/versions`, 'GET'], [`${dashboards}/${id}/versions/1`, 'GET'],
     [`${dashboards}/${id}/shares/user/p`, 'PUT', { role: 'viewer' }], [`${dashboards}/${id}/versions/1/visuals/v/query`, 'POST', {}],
     [`${dashboards}/${id}/exports`, 'POST', { format: 'csv' }], [`${analyses}/analysis/publish`, 'POST', {}],
-  ]) error(await f.call(path, { token, method, body, headers: { 'Idempotency-Key': 'tenant-publish' } }), 404, 'RESOURCE_NOT_FOUND');
+  ]) error(await f.call(path, { token, method, body, headers: { ...at(1), 'Idempotency-Key': 'tenant-publish' } }), 404, 'RESOURCE_NOT_FOUND');
 });
 
 test('v1 dashboards: current data-policy revocation blocks query/export replays and publication with diagnostics', async t => {

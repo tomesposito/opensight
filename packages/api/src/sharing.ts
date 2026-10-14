@@ -1,7 +1,7 @@
 import { dashboardVersion, type DashboardBackend } from './dashboard-model.js';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { method, routeId, send } from './automation-routes.js';
-import { validateGrants, validateOrganization, type OrganizationService, type OrganizedAsset } from './organization.js';
+import { validateGrants, validateOrganization, touchOrganizedAsset, type OrganizationService, type OrganizedAsset } from './organization.js';
 import { readBody, RequestError, type SalesQuery } from './query.js';
 import { record } from './schedule.js';
 import type { Identity } from './security.js';
@@ -54,6 +54,7 @@ export async function sharingRoute(request: IncomingMessage, response: ServerRes
     }
     asset.grants = (asset.grants ?? []).filter(g => !(g.principal.type === principalType && g.principal.id === principalId));
     if (grant) asset.grants.push(grant);
+    touchOrganizedAsset(asset);
     validateOrganization(state);
     return grant ?? { deleted: true };
   });

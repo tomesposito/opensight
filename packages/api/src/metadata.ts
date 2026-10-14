@@ -120,7 +120,7 @@ export class TenantMetadata {
       if (Number(prior?.version ?? 0) !== asset.version) throw new MetadataError('METADATA_CONFLICT');
       const old = prior ? JSON.parse(String(prior.body)) as JsonObject : { folderId: null };
       await this.analysisWriteAccess(c, context, user, old);
-      const body: JsonObject = { ...old, definition: asset.body.definition, datasets: asset.body.datasets };
+      const body: JsonObject = { ...old, definition: asset.body.definition, datasets: asset.body.datasets, updatedAt: new Date().toISOString() };
       if (!prior) await insertResource(c, context, key, body);
       else {
         await c.query(`DELETE FROM h1_links WHERE ${predicates}`, keyValues(context, key));
@@ -253,6 +253,7 @@ export class TenantMetadata {
         if (refs.length) throw new MetadataError('ASSET_DELETE_REFERENCED', 409);
         await c.query(`DELETE FROM h1_resources WHERE ${predicates}`, keyValues(context, r));
       }
+      if (removed.some(r => r.kind === 'prepared-dataset')) await c.query('UPDATE h1_revisions SET configuration = configuration + 1 WHERE tenant_id = ? AND namespace_id = ?', scopeValues(context));
       if (changed.length || removed.length) await appendMetadataEvent(c, context, 'assets.changed');
       return result;
     }, write);

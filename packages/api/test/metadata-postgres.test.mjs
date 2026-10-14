@@ -93,6 +93,23 @@ test('H1 live Postgres: restricted role, forced RLS, pooled reset, composite con
   assert.equal(results.find(r => r.status === 'rejected').reason.code, 'METADATA_CONFLICT');
   assert.equal((await repo.get(a, { kind: 'dataset', id: 'same' })).version, 2);
   assert.equal((await repo.revisions(a)).configuration, 3);
+  await t.test('asset transactions preserve definitions, links, revisions and folder guards under RLS', async () => {
+    await repo.put(await login(repo, 'one'), { kind: 'folder', id: 'assets-folder' }, { name: 'Assets' });
+    await repo.put(await login(repo, 'one'), { kind: 'analysis', id: 'asset-source' }, { folderId: null, datasets: [], definition: { AnalysisId: 'asset-source', Name: 'Source', Definition: { DataSetIdentifierDeclarations: [], Opaque: { Preserve: true } } } });
+    const context = await login(repo, 'one');
+    await repo.assetTransaction(context, true, catalog => {
+      const copy = catalog.copy(catalog.asset('analyses', 'asset-source'), 'asset-copy', undefined, null);
+      catalog.move(copy, 'assets-folder');
+      catalog.share(copy, { type: 'user', id: 'admin' }, 'co-owner');
+    });
+    const copy = await repo.get(context, { kind: 'analysis', id: 'asset-copy' });
+    assert.equal(copy.version, 3); assert.deepEqual(copy.body.definition.Definition.Opaque, { Preserve: true });
+    await assert.rejects(repo.assetTransaction(context, true, catalog => catalog.remove(catalog.folder('assets-folder', true))), { code: 'FOLDER_NOT_EMPTY' });
+    await assert.rejects(repo.assetTransaction(context, true, catalog => catalog.match(catalog.asset('analyses', 'asset-copy', true), 1)), { code: 'ASSET_PRECONDITION_FAILED' });
+    await repo.assetTransaction(context, true, catalog => { catalog.remove(catalog.asset('analyses', 'asset-copy', true)); catalog.remove(catalog.folder('assets-folder', true)); });
+    await assert.rejects(repo.get(context, { kind: 'analysis', id: 'asset-copy' }), { code: 'RESOURCE_NOT_FOUND' });
+    assert.equal((await repo.get(context, { kind: 'analysis', id: 'asset-source' })).body.definition.Name, 'Source');
+  });
   const suspended = await operator.tenant(a.tenantId);
   const transitions = await Promise.allSettled(['suspend-a', 'suspend-b'].map(id => operator.transition(id, a.tenantId, 'suspend', suspended.version)));
   assert.equal(transitions.filter(r => r.status === 'fulfilled').length, 1);

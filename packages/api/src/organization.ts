@@ -27,6 +27,12 @@ export interface OrganizedAsset {
   datasetBindingOwnerId?: string;
   deleted?: boolean;
 }
+/** Keep v1 optimistic revisions current when legacy organization verbs write. */
+export function touchOrganizedAsset(asset: OrganizedAsset): void {
+  if (asset.kind === 'analysis') asset.analysisVersion = (asset.analysisVersion ?? 1) + 1;
+  else asset.assetVersion = (asset.assetVersion ?? asset.dashboard?.latest ?? 1) + 1;
+  asset.updatedAt = new Date().toISOString();
+}
 export function resourceName(raw: unknown): string {
   if (typeof raw !== 'string' || !raw.trim() || raw.length > 512 || /[\x00-\x1f]/.test(raw)) invalid('$.name', 'expected a name');
   return raw;
@@ -145,6 +151,7 @@ export class OrganizationService {
         let asset = copy ? undefined : this.asset(state, identity.namespaceId, kind, assetId);
         if (!asset) { asset = { id: newId, kind, namespaceId: identity.namespaceId, folderId }; (state.assets ??= []).push(asset); }
         asset.folderId = folderId;
+        if (!copy) touchOrganizedAsset(asset);
         if (copy) {
           const source = this.asset(state, identity.namespaceId, kind, assetId);
           if (source?.grants !== undefined) asset.grants = structuredClone(source.grants);
@@ -182,6 +189,7 @@ export class OrganizationService {
         state.folders = state.folders!.filter(f => f !== existing);
         return { deleted: true };
       }
+      if (existing) { existing.version = (existing.version ?? 1) + 1; existing.updatedAt = new Date().toISOString(); }
       if (sub === 'permissions') {
         if (body!.grants === null) delete existing!.grants;
         else existing!.grants = validateGrants(body!.grants, identity.namespaceId, state);

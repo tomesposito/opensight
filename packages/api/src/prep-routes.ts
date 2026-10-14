@@ -139,7 +139,7 @@ export class PrepRoutes {
           const e = draft.datasets.find(e => this.owned(identity, e) && e.resource.dataSetId === id);
           if (!e) prepFail('PREP_NOT_FOUND', '$.dataset', 'Prepared dataset not found');
           if (settings.mode === 'DIRECT_QUERY') this.requireDirect(identity, id, draft);
-          e.execution = settings;
+          e.execution = settings; e.version = (e.version ?? 1) + 1; e.updatedAt = new Date().toISOString();
           this.enforceModes(draft);
         });
         const previous = this.blaze.status(key).mode;
@@ -310,10 +310,11 @@ export class PrepRoutes {
         });
         this.syncModes();
         this.invalidate(identity, id);
+        response.setHeader('ETag', `"${this.find(identity, id).version ?? 1}"`);
         send(response, created ? 201 : 200, { resource, persistence: this.persistent ? 'file' : 'ephemeral' }); return;
       }
       if (!existing) prepFail('PREP_NOT_FOUND', '$.dataset', 'Prepared dataset not found');
-      if (request.method === 'GET') { send(response, 200, { resource: existing.resource, persistence: this.persistent ? 'file' : 'ephemeral' }); return; }
+      if (request.method === 'GET') { response.setHeader('ETag', `"${existing.version ?? 1}"`); send(response, 200, { resource: existing.resource, persistence: this.persistent ? 'file' : 'ephemeral' }); return; }
       this.invalidate(identity, id); this.blaze.remove(this.key(identity, id));
       this.configured.delete(this.key(identity, id));
       await this.store.change(draft => { draft.datasets = draft.datasets.filter(e => !(this.owned(identity, e) && e.resource.dataSetId === id)); });

@@ -50,7 +50,11 @@ export class LocalAnalyses implements AnalysisBackend {
     const wire = this.organization ? this.organization.definition(this.identity.namespaceId, 'analysis', id) : this.store?.get('analysis', id);
     if (!wire) throw new MetadataError('RESOURCE_NOT_FOUND', 404);
     const stored = !this.organization && this.store?.analysisRecord(id);
-    if (stored) return stored;
+    if (stored) {
+      const refs = this.store?.assetResources().find(r => r.kind === 'analysis' && r.id === id)?.body.datasets as { kind: string; ownerId?: string }[] | undefined;
+      if (refs?.some(r => r.kind === 'prepared-dataset' && r.ownerId !== this.identity.userId)) analysisFail('SECURITY_REJECTED', '$.datasetBindings', 'Dataset owner does not match authenticated user');
+      return stored;
+    }
     if (asset?.datasetBindings && Object.values(asset.datasetBindings).some(b => b.kind === 'prepared-dataset') && asset.datasetBindingOwnerId !== this.identity.userId) {
       analysisFail('SECURITY_REJECTED', '$.datasetBindings', 'Dataset owner does not match authenticated user');
     }
@@ -111,6 +115,6 @@ export class LocalAnalyses implements AnalysisBackend {
     });
     if (this.root) await legacyWrite(this.root, commit); else await commit();
   }
-  async save(record: AnalysisRecord, version: number, stamp: unknown) { await this.mutation(record.id, { ...record, updatedAt: new Date().toISOString() }, version, stamp); }
+  async save(record: AnalysisRecord, version: number, stamp: unknown) { await this.mutation(record.id, { ...record, updatedAt: new Date().toISOString(), bindingOwnerId: this.identity.userId }, version, stamp); }
   async remove(id: string, version: number, stamp: unknown) { await this.mutation(id, null, version, stamp); }
 }

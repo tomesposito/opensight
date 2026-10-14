@@ -1,3 +1,4 @@
+import { LocalAssets } from './local-assets.js';
 import type { Identity } from './security.js';
 import { MetadataError } from './metadata-db.js';
 import { LocalDashboards } from './local-dashboards.js';
@@ -161,7 +162,7 @@ export async function createApiServer(options: ApiOptions): Promise<Server> {
         };
         const root = namespaceId === 'default' ? options.dataRoot : options.namespaceDataRoots?.[namespaceId];
         const analyses = new LocalAnalyses(scopedStore, scopedSales, prepRoutes, v1Identity, recheck, organization, root, !!options.security?.storePath);
-        await v1.local(request, response, path, analyses, new LocalDashboards(analyses, scopedStore, scopedSales, prepRoutes, v1Identity, recheck, organization, root, !!options.security?.storePath)); return;
+        await v1.local(request, response, path, analyses, new LocalDashboards(analyses, scopedStore, scopedSales, prepRoutes, v1Identity, recheck, organization, root, !!options.security?.storePath), new LocalAssets(scopedStore, prepRoutes, v1Identity, recheck, organization, root, !!options.security?.storePath)); return;
       }
       const preparedResource = /^\/api\/(prep-sources|prep-datasets)(?:\/|$)/.test(path)
         || /^\/api\/datasets\/[^/]+\/(prep(?:\/|$)|execution$|rows$)/.test(path)

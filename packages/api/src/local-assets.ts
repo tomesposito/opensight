@@ -1,3 +1,4 @@
+import { dashboardVersion } from './dashboard-model.js';
 import { AssetCatalog, assetKey, type AssetBackend } from './asset-model.js';
 import { MetadataError } from './metadata-db.js';
 import type { MetadataResource } from './metadata-resources.js';
@@ -12,13 +13,14 @@ import { object } from './metadata-resources.js';
 
 export function localResource(id: string, kind: 'analysis' | 'dashboard', definition: JsonObject, asset?: OrganizedAsset): MetadataResource {
   const declarations = object(definition.Definition).DataSetIdentifierDeclarations as { Identifier: string }[];
+  const published = asset?.dashboard ? dashboardVersion(asset.dashboard) : undefined;
   return { kind, id, version: kind === 'analysis' ? asset?.analysisVersion ?? 1 : asset?.assetVersion ?? asset?.dashboard?.latest ?? 1,
     body: { definition: structuredClone(definition), folderId: asset?.folderId ?? null,
-      ...(asset?.grants === undefined ? {} : { grants: asset.grants }), ...(asset?.updatedAt ? { updatedAt: asset.updatedAt } : {}),
+      ...(asset?.grants === undefined ? {} : { grants: asset.grants }), ...(asset?.updatedAt || published ? { updatedAt: asset?.updatedAt ?? published!.publishedAt } : {}),
       ...(asset?.dashboard ? { published: asset.dashboard } : {}),
       datasets: declarations.map(d => {
-        const ref = asset?.datasetBindings?.[d.Identifier] ?? { kind: 'dataset', id: 'sales' };
-        return { ...ref, ...(ref.kind === 'prepared-dataset' ? { ownerId: asset?.datasetBindingOwnerId } : {}) };
+        const ref = published?.datasetBindings[d.Identifier] ?? asset?.datasetBindings?.[d.Identifier] ?? { kind: 'dataset', id: 'sales' };
+        return { ...ref, ...(ref.kind === 'prepared-dataset' ? { ownerId: published?.bindingOwnerId ?? asset?.datasetBindingOwnerId } : {}) };
       }) } };
 }
 export function organizedResource(r: MetadataResource, namespaceId: string): OrganizedAsset {
