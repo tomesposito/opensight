@@ -1311,6 +1311,23 @@ Apache-2.0 S3 presigner uses the existing approved SDK/tslib dependency family.
 H7 recurring-job/delivery integration, idle embed UI, public ingress and release
 automation remain subsequent deployment work; unsupported routes fail explicitly.
 
+
+**SR3 queue monitoring (frozen 2026-10-15):**
+Issue #85's pilot monitoring uses four standard-resolution CloudWatch alarms:
+one visible-message alarm for each work, recovery and Scheduler DLQ, plus one
+metric-math alarm for the maximum oldest-message age of the work and recovery
+source queues. The backlog threshold is 900 seconds for two of three one-minute
+periods; each DLQ alarms above zero in one one-minute period. Missing metrics are
+non-breaching because inactive SQS queues may stop publishing. These are service
+metrics only: no Lambda, scheduled probe, SQL query, redrive or deletion action.
+The four alarms reference five billable metrics (at most $0.50/month at the
+published us-east-1 standard alarm rate before any free allowance). Initial alarms
+are visible in CloudWatch only; no new email subscription or automatic recovery.
+A separate monitoring OpenTofu root uses the existing encrypted, versioned,
+locked private state backend, pinned tooling and exact deployment queue names.
+Plans must contain exactly these four additive alarms and no other mutations.
+Existing DLQ messages remain evidence; an alarm never grants replay authority.
+
 **SR3b on-demand clients (frozen 2026-10-11):**
 [On-demand browser and embed connections](docs/phase5-sr3b-idle-clients.md)
 implements D-26's accepted hide-and-Connect experience.
