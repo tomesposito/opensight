@@ -1280,8 +1280,11 @@ smoke configuration and verified frontend bytes together. Ordinary code rollback
 must retain a complete marketing bundle after cutover. Infrastructure apply,
 restore and compatibility changes never become permissions of the code-only CI
 role. Startup smoke may retry only the explicit empty startup request on bounded
-503/WORKSPACE_STARTING or generic gateway-unavailable responses; authentication,
-authorization and business failures remain failures.
+503/WORKSPACE_STARTING or exact generic gateway-unavailable (503) and internal
+server error (500) responses, as specified in [D-81](docs/itd/D-81-startup-readiness.md).
+Six attempts spaced ten seconds apart require an eventual explicit ready response;
+persistent gateway errors, authentication, authorization and business failures
+remain failures.
 
 The hosted-business trigger was met 2026-09-30 (D14), leading to the H1–H8
 foundation and single-node reference. D-18 (2026-10-10) now selects an initial

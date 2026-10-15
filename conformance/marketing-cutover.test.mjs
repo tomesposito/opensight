@@ -81,6 +81,32 @@ test('D-77 explicit startup wake retries bounded transient 503s, never denials o
   tries = 0; await assert.rejects(smokeStartup(async () => { tries++; return { status: 503, body: { errorCode: 'WORKSPACE_STARTING' } }; }, async () => {}), /SMOKE_STARTUP_TIMEOUT/); assert.equal(tries, 6);
 });
 
+test('D-81 explicit startup wake retries exact generic 500 and requires eventual readiness', async () => {
+  let tries = 0; const waits = [];
+  await smokeStartup(async () => ++tries === 1 ? { status: 500, body: { message: 'Internal Server Error' } }
+    : { status: 200, body: { state: 'ready' } }, async ms => waits.push(ms));
+  assert.equal(tries, 2); assert.deepEqual(waits, [10000]);
+  tries = 0; waits.length = 0;
+  await assert.rejects(smokeStartup(async () => { tries++; return { status: 500, body: { message: 'Internal Server Error' } }; }, async ms => waits.push(ms)), /SMOKE_STARTUP_TIMEOUT/);
+  assert.equal(tries, 6); assert.deepEqual(waits, Array(5).fill(10000));
+});
+
+test('D-81 non-generic 500 bodies and wrong statuses remain terminal', async () => {
+  for (const response of [
+    { status: 500, body: { message: 'Internal Server Error', errorCode: 'DENIED' } },
+    { status: 500, body: { message: 'Internal server error' } },
+    { status: 500, body: { errorCode: 'WORKSPACE_STARTING' } },
+    { status: 500, body: { message: 'Service Unavailable' } },
+    { status: 403, body: { message: 'Internal Server Error' } },
+    { status: 503, body: { message: 'Internal Server Error' } },
+    { status: 500, body: null },
+  ]) {
+    let tries = 0;
+    await assert.rejects(smokeStartup(async () => { tries++; return response; }, async () => assert.fail()), /SMOKE_STARTUP_FAILED/);
+    assert.equal(tries, 1);
+  }
+});
+
 test('D-77 composite cutover retains deployed runtime and app bytes, rejects image/configuration drift', async () => {
   const { cutoverRelease, originPatch } = await import('../ops/serverless/marketing-cutover-policy.mjs');
   const { configurationFingerprint } = await import('../ops/serverless/release-safety.mjs');
