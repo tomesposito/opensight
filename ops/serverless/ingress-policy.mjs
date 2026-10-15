@@ -25,12 +25,13 @@ export function checkIngressPlan(plan, inputs) {
   check(changes.length >= 25 && changes.length <= 45, 'INVENTORY');
   for (const r of changes) {
     const v = r.change?.after ?? {}, address = r.address;
-    check(allowed.has(address) || ['aws_route53_record.certificate', 'aws_route53_record.origin', 'aws_route53_record.site', 'aws_apigatewayv2_route.request'].includes(address.split('[')[0]), 'RESOURCE_SCOPE');
+    check(allowed.has(address) || ['aws_route53_record.certificate', 'aws_route53_record.origin', 'aws_route53_record.site', 'aws_route53_record.app', 'aws_cloudfront_function.static', 'aws_apigatewayv2_route.request'].includes(address.split('[')[0]), 'RESOURCE_SCOPE');
     check(r.change.actions.every(a => ['create', 'update', 'no-op', 'read'].includes(a)), 'DESTRUCTIVE_PLAN');
     if (r.type === 'aws_route53_record') {
       check(v.zone_id === inputs.zone_id && v.allow_overwrite !== true, 'DNS_SCOPE');
-      if (address.startsWith('aws_route53_record.site')) check(inputs.publish_site === true && v.name === new URL(inputs.public_origin).hostname, 'DNS_CUTOVER');
+      if (address.startsWith('aws_route53_record.site')) check(inputs.publish_site === true && v.name === new URL(inputs.marketing_origin ?? inputs.public_origin).hostname, 'DNS_CUTOVER');
     }
+    if (address.startsWith('aws_route53_record.app')) check(Boolean(inputs.marketing_origin) && inputs.publish_site === true && v.name === new URL(inputs.public_origin).hostname, 'APP_DNS_CUTOVER');
     if (r.type === 'aws_lambda_function') check(v.function_name === `${inputs.deployment}-ingress` && v.timeout === 10 && v.memory_size === 256 && v.reserved_concurrent_executions === (inputs.authorizer_concurrency ?? 2) && v.architectures?.join() === 'arm64' && !(v.vpc_config?.length) && v.image_uri === inputs.image_uri, 'AUTHORIZER_CAP');
     if (r.type === 'aws_lambda_alias') check(v.function_name === inputs.request_function_name && v.function_version === inputs.request_function_version && v.name === 'live', 'REQUEST_VERSION');
     if (r.type === 'aws_apigatewayv2_api') check(v.disable_execute_api_endpoint === true && v.protocol_type === 'HTTP', 'ORIGIN_BYPASS');
@@ -49,7 +50,10 @@ export function checkIngressPlan(plan, inputs) {
     if (r.type === 'aws_s3_bucket_public_access_block') check(['block_public_acls', 'block_public_policy', 'ignore_public_acls', 'restrict_public_buckets'].every(k => v[k] === true), 'PUBLIC_BUCKET');
     if (r.type === 'aws_s3_bucket_versioning') check(v.versioning_configuration?.[0]?.status === 'Enabled', 'BUCKET_VERSIONS');
     if (r.type === 'aws_cloudfront_distribution') {
-      check(v.enabled === true && v.retain_on_delete === true && v.aliases?.join() === new URL(inputs.public_origin).hostname && v.ordered_cache_behavior?.length === 3 && !v.custom_error_response?.length, 'EDGE_SCOPE');
+      check(v.enabled === true && v.retain_on_delete === true && [...(v.aliases ?? [])].sort().join() === [...new Set([new URL(inputs.public_origin).hostname, new URL(inputs.marketing_origin ?? inputs.public_origin).hostname])].sort().join() && v.ordered_cache_behavior?.length === 3 && !v.custom_error_response?.length, 'EDGE_SCOPE');
+      if (inputs.marketing_origin) {
+        check(v.viewer_certificate?.[0]?.acm_certificate_arn === inputs.frontend_certificate_arn && v.default_cache_behavior?.[0]?.function_association?.length === 1 && v.ordered_cache_behavior?.find(b => b.path_pattern === '/assets/*')?.function_association?.length === 1, 'STATIC_HOST_ISOLATION');
+      }
       for (const behavior of v.ordered_cache_behavior ?? []) if (behavior.target_origin_id === 'api') check(behavior.cache_policy_id === '4135ea2d-6df8-44a3-9df3-4b5a84be39ad' && behavior.origin_request_policy_id === 'b689b0a8-53d0-40ab-baf2-68738e2966ac' && behavior.viewer_protocol_policy === 'https-only' && !behavior.response_headers_policy_id, 'DYNAMIC_CACHE');
     }
     if (r.type === 'aws_cloudformation_stack') {

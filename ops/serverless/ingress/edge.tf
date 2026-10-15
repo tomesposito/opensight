@@ -45,7 +45,14 @@ resource "aws_cloudfront_function" "viewer" {
   name    = "${var.deployment}-viewer"
   runtime = "cloudfront-js-2.0"
   publish = true
-  code    = replace(replace(file("${path.module}/../edge-viewer.js"), "__OPENSIGHT_ORIGIN__", jsonencode(var.public_origin)), "__OPENSIGHT_HOST__", jsonencode(local.site_host))
+  code    = replace(replace(file("${path.module}/../edge-viewer.js"), "__OPENSIGHT_ORIGIN__", jsonencode(var.public_origin)), "__OPENSIGHT_HOST__", jsonencode(local.app_host))
+}
+resource "aws_cloudfront_function" "static" {
+  count   = var.marketing_origin == null ? 0 : 1
+  name    = "${var.deployment}-static"
+  runtime = "cloudfront-js-2.0"
+  publish = true
+  code    = replace(replace(file("${path.module}/../edge-static.js"), "__OPENSIGHT_APP_HOST__", jsonencode(local.app_host)), "__OPENSIGHT_MARKETING_HOST__", jsonencode(local.site_host))
 }
 resource "aws_wafv2_web_acl" "application" {
   name  = "${var.deployment}-application"
@@ -81,7 +88,7 @@ resource "aws_wafv2_web_acl" "application" {
 resource "aws_cloudfront_distribution" "application" {
   enabled             = true
   is_ipv6_enabled     = true
-  aliases             = [local.site_host]
+  aliases             = distinct([local.site_host, local.app_host])
   default_root_object = "index.html"
   http_version        = "http2and3"
   price_class         = "PriceClass_All"
@@ -128,6 +135,13 @@ resource "aws_cloudfront_distribution" "application" {
     cache_policy_id            = data.aws_cloudfront_cache_policy.disabled.id
     response_headers_policy_id = data.aws_cloudfront_response_headers_policy.static.id
     compress                   = true
+    dynamic "function_association" {
+      for_each = aws_cloudfront_function.static
+      content {
+        event_type   = "viewer-request"
+        function_arn = function_association.value.arn
+      }
+    }
   }
   ordered_cache_behavior {
     path_pattern               = "/assets/*"
@@ -138,6 +152,13 @@ resource "aws_cloudfront_distribution" "application" {
     cache_policy_id            = data.aws_cloudfront_cache_policy.assets.id
     response_headers_policy_id = data.aws_cloudfront_response_headers_policy.static.id
     compress                   = true
+    dynamic "function_association" {
+      for_each = aws_cloudfront_function.static
+      content {
+        event_type   = "viewer-request"
+        function_arn = function_association.value.arn
+      }
+    }
   }
   dynamic "ordered_cache_behavior" {
     for_each = ["/api/*", "/embed/sessions/*"]
@@ -160,7 +181,7 @@ resource "aws_cloudfront_distribution" "application" {
     geo_restriction { restriction_type = "none" }
   }
   viewer_certificate {
-    acm_certificate_arn      = aws_acm_certificate_validation.site.certificate_arn
+    acm_certificate_arn      = coalesce(var.frontend_certificate_arn, aws_acm_certificate_validation.site.certificate_arn)
     ssl_support_method       = "sni-only"
     minimum_protocol_version = "TLSv1.2_2021"
   }
@@ -190,6 +211,24 @@ resource "aws_route53_record" "site" {
     precondition {
       condition     = try(aws_cloudformation_stack.plan.outputs["Status"] == "ACTIVE" && aws_cloudformation_stack.plan.outputs["Tier"] == "FREE", false)
       error_message = "Public cutover requires the active Free subscription and separate operator acceptance."
+    }
+  }
+}
+
+resource "aws_route53_record" "app" {
+  for_each = var.publish_site && var.marketing_origin != null ? toset(["A", "AAAA"]) : toset([])
+  zone_id  = var.zone_id
+  name     = local.app_host
+  type     = each.value
+  alias {
+    name                   = aws_cloudfront_distribution.application.domain_name
+    zone_id                = aws_cloudfront_distribution.application.hosted_zone_id
+    evaluate_target_health = false
+  }
+  lifecycle {
+    precondition {
+      condition     = try(aws_cloudformation_stack.plan.outputs["Status"] == "ACTIVE" && aws_cloudformation_stack.plan.outputs["Tier"] == "FREE", false)
+      error_message = "App cutover requires the active Free subscription."
     }
   }
 }

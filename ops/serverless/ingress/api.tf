@@ -1,5 +1,6 @@
 locals {
-  site_host   = trimprefix(var.public_origin, "https://")
+  app_host    = trimprefix(var.public_origin, "https://")
+  site_host   = trimprefix(coalesce(var.marketing_origin, var.public_origin), "https://")
   request_arn = "arn:aws:lambda:${var.region}:${var.account_id}:function:${var.request_function_name}"
   ingress_environment = {
     OPENSIGHT_PUBLIC_ORIGIN         = var.public_origin

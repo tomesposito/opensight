@@ -1,6 +1,7 @@
+import { verifySites } from './site-smoke.mjs';
 import assert from 'node:assert/strict';
 import { createHmac, createHash, randomUUID } from 'node:crypto';
-import { smokeRequest } from './release-smoke-request.mjs';
+import { smokeRequest, smokeStartup } from './release-smoke-request.mjs';
 const c = JSON.parse(process.env.OPENSIGHT_SMOKE_CONFIG ?? '{}');
 if (!c.tester || !/^https:\/\/[a-z0-9.-]+$/.test(c.origin ?? '') || !Array.isArray(c.foreignPaths)) throw Error('SMOKE_CONFIGURATION_REQUIRED');
 const timer = setTimeout(() => { console.error('SMOKE_DEADLINE'); process.exit(1); }, 300000);
@@ -33,16 +34,9 @@ async function call(path,method='GET',body,expected=200,extra={}) {
   return r.body;
 }
 try {
-  const page=await fetch(c.origin,{redirect:'error',signal:AbortSignal.timeout(15000)});
-  if(page.status!==200 || !(await page.text()).includes('OpenSight'))throw Error('SMOKE_FRONTEND_FAILED');
-  let ready=false;
-  for(let attempt=0;attempt<6;attempt++){
-    const r=await raw('/api/startup','POST',{},false);
-    if(r.status===200 && r.body.state==='ready'){ready=true;break;}
-    if(r.status!==503 || r.body.errorCode!=='WORKSPACE_STARTING')throw Error('SMOKE_STARTUP_FAILED');
-    await pause(5000);
-  }
-  if(!ready)throw Error('SMOKE_STARTUP_TIMEOUT');await authenticate();
+  await verifySites(c, process.env.OPENSIGHT_FRONTEND_FILES ? JSON.parse(process.env.OPENSIGHT_FRONTEND_FILES) : undefined);
+  await smokeStartup(() => raw('/api/startup','POST',{},false));
+  await authenticate();
   const session=await call('/api/session');assert.equal(session.tenantId,c.tester.tenantId);
   for(const path of c.foreignPaths){const r=await raw(path);if(![403,404].includes(r.status))throw Error('SMOKE_ISOLATION_FAILED');}
   if((await raw('/api/session','GET',undefined,false)).status!==401)throw Error('SMOKE_ANONYMOUS_ACCESS');
