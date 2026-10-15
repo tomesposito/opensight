@@ -805,6 +805,8 @@ SR0 implementation decision register (issue #81; proposals, no AWS authorization
 | [D-34](itd/D-34-compatible-release-automation.md) | Compatible releases and revocable CI access | ✅ Public isolated CI, private immutable promotion, dedicated OIDC roles and independent emergency shutoff; general migrations remain separate |
 | [D-77](itd/D-77-marketing-cutover.md) | Marketing cutover | ✅ Shared private edge, attested site/demo and operator-owned hostname transition |
 | [D-78](itd/D-78-release-requests.md) | Release requests and status | ✅ Public exact-artifact requests, independent approval and sanitized AWS observations |
+| [D-79](itd/D-79-cloud-delivery-acceptance.md) | Cloud delivery acceptance | ✅ Dedicated replay boundary and bounded isolated delivery/failure checks |
+| [D-80](itd/D-80-maintenance-execution.md) | Maintenance execution | ✅ Exact saved plans, transactional migration and isolated held restore |
 
 Related confirmed deployment decision: [ITD D-18 — serverless development
 deployment](itd/D-18-serverless-development-deployment.md) (2026-10-10). Lambda

@@ -1230,6 +1230,30 @@ plane evidence, not continuous health monitoring. A changed compatibility hash
 still requires separately reviewed maintenance; this path adds no migration,
 restore, IAM permissions, database polling or new standing resources.
 
+**SR3/SR4 completion (frozen 2026-10-15):** Implement
+[D-79](docs/itd/D-79-cloud-delivery-acceptance.md) and
+[D-80](docs/itd/D-80-maintenance-execution.md). Separate identifier-only IAM
+replay from administration/migration. Report the independently configured worker
+mail capability without exposing its secret to request execution. Use a private,
+expiring synthetic acceptance plan and isolated SQL/queue/storage resources for
+real report/alert rendering, IPv6 SMTP, authorization denial, duplicate/late
+events and injected commit/send/ack failures. Never introduce a public bypass,
+arbitrary SQL command or production bulk redrive.
+
+Replace the plan/apply/migration/restore placeholder steps with bounded executable
+controllers. Exact private configuration, source/tool/provider/state/plan digests
+and independent approval bind every apply; acquire the shared operation CAS and
+native state lock, refuse drift/staleness and hold uncertain partial changes for
+reconciliation. Migration records transactional receipts and preserves existing
+objects, references and monotonic authority. Registered encrypted backups bind
+exact immutable objects and current key versions. Restore only into an isolated
+target: verify independent registry history, advance external epoch/fence high
+water marks, keep tenants/memberships/sessions/delivery held and refuse missing
+or newer deletion evidence. A restore never opens production or implicitly
+restores old state/configuration; cutover requires its own reviewed operation.
+Public builds gain no cloud access. Live isolated drills and exact production
+promotion evidence, rather than offline boolean fixtures, determine completion.
+
 **SR4c marketing cutover (frozen 2026-10-15):** Implement
 [D-77](docs/itd/D-77-marketing-cutover.md). One existing private S3 origin and
 CloudFront Free distribution serve the approved marketing page plus offline demo
