@@ -5,6 +5,12 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 import { privateDirectory } from './operator.mjs';
 const hash = value => createHash('sha256').update(value).digest('hex');
+const canonical = value => JSON.stringify(value, (_, v) => v && typeof v === 'object' && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).sort(([a],[b])=>a.localeCompare(b))) : v);
+const observations = plan => ({ observedState: hash(canonical(plan.prior_state?.values ?? {})), observedDrift: hash(canonical(plan.resource_drift ?? [])) });
+export function verifyPlanDrift(envelope, refreshed) {
+  const actual=observations(refreshed);
+  if(refreshed.errored || actual.observedState!==envelope.observedState || actual.observedDrift!==envelope.observedDrift) throw Error('RESOURCE_DRIFT_REPLAN_REQUIRED');
+}
 const fail = code => { throw Error(code); };
 export function planPolicy(plan, allowedTypes) {
   if (plan?.errored || !plan?.format_version || !Array.isArray(plan.resource_changes) || !Array.isArray(allowedTypes) || !allowedTypes.length) fail('PLAN_INVALID');
@@ -72,7 +78,7 @@ export async function savedPlanMain(args=process.argv.slice(2), env=process.env)
     if(command==='plan') {
       tf(['plan','-input=false','-lock-timeout=30s',`-var-file=${varPath}`,`-out=${planPath}`]);
       const readable=JSON.parse(tf(['show','-json',planPath]));planPolicy(readable,c.allowedResourceTypes);
-      const bytes=privateRead(planPath),createdAt=Date.now(),envelope={version:1,createdAt,expiresAt:createdAt+86400000,binding,state:hash(state),lineage:parsed.lineage,serial:parsed.serial,binary:hash(bytes)};
+      const bytes=privateRead(planPath),createdAt=Date.now(),envelope={version:1,createdAt,expiresAt:createdAt+86400000,binding,state:hash(state),lineage:parsed.lineage,serial:parsed.serial,binary:hash(bytes),...observations(readable)};
       const encoded=Buffer.from(JSON.stringify(envelope)),id=hash(encoded);
       put(`maintenance/plans/${id}/plan.tfplan`,bytes,{IfNoneMatch:'*'});put(`maintenance/plans/${id}/review.json`,JSON.stringify(readable),{IfNoneMatch:'*'});put(`maintenance/plans/${id}/envelope.json`,encoded,{IfNoneMatch:'*'});
       console.log('SAVED_PLAN '+id);
@@ -83,7 +89,9 @@ export async function savedPlanMain(args=process.argv.slice(2), env=process.env)
       if(approval.version!==1||approval.plan!==selected||approval.configuration!==hash(configBytes)||approval.expiresAt<=Date.now()||approval.expiresAt>Date.now()+86400000)fail('PLAN_APPROVAL_REQUIRED');
       writeFileSync(planPath,bytes,{mode:0o600});planPolicy(JSON.parse(tf(['show','-json',planPath])),c.allowedResourceTypes);
       const drift=spawnSync(tofu,[`-chdir=${join(repo,c.root)}`,'plan','-refresh-only','-detailed-exitcode','-input=false','-lock-timeout=30s',`-var-file=${varPath}`,`-out=${join(output,operationId+'-drift.tfplan')}`],{env:tofuEnv,stdio:['ignore','pipe','pipe'],timeout:300000});
-      if(drift.status!==0)fail('RESOURCE_DRIFT_REPLAN_REQUIRED');
+      writeFileSync(join(output,operationId+'-drift.log'),Buffer.concat([drift.stdout??Buffer.alloc(0),drift.stderr??Buffer.alloc(0)]),{mode:0o600});
+      if(![0,2].includes(drift.status))fail('DRIFT_CHECK_FAILED');
+      verifyPlanDrift(envelope,JSON.parse(tf(['show','-json',join(output,operationId+'-drift.tfplan')])));
       if(hash(tf(['state','pull']))!==envelope.state)fail('PLAN_STATE_CHANGED');
       // One immutable consumption record. An interrupted apply is not retried.
       json(`maintenance/consumed/${selected}.json`,{operationId,at:Date.now()},{IfNoneMatch:'*'});
