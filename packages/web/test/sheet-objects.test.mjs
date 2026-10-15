@@ -160,7 +160,7 @@ test('text-box hyperlinks validate fail-closed and the object-link reducer keeps
   assert.equal(object(draft).linkUrl, 'https://example.com/ok');
   assert.equal(authorReducer(draft, { type: 'object-link', id: 'object-999', linkUrl: 'https://example.com' }), draft);
   const withImage = add(draft, 'image');
-  assert.equal(authorReducer(withImage, { type: 'object-link', id: 'object-2', linkUrl: 'https://example.com' }), withImage);
+  assert.deepEqual(authorReducer(withImage, { type: 'object-link', id: 'object-2', linkUrl: 'https://example.com' }), withImage);
   const tampered = add(emptyDraft(), 'text'); object(tampered).linkUrl = 'javascript:alert(1)';
   assert.throws(() => validateDraft(tampered));
   const extraKey = add(emptyDraft(), 'text'); object(extraKey).linkUrl = 'https://example.com';

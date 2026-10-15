@@ -15,9 +15,12 @@ selection, Format Object, Style, Placement and removal include these objects.
 
 Text is edited in place with font size (8–96 px), bold, italic, underline,
 color and alignment. Formatting applies to the whole text box. Content is
-limited to 20,000 characters. Hyperlinks and parameters-in-text have disabled
-controls with explanations. Arbitrary imported rich HTML is retained in the
-original bundle and named in the import report, without being executed.
+limited to 20,000 characters. Text boxes support a whole-box hyperlink
+(`http://`/`https://` only, validated fail-closed as `LINK_URL_INVALID`) and
+`$parameterName` placeholders resolved against the analysis's current parameter
+values (unknown names render literally, matching QuickSight). Arbitrary
+imported rich HTML is retained in the original bundle and named in the import
+report, without being executed.
 
 Images use a device-local `image/*` file picker, a **4 MiB (4,194,304 byte)**
 per-image cap, and a base64 image data URI. MIME, byte count, URI shape and
@@ -37,7 +40,7 @@ has no native embedded-image field:
 | Draft | Bundle definition | PascalCase definition input |
 | --- | --- | --- |
 | Text identity | `sheets[].textBoxes[].sheetTextBoxId` | `Sheets[].TextBoxes[].SheetTextBoxId` |
-| Text content/style | Escaped `content` text-box HTML plus `opensightText: {content, style}` | `Content`, `OpenSightText` |
+| Text content/style/link | Escaped `content` text-box HTML (linked text wrapped in `<a href>`) plus `opensightText: {content, style, linkUrl}` | `Content`, `OpenSightText` |
 | Image identity | `sheets[].images[].sheetImageId` | `Sheets[].Images[].SheetImageId` |
 | Embedded bytes | `source.opensightDataUri` | `Source.OpenSightDataUri` |
 | Image fit | `scaling.scalingType`: `SCALE_TO_FIT` / `SCALE_TO_FILL` | `Scaling.ScalingType` |
@@ -53,8 +56,9 @@ object patches its fields while preserving unknown metadata. Removing it
 removes its projected element and placement, leaving opaque siblings intact.
 
 Whole-box styling, rather than mixed formatting within a text selection, is
-the supported subset. Text hyperlinks, parameters, remote images and arbitrary
-foreign HTML rendering remain unavailable. Autosave uses existing browser
+the supported subset. Hyperlinks apply to the whole text box (QuickSight
+supports per-run links; OpenSight documents this divergence). Remote images
+and arbitrary foreign HTML rendering remain unavailable. Autosave uses existing browser
 storage; quota failures retain the editor state and report the existing
 export-to-keep-your-work explanation.
 
