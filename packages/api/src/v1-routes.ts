@@ -216,7 +216,7 @@ export class V1Routes {
       }
       return false;
     };
-    for (const d of await this.routes.prep.list(context)) if (await touches(d.resource.dataSetId, new Set())) blocking.push(d.resource.dataSetId);
+    for (const d of (await this.routes.prep.list(context)).datasets) if (await touches(d.resource.dataSetId, new Set())) blocking.push(d.resource.dataSetId);
     return blocking;
   }
 
@@ -241,7 +241,7 @@ export class V1Routes {
     if (path === '/api/v1/datasets') {
       method(request, response, ['GET']);
       const { limit, offset } = this.paging(request);
-      await publish(200, this.page((await this.routes.prep.list(context)).map(d => this.summarizeDataset(d)), offset, limit));
+      await publish(200, this.page((await this.routes.prep.list(context)).datasets.map(d => this.summarizeDataset(d)), offset, limit));
       return;
     }
     const dataset = /^\/api\/v1\/datasets\/([A-Za-z0-9_-]{1,128})(?:\/(lineage|refresh|refresh-status))?$/.exec(path);
