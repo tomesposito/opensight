@@ -3,9 +3,10 @@ import type { ExecutionSettings, ExecutionStatus } from './api-client.js';
 import { prepSchema, type PrepSourceSummary } from './data-prep.js';
 
 export interface HostedPrepDataset { resource: BundleDataSet; version: number; execution: ExecutionSettings }
+export interface UnavailablePrepDataset { id: string; errorCode: string }
 export type PrepDatasetsResponse =
   | { datasets: BundleDataSet[]; persistence: 'file' | 'ephemeral' }
-  | { datasets: HostedPrepDataset[]; persistence: 'durable' };
+  | { datasets: HostedPrepDataset[]; unavailable?: UnavailablePrepDataset[]; persistence: 'durable' };
 export type PrepSaveResponse = { resource: BundleDataSet; persistence: 'file' | 'ephemeral' } | HostedPrepDataset;
 
 /** Hosted execution is configuration only. Missing cache telemetry is never zero/ready. */
@@ -22,7 +23,7 @@ export function prepSources(saved: PrepDatasetsResponse, sources: PrepSourceSumm
   if (saved.persistence !== 'durable') return sources;
   const datasets = prepResources(saved);
   const raw = sources.filter(source => !source.ref || typeof source.ref === 'string');
-  return [...raw, ...saved.datasets.map(({ resource, execution, version }): PrepSourceSummary => {
+  const resolved = saved.datasets.map(({ resource, execution, version }): PrepSourceSummary => {
     const base = { id: resource.dataSetId, ref: { dataset: resource.dataSetId }, name: resource.name, connectorId: 'file', execution: hostedExecution(execution, version) };
     try {
       if (!resource.opensightPrep) throw new Error('INVALID_PREP_PIPELINE');
@@ -33,5 +34,11 @@ export function prepSources(saved: PrepDatasetsResponse, sources: PrepSourceSumm
       const errorCode = error instanceof Error && 'code' in error && typeof error.code === 'string' ? error.code : 'PREP_SCHEMA_UNAVAILABLE';
       return { ...base, columns: [], available: false, errorCode };
     }
-  })];
+  });
+  // Datasets the server could not resolve stay visible as unavailable instead of
+  // failing the composed catalog. They are identified by id only: no execution
+  // settings and no columns are fabricated for an entry the server refused.
+  const unavailable = (saved.unavailable ?? []).map(({ id, errorCode }): PrepSourceSummary =>
+    ({ id, ref: { dataset: id }, name: id, connectorId: 'prepared', columns: [], available: false, errorCode }));
+  return [...raw, ...resolved, ...unavailable];
 }
