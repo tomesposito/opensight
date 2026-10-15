@@ -1,5 +1,5 @@
 ---
-status: 🚧 Draft
+status: ✅ Confirmed (product owner, 2026-10-14)
 owner: Tom Esposito
 date: 2026-10-14
 labels: [idd]
@@ -21,7 +21,7 @@ generated core with a hand-maintained UX layer. Follows D-37 ✅
 Subcommand vocabulary (D-71), output format (D-72), credential
 carriage (D-73), packaging (D-74).
 
-### 🚧 IDD D-75 — How much of the CLI is generated from the spec?
+### ✅ IDD D-75 — How much of the CLI is generated from the spec?
 
 #### CONTEXT
 

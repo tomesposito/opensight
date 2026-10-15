@@ -1,5 +1,5 @@
 ---
-status: 🚧 Draft
+status: ✅ Confirmed (product owner, 2026-10-14)
 owner: Tom Esposito
 date: 2026-10-14
 labels: [idd]
@@ -23,7 +23,7 @@ Hosted refresh-token minting/exchange endpoints (the remote dev's
 handoff per D-70 ITD — not claimed shipped); subcommand vocabulary
 (D-71); output format (D-72); packaging (D-74).
 
-### 🚧 IDD D-73 — How does the CLI authenticate?
+### ✅ IDD D-73 — How does the CLI authenticate?
 
 #### CONTEXT
 
