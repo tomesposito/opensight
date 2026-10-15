@@ -10,6 +10,10 @@ export function ciConfig(c) {
     || !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(c.privateRepository ?? '')
     || !/^[1-9][0-9]*$/.test(c.repositoryId ?? '') || !/^[1-9][0-9]*$/.test(c.ownerId ?? '')
     || !/^[a-f0-9]{40}$/.test(c.workflowCommit ?? '')) fail();
+  if (c.marketingOrigin !== undefined || c.publicOrigin !== undefined) {
+    const origin = v => /^https:\/\/[a-z0-9][a-z0-9.-]+[a-z0-9]$/.test(v ?? '');
+    if (!origin(c.marketingOrigin) || !origin(c.publicOrigin) || c.publicOrigin !== c.marketingOrigin.replace('https://', 'https://app.')) fail();
+  }
   return c;
 }
 export function ciSubject(config) {

@@ -32,6 +32,8 @@ RUN --network=none npm test
 RUN --network=none VITE_OPENSIGHT_SERVERLESS=true npm run build --workspace @opensight/web
 RUN --network=none node ops/serverless/package.mjs frontend /frontend
 RUN --network=none npm run build:demo --workspace @opensight/web
+RUN --network=none node site/check.mjs
+RUN --network=none node ops/serverless/package-sites.mjs site packages/web/dist/opensight-demo.html /frontend
 
 FROM test AS production
 RUN --network=none npm prune --omit=dev --ignore-scripts --offline --no-audit --no-fund
