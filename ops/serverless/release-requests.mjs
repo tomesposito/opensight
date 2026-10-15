@@ -154,16 +154,19 @@ try {
       try {
         const request = validateRequest(d, repository), statuses = await api('GET', endpoint + '/deployments/' + d.id + '/statuses?per_page=1');
         const state = ['pending', 'queued', 'in_progress', 'success', 'failure', 'error', 'inactive'].includes(statuses[0]?.state) ? statuses[0].state : 'unknown';
-        records.push({ ...request, state });
+        const stages = { pending: 'requested', queued: 'approved', in_progress: 'deploying', success: 'deployed', failure: 'failed', error: 'blocked', inactive: 'inactive' };
+        records.push({ ...request, state, stage: stages[state] ?? 'unknown' });
       } catch { records.push({ state: 'unverified-record' }); }
     }
-    const observed = await api('GET', endpoint + '/deployments?task=opensight%3Aobserve&per_page=1');
+    const observed = await api('GET', endpoint + '/deployments?task=opensight%3Aobserve&per_page=20');
     let production;
-    if (observed[0]) {
-      const d = observed[0], p = d.payload, statuses = await api('GET', endpoint + '/deployments/' + d.id + '/statuses?per_page=1');
+    for (const d of observed) {
+      let p; try { p = typeof d.payload === 'string' ? JSON.parse(d.payload) : d.payload; } catch { continue; }
+      const statuses = await api('GET', endpoint + '/deployments/' + d.id + '/statuses?per_page=1');
       if (statuses[0]?.state === 'success' && p?.version === 1 && p.kind === 'opensight-production-observation'
         && sourcePattern.test(p.runtimeSource) && sourcePattern.test(p.marketingSource) && Number.isFinite(Date.parse(p.observedAt))) {
         production = { runtimeSource: p.runtimeSource, marketingSource: p.marketingSource, observedAt: new Date(p.observedAt).toISOString() };
+        break;
       }
     }
     console.log(JSON.stringify({ requests: records, production, informationalOnly: true }, null, 2));

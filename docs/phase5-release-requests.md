@@ -124,6 +124,11 @@ boundary test exercises S3's streaming outfile/required flags and Lambda reads.
 The demo was rebuilt; its HTML and Home screenshot match the prior reference
 byte for byte. No product UI changed.
 
+Full root `npm test` in isolated Linux ARM64 with real PostgreSQL and Chromium:
+**3,008 passed / 0 failed / 0 skipped / 0 cancelled**. The sixteen new request
+tests also passed independently. Both workflow YAML files parsed; staged secret
+and portable-path checks passed. No new dependency was added.
+
 The owner merge and an independently approved **compatible** release are still
 needed to exercise the new correlated private dispatch end to end. Existing
 compatible promotion remains live. Generic saved-plan/migration/restore execution

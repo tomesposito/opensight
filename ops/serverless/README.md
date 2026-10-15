@@ -9,7 +9,10 @@ activation changes SQL admission only after migration and tester setup. Neither
 profile creates recurring database wakeups.
 
 The initial pilot workflow is documented in
-[`pilot-README.md`](pilot-README.md). General CI deployment, drain and rollback
+[`pilot-README.md`](pilot-README.md). Recurring compatible releases use the
+[private OIDC controller](../../docs/phase5-sr4c-compatible-releases.md).
+Remote developers can [request a release and inspect production status](../../docs/phase5-release-requests.md)
+without AWS access. General infrastructure, migration and restore execution
 remain separate D-25 work.
 
 ## Build and local acceptance
