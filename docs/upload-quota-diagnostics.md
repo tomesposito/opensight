@@ -26,7 +26,8 @@ Fields:
   manifest or result reference. These are cleanup obligations, including reservations
   still inside their retention window. Healthy protected live objects are excluded.
 - `pendingCleanup` — per object: `id`, `purpose`, `state` (`reserved`|`live`|`retiring`),
-  `capacityBytes`, `bytes` (when bound), `nextReclamationAt` (ms epoch), `overdue`.
+  `capacityBytes`, `bytes` (when bound), `nextReclamationAt` (ms epoch or null),
+  `protections`, `overdue`.
 - `nextReclamationAt` — the earliest reclamation time across pending objects, null when
   nothing is pending. Per object it is `max(retention_until, created_at + 24h,
   signature_until + 10min)`, extended by active pins, source/result expiry and running
@@ -48,7 +49,7 @@ namespace explicitly; there is no cross-tenant listing.
 `ObjectLedger.reserve()` throws `USAGE_LIMIT_EXCEEDED` (429) with a `detail` payload:
 
 ```json
-{ "summary": "Storage limit 1 MiB exceeded: ... retained by 2 earlier upload attempt(s) ... next eligible reclamation 2026-10-15T...Z. Failed or cancelled uploads keep their reservation until the collector proves exact-version absence after the minimum 24-hour window; counters are never hand-edited.",
+{ "summary": "Storage limit 1 MiB exceeded: ... retained by 1 object(s) awaiting collector cleanup; next eligible reclamation ... Eligible times are not a promise of deletion. ...",
   "requestedBytes": 600000,
   "breakdown": { "limitBytes": 1048576, "metadataBytes": 0, "liveBytes": 0, "reservedBytes": 600000,
                  "pendingCleanupBytes": 600000, "pendingCleanupCount": 1, "overdueCount": 0,
@@ -96,9 +97,9 @@ Diagnosing a stuck workspace:
    not recorded the exact-version deletion proof — that is a collector problem, not a
    quota problem. Do not touch counters; investigate the collector run for those
    object ids.
-4. If `nextReclamationAt` is in the future, the quota is working as designed: the
-   reservations release when the retention window expires. The 24-hour minimum hold
-   is a protocol guarantee and must not be shortened to clear a test quota.
+4. If `nextReclamationAt` is in the future, the retention gate is still active.
+   Expiry makes cleanup eligible; release still requires successful collector proof.
+   The 24-hour minimum hold must not be shortened to clear a test quota.
 
 
 ## Private AWS inspection
@@ -132,6 +133,26 @@ keep them outside repositories. Match event IDs against a bounded DLQ inspection
 and check exact S3 object versions with read-only HEAD calls. Never redrive, delete
 or adjust counters as part of inspection. A separate reviewed repair is needed
 when obsolete/expired cleanup events require replacement.
+
+## AWS acceptance and cleanup defect
+
+The 2026-10-15 inspection is recorded in
+[`phase5-issue91-aws-evidence.md`](phase5-issue91-aws-evidence.md). Both pilot gauges
+matched their ledgers; no gauge adjustment was indicated. Cleanup had left charged
+objects whose S3 versions were already absent.
+
+`AwsObjectDeletion` now recognizes named S3 HEAD 404 responses inside the
+`InvocationAws.call` callback. Previously the wrapper replaced those provider
+errors with `AWS_REQUEST_FAILED` before the collector could classify absence.
+The fix preserves general error redaction and rejects 403, unnamed 404, timeouts
+and ambiguous responses. Tests exercise the actual wrapper, ledger release and
+duplicate cleanup.
+
+This fix does not revive expired events. Recovery of the existing obligations is
+tracked separately in [#96](https://github.com/tomesposito/opensight/issues/96).
+Do not blindly redrive them: current execution admission terminalizes expired
+events before collector work, which can acknowledge messages without reclaiming
+the charged storage.
 
 ## Maintenance: audited bounded recompute (specified, not implemented)
 
