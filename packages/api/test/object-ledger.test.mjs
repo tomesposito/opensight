@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { manifestFixture } from './manifest-helpers.mjs';
 import { migrateDispatch } from '../dist/dispatch-schema.js';
 import { migrateObjects } from '../dist/object-schema.js';
+import { migrateOperations } from '../dist/operation-schema.js';
 import { DurableDispatch } from '../dist/dispatch.js';
 import { ObjectLedger } from '../dist/object-ledger.js';
 import { TenantMetadata } from '../dist/metadata.js';
@@ -13,6 +14,7 @@ const digest = Buffer.alloc(32, 1).toString('base64');
 async function fixture(t) {
   const f = await manifestFixture(t);
   await migrateDispatch(f.db, 'test', 'frozen', 'sqlite'); await migrateObjects(f.db, 'test', 'frozen', 'sqlite');
+  await migrateOperations(f.db, 'test', 'frozen', 'sqlite');
   const usage = new HostedUsage(f.db, f.entitlements, Date.now, 'test'), metadata = new TenantMetadata(f.db, f.db, usage);
   const contexts = await Promise.all(['one', 'two'].map(namespaceId => metadata.authenticate(null, async () => ({ namespaceId, userId: 'admin' }))));
   const dispatch = new DurableDispatch(f.db, metadata, 'test', { recover: async () => {}, dispatch: async () => {} }, 'sqlite'), ledger = new ObjectLedger(metadata, 'test');

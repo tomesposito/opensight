@@ -207,8 +207,8 @@ test('#91 real TLS PostgreSQL CLI matches SQLite, enforces read-only snapshots a
     assert.equal(missing.code, 1); assert.doesNotMatch(missing.stderr, /postgresql:|password/);
     const invalidCA = await run(process.execPath, args, { env: { ...env, OPENSIGHT_POSTGRES_CA: ca.replace('CERTIFICATE', 'INVALID') } }).then(() => null, e => e);
     assert.equal(invalidCA.code, 1);
-    const foreignCA = await readFile(new URL('../../../ops/serverless/rds-ca.pem', import.meta.url), 'utf8');
-    const wrongCA = await run(process.execPath, args, { env: { ...env, OPENSIGHT_POSTGRES_CA: foreignCA } }).then(() => null, e => e);
+    const foreignCA = new URL('../../../ops/serverless/rds-ca.pem', import.meta.url).pathname;
+    const wrongCA = await run(process.execPath, args, { env: { ...env, OPENSIGHT_POSTGRES_CA: '', OPENSIGHT_POSTGRES_CA_FILE: foreignCA } }).then(() => null, e => e);
     assert.equal(wrongCA.code, 1);
     const other = await run(process.execPath, [cli, '--deployment', 'test', '--tenant', f.contexts[1].tenantId, '--namespace', 'two'], { env });
     assert.equal(JSON.parse(other.stdout).reservedBytes, 0);

@@ -10,7 +10,7 @@ export interface PendingObject {
   /** Earliest ms epoch at which the collector may reclaim it; mirrors ObjectLedger.retire(). */
   nextReclamationAt: number | null;
   protections: StorageProtection[];
-  /** A retiring object past its reclamation time: the collector owes an exact-version deletion proof. */
+  /** An unprotected object past eligibility: the collector owes an exact-version deletion proof. */
   overdue: boolean;
 }
 
@@ -87,7 +87,7 @@ export function quotaExceededSummary(breakdown: StorageBreakdown, requestedBytes
     `${breakdown.pendingCleanup.length} object(s) awaiting collector cleanup; ${reclaim}. ` +
     (breakdown.overdueCount ? `${breakdown.overdueCount} object(s) are eligible and awaiting cleanup proof. ` : '') +
     `Eligible times are not a promise of deletion. ` +
-    ` Failed or cancelled uploads keep their reservation until the collector proves exact-version absence after the minimum 24-hour window; counters are never hand-edited.`;
+    `Failed or cancelled uploads keep their reservation until the collector proves exact-version absence after the minimum 24-hour window; counters are never hand-edited.`;
 }
 
 const publicQuotaErrors = new WeakMap<MetadataError, string>();
