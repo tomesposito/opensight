@@ -1230,6 +1230,30 @@ plane evidence, not continuous health monitoring. A changed compatibility hash
 still requires separately reviewed maintenance; this path adds no migration,
 restore, IAM permissions, database polling or new standing resources.
 
+**SR3/SR4 completion (frozen 2026-10-15):** Implement
+[D-79](docs/itd/D-79-cloud-delivery-acceptance.md) and
+[D-80](docs/itd/D-80-maintenance-execution.md). Separate identifier-only IAM
+replay from administration/migration. Report the independently configured worker
+mail capability without exposing its secret to request execution. Use a private,
+expiring synthetic acceptance plan and isolated SQL/queue/storage resources for
+real report/alert rendering, IPv6 SMTP, authorization denial, duplicate/late
+events and injected commit/send/ack failures. Never introduce a public bypass,
+arbitrary SQL command or production bulk redrive.
+
+Replace the plan/apply/migration/restore placeholder steps with bounded executable
+controllers. Exact private configuration, source/tool/provider/state/plan digests
+and independent approval bind every apply; acquire the shared operation CAS and
+native state lock, refuse drift/staleness and hold uncertain partial changes for
+reconciliation. Migration records transactional receipts and preserves existing
+objects, references and monotonic authority. Registered encrypted backups bind
+exact immutable objects and current key versions. Restore only into an isolated
+target: verify independent registry history, advance external epoch/fence high
+water marks, keep tenants/memberships/sessions/delivery held and refuse missing
+or newer deletion evidence. A restore never opens production or implicitly
+restores old state/configuration; cutover requires its own reviewed operation.
+Public builds gain no cloud access. Live isolated drills and exact production
+promotion evidence, rather than offline boolean fixtures, determine completion.
+
 **SR4c marketing cutover (frozen 2026-10-15):** Implement
 [D-77](docs/itd/D-77-marketing-cutover.md). One existing private S3 origin and
 CloudFront Free distribution serve the approved marketing page plus offline demo
@@ -1523,6 +1547,51 @@ failure, timeout and a successful HEAD remain non-proof. Other AWS failures reta
 their sanitized named errors. Regression tests exercise the real InvocationAws
 wrapper, quota release and duplicate cleanup. This corrects future collector
 execution only; it does not revive expired events or authorize a ledger repair.
+
+### Phase 5: bounded pilot SR3 migration release
+
+Frozen 2026-10-15 under the operator's instruction to deploy the merged release.
+[D-71](docs/itd/D-71-pilot-migration-release.md) defines a narrow recurring-operator
+bridge for the additive SR2-to-SR3 transition. Promote the attested public image
+and frontend without rebuilding them. The ordinary private CI compatibility guard
+stays unchanged; record a new compatibility baseline only after the actual schema,
+runtime configuration, application versions and frontend have been promoted and
+verified together.
+
+The bridge is IAM-only, temporary, version-pinned, VPC-local and has no arbitrary
+SQL, public route, event source, quota adjustment or restore command. Validate a
+digest-bound plan, expected current release/configuration and conditional operation
+lock. Refuse live jobs, pending operations, nonexpired durable obligations, active
+admissions, active artifact references or present artifact versions in this pilot
+transition. Preserve expired outbox/DLQ evidence for separately reviewed recovery.
+After stopping runtime admission/mappings and draining their hard timeout plus ten
+seconds, advance the independent epoch record and SQL maintenance gate with an
+operation-bound idempotent receipt. Never reuse the initial activation commands.
+
+Before DDL, register a completed encrypted Aurora snapshot with the operation,
+schema/source identity, empty artifact-version inventory, key-version references,
+authorization/deletion audit digest and independent epoch record. Retain the
+snapshot for seven days; it is held evidence, not an automatically eligible data
+restore. A restore requires the separately reviewed D-25 authority reconciliation.
+No object pins are needed only because this transition refuses present versions.
+
+Run the existing additive serverless migration in one advisory-locked transaction;
+commit its checksum-bound receipt and audit atomically. Verify runtime grants and
+tenant denial of the private execution tables. Keep source definitions, users,
+quota gauges, object records and retry/fence high-water marks unchanged. Reopening
+requires the exact operation/advanced epoch, verified candidate promotion and an
+independent watchdog; ambiguous failure retains closed admission and the operation
+lock. No automatic down-migration, old-state restore, blind redrive or IAM widening.
+
+Operator promotion retains exact prior code/frontend/configuration receipts, updates
+the worker's existing SMTP references, promotes the selected application artifact,
+runs bounded authenticated upload/ingestion/refresh/query/isolation checks and records
+the real resulting release/configuration by CAS. Only then release the lock and
+validate the private CI preflight against the new baseline. Generic infrastructure
+apply, data restore, live-email fault drills and expired cleanup repair remain
+separate tasks; their absence does not justify claiming those issues complete.
+Tests cover stale/replayed commands, drain requirements, atomic migration receipts,
+restricted grants and failure-held gates; full root tests remain required.
 
 ## 7. Repository Layout
 

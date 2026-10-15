@@ -11,6 +11,7 @@ import { migrateServerless } from './serverless-migration.js';
 import { initialCommand, initialMigrationCommand, initialAdministration, prepareInitial, type InitialResult, type InitialCommand } from './runtime-initial.js';
 import { runServerlessEvent, replayServerlessEvent } from './serverless-worker.js';
 import { dispatchEnvelope } from './dispatch.js';
+import { replayCommand } from './replay-command.js';
 
 export interface ScheduledEvent { version: 1; deploymentEpoch: number; eventId: string; kind: 'due' | 'execute' | 'recover' }
 export interface PrivateRuntimeDependencies extends Pick<RuntimeDependencies, 'databases'> {
@@ -26,6 +27,13 @@ export function createPrivateRuntime(environment: () => NodeJS.ProcessEnv = () =
   const invoke = <T>(env: NodeJS.ProcessEnv, context: InvocationContext, work: (db: InvocationDatabases, scope: InvocationScope) => Promise<T>) =>
     new InvocationScope(invocationDeadline(context, Date.now(), 110000)).run(scope => work((dependencies.databases ?? invocationDatabases)(scope, env, 20000), scope));
   return {
+    /** Only the separately published IAM-only replay function exports this method. */
+    async replay(raw: unknown, context: InvocationContext): Promise<{ state: 'replayed' }> {
+      const input = replayCommand(raw), env = configured();
+      if (env.OPENSIGHT_SERVERLESS_DATA !== 'durable') throw new MetadataError('DISPATCH_REPLAY_DENIED', 409);
+      await invoke(env, context, (db, scope) => (dependencies.replay ?? replayServerlessEvent)(input.event, db, scope, env, input.acceptAmbiguous));
+      return { state: 'replayed' };
+    },
     /** Private IAM invocation only; not an HTTP route. Keep the existing operator check. */
     async migration(raw: unknown, context: InvocationContext): Promise<{ state: 'migrated'; maintenance: true }> {
       const env = configured(), input = object(raw, ['command', 'authorization']);

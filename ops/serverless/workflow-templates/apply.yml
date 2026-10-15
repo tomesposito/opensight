@@ -1,51 +1,80 @@
-# TEMPLATE — not a live workflow. See README.md.
-# Private apply workflow: applies a REVIEWED plan envelope, nothing else.
-name: OpenSight private apply (template)
+# Copy only to the private controller repository; invoke this reusable workflow
+# through a manual wrapper pinned to its reviewed 40-character commit. See README.
+name: OpenSight private apply
 on:
-  workflow_dispatch:
+  workflow_call:
     inputs:
-      environment:
-        description: 'Target environment (e.g. pilot)'
+      config_revision:
+        type: string
         required: true
-      plan_envelope_digest:
-        description: 'SHA-256 of the approved plan envelope'
-        required: true
-      approval_ref:
-        description: 'Reference to the recorded operator approval'
+      selection:
+        type: string
         required: true
 permissions:
   contents: read
 concurrency:
-  group: opensight-deploy-${{ inputs.environment }}
+  group: opensight-production-controller
   cancel-in-progress: false
 jobs:
-  apply:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 60
+  execute:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 30
     permissions:
       contents: read
-      id-token: write  # only this job assumes the apply role
+      id-token: write
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
+          repository: ${{ vars.OPENSIGHT_PUBLIC_REPOSITORY }}
+          ref: ${{ vars.OPENSIGHT_CONTROL_SOURCE }}
           persist-credentials: false
-      # 1. Assume the APPLY role via short-lived OIDC. May apply the reviewed
-      #    plan within the environment with limited PassRole; cannot alter its
-      #    own trust, bootstrap state policy, or permissions boundary.
-      - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a  # v4
+      - name: Verify pinned private workflow identity and inputs
+        env:
+          CONFIG_REVISION: ${{ inputs.config_revision }}
+          SELECTED: ${{ inputs.selection }}
+        run: |
+          node --input-type=module <<'NODE'
+          import { appendFileSync } from 'node:fs';
+          if (!/^[a-f0-9]{64}$/.test(process.env.CONFIG_REVISION) || (process.env.SELECTED && !/^[a-f0-9]{64}$/.test(process.env.SELECTED))) throw Error('SELECTION_INVALID');
+          const url = new URL(process.env.ACTIONS_ID_TOKEN_REQUEST_URL); url.searchParams.set('audience','sts.amazonaws.com');
+          const response = await fetch(url,{headers:{authorization:`Bearer ${process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN}`}});
+          if (!response.ok) throw Error('OIDC_IDENTITY_UNAVAILABLE');
+          const {value} = await response.json(); const claims = JSON.parse(Buffer.from(value.split('.')[1],'base64url'));
+          if (!/^[a-f0-9]{40}$/.test(claims.job_workflow_sha ?? '') || !claims.job_workflow_ref.endsWith('@'+claims.job_workflow_sha) || claims.event_name !== 'workflow_dispatch') throw Error('PINNED_MANUAL_CONTROLLER_REQUIRED');
+          appendFileSync(process.env.GITHUB_ENV,'OPENSIGHT_PRIVATE_COMMIT='+claims.job_workflow_sha+'\n');
+          NODE
+      - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a
         with:
           role-to-assume: ${{ vars.OPENSIGHT_APPLY_ROLE_ARN }}
           aws-region: us-east-1
-      # 2. Fetch the plan envelope by digest from restricted operational
-      #    storage. Verify: digest matches approval_ref, envelope not expired
-      #    (24h), envelope commits/locks match the current tree.
-      # 3. Reacquire the state lock (bounded wait; fail if unavailable).
-      # 4. Check resource drift and current configuration/state against the
-      #    envelope. Changed input, expired plan, drift, or stale state ->
-      #    refuse and require a new plan/review. Never synthesize a
-      #    replacement plan.
-      # 5. tofu apply plan.tfplan. Partial apply is reconciled against actual
-      #    resources and current state; never retried as an assumed atomic
-      #    transaction.
-      # 6. Record the apply outcome (envelope digest, state serial before/after)
-      #    in the private audit log.
+          role-duration-seconds: 1800
+          mask-aws-account-id: true
+          retry-max-attempts: 2
+      - name: Fetch encrypted private inputs outside Git
+        env:
+          BUCKET: ${{ vars.OPENSIGHT_OPERATIONS_BUCKET }}
+          CONFIG_REVISION: ${{ inputs.config_revision }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          directory="$RUNNER_TEMP/opensight-maintenance"
+          mkdir -p "$directory"
+          chmod 700 "$directory"
+          for file in maintenance-config.json maintenance.tfvars.json maintenance.backend.hcl; do
+            aws s3api get-object --bucket "$BUCKET" --key "maintenance/configs/$CONFIG_REVISION/$file" "$directory/$file" >/dev/null
+          done
+          printf '%s  %s\n' "$CONFIG_REVISION" "$directory/maintenance-config.json" | sha256sum --check --status
+          echo "OPENSIGHT_OPERATOR_DIR=$directory" >> "$GITHUB_ENV"
+      - name: Acquire pinned OpenTofu (MPL-2.0 operator tool, never bundled)
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --location https://github.com/opentofu/opentofu/releases/download/v1.13.1/tofu_1.13.1_linux_arm64.zip --output "$RUNNER_TEMP/tofu.zip"
+          printf '%s  %s\n' b9614df40575cc3fc10a8a25025b7245d961da279f715ea3efff4ddae8e6938a "$RUNNER_TEMP/tofu.zip" | sha256sum --check
+          unzip -q "$RUNNER_TEMP/tofu.zip" -d "$RUNNER_TEMP/opensight-tofu"
+          echo "$RUNNER_TEMP/opensight-tofu" >> "$GITHUB_PATH"
+      - name: Execute reviewed apply
+        env:
+          SELECTED: ${{ inputs.selection }}
+        run: node ops/serverless/saved-plan.mjs apply "$SELECTED"

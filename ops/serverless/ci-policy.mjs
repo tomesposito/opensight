@@ -10,6 +10,7 @@ export function ciConfig(c) {
     || !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(c.privateRepository ?? '')
     || !/^[1-9][0-9]*$/.test(c.repositoryId ?? '') || !/^[1-9][0-9]*$/.test(c.ownerId ?? '')
     || !/^[a-f0-9]{40}$/.test(c.workflowCommit ?? '')) fail();
+  if (c.maintenanceWorkflows !== undefined && (!c.maintenanceWorkflows || typeof c.maintenanceWorkflows !== 'object' || Array.isArray(c.maintenanceWorkflows) || Object.entries(c.maintenanceWorkflows).some(([k,v]) => !['plan','apply','maintenance','restore'].includes(k) || !/^[a-f0-9]{40}$/.test(v)))) fail();
   if (c.marketingOrigin !== undefined || c.publicOrigin !== undefined) {
     const origin = v => /^https:\/\/[a-z0-9][a-z0-9.-]+[a-z0-9]$/.test(v ?? '');
     if (!origin(c.marketingOrigin) || !origin(c.publicOrigin) || c.publicOrigin !== c.marketingOrigin.replace('https://', 'https://app.')) fail();
@@ -60,4 +61,14 @@ export function ciPolicy(config, kind) {
       allow('iam:PassRole', `arn:aws:iam::${c.account}:role/${c.deployment}-ci-watchdog-invoke`, { StringEquals: { 'iam:PassedToService': 'scheduler.amazonaws.com' } }),
     ] : []),
   ] };
+}
+
+/** Each maintenance role trusts only its own immutable reusable workflow. */
+export function ciRoleKinds(config) { const c=ciConfig(config); return ['read','deploy',...Object.keys(c.maintenanceWorkflows??{})]; }
+export function ciRoleTrust(config,kind) {
+  const c=ciConfig(config); if(['read','deploy'].includes(kind))return ciTrust(c);
+  const pin=c.maintenanceWorkflows?.[kind]; if(!pin||!['plan','apply','maintenance','restore'].includes(kind))fail();
+  const trust=ciTrust(c);
+  trust.Statement[0].Condition.StringEquals['token.actions.githubusercontent.com:sub']=`repository_id:${c.repositoryId}:repository_owner_id:${c.ownerId}:ref:refs/heads/master:event_name:workflow_dispatch:job_workflow_ref:${c.privateRepository}/.github/workflows/${kind}.yml@${pin}`;
+  return trust;
 }

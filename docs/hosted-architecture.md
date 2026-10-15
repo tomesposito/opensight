@@ -778,6 +778,7 @@ Headless API decision register (issue #95):
 | ID | Contract | Status / gate |
 | --- | --- | --- |
 | [D-70](itd/D-70-mcp-runtime-boundaries.md) | MCP runtime boundaries | ✅ Explicit operator OAuth exchange configuration; MIT-only bundled stdio SDK runtime |
+| [D-71](itd/D-71-pilot-migration-release.md) | Pilot additive migration release | ✅ Bounded operator bridge, registered backup, real promotion before the new compatibility baseline |
 | [D-37](idd/D-37-headless-first-api.md) | Headless-first API foundation | ✅ REST/OpenAPI, no raw SQL, tenant-scoped user credentials and rate limiting |
 | [D-38](idd/D-38-dashboard-publish-semantics.md) | Dashboard publish semantics | ✅ Immutable versioned definition, live data; publish authorization remains with the dashboards slice |
 | [D-39](idd/D-39-headless-analysis-authoring.md) | Analysis authoring verbs and behavior | 🚧 Analyses implementation waits for the [slice proposal](headless-v1-analyses.md#product-questions-requiring-answers): granularity/names, access, concurrency, dataset binding and incomplete drafts |
@@ -804,6 +805,8 @@ SR0 implementation decision register (issue #81; proposals, no AWS authorization
 | [D-34](itd/D-34-compatible-release-automation.md) | Compatible releases and revocable CI access | ✅ Public isolated CI, private immutable promotion, dedicated OIDC roles and independent emergency shutoff; general migrations remain separate |
 | [D-77](itd/D-77-marketing-cutover.md) | Marketing cutover | ✅ Shared private edge, attested site/demo and operator-owned hostname transition |
 | [D-78](itd/D-78-release-requests.md) | Release requests and status | ✅ Public exact-artifact requests, independent approval and sanitized AWS observations |
+| [D-79](itd/D-79-cloud-delivery-acceptance.md) | Cloud delivery acceptance | ✅ Dedicated replay boundary and bounded isolated delivery/failure checks |
+| [D-80](itd/D-80-maintenance-execution.md) | Maintenance execution | ✅ Exact saved plans, transactional migration and isolated held restore |
 
 Related confirmed deployment decision: [ITD D-18 — serverless development
 deployment](itd/D-18-serverless-development-deployment.md) (2026-10-10). Lambda

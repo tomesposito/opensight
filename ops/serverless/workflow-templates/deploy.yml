@@ -1,53 +1,130 @@
-# TEMPLATE — not a live workflow. See README.md.
-# Private deploy workflow: promotes a verified release through the controller.
-name: OpenSight private deploy (template)
+# Private reusable template. Pin caller and AWS trust before activation.
+name: OpenSight private compatible deploy (reusable template)
 on:
-  workflow_dispatch:
+  workflow_call:
     inputs:
-      environment:
-        description: 'Target environment (e.g. pilot)'
+      mode:
+        type: string
         required: true
-      release_digest:
-        description: 'SHA-256 of the release manifest to deploy'
-        required: true
-      approval_ref:
-        description: 'Reference to the recorded operator approval'
-        required: true
+      role:
+        type: string
+        default: read
+      source:
+        type: string
+        default: ''
+      manifest:
+        type: string
+        default: ''
+    secrets:
+      OPENSIGHT_SMOKE_CONFIG:
+        required: false
 permissions:
   contents: read
+  id-token: write
 concurrency:
-  group: opensight-deploy-${{ inputs.environment }}
+  group: opensight-production-controller
   cancel-in-progress: false
 jobs:
-  deploy:
+  preflight:
     runs-on: ubuntu-24.04
-    timeout-minutes: 90
-    permissions:
-      contents: read
-      id-token: write  # only this job assumes the deploy role
+    timeout-minutes: 7
+    outputs:
+      controller-sha: ${{ steps.controller.outputs.sha }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - name: Resolve this reviewed controller commit from GitHub's OIDC claims
+        id: controller
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import { appendFileSync } from 'node:fs';
+          const url = new URL(process.env.ACTIONS_ID_TOKEN_REQUEST_URL);
+          url.searchParams.set('audience', 'sts.amazonaws.com');
+          const response = await fetch(url, {headers: {authorization: `Bearer ${process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN}`}});
+          if (!response.ok) throw Error('OIDC_IDENTITY_UNAVAILABLE');
+          const {value} = await response.json();
+          const claims = JSON.parse(Buffer.from(value.split('.')[1], 'base64url'));
+          if (!/^[a-f0-9]{40}$/.test(claims.job_workflow_sha ?? '') || !claims.job_workflow_ref.endsWith('@'+claims.job_workflow_sha)) throw Error('PINNED_CONTROLLER_REQUIRED');
+          appendFileSync(process.env.GITHUB_OUTPUT, 'sha='+claims.job_workflow_sha+'\n');
+          console.log('Immutable controller identity verified.');
+          NODE
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
+          repository: ${{ vars.OPENSIGHT_PUBLIC_REPOSITORY }}
+          ref: ${{ vars.OPENSIGHT_CONTROL_SOURCE }}
           persist-credentials: false
-      # 1. Assume the DEPLOY role via short-lived OIDC. May copy verified
-      #    image/assets, update named functions/versions/aliases, control event
-      #    mappings, and invoke the private maintenance entrypoint. No
-      #    tenant-object read, secret fetch, direct SQL, or IAM administration.
-      - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a  # v4
+      - name: Validate the requested operation
+        env:
+          MODE: ${{ inputs.mode }}
+          ROLE: ${{ inputs.role }}
+        run: node -e 'if(!["access-probe","revocation-probe","preflight","deploy","smoke-probe"].includes(process.env.MODE)||!["read","deploy"].includes(process.env.ROLE))throw Error("OPERATION_NOT_ENABLED")'
+      - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a
         with:
-          role-to-assume: ${{ vars.OPENSIGHT_DEPLOY_ROLE_ARN }}
+          role-to-assume: ${{ (inputs.mode == 'access-probe' || inputs.mode == 'revocation-probe') && inputs.role == 'deploy' && vars.AWS_DEPLOY_ROLE || vars.AWS_READ_ROLE }}
           aws-region: us-east-1
-      # 2. Download the release manifest by digest; verify repository, workflow,
-      #    ref, source commit, artifact digests, compatibility range, SBOM, and
-      #    provenance (see ops/serverless/release-manifest.mjs).
-      # 3. Verify the approval envelope: approval.manifest == release digest,
-      #    approval.source/configuration/current match, not expired (24h),
-      #    compatibility matches the live deployment.
-      # 4. Run the release controller in preflight mode, then deploy mode
-      #    (ops/serverless/release-controller.mjs): drain, fence epoch, backup
-      #    with registry linkage, migration under advisory lock, alias switch
-      #    as a recorded set, smoke checks, reopen on CAS. The operation record
-      #    is created with If-None-Match and updated with If-Match.
-      # 5. A failed or cancelled workflow never reopens the gate automatically.
-      #    Recovery proves the owning run stopped, advances the fence, and
-      #    reconciles the record before continuing.
+          role-duration-seconds: 900
+          role-session-name: opensight-ci-${{ github.run_id }}
+          mask-aws-account-id: true
+          retry-max-attempts: 2
+      - name: Check access without application mutation
+        if: inputs.mode == 'access-probe' || inputs.mode == 'revocation-probe'
+        env:
+          OPENSIGHT_OPERATIONS_BUCKET: ${{ vars.OPENSIGHT_OPERATIONS_BUCKET }}
+          MODE: ${{ inputs.mode }}
+        run: node ops/serverless/release-controller.mjs "$MODE"
+      - name: Acquire pinned GitHub CLI (MIT)
+        if: inputs.mode == 'preflight' || inputs.mode == 'deploy'
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --location https://github.com/cli/cli/releases/download/v2.102.0/gh_2.102.0_linux_amd64.tar.gz --output /tmp/gh.tar.gz
+          printf '%s  %s\n' bb766f710eef8ede859c18578c72c327597cd4c8a85b06001b1f3843c6019386 /tmp/gh.tar.gz | sha256sum --check
+          tar -xzf /tmp/gh.tar.gz -C /tmp
+          echo /tmp/gh_2.102.0_linux_amd64/bin >> "$GITHUB_PATH"
+      - name: Verify immutable release and independent operator approval
+        if: inputs.mode == 'preflight' || inputs.mode == 'deploy'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OPENSIGHT_OPERATIONS_BUCKET: ${{ vars.OPENSIGHT_OPERATIONS_BUCKET }}
+          OPENSIGHT_RELEASE_SOURCE: ${{ inputs.source }}
+          OPENSIGHT_RELEASE_MANIFEST: ${{ inputs.manifest }}
+        run: node ops/serverless/release-controller.mjs preflight
+      - name: Diagnose synthetic public behavior without deployment
+        if: inputs.mode == 'smoke-probe'
+        env:
+          OPENSIGHT_SMOKE_CONFIG: ${{ secrets.OPENSIGHT_SMOKE_CONFIG }}
+        run: node ops/serverless/release-smoke.mjs
+  deploy:
+    if: inputs.mode == 'deploy'
+    needs: preflight
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: ${{ vars.OPENSIGHT_PUBLIC_REPOSITORY }}
+          ref: ${{ vars.OPENSIGHT_CONTROL_SOURCE }}
+          persist-credentials: false
+      - name: Acquire pinned GitHub CLI (MIT)
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --location https://github.com/cli/cli/releases/download/v2.102.0/gh_2.102.0_linux_amd64.tar.gz --output /tmp/gh.tar.gz
+          printf '%s  %s\n' bb766f710eef8ede859c18578c72c327597cd4c8a85b06001b1f3843c6019386 /tmp/gh.tar.gz | sha256sum --check
+          tar -xzf /tmp/gh.tar.gz -C /tmp
+          echo /tmp/gh_2.102.0_linux_amd64/bin >> "$GITHUB_PATH"
+      - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE }}
+          aws-region: us-east-1
+          role-duration-seconds: 900
+          role-session-name: opensight-ci-${{ github.run_id }}
+          mask-aws-account-id: true
+          retry-max-attempts: 2
+      - name: Promote verified application and test public behavior
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OPENSIGHT_OPERATIONS_BUCKET: ${{ vars.OPENSIGHT_OPERATIONS_BUCKET }}
+          OPENSIGHT_RELEASE_SOURCE: ${{ inputs.source }}
+          OPENSIGHT_RELEASE_MANIFEST: ${{ inputs.manifest }}
+          OPENSIGHT_SMOKE_CONFIG: ${{ secrets.OPENSIGHT_SMOKE_CONFIG }}
+        run: node ops/serverless/release-controller.mjs deploy

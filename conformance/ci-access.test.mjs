@@ -70,3 +70,18 @@ test('SR4c recovery retains an explicit issue-time deny for old sessions',()=>{
   assert.ok(new Date(now-1000).toISOString()<cutoff);
   assert.ok(!(new Date(now+1000).toISOString()<cutoff));
 });
+
+test('maintenance roles have distinct immutable OIDC pins and share the emergency kill switch',async()=>{
+ const {ciRoleTrust,ciRoleKinds}=await import('../ops/serverless/ci-policy.mjs');
+ const config={...c,maintenanceWorkflows:{plan:'b'.repeat(40),apply:'c'.repeat(40),maintenance:'d'.repeat(40),restore:'e'.repeat(40)}};
+ assert.equal(ciRoleKinds(config).length,6);
+ for(const [kind,pin] of Object.entries(config.maintenanceWorkflows))assert.ok(ciRoleTrust(config,kind).Statement[0].Condition.StringEquals['token.actions.githubusercontent.com:sub'].endsWith(`/.github/workflows/${kind}.yml@${pin}`));
+ assert.throws(()=>ciRoleTrust(config,'administrator'));
+ const denied=[];await disableCi(async(_service,action,args)=>{
+  if(action==='put-role-policy')denied.push(args['role-name']);
+  if(action==='get-role-policy')return {PolicyDocument:ciDeny};
+  if(action==='get-role')return {Role:{AssumeRolePolicyDocument:ciClosedTrust(config)}};
+  return {};
+ },config);
+ assert.deepEqual(denied,ciRoleKinds(config).map(k=>c.deployment+'-ci-'+k));
+});
