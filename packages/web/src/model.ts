@@ -28,6 +28,10 @@ export interface VisualModel {
   /** Small-multiples facet dimension (pie only for now). Rendered as a grid of
    *  per-facet charts; part of the view-data table but never a series field. */
   facet?: Field;
+  /** Waterfall breakdown dimension (QuickSight Breakdowns well parity). Each
+   *  breakdown value's deltas render as floating bars between the category
+   *  subtotals; part of the view-data table but never a series field. */
+  breakdown?: Field;
   /** Multiples Options panel state (pie small multiples only). Absent means the
    *  automatic layout: heuristic grid, up to 20 panels, small centered titles. */
   multiplesOptions?: MultiplesOptions;

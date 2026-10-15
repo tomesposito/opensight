@@ -30,7 +30,7 @@ variable "public_origin" {
 variable "origin_domain" {
   type = string
   validation {
-    condition     = can(regex("^[a-z0-9][a-z0-9.-]{1,250}[a-z0-9]$", var.origin_domain)) && var.origin_domain != trimprefix(var.public_origin, "https://") && endswith(var.origin_domain, ".${trimprefix(coalesce(var.marketing_origin, var.public_origin), "https://")}")
+    condition     = can(regex("^[a-z0-9][a-z0-9.-]{1,250}[a-z0-9]$", var.origin_domain)) && var.origin_domain != trimprefix(var.public_origin, "https://") && endswith(var.origin_domain, ".${trimprefix(var.public_origin, "https://")}")
     error_message = "The API origin must be a separate subdomain of the public site."
   }
 }
@@ -96,31 +96,5 @@ variable "authorizer_concurrency" {
   validation {
     condition     = contains([2, 4], var.authorizer_concurrency)
     error_message = "Use two validation slots or four pilot slots."
-  }
-}
-
-variable "marketing_origin" {
-  type        = string
-  default     = null
-  description = "Optional apex marketing origin; public_origin then selects the app subdomain."
-  validation {
-    condition = var.marketing_origin == null ? var.frontend_certificate_arn == null : (
-      can(regex("^https://[a-z0-9][a-z0-9.-]+[a-z0-9]$", var.marketing_origin)) &&
-      var.public_origin == replace(var.marketing_origin, "https://", "https://app.") &&
-      var.frontend_certificate_arn != null
-    )
-    error_message = "Marketing requires the exact apex/app origin pair and a reviewed shared certificate."
-  }
-}
-variable "frontend_certificate_arn" {
-  type        = string
-  default     = null
-  sensitive   = true
-  description = "Issued us-east-1 certificate covering both frontend aliases; preserve the API origin certificate."
-  validation {
-    condition = var.frontend_certificate_arn == null ? true : can(regex(
-      "^arn:aws:acm:us-east-1:${var.account_id}:certificate/[a-f0-9-]{36}$", var.frontend_certificate_arn
-    ))
-    error_message = "The shared certificate must belong to this account and edge region."
   }
 }

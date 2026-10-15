@@ -248,8 +248,7 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
   const faceted = FACETED_KINDS.includes(kind);
   const unused = [key('colors', 'Colors'), key('targetValues', 'TargetValues'), key('trendGroups', 'TrendGroups'), ...(faceted ? [] : [smallMultiplesKey])];
   const wellKey = (name: string) => key(name, kind === 'waterfall' && name === 'category' ? 'Categories' : name.startsWith('opensight') ? `OpenSight${name.slice(9)}` : name[0]!.toUpperCase() + name.slice(1));
-  if (kind === 'waterfall' && Object.hasOwn(wells, key('breakdowns', 'Breakdowns'))) fail(`${wpath}.${key('breakdowns', 'Breakdowns')}`, 'WATERFALL_BREAKDOWN_UNSUPPORTED: breakdowns are not yet supported');
-  keys(wells, [...(extra ? [...extra.dimensions, ...extra.measures].map(wellKey) : [categoryKey, valueKey]), ...(kind === 'pivot' ? [key('columns', 'Columns')] : []), ...(faceted ? [smallMultiplesKey] : []), ...unused], wpath);
+  keys(wells, [...(extra ? [...extra.dimensions, ...extra.measures].map(wellKey) : [categoryKey, valueKey]), ...(kind === 'pivot' ? [key('columns', 'Columns')] : []), ...(kind === 'waterfall' ? [key('breakdowns', 'Breakdowns')] : []), ...(faceted ? [smallMultiplesKey] : []), ...unused], wpath);
   for (const name of unused) if (list(wells[name], `${wpath}.${name}`).length) fail(`${wpath}.${name}`, 'field well not supported');
   const field = (value: unknown, measure: boolean, fp: string): Field => {
     const wrapper = object(value, fp);
@@ -291,6 +290,17 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
     if (sm.length > 1) fail(`${wpath}.${smallMultiplesKey}`, 'at most one Small multiples field is supported');
     if (sm.length) facet = field(sm[0], false, `${wpath}.${smallMultiplesKey}[0]`);
   }
+  // Waterfall breakdowns (QuickSight Breakdowns well parity): one breakdown
+  // dimension whose values interleave as floating delta bars between the
+  // category subtotals. At most one; a measure here would change the
+  // aggregation grain, so only dimensions are accepted.
+  let breakdown: Field | undefined;
+  if (kind === 'waterfall') {
+    const bdKey = key('breakdowns', 'Breakdowns');
+    const bd = list(wells[bdKey], `${wpath}.${bdKey}`);
+    if (bd.length > 1) fail(`${wpath}.${bdKey}`, 'WATERFALL_BREAKDOWN_LIMIT: at most one Breakdowns field is supported');
+    if (bd.length) breakdown = field(bd[0], false, `${wpath}.${bdKey}[0]`);
+  }
   if (extra) {
     const d = dimensions.length, m = measures.length;
     if (kind === 'insight') {
@@ -321,7 +331,7 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
     if (kind === 'kpi' ? dimensions.length !== 0 : kind === 'pivot' || kind === 'table' ? dimensions.length < 1 : dimensions.length !== 1) fail(wpath, kind === 'kpi' ? 'KPI must have no category' : 'exactly one category/group field is supported');
     if (!measures.length || ((kind === 'pie' || kind === 'kpi') && measures.length !== 1)) fail(wpath, 'expected supported number of measures (pie/KPI: one)');
   }
-  const fields = [...dimensions, ...(facet ? [facet] : []), ...measures];
+  const fields = [...dimensions, ...(breakdown ? [breakdown] : []), ...(facet ? [facet] : []), ...measures];
   if (new Set(fields.map(f => f.id)).size !== fields.length) fail(wpath, 'duplicate field IDs');
   if (new Set(fields.map(f => f.dataSet)).size !== 1) fail(wpath, 'multiple datasets are unsupported');
   const warnings: string[] = extra ? [`${p}: ${extra.note}`] : [];
@@ -372,7 +382,7 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
   const tooltip = object(config[key('tooltip', 'Tooltip')] ?? {}, cpath);
   keys(tooltip, ['radar', 'sankey', 'waterfall'].includes(kind) ? [key('tooltipVisibility', 'TooltipVisibility')] : [key('tooltipVisibility', 'TooltipVisibility'), key('selectedTooltipType', 'SelectedTooltipType'), key('fieldBasedTooltip', 'FieldBasedTooltip')], `${cpath}.${key('tooltip', 'Tooltip')}`);
   const tooltipPath = `${cpath}.${key('tooltip', 'Tooltip')}`;
-  const tooltipDetail = parseTooltipDetail(tooltip, key, tooltipPath, [...dimensions, ...(facet ? [facet] : []), ...measures]);
+  const tooltipDetail = parseTooltipDetail(tooltip, key, tooltipPath, [...dimensions, ...(breakdown ? [breakdown] : []), ...(facet ? [facet] : []), ...measures]);
   const legend = object(config[key('legend', 'Legend')] ?? {}, cpath);
   keys(legend, [key('visibility', 'Visibility'), key('position', 'Position')], cpath);
   let innerRadius = '0%';
@@ -440,6 +450,7 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
     dimensions, rowDimensions, columnDimensions, measures, totals, subtotals, columnTotals, columnSubtotals, innerRadius, sort: fieldSort, warnings,
     ...(sliceLimit ? { sliceLimit } : {}),
     ...(facet ? { facet } : {}),
+    ...(breakdown ? { breakdown } : {}),
     ...(multiplesOptions ? { multiplesOptions } : {}),
     horizontal: (kind === 'bar' || kind === 'bar100') && enumValue(config[key('orientation', 'Orientation')], ['VERTICAL', 'HORIZONTAL'], 'VERTICAL', `${cpath}.${key('orientation', 'Orientation')}`) === 'HORIZONTAL',
     stacked: kind === 'bar' && enumValue(config[key('barsArrangement', 'BarsArrangement')], ['CLUSTERED', 'STACKED'], 'CLUSTERED', `${cpath}.${key('barsArrangement', 'BarsArrangement')}`) === 'STACKED',
@@ -457,7 +468,7 @@ export function compileVisual(input: Input): CompiledVisual {
   if (input.theme !== undefined && !themeValid(input.theme)) fail(input.path, 'invalid analysis theme');
   const theme = input.theme ?? LIGHT_THEME;
   const model = normalizeVisual(input.source, input.definition, input.path);
-  const fields = [...model.dimensions, ...(model.facet ? [model.facet] : []), ...model.measures];
+  const fields = [...model.dimensions, ...(model.breakdown ? [model.breakdown] : []), ...(model.facet ? [model.facet] : []), ...model.measures];
   // Extra tooltip fields ride the result rows as additional measures; they never join the wells,
   // the series, or the data table. Their column alias is the field id (the query plans outputName = fieldId).
   const extraFields: Field[] = (model.tooltipExtraFields ?? []).map(e =>
@@ -539,8 +550,9 @@ export function compileVisual(input: Input): CompiledVisual {
     rows.push(...limited);
   }
   if (model.dimensions[0] && !['box', 'histogram', 'scatter', 'pointMap', 'sankey'].includes(model.kind)) {
-    // Faceted pies group by (facet, category): the same category may repeat across facets.
-    const keyFields = model.facet ? [model.facet, ...model.dimensions] : model.dimensions;
+    // Faceted pies group by (facet, category); waterfall breakdowns group by
+    // (category, breakdown): the same category may repeat across breakdown values.
+    const keyFields = model.breakdown ? [...model.dimensions, model.breakdown] : model.facet ? [model.facet, ...model.dimensions] : model.dimensions;
     const categories = rows.map(row => JSON.stringify(keyFields.map(f => cell(row, f))));
     if (new Set(categories).size !== categories.length) fail(input.path, 'duplicate categories: expected aggregated result rows');
   }

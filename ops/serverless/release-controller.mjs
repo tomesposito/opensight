@@ -2,7 +2,6 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, lstatSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { randomUUID, createHash } from 'node:crypto';
-import { frontendMetadata } from './frontend-policy.mjs';
 import { ciConfig } from './ci-policy.mjs';
 import { validateManifest, digest } from './release-manifest.mjs';
 import { configurationFingerprint, approveRelease, frontendFiles } from './release-safety.mjs';
@@ -120,11 +119,12 @@ async function reopen() {
   for (const UUID of c.eventMappings) aws('lambda', 'update-event-source-mapping', { UUID, Enabled: true });
   await until(() => c.eventMappings.every(UUID => aws('lambda', 'get-event-source-mapping', { UUID }).State === 'Enabled'));
 }
+const contentType = name => name.endsWith('.html') ? 'text/html' : name.endsWith('.js') ? 'text/javascript' : name.endsWith('.css') ? 'text/css' : name.endsWith('.json') ? 'application/json' : name.endsWith('.svg') ? 'image/svg+xml' : 'application/octet-stream';
 function publishFrontend(files, read) {
   for (const name of Object.keys(files).sort((a, b) => Number(a.endsWith('.html')) - Number(b.endsWith('.html')))) {
     if (!/^[A-Za-z0-9_./-]+$/.test(name) || name.split('/').some(p => !p || p === '.' || p === '..')) throw Error('FRONTEND_PATH_INVALID');
     const bytes = read(name); if (digest(bytes) !== files[name]) throw Error('FRONTEND_DIGEST_MISMATCH');
-    putBytes(c.frontendBucket, 'frontend/' + name, bytes, { ...frontendMetadata(name), ServerSideEncryption: 'AES256' });
+    putBytes(c.frontendBucket, 'frontend/' + name, bytes, { ContentType: contentType(name), CacheControl: name.startsWith('assets/') ? 'public,max-age=31536000,immutable' : 'no-store', ServerSideEncryption: 'AES256' });
   }
   aws('cloudfront', 'create-invalidation', { DistributionId: c.distribution, InvalidationBatch: { CallerReference: operationId + '-' + Date.now(), Paths: { Quantity: 1, Items: ['/*'] } } });
 }
@@ -158,11 +158,7 @@ try {
   const frontend = join(root, 'frontend');
   run('node', [new URL('./extract-frontend.mjs', import.meta.url).pathname, join(releaseDir, 'frontend.tar.gz'), frontend]);
   const front = JSON.parse(readFileSync(join(frontend, 'manifest.json'), 'utf8'));
-  frontendFiles(front, Boolean(c.marketingOrigin));
-  if (c.marketingOrigin) {
-    const smoke = JSON.parse(process.env.OPENSIGHT_SMOKE_CONFIG ?? '{}');
-    if (smoke.origin !== c.publicOrigin || smoke.marketingOrigin !== c.marketingOrigin) throw Error('SMOKE_ORIGIN_CONFIGURATION_MISMATCH');
-  }
+  frontendFiles(front);
   phase('staged');
   const deadline = new Date(Date.now() + 15 * 60000).toISOString().slice(0,19);
   aws('scheduler','create-schedule', { Name: scheduleName, GroupName: scheduleGroup, ScheduleExpression: `at(${deadline})`, ScheduleExpressionTimezone: 'UTC', FlexibleTimeWindow: { Mode: 'OFF' }, ActionAfterCompletion: 'DELETE',
@@ -178,9 +174,8 @@ try {
   publishFrontend(front.files, name => readFileSync(join(frontend, name)));
   phase('promoted'); await reopen(); phase('verifying');
   if (approval.exerciseRollback === true) throw Error('APPROVED_ROLLBACK_EXERCISE');
-  process.env.OPENSIGHT_FRONTEND_FILES = JSON.stringify(front.files);
   run('node', [new URL('./release-smoke.mjs', import.meta.url).pathname]);
-  const next = { version: 1, id: selectedDigest, source: selected, compatibility: m.compatibility, imageUri, requestVersion: version.Version, files: front.files, configuration: current.configuration, previous: current.id, ...(c.marketingOrigin ? { marketing: { source: selected, manifest: selectedDigest } } : {}), completedAt: Date.now() };
+  const next = { version: 1, id: selectedDigest, source: selected, compatibility: m.compatibility, imageUri, requestVersion: version.Version, files: front.files, configuration: current.configuration, previous: current.id, completedAt: Date.now() };
   put(`ci/releases/${selectedDigest}/release.json`, next);
   try { put('ci/releases/current.json', next, { IfMatch: currentObject.meta.ETag }); }
   catch { stopAdmission(); throw Error('RELEASE_COMMIT_AMBIGUOUS'); }
@@ -198,7 +193,6 @@ try {
       const alias = aws('lambda', 'get-alias', { FunctionName: functions[0], Name: 'live' });
       aws('lambda', 'update-alias', { FunctionName: functions[0], Name: 'live', FunctionVersion: oldAlias.FunctionVersion, RevisionId: alias.RevisionId });
       publishFrontend(current.files, name => get(bucket, `ci/releases/${current.id}/frontend/${name}`).bytes);
-      process.env.OPENSIGHT_FRONTEND_FILES = JSON.stringify(current.files);
       await reopen(); run('node', [new URL('./release-smoke.mjs', import.meta.url).pathname]);
       phase('rolled-back'); cancelWatchdog(); put(`ci/operations/${operationId}.json`, record);
       aws('s3api', 'delete-object', { Bucket: bucket, Key: lockKey, IfMatch: etag });

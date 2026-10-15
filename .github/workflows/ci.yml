@@ -33,7 +33,7 @@ jobs:
           curl --fail --silent --show-error --location https://github.com/opentofu/opentofu/releases/download/v1.13.1/tofu_1.13.1_linux_arm64.zip --output /tmp/tofu.zip
           printf '%s  %s\n' b9614df40575cc3fc10a8a25025b7245d961da279f715ea3efff4ddae8e6938a /tmp/tofu.zip | sha256sum --check
           unzip -q /tmp/tofu.zip -d /tmp/opensight-tofu
-          for root in validation ingress ci-access monitoring; do
+          for root in validation ingress ci-access; do
             before=$(sha256sum "ops/serverless/$root/.terraform.lock.hcl")
             /tmp/opensight-tofu/tofu -chdir="ops/serverless/$root" init -backend=false -input=false
             test "$before" = "$(sha256sum "ops/serverless/$root/.terraform.lock.hcl")"
@@ -88,25 +88,6 @@ jobs:
           docker rm "$container"
           tar -czf release/frontend.tar.gz -C release/frontend .
           docker run --rm --network none --read-only --entrypoint node -i opensight-runtime:ci --input-type=module < ops/serverless/runtime-sbom.mjs > release/runtime-sbom.json
-      - name: Assemble the marketing site with the offline demo
-        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/master'
-        shell: bash
-        run: |
-          set -euo pipefail
-          node site/check.mjs
-          mkdir site-dist
-          cp -R release/frontend/marketing/. site-dist/
-          test -s site-dist/demo/index.html
-          node --input-type=module -e "import {readFileSync} from 'node:fs'; import {digest} from './ops/serverless/release-manifest.mjs'; import {marketingFiles} from './ops/serverless/frontend-policy.mjs'; const m=JSON.parse(readFileSync('release/frontend/manifest.json')); for (const p of marketingFiles) if (digest(readFileSync('site-dist/'+p.slice(10)))!==m.files[p]) throw Error('SITE_ARTIFACT_MISMATCH');"
-      - name: Upload the marketing site artifact
-        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/master'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: site-${{ github.sha }}
-          path: site-dist/
-          retention-days: 7
-          compression-level: 6
-          if-no-files-found: error
       - name: Export immutable image archive
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/master'
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8

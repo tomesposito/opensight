@@ -7,8 +7,6 @@
 !SOLUTION_DESIGN.md
 !packages/
 !packages/**
-!site/
-!site/**
 !fixtures/
 !fixtures/**
 !conformance/

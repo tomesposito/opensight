@@ -802,7 +802,6 @@ SR0 implementation decision register (issue #81; proposals, no AWS authorization
 | [D-32](itd/D-32-initial-public-ingress.md) | Initial public ingress | ✅ Free CloudFront profile, edge-derived viewer IP and private origin configuration; cutover follows application acceptance |
 | [D-33](itd/D-33-initial-pilot-activation.md) | Initial pilot activation | ✅ Retain validated resources, IAM-only initial tester bootstrap, one-time admission and real application acceptance before DNS |
 | [D-34](itd/D-34-compatible-release-automation.md) | Compatible releases and revocable CI access | ✅ Public isolated CI, private immutable promotion, dedicated OIDC roles and independent emergency shutoff; general migrations remain separate |
-| [D-77](itd/D-77-marketing-cutover.md) | Marketing cutover | ✅ Shared private edge, attested site/demo and operator-owned hostname transition |
 
 Related confirmed deployment decision: [ITD D-18 — serverless development
 deployment](itd/D-18-serverless-development-deployment.md) (2026-10-10). Lambda
