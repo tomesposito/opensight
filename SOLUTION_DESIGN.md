@@ -1450,6 +1450,16 @@ without deleting/redriving messages or adjusting the ledger. Any repair requires
 a separately reviewed scoped protocol; inspection never performs repair. Keep
 cloud identifiers and raw diagnostic evidence outside both repositories.
 
+AWS acceptance correction (2026-10-15): the object collector classifies a verified
+S3 HEAD absence (named NotFound/NoSuchKey/NoSuchVersion with HTTP 404) inside the
+invocation-owned AWS call, before provider errors are sanitized. A missing latest
+key can release an unbound reservation; a missing exact version after DELETE can
+complete its existing fenced cleanup transaction. HTTP 403, unnamed 404, transport
+failure, timeout and a successful HEAD remain non-proof. Other AWS failures retain
+their sanitized named errors. Regression tests exercise the real InvocationAws
+wrapper, quota release and duplicate cleanup. This corrects future collector
+execution only; it does not revive expired events or authorize a ledger repair.
+
 ## 7. Repository Layout
 
 ```
