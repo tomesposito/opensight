@@ -6,27 +6,14 @@ first, MCP second, SDK/CLI generated (TS then Python)").
 
 ## Scope (frozen)
 
-The SDK maps **1:1 onto `docs/api/openapi-v1.yaml` — the implemented
-datasets + querying slices only.** It has methods for exactly these routes:
-
-- `GET /datasets` → `listDatasets({ limit, cursor })`
-- `GET /datasets/{id}` → `getDataset(id)`
-- `PUT /datasets/{id}` → `saveDataset(id, body, { idempotencyKey })`
-- `DELETE /datasets/{id}` → `deleteDataset(id, ifMatch)`
-- `GET /datasets/{id}/lineage` → `getDatasetLineage(id)`
-- `POST /datasets/{id}/query` → `queryDataset(id, query, { idempotencyKey })`
-- `POST /datasets/{id}/refresh` → `refreshDataset(id, { idempotencyKey })`
-- `GET /datasets/{id}/refresh-status` → `getRefreshStatus(id)`
-- `GET /sources` → `listSources({ limit, cursor })`
-- `GET /sources/{id}` → `getSource(id)`
-- `DELETE /sources/{id}` → `deleteSource(id, ifMatch)`
-
-There are intentionally **no** analyses/dashboards/assets/MCP methods — those
-slices are contract proposals at review gates (D-39/D-40/D-41/D-42 drafts)
-awaiting Tom's answers. `test/openapi-coverage.test.mjs` parses the OpenAPI
-file and fails if any spec route is unmapped or any SDK entry invents a
-route not in the spec, so new slices get caught by the test suite, not by
-silence.
+The SDK maps **1:1 onto `docs/api/openapi-v1.yaml`** — all five implemented
+slices: datasets, querying, analyses, dashboards, and assets/folders.
+Method names mirror the TypeScript client's camelCase in Python
+snake_case (`get_dataset`, `query_dataset`, `publish_analysis`,
+`set_folder_permissions`, …). `test/test_openapi_coverage.py` parses the
+OpenAPI file and fails if any spec route is unmapped or any SDK entry
+invents a route not in the spec — the same anti-invention guard the TS
+SDK carries.
 
 ## Conventions
 
@@ -64,10 +51,54 @@ const result = await client.queryDataset('sales-2026', {
 for (const row of result.rows) console.log(row);
 ```
 
+## Python SDK (issue #95)
+
+`packages/headless-sdk-python/` (`opensight-headless-sdk` on PyPI naming)
+is the generated-first Python port of the TypeScript client (IDD D-37
+decision 1: "TS then Python"). Same 1:1 mapping, same conventions, Python
+idioms otherwise:
+
+- Method names are snake_case: `list_datasets`, `get_dataset`,
+  `query_dataset`, `publish_analysis`, `set_folder_permissions`, …
+- `OpenSightClient(base_url, get_token, transport=None)` — `get_token`
+  is a string or a zero-argument callable (refresh-token flows supply the
+  current token); `transport` is an injectable
+  `(method, url, headers, body_bytes) -> HttpResponse`, defaulting to
+  stdlib `urllib`.
+- `OpenSightApiError` carries `error_code`, `status`, `retry_after`,
+  `body`. Versioned responses return a `VersionedResult(value, etag)`;
+  `create_dashboard_export` returns `DashboardExportArtifact` with raw
+  `bytes`.
+- Wire shapes keep the API's casing (camelCase writes, PascalCase
+  descriptions) as `TypedDict`s in `opensight_headless.types`.
+- Zero runtime dependencies (`urllib` only); `pyproject.toml` declares
+  `requires-python = ">=3.10"`. The `package.json` shim keeps the npm
+  workspace green: its `test` script runs the unittest suite, skipping
+  loudly if `python3` is unavailable.
+
+```python
+from opensight_headless import OpenSightClient
+
+client = OpenSightClient(
+    "https://opensight.example/api",
+    get_token=lambda: current_token(),
+)
+
+page = client.list_datasets(limit=50)
+result = client.query_dataset("sales-2026", {
+    "dimensions": [{"fieldId": "region", "columnName": "region"}],
+    "measures": [{"fieldId": "total", "columnName": "amount", "aggregation": "SUM"}],
+    "filters": [],
+})
+for row in result["rows"]:
+    print(row)
+```
+
 ## Boundaries
 
-- Zero runtime dependencies (global `fetch` only); `typescript` dev-only.
+- Zero runtime dependencies: the TS client uses the global `fetch` only
+  (TypeScript dev-only); the Python client uses stdlib `urllib` only.
 - MIT/Apache-2.0 governs this code; no other dependency licenses.
-- Not yet shipped: Python SDK and CLI generation (D-37 decision 1 lists TS
-  first, Python second; both generate from the OpenAPI spec once the remaining
-  slices freeze).
+- Not yet shipped: CLI generation (D-37 decision 1). The CLI's user-facing
+  shape (argument names, output formats) is product surface and has no
+  confirmed decision yet — it ships as its own slice once specified.

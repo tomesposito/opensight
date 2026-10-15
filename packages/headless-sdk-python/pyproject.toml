@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "opensight-headless-sdk"
+version = "0.0.0"
+description = "Python client for the OpenSight headless v1 REST API (issue #95). Maps 1:1 to docs/api/openapi-v1.yaml; no invented endpoints."
+readme = { text = "Python SDK for the OpenSight headless v1 REST API (issue #95). See docs/headless-v1-sdk.md for conventions.", content-type = "text/plain" }
+license = { text = "Apache-2.0" }
+requires-python = ">=3.10"
+dependencies = []
+
+[project.urls]
+Repository = "https://github.com/tomesposito/opensight"
+
+[tool.setuptools.packages.find]
+where = ["src"]
