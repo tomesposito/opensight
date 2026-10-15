@@ -160,6 +160,7 @@ implemented, and contract/security tests are wired into the full suite.
 
 Remaining boundaries are explicit: the operator refresh-exchange integration
 above; serverless `/api/v1` durable adapters owned by the remote developer;
-Streamable HTTP as its own slice; Python SDK and CLI as future slices. Issue
+Streamable HTTP as its own slice. The [Python SDK](headless-v1-sdk.md) and
+[CLI](headless-v1-cli.md) now cover the same v1 operations. Issue
 #95 remains open. This slice changes no UI and does not deploy a server.
 Breaking tool changes require a version bump and migration notes (D-69).

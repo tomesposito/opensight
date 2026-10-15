@@ -97,9 +97,9 @@ export class OpenSightClient {
   }
 
   /** DELETE a prepared dataset. Requires If-Match (optimistic concurrency). */
-  deleteDataset(id: string, ifMatch: string): Promise<DeleteDatasetResult> {
+  deleteDataset(id: string, ifMatch: string, opts: Pick<RequestOptions, 'idempotencyKey'> = {}): Promise<DeleteDatasetResult> {
     return this.request('DELETE', `/v1/datasets/${encode(id)}`, {
-      headers: { ...mutationHeaders({}), 'If-Match': ifMatch },
+      headers: { ...mutationHeaders(opts), 'If-Match': ifMatch },
     });
   }
 
@@ -150,9 +150,9 @@ export class OpenSightClient {
    * Retire a source. Refused fail-closed (409 SOURCE_DELETE_BLOCKED_BY_DATASET)
    * while any prepared dataset references it. Requires If-Match.
    */
-  deleteSource(id: string, ifMatch: string): Promise<DeleteSourceResult> {
+  deleteSource(id: string, ifMatch: string, opts: Pick<RequestOptions, 'idempotencyKey'> = {}): Promise<DeleteSourceResult> {
     return this.request('DELETE', `/v1/sources/${encode(id)}`, {
-      headers: { ...mutationHeaders({}), 'If-Match': ifMatch },
+      headers: { ...mutationHeaders(opts), 'If-Match': ifMatch },
     });
   }
 

@@ -3,6 +3,7 @@ WORKDIR /build
 COPY package.json package-lock.json ./
 COPY packages/api/package.json packages/api/package.json
 COPY packages/bundle-parser/package.json packages/bundle-parser/package.json
+COPY packages/cli/package.json packages/cli/package.json
 COPY packages/embedding-sdk/package.json packages/embedding-sdk/package.json
 COPY packages/headless-sdk/package.json packages/headless-sdk/package.json
 COPY packages/headless-sdk-python/package.json packages/headless-sdk-python/package.json
