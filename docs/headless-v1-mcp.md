@@ -86,8 +86,12 @@ limits, unions, enums and `additionalProperties`. No request schema is handwritt
   `principal`/`role` fields) remain valid; they never replace the caller.
   Parameter/control/binding map names remain data, even if named `userId`.
 
-The OpenAPI schema is advertised to MCP clients; REST performs authoritative
-request/semantic validation. Bodies are forwarded unchanged, so SQL strings,
+The OpenAPI schema is advertised to MCP clients. The query body is also
+validated locally against the generated schema. REST performs authoritative
+request/semantic validation; invalid inputs still reach its boundary so auth,
+rate limiting and exact named error precedence remain intact. If a backend
+unexpectedly accepts a schema-invalid query, MCP refuses to publish its result.
+Bodies are forwarded unchanged, so SQL strings,
 envelopes, unknown operators and nested extra properties get the same named
 errors as direct REST. Calculated-field expressions pass the existing parser;
 SQL-looking filter literals remain data. No query result is truncated or
