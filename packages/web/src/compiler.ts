@@ -11,6 +11,7 @@ import type { Cell, Field, FixtureVisual, MultiplesOptions, Row, VisualModel } f
 import { EXTRA_VISUALS, extraKind, variantKinds, type VisualKind } from './visual-catalog.js';
 import { compileExtra } from './extra-charts.js';
 import { applyDisplayOptions, legendTextStyle } from './display-options.js';
+import { FACETED_KINDS, facetLayout, facetPanelGrids, facetTitles, groupRowsByFacet } from './facet-layout.js';
 
 export const DATA_REQUIRED_LABEL = 'Needs data';
 
@@ -222,7 +223,8 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
   const extra = extraKind(kind) ? EXTRA_VISUALS[kind] : undefined;
   const common = [key('fieldWells', 'FieldWells')];
   if (kind !== 'insight' && kind !== 'kpi' && kind !== 'table' && kind !== 'pivot') common.push(key('sortConfiguration', 'SortConfiguration'), key('dataLabels', 'DataLabels'), key('tooltip', 'Tooltip'), key('legend', 'Legend'));
-  if (kind === 'pie') common.push(key('donutOptions', 'DonutOptions'), key('opensightMultiplesOptions', 'OpenSightMultiplesOptions'));
+  if (kind === 'pie') common.push(key('donutOptions', 'DonutOptions'));
+  if (FACETED_KINDS.includes(kind)) common.push(key('opensightMultiplesOptions', 'OpenSightMultiplesOptions'));
   if (kind === 'bar' || kind === 'bar100') common.push(key('orientation', 'Orientation'), key('barsArrangement', 'BarsArrangement'));
   if (kind === 'table' || kind === 'pivot') common.push(key('totalOptions', 'TotalOptions'));
   if (kind === 'table') common.push(key('opensightSubtotalOptions', 'OpenSightSubtotalOptions'));
@@ -240,12 +242,14 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
   const categoryKey = kind === 'pivot' ? key('rows', 'Rows') : kind === 'table' ? key('groupBy', 'GroupBy') : key('category', 'Category');
   const valueKey = key('values', 'Values');
   // Empty optional wells are harmless; nonempty colors/targets/trends change semantics.
-  // Pie parses SmallMultiples into model.facet below; every other kind still rejects it.
+  // Small multiples facets render as a grid of per-facet panels for the faceted
+  // kinds; every other kind still rejects the well.
   const smallMultiplesKey = key('smallMultiples', 'SmallMultiples');
-  const unused = [key('colors', 'Colors'), key('targetValues', 'TargetValues'), key('trendGroups', 'TrendGroups'), ...(kind === 'pie' ? [] : [smallMultiplesKey])];
+  const faceted = FACETED_KINDS.includes(kind);
+  const unused = [key('colors', 'Colors'), key('targetValues', 'TargetValues'), key('trendGroups', 'TrendGroups'), ...(faceted ? [] : [smallMultiplesKey])];
   const wellKey = (name: string) => key(name, kind === 'waterfall' && name === 'category' ? 'Categories' : name.startsWith('opensight') ? `OpenSight${name.slice(9)}` : name[0]!.toUpperCase() + name.slice(1));
   if (kind === 'waterfall' && Object.hasOwn(wells, key('breakdowns', 'Breakdowns'))) fail(`${wpath}.${key('breakdowns', 'Breakdowns')}`, 'WATERFALL_BREAKDOWN_UNSUPPORTED: breakdowns are not yet supported');
-  keys(wells, [...(extra ? [...extra.dimensions, ...extra.measures].map(wellKey) : [categoryKey, valueKey]), ...(kind === 'pivot' ? [key('columns', 'Columns')] : []), ...(kind === 'pie' ? [smallMultiplesKey] : []), ...unused], wpath);
+  keys(wells, [...(extra ? [...extra.dimensions, ...extra.measures].map(wellKey) : [categoryKey, valueKey]), ...(kind === 'pivot' ? [key('columns', 'Columns')] : []), ...(faceted ? [smallMultiplesKey] : []), ...unused], wpath);
   for (const name of unused) if (list(wells[name], `${wpath}.${name}`).length) fail(`${wpath}.${name}`, 'field well not supported');
   const field = (value: unknown, measure: boolean, fp: string): Field => {
     const wrapper = object(value, fp);
@@ -280,9 +284,9 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
   const columnDimensions = kind === 'pivot' ? list(wells[key('columns', 'Columns')], wpath).map((v, i) => field(v, false, `${wpath}.columns[${i}]`)) : [];
   const dimensions = [...rowDimensions, ...columnDimensions];
   const measures = measureNames.flatMap(name => list(wells[name], `${wpath}.${name}`).map((v, i) => field(v, true, `${wpath}.${name}[${i}]`)));
-  // Pie small multiples: one facet dimension, rendered as a grid of per-facet pies.
+  // Small multiples: one facet dimension, rendered as a grid of per-facet panels.
   let facet: Field | undefined;
-  if (kind === 'pie') {
+  if (faceted) {
     const sm = list(wells[smallMultiplesKey], `${wpath}.${smallMultiplesKey}`);
     if (sm.length > 1) fail(`${wpath}.${smallMultiplesKey}`, 'at most one Small multiples field is supported');
     if (sm.length) facet = field(sm[0], false, `${wpath}.${smallMultiplesKey}[0]`);
@@ -381,10 +385,11 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
     innerRadius = ({ WHOLE: '0%', SMALL: '56%', MEDIUM: '42%', LARGE: '28%' } as const)[thickness as 'WHOLE' | 'SMALL' | 'MEDIUM' | 'LARGE'];
     if (thickness !== 'WHOLE') warnings.push(`${cpath}: donut radii are OpenSight approximations, not measured reference geometry.`);
   }
-  // OpenSight extension: the Multiples Options panel persists its state for pie
-  // only (other kinds fail the chartConfiguration key gate above, like the well).
+  // OpenSight extension: the Multiples Options panel persists its state for the
+  // faceted kinds (other kinds fail the chartConfiguration key gate above,
+  // like the well).
   const multiplesKey = key('opensightMultiplesOptions', 'OpenSightMultiplesOptions');
-  const multiplesOptions = kind === 'pie' && config[multiplesKey] !== undefined
+  const multiplesOptions = FACETED_KINDS.includes(kind) && config[multiplesKey] !== undefined
     ? parseMultiplesOptions(config[multiplesKey], `${cpath}.${multiplesKey}`) : undefined;
   const sort = object(config[key('sortConfiguration', 'SortConfiguration')] ?? {}, cpath);
   const sortsKey = key('categorySort', 'CategorySort');
@@ -558,7 +563,8 @@ export function compileVisual(input: Input): CompiledVisual {
     option.tooltip = { show: false };
     option.graphic = insightGraphic(narrative, theme, model.formatting?.fontSize).graphic;
   } else if (extraKind(model.kind)) {
-    compileExtra(model, rows, cell, number, option, message => fail(input.path, message));
+    facetRowGroups = compileExtra(model, rows, cell, number, option, message => fail(input.path, message),
+      { path: input.path, theme, warn: message => model.warnings.push(message) }) ?? facetRowGroups;
   } else if (model.kind === 'pie') {
     const measure = model.measures[0]!;
     option.legend = { show: model.legend, bottom: 4, type: 'scroll' };
@@ -575,37 +581,9 @@ export function compileVisual(input: Input): CompiledVisual {
     });
     if (model.facet) {
       // Small multiples: one pie per facet value on a grid, first-appearance order.
-      const groups: { value: Cell; rows: Row[] }[] = [];
-      const seen = new Map<string, number>();
-      for (const row of rows) {
-        const value = cell(row, model.facet);
-        const k = JSON.stringify(value);
-        let i = seen.get(k);
-        if (i === undefined) { i = groups.length; seen.set(k, i); groups.push({ value, rows: [] }); }
-        groups[i]!.rows.push(row);
-      }
       const opts = model.multiplesOptions;
-      const MAX_FACETS = 20;
-      // The panel's Number of panels caps the grid; the 20-panel renderer limit always applies.
-      const panelCap = Math.min(opts?.panelCount ?? MAX_FACETS, MAX_FACETS);
-      if (groups.length > panelCap) model.warnings.push(`${input.path}: ${groups.length} small-multiple panels exceed the ${panelCap}-panel limit; showing the first ${panelCap}.`);
-      let shown = groups.slice(0, panelCap);
-      // Explicit visible rows/columns pin the grid (honored together with the
-      // panel cap); 'auto' keeps today's heuristic.
-      const fixedRows = typeof opts?.visibleRows === 'number' ? opts.visibleRows : undefined;
-      const fixedCols = typeof opts?.visibleColumns === 'number' ? opts.visibleColumns : undefined;
-      let cols: number, gridRows: number;
-      if (fixedRows !== undefined && fixedCols !== undefined) {
-        gridRows = fixedRows; cols = fixedCols;
-        const capacity = gridRows * cols;
-        if (shown.length > capacity) {
-          model.warnings.push(`${input.path}: ${shown.length} small-multiple panels exceed the ${gridRows}x${cols} visible grid; showing the first ${capacity}.`);
-          shown = shown.slice(0, capacity);
-        }
-      } else if (fixedRows !== undefined) { gridRows = fixedRows; cols = Math.max(1, Math.ceil(shown.length / gridRows)); }
-      else if (fixedCols !== undefined) { cols = fixedCols; gridRows = Math.ceil(shown.length / cols); }
-      else { const n = shown.length; cols = n <= 1 ? 1 : n <= 4 ? 2 : 3; gridRows = Math.ceil(n / cols); }
-      const topPad = 12, bottomPad = 14, cellH = (100 - topPad - bottomPad) / gridRows, cellW = 100 / cols;
+      const { shown, cols, topPad, cellW, cellH } =
+        facetLayout(groupRowsByFacet(rows, model.facet, cell), opts, input.path, w => model.warnings.push(w));
       // Gutter opens an inter-panel gap by shrinking each panel's content (and
       // insetting its chrome below); the factor is an OpenSight approximation
       // of the reference spacing, not measured QuickSight geometry.
@@ -619,58 +597,65 @@ export function compileVisual(input: Input): CompiledVisual {
           [`${(((c + 0.5) / cols) * 100).toFixed(2)}%`, `${(topPad + (r + 0.5) * cellH).toFixed(2)}%`],
           [model.innerRadius, outer]);
       });
-      // Panel titles: absent options keep today's exact rendering (12px
-      // semibold, centered); explicit options apply the editor typography
-      // scale and alignment. Underline has no ECharts title support and is
-      // never faked — the flag stays in the model only.
-      const titleSize = opts ? { small: 11, medium: 13, large: 15 }[opts.title.size] : 12;
-      const titleWeight = opts ? (opts.title.bold ? 700 : 400) : 600;
-      const titleAlign = opts?.title.align ?? 'center';
-      option.title = shown.map((group, i) => {
-        const c = i % cols, r = Math.floor(i / cols);
-        // The title anchors to the panel edge matching its alignment.
-        const left = titleAlign === 'left' ? (c / cols) * 100 : titleAlign === 'right' ? ((c + 1) / cols) * 100 : ((c + 0.5) / cols) * 100;
-        return {
-          text: displayCell(group.value), left: `${left.toFixed(2)}%`, top: `${(topPad + r * cellH + 1.5).toFixed(2)}%`,
-          textAlign: titleAlign, textStyle: { fontSize: titleSize, fontWeight: titleWeight, ...(opts?.title.italic ? { fontStyle: 'italic' as const } : {}), color: theme.textColor, fontFamily: theme.fontFamily },
-        };
-      });
+      option.title = facetTitles(shown, opts, cols, cellH, topPad, theme, displayCell);
       // Panel chrome: one ECharts grid per panel draws the border/background.
-      // ECharts grids cannot dash their border, so dashed/dotted render solid
-      // (the choice is preserved in the model and exports).
-      if (opts && (opts.border.enabled || opts.background)) {
-        const inset = opts.gutter ? 1.5 : 0;
-        option.grid = shown.map((_, i) => {
-          const c = i % cols, r = Math.floor(i / cols);
-          return {
-            show: true,
-            left: `${(c * cellW + inset).toFixed(2)}%`, top: `${(topPad + r * cellH + inset).toFixed(2)}%`,
-            width: `${(cellW - inset * 2).toFixed(2)}%`, height: `${(cellH - inset * 2).toFixed(2)}%`,
-            backgroundColor: opts.background ? '#f4f6f8' : 'transparent',
-            borderWidth: opts.border.enabled ? opts.border.widthPx : 0,
-            borderColor: opts.border.color,
-          };
-        });
-      }
+      const chrome = facetPanelGrids(shown, opts, cols, cellW, cellH, topPad);
+      if (chrome) option.grid = chrome;
       facetRowGroups = shown.map(group => group.rows);
     } else {
       option.series = [pieSeries(rows.map(pieDatum), ['50%', '45%'], [model.innerRadius, '70%'])];
     }
   } else if (model.kind === 'bar' || model.kind === 'line') {
-    const category = { type: 'category' as const, data: rows.map(row => displayCell(cell(row, model.dimensions[0]!))), axisLabel: { hideOverlap: true }, ...(model.horizontal ? { inverse: true } : {}) };
-    const value = { type: 'value' as const, splitLine: { lineStyle: { color: '#e7edef' } } };
-    option.grid = { left: 20, right: 24, top: 36, bottom: 40, outerBoundsMode: 'same', outerBoundsContain: 'axisLabel' };
-    option.xAxis = model.horizontal ? value : category;
-    option.yAxis = model.horizontal ? category : value;
+    const panelParts = (panelRows: Row[]) => {
+      const category = { type: 'category' as const, data: panelRows.map(row => displayCell(cell(row, model.dimensions[0]!))), axisLabel: { hideOverlap: true }, ...(model.horizontal ? { inverse: true } : {}) };
+      const value = { type: 'value' as const, splitLine: { lineStyle: { color: '#e7edef' } } };
+      const series = model.measures.map((field): BarSeriesOption | LineSeriesOption => model.kind === 'bar' ? {
+        type: 'bar', name: fieldName(field, model.formatting), data: panelRows.map(row => number(row, field)),
+        barMaxWidth: 72, ...(model.stacked ? { stack: 'values' } : {}),
+        label: { show: model.labels },
+      } : {
+        type: 'line', name: fieldName(field, model.formatting), data: panelRows.map(row => number(row, field)),
+        connectNulls: false, symbolSize: 8, label: { show: model.labels },
+      });
+      return { category, value, series };
+    };
+    if (model.facet) {
+      // Small multiples: one cartesian panel per facet value on a grid.
+      const opts = model.multiplesOptions;
+      const { shown, cols, topPad, cellW, cellH } =
+        facetLayout(groupRowsByFacet(rows, model.facet, cell), opts, input.path, w => model.warnings.push(w));
+      const inset = opts?.gutter ? 1.5 : 0;
+      option.grid = shown.map((_, i) => {
+        const c = i % cols, r = Math.floor(i / cols);
+        const chrome = opts && (opts.border.enabled || opts.background);
+        return {
+          show: !!chrome,
+          left: `${(c * cellW + inset).toFixed(2)}%`, top: `${(topPad + r * cellH + inset).toFixed(2)}%`,
+          width: `${(cellW - inset * 2).toFixed(2)}%`, height: `${(cellH - inset * 2).toFixed(2)}%`,
+          outerBoundsMode: 'same', outerBoundsContain: 'axisLabel',
+          // Panel chrome: border/background piggyback on the layout grid.
+          // Dashed/dotted borders render solid (the choice stays in the model).
+          ...(chrome ? {
+            backgroundColor: opts.background ? '#f4f6f8' : 'transparent',
+            borderWidth: opts.border.enabled ? opts.border.widthPx : 0,
+            borderColor: opts.border.color,
+          } : {}),
+        };
+      });
+      const panels = shown.map(group => panelParts(group.rows));
+      option.xAxis = panels.map((panel, i) => ({ ...panel.category, gridIndex: i }));
+      option.yAxis = panels.map((panel, i) => ({ ...panel.value, gridIndex: i }));
+      option.series = panels.flatMap((panel, i) => panel.series.map(s => ({ ...s, xAxisIndex: i, yAxisIndex: i })));
+      option.title = facetTitles(shown, opts, cols, cellH, topPad, theme, displayCell);
+      facetRowGroups = shown.map(group => group.rows);
+    } else {
+      const { category, value, series } = panelParts(rows);
+      option.grid = { left: 20, right: 24, top: 36, bottom: 40, outerBoundsMode: 'same', outerBoundsContain: 'axisLabel' };
+      option.xAxis = model.horizontal ? value : category;
+      option.yAxis = model.horizontal ? category : value;
+      option.series = series;
+    }
     option.legend = { show: model.legend, bottom: 0 };
-    option.series = model.measures.map((field): BarSeriesOption | LineSeriesOption => model.kind === 'bar' ? {
-      type: 'bar', name: fieldName(field, model.formatting), data: rows.map(row => number(row, field)),
-      barMaxWidth: 72, ...(model.stacked ? { stack: 'values' } : {}),
-      label: { show: model.labels },
-    } : {
-      type: 'line', name: fieldName(field, model.formatting), data: rows.map(row => number(row, field)),
-      connectNulls: false, symbolSize: 8, label: { show: model.labels },
-    });
   } else if (model.kind === 'kpi') {
     if (rows.length > 1) fail(input.path, 'KPI expects exactly one aggregate row, not a client-side sum');
     const row = rows[0];

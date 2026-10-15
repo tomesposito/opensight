@@ -2,6 +2,7 @@ import { importObjects, serializeObject, objectElementType, type SheetObject } f
 import { analysisDescriptionValid, layoutSettingsValid } from './authoring.js';
 import { projectInsightBody } from './insight-configuration.js';
 import { normalizeVisual, tooltipDetailKinds } from './compiler.js';
+import { FACETED_KINDS } from './facet-layout.js';
 import { themeValid, paletteValid } from './themes.js';
 import { formattingValid, gaugeValid, binsValid, legendPositionValid, hasReferenceLines } from './formatting.js';
 import { EXTRA_VISUALS, extraKind, variantKinds } from './visual-catalog.js';
@@ -189,8 +190,8 @@ function importVisual(raw: BundleVisual, id: string, definition: BundleDefinitio
     ...(legendPositionValid(legendPosition) ? { formatting: { ...(formattingValid(body.opensightFormatting) ? copy(body.opensightFormatting) : {}), legendPosition } } : {}),
     ...(kind === 'gauge' && gaugeValid(config.opensightGauge) ? { gauge: copy(config.opensightGauge) } : {}),
     ...(kind === 'histogram' && binsValid(config.opensightBins) ? { bins: config.opensightBins } : {}),
-    // OpenSight extension: pie Multiples Options panel state imports into the draft.
-    ...(kind === 'pie' && multiplesOptionsValid(config.opensightMultiplesOptions) ? { multiplesOptions: copy(config.opensightMultiplesOptions) } : {}),
+    // OpenSight extension: faceted kinds' Multiples Options panel state imports into the draft.
+    ...(FACETED_KINDS.includes(kind) && multiplesOptionsValid(config.opensightMultiplesOptions) ? { multiplesOptions: copy(config.opensightMultiplesOptions) } : {}),
     // OpenSight extension: imported Group/Color sort imports into the draft.
     ...(importedGroupSort ? { groupSort: importedGroupSort } : {}),
     // OpenSight extension: imported pie slice limit imports into the draft.
@@ -506,7 +507,7 @@ function generatedFilters(sheet: AuthorSheet, visual: AuthorVisual, identifier: 
 
 export function exportBundle(draft: AuthorDraft): QsBundle {
   validateDraft(draft);
-  if (draft.sheets.some(s => s.visuals.some(v => v.smallMultiples?.length && v.kind !== 'pie'))) throw new Error('SMALL_MULTIPLES_UNSUPPORTED: Remove Small multiples fields before exporting; the draft retains them.');
+  if (draft.sheets.some(s => s.visuals.some(v => v.smallMultiples?.length && !FACETED_KINDS.includes(v.kind)))) throw new Error('SMALL_MULTIPLES_UNSUPPORTED: Remove Small multiples fields before exporting; the draft retains them.');
   if (!draft.bundle) {
     const resource = serializeDraft(draft), bundle = { members: [{ path: `analysis/${resource.analysisId}.json`, resource }] };
     summarizeQsBundle(bundle); return bundle;

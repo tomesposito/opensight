@@ -1,6 +1,7 @@
 import { declaration, type AuthorParameter } from './parameters.js';
 import type { AuthorControl } from './controls.js';
 import { authorVisualProblem, noDimensions, visualDimensions, dataFields, type AuthorDataset, type CalculatedField, type AuthorVisual } from './authoring.js';
+import { FACETED_KINDS } from './facet-layout.js';
 import type { createApiClient, QueryRequest } from './api-client.js';
 import { ApiError } from './api-client.js';
 import type { Row } from './model.js';
@@ -12,8 +13,9 @@ export function buildAuthorQuery(visual: AuthorVisual, calculations: readonly Ca
   if (authorVisualProblem(visual)) return null;
   const dimensions = visualDimensions(visual);
   if (!visual.measures.length || (!noDimensions(visual.kind) && !dimensions.length)) return null;
-  // Pie small multiples facet like a second dimension: the query groups by (category, facet).
-  const facetNames = visual.kind === 'pie' ? visual.smallMultiples ?? [] : [];
+  // Faceted small multiples group by (dimension, facet): the query groups at
+  // that grain so the renderer can draw one panel per facet value.
+  const facetNames = FACETED_KINDS.includes(visual.kind) ? visual.smallMultiples ?? [] : [];
   const relevant = queryDependencies([...dimensions, ...facetNames, ...visual.measures, ...visual.tooltipExtraFields.map(e => e.field), ...visual.filters.map(f => f.columnName), ...(visual.interactionFilters ?? []).map(f => f.columnName)], calculations);
   const names = new Set([...visual.filters.flatMap(f => f.parameterName ? [f.parameterName] : []), ...relevant.flatMap(c => [...c.expression.matchAll(/\$\{([^}]+)\}/g)].map(m => m[1]!))]);
   const used = parameters.filter(p => names.has(p.name));

@@ -18,6 +18,7 @@ import { summarizeQsBundle } from '@opensight/bundle-parser/browser';
 import type { QsBundle } from '@opensight/bundle-parser';
 import type { PrepColumn } from '@opensight/bundle-parser/prep';
 import { normalizeVisual, tooltipDetailKinds } from './compiler.js';
+import { FACETED_KINDS } from './facet-layout.js';
 
 export const SALES_FIELDS = [
   { name: 'order_id', role: 'dimension', type: 'INTEGER' },
@@ -789,9 +790,10 @@ export function authorVisualProblem(visual: AuthorVisual): string | undefined {
     if (issues.length) return `Unsupported features: ${issues.join('; ')}`;
   }
   if (visual.smallMultiples?.length) {
-    // Pie renders a faceted preview (QuickSight small-multiples parity); every
-    // other kind still fails closed until its faceted renderer exists.
-    if (visual.kind !== 'pie' || visual.smallMultiples.length !== 1) return 'SMALL_MULTIPLES_UNSUPPORTED: Small multiples are saved in this draft. Faceted preview is not supported yet; remove the Small multiples field to preview this visual.';
+    // The faceted kinds render a faceted preview (QuickSight small-multiples
+    // parity); every other kind still fails closed until its faceted renderer
+    // exists.
+    if (!FACETED_KINDS.includes(visual.kind) || visual.smallMultiples.length !== 1) return 'SMALL_MULTIPLES_UNSUPPORTED: Small multiples are saved in this draft. Faceted preview is not supported yet; remove the Small multiples field to preview this visual.';
   }
 }
 
@@ -814,7 +816,7 @@ export function serializeVisual(visual: AuthorVisual, includeInteractions = true
     tooltip: { tooltipVisibility: visual.tooltipVisible ? 'VISIBLE' : 'HIDDEN', ...(visual.tooltipType === 'detailed' && tooltipDetailKinds(visual.kind) ? { selectedTooltipType: 'DETAILED', fieldBasedTooltip: {
       aggregationVisibility: visual.tooltipAggregations ? 'VISIBLE' : 'HIDDEN',
       tooltipTitleType: visual.tooltipTitleType === 'fieldId' ? 'FIELD_ID' : 'PRIMARY_VALUE',
-      tooltipFields: [...[...visualDimensions(visual), ...(visual.kind === 'pie' ? visual.smallMultiples ?? [] : []), ...visual.measures].map(name => ({ fieldTooltipItem: { fieldId: name, visibility: visual.tooltipHiddenFields.includes(name) ? 'HIDDEN' : 'VISIBLE' } })),
+      tooltipFields: [...[...visualDimensions(visual), ...(FACETED_KINDS.includes(visual.kind) ? visual.smallMultiples ?? [] : []), ...visual.measures].map(name => ({ fieldTooltipItem: { fieldId: name, visibility: visual.tooltipHiddenFields.includes(name) ? 'HIDDEN' : 'VISIBLE' } })),
         ...visual.tooltipExtraFields.map(e => ({ fieldTooltipItem: { fieldId: e.field, visibility: 'VISIBLE' } }))],
       // OpenSight extension: per-extra-field label and aggregation, which the standard shape cannot express.
       ...(visual.tooltipExtraFields.length ? { opensightTooltipExtras: Object.fromEntries(visual.tooltipExtraFields.map(e =>
@@ -844,6 +846,9 @@ export function serializeVisual(visual: AuthorVisual, includeInteractions = true
       ...(visual.kind === 'area' ? { type: 'AREA' } : {}),
       ...(visual.kind === 'gauge' && visual.gauge ? { opensightGauge: visual.gauge } : {}),
       ...(visual.kind === 'histogram' && visual.bins !== undefined ? { opensightBins: visual.bins } : {}),
+      // OpenSight extension: the Multiples Options panel state round-trips
+      // through the bundle for the faceted kinds; the compiler parses it back.
+      ...(FACETED_KINDS.includes(visual.kind) && visual.multiplesOptions ? { opensightMultiplesOptions: visual.multiplesOptions } : {}),
     } } };
   }
   switch (visual.kind) {
@@ -854,8 +859,8 @@ export function serializeVisual(visual: AuthorVisual, includeInteractions = true
       // through the bundle; the compiler parses it back into the model.
       ...(visual.multiplesOptions ? { opensightMultiplesOptions: visual.multiplesOptions } : {}),
     } } };
-    case 'bar': return { barChartVisual: { ...body, chartConfiguration: { ...display, orientation: visual.horizontal ? 'HORIZONTAL' : 'VERTICAL', barsArrangement: visual.stacked ? 'STACKED' : 'CLUSTERED', ...groupSortConfig, fieldWells: { barChartAggregatedFieldWells: { category, values, ...multiples } } } } };
-    case 'line': return { lineChartVisual: { ...body, chartConfiguration: { ...display, fieldWells: { lineChartAggregatedFieldWells: { category, values, ...multiples } } } } };
+    case 'bar': return { barChartVisual: { ...body, chartConfiguration: { ...display, orientation: visual.horizontal ? 'HORIZONTAL' : 'VERTICAL', barsArrangement: visual.stacked ? 'STACKED' : 'CLUSTERED', ...groupSortConfig, ...(visual.multiplesOptions ? { opensightMultiplesOptions: visual.multiplesOptions } : {}), fieldWells: { barChartAggregatedFieldWells: { category, values, ...multiples } } } } };
+    case 'line': return { lineChartVisual: { ...body, chartConfiguration: { ...display, ...(visual.multiplesOptions ? { opensightMultiplesOptions: visual.multiplesOptions } : {}), fieldWells: { lineChartAggregatedFieldWells: { category, values, ...multiples } } } } };
     case 'table': return { tableVisual: { ...body, chartConfiguration: { ...tableTotals, fieldWells: { tableAggregatedFieldWells: { groupBy: category, values } } } } };
     case 'pivot': return { pivotTableVisual: { ...body, chartConfiguration: { ...pivotTotals, fieldWells: { pivotTableAggregatedFieldWells: { rows: visual.rows.map(name => dimensionField(name, visual.dateGrain, calculations, dataset)), columns: visual.columns.map(name => dimensionField(name, visual.dateGrain, calculations, dataset)), values } } } } };
     case 'kpi': return { kpiVisual: { ...body, chartConfiguration: { fieldWells: { values } } } };
@@ -876,9 +881,9 @@ export function serializeDraft(draft: AuthorDraft): BundleAnalysis {
       filters: [serializeFilter(filter, `${visual.id}-filter-${index}`, 'sales_data', sheetParameters(draft, sheet))],
     })))),
     sheets: draft.sheets.map(sheet => ({ sheetId: sheet.id, name: sheet.name, ...serializeObjects(sheet.objects), ...(sheet.layoutSettings ? { opensightLayoutSettings: sheet.layoutSettings } : {}), ...(sheet.controls.length ? { parameterControls: sheet.controls.map(c => serializeControl(c, sheetParameters(draft, sheet), sheet.controls)) } : {}), visuals: sheet.visuals.map(visual => {
-      // Pie small multiples export to real QuickSight bundles (PieChartAggregatedFieldWells.smallMultiples);
-      // other kinds still fail closed until their faceted renderers exist.
-      if (visual.smallMultiples?.length && visual.kind !== 'pie') throw new Error('SMALL_MULTIPLES_UNSUPPORTED: Remove Small multiples fields before exporting; the draft retains them.');
+      // Small multiples export to real QuickSight field wells for the faceted
+      // kinds; other kinds still fail closed until their faceted renderers exist.
+      if (visual.smallMultiples?.length && !FACETED_KINDS.includes(visual.kind)) throw new Error('SMALL_MULTIPLES_UNSUPPORTED: Remove Small multiples fields before exporting; the draft retains them.');
       const definition = serializeVisual(visual, true, draft.calculatedFields, draft.dataset);
       normalizeVisual('bundle', serializeVisual(visual, false, draft.calculatedFields, draft.dataset), `sheets.${sheet.id}.${visual.id}`);
       return definition;
