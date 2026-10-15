@@ -1,76 +1,77 @@
-# Issue #95 MCP slice — review gate and baseline verification
+# Issue #95 MCP — verification and demo comparison
 
-2026-10-13, branch `work/issue-95-mcp`. This checkpoint contains a
-contract proposal and draft IDD D-42. **The MCP implementation is
-blocked on product review**, as required by the frozen contract's rule
-that product-shaped questions come back for review rather than freezing
-silently. The [slice document](headless-v1-mcp.md) names the eight
-questions and the exact resume boundary. No MCP server, tool,
-transport, or dependency is claimed as implemented.
+The slice implements the stdio MCP client for all 53 implemented v1 REST
+operations. It changes no web UI. The static demo is rebuilt locally; this is
+not a deployed server. Verification artifacts remain outside version control
+under `.opensight/issue-95-mcp-impl/`.
 
-## Verification
+## Full-suite verification
 
-Full root `npm test` exited 0: **2,664 tests: 2,646 passed / 0 failed /
-18 skipped / 0 cancelled**. The slice document records the totals.
-All skips explicitly require live PostgreSQL (`DATABASE_URL` is unset;
-the local Postgres on :5433 was up, but the suite only runs the live
-tests when `DATABASE_URL` is set). Full per-suite log:
-`~/workspace/goals/opensight/hidden_files/test-logs/issue-95-mcp-npm-test.log`
-(kept out of the repo).
+Full root `npm test` exited **0** on 2026-10-15: **2,827 tests — 2,809 passed / 0 failed / 18 skipped / 0 cancelled**.
+Every skip requires live PostgreSQL (`DATABASE_URL` is unset). The MCP suite
+passed **74 / 0 / 0** in this root run, including all final security fixes.
 
-| Suite | Tests | Passed | Failed | Skipped |
-| --- | ---: | ---: | ---: | ---: |
-| API | 529 | 513 | 0 | 16 |
-| Bundle parser | 199 | 199 | 0 | 0 |
-| Embedding SDK | 10 | 10 | 0 | 0 |
-| Interpreter | 32 | 32 | 0 | 0 |
-| Parity | 11 | 11 | 0 | 0 |
-| Query engine | 506 | 504 | 0 | 2 |
-| Web | 1,320 | 1,320 | 0 | 0 |
-| Root conformance | 57 | 57 | 0 | 0 |
-| **Total** | **2,664** | **2,646** | **0** | **18** |
+| Suite | Passed | Failed | Skipped |
+| --- | ---: | ---: | ---: |
+| api | 567 | 0 | 16 |
+| bundle-parser | 199 | 0 | 0 |
+| embedding-sdk | 10 | 0 | 0 |
+| headless-sdk | 26 | 0 | 0 |
+| mcp-server | 74 | 0 | 0 |
+| o-interpreter | 32 | 0 | 0 |
+| parity | 11 | 0 | 0 |
+| query-engine | 505 | 0 | 2 |
+| web | 1,328 | 0 | 0 |
+| root conformance | 57 | 0 | 0 |
+| **Total** | **2,809** | **0** | **18** |
 
-`node ~/workspace/goals/opensight/hidden_files/build-demo-shim.mjs`
-rebuilds the static demo after publish. This is not a deployed server.
-Runtime sources, dependency manifests, `SOLUTION_DESIGN.md` and
-`docs/api/openapi-v1.yaml` match the master base (`5ad73972`).
-Document links resolve locally and `git diff --check` passes. Nothing
-was merged or pushed at the time this checkpoint was written; there
-were no new dependencies or AWS calls.
+## Contract and security verification
 
-## Corrections and groundings from the code
+The OpenAPI inventory guard and per-operation mapping checks exercise all 53
+tools through the official MCP client/protocol. Hosted integration checks use
+real HTTP and the existing synthetic SQLite/auth fixtures, including SQL and
+nested injection attempts, owner/tenant isolation, idempotency replay,
+If-Match, shared tenant rate limiting, revoked access, protected sources and
+real definition shares that cannot widen prepared-data access. A generated
+query-schema guard refuses successful responses to schema-invalid requests.
 
-While grounding the proposal, two details were verified against the
-implementation rather than assumed from the slice docs:
+CLI tests launch the bundled stdio executable against local HTTP endpoints and
+check that credentials never enter results or stderr, including JSON-escaped
+reflection. The runtime contribution audit reports only MIT code from the
+SDK, its supported validator and Zod. See the [dependency audit](issue-95-mcp-dependencies.md).
 
-- The v1 DELETE dataset response is `{ id, removed: true }`
-  (`packages/api/src/v1-routes.ts`); the v1 PUT dataset response is
-  the save summary `{ id, name, version, execution }`, not the full
-  composed describe. The slice document's tool table records the
-  latter exactly.
-- The OpenAPI spec's 11 implemented operations carry only one
-  `operationId` (`runDatasetQuery`, camelCase). The proposal's tool
-  names are the snake_case mechanical mapping; adding snake_case
-  `operationId` values to all 11 operations is spec-only alignment
-  for the implementation step, not a REST change.
+## Static demo
 
-## Dependencies restated, not re-decided
+The fresh demo's classic Author, new-look reference viewport and Home Q captures
+are byte-identical to the preceding assets-slice captures. Browser verification
+reports **0 page errors / 0 external requests**. Reference pairings retain the
+same viewports, regions, exclusions and tolerance of 16:
 
-- No MCP tool ships for an operation whose REST contract is still a
-  proposal. The deferred-tools table (13 analyses + 12 dashboards +
-  15 assets = 40) snapshots the D-39/D-40/D-41 proposal tables; if a
-  proposal changes during its review, its MCP tools follow the
-  approved table, not this snapshot.
-- Transport (Q1) and credential carriage (Q2) are the product calls
-  this slice exists to surface; neither is resolved by the proposal.
-- SDK/CLI generation, MCP prompts/resources, Streamable HTTP
-  transport, and upload-durability tools (#91) are out of scope here.
+| Reference pairing | Differing pixels |
+| --- | ---: |
+| editor-classic | 41.22% |
+| editor-newlook | 33.58% |
+| q-generative | 44.66% |
 
-## Offline capture and reference comparison
+These are pixel differences, not fidelity grades. No new visible gap was
+introduced; prior gaps remain in the [assets notes](issue-95-assets-gap-notes.md)
+and their referenced issue history. No new visual issue is needed. README
+screenshots and GIF remain current because this slice changes no visible UI.
 
-This slice changes documentation only, so no new captures were taken:
-there is no UI delta to compare. The demo rebuild is byte-equivalent
-to the assets slice's rebuilt demo for the static assets (docs are not
-shipped in the demo bundle). No new user-visible gap was introduced; no
-issue was filed or scheduled by this proposal. No visual-parity claim
-is made and README media is unchanged.
+## Resume boundary and remaining integration
+
+D-42/D-62–D-69's approved MCP client implementation boundary is complete.
+OpenAPI now has 53 unique snake_case operation IDs; missing IDs and the single
+camelCase ID were corrected in a spec-only commit, with no REST wire changes.
+
+The repo's built-in hosted auth still has no refresh-token exchange endpoint.
+The MCP client requires an explicit operator OAuth exchange URL and has no
+invented default endpoint or browser-session fallback. Its HTTP exchange is
+verified using a stub; real hosted v1 admission is separately verified. This
+is an integration prerequisite, not a claim that credential minting/exchange
+has shipped. [D-70](itd/D-70-mcp-runtime-boundaries.md) records the boundary.
+
+Serverless/Lambda durable adapters remain the remote developer's handoff;
+Streamable HTTP, Python SDK and general API CLI remain future slices. Issue
+#95 stays open. `SOLUTION_DESIGN.md`, serverless integration and GitHub workflow
+files are untouched. No AWS calls or deployment were performed.
