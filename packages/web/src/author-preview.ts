@@ -3,6 +3,7 @@ import type { AuthorVisual, AuthorDataset, CalculatedField } from './authoring.j
 import { buildAuthorQuery } from './author-query.js';
 import { executeFixtureQuery } from './fixture-query.js';
 import { normalizeVisual } from './compiler.js';
+import { FACETED_KINDS } from './facet-layout.js';
 import type { Fixture, FixtureVisual } from './model.js';
 import generated from './fixtures.generated.json' with { type: 'json' };
 
@@ -22,10 +23,10 @@ export function buildAuthorPreview(visual: AuthorVisual): FixtureVisual {
   const grain = noDimensions(visual.kind) ? 'total-revenue'
     : dimensions.length === 1 ? grains[dimensions[0] as keyof typeof grains] : undefined;
   // Pinned oracles cover only the four reviewed grains and cannot supply extra tooltip
-  // measures or facet groupings. Extras and pie small-multiples facets go through the same
+  // measures or facet groupings. Extras and faceted small-multiples go through the same
   // query-engine evaluation the live fixture path uses, so the preview shows real values
   // at the visual's grain; failures yield no rows.
-  const faceted = visual.kind === 'pie' && !!visual.smallMultiples?.length;
+  const faceted = FACETED_KINDS.includes(visual.kind) && !!visual.smallMultiples?.length;
   const rows = visual.tooltipExtraFields.length || faceted
     ? (() => { const request = buildAuthorQuery(visual); return request ? executeFixtureQuery(request).rows : null; })()
     : !authorVisualProblem(visual) && !visual.filters.length && visual.measures.length === 1 && visual.measures[0] === 'revenue' && grain
@@ -41,7 +42,7 @@ export function buildAuthorVisual(visual: AuthorVisual, calculations: readonly C
     ...(visual.filterActions?.length ? { filterActions: [...visual.filterActions] } : {}),
     ...(visual.urlActions?.length ? { urlActions: [...visual.urlActions] } : {}),
     ...(visual.navigationActions?.length ? { navigationActions: [...visual.navigationActions] } : {}),
-    bindings: Object.fromEntries([...visualDimensions(visual), ...(visual.kind === 'pie' ? visual.smallMultiples ?? [] : [])].filter(name => dataFields(calculations, dataset).some(f => f.name === name && f.type === 'DATETIME')).map(name => [name, (visual.dateGrain ?? 'MONTH').toLowerCase()])),
+    bindings: Object.fromEntries([...visualDimensions(visual), ...(FACETED_KINDS.includes(visual.kind) ? visual.smallMultiples ?? [] : [])].filter(name => dataFields(calculations, dataset).some(f => f.name === name && f.type === 'DATETIME')).map(name => [name, (visual.dateGrain ?? 'MONTH').toLowerCase()])),
     placement: { column: 0, columns: 36, row: 0, rows: 6 },
     path: `author.${visual.id}`,
   };

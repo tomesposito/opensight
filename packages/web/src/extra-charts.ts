@@ -1,7 +1,9 @@
 import type { EChartsOption, RadarSeriesOption, SeriesOption, TreemapSeriesOption } from 'echarts';
 import { fieldName } from './formatting.js';
+import type { AnalysisTheme } from './themes.js';
 import type { Cell, Field, Row, VisualModel } from './model.js';
 import { countryNames, WORLD_MAP } from './geo/world.js';
+import { facetLayout, facetTitles, groupRowsByFacet } from './facet-layout.js';
 
 type CellReader = (row: Row, field: Field) => Cell;
 type NumberReader = (row: Row, field: Field) => number | null;
@@ -17,7 +19,8 @@ const quartile = (values: number[], p: number): number => {
   return values[lo]! * (1 - position + lo) + values[hi]! * (position - lo);
 };
 /** Distributions describe supplied result values; they never pretend to recover raw observations. */
-export function compileExtra(model: VisualModel, rows: Row[], cell: CellReader, number: NumberReader, option: EChartsOption, fail: (message: string) => never): void {
+export function compileExtra(model: VisualModel, rows: Row[], cell: CellReader, number: NumberReader, option: EChartsOption, fail: (message: string) => never,
+  context?: { path: string; theme: AnalysisTheme; warn: (message: string) => void }): Row[][] | undefined {
   const names = rows.map(r => model.dimensions[0] ? label(cell(r, model.dimensions[0])) : '');
   const values = (i = 0) => rows.map(r => number(r, model.measures[i]!));
   const nonnegative = (r: Row, i = 0): number => {
@@ -33,20 +36,59 @@ export function compileExtra(model: VisualModel, rows: Row[], cell: CellReader, 
     option.yAxis = { type: 'value' };
   };
   if (['area', 'combo', 'bar100'].includes(model.kind)) {
-    axes();
     const percent = model.kind === 'bar100';
-    const totals = percent ? rows.map(r => model.measures.reduce((sum, _, i) => sum + nonnegative(r, i), 0)) : [];
-    if (totals.some(n => !Number.isFinite(n))) fail('percentage total must be finite');
-    const valueAxis = { type: 'value' as const, ...(percent ? { min: 0, max: 100, axisLabel: { formatter: '{value}%' } } : {}) };
-    if (model.horizontal) { option.yAxis = { type: 'category', data: names, inverse: true }; option.xAxis = valueAxis; }
-    else option.yAxis = valueAxis;
+    const panelParts = (panelRows: Row[]) => {
+      const names = panelRows.map(r => model.dimensions[0] ? label(cell(r, model.dimensions[0])) : '');
+      const values = (i = 0) => panelRows.map(r => number(r, model.measures[i]!));
+      const totals = percent ? panelRows.map(r => model.measures.reduce((sum, _, i) => sum + nonnegative(r, i), 0)) : [];
+      if (totals.some(n => !Number.isFinite(n))) fail('percentage total must be finite');
+      const valueAxis = { type: 'value' as const, ...(percent ? { min: 0, max: 100, axisLabel: { formatter: '{value}%' } } : {}) };
+      const xAxis = model.horizontal ? valueAxis : { type: 'category' as const, data: names };
+      const yAxis = model.horizontal ? { type: 'category' as const, data: names, inverse: true } : valueAxis;
+      const series = model.measures.map((f, i): SeriesOption => {
+        const data = values(i).map((n, j) => percent ? totals[j] ? (n! / totals[j]!) * 100 : 0 : n);
+        return percent || model.kind === 'combo' && i === 0 ? { type: 'bar', name: fieldName(f, model.formatting), data, ...(percent ? { stack: 'percent' } : {}), label: { show: model.labels }, barMaxWidth: 72 }
+          : { type: 'line', name: fieldName(f, model.formatting), data, connectNulls: false, ...(model.kind === 'area' ? { areaStyle: { opacity: 0.3 } } : {}), label: { show: model.labels } };
+      });
+      return { xAxis, yAxis, series };
+    };
+    if (model.facet && context) {
+      // Small multiples: one panel per facet value on a grid.
+      const opts = model.multiplesOptions;
+      const { shown, cols, gridRows, topPad, cellW, cellH } =
+        facetLayout(groupRowsByFacet(rows, model.facet, cell), opts, context.path, context.warn);
+      const inset = opts?.gutter ? 1.5 : 0;
+      option.grid = shown.map((_, i) => {
+        const c = i % cols, r = Math.floor(i / cols);
+        const chrome = opts && (opts.border.enabled || opts.background);
+        return {
+          show: !!chrome,
+          left: `${(c * cellW + inset).toFixed(2)}%`, top: `${(topPad + r * cellH + inset).toFixed(2)}%`,
+          width: `${(cellW - inset * 2).toFixed(2)}%`, height: `${(cellH - inset * 2).toFixed(2)}%`,
+          containLabel: true,
+          // Panel chrome: border/background piggyback on the layout grid.
+          ...(chrome ? {
+            backgroundColor: opts.background ? '#f4f6f8' : 'transparent',
+            borderWidth: opts.border.enabled ? opts.border.widthPx : 0,
+            borderColor: opts.border.color,
+          } : {}),
+        };
+      });
+      const panels = shown.map(group => panelParts(group.rows));
+      option.xAxis = panels.map((panel, i) => ({ ...panel.xAxis, gridIndex: i }));
+      option.yAxis = panels.map((panel, i) => ({ ...panel.yAxis, gridIndex: i }));
+      option.series = panels.flatMap((panel, i) => panel.series.map(s => ({ ...s, xAxisIndex: i, yAxisIndex: i })));
+      option.title = facetTitles(shown, opts, cols, cellH, topPad, context.theme, label);
+      option.legend = { show: model.legend, bottom: 0 };
+      return shown.map(group => group.rows);
+    }
+    const { xAxis, yAxis, series } = panelParts(rows);
+    option.grid = { left: 50, right: 24, top: 35, bottom: 55, containLabel: true };
+    option.xAxis = xAxis;
+    option.yAxis = yAxis;
     option.legend = { show: model.legend, bottom: 0 };
-    option.series = model.measures.map((f, i): SeriesOption => {
-      const data = values(i).map((n, j) => percent ? totals[j] ? (n! / totals[j]!) * 100 : 0 : n);
-      return percent || model.kind === 'combo' && i === 0 ? { type: 'bar', name: fieldName(f, model.formatting), data, ...(percent ? { stack: 'percent' } : {}), label: { show: model.labels }, barMaxWidth: 72 }
-        : { type: 'line', name: fieldName(f, model.formatting), data, connectNulls: false, ...(model.kind === 'area' ? { areaStyle: { opacity: 0.3 } } : {}), label: { show: model.labels } };
-    });
-  } else if (model.kind === 'waterfall') {
+    option.series = series;
+    return undefined;
     if (model.dimensions.length !== 1) fail('WATERFALL_CATEGORY_REQUIRED: expected exactly one Categories dimension');
     const measure = model.measures[0];
     if (!measure || model.measures.length !== 1) fail('WATERFALL_VALUES_REQUIRED: expected exactly one Values measure');
