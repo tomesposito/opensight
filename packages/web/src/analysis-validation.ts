@@ -124,7 +124,7 @@ export function validateAnalysisDefinition(raw: unknown, schemas: ReadonlyMap<st
         walk(wells, wp, (o, at) => {
           for (const [key, value] of Object.entries(o)) {
             if (/FieldWells$/.test(key)) analysisObject(value, `${at}.${key}`);
-            if (['values', 'category', 'groupBy', 'rows', 'columns', 'color', 'size', 'targetValues', 'trendGroups', 'smallMultiples'].includes(key)) array(value, `${at}.${key}`).forEach((field, i) => analysisObject(field, `${at}.${key}[${i}]`));
+            if (['values', 'category', 'groupBy', 'rows', 'columns', 'color', 'size', 'targetValues', 'trendGroups', 'smallMultiples', 'breakdowns'].includes(key)) array(value, `${at}.${key}`).forEach((field, i) => analysisObject(field, `${at}.${key}[${i}]`));
           }
         });
       }

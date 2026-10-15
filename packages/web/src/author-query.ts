@@ -16,7 +16,10 @@ export function buildAuthorQuery(visual: AuthorVisual, calculations: readonly Ca
   // Faceted small multiples group by (dimension, facet): the query groups at
   // that grain so the renderer can draw one panel per facet value.
   const facetNames = FACETED_KINDS.includes(visual.kind) ? visual.smallMultiples ?? [] : [];
-  const relevant = queryDependencies([...dimensions, ...facetNames, ...visual.measures, ...visual.tooltipExtraFields.map(e => e.field), ...visual.filters.map(f => f.columnName), ...(visual.interactionFilters ?? []).map(f => f.columnName)], calculations);
+  // Waterfall breakdowns group by (dimension, breakdown): the query groups at
+  // that grain so the renderer can interleave per-breakdown delta bars.
+  const breakdownNames = visual.kind === 'waterfall' ? visual.breakdowns ?? [] : [];
+  const relevant = queryDependencies([...dimensions, ...facetNames, ...breakdownNames, ...visual.measures, ...visual.tooltipExtraFields.map(e => e.field), ...visual.filters.map(f => f.columnName), ...(visual.interactionFilters ?? []).map(f => f.columnName)], calculations);
   const names = new Set([...visual.filters.flatMap(f => f.parameterName ? [f.parameterName] : []), ...relevant.flatMap(c => [...c.expression.matchAll(/\$\{([^}]+)\}/g)].map(m => m[1]!))]);
   const used = parameters.filter(p => names.has(p.name));
   const dynamic = (visual.interactionFilters ?? []).map((filter, i) => {
@@ -28,7 +31,7 @@ export function buildAuthorQuery(visual: AuthorVisual, calculations: readonly Ca
   const dimensionDescriptor = (name: string) =>
     ({ fieldId: name, columnName: name, ...(dataFields(calculations, dataset).find(f => f.name === name)?.type === 'DATETIME' ? { granularity: visual.dateGrain ?? 'MONTH' } : {}) });
   return {
-    dimensions: [...dimensions.map(dimensionDescriptor), ...facetNames.map(dimensionDescriptor)],
+    dimensions: [...dimensions.map(dimensionDescriptor), ...facetNames.map(dimensionDescriptor), ...breakdownNames.map(dimensionDescriptor)],
     measures: [...visual.measures.map(name => ({ fieldId: name, columnName: name, aggregation: 'SUM' })),
       // Extra tooltip measures aggregate at the visual's existing grain; they never change grouping.
       ...visual.tooltipExtraFields.map(e => ({ fieldId: e.field, columnName: e.field, aggregation: e.aggregation }))],
