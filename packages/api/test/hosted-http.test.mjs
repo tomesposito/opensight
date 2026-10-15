@@ -202,3 +202,26 @@ test('Issue #35: every query, O, upload and prep endpoint requires a verified ho
     assert.equal(forged.status, 403, path); assert.equal(forged.body.errorCode, 'FORGED_PRINCIPAL', path);
   }
 });
+
+test('#91 hosted invocation exposes only the approved quota explanation after authentication', async t => {
+  const { storageQuotaError } = await import('../dist/storage-breakdown.js');
+  const { MetadataError } = await import('../dist/metadata-db.js');
+  const { initializeEmbedding } = await import('../dist/embedding-config.js');
+  const { initializeJobs } = await import('../dist/job-schema.js');
+  const f = await authFixture(t); await initializeEmbedding(f.db); await initializeJobs(f.db);
+  const session = await f.login(); let failure = storageQuotaError({ limitBytes: 1048576, totalBytes: 900000, metadataBytes: 0,
+    liveBytes: 0, reservedBytes: 900000, pendingCleanupBytes: 900000, pendingCleanup: [{ id: 'private-object-id' }], nextReclamationAt: null, overdueCount: 0 }, 200000);
+  const { request } = await serving(t, f, { invocation: { signal: new AbortController().signal, compose: () => ({ allows: () => true,
+    route: async () => { throw failure; }, finish: async () => {} }) } });
+  const path = '/api/uploads/reservations';
+  const denied = await request(path, { method: 'POST', body: {} });
+  assert.notEqual(denied.status, 429); assert.equal(denied.body.Message, undefined);
+  const headers = { authorization: `Bearer ${session.token}` };
+  const quota = await request(path, { method: 'POST', body: {}, headers });
+  assert.equal(quota.status, 429); assert.equal(quota.body.errorCode, 'USAGE_LIMIT_EXCEEDED');
+  assert.match(quota.body.Message, /Storage limit 1 MiB exceeded/); assert.match(quota.body.Message, /retained/);
+  assert.doesNotMatch(JSON.stringify(quota.body), /private-object-id/); assert.equal(quota.body.detail, undefined);
+  failure = new MetadataError('USAGE_LIMIT_EXCEEDED', 429, { summary: 'private hostname and key' });
+  const forged = await request(path, { method: 'POST', body: {}, headers });
+  assert.deepEqual(forged.body, { errorCode: 'USAGE_LIMIT_EXCEEDED' });
+});

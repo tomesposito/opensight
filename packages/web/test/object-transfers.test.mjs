@@ -100,3 +100,10 @@ test('SR2d authoring client fetches chunks through the originating session and a
   });
   await assert.rejects(f.client.getPreparedRows('dataset'), { errorCode: 'AUTH_REQUEST_SUPERSEDED' });
 });
+
+test('#91 the hosted upload client preserves the quota explanation and sends no object bytes', async () => {
+  const f = await clientFixture(16), summary = 'Storage limit 256 MiB exceeded: 248 MiB reserved. Eligible times are not a promise of deletion.';
+  f.override(url => url.endsWith('/reservations') ? Response.json({ errorCode: 'USAGE_LIMIT_EXCEEDED', Message: summary }, { status: 429 }) : undefined);
+  await assert.rejects(f.upload(), e => e.status === 429 && e.errorCode === 'USAGE_LIMIT_EXCEEDED' && e.message.includes(summary));
+  assert.equal(f.calls.filter(c => c.url.startsWith('https://s3.')).length, 0);
+});

@@ -100,3 +100,11 @@ test('issue #92 cancelling during the retry wait issues no further status read',
   await f.tick(60000); assert.equal(statusCalls(), 1);
   assert.ok(f.calls.some(c => c[0] === 'cancel')); // the cancellation mutation still ran
 });
+
+test('#91 direct-upload UI shows the safe quota explanation without polling a failed reservation', async t => {
+  const f = await fixture(t), summary = 'Storage limit 256 MiB exceeded: 248 MiB reserved. Eligible times are not a promise of deletion.';
+  f.client.uploadDirectFile = async () => { throw Object.assign(new Error(summary), { status: 429, errorCode: 'USAGE_LIMIT_EXCEEDED' }); };
+  await f.expiry(); await f.click('Upload file'); await f.tick(60000);
+  assert.equal(f.renderer.root.findByProps({ role: 'alert' }).children.join(''), summary);
+  assert.deepEqual(f.calls, []);
+});
