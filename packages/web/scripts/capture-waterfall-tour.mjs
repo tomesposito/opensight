@@ -33,6 +33,12 @@ async function bar(page, prefix) {
   await navigate(page, 'author');
   await capture(page, `${prefix}-author-empty`);
   await page.locator('.build-panel').getByRole('button', { name: 'Add visual', exact: true }).click();
+  // New visuals start empty (AutoGraph empty-state-first, issue #56); assign
+  // the pinned sales fields so the chart builds.
+  await page.getByRole('button', { name: 'Select GROUP/COLOR well', exact: true }).click();
+  await page.getByRole('button', { name: 'Assign region', exact: true }).click();
+  await page.getByRole('button', { name: 'Select VALUE well', exact: true }).click();
+  await page.getByRole('button', { name: 'Assign revenue', exact: true }).click();
   await page.locator('.author-card .chart svg').waitFor();
   await capture(page, `${prefix}-author`);
 }
@@ -49,6 +55,11 @@ try {
   await page.getByLabel('Analysis title', { exact: true }).fill('Waterfall analysis');
   assert.match(await page.locator('.fixture-notice').innerText(), /waterfall previews recompute pinned synthetic sales rows locally/);
   for (const well of ['Categories', 'Values']) await page.getByLabel(`Assign ${well}`, { exact: true }).waitFor();
+  // New visuals start empty; assign the pinned sales fields so the chart builds.
+  await page.getByRole('button', { name: 'Select CATEGORIES well', exact: true }).click();
+  await page.getByRole('button', { name: 'Assign region', exact: true }).click();
+  await page.getByRole('button', { name: 'Select VALUES well', exact: true }).click();
+  await page.getByRole('button', { name: 'Assign revenue', exact: true }).click();
   const properties = page.locator('.properties-panel:not([open]) > summary');
   if (await properties.count()) await properties.click();
   await page.getByLabel('Title', { exact: true }).fill('Revenue accumulation by region');
@@ -57,6 +68,15 @@ try {
   const chart = page.locator('.author-card .chart svg'); await chart.waitFor();
   assert.match(await chart.textContent(), /Total/);
   await capture(page, 'waterfall-revenue');
+  // Breakdowns: assigning a breakdown field switches to the interleaved
+  // layout — category subtotals with per-breakdown floating delta bars.
+  await page.getByRole('button', { name: 'Select BREAKDOWN well', exact: true }).click();
+  await page.getByRole('button', { name: 'Assign category', exact: true }).click();
+  await chart.waitFor();
+  for (const label of ['East', 'Hardware', 'Software', 'West']) assert.match(await chart.textContent(), new RegExp(label));
+  await capture(page, 'waterfall-breakdown-authored');
+  await page.getByRole('button', { name: 'Remove category from Breakdown', exact: true }).click();
+  await chart.waitFor();
   // A visible calculation on pinned sales creates a signed scenario, without
   // substituting fixture responses or pretending to query a hosted service.
   await page.getByRole('button', { name: '+ CALCULATED FIELD', exact: true }).click();
