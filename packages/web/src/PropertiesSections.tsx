@@ -1,5 +1,5 @@
 import { useId, type Dispatch, type ReactNode } from 'react';
-import type { AuthorAction, AuthorDraft, AuthorVisual } from './authoring.js';
+import type { AuthorAction, AuthorDraft, AuthorVisual, GroupSort } from './authoring.js';
 import { GRID_COLUMNS, defaultMultiplesOptions, hasSmallMultiplesWell } from './authoring.js';
 import type { MultiplesOptions as MultiplesOptionsState } from './model.js';
 import { hasDataLabels, hasLegend, LEGEND_POSITIONS, DATA_LABEL_POSITIONS, CARD_DEFAULTS, cleanCardStyle, cleanCardLayout, cleanAltText, altTextValid, type LegendPosition, type LegendTextStyle, type LegendTitle, type GroupTitle, type DataLabels, type DataLabelPosition, type CardStyle, type CardSwatch, type CardBorder } from './formatting.js';
@@ -237,6 +237,14 @@ export function GroupColorOptions({ visual, dispatch }: SectionProps) {
     return Object.keys(next).length ? next : undefined;
   };
   const setTitle = (next: GroupTitle | undefined) => dispatch({ type: 'group-title', title: next });
+  const sortFields = [...new Set([...(field ? [field] : []), ...visual.measures])];
+  const sort = visual.groupSort;
+  const sortDisplayName = (name: string) => (names && Object.hasOwn(names, name) ? (names[name] as string) : name);
+  const setSort = (fieldId: string | undefined, direction?: GroupSort['direction']) => {
+    if (fieldId === undefined || fieldId === '') { dispatch({ type: 'group-sort', sort: undefined }); return; }
+    if (!sortFields.includes(fieldId)) return; // fail-closed: keep the last valid sort
+    dispatch({ type: 'group-sort', sort: { fieldId, direction: direction ?? (visual.measures.includes(fieldId) ? 'DESC' : 'ASC') } });
+  };
   return <details className="property-section"><summary>Group/Color</summary>
     <section className="property-group" aria-label="Group/Color title"><h4>GROUP/COLOR TITLE</h4>
       <label className="toggle"><input type="checkbox" aria-label="Show Group/Color title" checked={!!title.show}
@@ -262,9 +270,16 @@ export function GroupColorOptions({ visual, dispatch }: SectionProps) {
         dispatch({ type: 'formatting', formatting: { ...visual.formatting, names: next } });
       }} /></label>
     <p className="field-hint">{field ? `Source field: ${field}. Display names appear in generated titles and result tables.` : 'Assign a Group/Color field first.'}</p>
-    <Unavailable label="Group sort controls" reason="Sort editing is not supported in Author yet; imported sort settings are retained.">
-      <label>Sort<select defaultValue="Not editable"><option>Not editable</option></select></label>
-    </Unavailable>
+    {sortFields.length ? <div className="property-control-row" role="group" aria-label="Group/Color sort">
+      <label>Sort by<select aria-label="Sort slices by" value={sort?.fieldId ?? ''} onChange={e => setSort(e.target.value || undefined, sort?.direction)}>
+        <option value="">Default order</option>
+        {sortFields.map(f => <option key={f} value={f}>{sortDisplayName(f)}</option>)}
+      </select></label>
+      {sort && <div className="property-inline" role="group" aria-label="Sort direction">
+        {(['ASC', 'DESC'] as const).map(d => <button type="button" key={d} aria-label={d === 'ASC' ? 'Sort ascending' : 'Sort descending'} aria-pressed={sort.direction === d} onClick={() => setSort(sort.fieldId, d)}>{d === 'ASC' ? '↑' : '↓'}</button>)}
+      </div>}
+    </div> : <p className="field-hint">Assign a Group/Color field or a measure to sort the slices.</p>}
+    <p className="field-hint">The default order follows the dataset's dimension order; a chosen sort applies to the rendered slices.</p>
     {visual.kind === 'pie' && <Unavailable label="Slice limit controls" reason="Slice limits are not supported yet; all supplied result rows are shown.">
       <label>Number of slices displayed<input placeholder="Default: 20" /></label>
     </Unavailable>}
