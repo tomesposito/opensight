@@ -29,6 +29,49 @@ test('waterfall spans sequential totals, uses signed labels/colors, and leaves V
   assert.deepEqual(source, before);
 });
 
+const breakdownInput = rows => ({ source: 'bundle', path: '$.waterfall', bindings: {}, rows, definition: {
+  waterfallChartVisual: { visualId: 'waterfall', chartConfiguration: { fieldWells: { waterfallChartAggregatedFieldWells: { category: [dim('category')], breakdowns: [dim('breakdown')], values: [measure('delta')] } } } },
+} });
+
+test('waterfall breakdowns interleave floating delta bars between category subtotals', () => {
+  const rows = [
+    { category: 'Q1', breakdown: 'A', delta: 10 }, { category: 'Q1', breakdown: 'B', delta: 20 },
+    { category: 'Q2', breakdown: 'A', delta: -4 }, { category: 'Q2', breakdown: 'B', delta: 6 },
+    { category: 'Q3', breakdown: 'A', delta: 5 }, { category: 'Q3', breakdown: 'B', delta: -2 },
+  ];
+  const c = compileVisual(breakdownInput(rows)), [assist, visible] = c.option.series;
+  // First category subtotal from zero; later categories decompose into
+  // breakdown deltas, then subtotal from zero; final subtotal is the total.
+  assert.deepEqual(c.option.xAxis.data, ['Q1', 'A', 'B', 'Q2', 'A', 'B', 'Q3']);
+  assert.deepEqual(assist.data, [0, 26, 26, 0, 32, 35, 0]);
+  assert.deepEqual(visible.data.map(d => d.value), [30, 4, 6, 32, 5, 2, 35]);
+  assert.deepEqual(visible.data.map(d => d.delta), [30, -4, 6, 32, 5, -2, 35]);
+  assert.deepEqual(visible.data.map(d => d.itemStyle.color), ['#2673c9', '#d64545', '#2e8b57', '#2673c9', '#2e8b57', '#d64545', '#2673c9']);
+  assert.equal(visible.tooltip.formatter({ name: 'A', data: visible.data[1] }), 'A: -4');
+  assert.equal(visible.label.formatter({ data: visible.data[0] }), '30');
+  assert.ok(!c.option.xAxis.data.includes('Total'));
+  assert.deepEqual(c.table.rows, rows.map(r => [r.category, r.breakdown, r.delta]));
+});
+
+test('waterfall breakdowns skip missing pairs, fail closed on nulls/overflow, and allow repeated categories across breakdowns', () => {
+  const rows = [
+    { category: 'Q1', breakdown: 'A', delta: 10 }, { category: 'Q1', breakdown: 'B', delta: 20 },
+    { category: 'Q2', breakdown: 'A', delta: -4 },
+    { category: 'Q3', breakdown: 'A', delta: 5 }, { category: 'Q3', breakdown: 'B', delta: -2 },
+  ];
+  const c = compileVisual(breakdownInput(rows)), [assist, visible] = c.option.series;
+  assert.deepEqual(c.option.xAxis.data, ['Q1', 'A', 'Q2', 'A', 'B', 'Q3']);
+  assert.deepEqual(assist.data, [0, 26, 0, 26, 29, 0]);
+  assert.deepEqual(visible.data.map(d => d.value), [30, 4, 26, 5, 2, 29]);
+  assert.deepEqual(visible.data.map(d => d.delta), [30, -4, 26, 5, -2, 29]);
+  const nullRow = breakdownInput([{ category: 'Q1', breakdown: 'A', delta: null }]);
+  assert.throws(() => compileVisual(nullRow), /WATERFALL_VALUE_INVALID/);
+  const overflow = breakdownInput([{ category: 'Q1', breakdown: 'A', delta: 1e308 }, { category: 'Q1', breakdown: 'B', delta: 1e308 }]);
+  assert.throws(() => compileVisual(overflow), /WATERFALL_TOTAL_OVERFLOW/);
+  const dupe = breakdownInput([{ category: 'Q1', breakdown: 'A', delta: 1 }, { category: 'Q1', breakdown: 'A', delta: 2 }]);
+  assert.throws(() => compileVisual(dupe), /duplicate categories/);
+});
+
 test('waterfall rendered bar geometry covers negative starts, crossings, and negative/zero totals', () => {
   for (const deltas of [[-10, 3, 12, -9], [10, -4, -12, 3, 8], [0, 0], [4, -4]]) {
     const source = input(deltas); config(source).dataLabels = { visibility: 'VISIBLE' };
@@ -51,17 +94,36 @@ test('waterfall rendered bar geometry covers negative starts, crossings, and neg
   }
 });
 
-test('waterfall rejects missing/multiple wells and any supplied breakdowns with named errors', () => {
+test('waterfall rejects missing/multiple category or values wells with named errors', () => {
   for (const [slot, error, field] of [['category', 'CATEGORY', dim], ['values', 'VALUES', measure]]) {
     for (const value of [undefined, [], [field('extra'), field('another')]]) {
       const source = input([3]); wells(source)[slot] = value;
       assert.throws(() => compileVisual(source), e => e instanceof CompileError && e.message.includes(`WATERFALL_${error}_REQUIRED`));
     }
   }
-  for (const value of [[], [dim('breakdown')], null]) {
-    const source = input([3]); wells(source).breakdowns = value;
-    assert.throws(() => compileVisual(source), /WATERFALL_BREAKDOWN_UNSUPPORTED/);
+});
+
+test('waterfall accepts one breakdown dimension and rejects multiple or measure breakdowns', () => {
+  for (const value of [undefined, []]) {
+    const source = input([3]); if (value !== undefined) wells(source).breakdowns = value;
+    assert.doesNotThrow(() => compileVisual(source));
   }
+  const source = input([3]); source.rows[0].breakdown = 'B0'; wells(source).breakdowns = [dim('breakdown')];
+  const c = compileVisual(source);
+  assert.equal(c.model.breakdown?.column, 'breakdown');
+  assert.deepEqual(c.table.columns.length, 3);
+  assert.deepEqual(c.table.rows, [['C0', 'B0', 3]]);
+  for (const value of [[dim('a'), dim('b')], [measure('m')]]) {
+    const bad = input([3]); wells(bad).breakdowns = value;
+    assert.throws(() => compileVisual(bad), e => e instanceof CompileError && /WATERFALL_BREAKDOWN_LIMIT|unsupported property/.test(e.message));
+  }
+  // Breakdowns on other kinds stay unsupported.
+  const bar = { source: 'bundle', path: '$.bar', bindings: {}, rows: null, definition: {
+    barChartVisual: { visualId: 'bar', chartConfiguration: { fieldWells: { barChartAggregatedFieldWells: { category: [dim('category')], values: [measure('delta')], breakdowns: [dim('breakdown')] } } } } } };
+  assert.throws(() => compileVisual(bar), /unsupported property|field well not supported/);
+  // Rows must carry the breakdown grain; missing columns fail closed.
+  const grainless = input([3]); wells(grainless).breakdowns = [dim('breakdown')];
+  assert.throws(() => compileVisual(grainless), /missing result column breakdown/);
 });
 
 test('waterfall rejects invalid values, overflow and duplicate categories without inventing deltas', () => {

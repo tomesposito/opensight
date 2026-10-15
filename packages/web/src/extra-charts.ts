@@ -95,25 +95,76 @@ export function compileExtra(model: VisualModel, rows: Row[], cell: CellReader, 
     const measure = model.measures[0];
     if (!measure || model.measures.length !== 1) fail('WATERFALL_VALUES_REQUIRED: expected exactly one Values measure');
     const assist: number[] = [];
+    const axisNames: string[] = [];
     let running = 0;
-    // Deliberate OpenSight semantics: start at zero, retain supplied (or explicit
-    // field-sort) order, and append one Total. Native starting values, breakdowns,
-    // intermediate totals, color configuration and category limits are rejected.
-    const data = rows.map((row, i) => {
-      const delta = number(row, measure);
-      if (delta === null) fail('WATERFALL_VALUE_INVALID: deltas must be finite, non-null numbers');
-      const previous = running;
-      running += delta;
-      if (!Number.isFinite(running)) fail('WATERFALL_TOTAL_OVERFLOW: running totals must be finite');
-      assist.push(Math.min(previous, running));
-      return { name: names[i]!, value: Math.abs(delta), delta, itemStyle: { color: delta < 0 ? '#d64545' : '#2e8b57' } };
-    });
-    if (rows.length) {
-      assist.push(Math.min(0, running));
-      names.push('Total');
-      data.push({ name: 'Total', value: Math.abs(running), delta: running, itemStyle: { color: '#2673c9' } });
+    const pushBar = (name: string, base: number, height: number, delta: number, color: string) => {
+      assist.push(base); axisNames.push(name);
+      return { name, value: height, delta, itemStyle: { color } };
+    };
+    const finite = (value: number) => { if (!Number.isFinite(value)) fail('WATERFALL_TOTAL_OVERFLOW: running totals must be finite'); };
+    let data: { name: string; value: number; delta: number; itemStyle: { color: string } }[];
+    if (!model.breakdown) {
+      // Deliberate OpenSight semantics: start at zero, retain supplied (or explicit
+      // field-sort) order, and append one Total. Native starting values,
+      // intermediate totals, color configuration and category limits are rejected.
+      data = rows.map((row, i) => {
+        const delta = number(row, measure);
+        if (delta === null) fail('WATERFALL_VALUE_INVALID: deltas must be finite, non-null numbers');
+        const previous = running;
+        running += delta;
+        finite(running);
+        const bar = pushBar(names[i]!, Math.min(previous, running), Math.abs(delta), delta, delta < 0 ? '#d64545' : '#2e8b57');
+        return bar;
+      });
+      if (rows.length) {
+        data.push(pushBar('Total', Math.min(0, running), Math.abs(running), running, '#2673c9'));
+      }
+    } else {
+      // QuickSight breakdown parity (matches the AWS waterfall docs reference):
+      // the first category renders as a subtotal from zero; every later
+      // category decomposes into its breakdown values' floating delta bars,
+      // then renders its subtotal from zero. The final category's subtotal is
+      // the total, so no extra Total bar is appended. Breakdown values order
+      // by first appearance; missing (category, breakdown) pairs render no
+      // bar. Delta colors keep the OpenSight green/red sign convention rather
+      // than QuickSight's uniform navy; totals keep the OpenSight blue.
+      const category = model.dimensions[0]!, breakdown = model.breakdown;
+      const categories: string[] = [];
+      const catIndex = new Map<string, number>();
+      const breakdownOrder: string[] = [];
+      const seenBreakdown = new Set<string>();
+      const deltaOf = new Map<string, number>();
+      for (const row of rows) {
+        const c = label(cell(row, category)), b = label(cell(row, breakdown));
+        if (!catIndex.has(c)) { catIndex.set(c, categories.length); categories.push(c); }
+        if (!seenBreakdown.has(b)) { seenBreakdown.add(b); breakdownOrder.push(b); }
+        const delta = number(row, measure);
+        if (delta === null) fail('WATERFALL_VALUE_INVALID: deltas must be finite, non-null numbers');
+        deltaOf.set(JSON.stringify([c, b]), delta);
+      }
+      data = [];
+      if (categories.length) {
+        let subtotal = 0;
+        for (const b of breakdownOrder) subtotal += deltaOf.get(JSON.stringify([categories[0], b])) ?? 0;
+        running = subtotal; finite(running);
+        data.push(pushBar(categories[0]!, Math.min(0, subtotal), Math.abs(subtotal), subtotal, '#2673c9'));
+        for (let i = 1; i < categories.length; i++) {
+          const c = categories[i]!;
+          for (const b of breakdownOrder) {
+            const delta = deltaOf.get(JSON.stringify([c, b]));
+            if (delta === undefined) continue;
+            const previous = running;
+            running += delta;
+            finite(running);
+            data.push(pushBar(b, Math.min(previous, running), Math.abs(delta), delta, delta < 0 ? '#d64545' : '#2e8b57'));
+          }
+          data.push(pushBar(c, Math.min(0, running), Math.abs(running), running, '#2673c9'));
+        }
+      }
     }
-    axes();
+    option.xAxis = { type: 'category', data: axisNames.length ? axisNames : names };
+    option.yAxis = { type: 'value' };
+    option.grid = { left: 50, right: 24, top: 35, bottom: 55, containLabel: true };
     option.legend = { show: model.legend, bottom: 0, data: [fieldName(measure, model.formatting)] };
     option.series = [
       { type: 'bar', stack: 'waterfall', stackStrategy: 'all', data: assist, silent: true,

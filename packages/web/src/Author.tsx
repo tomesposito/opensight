@@ -47,7 +47,7 @@ import { buildDistinctQuery, loadAuthorRows } from './author-query.js';
 import type { QueryClient } from './author-query.js';
 import {
   authorVisualProblem, VISUAL_TYPES, GRID_COLUMNS, FIELD_GROUPS, fieldGroup, activeSheet, calculationError, dataFields, dimensionLabel,
-  emptyDraft, serializeDraft, sheetParameters, tabular, visualDimensions, grouped, splitDimensions, noDimensions, capabilityNote, hasSmallMultiplesWell,
+  emptyDraft, serializeDraft, sheetParameters, tabular, visualDimensions, grouped, splitDimensions, noDimensions, capabilityNote, hasSmallMultiplesWell, hasBreakdownWell,
 } from './authoring.js';
 import type { AuthorAction, AuthorDataset, AuthorDraft, AuthorVisual, CalculatedField, FieldGroup, VisualKind, Well } from './authoring.js';
 
@@ -285,7 +285,7 @@ function Panel({ title, className, children }: { title: string; className: strin
 
 const dimensionWellLabel = (kind: VisualKind, well: Well): string => well === 'columns'
   ? kind === 'sankey' ? 'Destination' : kind === 'pointMap' ? 'Longitude' : kind === 'radar' ? 'Color' : 'Columns'
-  : well === 'smallMultiples' ? 'Small multiples' : kind === 'pointMap' ? 'Latitude' : kind === 'box' ? 'Group / sample dimensions' : ['bar', 'bar100', 'pie'].includes(kind) ? 'Group/Color' : dimensionLabel(kind);
+  : well === 'breakdown' ? 'Breakdown' : well === 'smallMultiples' ? 'Small multiples' : kind === 'pointMap' ? 'Latitude' : kind === 'box' ? 'Group / sample dimensions' : ['bar', 'bar100', 'pie'].includes(kind) ? 'Group/Color' : dimensionLabel(kind);
 const FIELD_DRAG_TYPE = 'application/x-opensight-field';
 
 export function AuthorCanvas({ draft, dispatch, client, fit = true, sourceProblem }: EditorProps & { fit?: boolean; sourceProblem?: string }) {
@@ -305,7 +305,7 @@ export function AuthorCanvas({ draft, dispatch, client, fit = true, sourceProble
   })) }), [draft.calculatedFields, draft.dataset]));
   const query = search.trim().toLowerCase();
   const matchingFields = fields.filter(f => f.name.toLowerCase().includes(query));
-  const interactionKey = JSON.stringify([draft.dataset?.id, sheet.id, sheet.visuals.map(v => [v.id, v.kind, v.dimension, v.rows, v.columns, v.measures, v.smallMultiples, v.filters, v.filterActions, v.urlActions, v.navigationActions, v.hierarchy, v.imported]), draft.sheets.map(s => [s.id, s.imported?.memberPath]), draft.parameters, draft.calculatedFields, !!client]);
+  const interactionKey = JSON.stringify([draft.dataset?.id, sheet.id, sheet.visuals.map(v => [v.id, v.kind, v.dimension, v.rows, v.columns, v.measures, v.smallMultiples, v.breakdowns, v.filters, v.filterActions, v.urlActions, v.navigationActions, v.hierarchy, v.imported]), draft.sheets.map(s => [s.id, s.imported?.memberPath]), draft.parameters, draft.calculatedFields, !!client]);
   const [interactionState, setInteractionState] = useState<{ key: string; selections: ActionSelections }>({ key: interactionKey, selections: {} });
   const [actionProblems, setActionProblems] = useState<{ key: string; visuals: Record<string, Record<string, string>> }>({ key: interactionKey, visuals: {} });
   const runtimeProblems = actionProblems.key === interactionKey ? actionProblems.visuals : {};
@@ -321,7 +321,7 @@ export function AuthorCanvas({ draft, dispatch, client, fit = true, sourceProble
   const clearActions = () => { setInteractionState({ key: interactionKey, selections: {} }); setMenuActionState({ key: interactionKey, selections: {} }); };
   const selected = sheet.visuals.find(v => v.id === sheet.selectedId);
   const selectedObject = sheet.objects?.find(o => o.id === sheet.selectedId);
-  const dimensionWell: Well = well === 'smallMultiples' && (!selected || hasSmallMultiplesWell(selected.kind)) ? 'smallMultiples' : selected ? grouped(selected.kind) ? (well === 'columns' && splitDimensions(selected.kind) ? 'columns' : 'rows') : 'dimension' : 'dimension';
+  const dimensionWell: Well = well === 'smallMultiples' && (!selected || hasSmallMultiplesWell(selected.kind)) ? 'smallMultiples' : well === 'breakdown' && (!selected || hasBreakdownWell(selected.kind)) ? 'breakdown' : selected ? grouped(selected.kind) ? (well === 'columns' && splitDimensions(selected.kind) ? 'columns' : 'rows') : 'dimension' : 'dimension';
   const dimensionDestination = selected ? noDimensions(selected.kind) ? 'unavailable for this visual' : dimensionWellLabel(selected.kind, dimensionWell) : dimensionWellLabel('bar', dimensionWell);
   const recordProblem = (visualId: string, problems: Record<string, string>) => setActionProblems({ key: interactionKey, visuals: { ...runtimeProblems, [visualId]: problems } });
   const fireUrlAction = (visual: AuthorVisual, action: UrlAction, selection: Selection): string | undefined => {
@@ -367,7 +367,7 @@ export function AuthorCanvas({ draft, dispatch, client, fit = true, sourceProble
           {matchingFields.filter(f => fieldGroup(f) === group).map(field => <button key={field.name} type="button"
             title={field.type === 'BOOLEAN' ? 'Boolean fields are supported in preparation; convert to text or number before charting.' : undefined}
             disabled={field.type === 'BOOLEAN' || (field.role === 'dimension' && !!selected && noDimensions(selected.kind))}
-            aria-label={`Assign ${field.name}`} aria-pressed={selected?.dimension === field.name || selected?.rows.includes(field.name) || selected?.columns.includes(field.name) || !!selected?.measures.includes(field.name) || !!selected?.smallMultiples?.includes(field.name)}
+            aria-label={`Assign ${field.name}`} aria-pressed={selected?.dimension === field.name || selected?.rows.includes(field.name) || selected?.columns.includes(field.name) || !!selected?.measures.includes(field.name) || !!selected?.smallMultiples?.includes(field.name) || !!selected?.breakdowns?.includes(field.name)}
             draggable={field.type !== 'BOOLEAN'} onDragStart={e => { e.dataTransfer.setData(FIELD_DRAG_TYPE, field.name); e.dataTransfer.effectAllowed = 'copy'; }}
             aria-describedby={`${fieldIconId}-${encodeURIComponent(field.name)}`}
             onClick={() => dispatch({ type: selected ? 'assign' : 'assign-with-no-selection', field: field.name, well: field.role === 'measure' ? 'values' : dimensionWell })}>
@@ -489,6 +489,7 @@ function FieldWells({ visual, draft, dispatch, activeWell, onWell }: { visual?: 
     ...(splitDimensions(visual.kind) ? [{ name: 'columns' as const, label: dimensionWellLabel(visual.kind, 'columns'), values: visual.columns }] : []),
     { name: 'values', label: visual.kind === 'sankey' ? 'Weight' : visual.kind === 'scatter' ? 'Values · X, Y, size (in order)' : visual.kind === 'combo' ? 'Values · bar, then lines' : hasSmallMultiplesWell(visual.kind) ? 'Value' : 'Values', values: visual.measures },
     ...(hasSmallMultiplesWell(visual.kind) || visual.smallMultiples?.length ? [{ name: 'smallMultiples' as const, label: 'Small multiples', values: visual.smallMultiples ?? [] }] : []),
+    ...(hasBreakdownWell(visual.kind) || visual.breakdowns?.length ? [{ name: 'breakdown' as const, label: 'Breakdown', values: visual.breakdowns ?? [] }] : []),
   ];
   const assign = (field: string, well: Well) => dispatch({ type: visual ? 'assign' : 'assign-with-no-selection', field, well });
   return <div className="field-wells">{wells.map(w => <fieldset key={w.name} className={activeWell === w.name ? 'active-well' : ''} onFocus={() => onWell(w.name)} onClick={() => onWell(w.name)}
@@ -499,7 +500,7 @@ function FieldWells({ visual, draft, dispatch, activeWell, onWell }: { visual?: 
     {w.name === 'values' && visual?.kind === 'insight' && <p>One measure; optional second measure for comparison (first minus second).</p>}
     {w.name === 'values' && visual && visual.measures.length > 1 && <div className="measure-order">{visual.measures.map((name, index) => <button type="button" key={name} disabled={!index} aria-label={`Move ${name} measure earlier`} onClick={() => dispatch({ type: 'measure-move', index, offset: -1 })}>↑ {name}</button>)}</div>}
     {!w.values.length && <button type="button" className="well-placeholder" aria-label={`Select ${w.label.toUpperCase()} well`} aria-pressed={activeWell === w.name} onClick={() => onWell(w.name)}>{w.name === 'columns' && visual?.kind === 'radar' ? 'Optional color dimension' : w.name === 'values' ? 'Add a measure' : 'Add a dimension'}</button>}
-    {visual && <label className="well-picker"><span className="sr-only">Assign {w.name === 'values' ? 'measure' : w.name === 'smallMultiples' ? 'small multiples' : ['radar', 'sankey'].includes(visual.kind) ? w.label.toLowerCase() : w.name === 'dimension' ? 'dimension' : w.name}</span><select aria-label={`Assign ${w.label}`} title={`Assign ${w.label}`} disabled={w.name === 'smallMultiples' && !hasSmallMultiplesWell(visual.kind)} value="" onChange={e => assign(e.target.value, w.name)}><option value="" disabled>Choose field…</option>{fields.filter(f => f.type !== 'BOOLEAN' && f.role === (w.name === 'values' ? 'measure' : 'dimension')).map(f => <option key={f.name}>{f.name}</option>)}</select></label>}
+    {visual && <label className="well-picker"><span className="sr-only">Assign {w.name === 'values' ? 'measure' : w.name === 'smallMultiples' ? 'small multiples' : w.name === 'breakdown' ? 'breakdown' : ['radar', 'sankey'].includes(visual.kind) ? w.label.toLowerCase() : w.name === 'dimension' ? 'dimension' : w.name}</span><select aria-label={`Assign ${w.label}`} title={`Assign ${w.label}`} disabled={w.name === 'smallMultiples' && !hasSmallMultiplesWell(visual.kind) || w.name === 'breakdown' && !hasBreakdownWell(visual.kind)} value="" onChange={e => assign(e.target.value, w.name)}><option value="" disabled>Choose field…</option>{fields.filter(f => f.type !== 'BOOLEAN' && f.role === (w.name === 'values' ? 'measure' : 'dimension')).map(f => <option key={f.name}>{f.name}</option>)}</select></label>}
 </fieldset>)}</div>;
 }
 

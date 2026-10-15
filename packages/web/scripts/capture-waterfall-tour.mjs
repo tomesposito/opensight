@@ -93,19 +93,22 @@ try {
   await page.getByRole('button', { name: 'Save draft', exact: true }).click();
 
   const draft = authorReducer(emptyDraft(), { type: 'add', kind: 'waterfall' });
-  activeSheet(draft).visuals[0].title = 'Unsupported waterfall breakdown';
+  activeSheet(draft).visuals[0].title = 'Waterfall with breakdowns';
   const resource = serializeDraft(draft);
   const wells = resource.definition.sheets[0].visuals[0].waterfallChartVisual.chartConfiguration.fieldWells.waterfallChartAggregatedFieldWells;
-  wells.breakdowns = structuredClone(wells.category);
+  wells.breakdowns = [{ categoricalDimensionField: { fieldId: 'category', column: { columnName: 'category', dataSetIdentifier: 'sales_data' } } }];
   await page.getByText('Import bundle', { exact: true }).click();
-  await page.getByLabel('Import .qs or bundle JSON', { exact: true }).setInputFiles({ name: 'waterfall-unsupported.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(resource)) });
+  await page.getByLabel('Import .qs or bundle JSON', { exact: true }).setInputFiles({ name: 'waterfall-breakdown.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(resource)) });
   await page.getByRole('dialog', { name: 'Bundle import report', exact: true }).waitFor();
-  assert.match(await page.getByRole('dialog').innerText(), /CompileError.*WATERFALL_BREAKDOWN_UNSUPPORTED/);
+  assert.doesNotMatch(await page.getByRole('dialog').innerText(), /CompileError/);
   await capture(page, 'waterfall-import-report');
   await page.getByRole('button', { name: 'Close import report', exact: true }).click();
-  assert.match(await page.locator('.bundle-placeholder').innerText(), /Unsupported features.*WATERFALL_BREAKDOWN_UNSUPPORTED/);
-  assert.equal(await page.locator('.author-card .chart svg').count(), 0);
-  await capture(page, 'waterfall-import-blocked');
+  // The interleaved breakdown layout renders: the first category as a subtotal
+  // from zero, later categories decomposed into per-breakdown floating delta
+  // bars, each followed by its subtotal from zero.
+  const importedChart = page.locator('.author-card .chart svg'); await importedChart.waitFor();
+  for (const label of ['East', 'Hardware', 'Software', 'West']) assert.match(await importedChart.textContent(), new RegExp(label));
+  await capture(page, 'waterfall-breakdown');
   assert.deepEqual(errors, []); assert.deepEqual(external, []);
   const summary = { captures, pageErrors: errors.length, externalRequests: external.length };
   await writeFile(resolve(output, 'summary.json'), JSON.stringify(summary, null, 2));

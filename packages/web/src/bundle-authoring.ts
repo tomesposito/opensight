@@ -196,6 +196,9 @@ function importVisual(raw: BundleVisual, id: string, definition: BundleDefinitio
     ...(importedGroupSort ? { groupSort: importedGroupSort } : {}),
     // OpenSight extension: imported pie slice limit imports into the draft.
     ...(importedSliceLimit ? { sliceLimit: importedSliceLimit } : {}),
+    // QuickSight Breakdowns well imports into the draft (waterfall only; the
+    // compiler validates the field shape and count on import).
+    ...(kind === 'waterfall' ? { breakdowns: names(wells.breakdowns).slice(0, 1) } : {}),
     ...(validLines.length > 0 && hasReferenceLines(kind) ? { referenceLines: validLines.map((line, index) => ({ id: `refline-${index + 1}`, ...line })) } : {}),
     titleVisible: obj(body.title).visibility !== 'HIDDEN', dimension: noDimensions(kind) ? null : rows[0] ?? null,
     rows: grouped(kind) ? rows : [], columns, measures: singleMeasure(kind) ? measures.slice(0, 1) : measures,
