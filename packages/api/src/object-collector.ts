@@ -31,15 +31,20 @@ export class AwsObjectDeletion implements ObjectDeletion {
   }
   async latest(key: string): Promise<string | undefined> {
     this.key(key);
-    try { return version((await this.aws.call(signal => this.aws.s3.send(new HeadObjectCommand({ Bucket: this.bucket, Key: key }), { abortSignal: signal }))).VersionId); }
-    catch (error) { if (absent(error)) return undefined; throw error; }
+    return this.aws.call(async signal => {
+      // Classify proof before InvocationAws redacts provider errors.
+      try { return version((await this.aws.s3.send(new HeadObjectCommand({ Bucket: this.bucket, Key: key }), { abortSignal: signal })).VersionId); }
+      catch (error) { if (absent(error)) return undefined; throw error; }
+    });
   }
   async remove(key: string, id: string): Promise<void> {
     this.key(key); version(id);
     await this.aws.call(signal => this.aws.s3.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: key, VersionId: id }), { abortSignal: signal }));
-    try { await this.aws.call(signal => this.aws.s3.send(new HeadObjectCommand({ Bucket: this.bucket, Key: key, VersionId: id }), { abortSignal: signal })); }
-    catch (error) { if (absent(error)) return; throw error; }
-    throw new MetadataError('OBJECT_DELETE_UNCONFIRMED', 503);
+    await this.aws.call(async signal => {
+      try { await this.aws.s3.send(new HeadObjectCommand({ Bucket: this.bucket, Key: key, VersionId: id }), { abortSignal: signal }); }
+      catch (error) { if (absent(error)) return; throw error; }
+      throw new MetadataError('OBJECT_DELETE_UNCONFIRMED', 503);
+    });
   }
 }
 
