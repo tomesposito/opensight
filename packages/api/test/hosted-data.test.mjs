@@ -104,26 +104,3 @@ test('H3 durable prepared output graph, restart admission and cached protected-s
   await f.sources.bind(a, u.id, { expectedVersion: 1, policy: protectedPolicy });
   for (const action of ['rows', 'query', 'refresh']) await assert.rejects(prep.execute(a, 'prepared', action, action === 'query' ? query : {}), { code: 'PREP_SECURITY_REJECTED' });
 });
-test('H3 expired upload sources degrade the prep catalog listing without failing it', async t => {
-  const f = await sourceFixture(t), a = await f.login(), data = new HostedData(f.sources, undefined, f.budgets), prep = new HostedPrep(data);
-  const current = await f.sources.upload(a, upload());
-  const expiring = await f.sources.upload(a, upload(undefined, new Date(f.clock() + 60000).toISOString()));
-  await prep.save(a, 'current-dataset', { name: 'Current', pipeline: pipe(current.id), expectedVersion: 0 });
-  await prep.save(a, 'expired-dataset', { name: 'Expired', pipeline: pipe(expiring.id), expectedVersion: 0 });
-  f.advance(61000);
-  // One expired source must not fail the entire authorized catalog.
-  const listed = await prep.list(a);
-  assert.deepEqual(listed.datasets.map(d => d.resource.dataSetId), ['current-dataset']);
-  assert.deepEqual(listed.unavailable, [{ id: 'expired-dataset', errorCode: 'UPLOAD_EXPIRED' }]);
-  // The composed sources listing degrades the same way.
-  const sources = await data.discover(a);
-  assert.ok(sources.some(s => s.id === expiring.id && s.available === false && s.errorCode === 'UPLOAD_EXPIRED'));
-  assert.ok(sources.some(s => s.id === current.id && s.available === true));
-  // Fail-closed reading is preserved: single-dataset and source reads still refuse.
-  await assert.rejects(prep.get(a, 'expired-dataset'), { code: 'UPLOAD_EXPIRED' });
-  await assert.rejects(prep.execute(a, 'expired-dataset', 'rows'), { code: 'UPLOAD_EXPIRED' });
-  await assert.rejects(data.execute(a, expiring.id, 'output', {}), { code: 'UPLOAD_EXPIRED' });
-  // A separate namespace sees neither workspace's definitions.
-  const other = await prep.list(await f.login('two'));
-  assert.deepEqual(other.datasets, []); assert.deepEqual(other.unavailable, []);
-});

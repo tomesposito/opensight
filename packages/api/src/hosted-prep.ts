@@ -6,7 +6,6 @@ import { compilePrep, planPreparedQuery, planPreparedVisual, type PrepDataset } 
 import { HostedData, type Admission } from './hosted-data.js';
 import { object, identifier } from './metadata-resources.js';
 import { type TenantContext, type Revisions } from './metadata.js';
-import { MetadataError } from './metadata-db.js';
 import { sourceError } from './source-schema.js';
 import { BlazeTable, executionSettings, directSettings, type ExecutionSettings } from './blaze.js';
 import { materializationReason } from './blaze-policy.js';
@@ -121,22 +120,10 @@ export class HostedPrep {
       steps: pipeline.steps.map(s => ({ id: s.id, kind: s.kind, name: s.name ?? null, from: s.from ?? null })),
       inputs: references(pipeline).map(r => typeof r === 'string' ? { kind: 'source' as const, id: r } : { kind: 'dataset' as const, id: r.dataset }) };
   }
-  /** Listing degrades per dataset like `HostedData.discover()` degrades per source:
-   * a dataset that fails admission with a known unavailable code is listed as
-   * unavailable instead of failing the whole catalog. Anything else still
-   * throws (fail-closed: unknown errors are never swallowed into the catalog). */
   async list(context: TenantContext) {
-    const rev = await this.data.sources.metadata.revisions(context), datasets: Awaited<ReturnType<HostedPrep['get']>>[] = [], unavailable: { id: string; errorCode: string }[] = [];
-    for (const r of await this.data.sources.metadata.list(context, 'prepared-dataset')) {
-      try { datasets.push(await this.get(context, r.id)); }
-      catch (error) {
-        if (!(error instanceof MetadataError) && !(error instanceof Error && 'code' in error)) throw error;
-        const code = String((error as { code: unknown }).code);
-        if (!['SOURCE_RETIRED', 'UPLOAD_EXPIRED', 'ROW_ACCESS_DENIED', 'SOURCE_POLICY_REQUIRED', 'SOURCE_ENDPOINT_DENIED', 'SOURCE_MIGRATION_REQUIRED'].includes(code)) throw error;
-        unavailable.push({ id: r.id, errorCode: code });
-      }
-    }
-    await this.data.sources.metadata.assertRevisions(context, rev); return { datasets, unavailable };
+    const rev = await this.data.sources.metadata.revisions(context), result = [];
+    for (const r of await this.data.sources.metadata.list(context, 'prepared-dataset')) result.push(await this.get(context, r.id));
+    await this.data.sources.metadata.assertRevisions(context, rev); return result;
   }
   async remove(context: TenantContext, id: string, expectedVersion: number) {
     await this.data.sources.metadata.remove(context, this.key(context, id), expectedVersion); await this.data.cache?.invalidate(this.cacheKey(context, id));

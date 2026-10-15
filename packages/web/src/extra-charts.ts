@@ -144,19 +144,45 @@ export function compileExtra(model: VisualModel, rows: Row[], cell: CellReader, 
       }
       data = [];
       if (categories.length) {
+        // BreakdownItemsLimit parity: keep the top-N breakdown values in
+        // first-appearance order. The rest roll into one per-category "Other"
+        // delta bar when includeOther (fixed English label, pie-slice
+        // precedent), and are dropped entirely when EXCLUDE.
+        const limit = model.breakdownLimit;
+        const keptOrder = limit ? breakdownOrder.slice(0, limit.count) : breakdownOrder;
+        const restOrder = limit ? breakdownOrder.slice(limit.count) : [];
+        const restDeltaFor = (c: string): number | undefined => {
+          let sum = 0, found = false;
+          for (const b of restOrder) {
+            const delta = deltaOf.get(JSON.stringify([c, b]));
+            if (delta === undefined) continue;
+            found = true; sum += delta;
+          }
+          return found ? sum : undefined;
+        };
         let subtotal = 0;
-        for (const b of breakdownOrder) subtotal += deltaOf.get(JSON.stringify([categories[0], b])) ?? 0;
+        for (const b of keptOrder) subtotal += deltaOf.get(JSON.stringify([categories[0], b])) ?? 0;
+        if (limit?.includeOther) subtotal += restDeltaFor(categories[0]!) ?? 0;
         running = subtotal; finite(running);
         data.push(pushBar(categories[0]!, Math.min(0, subtotal), Math.abs(subtotal), subtotal, '#2673c9'));
         for (let i = 1; i < categories.length; i++) {
           const c = categories[i]!;
-          for (const b of breakdownOrder) {
+          for (const b of keptOrder) {
             const delta = deltaOf.get(JSON.stringify([c, b]));
             if (delta === undefined) continue;
             const previous = running;
             running += delta;
             finite(running);
             data.push(pushBar(b, Math.min(previous, running), Math.abs(delta), delta, delta < 0 ? '#d64545' : '#2e8b57'));
+          }
+          if (limit?.includeOther) {
+            const rest = restDeltaFor(c);
+            if (rest !== undefined) {
+              const previous = running;
+              running += rest;
+              finite(running);
+              data.push(pushBar('Other', Math.min(previous, running), Math.abs(rest), rest, rest < 0 ? '#d64545' : '#2e8b57'));
+            }
           }
           data.push(pushBar(c, Math.min(0, running), Math.abs(running), running, '#2673c9'));
         }

@@ -46,7 +46,6 @@
     "../src/EmbedFrame.tsx",
     "../src/embed-transport.ts",
     "../src/EmbeddedAuthor.tsx",
-    "../src/embed-preview-fixtures.ts",
-    "../src/prep-contracts.ts"
+    "../src/embed-preview-fixtures.ts"
   ]
 }

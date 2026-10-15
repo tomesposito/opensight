@@ -64,7 +64,7 @@ export class HostedDataRoutes {
     if (upload) { method(request, response, ['GET']); await publish(200, await this.data.execute(context, upload[1]!, 'preview', {})); return true; }
     const ai = /^\/api\/ai\/sources\/([A-Za-z0-9_-]{1,512})\/schema$/.exec(path);
     if (ai) { method(request, response, ['GET']); await publish(200, await this.data.schema(context, ai[1]!, 'ai')); return true; }
-    if (path === '/api/prep-datasets') { method(request, response, ['GET']); await publish(200, { ...(await this.prep.list(context)), persistence: 'durable' }); return true; }
+    if (path === '/api/prep-datasets') { method(request, response, ['GET']); await publish(200, { datasets: await this.prep.list(context), persistence: 'durable' }); return true; }
     if (path === '/api/prep-datasets/import') { method(request, response, ['POST']); await publish(201, await this.prep.import(context, await input())); return true; }
     const prep = /^\/api\/datasets\/([A-Za-z0-9_-]{1,128})\/(prep(?:\/preview)?|execution|refresh|rows|query|share|permissions|embed)$/.exec(path);
     if (prep) {
