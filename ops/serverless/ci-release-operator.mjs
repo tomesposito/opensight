@@ -22,6 +22,7 @@ if(m.source!==source||m.repository!==c.publicRepository)throw Error('RELEASE_SOU
 gh(['release','download','build-'+source,'--repo',c.publicRepository,'--pattern','provenance.jsonl','--dir',dir,'--clobber']);
 gh(['attestation','verify',path,'--bundle',join(dir,'provenance.jsonl'),'--repo',c.publicRepository,'--signer-workflow',c.publicRepository+'/.github/workflows/ci.yml','--signer-digest',source,'--source-digest',source,'--source-ref','refs/heads/master','--deny-self-hosted-runners']);
 const manifest=digest(bytes);
+if(process.env.OPENSIGHT_RELEASE_MANIFEST!==undefined && process.env.OPENSIGHT_RELEASE_MANIFEST!==manifest)throw Error('REQUEST_MANIFEST_CHANGED');
 if(operation.startsWith('approve')){
   const currentPath=join(dir,'current.json');aws('s3api','get-object',{Bucket:c.operationsBucket,Key:'ci/releases/current.json'},[currentPath]);
   const current=JSON.parse(readFileSync(currentPath));

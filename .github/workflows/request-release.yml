@@ -1,0 +1,34 @@
+name: Request a production release
+on:
+  workflow_dispatch:
+    inputs:
+      source:
+        type: string
+        required: true
+        description: Full source SHA of a published master build
+permissions:
+  contents: read
+  deployments: write
+jobs:
+  request:
+    if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Acquire pinned GitHub CLI (MIT)
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --location https://github.com/cli/cli/releases/download/v2.102.0/gh_2.102.0_linux_amd64.tar.gz --output /tmp/gh.tar.gz
+          printf '%s  %s\n' bb766f710eef8ede859c18578c72c327597cd4c8a85b06001b1f3843c6019386 /tmp/gh.tar.gz | sha256sum --check
+          tar -xzf /tmp/gh.tar.gz -C /tmp
+          echo /tmp/gh_2.102.0_linux_amd64/bin >> "$GITHUB_PATH"
+      - name: Verify the build and record a request without AWS access
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OPENSIGHT_PUBLIC_REPOSITORY: ${{ github.repository }}
+          RELEASE_SOURCE: ${{ inputs.source }}
+        run: node ops/serverless/release-requests.mjs request "$RELEASE_SOURCE"
