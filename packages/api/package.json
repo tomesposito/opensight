@@ -13,7 +13,8 @@
     "sources:migrate": "node dist/source-migrate-cli.js",
     "budgets:migrate": "node dist/budget-migrate-cli.js",
     "jobs:migrate": "node dist/job-migrate-cli.js",
-    "reference": "node dist/single-node-cli.js"
+    "reference": "node dist/single-node-cli.js",
+    "storage:inspect": "node dist/storage-inspect-cli.js"
   },
   "exports": {
     ".": {
