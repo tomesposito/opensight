@@ -75,3 +75,12 @@ subnet/AZ, deployment/migration/mapping activation, WAF/IP allowlisting and reso
 or cost decisions. The implementation does not establish any of that evidence.
 No AWS call, provisioning, spending, private repository creation or live workflow
 activation was performed.
+
+## SR3/SR4 cloud completion comparison (2026-10-15)
+
+Rebuilt the static demo and compared its Home page with the exact published
+`a27a5bd` release demo at 1280 × 800 in the same Chromium environment. The two
+PNG files have identical SHA-256 digests; no visible layout change was introduced.
+This phase changes private deployment/acceptance tooling and the hosted SMTP
+capability response, not demo UI. Existing README media remains current.
+This is a regression comparison, not a new QuickSight fidelity measurement.

@@ -13,7 +13,7 @@ caller inputs. No workflow executes a candidate release's scripts with AWS acces
 - `plan.yml`: pinned OpenTofu creates a real saved binary plan, validates policy,
   and stores private review JSON plus a digest-bound envelope.
 - `apply.yml`: consumes an independently approved envelope, checks source,
-  configuration, backend, provider/tool bytes, state and live resource drift, then
+  configuration, backend, provider/tool bytes, state and live resource observations, then
   applies **only the saved binary**. It never creates a replacement apply plan.
 - `deploy.yml`: the existing compatible-release controller verifies provenance and
   independent approval, drains, promotes exact artifacts, checks public behavior,
@@ -41,7 +41,8 @@ files. Plan/apply config fields are `version`, `account`, `region`, `deployment`
 `publicCommit`, `privateCommit` (the reusable workflow commit), `tofuSha256` (the
 unpacked pinned binary), `release` (manifest digest), and `allowedResourceTypes`.
 The backend must explicitly enable `encrypt`, `kms_key_id` and `use_lockfile`.
-No `TF_VAR_*` or `TF_CLI_ARGS*` environment overrides are accepted.
+Already-reviewed provider normalization is bound into the envelope; any new drift
+requires a new review. No `TF_VAR_*` or `TF_CLI_ARGS*` environment overrides are accepted.
 
 Plan receives resource/state reads and narrowly scoped state-lock, plan and
 operation-record writes. Apply receives only the selected root's reviewed resource

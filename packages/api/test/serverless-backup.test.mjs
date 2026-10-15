@@ -79,3 +79,11 @@ test('registered migration preserves retained metadata and receipts, and refuses
  await assert.rejects(migrateRegistered(f.db,f.env,f.snapshot,registry,randomUUID(),'sqlite'),{code:'MIGRATION_PRESERVATION_FAILED'});
  assert.equal((await f.db.transaction(c=>c.query('SELECT state FROM sr_control')))[0].state,'maintenance');
 });
+
+test('fixed backup plans reject a production restore target, expired plans and resource overrides before AWS',async()=>{
+ const {backupPlan}=await import('../dist/serverless-backup-lambda.js');
+ const env={OPENSIGHT_DEPLOYMENT:'synthetic',OPENSIGHT_DB_NAME:'os_restore_test'};
+ const p={version:1,operationId:randomUUID(),deployment:'synthetic',mode:'restore',backupId:randomUUID(),sourceDatabase:'source',targetDatabase:'os_restore_test',expiresAt:Date.now()+3600000,epoch:2,keyVersions:['a'.repeat(32)],snapshotVersion:'exact-version',snapshotDigest:'b'.repeat(64)};
+ assert.equal(backupPlan(p,env).mode,'restore');
+ for(const patch of [{sourceDatabase:'os_restore_test'},{targetDatabase:'production'},{expiresAt:Date.now()-1},{epoch:1},{snapshotVersion:null},{sql:'SELECT 1'},{mode:'reopen'}])assert.throws(()=>backupPlan({...p,...patch},env));
+});
