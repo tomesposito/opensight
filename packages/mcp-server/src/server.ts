@@ -1,3 +1,4 @@
+import type { JsonSchemaType } from '@modelcontextprotocol/sdk/validation/types.js';
 import { CfWorkerJsonSchemaValidator } from '@modelcontextprotocol/sdk/validation/cfworker';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { CallToolRequestSchema, ListToolsRequestSchema, ErrorCode, McpError, type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
@@ -46,8 +47,11 @@ export function apiBase(value: string): URL {
 /** Only HTTP crosses this package boundary; authorization and data validation belong to v1. */
 export function createMcpServer(options: ServerOptions): Server {
   const base = apiBase(options.baseUrl), fetchImpl = options.fetch ?? fetch;
+  const schemaValidator = new CfWorkerJsonSchemaValidator();
+  const queryValidators = new Map(operations.filter(op => op.bodyInput === 'query').map(op =>
+    [op.name, schemaValidator.getValidator(op.tool.inputSchema.properties!.query as JsonSchemaType)]));
   const server = new Server({ name: 'opensight-v1', version: serverVersion, title: `OpenSight API v${apiVersion}` },
-    { jsonSchemaValidator: new CfWorkerJsonSchemaValidator(), capabilities: { tools: {} }, instructions: `Tools map exactly to OpenSight HTTP API ${apiVersion}. One configured user and tenant. Response headers are in _meta.headers.` });
+    { jsonSchemaValidator: schemaValidator, capabilities: { tools: {} }, instructions: `Tools map exactly to OpenSight HTTP API ${apiVersion}. One configured user and tenant. Response headers are in _meta.headers.` });
   server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: operations.map(op => op.tool) }));
   server.setRequestHandler(CallToolRequestSchema, async request => {
     const op = operations.find(candidate => candidate.name === request.params.name);
@@ -60,6 +64,7 @@ export function createMcpServer(options: ServerOptions): Server {
       return failure('FORGED_PRINCIPAL', 'Caller credentials, principal and policy assertions are forbidden');
     }
     if (Object.keys(args).some(key => !Object.hasOwn(properties, key))) return failure('HOSTED_REQUEST_INVALID', 'Unknown tool argument');
+    const validQuery = queryValidators.get(op.name)?.(args.query).valid ?? true;
     const headers = new Headers({ Accept: 'application/json' });
     let path = op.path;
     for (const parameter of op.parameters) {
@@ -104,6 +109,7 @@ export function createMcpServer(options: ServerOptions): Server {
     }
     if (text.includes(token) || options.credentials.containsSecret(text) || JSON.stringify(metadata).includes(token) || options.credentials.containsSecret(JSON.stringify(metadata))) throw protocolError();
     const _meta = { status: response.status, headers: metadata };
+    if (response.ok && !validQuery) return failure('HOSTED_REQUEST_INVALID', 'Query does not match the OpenAPI schema');
     if (response.headers.get('content-type')?.includes('application/json')) {
       let data: unknown;
       try { data = JSON.parse(text); } catch { throw protocolError(); }

@@ -150,3 +150,18 @@ test('CLI configuration failures never print credentials or URLs', async () => {
   assert.equal(await new Promise(resolve => p.on('close', resolve)), 1);
   assert.equal(stdout, ''); assert.equal(stderr.includes(token), false); assert.match(stderr, /startup failed/);
 });
+
+
+test('generated query schema rejects invalid successes while preserving exact REST errors', async t => {
+  let status = 200;
+  const client = await connect(t, { fetch: async () => json(status === 200 ? { columns: [], rows: [{ protected: 'must not publish' }] } : { errorCode: 'UNSUPPORTED_FEATURE', message: 'Unsupported aggregation' }, status) });
+  const query = { dimensions: [], measures: [{ fieldId: 'value', columnName: 'amount', aggregation: 'SUM' }], filters: [] };
+  for (const invalid of ['SELECT 1', { sql: 'SELECT 1' }, { ...query, extra: true }, { ...query, filters: [{ columnName: 'x', value: 'y', operator: 'unknown' }] }]) {
+    const r = await call(client, 'run_dataset_query', { id: 'sample', query: invalid });
+    assert.equal(r.isError, true); assert.equal(r.structuredContent.errorCode, 'HOSTED_REQUEST_INVALID');
+    assert.equal(JSON.stringify(r).includes('must not publish'), false);
+  }
+  status = 422;
+  const r = await call(client, 'run_dataset_query', { id: 'sample', query: { ...query, measures: [{ ...query.measures[0], aggregation: 'unknown' }] } });
+  assert.equal(r.isError, true); assert.equal(r.structuredContent.errorCode, 'UNSUPPORTED_FEATURE');
+});

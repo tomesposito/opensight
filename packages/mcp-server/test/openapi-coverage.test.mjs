@@ -73,6 +73,7 @@ for (const e of entries) test(`${e.op.operationId} maps only ${e.verb.toUpperCas
   if (e.op.requestBody) {
     const schema = dereference(e.op.requestBody).content['application/json'].schema;
     expectedBody = sample(schema);
+    if (e.op.operationId === 'set_folder_permissions') expectedBody.grants = [{ principal: { type: 'user', id: 'target-user' }, role: 'co-owner' }];
     if (schema.maxProperties !== 0) args[e.op.operationId === 'run_dataset_query' ? 'query' : 'body'] = expectedBody;
   }
   const tools = await client.listTools(), tool = tools.tools.find(t => t.name === e.op.operationId);
