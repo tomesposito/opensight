@@ -33,7 +33,7 @@ jobs:
           curl --fail --silent --show-error --location https://github.com/opentofu/opentofu/releases/download/v1.13.1/tofu_1.13.1_linux_arm64.zip --output /tmp/tofu.zip
           printf '%s  %s\n' b9614df40575cc3fc10a8a25025b7245d961da279f715ea3efff4ddae8e6938a /tmp/tofu.zip | sha256sum --check
           unzip -q /tmp/tofu.zip -d /tmp/opensight-tofu
-          for root in validation ingress ci-access; do
+          for root in validation ingress ci-access monitoring; do
             before=$(sha256sum "ops/serverless/$root/.terraform.lock.hcl")
             /tmp/opensight-tofu/tofu -chdir="ops/serverless/$root" init -backend=false -input=false
             test "$before" = "$(sha256sum "ops/serverless/$root/.terraform.lock.hcl")"
