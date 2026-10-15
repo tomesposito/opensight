@@ -22,7 +22,7 @@ import { BuildForMe } from './BuildForMe.js';
 import { FormattingEditor } from './FormattingEditor.js';
 import { PivotOptionsEditor } from './PivotOptionsEditor.js';
 import { CardTitle, CardStyle, CardLayout, MultiplesOptions, GroupColorOptions, LegendOptions, DataLabelsOptions, ReferenceLinesEditor, VisualPlacement } from './PropertiesSections.js';
-import { type VisualFormatting } from './formatting.js';
+import { cardChromeStyle, type VisualFormatting } from './formatting.js';
 import { LIGHT_THEME, themeValid, type AnalysisTheme } from './themes.js';
 import { functionCatalog } from '@opensight/query-engine/browser';
 import { expressionError } from './authoring.js';
@@ -529,8 +529,8 @@ function Properties({ visual, draft, dispatch, client, runtimeProblems }: Editor
     <div role="tabpanel" id={`${tabId}-panel-Visual`} aria-labelledby={`${tabId}-Visual`} hidden={tab !== 'Visual'}>
     <details className="property-section" open><summary>Display settings</summary>
     <CardTitle visual={visual} dispatch={dispatch} />
-    <CardStyle />
-    <CardLayout />
+    <CardStyle visual={visual} dispatch={dispatch} />
+    <CardLayout visual={visual} dispatch={dispatch} />
     {toggles.map(({ property, label }) => <label className="toggle" key={property}><input type="checkbox" {...(property === 'tooltipVisible' ? { 'data-author-control': 'tooltips' } : {})} checked={visual[property]} onChange={e => dispatch({ type: 'display', property, value: e.target.checked })} />{label}</label>)}
     {visual.kind === 'insight' && <InsightOptions visual={visual} dispatch={dispatch} />}
     {visual.kind === 'insight' && <label>Narrative decimal places<input type="number" min="0" max="12" placeholder="Automatic" value={formatting.decimalPlaces ?? ''} onChange={e => {
@@ -640,7 +640,7 @@ function AuthorCard({ visual, theme, index, count, selected, dispatch, client, c
   const onRowGroupToggle: RowGroupToggle = (path, collapsed) => dispatch({ type: 'pivot-row-group', id: visual.id, path, collapsed });
   const preview = useMemo(() => noFields || extended || client || interactive || parameters.length || hasCalculation || problem ? undefined : buildAuthorPreview(visual), [visual, client, interactive, problem, parameters.length, hasCalculation, extended, noFields]);
   const label = visual.title || `Visual ${index + 1}`;
-  return <section className={`author-card${selected ? ' is-selected' : ''}`} aria-label={label} onClick={() => { if (!selected) dispatch({ type: 'select', id: visual.id }); }}>
+  return <section className={`author-card${selected ? ' is-selected' : ''}`} aria-label={label} style={cardChromeStyle(visual.formatting)} onClick={() => { if (!selected) dispatch({ type: 'select', id: visual.id }); }}>
     <div className="author-card-toolbar">
       <span className="drag-handle" aria-hidden="true" title="Drag visual">⠿</span><strong>{index + 1}. {visual.title || (visual.imported?.issues.some(i => i.startsWith('Unsupported visual type:')) && !visual.imported.replaced ? visual.imported.variant : VISUAL_TYPES.find(t => t.kind === visual.kind)?.label)}</strong>
       <div className="author-card-actions">

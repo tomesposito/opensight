@@ -2,7 +2,7 @@ import { useId, type Dispatch, type ReactNode } from 'react';
 import type { AuthorAction, AuthorDraft, AuthorVisual } from './authoring.js';
 import { GRID_COLUMNS, defaultMultiplesOptions, hasSmallMultiplesWell } from './authoring.js';
 import type { MultiplesOptions as MultiplesOptionsState } from './model.js';
-import { hasDataLabels, hasLegend, LEGEND_POSITIONS, DATA_LABEL_POSITIONS, type LegendPosition, type LegendTextStyle, type LegendTitle, type GroupTitle, type DataLabels, type DataLabelPosition } from './formatting.js';
+import { hasDataLabels, hasLegend, LEGEND_POSITIONS, DATA_LABEL_POSITIONS, CARD_DEFAULTS, cleanCardStyle, cleanCardLayout, type LegendPosition, type LegendTextStyle, type LegendTitle, type GroupTitle, type DataLabels, type DataLabelPosition, type CardStyle, type CardSwatch, type CardBorder } from './formatting.js';
 import { LIGHT_THEME } from './themes.js';
 
 type SectionProps = { visual: AuthorVisual; dispatch: Dispatch<AuthorAction> };
@@ -28,22 +28,79 @@ export function CardTitle({ visual, dispatch }: SectionProps) {
   </section>;
 }
 
-export function CardStyle() {
+/** Color swatch + opacity % editor for one card-style part. Unset parts show the
+ *  reference defaults without saving anything; any edit creates an explicit
+ *  (fail-closed validated) swatch. Opacity edits stay within 0–100; anything
+ *  else keeps the last valid value. */
+function SwatchEditor({ label, defaultColor, defaultOpacityPct, value, onChange }: {
+  label: string; defaultColor: string; defaultOpacityPct: number;
+  value: CardSwatch | undefined; onChange: (swatch: CardSwatch | undefined) => void;
+}) {
+  const setOpacity = (raw: string) => {
+    const trimmed = raw.trim();
+    if (trimmed === '') {
+      if (value?.color === undefined) onChange(undefined);
+      else { const { opacityPct: _dropped, ...rest } = value; onChange(Object.keys(rest).length ? rest : undefined); }
+      return;
+    }
+    if (/^\d+$/.test(trimmed) && Number(trimmed) >= 0 && Number(trimmed) <= 100) onChange({ color: value?.color ?? defaultColor, opacityPct: Number(trimmed) });
+  };
+  return <div className="property-control-row"><span>{label}</span><div className="property-inline">
+    <input type="color" aria-label={`${label} color`} value={value?.color ?? defaultColor}
+      onChange={e => onChange({ ...(value ?? {}), color: e.target.value })} />
+    <input aria-label={`${label} opacity (%)`} inputMode="numeric" placeholder={`${defaultOpacityPct}%`}
+      value={value?.opacityPct ?? ''} onChange={e => setOpacity(e.target.value)} />
+  </div></div>;
+}
+
+export function CardStyle({ visual, dispatch }: SectionProps) {
+  const style: CardStyle = visual.formatting?.cardStyle ?? {};
+  const set = (next: CardStyle | undefined) => dispatch({ type: 'card-style', style: cleanCardStyle(next) });
+  const border: Partial<CardBorder> = style.border ?? {};
+  const setBorder = (patch: Partial<CardBorder>) => set({ ...style, border: { color: border.color ?? CARD_DEFAULTS.borderColor, ...patch } });
+  const setBorderWidth = (raw: string) => { if (/^\d+$/.test(raw) && Number(raw) >= 0 && Number(raw) <= 8) setBorder({ widthPx: Number(raw) }); };
   return <section className="property-group" aria-label="Card style"><h4>CARD STYLE</h4>
-    <Unavailable label="Card style controls" reason="Per-card background, border, selection and loading animation settings are not supported yet. Shown placeholders are reference defaults, not applied settings.">
-      <div className="property-control-row"><span>Background</span><div className="property-inline"><input type="color" aria-label="Background color" defaultValue="#ffffff" /><input aria-label="Background opacity (%)" placeholder="85%" /></div></div>
-      <div className="property-control-row"><span>Border</span><div className="property-inline"><input type="color" aria-label="Border color" defaultValue="#cccccc" /><input aria-label="Border opacity (%)" placeholder="100%" /><select aria-label="Border width" defaultValue="1px"><option>1px</option></select></div></div>
-      <div className="property-control-row"><span>Selection</span><div className="property-inline"><input type="color" aria-label="Selection color" defaultValue="#000000" /><input aria-label="Selection opacity (%)" placeholder="100%" /></div></div>
-      <label className="toggle"><input type="checkbox" />Loading animation</label>
-    </Unavailable>
+    <SwatchEditor label="Background" defaultColor={CARD_DEFAULTS.backgroundColor} defaultOpacityPct={CARD_DEFAULTS.backgroundOpacityPct}
+      value={style.background} onChange={background => set(background === undefined ? { ...style, background: undefined } : { ...style, background })} />
+    <div className="property-control-row"><span>Border</span><div className="property-inline">
+      <input type="color" aria-label="Border color" value={border.color ?? CARD_DEFAULTS.borderColor}
+        onChange={e => setBorder({ color: e.target.value })} />
+      <input aria-label="Border opacity (%)" inputMode="numeric" placeholder={`${CARD_DEFAULTS.borderOpacityPct}%`}
+        value={border.opacityPct ?? ''} onChange={e => {
+          const trimmed = e.target.value.trim();
+          if (trimmed === '') {
+            const { opacityPct: _dropped, ...rest } = border;
+            set({ ...style, border: Object.keys(rest).length ? { color: rest.color ?? CARD_DEFAULTS.borderColor, widthPx: rest.widthPx } : undefined });
+          }
+          else if (/^\d+$/.test(trimmed) && Number(trimmed) >= 0 && Number(trimmed) <= 100) setBorder({ opacityPct: Number(trimmed) });
+        }} />
+      <select aria-label="Border width" value={String(border.widthPx ?? CARD_DEFAULTS.borderWidthPx)} onChange={e => setBorderWidth(e.target.value)}>
+        {[0, 1, 2, 3, 4, 5, 6, 7, 8].map(width => <option key={width} value={width}>{width === 0 ? 'No border' : `${width}px`}</option>)}
+      </select>
+    </div></div>
+    <SwatchEditor label="Selection" defaultColor={CARD_DEFAULTS.selectionColor} defaultOpacityPct={CARD_DEFAULTS.selectionOpacityPct}
+      value={style.selection} onChange={selection => set(selection === undefined ? { ...style, selection: undefined } : { ...style, selection })} />
+    <p className="field-hint">Selection color is saved with the visual and exports, but the chart does not draw a separate selection highlight.</p>
+    <label className="toggle"><input type="checkbox" checked={style.loadingAnimation ?? CARD_DEFAULTS.loadingAnimation}
+      onChange={e => set({ ...style, loadingAnimation: e.target.checked })} />Loading animation</label>
+    {Object.keys(style).length > 0 && <button type="button" onClick={() => set(undefined)}>Reset card style to defaults</button>}
   </section>;
 }
 
-export function CardLayout() {
+export function CardLayout({ visual, dispatch }: SectionProps) {
+  const padding = visual.formatting?.cardLayout?.paddingPx;
+  const set = (layout: { paddingPx?: number } | undefined) => dispatch({ type: 'card-layout', layout: cleanCardLayout(layout) });
+  const setPadding = (raw: string) => {
+    const trimmed = raw.trim();
+    if (trimmed === '') { set(undefined); return; }
+    if (/^\d+$/.test(trimmed) && Number(trimmed) >= 0 && Number(trimmed) <= 64) set({ paddingPx: Number(trimmed) });
+  };
   return <section className="property-group" aria-label="Card layout"><h4>CARD LAYOUT</h4>
-    <Unavailable label="Card layout controls" reason="Per-card padding is not supported yet. 24px is a reference default, not the current canvas padding.">
-      <label>Padding<select defaultValue="24px"><option>24px</option></select></label>
-    </Unavailable>
+    <div className="property-control-row">
+      <label>Padding (px)<input type="number" min="0" max="64" aria-label="Card padding in pixels" placeholder={`${CARD_DEFAULTS.paddingPx} (Default)`}
+        value={padding ?? ''} onChange={e => setPadding(e.target.value)} /></label>
+      {padding !== undefined && <button type="button" onClick={() => set(undefined)}>Reset to default</button>}
+    </div>
   </section>;
 }
 
