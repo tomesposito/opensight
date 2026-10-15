@@ -4,7 +4,7 @@ export const EMBEDDED_IMAGE_LIMIT = 4 * 1024 * 1024;
 export const IMAGE_TOO_LARGE = 'IMAGE_TOO_LARGE: Choose an image of 4 MiB or less. Images are embedded on this device; nothing was uploaded or downscaled.';
 export interface TextStyle { fontSize: number; bold: boolean; italic: boolean; underline: boolean; color: string; alignment: 'left' | 'center' | 'right' }
 interface ObjectIdentity { id: string; importedId?: string }
-export interface TextObject extends ObjectIdentity { kind: 'text'; content: string; style: TextStyle }
+export interface TextObject extends ObjectIdentity { kind: 'text'; content: string; style: TextStyle; linkUrl?: string }
 export interface ImageObject extends ObjectIdentity { kind: 'image'; dataUri: string; alt: string; keepAspectRatio: boolean; opacity: number }
 export type SheetObject = TextObject | ImageObject;
 export const defaultTextStyle = (): TextStyle => ({ fontSize: 20, bold: false, italic: false, underline: false, color: '#202938', alignment: 'left' });
@@ -42,8 +42,31 @@ export async function readEmbeddedImage(file: File): Promise<string> {
 }
 export function sheetObjectValid(value: unknown): value is SheetObject {
   if (!record(value) || typeof value.id !== 'string' || !/^object-[1-9][0-9]*$/.test(value.id) || value.importedId !== undefined && (typeof value.importedId !== 'string' || !value.importedId)) return false;
-  if (value.kind === 'text') return keys(value, ['id', 'importedId', 'kind', 'content', 'style']) && typeof value.content === 'string' && value.content.length <= 20000 && !value.content.includes('\0') && textStyleValid(value.style);
+  if (value.kind === 'text') return keys(value, ['id', 'importedId', 'kind', 'content', 'style', 'linkUrl']) && typeof value.content === 'string' && value.content.length <= 20000 && !value.content.includes('\0') && textStyleValid(value.style) && linkUrlProblem(value.linkUrl) === undefined;
   return value.kind === 'image' && keys(value, ['id', 'importedId', 'kind', 'dataUri', 'alt', 'keepAspectRatio', 'opacity']) && !imageDataProblem(value.dataUri) && typeof value.alt === 'string' && value.alt.length <= 512 && typeof value.keepAspectRatio === 'boolean' && typeof value.opacity === 'number' && Number.isFinite(value.opacity) && value.opacity >= 0 && value.opacity <= 1;
+}
+/** Fail-closed hyperlink validation: only absolute http(s) URLs are accepted,
+ * so javascript:, data: and other schemes can never reach a rendered anchor. */
+export const LINK_URL_INVALID = 'LINK_URL_INVALID: A text-box hyperlink must be an absolute http:// or https:// URL of 2048 characters or fewer.';
+export function linkUrlProblem(value: unknown): string | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== 'string' || value.length === 0 || value.length > 2048) return LINK_URL_INVALID;
+  if (/[\s\u0000-\u001f\u007f]/.test(value)) return LINK_URL_INVALID;
+  let url: URL;
+  try { url = new URL(value); } catch { return LINK_URL_INVALID; }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') return LINK_URL_INVALID;
+  return undefined;
+}
+/** Resolve `$name` placeholders against the analysis parameters (QuickSight text-box
+ * syntax). Unknown names render literally, matching QuickSight; an existing parameter
+ * with no selected value resolves to the empty string. */
+export function resolveTextParameters(content: string, params: readonly { name: string; values: readonly unknown[] }[]): string {
+  const byName = new Map(params.map(p => [p.name, p]));
+  return content.replace(/\$([A-Za-z_][A-Za-z0-9_]*)/g, (match, name: string) => {
+    const param = byName.get(name);
+    if (!param) return match;
+    return param.values.map(value => String(value)).join(', ');
+  });
 }
 const escapeHtml = (text: string) => text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 export const objectElementType = (object?: SheetObject) => object?.kind === 'text' ? 'TEXT_BOX' : object?.kind === 'image' ? 'IMAGE' : 'VISUAL';
@@ -51,7 +74,8 @@ export function serializeObject(object: SheetObject): Record<string, unknown> {
   const id = object.importedId ?? object.id;
   if (object.kind === 'image') return { sheetImageId: id, source: { opensightDataUri: object.dataUri }, scaling: { scalingType: object.keepAspectRatio ? 'SCALE_TO_FIT' : 'SCALE_TO_FILL' }, imageContentAltText: object.alt, opensightOpacity: object.opacity };
   const s = object.style;
-  return { sheetTextBoxId: id, content: `<text-box><p style="font-size:${s.fontSize}px;font-weight:${s.bold ? 'bold' : 'normal'};font-style:${s.italic ? 'italic' : 'normal'};text-decoration:${s.underline ? 'underline' : 'none'};color:${s.color};text-align:${s.alignment}">${escapeHtml(object.content).replace(/\n/g, '<br/>')}</p></text-box>`, opensightText: { content: object.content, style: object.style } };
+  const linked = object.linkUrl ? `<a href="${escapeHtml(object.linkUrl)}">${escapeHtml(object.content).replace(/\n/g, '<br/>')}</a>` : escapeHtml(object.content).replace(/\n/g, '<br/>');
+  return { sheetTextBoxId: id, content: `<text-box><p style="font-size:${s.fontSize}px;font-weight:${s.bold ? 'bold' : 'normal'};font-style:${s.italic ? 'italic' : 'normal'};text-decoration:${s.underline ? 'underline' : 'none'};color:${s.color};text-align:${s.alignment}">${linked}</p></text-box>`, opensightText: { content: object.content, style: object.style, ...(object.linkUrl ? { linkUrl: object.linkUrl } : {}) } };
 }
 export function serializeObjects(objects: readonly SheetObject[] = []): Partial<Pick<BundleSheet, 'textBoxes' | 'images'>> {
   return { ...(objects.some(o => o.kind === 'text') ? { textBoxes: objects.filter(o => o.kind === 'text').map(serializeObject) } : {}), ...(objects.some(o => o.kind === 'image') ? { images: objects.filter(o => o.kind === 'image').map(serializeObject) } : {}) };
@@ -67,12 +91,18 @@ export function importObjects(sheet: BundleSheet, nextId: () => string, messages
       if (!record(entry)) { messages.push(`${key}: unsupported element retained, read-only.`); continue; }
       const id = nextId(), importedId = entry[kind === 'text' ? 'sheetTextBoxId' : 'sheetImageId'];
       const text = record(entry.opensightText) ? entry.opensightText : typeof entry.content === 'string' && !/[<>]/.test(entry.content) ? { content: entry.content, style: defaultTextStyle() } : {};
+      const rawLink = record(entry.opensightText) ? entry.opensightText.linkUrl : undefined;
+      const linkValid = typeof rawLink === 'string' && linkUrlProblem(rawLink) === undefined;
       const source = record(entry.source) ? entry.source : {};
       const scaling = record(entry.scaling) ? entry.scaling : {};
-      const object = kind === 'text' ? { id, importedId, kind, content: text.content, style: text.style }
+      const object = kind === 'text' ? { id, importedId, kind, content: text.content, style: text.style, ...(linkValid ? { linkUrl: rawLink as string } : {}) }
         : { id, importedId, kind, dataUri: source.opensightDataUri, alt: entry.imageContentAltText ?? '', keepAspectRatio: scaling.scalingType !== 'SCALE_TO_FILL', opacity: entry.opensightOpacity ?? 1 };
-      if (typeof importedId === 'string' && sheetObjectValid(object)) objects.push(object);
-      else messages.push(`${key}.${String(importedId ?? '(missing ID)')}: ${kind === 'image' ? imageDataProblem(source.opensightDataUri) ?? 'Unsupported image settings.' : 'Unsupported rich text markup.'} Retained read-only; not rendered.`);
+      const label = `${key}.${String(importedId ?? '(missing ID)')}`;
+      if (typeof importedId === 'string' && sheetObjectValid(object)) {
+        objects.push(object);
+        if (rawLink !== undefined && !linkValid) messages.push(`${label}: Invalid hyperlink URL discarded. The text imports without its link.`);
+      }
+      else messages.push(`${label}: ${kind === 'image' ? imageDataProblem(source.opensightDataUri) ?? 'Unsupported image settings.' : 'Unsupported rich text markup.'} Retained read-only; not rendered.`);
     }
   }
   return objects;

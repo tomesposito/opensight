@@ -1,4 +1,4 @@
-import { defaultTextStyle, sheetObjectValid, serializeObjects, objectElementType, type SheetObject, type TextStyle } from './sheet-objects.js';
+import { defaultTextStyle, sheetObjectValid, serializeObjects, objectElementType, type SheetObject, type TextObject, type TextStyle } from './sheet-objects.js';
 import { rebindInsight } from './insight-configuration.js';
 import { paletteValid, themeValid, type AnalysisTheme } from './themes.js';
 import { formattingValid, gaugeValid, binsValid, legendPositionValid, legendTitleValid, groupTitleValid, altTextValid, cleanAltText, legendTextStyleValid, dataLabelsValid, cardStyleValid, cardLayoutValid, rowGroupPathValid, type LegendPosition, type LegendTitle, type GroupTitle, type LegendTextStyle, type DataLabels, type CardStyle, type CardLayout, type VisualFormatting } from './formatting.js';
@@ -269,6 +269,7 @@ export type AuthorAction =
   | { type: 'object-text'; id: string; content: string }
   | { type: 'object-style'; id: string; style: Partial<TextStyle> }
   | { type: 'object-image'; id: string; alt?: string; keepAspectRatio?: boolean; opacity?: number }
+  | { type: 'object-link'; id: string; linkUrl: string }
   | { type: 'analysis-settings'; title: string; description: string; theme?: AnalysisTheme }
   | { type: 'theme'; theme: AnalysisTheme }
   | { type: 'chrome'; mode: 'light' | 'dark' }
@@ -478,12 +479,18 @@ export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorD
     const shifted = sheet.layout.map(p => ({ ...p, y: p.y + height }));
     return update({ objects: [...objects, object], selectedId: id, layout: [{ i: id, x: 0, y: 0, w: 12, h: height }, ...shifted] });
   }
-  if (action.type === 'object-text' || action.type === 'object-style' || action.type === 'object-image') {
+  if (action.type === 'object-text' || action.type === 'object-style' || action.type === 'object-image' || action.type === 'object-link') {
     const object = objects.find(o => o.id === action.id);
     if (!object) return draft;
+    const withLink = (text: TextObject, url: string): TextObject => {
+      const { linkUrl: _removed, ...rest } = text;
+      const trimmed = url.trim();
+      return trimmed ? { ...rest, linkUrl: trimmed } : rest;
+    };
     const next = action.type === 'object-text' && object.kind === 'text' ? { ...object, content: action.content }
       : action.type === 'object-style' && object.kind === 'text' ? { ...object, style: { ...object.style, ...action.style } }
-      : action.type === 'object-image' && object.kind === 'image' ? { ...object, ...(action.alt !== undefined ? { alt: action.alt } : {}), ...(action.keepAspectRatio !== undefined ? { keepAspectRatio: action.keepAspectRatio } : {}), ...(action.opacity !== undefined ? { opacity: action.opacity } : {}) } : object;
+      : action.type === 'object-image' && object.kind === 'image' ? { ...object, ...(action.alt !== undefined ? { alt: action.alt } : {}), ...(action.keepAspectRatio !== undefined ? { keepAspectRatio: action.keepAspectRatio } : {}), ...(action.opacity !== undefined ? { opacity: action.opacity } : {}) }
+      : action.type === 'object-link' && object.kind === 'text' ? withLink(object, action.linkUrl) : object;
     return sheetObjectValid(next) ? update({ objects: objects.map(o => o === object ? next : o) }) : draft;
   }
   if (action.type === 'remove' && objects.some(o => o.id === action.id)) {
