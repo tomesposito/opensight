@@ -23,6 +23,12 @@ function hasAssertions(value: unknown, schema: unknown): boolean {
     return hasAssertions(entry, declared ? properties[key] : dictionary ? shape.additionalProperties : undefined);
   });
 }
+function reflectsSecret(value: unknown, check: (text: string) => boolean): boolean {
+  if (typeof value === 'string') return check(value);
+  if (Array.isArray(value)) return value.some(item => reflectsSecret(item, check));
+  if (record(value)) return Object.entries(value).some(([key, item]) => check(key) || reflectsSecret(item, check));
+  return false;
+}
 const protocolError = () => new McpError(ErrorCode.InternalError, 'OpenSight HTTP transport failed');
 function failure(errorCode: string, message: string): CallToolResult {
   const structuredContent = { errorCode, message };
@@ -108,7 +114,8 @@ export function createMcpServer(options: ServerOptions): Server {
     for (const name of ['ETag', 'Idempotent-Replayed', 'Retry-After', 'Content-Disposition', 'Content-Type']) {
       const value = response.headers.get(name); if (value !== null) metadata[name] = value;
     }
-    if (text.includes(token) || options.credentials.containsSecret(text) || JSON.stringify(metadata).includes(token) || options.credentials.containsSecret(JSON.stringify(metadata))) throw protocolError();
+    const containsSecret = (value: string) => value.includes(token) || options.credentials.containsSecret(value);
+    if (containsSecret(text) || reflectsSecret(metadata, containsSecret)) throw protocolError();
     const _meta = { status: response.status, headers: metadata };
     if (response.ok && !validQuery) return failure('HOSTED_REQUEST_INVALID', 'Query does not match the OpenAPI schema');
     if (response.headers.get('content-type')?.includes('application/json')) {
@@ -120,7 +127,7 @@ export function createMcpServer(options: ServerOptions): Server {
         if (typeof data.message !== 'string') data.message = data.errorCode;
       }
       const serialized = JSON.stringify(data);
-      if (serialized.includes(token) || options.credentials.containsSecret(serialized)) throw protocolError();
+      if (reflectsSecret(data, containsSecret)) throw protocolError();
       return { ...(response.ok ? {} : { isError: true }), structuredContent: data, content: [{ type: 'text', text: serialized }], _meta };
     }
     if (!response.ok) throw protocolError();

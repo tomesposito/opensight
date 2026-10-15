@@ -92,7 +92,7 @@ for (const [status, errorCode, headers] of [[409, 'SOURCE_DELETE_BLOCKED_BY_DATA
 }
 
 test('transport failures, invalid API envelopes and reflected credentials are redacted protocol errors', async t => {
-  const c = credentials();
+  const c = credentials(secret() + String.fromCharCode(34, 92));
   for (const fetchImpl of [
     async () => { throw new Error(c.token); },
     async () => new Response(c.token, { status: 502 }),

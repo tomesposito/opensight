@@ -2,8 +2,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { createMcpServer } from '../dist/index.js';
 import { randomBytes } from 'node:crypto';
-export function credentials() {
-  const token = randomBytes(32).toString('hex');
+export function credentials(token = randomBytes(32).toString('hex')) {
   return { token, accessToken: async () => token, containsSecret: text => text.includes(token), invalidate() {} };
 }
 export async function connect(t, options = {}) {
