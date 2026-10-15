@@ -28,3 +28,10 @@ test('apply permits exactly the refreshed observations already reviewed, and ref
  assert.throws(()=>verifyPlanDrift(envelope,{...reviewed,resource_drift:[]}),/RESOURCE_DRIFT/);
  assert.throws(()=>verifyPlanDrift(envelope,{...reviewed,errored:true}),/RESOURCE_DRIFT/);
 });
+
+test('state checks bind the actual versioned S3 object, not nondeterministic state-pull serialization',async()=>{
+ const {verifyStateObject}=await import('../ops/serverless/saved-plan.mjs');
+ const bytes=Buffer.from('exact remote state'),actual={bytes,version:'version-1',etag:'etag-1'},envelope={state:hash(bytes),stateVersion:actual.version,stateETag:actual.etag};
+ verifyStateObject(envelope,actual);
+ for(const patch of [{bytes:Buffer.from('different')},{version:'version-2'},{etag:'etag-2'}])assert.throws(()=>verifyStateObject(envelope,{...actual,...patch}),/PLAN_STATE_CHANGED/);
+});

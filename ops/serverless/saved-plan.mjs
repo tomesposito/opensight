@@ -26,6 +26,9 @@ export function planPolicy(plan, allowedTypes) {
   }
   return true;
 }
+export function verifyStateObject(envelope,actual) {
+  if(hash(actual.bytes)!==envelope.state||actual.version!==envelope.stateVersion||actual.etag!==envelope.stateETag)fail('PLAN_STATE_CHANGED');
+}
 export function verifyPlan(envelope, binding, binary, state, now=Date.now()) {
   if(envelope?.version!==1||!Number.isSafeInteger(envelope.createdAt)||!Number.isSafeInteger(envelope.expiresAt)||envelope.createdAt>now||envelope.expiresAt<=now||envelope.expiresAt-envelope.createdAt>86400000)fail('PLAN_EXPIRED');
   if(JSON.stringify(envelope.binding)!==JSON.stringify(binding)||envelope.binary!==hash(binary))fail('PLAN_INPUT_CHANGED');
@@ -39,10 +42,10 @@ export async function savedPlanMain(args=process.argv.slice(2), env=process.env)
   const privateRead=path=>{const s=lstatSync(path);if(!s.isFile()||s.isSymbolicLink()||s.mode&0o077||s.uid!==process.getuid())fail('PRIVATE_FILE_UNSAFE');return readFileSync(path);};
   const configBytes=privateRead(configPath), c=JSON.parse(configBytes), repo=resolve(env.OPENSIGHT_PUBLIC_CHECKOUT??'.');
   if(c.version!==1||!/^ops\/serverless\/[a-z][a-z0-9/-]+$/.test(c.root??'')||c.root.split('/').includes('..')||!/^\d{12}$/.test(c.account??'')||!/^us-[a-z]+-\d$/.test(c.region??''))fail('MAINTENANCE_CONFIG_INVALID');
-  if(Object.keys(env).some(k=>k.startsWith('TF_CLI_ARGS')||k.startsWith('TF_VAR_')))fail('UNBOUND_TOFU_ARGUMENT');
+  if(env.TF_WORKSPACE&&env.TF_WORKSPACE!=='default'||Object.keys(env).some(k=>k.startsWith('TF_CLI_ARGS')||k.startsWith('TF_VAR_')))fail('UNBOUND_TOFU_ARGUMENT');
   const output=join(root,'saved-plans');mkdirSync(output,{recursive:true,mode:0o700});
   const run=(bin,args,options={})=>{try{return execFileSync(bin,args,{cwd:repo,encoding:'utf8',maxBuffer:64*1024*1024,stdio:['ignore','pipe','pipe'],...options});}catch{fail('MAINTENANCE_COMMAND_FAILED');}};
-  const aws=(service,action,input={},extra=[])=>JSON.parse(run('aws',[service,action,'--region',c.region,'--output','json','--no-cli-pager',...(service==='s3api'&&action==='get-object'?['--bucket',c.operationsBucket,'--key',input.Key]:['--cli-input-json',JSON.stringify(input)]),...extra])||'{}');
+  const aws=(service,action,input={},extra=[])=>JSON.parse(run('aws',[service,action,'--region',c.region,'--output','json','--no-cli-pager',...(service==='s3api'&&action==='get-object'?['--bucket',input.Bucket??c.operationsBucket,'--key',input.Key,'--expected-bucket-owner',c.account]:['--cli-input-json',JSON.stringify(input)]),...extra])||'{}');
   const get=key=>{const path=join(output,randomUUID());const meta=aws('s3api','get-object',{Key:key},[path]);return {bytes:privateRead(path),meta};};
   const put=(key,bytes,condition={})=>{const path=join(output,randomUUID());writeFileSync(path,bytes,{mode:0o600});return aws('s3api','put-object',{Bucket:c.operationsBucket,Key:key,ServerSideEncryption:'aws:kms',SSEKMSKeyId:c.kmsKey,BucketKeyEnabled:true,...condition},['--body',path]);};
   const json=(key,value,condition)=>put(key,JSON.stringify(value),condition);
@@ -62,6 +65,12 @@ export async function savedPlanMain(args=process.argv.slice(2), env=process.env)
   const varPath=join(root,'maintenance.tfvars.json'),backendPath=join(root,'maintenance.backend.hcl'),lockPath=join(repo,c.root,'.terraform.lock.hcl');
   const backend=privateRead(backendPath),variables=privateRead(varPath),provider=readFileSync(lockPath);
   for(const line of [/^\s*use_lockfile\s*=\s*true\s*$/m,/^\s*encrypt\s*=\s*true\s*$/m,/^\s*kms_key_id\s*=\s*"[^"\n]+"\s*$/m])if(!line.test(backend.toString()))fail('ENCRYPTED_NATIVE_LOCK_REQUIRED');
+  const backendField=name=>new RegExp(String.raw`^\s*${name}\s*=\s*"([^"\n]+)"\s*$`,'m').exec(backend.toString())?.[1];
+  const stateBucket=backendField('bucket'),stateKey=backendField('key');
+  if(!/^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$/.test(stateBucket??'')||!stateKey||stateKey.includes('..'))fail('BACKEND_STATE_IDENTITY_REQUIRED');
+  const stateObject=()=>{const path=join(output,randomUUID());const meta=aws('s3api','get-object',{Bucket:stateBucket,Key:stateKey},[path]);
+    if(!meta.VersionId||meta.VersionId==='null'||!meta.ETag||meta.ServerSideEncryption!=='aws:kms')fail('VERSIONED_ENCRYPTED_STATE_REQUIRED');
+    return {bytes:privateRead(path),version:meta.VersionId,etag:meta.ETag};};
   const files=run('git',['ls-files','-z','ops/serverless']).split('\0').filter(p=>p.endsWith('.tf')||p.endsWith('.terraform.lock.hcl'));
   const binding={publicCommit:c.publicCommit,privateCommit:c.privateCommit,configuration:hash(configBytes),root:c.root,modules:hash(JSON.stringify(files.map(p=>[p,hash(readFileSync(join(repo,p)))]))),variables:hash(variables),backend:hash(backend),provider:hash(provider),tool:c.tofuSha256,release:c.release};
   if(!/^[a-f0-9]{64}$/.test(c.release??''))fail('RELEASE_DIGEST_REQUIRED');
@@ -73,12 +82,12 @@ export async function savedPlanMain(args=process.argv.slice(2), env=process.env)
   const phase=name=>{operation={...operation,phase:name,at:Date.now()};etag=json(key,operation,{IfMatch:etag}).ETag;};
   try {
     tf(['init','-input=false','-reconfigure',`-backend-config=${backendPath}`]);if(hash(readFileSync(lockPath))!==binding.provider)fail('PROVIDER_LOCK_CHANGED');
-    const state=Buffer.from(tf(['state','pull'])),parsed=JSON.parse(state);if(!parsed.lineage||!Number.isSafeInteger(parsed.serial))fail('STATE_INVALID');
+    const remoteState=stateObject(),state=remoteState.bytes,parsed=JSON.parse(tf(['state','pull']));if(!parsed.lineage||!Number.isSafeInteger(parsed.serial))fail('STATE_INVALID');
     const planPath=join(output,operationId+'.tfplan');
     if(command==='plan') {
       tf(['plan','-input=false','-lock-timeout=30s',`-var-file=${varPath}`,`-out=${planPath}`]);
       const readable=JSON.parse(tf(['show','-json',planPath]));planPolicy(readable,c.allowedResourceTypes);
-      const bytes=privateRead(planPath),createdAt=Date.now(),envelope={version:1,createdAt,expiresAt:createdAt+86400000,binding,state:hash(state),lineage:parsed.lineage,serial:parsed.serial,binary:hash(bytes),...observations(readable)};
+      const bytes=privateRead(planPath),createdAt=Date.now(),envelope={version:1,createdAt,expiresAt:createdAt+86400000,binding,state:hash(state),stateVersion:remoteState.version,stateETag:remoteState.etag,lineage:parsed.lineage,serial:parsed.serial,binary:hash(bytes),...observations(readable)};
       const encoded=Buffer.from(JSON.stringify(envelope)),id=hash(encoded);
       put(`maintenance/plans/${id}/plan.tfplan`,bytes,{IfNoneMatch:'*'});put(`maintenance/plans/${id}/review.json`,JSON.stringify(readable),{IfNoneMatch:'*'});put(`maintenance/plans/${id}/envelope.json`,encoded,{IfNoneMatch:'*'});
       console.log('SAVED_PLAN '+id);
@@ -86,13 +95,14 @@ export async function savedPlanMain(args=process.argv.slice(2), env=process.env)
       const encoded=get(`maintenance/plans/${selected}/envelope.json`).bytes;if(hash(encoded)!==selected)fail('PLAN_DIGEST_MISMATCH');
       const envelope=JSON.parse(encoded),bytes=get(`maintenance/plans/${selected}/plan.tfplan`).bytes,approval=JSON.parse(get(`maintenance/approvals/${selected}.json`).bytes);
       verifyPlan(envelope,binding,bytes,state);
+      verifyStateObject(envelope,remoteState);
       if(approval.version!==1||approval.plan!==selected||approval.configuration!==hash(configBytes)||approval.expiresAt<=Date.now()||approval.expiresAt>Date.now()+86400000)fail('PLAN_APPROVAL_REQUIRED');
       writeFileSync(planPath,bytes,{mode:0o600});planPolicy(JSON.parse(tf(['show','-json',planPath])),c.allowedResourceTypes);
       const drift=spawnSync(tofu,[`-chdir=${join(repo,c.root)}`,'plan','-refresh-only','-detailed-exitcode','-input=false','-lock-timeout=30s',`-var-file=${varPath}`,`-out=${join(output,operationId+'-drift.tfplan')}`],{env:tofuEnv,stdio:['ignore','pipe','pipe'],timeout:300000});
       writeFileSync(join(output,operationId+'-drift.log'),Buffer.concat([drift.stdout??Buffer.alloc(0),drift.stderr??Buffer.alloc(0)]),{mode:0o600});
       if(![0,2].includes(drift.status))fail('DRIFT_CHECK_FAILED');
       verifyPlanDrift(envelope,JSON.parse(tf(['show','-json',join(output,operationId+'-drift.tfplan')])));
-      if(hash(tf(['state','pull']))!==envelope.state)fail('PLAN_STATE_CHANGED');
+      verifyStateObject(envelope,stateObject());
       // One immutable consumption record. An interrupted apply is not retried.
       json(`maintenance/consumed/${selected}.json`,{operationId,at:Date.now()},{IfNoneMatch:'*'});
       phase('applying');startedApply=true;tf(['apply','-input=false','-lock-timeout=30s',planPath]);
