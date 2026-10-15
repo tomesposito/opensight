@@ -1075,6 +1075,7 @@ paths:
         '429': { $ref: '#/components/responses/RateLimited' }
   /datasets:
     get:
+      operationId: list_datasets
       tags: [datasets]
       summary: List prepared datasets (paginated)
       parameters:
@@ -1104,6 +1105,7 @@ paths:
         type: string
         pattern: ^[A-Za-z0-9_-]{1,128}$
     get:
+      operationId: describe_dataset
       tags:
       - datasets
       summary: Composed dataset describe (schema + lineage pointers + refresh state)
@@ -1181,6 +1183,7 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
     put:
+      operationId: update_dataset
       tags:
       - datasets
       summary: Create or update a prepared dataset
@@ -1264,7 +1267,7 @@ paths:
         schema: { type: string, pattern: '^[A-Za-z0-9_-]{1,128}$' }
     post:
       tags: [querying]
-      operationId: runDatasetQuery
+      operationId: run_dataset_query
       summary: Query an owner-scoped prepared dataset using the visual query model
       description: >-
         Uses the existing hosted prepared-dataset execution path. The body is
@@ -1357,6 +1360,7 @@ paths:
         required: true
         schema: { type: string, pattern: '^[A-Za-z0-9_-]{1,128}$' }
     get:
+      operationId: describe_dataset_lineage
       tags: [datasets]
       summary: Full lineage view (steps, resolved sources and datasets, refresh state)
       responses:
@@ -1402,6 +1406,7 @@ paths:
         required: true
         schema: { type: string, pattern: '^[A-Za-z0-9_-]{1,128}$' }
     post:
+      operationId: refresh_dataset
       tags: [datasets]
       summary: Trigger a refresh (BLAZE datasets only; fail-closed otherwise)
       parameters:
@@ -1440,6 +1445,7 @@ paths:
         required: true
         schema: { type: string, pattern: '^[A-Za-z0-9_-]{1,128}$' }
     get:
+      operationId: get_dataset_refresh_status
       tags: [datasets]
       summary: Refresh state (mode, schedule, whether refresh is supported)
       responses:
@@ -1457,6 +1463,7 @@ paths:
                   supported: { type: boolean }
   /sources:
     get:
+      operationId: list_sources
       tags: [sources]
       summary: List sources (paginated)
       parameters:
@@ -1482,6 +1489,7 @@ paths:
         required: true
         schema: { type: string, pattern: '^[A-Za-z0-9_-]{1,512}$' }
     get:
+      operationId: describe_source
       tags: [sources]
       summary: Schema inspection for one source
       responses:
@@ -1500,6 +1508,7 @@ paths:
                     items: { $ref: '#/components/schemas/Column' }
         '404': { $ref: '#/components/responses/NotFound' }
     delete:
+      operationId: delete_source
       tags: [sources]
       summary: Retire a source (fail-closed while datasets reference it)
       description: >-
