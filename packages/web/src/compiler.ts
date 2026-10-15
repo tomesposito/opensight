@@ -396,11 +396,14 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
     keys(limit, [key('otherCategories', 'OtherCategories'), key('itemsLimit', 'ItemsLimit')], `${cpath}.${categoryLimitKey}`);
     const other = enumValue(limit[key('otherCategories', 'OtherCategories')], ['INCLUDE', 'EXCLUDE'], 'INCLUDE', cpath);
     const count = limit[key('itemsLimit', 'ItemsLimit')];
-    if (Number.isInteger(count) && (count as number) >= 1 && (count as number) <= 100) {
-      if (kind === 'pie') sliceLimit = { count: count as number, includeOther: other === 'INCLUDE' };
-      else warnings.push(`${cpath}.${categoryLimitKey}: slice limits are only computed for pie visuals; all supplied result rows are shown.`);
+    if (count === undefined) {
+      warnings.push(`${cpath}.${categoryLimitKey}: no slice limit specified; all supplied result rows are shown.`);
+    } else if (kind !== 'pie') {
+      fail(`${cpath}.${categoryLimitKey}`, 'slice limits are only computed for pie visuals');
+    } else if (!Number.isInteger(count) || (count as number) < 1 || (count as number) > 100) {
+      fail(`${cpath}.${categoryLimitKey}`, 'slice limit count must be an integer between 1 and 100');
     } else {
-      warnings.push(`${cpath}.${categoryLimitKey}: unrecognized slice limit; all supplied result rows are shown.`);
+      sliceLimit = { count: count as number, includeOther: other === 'INCLUDE' };
     }
   }
   const smallLimitKey = key('smallMultiplesLimitConfiguration', 'SmallMultiplesLimitConfiguration');

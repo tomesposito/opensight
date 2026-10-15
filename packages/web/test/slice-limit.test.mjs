@@ -50,7 +50,7 @@ test('reducer sets, clears, and rejects invalid slice limits without touching th
   assert.throws(() => parseDraft(JSON.stringify(tampered)));
 });
 
-test('compiler parses CategoryItemsLimit into the model; invalid shapes stay a warning', () => {
+test('compiler parses CategoryItemsLimit into the model; bad shapes fail closed', () => {
   const input = pieFixture();
   config(input).SortConfiguration = { CategoryItemsLimit: { ItemsLimit: 3, OtherCategories: 'INCLUDE' } };
   assert.deepEqual(normalizeVisual('api', input.definition).sliceLimit, { count: 3, includeOther: true });
@@ -61,19 +61,21 @@ test('compiler parses CategoryItemsLimit into the model; invalid shapes stay a w
   const defaulted = pieFixture();
   config(defaulted).SortConfiguration = { CategoryItemsLimit: { ItemsLimit: 2 } };
   assert.deepEqual(normalizeVisual('api', defaulted.definition).sliceLimit, { count: 2, includeOther: true });
-  // Non-pie visuals keep the honest warning instead of a computed limit.
+  // No ItemsLimit at all keeps the old honest warning (nothing to compute).
+  const degenerate = pieFixture();
+  config(degenerate).SortConfiguration = { CategoryItemsLimit: { OtherCategories: 'INCLUDE' } };
+  const degenerateModel = normalizeVisual('api', degenerate.definition);
+  assert.equal(degenerateModel.sliceLimit, undefined);
+  assert.ok(degenerateModel.warnings.some(w => /no slice limit specified/));
+  // Slice limits on non-pie visuals fail with a located diagnostic (fail-closed).
   const bar = structuredClone(fixtures[1].sheets[0].visuals.find(v => Object.hasOwn(v.definition, 'BarChartVisual')));
   bar.definition.BarChartVisual.ChartConfiguration.SortConfiguration = { CategoryItemsLimit: { ItemsLimit: 3, OtherCategories: 'INCLUDE' } };
-  const barModel = normalizeVisual('api', bar.definition);
-  assert.equal(barModel.sliceLimit, undefined);
-  assert.ok(barModel.warnings.some(w => /slice limits are only computed for pie/));
-  // Unrecognized shapes warn and show all rows.
-  for (const shape of [{ ItemsLimit: 0 }, { ItemsLimit: 101 }, { ItemsLimit: '3' }, {}, { OtherCategories: 'INCLUDE' }]) {
+  assert.throws(() => normalizeVisual('api', bar.definition), /only computed for pie visuals/);
+  // Out-of-range or mistyped counts fail with a located diagnostic.
+  for (const shape of [{ ItemsLimit: 0 }, { ItemsLimit: 101 }, { ItemsLimit: '3' }, { ItemsLimit: 2.5 }]) {
     const bad = pieFixture();
     config(bad).SortConfiguration = { CategoryItemsLimit: shape };
-    const model = normalizeVisual('api', bad.definition);
-    assert.equal(model.sliceLimit, undefined, JSON.stringify(shape));
-    assert.ok(model.warnings.some(w => /unrecognized slice limit/), JSON.stringify(shape));
+    assert.throws(() => normalizeVisual('api', bad.definition), /integer between 1 and 100/, JSON.stringify(shape));
   }
 });
 
