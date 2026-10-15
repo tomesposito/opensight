@@ -69,4 +69,9 @@ export function inventory(spec) {
 export function source(spec) {
   return `// Generated from docs/api/openapi-v1.yaml. Do not edit.\nimport type { Operation } from './types.js';\nexport const apiVersion = ${JSON.stringify(spec.info.version)};\nexport const operations: Operation[] = [\n${inventory(spec).map(op => `  ${JSON.stringify(op)}`).join(',\n')}\n];\n`;
 }
-if (process.argv[1] === fileURLToPath(import.meta.url)) writeFileSync(new URL('../src/generated.ts', import.meta.url), source(load(readFileSync(specUrl, 'utf8'))));
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  const target = new URL('../src/generated.ts', import.meta.url), generated = source(load(readFileSync(specUrl, 'utf8')));
+  if (process.argv.includes('--check')) {
+    if (readFileSync(target, 'utf8') !== generated) throw Error('CLI operation table is stale; run npm run generate --workspace @opensight/cli');
+  } else writeFileSync(target, generated);
+}
