@@ -9,7 +9,13 @@ terraform {
 variable "deployment" { type = string }
 variable "region" { type = string }
 variable "account_id" { type = string }
-variable "operator_principal_arn" { type = string }
+variable "operator_principal_arn" {
+  type = string
+  validation {
+    condition     = can(regex("^arn:aws:iam::${var.account_id}:(user|role)/[A-Za-z0-9+=,.@_/-]+$", var.operator_principal_arn))
+    error_message = "Use one exact same-account operator principal."
+  }
+}
 variable "image_uri" {
   type = string
   validation {
@@ -19,7 +25,15 @@ variable "image_uri" {
 }
 variable "subnet_ids" { type = list(string) }
 variable "security_group_ids" { type = list(string) }
-variable "runtime_environment" { type = map(string) }
+variable "runtime_environment" {
+  type = map(string)
+  validation {
+    condition = alltrue([for k in keys(var.runtime_environment) : !contains([
+      "OPENSIGHT_POSTGRES_OPERATOR_URL", "OPENSIGHT_POSTGRES_TENANT_URL", "OPENSIGHT_OPERATOR_KEY", "OPENSIGHT_AUTH_SIGNING_KEY", "OPENSIGHT_AUTH_ENCRYPTION_KEY"
+    ], k)])
+    error_message = "Supply secret references, never inline database or signing credentials."
+  }
+}
 variable "runtime_secret_arns" { type = list(string) }
 variable "bootstrap_secret_arn" { type = string }
 variable "smtp_secret_arn" { type = string }
