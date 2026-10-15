@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { act, createElement, useReducer } from 'react';
 import { create } from 'react-test-renderer';
 import { CardTitle, CardStyle, CardLayout, MultiplesOptions, GroupColorOptions, LegendOptions, DataLabelsOptions } from '../build/test/PropertiesSections.js';
-import { activeSheet, authorReducer, defaultMultiplesOptions, emptyDraft, groupSortValid, parseDraft, serializeVisual } from '../build/test/authoring.js';
+import { activeSheet, authorReducer, defaultMultiplesOptions, emptyDraft, groupSortValid, parseDraft, serializeVisual, sliceLimitValid } from '../build/test/authoring.js';
 import { compileVisual } from '../build/test/compiler.js';
 import { buildAuthorVisual } from '../build/test/author-preview.js';
 
@@ -33,17 +33,6 @@ async function mount(t, Component, kind = 'pie') {
     },
   };
 }
-function unavailable(root, label, reason) {
-  const group = root.findByProps({ 'aria-label': label, disabled: true });
-  const note = root.findByProps({ id: group.props['aria-describedby'] });
-  assert.match(note.props.children, reason);
-  for (const control of group.findAll(n => ['input', 'select', 'textarea', 'button'].includes(n.type))) {
-    assert.equal(control.props.onChange, undefined);
-    assert.equal(control.props.onClick, undefined);
-  }
-  return group;
-}
-
 test('CARD TITLE edits survive storage, affect compilation, and leave the other visual unchanged', async t => {
   const ui = await mount(t, CardTitle);
   await ui.change('Edit title', 'Regional revenue');
@@ -135,7 +124,18 @@ test('groupSortValid accepts only complete field sorts', () => {
 });
 
 
-test('Group/Color title controls edit, persist, and round-trip; sort is wired; slice limits stay an honest stub', async t => {
+test('sliceLimitValid accepts only complete, bounded limits', () => {
+  assert.equal(sliceLimitValid({ count: 1, includeOther: true }), true);
+  assert.equal(sliceLimitValid({ count: 100, includeOther: false }), true);
+  for (const bad of [undefined, null, 'limit', [], 5, { count: 5 }, { includeOther: true },
+    { count: 0, includeOther: true }, { count: 101, includeOther: true }, { count: 2.5, includeOther: true },
+    { count: '5', includeOther: true }, { count: 5, includeOther: 'yes' }, { count: 5, includeOther: true, extra: 1 }]) {
+    assert.equal(sliceLimitValid(bad), false, JSON.stringify(bad));
+  }
+});
+
+
+test('Group/Color title controls edit, persist, and round-trip; sort and slice limit are wired', async t => {
   const ui = await mount(t, GroupColorOptions);
   const sourceField = ui.visual().dimension;
   await ui.change('Field name', 'Territory');
@@ -213,8 +213,48 @@ test('Group/Color title controls edit, persist, and round-trip; sort is wired; s
   const unassigned = authorReducer(ui.draft(), { type: 'unassign', field: 'revenue' });
   assert.equal(activeSheet(unassigned).visuals[1].groupSort, undefined);
 
-  // Slice limits remain an honest stub.
-  unavailable(ui.root, 'Slice limit controls', /all supplied result rows are shown/);
+  // Slice limit is wired: set the count, toggle the Other bucket, clear it.
+  assert.equal(ui.visual().sliceLimit, undefined);
+  await ui.change('Number of slices displayed', '5');
+  assert.deepEqual(ui.visual().sliceLimit, { count: 5, includeOther: true });
+  assert.deepEqual(ui.compile().model.sliceLimit, { count: 5, includeOther: true });
+  const otherToggle = ui.root.findByProps({ 'aria-label': 'Group the rest as Other' });
+  await act(() => otherToggle.props.onChange({ target: { checked: false } }));
+  assert.deepEqual(ui.visual().sliceLimit, { count: 5, includeOther: false });
+  // Fail-closed editing: out-of-range or non-numeric input keeps the last valid limit.
+  const sliceInput = ui.root.findByProps({ 'aria-label': 'Number of slices displayed' });
+  await act(() => sliceInput.props.onChange({ target: { value: '0' } }));
+  assert.deepEqual(ui.visual().sliceLimit, { count: 5, includeOther: false });
+  await act(() => sliceInput.props.onChange({ target: { value: '500' } }));
+  assert.deepEqual(ui.visual().sliceLimit, { count: 5, includeOther: false });
+  await act(() => sliceInput.props.onChange({ target: { value: 'abc' } }));
+  assert.deepEqual(ui.visual().sliceLimit, { count: 5, includeOther: false });
+  // Clearing the input removes the limit (all rows shown).
+  await act(() => sliceInput.props.onChange({ target: { value: '' } }));
+  assert.equal(ui.visual().sliceLimit, undefined);
+  assert.equal(ui.compile().model.sliceLimit, undefined);
+
+  // Reducer rejects invalid limits without touching the visual.
+  const limitSnapshot = ui.visual(), limitDraft = ui.draft();
+  const badLimit = limit => activeSheet(authorReducer(limitDraft, { type: 'slice-limit', limit })).visuals[1];
+  assert.deepEqual(badLimit({ count: 0, includeOther: true }), limitSnapshot);
+  assert.deepEqual(badLimit({ count: 101, includeOther: true }), limitSnapshot);
+  assert.deepEqual(badLimit({ count: 2.5, includeOther: true }), limitSnapshot);
+  assert.deepEqual(badLimit(null), limitSnapshot);
+
+  // Round-trip through storage keeps the limit.
+  await ui.change('Number of slices displayed', '8');
+  const revivedLimit = parseDraft(JSON.stringify(ui.draft())).sheets[0].visuals[1];
+  assert.deepEqual(revivedLimit.sliceLimit, { count: 8, includeOther: true });
+
+  // Export writes CategoryItemsLimit merged with the sort; the compiler reads it back.
+  const exportedSort = serializeVisual(ui.visual()).pieChartVisual.chartConfiguration.sortConfiguration;
+  assert.deepEqual(exportedSort, {
+    categorySort: [{ fieldSort: { fieldId: 'revenue', direction: 'DESC' } }],
+    categoryItemsLimit: { itemsLimit: 8, otherCategories: 'INCLUDE' },
+  });
+  assert.deepEqual(ui.compile().model.sliceLimit, { count: 8, includeOther: true });
+
   ui.verifySaved();
   await ui.change('Field name', '');
   assert.equal(ui.compile().table.columns[0], sourceField); ui.verifySaved();
