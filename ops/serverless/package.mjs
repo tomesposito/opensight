@@ -7,7 +7,10 @@ await mkdir(target, { recursive: true });
 if (kind === 'frontend') await cp('packages/web/dist', target, { recursive: true });
 else {
   for (const file of ['package.json', 'package-lock.json', 'LICENSE', 'node_modules']) await cp(file, join(target, file), { recursive: true, verbatimSymlinks: true });
+  // Workspace shims that are not Node runtime packages (no dist to ship).
+  const nonRuntime = new Set(['headless-sdk-python']);
   for (const name of await readdir('packages')) {
+    if (nonRuntime.has(name)) continue;
     await mkdir(join(target, 'packages', name), { recursive: true });
     await cp(join('packages', name, 'package.json'), join(target, 'packages', name, 'package.json'));
     if (name === 'web') {
