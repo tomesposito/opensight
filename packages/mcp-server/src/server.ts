@@ -67,6 +67,7 @@ export function createMcpServer(options: ServerOptions): Server {
       if (parameter.location === 'path') {
         const schema = properties[parameter.input] as { type?: string; pattern?: string; enum?: unknown[] };
         if (!(typeof value === 'string' && value.length > 0 || typeof value === 'number' && Number.isSafeInteger(value) && value > 0)
+          || schema.type === 'string' && typeof value !== 'string'
           || schema.type === 'integer' && typeof value !== 'number'
           || schema.pattern && !new RegExp(schema.pattern).test(String(value))
           || schema.enum && !schema.enum.includes(value)
@@ -111,7 +112,9 @@ export function createMcpServer(options: ServerOptions): Server {
         if (typeof data.errorCode !== 'string' || !data.errorCode) throw protocolError();
         if (typeof data.message !== 'string') data.message = data.errorCode;
       }
-      return { ...(response.ok ? {} : { isError: true }), structuredContent: data, content: [{ type: 'text', text: JSON.stringify(data) }], _meta };
+      const serialized = JSON.stringify(data);
+      if (serialized.includes(token) || options.credentials.containsSecret(serialized)) throw protocolError();
+      return { ...(response.ok ? {} : { isError: true }), structuredContent: data, content: [{ type: 'text', text: serialized }], _meta };
     }
     if (!response.ok) throw protocolError();
     const data = { base64: Buffer.from(bytes).toString('base64'), mimeType: response.headers.get('content-type') ?? 'application/octet-stream' };
