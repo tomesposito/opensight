@@ -306,6 +306,14 @@ delivery and dedupe keys. See [tenant automation](docs/tenant-automation.md).
 
 ![Operator transfer-or-stop choice using synthetic users](docs/images/job-owner-removal.png)
 
+### Headless v1 and MCP
+
+The headless REST API has a TypeScript SDK and a stdio MCP server with 53
+OpenAPI-generated tools for datasets, querying, analyses, dashboards and assets.
+The MCP process calls the same HTTP API with one user/tenant credential; it
+requires an operator-provided refresh exchange endpoint, which the built-in
+hosted auth does not yet implement. See [setup and contracts](docs/headless-v1-mcp.md).
+
 ## Contributor quickstart
 
 For development and verification, use Node 24+ and npm. From the repository root:
@@ -358,6 +366,7 @@ packages/bundle-parser  Observed .qs archive import + synthetic JSON inventory
 packages/api            Local definition and dataset-query API
 packages/web            React renderer + authoring and bundle round trips
 packages/query-engine   Typed synthetic planner + local DuckDB CSV executor
+packages/mcp-server     Stdio MCP client for the implemented headless v1 API
 packages/cli            Archive import/export/validate (planned)
 docs/research           Observed format and API contract research
 fixtures                Sanitized real export + synthetic regression specifications
