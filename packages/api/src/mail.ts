@@ -3,7 +3,12 @@ import { randomUUID } from 'node:crypto';
 import { invalid } from './schedule.js';
 
 export interface MailMessage { to: string[]; subject: string; html: string; dedupeKey?: string }
-export interface MailTransport { readonly configured: boolean; send(message: MailMessage, authorize?: () => Promise<void>): Promise<void> }
+export interface MailTransport {
+  readonly configured: boolean;
+  /** Deployment capability only; it does not grant this process permission to send. */
+  readonly deliveryConfigured?: boolean;
+  send(message: MailMessage, authorize?: () => Promise<void>): Promise<void>;
+}
 export class MailError extends Error {
   constructor(readonly code: 'SMTP_NOT_CONFIGURED' | 'SMTP_SEND_FAILED' | 'SMTP_CONFIG_INVALID') { super(code === 'SMTP_NOT_CONFIGURED' ? 'SMTP is not configured' : code === 'SMTP_CONFIG_INVALID' ? 'SMTP configuration is invalid' : 'SMTP delivery failed'); this.name = 'MailError'; }
 }

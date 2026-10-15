@@ -9,6 +9,15 @@ const region = 'us-east-1', smtp = `email-smtp.${region}.api.aws`;
 const env = { OPENSIGHT_SMTP_HOST: smtp, OPENSIGHT_SMTP_FROM: 'synthetic@example.test', OPENSIGHT_SMTP_SECRET_ARN: 'synthetic-secret-reference' };
 const message = { to: ['reader@example.test'], subject: 'Synthetic', html: '<p>synthetic</p>', dedupeKey: 'a'.repeat(64) };
 
+test('SR3 worker capability can be reported without request SMTP credentials or send permission', async () => {
+  const aws = { region, secret: async () => assert.fail('request must not fetch SMTP credentials') };
+  const mail = serverlessMail(aws, { OPENSIGHT_WORKER_SMTP_CAPABILITY: 'configured' });
+  assert.equal(mail.deliveryConfigured, true); assert.equal(mail.configured, false);
+  await assert.rejects(mail.send(message), { code: 'SMTP_NOT_CONFIGURED' });
+  assert.equal(serverlessMail(aws, {}).deliveryConfigured, false);
+  assert.throws(() => serverlessMail(aws, { OPENSIGHT_WORKER_SMTP_CAPABILITY: 'anything' }), { code: 'SMTP_CONFIG_INVALID' });
+});
+
 test('SR3 endpoint selection is regional, IPv6-only and refuses unknown profiles, alternate hosts and paid fallbacks', () => {
   assert.equal(egressEndpoints({}, region).sqs, `sqs.${region}.api.aws`);
   for (const bad of [{ OPENSIGHT_EGRESS_PROFILE: 'nat' }, { OPENSIGHT_EGRESS_PROFILE: 'ipv4' }, { OPENSIGHT_SMTP_PORT: '587' }]) assert.throws(() => egressEndpoints(bad, region), { code: 'EGRESS_ROUTE_UNSUPPORTED' });

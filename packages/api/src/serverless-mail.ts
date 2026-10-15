@@ -6,8 +6,9 @@ import { egressEndpoints } from './egress.js';
 export function serverlessMail(aws: InvocationAws, env: NodeJS.ProcessEnv,
   factory: (env: NodeJS.ProcessEnv, options: SmtpInvocationOptions) => MailTransport = smtpFromEnvironment): MailTransport {
   const hosts = egressEndpoints(env, aws.region);
+  if (env.OPENSIGHT_WORKER_SMTP_CAPABILITY !== undefined && env.OPENSIGHT_WORKER_SMTP_CAPABILITY !== 'configured') throw new MailError('SMTP_CONFIG_INVALID');
   const configured = !!env.OPENSIGHT_SMTP_HOST && !!env.OPENSIGHT_SMTP_FROM && !!env.OPENSIGHT_SMTP_SECRET_ARN;
-  return { configured, async send(message, authorize) {
+  return { configured, deliveryConfigured: env.OPENSIGHT_WORKER_SMTP_CAPABILITY === 'configured' || configured, async send(message, authorize) {
     if (!configured) throw new MailError('SMTP_NOT_CONFIGURED');
     const secret = await aws.secret(env.OPENSIGHT_SMTP_SECRET_ARN, ['username', 'password']);
     const transport = factory({ OPENSIGHT_SMTP_HOST: hosts.smtp, OPENSIGHT_SMTP_PORT: '465', OPENSIGHT_SMTP_FROM: env.OPENSIGHT_SMTP_FROM,
