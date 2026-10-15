@@ -102,6 +102,8 @@ export interface AuthorVisual {
   smallMultiples?: string[];
   /** Multiples Options panel state (pie small multiples). Inert until a facet is set. */
   multiplesOptions?: MultiplesOptions;
+  /** Group/Color sort: sort the slices/segments by one bound field. Renders through sortConfiguration. */
+  groupSort?: GroupSort;
   donut: boolean; titleVisible: boolean; legend: boolean; labels: boolean; tooltipVisible: boolean;
   /** Interactions-tab tooltip detail (QuickSight SelectedTooltipType / FieldBasedTooltip parity). */
   tooltipType: 'basic' | 'detailed'; tooltipTitleType: 'primaryValue' | 'fieldId';
@@ -192,6 +194,14 @@ export function multiplesOptionsValid(value: unknown): value is MultiplesOptions
   if (typeof v.gutter !== 'boolean' || typeof v.background !== 'boolean') return false;
   // No unknown keys at any level.
   return Object.keys(v).length === 7 && Object.keys(title).length === 5 && Object.keys(border).length === 4;
+}
+/** Group/Color sort for one visual: sort the slices/segments by one bound field. */
+export interface GroupSort { fieldId: string; direction: 'ASC' | 'DESC' }
+/** Fail-closed structural validation for the Group/Color sort (field membership is enforced where the visual is known). */
+export function groupSortValid(value: unknown): value is GroupSort {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const v = value as Record<string, unknown>;
+  return Object.keys(v).length === 2 && typeof v.fieldId === 'string' && !!v.fieldId && !v.fieldId.includes('\0') && (v.direction === 'ASC' || v.direction === 'DESC');
 }
 export const TOOLTIP_AGGREGATIONS = ['SUM', 'AVG', 'MIN', 'MAX', 'COUNT'] as const;
 export type TooltipAggregation = typeof TOOLTIP_AGGREGATIONS[number];
@@ -290,6 +300,7 @@ export type AuthorAction =
   | { type: 'legend-position'; position: LegendPosition }
   | { type: 'legend-title'; title: LegendTitle | undefined }
   | { type: 'group-title'; title: GroupTitle | undefined }
+  | { type: 'group-sort'; sort: GroupSort | undefined }
   | { type: 'legend-value-style'; style: LegendTextStyle | undefined }
   | { type: 'data-labels'; labels: DataLabels | undefined }
   | { type: 'card-style'; style: CardStyle | undefined }
@@ -602,6 +613,13 @@ export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorD
         if (next.formatting === undefined) delete next.formatting;
         return next;
       }
+      case 'group-sort': {
+        if (action.sort !== undefined && !groupSortValid(action.sort)) return visual;
+        const next = { ...visual };
+        if (action.sort === undefined) delete next.groupSort;
+        else next.groupSort = structuredClone(action.sort);
+        return next;
+      }
       case 'legend-value-style': {
         if (action.style !== undefined && !legendTextStyleValid(action.style)) return visual;
         const next = { ...visual, formatting: action.style === undefined ? stripFormattingKey(visual.formatting, 'legendValueStyle') : { ...visual.formatting, legendValueStyle: structuredClone(action.style) } };
@@ -712,9 +730,16 @@ export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorD
     return visual;
   }).map((visual, index) => {
     const previous = sheet.visuals[index]!;
-    if (!visual.formatting?.pivot?.collapsedRowGroups || visual.kind === previous.kind && JSON.stringify(visual.rows) === JSON.stringify(previous.rows)) return visual;
-    const { collapsedRowGroups: _old, ...pivot } = visual.formatting.pivot;
-    return { ...visual, formatting: { ...visual.formatting, pivot } };
+    let next = visual;
+    // A sort whose field left the visual's wells is stale: drop it rather than
+    // keep an unbound reference (same leniency as tooltip hidden fields).
+    if (next.groupSort && ![next.dimension, ...next.rows, ...next.columns, ...next.measures].includes(next.groupSort.fieldId)) {
+      const { groupSort: _dropped, ...rest } = next;
+      next = rest;
+    }
+    if (!next.formatting?.pivot?.collapsedRowGroups || next.kind === previous.kind && JSON.stringify(next.rows) === JSON.stringify(previous.rows)) return next;
+    const { collapsedRowGroups: _old, ...pivot } = next.formatting.pivot;
+    return { ...next, formatting: { ...next.formatting, pivot } };
   });
   return update({ visuals });
 }
@@ -780,12 +805,16 @@ export function serializeVisual(visual: AuthorVisual, includeInteractions = true
   const tableTotals = { totalOptions: totalVisibility(visual.totals), opensightSubtotalOptions: totalVisibility(visual.subtotals) };
   const pivotTotals = { totalOptions: { rowTotalOptions: totalVisibility(visual.totals), columnTotalOptions: totalVisibility(visual.totals),
     rowSubtotalOptions: totalVisibility(visual.subtotals), columnSubtotalOptions: totalVisibility(visual.subtotals) } };
+  // Group/Color sort serializes as SortConfiguration; the compiler parses it back into the model.
+  const groupSortConfig = visual.groupSort && ['bar', 'bar100', 'pie'].includes(visual.kind)
+    ? { sortConfiguration: { categorySort: [{ fieldSort: { fieldId: visual.groupSort.fieldId, direction: visual.groupSort.direction } }] } } : {};
   if (extraKind(visual.kind)) {
     const spec = EXTRA_VISUALS[visual.kind];
     const wells: Record<string, unknown> = { ...multiples };
     spec.dimensions.forEach((name, i) => { wells[name] = spec.dimensions.length === 1 ? category : (i === 0 ? visual.rows : visual.columns).map(n => dimensionField(n, visual.dateGrain, calculations, dataset)); });
     spec.measures.forEach((name, i) => { wells[name] = spec.measures.length === 1 ? values : visual.kind === 'combo' && i === 1 ? values.slice(1) : values.slice(i, i + 1); });
     return { [spec.variant]: { ...body, ...(visual.kind === 'insight' && visual.insightConfiguration ? { insightConfiguration: rebindInsight(visual.insightConfiguration, category, values) } : {}), chartConfiguration: { ...(visual.kind === 'insight' ? {} : display), fieldWells: spec.wells ? { [spec.wells]: wells } : wells,
+      ...groupSortConfig,
       ...(visual.kind === 'bar100' ? { barsArrangement: 'STACKED_PERCENT', orientation: visual.horizontal ? 'HORIZONTAL' : 'VERTICAL' } : {}),
       ...(visual.kind === 'area' ? { type: 'AREA' } : {}),
       ...(visual.kind === 'gauge' && visual.gauge ? { opensightGauge: visual.gauge } : {}),
@@ -795,11 +824,12 @@ export function serializeVisual(visual: AuthorVisual, includeInteractions = true
   switch (visual.kind) {
     case 'pie': return { pieChartVisual: { ...body, chartConfiguration: { ...display,
       fieldWells: { pieChartAggregatedFieldWells: { category, values, ...multiples } }, donutOptions: { arcOptions: { arcThickness: visual.donut ? 'MEDIUM' : 'WHOLE' } },
+      ...groupSortConfig,
       // OpenSight extension: the Multiples Options panel state round-trips
       // through the bundle; the compiler parses it back into the model.
       ...(visual.multiplesOptions ? { opensightMultiplesOptions: visual.multiplesOptions } : {}),
     } } };
-    case 'bar': return { barChartVisual: { ...body, chartConfiguration: { ...display, orientation: visual.horizontal ? 'HORIZONTAL' : 'VERTICAL', barsArrangement: visual.stacked ? 'STACKED' : 'CLUSTERED', fieldWells: { barChartAggregatedFieldWells: { category, values, ...multiples } } } } };
+    case 'bar': return { barChartVisual: { ...body, chartConfiguration: { ...display, orientation: visual.horizontal ? 'HORIZONTAL' : 'VERTICAL', barsArrangement: visual.stacked ? 'STACKED' : 'CLUSTERED', ...groupSortConfig, fieldWells: { barChartAggregatedFieldWells: { category, values, ...multiples } } } } };
     case 'line': return { lineChartVisual: { ...body, chartConfiguration: { ...display, fieldWells: { lineChartAggregatedFieldWells: { category, values, ...multiples } } } } };
     case 'table': return { tableVisual: { ...body, chartConfiguration: { ...tableTotals, fieldWells: { tableAggregatedFieldWells: { groupBy: category, values } } } } };
     case 'pivot': return { pivotTableVisual: { ...body, chartConfiguration: { ...pivotTotals, fieldWells: { pivotTableAggregatedFieldWells: { rows: visual.rows.map(name => dimensionField(name, visual.dateGrain, calculations, dataset)), columns: visual.columns.map(name => dimensionField(name, visual.dateGrain, calculations, dataset)), values } } } } };
@@ -894,10 +924,11 @@ export function validateDraft(value: unknown): asserts value is AuthorDraft {
       }
       const fieldNames = (v: unknown, role: string): v is string[] => imported ? Array.isArray(v) && v.every(n => typeof n === 'string' && !!n && !n.includes('\0')) && new Set(v).size === v.length : names(v, role);
 
-      if (!isObject(v) || !onlyKeys(v, ['id', 'kind', 'title', 'subtitle', 'subtitleVisible', 'dimension', 'measures', 'smallMultiples', 'multiplesOptions', 'donut', 'imported', 'filterActions', 'urlActions', 'navigationActions', 'hierarchy', 'dateGrain', 'palette', 'formatting', 'gauge', 'bins', 'insightConfiguration', 'referenceLines', ...Object.keys(defaults())]) || typeof v.id !== 'string' || !/^visual-[1-9][0-9]*$/.test(v.id) || ids.has(v.id) || !VISUAL_TYPES.some(t => t.kind === v.kind) || typeof v.title !== 'string' || !['donut', 'titleVisible', 'legend', 'labels', 'tooltipVisible', 'horizontal', 'stacked', 'totals', 'subtotals'].every(k => typeof v[k] === 'boolean') || (v.tooltipType !== 'basic' && v.tooltipType !== 'detailed') || (v.tooltipTitleType !== 'primaryValue' && v.tooltipTitleType !== 'fieldId') || typeof v.tooltipAggregations !== 'boolean' || !Array.isArray(v.tooltipHiddenFields) || !v.tooltipHiddenFields.every(n => typeof n === 'string' && !!n && !n.includes('\0')) || new Set(v.tooltipHiddenFields).size !== v.tooltipHiddenFields.length || !tooltipExtraFieldsValid(v.tooltipExtraFields) || !fieldNames(v.measures, 'measure') || !fieldNames(v.rows, 'dimension') || !fieldNames(v.columns, 'dimension') || (v.dimension !== null && !fieldNames([v.dimension], 'dimension')) || !Array.isArray(v.filters)) return fail();
+      if (!isObject(v) || !onlyKeys(v, ['id', 'kind', 'title', 'subtitle', 'subtitleVisible', 'dimension', 'measures', 'smallMultiples', 'multiplesOptions', 'groupSort', 'donut', 'imported', 'filterActions', 'urlActions', 'navigationActions', 'hierarchy', 'dateGrain', 'palette', 'formatting', 'gauge', 'bins', 'insightConfiguration', 'referenceLines', ...Object.keys(defaults())]) || typeof v.id !== 'string' || !/^visual-[1-9][0-9]*$/.test(v.id) || ids.has(v.id) || !VISUAL_TYPES.some(t => t.kind === v.kind) || typeof v.title !== 'string' || !['donut', 'titleVisible', 'legend', 'labels', 'tooltipVisible', 'horizontal', 'stacked', 'totals', 'subtotals'].every(k => typeof v[k] === 'boolean') || (v.tooltipType !== 'basic' && v.tooltipType !== 'detailed') || (v.tooltipTitleType !== 'primaryValue' && v.tooltipTitleType !== 'fieldId') || typeof v.tooltipAggregations !== 'boolean' || !Array.isArray(v.tooltipHiddenFields) || !v.tooltipHiddenFields.every(n => typeof n === 'string' && !!n && !n.includes('\0')) || new Set(v.tooltipHiddenFields).size !== v.tooltipHiddenFields.length || !tooltipExtraFieldsValid(v.tooltipExtraFields) || !fieldNames(v.measures, 'measure') || !fieldNames(v.rows, 'dimension') || !fieldNames(v.columns, 'dimension') || (v.dimension !== null && !fieldNames([v.dimension], 'dimension')) || !Array.isArray(v.filters)) return fail();
       if (v.referenceLines !== undefined && (!Array.isArray(v.referenceLines) || !v.referenceLines.every(referenceLineValid))) return fail();
       if (v.smallMultiples !== undefined && (!names(v.smallMultiples, 'dimension') || v.smallMultiples.length > 1 || v.smallMultiples.some(name => fields.find(f => f.name === name)?.type === 'BOOLEAN'))) return fail();
       if (v.multiplesOptions !== undefined && !multiplesOptionsValid(v.multiplesOptions)) return fail();
+      if (v.groupSort !== undefined && !groupSortValid(v.groupSort)) return fail();
       if ((v.kind === 'radar' || v.kind === 'sankey') && !v.imported && (v.rows.length > 1 || v.columns.length > 1)) return fail();
       if (singleMeasure(v.kind as VisualKind) && v.measures.length > 1 || noDimensions(v.kind as VisualKind) && v.dimension !== null || v.kind !== 'pie' && v.donut || !splitDimensions(v.kind as VisualKind) && v.columns.length || (grouped(v.kind as VisualKind) ? v.dimension !== (v.rows[0] ?? null) : v.rows.length) || v.rows.some(n => (v.columns as string[]).includes(n))) return fail();
       if (v.insightConfiguration !== undefined && !isObject(v.insightConfiguration) || v.kind === 'insight' && !v.imported && v.measures.length > 2) return fail();

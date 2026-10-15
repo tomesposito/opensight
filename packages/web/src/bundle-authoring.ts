@@ -162,6 +162,18 @@ function importVisual(raw: BundleVisual, id: string, definition: BundleDefinitio
   const total = obj(config.totalOptions);
   const subtitle = obj(body.subtitle), legendPosition = obj(config.legend).position;
   const validLines = list(body.opensightReferenceLines).map(serializedReferenceLine).filter((line): line is { value: number; label: string; color: string } => line !== undefined);
+  // OpenSight extension: an imported Group/Color sort becomes editable draft state
+  // (bar/bar100/pie only — the panel scope of this slice; other kinds keep the
+  // retained passthrough behavior). Multi-sort configurations stay unmapped.
+  const sortDimension = noDimensions(kind) ? null : rows[0] ?? null;
+  const sortBound = [sortDimension, ...(grouped(kind) ? rows : []), ...columns, ...measures].filter((f): f is string => f !== null);
+  const sortWrappers = list(obj(config.sortConfiguration).categorySort);
+  const sortFs = sortWrappers.length === 1 ? obj(obj(sortWrappers[0]).fieldSort) : {};
+  const sortFieldId = typeof sortFs.fieldId === 'string' && sortFs.fieldId && !sortFs.fieldId.includes('\0') ? sortFs.fieldId : undefined;
+  const sortDirection = sortFs.direction === 'ASC' ? 'ASC' as const : sortFs.direction === 'DESC' ? 'DESC' as const : undefined;
+  const importedGroupSort = sortWrappers.length === 1 && ['bar', 'bar100', 'pie'].includes(kind) &&
+    sortFieldId !== undefined && sortDirection !== undefined && sortBound.includes(sortFieldId)
+    ? { fieldId: sortFieldId, direction: sortDirection } : undefined;
   const visual: AuthorVisual = { ...defaults(), ...(validInsight && body.insightConfiguration !== undefined ? { insightConfiguration: copy(obj(body.insightConfiguration)) } : {}), ...(paletteValid(body.opensightPalette) ? { palette: [...body.opensightPalette] } : {}), id, kind, title: string(obj(obj(body.title).formatText).plainText),
     ...(formattingValid(body.opensightFormatting) ? { formatting: copy(body.opensightFormatting) } : {}),
     ...(body.subtitle !== undefined ? { subtitle: string(obj(subtitle.formatText).plainText), subtitleVisible: subtitle.visibility !== 'HIDDEN' } : {}),
@@ -170,6 +182,8 @@ function importVisual(raw: BundleVisual, id: string, definition: BundleDefinitio
     ...(kind === 'histogram' && binsValid(config.opensightBins) ? { bins: config.opensightBins } : {}),
     // OpenSight extension: pie Multiples Options panel state imports into the draft.
     ...(kind === 'pie' && multiplesOptionsValid(config.opensightMultiplesOptions) ? { multiplesOptions: copy(config.opensightMultiplesOptions) } : {}),
+    // OpenSight extension: imported Group/Color sort imports into the draft.
+    ...(importedGroupSort ? { groupSort: importedGroupSort } : {}),
     ...(validLines.length > 0 && hasReferenceLines(kind) ? { referenceLines: validLines.map((line, index) => ({ id: `refline-${index + 1}`, ...line })) } : {}),
     titleVisible: obj(body.title).visibility !== 'HIDDEN', dimension: noDimensions(kind) ? null : rows[0] ?? null,
     rows: grouped(kind) ? rows : [], columns, measures: singleMeasure(kind) ? measures.slice(0, 1) : measures,

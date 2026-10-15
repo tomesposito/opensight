@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { act, createElement, useReducer } from 'react';
 import { create } from 'react-test-renderer';
 import { CardTitle, CardStyle, CardLayout, MultiplesOptions, GroupColorOptions, LegendOptions, DataLabelsOptions } from '../build/test/PropertiesSections.js';
-import { activeSheet, authorReducer, defaultMultiplesOptions, emptyDraft, parseDraft } from '../build/test/authoring.js';
+import { activeSheet, authorReducer, defaultMultiplesOptions, emptyDraft, groupSortValid, parseDraft, serializeVisual } from '../build/test/authoring.js';
 import { compileVisual } from '../build/test/compiler.js';
 import { buildAuthorVisual } from '../build/test/author-preview.js';
 
@@ -124,7 +124,18 @@ test('Multiples Options edits reach the draft, compile, and survive storage', as
 });
 
 
-test('Group/Color title controls edit, persist, and round-trip; sort and slice limits stay honest stubs', async t => {
+test('groupSortValid accepts only complete field sorts', () => {
+  assert.equal(groupSortValid({ fieldId: 'category', direction: 'ASC' }), true);
+  assert.equal(groupSortValid({ fieldId: 'revenue', direction: 'DESC' }), true);
+  for (const bad of [undefined, null, 'category', [], 42, { fieldId: '', direction: 'ASC' }, { fieldId: 'category' },
+    { direction: 'ASC' }, { fieldId: 'category', direction: 'UP' }, { fieldId: 'category', direction: 'asc' },
+    { fieldId: 'category', direction: 'ASC', extra: 1 }, { fieldId: 'a\0b', direction: 'ASC' }]) {
+    assert.equal(groupSortValid(bad), false, JSON.stringify(bad));
+  }
+});
+
+
+test('Group/Color title controls edit, persist, and round-trip; sort is wired; slice limits stay an honest stub', async t => {
   const ui = await mount(t, GroupColorOptions);
   const sourceField = ui.visual().dimension;
   await ui.change('Field name', 'Territory');
@@ -168,8 +179,41 @@ test('Group/Color title controls edit, persist, and round-trip; sort and slice l
   const revived = parseDraft(JSON.stringify(ui.draft())).sheets[0].visuals[1];
   assert.deepEqual(revived.formatting.groupTitle, { show: true, text: 'Persisted' });
 
-  // Sort and slice limits remain honest stubs.
-  unavailable(ui.root, 'Group sort controls', /Sort editing is not supported/);
+  // Sort is wired: pick the group dimension, flip direction, switch fields, reset to default.
+  assert.equal(ui.visual().groupSort, undefined);
+  await ui.change('Sort by', 'category', 'select');
+  assert.deepEqual(ui.visual().groupSort, { fieldId: 'category', direction: 'ASC' });
+  assert.deepEqual(ui.compile().model.sort, { fieldId: 'category', direction: 'ASC' });
+  await act(() => ui.root.findByProps({ 'aria-label': 'Sort descending' }).props.onClick());
+  assert.deepEqual(ui.visual().groupSort, { fieldId: 'category', direction: 'DESC' });
+  await ui.change('Sort by', 'revenue', 'select');
+  assert.deepEqual(ui.visual().groupSort, { fieldId: 'revenue', direction: 'DESC' }); // keeps the chosen direction
+  await ui.change('Sort by', '', 'select');
+  assert.equal(ui.visual().groupSort, undefined);
+  assert.equal(ui.compile().model.sort, undefined);
+
+  // Reducer rejects invalid sorts without touching the visual.
+  const sortSnapshot = ui.visual(), sortDraft = ui.draft();
+  const bad = sort => activeSheet(authorReducer(sortDraft, { type: 'group-sort', sort })).visuals[1];
+  assert.deepEqual(bad({ fieldId: 'category', direction: 'UP' }), sortSnapshot);
+  assert.deepEqual(bad({ fieldId: '', direction: 'ASC' }), sortSnapshot);
+  assert.deepEqual(bad({ fieldId: 'category', direction: 'ASC', extra: 1 }), sortSnapshot);
+  assert.deepEqual(bad(null), sortSnapshot);
+
+  // Round-trip through storage keeps the sort.
+  await ui.change('Sort by', 'revenue', 'select');
+  const revivedSort = parseDraft(JSON.stringify(ui.draft())).sheets[0].visuals[1];
+  assert.deepEqual(revivedSort.groupSort, { fieldId: 'revenue', direction: 'DESC' });
+
+  // Export writes SortConfiguration; the compiler re-validates it on the way back.
+  const exported = serializeVisual(ui.visual()).pieChartVisual.chartConfiguration.sortConfiguration;
+  assert.deepEqual(exported, { categorySort: [{ fieldSort: { fieldId: 'revenue', direction: 'DESC' } }] });
+
+  // Unassigning the sorted field drops the stale sort instead of keeping an unbound reference.
+  const unassigned = authorReducer(ui.draft(), { type: 'unassign', field: 'revenue' });
+  assert.equal(activeSheet(unassigned).visuals[1].groupSort, undefined);
+
+  // Slice limits remain an honest stub.
   unavailable(ui.root, 'Slice limit controls', /all supplied result rows are shown/);
   ui.verifySaved();
   await ui.change('Field name', '');
