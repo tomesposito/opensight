@@ -66,7 +66,7 @@ export function compileExtra(model: VisualModel, rows: Row[], cell: CellReader, 
           show: !!chrome,
           left: `${(c * cellW + inset).toFixed(2)}%`, top: `${(topPad + r * cellH + inset).toFixed(2)}%`,
           width: `${(cellW - inset * 2).toFixed(2)}%`, height: `${(cellH - inset * 2).toFixed(2)}%`,
-          containLabel: true,
+          outerBoundsMode: 'same', outerBoundsContain: 'axisLabel',
           // Panel chrome: border/background piggyback on the layout grid.
           ...(chrome ? {
             backgroundColor: opts.background ? '#f4f6f8' : 'transparent',

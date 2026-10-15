@@ -51,7 +51,7 @@ const { authorVisualProblem, parseDraft, validateDraft, serializeDraft, serializ
 const { buildAuthorQuery } = await import('../build/test/author-query.js');
 const { exportBundle } = await import('../build/test/bundle-authoring.js');
 
-test('Pie small multiples render a faceted preview and export; other kinds still refuse', () => {
+test('Pie small multiples render a faceted preview and export; faceted kinds render too, non-faceted kinds still refuse', () => {
   const original = edit(emptyDraft(), { type: 'add', kind: 'pie' });
   let draft = edit(original, { type: 'assign', well: 'smallMultiples', field: 'region' });
   let visual = activeSheet(draft).visuals[0];
@@ -67,12 +67,18 @@ test('Pie small multiples render a faceted preview and export; other kinds still
   assert.match(render(draft), /Group by: region/);
   const exported = serializeVisual(visual).pieChartVisual.chartConfiguration.fieldWells.pieChartAggregatedFieldWells;
   assert.equal(exported.smallMultiples[0].categoricalDimensionField.column.columnName, 'region');
-  const bar = edit(emptyDraft(), { type: 'add', kind: 'bar' }, { type: 'assign', well: 'smallMultiples', field: 'region' });
+  const bar = edit(emptyDraft(), { type: 'add', kind: 'bar' }, { type: 'assign', well: 'smallMultiples', field: 'category' });
   const barVisual = activeSheet(bar).visuals[0];
-  assert.match(authorVisualProblem(barVisual), /^SMALL_MULTIPLES_UNSUPPORTED:/);
-  assert.equal(buildAuthorQuery(barVisual), null);
-  assert.throws(() => serializeDraft(bar), /SMALL_MULTIPLES_UNSUPPORTED/);
-  assert.throws(() => exportBundle(bar), /SMALL_MULTIPLES_UNSUPPORTED/);
+  // Faceted kinds now render a per-facet preview instead of refusing.
+  assert.equal(authorVisualProblem(barVisual), undefined);
+  assert.deepEqual(buildAuthorQuery(barVisual).dimensions.map(d => d.fieldId), ['region', 'category']);
+  assert.doesNotThrow(() => serializeDraft(bar));
+  assert.doesNotThrow(() => exportBundle(bar));
+  const tableDraft = edit(emptyDraft(), { type: 'add', kind: 'table' });
+  const tableVisual = { ...activeSheet(tableDraft).visuals[0], smallMultiples: ['region'] };
+  assert.match(authorVisualProblem(tableVisual), /^SMALL_MULTIPLES_UNSUPPORTED:/);
+  assert.throws(() => serializeVisual(tableVisual, true), /SMALL_MULTIPLES_UNSUPPORTED/);
+  assert.throws(() => exportBundle({ ...tableDraft, sheets: [{ ...activeSheet(tableDraft), visuals: [tableVisual] }] }), /SMALL_MULTIPLES_UNSUPPORTED/);
   draft = edit(draft, { type: 'unassign', well: 'smallMultiples', field: 'region' });
   visual = activeSheet(draft).visuals[0];
   assert.equal(visual.dimension, 'category');

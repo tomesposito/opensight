@@ -36,9 +36,9 @@ test('more than one small multiples field fails closed', () => {
   assert.throws(() => normalizeVisual('api', input.definition), /at most one Small multiples field/);
 });
 
-test('non-pie kinds still reject a nonempty small multiples well', () => {
-  const input = structuredClone(fixtures[1].sheets[0].visuals.find(v => Object.hasOwn(v.definition, 'BarChartVisual')));
-  input.definition.BarChartVisual.ChartConfiguration.FieldWells.BarChartAggregatedFieldWells.SmallMultiples = [facetWell()];
+test('non-faceted kinds still reject a nonempty small multiples well', () => {
+  const input = structuredClone(fixtures[1].sheets[0].visuals.find(v => Object.hasOwn(v.definition, 'TableVisual')));
+  input.definition.TableVisual.ChartConfiguration.FieldWells.TableAggregatedFieldWells.SmallMultiples = [facetWell()];
   assert.throws(() => normalizeVisual('api', input.definition), /field well not supported/);
 });
 

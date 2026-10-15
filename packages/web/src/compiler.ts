@@ -632,7 +632,7 @@ export function compileVisual(input: Input): CompiledVisual {
           show: !!chrome,
           left: `${(c * cellW + inset).toFixed(2)}%`, top: `${(topPad + r * cellH + inset).toFixed(2)}%`,
           width: `${(cellW - inset * 2).toFixed(2)}%`, height: `${(cellH - inset * 2).toFixed(2)}%`,
-          containLabel: true,
+          outerBoundsMode: 'same', outerBoundsContain: 'axisLabel',
           // Panel chrome: border/background piggyback on the layout grid.
           // Dashed/dotted borders render solid (the choice stays in the model).
           ...(chrome ? {
