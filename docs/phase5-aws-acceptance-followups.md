@@ -14,6 +14,13 @@ detected the previously retained backlog; recovery/Scheduler DLQ and source-age
 alarms evaluated OK. No message was deleted or redriven. These alarms have no
 notification or automatic recovery actions and make no database queries.
 
+A synthetic prepared-dataset refresh passed through a real one-shot Scheduler
+entry, SQS and the work Lambda, recording a succeeded occurrence. The schedule
+was stopped and its prepared dataset removed afterward. The first probe correctly
+failed `BLAZE_MODE_REQUIRED` because its dataset used direct-query mode; the
+successful probe explicitly configured BLAZE before arming the schedule. This is
+scheduled-refresh acceptance, not report/alert or crash-recovery acceptance.
+
 The current application exposes durable job endpoints. A request to
 `/api/api/automation-status` reports durable events but SMTP not configured,
 although the separate work Lambda has the approved SMTP references and exact
