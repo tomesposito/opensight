@@ -167,10 +167,10 @@ function importVisual(raw: BundleVisual, id: string, definition: BundleDefinitio
   // retained passthrough behavior). Multi-sort configurations stay unmapped.
   const sortDimension = noDimensions(kind) ? null : rows[0] ?? null;
   const sortBound = [sortDimension, ...(grouped(kind) ? rows : []), ...columns, ...measures].filter((f): f is string => f !== null);
-  const sortWrappers = list(obj(config.SortConfiguration).CategorySort);
-  const sortFs = sortWrappers.length === 1 ? obj(obj(sortWrappers[0]).FieldSort) : {};
-  const sortFieldId = typeof sortFs.FieldId === 'string' && sortFs.FieldId && !sortFs.FieldId.includes('\0') ? sortFs.FieldId : undefined;
-  const sortDirection = sortFs.Direction === 'ASC' ? 'ASC' as const : sortFs.Direction === 'DESC' ? 'DESC' as const : undefined;
+  const sortWrappers = list(obj(config.sortConfiguration).categorySort);
+  const sortFs = sortWrappers.length === 1 ? obj(obj(sortWrappers[0]).fieldSort) : {};
+  const sortFieldId = typeof sortFs.fieldId === 'string' && sortFs.fieldId && !sortFs.fieldId.includes('\0') ? sortFs.fieldId : undefined;
+  const sortDirection = sortFs.direction === 'ASC' ? 'ASC' as const : sortFs.direction === 'DESC' ? 'DESC' as const : undefined;
   const importedGroupSort = sortWrappers.length === 1 && ['bar', 'bar100', 'pie'].includes(kind) &&
     sortFieldId !== undefined && sortDirection !== undefined && sortBound.includes(sortFieldId)
     ? { fieldId: sortFieldId, direction: sortDirection } : undefined;
