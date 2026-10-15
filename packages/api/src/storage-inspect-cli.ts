@@ -1,44 +1,22 @@
-import { DatabaseSync } from 'node:sqlite';
-import { MetadataError, type SqlConnection, type SqlRow, type SqlValue } from './metadata-db.js';
-import { describeStorage } from './storage-breakdown.js';
+import { readFile } from 'node:fs/promises';
+import { MetadataError } from './metadata-db.js';
+import { inspectPostgres, inspectSqlite, storageScope } from './storage-inspection.js';
 
-/** Read-only operator diagnostic: inspect a namespace's retained object reservations, pending cleanup
- * and overdue reclamation obligations. Prints the usage breakdown as JSON on stdout.
- * Usage: node dist/storage-inspect-cli.js --tenant <id> --namespace <id> [--deployment <name>]
- * Database from OPENSIGHT_METADATA_DATABASE (sqlite file, opened read-only) or
- * OPENSIGHT_METADATA_POSTGRES (postgres connection string, read-only transaction guard). */
-function arg(name: string): string | undefined {
-  const i = process.argv.indexOf(`--${name}`);
-  return i === -1 || i + 1 >= process.argv.length ? undefined : process.argv[i + 1];
-}
-function asValues(values: readonly SqlValue[]): unknown[] { return values as unknown[]; }
 async function main(): Promise<void> {
-  const tenantId = arg('tenant'), namespaceId = arg('namespace'), deployment = arg('deployment') ?? 'default';
-  if (!tenantId || !namespaceId) throw new MetadataError('STORAGE_INSPECT_USAGE', 400);
-  const sqlitePath = process.env.OPENSIGHT_METADATA_DATABASE, postgresUrl = process.env.OPENSIGHT_METADATA_POSTGRES;
-  let close: () => Promise<void>;
-  let connection: SqlConnection;
-  if (sqlitePath && sqlitePath !== ':memory:' && !sqlitePath.includes('mode=memory')) {
-    // Read-only URI: any write attempt fails with "attempt to write a readonly database".
-    const db = new DatabaseSync(`file:${sqlitePath}?mode=ro`);
-    let closed = false;
-    connection = { query: async (sql, values = []) => { if (closed) throw new MetadataError('METADATA_TRANSACTION_CLOSED'); return db.prepare(sql).all(...values) as SqlRow[]; } };
-    close = async () => { closed = true; db.close(); };
-  } else if (postgresUrl) {
-    const { Pool } = await import('pg');
-    const pool = new Pool({ connectionString: postgresUrl, max: 1, connectionTimeoutMillis: 10000,
-      options: '-c default_transaction_read_only=on', application_name: 'opensight-storage-inspect' });
-    const client = await pool.connect();
-    try { await client.query('SELECT 1'); } finally { client.release(); }
-    connection = { query: async (sql, values = []) => (await pool.query(sql, asValues(values))).rows as SqlRow[] };
-    close = async () => { await pool.end(); };
-  } else throw new MetadataError('STORAGE_INSPECT_CONFIG_INVALID', 503);
-  try {
-    const breakdown = await describeStorage(connection, { deployment, tenantId, namespaceId });
-    console.log(JSON.stringify(breakdown, null, 2));
-  } finally { await close(); }
+  const args = process.argv.slice(2), values = new Map<string, string>();
+  for (let i = 0; i < args.length; i += 2) {
+    const key = args[i]!, value = args[i + 1];
+    if (!['--tenant', '--namespace', '--deployment'].includes(key) || !value || values.has(key)) throw new MetadataError('STORAGE_INSPECT_USAGE', 400);
+    values.set(key, value);
+  }
+  if (!values.has('--tenant') || !values.has('--namespace')) throw new MetadataError('STORAGE_INSPECT_USAGE', 400);
+  const scope = storageScope({ tenantId: values.get('--tenant')!, namespaceId: values.get('--namespace')!, deployment: values.get('--deployment') ?? 'default' });
+  const sqlite = process.env.OPENSIGHT_METADATA_DATABASE, postgres = process.env.OPENSIGHT_METADATA_POSTGRES;
+  if (!!sqlite === !!postgres) throw new MetadataError('STORAGE_INSPECT_CONFIG_INVALID', 503);
+  const ca = process.env.OPENSIGHT_POSTGRES_CA ?? (process.env.OPENSIGHT_POSTGRES_CA_FILE ? await readFile(process.env.OPENSIGHT_POSTGRES_CA_FILE, 'utf8') : '');
+  console.log(JSON.stringify(sqlite ? await inspectSqlite(sqlite, scope) : await inspectPostgres(postgres!, ca, scope), null, 2));
 }
-main().then(() => { process.exitCode = 0; }, (error: unknown) => {
+main().catch((error: unknown) => {
   console.error(error instanceof MetadataError ? error.code : 'STORAGE_INSPECTION_FAILED');
   process.exitCode = 1;
 });
