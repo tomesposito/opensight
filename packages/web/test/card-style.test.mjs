@@ -88,7 +88,7 @@ test('card-style and card-layout reducer actions validate and strip back to unde
   assert.deepEqual(selected(draft).formatting.cardLayout, { paddingPx: 8 });
   draft = authorReducer(draft, { type: 'card-layout', layout: undefined });
   assert.equal(selected(draft).formatting.cardLayout, undefined);
-  assert.deepEqual(selected(draft).formatting.cardStyle, style);
+  assert.deepEqual(selected(draft).formatting.cardStyle, { background: { color: '#1a2b3c', opacityPct: 50 }, border: { color: '#000000', widthPx: 3 }, loadingAnimation: false });
   draft = authorReducer(draft, { type: 'card-style', style: undefined });
   assert.equal(selected(draft).formatting, undefined);
   assert.ok(!('formatting' in selected(draft)));
@@ -99,7 +99,7 @@ test('card style and layout export, reimport, and round-trip byte-identically', 
   let draft = authorReducer(add(), { type: 'card-style', style });
   draft = authorReducer(draft, { type: 'card-layout', layout: { paddingPx: 8 } });
   const bundle = await parseQsBundle(await downloadBundleBytes(draft));
-  const exported = bundle.members[0].resource.definition.sheets[0].visuals[0].barVisual.opensightFormatting;
+  const exported = bundle.members[0].resource.definition.sheets[0].visuals[0].barChartVisual.opensightFormatting;
   assert.deepEqual(exported.cardStyle, style);
   assert.deepEqual(exported.cardLayout, { paddingPx: 8 });
   const restored = importBundle(bundle);
@@ -109,7 +109,7 @@ test('card style and layout export, reimport, and round-trip byte-identically', 
   assert.deepEqual(exportBundle(restored), bundle);
   // A tampered bundle with invalid card settings imports fail-closed: the whole formatting is dropped.
   const tampered = structuredClone(bundle);
-  tampered.members[0].resource.definition.sheets[0].visuals[0].barVisual.opensightFormatting.cardStyle.background.color = 'red';
+  tampered.members[0].resource.definition.sheets[0].visuals[0].barChartVisual.opensightFormatting.cardStyle.background.color = 'red';
   const recovered = importBundle(tampered);
   assert.equal(selected(recovered).formatting, undefined);
 });
