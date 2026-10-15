@@ -29,11 +29,14 @@ for (const r of local) {
   check(existsSync(resolve(root, r)), `missing local asset: ${r}`);
 }
 
-// 3. External links are only the allowlisted GitHub repo/docs ones.
+// 3. External links are only the allowlisted ones: the GitHub repo/docs and
+// the hosted product app (issue #106).
+const APP_ORIGIN = 'https://app.getopensight.org';
 const external = refs.filter(r => /^https?:/.test(r));
 for (const r of external) {
   check(
-    r.startsWith('https://github.com/tomesposito/opensight'),
+    r.startsWith('https://github.com/tomesposito/opensight') ||
+    r === APP_ORIGIN || r.startsWith(APP_ORIGIN + '/'),
     `non-allowlisted external URL: ${r}`
   );
 }
@@ -58,6 +61,7 @@ check(html.includes('Apache-2.0'), 'site must name the Apache-2.0 license');
 // 7. CTA targets.
 check(html.includes('href="demo/"'), 'missing demo/ CTA');
 check(html.includes('href="https://github.com/tomesposito/opensight"'), 'missing GitHub CTA');
+check(html.includes('href="https://app.getopensight.org"'), 'missing Open the app CTA');
 
 if (failures.length) {
   console.error(`site/check.mjs FAILED (${failures.length}):`);
