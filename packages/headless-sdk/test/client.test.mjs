@@ -65,6 +65,18 @@ describe('pagination headers (no query strings — the hosted plane rejects them
   });
 });
 
+describe('delete idempotency', () => {
+  for (const [method, resource] of [['deleteDataset', 'datasets'], ['deleteSource', 'sources']]) {
+    it(`${method} carries the optional spec Idempotency-Key without changing If-Match`, async () => {
+      const transport = mockFetch({ [`DELETE /api/v1/${resource}/example`]: jsonOk({ removed: true }) });
+      const client = new OpenSightClient({ baseUrl: 'https://opensight.example/api', getToken: 'fixture-token', fetch: transport });
+      await client[method]('example', '"3"', { idempotencyKey: 'delete-replay' });
+      assert.equal(transport.calls[0].headers['If-Match'], '"3"');
+      assert.equal(transport.calls[0].headers['Idempotency-Key'], 'delete-replay');
+    });
+  }
+});
+
 describe('datasets', () => {
   it('getDataset hits the describe route and returns the composed view', async () => {
     const body = {
