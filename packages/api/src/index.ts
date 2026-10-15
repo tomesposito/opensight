@@ -313,7 +313,8 @@ export async function createApiServer(options: ApiOptions): Promise<Server> {
       request.resume();
       if (/^\/api\/(?:namespaces\/[^/]+\/)?v1\//.test(request.url ?? '')) { v1.sendError(response, cause); return; }
       if (cause instanceof QueryEngineError) send(response, 422, { errorCode: cause.code, message: cause.message, path: cause.path });
-      else if (cause instanceof MetadataError) send(response, cause.status, { errorCode: cause.code, Message: cause.message });
+      else if (cause instanceof MetadataError) send(response, cause.status, { errorCode: cause.code, Message: cause.message,
+        ...(cause.detail === undefined ? {} : { detail: cause.detail }) });
       else if (cause instanceof SecurityError) send(response, cause.status, { errorCode: cause.code, Message: cause.message });
       else if (cause instanceof RequestError) send(response, cause.status, { Message: cause.message });
       else send(response, 500, { Message: 'Unable to process request' });

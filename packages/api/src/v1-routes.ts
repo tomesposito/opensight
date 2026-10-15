@@ -124,10 +124,15 @@ export class V1Routes {
     const status = dataError ? 422 : error instanceof MetadataError || error instanceof RequestError || error instanceof SecurityError ? error.status : 500;
     const errorCode = dataError ? error.code : error instanceof MetadataError || error instanceof SecurityError ? error.code
       : error instanceof RequestError ? (status === 405 ? 'METHOD_NOT_ALLOWED' : status === 404 ? 'RESOURCE_NOT_FOUND' : 'HOSTED_REQUEST_INVALID') : 'HOSTED_INTERNAL_ERROR';
-    const message = status === 500 ? 'Internal error' : String((error as { detail?: unknown })?.detail ?? (error as Error)?.message ?? errorCode);
+    const rawDetail = (error as { detail?: unknown })?.detail;
+    const summary = rawDetail !== null && typeof rawDetail === 'object' && 'summary' in rawDetail
+      && typeof (rawDetail as { summary: unknown }).summary === 'string' ? (rawDetail as { summary: string }).summary : undefined;
+    const message = status === 500 ? 'Internal error' : typeof rawDetail === 'string' ? rawDetail : summary ?? String((error as Error)?.message ?? errorCode);
     const path = error instanceof QueryEngineError ? error.path : error instanceof RequestError
       ? /^(\$[^:]*|parameterDeclarations[^:]*|parameterBindings[^:]*):/.exec(error.message)?.[1] : error instanceof MetadataError && 'path' in error ? error.path : undefined;
-    send(response, status, { errorCode, message, ...(path === undefined ? {} : { path }), ...(error instanceof Error && 'diagnostics' in error ? { Errors: error.diagnostics } : {}) });
+    send(response, status, { errorCode, message, ...(path === undefined ? {} : { path }),
+      ...(rawDetail === undefined ? {} : { detail: rawDetail }),
+      ...(error instanceof Error && 'diagnostics' in error ? { Errors: error.diagnostics } : {}) });
   }
 
   private header(request: IncomingMessage, name: string): string | undefined {

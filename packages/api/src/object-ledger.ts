@@ -6,6 +6,7 @@ import { currentAuthority } from './serverless-authority.js';
 import { coordinationDeployment } from './coordination-schema.js';
 import { objectChecksum } from './object-schema.js';
 import { entitlementConfig, resourceBytes } from './hosted-usage.js';
+import { describeStorage, quotaExceededSummary } from './storage-breakdown.js';
 import type { PlannedArtifactWrite } from './artifact-transfer.js';
 import { artifactIdentity, type ArtifactIdentity } from './artifact-schema.js';
 
@@ -83,7 +84,18 @@ export class ObjectLedger {
     const limits = entitlementConfig(row ? String(row.entitlements) : undefined), limit = Object.hasOwn(limits.tenants, context.tenantId) ? limits.tenants[context.tenantId] : limits.defaults;
     if (!limit) throw new MetadataError('ENTITLEMENT_UNRESOLVED', 503);
     const gauge = await this.gauge(c, context);
-    if (await resourceBytes(c, context) + gauge.reserved + gauge.live + bytes > limit.storageBytes) throw new MetadataError('USAGE_LIMIT_EXCEEDED', 429);
+    const logical = await resourceBytes(c, context);
+    if (logical + gauge.reserved + gauge.live + bytes > limit.storageBytes) {
+      // Explain the condition instead of a generic quota error: a tester needs to see
+      // how much of the limit is retained reservations awaiting collector cleanup.
+      const breakdown = await describeStorage(c, { deployment: this.deployment, tenantId: context.tenantId, namespaceId: context.namespaceId, now });
+      const summary = quotaExceededSummary(breakdown, bytes);
+      throw new MetadataError('USAGE_LIMIT_EXCEEDED', 429, { summary,
+        requestedBytes: bytes, breakdown: { limitBytes: breakdown.limitBytes, metadataBytes: breakdown.metadataBytes,
+          liveBytes: breakdown.liveBytes, reservedBytes: breakdown.reservedBytes, pendingCleanupBytes: breakdown.pendingCleanupBytes,
+          pendingCleanupCount: breakdown.pendingCleanup.length, overdueCount: breakdown.overdueCount,
+          nextReclamationAt: breakdown.nextReclamationAt === null ? null : new Date(breakdown.nextReclamationAt).toISOString() } });
+    }
     for (const plan of plans) {
       const state = this.plans.get(plan)!;
       await c.query("INSERT INTO sr_object VALUES (?,?,?,?,?,?,?,?,?,NULL,?,?,NULL,NULL,'reserved',?,?,?)", [...this.scope(context), plan.id, intentId, plan.key,

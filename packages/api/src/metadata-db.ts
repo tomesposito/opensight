@@ -19,7 +19,7 @@ export interface MetadataPool {
 }
 
 export class MetadataError extends Error {
-  constructor(readonly code: string, readonly status = 409) { super(code); }
+  constructor(readonly code: string, readonly status = 409, readonly detail?: unknown) { super(code); }
 }
 export function missing(): never { throw new MetadataError('RESOURCE_NOT_FOUND', 404); }
 
