@@ -389,13 +389,29 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
   const sort = object(config[key('sortConfiguration', 'SortConfiguration')] ?? {}, cpath);
   const sortsKey = key('categorySort', 'CategorySort');
   keys(sort, ['radar', 'sankey', 'waterfall'].includes(kind) ? [sortsKey] : [sortsKey, key('categoryItemsLimit', 'CategoryItemsLimit'), key('smallMultiplesLimitConfiguration', 'SmallMultiplesLimitConfiguration')], `${cpath}.${key('sortConfiguration', 'SortConfiguration')}`);
-  for (const limitKey of [key('categoryItemsLimit', 'CategoryItemsLimit'), key('smallMultiplesLimitConfiguration', 'SmallMultiplesLimitConfiguration')]) {
-    if (sort[limitKey] !== undefined) {
-      const limit = object(sort[limitKey], `${cpath}.${limitKey}`);
-      keys(limit, [key('otherCategories', 'OtherCategories')], `${cpath}.${limitKey}`);
-      enumValue(limit[key('otherCategories', 'OtherCategories')], ['INCLUDE'], 'INCLUDE', cpath);
-      warnings.push(`${cpath}.${limitKey}: no top-N/Other bucket is computed; all supplied result rows are shown.`);
+  let sliceLimit: VisualModel['sliceLimit'];
+  const categoryLimitKey = key('categoryItemsLimit', 'CategoryItemsLimit');
+  if (sort[categoryLimitKey] !== undefined) {
+    const limit = object(sort[categoryLimitKey], `${cpath}.${categoryLimitKey}`);
+    keys(limit, [key('otherCategories', 'OtherCategories'), key('itemsLimit', 'ItemsLimit')], `${cpath}.${categoryLimitKey}`);
+    const other = enumValue(limit[key('otherCategories', 'OtherCategories')], ['INCLUDE', 'EXCLUDE'], 'INCLUDE', cpath);
+    const count = limit[key('itemsLimit', 'ItemsLimit')];
+    if (count === undefined) {
+      warnings.push(`${cpath}.${categoryLimitKey}: no slice limit specified; all supplied result rows are shown.`);
+    } else if (kind !== 'pie') {
+      fail(`${cpath}.${categoryLimitKey}`, 'slice limits are only computed for pie visuals');
+    } else if (!Number.isInteger(count) || (count as number) < 1 || (count as number) > 100) {
+      fail(`${cpath}.${categoryLimitKey}`, 'slice limit count must be an integer between 1 and 100');
+    } else {
+      sliceLimit = { count: count as number, includeOther: other === 'INCLUDE' };
     }
+  }
+  const smallLimitKey = key('smallMultiplesLimitConfiguration', 'SmallMultiplesLimitConfiguration');
+  if (sort[smallLimitKey] !== undefined) {
+    const limit = object(sort[smallLimitKey], `${cpath}.${smallLimitKey}`);
+    keys(limit, [key('otherCategories', 'OtherCategories')], `${cpath}.${smallLimitKey}`);
+    enumValue(limit[key('otherCategories', 'OtherCategories')], ['INCLUDE'], 'INCLUDE', cpath);
+    warnings.push(`${cpath}.${smallLimitKey}: no top-N/Other bucket is computed; all supplied result rows are shown.`);
   }
   const sorts = list(sort[sortsKey], `${cpath}.${sortsKey}`);
   if (sorts.length > 1) fail(cpath, 'only one field sort is supported');
@@ -417,6 +433,7 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
     subtitle: subtitleText, subtitleVisible: visibility(subtitle, key('visibility', 'Visibility')),
     legendPosition: enumValue(legend[key('position', 'Position')] ?? (formattingValid(formatting) ? formatting.legendPosition : undefined), [...LEGEND_POSITIONS], 'BOTTOM', `${cpath}.legend.position`) as LegendPosition,
     dimensions, rowDimensions, columnDimensions, measures, totals, subtotals, columnTotals, columnSubtotals, innerRadius, sort: fieldSort, warnings,
+    ...(sliceLimit ? { sliceLimit } : {}),
     ...(facet ? { facet } : {}),
     ...(multiplesOptions ? { multiplesOptions } : {}),
     horizontal: (kind === 'bar' || kind === 'bar100') && enumValue(config[key('orientation', 'Orientation')], ['VERTICAL', 'HORIZONTAL'], 'VERTICAL', `${cpath}.${key('orientation', 'Orientation')}`) === 'HORIZONTAL',
@@ -478,6 +495,43 @@ export function compileVisual(input: Input): CompiledVisual {
       const cmp = typeof av === 'number' && typeof bv === 'number' ? av - bv : String(av) < String(bv) ? -1 : String(av) > String(bv) ? 1 : 0;
       return sort.direction === 'DESC' ? -cmp : cmp;
     });
+  }
+  // Pie slice limit (QuickSight CategoryItemsLimit parity): keep the top N rows
+  // in display order per facet group, rolling the rest into one "Other" bucket
+  // (per-measure SUM, null when every contributing value is null) or dropping
+  // them when Other is excluded. Unset limit: all supplied rows are shown.
+  if (model.sliceLimit && model.kind === 'pie' && model.dimensions[0]) {
+    const limit = model.sliceLimit;
+    const category = model.dimensions[0];
+    const keyOf = (row: Row) => model.facet ? JSON.stringify(cell(row, model.facet)) : '';
+    const groups = new Map<string, Row[]>();
+    for (const row of rows) {
+      const k = keyOf(row);
+      if (!groups.has(k)) groups.set(k, []);
+      groups.get(k)!.push(row);
+    }
+    const limited: Row[] = [];
+    for (const group of groups.values()) {
+      if (group.length <= limit.count) { limited.push(...group); continue; }
+      const kept = group.slice(0, limit.count), rest = group.slice(limit.count);
+      limited.push(...kept);
+      if (limit.includeOther) {
+        const other: Record<string, Cell> = { ...kept[0]! };
+        const alias = (f: Field) => Object.hasOwn(input.bindings, f.id) ? input.bindings[f.id]! : f.column;
+        other[alias(category)] = 'Other';
+        for (const measure of model.measures) {
+          const values = rest.map(r => number(r, measure)).filter((v): v is number => v !== null);
+          other[alias(measure)] = values.length ? values.reduce((a, b) => a + b, 0) : null;
+        }
+        // Tooltip extra fields are per-row adornments, not additive facts: the
+        // Other bucket has no meaningful value for them, so they read as empty
+        // rather than inheriting one slice's value.
+        for (const extra of extraFields) other[alias(extra)] = null;
+        limited.push(other);
+      }
+    }
+    rows.length = 0;
+    rows.push(...limited);
   }
   if (model.dimensions[0] && !['box', 'histogram', 'scatter', 'pointMap', 'sankey'].includes(model.kind)) {
     // Faceted pies group by (facet, category): the same category may repeat across facets.

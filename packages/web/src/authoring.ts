@@ -104,6 +104,8 @@ export interface AuthorVisual {
   multiplesOptions?: MultiplesOptions;
   /** Group/Color sort: sort the slices/segments by one bound field. Renders through sortConfiguration. */
   groupSort?: GroupSort;
+  /** Pie slice limit: top-N categories with an optional "Other" bucket. Renders through sortConfiguration. */
+  sliceLimit?: SliceLimit;
   donut: boolean; titleVisible: boolean; legend: boolean; labels: boolean; tooltipVisible: boolean;
   /** Interactions-tab tooltip detail (QuickSight SelectedTooltipType / FieldBasedTooltip parity). */
   tooltipType: 'basic' | 'detailed'; tooltipTitleType: 'primaryValue' | 'fieldId';
@@ -203,6 +205,15 @@ export function groupSortValid(value: unknown): value is GroupSort {
   const v = value as Record<string, unknown>;
   return Object.keys(v).length === 2 && typeof v.fieldId === 'string' && !!v.fieldId && !v.fieldId.includes('\0') && (v.direction === 'ASC' || v.direction === 'DESC');
 }
+/** Pie slice limit: show the top N categories, rolling the rest into an
+ *  "Other" bucket (QuickSight CategoryItemsLimit parity). Unset means no limit. */
+export interface SliceLimit { count: number; includeOther: boolean }
+/** Fail-closed structural validation for the pie slice limit. */
+export function sliceLimitValid(value: unknown): value is SliceLimit {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const v = value as Record<string, unknown>;
+  return Object.keys(v).length === 2 && Number.isInteger(v.count) && (v.count as number) >= 1 && (v.count as number) <= 100 && typeof v.includeOther === 'boolean';
+}
 export const TOOLTIP_AGGREGATIONS = ['SUM', 'AVG', 'MIN', 'MAX', 'COUNT'] as const;
 export type TooltipAggregation = typeof TOOLTIP_AGGREGATIONS[number];
 /** A dataset measure field added to the detailed tooltip. Aggregation is per-field; label overrides the field name. */
@@ -301,6 +312,7 @@ export type AuthorAction =
   | { type: 'legend-title'; title: LegendTitle | undefined }
   | { type: 'group-title'; title: GroupTitle | undefined }
   | { type: 'group-sort'; sort: GroupSort | undefined }
+  | { type: 'slice-limit'; limit: SliceLimit | undefined }
   | { type: 'legend-value-style'; style: LegendTextStyle | undefined }
   | { type: 'data-labels'; labels: DataLabels | undefined }
   | { type: 'card-style'; style: CardStyle | undefined }
@@ -620,6 +632,13 @@ export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorD
         else next.groupSort = structuredClone(action.sort);
         return next;
       }
+      case 'slice-limit': {
+        if (action.limit !== undefined && !sliceLimitValid(action.limit)) return visual;
+        const next = { ...visual };
+        if (action.limit === undefined) delete next.sliceLimit;
+        else next.sliceLimit = structuredClone(action.limit);
+        return next;
+      }
       case 'legend-value-style': {
         if (action.style !== undefined && !legendTextStyleValid(action.style)) return visual;
         const next = { ...visual, formatting: action.style === undefined ? stripFormattingKey(visual.formatting, 'legendValueStyle') : { ...visual.formatting, legendValueStyle: structuredClone(action.style) } };
@@ -805,9 +824,15 @@ export function serializeVisual(visual: AuthorVisual, includeInteractions = true
   const tableTotals = { totalOptions: totalVisibility(visual.totals), opensightSubtotalOptions: totalVisibility(visual.subtotals) };
   const pivotTotals = { totalOptions: { rowTotalOptions: totalVisibility(visual.totals), columnTotalOptions: totalVisibility(visual.totals),
     rowSubtotalOptions: totalVisibility(visual.subtotals), columnSubtotalOptions: totalVisibility(visual.subtotals) } };
-  // Group/Color sort serializes as SortConfiguration; the compiler parses it back into the model.
-  const groupSortConfig = visual.groupSort && ['bar', 'bar100', 'pie'].includes(visual.kind)
-    ? { sortConfiguration: { categorySort: [{ fieldSort: { fieldId: visual.groupSort.fieldId, direction: visual.groupSort.direction } }] } } : {};
+  // Group/Color sort and pie slice limit serialize as SortConfiguration; the
+  // compiler parses them back into the model. The slice limit is pie-scoped.
+  const sortConfiguration = {
+    ...(visual.groupSort && ['bar', 'bar100', 'pie'].includes(visual.kind)
+      ? { categorySort: [{ fieldSort: { fieldId: visual.groupSort.fieldId, direction: visual.groupSort.direction } }] } : {}),
+    ...(visual.sliceLimit && visual.kind === 'pie'
+      ? { categoryItemsLimit: { itemsLimit: visual.sliceLimit.count, otherCategories: visual.sliceLimit.includeOther ? 'INCLUDE' : 'EXCLUDE' } } : {}),
+  };
+  const groupSortConfig = Object.keys(sortConfiguration).length ? { sortConfiguration } : {};
   if (extraKind(visual.kind)) {
     const spec = EXTRA_VISUALS[visual.kind];
     const wells: Record<string, unknown> = { ...multiples };
@@ -924,11 +949,12 @@ export function validateDraft(value: unknown): asserts value is AuthorDraft {
       }
       const fieldNames = (v: unknown, role: string): v is string[] => imported ? Array.isArray(v) && v.every(n => typeof n === 'string' && !!n && !n.includes('\0')) && new Set(v).size === v.length : names(v, role);
 
-      if (!isObject(v) || !onlyKeys(v, ['id', 'kind', 'title', 'subtitle', 'subtitleVisible', 'dimension', 'measures', 'smallMultiples', 'multiplesOptions', 'groupSort', 'donut', 'imported', 'filterActions', 'urlActions', 'navigationActions', 'hierarchy', 'dateGrain', 'palette', 'formatting', 'gauge', 'bins', 'insightConfiguration', 'referenceLines', ...Object.keys(defaults())]) || typeof v.id !== 'string' || !/^visual-[1-9][0-9]*$/.test(v.id) || ids.has(v.id) || !VISUAL_TYPES.some(t => t.kind === v.kind) || typeof v.title !== 'string' || !['donut', 'titleVisible', 'legend', 'labels', 'tooltipVisible', 'horizontal', 'stacked', 'totals', 'subtotals'].every(k => typeof v[k] === 'boolean') || (v.tooltipType !== 'basic' && v.tooltipType !== 'detailed') || (v.tooltipTitleType !== 'primaryValue' && v.tooltipTitleType !== 'fieldId') || typeof v.tooltipAggregations !== 'boolean' || !Array.isArray(v.tooltipHiddenFields) || !v.tooltipHiddenFields.every(n => typeof n === 'string' && !!n && !n.includes('\0')) || new Set(v.tooltipHiddenFields).size !== v.tooltipHiddenFields.length || !tooltipExtraFieldsValid(v.tooltipExtraFields) || !fieldNames(v.measures, 'measure') || !fieldNames(v.rows, 'dimension') || !fieldNames(v.columns, 'dimension') || (v.dimension !== null && !fieldNames([v.dimension], 'dimension')) || !Array.isArray(v.filters)) return fail();
+      if (!isObject(v) || !onlyKeys(v, ['id', 'kind', 'title', 'subtitle', 'subtitleVisible', 'dimension', 'measures', 'smallMultiples', 'multiplesOptions', 'groupSort', 'sliceLimit', 'donut', 'imported', 'filterActions', 'urlActions', 'navigationActions', 'hierarchy', 'dateGrain', 'palette', 'formatting', 'gauge', 'bins', 'insightConfiguration', 'referenceLines', ...Object.keys(defaults())]) || typeof v.id !== 'string' || !/^visual-[1-9][0-9]*$/.test(v.id) || ids.has(v.id) || !VISUAL_TYPES.some(t => t.kind === v.kind) || typeof v.title !== 'string' || !['donut', 'titleVisible', 'legend', 'labels', 'tooltipVisible', 'horizontal', 'stacked', 'totals', 'subtotals'].every(k => typeof v[k] === 'boolean') || (v.tooltipType !== 'basic' && v.tooltipType !== 'detailed') || (v.tooltipTitleType !== 'primaryValue' && v.tooltipTitleType !== 'fieldId') || typeof v.tooltipAggregations !== 'boolean' || !Array.isArray(v.tooltipHiddenFields) || !v.tooltipHiddenFields.every(n => typeof n === 'string' && !!n && !n.includes('\0')) || new Set(v.tooltipHiddenFields).size !== v.tooltipHiddenFields.length || !tooltipExtraFieldsValid(v.tooltipExtraFields) || !fieldNames(v.measures, 'measure') || !fieldNames(v.rows, 'dimension') || !fieldNames(v.columns, 'dimension') || (v.dimension !== null && !fieldNames([v.dimension], 'dimension')) || !Array.isArray(v.filters)) return fail();
       if (v.referenceLines !== undefined && (!Array.isArray(v.referenceLines) || !v.referenceLines.every(referenceLineValid))) return fail();
       if (v.smallMultiples !== undefined && (!names(v.smallMultiples, 'dimension') || v.smallMultiples.length > 1 || v.smallMultiples.some(name => fields.find(f => f.name === name)?.type === 'BOOLEAN'))) return fail();
       if (v.multiplesOptions !== undefined && !multiplesOptionsValid(v.multiplesOptions)) return fail();
       if (v.groupSort !== undefined && !groupSortValid(v.groupSort)) return fail();
+      if (v.sliceLimit !== undefined && !sliceLimitValid(v.sliceLimit)) return fail();
       if ((v.kind === 'radar' || v.kind === 'sankey') && !v.imported && (v.rows.length > 1 || v.columns.length > 1)) return fail();
       if (singleMeasure(v.kind as VisualKind) && v.measures.length > 1 || noDimensions(v.kind as VisualKind) && v.dimension !== null || v.kind !== 'pie' && v.donut || !splitDimensions(v.kind as VisualKind) && v.columns.length || (grouped(v.kind as VisualKind) ? v.dimension !== (v.rows[0] ?? null) : v.rows.length) || v.rows.some(n => (v.columns as string[]).includes(n))) return fail();
       if (v.insightConfiguration !== undefined && !isObject(v.insightConfiguration) || v.kind === 'insight' && !v.imported && v.measures.length > 2) return fail();

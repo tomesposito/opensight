@@ -150,6 +150,42 @@ test('imported Group/Color sorts become editable draft state and survive export'
   assert.deepEqual(activeSheet(redraft).visuals.find(v => v.kind === 'pie').groupSort, { fieldId: 'revenue', direction: 'ASC' });
 });
 
+test('imported pie slice limits become editable draft state and survive export', () => {
+  const bundle = fixture();
+  const pie = bundle.members[0].resource.definition.sheets[0].visuals.find(v => v.pieChartVisual).pieChartVisual;
+  pie.chartConfiguration.sortConfiguration = {
+    categorySort: [{ fieldSort: { fieldId: 'category', direction: 'DESC' } }],
+    categoryItemsLimit: { itemsLimit: 4, otherCategories: 'INCLUDE' },
+  };
+  const draft = importBundle(bundle);
+  const visual = activeSheet(draft).visuals.find(v => v.kind === 'pie');
+  assert.deepEqual(visual.sliceLimit, { count: 4, includeOther: true });
+  assert.deepEqual(visual.groupSort, { fieldId: 'category', direction: 'DESC' });
+  // An untouched export keeps the imported limit verbatim alongside the sort.
+  const exported = exportBundle(draft);
+  const exportedPie = exported.members[0].resource.definition.sheets[0].visuals.find(v => v.pieChartVisual).pieChartVisual;
+  assert.deepEqual(exportedPie.chartConfiguration.sortConfiguration, {
+    categorySort: [{ fieldSort: { fieldId: 'category', direction: 'DESC' } }],
+    categoryItemsLimit: { itemsLimit: 4, otherCategories: 'INCLUDE' },
+  });
+  // Editing the limit writes through the diff export; re-import keeps it editable.
+  const edited = change(change(draft, { type: 'select', id: visual.id }), { type: 'slice-limit', limit: { count: 2, includeOther: false } });
+  const reexported = exportBundle(edited);
+  const reexportedPie = reexported.members[0].resource.definition.sheets[0].visuals.find(v => v.pieChartVisual).pieChartVisual;
+  assert.deepEqual(reexportedPie.chartConfiguration.sortConfiguration, {
+    categorySort: [{ fieldSort: { fieldId: 'category', direction: 'DESC' } }],
+    categoryItemsLimit: { itemsLimit: 2, otherCategories: 'EXCLUDE' },
+  });
+  const redraft = importBundle(reexported);
+  assert.deepEqual(activeSheet(redraft).visuals.find(v => v.kind === 'pie').sliceLimit, { count: 2, includeOther: false });
+  // Clearing the limit drops the limit subtree while the untouched sort survives.
+  const cleared = change(edited, { type: 'slice-limit', limit: undefined });
+  const clearedPie = exportBundle(cleared).members[0].resource.definition.sheets[0].visuals.find(v => v.pieChartVisual).pieChartVisual;
+  assert.deepEqual(clearedPie.chartConfiguration.sortConfiguration, {
+    categorySort: [{ fieldSort: { fieldId: 'category', direction: 'DESC' } }],
+  });
+});
+
 test('remap matches local fields by name, clears unmatched fields, and uses local sales query only afterward', () => {
   const bundle = fixture(), raw = bundle.members[0].resource.definition.sheets[0].visuals[0].barChartVisual;
   raw.chartConfiguration.fieldWells.barChartAggregatedFieldWells.values.push({ numericalMeasureField: { fieldId: 'unknown', column: { dataSetIdentifier: 'sales_data', columnName: 'foreign_margin' }, aggregationFunction: { simpleNumericalAggregation: 'SUM' } } });
