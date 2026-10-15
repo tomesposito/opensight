@@ -730,9 +730,16 @@ export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorD
     return visual;
   }).map((visual, index) => {
     const previous = sheet.visuals[index]!;
-    if (!visual.formatting?.pivot?.collapsedRowGroups || visual.kind === previous.kind && JSON.stringify(visual.rows) === JSON.stringify(previous.rows)) return visual;
-    const { collapsedRowGroups: _old, ...pivot } = visual.formatting.pivot;
-    return { ...visual, formatting: { ...visual.formatting, pivot } };
+    let next = visual;
+    // A sort whose field left the visual's wells is stale: drop it rather than
+    // keep an unbound reference (same leniency as tooltip hidden fields).
+    if (next.groupSort && ![next.dimension, ...next.rows, ...next.columns, ...next.measures].includes(next.groupSort.fieldId)) {
+      const { groupSort: _dropped, ...rest } = next;
+      next = rest;
+    }
+    if (!next.formatting?.pivot?.collapsedRowGroups || next.kind === previous.kind && JSON.stringify(next.rows) === JSON.stringify(previous.rows)) return next;
+    const { collapsedRowGroups: _old, ...pivot } = next.formatting.pivot;
+    return { ...next, formatting: { ...next.formatting, pivot } };
   });
   return update({ visuals });
 }
@@ -921,11 +928,7 @@ export function validateDraft(value: unknown): asserts value is AuthorDraft {
       if (v.referenceLines !== undefined && (!Array.isArray(v.referenceLines) || !v.referenceLines.every(referenceLineValid))) return fail();
       if (v.smallMultiples !== undefined && (!names(v.smallMultiples, 'dimension') || v.smallMultiples.length > 1 || v.smallMultiples.some(name => fields.find(f => f.name === name)?.type === 'BOOLEAN'))) return fail();
       if (v.multiplesOptions !== undefined && !multiplesOptionsValid(v.multiplesOptions)) return fail();
-      if (v.groupSort !== undefined) {
-        // The sort field must be one of the visual's own bound fields.
-        const boundFields = [v.dimension, ...(Array.isArray(v.rows) ? v.rows : []), ...(Array.isArray(v.columns) ? v.columns : []), ...(Array.isArray(v.measures) ? v.measures : [])];
-        if (!groupSortValid(v.groupSort) || !boundFields.includes((v.groupSort as GroupSort).fieldId)) return fail();
-      }
+      if (v.groupSort !== undefined && !groupSortValid(v.groupSort)) return fail();
       if ((v.kind === 'radar' || v.kind === 'sankey') && !v.imported && (v.rows.length > 1 || v.columns.length > 1)) return fail();
       if (singleMeasure(v.kind as VisualKind) && v.measures.length > 1 || noDimensions(v.kind as VisualKind) && v.dimension !== null || v.kind !== 'pie' && v.donut || !splitDimensions(v.kind as VisualKind) && v.columns.length || (grouped(v.kind as VisualKind) ? v.dimension !== (v.rows[0] ?? null) : v.rows.length) || v.rows.some(n => (v.columns as string[]).includes(n))) return fail();
       if (v.insightConfiguration !== undefined && !isObject(v.insightConfiguration) || v.kind === 'insight' && !v.imported && v.measures.length > 2) return fail();
