@@ -56,7 +56,7 @@ function SwatchEditor({ label, defaultColor, defaultOpacityPct, value, onChange 
 export function CardStyle({ visual, dispatch }: SectionProps) {
   const style: CardStyle = visual.formatting?.cardStyle ?? {};
   const set = (next: CardStyle | undefined) => dispatch({ type: 'card-style', style: cleanCardStyle(next) });
-  const border: CardBorder = style.border ?? {};
+  const border: Partial<CardBorder> = style.border ?? {};
   const setBorder = (patch: Partial<CardBorder>) => set({ ...style, border: { color: border.color ?? CARD_DEFAULTS.borderColor, ...patch } });
   const setBorderWidth = (raw: string) => { if (/^\d+$/.test(raw) && Number(raw) >= 0 && Number(raw) <= 8) setBorder({ widthPx: Number(raw) }); };
   return <section className="property-group" aria-label="Card style"><h4>CARD STYLE</h4>
@@ -68,7 +68,10 @@ export function CardStyle({ visual, dispatch }: SectionProps) {
       <input aria-label="Border opacity (%)" inputMode="numeric" placeholder={`${CARD_DEFAULTS.borderOpacityPct}%`}
         value={border.opacityPct ?? ''} onChange={e => {
           const trimmed = e.target.value.trim();
-          if (trimmed === '') { const { opacityPct: _dropped, ...rest } = border; set({ ...style, border: Object.keys(rest).length ? { color: rest.color ?? CARD_DEFAULTS.borderColor, ...rest } : undefined }); }
+          if (trimmed === '') {
+            const { opacityPct: _dropped, ...rest } = border;
+            set({ ...style, border: Object.keys(rest).length ? { color: rest.color ?? CARD_DEFAULTS.borderColor, widthPx: rest.widthPx } : undefined });
+          }
           else if (/^\d+$/.test(trimmed) && Number(trimmed) >= 0 && Number(trimmed) <= 100) setBorder({ opacityPct: Number(trimmed) });
         }} />
       <select aria-label="Border width" value={String(border.widthPx ?? CARD_DEFAULTS.borderWidthPx)} onChange={e => setBorderWidth(e.target.value)}>

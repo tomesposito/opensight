@@ -60,21 +60,43 @@ test('CARD TITLE edits survive storage, affect compilation, and leave the other 
 });
 
 
-test('CARD STYLE shows reference controls without handlers or persisted fake settings', async t => {
+test('CARD STYLE controls save lean card style settings and strip reference defaults', async t => {
   const ui = await mount(t, CardStyle);
-  const before = structuredClone(ui.visual());
-  const group = unavailable(ui.root, 'Card style controls', /not supported yet.*reference defaults, not applied/);
-  for (const label of ['Background opacity (%)', 'Border opacity (%)', 'Border width', 'Selection opacity (%)']) assert.ok(group.findByProps({ 'aria-label': label }));
-  assert.equal(group.findAllByType('label').filter(n => n.children.includes('Loading animation')).length, 1);
-  assert.deepEqual(ui.visual(), before); ui.verifySaved();
+  assert.equal(ui.visual().formatting, undefined);
+  const control = name => ui.root.findByProps({ 'aria-label': name });
+  await act(() => control('Background color').props.onChange({ target: { value: '#1a2b3c' } }));
+  assert.deepEqual(ui.visual().formatting.cardStyle, { background: { color: '#1a2b3c' } });
+  await act(() => control('Background opacity (%)').props.onChange({ target: { value: '50' } }));
+  assert.deepEqual(ui.visual().formatting.cardStyle.background, { color: '#1a2b3c', opacityPct: 50 });
+  await act(() => control('Border width').props.onChange({ target: { value: '3' } }));
+  assert.deepEqual(ui.visual().formatting.cardStyle.border, { color: '#cccccc', widthPx: 3 });
+  await act(() => control('Selection color').props.onChange({ target: { value: '#112233' } }));
+  assert.deepEqual(ui.visual().formatting.cardStyle.selection, { color: '#112233' });
+  assert.match(ui.root.findByProps({ 'aria-label': 'Card style' }).findAllByType('p').map(p => p.children.join('')).join(' '), /does not draw a separate selection highlight/);
+  await ui.change('Loading animation', false);
+  assert.equal(ui.visual().formatting.cardStyle.loadingAnimation, false);
+  assert.deepEqual(ui.compile().model.formatting.cardStyle.background, { color: '#1a2b3c', opacityPct: 50 });
+  const reset = ui.root.findAllByType('button').find(n => n.children.includes('Reset card style to defaults'));
+  await act(() => reset.props.onClick());
+  assert.equal(ui.visual().formatting, undefined);
+  ui.verifySaved();
 });
 
 
-test('CARD LAYOUT exposes disabled 24px reference padding with an accessible reason', async t => {
+test('CARD LAYOUT padding saves, strips the 24px default, and resets', async t => {
   const ui = await mount(t, CardLayout);
-  const group = unavailable(ui.root, 'Card layout controls', /Per-card padding is not supported/);
-  assert.equal(group.findByType('select').props.defaultValue, '24px');
-  assert.equal(ui.visual().formatting, undefined); ui.verifySaved();
+  assert.equal(ui.visual().formatting, undefined);
+  await ui.change('Padding (px)', '8');
+  assert.deepEqual(ui.visual().formatting.cardLayout, { paddingPx: 8 });
+  assert.deepEqual(ui.compile().model.formatting.cardLayout, { paddingPx: 8 });
+  await ui.change('Padding (px)', '24');
+  assert.equal(ui.visual().formatting, undefined); // The 24px reference default strips clean.
+  await ui.change('Padding (px)', '0');
+  assert.deepEqual(ui.visual().formatting.cardLayout, { paddingPx: 0 });
+  const reset = ui.root.findAllByType('button').find(n => n.children.includes('Reset to default'));
+  await act(() => reset.props.onClick());
+  assert.equal(ui.visual().formatting, undefined);
+  ui.verifySaved();
 });
 
 
