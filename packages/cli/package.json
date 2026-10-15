@@ -1,0 +1,21 @@
+{
+  "name": "@opensight/cli",
+  "version": "0.0.0",
+  "description": "Command line client for the OpenSight v1 API",
+  "license": "Apache-2.0",
+  "type": "module",
+  "bin": { "opensight": "dist/opensight.js" },
+  "files": ["dist", "README.md", "LICENSE"],
+  "engines": { "node": ">=24" },
+  "scripts": {
+    "generate": "node scripts/generate.mjs",
+    "build": "npm run build --workspace @opensight/bundle-parser && npm run build --workspace @opensight/headless-sdk && npm run generate && tsc",
+    "test": "npm run build && node --test --test-isolation=none test/*.test.mjs"
+  },
+  "dependencies": { "@opensight/headless-sdk": "0.0.0" },
+  "devDependencies": {
+    "@types/node": "^26.6.3",
+    "js-yaml": "4.1.1",
+    "typescript": "^5.6.0"
+  }
+}
