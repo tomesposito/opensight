@@ -184,6 +184,17 @@ function importVisual(raw: BundleVisual, id: string, definition: BundleDefinitio
   const importedSliceLimit = kind === 'pie' && Number.isInteger(itemsLimit) && (itemsLimit as number) >= 1 && (itemsLimit as number) <= 100 &&
     (otherCategories === undefined || otherCategories === 'INCLUDE' || otherCategories === 'EXCLUDE')
     ? { count: itemsLimit as number, includeOther: otherCategories !== 'EXCLUDE' } : undefined;
+  // Waterfall breakdown items limit (BreakdownItemsLimit): top-N breakdown
+  // values in display order, with the rest rolled into an "Other" bar unless
+  // OtherCategories is EXCLUDE. Fail-closed on shape (a malformed limit stays
+  // out of the draft, like the pie limit); the compiler validates the kind
+  // and the presence of a Breakdowns field on import.
+  const breakdownLimitObj = obj(obj(config.sortConfiguration).breakdownItemsLimit);
+  const breakdownItemsLimit = breakdownLimitObj.itemsLimit;
+  const breakdownOtherCategories = breakdownLimitObj.otherCategories;
+  const importedBreakdownLimit = kind === 'waterfall' && Number.isInteger(breakdownItemsLimit) && (breakdownItemsLimit as number) >= 1 && (breakdownItemsLimit as number) <= 100 &&
+    (breakdownOtherCategories === undefined || breakdownOtherCategories === 'INCLUDE' || breakdownOtherCategories === 'EXCLUDE')
+    ? { count: breakdownItemsLimit as number, includeOther: breakdownOtherCategories !== 'EXCLUDE' } : undefined;
   const visual: AuthorVisual = { ...defaults(), ...(validInsight && body.insightConfiguration !== undefined ? { insightConfiguration: copy(obj(body.insightConfiguration)) } : {}), ...(paletteValid(body.opensightPalette) ? { palette: [...body.opensightPalette] } : {}), id, kind, title: string(obj(obj(body.title).formatText).plainText),
     ...(formattingValid(body.opensightFormatting) ? { formatting: copy(body.opensightFormatting) } : {}),
     ...(body.subtitle !== undefined ? { subtitle: string(obj(subtitle.formatText).plainText), subtitleVisible: subtitle.visibility !== 'HIDDEN' } : {}),
@@ -196,6 +207,9 @@ function importVisual(raw: BundleVisual, id: string, definition: BundleDefinitio
     ...(importedGroupSort ? { groupSort: importedGroupSort } : {}),
     // OpenSight extension: imported pie slice limit imports into the draft.
     ...(importedSliceLimit ? { sliceLimit: importedSliceLimit } : {}),
+    // OpenSight extension: imported waterfall breakdown limit imports into the
+    // draft. The compiler validates on import that a Breakdowns field exists.
+    ...(importedBreakdownLimit ? { breakdownLimit: importedBreakdownLimit } : {}),
     // QuickSight Breakdowns well imports into the draft (waterfall only; the
     // compiler validates the field shape and count on import).
     ...(kind === 'waterfall' ? { breakdowns: names(wells.breakdowns).slice(0, 1) } : {}),

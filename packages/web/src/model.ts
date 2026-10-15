@@ -65,6 +65,11 @@ export interface VisualModel {
    *  rolling the rest into an "Other" bucket when includeOther. Applied per facet
    *  group for faceted pies. Absent means no limit: all result rows are shown. */
   sliceLimit?: { count: number; includeOther: boolean };
+  /** Waterfall breakdown limit (QuickSight BreakdownItemsLimit): show the top N
+   *  breakdown values in first-appearance order, rolling the rest into a per-category
+   *  "Other" delta bar when includeOther. Waterfall with a Breakdowns field only.
+   *  Absent means no limit: every supplied breakdown value renders. */
+  breakdownLimit?: { count: number; includeOther: boolean };
   warnings: string[];
   insightConfiguration?: Record<string, unknown>;
 }

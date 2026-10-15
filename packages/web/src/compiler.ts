@@ -403,7 +403,8 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
     ? parseMultiplesOptions(config[multiplesKey], `${cpath}.${multiplesKey}`) : undefined;
   const sort = object(config[key('sortConfiguration', 'SortConfiguration')] ?? {}, cpath);
   const sortsKey = key('categorySort', 'CategorySort');
-  keys(sort, ['radar', 'sankey', 'waterfall'].includes(kind) ? [sortsKey] : [sortsKey, key('categoryItemsLimit', 'CategoryItemsLimit'), key('smallMultiplesLimitConfiguration', 'SmallMultiplesLimitConfiguration')], `${cpath}.${key('sortConfiguration', 'SortConfiguration')}`);
+  const breakdownLimitKey = key('breakdownItemsLimit', 'BreakdownItemsLimit');
+  keys(sort, ['radar', 'sankey'].includes(kind) ? [sortsKey] : kind === 'waterfall' ? [sortsKey, breakdownLimitKey] : [sortsKey, key('categoryItemsLimit', 'CategoryItemsLimit'), key('smallMultiplesLimitConfiguration', 'SmallMultiplesLimitConfiguration')], `${cpath}.${key('sortConfiguration', 'SortConfiguration')}`);
   let sliceLimit: VisualModel['sliceLimit'];
   const categoryLimitKey = key('categoryItemsLimit', 'CategoryItemsLimit');
   if (sort[categoryLimitKey] !== undefined) {
@@ -428,6 +429,27 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
     enumValue(limit[key('otherCategories', 'OtherCategories')], ['INCLUDE'], 'INCLUDE', cpath);
     warnings.push(`${cpath}.${smallLimitKey}: no top-N/Other bucket is computed; all supplied result rows are shown.`);
   }
+  // Waterfall breakdown limits (QuickSight BreakdownItemsLimit parity): show the
+  // top N breakdown values in first-appearance order, rolling the rest into a
+  // per-category "Other" delta bar when OtherCategories is INCLUDE.
+  let breakdownLimit: VisualModel['breakdownLimit'];
+  if (sort[breakdownLimitKey] !== undefined) {
+    const limit = object(sort[breakdownLimitKey], `${cpath}.${breakdownLimitKey}`);
+    keys(limit, [key('otherCategories', 'OtherCategories'), key('itemsLimit', 'ItemsLimit')], `${cpath}.${breakdownLimitKey}`);
+    const other = enumValue(limit[key('otherCategories', 'OtherCategories')], ['INCLUDE', 'EXCLUDE'], 'INCLUDE', cpath);
+    const count = limit[key('itemsLimit', 'ItemsLimit')];
+    if (count === undefined) {
+      warnings.push(`${cpath}.${breakdownLimitKey}: no breakdown limit specified; all supplied breakdown values are shown.`);
+    } else if (kind !== 'waterfall') {
+      fail(`${cpath}.${breakdownLimitKey}`, 'breakdown item limits are only computed for waterfall visuals');
+    } else if (!Number.isInteger(count) || (count as number) < 1 || (count as number) > 100) {
+      fail(`${cpath}.${breakdownLimitKey}`, 'breakdown limit count must be an integer between 1 and 100');
+    } else if (!breakdown) {
+      fail(`${cpath}.${breakdownLimitKey}`, 'breakdown item limits require a Breakdowns field');
+    } else {
+      breakdownLimit = { count: count as number, includeOther: other === 'INCLUDE' };
+    }
+  }
   const sorts = list(sort[sortsKey], `${cpath}.${sortsKey}`);
   if (sorts.length > 1) fail(cpath, 'only one field sort is supported');
   let fieldSort: VisualModel['sort'];
@@ -449,6 +471,7 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
     legendPosition: enumValue(legend[key('position', 'Position')] ?? (formattingValid(formatting) ? formatting.legendPosition : undefined), [...LEGEND_POSITIONS], 'BOTTOM', `${cpath}.legend.position`) as LegendPosition,
     dimensions, rowDimensions, columnDimensions, measures, totals, subtotals, columnTotals, columnSubtotals, innerRadius, sort: fieldSort, warnings,
     ...(sliceLimit ? { sliceLimit } : {}),
+    ...(breakdownLimit ? { breakdownLimit } : {}),
     ...(facet ? { facet } : {}),
     ...(breakdown ? { breakdown } : {}),
     ...(multiplesOptions ? { multiplesOptions } : {}),

@@ -178,6 +178,7 @@ const visualBody: Schema = {
     SortConfiguration: ['sortConfiguration', {
       CategorySort: ['categorySort', sort], TrendGroupSort: ['trendGroupSort', sort], RowSort: ['rowSort', sort],
       CategoryItemsLimit: ['categoryItemsLimit', limit], SmallMultiplesLimitConfiguration: ['smallMultiplesLimitConfiguration', limit],
+      BreakdownItemsLimit: ['breakdownItemsLimit', limit],
     }],
   }],
 };
