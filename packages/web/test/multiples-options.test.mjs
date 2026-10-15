@@ -67,9 +67,9 @@ for (const [label, opts, pattern] of [
   });
 }
 
-test('non-pie kinds reject the extension key', () => {
-  const input = structuredClone(fixtures[1].sheets[0].visuals.find(v => Object.hasOwn(v.definition, 'BarChartVisual')));
-  input.definition.BarChartVisual.ChartConfiguration.OpenSightMultiplesOptions = fullOpts();
+test('non-faceted kinds reject the extension key', () => {
+  const input = structuredClone(fixtures[1].sheets[0].visuals.find(v => Object.hasOwn(v.definition, 'TableVisual')));
+  input.definition.TableVisual.ChartConfiguration.OpenSightMultiplesOptions = fullOpts();
   assert.throws(() => normalizeVisual('api', input.definition), /unsupported property/);
 });
 
@@ -213,9 +213,9 @@ test('exportBundle and importBundle carry the panel state', () => {
   assert.deepEqual(imported.sheets[0].visuals[0].multiplesOptions, options);
 });
 
-test('non-pie visuals never export the options', () => {
+test('non-faceted visuals never export the options', () => {
   const add = kind => authorReducer(emptyDraft(), { type: 'add', kind });
-  const visual = { ...activeSheet(add('bar')).visuals[0], multiplesOptions: defaultMultiplesOptions() };
+  const visual = { ...activeSheet(add('table')).visuals[0], multiplesOptions: defaultMultiplesOptions() };
   const definition = serializeVisual(visual, false);
-  assert.ok(!Object.hasOwn(definition.barChartVisual.chartConfiguration, 'opensightMultiplesOptions'));
+  assert.ok(!Object.hasOwn(definition.tableVisual.chartConfiguration, 'opensightMultiplesOptions'));
 });

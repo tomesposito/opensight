@@ -846,6 +846,9 @@ export function serializeVisual(visual: AuthorVisual, includeInteractions = true
       ...(visual.kind === 'area' ? { type: 'AREA' } : {}),
       ...(visual.kind === 'gauge' && visual.gauge ? { opensightGauge: visual.gauge } : {}),
       ...(visual.kind === 'histogram' && visual.bins !== undefined ? { opensightBins: visual.bins } : {}),
+      // OpenSight extension: the Multiples Options panel state round-trips
+      // through the bundle for the faceted kinds; the compiler parses it back.
+      ...(FACETED_KINDS.includes(visual.kind) && visual.multiplesOptions ? { opensightMultiplesOptions: visual.multiplesOptions } : {}),
     } } };
   }
   switch (visual.kind) {
@@ -856,8 +859,8 @@ export function serializeVisual(visual: AuthorVisual, includeInteractions = true
       // through the bundle; the compiler parses it back into the model.
       ...(visual.multiplesOptions ? { opensightMultiplesOptions: visual.multiplesOptions } : {}),
     } } };
-    case 'bar': return { barChartVisual: { ...body, chartConfiguration: { ...display, orientation: visual.horizontal ? 'HORIZONTAL' : 'VERTICAL', barsArrangement: visual.stacked ? 'STACKED' : 'CLUSTERED', ...groupSortConfig, fieldWells: { barChartAggregatedFieldWells: { category, values, ...multiples } } } } };
-    case 'line': return { lineChartVisual: { ...body, chartConfiguration: { ...display, fieldWells: { lineChartAggregatedFieldWells: { category, values, ...multiples } } } } };
+    case 'bar': return { barChartVisual: { ...body, chartConfiguration: { ...display, orientation: visual.horizontal ? 'HORIZONTAL' : 'VERTICAL', barsArrangement: visual.stacked ? 'STACKED' : 'CLUSTERED', ...groupSortConfig, ...(visual.multiplesOptions ? { opensightMultiplesOptions: visual.multiplesOptions } : {}), fieldWells: { barChartAggregatedFieldWells: { category, values, ...multiples } } } } };
+    case 'line': return { lineChartVisual: { ...body, chartConfiguration: { ...display, ...(visual.multiplesOptions ? { opensightMultiplesOptions: visual.multiplesOptions } : {}), fieldWells: { lineChartAggregatedFieldWells: { category, values, ...multiples } } } } };
     case 'table': return { tableVisual: { ...body, chartConfiguration: { ...tableTotals, fieldWells: { tableAggregatedFieldWells: { groupBy: category, values } } } } };
     case 'pivot': return { pivotTableVisual: { ...body, chartConfiguration: { ...pivotTotals, fieldWells: { pivotTableAggregatedFieldWells: { rows: visual.rows.map(name => dimensionField(name, visual.dateGrain, calculations, dataset)), columns: visual.columns.map(name => dimensionField(name, visual.dateGrain, calculations, dataset)), values } } } } };
     case 'kpi': return { kpiVisual: { ...body, chartConfiguration: { fieldWells: { values } } } };
