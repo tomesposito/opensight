@@ -513,7 +513,7 @@ export function compileVisual(input: Input): CompiledVisual {
       const kept = group.slice(0, limit.count), rest = group.slice(limit.count);
       limited.push(...kept);
       if (limit.includeOther) {
-        const other: Row = { ...kept[0]! };
+        const other: Record<string, Cell> = { ...kept[0]! };
         const alias = (f: Field) => Object.hasOwn(input.bindings, f.id) ? input.bindings[f.id]! : f.column;
         other[alias(category)] = 'Other';
         for (const measure of model.measures) {
