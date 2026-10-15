@@ -66,11 +66,14 @@ test('tool credentials, caller principals, policy assertions and nested header e
 
 test('path traversal and injected header values cannot escape v1 or change identity', async t => {
   let calls = 0;
-  const client = await connect(t, { fetch: async () => { calls++; return json({}); } });
+  const creds = credentials();
+  const client = await connect(t, { credentials: creds, fetch: async () => { calls++; return json({}); } });
   for (const id of ['..', '.', '../uploads', '%2e%2e', 'x?tenantId=other', 'x#fragment', 'a/b', 'https://other.example']) {
     assert.equal((await call(client, 'describe_dataset', { id })).isError, true);
   }
   assert.equal((await call(client, 'list_datasets', { cursor: 'x\r\nAuthorization: forged' })).isError, true);
+  const invalidHeader = await call(client, 'list_datasets', { cursor: creds.token + '😀' });
+  assert.equal(invalidHeader.isError, true); assert.equal(JSON.stringify(invalidHeader).includes(creds.token), false);
   assert.equal(calls, 0);
   for (const baseUrl of ['https://host/api', 'http://public.example/api/v1', 'https://user:secret@host/api/v1', 'https://host/api/v1?q=1']) {
     assert.throws(() => createMcpServer({ baseUrl, credentials: credentials() }));

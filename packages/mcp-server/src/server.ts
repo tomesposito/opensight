@@ -80,7 +80,8 @@ export function createMcpServer(options: ServerOptions): Server {
         path = path.replace(`{${parameter.name}}`, encodeURIComponent(String(value)));
       } else if (value !== undefined) {
         if (!['string', 'number'].includes(typeof value) || /[\r\n\x00]/.test(String(value))) return failure('HOSTED_REQUEST_INVALID', 'Invalid header argument');
-        headers.set(parameter.name, String(value));
+        try { headers.set(parameter.name, String(value)); }
+        catch { return failure('HOSTED_REQUEST_INVALID', 'Invalid header argument'); }
       }
     }
     // Body is forwarded intact, including invalid bodies: REST supplies the operation's exact named validation error.
