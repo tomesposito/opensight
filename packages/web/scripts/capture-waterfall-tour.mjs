@@ -69,17 +69,21 @@ try {
   assert.match(await chart.textContent(), /Total/);
   await capture(page, 'waterfall-revenue');
   // Breakdowns: assigning a breakdown field switches to the interleaved
-  // layout — category subtotals with per-breakdown floating delta bars.
+  // layout — East subtotal 500, West breakdown deltas 350/50, West subtotal
+  // 900. (The narrow card auto-hides some axis labels; the four bars' data
+  // labels prove the interleaved layout, and no extra Total bar is appended.)
   await page.getByRole('button', { name: 'Select BREAKDOWN well', exact: true }).click();
   await page.getByRole('button', { name: 'Assign category', exact: true }).click();
   await chart.waitFor();
-  for (const label of ['East', 'Hardware', 'Software', 'West']) assert.match(await chart.textContent(), new RegExp(label));
+  const breakdownText = await chart.textContent();
+  for (const value of ['500', '350', '50', '900']) assert.match(breakdownText, new RegExp(value));
+  assert.ok(!breakdownText.includes('Total'));
   await capture(page, 'waterfall-breakdown-authored');
   await page.getByRole('button', { name: 'Remove category from Breakdown', exact: true }).click();
   await chart.waitFor();
   // A visible calculation on pinned sales creates a signed scenario, without
   // substituting fixture responses or pretending to query a hosted service.
-  await page.getByRole('button', { name: '+ CALCULATED FIELD', exact: true }).click();
+  await page.getByRole('button', { name: '+ Calculated field', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Calculated field', exact: true });
   await dialog.getByLabel('Name', { exact: true }).fill('Adjustment');
   await dialog.getByLabel('Expression', { exact: true }).fill("ifelse({region} = 'East', {revenue}, -{revenue} * 2)");
@@ -127,7 +131,15 @@ try {
   // from zero, later categories decomposed into per-breakdown floating delta
   // bars, each followed by its subtotal from zero.
   const importedChart = page.locator('.author-card .chart svg'); await importedChart.waitFor();
-  for (const label of ['East', 'Hardware', 'Software', 'West']) assert.match(await importedChart.textContent(), new RegExp(label));
+  // Interleaved breakdown layout: East subtotal 500, West breakdown deltas
+  // 350/50, West subtotal 900. (Narrow-card axis auto-hides some labels; the
+  // four bars' data labels prove the layout.)
+  await openPropertySection(page, 'Data labels');
+  await page.getByLabel('Show data labels', { exact: true }).check();
+  await importedChart.waitFor();
+  const importedText = await importedChart.textContent();
+  for (const value of ['500', '350', '50', '900']) assert.match(importedText, new RegExp(value));
+  assert.ok(!importedText.includes('Total'));
   await capture(page, 'waterfall-breakdown');
   assert.deepEqual(errors, []); assert.deepEqual(external, []);
   const summary = { captures, pageErrors: errors.length, externalRequests: external.length };
