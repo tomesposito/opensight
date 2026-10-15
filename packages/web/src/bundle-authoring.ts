@@ -174,6 +174,15 @@ function importVisual(raw: BundleVisual, id: string, definition: BundleDefinitio
   const importedGroupSort = sortWrappers.length === 1 && ['bar', 'bar100', 'pie'].includes(kind) &&
     sortFieldId !== undefined && sortDirection !== undefined && sortBound.includes(sortFieldId)
     ? { fieldId: sortFieldId, direction: sortDirection } : undefined;
+  // OpenSight extension: an imported pie slice limit becomes editable draft state
+  // (like the Group/Color sort). Unrecognized shapes stay retained read-only
+  // through the differences check.
+  const limitObj = obj(obj(config.sortConfiguration).categoryItemsLimit);
+  const itemsLimit = limitObj.itemsLimit;
+  const otherCategories = limitObj.otherCategories;
+  const importedSliceLimit = kind === 'pie' && Number.isInteger(itemsLimit) && (itemsLimit as number) >= 1 && (itemsLimit as number) <= 100 &&
+    (otherCategories === undefined || otherCategories === 'INCLUDE' || otherCategories === 'EXCLUDE')
+    ? { count: itemsLimit as number, includeOther: otherCategories !== 'EXCLUDE' } : undefined;
   const visual: AuthorVisual = { ...defaults(), ...(validInsight && body.insightConfiguration !== undefined ? { insightConfiguration: copy(obj(body.insightConfiguration)) } : {}), ...(paletteValid(body.opensightPalette) ? { palette: [...body.opensightPalette] } : {}), id, kind, title: string(obj(obj(body.title).formatText).plainText),
     ...(formattingValid(body.opensightFormatting) ? { formatting: copy(body.opensightFormatting) } : {}),
     ...(body.subtitle !== undefined ? { subtitle: string(obj(subtitle.formatText).plainText), subtitleVisible: subtitle.visibility !== 'HIDDEN' } : {}),
@@ -184,6 +193,8 @@ function importVisual(raw: BundleVisual, id: string, definition: BundleDefinitio
     ...(kind === 'pie' && multiplesOptionsValid(config.opensightMultiplesOptions) ? { multiplesOptions: copy(config.opensightMultiplesOptions) } : {}),
     // OpenSight extension: imported Group/Color sort imports into the draft.
     ...(importedGroupSort ? { groupSort: importedGroupSort } : {}),
+    // OpenSight extension: imported pie slice limit imports into the draft.
+    ...(importedSliceLimit ? { sliceLimit: importedSliceLimit } : {}),
     ...(validLines.length > 0 && hasReferenceLines(kind) ? { referenceLines: validLines.map((line, index) => ({ id: `refline-${index + 1}`, ...line })) } : {}),
     titleVisible: obj(body.title).visibility !== 'HIDDEN', dimension: noDimensions(kind) ? null : rows[0] ?? null,
     rows: grouped(kind) ? rows : [], columns, measures: singleMeasure(kind) ? measures.slice(0, 1) : measures,
