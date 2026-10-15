@@ -111,7 +111,7 @@ test('waterfall imports report unsupported native options and bad wells, block q
     [c => { c.fieldWells.waterfallChartAggregatedFieldWells.values = []; }, /WATERFALL_VALUES_REQUIRED/],
     [c => { c.colorConfiguration = { positiveBarColor: '#ffffff' }; }, /colorConfiguration.*unsupported property/],
     [c => { c.waterfallChartOptions = { totalBarLabel: 'Net', totalBarVisibility: 'HIDDEN' }; }, /waterfallChartOptions.*unsupported property/],
-    [c => { c.sortConfiguration = { breakdownItemsLimit: { itemsLimit: 5 } }; }, /breakdownItemsLimit.*unsupported property/],
+    [c => { c.sortConfiguration = { breakdownItemsLimit: { itemsLimit: 5 } }; }, /breakdownItemsLimit.*require a Breakdowns field/],
     [c => { c.sortConfiguration = { categoryItemsLimit: {} }; }, /categoryItemsLimit.*unsupported property/],
     [c => { c.tooltip = { selectedTooltipType: 'DETAILED' }; }, /selectedTooltipType.*unsupported property/],
     [c => { c.primaryYAxisDisplayOptions = {}; }, /primaryYAxisDisplayOptions.*unsupported property/],

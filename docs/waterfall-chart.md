@@ -22,7 +22,7 @@ Empty and unavailable results do not manufacture a Total bar.
 These are deliberate OpenSight semantics: accumulation starts at zero, supplied
 row order is preserved unless an explicit `categorySort` field sort precedes
 accumulation, and every nonempty result gets exactly one final Total. No starting
-value, intermediate subtotal, hidden/renamed total, native item limit,
+value, intermediate subtotal, hidden/renamed total,
 custom axis configuration or native color override is implemented. The color
 roles follow QuickSight's convention; exact colors, geometry, default category
 ordering and totals parity have not been measured. Themes style the surrounding
@@ -38,8 +38,19 @@ breakdown mode. Breakdown values order by first appearance; missing
 sign convention (QuickSight colors them uniformly navy); totals keep the
 OpenSight blue. Breakdown values are named on the axis and in tooltips; the
 legend keeps the Values measure entry (no per-breakdown swatches). View data
-lists the supplied (category, breakdown) rows. `breakdownItemsLimit` stays an
-unsupported sort-configuration property — fail-closed, not silently dropped.
+lists the supplied (category, breakdown) rows.
+
+`breakdownItemsLimit` (QuickSight BreakdownItemsLimit parity) caps the breakdown
+values shown: the top N values in first-appearance order render; the rest roll
+into one per-category "Other" delta bar when OtherCategories is INCLUDE, and are
+dropped when EXCLUDE. Ranking follows the visual's display order (explicit
+categorySort first, else first appearance). Subtotals stay honest: with INCLUDE
+they cover the kept values plus the Other rollup; with EXCLUDE they cover only
+the kept values. An unset limit shows every supplied breakdown value (QuickSight
+defaults to 20; OpenSight never assumes a limit — no silent behavior change for
+existing drafts). The "Other" label is a fixed English string. Malformed limits
+(count outside 1–100, a limit without a Breakdowns field, or the property on a
+non-waterfall visual) fail closed with a path-qualified CompileError.
 
 Labels and tooltips show signed deltas (or the signed final total), never assist
 values or unsigned bar heights. Labels support the existing decimal control.
