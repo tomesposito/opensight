@@ -51,11 +51,13 @@ test('CARD TITLE edits survive storage, affect compilation, and leave the other 
   await ui.change('Title font size', '24');
   await ui.change('Show title', false);
   await ui.change('Show subtitle', false);
+  await ui.change('Alt text', '  Bars per region  ', 'textarea');
   const model = ui.compile().model;
   assert.equal(model.title, 'Regional revenue'); assert.equal(model.subtitle, 'Synthetic sample');
   assert.equal(model.titleVisible, false); assert.equal(model.subtitleVisible, false);
   assert.equal(model.formatting.titleFontSize, 24);
-  unavailable(ui.root, 'Alt text', /Custom alt text is not supported/);
+  assert.equal(model.formatting.altText, 'Bars per region');
+  assert.equal(ui.visual().formatting.altText, 'Bars per region');
   ui.verifySaved();
 });
 

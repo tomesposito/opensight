@@ -37,7 +37,7 @@ function Chart({ option, title, compiled, interaction }: { option: EChartsOption
     observer.observe(container.current);
     return () => { observer.disconnect(); chart.dispose(); };
   }, [option, compiled, interaction]);
-  return <div ref={container} className={`chart${compiled.narrative ? ' insight-chart' : ''}`} role="img" aria-label={compiled.narrative ? `${title}. ${compiled.narrative.text}` : title} />;
+  return <div ref={container} className={`chart${compiled.narrative ? ' insight-chart' : ''}`} role="img" aria-label={compiled.model.formatting?.altText ?? (compiled.narrative ? `${title}. ${compiled.narrative.text}` : title)} />;
 }
 
 export type RowGroupToggle = (path: Cell[], collapsed: boolean) => void;
@@ -78,7 +78,7 @@ function DataTable({ compiled, interaction, onRowGroupToggle }: { compiled: Comp
       }}>{isCollapsed ? '+' : '−'}</button>;
   };
   return <div className="table-scroll"><table style={{ fontSize: f?.fontSize, color: f?.cellColor, background: f?.cellBackground, ...(width ? { tableLayout: 'fixed', width: width * table.columns.length } : {}) }}>
-    <caption className="sr-only">{compiled.model.title} — result data</caption>
+    <caption className="sr-only">{compiled.model.formatting?.altText ?? compiled.model.title} — result data</caption>
     <thead className={f?.headersVisible === false ? 'sr-only' : undefined}><tr>{table.columns.map((column, i) => <th key={i} scope="col" style={{ ...cellStyle, color: f?.headerColor, background: f?.headerBackground }}>{table.visibleColumns?.[i] === '' ? <span className="sr-only">{column}</span> : table.visibleColumns?.[i] ?? column}</th>)}</tr></thead>
     <tbody>{table.rows.map((row, i) => {
       const path = table.rowGroupPaths?.[i], key = path && rowGroupKey(path);
