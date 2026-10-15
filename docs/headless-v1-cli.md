@@ -57,8 +57,6 @@ separate generic asset-delete operation in v1.
 opensight dataset list --limit 20
 opensight dataset describe sales --format table
 opensight asset search --query Sales --kinds '["analyses","datasets"]'
-opensight dataset update sales --name Sales --expectedVersion 0 \
-  --pipeline '{"version":1,"steps":[]}'
 opensight dataset query sales --query '{"dimensions":[],"measures":[{"fieldId":"total","columnName":"amount","aggregation":"SUM"}],"filters":[]}'
 opensight dashboard publish analysis-1 --dashboardId report-1
 opensight dashboard create-export dashboard-1 --body '{"format":"csv"}'
