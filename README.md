@@ -306,13 +306,16 @@ delivery and dedupe keys. See [tenant automation](docs/tenant-automation.md).
 
 ![Operator transfer-or-stop choice using synthetic users](docs/images/job-owner-removal.png)
 
-### Headless v1 and MCP
+### Headless v1, SDKs, MCP and CLI
 
-The headless REST API has a TypeScript SDK and a stdio MCP server with 53
-OpenAPI-generated tools for datasets, querying, analyses, dashboards and assets.
-The MCP process calls the same HTTP API with one user/tenant credential; it
-requires an operator-provided refresh exchange endpoint, which the built-in
-hosted auth does not yet implement. See [setup and contracts](docs/headless-v1-mcp.md).
+The headless REST API has TypeScript and Python SDKs, a stdio MCP server and
+an `opensight` CLI covering the same 53 operations for datasets, querying,
+analyses, dashboards and assets. The CLI uses resource commands such as
+`opensight dataset list` and defaults to JSON output. MCP and CLI calls use
+one user/tenant credential and require an operator-provided refresh exchange
+endpoint, which the built-in hosted auth does not yet implement. See the
+[SDK contracts](docs/headless-v1-sdk.md), [MCP setup](docs/headless-v1-mcp.md)
+and [CLI command and output contracts](docs/headless-v1-cli.md).
 
 ## Contributor quickstart
 
@@ -367,7 +370,9 @@ packages/api            Local definition and dataset-query API
 packages/web            React renderer + authoring and bundle round trips
 packages/query-engine   Typed synthetic planner + local DuckDB CSV executor
 packages/mcp-server     Stdio MCP client for the implemented headless v1 API
-packages/cli            Archive import/export/validate (planned)
+packages/headless-sdk   TypeScript client for the headless v1 API
+packages/headless-sdk-python Python client for the headless v1 API
+packages/cli            Generated resource commands over the TypeScript SDK
 docs/research           Observed format and API contract research
 fixtures                Sanitized real export + synthetic regression specifications
 conformance             Controls-to-query integration; source fidelity planned

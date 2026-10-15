@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { statSync } from 'node:fs';
 
 const bin = fileURLToPath(new URL('../dist/opensight.js', import.meta.url));
 function invoke(args, env = {}) {
@@ -17,6 +18,7 @@ function invoke(args, env = {}) {
 }
 
 test('built executable shows help and exits nonzero with structured missing-token diagnostics', async () => {
+  assert.ok(statSync(bin).mode & 0o111, 'npm bin must be executable');
   const help = await invoke(['--help']);
   assert.equal(help.code, 0);
   assert.match(help.stdout, /dataset:/);

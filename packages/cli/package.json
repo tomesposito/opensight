@@ -9,7 +9,7 @@
   "engines": { "node": ">=24" },
   "scripts": {
     "generate": "node scripts/generate.mjs",
-    "build": "npm run build --workspace @opensight/bundle-parser && npm run build --workspace @opensight/headless-sdk && npm run generate && tsc",
+    "build": "npm run build --workspace @opensight/bundle-parser && npm run build --workspace @opensight/headless-sdk && npm run generate && tsc && node scripts/build.mjs",
     "test": "node scripts/generate.mjs --check && npm run build && node --test --test-isolation=none test/*.test.mjs"
   },
   "dependencies": { "@opensight/headless-sdk": "0.0.0" },
