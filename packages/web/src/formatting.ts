@@ -167,6 +167,19 @@ export function groupTitleValid(raw: unknown): raw is GroupTitle {
     && (t.text === undefined || typeof t.text === 'string' && !!t.text.trim() && t.text.length <= 128)
     && (t.style === undefined || legendTextStyleValid(t.style));
 }
+/** Custom accessible description for a visual's chart (QuickSight Display settings ·
+ *  Card title "Alt text" parity). Saved with the visual and exported; when set it
+ *  becomes the chart's accessible description, and when unset the chart title
+ *  serves as it does today. */
+export const ALT_TEXT_MAX_LENGTH = 500;
+export const altTextValid = (v: unknown): v is string =>
+  typeof v === 'string' && !!v.trim() && v.trim().length <= ALT_TEXT_MAX_LENGTH;
+/** Normalize saved alt text: trim; blank clears to `undefined`. */
+export function cleanAltText(text: string | undefined): string | undefined {
+  if (text === undefined) return undefined;
+  const trimmed = text.trim();
+  return trimmed ? trimmed : undefined;
+}
 export interface PivotOptions {
   metricPlacement?: 'columns' | 'rows';
   hideEmptyRows?: boolean; hideEmptyColumns?: boolean;
@@ -193,6 +206,8 @@ export interface VisualFormatting {
   legendTitle?: LegendTitle; legendValueStyle?: LegendTextStyle;
   /** Group/Color well title (show/text/style); saved with the visual and exports, not drawn by the chart. */
   groupTitle?: GroupTitle;
+  /** Custom accessible description for the visual's chart (Alt text parity); absent means the chart title serves. */
+  altText?: string;
   /** Data label content/styling options (QuickSight Data labels panel); absent means today's defaults. */
   dataLabels?: DataLabels;
   /** Per-visual card style (background/border/selection/loading animation); absent means the reference defaults. */
@@ -208,10 +223,11 @@ export function formattingValid(raw: unknown): raw is VisualFormatting {
   const f = raw as Record<string, unknown>;
   const booleans = ['headersVisible', 'rowNamesVisible', 'columnNamesVisible', 'valueNamesVisible'];
   const colors = ['headerColor', 'headerBackground', 'cellColor', 'cellBackground'];
-  if (Object.keys(f).some(k => ![...booleans, ...colors, 'fontSize', 'decimalPlaces', 'names', 'rules', 'pivot', 'titleFontSize', 'barCategoryGap', 'legendPosition', 'legendTitle', 'legendValueStyle', 'groupTitle', 'dataLabels', 'cardStyle', 'cardLayout'].includes(k))) return false;
+  if (Object.keys(f).some(k => ![...booleans, ...colors, 'fontSize', 'decimalPlaces', 'names', 'rules', 'pivot', 'titleFontSize', 'barCategoryGap', 'legendPosition', 'legendTitle', 'legendValueStyle', 'groupTitle', 'altText', 'dataLabels', 'cardStyle', 'cardLayout'].includes(k))) return false;
   if (f.legendPosition !== undefined && !legendPositionValid(f.legendPosition)) return false;
   if (f.legendTitle !== undefined && !legendTitleValid(f.legendTitle)) return false;
   if (f.groupTitle !== undefined && !groupTitleValid(f.groupTitle)) return false;
+  if (f.altText !== undefined && !altTextValid(f.altText)) return false;
   if (f.legendValueStyle !== undefined && !legendTextStyleValid(f.legendValueStyle)) return false;
   if (f.dataLabels !== undefined && !dataLabelsValid(f.dataLabels)) return false;
   if (f.cardStyle !== undefined && !cardStyleValid(f.cardStyle)) return false;
