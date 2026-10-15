@@ -46,8 +46,11 @@ try {
   const endpoint = `/repos/${repository}`;
   let sequence = 0;
   async function aws(service, command, input, extra = []) {
+    // get-object's streaming CLI customization requires explicit required flags.
+    const args = service === 's3api' && command === 'get-object'
+      ? ['--bucket', input.Bucket, '--key', input.Key] : ['--cli-input-json', JSON.stringify(input)];
     return JSON.parse(await run('aws', [service, command, '--region', c.region, '--no-cli-pager', '--output', 'json',
-      '--cli-connect-timeout', '5', '--cli-read-timeout', '20', '--cli-input-json', JSON.stringify(input), ...extra],
+      '--cli-connect-timeout', '5', '--cli-read-timeout', '20', ...args, ...extra],
     { env: { ...process.env, AWS_MAX_ATTEMPTS: '2' } }) || '{}');
   }
   async function object(key) {

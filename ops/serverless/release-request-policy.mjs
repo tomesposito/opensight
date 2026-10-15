@@ -28,7 +28,8 @@ export function matchedRun(runs, receipt) {
   if (matches.length > 1) throw Error('DUPLICATE_REQUEST_RUNS');
   const r = matches[0];
   if (r && (r.event !== 'workflow_dispatch' || r.head_branch !== 'master' || r.path !== '.github/workflows/deploy.yml'
-    || r.run_attempt !== 1 || !Number.isSafeInteger(r.id) || Date.parse(r.created_at) < receipt.attemptedAt - 5000)) throw Error('REQUEST_RUN_INVALID');
+    || r.run_attempt !== 1 || !Number.isSafeInteger(r.id) || !Number.isFinite(Date.parse(r.created_at))
+    || Date.parse(r.created_at) < receipt.attemptedAt - 5000)) throw Error('REQUEST_RUN_INVALID');
   return r;
 }
 export function observedProduction(current, evidence, now = Date.now()) {
@@ -55,6 +56,7 @@ export function publicStatus(stage, observation) {
     deploying: 'Dispatch attempted; awaiting verified outcome', deployed: 'Deployed; AWS control plane verified',
     failed: 'Private deployment failed; operator reconciliation required', blocked: 'Blocked; operator compatibility or state review required' };
   if (!states[stage]) throw Error('PUBLIC_STATUS_INVALID');
-  const description = observation ? `${stage}; runtime ${requestSelection(observation.runtimeSource, '0'.repeat(64)).source}; marketing ${requestSelection(observation.marketingSource, '0'.repeat(64)).source}` : descriptions[stage];
+  if (observation && (!sourcePattern.test(observation.runtimeSource ?? '') || !sourcePattern.test(observation.marketingSource ?? ''))) throw Error('PUBLIC_STATUS_INVALID');
+  const description = observation ? `${stage}; runtime ${observation.runtimeSource}; marketing ${observation.marketingSource}` : descriptions[stage];
   return { state: states[stage], description, auto_inactive: false };
 }

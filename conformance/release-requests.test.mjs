@@ -1,6 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdtempSync, rmSync, mkdirSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { releaseRequest } from '../ops/serverless/release-request-flow.mjs';
 import { requestBody, validateRequest, requestRunName, matchedRun, observedProduction, publicStatus } from '../ops/serverless/release-request-policy.mjs';
 import { configurationFingerprint } from '../ops/serverless/release-safety.mjs';
@@ -89,7 +93,7 @@ test('run correlation rejects duplicate runs, reruns, wrong branch, event or wor
   const receipt = receipts.get(12);
   assert.equal(matchedRun([run(receipt)], receipt).id, 99);
   assert.throws(() => matchedRun([run(receipt), run(receipt)], receipt), /DUPLICATE/);
-  for (const patch of [{ run_attempt: 2 }, { event: 'push' }, { head_branch: 'other' }, { path: 'other.yml' }, { created_at: '2000-01-01' }]) {
+  for (const patch of [{ run_attempt: 2 }, { event: 'push' }, { head_branch: 'other' }, { path: 'other.yml' }, { created_at: '2000-01-01' }, { created_at: 'invalid' }]) {
     assert.throws(() => matchedRun([run(receipt, patch)], receipt), /REQUEST_RUN_INVALID/);
   }
 });
@@ -145,4 +149,47 @@ test('public request workflow is manual, master-only and has no AWS or private-d
   assert.match(workflow, /workflow_dispatch:/); assert.match(workflow, /github.ref == 'refs\/heads\/master'/);
   assert.match(workflow, /deployments: write/); assert.match(workflow, /contents: read/);
   assert.doesNotMatch(workflow, /id-token:|secrets\.|pull_request|workflow_run|configure-aws|repository_dispatch/);
+});
+test('operator CLI observes streaming S3 and Lambda evidence and publishes only allowed fields', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'opensight-request-test-'));
+  try {
+    const { current, evidence } = cloud();
+    const config = { version: 1, account: '000000000000', region: 'us-east-1', deployment: 'synthetic',
+      operationsBucket: 'synthetic-operations', frontendBucket: 'synthetic-frontend',
+      kmsKey: 'arn:aws:kms:us-east-1:000000000000:key/' + '0'.repeat(36), distribution: 'SYNTHETIC',
+      eventMappings: ['1'.repeat(36), '2'.repeat(36)], privateRepository: 'example/deploy', publicRepository: repository,
+      repositoryId: '1', ownerId: '2', workflowCommit: source };
+    const put = (name, value, mode = 0o600) => writeFileSync(join(dir, name), typeof value === 'string' ? value : JSON.stringify(value), { mode });
+    put('ci-config.json', config); put('fixture.json', { current, evidence }); mkdirSync(join(dir, 'bin'));
+    // This executable emulates the actual CLI boundary, including S3's explicit
+    // flags requirement and outfile; a JSON-only request must fail this test.
+    put('bin/aws', `#!/usr/bin/env node
+const fs=require('node:fs'),p=require('node:path'),root=process.env.OPENSIGHT_OPERATOR_DIR;
+const c=JSON.parse(fs.readFileSync(p.join(root,'ci-config.json'))),f=JSON.parse(fs.readFileSync(p.join(root,'fixture.json'))),a=process.argv.slice(2);
+const flag=k=>a[a.indexOf(k)+1]; const out=v=>console.log(JSON.stringify(v));
+if(a[0]==='sts')out({Account:c.account,Arn:'synthetic-operator'});
+else if(a[0]==='s3api'){
+ if(!a.includes('--bucket')||!a.includes('--key'))process.exit(2);
+ const key=flag('--key');if(key==='ci/operations/active.json'){console.error('(NoSuchKey)');process.exit(1);}
+ fs.writeFileSync(a.at(-1),key==='ci/config/deployment.json'?fs.readFileSync(p.join(root,'ci-config.json')):JSON.stringify(f.current));out({ETag:'before'});
+}else if(a[0]==='lambda'){
+ const i=JSON.parse(flag('--cli-input-json'));
+ if(a[1]==='get-event-source-mapping')out(f.evidence.mappings[c.eventMappings.indexOf(i.UUID)]);
+ else if(a[1]==='get-alias')out(f.evidence.alias);
+ else {const v=f.evidence.functions.find(v=>v.configuration.FunctionName===i.FunctionName);
+ out(a[1]==='get-function'?{Configuration:v.configuration,Code:{ResolvedImageUri:v.image}}:{ReservedConcurrentExecutions:v.concurrency});}
+}else process.exit(3);
+`, 0o700);
+    put('bin/gh', `#!/usr/bin/env node
+const fs=require('node:fs'),p=require('node:path'),a=process.argv.slice(2),v=JSON.parse(fs.readFileSync(a[a.indexOf('--input')+1]));
+fs.appendFileSync(p.join(process.env.OPENSIGHT_OPERATOR_DIR,'published.jsonl'),JSON.stringify(v)+'\\n');console.log(JSON.stringify({id:12}));
+`, 0o700);
+    const output = execFileSync(process.execPath, [fileURLToPath(new URL('../ops/serverless/release-requests.mjs', import.meta.url)), 'observe'], {
+      encoding: 'utf8', env: { ...process.env, OPENSIGHT_OPERATOR_DIR: dir, OPENSIGHT_GH_BINARY: join(dir, 'bin/gh'), PATH: join(dir, 'bin') + ':' + process.env.PATH },
+    });
+    assert.equal(JSON.parse(output).runtimeSource, source);
+    const published = readFileSync(join(dir, 'published.jsonl'), 'utf8');
+    for (const forbidden of ['must-not-appear', 'private-image', config.account, config.operationsBucket, config.privateRepository]) assert.ok(!published.includes(forbidden));
+    assert.equal(published.trim().split('\n').length, 2);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });
