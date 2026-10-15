@@ -1,5 +1,5 @@
 ---
-status: 🚧 Draft
+status: ✅ Confirmed (product owner, 2026-10-14)
 owner: Tom Esposito
 date: 2026-10-14
 labels: [idd]
@@ -19,7 +19,7 @@ changes it. Output contract only — wire shapes are frozen.
 Subcommand vocabulary (D-71), credential carriage (D-73), packaging
 (D-74), generation (D-75).
 
-### 🚧 IDD D-72 — What should the CLI print by default?
+### ✅ IDD D-72 — What should the CLI print by default?
 
 #### CONTEXT
 

@@ -1,5 +1,5 @@
 ---
-status: 🚧 Draft
+status: ✅ Confirmed (product owner, 2026-10-14)
 owner: Tom Esposito
 date: 2026-10-14
 labels: [idd]
@@ -20,7 +20,7 @@ AGENTS.md §2.5 rule (MIT/Apache-2.0 bundled code only).
 Subcommand vocabulary (D-71), output format (D-72), credential
 carriage (D-73), generated vs hand-authored internals (D-75).
 
-### 🚧 IDD D-74 — How should the CLI be packaged and installed?
+### ✅ IDD D-74 — How should the CLI be packaged and installed?
 
 #### CONTEXT
 

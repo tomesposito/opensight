@@ -1,5 +1,5 @@
 ---
-status: 🚧 Draft
+status: ✅ Confirmed (product owner, 2026-10-14)
 owner: Tom Esposito
 date: 2026-10-14
 labels: [idd]
@@ -20,7 +20,7 @@ operation — no invented API calls.
 Output format (D-72), credential carriage (D-73), packaging (D-74),
 generated vs hand-authored command layer (D-75).
 
-### 🚧 IDD D-71 — What should the CLI's subcommand vocabulary be?
+### ✅ IDD D-71 — What should the CLI's subcommand vocabulary be?
 
 #### CONTEXT
 
