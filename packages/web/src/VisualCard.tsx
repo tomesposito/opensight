@@ -1,6 +1,6 @@
 import { insightGraphic } from './insight-graphic.js';
 import { LIGHT_THEME } from './themes.js';
-import { fieldName, fieldRule } from './formatting.js';
+import { fieldName, fieldRule, cardChromeStyle, cardLoadingAnimation } from './formatting.js';
 import { rowSelection, brushSelection, type VisualInteraction } from './visual-selection.js';
 import { Fragment, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { VisualSkeleton } from './VisualSkeleton.js';
@@ -104,7 +104,7 @@ export function VisualCard({ visual, dataMessage, loading = false, definitionPre
   }, [visual]);
   const { compiled, error } = result;
   const { column, columns, row, rows } = visual.placement;
-  return <section className="visual-card" aria-busy={loading} aria-labelledby={headingId} style={{ '--visual-header': theme.background, background: theme.surface, color: theme.textColor, fontFamily: theme.fontFamily, gridColumn: `${column + 1} / span ${columns}`, gridRow: `${row + 1} / span ${rows}` } as CSSProperties}>
+  return <section className="visual-card" aria-busy={loading} aria-labelledby={headingId} style={{ '--visual-header': theme.background, background: theme.surface, color: theme.textColor, fontFamily: theme.fontFamily, gridColumn: `${column + 1} / span ${columns}`, gridRow: `${row + 1} / span ${rows}`, ...cardChromeStyle(compiled?.model.formatting) } as CSSProperties}>
     <header className="card-heading">
       <div className="card-titles">
         <h3 id={headingId} style={{ fontSize: compiled?.model.formatting?.titleFontSize }} className={compiled && !compiled.model.titleVisible ? 'sr-only' : ''}>{compiled?.model.title ?? 'Unsupported visual'}</h3>
@@ -118,7 +118,7 @@ export function VisualCard({ visual, dataMessage, loading = false, definitionPre
     {compiled && <>
       <div className="visual-content">
         {!loading && compiled.state === 'ready' && ((compiled.model.kind === 'table' || compiled.model.kind === 'pivot') ? <DataTable compiled={compiled} interaction={interaction} onRowGroupToggle={onRowGroupToggle} /> : <Chart option={compiled.option} title={compiled.model.title} compiled={compiled} interaction={interaction} />)}
-        {loading && compiled.state !== 'ready' && <VisualSkeleton kind={compiled.model.kind} />}
+        {loading && compiled.state !== 'ready' && <VisualSkeleton kind={compiled.model.kind} animated={cardLoadingAnimation(compiled.model.formatting)} />}
         {!loading && compiled.state !== 'ready' && <div className="empty-state" role="status">
           <strong>{compiled.state === 'unavailable' ? definitionPreview ? 'Definition only' : dataMessage ? 'Unable to load data' : DATA_REQUIRED_LABEL : 'No results'}</strong>
           <p>{compiled.state === 'empty' ? 'The result set contains no rows. Review the filters and source data for matching records.' : definitionPreview ? 'This preview has no sample results. Live data requires a hosted API with a configured source and access permissions. No query runs in this preview.' : dataMessage ? 'Review the details below, check the selected fields and data access, then retry.' : 'No data is attached to this visual. Choose a supported sample, or query a configured dataset through a hosted API.'}</p>

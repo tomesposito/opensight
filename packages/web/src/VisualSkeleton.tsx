@@ -46,10 +46,12 @@ function Block() {
  * recomputes (live query, interaction, parameter change). The shapes roughly
  * match the visual so the card does not read as blank or broken. Motion is a
  * pure CSS shimmer; `prefers-reduced-motion` renders a static placeholder.
+ * `animated={false}` (the card's Loading animation toggle, off) renders the
+ * same static placeholder: the loading state is still shown, without motion.
  */
-export function VisualSkeleton({ kind }: { kind: VisualKind }) {
+export function VisualSkeleton({ kind, animated = true }: { kind: VisualKind; animated?: boolean }) {
   const variant = skeletonVariant(kind);
-  return <div className={`visual-skeleton skeleton-${variant}`} role="status" aria-label="Loading data">
+  return <div className={`visual-skeleton skeleton-${variant}${animated ? '' : ' skeleton-static'}`} role="status" aria-label="Loading data">
     <span className="sr-only">Waiting for query results. No data is shown until the query completes.</span>
     {variant === 'bars' && <Bars />}
     {variant === 'pie' && <Pie />}
