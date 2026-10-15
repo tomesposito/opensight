@@ -15,7 +15,7 @@ export type RecoveryDecision =
   | 'obligation-expired' | 'epoch-changed' | 'failed';
 export interface RecoveryObjectReport {
   objectId: string; decision: RecoveryDecision; reason: string;
-  supersededEventIds: string[]; strandedEventIds: string[];
+  supersededEventIds: string[];
   newEventId?: string; aggregateRevision?: number; error?: string;
 }
 export interface RecoveryReport {
@@ -51,7 +51,7 @@ export class ObjectRecovery {
   private scope(scope: RecoveryScope): SqlValue[] { return [this.deployment, scope.tenantId, scope.namespaceId, scope.userId]; }
   private envelope(eventId: string, epoch: number): DispatchEnvelope { return { version: 1, deploymentEpoch: epoch, eventId, kind: 'execute' }; }
   private entry(objectId: string, decision: RecoveryDecision, reason: string): RecoveryObjectReport {
-    return { objectId, decision, reason, supersededEventIds: [], strandedEventIds: [] };
+    return { objectId, decision, reason, supersededEventIds: [] };
   }
   private validated(scope: RecoveryScope, objectIds: readonly string[], windowMs: number): string[] {
     for (const value of [scope.tenantId, scope.namespaceId, scope.userId]) identifier(value);
@@ -129,17 +129,21 @@ export class ObjectRecovery {
     const live = rows.filter(r => r.state !== 'terminal');
     const expiredIds = live.filter(r => number(r.expires_at) <= now).map(r => String(r.event_id));
     const supersededEventIds = [...terminalIds, ...expiredIds];
-    const strandedEventIds = live.filter(r => number(r.control_epoch) !== epoch && number(r.expires_at) > now).map(r => String(r.event_id));
+    // Rows from a past epoch can never execute (the epoch gate); expired rows would be
+    // terminalized by inspect(). Both are superseded by the fresh prearmed obligation, with
+    // the linkage recorded here. Nothing is deleted: the rows stay as audit evidence.
+    const strandedIds = live.filter(r => number(r.control_epoch) !== epoch && number(r.expires_at) > now).map(r => String(r.event_id));
+    const allSuperseded = [...supersededEventIds, ...strandedIds];
     const resumable = live.find(r => number(r.control_epoch) === epoch && number(r.expires_at) > now);
     if (resumable) return { ...this.entry(id, 'resumed', 'A non-terminal obligation from this epoch is still pending; it will be resumed, not duplicated.'),
-      supersededEventIds, strandedEventIds, newEventId: String(resumable.event_id), aggregateRevision: number(resumable.aggregate_revision) };
+      supersededEventIds: allSuperseded, newEventId: String(resumable.event_id), aggregateRevision: number(resumable.aggregate_revision) };
     const pins = await c.query(`SELECT pin_id FROM sr_object_pin WHERE ${scoped} AND object_id = ? AND expires_at > ? LIMIT 1`, [...this.scope(scope), id, now]);
-    if (pins.length) return { ...this.entry(id, 'protected-pin', 'An active pin protects this object; cleanup stays deferred.'), supersededEventIds, strandedEventIds };
+    if (pins.length) return { ...this.entry(id, 'protected-pin', 'An active pin protects this object; cleanup stays deferred.'), supersededEventIds: allSuperseded };
     const until = Math.max(number(entry.retention_until), number(entry.created_at) + 86400000, number(entry.signature_until) + 600000);
-    if (until > now) return { ...this.entry(id, 'protected-retention', `Minimum retention holds until ${new Date(until).toISOString()}; cleanup stays deferred.`), supersededEventIds, strandedEventIds };
+    if (until > now) return { ...this.entry(id, 'protected-retention', `Minimum retention holds until ${new Date(until).toISOString()}; cleanup stays deferred.`), supersededEventIds: allSuperseded };
     const aggregateRevision = rows.reduce((max, r) => Math.max(max, number(r.aggregate_revision)), 0) + 1;
     return { ...this.entry(id, 'replace', 'Eligible: a fresh cleanup obligation will be prearmed and collected with exact-version proof.'),
-      supersededEventIds, strandedEventIds, aggregateRevision };
+      supersededEventIds: allSuperseded, aggregateRevision };
   }
   /**
    * Prearm a fresh obligation inside one transaction, then collect outside it.
@@ -149,7 +153,7 @@ export class ObjectRecovery {
    */
   private async replace(scope: RecoveryScope, id: string, assessed: RecoveryObjectReport, epoch: number, windowMs: number): Promise<RecoveryObjectReport> {
     type Prearm = { kind: 'epoch-changed' } | { kind: 'resumed'; report: RecoveryObjectReport }
-      | { kind: 'prearmed'; eventId: string; revision: number; supersededEventIds: string[]; strandedEventIds: string[] };
+      | { kind: 'prearmed'; eventId: string; revision: number; supersededEventIds: string[] };
     const prearmed: Prearm = await this.dispatch.system(async (c, control): Promise<Prearm> => {
       if (control.epoch !== epoch) return { kind: 'epoch-changed' };
       const fresh = await this.assess(c, scope, id, control.epoch, control.now);
@@ -163,29 +167,29 @@ export class ObjectRecovery {
       const eventId = randomUUID(), values: SqlValue[] = [...this.scope(scope), eventId, String(row.intent_id), id,
         fresh.aggregateRevision, 'object-cleanup', control.epoch, control.now, control.now + windowMs];
       await c.query("INSERT INTO sr_outbox VALUES (?,?,?,?,?,?,?,?,?,1,?,?,?,'pending')", values);
-      return { kind: 'prearmed', eventId, revision: fresh.aggregateRevision, supersededEventIds: fresh.supersededEventIds, strandedEventIds: fresh.strandedEventIds };
+      return { kind: 'prearmed', eventId, revision: fresh.aggregateRevision, supersededEventIds: fresh.supersededEventIds };
     });
     if (prearmed.kind === 'epoch-changed') return { ...this.entry(id, 'epoch-changed', 'Control epoch changed between assessment and prearm; nothing written.'),
-      supersededEventIds: assessed.supersededEventIds, strandedEventIds: assessed.strandedEventIds };
+      supersededEventIds: assessed.supersededEventIds };
     if (prearmed.kind === 'resumed') return this.resume(scope, id, prearmed.report);
     // External I/O never holds the SQL transaction: the prearmed row is durable first.
     await this.collector.run(this.envelope(prearmed.eventId, epoch));
-    return this.outcome(scope, id, prearmed.eventId, prearmed.revision, epoch, prearmed.supersededEventIds, prearmed.strandedEventIds);
+    return this.outcome(scope, id, prearmed.eventId, prearmed.revision, epoch, prearmed.supersededEventIds);
   }
   /** A pending obligation from this epoch is resumed instead of duplicated. */
   private async resume(scope: RecoveryScope, id: string, assessed: RecoveryObjectReport): Promise<RecoveryObjectReport> {
     const checked = await this.dispatch.system(async (c, control) => ({ epoch: control.epoch, fresh: await this.assess(c, scope, id, control.epoch, control.now) }));
     if (checked.fresh.decision !== 'resumed') {
       const decision: RecoveryDecision = checked.fresh.decision === 'epoch-changed' ? 'epoch-changed' : 'failed';
-      return { ...this.entry(id, decision, checked.fresh.reason), supersededEventIds: assessed.supersededEventIds, strandedEventIds: assessed.strandedEventIds };
+      return { ...this.entry(id, decision, checked.fresh.reason), supersededEventIds: assessed.supersededEventIds };
     }
     await this.collector.run(this.envelope(checked.fresh.newEventId!, checked.epoch));
-    return this.outcome(scope, id, checked.fresh.newEventId!, checked.fresh.aggregateRevision!, checked.epoch, assessed.supersededEventIds, assessed.strandedEventIds);
+    return this.outcome(scope, id, checked.fresh.newEventId!, checked.fresh.aggregateRevision!, checked.epoch, assessed.supersededEventIds);
   }
   private async outcome(scope: RecoveryScope, id: string, eventId: string, revision: number, epoch: number,
-    supersededEventIds: string[], strandedEventIds: string[]): Promise<RecoveryObjectReport> {
+    supersededEventIds: string[]): Promise<RecoveryObjectReport> {
     return this.dispatch.system(async (c, control) => {
-      const base = { objectId: id, supersededEventIds, strandedEventIds, newEventId: eventId, aggregateRevision: revision };
+      const base = { objectId: id, supersededEventIds, newEventId: eventId, aggregateRevision: revision };
       const row = (await c.query(`SELECT state FROM sr_object WHERE ${scoped} AND object_id = ?`, [...this.scope(scope), id]))[0];
       if (!row || String(row.state) === 'deleted')
         return { ...base, decision: 'recovered' as const, reason: 'Exact-version absence proven; ledger and gauge updated atomically.' };
