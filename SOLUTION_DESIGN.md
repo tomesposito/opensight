@@ -1212,6 +1212,24 @@ deployment if the twelve-minute CI job disappears; AWS delivery can be delayed.
 It never reopens admission. CI access recovery retains an explicit token-issue-time
 cutoff so it cannot revive pre-recovery AWS sessions.
 
+**SR4c release requests and status (frozen 2026-10-15):** Implement
+[D-78](docs/itd/D-78-release-requests.md). A manual public workflow verifies an
+exact master build and records a deployment request, with no AWS identity or
+private-repository credential. Requests and public statuses are informational,
+never approval authority. The independent operator verifies the exact manifest,
+compatibility, current release and private configuration, writes the existing
+four-hour AWS approval, and dispatches the existing pinned private controller.
+Persist a private single-use dispatch intent before dispatch; an uncertain
+response requires reconciliation, never an automatic duplicate dispatch.
+Correlate the private run with a unique request token without exposing its URL.
+Only report deployed after run success and fresh AWS read-back of current source,
+image, alias, configuration, admission and queue mappings with no active lock.
+Publish only fixed status text, source/manifest digests and observation timestamps;
+preserve separate runtime and marketing sources. Observations are dated control-
+plane evidence, not continuous health monitoring. A changed compatibility hash
+still requires separately reviewed maintenance; this path adds no migration,
+restore, IAM permissions, database polling or new standing resources.
+
 **SR4c marketing cutover (frozen 2026-10-15):** Implement
 [D-77](docs/itd/D-77-marketing-cutover.md). One existing private S3 origin and
 CloudFront Free distribution serve the approved marketing page plus offline demo
