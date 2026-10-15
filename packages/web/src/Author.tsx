@@ -529,8 +529,8 @@ function Properties({ visual, draft, dispatch, client, runtimeProblems }: Editor
     <div role="tabpanel" id={`${tabId}-panel-Visual`} aria-labelledby={`${tabId}-Visual`} hidden={tab !== 'Visual'}>
     <details className="property-section" open><summary>Display settings</summary>
     <CardTitle visual={visual} dispatch={dispatch} />
-    <CardStyle />
-    <CardLayout />
+    <CardStyle visual={visual} dispatch={dispatch} />
+    <CardLayout visual={visual} dispatch={dispatch} />
     {toggles.map(({ property, label }) => <label className="toggle" key={property}><input type="checkbox" {...(property === 'tooltipVisible' ? { 'data-author-control': 'tooltips' } : {})} checked={visual[property]} onChange={e => dispatch({ type: 'display', property, value: e.target.checked })} />{label}</label>)}
     {visual.kind === 'insight' && <InsightOptions visual={visual} dispatch={dispatch} />}
     {visual.kind === 'insight' && <label>Narrative decimal places<input type="number" min="0" max="12" placeholder="Automatic" value={formatting.decimalPlaces ?? ''} onChange={e => {
