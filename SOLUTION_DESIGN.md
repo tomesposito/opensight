@@ -1212,6 +1212,35 @@ deployment if the twelve-minute CI job disappears; AWS delivery can be delayed.
 It never reopens admission. CI access recovery retains an explicit token-issue-time
 cutoff so it cannot revive pre-recovery AWS sessions.
 
+**SR4c marketing cutover (frozen 2026-10-15):** Implement
+[D-77](docs/itd/D-77-marketing-cutover.md). One existing private S3 origin and
+CloudFront Free distribution serve the approved marketing page plus offline demo
+on the apex and the hosted product on its app subdomain. Host-validated static
+rewrites separate their object/cache paths; dynamic routes accept only the app
+host. Preserve the API origin domain/certificate, exact ingress guards, WAF,
+private storage, session/authority semantics and database settings. Package the
+site and demo inside the attested frontend archive; publish a seven-day
+`site-<sha>` convenience artifact with identical marketing bytes.
+
+The initial operator-only cutover retains the currently deployed runtime image
+and hosted frontend bytes. It adds only marketing files from a verified master
+release. A distinct composite release record binds both sources, the exact
+frontend hashes and resulting runtime configuration fingerprints; it does not
+change the runtime compatibility fingerprint or claim a schema migration.
+Review private saved infrastructure plans before applying them under the existing
+CAS operation lock and fail-closed watchdog. Quiesce all four functions and both
+queue mappings, allow admitted invocations to expire, change exact public-origin
+configuration and artifact CORS, publish a fresh request version, then switch
+both aliases and validate HTTPS, host isolation, MFA, uploads and queries before
+CAS completion. An interrupted cutover remains held for explicit operator
+reconciliation; rollback restores routing, origin configuration, CORS, alias,
+smoke configuration and verified frontend bytes together. Ordinary code rollback
+must retain a complete marketing bundle after cutover. Infrastructure apply,
+restore and compatibility changes never become permissions of the code-only CI
+role. Startup smoke may retry only the explicit empty startup request on bounded
+503/WORKSPACE_STARTING or generic gateway-unavailable responses; authentication,
+authorization and business failures remain failures.
+
 The hosted-business trigger was met 2026-09-30 (D14), leading to the H1–H8
 foundation and single-node reference. D-18 (2026-10-10) now selects an initial
 Lambda/Aurora deployment with automatic idle pause. That activates the artifact
