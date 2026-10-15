@@ -1,19 +1,11 @@
-import { useId, type Dispatch, type ReactNode } from 'react';
-import type { AuthorAction, AuthorDraft, AuthorVisual, GroupSort } from './authoring.js';
-import { GRID_COLUMNS, defaultMultiplesOptions, hasSmallMultiplesWell } from './authoring.js';
+import { type Dispatch } from 'react';
+import type { AuthorAction, AuthorDraft, AuthorVisual, GroupSort, SliceLimit } from './authoring.js';
+import { GRID_COLUMNS, defaultMultiplesOptions, hasSmallMultiplesWell, sliceLimitValid } from './authoring.js';
 import type { MultiplesOptions as MultiplesOptionsState } from './model.js';
 import { hasDataLabels, hasLegend, LEGEND_POSITIONS, DATA_LABEL_POSITIONS, CARD_DEFAULTS, cleanCardStyle, cleanCardLayout, cleanAltText, altTextValid, type LegendPosition, type LegendTextStyle, type LegendTitle, type GroupTitle, type DataLabels, type DataLabelPosition, type CardStyle, type CardSwatch, type CardBorder } from './formatting.js';
 import { LIGHT_THEME } from './themes.js';
 
 type SectionProps = { visual: AuthorVisual; dispatch: Dispatch<AuthorAction> };
-
-/** Reference affordances must never save settings the renderer cannot honor. */
-function Unavailable({ label, reason, children }: { label: string; reason: string; children: ReactNode }) {
-  const reasonId = useId();
-  return <fieldset className="property-unavailable" disabled aria-label={label} aria-describedby={reasonId} title={reason}>
-    {children}<p className="field-hint" id={reasonId}>{reason}</p>
-  </fieldset>;
-}
 
 export function CardTitle({ visual, dispatch }: SectionProps) {
   const altText = visual.formatting?.altText ?? '';
@@ -224,6 +216,27 @@ function TextStyling({ label, size, value, onChange }: { label: string; size: nu
   </>;
 }
 
+/** Pie slice-limit controls (QuickSight CategoryItemsLimit parity): the top N
+ *  categories in display order; the rest roll into an "Other" slice or are
+ *  hidden. Fail-closed: out-of-range input keeps the last valid limit; clearing
+ *  the input removes the limit (all rows shown). */
+function SliceLimitControls({ visual, dispatch }: SectionProps) {
+  const limit = visual.sliceLimit;
+  const setLimit = (raw: string, includeOther?: boolean) => {
+    if (raw.trim() === '') { dispatch({ type: 'slice-limit', limit: undefined }); return; }
+    const next: SliceLimit = { count: Number(raw), includeOther: includeOther ?? limit?.includeOther ?? true };
+    if (!sliceLimitValid(next)) return; // keep the last valid limit
+    dispatch({ type: 'slice-limit', limit: next });
+  };
+  return <div className="property-control-row" role="group" aria-label="Slice limit controls">
+    <label>Number of slices displayed<input type="number" aria-label="Number of slices displayed" min={1} max={100}
+      placeholder="All rows" value={limit?.count ?? ''} onChange={e => setLimit(e.target.value)} /></label>
+    {limit && <label className="toggle"><input type="checkbox" aria-label="Group the rest as Other"
+      checked={limit.includeOther} onChange={e => setLimit(String(limit.count), e.target.checked)} />Group the rest as “Other”</label>}
+    <p className="field-hint">Top {limit?.count ?? 'N'} categories in display order{limit?.includeOther === false ? '; the rest are hidden' : '; the rest roll into an “Other” slice'}. Empty shows all rows.</p>
+  </div>;
+}
+
 export function GroupColorOptions({ visual, dispatch }: SectionProps) {
   if (!['bar', 'bar100', 'pie'].includes(visual.kind)) return null;
   const field = visual.dimension;
@@ -280,9 +293,7 @@ export function GroupColorOptions({ visual, dispatch }: SectionProps) {
       </div>}
     </div> : <p className="field-hint">Assign a Group/Color field or a measure to sort the slices.</p>}
     <p className="field-hint">The default order follows the dataset's dimension order; a chosen sort applies to the rendered slices.</p>
-    {visual.kind === 'pie' && <Unavailable label="Slice limit controls" reason="Slice limits are not supported yet; all supplied result rows are shown.">
-      <label>Number of slices displayed<input placeholder="Default: 20" /></label>
-    </Unavailable>}
+    {visual.kind === 'pie' && <SliceLimitControls visual={visual} dispatch={dispatch} />}
   </details>;
 }
 
