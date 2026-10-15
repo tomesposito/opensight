@@ -1,14 +1,16 @@
 import { MetadataError, type SqlConnection, type SqlValue } from './metadata-db.js';
 import { identifier } from './metadata-resources.js';
 import { entitlementConfig, resourceBytes } from './hosted-usage.js';
+import { objectProtection, type StorageProtection } from './object-protection.js';
 
 /** An object still charging the namespace quota: bound, reserved, or waiting on collector proof. */
 export interface PendingObject {
   id: string; purpose: 'raw-upload' | 'source' | 'cache' | 'result';
   state: 'reserved' | 'live' | 'retiring'; capacityBytes: number; bytes?: number;
   /** Earliest ms epoch at which the collector may reclaim it; mirrors ObjectLedger.retire(). */
-  nextReclamationAt: number;
-  /** A retiring object past its reclamation time: the collector owes an exact-version deletion proof. */
+  nextReclamationAt: number | null;
+  protections: StorageProtection[];
+  /** An unprotected object past eligibility: the collector owes an exact-version deletion proof. */
   overdue: boolean;
 }
 
@@ -20,6 +22,8 @@ export interface StorageBreakdown {
   nextReclamationAt: number | null;
   overdueCount: number;
   pendingCleanup: PendingObject[];
+  protectedObjects: PendingObject[];
+  protectedBytes: number;
 }
 
 /** Matches the retention gate in ObjectLedger.retire(): retention until, 24h minimum hold, signature grace. */
@@ -50,23 +54,27 @@ export async function describeStorage(c: SqlConnection, input: { deployment: str
     [deployment, tenantId, namespaceId]))[0];
   const reservedBytes = gauge ? asCount(gauge.reserved_bytes) : 0, liveBytes = gauge ? asCount(gauge.live_bytes) : 0;
   const metadataBytes = await resourceBytes(c, { tenantId, namespaceId });
-  const pendingCleanup: PendingObject[] = [];
-  for (const row of await c.query(`SELECT object_id, purpose, capacity_bytes, actual_bytes, state, created_at, retention_until, signature_until
-      FROM sr_object WHERE deployment = ? AND tenant_id = ? AND namespace_id = ? AND state <> 'deleted' ORDER BY created_at`, [deployment, tenantId, namespaceId])) {
+  const pendingCleanup: PendingObject[] = [], protectedObjects: PendingObject[] = [];
+  const rows = await c.query(`SELECT * FROM sr_object WHERE deployment = ? AND tenant_id = ? AND namespace_id = ? AND state <> 'deleted' ORDER BY created_at LIMIT 257`, [deployment, tenantId, namespaceId]);
+  if (rows.length > 256) throw new MetadataError('STORAGE_INSPECT_LIMIT', 503);
+  for (const row of rows) {
     const state = String(row.state);
     if (!['reserved', 'live', 'retiring'].includes(state)) throw new MetadataError('OBJECT_LEDGER_UNAVAILABLE', 503);
-    const createdAt = asCount(row.created_at), retentionUntil = asCount(row.retention_until), signatureUntil = asCount(row.signature_until);
-    const reclamation = nextReclamationAt(createdAt, retentionUntil, signatureUntil);
+    const protection = await objectProtection(c, [deployment, tenantId, namespaceId, String(row.owner_id)], row, now);
+    const reclamation = protection.until;
     const capacityBytes = asCount(row.capacity_bytes), bytes = row.actual_bytes === null ? undefined : asCount(row.actual_bytes);
-    pendingCleanup.push({ id: String(row.object_id), purpose: String(row.purpose) as PendingObject['purpose'],
+    (protection.reasons.length ? protectedObjects : pendingCleanup).push({ id: String(row.object_id), purpose: String(row.purpose) as PendingObject['purpose'],
       state: state as PendingObject['state'], capacityBytes, ...(bytes === undefined ? {} : { bytes }),
-      nextReclamationAt: reclamation, overdue: state === 'retiring' && reclamation <= now });
+      protections: protection.reasons, nextReclamationAt: reclamation,
+      overdue: reclamation !== null && reclamation <= now && protection.reasons.length === 0 });
   }
   const pendingCleanupBytes = pendingCleanup.reduce((n, o) => n + (o.bytes ?? o.capacityBytes), 0);
-  const nextReclamation = pendingCleanup.length ? Math.min(...pendingCleanup.map(o => o.nextReclamationAt)) : null;
+  const times = pendingCleanup.flatMap(o => o.nextReclamationAt === null ? [] : [o.nextReclamationAt]);
+  const nextReclamation = times.length ? Math.min(...times) : null;
   return { deployment, tenantId, namespaceId, at: new Date(now).toISOString(), limitBytes: limit.storageBytes,
     metadataBytes, liveBytes, reservedBytes, totalBytes: metadataBytes + liveBytes + reservedBytes,
-    pendingCleanupBytes, nextReclamationAt: nextReclamation, overdueCount: pendingCleanup.filter(o => o.overdue).length, pendingCleanup };
+    pendingCleanupBytes, nextReclamationAt: nextReclamation, overdueCount: pendingCleanup.filter(o => o.overdue).length, pendingCleanup,
+    protectedObjects, protectedBytes: protectedObjects.reduce((n, o) => n + (o.bytes ?? o.capacityBytes), 0) };
 }
 
 /** Human sentence carried on the USAGE_LIMIT_EXCEEDED error detail. */
@@ -76,9 +84,26 @@ export function quotaExceededSummary(breakdown: StorageBreakdown, requestedBytes
   return `Storage limit ${formatBytes(breakdown.limitBytes)} exceeded: ${formatBytes(breakdown.totalBytes)} in use ` +
     `(live ${formatBytes(breakdown.liveBytes)}, reserved ${formatBytes(breakdown.reservedBytes)}, metadata ${formatBytes(breakdown.metadataBytes)}), ` +
     `request needs ${formatBytes(requestedBytes)}. ${formatBytes(breakdown.pendingCleanupBytes)} is retained by ` +
-    `${breakdown.pendingCleanup.length} earlier upload attempt(s) awaiting collector cleanup; ${reclaim}. ` +
-    (breakdown.overdueCount ? `${breakdown.overdueCount} object(s) are overdue for exact-version deletion proof.` : '') +
-    ` Failed or cancelled uploads keep their reservation until the collector proves exact-version absence after the minimum 24-hour window; counters are never hand-edited.`;
+    `${breakdown.pendingCleanup.length} object(s) awaiting collector cleanup; ${reclaim}. ` +
+    (breakdown.overdueCount ? `${breakdown.overdueCount} object(s) are eligible and awaiting cleanup proof. ` : '') +
+    `Eligible times are not a promise of deletion. ` +
+    `Failed or cancelled uploads keep their reservation until the collector proves exact-version absence after the minimum 24-hour window; counters are never hand-edited.`;
+}
+
+const publicQuotaErrors = new WeakMap<MetadataError, string>();
+/** Only this factory may opt a quota message into the hosted public error response. */
+export function storageQuotaError(breakdown: StorageBreakdown, requestedBytes: number): MetadataError {
+  const summary = quotaExceededSummary(breakdown, requestedBytes);
+  const error = new MetadataError('USAGE_LIMIT_EXCEEDED', 429, { summary,
+    requestedBytes, breakdown: { limitBytes: breakdown.limitBytes, metadataBytes: breakdown.metadataBytes,
+      liveBytes: breakdown.liveBytes, reservedBytes: breakdown.reservedBytes,
+      pendingCleanupBytes: breakdown.pendingCleanupBytes, pendingCleanupCount: breakdown.pendingCleanup.length,
+      overdueCount: breakdown.overdueCount, nextReclamationAt: breakdown.nextReclamationAt === null ? null : new Date(breakdown.nextReclamationAt).toISOString() } });
+  if (summary.length <= 1200 && !/[\x00-\x1f\x7f]/.test(summary)) publicQuotaErrors.set(error, summary);
+  return error;
+}
+export function publicQuotaMessage(error: unknown): string | undefined {
+  return error instanceof MetadataError ? publicQuotaErrors.get(error) : undefined;
 }
 
 /** The audited bounded maintenance operation is specified and tested before any implementation ships. */

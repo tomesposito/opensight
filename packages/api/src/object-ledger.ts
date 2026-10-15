@@ -6,7 +6,7 @@ import { currentAuthority } from './serverless-authority.js';
 import { coordinationDeployment } from './coordination-schema.js';
 import { objectChecksum } from './object-schema.js';
 import { entitlementConfig, resourceBytes } from './hosted-usage.js';
-import { describeStorage, quotaExceededSummary } from './storage-breakdown.js';
+import { describeStorage, storageQuotaError } from './storage-breakdown.js';
 import type { PlannedArtifactWrite } from './artifact-transfer.js';
 import { artifactIdentity, type ArtifactIdentity } from './artifact-schema.js';
 
@@ -89,12 +89,7 @@ export class ObjectLedger {
       // Explain the condition instead of a generic quota error: a tester needs to see
       // how much of the limit is retained reservations awaiting collector cleanup.
       const breakdown = await describeStorage(c, { deployment: this.deployment, tenantId: context.tenantId, namespaceId: context.namespaceId, now });
-      const summary = quotaExceededSummary(breakdown, bytes);
-      throw new MetadataError('USAGE_LIMIT_EXCEEDED', 429, { summary,
-        requestedBytes: bytes, breakdown: { limitBytes: breakdown.limitBytes, metadataBytes: breakdown.metadataBytes,
-          liveBytes: breakdown.liveBytes, reservedBytes: breakdown.reservedBytes, pendingCleanupBytes: breakdown.pendingCleanupBytes,
-          pendingCleanupCount: breakdown.pendingCleanup.length, overdueCount: breakdown.overdueCount,
-          nextReclamationAt: breakdown.nextReclamationAt === null ? null : new Date(breakdown.nextReclamationAt).toISOString() } });
+      throw storageQuotaError(breakdown, bytes);
     }
     for (const plan of plans) {
       const state = this.plans.get(plan)!;

@@ -39,6 +39,7 @@ import { hostedReadiness } from './hosted-health.js';
 import { HostedUsage, appendOperatorAudit } from './hosted-usage.js';
 import { referenceConfig, referenceDisclosure, assertReferenceSurfaces } from './single-node-config.js';
 import { V1Routes } from './v1-routes.js';
+import { publicQuotaMessage } from './storage-breakdown.js';
 
 const invocationFinishes = new WeakMap<Server, () => Promise<void>>();
 export async function finishHostedInvocation(server: Server): Promise<void> { await invocationFinishes.get(server)?.(); }
@@ -329,7 +330,8 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
       const dataError = error instanceof QueryEngineError || error instanceof PrepError || error instanceof UploadError || error instanceof BlazeError;
       const status = dataError ? 422 : error instanceof MetadataError || error instanceof RequestError ? error.status : 500;
       const errorCode = dataError ? error.code : error instanceof MetadataError || error instanceof SecurityError ? error.code : error instanceof RequestError ? 'HOSTED_REQUEST_INVALID' : 'HOSTED_INTERNAL_ERROR';
-      send(response, status, { errorCode });
+      const quotaMessage = publicQuotaMessage(error);
+      send(response, status, { errorCode, ...(quotaMessage === undefined ? {} : { Message: quotaMessage }) });
     }).finally(() => { active.delete(work); });
     active.add(work);
     return work;

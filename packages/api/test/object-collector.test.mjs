@@ -4,6 +4,9 @@ import { randomUUID } from 'node:crypto';
 import { ObjectCollector, AwsObjectDeletion } from '../dist/object-collector.js';
 import { MetadataError } from '../dist/metadata-db.js';
 import { uploadFixture, directRequest } from './serverless-upload-helpers.mjs';
+import { InvocationAws } from '../dist/runtime-aws.js';
+import { InvocationScope } from '../dist/runtime-scope.js';
+const awsEnv = { AWS_ACCESS_KEY_ID: 'synthetic', AWS_SECRET_ACCESS_KEY: 'synthetic', AWS_SESSION_TOKEN: 'synthetic', AWS_REGION: 'us-east-1', OPENSIGHT_DEPLOYMENT: 'test' };
 async function fixture(t) {
   const f = await uploadFixture(t), ctx = f.contexts[0];
   await f.uploads.reserve(ctx, directRequest(), randomUUID(), async () => {});
@@ -74,4 +77,48 @@ test('SR2d S3 deletion requires exact version and verified 404; 403 and ambiguou
   assert.ok(calls.every(c => c.input.VersionId === 'v1'));
   assert.equal(await deletion.latest(key), undefined);
   await assert.rejects(deletion.remove('../foreign', 'v1'), { code: 'OBJECT_INVALID' });
+});
+
+test('#91 real AWS wrapper preserves absence proof and collector releases quota exactly once', async t => {
+  for (const bound of [false, true]) {
+    const f = await fixture(t), before = (await f.rows('sr_storage_usage'))[0].reserved_bytes, calls = [];
+    if (bound) await f.db.transaction(c => c.query('UPDATE sr_object SET object_version = ? WHERE object_id = ?', ['exact-version', f.raw.object_id]));
+    await new InvocationScope(Date.now() + 12000).run(async invocation => {
+      const aws = new InvocationAws(invocation, awsEnv);
+      t.mock.method(aws.s3, 'send', async command => {
+        calls.push(command);
+        if (command.constructor.name === 'HeadObjectCommand') throw Object.assign(new Error('private provider detail'), { name: 'NotFound', $metadata: { httpStatusCode: 404 } });
+        return {};
+      });
+      const collector = new ObjectCollector(f.db, f.dispatch, new AwsObjectDeletion(aws, 'synthetic-artifacts'), 'sqlite');
+      await collector.run(f.envelope); await collector.run(f.envelope);
+    });
+    assert.equal((await f.rows('sr_object')).find(r => r.object_id === f.raw.object_id).state, 'deleted');
+    assert.equal((await f.rows('sr_storage_usage'))[0].reserved_bytes, before - Number(f.raw.capacity_bytes));
+    assert.deepEqual(calls.map(c => c.constructor.name), bound ? ['DeleteObjectCommand', 'HeadObjectCommand'] : ['HeadObjectCommand']);
+    assert.ok(calls.every(c => c.input.VersionId === (bound ? 'exact-version' : undefined)));
+  }
+});
+
+test('#91 real AWS wrapper fails closed on denied, unnamed, ambiguous and timed-out HEAD responses', async t => {
+  await new InvocationScope(Date.now() + 12000).run(async invocation => {
+    const aws = new InvocationAws(invocation, awsEnv), deletion = new AwsObjectDeletion(aws, 'synthetic-artifacts');
+    const key = `objects/v1/${'a'.repeat(64)}/${randomUUID()}`;
+    for (const [name, status] of [['AccessDenied', 403], ['NotFound', 403], ['Error', 404], ['NotFound', 500]]) {
+      t.mock.method(aws.s3, 'send', async command => {
+        if (command.constructor.name === 'HeadObjectCommand') throw Object.assign(new Error('private provider detail'), { name, $metadata: { httpStatusCode: status } });
+        return {};
+      });
+      for (const call of [() => deletion.latest(key), () => deletion.remove(key, 'exact-version')]) {
+        await assert.rejects(call(), error => error.code === 'AWS_REQUEST_FAILED' && !error.message.includes('private'));
+      }
+    }
+    t.mock.method(aws.s3, 'send', async () => ({ VersionId: 'exact-version' }));
+    await assert.rejects(deletion.remove(key, 'exact-version'), { code: 'OBJECT_DELETE_UNCONFIRMED' });
+    const call = aws.call.bind(aws); t.mock.method(aws, 'call', work => call(work, 20));
+    t.mock.method(aws.s3, 'send', async (_command, { abortSignal }) => new Promise((_resolve, reject) => {
+      abortSignal.addEventListener('abort', () => reject(Error('private transport failure')), { once: true });
+    }));
+    await assert.rejects(deletion.latest(key), { code: 'AWS_REQUEST_TIMEOUT' });
+  });
 });

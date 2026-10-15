@@ -1421,6 +1421,45 @@ change is included. Real AWS acceptance continues to gate DNS.
 
 ---
 
+### Phase 5: upload storage diagnostics and AWS acceptance (#91)
+
+Frozen 2026-10-15. The operator inspects one explicitly selected deployment,
+tenant and namespace in a bounded, consistent read-only snapshot. PostgreSQL
+uses numbered parameters, verified TLS with an explicit CA, connection/statement
+deadlines and guaranteed socket cleanup. SQLite uses an actual read-only open.
+Neither backend runs migrations or changes counters, pins, events or retention.
+A private IAM-only Lambda entrypoint supplies the same diagnostic inside the
+existing VPC, loads only the operator credential secret, and returns bounded
+metadata; it has no HTTP route, scheduler, arbitrary SQL input or mutation mode.
+Its temporary role and runner are removed after operator acceptance.
+
+Usage distinguishes live referenced/pinned storage, active reservations and
+cleanup obligations. Reclamation eligibility must use the collector's existing
+reference/pin/operation/retention rules, including indefinite references. Report
+the earliest eligible time only for actual pending cleanup; it is not a promise
+of completed deletion. Fail closed on invalid references or overlarge reports.
+Namespace-wide quota totals may be explained to an authorized uploader; detailed
+object identifiers remain operator-only. The hosted upload error carries only a
+validated bounded quota summary with named `USAGE_LIMIT_EXCEEDED`, and the web
+client displays that summary. Other backend error details remain private.
+
+Acceptance includes real PostgreSQL parameter/read-only/snapshot/cleanup checks,
+hosted API and client error propagation, pins/live references, namespace
+isolation, and a bounded live Aurora inspection. Inspect failed cleanup evidence
+without deleting/redriving messages or adjusting the ledger. Any repair requires
+a separately reviewed scoped protocol; inspection never performs repair. Keep
+cloud identifiers and raw diagnostic evidence outside both repositories.
+
+AWS acceptance correction (2026-10-15): the object collector classifies a verified
+S3 HEAD absence (named NotFound/NoSuchKey/NoSuchVersion with HTTP 404) inside the
+invocation-owned AWS call, before provider errors are sanitized. A missing latest
+key can release an unbound reservation; a missing exact version after DELETE can
+complete its existing fenced cleanup transaction. HTTP 403, unnamed 404, transport
+failure, timeout and a successful HEAD remain non-proof. Other AWS failures retain
+their sanitized named errors. Regression tests exercise the real InvocationAws
+wrapper, quota release and duplicate cleanup. This corrects future collector
+execution only; it does not revive expired events or authorize a ledger repair.
+
 ## 7. Repository Layout
 
 ```
