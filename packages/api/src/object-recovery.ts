@@ -3,6 +3,7 @@ import { MetadataError, type Database, type SqlConnection, type SqlRow, type Sql
 import { identifier } from './metadata-resources.js';
 import { DurableDispatch, type DispatchEnvelope } from './dispatch.js';
 import type { ObjectCollector } from './object-collector.js';
+import { objectProtection } from './object-protection.js';
 
 export interface RecoveryScope { tenantId: string; namespaceId: string; userId: string }
 export interface RecoveryOptions { dryRun?: boolean; windowMs?: number }
@@ -10,7 +11,7 @@ export type RecoveryDecision =
   | 'replace' | 'resumed'
   | 'recovered'
   | 'already-complete'
-  | 'protected-pin' | 'protected-retention' | 'protected-continued' | 'protected-manifest'
+  | 'protected-pin' | 'protected-retention' | 'protected-reference' | 'protected-continued' | 'protected-manifest'
   | 'scope-mismatch' | 'unknown-object' | 'unexpected-state'
   | 'obligation-expired' | 'epoch-changed' | 'failed';
 export interface RecoveryObjectReport {
@@ -109,10 +110,11 @@ export class ObjectRecovery {
     return { deployment: this.deployment, scope, dryRun: false, epoch, startedAt, objects };
   }
   /**
-   * Read-only assessment. Pins and minimum retention are checked here; the deeper
-   * live-reference checks (accepted uploads, source bindings, cache manifests,
-   * result operations) stay with ObjectCollector, which re-verifies them
-   * authoritatively inside its own transaction at run time.
+   * Read-only assessment. Protection uses the same canonical check the
+   * collector runs (objectProtection): pins, minimum retention, accepted
+   * uploads, source bindings, cache manifests and result operations. The
+   * collector still re-verifies it under its own locks at run time, so a
+   * reference that lands between assessment and collection is never missed.
    */
   private async assess(c: SqlConnection, scope: RecoveryScope, id: string, epoch: number, now: number): Promise<RecoveryObjectReport> {
     const located = (await c.query('SELECT tenant_id, namespace_id, owner_id FROM sr_object WHERE deployment = ? AND object_id = ?', [this.deployment, id]))[0];
@@ -137,10 +139,16 @@ export class ObjectRecovery {
     const resumable = live.find(r => number(r.control_epoch) === epoch && number(r.expires_at) > now);
     if (resumable) return { ...this.entry(id, 'resumed', 'A non-terminal obligation from this epoch is still pending; it will be resumed, not duplicated.'),
       supersededEventIds: allSuperseded, newEventId: String(resumable.event_id), aggregateRevision: number(resumable.aggregate_revision) };
-    const pins = await c.query(`SELECT pin_id FROM sr_object_pin WHERE ${scoped} AND object_id = ? AND expires_at > ? LIMIT 1`, [...this.scope(scope), id, now]);
-    if (pins.length) return { ...this.entry(id, 'protected-pin', 'An active pin protects this object; cleanup stays deferred.'), supersededEventIds: allSuperseded };
-    const until = Math.max(number(entry.retention_until), number(entry.created_at) + 86400000, number(entry.signature_until) + 600000);
-    if (until > now) return { ...this.entry(id, 'protected-retention', `Minimum retention holds until ${new Date(until).toISOString()}; cleanup stays deferred.`), supersededEventIds: allSuperseded };
+    const pins = await objectProtection(c, this.scope(scope), entry, now);
+    if (pins.until === null)
+      return { ...this.entry(id, 'protected-manifest', 'An indefinite live reference protects this object; time alone cannot release it.'), supersededEventIds: allSuperseded };
+    if (pins.until > now) {
+      const decision: RecoveryDecision = pins.reasons.includes('pin') ? 'protected-pin' : pins.reasons.length ? 'protected-reference' : 'protected-retention';
+      const reason = decision === 'protected-retention'
+        ? `Minimum retention holds until ${new Date(pins.until).toISOString()}; cleanup stays deferred.`
+        : `Live ${pins.reasons.join('/')} protection holds until ${new Date(pins.until).toISOString()}; cleanup stays deferred.`;
+      return { ...this.entry(id, decision, reason), supersededEventIds: allSuperseded };
+    }
     const aggregateRevision = rows.reduce((max, r) => Math.max(max, number(r.aggregate_revision)), 0) + 1;
     return { ...this.entry(id, 'replace', 'Eligible: a fresh cleanup obligation will be prearmed and collected with exact-version proof.'),
       supersededEventIds: allSuperseded, aggregateRevision };

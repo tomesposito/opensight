@@ -120,9 +120,8 @@ test('SR96 protected objects stay deferred: pin and minimum retention', async t 
   assert.equal(await g.gauge(), gBefore);
 });
 
-test('SR96 a live upload reference prearms a continuation instead of deleting', async t => {
-  const f = await fixture(t), before = await f.gauge();
-  const upload = (await f.rows('sr_upload')).find(r => r.raw_object_id === f.raw.object_id);
+async function blockingOperation(f, objectId) {
+  const upload = (await f.rows('sr_upload')).find(r => r.raw_object_id === objectId);
   const operationId = randomUUID(), epoch = (await f.db.transaction(c => c.query("SELECT epoch FROM sr_control WHERE deployment = 'test'")))[0].epoch;
   await f.db.transaction(async c => {
     await c.query(`INSERT INTO sr_operation (deployment, tenant_id, namespace_id, owner_id, operation_id, revision, kind, state,
@@ -131,7 +130,28 @@ test('SR96 a live upload reference prearms a continuation instead of deleting', 
       ['test', f.ctx.tenantId, f.ctx.namespaceId, f.ctx.userId, operationId, Number(epoch), 1, 1, 1, upload.upload_id, Date.now() + 3600000]);
     await c.query("UPDATE sr_upload SET state = 'accepted', operation_id = ? WHERE upload_id = ?", [operationId, upload.upload_id]);
   });
+}
+
+test('SR96 a live upload reference defers recovery at plan time', async t => {
+  const f = await fixture(t), before = await f.gauge(), outboxBefore = (await f.rows('sr_outbox')).length;
+  await blockingOperation(f, f.raw.object_id);
   const report = await f.recovery.recover(f.scope, [f.raw.object_id]);
+  const entry = report.objects[0];
+  assert.equal(entry.decision, 'protected-reference');
+  assert.match(entry.reason, /operation/);
+  assert.equal((await f.rows('sr_outbox')).length, outboxBefore, 'no obligation prearmed while referenced');
+  assert.equal(await f.objectState(), 'reserved');
+  assert.equal(await f.gauge(), before);
+});
+
+test('SR96 a reference landing between prearm and collection prearms a continuation', async t => {
+  const f = await fixture(t), before = await f.gauge();
+  const real = new ObjectCollector(f.db, f.dispatch, f.objects, 'sqlite');
+  // The reference lands after the prearm assessment but before the collector's
+  // own protection check: the run-time recheck must still catch it.
+  const interleaving = { run: async envelope => { await blockingOperation(f, f.raw.object_id); return real.run(envelope); } };
+  const recovery = new ObjectRecovery(f.db, f.dispatch, interleaving);
+  const report = await recovery.recover(f.scope, [f.raw.object_id]);
   const entry = report.objects[0];
   assert.equal(entry.decision, 'protected-continued');
   assert.equal(await f.objectState(), 'reserved', 'untouched: the continuation defers the retiring transition');

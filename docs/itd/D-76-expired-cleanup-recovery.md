@@ -54,10 +54,12 @@ second deletion path?
 1. ✅ **Prearm a fresh cleanup envelope per reviewed object, then run the
    unchanged `ObjectCollector`.** The recovery (`packages/api/src/object-recovery.ts`,
    `ObjectRecovery`) takes an explicit scope (deployment/tenant/namespace/owner)
-   plus an explicit reviewed object-id list. For each object it rechecks, inside
-   one transaction: current control epoch, ownership (the object row's
+   plus an explicit reviewed object-id list. For each object it rechecks, inside one
+   transaction: current control epoch, ownership (the object row's
    tenant/namespace/owner must equal the scope — namespace isolation), object
-   state, active pins, and minimum retention. It then prearms a FRESH outbox row
+   state, and the shared `objectProtection` check the collector itself runs
+   (pins, minimum retention, accepted uploads, source bindings, cache
+   manifests, result operations). It then prearms a FRESH outbox row
    — new event id, next aggregate revision, current epoch, fresh due/expires
    window, reusing the object's own `intent_id` (the outbox FK requires a live
    `sr_dispatch_intent` row) — terminalizes the superseded expired/old-epoch
@@ -147,11 +149,12 @@ assessment with zero writes and no AWS credentials.
 
 ## Verification
 
-`packages/api/test/object-recovery.test.mjs` (11 tests, sqlite): exact-once
+`packages/api/test/object-recovery.test.mjs` (12 tests, sqlite): exact-once
 gauge release on an already-absent key; duplicate run is a no-op; partial
 completion (crash between prearm and collection) resumes the pending
 obligation; expired fresh envelopes are superseded, never replayed; epoch
-change aborts with zero writes; pin and minimum-retention deferral; live
-upload reference prearms a continuation; 403/timeout retain the obligation;
+change aborts with zero writes; pin, minimum-retention, and live-reference
+deferral at plan time; a reference landing between prearm and collection
+still prearms a continuation at run time; 403/timeout retain the obligation;
 namespace isolation (foreign/unknown objects untouched); dry-run writes
 nothing; input validation; `close()` settles the connection.

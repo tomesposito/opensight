@@ -23,7 +23,7 @@ function arg(name: string): string | undefined {
   const i = process.argv.indexOf(`--${name}`);
   return i === -1 || i + 1 >= process.argv.length ? undefined : process.argv[i + 1];
 }
-const SUCCESS = new Set(['recovered', 'already-complete', 'protected-pin', 'protected-retention', 'protected-continued', 'protected-manifest']);
+const SUCCESS = new Set(['recovered', 'already-complete', 'protected-pin', 'protected-retention', 'protected-reference', 'protected-continued', 'protected-manifest']);
 async function main(): Promise<void> {
   const tenantId = arg('tenant'), namespaceId = arg('namespace'), userId = arg('owner'), objects = arg('objects');
   const auditPath = arg('audit-path'), deployment = arg('deployment') ?? 'default';
