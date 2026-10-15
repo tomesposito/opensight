@@ -38,7 +38,8 @@ export function compileExtra(model: VisualModel, rows: Row[], cell: CellReader, 
   if (['area', 'combo', 'bar100'].includes(model.kind)) {
     const percent = model.kind === 'bar100';
     const panelParts = (panelRows: Row[]) => {
-      const names = panelRows.map(r => model.dimensions[0] ? label(cell(r, model.dimensions[0])) : '');
+      const dim = model.dimensions[0];
+      const names = panelRows.map(r => dim ? label(cell(r, dim)) : '');
       const values = (i = 0) => panelRows.map(r => number(r, model.measures[i]!));
       const totals = percent ? panelRows.map(r => model.measures.reduce((sum, _, i) => sum + nonnegative(r, i), 0)) : [];
       if (totals.some(n => !Number.isFinite(n))) fail('percentage total must be finite');
@@ -55,7 +56,7 @@ export function compileExtra(model: VisualModel, rows: Row[], cell: CellReader, 
     if (model.facet && context) {
       // Small multiples: one panel per facet value on a grid.
       const opts = model.multiplesOptions;
-      const { shown, cols, gridRows, topPad, cellW, cellH } =
+      const { shown, cols, topPad, cellW, cellH } =
         facetLayout(groupRowsByFacet(rows, model.facet, cell), opts, context.path, context.warn);
       const inset = opts?.gutter ? 1.5 : 0;
       option.grid = shown.map((_, i) => {
@@ -89,6 +90,7 @@ export function compileExtra(model: VisualModel, rows: Row[], cell: CellReader, 
     option.legend = { show: model.legend, bottom: 0 };
     option.series = series;
     return undefined;
+  } else if (model.kind === 'waterfall') {
     if (model.dimensions.length !== 1) fail('WATERFALL_CATEGORY_REQUIRED: expected exactly one Categories dimension');
     const measure = model.measures[0];
     if (!measure || model.measures.length !== 1) fail('WATERFALL_VALUES_REQUIRED: expected exactly one Values measure');

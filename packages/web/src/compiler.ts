@@ -582,7 +582,7 @@ export function compileVisual(input: Input): CompiledVisual {
     if (model.facet) {
       // Small multiples: one pie per facet value on a grid, first-appearance order.
       const opts = model.multiplesOptions;
-      const { shown, cols, gridRows, topPad, cellW, cellH } =
+      const { shown, cols, topPad, cellW, cellH } =
         facetLayout(groupRowsByFacet(rows, model.facet, cell), opts, input.path, w => model.warnings.push(w));
       // Gutter opens an inter-panel gap by shrinking each panel's content (and
       // insetting its chrome below); the factor is an OpenSight approximation
@@ -622,7 +622,7 @@ export function compileVisual(input: Input): CompiledVisual {
     if (model.facet) {
       // Small multiples: one cartesian panel per facet value on a grid.
       const opts = model.multiplesOptions;
-      const { shown, cols, gridRows, topPad, cellW, cellH } =
+      const { shown, cols, topPad, cellW, cellH } =
         facetLayout(groupRowsByFacet(rows, model.facet, cell), opts, input.path, w => model.warnings.push(w));
       const inset = opts?.gutter ? 1.5 : 0;
       option.grid = shown.map((_, i) => {
