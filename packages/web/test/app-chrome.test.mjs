@@ -168,3 +168,58 @@ test('navigation follows the actual band below a demo banner and after scrolling
   await act(() => renderer.unmount()); renderer = undefined;
   assert.equal(listeners.size, 0); assert.equal(values.size, 0);
 });
+
+
+describe('issue #108 polish: favorites filter and route notice', () => {
+  let page;
+  before(async () => { page = await chromiumPage(); });
+  after(async () => { await page?.close(); });
+
+  test('favorites filter label never wraps to a second line', async () => {
+    assert.match(css, /\.draft-collection-tools label\.favorites-filter\s*\{[^}]*white-space:\s*nowrap/);
+    const { LocalDrafts } = await import('../build/test/LocalDrafts.js');
+    await page.setViewportSize({ width: 700, height: 900 });
+    const html = renderToStaticMarkup(h('div', { className: 'app-shell' },
+      h('main', { style: { width: '400px' } },
+        h(LocalDrafts, { expanded: true, entries: [], onOpen: () => {}, onRename: () => {}, onDelete: () => {}, onRefresh: () => {} }))));
+    await page.setContent(`<style>${css}</style>${html}`);
+    const actual = await page.evaluate(() => {
+      const label = document.querySelector('label.favorites-filter');
+      const rect = label.getBoundingClientRect();
+      const lineHeight = parseFloat(getComputedStyle(label).lineHeight);
+      return {
+        whiteSpace: getComputedStyle(label).whiteSpace,
+        lines: Math.round(rect.height / lineHeight),
+      };
+    });
+    assert.equal(actual.whiteSpace, 'nowrap');
+    assert.equal(actual.lines, 1);
+  });
+
+  test('route problem renders a centered notice card, not a bare paragraph', async () => {
+    assert.match(css, /\.route-notice\s*\{[^}]*margin:\s*64px auto/);
+    const { RouteNotice } = await import('../build/test/Application.js');
+    await page.setViewportSize({ width: 1440, height: 900 });
+    const html = renderToStaticMarkup(h('div', { className: 'app-shell' },
+      h('main', {}, h(RouteNotice, { problem: 'This page is available in the local workspace.' }))));
+    await page.setContent(`<style>${css}</style>${html}`);
+    const actual = await page.evaluate(() => {
+      const notice = document.querySelector('.route-notice');
+      const rect = notice.getBoundingClientRect();
+      const mainRect = document.querySelector('.app-shell > main').getBoundingClientRect();
+      const style = getComputedStyle(notice);
+      return {
+        role: notice.getAttribute('role'),
+        text: notice.querySelector('p').textContent,
+        icon: notice.querySelector('svg') !== null,
+        centered: Math.abs((rect.left - mainRect.left) - (mainRect.right - rect.right)) < 2,
+        card: style.borderStyle !== 'none' && style.backgroundColor !== 'rgba(0, 0, 0, 0)',
+      };
+    });
+    assert.equal(actual.role, 'alert');
+    assert.equal(actual.text, 'This page is available in the local workspace.');
+    assert.equal(actual.icon, true);
+    assert.equal(actual.centered, true);
+    assert.equal(actual.card, true);
+  });
+});
