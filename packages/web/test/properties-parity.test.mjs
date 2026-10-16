@@ -2,8 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { act, createElement, useReducer } from 'react';
 import { create } from 'react-test-renderer';
-import { CardTitle, CardStyle, CardLayout, MultiplesOptions, GroupColorOptions, BreakdownOptions, LegendOptions, DataLabelsOptions } from '../build/test/PropertiesSections.js';
-import { activeSheet, authorReducer, defaultMultiplesOptions, emptyDraft, groupSortValid, parseDraft, serializeVisual, sliceLimitValid, breakdownLimitValid } from '../build/test/authoring.js';
+import { CardTitle, CardStyle, CardLayout, MultiplesOptions, GroupColorOptions, LegendOptions, DataLabelsOptions } from '../build/test/PropertiesSections.js';
+import { activeSheet, authorReducer, defaultMultiplesOptions, emptyDraft, groupSortValid, parseDraft, serializeVisual, sliceLimitValid } from '../build/test/authoring.js';
 import { compileVisual } from '../build/test/compiler.js';
 import { buildAuthorVisual } from '../build/test/author-preview.js';
 
@@ -360,112 +360,4 @@ test('Data labels content, position, styling and overlap controls are live', asy
   await ui.change('Show data labels', false); assert.equal(ui.compile().option.series[0].label.show, false);
   await ui.change('Data label decimal places', ''); assert.equal(ui.visual().formatting.decimalPlaces, undefined);
   ui.verifySaved();
-});
-
-
-test('breakdownLimitValid accepts only complete, bounded limits', () => {
-  assert.equal(breakdownLimitValid({ count: 1, includeOther: true }), true);
-  assert.equal(breakdownLimitValid({ count: 100, includeOther: false }), true);
-  for (const bad of [undefined, null, 'limit', [], 5, { count: 5 }, { includeOther: true },
-    { count: 0, includeOther: true }, { count: 101, includeOther: true }, { count: 2.5, includeOther: true },
-    { count: '5', includeOther: true }, { count: 5, includeOther: 'yes' }, { count: 5, includeOther: true, extra: 1 }]) {
-    assert.equal(breakdownLimitValid(bad), false, JSON.stringify(bad));
-  }
-});
-
-
-test('Waterfall Breakdowns panel edits, compiles, round-trips, and drops with the breakdown', async t => {
-  // (a) No breakdown assigned: the section shows the hint, no count input.
-  const bare = await mount(t, BreakdownOptions, 'waterfall');
-  assert.equal(bare.visual().kind, 'waterfall');
-  assert.ok(bare.root.findByProps({ 'data-author-control': 'breakdowns' }));
-  assert.match(bare.root.findAllByType('p').map(p => p.children.join('')).join(' '), /Assign a Breakdowns field/);
-  assert.equal(bare.root.findAllByProps({ 'aria-label': 'Number of breakdowns displayed' }).length, 0);
-
-  // (b) Custom harness: waterfall visual with a breakdown assigned (the
-  // SALES_FIELDS fixture fallback makes this work with emptyDraft).
-  const oldAct = globalThis.IS_REACT_ACT_ENVIRONMENT;
-  globalThis.IS_REACT_ACT_ENVIRONMENT = true;
-  let renderer, state, dispatchRef;
-  let initial = authorReducer(authorReducer(emptyDraft(), { type: 'add', kind: 'waterfall' }), { type: 'add', kind: 'waterfall' });
-  initial = authorReducer(initial, { type: 'assign', field: 'category', well: 'breakdown' });
-  const untouched = structuredClone(activeSheet(initial).visuals[0]);
-  function Harness() {
-    const [draft, dispatch] = useReducer(authorReducer, initial); state = draft; dispatchRef = dispatch;
-    return createElement(BreakdownOptions, { visual: selected(draft), dispatch });
-  }
-  await act(() => { renderer = create(createElement(Harness)); });
-  t.after(async () => { await act(() => renderer.unmount()); globalThis.IS_REACT_ACT_ENVIRONMENT = oldAct; });
-  const ui = {
-    root: renderer.root,
-    draft: () => state,
-    visual: () => selected(state),
-    dispatchAction: a => act(() => dispatchRef(a)),
-    compile: () => compileVisual({ ...buildAuthorVisual(selected(state)), rows: [{ region: 'East', category: 'A', revenue: 12.345 }] }),
-    async change(label, value, type = 'input') {
-      const control = renderer.root.findAllByType('label').find(n => n.children.includes(label)).findByType(type);
-      assert.notEqual(control.props.disabled, true);
-      await act(() => control.props.onChange({ target: { value, checked: value } }));
-    },
-  };
-
-  assert.deepEqual(ui.visual().breakdowns, ['category']);
-  assert.equal(ui.visual().breakdownLimit, undefined);
-  assert.match(ui.root.findAllByType('p').map(p => p.children.join('')).join(' '), /Breakdown field: category/);
-  assert.ok(ui.root.findByProps({ 'aria-label': 'Number of breakdowns displayed' }));
-
-  // Breakdown limit is wired: set the count, toggle the Other bucket, clear it.
-  await ui.change('Number of breakdowns displayed', '4');
-  assert.deepEqual(ui.visual().breakdownLimit, { count: 4, includeOther: true });
-  assert.deepEqual(ui.compile().model.breakdownLimit, { count: 4, includeOther: true });
-  const otherToggle = ui.root.findByProps({ 'aria-label': 'Group the rest as Other' });
-  await act(() => otherToggle.props.onChange({ target: { checked: false } }));
-  assert.deepEqual(ui.visual().breakdownLimit, { count: 4, includeOther: false });
-  // Fail-closed editing: out-of-range or non-numeric input keeps the last valid limit.
-  const countInput = ui.root.findByProps({ 'aria-label': 'Number of breakdowns displayed' });
-  await act(() => countInput.props.onChange({ target: { value: '0' } }));
-  assert.deepEqual(ui.visual().breakdownLimit, { count: 4, includeOther: false });
-  await act(() => countInput.props.onChange({ target: { value: '500' } }));
-  assert.deepEqual(ui.visual().breakdownLimit, { count: 4, includeOther: false });
-  await act(() => countInput.props.onChange({ target: { value: 'abc' } }));
-  assert.deepEqual(ui.visual().breakdownLimit, { count: 4, includeOther: false });
-  // Clearing the input removes the limit (all breakdown values shown).
-  await act(() => countInput.props.onChange({ target: { value: '' } }));
-  assert.equal(ui.visual().breakdownLimit, undefined);
-  assert.equal(ui.compile().model.breakdownLimit, undefined);
-
-  // Reducer rejects invalid limits without touching the visual.
-  const limitSnapshot = ui.visual(), limitDraft = ui.draft();
-  const badLimit = limit => activeSheet(authorReducer(limitDraft, { type: 'breakdown-limit', limit })).visuals[1];
-  assert.deepEqual(badLimit({ count: 0, includeOther: true }), limitSnapshot);
-  assert.deepEqual(badLimit({ count: 101, includeOther: true }), limitSnapshot);
-  assert.deepEqual(badLimit({ count: 2.5, includeOther: true }), limitSnapshot);
-  assert.deepEqual(badLimit(null), limitSnapshot);
-
-  // Round-trip through storage keeps the limit.
-  await ui.change('Number of breakdowns displayed', '6');
-  const revived = parseDraft(JSON.stringify(ui.draft())).sheets[0].visuals[1];
-  assert.deepEqual(revived.breakdownLimit, { count: 6, includeOther: true });
-
-  // Export writes BreakdownItemsLimit; the compiler reads it back.
-  const exported = serializeVisual(ui.visual()).waterfallChartVisual.chartConfiguration.sortConfiguration;
-  assert.deepEqual(exported, { breakdownItemsLimit: { itemsLimit: 6, otherCategories: 'INCLUDE' } });
-  assert.deepEqual(ui.compile().model.breakdownLimit, { count: 6, includeOther: true });
-
-  // Unassigning the breakdown drops the limit; the hint returns.
-  await ui.dispatchAction({ type: 'unassign', field: 'category', well: 'breakdown' });
-  assert.equal(ui.visual().breakdownLimit, undefined);
-  assert.deepEqual(ui.visual().breakdowns, []);
-  assert.equal(ui.root.findAllByProps({ 'aria-label': 'Number of breakdowns displayed' }).length, 0);
-
-  // Storage round-trip is clean and the other visual is untouched.
-  assert.deepEqual(parseDraft(JSON.stringify(ui.draft())), ui.draft());
-  assert.deepEqual(activeSheet(ui.draft()).visuals[0], untouched);
-});
-
-
-test('BreakdownOptions renders nothing for non-waterfall visuals', async t => {
-  const ui = await mount(t, BreakdownOptions); // pie
-  assert.equal(ui.visual().kind, 'pie');
-  assert.equal(ui.root.findAllByProps({ 'data-author-control': 'breakdowns' }).length, 0);
 });

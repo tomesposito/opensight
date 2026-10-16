@@ -7,23 +7,6 @@ import { DataDialog, DataTable } from './DataSectionUI.js';
 
 export type ManageDataClient = Pick<QueryClient, 'listPrepSources'>;
 
-/**
- * Shimmer table placeholder shown while the dataset source list loads (issue
- * #108 polish). The dialog body reserves 320px, so the skeleton only needs to
- * approximate the loaded table (header + a few rows); the loading -> loaded
- * swap never moves the dialog footer. Reuses the shimmer row shapes from
- * style.css; static under prefers-reduced-motion.
- */
-export function ManageDataSkeleton() {
-  const rows = Array.from({ length: 3 }, (_, index) => index);
-  return <div className="manage-data-skeleton" role="status" aria-label="Loading datasets">
-    <span className="sr-only">Loading datasets…</span>
-    <div className="skeleton-rows" aria-hidden="true">
-      {rows.map(index => <span key={index} className="skeleton-shape skeleton-row" />)}
-    </div>
-  </div>;
-}
-
 /** Bundled sample dataset id, matching the Data panel picker's 'sales' option. */
 export const SAMPLE_DATASET_ID = 'sales';
 export const sampleDataset = (): AuthorDataset => ({
@@ -106,7 +89,7 @@ export function ManageDataDialog({ client, datasets, sampleLoaded, onClose, onRe
   return <DataDialog title="Manage data" description="Review the datasets this analysis uses, replace one, or add data." onClose={onClose}>
     <div className="data-dialog-body">
       {error ? <p role="alert">Could not load data sources. {error} <button type="button" onClick={() => { setSources(undefined); setError(''); const list = client?.listPrepSources; if (!list) setSources([]); else void list().then(value => setSources(value)).catch((failure: unknown) => setError(failure instanceof Error ? failure.message : String(failure))); }}>Retry</button></p>
-        : sources === undefined ? <ManageDataSkeleton />
+        : sources === undefined ? <p role="status">Loading datasets…</p>
         : <DataTable headings={['Dataset', 'Type', 'Status', '']} empty={rows.length ? undefined : 'No datasets in this analysis yet.'}>
           {rows.map(dataset => {
             const source = sourceFor(dataset);

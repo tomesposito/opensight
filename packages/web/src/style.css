@@ -80,13 +80,6 @@ select { background: #fff; border: 1px solid #c9d8de; border-radius: 6px; paddin
 .source-picker-skeleton { min-height: 206px; padding: 12px 0; }
 .source-picker-skeleton .skeleton-rows { min-height: 206px; }
 .source-picker-skeleton .skeleton-row { height: 26px; }
-/* Issue #108 polish: the Manage data dialog reserves table height while the
-   dataset source list loads. 3 rows x 26px + 2 x 10px gaps = 98px, so with the
-   dialog body's 320px min-height the loading -> loaded swap never moves the
-   dialog footer for typical dataset counts. */
-.manage-data-skeleton { min-height: 98px; padding: 12px 0; }
-.manage-data-skeleton .skeleton-rows { min-height: 98px; }
-.manage-data-skeleton .skeleton-row { height: 26px; }
 /* Issue #108 polish: the dialog's illustrated dataset-empty state reuses the
    shared empty-page artwork, compacted so it fits inside the skeleton's
    reserved height — the loading -> loaded swap never moves the pagination
