@@ -1,6 +1,7 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import type { AuthorDataset } from './authoring.js';
 import type { QueryClient } from './author-query.js';
+import { EmptyPageState } from './LocalEmptyState.js';
 import { prepMessage, type PrepSourceSummary } from './data-prep.js';
 
 interface Props {
@@ -42,6 +43,20 @@ function SourceIcon({ source }: { source: Choice['source'] }) {
   return <svg className="dataset-source-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.3" aria-hidden="true">
     {source === 'file' || source === 'sample' ? <path d="M5 2h7l4 4v12H5V2Zm7 0v5h4" /> : source === 'database' ? <><ellipse cx="10" cy="4" rx="6" ry="2.5" /><path d="M4 4v11c0 3.3 12 3.3 12 0V4M4 9c0 3.3 12 3.3 12 0" /></> : <><circle cx="10" cy="10" r="7" /><path d="M8 7a2 2 0 0 1 4 0c0 2-2 2-2 4m0 2v1" /></>}
   </svg>;
+}
+
+/**
+ * Illustrated empty state shown when the catalog loads with no datasets
+ * (issue #108 polish). It reuses the shared empty-page artwork so the
+ * first-run dialog reads as intentional instead of a bare sentence, and
+ * offers the same Create dataset action as the dialog toolbar.
+ */
+function DatasetPickerEmpty({ onCreateDataset }: { onCreateDataset?: () => void }) {
+  return <div className="dataset-picker-empty" role="status">
+    <EmptyPageState guidance="No datasets yet. Create a dataset to get started.">
+      {onCreateDataset && <button type="button" className="primary-button" onClick={onCreateDataset}>Create dataset</button>}
+    </EmptyPageState>
+  </div>;
 }
 
 /**
@@ -113,7 +128,7 @@ export function CreateAnalysisDialog({ client, sampleAvailable = false, offline 
               <td><span title="Owner is not supplied by the dataset catalog">Not available</span></td><td><span title="Modification date is not supplied by the dataset catalog">Not available</span></td>
             </tr>;})}</tbody>
           </table>
-          {loading ? <DatasetPickerSkeleton /> : current?.error ? <p className="dataset-picker-status" role="alert">Could not load datasets. {current.error}</p> : !rows.length && <p className="dataset-picker-status" role="status">{query.trim() ? 'No datasets match your search.' : 'No datasets yet. Create a dataset to get started.'}</p>}
+          {loading ? <DatasetPickerSkeleton /> : current?.error ? <p className="dataset-picker-status" role="alert">Could not load datasets. {current.error}</p> : !rows.length && (query.trim() ? <p className="dataset-picker-status" role="status">No datasets match your search.</p> : <DatasetPickerEmpty onCreateDataset={onCreateDataset} />)}
         </div>
         <div className="dataset-picker-pagination">
           {list && <button type="button" className="dataset-picker-refresh" onClick={() => { setRevision(value => value + 1); setSelected(''); }}>Refresh datasets</button>}
