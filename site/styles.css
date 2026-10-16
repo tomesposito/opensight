@@ -7,8 +7,8 @@
   --line: #e2e8f2;
   --bg: #ffffff;
   --bg-alt: #f4f7fc;
-  --accent: #5b8def;
-  --accent-dark: #3f6fd6;
+  --accent: #3B82F6;
+  --accent-dark: #2f66d8;
   --radius: 14px;
   --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
@@ -60,6 +60,7 @@ img { max-width: 100%; height: auto; display: block; }
 .nav-inner { display: flex; align-items: center; gap: 28px; height: 64px; }
 .brand { display: inline-flex; align-items: center; gap: 9px; color: #fff; font-weight: 700; font-size: 18px; text-decoration: none; }
 .brand-mark { flex: none; }
+.brand .wordmark { font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, sans-serif; }
 .nav-links { display: flex; gap: 22px; margin-left: 8px; }
 .nav-links a { color: #cdd9ef; text-decoration: none; font-size: 15px; }
 .nav-links a:hover { color: #fff; }
