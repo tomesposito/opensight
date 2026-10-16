@@ -14,7 +14,8 @@
 .product-navigation .app-nav { display: flex; flex-direction: column; align-items: stretch; gap: 4px; }
 .product-navigation .app-nav a, .product-navigation .rail-search, .product-navigation .rail-more { display: flex; align-items: center; gap: 8px; width: 100%; font: 12px/1.5 Arial, "Helvetica Neue", Helvetica, sans-serif; text-align: left; padding: 8px; min-height: 36px; border: 1px solid transparent; border-radius: 5px; background: transparent; color: #365764; }
 .product-navigation .navigation-icon { flex: none; width: 16px; height: 16px; }
-.product-navigation .rail-search:hover, .product-navigation .rail-more:hover { background: #dceff0; }
+.product-navigation .rail-search:hover, .product-navigation .rail-more:hover,
+.product-navigation .app-nav a:hover { background: #dceff0; }
 .product-navigation .app-nav a[href="#/my-stuff"] { margin-bottom: 12px; }
 .product-navigation .rail-chevron { margin-left: auto; display: flex; }
 .product-navigation .rail-more { margin-top: 4px; }
