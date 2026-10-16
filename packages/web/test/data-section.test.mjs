@@ -1,12 +1,16 @@
-import test from 'node:test';
+import test, { after, before, describe } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import { act, createElement } from 'react';
 import { create } from 'react-test-renderer';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { AccessProvider, demoAccess } from '../build/test/access.js';
-import { DataLanding } from '../build/test/DataLanding.js';
+import { DataCatalogSkeleton, DataLanding } from '../build/test/DataLanding.js';
+import { chromiumPage } from './chromium.mjs';
 import { datasetBadges, filterDatasets } from '../build/test/data-section.js';
 import { parseRoute, productSections, routeHash, routeProblem } from '../build/test/app-navigation.js';
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+const css = (await Promise.all(['style.css', 'data-section.css'].map(name => readFile(new URL(`../src/${name}`, import.meta.url), 'utf8')))).join('\n');
 const dataset = { resourceType: 'dataset', dataSetId: 'orders', name: 'Orders', physicalTableMap: {}, importMode: 'DIRECT_QUERY', opensightPrep: { version: 1, input: 'upload-1', steps: [] } };
 const source = { id: 'orders', ref: { dataset: 'orders' }, name: 'Orders', connectorId: 'file', available: true, columns: [{ name: 'amount', type: 'DECIMAL' }], execution: { mode: 'BLAZE' } };
 const catalog = { datasets: [dataset], sources: [source] };
@@ -83,4 +87,50 @@ test('landing icons are font-independent vector graphics', async t => {
   const disclosure = ui.root.findByProps({ 'aria-label': 'More create options' });
   assert.ok(disclosure.findAllByType('svg').length >= 1, 'create-options disclosure must render an SVG chevron');
   assert.ok(ui.root.findAllByType('svg').length >= 2, 'empty state and disclosure must both render SVG icons');
+});
+
+
+describe('issue #108 polish: data landing loading skeleton', () => {
+  let page;
+  before(async () => { page = await chromiumPage(); });
+  after(async () => { await page?.close(); });
+
+  test('loading renders a height-reserving skeleton, not a bare paragraph', async t => {
+    const pending = { ...client, listPrepDatasets: () => new Promise(() => {}) };
+    const ui = await mount(t, { client: pending });
+    const skeleton = ui.root.findByProps({ className: 'data-skeleton' });
+    assert.equal(skeleton.props.role, 'status');
+    assert.equal(skeleton.props['aria-label'], 'Loading datasets');
+    const shapes = skeleton.findAll(node => node.props && typeof node.props.className === 'string' && node.props.className.includes('skeleton-shape'));
+    assert.equal(shapes.length, 11, 'skeleton renders one head row and ten shimmer rows');
+    assert.doesNotMatch(ui.text(), /Loading data…/, 'the bare loading paragraph is gone');
+  });
+
+  test('skeleton css reserves content height', () => {
+    assert.match(css, /\.data-skeleton\s*\{[^}]*min-height:\s*320px/);
+    assert.match(css, /\.data-skeleton\s+\.skeleton-rows\s*\{[^}]*min-height:\s*272px/);
+  });
+
+  test('skeleton height matches the loaded empty state (no layout shift)', async () => {
+    const card = inner => renderToStaticMarkup(createElement('div', { className: 'data-page' },
+      createElement('div', { className: 'data-card' },
+        createElement('section', { role: 'tabpanel', 'aria-label': 'Datasets' }, inner))));
+    // Deterministic empty-state markup mirroring DataLanding's loaded branch.
+    const empty = createElement('div', { className: 'data-empty' },
+      createElement('span', { 'aria-hidden': 'true' },
+        createElement('svg', { width: 36, height: 36, viewBox: '0 0 24 24', focusable: 'false' },
+          createElement('rect', { x: 4, y: 5, width: 16, height: 14, rx: 1, fill: 'none', stroke: 'currentColor', strokeWidth: 1.5 }),
+          createElement('path', { d: 'M4 9.5h16M4 14h16', fill: 'none', stroke: 'currentColor', strokeWidth: 1.5 }))),
+      createElement('h2', {}, 'No datasets yet'),
+      createElement('p', {}, 'Create a dataset to prepare data for your analyses.'),
+      createElement('button', {}, 'Create dataset'));
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.setContent(`<style>${css}</style>${card(createElement(DataCatalogSkeleton, {}))}`);
+    const skeletonHeight = await page.evaluate(() => document.querySelector('.data-skeleton').getBoundingClientRect().height);
+    await page.setContent(`<style>${css}</style>${card(empty)}`);
+    const emptyHeight = await page.evaluate(() => document.querySelector('.data-empty').getBoundingClientRect().height);
+    assert.ok(skeletonHeight >= 300, `skeleton reserves content height, got ${skeletonHeight}`);
+    assert.ok(Math.abs(skeletonHeight - emptyHeight) < 60,
+      `skeleton (${skeletonHeight}px) matches loaded empty state (${emptyHeight}px): no layout shift on load`);
+  });
 });
