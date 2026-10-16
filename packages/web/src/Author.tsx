@@ -21,7 +21,7 @@ import { QSidePanel } from './QSidePanel.js';
 import { BuildForMe } from './BuildForMe.js';
 import { FormattingEditor } from './FormattingEditor.js';
 import { PivotOptionsEditor } from './PivotOptionsEditor.js';
-import { CardTitle, CardStyle, CardLayout, MultiplesOptions, GroupColorOptions, LegendOptions, DataLabelsOptions, ReferenceLinesEditor, VisualPlacement } from './PropertiesSections.js';
+import { CardTitle, CardStyle, CardLayout, MultiplesOptions, GroupColorOptions, BreakdownOptions, LegendOptions, DataLabelsOptions, ReferenceLinesEditor, VisualPlacement } from './PropertiesSections.js';
 import { cardChromeStyle, type VisualFormatting } from './formatting.js';
 import { LIGHT_THEME, themeValid, type AnalysisTheme } from './themes.js';
 import { functionCatalog } from '@opensight/query-engine/browser';
@@ -549,6 +549,7 @@ function Properties({ visual, draft, dispatch, client, runtimeProblems }: Editor
     </details>
     <MultiplesOptions visual={visual} dispatch={dispatch} />
     <GroupColorOptions visual={visual} dispatch={dispatch} />
+    <BreakdownOptions visual={visual} dispatch={dispatch} />
     <LegendOptions visual={visual} dispatch={dispatch} />
     <DataLabelsOptions visual={visual} dispatch={dispatch} />
     <VisualPlacement visual={visual} draft={draft} dispatch={dispatch} />
