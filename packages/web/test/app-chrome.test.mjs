@@ -223,3 +223,38 @@ describe('issue #108 polish: favorites filter and route notice', () => {
     assert.equal(actual.card, true);
   });
 });
+
+describe('issue #108 polish slice 8: navigation rail hover feedback', () => {
+  let page;
+  before(async () => { page = await chromiumPage(); });
+  after(async () => { await page?.close(); });
+
+  test('product nav links highlight on hover', async () => {
+    // The rail base rule sets background: transparent on .app-nav links at the
+    // same specificity as style.css's generic :hover rule, so without a
+    // rail-scoped hover rule hovering a link changes nothing.
+    assert.match(css, /\.product-navigation[^{]*\.app-nav a:hover[^{]*\{[^}]*background:\s*#dceff0/);
+    await page.setViewportSize({ width: 1440, height: 900 });
+    const html = renderToStaticMarkup(h('div', { className: 'app-shell' },
+      h(AppNavigation, { route: { page: 'home' }, navigate() {} })));
+    await page.setContent(`<style>${css}</style>${html}`);
+    const actual = await page.evaluate(() => {
+      const link = document.querySelector('.product-navigation .app-nav a[href="#/data"]');
+      const base = getComputedStyle(link).backgroundColor;
+      let hoverBg = null;
+      for (const sheet of document.styleSheets) {
+        let rules; try { rules = sheet.cssRules; } catch { continue; }
+        for (const rule of rules) {
+          if (rule.selectorText && rule.selectorText.includes('.product-navigation') &&
+            rule.selectorText.includes('.app-nav a:hover')) {
+            hoverBg = rule.style.background || rule.style.backgroundColor;
+          }
+        }
+      }
+      return { base, hoverBg };
+    });
+    assert.equal(actual.base, 'rgba(0, 0, 0, 0)');
+    assert.ok(actual.hoverBg === 'rgb(220, 239, 240)' || actual.hoverBg === '#dceff0',
+      `rail link hover background is ${actual.hoverBg}`);
+  });
+});
