@@ -156,6 +156,37 @@ test('footer Cancel closes; source errors surface with retry', async t => {
   assert.match(broken.text(), /Grants/);
 });
 
+test('source list loading renders the shimmer skeleton instead of a bare paragraph (issue #108 polish)', async t => {
+  const previous = globalThis.IS_REACT_ACT_ENVIRONMENT;
+  globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+  let renderer;
+  await act(async () => {
+    renderer = create(createElement(ManageDataDialog, {
+      datasets: [], onClose() {}, onReplace() {}, onRemove() {},
+      client: { listPrepSources: () => new Promise(() => {}) },
+    }));
+  });
+  t.after(async () => { await act(async () => { renderer.unmount(); }); globalThis.IS_REACT_ACT_ENVIRONMENT = previous; });
+  const skeleton = renderer.root.findByProps({ className: 'manage-data-skeleton' });
+  assert.equal(skeleton.props.role, 'status');
+  assert.equal(skeleton.props['aria-label'], 'Loading datasets');
+  assert.match(JSON.stringify(renderer.toJSON()), /Loading datasets…/);
+  assert.equal(skeleton.findAllByProps({ className: 'skeleton-shape skeleton-row' }).length, 3);
+  assert.deepEqual(
+    renderer.root.findAllByType('p').filter(node => node.props.role === 'status').map(node => node.children.join('')),
+    [],
+    'no bare loading paragraph remains',
+  );
+});
+
+test('manage data skeleton reserves the loaded table height in CSS', async t => {
+  const { readFile } = await import('node:fs/promises');
+  const css = await readFile(new URL('../src/style.css', import.meta.url), 'utf8');
+  assert.match(css, /\.manage-data-skeleton\s*\{[^}]*min-height:\s*98px/);
+  assert.match(css, /\.manage-data-skeleton\s+\.skeleton-rows\s*\{[^}]*min-height:\s*98px/);
+  assert.match(css, /\.manage-data-skeleton\s+\.skeleton-row\s*\{[^}]*height:\s*26px/);
+});
+
 test('Data menu opens with Manage data first and runs the callback', async t => {
   const previous = globalThis.IS_REACT_ACT_ENVIRONMENT;
   globalThis.IS_REACT_ACT_ENVIRONMENT = true;
