@@ -238,7 +238,7 @@ test('Issue #109: the product header carries the new brand wordmark (lowercase o
   for (const access of [{ mode: 'local' }, demoAccess, hosted('author')]) {
     for (const page of ['home', 'author', 'fixtures']) {
       const html = shell(access, page);
-      assert.match(html, /class="brand"[^>]*>[\s\S]*?opensight<\/a>/);
+      assert.match(html, /class="brand"[^>]*>[\s\S]*?opensight<\/span><\/a>/);
       assert.match(html, /class="brand-wordmark"/);
       assert.match(html, /aria-label="Breadcrumb"/);
       if (page !== 'home') assert.ok(html.includes(`<span class="header-caption" aria-current="page">${pages[page].title}</span>`));
