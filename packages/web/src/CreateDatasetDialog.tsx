@@ -9,6 +9,23 @@ import { rawSources, useDataCatalog } from './data-section.js';
 export type DatasetCreationClient = Pick<ReturnType<typeof createApiClient>, 'listPrepSources' | 'listPrepDatasets' | 'uploadFile' | 'validateConnector'>;
 // MySQL is explicitly requested by the brief, but its registry status must stay visible.
 export const creationConnectors = connectors.filter(connector => connector.category !== 'AWS' && (connector.implementation === 'upload' || connector.implementation === 'query' || connector.id === 'mysql'));
+/**
+ * Shimmer table placeholder shown while the data-source catalog loads (issue
+ * #108 polish). It is sized so the dialog body stays at its 320px min-height
+ * for typical catalogs (empty or a few sources), so the loading -> loaded
+ * swap does not move the dialog footer; larger catalogs grow the table
+ * naturally. Reuses the shimmer row shapes from style.css; static under
+ * prefers-reduced-motion.
+ */
+export function SourcePickerSkeleton() {
+  const rows = Array.from({ length: 6 }, (_, index) => index);
+  return <div className="source-picker-skeleton" role="status" aria-label="Loading data sources">
+    <span className="sr-only">Loading data sources…</span>
+    <div className="skeleton-rows" aria-hidden="true">
+      {rows.map(index => <span key={index} className="skeleton-shape skeleton-row" />)}
+    </div>
+  </div>;
+}
 export function CreateDatasetDialog({ client, start = 'dataset', onClose, onPrep }: { client?: DatasetCreationClient; start?: 'dataset' | 'source' | 'file'; onClose: () => void; onPrep: (source: string) => void }) {
   const access = useAccess(), catalog = useDataCatalog(client);
   const [stage, setStage] = useState<'dataset' | 'source' | 'config'>(start === 'file' ? 'config' : start);
@@ -26,7 +43,7 @@ export function CreateDatasetDialog({ client, start = 'dataset', onClose, onPrep
     <div className="data-dialog-body">
       {stage === 'dataset' ? <>
         <div className="data-dialog-tools"><input aria-label="Search data sources" type="search" placeholder="Search data sources" value={search} onChange={event => { setSearch(event.target.value); setSelectedSource(''); }} /><button onClick={upload}>Upload file</button><button onClick={() => nextStage('source')}>Create data source</button></div>
-        {catalog.loading ? <p role="status">Loading data sources…</p> : catalog.error ? <p role="alert">Could not load data sources. {catalog.error} <button onClick={catalog.reload}>Retry</button></p> : <DataTable headings={['Select', 'Name', 'Type']} empty={!matchingSources.length ? search ? 'No data sources match your search.' : 'No data sources yet. Upload a file or create a data source.' : undefined}>{matchingSources.map(item => <tr key={item.id}><td><input type="radio" aria-label={`Select ${item.name ?? item.id}`} name="data-source" disabled={!item.available} checked={selectedSource === item.id} onChange={() => setSelectedSource(item.id)} /></td><td>{item.name ?? item.id}{!item.available && <small> · {item.errorCode ?? 'SOURCE_UNAVAILABLE'}</small>}</td><td>{item.connectorId === 'file' ? 'File' : item.connectorId}</td></tr>)}</DataTable>}
+        {catalog.loading ? <SourcePickerSkeleton /> : catalog.error ? <p role="alert">Could not load data sources. {catalog.error} <button onClick={catalog.reload}>Retry</button></p> : <DataTable headings={['Select', 'Name', 'Type']} empty={!matchingSources.length ? search ? 'No data sources match your search.' : 'No data sources yet. Upload a file or create a data source.' : undefined}>{matchingSources.map(item => <tr key={item.id}><td><input type="radio" aria-label={`Select ${item.name ?? item.id}`} name="data-source" disabled={!item.available} checked={selectedSource === item.id} onChange={() => setSelectedSource(item.id)} /></td><td>{item.name ?? item.id}{!item.available && <small> · {item.errorCode ?? 'SOURCE_UNAVAILABLE'}</small>}</td><td>{item.connectorId === 'file' ? 'File' : item.connectorId}</td></tr>)}</DataTable>}
       </> : stage === 'source' ? <>
         <div className="data-dialog-tools"><input aria-label="Search connectors" type="search" placeholder="Search data sources" value={search} onChange={event => { setSearch(event.target.value); setConnectorId(''); }} /></div>
         <div className="data-connector-grid">{creationConnectors.filter(item => item.name.toLowerCase().includes(search.trim().toLowerCase())).map(item => <label key={item.id} className="data-connector-tile" data-selected={connectorId === item.id}>
