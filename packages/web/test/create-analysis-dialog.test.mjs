@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import { act, createElement } from 'react';
 import { create } from 'react-test-renderer';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -110,6 +111,41 @@ test('catalog failures never silently fall back to the sample', async t => {
   const ui = await mount(t, { sampleAvailable: true, client: { listPrepSources: async () => { throw new Error('Offline'); } } });
   assert.match(ui.text(), /Could not load datasets/); assert.equal(ui.radios()[0].props.disabled, true);
   await act(() => ui.radios()[0].props.onChange()); await ui.submit(); assert.deepEqual(ui.selected, []);
+});
+
+test('dataset-empty state uses the shared illustrated empty page with a working Create dataset CTA', async t => {
+  let creates = 0;
+  const ui = await mount(t, { onCreateDataset: () => creates++ });
+  const empty = ui.root.findByProps({ className: 'dataset-picker-empty' });
+  assert.equal(empty.props.role, 'status');
+  const art = empty.findByProps({ className: 'empty-page-illustration' });
+  assert.equal(art.type, 'svg'); assert.equal(art.props['aria-hidden'], 'true');
+  assert.match(ui.text(), /No datasets yet\. Create a dataset to get started/);
+  assert.deepEqual(ui.root.findAllByProps({ className: 'dataset-picker-status' }), []);
+  const cta = empty.findByType('button');
+  assert.equal(cta.props.children, 'Create dataset'); assert.equal(cta.props.className, 'primary-button');
+  await act(() => cta.props.onClick()); assert.equal(creates, 1);
+});
+
+test('dataset-empty state renders guidance and artwork without a CTA when creating is unavailable', async t => {
+  const ui = await mount(t);
+  const empty = ui.root.findByProps({ className: 'dataset-picker-empty' });
+  assert.match(ui.text(), /No datasets yet/);
+  assert.equal(empty.findByProps({ className: 'empty-page-illustration' }).type, 'svg');
+  assert.deepEqual(empty.findAllByType('button'), []);
+});
+
+test('search with no matches keeps the text status and shows no illustration', async t => {
+  const ui = await mount(t, { client: { listPrepSources: async () => [source('alpha')] } });
+  await ui.search('zzz');
+  assert.match(ui.text(), /No datasets match your search/);
+  assert.deepEqual(ui.root.findAllByProps({ className: 'empty-page-illustration' }), []);
+});
+
+test('dialog empty state is compacted inside the skeleton reserved height (no loading->loaded shift)', async t => {
+  const css = await readFile(new URL('../src/style.css', import.meta.url), 'utf8');
+  assert.match(css, /\.create-analysis-dialog\s+\.empty-page-state\s*\{[^}]*min-height:\s*0/);
+  assert.match(css, /\.create-analysis-dialog\s+\.empty-page-illustration\s*\{[^}]*width:\s*96px/);
 });
 
 test('static dialog renders the public sample honestly without fetching or invented dates', () => {

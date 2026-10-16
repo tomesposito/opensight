@@ -73,6 +73,12 @@ select { background: #fff; border: 1px solid #c9d8de; border-radius: 6px; paddin
 .dataset-picker-skeleton { min-height: 296px; padding: 12px 0; }
 .dataset-picker-skeleton .skeleton-rows { min-height: 272px; }
 .dataset-picker-skeleton .skeleton-row { height: 26px; }
+/* Issue #108 polish: the dialog's illustrated dataset-empty state reuses the
+   shared empty-page artwork, compacted so it fits inside the skeleton's
+   reserved height — the loading -> loaded swap never moves the pagination
+   row and dialog footer. */
+.create-analysis-dialog .empty-page-state { min-height: 0; padding: 20px 16px; gap: 12px; }
+.create-analysis-dialog .empty-page-illustration { width: 96px; height: 83px; }
 .dataset-picker-pagination { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 12px; }
 .dataset-picker-pagination label { display: flex; align-items: center; gap: 8px; }
 .dataset-picker-pagination select { padding: 3px 6px; border-color: #969da3; }
