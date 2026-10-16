@@ -44,23 +44,6 @@ function SourceIcon({ source }: { source: Choice['source'] }) {
   </svg>;
 }
 
-/**
- * Shimmer table placeholder shown while the dataset catalog loads (issue
- * #108 polish). It approximates the loaded table's height so the loading ->
- * loaded swap does not push the pagination row and dialog footer down the
- * dialog. Reuses the shimmer row shapes from style.css; static under
- * prefers-reduced-motion.
- */
-export function DatasetPickerSkeleton() {
-  const rows = Array.from({ length: 8 }, (_, index) => index);
-  return <div className="dataset-picker-skeleton" role="status" aria-label="Loading datasets">
-    <span className="sr-only">Loading datasets…</span>
-    <div className="skeleton-rows" aria-hidden="true">
-      {rows.map(index => <span key={index} className="skeleton-shape skeleton-row" />)}
-    </div>
-  </div>;
-}
-
 export function CreateAnalysisDialog({ client, sampleAvailable = false, offline = false, selectionError, onSelect, onCreateDataset, onClose }: Props) {
   const id = useId(), ref = useRef<HTMLDialogElement>(null), searchRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState(''), [selected, setSelected] = useState('');
@@ -113,7 +96,7 @@ export function CreateAnalysisDialog({ client, sampleAvailable = false, offline 
               <td><span title="Owner is not supplied by the dataset catalog">Not available</span></td><td><span title="Modification date is not supplied by the dataset catalog">Not available</span></td>
             </tr>;})}</tbody>
           </table>
-          {loading ? <DatasetPickerSkeleton /> : current?.error ? <p className="dataset-picker-status" role="alert">Could not load datasets. {current.error}</p> : !rows.length && <p className="dataset-picker-status" role="status">{query.trim() ? 'No datasets match your search.' : 'No datasets yet. Create a dataset to get started.'}</p>}
+          {loading ? <p className="dataset-picker-status" role="status">Loading datasets…</p> : current?.error ? <p className="dataset-picker-status" role="alert">Could not load datasets. {current.error}</p> : !rows.length && <p className="dataset-picker-status" role="status">{query.trim() ? 'No datasets match your search.' : 'No datasets yet. Create a dataset to get started.'}</p>}
         </div>
         <div className="dataset-picker-pagination">
           {list && <button type="button" className="dataset-picker-refresh" onClick={() => { setRevision(value => value + 1); setSelected(''); }}>Refresh datasets</button>}
