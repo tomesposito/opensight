@@ -169,7 +169,7 @@ img { max-width: 100%; height: auto; display: block; }
   .hero { padding: 56px 0 64px; }
   .cards { grid-template-columns: 1fr; }
   .nav-links { display: none; }
-  .nav-cta .btn-github { display: none; }
+  .nav-cta .btn-ghost { display: none; }
   .nav-cta .btn-primary { padding: 9px 14px; font-size: 14px; }
   .brand span { font-size: 16px; }
   .section { padding: 64px 0; }
