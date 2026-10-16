@@ -67,6 +67,9 @@ select { background: #fff; border: 1px solid #c9d8de; border-radius: 6px; paddin
 .dataset-source-icon { width: 18px; height: 18px; flex: none; color: #3888a8; }
 .dataset-picker-error { display: block; color: #a22a20; }
 .dataset-picker-status { padding: 32px 16px; text-align: center; overflow-wrap: anywhere; }
+.dataset-picker-skeleton { min-height: 296px; padding: 12px 0; }
+.dataset-picker-skeleton .skeleton-rows { min-height: 272px; }
+.dataset-picker-skeleton .skeleton-row { height: 26px; }
 .dataset-picker-pagination { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 12px; }
 .dataset-picker-pagination label { display: flex; align-items: center; gap: 8px; }
 .dataset-picker-pagination select { padding: 3px 6px; border-color: #969da3; }
