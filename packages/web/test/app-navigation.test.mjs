@@ -234,11 +234,12 @@ test('unknown URLs have recovery links and product navigation works through brow
   await ui.forward(); assert.equal(ui.location.hash, '#/data');
 });
 
-test('Issue #35: the product header names OpenSight and the current page after #31', () => {
+test('Issue #109: the product header carries the new brand wordmark (lowercase opensight) and the current page after #31', () => {
   for (const access of [{ mode: 'local' }, demoAccess, hosted('author')]) {
     for (const page of ['home', 'author', 'fixtures']) {
       const html = shell(access, page);
-      assert.match(html, /class="brand"[^>]*>[\s\S]*?OpenSight<\/a>/);
+      assert.match(html, /class="brand"[^>]*>[\s\S]*?opensight<\/span><\/a>/);
+      assert.match(html, /class="brand-wordmark"/);
       assert.match(html, /aria-label="Breadcrumb"/);
       if (page !== 'home') assert.ok(html.includes(`<span class="header-caption" aria-current="page">${pages[page].title}</span>`));
       for (const label of ['Home', 'My stuff', 'Analyses', 'Data']) assert.ok(html.includes(`>${label}</a>`));

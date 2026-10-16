@@ -1,3 +1,5 @@
+import { BrandMark } from './BrandMark.js';
+
 export type StartupIssue = 'not-configured' | 'sign-in' | 'unavailable';
 
 const messages = {
@@ -22,7 +24,7 @@ export function FirstRun({ issue, checking, onRetry, onDemo }: {
 }) {
   const message = issue ? messages[issue] : undefined;
   return <div className="first-run">
-    <header className="first-run-header"><a className="brand" href="./"><span className="brand-mark" aria-hidden="true">◈</span>OpenSight</a><span>Open-source business intelligence</span></header>
+    <header className="first-run-header"><a className="brand" href="./"><span className="brand-mark" aria-hidden="true"><BrandMark size={26} /></span><span className="brand-wordmark">opensight</span></a><span>Open-source business intelligence</span></header>
     <main className="first-run-main">
       <div className="first-run-intro"><p className="eyebrow">WELCOME TO OPENSIGHT</p><h1>From data to dashboards.</h1>
         <p>OpenSight is open-source, QuickSight-compatible BI for dashboards, analysis authoring, data preparation, connectors and embedding.</p>

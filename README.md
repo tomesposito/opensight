@@ -1,4 +1,4 @@
-# OpenSight
+<h1><img src="docs/images/brand/opensight-icon.svg" alt="opensight logo" width="36" height="36" align="absmiddle"> opensight</h1>
 
 [![License](https://img.shields.io/badge/License-Apache_2.0-teal.svg)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%3E%3D24-4d7c0f.svg)](package.json)

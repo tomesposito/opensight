@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { BrandMark } from './BrandMark.js';
 import type { LoginInput } from './api-client.js';
 import { authNotice, type AuthNotice } from './auth-errors.js';
 
@@ -33,7 +34,7 @@ export function SignIn({ onSignIn, notice, onRetry, onDemo }: {
   return <div className="sign-in-page">
     <main className="sign-in-main">
       <section className="sign-in-card" aria-labelledby="sign-in-title">
-        <div className="sign-in-brand"><span className="brand-mark" aria-hidden="true">◈</span><span>OpenSight</span></div>
+        <div className="sign-in-brand"><span className="brand-mark" aria-hidden="true"><BrandMark size={34} /></span><span className="brand-wordmark">opensight</span></div>
         <p className="sign-in-kicker">YOUR HOSTED WORKSPACE</p>
         <h1 id="sign-in-title">{step === 'credentials' ? 'Sign in' : 'Verify your identity'}</h1>
         {message && <div ref={alert} className="sign-in-alert" data-kind={message.kind} role={message.kind === 'info' ? 'status' : 'alert'} tabIndex={-1}><p>{message.message}</p>{message.code && <span className="sign-in-error-code">{message.code}</span>}</div>}

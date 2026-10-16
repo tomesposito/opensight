@@ -16,6 +16,9 @@ button:focus-visible, select:focus-visible, input:focus-visible, summary:focus-v
 .app-header { position: sticky; top: 0; z-index: 60; display: flex; flex-wrap: wrap; align-items: center; gap: 24px; padding: 20px 36px; background: #fff; border-bottom: 1px solid #dce5e9; }
 .brand { color: #153c4a; text-decoration: none; font-size: 23px; font-weight: 750; letter-spacing: -.8px; display: flex; align-items: center; gap: 10px; }
 .brand-mark { color: #157f88; font-size: 32px; }
+/* Brand identity (issue #109): lowercase wordmark in Inter/system bold next to the gradient mark. */
+.brand-wordmark { font-weight: 700; letter-spacing: -.4px; }
+.sign-in-brand .brand-wordmark { color: #0f172a; }
 .header-caption { color: #687e89; border-left: 1px solid #dce5e9; padding-left: 24px; font-size: 14px; }
 .fixture-picker { display: flex; align-items: center; gap: 12px; margin-left: auto; font-size: 12px; font-weight: 650; color: #526c7a; }
 select { background: #fff; border: 1px solid #c9d8de; border-radius: 6px; padding: 10px; color: #19384a; max-width: 340px; }

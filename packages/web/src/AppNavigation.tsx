@@ -3,6 +3,7 @@ import { useAccess } from './access.js';
 import { adminPages, dataPages, developerPages, pages, parseRoute, productSections, routeHash, visiblePage, type AppRoute, type Page } from './app-navigation.js';
 import { useCommandPalette } from './CommandPalette.js';
 import { useGlobalSearch } from './GlobalSearch.js';
+import { BrandMark } from './BrandMark.js';
 
 export function useAppRoute() {
   const [route, setRoute] = useState(() => parseRoute(typeof window === 'undefined' ? '' : window.location?.hash ?? ''));
@@ -84,7 +85,7 @@ export function AppNavigation({ route, navigate, recentPages = [], children }: {
   return <>
     <header ref={header} className="app-header product-header">
       <button ref={toggle} className="navigation-toggle" type="button" aria-label="Toggle navigation" aria-expanded={navigationOpen} aria-controls="product-navigation" onClick={() => setNavigationOpen(open => !open)} onKeyDown={event => { if (navigationOpen && event.key === 'Escape') { event.preventDefault(); closeNavigation(); } }}><VectorIcon path="M4 7h16M4 12h16M4 17h16" size={18} /></button>
-      <AppLink className="brand" to={{ page: 'home' }} navigate={navigate}><span className="brand-mark" aria-hidden="true"><VectorIcon path="M12 3l8 9-8 9-8-9z" size={20} fill /></span>OpenSight</AppLink>
+      <AppLink className="brand" to={{ page: 'home' }} navigate={navigate}><span className="brand-mark" aria-hidden="true"><BrandMark size={22} /></span><span className="brand-wordmark">opensight</span></AppLink>
       <nav className="breadcrumbs" aria-label="Breadcrumb">
         <AppLink to={{ page: 'home' }} navigate={navigate} current={route?.page === 'home'}>Home</AppLink>
         {route?.page !== 'home' && <>
