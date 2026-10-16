@@ -85,13 +85,16 @@ export function CreateAnalysisDialog({ client, sampleAvailable = false, offline 
       <div id={`${id}-panel`} role="tabpanel" aria-labelledby={`${id}-datasets`}>
         <div className="dataset-picker-table" tabIndex={0} role="region" aria-label="Available datasets" aria-busy={loading}>
           <table><thead><tr><th scope="col"><span className="sr-only">Select dataset</span></th><th scope="col">Dataset name</th><th scope="col">Type</th><th scope="col">Source</th><th scope="col">Owner</th><th scope="col">Last modified</th></tr></thead>
-            <tbody>{visible.map(row => <tr key={row.key} data-selected={selection?.key === row.key || undefined}>
+            <tbody>{visible.map(row => {
+              // The whole row is a click target; unavailable rows never select.
+              const selectable = row.available && !loading && !current?.error;
+              return <tr key={row.key} data-selected={selection?.key === row.key || undefined} data-selectable={selectable || undefined} onClick={selectable ? () => setSelected(row.key) : undefined}>
               <td><input type="radio" name={`${id}-selection`} id={`${id}-${row.key}`} checked={selected === row.key} disabled={!row.available || loading || !!current?.error} onChange={() => setSelected(row.key)} /></td>
               <td><label htmlFor={`${id}-${row.key}`}>{row.name}</label>{row.error && <small className="dataset-picker-error">{row.error}</small>}</td>
               <td>{row.mode ? <span className={row.mode === 'BLAZE' ? 'dataset-picker-badge' : undefined}>{row.mode}</span> : <span title="Execution mode is not supplied by the dataset catalog">Not available</span>}</td>
               <td><span className="dataset-picker-source"><SourceIcon source={row.source} />{row.sourceName}</span></td>
               <td><span title="Owner is not supplied by the dataset catalog">Not available</span></td><td><span title="Modification date is not supplied by the dataset catalog">Not available</span></td>
-            </tr>)}</tbody>
+            </tr>;})}</tbody>
           </table>
           {loading ? <p className="dataset-picker-status" role="status">Loading datasets…</p> : current?.error ? <p className="dataset-picker-status" role="alert">Could not load datasets. {current.error}</p> : !rows.length && <p className="dataset-picker-status" role="status">{query.trim() ? 'No datasets match your search.' : 'No datasets yet. Create a dataset to get started.'}</p>}
         </div>

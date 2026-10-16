@@ -9,7 +9,7 @@ export function LocalDrafts({ entries, activeId, onOpen, onRename, onDelete, onR
   const [rename, setRename] = useState<{ id: string; name: string }>();
   const [search, setSearch] = useState('');
   const [favoritesOnly, setFavoritesOnly] = useState(false);
-  const favoriteFilter = <label><input type="checkbox" checked={favoritesOnly} onChange={e => { setFavoritesOnly(e.target.checked); setPage(0); }} />Favorites only</label>;
+  const favoriteFilter = <label className="favorites-filter"><input type="checkbox" checked={favoritesOnly} onChange={e => { setFavoritesOnly(e.target.checked); setPage(0); }} />Favorites only</label>;
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(25);
   const matches = entries.filter(entry => (!favoritesOnly || entry.favorite) && entry.name.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase()));
