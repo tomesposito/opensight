@@ -36,7 +36,25 @@ test('empty, loading, and failed source states cannot submit invented sources', 
   const failed = await mount(t, { client: { ...client, listPrepSources: async () => { throw new Error('SOURCE_DENIED'); } } });
   assert.match(failed.text(), /SOURCE_DENIED/); assert.equal(button(failed, 'Select').props.disabled, true);
   const loading = await mount(t, { client: { ...client, listPrepSources: () => new Promise(() => {}) } });
-  assert.match(loading.text(), /Loading data sources/); assert.equal(button(loading, 'Select').props.disabled, true);
+  assert.equal(loading.root.findByProps({ className: 'source-picker-skeleton' }).props.role, 'status');
+  assert.equal(button(loading, 'Select').props.disabled, true);
+});
+test('source loading renders the shimmer skeleton instead of a bare paragraph (issue #108 polish)', async t => {
+  const ui = await mount(t, { client: { ...client, listPrepSources: () => new Promise(() => {}) } });
+  const skeleton = ui.root.findByProps({ className: 'source-picker-skeleton' });
+  assert.equal(skeleton.props.role, 'status');
+  assert.equal(skeleton.props['aria-label'], 'Loading data sources');
+  assert.match(ui.text(), /Loading data sources/);
+  const shapes = skeleton.findAllByProps({ className: 'skeleton-shape skeleton-row' });
+  assert.equal(shapes.length, 6);
+  assert.deepEqual(ui.root.findAllByType('p').filter(node => node.props.role === 'status').map(node => node.children.join('')), []);
+});
+test('source picker skeleton reserves the loaded table height in CSS', async t => {
+  const { readFile } = await import('node:fs/promises');
+  const css = await readFile(new URL('../src/style.css', import.meta.url), 'utf8');
+  assert.match(css, /\.source-picker-skeleton\s*\{[^}]*min-height:\s*206px/);
+  assert.match(css, /\.source-picker-skeleton\s+\.skeleton-rows\s*\{[^}]*min-height:\s*206px/);
+  assert.match(css, /\.source-picker-skeleton\s+\.skeleton-row\s*\{[^}]*height:\s*26px/);
 });
 test('connector grid follows live registry, exposes honest MySQL limitation, and omits AWS services', async t => {
   const expected = connectors.filter(item => item.category !== 'AWS' && ['upload', 'query'].includes(item.implementation));

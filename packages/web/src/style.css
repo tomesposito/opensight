@@ -73,6 +73,13 @@ select { background: #fff; border: 1px solid #c9d8de; border-radius: 6px; paddin
 .dataset-picker-skeleton { min-height: 296px; padding: 12px 0; }
 .dataset-picker-skeleton .skeleton-rows { min-height: 272px; }
 .dataset-picker-skeleton .skeleton-row { height: 26px; }
+/* Issue #108 polish: the create-dataset source picker reserves table height
+   while the catalog loads. 6 rows x 26px + 5 x 10px gaps = 206px, so with the
+   dialog tools row the body stays at its 320px min-height and the loading ->
+   loaded swap never moves the dialog footer for typical catalogs. */
+.source-picker-skeleton { min-height: 206px; padding: 12px 0; }
+.source-picker-skeleton .skeleton-rows { min-height: 206px; }
+.source-picker-skeleton .skeleton-row { height: 26px; }
 /* Issue #108 polish: the dialog's illustrated dataset-empty state reuses the
    shared empty-page artwork, compacted so it fits inside the skeleton's
    reserved height — the loading -> loaded swap never moves the pagination
