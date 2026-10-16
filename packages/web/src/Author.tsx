@@ -37,6 +37,7 @@ import type { AuthorParameter } from './parameters.js';
 import { ParameterEditor } from './ParameterEditor.js';
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { Dispatch, ReactNode } from 'react';
+import { BrandMark } from './BrandMark.js';
 import { GridLayout, noCompactor, useContainerWidth } from 'react-grid-layout';
 import { downloadBundleBytes, exportBundle, importBundleFile, importedFilterProblem, withInheritedParameterFilters } from './bundle-authoring.js';
 import { VisualCard, type RowGroupToggle } from './VisualCard.js';
@@ -171,7 +172,7 @@ function AuthorWorkspace({ renderIdentity, sampleLoaded = false, onTrySample, cl
     <AuthorShortcuts workspace={workspace} onSave={saveDraft} onUndo={() => dispatch({ type: 'undo' })} onRedo={() => dispatch({ type: 'redo' })} />
     <AuthorCommands draft={draft} dispatch={dispatch} onSave={saveDraft} />
     {renderIdentity ? renderIdentity(titleControl) : <header className="author-topbar app-header">
-      {!inApp && <a className="brand" href="./"><span className="brand-mark" aria-hidden="true">◈</span>OpenSight</a>}
+      {!inApp && <a className="brand" href="./"><span className="brand-mark" aria-hidden="true"><BrandMark size={18} /></span><span className="brand-wordmark">opensight</span></a>}
       {titleControl}
     </header>}
     {noData ? renderToolbar() : <QSidePanel draft={draft} dispatch={dispatch} client={client} renderTrigger={renderToolbar} />}
