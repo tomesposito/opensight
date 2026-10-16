@@ -1,6 +1,6 @@
 import { type Dispatch } from 'react';
-import type { AuthorAction, AuthorDraft, AuthorVisual, GroupSort, SliceLimit } from './authoring.js';
-import { GRID_COLUMNS, defaultMultiplesOptions, hasSmallMultiplesWell, sliceLimitValid } from './authoring.js';
+import type { AuthorAction, AuthorDraft, AuthorVisual, BreakdownLimit, GroupSort, SliceLimit } from './authoring.js';
+import { GRID_COLUMNS, defaultMultiplesOptions, hasSmallMultiplesWell, breakdownLimitValid, sliceLimitValid } from './authoring.js';
 import type { MultiplesOptions as MultiplesOptionsState } from './model.js';
 import { hasDataLabels, hasLegend, LEGEND_POSITIONS, DATA_LABEL_POSITIONS, CARD_DEFAULTS, cleanCardStyle, cleanCardLayout, cleanAltText, altTextValid, type LegendPosition, type LegendTextStyle, type LegendTitle, type GroupTitle, type DataLabels, type DataLabelPosition, type CardStyle, type CardSwatch, type CardBorder } from './formatting.js';
 import { LIGHT_THEME } from './themes.js';
@@ -235,6 +235,39 @@ function SliceLimitControls({ visual, dispatch }: SectionProps) {
       checked={limit.includeOther} onChange={e => setLimit(String(limit.count), e.target.checked)} />Group the rest as “Other”</label>}
     <p className="field-hint">Top {limit?.count ?? 'N'} categories in display order{limit?.includeOther === false ? '; the rest are hidden' : '; the rest roll into an “Other” slice'}. Empty shows all rows.</p>
   </div>;
+}
+
+/** Waterfall breakdown-limit controls (QuickSight BreakdownItemsLimit parity): the top
+ *  N breakdown values in display order per category; the rest roll into an "Other"
+ *  bar or are hidden. Fail-closed: out-of-range input keeps the last valid limit;
+ *  clearing the input removes the limit (all breakdown values shown). */
+function BreakdownLimitControls({ visual, dispatch }: SectionProps) {
+  const limit = visual.breakdownLimit;
+  const setLimit = (raw: string, includeOther?: boolean) => {
+    if (raw.trim() === '') { dispatch({ type: 'breakdown-limit', limit: undefined }); return; }
+    const next: BreakdownLimit = { count: Number(raw), includeOther: includeOther ?? limit?.includeOther ?? true };
+    if (!breakdownLimitValid(next)) return; // keep the last valid limit
+    dispatch({ type: 'breakdown-limit', limit: next });
+  };
+  return <div className="property-control-row" role="group" aria-label="Breakdown limit controls">
+    <label>Number of breakdowns displayed<input type="number" aria-label="Number of breakdowns displayed" min={1} max={100}
+      placeholder="All breakdowns" value={limit?.count ?? ''} onChange={e => setLimit(e.target.value)} /></label>
+    {limit && <label className="toggle"><input type="checkbox" aria-label="Group the rest as Other"
+      checked={limit.includeOther} onChange={e => setLimit(String(limit.count), e.target.checked)} />Group the rest as “Other”</label>}
+    <p className="field-hint">Top {limit?.count ?? 'N'} breakdown values in display order{limit?.includeOther === false ? '; the rest are hidden' : '; the rest roll into an “Other” bar'}. Empty shows all breakdown values.</p>
+  </div>;
+}
+
+/** Waterfall Breakdowns section: waterfall has no Group/Color section (that section
+ *  is bar/bar100/pie-scoped), so the BreakdownItemsLimit control gets its own
+ *  section here, next to where Group/Color would sit. */
+export function BreakdownOptions({ visual, dispatch }: SectionProps) {
+  if (visual.kind !== 'waterfall') return null;
+  const breakdown = visual.breakdowns?.[0];
+  return <details className="property-section"><summary data-author-control="breakdowns">Breakdowns</summary>
+    <p className="field-hint">{breakdown ? `Breakdown field: ${breakdown}. Breakdown values render in display order within each category.` : 'Assign a Breakdowns field in the field wells to limit breakdown values.'}</p>
+    {breakdown && <BreakdownLimitControls visual={visual} dispatch={dispatch} />}
+  </details>;
 }
 
 export function GroupColorOptions({ visual, dispatch }: SectionProps) {
