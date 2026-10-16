@@ -9,7 +9,7 @@ Issue #111. Two scanning layers:
   (`.github/dependabot.yml`). GitHub Actions updates stay SHA-pinned, matching
   the repo's existing pinning practice.
 
-(The `.github/` files were added by the repo owner via the GitHub web UI: the
+(The `.github/` files are the repo owner's web-UI step (pending): the
 automation credential cannot publish under `.github/`. The exact contents are
 recorded on issue #111.)
 
