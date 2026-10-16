@@ -31,6 +31,12 @@ import { LocalEmptyState } from './LocalEmptyState.js';
 import { Dashboards } from './Dashboards.js';
 import { FolderEmptyState, MyStuff } from './NavigationPages.js';
 
+/** Access-gated route notice: a centered card, not a bare paragraph, so a blocked
+ *  page still feels finished (issue #108 polish). */
+export function RouteNotice({ problem }: { problem: string }) {
+  return <div className="route-notice" role="alert"><span aria-hidden="true"><svg width="30" height="30" viewBox="0 0 24 24" focusable="false"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" strokeWidth="1.5" /><path d="M12 11v5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /><circle cx="12" cy="7.5" r="1.2" fill="currentColor" /></svg></span><p>{problem}</p></div>;
+}
+
 export function Application(props: { api: ReturnType<typeof createApiClient>; fixtures: Fixture[] }) {
   const access = useAccess();
   return <ToastProvider key={draftStorageKey(access)}><ApplicationWorkspace {...props} /></ToastProvider>;
@@ -62,7 +68,7 @@ function ApplicationWorkspace({ api, fixtures }: { api: ReturnType<typeof create
   </>;
   const content = () => {
     if (!route) return <section><h1>Page not found</h1><p>Choose a section in the navigation to continue.</p><AppLink to={{ page: 'home' }} navigate={navigate}>Go to Home</AppLink></section>;
-    if (problem) return <p role="alert">{problem}</p>;
+    if (problem) return <RouteNotice problem={problem} />;
     switch (route.page) {
       case 'home': return <section className="home-page" aria-label="Home">{access.mode === 'local' && !sampleLoaded ? <LocalEmptyState onSources={() => navigate({ page: 'data-sources' })} onSample={() => setSampleLoaded(true)} /> : sample ? <Dashboard key="sample" fixture={sample} sample /> : <p role="status">The sample dashboard is not included in this build. Ask the operator to restore the pinned sales sample.</p>}</section>;
       case 'dashboards': return <Dashboards navigate={navigate} />;
