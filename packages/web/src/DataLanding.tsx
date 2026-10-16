@@ -5,6 +5,24 @@ import { DataMenu, DataTable, DataTabs } from './DataSectionUI.js';
 import { datasetBadges, datasetSource, filterDatasets, rawSources, useDataCatalog, type DataCatalogClient, type DatasetFilter } from './data-section.js';
 import type { PrepSourceSummary } from './data-prep.js';
 
+/**
+ * Shimmer table placeholder shown while the data catalog loads (issue #108
+ * polish). It reserves roughly the content height of the loaded table/empty
+ * state, so the loading -> loaded swap does not shift the page and footer.
+ * Reuses the shimmer row shapes from style.css; static under
+ * prefers-reduced-motion.
+ */
+export function DataCatalogSkeleton() {
+  const rows = Array.from({ length: 10 }, (_, index) => index);
+  return <div className="data-skeleton" role="status" aria-label="Loading datasets">
+    <span className="sr-only">Loading datasets…</span>
+    <div className="skeleton-rows" aria-hidden="true">
+      <span className="skeleton-shape skeleton-row-head" />
+      {rows.map(index => <span key={index} className="skeleton-shape skeleton-row" />)}
+    </div>
+  </div>;
+}
+
 export function DataLanding({ client, initialTab = 'Datasets', onCreate, onCreateSource, onOpen, onEdit, onPrep }: {
   client?: DataCatalogClient; initialTab?: 'Datasets' | 'Data sources'; onCreate: () => void; onCreateSource: () => void;
   onOpen: (dataset: BundleDataSet) => void; onEdit: (dataset: BundleDataSet) => void; onPrep: (source: PrepSourceSummary) => void;
@@ -23,7 +41,7 @@ export function DataLanding({ client, initialTab = 'Datasets', onCreate, onCreat
         <div className="data-tools"><label><span className="sr-only">{tab === 'Datasets' ? 'Search datasets by name' : 'Search data sources'}</span><input type="search" placeholder={tab === 'Datasets' ? 'Search datasets by name' : 'Search data sources'} value={search} onChange={event => setSearch(event.target.value)} /></label>
           {tab === 'Datasets' ? <select aria-label="Filter datasets" value={filter} onChange={event => setFilter(event.target.value as DatasetFilter)}><option value="all">All datasets</option><option value="mine" disabled={access.mode !== 'hosted'}>Owned by me</option><option value="cached">Cached datasets</option><option value="direct">Direct query datasets</option><option value="rls">RLS enabled</option><option value="rules">Rules datasets</option></select> : <button onClick={onCreateSource}>Create data source</button>}
           {client && <button className="data-reload" onClick={catalog.reload}>Reload data</button>}</div>
-        {catalog.loading ? <p role="status">Loading data…</p> : catalog.error ? <p role="alert">Could not load data. {catalog.error}</p> : tab === 'Datasets' ? <>
+        {catalog.loading ? <DataCatalogSkeleton /> : catalog.error ? <p role="alert">Could not load data. {catalog.error}</p> : tab === 'Datasets' ? <>
           <DataTable headings={['Name', 'Owner', 'Last Modified', 'Action']}>{rows.map(dataset => <tr key={dataset.dataSetId}>
             <td><button className="data-name" onClick={() => onOpen(dataset)}>{dataset.name}</button><span className="data-badges">{datasetBadges(dataset, datasetSource(dataset, data.sources)).map(badge => <span className="data-badge" key={badge}>{badge}</span>)}</span></td>
             <td>{access.mode === 'hosted' ? 'Me' : 'Local workspace'}</td><td><span title="Modification time is not supplied by the dataset API">Not available</span></td>

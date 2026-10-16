@@ -36,6 +36,11 @@
 .data-empty { text-align: center; padding: 64px 16px; }
 .data-empty > span { display: block; font-size: 36px; color: #548599; margin-bottom: 12px; }
 .data-empty p, .data-note { color: #596c78; }
+/* Issue #108 polish: shimmer placeholder while the catalog loads. Reserves
+   roughly the content height of the loaded table/empty state so the
+   loading -> loaded swap does not shift the page. */
+.data-skeleton { min-height: 320px; padding: 24px 0; }
+.data-skeleton .skeleton-rows { min-height: 272px; }
 .data-table .data-table-empty { padding: 40px 8px; text-align: center; color: #596c78; }
 .data-note { margin: 16px 0 0; }
 .data-dialog { width: min(960px, calc(100vw - 48px)); max-height: calc(100vh - 48px); padding: 0; border: 1px solid #a7b6bf; border-radius: 6px; box-shadow: 0 16px 48px #172d3c55; }
