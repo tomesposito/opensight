@@ -9,6 +9,15 @@
 .data-page button, .data-dialog button { border: 1px solid #8ca6b4; border-radius: 3px; padding: 4px 12px; background: white; color: #176482; }
 .data-page button:disabled, .data-dialog button:disabled { color: #65737b; border-color: #c7cfd3; background: #f0f2f3; cursor: not-allowed; }
 .data-page .data-primary, .data-dialog .data-primary { color: white; background: #176b88; border-color: #176b88; }
+/* Issue #108 polish slice 16: every control on the Data landing now gives
+   hover feedback. The teal create controls darken (#176b88 -> #145d76, the
+   same ~13% step the app-wide #157f88 -> #126e76 primary-button hover uses);
+   plain buttons and unselected tabs take the data page's established
+   menu-item hover tint (#eaf3f7). Disabled controls and the selected tab
+   keep their flat state. */
+.data-page .data-primary:hover:not(:disabled), .data-dialog .data-primary:hover:not(:disabled),
+.data-split > .data-menu > summary:hover { background: #145d76; }
+.data-page button:hover:not(:disabled):not(.data-primary):not([aria-selected=true]) { background: #eaf3f7; }
 .data-page input, .data-dialog input, .data-page select, .data-dialog select { padding: 4px 8px; border: 1px solid #9eb0ba; border-radius: 3px; background: white; color: inherit; }
 .data-tools { margin: 0 0 12px; }
 .data-tools input[type=search], .data-dialog-tools input[type=search] { width: 260px; max-width: 100%; }
