@@ -88,6 +88,49 @@ indirectly disclose denied columns. Role, grants, and policies are checked again
 after provider I/O. Client edits discard pending stale suggestions; failures do
 not fall back to fixtures or deterministic results.
 
+### Prompt-injection safety
+
+Threat model. Three user-influenced inputs meet the provider in the prompt: the
+free-text question, calculated-field names/expressions, and dataset schema field
+names (operator-controlled, CLS-filtered). They are serialized as JSON strings,
+which neutralizes structural/delimiter breakout, but the model can still be
+semantically steered ("ignore previous instructions…"). The model's output, by
+contrast, can trigger nothing executable: it is JSON-parsed, key-restricted, and
+re-validated — `/api/o/generate` answers must parse through the O grammar
+against the real field list (`O_UNSUPPORTED_QUESTION` otherwise), and
+`/api/o/calculation` expressions must expression-bind against the real schema
+with column authorization, type checks, and cycle detection.
+
+Defenses (issue #113):
+
+- System-prompt hardening (`packages/api/src/ai-guard.ts`): the instructions
+  pin the question, field names, types, and expressions as untrusted data,
+  never instructions; the model is told never to follow instructions embedded
+  in them, never to reveal instructions/configuration/keys, and to output
+  nothing but the specified JSON object.
+- Unsafe calculated-field names (empty, or containing `{`, `}`, NUL) are
+  rejected with a clear 400 before any provider call — matching the O
+  interpreter's own schema-safety rule, instead of spending a provider call
+  on a request interpretation must reject.
+- PII redaction: the question is scrubbed of common email, SSN, phone,
+  payment-card, and IPv4 formats (`redactPII`) before it is serialized into
+  the prompt. Best-effort patterns, always on; only the provider's copy is
+  affected, never the stored question.
+- Provider keys are redacted from echoed answers (`AISettings.complete`), and
+  the transport boundary allows no redirects, tools, retries, or provider
+  error-body forwarding.
+
+Residual risk, stated honestly. Redaction is pattern-based and cannot catch
+every identifier; field names themselves are sent by design (the task needs
+the schema) and may contain sensitive terms if a dataset is named that way —
+choose the provider and model accordingly, since the operator configures both.
+A sufficiently capable model can still be semantically influenced by hostile
+field names despite the system-prompt rules; the containment is that its
+output cannot execute anything — it must survive grammar/binder validation
+against the real schema before the server returns it. The calculation
+`explanation` is model-authored display text, length-capped at 2,000
+characters; the web UI renders it as escaped text (React default).
+
 ## User management and invitations
 
 The administrator-only Users and invitations page lists registered namespace
