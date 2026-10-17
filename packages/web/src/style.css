@@ -22,6 +22,12 @@ button:focus-visible, select:focus-visible, input:focus-visible, summary:focus-v
    their flat state. The state is instantaneous (no animation), so no
    reduced-motion variant is needed. */
 button:active:not(:disabled) { transform: translateY(1px); }
+/* Issue #108 polish slice 15: the same tactile press for <summary> dropdown
+   toggles (shell account menu, split-button carets, data row menus). The
+   author-menu summaries already have their own pressed background/inset
+   shadow (line ~517); the shift composes with it. Instantaneous state, so
+   no reduced-motion variant is needed. */
+summary:active { transform: translateY(1px); }
 .app-header { position: sticky; top: 0; z-index: 60; display: flex; flex-wrap: wrap; align-items: center; gap: 24px; padding: 20px 36px; background: #fff; border-bottom: 1px solid #dce5e9; }
 .brand { color: #153c4a; text-decoration: none; font-size: 23px; font-weight: 750; letter-spacing: -.8px; display: flex; align-items: center; gap: 10px; }
 .brand-mark { color: #157f88; font-size: 32px; }
