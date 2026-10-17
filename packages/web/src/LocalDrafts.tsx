@@ -1,5 +1,20 @@
 import { useState } from 'react';
 import type { DraftSummary } from './local-drafts.js';
+import { EmptyPageState } from './LocalEmptyState.js';
+
+/**
+ * Illustrated empty state shown when the drafts collection has no entries at
+ * all (issue #108 polish). It reuses the shared empty-page artwork so the
+ * collection reads as intentional instead of a bare sentence, with a
+ * compact height for the collection table region and the author sidebar.
+ * Search and favorites-filter no-matches keep their text-only status —
+ * they are a filter result, not an empty collection.
+ */
+function DraftsEmpty() {
+  return <div className="drafts-empty" role="status">
+    <EmptyPageState guidance="No saved analyses yet. Use Save draft to keep your work.">{null}</EmptyPageState>
+  </div>;
+}
 
 export function LocalDrafts({ entries, activeId, onOpen, onRename, onDelete, onRefresh, expanded = false }: {
   expanded?: boolean;
@@ -33,7 +48,7 @@ export function LocalDrafts({ entries, activeId, onOpen, onRename, onDelete, onR
         <td><button type="button" className="draft-name-link" disabled={!!entry.problem} onClick={() => onOpen(entry.id)} aria-label={`Open ${entry.name}`}><strong>{entry.name}</strong>{entry.favorite && <span className="collection-badge">Favorite</span>}</button>{entry.sample && <span className="collection-badge">Sample data</span>}{entry.problem && <p role="alert">{entry.problem}</p>}</td>
         <td>{updated(entry)}</td><td><div className="collection-row-actions" aria-label={`Actions for ${entry.name}`}>{actions(entry)}</div></td>
       </tr>)}</tbody>
-    </table>{!matches.length && <p className="collection-no-results" role="status">{favoritesOnly ? 'No favorite analyses match.' : entries.length ? 'No analyses match your search.' : 'No saved analyses yet. Use Save draft to keep your work.'}</p>}</div>
+    </table>{!matches.length && (entries.length || favoritesOnly) && <p className="collection-no-results" role="status">{favoritesOnly ? 'No favorite analyses match.' : 'No analyses match your search.'}</p>}{!matches.length && !entries.length && !favoritesOnly && <DraftsEmpty />}</div>
     <div className="collection-pagination"><span role="status">{matches.length} {matches.length === 1 ? 'analysis' : 'analyses'}</span><label>Items per page<select value={pageSize} onChange={e => { setPageSize(Number(e.target.value)); setPage(0); }}><option value={25}>25</option><option value={50}>50</option></select></label><button type="button" aria-label="Previous page" disabled={currentPage === 0} onClick={() => setPage(currentPage - 1)}>‹</button><span>Page {currentPage + 1} of {pages}</span><button type="button" aria-label="Next page" disabled={currentPage + 1 >= pages} onClick={() => setPage(currentPage + 1)}>›</button></div>
     <p className="collection-note">Saved in this browser on this device. Not synced or shared. Export .qs or JSON to share a definition; data is not included.</p>
     {renameForm}
@@ -42,7 +57,7 @@ export function LocalDrafts({ entries, activeId, onOpen, onRename, onDelete, onR
     <summary>Local drafts ({entries.length})</summary>
     <p>Saved in this browser on this device. Not synced or shared. Export .qs or JSON to share a definition; data is not included.</p>
     <button type="button" onClick={onRefresh}>Refresh drafts</button>
-    {!entries.length && <p>No saved analyses yet. Use Save draft to keep your work.</p>}
+    {!entries.length && <DraftsEmpty />}
     {favoriteFilter}
     {favoritesOnly && !matches.length && <p>No favorite analyses yet.</p>}
     <ul>{matches.map(entry => <li key={entry.id}>

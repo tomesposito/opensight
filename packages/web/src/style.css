@@ -93,6 +93,11 @@ select { background: #fff; border: 1px solid #c9d8de; border-radius: 6px; paddin
    row and dialog footer. */
 .create-analysis-dialog .empty-page-state { min-height: 0; padding: 20px 16px; gap: 12px; }
 .create-analysis-dialog .empty-page-illustration { width: 96px; height: 83px; }
+/* Issue #108 polish: the drafts collection's illustrated empty state reuses
+   the shared empty-page artwork, compacted for the collection table region
+   and the author sidebar — no bare paragraph in either placement. */
+.local-drafts .empty-page-state { min-height: 0; padding: 24px 16px; gap: 12px; }
+.local-drafts .empty-page-illustration { width: 96px; height: 83px; }
 .dataset-picker-pagination { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 12px; }
 .dataset-picker-pagination label { display: flex; align-items: center; gap: 8px; }
 .dataset-picker-pagination select { padding: 3px 6px; border-color: #969da3; }
@@ -168,6 +173,13 @@ h3 { font-size: 14px; font-weight: 650; margin: 0; }
 dialog[open] { animation: dialog-open 150ms ease-out; }
 dialog[open]::backdrop { animation: dialog-backdrop-open 150ms ease-out; }
 @media (prefers-reduced-motion: reduce) { dialog[open], dialog[open]::backdrop { animation: none; } }
+/* Popover menu open transitions (issue #108 polish): the author topbar menus,
+   the visual ⋯ action menus, and the data-landing split-button dropdown all
+   fade and rise slightly on open instead of popping in, on the same 150ms beat
+   as the dialog transition. Static under prefers-reduced-motion. */
+@keyframes menu-open { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+details[open] .menu-popover { animation: menu-open 150ms ease-out; }
+@media (prefers-reduced-motion: reduce) { details[open] .menu-popover { animation: none; } }
 /* Card style · Loading animation off: same skeleton shapes, no shimmer motion. */
 .skeleton-static .skeleton-shape { animation: none; background: #e6edf0; }
 .empty-state p { color: #687e89; font-size: 13px; max-width: 300px; line-height: 1.6; }
@@ -554,7 +566,8 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .notice-amber { padding: 8px; background: #fef3e2; border: 1px solid #f0c36d; border-radius: 4px; color: #7a4b00; font-size: 12px; }
 .author-workspace[data-chrome=dark] .notice-amber { background: #3a2f16; border-color: #8a6d2b; color: #f5d98b; }
 .visual-action-menu { position: relative; }
-.visual-action-menu [role=menu] { position: absolute; z-index: 5; top: 100%; right: 0; display: grid; min-width: 160px; background: var(--chrome-surface, #fff); border: 1px solid var(--chrome-border, #c9d8de); border-radius: 4px; box-shadow: 0 4px 12px rgb(0 0 0 / .15); padding: 4px; }
+.visual-action-menu [role=menu] { position: absolute; z-index: 5; top: 100%; right: 0; display: grid; min-width: 160px; background: var(--chrome-surface, #fff); border: 1px solid var(--chrome-border, #c9d8de); border-radius: 4px; box-shadow: 0 4px 12px rgb(0 0 0 / .15); padding: 4px; animation: menu-open 150ms ease-out; }
+@media (prefers-reduced-motion: reduce) { .visual-action-menu [role=menu] { animation: none; } }
 .visual-action-menu [role=menuitem] { text-align: left; padding: 6px 8px; font: inherit; font-size: 12px; background: transparent; border: 0; border-radius: 3px; cursor: pointer; color: inherit; }
 .visual-action-menu [role=menuitem]:hover:not(:disabled) { background: #e8f1f3; }
 .visual-action-menu [role=menuitem]:disabled { opacity: .55; cursor: not-allowed; }
