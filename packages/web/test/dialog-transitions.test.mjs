@@ -33,15 +33,19 @@ describe('dialog open transition in offline Chromium', () => {
         return { name: cs.animationName, duration: cs.animationDuration };
       };
       const open = document.querySelector('dialog[open]');
-      const animations = open.getAnimations().map(a => ({ name: a.animationName, state: a.playState }));
+      const applied = style('dialog[open]');
+      // Restart the entry animation deterministically: the 150ms animation may
+      // already have finished by the time the page is evaluated.
+      open.removeAttribute('open'); void open.offsetWidth; open.setAttribute('open', '');
+      const restarted = open.getAnimations().some(a => a.animationName === 'dialog-open');
       const backdrop = getComputedStyle(open, '::backdrop');
-      return { open: style('dialog[open]'), closed: style('dialog:not([open])'), animations,
+      return { applied, restarted, closed: style('dialog:not([open])'),
         backdrop: { name: backdrop.animationName, duration: backdrop.animationDuration } };
     });
-    assert.equal(actual.open.name, 'dialog-open');
-    assert.equal(actual.open.duration, '0.15s');
+    assert.equal(actual.applied.name, 'dialog-open');
+    assert.equal(actual.applied.duration, '0.15s');
     assert.equal(actual.closed.name, 'none');
-    assert.ok(actual.animations.some(a => a.name === 'dialog-open' && a.state === 'running'));
+    assert.ok(actual.restarted);
     assert.equal(actual.backdrop.name, 'dialog-backdrop-open');
     assert.equal(actual.backdrop.duration, '0.15s');
   });
