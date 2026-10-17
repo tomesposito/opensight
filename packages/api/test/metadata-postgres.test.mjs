@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import { PostgresMetadataDatabase } from '../dist/metadata-db.js';
 import { initializeMetadata, metadataTables } from '../dist/metadata-schema.js';
+import { initializeAudit } from '../dist/operator-audit.js';
 import { TenantMetadata } from '../dist/metadata.js';
 import { MetadataOperator } from '../dist/metadata-operator.js';
 
@@ -56,7 +57,7 @@ test('H1 live Postgres: restricted role, forced RLS, pooled reset, composite con
   await adminPool.query(`CREATE SCHEMA ${name}`);
   await adminPool.query(`CREATE ROLE ${role} LOGIN NOINHERIT NOSUPERUSER NOBYPASSRLS`);
   const operatorDb = new PostgresMetadataDatabase(adminPool), operator = new MetadataOperator(operatorDb);
-  await initializeMetadata(operatorDb, 'postgres');
+  await initializeMetadata(operatorDb, 'postgres'); await operatorDb.transaction(c => initializeAudit(c));
   await adminPool.query(`GRANT USAGE ON SCHEMA ${name} TO ${role}`);
   for (const table of metadataTables.filter(t => t !== 'migrations')) await adminPool.query(`GRANT SELECT, INSERT, UPDATE, DELETE ON h1_${table} TO ${role}`);
   const url = new URL(process.env.DATABASE_URL); url.username = role; url.password = '';

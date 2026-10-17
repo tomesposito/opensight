@@ -17,7 +17,10 @@ const baseTables = ['sr_control', 'h1_tenants', 'h1_namespaces', 'h1_revisions',
   'h4_budget_config', 'h5_embedding_config', 'h6_keys', 'h6_sessions', 'h7_jobs', 'h7_occurrences', 'h7_deliveries', 'h7_migrations',
   'h8_usage', 'h8_usage_events', 'h8_audit', 'h8_recovery', 'h8_schema'];
 const durableTables = [...coordinationTables, ...manifestTables, ...dispatchTables, ...objectTables, ...operationTables, ...executionTables];
-export const serverlessTables = [...baseTables, ...durableTables];
+// h8_audit_schema rides along for ownership/backup/restore inventory, but stays out of
+// baseTables on purpose: the existing-database foreign check must accept deployed
+// databases that predate the marker (the owner migration adds it).
+export const serverlessTables = [...baseTables, 'h8_audit_schema', ...durableTables];
 export async function grantServerlessRuntime(c: SqlConnection, env: NodeJS.ProcessEnv): Promise<void> {
   const schema = String((await c.query('SELECT current_schema() AS schema'))[0]?.schema);
   if (!/^[a-z][a-z0-9_]{0,62}$/.test(schema)) throw new MetadataError('RUNTIME_SCHEMA_INVALID', 503);

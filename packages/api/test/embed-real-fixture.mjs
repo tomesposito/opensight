@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { initializeMetadata } from '../dist/metadata-schema.js';
 import { initializeAuth } from '../dist/auth-schema.js';
+import { initializeAudit } from '../dist/operator-audit.js';
 import { migrateBudgets } from '../dist/budget-store.js';
 import { budgetConfig } from './budget-helpers.mjs';
 import { environment, decode32 } from './hosted-helpers.mjs';
@@ -15,7 +16,7 @@ import { EmbedSessions, resourceArn } from '../dist/embed-sessions.js';
 import { seedEmbedContent } from './embed-content-helpers.mjs';
 /** Synthetic data with the production auth, durable store, query engine and HTTP stack. */
 export async function realEmbedFixture(db, dialect, origin, parentOrigin) {
-  await initializeMetadata(db, dialect); await initializeAuth(db); await migrateBudgets(db, budgetConfig, 'frozen');
+  await initializeMetadata(db, dialect); await initializeAuth(db); await db.transaction(c => initializeAudit(c)); await migrateBudgets(db, budgetConfig, 'frozen');
   const env = { ...environment(), OPENSIGHT_PUBLIC_ORIGIN: origin, OPENSIGHT_SESSION_SECONDS: '36000' }, config = hostedConfig(env);
   const mail = new StubMailTransport(), auth = await HostedAuth.create(db, config), provisioning = new HostedProvisioning(db, config, mail), metadata = new TenantMetadata(db, db);
   const tenant = await provisioning.provision('embed-browser', { name: 'Synthetic embed tenant', administrator: { email: 'embed-admin@example.test', name: 'Embed administrator' } });

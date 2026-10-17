@@ -53,6 +53,8 @@ test('operator audit redaction strips secret-bearing detail fields, recursively'
 test('audit schema migration is idempotent and attributes legacy rows to the deployment operator', async t => {
   const f = await database(t);
   await f.db.transaction(async c => {
+    await c.query('DROP TABLE h8_audit');
+    await c.query('DROP TABLE h8_audit_schema');
     await c.query('CREATE TABLE h8_audit (event_id TEXT PRIMARY KEY, created_at TEXT NOT NULL, action TEXT NOT NULL)');
     await c.query("INSERT INTO h8_audit (event_id, created_at, action) VALUES ('legacy-1','2026-01-01T00:00:00.000Z','backup.created')");
   });
