@@ -23,6 +23,8 @@
 .data-menu > summary { list-style: none; padding: 0 8px; font-size: 16px; cursor: pointer; display: flex; align-items: center; }
 .data-menu > summary::-webkit-details-marker { display: none; }
 .data-menu-items { position: absolute; right: 0; top: 100%; z-index: 15; width: max-content; max-width: 300px; background: white; border: 1px solid #bbcbd3; box-shadow: 0 4px 12px #19384a33; padding: 4px; }
+details[open] .data-menu-items { animation: menu-open 150ms ease-out; }
+@media (prefers-reduced-motion: reduce) { details[open] .data-menu-items { animation: none; } }
 .data-menu-items button { display: block; border: 0; text-align: left; width: 100%; }
 .data-menu-items button:hover { background: #eaf3f7; }
 .data-table-scroll { overflow-x: auto; }
