@@ -39,7 +39,9 @@ subject, and when.
 
 Entries are written inside the mutation's own transaction: a rolled-back
 mutation leaves no entry, and an idempotent replay of an already-applied
-mutation appends nothing new.
+mutation appends nothing new. The log self-initializes (`initializeAudit`
+runs on every append and read), so any operator-plane database carries it
+without a separate migration step.
 
 ## Secret redaction
 

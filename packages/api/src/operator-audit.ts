@@ -51,8 +51,15 @@ function text(value: unknown, field: string, max: number): string | null {
 }
 
 async function addColumn(c: SqlConnection, column: string, definition: string): Promise<void> {
-  try { await c.query(`ALTER TABLE h8_audit ADD COLUMN ${column} ${definition}`); }
-  catch (error) {
+  // Column names are fixed constants, never caller input. The savepoint keeps a
+  // duplicate-column failure from aborting the caller's transaction on Postgres.
+  await c.query('SAVEPOINT opensight_audit_migrate');
+  try {
+    await c.query(`ALTER TABLE h8_audit ADD COLUMN ${column} ${definition}`);
+    await c.query('RELEASE SAVEPOINT opensight_audit_migrate');
+  } catch (error) {
+    await c.query('ROLLBACK TO SAVEPOINT opensight_audit_migrate');
+    await c.query('RELEASE SAVEPOINT opensight_audit_migrate');
     const code = error !== null && typeof error === 'object' && 'code' in error ? String(error.code) : '';
     const message = error instanceof Error ? error.message : '';
     if (code === '42701' || /duplicate column/i.test(message)) return; // already migrated
@@ -73,8 +80,10 @@ export async function initializeAudit(c: SqlConnection): Promise<void> {
   await addColumn(c, 'detail', 'TEXT');
 }
 
-/** Append within the mutation's own transaction: a rolled-back mutation leaves no entry. */
+/** Append within the mutation's own transaction: a rolled-back mutation leaves no entry.
+ * The log self-initializes so any operator-plane database can rely on it existing. */
 export async function appendOperatorAudit(c: SqlConnection, input: OperatorAuditInput, now = Date.now()): Promise<void> {
+  await initializeAudit(c);
   const action = text(input.action, 'action', 128);
   if (action === null) throw new MetadataError('METADATA_INVALID', 400);
   await c.query('INSERT INTO h8_audit (event_id, created_at, actor, action, tenant_id, subject, detail) VALUES (?,?,?,?,?,?,?)',
@@ -95,6 +104,7 @@ export async function readOperatorAudit(db: Database, options: { limit?: number 
   const limit = options.limit ?? 50;
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > 200) throw new MetadataError('METADATA_INVALID', 400);
   return db.transaction(async c => {
+    await initializeAudit(c);
     const rows = await c.query('SELECT event_id, created_at, actor, action, tenant_id, subject, detail FROM h8_audit ORDER BY created_at DESC LIMIT ?', [limit]);
     return rows.map(stored);
   });
