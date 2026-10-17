@@ -3,6 +3,7 @@ import { interpretQuestion, type SchemaField } from '@opensight/o-interpreter';
 import { resolveSecurity, ExpressionBinder, parseExpression, QueryEngineError } from '@opensight/query-engine';
 import { method, send } from './automation-routes.js';
 import { AIError } from './ai-providers.js';
+import { generativeInstructions, redactPII } from './ai-guard.js';
 import type { AISettings } from './ai-settings.js';
 import { readBody, RequestError, type SalesQuery } from './query.js';
 import { record, invalid } from './schedule.js';
@@ -18,6 +19,10 @@ function schema(body: Record<string, unknown>, sales: SalesQuery, identity: Iden
   const declarations = raw.map(value => {
     const c = record(value, ['name', 'expression', 'role']);
     if (typeof c.name !== 'string' || typeof c.expression !== 'string' || !['dimension', 'measure'].includes(String(c.role))) invalid('$.calculatedFields', 'invalid calculation');
+    // The provider prompt carries field names as data, but the O interpreter
+    // rejects unsafe schema names outright — fail here with a clear 400
+    // instead of spending a provider call on a request that cannot succeed.
+    if (!c.name.trim() || /[{}\0]/.test(c.name)) invalid('$.calculatedFields', 'calculated field names must be nonempty and cannot contain braces');
     return { Name: c.name, Expression: c.expression, DataSetIdentifier: 'sales' };
   });
   const binder = new ExpressionBinder('sales', metadata.columns, declarations, [], {}, (name, path) => {
@@ -46,10 +51,11 @@ export async function generativeRoute(request: IncomingMessage, response: Server
   requireOScope(body, identity, security, organization, sales);
   if (typeof body.question !== 'string' || !body.question.trim() || body.question.length > 2000) invalid('$.question', 'expected 1–2000 characters');
   const before = schema(body, sales!, identity, security);
-  const instructions = calculation
-    ? 'Return JSON only: {"name":"New field name","expression":"QuickSight calculated field expression","role":"measure or dimension","explanation":"Short explanation"}. Use only supplied fields. No SQL, scripts, tools, or invented functions.'
-    : 'Translate the question to the supported analytical grammar. Return JSON only: {"question":"canonical question"}. Grammar: sum|avg|count|min|max FIELD [by FIELD [and FIELD]] [per month|year|quarter|day] [in YEAR] [where FIELD is VALUE] [top N] [bar|line|pie|table]. count rows is supported. Use exact supplied field names, quoting names with spaces. Do not drop requested conditions or invent data. If unsupported return {"question":""}.';
-  const text = await ai.complete(identity.namespaceId, { system: instructions, prompt: JSON.stringify({ question: body.question, fields: before.fields }) });
+  // Prompts are the one place user-influenced content meets the provider:
+  // the question is PII-redacted first, field names ride inside JSON strings,
+  // and the system instructions pin untrusted content as data, never rules.
+  const instructions = generativeInstructions(calculation);
+  const text = await ai.complete(identity.namespaceId, { system: instructions, prompt: JSON.stringify({ question: redactPII(body.question), fields: before.fields }) });
   // Authorization and policy changes during provider I/O must not release stale answers.
   requireOScope(body, identity, security, organization, sales);
   if (calculation) security.require(identity, 'build');
