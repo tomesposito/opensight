@@ -12,7 +12,8 @@ import { ReferenceMaintenance } from '../dist/single-node-maintenance.js';
 import { budgetConfig } from './budget-helpers.mjs';
 import { MetadataOperator } from '../dist/metadata-operator.js';
 import { hostedReadiness } from '../dist/hosted-health.js';
-import { HostedUsage, appendOperatorAudit } from '../dist/hosted-usage.js';
+import { HostedUsage } from '../dist/hosted-usage.js';
+import { appendOperatorAudit } from '../dist/operator-audit.js';
 import { TenantMetadata } from '../dist/metadata.js';
 import { referenceEnv } from './h8-helpers.mjs';
 async function fixture(t) {
@@ -72,7 +73,7 @@ test('H8 backup authentication, maintenance gates and audit/usage retention fail
   await assert.rejects(ReferenceMaintenance.open(f.db, f.backups, f.key), { code: 'REFERENCE_MAINTENANCE_REQUIRED' });
   await assert.rejects(ReferenceMaintenance.open(f.db, process.cwd(), f.key, 'frozen'), { code: 'BACKUP_DIRECTORY_INVALID' });
   await f.db.transaction(async c => {
-    await appendOperatorAudit(c, 'old-event', Date.UTC(2000, 0, 1));
+    await appendOperatorAudit(c, { action: 'old-event' }, Date.UTC(2000, 0, 1));
     await c.query("INSERT INTO h1_outbox VALUES ('audit-event','tenant-one','one','tenant.test',1,'2000-01-01T00:00:00.000Z')");
     await c.query("INSERT INTO h1_outbox VALUES ('storage-event','tenant-one','one','usage.storage.bytes:100',1,'2000-01-01T00:00:00.000Z')");
   });

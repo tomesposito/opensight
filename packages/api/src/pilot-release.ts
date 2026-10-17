@@ -4,7 +4,7 @@ import { migrateServerless, serverlessTables } from './serverless-migration.js';
 import { executionChecksum, executionTables } from './execution-schema.js';
 import { objectProtection } from './object-protection.js';
 import { coordinationNow, type CoordinationDialect } from './coordination-schema.js';
-import { appendOperatorAudit } from './hosted-usage.js';
+import { appendOperatorAudit } from './operator-audit.js';
 
 export const pilotDigest = (value: unknown): string => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 export interface PilotPlan {
@@ -118,7 +118,7 @@ export async function pilotRelease(db: Database, env: NodeJS.ProcessEnv, raw: Pi
     }
     if (!prior && command !== 'verify') {
       await c.query('INSERT INTO h2_requests (operation_id, request_hash) VALUES (?,?)', [operation, request]);
-      await appendOperatorAudit(c, `pilot.${command}:${p.operationId}:${digest}`);
+      await appendOperatorAudit(c, { action: `pilot.${command}`, detail: { operationId: p.operationId, digest } });
     }
     return { state: prior ? 'replayed' : 'verified', epoch: p.expectedEpoch + 1, executionChecksum, ...inventory };
   });

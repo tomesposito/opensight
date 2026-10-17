@@ -3,7 +3,7 @@ import { MetadataError, type Database, type SqlConnection, type SqlRow } from '.
 import { serverlessTables } from './serverless-migration.js';
 import { checksum } from './metadata-operator.js';
 import { coordinationNow, type CoordinationDialect } from './coordination-schema.js';
-import { appendOperatorAudit } from './hosted-usage.js';
+import { appendOperatorAudit } from './operator-audit.js';
 
 export interface CloudSnapshot {
   version: 1; id: string; deployment: string; epoch: number; createdAt: number; expiresAt: number;
@@ -116,7 +116,7 @@ export async function restoreServerless(db: Database, snapshot: CloudSnapshot, r
       await c.query('INSERT INTO h8_recovery VALUES (?) ON CONFLICT (tenant_id) DO NOTHING', [ns.tenant_id!]);
       for (const metric of ['apiCalls', 'computeAttempts']) await c.query(`INSERT INTO h8_usage VALUES (?,?,?,?,9007199254740991,0) ON CONFLICT (tenant_id,namespace_id,period,metric) DO UPDATE SET admitted=9007199254740991`, [ns.tenant_id!, ns.namespace_id!, period, metric]);
     }
-    await appendOperatorAudit(c, 'serverless.restore-held');
+    await appendOperatorAudit(c, { action: 'serverless.restore-held' });
     return { state: 'held', epoch: registry.epoch, tenants: snapshot.tables.h1_tenants!.length };
   });
 }
@@ -147,7 +147,7 @@ export async function migrateRegistered(db: Database, env: NodeJS.ProcessEnv, sn
       await migrateServerless({ durable: true, transaction: work => work(c), close: async () => {} }, { ...env, OPENSIGHT_MAINTENANCE: 'frozen' }, dialect);
       await verify();
       await c.query('INSERT INTO h2_requests VALUES (?,?)', [receipt, request]);
-      await appendOperatorAudit(c, 'serverless.registered-migration');
+      await appendOperatorAudit(c, { action: 'serverless.registered-migration' });
     }
     return { state: 'migrated', epoch: snapshot.epoch, replayed: !!prior };
   });

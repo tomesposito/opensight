@@ -36,7 +36,8 @@ import { JobOwnership, disposition } from './job-ownership.js';
 import { jobRoute } from './job-routes.js';
 import { Scheduler } from './schedule.js';
 import { hostedReadiness } from './hosted-health.js';
-import { HostedUsage, appendOperatorAudit } from './hosted-usage.js';
+import { HostedUsage } from './hosted-usage.js';
+import { appendOperatorAudit, readOperatorAudit } from './operator-audit.js';
 import { referenceConfig, referenceDisclosure, assertReferenceSurfaces } from './single-node-config.js';
 import { V1Routes } from './v1-routes.js';
 import { publicQuotaMessage } from './storage-breakdown.js';
@@ -117,7 +118,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
     for (const table of ['h8_usage', 'h8_usage_events', 'h8_audit', 'h8_recovery']) await c.query(`SELECT 1 FROM ${table} WHERE 1 = 0`);
     const r = (await c.query('SELECT version FROM h8_schema WHERE id = 1'))[0];
     if (Number(r?.version) !== 1) throw new MetadataError('MIGRATIONS_REQUIRED', 503);
-    await appendOperatorAudit(c, 'reference.started');
+    await appendOperatorAudit(c, { action: 'reference.started' });
   });
   const metadata = new TenantMetadata(options.tenantDatabase, options.membershipDatabase, usage);
   const policy = embeddingPolicy(options.env ?? process.env, config.origin);
@@ -201,6 +202,10 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
         }
         const operation = /^\/api\/host\/operations\/([A-Za-z0-9_-]+)$/.exec(path);
         if (operation) { method(request, response, ['GET']); send(response, 200, await provisioning.operator.inspect(identifier(operation[1]))); return; }
+        if (path === '/api/host/audit') {
+          method(request, response, ['GET']);
+          send(response, 200, { entries: await readOperatorAudit(options.membershipDatabase) }); return;
+        }
         const tenant = /^\/api\/host\/tenants\/([A-Za-z0-9_-]+)(?:\/(suspend|resume|invitations|users)(?:\/([A-Za-z0-9_-]+))?)?$/.exec(path);
         if (tenant) {
           const tenantId = identifier(tenant[1]), action = tenant[2];
@@ -348,7 +353,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
   drains.set(server, () => drain ??= (async () => {
     draining = true; scheduler.stop(); runner.stop(); clearInterval(expiryTimer);
     await Promise.all([...active]); await scheduler.idle(); await expiryWork; await budgets.shutdown();
-    if (reference) await options.membershipDatabase.transaction(c => appendOperatorAudit(c, 'reference.drained'));
+    if (reference) await options.membershipDatabase.transaction(c => appendOperatorAudit(c, { action: 'reference.drained' }));
     if (server.listening) await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
   })());
   server.requestTimeout = 15000; server.headersTimeout = 10000;

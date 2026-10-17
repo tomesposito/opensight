@@ -8,7 +8,8 @@ import { identifier, object, insertResource } from './metadata-resources.js';
 import { appendMetadataEvent } from './metadata-outbox.js';
 import { budgetEnvironment } from './budget-store.js';
 import { validateBudgets } from './budgets.js';
-import { appendOperatorAudit, entitlementConfig } from './hosted-usage.js';
+import { entitlementConfig } from './hosted-usage.js';
+import { appendOperatorAudit } from './operator-audit.js';
 import { deploymentId } from './runtime-startup.js';
 import { executionChecksum } from './execution-schema.js';
 import { serverlessTables, migrateServerless, grantServerlessRuntime } from './serverless-migration.js';
@@ -174,7 +175,7 @@ export async function initialAdministration(database: Database, env: NodeJS.Proc
       }
       if (!(await c.query('SELECT 1 FROM h2_keys')).length) await c.query('INSERT INTO h2_keys VALUES (?,?,1)', [config.keyId, digest(config.signingKey)]);
       for (const [id, hash] of [[selectionId, selectionHash], [bootstrapId, requestHash]]) await c.query('INSERT INTO h2_requests VALUES (?,?)', [id!, hash!]);
-      await appendOperatorAudit(c, 'runtime.initial-bootstrapped');
+      await appendOperatorAudit(c, { action: 'runtime.initial-bootstrapped' });
       return { state: 'bootstrapped', epoch: 1, tenants: 2 };
     }
     if (input.expectedEpoch !== 1 || input.releaseDigest !== env.OPENSIGHT_RELEASE_DIGEST || selected !== selectionHash || typeof prior !== 'string') fail('INITIAL_BOOTSTRAP_REQUIRED');
@@ -216,7 +217,7 @@ export async function initialAdministration(database: Database, env: NodeJS.Proc
       await c.query('UPDATE h4_budget_config SET version = ?, body = ? WHERE id = 1', [nextVersion, JSON.stringify(target)]);
       await c.query('UPDATE sr_limits SET revision = ?, budget_version = ? WHERE deployment = ?', [nextVersion, nextVersion, deployment]);
       await c.query('INSERT INTO h2_requests VALUES (?,?)', [changeId, requestHash]);
-      await appendOperatorAudit(c, execution ? 'runtime.pilot-execution-extended' : 'runtime.initial-budgets-configured');
+      await appendOperatorAudit(c, { action: execution ? 'runtime.pilot-execution-extended' : 'runtime.initial-budgets-configured' });
       return { state: 'budgets-configured', epoch: 1, budgetVersion: nextVersion };
     }
     if (input.command === 'repair-initial-locks') {
@@ -230,7 +231,7 @@ export async function initialAdministration(database: Database, env: NodeJS.Proc
         await empty(c, workTables);
         await grantServerlessRuntime(c, env);
         await c.query('INSERT INTO h2_requests VALUES (?,?)', [repairId, requestHash]);
-        await appendOperatorAudit(c, 'runtime.initial-locks-repaired');
+        await appendOperatorAudit(c, { action: 'runtime.initial-locks-repaired' });
       }
       return { state: 'locks-repaired', epoch: 1 };
     }
@@ -243,7 +244,7 @@ export async function initialAdministration(database: Database, env: NodeJS.Proc
     await empty(c, [...workTables, 'h7_jobs', 'h2_sessions', 'h8_usage', 'h8_usage_events']);
     await c.query("UPDATE sr_control SET state = 'open' WHERE deployment = ? AND epoch = 1 AND state = 'maintenance'", [deployment]);
     await c.query('INSERT INTO h2_requests VALUES (?,?)', [activationId, requestHash]);
-    await appendOperatorAudit(c, 'runtime.initial-activated');
+    await appendOperatorAudit(c, { action: 'runtime.initial-activated' });
     return { state: 'active', epoch: 1 };
   });
 }
@@ -272,6 +273,6 @@ export async function prepareInitial(database: Database, env: NodeJS.ProcessEnv,
       // attributes, memberships and absence of ownership before this change.
       await c.query(`ALTER ROLE "${role}" CONNECTION LIMIT 8`);
     }
-    await appendOperatorAudit(c, 'runtime.initial-prepared');
+    await appendOperatorAudit(c, { action: 'runtime.initial-prepared' });
   });
 }
