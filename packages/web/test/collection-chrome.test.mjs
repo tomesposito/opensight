@@ -1,9 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import { act, createElement as h } from 'react';
 import { create } from 'react-test-renderer';
 import { LocalDrafts } from '../build/test/LocalDrafts.js';
 import { CollectionPage } from '../build/test/CollectionPage.js';
+import { chromiumPage } from './chromium.mjs';
+
+const css = await readFile(new URL('../src/style.css', import.meta.url), 'utf8');
 
 async function mount(t, Component, props, options) {
   const previous = globalThis.IS_REACT_ACT_ENVIRONMENT;
@@ -68,4 +72,46 @@ test('Dashboards retains its empty collection and publishing explanation after b
   assert.ok(ui.root.findAllByType('p').some(p => p.props.children === 'Publishing dashboards needs a hosted API.'));
   await act(() => ui.root.findByType('a').props.onClick({ button: 0, preventDefault() {} }));
   assert.deepEqual(routes, [{ page: 'analyses' }]);
+});
+
+test('issue #108 slice 10: empty drafts collection is illustrated, not a bare paragraph', async t => {
+  assert.match(css, /\.local-drafts\s+\.empty-page-state\s*\{[^}]*min-height:\s*0/);
+  // Expanded collection with no entries at all: illustrated empty state, role=status, no bare paragraph.
+  const empty = await mount(t, LocalDrafts, { expanded: true, entries: [], onOpen() {}, onRename() {}, onDelete() {}, onRefresh() {} });
+  const status = empty.root.findByProps({ role: 'status' });
+  assert.equal(status.props.className, 'drafts-empty');
+  assert.equal(status.findByType('p').props.children, 'No saved analyses yet. Use Save draft to keep your work.');
+  assert.ok(status.findByProps({ 'aria-hidden': 'true' }), 'shared empty-page illustration is rendered');
+  assert.equal(empty.root.findAllByProps({ className: 'collection-no-results' }).length, 0, 'no bare paragraph');
+  // Collapsed details variant (author sidebar) uses the same illustrated state.
+  const details = await mount(t, LocalDrafts, { entries: [], onOpen() {}, onRename() {}, onDelete() {}, onRefresh() {} });
+  assert.equal(details.root.findByProps({ className: 'drafts-empty' }).findByType('p').props.children, 'No saved analyses yet. Use Save draft to keep your work.');
+});
+
+test('issue #108 slice 10: search and favorites-filter no-matches keep their text status', async t => {
+  const props = { expanded: true, entries, onOpen() {}, onRename() {}, onDelete() {}, onRefresh() {} };
+  const ui = await mount(t, LocalDrafts, props);
+  await act(() => ui.root.findByProps({ type: 'search' }).props.onChange({ target: { value: 'missing' } }));
+  const statuses = ui.root.findAllByProps({ role: 'status' });
+  assert.ok(statuses.some(n => n.props.children === 'No analyses match your search.'), 'text status for search no-match');
+  assert.equal(ui.root.findAllByProps({ className: 'drafts-empty' }).length, 0, 'illustration only for a truly empty collection');
+  await act(() => ui.root.findByProps({ type: 'search' }).props.onChange({ target: { value: '' } }));
+  await act(() => ui.root.findByProps({ type: 'checkbox' }).props.onChange({ target: { checked: true } }));
+  assert.ok(ui.root.findAllByProps({ role: 'status' }).some(n => n.props.children === 'No favorite analyses match.'), 'text status for favorites no-match');
+  assert.equal(ui.root.findAllByProps({ className: 'drafts-empty' }).length, 0);
+});
+
+test('issue #108 slice 10: illustrated drafts empty state is height-compact in Chromium', async t => {
+  const { renderToStaticMarkup } = await import('react-dom/server');
+  const page = await chromiumPage(); t.after(async () => page.close());
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const html = renderToStaticMarkup(h('div', { className: 'app-shell' },
+    h('main', { style: { width: '900px' } }, h(LocalDrafts, { expanded: true, entries: [], onOpen() {}, onRename() {}, onDelete() {}, onRefresh() {} }))));
+  await page.setContent(`<style>${css}</style>${html}`);
+  const actual = await page.evaluate(() => {
+    const empty = document.querySelector('.drafts-empty');
+    return { height: empty.getBoundingClientRect().height, minHeight: getComputedStyle(empty.querySelector('.empty-page-state')).minHeight };
+  });
+  assert.equal(actual.minHeight, '0px', 'compacted empty state reserves no 360px page minimum');
+  assert.ok(actual.height < 260, `illustrated empty state is compact (got ${actual.height}px)`);
 });

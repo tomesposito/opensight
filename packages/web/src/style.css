@@ -93,6 +93,11 @@ select { background: #fff; border: 1px solid #c9d8de; border-radius: 6px; paddin
    row and dialog footer. */
 .create-analysis-dialog .empty-page-state { min-height: 0; padding: 20px 16px; gap: 12px; }
 .create-analysis-dialog .empty-page-illustration { width: 96px; height: 83px; }
+/* Issue #108 polish: the drafts collection's illustrated empty state reuses
+   the shared empty-page artwork, compacted for the collection table region
+   and the author sidebar — no bare paragraph in either placement. */
+.local-drafts .empty-page-state { min-height: 0; padding: 24px 16px; gap: 12px; }
+.local-drafts .empty-page-illustration { width: 96px; height: 83px; }
 .dataset-picker-pagination { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 12px; }
 .dataset-picker-pagination label { display: flex; align-items: center; gap: 8px; }
 .dataset-picker-pagination select { padding: 3px 6px; border-color: #969da3; }
