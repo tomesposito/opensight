@@ -61,6 +61,13 @@ export function routeHash(route: AppRoute): string {
   return route.page === 'author' && route.draftId ? `#/analyses/drafts/${encodeURIComponent(route.draftId)}`
     : route.page === 'author' && route.newAnalysis ? '#/analyses/new' : `#${pages[route.page].path}`;
 }
+/** Scroll target for route changes. A new page starts at the top instead of
+ * inheriting the previous page's scroll position — the production-app feel
+ * the #108 polish pass asks for. Structural (not Window) so tests can pass a
+ * fake; a missing scrollTo is a silent no-op. */
+export function resetRouteScroll(scope?: { scrollTo?: (x: number, y: number) => void }): void {
+  scope?.scrollTo?.(0, 0);
+}
 export function parseRoute(hash: string): AppRoute | undefined {
   if (!hash || hash === '#' || hash === '#/') return { page: 'home' };
   const dataset = /^#\/data\/(datasets|preparation\/edit|preparation\/dataset)\/([A-Za-z0-9_-]{1,128})$/.exec(hash);
