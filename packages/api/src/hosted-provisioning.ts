@@ -65,6 +65,11 @@ export class HostedProvisioning {
       const invitation = await this.invite(c, operationId, tenantId, namespaceId, userId, input.administrator.email);
       await c.query('INSERT INTO h2_onboarding VALUES (?,?,?,?)', [operationId, hash, tenantId, invitation]);
       await appendMetadataEvent(c, { tenantId, namespaceId }, 'tenant.provisioning');
+      // The committed provisioning mutations are audited in the transaction that creates
+      // them, so a later SMTP failure cannot leave them unaudited. Invitation tokens are
+      // sealed in h2_invitations and mailed; only the recipient identity lands here.
+      await appendOperatorAudit(c, { action: 'tenant.provisioned', tenantId, subject: input.administrator.email, detail: { operationId, name: input.name } });
+      await appendOperatorAudit(c, { action: 'membership.invited', tenantId, subject: input.administrator.email, detail: { operationId, userId, role: 'administrator' } });
     });
     return this.completeProvision(operationId, input);
   }
@@ -96,8 +101,11 @@ export class HostedProvisioning {
       await c.query("UPDATE h1_tenants SET state = 'active', version = version + 1 WHERE tenant_id = ? AND state = 'provisioning'", [op.tenantId]);
       await c.query("UPDATE h1_operations SET status = 'complete', step = 'active' WHERE operation_id = ?", [operationId]);
       await appendMetadataEvent(c, op, 'tenant.active');
-      // The invitation token is sealed in h2_invitations and mailed; only the recipient identity lands here.
-      await appendOperatorAudit(c, { action: 'tenant.onboarded', tenantId: op.tenantId, subject: input.administrator.email, detail: { operationId, name: input.name } });
+      // Activation is recorded separately from provisioning; the complete-status checks
+      // above make it operation-deduplicated, so a retried provision activates (and audits)
+      // exactly once. The invitation token is sealed in h2_invitations and mailed; only the
+      // recipient identity lands here.
+      await appendOperatorAudit(c, { action: 'tenant.activated', tenantId: op.tenantId, subject: input.administrator.email, detail: { operationId } });
     });
     return this.operator.inspect(operationId);
   }

@@ -7,6 +7,7 @@ import { randomBytes } from 'node:crypto';
 import { SqliteMetadataDatabase } from '../dist/metadata-db.js';
 import { initializeMetadata } from '../dist/metadata-schema.js';
 import { initializeAuth } from '../dist/auth-schema.js';
+import { initializeAudit } from '../dist/operator-audit.js';
 import { hostedConfig } from '../dist/hosted-config.js';
 import { HostedAuth } from '../dist/hosted-auth.js';
 import { HostedProvisioning } from '../dist/hosted-provisioning.js';
@@ -24,6 +25,9 @@ export async function database(t) {
   const db = new SqliteMetadataDatabase(path);
   t.after(async () => { await db.close(); await rm(directory, { recursive: true, force: true }); });
   await initializeMetadata(db); await initializeAuth(db); await migrateBudgets(db, budgetConfig, 'frozen');
+  // Test databases stand in for migrated deployments: the owner migration has run,
+  // so the audit schema exists and runtime paths do no DDL (issue #123).
+  await db.transaction(c => initializeAudit(c));
   return { db, path, config: hostedConfig(environment()) };
 }
 export function decode32(value) {

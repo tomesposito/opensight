@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import { PostgresMetadataDatabase } from '../dist/metadata-db.js';
 import { initializeMetadata, metadataTables } from '../dist/metadata-schema.js';
+import { initializeAudit } from '../dist/operator-audit.js';
 import { initializeAuth } from '../dist/auth-schema.js';
 import { TenantMetadata } from '../dist/metadata.js';
 import { seedSources } from './source-helpers.mjs';
@@ -21,7 +22,7 @@ test('H7 live Postgres: private job tables, scoped history, durable claims and t
   const pool = new Pool({ connectionString: process.env.DATABASE_URL, options: `-c search_path=${schema}` }); let tenantPool;
   t.after(async () => { await tenantPool?.end(); await pool.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`); await pool.query(`DROP ROLE IF EXISTS ${role}`); await pool.end(); });
   await pool.query(`CREATE SCHEMA ${schema}`); await pool.query(`CREATE ROLE ${role} LOGIN NOINHERIT NOSUPERUSER NOBYPASSRLS`);
-  const db = new PostgresMetadataDatabase(pool); await initializeMetadata(db, 'postgres'); await initializeAuth(db); await seedSources(db);
+  const db = new PostgresMetadataDatabase(pool); await initializeMetadata(db, 'postgres'); await db.transaction(c => initializeAudit(c)); await initializeAuth(db); await seedSources(db);
   await pool.query(`GRANT USAGE ON SCHEMA ${schema} TO ${role}`);
   for (const table of metadataTables.filter(t => t !== 'migrations')) await pool.query(`GRANT SELECT, INSERT, UPDATE, DELETE ON h1_${table} TO ${role}`);
   const url = new URL(process.env.DATABASE_URL); url.username = role; url.password = '';

@@ -4,6 +4,7 @@ import { randomUUID, randomBytes } from 'node:crypto';
 import { Pool } from 'pg';
 import { PostgresMetadataDatabase } from '../dist/metadata-db.js';
 import { initializeMetadata, metadataTables } from '../dist/metadata-schema.js';
+import { initializeAudit } from '../dist/operator-audit.js';
 import { initializeAuth } from '../dist/auth-schema.js';
 import { HostedAuth, activateAuthKey } from '../dist/hosted-auth.js';
 import { HostedProvisioning } from '../dist/hosted-provisioning.js';
@@ -19,7 +20,7 @@ test('H2 live Postgres: private credentials, concurrent onboarding/MFA/switch, c
   const adminPool = new Pool({ connectionString: process.env.DATABASE_URL, max: 4, options: `-c search_path=${schema}` }); let tenantPool;
   t.after(async () => { await tenantPool?.end(); await adminPool.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`); await adminPool.query(`DROP ROLE IF EXISTS ${role}`); await adminPool.end(); });
   await adminPool.query(`CREATE SCHEMA ${schema}`); await adminPool.query(`CREATE ROLE ${role} LOGIN NOINHERIT NOSUPERUSER NOBYPASSRLS`);
-  const db = new PostgresMetadataDatabase(adminPool); await initializeMetadata(db, 'postgres'); await initializeAuth(db);
+  const db = new PostgresMetadataDatabase(adminPool); await initializeMetadata(db, 'postgres'); await db.transaction(c => initializeAudit(c)); await initializeAuth(db);
   await adminPool.query(`GRANT USAGE ON SCHEMA ${schema} TO ${role}`);
   for (const table of metadataTables.filter(t => t !== 'migrations')) await adminPool.query(`GRANT SELECT, INSERT, UPDATE, DELETE ON h1_${table} TO ${role}`);
   const url = new URL(process.env.DATABASE_URL); url.username = role; url.password = '';

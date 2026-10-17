@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { SqliteMetadataDatabase } from '../dist/metadata-db.js';
 import { initializeMetadata } from '../dist/metadata-schema.js';
+import { initializeAudit } from '../dist/operator-audit.js';
 import { insertResource } from '../dist/metadata-resources.js';
 import { TenantMetadata } from '../dist/metadata.js';
 import { HostedSources } from '../dist/hosted-sources.js';
@@ -26,7 +27,7 @@ export async function seedSources(db) {
 export async function sourceFixture(t, options = {}) {
   const dir = await mkdtemp(join(tmpdir(), 'opensight-h3-')), path = join(dir, 'metadata.sqlite'), key = randomBytes(32).toString('base64');
   let db = new SqliteMetadataDatabase(path), now = Date.now();
-  await initializeMetadata(db); await seedSources(db);
+  await initializeMetadata(db); await db.transaction(c => initializeAudit(c)); await seedSources(db);
   const f = { path, key, get db() { return db; }, clock: () => now, advance(ms) { now += ms; }, endpoints: options.endpoints ?? endpoints,
     async restart() { await db.close(); db = new SqliteMetadataDatabase(path); setup(); } };
   function setup() {

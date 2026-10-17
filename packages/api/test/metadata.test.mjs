@@ -5,9 +5,17 @@ import { initializeMetadata } from '../dist/metadata-schema.js';
 import { TenantMetadata } from '../dist/metadata.js';
 import { insertResource, resourceKinds } from '../dist/metadata-resources.js';
 import { MetadataOperator } from '../dist/metadata-operator.js';
+import { initializeAudit } from '../dist/operator-audit.js';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+
+/** Operator-plane tests run against a migrated database: the owner migration has
+ *  created the audit schema, so runtime appends do no DDL (issue #123). */
+async function migrated(db) {
+  await initializeMetadata(db);
+  await db.transaction(c => initializeAudit(c));
+}
 
 export async function seed(db, namespaceId = 'one', tenantId = 'a') {
   await db.transaction(async c => {
@@ -129,7 +137,7 @@ test('H1 resumable operator lifecycle, suspension revocation and permanent delet
   const dir = await mkdtemp(join(tmpdir(), 'opensight-h1-'));
   let db = new SqliteMetadataDatabase(join(dir, 'metadata.db'));
   try {
-    await initializeMetadata(db);
+    await migrated(db);
     let operator = new MetadataOperator(db), repo = new TenantMetadata(db, db);
     const request = { namespaceId: 'one', name: 'One', administrator: { id: 'admin', name: 'Admin' } };
     const created = await operator.provision('provision', request);
@@ -167,7 +175,7 @@ test('H1 resumable operator lifecycle, suspension revocation and permanent delet
 test('H1 concurrent provisioning has one winner and no orphan tenant or operation', async () => {
   const db = new SqliteMetadataDatabase(':memory:');
   try {
-    await initializeMetadata(db); const operator = new MetadataOperator(db);
+    await migrated(db); const operator = new MetadataOperator(db);
     const results = await Promise.allSettled(['first', 'second'].map(id => operator.provision(id, { namespaceId: 'same', name: 'Same', administrator: { id: 'admin', name: 'Admin' } })));
     assert.equal(results.filter(r => r.status === 'fulfilled').length, 1);
     assert.equal(results.find(r => r.status === 'rejected').reason.code, 'METADATA_CONFLICT');
@@ -189,6 +197,7 @@ test('H1 outbox commits with state, contains no payloads, and rolls back on fail
     assert.equal(JSON.stringify(before).includes('private payload'), false);
     await assert.rejects(repo.put(context, { kind: 'group', id: 'bad' }, { name: 'bad', userIds: ['missing'] }));
     assert.deepEqual(await readEvents(), before);
+    await db.transaction(c => initializeAudit(c));
     const operator = new MetadataOperator(db), request = { namespaceId: 'new', name: 'New', administrator: { id: 'admin', name: 'Admin' } };
     await operator.provision('new-operation', request); await operator.provision('new-operation', request);
     assert.equal((await readEvents()).length, 2);

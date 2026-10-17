@@ -3,7 +3,7 @@ import { migrateRuntime } from './runtime-migration.js';
 import { deploymentId } from './runtime-startup.js';
 import { budgetEnvironment } from './budget-store.js';
 import { entitlementConfig } from './hosted-usage.js';
-import { appendOperatorAudit } from './operator-audit.js';
+import { appendOperatorAudit, initializeAudit } from './operator-audit.js';
 import { migrateCoordination, coordinationTables, coordinationNow, type CoordinationDialect } from './coordination-schema.js';
 import { migrateManifests, manifestTables } from './manifest-schema.js';
 import { migrateDispatch, dispatchTables } from './dispatch-schema.js';
@@ -17,7 +17,10 @@ const baseTables = ['sr_control', 'h1_tenants', 'h1_namespaces', 'h1_revisions',
   'h4_budget_config', 'h5_embedding_config', 'h6_keys', 'h6_sessions', 'h7_jobs', 'h7_occurrences', 'h7_deliveries', 'h7_migrations',
   'h8_usage', 'h8_usage_events', 'h8_audit', 'h8_recovery', 'h8_schema'];
 const durableTables = [...coordinationTables, ...manifestTables, ...dispatchTables, ...objectTables, ...operationTables, ...executionTables];
-export const serverlessTables = [...baseTables, ...durableTables];
+// h8_audit_schema rides along for ownership/backup/restore inventory, but stays out of
+// baseTables on purpose: the existing-database foreign check must accept deployed
+// databases that predate the marker (the owner migration adds it).
+export const serverlessTables = [...baseTables, 'h8_audit_schema', ...durableTables];
 export async function grantServerlessRuntime(c: SqlConnection, env: NodeJS.ProcessEnv): Promise<void> {
   const schema = String((await c.query('SELECT current_schema() AS schema'))[0]?.schema);
   if (!/^[a-z][a-z0-9_]{0,62}$/.test(schema)) throw new MetadataError('RUNTIME_SCHEMA_INVALID', 503);
@@ -36,6 +39,11 @@ export async function grantServerlessRuntime(c: SqlConnection, env: NodeJS.Proce
   const readOnly = ['sr_control', 'sr_limits', 'h4_budget_config', 'h8_schema', 'h1_migrations', 'h7_migrations', ...durableTables.filter(t => t.endsWith('_schema'))];
   const writable = [...baseTables, ...durableTables].filter(t => !readOnly.includes(t));
   await c.query(`GRANT SELECT ON ${readOnly.join(', ')} TO "${roles.operator}"`);
+  // The audit schema marker is owner-written and read-only for the runtime operator,
+  // so deployments can verify the migrated audit version without DDL rights. The guard
+  // keeps repair flows working against databases that predate the marker table.
+  if ((await c.query("SELECT to_regclass('h8_audit_schema') AS marker"))[0]?.marker)
+    await c.query(`GRANT SELECT ON h8_audit_schema TO "${roles.operator}"`);
   await c.query(`GRANT SELECT, INSERT, UPDATE, DELETE ON ${writable.join(', ')} TO "${roles.operator}"`);
   await c.query(`GRANT SELECT, INSERT, UPDATE, DELETE ON h1_tenants, h1_namespaces, h1_revisions, h1_resources, h1_links, h1_operations, h1_outbox TO "${roles.tenant}"`);
   await c.query(`GRANT SELECT ON sr_control, sr_storage_usage TO "${roles.tenant}"`);
@@ -70,6 +78,11 @@ export async function migrateServerless(database: Database, env: NodeJS.ProcessE
     await migrateObjects(nested, deployment, 'frozen', dialect);
     await migrateOperations(nested, deployment, 'frozen', dialect);
     await migrateExecutions(nested, deployment, 'frozen', dialect);
+    // Owner-serialized audit upgrade: legacy h8_audit tables gain the new columns and the
+    // version/checksum marker here, so runtime appends/reads (no DDL, no CREATE privilege)
+    // work immediately after promotion. The marker table stays out of baseTables on purpose:
+    // the existing-database foreign check above must accept deployed databases that predate it.
+    await initializeAudit(c);
     if (dialect === 'postgres') await grantServerlessRuntime(c, env);
     await appendOperatorAudit(c, { action: 'serverless.migrated' });
   });

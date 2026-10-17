@@ -53,6 +53,8 @@ test('operator audit redaction strips secret-bearing detail fields, recursively'
 test('audit schema migration is idempotent and attributes legacy rows to the deployment operator', async t => {
   const f = await database(t);
   await f.db.transaction(async c => {
+    await c.query('DROP TABLE h8_audit');
+    await c.query('DROP TABLE h8_audit_schema');
     await c.query('CREATE TABLE h8_audit (event_id TEXT PRIMARY KEY, created_at TEXT NOT NULL, action TEXT NOT NULL)');
     await c.query("INSERT INTO h8_audit (event_id, created_at, action) VALUES ('legacy-1','2026-01-01T00:00:00.000Z','backup.created')");
   });
@@ -105,10 +107,20 @@ test('onboarding, invitation minting and member removal are audited without secr
   const tenantId = onboarded.tenantId;
   const invited = await f.provisioning.inviteMember('invite-1', tenantId, { email: 'member@example.test', name: 'Member', role: 'reader' });
   let entries = await readOperatorAudit(f.db, { limit: 200 });
-  const onboard = entries.find(e => e.action === 'tenant.onboarded');
+  const onboard = entries.find(e => e.action === 'tenant.activated');
   assert.equal(onboard.actor, OPERATOR_ACTOR);
   assert.equal(onboard.tenantId, tenantId);
   assert.equal(onboard.subject, 'boss@example.test');
+  // Provisioning and invitation minting are audited in the creating transaction,
+  // independent of the later delivery/activation step.
+  const provisioned = entries.find(e => e.action === 'tenant.provisioned');
+  assert.equal(provisioned.tenantId, tenantId);
+  assert.equal(provisioned.subject, 'boss@example.test');
+  assert.equal(provisioned.detail.operationId, onboarded.operationId);
+  assert.equal(provisioned.detail.name, 'Acme');
+  const adminInvite = entries.find(e => e.action === 'membership.invited' && e.subject === 'boss@example.test');
+  assert.ok(adminInvite);
+  assert.equal(adminInvite.detail.role, 'administrator');
   const invite = entries.find(e => e.action === 'membership.invited' && e.subject === 'member@example.test');
   assert.ok(invite);
   assert.equal(invite.detail.role, 'reader');
@@ -124,6 +136,38 @@ test('onboarding, invitation minting and member removal are audited without secr
   const removed = entries.find(e => e.action === 'membership.removed');
   assert.equal(removed.tenantId, tenantId);
   assert.equal(removed.subject, String(memberships[0].user_id));
+});
+
+test('a failed invitation delivery leaves committed provisioning audited, without token leakage', async t => {
+  const f = await database(t);
+  await initializeUsage(f.db);
+  const rejecting = { configured: true, async send() { throw new Error('SMTP rejected'); } };
+  let now = Date.UTC(2026, 9, 16, 12);
+  const failing = new HostedProvisioning(f.db, f.config, rejecting, () => now);
+  await assert.rejects(failing.provision('onboard-retry',
+    { name: 'Retry Co', administrator: { email: 'retry@example.test', name: 'Retry' } }), /SMTP rejected/);
+  // The committed mutations are audited even though delivery failed.
+  let entries = await readOperatorAudit(f.db, { limit: 200 });
+  const provisioned = entries.find(e => e.action === 'tenant.provisioned');
+  assert.ok(provisioned);
+  assert.equal(provisioned.subject, 'retry@example.test');
+  assert.equal(provisioned.detail.name, 'Retry Co');
+  const invited = entries.find(e => e.action === 'membership.invited' && e.subject === 'retry@example.test');
+  assert.ok(invited);
+  assert.equal(invited.detail.role, 'administrator');
+  assert.ok(!entries.some(e => e.action === 'tenant.activated'));
+  const sealed = await f.db.transaction(c => c.query('SELECT token_secret FROM h2_invitations'));
+  assert.ok(sealed.length >= 1);
+  const dump = JSON.stringify(entries);
+  for (const row of sealed) assert.ok(!dump.includes(String(row.token_secret)), 'sealed invitation leaked into the audit log');
+  // Retrying with working mail completes and records activation exactly once.
+  const retry = new HostedProvisioning(f.db, f.config, new StubMailTransport(), () => now);
+  const completed = await retry.provision('onboard-retry',
+    { name: 'Retry Co', administrator: { email: 'retry@example.test', name: 'Retry' } });
+  assert.equal(completed.status, 'complete');
+  entries = await readOperatorAudit(f.db, { limit: 200 });
+  assert.equal(entries.filter(e => e.action === 'tenant.activated').length, 1);
+  assert.equal(entries.filter(e => e.action === 'tenant.provisioned').length, 1);
 });
 
 test('auth key rotation is audited with the key ID only', async t => {
