@@ -12,7 +12,7 @@ import { EmptyPageState } from './LocalEmptyState.js';
  */
 function DraftsEmpty() {
   return <div className="drafts-empty" role="status">
-    <EmptyPageState guidance="No saved analyses yet. Use Save draft to keep your work." />
+    <EmptyPageState guidance="No saved analyses yet. Use Save draft to keep your work.">{null}</EmptyPageState>
   </div>;
 }
 

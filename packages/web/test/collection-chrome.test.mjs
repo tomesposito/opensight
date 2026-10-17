@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { act, createElement as h } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { create } from 'react-test-renderer';
 import { LocalDrafts } from '../build/test/LocalDrafts.js';
 import { CollectionPage } from '../build/test/CollectionPage.js';
@@ -78,8 +79,8 @@ test('issue #108 slice 10: empty drafts collection is illustrated, not a bare pa
   assert.match(css, /\.local-drafts\s+\.empty-page-state\s*\{[^}]*min-height:\s*0/);
   // Expanded collection with no entries at all: illustrated empty state, role=status, no bare paragraph.
   const empty = await mount(t, LocalDrafts, { expanded: true, entries: [], onOpen() {}, onRename() {}, onDelete() {}, onRefresh() {} });
-  const status = empty.root.findByProps({ role: 'status' });
-  assert.equal(status.props.className, 'drafts-empty');
+  const status = empty.root.findByProps({ className: 'drafts-empty' });
+  assert.equal(status.props.role, 'status');
   assert.equal(status.findByType('p').props.children, 'No saved analyses yet. Use Save draft to keep your work.');
   assert.ok(status.findByProps({ 'aria-hidden': 'true' }), 'shared empty-page illustration is rendered');
   assert.equal(empty.root.findAllByProps({ className: 'collection-no-results' }).length, 0, 'no bare paragraph');
@@ -102,7 +103,6 @@ test('issue #108 slice 10: search and favorites-filter no-matches keep their tex
 });
 
 test('issue #108 slice 10: illustrated drafts empty state is height-compact in Chromium', async t => {
-  const { renderToStaticMarkup } = await import('react-dom/server');
   const page = await chromiumPage(); t.after(async () => page.close());
   await page.setViewportSize({ width: 1440, height: 900 });
   const html = renderToStaticMarkup(h('div', { className: 'app-shell' },
