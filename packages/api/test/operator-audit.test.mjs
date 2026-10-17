@@ -105,10 +105,20 @@ test('onboarding, invitation minting and member removal are audited without secr
   const tenantId = onboarded.tenantId;
   const invited = await f.provisioning.inviteMember('invite-1', tenantId, { email: 'member@example.test', name: 'Member', role: 'reader' });
   let entries = await readOperatorAudit(f.db, { limit: 200 });
-  const onboard = entries.find(e => e.action === 'tenant.onboarded');
+  const onboard = entries.find(e => e.action === 'tenant.activated');
   assert.equal(onboard.actor, OPERATOR_ACTOR);
   assert.equal(onboard.tenantId, tenantId);
   assert.equal(onboard.subject, 'boss@example.test');
+  // Provisioning and invitation minting are audited in the creating transaction,
+  // independent of the later delivery/activation step.
+  const provisioned = entries.find(e => e.action === 'tenant.provisioned');
+  assert.equal(provisioned.tenantId, tenantId);
+  assert.equal(provisioned.subject, 'boss@example.test');
+  assert.equal(provisioned.detail.operationId, onboarded.operationId);
+  assert.equal(provisioned.detail.name, 'Acme');
+  const adminInvite = entries.find(e => e.action === 'membership.invited' && e.subject === 'boss@example.test');
+  assert.ok(adminInvite);
+  assert.equal(adminInvite.detail.role, 'administrator');
   const invite = entries.find(e => e.action === 'membership.invited' && e.subject === 'member@example.test');
   assert.ok(invite);
   assert.equal(invite.detail.role, 'reader');
