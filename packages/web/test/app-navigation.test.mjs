@@ -6,8 +6,8 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { ROLES, hasCapability } from '@opensight/query-engine/browser';
 import { AccessProvider, demoAccess } from '../build/test/access.js';
 import { Application } from '../build/test/Application.js';
-import { AppNavigation } from '../build/test/AppNavigation.js';
-import { pages, parseRoute, recordRecentPage, routeHash } from '../build/test/app-navigation.js';
+import { AppNavigation, useAppRoute } from '../build/test/AppNavigation.js';
+import { pages, parseRoute, recordRecentPage, resetRouteScroll, routeHash } from '../build/test/app-navigation.js';
 import { AuthorCanvas } from '../build/test/Author.js';
 import { LocalDrafts } from '../build/test/LocalDrafts.js';
 import { DataPrep } from '../build/test/DataPrep.js';
@@ -272,4 +272,47 @@ test('navigation icons are font-independent vector graphics', () => {
   assert.match(home, /aria-label="Toggle navigation"/);
   assert.match(home, /<span class="brand-mark"[^>]*><svg/);
   assert.match(home, /<span class="rail-chevron"[^>]*><svg/);
+});
+
+test('Issue #108 slice 12: resetRouteScroll scrolls to the top and tolerates a missing scrollTo', () => {
+  const calls = [];
+  resetRouteScroll({ scrollTo: (x, y) => calls.push([x, y]) });
+  assert.deepEqual(calls, [[0, 0]]);
+  assert.doesNotThrow(() => resetRouteScroll({}));
+  assert.doesNotThrow(() => resetRouteScroll(undefined));
+});
+
+test('Issue #108 slice 12: pushing a new route resets the page scroll; replacements and same-hash navigations do not', async t => {
+  const events = new EventTarget();
+  const win = {
+    location: { hash: '#/home' },
+    scrollToCalls: [],
+    scrollTo(x, y) { win.scrollToCalls.push([x, y]); },
+    addEventListener: (type, handler, options) => events.addEventListener(type, handler, options),
+    removeEventListener: (type, handler) => events.removeEventListener(type, handler),
+    history: {
+      pushState: (_state, _title, hash) => { win.location.hash = hash; },
+      replaceState: (_state, _title, hash) => { win.location.hash = hash; },
+    },
+  };
+  const oldWindow = globalThis.window, oldAct = globalThis.IS_REACT_ACT_ENVIRONMENT;
+  globalThis.window = win; globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+  let hook;
+  const Probe = () => { hook = useAppRoute(); return null; };
+  let renderer;
+  await act(() => { renderer = create(createElement(Probe)); });
+  t.after(async () => { await act(() => renderer.unmount()); globalThis.window = oldWindow; globalThis.IS_REACT_ACT_ENVIRONMENT = oldAct; });
+
+  assert.equal(win.scrollToCalls.length, 0, 'no reset on mount');
+  await act(() => hook.navigate({ page: 'analyses' }));
+  assert.deepEqual(win.scrollToCalls, [[0, 0]], 'push to a new page resets the scroll');
+  assert.equal(win.location.hash, '#/analyses');
+  await act(() => hook.navigate({ page: 'analyses' }));
+  assert.equal(win.scrollToCalls.length, 1, 'same-hash navigation does not reset');
+  await act(() => hook.navigate({ page: 'data' }, true));
+  assert.equal(win.scrollToCalls.length, 1, 'replace navigation keeps the scroll position');
+  assert.equal(win.location.hash, '#/data');
+  win.location.hash = '#/my-stuff';
+  await act(() => events.dispatchEvent(new Event('hashchange')));
+  assert.equal(win.scrollToCalls.length, 2, 'browser back/forward (hashchange) resets the scroll');
 });

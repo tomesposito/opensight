@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import { useAccess } from './access.js';
-import { adminPages, dataPages, developerPages, pages, parseRoute, productSections, routeHash, visiblePage, type AppRoute, type Page } from './app-navigation.js';
+import { adminPages, dataPages, developerPages, pages, parseRoute, productSections, resetRouteScroll, routeHash, visiblePage, type AppRoute, type Page } from './app-navigation.js';
 import { useCommandPalette } from './CommandPalette.js';
 import { useGlobalSearch } from './GlobalSearch.js';
 import { BrandMark } from './BrandMark.js';
@@ -10,7 +10,12 @@ export function useAppRoute() {
   const [entry, setEntry] = useState(0);
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    const changed = () => { setRoute(parseRoute(window.location.hash)); setEntry(value => value + 1); };
+    const changed = () => {
+      setRoute(parseRoute(window.location.hash));
+      setEntry(value => value + 1);
+      // Browser back/forward lands on a new page: start at the top.
+      resetRouteScroll(window);
+    };
     window.addEventListener('hashchange', changed);
     return () => window.removeEventListener('hashchange', changed);
   }, []);
@@ -20,6 +25,9 @@ export function useAppRoute() {
     if (typeof window !== 'undefined' && window.location?.hash !== hash) {
       // History changes do not reload either Vite or the file:// demo.
       window.history?.[replace ? 'replaceState' : 'pushState'](null, '', hash);
+      // A pushed page starts at the top instead of inheriting the previous
+      // page's scroll position. Replacements keep their scroll (same view).
+      if (!replace) resetRouteScroll(window);
     }
     setRoute(next);
   };
