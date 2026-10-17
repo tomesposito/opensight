@@ -161,6 +161,13 @@ h3 { font-size: 14px; font-weight: 650; margin: 0; }
 .skeleton-shape { background: linear-gradient(90deg, #e6edf0 25%, #f4f8f9 50%, #e6edf0 75%); background-size: 200% 100%; animation: skeleton-shimmer 1.4s ease-in-out infinite; }
 @keyframes skeleton-shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
 @media (prefers-reduced-motion: reduce) { .skeleton-shape { animation: none; background: #e6edf0; } }
+/* Dialog open transitions (issue #108 polish): modals fade and rise slightly on
+   open instead of popping in. Static under prefers-reduced-motion. */
+@keyframes dialog-open { from { opacity: 0; transform: translateY(10px) scale(.99); } to { opacity: 1; transform: none; } }
+@keyframes dialog-backdrop-open { from { opacity: 0; } to { opacity: 1; } }
+dialog[open] { animation: dialog-open 150ms ease-out; }
+dialog[open]::backdrop { animation: dialog-backdrop-open 150ms ease-out; }
+@media (prefers-reduced-motion: reduce) { dialog[open], dialog[open]::backdrop { animation: none; } }
 /* Card style · Loading animation off: same skeleton shapes, no shimmer motion. */
 .skeleton-static .skeleton-shape { animation: none; background: #e6edf0; }
 .empty-state p { color: #687e89; font-size: 13px; max-width: 300px; line-height: 1.6; }
