@@ -91,7 +91,7 @@ test('SR2a SQL failures and publication callback failures roll back charges, res
   for (const table of ['sr_admission', 'sr_claim', 'h8_usage', 'h8_usage_events']) assert.deepEqual(await rows(f, table), []);
   const c = coordinator(f), handle = await c.admit(f.contexts[0], await f.input(0, true)), before = await rows(f, 'h8_audit');
   await assert.rejects(c.publish(handle, async sql => {
-    await sql.query("INSERT INTO h8_audit VALUES ('rollback','synthetic','test')"); throw Error('sensitive failure');
+    await sql.query("INSERT INTO h8_audit (event_id, created_at, action) VALUES ('rollback','synthetic','test')"); throw Error('sensitive failure');
   }), { code: 'COORDINATION_UNAVAILABLE' });
   assert.deepEqual(await rows(f, 'h8_audit'), before);
   assert.equal(await c.publish(handle, async () => 'published'), 'published'); await c.release(handle);
@@ -203,7 +203,7 @@ test('SR2a SQL-time expiry before admission commit or after publication callback
     } else {
       const handle = await c.admit(f.contexts[0], await f.input(0, true)), before = await rows(f, 'h8_audit');
       await assert.rejects(c.publish(handle, async sql => {
-        await sql.query("INSERT INTO h8_audit VALUES ('expired','synthetic','test')"); offset = 1000000;
+        await sql.query("INSERT INTO h8_audit (event_id, created_at, action) VALUES ('expired','synthetic','test')"); offset = 1000000;
       }), { code: 'ATTEMPT_EXPIRED' });
       assert.deepEqual(await rows(f, 'h8_audit'), before); offset = 0; await c.release(handle);
     }

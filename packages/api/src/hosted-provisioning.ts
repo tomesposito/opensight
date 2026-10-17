@@ -8,6 +8,7 @@ import type { HostedConfig } from './hosted-config.js';
 import type { MailTransport } from './mail.js';
 import { digest, seal, unseal } from './auth-crypto.js';
 import { normalizedEmail } from './hosted-auth.js';
+import { appendOperatorAudit } from './operator-audit.js';
 import { applyDisposition, disposition, type JobDisposition, type JobOwnership } from './job-ownership.js';
 
 export interface OnboardingInput { name: string; administrator: { email: string; name: string } }
@@ -65,7 +66,7 @@ export class HostedProvisioning {
       await c.query('INSERT INTO h2_onboarding VALUES (?,?,?,?)', [operationId, hash, tenantId, invitation]);
       await appendMetadataEvent(c, { tenantId, namespaceId }, 'tenant.provisioning');
     });
-    return this.completeProvision(operationId);
+    return this.completeProvision(operationId, input);
   }
   private async deliver(invitationId: string): Promise<void> {
     const row = (await this.database.transaction(c => c.query(`SELECT v.*, i.email, t.state FROM h2_invitations v
@@ -80,7 +81,7 @@ export class HostedProvisioning {
       html: `<p>You have been invited to OpenSight.</p><p>Public origin: ${this.config.origin}</p><p>Tenant: ${row.tenant_id}</p><p>Use this single-use invitation token with the OpenSight enrollment API:</p><code>${token}</code>` });
     await this.database.transaction(c => c.query('UPDATE h2_invitations SET delivered = 1 WHERE invitation_id = ?', [invitationId]));
   }
-  private async completeProvision(operationId: string): Promise<TenantOperation> {
+  private async completeProvision(operationId: string, input: OnboardingInput): Promise<TenantOperation> {
     const op = await this.operator.inspect(operationId);
     if (op.status === 'complete') return op;
     await this.deliver(operationId);
@@ -95,6 +96,8 @@ export class HostedProvisioning {
       await c.query("UPDATE h1_tenants SET state = 'active', version = version + 1 WHERE tenant_id = ? AND state = 'provisioning'", [op.tenantId]);
       await c.query("UPDATE h1_operations SET status = 'complete', step = 'active' WHERE operation_id = ?", [operationId]);
       await appendMetadataEvent(c, op, 'tenant.active');
+      // The invitation token is sealed in h2_invitations and mailed; only the recipient identity lands here.
+      await appendOperatorAudit(c, { action: 'tenant.onboarded', tenantId: op.tenantId, subject: input.administrator.email, detail: { operationId, name: input.name } });
     });
     return this.operator.inspect(operationId);
   }
@@ -116,6 +119,8 @@ export class HostedProvisioning {
       await c.query('INSERT INTO h2_onboarding VALUES (?,?,?,?)', [operationId, hash, tenantId, operationId]);
       await c.query('UPDATE h1_revisions SET "authorization" = "authorization" + 1 WHERE tenant_id = ?', [tenantId]);
       await appendMetadataEvent(c, { tenantId, namespaceId }, 'membership.invited');
+      // The invitation token is sealed in h2_invitations and mailed; only the recipient identity lands here.
+      await appendOperatorAudit(c, { action: 'membership.invited', tenantId, subject: input.email, detail: { operationId, userId, role: input.role } });
     });
     await this.deliver(operationId);
     return { operationId, tenantId };
@@ -143,6 +148,7 @@ export class HostedProvisioning {
       }
       await c.query('UPDATE h1_revisions SET "authorization" = "authorization" + 1 WHERE tenant_id = ?', [tenantId]);
       await appendMetadataEvent(c, { tenantId, namespaceId: String(rows[0]!.namespace_id) }, 'membership.removed');
+      await appendOperatorAudit(c, { action: 'membership.removed', tenantId, subject: userId, detail: { jobs: choice?.action ?? 'none' } });
     });
   }
 }

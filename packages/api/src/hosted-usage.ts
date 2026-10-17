@@ -3,6 +3,7 @@ import { MetadataError, type Database, type SqlConnection } from './metadata-db.
 import type { TenantContext, TenantMetadata } from './metadata.js';
 import { identifier, object, type Scope } from './metadata-resources.js';
 import { appendMetadataEvent } from './metadata-outbox.js';
+import { initializeAudit } from './operator-audit.js';
 
 export interface Entitlement { apiCalls: number; storageBytes: number; computeAttempts: number }
 export interface Entitlements { defaults: Entitlement | null; tenants: Record<string, Entitlement> }
@@ -29,14 +30,11 @@ export async function initializeUsage(db: Database): Promise<void> {
       event_id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, namespace_id TEXT NOT NULL, created_at TEXT NOT NULL,
       metric TEXT NOT NULL, unit TEXT NOT NULL, amount BIGINT NOT NULL, outcome TEXT NOT NULL,
       FOREIGN KEY (tenant_id, namespace_id) REFERENCES h1_namespaces(tenant_id, namespace_id))`);
-    await c.query(`CREATE TABLE IF NOT EXISTS h8_audit (event_id TEXT PRIMARY KEY, created_at TEXT NOT NULL, action TEXT NOT NULL)`);
+    await initializeAudit(c);
     await c.query('CREATE TABLE IF NOT EXISTS h8_recovery (tenant_id TEXT PRIMARY KEY REFERENCES h1_tenants(tenant_id))');
     await c.query('CREATE TABLE IF NOT EXISTS h8_schema (id INTEGER PRIMARY KEY CHECK (id = 1), version INTEGER NOT NULL)');
     await c.query('INSERT INTO h8_schema VALUES (1,1) ON CONFLICT (id) DO NOTHING');
   });
-}
-export async function appendOperatorAudit(c: SqlConnection, action: string, now = Date.now()): Promise<void> {
-  await c.query('INSERT INTO h8_audit VALUES (?,?,?)', [randomUUID(), new Date(now).toISOString(), action]);
 }
 export async function resourceBytes(c: SqlConnection, scope: Scope): Promise<number> {
   const rows = await c.query('SELECT body FROM h1_resources WHERE tenant_id = ? AND namespace_id = ?', [scope.tenantId, scope.namespaceId]);

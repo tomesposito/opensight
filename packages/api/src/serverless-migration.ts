@@ -2,7 +2,8 @@ import { MetadataError, type Database, type SqlConnection } from './metadata-db.
 import { migrateRuntime } from './runtime-migration.js';
 import { deploymentId } from './runtime-startup.js';
 import { budgetEnvironment } from './budget-store.js';
-import { entitlementConfig, appendOperatorAudit } from './hosted-usage.js';
+import { entitlementConfig } from './hosted-usage.js';
+import { appendOperatorAudit } from './operator-audit.js';
 import { migrateCoordination, coordinationTables, coordinationNow, type CoordinationDialect } from './coordination-schema.js';
 import { migrateManifests, manifestTables } from './manifest-schema.js';
 import { migrateDispatch, dispatchTables } from './dispatch-schema.js';
@@ -70,6 +71,6 @@ export async function migrateServerless(database: Database, env: NodeJS.ProcessE
     await migrateOperations(nested, deployment, 'frozen', dialect);
     await migrateExecutions(nested, deployment, 'frozen', dialect);
     if (dialect === 'postgres') await grantServerlessRuntime(c, env);
-    await appendOperatorAudit(c, 'serverless.migrated');
+    await appendOperatorAudit(c, { action: 'serverless.migrated' });
   });
 }

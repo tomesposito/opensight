@@ -5,7 +5,7 @@ import { MetadataError, type Database, type SqlRow } from './metadata-db.js';
 import { seal, unseal, digest } from './auth-crypto.js';
 import { identifier } from './metadata-resources.js';
 import { MetadataOperator } from './metadata-operator.js';
-import { appendOperatorAudit } from './hosted-usage.js';
+import { appendOperatorAudit } from './operator-audit.js';
 
 // Foreign-key order; only application tables, never database roles or environment.
 export const referenceTables = ['h1_tenants', 'h1_namespaces', 'h1_revisions', 'h1_resources', 'h1_links', 'h1_operations', 'h1_outbox', 'h1_migrations',
@@ -67,7 +67,7 @@ export class ReferenceMaintenance {
     const data = seal(JSON.stringify(snapshot), this.key, `h8-backup:${id}`);
     await privateWrite(join(this.directory, `${id}.backup`), data); await syncDirectory(this.directory);
     registry.backups[id] = digest(data); await this.saveRegistry(registry);
-    await this.db.transaction(c => appendOperatorAudit(c, 'backup.created'));
+    await this.db.transaction(c => appendOperatorAudit(c, { action: 'backup.created', detail: { backupId: id, rows } }));
     return { id, bytes: Buffer.byteLength(data), rows };
   }
   async restore(id: string): Promise<void> {
@@ -104,7 +104,7 @@ export class ReferenceMaintenance {
         for (const metric of ['apiCalls', 'computeAttempts']) await c.query(`INSERT INTO h8_usage VALUES (?,?,?,?,9007199254740991,0)
           ON CONFLICT (tenant_id,namespace_id,period,metric) DO UPDATE SET admitted = 9007199254740991`, [ns.tenant_id!, ns.namespace_id!, period, metric]);
       }
-      await appendOperatorAudit(c, 'backup.restored-held');
+      await appendOperatorAudit(c, { action: 'backup.restored-held', detail: { backupId: id } });
     });
   }
   async review(tenantId: string, userIds: readonly string[]): Promise<void> {
@@ -123,7 +123,7 @@ export class ReferenceMaintenance {
       }
       if (!admin) failure('TENANT_ADMINISTRATOR_REQUIRED');
       await c.query('DELETE FROM h8_recovery WHERE tenant_id = ?', [tenantId]);
-      await appendOperatorAudit(c, 'restore.memberships-reviewed');
+      await appendOperatorAudit(c, { action: 'restore.memberships-reviewed', tenantId, detail: { users: userIds.length } });
     });
   }
   async deleteTenant(operationId: string, externalCopies: string | undefined): Promise<void> {
@@ -150,7 +150,7 @@ export class ReferenceMaintenance {
     });
     if (op.step === 'revoked') await operator.checkpoint(operationId, 'revoked', 'artifacts-removed');
     await operator.finishDeletion(operationId);
-    await this.db.transaction(c => appendOperatorAudit(c, 'tenant.deletion-completed'));
+    await this.db.transaction(c => appendOperatorAudit(c, { action: 'tenant.deletion-completed', tenantId: op.tenantId }));
   }
   async retain(auditDays: number, usageDays: number, now = Date.now()): Promise<void> {
     if (!Number.isSafeInteger(auditDays) || auditDays < 0 || !Number.isSafeInteger(usageDays) || usageDays < 1) failure('REFERENCE_CONFIG_INVALID');
@@ -164,7 +164,7 @@ export class ReferenceMaintenance {
         await c.query("DELETE FROM h1_outbox WHERE event_type NOT LIKE 'usage.storage.bytes:%' AND created_at < ?", [before]);
         await c.query('DELETE FROM h8_audit WHERE created_at < ?', [before]);
       }
-      await appendOperatorAudit(c, 'retention.applied', now);
+      await appendOperatorAudit(c, { action: 'retention.applied', detail: { auditDays, usageDays } }, now);
     });
   }
 }

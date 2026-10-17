@@ -7,6 +7,7 @@ import type { HostedConfig } from './hosted-config.js';
 import { base32, digest, equal, hashPassword, passwordInput, seal, unseal, verifyPassword, verifyTotp } from './auth-crypto.js';
 import { identifier } from './metadata-resources.js';
 import { emailAddress } from './mail.js';
+import { appendOperatorAudit } from './operator-audit.js';
 
 function denied(): never { throw new MetadataError('AUTHENTICATION_FAILED', 401); }
 export function normalizedEmail(value: unknown): string {
@@ -34,6 +35,8 @@ export async function activateAuthKey(database: Database, config: HostedConfig):
     }
     await c.query('UPDATE h2_keys SET active = 0 WHERE active = 1');
     await c.query('INSERT INTO h2_keys VALUES (?,?,1)', [config.keyId, fingerprint]);
+    // The log names the new key ID only: the signing key and its fingerprint never leave the key store.
+    await appendOperatorAudit(c, { action: 'auth.key-rotated', detail: { keyId: config.keyId } });
   });
 }
 

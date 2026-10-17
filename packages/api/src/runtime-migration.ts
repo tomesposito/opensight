@@ -3,7 +3,8 @@ import { initializeMetadata } from './metadata-schema.js';
 import { initializeAuth } from './auth-schema.js';
 import { initializeEmbedding } from './embedding-config.js';
 import { initializeEmbedSessions } from './embed-sessions.js';
-import { initializeUsage, appendOperatorAudit } from './hosted-usage.js';
+import { initializeUsage } from './hosted-usage.js';
+import { appendOperatorAudit } from './operator-audit.js';
 import { budgetEnvironment, migrateBudgets } from './budget-store.js';
 import { deploymentId, runtimeProtocol } from './runtime-startup.js';
 
@@ -33,7 +34,7 @@ export async function migrateRuntime(db: Database, env: NodeJS.ProcessEnv, diale
     await initializeMetadata(transaction, dialect); await initializeAuth(transaction);
     await initializeEmbedding(transaction); await initializeEmbedSessions(transaction);
     await migrateBudgets(transaction, budgets, 'frozen'); await initializeUsage(transaction);
-    await appendOperatorAudit(c, 'runtime.migrated');
+    await appendOperatorAudit(c, { action: 'runtime.migrated' });
     await c.query('UPDATE sr_control SET schema_min = ?, schema_max = ?, protocol_min = ?, protocol_max = ? WHERE deployment = ?', [runtimeProtocol, runtimeProtocol, runtimeProtocol, runtimeProtocol, deployment]);
   });
 }

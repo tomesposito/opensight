@@ -10,6 +10,8 @@ export type { Database, MetadataPool } from './metadata-db.js';
 export { initializeMetadata } from './metadata-schema.js';
 export { MetadataOperator } from './metadata-operator.js';
 export type { ProvisionRequest, TenantOperation } from './metadata-operator.js';
+export { OPERATOR_ACTOR, redactAuditDetail, initializeAudit, appendOperatorAudit, readOperatorAudit } from './operator-audit.js';
+export type { OperatorAuditInput, OperatorAuditEntry } from './operator-audit.js';
 export { MetadataMigration } from './metadata-migration.js';
 export type { LegacyMigrationConfig, MigrationReport, MigrationCheckpoint } from './metadata-migration.js';
 export type { MetadataKind, ResourceKey, MetadataResource } from './metadata-resources.js';
