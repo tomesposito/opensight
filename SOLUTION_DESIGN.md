@@ -1254,6 +1254,26 @@ restores old state/configuration; cutover requires its own reviewed operation.
 Public builds gain no cloud access. Live isolated drills and exact production
 promotion evidence, rather than offline boolean fixtures, determine completion.
 
+**Registered audit upgrade (issue #131, frozen 2026-10-18):** The maintenance
+executor recognizes exactly two audit inventories: the deployed three-column
+`h8_audit` with no marker, and the current seven-column table with the exact
+version/checksum marker. All other required tables remain mandatory and owned.
+Snapshot the actual recognized inventory, pin retained object versions, and
+register its unchanged checksum before migration. A registered legacy snapshot
+can migrate only the matching frozen source; only its committed receipt permits
+retry against the upgraded schema. Verify unchanged schema markers, retained
+rows, object references, audit history and request receipts before and after
+DDL; reject foreign ownership, partial/unknown audit shapes, unexpected writes,
+stale authority and mismatched receipts. Runtime roles gain no DDL rights.
+An isolated held restore accepts only these exact registered inventories. Restore
+legacy audit rows through the current column defaults while retaining the target's
+verified audit marker; preserve all existing revocation/fence/hold behavior.
+The fixed-plan maintenance runner reconciles an identical committed receipt on
+retry and rejects conflicting evidence. Never use the empty-pilot bridge or
+rewrite the release compatibility baseline to make an upgrade pass. Rehearse
+the legacy-to-current path with retained data and objects on PostgreSQL, including
+transaction rollback and the previous release's three-value audit INSERT.
+
 **SR4c marketing cutover (frozen 2026-10-15):** Implement
 [D-77](docs/itd/D-77-marketing-cutover.md). One existing private S3 origin and
 CloudFront Free distribution serve the approved marketing page plus offline demo
