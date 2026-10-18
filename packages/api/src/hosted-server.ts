@@ -37,6 +37,7 @@ import { jobRoute } from './job-routes.js';
 import { Scheduler } from './schedule.js';
 import { hostedReadiness } from './hosted-health.js';
 import { HostedUsage } from './hosted-usage.js';
+import type { AiMeter } from './ai-settings.js';
 import { appendOperatorAudit, readOperatorAudit } from './operator-audit.js';
 import { referenceConfig, referenceDisclosure, assertReferenceSurfaces } from './single-node-config.js';
 import { V1Routes } from './v1-routes.js';
@@ -77,7 +78,7 @@ export interface HostedServerOptions {
   env?: NodeJS.ProcessEnv;
   mailTransport?: MailTransport;
   /** Invocation mode never runs DDL, activates keys, recovers jobs or starts interval work. */
-  invocation?: { signal: AbortSignal; usage?: HostedUsage; compose?(metadata: TenantMetadata, budgets: TenantBudgets, auth?: HostedAuth): HostedInvocationAdapters };
+  invocation?: { signal: AbortSignal; usage?: HostedUsage; compose?(metadata: TenantMetadata, budgets: TenantBudgets, auth?: HostedAuth, aiMeter?: AiMeter): HostedInvocationAdapters };
 }
 const forgedHeaders = ['x-user', 'x-user-id', 'x-principal', 'x-groups', 'x-group-ids', 'x-namespace', 'x-namespace-id', 'x-tenant', 'x-tenant-id', 'x-subject', 'x-role', 'x-roles', 'x-capabilities'];
 const forgedFields = ['subject', 'principal', 'userId', 'namespaceId', 'groups', 'security', 'capabilities', 'issuer', 'audience'];
@@ -125,7 +126,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
   if (!options.invocation) await initializeEmbedding(options.membershipDatabase);
   const embedding = new HostedEmbedding(options.membershipDatabase, metadata, policy);
   const budgets = await loadBudgets(options.membershipDatabase, metadata);
-  const invocation = options.invocation?.compose?.(metadata, budgets, options.builtinAuth);
+  const invocation = options.invocation?.compose?.(metadata, budgets, options.builtinAuth, usage?.aiMeter());
   const jobs = invocation?.jobs ?? new JobStore(options.membershipDatabase, metadata);
   const data = invocation?.data ?? new HostedDataRoutes(new HostedData(new HostedSources(metadata, config.encryptionKey.toString('base64'), sourceEndpoints(options.env)), undefined, budgets), jobs);
   const v1 = new V1Routes(data, options.env ?? process.env);
