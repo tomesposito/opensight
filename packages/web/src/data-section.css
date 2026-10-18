@@ -18,6 +18,13 @@
 .data-page .data-primary:hover:not(:disabled), .data-dialog .data-primary:hover:not(:disabled),
 .data-split > .data-menu > summary:hover { background: #145d76; }
 .data-page button:hover:not(:disabled):not(.data-primary):not([aria-selected=true]) { background: #eaf3f7; }
+/* Issue #108 polish slice 21: the Data landing's dataset filter select was the
+   last interactive control on the surface with zero hover feedback — the fresh
+   audit found the surrounding buttons and tabs already take the data page's
+   established menu-item tint (#eaf3f7, slice 16) while hovering the select
+   changed nothing. It takes the same tint; disabled selects keep their flat
+   state. Background only, so resting geometry is identical. */
+.data-page select:hover:not(:disabled) { background: #eaf3f7; }
 .data-page input, .data-dialog input, .data-page select, .data-dialog select { padding: 4px 8px; border: 1px solid #9eb0ba; border-radius: 3px; background: white; color: inherit; }
 .data-tools { margin: 0 0 12px; }
 .data-tools input[type=search], .data-dialog-tools input[type=search] { width: 260px; max-width: 100%; }
