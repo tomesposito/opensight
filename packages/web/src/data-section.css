@@ -25,6 +25,15 @@
    changed nothing. It takes the same tint; disabled selects keep their flat
    state. Background only, so resting geometry is identical. */
 .data-page select:hover:not(:disabled) { background: #eaf3f7; }
+/* Issue #108 polish slice 27: the Data landing's dataset search input was the
+   last interactive control on the landing surfaces with zero hover feedback —
+   a fresh interactive-state audit (home/my-stuff/analyses/dashboards/data,
+   in-page CLS 0 on every route, no page errors) found the surrounding buttons,
+   tabs, and the filter select already take the data page's established
+   menu-item tint (#eaf3f7, slices 16/21) while hovering the search input
+   changed nothing. It takes the same tint; disabled inputs keep their flat
+   state. Background only, so resting geometry is identical. */
+.data-page input[type=search]:hover:not(:disabled) { background: #eaf3f7; }
 .data-page input, .data-dialog input, .data-page select, .data-dialog select { padding: 4px 8px; border: 1px solid #9eb0ba; border-radius: 3px; background: white; color: inherit; }
 .data-tools { margin: 0 0 12px; }
 .data-tools input[type=search], .data-dialog-tools input[type=search] { width: 260px; max-width: 100%; }
