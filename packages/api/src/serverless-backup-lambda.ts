@@ -13,6 +13,34 @@ interface BackupPlan {
   sourceDatabase: string; targetDatabase: string; expiresAt: number; epoch: number;
   keyVersions: string[]; snapshotVersion: string | null; snapshotDigest: string | null;
 }
+/** SQL's replay observation is not part of the durable receipt identity. A
+ * lost response can be retried without replacing the original S3 evidence. */
+export async function recordMaintenanceReceipt(expected: Record<string, unknown>, io: {
+  read(): Promise<unknown>;
+  create(value: Record<string, unknown>): Promise<unknown>;
+}): Promise<void> {
+  const canonical = (value: unknown) => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+    const { replayed: _replayed, ...identity } = value as Record<string, unknown>;
+    if (_replayed !== undefined && typeof _replayed !== 'boolean') return null;
+    return checksum(identity);
+  };
+  const matches = (actual: unknown) => {
+    if (canonical(actual) !== canonical(expected)) throw new MetadataError('BACKUP_RECEIPT_CONFLICT', 503);
+  };
+  try { matches(await io.read()); return; }
+  catch (error) {
+    if (!(error instanceof Error) || !['NoSuchKey', 'NotFound'].includes(error.name)) throw error;
+  }
+  try { await io.create(expected); }
+  catch (error) {
+    // A successful conditional write can have a lost response. Read back the
+    // exact evidence once; uncertainty or different evidence still fails closed.
+    let actual: unknown;
+    try { actual = await io.read(); } catch { throw error; }
+    matches(actual);
+  }
+}
 export function backupPlan(raw: unknown, env: NodeJS.ProcessEnv, now = Date.now()): BackupPlan {
   const p = raw as BackupPlan;
   if (!p || Object.keys(p).sort().join() !== 'backupId,deployment,epoch,expiresAt,keyVersions,mode,operationId,snapshotDigest,snapshotVersion,sourceDatabase,targetDatabase,version'
@@ -81,7 +109,11 @@ export async function handler(event: unknown, context: InvocationContext) {
       // authorized lifecycle/restore writers throughout the SQL transaction.
       if ((await get('maintenance/registry/head.json')).etag !== head.etag) throw new MetadataError('RESTORE_AUTHORITY_CHANGED', 503);
       const result = plan.mode === 'restore' ? await restoreServerless(db, snapshot, registry) : await migrateRegistered(db, env, snapshot, registry, plan.operationId);
-      await put(`maintenance/receipts/${plan.operationId}.json`, { ...result, plan: checksum(plan), registry: checksum(registry), backup: plan.snapshotDigest }, { IfNoneMatch: '*' });
+      const receiptKey = `maintenance/receipts/${plan.operationId}.json`;
+      await recordMaintenanceReceipt({ ...result, plan: checksum(plan), registry: checksum(registry), backup: plan.snapshotDigest }, {
+        read: async () => (await get(receiptKey)).value,
+        create: value => put(receiptKey, value, { IfNoneMatch: '*' }),
+      });
       return result;
     });
   } catch (error) { throw new MetadataError(error instanceof MetadataError ? error.code : 'BACKUP_OPERATION_FAILED', 503); }
