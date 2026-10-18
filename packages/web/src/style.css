@@ -815,6 +815,9 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .prep-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .data-prep button { cursor: pointer; border: 1px solid #aebdca; background: white; border-radius: 4px; color: #243746; padding: 4px 8px; font: inherit; font-size: 12px; }
 .data-prep button:hover:not(:disabled) { background: #edf6fc; border-color: #1681b9; }
+/* Slice 31 (#108): the prep document-bar selects (saved/imported dataset
+   pickers) had zero hover feedback — take the surface's button hover tint. */
+.data-prep select:hover:not(:disabled) { background: #edf6fc; }
 .data-prep button:focus-visible, .data-prep input:focus-visible, .data-prep select:focus-visible, .data-prep textarea:focus-visible { outline: 3px solid #1681b9; outline-offset: 2px; }
 .data-prep button:disabled { cursor: default; opacity: .5; }
 .prep-document-bar { flex-wrap: wrap; padding: 8px; background: #edf2f6; border: 1px solid #c9d3dc; }
