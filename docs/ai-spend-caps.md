@@ -56,6 +56,10 @@ the authenticated namespace and H1's immutable, unique tenant/namespace mapping.
 Neither tenant IDs nor price settings come from request fields or headers.
 Existing role, namespace and dataset checks still run before completion.
 
+`HostedUsage`, `entitlementConfig` and the owner-only `initializeUsage` migration
+are exported from `@opensight/api/metadata` for trusted compositions. Runtime
+requests use already migrated tables; they never run this migration.
+
 `createHostedApiServer` currently does **not** expose either AI route. It passes
 the durable meter as the fourth argument of `invocation.compose` for explicitly
 composed adapters. Existing hosted/serverless capability gates remain closed;

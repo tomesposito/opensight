@@ -347,6 +347,6 @@ export type { SecurityOptions, SecurityState, Identity } from './security.js';
 
 export type { EmbeddingOptions } from './embedding.js';
 
-export type { AIOptions } from './ai-settings.js';
+export type { AIOptions, AiMeter } from './ai-settings.js';
 
 export type { PrepPostgresBinding } from './prep-routes.js';

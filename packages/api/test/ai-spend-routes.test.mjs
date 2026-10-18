@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
 import { h8Fixture, serveH8 } from './h8-helpers.mjs';
 import { organizationApi } from './organization-helpers.mjs';
-import { HostedUsage, initializeUsage } from '../dist/hosted-usage.js';
+import { HostedUsage, initializeUsage } from '@opensight/api/metadata';
 import { initializeJobs } from '../dist/job-schema.js';
 import { HostedDataRoutes } from '../dist/hosted-data-routes.js';
 import { HostedData } from '../dist/hosted-data.js';
