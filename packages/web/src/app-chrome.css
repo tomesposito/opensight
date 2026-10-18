@@ -105,6 +105,14 @@
 .my-stuff-links { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 16px; }
 .my-stuff-links a, .folder-empty-state a { color: #126e76; }
 .my-stuff-links a { padding: 8px 12px; border: 1px solid #9dbfc4; border-radius: 4px; text-decoration: none; }
+/* Issue #108 polish slice 25: the my-stuff collection quick links ("My
+   analyses", "Dashboards", "My folders", "Shared folders") were the last
+   control class on the landing surfaces with zero hover state — hovering them
+   changed nothing (the fresh probe found every other reachable control
+   covered by slices 8-24). They take the app-wide menu-item hover tint
+   (#eaf3f7, slices 16/21); background only, so resting geometry is identical.
+   Static, no animation. */
+.my-stuff-links a:hover { background: #eaf3f7; }
 .recent-pages { margin: 16px 0 0; padding: 0; list-style: none; }
 .recent-pages a { display: block; padding: 8px 0; border-top: 1px solid #d1e0e5; color: #126e76; text-decoration: none; }
 .folder-empty-state { min-height: 320px; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
