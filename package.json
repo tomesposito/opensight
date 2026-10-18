@@ -4,7 +4,7 @@
   "name": "opensight",
   "private": true,
   "scripts": {
-    "build": "npm run build --workspaces",
+    "build": "npm run build --workspaces --if-present",
     "audit": "npm audit --audit-level=high",
     "test": "npm run test --workspaces && node --test --test-isolation=none conformance/*.test.mjs",
     "dev:hosted": "node packages/api/dev-hosted.mjs"
