@@ -1,9 +1,5 @@
 # Issue #7: roles and AI settings
 
-For durable tenant metering of the admin test and generative completions, see
-[issue #114: AI spend caps](ai-spend-caps.md). Plain self-hosted use without a
-tenant meter retains the behavior described here.
-
 The authoritative implementation brief is Tom's Issue #7 decisions supplied for
 this build. SOLUTION_DESIGN.md is unchanged.
 
