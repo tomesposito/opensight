@@ -4,6 +4,7 @@ import { serverlessTables } from './serverless-migration.js';
 import { checksum } from './metadata-operator.js';
 import { coordinationNow, type CoordinationDialect } from './coordination-schema.js';
 import { appendOperatorAudit } from './operator-audit.js';
+import { databaseInventory, inventoryTables, snapshotInventory, upgradedAudit } from './serverless-backup-schema.js';
 
 export interface CloudSnapshot {
   version: 1; id: string; deployment: string; epoch: number; createdAt: number; expiresAt: number;
@@ -21,16 +22,15 @@ async function locked(c: SqlConnection, dialect: CoordinationDialect) {
   if (dialect === 'postgres') {
     if (!(await c.query("SELECT pg_try_advisory_xact_lock(hashtext(current_database()), hashtext(current_schema() || ':opensight-h8-reference')) AS acquired"))[0]?.acquired) denied('MIGRATION_BUSY');
     await c.query('SET LOCAL row_security = off');
-    const owned = await c.query("SELECT relname FROM pg_class WHERE relnamespace=current_schema()::regnamespace AND relkind IN ('r','p') AND relowner=(SELECT oid FROM pg_roles WHERE rolname=current_user)");
-    if (serverlessTables.some(t => !owned.some(r => r.relname === t))) denied('BACKUP_FOREIGN_DATABASE');
   }
+  return databaseInventory(c, dialect);
 }
 /** Called only after external admission/mapping drain and epoch fencing. Pins
  * are committed with the snapshot inventory; no unregistered backup is usable. */
 export async function snapshotServerless(db: Database, deployment: string, id: string, expiresAt: number, keyVersions: string[], dialect: CoordinationDialect = 'postgres'): Promise<CloudSnapshot> {
   if (!/^[a-f0-9-]{36}$/.test(id) || !keyVersions.length || keyVersions.length > 32 || keyVersions.some(k => !/^[a-f0-9-]{32,64}$/.test(k))) denied('BACKUP_INPUT_INVALID');
   return db.transaction(async c => {
-    await locked(c, dialect);
+    const inventory = await locked(c, dialect);
     const now = await coordinationNow(c, dialect), control = (await c.query('SELECT * FROM sr_control WHERE deployment=?', [deployment]))[0];
     if (control?.state !== 'maintenance' || !bounded(expiresAt) || expiresAt <= now || expiresAt > now + 7 * 86400000) denied('BACKUP_MAINTENANCE_REQUIRED');
     if ((await c.query("SELECT 1 FROM sr_admission WHERE state='held' AND hold_until>? LIMIT 1", [now])).length) denied('WORKSPACE_DRAIN_REQUIRED');
@@ -44,7 +44,7 @@ export async function snapshotServerless(db: Database, deployment: string, id: s
         [deployment, r.tenant_id!, r.namespace_id!, r.owner_id!, r.object_id!, `backup:${id}`, expiresAt, expiresAt]);
     }
     const tables: CloudSnapshot['tables'] = {}; let count = 0, bytes = 0, fence = 0;
-    for (const table of serverlessTables) {
+    for (const table of inventoryTables(inventory)) {
       const records = await c.query(`SELECT * FROM ${table} LIMIT 100001`);
       count += records.length; bytes += Buffer.byteLength(JSON.stringify(records));
       if (count > 100000 || bytes > 64 * 1024 * 1024) denied('BACKUP_LIMIT_EXCEEDED');
@@ -57,6 +57,20 @@ export async function snapshotServerless(db: Database, deployment: string, id: s
     return { version: 1, id, deployment, epoch: Number(control!.epoch), createdAt: now, expiresAt, tables, objects, keyVersions: [...keyVersions], fence };
   });
 }
+function validateSnapshot(snapshot: CloudSnapshot): void {
+  if (snapshot?.version !== 1 || !/^[a-f0-9-]{36}$/.test(snapshot.id) || !bounded(snapshot.epoch) || snapshot.epoch < 1
+    || !bounded(snapshot.fence) || !bounded(snapshot.createdAt) || !bounded(snapshot.expiresAt)
+    || snapshot.createdAt > Date.now() || snapshot.expiresAt <= snapshot.createdAt
+    || snapshot.expiresAt - snapshot.createdAt > 7 * 86400000) denied('BACKUP_INVALID');
+  snapshotInventory(snapshot.tables);
+  let count = 0, bytes = 0;
+  for (const records of Object.values(snapshot.tables)) {
+    count += records.length; bytes += Buffer.byteLength(JSON.stringify(records));
+    if (count > 100000 || bytes > 64 * 1024 * 1024) denied('BACKUP_LIMIT_EXCEEDED');
+    for (const row of records) if (!row || Object.keys(row).some(k => !/^[a-z_]+$/.test(k))
+      || Object.values(row).some(v => v !== null && typeof v !== 'string' && typeof v !== 'number')) denied('BACKUP_INVALID');
+  }
+}
 /** The caller must fetch the newest independent registry, not the backup's copy. */
 export function validateRecovery(snapshot: CloudSnapshot, registry: RecoveryRegistry, now = Date.now()): void {
   if (snapshot?.version !== 1 || registry?.version !== 1 || !bounded(registry.revision) || registry.revision < 1
@@ -66,31 +80,27 @@ export function validateRecovery(snapshot: CloudSnapshot, registry: RecoveryRegi
     || snapshot.expiresAt - snapshot.createdAt > 7 * 86400000 || registry.backups?.[snapshot.id] !== checksum(snapshot)) denied('BACKUP_UNREGISTERED');
   if (!Array.isArray(registry.deletedTenants) || !Array.isArray(registry.retiredKeyVersions) || !snapshot.keyVersions.length
     || snapshot.keyVersions.some(k => registry.retiredKeyVersions.includes(k))) denied('RESTORE_KEY_UNAVAILABLE');
-  if (JSON.stringify(Object.keys(snapshot.tables).sort()) !== JSON.stringify([...serverlessTables].sort())) denied('BACKUP_SCHEMA_INVALID');
+  validateSnapshot(snapshot);
   if (snapshot.tables.h1_tenants!.some(t => registry.deletedTenants.includes(String(t.tenant_id)) && t.state !== 'deleted')) denied('BACKUP_DELETED_TENANT');
-  let count = 0, bytes = 0;
-  for (const records of Object.values(snapshot.tables)) {
-    if (!Array.isArray(records)) denied('BACKUP_INVALID');
-    count += records.length; bytes += Buffer.byteLength(JSON.stringify(records));
-    if (count > 100000 || bytes > 64 * 1024 * 1024) denied('BACKUP_LIMIT_EXCEEDED');
-    for (const row of records) if (!row || Object.keys(row).some(k => !/^[a-z_]+$/.test(k)) || Object.values(row).some(v => v !== null && typeof v !== 'string' && typeof v !== 'number')) denied('BACKUP_INVALID');
-  }
 }
 /** Restore only into a separately initialized, empty, isolated database. There
  * is deliberately no reopen/cutover/review-memberships operation here. */
 export async function restoreServerless(db: Database, snapshot: CloudSnapshot, registry: RecoveryRegistry, dialect: CoordinationDialect = 'postgres'): Promise<{ state: 'held'; epoch: number; tenants: number }> {
   validateRecovery(snapshot, registry);
+  const sourceTables = inventoryTables(snapshotInventory(snapshot.tables));
   return db.transaction(async c => {
-    await locked(c, dialect);
+    if (await locked(c, dialect) !== 'audit-v1') denied('BACKUP_SCHEMA_INVALID');
     if ((await c.query('SELECT 1 FROM h1_tenants LIMIT 1')).length) denied('RESTORE_TARGET_NOT_EMPTY');
     const control = await c.query('SELECT * FROM sr_control');
     if (control.length !== 1 || control[0]?.state !== 'maintenance' || control[0]?.deployment !== snapshot.deployment) denied('RESTORE_TARGET_INVALID');
-    for (const table of serverlessTables.filter(t => t.endsWith('_schema'))) {
+    for (const table of sourceTables.filter(t => t.endsWith('_schema'))) {
       const current = await c.query(`SELECT * FROM ${table}`);
       if (checksum(current) !== checksum(snapshot.tables[table])) denied('BACKUP_SCHEMA_INVALID');
     }
-    for (const table of [...serverlessTables].reverse()) await c.query(`DELETE FROM ${table}`);
-    for (const table of serverlessTables) for (const row of snapshot.tables[table]!) {
+    // A recognized legacy backup has no audit marker. Retain the independently
+    // verified current target marker and let its audit column defaults apply.
+    for (const table of [...sourceTables].reverse()) await c.query(`DELETE FROM ${table}`);
+    for (const table of sourceTables) for (const row of snapshot.tables[table]!) {
       const keys = Object.keys(row);
       await c.query(`INSERT INTO ${table} (${keys.map(k => `"${k}"`).join(',')}) VALUES (${keys.map(() => '?').join(',')})`, Object.values(row));
     }
@@ -126,28 +136,55 @@ export async function restoreServerless(db: Database, snapshot: CloudSnapshot, r
  * between backup and DDL. The external controller owns drain/epoch/watchdog. */
 export async function migrateRegistered(db: Database, env: NodeJS.ProcessEnv, snapshot: CloudSnapshot, registry: RecoveryRegistry, operationId: string,
   dialect: CoordinationDialect = 'postgres'): Promise<{ state: 'migrated'; epoch: number; replayed: boolean }> {
+  validateSnapshot(snapshot);
+  const sourceInventory = snapshotInventory(snapshot.tables);
   if (!/^[a-f0-9-]{36}$/.test(operationId) || snapshot.deployment !== env.OPENSIGHT_DEPLOYMENT || registry.epoch !== snapshot.epoch
-    || registry.completeThroughEpoch < snapshot.epoch || registry.backups[snapshot.id] !== checksum(snapshot) || snapshot.expiresAt <= Date.now()
+    || registry.version !== 1 || !bounded(registry.revision) || registry.revision < 1 || !bounded(registry.fence) || registry.fence < snapshot.fence
+    || !bounded(registry.completeThroughEpoch) || registry.completeThroughEpoch < snapshot.epoch
+    || registry.backups[snapshot.id] !== checksum(snapshot) || snapshot.expiresAt <= Date.now()
     || snapshot.keyVersions.some(k => registry.retiredKeyVersions.includes(k)) || snapshot.tables.h1_tenants!.some(t => registry.deletedTenants.includes(String(t.tenant_id)) && t.state !== 'deleted')) denied('MIGRATION_BACKUP_REQUIRED');
   const { migrateServerless } = await import('./serverless-migration.js');
   return db.transaction(async c => {
-    await locked(c, dialect);
+    const liveInventory = await locked(c, dialect);
     const control = (await c.query('SELECT * FROM sr_control WHERE deployment=?', [snapshot.deployment]))[0];
     if (control?.state !== 'maintenance' || Number(control.epoch) !== snapshot.epoch) denied('WORKSPACE_MAINTENANCE_REQUIRED');
     const receipt = `cloud-migration:${operationId}`, request = checksum([snapshot.id, checksum(snapshot)]);
     const prior = (await c.query('SELECT request_hash FROM h2_requests WHERE operation_id=?', [receipt]))[0];
     if (prior && prior.request_hash !== request) denied('MIGRATION_RECEIPT_CONFLICT');
+    if (liveInventory !== (prior ? 'audit-v1' : sourceInventory)) denied('BACKUP_SCHEMA_INVALID');
     const preserved = serverlessTables.filter(t => !['h8_audit', 'h2_requests'].includes(t) && !t.endsWith('_schema'));
     const fingerprint = (rows: SqlRow[]) => checksum(rows.map(checksum).sort());
     const verify = async () => {
       for (const table of preserved) if (fingerprint(await c.query(`SELECT * FROM ${table} LIMIT 100001`)) !== fingerprint(snapshot.tables[table]!)) denied('MIGRATION_PRESERVATION_FAILED');
+      for (const table of inventoryTables(sourceInventory).filter(t => t.endsWith('_schema')))
+        if (fingerprint(await c.query(`SELECT * FROM ${table}`)) !== fingerprint(snapshot.tables[table]!)) denied('MIGRATION_PRESERVATION_FAILED');
     };
     await verify();
+    const requests = await c.query('SELECT * FROM h2_requests LIMIT 100001');
+    const expectedRequests = prior ? [...snapshot.tables.h2_requests!, { operation_id: receipt, request_hash: request }] : snapshot.tables.h2_requests!;
+    if (fingerprint(requests) !== fingerprint(expectedRequests)) denied('MIGRATION_PRESERVATION_FAILED');
+    const audit = await c.query('SELECT * FROM h8_audit LIMIT 100001');
+    const baseline = prior ? upgradedAudit(snapshot.tables.h8_audit!, sourceInventory) : snapshot.tables.h8_audit!;
+    // Only the two owner migration entries bound to this operation may extend
+    // the audit history. An unrelated append is a post-backup write, not a retry.
+    const baselineIds = new Set(baseline.map(row => row.event_id));
+    const additions = prior ? audit.filter(row => !baselineIds.has(row.event_id)) : [];
+    if (fingerprint(audit.filter(row => !additions.includes(row))) !== fingerprint(baseline)
+      || prior && (additions.length !== 2 || additions.filter(row => row.action === 'serverless.migrated').length !== 1
+        || additions.filter(row => row.action === 'serverless.registered-migration' && row.detail === JSON.stringify({ operationId })).length !== 1)) denied('MIGRATION_PRESERVATION_FAILED');
     if (!prior) {
       await migrateServerless({ durable: true, transaction: work => work(c), close: async () => {} }, { ...env, OPENSIGHT_MAINTENANCE: 'frozen' }, dialect);
       await verify();
+      if (await databaseInventory(c, dialect) !== 'audit-v1') denied('BACKUP_SCHEMA_INVALID');
+      const afterAudit = await c.query('SELECT * FROM h8_audit LIMIT 100001');
+      const expectedAudit = upgradedAudit(snapshot.tables.h8_audit!, sourceInventory);
+      const expectedIds = new Set(expectedAudit.map(row => row.event_id));
+      if (afterAudit.length !== expectedAudit.length + 1
+        || fingerprint(afterAudit.filter(row => expectedIds.has(row.event_id))) !== fingerprint(expectedAudit)
+        || afterAudit.filter(row => !expectedIds.has(row.event_id)).some(row => row.action !== 'serverless.migrated')
+        || fingerprint(await c.query('SELECT * FROM h2_requests LIMIT 100001')) !== fingerprint(snapshot.tables.h2_requests!)) denied('MIGRATION_PRESERVATION_FAILED');
       await c.query('INSERT INTO h2_requests VALUES (?,?)', [receipt, request]);
-      await appendOperatorAudit(c, { action: 'serverless.registered-migration' });
+      await appendOperatorAudit(c, { action: 'serverless.registered-migration', detail: { operationId } });
     }
     return { state: 'migrated', epoch: snapshot.epoch, replayed: !!prior };
   });

@@ -42,8 +42,13 @@ export async function grantServerlessRuntime(c: SqlConnection, env: NodeJS.Proce
   // The audit schema marker is owner-written and read-only for the runtime operator,
   // so deployments can verify the migrated audit version without DDL rights. The guard
   // keeps repair flows working against databases that predate the marker table.
-  if ((await c.query("SELECT to_regclass('h8_audit_schema') AS marker"))[0]?.marker)
+  if ((await c.query("SELECT to_regclass('h8_audit_schema') AS marker"))[0]?.marker) {
+    for (const name of Object.values(roles)) {
+      await c.query(`REVOKE ALL ON h8_audit_schema FROM "${name}"`);
+      await c.query(`REVOKE ALL (id, version, checksum) ON h8_audit_schema FROM "${name}"`);
+    }
     await c.query(`GRANT SELECT ON h8_audit_schema TO "${roles.operator}"`);
+  }
   await c.query(`GRANT SELECT, INSERT, UPDATE, DELETE ON ${writable.join(', ')} TO "${roles.operator}"`);
   await c.query(`GRANT SELECT, INSERT, UPDATE, DELETE ON h1_tenants, h1_namespaces, h1_revisions, h1_resources, h1_links, h1_operations, h1_outbox TO "${roles.tenant}"`);
   await c.query(`GRANT SELECT ON sr_control, sr_storage_usage TO "${roles.tenant}"`);
