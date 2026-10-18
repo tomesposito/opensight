@@ -41,6 +41,17 @@
 .data-tabs { display: flex; gap: 4px; }
 .data-tabs button { border: 0; border-radius: 0; padding: 8px 12px; color: #233b49; background: transparent; border-bottom: 2px solid transparent; }
 .data-tabs button[aria-selected=true] { border-bottom-color: #176b88; background: #eff4f6; font-weight: bold; }
+/* Issue #108 polish slice 28: the selected data-page tab ("Datasets", …) was
+   the last interactive control on the landing surfaces with zero hover
+   feedback — a fresh interactive-state audit (home/my-stuff/analyses/
+   dashboards/data, in-page CLS 0 on every route, no page errors) found the
+   unselected tabs already take the data page's established menu-item tint
+   (#eaf3f7, slices 16/21) while hovering the selected tab changed nothing.
+   The selected tab takes the same tint on hover: it stays visually distinct
+   from unselected tabs at rest, and reads interactive on hover. Background
+   only, so resting geometry is identical; disabled tabs keep their flat
+   state. */
+.data-tabs button[aria-selected=true]:hover:not(:disabled) { background: #eaf3f7; }
 .data-split { display: flex; align-items: stretch; }
 .data-split > button { border-radius: 3px 0 0 3px; }
 .data-split > .data-menu > summary { background: #176b88; color: white; border-radius: 0 3px 3px 0; border-left: 1px solid #7facbd; padding: 4px 8px; height: 100%; }
