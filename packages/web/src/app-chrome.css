@@ -115,6 +115,15 @@
 .my-stuff-links a:hover { background: #eaf3f7; }
 .recent-pages { margin: 16px 0 0; padding: 0; list-style: none; }
 .recent-pages a { display: block; padding: 8px 0; border-top: 1px solid #d1e0e5; color: #126e76; text-decoration: none; }
+/* Issue #108 polish slice 26: the "Recent pages" rows on the My stuff page
+   (ul.recent-pages > li > a) were the last reachable landing-surface controls
+   with zero hover state — a fresh audit (home/analyses/dashboards/data/my-stuff
+   with the click-navigation race fixed) found the quick links, rail nav,
+   breadcrumbs, pagination selects, Q trigger, and navigation toggle all covered
+   by slices 8-25. They take the app-wide menu-item hover tint (#eaf3f7,
+   slices 16/21/25); background only, so resting geometry is identical.
+   Static, no animation. */
+.recent-pages a:hover { background: #eaf3f7; }
 .folder-empty-state { min-height: 320px; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
 .folder-empty-state > svg { color: #157f88; margin-bottom: 24px; }
 .folder-empty-state p { max-width: 560px; margin: 0 0 12px; }
