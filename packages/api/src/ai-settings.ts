@@ -5,7 +5,27 @@ import { method, send } from './automation-routes.js';
 import { record, invalid, id } from './schedule.js';
 import { readBody, RequestError } from './query.js';
 import type { Identity, SecurityService } from './security.js';
-import { AIError, PROVIDERS, providerAdapters, type AIProvider, type ProviderConfig, type Completion } from './ai-providers.js';
+import { AIError, PROVIDERS, estimateTokens, providerAdapters, type AIProvider, type ProviderConfig, type Completion } from './ai-providers.js';
+
+/**
+ * Optional per-tenant AI spend meter (hosted wiring supplies this from
+ * HostedUsage). check runs before any provider transport and may throw
+ * AI_SPEND_CAP_EXCEEDED (429); record runs after a successful call with the
+ * provider-reported token total, or an estimate when none was reported.
+ * Absent = no tenant context (plain self-hosted): calls are unmetered and
+ * never denied by a spend cap.
+ */
+export interface AiMeter {
+  check(namespaceId: string): Promise<void>;
+  record(namespaceId: string, tokens: number, estimated: boolean): Promise<void>;
+}
+function spendCapError(error: unknown): AIError | undefined {
+  if (error === null || typeof error !== 'object' || !('code' in error) || error.code !== 'AI_SPEND_CAP_EXCEEDED') return undefined;
+  const detail = 'detail' in error && error.detail !== null && typeof error.detail === 'object' ? error.detail as Record<string, unknown> : {};
+  const cents = (v: unknown) => typeof v === 'number' && Number.isFinite(v) ? v : undefined;
+  const tenant = typeof detail.tenantId === 'string' ? detail.tenantId : 'unknown', cap = cents(detail.capCents), spend = cents(detail.spendCents), period = typeof detail.period === 'string' ? detail.period : 'today';
+  return new AIError(429, 'AI_SPEND_CAP_EXCEEDED', `AI spend cap exceeded for tenant ${tenant}: spent ${spend ?? 'unknown'} cents of the ${cap ?? 'unknown'}-cent cap for ${period}. No provider call was made. Ask your operator to raise aiSpendCapCents or wait for the next daily period.`);
+}
 
 export interface SavedConfig extends ProviderConfig { namespaceId: string; encryptedKey?: string }
 export interface AIState { version: 1; configs: SavedConfig[] }
@@ -19,6 +39,8 @@ export interface AIOptions {
   /** Optional default-namespace bootstrap; environment keys are never serialized. */
   bootstrap?: ProviderConfig & { key?: string };
   fetcher?: typeof fetch;
+  /** Optional per-tenant AI spend meter; see AiMeter. Omit for self-hosted. */
+  aiMeter?: AiMeter;
 }
 export function aiFromEnvironment(env: NodeJS.ProcessEnv = process.env): AIOptions {
   const provider = env.OPENSIGHT_AI_PROVIDER;
@@ -99,10 +121,24 @@ export class AISettings {
   async complete(namespaceId: string, input: Completion): Promise<string> {
     const c = this.get(namespaceId);
     if (!c) throw new AIError(503, 'AI_NOT_CONFIGURED', 'AI provider is not configured');
-    if (c.provider === 'bedrock') return this.adapters.bedrock.complete(c, '', input);
+    if (c.provider === 'bedrock') return (await this.adapters.bedrock.complete(c, '', input)).text;
     const key = this.key(c);
     if (!key) throw new AIError(503, 'AI_NOT_CONFIGURED', 'Provider API key is not configured');
-    const answer = await this.adapters[c.provider].complete(c, key, input);
+    // Single spend choke point: the admin connection test and the NLQ
+    // generative route both pass through here. The cap gate runs before any
+    // provider transport; metering failures after a successful call surface
+    // instead of silently dropping the charge (fail closed).
+    const meter = this.options.aiMeter;
+    if (meter) {
+      try { await meter.check(namespaceId); }
+      catch (error) { throw spendCapError(error) ?? error; }
+    }
+    const result = await this.adapters[c.provider].complete(c, key, input);
+    const answer = result.text;
+    if (meter) {
+      const estimated = result.tokens === undefined;
+      await meter.record(namespaceId, result.tokens ?? estimateTokens(input.system, input.prompt, answer), estimated);
+    }
     return answer.split(key).join('[redacted]');
   }
   async route(request: IncomingMessage, response: ServerResponse, path: string, query: string, identity: Identity, security: SecurityService): Promise<boolean> {

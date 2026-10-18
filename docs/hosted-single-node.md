@@ -177,28 +177,46 @@ and await exit before container removal or maintenance. Drain errors report
 
 ## Entitlements, events and audit
 
-`OPENSIGHT_ENTITLEMENTS` has exactly this shape; these small numbers illustrate
+`OPENSIGHT_ENTITLEMENTS` accepts this shape; these small numbers illustrate
 validation, **not** recommended capacity or a product tier:
 
 ```json
 {
-  "defaults": { "apiCalls": 100, "storageBytes": 1048576, "computeAttempts": 10 },
+  "defaults": {
+    "apiCalls": 100,
+    "storageBytes": 1048576,
+    "computeAttempts": 10,
+    "aiSpendCapCents": 500,
+    "aiWarnPct": 80,
+    "aiCostCentsPerMillionTokens": 200
+  },
   "tenants": {}
 }
 ```
 
-Each tenant override is a complete replacement with those three nonnegative,
-safe-integer limits. Set `defaults` to `null` to require an explicit tenant entry.
+Each tenant override is a complete replacement with the three required nonnegative,
+safe-integer API/storage/compute limits and any optional AI fields. Set `defaults`
+to `null` to require an explicit tenant entry.
 Missing/malformed configuration or missing tenant entitlement is
-`ENTITLEMENT_UNRESOLVED` (503). Zero disables the selected unit. Config is read at
+`ENTITLEMENT_UNRESOLVED` (503). Zero disables the selected API/storage/compute unit. Config is read at
 startup; drain, update the environment, and restart to change it. It cannot be
 supplied by tenant request fields, headers or SQL roles.
+
+The optional `aiSpendCapCents` is a daily nonnegative safe integer; absent means
+uncapped. `aiWarnPct` is an integer from 0 to 100 (default 80).
+`aiCostCentsPerMillionTokens` is a nonnegative safe integer (default 0). Zero rate
+disables spend admission/warnings while retaining request and token accounting;
+with a positive rate, zero cap prevents all calls. Spend is total tokens times
+the rate divided by one million, without rounding to whole cents. These fields
+also apply to the stored serverless entitlements snapshot. See
+[AI spend caps](ai-spend-caps.md) for wiring, error handling and accounting limits.
 
 | Hook | Unit and accuracy | Enforcement and emission |
 | --- | --- | --- |
 | API | One authenticated, correctly namespace-scoped tenant or verified embed API request admitted past the identity boundary | Exact durable admissions per UTC calendar day; later validation/operation errors still consume a call. Over-limit calls return `USAGE_LIMIT_EXCEEDED` (429). Authentication attempts, embed shell/bootstrap redemption and operator calls are excluded; H2 authentication throttles still apply. |
 | Storage | Exact sum of UTF-8 bytes of serialized `h1_resources.body` within a tenant | Logical current occupancy, including encrypted source/upload payload envelopes and base64 overhead. Growing writes above the ceiling roll back metadata, links, secrets and revisions together. Shrinking/deleting data remains possible after a limit reduction. Every committed tenant resource write emits the resulting byte gauge. |
 | Compute | One admitted execution attempt of a manual source/prepared refresh, an H7 refresh/report/alert occurrence, or a recipient rendering attempt | Exact count of admissions per UTC day, **not** CPU time, row count or cost. A report may use one execution attempt plus one per rendered recipient. Retries/restarts doing new work count again; reuse of a saved delivery message does not render or consume another attempt. A scheduled refresh is not double-counted by the underlying refresh path. |
+| AI | `aiCalls`: successful provider completions; `aiTokens`: reported input + output tokens, or a marked deterministic estimate | Durable UTC daily totals. A configured positive rate and recorded spend at/above the cap deny the next call with `AI_SPEND_CAP_EXCEEDED` (429). A transactional `ai.spend.warning` audit alert fires once per tenant/day at the threshold. Requires the AI meter composition described in the linked guide; the hosted server does not currently expose generative O/admin AI routes. |
 
 API/compute use atomic per-tenant locked counters and `h8_usage_events`, with
 UUID, tenant/namespace, UTC timestamp, metric, `call`/`attempt` unit, amount `1`

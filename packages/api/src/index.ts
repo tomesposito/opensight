@@ -1,6 +1,7 @@
 import { LocalAssets } from './local-assets.js';
 import type { Identity } from './security.js';
 import { MetadataError } from './metadata-db.js';
+import type { HostedUsage } from './hosted-usage.js';
 import { LocalDashboards } from './local-dashboards.js';
 import { V1Routes } from './v1-routes.js';
 import { LocalAnalyses } from './local-analyses.js';
@@ -41,6 +42,8 @@ export interface ApiOptions {
   prepStorePath?: string;
   prepPostgresBindings?: readonly PrepPostgresBinding[];
   ai?: AIOptions;
+  /** Trusted durable tenant accounting for AI-enabled compositions; omitted for plain self-hosted. */
+  hostedUsage?: HostedUsage;
   embedding?: EmbeddingOptions;
   security?: SecurityOptions;
   /** Trusted startup roots. Unconfigured namespaces start empty; IDs never become paths. */
@@ -85,7 +88,8 @@ export async function createApiServer(options: ApiOptions): Promise<Server> {
     if (source) source.security = security;
     namespaceStores.set(namespaceId, definitions); namespaceQueries.set(namespaceId, source);
   }
-  const ai = await AISettings.load(options.ai ?? aiFromEnvironment());
+  const ai = await AISettings.load({ ...(options.ai ?? aiFromEnvironment()),
+    ...(options.hostedUsage ? { aiMeter: options.hostedUsage.aiMeter() } : {}) });
   const organization = security ? new OrganizationService(security, namespaceStores) : undefined;
   if (options.embedding && !organization) throw new Error('Embedding requires security configuration');
   if (security) security.hasAssets = namespaceId => !!namespaceStores.get(namespaceId)?.list().length || !!namespaceQueries.get(namespaceId);
@@ -343,6 +347,6 @@ export type { SecurityOptions, SecurityState, Identity } from './security.js';
 
 export type { EmbeddingOptions } from './embedding.js';
 
-export type { AIOptions } from './ai-settings.js';
+export type { AIOptions, AiMeter } from './ai-settings.js';
 
 export type { PrepPostgresBinding } from './prep-routes.js';

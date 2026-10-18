@@ -5,14 +5,34 @@ export const PROVIDERS = ['openai', 'anthropic', 'openai-compatible', 'bedrock']
 export type AIProvider = typeof PROVIDERS[number];
 export interface ProviderConfig { provider: AIProvider; model: string; baseUrl?: string }
 export interface Completion { system: string; prompt: string; maxTokens?: number }
-export interface ProviderAdapter { complete(config: ProviderConfig, key: string, input: Completion): Promise<string> }
+/** Provider completion text plus total tokens (input + output) when the provider reported usage. */
+export interface CompletionResult { text: string; tokens?: number }
+export interface ProviderAdapter { complete(config: ProviderConfig, key: string, input: Completion): Promise<CompletionResult> }
 export class AIError extends SecurityError {}
 const invalidResponse = () => new AIError(502, 'AI_INVALID_RESPONSE', 'Provider returned an invalid or empty response');
+/**
+ * Single deterministic fallback when a provider reports no usage: an ESTIMATE
+ * of ceil(chars/4) over the system prompt, user prompt and response (JS string lengths).
+ * It is never presented as provider-measured usage.
+ */
+export function estimateTokens(...texts: string[]): number {
+  return Math.ceil(texts.reduce((n, t) => n + t.length, 0) / 4);
+}
+function usageTokens(raw: Record<string, unknown>, inputKey: string, outputKey: string): number | undefined {
+  if (!isObject(raw.usage)) return undefined;
+  const input = raw.usage[inputKey], output = raw.usage[outputKey];
+  if (typeof input !== 'number' || typeof output !== 'number' || !Number.isSafeInteger(input) || !Number.isSafeInteger(output) || input < 0 || output < 0) return undefined;
+  const total = input + output;
+  return Number.isSafeInteger(total) ? total : undefined;
+}
+function result(text: string, tokens: number | undefined): CompletionResult {
+  return { text, ...(tokens === undefined ? {} : { tokens }) };
+}
 
 /** One transport boundary: no SDK, redirects, tools, retries, or provider error-body forwarding. */
 abstract class HTTPAdapter implements ProviderAdapter {
   constructor(protected readonly fetcher: typeof fetch) {}
-  abstract complete(config: ProviderConfig, key: string, input: Completion): Promise<string>;
+  abstract complete(config: ProviderConfig, key: string, input: Completion): Promise<CompletionResult>;
   protected async post(url: string, headers: Record<string, string>, body: unknown): Promise<Record<string, unknown>> {
     try {
       const response = await this.fetcher(url, { method: 'POST', redirect: 'error', signal: AbortSignal.timeout(20_000), headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(body) });
@@ -45,30 +65,30 @@ abstract class HTTPAdapter implements ProviderAdapter {
   }
 }
 class OpenAIAdapter extends HTTPAdapter {
-  async complete(config: ProviderConfig, key: string, input: Completion): Promise<string> {
+  async complete(config: ProviderConfig, key: string, input: Completion): Promise<CompletionResult> {
     const raw = await this.post('https://api.openai.com/v1/responses', { Authorization: `Bearer ${key}` }, {
       model: config.model, instructions: input.system, input: input.prompt, max_output_tokens: input.maxTokens ?? 2048, store: false,
     });
     if (!Array.isArray(raw.output)) throw invalidResponse();
-    return this.text(raw.output.flatMap(item => isObject(item) && item.type === 'message' && Array.isArray(item.content)
-      ? item.content.flatMap(c => isObject(c) && c.type === 'output_text' && typeof c.text === 'string' ? [c.text] : []) : []).join('\n'));
+    return result(this.text(raw.output.flatMap(item => isObject(item) && item.type === 'message' && Array.isArray(item.content)
+      ? item.content.flatMap(c => isObject(c) && c.type === 'output_text' && typeof c.text === 'string' ? [c.text] : []) : []).join('\n')), usageTokens(raw, 'input_tokens', 'output_tokens'));
   }
 }
 class CompatibleAdapter extends HTTPAdapter {
-  async complete(config: ProviderConfig, key: string, input: Completion): Promise<string> {
+  async complete(config: ProviderConfig, key: string, input: Completion): Promise<CompletionResult> {
     const raw = await this.post(`${config.baseUrl}/chat/completions`, { Authorization: `Bearer ${key}` }, {
       model: config.model, max_tokens: input.maxTokens ?? 2048, messages: [{ role: 'system', content: input.system }, { role: 'user', content: input.prompt }],
     });
     const choice = Array.isArray(raw.choices) ? raw.choices[0] : undefined;
-    return this.text(isObject(choice) && isObject(choice.message) ? choice.message.content : undefined);
+    return result(this.text(isObject(choice) && isObject(choice.message) ? choice.message.content : undefined), usageTokens(raw, 'prompt_tokens', 'completion_tokens'));
   }
 }
 class AnthropicAdapter extends HTTPAdapter {
-  async complete(config: ProviderConfig, key: string, input: Completion): Promise<string> {
+  async complete(config: ProviderConfig, key: string, input: Completion): Promise<CompletionResult> {
     const raw = await this.post('https://api.anthropic.com/v1/messages', { 'x-api-key': key, 'anthropic-version': '2023-06-01' }, {
       model: config.model, system: input.system, max_tokens: input.maxTokens ?? 2048, messages: [{ role: 'user', content: input.prompt }],
     });
-    return this.text(Array.isArray(raw.content) ? raw.content.flatMap(c => isObject(c) && c.type === 'text' && typeof c.text === 'string' ? [c.text] : []).join('\n') : undefined);
+    return result(this.text(Array.isArray(raw.content) ? raw.content.flatMap(c => isObject(c) && c.type === 'text' && typeof c.text === 'string' ? [c.text] : []).join('\n') : undefined), usageTokens(raw, 'input_tokens', 'output_tokens'));
   }
 }
 class BedrockAdapter implements ProviderAdapter {
