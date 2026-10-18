@@ -3,17 +3,30 @@ import { MetadataError, type Database, type SqlConnection } from './metadata-db.
 import type { TenantContext, TenantMetadata } from './metadata.js';
 import { identifier, object, type Scope } from './metadata-resources.js';
 import { appendMetadataEvent } from './metadata-outbox.js';
-import { initializeAudit } from './operator-audit.js';
+import { appendOperatorAudit, initializeAudit } from './operator-audit.js';
+import type { AiMeter } from './ai-settings.js';
 
-export interface Entitlement { apiCalls: number; storageBytes: number; computeAttempts: number }
+export interface Entitlement {
+  apiCalls: number; storageBytes: number; computeAttempts: number;
+  /** Optional AI spend cap in cents per UTC day. Absent = no cap (metering still records). */
+  aiSpendCapCents?: number;
+  /** Warning threshold as a percentage of the cap, 0-100. Default 80 when a cap is set. */
+  aiWarnPct?: number;
+  /** Operator price in cents per million tokens. Default 0 = spend tracking disabled, request counts still metered. */
+  aiCostCentsPerMillionTokens?: number;
+}
 export interface Entitlements { defaults: Entitlement | null; tenants: Record<string, Entitlement> }
 export function entitlementConfig(raw: string | undefined): Entitlements {
   try {
     const input = object(JSON.parse(raw!), ['defaults', 'tenants']);
     const limits = (raw: unknown): Entitlement => {
-      const r = object(raw, ['apiCalls', 'storageBytes', 'computeAttempts']);
+      const r = object(raw, ['apiCalls', 'storageBytes', 'computeAttempts', 'aiSpendCapCents', 'aiWarnPct', 'aiCostCentsPerMillionTokens']);
       for (const k of ['apiCalls', 'storageBytes', 'computeAttempts']) if (!Number.isSafeInteger(r[k]) || Number(r[k]) < 0) throw Error();
-      return r as unknown as Entitlement;
+      const out: Entitlement = { apiCalls: Number(r.apiCalls), storageBytes: Number(r.storageBytes), computeAttempts: Number(r.computeAttempts) };
+      if (r.aiSpendCapCents !== undefined) { if (!Number.isSafeInteger(r.aiSpendCapCents) || Number(r.aiSpendCapCents) < 0) throw Error(); out.aiSpendCapCents = Number(r.aiSpendCapCents); }
+      if (r.aiWarnPct !== undefined) { if (!Number.isSafeInteger(r.aiWarnPct) || Number(r.aiWarnPct) < 0 || Number(r.aiWarnPct) > 100) throw Error(); out.aiWarnPct = Number(r.aiWarnPct); }
+      if (r.aiCostCentsPerMillionTokens !== undefined) { if (!Number.isSafeInteger(r.aiCostCentsPerMillionTokens) || Number(r.aiCostCentsPerMillionTokens) < 0) throw Error(); out.aiCostCentsPerMillionTokens = Number(r.aiCostCentsPerMillionTokens); }
+      return out;
     };
     const tenants: Record<string, Entitlement> = Object.create(null) as Record<string, Entitlement>;
     for (const [id, value] of Object.entries(object(input.tenants))) tenants[identifier(id)] = limits(value);
@@ -91,6 +104,108 @@ export class HostedUsage {
     });
     if (denied) throw new MetadataError('USAGE_LIMIT_EXCEEDED', 429);
   }
+  /** Derived spend in cents for a token total under an entitlement. Zero when no price is configured. */
+  aiSpendCents(entitlement: Entitlement, tokens: number): number {
+    return tokens * (entitlement.aiCostCentsPerMillionTokens ?? 0) / 1_000_000;
+  }
+  private async aiCountIn(c: SqlConnection, scope: Scope, period: string, metric: 'aiCalls' | 'aiTokens'): Promise<number> {
+    const row = (await c.query('SELECT admitted FROM h8_usage WHERE tenant_id = ? AND namespace_id = ? AND period = ? AND metric = ?', [scope.tenantId, scope.namespaceId, period, metric]))[0];
+    const count = row === undefined ? 0 : Number(row.admitted);
+    if (!Number.isSafeInteger(count) || count < 0) throw new MetadataError('ENTITLEMENT_UNRESOLVED', 503);
+    return count;
+  }
+  private async lockAiScope(c: SqlConnection, scope: Scope): Promise<void> {
+    if (!(await c.query("UPDATE h1_tenants SET version = version WHERE tenant_id = ? AND state = 'active' RETURNING tenant_id", [scope.tenantId])).length) throw new MetadataError('TENANT_UNAVAILABLE', 403);
+    if (!(await c.query('SELECT tenant_id FROM h1_namespaces WHERE tenant_id = ? AND namespace_id = ?', [scope.tenantId, scope.namespaceId])).length) throw new MetadataError('ENTITLEMENT_UNRESOLVED', 503);
+  }
+  /** Current durable AI usage snapshot for a tenant scope (today's UTC period). */
+  async aiUsage(scope: Scope): Promise<{ tenantId: string; namespaceId: string; period: string; aiCalls: number; aiTokens: number; spendCents: number; capCents?: number; warnPct: number }> {
+    const entitlement = this.entitlement(scope), period = new Date(this.clock()).toISOString().slice(0, 10);
+    return this.db.transaction(async c => {
+      const aiCalls = await this.aiCountIn(c, scope, period, 'aiCalls');
+      const aiTokens = await this.aiCountIn(c, scope, period, 'aiTokens');
+      return { tenantId: scope.tenantId, namespaceId: scope.namespaceId, period, aiCalls, aiTokens, spendCents: this.aiSpendCents(entitlement, aiTokens),
+        ...(entitlement.aiSpendCapCents === undefined ? {} : { capCents: entitlement.aiSpendCapCents }), warnPct: entitlement.aiWarnPct ?? 80 };
+    }).catch((error: unknown) => { if (error instanceof MetadataError) throw error; throw new MetadataError('ENTITLEMENT_UNRESOLVED', 503); });
+  }
+  /**
+   * Pre-call cap gate (fail closed). When a cap and a price are configured and
+   * recorded spend already meets/exceeds the cap, the denial is recorded in
+   * h8_usage/h8_usage_events and AI_SPEND_CAP_EXCEEDED (429) is thrown; the
+   * caller must not invoke the provider. No cap, or a zero price (spend
+   * tracking disabled), never denies here.
+   */
+  async checkAiSpend(scope: Scope): Promise<void> {
+    const entitlement = this.entitlement(scope);
+    const cap = entitlement.aiSpendCapCents, cost = entitlement.aiCostCentsPerMillionTokens ?? 0, now = new Date(this.clock()).toISOString(), period = now.slice(0, 10);
+    const denied = await this.db.transaction(async c => {
+      await this.lockAiScope(c, scope);
+      const tokens = await this.aiCountIn(c, scope, period, 'aiTokens'), spendCents = this.aiSpendCents(entitlement, tokens);
+      await this.aiCountIn(c, scope, period, 'aiCalls');
+      if (cap === undefined || cost === 0 || BigInt(tokens) * BigInt(cost) < BigInt(cap) * 1_000_000n) return undefined;
+      const args = [scope.tenantId, scope.namespaceId, period, 'aiCalls'];
+      await c.query('INSERT INTO h8_usage VALUES (?,?,?,?,0,0) ON CONFLICT (tenant_id, namespace_id, period, metric) DO NOTHING', args);
+      await c.query('UPDATE h8_usage SET denied = denied + 1 WHERE tenant_id = ? AND namespace_id = ? AND period = ? AND metric = ?', args);
+      await c.query('INSERT INTO h8_usage_events VALUES (?,?,?,?,?,?,?,?)', [randomUUID(), scope.tenantId, scope.namespaceId, now, 'aiCalls', 'call', 1, 'denied']);
+      return { tenantId: scope.tenantId, namespaceId: scope.namespaceId, period, capCents: cap, spendCents, aiTokens: tokens };
+    }).catch((error: unknown) => { if (error instanceof MetadataError) throw error; throw new MetadataError('ENTITLEMENT_UNRESOLVED', 503); });
+    if (denied) throw new MetadataError('AI_SPEND_CAP_EXCEEDED', 429, denied);
+  }
+  /**
+   * Post-call metering: durably adds one aiCalls call and the call's aiTokens
+   * tokens in the same tables/serialization as other usage. When cumulative
+   * spend first crosses aiWarnPct of the cap in a period, one operator-audit
+   * alert (ai.spend.warning) is appended in the same transaction.
+   */
+  async recordAiUsage(scope: Scope, tokens: number, estimated = false): Promise<{ aiCalls: number; aiTokens: number; spendCents: number; warned: boolean }> {
+    if (!Number.isSafeInteger(tokens) || tokens < 0) throw new MetadataError('ENTITLEMENT_UNRESOLVED', 503);
+    const entitlement = this.entitlement(scope), now = new Date(this.clock()).toISOString(), period = now.slice(0, 10);
+    return this.db.transaction(async c => {
+      await this.lockAiScope(c, scope);
+      const after = await this.aiCountIn(c, scope, period, 'aiTokens') + tokens;
+      const aiCalls = await this.aiCountIn(c, scope, period, 'aiCalls') + 1;
+      if (!Number.isSafeInteger(after) || !Number.isSafeInteger(aiCalls)) throw new MetadataError('ENTITLEMENT_UNRESOLVED', 503);
+      for (const [metric, amount, unit] of [['aiCalls', 1, 'call'], ['aiTokens', tokens, estimated ? 'estimated-token' : 'token']] as const) {
+        const args = [scope.tenantId, scope.namespaceId, period, metric];
+        await c.query('INSERT INTO h8_usage VALUES (?,?,?,?,0,0) ON CONFLICT (tenant_id, namespace_id, period, metric) DO NOTHING', args);
+        await c.query('UPDATE h8_usage SET admitted = admitted + ? WHERE tenant_id = ? AND namespace_id = ? AND period = ? AND metric = ?', [amount, ...args]);
+        await c.query('INSERT INTO h8_usage_events VALUES (?,?,?,?,?,?,?,?)', [randomUUID(), scope.tenantId, scope.namespaceId, now, metric, unit, amount, 'admitted']);
+      }
+      const spendCents = this.aiSpendCents(entitlement, after);
+      let warned = false;
+      const cap = entitlement.aiSpendCapCents, cost = entitlement.aiCostCentsPerMillionTokens ?? 0;
+      if (cap !== undefined && cost > 0) {
+        const warnPct = entitlement.aiWarnPct ?? 80;
+        if (BigInt(after) * BigInt(cost) * 100n >= BigInt(cap) * BigInt(warnPct) * 1_000_000n) {
+          const prior = await c.query("SELECT event_id FROM h8_audit WHERE tenant_id = ? AND action = 'ai.spend.warning' AND substr(created_at,1,10) = ?", [scope.tenantId, period]);
+          if (!prior.length) {
+            await appendOperatorAudit(c, { action: 'ai.spend.warning', tenantId: scope.tenantId, subject: scope.namespaceId,
+              detail: { period, spendCents, capCents: cap, warnPct, estimated } }, Date.parse(now));
+            warned = true;
+          }
+        }
+      }
+      return { aiCalls, aiTokens: after, spendCents, warned };
+    }).catch((error: unknown) => { if (error instanceof MetadataError) throw error; throw new MetadataError('ENTITLEMENT_UNRESOLVED', 503); });
+  }
+  /** Resolve the authenticated namespace using H1's immutable one-namespace-per-tenant mapping.
+   * Hosted callers cannot opt out by returning an unresolved scope. Self-hosted omits the meter. */
+  aiMeter(): AiMeter {
+    const resolveScope = async (namespaceId: string): Promise<Scope> => {
+      try {
+        const rows = await this.db.transaction(c => c.query('SELECT tenant_id FROM h1_namespaces WHERE namespace_id = ?', [namespaceId]));
+        if (rows.length !== 1) throw new MetadataError('ENTITLEMENT_UNRESOLVED', 503);
+        return { tenantId: String(rows[0]!.tenant_id), namespaceId };
+      } catch (error) {
+        if (error instanceof MetadataError) throw error;
+        throw new MetadataError('ENTITLEMENT_UNRESOLVED', 503);
+      }
+    };
+    return {
+      check: async namespaceId => { await this.checkAiSpend(await resolveScope(namespaceId)); },
+      record: async (namespaceId, tokens, estimated) => { await this.recordAiUsage(await resolveScope(namespaceId), tokens, estimated); },
+    };
+  }
   async metrics(): Promise<string> {
     return this.db.transaction(async c => {
       const lines = ['# TYPE opensight_usage_admitted gauge', '# TYPE opensight_usage_denied gauge', '# TYPE opensight_storage_bytes gauge'];
@@ -100,6 +215,13 @@ export class HostedUsage {
         lines.push(`opensight_usage_admitted{${labels}} ${Number(r.admitted)}`, `opensight_usage_denied{${labels}} ${Number(r.denied)}`);
       }
       for (const r of await c.query('SELECT tenant_id, namespace_id FROM h1_namespaces ORDER BY tenant_id')) lines.push(`opensight_storage_bytes{tenant=${JSON.stringify(r.tenant_id)}} ${await this.storageBytes(c, { tenantId: String(r.tenant_id), namespaceId: String(r.namespace_id) })}`);
+      lines.push('# TYPE opensight_ai_calls gauge', '# TYPE opensight_ai_tokens gauge', '# TYPE opensight_ai_spend_cents gauge');
+      for (const r of await c.query("SELECT tenant_id, namespace_id, admitted FROM h8_usage WHERE period = ? AND metric = 'aiTokens' ORDER BY tenant_id, namespace_id", [period])) {
+        const tokens = Number(r.admitted), labels = `tenant=${JSON.stringify(r.tenant_id)},namespace=${JSON.stringify(r.namespace_id)},period=${JSON.stringify(period)}`;
+        const scope = { tenantId: String(r.tenant_id), namespaceId: String(r.namespace_id) };
+        lines.push(`opensight_ai_calls{${labels}} ${await this.aiCountIn(c, scope, period, 'aiCalls')}`, `opensight_ai_tokens{${labels}} ${tokens}`);
+        lines.push(`opensight_ai_spend_cents{${labels}} ${this.aiSpendCents(this.entitlement(scope), tokens)}`);
+      }
       return `${lines.join('\n')}\n`;
     });
   }
