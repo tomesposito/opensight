@@ -18,6 +18,19 @@
 .data-page .data-primary:hover:not(:disabled), .data-dialog .data-primary:hover:not(:disabled),
 .data-split > .data-menu > summary:hover { background: #145d76; }
 .data-page button:hover:not(:disabled):not(.data-primary):not([aria-selected=true]) { background: #eaf3f7; }
+/* Issue #108 polish slice 30: the create-dataset dialog's plain buttons
+   ("Upload file", "Create data source" in .data-dialog-tools) had zero hover
+   state — a fresh behavioral hover audit extended past the 5 landing routes
+   to every top-level offline-demo route (folders, data-prep, data sources,
+   dataset/admin surfaces, #/analyses/new, #/data/new) found this was the
+   largest remaining zero-hover control class. Slice 16's rule covered
+   .data-page buttons but not .data-dialog buttons, and the dialog buttons
+   share the data surface's plain-button style (white bg, teal text), so they
+   take the same established menu-item tint (#eaf3f7). This also gives the
+   dialog header/footer plain buttons hover feedback for the first time.
+   Background only, so resting geometry is identical; disabled buttons keep
+   their flat state. Static (no animation), so no reduced-motion variant. */
+.data-dialog button:hover:not(:disabled):not(.data-primary):not([aria-selected=true]) { background: #eaf3f7; }
 /* Issue #108 polish slice 21: the Data landing's dataset filter select was the
    last interactive control on the surface with zero hover feedback — the fresh
    audit found the surrounding buttons and tabs already take the data page's
