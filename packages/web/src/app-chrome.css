@@ -144,6 +144,12 @@
 .collection-pagination > span:first-child { margin-right: auto; }
 .collection-pagination label { display: flex; align-items: center; gap: 8px; }
 .collection-pagination button { min-width: 28px; }
+/* Issue #108 polish slice 23: the drafts collection's "Items per page" select
+   was the last control on the collections surface with zero hover state (the
+   fresh probe found every landing/dialog control covered by slices 8-22).
+   It takes the app-wide menu-item hover tint (#eaf3f7, slices 16/21);
+   background only, so resting geometry is identical. Static, no animation. */
+.collection-pagination select:hover:not(:disabled) { background: #eaf3f7; }
 .collection-note { color: #526c7a; margin: 16px 0 0; font-size: 11px; }
 .collection-no-results { text-align: center; padding: 32px 16px; }
 .collection-card .draft-rename { margin-top: 16px; padding-top: 16px; border-top: 1px solid #d1e0e5; }

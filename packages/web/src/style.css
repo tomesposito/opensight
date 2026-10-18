@@ -57,6 +57,12 @@ select { background: #fff; border: 1px solid #c9d8de; border-radius: 6px; paddin
 .create-analysis-dialog::backdrop { background: #0008; }
 .create-analysis-dialog button, .create-analysis-dialog select { padding: 6px 12px; border: 1px solid #6b9eb6; border-radius: 5px; background: #fff; color: #246583; font: inherit; }
 .create-analysis-dialog button:hover:not(:disabled) { background: #edf7fc; }
+/* Issue #108 polish slice 23: the dialog's "Items per page" select was the
+   last control in the Create Analysis dialog with zero hover state (a fresh
+   probe hovered every dialog control; the select changed nothing). It takes
+   the dialog's established button hover tint (#edf7fc, same rule as above);
+   background only, so resting geometry is identical. Static, no animation. */
+.create-analysis-dialog select:hover:not(:disabled) { background: #edf7fc; }
 .create-analysis-dialog button:disabled { color: #767b80; border-color: #e0e1e4; cursor: default; }
 .create-analysis-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 28px; }
 .create-analysis-heading h2 { font: bold 16px/1.5 Arial, "Helvetica Neue", Helvetica, sans-serif; margin: 0; }
