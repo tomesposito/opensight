@@ -1041,6 +1041,7 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .prep-heading p { margin-bottom: 8px; }
 .prep-execution { margin: 8px 0; }
 .prep-execution summary { cursor: pointer; }
+.prep-execution summary:hover { background: #edf6fc; }
 .prep-catalog-group { border-top: 1px solid #e1e7ec; padding: 8px 0; }
 .prep-steps-search { margin-bottom: 8px; }
 .prep-sidebar:focus-visible { outline: 2px solid #087caa; outline-offset: -2px; }
