@@ -1229,6 +1229,21 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
    is no animation. */
 .sheet-type-card:hover:not(.sheet-type-card-disabled) { background: #edf7f7; }
 .author-workspace[data-chrome=dark] .sheet-type-card:hover:not(.sheet-type-card-disabled) { background: #334c62; }
+/* Issue #108 polish slice 46: the Calculated field dialog renders outside
+   .author-workspace (a sibling of it in Author.tsx), so the author hover
+   rules never reach it — its resting and primary rules name
+   .calculation-dialog explicitly, but no hover rule did. Its buttons, the
+   "Use as" and "Function reference" selects, the Name input and the
+   Expression textarea all measured flat: hovering changed nothing while
+   every other author control tinted. They now take the author hover
+   language exactly (buttons: border + #edf7f7; primary: #126e76; fields:
+   #edf7f7 background only). The dialog's resting colors are fixed light
+   (it has no dark-chrome variant), so no dark variant is added. Field
+   rules are background-only, so resting geometry is identical and there
+   is no animation. */
+.calculation-dialog button:hover:not(:disabled) { border-color: #157f88; background: #edf7f7; }
+.calculation-dialog .primary-button:hover:not(:disabled) { background: #126e76; color: white; }
+.calculation-dialog input:hover:not(:disabled), .calculation-dialog select:hover:not(:disabled), .calculation-dialog textarea:hover:not(:disabled) { background: #edf7f7; }
 .settings-palette { display: flex; gap: 4px; margin-top: 8px; }
 .settings-palette span { width: 24px; height: 16px; border: 1px solid var(--chrome-border, #c9d8de); }
 .analysis-settings-dialog button[aria-disabled="true"] { color: var(--chrome-muted, #536879); cursor: not-allowed; }
