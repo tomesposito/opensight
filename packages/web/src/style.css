@@ -157,6 +157,17 @@ main.author-main { max-width: none; padding: 16px; padding-top: 0; }
 h1 { margin: 0; font-size: clamp(23px, 3vw, 32px); font-weight: 650; letter-spacing: -.7px; }
 .phase-badge { font-size: 11px; font-weight: 650; background: #e4eef0; color: #346773; padding: 7px 10px; border-radius: 5px; white-space: nowrap; }
 .fixture-notice { background: #eaf2f3; border-left: 3px solid #157f88; padding: 13px 16px; margin: 24px 0; line-height: 1.6; font-size: 13px; color: #365764; }
+/* Issue #108 polish slice 34: the fixture-notice "Open Home" link (Dashboard
+   fixture previews: "Questions are unavailable for definition previews. Open
+   Home to explore sample sales data.") was the last user-facing control with
+   zero hover state — a fresh behavioral hover audit (real mouse hover +
+   computed-style delta, Chromium) found it on the Developer fixture preview
+   page; the landing thread stays complete since slice 29. The app-wide
+   menu-item tint (#eaf3f7, slices 16/21/25/26/30/32) is invisible against the
+   notice's own #eaf2f3 background, so the link takes the palette's darker
+   blue-gray step (#d4dfe7); background only, so resting geometry is
+   identical. Static, no animation. */
+.fixture-notice a:hover { background: #d4dfe7; }
 .sheet-tabs { display: flex; gap: 20px; border-bottom: 1px solid #d9e3e8; margin-bottom: 22px; }
 .sheet-tabs button { border: 0; border-bottom: 3px solid transparent; padding: 12px 0; background: transparent; color: #526c7a; font-weight: 650; font-size: 14px; }
 .sheet-tabs button[aria-current] { color: #126e76; border-color: #157f88; }
