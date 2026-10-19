@@ -364,6 +364,25 @@ button:disabled { cursor: default; opacity: .5; }
    animation. */
 .author-workspace input[type=search]:hover:not(:disabled) { background: #edf7f7; }
 .author-workspace[data-chrome=dark] input[type=search]:hover:not(:disabled) { background: #334c62; }
+/* Issue #108 polish slice 42: the author workspace's disclosure summaries
+   had no hover state at all — the author hover rules cover buttons, selects,
+   color inputs and search inputs, and the global summary rules give only
+   the pointer cursor, the focus outline and the slice-15 :active press. A
+   behavioral audit that included <summary> elements on the author route for
+   the first time (real mouse hover, :hover and hit-test confirmed) measured
+   transparent -> transparent or white -> white on all ten: the builder-panel
+   headers ("Data" 188x35, "Visuals" 214x35, "Properties" 218x35), the Data
+   panel's field-group summaries ("Geography"/"Metadata"/"Sales", 172x25),
+   "Parameters" (172x17), the Properties panel's property-section summaries
+   ("Analysis theme", 202x17), and the author-tools summaries ("Local drafts
+   (1)" 99x17, "Import bundle" 93x17). The header's .author-menu summary
+   already has its own header hover and is not in this group. These summaries
+   now take the author buttons' hover tint (#edf7f7); dark chrome takes the
+   dark button hover background (#334c62) via a more specific variant, as in
+   slices 36/37/38. Background only, so resting geometry is identical and
+   there is no animation. */
+.author-workspace .builder-panel > summary:hover, .author-workspace .field-group > summary:hover, .author-workspace .property-section > summary:hover, .author-workspace .parameter-editor > summary:hover, .author-workspace .local-drafts > summary:hover, .author-workspace .bundle-import summary:hover { background: #edf7f7; }
+.author-workspace[data-chrome=dark] .builder-panel > summary:hover, .author-workspace[data-chrome=dark] .field-group > summary:hover, .author-workspace[data-chrome=dark] .property-section > summary:hover, .author-workspace[data-chrome=dark] .parameter-editor > summary:hover, .author-workspace[data-chrome=dark] .local-drafts > summary:hover, .author-workspace[data-chrome=dark] .bundle-import summary:hover { background: #334c62; }
 .author-topbar { display: flex; align-items: center; flex-wrap: wrap; gap: 14px; }
 .author-topbar .analysis-title { flex: 1; min-width: 200px; }
 .author-topbar .analysis-title input { font-size: 23px; font-weight: 600; background: transparent; border-color: transparent; padding-left: 0; }
