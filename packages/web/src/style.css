@@ -874,6 +874,19 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 /* Slice 31 (#108): the prep document-bar selects (saved/imported dataset
    pickers) had zero hover feedback — take the surface's button hover tint. */
 .data-prep select:hover:not(:disabled) { background: #edf6fc; }
+/* Slice 39 (#108): the prep inputs and textareas had zero hover feedback —
+   the last members of the resting-rule group (.data-prep input, select,
+   textarea) without a hover state. A fresh behavioral hover audit of the
+   preparation surface (real mouse hover, computed-style delta, Chromium,
+   demo route) measured white -> white on the document-bar dataset-name
+   input (280x28) and the steps-panel "Search steps" input (183x30), while
+   every button and the Connected source select beside them tinted. The
+   step editors' text inputs and expression/values textareas share the
+   same resting rule and the same gap. Inputs and textareas now take the
+   surface's own hover tint (#edf6fc, buttons slice-31 select language).
+   Background only, so resting geometry is identical and there is no
+   animation. */
+.data-prep input:hover:not(:disabled), .data-prep textarea:hover:not(:disabled) { background: #edf6fc; }
 .data-prep button:focus-visible, .data-prep input:focus-visible, .data-prep select:focus-visible, .data-prep textarea:focus-visible { outline: 3px solid #1681b9; outline-offset: 2px; }
 .data-prep button:disabled { cursor: default; opacity: .5; }
 .prep-document-bar { flex-wrap: wrap; padding: 8px; background: #edf2f6; border: 1px solid #c9d3dc; }
