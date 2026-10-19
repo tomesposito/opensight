@@ -63,6 +63,15 @@ select { background: #fff; border: 1px solid #c9d8de; border-radius: 6px; paddin
    the dialog's established button hover tint (#edf7fc, same rule as above);
    background only, so resting geometry is identical. Static, no animation. */
 .create-analysis-dialog select:hover:not(:disabled) { background: #edf7fc; }
+/* Issue #108 polish slice 48: the dialog's dataset search input
+   (.dataset-picker-search input, "Search datasets by name") was the last
+   control in the Create Analysis dialog with zero hover state — the slice
+   48 behavioral audit opened the dialog and measured white -> white on it
+   at 420x34, while its buttons and the pagination select beside it tinted.
+   It takes the dialog's established hover tint (#edf7fc, the button/select
+   rules above); background only, so resting geometry is identical and the
+   search icon (an absolutely-positioned sibling svg) is unaffected. */
+.create-analysis-dialog input[type=search]:hover:not(:disabled) { background: #edf7fc; }
 .create-analysis-dialog button:disabled { color: #767b80; border-color: #e0e1e4; cursor: default; }
 .create-analysis-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 28px; }
 .create-analysis-heading h2 { font: bold 16px/1.5 Arial, "Helvetica Neue", Helvetica, sans-serif; margin: 0; }
