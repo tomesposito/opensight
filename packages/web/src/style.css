@@ -1172,6 +1172,24 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .analysis-file-dialog label { display: grid; gap: 4px; }
 .analysis-file-dialog input { width: 100%; min-width: 0; padding: 4px 8px; border: 1px solid var(--chrome-border, #c9d8de); border-radius: 5px; background: var(--chrome-surface, #fff); color: inherit; }
 .analysis-file-dialog .dialog-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+/* Issue #108 polish slice 44: the analysis file dialogs' text inputs and
+   textareas (Save-as-Analysis title, New Sheet name, Layout Settings
+   numeric fields, Analysis Settings name and description) had no hover
+   state at all — the author hover rules cover buttons, selects, color
+   inputs and search inputs, and route audits never open a dialog, so the
+   dialog fields were never measured. A behavioral audit that opens the
+   New Sheet and Analysis Settings dialogs (real mouse hover, :hover and
+   hit-test confirmed) measured white -> white on the Sheet name input
+   (430x28), the Analysis name input (430x28) and the Description
+   textarea (430x64), while the same dialogs' buttons and selects
+   tinted. Text inputs and textareas now take the author buttons' hover
+   tint (#edf7f7); dark chrome takes the dark button hover background
+   (#334c62) via a more specific variant, as in slices 36/37/38. Radio
+   and checkbox inputs keep their native rendering (slices 33/37/38
+   precedent). Background only, so resting geometry is identical and
+   there is no animation. */
+.analysis-file-dialog input:hover:not(:disabled):not([type=radio]):not([type=checkbox]), .analysis-file-dialog textarea:hover:not(:disabled) { background: #edf7f7; }
+.author-workspace[data-chrome=dark] .analysis-file-dialog input:hover:not(:disabled):not([type=radio]):not([type=checkbox]), .author-workspace[data-chrome=dark] .analysis-file-dialog textarea:hover:not(:disabled) { background: #334c62; }
 
 /* Keep the snapshot laid out for accurate scroll offsets, out of screen view. */
 .analysis-print-root { position: fixed; left: -100000px; top: 0; width: 1000px; visibility: hidden; pointer-events: none; }
