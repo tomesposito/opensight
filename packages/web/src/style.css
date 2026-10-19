@@ -1217,6 +1217,18 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .sheet-type-card strong { display: block; }
 .sheet-type-card span span { display: block; color: var(--chrome-muted, #536879); font-size: 12px; }
 .sheet-type-card-disabled { cursor: not-allowed; opacity: 0.75; background: var(--chrome-subtle, #f2f6f8); }
+/* Issue #108 polish slice 45: the New Sheet dialog's sheet-type cards are
+   clickable selection cards (pointer cursor, bordered, padded) but had no
+   hover state at all — slice 44's dialog audit measured the enabled
+   Interactive card's label flat on hover while the same dialog's buttons,
+   selects, inputs and textareas all tinted. The enabled card now takes
+   the author hover tint (#edf7f7); dark chrome takes the dark variant
+   (#334c62), as in slices 36/37/38/44. The disabled Pixel-Perfect card is
+   excluded: it keeps its subtle resting background and not-allowed
+   cursor. Background only, so resting geometry is identical and there
+   is no animation. */
+.sheet-type-card:hover:not(.sheet-type-card-disabled) { background: #edf7f7; }
+.author-workspace[data-chrome=dark] .sheet-type-card:hover:not(.sheet-type-card-disabled) { background: #334c62; }
 .settings-palette { display: flex; gap: 4px; margin-top: 8px; }
 .settings-palette span { width: 24px; height: 16px; border: 1px solid var(--chrome-border, #c9d8de); }
 .analysis-settings-dialog button[aria-disabled="true"] { color: var(--chrome-muted, #536879); cursor: not-allowed; }
