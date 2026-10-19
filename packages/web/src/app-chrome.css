@@ -72,6 +72,7 @@
 .app-shell .empty-page-state .empty-state-secondary { color: #126e76; }
 .navigation-toggle { display: none; align-items: center; justify-content: center; flex: none; width: 32px; height: 32px; padding: 0; font-size: 18px; border: 1px solid #526c7a; border-radius: 4px; background: transparent; color: #fff; }
 .product-header .navigation-toggle:hover:not(:disabled) { background: #365764; }
+.author-workspace .app-header .navigation-toggle:hover:not(:disabled) { background: #365764; }
 .navigation-scrim { display: none; position: fixed; inset: var(--app-navigation-top, var(--app-band)) 0 0; border: 0; padding: 0; background: #14253655; z-index: 58; }
 .app-shell[data-page=author] { --app-rail: 0px; }
 .app-shell[data-page=author] .product-navigation { display: none; width: 224px; }
