@@ -331,6 +331,22 @@ button:disabled { cursor: default; opacity: .5; }
    resting geometry is identical and there is no animation. */
 .author-workspace select:hover:not(:disabled) { background: #edf7f7; }
 .author-workspace[data-chrome=dark] select:hover:not(:disabled) { background: #334c62; }
+/* Issue #108 polish slice 37: author-workspace color inputs (the Analysis
+   theme palette swatches and theme color fields, the formatting and card
+   color pickers) had no hover state at all — the author hover rules cover
+   only buttons and selects, so hovering a swatch changed nothing while the
+   controls beside it tinted. A behavioral audit with every property section
+   expanded (real mouse hover, :hover and hit-test confirmed) measured
+   rgb(239,239,239) -> rgb(239,239,239) on the palette swatches, the largest
+   real zero-hover class left on the author surface (8 inputs). Color inputs
+   now take the author buttons' hover language (background #edf7f7 + border
+   #157f88 — the border and padding frame is most of what a native swatch
+   control shows around its color well); dark chrome takes the dark button
+   hover background (#334c62) via a more specific variant, as in slice 36.
+   Paint-only (background + border-color), so resting geometry is identical
+   and there is no animation. */
+.author-workspace input[type=color]:hover:not(:disabled) { background: #edf7f7; border-color: #157f88; }
+.author-workspace[data-chrome=dark] input[type=color]:hover:not(:disabled) { background: #334c62; }
 .author-topbar { display: flex; align-items: center; flex-wrap: wrap; gap: 14px; }
 .author-topbar .analysis-title { flex: 1; min-width: 200px; }
 .author-topbar .analysis-title input { font-size: 23px; font-weight: 600; background: transparent; border-color: transparent; padding-left: 0; }
