@@ -31,6 +31,21 @@
    Background only, so resting geometry is identical; disabled buttons keep
    their flat state. Static (no animation), so no reduced-motion variant. */
 .data-dialog button:hover:not(:disabled):not(.data-primary):not([aria-selected=true]) { background: #eaf3f7; }
+/* Issue #108 polish slice 48: the data dialogs' fields (the create-dataset
+   dialog's "Search data sources" input, the connector config form's text
+   inputs and selects in ManageData / DatasetDetail / DatasetRefresh — all
+   .data-dialog via DataSectionUI) had zero hover state: a behavioral hover
+   probe (real mouse + computed-style delta, replica carrying this stylesheet)
+   measured the search input (260x28), a text input and a select white ->
+   white while the dialog buttons beside them tinted (slices 16/30). Slices
+   21/27 gave the .data-page select and search input this same tint but never
+   the dialog fields, which share the data surface's field style (white bg,
+   #9eb0ba border). They take the same established menu-item tint (#eaf3f7).
+   Native radio/checkbox/file inputs keep their OS rendering (the slice-44
+   exclusion pattern). Background only, so resting geometry is identical;
+   disabled fields keep their flat state. Static (no animation), so no
+   reduced-motion variant. */
+.data-dialog input:hover:not(:disabled):not([type=radio]):not([type=checkbox]):not([type=file]), .data-dialog select:hover:not(:disabled) { background: #eaf3f7; }
 /* Issue #108 polish slice 21: the Data landing's dataset filter select was the
    last interactive control on the surface with zero hover feedback — the fresh
    audit found the surrounding buttons and tabs already take the data page's
@@ -47,6 +62,17 @@
    changed nothing. It takes the same tint; disabled inputs keep their flat
    state. Background only, so resting geometry is identical. */
 .data-page input[type=search]:hover:not(:disabled) { background: #eaf3f7; }
+/* Issue #108 polish slice 48: the create-dataset dialog's search inputs
+   ("Search data sources" / "Search connectors", .data-dialog-tools) had
+   zero hover state — a fresh behavioral hover audit that opened both
+   creation dialogs (real mouse hover, :hover and hit-test confirmed)
+   measured white -> white on them at 260x28, while the dialog's buttons
+   beside them tinted (slice 30). Slice 27's rule covered .data-page search
+   inputs but not .data-dialog ones — the same unfinished-member pattern
+   slice 30 fixed for dialog buttons. They take the data surface's
+   established menu-item tint (#eaf3f7). Background only, so resting
+   geometry is identical; disabled inputs keep their flat state. */
+.data-dialog input[type=search]:hover:not(:disabled) { background: #eaf3f7; }
 .data-page input, .data-dialog input, .data-page select, .data-dialog select { padding: 4px 8px; border: 1px solid #9eb0ba; border-radius: 3px; background: white; color: inherit; }
 .data-tools { margin: 0 0 12px; }
 .data-tools input[type=search], .data-dialog-tools input[type=search] { width: 260px; max-width: 100%; }
