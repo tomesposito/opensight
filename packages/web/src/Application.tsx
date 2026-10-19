@@ -67,7 +67,7 @@ function ApplicationWorkspace({ api, fixtures }: { api: ReturnType<typeof create
     {access.mode === 'local' && <aside className="fixture-demo-banner workspace-banner" aria-label="Local data workspace"><span><strong>Local workspace</strong> · Files stay on this computer · Uploads survive restarts and expire after 24 hours</span>{sampleLoaded && <><span>Sample sales data loaded · Synthetic data</span><button type="button" onClick={() => setSampleLoaded(false)}>Remove sample data</button></>}</aside>}
   </>;
   const content = () => {
-    if (!route) return <section><h1>Page not found</h1><p>Choose a section in the navigation to continue.</p><AppLink to={{ page: 'home' }} navigate={navigate}>Go to Home</AppLink></section>;
+    if (!route) return <section className="not-found-page"><h1>Page not found</h1><p>Choose a section in the navigation to continue.</p><AppLink to={{ page: 'home' }} navigate={navigate}>Go to Home</AppLink></section>;
     if (problem) return <RouteNotice problem={problem} />;
     switch (route.page) {
       case 'home': return <section className="home-page" aria-label="Home">{access.mode === 'local' && !sampleLoaded ? <LocalEmptyState onSources={() => navigate({ page: 'data-sources' })} onSample={() => setSampleLoaded(true)} /> : sample ? <Dashboard key="sample" fixture={sample} sample /> : <p role="status">The sample dashboard is not included in this build. Ask the operator to restore the pinned sales sample.</p>}</section>;

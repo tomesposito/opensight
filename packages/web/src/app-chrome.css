@@ -140,6 +140,16 @@
    takes the same app-wide menu-item hover tint (#eaf3f7, slices 16/21/25/26);
    background only, so resting geometry is identical. Static, no animation. */
 .folder-empty-state a:hover { background: #eaf3f7; }
+/* Issue #108 polish slice 43: the Page-not-found "Go to Home" link
+   (.not-found-page a, any unknown route) was the last user-facing control
+   with zero hover state — a fresh whole-document behavioral hover audit
+   (real mouse hover + computed-style delta, Chromium) over 11 routes found
+   every other zero-hover hit explained (opened-menu summaries resting at
+   their hover/pressed tint, current-page nav links resting at their hover
+   tint by design, the by-design native favorites checkbox). It takes the
+   same app-wide menu-item hover tint (#eaf3f7, slices 16/21/25/26/32);
+   background only, so resting geometry is identical. Static, no animation. */
+.not-found-page a:hover { background: #eaf3f7; }
 .folder-empty-state { min-height: 320px; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
 .folder-empty-state > svg { color: #157f88; margin-bottom: 24px; }
 .folder-empty-state p { max-width: 560px; margin: 0 0 12px; }
