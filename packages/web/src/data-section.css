@@ -133,6 +133,7 @@ details[open] .data-menu-items { animation: menu-open 150ms ease-out; }
 .data-connector-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .data-connector-tile { display: flex; gap: 12px; align-items: center; padding: 16px 12px; border: 1px solid #d3dfe5; border-radius: 4px; cursor: pointer; }
 .data-connector-tile[data-selected=true] { border-color: #176b88; background: #f0f8fb; }
+.data-connector-tile:hover:not([data-selected=true]):not(:has(> input:disabled)) { background: #eaf3f7; }
 .data-connector-tile > span:first-child { font-size: 24px; color: #387d99; }
 .data-connector-tile strong { font-weight: 500; }
 .data-connector-tile small { display: block; color: #5a6d78; }
