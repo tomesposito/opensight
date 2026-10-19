@@ -318,6 +318,19 @@ button:disabled { cursor: default; opacity: .5; }
 .author-workspace button:hover:not(:disabled), .author-layout button:hover:not(:disabled) { border-color: #157f88; background: #edf7f7; }
 .author-workspace .primary-button, .author-layout .primary-button, .calculation-dialog .primary-button { background: #157f88; color: white; border-color: #157f88; }
 .author-workspace .primary-button:hover:not(:disabled) { background: #126e76; color: white; }
+/* Issue #108 polish slice 36: author-workspace selects (the Properties panel's
+   palette and font-family pickers, field-well and dialog selects) had no hover
+   state at all — the author hover rule above covers only buttons, so hovering
+   a select changed nothing while the buttons beside it tinted. A behavioral
+   audit with the Analysis theme section expanded (real mouse hover, :hover
+   confirmed) measured white -> white on the palette select. Selects now take
+   the author buttons' hover tint (#edf7f7); dark chrome takes the dark button
+   hover (#334c62) via a more specific variant, since the light rule would
+   otherwise outrank the dark resting :is() background rule. The chrome-switch
+   select keeps its own more specific header hover. Background only, so
+   resting geometry is identical and there is no animation. */
+.author-workspace select:hover:not(:disabled) { background: #edf7f7; }
+.author-workspace[data-chrome=dark] select:hover:not(:disabled) { background: #334c62; }
 .author-topbar { display: flex; align-items: center; flex-wrap: wrap; gap: 14px; }
 .author-topbar .analysis-title { flex: 1; min-width: 200px; }
 .author-topbar .analysis-title input { font-size: 23px; font-weight: 600; background: transparent; border-color: transparent; padding-left: 0; }
