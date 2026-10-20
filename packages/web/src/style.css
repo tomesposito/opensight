@@ -159,6 +159,21 @@ select { background: #fff; border: 1px solid #c9d8de; border-radius: 6px; paddin
 .resource-id { flex: 1; min-width: 180px; }
 .api-picker input { min-width: 0; padding: 10px; border: 1px solid #c9d8de; border-radius: 6px; }
 .api-picker button { padding: 11px 18px; border: 0; border-radius: 6px; background: #157f88; color: white; }
+/* Issue #108 polish slice 57: the API explorer's picker form (.api-picker
+   in ApiExplorer — Resource select, Resource ID input, Load definition
+   button) had no hover state at all. It renders in <main> inside
+   .app-shell, outside .author-workspace and .data-page, so none of the
+   author/data/dialog hover rules reach it; the Author page's own
+   .api-picker instance sits inside .author-workspace and is already
+   covered by the author hover rules (equal specificity, later in this
+   file, so it keeps its author hover). The submit button now takes the
+   app-wide primary hover step (#157f88 -> #126e76) and the select and
+   input take this file's field hover tint (#edf7f7, the author
+   select/input language). Background only, so resting geometry is
+   identical. Static, so no reduced-motion variant is needed; disabled
+   controls keep their flat resting state. */
+.api-picker button:hover:not(:disabled) { background: #126e76; }
+.api-picker select:hover:not(:disabled), .api-picker input:hover:not(:disabled) { background: #edf7f7; }
 main { padding: 34px 36px; max-width: 1680px; margin: auto; }
 main.author-main { max-width: none; padding: 16px; padding-top: 0; }
 .dashboard-heading { display: flex; justify-content: space-between; align-items: center; gap: 20px; }
