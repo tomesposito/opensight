@@ -53,13 +53,13 @@ test('header keeps identity, menus, working O entry, canvas actions and NEW LOOK
   assert.ok(answer);
   assert.equal(panel.findByProps({ className: 'o-answer' }), answer, 'Q answers belong to the side panel');
   assert.equal(nav.findAll(n => n.props.className === 'o-answer').length, 0, 'Q answers are outside the toolbar');
-  await ui.click('Close Ask Q');
+  await ui.click('Close Ask O');
   assert.equal(ui.find('div', p => p.role === 'dialog'), undefined);
   await act(() => nav.findByProps({ className: 'q-trigger' }).props.onClick());
   await act(() => ui.renderer.root.findByProps({ id: 'o-question' }).props.onChange({ target: { value: 'sum revenue by region' } }));
   await act(() => ui.renderer.root.findByProps({ className: 'o-bar' }).props.onSubmit({ preventDefault() {} }));
   await ui.click('ADD TO ANALYSIS');
-  await ui.click('Close Ask Q');
+  await ui.click('Close Ask O');
   await ui.click('Save draft');
   assert.equal(activeSheet(ui.saved()).visuals.length, 2);
 });

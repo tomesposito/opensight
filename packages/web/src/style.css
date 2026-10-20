@@ -786,7 +786,7 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .automation-notice h2 { margin-top: 0; }
 .automation-notice p { line-height: 1.6; }
 .automation-notice button:disabled { cursor: not-allowed; opacity: .6; }
-/* Interpreter content is shared by the Author and Home ASK Q panel. */
+/* Interpreter content is shared by the Author and Home ASK O panel. */
 .o-entry { margin: 8px 0; padding: 10px 14px; border: 1px solid var(--border, #cbd5e1); border-radius: 6px; background: var(--panel, #fff); color: var(--text, #15283d); }
 .o-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 .o-bar label { font-weight: 650; }
@@ -812,7 +812,7 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .q-trigger { display: flex; align-items: center; gap: 8px; min-height: 28px; max-width: 100%; padding: 4px 8px; border: 1px solid #c9d8de; border-radius: 5px; background: #fff; color: #19384a; text-align: left; font: 12px Arial, "Helvetica Neue", Helvetica, sans-serif; }
 .author-workspace[data-chrome] .author-menu > .q-trigger { flex: 0 1 clamp(220px, 18vw, 280px); min-width: 0; margin: 4px auto; padding: 4px 8px; border: 1px solid var(--header-border); border-radius: 20px; background: var(--header-pressed); }
 .q-trigger .o-mark { flex-shrink: 0; }
-/* Standalone Ask Q trigger (home sample dashboard, dashboard view) takes the
+/* Standalone Ask O trigger (home sample dashboard, dashboard view) takes the
    established menu-item hover tint (#eaf3f7), same state language as the
    data-page buttons and tabs (slices 16/19/21). The author-chrome rendering is
    governed by the more specific .author-menu > button:hover rule, which keeps
@@ -824,7 +824,7 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
   .author-workspace[data-chrome] .author-menu > .q-trigger { flex: 1 1 240px; }
 }
 /* Above sticky app/editor headers (60), below notifications and native modals.
-   Issue #108 slice 19: the Ask Q side panel slides in from the right edge
+   Issue #108 slice 19: the Ask O side panel slides in from the right edge
    (fade + translateX) when it mounts instead of popping in one frame, on the
    same 150ms ease-out beat as the dialog (slice 9), popover (slice 10), toast
    (slice 11), and visual card (slice 13) entry transitions. The panel mounts

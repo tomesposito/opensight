@@ -47,7 +47,7 @@ async function mount(t, element, access = demoAccess) {
   };
 }
 
-for (const surface of ['Home', 'Author']) test(`${surface}: Ask Q opens a named dialog, focuses the query and restores trigger focus on Escape and Close`, async t => {
+for (const surface of ['Home', 'Author']) test(`${surface}: Ask O opens a named dialog, focuses the query and restores trigger focus on Escape and Close`, async t => {
   const ui = await mount(t, surface === 'Author' ? createElement(Author) : createElement(Dashboard, { fixture, sample: true }));
   assert.equal(ui.renderer.root.findAllByProps({ role: 'dialog' }).length, 0);
   assert.equal(ui.renderer.root.findAllByType(OEntry).length, 0, 'no inline interpreter');
@@ -56,7 +56,7 @@ for (const surface of ['Home', 'Author']) test(`${surface}: Ask Q opens a named 
   await act(() => ui.trigger().props.onClick());
   const panel = ui.panel();
   assert.equal(ui.trigger().props['aria-controls'], panel.props.id);
-  assert.equal(ui.renderer.root.findByProps({ id: panel.props['aria-labelledby'] }).props.children, 'ASK Q');
+  assert.equal(ui.renderer.root.findByProps({ id: panel.props['aria-labelledby'] }).props.children, 'ASK O');
   assert.equal(ui.focused(), 'question');
   assert.equal(ui.trigger().props['aria-expanded'], true);
   await ui.ask('revenue by region');
@@ -92,7 +92,7 @@ for (const surface of ['Home', 'Author']) test(`${surface}: Ask Q opens a named 
   await act(() => ui.trigger().props.onClick());
   assert.equal(ui.focused(), 'question');
   assert.equal(ui.renderer.root.findByProps({ id: 'o-question' }).props.value, '', 'reopening starts a fresh question');
-  await ui.click('Close Ask Q');
+  await ui.click('Close Ask O');
   assert.equal(ui.renderer.root.findAllByProps({ role: 'dialog' }).length, 0);
   assert.equal(ui.focused(), 'trigger');
 });
@@ -116,7 +116,7 @@ test('hosted dashboard keeps published query scope, aborts preview on close and 
   assert.equal(calls.length, 1);
   assert.equal(calls[0][1], 'published');
   assert.equal(calls[0][2].aborted, false);
-  await ui.click('Close Ask Q');
+  await ui.click('Close Ask O');
   assert.equal(calls[0][2].aborted, true);
   await act(() => ui.trigger().props.onClick());
   await ui.access({ ...access, session: { ...access.session, role: 'reader' } });

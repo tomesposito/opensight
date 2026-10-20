@@ -129,7 +129,7 @@ describe('toolbar/header geometry in offline Chromium', () => {
         // Reproduce the panel's fixed top edge; assert actual hit testing, not
         // just a numeric z-index, against both real sticky header selectors.
         const panel = document.createElement('div'); panel.className = 'q-side-panel';
-        panel.innerHTML = '<header class="q-panel-heading"><h2>ASK Q</h2><button>Close</button></header>';
+        panel.innerHTML = '<header class="q-panel-heading"><h2>ASK O</h2><button>Close</button></header>';
         document.querySelector('.author-workspace').append(panel);
         const close = panel.querySelector('button');
         const hit = () => { const r = close.getBoundingClientRect(); return document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2) === close; };

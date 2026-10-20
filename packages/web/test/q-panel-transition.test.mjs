@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { chromiumPage } from './chromium.mjs';
 
-// Issue #108 polish slice 19: the Ask Q side panel slides in from the right
+// Issue #108 polish slice 19: the Ask O side panel slides in from the right
 // edge (fade + translateX(24px)) when it mounts instead of popping in one
 // frame, on the same 150ms ease-out beat as the dialog (slice 9), popover
 // (slice 10), toast (slice 11), and visual card (slice 13) entry transitions.
