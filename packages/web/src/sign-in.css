@@ -7,6 +7,7 @@
 .sign-in-card h1 { margin: 0 0 20px; font-size: 18px; line-height: 1.4; letter-spacing: 0; }
 .sign-in-field { display: flex; flex-direction: column; gap: 4px; margin: 16px 0 0; font-weight: bold; }
 .sign-in-field input { width: 100%; min-width: 0; height: 36px; padding: 6px 8px; border: 1px solid #91a5af; border-radius: 3px; color: #19384a; background: #fff; font-weight: normal; }
+.sign-in-field input:hover:not(:disabled) { background: #eaf4f4; }
 .sign-in-check { display: flex; align-items: flex-start; gap: 8px; margin: 8px 0; cursor: pointer; }
 .sign-in-check input { margin: 3px 0 0; accent-color: #157f88; }
 .sign-in-help { color: #526c7a; font-size: 11px; margin: 4px 0 16px; }
