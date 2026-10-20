@@ -327,6 +327,18 @@ td { padding: 14px 12px; border-bottom: 1px solid #e7edef; font-variant-numeric:
 .first-run-config dd { margin: 6px 0 0; line-height: 1.6; color: #4c6573; }
 .first-run-docs { display: flex; align-items: baseline; flex-wrap: wrap; gap: 14px 24px; margin-top: 28px; font-size: 13px; }
 .first-run-docs a { color: #126e76; text-underline-offset: 3px; }
+/* Issue #108 polish slice 63: the first-run docs links (the "Setup guides"
+   row in FirstRun.tsx) had no hover state at all — the page is standalone
+   (SessionGate renders it before any session, outside .app-shell), so no
+   app-shell or author hover rule reaches it, and its own stylesheet rules
+   gave both of its buttons a hover step (.first-run button:hover,
+   .first-run-primary:hover) while the four setup-guide links changed
+   nothing on hover, unlike links on every other surface (fixture-notice,
+   my-stuff, recent-pages, folder and not-found links all step). The links
+   now take the first-run surface's own button hover tint (#eaf3f4) as a
+   background step, underline kept. Background only, so resting geometry
+   is identical and there is no animation. */
+.first-run-docs a:hover { background: #eaf3f4; }
 .first-run-docs span { flex-basis: 100%; color: #4c6573; }
 .fixture-demo-banner { background: #162e40; color: #fff; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 24px; font-size: 14px; }
 @media (max-width: 760px) {
