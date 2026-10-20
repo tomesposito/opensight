@@ -121,7 +121,7 @@ test('Q&A opens its existing panel from Home and Author, including when already 
     assert.equal(ui.renderer.root.findAllByProps({ className: 'q-side-panel' }).length, 1);
     assert.equal(ui.document.activeElement, ui.question);
     await ui.open(); await ui.run('Open Q&A panel'); assert.equal(ui.document.activeElement, ui.question);
-    await ui.click('Close Ask Q');
+    await ui.click('Close Ask O');
   }
 });
 test('commands unregister on route changes and unavailable Author or Q contexts add none', async t => {

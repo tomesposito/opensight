@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { chromiumPage } from './chromium.mjs';
 
-// Issue #108 polish slice 22: hover feedback for the standalone Ask Q trigger
+// Issue #108 polish slice 22: hover feedback for the standalone Ask O trigger
 // button (.q-trigger). A fresh interactive-state audit on the fixture demo
 // found the trigger had zero hover feedback in its standalone rendering
 // (home sample dashboard, dashboard view): hovering changed nothing, while
@@ -19,7 +19,7 @@ const css = await readFile(new URL('../src/style.css', import.meta.url), 'utf8')
 
 const hoverRule = css.match(/\.q-trigger:hover:not\(:disabled\)\s*\{([^}]*)\}/);
 
-test('the Ask Q trigger has a hover state using the menu tint', () => {
+test('the Ask O trigger has a hover state using the menu tint', () => {
   assert.ok(hoverRule, 'expected .q-trigger:hover:not(:disabled)');
   assert.match(hoverRule[1], /background:\s*#eaf3f7/);
 });
@@ -48,13 +48,13 @@ test('the author-chrome button hover rule still outranks the new rule', () => {
   assert.ok(!/!important/.test(hoverRule[1]), 'standalone hover rule must not use !important');
 });
 
-describe('Ask Q trigger hover in offline Chromium', () => {
+describe('Ask O trigger hover in offline Chromium', () => {
   let page;
   before(async () => { page = await chromiumPage(); });
   after(async () => { await page?.close(); });
 
   test('applying the hover rule changes the visual state with identical geometry', async () => {
-    await page.setContent(`<style>${css}</style><div class="q-entry"><button type="button" class="q-trigger"><span class="o-mark">Q</span><span class="q-trigger-label">Ask a question about Local sales</span></button><button type="button" class="q-trigger" disabled><span class="o-mark">Q</span><span class="q-trigger-label">Ask a question about Local sales</span></button></div>`);
+    await page.setContent(`<style>${css}</style><div class="q-entry"><button type="button" class="q-trigger"><span class="o-mark">O</span><span class="q-trigger-label">Ask a question about Local sales</span></button><button type="button" class="q-trigger" disabled><span class="o-mark">O</span><span class="q-trigger-label">Ask a question about Local sales</span></button></div>`);
     const actual = await page.evaluate(() => {
       const rules = [];
       for (const sheet of document.styleSheets) {

@@ -163,7 +163,7 @@ test('Author leaves typing and composition alone, retaining composition state ac
   await ui.key({ key: 's', ctrlKey: true }); assert.equal(ui.saved().draft.title, 'Composing');
 });
 
-test('Escape closes existing calculation/import dialogs through cancel and closes Ask Q from its input', async t => {
+test('Escape closes existing calculation/import dialogs through cancel and closes Ask O from its input', async t => {
   const ui = await mount(t);
   await ui.click('+ Calculated field');
   assert.equal(ui.renderer.root.findByType('dialog').props.className, 'calculation-dialog');
@@ -186,7 +186,7 @@ test('Escape closes existing calculation/import dialogs through cancel and close
   assert.equal(ui.document.activeElement, ui.trigger);
 });
 
-test('help above Ask Q owns Escape; a second Escape closes Q', async t => {
+test('help above Ask O owns Escape; a second Escape closes Q', async t => {
   const ui = await mount(t);
   await act(() => ui.renderer.root.findByProps({ className: 'q-trigger' }).props.onClick());
   ui.canvas.focus(); await ui.key({ key: '?' });

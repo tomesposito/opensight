@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { chromiumPage } from './chromium.mjs';
 
-// Issue #108 polish slice 58: hover feedback for the Ask Q side
+// Issue #108 polish slice 58: hover feedback for the Ask O side
 // panel's search field (.q-side-panel .o-bar input — OEntry's "Ask a
 // question" input, type=search, QSidePanel.tsx). Static audit
 // follow-on to slices 53-57: the panel gives its buttons a hover step
