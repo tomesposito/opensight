@@ -604,7 +604,7 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .command-palette ul { list-style: none; max-height: min(320px, 40dvh); overflow-y: auto; padding: 4px 8px; margin: 0; border-block: 1px solid var(--palette-border); }
 .command-palette li { padding: 8px; border-radius: 4px; overflow-wrap: anywhere; cursor: pointer; border-left: 4px solid transparent; }
 .command-palette li[aria-selected=true] { background: var(--palette-selected); border-left-color: #187199; }
-.command-palette li:hover { text-decoration: underline; }
+.command-palette li:hover { background: var(--palette-selected); text-decoration: underline; }
 .command-palette p { margin: 8px 16px; color: var(--palette-muted); }
 .author-workspace[data-chrome=dark] :is(.builder-panel, .controls-strip, button, input, select, textarea, .author-card-toolbar, .bundle-import) { color: var(--chrome-text); background-color: var(--chrome-surface); border-color: var(--chrome-border); }
 .author-workspace[data-chrome=dark] :is(label, .field-hint, .field-type, .author-save p, .canvas-label span, .field-wells legend) { color: var(--chrome-muted); }
@@ -1282,7 +1282,7 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .global-search ul { list-style: none; max-height: min(320px, 40dvh); overflow-y: auto; padding: 4px 8px; margin: 0 8px; }
 .global-search li.search-row { display: flex; align-items: center; gap: 8px; padding: 8px; border-radius: 4px; overflow-wrap: anywhere; cursor: pointer; border-left: 4px solid transparent; }
 .global-search li[aria-selected=true] { background: var(--palette-selected); border-left-color: #187199; }
-.global-search li:hover { text-decoration: underline; }
+.global-search li:hover { background: var(--palette-selected); text-decoration: underline; }
 .global-search .search-icon { width: 16px; height: 16px; flex: none; color: var(--palette-muted); }
 .global-search .search-name { flex: 1; min-width: 0; }
 .global-search time { flex: none; color: var(--palette-muted); white-space: nowrap; }
@@ -1305,3 +1305,14 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .command-palette header button:hover, .global-search header button:hover { background: #365764; }
 .command-palette input:hover:not(:disabled), .global-search > input:hover:not(:disabled) { background-color: var(--palette-selected); }
 .global-search .search-types button:hover:not([aria-pressed=true]) { background: var(--palette-selected); }
+/* Issue #108 polish slice 52: the palette twins' result rows were the
+   last controls in these dialogs whose hover painted nothing — a row
+   hover only underlined the text while the keyboard-selected row rests
+   fully tinted and slice 47 gave the Close buttons, inputs and chips
+   the selected tint on hover. A full-row click target that only
+   underlines reads as a text link and never shows its hit area, so the
+   rows now take var(--palette-selected) as their hover background (the
+   existing underline is kept). The selected row already rests at the
+   same tint, so its hover is unchanged; dark chrome resolves the var
+   to #293f55. Background only, so resting geometry is identical and
+   there is no animation. */
