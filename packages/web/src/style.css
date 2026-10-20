@@ -582,6 +582,18 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .action-status, .drill-navigation { display: flex; align-items: center; flex-wrap: wrap; gap: .4rem; padding: .5rem; font-size: .8rem; }
 .drill-navigation { border-bottom: 1px solid #dce5e7; }
 .drill-navigation button[aria-pressed="true"] { background: #157f88; color: white; }
+/* Issue #108 polish slice 61: the Dashboard's .action-status bar ("Reset
+   actions") renders in <main> inside .app-shell, outside .author-workspace,
+   so no :hover rule reached its button — the bar's only rule sets layout —
+   and hovering changed nothing while buttons on every other surface tint.
+   It takes style.css's generic button hover tint (#edf7f7, the author
+   button hover; slices 57/59/60). Background only, so resting geometry is
+   identical. Static, no animation. The Author instance of .action-status
+   already takes the same tint from the author rule (which also sets its
+   border-color, and whose dark-chrome variant has higher specificity), so
+   it is unchanged in effect; the disabled state (no active selection)
+   keeps its flat resting state. */
+.action-status button:hover:not(:disabled) { background: #edf7f7; }
 .table-scroll td button { color: #126a74; text-decoration: underline; }
 
 /* NEW LOOK controls the editor; the analysis theme independently styles its canvas. */
