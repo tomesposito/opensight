@@ -1080,6 +1080,17 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .job-management table { width: 100%; table-layout: fixed; border-collapse: collapse; margin: 16px 0; }
 .job-management td, .job-management th { padding: 8px; text-align: left; overflow-wrap: anywhere; vertical-align: top; border-bottom: 1px solid #cbd5e1; }
 .job-management button { white-space: normal; overflow-wrap: anywhere; }
+/* Issue #108 polish slice 60: the hosted Jobs page (.job-management —
+   "Refresh jobs and history", per-row "History"/"Run" buttons) renders in
+   <main> inside .app-shell, outside .author-workspace, .data-page,
+   .collection-card and .admin-settings, so no hover rule reached its
+   buttons; hovering changed nothing while buttons on every other surface
+   tint. They now take #edf7f7 — style.css's generic button hover tint
+   (.author-workspace button:hover, the slice-59 admin buttons).
+   Background only, so resting geometry is identical. Static, so no
+   reduced-motion variant is needed; disabled buttons (the page's busy
+   state) keep their flat resting state. */
+.job-management button:hover:not(:disabled) { background: #edf7f7; }
 .admin-settings [role="dialog"] { margin-top: 24px; overflow-wrap: anywhere; }
 .admin-settings [role="dialog"] fieldset { display: grid; gap: 12px; }
 .admin-settings [role="dialog"] select { max-width: 100%; }
