@@ -71,7 +71,7 @@ test('the hover step coexists with the embed theme vars and resting rules', () =
       };
     });
     assert.equal(actual.ruleCount, 1);
-    assert.equal(actual.backgroundValue, '#d4dfe7');
+    assert.equal(actual.backgroundValue, 'rgb(212, 223, 231)');
     assert.equal(actual.rest.background, 'rgb(238, 243, 248)');
     assert.equal(actual.hovered.background, 'rgb(212, 223, 231)');
     assert.notEqual(actual.rest.background, actual.hovered.background);
