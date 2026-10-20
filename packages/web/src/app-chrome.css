@@ -182,6 +182,18 @@
 .collection-tools .primary-button, .collection-card .primary-button { display: inline-block; padding: 6px 12px; border: 1px solid #157f88; border-radius: 4px; background: #157f88; color: #fff; font-size: 12px; text-decoration: none; }
 .collection-card button, .collection-card select, .collection-card input { min-height: 28px; padding: 4px 8px; border: 1px solid #b9ced5; border-radius: 4px; background: #fff; color: #19384a; font: inherit; font-size: 12px; }
 .collection-card button:hover:not(:disabled) { background: #eaf4f4; }
+/* Issue #108 polish slice 64: inputs inside a collection card (the drafts
+   search field and rename field of the expanded LocalDrafts collection on
+   the Analyses home page) had no hover state — buttons in the same card
+   tint (#eaf4f4 above) and the pagination select tints (#eaf3f7, slice 23),
+   but no :hover rule in any stylesheet reaches a .collection-card input
+   (the search-input hover rules are scoped to .author-workspace /
+   .data-page). The fields now take #eaf3f7, the collection surface's own
+   field hover tint (the slice-23 pagination select in the same card);
+   background only, so resting geometry is identical. Radio/checkbox inputs
+   are excluded so the favorites-filter checkbox keeps its native rendering
+   (the data-dialog / admin-settings pattern), and file inputs likewise. */
+.collection-card input:hover:not(:disabled):not([type=radio]):not([type=checkbox]):not([type=file]) { background: #eaf3f7; }
 .collection-card .empty-state-secondary { border: 0; }
 .collection-card .empty-page-state { min-height: 300px; }
 .analyses-home .draft-collection { margin: 0; padding: 0; border: 0; }
