@@ -874,6 +874,23 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .admin-settings label { display: grid; gap: .4rem; flex: 1 1 14rem; }
 .admin-settings input, .admin-settings select { min-width: 0; width: 100%; padding: .65rem; }
 .admin-settings button { padding: .65rem 1rem; }
+/* Issue #108 polish slice 59: the admin surfaces (.admin-settings —
+   AI provider settings, Users and invitations, Operator user removal)
+   gave none of their controls a hover step. They render in <main>
+   inside .app-shell, outside .author-workspace and .data-page, so the
+   author/data/dialog hover rules never reach them, and hovering a
+   Save button, text field, or select changed nothing while every
+   other surface in the app tints on hover. They now take #edf7f7 —
+   style.css's one hover tint for both generic buttons
+   (.author-workspace button:hover) and fields (.author-workspace
+   select/input:hover, the .api-picker fields). Background only, so
+   resting geometry is identical. Static, so no reduced-motion
+   variant is needed; disabled controls keep their flat resting
+   state. Radio/checkbox inputs are excluded so the user-removal
+   dialog's native controls keep OS rendering (the data-dialog /
+   analysis-file-dialog exclusion pattern). */
+.admin-settings button:hover:not(:disabled) { background: #edf7f7; }
+.admin-settings input:hover:not(:disabled):not([type=radio]):not([type=checkbox]), .admin-settings select:hover:not(:disabled) { background: #edf7f7; }
 
 /* Connector gallery: docked details, clear availability, no simulated connections. */
 .data-sources { max-width: 1500px; margin: 0 auto; padding: 28px 32px; color: #26364a; }
