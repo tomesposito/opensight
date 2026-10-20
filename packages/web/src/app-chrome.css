@@ -69,6 +69,14 @@
 .app-shell .phase-badge { font-size: 11px; padding: 4px 8px; }
 .app-shell .workspace-banner { font-size: 12px; padding: 6px 32px; gap: 8px; background: #eaf4f4; color: #365764; border-bottom: 1px solid #c9d8de; }
 .app-shell .workspace-banner button { min-height: 28px; padding: 4px 8px; font-size: 12px; }
+/* Issue #108 polish slice 62: the workspace banner's "Remove sample data"
+   button had no hover feedback — the banner renders as an <aside> directly
+   inside .app-shell, outside <main> and every hover scope (author, data,
+   collection, admin), and its only rule sets size. It takes app-chrome's
+   own shell-control hover tint (#dceff0, the product-navigation hover);
+   the lighter #eaf3f7/#eaf4f4 tints would vanish against the banner's own
+   #eaf4f4 background. Background only, geometry identical, no animation. */
+.app-shell .workspace-banner button:hover:not(:disabled) { background: #dceff0; }
 .home-page > .fixture-notice { margin: 16px 0; padding: 8px 12px; font-size: 12px; }
 .home-page > .sheet-tabs { margin-bottom: 16px; gap: 24px; }
 .home-page > .sheet-tabs button { padding: 8px 0; font-size: 13px; }
