@@ -48,6 +48,15 @@
 .account-menu .account-panel { position: absolute; right: 0; top: calc(100% + 8px); width: min(260px, calc(100vw - 24px)); padding: 16px; background: #fff; color: #19384a; border: 1px solid #c9d8de; border-radius: 6px; box-shadow: 0 4px 16px #162e4026; z-index: 70; overflow-wrap: anywhere; }
 .account-panel p { font-size: 12px; margin: 8px 0 12px; color: #526c7a; }
 .product-header .account-panel button { padding: 6px 12px; min-height: 32px; border: 1px solid #157f88; border-radius: 4px; background: #157f88; color: #fff; font-size: 12px; }
+/* Issue #108 polish slice 51: the account panel's Sign out button is a
+   primary button (#157f88, white text) with no hover feedback on app
+   routes — it renders only in hosted mode, so demo-route audits never
+   reached it, and on the author route the generic author-workspace
+   button hover would paint its light tint under the white text. It now
+   takes the app-wide primary hover step (#157f88 -> #126e76); the
+   .account-menu segment keeps this rule above the author generic hover
+   rules. Background only, so resting geometry is identical. */
+.product-header .account-menu .account-panel button:hover:not(:disabled) { background: #126e76; }
 .app-shell > .section-nav, .app-shell > .admin-navigation .section-nav { padding: 0 32px; gap: 8px 24px; }
 .app-shell > .section-nav a, .app-shell > .admin-navigation .section-nav a { padding: 8px 0; font-size: 12px; }
 .app-shell > main { width: 100%; padding: 32px; min-width: 0; }
