@@ -843,6 +843,21 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .q-side-panel :is(button, input) { min-height: 28px; padding: 4px 8px; font: inherit; }
 .q-side-panel button { border: 1px solid var(--chrome-border, #c9d8de); border-radius: 5px; background: var(--chrome-surface, #fff); color: inherit; }
 .q-side-panel button:hover:not(:disabled) { background: var(--chrome-menu-hover, #edf7f7); }
+/* Issue #108 polish slice 58: the panel's search field (.o-bar input,
+   OEntry's "Ask a question" input) had no hover rule of its own. Inside
+   the Author workspace the generic author search-input hover reaches
+   it, but on the Dashboard the panel is a fixed overlay outside
+   .author-workspace, so hovering the field changed nothing while every
+   button beside it tinted. It now takes the panel's own hover tint —
+   the same var its button rule above uses (dark chrome resolves the
+   var to #293f55, matching the buttons). At equal specificity to the
+   author search hover rule and later in this file, the panel input
+   matches its panel buttons inside Author too. Background only, so
+   resting geometry is identical. Static, so no reduced-motion variant
+   is needed; disabled fields keep their flat resting state. The
+   .o-bar scope keeps the mode notice's native checkbox on OS rendering
+   by design. */
+.q-side-panel .o-bar input:hover:not(:disabled) { background: var(--chrome-menu-hover, #edf7f7); }
 .q-side-panel .o-answer { margin-top: 8px; padding-top: 8px; border-color: var(--chrome-border, #c9d8de); }
 .q-side-panel .o-alternatives { margin-top: 8px; }
 .q-side-panel .o-alternatives h3 { margin-bottom: 8px; }
