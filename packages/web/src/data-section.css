@@ -169,6 +169,28 @@ details[open] .data-menu-items { animation: menu-open 150ms ease-out; }
 .data-summary-cards button { border: 0; padding: 0; }
 .data-summary-cards .dataset-execution { padding: 8px 0; }
 .data-summary-cards .execution-controls { flex-direction: column; align-items: start; }
+/* Issue #108 polish slice 81: the dataset detail's "Storage settings"
+   disclosure summary (the bare <details> in DatasetDetail.tsx's About
+   card — the only details inside .data-summary-cards, rendered
+   unconditionally on the dataset Summary tab) had no hover state.
+   Every other control on the data detail tints #eaf3f7 on hover —
+   buttons via .data-page button:hover, the selected tab (slice 28),
+   the filter select (slice 21), the search input (slice 27) and the
+   row-menu summary (.data-row-menu summary:hover) — but a summary is
+   none of those elements, and every summary:hover rule in the
+   cascade is scoped elsewhere (.author-workspace, .prep-*,
+   .calculation-dialog, .card-footer, .account-menu, .data-menu,
+   .first-run), so hovering "Storage settings" changed nothing; its
+   only rules are the global cursor and the slice-15 :active press.
+   A CSSOM probe with the real stylesheets confirmed zero matching
+   :hover rules. The dataset detail is a sub-route reached by opening
+   a dataset, so top-level route audits never hover it (the slices
+   50/62/64/67/68 blind spot). It now takes the data surface's
+   established hover tint (#eaf3f7), so no new colour is introduced.
+   Background only, so resting geometry is identical; static (no
+   animation), so no reduced-motion variant is needed. The data
+   detail surface is fixed light, so no dark variant is added. */
+.data-summary-cards details > summary:hover { background: #eaf3f7; }
 .data-refresh { display: grid; gap: 16px; }
 .data-refresh .data-email { justify-self: end; }
 .data-dialog label { display: block; }
