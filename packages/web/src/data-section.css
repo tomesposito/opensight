@@ -134,6 +134,21 @@ details[open] .data-menu-items { animation: menu-open 150ms ease-out; }
 .data-connector-tile { display: flex; gap: 12px; align-items: center; padding: 16px 12px; border: 1px solid #d3dfe5; border-radius: 4px; cursor: pointer; }
 .data-connector-tile[data-selected=true] { border-color: #176b88; background: #f0f8fb; }
 .data-connector-tile:hover:not([data-selected=true]):not(:has(> input:disabled)) { background: #eaf3f7; }
+/* Issue #108 polish slice 76: the selected connector tile was the Create
+   Dataset dialog's last zero-hover control — slice 49's hover rule
+   explicitly excludes it, so hovering the chosen tile changed nothing
+   while every unselected enabled tile steps white -> #eaf3f7 (a real-mouse
+   probe on the demo dialog measured the selected tile, 301x82, at
+   rgb(240,248,251) on rest and hover alike). Following slice 28's
+   selected-tab language, the selected tile takes the data surface's
+   established hover tint (#eaf3f7) on hover — one visible step deeper
+   than its #f0f8fb resting tint; it stays distinct at rest via the tint
+   and the #176b88 border, which the hover keeps. A selected tile whose
+   connector is unimplemented (disabled radio) keeps its flat state, via
+   the same :has(> input:disabled) guard slice 49 uses. Background only,
+   so resting geometry is identical; static (no animation), so no
+   reduced-motion variant is needed. */
+.data-connector-tile[data-selected=true]:hover:not(:has(> input:disabled)) { background: #eaf3f7; }
 .data-connector-tile > span:first-child { font-size: 24px; color: #387d99; }
 .data-connector-tile strong { font-weight: 500; }
 .data-connector-tile small { display: block; color: #5a6d78; }
