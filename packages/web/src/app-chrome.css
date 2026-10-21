@@ -71,6 +71,23 @@
 .account-menu summary::-webkit-details-marker { display: none; }
 .account-menu summary:hover { background: #365764; }
 .account-menu[open] summary { background: #365764; }
+/* Issue #108 polish slice 80: the account menu's OPEN summary had zero
+   hover feedback — its [open] rule paints the exact tint the slice-17
+   hover rule paints (#365764), ties it at (0,2,1) and stands after it,
+   so hovering the open summary changed nothing while every closed
+   summary steps transparent -> #365764. Slice 17 made the closed hover
+   preview the open state; slices 73-79 since established that
+   selected/open controls take a dedicated hover step beyond their
+   selected rest (slice 79 did this for the author menu's open
+   summary). The open summary now steps one step deeper: #254a5e,
+   already in the palette as the dark control hover step
+   (.back-to-top:hover, resting at #19384a) and the middle step of
+   the dark-teal sequence #162e40 (header) -> #254a5e -> #365764, so
+   no new colour is introduced. Its (0,3,1) specificity beats both
+   the open rule and the closed hover rule. Background only, so the
+   summary's #526c7a border, white text and resting geometry are
+   identical; static (no animation), so no reduced-motion variant. */
+.account-menu[open] summary:hover { background: #254a5e; }
 .account-menu .account-panel { position: absolute; right: 0; top: calc(100% + 8px); width: min(260px, calc(100vw - 24px)); padding: 16px; background: #fff; color: #19384a; border: 1px solid #c9d8de; border-radius: 6px; box-shadow: 0 4px 16px #162e4026; z-index: 70; overflow-wrap: anywhere; }
 .account-panel p { font-size: 12px; margin: 8px 0 12px; color: #526c7a; }
 .product-header .account-panel button { padding: 6px 12px; min-height: 32px; border: 1px solid #157f88; border-radius: 4px; background: #157f88; color: #fff; font-size: 12px; }
