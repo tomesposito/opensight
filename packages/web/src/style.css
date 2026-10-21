@@ -1491,6 +1491,24 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .sheet-image-frame img { display: block; width: 100%; height: 100%; }
 .object-text-style { display: flex; flex-wrap: wrap; gap: 4px; margin: 8px 0; }
 .author-layout .object-text-style button[aria-pressed="true"], .author-layout .object-text-style button[aria-pressed="true"]:hover { background: #166f7a; color: white; }
+/* Issue #108 polish slice 78: the sheet text object's pressed style
+   toggles (Bold / Italic / Underline, .object-text-style in
+   SheetObjectProperties) were the author surface's zero-hover pressed
+   control — the rule above pairs the pressed rest and hover in one
+   declaration at #166f7a, and its (0,4,1) hover variant beats the
+   author generic hover (#edf7f7, (0,3,1)), so hovering a pressed
+   toggle changed nothing while every unpressed toggle steps
+   transparent -> #edf7f7. The group only renders while a text sheet
+   object is selected, so route audits never reach it. Following the
+   slices 28/29/73-77 selected-control language, the pressed toggle
+   takes a dedicated hover step one visible step deeper than its
+   #166f7a rest: #126e76, the app-wide primary hover step (slices
+   51/57/66), so no new color is introduced. Specificity (0,5,1)
+   beats the paired hover rule. Background only, so the white label
+   is kept and resting geometry is identical; static (no animation),
+   so no reduced-motion variant is needed. Disabled pressed toggles
+   keep their flat state. */
+.author-layout .object-text-style button[aria-pressed="true"]:hover:not(:disabled) { background: #126e76; }
 /* Global "find anything" search modal — mirrors the command palette chrome. */
 .global-search { --palette-surface: #fff; --palette-text: #19384a; --palette-muted: #526c7a; --palette-border: #c9d8de; --palette-selected: #e2f2fa; width: min(520px, calc(100% - 32px)); max-height: calc(100dvh - 32px); padding: 0; border: 1px solid var(--palette-border); border-radius: 8px; background: var(--palette-surface); color: var(--palette-text); box-shadow: 0 8px 32px #14253644; font: 12px/1.4 Arial, "Helvetica Neue", Helvetica, sans-serif; overflow: auto; }
 .global-search::backdrop { background: #14253688; }
