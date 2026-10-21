@@ -297,6 +297,20 @@ td { padding: 14px 12px; border-bottom: 1px solid #e7edef; font-variant-numeric:
 .app-footer { text-align: center; font-size: 11px; color: #687e89; padding: 14px 20px 28px; }
 .first-run-header { background: #162e40; color: #d0e0e8; display: flex; align-items: center; flex-wrap: wrap; gap: 24px; padding: 18px 36px; font-size: 13px; }
 .first-run-header .brand { color: #fff; }
+/* Issue #108 polish slice 71: hover feedback for the first-run header's
+   brand link (.first-run-header .brand in FirstRun.tsx). Verified lead
+   from slice 70: this link matched zero :hover rules — the product
+   header's brand hover (.product-header .brand:hover in app-chrome.css)
+   is scoped to .product-header, and the first-run page is standalone
+   (SessionGate renders it before any session, outside .app-shell), so
+   no app-shell rule reaches it either; its only rules set the white
+   resting color and the teal mark, and hovering it changed nothing
+   while the same brand link in the product header tints on hover. It
+   now takes that header's own dark-chrome hover tint (#365764, the
+   .product-header .brand:hover tint), matching the header's dark
+   #162e40 resting background. Background only, so resting geometry is
+   identical and there is no animation. */
+.first-run-header .brand:hover { background: #365764; }
 .first-run-header .brand-mark { color: #72d3d4; }
 .first-run-main { max-width: 1180px; padding: 48px 36px 28px; }
 .first-run-intro { max-width: 750px; margin-bottom: 28px; }
