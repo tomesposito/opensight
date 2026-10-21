@@ -1515,6 +1515,20 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .command-palette header button:hover, .global-search header button:hover { background: #365764; }
 .command-palette input:hover:not(:disabled), .global-search > input:hover:not(:disabled) { background-color: var(--palette-selected); }
 .global-search .search-types button:hover:not([aria-pressed=true]) { background: var(--palette-selected); }
+/* Issue #108 polish slice 75: the pressed search-type chip was the
+   global search dialog's last zero-hover control — slice 47's chip
+   hover deliberately excluded it because it already rests at the
+   unpressed hover tint (var(--palette-selected), #e2f2fa), so hovering
+   it changed nothing while every plain chip steps transparent ->
+   #e2f2fa. Following the slices 28/29/73/74 selected-control language,
+   the pressed chip now takes a dedicated hover step one visible step
+   deeper: #c8eafa, already the codebase's selected-hover step for this
+   exact resting tint (--header-selected-hover, the author menu's
+   pressed-button hover). The dialog's resting colors are fixed light
+   (no dark variant), so a literal is correct. Background only, so the
+   pressed border and text are unchanged and resting geometry is
+   identical; no animation. */
+.global-search .search-types button[aria-pressed=true]:hover { background: #c8eafa; }
 /* Issue #108 polish slice 52: the palette twins' result rows were the
    last controls in these dialogs whose hover painted nothing — a row
    hover only underlined the text while the keyboard-selected row rests
