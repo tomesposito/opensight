@@ -268,7 +268,7 @@
 .app-shell .connector-details input, .app-shell .connector-details select { min-height: 32px; padding: 6px 8px; }
 .app-shell .connector-submit { background: #157f88; padding: 8px 12px; color: #fff; }
 .app-shell .connector-submit:disabled { background: #dbe3e9; }
-/* Issue #108 polish slice 64: the connector setup submit button
+/* Issue #108 polish slice 66: the connector setup submit button
    (.connector-submit in ConnectorDetails / DirectUpload — "Upload to
    staging", "Validate configuration", "Upload file") had no hover step
    of its own. In the standalone gallery context hovering changed

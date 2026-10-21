@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { chromiumPage } from './chromium.mjs';
 
-// Issue #108 polish slice 64: hover feedback for the connector setup
+// Issue #108 polish slice 66: hover feedback for the connector setup
 // submit button (.connector-submit in ConnectorDetails / DirectUpload
 // — "Upload to staging", "Validate configuration", "Upload file").
 // Static audit follow-on to slices 51/57/59: the submit is a primary
