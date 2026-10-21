@@ -1,6 +1,18 @@
 /* Application layout: OpenSight palette, compact identity band and landing rail.
    Keep chart/theme typography and standalone/embedded editors independent. */
 .app-shell { --app-rail: 192px; --app-band: 48px; padding-left: var(--app-rail); min-height: 100dvh; font: 13px/1.5 Arial, "Helvetica Neue", Helvetica, sans-serif; }
+/* Issue #136 / #108 polish slice 65: while the Ask O panel is open the shell
+   makes room for it — padding-right reserves the panel's 400px so <main>
+   (and the header above it) compress instead of being covered, and the
+   panel reads as a docked slide-in column. The 150ms ease-out transition
+   matches the panel's own entry beat, so the content slides with it;
+   closing restores the full width the same way. Charts reflow to the
+   compressed width through VisualCard's ResizeObserver. Below the 760px
+   shell breakpoint the panel is effectively full-width, there is nothing
+   to compress into, and it keeps its overlay behavior (and shadow). */
+.app-shell { transition: padding-right 150ms ease-out; }
+@media (min-width: 761px) { .app-shell:has(.q-side-panel) { padding-right: 400px; } }
+@media (prefers-reduced-motion: reduce) { .app-shell { transition: none; } }
 .app-shell .product-header { height: var(--app-band); min-height: var(--app-band); padding: 4px 20px; margin-left: calc(-1 * var(--app-rail)); gap: 16px; flex-wrap: nowrap; background: #162e40; color: #fff; }
 .product-header .brand { font-size: 18px; letter-spacing: -.4px; color: #fff; gap: 8px; flex-shrink: 0; padding: 4px 8px; margin: -4px -8px; border-radius: 4px; }
 .product-header .brand:hover { background: #365764; }
