@@ -1372,6 +1372,20 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .calculation-dialog button:hover:not(:disabled) { border-color: #157f88; background: #edf7f7; }
 .calculation-dialog .primary-button:hover:not(:disabled) { background: #126e76; color: white; }
 .calculation-dialog input:hover:not(:disabled), .calculation-dialog select:hover:not(:disabled), .calculation-dialog textarea:hover:not(:disabled) { background: #edf7f7; }
+/* Issue #108 polish slice 68: one control in the Calculated field
+   dialog still had no hover state — the "Build for me" disclosure
+   summary (.o-build-for-me summary, BuildForMe.tsx, mounted inside
+   the dialog). Slice 46 covered the dialog's buttons and fields, but
+   a summary is none of those; slice 42's summary hover rules are all
+   scoped to .author-workspace and the dialog renders outside it (a
+   sibling in Author.tsx), and the global summary rules give only the
+   pointer cursor and an :active press, so hovering "Build for me"
+   changed nothing while every other control in the dialog tinted.
+   It now takes the dialog's own hover tint (#edf7f7, slice 46's
+   button/field tint). The dialog's resting colors are fixed light
+   (no dark-chrome variant), so no dark variant is added. Background
+   only, so resting geometry is identical and there is no animation. */
+.calculation-dialog .o-build-for-me summary:hover { background: #edf7f7; }
 .settings-palette { display: flex; gap: 4px; margin-top: 8px; }
 .settings-palette span { width: 24px; height: 16px; border: 1px solid var(--chrome-border, #c9d8de); }
 .analysis-settings-dialog button[aria-disabled="true"] { color: var(--chrome-muted, #536879); cursor: not-allowed; }
