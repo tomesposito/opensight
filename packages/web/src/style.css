@@ -115,6 +115,20 @@ select { background: #fff; border: 1px solid #c9d8de; border-radius: 6px; paddin
 .dataset-picker-table tr[data-selected] { background: #eef8fd; }
 .dataset-picker-table tbody tr[data-selectable] { cursor: pointer; }
 .dataset-picker-table tbody tr[data-selectable]:not([data-selected]):hover { background: #f2f9fd; }
+/* Issue #108 polish slice 77: the dataset picker's selected row was the
+   Create Analysis dialog's zero-hover row — the row hover rule above
+   explicitly excludes it (:not([data-selected])), and no other tr:hover
+   rule exists, so hovering the selected (clickable) row changed nothing
+   while every unselected selectable row steps transparent -> #f2f9fd.
+   Following the slices 28/29/73-76 selected-control language, the
+   selected row takes a dedicated hover step one visible step deeper
+   than its #eef8fd resting tint: #d6effd, already this table's own
+   header tint (.dataset-picker-table th), so no new color is
+   introduced. Scoped to [data-selectable] so a retained selection on
+   an unavailable, non-clickable row keeps its flat state. Background
+   only, so resting geometry is identical; static (no animation), so
+   no reduced-motion variant is needed. */
+.dataset-picker-table tbody tr[data-selectable][data-selected]:hover { background: #d6effd; }
 .dataset-picker-table label { cursor: pointer; }
 .dataset-picker-table input { margin: 0; accent-color: #24749d; }
 .dataset-picker-badge { display: inline-block; padding: 1px 7px; border-radius: 10px; background: #dddde3; color: #28282e; font-size: 10px; font-weight: bold; }
