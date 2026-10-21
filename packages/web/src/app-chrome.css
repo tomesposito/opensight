@@ -266,8 +266,26 @@
 .app-shell .connector-details h2 { margin: 4px 0 12px; font-size: 16px; font-weight: 600; }
 .app-shell .connector-details form { gap: 12px; margin: 16px 0; }
 .app-shell .connector-details input, .app-shell .connector-details select { min-height: 32px; padding: 6px 8px; }
-.app-shell .connector-submit { background: #157f88; padding: 8px 12px; }
+.app-shell .connector-submit { background: #157f88; padding: 8px 12px; color: #fff; }
 .app-shell .connector-submit:disabled { background: #dbe3e9; }
+/* Issue #108 polish slice 66: the connector setup submit button
+   (.connector-submit in ConnectorDetails / DirectUpload — "Upload to
+   staging", "Validate configuration", "Upload file") had no hover step
+   of its own. In the standalone gallery context hovering changed
+   nothing; in its live context inside the create-dataset dialog
+   (.data-dialog, CreateDatasetDialog's config stage) the generic
+   data-dialog button rules reach it instead: their hover paints the
+   light #eaf3f7 tint, and their resting color #176482 (specificity
+   (0,1,1)) beats the button's own white from style.css ((0,1,0)), so
+   the label rests dark teal on the teal #157f88 background. The
+   app-shell resting rule above now also carries the white label
+   ((0,2,0) beats the generic resting color), and the submit takes the
+   app-wide primary hover step (#157f88 -> #126e76, slices 51/57/59).
+   The .connector-details + button segments lift the hover rule to
+   (0,5,1), tying the generic dialog hover so this later stylesheet
+   wins. Background only on hover, so resting geometry is identical;
+   disabled submits keep their flat state. */
+.app-shell .connector-details button.connector-submit:hover:not(:disabled) { background: #126e76; }
 .app-shell .prep-heading { margin-bottom: 16px; }
 .app-shell .prep-document-bar { gap: 8px 16px; padding: 12px; border-radius: 6px 6px 0 0; background: #fff; }
 .app-shell .prep-document-bar input { padding: 6px 8px; }
