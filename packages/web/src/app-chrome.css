@@ -50,6 +50,20 @@
 .product-navigation :focus-visible, .product-header :focus-visible { outline: 2px solid #157f88; outline-offset: 2px; }
 .product-header :focus-visible { outline-color: #e5a046; }
 .product-navigation .app-nav a[aria-current] { border-color: #157f88; background: #dceff0; color: #126e76; font-weight: 600; }
+/* Issue #108 polish slice 73: the rail's current-page link had zero hover
+   feedback on every route — its resting selected background (#dceff0) is
+   the generic rail hover tint itself, and the [aria-current] rule ties the
+   hover rule at (0,3,1) and stands after it, so hovering the current link
+   changed nothing while every other rail link steps transparent -> #dceff0.
+   A fresh whole-demo behavioral audit (real mouse + computed-style delta)
+   flagged it on every route audited. Following the slices 28/29
+   selected-control language, the current link takes a dedicated hover
+   step: #cddde0, one visible step deeper than #dceff0 and already in the
+   palette (the author-canvas dot grid). Its (0,4,1) specificity beats both
+   the generic hover and the resting selected rule. Background only, so
+   the selected border, teal text and weight are unchanged and resting
+   geometry is identical. */
+.product-navigation .app-nav a[aria-current]:hover { background: #cddde0; }
 .product-navigation .section-nav { margin-top: 16px; padding: 12px 4px; border-top: 1px solid #d1e0e5; border-bottom: 0; background: transparent; gap: 4px; flex-direction: column; align-items: stretch; }
 .product-navigation .section-nav a { padding: 6px 8px; border: 0; border-radius: 4px; font-size: 12px; }
 .product-header .account-menu { display: block; position: relative; flex: none; margin-left: auto; min-width: 0; color: #fff; font-size: 12px; }
