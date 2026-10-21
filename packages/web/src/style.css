@@ -659,6 +659,31 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .imported-panel { border-top: 1px solid #d4e1e5; margin-top: 18px; padding-top: 12px; }
 .imported-panel pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 250px; overflow: auto; font-size: 11px; }
 .imported-panel summary { cursor: pointer; margin: 6px 0; }
+/* Issue #108 polish slice 82: the ImportedPanels disclosure summaries
+   (details.imported-panel in Author.tsx — the "Imported calculated
+   fields" / "Imported filter groups" group summaries in the Data
+   panel, plus the nested per-value summaries inside them) had no
+   hover state. Every author summary hover is scoped elsewhere — the
+   builder-panel/field-group/property-section/parameter-editor/
+   local-drafts hovers take direct-child summaries only, and the
+   bundle-import hover takes summaries inside .bundle-import — so the
+   imported-panel summary, a descendant (not direct child) of the
+   Data builder-panel, matched none of them; its only rules are the
+   cursor/margin above and the slice-15 :active press. A CSSOM probe
+   with the real stylesheets confirmed zero matching :hover rules for
+   both the outer and the nested summaries, resting transparent while
+   the panel's own summary steps to #edf7f7. ImportedPanels renders
+   only for imported bundles, so route audits never hover it (the
+   slices 50/62/64/67/68 blind spot). It now takes the author
+   surface's established hover tint (#edf7f7, the author generic and
+   summary hovers), so no new colour is introduced; the descendant
+   selector covers the nested per-value summaries too, mirroring
+   .bundle-import summary:hover. Background only, so resting
+   geometry is identical; static (no animation), so no
+   reduced-motion variant is needed. The dark-chrome variant takes
+   #334c62, the dark summary hover of the neighbouring panels. */
+.imported-panel summary:hover { background: #edf7f7; }
+.author-workspace[data-chrome=dark] .imported-panel summary:hover { background: #334c62; }
 
 .controls-strip { border: 1px solid var(--border, #cbd5e1); background: #fff; padding: 14px; margin-bottom: 12px; border-radius: 6px; }
 .controls-heading, .controls-row { display: flex; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
