@@ -97,7 +97,7 @@ test('the dialog stays outside the author-workspace hover scope it now replaces'
         createBg: primary ? (() => { const el = document.querySelector('#create'); apply(el, primary); return getComputedStyle(el).backgroundColor; })() : null,
       };
     });
-    assert.equal(actual.ruleKeys.length, 3, 'expected exactly the three calculation-dialog hover rules');
+    assert.equal(actual.ruleKeys.length, 4, 'expected the four calculation-dialog hover rules (slice 68 added the build-for-me summary rule)');
     for (const key of ['name', 'role', 'expr']) {
       assert.ok(actual[key], `expected measurements for ${key}`);
       assert.equal(actual[key].hovered.background, 'rgb(237, 247, 247)');
