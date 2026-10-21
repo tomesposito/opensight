@@ -43,6 +43,25 @@ select { background: #fff; border: 1px solid #c9d8de; border-radius: 6px; paddin
 .app-nav a { font-weight: 650; }
 .app-nav a[aria-current], .section-nav a[aria-current] { color: #126e76; border-color: #157f88; background: #eaf4f4; }
 .app-nav a:hover, .section-nav a:hover { background: #eaf4f4; }
+/* Issue #108 polish slice 74: a section nav's current link had zero hover
+   feedback in both of its contexts — the top section nav (.app-shell >
+   .section-nav, Data) and the rail's section groups (.product-navigation
+   .section-nav, Analyses/Admin/Developer tools). Its resting selected
+   background (#eaf4f4, above) is the exact tint the generic hover paints,
+   and both rules tie at (0,2,1), so hovering the current link changed
+   nothing while every plain section link steps transparent -> #eaf4f4.
+   app-chrome.css adds no section-nav link background (only padding,
+   border and radius), so this cascade governs both contexts. Following
+   the slices 28/29 selected-control language (and slice 73 for the
+   rail's app-nav current link), the current link takes a dedicated
+   hover step: #dceff0, one visible step deeper than #eaf4f4 and already
+   in the palette (the rail hover/selected tint). Its (0,3,1)
+   specificity beats both the resting selected rule and the generic
+   hover. Scope is .section-nav only: .app-nav renders only inside the
+   rail, where slice 73's (0,4,1) rule already governs its current link.
+   Background only, so the selected border and teal text are unchanged
+   and resting geometry is identical. */
+.section-nav a[aria-current]:hover { background: #dceff0; }
 .section-nav { padding: 0 36px; border-bottom: 1px solid #dce5e9; background: #fff; }
 .section-nav a { font-size: 13px; }
 .developer-nav { background: #f3f6f7; }
