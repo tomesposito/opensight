@@ -1270,6 +1270,18 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .prep-type-icon { color: #087da5; width: 12px; flex-shrink: 0; text-align: center; }
 .prep-type-icon.type-integer, .prep-type-icon.type-decimal { color: #9b6600; }
 .prep-join-outputs summary { cursor: pointer; margin-bottom: 8px; }
+/* Issue #108 polish slice 69: hover feedback for the join editor's
+   "Right output columns" disclosure summary (.prep-join-outputs
+   summary, PrepJoinEditor.tsx, inside .data-prep). Every other
+   data-prep control hovers to the surface tint #edf6fc — buttons,
+   selects, inputs/textareas, and the prep-execution summary
+   (slice 41) — but a summary is none of those elements, so the
+   .data-prep hover rules never reached this one and no summary
+   hover rule was scoped to it: hovering it changed nothing. It
+   only renders while a join step is being configured, so route
+   audits never reach it. Background only, so resting geometry
+   is identical and there is no animation. */
+.prep-join-outputs summary:hover { background: #edf6fc; }
 .prep-join-outputs label { margin-bottom: 8px; }
 .prep-key-column { display: flex; flex-direction: row !important; align-items: center; gap: 4px; }
 .prep-key-column select { min-width: 0; }
