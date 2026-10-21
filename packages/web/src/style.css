@@ -400,6 +400,36 @@ button:disabled { cursor: default; opacity: .5; }
    animation. */
 .author-workspace input[type=search]:hover:not(:disabled) { background: #edf7f7; }
 .author-workspace[data-chrome=dark] input[type=search]:hover:not(:disabled) { background: #334c62; }
+/* Issue #108 polish slice 67: the author layout's plain fields — text,
+   number and date inputs and textareas — had no hover state at all. The
+   author hover rules cover buttons, selects (slice 36), color inputs
+   (37) and search inputs (38), and the dialog-scoped rules cover the
+   calculation and analysis-file dialogs, so a plain field in the layout
+   changed nothing on hover while the select beside it tinted: the
+   Properties Title/Subtitle text inputs and title font-size number,
+   the formatting font-size/decimal numbers, the action name input, the
+   pivot column-width number, the parameter name input and defaults
+   textarea, the controls strip's text/date inputs, the sheet rename
+   input, and the sheet text object's editor textarea, alt-text input
+   and font-size number. A fresh behavioral audit of the demo routes
+   (16 routes, whole-document) found the top-level surfaces complete,
+   and the author field audit found every reachable field covered
+   except this class, which only renders once a visual or control is
+   selected. The fields now take the author buttons' hover tint
+   (#edf7f7); dark chrome takes the dark button hover (#334c62) via
+   more specific variants, as in slices 36-38. The rule is scoped to
+   .author-layout (the scope of the .author-layout input resting group
+   and the button-hover pairing) so the header analysis-title input —
+   transparent at rest with light text on the dark header, border-only
+   hover by design — stays out of reach, and the Q side panel keeps its
+   own hover variable. Color and search inputs inside the layout keep
+   their identical-value rules (color keeps its border step).
+   Radio/checkbox/file inputs are excluded so native controls keep OS
+   rendering (the house pattern), and range inputs likewise as an
+   OS-rendered control (the slice-38 by-design family). Background
+   only, so resting geometry is identical and there is no animation. */
+.author-layout input:hover:not(:disabled):not([type=radio]):not([type=checkbox]):not([type=file]):not([type=range]), .author-layout textarea:hover:not(:disabled) { background: #edf7f7; }
+.author-workspace[data-chrome=dark] .author-layout input:hover:not(:disabled):not([type=radio]):not([type=checkbox]):not([type=file]):not([type=range]), .author-workspace[data-chrome=dark] .author-layout textarea:hover:not(:disabled) { background: #334c62; }
 /* Issue #108 polish slice 42: the author workspace's disclosure summaries
    had no hover state at all — the author hover rules cover buttons, selects,
    color inputs and search inputs, and the global summary rules give only
