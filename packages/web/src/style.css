@@ -817,6 +817,25 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .visual-card th { background: var(--visual-header, #f3f7f8); color: inherit; }
 .visual-card :is(tr.subtotal, tr.total) { background: var(--visual-header, #edf6f6); }
 .visual-card .table-scroll td button { color: inherit; background: transparent; }
+/* Issue #108 polish slice 72: hover feedback for the table row-selection
+   button (.table-scroll td button in VisualCard's DataTable — the first
+   column's value rendered as a button when the visual has an
+   interaction, so clicking it applies the row's filter action). In the
+   author workspace the generic author button hover (#edf7f7) reaches it,
+   but a visual card on the consumer Dashboard renders in <main> inside
+   .app-shell, outside .author-workspace and .data-prep, and a CSSOM
+   audit showed the button matches zero :hover rules there: resting at
+   color inherit / background transparent (the rule above), hovering
+   changed nothing while the card's own footer summaries tint on hover.
+   It now takes #eaf3f7 — that card-footer summary tint, the same light
+   tint the data-row-menu summary uses. This selector ties the resting
+   rule above at (0,2,2) and wins by standing after it; it stays below
+   the author (0,3,1) and data-prep (0,3,1) button hovers, so those
+   contexts keep their own tints unchanged (real-mouse probe: the
+   author-context button still hovers to rgb(237,247,247)). Background
+   only, so resting geometry is identical; the underline and inherited
+   color are kept. Static, no animation. */
+.table-scroll td button:hover { background: #eaf3f7; }
 @media (max-width: 760px) {
   .author-menu > details { position: static; }
   .menu-popover { left: 0; width: min(320px, 90vw); max-height: min(360px, 45vh); }
