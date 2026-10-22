@@ -1242,6 +1242,30 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
    gallery is a fixed-light app-shell surface, so no dark variant
    is added. */
 .connector-details input:hover:not(:disabled):not([type=radio]):not([type=checkbox]):not([type=file]), .connector-details select:hover:not(:disabled) { background: #eaf3f7; }
+/* Issue #108 polish slice 93: the plain connector-details buttons
+   (.connector-details button without .connector-submit — "Prepare
+   PostgreSQL data" and "Prepare this upload" in DataSources.tsx's
+   ConnectorDetails, and "Check status" / "Cancel upload" / the
+   completed-state "Prepare this upload" in DirectUpload.tsx, all
+   inside aside.connector-details in the standalone gallery) had
+   zero hover feedback and no resting rule of their own: they rest
+   at the UA default. Every button:hover rule in the cascade is
+   scoped elsewhere — the data-dialog button hover covers these
+   same buttons only inside the create-dataset dialog, and the
+   app-shell scopes (data-sources heading, slice 92) and the
+   connector-submit hover (slice 66) do not reach plain buttons —
+   so a CSSOM probe with all five real stylesheets (1,345 rules) in
+   the real ancestor context confirmed zero matching :hover rules
+   and a UA-default rest for all of them, while the gallery's
+   fields (slice 91) and its submit (slice 66) do step. They now
+   take the app surfaces' established secondary-button hover tint
+   (#eaf3f7 — the data-dialog button hover these mirror in the
+   dialog context, and the details fields' hover, slice 91), so no
+   new colour is introduced. The primary submit is excluded so it
+   keeps its #126e76 step. Background only, so resting geometry is
+   identical and there is no animation. The gallery is a
+   fixed-light app-shell surface, so no dark variant is added. */
+.connector-details button:hover:not(:disabled):not(.connector-submit) { background: #eaf3f7; }
 .connector-details input:disabled, .connector-details select:disabled { background: #f0f3f6; color: #6a7886; }
 .connector-availability { padding: 9px 12px; background: #f0f3f6; border-radius: 3px; font-weight: 600; }
 .connector-submit { background: #087cb8; color: white; padding: 11px; border: 0; border-radius: 3px; font-weight: 600; cursor: pointer; }
