@@ -974,6 +974,24 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 /* Identity → menus → Q → canvas actions → NEW LOOK. Keep the canvas in flow. */
 .author-workspace .author-topbar { min-height: 32px; flex-wrap: nowrap; gap: 8px; margin: 0 -16px; padding: 2px 16px; border: 0; background: var(--header-bg); color: var(--header-text); }
 .author-topbar .brand { gap: 8px; color: var(--header-text); font-size: 13px; letter-spacing: 0; white-space: nowrap; }
+/* Issue #108 polish slice 89: the standalone author topbar's brand
+   link (Author.tsx — a plain <a class="brand"> inside
+   header.author-topbar, rendered only when the author is not embedded
+   in the app shell and no identity renderer is supplied) had zero
+   hover feedback. The other two brand-link instances already hover —
+   .product-header .brand:hover and .first-run-header .brand:hover
+   (slice 71), both #365764 — but each is scoped to its own header, and
+   every other a:hover rule is scoped elsewhere, while the author
+   generic hovers are button/input/select/textarea/summary-typed, so
+   this link matched no :hover rule. A CSSOM probe with all five real
+   stylesheets (1,341 rules) in the real ancestor context confirmed
+   zero matching :hover rules and a transparent rest. It now takes the
+   brand links' established dark-header hover tint (#365764, the
+   product-header and first-run brand hovers), so no new colour is
+   introduced. The header variables are shared by both editor chromes,
+   so no dark variant is added. Background only, so resting colour and
+   geometry are identical and there is no animation. */
+.author-topbar .brand:hover { background: #365764; }
 .author-topbar .brand-mark { color: var(--header-muted); font-size: 18px; }
 .author-workspace .author-topbar .analysis-title { flex: 0 1 38rem; min-width: 0; margin: 0; padding-left: 8px; border-left: 1px solid var(--header-muted); }
 .author-workspace .author-topbar .analysis-title:first-child { padding-left: 0; border-left: 0; }
