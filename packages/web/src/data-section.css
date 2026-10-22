@@ -97,6 +97,25 @@
 .data-menu { position: relative; display: inline-block; }
 .data-menu > summary { list-style: none; padding: 0 8px; font-size: 16px; cursor: pointer; display: flex; align-items: center; }
 .data-menu > summary::-webkit-details-marker { display: none; }
+/* Issue #108 polish slice 85: the plain DataMenu overflow summary
+   (.data-menu > summary in DataSectionUI.tsx's DataMenu — the ⋮ trigger
+   in the Data landing's dataset rows and DatasetDetail's standalone
+   "Dataset actions" menu) had no hover state outside .data-split.
+   Slice 16 gave the split-button variant its hover (.data-split >
+   .data-menu > summary:hover, #145d76 on its teal #176b88 rest), but
+   the plain variant rests transparent and matched no :hover rule: the
+   data page's button hover is button-only and a summary is not a
+   button, and every other summary:hover rule is scoped elsewhere. A
+   CSSOM probe with all five real stylesheets (1,337 rules) in the real
+   ancestor context confirmed zero matching :hover rules and a
+   transparent rest, while the split neighbour rests rgb(23,107,136).
+   It now takes the data surface's established hover tint (#eaf3f7,
+   slices 16/20/104), so no new colour is introduced. The split rule
+   (0,3,1) still beats this rule (0,2,1) for the split variant, so its
+   teal hover is unchanged. Background only, so resting geometry is
+   identical; static (no animation), so no reduced-motion variant is
+   needed. The data surface is fixed light, so no dark variant. */
+.data-menu > summary:hover { background: #eaf3f7; }
 .data-menu-items { position: absolute; right: 0; top: 100%; z-index: 15; width: max-content; max-width: 300px; background: white; border: 1px solid #bbcbd3; box-shadow: 0 4px 12px #19384a33; padding: 4px; }
 details[open] .data-menu-items { animation: menu-open 150ms ease-out; }
 @media (prefers-reduced-motion: reduce) { details[open] .data-menu-items { animation: none; } }
