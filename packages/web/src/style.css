@@ -722,6 +722,33 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
    neighbouring panels. */
 .control-settings summary:hover { background: #edf7f7; }
 .author-workspace[data-chrome=dark] .control-settings summary:hover { background: #334c62; }
+/* Issue #108 polish slice 84: the Properties panel's "Unsupported
+   features (retained)" disclosure summary (a plain <details><summary>
+   inside .dataset-binding in Author.tsx's Properties — the Dataset
+   binding block for an imported visual) had no hover state. Every
+   summary:hover rule in the cascade is scoped elsewhere — the
+   builder-panel/field-group/property-section/parameter-editor/
+   local-drafts hovers take direct-child summaries only, and the
+   bundle-import/imported-panel/control-settings/card-footer/
+   first-run/prep hovers take summaries inside their own containers —
+   so this summary, inside a plain details in a .dataset-binding,
+   matched none of them; its only rules are the global cursor and the
+   slice-15 :active press, while the Remap button in the same block
+   does tint via the author generic button hover. A CSSOM probe with
+   the real stylesheet (960 rules) in the real ancestor context
+   (author-workspace > builder-panel properties-panel > panel-content
+   > tabpanel > dataset-binding) confirmed zero matching :hover rules
+   and a transparent rest. The block renders only for imported
+   visuals with retained unsupported features, so route audits never
+   hover it (the slices 50/62/64/67/68 blind spot). It now takes the
+   author surface's established hover tint (#edf7f7, the author
+   generic and summary hovers), so no new colour is introduced.
+   Background only, so resting geometry is identical; static (no
+   animation), so no reduced-motion variant is needed. The
+   dark-chrome variant takes #334c62, the dark summary hover of the
+   neighbouring panels. */
+.dataset-binding summary:hover { background: #edf7f7; }
+.author-workspace[data-chrome=dark] .dataset-binding summary:hover { background: #334c62; }
 .control-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; padding-top: 14px; }
 .parameter-editor { margin-top: 16px; }
 .parameter-editor form { padding: 8px 0; }
