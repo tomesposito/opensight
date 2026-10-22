@@ -509,6 +509,12 @@ button:disabled { cursor: default; opacity: .5; }
    there is no animation. */
 .author-workspace .builder-panel > summary:hover, .author-workspace .field-group > summary:hover, .author-workspace .property-section > summary:hover, .author-workspace .parameter-editor > summary:hover, .author-workspace .local-drafts > summary:hover, .author-workspace .bundle-import summary:hover { background: #edf7f7; }
 .author-workspace[data-chrome=dark] .builder-panel > summary:hover, .author-workspace[data-chrome=dark] .field-group > summary:hover, .author-workspace[data-chrome=dark] .property-section > summary:hover, .author-workspace[data-chrome=dark] .parameter-editor > summary:hover, .author-workspace[data-chrome=dark] .local-drafts > summary:hover, .author-workspace[data-chrome=dark] .bundle-import summary:hover { background: #334c62; }
+/* Issue #108 polish slice 96: dark-chrome variant of the favorites-filter
+   label hover (app-chrome.css). The label also renders in the author
+   sidebar's local-drafts panel, where the light collection tint would sit
+   wrong on the dark chrome; it takes the author dark hover tint (#334c62,
+   the dark button and summary hovers above) instead. Background only. */
+.author-workspace[data-chrome=dark] .favorites-filter:hover { background: #334c62; }
 .author-topbar { display: flex; align-items: center; flex-wrap: wrap; gap: 14px; }
 .author-topbar .analysis-title { flex: 1; min-width: 200px; }
 .author-topbar .analysis-title input { font-size: 23px; font-weight: 600; background: transparent; border-color: transparent; padding-left: 0; }
