@@ -1219,6 +1219,29 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .connector-details form { gap: 16px; margin: 22px 0 16px; }
 .connector-details label { font-size: 12px; font-weight: 600; }
 .connector-details input, .connector-details select { min-width: 0; max-width: 100%; padding: 9px; border: 1px solid #bdcbd6; border-radius: 3px; font: inherit; background: white; color: #26364a; }
+/* Issue #108 polish slice 91: the connector details fields
+   (.connector-details input / select in DataSources.tsx's
+   ConnectorDetails — the setup form in the standalone connector
+   gallery) had zero hover feedback. Every input/select :hover rule
+   in the cascade is scoped elsewhere — the data-dialog field hovers
+   cover these same fields only inside the create-dataset dialog,
+   and the data-page / author / admin / collection scopes do not
+   reach the standalone gallery — so these fields matched no :hover
+   rule. A CSSOM probe with all five real stylesheets (1,343 rules)
+   in the real ancestor context (app-shell > main >
+   section.data-sources > .connector-layout > aside.connector-details)
+   confirmed zero matching :hover rules and a white rest for both
+   the text input and the select, while the gallery's search input
+   (slice 90) and its submit (slice 66) do step. They now take the
+   app surfaces' established field hover tint (#eaf3f7 — the
+   data-dialog fields these mirror, slices 27/48, and the connector
+   search input, slice 90), so no new colour is introduced. The file
+   input keeps its flat state, following the data-dialog rule's own
+   exclusion of file/radio/checkbox inputs. Background only, so
+   resting geometry is identical and there is no animation. The
+   gallery is a fixed-light app-shell surface, so no dark variant
+   is added. */
+.connector-details input:hover:not(:disabled):not([type=radio]):not([type=checkbox]):not([type=file]), .connector-details select:hover:not(:disabled) { background: #eaf3f7; }
 .connector-details input:disabled, .connector-details select:disabled { background: #f0f3f6; color: #6a7886; }
 .connector-availability { padding: 9px 12px; background: #f0f3f6; border-radius: 3px; font-weight: 600; }
 .connector-submit { background: #087cb8; color: white; padding: 11px; border: 0; border-radius: 3px; font-weight: 600; cursor: pointer; }
