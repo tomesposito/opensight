@@ -116,6 +116,32 @@
    identical; static (no animation), so no reduced-motion variant is
    needed. The data surface is fixed light, so no dark variant. */
 .data-menu > summary:hover { background: #eaf3f7; }
+/* Issue #108 polish slice 86: the plain AppLink links on the dataset
+   detail page (DatasetDetail.tsx — the .data-breadcrumb "Datasets"
+   link, the standalone "‹ Datasets" link under it, the Usage tab's
+   analysis/dependent-dataset table links, and the not-found branch's
+   "‹ Datasets" link) had no hover state. AppLink (AppNavigation.tsx)
+   renders a plain <a> with no class, and no resting rule targets it,
+   so it keeps the pure UA default (transparent background, default
+   link blue, underline). Every a:hover rule in the cascade is scoped
+   elsewhere — .app-nav/.section-nav, .fixture-notice, .first-run-docs,
+   .product-header .breadcrumbs (plural, and inside the product
+   header; this nav is the singular .data-breadcrumb on the page), the
+   rail/folder/not-found scopes — and the data surface's own hovers
+   are button/select/input/summary-typed, so none reaches an <a>. A
+   CSSOM probe with all five real stylesheets (1,336 rules) in the
+   real ancestor contexts confirmed zero matching :hover rules and
+   rest == hover on every paint property. DatasetDetail is a
+   sub-route (reached only by opening a dataset), the same blind spot
+   slices 81/85 noted for this page. The links now take the data
+   surface's established hover tint (#eaf3f7, slices 16/20/50/85), so
+   no new colour is introduced; the scope is tight in practice — the
+   only .data-page roots are DataLanding (renders no <a>), DataPrep's
+   opening branch (buttons only) and DatasetDetail. Background only,
+   so the UA link colour/underline and resting geometry are identical;
+   static (no animation), so no reduced-motion variant is needed.
+   The data surface is fixed light, so no dark variant. */
+.data-page a:hover { background: #eaf3f7; }
 .data-menu-items { position: absolute; right: 0; top: 100%; z-index: 15; width: max-content; max-width: 300px; background: white; border: 1px solid #bbcbd3; box-shadow: 0 4px 12px #19384a33; padding: 4px; }
 details[open] .data-menu-items { animation: menu-open 150ms ease-out; }
 @media (prefers-reduced-motion: reduce) { details[open] .data-menu-items { animation: none; } }
