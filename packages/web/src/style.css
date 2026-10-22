@@ -790,6 +790,42 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .parameter-editor { margin-top: 16px; }
 .parameter-editor form { padding: 8px 0; }
 .parameter-editor p { overflow-wrap: anywhere; }
+/* Issue #108 polish slice 99: the ParameterEditor's plain checkbox
+   labels ("Multiple values" / "Integer", ParameterEditor.tsx — plain
+   <label> elements wrapping their checkbox inside the create-parameter
+   form in .parameter-editor, rendered in the author Data panel inside
+   .author-layout) had zero hover feedback. Every :hover rule that
+   reaches the editor is scoped elsewhere or excludes them — the author
+   field hover reaches the form's text input, select and textarea but
+   deliberately excludes checkbox inputs so native controls keep their
+   OS rendering, and the parameter-editor summary hover takes the
+   details' direct-child summary only — so neither the labels nor their
+   checkboxes matched any :hover rule, while the fields and buttons
+   around them do step. A CSSOM probe with all five real stylesheets
+   (1,354 rules) in the real ancestor contexts (author light chrome and
+   author dark chrome) confirmed zero matching :hover rules for both
+   labels and their checkboxes and a transparent rest in both, and
+   confirmed the name, type and default fields do match the author
+   field hovers. The labels now take #edf7f7, the author surface's
+   established hover tint (the author button and field hovers), so no
+   new colour is introduced. The rule is on the label, not the checkbox:
+   the checkbox keeps its native rendering, following the slice-94
+   connector-toggle, slice-95 sign-in-check, slice-96 favorites-filter,
+   slice-97 toggle-label and slice-98 O-mode-label precedents where the
+   label surface hovers and its inner input does not. The :has(>
+   input[type=checkbox]) scope — the data-connector-tile's :has(>
+   input:disabled) guard is the codebase precedent — targets exactly
+   the two checkbox labels; the name, type and default-values field
+   labels stay out of scope because their fields already hover via the
+   author field hover. Background only, so resting geometry is
+   identical and there is no animation. */
+.parameter-editor label:has(> input[type=checkbox]):hover { background: #edf7f7; }
+/* Issue #108 polish slice 99: dark-chrome variant of the parameter
+   checkbox label hover above. The editor renders in the author Data
+   panel under dark chrome, where the light tint would sit wrong; it
+   takes the author dark hover tint (#334c62, the dark button and field
+   hovers) instead. Background only. */
+.author-workspace[data-chrome=dark] .parameter-editor label:has(> input[type=checkbox]):hover { background: #334c62; }
 
 .property-section fieldset { margin-block: .7rem; min-width: 0; border: 1px solid var(--chrome-border, #cedbde); }
 .action-target { border-top: 1px solid #dce5e7; padding-block: .6rem; }
