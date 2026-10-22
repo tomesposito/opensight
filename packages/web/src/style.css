@@ -1201,6 +1201,31 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .connector-description { font-size: 14px; line-height: 1.5; }
 .connector-toggle { display: flex; align-items: center; gap: 8px; margin: 24px 0; font-size: 14px; cursor: pointer; }
 .connector-toggle input { margin: 0; }
+/* Issue #108 polish slice 94: the gallery picker's connector toggle
+   (label.connector-toggle in DataSources.tsx — "Show unavailable
+   connectors", wrapping the showUnavailable checkbox in the
+   .connector-picker of the standalone gallery) had zero hover
+   feedback. Every label/input :hover rule in the cascade is scoped
+   elsewhere, and checkbox inputs are deliberately excluded from
+   every field-hover rule so native controls keep their OS
+   rendering — so neither the label nor its checkbox matched any
+   :hover rule, while the gallery's search input (slice 90), cards
+   and details controls do step. A CSSOM probe with all five real
+   stylesheets (1,346 rules) in the real ancestor context
+   (app-shell > main > section.data-sources > .connector-layout >
+   .connector-picker > label.connector-toggle) confirmed zero
+   matching :hover rules and a transparent rest for both the label
+   and the checkbox. The label now takes the app surfaces'
+   established hover tint (#eaf3f7 — the gallery's own search and
+   details hovers, slices 90/91/93, and the data-connector-tile
+   label hover in the Create Dataset dialog), so no new colour is
+   introduced. The rule is on the label, not the checkbox: the
+   checkbox keeps its native rendering, following the
+   data-connector-tile precedent where the label surface hovers and
+   its inner input does not. Background only, so resting geometry
+   is identical and there is no animation. The gallery is a
+   fixed-light app-shell surface, so no dark variant is added. */
+.connector-toggle:hover { background: #eaf3f7; }
 .connector-unavailable { border-top: 1px solid #d4dfe7; padding-top: 16px; }
 .connector-unavailable > p { font-size: 13px; color: #52687b; }
 .connector-card { display: flex; flex-direction: column; text-align: left; align-items: flex-start; gap: 6px; min-height: 176px; padding: 18px; border: 1px solid #cdd8e2; border-radius: 4px; background: white; color: #26364a; cursor: pointer; }
