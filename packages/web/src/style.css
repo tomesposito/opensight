@@ -1158,6 +1158,39 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .o-mode-notice { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin-top: 6px; font-size: 12px; }
 .o-mode-notice label { display: flex; flex-direction: row; align-items: center; gap: 5px; white-space: nowrap; margin: 0; }
 .o-mode-notice input[type=checkbox] { width: auto; margin: 0; }
+/* Issue #108 polish slice 98: the O-mode notice's "Generative mode"
+   label (.o-mode-notice label in OModeNotice.tsx, wrapping its
+   role=switch checkbox) had zero hover feedback. It renders in the
+   standalone O entry (.o-entry), the author toolbar form
+   (.o-entry-toolbar in light and dark chrome), the Ask O side panel,
+   and BuildForMe inside the calculation dialog — and in every one of
+   those contexts every :hover rule is scoped elsewhere or excludes
+   it: the author and dialog field hovers reach inputs, not labels,
+   and checkbox/switch inputs are deliberately excluded from the
+   field hovers so native controls keep their OS rendering. A CSSOM
+   probe with all five real stylesheets (1,352 rules) in the real
+   ancestor contexts confirmed zero matching :hover rules for the
+   label and a transparent rest in all of them (the switch itself
+   steps only inside the calculation dialog, via that dialog's
+   generic input hover, slice 46). The label now takes #edf7f7, the
+   author surface's established hover tint (the author button and
+   field hovers, the calculation-dialog hovers, and the Ask O panel's
+   fallback hover tint), so no new colour is introduced. The rule is
+   on the label, not the switch: the switch keeps its native
+   rendering, following the slice-94 connector-toggle, slice-95
+   sign-in-check, slice-96 favorites-filter and slice-97 toggle-label
+   precedents where the label surface hovers and its inner input does
+   not. Background only, so resting geometry is identical and there
+   is no animation. */
+.o-mode-notice label:hover { background: #edf7f7; }
+/* Issue #108 polish slice 98: dark-chrome variant of the O-mode
+   notice label hover above. The notice renders in the author toolbar
+   under dark chrome, where the light tint would sit wrong; it takes
+   the author dark hover tint (#334c62, the dark button and field
+   hovers) instead. The calculation dialog renders outside
+   .author-workspace (slice 46) and is a fixed-light surface, so the
+   BuildForMe rendering keeps the light tint above. Background only. */
+.author-workspace[data-chrome=dark] .o-mode-notice label:hover { background: #334c62; }
 
 .admin-settings { max-width: 52rem; padding: 1.5rem; margin: 0 auto; }
 .admin-settings form { display: flex; flex-wrap: wrap; align-items: end; gap: 1rem; margin: 1.5rem 0; }
