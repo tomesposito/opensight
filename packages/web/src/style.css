@@ -698,6 +698,30 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .parameter-control select[multiple] { min-height: 80px; }
 .parameter-control output { font-variant-numeric: tabular-nums; }
 .control-settings { font-size: 12px; margin-top: 8px; }
+/* Issue #108 polish slice 83: the ControlsStrip per-control disclosure
+   summary (.control-settings summary in ControlsStrip.tsx — "Edit
+   {label}" above the sheet, one per parameter control) had no hover
+   state. Every summary:hover rule in the cascade is scoped elsewhere
+   — the builder-panel/field-group/property-section/parameter-editor/
+   local-drafts hovers take direct-child summaries only, and the
+   bundle-import/imported-panel/card-footer/first-run/prep hovers take
+   summaries inside their own containers — so this summary, inside a
+   plain details in a .control-container, matched none of them; its
+   only rules are the font-size/margin above and the slice-15 :active
+   press, while the Move/Remove buttons inside the same details do
+   tint via the author generic button hover. A CSSOM probe with the
+   real stylesheet in the real ancestor context confirmed zero
+   matching :hover rules and a transparent rest. The summary renders
+   only when a sheet has parameter controls, so route audits without
+   controls never hover it (the slices 50/62/64/67/68 blind spot). It
+   now takes the author surface's established hover tint (#edf7f7,
+   the author generic and summary hovers), so no new colour is
+   introduced. Background only, so resting geometry is identical;
+   static (no animation), so no reduced-motion variant is needed. The
+   dark-chrome variant takes #334c62, the dark summary hover of the
+   neighbouring panels. */
+.control-settings summary:hover { background: #edf7f7; }
+.author-workspace[data-chrome=dark] .control-settings summary:hover { background: #334c62; }
 .control-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; padding-top: 14px; }
 .parameter-editor { margin-top: 16px; }
 .parameter-editor form { padding: 8px 0; }
