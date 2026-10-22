@@ -1598,6 +1598,27 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .analysis-settings-dialog .menu-item-reason { display: block; margin: 4px 0 8px; }
 
 /* Text and embedded images share the visual grid and its selection chrome. */
+/* Issue #108 polish slice 88: the whole-box hyperlink shown under a
+   text sheet object (SheetObjectCard.tsx — a plain <a> inside
+   p.field-hint in section.author-card.sheet-object) has zero hover
+   feedback. The author generic hovers are button/input/select/
+   textarea/summary-typed, and every a:hover rule in the cascade is
+   scoped elsewhere (.app-nav/.section-nav, .fixture-notice,
+   .first-run-docs, .product-header .breadcrumbs, the rail/folder/
+   not-found/data-page/admin scopes). A CSSOM probe with all five
+   real stylesheets (1,340 rules) in the real ancestor context
+   confirmed zero matching :hover rules and a transparent rest. It
+   is the only <a> inside .sheet-object anywhere, and it renders
+   only when a text object has a link URL set, so route audits never
+   hover it. It now takes the author surface's established hover
+   tint (#edf7f7 — the tint the card's own toolbar buttons take via
+   the author generic button hover), so no new colour is
+   introduced. Background only, so the UA link colour/underline and
+   resting geometry are identical; static (no animation), so no
+   reduced-motion variant is needed. The author card is white in
+   both chromes (.author-card background is unconditional — the
+   card-footer precedent), so no dark variant. */
+.sheet-object a:hover { background: #edf7f7; }
 .sheet-object .drag-handle { border: 0; cursor: move; padding: 2px 6px; }
 .sheet-object .sheet-text-editor { flex: 1; width: 100%; min-height: 0; resize: none; border: 0; border-radius: 0; padding: 12px; margin: 0; background: white; line-height: 1.4; font-family: Arial, "Helvetica Neue", Helvetica, sans-serif; }
 .sheet-image-frame { flex: 1; min-height: 0; padding: 8px; background: white; }
