@@ -600,6 +600,37 @@ button:disabled { cursor: default; opacity: .5; }
 .react-grid-item > .react-resizable-handle { z-index: 2; }
 .author-layout .toggle { flex-direction: row; align-items: center; gap: 6px; margin: 6px 0; }
 .toggle input { width: 17px; height: 17px; flex-shrink: 0; accent-color: #157f88; }
+/* Issue #108 polish slice 97: the Properties panels' toggle labels
+   (label.toggle in Author.tsx / PropertiesSections.tsx /
+   FormattingEditor.tsx / PivotOptionsEditor.tsx / TooltipEditor.tsx /
+   SheetObjectCard.tsx — "Show legend", "Show totals", "Donut", "Hide
+   empty rows", the filter-value labels, all inside .author-layout) had
+   zero hover feedback. Every :hover rule that reaches them is scoped
+   elsewhere or excludes them — the author field hover deliberately
+   excludes checkbox inputs so native controls keep their OS rendering,
+   and the author button hover is button-typed — so neither the labels
+   nor their checkboxes matched any :hover rule, while the buttons and
+   fields around them do step. A CSSOM probe with all five real
+   stylesheets (1,350 rules) in the real ancestor contexts (author
+   light chrome and author dark chrome) confirmed zero matching :hover
+   rules and a transparent rest in both. The label now takes #edf7f7,
+   the author surface's established hover tint (the author button and
+   field hovers), so no new colour is introduced. The rule is on the
+   label, not the checkbox: the checkbox keeps its native rendering,
+   following the slice-94 connector-toggle, slice-95 sign-in-check and
+   slice-96 favorites-filter precedents where the label surface hovers
+   and its inner input does not. The selector is label.toggle, so the
+   one div.toggle row in TooltipEditor (a span plus its Remove button,
+   whose button already hovers via the author button hover) stays out
+   of scope. Background only, so resting geometry is identical and
+   there is no animation. */
+label.toggle:hover { background: #edf7f7; }
+/* Issue #108 polish slice 97: dark-chrome variant of the toggle label
+   hover above. The toggles render in the author Properties panels,
+   where the light tint would sit wrong on dark chrome; it takes the
+   author dark hover tint (#334c62, the dark button and field hovers)
+   instead. Background only. */
+.author-workspace[data-chrome=dark] label.toggle:hover { background: #334c62; }
 .filter-editor { border-top: 1px solid #dce5e9; margin-top: 20px; padding-top: 14px; }
 .filter-editor h3 { margin-bottom: 12px; }
 .filter-values { max-height: 210px; overflow: auto; }
