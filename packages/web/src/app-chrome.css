@@ -284,6 +284,24 @@
 .app-shell .data-sources-heading .eyebrow, .app-shell .prep-heading .eyebrow { display: none; }
 .app-shell .data-sources-heading p, .app-shell .prep-heading p { font-size: 12px; margin: 0; color: #526c7a; }
 .app-shell .data-sources-heading > button { min-height: 32px; padding: 6px 12px; border: 1px solid #157f88; background: #157f88; color: #fff; border-radius: 4px; font-size: 12px; }
+/* Issue #108 polish slice 92: the data-sources heading's "Prepare data"
+   button (DataSources.tsx — the plain <button> in .data-sources-heading
+   inside section.data-sources in .app-shell > main) had zero hover
+   feedback. It is a primary button (the resting rule above paints it
+   #157f88 with white text), but every button:hover rule in the cascade
+   is scoped elsewhere — author, data-page/data-dialog, admin,
+   collection, the product-header account panel, the workspace banner,
+   the empty-page primary, the connector-submit in this same gallery —
+   so hovering changed nothing while the gallery's search input
+   (slice 90), details fields (slice 91) and submit (slice 66) do step.
+   A CSSOM probe with all five real stylesheets (1,344 rules) in the
+   real ancestor context confirmed zero matching :hover rules and a
+   #157f88 rest. It now takes the app-wide primary hover step
+   (#157f88 -> #126e76, slices 51/57/59/66), so no new colour is
+   introduced. Background only, so resting geometry is identical and
+   there is no animation. The gallery is a fixed-light app-shell
+   surface, so no dark variant is added. */
+.app-shell .data-sources-heading > button:hover:not(:disabled) { background: #126e76; }
 .app-shell .connector-demo-notice { margin: 0 0 16px; padding: 8px 12px; font-size: 12px; background: #eaf4f4; border-color: #157f88; }
 .app-shell .connector-layout { padding: 16px; background: #fff; border: 1px solid #d1e0e5; border-radius: 6px; gap: 24px; }
 .app-shell .connector-search { font-size: 12px; max-width: 360px; }
