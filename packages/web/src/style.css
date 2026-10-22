@@ -1126,6 +1126,24 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
    analysis-file-dialog exclusion pattern). */
 .admin-settings button:hover:not(:disabled) { background: #edf7f7; }
 .admin-settings input:hover:not(:disabled):not([type=radio]):not([type=checkbox]), .admin-settings select:hover:not(:disabled) { background: #edf7f7; }
+/* Issue #108 polish slice 87: the one link on the admin surfaces —
+   "Open operator user removal" (UserManagement.tsx, the hosted-tenant
+   branch) — is a plain <a> inside .admin-settings, so slice 59's
+   button/input/select hovers never reach it, and every a:hover rule
+   in the cascade is scoped elsewhere (.app-nav/.section-nav,
+   .fixture-notice, .first-run-docs, .product-header .breadcrumbs,
+   the rail/folder/not-found/data-page scopes). A CSSOM probe with
+   all five real stylesheets (1,339 rules) in the real ancestor
+   context confirmed zero matching :hover rules and a transparent
+   rest. It is the only <a> inside .admin-settings anywhere (the AI
+   settings, operator-removal, users and accept-invitation branches
+   render no other links), so the scope is tight. It now takes the
+   admin surface's established hover tint (#edf7f7, slice 59), so no
+   new colour is introduced. Background only, so the UA link
+   colour/underline and resting geometry are identical; static (no
+   animation), so no reduced-motion variant is needed. The admin
+   surface is fixed light, so no dark variant. */
+.admin-settings a:hover { background: #edf7f7; }
 
 /* Connector gallery: docked details, clear availability, no simulated connections. */
 .data-sources { max-width: 1500px; margin: 0 auto; padding: 28px 32px; color: #26364a; }
