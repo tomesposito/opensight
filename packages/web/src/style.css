@@ -1461,6 +1461,18 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .prep-columns { max-height: 220px; overflow: auto; }
 .prep-columns label { flex-direction: row; align-items: center; gap: 6px; overflow-wrap: anywhere; }
 .prep-columns label small { color: #5c7281; margin-left: auto; font-size: 9px; }
+/* Slice 103 (#108): the column-picker rows (.prep-columns label — the
+   full-row label wrapping drag handle, checkbox, name and type) had
+   zero hover feedback: every label :hover rule is scoped elsewhere, so
+   the row rested transparent and hovering its name, type or handle
+   changed nothing, while only the small checkbox box tinted via the
+   slice-39 input hover. The row is the interactive surface (click
+   toggles, selected rows are focusable and draggable), so it now takes
+   the data-prep surface's hover tint (#edf6fc, slices 31/39).
+   Background only, so resting geometry is identical and there is no
+   animation. The data-prep surface is fixed light, so no dark
+   variant. */
+.prep-columns label:hover { background: #edf6fc; }
 .prep-main { min-width: 0; }
 .prep-canvas-heading, .prep-preview-heading { padding: 8px; border-bottom: 1px solid #dce3e9; font-size: 12px; color: #5c7281; }
 .prep-canvas-heading h2, .prep-preview-heading h2 { margin: 0; color: #243746; }
