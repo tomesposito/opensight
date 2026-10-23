@@ -995,6 +995,8 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .action-checkbox-list label { display: flex; flex-direction: row; align-items: center; gap: 6px; font-size: 12px; font-weight: 400; margin-bottom: 0; }
 .action-checkbox-list label:has(> input[type=checkbox]):hover { background: #edf7f7; }
 .author-workspace[data-chrome=dark] .action-checkbox-list label:has(> input[type=checkbox]):hover { background: #334c62; }
+.action-radio-group label:has(> input[type=radio]):hover { background: #edf7f7; }
+.author-workspace[data-chrome=dark] .action-radio-group label:has(> input[type=radio]):hover { background: #334c62; }
 .action-target { display: grid; gap: 4px; padding: 6px; border: 1px solid var(--chrome-border, #c9d8de); border-radius: 4px; }
 .action-panel-footer { display: grid; gap: 8px; padding: 12px 0 4px; border-top: 1px solid var(--chrome-border, #c9d8de); }
 .action-panel-footer button { padding: 8px; border-radius: 4px; font: inherit; cursor: pointer; }
