@@ -1587,6 +1587,25 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
    so resting geometry is identical and there is no animation.
    The admin surface is fixed light, so no dark variant. */
 .admin-settings label:hover { background: #edf7f7; }
+/* Slice 112 (#108): the imported-dataset picker label (the bare
+   <label> in DataPrep.tsx — "Imported dataset" wrapping its
+   select, a direct child of section.data-prep, rendered only
+   when an imported bundle holds more than one prepared dataset)
+   had zero hover feedback: every label :hover rule is scoped
+   elsewhere, so the label rested transparent and hovering its
+   text or the gap above its select changed nothing, while only
+   the select inside it tinted via the slice-31 select hover.
+   The .data-prep label rule lays the label out as a column flex
+   (text line, gap, field), so the label itself is a visible
+   surface, so it now takes the data-prep surface's hover tint
+   (#edf6fc, slices 31/39/103/104/105/106/107/108), so no new
+   colour is introduced. The child-combinator scope keeps labels
+   nested deeper in the section out; the document-bar, step
+   editor, input-config and staging labels already take the
+   identical tint via slices 105/106/107/108. Background only,
+   so resting geometry is identical and there is no animation.
+   The data-prep surface is fixed light, so no dark variant. */
+.data-prep > label:hover { background: #edf6fc; }
 .prep-main { min-width: 0; }
 .prep-canvas-heading, .prep-preview-heading { padding: 8px; border-bottom: 1px solid #dce3e9; font-size: 12px; color: #5c7281; }
 .prep-canvas-heading h2, .prep-preview-heading h2 { margin: 0; color: #243746; }
