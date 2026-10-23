@@ -67,9 +67,14 @@ test('the controls label hover rules are paint-only: resting geometry and label 
   }
 });
 
-test('the resting controls label rule is preserved and the parameter-editor labels stay out of scope', () => {
+test('the resting controls label rule is preserved and the parameter-editor labels stay out of this slice\u2019s scope', () => {
   assert.ok(styleCss.match(/\.parameter-control label, \.control-settings label, \.control-form label, \.parameter-editor label\s*\{[^}]*display:\s*flex[^}]*flex-direction:\s*column[^}]*gap:\s*4px[^}]*margin-bottom:\s*8px/), 'the shared resting label rule must remain');
-  assert.ok(!styleCss.match(/\.parameter-editor label:hover/), 'the parameter-editor plain labels must stay out of scope (their checkbox labels are slice 99)');
+  // The parameter-editor plain labels were out of scope for slices
+  // 112/113 (a different surface, the Data panel); slice 115 later
+  // covered them with their own rule at the same author tint, which
+  // parameter-editor-label-hover.test.mjs now guards. This slice's
+  // grouped rule must still not reach them.
+  assert.ok(!rule[0].includes('parameter-editor'), 'the controls label hover rule must not cover the parameter-editor labels');
 });
 
 describe('Controls label hover in offline Chromium', () => {

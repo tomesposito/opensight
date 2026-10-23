@@ -864,7 +864,7 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
    takes the author dark hover tint (#334c62, the dark button and field
    hovers) instead. Background only. */
 .author-workspace[data-chrome=dark] .parameter-editor label:has(> input[type=checkbox]):hover { background: #334c62; }
-/* Issue #108 polish slice 114: the ParameterEditor's plain field
+/* Issue #108 polish slice 115: the ParameterEditor's plain field
    labels (.parameter-editor label — "Parameter name", "Parameter
    type" and "Default values" in ParameterEditor.tsx's
    create-parameter form in the author Data panel) had zero hover
