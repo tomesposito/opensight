@@ -1518,6 +1518,22 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
    no animation. The data-prep surface is fixed light, so no dark
    variant. */
 .prep-step-editor label:hover { background: #edf6fc; }
+/* Slice 107 (#108): the input config's source-picker label
+   (.prep-input-config > label — "Connected source" wrapping its
+   PrepSourcePicker select in DataPrep.tsx) had zero hover feedback:
+   every label :hover rule is scoped elsewhere, so the label rested
+   transparent and hovering its text or the gap above its select
+   changed nothing, while only the select inside it tinted via the
+   slice-31 select hover. The .data-prep label rule lays the label
+   out as a column flex (text line, gap, field), so the label itself
+   is a visible surface, so it now takes the data-prep surface's
+   hover tint (#edf6fc, slices 31/39/103/104/105/106). The
+   child-combinator scope keeps the staging picker's label out; the
+   step editor's source-picker label already takes the identical
+   tint via slice 106. Background only, so resting geometry is
+   identical and there is no animation. The data-prep surface is
+   fixed light, so no dark variant. */
+.prep-input-config > label:hover { background: #edf6fc; }
 .prep-main { min-width: 0; }
 .prep-canvas-heading, .prep-preview-heading { padding: 8px; border-bottom: 1px solid #dce3e9; font-size: 12px; color: #5c7281; }
 .prep-canvas-heading h2, .prep-preview-heading h2 { margin: 0; color: #243746; }
