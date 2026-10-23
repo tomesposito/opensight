@@ -864,6 +864,35 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
    takes the author dark hover tint (#334c62, the dark button and field
    hovers) instead. Background only. */
 .author-workspace[data-chrome=dark] .parameter-editor label:has(> input[type=checkbox]):hover { background: #334c62; }
+/* Issue #108 polish slice 114: the ParameterEditor's plain field
+   labels (.parameter-editor label — "Parameter name", "Parameter
+   type" and "Default values" in ParameterEditor.tsx's
+   create-parameter form in the author Data panel) had zero hover
+   feedback. Slice 99 hovered only the editor's checkbox labels via
+   :has(> input[type=checkbox]), and every other label hover is
+   scoped elsewhere — the sheet-controls labels of slices 112/113
+   share these labels' resting rule (column flex: text line, 4px
+   gap, field) but explicitly left the parameter-editor labels out
+   as a different surface — so the plain labels rested transparent
+   and hovering their text or gap changed nothing, while only the
+   field inside each label tinted via the author field hovers. A
+   CSSOM probe with all five real stylesheets (1,374 rules) in the
+   real ancestor contexts (light and dark chrome) confirmed zero
+   matching :hover rules for all three plain labels and a
+   transparent rest in both chromes. The labels now take the author
+   surface's established hover tint (#edf7f7, the author button,
+   field and summary hovers and the slice-99 checkbox-label hover
+   in this same editor), so no new colour is introduced — and
+   because the inner field's own hover is the same tint, hovering
+   the field inside the label reads as one surface, not two steps
+   (the slices 112/113 reasoning). The slice-99 :has rules keep
+   higher specificity with the same tints, so the checkbox labels
+   are unchanged. Background only, so resting geometry is
+   identical; static (no animation), so no reduced-motion variant
+   is needed. The dark-chrome variant takes #334c62, the author
+   dark hover tint. */
+.parameter-editor label:hover { background: #edf7f7; }
+.author-workspace[data-chrome=dark] .parameter-editor label:hover { background: #334c62; }
 
 .property-section fieldset { margin-block: .7rem; min-width: 0; border: 1px solid var(--chrome-border, #cedbde); }
 .action-target { border-top: 1px solid #dce5e7; padding-block: .6rem; }
@@ -1927,6 +1956,25 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
    there is no animation. */
 .analysis-file-dialog input:hover:not(:disabled):not([type=radio]):not([type=checkbox]), .analysis-file-dialog textarea:hover:not(:disabled) { background: #edf7f7; }
 .author-workspace[data-chrome=dark] .analysis-file-dialog input:hover:not(:disabled):not([type=radio]):not([type=checkbox]), .author-workspace[data-chrome=dark] .analysis-file-dialog textarea:hover:not(:disabled) { background: #334c62; }
+/* Issue #108 polish slice 114: the analysis file dialogs' field labels
+   (Save-as-Analysis "Analysis name"; Analysis Settings "Analysis name",
+   "Description" and "Analysis theme"; New Sheet "Sheet name", "Layout"
+   and "Optimize for viewing on"; Layout Settings "Row height (pixels)"
+   and "Spacing between items (pixels)") had no hover state — the
+   resting rule lays each label out as a grid (text line, 4px gap,
+   field), so the label is a visible surface, but every label :hover
+   rule is scoped elsewhere and hovering a label's text or gap changed
+   nothing, while only the field inside it tinted via slice 44. The
+   labels now take the same author hover tint (#edf7f7; dark chrome
+   #334c62), so hovering the field inside the label reads as one
+   surface, not two steps. The New Sheet dialog's disabled sheet-type
+   card is a label too and keeps slice 45's exclusion: the :not leaves
+   its subtle resting background and not-allowed cursor untouched (the
+   enabled card already takes the identical tint via slice 45).
+   Background only, so resting geometry is identical and there is no
+   animation. */
+.analysis-file-dialog label:hover:not(.sheet-type-card-disabled) { background: #edf7f7; }
+.author-workspace[data-chrome=dark] .analysis-file-dialog label:hover:not(.sheet-type-card-disabled) { background: #334c62; }
 
 /* Keep the snapshot laid out for accurate scroll offsets, out of screen view. */
 .analysis-print-root { position: fixed; left: -100000px; top: 0; width: 1000px; visibility: hidden; pointer-events: none; }
