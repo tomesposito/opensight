@@ -1566,6 +1566,27 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
    geometry is identical and there is no animation. */
 .change-type:hover { background: #edf7f7; }
 .author-workspace[data-chrome=dark] .change-type:hover { background: #334c62; }
+/* Slice 110 (#108): the admin surfaces' field labels
+   (.admin-settings label — "AI provider", "Model ID" and
+   "Replace API key" in AISettings.tsx, "Sign-in user ID",
+   "Display name" and "Role" in UserManagement.tsx, "Tenant ID"
+   and "Operator credential" in OperatorUsers.tsx, and the
+   standalone "Single-use invitation link" label in
+   UserManagement.tsx) had zero hover feedback: every label
+   :hover rule is scoped elsewhere, so the label rested
+   transparent and hovering its text or the gap above its field
+   changed nothing, while only the field inside it tinted via
+   the slice-59 admin field hover. The .admin-settings label
+   rule lays the label out as a grid (text line, gap, field),
+   so the label itself is a visible surface, so it now takes
+   the admin surface's hover tint (#edf7f7 — the slice-59 admin
+   button and field hovers and the slice-87 admin link hover),
+   so no new colour is introduced. The removal dialog's radio
+   labels already take the identical tint via slice 102, so
+   this broader scope changes nothing there. Background only,
+   so resting geometry is identical and there is no animation.
+   The admin surface is fixed light, so no dark variant. */
+.admin-settings label:hover { background: #edf7f7; }
 .prep-main { min-width: 0; }
 .prep-canvas-heading, .prep-preview-heading { padding: 8px; border-bottom: 1px solid #dce3e9; font-size: 12px; color: #5c7281; }
 .prep-canvas-heading h2, .prep-preview-heading h2 { margin: 0; color: #243746; }
