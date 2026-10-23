@@ -893,6 +893,48 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
    dark hover tint. */
 .parameter-editor label:hover { background: #edf7f7; }
 .author-workspace[data-chrome=dark] .parameter-editor label:hover { background: #334c62; }
+/* Issue #108 polish slice 116: the Properties panel sections'
+   plain field labels (.property-section label — "Edit title",
+   "Title font size" and "Alt text" in PropertiesSections.tsx,
+   "Hierarchy name" and "Level dimension" in HierarchyEditor.tsx,
+   "Metric placement" and "Column width (px)" in
+   PivotOptionsEditor.tsx, the header/cell colour, font-size,
+   display-name and rule labels in FormattingEditor.tsx, "Palette
+   override", "Analysis palette", "Analysis font" and the
+   .color-inputs colour labels in ThemeEditor.tsx, and the
+   sheet-object Placement labels in SheetObjectCard.tsx) had zero
+   hover feedback. The shared resting rule (.author-layout label,
+   above) lays these labels out as column flexes (text line, 4px
+   gap, field), so each label is itself a visible surface, but
+   every label :hover rule in the cascade is scoped elsewhere
+   (parameter-editor, sheet-controls, action lists, O-mode notice,
+   connector/sign-in/collection labels, the data-prep label
+   series, the change-type label, the admin labels, the embed
+   labels), and the one label rule that does reach this surface —
+   slice 97's label.toggle — covers only the sections' checkbox
+   labels, so the plain labels rested transparent and hovering
+   their text or gap changed nothing, while only the field inside
+   each label tinted via the author field hovers. A CSSOM probe
+   with all five real stylesheets (1,378 rules) in the real
+   ancestor contexts (author-workspace > author-layout >
+   properties-panel > details.property-section, light and dark
+   chrome) confirmed zero matching :hover rules for the plain
+   labels and a transparent rest in both chromes, while the
+   toggle labels matched the slice-97 rules and the name/font
+   fields matched the author field hovers. The labels now take
+   #edf7f7, the author surface's established hover tint (the
+   author button, field and summary hovers, the slice-97 toggle
+   hover in these same sections, and the slices 112-115 label
+   hovers), plus the author dark-chrome variant #334c62, so no
+   new colour is introduced — and because the inner field's own
+   hover is the same tint, hovering the field inside the label
+   reads as one surface, not two steps. The slice-97 toggle rules
+   carry the same tints, so the toggle labels are unchanged
+   whichever rule wins. Background only, so resting geometry is
+   identical; static (no animation), so no reduced-motion variant
+   is needed. */
+.property-section label:hover { background: #edf7f7; }
+.author-workspace[data-chrome=dark] .property-section label:hover { background: #334c62; }
 
 .property-section fieldset { margin-block: .7rem; min-width: 0; border: 1px solid var(--chrome-border, #cedbde); }
 .action-target { border-top: 1px solid #dce5e7; padding-block: .6rem; }
