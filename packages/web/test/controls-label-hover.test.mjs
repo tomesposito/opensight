@@ -70,7 +70,7 @@ test('the controls label hover rules are paint-only: resting geometry and label 
 test('the resting controls label rule is preserved and the parameter-editor labels stay out of this slice\u2019s scope', () => {
   assert.ok(styleCss.match(/\.parameter-control label, \.control-settings label, \.control-form label, \.parameter-editor label\s*\{[^}]*display:\s*flex[^}]*flex-direction:\s*column[^}]*gap:\s*4px[^}]*margin-bottom:\s*8px/), 'the shared resting label rule must remain');
   // The parameter-editor plain labels were out of scope for slices
-  // 112/113 (a different surface, the Data panel); slice 114 later
+  // 112/113 (a different surface, the Data panel); slice 115 later
   // covered them with their own rule at the same author tint, which
   // parameter-editor-label-hover.test.mjs now guards. This slice's
   // grouped rule must still not reach them.

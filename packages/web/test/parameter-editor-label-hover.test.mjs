@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { chromiumPage } from './chromium.mjs';
 
-// Issue #108 polish slice 114: hover feedback for the
+// Issue #108 polish slice 115: hover feedback for the
 // ParameterEditor's plain field labels (.parameter-editor label —
 // "Parameter name" wrapping its text input, "Parameter type"
 // wrapping its select, and "Default values" wrapping its textarea
