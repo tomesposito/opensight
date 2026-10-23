@@ -787,6 +787,44 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .dataset-binding summary:hover { background: #edf7f7; }
 .author-workspace[data-chrome=dark] .dataset-binding summary:hover { background: #334c62; }
 .control-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; padding-top: 14px; }
+/* Issue #108 polish slice 112: the sheet controls strip's field
+   labels (.parameter-control label — the on-sheet control's own
+   label in ControlInput.tsx, wrapping its select, range slider or
+   text/date input; .control-settings label — "Bound parameter" in
+   the per-control Edit details in ControlsStrip.tsx; and
+   .control-form label — the Add-control form's "Control label",
+   "Parameter", "Control type", "Options source", "Options (one
+   per line)", "Cascade from", "Parent filter column" and
+   "Minimum" / "Maximum" / "Step") had zero hover feedback. Every
+   label :hover rule in the cascade is scoped elsewhere (author
+   toggles, parameter/action editor labels, the O-mode notice
+   label, connector/sign-in/collection labels, the data-prep label
+   series, the change-type label, the admin labels, the embed
+   labels), so the labels rested transparent and hovering their
+   text or the gap above their field changed nothing, while only
+   the field inside each label tinted via the author field hovers
+   — and the slider's range input is deliberately excluded from
+   the author field hover, so the slider label was fully dead on
+   hover. The shared resting rule above lays all three label types
+   out as column flexes (text line, 4px gap, field), so each label
+   is itself a visible surface. A CSSOM probe with all five real
+   stylesheets (1,371 rules) in the real ancestor contexts
+   (author-workspace > author-layout > author-center >
+   controls-strip, light and dark chrome) confirmed zero matching
+   :hover rules for all eight label variants and a transparent rest
+   in both chromes. The labels now take #edf7f7, the author
+   surface's established hover tint (the author button, field and
+   summary hovers, and the slice-83 control-settings summary hover
+   in this same strip), plus the author dark-chrome variant
+   #334c62, so no new colour is introduced — and because the inner
+   field's own hover is the same tint, hovering the field inside
+   the label reads as one surface, not two steps. Background only,
+   so resting geometry is identical and there is no animation. The
+   .parameter-editor plain labels share the resting rule but stay
+   out of scope: they are a different surface (the Data panel),
+   and their checkbox labels are slice 99. */
+.parameter-control label:hover, .control-settings label:hover, .control-form label:hover { background: #edf7f7; }
+.author-workspace[data-chrome=dark] .parameter-control label:hover, .author-workspace[data-chrome=dark] .control-settings label:hover, .author-workspace[data-chrome=dark] .control-form label:hover { background: #334c62; }
 .parameter-editor { margin-top: 16px; }
 .parameter-editor form { padding: 8px 0; }
 .parameter-editor p { overflow-wrap: anywhere; }
