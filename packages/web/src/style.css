@@ -2085,6 +2085,26 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
    (no dark-chrome variant), so no dark variant is added. Background
    only, so resting geometry is identical and there is no animation. */
 .calculation-dialog .o-build-for-me summary:hover { background: #edf7f7; }
+/* Issue #108 polish slice 117: one surface in the Calculated field
+   dialog still had no hover state — its field labels
+   (.calculation-dialog label — "Name", "Use as", "Expression" and
+   "Function reference" in CalculationDialog in Author.tsx). Slice
+   46 hovered the dialog's buttons and fields and slice 68 its
+   "Build for me" summary, but every label :hover rule in the
+   cascade is scoped elsewhere, and the dialog renders outside
+   .author-workspace so the author label hovers never reach it
+   either, so the labels rested transparent and hovering their
+   text or gap changed nothing while only the field inside each
+   label tinted. The shared resting rule lays these labels out as
+   column flexes (text line, 4px gap, field), so each label is
+   itself a visible surface. They now take the dialog's own hover
+   tint (#edf7f7, slice 46's field tint — the same tint as the
+   inner field's hover, so the label reads as one surface), so no
+   new colour is introduced. The dialog's resting colors are
+   fixed light (no dark-chrome variant), so no dark variant is
+   added. Background only, so resting geometry is identical and
+   there is no animation. */
+.calculation-dialog label:hover { background: #edf7f7; }
 .settings-palette { display: flex; gap: 4px; margin-top: 8px; }
 .settings-palette span { width: 24px; height: 16px; border: 1px solid var(--chrome-border, #c9d8de); }
 .analysis-settings-dialog button[aria-disabled="true"] { color: var(--chrome-muted, #536879); cursor: not-allowed; }
