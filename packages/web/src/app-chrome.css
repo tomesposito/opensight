@@ -327,6 +327,31 @@
 .collection-no-results { text-align: center; padding: 32px 16px; }
 .collection-card .draft-rename { margin-top: 16px; padding-top: 16px; border-top: 1px solid #d1e0e5; }
 .collection-card .draft-rename label { display: grid; gap: 4px; }
+/* Issue #108 polish slice 126: the draft-rename form's label
+   (.draft-rename label — "Draft name" in LocalDrafts.tsx, wrapping the
+   rename input in the expanded drafts collection on the Analyses home
+   page and again in the author sidebar's local-drafts panel) had zero
+   hover feedback. Slice 64 hovered the rename field inside it in the
+   collection context, and slices 96/124/125 hovered the neighbouring
+   collection labels, but every label :hover rule in the cascade is
+   scoped elsewhere, so the label rested transparent in all three
+   contexts (collection, author light chrome, author dark chrome) and
+   hovering its text or gap changed nothing, while only the field
+   inside it tinted in the collection context. A CSSOM probe with all
+   five real stylesheets (1,395 rules) in the real ancestor contexts
+   confirmed zero matching :hover rules for the label in all three.
+   The resting rules above and in style.css (.local-drafts form) make
+   the label a visible surface (text line, 4px gap, field). It now
+   takes #eaf3f7, the collection surface's own hover tint (the rename
+   field inside it, slice 64, and the neighbouring labels, slices
+   96/124/125), so no new colour is introduced and the label and the
+   field inside it read as one surface in the collection context; the
+   same light rule reaches the author sidebar in light chrome,
+   following the slice-96 favorites-filter precedent for this same
+   component. The author dark-chrome variant (style.css) takes the
+   author dark hover tint #334c62. Background only, so resting
+   geometry is identical and there is no animation. */
+.draft-rename label:hover { background: #eaf3f7; }
 @media (max-width: 760px) {
   .collection-banner { padding: 20px; gap: 16px; }
   .collection-banner > svg { display: none; }

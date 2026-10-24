@@ -547,6 +547,12 @@ button:disabled { cursor: default; opacity: .5; }
    wrong on the dark chrome; it takes the author dark hover tint (#334c62,
    the dark button and summary hovers above) instead. Background only. */
 .author-workspace[data-chrome=dark] .favorites-filter:hover { background: #334c62; }
+/* Issue #108 polish slice 126: dark-chrome variant of the draft-rename
+   label hover (app-chrome.css). The label also renders in the author
+   sidebar's local-drafts panel, where the light collection tint would sit
+   wrong on the dark chrome; it takes the author dark hover tint (#334c62,
+   the dark button and summary hovers above) instead. Background only. */
+.author-workspace[data-chrome=dark] .draft-rename label:hover { background: #334c62; }
 .author-topbar { display: flex; align-items: center; flex-wrap: wrap; gap: 14px; }
 .author-topbar .analysis-title { flex: 1; min-width: 200px; }
 .author-topbar .analysis-title input { font-size: 23px; font-weight: 600; background: transparent; border-color: transparent; padding-left: 0; }
