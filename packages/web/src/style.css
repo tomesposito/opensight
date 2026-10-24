@@ -643,6 +643,27 @@ label.toggle:hover { background: #edf7f7; }
 .sheet-tabs button[aria-selected=true] { color: #126e76; border-bottom-color: #157f88; }
 .rename-sheet { flex-basis: 100%; display: flex; gap: 8px; align-items: end; }
 .rename-sheet label { margin: 0; }
+/* Issue #108 polish slice 118: the rename-sheet form's label
+   ("Sheet name" in SheetTabs in Author.tsx) and its input had zero
+   hover feedback. The form's buttons hover via the author-workspace
+   button hover, but the input sits outside .author-layout so the
+   author field hovers never reach it (the workspace-wide input
+   hovers cover only [type=color] and [type=search]), and every
+   label :hover rule in the cascade is scoped elsewhere, so the
+   label rested transparent and hovering its text, gap or field
+   changed nothing. The shared resting rule lays the label out as
+   a column flex (text line, 4px gap, field), so the label is
+   itself a visible surface. The label and input now take the
+   author surface's established hover tints (#edf7f7 light, the
+   author dark-chrome variant #334c62 — the field and label hover
+   tints of slices 112-117), so no new colour is introduced, and
+   because the label and the field inside it take the same tint,
+   hovering either reads as one surface. Background only, so
+   resting geometry is identical and there is no animation. */
+.rename-sheet label:hover { background: #edf7f7; }
+.author-workspace[data-chrome=dark] .rename-sheet label:hover { background: #334c62; }
+.rename-sheet input:hover:not(:disabled) { background: #edf7f7; }
+.author-workspace[data-chrome=dark] .rename-sheet input:hover:not(:disabled) { background: #334c62; }
 .calculation-dialog { width: min(520px, calc(100% - 32px)); border: 1px solid #c9d8de; border-radius: 8px; padding: 24px; color: #19384a; }
 .calculation-dialog::backdrop { background: #153c4a88; }
 .calculation-dialog h2 { margin-top: 0; font-size: 20px; }
