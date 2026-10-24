@@ -28,6 +28,20 @@
    mark, navigation toggle and account menu) with light text so the dark
    resting text stays readable; paint-only, no geometry change. */
 .product-header .fixture-picker select:hover:not(:disabled) { background: #365764; color: #fff; }
+/* Issue #108 polish slice 129: the fixture-picker label itself (the
+   "Definition example" text and the gap around the select it wraps) had
+   zero hover feedback — slice 33 hovered only the select inside it, and
+   every other label :hover rule in the cascade is scoped to a panel,
+   dialog or surface elsewhere, so the label rested transparent while the
+   brand link and account summary in the same header step to #365764.
+   A CSSOM probe with all five real stylesheets (1,403 rules) in the real
+   ancestor context confirmed zero matching :hover rules and a
+   transparent rest. The label now takes the same header hover tint
+   (#365764, the select's own hover), so no new colour is introduced and
+   label and field read as one surface. No colour change: the label text
+   is already the light #d0e0e8, readable on #365764. Background only, so
+   resting geometry is identical and there is no animation. */
+.product-header .fixture-picker:hover { background: #365764; }
 .product-navigation { position: fixed; z-index: 59; left: 0; top: var(--app-navigation-top, var(--app-band)); bottom: 0; width: var(--app-rail); padding: 16px 8px; overflow-y: auto; background: #edf3f5; border-right: 1px solid #d1e0e5; }
 .product-navigation .app-nav { display: flex; flex-direction: column; align-items: stretch; gap: 4px; }
 .product-navigation .app-nav a, .product-navigation .rail-search, .product-navigation .rail-more { display: flex; align-items: center; gap: 8px; width: 100%; font: 12px/1.5 Arial, "Helvetica Neue", Helvetica, sans-serif; text-align: left; padding: 8px; min-height: 36px; border: 1px solid transparent; border-radius: 5px; background: transparent; color: #365764; }
