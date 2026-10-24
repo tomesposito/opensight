@@ -1143,6 +1143,31 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .author-workspace[data-chrome=dark] .action-checkbox-list label:has(> input[type=checkbox]):hover { background: #334c62; }
 .action-radio-group label:has(> input[type=radio]):hover { background: #edf7f7; }
 .author-workspace[data-chrome=dark] .action-radio-group label:has(> input[type=radio]):hover { background: #334c62; }
+/* Issue #108 polish slice 121: the action panel's plain field labels
+   (.action-panel-body label — "Action name" and "Action type" in
+   ActionEditor.tsx's ActionPanel, "Source field" in FilterFields,
+   "URL template" and "Open in" in UrlFields, "Target sheet", "Mapped
+   source field" and "Target parameter" in NavigationFields) had zero
+   hover feedback. The resting rule above (.action-panel-body label
+   { display: grid; gap: 4px; }) makes each label a visible surface
+   (text line, 4px gap, field), but every label :hover rule in the
+   cascade is scoped elsewhere and the panel's own label hovers (the
+   :has rules above) cover only its radio/checkbox labels, so the
+   plain labels rested transparent while only the field inside each
+   label tinted via the author field hovers. A CSSOM probe (1,387
+   rules, real ancestor context) confirmed zero matching :hover
+   rules and a transparent rest for the plain labels. They now take
+   the author surface's established hover tint (#edf7f7, the panel's
+   own :has label hovers and the author field/button/summary
+   hovers), plus the author dark-chrome variant #334c62, so no new
+   colour is introduced — and because the label and the field inside
+   it take the same tint, hovering either reads as one surface. The
+   :has rules keep higher specificity with the same tints, so the
+   radio/checkbox labels are unchanged. Background only, so resting
+   geometry is identical; static, so no animation and no
+   reduced-motion variant is needed. */
+.action-panel-body label:hover { background: #edf7f7; }
+.author-workspace[data-chrome=dark] .action-panel-body label:hover { background: #334c62; }
 .action-target { display: grid; gap: 4px; padding: 6px; border: 1px solid var(--chrome-border, #c9d8de); border-radius: 4px; }
 .action-panel-footer { display: grid; gap: 8px; padding: 12px 0 4px; border-top: 1px solid var(--chrome-border, #c9d8de); }
 .action-panel-footer button { padding: 8px; border-radius: 4px; font: inherit; cursor: pointer; }
