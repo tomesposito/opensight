@@ -1885,6 +1885,29 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .dataset-execution { margin: 0 0 16px; padding: 12px 16px; background: var(--panel, #fff); border: 1px solid var(--border, #d7dfe8); border-radius: 4px; }
 .execution-controls, .execution-controls form { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
 .execution-controls label { display: grid; gap: 5px; font-size: 12px; font-weight: 600; }
+/* Issue #108 polish slice 128: the execution controls' labels
+   ("Execution mode" in every context, "Refresh interval (minutes)" in
+   the non-compact form) had no hover state at all — every label :hover
+   rule is scoped elsewhere (the prep label hovers cover the document
+   bar, columns, step editor, input config and staging scopes; the
+   data-dialog label hover does not reach the data-detail page; the
+   author label hovers cover the parameter/property/rename panels), so
+   the labels rested transparent in the data-detail, data-prep and
+   author light/dark contexts and hovering their text or gap changed
+   nothing while the field inside each label tinted. A CSSOM probe with
+   all five real stylesheets (1,399 rules) in the real ancestor
+   contexts confirmed zero matching :hover rules for every label. Each
+   label now takes the hover tint of the field inside it on its own
+   surface — #eaf3f7 on the data surfaces (the data-page select hover),
+   #edf6fc in data-prep (its select/input hovers), #edf7f7 in author
+   light chrome and #334c62 in author dark chrome (the author select
+   hovers) — so no new colour is introduced and label and field read
+   as one surface. Background only, so resting geometry is identical
+   and there is no animation. */
+.execution-controls label:hover { background: #eaf3f7; }
+.data-prep .execution-controls label:hover { background: #edf6fc; }
+.author-workspace .execution-controls label:hover { background: #edf7f7; }
+.author-workspace[data-chrome=dark] .execution-controls label:hover { background: #334c62; }
 .execution-controls input, .execution-controls select { padding: 7px 9px; border: 1px solid #b6c4d2; border-radius: 3px; background: var(--panel, white); color: inherit; }
 .execution-controls input { width: 145px; }
 .execution-controls button { min-height: 33px; }
