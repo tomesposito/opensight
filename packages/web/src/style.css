@@ -1881,6 +1881,21 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .draft-source-recovery { margin: 8px 20px; padding: 12px; border: 1px solid #b97715; background: #fff8e6; color: #34280c; }
 .draft-source-recovery button, .draft-source-recovery label { margin: 4px 8px 4px 0; }
 .draft-source-recovery select { max-width: 100%; }
+/* Issue #108 polish slice 123: the draft-source recovery banner's
+   label (.draft-source-recovery label — "Replacement dataset" in
+   DraftSource.tsx's DraftSourceRecovery aside, a direct child of
+   .author-workspace in Author.tsx) had zero hover feedback. The
+   author select hover (slice 36) and the author button hover reach
+   the controls inside the banner, but every label :hover rule in
+   the cascade is scoped elsewhere, so the label rested transparent
+   and hovering its text changed nothing while only the select
+   inside it tinted. The label now takes the author select/button
+   hover tint (#edf7f7), plus the author dark-chrome variant
+   (#334c62), so no new colour is introduced and the label and the
+   select inside it read as one surface. Background only, so
+   resting geometry is identical and there is no animation. */
+.draft-source-recovery label:hover { background: #edf7f7; }
+.author-workspace[data-chrome=dark] .draft-source-recovery label:hover { background: #334c62; }
 /* Durable automation histories contain long occurrence IDs. Keep them in the
    page's content column, including on narrow operator screens. */
 .job-management table { width: 100%; table-layout: fixed; border-collapse: collapse; margin: 16px 0; }
