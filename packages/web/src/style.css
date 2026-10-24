@@ -223,6 +223,22 @@ select { background: #fff; border: 1px solid #c9d8de; border-radius: 6px; paddin
    controls keep their flat resting state. */
 .api-picker button:hover:not(:disabled) { background: #126e76; }
 .api-picker select:hover:not(:disabled), .api-picker input:hover:not(:disabled) { background: #edf7f7; }
+/* Issue #108 polish slice 122: the picker form's labels (.api-picker
+   label — "Resource" and "Resource ID" in Application.tsx's
+   ApiExplorer form, "Analysis dataset" in Author.tsx's dataset
+   chooser) had zero hover feedback. Slice 57 hovered the picker's
+   fields and submit, but every label :hover rule in the cascade is
+   scoped elsewhere, so the labels rested transparent and hovering
+   their text or gap changed nothing while only the field inside
+   tinted. The resting rule lays each label out as a column flex
+   (text line, 8px gap, field), so the label is itself a visible
+   surface. The labels now take the picker's own field hover tint
+   (#edf7f7), plus the author dark-chrome variant (#334c62) for the
+   Author instance, so no new colour is introduced and the label
+   and the field inside it read as one surface. Background only,
+   so resting geometry is identical and there is no animation. */
+.api-picker label:hover { background: #edf7f7; }
+.author-workspace[data-chrome=dark] .api-picker label:hover { background: #334c62; }
 main { padding: 34px 36px; max-width: 1680px; margin: auto; }
 main.author-main { max-width: none; padding: 16px; padding-top: 0; }
 .dashboard-heading { display: flex; justify-content: space-between; align-items: center; gap: 20px; }
