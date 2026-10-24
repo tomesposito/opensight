@@ -266,6 +266,26 @@
    Background only, so resting geometry is identical and there is no
    animation. */
 .favorites-filter:hover { background: #eaf3f7; }
+/* Issue #108 polish slice 125: the drafts collection tools row's plain
+   search label (.draft-collection-tools label — "Search analyses" in
+   LocalDrafts.tsx's expanded collection, wrapping the search input) had
+   zero hover feedback of its own — slice 64 hovered the search field
+   inside it and slice 96 the favorites-filter label beside it, but every
+   label :hover rule in the cascade is scoped elsewhere, so the label
+   rested transparent and hovering its text or gap changed nothing, while
+   only the field inside it tinted. The resting rule above makes the
+   label a visible surface (text line, 4px gap, field). It now takes
+   #eaf3f7, the collection surface's own hover tint (the search field
+   inside it, slice 64, and the slice-96 favorites label beside it), so
+   no new colour is introduced and the label and the field inside it
+   read as one surface. The favorites-filter label is excluded: slice 96
+   already owns its hover (same tint, plus its author dark-chrome
+   variant). This label exists only in the expanded collection on the
+   Analyses home page — the author sidebar renders LocalDrafts without
+   the tools row — and that surface is fixed light, so no dark variant.
+   Background only, so resting geometry is identical and there is no
+   animation. */
+.draft-collection-tools label:hover:not(.favorites-filter) { background: #eaf3f7; }
 .collection-card input { min-width: 0; width: 100%; }
 .collection-table-scroll { overflow: auto; }
 .collection-table-scroll table { min-width: 600px; font-size: 12px; }
