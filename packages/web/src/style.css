@@ -1415,6 +1415,29 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
    .o-bar scope keeps the mode notice's native checkbox on OS rendering
    by design. */
 .q-side-panel .o-bar input:hover:not(:disabled) { background: var(--chrome-menu-hover, #edf7f7); }
+/* Issue #108 polish slice 132: the Ask O panel's question label
+   (.q-side-panel .o-bar label — "Ask a question" in OEntry's form,
+   rendered inside .q-panel-content) had zero hover feedback. The
+   resting rules (.o-bar is a wrapping flex row with an 8px gap, the
+   label is font-weight 650, and the panel scopes it to
+   flex-basis: 100%) make the label a full-width row of the question
+   bar, directly above the search input — but every label :hover rule
+   in the cascade is scoped elsewhere, so the label rested transparent
+   and hovering its row changed nothing, while the panel's buttons,
+   its search input (slice 58) and the mode-notice label inside the
+   same panel all tint. A CSSOM probe with all five real stylesheets
+   (1,406 rules) in the real ancestor context confirmed zero matching
+   :hover rules and a transparent rest. The label now takes the
+   panel's own hover expression, var(--chrome-menu-hover, #edf7f7) —
+   the exact background of the panel button hover and the slice-58
+   input hover — so no new colour is introduced, label and field read
+   as one surface, and dark chrome resolves the var to #293f55
+   exactly like the panel buttons. Background only, so resting
+   geometry is identical and there is no animation. Scoped to
+   .q-side-panel: in the author-menu variant the same label is
+   visually hidden (clipped), and the embed context is already
+   covered by embed.css, so both stay unchanged. */
+.q-side-panel .o-bar label:hover { background: var(--chrome-menu-hover, #edf7f7); }
 .q-side-panel .o-answer { margin-top: 8px; padding-top: 8px; border-color: var(--chrome-border, #c9d8de); }
 .q-side-panel .o-alternatives { margin-top: 8px; }
 .q-side-panel .o-alternatives h3 { margin-bottom: 8px; }
