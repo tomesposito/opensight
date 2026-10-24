@@ -1628,6 +1628,38 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
    identical and there is no animation. The gallery is a
    fixed-light app-shell surface, so no dark variant is added. */
 .connector-details button:hover:not(:disabled):not(.connector-submit) { background: #eaf3f7; }
+/* Issue #108 polish slice 131: the connector details labels
+   (.connector-details label — "File" and the schema-field labels
+   in DataSources.tsx's ConnectorDetails form, plus "Data expires"
+   in DirectUpload.tsx's section.direct-upload, all inside
+   aside.connector-details) had zero hover feedback on the
+   standalone gallery surface. The resting rule
+   (.connector-details form, .connector-details label
+   { display: grid; gap: 7px; }) makes each label a visible surface
+   (text line, gap, field). In the create-dataset dialog the SAME
+   ConnectorDetails labels already hover via .data-dialog
+   label:hover (#eaf3f7), but in the standalone gallery
+   (app-shell > main > section.data-sources > .connector-layout >
+   aside.connector-details) every label :hover rule in the cascade
+   is scoped elsewhere, so a CSSOM probe with all five real
+   stylesheets (1,405 rules) in the real ancestor contexts
+   confirmed zero matching :hover rules and a transparent rest for
+   the gallery form label, the file label and the DirectUpload
+   label, while the fields inside them tint (slice 91) and the
+   aside's plain buttons (slice 93), submit (slice 66) and toggle
+   label (slice 94) do step. They now take #eaf3f7 — the tint these
+   same labels already take inside the data-dialog, and the
+   gallery's own field (slice 91), plain-button (slice 93) and
+   toggle-label (slice 94) hovers — so no new colour is introduced
+   and label and field read as one surface. The rule is not
+   surface-scoped: in the dialog context it sets the identical
+   tint to the data-dialog rule, so the dialog is unchanged. The
+   rule is on the label, not the inner control, so the file input
+   keeps its native rendering (the slice-94/95 label precedent).
+   Background only, so resting geometry is identical and there is
+   no animation. The gallery is a fixed-light app-shell surface,
+   so no dark variant is added. */
+.connector-details label:hover { background: #eaf3f7; }
 .connector-details input:disabled, .connector-details select:disabled { background: #f0f3f6; color: #6a7886; }
 .connector-availability { padding: 9px 12px; background: #f0f3f6; border-radius: 3px; font-weight: 600; }
 .connector-submit { background: #087cb8; color: white; padding: 11px; border: 0; border-radius: 3px; font-weight: 600; cursor: pointer; }
