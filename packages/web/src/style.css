@@ -553,6 +553,26 @@ button:disabled { cursor: default; opacity: .5; }
    wrong on the dark chrome; it takes the author dark hover tint (#334c62,
    the dark button and summary hovers above) instead. Background only. */
 .author-workspace[data-chrome=dark] .draft-rename label:hover { background: #334c62; }
+/* Issue #108 polish slice 127: the draft-rename form's input in the author
+   sidebar (.author-workspace .draft-rename input — LocalDrafts.tsx's
+   rename field inside the author-tools local-drafts panel) had zero hover
+   feedback. Its collection-context instance hovers via slice 64
+   (.collection-card input:hover), but the sidebar instance sits outside
+   .collection-card and outside .author-layout (the author field hover's
+   scope above), and the workspace-wide input hovers cover only color and
+   search inputs — a CSSOM probe with all five real stylesheets (1,397
+   rules) in the real ancestor contexts confirmed zero matching :hover
+   rules in both author chromes, while the label around it (slice 126),
+   the panel summary and the form's buttons do step. It now takes the
+   author surface's established field hover tints (#edf7f7 light — the
+   author-layout field hover above and the rename-sheet input hover, the
+   precedent for a rename input outside .author-layout — and the author
+   dark field tint #334c62), so no new colour is introduced. Both rules
+   are scoped to .author-workspace, so the collection instance keeps its
+   slice-64 #eaf3f7 hover untouched. Background only, so resting geometry
+   is identical and there is no animation. */
+.author-workspace .draft-rename input:hover:not(:disabled) { background: #edf7f7; }
+.author-workspace[data-chrome=dark] .draft-rename input:hover:not(:disabled) { background: #334c62; }
 .author-topbar { display: flex; align-items: center; flex-wrap: wrap; gap: 14px; }
 .author-topbar .analysis-title { flex: 1; min-width: 200px; }
 .author-topbar .analysis-title input { font-size: 23px; font-weight: 600; background: transparent; border-color: transparent; padding-left: 0; }
