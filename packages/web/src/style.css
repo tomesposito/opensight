@@ -1083,6 +1083,31 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .author-workspace[data-chrome] .chrome-switch select { min-height: 28px; padding: 4px; border-radius: 3px; border: 1px solid var(--header-border); background: var(--header-bg); color: var(--header-text); font-size: 12px; }
 .author-workspace[data-chrome] .chrome-switch select:hover { background: var(--header-pressed); }
 .author-workspace[data-chrome] .chrome-switch select:focus-visible { outline-color: var(--header-focus); }
+/* Issue #108 polish slice 133: hover feedback for the NEW LOOK switch's
+   label (.author-workspace[data-chrome] label.chrome-switch — "NEW LOOK"
+   text plus its theme select in AuthorToolbar.tsx's nav.author-menu, at
+   the right end of the author menu bar). The resting rule makes the
+   label a visible surface (flex row: text, 8px gap, select, with a
+   border-left separator), but the label had zero hover feedback: its
+   select hovers (the chrome-switch select hover above, plus the generic
+   author select hover), the neighbouring menu summaries and the
+   analysis-search button hover, and the fixture-picker label in the
+   product header hovers as a whole — but every label :hover rule in the
+   cascade is scoped elsewhere, so the chrome-switch label rested
+   transparent and hovering its text or gap changed nothing. A CSSOM
+   probe with all five real stylesheets (1,407 rules) in the real
+   ancestor context (.author-workspace[data-chrome] > nav.author-menu)
+   confirmed zero matching :hover rules for the label and a transparent
+   rest, while the inner select matched both of its hover rules. The
+   label now takes var(--header-pressed), the select's own hover
+   expression (the fixture-picker precedent: the label takes its field's
+   hover tint), so no new colour is introduced and label and field read
+   as one surface. The header vars are defined on .author-workspace and
+   shared by both chromes ("Both editor themes share the NEW LOOK
+   identity and menu bands"), so the one rule covers light and dark
+   chrome alike. Background only, so resting geometry is identical and
+   there is no animation. */
+.author-workspace[data-chrome] label.chrome-switch:hover { background: var(--header-pressed); }
 .color-inputs { display: flex; flex-wrap: wrap; gap: 5px; }
 .color-inputs label { width: 48px; font-size: 9px; }
 .color-inputs input[type=color] { padding: 2px; height: 30px; }
