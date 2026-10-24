@@ -289,6 +289,20 @@
    It takes the app-wide menu-item hover tint (#eaf3f7, slices 16/21);
    background only, so resting geometry is identical. Static, no animation. */
 .collection-pagination select:hover:not(:disabled) { background: #eaf3f7; }
+/* Issue #108 polish slice 124: the pagination label wrapping that select
+   ("Items per page" in LocalDrafts.tsx's expanded collection) had zero
+   hover feedback of its own — slice 23 hovered the select inside it and
+   slice 64 the card's fields, but every label :hover rule in the cascade
+   is scoped elsewhere, so the label rested transparent and hovering its
+   text or gap changed nothing, while only the select inside it tinted.
+   The resting rule above makes the label a visible surface (text line,
+   8px gap, field). It now takes #eaf3f7, the collection surface's own
+   hover tint (the select inside it, slice 23, and the slice-64 card
+   field hover), so no new colour is introduced and the label and the
+   select inside it read as one surface. Background only, so resting
+   geometry is identical and there is no animation; the collection
+   surface is fixed light, so no dark variant. */
+.collection-pagination label:hover { background: #eaf3f7; }
 .collection-note { color: #526c7a; margin: 16px 0 0; font-size: 11px; }
 .collection-no-results { text-align: center; padding: 32px 16px; }
 .collection-card .draft-rename { margin-top: 16px; padding-top: 16px; border-top: 1px solid #d1e0e5; }
