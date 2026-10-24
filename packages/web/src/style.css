@@ -1224,6 +1224,20 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .visual-action-menu [role=menuitem] { text-align: left; padding: 6px 8px; font: inherit; font-size: 12px; background: transparent; border: 0; border-radius: 3px; cursor: pointer; color: inherit; }
 .visual-action-menu [role=menuitem]:hover:not(:disabled) { background: #e8f1f3; }
 .visual-action-menu [role=menuitem]:disabled { opacity: .55; cursor: not-allowed; }
+/* Issue #108 polish slice 130: the action menu's trigger button
+   (.visual-action-menu > button, the "⋯" button in VisualActionMenu.tsx
+   inside the card heading) had zero hover feedback on the dashboard
+   (view) surface: the menu renders there inside .dashboard-grid, outside
+   every scoped button hover (author, data-page, data-dialog, embed,
+   sign-in, Ask O panel), so the trigger rested at the UA default and
+   hovering changed nothing, while the menuitems inside its own menu
+   tint. In the author contexts the trigger already hovers via the
+   generic author button hovers, so the rule is scoped to
+   .dashboard-grid to leave those exactly as they are. It takes
+   #e8f1f3, the menuitems' own hover tint, so no new colour is
+   introduced and trigger and menu read as one surface. Background
+   only, so resting geometry is identical and there is no animation. */
+.dashboard-grid .visual-action-menu > button:hover:not(:disabled) { background: #e8f1f3; }
 /* Dashboard (view) cards share the author card's ⋯ action menu. */
 .card-heading .visual-action-menu { margin-left: auto; }
 .visual-action-problem { margin: 4px 20px 0; padding: .5rem .75rem; font-size: .8rem; color: #7a4a00; background: #fdf3e3; border: 1px solid #ecd9ae; border-radius: 4px; }
