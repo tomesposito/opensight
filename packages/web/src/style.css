@@ -166,6 +166,22 @@ select { background: #fff; border: 1px solid #c9d8de; border-radius: 6px; paddin
 .local-drafts .empty-page-illustration { width: 96px; height: 83px; }
 .dataset-picker-pagination { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 12px; }
 .dataset-picker-pagination label { display: flex; align-items: center; gap: 8px; }
+/* Issue #108 polish slice 120: the pagination row's "Items per page" label
+   was the Create Analysis dialog's last zero-hover surface — the resting
+   rule above lays it out as a flex row (text, gap, select), so it is a
+   visible surface, but every label :hover rule in the cascade is scoped
+   elsewhere and the dialog's own hovers cover only its buttons, the
+   select inside this label (slice 23) and its search input (slice 48).
+   A CSSOM probe (1,386 rules, real ancestor context) confirmed zero
+   matching :hover rules and a transparent rest for the label while the
+   select inside it tinted. It takes the dialog's established hover tint
+   (#edf7fc, the button/select/search hovers above), so no new colour is
+   introduced — and because the label and the select inside it take the
+   same tint, hovering either reads as one surface. Background only, so
+   resting geometry is identical; static, so no animation and no
+   reduced-motion variant is needed. The dialog is a fixed-light
+   surface, so no dark variant. */
+.dataset-picker-pagination label:hover { background: #edf7fc; }
 .dataset-picker-pagination select { padding: 3px 6px; border-color: #969da3; }
 .dataset-picker-pagination button { padding: 2px 8px; border-color: transparent; }
 .dataset-picker-pagination .dataset-picker-refresh { margin-right: auto; }
