@@ -470,7 +470,13 @@ function projectVisual(visual: AuthorVisual, raw: BundleVisual, calculations: re
 }
 const usesRemappedDataset = (meta: ImportedVisual): boolean => meta.local && (!!meta.remapped || !meta.dataSets.every(d => d.arn === LOCAL_SALES_ARN));
 function exportVisual(v: AuthorVisual, raw: BundleVisual | undefined, calculations: readonly CalculatedField[]): BundleVisual {
-  if (!v.imported || !raw) return serializeVisual(v, true, calculations);
+  if (!v.imported || !raw) {
+    const generated = serializeVisual(v, false, calculations);
+    // Copies have no raw definition under their new identity. Keep their
+    // dataset binding instead of inheriting the local serializer's default.
+    if (v.imported) rebind(generated, usesRemappedDataset(v.imported) ? LOCAL_IDENTIFIER : v.imported.dataSets[0]?.identifier ?? LOCAL_IDENTIFIER);
+    return generated;
+  }
   const meta = v.imported, baseline = meta.baseline;
   const before = obj(Object.values(projectVisual(baseline, raw, calculations))[0]), after = obj(Object.values(projectVisual(v, raw, calculations))[0]);
   const originalBody = Object.values(raw)[0]!;
@@ -495,7 +501,7 @@ function exportVisual(v: AuthorVisual, raw: BundleVisual | undefined, calculatio
   return { [changedKind ? Object.keys(serializeVisual(v, true, calculations))[0]! : meta.variant]: body };
 }
 function exportLayout(sheet: AuthorSheet, raw: BundleSheet): void {
-  if (sheet.imported && equal(sheet.layout, sheet.imported.layout)) return;
+  if (sheet.imported && !sheet.imported.sourceSheetId && equal(sheet.layout, sheet.imported.layout)) return;
   const layouts = copy(raw.layouts ?? []), first = obj(layouts[0]), config = obj(first.configuration), grid = obj(config.gridLayout);
   // Layout configurations are a union. A grid edit replaces a free-form or
   // paginated variant; the extension preserves the complete original layout.
@@ -554,7 +560,7 @@ export function exportBundle(draft: AuthorDraft): QsBundle {
     if (primary && draft.title !== origin.title) r.name = draft.title.trim() || 'Untitled analysis';
     const sheets = draft.sheets.filter(s => s.imported ? s.imported.memberPath === member.path : primary && (s.id !== origin.emptySheetId || (s.visuals.length > 0 || !!s.objects?.length) || s.name !== 'Sheet 1'));
     if (d.sheets !== undefined || sheets.length) d.sheets = sheets.map(sheet => {
-      const raw = copy(d.sheets?.find(s => s.sheetId === sheet.imported?.sheetId) ?? { sheetId: sheet.id, name: sheet.name });
+      const raw = copy(d.sheets?.find(s => s.sheetId === sheet.imported?.sheetId) ?? { sheetId: sheet.imported?.sheetId ?? sheet.id, name: sheet.name });
       if (!sheet.imported || sheet.name !== sheet.imported.name) raw.name = sheet.name;
       // Current layout settings always win on export, in both branches: the
       // imported branch retains the original raw definition (which would keep
@@ -625,7 +631,7 @@ export function exportBundle(draft: AuthorDraft): QsBundle {
     for (const sheet of sheets) for (const v of sheet.visuals) {
       const meta = v.imported, identifier = meta?.local ? usesRemappedDataset(meta) ? LOCAL_IDENTIFIER : meta.dataSets[0]?.identifier ?? LOCAL_IDENTIFIER : meta?.dataSets[0]?.identifier ?? LOCAL_IDENTIFIER;
       const before = meta?.baseline.filters ?? [];
-      if (equal(before, v.filters) && !(meta && usesRemappedDataset(meta))) continue;
+      if (!meta?.sourceVisualId && equal(before, v.filters) && !(meta && usesRemappedDataset(meta))) continue;
       const existing = d.filterGroups ?? [];
       for (const binding of meta?.filterGroups ?? []) {
         const group = existing.find(g => obj(g).filterGroupId === binding.id), filter = v.filters.find(f => f.columnName === binding.columnName);

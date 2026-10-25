@@ -129,7 +129,9 @@ export function importInteractions(body: Obj, visual: AuthorVisual): { actions: 
 }
 /** Patch only modeled interaction arrays; retain unknown entries and untouched native shapes. */
 export function exportInteractions(body: Obj, visual: AuthorVisual, targetId: (id: string) => string, identifier: string, sheetId: (id: string) => string = id => id): void {
-  const before = visual.imported?.baseline;
+  // A copy has no raw interactions under its new identity: serialize every
+  // action, including unchanged navigation back to an original imported sheet.
+  const before = visual.imported?.sourceVisualId ? undefined : visual.imported?.baseline;
   const kinds = ['filterActions', 'urlActions', 'navigationActions'] as const;
   if (!before || kinds.some(kind => !equal(before[kind], visual[kind]))) {
     const current = [...(visual.filterActions ?? []).map(a => serializeAction(a, fieldIds(body), targetId)), ...(visual.urlActions ?? []).map(serializeUrlAction), ...(visual.navigationActions ?? []).map(a => serializeNavigationAction(a, sheetId))];

@@ -69,6 +69,8 @@ export type Well = 'dimension' | 'rows' | 'columns' | 'values' | 'smallMultiples
 export interface CategoryFilter { columnName: string; values: string[]; parameterName?: string; operator?: 'EQUALS' | 'GREATER_THAN_OR_EQUAL_TO' | 'LESS_THAN_OR_EQUAL_TO' }
 export interface ImportedVisual {
   visualId: string; variant: string; local: boolean; replaced?: boolean; remapped?: boolean;
+  /** Copies export under visualId; this identifies their visual in the origin bundle. */
+  sourceVisualId?: string;
   dataSets: { identifier: string; arn?: string }[];
   issues: string[]; unmappedFields: string[];
   baseline: Omit<AuthorVisual, 'imported'>;
@@ -76,6 +78,8 @@ export interface ImportedVisual {
 }
 export interface ImportedSheet {
   memberPath: string; sheetId: string; name: string; layout: Placement[]; controls?: AuthorControl[]; objects?: SheetObject[];
+  /** Copies export under sheetId; this identifies their sheet in memberPath. */
+  sourceSheetId?: string;
 }
 export interface ImportResult { path: string; name: string; messages: string[] }
 export interface BundleOrigin {
@@ -452,6 +456,18 @@ export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorD
       delete control.importedId;
     }
     copy.layout = copy.layout.map(p => ({ ...p, i: remap.get(p.i) ?? p.i }));
+    if (copy.imported) {
+      copy.imported.sourceSheetId ??= copy.imported.sheetId;
+      copy.imported.sheetId = copy.id;
+      for (const visual of copy.visuals) if (visual.imported) {
+        visual.imported.sourceVisualId ??= visual.imported.visualId;
+        visual.imported.visualId = visual.id;
+        // Bindings belong to the source sheet. The copy exports its own filters.
+        visual.imported.filterGroups = [];
+        const { imported, ...baseline } = visual;
+        imported.baseline = structuredClone(baseline);
+      }
+    }
     if (source.selectedId && remap.has(source.selectedId)) copy.selectedId = remap.get(source.selectedId)!;
     return { ...draft, sheets: [...draft.sheets, copy], activeSheetId: copy.id };
   }
@@ -983,14 +999,20 @@ export function validateDraft(value: unknown): asserts value is AuthorDraft {
     calculations.push(field);
   }
   const fields = dataFields(calculations, dataset), ids = new Set<string>(), sheetIds = new Set<string>();
+  const origin = isObject(value.bundle) ? value.bundle.original as QsBundle : undefined;
+  const originalSheets = (origin?.members ?? []).flatMap(({ resource }) => resource.resourceType === 'analysis' || resource.resourceType === 'dashboard' ? resource.definition.sheets ?? [] : []);
+  const originalSheetIds = new Set(originalSheets.map(s => s.sheetId));
+  const originalVisualIds = new Set(originalSheets.flatMap(s => (s.visuals ?? []).map(v => Object.values(v)[0]!.visualId)));
   const names = (v: unknown, role: string): v is string[] => Array.isArray(v) && v.every(n => fields.some(f => f.name === n && f.role === role)) && new Set(v).size === v.length;
   for (const sheet of value.sheets) {
     if (!isObject(sheet) || !onlyKeys(sheet, ['id', 'name', 'controls', 'visuals', 'objects', 'layout', 'selectedId', 'imported', 'layoutSettings']) || typeof sheet.id !== 'string' || !/^sheet-[1-9][0-9]*$/.test(sheet.id) || sheetIds.has(sheet.id) || typeof sheet.name !== 'string' || !sheet.name.trim() || !Array.isArray(sheet.visuals) || !Array.isArray(sheet.layout)) return fail();
     if (sheet.layoutSettings !== undefined && !layoutSettingsValid(sheet.layoutSettings)) return fail();
     if (sheet.imported !== undefined && (!value.bundle || !isObject(sheet.imported) || typeof sheet.imported.memberPath !== 'string' || typeof sheet.imported.sheetId !== 'string' || typeof sheet.imported.name !== 'string' || !Array.isArray(sheet.imported.layout))) return fail();
-    const origin = isObject(value.bundle) ? value.bundle.original as QsBundle : undefined;
-    const source = isObject(sheet.imported) ? origin?.members.find(m => m.path === (sheet.imported as Record<string, unknown>).memberPath)?.resource : undefined;
-    const sourceSheet = source && (source.resourceType === 'analysis' || source.resourceType === 'dashboard') ? source.definition.sheets?.find(s => s.sheetId === (sheet.imported as Record<string, unknown>).sheetId) : undefined;
+    const sheetImport = isObject(sheet.imported) ? sheet.imported : undefined;
+    const copied = sheetImport?.sourceSheetId !== undefined;
+    if (copied && (typeof sheetImport.sourceSheetId !== 'string' || sheetImport.sheetId !== sheet.id || originalSheetIds.has(sheet.id))) return fail();
+    const source = origin?.members.find(m => m.path === sheetImport?.memberPath)?.resource;
+    const sourceSheet = source && (source.resourceType === 'analysis' || source.resourceType === 'dashboard') ? source.definition.sheets?.find(s => s.sheetId === (sheetImport?.sourceSheetId ?? sheetImport?.sheetId)) : undefined;
     if (sheet.imported !== undefined && (!sourceSheet || !(sheet.imported as Record<string, unknown>).layout || !(sheet.imported as { layout: unknown[] }).layout.every(p => isObject(p) && typeof p.i === 'string' && [p.x, p.y, p.w, p.h].every(Number.isSafeInteger)))) return fail();
     const parameters = (value.parameters as AuthorParameter[]).filter(p => !p.memberPath || p.memberPath === (isObject(sheet.imported) ? sheet.imported.memberPath : isObject(value.bundle) ? value.bundle.primaryPath : undefined));
     validateControls(sheet.controls, parameters);
@@ -1002,9 +1024,10 @@ export function validateDraft(value: unknown): asserts value is AuthorDraft {
         if (!value.bundle || !imported || typeof imported.visualId !== 'string' || typeof imported.variant !== 'string' || typeof imported.local !== 'boolean' || (imported.replaced !== undefined && typeof imported.replaced !== 'boolean') || (imported.remapped !== undefined && typeof imported.remapped !== 'boolean') || !isObject(imported.baseline) || !Array.isArray(imported.dataSets) || !imported.dataSets.every(d => isObject(d) && typeof d.identifier === 'string' && (d.arn === undefined || typeof d.arn === 'string')) || !Array.isArray(imported.issues) || !imported.issues.every(i => typeof i === 'string') || !Array.isArray(imported.unmappedFields) || !imported.unmappedFields.every(i => typeof i === 'string') || !Array.isArray(imported.filterGroups) || !imported.filterGroups.every(g => isObject(g) && typeof g.id === 'string' && typeof g.columnName === 'string')) return fail();
       }
       if (imported) {
+        if (copied ? typeof imported.sourceVisualId !== 'string' || imported.visualId !== v.id || originalVisualIds.has(imported.visualId as string) || (imported.filterGroups as unknown[]).length !== 0 : imported.sourceVisualId !== undefined) return fail();
         const baseline = imported.baseline as Record<string, unknown>;
         const strings = (a: unknown): a is string[] => Array.isArray(a) && a.every(n => typeof n === 'string' && !!n && !n.includes('\0'));
-        if (!sourceSheet?.visuals?.some(raw => raw[imported.variant as string]?.visualId === imported.visualId) || !isObject(v) || baseline.id !== v.id || !VISUAL_TYPES.some(t => t.kind === baseline.kind) || typeof baseline.title !== 'string' || (baseline.dimension !== null && typeof baseline.dimension !== 'string') || !['rows', 'columns', 'measures'].every(k => strings(baseline[k])) || !['donut', 'titleVisible', 'legend', 'labels', 'horizontal', 'stacked', 'totals', 'subtotals'].every(k => typeof baseline[k] === 'boolean') || !Array.isArray(baseline.filters) || !baseline.filters.every(f => isObject(f) && typeof f.columnName === 'string' && Array.isArray(f.values) && f.values.every(n => typeof n === 'string'))) return fail();
+        if (!sourceSheet?.visuals?.some(raw => raw[imported.variant as string]?.visualId === (imported.sourceVisualId ?? imported.visualId)) || !isObject(v) || baseline.id !== v.id || !VISUAL_TYPES.some(t => t.kind === baseline.kind) || typeof baseline.title !== 'string' || (baseline.dimension !== null && typeof baseline.dimension !== 'string') || !['rows', 'columns', 'measures'].every(k => strings(baseline[k])) || !['donut', 'titleVisible', 'legend', 'labels', 'horizontal', 'stacked', 'totals', 'subtotals'].every(k => typeof baseline[k] === 'boolean') || !Array.isArray(baseline.filters) || !baseline.filters.every(f => isObject(f) && typeof f.columnName === 'string' && Array.isArray(f.values) && f.values.every(n => typeof n === 'string'))) return fail();
       }
       const fieldNames = (v: unknown, role: string): v is string[] => imported ? Array.isArray(v) && v.every(n => typeof n === 'string' && !!n && !n.includes('\0')) && new Set(v).size === v.length : names(v, role);
 
