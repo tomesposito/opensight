@@ -44,6 +44,9 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
+- Registered maintenance migrations create their durable receipt before reading
+  it, so scoped S3 permissions and normalized errors no longer block the first
+  write; retries preserve the original evidence and reject conflicts (#133).
 - Dataset/query and analysis retry receipts now share configurable global and
   per-tenant entry/JSON-byte budgets, count retained analysis definitions and
   access snapshots, and expire during idle periods. Capacity failures return
