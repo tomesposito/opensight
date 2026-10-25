@@ -10,6 +10,8 @@ import { SqliteMetadataDatabase } from '../dist/metadata-db.js';
 import { migrateServerless } from '../dist/serverless-migration.js';
 import { snapshotServerless,validateRecovery,restoreServerless } from '../dist/serverless-backup.js';
 import { checksum } from '../dist/metadata-operator.js';
+import { HostedUsage } from '../dist/hosted-usage.js';
+import { readOperatorAudit } from '../dist/operator-audit.js';
 async function fixture(t){
  const f=await coordinationFixture(t,{migrate:false}),env={...f.env,OPENSIGHT_ENTITLEMENTS:JSON.stringify(f.entitlements)};
  await migrateServerless(f.db,env,'sqlite');
@@ -111,4 +113,42 @@ test('Issue #146: registered pre-naming backups migrate idempotently and restore
  assert.ok((await f.db.transaction(c=>c.query('SELECT display_name,slug FROM h1_tenants'))).every(row=>row.display_name===null&&row.slug===null));
  await restoreServerless(f.target,snapshot,{...registry,epoch:2},'sqlite');
  assert.ok((await f.target.transaction(c=>c.query('SELECT display_name,slug FROM h1_tenants'))).every(row=>row.display_name===null&&row.slug===null));
+});
+
+test('Issue #138: pending AI warnings survive registered migration and held backup restore', async t => {
+ const f=await fixture(t),scope={tenantId:'tenant-one',namespaceId:'one'};
+ const config={defaults:{apiCalls:1000,storageBytes:100000,computeAttempts:100,aiSpendCapCents:100,aiCostCentsPerMillionTokens:1000000},tenants:{}};
+ const clock=()=>Date.UTC(2026,9,3),usage=new HostedUsage(f.db,config,clock);
+ await f.db.transaction(c=>c.query(`CREATE TRIGGER fail_ai_audit BEFORE INSERT ON h8_audit WHEN NEW.action='ai.spend.warning'
+  BEGIN SELECT RAISE(ABORT, 'audit unavailable'); END`));
+ assert.equal((await usage.recordAiUsage(scope,80,true)).warned,false);
+ await f.db.transaction(c=>c.query('DROP TRIGGER fail_ai_audit'));
+ const snapshot=await snapshotServerless(f.db,'test',randomUUID(),Date.now()+3600000,['a'.repeat(32)],'sqlite');
+ assert.equal(snapshot.tables.h8_ai_warnings.length,1);
+ assert.equal(snapshot.tables.h8_ai_warnings[0].delivered_at,null);
+ const registry={...f.registry,backups:{[snapshot.id]:checksum(snapshot)}};
+ const {migrateRegistered}=await import('../dist/serverless-backup.js'),operation=randomUUID();
+ assert.equal((await migrateRegistered(f.db,f.env,snapshot,{...registry,epoch:1},operation,'sqlite')).replayed,false);
+ assert.equal((await migrateRegistered(f.db,f.env,snapshot,{...registry,epoch:1},operation,'sqlite')).replayed,true);
+ await restoreServerless(f.target,snapshot,registry,'sqlite');
+ assert.deepEqual(await f.target.transaction(c=>c.query('SELECT * FROM h8_ai_warnings')),snapshot.tables.h8_ai_warnings);
+ await f.target.transaction(c=>c.query("UPDATE h1_tenants SET state='active' WHERE tenant_id=?",[scope.tenantId]));
+ const restored=new HostedUsage(f.target,config,clock);
+ await restored.checkAiSpend(scope); await restored.checkAiSpend(scope);
+ const entries=(await readOperatorAudit(f.target)).filter(e=>e.action==='ai.spend.warning');
+ assert.equal(entries.length,1); assert.equal(entries[0].detail.spendCents,80); assert.equal(entries[0].detail.estimated,true);
+});
+
+test('Issue #138: pre-warning backups migrate idempotently and restore without inventing warning intents', async t => {
+ const f=await fixture(t);
+ await f.db.transaction(c=>c.query('DROP TABLE h8_ai_warnings'));
+ const snapshot=await snapshotServerless(f.db,'test',randomUUID(),Date.now()+3600000,['a'.repeat(32)],'sqlite');
+ assert.equal('h8_ai_warnings' in snapshot.tables,false);
+ const registry={...f.registry,epoch:1,backups:{[snapshot.id]:checksum(snapshot)}};
+ const {migrateRegistered}=await import('../dist/serverless-backup.js'),operation=randomUUID();
+ assert.equal((await migrateRegistered(f.db,f.env,snapshot,registry,operation,'sqlite')).replayed,false);
+ assert.equal((await migrateRegistered(f.db,f.env,snapshot,registry,operation,'sqlite')).replayed,true);
+ assert.deepEqual(await f.db.transaction(c=>c.query('SELECT * FROM h8_ai_warnings')),[]);
+ await restoreServerless(f.target,snapshot,{...registry,epoch:2},'sqlite');
+ assert.deepEqual(await f.target.transaction(c=>c.query('SELECT * FROM h8_ai_warnings')),[]);
 });

@@ -60,6 +60,9 @@ Existing role, namespace and dataset checks still run before completion.
 `HostedUsage`, `entitlementConfig` and the owner-only `initializeUsage` migration
 are exported from `@opensight/api/metadata` for trusted compositions. Runtime
 requests use already migrated tables; they never run this migration.
+The serverless owner migration also installs the warning table and its operator
+grants. Registered backups preserve pending and delivered intents; pre-warning
+backups remain readable and migrate to an empty warning table.
 
 `createHostedApiServer` currently does **not** expose either AI route. It passes
 the durable meter as the fourth argument of `invocation.compose` for explicitly
