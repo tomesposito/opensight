@@ -522,6 +522,32 @@ button:disabled { cursor: default; opacity: .5; }
    only, so resting geometry is identical and there is no animation. */
 .author-layout input:hover:not(:disabled):not([type=radio]):not([type=checkbox]):not([type=file]):not([type=range]), .author-layout textarea:hover:not(:disabled) { background: #edf7f7; }
 .author-workspace[data-chrome=dark] .author-layout input:hover:not(:disabled):not([type=radio]):not([type=checkbox]):not([type=file]):not([type=range]), .author-workspace[data-chrome=dark] .author-layout textarea:hover:not(:disabled) { background: #334c62; }
+/* Issue #108 polish slice 134: the Data panel's "Search fields" label
+   (.fields-panel .panel-content > label in Author.tsx — the text line
+   plus its search input at the top of the author Data panel) had zero
+   hover feedback. The shared .author-layout label rule lays it out as
+   a column flex (text line, 4px gap, field), so the label is itself a
+   visible surface, but every label :hover rule in the cascade is
+   scoped elsewhere (property sections, panels, dialogs, the data-prep
+   series, the embed/admin/connector scopes), so the label rested
+   transparent and hovering its text or gap changed nothing, while
+   only the input inside it tinted via the author-layout input hover
+   above. A CSSOM probe with all five real stylesheets (1,408 rules)
+   in the real ancestor context (.author-workspace[data-chrome] >
+   .author-layout > details.builder-panel.fields-panel >
+   .panel-content) confirmed zero matching :hover rules for the label
+   and a transparent rest in both chromes, while the inner input
+   matched the author-layout input hover. The label now takes the
+   input's own hover tint (#edf7f7; dark chrome #334c62 — the
+   fixture-picker / chrome-switch precedent: the label takes its
+   field's hover tint), so no new colour is introduced and label and
+   field read as one surface. The scope is the direct child of
+   .panel-content, so the dataset header's execution-controls labels
+   nested in their section keep their own slice-128 rules (the same
+   tints) and the field-group rows are out of scope. Background only,
+   so resting geometry is identical and there is no animation. */
+.fields-panel .panel-content > label:hover { background: #edf7f7; }
+.author-workspace[data-chrome=dark] .fields-panel .panel-content > label:hover { background: #334c62; }
 /* Issue #108 polish slice 42: the author workspace's disclosure summaries
    had no hover state at all — the author hover rules cover buttons, selects,
    color inputs and search inputs, and the global summary rules give only
