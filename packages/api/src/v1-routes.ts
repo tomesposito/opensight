@@ -17,6 +17,7 @@ import { readBody, RequestError, SecurityError, validateQuery } from './query.js
 import { BlazeError } from './blaze.js';
 import type { HostedDataRoutes } from './hosted-data-routes.js';
 import type { TenantContext } from './metadata.js';
+import { RetryStore, RETRY_TTL_MS } from './retry-store.js';
 
 /**
  * Headless v1 surface (issue #95, IDD D-37, frozen contract
@@ -46,7 +47,7 @@ import type { TenantContext } from './metadata.js';
  * lands — this router deliberately does not version them.
  */
 const DEFAULT_LIMIT = 100, MAX_LIMIT = 1000;
-const IDEMPOTENCY_TTL_MS = 10 * 60 * 1000;
+interface Receipt { fingerprint: string; status: number; body: unknown }
 
 function canonical(v: unknown): string {
   if (Array.isArray(v)) return `[${v.map(canonical).join(',')}]`;
@@ -80,12 +81,19 @@ class RateLimiter {
 
 export class V1Routes {
   private readonly limiter: RateLimiter;
-  private readonly idempotency = new Map<string, { fingerprint: string; status: number; body: unknown; expiresAt: number }>();
+  private readonly retries: RetryStore;
   private readonly tails = new Map<string, Promise<unknown>>();
-  private readonly analyses = new AnalysisRoutes({ paging: r => this.paging(r), ifMatch: r => this.ifMatch(r) });
+  private readonly analyses: AnalysisRoutes;
   private readonly assets = new AssetRoutes({ paging: r => this.paging(r), ifMatch: r => this.ifMatch(r) });
   private readonly dashboards: DashboardRoutes;
-  constructor(private readonly hostedRoutes?: HostedDataRoutes, env: NodeJS.ProcessEnv = process.env) { this.limiter = new RateLimiter(env); this.dashboards = new DashboardRoutes({ paging: r => this.paging(r) }, env); }
+  constructor(private readonly hostedRoutes?: HostedDataRoutes, env: NodeJS.ProcessEnv = process.env, options: { invocation?: boolean } = {}) {
+    this.limiter = new RateLimiter(env);
+    this.dashboards = new DashboardRoutes({ paging: r => this.paging(r) }, env);
+    // Lambda invocations start no timers (SR1): their store prunes on access.
+    this.retries = new RetryStore({ env, periodicPrune: !options.invocation });
+    this.analyses = new AnalysisRoutes({ paging: r => this.paging(r), ifMatch: r => this.ifMatch(r) }, this.retries);
+  }
+  close(): void { this.retries.close(); }
   private get routes(): HostedDataRoutes { if (!this.hostedRoutes) throw new MetadataError('HOSTED_API_REQUIRED', 503); return this.hostedRoutes; }
   async local(request: IncomingMessage, response: ServerResponse, path: string, backend: AnalysisBackend, dashboards: DashboardBackend, assets: AssetBackend): Promise<void> {
     try {
@@ -132,6 +140,7 @@ export class V1Routes {
     const status = dataError ? 422 : error instanceof MetadataError || error instanceof RequestError || error instanceof SecurityError ? error.status : 500;
     const errorCode = dataError ? error.code : error instanceof MetadataError || error instanceof SecurityError ? error.code
       : error instanceof RequestError ? (status === 405 ? 'METHOD_NOT_ALLOWED' : status === 404 ? 'RESOURCE_NOT_FOUND' : 'HOSTED_REQUEST_INVALID') : 'HOSTED_INTERNAL_ERROR';
+    if (errorCode === 'IDEMPOTENCY_CAPACITY_EXCEEDED') response.setHeader('Retry-After', '60');
     const rawDetail = (error as { detail?: unknown })?.detail;
     const summary = rawDetail !== null && typeof rawDetail === 'object' && 'summary' in rawDetail
       && typeof (rawDetail as { summary: unknown }).summary === 'string' ? (rawDetail as { summary: string }).summary : undefined;
@@ -195,15 +204,20 @@ export class V1Routes {
     const fingerprint = createHash('sha256').update(canonical(contents)).digest('hex');
     await this.serial(storeKey, async () => {
       const now = Date.now();
-      for (const [k, v] of this.idempotency) if (v.expiresAt <= now) this.idempotency.delete(k);
-      const seen = this.idempotency.get(storeKey);
+      const receiptKey = `v1:${storeKey}`, seen = this.retries.get<Receipt>(receiptKey);
       if (seen) {
         if (seen.fingerprint !== fingerprint) v1Fail('IDEMPOTENCY_CONFLICT', 409, 'Idempotency-Key was already used with different request contents');
         response.setHeader('Idempotent-Replayed', 'true'); await publish(seen.status, seen.body); return;
       }
-      const result = await run();
-      await publish(result.status, result.body);
-      this.idempotency.set(storeKey, { fingerprint, status: result.status, body: result.body, expiresAt: now + IDEMPOTENCY_TTL_MS });
+      const reservation = this.retries.reserve<Receipt>(context.tenantId, receiptKey);
+      try {
+        const result = await run();
+        // Result size is only known after execution. An oversized result returns
+        // capacity failure after work completed, with no receipt retained.
+        reservation.prepare({ fingerprint, status: result.status, body: result.body });
+        await publish(result.status, result.body);
+        reservation.commit(now + RETRY_TTL_MS);
+      } finally { reservation.release(); }
     });
   }
 

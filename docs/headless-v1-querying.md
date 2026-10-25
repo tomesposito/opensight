@@ -72,6 +72,10 @@ invalidated cache fails closed with the existing `BLAZE_NOT_READY` error.
   graph admission, and are invalidated by metadata revision changes.
   Authorization and publication checks run before returning original
   results or replays. Without a key, each request executes the query.
+  Receipts share the [dataset/analysis retry capacity budgets](headless-v1-datasets.md#retry-receipt-capacity).
+  Capacity errors return 429 `IDEMPOTENCY_CAPACITY_EXCEEDED` with
+  `Retry-After: 60`; oversized results can fail after execution without
+  retaining a receipt. Existing receipts continue to replay.
 - Per-tenant rate limiting returns 429 `RATE_LIMIT_EXCEEDED` with
   `Retry-After`. This slice corrects the shared v1 limiter to count all
   users of a tenant together. Dataset/source routes and query calls

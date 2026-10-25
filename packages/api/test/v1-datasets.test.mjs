@@ -13,6 +13,28 @@ import { upload } from './source-helpers.mjs';
  */
 const hasErrorCode = r => { assert.equal(typeof r.body.errorCode, 'string', `expected errorCode in ${JSON.stringify(r.body)}`); return r.body.errorCode; };
 
+for (const budget of ['OPENSIGHT_RETRY_CACHE_MAX_ENTRIES', 'OPENSIGHT_RETRY_CACHE_PER_TENANT_MAX_ENTRIES']) {
+  test(`v1 datasets: ${budget} rejects new writes before mutation and preserves retries`, async t => {
+    const f = await authFixture(t), call = await serving(t, f, { [budget]: '1' });
+    let token = (await f.login()).token;
+    const source = await call('/api/uploads', { token, method: 'POST', body: upload() });
+    assert.equal(source.status, 201); token = (await f.login()).token;
+    const path = '/api/v1/datasets/budgeted', body = { name: 'Original', pipeline: { version: 1, input: source.body.id, steps: [] }, expectedVersion: 0 };
+    const headers = { 'Idempotency-Key': 'first' };
+    const first = await call(path, { token, method: 'PUT', body, headers });
+    assert.equal(first.status, 200, JSON.stringify(first.body)); token = (await f.login()).token;
+    const replay = () => call(path, { token, method: 'PUT', body, headers });
+    let r = await replay(); assert.equal(r.headers['idempotent-replayed'], 'true'); assert.deepEqual(r.body, first.body);
+    r = await call(path, { token, method: 'PUT', body: { ...body, name: 'Rejected', expectedVersion: 1 }, headers: { 'Idempotency-Key': 'second' } });
+    assert.equal(r.status, 429); assert.equal(hasErrorCode(r), 'IDEMPOTENCY_CAPACITY_EXCEEDED'); assert.equal(r.headers['retry-after'], '60');
+    const unchanged = await call(path, { token });
+    assert.equal(unchanged.status, 200); assert.equal(unchanged.body.name, 'Original'); assert.equal(unchanged.body.version, 1);
+    r = await replay(); assert.equal(r.status, 200); assert.equal(r.headers['idempotent-replayed'], 'true'); assert.deepEqual(r.body, first.body);
+    r = await call(path, { token, method: 'PUT', body: { ...body, name: 'Conflict' }, headers });
+    assert.equal(r.status, 409); assert.equal(hasErrorCode(r), 'IDEMPOTENCY_CONFLICT');
+  });
+}
+
 test('v1 datasets: list, pagination, composed describe and lineage', async t => {
   const f = await authFixture(t), call = await serving(t, f);
   let token = (await f.login()).token;

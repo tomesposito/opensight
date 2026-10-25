@@ -7,9 +7,10 @@ import { identifier } from './metadata-resources.js';
 import { method, send } from './automation-routes.js';
 import { readBody } from './query.js';
 import { analysisName, datasetBindings, describeAnalysis, type AnalysisRecord, type AnalysisBackend } from './analysis-model.js';
+import type { RetryStore } from './retry-store.js';
 
 interface Reply { status: number; body: unknown; version?: number }
-interface Replay { fingerprint: string; reply: Reply; record: AnalysisRecord; removed: boolean; access: unknown; expires: number }
+interface Replay { fingerprint: string; reply: Reply; record: AnalysisRecord; removed: boolean; access: unknown }
 export interface AnalysisProtocol {
   paging(request: IncomingMessage): { limit: number; offset: number };
   ifMatch(request: IncomingMessage): number;
@@ -27,9 +28,8 @@ function bodyKeys(body: Record<string, unknown>, keys: string[]): void {
 }
 /** One working version and one shared admission path for all approved verbs. */
 export class AnalysisRoutes {
-  private readonly replay = new Map<string, Replay>();
   private readonly tails = new Map<string, Promise<unknown>>();
-  constructor(private readonly protocol: AnalysisProtocol) {}
+  constructor(private readonly protocol: AnalysisProtocol, private readonly retries: RetryStore) {}
   private async serial<T>(key: string, work: () => Promise<T>): Promise<T> {
     const result = (this.tails.get(key) ?? Promise.resolve()).then(work), tail = result.catch(() => {});
     this.tails.set(key, tail);
@@ -72,8 +72,8 @@ export class AnalysisRoutes {
     const fingerprint = createHash('sha256').update(canonical([raw, version])).digest('hex');
     const scopedId = canonical([backend.scope.tenantId, backend.scope.namespaceId, id]);
     const execute = () => this.serial(`analysis:${scopedId}`, async () => {
-      for (const [k, v] of this.replay) if (v.expires <= Date.now()) this.replay.delete(k);
-      const seen = key === undefined ? undefined : this.replay.get(key);
+      const receiptKey = key === undefined ? undefined : `analysis:${key}`;
+      const seen = receiptKey === undefined ? undefined : this.retries.get<Replay>(receiptKey);
       if (seen) {
         const stamp = await backend.stamp();
         if (seen.removed) {
@@ -90,63 +90,69 @@ export class AnalysisRoutes {
         await backend.check(stamp);
         response.setHeader('Idempotent-Replayed', 'true'); this.publish(response, seen.reply); return;
       }
-      await backend.authorize(pathId, true);
-      const stamp = await backend.stamp();
-      const previous = pathId ? await backend.get(id) : undefined;
-      if (previous && previous.version !== version) conflict();
-      // Rebinding cannot be used to bypass access to the current owner's data.
-      if (previous) await backend.resolve(previous.datasetBindings);
-      const access = previous ? await backend.accessSnapshot(id) : null;
-      let record: AnalysisRecord;
-      const removed = verb === 'DELETE' && !sheetAction && !collection;
-      if (removed) record = previous!;
-      else if (!sheetAction && !collection) {
-        const body = analysisObject(raw, '$'); bodyKeys(body, pathId ? ['name', 'definition', 'datasetBindings'] : ['analysisId', 'name', 'definition', 'datasetBindings']);
-        const definition = analysisObject(body.definition, '$.definition') as unknown as BundleDefinition;
-        record = { id, name: analysisName(body.name), definition, datasetBindings: datasetBindings(body.datasetBindings, definition), version: version + 1 };
-      } else {
-        record = structuredClone(previous!); record.version = version + 1;
-        const d = record.definition;
-        if (sheetAction) {
-          const sheet = d.sheets?.find(s => s.sheetId === sheetId); if (!sheet) unknown();
-          if (sheetAction === 'layouts') {
-            if (!Array.isArray(raw)) analysisFail('INVALID_INPUT', '$.definition.sheets.layouts', 'Expected complete layouts array');
-            sheet.layouts = raw;
+      const reservation = receiptKey === undefined ? undefined : this.retries.reserve<Replay>(backend.scope.tenantId, receiptKey);
+      try {
+        await backend.authorize(pathId, true);
+        const stamp = await backend.stamp();
+        const previous = pathId ? await backend.get(id) : undefined;
+        if (previous && previous.version !== version) conflict();
+        // Rebinding cannot be used to bypass access to the current owner's data.
+        if (previous) await backend.resolve(previous.datasetBindings);
+        const access = previous ? await backend.accessSnapshot(id) : null;
+        let record: AnalysisRecord;
+        const removed = verb === 'DELETE' && !sheetAction && !collection;
+        if (removed) record = previous!;
+        else if (!sheetAction && !collection) {
+          const body = analysisObject(raw, '$'); bodyKeys(body, pathId ? ['name', 'definition', 'datasetBindings'] : ['analysisId', 'name', 'definition', 'datasetBindings']);
+          const definition = analysisObject(body.definition, '$.definition') as unknown as BundleDefinition;
+          record = { id, name: analysisName(body.name), definition, datasetBindings: datasetBindings(body.datasetBindings, definition), version: version + 1 };
+        } else {
+          record = structuredClone(previous!); record.version = version + 1;
+          const d = record.definition;
+          if (sheetAction) {
+            const sheet = d.sheets?.find(s => s.sheetId === sheetId); if (!sheet) unknown();
+            if (sheetAction === 'layouts') {
+              if (!Array.isArray(raw)) analysisFail('INVALID_INPUT', '$.definition.sheets.layouts', 'Expected complete layouts array');
+              sheet.layouts = raw;
+            } else {
+              const visuals = sheet.visuals ??= [];
+              const index = visualId === undefined ? -1 : visuals.findIndex(v => visualIdentity(v, '$.definition.sheets.visuals') === visualId);
+              if (visualId !== undefined && index < 0) unknown();
+              if (verb === 'DELETE') visuals.splice(index, 1);
+              else {
+                const id = visualIdentity(raw, '$.definition.sheets.visuals');
+                if (visualId !== undefined && id !== visualId) analysisFail('INVALID_INPUT', '$.definition.sheets.visuals.visualId', 'Identity must match path');
+                if (verb === 'POST') visuals.push(raw as typeof visuals[number]); else visuals[index] = raw as typeof visuals[number];
+              }
+            }
+          } else if (collection === 'calculated-fields') {
+            if (!Array.isArray(raw)) analysisFail('INVALID_INPUT', '$.definition.calculatedFields', 'Expected complete calculated fields array');
+            d.calculatedFields = raw;
           } else {
-            const visuals = sheet.visuals ??= [];
-            const index = visualId === undefined ? -1 : visuals.findIndex(v => visualIdentity(v, '$.definition.sheets.visuals') === visualId);
-            if (visualId !== undefined && index < 0) unknown();
-            if (verb === 'DELETE') visuals.splice(index, 1);
+            const groups = d.filterGroups ??= [], index = groupId === undefined ? -1 : groups.findIndex(g => analysisObject(g, '$.definition.filterGroups').filterGroupId === groupId);
+            if (groupId !== undefined && index < 0) unknown();
+            if (verb === 'DELETE') groups.splice(index, 1);
             else {
-              const id = visualIdentity(raw, '$.definition.sheets.visuals');
-              if (visualId !== undefined && id !== visualId) analysisFail('INVALID_INPUT', '$.definition.sheets.visuals.visualId', 'Identity must match path');
-              if (verb === 'POST') visuals.push(raw as typeof visuals[number]); else visuals[index] = raw as typeof visuals[number];
+              const g = analysisObject(raw, '$.definition.filterGroups');
+              if (groupId !== undefined && g.filterGroupId !== groupId) analysisFail('INVALID_INPUT', '$.definition.filterGroups.filterGroupId', 'Identity must match path');
+              if (verb === 'POST') groups.push(g); else groups[index] = g;
             }
           }
-        } else if (collection === 'calculated-fields') {
-          if (!Array.isArray(raw)) analysisFail('INVALID_INPUT', '$.definition.calculatedFields', 'Expected complete calculated fields array');
-          d.calculatedFields = raw;
-        } else {
-          const groups = d.filterGroups ??= [], index = groupId === undefined ? -1 : groups.findIndex(g => analysisObject(g, '$.definition.filterGroups').filterGroupId === groupId);
-          if (groupId !== undefined && index < 0) unknown();
-          if (verb === 'DELETE') groups.splice(index, 1);
-          else {
-            const g = analysisObject(raw, '$.definition.filterGroups');
-            if (groupId !== undefined && g.filterGroupId !== groupId) analysisFail('INVALID_INPUT', '$.definition.filterGroups.filterGroupId', 'Identity must match path');
-            if (verb === 'POST') groups.push(g); else groups[index] = g;
-          }
         }
-      }
-      const body = await this.describe(record, backend);
-      await backend.check(stamp);
-      if (removed) await backend.remove(id, version, stamp); else await backend.save(record, version, stamp);
-      const reply: Reply = removed ? { status: 200, body: { id, removed: true } } : { status: pathId ? 200 : 201, body, version: record.version };
-      // Store after commit, before writing the response: disconnected clients can retry.
-      if (key !== undefined) this.replay.set(key, { fingerprint, reply, record, removed, access, expires: Date.now() + 600000 });
-      const publication = await backend.stamp();
-      if (removed) await backend.authorizeRemoved(access); else await backend.authorize(id, true);
-      await this.describe(record, backend); await backend.check(publication);
-      this.publish(response, reply);
+        const body = await this.describe(record, backend);
+        const reply: Reply = removed ? { status: 200, body: { id, removed: true } } : { status: pathId ? 200 : 201, body, version: record.version };
+        // Retain and reserve all components before saving/removing anything. This
+        // includes the definition and access snapshot, even for a small delete reply.
+        reservation?.prepare({ fingerprint, reply, record, removed, access });
+        await backend.check(stamp);
+        if (removed) await backend.remove(id, version, stamp); else await backend.save(record, version, stamp);
+        // Store after commit, before writing the response: disconnected clients can retry.
+        reservation?.commit();
+        const publication = await backend.stamp();
+        if (removed) await backend.authorizeRemoved(access); else await backend.authorize(id, true);
+        await this.describe(record, backend); await backend.check(publication);
+        this.publish(response, reply);
+      } finally { reservation?.release(); }
     });
     // Create requests share one route but can target different analysis IDs.
     // Reserve the retry key before taking the resource lock, so different

@@ -130,7 +130,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
   const invocation = options.invocation?.compose?.(metadata, budgets, options.builtinAuth, usage?.aiMeter());
   const jobs = invocation?.jobs ?? new JobStore(options.membershipDatabase, metadata);
   const data = invocation?.data ?? new HostedDataRoutes(new HostedData(new HostedSources(metadata, config.encryptionKey.toString('base64'), sourceEndpoints(options.env)), undefined, budgets), jobs);
-  const v1 = new V1Routes(data, options.env ?? process.env);
+  const v1 = new V1Routes(data, options.env ?? process.env, { invocation: !!options.invocation });
   const embedContent = invocation?.embedContent ?? new EmbedContent(new HostedData(new EmbedSources(metadata, config.encryptionKey.toString('base64'), sourceEndpoints(options.env)), undefined, budgets));
   const mail = invocation?.mail ?? options.mailTransport ?? smtpFromEnvironment(options.env);
   if (!options.invocation) await initializeJobs(options.membershipDatabase);
@@ -360,10 +360,11 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
     expiryWork ??= expireUploads(options.membershipDatabase).catch(() => { /* Reads still fail closed on expiry. */ }).finally(() => { expiryWork = undefined; });
   }, 60000);
   if (!options.invocation) { await runner.recover(); server.once('listening', () => scheduler.start()); }
-  expiryTimer?.unref(); server.once('close', () => { clearInterval(expiryTimer); scheduler.stop(); budgets.close(); });
+  expiryTimer?.unref(); server.once('close', () => { v1.close(); clearInterval(expiryTimer); scheduler.stop(); budgets.close(); });
   drains.set(server, () => drain ??= (async () => {
     draining = true; scheduler.stop(); runner.stop(); clearInterval(expiryTimer);
     await Promise.all([...active]); await scheduler.idle(); await expiryWork; await budgets.shutdown();
+    v1.close();
     if (reference) await options.membershipDatabase.transaction(c => appendOperatorAudit(c, { action: 'reference.drained' }));
     if (server.listening) await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
   })());

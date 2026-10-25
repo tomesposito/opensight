@@ -170,6 +170,53 @@ test('v1 querying: concurrent identical retries execute once and replay the same
   assert.equal(execute.mock.callCount(), 1);
 });
 
+for (const budget of ['OPENSIGHT_RETRY_CACHE_MAX_BYTES', 'OPENSIGHT_RETRY_CACHE_PER_TENANT_MAX_BYTES']) {
+  test(`v1 querying: ${budget} rejects oversized results without retaining a receipt`, async t => {
+    const size = Buffer.byteLength(JSON.stringify({ fingerprint: '0'.repeat(64), status: 200, body: expected }));
+    const f = await fixture(t, { [budget]: String(size - 1) }), headers = { 'Idempotency-Key': 'oversize' };
+    const execute = t.mock.method(HostedPrep.prototype, 'execute');
+    for (let i = 0; i < 2; i++) {
+      const r = await f.run(query, { headers });
+      error(r, 429, 'IDEMPOTENCY_CAPACITY_EXCEEDED'); assert.equal(r.headers['retry-after'], '60');
+      assert.equal(r.headers['idempotent-replayed'], undefined);
+    }
+    assert.equal(execute.mock.callCount(), 2, 'oversized results execute but leave no receipt');
+    const smaller = { ...query, filters: [{ columnName: 'region', values: [] }] };
+    const first = await f.run(smaller, { headers }); assert.equal(first.status, 200); assert.deepEqual(first.body.rows, []);
+    const replay = await f.run(smaller, { headers });
+    assert.equal(replay.status, 200); assert.equal(replay.headers['idempotent-replayed'], 'true'); assert.deepEqual(replay.body, first.body);
+    assert.equal(execute.mock.callCount(), 3);
+  });
+}
+
+test('v1 querying: exhausted byte headroom rejects new execution while the stored result replays', async t => {
+  const size = Buffer.byteLength(JSON.stringify({ fingerprint: '0'.repeat(64), status: 200, body: expected }));
+  const f = await fixture(t, { OPENSIGHT_RETRY_CACHE_MAX_BYTES: String(size) }), headers = { 'Idempotency-Key': 'fits-exactly' };
+  const execute = t.mock.method(HostedPrep.prototype, 'execute');
+  assert.equal((await f.run(query, { headers })).status, 200);
+  const blocked = await f.run(query, { headers: { 'Idempotency-Key': 'second' } });
+  error(blocked, 429, 'IDEMPOTENCY_CAPACITY_EXCEEDED'); assert.equal(blocked.headers['retry-after'], '60');
+  const replay = await f.run(query, { headers });
+  assert.equal(replay.status, 200); assert.equal(replay.headers['idempotent-replayed'], 'true'); assert.deepEqual(replay.body, expected);
+  assert.equal(execute.mock.callCount(), 1);
+});
+
+test('v1 querying: concurrent distinct keys reserve entry capacity before executing', async t => {
+  const f = await fixture(t, { OPENSIGHT_RETRY_CACHE_MAX_ENTRIES: '1' });
+  let entered, finish;
+  const started = new Promise(resolve => { entered = resolve; }), waiting = new Promise(resolve => { finish = resolve; });
+  t.after(() => finish());
+  const original = HostedPrep.prototype.execute;
+  const execute = t.mock.method(HostedPrep.prototype, 'execute', async function (...args) {
+    entered(); await waiting; return original.apply(this, args);
+  });
+  const first = f.run(query, { headers: { 'Idempotency-Key': 'first' } }); await started;
+  const blocked = await f.run(query, { headers: { 'Idempotency-Key': 'second' } });
+  finish();
+  error(blocked, 429, 'IDEMPOTENCY_CAPACITY_EXCEEDED'); assert.equal(blocked.headers['retry-after'], '60');
+  assert.equal((await first).status, 200); assert.equal(execute.mock.callCount(), 1);
+});
+
 test('v1 querying: concurrent different queries sharing a retry key conflict', async t => {
   const f = await fixture(t), headers = { 'Idempotency-Key': 'concurrent-different' };
   const execute = t.mock.method(HostedPrep.prototype, 'execute');
@@ -246,6 +293,28 @@ test('v1 querying: dataset and replay data cannot cross owner or tenant boundari
   const f = await fixture(t), member = await otherMember(f), tenant = await otherTenant(f), headers = { 'Idempotency-Key': 'private-result' };
   assert.deepEqual((await f.run(query, { headers })).body, expected);
   for (const token of [member, tenant]) error(await f.call(path, { method: 'POST', body: query, token, headers }), 404, 'RESOURCE_NOT_FOUND');
+});
+
+test('v1 querying: one tenant exhausting receipts does not block a second tenant', async t => {
+  const f = await fixture(t, { OPENSIGHT_RETRY_CACHE_PER_TENANT_MAX_ENTRIES: '1' });
+  const tenant = await f.provisioning.provision('budget-tenant', { ...f.input, name: 'Other tenant' });
+  const invitation = f.mail.messages.at(-1).html.match(/<code>([^<]+)<\/code>/)[1];
+  await f.auth.accept(invitation, f.password, f.code(), 'local'); f.advance();
+  let token;
+  // Authenticate afresh after data revisions, in the second tenant.
+  const renew = async () => { token = (await f.auth.login(f.email, f.password, f.code(), tenant.tenantId, 'local')).token; f.advance(); };
+  await renew();
+  const source = await f.call('/api/uploads', { token, method: 'POST', body: upload() }); assert.equal(source.status, 201);
+  await renew();
+  const prepared = await f.call('/api/datasets/sales/prep', { token, method: 'PUT', body: { name: 'Other sales', pipeline: { version: 1, input: source.body.id, steps: [] }, expectedVersion: 0 } });
+  assert.equal(prepared.status, 200, JSON.stringify(prepared.body)); await renew(); await f.renew();
+  const headers = { 'Idempotency-Key': 'same-key' };
+  assert.equal((await f.run(query, { headers })).status, 200);
+  error(await f.run(query, { headers: { 'Idempotency-Key': 'overflow' } }), 429, 'IDEMPOTENCY_CAPACITY_EXCEEDED');
+  const other = await f.call(path, { token, method: 'POST', body: query, headers });
+  assert.equal(other.status, 200, JSON.stringify(other.body)); assert.deepEqual(other.body, expected);
+  const replay = await f.call(path, { token, method: 'POST', body: query, headers });
+  assert.equal(replay.headers['idempotent-replayed'], 'true');
 });
 
 test('v1 querying: rate limit is shared across users and v1 resources, isolated across tenants', async t => {
