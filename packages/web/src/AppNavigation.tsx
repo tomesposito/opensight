@@ -107,7 +107,7 @@ export function AppNavigation({ route, navigate, recentPages = [], children }: {
         <summary aria-label="Account"><svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="8" r="4" fill="none" stroke="currentColor" strokeWidth="1.5" /><path d="M4 22v-2a8 8 0 0 1 16 0v2" fill="none" stroke="currentColor" strokeWidth="1.5" /></svg><span className="account-label">Account</span></summary>
         <div className="account-panel">
           <strong>{access.mode === 'hosted' ? access.session?.name ?? 'Hosted workspace' : access.mode === 'local' ? 'Local workspace' : 'Public sample preview'}</strong>
-          {access.mode === 'hosted' && (access.session?.workspaceName ?? access.session?.tenantId) && <p className="account-workspace">{access.session?.workspaceName ?? access.session?.tenantId}</p>}
+          {access.mode === 'hosted' && (access.session?.workspaceName || access.session?.tenantId) && <p className="account-workspace">{access.session?.workspaceName || access.session?.tenantId}</p>}
           <p>{access.mode === 'hosted' ? access.session?.role ?? 'No active session' : access.mode === 'local' ? 'Files and drafts stay on this computer.' : 'Synthetic sample data · No hosted account.'}</p>
           {access.mode === 'hosted' && access.signOut && <button type="button" onClick={() => void access.signOut?.()}>Sign out</button>}
         </div>
