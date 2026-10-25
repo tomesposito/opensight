@@ -81,6 +81,7 @@ class RateLimiter {
 export class V1Routes {
   private readonly limiter: RateLimiter;
   private readonly idempotency = new Map<string, { fingerprint: string; status: number; body: unknown; expiresAt: number }>();
+  private readonly tails = new Map<string, Promise<unknown>>();
   private readonly analyses = new AnalysisRoutes({ paging: r => this.paging(r), ifMatch: r => this.ifMatch(r) });
   private readonly assets = new AssetRoutes({ paging: r => this.paging(r), ifMatch: r => this.ifMatch(r) });
   private readonly dashboards: DashboardRoutes;
@@ -177,6 +178,12 @@ export class V1Routes {
     return Number((raw as string).slice(1, -1));
   }
 
+  private async serial<T>(key: string, work: () => Promise<T>): Promise<T> {
+    const result = (this.tails.get(key) ?? Promise.resolve()).then(work), tail = result.catch(() => {});
+    this.tails.set(key, tail);
+    try { return await result; } finally { if (this.tails.get(key) === tail) this.tails.delete(key); }
+  }
+
   /** Replay or record a response bound to the request's Idempotency-Key and contents. */
   private async idempotent(request: IncomingMessage, response: ServerResponse, context: TenantContext, path: string,
     contents: unknown, run: () => Promise<{ status: number; body: unknown }>,
@@ -184,18 +191,20 @@ export class V1Routes {
     revisionScope = ''): Promise<void> {
     const key = this.header(request, 'idempotency-key');
     if (key === undefined) { const r = await run(); await publish(r.status, r.body); return; }
-    const now = Date.now();
-    for (const [k, v] of this.idempotency) if (v.expiresAt <= now) this.idempotency.delete(k);
     const storeKey = `${context.tenantId}:${context.namespaceId}:${context.userId}:${request.method}:${path}:${identifier(key)}:${revisionScope}`;
     const fingerprint = createHash('sha256').update(canonical(contents)).digest('hex');
-    const seen = this.idempotency.get(storeKey);
-    if (seen) {
-      if (seen.fingerprint !== fingerprint) v1Fail('IDEMPOTENCY_CONFLICT', 409, 'Idempotency-Key was already used with different request contents');
-      response.setHeader('Idempotent-Replayed', 'true'); await publish(seen.status, seen.body); return;
-    }
-    const result = await run();
-    await publish(result.status, result.body);
-    this.idempotency.set(storeKey, { fingerprint, status: result.status, body: result.body, expiresAt: now + IDEMPOTENCY_TTL_MS });
+    await this.serial(storeKey, async () => {
+      const now = Date.now();
+      for (const [k, v] of this.idempotency) if (v.expiresAt <= now) this.idempotency.delete(k);
+      const seen = this.idempotency.get(storeKey);
+      if (seen) {
+        if (seen.fingerprint !== fingerprint) v1Fail('IDEMPOTENCY_CONFLICT', 409, 'Idempotency-Key was already used with different request contents');
+        response.setHeader('Idempotent-Replayed', 'true'); await publish(seen.status, seen.body); return;
+      }
+      const result = await run();
+      await publish(result.status, result.body);
+      this.idempotency.set(storeKey, { fingerprint, status: result.status, body: result.body, expiresAt: now + IDEMPOTENCY_TTL_MS });
+    });
   }
 
   private datasetId(raw: string): string {
