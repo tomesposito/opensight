@@ -147,6 +147,13 @@ folders; recreation of the ID prevents replaying the old delete. Successful
 responses are recorded after commit and before HTTP publication, so a
 connection loss cannot make a retry repeat that write.
 
+Analysis receipts share the [dataset/query retry capacity budgets](headless-v1-datasets.md#retry-receipt-capacity).
+Accounting includes the full reply, retained record/definition and access
+snapshot. Capacity is reserved before committing analysis edits, so 429
+`IDEMPOTENCY_CAPACITY_EXCEEDED` (`Retry-After: 60`) leaves the analysis unchanged.
+Retained retries still perform the access and definition checks above.
+Resource DELETEs are handled by the asset router and retain its separate cap.
+
 Local unauthenticated file workspaces persist an atomic overlay beside the
 trusted startup root: `.opensight-analyses.json` within a directory root,
 or a hidden sibling of a single-file root. No resource ID becomes a path.

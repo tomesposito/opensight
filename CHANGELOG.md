@@ -44,6 +44,10 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
+- Dataset/query and analysis retry receipts now share configurable global and
+  per-tenant entry/JSON-byte budgets, count retained analysis definitions and
+  access snapshots, and expire during idle periods. Capacity failures return
+  `IDEMPOTENCY_CAPACITY_EXCEEDED` without evicting retained retries (#121).
 - Dataset/query retries (v1): idempotency keys now bind to request contents
   and version preconditions, reject mismatched retries with
   `IDEMPOTENCY_CONFLICT`, validate retry payloads before replay, and serialize

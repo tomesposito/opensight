@@ -46,6 +46,39 @@ contract: `docs/api/openapi-v1.yaml`.
 - Optimistic concurrency on deletes via `If-Match: "<version>"`
   (428 `V1_IF_MATCH_REQUIRED` when missing).
 
+## Retry receipt capacity
+
+Dataset/query and analysis receipts share one process-local store, including
+in local mode. These environment variables accept positive safe integers;
+invalid values fail construction:
+
+| Variable | Default |
+| --- | --- |
+| `OPENSIGHT_RETRY_CACHE_MAX_ENTRIES` | 1000 |
+| `OPENSIGHT_RETRY_CACHE_MAX_BYTES` | 67108864 (64 MiB) |
+| `OPENSIGHT_RETRY_CACHE_PER_TENANT_MAX_ENTRIES` | 250 |
+| `OPENSIGHT_RETRY_CACHE_PER_TENANT_MAX_BYTES` | 16777216 (16 MiB) |
+
+Bytes count the complete JSON-serialized receipt, including the response,
+fingerprint/status, and analysis record/definition and access snapshot.
+Map keys, bookkeeping and JavaScript object overhead are outside this JSON
+byte measurement. Asset mutations (including resource DELETEs) and dashboard
+receipts retain their separate caps.
+
+New keyed executions reserve an entry before work starts. Exhausted entry
+capacity or byte headroom returns 429 `IDEMPOTENCY_CAPACITY_EXCEEDED` with
+`Retry-After: 60`. Exact receipt bytes are reserved before publication; analysis
+receipts reserve them before saving or deleting. Dataset/query result sizes
+are only known after execution: an oversized result returns the same capacity
+error after execution has completed, and no receipt is retained. A dataset
+mutation may therefore have taken effect; inspect its current version before
+retrying. Failed work releases its reservation.
+
+Unexpired receipts are never evicted to make room, and replay hits bypass
+capacity admission while keeping existing authorization/publication checks.
+The ten-minute expiry window is unchanged. Expired entries are pruned on
+access and every 60 seconds by an unref'd timer, stopped on server shutdown.
+
 ## Deliberately not versioned here
 
 Upload durability primitives (`/api/uploads`, reservations, operations)
