@@ -44,6 +44,13 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
+- Source deletion guard (v1): deleting a source now checks the stored
+  pipeline references of every prepared dataset — including unavailable
+  datasets and references through join/append steps or an unavailable
+  intermediate dataset — instead of only datasets that pass admission, and
+  the check is revalidated against metadata revisions immediately before
+  retirement so a stale check cannot retire a newly referenced source
+  (#119).
 - AI spend accounting: a charge now commits together with a durable warning
   intent, so an accounting or audit failure can no longer leave repeated
   provider calls unmetered past the tenant's cap; stranded warnings are

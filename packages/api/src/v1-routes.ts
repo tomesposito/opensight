@@ -201,22 +201,27 @@ export class V1Routes {
     return { id: d.resource.dataSetId, name: d.resource.name, version: d.version, execution: { mode: d.execution.mode, intervalMinutes: d.execution.intervalMinutes } };
   }
 
-  /** All prep datasets whose pipeline references the source, directly or
-   * through nested `{ dataset }` refs. Unresolvable refs fail closed
-   * elsewhere (admission refuses them); they do not block deletion here. */
+  /** All prep datasets whose stored pipeline references the source, directly
+   * or through nested `{ dataset }` refs. Stored references are the authority
+   * for the deletion guard; admission state is irrelevant to it, so available
+   * and unavailable datasets alike are walked, including references that only
+   * appear in join/append step sources and references through an unavailable
+   * intermediate dataset. A nested dataset ref that no longer exists
+   * contributes no references; any other unreadable stored record fails
+   * closed (its parse error propagates). */
   private async datasetsReferencingSource(context: TenantContext, sourceId: string): Promise<string[]> {
     const blocking: string[] = [];
     const touches = async (datasetId: string, seen: Set<string>): Promise<boolean> => {
       if (seen.has(datasetId)) return false; seen.add(datasetId);
-      let described: Awaited<ReturnType<HostedDataRoutes['prep']['describe']>>;
-      try { described = await this.routes.prep.describe(context, datasetId); } catch { return false; }
-      for (const input of described.inputs) {
+      const inputs = await this.routes.prep.storedInputs(context, datasetId);
+      if (inputs === null) return false;
+      for (const input of inputs) {
         if (input.kind === 'source' && input.id === sourceId) return true;
         if (input.kind === 'dataset' && await touches(input.id, seen)) return true;
       }
       return false;
     };
-    for (const d of (await this.routes.prep.list(context)).datasets) if (await touches(d.resource.dataSetId, new Set())) blocking.push(d.resource.dataSetId);
+    for (const id of await this.routes.prep.storedDatasetIds(context)) if (await touches(id, new Set())) blocking.push(id);
     return blocking;
   }
 
@@ -321,9 +326,11 @@ export class V1Routes {
       if (verb === 'GET') { await publish(200, await this.routes.data.schema(context, id)); return; }
       await this.idempotent(request, response, context, path, async () => {
         const expectedVersion = this.ifMatch(request);
+        const revisions = await this.routes.data.sources.metadata.revisions(context);
         const blocking = await this.datasetsReferencingSource(context, id);
         if (blocking.length) v1Fail('SOURCE_DELETE_BLOCKED_BY_DATASET', 409,
           `Source is referenced by ${blocking.length} prepared dataset(s): ${blocking.join(', ')}`);
+        await this.routes.data.sources.metadata.assertRevisions(context, revisions);
         await this.routes.data.sources.retire(context, id, expectedVersion);
         await this.routes.data.sources.metadata.revisions(context);
         return { status: 200, body: { id, retired: true, version: expectedVersion + 1 } };
