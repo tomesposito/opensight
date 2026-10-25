@@ -405,6 +405,17 @@
 .app-shell .connector-grid { gap: 12px; }
 .app-shell .connector-card { min-height: 148px; padding: 16px; gap: 4px; }
 .app-shell .connector-card.selected { border-color: #157f88; box-shadow: inset 0 0 0 1px #157f88; background: #eaf4f4; }
+/* Issue #108 final audit: the selected connector card (DataSources.tsx)
+   had zero hover feedback in the app shell — .connector-card:hover
+   (style.css, #f8fbff) matches it, but loses the cascade to the
+   selected rule above (specificity 0-3-0 over 0-2-0), so hovering the
+   selected card changed nothing while unselected cards tint. The
+   selected card now deepens to #dceff0, the shell-control hover tint
+   (product navigation, workspace banner — the slice-62 choice for a
+   control resting on #eaf4f4), staying distinct at rest and still
+   reading interactive. Background only, geometry identical, no
+   animation, so no reduced-motion variant is needed. */
+.app-shell .connector-card.selected:hover { background: #dceff0; }
 .app-shell .connector-name { font-size: 13px; }
 .app-shell .connector-description { font-size: 12px; }
 .app-shell .connector-details { padding: 0 0 0 24px; font-size: 12px; }

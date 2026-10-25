@@ -792,6 +792,16 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .bundle-import summary { font-weight: 600; }
 .bundle-import details[open] > summary { margin-bottom: 12px; }
 .bundle-import label { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; font-weight: 600; }
+/* Issue #108 final audit: the bundle-import label (Author.tsx — the
+   flex row wrapping the bundle file input) was the author surface's
+   last label with zero hover feedback: its sibling summary takes the
+   author summary hover (.bundle-import summary:hover), and every other
+   label :hover rule in the cascade is scoped elsewhere. The label now
+   takes the author label tint #edf7f7 (dark #334c62), so the row reads
+   as one surface with the file field it labels. Background only, so
+   resting geometry is identical and there is no animation. */
+.author-workspace .bundle-import label:hover { background: #edf7f7; }
+.author-workspace[data-chrome=dark] .bundle-import label:hover { background: #334c62; }
 .bundle-import p { margin: 8px 0; }
 .import-report { width: min(850px, 90vw); max-height: 85vh; overflow: auto; border: 1px solid #8ba9b2; border-radius: 10px; padding: 24px; }
 .import-report::backdrop { background: #15374688; }
@@ -2191,6 +2201,16 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .prep-join-key { display: grid; grid-template-columns: minmax(0, 1fr) 8px minmax(0, 1fr) 24px; align-items: center; gap: 8px; margin: 8px 0; }
 .data-prep .prep-key-column select { border-radius: 16px; border-color: #85adc1; background: #f5fbff; font-weight: normal; padding: 4px 8px; width: 100%; font-size: 12px; }
 .data-prep .prep-key-column.empty select { border-style: dashed; border-color: #929da5; background: #fff; color: #536879; }
+/* Issue #108 final audit: the empty join key-column select (the
+   dashed placeholder dropdown in PrepJoinEditor.tsx) had zero hover
+   feedback: the prep select hover (.data-prep select:hover,
+   #edf6fc) ties the empty resting rule above on specificity (0-3-1
+   each, counting :not) and loses on source order, while the
+   non-empty key select (resting #f5fbff at 0-2-1) hovers correctly.
+   The empty select — a live dropdown, not a disabled state — now
+   takes the same prep tint on hover. Background only, so resting
+   geometry is identical and there is no animation. */
+.data-prep .prep-key-column.empty select:hover:not(:disabled) { background: #edf6fc; }
 .data-prep .prep-remove-key { border: 0; padding: 0; font-size: 20px; }
 .prep-join-columns { list-style: none; padding: 0; margin: 4px 0; max-height: 300px; overflow: auto; }
 .prep-join-columns button { width: 100%; display: flex; align-items: center; text-align: left; gap: 8px; border-color: transparent; border-radius: 16px; padding: 4px 8px; }
@@ -2442,6 +2462,19 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .global-search > p { margin: 8px 16px; color: var(--palette-muted); }
 .global-search .search-empty { padding: 8px 16px 16px; }
 .global-search .search-empty p { margin: 4px 0; }
+/* Issue #108 final audit: the global search dialog's empty-state
+   primary button (.global-search .search-empty .primary-button —
+   "Create analysis" in GlobalSearch.tsx) was unpainted and inert:
+   every .primary-button rule in the cascade is scoped to another
+   context (analyses home, author workspace, calculation dialog,
+   empty-page state, collection cards), so inside the search dialog
+   the button rested at the UA default grey and hovering changed
+   nothing. It now takes the standard primary paint (#157f88 with
+   white text, the empty-page-state primary's padding and radius) and
+   the standard primary hover deepening (#126e76) every other context
+   uses. The dialog is a fixed-light surface, so no dark variant. */
+.global-search .search-empty .primary-button { padding: 8px 16px; border: 1px solid #157f88; border-radius: 4px; background: #157f88; color: #fff; }
+.global-search .search-empty .primary-button:hover { background: #126e76; border-color: #126e76; }
 /* Issue #108 polish slice 47: the command palette and global search
    dialogs are CSS twins mounted at the app-shell level, so no workspace
    hover rule reaches them — their header Close buttons rested
