@@ -535,6 +535,15 @@ export function compileVisual(input: Input): CompiledVisual {
       return sort.direction === 'DESC' ? -cmp : cmp;
     });
   }
+  if (model.dimensions[0] && !['box', 'histogram', 'scatter', 'pointMap', 'sankey'].includes(model.kind)) {
+    // Validate source rows before limiting: collapsing or dropping rows must
+    // not hide genuinely duplicated categories (#126).
+    // Faceted pies group by (facet, category); waterfall breakdowns group by
+    // (category, breakdown): the same category may repeat across breakdown values.
+    const keyFields = model.breakdown ? [...model.dimensions, model.breakdown] : model.facet ? [model.facet, ...model.dimensions] : model.dimensions;
+    const categories = rows.map(row => JSON.stringify(keyFields.map(f => cell(row, f))));
+    if (new Set(categories).size !== categories.length) fail(input.path, 'duplicate categories: expected aggregated result rows');
+  }
   // Pie slice limit (QuickSight CategoryItemsLimit parity): keep the top N rows
   // in display order per facet group, rolling the rest into one "Other" bucket
   // (per-measure SUM, null when every contributing value is null) or dropping
@@ -571,13 +580,6 @@ export function compileVisual(input: Input): CompiledVisual {
     }
     rows.length = 0;
     rows.push(...limited);
-  }
-  if (model.dimensions[0] && !['box', 'histogram', 'scatter', 'pointMap', 'sankey'].includes(model.kind)) {
-    // Faceted pies group by (facet, category); waterfall breakdowns group by
-    // (category, breakdown): the same category may repeat across breakdown values.
-    const keyFields = model.breakdown ? [...model.dimensions, model.breakdown] : model.facet ? [model.facet, ...model.dimensions] : model.dimensions;
-    const categories = rows.map(row => JSON.stringify(keyFields.map(f => cell(row, f))));
-    if (new Set(categories).size !== categories.length) fail(input.path, 'duplicate categories: expected aggregated result rows');
   }
   const state = input.rows === null ? 'unavailable' : rows.length ? 'ready' : 'empty';
   const option: EChartsOption = {

@@ -116,6 +116,21 @@ test('no limit shows all rows; a limit above the row count is a no-op', () => {
   assert.deepEqual(compileVisual(noop).option.series[0].data.map(d => d.name), ['A', 'B', 'C', 'D']);
 });
 
+for (const category of ['Other', 'A']) {
+  test(`duplicate source category ${category} fails before slice limiting can hide it`, () => {
+    for (const categories of [[category, category, 'B'], [category, 'B', category], ['B', category, category]]) {
+      for (const limit of [undefined, ...[1, 2, 3, 4].flatMap(ItemsLimit =>
+        ['INCLUDE', 'EXCLUDE'].map(OtherCategories => ({ ItemsLimit, OtherCategories })))]) {
+        const input = pieFixture();
+        config(input).SortConfiguration = limit ? { CategoryItemsLimit: limit } : {};
+        input.rows = categories.map((category, i) => ({ category, revenue: 100 - i * 10 }));
+        assert.throws(() => compileVisual(input), /duplicate categories: expected aggregated result rows/,
+          JSON.stringify({ categories, limit }));
+      }
+    }
+  });
+}
+
 test('Other bucket sums measures, nulls out all-null measures, and never invents rows', () => {
   const input = pieFixture();
   config(input).SortConfiguration = { CategoryItemsLimit: { ItemsLimit: 1, OtherCategories: 'INCLUDE' } };
