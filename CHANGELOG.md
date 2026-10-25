@@ -48,3 +48,10 @@ Unreleased entries into a new version section (see AGENTS.md §1).
   intent, so an accounting or audit failure can no longer leave repeated
   provider calls unmetered past the tenant's cap; stranded warnings are
   retried and delivered exactly once after recovery (#138).
+
+### Security
+
+- Python SDK: the default urllib transport now rejects every HTTP redirect
+  instead of following it, so the bearer token is never forwarded to a
+  redirect destination (cross-origin or HTTPS→HTTP downgrade); this matches
+  the TypeScript SDK, MCP and CLI transports (#118).
