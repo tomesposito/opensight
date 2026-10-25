@@ -25,7 +25,7 @@ test('session success keeps the existing request transport and rejects malformed
     assert.deepEqual(options, { signal: controller.signal, credentials: 'same-origin', headers: { Accept: 'application/json' } });
     return Response.json(session);
   });
-  assert.deepEqual(await client.getSession(controller.signal), session);
+  assert.deepEqual(await client.getSession(controller.signal), { ...session, workspaceSlug: null });
   for (const body of [{ ...session, role: 'admin' }, { ...session, id: undefined }, { mode: 'demo' }, null]) {
     await assert.rejects(createApiClient('/api', async () => Response.json(body)).getSession());
   }
