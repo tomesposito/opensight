@@ -119,6 +119,46 @@ test('v1 sources: list, describe, fail-closed deletion pin-down', async t => {
   assert.equal(hasErrorCode(await call('/api/v1/sources/nope', { token })), 'RESOURCE_NOT_FOUND');
 });
 
+test('v1 sources: deletion guard sees stored references from unavailable prepared datasets', async t => {
+  const f = await authFixture(t), call = await serving(t, f);
+  let token = (await f.login()).token;
+  const mutate = async (path, options) => { const r = await call(path, { token, ...options }); if (r.status < 400 && !r.headers['idempotent-replayed']) token = (await f.login()).token; return r; };
+  const target = (await mutate('/api/uploads', { method: 'POST', body: upload() })).body;
+  const other = (await mutate('/api/uploads', { method: 'POST', body: upload() })).body;
+  assert.notEqual(target.id, other.id);
+  // guarded references the target only through a join step source; its
+  // pipeline input is the other source.
+  let r = await mutate('/api/datasets/guarded/prep', { method: 'PUT', body: { name: 'Guarded', expectedVersion: 0, pipeline: { version: 1, input: other.id, steps: [{ id: 'join', kind: 'join', config: { source: target.id, joinType: 'left', keys: [{ left: 'region', right: 'region' }], prefix: 'r_' } }] } } });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  r = await mutate('/api/datasets/outer/prep', { method: 'PUT', body: { name: 'Outer', pipeline: { version: 1, input: { dataset: 'guarded' }, steps: [] }, expectedVersion: 0 } });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+
+  // Retire the other source through the unversioned route (no v1 guard on
+  // it), making guarded — and transitively outer — unavailable for a reason
+  // unrelated to the target source.
+  r = await mutate(`/api/sources/${other.id}`, { method: 'DELETE', body: { expectedVersion: 1 } });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  r = await call('/api/prep-datasets', { token });
+  assert.equal(r.status, 200);
+  assert.ok(r.body.unavailable.some(u => u.id === 'guarded'), `guarded must be unavailable: ${JSON.stringify(r.body.unavailable)}`);
+  assert.ok(hasErrorCode(await call('/api/v1/datasets/guarded', { token })), 'guarded describe must fail while unavailable');
+
+  // The stored-reference guard must still block: guarded directly (join step
+  // source) and outer transitively through the unavailable intermediate.
+  r = await mutate(`/api/v1/sources/${target.id}`, { method: 'DELETE', headers: { 'If-Match': '"1"' } });
+  assert.equal(r.status, 409, JSON.stringify(r.body)); assert.equal(hasErrorCode(r), 'SOURCE_DELETE_BLOCKED_BY_DATASET');
+  assert.ok(r.body.message.includes('guarded'), r.body.message);
+  assert.ok(r.body.message.includes('outer'), r.body.message);
+
+  // Once the stored references are gone the guard must not over-block.
+  r = await mutate('/api/v1/datasets/outer', { method: 'DELETE', headers: { 'If-Match': '"1"' } });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  r = await mutate('/api/v1/datasets/guarded', { method: 'DELETE', headers: { 'If-Match': '"1"' } });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  r = await mutate(`/api/v1/sources/${target.id}`, { method: 'DELETE', headers: { 'If-Match': '"1"' } });
+  assert.equal(r.status, 200, JSON.stringify(r.body)); assert.deepEqual(r.body, { id: target.id, retired: true, version: 2 });
+});
+
 test('v1: rate limiting returns 429 RATE_LIMIT_EXCEEDED with Retry-After', async t => {
   const f = await authFixture(t), call = await serving(t, f, { OPENSIGHT_V1_RATE_LIMIT_PER_MINUTE: '2' });
   const token = (await f.login()).token;

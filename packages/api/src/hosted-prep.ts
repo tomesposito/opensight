@@ -121,6 +121,26 @@ export class HostedPrep {
       steps: pipeline.steps.map(s => ({ id: s.id, kind: s.kind, name: s.name ?? null, from: s.from ?? null })),
       inputs: references(pipeline).map(r => typeof r === 'string' ? { kind: 'source' as const, id: r } : { kind: 'dataset' as const, id: r.dataset }) };
   }
+  /** Stored prepared-dataset ids for the owner, read from storage only —
+   * no graph admission, so unavailable datasets are included. */
+  async storedDatasetIds(context: TenantContext): Promise<string[]> {
+    return (await this.data.sources.metadata.list(context, 'prepared-dataset')).map(r => r.id);
+  }
+  /** Direct pipeline inputs of a prepared dataset, read from its stored
+   * record only — no graph admission and no execution planning. Returns
+   * null when the dataset no longer exists (RESOURCE_NOT_FOUND); any other
+   * stored-record parse error propagates, so an unreadable recipe is never
+   * silently treated as having no references. */
+  async storedInputs(context: TenantContext, id: string): Promise<{ kind: 'source' | 'dataset'; id: string }[] | null> {
+    let stored;
+    try { stored = await this.stored(context, id); }
+    catch (error) {
+      if (error instanceof MetadataError && error.code === 'RESOURCE_NOT_FOUND') return null;
+      throw error;
+    }
+    return references(stored.resource.opensightPrep!)
+      .map(r => typeof r === 'string' ? { kind: 'source' as const, id: r } : { kind: 'dataset' as const, id: r.dataset });
+  }
   /** Listing degrades per dataset like `HostedData.discover()` degrades per source:
    * a dataset that fails admission with a known unavailable code is listed as
    * unavailable instead of failing the whole catalog. Anything else still
