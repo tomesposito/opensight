@@ -8,7 +8,9 @@ Implements the Sheets menu items left honestly disabled in #60.
 - Deep-copies the active sheet: visuals, text/image objects, controls, and layout.
 - Every id is remapped (sheet, visuals, nested filter/url/navigation actions, objects, controls, layout placements), so the copy is fully independent — edits to the copy never affect the original.
 - Navigation actions that targeted the source sheet are retargeted to the copy; other targets are preserved.
-- Imported markers are cleared: the copy is a local sheet, not a bundle import.
+- Imported provenance and unsupported-feature guards are retained. Copies use
+  new sheet/visual export identities and separate source identities (#124; see
+  [copy semantics](issue-124-gap-notes.md)).
 - Named `{original} (copy)` and selected immediately.
 
 **Sheet title / description objects** (`Sheets → Add Title`, `Sheets → Add Description`)
