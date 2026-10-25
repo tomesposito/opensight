@@ -96,6 +96,68 @@ async function local(t, options = {}) {
 }
 const at = version => ({ 'If-Match': `"${version}"` });
 
+for (const budget of ['OPENSIGHT_RETRY_CACHE_MAX_BYTES', 'OPENSIGHT_RETRY_CACHE_PER_TENANT_MAX_BYTES']) {
+  test(`v1 analyses: ${budget} counts retained definitions before saving and preserves fitting retries`, async t => {
+    const large = create('large', empty());
+    large.definition.sheets = Array.from({ length: 10 }, (_, i) => ({ sheetId: `sheet${i}`, visuals: [] }));
+    const replyOnly = { status: 201, body: { AnalysisId: large.analysisId, Name: large.name, Definition: projectDefinition(large.definition), Errors: [] }, version: 1 };
+    // The projected reply fits; retaining its original definition as well does not.
+    const f = await hosted(t, { [budget]: String(Buffer.byteLength(JSON.stringify(replyOnly)) + 150) });
+    let r = await f.request(base, { method: 'POST', body: large, headers: { 'Idempotency-Key': 'large' } });
+    error(r, 429, 'IDEMPOTENCY_CAPACITY_EXCEEDED'); assert.equal(r.headers['retry-after'], '60');
+    error(await f.request(`${base}/large`), 404, 'RESOURCE_NOT_FOUND');
+    const body = create('small', empty()), headers = { 'Idempotency-Key': 'small' };
+    const first = await f.request(base, { method: 'POST', body, headers });
+    assert.equal(first.status, 201, JSON.stringify(first.body));
+    r = await f.request(base, { method: 'POST', body, headers });
+    assert.equal(r.status, 201); assert.equal(r.headers['idempotent-replayed'], 'true'); assert.deepEqual(r.body, first.body);
+    const { analysisId, ...replacement } = large;
+    r = await f.request(`${base}/small`, { method: 'PUT', body: replacement, headers: { ...at(1), 'Idempotency-Key': 'update' } });
+    error(r, 429, 'IDEMPOTENCY_CAPACITY_EXCEEDED'); assert.equal(r.headers['retry-after'], '60');
+    const unchanged = await f.request(`${base}/small`);
+    assert.equal(unchanged.headers.etag, '"1"'); assert.deepEqual(unchanged.body, first.body);
+    r = await f.request(base, { method: 'POST', body, headers });
+    assert.equal(r.status, 201); assert.equal(r.headers['idempotent-replayed'], 'true'); assert.deepEqual(r.body, first.body);
+  });
+}
+
+test('v1 analyses: update capacity includes the prior access snapshot before saving', async t => {
+  const f = await hosted(t, { OPENSIGHT_RETRY_CACHE_MAX_BYTES: '1000' });
+  const body = create('analysis', empty());
+  body.definition.sheets = Array.from({ length: 60 }, (_, i) => ({ sheetId: `sheet${i}`, visuals: [] }));
+  const first = await f.request(base, { method: 'POST', body }); assert.equal(first.status, 201);
+  const { analysisId, ...replacement } = create('analysis', empty());
+  const r = await f.request(`${base}/analysis`, { method: 'PUT', body: replacement, headers: { ...at(1), 'Idempotency-Key': 'update' } });
+  error(r, 429, 'IDEMPOTENCY_CAPACITY_EXCEEDED'); assert.equal(r.headers['retry-after'], '60');
+  const unchanged = await f.request(`${base}/analysis`);
+  assert.equal(unchanged.status, 200); assert.equal(unchanged.headers.etag, '"1"'); assert.deepEqual(unchanged.body, first.body);
+});
+
+test('v1 analyses: query and analysis receipts share the same global entry budget', async t => {
+  const f = await hosted(t, { OPENSIGHT_RETRY_CACHE_MAX_ENTRIES: '1' });
+  const headers = { 'Idempotency-Key': 'query' }, query = { dimensions: [], measures: [{ fieldId: 'total', columnName: 'amount', aggregation: 'SUM' }], filters: [] };
+  const first = await f.request('/api/v1/datasets/sales/query', { method: 'POST', body: query, headers }); assert.equal(first.status, 200);
+  const blocked = await f.request(base, { method: 'POST', body: create(), headers: { 'Idempotency-Key': 'analysis' } });
+  error(blocked, 429, 'IDEMPOTENCY_CAPACITY_EXCEEDED'); assert.equal(blocked.headers['retry-after'], '60');
+  error(await f.request(`${base}/analysis`), 404, 'RESOURCE_NOT_FOUND');
+  const replay = await f.request('/api/v1/datasets/sales/query', { method: 'POST', body: query, headers });
+  assert.equal(replay.headers['idempotent-replayed'], 'true'); assert.deepEqual(replay.body, first.body);
+});
+
+test('v1 analyses local: shared retry budgets apply without hosted routes', async t => {
+  const name = 'OPENSIGHT_RETRY_CACHE_PER_TENANT_MAX_ENTRIES', previous = process.env[name];
+  process.env[name] = '1';
+  let f;
+  try { f = await local(t); } finally { if (previous === undefined) delete process.env[name]; else process.env[name] = previous; }
+  const body = create('local', empty()), headers = { 'Idempotency-Key': 'first' };
+  const first = await f.request(base, { method: 'POST', body, headers }); assert.equal(first.status, 201);
+  const blocked = await f.request(base, { method: 'POST', body: create('second', empty()), headers: { 'Idempotency-Key': 'second' } });
+  error(blocked, 429, 'IDEMPOTENCY_CAPACITY_EXCEEDED'); assert.equal(blocked.headers['retry-after'], '60');
+  error(await f.request(`${base}/second`), 404, 'RESOURCE_NOT_FOUND');
+  const replay = await f.request(base, { method: 'POST', body, headers });
+  assert.equal(replay.headers['idempotent-replayed'], 'true'); assert.deepEqual(replay.body, first.body);
+});
+
 test('v1 analyses hosted CRUD: real definitions, ETags, creator grants and durable metadata round trip', async t => {
   const f = await hosted(t), input = create(); input.definition.sheets[0].visuals = [visual()];
   const r = await f.request(base, { method: 'POST', body: input }); assert.equal(r.status, 201, JSON.stringify(r.body)); assert.equal(r.headers.etag, '"1"');
