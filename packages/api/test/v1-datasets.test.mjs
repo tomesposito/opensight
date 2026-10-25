@@ -78,6 +78,21 @@ test('v1 datasets: create/update/delete honor Idempotency-Key and If-Match', asy
   assert.equal(r.status, 200); assert.equal(r.headers['idempotent-replayed'], 'true'); assert.equal(r.body.version, 1, 'replay must not bump the version');
   assert.equal((await call('/api/v1/datasets/agent', { token })).body.version, 1);
 
+  for (const change of [{ name: 'Renamed' }, { pipeline: { ...pipeline, steps: [{ id: 'east', kind: 'filter', config: { filters: [{ columnName: 'region', value: 'east' }] } }] } }, { expectedVersion: 1 }]) {
+    r = await mutate('/api/v1/datasets/agent', { method: 'PUT', body: { name: 'Agent', pipeline, expectedVersion: 0, ...change }, headers: { 'Idempotency-Key': 'create-once' } });
+    assert.equal(r.status, 409); assert.equal(hasErrorCode(r), 'IDEMPOTENCY_CONFLICT');
+    assert.equal(r.headers['idempotent-replayed'], undefined);
+  }
+  for (const options of [{ rawBody: '{' }, { body: { name: 'Agent', pipeline, expectedVersion: 0, extra: true } }]) {
+    r = await mutate('/api/v1/datasets/agent', { method: 'PUT', headers: { 'Idempotency-Key': 'create-once', 'Content-Type': 'application/json' }, ...options });
+    assert.equal(r.status, 400); assert.ok(hasErrorCode(r)); assert.equal(r.headers['idempotent-replayed'], undefined);
+  }
+  // Property order, including nested objects, does not change request contents.
+  r = await mutate('/api/v1/datasets/agent', { method: 'PUT', body: { expectedVersion: 0, pipeline: { steps: [], input: source.id, version: 1 }, name: 'Agent' }, headers: { 'Idempotency-Key': 'create-once' } });
+  assert.equal(r.status, 200); assert.equal(r.headers['idempotent-replayed'], 'true'); assert.equal(r.body.version, 1);
+  const stored = await call('/api/v1/datasets/agent', { token });
+  assert.equal(stored.status, 200); assert.equal(stored.body.name, 'Agent'); assert.equal(stored.body.version, 1);
+
   assert.equal(hasErrorCode(await mutate('/api/v1/datasets/agent', { method: 'DELETE' })), 'V1_IF_MATCH_REQUIRED');
   assert.equal(hasErrorCode(await mutate('/api/v1/datasets/agent', { method: 'DELETE', headers: { 'If-Match': '"abc"' } })), 'V1_IF_MATCH_INVALID');
   const staleDelete = await mutate('/api/v1/datasets/agent', { method: 'DELETE', headers: { 'If-Match': '"7"' } });
@@ -86,6 +101,34 @@ test('v1 datasets: create/update/delete honor Idempotency-Key and If-Match', asy
   assert.equal(r.status, 200); assert.deepEqual(r.body, { id: 'agent', removed: true });
   r = await call('/api/v1/datasets/agent', { method: 'DELETE', token, headers: { 'If-Match': '"1"', 'Idempotency-Key': 'delete-once' } });
   assert.equal(r.headers['idempotent-replayed'], 'true'); assert.deepEqual(r.body, { id: 'agent', removed: true });
+  r = await mutate('/api/v1/datasets/agent', { method: 'DELETE', headers: { 'If-Match': '"2"', 'Idempotency-Key': 'delete-once' } });
+  assert.equal(r.status, 409); assert.equal(hasErrorCode(r), 'IDEMPOTENCY_CONFLICT'); assert.equal(r.headers['idempotent-replayed'], undefined);
+  for (const [precondition, status, code] of [[{}, 428, 'V1_IF_MATCH_REQUIRED'], [{ 'If-Match': '"abc"' }, 400, 'V1_IF_MATCH_INVALID']]) {
+    r = await mutate('/api/v1/datasets/agent', { method: 'DELETE', headers: { 'Idempotency-Key': 'delete-once', ...precondition } });
+    assert.equal(r.status, status); assert.equal(hasErrorCode(r), code); assert.equal(r.headers['idempotent-replayed'], undefined);
+  }
+  r = await mutate('/api/v1/datasets/agent', { method: 'DELETE', headers: { 'If-Match': '"1"', 'Idempotency-Key': 'delete-once' } });
+  assert.equal(r.status, 200); assert.equal(r.headers['idempotent-replayed'], 'true'); assert.deepEqual(r.body, { id: 'agent', removed: true });
+});
+
+test('v1 datasets: refresh retries validate the empty body before replay', async t => {
+  const f = await authFixture(t), call = await serving(t, f);
+  let token = (await f.login()).token;
+  const mutate = async (path, options) => { const r = await call(path, { token, ...options }); if (r.status < 400 && !r.headers['idempotent-replayed']) token = (await f.login()).token; return r; };
+  const source = (await mutate('/api/uploads', { method: 'POST', body: upload() })).body;
+  let r = await mutate('/api/v1/datasets/cached', { method: 'PUT', body: { name: 'Cached', pipeline: { version: 1, input: source.id, steps: [] }, expectedVersion: 0 } });
+  assert.equal(r.status, 200);
+  r = await mutate('/api/datasets/cached/execution', { method: 'PUT', body: { mode: 'BLAZE', intervalMinutes: null, expectedVersion: 1 } });
+  assert.equal(r.status, 200);
+  const headers = { 'Idempotency-Key': 'refresh-once' }, path = '/api/v1/datasets/cached/refresh';
+  const first = await mutate(path, { method: 'POST', body: {}, headers });
+  assert.equal(first.status, 200, JSON.stringify(first.body)); assert.equal(first.headers['idempotent-replayed'], undefined);
+  for (const body of [{ unexpected: true }, []]) {
+    r = await mutate(path, { method: 'POST', body, headers });
+    assert.equal(r.status, 400); assert.equal(hasErrorCode(r), 'METADATA_INVALID'); assert.equal(r.headers['idempotent-replayed'], undefined);
+  }
+  r = await mutate(path, { method: 'POST', body: {}, headers });
+  assert.equal(r.status, 200); assert.deepEqual(r.body, first.body); assert.equal(r.headers['idempotent-replayed'], 'true');
 });
 
 test('v1 sources: list, describe, fail-closed deletion pin-down', async t => {
@@ -115,6 +158,14 @@ test('v1 sources: list, describe, fail-closed deletion pin-down', async t => {
   await mutate('/api/v1/datasets/base', { method: 'DELETE', headers: { 'If-Match': '"1"' } });
   r = await mutate(`/api/v1/sources/${source.id}`, { method: 'DELETE', headers: { 'If-Match': '"1"', 'Idempotency-Key': 'retire-blocked' } });
   assert.equal(r.status, 200); assert.deepEqual(r.body, { id: source.id, retired: true, version: 2 });
+  r = await mutate(`/api/v1/sources/${source.id}`, { method: 'DELETE', headers: { 'If-Match': '"2"', 'Idempotency-Key': 'retire-blocked' } });
+  assert.equal(r.status, 409); assert.equal(hasErrorCode(r), 'IDEMPOTENCY_CONFLICT'); assert.equal(r.headers['idempotent-replayed'], undefined);
+  for (const [precondition, status, code] of [[{}, 428, 'V1_IF_MATCH_REQUIRED'], [{ 'If-Match': '"abc"' }, 400, 'V1_IF_MATCH_INVALID']]) {
+    r = await mutate(`/api/v1/sources/${source.id}`, { method: 'DELETE', headers: { 'Idempotency-Key': 'retire-blocked', ...precondition } });
+    assert.equal(r.status, status); assert.equal(hasErrorCode(r), code); assert.equal(r.headers['idempotent-replayed'], undefined);
+  }
+  r = await mutate(`/api/v1/sources/${source.id}`, { method: 'DELETE', headers: { 'If-Match': '"1"', 'Idempotency-Key': 'retire-blocked' } });
+  assert.equal(r.status, 200); assert.deepEqual(r.body, { id: source.id, retired: true, version: 2 }); assert.equal(r.headers['idempotent-replayed'], 'true');
   assert.equal(hasErrorCode(await call(`/api/v1/sources/${source.id}`, { token })), 'SOURCE_RETIRED');
   assert.equal(hasErrorCode(await call('/api/v1/sources/nope', { token })), 'RESOURCE_NOT_FOUND');
 });
