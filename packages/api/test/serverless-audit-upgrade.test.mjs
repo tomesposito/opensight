@@ -217,7 +217,7 @@ test('maintenance receipt: exact retry and lost write response reconcile; confli
   const expected = { state: 'migrated', epoch: 2, replayed: false, plan: 'plan', registry: 'registry', backup: 'backup' };
   let stored, writes = 0;
   const io = { read: async () => { if (!stored) throw Object.assign(new Error('missing'), { name: 'NoSuchKey' }); return stored; },
-    create: async value => { writes++; stored = value; } };
+    create: async value => { if (stored) throw new Error('conditional conflict'); writes++; stored = value; } };
   await recordMaintenanceReceipt(expected, io);
   await recordMaintenanceReceipt({ ...expected, replayed: true }, io); assert.equal(writes, 1);
   await assert.rejects(recordMaintenanceReceipt({ ...expected, backup: 'changed' }, io), { code: 'BACKUP_RECEIPT_CONFLICT' });
@@ -225,4 +225,50 @@ test('maintenance receipt: exact retry and lost write response reconcile; confli
   await recordMaintenanceReceipt(expected, { ...io, create: async value => { stored = value; throw new Error('lost response'); } });
   stored = undefined;
   await assert.rejects(recordMaintenanceReceipt(expected, { ...io, create: async () => { stored = { ...expected, plan: 'foreign' }; throw new Error('conditional conflict'); } }), { code: 'BACKUP_RECEIPT_CONFLICT' });
+});
+
+async function beforeWorkspaceAndWarnings(f) {
+  await f.pool.query('DROP TABLE h2_login_selections, h8_ai_warnings');
+  await f.pool.query('ALTER TABLE h1_tenants DROP COLUMN display_name, DROP COLUMN slug');
+}
+
+test('live Postgres: deployed audit-v1 inventory upgrades workspace and AI warnings with retained data and exact retry', live, async t => {
+  const f = await postgres(t, { old: false }); await beforeWorkspaceAndWarnings(f);
+  const snapshot = await take(f, 'postgres'), registry = registryFor(snapshot), operation = randomUUID();
+  assert.equal(snapshot.objects.length, 1);
+  assert.equal('display_name' in snapshot.tables.h1_tenants[0], false);
+  assert.equal('h2_login_selections' in snapshot.tables, false);
+  assert.equal('h8_ai_warnings' in snapshot.tables, false);
+  assert.equal((await migrateRegistered(f.db, f.env, snapshot, registry, operation)).replayed, false);
+  assert.equal((await migrateRegistered(f.db, f.env, snapshot, registry, operation)).replayed, true);
+  assert.deepEqual(await rows(f, 'h2_login_selections'), []);
+  assert.deepEqual(await rows(f, 'h8_ai_warnings'), []);
+  assert.equal(fingerprint(await rows(f, 'h1_tenants')), fingerprint(snapshot.tables.h1_tenants.map(row => ({ ...row, display_name: null, slug: null }))));
+  for (const table of Object.keys(snapshot.tables).filter(name => !['h1_tenants', 'h8_audit', 'h2_requests'].includes(name)))
+    assert.equal(fingerprint(await rows(f, table)), fingerprint(snapshot.tables[table]), table);
+  const grants = (await f.pool.query(`SELECT has_table_privilege($1, 'h2_login_selections', 'SELECT,INSERT,UPDATE') AS login,
+    has_table_privilege($1, 'h8_ai_warnings', 'SELECT,INSERT,UPDATE') AS warnings,
+    has_schema_privilege($1, current_schema(), 'CREATE') AS ddl`, [f.operator])).rows[0];
+  assert.deepEqual(grants, { login: true, warnings: true, ddl: false });
+  const target = await postgres(t, { seed: false, old: false });
+  const restored = await restoreServerless(target.db, snapshot, { ...registry, epoch: registry.epoch + 1 });
+  assert.equal(restored.state, 'held');
+  assert.ok((await rows(target, 'h1_tenants')).every(row => row.state === 'suspended' && row.display_name === null && row.slug === null));
+});
+
+test('live Postgres: workspace and AI warning upgrade rolls back on failed preservation without leaving a receipt', live, async t => {
+  const f = await postgres(t, { old: false }); await beforeWorkspaceAndWarnings(f);
+  const snapshot = await take(f, 'postgres'), registry = registryFor(snapshot), operation = randomUUID();
+  const injected = { durable: true, transaction: work => f.db.transaction(c => work({ query: async (sql, values) => {
+    const result = await c.query(sql, values);
+    if (sql.startsWith('ALTER TABLE h1_tenants ADD COLUMN display_name')) await c.query("UPDATE h1_namespaces SET name='injected' WHERE namespace_id='one'");
+    return result;
+  } })) };
+  await assert.rejects(migrateRegistered(injected, f.env, snapshot, registry, operation), { code: 'MIGRATION_PRESERVATION_FAILED' });
+  const after = await take(f, 'postgres');
+  assert.equal('h2_login_selections' in after.tables, false);
+  assert.equal('h8_ai_warnings' in after.tables, false);
+  assert.equal('display_name' in after.tables.h1_tenants[0], false);
+  assert.equal(fingerprint(after.tables.h1_namespaces), fingerprint(snapshot.tables.h1_namespaces));
+  assert.equal(fingerprint(after.tables.h2_requests), fingerprint(snapshot.tables.h2_requests));
 });

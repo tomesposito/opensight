@@ -1269,7 +1269,14 @@ An isolated held restore accepts only these exact registered inventories. Restor
 legacy audit rows through the current column defaults while retaining the target's
 verified audit marker; preserve all existing revocation/fence/hold behavior.
 The fixed-plan maintenance runner reconciles an identical committed receipt on
-retry and rejects conflicting evidence. Never use the empty-pilot bridge or
+retry and rejects conflicting evidence. **Receipt creation (issue #133):** attempt
+the encrypted S3 conditional create (`IfNoneMatch: *`) before any receipt read.
+After an uncertain or failed write, read the exact receipt once and require an
+identical plan/registry/backup/result identity, ignoring only a boolean `replayed`
+observation. Unreadable, absent or conflicting evidence fails closed; never
+overwrite a receipt, infer absence from AccessDenied, or add bucket-listing
+permissions. Test through the invocation adapter's normalized AWS errors.
+Never use the empty-pilot bridge or
 rewrite the release compatibility baseline to make an upgrade pass. Rehearse
 the legacy-to-current path with retained data and objects on PostgreSQL, including
 transaction rollback and the previous release's three-value audit INSERT.

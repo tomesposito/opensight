@@ -28,10 +28,8 @@ export async function recordMaintenanceReceipt(expected: Record<string, unknown>
   const matches = (actual: unknown) => {
     if (canonical(actual) !== canonical(expected)) throw new MetadataError('BACKUP_RECEIPT_CONFLICT', 503);
   };
-  try { matches(await io.read()); return; }
-  catch (error) {
-    if (!(error instanceof Error) || !['NoSuchKey', 'NotFound'].includes(error.name)) throw error;
-  }
+  // Create first: the invocation adapter normalizes SDK errors, and an absent
+  // key can return AccessDenied without ListBucket. Neither proves absence.
   try { await io.create(expected); }
   catch (error) {
     // A successful conditional write can have a lost response. Read back the
