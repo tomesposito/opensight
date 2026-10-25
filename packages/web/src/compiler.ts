@@ -562,7 +562,14 @@ export function compileVisual(input: Input): CompiledVisual {
     for (const group of groups.values()) {
       if (group.length <= limit.count) { limited.push(...group); continue; }
       const kept = group.slice(0, limit.count), rest = group.slice(limit.count);
-      limited.push(...kept);
+      // Fold a retained literal "Other" into this facet's bucket (#126).
+      // One row/name keeps series, legends, tooltips, tables and label-based
+      // selections consistent while preserving totals. Do not promote another
+      // row into its place; EXCLUDE leaves the retained rows unchanged.
+      for (const row of kept) {
+        if (limit.includeOther && cell(row, category) === 'Other') rest.push(row);
+        else limited.push(row);
+      }
       if (limit.includeOther) {
         const other: Record<string, Cell> = { ...kept[0]! };
         const alias = (f: Field) => Object.hasOwn(input.bindings, f.id) ? input.bindings[f.id]! : f.column;
