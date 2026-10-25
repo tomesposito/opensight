@@ -589,17 +589,24 @@ export function compileVisual(input: Input): CompiledVisual {
     aria: { enabled: true },
   };
   let narrative: InsightNarrative | undefined;
-  // Faceted pies: per-facet row groups, so per-series row lookups (detailed
-  // tooltips, conditional-formatting rules) resolve against the right facet.
-  let facetRowGroups: Row[][] | undefined;
+  // Faceted charts flatten several series per panel (one per measure, except
+  // pies with one per panel), so per-series row lookups (detailed tooltips,
+  // conditional-formatting rules) cannot index per-panel row groups by the
+  // global series index (#125). Carry an explicit mapping from each series,
+  // in option.series order, to its facet rows and its measure index.
+  let facetSeriesMap: { rows: Row[]; measureIndex: number }[] | undefined;
   if (model.kind === 'insight') {
     try { narrative = insightNarrative(rows.map(row => ({ category: cell(row, model.dimensions[0]!), values: model.measures.map(f => number(row, f)) })), { category: model.dimensions[0], measures: model.measures, computations: model.insightConfiguration, formatting: model.formatting }); }
     catch (error) { if (error instanceof InsightError) fail(input.path, error.message); throw error; }
     option.tooltip = { show: false };
     option.graphic = insightGraphic(narrative, theme, model.formatting?.fontSize).graphic;
   } else if (extraKind(model.kind)) {
-    facetRowGroups = compileExtra(model, rows, cell, number, option, message => fail(input.path, message),
-      { path: input.path, theme, warn: message => model.warnings.push(message) }) ?? facetRowGroups;
+    // compileExtra returns per-panel row groups only for faceted
+    // area/combo/bar100, whose panels each emit one series per measure in
+    // panel order — expand those groups into the per-series map.
+    const extraGroups = compileExtra(model, rows, cell, number, option, message => fail(input.path, message),
+      { path: input.path, theme, warn: message => model.warnings.push(message) });
+    if (extraGroups) facetSeriesMap = extraGroups.flatMap(groupRows => model.measures.map((_, measureIndex) => ({ rows: groupRows, measureIndex })));
   } else if (model.kind === 'pie') {
     const measure = model.measures[0]!;
     option.legend = { show: model.legend, bottom: 4, type: 'scroll' };
@@ -636,7 +643,7 @@ export function compileVisual(input: Input): CompiledVisual {
       // Panel chrome: one ECharts grid per panel draws the border/background.
       const chrome = facetPanelGrids(shown, opts, cols, cellW, cellH, topPad);
       if (chrome) option.grid = chrome;
-      facetRowGroups = shown.map(group => group.rows);
+      facetSeriesMap = shown.map(group => ({ rows: group.rows, measureIndex: 0 }));
     } else {
       option.series = [pieSeries(rows.map(pieDatum), ['50%', '45%'], [model.innerRadius, '70%'])];
     }
@@ -682,7 +689,7 @@ export function compileVisual(input: Input): CompiledVisual {
       option.yAxis = panels.map((panel, i) => ({ ...panel.value, gridIndex: i }));
       option.series = panels.flatMap((panel, i) => panel.series.map(s => ({ ...s, xAxisIndex: i, yAxisIndex: i })));
       option.title = facetTitles(shown, opts, cols, cellH, topPad, theme, displayCell);
-      facetRowGroups = shown.map(group => group.rows);
+      facetSeriesMap = shown.flatMap(group => model.measures.map((_, measureIndex) => ({ rows: group.rows, measureIndex })));
     } else {
       const { category, value, series } = panelParts(rows);
       option.grid = { left: 20, right: 24, top: 36, bottom: 40, outerBoundsMode: 'same', outerBoundsContain: 'axisLabel' };
@@ -703,7 +710,7 @@ export function compileVisual(input: Input): CompiledVisual {
   if (model.tooltip && model.tooltipDetail?.type === 'detailed') {
     if (DETAILED_TOOLTIP_KINDS.includes(model.kind)) {
       option.tooltip = { ...(typeof option.tooltip === 'object' && !Array.isArray(option.tooltip) ? option.tooltip : {}),
-        formatter: detailedTooltipFormatter(model, rows, cell, availableExtras, facetRowGroups) };
+        formatter: detailedTooltipFormatter(model, rows, cell, availableExtras, facetSeriesMap) };
     } else {
       model.warnings.push(`detailed tooltips are not rendered for ${model.kind} visuals; using basic tooltips.`);
     }
@@ -726,9 +733,10 @@ export function compileVisual(input: Input): CompiledVisual {
   if (model.formatting?.rules?.length && ['bar', 'line', 'pie', 'scatter', 'funnel', 'area', 'combo', 'bar100'].includes(model.kind) && Array.isArray(option.series)) {
     option.series.forEach((series, index) => {
       if (!('data' in series) || !Array.isArray(series.data)) return;
-      const measures = model.kind === 'scatter' ? model.measures : [model.measures[index] ?? model.measures[0]!];
+      const facetEntry = facetSeriesMap?.[index];
+      const measures = model.kind === 'scatter' ? model.measures : [model.measures[facetEntry ? facetEntry.measureIndex : index] ?? model.measures[0]!];
       series.data = series.data.map((datum: unknown, rowIndex: number) => {
-        const row = (facetRowGroups?.[index] ?? rows)[rowIndex];
+        const row = (facetEntry?.rows ?? rows)[rowIndex];
         const rule = row && model.formatting?.rules?.find(rule => {
           const field = measures.find(f => f.column === rule.fieldId || f.id === rule.fieldId);
           return field && matchingRule([rule], rule.fieldId, number(row, field));
@@ -770,7 +778,7 @@ const richTextEscape = (value: string): string => value.replace(/[{}]/g, ch => c
  */
 const TOOLTIP_AGGREGATION_WORD: Record<'SUM' | 'AVG' | 'MIN' | 'MAX' | 'COUNT', string> =
   { SUM: 'Sum', AVG: 'Avg', MIN: 'Min', MAX: 'Max', COUNT: 'Count' };
-function detailedTooltipFormatter(model: VisualModel, rows: Row[], cell: (row: Row, field: Field) => Cell, extraFields: Field[], facetRows?: Row[][]): (params: unknown) => string {
+function detailedTooltipFormatter(model: VisualModel, rows: Row[], cell: (row: Row, field: Field) => Cell, extraFields: Field[], facetSeries?: { rows: Row[]; measureIndex: number }[]): (params: unknown) => string {
   const detail = model.tooltipDetail!;
   const fields = [...model.dimensions, ...(model.facet ? [model.facet] : []), ...model.measures].filter(f => !detail.hiddenFields.includes(f.id));
   const extras = (model.tooltipExtraFields ?? []).flatMap(e => {
@@ -779,8 +787,10 @@ function detailedTooltipFormatter(model: VisualModel, rows: Row[], cell: (row: R
   });
   return (params: unknown): string => {
     const first = (Array.isArray(params) ? params[0] : params) as { dataIndex?: unknown; seriesIndex?: unknown } | undefined;
-    // Faceted pies report a per-series dataIndex; resolve against the facet's rows.
-    const pool = facetRows && typeof first?.seriesIndex === 'number' ? facetRows[first.seriesIndex] ?? rows : rows;
+    // Faceted series report a per-series dataIndex; resolve it against that
+    // series' own facet rows via the explicit series map (#125), never by
+    // indexing per-panel groups with the global series index.
+    const pool = facetSeries && typeof first?.seriesIndex === 'number' ? facetSeries[first.seriesIndex]?.rows ?? rows : rows;
     const row = typeof first?.dataIndex === 'number' ? pool[first.dataIndex] : undefined;
     if (!row) return '';
     const titleField = model.dimensions[0] ?? model.measures[0];
