@@ -19,7 +19,7 @@ async function migrated(db) {
 
 export async function seed(db, namespaceId = 'one', tenantId = 'a') {
   await db.transaction(async c => {
-    await c.query("INSERT INTO h1_tenants VALUES (?, 'active', 1, NULL, NULL, NULL)", [tenantId]);
+    await c.query("INSERT INTO h1_tenants (tenant_id,state,version,tombstone,placement,limit_policy) VALUES (?, 'active', 1, NULL, NULL, NULL)", [tenantId]);
     await c.query('INSERT INTO h1_namespaces VALUES (?,?,?)', [namespaceId, tenantId, namespaceId]);
     await c.query('INSERT INTO h1_revisions VALUES (?,?,1,1,1)', [tenantId, namespaceId]);
     await insertResource(c, { tenantId, namespaceId }, { kind: 'user', id: 'admin' }, { name: namespaceId, role: 'administrator' });
@@ -123,7 +123,7 @@ test('H1 tenant/namespace uniqueness and composite foreign keys survive rollback
   try {
     await initializeMetadata(db);
     await db.transaction(async c => {
-      for (const t of ['a', 'b']) await c.query("INSERT INTO h1_tenants VALUES (?, 'provisioning', 1, NULL, NULL, NULL)", [t]);
+      for (const t of ['a', 'b']) await c.query("INSERT INTO h1_tenants (tenant_id,state,version,tombstone,placement,limit_policy) VALUES (?, 'provisioning', 1, NULL, NULL, NULL)", [t]);
       await c.query("INSERT INTO h1_namespaces VALUES ('one', 'a', 'One')");
     });
     for (const sql of ["INSERT INTO h1_namespaces VALUES ('two', 'a', 'Two')", "INSERT INTO h1_namespaces VALUES ('one', 'b', 'One')"])

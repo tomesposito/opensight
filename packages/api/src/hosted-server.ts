@@ -198,8 +198,8 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
         }
         if (path === '/api/host/tenants') {
           method(request, response, ['POST']);
-          const input = await body(request, ['name', 'administrator']), administrator = object(input.administrator, ['email', 'name']);
-          const result = await provisioning.provision(idempotency(request), { name: input.name as string, administrator: { email: administrator.email as string, name: administrator.name as string } });
+          const input = await body(request, ['name', 'slug', 'administrator']), administrator = object(input.administrator, ['email', 'name']);
+          const result = await provisioning.provision(idempotency(request), { name: input.name as string, slug: input.slug as string | undefined, administrator: { email: administrator.email as string, name: administrator.name as string } });
           send(response, 201, { ...result, state: (await provisioning.operator.tenant(result.tenantId)).state }); return;
         }
         const operation = /^\/api\/host\/operations\/([A-Za-z0-9_-]+)$/.exec(path);

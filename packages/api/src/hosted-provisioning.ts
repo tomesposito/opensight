@@ -59,14 +59,9 @@ export class HostedProvisioning {
       const prior = (await c.query('SELECT * FROM h2_onboarding WHERE operation_id = ?', [operationId]))[0];
       if (prior) { if (prior.request_hash !== hash) throw new MetadataError('OPERATION_ID_REUSED'); return; }
       const tenantId = randomUUID(), namespaceId = randomUUID(), userId = randomUUID();
-      try {
-        await c.query("INSERT INTO h1_tenants VALUES (?,'provisioning',1,NULL,NULL,NULL,?,?)", [tenantId, input.name, input.slug]);
-      } catch (error) {
-        // The unique slug index is the backstop; the named error is the
-        // surface. The failed provision leaves no partial rows (fail closed).
-        if (error instanceof MetadataError && error.code === 'METADATA_CONFLICT') throw new MetadataError('TENANT_SLUG_CONFLICT', 409);
-        throw error;
-      }
+      const inserted = await c.query(`INSERT INTO h1_tenants (tenant_id,state,version,display_name,slug)
+        VALUES (?,'provisioning',1,?,?) ON CONFLICT (slug) DO NOTHING RETURNING tenant_id`, [tenantId, input.name, input.slug]);
+      if (!inserted.length) throw new MetadataError('TENANT_SLUG_CONFLICT', 409);
       await c.query('INSERT INTO h1_namespaces VALUES (?,?,?)', [namespaceId, tenantId, input.name]);
       await c.query('INSERT INTO h1_revisions VALUES (?,?,1,1,1)', [tenantId, namespaceId]);
       await insertResource(c, { tenantId, namespaceId }, { kind: 'user', id: userId }, { name: input.administrator.name, role: 'administrator' });
@@ -100,7 +95,7 @@ export class HostedProvisioning {
       html: `<p>You have been invited to OpenSight.</p><p>Public origin: ${this.config.origin}</p>${tenantLine}<p>Use this single-use invitation token with the OpenSight enrollment API:</p><code>${token}</code>` });
     await this.database.transaction(c => c.query('UPDATE h2_invitations SET delivered = 1 WHERE invitation_id = ?', [invitationId]));
   }
-  private async completeProvision(operationId: string, input: OnboardingInput): Promise<TenantOperation> {
+  private async completeProvision(operationId: string, input: Pick<OnboardingInput, 'administrator'>): Promise<TenantOperation> {
     const op = await this.operator.inspect(operationId);
     if (op.status === 'complete') return op;
     await this.deliver(operationId);

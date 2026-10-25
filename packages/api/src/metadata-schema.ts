@@ -52,23 +52,12 @@ const schema = [
  * SQLite, so slug uniqueness is a named unique index on both dialects
  * (NULLs exempt — many unnamed tenants coexist).
  */
-async function ensureTenantNaming(c: SqlConnection): Promise<void> {
-  for (const [column, definition] of [['display_name', 'TEXT'], ['slug', 'TEXT']] as const) {
-    // Column names are fixed constants, never caller input. The savepoint
-    // keeps a duplicate-column failure from aborting the caller's
-    // transaction on Postgres (same discipline as operator-audit.ts).
-    await c.query('SAVEPOINT opensight_tenant_naming');
-    try {
-      await c.query(`ALTER TABLE h1_tenants ADD COLUMN ${column} ${definition}`);
-      await c.query('RELEASE SAVEPOINT opensight_tenant_naming');
-    } catch (error) {
-      await c.query('ROLLBACK TO SAVEPOINT opensight_tenant_naming');
-      await c.query('RELEASE SAVEPOINT opensight_tenant_naming');
-      const code = error !== null && typeof error === 'object' && 'code' in error ? String(error.code) : '';
-      const message = error instanceof Error ? error.message : '';
-      if (code === '42701' || /duplicate column/i.test(message)) continue; // already migrated
-      throw error;
-    }
+export async function ensureTenantNaming(c: SqlConnection, dialect: 'sqlite' | 'postgres'): Promise<void> {
+  const columns = await c.query(dialect === 'postgres'
+    ? "SELECT column_name AS name FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'h1_tenants'"
+    : 'PRAGMA table_info(h1_tenants)');
+  for (const column of ['display_name', 'slug']) {
+    if (!columns.some(row => row.name === column)) await c.query(`ALTER TABLE h1_tenants ADD COLUMN ${column} TEXT`);
   }
   await c.query('CREATE UNIQUE INDEX IF NOT EXISTS h1_tenants_slug ON h1_tenants(slug)');
 }
@@ -76,7 +65,7 @@ async function ensureTenantNaming(c: SqlConnection): Promise<void> {
 export async function initializeMetadata(database: Database, dialect: 'sqlite' | 'postgres' = 'sqlite'): Promise<void> {
   await database.transaction(async c => {
     for (const sql of schema) await c.query(sql);
-    await ensureTenantNaming(c);
+    await ensureTenantNaming(c, dialect);
     if (dialect === 'postgres') {
       await c.query('ALTER TABLE h1_tenants ENABLE ROW LEVEL SECURITY');
       await c.query('ALTER TABLE h1_tenants FORCE ROW LEVEL SECURITY');

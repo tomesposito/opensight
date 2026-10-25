@@ -9,12 +9,12 @@ export const WORKSPACE_SLUG_MAX = 64;
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 /**
- * Validate an explicitly supplied workspace slug. Absent (undefined/null)
+ * Validate an explicitly supplied workspace slug. Absent (undefined)
  * means "derive from the display name". Any supplied value must match
  * /^[a-z0-9]+(?:-[a-z0-9]+)*$/ and fit in 64 chars, else METADATA_INVALID.
  */
 export function parseWorkspaceSlug(raw: unknown): string | null {
-  if (raw === undefined || raw === null) return null;
+  if (raw === undefined) return null;
   if (typeof raw !== 'string' || raw.length > WORKSPACE_SLUG_MAX || !SLUG_PATTERN.test(raw)) {
     throw new MetadataError('METADATA_INVALID', 400);
   }

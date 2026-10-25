@@ -197,7 +197,7 @@ test('SR4b1 initial activation admits real password/TOTP authentication, denies 
 });
 test('SR4b1 bootstrap refuses populated, foreign, incompatible and retired-key databases without partial identities', async t => {
   for (const [sql, code] of [
-    ["INSERT INTO h1_tenants VALUES ('existing','active',1,NULL,NULL,NULL)", 'INITIAL_DATABASE_NOT_EMPTY'],
+    ["INSERT INTO h1_tenants (tenant_id,state,version,tombstone,placement,limit_policy) VALUES ('existing','active',1,NULL,NULL,NULL)", 'INITIAL_DATABASE_NOT_EMPTY'],
     ["CREATE TABLE foreign_table (value TEXT)", 'INITIAL_SCHEMA_NOT_OWNED'],
     ["UPDATE sr_object_schema SET checksum = 'foreign'", 'INITIAL_SCHEMA_INVALID'],
     ["UPDATE sr_control SET state = 'draining'", 'INITIAL_MAINTENANCE_REQUIRED'],
