@@ -44,6 +44,10 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
+- Multi-measure small-multiples charts now resolve detailed tooltips and
+  conditional-formatting rules against each series' own facet rows and
+  measure, instead of indexing per-panel row groups by the global series
+  index and showing or styling another panel's values (#125).
 - Registered maintenance migrations create their durable receipt before reading
   it, so scoped S3 permissions and normalized errors no longer block the first
   write; retries preserve the original evidence and reject conflicts (#133).
