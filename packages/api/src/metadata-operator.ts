@@ -48,7 +48,7 @@ export class MetadataOperator {
     return this.database.transaction(async c => {
       const prior = await existing(c, operationId, hash); if (prior) return prior;
       const tenantId = randomUUID();
-      await c.query("INSERT INTO h1_tenants VALUES (?, 'provisioning', 1, NULL, NULL, NULL)", [tenantId]);
+      await c.query("INSERT INTO h1_tenants (tenant_id,state,version,tombstone,placement,limit_policy) VALUES (?, 'provisioning', 1, NULL, NULL, NULL)", [tenantId]);
       await c.query('INSERT INTO h1_namespaces VALUES (?,?,?)', [input.namespaceId, tenantId, input.name]);
       await c.query('INSERT INTO h1_revisions VALUES (?,?,1,1,1)', [tenantId, input.namespaceId]);
       await insertResource(c, { tenantId, namespaceId: input.namespaceId }, { kind: 'user', id: input.administrator.id }, { name: input.administrator.name, role: 'administrator' });

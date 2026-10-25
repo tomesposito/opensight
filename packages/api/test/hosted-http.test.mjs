@@ -225,3 +225,43 @@ test('#91 hosted invocation exposes only the approved quota explanation after au
   const forged = await request(path, { method: 'POST', body: {}, headers });
   assert.deepEqual(forged.body, { errorCode: 'USAGE_LIMIT_EXCEEDED' });
 });
+
+test('Issue #146 items 1/3/4: operator slug input and session workspace labels travel over HTTP', async t => {
+  const f = await authFixture(t), { request, operator } = await serving(t, f);
+  const created = await request('/api/host/tenants', { method: 'POST', headers: { ...operator, 'idempotency-key': 'named-http' }, body: { ...f.input, name: 'HTTP name', slug: 'explicit-http' } });
+  assert.equal(created.status, 201);
+  assert.equal((await f.db.transaction(c => c.query('SELECT slug FROM h1_tenants WHERE tenant_id = ?', [created.body.tenantId])))[0].slug, 'explicit-http');
+  const session = await f.login(), headers = { authorization: `Bearer ${session.token}` };
+  let result = await request('/api/session', { headers });
+  assert.equal(result.body.workspaceName, 'Synthetic tenant'); assert.equal(result.body.workspaceSlug, 'synthetic-tenant');
+  await f.db.transaction(c => c.query('UPDATE h1_tenants SET display_name = NULL, slug = NULL WHERE tenant_id = ?', [f.tenant.tenantId]));
+  result = await request('/api/session', { headers });
+  assert.equal(result.body.workspaceName, f.tenant.tenantId); assert.equal(result.body.workspaceSlug, null);
+});
+
+test('Issue #146 item 3: HTTP selection uses the login boundary and completes through invocation gating', async t => {
+  const f = await authFixture(t);
+  const second = await f.provisioning.provision('http-second', { ...f.input, name: 'Second HTTP workspace' });
+  const invite = f.mail.messages.at(-1).html.match(/<code>([^<]+)<\/code>/)[1];
+  await f.auth.accept(invite, f.password, f.code(), 'local'); f.advance();
+  // Initialize auxiliary schemas, then exercise the serverless invocation boundary.
+  await serving(t, f);
+  const { request } = await serving(t, f, { invocation: { capabilities: {} } });
+  const path = '/api/auth/login/select';
+  for (const method of ['GET', 'PUT', 'DELETE']) assert.equal((await request(path, { method })).status, 405);
+  for (const headers of [{ authorization: 'Bearer stale' }, { cookie: 'stale=1' }]) {
+    const bad = await request(path, { method: 'POST', headers, body: {} });
+    assert.equal(bad.status, 400); assert.equal(bad.body.errorCode, 'HOSTED_REQUEST_INVALID');
+  }
+  let result = await request('/api/auth/login', { method: 'POST', body: { email: f.email, password: f.password, code: f.code() } });
+  assert.equal(result.status, 200); assert.equal(result.body.selectionRequired, true); assert.equal(result.body.token, undefined);
+  const selectionToken = result.body.selectionToken;
+  result = await request(path, { method: 'POST', body: { selectionToken, tenantId: 'nonmember' } });
+  assert.equal(result.status, 401); assert.equal(result.body.errorCode, 'AUTHENTICATION_FAILED');
+  result = await request(path, { method: 'POST', body: { selectionToken, tenantId: second.tenantId } });
+  assert.equal(result.status, 200); assert.equal(result.body.tenantId, second.tenantId); assert.ok(result.body.token);
+  const replay = await request(path, { method: 'POST', body: { selectionToken, tenantId: second.tenantId } });
+  assert.equal(replay.status, 401); assert.equal(replay.body.errorCode, 'AUTHENTICATION_FAILED');
+  const unavailable = await serving(t, f, { builtinAuth: undefined });
+  assert.equal((await unavailable.request(path, { method: 'POST', body: {} })).body.errorCode, 'BUILTIN_AUTH_UNAVAILABLE');
+});

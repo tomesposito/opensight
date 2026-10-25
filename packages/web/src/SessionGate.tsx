@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { AccessProvider, demoAccess, type Session, type Access } from './access.js';
-import { ApiError, type createApiClient, type LoginInput } from './api-client.js';
+import { ApiError, type createApiClient, type LoginInput, type LoginResult } from './api-client.js';
 import { FirstRun, type StartupIssue } from './FirstRun.js';
 import { SignIn } from './SignIn.js';
 import { authNotice, type AuthNotice } from './auth-errors.js';
 import { StartupError } from './workspace-startup.js';
 
-type Client = Pick<ReturnType<typeof createApiClient>, 'getSession'> & Partial<Pick<ReturnType<typeof createApiClient>, 'getLocalData' | 'login' | 'logout' | 'clearSession' | 'onDemand' | 'connect' | 'subscribeAvailability'>> & Access['aiClient'];
+type Client = Pick<ReturnType<typeof createApiClient>, 'getSession'> & Partial<Pick<ReturnType<typeof createApiClient>, 'getLocalData' | 'login' | 'selectWorkspace' | 'logout' | 'clearSession' | 'onDemand' | 'connect' | 'subscribeAvailability'>> & Access['aiClient'];
 export const SESSION_TIMEOUT_MS = 10_000;
 
 function startupIssue(error: unknown): StartupIssue {
@@ -132,13 +132,32 @@ export function SessionGate({ client, offline, children }: { client: Client; off
     }
   }
 
-  async function signIn(input: LoginInput, remember: boolean) {
+  async function signIn(input: LoginInput, remember: boolean): Promise<LoginResult | void> {
     if (!client.login) throw new ApiError('Unavailable', 503, 'BUILTIN_AUTH_UNAVAILABLE');
     cancelRefresh();
     const controller = new AbortController(); authRequest.current = controller;
     const deadline = window.setTimeout(() => controller.abort(), SESSION_TIMEOUT_MS);
     try {
       const value = await client.login(input, remember, controller.signal);
+      if (controller.signal.aborted) throw new ApiError('Sign-in timed out.');
+      // A picker challenge is not a session: the SignIn screen keeps the
+      // challenge and completes it through selectWorkspace below.
+      if (!('session' in value)) return value;
+      requireSignIn.current = false;
+      setSession(value.session); setExpiresAt(value.expiresAt); setLocal(false); setIssue(undefined); setNotice(undefined);
+    } finally {
+      window.clearTimeout(deadline);
+      if (authRequest.current === controller) authRequest.current = undefined;
+      if (!controller.signal.aborted) setChecking(false);
+    }
+  }
+  async function selectWorkspace(selectionToken: string, tenantId: string, remember: boolean) {
+    if (!client.selectWorkspace) throw new ApiError('Unavailable', 503, 'BUILTIN_AUTH_UNAVAILABLE');
+    cancelRefresh();
+    const controller = new AbortController(); authRequest.current = controller;
+    const deadline = window.setTimeout(() => controller.abort(), SESSION_TIMEOUT_MS);
+    try {
+      const value = await client.selectWorkspace(selectionToken, tenantId, remember, controller.signal);
       if (controller.signal.aborted) throw new ApiError('Sign-in timed out.');
       requireSignIn.current = false;
       setSession(value.session); setExpiresAt(value.expiresAt); setLocal(false); setIssue(undefined); setNotice(undefined);
@@ -187,7 +206,7 @@ export function SessionGate({ client, offline, children }: { client: Client; off
   </main></div>;
   if (local) return <AccessProvider access={{ mode: 'local' }}>{children}</AccessProvider>;
   if (signingOut) return <div className="sign-in-page"><main className="sign-in-main"><p role="status">Signing out…</p></main></div>;
-  if (!session && issue === 'sign-in') return <SignIn notice={notice} onSignIn={signIn} onRetry={retry} onDemo={explore} />;
+  if (!session && issue === 'sign-in') return <SignIn notice={notice} onSignIn={signIn} onSelectWorkspace={selectWorkspace} onRetry={retry} onDemo={explore} />;
   // While the first session check is in flight we know nothing yet — render a minimal
   // loading state in the sign-in shell so the landing page never flashes before auth.
   // The sample-data escape hatch stays available for slow checks.

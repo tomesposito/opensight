@@ -1,7 +1,11 @@
 import type { AIStatus, createApiClient } from './api-client.js';
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import { hasCapability, type Capability, type Role } from '@opensight/query-engine/browser';
-export interface Session { id: string; namespaceId: string; tenantId?: string; name: string; role: Role }
+export interface Session {
+  id: string; namespaceId: string; tenantId?: string; name: string; role: Role;
+  /** Workspace display label (display_name with tenant_id fallback) and internal slug. */
+  workspaceName?: string; workspaceSlug?: string | null;
+}
 export interface Access { mode: 'demo' | 'hosted' | 'local'; session?: Session; signOut?(): Promise<void>; aiClient?: Pick<ReturnType<typeof createApiClient>, 'getAIStatus' | 'generateO' | 'generateCalculation'> }
 // Public sample preview has a fixed author_ai persona, never a hosted credential.
 export const demoAccess: Access = { mode: 'demo', session: { id: 'sample', namespaceId: 'sample', name: 'Public sample preview', role: 'author_ai' } };

@@ -8,6 +8,16 @@ import { base32, digest, equal, hashPassword, passwordInput, seal, unseal, verif
 import { identifier } from './metadata-resources.js';
 import { emailAddress } from './mail.js';
 import { appendOperatorAudit } from './operator-audit.js';
+import { workspaceLabel } from './workspace-naming.js';
+
+/** A workspace picker challenge lives at most five minutes and is single-use. */
+export const LOGIN_SELECTION_MS = 5 * 60 * 1000;
+export interface LoginSession { token: string; expiresAt: number; tenantId: string }
+export interface LoginWorkspace { tenantId: string; name: string; slug: string | null }
+export interface LoginSelection {
+  selectionRequired: true; email: string; workspaces: LoginWorkspace[];
+  selectionToken: string; selectionExpiresAt: number;
+}
 
 function denied(): never { throw new MetadataError('AUTHENTICATION_FAILED', 401); }
 export function normalizedEmail(value: unknown): string {
@@ -141,14 +151,19 @@ export class HostedAuth {
       return { accepted: true };
     });
   }
-  async login(emailValue: unknown, passwordValue: unknown, code: string, tenantValue: unknown, peer: string): Promise<{ token: string; expiresAt: number; tenantId: string }> {
-    const email = normalizedEmail(emailValue), password = passwordInput(passwordValue), tenantId = identifier(tenantValue);
+  async login(emailValue: unknown, passwordValue: unknown, code: string, tenantValue: unknown, peer: string): Promise<LoginSession | LoginSelection> {
+    const email = normalizedEmail(emailValue), password = passwordInput(passwordValue);
+    // An omitted workspace selects the picker flow below; an explicitly
+    // supplied workspace keeps the exact historical behavior, including
+    // validation order (identifier before the rate-limit reserve).
+    const tenantId = tenantValue === undefined || tenantValue === null || tenantValue === '' ? undefined : identifier(tenantValue);
     await this.limit(email, peer);
     const identity = (await this.database.transaction(c => c.query('SELECT * FROM h2_identities WHERE email = ?', [email])))[0];
     // Unknown/uninitialized accounts still pay the same scrypt cost and return the same error.
     if (!identity?.password_hash) { await hashPassword(password); denied(); }
     const credentials = await this.credentials(String(identity.subject), password);
     if (credentials.status !== 'active') denied();
+    if (tenantId === undefined) return this.challenge(String(identity.subject), email, credentials, code);
     return this.database.transaction(async c => {
       await this.key(c);
       const membership = await this.membership(c, String(identity.subject), tenantId);
@@ -156,6 +171,70 @@ export class HostedAuth {
       return this.issue(c, membership);
     });
   }
+  /**
+   * Identity is already verified (rate limit, password, active status) and
+   * the TOTP is consumed exactly once, in the same transaction that either
+   * issues the session (single membership) or mints the picker challenge.
+   * A rollback leaves neither a session nor a reusable challenge.
+   */
+  private async challenge(subject: string, email: string, credentials: SqlRow, code: string): Promise<LoginSession | LoginSelection> {
+    return this.database.transaction(async c => {
+      await this.key(c);
+      const candidates = await c.query("SELECT tenant_id FROM h2_memberships WHERE subject = ? AND status = 'active' ORDER BY tenant_id", [subject]);
+      const admissible: SqlRow[] = [];
+      for (const candidate of candidates) {
+        // Admission semantics identical to membership(): tenant state
+        // 'active' AND membership status 'active', tenant locked first. A
+        // tenant suspended after an earlier login simply does not list.
+        try { admissible.push(await this.membership(c, subject, String(candidate.tenant_id))); }
+        catch (error) { if (!(error instanceof MetadataError && error.code === 'AUTHENTICATION_FAILED')) throw error; }
+      }
+      // Zero admissible memberships look exactly like a bad tenant (401, no
+      // new enumeration signal); one membership never sees a picker.
+      if (!admissible.length) denied();
+      await this.consumeTotp(c, credentials, code);
+      if (admissible.length === 1) return this.issue(c, admissible[0]!);
+      const ids = admissible.map(m => String(m.tenant_id));
+      const labels = await c.query(`SELECT tenant_id, display_name, slug FROM h1_tenants WHERE tenant_id IN (${ids.map(() => '?').join(',')})`, ids);
+      const byId = new Map(labels.map(row => [String(row.tenant_id), row]));
+      const workspaces = admissible.map(m => {
+        const tenantId = String(m.tenant_id), info = byId.get(tenantId);
+        return { tenantId, name: workspaceLabel(info?.display_name, tenantId), slug: typeof info?.slug === 'string' ? info.slug : null };
+      }).sort((a, b) => a.name.localeCompare(b.name) || (a.tenantId < b.tenantId ? -1 : 1));
+      const selectionToken = randomBytes(32).toString('base64url'), selectionExpiresAt = this.clock() + LOGIN_SELECTION_MS;
+      await c.query('INSERT INTO h2_login_selections VALUES (?,?,?,0)', [digest(selectionToken), subject, selectionExpiresAt]);
+      return { selectionRequired: true as const, email, workspaces, selectionToken, selectionExpiresAt };
+    });
+  }
+  /**
+   * Completes a picker challenge. Unknown, consumed or expired selections,
+   * suspended tenants and non-member tenants all fail closed with the same
+   * AUTHENTICATION_FAILED — never revealing which check failed. Consume and
+   * issue happen atomically, so a replayed token always loses the race.
+   */
+  async completeLogin(selectionValue: unknown, tenantValue: unknown, peer: string): Promise<LoginSession> {
+    const selectionToken = tokenInput(selectionValue);
+    let tenantId: string;
+    try { tenantId = identifier(tenantValue); } catch { denied(); }
+    const found = (await this.database.transaction(c => c.query('SELECT * FROM h2_login_selections WHERE selection_id = ?', [digest(selectionToken)])))[0];
+    // Unknown tokens still reserve peer/global attempts; no principal is
+    // disclosed, and all selection admission failures share the same error.
+    try { await this.limit(found ? String(found.subject) : `selection:${digest(selectionToken)}`, peer); }
+    catch (error) { if (error instanceof MetadataError && error.code === 'AUTH_RATE_LIMITED') denied(); throw error; }
+    if (!found || Number(found.consumed) !== 0 || Number(found.expires_at) <= this.clock()) denied();
+    const subject = String(found.subject);
+    return this.database.transaction(async c => {
+      try { await this.key(c); }
+      catch (error) { if (error instanceof MetadataError && error.code === 'AUTH_KEY_REVOKED') denied(); throw error; }
+      const membership = await this.membership(c, subject, tenantId);
+      if (!(await c.query("SELECT subject FROM h2_identities WHERE subject = ? AND status = 'active'", [subject])).length) denied();
+      const consumed = await c.query('UPDATE h2_login_selections SET consumed = 1 WHERE selection_id = ? AND consumed = 0 AND expires_at > ? RETURNING selection_id',
+        [digest(selectionToken), this.clock()]);
+      if (!consumed.length) denied();
+      return this.issue(c, membership);
+    });
+  }
+
   private signature(prefix: string): string {
     return createHmac('sha256', this.config.signingKey).update(JSON.stringify([prefix, this.config.issuer, this.config.audience, this.config.origin])).digest('base64url');
   }

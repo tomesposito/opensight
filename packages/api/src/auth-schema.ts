@@ -30,6 +30,9 @@ export async function initializeAuth(database: Database): Promise<void> {
       `CREATE TABLE IF NOT EXISTS h2_attempts (bucket TEXT PRIMARY KEY, window_start BIGINT NOT NULL, attempts INTEGER NOT NULL)`,
       `CREATE TABLE IF NOT EXISTS h2_onboarding (operation_id TEXT PRIMARY KEY, request_hash TEXT NOT NULL, tenant_id TEXT NOT NULL,
         invitation_id TEXT NOT NULL REFERENCES h2_invitations(invitation_id))`,
+      `CREATE TABLE IF NOT EXISTS h2_login_selections (
+        selection_id TEXT PRIMARY KEY, subject TEXT NOT NULL REFERENCES h2_identities(subject),
+        expires_at BIGINT NOT NULL, consumed INTEGER NOT NULL DEFAULT 0)`,
       `CREATE TABLE IF NOT EXISTS h2_requests (operation_id TEXT PRIMARY KEY, request_hash TEXT NOT NULL)`
     ]) await c.query(sql);
   });

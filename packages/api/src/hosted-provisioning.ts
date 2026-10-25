@@ -7,11 +7,13 @@ import { appendMetadataEvent } from './metadata-outbox.js';
 import type { HostedConfig } from './hosted-config.js';
 import type { MailTransport } from './mail.js';
 import { digest, seal, unseal } from './auth-crypto.js';
+import { escapeHtml } from './reports.js';
 import { normalizedEmail } from './hosted-auth.js';
 import { appendOperatorAudit } from './operator-audit.js';
 import { applyDisposition, disposition, type JobDisposition, type JobOwnership } from './job-ownership.js';
+import { deriveWorkspaceSlug, parseWorkspaceSlug, workspaceLabel } from './workspace-naming.js';
 
-export interface OnboardingInput { name: string; administrator: { email: string; name: string } }
+export interface OnboardingInput { name: string; slug?: string; administrator: { email: string; name: string } }
 export interface InvitationInput { email: string; name: string; role: Role }
 function label(value: string): string {
   if (typeof value !== 'string' || !value.trim() || value.length > 512 || /[\x00-\x1f]/.test(value)) throw new MetadataError('METADATA_INVALID', 400);
@@ -48,7 +50,8 @@ export class HostedProvisioning {
     return operationId;
   }
   async provision(key: string, raw: OnboardingInput): Promise<TenantOperation> {
-    const input = { name: label(raw.name), administrator: { email: normalizedEmail(raw.administrator.email), name: label(raw.administrator.name) } };
+    const name = label(raw.name), slug = parseWorkspaceSlug(raw.slug) ?? deriveWorkspaceSlug(name);
+    const input = { name, slug, administrator: { email: normalizedEmail(raw.administrator.email), name: label(raw.administrator.name) } };
     const operationId = operatorOperationId(key), hash = checksum({ action: 'onboard', input });
     if (!this.mail.configured) throw new MetadataError('SMTP_NOT_CONFIGURED', 503);
     await this.reserve(operationId, hash);
@@ -57,7 +60,9 @@ export class HostedProvisioning {
       const prior = (await c.query('SELECT * FROM h2_onboarding WHERE operation_id = ?', [operationId]))[0];
       if (prior) { if (prior.request_hash !== hash) throw new MetadataError('OPERATION_ID_REUSED'); return; }
       const tenantId = randomUUID(), namespaceId = randomUUID(), userId = randomUUID();
-      await c.query("INSERT INTO h1_tenants VALUES (?,'provisioning',1,NULL,NULL,NULL)", [tenantId]);
+      const inserted = await c.query(`INSERT INTO h1_tenants (tenant_id,state,version,display_name,slug)
+        VALUES (?,'provisioning',1,?,?) ON CONFLICT (slug) DO NOTHING RETURNING tenant_id`, [tenantId, input.name, input.slug]);
+      if (!inserted.length) throw new MetadataError('TENANT_SLUG_CONFLICT', 409);
       await c.query('INSERT INTO h1_namespaces VALUES (?,?,?)', [namespaceId, tenantId, input.name]);
       await c.query('INSERT INTO h1_revisions VALUES (?,?,1,1,1)', [tenantId, namespaceId]);
       await insertResource(c, { tenantId, namespaceId }, { kind: 'user', id: userId }, { name: input.administrator.name, role: 'administrator' });
@@ -68,25 +73,30 @@ export class HostedProvisioning {
       // The committed provisioning mutations are audited in the transaction that creates
       // them, so a later SMTP failure cannot leave them unaudited. Invitation tokens are
       // sealed in h2_invitations and mailed; only the recipient identity lands here.
-      await appendOperatorAudit(c, { action: 'tenant.provisioned', tenantId, subject: input.administrator.email, detail: { operationId, name: input.name } });
+      await appendOperatorAudit(c, { action: 'tenant.provisioned', tenantId, subject: input.administrator.email, detail: { operationId, name: input.name, slug: input.slug } });
       await appendOperatorAudit(c, { action: 'membership.invited', tenantId, subject: input.administrator.email, detail: { operationId, userId, role: 'administrator' } });
     });
     return this.completeProvision(operationId, input);
   }
   private async deliver(invitationId: string): Promise<void> {
-    const row = (await this.database.transaction(c => c.query(`SELECT v.*, i.email, t.state FROM h2_invitations v
+    const row = (await this.database.transaction(c => c.query(`SELECT v.*, i.email, t.state, t.display_name FROM h2_invitations v
       JOIN h2_identities i ON i.subject = v.subject JOIN h1_tenants t ON t.tenant_id = v.tenant_id WHERE invitation_id = ?`, [invitationId])))[0];
     if (!row) missing();
     if (!['provisioning', 'active'].includes(String(row.state))) throw new MetadataError('TENANT_UNAVAILABLE', 403);
     if (Number(row.delivered) || Number(row.accepted)) return;
     if (Number(row.expires_at) <= this.clock()) throw new MetadataError('INVITATION_EXPIRED', 409);
     const token = unseal(String(row.token_secret), this.config.encryptionKey, `invitation:${invitationId}`);
+    // The workspace name is shown when the tenant has one; legacy tenants
+    // without a display name keep the raw tenant line (fallback, never typed).
+    const tenantLine = row.display_name
+      ? `<p>Workspace: ${escapeHtml(workspaceLabel(row.display_name, String(row.tenant_id)))}</p>`
+      : `<p>Tenant: ${row.tenant_id}</p>`;
     // Delivery belongs to the identity flow, never to operator metadata responses.
     await this.mail.send({ to: [String(row.email)], subject: 'OpenSight invitation',
-      html: `<p>You have been invited to OpenSight.</p><p>Public origin: ${this.config.origin}</p><p>Tenant: ${row.tenant_id}</p><p>Use this single-use invitation token with the OpenSight enrollment API:</p><code>${token}</code>` });
+      html: `<p>You have been invited to OpenSight.</p><p>Public origin: ${this.config.origin}</p>${tenantLine}<p>Use this single-use invitation token with the OpenSight enrollment API:</p><code>${token}</code>` });
     await this.database.transaction(c => c.query('UPDATE h2_invitations SET delivered = 1 WHERE invitation_id = ?', [invitationId]));
   }
-  private async completeProvision(operationId: string, input: OnboardingInput): Promise<TenantOperation> {
+  private async completeProvision(operationId: string, input: Pick<OnboardingInput, 'administrator'>): Promise<TenantOperation> {
     const op = await this.operator.inspect(operationId);
     if (op.status === 'complete') return op;
     await this.deliver(operationId);

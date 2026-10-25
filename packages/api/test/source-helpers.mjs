@@ -18,7 +18,7 @@ export const registration = () => ({ connectorId: 'postgresql', endpointId: 'ref
 export const upload = (p = policy, expiry = '2099-01-01T00:00:00.000Z') => ({ config: { format: 'csv' }, base64: Buffer.from('region,amount,private\neast,10,a\nwest,20,b\neast,30,c\n').toString('base64'), policy: p, expiresAt: expiry });
 export async function seedSources(db) {
   for (const [tenantId, namespaceId] of [['tenant-one', 'one'], ['tenant-two', 'two']]) await db.transaction(async c => {
-    await c.query("INSERT INTO h1_tenants VALUES (?,'active',1,NULL,NULL,NULL)", [tenantId]);
+    await c.query("INSERT INTO h1_tenants (tenant_id,state,version,tombstone,placement,limit_policy) VALUES (?,'active',1,NULL,NULL,NULL)", [tenantId]);
     await c.query('INSERT INTO h1_namespaces VALUES (?,?,?)', [namespaceId, tenantId, namespaceId]);
     await c.query('INSERT INTO h1_revisions VALUES (?,?,1,1,1)', [tenantId, namespaceId]);
     for (const id of ['admin', 'other']) await insertResource(c, { tenantId, namespaceId }, { kind: 'user', id }, { name: id, role: 'administrator' });

@@ -119,7 +119,7 @@ export async function handler(raw, context) {
     const ns=command==='replay'?'ambiguity':command==='complete-object-backup'?'object-backup':command,tenant='tenant-'+ns;
     const contextFor = user=>metadata.authenticate(null,async()=>({namespaceId:ns,userId:user}));
     if(!['replay','complete-object-backup'].includes(command)) {
-      await sql("INSERT INTO h1_tenants VALUES (?,'active',1,NULL,NULL,NULL)",[tenant]);
+      await sql("INSERT INTO h1_tenants (tenant_id,state,version,tombstone,placement,limit_policy) VALUES (?,'active',1,NULL,NULL,NULL)",[tenant]);
       await sql('INSERT INTO h1_namespaces VALUES (?,?,?)',[ns,tenant,ns]);
       await sql('INSERT INTO h1_revisions VALUES (?,?,1,1,1)',[tenant,ns]);
       for(const user of ['owner','reader']) {

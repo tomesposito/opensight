@@ -26,7 +26,7 @@ test('Issue #63: browser client completes real hosted login, session establishme
       const chunks=[];res.on('data',chunk=>chunks.push(chunk));res.on('end',()=>resolve(new Response(Buffer.concat(chunks),{status:res.statusCode,headers:res.headers})));
     });req.on('error',reject);req.end(options.body);
   }));
-  const login=()=>client.login({email:f.email,password:f.password,code:f.code(),tenantId:f.tenant.tenantId},false);
+  const login=()=>client.login({email:f.email,password:f.password,code:f.code()},false);
   await assert.rejects(client.getSession(),{errorCode:'AUTHENTICATION_FAILED'});
   const result=await login();
   assert.equal(result.session.tenantId,f.tenant.tenantId);

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
 import { createApiClient, ApiError, SHORT_SESSION_MS, MAX_SESSION_MS } from '../build/test/api-client.js';
 
-const input = () => ({ email: 'invited@example.test', password: randomBytes(24).toString('base64'), code: '123456', tenantId: 'workspace' });
+const input = () => ({ email: 'invited@example.test', password: randomBytes(24).toString('base64'), code: '123456' });
 const identity = { id: 'user', namespaceId: 'namespace', name: 'Invited user', role: 'author', tenantId: 'workspace' };
 const token = () => randomBytes(32).toString('base64url');
 
@@ -29,7 +29,7 @@ test('Issue #63: one credential-free login establishes a verified session, every
     return Response.json([]);
   });
   const result = await client.login(credentials, true);
-  assert.deepEqual(result.session, identity);
+  assert.deepEqual(result.session, {...identity, workspaceName: 'workspace', workspaceSlug: null});
   assert.equal('token' in result, false);
   await client.listUsers();
   await client.queryDataset('sample', { dimensions: [], measures: [] });
@@ -72,7 +72,7 @@ test('Issue #63: remember-me uses a bounded deadline, never renews or persists a
 });
 
 test('Issue #63: malformed responses and failed session verification cannot establish access', async () => {
-  for (const body of [{}, null, { token: 'bad token', expiresAt: Date.now()+900000, tenantId:'workspace' }, { token: token(), expiresAt: Date.now()-1, tenantId:'workspace' }, { token:token(), expiresAt:Date.now()+900000, tenantId:'other' }]) {
+  for (const body of [{}, null, { token: 'bad token', expiresAt: Date.now()+900000, tenantId:'workspace' }, { token: token(), expiresAt: Date.now()-1, tenantId:'workspace' }, { token:token(), expiresAt:Date.now()+900000, tenantId:42 }]) {
     const client = createApiClient('/', async () => Response.json(body));
     await assert.rejects(client.login(input(), false), { errorCode:'AUTH_RESPONSE_INVALID' });
   }
@@ -161,4 +161,55 @@ test('on-demand late prior-session failures cannot hide a replacement session; l
   held = true; const old = client.getSession(); held = false; await client.login(input(), false);
   resolve(Response.json({ errorCode: 'AUTHORIZATION_REVISED' }, { status: 401 })); await assert.rejects(old, { errorCode: 'AUTH_REQUEST_SUPERSEDED' }); assert.equal(events.length, 0);
   const before = calls; t.mock.timers.tick(900000); await assert.rejects(client.getSession(), { errorCode: 'SESSION_EXPIRED' }); assert.equal(calls, before); assert.deepEqual(events, [{ kind: 'authentication-required', errorCode: 'SESSION_EXPIRED' }]);
+});
+
+const selection = () => ({selectionRequired:true,email:'invited@example.test',workspaces:[
+  {tenantId:'workspace',name:'Sales team',slug:'sales-team'}, {tenantId:'legacy',name:'legacy',slug:null},
+],selectionToken:token(),selectionExpiresAt:Date.now()+300000});
+
+test('Issue #146: challenge is typed and credential-free; selecting establishes the shared verified session', async () => {
+  const challenge=selection(), calls=[];
+  const client=createApiClient('/',async(url,options)=>{
+    calls.push(url);
+    if(url==='/api/auth/login'||url==='/api/auth/login/select') {
+      assert.equal(options.credentials,'omit');assert.equal(new Headers(options.headers).get('authorization'),null);
+      assert.equal(new Headers(options.headers).get('cookie'),null);
+      if(url.endsWith('/login')) {assert.equal('tenantId' in JSON.parse(options.body),false);return Response.json(challenge);}
+      assert.deepEqual(JSON.parse(options.body),{selectionToken:challenge.selectionToken,tenantId:'workspace'});
+      return Response.json({token:token(),tenantId:'workspace',expiresAt:Date.now()+900000});
+    }
+    assert.ok(options.headers.Authorization);return Response.json({...identity,workspaceName:'Sales team',workspaceSlug:'sales-team'});
+  });
+  assert.deepEqual(await client.login(input(),false),{kind:'selection',email:challenge.email,workspaces:challenge.workspaces,selectionToken:challenge.selectionToken,selectionExpiresAt:challenge.selectionExpiresAt});
+  assert.deepEqual(calls,['/api/auth/login']);
+  const signed=await client.selectWorkspace(challenge.selectionToken,'workspace',false);
+  assert.equal(signed.session.workspaceName,'Sales team');assert.equal(signed.session.workspaceSlug,'sales-team');
+  assert.deepEqual(calls,['/api/auth/login','/api/auth/login/select','/api/session']);
+});
+
+test('Issue #146: malformed/expired challenges fail closed without requesting a session', async () => {
+  for(const change of [c=>{c.selectionToken='bad';},c=>{c.selectionExpiresAt=Date.now();},c=>{c.workspaces=[];},c=>{c.workspaces=[c.workspaces[0],c.workspaces[0]];},c=>{c.workspaces[0].name=42;},c=>{c.workspaces[0].slug={};}]) {
+    const challenge=selection();change(challenge);let calls=0;
+    const client=createApiClient('/',async()=>{calls++;return Response.json(challenge);});
+    await assert.rejects(client.login(input(),false),{errorCode:'AUTH_RESPONSE_INVALID'});assert.equal(calls,1);
+  }
+});
+
+test('Issue #146: selection must match both requested tenant and verified session, and failure clears credentials', async () => {
+  for(const [issued,verified] of [['other','other'],['workspace','other']]) {
+    let seen;
+    const client=createApiClient('/',async(url,options)=>{seen=options;return Response.json(url.endsWith('/select')?{token:token(),tenantId:issued,expiresAt:Date.now()+900000}:{...identity,tenantId:verified});});
+    await assert.rejects(client.selectWorkspace(token(),'workspace',false),{errorCode:'AUTH_RESPONSE_INVALID'});
+    await client.getSession();assert.equal(seen.headers.Authorization,undefined);
+  }
+});
+
+test('Issue #146: null slugs and absent fields support older servers; malformed label fields are rejected', async () => {
+  for(const body of [identity,{...identity,workspaceName:'',workspaceSlug:null}]) {
+    const client=createApiClient('/',async()=>Response.json(body));
+    const session=await client.getSession();assert.equal(session.workspaceName,'workspace');assert.equal(session.workspaceSlug,null);
+  }
+  for(const fields of [{workspaceName:42},{workspaceSlug:{}}]) {
+    const client=createApiClient('/',async()=>Response.json({...identity,...fields}));await assert.rejects(client.getSession());
+  }
 });

@@ -35,7 +35,7 @@ async function credentials(ui) {
   const password = randomBytes(24).toString('base64');
   await field(ui, 'signin-email', 'invited@example.test');
   await field(ui, 'signin-password', password);
-  await field(ui, 'signin-workspace', 'workspace');
+  assert.equal(ui.renderer.root.findAllByProps({id:'signin-workspace'}).length, 0);
   await submit(ui);
   return password;
 }
@@ -51,7 +51,7 @@ test('Issue #63: credentials advance locally; only a six-digit TOTP submits, wit
   assert.equal(calls.length,0);
   assert.match(JSON.stringify(ui.renderer.toJSON()), /6-digit code/);
   await field(ui,'signin-code','012345'); await submit(ui);
-  assert.deepEqual(calls, [[{email:'invited@example.test',password,code:'012345',tenantId:'workspace'},true]]);
+  assert.deepEqual(calls, [[{email:'invited@example.test',password,code:'012345'},true]]);
   assert.equal(ui.renderer.root.findByProps({id:'signin-code'}).props.value,'');
 });
 
@@ -66,7 +66,7 @@ test('Issue #63: back clears password and TOTP; rejected login clears code and k
   assert.equal(ui.renderer.root.findByProps({id:'signin-email'}).props.value,'invited@example.test');
 });
 
-for (const [code,text] of Object.entries({AUTH_RATE_LIMITED:'Too many sign-in attempts',AUTH_KEY_REVOKED:'no longer valid',BUILTIN_AUTH_UNAVAILABLE:'not available',HOSTED_REQUEST_INVALID:'could not accept',UNTRUSTED_ORIGIN:'not trusted',FORGED_PRINCIPAL:'rejected the request identity',EMAIL_INVALID:'valid email',PASSWORD_INVALID:'at least 15',METADATA_INVALID:'workspace ID',PRINCIPAL_REQUIRED:'Sign in to access',UNKNOWN_PRINCIPAL:'cannot access',TENANT_UNAVAILABLE:'workspace is unavailable',AUTHORIZATION_REVISED:'access has changed',AUTH_RESPONSE_INVALID:'invalid sign-in response',AUTH_REQUEST_SUPERSEDED:'cancelled',SESSION_EXPIRED:'session has expired'})) {
+for (const [code,text] of Object.entries({AUTH_RATE_LIMITED:'Too many sign-in attempts',AUTH_KEY_REVOKED:'no longer valid',BUILTIN_AUTH_UNAVAILABLE:'not available',HOSTED_REQUEST_INVALID:'could not accept',UNTRUSTED_ORIGIN:'not trusted',FORGED_PRINCIPAL:'rejected the request identity',EMAIL_INVALID:'valid email',PASSWORD_INVALID:'at least 15',METADATA_INVALID:'workspace details',PRINCIPAL_REQUIRED:'Sign in to access',UNKNOWN_PRINCIPAL:'cannot access',TENANT_UNAVAILABLE:'workspace is unavailable',AUTHORIZATION_REVISED:'access has changed',AUTH_RESPONSE_INVALID:'invalid sign-in response',AUTH_REQUEST_SUPERSEDED:'cancelled',SESSION_EXPIRED:'session has expired'})) {
   test(`Issue #63: ${code} has actionable, named UI guidance`, async t => {
     const ui=await mount(t,createElement(SignIn,{onSignIn:async()=>{throw new ApiError('sensitive backend text',403,code);},onRetry(){},onDemo(){}}));
     await credentials(ui); await field(ui,'signin-code','123456'); await submit(ui);
@@ -195,4 +195,45 @@ test('Issue #63: login timeout aborts transport and never mounts a workspace', a
   assert.equal(signal.aborted,true);
   assert.equal(ui.renderer.root.findAllByType(Probe).length,0);
   assert.match(JSON.stringify(ui.renderer.toJSON()),/Unable to reach your workspace/);
+});
+
+function pickerClient(failure=false) {
+  const selectionToken=randomBytes(32).toString('base64url'),calls=[];
+  const client=createApiClient('/',async(url,options)=>{
+    calls.push({url,options});
+    if(url.endsWith('/login')) return Response.json({selectionRequired:true,email:'invited@example.test',selectionToken,selectionExpiresAt:Date.now()+300000,
+      workspaces:[{tenantId:'workspace',name:'Sales team',slug:'sales-team'},{tenantId:'legacy',name:'legacy',slug:null}]});
+    if(url.endsWith('/select')) return failure?Response.json({errorCode:'AUTHENTICATION_FAILED'},{status:401}):Response.json({token:randomBytes(32).toString('base64url'),tenantId:'workspace',expiresAt:Date.now()+900000});
+    return options.headers.Authorization?Response.json({...identity,workspaceName:'Sales team',workspaceSlug:'sales-team'}):Response.json({errorCode:'AUTHENTICATION_FAILED'},{status:401});
+  });
+  return {client,calls,selectionToken};
+}
+
+test('Issue #146: no workspace input; challenge renders email, names and slugs; choosing completes sign-in and labels the header', async t => {
+  const f=pickerClient(),ui=await mount(t,createElement(SessionGate,{client:f.client,offline:false},createElement(Probe)));
+  assert.doesNotMatch(JSON.stringify(ui.renderer.toJSON()),/Workspace ID|signin-workspace-help/);
+  await credentials(ui);await field(ui,'signin-code','123456');await submit(ui);
+  const text=JSON.stringify(ui.renderer.toJSON());assert.match(text,/Choose your workspace/);assert.match(text,/Signed in as/);assert.match(text,/invited@example.test/);assert.match(text,/Sales team/);assert.match(text,/sales-team/);assert.match(text,/legacy/);
+  assert.equal(ui.renderer.root.findAllByType(Probe).length,0);
+  const list=ui.renderer.root.findByProps({'aria-label':'Workspaces'});assert.equal(list.type,'ul');assert.equal(list.findAllByType('li').length,2);
+  await act(async()=>list.findAllByType('button')[0].props.onClick());
+  assert.equal(ui.renderer.root.findByType('output').props['data-access'].mode,'hosted');
+  assert.equal(ui.renderer.root.findByProps({className:'account-workspace'}).props.children,'Sales team');
+  const call=f.calls.find(c=>c.url.endsWith('/select'));assert.deepEqual(JSON.parse(call.options.body),{selectionToken:f.selectionToken,tenantId:'workspace'});
+});
+
+for(const back of [false,true]) test(`Issue #146: picker ${back?'back button':'expired/failed selection'} returns to cleared credentials`,async t=>{
+  const f=pickerClient(true),ui=await mount(t,createElement(SessionGate,{client:f.client,offline:false},createElement(Probe)));
+  await credentials(ui);await field(ui,'signin-code','123456');await submit(ui);
+  await act(async()=>back?button(ui,'Back to sign in').props.onClick():ui.renderer.root.findByProps({'aria-label':'Workspaces'}).findAllByType('button')[0].props.onClick());
+  assert.equal(ui.renderer.root.findByProps({id:'signin-password'}).props.value,'');
+  assert.equal(ui.renderer.root.findAllByProps({'aria-label':'Workspaces'}).length,0);
+  if(!back) assert.match(JSON.stringify(ui.renderer.toJSON()),/AUTHENTICATION_FAILED/);
+});
+
+test('Issue #146: single-membership sign-in never renders a picker and old-server header falls back to tenant ID',async t=>{
+  const ui=await signedIn(t);
+  assert.equal(ui.renderer.root.findAllByProps({'aria-label':'Workspaces'}).length,0);
+  assert.equal(ui.renderer.root.findByProps({className:'account-workspace'}).props.children,'workspace');
+  assert.equal(ui.calls.some(c=>c.url.endsWith('/select')),false);
 });

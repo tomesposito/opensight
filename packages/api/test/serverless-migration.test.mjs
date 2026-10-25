@@ -62,3 +62,16 @@ test('SR2d live Postgres composed owner migration grants runtime DML without own
 
     } finally { await client.query('RESET ROLE'); client.release(); }
   });
+
+test('Issue #146: existing serverless databases gain tenant columns and selection ledger on the owner migration', async t => {
+  const f = await coordinationFixture(t, { migrate: false }), env = { ...f.env, OPENSIGHT_ENTITLEMENTS: JSON.stringify(f.entitlements) };
+  await migrateServerless(f.db, env, 'sqlite');
+  await f.db.transaction(async c => {
+    await c.query('DROP TABLE h2_login_selections');
+    await c.query('ALTER TABLE h1_tenants DROP COLUMN display_name');
+  });
+  await migrateServerless(f.db, env, 'sqlite'); await migrateServerless(f.db, env, 'sqlite');
+  assert.equal((await f.db.transaction(c => c.query('SELECT * FROM h2_login_selections'))).length, 0);
+  const tenants = await f.db.transaction(c => c.query('SELECT display_name FROM h1_tenants'));
+  assert.ok(tenants.length); assert.ok(tenants.every(row => row.display_name === null));
+});

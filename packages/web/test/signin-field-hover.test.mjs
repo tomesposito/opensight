@@ -4,11 +4,11 @@ import { readFile } from 'node:fs/promises';
 import { chromiumPage } from './chromium.mjs';
 
 // Issue #108 polish slice 55: hover feedback for the sign-in form
-// fields (.sign-in-field input — Email address, Password, Workspace
-// ID, and the Authenticator code input). Static audit: sign-in.css
+// fields (.sign-in-field input — Email address, Password,
+// and the Authenticator code input). Static audit: sign-in.css
 // gave both of its buttons a hover step (.sign-in-primary and
 // .sign-in-secondary) but carried no field :hover rule at all — the
-// four text inputs rest at #fff, but hovering changed nothing, while
+// text inputs rest at #fff, but hovering changed nothing, while
 // fields on every other surface tint (data slices 16/21/27/48, embed
 // slice 54). The fields now take #eaf4f4 on hover — the sign-in
 // surface's own tint (the .sign-in-secondary hover step and the info

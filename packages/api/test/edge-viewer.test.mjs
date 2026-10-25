@@ -68,3 +68,16 @@ test('SR4a edge discards nonauthoritative viewer-address metadata before derivin
     assert.equal(result.headers['cloudfront-viewer-address'], undefined);
   }
 });
+
+
+test('Issue #146: edge and packaged edge admit workspace selection with login boundary parity', async () => {
+  assert.equal(await readFile(new URL('../../../ops/serverless/modules/edge/edge-viewer.js', import.meta.url), 'utf8'), source);
+  for (const path of ['/api/api/auth/login', '/api/api/auth/login/select']) {
+    const e = frame(); e.request.uri = path; e.request.method = 'POST'; delete e.request.headers.authorization;
+    assert.equal(context.handler(e).uri, path);
+  }
+  for (const path of ['/api/api/auth/login/select/extra', '/api/api/namespaces/foreign/auth/login/select']) {
+    const e = frame(); e.request.uri = path; e.request.method = 'POST';
+    assert.equal(context.handler(e).statusCode, 403);
+  }
+});

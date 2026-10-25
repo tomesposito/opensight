@@ -1,4 +1,4 @@
-import type { Database } from './metadata-db.js';
+import type { Database, SqlConnection } from './metadata-db.js';
 
 export const metadataTables = ['tenants', 'namespaces', 'revisions', 'resources', 'links', 'operations', 'outbox', 'migrations'] as const;
 
@@ -7,6 +7,7 @@ const schema = [
   `CREATE TABLE IF NOT EXISTS h1_tenants (
     tenant_id TEXT PRIMARY KEY, state TEXT NOT NULL CHECK (state IN ('provisioning','active','suspended','deleting','deleted')),
     version INTEGER NOT NULL CHECK (version > 0), tombstone TEXT, placement TEXT, limit_policy TEXT,
+    display_name TEXT, slug TEXT UNIQUE,
     CHECK ((state = 'deleted') = (tombstone IS NOT NULL)))`,
   `CREATE TABLE IF NOT EXISTS h1_namespaces (
     namespace_id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL UNIQUE REFERENCES h1_tenants(tenant_id), name TEXT NOT NULL,
@@ -44,9 +45,27 @@ const schema = [
     state TEXT NOT NULL CHECK (state IN ('inventoried','committed','rolled-back','sealed')), backup_version INTEGER NOT NULL)`
 ];
 
+/**
+ * Additive upgrade for databases created before workspace naming (issue
+ * #146): both columns are nullable so legacy tenants keep working via the
+ * display-label fallback. UNIQUE cannot ride ALTER TABLE ... ADD COLUMN on
+ * SQLite, so slug uniqueness is a named unique index on both dialects
+ * (NULLs exempt — many unnamed tenants coexist).
+ */
+export async function ensureTenantNaming(c: SqlConnection, dialect: 'sqlite' | 'postgres'): Promise<void> {
+  const columns = await c.query(dialect === 'postgres'
+    ? "SELECT column_name AS name FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'h1_tenants'"
+    : 'PRAGMA table_info(h1_tenants)');
+  for (const column of ['display_name', 'slug']) {
+    if (!columns.some(row => row.name === column)) await c.query(`ALTER TABLE h1_tenants ADD COLUMN ${column} TEXT`);
+  }
+  await c.query('CREATE UNIQUE INDEX IF NOT EXISTS h1_tenants_slug ON h1_tenants(slug)');
+}
+
 export async function initializeMetadata(database: Database, dialect: 'sqlite' | 'postgres' = 'sqlite'): Promise<void> {
   await database.transaction(async c => {
     for (const sql of schema) await c.query(sql);
+    await ensureTenantNaming(c, dialect);
     if (dialect === 'postgres') {
       await c.query('ALTER TABLE h1_tenants ENABLE ROW LEVEL SECURITY');
       await c.query('ALTER TABLE h1_tenants FORCE ROW LEVEL SECURITY');

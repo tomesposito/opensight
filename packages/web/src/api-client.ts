@@ -66,8 +66,17 @@ export interface AIConfig {
   keyStorage: 'ephemeral' | 'encrypted-file'; canSaveKey: boolean; compatibleBaseUrls: string[];
 }
 
-export interface LoginInput { email: string; password: string; code: string; tenantId: string }
+export interface LoginInput { email: string; password: string; code: string }
 export interface SignedIn { session: Session; expiresAt: number }
+export interface WorkspaceSelectionInfo { tenantId: string; name: string; slug: string | null }
+export interface WorkspaceSelection {
+  kind: 'selection'; email: string; workspaces: WorkspaceSelectionInfo[];
+  selectionToken: string; selectionExpiresAt: number;
+}
+export type LoginResult = SignedIn | WorkspaceSelection;
+export function isWorkspaceSelection(value: LoginResult | undefined): value is WorkspaceSelection {
+  return !!value && 'kind' in value && value.kind === 'selection';
+}
 export const SHORT_SESSION_MS = 15 * 60_000;
 export const MAX_SESSION_MS = 600 * 60_000;
 
@@ -132,28 +141,70 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
     if (!body) throw new ApiError('Invalid authentication response.', response.status, 'AUTH_RESPONSE_INVALID');
     return body;
   }
-  async function login(input: LoginInput, remember: boolean, signal?: AbortSignal): Promise<SignedIn> {
+  function workspaceSelection(body: Record<string, unknown>): WorkspaceSelection {
+    const invalid = () => new ApiError('Invalid authentication response.', undefined, 'AUTH_RESPONSE_INVALID');
+    if (body.selectionRequired !== true || typeof body.email !== 'string' || !Array.isArray(body.workspaces) || body.workspaces.length < 2
+      || typeof body.selectionToken !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(body.selectionToken)
+      || typeof body.selectionExpiresAt !== 'number' || !Number.isSafeInteger(body.selectionExpiresAt) || body.selectionExpiresAt <= Date.now()) throw invalid();
+    const workspaces = body.workspaces.map(item => {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) throw invalid();
+      const workspace = item as Record<string, unknown>;
+      if (typeof workspace.tenantId !== 'string' || !/^[A-Za-z0-9_-]{1,512}$/.test(workspace.tenantId) || typeof workspace.name !== 'string' || !workspace.name
+        || (workspace.slug !== null && typeof workspace.slug !== 'string')) throw invalid();
+      return { tenantId: workspace.tenantId, name: workspace.name, slug: workspace.slug };
+    });
+    if (new Set(workspaces.map(w => w.tenantId)).size !== workspaces.length) throw invalid();
+    return { kind: 'selection', email: body.email, workspaces, selectionToken: body.selectionToken, selectionExpiresAt: body.selectionExpiresAt };
+  }
+  async function establishSession(body: Record<string, unknown>, remember: boolean, signal: AbortSignal | undefined, current: number, started: number): Promise<SignedIn> {
+    if (current !== generation || signal?.aborted) throw new ApiError('Sign-in cancelled.', undefined, 'AUTH_REQUEST_SUPERSEDED');
+    if (typeof body.token !== 'string' || !/^[A-Za-z0-9_.-]{1,1017}$/.test(body.token) ||
+        typeof body.expiresAt !== 'number' || !Number.isSafeInteger(body.expiresAt) || body.expiresAt <= Date.now() || (typeof body.tenantId !== 'string' || !/^[A-Za-z0-9_-]{1,512}$/.test(body.tenantId))) {
+      throw new ApiError('Invalid authentication response.', undefined, 'AUTH_RESPONSE_INVALID');
+    }
+    const expectedTenant = body.tenantId;
+    const expiresAt = Math.min(body.expiresAt, started + (remember ? MAX_SESSION_MS : SHORT_SESSION_MS));
+    credential = { token: body.token, expiresAt };
+    const session = await getSession(signal);
+    if (current !== generation || signal?.aborted) throw new ApiError('Sign-in cancelled.', undefined, 'AUTH_REQUEST_SUPERSEDED');
+    if (session.tenantId !== expectedTenant) throw new ApiError('Invalid authentication response.', undefined, 'AUTH_RESPONSE_INVALID');
+    if (expiresAt <= Date.now()) throw new ApiError('Your session has expired.', 401, 'SESSION_EXPIRED');
+    return { session, expiresAt };
+  }
+  async function login(input: LoginInput, remember: boolean, signal?: AbortSignal): Promise<LoginResult> {
     clearSession();
     const current = generation, started = Date.now();
     try {
       // The login boundary rejects BOTH cookies and Authorization, even stale ones.
+      // No workspace travels with the request: the server either issues the
+      // session directly (single membership) or challenges with a picker.
       const body = await authResponse(await fetcher(`${base}/api/auth/login`, {
         method: 'POST', credentials: 'omit', signal,
         headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: input.email, password: input.password, code: input.code, tenantId: input.tenantId }),
+        body: JSON.stringify({ email: input.email, password: input.password, code: input.code }),
       }));
-      if (current !== generation || signal?.aborted) throw new ApiError('Sign-in cancelled.', undefined, 'AUTH_REQUEST_SUPERSEDED');
-      if (typeof body.token !== 'string' || !/^[A-Za-z0-9_.-]{1,1017}$/.test(body.token) ||
-          typeof body.expiresAt !== 'number' || !Number.isSafeInteger(body.expiresAt) || body.expiresAt <= Date.now() || body.tenantId !== input.tenantId) {
-        throw new ApiError('Invalid authentication response.', undefined, 'AUTH_RESPONSE_INVALID');
+      if (body.selectionRequired === true) {
+        if (current !== generation || signal?.aborted) throw new ApiError('Sign-in cancelled.', undefined, 'AUTH_REQUEST_SUPERSEDED');
+        return workspaceSelection(body);
       }
-      const expiresAt = Math.min(body.expiresAt, started + (remember ? MAX_SESSION_MS : SHORT_SESSION_MS));
-      credential = { token: body.token, expiresAt };
-      const session = await getSession(signal);
-      if (current !== generation || signal?.aborted) throw new ApiError('Sign-in cancelled.', undefined, 'AUTH_REQUEST_SUPERSEDED');
-      if (session.tenantId !== input.tenantId) throw new ApiError('Invalid authentication response.', undefined, 'AUTH_RESPONSE_INVALID');
-      if (expiresAt <= Date.now()) throw new ApiError('Your session has expired.', 401, 'SESSION_EXPIRED');
-      return { session, expiresAt };
+      return await establishSession(body, remember, signal, current, started);
+    } catch (error) {
+      if (current === generation) clearSession();
+      throw error;
+    }
+  }
+  async function selectWorkspace(selectionToken: string, tenantId: string, remember: boolean, signal?: AbortSignal): Promise<SignedIn> {
+    clearSession();
+    const current = generation, started = Date.now();
+    try {
+      // Same login boundary as /api/auth/login: no cookies, no Authorization.
+      const body = await authResponse(await fetcher(`${base}/api/auth/login/select`, {
+        method: 'POST', credentials: 'omit', signal,
+        headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ selectionToken, tenantId }),
+      }));
+      if (body.tenantId !== tenantId) throw new ApiError('Invalid authentication response.', undefined, 'AUTH_RESPONSE_INVALID');
+      return await establishSession(body, remember, signal, current, started);
     } catch (error) {
       if (current === generation) clearSession();
       throw error;
@@ -265,7 +316,17 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
     const body = object(await response.json(), 'Session');
     if (!isRole(body.role) || typeof body.id !== 'string' || typeof body.namespaceId !== 'string' || typeof body.name !== 'string') throw new ApiError('Invalid session.');
     currentSession(expected, signal); capabilities = transportCapabilities(body.capabilities);
-    return { id: body.id, namespaceId: body.namespaceId, name: body.name, role: body.role, ...(typeof body.tenantId === 'string' ? { tenantId: body.tenantId } : {}) };
+    // The workspace label rides the session; older servers omit both fields,
+    // in which case the tenant ID stays the label (never a typed input).
+    const tenantId = typeof body.tenantId === 'string' ? body.tenantId : undefined;
+    if (body.workspaceName !== undefined && typeof body.workspaceName !== 'string'
+      || body.workspaceSlug !== undefined && body.workspaceSlug !== null && typeof body.workspaceSlug !== 'string') throw new ApiError('Invalid session.');
+    const workspaceName = typeof body.workspaceName === 'string' && body.workspaceName ? body.workspaceName : tenantId;
+    return {
+      id: body.id, namespaceId: body.namespaceId, name: body.name, role: body.role,
+      ...(tenantId ? { tenantId } : {}), ...(workspaceName ? { workspaceName } : {}),
+      workspaceSlug: typeof body.workspaceSlug === 'string' ? body.workspaceSlug : null,
+    };
   }
   async function getDatasetRefreshStatus(id: string, signal?: AbortSignal): Promise<DatasetRefreshStatus> {
     if (!/^[A-Za-z0-9_-]{1,512}$/.test(id)) throw new ApiError('Invalid dataset ID.');
@@ -352,7 +413,7 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
   }
   return {
     onDemand, connect, subscribeAvailability,
-    login, logout, clearSession, getTransportCapabilities, uploadDirectFile, getOperation, getUploadReservation, cancelOperation, cancelUploadReservation,
+    login, selectWorkspace, logout, clearSession, getTransportCapabilities, uploadDirectFile, getOperation, getUploadReservation, cancelOperation, cancelUploadReservation,
     listJobs, jobRecipients, jobHistory, jobDeliveries, runJob,
     getLocalData, getDatasetExecution, setDatasetExecution, refreshBlaze, getPreparedRows, listPrepSources, listPrepDatasets, savePrep, deletePrep, previewPrep, uploadFile, validateConnector, listUsers, saveUser, deleteUser, listInvitations, inviteUser, revokeInvitation, acceptInvitation, getAIStatus, generateO, generateCalculation, getAIConfig, saveAIConfig, saveAIKey, testAIConnection, getSession, queryO, getDatasetRefreshStatus,
     queryDataset,

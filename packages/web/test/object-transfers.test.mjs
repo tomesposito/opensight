@@ -34,7 +34,7 @@ async function clientFixture(size = 8388608) {
     assert.fail(`unexpected URL ${url}`);
   };
   const client = createApiClient('/api', fetcher);
-  await client.login({ email: 'synthetic@example.test', password: 'synthetic', code: '123456', tenantId: 'tenant' }, false);
+  await client.login({ email: 'synthetic@example.test', password: 'synthetic', code: '123456' }, false);
   return { client, file, calls, progress, op, expiresAt, override: fn => { override = fn; }, upload: signal => client.uploadDirectFile(file, { format: 'csv' }, expiresAt, p => progress.push(p), signal) };
 }
 test('SR2d browser negotiates an 8 MiB direct upload and never forwards a bearer or forbidden length header to S3', async () => {

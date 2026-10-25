@@ -19,7 +19,7 @@ test('admin test and generative HTTP routes share durable spend admission and au
   const f = await h8Fixture(t); await initializeUsage(f.db);
   await f.db.transaction(async c => {
     for (const scope of [first, second]) {
-      await c.query("INSERT INTO h1_tenants VALUES (?,'active',1,NULL,NULL,NULL)", [scope.tenantId]);
+      await c.query("INSERT INTO h1_tenants (tenant_id,state,version,tombstone,placement,limit_policy) VALUES (?,'active',1,NULL,NULL,NULL)", [scope.tenantId]);
       await c.query('INSERT INTO h1_namespaces VALUES (?,?,?)', [scope.namespaceId, scope.tenantId, scope.namespaceId]);
     }
   });
