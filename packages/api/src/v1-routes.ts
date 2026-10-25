@@ -265,17 +265,21 @@ export class V1Routes {
             refresh: { supported: d.execution.mode === 'BLAZE', mode: d.execution.mode, intervalMinutes: d.execution.intervalMinutes } });
           return;
         }
-        await this.idempotent(request, response, context, path, async () => {
-          if (verb === 'PUT') {
-            const raw = object(structuredClone(await input()), ['name', 'pipeline', 'expectedVersion']);
+        if (verb === 'PUT') {
+          const raw = object(structuredClone(await input()), ['name', 'pipeline', 'expectedVersion']);
+          await this.idempotent(request, response, context, path, async () => {
             const saved = await this.routes.prep.save(context, id, raw);
             await this.routes.data.sources.metadata.revisions(context);
             return { status: 200, body: { id, name: saved.resource.name, version: saved.version, execution: { mode: saved.execution.mode, intervalMinutes: saved.execution.intervalMinutes } } };
-          }
-          await this.routes.prep.remove(context, id, this.ifMatch(request));
-          await this.routes.data.sources.metadata.revisions(context);
-          return { status: 200, body: { id, removed: true } };
-        });
+          });
+        } else {
+          const expectedVersion = this.ifMatch(request);
+          await this.idempotent(request, response, context, path, async () => {
+            await this.routes.prep.remove(context, id, expectedVersion);
+            await this.routes.data.sources.metadata.revisions(context);
+            return { status: 200, body: { id, removed: true } };
+          });
+        }
         return;
       }
       if (action === 'lineage') {
@@ -303,9 +307,9 @@ export class V1Routes {
         return;
       }
       method(request, response, ['POST']);
+      const body = object(await input(), []);
       await this.idempotent(request, response, context, path, async () => {
-        object(await input(), []);
-        const result = await this.routes.prep.execute(context, id, 'refresh') as { mode: string; state: string };
+        const result = await this.routes.prep.execute(context, id, 'refresh', body) as { mode: string; state: string };
         await this.routes.data.sources.metadata.revisions(context);
         return { status: 200, body: { datasetId: id, refreshed: true, ...result } };
       });
@@ -324,8 +328,8 @@ export class V1Routes {
       const id = this.sourceId(source[1]!);
       const verb = method(request, response, ['GET', 'DELETE']);
       if (verb === 'GET') { await publish(200, await this.routes.data.schema(context, id)); return; }
+      const expectedVersion = this.ifMatch(request);
       await this.idempotent(request, response, context, path, async () => {
-        const expectedVersion = this.ifMatch(request);
         const revisions = await this.routes.data.sources.metadata.revisions(context);
         const blocking = await this.datasetsReferencingSource(context, id);
         if (blocking.length) v1Fail('SOURCE_DELETE_BLOCKED_BY_DATASET', 409,
