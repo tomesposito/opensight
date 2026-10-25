@@ -146,6 +146,65 @@ test('v1 querying: read POST idempotency rechecks admission and invalidates revi
   error(await f.run(query, { headers }), 403, 'PREP_SECURITY_REJECTED');
 });
 
+test('v1 querying: retry keys reject different queries without replacing the original receipt', async t => {
+  const f = await fixture(t), headers = { 'Idempotency-Key': 'filtered-once' };
+  const east = { ...query, filters: [{ columnName: 'region', value: 'east' }] };
+  const west = { ...query, filters: [{ columnName: 'region', value: 'west' }] };
+  const first = await f.run(east, { headers });
+  assert.equal(first.status, 200); assert.deepEqual(first.body, { ...expected, rows: [expected.rows[0]] });
+  assert.equal(first.headers['idempotent-replayed'], undefined);
+  const conflict = await f.run(west, { headers });
+  error(conflict, 409, 'IDEMPOTENCY_CONFLICT');
+  assert.equal(conflict.headers['idempotent-replayed'], undefined);
+  const replay = await f.run(east, { headers });
+  assert.equal(replay.status, 200); assert.deepEqual(replay.body, first.body);
+  assert.equal(replay.headers['idempotent-replayed'], 'true');
+});
+
+test('v1 querying: concurrent identical retries execute once and replay the same result', async t => {
+  const f = await fixture(t), headers = { 'Idempotency-Key': 'concurrent-same' };
+  const execute = t.mock.method(HostedPrep.prototype, 'execute');
+  const replies = await Promise.all([f.run(query, { headers }), f.run(query, { headers })]);
+  for (const r of replies) { assert.equal(r.status, 200, JSON.stringify(r.body)); assert.deepEqual(r.body, expected); }
+  assert.equal(replies.filter(r => r.headers['idempotent-replayed'] === 'true').length, 1);
+  assert.equal(execute.mock.callCount(), 1);
+});
+
+test('v1 querying: concurrent different queries sharing a retry key conflict', async t => {
+  const f = await fixture(t), headers = { 'Idempotency-Key': 'concurrent-different' };
+  const execute = t.mock.method(HostedPrep.prototype, 'execute');
+  const bodies = ['east', 'west'].map(value => ({ ...query, filters: [{ columnName: 'region', value }] }));
+  const replies = await Promise.all(bodies.map(body => f.run(body, { headers })));
+  assert.deepEqual(replies.map(r => r.status).sort(), [200, 409]);
+  for (const [i, r] of replies.entries()) {
+    assert.equal(r.headers['idempotent-replayed'], undefined);
+    if (r.status === 200) assert.deepEqual(r.body, { ...expected, rows: [expected.rows[i]] });
+    else error(r, 409, 'IDEMPOTENCY_CONFLICT');
+  }
+  assert.equal(execute.mock.callCount(), 1);
+});
+
+test('v1 querying: failed execution leaves its retry key available to queued requests', async t => {
+  const f = await fixture(t), headers = { 'Idempotency-Key': 'retry-after-failure' };
+  const original = HostedPrep.prototype.execute;
+  let fail = true;
+  const execute = t.mock.method(HostedPrep.prototype, 'execute', async function (...args) {
+    if (fail) { fail = false; throw new Error('temporary query failure'); }
+    return original.apply(this, args);
+  });
+  const replies = await Promise.all([f.run(query, { headers }), f.run(query, { headers })]);
+  assert.deepEqual(replies.map(r => r.status).sort(), [200, 500]);
+  for (const r of replies) {
+    assert.equal(r.headers['idempotent-replayed'], undefined);
+    if (r.status === 200) assert.deepEqual(r.body, expected);
+    else error(r, 500, 'HOSTED_INTERNAL_ERROR');
+  }
+  const replay = await f.run(query, { headers });
+  assert.equal(replay.status, 200); assert.deepEqual(replay.body, expected);
+  assert.equal(replay.headers['idempotent-replayed'], 'true');
+  assert.equal(execute.mock.callCount(), 2);
+});
+
 test('v1 querying: authentication, methods, body boundary and unsupported routes have named errors', async t => {
   const f = await fixture(t);
   for (const token of [undefined, 'forged']) {

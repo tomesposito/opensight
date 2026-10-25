@@ -44,6 +44,10 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
+- Dataset/query retries (v1): idempotency keys now bind to request contents
+  and version preconditions, reject mismatched retries with
+  `IDEMPOTENCY_CONFLICT`, validate retry payloads before replay, and serialize
+  concurrent requests sharing a retry key (#120).
 - Source deletion guard (v1): deleting a source now checks the stored
   pipeline references of every prepared dataset — including unavailable
   datasets and references through join/append steps or an unavailable
