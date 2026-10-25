@@ -7,6 +7,7 @@ import { AnalysisRoutes } from './analysis-routes.js';
 import { HostedAnalyses } from './hosted-analyses.js';
 import type { AnalysisBackend } from './analysis-model.js';
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import { createHash } from 'node:crypto';
 import { planPreparedQuery, QueryEngineError, UploadError } from '@opensight/query-engine';
 import { PrepError } from '@opensight/bundle-parser/prep';
 import { MetadataError } from './metadata-db.js';
@@ -47,6 +48,12 @@ import type { TenantContext } from './metadata.js';
 const DEFAULT_LIMIT = 100, MAX_LIMIT = 1000;
 const IDEMPOTENCY_TTL_MS = 10 * 60 * 1000;
 
+function canonical(v: unknown): string {
+  if (Array.isArray(v)) return `[${v.map(canonical).join(',')}]`;
+  if (v && typeof v === 'object') return `{${Object.entries(v).sort(([a], [b]) => a.localeCompare(b)).map(([k, child]) => `${JSON.stringify(k)}:${canonical(child)}`).join(',')}}`;
+  return JSON.stringify(v) ?? 'null';
+}
+
 function v1Fail(code: string, status: number, detail: string): never {
   const error = new MetadataError(code, status) as MetadataError & { detail: string };
   error.detail = detail; throw error;
@@ -73,7 +80,7 @@ class RateLimiter {
 
 export class V1Routes {
   private readonly limiter: RateLimiter;
-  private readonly idempotency = new Map<string, { status: number; body: unknown; expiresAt: number }>();
+  private readonly idempotency = new Map<string, { fingerprint: string; status: number; body: unknown; expiresAt: number }>();
   private readonly analyses = new AnalysisRoutes({ paging: r => this.paging(r), ifMatch: r => this.ifMatch(r) });
   private readonly assets = new AssetRoutes({ paging: r => this.paging(r), ifMatch: r => this.ifMatch(r) });
   private readonly dashboards: DashboardRoutes;
@@ -170,9 +177,9 @@ export class V1Routes {
     return Number((raw as string).slice(1, -1));
   }
 
-  /** Replay or record a mutation response for the request's Idempotency-Key. */
+  /** Replay or record a response bound to the request's Idempotency-Key and contents. */
   private async idempotent(request: IncomingMessage, response: ServerResponse, context: TenantContext, path: string,
-    run: () => Promise<{ status: number; body: unknown }>,
+    contents: unknown, run: () => Promise<{ status: number; body: unknown }>,
     publish: (status: number, body: unknown) => void | Promise<void> = (status, body) => send(response, status, body),
     revisionScope = ''): Promise<void> {
     const key = this.header(request, 'idempotency-key');
@@ -180,11 +187,15 @@ export class V1Routes {
     const now = Date.now();
     for (const [k, v] of this.idempotency) if (v.expiresAt <= now) this.idempotency.delete(k);
     const storeKey = `${context.tenantId}:${context.namespaceId}:${context.userId}:${request.method}:${path}:${identifier(key)}:${revisionScope}`;
+    const fingerprint = createHash('sha256').update(canonical(contents)).digest('hex');
     const seen = this.idempotency.get(storeKey);
-    if (seen) { response.setHeader('Idempotent-Replayed', 'true'); await publish(seen.status, seen.body); return; }
+    if (seen) {
+      if (seen.fingerprint !== fingerprint) v1Fail('IDEMPOTENCY_CONFLICT', 409, 'Idempotency-Key was already used with different request contents');
+      response.setHeader('Idempotent-Replayed', 'true'); await publish(seen.status, seen.body); return;
+    }
     const result = await run();
     await publish(result.status, result.body);
-    this.idempotency.set(storeKey, { status: result.status, body: result.body, expiresAt: now + IDEMPOTENCY_TTL_MS });
+    this.idempotency.set(storeKey, { fingerprint, status: result.status, body: result.body, expiresAt: now + IDEMPOTENCY_TTL_MS });
   }
 
   private datasetId(raw: string): string {
@@ -236,7 +247,7 @@ export class V1Routes {
       const revisions = await this.routes.data.sources.metadata.revisions(context);
       const dataset = await this.routes.prep.describe(context, id);
       planPreparedQuery(dataset.columns, body);
-      await this.idempotent(request, response, context, path, async () => {
+      await this.idempotent(request, response, context, path, body, async () => {
         const result = await this.routes.prep.execute(context, id, 'query', body);
         return { status: 200, body: { ...result, ...(dataset.execution.mode === 'BLAZE'
           ? { execution: { mode: 'BLAZE', cached: true } } : {}) } };
@@ -267,14 +278,14 @@ export class V1Routes {
         }
         if (verb === 'PUT') {
           const raw = object(structuredClone(await input()), ['name', 'pipeline', 'expectedVersion']);
-          await this.idempotent(request, response, context, path, async () => {
+          await this.idempotent(request, response, context, path, raw, async () => {
             const saved = await this.routes.prep.save(context, id, raw);
             await this.routes.data.sources.metadata.revisions(context);
             return { status: 200, body: { id, name: saved.resource.name, version: saved.version, execution: { mode: saved.execution.mode, intervalMinutes: saved.execution.intervalMinutes } } };
           });
         } else {
           const expectedVersion = this.ifMatch(request);
-          await this.idempotent(request, response, context, path, async () => {
+          await this.idempotent(request, response, context, path, expectedVersion, async () => {
             await this.routes.prep.remove(context, id, expectedVersion);
             await this.routes.data.sources.metadata.revisions(context);
             return { status: 200, body: { id, removed: true } };
@@ -308,7 +319,7 @@ export class V1Routes {
       }
       method(request, response, ['POST']);
       const body = object(await input(), []);
-      await this.idempotent(request, response, context, path, async () => {
+      await this.idempotent(request, response, context, path, body, async () => {
         const result = await this.routes.prep.execute(context, id, 'refresh', body) as { mode: string; state: string };
         await this.routes.data.sources.metadata.revisions(context);
         return { status: 200, body: { datasetId: id, refreshed: true, ...result } };
@@ -329,7 +340,7 @@ export class V1Routes {
       const verb = method(request, response, ['GET', 'DELETE']);
       if (verb === 'GET') { await publish(200, await this.routes.data.schema(context, id)); return; }
       const expectedVersion = this.ifMatch(request);
-      await this.idempotent(request, response, context, path, async () => {
+      await this.idempotent(request, response, context, path, expectedVersion, async () => {
         const revisions = await this.routes.data.sources.metadata.revisions(context);
         const blocking = await this.datasetsReferencingSource(context, id);
         if (blocking.length) v1Fail('SOURCE_DELETE_BLOCKED_BY_DATASET', 409,
