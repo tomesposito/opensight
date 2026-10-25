@@ -7,7 +7,8 @@ import { zipSync, strToU8, unzipSync } from 'fflate';
 import { assembleQsBundle, parseQsBundle, parseBundleJson, ZIP_LIMITS } from '@opensight/bundle-parser/browser';
 import { parseQsBundle as parseNodeBundle } from '@opensight/bundle-parser';
 import { importBundle, importBundleFile, exportBundle, downloadBundleBytes } from '../build/test/bundle-authoring.js';
-import { activeSheet, authorReducer, dataFields, emptyDraft, serializeDraft, validateDraft, loadDraft, saveDraft } from '../build/test/authoring.js';
+import { activeSheet, authorReducer, authorVisualProblem, dataFields, emptyDraft, serializeDraft, validateDraft, loadDraft, saveDraft } from '../build/test/authoring.js';
+import { createDraftStore } from '../build/test/local-drafts.js';
 import { buildAuthorQuery } from '../build/test/author-query.js';
 import { buildAuthorPreview } from '../build/test/author-preview.js';
 import { AuthorCanvas } from '../build/test/Author.js';
@@ -353,7 +354,7 @@ test('draft storage preserves original unknown JSON and imported binding metadat
   assert.equal(restored.warning, undefined); assert.deepEqual(exportBundle(restored.draft), fixture());
 });
 
-test('duplicated imported sheets retain provenance and validate after saving and reloading (#124)', () => {
+test('duplicated imported sheets retain provenance, save, autosave and export independently (#124)', async () => {
   const original = importBundle(fixture()), snapshot = structuredClone(original);
   const source = original.sheets[0];
   const draft = change(original, { type: 'sheet-duplicate', id: source.id }), copied = activeSheet(draft);
@@ -376,6 +377,24 @@ test('duplicated imported sheets retain provenance and validate after saving and
   const restored = loadDraft(() => storage);
   assert.equal(restored.warning, undefined);
   assert.deepEqual(restored.draft, JSON.parse(JSON.stringify(draft)));
+  const values = new Map(), store = createDraftStore(() => ({ getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value) }), { mode: 'demo' });
+  const savedId = store.save(restored.draft);
+  store.autosave(restored.draft, savedId, store.restore().manualSavedAt);
+  const persisted = store.restore().draft;
+  validateDraft(persisted);
+  const exported = await parseQsBundle(await downloadBundleBytes(persisted));
+  const definition = exported.members[0].resource.definition, originalDefinition = fixture().members[0].resource.definition;
+  assert.deepEqual(definition.sheets.slice(0, 2), originalDefinition.sheets);
+  assert.deepEqual(exported.members.slice(1), fixture().members.slice(1));
+  assert.equal(definition.sheets.length, 3);
+  assert.equal(new Set(definition.sheets.map(s => s.sheetId)).size, 3);
+  const visualIds = definition.sheets.flatMap(s => s.visuals.map(v => Object.values(v)[0].visualId));
+  assert.equal(new Set(visualIds).size, visualIds.length);
+  const exportedCopy = definition.sheets[2];
+  assert.equal(exportedCopy.sheetId, copied.id);
+  assert.deepEqual(exportedCopy.visuals.map(v => Object.values(v)[0].visualId), copied.visuals.map(v => v.id));
+  assert.deepEqual(exportedCopy.layouts[0].configuration.gridLayout.elements.map(e => e.elementId), copied.layout.map(p => p.i));
+  validateDraft(importBundle(exported));
 });
 
 test('empty imported sheets and copies of copies retain valid source provenance (#124)', () => {
@@ -390,6 +409,140 @@ test('empty imported sheets and copies of copies retain valid source provenance 
     assert.equal(activeSheet(draft).imported.sheetId, draft.activeSheetId);
   }
   assert.equal(new Set(draft.sheets.map(s => s.imported.sheetId)).size, 3);
+  const sheets = exportBundle(draft).members[0].resource.definition.sheets;
+  assert.deepEqual(sheets[0], resource.definition.sheets[0]);
+  assert.equal(sheets.length, 3);
+  assert.equal(new Set(sheets.map(s => s.sheetId)).size, 3);
+  assert.deepEqual(sheets.slice(1).map(s => s.name), ['Empty sheet (copy)', 'Empty sheet (copy) (copy)']);
+});
+
+test('copied imported filters get independent scopes without editing or splitting source groups (#124)', () => {
+  const bundle = fixture(), definition = bundle.members[0].resource.definition;
+  const shared = categoryGroup();
+  shared.filterGroupId = 'shared-parameter-filter';
+  shared.filters[0].categoryFilter.column.columnName = 'category';
+  shared.filters[0].categoryFilter.configuration = { customFilterConfiguration: { matchOperator: 'EQUALS', nullOption: 'NON_NULLS_ONLY', parameterName: 'Region' } };
+  shared.scopeConfiguration.selectedSheets.sheetVisualScopingConfigurations[0].visualIds.push('visual-2');
+  delete shared.opaque;
+  definition.filterGroups = [categoryGroup(), shared];
+  const original = importBundle(bundle);
+  assert.equal(original.sheets[0].visuals[0].filters.length, 2);
+  assert.equal(original.sheets[0].visuals[1].filters.length, 1);
+  let draft = change(original, { type: 'sheet-duplicate', id: original.activeSheetId });
+  const copied = activeSheet(draft), copiedVisual = copied.visuals[0];
+  for (const values of [['East'], ['West'], null]) {
+    draft = change(draft, { type: 'select', id: copiedVisual.id });
+    draft = change(draft, { type: 'filter', columnName: 'region', values });
+    validateDraft(draft);
+    const result = exportBundle(draft).members[0].resource.definition;
+    assert.deepEqual(result.sheets.slice(0, 2), definition.sheets);
+    assert.deepEqual(result.filterGroups.slice(0, 2), definition.filterGroups);
+    const added = result.filterGroups.slice(2);
+    assert.equal(added.length, values ? 3 : 2);
+    assert.equal(new Set(result.filterGroups.map(g => g.filterGroupId)).size, result.filterGroups.length);
+    for (const group of added) {
+      const [scope] = group.scopeConfiguration.selectedSheets.sheetVisualScopingConfigurations;
+      assert.equal(scope.sheetId, copied.id);
+      assert.equal(scope.scope, 'SELECTED_VISUALS');
+      assert.ok(scope.visualIds.every(id => copied.visuals.some(v => v.id === id)));
+    }
+    const region = added.find(g => g.filters[0].categoryFilter.column.columnName === 'region');
+    assert.deepEqual(region?.filters[0].categoryFilter.configuration.filterListConfiguration.categoryValues ?? null, values);
+  }
+});
+
+test('copied imported interactions export copy targets and preserve external navigation (#124)', () => {
+  let native = emptyDraft();
+  for (const kind of ['bar', 'table']) native = change(native, { type: 'add', kind });
+  native = change(native, { type: 'sheet-add' });
+  const source = native.sheets[0], [first, second] = source.visuals;
+  first.filterActions = [{ id: 'action-1', name: 'Filter', sourceField: 'region', targets: [second.id], mappings: { [second.id]: 'region' } }];
+  first.urlActions = [{ id: 'action-2', name: 'Link', sourceField: 'region', urlTemplate: 'https://example.org/region/<<region>>', target: '_blank' }];
+  first.navigationActions = [
+    { id: 'action-3', name: 'Self', sourceField: 'region', targetSheetId: source.id, parameterMappings: {} },
+    { id: 'action-4', name: 'Other', sourceField: 'region', targetSheetId: native.sheets[1].id, parameterMappings: {} },
+  ];
+  const resource = serializeDraft(native);
+  // Native bundle identities deliberately differ from local draft identities.
+  resource.definition.sheets[1].sheetId = 'external-sheet';
+  resource.definition.sheets[0].visuals[0].barChartVisual.actions[3].actionOperations[0].navigationOperation.targetSheetId = 'external-sheet';
+  const original = importBundle({ members: [member(resource)] });
+  const draft = change(original, { type: 'sheet-duplicate', id: original.sheets[0].id });
+  const copied = activeSheet(draft), [copyFirst, copySecond] = copied.visuals;
+  const sheets = exportBundle(draft).members[0].resource.definition.sheets;
+  assert.deepEqual(sheets.slice(0, 2), resource.definition.sheets);
+  const actions = sheets[2].visuals[0].barChartVisual.actions;
+  assert.deepEqual(actions.map(a => a.customActionId), [...copyFirst.filterActions, ...copyFirst.urlActions, ...copyFirst.navigationActions].map(a => a.id));
+  assert.deepEqual(actions[0].actionOperations[0].filterOperation.targetVisualsConfiguration.sameSheetTargetVisualConfiguration.targetVisuals, [copySecond.id]);
+  assert.deepEqual(actions[0].opensightFieldMappings, { [copySecond.id]: 'region' });
+  assert.equal(actions[1].actionOperations[0].urlOperation.URL, first.urlActions[0].urlTemplate);
+  assert.equal(actions[2].actionOperations[0].navigationOperation.targetSheetId, copied.id);
+  assert.equal(actions[3].actionOperations[0].navigationOperation.targetSheetId, 'external-sheet');
+});
+
+test('copied imported visuals retain unresolved fields, remap/replacement state and unsupported guards (#124)', () => {
+  const bundle = fixture(), definition = bundle.members[0].resource.definition;
+  const raw = definition.sheets[0].visuals[0].barChartVisual;
+  raw.chartConfiguration.fieldWells.barChartAggregatedFieldWells.category[0].categoricalDimensionField.column.columnName = 'foreign_region';
+  raw.chartConfiguration.customAxis = { unsupported: true };
+  definition.filterGroups = [{ ...categoryGroup(), filters: [{ futureFilter: { unsupported: true } }] }];
+  let draft = importBundle(bundle);
+  for (const state of ['unresolved', 'remapped', 'replaced']) {
+    if (state === 'remapped') draft = change(draft, { type: 'remap', id: selected(draft).id });
+    if (state === 'replaced') draft = change(draft, { type: 'kind', kind: 'line' });
+    const source = activeSheet(draft), visual = source.visuals[0];
+    draft = change(draft, { type: 'sheet-duplicate', id: source.id });
+    const copied = activeSheet(draft).visuals[0];
+    validateDraft(draft);
+    for (const key of ['issues', 'local', 'remapped', 'replaced', 'unmappedFields', 'dataSets']) assert.deepEqual(copied.imported[key], visual.imported[key], key);
+    assert.equal(authorVisualProblem(copied), authorVisualProblem(visual));
+    assert.match(authorVisualProblem(copied), state === 'unresolved' ? /Unresolved dataset/ : /Filter group region-filter/);
+    assert.equal(buildAuthorQuery(copied), null);
+    assert.equal(buildAuthorPreview(copied).rows, null);
+    assert.doesNotThrow(() => exportBundle(draft));
+  }
+});
+
+test('copied imported dataset identifiers and edits survive export before and after remapping (#124)', () => {
+  const bundle = fixture();
+  // Use an identifier other than the serializer default to detect accidental rebinding.
+  const renamed = JSON.parse(JSON.stringify(bundle).replaceAll('sales_data', 'remote_sales'));
+  let draft = importBundle(renamed);
+  draft = change(draft, { type: 'title', title: 'Edited before copy' });
+  const source = activeSheet(draft);
+  draft = change(draft, { type: 'sheet-duplicate', id: source.id });
+  const copied = activeSheet(draft);
+  for (const remapped of [false, true]) {
+    if (remapped) draft = change(draft, { type: 'sheet-remap', id: copied.id });
+    const result = exportBundle(draft).members[0].resource.definition;
+    const bar = result.sheets.find(s => s.sheetId === copied.id).visuals[0].barChartVisual;
+    assert.equal(bar.title.formatText.plainText, 'Edited before copy');
+    const wells = bar.chartConfiguration.fieldWells.barChartAggregatedFieldWells;
+    const identifier = remapped ? 'opensight_local_sales' : 'remote_sales';
+    assert.equal(wells.category[0].categoricalDimensionField.column.dataSetIdentifier, identifier);
+    assert.equal(wells.values[0].numericalMeasureField.column.dataSetIdentifier, identifier);
+    assert.ok(result.dataSetIdentifierDeclarations.some(d => d.identifier === identifier));
+  }
+});
+
+test('copies of dashboard sheets stay in their member after copying again and deleting the source (#124)', () => {
+  const bundle = fixture(), original = importBundle(bundle), source = original.sheets[2];
+  let draft = change(original, { type: 'sheet-duplicate', id: source.id });
+  draft = change(draft, { type: 'add', kind: 'bar' }); // A copied sheet may also contain local visuals.
+  draft = change(draft, { type: 'sheet-duplicate', id: draft.activeSheetId });
+  draft = change(draft, { type: 'sheet-delete', id: source.id });
+  validateDraft(JSON.parse(JSON.stringify(draft)));
+  const exported = exportBundle(draft);
+  assert.deepEqual(exported.members[0], bundle.members[0]);
+  const sheets = exported.members[1].resource.definition.sheets;
+  assert.equal(sheets.length, 3);
+  assert.equal(new Set(sheets.map(s => s.sheetId)).size, 3);
+  const ids = sheets.flatMap(s => s.visuals.map(v => Object.values(v)[0].visualId));
+  assert.equal(new Set(ids).size, ids.length);
+  for (const sheet of draft.sheets.slice(-2)) {
+    assert.equal(sheet.imported.sourceSheetId, source.imported.sheetId);
+    assert.deepEqual(sheets.find(s => s.sheetId === sheet.id).visuals.map(v => Object.values(v)[0].visualId), sheet.visuals.map(v => v.id));
+  }
 });
 
 for (const [name, corrupt] of [
@@ -397,6 +550,7 @@ for (const [name, corrupt] of [
   ['malformed sheet provenance', s => { s.imported.sourceSheetId = true; }],
   ['sheet identity collision', s => { s.imported.sheetId = 'sheet-1'; }],
   ['missing visual provenance', s => { s.visuals[0].imported.sourceVisualId = 'missing'; }],
+  ['malformed visual provenance', s => { s.visuals[0].imported.sourceVisualId = false; }],
   ['unmarked copied visual', s => { delete s.visuals[0].imported.sourceVisualId; }],
   ['visual identity collision', s => { s.visuals[0].imported.visualId = 'visual-1'; }],
   ['mismatched copied baseline', s => { s.visuals[0].imported.baseline.id = 'visual-1'; }],
@@ -433,6 +587,7 @@ for (const [name, corrupt] of [
   ['missing source visual', d => { d.sheets[0].visuals[0].imported.visualId = 'missing'; }],
   ['missing source sheet', d => { d.sheets[0].imported.sheetId = 'missing'; }],
   ['mismatched baseline id', d => { d.sheets[0].visuals[0].imported.baseline.id = 'visual-999'; }],
+  ['copy marker without a copied sheet', d => { d.sheets[0].visuals[0].imported.sourceVisualId = 'visual-1'; }],
   ['malformed baseline', d => { d.sheets[0].visuals[0].imported.baseline.measures = null; }],
   ['malformed report', d => { d.bundle.report[0].messages = 42; }],
   ['unsupported baseline kind', d => { d.sheets[0].visuals[0].imported.baseline.kind = 'future'; }],
