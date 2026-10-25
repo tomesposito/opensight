@@ -180,8 +180,7 @@ export class HostedAuth {
   private async challenge(subject: string, email: string, credentials: SqlRow, code: string): Promise<LoginSession | LoginSelection> {
     return this.database.transaction(async c => {
       await this.key(c);
-      await this.consumeTotp(c, credentials, code);
-      const candidates = await c.query("SELECT tenant_id FROM h2_memberships WHERE subject = ? AND status = 'active'", [subject]);
+      const candidates = await c.query("SELECT tenant_id FROM h2_memberships WHERE subject = ? AND status = 'active' ORDER BY tenant_id", [subject]);
       const admissible: SqlRow[] = [];
       for (const candidate of candidates) {
         // Admission semantics identical to membership(): tenant state
@@ -193,6 +192,7 @@ export class HostedAuth {
       // Zero admissible memberships look exactly like a bad tenant (401, no
       // new enumeration signal); one membership never sees a picker.
       if (!admissible.length) denied();
+      await this.consumeTotp(c, credentials, code);
       if (admissible.length === 1) return this.issue(c, admissible[0]!);
       const ids = admissible.map(m => String(m.tenant_id));
       const labels = await c.query(`SELECT tenant_id, display_name, slug FROM h1_tenants WHERE tenant_id IN (${ids.map(() => '?').join(',')})`, ids);
@@ -213,21 +213,28 @@ export class HostedAuth {
    * issue happen atomically, so a replayed token always loses the race.
    */
   async completeLogin(selectionValue: unknown, tenantValue: unknown, peer: string): Promise<LoginSession> {
-    const selectionToken = tokenInput(selectionValue), tenantId = identifier(tenantValue);
+    const selectionToken = tokenInput(selectionValue);
+    let tenantId: string;
+    try { tenantId = identifier(tenantValue); } catch { denied(); }
     const found = (await this.database.transaction(c => c.query('SELECT * FROM h2_login_selections WHERE selection_id = ?', [digest(selectionToken)])))[0];
-    if (!found || Number(found.consumed) !== 0 || Number(found.expires_at) <= this.clock()
-      || !equal(String(found.selection_id), digest(selectionToken))) denied();
-    const subject = String(found!.subject);
-    await this.limit(subject, peer);
+    // Unknown tokens still reserve peer/global attempts; no principal is
+    // disclosed, and all selection admission failures share the same error.
+    try { await this.limit(found ? String(found.subject) : `selection:${digest(selectionToken)}`, peer); }
+    catch (error) { if (error instanceof MetadataError && error.code === 'AUTH_RATE_LIMITED') denied(); throw error; }
+    if (!found || Number(found.consumed) !== 0 || Number(found.expires_at) <= this.clock()) denied();
+    const subject = String(found.subject);
     return this.database.transaction(async c => {
-      await this.key(c);
+      try { await this.key(c); }
+      catch (error) { if (error instanceof MetadataError && error.code === 'AUTH_KEY_REVOKED') denied(); throw error; }
       const membership = await this.membership(c, subject, tenantId);
+      if (!(await c.query("SELECT subject FROM h2_identities WHERE subject = ? AND status = 'active'", [subject])).length) denied();
       const consumed = await c.query('UPDATE h2_login_selections SET consumed = 1 WHERE selection_id = ? AND consumed = 0 AND expires_at > ? RETURNING selection_id',
         [digest(selectionToken), this.clock()]);
       if (!consumed.length) denied();
       return this.issue(c, membership);
     });
   }
+
   private signature(prefix: string): string {
     return createHmac('sha256', this.config.signingKey).update(JSON.stringify([prefix, this.config.issuer, this.config.audience, this.config.origin])).digest('base64url');
   }

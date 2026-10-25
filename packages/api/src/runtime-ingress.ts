@@ -45,7 +45,7 @@ export function publicPath(path: unknown): string {
   const unscoped = internal.replace(/^\/api\/namespaces\/[A-Za-z0-9_-]+\//, '/api/');
   if (!/^\/embed\/sessions\/[A-Za-z0-9_-]+$/.test(unscoped)
     && !/^\/api\/(?:startup|session|namespaces|users|groups|connectors|sources|prep-sources|uploads|prep-datasets|automation-status|job-recipients|jobs)$/.test(unscoped)
-    && !/^\/api\/auth\/(?:enroll|accept|login|switch|logout)$/.test(unscoped)
+    && !/^\/api\/auth\/(?:enroll|accept|login(?:\/select)?|switch|logout)$/.test(unscoped)
     && !/^\/api\/sources\/[A-Za-z0-9_-]+(?:\/(?:bind|rotate|preview|rows|output|query|refresh|policy))?$/.test(unscoped)
     && !/^\/api\/(?:uploads\/[A-Za-z0-9_-]+|ai\/sources(?:\/[A-Za-z0-9_-]+\/schema)?|prep-datasets\/import)$/.test(unscoped)
     && !/^\/api\/(?:uploads\/reservations(?:\/[A-Za-z0-9_-]+(?:\/complete)?)?|operations\/[A-Za-z0-9_-]+(?:\/result\/(?:0|[1-9]\d{0,5}))?)$/.test(unscoped)

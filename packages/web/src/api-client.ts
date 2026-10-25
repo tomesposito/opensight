@@ -70,12 +70,12 @@ export interface LoginInput { email: string; password: string; code: string }
 export interface SignedIn { session: Session; expiresAt: number }
 export interface WorkspaceSelectionInfo { tenantId: string; name: string; slug: string | null }
 export interface WorkspaceSelection {
-  selectionRequired: true; email: string; workspaces: WorkspaceSelectionInfo[];
+  kind: 'selection'; email: string; workspaces: WorkspaceSelectionInfo[];
   selectionToken: string; selectionExpiresAt: number;
 }
 export type LoginResult = SignedIn | WorkspaceSelection;
 export function isWorkspaceSelection(value: LoginResult | undefined): value is WorkspaceSelection {
-  return !!value && (value as WorkspaceSelection).selectionRequired === true;
+  return !!value && 'kind' in value && value.kind === 'selection';
 }
 export const SHORT_SESSION_MS = 15 * 60_000;
 export const MAX_SESSION_MS = 600 * 60_000;
@@ -143,22 +143,23 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
   }
   function workspaceSelection(body: Record<string, unknown>): WorkspaceSelection {
     const invalid = () => new ApiError('Invalid authentication response.', undefined, 'AUTH_RESPONSE_INVALID');
-    if (body.selectionRequired !== true || typeof body.email !== 'string' || !Array.isArray(body.workspaces) || !body.workspaces.length
+    if (body.selectionRequired !== true || typeof body.email !== 'string' || !Array.isArray(body.workspaces) || body.workspaces.length < 2
       || typeof body.selectionToken !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(body.selectionToken)
-      || typeof body.selectionExpiresAt !== 'number' || !Number.isSafeInteger(body.selectionExpiresAt)) throw invalid();
+      || typeof body.selectionExpiresAt !== 'number' || !Number.isSafeInteger(body.selectionExpiresAt) || body.selectionExpiresAt <= Date.now()) throw invalid();
     const workspaces = body.workspaces.map(item => {
       if (!item || typeof item !== 'object' || Array.isArray(item)) throw invalid();
       const workspace = item as Record<string, unknown>;
-      if (typeof workspace.tenantId !== 'string' || typeof workspace.name !== 'string'
+      if (typeof workspace.tenantId !== 'string' || !/^[A-Za-z0-9_-]{1,512}$/.test(workspace.tenantId) || typeof workspace.name !== 'string' || !workspace.name
         || (workspace.slug !== null && typeof workspace.slug !== 'string')) throw invalid();
       return { tenantId: workspace.tenantId, name: workspace.name, slug: workspace.slug };
     });
-    return { selectionRequired: true, email: body.email as string, workspaces, selectionToken: body.selectionToken as string, selectionExpiresAt: body.selectionExpiresAt as number };
+    if (new Set(workspaces.map(w => w.tenantId)).size !== workspaces.length) throw invalid();
+    return { kind: 'selection', email: body.email, workspaces, selectionToken: body.selectionToken, selectionExpiresAt: body.selectionExpiresAt };
   }
   async function establishSession(body: Record<string, unknown>, remember: boolean, signal: AbortSignal | undefined, current: number, started: number): Promise<SignedIn> {
     if (current !== generation || signal?.aborted) throw new ApiError('Sign-in cancelled.', undefined, 'AUTH_REQUEST_SUPERSEDED');
     if (typeof body.token !== 'string' || !/^[A-Za-z0-9_.-]{1,1017}$/.test(body.token) ||
-        typeof body.expiresAt !== 'number' || !Number.isSafeInteger(body.expiresAt) || body.expiresAt <= Date.now() || typeof body.tenantId !== 'string') {
+        typeof body.expiresAt !== 'number' || !Number.isSafeInteger(body.expiresAt) || body.expiresAt <= Date.now() || (typeof body.tenantId !== 'string' || !/^[A-Za-z0-9_-]{1,512}$/.test(body.tenantId))) {
       throw new ApiError('Invalid authentication response.', undefined, 'AUTH_RESPONSE_INVALID');
     }
     const expectedTenant = body.tenantId;
@@ -202,6 +203,7 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
         headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
         body: JSON.stringify({ selectionToken, tenantId }),
       }));
+      if (body.tenantId !== tenantId) throw new ApiError('Invalid authentication response.', undefined, 'AUTH_RESPONSE_INVALID');
       return await establishSession(body, remember, signal, current, started);
     } catch (error) {
       if (current === generation) clearSession();
@@ -317,11 +319,13 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
     // The workspace label rides the session; older servers omit both fields,
     // in which case the tenant ID stays the label (never a typed input).
     const tenantId = typeof body.tenantId === 'string' ? body.tenantId : undefined;
+    if (body.workspaceName !== undefined && typeof body.workspaceName !== 'string'
+      || body.workspaceSlug !== undefined && body.workspaceSlug !== null && typeof body.workspaceSlug !== 'string') throw new ApiError('Invalid session.');
     const workspaceName = typeof body.workspaceName === 'string' && body.workspaceName ? body.workspaceName : tenantId;
     return {
       id: body.id, namespaceId: body.namespaceId, name: body.name, role: body.role,
       ...(tenantId ? { tenantId } : {}), ...(workspaceName ? { workspaceName } : {}),
-      ...(typeof body.workspaceSlug === 'string' ? { workspaceSlug: body.workspaceSlug } : {}),
+      workspaceSlug: typeof body.workspaceSlug === 'string' ? body.workspaceSlug : null,
     };
   }
   async function getDatasetRefreshStatus(id: string, signal?: AbortSignal): Promise<DatasetRefreshStatus> {

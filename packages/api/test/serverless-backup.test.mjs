@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
+import { DatabaseSync } from 'node:sqlite';
 import { mkdtemp,rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -86,4 +87,28 @@ test('fixed backup plans reject a production restore target, expired plans and r
  const p={version:1,operationId:randomUUID(),deployment:'synthetic',mode:'restore',backupId:randomUUID(),sourceDatabase:'source',targetDatabase:'os_restore_test',expiresAt:Date.now()+3600000,epoch:2,keyVersions:['a'.repeat(32)],snapshotVersion:'exact-version',snapshotDigest:'b'.repeat(64)};
  assert.equal(backupPlan(p,env).mode,'restore');
  for(const patch of [{sourceDatabase:'os_restore_test'},{targetDatabase:'production'},{expiresAt:Date.now()-1},{epoch:1},{snapshotVersion:null},{sql:'SELECT 1'},{mode:'reopen'}])assert.throws(()=>backupPlan({...p,...patch},env));
+});
+
+test('Issue #146: registered pre-naming backups migrate idempotently and restore with NULL labels', async t => {
+ const f=await fixture(t);
+ // Reconstruct a pre-naming database through a separate owner connection;
+ // foreign keys are disabled only while restoring this historical schema.
+ const legacy=new DatabaseSync(f.path);
+ try { legacy.exec(`PRAGMA foreign_keys=OFF; BEGIN;
+  DROP TABLE h2_login_selections;
+  CREATE TABLE legacy_tenants (tenant_id TEXT PRIMARY KEY,state TEXT NOT NULL,version INTEGER NOT NULL,tombstone TEXT,placement TEXT,limit_policy TEXT);
+  INSERT INTO legacy_tenants SELECT tenant_id,state,version,tombstone,placement,limit_policy FROM h1_tenants;
+  DROP TABLE h1_tenants;
+  ALTER TABLE legacy_tenants RENAME TO h1_tenants;
+  COMMIT;`); } finally { legacy.close(); }
+ const snapshot=await snapshotServerless(f.db,'test',randomUUID(),Date.now()+3600000,['a'.repeat(32)],'sqlite');
+ assert.equal('h2_login_selections' in snapshot.tables,false);
+ assert.ok(snapshot.tables.h1_tenants.every(row=>!('display_name' in row)));
+ const registry={...f.registry,epoch:1,backups:{[snapshot.id]:checksum(snapshot)}};
+ const {migrateRegistered}=await import('../dist/serverless-backup.js'),id=randomUUID();
+ assert.equal((await migrateRegistered(f.db,f.env,snapshot,registry,id,'sqlite')).replayed,false);
+ assert.equal((await migrateRegistered(f.db,f.env,snapshot,registry,id,'sqlite')).replayed,true);
+ assert.ok((await f.db.transaction(c=>c.query('SELECT display_name,slug FROM h1_tenants'))).every(row=>row.display_name===null&&row.slug===null));
+ await restoreServerless(f.target,snapshot,{...registry,epoch:2},'sqlite');
+ assert.ok((await f.target.transaction(c=>c.query('SELECT display_name,slug FROM h1_tenants'))).every(row=>row.display_name===null&&row.slug===null));
 });

@@ -5,8 +5,8 @@ import { createRuntime } from '../dist/runtime.js';
 import { runtimeEnv, event, context } from './runtime-helpers.mjs';
 
 test('SR1 authoring and embed routing preserves authorization and trusted normalized viewer peer', () => {
-  for (const path of ['/api/api/session', '/api/api/auth/login', '/api/api/sources', '/api/api/uploads', '/api/api/datasets/example/prep', '/api/api/embedding/sessions', '/api/embed/sessions/id/status', '/embed/sessions/id']) {
-    const e = event(path, ['/api/api/auth/login', '/api/api/uploads', '/api/api/embedding/sessions'].includes(path) ? 'POST' : 'GET'), input = adaptGatewayRequest(e, runtimeEnv());
+  for (const path of ['/api/api/session', '/api/api/auth/login', '/api/api/auth/login/select', '/api/api/sources', '/api/api/uploads', '/api/api/datasets/example/prep', '/api/api/embedding/sessions', '/api/embed/sessions/id/status', '/embed/sessions/id']) {
+    const e = event(path, ['/api/api/auth/login', '/api/api/auth/login/select', '/api/api/uploads', '/api/api/embedding/sessions'].includes(path) ? 'POST' : 'GET'), input = adaptGatewayRequest(e, runtimeEnv());
     assert.equal(input.path, path.startsWith('/api/api/') ? path.slice(4) : path);
     assert.equal(input.headers.authorization, 'one'); assert.equal(input.headers.host, 'opensight.example'); assert.equal(input.peer, '192.0.2.1');
     assert.equal(input.headers['x-forwarded-for'], undefined); assert.equal(input.headers['x-opensight-ingress-secret'], undefined);
@@ -56,7 +56,7 @@ test('SR1 edge contract rejects caller forwarding/identity headers, duplicate si
 });
 
 test('SR1 pre-DB method validation matches existing data and job routes', () => {
-  for (const [path, methods] of [['/api/api/sources/id/rows', ['POST']], ['/api/api/sources/id/output', ['POST']], ['/api/api/sources/id/policy', ['GET']], ['/api/api/uploads/upload_id', ['GET']], ['/api/api/jobs/id/runs', ['GET', 'POST']], ['/api/api/auth/login', ['POST']]]) {
+  for (const [path, methods] of [['/api/api/sources/id/rows', ['POST']], ['/api/api/sources/id/output', ['POST']], ['/api/api/sources/id/policy', ['GET']], ['/api/api/uploads/upload_id', ['GET']], ['/api/api/jobs/id/runs', ['GET', 'POST']], ['/api/api/auth/login', ['POST']], ['/api/api/auth/login/select', ['POST']]]) {
     for (const method of ['GET', 'POST', 'PUT', 'DELETE']) {
       if (methods.includes(method)) assert.equal(adaptGatewayRequest(event(path, method), runtimeEnv()).method, method);
       else assert.throws(() => adaptGatewayRequest(event(path, method), runtimeEnv()));

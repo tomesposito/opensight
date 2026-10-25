@@ -1,4 +1,6 @@
 import { MetadataError, type Database, type SqlConnection } from './metadata-db.js';
+import { initializeAuth } from './auth-schema.js';
+import { ensureTenantNaming } from './metadata-schema.js';
 import { migrateRuntime } from './runtime-migration.js';
 import { deploymentId } from './runtime-startup.js';
 import { budgetEnvironment } from './budget-store.js';
@@ -20,7 +22,8 @@ const durableTables = [...coordinationTables, ...manifestTables, ...dispatchTabl
 // h8_audit_schema rides along for ownership/backup/restore inventory, but stays out of
 // baseTables on purpose: the existing-database foreign check must accept deployed
 // databases that predate the marker (the owner migration adds it).
-export const serverlessTables = [...baseTables, 'h8_audit_schema', ...durableTables];
+const additiveTables = ['h2_login_selections'];
+export const serverlessTables = [...baseTables, ...additiveTables, 'h8_audit_schema', ...durableTables];
 export async function grantServerlessRuntime(c: SqlConnection, env: NodeJS.ProcessEnv): Promise<void> {
   const schema = String((await c.query('SELECT current_schema() AS schema'))[0]?.schema);
   if (!/^[a-z][a-z0-9_]{0,62}$/.test(schema)) throw new MetadataError('RUNTIME_SCHEMA_INVALID', 503);
@@ -33,11 +36,11 @@ export async function grantServerlessRuntime(c: SqlConnection, env: NodeJS.Proce
       || (await c.query('SELECT 1 FROM pg_class WHERE relowner = (SELECT oid FROM pg_roles WHERE rolname = ?) AND relnamespace = current_schema()::regnamespace', [name!])).length) throw new MetadataError('RUNTIME_ROLE_UNSAFE', 503);
     await c.query(`REVOKE CREATE ON SCHEMA "${schema}" FROM "${name}"`);
     await c.query(`GRANT USAGE ON SCHEMA "${schema}" TO "${name}"`);
-    await c.query(`REVOKE ALL ON ${[...baseTables, ...durableTables].join(', ')} FROM "${name}"`);
+    await c.query(`REVOKE ALL ON ${[...baseTables, ...additiveTables, ...durableTables].join(', ')} FROM "${name}"`);
   }
   await c.query(`REVOKE CREATE ON SCHEMA "${schema}" FROM PUBLIC`);
   const readOnly = ['sr_control', 'sr_limits', 'h4_budget_config', 'h8_schema', 'h1_migrations', 'h7_migrations', ...durableTables.filter(t => t.endsWith('_schema'))];
-  const writable = [...baseTables, ...durableTables].filter(t => !readOnly.includes(t));
+  const writable = [...baseTables, ...additiveTables, ...durableTables].filter(t => !readOnly.includes(t));
   await c.query(`GRANT SELECT ON ${readOnly.join(', ')} TO "${roles.operator}"`);
   // The audit schema marker is owner-written and read-only for the runtime operator,
   // so deployments can verify the migrated audit version without DDL rights. The guard
@@ -77,6 +80,8 @@ export async function migrateServerless(database: Database, env: NodeJS.ProcessE
       if (!saved || JSON.stringify(JSON.parse(String(saved.body))) !== JSON.stringify(budgets)) throw new MetadataError('COORDINATION_CONFIG_CHANGED', 503);
     }
     if (tables.some(r => r.name === 'sr_admission') && (await c.query("SELECT attempt_id FROM sr_admission WHERE deployment = ? AND state = 'held' AND hold_until > ? LIMIT 1", [deployment, await coordinationNow(c, dialect)])).length) throw new MetadataError('WORKSPACE_DRAIN_REQUIRED', 503);
+    await ensureTenantNaming(c, dialect);
+    await initializeAuth(nested);
     await migrateCoordination(nested, deployment, entitlements, 'frozen', dialect);
     await migrateManifests(nested, deployment, 'frozen', dialect);
     await migrateDispatch(nested, deployment, 'frozen', dialect);

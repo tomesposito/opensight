@@ -31,7 +31,7 @@ export function SignIn({ onSignIn, onSelectWorkspace, notice, onRetry, onDemo }:
     try {
       const result = await onSignIn({ email: email.trim(), password, code }, remember);
       if (!active.current) return;
-      if (isWorkspaceSelection(result ?? undefined)) { setChallenge(result); setStep('picker'); }
+      if (result && isWorkspaceSelection(result)) { setPassword(''); setCode(''); setChallenge(result); setStep('picker'); }
       else { setPassword(''); setCode(''); }
     } catch (failure: unknown) {
       if (active.current) { setCode(''); setError(authNotice(failure)); }
@@ -60,7 +60,7 @@ export function SignIn({ onSignIn, onSelectWorkspace, notice, onRetry, onDemo }:
         {message && <div ref={alert} className="sign-in-alert" data-kind={message.kind} role={message.kind === 'info' ? 'status' : 'alert'} tabIndex={-1}><p>{message.message}</p>{message.code && <span className="sign-in-error-code">{message.code}</span>}</div>}
         {step === 'picker' && challenge ? <>
           <p className="sign-in-identity">Signed in as {challenge.email}</p>
-          <p className="sign-in-description">Choose the workspace to open. Your sign-in details were checked together.</p>
+          <p className="sign-in-description">Choose the workspace to open.</p>
           <ul ref={pickerList} className="sign-in-workspaces" aria-label="Workspaces">
             {challenge.workspaces.map(workspace => <li key={workspace.tenantId}>
               <button className="sign-in-workspace" type="button" disabled={busy} onClick={() => void choose(workspace.tenantId)}>

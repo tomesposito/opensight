@@ -1,10 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { MetadataError, type Database, type SqlConnection, type SqlRow } from './metadata-db.js';
-import { serverlessTables } from './serverless-migration.js';
 import { checksum } from './metadata-operator.js';
 import { coordinationNow, type CoordinationDialect } from './coordination-schema.js';
 import { appendOperatorAudit } from './operator-audit.js';
-import { databaseInventory, inventoryTables, snapshotInventory, upgradedAudit } from './serverless-backup-schema.js';
+import { databaseInventory, inventoryTables, snapshotInventory, upgradedAudit, currentInventory, namedWorkspaces } from './serverless-backup-schema.js';
 
 export interface CloudSnapshot {
   version: 1; id: string; deployment: string; epoch: number; createdAt: number; expiresAt: number;
@@ -89,7 +88,7 @@ export async function restoreServerless(db: Database, snapshot: CloudSnapshot, r
   validateRecovery(snapshot, registry);
   const sourceTables = inventoryTables(snapshotInventory(snapshot.tables));
   return db.transaction(async c => {
-    if (await locked(c, dialect) !== 'audit-v1') denied('BACKUP_SCHEMA_INVALID');
+    if (await locked(c, dialect) !== currentInventory) denied('BACKUP_SCHEMA_INVALID');
     if ((await c.query('SELECT 1 FROM h1_tenants LIMIT 1')).length) denied('RESTORE_TARGET_NOT_EMPTY');
     const control = await c.query('SELECT * FROM sr_control');
     if (control.length !== 1 || control[0]?.state !== 'maintenance' || control[0]?.deployment !== snapshot.deployment) denied('RESTORE_TARGET_INVALID');
@@ -116,7 +115,7 @@ export async function restoreServerless(db: Database, snapshot: CloudSnapshot, r
     await c.query("UPDATE h1_tenants SET state='suspended', version=version+1 WHERE state IN ('active','provisioning')");
     await c.query('UPDATE h1_revisions SET "authorization"="authorization"+1, policy=policy+1, configuration=configuration+1');
     await c.query("UPDATE h2_memberships SET status='removed', version=version+1");
-    await c.query('UPDATE h2_sessions SET revoked=1'); await c.query('UPDATE h6_sessions SET revoked=1');
+    await c.query('UPDATE h2_login_selections SET consumed=1'); await c.query('UPDATE h2_sessions SET revoked=1'); await c.query('UPDATE h6_sessions SET revoked=1');
     await c.query('DELETE FROM h2_onboarding'); await c.query('DELETE FROM h2_invitations');
     await c.query('UPDATE h7_jobs SET stopped=1, next_run=NULL, version=version+1');
     await c.query("UPDATE h7_occurrences SET state='cancelled', error_code='RESTORE_REVIEW_REQUIRED' WHERE state IN ('queued','running','delivering')");
@@ -151,11 +150,16 @@ export async function migrateRegistered(db: Database, env: NodeJS.ProcessEnv, sn
     const receipt = `cloud-migration:${operationId}`, request = checksum([snapshot.id, checksum(snapshot)]);
     const prior = (await c.query('SELECT request_hash FROM h2_requests WHERE operation_id=?', [receipt]))[0];
     if (prior && prior.request_hash !== request) denied('MIGRATION_RECEIPT_CONFLICT');
-    if (liveInventory !== (prior ? 'audit-v1' : sourceInventory)) denied('BACKUP_SCHEMA_INVALID');
-    const preserved = serverlessTables.filter(t => !['h8_audit', 'h2_requests'].includes(t) && !t.endsWith('_schema'));
+    if (liveInventory !== (prior ? currentInventory : sourceInventory)) denied('BACKUP_SCHEMA_INVALID');
+    const preserved = inventoryTables(sourceInventory).filter(t => !['h8_audit', 'h2_requests'].includes(t) && !t.endsWith('_schema'));
     const fingerprint = (rows: SqlRow[]) => checksum(rows.map(checksum).sort());
-    const verify = async () => {
-      for (const table of preserved) if (fingerprint(await c.query(`SELECT * FROM ${table} LIMIT 100001`)) !== fingerprint(snapshot.tables[table]!)) denied('MIGRATION_PRESERVATION_FAILED');
+    const verify = async (upgraded = !!prior) => {
+      for (const table of preserved) {
+        const baseline = table === 'h1_tenants' && upgraded && !namedWorkspaces(sourceInventory)
+          ? snapshot.tables[table]!.map(row => ({ ...row, display_name: null, slug: null })) : snapshot.tables[table]!;
+        if (fingerprint(await c.query(`SELECT * FROM ${table} LIMIT 100001`)) !== fingerprint(baseline)) denied('MIGRATION_PRESERVATION_FAILED');
+      }
+      if (upgraded && !namedWorkspaces(sourceInventory) && (await c.query('SELECT 1 FROM h2_login_selections LIMIT 1')).length) denied('MIGRATION_PRESERVATION_FAILED');
       for (const table of inventoryTables(sourceInventory).filter(t => t.endsWith('_schema')))
         if (fingerprint(await c.query(`SELECT * FROM ${table}`)) !== fingerprint(snapshot.tables[table]!)) denied('MIGRATION_PRESERVATION_FAILED');
     };
@@ -174,8 +178,8 @@ export async function migrateRegistered(db: Database, env: NodeJS.ProcessEnv, sn
         || additions.filter(row => row.action === 'serverless.registered-migration' && row.detail === JSON.stringify({ operationId })).length !== 1)) denied('MIGRATION_PRESERVATION_FAILED');
     if (!prior) {
       await migrateServerless({ durable: true, transaction: work => work(c), close: async () => {} }, { ...env, OPENSIGHT_MAINTENANCE: 'frozen' }, dialect);
-      await verify();
-      if (await databaseInventory(c, dialect) !== 'audit-v1') denied('BACKUP_SCHEMA_INVALID');
+      await verify(true);
+      if (await databaseInventory(c, dialect) !== currentInventory) denied('BACKUP_SCHEMA_INVALID');
       const afterAudit = await c.query('SELECT * FROM h8_audit LIMIT 100001');
       const expectedAudit = upgradedAudit(snapshot.tables.h8_audit!, sourceInventory);
       const expectedIds = new Set(expectedAudit.map(row => row.event_id));
