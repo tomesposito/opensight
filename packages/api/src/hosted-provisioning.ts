@@ -7,6 +7,7 @@ import { appendMetadataEvent } from './metadata-outbox.js';
 import type { HostedConfig } from './hosted-config.js';
 import type { MailTransport } from './mail.js';
 import { digest, seal, unseal } from './auth-crypto.js';
+import { escapeHtml } from './reports.js';
 import { normalizedEmail } from './hosted-auth.js';
 import { appendOperatorAudit } from './operator-audit.js';
 import { applyDisposition, disposition, type JobDisposition, type JobOwnership } from './job-ownership.js';
@@ -88,7 +89,7 @@ export class HostedProvisioning {
     // The workspace name is shown when the tenant has one; legacy tenants
     // without a display name keep the raw tenant line (fallback, never typed).
     const tenantLine = row.display_name
-      ? `<p>Workspace: ${workspaceLabel(row.display_name, String(row.tenant_id))}</p>`
+      ? `<p>Workspace: ${escapeHtml(workspaceLabel(row.display_name, String(row.tenant_id)))}</p>`
       : `<p>Tenant: ${row.tenant_id}</p>`;
     // Delivery belongs to the identity flow, never to operator metadata responses.
     await this.mail.send({ to: [String(row.email)], subject: 'OpenSight invitation',

@@ -80,3 +80,15 @@ test('Issue #146 item 1: Postgres upgrade guards each column and installs the un
   assert.equal(statements.filter(sql => sql.startsWith('ALTER')).length, 2);
   assert.equal(statements.filter(sql => sql.startsWith('CREATE UNIQUE')).length, 2);
 });
+
+test('Issue #146 item 2: invitation uses the workspace name, escapes labels, and falls back for legacy tenants', async t => {
+  const f = await setup(t), op = await f.provision.provision('mail', input('Sales & <Ops>'));
+  assert.match(f.mail.messages[0].html, /<p>Workspace: Sales &amp; &lt;Ops&gt;<\/p>/);
+  assert.equal(f.mail.messages[0].html.includes(op.tenantId), false);
+  for (const name of [null, '']) {
+    await f.db.transaction(c => c.query('UPDATE h1_tenants SET display_name = ? WHERE tenant_id = ?', [name, op.tenantId]));
+    await f.provision.inviteMember(`legacy-${f.mail.messages.length}`, op.tenantId, { email: `legacy-${f.mail.messages.length}@example.test`, name: 'Legacy invite', role: 'author' });
+    assert.ok(f.mail.messages.at(-1).html.includes(`<p>Tenant: ${op.tenantId}</p>`));
+    assert.doesNotMatch(f.mail.messages.at(-1).html, /Workspace:/);
+  }
+});
