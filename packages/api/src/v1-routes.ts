@@ -83,13 +83,14 @@ export class V1Routes {
   private readonly limiter: RateLimiter;
   private readonly retries: RetryStore;
   private readonly tails = new Map<string, Promise<unknown>>();
-  private readonly analyses = new AnalysisRoutes({ paging: r => this.paging(r), ifMatch: r => this.ifMatch(r) });
+  private readonly analyses: AnalysisRoutes;
   private readonly assets = new AssetRoutes({ paging: r => this.paging(r), ifMatch: r => this.ifMatch(r) });
   private readonly dashboards: DashboardRoutes;
   constructor(private readonly hostedRoutes?: HostedDataRoutes, env: NodeJS.ProcessEnv = process.env) {
     this.limiter = new RateLimiter(env);
     this.dashboards = new DashboardRoutes({ paging: r => this.paging(r) }, env);
     this.retries = new RetryStore({ env });
+    this.analyses = new AnalysisRoutes({ paging: r => this.paging(r), ifMatch: r => this.ifMatch(r) }, this.retries);
   }
   close(): void { this.retries.close(); }
   private get routes(): HostedDataRoutes { if (!this.hostedRoutes) throw new MetadataError('HOSTED_API_REQUIRED', 503); return this.hostedRoutes; }
