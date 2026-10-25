@@ -43,6 +43,10 @@ export async function initializeUsage(db: Database): Promise<void> {
       event_id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, namespace_id TEXT NOT NULL, created_at TEXT NOT NULL,
       metric TEXT NOT NULL, unit TEXT NOT NULL, amount BIGINT NOT NULL, outcome TEXT NOT NULL,
       FOREIGN KEY (tenant_id, namespace_id) REFERENCES h1_namespaces(tenant_id, namespace_id))`);
+    await c.query(`CREATE TABLE IF NOT EXISTS h8_ai_warnings (
+      tenant_id TEXT NOT NULL, namespace_id TEXT NOT NULL, period TEXT NOT NULL,
+      detail TEXT NOT NULL, created_at TEXT NOT NULL, delivered_at TEXT,
+      PRIMARY KEY (tenant_id, period))`);
     await initializeAudit(c);
     await c.query('CREATE TABLE IF NOT EXISTS h8_recovery (tenant_id TEXT PRIMARY KEY REFERENCES h1_tenants(tenant_id))');
     await c.query('CREATE TABLE IF NOT EXISTS h8_schema (id INTEGER PRIMARY KEY CHECK (id = 1), version INTEGER NOT NULL)');
@@ -118,6 +122,21 @@ export class HostedUsage {
     if (!(await c.query("UPDATE h1_tenants SET version = version WHERE tenant_id = ? AND state = 'active' RETURNING tenant_id", [scope.tenantId])).length) throw new MetadataError('TENANT_UNAVAILABLE', 403);
     if (!(await c.query('SELECT tenant_id FROM h1_namespaces WHERE tenant_id = ? AND namespace_id = ?', [scope.tenantId, scope.namespaceId])).length) throw new MetadataError('ENTITLEMENT_UNRESOLVED', 503);
   }
+  /** Delivery and acknowledgement commit together, independently of the charge. */
+  private async deliverAiWarnings(scope: Scope): Promise<Set<string>> {
+    return this.db.transaction(async c => {
+      await this.lockAiScope(c, scope);
+      const pending = await c.query('SELECT namespace_id, period, detail, created_at FROM h8_ai_warnings WHERE tenant_id = ? AND delivered_at IS NULL ORDER BY period', [scope.tenantId]);
+      const delivered = new Set<string>();
+      for (const row of pending) {
+        const period = String(row.period), detail: unknown = JSON.parse(String(row.detail));
+        await appendOperatorAudit(c, { action: 'ai.spend.warning', tenantId: scope.tenantId, subject: String(row.namespace_id), detail }, Date.parse(String(row.created_at)));
+        await c.query('UPDATE h8_ai_warnings SET delivered_at = ? WHERE tenant_id = ? AND period = ?', [new Date(this.clock()).toISOString(), scope.tenantId, period]);
+        delivered.add(period);
+      }
+      return delivered;
+    });
+  }
   /** Current durable AI usage snapshot for a tenant scope (today's UTC period). */
   async aiUsage(scope: Scope): Promise<{ tenantId: string; namespaceId: string; period: string; aiCalls: number; aiTokens: number; spendCents: number; capCents?: number; warnPct: number }> {
     const entitlement = this.entitlement(scope), period = new Date(this.clock()).toISOString().slice(0, 10);
@@ -136,6 +155,7 @@ export class HostedUsage {
    * tracking disabled), never denies here.
    */
   async checkAiSpend(scope: Scope): Promise<void> {
+    try { await this.deliverAiWarnings(scope); } catch { /* Pending warnings must not block the counter-based gate. */ }
     const entitlement = this.entitlement(scope);
     const cap = entitlement.aiSpendCapCents, cost = entitlement.aiCostCentsPerMillionTokens ?? 0, now = new Date(this.clock()).toISOString(), period = now.slice(0, 10);
     const denied = await this.db.transaction(async c => {
@@ -154,13 +174,13 @@ export class HostedUsage {
   /**
    * Post-call metering: durably adds one aiCalls call and the call's aiTokens
    * tokens in the same tables/serialization as other usage. When cumulative
-   * spend first crosses aiWarnPct of the cap in a period, one operator-audit
-   * alert (ai.spend.warning) is appended in the same transaction.
+   * spend first crosses aiWarnPct of the cap in a period, a durable warning
+   * intent commits with the charge. Audit delivery is retried independently.
    */
   async recordAiUsage(scope: Scope, tokens: number, estimated = false): Promise<{ aiCalls: number; aiTokens: number; spendCents: number; warned: boolean }> {
     if (!Number.isSafeInteger(tokens) || tokens < 0) throw new MetadataError('ENTITLEMENT_UNRESOLVED', 503);
     const entitlement = this.entitlement(scope), now = new Date(this.clock()).toISOString(), period = now.slice(0, 10);
-    return this.db.transaction(async c => {
+    const recorded = await this.db.transaction(async c => {
       await this.lockAiScope(c, scope);
       const after = await this.aiCountIn(c, scope, period, 'aiTokens') + tokens;
       const aiCalls = await this.aiCountIn(c, scope, period, 'aiCalls') + 1;
@@ -172,21 +192,32 @@ export class HostedUsage {
         await c.query('INSERT INTO h8_usage_events VALUES (?,?,?,?,?,?,?,?)', [randomUUID(), scope.tenantId, scope.namespaceId, now, metric, unit, amount, 'admitted']);
       }
       const spendCents = this.aiSpendCents(entitlement, after);
-      let warned = false;
       const cap = entitlement.aiSpendCapCents, cost = entitlement.aiCostCentsPerMillionTokens ?? 0;
       if (cap !== undefined && cost > 0) {
         const warnPct = entitlement.aiWarnPct ?? 80;
         if (BigInt(after) * BigInt(cost) * 100n >= BigInt(cap) * BigInt(warnPct) * 1_000_000n) {
-          const prior = await c.query("SELECT event_id FROM h8_audit WHERE tenant_id = ? AND action = 'ai.spend.warning' AND substr(created_at,1,10) = ?", [scope.tenantId, period]);
-          if (!prior.length) {
-            await appendOperatorAudit(c, { action: 'ai.spend.warning', tenantId: scope.tenantId, subject: scope.namespaceId,
-              detail: { period, spendCents, capCents: cap, warnPct, estimated } }, Date.parse(now));
-            warned = true;
+          const intent = await c.query('SELECT period FROM h8_ai_warnings WHERE tenant_id = ? AND period = ?', [scope.tenantId, period]);
+          if (!intent.length) {
+            // Preserve pre-intent audit deduplication. An unavailable audit store
+            // must not abort the charge transaction, including on Postgres.
+            let prior = false;
+            await c.query('SAVEPOINT opensight_ai_warning_prior');
+            try {
+              prior = (await c.query("SELECT event_id FROM h8_audit WHERE tenant_id = ? AND action = 'ai.spend.warning' AND substr(created_at,1,10) = ?", [scope.tenantId, period])).length > 0;
+            } catch {
+              await c.query('ROLLBACK TO SAVEPOINT opensight_ai_warning_prior');
+            }
+            await c.query('RELEASE SAVEPOINT opensight_ai_warning_prior');
+            if (!prior) await c.query('INSERT INTO h8_ai_warnings (tenant_id, namespace_id, period, detail, created_at, delivered_at) VALUES (?,?,?,?,?,NULL)',
+              [scope.tenantId, scope.namespaceId, period, JSON.stringify({ period, spendCents, capCents: cap, warnPct, estimated }), now]);
           }
         }
       }
-      return { aiCalls, aiTokens: after, spendCents, warned };
+      return { aiCalls, aiTokens: after, spendCents };
     }).catch((error: unknown) => { if (error instanceof MetadataError) throw error; throw new MetadataError('ENTITLEMENT_UNRESOLVED', 503); });
+    let warned = false;
+    try { warned = (await this.deliverAiWarnings(scope)).has(period); } catch { /* The charge is committed; retain the warning for retry. */ }
+    return { ...recorded, warned };
   }
   /** Resolve the authenticated namespace using H1's immutable one-namespace-per-tenant mapping.
    * Hosted callers cannot opt out by returning an unresolved scope. Self-hosted omits the meter. */

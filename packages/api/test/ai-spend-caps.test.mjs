@@ -4,7 +4,7 @@ import { h8Fixture } from './h8-helpers.mjs';
 import { HostedUsage, initializeUsage, entitlementConfig } from '../dist/hosted-usage.js';
 import { AISettings } from '../dist/ai-settings.js';
 import { providerAdapters, estimateTokens } from '../dist/ai-providers.js';
-import { readOperatorAudit } from '../dist/operator-audit.js';
+import { appendOperatorAudit, readOperatorAudit } from '../dist/operator-audit.js';
 
 const base = { apiCalls: 1000, storageBytes: 100000, computeAttempts: 100 };
 const one = { tenantId: 'tenant-one', namespaceId: 'one' };
@@ -243,11 +243,90 @@ test('unknown or mismatched tenant namespaces and suspended tenants cannot spend
   await assert.rejects(f.usage.aiMeter().record('one', 1, false), { code: 'TENANT_UNAVAILABLE' });
 });
 
-test('audit failure rolls back both usage metrics and post-call accounting errors withhold the answer', async t => {
+test('persistent audit failure preserves charges, bounds provider calls across fresh instances and retries the crossing warning', async t => {
   const f = await setup(t, priced({ aiSpendCapCents: 100, aiWarnPct: 80 }));
   await f.usage.recordAiUsage(one, 70);
   await f.db.transaction(c => c.query('DROP TABLE h8_audit'));
-  const ai = await AISettings.load({ bootstrap: { provider: 'openai', model: 'm', key: 'key' }, aiMeter: meterFor(f.usage), fetcher: async () => openAiReply(10) });
+  let calls = 0;
+  const freshUsage = () => new HostedUsage(f.db, f.usage.config, f.usage.clock);
+  const complete = async () => {
+    const ai = await AISettings.load({ bootstrap: { provider: 'openai', model: 'm', key: 'key' }, aiMeter: meterFor(freshUsage()),
+      fetcher: async () => { calls++; return openAiReply(10); } });
+    return ai.complete('default', { system: 's', prompt: 'p' });
+  };
+  for (const tokens of [80, 90, 100]) {
+    assert.equal(await complete(), 'OK');
+    const snapshot = await freshUsage().aiUsage(one);
+    assert.equal(snapshot.aiTokens, tokens); assert.equal(snapshot.aiCalls, 1 + (tokens - 70) / 10);
+    assert.equal(calls, (tokens - 70) / 10);
+  }
+  for (let i = 0; i < 3; i++) {
+    await assert.rejects(complete(), { code: 'AI_SPEND_CAP_EXCEEDED', status: 429 });
+    assert.equal(calls, 3);
+  }
+  const pending = await f.db.transaction(c => c.query('SELECT * FROM h8_ai_warnings'));
+  assert.equal(pending.length, 1); assert.equal(pending[0].delivered_at, null);
+  assert.equal(JSON.parse(pending[0].detail).spendCents, 80);
+  // The owner migration trusts its marker: reset it when repairing the dropped table.
+  await f.db.transaction(c => c.query('DELETE FROM h8_audit_schema'));
+  await initializeUsage(f.db);
+  for (let i = 0; i < 2; i++) await assert.rejects(freshUsage().checkAiSpend(one), { code: 'AI_SPEND_CAP_EXCEEDED', status: 429 });
+  const entries = (await readOperatorAudit(f.db)).filter(e => e.action === 'ai.spend.warning' && e.tenantId === one.tenantId);
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0].detail.spendCents, 80); assert.equal(entries[0].detail.capCents, 100);
+  assert.equal(entries[0].createdAt, pending[0].created_at);
+  assert.equal(entries[0].subject, one.namespaceId);
+  assert.ok((await f.db.transaction(c => c.query('SELECT delivered_at FROM h8_ai_warnings')))[0].delivered_at);
+  assert.equal(calls, 3);
+  const snapshot = await freshUsage().aiUsage(one);
+  assert.equal(snapshot.aiCalls, 4); assert.equal(snapshot.aiTokens, 100);
+  assert.equal((await f.db.transaction(c => c.query("SELECT * FROM h8_usage_events WHERE outcome = 'admitted'"))).length, 8);
+});
+
+test('warnings delivered before durable intents still deduplicate for the tenant and period', async t => {
+  const f = await setup(t, priced({ aiSpendCapCents: 100 }));
+  await f.db.transaction(c => appendOperatorAudit(c, { action: 'ai.spend.warning', tenantId: one.tenantId, subject: one.namespaceId,
+    detail: { period: '2026-10-03', spendCents: 80, capCents: 100, warnPct: 80, estimated: false } }, f.usage.clock()));
+  assert.equal((await f.usage.recordAiUsage(one, 90)).warned, false);
+  assert.equal((await f.db.transaction(c => c.query('SELECT * FROM h8_ai_warnings'))).length, 0);
+  assert.equal((await readOperatorAudit(f.db)).filter(e => e.action === 'ai.spend.warning').length, 1);
+  assert.equal((await f.usage.recordAiUsage(two, 80)).warned, true);
+  f.advance();
+  assert.equal((await f.usage.recordAiUsage(one, 80)).warned, true);
+});
+
+test('delivery acknowledgement failure keeps all periods pending and retry only reports the current period', async t => {
+  const f = await setup(t, priced({ aiSpendCapCents: 100 }));
+  await f.db.transaction(c => c.query(`CREATE TRIGGER fail_warning_delivery BEFORE UPDATE OF delivered_at ON h8_ai_warnings
+    BEGIN SELECT RAISE(ABORT, 'warning acknowledgement unavailable'); END`));
+  assert.equal((await f.usage.recordAiUsage(one, 80, true)).warned, false);
+  f.advance();
+  assert.equal((await f.usage.recordAiUsage(one, 90)).warned, false);
+  assert.equal((await readOperatorAudit(f.db)).filter(e => e.action === 'ai.spend.warning').length, 0);
+  assert.equal((await f.db.transaction(c => c.query('SELECT * FROM h8_ai_warnings WHERE delivered_at IS NULL'))).length, 2);
+  await f.db.transaction(c => c.query('DROP TRIGGER fail_warning_delivery'));
+  await f.usage.checkAiSpend(two); // Another tenant cannot drain these warnings.
+  assert.equal((await readOperatorAudit(f.db)).filter(e => e.action === 'ai.spend.warning').length, 0);
+  f.advance();
+  assert.equal((await f.usage.recordAiUsage(one, 1)).warned, false); // Only earlier periods delivered.
+  const entries = (await readOperatorAudit(f.db)).filter(e => e.action === 'ai.spend.warning').sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  assert.deepEqual(entries.map(e => e.detail), [
+    { period: '2026-10-03', spendCents: 80, capCents: 100, warnPct: 80, estimated: true },
+    { period: '2026-10-04', spendCents: 90, capCents: 100, warnPct: 80, estimated: false },
+  ]);
+  assert.equal((await f.usage.recordAiUsage(one, 79)).warned, true);
+  await f.usage.checkAiSpend(one);
+  assert.equal((await readOperatorAudit(f.db)).filter(e => e.action === 'ai.spend.warning').length, 3);
+});
+
+test('charge transaction failures still withhold the answer and roll back both usage metrics', async t => {
+  const f = await setup(t, priced({ aiSpendCapCents: 100, aiWarnPct: 80 }));
+  await f.usage.recordAiUsage(one, 70);
+  const ai = await AISettings.load({ bootstrap: { provider: 'openai', model: 'm', key: 'key' }, aiMeter: meterFor(f.usage),
+    fetcher: async () => {
+      await f.db.transaction(c => c.query('DROP TABLE h8_ai_warnings'));
+      return openAiReply(10);
+    } });
   await assert.rejects(ai.complete('default', { system: 's', prompt: 'p' }), { code: 'ENTITLEMENT_UNRESOLVED', status: 503 });
   const snapshot = await f.usage.aiUsage(one);
   assert.equal(snapshot.aiCalls, 1); assert.equal(snapshot.aiTokens, 70);
