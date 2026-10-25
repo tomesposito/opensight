@@ -8,6 +8,9 @@ import { MetadataError } from './metadata-db.js';
  * Reservations count toward both entry limits while work is in flight; prepare
  * reserves the exact receipt bytes before an asynchronous commit/publication.
  * Only expired receipts are reclaimed. Callers must not mutate stored values.
+ * The periodic prune timer runs only in long-lived server compositions
+ * (`periodicPrune`); invocation-scoped (Lambda) stores start no timers and
+ * rely on prune-on-access, matching the hosted expiry-timer pattern.
  */
 export const RETRY_TTL_MS = 10 * 60 * 1000;
 interface Usage { entries: number; bytes: number }
@@ -39,17 +42,16 @@ export class RetryStore {
   private readonly perTenantMaxEntries: number;
   private readonly perTenantMaxBytes: number;
   private readonly now: () => number;
-  private readonly timer: ReturnType<typeof setInterval>;
-  constructor({ env = process.env, now = () => Date.now() }: { env?: NodeJS.ProcessEnv; now?: () => number } = {}) {
+  private readonly timer?: ReturnType<typeof setInterval>;
+  constructor({ env = process.env, now = () => Date.now(), periodicPrune = true }: { env?: NodeJS.ProcessEnv; now?: () => number; periodicPrune?: boolean } = {}) {
     this.maxEntries = positive(env, 'OPENSIGHT_RETRY_CACHE_MAX_ENTRIES', 1000);
     this.maxBytes = positive(env, 'OPENSIGHT_RETRY_CACHE_MAX_BYTES', 64 * 1024 * 1024);
     this.perTenantMaxEntries = positive(env, 'OPENSIGHT_RETRY_CACHE_PER_TENANT_MAX_ENTRIES', 250);
     this.perTenantMaxBytes = positive(env, 'OPENSIGHT_RETRY_CACHE_PER_TENANT_MAX_BYTES', 16 * 1024 * 1024);
     this.now = now;
-    this.timer = setInterval(() => this.prune(), 60000);
-    this.timer.unref();
+    if (periodicPrune) { this.timer = setInterval(() => this.prune(), 60000); this.timer.unref(); }
   }
-  close(): void { clearInterval(this.timer); }
+  close(): void { if (this.timer) clearInterval(this.timer); }
   /** Includes in-flight reservations; inspecting totals does not trigger pruning. */
   usage(tenantId?: string): Usage { return { ...(tenantId === undefined ? this.total : this.tenants.get(tenantId) ?? { entries: 0, bytes: 0 }) }; }
   /** Callers own disjoint key prefixes and the receipt type associated with each. */

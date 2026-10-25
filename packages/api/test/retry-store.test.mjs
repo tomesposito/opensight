@@ -103,6 +103,12 @@ test('retry store: periodic prune works without access and close stops the timer
   assert.deepEqual(cache.usage(), { entries: 1, bytes: 1 });
 });
 
+test('retry store: periodicPrune false starts no interval (Lambda invocation composition)', t => {
+  t.mock.method(globalThis, 'setInterval', () => assert.fail('invocation-scoped store started an interval'));
+  const cache = new RetryStore({ env: {}, periodicPrune: false });
+  cache.set('a', 'k', 'value'); assert.equal(cache.get('k'), 'value'); cache.close();
+});
+
 test('retry store: in-flight reservations prevent competing admission and release on failure', t => {
   const cache = store(t, { OPENSIGHT_RETRY_CACHE_MAX_ENTRIES: '2', OPENSIGHT_RETRY_CACHE_MAX_BYTES: '8', OPENSIGHT_RETRY_CACHE_PER_TENANT_MAX_ENTRIES: '1' });
   const a = cache.reserve('a', 'a1');

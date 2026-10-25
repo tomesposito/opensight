@@ -130,7 +130,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
   const invocation = options.invocation?.compose?.(metadata, budgets, options.builtinAuth, usage?.aiMeter());
   const jobs = invocation?.jobs ?? new JobStore(options.membershipDatabase, metadata);
   const data = invocation?.data ?? new HostedDataRoutes(new HostedData(new HostedSources(metadata, config.encryptionKey.toString('base64'), sourceEndpoints(options.env)), undefined, budgets), jobs);
-  const v1 = new V1Routes(data, options.env ?? process.env);
+  const v1 = new V1Routes(data, options.env ?? process.env, { invocation: !!options.invocation });
   const embedContent = invocation?.embedContent ?? new EmbedContent(new HostedData(new EmbedSources(metadata, config.encryptionKey.toString('base64'), sourceEndpoints(options.env)), undefined, budgets));
   const mail = invocation?.mail ?? options.mailTransport ?? smtpFromEnvironment(options.env);
   if (!options.invocation) await initializeJobs(options.membershipDatabase);
