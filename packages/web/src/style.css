@@ -792,6 +792,16 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .bundle-import summary { font-weight: 600; }
 .bundle-import details[open] > summary { margin-bottom: 12px; }
 .bundle-import label { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; font-weight: 600; }
+/* Issue #108 final audit: the bundle-import label (Author.tsx — the
+   flex row wrapping the bundle file input) was the author surface's
+   last label with zero hover feedback: its sibling summary takes the
+   author summary hover (.bundle-import summary:hover), and every other
+   label :hover rule in the cascade is scoped elsewhere. The label now
+   takes the author label tint #edf7f7 (dark #334c62), so the row reads
+   as one surface with the file field it labels. Background only, so
+   resting geometry is identical and there is no animation. */
+.author-workspace .bundle-import label:hover { background: #edf7f7; }
+.author-workspace[data-chrome=dark] .bundle-import label:hover { background: #334c62; }
 .bundle-import p { margin: 8px 0; }
 .import-report { width: min(850px, 90vw); max-height: 85vh; overflow: auto; border: 1px solid #8ba9b2; border-radius: 10px; padding: 24px; }
 .import-report::backdrop { background: #15374688; }
