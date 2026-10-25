@@ -353,6 +353,61 @@ test('draft storage preserves original unknown JSON and imported binding metadat
   assert.equal(restored.warning, undefined); assert.deepEqual(exportBundle(restored.draft), fixture());
 });
 
+test('duplicated imported sheets retain provenance and validate after saving and reloading (#124)', () => {
+  const original = importBundle(fixture()), snapshot = structuredClone(original);
+  const source = original.sheets[0];
+  const draft = change(original, { type: 'sheet-duplicate', id: source.id }), copied = activeSheet(draft);
+  validateDraft(draft);
+  assert.deepEqual(original, snapshot);
+  assert.equal(copied.imported.sheetId, copied.id);
+  assert.equal(copied.imported.sourceSheetId, source.imported.sheetId);
+  assert.equal(copied.imported.memberPath, source.imported.memberPath);
+  for (const [i, visual] of copied.visuals.entries()) {
+    assert.equal(visual.imported.visualId, visual.id);
+    assert.equal(visual.imported.sourceVisualId, source.visuals[i].imported.visualId);
+    const { imported, ...baseline } = visual;
+    assert.deepEqual(imported.baseline, baseline);
+    assert.deepEqual(imported.filterGroups, []);
+  }
+  let value;
+  const storage = { getItem: () => value, setItem: (_, next) => { value = next; } };
+  assert.match(saveDraft(draft, () => storage), /Draft saved/);
+  validateDraft(JSON.parse(value));
+  const restored = loadDraft(() => storage);
+  assert.equal(restored.warning, undefined);
+  assert.deepEqual(restored.draft, JSON.parse(JSON.stringify(draft)));
+});
+
+test('empty imported sheets and copies of copies retain valid source provenance (#124)', () => {
+  const resource = { resourceType: 'analysis', analysisId: 'empty', name: 'Empty', definition: {
+    dataSetIdentifierDeclarations: [], sheets: [{ sheetId: 'original-empty', name: 'Empty sheet', visuals: [] }],
+  } };
+  let draft = importBundle({ members: [member(resource)] });
+  for (let i = 0; i < 2; i++) {
+    draft = change(draft, { type: 'sheet-duplicate', id: draft.activeSheetId });
+    validateDraft(JSON.parse(JSON.stringify(draft)));
+    assert.equal(activeSheet(draft).imported.sourceSheetId, 'original-empty');
+    assert.equal(activeSheet(draft).imported.sheetId, draft.activeSheetId);
+  }
+  assert.equal(new Set(draft.sheets.map(s => s.imported.sheetId)).size, 3);
+});
+
+for (const [name, corrupt] of [
+  ['missing sheet provenance', s => { s.imported.sourceSheetId = 'missing'; }],
+  ['malformed sheet provenance', s => { s.imported.sourceSheetId = true; }],
+  ['sheet identity collision', s => { s.imported.sheetId = 'sheet-1'; }],
+  ['missing visual provenance', s => { s.visuals[0].imported.sourceVisualId = 'missing'; }],
+  ['unmarked copied visual', s => { delete s.visuals[0].imported.sourceVisualId; }],
+  ['visual identity collision', s => { s.visuals[0].imported.visualId = 'visual-1'; }],
+  ['mismatched copied baseline', s => { s.visuals[0].imported.baseline.id = 'visual-1'; }],
+  ['retained source filter binding', s => { s.visuals[0].imported.filterGroups = [{ id: 'region-filter', columnName: 'region' }]; }],
+]) test(`duplicated imported storage rejects ${name} (#124)`, () => {
+  const original = importBundle(fixture());
+  const draft = change(original, { type: 'sheet-duplicate', id: original.activeSheetId });
+  corrupt(activeSheet(draft));
+  assert.throws(() => validateDraft(draft), /Invalid or unsupported author draft/);
+});
+
 test('deleting an imported visual removes its scoped filters while archiving the complete original group', () => {
   const bundle = fixture(); bundle.members[0].resource.definition.filterGroups = [categoryGroup()];
   let draft = importBundle(bundle);
@@ -376,6 +431,8 @@ test('new visual and sheet IDs do not collide with original bundle IDs', () => {
 for (const [name, corrupt] of [
   ['missing source resource', d => { d.sheets[0].imported.memberPath = 'analysis/missing.json'; }],
   ['missing source visual', d => { d.sheets[0].visuals[0].imported.visualId = 'missing'; }],
+  ['missing source sheet', d => { d.sheets[0].imported.sheetId = 'missing'; }],
+  ['mismatched baseline id', d => { d.sheets[0].visuals[0].imported.baseline.id = 'visual-999'; }],
   ['malformed baseline', d => { d.sheets[0].visuals[0].imported.baseline.measures = null; }],
   ['malformed report', d => { d.bundle.report[0].messages = 42; }],
   ['unsupported baseline kind', d => { d.sheets[0].visuals[0].imported.baseline.kind = 'future'; }],
