@@ -164,7 +164,7 @@ export async function initialAdministration(database: Database, env: NodeJS.Proc
       await empty(c, initialEmptyTables);
       for (let index = 0; index < input.testers.length; index++) {
         const t = input.testers[index]!, credential = prepared[index]!, scope = { tenantId: t.tenantId, namespaceId: t.namespaceId };
-        await c.query("INSERT INTO h1_tenants VALUES (?, 'active', 2, NULL, NULL, NULL)", [t.tenantId]);
+        await c.query("INSERT INTO h1_tenants VALUES (?, 'active', 2, NULL, NULL, NULL, NULL, NULL)", [t.tenantId]);
         await c.query('INSERT INTO h1_namespaces VALUES (?,?,?)', [t.namespaceId, t.tenantId, t.name]);
         await c.query('INSERT INTO h1_revisions VALUES (?,?,1,1,1)', [t.tenantId, t.namespaceId]);
         await insertResource(c, scope, { kind: 'user', id: t.userId }, { name: t.name, role: 'administrator' });

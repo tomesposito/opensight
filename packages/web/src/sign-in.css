@@ -25,6 +25,12 @@
 .sign-in-error-code { display: block; margin-top: 4px; font-size: 10px; }
 .sign-in-identity { margin: 0 0 12px; font-weight: bold; overflow-wrap: anywhere; }
 .sign-in-description { margin: 0; color: #526c7a; }
+.sign-in-workspaces { list-style: none; margin: 16px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.sign-in-workspace { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; width: 100%; padding: 10px 12px; border: 1px solid #91a5af; border-radius: 3px; color: #19384a; background: #fff; font: inherit; text-align: left; cursor: pointer; }
+.sign-in-workspace:hover:not(:disabled) { background: #eaf4f4; }
+.sign-in-workspace:focus-visible { outline: 2px solid #126e76; outline-offset: 1px; }
+.sign-in-workspace-name { font-weight: bold; overflow-wrap: anywhere; }
+.sign-in-workspace-slug { color: #526c7a; font-size: 11px; overflow-wrap: anywhere; }
 .sign-in-field .sign-in-code { letter-spacing: 6px; font-size: 20px; }
 .sign-in-links { display: flex; justify-content: center; flex-wrap: wrap; gap: 8px 20px; margin-top: 20px; }
 .sign-in-links button { padding: 4px 0; border: 0; background: transparent; color: #126e76; text-decoration: underline; font-size: 11px; }

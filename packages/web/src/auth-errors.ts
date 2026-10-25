@@ -12,7 +12,7 @@ const messages: Readonly<Record<string, string>> = {
   FORGED_PRINCIPAL: 'The server rejected the request identity. Contact your administrator.',
   EMAIL_INVALID: 'Enter a valid email address.',
   PASSWORD_INVALID: 'Enter your password using at least 15 characters and no more than 1,024 bytes.',
-  METADATA_INVALID: 'Check the workspace ID from your invitation.',
+  METADATA_INVALID: 'Check the workspace details from your invitation.',
   PRINCIPAL_REQUIRED: 'Sign in to access your workspace.',
   UNKNOWN_PRINCIPAL: 'Your account cannot access this workspace. Contact your administrator.',
   TENANT_UNAVAILABLE: 'This workspace is unavailable. Contact your administrator.',

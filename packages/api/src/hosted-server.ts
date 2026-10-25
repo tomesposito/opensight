@@ -23,6 +23,7 @@ import { MetadataError, type Database } from './metadata-db.js';
 import { TenantMetadata, type TenantContext } from './metadata.js';
 import type { TenantBudgets } from './budgets.js';
 import { identifier, object } from './metadata-resources.js';
+import { workspaceLabel } from './workspace-naming.js';
 import type { SecurityOptions } from './security.js';
 import { scopePath } from './namespace-routes.js';
 import { readBody, RequestError, SecurityError } from './query.js';
@@ -235,13 +236,16 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
         throw new MetadataError('RESOURCE_NOT_FOUND', 404);
       }
       const peer = request.socket.remoteAddress ?? 'unknown';
-      if (['/api/auth/enroll', '/api/auth/accept', '/api/auth/login'].includes(path)) {
+      if (['/api/auth/enroll', '/api/auth/accept', '/api/auth/login', '/api/auth/login/select'].includes(path)) {
         if (!options.builtinAuth) throw new MetadataError('BUILTIN_AUTH_UNAVAILABLE', 503);
         method(request, response, ['POST']);
         if (request.headers.authorization || request.headers.cookie) throw new MetadataError('HOSTED_REQUEST_INVALID', 400);
         if (path === '/api/auth/login') {
           const input = await body(request, ['email', 'password', 'code', 'tenantId']);
           send(response, 200, await options.builtinAuth.login(input.email, input.password, code(input.code), input.tenantId, peer));
+        } else if (path === '/api/auth/login/select') {
+          const input = await body(request, ['selectionToken', 'tenantId']);
+          send(response, 200, await options.builtinAuth.completeLogin(input.selectionToken, input.tenantId, peer));
         } else {
           const input = await body(request, path.endsWith('/enroll') ? ['invitationToken', 'password'] : ['invitationToken', 'password', 'code']);
           send(response, 200, path.endsWith('/enroll') ? await options.builtinAuth.enroll(input.invitationToken, input.password, peer)
@@ -271,7 +275,13 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
       if (path === '/api/session') {
         method(request, response, ['GET']);
         const user = await metadata.get(context, { kind: 'user', id: context.userId });
-        send(response, 200, { id: user.id, namespaceId: context.namespaceId, tenantId: context.tenantId, ...user.body, ...(invocation ? { capabilities: invocation.capabilities } : {}) }); return;
+        // The workspace label rides the session: display_name with tenant_id
+        // fallback, plus the internal slug (or null). The ID stays in the
+        // session data; it is just no longer presented as the label.
+        const tenant = (await options.membershipDatabase.transaction(c => c.query('SELECT display_name, slug FROM h1_tenants WHERE tenant_id = ?', [context.tenantId])))[0];
+        const workspaceName = workspaceLabel(tenant?.display_name, context.tenantId);
+        const workspaceSlug = typeof tenant?.slug === 'string' ? tenant.slug : null;
+        send(response, 200, { id: user.id, namespaceId: context.namespaceId, tenantId: context.tenantId, workspaceName, workspaceSlug, ...user.body, ...(invocation ? { capabilities: invocation.capabilities } : {}) }); return;
       }
       if (path === '/api/auth/switch' || path === '/api/auth/logout') {
         if (!options.builtinAuth) throw new MetadataError('BUILTIN_AUTH_UNAVAILABLE', 503);

@@ -229,7 +229,7 @@ export class MetadataMigration {
       if (record.state === 'committed' || record.state === 'sealed') return String(record.state);
       if (record.state !== 'inventoried') throw new MetadataError('MIGRATION_ID_REUSED');
       for (const ns of plan.namespaces) {
-        await c.query("INSERT INTO h1_tenants VALUES (?,'provisioning',1,NULL,NULL,NULL)", [ns.tenantId]);
+        await c.query("INSERT INTO h1_tenants VALUES (?,'provisioning',1,NULL,NULL,NULL,NULL,NULL)", [ns.tenantId]);
         await c.query('INSERT INTO h1_namespaces VALUES (?,?,?)', [ns.namespaceId, ns.tenantId, ns.name]);
         await c.query('INSERT INTO h1_revisions VALUES (?,?,1,1,1)', [ns.tenantId, ns.namespaceId]);
         await c.query("INSERT INTO h1_operations VALUES (?,?,?,'provision',?,'pending','migration-held')", [operationId(config.migrationId, ns.tenantId), ns.tenantId, ns.namespaceId, plan.checksum]);
