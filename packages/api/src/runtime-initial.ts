@@ -30,7 +30,7 @@ export type InitialResult = { state: 'bootstrapped'; epoch: 1; tenants: 2 } | { 
 function fail(code = 'INITIAL_ACTIVATION_INVALID'): never { throw new MetadataError(code, 503); }
 const markers = [['sr_coordination_schema', coordinationChecksum], ['sr_manifest_schema', manifestChecksum], ['sr_dispatch_schema', dispatchChecksum], ['sr_object_schema', objectChecksum], ['sr_operation_schema', operationChecksum], ['sr_execution_schema', executionChecksum]] as const;
 const workTables = serverlessTables.filter(t => t.startsWith('sr_') && !t.endsWith('_schema') && !['sr_control', 'sr_limits'].includes(t));
-const initialEmptyTables = [...workTables, 'h1_tenants', 'h1_resources', 'h1_operations', 'h1_outbox', 'h2_identities', 'h2_memberships', 'h2_invitations', 'h2_sessions', 'h2_login_selections', 'h2_onboarding', 'h2_requests', 'h7_jobs', 'h8_usage', 'h8_usage_events', 'h8_recovery'];
+const initialEmptyTables = [...workTables, 'h1_tenants', 'h1_resources', 'h1_operations', 'h1_outbox', 'h2_identities', 'h2_memberships', 'h2_invitations', 'h2_sessions', 'h2_login_selections', 'h2_onboarding', 'h2_requests', 'h7_jobs', 'h8_usage', 'h8_usage_events', 'h8_ai_warnings', 'h8_recovery'];
 const hmac = (config: HostedConfig, value: unknown) => createHmac('sha256', config.encryptionKey).update(canonical(value)).digest('hex');
 const receipt = async (c: SqlConnection, id: string) => (await c.query('SELECT request_hash FROM h2_requests WHERE operation_id = ?', [id]))[0]?.request_hash;
 const tenantOperation = (deployment: string, operationId: string, index: number) => checksum(['initial-bootstrap-tenant', deployment, operationId, index]);
@@ -241,7 +241,7 @@ export async function initialAdministration(database: Database, env: NodeJS.Proc
     }
     if (state !== 'maintenance') fail('INITIAL_MAINTENANCE_REQUIRED');
     await verifyTesters(c, deployment, input.operationId, prior);
-    await empty(c, [...workTables, 'h7_jobs', 'h2_sessions', 'h2_login_selections', 'h8_usage', 'h8_usage_events']);
+    await empty(c, [...workTables, 'h7_jobs', 'h2_sessions', 'h2_login_selections', 'h8_usage', 'h8_usage_events', 'h8_ai_warnings']);
     await c.query("UPDATE sr_control SET state = 'open' WHERE deployment = ? AND epoch = 1 AND state = 'maintenance'", [deployment]);
     await c.query('INSERT INTO h2_requests VALUES (?,?)', [activationId, requestHash]);
     await appendOperatorAudit(c, { action: 'runtime.initial-activated' });

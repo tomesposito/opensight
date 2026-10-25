@@ -3,7 +3,7 @@ import { MetadataError, type Database, type SqlConnection, type SqlRow } from '.
 import { checksum } from './metadata-operator.js';
 import { coordinationNow, type CoordinationDialect } from './coordination-schema.js';
 import { appendOperatorAudit } from './operator-audit.js';
-import { databaseInventory, inventoryTables, snapshotInventory, upgradedAudit, currentInventory, namedWorkspaces } from './serverless-backup-schema.js';
+import { databaseInventory, inventoryTables, snapshotInventory, upgradedAudit, currentInventory, namedWorkspaces, aiWarnings } from './serverless-backup-schema.js';
 
 export interface CloudSnapshot {
   version: 1; id: string; deployment: string; epoch: number; createdAt: number; expiresAt: number;
@@ -89,7 +89,7 @@ export async function restoreServerless(db: Database, snapshot: CloudSnapshot, r
   const sourceTables = inventoryTables(snapshotInventory(snapshot.tables));
   return db.transaction(async c => {
     if (await locked(c, dialect) !== currentInventory) denied('BACKUP_SCHEMA_INVALID');
-    if ((await c.query('SELECT 1 FROM h1_tenants LIMIT 1')).length) denied('RESTORE_TARGET_NOT_EMPTY');
+    if ((await c.query('SELECT 1 FROM h1_tenants LIMIT 1')).length || (await c.query('SELECT 1 FROM h8_ai_warnings LIMIT 1')).length) denied('RESTORE_TARGET_NOT_EMPTY');
     const control = await c.query('SELECT * FROM sr_control');
     if (control.length !== 1 || control[0]?.state !== 'maintenance' || control[0]?.deployment !== snapshot.deployment) denied('RESTORE_TARGET_INVALID');
     for (const table of sourceTables.filter(t => t.endsWith('_schema'))) {
@@ -160,6 +160,7 @@ export async function migrateRegistered(db: Database, env: NodeJS.ProcessEnv, sn
         if (fingerprint(await c.query(`SELECT * FROM ${table} LIMIT 100001`)) !== fingerprint(baseline)) denied('MIGRATION_PRESERVATION_FAILED');
       }
       if (upgraded && !namedWorkspaces(sourceInventory) && (await c.query('SELECT 1 FROM h2_login_selections LIMIT 1')).length) denied('MIGRATION_PRESERVATION_FAILED');
+      if (upgraded && !aiWarnings(sourceInventory) && (await c.query('SELECT 1 FROM h8_ai_warnings LIMIT 1')).length) denied('MIGRATION_PRESERVATION_FAILED');
       for (const table of inventoryTables(sourceInventory).filter(t => t.endsWith('_schema')))
         if (fingerprint(await c.query(`SELECT * FROM ${table}`)) !== fingerprint(snapshot.tables[table]!)) denied('MIGRATION_PRESERVATION_FAILED');
     };

@@ -2,8 +2,9 @@
 
 `HostedUsage` records `aiCalls` and `aiTokens` alongside existing usage in
 `h8_usage` and `h8_usage_events`. Counters, denials and warning deduplication survive
-new service instances and invocations. No new schema, dependency or provider SDK
-is required. [D-82](itd/D-82-ai-spend-caps.md) records the engineering choices.
+new service instances and invocations. Issue #138 adds `h8_ai_warnings` for durable
+warning-delivery intents; no new dependency or provider SDK is required.
+[D-82](itd/D-82-ai-spend-caps.md) records the original spend-cap engineering choices.
 
 ## Configuration and admission
 
@@ -59,6 +60,9 @@ Existing role, namespace and dataset checks still run before completion.
 `HostedUsage`, `entitlementConfig` and the owner-only `initializeUsage` migration
 are exported from `@opensight/api/metadata` for trusted compositions. Runtime
 requests use already migrated tables; they never run this migration.
+The serverless owner migration also installs the warning table and its operator
+grants. Registered backups preserve pending and delivered intents; pre-warning
+backups remain readable and migrate to an empty warning table.
 
 `createHostedApiServer` currently does **not** expose either AI route. It passes
 the durable meter as the fourth argument of `invocation.compose` for explicitly
@@ -80,8 +84,9 @@ are persisted. Provider-key redaction of returned answers remains intact.
 Successful provider completions are recorded before O grammar validation or its
 post-I/O authorization checks. Those later failures still consume usage. Provider
 transport/invalid-response failures without usable completion text are unmetered.
-Post-call accounting failures withhold the answer. The UTC day is the completion
-day; a call crossing midnight is recorded in the new day. Rate changes reprice
+Failures to commit the charge withhold the answer; audit-delivery failures do not.
+The UTC day is the completion day; a call crossing midnight is recorded in the new
+day. Rate changes reprice
 recorded tokens on restart (serverless uses its existing stored entitlement
 snapshot configuration lifecycle).
 
@@ -93,12 +98,17 @@ This is the brief's recorded-spend circuit breaker, not a hard invoice ceiling.
 
 ## Alerts and observability
 
-At or above the warning threshold, `ai.spend.warning` is appended to the existing
-operator audit in the same transaction as the counters. Durable tenant/day
-deduplication gives one alert per UTC day across instances and restarts. Zero
-percent alerts on the first successful completion; 100 percent alerts at the
-cap. A single call may cross both warning and cap. Audit detail contains period,
-spend, cap, warning percentage and whether the triggering call used an estimate.
+At or above the warning threshold, the charge commits with a durable
+warning-delivery intent in `h8_ai_warnings`. A separate transaction appends
+`ai.spend.warning` to the operator audit and marks the intent delivered. Delivery
+is retried on later admission checks (including denied checks) and usage recording;
+an undelivered warning stays pending until the audit store recovers. Audit delivery
+can never erase or block the charge. Durable tenant/day deduplication gives one
+alert per UTC day across instances and restarts, including alerts delivered before
+intents were introduced. Zero percent alerts on the first successful completion;
+100 percent alerts at the cap. A single call may cross both warning and cap.
+Audit detail preserves the crossing snapshot: period, spend, cap, warning percentage
+and whether the triggering call used an estimate, with the original timestamp.
 No email or external billing integration is added. Operators inspect the existing
 `/api/host/audit` path; retention follows existing audit retention.
 
