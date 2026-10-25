@@ -325,7 +325,7 @@ export async function createApiServer(options: ApiOptions): Promise<Server> {
     });
   });
   server.once('listening', () => scheduler.start());
-  server.once('close', () => { scheduler.stop(); void scheduler.idle().then(() => connectorRoutes.close()); });
+  server.once('close', () => { v1.close(); scheduler.stop(); void scheduler.idle().then(() => connectorRoutes.close()); });
   return server;
 }
 

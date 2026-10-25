@@ -360,10 +360,11 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
     expiryWork ??= expireUploads(options.membershipDatabase).catch(() => { /* Reads still fail closed on expiry. */ }).finally(() => { expiryWork = undefined; });
   }, 60000);
   if (!options.invocation) { await runner.recover(); server.once('listening', () => scheduler.start()); }
-  expiryTimer?.unref(); server.once('close', () => { clearInterval(expiryTimer); scheduler.stop(); budgets.close(); });
+  expiryTimer?.unref(); server.once('close', () => { v1.close(); clearInterval(expiryTimer); scheduler.stop(); budgets.close(); });
   drains.set(server, () => drain ??= (async () => {
     draining = true; scheduler.stop(); runner.stop(); clearInterval(expiryTimer);
     await Promise.all([...active]); await scheduler.idle(); await expiryWork; await budgets.shutdown();
+    v1.close();
     if (reference) await options.membershipDatabase.transaction(c => appendOperatorAudit(c, { action: 'reference.drained' }));
     if (server.listening) await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
   })());
