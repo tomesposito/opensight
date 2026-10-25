@@ -37,6 +37,16 @@ added via the web UI or a re-scoped token.
 after every phase and screenshot-compared against the reference set
 (see §4). Never present the static demo as a deployed server.
 
+**Keep the changelog.** Every merged slice appends its notable changes
+to `CHANGELOG.md` under `## [Unreleased]`, in the right Keep a Changelog
+category (Added / Changed / Deprecated / Removed / Fixed / Security),
+in the same merge — not as a later cleanup. An entry names the
+user-visible change and the issue it shipped under, not the commit.
+Internal-only work with no user-visible effect needs no entry. When a
+release is cut, the release flow moves the Unreleased entries into a
+new `## [x.y.z] - YYYY-MM-DD` section, leaves an empty Unreleased
+section on top, and tags the release.
+
 ## 2. How we decide
 
 These principles resolve trade-offs. In order:
