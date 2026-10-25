@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, Mapping
 from urllib.error import HTTPError
 from urllib.parse import quote
-from urllib.request import Request, urlopen
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 from .errors import OpenSightApiError
 
@@ -61,12 +61,32 @@ class DashboardExportArtifact:
 Transport = Callable[[str, str, dict[str, str], bytes | None], HttpResponse]
 
 
+class _NoRedirectHandler(HTTPRedirectHandler):
+    """Reject every redirect, mirroring ``redirect: 'error'`` in the
+    TypeScript SDK, MCP and CLI transports (issue #118).
+
+    The default urllib redirect handler re-sends the request — including
+    the ``Authorization: Bearer`` header — to the redirect target, even
+    cross-origin or on an HTTPS→HTTP downgrade. Returning ``None`` here
+    makes urllib raise :class:`HTTPError` for the redirect response
+    instead of following it, so no second request is ever sent and the
+    bearer token never leaves the configured API origin.
+    """
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: D102
+        return None
+
+
+#: Opener used by the default transport; carries no redirect following.
+_default_opener = build_opener(_NoRedirectHandler)
+
+
 def _urllib_transport(
     method: str, url: str, headers: dict[str, str], body: bytes | None
 ) -> HttpResponse:
     req = Request(url, data=body, headers=headers, method=method)
     try:
-        with urlopen(req) as res:
+        with _default_opener.open(req) as res:
             return HttpResponse(
                 status=res.status,
                 headers={k.lower(): v for k, v in res.headers.items()},

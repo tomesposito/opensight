@@ -9,7 +9,9 @@ ETag-preserving versioned transport.
 """
 
 import json
+import threading
 import unittest
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit
 
 from opensight_headless import HttpResponse, OpenSightApiError, OpenSightClient
@@ -674,6 +676,128 @@ class AssetsAndFoldersTest(unittest.TestCase):
             json.loads(calls[17]["body"]),
             {"grants": [{"principal": principal, "role": "co-owner"}]},
         )
+
+
+class _RecordingHandler(BaseHTTPRequestHandler):
+    """HTTP handler driven by the owning server's ``routes`` table.
+
+    Each entry maps a path to ``(status, headers, body_bytes)``. Every
+    request is appended to ``server.hits`` so tests can prove a redirect
+    target was never contacted.
+    """
+
+    def _handle(self):
+        self.server.hits.append(
+            {"method": self.command, "path": self.path, "headers": dict(self.headers)}
+        )
+        length = int(self.headers.get("Content-Length") or 0)
+        if length:
+            self.rfile.read(length)
+        status, headers, body = self.server.routes.get(
+            self.path, (404, {}, b'{"errorCode": "NOT_FOUND", "message": "nope"}')
+        )
+        self.send_response(status)
+        for key, value in headers.items():
+            self.send_header(key, value)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    do_GET = _handle
+    do_POST = _handle
+    do_PUT = _handle
+    do_DELETE = _handle
+
+    def log_message(self, *args):  # keep test output quiet
+        pass
+
+
+class DefaultTransportRedirectTest(unittest.TestCase):
+    """Issue #118: the REAL default (urllib) transport — no injected
+    transport — must reject redirects instead of forwarding the bearer
+    token to the redirect destination."""
+
+    def _start_server(self, routes):
+        server = ThreadingHTTPServer(("127.0.0.1", 0), _RecordingHandler)
+        server.routes = routes
+        server.hits = []
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        self.addCleanup(server.shutdown)
+        self.addCleanup(server.server_close)
+        return server
+
+    @staticmethod
+    def _base(server):
+        return f"http://127.0.0.1:{server.server_address[1]}/api"
+
+    def test_default_transport_rejects_cross_origin_redirect_and_never_contacts_target(self):
+        target = self._start_server(
+            {"/stolen": (200, {"Content-Type": "application/json"}, b'{"items": []}')}
+        )
+        target_url = f"http://127.0.0.1:{target.server_address[1]}/stolen"
+        for code in (301, 302, 303, 307, 308):
+            with self.subTest(code=code):
+                origin = self._start_server(
+                    {"/api/v1/datasets": (code, {"Location": target_url}, b"")}
+                )
+                client = OpenSightClient(
+                    base_url=self._base(origin), get_token="secret-token"
+                )
+                with self.assertRaises(OpenSightApiError) as ctx:
+                    client.list_datasets()
+                self.assertEqual(ctx.exception.status, code)
+                # The origin was hit once, with the token; the redirect
+                # target was never contacted at all.
+                self.assertEqual(len(origin.hits), 1)
+                self.assertEqual(
+                    origin.hits[0]["headers"].get("Authorization"),
+                    "Bearer secret-token",
+                )
+                self.assertEqual(target.hits, [])
+
+    def test_default_transport_rejects_same_origin_redirect(self):
+        origin = self._start_server(
+            {
+                "/api/v1/datasets": (302, {"Location": "/api/v1/sources"}, b""),
+                "/api/v1/sources": (
+                    200,
+                    {"Content-Type": "application/json"},
+                    b'{"items": [], "nextCursor": null}',
+                ),
+            }
+        )
+        client = OpenSightClient(base_url=self._base(origin), get_token="secret-token")
+        with self.assertRaises(OpenSightApiError) as ctx:
+            client.list_datasets()
+        self.assertEqual(ctx.exception.status, 302)
+        self.assertEqual([h["path"] for h in origin.hits], ["/api/v1/datasets"])
+
+    def test_default_transport_rejects_redirect_on_post(self):
+        target = self._start_server({"/stolen": (200, {}, b"{}")})
+        target_url = f"http://127.0.0.1:{target.server_address[1]}/stolen"
+        origin = self._start_server(
+            {"/api/v1/datasets/ds1/query": (307, {"Location": target_url}, b"")}
+        )
+        client = OpenSightClient(base_url=self._base(origin), get_token="secret-token")
+        with self.assertRaises(OpenSightApiError) as ctx:
+            client.query_dataset("ds1", {"fields": []})
+        self.assertEqual(ctx.exception.status, 307)
+        self.assertEqual(target.hits, [])
+
+    def test_default_transport_still_serves_direct_200(self):
+        origin = self._start_server(
+            {
+                "/api/v1/datasets": (
+                    200,
+                    {"Content-Type": "application/json"},
+                    b'{"items": [], "nextCursor": null}',
+                )
+            }
+        )
+        client = OpenSightClient(base_url=self._base(origin), get_token="secret-token")
+        self.assertEqual(client.list_datasets(), {"items": [], "nextCursor": None})
+        self.assertEqual(len(origin.hits), 1)
 
 
 if __name__ == "__main__":
