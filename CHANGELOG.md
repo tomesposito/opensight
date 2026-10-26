@@ -49,6 +49,9 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
+- Dashboard visuals now stack when the available content width is narrow,
+  preventing overflow beneath the docked Ask O panel while preserving the
+  wide desktop layout (#140).
 - Explicit workspace startup now budgets from invocation entry so combined
   ingress/runtime cold starts can leave time for database wake-up; exhausted
   startup deadlines return retryable `WORKSPACE_STARTING` within the existing
