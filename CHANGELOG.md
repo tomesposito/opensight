@@ -44,6 +44,9 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
+- Dataset replacement now preserves saveable drafts with missing or incompatible
+  fields, lists repair diagnostics, and names unresolved fields when export is
+  blocked (#128).
 - Horizontal bar charts keep their orientation in every small-multiples panel,
   with categories on the y-axis and reference lines on the value x-axis (#127).
 - Pie slice limits now fold a retained category named "Other" into the Other
