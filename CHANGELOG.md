@@ -44,6 +44,9 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
+- Pie slice limits now fold a retained category named "Other" into the Other
+  bucket per facet, preserving totals and a single slice, tooltip and data-table
+  row; genuinely duplicated source categories still fail validation (#126).
 - Multi-measure small-multiples charts now resolve detailed tooltips and
   conditional-formatting rules against each series' own facet rows and
   measure, instead of indexing per-panel row groups by the global series
