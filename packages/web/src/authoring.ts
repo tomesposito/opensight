@@ -149,6 +149,8 @@ export interface AuthorSheet { objects?: SheetObject[]; controls: AuthorControl[
 export interface AuthorDraft {
   description?: string;
   dataset?: AuthorDataset;
+  /** Explicit removal; absent preserves the legacy implicit-sample behavior. */
+  noDataset?: true;
   theme?: AnalysisTheme; chrome?: 'light' | 'dark';
   version: 2; parameters: AuthorParameter[]; title: string; sheets: AuthorSheet[]; activeSheetId: string; calculatedFields: CalculatedField[]; bundle?: BundleOrigin;
 }
@@ -400,7 +402,13 @@ export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorD
   // Manage data: swap or clear the analysis dataset while keeping sheets,
   // visuals, parameters and calculated fields. Unlike 'import' this is an
   // undoable edit, not a document boundary.
-  if (action.type === 'dataset') return { ...draft, dataset: action.dataset };
+  if (action.type === 'dataset') {
+    const { dataset: _dataset, noDataset: _noDataset, ...content } = draft;
+    // The sample uses the existing implicit schema/query path, never a prepared
+    // dataset named "sales" (which persisted draft validation deliberately rejects).
+    return !action.dataset ? { ...content, noDataset: true }
+      : action.dataset.id === 'sales' ? content : { ...content, dataset: action.dataset };
+  }
   if (action.type === 'calculation-add') {
     if (calculationError(action.field, dataFields(draft.calculatedFields, draft.dataset))) return draft;
     return { ...draft, calculatedFields: [...draft.calculatedFields, { ...action.field, name: action.field.name.trim() }] };
@@ -943,6 +951,7 @@ export function serializeVisual(visual: AuthorVisual, includeInteractions = true
 /** Export the analysis, including sheet layouts and scoped filters, but never result rows or UI selection. */
 export function serializeDraft(draft: AuthorDraft): BundleAnalysis {
   validateDraft(draft);
+  if (draft.noDataset) throw new Error('NO_DATASET: Select a dataset before exporting. Your draft can still save.');
   const unresolved = unresolvedFieldDiagnostics(draft);
   if (unresolved.length) throw new Error(`UNRESOLVED_FIELDS: Repair fields before exporting: ${[...new Set(unresolved.map(d => d.fieldName))].join(', ')}.`);
   return { resourceType: 'analysis', analysisId: 'authored-analysis', name: draft.title.trim() || 'Untitled analysis', definition: {
@@ -978,13 +987,14 @@ export function analysisSettingsError(settings: { title: string; description: st
 /** localStorage is untrusted: validate every identity, field, layout and display option. */
 export function validateDraft(value: unknown): asserts value is AuthorDraft {
   const fail = (): never => { throw new Error('Invalid or unsupported author draft.'); };
-  if (!isObject(value) || !onlyKeys(value, ['version', 'title', 'description', 'sheets', 'activeSheetId', 'calculatedFields', 'parameters', 'bundle', 'theme', 'chrome', 'dataset']) || value.version !== 2 || typeof value.title !== 'string' || !Array.isArray(value.sheets) || !value.sheets.length || !Array.isArray(value.calculatedFields)) return fail();
+  if (!isObject(value) || !onlyKeys(value, ['version', 'title', 'description', 'sheets', 'activeSheetId', 'calculatedFields', 'parameters', 'bundle', 'theme', 'chrome', 'dataset', 'noDataset']) || value.version !== 2 || typeof value.title !== 'string' || !Array.isArray(value.sheets) || !value.sheets.length || !Array.isArray(value.calculatedFields)) return fail();
+  if (value.noDataset !== undefined && (value.noDataset !== true || value.dataset !== undefined)) return fail();
   if (value.description !== undefined && !analysisDescriptionValid(value.description)) return fail();
   if (value.theme !== undefined && !themeValid(value.theme) || value.chrome !== undefined && !['light', 'dark'].includes(String(value.chrome))) return fail();
   const dataset = value.dataset as AuthorDataset | undefined;
   // Replacement retains references, including schema-dependent types. Explicit
-  // datasets persist hygienic unresolved names; the built-in sample stays strict.
-  const unresolvedAllowed = value.dataset !== undefined;
+  // datasets and removed datasets persist hygienic unresolved names; the built-in sample stays strict.
+  const unresolvedAllowed = value.dataset !== undefined || value.noDataset === true;
   if (dataset !== undefined) {
     if (!isObject(dataset) || !onlyKeys(dataset, ['id', 'name', 'columns']) || typeof dataset.id !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(dataset.id) || dataset.id === 'sales' || typeof dataset.name !== 'string' || !dataset.name.trim() || !Array.isArray(dataset.columns) || !dataset.columns.length || dataset.columns.length > 256 || value.bundle !== undefined) return fail();
     const names = new Set<string>();
@@ -1000,11 +1010,14 @@ export function validateDraft(value: unknown): asserts value is AuthorDraft {
     const summary = summarizeQsBundle(b.original as QsBundle);
     if (!summary.memberCount || (b.primaryPath && !summary.members.some(m => m.path === b.primaryPath && (m.resourceType === 'analysis' || m.resourceType === 'dashboard'))) || !b.report.every(r => isObject(r) && typeof r.path === 'string' && typeof r.name === 'string' && Array.isArray(r.messages) && r.messages.every(m => typeof m === 'string')) || !b.calculations.every(c => isObject(c) && typeof c.name === 'string' && typeof c.expression === 'string' && (c.role === 'measure' || c.role === 'dimension'))) return fail();
   }
+  // Retain calculations after removal without treating sample columns as active
+  // fields (including name collisions with prepared-data calculations).
+  const validationFields = (calculations: CalculatedField[]) => dataFields(calculations, dataset).filter(f => !value.noDataset || f.group === 'Calculated');
   const calculations: CalculatedField[] = [];
   for (const item of value.calculatedFields) {
     if (!isObject(item) || !onlyKeys(item, ['name', 'expression', 'role']) || typeof item.name !== 'string' || typeof item.expression !== 'string' || (item.role !== 'dimension' && item.role !== 'measure')) return fail();
     const field: CalculatedField = { name: item.name, expression: item.expression, role: item.role };
-    const existing = dataFields(calculations, dataset);
+    const existing = validationFields(calculations);
     if (field.name !== field.name.trim() || calculationError(field, existing, unresolvedAllowed ? existing.map(f => f.name) : [])) return fail();
     calculations.push(field);
   }
@@ -1021,16 +1034,16 @@ export function validateDraft(value: unknown): asserts value is AuthorDraft {
     visiting.delete(name); visited.add(name);
   };
   calculations.forEach(c => visit(c.name));
-  if (dataset) {
+  if (dataset || value.noDataset) {
     // A type change also reaches calculations that use another calculation.
     // Keep type-checking schema-independent expressions against the same prior
     // declarations as before; only dataset-dependent types may remain unresolved.
-    const deferredFields = [...dataset.columns.map(c => c.name), ...schemaDependent];
+    const deferredFields = [...(dataset?.columns.map(c => c.name) ?? []), ...schemaDependent];
     for (const [index, field] of calculations.entries()) {
-      if (expressionError(field.expression, dataFields(calculations.slice(0, index), dataset), deferredFields)) return fail();
+      if (expressionError(field.expression, validationFields(calculations.slice(0, index)), deferredFields)) return fail();
     }
   }
-  const fields = dataFields(calculations, dataset), ids = new Set<string>(), sheetIds = new Set<string>();
+  const fields = validationFields(calculations), ids = new Set<string>(), sheetIds = new Set<string>();
   const origin = isObject(value.bundle) ? value.bundle.original as QsBundle : undefined;
   const originalSheets = (origin?.members ?? []).flatMap(({ resource }) => resource.resourceType === 'analysis' || resource.resourceType === 'dashboard' ? resource.definition.sheets ?? [] : []);
   const originalSheetIds = new Set(originalSheets.map(s => s.sheetId));
