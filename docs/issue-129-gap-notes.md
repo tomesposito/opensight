@@ -54,3 +54,28 @@ Application composition and exercises actual Manage data removal/reopening,
 all workspace modes, queries, save/re-entry/reload, selection paths, the home
 sample/banner flow, import, dirty state and autosave. Both are included by the
 existing root web test glob. No dependencies were added.
+
+## Static demo and visual review
+
+Rebuilt `packages/web/dist/opensight-demo.html` with the demo build script:
+794 modules, 2,229,940 bytes. Chromium exercised removal, the empty Manage data
+dialog, undo/redo, save/reload and explicit sample selection against this
+`file://` artifact. It recorded zero page errors and zero HTTP/HTTPS requests;
+external requests were blocked throughout.
+
+The [empty author capture](images/author-no-dataset.png) shows no sample fields,
+empty Data/Visuals docks and Add data guidance. The
+[reopened dialog](images/manage-data-empty.png) shows its honest empty state
+with no sample row. Compared both with the local QuickSight reference
+`qs-2026/qs-manage-data-dialog.jpg`: Data → Visuals → sheet ordering, the
+Dataset/Type/Status table and Cancel/Add data footer remain consistent with
+the existing implementation. The existing wider/taller OpenSight modal,
+offline notices and different header geometry remain; this change introduces
+no new styling. QuickSight visual fidelity remains unmeasured.
+
+Refreshed the README hero with the prescribed `readme-gif.mjs` workflow,
+adapting its artifact path, route navigation and button names to the current
+app. The documented ffmpeg palette workflow assembles 34 frames at two frames
+per second. The tour includes the removed-dataset state and undo. Capture
+scripts, PNGs and build/test logs are under `/tmp/opensight-issue-129/` and
+`/tmp/issue-129-*.log`. The demo is a local static artifact, not a deployment.
