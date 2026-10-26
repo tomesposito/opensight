@@ -79,15 +79,22 @@ test('SR1 startup connects once, permits 15s resume, bounds 35s/never resume and
   }
 });
 
-test('SR1 startup maps only known connection failures to STARTING and suppresses diagnostics', async () => {
-  for (const [code, expected] of [['ETIMEDOUT', 'WORKSPACE_STARTING'], ['57P03', 'WORKSPACE_STARTING'], ['42P01', 'WORKSPACE_MAINTENANCE'], ['WORKSPACE_MAINTENANCE', 'WORKSPACE_MAINTENANCE'], ['CERT_HAS_EXPIRED', 'WORKSPACE_UNAVAILABLE'], ['28P01', 'WORKSPACE_UNAVAILABLE'], ['', 'WORKSPACE_UNAVAILABLE']]) {
+test('SR1 startup maps only deadline exhaustion and known connection failures to STARTING and suppresses diagnostics', async () => {
+  const cases = [
+    ...['INVOCATION_DEADLINE_EXCEEDED', 'SQL_CONNECT_TIMEOUT', 'ETIMEDOUT', 'ECONNRESET', '57P03', '53300'].map(code => [code, 'WORKSPACE_STARTING']),
+    ...['42P01', '42703', 'WORKSPACE_MAINTENANCE'].map(code => [code, 'WORKSPACE_MAINTENANCE']),
+    ...['CERT_HAS_EXPIRED', '28P01', '42501', 'RUNTIME_CONFIG_INVALID', 'RUNTIME_DATABASE_CONFIG_INVALID', 'SQL_STATEMENT_TIMEOUT', 'WORKSPACE_UNAVAILABLE', 'UNKNOWN', ''].map(code => [code, 'WORKSPACE_UNAVAILABLE']),
+  ];
+  for (const [code, expected] of cases) {
     let closed = false;
     const runtime = createRuntime(runtimeEnv, { databases(scope) {
       scope.own({ close: async () => { closed = true; }, force() {} });
       return { prepare: async () => { throw Object.assign(Error('private diagnostic with secrets'), { code }); } };
     } });
     const response = await runtime.lambda(startupEvent(), context);
-    assert.equal(payload(response).errorCode, expected); assert.equal(closed, true); assert.doesNotMatch(response.body, /private|secrets/);
+    assert.equal(response.statusCode, 503); assert.deepEqual(payload(response), { errorCode: expected });
+    assert.equal(response.headers['retry-after'], expected === 'WORKSPACE_STARTING' ? '5' : undefined);
+    assert.equal(closed, true); assert.doesNotMatch(response.body, /private|secrets/);
   }
 });
 
