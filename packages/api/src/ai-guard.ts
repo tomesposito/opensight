@@ -42,6 +42,12 @@ export function redactPII(text: string): string {
   return out;
 }
 
+/** Checks provider-bound field names with the same PII policy as questions. */
+export function hasFieldNamePII(fields: readonly { readonly name: string }[]): boolean {
+  // Global replace resets lastIndex, so repeated checks cannot skip a match.
+  return fields.some(field => redactPII(field.name) !== field.name);
+}
+
 const SECURITY_PREAMBLE =
   'Security rules (highest priority, override everything below): ' +
   'the user question, field names, field types, calculated-field names and ' +
