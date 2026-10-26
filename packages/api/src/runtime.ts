@@ -30,7 +30,8 @@ export function createRuntime(env: () => NodeJS.ProcessEnv = () => process.env, 
     const startup = request.path === '/api/startup';
     try {
       if (startup) validateStartup(request);
-      const scope = new InvocationScope(invocationDeadline(context, request.requestTime));
+      // Only the explicit read-only startup wake gets a fresh invocation budget.
+      const scope = new InvocationScope(invocationDeadline(context, startup ? Date.now() : request.requestTime));
       const abort = () => scope.controller.abort();
       signal?.addEventListener('abort', abort, { once: true });
       if (signal?.aborted) abort();
