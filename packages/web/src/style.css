@@ -788,6 +788,19 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
   .visual-content { min-height: 235px; }
 }
 
+/* Issue #140: the rail and docked Ask O panel can leave far less room than
+   the viewport suggests. Use main's content width (excluding its padding)
+   to stack dashboard cards before the 350px of fixed gutters crowd out the
+   tracks. Keep the 36-column/10px desktop geometry above 600px, including
+   a 1280px viewport with Ask O open. Scope card sizing to this grid so other
+   main content keeps its own layout; the mobile rules above still apply. */
+@container dashboard-content (max-width: 600px) {
+  .dashboard-grid { display: flex; flex-direction: column; gap: 16px; }
+  .dashboard-grid > .visual-card { min-height: 340px; }
+  .dashboard-grid > .visual-card:has(> .visual-content > .table-scroll) { height: 340px; }
+  .dashboard-grid > .visual-card > .visual-content { min-height: 235px; }
+}
+
 .bundle-import { border: 1px dashed #8ba9b2; border-radius: 5px; padding: 8px 12px; margin: 10px 0; background: #f4f9fa; font-size: 12px; }
 .bundle-import summary { font-weight: 600; }
 .bundle-import details[open] > summary { margin-bottom: 12px; }
