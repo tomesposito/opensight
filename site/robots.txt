@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+
+User-agent: meta-webindexer
+Allow: /
+
+Sitemap: https://getopensight.org/sitemap.xml
