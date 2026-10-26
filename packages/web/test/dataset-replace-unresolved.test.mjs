@@ -3,6 +3,12 @@ import assert from 'node:assert/strict';
 import { authorReducer, emptyDraft, validateDraft, saveDraft, parseDraft, loadDraft, DRAFT_KEY, unresolvedFieldDiagnostics, serializeDraft } from '../build/test/authoring.js';
 import { authorHistoryReducer, createAuthorHistory } from '../build/test/author-history.js';
 import { createDraftStore } from '../build/test/local-drafts.js';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { AuthorCanvas } from '../build/test/Author.js';
+import { buildAuthorVisual } from '../build/test/author-preview.js';
+import { buildAuthorQuery } from '../build/test/author-query.js';
+import { compileVisual } from '../build/test/compiler.js';
 
 const datasetA = { id: 'schema-a', name: 'Original', columns: [
   { name: 'region', type: 'STRING' }, { name: 'category', type: 'STRING' },
@@ -186,4 +192,39 @@ test('syntax errors, banned constructs, invalid names, cycles and literal type e
   const draft = replace(original());
   draft.calculatedFields = [{ name: 'One', expression: '{Two}', role: 'measure' }, { name: 'Two', expression: '{One}', role: 'measure' }];
   assert.throws(() => validateDraft(draft), 'indirect cycle');
+  draft.calculatedFields = [{ name: 'Text', expression: "'literal'", role: 'dimension' }, { name: 'Bad', expression: '{Text} + 1', role: 'measure' }];
+  assert.throws(() => validateDraft(draft), 'calculation role errors are not dataset membership errors');
+});
+
+test('unresolved visuals compile without rows, skip queries, and show field diagnostics in the canvas', () => {
+  const draft = replace(original());
+  for (const visual of draft.sheets[0].visuals) {
+    assert.equal(buildAuthorQuery(visual, draft.calculatedFields, draft.parameters, draft.dataset), null);
+    const compiled = compileVisual(buildAuthorVisual(visual, draft.calculatedFields, draft.dataset));
+    assert.equal(compiled.state, 'unavailable');
+    assert.deepEqual(compiled.table.rows, []);
+  }
+  const html = renderToStaticMarkup(createElement(AuthorCanvas, {
+    draft, dispatch() {}, client: { dataset: draft.dataset, queryDataset() { assert.fail('unresolved fields must not query'); } },
+  }));
+  assert.match(html, /aria-label="Unavailable fields"/);
+  assert.match(html, /Your draft can still save/);
+  assert.match(html, /Calculation Margin/);
+  for (const name of ['region', 'category', 'revenue', 'profit']) assert.match(html, new RegExp(`${name}.*missing`));
+  assert.equal((html.match(/class="bundle-placeholder"/g) ?? []).length, 3);
+  assert.doesNotMatch(html, /Loading data|View data/);
+  const repaired = replace(draft, datasetA);
+  const restored = renderToStaticMarkup(createElement(AuthorCanvas, { draft: repaired, dispatch() {} }));
+  assert.doesNotMatch(restored, /aria-label="Unavailable fields"/);
+  assert.ok(buildAuthorQuery(repaired.sheets[0].visuals[0], repaired.calculatedFields, repaired.parameters, repaired.dataset));
+});
+
+test('a resolved calculation-backed well with missing dependencies and a role-changed well cannot query', () => {
+  const draft = original(), visual = draft.sheets[0].visuals[1];
+  visual.measures = ['Margin'];
+  const dataset = { ...datasetA, columns: datasetA.columns.filter(c => c.name !== 'profit') };
+  assert.equal(buildAuthorQuery(visual, draft.calculatedFields, [], dataset), null);
+  visual.measures = ['revenue'];
+  const changed = { ...datasetA, columns: datasetA.columns.map(c => c.name === 'revenue' ? { ...c, type: 'STRING' } : c) };
+  assert.equal(buildAuthorQuery(visual, [], [], changed), null);
 });

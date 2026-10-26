@@ -267,20 +267,22 @@ export function tooltipPatchValid(patch: unknown): patch is Partial<Pick<AuthorV
   return true;
 }
 
-/** Use the execution parser for editor diagnostics; retain expression text byte for byte. */
-export function expressionError(expression: string, existing: readonly DataField[] = [], deferFieldTypes = false): string | undefined {
+/** Use the execution parser and retain expression text byte for byte. Persistence
+ * may defer dataset column types after replacement; calculation roles, literal
+ * types, syntax and function restrictions still undergo the same validation. */
+export function expressionError(expression: string, existing: readonly DataField[] = [], deferDatasetTypes?: AuthorDataset): string | undefined {
   try { parseExpression(expression, '$.expression', { validationOnly: true, bind: name => {
     const field = existing.find(f => f.name === name);
-    return { scalarType: deferFieldTypes || !field ? 'unknown' : field.type === 'DATETIME' ? 'datetime' : field.type === 'STRING' ? 'string' : 'number', nullable: true };
+    return { scalarType: deferDatasetTypes?.columns.some(c => c.name === name) || !field ? 'unknown' : field.type === 'DATETIME' ? 'datetime' : field.type === 'STRING' ? 'string' : 'number', nullable: true };
   } }); } catch (e) { return (e instanceof Error ? e.message : String(e)).replace(/^\$\.expression: /, ''); }
 }
-export function calculationError(field: CalculatedField, existing: readonly DataField[], deferFieldTypes = false): string | undefined {
+export function calculationError(field: CalculatedField, existing: readonly DataField[], deferDatasetTypes?: AuthorDataset): string | undefined {
   if (!/^[A-Za-z_][A-Za-z0-9_ ]{0,127}$/.test(field.name.trim())) return 'Use a field name starting with a letter or underscore (up to 128 characters).';
   if (existing.some(f => f.name.toLowerCase() === field.name.trim().toLowerCase())) return 'A field with that name already exists.';
   if (!field.expression.trim()) return 'Enter an expression.';
   if (field.expression.length > 10000 || /[;`\0]|--|\/\*|\*\/|=>|\b(?:eval|Function|fetch|require|import|exec|window|document|process|globalThis)\b/i.test(field.expression)) return 'Remove scripts, comments, or statement separators from the expression.';
   if (field.role !== 'dimension' && field.role !== 'measure') return 'Choose a field role.';
-  return expressionError(field.expression, existing, deferFieldTypes);
+  return expressionError(field.expression, existing, deferDatasetTypes);
 }
 export type AuthorAction =
   | { type: 'object-add'; kind: 'text' }
@@ -1002,7 +1004,7 @@ export function validateDraft(value: unknown): asserts value is AuthorDraft {
   for (const item of value.calculatedFields) {
     if (!isObject(item) || !onlyKeys(item, ['name', 'expression', 'role']) || typeof item.name !== 'string' || typeof item.expression !== 'string' || (item.role !== 'dimension' && item.role !== 'measure')) return fail();
     const field: CalculatedField = { name: item.name, expression: item.expression, role: item.role };
-    if (field.name !== field.name.trim() || calculationError(field, dataFields(calculations, dataset), unresolvedAllowed)) return fail();
+    if (field.name !== field.name.trim() || calculationError(field, dataFields(calculations, dataset), dataset)) return fail();
     calculations.push(field);
   }
   // Parse with unknown field types for dependency checks: missing names are not
@@ -1045,7 +1047,7 @@ export function validateDraft(value: unknown): asserts value is AuthorDraft {
       if (imported) {
         if (copied ? typeof imported.sourceVisualId !== 'string' || imported.visualId !== v.id || originalVisualIds.has(imported.visualId as string) || (imported.filterGroups as unknown[]).length !== 0 : imported.sourceVisualId !== undefined) return fail();
         const baseline = imported.baseline as Record<string, unknown>;
-        const strings = (a: unknown): a is string[] => Array.isArray(a) && a.every(n => typeof n === 'string' && !!n.trim() && n === n.trim() && !n.includes('\0'));
+        const strings = (a: unknown): a is string[] => Array.isArray(a) && a.every(n => typeof n === 'string' && !!n && !n.includes('\0'));
         if (!sourceSheet?.visuals?.some(raw => raw[imported.variant as string]?.visualId === (imported.sourceVisualId ?? imported.visualId)) || !isObject(v) || baseline.id !== v.id || !VISUAL_TYPES.some(t => t.kind === baseline.kind) || typeof baseline.title !== 'string' || (baseline.dimension !== null && typeof baseline.dimension !== 'string') || !['rows', 'columns', 'measures'].every(k => strings(baseline[k])) || !['donut', 'titleVisible', 'legend', 'labels', 'horizontal', 'stacked', 'totals', 'subtotals'].every(k => typeof baseline[k] === 'boolean') || !Array.isArray(baseline.filters) || !baseline.filters.every(f => isObject(f) && typeof f.columnName === 'string' && Array.isArray(f.values) && f.values.every(n => typeof n === 'string'))) return fail();
       }
       const fieldNames = (v: unknown, role: string): v is string[] => imported || unresolvedAllowed ? Array.isArray(v) && v.every(n => typeof n === 'string' && !!n.trim() && n === n.trim() && !n.includes('\0')) && new Set(v).size === v.length : names(v, role);

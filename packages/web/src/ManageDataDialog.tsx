@@ -131,7 +131,7 @@ export function ManageDataDialog({ client, datasets, sampleLoaded, onClose, onRe
           {sampleLoaded && replacingDataset.id !== SAMPLE_DATASET_ID && <option value={SAMPLE_DATASET_ID}>Sample sales data</option>}
           {candidates.map(source => <option key={source.id} value={source.id}>{source.name ?? source.id}</option>)}
         </select></label>
-        <p>Sheets, visuals, parameters, and calculated fields are kept. Fields missing from the new dataset show their unavailable-field state.</p>
+        <p>Sheets, visuals, parameters, and calculated fields are kept. Missing or incompatible fields are listed in the Data panel. Affected visuals show an unavailable-field state, and your draft can still save.</p>
         <div className="data-inline-actions">
           <button type="button" onClick={() => setReplacing(null)}>Cancel</button>
           <button type="button" className="data-primary" disabled={!choice} onClick={confirmReplace}>Replace dataset</button>

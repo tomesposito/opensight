@@ -1,3 +1,4 @@
+import { unresolvedFieldDiagnostics, unresolvedFieldMessage } from './unresolved-fields.js';
 import { SheetObjectCard, SheetObjectProperties } from './SheetObjectCard.js';
 import { useAccess, allowed } from './access.js';
 import { LocalEmptyState } from './LocalEmptyState.js';
@@ -290,6 +291,7 @@ const dimensionWellLabel = (kind: VisualKind, well: Well): string => well === 'c
 const FIELD_DRAG_TYPE = 'application/x-opensight-field';
 
 export function AuthorCanvas({ draft, dispatch, client, fit = true, sourceProblem }: EditorProps & { fit?: boolean; sourceProblem?: string }) {
+  const unresolved = useMemo(() => unresolvedFieldDiagnostics(draft), [draft]);
   const [newKind, setNewKind] = useState<VisualKind>('bar');
   const [search, setSearch] = useState('');
   const fieldSearch = useRef<HTMLInputElement>(null);
@@ -357,6 +359,16 @@ export function AuthorCanvas({ draft, dispatch, client, fit = true, sourceProble
     <div className="author-layout">
       <Panel title="Data" className="fields-panel">
         <DatasetHeader datasetId={draft.dataset?.id} datasetName={draft.dataset?.name} client={client} />
+        {unresolved.length > 0 && <details className="field-hint" open aria-label="Unavailable fields">
+          <summary>Unavailable fields ({unresolved.length})</summary>
+          <p>Your draft can still save. Repair field assignments, replace the dataset, or undo the replacement before exporting.</p>
+          <ul>{unresolved.map((diagnostic, index) => {
+            const ownerSheet = draft.sheets.find(s => s.id === diagnostic.sheetId);
+            const ownerVisual = ownerSheet?.visuals.find(v => v.id === diagnostic.visualId);
+            const owner = [ownerSheet?.name, ownerVisual ? ownerVisual.title || ownerVisual.id : diagnostic.controlId, diagnostic.calculation ? `Calculation ${diagnostic.calculation}` : undefined].filter(Boolean).join(' / ');
+            return <li key={index}>{owner}: {diagnostic.fieldName} — {diagnostic.reason} ({diagnostic.location})</li>;
+          })}</ul>
+        </details>}
         <label>Search fields<input ref={fieldSearch} data-author-control="field-search" type="search" value={search} onChange={e => { setSearch(e.target.value); setSearchCollapsedGroups({}); }} placeholder="Search fields" /></label>
         <button type="button" className="calculation-button" onClick={() => setCalculationOpen(true)}>+ Calculated field</button>
         <p className="field-hint">{selected ? 'Click a field to assign it.' : 'Click a field to create a bar.'} Dimensions: {dimensionDestination}. Measures: VALUE.</p>
@@ -448,7 +460,7 @@ export function AuthorCanvas({ draft, dispatch, client, fit = true, sourceProble
                     <button type="button" disabled={path.length >= hierarchy.levels.length - 1} aria-pressed={armed === visual.id} onClick={() => setDrillState({ key: interactionKey, paths, armed: armed === visual.id ? undefined : visual.id })}>Drill down</button>
                     {armed === visual.id && <span role="status">Select a category or data row to drill.</span>}
                   </nav>}
-                  visual={withActionFilters(sheet, projected, selections, draft.calculatedFields, draft.dataset, menuSelections)} index={index} count={sheet.visuals.length} selected={visual.id === sheet.selectedId} filterProblem={sourceProblem ?? (draft.dataset && !client ? 'Local dataset needs its local API; no sample data is substituted.' : importedFilterProblem(draft, sheet, visual))} dispatch={dispatch} client={client} calculations={draft.calculatedFields} parameters={sheetParameters(draft)}
+                  visual={withActionFilters(sheet, projected, selections, draft.calculatedFields, draft.dataset, menuSelections)} index={index} count={sheet.visuals.length} selected={visual.id === sheet.selectedId} filterProblem={unresolvedFieldMessage(unresolved.filter(d => d.sheetId === sheet.id && d.visualId === visual.id)) ?? sourceProblem ?? (draft.dataset && !client ? 'Local dataset needs its local API; no sample data is substituted.' : importedFilterProblem(draft, sheet, visual))} dispatch={dispatch} client={client} calculations={draft.calculatedFields} parameters={sheetParameters(draft)}
                     actionMenu={cardMenuActions.length ? <VisualActionMenu items={cardMenuActions} selection={selections[visual.id]} onInvoke={action => runMenuAction(visual, action)} /> : undefined} />
                 </div>;
               })}

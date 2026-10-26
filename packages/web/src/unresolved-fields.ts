@@ -29,7 +29,12 @@ function fieldChecker(calculations: readonly CalculatedField[], dataset: AuthorD
     // A retained expression can become ill-typed after a column type changes.
     // Structural expression checks still run in validateDraft with unknown bindings.
     if (!problems.length) {
-      try { calculationInfo(name, calculations, dataset); }
+      try {
+        const info = calculationInfo(name, calculations, dataset);
+        if (calculations.find(c => c.name === name)?.role === 'measure' && !['number', 'unknown'].includes(info.scalarType)) {
+          problems.push(...refs.map(fieldName => ({ fieldName, calculation: name, reason: 'role changed' as const })));
+        }
+      }
       catch { problems.push(...refs.map(fieldName => ({ fieldName, calculation: name, reason: 'role changed' as const }))); }
     }
     cache.set(name, problems); return problems;

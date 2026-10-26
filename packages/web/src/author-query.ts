@@ -1,3 +1,4 @@
+import { unresolvedVisualFieldDiagnostics } from './unresolved-fields.js';
 import { declaration, type AuthorParameter } from './parameters.js';
 import type { AuthorControl } from './controls.js';
 import { authorVisualProblem, noDimensions, visualDimensions, dataFields, type AuthorDataset, type CalculatedField, type AuthorVisual } from './authoring.js';
@@ -10,7 +11,7 @@ export type QueryClient = Pick<ReturnType<typeof createApiClient>, 'queryDataset
 export interface AuthorRows { rows: Row[] | null; message?: string }
 
 export function buildAuthorQuery(visual: AuthorVisual, calculations: readonly CalculatedField[] = [], parameters: readonly AuthorParameter[] = [], dataset?: AuthorDataset): QueryRequest | null {
-  if (authorVisualProblem(visual)) return null;
+  if (authorVisualProblem(visual) || unresolvedVisualFieldDiagnostics(visual, calculations, dataset, parameters).length) return null;
   const dimensions = visualDimensions(visual);
   if (!visual.measures.length || (!noDimensions(visual.kind) && !dimensions.length)) return null;
   // Faceted small multiples group by (dimension, facet): the query groups at
