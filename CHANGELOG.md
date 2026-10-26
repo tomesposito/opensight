@@ -49,6 +49,10 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
+- Explicit workspace startup now budgets from invocation entry so combined
+  ingress/runtime cold starts can leave time for database wake-up; exhausted
+  startup deadlines return retryable `WORKSPACE_STARTING` within the existing
+  bounds (#148).
 - Storage recovery now delivers cleanup continuations through acknowledged
   SQS/Scheduler transport before marking them dispatched, rejects invalid
   dispatch configuration before opening the database, and retries failed

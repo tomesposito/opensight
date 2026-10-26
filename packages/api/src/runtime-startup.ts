@@ -53,7 +53,7 @@ export function validateStartup(request: RuntimeRequest): void {
 }
 export function startupFailure(error: unknown): RuntimeResponse {
   const code = error && typeof error === 'object' && 'code' in error ? String(error.code) : '';
-  const starting = ['SQL_CONNECT_TIMEOUT', 'ETIMEDOUT', 'ECONNRESET', '57P03', '53300'].includes(code);
+  const starting = ['INVOCATION_DEADLINE_EXCEEDED', 'SQL_CONNECT_TIMEOUT', 'ETIMEDOUT', 'ECONNRESET', '57P03', '53300'].includes(code);
   const maintenance = ['WORKSPACE_MAINTENANCE', '42P01', '42703'].includes(code);
   const result = runtimeError(new MetadataError(starting ? 'WORKSPACE_STARTING' : maintenance ? 'WORKSPACE_MAINTENANCE' : 'WORKSPACE_UNAVAILABLE', 503));
   if (starting) result.headers['retry-after'] = '5';
