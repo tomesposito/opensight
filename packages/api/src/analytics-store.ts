@@ -32,6 +32,17 @@ export class AnalyticsStore {
   async enabled(scope: Scope, fallback: boolean): Promise<boolean> {
     return this.db.transaction(async c => { await this.scope(c, scope); return (await this.overrideIn(c, scope)) ?? fallback; }, scope);
   }
+  async setting(scope: Scope): Promise<boolean | undefined> {
+    return this.db.transaction(async c => { await this.scope(c, scope); return this.overrideIn(c, scope); }, scope);
+  }
+  async setEnabled(scope: Scope, enabled: boolean): Promise<void> {
+    if (typeof enabled !== 'boolean') throw new MetadataError('ANALYTICS_SETTINGS_INVALID', 400);
+    await this.db.transaction(async c => {
+      await this.scope(c, scope);
+      await c.query(`INSERT INTO analytics_settings VALUES (?,?,?) ON CONFLICT (tenant_id)
+        DO UPDATE SET enabled = excluded.enabled`, [scope.tenantId, scope.namespaceId, enabled ? 1 : 0]);
+    }, scope);
+  }
   /** Trusted server writes only; request bodies cannot choose a scope or an event. */
   async append(row: AnalyticsRow, fallback: boolean): Promise<boolean> {
     const event = validateAnalyticsEvent({ name: row.name, props: row.props });

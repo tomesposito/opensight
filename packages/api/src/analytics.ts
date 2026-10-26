@@ -1,3 +1,4 @@
+import { MetadataError } from './metadata-db.js';
 import { randomUUID } from 'node:crypto';
 import type { Scope } from './metadata-resources.js';
 import type { AnalyticsStore } from './analytics-store.js';
@@ -58,14 +59,26 @@ export class Analytics {
     this.defaultEnabled = options.enabled === true;
     this.configured = !!store && !!options.vendorKey?.trim() && !!analyticsHost(options.vendorHost);
   }
+  private resolveScope(scope: Scope): Scope {
+    const resolved = this.options.localScopes ? this.options.localScopes.get(scope.namespaceId) : scope;
+    if (!resolved) throw new MetadataError('TENANT_UNAVAILABLE', 403);
+    return resolved;
+  }
+  async settings(scope: Scope) {
+    const override = await this.store?.setting(this.resolveScope(scope));
+    return { enabled: this.configured && (override ?? this.defaultEnabled), override: override ?? null, defaultEnabled: this.defaultEnabled, configured: this.configured };
+  }
+  async setEnabled(scope: Scope, enabled: boolean): Promise<void> {
+    if (!this.store) throw new MetadataError('ANALYTICS_STORE_UNAVAILABLE', 503);
+    await this.store.setEnabled(this.resolveScope(scope), enabled);
+  }
   track(scope: Scope, event: AnalyticsEvent): void {
     try {
       if (this.closed || !this.configured) return;
       const checked = validateAnalyticsEvent(event);
       if (!checked) { this.stats.invalid++; return; }
       if (this.queue.length >= (this.options.maxBuffered ?? 256)) { this.stats.dropped++; return; }
-      const trusted = this.options.localScopes ? this.options.localScopes.get(scope.namespaceId) : scope;
-      if (!trusted) { this.stats.dropped++; return; }
+      const trusted = this.resolveScope(scope);
       this.queue.push({ scope: { tenantId: trusted.tenantId, namespaceId: trusted.namespaceId }, event: checked, id: randomUUID(), createdAt: new Date().toISOString() });
       this.start();
     } catch { this.stats.invalid++; }

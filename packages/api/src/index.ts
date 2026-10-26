@@ -1,3 +1,4 @@
+import { analyticsSettingsRoute } from './analytics-settings.js';
 import { localAnalytics } from './analytics-local.js';
 import type { Analytics } from './analytics.js';
 import { LocalAssets } from './local-assets.js';
@@ -195,6 +196,10 @@ export async function createApiServer(options: ApiOptions): Promise<Server> {
       if (path.startsWith('/api/invitations')) {
         if (!security || !identity) throw new SecurityError(503, 'SECURITY_NOT_CONFIGURED', 'Hosted authentication required');
         if (await invitationRoute(request, response, path, query, identity, security)) return;
+      }
+      if (path === '/api/admin/analytics') {
+        if (!security || !identity) throw new SecurityError(503, 'SECURITY_NOT_CONFIGURED', 'Hosted administrator access required');
+        if (await analyticsSettingsRoute(request, response, path, query, analytics, { tenantId: identity.namespaceId, namespaceId: identity.namespaceId }, async () => { security.admin(identity); })) return;
       }
       if (path.startsWith('/api/admin/ai')) {
         if (!security || !identity) throw new SecurityError(503, 'SECURITY_NOT_CONFIGURED', 'Hosted authentication required');

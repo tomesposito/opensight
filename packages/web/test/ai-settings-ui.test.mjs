@@ -22,7 +22,7 @@ test('settings page gates all non-admin roles and static demo before fetching co
 test('admin settings save provider/model, clear key entry, test connection and show Bedrock approval state', async t => {
   const before = globalThis.IS_REACT_ACT_ENVIRONMENT; globalThis.IS_REACT_ACT_ENVIRONMENT = true;
   let renderer, config = initial; const calls = [];
-  const client = { async getAIConfig() { return config; }, async saveAIConfig(value) { calls.push(value); return config = { ...config, ...value }; }, async saveAIKey(key) { calls.push({ key }); return config = { ...config, hasKey: true, configured: true, state: 'configured' }; }, async testAIConnection() { calls.push('test'); } };
+  const client = { async getAnalyticsConfig() { return { enabled: false, override: null, defaultEnabled: false, configured: false }; }, async getAIConfig() { return config; }, async saveAIConfig(value) { calls.push(value); return config = { ...config, ...value }; }, async saveAIKey(key) { calls.push({ key }); return config = { ...config, hasKey: true, configured: true, state: 'configured' }; }, async testAIConnection() { calls.push('test'); } };
   await act(() => { renderer = create(createElement(AccessProvider, { access: access('administrator') }, createElement(AISettings, { client }))); });
   t.after(async () => { await act(() => renderer.unmount()); globalThis.IS_REACT_ACT_ENVIRONMENT = before; });
   await act(() => renderer.root.findAllByType('input').find(i => i.props.maxLength === 256).props.onChange({ target: { value: 'selected-model' } }));
@@ -45,4 +45,17 @@ test('client sends keys only to the write-only route and surfaces named failures
   assert.equal(calls[0].url, '/mount/api/admin/ai/key');
   assert.equal(calls[0].init.method, 'POST'); assert.equal(calls[0].init.credentials, 'same-origin');
   assert.deepEqual(JSON.parse(calls[0].init.body), { key: 'synthetic-ui-secret' });
+});
+test('analytics toggle loads the server preference and saves the off switch; failures stay visible', async t => {
+  const before = globalThis.IS_REACT_ACT_ENVIRONMENT; globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+  let renderer; const saved = [];
+  const client = { async getAIConfig() { return initial; }, async getAnalyticsConfig() { return { enabled: true, override: null, defaultEnabled: true, configured: true }; },
+    async saveAnalyticsConfig(enabled) { saved.push(enabled); if (enabled) throw Error('Save failed'); return { enabled, override: enabled, defaultEnabled: true, configured: true }; } };
+  await act(() => { renderer = create(createElement(AccessProvider, { access: access('administrator') }, createElement(AISettings, { client }))); });
+  t.after(async () => { await act(() => renderer.unmount()); globalThis.IS_REACT_ACT_ENVIRONMENT = before; });
+  assert.equal(renderer.root.findByProps({ type: 'checkbox' }).props.checked, true);
+  await act(() => renderer.root.findByProps({ type: 'checkbox' }).props.onChange({ target: { checked: false } }));
+  assert.deepEqual(saved, [false]); assert.equal(renderer.root.findByProps({ type: 'checkbox' }).props.checked, false);
+  await act(() => renderer.root.findByProps({ type: 'checkbox' }).props.onChange({ target: { checked: true } }));
+  assert.match(JSON.stringify(renderer.toJSON()), /Save failed/); assert.equal(renderer.root.findByProps({ type: 'checkbox' }).props.checked, false);
 });

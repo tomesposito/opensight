@@ -1,3 +1,4 @@
+import { analyticsSettingsRoute } from './analytics-settings.js';
 import { Analytics, analyticsFromEnvironment } from './analytics.js';
 import { AnalyticsStore, initializeAnalytics } from './analytics-store.js';
 import { EmbedSessions, embedSessionKey } from './embed-sessions.js';
@@ -278,6 +279,10 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
       const context = await metadata.authenticate(request, verified);
       path = scopePath(path, context);
       await usage?.consume(metadata, context, 'apiCalls');
+      if (await analyticsSettingsRoute(request, response, path, '', analytics, context, async () => {
+        const user = await metadata.get(context, { kind: 'user', id: context.userId });
+        if (!hasCapability(user.body.role as Parameters<typeof hasCapability>[0], 'admin')) throw new MetadataError('SECURITY_ADMIN_REQUIRED', 403);
+      })) return;
       if (path === '/api/session') {
         method(request, response, ['GET']);
         const user = await metadata.get(context, { kind: 'user', id: context.userId });
