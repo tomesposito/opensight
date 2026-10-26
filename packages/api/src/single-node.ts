@@ -1,3 +1,4 @@
+import { initializeAnalytics } from './analytics-store.js';
 import { Pool, type PoolClient } from 'pg';
 import { MetadataError, PostgresMetadataDatabase, type Database } from './metadata-db.js';
 import { initializeMetadata, metadataTables } from './metadata-schema.js';
@@ -14,7 +15,7 @@ export async function migrateReference(db: Database, env: NodeJS.ProcessEnv, dia
   if (env.OPENSIGHT_MAINTENANCE !== 'frozen') throw new MetadataError('REFERENCE_MAINTENANCE_REQUIRED', 503);
   referenceConfig(env);
   await initializeMetadata(db, dialect); await initializeAuth(db); await initializeEmbedding(db); await initializeEmbedSessions(db);
-  await migrateBudgets(db, budgetEnvironment(env), 'frozen'); await initializeUsage(db);
+  await migrateBudgets(db, budgetEnvironment(env), 'frozen'); await initializeUsage(db); await initializeAnalytics(db);
   await db.transaction(c => appendOperatorAudit(c, { action: 'reference.migrated' }));
 }
 /** Shared lifetime lock prevents a second scheduler, maintenance while serving,
