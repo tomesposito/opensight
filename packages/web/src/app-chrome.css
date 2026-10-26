@@ -116,7 +116,7 @@
 .product-header .account-menu .account-panel button:hover:not(:disabled) { background: #126e76; }
 .app-shell > .section-nav, .app-shell > .admin-navigation .section-nav { padding: 0 32px; gap: 8px 24px; }
 .app-shell > .section-nav a, .app-shell > .admin-navigation .section-nav a { padding: 8px 0; font-size: 12px; }
-.app-shell > main { width: 100%; padding: 32px; min-width: 0; }
+.app-shell > main { width: 100%; padding: 32px; min-width: 0; container: dashboard-content / inline-size; }
 .route-notice { max-width: 560px; margin: 64px auto; padding: 40px 24px; text-align: center; border: 1px solid #d1e0e5; border-radius: 8px; background: #fff; }
 .route-notice > span[aria-hidden="true"] { display: block; font-size: 30px; color: #548599; margin-bottom: 12px; }
 .route-notice p { margin: 0; color: #365764; font-size: 14px; }
