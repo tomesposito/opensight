@@ -74,19 +74,46 @@ compute or network waits. Startup makes one connection attempt per role, in
 parallel, and immediately uses those connections for readiness. There is no
 retry loop, idle SQL pool, TCP keep-alive or database heartbeat.
 
-The deadline is `min(trusted request timestamp + 25s, remaining Lambda time - 3s)`.
-Business work stops three seconds before that deadline. Startup connect attempts
-are at most 18s; ordinary connects are at most 3s. Readiness statements have a 2s
-total budget after connecting. Statements are limited to 2s, locks to 500ms,
-idle transactions to 3s, and idle sessions to 5s. Private invocations have an
-additional 110s maximum application budget, bounded by platform remaining time.
+Ordinary requests use the trusted gateway request timestamp as their deadline
+anchor. Only the explicit empty startup operation anchors at invocation entry,
+so ingress authorizer and request-runtime initialization do not consume its
+application budget (#148). In both cases the deadline is
+`min(anchor + 25s, current time + remaining Lambda time - 3s)`.
+Business work stops three seconds before that deadline, reserving cleanup time.
+Startup connect attempts are at most 18s; ordinary connects are at most 3s.
+Readiness statements have a 2s total budget after connecting. Statements are
+limited to 2s, locks to 500ms, idle transactions to 3s, and idle sessions to 5s.
+Private invocations have an additional 110s maximum application budget, bounded
+by platform remaining time. The authorizer's own 8s deadline is unchanged.
 
 `POST /api/api/startup` accepts only an empty JSON object, without authentication
 credentials, at most 1 KiB. It checks schema/protocol compatibility, maintenance,
 restricted-role safety and RLS without DDL, key activation, tenant enumeration or
 job recovery. It returns `ready`, `WORKSPACE_STARTING` (`Retry-After: 5`),
-`WORKSPACE_UNAVAILABLE`, or `WORKSPACE_MAINTENANCE`. Only recognized transient
-connection failures produce STARTING. Diagnostics are never returned.
+`WORKSPACE_UNAVAILABLE`, or `WORKSPACE_MAINTENANCE`. Recognized transient connection
+failures and `INVOCATION_DEADLINE_EXCEEDED` produce STARTING. Schema/maintenance
+failures remain MAINTENANCE; authentication, configuration, permission and unknown
+failures remain UNAVAILABLE. Error bodies contain exactly `{errorCode}`; messages
+and internal diagnostics are never returned.
+Readiness timeout cancellation can surface the outer scope's
+`INVOCATION_DEADLINE_EXCEEDED`, which also becomes STARTING; a directly reported
+`SQL_STATEMENT_TIMEOUT` remains UNAVAILABLE. The readiness budget stays 2s.
+
+The #148 fake-time regression reproduces 14s of ingress/init lag followed by a
+9s connection wake. With 28s remaining at Lambda entry, the old gateway anchor
+left only 8s for work and converted deadline exhaustion to UNAVAILABLE. Startup
+now completes read-only readiness after the 9s wake. If only 12s remain at entry,
+work is cancelled after 6s, resources close, and the response is STARTING with
+`Retry-After: 5`, never ready. A longer Lambda duration still cannot exceed the
+25s application deadline. These are deterministic local tests, not live Aurora
+timing measurements.
+
+Startup is credential-free, read-only and idempotent, so completion after a
+gateway timeout cannot replay a mutation. Explicit startup callers retain their
+finite retry policies: the browser permits six attempts for STARTING/429, while
+deployment smoke also recognizes the exact generic gateway failures recorded in
+[D-81](itd/D-81-startup-readiness.md). There is no new retry of ordinary requests,
+background polling, provisioned concurrency or change to database auto-pause.
 
 Every invocation scope tracks SQL sockets from construction (including pending
 connects), late promises, workers, timers and private temporary files. Cancellation
@@ -97,6 +124,8 @@ local scopes. Cleanup has a three-second maximum, with a force phase halfway
 through the remaining budget. Failed/unprovable cleanup returns
 `INVOCATION_CLEANUP_FAILED` and quarantines the process; subsequent invocations
 return `RUNTIME_QUARANTINED`. It is never treated as a healthy warm runtime.
+Both cleanup codes take precedence over startup classification and are returned
+directly without `Retry-After`, including when cleanup follows deadline exhaustion.
 Platform hard kill cannot execute `finally`; server timeouts and SR2 durable
 claims/quarantine remain necessary.
 
