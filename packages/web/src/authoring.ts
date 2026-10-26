@@ -268,21 +268,21 @@ export function tooltipPatchValid(patch: unknown): patch is Partial<Pick<AuthorV
 }
 
 /** Use the execution parser and retain expression text byte for byte. Persistence
- * may defer dataset column types after replacement; calculation roles, literal
- * types, syntax and function restrictions still undergo the same validation. */
-export function expressionError(expression: string, existing: readonly DataField[] = [], deferDatasetTypes?: AuthorDataset): string | undefined {
+ * may defer schema-dependent field types after replacement; literal types,
+ * syntax and function restrictions still undergo the same validation. */
+export function expressionError(expression: string, existing: readonly DataField[] = [], deferredFields: readonly string[] = []): string | undefined {
   try { parseExpression(expression, '$.expression', { validationOnly: true, bind: name => {
     const field = existing.find(f => f.name === name);
-    return { scalarType: deferDatasetTypes?.columns.some(c => c.name === name) || !field ? 'unknown' : field.type === 'DATETIME' ? 'datetime' : field.type === 'STRING' ? 'string' : 'number', nullable: true };
+    return { scalarType: deferredFields.includes(name) || !field ? 'unknown' : field.type === 'DATETIME' ? 'datetime' : field.type === 'STRING' ? 'string' : 'number', nullable: true };
   } }); } catch (e) { return (e instanceof Error ? e.message : String(e)).replace(/^\$\.expression: /, ''); }
 }
-export function calculationError(field: CalculatedField, existing: readonly DataField[], deferDatasetTypes?: AuthorDataset): string | undefined {
+export function calculationError(field: CalculatedField, existing: readonly DataField[], deferredFields: readonly string[] = []): string | undefined {
   if (!/^[A-Za-z_][A-Za-z0-9_ ]{0,127}$/.test(field.name.trim())) return 'Use a field name starting with a letter or underscore (up to 128 characters).';
   if (existing.some(f => f.name.toLowerCase() === field.name.trim().toLowerCase())) return 'A field with that name already exists.';
   if (!field.expression.trim()) return 'Enter an expression.';
   if (field.expression.length > 10000 || /[;`\0]|--|\/\*|\*\/|=>|\b(?:eval|Function|fetch|require|import|exec|window|document|process|globalThis)\b/i.test(field.expression)) return 'Remove scripts, comments, or statement separators from the expression.';
   if (field.role !== 'dimension' && field.role !== 'measure') return 'Choose a field role.';
-  return expressionError(field.expression, existing, deferDatasetTypes);
+  return expressionError(field.expression, existing, deferredFields);
 }
 export type AuthorAction =
   | { type: 'object-add'; kind: 'text' }
@@ -1004,21 +1004,32 @@ export function validateDraft(value: unknown): asserts value is AuthorDraft {
   for (const item of value.calculatedFields) {
     if (!isObject(item) || !onlyKeys(item, ['name', 'expression', 'role']) || typeof item.name !== 'string' || typeof item.expression !== 'string' || (item.role !== 'dimension' && item.role !== 'measure')) return fail();
     const field: CalculatedField = { name: item.name, expression: item.expression, role: item.role };
-    if (field.name !== field.name.trim() || calculationError(field, dataFields(calculations, dataset), dataset)) return fail();
+    const existing = dataFields(calculations, dataset);
+    if (field.name !== field.name.trim() || calculationError(field, existing, unresolvedAllowed ? existing.map(f => f.name) : [])) return fail();
     calculations.push(field);
   }
   // Parse with unknown field types for dependency checks: missing names are not
   // syntax errors, but a cycle must never become a persistable calculation.
   const dependencies = new Map(calculations.map(c => [c.name, parseExpression(c.expression, '$.expression', { validationOnly: true }).dependencies]));
-  const visiting = new Set<string>(), visited = new Set<string>();
+  const visiting = new Set<string>(), visited = new Set<string>(), schemaDependent = new Set<string>();
   const visit = (name: string): void => {
     if (visiting.has(name)) fail();
     if (visited.has(name)) return;
     visiting.add(name);
     for (const dependency of dependencies.get(name) ?? []) if (dependencies.has(dependency)) visit(dependency);
+    if ((dependencies.get(name) ?? []).some(dependency => !dependencies.has(dependency) || schemaDependent.has(dependency))) schemaDependent.add(name);
     visiting.delete(name); visited.add(name);
   };
   calculations.forEach(c => visit(c.name));
+  if (dataset) {
+    // A type change also reaches calculations that use another calculation.
+    // Keep type-checking schema-independent expressions against the same prior
+    // declarations as before; only dataset-dependent types may remain unresolved.
+    const deferredFields = [...dataset.columns.map(c => c.name), ...schemaDependent];
+    for (const [index, field] of calculations.entries()) {
+      if (expressionError(field.expression, dataFields(calculations.slice(0, index), dataset), deferredFields)) return fail();
+    }
+  }
   const fields = dataFields(calculations, dataset), ids = new Set<string>(), sheetIds = new Set<string>();
   const origin = isObject(value.bundle) ? value.bundle.original as QsBundle : undefined;
   const originalSheets = (origin?.members ?? []).flatMap(({ resource }) => resource.resourceType === 'analysis' || resource.resourceType === 'dashboard' ? resource.definition.sheets ?? [] : []);

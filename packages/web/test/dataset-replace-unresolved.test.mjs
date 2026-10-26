@@ -86,6 +86,21 @@ test('role and type changes persist, are diagnosed, and clear when the schema is
   assert.deepEqual(unresolvedFieldDiagnostics(roundTrip(replace(changed, datasetA))), []);
 });
 
+test('dataset type changes propagate through dependent calculations without preventing persistence', () => {
+  const draft = replace(emptyDraft(), datasetA);
+  draft.calculatedFields = [
+    { name: 'First', expression: '{revenue}', role: 'measure' },
+    { name: 'Second', expression: '{First} + 1', role: 'measure' },
+  ];
+  validateDraft(draft);
+  const changed = replace(draft, { ...datasetA, columns: datasetA.columns.map(c => c.name === 'revenue' ? { ...c, type: 'DATETIME' } : c) });
+  roundTrip(changed);
+  const diagnostics = unresolvedFieldDiagnostics(changed);
+  for (const calculation of ['First', 'Second']) assert.ok(diagnostics.some(d => d.calculation === calculation && d.reason === 'role changed'));
+  assert.throws(() => serializeDraft(changed), /UNRESOLVED_FIELDS:.*revenue/);
+  assert.deepEqual(unresolvedFieldDiagnostics(replace(changed, datasetA)), []);
+});
+
 test('undo restores the saved dataset and clean snapshot; replace-back repairs and persists', () => {
   const draft = original(), saved = JSON.stringify(draft);
   const replaced = authorHistoryReducer(createAuthorHistory(draft), { type: 'dataset', dataset: datasetB });
