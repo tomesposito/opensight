@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { generativeInstructions, redactPII } from '../dist/ai-guard.js';
+import { generativeInstructions, hasFieldNamePII, redactPII } from '../dist/ai-guard.js';
 
 test('redactPII replaces common PII formats with [redacted]', () => {
   const cases = [
@@ -23,6 +23,37 @@ test('redactPII leaves ordinary analytical questions intact', () => {
     'avg discount by segment per month',
   ];
   for (const q of questions) assert.equal(redactPII(q), q, q);
+});
+
+for (const [pattern, name] of [
+  ['email', 'revenue for test.person@example.com'],
+  ['SSN', 'SSN 123-45-6789'],
+  ['phone', 'phone 555-123-4567'],
+  ['international phone', 'phone +1 (555) 123-4567'],
+  ['unseparated phone', 'phone 5551234567'],
+  ['payment card', 'card 4111-1111-1111-1111'],
+  ['unseparated payment card', 'card 4111111111111111'],
+  ['IPv4', 'traffic from 192.0.2.8'],
+]) {
+  test(`hasFieldNamePII detects ${pattern} without mutation or global-regex state leaks`, () => {
+    const fields = Object.freeze([Object.freeze({ name: 'revenue' }), Object.freeze({ name })]);
+    for (let i = 0; i < 3; i++) {
+      assert.equal(hasFieldNamePII(fields), true);
+      assert.notEqual(redactPII(name), name);
+      assert.equal(hasFieldNamePII(fields), true);
+      assert.equal(hasFieldNamePII([{ name: 'revenue' }]), false);
+    }
+    assert.deepEqual(fields, [{ name: 'revenue' }, { name }]);
+  });
+}
+
+test('hasFieldNamePII accepts empty lists and ordinary analytical names unchanged', () => {
+  const names = ['Margin', 'Gross revenue', 'revenue 2024', 'Say "hello", it\'s revenue'];
+  const fields = Object.freeze(names.map(name => Object.freeze({ name })));
+  assert.equal(hasFieldNamePII([]), false);
+  for (const field of fields) assert.equal(hasFieldNamePII([field]), false, field.name);
+  assert.equal(hasFieldNamePII(fields), false);
+  assert.deepEqual(fields.map(field => field.name), names);
 });
 
 test('generative instructions pin untrusted content as data and forbid instruction leakage', () => {

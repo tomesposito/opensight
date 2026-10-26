@@ -1,10 +1,115 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
+import { readFile, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { Analytics } from '../dist/analytics.js';
+import { dashboardRoot } from './automation-helpers.mjs';
 import { organizationApi } from './organization-helpers.mjs';
 const route = '/api/o/generate';
 const response = text => Response.json({ output: [{ type: 'message', content: [{ type: 'output_text', text: typeof text === 'string' ? text : JSON.stringify(text) }] }] });
 const options = fetcher => ({ bootstrap: { provider: 'openai', model: 'test-model', key: randomBytes(20).toString('hex') }, fetcher });
+const sensitiveNames = [
+  ['email', 'revenue for test.person@example.com'],
+  ['SSN', 'SSN 123-45-6789'],
+  ['phone', 'phone 555-123-4567'],
+  ['international phone', 'phone +1 (555) 123-4567'],
+  ['unseparated phone', 'phone 5551234567'],
+  ['payment card', 'card 4111-1111-1111-1111'],
+  ['unseparated payment card', 'card 4111111111111111'],
+  ['IPv4', 'traffic from 192.0.2.8'],
+];
+
+// Exercise the real metadata loader with a private copy of the physical schema.
+async function physicalFieldRoot(t, name) {
+  const dataRoot = await dashboardRoot(t);
+  const schemaPath = join(dataRoot, 'describe-data-set.response.json');
+  const schema = JSON.parse(await readFile(schemaPath, 'utf8'));
+  for (const columns of [schema.DataSet.PhysicalTableMap.sales.RelationalTable.InputColumns, schema.DataSet.OutputColumns]) {
+    columns.find(column => column.Name === 'category').Name = name;
+  }
+  await writeFile(schemaPath, JSON.stringify(schema));
+  const csvPath = join(dataRoot, 'sales.csv');
+  const csv = await readFile(csvPath, 'utf8');
+  await writeFile(csvPath, csv.replace(',category,', `,${name},`));
+  return dataRoot;
+}
+
+function assertFieldNamePII(result, name) {
+  assert.equal(result.status, 400, JSON.stringify(result.body));
+  assert.equal(result.body.errorCode, 'AI_FIELD_NAME_PII');
+  assert.match(result.body.Message, /field name matches a sensitive-data pattern/i);
+  assert.match(result.body.Message, /rename the field/i);
+  // Check the sensitive value as well as the full field name.
+  assert.equal(JSON.stringify(result.body).includes(name), false);
+  assert.equal(JSON.stringify(result.body).includes(name.split(' ').at(-1)), false);
+}
+
+for (const endpoint of [route, '/api/o/calculation']) {
+  const suggestion = { name: 'Suggested revenue', expression: '{revenue} * 2', role: 'measure', explanation: 'Double revenue.' };
+  const answer = endpoint === route ? { question: 'sum revenue' } : suggestion;
+  for (const [pattern, name] of sensitiveNames) {
+    test(`${endpoint} blocks ${pattern} in a calculated field before provider transport or analytics`, async t => {
+      const calls = [];
+      const analytics = new Analytics();
+      const track = t.mock.method(analytics, 'track');
+      const { api } = await organizationApi(t, { analytics, ai: options(async (_url, init) => { calls.push(JSON.parse(init.body)); return response(answer); }) });
+      // Repeated requests also exercise the shared recognizers' global-regex state.
+      for (let i = 0; i < 2; i++) {
+        assertFieldNamePII(await api(endpoint, 'POST', { question: 'sum revenue', calculatedFields: [{ name, expression: '{revenue}', role: 'measure' }] }), name);
+        assert.equal(calls.length, 0);
+        assert.equal(track.mock.callCount(), 0);
+      }
+    });
+
+    test(`${endpoint} blocks ${pattern} in a physical column before provider transport or analytics`, async t => {
+      const calls = [];
+      const analytics = new Analytics();
+      const track = t.mock.method(analytics, 'track');
+      const dataRoot = await physicalFieldRoot(t, name);
+      const { api } = await organizationApi(t, { dataRoot, analytics, ai: options(async (_url, init) => { calls.push(JSON.parse(init.body)); return response(answer); }) });
+      assertFieldNamePII(await api(endpoint, 'POST', { question: 'sum revenue' }), name);
+      assert.equal(calls.length, 0);
+      assert.equal(track.mock.callCount(), 0);
+    });
+  }
+
+  test(`${endpoint} preserves ordinary calculated names end-to-end`, async t => {
+    const calls = [];
+    let providerAnswer = answer;
+    const { api } = await organizationApi(t, { ai: options(async (_url, init) => { calls.push(JSON.parse(init.body)); return response(providerAnswer); }) });
+    const names = ['Margin', 'Gross revenue', 'revenue 2024', 'Say "hello", it\'s revenue'];
+    for (const [i, name] of names.entries()) {
+      if (endpoint !== route) providerAnswer = { ...suggestion, expression: `{${name}} * 2` };
+      const result = await api(endpoint, 'POST', { question: 'sum revenue', calculatedFields: [{ name, expression: '{revenue}', role: 'measure' }] });
+      assert.equal(result.status, 200, JSON.stringify(result.body));
+      assert.equal(calls.length, i + 1);
+      const prompt = JSON.parse(calls[i].input);
+      assert.deepEqual(prompt.fields.find(field => field.name === name), { name, type: 'DECIMAL' });
+      if (endpoint === route) assert.equal(result.body.interpretations[0].measure, 'revenue');
+      else assert.deepEqual(result.body.suggestion, providerAnswer);
+    }
+  });
+
+  test(`${endpoint} excludes a CLS-denied sensitive physical name without blocking permitted fields`, async t => {
+    const name = sensitiveNames[0][1];
+    const calls = [];
+    const dataRoot = await physicalFieldRoot(t, name);
+    const { api } = await organizationApi(t, { dataRoot, ai: options(async (_url, init) => { calls.push(JSON.parse(init.body)); return response(answer); }) });
+    assert.equal((await api('/api/users/alice', 'PUT', { name: 'Alice', role: 'author_ai' })).status, 200);
+    assertFieldNamePII(await api(endpoint, 'POST', { question: 'sum revenue' }, 'default-alice'), name);
+    assert.equal(calls.length, 0);
+    assert.equal((await api('/api/datasets/sales/column-grants/sensitive', 'PUT', { column: name, effect: 'deny', principals: [{ type: 'user', id: 'alice' }] })).status, 200);
+    const result = await api(endpoint, 'POST', { question: 'sum revenue' }, 'default-alice');
+    assert.equal(result.status, 200, JSON.stringify(result.body));
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].input.includes(name), false);
+    assert.ok(JSON.parse(calls[0].input).fields.some(field => field.name === 'revenue'));
+    const bypass = await api(endpoint, 'POST', { question: 'sum revenue', calculatedFields: [{ name: 'leak', expression: `{${name}}`, role: 'dimension' }] }, 'default-alice');
+    assert.equal(bypass.body.errorCode, 'COLUMN_ACCESS_DENIED');
+    assert.equal(calls.length, 1);
+  });
+}
 
 test('generative O uses registered capabilities, server metadata and namespace-scoped dashboard access', async t => {
   const calls = [];
