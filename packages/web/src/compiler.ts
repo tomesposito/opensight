@@ -694,8 +694,8 @@ export function compileVisual(input: Input): CompiledVisual {
         };
       });
       const panels = shown.map(group => panelParts(group.rows));
-      option.xAxis = panels.map((panel, i) => ({ ...panel.category, gridIndex: i }));
-      option.yAxis = panels.map((panel, i) => ({ ...panel.value, gridIndex: i }));
+      option.xAxis = panels.map((panel, i) => ({ ...(model.horizontal ? panel.value : panel.category), gridIndex: i }));
+      option.yAxis = panels.map((panel, i) => ({ ...(model.horizontal ? panel.category : panel.value), gridIndex: i }));
       option.series = panels.flatMap((panel, i) => panel.series.map(s => ({ ...s, xAxisIndex: i, yAxisIndex: i })));
       option.title = facetTitles(shown, opts, cols, cellH, topPad, theme, displayCell);
       facetSeriesMap = shown.flatMap(group => model.measures.map((_, measureIndex) => ({ rows: group.rows, measureIndex })));

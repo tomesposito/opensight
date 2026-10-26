@@ -95,6 +95,58 @@ test('faceted bar renders one panel per facet with titles and a single shared le
   assert.deepEqual(c.option.xAxis[0].data, ['East', 'West']);
 });
 
+for (const orientation of ['VERTICAL', 'HORIZONTAL']) {
+  test(`${orientation.toLowerCase()} faceted bar preserves each panel's axes and category order`, () => {
+    const input = facetedBar([
+      { category: 'Hardware', region: 'West', revenue: 200 },
+      { category: 'Software', region: 'North', revenue: 100 },
+      { category: 'Hardware', region: 'East', revenue: 50 },
+      { category: 'Software', region: 'South', revenue: 300 },
+      { category: 'Software', region: 'Central', revenue: 150 },
+    ]);
+    input.definition.BarChartVisual.ChartConfiguration.Orientation = orientation;
+    const { model, option } = compileVisual(input);
+    const horizontal = orientation === 'HORIZONTAL';
+    assert.equal(model.horizontal, horizontal);
+    assert.equal(option.grid.length, 2);
+    assert.equal(option.xAxis.length, 2);
+    assert.equal(option.yAxis.length, 2);
+    assert.deepEqual(option.title.map(t => t.text), ['Hardware', 'Software']);
+    const categories = [['West', 'East'], ['North', 'South', 'Central']];
+    for (let i = 0; i < categories.length; i++) {
+      assert.equal(option.xAxis[i].type, horizontal ? 'value' : 'category');
+      assert.equal(option.yAxis[i].type, horizontal ? 'category' : 'value');
+      assert.equal(option.xAxis[i].gridIndex, i);
+      assert.equal(option.yAxis[i].gridIndex, i);
+      const categoryAxis = horizontal ? option.yAxis[i] : option.xAxis[i];
+      assert.deepEqual(categoryAxis.data, categories[i]);
+      assert.equal(categoryAxis.inverse, horizontal ? true : undefined);
+    }
+    assert.deepEqual(option.series.map(s => [s.xAxisIndex, s.yAxisIndex]), [[0, 0], [1, 1]]);
+    assert.deepEqual(option.series.map(s => s.data), [[200, 50], [100, 300, 150]]);
+  });
+}
+
+test('horizontal faceted bar reference lines use each panel\'s value xAxis', () => {
+  const input = facetedBar(rows);
+  input.definition.BarChartVisual.ChartConfiguration.Orientation = 'HORIZONTAL';
+  input.definition.BarChartVisual.OpenSightReferenceLines = [
+    { value: 75, label: 'Minimum', color: '#c0392b' },
+    { value: 150, label: 'Goal', color: '#157f88' },
+  ];
+  const { option } = compileVisual(input);
+  assert.equal(option.xAxis.length, 2);
+  assert.ok(option.xAxis.every(axis => axis.type === 'value'));
+  assert.deepEqual(option.series.map(s => [s.xAxisIndex, s.yAxisIndex]), [[0, 0], [1, 1]]);
+  for (const series of option.series) {
+    assert.equal(option.xAxis[series.xAxisIndex].type, 'value');
+    assert.deepEqual(series.markLine.data, [
+      { name: 'Minimum', xAxis: 75, label: { color: '#c0392b' }, lineStyle: { color: '#c0392b' } },
+      { name: 'Goal', xAxis: 150, label: { color: '#157f88' }, lineStyle: { color: '#157f88' } },
+    ]);
+  }
+});
+
 test('faceted line renders one line series per facet', () => {
   const c = compileVisual(facetedLine(lineRows));
   assert.equal(c.state, 'ready');
@@ -139,6 +191,25 @@ test('faceted bar100 normalizes to percent per facet', () => {
   assert.deepEqual(c.option.series[1].data.map(n => Math.round(n)), [75, 67]);
   assert.deepEqual(c.option.series[2].data.map(n => Math.round(n)), [83, 75]);
   assert.deepEqual(c.option.series[3].data.map(n => Math.round(n)), [17, 25]);
+});
+
+test('horizontal faceted bar100 keeps percent xAxes and category yAxes', () => {
+  const input = extraInput('bar100', extraRows);
+  input.definition.barChartVisual.chartConfiguration.orientation = 'HORIZONTAL';
+  const { option } = compileVisual(input);
+  assert.equal(option.xAxis.length, 2);
+  assert.equal(option.yAxis.length, 2);
+  for (let i = 0; i < 2; i++) {
+    assert.equal(option.xAxis[i].type, 'value');
+    assert.equal(option.xAxis[i].min, 0);
+    assert.equal(option.xAxis[i].max, 100);
+    assert.equal(option.xAxis[i].gridIndex, i);
+    assert.equal(option.yAxis[i].type, 'category');
+    assert.deepEqual(option.yAxis[i].data, ['A', 'B']);
+    assert.equal(option.yAxis[i].inverse, true);
+    assert.equal(option.yAxis[i].gridIndex, i);
+  }
+  assert.deepEqual(option.series.map(s => [s.xAxisIndex, s.yAxisIndex]), [[0, 0], [0, 0], [1, 1], [1, 1]]);
 });
 
 test('faceted bar renders to SVG without NaN/overflow', () => {

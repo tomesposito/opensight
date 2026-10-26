@@ -44,6 +44,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
+- Horizontal bar charts keep their orientation in every small-multiples panel,
+  with categories on the y-axis and reference lines on the value x-axis (#127).
 - Pie slice limits now fold a retained category named "Other" into the Other
   bucket per facet, preserving totals and a single slice, tooltip and data-table
   row; genuinely duplicated source categories still fail validation (#126).

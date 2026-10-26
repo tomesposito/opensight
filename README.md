@@ -8,11 +8,11 @@ bidirectional asset compatibility — connect data, prepare datasets, build
 analyses and dashboards, and ask questions in natural language. Self-hosted;
 no AWS required.
 
-![OpenSight tour: Home, O answer, Author, Edit menu, Analysis Settings, command palette, and data tools](docs/images/opensight-tour.gif)
+![OpenSight tour: dashboard, O answer, horizontal small-multiples authoring, and data tools](docs/images/opensight-tour.gif)
 
-*Above: the offline demo — a dashboard, O answering "revenue by region" and
-adding the chart to an analysis, saved drafts, data preparation, connectors,
-and administration.*
+*Above: the offline demo — a dashboard, O answering "sum of revenue by region",
+horizontal small multiples with reference lines, data preparation, and data
+sources.*
 
 ## Run it
 
