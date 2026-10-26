@@ -530,6 +530,7 @@ function generatedFilters(sheet: AuthorSheet, visual: AuthorVisual, identifier: 
 
 export function exportBundle(draft: AuthorDraft): QsBundle {
   validateDraft(draft);
+  if (draft.noDataset) throw new Error('NO_DATASET: Select a dataset before exporting. Your draft can still save.');
   if (draft.sheets.some(s => s.visuals.some(v => v.smallMultiples?.length && !FACETED_KINDS.includes(v.kind)))) throw new Error('SMALL_MULTIPLES_UNSUPPORTED: Remove Small multiples fields before exporting; the draft retains them.');
   if (!draft.bundle) {
     const resource = serializeDraft(draft), bundle = { members: [{ path: `analysis/${resource.analysisId}.json`, resource }] };

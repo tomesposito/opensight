@@ -44,6 +44,9 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
+- Removing an analysis dataset now persists an explicit empty state, prevents
+  sample data from silently returning on the canvas or in Manage data, and
+  supports undo/redo and selecting data again (#129).
 - Dataset replacement now preserves saveable drafts with missing or incompatible
   fields, lists repair diagnostics, and names unresolved fields when export is
   blocked (#128).

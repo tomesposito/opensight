@@ -8,11 +8,10 @@ bidirectional asset compatibility — connect data, prepare datasets, build
 analyses and dashboards, and ask questions in natural language. Self-hosted;
 no AWS required.
 
-![OpenSight tour: dashboard, O answer, horizontal small-multiples authoring, and data tools](docs/images/opensight-tour.gif)
+![OpenSight tour: dashboard, O answer, dataset removal and undo, and data tools](docs/images/opensight-tour.gif)
 
 *Above: the offline demo — a dashboard, O answering "sum of revenue by region",
-horizontal small multiples with reference lines, data preparation, and data
-sources.*
+Manage data removal and undo, data preparation, and data sources.*
 
 ## Run it
 
@@ -161,6 +160,12 @@ save in drafts, with an explicit preview/export limitation until faceted renderi
 is supported. See [field wells](docs/field-wells.md).
 
 ![Empty Author visual with GROUP/COLOR, VALUE and SMALL MULTIPLES field wells](docs/images/author-empty.png)
+
+Removing the dataset in **Data → Manage data** keeps the analysis definition
+and shows empty Data/Visuals panels until data is chosen again. Removal saves
+with the draft and supports Undo/Redo; available sample data stays unselected.
+
+![Author after dataset removal, with empty panels and an Add data affordance](docs/images/author-no-dataset.png)
 
 The Properties dock groups card title/style/layout, Multiples Options,
 Group/Color, Legend and Data labels. Existing title, display-name, legend and
