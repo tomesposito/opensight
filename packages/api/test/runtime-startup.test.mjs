@@ -5,6 +5,52 @@ import { runtimeReadiness } from '../dist/runtime-startup.js';
 import { InvocationScope } from '../dist/runtime-scope.js';
 import { runtimeEnv, startupEvent, event, context, payload } from './runtime-helpers.mjs';
 
+for (const remainingMs of [28000, 12000]) test(`SR1 cold startup with 14s ingress/init lag and ${remainingMs}ms Lambda time stays bounded and read-only`, async t => {
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout', 'setInterval'], now: 100000 });
+  const request = startupEvent();
+  t.mock.timers.tick(14000);
+  const invokedAt = Date.now(), connectTime = 9000, ready = remainingMs === 28000;
+  let active = 0, attempts = 0, closed = 0, applications = 0, deadline, connectBudget;
+  const statements = [];
+  let entered;
+  const started = new Promise(resolve => { entered = resolve; });
+  const runtime = createRuntime(runtimeEnv, { databases(scope, _env, connectMs) {
+    deadline = scope.deadline; connectBudget = connectMs;
+    scope.own({ close: async () => { closed++; assert.equal(active, 0); }, force() {} });
+    const db = { transaction: async work => work({ query: async sql => {
+      statements.push(sql);
+      if (sql.includes('FROM sr_control')) return [{ state: 'open', schema_min: 1, schema_max: 1, protocol_min: 1, protocol_max: 1 }];
+      return [];
+    } }) };
+    return { membership: db, tenant: db, prepare: () => {
+      attempts++; active++;
+      let timer, rejectConnect;
+      return scope.stage(() => new Promise((resolve, reject) => {
+        rejectConnect = reject;
+        timer = setTimeout(() => { active = 0; resolve(); }, connectTime);
+        entered();
+      }), connectMs, () => { clearTimeout(timer); active = 0; rejectConnect(Error('private cancelled socket')); }, 'SQL_CONNECT_TIMEOUT');
+    } };
+  }, application: () => { applications++; assert.fail('startup built API application'); } });
+  const run = runtime.lambda(request, { getRemainingTimeInMillis: () => remainingMs - (Date.now() - invokedAt) });
+  await started;
+  t.mock.timers.tick(ready ? connectTime : remainingMs - 6000);
+  const result = await run;
+  assert.equal(result.statusCode, ready ? 200 : 503);
+  assert.deepEqual(payload(result), ready ? { state: 'ready' } : { errorCode: 'WORKSPACE_STARTING' });
+  assert.equal(result.headers['retry-after'], ready ? undefined : '5');
+  assert.equal(deadline, invokedAt + Math.min(25000, remainingMs - 3000));
+  assert.equal(connectBudget, 18000);
+  assert.equal(attempts, 1); assert.equal(active, 0); assert.equal(closed, 1); assert.equal(applications, 0);
+  assert.equal(Date.now() - invokedAt, ready ? connectTime : remainingMs - 6000);
+  assert.equal(statements.length > 0, ready);
+  assert.ok(statements.every(sql => /^(SELECT|SET TRANSACTION READ ONLY)/.test(sql)));
+  const statementCount = statements.length;
+  t.mock.timers.tick(300000);
+  assert.equal(attempts, 1); assert.equal(active, 0); assert.equal(closed, 1); assert.equal(applications, 0);
+  assert.equal(statements.length, statementCount);
+});
+
 test('SR1 startup connects once, permits 15s resume, bounds 35s/never resume and has no idle keep-alive', async t => {
   t.mock.timers.enable({ apis: ['Date', 'setTimeout', 'setInterval'], now: 100000 });
   for (const connectTime of [15000, 35000, Infinity]) {
