@@ -1,3 +1,4 @@
+import { disabledAnalytics } from './analytics.js';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { createHash } from 'node:crypto';
 import { analysisFail, analysisObject, analysisId, checkAnalysisInput, validateAnalysisDefinition, visualIdentity, projectDefinition } from '@opensight/web/analysis';
@@ -29,7 +30,7 @@ function bodyKeys(body: Record<string, unknown>, keys: string[]): void {
 /** One working version and one shared admission path for all approved verbs. */
 export class AnalysisRoutes {
   private readonly tails = new Map<string, Promise<unknown>>();
-  constructor(private readonly protocol: AnalysisProtocol, private readonly retries: RetryStore) {}
+  constructor(private readonly protocol: AnalysisProtocol, private readonly retries: RetryStore, private readonly analytics = disabledAnalytics) {}
   private async serial<T>(key: string, work: () => Promise<T>): Promise<T> {
     const result = (this.tails.get(key) ?? Promise.resolve()).then(work), tail = result.catch(() => {});
     this.tails.set(key, tail);
@@ -139,6 +140,9 @@ export class AnalysisRoutes {
             }
           }
         }
+        const hadVisual = previous?.hasHadVisual === true || !!previous?.definition.sheets?.some(s => s.visuals?.length);
+        const hasVisual = !!record.definition.sheets?.some(s => s.visuals?.length);
+        record.hasHadVisual = hadVisual || hasVisual;
         const body = await this.describe(record, backend);
         const reply: Reply = removed ? { status: 200, body: { id, removed: true } } : { status: pathId ? 200 : 201, body, version: record.version };
         // Retain and reserve all components before saving/removing anything. This
@@ -146,6 +150,12 @@ export class AnalysisRoutes {
         reservation?.prepare({ fingerprint, reply, record, removed, access });
         await backend.check(stamp);
         if (removed) await backend.remove(id, version, stamp); else await backend.save(record, version, stamp);
+        if (!removed) {
+          if (!previous) this.analytics.track(backend.scope, { name: 'analysis_created' });
+          if (!hadVisual && hasVisual) this.analytics.track(backend.scope, { name: 'analysis_first_visual' });
+          if (backend.sampleDatasetId === 'sales' && Object.values(record.datasetBindings).some(b => b.kind === 'dataset' && b.id === 'sales')
+            && !Object.values(previous?.datasetBindings ?? {}).some(b => b.kind === 'dataset' && b.id === 'sales')) this.analytics.track(backend.scope, { name: 'sample_data_opted_in' });
+        }
         // Store after commit, before writing the response: disconnected clients can retry.
         reservation?.commit();
         const publication = await backend.stamp();

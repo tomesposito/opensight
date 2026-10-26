@@ -1,3 +1,4 @@
+import { disabledAnalytics } from './analytics.js';
 import { describeDashboard, dashboardVersion, type DashboardBackend } from './dashboard-model.js';
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
@@ -48,7 +49,7 @@ function dashboardVisuals(definition: unknown) {
 export class EmbeddingService {
   private readonly secret: string | undefined;
   private readonly options: EmbeddingOptions | undefined;
-  constructor(options: EmbeddingOptions | undefined, private readonly organization: OrganizationService, private readonly dashboards?: (identity: Identity) => DashboardBackend) {
+  constructor(options: EmbeddingOptions | undefined, private readonly organization: OrganizationService, private readonly dashboards?: (identity: Identity) => DashboardBackend, private readonly analytics = disabledAnalytics) {
     // There is deliberately no constructor option, default key, or client-side signer.
     this.secret = process.env.OPENSIGHT_EMBED_SECRET;
     if (options) {
@@ -171,6 +172,7 @@ export class EmbeddingService {
     const html = template.replace('<!--OPENSIGHT_EMBED_DATA-->', () => `<script type="application/json" id="opensight-embed-data">${payload}</script>`).replaceAll('<script', `<script nonce="${nonce}"`);
     response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer', 'X-Content-Type-Options': 'nosniff',
       'Content-Security-Policy': `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'; frame-ancestors ${claims.parentOrigin}` });
+    this.analytics.track({ tenantId: claims.namespaceId, namespaceId: claims.namespaceId }, { name: 'embed_viewed' });
     response.end(html); return true;
   }
 }

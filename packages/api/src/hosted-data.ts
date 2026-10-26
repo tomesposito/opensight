@@ -1,4 +1,4 @@
-import { disabledAnalytics, type Analytics } from './analytics.js';
+import { disabledAnalytics, rowCountBucket } from './analytics.js';
 import { setImmediate as yieldTurn } from 'node:timers/promises';
 import { TenantBudgets, type WorkScope } from './budgets.js';
 import { HostedCache, type HostedCacheAdapter } from './hosted-cache.js';
@@ -87,7 +87,9 @@ export class HostedData {
         scope.rows(parsed.rows.length); scope.memory(Buffer.byteLength(JSON.stringify(parsed)));
         await this.verifiers.get(context)?.(); scope.check(); return parsed;
       });
-      committed = true; return result;
+      committed = true;
+      this.analytics.track(context, { name: 'dataset_uploaded', props: { sourceType: 'file', rowCountBucket: rowCountBucket(result.rowCount!) } });
+      return result;
     }, this.signals.get(context));
   }
   async admit(context: TenantContext, id: string, path: DataPath, embedSecurity?: (security: SecurityContext) => SecurityContext): Promise<Admission> {

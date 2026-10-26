@@ -152,3 +152,25 @@ test('Issue #138: pre-warning backups migrate idempotently and restore without i
  await restoreServerless(f.target,snapshot,{...registry,epoch:2},'sqlite');
  assert.deepEqual(await f.target.transaction(c=>c.query('SELECT * FROM h8_ai_warnings')),[]);
 });
+
+test('Issue #137: registered backups preserve analytics events and tenant off switches', async t => {
+ const f = await fixture(t);
+ await f.db.transaction(async c => {
+  await c.query("INSERT INTO analytics_settings VALUES ('tenant-one','one',0)");
+  await c.query("INSERT INTO analytics_events VALUES ('synthetic-event','tenant-one','one','ask_o_asked','{\"count\":1}','2026-10-26T00:00:00.000Z')");
+ });
+ const snapshot = await snapshotServerless(f.db, 'test', randomUUID(), Date.now()+3600000, ['a'.repeat(32)], 'sqlite');
+ await restoreServerless(f.target, snapshot, { ...f.registry, backups: { [snapshot.id]: checksum(snapshot) } }, 'sqlite');
+ for (const table of ['analytics_events', 'analytics_settings']) assert.deepEqual(await f.target.transaction(c => c.query(`SELECT * FROM ${table}`)), snapshot.tables[table]);
+});
+test('Issue #137: pre-analytics backups upgrade and restore without invented events or overrides', async t => {
+ const f = await fixture(t), { migrateRegistered } = await import('../dist/serverless-backup.js');
+ await f.db.transaction(async c => { await c.query('DROP TABLE analytics_events'); await c.query('DROP TABLE analytics_settings'); });
+ const snapshot = await snapshotServerless(f.db, 'test', randomUUID(), Date.now()+3600000, ['a'.repeat(32)], 'sqlite');
+ const registry = { ...f.registry, backups: { [snapshot.id]: checksum(snapshot) } };
+ await restoreServerless(f.target, snapshot, registry, 'sqlite');
+ const operation = randomUUID();
+ await migrateRegistered(f.db, f.env, snapshot, { ...registry, epoch: 1 }, operation, 'sqlite');
+ assert.equal((await migrateRegistered(f.db, f.env, snapshot, { ...registry, epoch: 1 }, operation, 'sqlite')).replayed, true);
+ for (const db of [f.db, f.target]) for (const table of ['analytics_events', 'analytics_settings']) assert.deepEqual(await db.transaction(c => c.query(`SELECT * FROM ${table}`)), []);
+});

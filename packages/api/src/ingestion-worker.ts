@@ -1,3 +1,4 @@
+import { disabledAnalytics, rowCountBucket } from './analytics.js';
 import { randomUUID } from 'node:crypto';
 import { MetadataError, type Database, type SqlConnection, type SqlRow } from './metadata-db.js';
 import { TenantMetadata, type TenantContext, type Revisions } from './metadata.js';
@@ -29,7 +30,7 @@ export class IngestionWorker {
   constructor(private readonly database: Database, private readonly metadata: TenantMetadata, private readonly coordinator: DurableCoordinator,
     private readonly dispatch: DurableDispatch, private readonly ledger: ObjectLedger, private readonly objects: UploadObjects,
     private readonly transfer: ArtifactTransfer, private readonly budgets: TenantBudgets, private readonly closeTransfers: () => Promise<void>,
-    private readonly dialect: CoordinationDialect = 'postgres') {}
+    private readonly dialect: CoordinationDialect = 'postgres', private readonly analytics = disabledAnalytics) {}
   private async row(c: SqlConnection, event: InspectedEvent): Promise<SqlRow> {
     const row = (await c.query(`SELECT *, CAST(fence AS TEXT) AS fence FROM sr_operation WHERE deployment = ? AND tenant_id = ? AND namespace_id = ? AND owner_id = ? AND operation_id = ?${this.dialect === 'postgres' ? ' FOR UPDATE' : ''}`,
       [this.coordinator.deployment, event.scope.tenantId, event.scope.namespaceId, event.scope.userId, event.aggregateId]))[0];
@@ -136,6 +137,7 @@ export class IngestionWorker {
           await this.dispatch.terminal(c, event.eventId, event.epoch);
         });
         published = true;
+        this.analytics.track(context, { name: 'dataset_uploaded', props: { sourceType: 'file', rowCountBucket: rowCountBucket(reference.descriptor.rowCount) } });
       }, InvocationScope.current()?.signal);
     } catch (error) {
       if (!published && error instanceof MetadataError && error.status < 500 && (attempt || !['TENANT_BUDGET_EXCEEDED', 'NODE_ADMISSION_REFUSED', 'OPERATION_BUSY'].includes(error.code))) {

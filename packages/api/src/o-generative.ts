@@ -1,3 +1,4 @@
+import { disabledAnalytics } from './analytics.js';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { interpretQuestion, type SchemaField } from '@opensight/o-interpreter';
 import { resolveSecurity, ExpressionBinder, parseExpression, QueryEngineError } from '@opensight/query-engine';
@@ -39,7 +40,7 @@ function providerObject(text: string, keys: string[]): Record<string, unknown> {
   try { return record(JSON.parse(text) as unknown, keys); }
   catch { throw new AIError(502, 'O_INVALID_PROVIDER_RESPONSE', 'Provider did not return a supported O response'); }
 }
-export async function generativeRoute(request: IncomingMessage, response: ServerResponse, path: string, query: string, identity: Identity, security: SecurityService, organization: OrganizationService, ai: AISettings, sales?: SalesQuery): Promise<boolean> {
+export async function generativeRoute(request: IncomingMessage, response: ServerResponse, path: string, query: string, identity: Identity, security: SecurityService, organization: OrganizationService, ai: AISettings, sales?: SalesQuery, analytics = disabledAnalytics): Promise<boolean> {
   if (!['/api/o/status', '/api/o/generate', '/api/o/calculation'].includes(path)) return false;
   security.require(identity, 'ai');
   if (query) throw new RequestError(400, 'Query parameters are not supported');
@@ -51,6 +52,7 @@ export async function generativeRoute(request: IncomingMessage, response: Server
   requireOScope(body, identity, security, organization, sales);
   if (typeof body.question !== 'string' || !body.question.trim() || body.question.length > 2000) invalid('$.question', 'expected 1–2000 characters');
   const before = schema(body, sales!, identity, security);
+  if (!calculation) analytics.track({ tenantId: identity.namespaceId, namespaceId: identity.namespaceId }, { name: 'ask_o_asked', props: { count: 1 } });
   // Prompts are the one place user-influenced content meets the provider:
   // the question is PII-redacted first, field names ride inside JSON strings,
   // and the system instructions pin untrusted content as data, never rules.

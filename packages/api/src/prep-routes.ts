@@ -1,3 +1,4 @@
+import { disabledAnalytics } from './analytics.js';
 import { MetadataError } from './metadata-db.js';
 import { randomUUID } from 'node:crypto';
 import { materializationReason } from './blaze-policy.js';
@@ -41,6 +42,7 @@ function send(response: ServerResponse, status: number, body: unknown): void {
   response.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }); response.end(JSON.stringify(body));
 }
 export class PrepRoutes {
+  analytics = disabledAnalytics;
   private readonly blaze = new BlazeStore();
   private readonly configured = new Map<string, string>();
   private requirement(identity: Identity, id: string, state = this.store.read()): string | null {
@@ -308,6 +310,7 @@ export class PrepRoutes {
           this.enforceModes(draft);
           return index < 0;
         });
+        this.analytics.track({ tenantId: identity.namespaceId, namespaceId: identity.namespaceId }, { name: 'dataset_prep_saved' });
         this.syncModes();
         this.invalidate(identity, id);
         response.setHeader('ETag', `"${this.find(identity, id).version ?? 1}"`);

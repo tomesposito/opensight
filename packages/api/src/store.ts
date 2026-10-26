@@ -41,7 +41,7 @@ export class DefinitionStore {
         if (!record) for (const dashboard of Object.values(state.dashboards ?? {})) if (dashboard?.sourceAnalysisId === id) dashboard.sourceActive = false;
         const asset = state.assets?.find(r => r.kind === 'analysis' && r.id === id);
         if (asset && record) {
-          asset.version = record.version; asset.body.updatedAt = new Date().toISOString();
+          asset.version = record.version; asset.body.hasHadVisual = record.hasHadVisual === true; asset.body.updatedAt = new Date().toISOString();
           asset.body.definition = { AnalysisId: id, Name: record.name, Definition: projectDefinition(record.definition) };
           asset.body.datasets = Object.values(record.datasetBindings).map(ref => ({ ...ref, ...(ref.kind === 'prepared-dataset' ? { ownerId: record.bindingOwnerId } : {}) }));
         } else if (!record) state.assets = state.assets?.filter(r => r.kind !== 'analysis' || r.id !== id);
@@ -83,7 +83,7 @@ export class DefinitionStore {
       const found = stored.find(r => r.kind === a.kind && r.id === a.id);
       const record = this.analysisRecord(a.id), dashboard = this.dashboards().find(d => d.id === a.id);
       return found ?? localResource(a.id, a.kind, this.get(a.kind, a.id)!, { id: a.id, kind: a.kind, namespaceId: 'default', folderId: null,
-        ...(a.kind === 'analysis' && record ? { analysisVersion: record.version, updatedAt: record.updatedAt, datasetBindingOwnerId: record.bindingOwnerId, datasetBindings: record.datasetBindings } : {}),
+        ...(a.kind === 'analysis' && record ? { hasHadVisual: record.hasHadVisual, analysisVersion: record.version, updatedAt: record.updatedAt, datasetBindingOwnerId: record.bindingOwnerId, datasetBindings: record.datasetBindings } : {}),
         ...(a.kind === 'dashboard' && dashboard ? { dashboard } : {}) });
     }), ...stored.filter(r => r.kind === 'folder')];
   }
@@ -99,7 +99,7 @@ export class DefinitionStore {
         for (const r of next) {
           if (r.kind === 'analysis') {
             const a = organizedResource(r, scope.namespaceId);
-            Object.defineProperty(state.records, r.id, { value: { id: r.id, name: String(a.definition!.Name), definition: convertDefinition(a.definition!.Definition), datasetBindings: a.datasetBindings!, bindingOwnerId: a.datasetBindingOwnerId, updatedAt: a.updatedAt, version: r.version }, configurable: true, enumerable: true, writable: true });
+            Object.defineProperty(state.records, r.id, { value: { id: r.id, name: String(a.definition!.Name), definition: convertDefinition(a.definition!.Definition), datasetBindings: a.datasetBindings!, hasHadVisual: a.hasHadVisual, bindingOwnerId: a.datasetBindingOwnerId, updatedAt: a.updatedAt, version: r.version }, configurable: true, enumerable: true, writable: true });
           }
           if (r.kind === 'dashboard' && r.body.published) Object.defineProperty(state.dashboards ??= {}, r.id, { value: r.body.published, configurable: true, enumerable: true, writable: true });
         }

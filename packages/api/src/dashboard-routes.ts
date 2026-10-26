@@ -1,3 +1,4 @@
+import { disabledAnalytics } from './analytics.js';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { createHash, randomUUID } from 'node:crypto';
 import { analysisObject, analysisId, validateAnalysisDefinition, type AnalysisDiagnostic } from '@opensight/web/analysis';
@@ -24,7 +25,7 @@ export class DashboardRoutes {
   private readonly replay = new Map<string, Replay>();
   private readonly tails = new Map<string, Promise<unknown>>();
   private readonly cap?: number;
-  constructor(private readonly protocol: Pick<AnalysisProtocol, 'paging'>, private readonly env: NodeJS.ProcessEnv) {
+  constructor(private readonly protocol: Pick<AnalysisProtocol, 'paging'>, private readonly env: NodeJS.ProcessEnv, private readonly analytics = disabledAnalytics) {
     const raw = env.OPENSIGHT_DASHBOARD_VERSION_CAP;
     if (raw !== undefined) { if (!/^[1-9]\d*$/.test(raw) || !Number.isSafeInteger(Number(raw))) throw new Error('OPENSIGHT_DASHBOARD_VERSION_CAP must be a positive integer'); this.cap = Number(raw); }
   }
@@ -64,6 +65,7 @@ export class DashboardRoutes {
         else { body = describeDashboard(record, pinned); etag = pinned ?? await backend.revision(pathId); }
       }
       await backend.analyses.check(stamp); await backend.authorize(pathId, principalId ? 'admin' : 'read');
+      if (pathId && !principalId && (!versions || pinned)) this.analytics.track(backend.analyses.scope, { name: 'dashboard_viewed' });
       this.send(response, { status: 200, body, version: etag }); return;
     }
     const raw: unknown = verb === 'DELETE' ? undefined : await readBody(request);
@@ -141,6 +143,7 @@ export class DashboardRoutes {
         }
         await backend.analyses.check(stamp);
         if (change) await backend.change(id, change, stamp);
+        if (change?.kind === 'share' && change.role) this.analytics.track(scope, { name: 'dashboard_shared' });
       }
       if (key !== undefined && reply.bytes && [...this.replay.values()].reduce((size, r) => size + (r.reply.bytes?.length ?? 0), reply.bytes.length) > 64 * 1024 * 1024) { response.setHeader('Retry-After', '60'); fail('IDEMPOTENCY_CAPACITY_EXCEEDED', 429); }
       if (key !== undefined) this.replay.set(key, { fingerprint, reply, id, expires: Date.now() + 600000, removed: change?.kind === 'delete', access, dataVersion, ...(dataVersion ? { dataStamp: stamp } : {}) });

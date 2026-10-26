@@ -13,6 +13,7 @@ import { legacyWrite } from './metadata-maintenance.js';
 
 export class LocalAnalyses implements AnalysisBackend {
   readonly scope;
+  readonly sampleDatasetId = 'sales' as const;
   constructor(private readonly store: DefinitionStore | undefined, private readonly sales: SalesQuery | undefined, private readonly prep: PrepRoutes,
     private readonly identity: Identity, private readonly recheck: () => Promise<void>, private readonly organization?: OrganizationService, private readonly root?: string, private readonly durableSecurity = false) {
     this.scope = { tenantId: identity.namespaceId, ...identity };
@@ -65,7 +66,7 @@ export class LocalAnalyses implements AnalysisBackend {
       if (!this.sales || d.dataSetArn !== this.sales.securitySchema().localData.dataSetArn) analysisFail('UNRESOLVED_BINDING', '$.datasetBindings', 'Imported dataset has no configured binding');
       return [d.identifier, { kind: 'dataset', id: 'sales' }];
     }));
-    return { id, name: String(wire.Name ?? id), definition, datasetBindings: datasetBindings(bindings, definition), version: asset?.analysisVersion ?? 1 };
+    return { id, name: String(wire.Name ?? id), definition, datasetBindings: datasetBindings(bindings, definition), version: asset?.analysisVersion ?? 1, hasHadVisual: asset?.hasHadVisual };
   }
   async resolve(bindings: DatasetBindings): Promise<Map<string, AnalysisSchema>> {
     await this.authorize(); const result = new Map<string, AnalysisSchema>();
@@ -103,7 +104,7 @@ export class LocalAnalyses implements AnalysisBackend {
       if (!prior) (state.assets ??= []).push(asset); else if (asset !== prior) state.assets![state.assets!.indexOf(prior)] = asset;
       asset.analysisVersion = version + 1; asset.updatedAt = new Date().toISOString();
       if (record) {
-        delete asset.deleted;
+        delete asset.deleted; asset.hasHadVisual = record.hasHadVisual;
         asset.definition = { AnalysisId: id, Name: record.name, Definition: projectDefinition(record.definition) };
         asset.datasetBindings = record.datasetBindings;
         if (Object.values(record.datasetBindings).some(b => b.kind === 'prepared-dataset')) asset.datasetBindingOwnerId = this.identity.userId;

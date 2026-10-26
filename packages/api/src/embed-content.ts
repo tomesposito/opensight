@@ -219,7 +219,15 @@ export class EmbedContent {
     if (previous) await this.access(context, previous, true);
     const asset: MetadataResource = { kind: 'analysis', id, version: Number(expectedVersion), body: { ...(previous?.body ?? { folderId: null }), definition, datasets: [{ kind: 'dataset', id: datasetId }] } };
     await this.admission(context, g, datasetId); await this.visuals(context, g, asset);
+    const hasVisual = (body: JsonObject | undefined) => {
+      const sheets = body && object(object(body.definition).Definition).Sheets;
+      return Array.isArray(sheets) && sheets.some(s => Array.isArray(object(s).Visuals) && (object(s).Visuals as unknown[]).length > 0);
+    };
+    const hadVisual = previous?.body.hasHadVisual === true || hasVisual(previous?.body), nowVisual = hasVisual(asset.body);
+    asset.body.hasHadVisual = hadVisual || nowVisual;
     await this.metadata.saveEmbeddedAnalysis(context, asset, revisions);
+    if (!previous) this.data.analytics.track(context, { name: 'analysis_created' });
+    if (!hadVisual && nowVisual) this.data.analytics.track(context, { name: 'analysis_first_visual' });
     return { saved: true, analysisId: id, version: Number(expectedVersion) + 1, requiresRenewal: true };
   }
 }

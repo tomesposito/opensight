@@ -1,3 +1,5 @@
+import { disabledAnalytics } from './analytics.js';
+import { wireHasVisuals } from './analysis-model.js';
 import { createHash } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { method, send } from './automation-routes.js';
@@ -19,7 +21,7 @@ const folderWire = (r: MetadataResource) => ({ Id: r.id, Name: r.body.name, Vers
 export class AssetRoutes {
   private readonly receipts = new Map<string, Receipt>();
   private tail: Promise<unknown> = Promise.resolve();
-  constructor(private readonly protocol: AnalysisProtocol) {}
+  constructor(private readonly protocol: AnalysisProtocol, private readonly analytics = disabledAnalytics) {}
   matches(path: string, verb?: string) {
     return /^\/api\/v1\/(assets|folders)(?:\/|$)/.test(path)
       || /^\/api\/v1\/(analyses|dashboards)\/[^/]+\/shares\//.test(path)
@@ -113,6 +115,11 @@ export class AssetRoutes {
         }
         c.remove(r); removed = true; return { status: 200, body: { id: r.id, removed: true } };
       });
+      if (share?.[1] === 'dashboards' && verb === 'PUT') this.analytics.track(backend.scope, { name: 'dashboard_shared' });
+      if (transfer?.[1] === 'analyses' && transfer[3] === 'copy') {
+        this.analytics.track(backend.scope, { name: 'analysis_created' });
+        if (wireHasVisuals(access?.body.definition)) this.analytics.track(backend.scope, { name: 'analysis_first_visual' });
+      }
       if (key !== undefined) this.receipts.set(key, { fingerprint, reply, access: access!, removed, expires: Date.now() + 600000 });
       this.send(response, reply);
     };

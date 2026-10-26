@@ -5,19 +5,21 @@ import type { CoordinationDialect } from './coordination-schema.js';
 
 type AuditVersion = 'legacy-audit-v0' | 'audit-v1';
 type WorkspaceInventory = AuditVersion | `${AuditVersion}-workspace-v1`;
-export type AuditInventory = WorkspaceInventory | `${WorkspaceInventory}-ai-warnings-v1`;
-export const currentInventory: AuditInventory = 'audit-v1-workspace-v1-ai-warnings-v1';
+type WarningInventory = WorkspaceInventory | `${WorkspaceInventory}-ai-warnings-v1`;
+export type AuditInventory = WarningInventory | `${WarningInventory}-analytics-v1`;
+export const currentInventory: AuditInventory = 'audit-v1-workspace-v1-ai-warnings-v1-analytics-v1';
 const currentAudit = (inventory: AuditInventory) => inventory.startsWith('audit-v1');
 export const namedWorkspaces = (inventory: AuditInventory) => inventory.includes('-workspace-v1');
-export const aiWarnings = (inventory: AuditInventory) => inventory.endsWith('-ai-warnings-v1');
-const inventoryName = (audit: boolean, names: boolean, warnings: boolean): AuditInventory => `${audit ? 'audit-v1' : 'legacy-audit-v0'}${names ? '-workspace-v1' : ''}${warnings ? '-ai-warnings-v1' : ''}`;
+export const aiWarnings = (inventory: AuditInventory) => inventory.includes('-ai-warnings-v1');
+export const usageTracking = (inventory: AuditInventory) => inventory.endsWith('-analytics-v1');
+const inventoryName = (audit: boolean, names: boolean, warnings: boolean, analytics: boolean): AuditInventory => `${audit ? 'audit-v1' : 'legacy-audit-v0'}${names ? '-workspace-v1' : ''}${warnings ? '-ai-warnings-v1' : ''}${analytics ? '-analytics-v1' : ''}`;
 const markerTable = 'h8_audit_schema';
 const legacyColumns = ['event_id', 'created_at', 'action'];
 const currentColumns = [...legacyColumns, 'actor', 'tenant_id', 'subject', 'detail'];
 const reject = (): never => { throw new MetadataError('BACKUP_SCHEMA_INVALID', 503); };
 const sameKeys = (row: object, names: readonly string[]) => Object.keys(row).sort().join() === [...names].sort().join();
 export const inventoryTables = (inventory: AuditInventory): string[] =>
-  serverlessTables.filter(t => (t !== markerTable || currentAudit(inventory)) && (t !== 'h2_login_selections' || namedWorkspaces(inventory)) && (t !== 'h8_ai_warnings' || aiWarnings(inventory)));
+  serverlessTables.filter(t => (t !== markerTable || currentAudit(inventory)) && (t !== 'h2_login_selections' || namedWorkspaces(inventory)) && (t !== 'h8_ai_warnings' || aiWarnings(inventory)) && (!['analytics_events', 'analytics_settings'].includes(t) || usageTracking(inventory)));
 
 function validMarker(rows: SqlRow[]): boolean {
   return rows.length === 1 && sameKeys(rows[0]!, ['id', 'version', 'checksum'])
@@ -27,7 +29,7 @@ function validMarker(rows: SqlRow[]): boolean {
 /** Version-1 snapshots recognize audit, workspace and AI warning upgrades explicitly. Their original bytes/checksum remain the registration authority. */
 export function snapshotInventory(tables: Record<string, SqlRow[]>): AuditInventory {
   if (!tables || typeof tables !== 'object' || Array.isArray(tables)) reject();
-  const inventory = inventoryName(Object.hasOwn(tables, markerTable), Object.hasOwn(tables, 'h2_login_selections'), Object.hasOwn(tables, 'h8_ai_warnings'));
+  const inventory = inventoryName(Object.hasOwn(tables, markerTable), Object.hasOwn(tables, 'h2_login_selections'), Object.hasOwn(tables, 'h8_ai_warnings'), Object.hasOwn(tables, 'analytics_events'));
   if (!sameKeys(tables, inventoryTables(inventory))) reject();
   if (Object.values(tables).some(rows => !Array.isArray(rows))) reject();
   if (tables.h1_tenants!.some(row => ['display_name', 'slug'].some(key => Object.hasOwn(row, key) !== namedWorkspaces(inventory)))) reject();
@@ -47,7 +49,8 @@ export async function databaseInventory(c: SqlConnection, dialect: CoordinationD
   const relations = await c.query(dialect === 'postgres'
     ? "SELECT relname AS name, relkind AS kind, CASE WHEN relowner=(SELECT oid FROM pg_roles WHERE rolname=current_user) THEN 1 ELSE 0 END AS owned FROM pg_class WHERE relnamespace=current_schema()::regnamespace"
     : "SELECT name, CASE WHEN type='table' THEN 'r' ELSE type END AS kind, 1 AS owned FROM sqlite_master");
-  const inventory = inventoryName(relations.some(r => r.name === markerTable), relations.some(r => r.name === 'h2_login_selections'), relations.some(r => r.name === 'h8_ai_warnings'));
+  const inventory = inventoryName(relations.some(r => r.name === markerTable), relations.some(r => r.name === 'h2_login_selections'), relations.some(r => r.name === 'h8_ai_warnings'), relations.some(r => r.name === 'analytics_events'));
+  if (relations.some(r => r.name === 'analytics_events') !== relations.some(r => r.name === 'analytics_settings')) reject();
   for (const table of inventoryTables(inventory)) {
     if (!relations.some(r => r.name === table && ['r', 'p'].includes(String(r.kind)) && Number(r.owned) === 1))
       throw new MetadataError('BACKUP_FOREIGN_DATABASE', 503);

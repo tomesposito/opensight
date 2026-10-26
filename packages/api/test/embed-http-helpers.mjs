@@ -7,8 +7,8 @@ export function serverEnvironment(f, overrides = {}) {
     OPENSIGHT_SESSION_SECONDS: String(c.sessionSeconds), OPENSIGHT_INVITATION_SECONDS: String(c.invitationSeconds), OPENSIGHT_EMBEDDING_POLICY: JSON.stringify(f.policyInput),
     OPENSIGHT_EMBED_SESSION_KEY_ID: f.key.id, OPENSIGHT_EMBED_SESSION_KEY: f.key.secret.toString('base64'), ...overrides };
 }
-export async function httpStack(t, f) {
-  const server = await createHostedApiServer({ membershipDatabase: f.db, tenantDatabase: f.db, security: { authenticate: f.auth.authenticate }, builtinAuth: f.auth, env: serverEnvironment(f), mailTransport: f.mail });
+export async function httpStack(t, f, analytics) {
+  const server = await createHostedApiServer({ membershipDatabase: f.db, tenantDatabase: f.db, security: { authenticate: f.auth.authenticate }, builtinAuth: f.auth, env: serverEnvironment(f), analytics, mailTransport: f.mail });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   t.after(() => new Promise(resolve => { server.close(resolve); server.closeAllConnections(); }));
   const call = (path, method = 'GET', body, authorization, extra = {}) => new Promise((resolve, reject) => {

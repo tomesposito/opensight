@@ -1,3 +1,4 @@
+import { disabledAnalytics } from './analytics.js';
 import { dashboardVersion, type DashboardBackend } from './dashboard-model.js';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { method, routeId, send } from './automation-routes.js';
@@ -7,7 +8,7 @@ import { record } from './schedule.js';
 import type { Identity } from './security.js';
 
 /** Sharing grants access to the definition, never to the sharer's data-policy context. */
-export async function sharingRoute(request: IncomingMessage, response: ServerResponse, path: string, query: string, identity: Identity, organization: OrganizationService, sales?: SalesQuery, dashboards?: (identity: Identity) => DashboardBackend): Promise<boolean> {
+export async function sharingRoute(request: IncomingMessage, response: ServerResponse, path: string, query: string, identity: Identity, organization: OrganizationService, sales?: SalesQuery, dashboards?: (identity: Identity) => DashboardBackend, analytics = disabledAnalytics): Promise<boolean> {
   const shares = /^\/(?:api\/)?(analyses|dashboards)\/([^/]+)\/shares(?:\/(user|group)\/([^/]+))?$/.exec(path);
   const visual = /^\/(?:api\/)?(analyses|dashboards)\/([^/]+)\/visuals\/([^/]+)\/query$/.exec(path);
   if (!shares && !visual) return false;
@@ -58,5 +59,6 @@ export async function sharingRoute(request: IncomingMessage, response: ServerRes
     validateOrganization(state);
     return grant ?? { deleted: true };
   });
+  if (kind === 'dashboard' && verb === 'PUT') analytics.track({ tenantId: identity.namespaceId, namespaceId: identity.namespaceId }, { name: 'dashboard_shared' });
   send(response, 200, result); return true;
 }

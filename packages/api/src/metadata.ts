@@ -120,7 +120,7 @@ export class TenantMetadata {
       if (Number(prior?.version ?? 0) !== asset.version) throw new MetadataError('METADATA_CONFLICT');
       const old = prior ? JSON.parse(String(prior.body)) as JsonObject : { folderId: null };
       await this.analysisWriteAccess(c, context, user, old);
-      const body: JsonObject = { ...old, definition: asset.body.definition, datasets: asset.body.datasets, updatedAt: new Date().toISOString() };
+      const body: JsonObject = { ...old, hasHadVisual: old.hasHadVisual === true || asset.body.hasHadVisual === true, definition: asset.body.definition, datasets: asset.body.datasets, updatedAt: new Date().toISOString() };
       if (!prior) await insertResource(c, context, key, body);
       else {
         await c.query(`DELETE FROM h1_links WHERE ${predicates}`, keyValues(context, key));
@@ -146,7 +146,7 @@ export class TenantMetadata {
   }
   /** D-44/D-45: grant-aware author writes, CAS and revision check in one transaction.
    * Only definitions and server-resolved dataset links may change. */
-  async mutateAnalysis(context: TenantContext, id: string, replacement: Pick<JsonObject, 'definition' | 'datasets'> | null, expectedVersion: number, expected: Revisions): Promise<void> {
+  async mutateAnalysis(context: TenantContext, id: string, replacement: Pick<JsonObject, 'definition' | 'datasets'> & { hasHadVisual?: boolean } | null, expectedVersion: number, expected: Revisions): Promise<void> {
     await this.checked(context, async (c, revisions, user) => {
       if (!hasCapability(user.role as Parameters<typeof hasCapability>[0], 'build')) throw new MetadataError('METADATA_WRITE_FORBIDDEN', 403);
       const key = resourceKey({ kind: 'analysis', id });
@@ -168,7 +168,7 @@ export class TenantMetadata {
         await c.query(`DELETE FROM h1_links WHERE ${predicates}`, keyValues(context, key));
         await c.query(`DELETE FROM h1_resources WHERE ${predicates}`, keyValues(context, key));
       } else {
-        const body: JsonObject = { ...old, definition: replacement.definition, datasets: replacement.datasets, updatedAt: new Date().toISOString() };
+        const body: JsonObject = { ...old, hasHadVisual: old.hasHadVisual === true || replacement.hasHadVisual === true, definition: replacement.definition, datasets: replacement.datasets, updatedAt: new Date().toISOString() };
         // Server-owned prepared links cannot adopt another user's owner scope.
         for (const ref of resourceLinks(key, body)) if (ref.kind === 'prepared-dataset' && ref.ownerId !== context.userId) missing();
         if (!prior) await insertResource(c, context, key, body);
