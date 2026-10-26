@@ -4,7 +4,7 @@ import { interpretQuestion, type SchemaField } from '@opensight/o-interpreter';
 import { resolveSecurity, ExpressionBinder, parseExpression, QueryEngineError } from '@opensight/query-engine';
 import { method, send } from './automation-routes.js';
 import { AIError } from './ai-providers.js';
-import { generativeInstructions, redactPII } from './ai-guard.js';
+import { generativeInstructions, hasFieldNamePII, redactPII } from './ai-guard.js';
 import type { AISettings } from './ai-settings.js';
 import { readBody, RequestError, type SalesQuery } from './query.js';
 import { record, invalid } from './schedule.js';
@@ -52,10 +52,11 @@ export async function generativeRoute(request: IncomingMessage, response: Server
   requireOScope(body, identity, security, organization, sales);
   if (typeof body.question !== 'string' || !body.question.trim() || body.question.length > 2000) invalid('$.question', 'expected 1–2000 characters');
   const before = schema(body, sales!, identity, security);
+  if (hasFieldNamePII(before.fields)) throw new AIError(400, 'AI_FIELD_NAME_PII', 'A field name matches a sensitive-data pattern. Rename the field before using generative AI.');
   if (!calculation) analytics.track({ tenantId: identity.namespaceId, namespaceId: identity.namespaceId }, { name: 'ask_o_asked', props: { count: 1 } });
   // Prompts are the one place user-influenced content meets the provider:
-  // the question is PII-redacted first, field names ride inside JSON strings,
-  // and the system instructions pin untrusted content as data, never rules.
+  // the question is PII-redacted, field names pass the shared PII guard,
+  // and JSON strings plus system instructions pin content as data, never rules.
   const instructions = generativeInstructions(calculation);
   const text = await ai.complete(identity.namespaceId, { system: instructions, prompt: JSON.stringify({ question: redactPII(body.question), fields: before.fields }) });
   // Authorization and policy changes during provider I/O must not release stale answers.
