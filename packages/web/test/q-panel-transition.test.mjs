@@ -74,44 +74,123 @@ describe('docked Q side panel geometry in offline Chromium', () => {
   before(async () => { page = await chromiumPage(); });
   after(async () => { await page?.close(); });
 
-  const shell = panel => `<style>${css}\n${chromeCss}</style><div class="app-shell"><main><div class="chart-probe" style="height:80px"></div></main>${panel ? '<aside class="q-side-panel">Ask O</aside>' : ''}</div>`;
+  // Issue #140: use the dashboard's actual grid and VisualCard structure,
+  // including inline placements ending at column 37. An ordinary block fits
+  // main even when the grid's 35 fixed gutters push its rightmost cards out.
+  const card = (id, column, columns, row, table = false) => `<section id="${id}" class="visual-card" style="grid-column:${column} / span ${columns};grid-row:${row} / span 6">
+    <header class="card-heading"><div class="card-titles"><h3>${id}</h3></div></header>
+    <div class="visual-content">${table ? '<div class="table-scroll"><table><tbody><tr><td>Revenue</td><td>100</td></tr></tbody></table></div>' : '<div class="chart"></div>'}</div>
+  </section>`;
+  const panel = '<aside class="q-side-panel">Ask O</aside>';
+  const shell = open => `<style>${css}\n${chromeCss}</style><div class="app-shell"><main><div class="dashboard-grid">${
+    card('left', 1, 18, 1) + card('rightmost', 19, 18, 1) + card('rightmost-lower', 25, 12, 7) + card('table', 1, 36, 13, true)
+  }</div></main>${open ? panel : ''}</div>`;
   const boxes = () => page.evaluate(async () => {
-    // Let the 150ms shell transition settle before measuring.
+    // Let the 150ms shell transition and card entry animations settle.
     await new Promise(resolve => setTimeout(resolve, 300));
-    const rect = selector => {
-      const box = document.querySelector(selector)?.getBoundingClientRect();
-      return box && { left: box.left, right: box.right, width: box.width };
+    const rect = element => {
+      const box = element?.getBoundingClientRect();
+      return box && { left: box.left, right: box.right, width: box.width, top: box.top, bottom: box.bottom, height: box.height };
     };
+    const main = document.querySelector('.app-shell > main');
+    const mainStyle = getComputedStyle(main);
+    const grid = document.querySelector('.dashboard-grid');
+    const gridStyle = getComputedStyle(grid);
     return {
+      viewportWidth: document.documentElement.clientWidth,
       shellPaddingRight: getComputedStyle(document.querySelector('.app-shell')).paddingRight,
-      main: rect('.app-shell > main'),
-      chart: rect('.chart-probe'),
-      panel: rect('.q-side-panel'),
+      main: rect(main),
+      contentLeft: rect(main).left + parseFloat(mainStyle.paddingLeft) + parseFloat(mainStyle.borderLeftWidth),
+      contentRight: rect(main).right - parseFloat(mainStyle.paddingRight) - parseFloat(mainStyle.borderRightWidth),
+      grid: { ...rect(grid), display: gridStyle.display, gap: gridStyle.gap,
+        columns: gridStyle.gridTemplateColumns.split(' ').length, scrollWidth: grid.scrollWidth, clientWidth: grid.clientWidth },
+      cards: [...grid.children].map(element => ({ id: element.id, ...rect(element) })),
+      charts: [...grid.querySelectorAll('.chart')].map(rect),
+      panel: rect(document.querySelector('.q-side-panel')),
     };
   });
 
-  test('at a desktop viewport the panel docks: main compresses and no box overlaps it', async () => {
-    await page.setViewportSize({ width: 1280, height: 800 });
-    await page.setContent(shell(true));
+  function assertFits(actual, docked = false) {
+    for (const [name, box] of [['grid', actual.grid], ...actual.cards.map(c => [c.id, c]), ...actual.charts.map((c, i) => [`chart ${i}`, c])]) {
+      assert.ok(box.width > 0, `${name} must remain visible`);
+      assert.ok(box.left >= actual.contentLeft - 1, `${name} must stay inside main's content left edge`);
+      assert.ok(box.right <= actual.contentRight + 1, `${name} (${box.right}) must stay inside main's content right edge (${actual.contentRight})`);
+      if (docked) assert.ok(box.right <= actual.panel.left + 1, `${name} must not extend under the panel`);
+    }
+    assert.ok(actual.grid.scrollWidth <= actual.grid.clientWidth + 1, 'the grid must have no horizontal overflow');
+  }
+
+  function assertDesktopGrid(actual) {
+    assert.equal(actual.grid.display, 'grid');
+    assert.equal(actual.grid.columns, 36, 'wide content keeps all 36 tracks');
+    assert.equal(actual.grid.gap, '10px', 'wide content keeps its fixed 10px gutters');
+    assert.equal(actual.cards[0].top, actual.cards[1].top, 'left and right cards remain side by side');
+    assert.ok(Math.abs(actual.cards[1].right - actual.grid.right) <= 1, 'the fixture exercises the rightmost column');
+  }
+
+  function assertCompact(actual) {
+    assert.equal(actual.grid.display, 'flex');
+    assert.equal(actual.grid.gap, '16px');
+    for (const [i, card] of actual.cards.entries()) {
+      assert.ok(Math.abs(card.width - actual.grid.width) <= 1, `${card.id} must fill the compact width`);
+      assert.ok(card.height >= 340, `${card.id} must keep the compact card height`);
+      if (i) assert.ok(card.top >= actual.cards[i - 1].bottom + 15, 'compact cards must stack in document order');
+    }
+    assert.equal(actual.cards.at(-1).height, 340, 'compact tables keep a bounded scroll area');
+    for (const chart of actual.charts) assert.ok(chart.height >= 235, 'compact charts keep their minimum height');
+  }
+
+  for (const width of [761, 900, 1280]) test(`at ${width}px the real dashboard fits before opening, while docked, and after closing`, async () => {
+    await page.setViewportSize({ width, height: 800 });
+    await page.setContent(shell(false));
+    const initial = await boxes();
+    assert.equal(initial.shellPaddingRight, '0px');
+    assertFits(initial);
+    if (width >= 900) assertDesktopGrid(initial);
+    else assertCompact(initial);
+
+    await page.evaluate(markup => document.querySelector('.app-shell').insertAdjacentHTML('beforeend', markup), panel);
     const open = await boxes();
     assert.equal(open.shellPaddingRight, '400px');
     assert.equal(Math.round(open.panel.width), 400);
     assert.ok(open.main.right <= open.panel.left + 1, `main (${open.main.right}) must not extend under the panel (${open.panel.left})`);
-    assert.ok(open.chart.right <= open.panel.left + 1, 'the chart must sit fully inside the compressed width');
-    assert.ok(open.chart.right <= open.main.right + 1, 'the chart must stay inside main');
+    assertFits(open, true);
+    if (width === 1280) assertDesktopGrid(open);
+    else assertCompact(open);
+    if (width === 900) assert.equal(open.grid.width, open.viewportWidth - 168 - 400 - 48,
+      '900px leaves 284px after rail, panel and padding, less any vertical scrollbar');
+
     // Closing the panel restores the full width.
     await page.evaluate(() => document.querySelector('.q-side-panel').remove());
     const closed = await boxes();
     assert.equal(closed.shellPaddingRight, '0px');
-    assert.ok(closed.main.width > open.main.width, 'main regains the reserved width on close');
+    assert.equal(closed.main.width - open.main.width, 400, 'main regains the reserved width on close');
+    assertFits(closed);
+    assert.deepEqual(closed.grid, initial.grid, 'closing restores the original grid geometry');
+    assert.deepEqual(closed.cards, initial.cards, 'closing restores every original card placement');
   });
 
-  test('below the 760px breakpoint the panel keeps overlay behavior', async () => {
-    await page.setViewportSize({ width: 500, height: 800 });
+  test('compact layout follows available content width even without Ask O or a viewport change', async () => {
+    await page.setViewportSize({ width: 1920, height: 800 });
+    await page.setContent(shell(false));
+    for (const width of [601, 600, 284, 601]) {
+      await page.evaluate(width => { document.querySelector('main').style.width = `${width + 64}px`; }, width);
+      const actual = await boxes();
+      assert.equal(actual.grid.width, width, 'the container query excludes main padding');
+      assertFits(actual);
+      if (width > 600) assertDesktopGrid(actual);
+      else assertCompact(actual);
+    }
+  });
+
+  for (const width of [500, 760]) test(`at ${width}px the panel keeps overlay behavior and the dashboard remains compact`, async () => {
+    await page.setViewportSize({ width, height: 800 });
     await page.setContent(shell(true));
     const small = await boxes();
     assert.equal(small.shellPaddingRight, '0px');
     assert.equal(Math.round(small.panel.width), 400);
     assert.ok(small.main.right > small.panel.left, 'on small screens the panel still floats over main');
+    assertFits(small);
+    assertCompact(small);
   });
 });
