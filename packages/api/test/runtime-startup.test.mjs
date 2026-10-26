@@ -1,15 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { fileURLToPath } from 'node:url';
 import { createRuntime } from '../dist/runtime.js';
 import { runtimeReadiness } from '../dist/runtime-startup.js';
 import { InvocationScope } from '../dist/runtime-scope.js';
 import { runtimeEnv, startupEvent, event, context, payload } from './runtime-helpers.mjs';
 
-for (const remainingMs of [28000, 12000]) test(`SR1 cold startup with 14s ingress/init lag and ${remainingMs}ms Lambda time stays bounded and read-only`, async t => {
+for (const remainingMs of [28000, 60000, 12000]) test(`SR1 cold startup with 14s ingress/init lag and ${remainingMs}ms Lambda time stays bounded and read-only`, async t => {
   t.mock.timers.enable({ apis: ['Date', 'setTimeout', 'setInterval'], now: 100000 });
   const request = startupEvent();
   t.mock.timers.tick(14000);
-  const invokedAt = Date.now(), connectTime = 9000, ready = remainingMs === 28000;
+  const invokedAt = Date.now(), connectTime = 9000, ready = remainingMs >= 28000;
   let active = 0, attempts = 0, closed = 0, applications = 0, deadline, connectBudget;
   const statements = [];
   let entered;
@@ -49,6 +52,21 @@ for (const remainingMs of [28000, 12000]) test(`SR1 cold startup with 14s ingres
   t.mock.timers.tick(300000);
   assert.equal(attempts, 1); assert.equal(active, 0); assert.equal(closed, 1); assert.equal(applications, 0);
   assert.equal(statements.length, statementCount);
+});
+
+test('SR1 startup without an invocation work budget returns STARTING before constructing SQL', async () => {
+  let opened = 0;
+  const runtime = createRuntime(runtimeEnv, { databases() { opened++; assert.fail('expired startup touched SQL'); } });
+  for (const remainingMs of [0, 4000]) {
+    const result = await runtime.lambda(startupEvent(), { getRemainingTimeInMillis: () => remainingMs });
+    assert.equal(result.statusCode, 503); assert.deepEqual(payload(result), { errorCode: 'WORKSPACE_STARTING' });
+    assert.equal(result.headers['retry-after'], '5'); assert.equal(opened, 0);
+  }
+});
+
+test('SR1 startup cleanup failure and quarantine take precedence over retryable deadline exhaustion', async () => {
+  const { stdout } = await promisify(execFile)(process.execPath, [fileURLToPath(new URL('./support/runtime-startup-cleanup-worker.mjs', import.meta.url))], { timeout: 5000 });
+  assert.match(stdout, /startup cleanup quarantined/);
 });
 
 test('SR1 startup connects once, permits 15s resume, bounds 35s/never resume and has no idle keep-alive', async t => {
@@ -142,6 +160,8 @@ test('SR1 readiness timeout cancels ongoing SQL and waits for disposal', async t
   } });
   const run = runtime.lambda(startupEvent(), context); await started; t.mock.timers.tick(2000);
   const result = await run; assert.equal(result.statusCode, 503); assert.equal(closed, true); assert.equal(active, false);
+  // Readiness cancels the entire scope, whose deadline error wins the race.
+  assert.deepEqual(payload(result), { errorCode: 'WORKSPACE_STARTING' }); assert.equal(result.headers['retry-after'], '5');
 });
 
 test('SR3 startup requires all durable schema markers and never enables a partial migration', async () => {
