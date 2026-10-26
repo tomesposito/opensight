@@ -13,6 +13,9 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Added
 
+- Marketing site crawler rules, public sitemap, social sharing metadata,
+  an approved QuickSight alternative introduction, and an October 2026
+  freshness line (#134).
 - This changelog, with the update process documented in AGENTS.md (#116).
 - Workspace display names and a login-screen workspace picker: operators set
   a display name and unique slug at provisioning, the name shows in the

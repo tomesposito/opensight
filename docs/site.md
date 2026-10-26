@@ -9,13 +9,29 @@ infrastructure.
 
 1. Hero: value prop, subhead, two CTAs (Try the live demo → `demo/`, Star on
    GitHub), hero video of real product footage.
-2. Features strip: Blaze in-memory engine, visual data prep, embedding SDK.
-3. Compatibility (supporting, not the lead): QuickSight-compatible as a proof
+2. QuickSight alternative: the first H2 and comparison paragraph use Tom's
+   exact wording approved on 2026-10-20 (#134).
+3. Features strip: Blaze in-memory engine, visual data prep, embedding SDK.
+4. Compatibility (supporting, not the lead): QuickSight-compatible as a proof
    point under the main vision.
-4. Open source: Apache-2.0 (the repo's actual license — the issue text said
+5. Open source: Apache-2.0 (the repo's actual license — the issue text said
    "MIT", which was wrong), repo link, star CTA.
-5. Getting started: clone/install/run, condensed from the README.
-6. Footer: demo, GitHub, docs, discussion links.
+6. Getting started: clone/install/run, condensed from the README.
+7. Footer: demo, GitHub, docs, discussion links and the October 2026 freshness
+   line (#134).
+
+## Discovery and sharing (#134)
+
+`robots.txt` allows all crawlers, explicitly allows `meta-webindexer`, and
+points at `https://getopensight.org/sitemap.xml`. The sitemap lists the
+marketing page, `/demo/`, and `https://app.getopensight.org/`. Open Graph and
+Twitter large-image cards reuse the page title, existing meta description,
+and the absolute URL of `assets/hero-poster.jpg`.
+
+Run `node site/check.mjs` separately from root `npm test`: CI invokes the
+checker, but the root suite does not. Checks are offline; external URL
+inspection cannot establish live availability. The demo entry point remains
+a deploy-time artifact. Publishing and hosted routing remain operator work.
 
 ## Positioning (Tom's direction, 2026-10-12, from issue #93)
 
