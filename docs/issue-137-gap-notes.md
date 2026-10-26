@@ -9,7 +9,10 @@ semantics are documented in [usage-tracking.md](usage-tracking.md).
 - Root `npm run build`: passed, including strict TypeScript.
 - API analytics tests: **14 passed / 0 failed / 0 skipped**.
 - Web AI settings tests: **4 passed / 0 failed / 0 skipped**.
-- Root full-suite results are recorded below after the final run.
+- Final root `npm test`: **3,945 passed / 0 failed / 33 skipped**, exit code 0.
+  All 33 skips require live PostgreSQL; there were no cancellations or todos.
+  This total includes the 32 Python SDK tests as well as every Node workspace
+  and the root conformance tests.
 
 Targeted API command, from `packages/api`:
 
@@ -17,19 +20,42 @@ Targeted API command, from `packages/api`:
 TZ=UTC node --test --test-isolation=none test/analytics*.test.mjs
 ```
 
-The root suite uses UTC and a temporary directory on the workspace disk:
+The root suite uses UTC and a temporary directory on the workspace disk,
+outside the checkout (required by private-operator conformance fixtures):
 
 ```sh
-TZ=UTC TMPDIR="$PWD/.opensight/tmp" npm test
+mkdir -p "$HOME/workspace/.tmp"
+TZ=UTC TMPDIR="$HOME/workspace/.tmp" npm test
 ```
+
+Completed results on 2026-10-26:
+
+| Suite | Passed | Failed | Skipped |
+| --- | ---: | ---: | ---: |
+| API | 753 | 0 | 31 |
+| Bundle parser | 199 | 0 | 0 |
+| CLI | 73 | 0 | 0 |
+| Embedding SDK | 10 | 0 | 0 |
+| Headless SDK (JavaScript) | 28 | 0 | 0 |
+| Headless SDK (Python) | 32 | 0 | 0 |
+| MCP server | 74 | 0 | 0 |
+| O interpreter | 32 | 0 | 0 |
+| Parity | 11 | 0 | 0 |
+| Query engine | 505 | 0 | 2 |
+| Web | 2,140 | 0 | 0 |
+| Root conformance | 88 | 0 | 0 |
+| **Total** | **3,945** | **0** | **33** |
+
+The complete local output is `.opensight/issue-137/verification/full-suite.log`;
+the checked aggregate is `results.json` in the same ignored directory.
 
 No live PostHog, AI provider, AWS or external network was used. Vendor transports
 are fakes. No dependencies were added. `SOLUTION_DESIGN.md` was not edited.
 
 An earlier full-suite attempt was stopped after the existing H4 flood test
 exceeded its execution-time bound while Chromium capture/build work was also
-running. That attempt has no complete totals. The final run starts after all
-browser/build/ffmpeg work finishes; no test thresholds were changed. Early
+running. That attempt has no complete totals. The final run started after all
+browser/build/ffmpeg work finished; no test thresholds were changed. Early
 focused attempts also exposed an incorrect working directory for existing v1
 asset fixtures and missing required fields in the new embed test fixture. Both
 were corrected before the final focused and root runs.
@@ -38,14 +64,21 @@ The next root attempt completed all non-web workspaces, but its longer TMPDIR
 (`.opensight/issue-137/tmp`) caused Chromium's `Socket path too long` fatal error.
 The web summary was 1,744 passed / 194 failed / 202 cancelled, with no skips;
 root conformance did not run. The offline Chromium helper succeeds with the
-shorter `.opensight/tmp` path on the same workspace disk. The final root rerun
-uses that path without changing code, test expectations or skip conditions.
+shorter `.opensight/tmp` path on the same workspace disk. That rerun used the
+shorter path without changing code, test expectations or skip conditions.
 
 The subsequent root rerun was interrupted by a VM reboot after the API
 query-replay/concurrency checks. Its partial output is not a completed result.
 After resuming, the five implementation checkpoints and the pending item 6
-files were reviewed without replaying completed commits. A fresh full root
-run is required for the final totals below.
+files were reviewed without replaying completed commits; item 6 was saved as
+`03f33620`. The post-reboot full run completed all workspaces with **3,857
+passed / 0 failed / 33 skipped** (including 32 Python SDK tests), then root
+conformance reported **86 passed / 2 failed / 0 skipped**. Both failures came
+from private-operator fixtures rejecting the in-checkout temporary directory. The final run uses the brief's
+suggested `$HOME/workspace/.tmp`, outside the checkout and short enough for
+Chromium sockets. Standalone conformance passed 88/88 and an offline Chromium
+check passed with this path before the complete root rerun. No code, test
+expectation or skip condition changed.
 
 ## Visual review
 
@@ -57,6 +90,8 @@ page errors, external requests or horizontal overflow at 390px width. Desktop
 capture is 1440×1000; mobile viewport is 390×844. The initial capture revealed
 an inherited form rule that placed the checkbox above its label; the scoped
 checkbox-row fix is included and the corrected captures were reviewed.
+The post-reboot capture rerun passed the same assertions and produced a desktop
+image byte-for-byte identical to `docs/images/analytics-settings.png`.
 
 Compared the settings form with the local `dyn-02-ai-settings.png` reference.
 The new Analytics section follows the existing provider form; current shell and
@@ -172,7 +207,7 @@ Files can appear in multiple checkpoints as later items wire earlier modules.
 - `packages/api/test/embed-http-helpers.mjs`
 - `packages/api/test/serverless-backup.test.mjs`
 
-### 6 — Documentation, screenshots and final verification
+### 6 — Documentation, screenshots and verification (`03f33620`)
 
 - `CHANGELOG.md`
 - `README.md`
