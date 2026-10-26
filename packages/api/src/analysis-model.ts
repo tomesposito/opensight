@@ -3,8 +3,10 @@ import { analysisFail, analysisId, analysisObject, checkAnalysisInput, type Anal
 import type { JsonObject } from './mapping.js';
 export interface DatasetBinding { kind: 'dataset' | 'prepared-dataset'; id: string }
 export type DatasetBindings = Record<string, DatasetBinding>;
-export interface AnalysisRecord { id: string; name: string; definition: BundleDefinition; datasetBindings: DatasetBindings; version: number; updatedAt?: string; bindingOwnerId?: string }
+export interface AnalysisRecord { id: string; name: string; definition: BundleDefinition; datasetBindings: DatasetBindings; version: number; updatedAt?: string; hasHadVisual?: boolean; bindingOwnerId?: string }
 export interface AnalysisBackend {
+  /** Only the local backend has the configured synthetic sales binding. */
+  sampleDatasetId?: 'sales';
   /** Scope is trusted and comes only from verified identity or explicit local mode. */
   scope: { tenantId: string; namespaceId: string; userId: string };
   list(): Promise<{ kind: 'analysis'; id: string; name: string }[]>;
@@ -44,4 +46,12 @@ export function analysisName(raw: unknown): string {
 }
 export function describeAnalysis(record: AnalysisRecord, Definition: JsonObject, Errors: unknown[]) {
   return { AnalysisId: record.id, Name: record.name, Definition, Errors };
+}
+
+/** Internal milestone checks support the persisted QuickSight wire definition. */
+export function wireHasVisuals(wire: unknown): boolean {
+  if (!wire || typeof wire !== 'object' || !('Definition' in wire)) return false;
+  const definition = wire.Definition;
+  if (!definition || typeof definition !== 'object' || !('Sheets' in definition) || !Array.isArray(definition.Sheets)) return false;
+  return definition.Sheets.some((sheet: unknown) => !!sheet && typeof sheet === 'object' && 'Visuals' in sheet && Array.isArray(sheet.Visuals) && sheet.Visuals.length > 0);
 }

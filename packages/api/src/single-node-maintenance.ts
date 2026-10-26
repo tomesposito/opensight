@@ -11,7 +11,7 @@ import { appendOperatorAudit } from './operator-audit.js';
 export const referenceTables = ['h1_tenants', 'h1_namespaces', 'h1_revisions', 'h1_resources', 'h1_links', 'h1_operations', 'h1_outbox', 'h1_migrations',
   'h2_control', 'h2_identities', 'h2_memberships', 'h2_invitations', 'h2_keys', 'h2_sessions', 'h2_attempts', 'h2_onboarding', 'h2_requests',
   'h4_budget_config', 'h5_embedding_config', 'h6_keys', 'h6_sessions', 'h7_jobs', 'h7_occurrences', 'h7_deliveries', 'h7_migrations',
-  'h8_schema', 'h8_usage', 'h8_usage_events', 'h8_audit', 'h8_recovery'] as const;
+  'h8_schema', 'h8_usage', 'h8_usage_events', 'h8_audit', 'h8_recovery', 'analytics_events', 'analytics_settings'] as const;
 interface Registry { version: 1; backups: Record<string, string>; deleted: string[] }
 interface Snapshot { version: 1; tables: Record<string, SqlRow[]> }
 const maxBytes = 64 * 1024 * 1024;
@@ -79,12 +79,13 @@ export class ReferenceMaintenance {
     let snapshot: Snapshot;
     try { snapshot = JSON.parse(unseal(data, this.key, `h8-backup:${id}`)) as Snapshot; }
     catch { return failure('BACKUP_INVALID'); }
-    if (snapshot.version !== 1 || JSON.stringify(Object.keys(snapshot.tables).sort()) !== JSON.stringify([...referenceTables].sort())) failure('BACKUP_INVALID');
+    const sourceTables = Object.keys(snapshot.tables).sort();
+    if (snapshot.version !== 1 || ![referenceTables, referenceTables.filter(t => !t.startsWith('analytics_'))].some(tables => JSON.stringify(sourceTables) === JSON.stringify([...tables].sort()))) failure('BACKUP_INVALID');
     if (snapshot.tables.h1_tenants!.some(t => registry.deleted.includes(String(t.tenant_id)) && t.state !== 'deleted')) failure('BACKUP_DELETED_TENANT');
     await this.db.transaction(async c => {
       if ((await c.query('SELECT tenant_id FROM h1_tenants')).length) failure('RESTORE_TARGET_NOT_EMPTY');
       for (const table of [...referenceTables].reverse()) await c.query(`DELETE FROM ${table}`);
-      for (const table of referenceTables) for (const row of snapshot.tables[table]!) {
+      for (const table of referenceTables) for (const row of (snapshot.tables[table] ?? [])) {
         const keys = Object.keys(row); if (keys.some(k => !/^[a-z_]+$/.test(k))) failure('BACKUP_INVALID');
         await c.query(`INSERT INTO ${table} (${keys.map(k => `"${k}"`).join(',')}) VALUES (${keys.map(() => '?').join(',')})`, Object.values(row));
       }
@@ -142,7 +143,7 @@ export class ReferenceMaintenance {
     }
     await syncDirectory(this.directory);
     await this.db.transaction(async c => {
-      for (const table of ['h8_recovery', 'h8_usage_events', 'h8_usage', 'h7_deliveries', 'h7_occurrences', 'h7_jobs', 'h7_migrations', 'h6_sessions', 'h5_embedding_config', 'h2_onboarding', 'h2_invitations', 'h2_sessions', 'h2_memberships']) await c.query(`DELETE FROM ${table} WHERE tenant_id = ?`, [op.tenantId]);
+      for (const table of ['analytics_events', 'analytics_settings', 'h8_recovery', 'h8_usage_events', 'h8_usage', 'h7_deliveries', 'h7_occurrences', 'h7_jobs', 'h7_migrations', 'h6_sessions', 'h5_embedding_config', 'h2_onboarding', 'h2_invitations', 'h2_sessions', 'h2_memberships']) await c.query(`DELETE FROM ${table} WHERE tenant_id = ?`, [op.tenantId]);
       await c.query('DELETE FROM h2_identities WHERE NOT EXISTS (SELECT 1 FROM h2_memberships m WHERE m.subject = h2_identities.subject)');
       // Namespace reservation remains, but labels and placement may contain tenant data.
       await c.query("UPDATE h1_namespaces SET name = 'deleted' WHERE tenant_id = ?", [op.tenantId]);

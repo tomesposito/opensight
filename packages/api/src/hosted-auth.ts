@@ -1,3 +1,4 @@
+import { disabledAnalytics } from './analytics.js';
 import { appendMetadataEvent } from './metadata-outbox.js';
 import { createHmac, randomBytes } from 'node:crypto';
 import type { IncomingMessage } from 'node:http';
@@ -51,6 +52,7 @@ export async function activateAuthKey(database: Database, config: HostedConfig):
 }
 
 export class HostedAuth {
+  analytics = disabledAnalytics;
   private constructor(private readonly database: Database, private readonly config: HostedConfig, private readonly clock: () => number) {}
   static async create(database: Database, config: HostedConfig, clock = Date.now, initializeKey = true): Promise<HostedAuth> {
     if (database.durable !== true) throw new MetadataError('DURABLE_MEMBERSHIP_STORE_REQUIRED', 503);
@@ -137,7 +139,7 @@ export class HostedAuth {
     await this.limit(`invite:${digest(token)}`, peer);
     const invite = await this.database.transaction(c => this.invitation(c, token));
     const credentials = await this.credentials(String(invite.subject), password);
-    return this.database.transaction(async c => {
+    const activated = await this.database.transaction(async c => {
       const current = await this.invitation(c, token);
       // Accepted replays only acknowledge completion. They never issue credentials or reset MFA.
       await this.consumeTotp(c, credentials, code, Number(current.accepted) === 1);
@@ -147,9 +149,11 @@ export class HostedAuth {
         const scope = (await c.query('SELECT namespace_id FROM h1_namespaces WHERE tenant_id = ?', [String(current.tenant_id)]))[0]!;
         await appendMetadataEvent(c, { tenantId: String(current.tenant_id), namespaceId: String(scope.namespace_id) }, 'membership.accepted');
         await c.query('UPDATE h2_invitations SET accepted = 1 WHERE invitation_id = ?', [String(current.invitation_id)]);
+        return { tenantId: String(current.tenant_id), namespaceId: String(scope.namespace_id) };
       }
-      return { accepted: true };
     });
+    if (activated) this.analytics.track(activated, { name: 'user_activated' });
+    return { accepted: true };
   }
   async login(emailValue: unknown, passwordValue: unknown, code: string, tenantValue: unknown, peer: string): Promise<LoginSession | LoginSelection> {
     const email = normalizedEmail(emailValue), password = passwordInput(passwordValue);

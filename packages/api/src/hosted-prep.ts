@@ -95,6 +95,7 @@ export class HostedPrep {
     const resource: BundleDataSet = { resourceType: 'dataset', dataSetId: identifier(id), name: raw.name, physicalTableMap: {}, importMode: 'DIRECT_QUERY', opensightPrep: pipeline };
     const execution: ExecutionSettings = graph.reason ? { mode: 'BLAZE', intervalMinutes: null } : directSettings;
     await this.data.sources.metadata.batch(context, [{ key: this.key(context, id), body: { resource, execution, updatedAt: new Date().toISOString() }, expectedVersion: raw.expectedVersion as number }], graph.revisions);
+    this.data.analytics.track(context, { name: 'dataset_prep_saved' });
     await this.data.cache?.invalidate(this.cacheKey(context, id)); return { resource, version: Number(raw.expectedVersion) + 1, execution };
   }
   async import(context: TenantContext, input: unknown) {

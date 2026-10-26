@@ -1,3 +1,5 @@
+import { Analytics, analyticsFromEnvironment } from './analytics.js';
+import { AnalyticsStore } from './analytics-store.js';
 import { MetadataError } from './metadata-db.js';
 import { TenantMetadata } from './metadata.js';
 import { InvocationAws } from './runtime-aws.js';
@@ -53,9 +55,10 @@ export async function runServerlessEvent(raw: ScheduledEvent, db: InvocationData
       await execution.checked(handle, (c, now) => expireResultOperation(c, deployment, inspected, now));
     } else if (inspected.kind === 'ingest') {
       const budgets = await loadBudgets(db.membership, metadata); scope.own({ close: () => budgets.shutdown(), force: () => budgets.close() });
+      const analytics = new Analytics(new AnalyticsStore(db.membership), analyticsFromEnvironment(env));
       const worker = new IngestionWorker(db.membership, metadata, new DurableCoordinator(db.membership, metadata, deployment), dispatch,
-        new ObjectLedger(metadata, deployment), new UploadObjects(aws, bucket), new ArtifactTransfer(aws, { bucket, prefix: 'artifacts/v1' }), budgets, () => aws.close());
-      try { await worker.run(event, scope.remaining()); } finally { await budgets.shutdown(); }
+        new ObjectLedger(metadata, deployment), new UploadObjects(aws, bucket), new ArtifactTransfer(aws, { bucket, prefix: 'artifacts/v1' }), budgets, () => aws.close(), 'postgres', analytics);
+      try { await worker.run(event, scope.remaining()); } finally { await analytics.close(); await budgets.shutdown(); }
     } else throw new MetadataError('SERVERLESS_DISPATCH_REQUIRED', 503);
     await execution.complete(handle);
   } catch (error) { if (!await execution.failed(handle, error)) throw error; }

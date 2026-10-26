@@ -58,5 +58,7 @@ export async function embedSessionRoute(request: IncomingMessage, response: Serv
   }
   await recheck(); await content.data.publication(context, revisions);
   const output = publishResult ? await publishResult(context, session, result, recheck) : { status: 200, body: result };
+  if (action === 'content' || action === 'analysis') content.data.analytics.track(context, { name: 'embed_viewed' });
+  if (action === 'question') content.data.analytics.track(context, { name: 'ask_o_asked', props: { count: 1 } });
   send(response, output.status, output.body); return true;
 }

@@ -2098,6 +2098,10 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .admin-settings [role="dialog"] label:has(> input[type=radio]):hover { background: #edf7f7; }
 .admin-settings [role="dialog"] input[type="radio"] { width: auto; margin-right: .5rem; }
 
+/* Analytics consent is one compact checkbox row within the settings form. */
+.admin-settings label.analytics-toggle { display: flex; align-items: center; gap: 8px; width: fit-content; }
+.admin-settings label.analytics-toggle input { width: auto; margin: 0; flex: none; }
+
 /* Narratives share KPI graphics; long computations remain readable by scrolling. */
 .chart.insight-chart { overflow: auto; }
 

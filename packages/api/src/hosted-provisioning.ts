@@ -1,3 +1,4 @@
+import { disabledAnalytics, type Analytics } from './analytics.js';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { isRole, type Role } from '@opensight/query-engine';
 import { MetadataError, missing, type Database, type SqlConnection } from './metadata-db.js';
@@ -24,7 +25,7 @@ export const operatorOperationId = (key: string): string => checksum(['deploymen
 
 export class HostedProvisioning {
   readonly operator: MetadataOperator;
-  constructor(private readonly database: Database, private readonly config: HostedConfig, private readonly mail: MailTransport, private readonly clock = Date.now, private readonly jobs?: JobOwnership) {
+  constructor(private readonly database: Database, private readonly config: HostedConfig, private readonly mail: MailTransport, private readonly clock = Date.now, private readonly jobs?: JobOwnership, private readonly analytics = disabledAnalytics) {
     this.operator = new MetadataOperator(database);
   }
   private async reserve(operationId: string, hash: string): Promise<void> {
@@ -100,7 +101,7 @@ export class HostedProvisioning {
     const op = await this.operator.inspect(operationId);
     if (op.status === 'complete') return op;
     await this.deliver(operationId);
-    await this.database.transaction(async c => {
+    const activated = await this.database.transaction(async c => {
       const tenants = await c.query("UPDATE h1_tenants SET version = version WHERE tenant_id = ? AND state IN ('provisioning','active') RETURNING state", [op.tenantId]);
       if (!tenants.length) throw new MetadataError('TENANT_UNAVAILABLE', 403);
       if ((await c.query('SELECT status FROM h1_operations WHERE operation_id = ?', [operationId]))[0]!.status === 'complete') return;
@@ -116,7 +117,9 @@ export class HostedProvisioning {
       // exactly once. The invitation token is sealed in h2_invitations and mailed; only the
       // recipient identity lands here.
       await appendOperatorAudit(c, { action: 'tenant.activated', tenantId: op.tenantId, subject: input.administrator.email, detail: { operationId } });
+      return true;
     });
+    if (activated) { this.analytics.track(op, { name: 'tenant_provisioned' }); this.analytics.track(op, { name: 'user_invited' }); }
     return this.operator.inspect(operationId);
   }
   async inviteMember(key: string, tenantId: string, raw: InvitationInput): Promise<{ operationId: string; tenantId: string }> {
@@ -126,7 +129,7 @@ export class HostedProvisioning {
     const hash = checksum({ action: 'invite', tenantId, input });
     if (!this.mail.configured) throw new MetadataError('SMTP_NOT_CONFIGURED', 503);
     await this.reserve(operationId, hash);
-    await this.database.transaction(async c => {
+    const invited = await this.database.transaction(async c => {
       const rows = await c.query("UPDATE h1_tenants SET version = version WHERE tenant_id = ? AND state = 'active' RETURNING tenant_id", [tenantId]);
       if (!rows.length) throw new MetadataError('TENANT_UNAVAILABLE', 403);
       const prior = (await c.query('SELECT * FROM h2_onboarding WHERE operation_id = ?', [operationId]))[0];
@@ -139,7 +142,9 @@ export class HostedProvisioning {
       await appendMetadataEvent(c, { tenantId, namespaceId }, 'membership.invited');
       // The invitation token is sealed in h2_invitations and mailed; only the recipient identity lands here.
       await appendOperatorAudit(c, { action: 'membership.invited', tenantId, subject: input.email, detail: { operationId, userId, role: input.role } });
+      return { tenantId, namespaceId };
     });
+    if (invited) this.analytics.track(invited, { name: 'user_invited' });
     await this.deliver(operationId);
     return { operationId, tenantId };
   }

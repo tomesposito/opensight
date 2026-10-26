@@ -1,3 +1,4 @@
+import { disabledAnalytics, rowCountBucket } from './analytics.js';
 import { setImmediate as yieldTurn } from 'node:timers/promises';
 import { TenantBudgets, type WorkScope } from './budgets.js';
 import { HostedCache, type HostedCacheAdapter } from './hosted-cache.js';
@@ -33,7 +34,7 @@ export class HostedData {
   begin(context: TenantContext, signal?: AbortSignal, verify?: () => Promise<void>, beforePublication?: () => Promise<void>): void { if (verify) this.verifiers.set(context, verify); if (beforePublication) this.publicationChecks.set(context, beforePublication); this.admitted.set(context, new Set()); if (signal) this.signals.set(context, signal); }
   async publication(context: TenantContext, revisions: Revisions): Promise<void> { await this.finish(context, [...this.admitted.get(context) ?? []], revisions); }
   constructor(readonly sources: HostedSources, private readonly postgres = streamSourcePostgres, readonly budgets?: TenantBudgets, cache?: HostedCacheAdapter,
-    private readonly durableWork?: HostedWorkAdapter) { this.cache = cache ?? (budgets ? new HostedCache(budgets) : undefined); }
+    private readonly durableWork?: HostedWorkAdapter, readonly analytics = disabledAnalytics) { this.cache = cache ?? (budgets ? new HostedCache(budgets) : undefined); }
   scope(context: TenantContext): WorkScope {
     this.sources.metadata.assertContext(context);
     if (!this.budgets) throw new MetadataError('BUDGET_MIGRATION_REQUIRED', 503);
@@ -86,7 +87,9 @@ export class HostedData {
         scope.rows(parsed.rows.length); scope.memory(Buffer.byteLength(JSON.stringify(parsed)));
         await this.verifiers.get(context)?.(); scope.check(); return parsed;
       });
-      committed = true; return result;
+      committed = true;
+      this.analytics.track(context, { name: 'dataset_uploaded', props: { sourceType: 'file', rowCountBucket: rowCountBucket(result.rowCount!) } });
+      return result;
     }, this.signals.get(context));
   }
   async admit(context: TenantContext, id: string, path: DataPath, embedSecurity?: (security: SecurityContext) => SecurityContext): Promise<Admission> {

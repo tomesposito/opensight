@@ -1,3 +1,4 @@
+import { initializeAnalytics } from './analytics-store.js';
 import { MetadataError, type Database, type SqlConnection } from './metadata-db.js';
 import { initializeAuth } from './auth-schema.js';
 import { ensureTenantNaming } from './metadata-schema.js';
@@ -22,7 +23,7 @@ const durableTables = [...coordinationTables, ...manifestTables, ...dispatchTabl
 // h8_audit_schema rides along for ownership/backup/restore inventory, but stays out of
 // baseTables on purpose: the existing-database foreign check must accept deployed
 // databases that predate the marker (the owner migration adds it).
-const additiveTables = ['h2_login_selections', 'h8_ai_warnings'];
+const additiveTables = ['h2_login_selections', 'h8_ai_warnings', 'analytics_events', 'analytics_settings'];
 export const serverlessTables = [...baseTables, ...additiveTables, 'h8_audit_schema', ...durableTables];
 export async function grantServerlessRuntime(c: SqlConnection, env: NodeJS.ProcessEnv): Promise<void> {
   const schema = String((await c.query('SELECT current_schema() AS schema'))[0]?.schema);
@@ -91,7 +92,7 @@ export async function migrateServerless(database: Database, env: NodeJS.ProcessE
     // Owner-serialized usage/audit upgrade adds warning intents and upgrades legacy
     // audit columns/markers before runtime grants. Additive tables stay out of
     // baseTables so the foreign-database check accepts pre-upgrade deployments.
-    await initializeUsage(nested);
+    await initializeUsage(nested); await initializeAnalytics(nested);
     if (dialect === 'postgres') await grantServerlessRuntime(c, env);
     await appendOperatorAudit(c, { action: 'serverless.migrated' });
   });

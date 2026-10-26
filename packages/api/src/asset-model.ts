@@ -1,3 +1,4 @@
+import { wireHasVisuals } from './analysis-model.js';
 import { hasCapability, type Role } from '@opensight/query-engine';
 import { MetadataError } from './metadata-db.js';
 import { object, identifier, type MetadataResource, type ResourceKey } from './metadata-resources.js';
@@ -83,6 +84,7 @@ export class AssetCatalog {
     const { Arn: _arn, AnalysisId: _analysis, DashboardId: _dashboard, Version: _version, ...wire } = object(copy.body.definition);
     copy.body.definition = { ...wire, [r.kind === 'analysis' ? 'AnalysisId' : 'DashboardId']: id, Name: name ?? summary(r).name };
     copy.body.folderId = folderId; copy.body.grants = [{ principal: { type: 'user', id: this.scope.userId }, role: 'co-owner' }];
+    if (copy.kind === 'analysis') copy.body.hasHadVisual = wireHasVisuals(copy.body.definition);
     copy.body.updatedAt = new Date().toISOString();
     if (copy.body.published) {
       const published = copy.body.published as DashboardRecord, latest = structuredClone(dashboardVersion(published));

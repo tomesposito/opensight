@@ -1,3 +1,6 @@
+import { analyticsSettingsRoute } from './analytics-settings.js';
+import { Analytics, analyticsFromEnvironment } from './analytics.js';
+import { AnalyticsStore, initializeAnalytics } from './analytics-store.js';
 import { EmbedSessions, embedSessionKey } from './embed-sessions.js';
 import { EmbedContent } from './embed-content.js';
 import { EmbedSources } from './embed-sources.js';
@@ -78,8 +81,9 @@ export interface HostedServerOptions {
   builtinAuth?: HostedAuth;
   env?: NodeJS.ProcessEnv;
   mailTransport?: MailTransport;
+  analytics?: Analytics;
   /** Invocation mode never runs DDL, activates keys, recovers jobs or starts interval work. */
-  invocation?: { signal: AbortSignal; usage?: HostedUsage; compose?(metadata: TenantMetadata, budgets: TenantBudgets, auth?: HostedAuth, aiMeter?: AiMeter): HostedInvocationAdapters };
+  invocation?: { signal: AbortSignal; usage?: HostedUsage; compose?(metadata: TenantMetadata, budgets: TenantBudgets, auth?: HostedAuth, aiMeter?: AiMeter, analytics?: Analytics): HostedInvocationAdapters };
 }
 const forgedHeaders = ['x-user', 'x-user-id', 'x-principal', 'x-groups', 'x-group-ids', 'x-namespace', 'x-namespace-id', 'x-tenant', 'x-tenant-id', 'x-subject', 'x-role', 'x-roles', 'x-capabilities'];
 const forgedFields = ['subject', 'principal', 'userId', 'namespaceId', 'groups', 'security', 'capabilities', 'issuer', 'audience'];
@@ -122,16 +126,19 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
     if (Number(r?.version) !== 1) throw new MetadataError('MIGRATIONS_REQUIRED', 503);
     await appendOperatorAudit(c, { action: 'reference.started' });
   });
+  if (!options.invocation) await initializeAnalytics(options.membershipDatabase);
+  const analytics = options.analytics ?? new Analytics(new AnalyticsStore(options.membershipDatabase), analyticsFromEnvironment(options.env));
+  if (options.builtinAuth) options.builtinAuth.analytics = analytics;
   const metadata = new TenantMetadata(options.tenantDatabase, options.membershipDatabase, usage);
   const policy = embeddingPolicy(options.env ?? process.env, config.origin);
   if (!options.invocation) await initializeEmbedding(options.membershipDatabase);
   const embedding = new HostedEmbedding(options.membershipDatabase, metadata, policy);
   const budgets = await loadBudgets(options.membershipDatabase, metadata);
-  const invocation = options.invocation?.compose?.(metadata, budgets, options.builtinAuth, usage?.aiMeter());
+  const invocation = options.invocation?.compose?.(metadata, budgets, options.builtinAuth, usage?.aiMeter(), analytics);
   const jobs = invocation?.jobs ?? new JobStore(options.membershipDatabase, metadata);
-  const data = invocation?.data ?? new HostedDataRoutes(new HostedData(new HostedSources(metadata, config.encryptionKey.toString('base64'), sourceEndpoints(options.env)), undefined, budgets), jobs);
-  const v1 = new V1Routes(data, options.env ?? process.env, { invocation: !!options.invocation });
-  const embedContent = invocation?.embedContent ?? new EmbedContent(new HostedData(new EmbedSources(metadata, config.encryptionKey.toString('base64'), sourceEndpoints(options.env)), undefined, budgets));
+  const data = invocation?.data ?? new HostedDataRoutes(new HostedData(new HostedSources(metadata, config.encryptionKey.toString('base64'), sourceEndpoints(options.env)), undefined, budgets, undefined, undefined, analytics), jobs);
+  const v1 = new V1Routes(data, options.env ?? process.env, { invocation: !!options.invocation, analytics });
+  const embedContent = invocation?.embedContent ?? new EmbedContent(new HostedData(new EmbedSources(metadata, config.encryptionKey.toString('base64'), sourceEndpoints(options.env)), undefined, budgets, undefined, undefined, analytics));
   const mail = invocation?.mail ?? options.mailTransport ?? smtpFromEnvironment(options.env);
   if (!options.invocation) await initializeJobs(options.membershipDatabase);
   const unmigrated = await options.membershipDatabase.transaction(c => c.query(`SELECT j.resource_id FROM h1_resources j WHERE j.kind = 'job'
@@ -141,7 +148,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
   const ownership = new JobOwnership(jobs, renderer), scheduler = new Scheduler(() => runner.tick());
   const sessions = new EmbedSessions(options.membershipDatabase, metadata, policy, embedSessionKey(options.env ?? process.env), (context, grant) => embedContent.authorize(context, grant));
   await sessions.initialize(!options.invocation);
-  const provisioning = new HostedProvisioning(options.membershipDatabase, config, mail, Date.now, ownership);
+  const provisioning = new HostedProvisioning(options.membershipDatabase, config, mail, Date.now, ownership, analytics);
   // Prove that the durable H1/H2 schema is reachable before binding a socket.
   await options.membershipDatabase.transaction(async c => { await c.query('SELECT tenant_id FROM h1_tenants WHERE 1 = 0'); await c.query('SELECT subject FROM h2_memberships WHERE 1 = 0'); });
   await assertHostedSourcesReady(options.membershipDatabase);
@@ -272,6 +279,10 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
       const context = await metadata.authenticate(request, verified);
       path = scopePath(path, context);
       await usage?.consume(metadata, context, 'apiCalls');
+      if (await analyticsSettingsRoute(request, response, path, '', analytics, context, async () => {
+        const user = await metadata.get(context, { kind: 'user', id: context.userId });
+        if (!hasCapability(user.body.role as Parameters<typeof hasCapability>[0], 'admin')) throw new MetadataError('SECURITY_ADMIN_REQUIRED', 403);
+      })) return;
       if (path === '/api/session') {
         method(request, response, ['GET']);
         const user = await metadata.get(context, { kind: 'user', id: context.userId });
@@ -354,16 +365,16 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
   };
   const server = createServer((request, response) => { void handle(request, response); });
   handlers.set(server, handle);
-  if (invocation) invocationFinishes.set(server, () => invocation.finish());
+  if (invocation) invocationFinishes.set(server, async () => { await analytics.close(); await invocation.finish(); });
   let expiryWork: Promise<void> | undefined;
   const expiryTimer = options.invocation ? undefined : setInterval(() => {
     expiryWork ??= expireUploads(options.membershipDatabase).catch(() => { /* Reads still fail closed on expiry. */ }).finally(() => { expiryWork = undefined; });
   }, 60000);
   if (!options.invocation) { await runner.recover(); server.once('listening', () => scheduler.start()); }
-  expiryTimer?.unref(); server.once('close', () => { v1.close(); clearInterval(expiryTimer); scheduler.stop(); budgets.close(); });
+  expiryTimer?.unref(); server.once('close', () => { v1.close(); clearInterval(expiryTimer); scheduler.stop(); budgets.close(); void analytics.close(); });
   drains.set(server, () => drain ??= (async () => {
     draining = true; scheduler.stop(); runner.stop(); clearInterval(expiryTimer);
-    await Promise.all([...active]); await scheduler.idle(); await expiryWork; await budgets.shutdown();
+    await Promise.all([...active]); await scheduler.idle(); await expiryWork; await analytics.close(); await budgets.shutdown();
     v1.close();
     if (reference) await options.membershipDatabase.transaction(c => appendOperatorAudit(c, { action: 'reference.drained' }));
     if (server.listening) await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));

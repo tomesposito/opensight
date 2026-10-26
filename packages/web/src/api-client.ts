@@ -59,6 +59,7 @@ export interface JobHistory { id: string; state: string; errorCode: string | nul
 export interface JobDelivery { delivery_id: string; recipient_id: string; state: string; attempts: number; error_code: string | null }
 export interface AIStatus { configured: boolean; state: 'configured' | 'not-configured' | 'needs-approval' }
 export interface ORequest { question: string; dashboardId?: string; calculatedFields?: readonly CalculatedField[] }
+export interface AnalyticsConfig { enabled: boolean; override: boolean | null; defaultEnabled: boolean; configured: boolean }
 export interface AIConfig {
   provider: 'openai' | 'anthropic' | 'openai-compatible' | 'bedrock' | null;
   model: string; baseUrl?: string; hasKey: boolean; configured: boolean;
@@ -299,6 +300,8 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
   const getAIStatus = () => resource<AIStatus>('/api/o/status');
   const generateO = (request: ORequest) => resource<InterpretationResult>('/api/o/generate', 'POST', request);
   const generateCalculation = (request: ORequest) => resource<CalculationResult>('/api/o/calculation', 'POST', request);
+  const getAnalyticsConfig = () => resource<AnalyticsConfig>('/api/admin/analytics');
+  const saveAnalyticsConfig = (enabled: boolean) => resource<AnalyticsConfig>('/api/admin/analytics', 'POST', { enabled });
   const getAIConfig = () => resource<AIConfig>('/api/admin/ai');
   const saveAIConfig = (config: Pick<AIConfig, 'provider' | 'model' | 'baseUrl'>) => resource<AIConfig>('/api/admin/ai', 'POST', config);
   const saveAIKey = (key: string) => resource<AIConfig>('/api/admin/ai/key', 'POST', { key });
@@ -415,7 +418,7 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
     onDemand, connect, subscribeAvailability,
     login, selectWorkspace, logout, clearSession, getTransportCapabilities, uploadDirectFile, getOperation, getUploadReservation, cancelOperation, cancelUploadReservation,
     listJobs, jobRecipients, jobHistory, jobDeliveries, runJob,
-    getLocalData, getDatasetExecution, setDatasetExecution, refreshBlaze, getPreparedRows, listPrepSources, listPrepDatasets, savePrep, deletePrep, previewPrep, uploadFile, validateConnector, listUsers, saveUser, deleteUser, listInvitations, inviteUser, revokeInvitation, acceptInvitation, getAIStatus, generateO, generateCalculation, getAIConfig, saveAIConfig, saveAIKey, testAIConnection, getSession, queryO, getDatasetRefreshStatus,
+    getLocalData, getDatasetExecution, setDatasetExecution, refreshBlaze, getPreparedRows, listPrepSources, listPrepDatasets, savePrep, deletePrep, previewPrep, uploadFile, validateConnector, listUsers, saveUser, deleteUser, listInvitations, inviteUser, revokeInvitation, acceptInvitation, getAIStatus, generateO, generateCalculation, getAnalyticsConfig, saveAnalyticsConfig, getAIConfig, saveAIConfig, saveAIKey, testAIConnection, getSession, queryO, getDatasetRefreshStatus,
     queryDataset,
     getAnalysisDefinition: (id: string, signal?: AbortSignal) => getDefinition('analysis', id, signal),
     getDashboardDefinition: (id: string, signal?: AbortSignal) => getDefinition('dashboard', id, signal),

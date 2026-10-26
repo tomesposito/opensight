@@ -1,3 +1,6 @@
+import { analyticsSettingsRoute } from './analytics-settings.js';
+import { localAnalytics } from './analytics-local.js';
+import type { Analytics } from './analytics.js';
 import { LocalAssets } from './local-assets.js';
 import type { Identity } from './security.js';
 import { MetadataError } from './metadata-db.js';
@@ -42,6 +45,8 @@ export interface ApiOptions {
   prepStorePath?: string;
   prepPostgresBindings?: readonly PrepPostgresBinding[];
   ai?: AIOptions;
+  analytics?: Analytics;
+  analyticsStorePath?: string;
   /** Trusted durable tenant accounting for AI-enabled compositions; omitted for plain self-hosted. */
   hostedUsage?: HostedUsage;
   embedding?: EmbeddingOptions;
@@ -88,6 +93,8 @@ export async function createApiServer(options: ApiOptions): Promise<Server> {
     if (source) source.security = security;
     namespaceStores.set(namespaceId, definitions); namespaceQueries.set(namespaceId, source);
   }
+  const localTracking = options.analytics ? undefined : await localAnalytics(['default', 'local', ...(security?.store.read().namespaces.map(n => n.id) ?? [])], options.analyticsStorePath);
+  const analytics = options.analytics ?? localTracking!.analytics;
   const ai = await AISettings.load({ ...(options.ai ?? aiFromEnvironment()),
     ...(options.hostedUsage ? { aiMeter: options.hostedUsage.aiMeter() } : {}) });
   const organization = security ? new OrganizationService(security, namespaceStores) : undefined;
@@ -103,8 +110,9 @@ export async function createApiServer(options: ApiOptions): Promise<Server> {
   await alerts.recover();
   refresh.onSuccess = (datasetId, run) => alerts.afterRefresh(datasetId, run);
   const scheduler = new Scheduler(async () => { await connectorRoutes.expire(); await refresh.tick(); await reports.tick(); await prepRoutes.tick(identity => { if (localIdentity && identity.namespaceId === localIdentity.namespaceId && identity.userId === localIdentity.userId) return; if (!security) throw new SecurityError(503, 'SECURITY_NOT_CONFIGURED', 'Authentication required'); security.require(identity, 'build'); }); });
-  const connectorRoutes = new ConnectorRoutes(!!localIdentity);
+  const connectorRoutes = new ConnectorRoutes(!!localIdentity, analytics);
   const prepRoutes = await PrepRoutes.create(connectorRoutes, options.prepStorePath, options.prepPostgresBindings);
+  prepRoutes.analytics = analytics;
   if (options.localUploadPath) await connectorRoutes.openLocal(options.localUploadPath);
   const dashboardBackend = (identity: Identity) => {
     const root = identity.namespaceId === 'default' ? options.dataRoot : options.namespaceDataRoots?.[identity.namespaceId];
@@ -113,8 +121,8 @@ export async function createApiServer(options: ApiOptions): Promise<Server> {
     const analyses = new LocalAnalyses(scopedStore, scopedSales, prepRoutes, identity, recheck, organization, root, !!options.security?.storePath);
     return new LocalDashboards(analyses, scopedStore, scopedSales, prepRoutes, identity, recheck, organization, root, !!options.security?.storePath);
   };
-  const embedding = organization ? new EmbeddingService(options.embedding, organization, dashboardBackend) : undefined;
-  const v1 = new V1Routes();
+  const embedding = organization ? new EmbeddingService(options.embedding, organization, dashboardBackend, analytics) : undefined;
+  const v1 = new V1Routes(undefined, process.env, { analytics });
   const server = createServer((request, response) => {
     void (async () => {
       const requestId = randomUUID();
@@ -135,7 +143,7 @@ export async function createApiServer(options: ApiOptions): Promise<Server> {
       if (path === '/api/invitations/accept') {
         if (!security) throw new SecurityError(503, 'SECURITY_NOT_CONFIGURED', 'Hosted authentication required');
         const invitedIdentity = await security.verify(request);
-        await invitationRoute(request, response, path, query, invitedIdentity, security); return;
+        await invitationRoute(request, response, path, query, invitedIdentity, security, analytics); return;
       }
       const identity = await security?.authenticate(request);
       if (identity) path = scopePath(path, identity);
@@ -188,7 +196,11 @@ export async function createApiServer(options: ApiOptions): Promise<Server> {
       }
       if (path.startsWith('/api/invitations')) {
         if (!security || !identity) throw new SecurityError(503, 'SECURITY_NOT_CONFIGURED', 'Hosted authentication required');
-        if (await invitationRoute(request, response, path, query, identity, security)) return;
+        if (await invitationRoute(request, response, path, query, identity, security, analytics)) return;
+      }
+      if (path === '/api/admin/analytics') {
+        if (!security || !identity) throw new SecurityError(503, 'SECURITY_NOT_CONFIGURED', 'Hosted administrator access required');
+        if (await analyticsSettingsRoute(request, response, path, query, analytics, { tenantId: identity.namespaceId, namespaceId: identity.namespaceId }, async () => { security.admin(identity); })) return;
       }
       if (path.startsWith('/api/admin/ai')) {
         if (!security || !identity) throw new SecurityError(503, 'SECURITY_NOT_CONFIGURED', 'Hosted authentication required');
@@ -196,7 +208,7 @@ export async function createApiServer(options: ApiOptions): Promise<Server> {
       }
       if (path.startsWith('/api/o/')) {
         if (!security || !identity || !organization) throw new SecurityError(503, 'SECURITY_NOT_CONFIGURED', 'Hosted authentication required');
-        if (await generativeRoute(request, response, path, query, identity, security, organization, ai, scopedSales)) return;
+        if (await generativeRoute(request, response, path, query, identity, security, organization, ai, scopedSales, analytics)) return;
         if (await oRoute(request, response, path, query, identity, security, organization, scopedSales)) return;
       }
       if (/^\/(?:api\/)?dashboards\/[^/]+\/embed-url$/.test(path)) {
@@ -213,7 +225,7 @@ export async function createApiServer(options: ApiOptions): Promise<Server> {
       }
       if (/^\/(?:api\/)?(analyses|dashboards)\/[^/]+\/(shares|visuals)(?:\/|$)/.test(path)) {
         if (!security || !identity || !organization) throw new SecurityError(503, 'SECURITY_NOT_CONFIGURED', 'Needs a hosted API with authentication configured');
-        if (await sharingRoute(request, response, path, query, identity, organization, scopedSales, dashboardBackend)) return;
+        if (await sharingRoute(request, response, path, query, identity, organization, scopedSales, dashboardBackend, analytics)) return;
       }
       if (['/api/assets', '/analyses', '/dashboards', '/api/datasets'].includes(path)) {
         method(request, response, ['GET']);
@@ -309,6 +321,7 @@ export async function createApiServer(options: ApiOptions): Promise<Server> {
         return;
       }
       try {
+        if (kind === 'dashboard') analytics.track({ tenantId: namespaceId, namespaceId }, { name: 'dashboard_viewed' });
         send(response, 200, { ...body, RequestId: requestId });
       } catch {
         error(500, 'InternalFailureException', 'Unable to serialize definition');
@@ -325,7 +338,7 @@ export async function createApiServer(options: ApiOptions): Promise<Server> {
     });
   });
   server.once('listening', () => scheduler.start());
-  server.once('close', () => { v1.close(); scheduler.stop(); void scheduler.idle().then(() => connectorRoutes.close()); });
+  server.once('close', () => { v1.close(); scheduler.stop(); void scheduler.idle().then(async () => { await analytics.close(); await localTracking?.close(); await connectorRoutes.close(); }); });
   return server;
 }
 

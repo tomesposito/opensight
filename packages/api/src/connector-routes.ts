@@ -1,3 +1,4 @@
+import { disabledAnalytics, rowCountBucket } from './analytics.js';
 import { streamPrepDuckDb, previewPrepDuckDb, withPrepMemory, type PrepSink, type PrepReadLimits, type PrepMemoryTable } from '@opensight/query-engine';
 import { prepFail } from '@opensight/bundle-parser/prep';
 import type { PrepSource, PrepPreview, PrepPreviewOptions } from '@opensight/query-engine';
@@ -16,7 +17,7 @@ function send(response: ServerResponse, status: number, body: unknown): void {
 }
 /** Authenticated owner staging, or an explicitly enabled shared local workspace. */
 export class ConnectorRoutes {
-  constructor(private readonly local = false) {}
+  constructor(private readonly local = false, private readonly analytics = disabledAnalytics) {}
   async openLocal(databasePath: string): Promise<void> {
     if (!this.local) throw new Error('LOCAL_DATA_MODE_CONFLICT');
     const session = await UploadStaging.create({ ttlMs: 24 * 60 * 60 * 1000 }, databasePath);
@@ -55,7 +56,7 @@ export class ConnectorRoutes {
         const selected = session;
         const operation = (this.queues.get(owner) ?? Promise.resolve()).catch(() => undefined).then(async () => (await selected).ingest({ config: body.config, data, ...(body.columns === undefined ? {} : { columns: body.columns as UploadColumn[] }) }));
         this.queues.set(owner, operation);
-        try { send(response, 201, await operation); } finally { if (this.queues.get(owner) === operation) this.queues.delete(owner); }
+        try { const result = await operation; this.analytics.track({ tenantId: identity.namespaceId, namespaceId: identity.namespaceId }, { name: 'dataset_uploaded', props: { sourceType: 'file', rowCountBucket: rowCountBucket(result.rowCount) } }); send(response, 201, result); } finally { if (this.queues.get(owner) === operation) this.queues.delete(owner); }
         return;
       }
       const preview = /^\/api\/uploads\/(upload_[a-f0-9]{32})$/.exec(path);

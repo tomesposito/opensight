@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { allowed, useAccess } from './access.js';
-import type { AIConfig, createApiClient } from './api-client.js';
+import type { AnalyticsConfig, AIConfig, createApiClient } from './api-client.js';
 
-type Client = Pick<ReturnType<typeof createApiClient>, 'getAIConfig' | 'saveAIConfig' | 'saveAIKey' | 'testAIConnection'>;
+type Client = Pick<ReturnType<typeof createApiClient>, 'getAnalyticsConfig' | 'saveAnalyticsConfig' | 'getAIConfig' | 'saveAIConfig' | 'saveAIKey' | 'testAIConnection'>;
 export function AISettings({ client }: { client: Client }) {
   const access = useAccess();
   if (access.mode !== 'hosted' || !allowed(access, 'admin')) return <p role="alert">SECURITY_ADMIN_REQUIRED: Hosted administrator access required.</p>;
@@ -48,6 +48,33 @@ function SettingsForm({ client }: { client: Client }) {
       {dirty && <p>Save provider and model before replacing the key or testing the connection.</p>}
       <button type="button" disabled={busy || dirty || !config.configured} onClick={() => void run(async () => { await client.testAIConnection(); }, 'Connection succeeded.')}>Test connection</button>
     </>}
+    <AnalyticsSettings client={client} />
     {busy && <p role="status">Working…</p>}{message && <p role="status">{message}</p>}{error && <p role="alert">{error}</p>}
+  </section>;
+}
+
+function AnalyticsSettings({ client }: { client: Client }) {
+  const [config, setConfig] = useState<AnalyticsConfig>();
+  const [error, setError] = useState(''), [busy, setBusy] = useState(false);
+  useEffect(() => {
+    let active = true;
+    void client.getAnalyticsConfig().then(value => { if (active) setConfig(value); }).catch(e => { if (active) setError(String(e)); });
+    return () => { active = false; };
+  }, [client]);
+  const save = async (enabled: boolean) => {
+    setBusy(true); setError('');
+    try { setConfig(await client.saveAnalyticsConfig(enabled)); }
+    catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+    finally { setBusy(false); }
+  };
+  return <section aria-labelledby="analytics-settings-title">
+    <h2 id="analytics-settings-title">Analytics</h2>
+    <p>Share tenant-level usage events with OpenSight through PostHog. No names, emails, file names, dataset contents, or questions are collected.</p>
+    <label className="analytics-toggle"><input type="checkbox" checked={config ? config.override ?? config.defaultEnabled : false} disabled={!config || busy}
+      onChange={e => void save(e.target.checked)} />Enable usage tracking for this tenant</label>
+    <p>Turning this off stops new events in both the OpenSight event log and PostHog. Previously collected events are retained.</p>
+    {config && <p role="status">{!config.configured ? 'Collection is off: analytics is not configured on the server.' : config.enabled ? 'Usage tracking is on.' : 'Usage tracking is off.'}</p>}
+    {!config && !error && <p role="status">Loading analytics settings…</p>}
+    {busy && <p role="status">Saving analytics setting…</p>}{error && <p role="alert">{error}</p>}
   </section>;
 }

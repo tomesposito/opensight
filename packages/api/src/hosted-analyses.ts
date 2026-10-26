@@ -39,7 +39,7 @@ export class HostedAnalyses implements AnalysisBackend {
       if (ref.kind !== 'dataset' && ref.kind !== 'prepared-dataset' || ref.kind === 'prepared-dataset' && ref.ownerId !== this.scope.userId) analysisFail('SECURITY_REJECTED', `$.datasetBindings[${JSON.stringify(d.identifier)}]`, 'Dataset owner does not match authenticated user');
       return [d.identifier, { kind: ref.kind, id: ref.id }];
     }));
-    return { id, name: String(wire.Name ?? id), definition, datasetBindings, version: asset.version };
+    return { id, name: String(wire.Name ?? id), definition, datasetBindings, version: asset.version, hasHadVisual: asset.body.hasHadVisual === true };
   }
   async resolve(bindings: DatasetBindings): Promise<Map<string, AnalysisSchema>> {
     const schemas = new Map<string, AnalysisSchema>();
@@ -78,6 +78,7 @@ export class HostedAnalyses implements AnalysisBackend {
   async save(record: AnalysisRecord, expectedVersion: number, stamp: unknown) {
     await this.recheck();
     await this.metadata.mutateAnalysis(this.scope, record.id, {
+      hasHadVisual: record.hasHadVisual === true,
       definition: { AnalysisId: record.id, Name: record.name, Definition: projectDefinition(record.definition) },
       datasets: record.definition.dataSetIdentifierDeclarations.map(d => {
         const ref = record.datasetBindings[d.identifier]!;

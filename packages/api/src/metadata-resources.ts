@@ -60,8 +60,9 @@ export function resourceLinks(key: ResourceKey, raw: JsonObject): ResourceKey[] 
     }
     case 'folder': object(body, ['name', 'grants', 'updatedAt']); label(body.name); grants(body.grants); break;
     case 'analysis': case 'dashboard': {
-      object(body, ['definition', 'folderId', 'grants', 'datasets', 'updatedAt', ...(key.kind === 'dashboard' ? ['published'] : [])]);
+      object(body, ['definition', 'folderId', 'grants', 'datasets', 'updatedAt', ...(key.kind === 'dashboard' ? ['published'] : ['hasHadVisual'])]);
       const d = object(body.definition), definition = object(d.Definition);
+      if (body.hasHadVisual !== undefined && typeof body.hasHadVisual !== 'boolean') invalidMetadata();
       if (d[key.kind === 'analysis' ? 'AnalysisId' : 'DashboardId'] !== key.id) invalidMetadata();
       const declarations = list(definition.DataSetIdentifierDeclarations);
       const bindings = list(body.datasets);
