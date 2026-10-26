@@ -136,7 +136,10 @@ export class ObjectRecovery {
     // the linkage recorded here. Nothing is deleted: the rows stay as audit evidence.
     const strandedIds = live.filter(r => number(r.control_epoch) !== epoch && number(r.expires_at) > now).map(r => String(r.event_id));
     const allSuperseded = [...supersededEventIds, ...strandedIds];
-    const resumable = live.find(r => number(r.control_epoch) === epoch && number(r.expires_at) > now);
+    // A failed continuation send leaves its original unfinished. Resume that
+    // oldest owner first so the collector retries the same continuation rather
+    // than attempting a future envelope (or growing another continuation).
+    const resumable = [...live].reverse().find(r => number(r.control_epoch) === epoch && number(r.expires_at) > now);
     if (resumable) return { ...this.entry(id, 'resumed', 'A non-terminal obligation from this epoch is still pending; it will be resumed, not duplicated.'),
       supersededEventIds: allSuperseded, newEventId: String(resumable.event_id), aggregateRevision: number(resumable.aggregate_revision) };
     const pins = await objectProtection(c, this.scope(scope), entry, now);
