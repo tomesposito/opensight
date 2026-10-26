@@ -26,6 +26,16 @@ the other 18 facet tests passed. Afterward, all 67 focused facet/compiler tests
 passed with zero failures or skips. TypeScript compilation passed. Serialized
 vertical faceted axis options were byte-for-byte identical before and after.
 
+The complete root `npm test` run exited successfully: **3,871 passed, 0 failed,
+32 skipped** (3,903 tests total; zero cancelled or todo). Every skip requires
+live PostgreSQL: 30 API tests and 2 query-engine tests. The totals include all
+2,102 web tests, 32 Python SDK tests and 88 root conformance tests.
+
+The completed run used local-server permissions outside the sandbox and a
+detached process after an earlier command session was terminated by SIGTERM.
+Its complete output is `/tmp/opensight-issue-127/full-test-complete.log`, with
+exit status `0` in `full-test.exit` and aggregate counts in `totals.json`.
+
 ## Static demo inspection
 
 The rebuilt single-file demo contains 793 modules and is 2,224,322 bytes.
