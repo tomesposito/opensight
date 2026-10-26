@@ -94,10 +94,11 @@ not fall back to fixtures or deterministic results.
 
 ### Prompt-injection safety
 
-Threat model. Three user-influenced inputs meet the provider in the prompt: the
-free-text question, calculated-field names/expressions, and dataset schema field
-names (operator-controlled, CLS-filtered). They are serialized as JSON strings,
-which neutralizes structural/delimiter breakout, but the model can still be
+Threat model. The provider prompt contains the free-text question and permitted
+field names/types: calculated fields and physical dataset columns after CLS
+filtering. Calculated expressions are validated on the server and are not sent
+in the prompt. Accepted content is serialized as JSON strings, which neutralizes
+structural/delimiter breakout, but the model can still be
 semantically steered ("ignore previous instructions…"). The model's output, by
 contrast, can trigger nothing executable: it is JSON-parsed, key-restricted, and
 re-validated — `/api/o/generate` answers must parse through the O grammar
@@ -105,7 +106,7 @@ against the real field list (`O_UNSUPPORTED_QUESTION` otherwise), and
 `/api/o/calculation` expressions must expression-bind against the real schema
 with column authorization, type checks, and cycle detection.
 
-Defenses (issue #113):
+Defenses (issues #113 and #139):
 
 - System-prompt hardening (`packages/api/src/ai-guard.ts`): the instructions
   pin the question, field names, types, and expressions as untrusted data,
@@ -120,14 +121,25 @@ Defenses (issue #113):
   payment-card, and IPv4 formats (`redactPII`) before it is serialized into
   the prompt. Best-effort patterns, always on; only the provider's copy is
   affected, never the stored question.
+- Field-name egress guard: the exact permitted field list uses the same PII
+  patterns. If any physical or calculated field name matches, both
+  `/api/o/generate` and `/api/o/calculation` return HTTP 400 with
+  `AI_FIELD_NAME_PII`, before any provider call, spend metering, or question
+  analytics. The message asks the user to rename the field and never echoes
+  the sensitive name or value. Names are rejected rather than redacted so
+  binding stays unambiguous. CLS-denied columns are excluded before this check
+  and cannot trigger it; calculations that reference denied columns still fail
+  authorization.
 - Provider keys are redacted from echoed answers (`AISettings.complete`), and
   the transport boundary allows no redirects, tools, retries, or provider
   error-body forwarding.
 
-Residual risk, stated honestly. Redaction is pattern-based and cannot catch
-every identifier; field names themselves are sent by design (the task needs
-the schema) and may contain sensitive terms if a dataset is named that way —
-choose the provider and model accordingly, since the operator configures both.
+Residual risk, stated honestly. Question redaction and field-name rejection are
+pattern-based and cannot catch every identifier. Field names that pass the guard
+are sent because the task needs the schema; unrecognized sensitive terms may
+still reach the provider. Conservative patterns can also reject benign long
+numeric field names. Choose the provider and model accordingly, since the
+operator configures both.
 A sufficiently capable model can still be semantically influenced by hostile
 field names despite the system-prompt rules; the containment is that its
 output cannot execute anything — it must survive grammar/binder validation
