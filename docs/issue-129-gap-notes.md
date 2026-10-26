@@ -55,6 +55,19 @@ all workspace modes, queries, save/re-entry/reload, selection paths, the home
 sample/banner flow, import, dirty state and autosave. Both are included by the
 existing root web test glob. No dependencies were added.
 
+The completed full root run, `TZ=UTC npm test`, exited **0** with
+**3,908 passed / 0 failed / 32 skipped** (3,940 tests total, zero cancelled
+or todo). This includes all 2,139 web tests, 32 Python SDK tests and 88 root
+conformance tests. All 23 new issue #129 tests passed inside that run. Every
+skip requires live PostgreSQL: 31 have no `DATABASE_URL`; one needs a live
+TLS PostgreSQL configuration.
+
+Full output: `/tmp/issue-129-full-test-complete.log`; aggregated counts and
+skip reasons: `/tmp/issue-129-test-summary.json`. The initial interactive
+full-suite attempt ended with SIGTERM (exit 143) before a summary; the
+successful complete run used a detached local runner. No code changed
+between those attempts. `SOLUTION_DESIGN.md` was not modified.
+
 ## Static demo and visual review
 
 Rebuilt `packages/web/dist/opensight-demo.html` with the demo build script:
