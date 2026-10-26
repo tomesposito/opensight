@@ -42,7 +42,7 @@ try {
     }
     const dataRoot = process.env.OPENSIGHT_DATA_ROOT ?? fileURLToPath(new URL('../../../fixtures/', import.meta.url));
     process.umask(0o077);
-    return createApiServer({ dataRoot, localData: true, localUploadPath: process.env.OPENSIGHT_LOCAL_UPLOAD_DATABASE ?? '.opensight/uploads.duckdb', prepStorePath: process.env.OPENSIGHT_PREP_STORE ?? '.opensight/prep.json', automationStorePath: process.env.OPENSIGHT_AUTOMATION_STORE ?? '.opensight/automation.json' });
+    return createApiServer({ dataRoot, localData: true, analyticsStorePath: process.env.ANALYTICS_STORE ?? '.opensight/analytics.sqlite', localUploadPath: process.env.OPENSIGHT_LOCAL_UPLOAD_DATABASE ?? '.opensight/uploads.duckdb', prepStorePath: process.env.OPENSIGHT_PREP_STORE ?? '.opensight/prep.json', automationStorePath: process.env.OPENSIGHT_AUTOMATION_STORE ?? '.opensight/automation.json' });
   })();
   if (server) {
     server.once('close', () => { void drainHostedServer(server).finally(async () => { await database?.close(); unlock?.(); }); });

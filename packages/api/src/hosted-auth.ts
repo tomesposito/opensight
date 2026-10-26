@@ -1,3 +1,4 @@
+import { disabledAnalytics } from './analytics.js';
 import { appendMetadataEvent } from './metadata-outbox.js';
 import { createHmac, randomBytes } from 'node:crypto';
 import type { IncomingMessage } from 'node:http';
@@ -51,6 +52,7 @@ export async function activateAuthKey(database: Database, config: HostedConfig):
 }
 
 export class HostedAuth {
+  analytics = disabledAnalytics;
   private constructor(private readonly database: Database, private readonly config: HostedConfig, private readonly clock: () => number) {}
   static async create(database: Database, config: HostedConfig, clock = Date.now, initializeKey = true): Promise<HostedAuth> {
     if (database.durable !== true) throw new MetadataError('DURABLE_MEMBERSHIP_STORE_REQUIRED', 503);

@@ -92,3 +92,16 @@ test('analytics buffer is bounded, timeouts drain, close refuses new events, and
     rejected.track(f.b, { name: 'dashboard_viewed' }); await rejected.close(); assert.equal(rejected.stats.failed, 1);
   } finally { await f.db.close(); }
 });
+test('local composition defaults off and preserves opaque tenant IDs across server restarts', async () => {
+  const { localAnalytics } = await import('../dist/analytics-local.js');
+  const { mkdtemp, rm } = await import('node:fs/promises'); const { join } = await import('node:path'); const { tmpdir } = await import('node:os');
+  const dir = await mkdtemp(join(tmpdir(), 'analytics-'));
+  try {
+    const path = join(dir, 'events.sqlite'), first = await localAnalytics(['local'], path, {});
+    assert.equal(first.analytics.defaultEnabled, false); assert.equal(first.analytics.configured, false);
+    const tenant = first.scope('local').tenantId; assert.notEqual(tenant, 'local');
+    await first.close();
+    const next = await localAnalytics(['local'], path, { ANALYTICS_ENABLED: '1', ANALYTICS_VENDOR_KEY: 'test-only' });
+    assert.equal(next.analytics.configured, true); assert.equal(next.scope('local').tenantId, tenant); await next.close();
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});

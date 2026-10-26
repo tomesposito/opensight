@@ -1,3 +1,4 @@
+import { disabledAnalytics } from './analytics.js';
 import { createBuiltinHostedServer, type HostedInvocationAdapters } from './hosted-server.js';
 import { MetadataError, type Database } from './metadata-db.js';
 import { TenantMetadata } from './metadata.js';
@@ -60,7 +61,7 @@ export function serverlessDataPath(raw: string): boolean {
     || /^\/embed\/sessions\/[A-Za-z0-9_-]+$/.test(path);
 }
 export function serverlessAdapters(database: Database, metadata: TenantMetadata, budgets: TenantBudgets, aws: InvocationAws,
-  env: NodeJS.ProcessEnv, auth?: HostedAuth): HostedInvocationAdapters {
+  env: NodeJS.ProcessEnv, auth?: HostedAuth, analytics = disabledAnalytics): HostedInvocationAdapters {
   const deployment = deploymentId(env), config = hostedConfig(env), bucket = env.OPENSIGHT_ARTIFACT_BUCKET;
   if (!bucket) throw new MetadataError('ARTIFACT_CONFIG_INVALID', 503);
   const coordinator = new DurableCoordinator(database, metadata, deployment), manifests = new ManifestStore(coordinator);
@@ -75,11 +76,11 @@ export function serverlessAdapters(database: Database, metadata: TenantMetadata,
   const authority = (request: Parameters<HostedAuth['resultSession']>[0]) => {
     if (!auth) throw new MetadataError('RESULT_SESSION_REQUIRED', 503); return auth.resultSession(request);
   };
-  const data = new HostedDataRoutes(new HostedData(sources, undefined, budgets, work.cache, work), jobs, async (request, context, status, body, recheck) => {
+  const data = new HostedDataRoutes(new HostedData(sources, undefined, budgets, work.cache, work, analytics), jobs, async (request, context, status, body, recheck) => {
     if (Buffer.byteLength(JSON.stringify(body)) <= 1024 * 1024) return { status, body };
     return results.publish(context, body, await authority(request), recheck);
   });
-  const embedContent = new EmbedContent(new HostedData(embedSources, undefined, budgets, work.cache, work));
+  const embedContent = new EmbedContent(new HostedData(embedSources, undefined, budgets, work.cache, work, analytics));
   const uploadService = new DurableUploads(metadata, dispatch, ledger, new UploadObjects(aws, bucket)), uploads = new DurableUploadRoutes(uploadService);
   return { data, embedContent, jobs, mail: serverlessMail(aws, env), allows: serverlessDataPath, capabilities: { directUploads: { version: 1, maxBytes: 8 * 1024 * 1024 }, resultChunks: { version: 1, maxBytes: 1024 * 1024, maxResultBytes: budgets.config.node.resultBytes }, controlJsonBytes: 1024 * 1024 },
     resultMaxBytes: budgets.config.node.resultBytes,
@@ -106,5 +107,5 @@ export function serverlessAdapters(database: Database, metadata: TenantMetadata,
 export async function createServerlessApplication(db: InvocationDatabases, scope: InvocationScope, env: NodeJS.ProcessEnv) {
   const aws = new InvocationAws(scope, env), usage = await serverlessUsage(db.membership, deploymentId(env));
   return createBuiltinHostedServer({ membershipDatabase: db.membership, tenantDatabase: db.tenant, env,
-    invocation: { signal: scope.signal, usage, compose: (metadata, budgets, auth) => serverlessAdapters(db.membership, metadata, budgets, aws, env, auth) } });
+    invocation: { signal: scope.signal, usage, compose: (metadata, budgets, auth, _aiMeter, analytics) => serverlessAdapters(db.membership, metadata, budgets, aws, env, auth, analytics) } });
 }

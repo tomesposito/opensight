@@ -1,3 +1,4 @@
+import { disabledAnalytics, type Analytics } from './analytics.js';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { isRole, type Role } from '@opensight/query-engine';
 import { MetadataError, missing, type Database, type SqlConnection } from './metadata-db.js';
@@ -24,7 +25,7 @@ export const operatorOperationId = (key: string): string => checksum(['deploymen
 
 export class HostedProvisioning {
   readonly operator: MetadataOperator;
-  constructor(private readonly database: Database, private readonly config: HostedConfig, private readonly mail: MailTransport, private readonly clock = Date.now, private readonly jobs?: JobOwnership) {
+  constructor(private readonly database: Database, private readonly config: HostedConfig, private readonly mail: MailTransport, private readonly clock = Date.now, private readonly jobs?: JobOwnership, private readonly analytics = disabledAnalytics) {
     this.operator = new MetadataOperator(database);
   }
   private async reserve(operationId: string, hash: string): Promise<void> {

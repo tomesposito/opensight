@@ -1,3 +1,5 @@
+import { localAnalytics } from './analytics-local.js';
+import type { Analytics } from './analytics.js';
 import { LocalAssets } from './local-assets.js';
 import type { Identity } from './security.js';
 import { MetadataError } from './metadata-db.js';
@@ -42,6 +44,8 @@ export interface ApiOptions {
   prepStorePath?: string;
   prepPostgresBindings?: readonly PrepPostgresBinding[];
   ai?: AIOptions;
+  analytics?: Analytics;
+  analyticsStorePath?: string;
   /** Trusted durable tenant accounting for AI-enabled compositions; omitted for plain self-hosted. */
   hostedUsage?: HostedUsage;
   embedding?: EmbeddingOptions;
@@ -88,6 +92,8 @@ export async function createApiServer(options: ApiOptions): Promise<Server> {
     if (source) source.security = security;
     namespaceStores.set(namespaceId, definitions); namespaceQueries.set(namespaceId, source);
   }
+  const localTracking = options.analytics ? undefined : await localAnalytics(['default', 'local', ...(security?.store.read().namespaces.map(n => n.id) ?? [])], options.analyticsStorePath);
+  const analytics = options.analytics ?? localTracking!.analytics;
   const ai = await AISettings.load({ ...(options.ai ?? aiFromEnvironment()),
     ...(options.hostedUsage ? { aiMeter: options.hostedUsage.aiMeter() } : {}) });
   const organization = security ? new OrganizationService(security, namespaceStores) : undefined;
@@ -114,7 +120,7 @@ export async function createApiServer(options: ApiOptions): Promise<Server> {
     return new LocalDashboards(analyses, scopedStore, scopedSales, prepRoutes, identity, recheck, organization, root, !!options.security?.storePath);
   };
   const embedding = organization ? new EmbeddingService(options.embedding, organization, dashboardBackend) : undefined;
-  const v1 = new V1Routes();
+  const v1 = new V1Routes(undefined, process.env, { analytics });
   const server = createServer((request, response) => {
     void (async () => {
       const requestId = randomUUID();
@@ -325,7 +331,7 @@ export async function createApiServer(options: ApiOptions): Promise<Server> {
     });
   });
   server.once('listening', () => scheduler.start());
-  server.once('close', () => { v1.close(); scheduler.stop(); void scheduler.idle().then(() => connectorRoutes.close()); });
+  server.once('close', () => { v1.close(); scheduler.stop(); void scheduler.idle().then(async () => { await analytics.close(); await localTracking?.close(); await connectorRoutes.close(); }); });
   return server;
 }
 

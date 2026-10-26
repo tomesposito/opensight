@@ -32,6 +32,8 @@ export function validateAnalyticsEvent(raw: unknown): Pick<AnalyticsRow, 'name' 
 export type AnalyticsTransport = (url: string, init: RequestInit) => Promise<{ ok: boolean }>;
 export interface AnalyticsOptions {
   enabled?: boolean;
+  /** Local composition maps namespaces to opaque installation tenant IDs. */
+  localScopes?: ReadonlyMap<string, Scope>;
   vendorKey?: string;
   vendorHost?: string;
   maxBuffered?: number;
@@ -62,7 +64,9 @@ export class Analytics {
       const checked = validateAnalyticsEvent(event);
       if (!checked) { this.stats.invalid++; return; }
       if (this.queue.length >= (this.options.maxBuffered ?? 256)) { this.stats.dropped++; return; }
-      this.queue.push({ scope: { tenantId: scope.tenantId, namespaceId: scope.namespaceId }, event: checked, id: randomUUID(), createdAt: new Date().toISOString() });
+      const trusted = this.options.localScopes ? this.options.localScopes.get(scope.namespaceId) : scope;
+      if (!trusted) { this.stats.dropped++; return; }
+      this.queue.push({ scope: { tenantId: trusted.tenantId, namespaceId: trusted.namespaceId }, event: checked, id: randomUUID(), createdAt: new Date().toISOString() });
       this.start();
     } catch { this.stats.invalid++; }
   }
