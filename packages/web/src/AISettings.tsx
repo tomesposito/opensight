@@ -70,7 +70,7 @@ function AnalyticsSettings({ client }: { client: Client }) {
   return <section aria-labelledby="analytics-settings-title">
     <h2 id="analytics-settings-title">Analytics</h2>
     <p>Share tenant-level usage events with OpenSight through PostHog. No names, emails, file names, dataset contents, or questions are collected.</p>
-    <label><input type="checkbox" checked={config ? config.override ?? config.defaultEnabled : false} disabled={!config || busy}
+    <label className="analytics-toggle"><input type="checkbox" checked={config ? config.override ?? config.defaultEnabled : false} disabled={!config || busy}
       onChange={e => void save(e.target.checked)} />Enable usage tracking for this tenant</label>
     <p>Turning this off stops new events in both the OpenSight event log and PostHog. Previously collected events are retained.</p>
     {config && <p role="status">{!config.configured ? 'Collection is off: analytics is not configured on the server.' : config.enabled ? 'Usage tracking is on.' : 'Usage tracking is off.'}</p>}

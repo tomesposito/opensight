@@ -13,6 +13,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Added
 
+- Opt-in tenant usage tracking with a private event log, content-free PostHog
+  events, and an administrator off switch (#137).
 - Marketing site crawler rules, public sitemap, social sharing metadata,
   an approved QuickSight alternative introduction, and an October 2026
   freshness line (#134).

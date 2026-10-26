@@ -283,6 +283,13 @@ Five roles (administrator, author, author_ai, reader, reader_ai), single-use
 invitations, row/column security with namespaces, folders, asset sharing, an
 embedding SDK with signed URLs, scheduled refreshes, and dashboard reports.
 
+Optional [usage tracking](docs/usage-tracking.md) keeps a tenant event log and
+forwards allowlisted events to PostHog. Self-hosted installs default to off;
+administrators can disable collection in AI provider settings. Events contain
+no customer content or person identifiers.
+
+![Administrator usage tracking off switch, captured against a local synthetic API](docs/images/analytics-settings.png)
+
 ### 🖼️ Embed appearance preview
 
 Tenant administrators can configure exact parent origins, bounded lifetimes and
