@@ -12,7 +12,7 @@ import { usePaletteCommands } from './CommandPalette.js';
 import { DraftSourceRecovery, useDraftSource } from './DraftSource.js';
 import { printAnalysis } from './analysis-print.js';
 import { SaveAnalysisCopy } from './SaveAnalysisCopy.js';
-import { ManageDataDialog } from './ManageDataDialog.js';
+import { ManageDataDialog, sampleDataset } from './ManageDataDialog.js';
 import { LocalDrafts } from './LocalDrafts.js';
 import { useLocalDrafts } from './use-local-drafts.js';
 import { draftStorageKey } from './local-drafts.js';
@@ -66,7 +66,7 @@ function AuthorWorkspace({ renderIdentity, sampleLoaded = false, onTrySample, cl
   const notify = useToast();
   const drafts = useLocalDrafts(access, dataset, { draftId, newAnalysis });
   const { draft, dispatch } = drafts;
-  const noData = access.mode === 'local' && !draft.dataset && !sampleLoaded;
+  const noData = draft.noDataset === true || (access.mode === 'local' && !draft.dataset && !draft.bundle && !sampleLoaded);
   const workspace = useRef<HTMLDivElement>(null);
   const saveDraft = () => { const saved = !!drafts.save(); if (saved) notify('Draft saved'); return saved; };
   const notifiedError = useRef<string | null>(null);
@@ -82,6 +82,12 @@ function AuthorWorkspace({ renderIdentity, sampleLoaded = false, onTrySample, cl
   // Storage reads create fresh objects. Renaming a draft must not cancel and
   // restart an identical data query while the server is still executing it.
   const datasetKey = JSON.stringify(draft.dataset);
+  // Keep Application's selection in sync with restores and history as well as
+  // direct selection. Sample availability belongs to the workspace; removal
+  // belongs to this persisted draft and must not unload the home-page sample.
+  const datasetChanged = useRef(onDatasetChange);
+  datasetChanged.current = onDatasetChange;
+  useEffect(() => { if (!drafts.openingError) datasetChanged.current?.(draft.dataset); }, [datasetKey, drafts.openingError]);
   const queryDataset = useMemo(() => draft.dataset, [datasetKey]);
   const client = useMemo(() => apiClient ? { ...apiClient, dataset: queryDataset } : undefined, [apiClient, queryDataset]);
   const source = useDraftSource(queryDataset, client, access.mode === 'local');
@@ -103,7 +109,7 @@ function AuthorWorkspace({ renderIdentity, sampleLoaded = false, onTrySample, cl
     try {
       const imported = await importBundleFile(file);
       if (!drafts.replace(imported)) { setImportStatus('Import paused. Save or export your current work first.'); return; }
-      onDatasetChange?.(undefined); setReportOpen(true);
+      setReportOpen(true);
       setImportStatus(`Imported ${file.name}. Review the import report for unsupported features.`);
       // The modal makes the app shell inert. Announce success after it closes
       // so the toast is visible and its dismiss button is keyboard accessible.
@@ -191,7 +197,7 @@ function AuthorWorkspace({ renderIdentity, sampleLoaded = false, onTrySample, cl
       </div>}
       {inApp && <p id={copyHelpId} className="draft-link-help">Draft links open only in this browser on this device; they do not share the analysis. Save changes before copying.</p>}
       {copyError && <p role="alert">{copyError}</p>}
-      <LocalDrafts entries={drafts.entries} activeId={drafts.id} onRefresh={drafts.refresh} onOpen={id => { const opened = drafts.open(id); if (opened) { source.retry(); onDatasetChange?.(opened.dataset); } }} onRename={drafts.rename} onDelete={id => { if (drafts.remove(id) && id === drafts.id) onDatasetChange?.(undefined); }} />
+      <LocalDrafts entries={drafts.entries} activeId={drafts.id} onRefresh={drafts.refresh} onOpen={id => { if (drafts.open(id)) source.retry(); }} onRename={drafts.rename} onDelete={drafts.remove} />
       <div className="bundle-import" onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; }} onDrop={e => { e.preventDefault(); if (e.dataTransfer.files.length !== 1) setImportStatus('Drop one .qs ZIP or one bundle .json member.'); else void importFile(e.dataTransfer.files[0]); }} aria-label="Bundle drop zone">
         <details><summary>Import bundle</summary>
         <label>Import .qs or bundle JSON<input ref={fileInput} type="file" accept=".qs,.json,application/zip,application/json" disabled={busy} onChange={e => { const file = e.currentTarget.files?.[0]; e.currentTarget.value = ''; void importFile(file); }} /></label>
@@ -201,32 +207,32 @@ function AuthorWorkspace({ renderIdentity, sampleLoaded = false, onTrySample, cl
         {draft.bundle && <button type="button" onClick={() => setReportOpen(true)}>View import report</button>}
       </div>
     </div>
-    {access.mode === 'local' && <LocalDatasetPicker sampleLoaded={sampleLoaded} client={client} dataset={draft.dataset} onSelect={dataset => { if (drafts.replace({ ...emptyDraft(), ...(dataset ? { dataset } : {}) })) onDatasetChange?.(dataset); }} />}
+    {access.mode === 'local' && <LocalDatasetPicker sampleLoaded={sampleLoaded} noDataset={draft.noDataset} client={client} dataset={draft.dataset} onSelect={dataset => { drafts.replace({ ...emptyDraft(), ...(dataset ? { dataset } : {}) }); }} />}
     <p className="fixture-notice">{noData ? 'No dataset selected. Add data to start building.' : draft.dataset ? (access.mode === 'local' ? 'Live prepared data · Field assignments query the local API. Uploads survive API restarts and expire after 24 hours.' : 'Live prepared data · Field assignments query the local API. Uploads expire after 24 hours or API restart.') : access.mode === 'local' ? 'Sample sales data · 8 synthetic rows. Field assignments query the local sample dataset.' : client ? 'Live local sales data · All regions, dates grouped in UTC (month by default). Field assignments query the API; unsupported queries show their error details and guidance.' : draft.sheets.some(s => s.visuals.some(v => v.kind === 'pivot')) ? 'Offline demo: pivot previews recompute pinned synthetic sales rows locally across all regions. Row groups expand and collapse locally. No live queries run.' : draft.sheets.some(s => s.visuals.some(v => v.kind === 'insight')) ? 'Offline demo: insight narratives recompute pinned synthetic sales rows locally across all regions. Rule-based computations; no ML or live queries.' : draft.sheets.some(s => s.visuals.some(v => v.kind === 'waterfall')) ? 'Offline demo: waterfall previews recompute pinned synthetic sales rows locally across all regions. No live queries run.' : draft.sheets.some(s => s.visuals.some(v => v.kind === 'sankey')) ? 'Offline demo: sankey previews recompute pinned synthetic sales rows locally across all regions. No live queries run.' : draft.sheets.some(s => s.visuals.some(v => v.kind === 'radar')) ? 'Offline demo: radar previews recompute pinned synthetic sales rows locally across all regions. No live queries run.' : draft.calculatedFields.length || draft.parameters.length || draft.sheets.some(s => s.visuals.some(v => hasVisualActions(v) || v.hierarchy)) ? 'Offline demo: controls, calculated fields and interactions recompute pinned synthetic sales rows locally across all regions. No live queries run.' : 'Offline demo: manual visual previews use fixed sample results: region = East, dates grouped by UTC month. Only revenue totals by region, category, month, or overall are available. Other manual selections need a supported sample or a hosted API. O recomputes synthetic sales rows locally across all regions. No live queries run.'}</p>
     <div className="author-save"><p role="status">{drafts.message}</p>
       <p id="export-help">{exported.error ?? (client ? 'Downloads analysis definitions and sheet layouts; query results are not included.' : 'Downloads analysis definitions and sheet layouts; sample rows and the fixed East preview filter are not included.')}</p>
       {exportStatus && <p role="status">{exportStatus}</p>}
     </div>
-    {source.problem && <DraftSourceRecovery draft={draft} sources={source.sources} problem={source.problem} onRetry={source.retry} onSources={onSources ? () => { if (drafts.keepCurrent()) onSources(); } : undefined} onReconnect={next => { dispatch({ type: 'import', draft: next }); onDatasetChange?.(next.dataset); }} />}
+    {source.problem && <DraftSourceRecovery draft={draft} sources={source.sources} problem={source.problem} onRetry={source.retry} onSources={onSources ? () => { if (drafts.keepCurrent()) onSources(); } : undefined} onReconnect={next => { dispatch({ type: 'import', draft: next }); }} />}
     {noData ? <div className="author-layout author-layout-empty">
       <Panel title="Data" className="fields-panel"><p>No dataset selected.</p>{onSources && <button type="button" onClick={() => { if (drafts.keepCurrent()) onSources(); }}>Add data</button>}</Panel>
       <Panel title="Visuals" className="build-panel"><p>Add data to see fields and create visuals.</p></Panel>
-      <div className="author-center" role="region" aria-label="Analysis sheet"><SheetTabs draft={draft} dispatch={dispatch} /><div className="author-canvas"><LocalEmptyState title="Add data to your analysis" onSources={onSources ? () => { if (drafts.keepCurrent()) onSources(); } : undefined} onSample={onTrySample} /></div></div>
+      <div className="author-center" role="region" aria-label="Analysis sheet"><SheetTabs draft={draft} dispatch={dispatch} /><div className="author-canvas"><LocalEmptyState title="Add data to your analysis" onSources={onSources ? () => { if (drafts.keepCurrent()) onSources(); } : undefined} onSample={onTrySample || sampleLoaded || access.mode === 'demo' ? () => { dispatch({ type: 'dataset', dataset: sampleDataset() }); onTrySample?.(); } : undefined} /></div></div>
     </div> : <AuthorCanvas draft={draft} dispatch={dispatch} client={client} fit={fit} sourceProblem={source.problem} />}
     {reportOpen && draft.bundle && <ImportReport draft={draft} onClose={() => {
       setReportOpen(false);
       if (importConfirmation.current) { importConfirmation.current = false; notify('Bundle imported'); }
     }} />}
     {saveCopyOpen && <SaveAnalysisCopy name={draft.title} onClose={() => setSaveCopyOpen(false)} onSave={name => { const error = drafts.saveCopy(name); if (!error) { setSaveCopyOpen(false); notify('Separate analysis copy saved on this device'); } return error; }} />}
-    {manageOpen && <ManageDataDialog client={apiClient} datasets={draft.dataset ? [draft.dataset] : []} sampleLoaded={sampleLoaded || (access.mode !== 'local' && !draft.dataset)} onClose={() => setManageOpen(false)}
-      onReplace={dataset => { dispatch({ type: 'dataset', dataset }); onDatasetChange?.(dataset); setManageOpen(false); notify(`Dataset replaced with ${dataset.name}.`); }}
-      onRemove={() => { dispatch({ type: 'dataset', dataset: undefined }); onDatasetChange?.(undefined); setManageOpen(false); notify('Dataset removed. Add data to keep building.'); }}
+    {manageOpen && <ManageDataDialog client={apiClient} datasets={draft.dataset ? [draft.dataset] : []} noDataset={draft.noDataset} sampleLoaded={sampleLoaded || (access.mode !== 'local' && !draft.dataset)} onClose={() => setManageOpen(false)}
+      onReplace={dataset => { dispatch({ type: 'dataset', dataset }); setManageOpen(false); notify(`Dataset replaced with ${dataset.name}.`); }}
+      onRemove={() => { dispatch({ type: 'dataset' }); setManageOpen(false); notify('Dataset removed. Add data to keep building.'); }}
       onAddData={(onSources ?? onPrep) ? () => { if (drafts.keepCurrent()) { setManageOpen(false); (onSources ?? onPrep)!(); } } : undefined} />}
   </div>
     {createOpen && <CreateAnalysisDialog client={apiClient} sampleAvailable={access.mode === 'demo' || sampleLoaded} offline={!apiClient} selectionError={drafts.autoError ?? undefined}
       onClose={() => setCreateOpen(false)} onCreateDataset={apiClient && onPrep ? () => { if (drafts.keepCurrent()) { setCreateOpen(false); onPrep(); } } : undefined}
       onSelect={dataset => {
-        if (drafts.replace({ ...emptyDraft(), ...(dataset ? { dataset } : {}) })) { onDatasetChange?.(dataset); setCreateOpen(false); }
+        if (drafts.replace({ ...emptyDraft(), ...(dataset ? { dataset } : {}) })) setCreateOpen(false);
       }} />}
   </>;
 }
@@ -251,7 +257,7 @@ function AuthorCommands({ draft, dispatch, onSave }: EditorProps & { onSave: () 
   return null;
 }
 
-function LocalDatasetPicker({ sampleLoaded, client, dataset, onSelect }: { sampleLoaded: boolean; client?: QueryClient; dataset?: AuthorDataset; onSelect: (dataset?: AuthorDataset) => void }) {
+function LocalDatasetPicker({ sampleLoaded, noDataset, client, dataset, onSelect }: { sampleLoaded: boolean; noDataset?: boolean; client?: QueryClient; dataset?: AuthorDataset; onSelect: (dataset?: AuthorDataset) => void }) {
   const [sources, setSources] = useState<Awaited<ReturnType<NonNullable<QueryClient['listPrepSources']>>>>([]);
   const [error, setError] = useState('');
   const [reload, setReload] = useState(0);
@@ -261,7 +267,7 @@ function LocalDatasetPicker({ sampleLoaded, client, dataset, onSelect }: { sampl
     if (list) void list().then(value => { if (active) { setSources(value.filter(s => typeof s.ref === 'object' && 'dataset' in s.ref)); setError(''); } }).catch(e => { if (active) setError(String(e)); });
     return () => { active = false; };
   }, [list, reload]);
-  return <div className="api-picker"><label>Analysis dataset<select value={dataset?.id ?? (sampleLoaded ? 'sales' : '')} onChange={e => {
+  return <div className="api-picker"><label>Analysis dataset<select value={noDataset ? '' : dataset?.id ?? (sampleLoaded ? 'sales' : '')} onChange={e => {
     const selected = sources.find(s => s.id === e.target.value);
     if (e.target.value === 'sales' && sampleLoaded) onSelect();
     else if (selected?.available) onSelect({ id: selected.id, name: selected.name ?? selected.id, columns: selected.columns });

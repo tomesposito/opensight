@@ -65,12 +65,14 @@ export function replaceableSources(sources: readonly PrepSourceSummary[], curren
   return sources.filter(source => source.id !== currentId && source.available && typeof source.ref === 'object' && 'dataset' in source.ref);
 }
 
-export function ManageDataDialog({ client, datasets, sampleLoaded, onClose, onReplace, onRemove, onAddData }: {
+export function ManageDataDialog({ client, datasets, sampleLoaded, noDataset, onClose, onReplace, onRemove, onAddData }: {
   client?: ManageDataClient;
   /** The analysis's datasets (local author: the single draft dataset, if any). */
   datasets: readonly AuthorDataset[];
-  /** The bundled sample dataset backs this analysis (no draft dataset, fields fall back to the sample). */
+  /** Sample data is available for implicit fallback or explicit replacement. */
   sampleLoaded?: boolean;
+  /** Explicit removal suppresses implicit sample fallback, even while sample data is available. */
+  noDataset?: boolean;
   onClose: () => void;
   onReplace: (dataset: AuthorDataset) => void;
   onRemove: (dataset: AuthorDataset) => void;
@@ -92,7 +94,7 @@ export function ManageDataDialog({ client, datasets, sampleLoaded, onClose, onRe
     return () => { active = false; };
   }, [client]);
   // Demo mode: the analysis runs on the bundled sample dataset without a draft dataset.
-  const rows = datasets.length ? [...datasets] : sampleLoaded ? [sampleDataset()] : [];
+  const rows = noDataset ? [] : datasets.length ? [...datasets] : sampleLoaded ? [sampleDataset()] : [];
   const sourceFor = (dataset: AuthorDataset) => sources?.find(source => source.id === dataset.id);
   const replacingDataset = replacing ? rows.find(row => row.id === replacing) : undefined;
   const removingDataset = removing ? rows.find(row => row.id === removing) : undefined;

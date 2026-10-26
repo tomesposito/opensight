@@ -26,7 +26,7 @@ export function EmptyPageState({ guidance, children }: { guidance: string; child
   </div>;
 }
 
-/** Local first-run guidance; the static demo never renders this component. */
+/** First-run and explicit no-dataset guidance, including demo dataset removal. */
 export function LocalEmptyState({ title, onSources, onSample }: { title?: string; onSources?: () => void; onSample?: () => void }) {
   return <section className="local-empty-state">
     {title && <h2>{title}</h2>}
