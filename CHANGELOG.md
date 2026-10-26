@@ -44,6 +44,10 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
+- Storage recovery now delivers cleanup continuations through acknowledged
+  SQS/Scheduler transport before marking them dispatched, rejects invalid
+  dispatch configuration before opening the database, and retries failed
+  continuation delivery without duplicating the obligation (#130).
 - Removing an analysis dataset now persists an explicit empty state, prevents
   sample data from silently returning on the canvas or in Manage data, and
   supports undo/redo and selecting data again (#129).

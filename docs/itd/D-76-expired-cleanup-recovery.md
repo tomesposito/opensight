@@ -95,8 +95,12 @@ report `already-complete`; epoch changes abort with zero writes (fail closed);
 operator-only CLI (`storage:recover`) needs no principal session, uses the
 existing `PostgresMetadataDatabase` adapter (correct `?`→`$n` conversion) with
 explicit verified TLS/CA for Aurora, and guarantees connection close in a
-`finally` (idle database pause). Dry-run (`--dry-run`) performs the full
-assessment with zero writes and no AWS credentials.
+`finally` (idle database pause). Non-dry runs require the queue and Scheduler
+configuration listed below, validated before opening the database. The CLI
+shares one invocation-owned AWS transport between deletion and dispatch;
+its transport audit records only acknowledged SQS or Scheduler deliveries.
+Dry-run (`--dry-run`) performs the full assessment with zero writes, no AWS
+credentials or dispatch configuration, and no delivery acknowledgements.
 
 #### IMPLICATIONS
 
@@ -106,7 +110,21 @@ assessment with zero writes and no AWS credentials.
   fresh envelope to the expired obligations it replaces.
 - Protected objects (pins, retention, live references, indefinite manifests)
   are never force-cleaned; the collector prearms continuations for the next
-  eligible window and the report says so.
+  eligible window and the report says so. A `protected-continued` result
+  requires an external SQS/Scheduler acknowledgement before the original
+  obligation is terminalized. A rejected delivery leaves the continuation
+  pending, the original unfinished, and the gauge unchanged; recovery resumes
+  the oldest unfinished obligation to retry the same continuation.
+- Non-dry CLI runs fail closed with `DISPATCH_CONFIG_INVALID` before opening
+  or writing the recovery database if dispatch configuration is missing,
+  empty, or inconsistent. Set all seven keys: `OPENSIGHT_WORK_QUEUE_URL`,
+  `OPENSIGHT_WORK_QUEUE_ARN`, `OPENSIGHT_RECOVERY_QUEUE_URL`,
+  `OPENSIGHT_RECOVERY_QUEUE_ARN`, `OPENSIGHT_SCHEDULER_GROUP`,
+  `OPENSIGHT_SCHEDULER_ROLE_ARN`, and `OPENSIGHT_SCHEDULER_DLQ_ARN`.
+  Queue URLs/ARNs, AWS region and Scheduler destinations must agree. Pass
+  the reviewed database deployment using `--deployment` (default `default`);
+  that value also determines Scheduler identity, regardless of
+  `OPENSIGHT_DEPLOYMENT` in the environment.
 - `storage:recover` is the only new operator surface; no new tables, no
   migration, no schema checksum change.
 
@@ -133,7 +151,11 @@ assessment with zero writes and no AWS credentials.
    relies on correct 404 classification for the DELETE+HEAD proof path.
 2. Run the dry-run plan above against the pilot Aurora (read replica if
    available for the plan step; the real run needs the writer).
-3. Real run without `--dry-run`, one workspace at a time. Expected per object:
+3. Configure all seven queue/Scheduler environment keys above, the invocation's
+   AWS credentials/region, and `OPENSIGHT_ARTIFACT_BUCKET`. Run without
+   `--dry-run`, one workspace at a time, with the reviewed `--deployment`.
+   Invalid dispatch configuration stops before any database recovery work.
+   Expected per object:
    `decision: "recovered"`, `newEventId` distinct from every superseded id.
    The CLI exits non-zero if any object reports `failed`, `epoch-changed`,
    `obligation-expired`, `scope-mismatch`, `unknown-object`, or
@@ -144,8 +166,11 @@ assessment with zero writes and no AWS credentials.
 5. Keep the audit files private (they contain object ids and event ids).
    Attach the report summary — not the raw file — to issue #96 when closing.
 6. If any object reports `protected-continued`, its continuation obligation is
-   already prearmed in the outbox and dispatched; no operator action needed
-   until its window elapses.
+   already prearmed in the outbox and externally acknowledged by SQS/Scheduler
+   using the required dispatch configuration; no operator action needed until
+   its window elapses. The audit file's `transport` array contains the delivery
+   acknowledgement. Failed sends produce `failed`, never a successful
+   continuation acknowledgement; rerunning recovery retries the same obligation.
 
 ## Verification
 
@@ -158,3 +183,22 @@ deferral at plan time; a reference landing between prearm and collection
 still prearms a continuation at run time; 403/timeout retain the obligation;
 namespace isolation (foreign/unknown objects untouched); dry-run writes
 nothing; input validation; `close()` settles the connection.
+
+Issue #130 adds `packages/api/test/storage-recover-cli.test.mjs`, included by
+the existing root `npm test` API glob. It verifies all required configuration
+keys and URL/ARN validation before I/O, audit ordering and rejection propagation,
+MD5-verified recovery/work queue sends, Scheduler acknowledgements and CLI
+deployment identity, and denial-only dry-run transport. SQLite races cover
+both an already-dispatched original and a fresh pending original (whose flush
+also delivers and audits that original), external continuation receipts, and
+failed delivery with unchanged gauge/object state. Retrying reuses the same
+continuation id and settles quota exactly once when protection ends. The retry
+test exposed selection of the future continuation instead of its unfinished
+original; recovery now selects the oldest unfinished obligation first.
+`DurableDispatch` and `ObjectCollector` are unchanged.
+
+A schema-isolated `PostgresMetadataDatabase` race runs when `DATABASE_URL` is
+set. CLI subprocess tests verify rejection before creating a SQLite database,
+credential-free dry-run with no writes and mode-0600 audit, the required
+Postgres CA, and non-success exit status. AWS calls are stubbed; these tests
+do not constitute AWS operator acceptance or change this ITD's draft status.
