@@ -24,19 +24,19 @@ export function validateAnalyticsEvent(raw: unknown): Pick<AnalyticsRow, 'name' 
   const name = raw.name, props = raw.props === undefined ? {} : raw.props;
   if (!plain(props)) return;
   if (typeof name === 'string' && emptyNames.includes(name) && keys(props, [])) return { name: name as EmptyEventName, props: {} };
-  if (name === 'dataset_uploaded' && keys(props, ['sourceType', 'rowCountBucket']) && ['file', 'postgresql'].includes(String(props.sourceType))
-    && typeof props.sourceType === 'string' && rowCountBuckets.includes(props.rowCountBucket as RowCountBucket)) {
+  if (name === 'dataset_uploaded' && keys(props, ['sourceType', 'rowCountBucket']) && typeof props.sourceType === 'string' && ['file', 'postgresql'].includes(props.sourceType) && rowCountBuckets.includes(props.rowCountBucket as RowCountBucket)) {
     return { name, props: { sourceType: props.sourceType, rowCountBucket: props.rowCountBucket as RowCountBucket } };
   }
   if (name === 'ask_o_asked' && keys(props, ['count']) && typeof props.count === 'number' && Number.isSafeInteger(props.count) && props.count > 0) return { name, props: { count: props.count } };
 }
+export type AnalyticsTransport = (url: string, init: RequestInit) => Promise<{ ok: boolean }>;
 export interface AnalyticsOptions {
   enabled?: boolean;
   vendorKey?: string;
   vendorHost?: string;
   maxBuffered?: number;
-  /** Internal delivery seam; no call site may bypass track(). */
-  deliver?: (row: AnalyticsRow) => Promise<void>;
+  transport?: AnalyticsTransport;
+  timeoutMs?: number;
 }
 export function analyticsFromEnvironment(env: NodeJS.ProcessEnv = process.env): AnalyticsOptions {
   return { enabled: env.ANALYTICS_ENABLED === '1', vendorKey: env.ANALYTICS_VENDOR_KEY, vendorHost: env.ANALYTICS_VENDOR_HOST ?? 'https://us.i.posthog.com' };
@@ -74,10 +74,25 @@ export class Analytics {
           const row: AnalyticsRow = { ...entry.event, ...entry.scope, id: entry.id, createdAt: entry.createdAt };
           if (!await this.store!.append(row, this.defaultEnabled)) continue;
           this.stats.recorded++;
-          await this.options.deliver?.(row);
+          if (await this.store!.enabled(entry.scope, this.defaultEnabled)) await this.deliver(row);
         } catch { this.stats.failed++; }
       }
     }).catch(() => { this.stats.failed++; }).finally(() => { this.running = undefined; if (this.queue.length) this.start(); });
+  }
+  private async deliver(row: AnalyticsRow): Promise<void> {
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const deadline = new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => { controller.abort(); reject(new Error('ANALYTICS_TIMEOUT')); }, this.options.timeoutMs ?? 2000);
+      });
+      const response = await Promise.race([deadline, (this.options.transport ?? fetch)(`${analyticsHost(this.options.vendorHost)}/capture/`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, redirect: 'error', signal: controller.signal,
+        body: JSON.stringify({ api_key: this.options.vendorKey, event: row.name, timestamp: row.createdAt, uuid: row.id,
+          properties: { ...row.props, distinct_id: row.tenantId, $groups: { tenant: row.tenantId }, $process_person_profile: false } }),
+      })]);
+      if (!response.ok) throw new Error('ANALYTICS_DELIVERY_FAILED');
+    } finally { clearTimeout(timer); }
   }
   async flush(): Promise<void> { while (this.running) await this.running; }
   async close(): Promise<void> { this.closed = true; await this.flush(); }
