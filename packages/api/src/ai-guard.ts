@@ -3,9 +3,15 @@
  * NLQ routes (`/api/o/generate`, `/api/o/calculation`).
  *
  * Threat model (see docs/roles-ai-settings.md, "Prompt-injection safety"):
- * the provider prompt carries three user-influenced inputs — the free-text
- * question, calculated-field names/expressions, and dataset schema field
- * names. All three are serialized as JSON strings, which neutralizes
+ * the provider prompt carries the free-text question and permitted field
+ * names/types: physical columns after CLS filtering plus calculated fields.
+ * Calculated expressions are validated on the server, not sent in the prompt.
+ * The question is PII-redacted; if any provider-bound field name matches the
+ * same patterns, both routes return 400 AI_FIELD_NAME_PII before provider
+ * calls, spend metering, or question analytics, without echoing the name.
+ * Denied columns are excluded before this guard. Patterns are best-effort:
+ * unrecognized sensitive terms may still pass, and benign numeric identifiers
+ * may match. Accepted content is serialized as JSON strings, which neutralizes
  * delimiter/structural breakout, but the model can still be semantically
  * steered ("ignore previous instructions…"). The model's output, by
  * contrast, can trigger nothing executable: it is JSON-parsed,

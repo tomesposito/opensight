@@ -100,6 +100,10 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Security
 
+- Generative questions and calculated-field suggestions now reject permitted
+  physical or calculated field names matching common PII patterns before any
+  provider call, returning `AI_FIELD_NAME_PII` with rename guidance without
+  echoing sensitive values (#139).
 - Python SDK: the default urllib transport now rejects every HTTP redirect
   instead of following it, so the bearer token is never forwarded to a
   redirect destination (cross-origin or HTTPS→HTTP downgrade); this matches
