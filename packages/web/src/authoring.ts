@@ -5,6 +5,8 @@ import { formattingValid, gaugeValid, binsValid, legendPositionValid, legendTitl
 import type { Cell, MultiplesOptions } from './model.js';
 import { EXTRA_VISUALS, extraKind, type VisualKind } from './visual-catalog.js';
 export type { VisualKind } from './visual-catalog.js';
+import { unresolvedFieldDiagnostics } from './unresolved-fields.js';
+export { unresolvedFieldDiagnostics } from './unresolved-fields.js';
 import { parseExpression } from '@opensight/query-engine/browser';
 import { serializeInteractions } from './bundle-interactions.js';
 import { hierarchyError, type DimensionHierarchy, type DateGrain } from './drill.js';
@@ -244,7 +246,7 @@ export function tooltipExtraFieldValid(value: unknown): value is TooltipExtraFie
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const v = value as Record<string, unknown>;
   if (!Object.keys(v).every(k => ['field', 'label', 'aggregation'].includes(k))) return false;
-  if (typeof v.field !== 'string' || !v.field || v.field.includes('\0')) return false;
+  if (typeof v.field !== 'string' || !v.field.trim() || v.field !== v.field.trim() || v.field.includes('\0')) return false;
   if (v.label !== undefined && (typeof v.label !== 'string' || v.label.length > 128)) return false;
   return v.aggregation !== undefined && (TOOLTIP_AGGREGATIONS as readonly string[]).includes(v.aggregation as string);
 }
@@ -260,25 +262,27 @@ export function tooltipPatchValid(patch: unknown): patch is Partial<Pick<AuthorV
   if (p.tooltipType !== undefined && p.tooltipType !== 'basic' && p.tooltipType !== 'detailed') return false;
   if (p.tooltipTitleType !== undefined && p.tooltipTitleType !== 'primaryValue' && p.tooltipTitleType !== 'fieldId') return false;
   if (p.tooltipAggregations !== undefined && typeof p.tooltipAggregations !== 'boolean') return false;
-  if (p.tooltipHiddenFields !== undefined && (!Array.isArray(p.tooltipHiddenFields) || !p.tooltipHiddenFields.every(n => typeof n === 'string' && !!n && !n.includes('\0')) || new Set(p.tooltipHiddenFields).size !== p.tooltipHiddenFields.length)) return false;
+  if (p.tooltipHiddenFields !== undefined && (!Array.isArray(p.tooltipHiddenFields) || !p.tooltipHiddenFields.every(n => typeof n === 'string' && !!n.trim() && n === n.trim() && !n.includes('\0')) || new Set(p.tooltipHiddenFields).size !== p.tooltipHiddenFields.length)) return false;
   if (p.tooltipExtraFields !== undefined && !tooltipExtraFieldsValid(p.tooltipExtraFields)) return false;
   return true;
 }
 
-/** Use the execution parser for editor diagnostics; retain expression text byte for byte. */
-export function expressionError(expression: string, existing: readonly DataField[] = []): string | undefined {
+/** Use the execution parser and retain expression text byte for byte. Persistence
+ * may defer schema-dependent field types after replacement; literal types,
+ * syntax and function restrictions still undergo the same validation. */
+export function expressionError(expression: string, existing: readonly DataField[] = [], deferredFields: readonly string[] = []): string | undefined {
   try { parseExpression(expression, '$.expression', { validationOnly: true, bind: name => {
     const field = existing.find(f => f.name === name);
-    return { scalarType: !field ? 'unknown' : field.type === 'DATETIME' ? 'datetime' : field.type === 'STRING' ? 'string' : 'number', nullable: true };
+    return { scalarType: deferredFields.includes(name) || !field ? 'unknown' : field.type === 'DATETIME' ? 'datetime' : field.type === 'STRING' ? 'string' : 'number', nullable: true };
   } }); } catch (e) { return (e instanceof Error ? e.message : String(e)).replace(/^\$\.expression: /, ''); }
 }
-export function calculationError(field: CalculatedField, existing: readonly DataField[]): string | undefined {
+export function calculationError(field: CalculatedField, existing: readonly DataField[], deferredFields: readonly string[] = []): string | undefined {
   if (!/^[A-Za-z_][A-Za-z0-9_ ]{0,127}$/.test(field.name.trim())) return 'Use a field name starting with a letter or underscore (up to 128 characters).';
   if (existing.some(f => f.name.toLowerCase() === field.name.trim().toLowerCase())) return 'A field with that name already exists.';
   if (!field.expression.trim()) return 'Enter an expression.';
   if (field.expression.length > 10000 || /[;`\0]|--|\/\*|\*\/|=>|\b(?:eval|Function|fetch|require|import|exec|window|document|process|globalThis)\b/i.test(field.expression)) return 'Remove scripts, comments, or statement separators from the expression.';
   if (field.role !== 'dimension' && field.role !== 'measure') return 'Choose a field role.';
-  return expressionError(field.expression, existing);
+  return expressionError(field.expression, existing, deferredFields);
 }
 export type AuthorAction =
   | { type: 'object-add'; kind: 'text' }
@@ -939,6 +943,8 @@ export function serializeVisual(visual: AuthorVisual, includeInteractions = true
 /** Export the analysis, including sheet layouts and scoped filters, but never result rows or UI selection. */
 export function serializeDraft(draft: AuthorDraft): BundleAnalysis {
   validateDraft(draft);
+  const unresolved = unresolvedFieldDiagnostics(draft);
+  if (unresolved.length) throw new Error(`UNRESOLVED_FIELDS: Repair fields before exporting: ${[...new Set(unresolved.map(d => d.fieldName))].join(', ')}.`);
   return { resourceType: 'analysis', analysisId: 'authored-analysis', name: draft.title.trim() || 'Untitled analysis', definition: {
     ...(draft.description !== undefined ? { opensightDescription: draft.description } : {}),
     ...(draft.theme ? { opensightTheme: draft.theme } : {}),
@@ -976,6 +982,9 @@ export function validateDraft(value: unknown): asserts value is AuthorDraft {
   if (value.description !== undefined && !analysisDescriptionValid(value.description)) return fail();
   if (value.theme !== undefined && !themeValid(value.theme) || value.chrome !== undefined && !['light', 'dark'].includes(String(value.chrome))) return fail();
   const dataset = value.dataset as AuthorDataset | undefined;
+  // Replacement retains references, including schema-dependent types. Explicit
+  // datasets persist hygienic unresolved names; the built-in sample stays strict.
+  const unresolvedAllowed = value.dataset !== undefined;
   if (dataset !== undefined) {
     if (!isObject(dataset) || !onlyKeys(dataset, ['id', 'name', 'columns']) || typeof dataset.id !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(dataset.id) || dataset.id === 'sales' || typeof dataset.name !== 'string' || !dataset.name.trim() || !Array.isArray(dataset.columns) || !dataset.columns.length || dataset.columns.length > 256 || value.bundle !== undefined) return fail();
     const names = new Set<string>();
@@ -995,8 +1004,31 @@ export function validateDraft(value: unknown): asserts value is AuthorDraft {
   for (const item of value.calculatedFields) {
     if (!isObject(item) || !onlyKeys(item, ['name', 'expression', 'role']) || typeof item.name !== 'string' || typeof item.expression !== 'string' || (item.role !== 'dimension' && item.role !== 'measure')) return fail();
     const field: CalculatedField = { name: item.name, expression: item.expression, role: item.role };
-    if (field.name !== field.name.trim() || calculationError(field, dataFields(calculations, dataset))) return fail();
+    const existing = dataFields(calculations, dataset);
+    if (field.name !== field.name.trim() || calculationError(field, existing, unresolvedAllowed ? existing.map(f => f.name) : [])) return fail();
     calculations.push(field);
+  }
+  // Parse with unknown field types for dependency checks: missing names are not
+  // syntax errors, but a cycle must never become a persistable calculation.
+  const dependencies = new Map(calculations.map(c => [c.name, parseExpression(c.expression, '$.expression', { validationOnly: true }).dependencies]));
+  const visiting = new Set<string>(), visited = new Set<string>(), schemaDependent = new Set<string>();
+  const visit = (name: string): void => {
+    if (visiting.has(name)) fail();
+    if (visited.has(name)) return;
+    visiting.add(name);
+    for (const dependency of dependencies.get(name) ?? []) if (dependencies.has(dependency)) visit(dependency);
+    if ((dependencies.get(name) ?? []).some(dependency => !dependencies.has(dependency) || schemaDependent.has(dependency))) schemaDependent.add(name);
+    visiting.delete(name); visited.add(name);
+  };
+  calculations.forEach(c => visit(c.name));
+  if (dataset) {
+    // A type change also reaches calculations that use another calculation.
+    // Keep type-checking schema-independent expressions against the same prior
+    // declarations as before; only dataset-dependent types may remain unresolved.
+    const deferredFields = [...dataset.columns.map(c => c.name), ...schemaDependent];
+    for (const [index, field] of calculations.entries()) {
+      if (expressionError(field.expression, dataFields(calculations.slice(0, index), dataset), deferredFields)) return fail();
+    }
   }
   const fields = dataFields(calculations, dataset), ids = new Set<string>(), sheetIds = new Set<string>();
   const origin = isObject(value.bundle) ? value.bundle.original as QsBundle : undefined;
@@ -1029,12 +1061,12 @@ export function validateDraft(value: unknown): asserts value is AuthorDraft {
         const strings = (a: unknown): a is string[] => Array.isArray(a) && a.every(n => typeof n === 'string' && !!n && !n.includes('\0'));
         if (!sourceSheet?.visuals?.some(raw => raw[imported.variant as string]?.visualId === (imported.sourceVisualId ?? imported.visualId)) || !isObject(v) || baseline.id !== v.id || !VISUAL_TYPES.some(t => t.kind === baseline.kind) || typeof baseline.title !== 'string' || (baseline.dimension !== null && typeof baseline.dimension !== 'string') || !['rows', 'columns', 'measures'].every(k => strings(baseline[k])) || !['donut', 'titleVisible', 'legend', 'labels', 'horizontal', 'stacked', 'totals', 'subtotals'].every(k => typeof baseline[k] === 'boolean') || !Array.isArray(baseline.filters) || !baseline.filters.every(f => isObject(f) && typeof f.columnName === 'string' && Array.isArray(f.values) && f.values.every(n => typeof n === 'string'))) return fail();
       }
-      const fieldNames = (v: unknown, role: string): v is string[] => imported ? Array.isArray(v) && v.every(n => typeof n === 'string' && !!n && !n.includes('\0')) && new Set(v).size === v.length : names(v, role);
+      const fieldNames = (v: unknown, role: string): v is string[] => imported || unresolvedAllowed ? Array.isArray(v) && v.every(n => typeof n === 'string' && !!n.trim() && n === n.trim() && !n.includes('\0')) && new Set(v).size === v.length : names(v, role);
 
-      if (!isObject(v) || !onlyKeys(v, ['id', 'kind', 'title', 'subtitle', 'subtitleVisible', 'dimension', 'measures', 'smallMultiples', 'breakdowns', 'multiplesOptions', 'groupSort', 'sliceLimit', 'breakdownLimit', 'donut', 'imported', 'filterActions', 'urlActions', 'navigationActions', 'hierarchy', 'dateGrain', 'palette', 'formatting', 'gauge', 'bins', 'insightConfiguration', 'referenceLines', ...Object.keys(defaults())]) || typeof v.id !== 'string' || !/^visual-[1-9][0-9]*$/.test(v.id) || ids.has(v.id) || !VISUAL_TYPES.some(t => t.kind === v.kind) || typeof v.title !== 'string' || !['donut', 'titleVisible', 'legend', 'labels', 'tooltipVisible', 'horizontal', 'stacked', 'totals', 'subtotals'].every(k => typeof v[k] === 'boolean') || (v.tooltipType !== 'basic' && v.tooltipType !== 'detailed') || (v.tooltipTitleType !== 'primaryValue' && v.tooltipTitleType !== 'fieldId') || typeof v.tooltipAggregations !== 'boolean' || !Array.isArray(v.tooltipHiddenFields) || !v.tooltipHiddenFields.every(n => typeof n === 'string' && !!n && !n.includes('\0')) || new Set(v.tooltipHiddenFields).size !== v.tooltipHiddenFields.length || !tooltipExtraFieldsValid(v.tooltipExtraFields) || !fieldNames(v.measures, 'measure') || !fieldNames(v.rows, 'dimension') || !fieldNames(v.columns, 'dimension') || (v.dimension !== null && !fieldNames([v.dimension], 'dimension')) || !Array.isArray(v.filters)) return fail();
+      if (!isObject(v) || !onlyKeys(v, ['id', 'kind', 'title', 'subtitle', 'subtitleVisible', 'dimension', 'measures', 'smallMultiples', 'breakdowns', 'multiplesOptions', 'groupSort', 'sliceLimit', 'breakdownLimit', 'donut', 'imported', 'filterActions', 'urlActions', 'navigationActions', 'hierarchy', 'dateGrain', 'palette', 'formatting', 'gauge', 'bins', 'insightConfiguration', 'referenceLines', ...Object.keys(defaults())]) || typeof v.id !== 'string' || !/^visual-[1-9][0-9]*$/.test(v.id) || ids.has(v.id) || !VISUAL_TYPES.some(t => t.kind === v.kind) || typeof v.title !== 'string' || !['donut', 'titleVisible', 'legend', 'labels', 'tooltipVisible', 'horizontal', 'stacked', 'totals', 'subtotals'].every(k => typeof v[k] === 'boolean') || (v.tooltipType !== 'basic' && v.tooltipType !== 'detailed') || (v.tooltipTitleType !== 'primaryValue' && v.tooltipTitleType !== 'fieldId') || typeof v.tooltipAggregations !== 'boolean' || !Array.isArray(v.tooltipHiddenFields) || !v.tooltipHiddenFields.every(n => typeof n === 'string' && !!n.trim() && n === n.trim() && !n.includes('\0')) || new Set(v.tooltipHiddenFields).size !== v.tooltipHiddenFields.length || !tooltipExtraFieldsValid(v.tooltipExtraFields) || !fieldNames(v.measures, 'measure') || !fieldNames(v.rows, 'dimension') || !fieldNames(v.columns, 'dimension') || (v.dimension !== null && !fieldNames([v.dimension], 'dimension')) || !Array.isArray(v.filters)) return fail();
       if (v.referenceLines !== undefined && (!Array.isArray(v.referenceLines) || !v.referenceLines.every(referenceLineValid))) return fail();
-      if (v.smallMultiples !== undefined && (!names(v.smallMultiples, 'dimension') || v.smallMultiples.length > 1 || v.smallMultiples.some(name => fields.find(f => f.name === name)?.type === 'BOOLEAN'))) return fail();
-      if (v.breakdowns !== undefined && (!names(v.breakdowns, 'dimension') || v.breakdowns.length > 1 || v.breakdowns.some(name => fields.find(f => f.name === name)?.type === 'BOOLEAN'))) return fail();
+      if (v.smallMultiples !== undefined && (!fieldNames(v.smallMultiples, 'dimension') || v.smallMultiples.length > 1 || !unresolvedAllowed && v.smallMultiples.some(name => fields.find(f => f.name === name)?.type === 'BOOLEAN'))) return fail();
+      if (v.breakdowns !== undefined && (!fieldNames(v.breakdowns, 'dimension') || v.breakdowns.length > 1 || !unresolvedAllowed && v.breakdowns.some(name => fields.find(f => f.name === name)?.type === 'BOOLEAN'))) return fail();
       if (v.multiplesOptions !== undefined && !multiplesOptionsValid(v.multiplesOptions)) return fail();
       if (v.groupSort !== undefined && !groupSortValid(v.groupSort)) return fail();
       if (v.sliceLimit !== undefined && !sliceLimitValid(v.sliceLimit)) return fail();
@@ -1046,16 +1078,16 @@ export function validateDraft(value: unknown): asserts value is AuthorDraft {
       if (v.subtitle !== undefined && typeof v.subtitle !== 'string' || v.subtitleVisible !== undefined && (typeof v.subtitleVisible !== 'boolean' || v.subtitle === undefined)) return fail();
       if (v.palette !== undefined && !paletteValid(v.palette)) return fail();
       if (v.dateGrain !== undefined && !['YEAR','QUARTER','MONTH','DAY'].includes(String(v.dateGrain))) return fail();
-      if (v.hierarchy !== undefined && hierarchyError(v.hierarchy as DimensionHierarchy, calculations, !!imported, dataset)) return fail();
+      if (v.hierarchy !== undefined && hierarchyError(v.hierarchy as DimensionHierarchy, calculations, !!imported || unresolvedAllowed, dataset)) return fail();
       if (!visualActionsValid(v)) return fail();
       const filters = new Set<string>();
       for (const f of v.filters) {
-        if (!isObject(f) || !onlyKeys(f, ['columnName', 'values', 'parameterName', 'operator']) || typeof f.columnName !== 'string' || filters.has(f.columnName) || (!imported && !fields.some(field => field.name === f.columnName && (f.parameterName !== undefined || field.type === 'STRING'))) || !Array.isArray(f.values) || !f.values.every(n => typeof n === 'string' && !n.includes('\0')) || new Set(f.values).size !== f.values.length) return fail();
+        if (!isObject(f) || !onlyKeys(f, ['columnName', 'values', 'parameterName', 'operator']) || typeof f.columnName !== 'string' || !f.columnName.trim() || f.columnName !== f.columnName.trim() || f.columnName.includes('\0') || filters.has(f.columnName) || (!imported && !unresolvedAllowed && !fields.some(field => field.name === f.columnName && (f.parameterName !== undefined || field.type === 'STRING'))) || !Array.isArray(f.values) || !f.values.every(n => typeof n === 'string' && !n.includes('\0')) || new Set(f.values).size !== f.values.length) return fail();
         if (f.parameterName !== undefined && (typeof f.parameterName !== 'string' || !parameters.some(p => p.name === f.parameterName)) || f.operator !== undefined && !['EQUALS', 'GREATER_THAN_OR_EQUAL_TO', 'LESS_THAN_OR_EQUAL_TO'].includes(String(f.operator))) return fail();
         if (f.parameterName !== undefined) {
           const p = parameters.find(p => p.name === f.parameterName)!;
           const field = fields.find(c => c.name === f.columnName);
-          if (!imported && (!field || p.type !== (field.type === 'STRING' ? 'string' : field.type === 'DATETIME' ? 'datetime' : field.type === 'BOOLEAN' ? 'boolean' : 'number')) || f.operator && f.operator !== 'EQUALS' && (p.type === 'string' || p.multiple) || f.values.length) return fail();
+          if (!imported && !unresolvedAllowed && (!field || p.type !== (field.type === 'STRING' ? 'string' : field.type === 'DATETIME' ? 'datetime' : field.type === 'BOOLEAN' ? 'boolean' : 'number')) || f.operator && f.operator !== 'EQUALS' && (p.type === 'string' || p.multiple) || f.values.length) return fail();
         }
         filters.add(f.columnName);
       }
