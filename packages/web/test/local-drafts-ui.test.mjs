@@ -105,8 +105,8 @@ for (const mode of ['local', 'demo', 'hosted']) test(`Publish copy is accurate i
   await act(() => renderer.root.findAllByType('button').find(b => b.props.children === 'PUBLISH').props.onClick());
   const text = JSON.stringify(renderer.toJSON());
   assert.doesNotMatch(text, /AWS/);
-  assert.match(text, mode === 'hosted' ? /hosted deployment with dashboard publication enabled/ : /device-local, not synced or shared/);
-  assert.match(text, mode === 'local' ? /This local workspace/ : mode === 'demo' ? /This static demo/ : /nothing has been published/);
+  assert.match(text, mode === 'hosted' ? /HOSTED_API_REQUIRED: Connect the hosted API before publishing/ : /device-local, not synced or shared/);
+  assert.match(text, mode === 'local' ? /This local workspace/ : mode === 'demo' ? /This static demo/ : /Nothing has been published/);
 });
 test('draft names render as escaped text, never executable HTML', () => {
   const html = renderToStaticMarkup(createElement(LocalDrafts, { entries: [{ id: 'draft', name: '<img src=x onerror=alert(1)>', updatedAt: new Date().toISOString() }], onRefresh() {}, onOpen() {}, onDelete() {}, onRename() {} }));
