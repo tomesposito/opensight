@@ -1,3 +1,4 @@
+import { hostedAnalysisInput, saveHostedDraft, publishHostedDraft, type PublishingClient, type HostedDraftLink } from './hosted-publish.js';
 import { unresolvedFieldDiagnostics, unresolvedFieldMessage } from './unresolved-fields.js';
 import { SheetObjectCard, SheetObjectProperties } from './SheetObjectCard.js';
 import { useAccess, allowed } from './access.js';
@@ -53,7 +54,7 @@ import {
 } from './authoring.js';
 import type { AuthorAction, AuthorDataset, AuthorDraft, AuthorVisual, CalculatedField, FieldGroup, VisualKind, Well } from './authoring.js';
 
-interface AuthorProps { renderIdentity?: (title: ReactNode) => ReactNode; sampleLoaded?: boolean; onTrySample?: () => void; onSources?: () => void; onDatasetChange?: (dataset?: AuthorDataset) => void; dataset?: AuthorDataset; client?: QueryClient; onPrep?: () => void; inApp?: boolean; draftId?: string; newAnalysis?: boolean; onDraftChange?: (id?: string) => void }
+interface AuthorProps { renderIdentity?: (title: ReactNode) => ReactNode; sampleLoaded?: boolean; onTrySample?: () => void; onSources?: () => void; onDatasetChange?: (dataset?: AuthorDataset) => void; dataset?: AuthorDataset; client?: QueryClient & Partial<PublishingClient>; onPrep?: () => void; inApp?: boolean; draftId?: string; newAnalysis?: boolean; onDraftChange?: (id?: string) => void }
 export function Author(props: AuthorProps) {
   const access = useAccess();
   return allowed(access, 'build') ? <AuthorWorkspace key={draftStorageKey(access)} {...props} /> : <p role="alert">SECURITY_BUILD_REQUIRED: Author access required.</p>;
@@ -68,7 +69,36 @@ function AuthorWorkspace({ renderIdentity, sampleLoaded = false, onTrySample, cl
   const { draft, dispatch } = drafts;
   const noData = draft.noDataset === true || (access.mode === 'local' && !draft.dataset && !draft.bundle && !sampleLoaded);
   const workspace = useRef<HTMLDivElement>(null);
-  const saveDraft = () => { const saved = !!drafts.save(); if (saved) notify('Draft saved'); return saved; };
+  const [hostedStatus, setHostedStatus] = useState('');
+  const [publishing, setPublishing] = useState(false);
+  const hostedBusy = useRef(false);
+  const hostedOperation = async (publish: boolean): Promise<string> => {
+    if (hostedBusy.current) throw new Error('HOSTED_SAVE_BUSY: Wait for the current save or publication.');
+    hostedBusy.current = true; setPublishing(true);
+    try {
+      if (!apiClient?.saveHostedAnalysis || !apiClient.publishAnalysis) throw new Error('HOSTED_API_REQUIRED: Connect the hosted API.');
+      const input = hostedAnalysisInput(draft);
+      const id = drafts.save(); if (!id) throw new Error('DRAFT_SAVE_FAILED: Save the recovery draft before publishing.');
+      const key = `${draftStorageKey(access)}:hosted:${id}`;
+      const storage = window.localStorage;
+      const raw = storage.getItem(key);
+      const link: HostedDraftLink = raw ? JSON.parse(raw) as HostedDraftLink : { analysisId: `editor-${id}` };
+      const persist = (next: HostedDraftLink) => storage.setItem(key, JSON.stringify(next));
+      persist(link);
+      const client: PublishingClient = { saveHostedAnalysis: apiClient.saveHostedAnalysis, publishAnalysis: apiClient.publishAnalysis };
+      if (!publish) { await saveHostedDraft(client, input, link, persist); return 'Analysis saved to this hosted workspace.'; }
+      const result = await publishHostedDraft(client, input, link, persist);
+      return `Published “${draft.title}” · version ${result.Version}. Dashboard ID: ${result.DashboardId}.${result.Errors.length ? ` Published with diagnostics: ${result.Errors.map(e => `${e.errorCode}: ${e.message}`).join('; ')}` : ''} Reader access follows existing dashboard grants and dataset permissions.`;
+    } finally { hostedBusy.current = false; setPublishing(false); }
+  };
+  const saveDraft = () => {
+    if (access.mode === 'hosted') {
+      setHostedStatus('Saving hosted analysis…');
+      void hostedOperation(false).then(message => { setHostedStatus(message); notify(message); }).catch((error: unknown) => setHostedStatus(error instanceof Error ? error.message : String(error)));
+      return true;
+    }
+    const saved = !!drafts.save(); if (saved) notify('Draft saved'); return saved;
+  };
   const notifiedError = useRef<string | null>(null);
   useEffect(() => {
     if (drafts.autoState !== 'error') { notifiedError.current = null; return; }
@@ -164,6 +194,7 @@ function AuthorWorkspace({ renderIdentity, sampleLoaded = false, onTrySample, cl
     } catch (error) { setExportStatus(`Print blocked: ${error instanceof Error ? error.message : String(error)}`); }
   };
   const renderToolbar = (trigger?: ReactNode) => <AuthorToolbar
+    publishing={publishing} onPublish={access.mode === 'hosted' ? () => hostedOperation(true) : undefined}
     onPrep={onPrep ? () => { if (drafts.keepCurrent()) onPrep(); } : undefined}
     onSources={onSources ? () => { if (drafts.keepCurrent()) onSources(); } : undefined}
     onManageData={() => setManageOpen(true)}
@@ -185,14 +216,14 @@ function AuthorWorkspace({ renderIdentity, sampleLoaded = false, onTrySample, cl
     {noData ? renderToolbar() : <QSidePanel draft={draft} dispatch={dispatch} client={client} renderTrigger={renderToolbar} />}
     <div className="author-tools">
       <div className="author-utilities">
-        <button type="button" aria-keyshortcuts="Meta+S Control+S" onClick={saveDraft}>Save draft</button>
+        <button type="button" aria-keyshortcuts="Meta+S Control+S" onClick={saveDraft}>{access.mode === 'hosted' ? 'Save analysis' : 'Save draft'}</button>
         {(drafts.id || drafts.savedAt || drafts.autoState === 'saving' || drafts.autoState === 'error') && <span className="save-indicator" role="status">{drafts.autoState === 'saving' ? 'Saving…' : drafts.autoState === 'unsaved' || drafts.autoState === 'error' ? 'Unsaved changes' : drafts.savedAt ? `Saved · ${saveTime(drafts.savedAt)}` : null}</span>}
         {inApp && <button type="button" disabled={!drafts.id || drafts.dirty || copying} aria-describedby={copyHelpId} onClick={() => { void copyDraftLink(); }}>Copy draft link</button>}
         <button type="button" onClick={() => { if (drafts.keepCurrent()) setCreateOpen(true); }}>New analysis</button>
       </div>
       {drafts.recoveredAt && <div className="draft-recovery">
         <span role="status">Recovered auto-saved work from {saveTime(drafts.recoveredAt)} — it was never manually saved.</span>
-        <button type="button" onClick={saveDraft}>Save draft</button>
+        <button type="button" onClick={saveDraft}>{access.mode === 'hosted' ? 'Save analysis' : 'Save draft'}</button>
         <button type="button" onClick={drafts.dismissRecovery}>Dismiss</button>
       </div>}
       {inApp && <p id={copyHelpId} className="draft-link-help">Draft links open only in this browser on this device; they do not share the analysis. Save changes before copying.</p>}
@@ -209,7 +240,7 @@ function AuthorWorkspace({ renderIdentity, sampleLoaded = false, onTrySample, cl
     </div>
     {access.mode === 'local' && <LocalDatasetPicker sampleLoaded={sampleLoaded} noDataset={draft.noDataset} client={client} dataset={draft.dataset} onSelect={dataset => { drafts.replace({ ...emptyDraft(), ...(dataset ? { dataset } : {}) }); }} />}
     <p className="fixture-notice">{noData ? 'No dataset selected. Add data to start building.' : draft.dataset ? (access.mode === 'local' ? 'Live prepared data · Field assignments query the local API. Uploads survive API restarts and expire after 24 hours.' : 'Live prepared data · Field assignments query the local API. Uploads expire after 24 hours or API restart.') : access.mode === 'local' ? 'Sample sales data · 8 synthetic rows. Field assignments query the local sample dataset.' : client ? 'Live local sales data · All regions, dates grouped in UTC (month by default). Field assignments query the API; unsupported queries show their error details and guidance.' : draft.sheets.some(s => s.visuals.some(v => v.kind === 'pivot')) ? 'Offline demo: pivot previews recompute pinned synthetic sales rows locally across all regions. Row groups expand and collapse locally. No live queries run.' : draft.sheets.some(s => s.visuals.some(v => v.kind === 'insight')) ? 'Offline demo: insight narratives recompute pinned synthetic sales rows locally across all regions. Rule-based computations; no ML or live queries.' : draft.sheets.some(s => s.visuals.some(v => v.kind === 'waterfall')) ? 'Offline demo: waterfall previews recompute pinned synthetic sales rows locally across all regions. No live queries run.' : draft.sheets.some(s => s.visuals.some(v => v.kind === 'sankey')) ? 'Offline demo: sankey previews recompute pinned synthetic sales rows locally across all regions. No live queries run.' : draft.sheets.some(s => s.visuals.some(v => v.kind === 'radar')) ? 'Offline demo: radar previews recompute pinned synthetic sales rows locally across all regions. No live queries run.' : draft.calculatedFields.length || draft.parameters.length || draft.sheets.some(s => s.visuals.some(v => hasVisualActions(v) || v.hierarchy)) ? 'Offline demo: controls, calculated fields and interactions recompute pinned synthetic sales rows locally across all regions. No live queries run.' : 'Offline demo: manual visual previews use fixed sample results: region = East, dates grouped by UTC month. Only revenue totals by region, category, month, or overall are available. Other manual selections need a supported sample or a hosted API. O recomputes synthetic sales rows locally across all regions. No live queries run.'}</p>
-    <div className="author-save"><p role="status">{drafts.message}</p>
+    <div className="author-save"><p role="status">{hostedStatus || drafts.message}</p>
       <p id="export-help">{exported.error ?? (client ? 'Downloads analysis definitions and sheet layouts; query results are not included.' : 'Downloads analysis definitions and sheet layouts; sample rows and the fixed East preview filter are not included.')}</p>
       {exportStatus && <p role="status">{exportStatus}</p>}
     </div>

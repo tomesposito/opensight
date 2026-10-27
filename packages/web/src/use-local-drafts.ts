@@ -78,7 +78,7 @@ export function useLocalDrafts(access: Access, dataset?: AuthorDataset, opening?
     try {
       const current = draftRef.current, next = store.save(current, idRef.current);
       synced(next, JSON.stringify(current), store.restore()); setRecoveredAt(null);
-      setMessage('Draft saved on this device.'); refresh(); return true;
+      setMessage('Draft saved on this device.'); refresh(); return next;
     } catch (error) { failed(error); return false; }
   };
   const favorite = !!entries.find(entry => entry.id === id)?.favorite;

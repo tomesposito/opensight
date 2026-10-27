@@ -1,3 +1,4 @@
+import type { HostedAnalysisInput, Publication } from './hosted-publish.js';
 import type { PrepPipeline } from '@opensight/bundle-parser/prep';
 import type { PrepPreview } from '@opensight/query-engine';
 import type { PrepSourceSummary } from './data-prep.js';
@@ -414,7 +415,26 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
       throw new ApiError(`Invalid definition response: ${error instanceof Error ? error.message : String(error)}`, response.status);
     }
   }
+  async function saveHostedAnalysis(id: string, input: HostedAnalysisInput, revision?: number): Promise<number> {
+    const expected = generation;
+    const response = await authenticatedFetch(`${base}/api/v1/analyses${revision === undefined ? '' : `/${encodeURIComponent(id)}`}`, {
+      method: revision === undefined ? 'POST' : 'PUT', credentials: 'same-origin',
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json', ...(revision === undefined ? {} : { 'If-Match': `"${revision}"` }) },
+      body: controlBody({ ...(revision === undefined ? { analysisId: id } : {}), ...input }),
+    });
+    const body = object(await response.json(), 'Analysis response'); currentSession(expected);
+    if (!response.ok) throw new ApiError(`${body.errorCode ?? 'ANALYSIS_SAVE_FAILED'}: ${body.Message ?? body.message ?? 'Could not save analysis.'}`, response.status, typeof body.errorCode === 'string' ? body.errorCode : undefined);
+    const etag = response.headers.get('etag');
+    if (body.AnalysisId !== id || !etag || !/^"[1-9]\d*"$/.test(etag) || !Number.isSafeInteger(Number(etag.slice(1, -1)))) throw new ApiError('ANALYSIS_RESPONSE_INVALID: Missing analysis identity or revision.');
+    return Number(etag.slice(1, -1));
+  }
+  async function publishAnalysis(id: string, dashboardId: string | undefined, key: string): Promise<Publication> {
+    const body = object(await rawResource(`/api/v1/analyses/${encodeURIComponent(id)}/publish`, 'POST', dashboardId ? { dashboardId } : {}, undefined, key), 'Publish response');
+    if (typeof body.DashboardId !== 'string' || !/^[A-Za-z0-9_-]{1,512}$/.test(body.DashboardId) || !Number.isSafeInteger(body.Version) || Number(body.Version) < 1 || !Array.isArray(body.Errors)) throw new ApiError('DASHBOARD_RESPONSE_INVALID: Missing publication receipt.');
+    return body as unknown as Publication;
+  }
   return {
+    saveHostedAnalysis, publishAnalysis,
     onDemand, connect, subscribeAvailability,
     login, selectWorkspace, logout, clearSession, getTransportCapabilities, uploadDirectFile, getOperation, getUploadReservation, cancelOperation, cancelUploadReservation,
     listJobs, jobRecipients, jobHistory, jobDeliveries, runJob,
