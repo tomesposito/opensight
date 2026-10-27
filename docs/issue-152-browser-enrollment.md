@@ -30,8 +30,9 @@ activates only a membership belonging to the same identity. Used, expired,
 revoked, foreign and suspended-workspace invitations are denied. Acceptance
 neither resets credentials nor issues a session nor switches workspaces.
 
-The QR encoder is in-repository TypeScript under the project's Apache-2.0
-license, with no new dependency. It encodes the exact ASCII `otpauth` URI as QR
+The QR encoder is dependency-free, in-repository TypeScript. Its parameter tables
+retain Kazuhiko Arase's MIT license notice alongside the project's Apache-2.0
+code; no new dependency was added. It encodes the exact ASCII `otpauth` URI as QR
 byte mode, error-correction level L, versions 1–40, with a four-module quiet
 zone in the rendered SVG. Tests compare every module with the independent MIT
 implementation already installed in the API's `qrcode-terminal` development
