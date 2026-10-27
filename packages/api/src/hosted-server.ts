@@ -262,7 +262,8 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
       }
       // SR2/SR3 supply durable admission/artifacts and event claims. Never run
       // the single-node data/job/embedding plane just because Lambda can invoke it.
-      if (options.invocation && !['/api/session', '/api/auth/switch', '/api/auth/logout', '/api/namespaces', '/api/users', '/api/groups'].includes(path) && !invocation?.allows(path)) throw new MetadataError('SERVERLESS_STORAGE_REQUIRED', 503);
+      const invitationPath = /^\/api\/(?:namespaces\/[^/]+\/)?invitations(?:\/[A-Za-z0-9_-]+)?$/;
+      if (options.invocation && !['/api/session', '/api/auth/switch', '/api/auth/logout', '/api/namespaces', '/api/users', '/api/groups'].includes(path) && !invitationPath.test(path) && !invocation?.allows(path)) throw new MetadataError('SERVERLESS_STORAGE_REQUIRED', 503);
       if (await invocation?.embedOperation?.(request, response, path, sessions)) return;
       if (await embedSessionRoute(request, response, path, sessions, embedContent, invocation?.embedResult, invocation?.resultMaxBytes, invocation?.idleReconnect)) return;
       // Every other request, including unknown and legacy routes, must verify first.
@@ -313,6 +314,25 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
         if (!hasCapability(user.body.role as Parameters<typeof hasCapability>[0], 'admin')) throw new MetadataError('SECURITY_ADMIN_REQUIRED', 403);
         const resources = await metadata.list(context, path.endsWith('/users') ? 'user' : 'group');
         send(response, 200, resources.map(r => ({ id: r.id, namespaceId: context.namespaceId, ...r.body }))); return;
+      }
+      const invitation = /^\/api\/invitations(?:\/([A-Za-z0-9_-]+))?$/.exec(path);
+      if (invitation) {
+        const user = await metadata.get(context, { kind: 'user', id: context.userId });
+        if (!hasCapability(user.body.role as Parameters<typeof hasCapability>[0], 'admin')) throw new MetadataError('SECURITY_ADMIN_REQUIRED', 403);
+        method(request, response, invitation[1] ? ['DELETE'] : ['GET', 'POST']);
+        if (request.method === 'GET') send(response, 200, await provisioning.listTenantInvitations(context));
+        else if (request.method === 'POST') {
+          const input = await body(request, ['email', 'name', 'role', 'tenantId']);
+          if (Object.hasOwn(input, 'tenantId')) throw new MetadataError('FORGED_PRINCIPAL', 403);
+          send(response, 201, await provisioning.inviteTenantMember(context, { email: input.email as string, name: input.name as string, role: input.role as Parameters<HostedProvisioning['inviteMember']>[2]['role'] }));
+        } else {
+          if (request.headers['content-length'] && request.headers['content-length'] !== '0' || request.headers['transfer-encoding']) {
+            const input = await body(request, ['tenantId']);
+            if (Object.hasOwn(input, 'tenantId')) throw new MetadataError('FORGED_PRINCIPAL', 403);
+          }
+          await provisioning.revokeTenantInvitation(context, invitation[1]!); send(response, 200, { deleted: true });
+        }
+        return;
       }
       if (/^\/api\/(namespaces|users|invitations)(?:\/|$)/.test(path)) throw new MetadataError('OPERATOR_REQUIRED', 403);
       if (path === '/api/embedding/config') {
