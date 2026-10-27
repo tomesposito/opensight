@@ -13,6 +13,10 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Added
 
+- Invited users can set a password and register TOTP from the emailed browser
+  link, with a scannable QR code and manual setup key, then sign in with a fresh
+  authenticator code and open their workspace or workspace picker. Existing
+  users can accept another workspace invitation after signing in (#152).
 - Hosted authors can save analyses and publish versioned dashboards from the
   editor. Hosted Home and My stuff list accessible tenant dashboards; readers
   open live visual queries, authored parameter controls, and a docked Ask O

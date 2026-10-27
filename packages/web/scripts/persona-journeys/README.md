@@ -65,18 +65,18 @@ These builds and the suite require no external network access.
 | Script | Persona | Main checks |
 | --- | --- | --- |
 | j1-discover | Evaluator | Homepage, crawler files, demo CTA, real SVG, supported Ask O question |
-| j2-first-login | Workspace Admin | PostgreSQL enrollment setup, browser password/TOTP sign-in, reader restrictions, named workspace picker |
+| j2-first-login | Workspace Admin | Browser invitation/password/TOTP enrollment for admin and reader, fresh-code sign-in, reader restrictions, named workspace picker |
 | j3-first-dashboard | Author | CSV upload, calculated field, regional bar totals against CSV, draft reload |
 | j4-reader-daily | Reader AI | Hosted Orders analysis, provider disclosure, reader navigation, available controls and geometry |
 | j5-migration | Admin + Author | Real .qs import/report, exported ZIP members, saved imported asset |
 | j6-self-host | Self-Hoster | Empty states, explicit sample opt-in, full API/Vite restart, durable CSV rows, no phone-home |
-| j7-operator | Operator | Real provisioning API, operator user list, browser admin sign-in, removal confirmed by API/database |
+| j7-operator | Operator | Real provisioning API, operator user list, browser admin enrollment and sign-in, removal confirmed by API/database |
 | j8-embedding | Embedder (future) | Four offline preview states, branding, honest lack of active session |
 
 **Gaps are product findings, not test bugs.** They must state what was expected
 and what the shipped product actually offers. Do not add fake data, bypass a UI
 restriction, or relabel an assertion failure merely to obtain a green run.
-Current findings include missing hosted enrollment UI, owner-only prepared data
+Current findings include owner-only prepared data
 that remains unavailable to a different dashboard reader under D-53, and an
 imported Athena definition whose source is unconfigured. J4 publishes and grants
 definition access through the product, then checks the real reader surface; J2
@@ -85,8 +85,12 @@ fixture has no provider; live embedding remains a future journey. The generated
 report is the authoritative record for the latest run.
 
 Where the brief's labels differ, scripts follow the current UI and describe
-the difference in step details. API enrollment is explicitly recorded as setup
-after a browser-enrollment gap; subsequent sign-in uses the real SignIn UI.
+the difference in step details. J2 and J7 open the mailed invitation in the real
+browser, set a password, read the displayed base32 key, confirm a live code, and
+sign in with a fresh code after its time step changes. No enrollment request is
+made by hand. J2 retains the API membership acceptance for its already-enrolled
+administrator's second workspace. Enrollment QR codes and setup keys are masked
+in captures, including failure captures.
 J4 copies the actual `hostedDataFixture` rows and recipe into its PostgreSQL
 tenant, then uses real hosted HTTP handlers and built-in-auth fixture tokens.
 It does not synthesize session/data responses. A persistent local draft is

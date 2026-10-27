@@ -29,5 +29,6 @@ token delivery, response shape and authorization revision invalidation. Audit
 entries attribute tenant actions to the verified administrator and omit tokens.
 
 Member removal remains operator-managed because it requires transferring or
-stopping refresh, report and alert schedules (HQ-13). Browser enrollment remains
-issue #152; this change supplies invitations to the existing API enrollment flow.
+stopping refresh, report and alert schedules (HQ-13). Browser password/TOTP
+enrollment was subsequently added in [issue #152](issue-152-browser-enrollment.md);
+the API enrollment flow remains available.
