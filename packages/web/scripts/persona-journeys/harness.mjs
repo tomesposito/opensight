@@ -57,7 +57,9 @@ export async function startHostedStack() {
     import('../../../api/test/embed-http-helpers.mjs'), import('../../../api/dist/hosted-server.js'),
   ]);
   const schema = `persona_${randomUUID().replaceAll('-', '')}`;
-  const pool = new Pool({ connectionString: process.env.DATABASE_URL ?? 'postgresql://postgres@localhost:5433/opensight', options: `-c search_path=${schema}` });
+  const connectionString = process.env.DATABASE_URL ?? 'postgresql://postgres@localhost:5433/opensight';
+  assert.ok(['localhost', '127.0.0.1', '[::1]'].includes(new URL(connectionString).hostname), 'Persona tests require a localhost PostgreSQL server');
+  const pool = new Pool({ connectionString, options: `-c search_path=${schema}` });
   const db = new PostgresMetadataDatabase(pool), stack = { origin, pool, db, schema };
   stack.stop = async () => {
     await stack.vite?.close(); await close(stack.api);
@@ -161,7 +163,7 @@ export async function runJourney(name, persona, run) {
   await mkdir(output, { recursive: true });
   const cleanup = [], j = { journey: name, persona, steps: [], screenshots: [], pageerrors: [], external: [], transportErrors: [], requests: [], pending: new Set(),
     cleanup: fn => cleanup.push(fn),
-    gap(name, expected, actual) { this.steps.push({ name, status: 'gap', detail: { expected, actual } }); console.log(`GAP ${name}: ${actual}`); },
+    gap(name, expected, actual) { this.steps.push({ name, status: 'gap', detail: { expected, actual } }); console.log(`GAP ${name}: ${typeof actual === 'string' ? actual : JSON.stringify(actual)}`); },
     async step(name, page, fn) {
       try { const detail = await fn(); if (page) await capture(this, page, name); this.steps.push({ name, status: 'pass', detail: detail ?? 'Assertions passed.' }); console.log(`PASS ${name}`); }
       catch (error) {
