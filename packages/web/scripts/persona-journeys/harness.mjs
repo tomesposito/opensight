@@ -120,8 +120,10 @@ export async function routeBridge(context, stack, journey) {
       const api = stack.apiTransport && url.pathname.startsWith('/api/');
       const headers = { ...req.headers() }; delete headers.host; delete headers['content-length'];
       if (api) headers.host = new URL(stack.origin).host;
-      const response = await forward((api ? stack.apiTransport : stack.transport) + (api ? url.pathname.replace(/^\/api/, '') : url.pathname) + url.search,
+      const pending = forward((api ? stack.apiTransport : stack.transport) + (api ? url.pathname.replace(/^\/api/, '') : url.pathname) + url.search,
         req.method(), headers, req.postDataBuffer() ?? undefined);
+      journey.pending.add(pending);
+      const response = await pending.finally(() => journey.pending.delete(pending));
       const body = response.body, responseHeaders = response.headers;
       delete responseHeaders['content-encoding']; delete responseHeaders['content-length'];
       if (api) journey.requests.push({ path: url.pathname, method: req.method(), status: response.status,
@@ -132,7 +134,11 @@ export async function routeBridge(context, stack, journey) {
 }
 export async function launchBrowser(journey) {
   const browser = await chromium.launch({ executablePath: process.env.OPENSIGHT_CHROMIUM ?? '/opt/meta-chromium/chrome', args: ['--no-sandbox', '--disable-background-networking', '--disable-component-update', '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
-  journey.cleanup(() => browser.close());
+  journey.cleanup(async () => {
+    await browser.close();
+    // Finish requests issued before closing contexts while their API is alive.
+    await Promise.allSettled([...journey.pending]);
+  });
   return { browser, async page(stack, token) {
     const context = await browser.newContext({ viewport: { width: 1440, height: 1100 }, reducedMotion: 'reduce', serviceWorkers: 'block',
       ...(token ? { extraHTTPHeaders: { Authorization: `Bearer ${token}` } } : {}) });
@@ -153,7 +159,7 @@ export async function writeResults(journey) {
 }
 export async function runJourney(name, persona, run) {
   await mkdir(output, { recursive: true });
-  const cleanup = [], j = { journey: name, persona, steps: [], screenshots: [], pageerrors: [], external: [], transportErrors: [], requests: [],
+  const cleanup = [], j = { journey: name, persona, steps: [], screenshots: [], pageerrors: [], external: [], transportErrors: [], requests: [], pending: new Set(),
     cleanup: fn => cleanup.push(fn),
     gap(name, expected, actual) { this.steps.push({ name, status: 'gap', detail: { expected, actual } }); console.log(`GAP ${name}: ${actual}`); },
     async step(name, page, fn) {
