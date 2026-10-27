@@ -119,3 +119,21 @@ test('H2 onboarding is idempotent, secret-free in responses, durable before deli
   assert.equal((await db.transaction(c => c.query('SELECT * FROM h1_tenants'))).length, 1);
   assert.ok(!/token|password|secret|email/i.test(JSON.stringify(completed)));
 });
+
+test('Issue #152: invitation mail leads with the browser link and retains the automation token', async t => {
+  const { db, config } = await database(t), mail = new StubMailTransport();
+  const provision = new HostedProvisioning(db, config, mail);
+  const tenant = await provision.provision('browser-mail', {name:'Browser & workspace', administrator:{email:'browser@example.test',name:'Admin'}});
+  await provision.inviteMember('browser-reader',tenant.tenantId,{email:'reader@example.test',name:'Reader',role:'reader'});
+  for (const message of mail.messages) {
+    const token = message.html.match(/<code>([A-Za-z0-9_-]{43})<\/code>/)[1];
+    const href = message.html.match(/href="([^"]+)"/)[1];
+    assert.equal(href, `${config.origin}/#invite=${token}`);
+    assert.equal(new URL(href).search,'');
+    assert.match(message.html,/Set up your OpenSight account.*in your browser/);
+    assert.match(message.html,/Workspace: Browser &amp; workspace/);
+    assert.match(message.html,/already have an account, sign in/);
+    assert.ok(message.html.indexOf('href=') < message.html.indexOf('enrollment API'));
+    assert.doesNotMatch(message.html,/Use this single-use invitation token with/);
+  }
+});

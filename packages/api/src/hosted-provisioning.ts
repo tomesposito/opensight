@@ -97,7 +97,7 @@ export class HostedProvisioning {
       : `<p>Tenant: ${row.tenant_id}</p>`;
     // Delivery belongs to the identity flow, never to operator metadata responses.
     await this.mail.send({ to: [String(row.email)], subject: 'OpenSight invitation',
-      html: `<p>You have been invited to OpenSight.</p><p>Public origin: ${this.config.origin}</p>${tenantLine}<p>Use this single-use invitation token with the OpenSight enrollment API:</p><code>${token}</code>` });
+      html: `<p>You have been invited to OpenSight.</p>${tenantLine}<p><a href="${escapeHtml(this.config.origin)}/#invite=${token}">Set up your OpenSight account</a> in your browser: choose a password and register your authenticator app. If you already have an account, sign in to accept the invitation.</p><p>This invitation is single-use. Operators and automation can also use the enrollment API with this token:</p><code>${token}</code>` });
     await this.database.transaction(c => c.query('UPDATE h2_invitations SET delivered = 1 WHERE invitation_id = ?', [invitationId]));
   }
   private async completeProvision(operationId: string, input: Pick<OnboardingInput, 'administrator'>): Promise<TenantOperation> {
