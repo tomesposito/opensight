@@ -66,6 +66,25 @@ the editor, grants definition access through the administrator UI, opens the
 reader collection, submits a real control query, and measures dock geometry.
 The complete persona suite also preserves J3's honest local publication gap.
 
+Final verification on 2026-10-27:
+
+- Root `npm test`: exit 0; **4,191 passed / 0 failed / 34 skipped**. This
+  includes 4,159 Node tests and 32 Python tests passing. All 34 skips require
+  live PostgreSQL configuration; no other suite was skipped.
+- `TMPDIR=/tmp node packages/web/scripts/persona-journeys/run-all.mjs`: exit 0;
+  **8 journeys, 58 passed / 0 failed / 10 gaps** against local servers and
+  real PostgreSQL. The harness rejects external requests.
+- J2 `hosted-empty-home` and J4 `publish-orders-dashboard`,
+  `reader-open-orders`, `reader-dashboard-navigation`, `reader-ask-o-docking`,
+  and `narrow-reader-with-panel` all pass. J4 has two gaps: the D-53 reader
+  data denial described above, and no configured AI provider. The remaining
+  eight gaps are existing journey limitations, including local publication.
+
+An earlier persona run alongside the full test suite timed out while the
+publisher's dashboard queries were still loading. The final run executed after
+the root suite, with the same assertions and timeouts, and passed. Detailed
+journey reports and screenshots are generated under `.opensight/persona-journeys/`.
+
 The static demo was rebuilt. Chromium captures of the prior and rebuilt Home at
 1440×1100 produced identical 1440×1431 images (zero changed pixels, four SVG
 charts). No demo-visible UI changed, so README screenshots and the hero GIF were
