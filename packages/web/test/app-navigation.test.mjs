@@ -75,7 +75,7 @@ async function mount(t, access = demoAccess, hash = '#/home', seed) {
     matchMedia: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }),
   };
   globalThis.IS_REACT_ACT_ENVIRONMENT = true;
-  const api = new Proxy({}, { get() { return () => { assert.fail('Navigation must not bypass access gates and request data'); }; } });
+  const api = new Proxy({}, { get(_target, name) { if (name === 'listDashboards') return async () => []; return () => { assert.fail('Navigation must not bypass access gates and request data'); }; } });
   const element = createElement(AccessProvider, { access }, createElement(Application, { api, fixtures: [] }));
   let renderer; await act(() => { renderer = create(element); });
   t.after(async () => { await act(() => renderer.unmount()); globalThis.window = oldWindow; globalThis.IS_REACT_ACT_ENVIRONMENT = oldAct; });
@@ -115,7 +115,7 @@ test('My stuff starts empty and shows only real session visits with gated collec
   for (const access of [demoAccess, hosted('reader')]) {
     const html = renderToStaticMarkup(createElement(AccessProvider, { access }, createElement(MyStuff, { recentPages: [], navigate() {} })));
     assert.equal(html.includes('href="#/analyses"'), access.mode === 'demo');
-    assert.doesNotMatch(html, /href="#\/dashboards"/);
+    assert.equal(html.includes('href="#/dashboards"'), access.mode === 'hosted');
   }
 });
 

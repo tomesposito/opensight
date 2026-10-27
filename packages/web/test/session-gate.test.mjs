@@ -156,11 +156,12 @@ test('fixture application never supplies API clients, even when API/admin modes 
   }
 });
 
-test('configured author retains its API client and the original initial fixture', async t => {
-  const api = createApiClient('/api', async () => Response.json({ lastGood: null, state: 'never', error: null, datasetId: 'sales' }));
+test('configured author retains its API client and only opens samples by explicit navigation', async t => {
+  const api = createApiClient('/api', async url => Response.json(String(url).endsWith('/api/v1/dashboards') ? { items: [], nextCursor: null } : { lastGood: null, state: 'never', error: null, datasetId: 'sales' }));
   const fixtures = ['other', 'renderable-sales'].map(id => ({ id, name: id, description: '', provenance: '', notice: '', sheets: [] }));
   const ui = await mount(t, createElement(AccessProvider, { access: { mode: 'hosted', session: registered } }, createElement(Application, { api, fixtures })));
-  assert.equal(ui.renderer.root.findByType(Dashboard).props.fixture.id, 'renderable-sales');
+  assert.equal(ui.renderer.root.findAllByType(Dashboard).length, 0);
+  assert.match(JSON.stringify(ui.renderer.toJSON()), /No published dashboards are available to you yet/);
   await act(() => ui.renderer.root.findByType(AppNavigation).props.navigate({ page: 'security' }));
   assert.equal(ui.renderer.root.findAllByType('a').some(a => a.props.href === '#/admin/developer/api'), true);
   await act(async () => ui.renderer.root.findByType(AppNavigation).props.navigate({ page: 'fixtures' }));

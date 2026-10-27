@@ -1,3 +1,4 @@
+import { PublishedDashboard } from './PublishedDashboard.js';
 import { DataPrep } from './DataPrep.js';
 import { DatasetDetail } from './DatasetDetail.js';
 import { emptyDraft } from './authoring.js';
@@ -28,7 +29,7 @@ import { BackToTop } from './BackToTop.js';
 import { CommandPaletteProvider } from './CommandPalette.js';
 import { GlobalSearchProvider } from './GlobalSearch.js';
 import { LocalEmptyState } from './LocalEmptyState.js';
-import { Dashboards } from './Dashboards.js';
+import { Dashboards, HostedDashboards } from './Dashboards.js';
 import { FolderEmptyState, MyStuff } from './NavigationPages.js';
 
 /** Access-gated route notice: a centered card, not a bare paragraph, so a blocked
@@ -70,8 +71,9 @@ function ApplicationWorkspace({ api, fixtures }: { api: ReturnType<typeof create
     if (!route) return <section className="not-found-page"><h1>Page not found</h1><p>Choose a section in the navigation to continue.</p><AppLink to={{ page: 'home' }} navigate={navigate}>Go to Home</AppLink></section>;
     if (problem) return <RouteNotice problem={problem} />;
     switch (route.page) {
-      case 'home': return <section className="home-page" aria-label="Home">{access.mode === 'local' && !sampleLoaded ? <LocalEmptyState onSources={() => navigate({ page: 'data-sources' })} onSample={() => setSampleLoaded(true)} /> : sample ? <Dashboard key="sample" fixture={sample} sample /> : <p role="status">The sample dashboard is not included in this build. Ask the operator to restore the pinned sales sample.</p>}</section>;
-      case 'dashboards': return <Dashboards navigate={navigate} />;
+      case 'home': if (access.mode === 'hosted') return <section className="home-page" aria-label="Home"><HostedDashboards home client={api} navigate={navigate} /></section>;
+      return <section className="home-page" aria-label="Home">{access.mode === 'local' && !sampleLoaded ? <LocalEmptyState onSources={() => navigate({ page: 'data-sources' })} onSample={() => setSampleLoaded(true)} /> : sample ? <Dashboard key="sample" fixture={sample} sample /> : <p role="status">The sample dashboard is not included in this build. Ask the operator to restore the pinned sales sample.</p>}</section>;
+      case 'dashboards': return access.mode === 'hosted' && route.dashboardId ? <PublishedDashboard key={route.dashboardId} id={route.dashboardId} client={api} navigate={navigate} /> : <Dashboards navigate={navigate} client={api} />;
       case 'my-stuff': return <MyStuff recentPages={recentPages} navigate={navigate} />;
       case 'my-folders': return <FolderEmptyState shared={false} navigate={navigate} />;
       case 'shared-folders': return <FolderEmptyState shared navigate={navigate} />;

@@ -15,14 +15,14 @@ import { useCommandPalette } from './CommandPalette.js';
 import { hasDataLabels, hasLegend, hasReferenceLines } from './formatting.js';
 export function publishNotice(mode: Access['mode']): string {
   return mode === 'hosted'
-    ? 'Publishing needs a hosted deployment with dashboard publication enabled. It is not available in this editor yet; nothing has been published.'
+    ? 'HOSTED_API_REQUIRED: Connect the hosted API before publishing. Nothing has been published.'
     : `${mode === 'local' ? 'This local workspace' : 'This static demo'} has no publication destination. Drafts are device-local, not synced or shared. Export .qs or JSON to share an analysis definition; data is not included. Nothing has been published.`;
 }
 /** Local draft IDs and imported resource IDs are never proof of a hosted asset. */
 export function sharingUnavailableReason(access: Access): string {
   if (access.mode !== 'hosted') return `Sharing needs hosted API support. ${access.mode === 'local' ? 'This local workspace' : 'This static demo'} saves device-local drafts, not shared assets. Exports downloads definitions without data.`;
   if (!access.session?.namespaceId || !access.session.id) return 'Sharing needs a resolved hosted session and namespace. No sharing request can be made from this editor.';
-  return `Sharing in namespace “${access.session.namespaceId}” needs a saved hosted analysis and share-management integration. This editor only saves device-local drafts, so Share is unavailable. Hosted grants must resolve users or groups in this namespace; namespace, folder, row and column permissions still apply.`;
+  return `Sharing in namespace “${access.session.namespaceId}” needs a saved hosted analysis and share-management integration. Share management is unavailable in this editor. Hosted grants must resolve users or groups in this namespace; namespace, folder, row and column permissions still apply.`;
 }
 /** Moves keyboard focus to an editor control: opens any collapsed ancestor
  *  panel, scrolls the control into view, then focuses it. Exported for tests.
@@ -38,7 +38,7 @@ export function focusAuthorControl(nav: HTMLElement | null, selector: string, ta
   target?.focus();
   return target;
 }
-export function AuthorToolbar({ canUndo = false, canRedo = false, onUndo, onRedo, onPrep, onSources, onManageData, draft, dispatch, fit, onFit, onJson, onBundle, onImport, oEntry, dataAvailable = true, busy = false, jsonDisabled = false, autosaveError, favorite = false, onFavorite, onSaveCopy, onPrint }: { canUndo?: boolean; canRedo?: boolean; onUndo?: () => void; onRedo?: () => void; onPrint?: () => void; onSaveCopy?: () => void; favorite?: boolean; onFavorite?: () => void; autosaveError?: string; dataAvailable?: boolean; onSources?: () => void; onPrep?: () => void; onManageData?: () => void; oEntry?: ReactNode; busy?: boolean; jsonDisabled?: boolean; draft: AuthorDraft; dispatch: Dispatch<AuthorAction>; fit: boolean; onFit: () => void; onJson: () => void; onBundle: () => void; onImport: () => void }) {
+export function AuthorToolbar({ canUndo = false, canRedo = false, onUndo, onRedo, onPrep, onSources, onManageData, draft, dispatch, fit, onFit, onJson, onBundle, onImport, oEntry, dataAvailable = true, busy = false, jsonDisabled = false, autosaveError, favorite = false, onFavorite, onSaveCopy, onPrint, onPublish, publishing = false }: { onPublish?: () => Promise<string>; publishing?: boolean; canUndo?: boolean; canRedo?: boolean; onUndo?: () => void; onRedo?: () => void; onPrint?: () => void; onSaveCopy?: () => void; favorite?: boolean; onFavorite?: () => void; autosaveError?: string; dataAvailable?: boolean; onSources?: () => void; onPrep?: () => void; onManageData?: () => void; oEntry?: ReactNode; busy?: boolean; jsonDisabled?: boolean; draft: AuthorDraft; dispatch: Dispatch<AuthorAction>; fit: boolean; onFit: () => void; onJson: () => void; onBundle: () => void; onImport: () => void }) {
   const access = useAccess();
   const notify = useToast();
   const [notice, setNotice] = useState('');
@@ -72,7 +72,13 @@ export function AuthorToolbar({ canUndo = false, canRedo = false, onUndo, onRedo
   const activate = (selector: string) => { focusAuthorControl(nav.current, selector)?.click(); };
   const needsData = !dataAvailable ? 'Add data to start building.' : undefined;
   const needsVisual = needsData ?? (!selected ? 'Select a visual first.' : undefined);
-  const publish = () => { setNotice(publishNotice(access.mode)); notify('Publishing is unavailable in this editor. Nothing has been published.'); };
+  const publish = async () => {
+    if (publishing) return;
+    if (access.mode !== 'hosted' || !onPublish) { setNotice(publishNotice(access.mode)); notify('Publishing is unavailable in this editor. Nothing has been published.'); return; }
+    setNotice('Saving analysis and publishing…');
+    try { const message = await onPublish(); setNotice(message); notify(message); }
+    catch (error) { setNotice(error instanceof Error ? error.message : String(error)); }
+  };
   return <>
     <input ref={imageInput} type="file" accept="image/*" hidden aria-label="Insert local image" onChange={async e => {
       const file = e.currentTarget.files?.[0], sheetId = imageSheetId.current, openedDraft = imageDraft.current; e.currentTarget.value = '';
@@ -96,7 +102,7 @@ export function AuthorToolbar({ canUndo = false, canRedo = false, onUndo, onRedo
     }} onClick={e => { const button = (e.target as HTMLElement).closest('button'); if (button && button.getAttribute('aria-disabled') !== 'true' && !button.hasAttribute('data-menu-keep-open')) { const menu = button.closest('details'); if (menu) { if (menu.contains(menu.ownerDocument.activeElement)) menu.querySelector('summary')?.focus(); menu.open = false; } } }}>
       <AuthorMenu name="File">
         <AuthorMenuItem label={favorite ? "Remove from Favorites" : "Add to Favorites"} run={onFavorite} reason={!onFavorite ? "Favorites need an open analysis on this device." : undefined} />
-        <AuthorMenuItem label="Publish" run={publish} />
+        <AuthorMenuItem label="Publish" run={() => { void publish(); }} reason={publishing ? 'Publication in progress.' : undefined} />
         <AuthorMenuItem label="Save as Analysis" run={onSaveCopy} reason={busy ? "Wait for the current import or export to finish." : !onSaveCopy ? "Open an analysis to save a separate copy on this device." : undefined} />
         <hr />
         <AuthorMenuItem label="Share" reason={sharingUnavailableReason(access)} />
@@ -198,7 +204,7 @@ export function AuthorToolbar({ canUndo = false, canRedo = false, onUndo, onRedo
         nav.current?.querySelectorAll('details[open]').forEach(menu => menu.removeAttribute('open'));
         palette?.open('Search analysis actions');
       }}>Search</button>
-      {oEntry}<div className="menu-spacer" /><button type="button" disabled={!dataAvailable} onClick={() => focus('.visual-gallery button')}>Add visual</button><button type="button" aria-pressed={fit} title={fit ? `Fit is on; switch to ${sheet.layoutSettings?.optimizeWidth ?? 1200} pixel canvas` : 'Fit canvas to available width'} onClick={onFit}>FIT TO WIDTH</button><button type="button" onClick={publish}>PUBLISH</button>
+      {oEntry}<div className="menu-spacer" /><button type="button" disabled={!dataAvailable} onClick={() => focus('.visual-gallery button')}>Add visual</button><button type="button" aria-pressed={fit} title={fit ? `Fit is on; switch to ${sheet.layoutSettings?.optimizeWidth ?? 1200} pixel canvas` : 'Fit canvas to available width'} onClick={onFit}>FIT TO WIDTH</button><button type="button" disabled={publishing} onClick={() => { void publish(); }}>{publishing ? 'PUBLISHING…' : 'PUBLISH'}</button>
       <label className="chrome-switch">NEW LOOK<select aria-label="NEW LOOK" value={draft.chrome ?? 'light'} onChange={e => dispatch({ type: 'chrome', mode: e.target.value as 'light' | 'dark' })}><option value="light">Light</option><option value="dark">Dark</option></select></label>
     </nav>
     {notice && <div className="toolbar-notice" role="status">{notice}<button type="button" onClick={() => setNotice('')}>Dismiss</button></div>}

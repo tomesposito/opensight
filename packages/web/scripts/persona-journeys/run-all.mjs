@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 const directory = dirname(fileURLToPath(import.meta.url)), repo = resolve(directory, '../../../..');
 const output = resolve(process.env.OPENSIGHT_PERSONA_OUTPUT ?? resolve(repo, '.opensight/persona-journeys'));
 const env = { ...process.env, DATABASE_URL: process.env.DATABASE_URL ?? 'postgresql://postgres@localhost:5433/opensight',
-  TMPDIR: resolve(homedir(), 'workspace/.tmp'), OPENSIGHT_PERSONA_OUTPUT: output };
+  TMPDIR: process.env.TMPDIR ?? resolve(homedir(), 'workspace/.tmp'), OPENSIGHT_PERSONA_OUTPUT: output };
 await mkdir(env.TMPDIR, { recursive: true }); await mkdir(output, { recursive: true });
 const journeys = [
   ['j1-discover', 'Evaluator'], ['j2-first-login', 'Workspace Admin'], ['j3-first-dashboard', 'Author'], ['j4-reader-daily', 'Reader AI'],

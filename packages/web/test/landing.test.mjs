@@ -17,14 +17,14 @@ import generated from '../build/test/fixtures.generated.json' with { type: 'json
 const fixtures = JSON.parse(readFileSync(new URL('../src/fixtures.generated.json', import.meta.url), 'utf8'));
 const sales = fixtures.find(f => f.id === 'renderable-sales');
 const api = createApiClient('');
-const app = () => createElement(Application, { api, fixtures: generated });
+const app = (client = api) => createElement(Application, { api: client, fixtures: generated });
 const render = access => renderToStaticMarkup(access
   ? createElement(AccessProvider, { access }, app())
   : app());
 const hosted = role => ({ mode: 'hosted', session: { id: 'u', namespaceId: 'n', name: 'User', role } });
 
-test('first application render is the populated pinned sales dashboard for demo and every hosted role', () => {
-  for (const access of [undefined, ...ROLES.map(hosted)]) {
+test('first demo render retains the populated pinned sales dashboard', () => {
+  for (const access of [undefined]) {
     const html = render(access);
     assert.match(html, /href="#\/home" aria-current="page">Home<\/a>/);
     assert.doesNotMatch(html, /value="fixtures" selected|Data unavailable|empty-state|visual-error|TotalDeathByCountry/);
@@ -41,7 +41,13 @@ test('first application render is the populated pinned sales dashboard for demo 
   assert.equal(compileVisual(sales.sheets[0].visuals.find(v => v.definition.KPIVisual)).option.graphic[0].style.text, '500');
 });
 
-test('switching to definition fixtures and back restores the sales dashboard', async t => {
+for (const role of ROLES) test(`hosted ${role} first paint waits for tenant dashboards without sample content`, () => {
+  const html = render(hosted(role));
+  assert.match(html, /Loading dashboards/);
+  assert.doesNotMatch(html, /class="visual-card"|class="chart"|Pinned synthetic sales|Pinned sample data/);
+});
+
+test('hosted fixture preview is explicit and returning home restores the empty tenant collection', async t => {
   const oldAct = globalThis.IS_REACT_ACT_ENVIRONMENT;
   let renderer;
   globalThis.IS_REACT_ACT_ENVIRONMENT = true;
@@ -49,14 +55,16 @@ test('switching to definition fixtures and back restores the sales dashboard', a
     if (renderer) await act(() => renderer.unmount());
     globalThis.IS_REACT_ACT_ENVIRONMENT = oldAct;
   });
-  await act(() => { renderer = create(createElement(AccessProvider, { access: hosted('author') }, app())); });
+  await act(() => { renderer = create(createElement(AccessProvider, { access: hosted('author') }, app({ async listDashboards() { return []; } }))); });
   const choose = page => act(() => renderer.root.findByType(AppNavigation).props.navigate({ page }));
-  assert.deepEqual(renderer.root.findByType(Dashboard).props.fixture, sales);
+  assert.equal(renderer.root.findAllByType(Dashboard).length, 0);
+  assert.match(JSON.stringify(renderer.toJSON()), /No published dashboards are available to you yet/);
   await choose('fixtures');
   assert.equal(renderer.root.findByProps({ className: 'header-caption' }).props.children, 'Developer fixture preview');
   assert.deepEqual(renderer.root.findByType(Dashboard).props.fixture, fixtures[0]);
   await choose('home');
-  assert.deepEqual(renderer.root.findByType(Dashboard).props.fixture, sales);
+  assert.equal(renderer.root.findAllByType(Dashboard).length, 0);
+  assert.match(JSON.stringify(renderer.toJSON()), /No published dashboards are available to you yet/);
 });
 
 test('hosted entry shows the first-run gate while the session resolves, before exposing the application', t => {
@@ -68,14 +76,17 @@ test('hosted entry shows the first-run gate while the session resolves, before e
   assert.doesNotMatch(html, /visual-card|Sample dashboard|source-picker/);
 });
 
-test('a build without the pinned sample gives recovery guidance without falling back to an empty chart', () => {
+test('a demo build without the pinned sample gives recovery guidance without falling back to an empty chart', () => {
   const saved = [...generated];
   try {
     generated.splice(0, generated.length, ...saved.filter(f => f.id !== 'renderable-sales'));
-    const html = render(hosted('reader'));
+    const html = render();
     assert.match(html, /The sample dashboard is not included in this build/);
     assert.match(html, /Ask the operator to restore the pinned sales sample/);
     assert.doesNotMatch(html, /visual-card|Choose Author/);
+    const hostedHome = render(hosted('reader'));
+    assert.match(hostedHome, /Loading dashboards/);
+    assert.doesNotMatch(hostedHome, /restore the pinned sales sample|visual-card/);
   } finally { generated.splice(0, generated.length, ...saved); }
 });
 

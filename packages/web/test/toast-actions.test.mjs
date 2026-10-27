@@ -141,7 +141,7 @@ for (const mode of ['demo', 'local', 'hosted']) test(`Publish in ${mode} mode gi
   t.after(async () => { await act(() => renderer.unmount()); globalThis.IS_REACT_ACT_ENVIRONMENT = oldAct; });
   for (let i = 0; i < 2; i++) await act(() => renderer.root.findAllByType('button').find(b => b.props.children === 'PUBLISH').props.onClick());
   assert.deepEqual(renderer.root.findByProps({ className: 'toast-host' }).findAllByType('span').map(n => n.props.children), ['Publishing is unavailable in this editor. Nothing has been published.']);
-  assert.match(renderer.root.findByProps({ className: 'toolbar-notice' }).props.children[0], mode === 'hosted' ? /hosted deployment/ : /device-local, not synced or shared/);
+  assert.match(renderer.root.findByProps({ className: 'toolbar-notice' }).props.children[0], mode === 'hosted' ? /HOSTED_API_REQUIRED: Connect the hosted API before publishing/ : /device-local, not synced or shared/);
 });
 
 test('one toast host survives page navigation but clears when the workspace identity changes', async t => {

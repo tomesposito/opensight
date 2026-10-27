@@ -32,6 +32,7 @@ async function mount(t, { access = demoAccess, seed, sample = false } = {}) {
   globalThis.IS_REACT_ACT_ENVIRONMENT = true;
   const queries = [];
   const api = {
+    listDashboards: async () => [],
     listPrepSources: async () => [{ ...prepared, ref: { dataset: prepared.id }, connectorId: 'file', available: true }],
     queryDataset: async id => { queries.push(id); return { rows: id === 'sales' ? [{ region: 'East', revenue: 10 }] : [{ team: 'North', amount: 10 }] }; },
   };
@@ -71,8 +72,9 @@ for (const [label, options] of [
   ['implicit demo sample', { seed: authored() }],
   ['local sample', { access: { mode: 'local' }, sample: true, seed: authored() }],
   ['prepared data with sample loaded', { access: { mode: 'local' }, sample: true, seed: authored(prepared) }],
-  ['hosted sample fallback', { access: { mode: 'hosted', session: { id: 'author', namespaceId: 'test', role: 'author' } }, seed: authored() }],
+  ['restored hosted sample draft', { access: { mode: 'hosted', session: { id: 'author', namespaceId: 'test', role: 'author' } }, seed: authored() }],
 ]) test(`issue #129 application: remove/reopen, undo/redo and re-entry for ${label}`, async t => {
+  if (options.access?.mode === 'hosted') t.mock.timers.enable({ apis: ['setTimeout'] });
   const ui = await mount(t, options);
   const before = structuredClone(ui.draft());
   assert.equal(ui.root.findAllByType(AuthorCanvas).length, 1);
@@ -92,7 +94,11 @@ for (const [label, options] of [
   assert.deepEqual(ui.draft(), before);
   assert.equal(ui.root.findAllByType(AuthorCanvas).length, 1);
   await ui.click('Redo'); ui.empty();
-  await ui.click('Save draft');
+  if (options.access?.mode === 'hosted') {
+    // A removed dataset cannot be saved as a hosted asset. The recovery draft
+    // must still retain that removal across navigation and a browser reload.
+    await act(async () => { t.mock.timers.tick(2000); });
+  } else await ui.click('Save draft');
   assert.deepEqual(ui.store.restore().draft, ui.draft());
   await ui.navigate({ page: 'my-stuff' });
   await ui.navigate({ page: 'author' }); ui.empty();

@@ -13,6 +13,11 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Added
 
+- Hosted authors can save analyses and publish versioned dashboards from the
+  editor. Hosted Home and My stuff list accessible tenant dashboards; readers
+  open live visual queries, authored parameter controls, and a docked Ask O
+  panel for AI roles. Administrators can grant dashboard viewing access while
+  independent dataset permissions remain enforced (#151).
 - Hosted workspace administrators can invite members in all five roles, share
   single-use invitations, and list or revoke pending invitations within their
   own workspace. Invitations expire after seven days by default; member removal
@@ -57,6 +62,9 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
+- Fresh hosted workspaces show a real empty dashboard collection for every role
+  instead of the pinned synthetic sales showcase. Local sample opt-in and demo
+  publication notices retain their existing behavior (#151).
 - Dashboard visuals now stack when the available content width is narrow,
   preventing overflow beneath the docked Ask O panel while preserving the
   wide desktop layout (#140).

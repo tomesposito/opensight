@@ -480,3 +480,8 @@
 }
 
 .author-workspace[data-chrome] .navigation-scrim { background: #14253655; border: 0; padding: 0; }
+
+/* A reader's narrow-screen Ask O remains in flow; it never covers a dashboard. */
+@media (max-width: 760px) {
+  .published-dashboard .q-side-panel { position: static; width: 100%; max-height: 60dvh; margin-block: 12px; border: 1px solid var(--chrome-border, #c9d8de); box-shadow: none; }
+}

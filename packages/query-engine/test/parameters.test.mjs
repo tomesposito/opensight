@@ -61,3 +61,47 @@ test('published QuickSight parameter defaults share DuckDB and prepared evaluato
   request.analysis.Definition.ParameterDeclarations[0].IntegerParameterDeclaration.DefaultValues.StaticValues = ['3; SELECT 1'];
   assert.throws(() => planVisual(request), /integer/);
 });
+
+test('published editor formatting and scoped parameter filters preserve live DuckDB/prepared semantics', async () => {
+  const { queryPreparedVisual } = await import('../dist/index.js');
+  const input = { dimensions: [{ fieldId: 'region', columnName: 'region' }], measures: [{ fieldId: 'revenue', columnName: 'revenue', aggregation: 'SUM' }], filters: [] };
+  const request = interactiveRequest(input, metadata), d = request.analysis.Definition;
+  d.ParameterDeclarations = [{ StringParameterDeclaration: { Name: 'Region', ParameterValueType: 'SINGLE_VALUED', DefaultValues: { StaticValues: ['West'] } } }];
+  d.Sheets[0].ParameterControls = [{ Dropdown: { ParameterControlId: 'region', SourceParameterName: 'Region', SelectableValues: { Values: ['East', 'West'] } } }];
+  const visual = Object.values(d.Sheets[0].Visuals[0])[0];
+  Object.assign(visual.ChartConfiguration, { Legend: { Visibility: 'VISIBLE' }, DataLabels: { Visibility: 'HIDDEN' }, Tooltip: { TooltipVisibility: 'VISIBLE' }, Orientation: 'VERTICAL', BarsArrangement: 'CLUSTERED' });
+  d.FilterGroups = [{ FilterGroupId: 'region', Status: 'ENABLED', CrossDataset: 'SINGLE_DATASET', ScopeConfiguration: { SelectedSheets: { SheetVisualScopingConfigurations: [{ SheetId: d.Sheets[0].SheetId, Scope: 'SELECTED_VISUALS', VisualIds: [request.visualId] }] } }, Filters: [{ CategoryFilter: { FilterId: 'region', Column: { DataSetIdentifier: 'sales_data', ColumnName: 'region' }, Configuration: { CustomFilterConfiguration: { MatchOperator: 'EQUALS', NullOption: 'NON_NULLS_ONLY', ParameterName: 'Region' } } } }] }];
+  // Use the actual bound identifier; no fixture identity is assumed by publication.
+  d.FilterGroups[0].Filters[0].CategoryFilter.Column.DataSetIdentifier = d.DataSetIdentifierDeclarations[0].Identifier;
+  const before = structuredClone(d), live = await executeLocal(request, { dataRoot: root });
+  assert.deepEqual(live.rows, [{ region: 'West', revenue: 400 }]); assert.deepEqual(d, before);
+  const columns = [{ name: 'region', type: 'STRING' }, { name: 'revenue', type: 'DECIMAL' }], rows = [['East', 500], ['West', 400]];
+  assert.deepEqual(queryPreparedVisual(columns, rows.length, (r, c) => rows[r][c], request.analysis, request.visualId, metadata.localData.dataSetArn).rows, live.rows);
+  for (const dialect of ['duckdb', 'postgres', 'mysql']) {
+    const plan = planVisual(request, { dialect }); assert.deepEqual(evaluatePlan(plan, [{ region: 'East', revenue: 500 }, { region: 'West', revenue: 400 }]), live.rows);
+  }
+  d.ParameterDeclarations[0].StringParameterDeclaration.DefaultValues.StaticValues = ["West' OR TRUE --"];
+  assert.doesNotMatch(planVisual(request).sql, /OR TRUE/);
+  assert.deepEqual((await executeLocal(request, { dataRoot: root })).rows, []);
+  d.FilterGroups[0].Filters[0].CategoryFilter.Configuration.CustomFilterConfiguration.ParameterName = 'missing';
+  assert.throws(() => planVisual(request), /undeclared parameter/);
+  d.FilterGroups = []; visual.ChartConfiguration.Sql = 'select 1'; assert.throws(() => planVisual(request), /unrecognized execution property/);
+});
+
+test('published numeric and datetime parameter predicates match interactive plans and reject mismatched variants', () => {
+  const make = (columnName, type, value) => {
+    const request = interactiveRequest({ dimensions: [], measures: [{ fieldId: 'total', columnName: 'revenue', aggregation: 'SUM' }], filters: [] }, metadata);
+    request.analysis.Definition.ParameterDeclarations = [{ [type === 'number' ? 'DecimalParameterDeclaration' : 'DateTimeParameterDeclaration']: { Name: 'Bound', ...(type === 'number' ? { ParameterValueType: 'SINGLE_VALUED' } : {}), DefaultValues: { StaticValues: [value] } } }];
+    const id = request.analysis.Definition.DataSetIdentifierDeclarations[0].Identifier;
+    return { request, body: { FilterId: 'bound', Column: { DataSetIdentifier: id, ColumnName: columnName }, NullOption: 'NON_NULLS_ONLY' } };
+  };
+  for (const [column, type, value, variant, range] of [['revenue', 'number', 100, 'NumericEqualityFilter', false], ['revenue', 'number', 100, 'NumericRangeFilter', true], ['order_date', 'datetime', '2025-04-01T00:00:00Z', 'TimeRangeFilter', true]]) {
+    const { request, body } = make(column, type, value);
+    Object.assign(body, range ? { [type === 'datetime' ? 'RangeMinimumValue' : 'RangeMinimum']: { Parameter: 'Bound' }, IncludeMinimum: true } : { MatchOperator: 'EQUALS', ParameterName: 'Bound' });
+    request.analysis.Definition.FilterGroups = [{ FilterGroupId: 'bound', Status: 'ENABLED', CrossDataset: 'SINGLE_DATASET', ScopeConfiguration: { AllSheets: {} }, Filters: [{ [variant]: body }] }];
+    const frozen = planVisual(request);
+    const interactive = planVisual(interactiveRequest({ dimensions: [], measures: [{ fieldId: 'total', columnName: 'revenue', aggregation: 'SUM' }], filters: [{ columnName: column, parameterName: 'Bound', operator: range ? 'GREATER_THAN_OR_EQUAL_TO' : 'EQUALS' }], parameterDeclarations: [{ name: 'Bound', type, multiple: false }], parameterBindings: { Bound: [value] } }, metadata));
+    assert.equal(frozen.sql, interactive.sql); assert.deepEqual(frozen.parameters, interactive.parameters);
+    body.Column.ColumnName = 'region'; assert.throws(() => planVisual(request), /TYPE_MISMATCH|number column|column type/);
+  }
+});

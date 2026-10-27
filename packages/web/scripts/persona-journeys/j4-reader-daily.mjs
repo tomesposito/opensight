@@ -28,14 +28,32 @@ await runJourney('j4-reader-daily', 'Reader AI', async j => {
     await author.locator('.author-card .chart svg').waitFor();
     await author.locator('.author-card summary').filter({ hasText: 'View data' }).click();
     assert.deepEqual(await author.locator('.author-card tbody tr').evaluateAll(rows => rows.map(r => [...r.cells].map(c => c.textContent))), [['east', '40'], ['west', '20']]);
-    await button(author, 'Save draft').click(); await author.getByText('Draft saved on this device.', { exact: true }).waitFor();
+    await button(author, '+ Parameter').click();
+    await author.getByLabel('Parameter name', { exact: true }).fill('Region');
+    await author.getByLabel('Default values', { exact: true }).fill('east');
+    await button(author, 'Create parameter').click();
+    await button(author, '+ Add control').click();
+    await author.getByLabel('Control label', { exact: true }).fill('Region');
+    await author.getByLabel('Options (one per line)', { exact: true }).fill('east\nwest');
+    await button(author, 'Create control').click();
+    const bindRegion = async () => {
+      await author.getByRole('tab', { name: 'Interaction', exact: true }).click();
+      await author.getByText('Parameter bindings', { exact: true }).click();
+      await button(author, 'Apply parameter filter').click();
+    };
+    await bindRegion();
+    await author.locator('.add-visual').getByRole('button', { name: 'Add visual', exact: true }).click();
+    await button(author, 'Assign region').click(); await button(author, 'Assign revenue').click();
+    await bindRegion();
+    await button(author, 'Save analysis').click();
+    await author.getByText('Analysis saved to this hosted workspace.', { exact: true }).first().waitFor();
     return 'Orders from hostedDataFixture runs through the real hosted API; browser bearer credentials come from the real built-in auth fixture.';
   });
-  await j.step('publish-availability', author, async () => {
+  await j.step('publish-orders-dashboard', author, async () => {
     await button(author, 'PUBLISH').click();
-    const actual = await author.locator('.toolbar-notice').innerText();
-    assert.match(actual, /not available in this editor yet/); assert.match(actual, /nothing has been published/i);
-    j.gap('publish-orders-dashboard', 'An author publishes Orders for Readers.', actual);
+    await author.locator('.toolbar-notice').filter({ hasText: /Published “Daily Orders” · version 1/ }).waitFor();
+    assert.doesNotMatch(await author.locator('.toolbar-notice').innerText(), /Published with diagnostics/);
+    return 'The editor saved a hosted analysis and the real v1 publish route returned version 1.';
   });
   await j.step('provider-unconfigured', author, async () => {
     await author.getByRole('button', { name: /^Ask a question about / }).click();
@@ -44,31 +62,49 @@ await runJourney('j4-reader-daily', 'Reader AI', async j => {
     const actual = await author.locator('.o-mode-notice').innerText(); assert.match(actual, /not configured/);
     j.gap('ai-answer-environment', 'Ask O answers using a configured provider and traces the visible data.', `Environment-limited: no provider configured. Author panel says: ${actual}. No AI call is made.`);
   });
+  await j.step('admin-grants-dashboard', author, async () => {
+    await navigate(author, 'my-stuff');
+    await author.getByRole('navigation', { name: 'Your collections' }).getByRole('link', { name: 'Dashboards', exact: true }).click();
+    await author.getByRole('link', { name: 'Daily Orders', exact: true }).click();
+    await author.locator('.dashboard-grid .chart svg').first().waitFor();
+    await author.getByText('Dashboard access', { exact: true }).click();
+    await author.getByLabel('Viewer', { exact: true }).selectOption({ label: 'Daily reader' });
+    await button(author, 'Grant dashboard access').click();
+    await author.getByText('Dashboard viewing access granted. Dataset permissions are unchanged.', { exact: true }).waitFor();
+    return 'An administrator grants definition visibility through the product. D-53 keeps publisher-owned prepared data private.';
+  });
   const page = await browser.page(stack, readerToken);
-  await j.step('reader-home', page, async () => {
+  await j.step('reader-open-orders', page, async () => {
     await page.goto(stack.origin); await page.locator('.app-shell').waitFor();
     assert.equal(await page.locator('#product-navigation').getByRole('link', { name: /^(Analyses|Data)$/ }).count(), 0);
     await page.getByLabel('Account', { exact: true }).click();
     assert.match(await page.locator('.account-menu').innerText(), /Daily reader/); await page.getByLabel('Account', { exact: true }).click();
-    assert.equal(await page.getByRole('link', { name: 'Daily Orders', exact: true }).count(), 0);
-    assert.match(await page.locator('main').innerText(), /Pinned synthetic sales data/);
-    j.gap('reader-open-orders', 'Open the published Orders dashboard from reader home.', 'The editor cannot publish. Hosted home displays pinned synthetic sales rather than a collection of tenant dashboards.');
+    await page.getByRole('link', { name: 'Daily Orders', exact: true }).click();
+    await page.getByRole('heading', { name: 'Daily Orders', exact: true }).waitFor();
+    assert.doesNotMatch(await page.locator('main').innerText(), /Pinned synthetic sales data|Pinned sample data/);
+    assert.match(page.url(), /#\/dashboards\//);
   });
-  await j.step('reader-dashboard-collection', page, async () => {
+  await j.step('reader-dashboard-navigation', page, async () => {
     await navigate(page, 'my-stuff');
-    const dashboards = page.getByRole('navigation', { name: 'Your collections', exact: true }).getByRole('link', { name: 'Dashboards', exact: true });
-    if (await dashboards.count()) {
-      await dashboards.click();
-      assert.match(await page.locator('main').innerText(), /Publishing dashboards needs a hosted API/);
-    } else j.gap('reader-dashboard-navigation', 'Reader has a dashboard collection entry.', `My stuff offers: ${(await page.locator('.my-stuff-links').innerText()).trim()}`);
-    assert.equal(await page.getByRole('link', { name: 'Daily Orders', exact: true }).count(), 0);
-    await navigate(page, 'sample'); await page.locator('.dashboard-grid .chart svg').first().waitFor();
+    await page.getByRole('navigation', { name: 'Your collections', exact: true }).getByRole('link', { name: 'Dashboards', exact: true }).click();
+    await page.getByRole('link', { name: 'Daily Orders', exact: true }).click();
+    await page.getByRole('heading', { name: 'Daily Orders', exact: true }).waitFor();
+    assert.equal(await page.locator('.dashboard-grid > .visual-card').count(), 2);
   });
-  const controls = page.locator('.home-page').getByRole('combobox');
-  if (!await controls.count()) j.gap('reader-filter', 'Apply a dashboard filter/control.', 'The shipped reader home sample has no filter controls; the Orders dashboard is not publishable.');
-  else await j.step('reader-filter', page, async () => {
-    const values = await controls.first().locator('option').evaluateAll(options => options.filter(o => !o.disabled).map(o => o.value));
-    assert.ok(values.length > 1); await controls.first().selectOption(values.at(-1)); assert.equal(await controls.first().inputValue(), values.at(-1));
+  const controls = page.locator('.published-dashboard').getByRole('combobox', { name: 'Region', exact: true });
+  await controls.waitFor();
+  const response = page.waitForResponse(r => r.url().includes('/versions/1/visuals/') && r.url().endsWith('/query') && r.request().postDataJSON()?.controlValues?.['control-1']?.[0] === 'west');
+  await controls.selectOption('west');
+  const filtered = await response;
+  if (filtered.status() === 403) {
+    const error = await filtered.json(); assert.equal(error.errorCode, 'DASHBOARD_DATASET_ACCESS_DENIED');
+    await page.locator('.dashboard-grid').getByText(/DASHBOARD_DATASET_ACCESS_DENIED/).first().waitFor();
+    assert.equal(await page.locator('.dashboard-grid .chart svg').count(), 0);
+    j.gap('reader-filter', 'Apply Region to live Orders rows as a Reader.', 'The real dashboard sends the declared control to v1; D-53/HQ-4 deny publisher-owned prepared data with DASHBOARD_DATASET_ACCESS_DENIED. No sample or stale rows are shown.');
+  } else await j.step('reader-filter', page, async () => {
+    assert.equal(filtered.status(), 200); assert.deepEqual((await filtered.json()).rows, [{ region: 'west', revenue: 20 }]);
+    await page.locator('.dashboard-grid .chart svg').first().waitFor();
+    assert.equal(await controls.inputValue(), 'west');
   });
   const trigger = page.getByRole('button', { name: /^Ask a question about / });
   const panelAvailable = await trigger.count() > 0;
@@ -83,7 +119,7 @@ await runJourney('j4-reader-daily', 'Reader AI', async j => {
     assert.equal(await panel.getByRole('switch', { name: 'Generative mode', exact: true }).isDisabled(), true);
     return { before, after, panel: box };
   });
-  await j.step('narrow-reader-observation', page, async () => {
+  await j.step('narrow-reader-with-panel', page, async () => {
     await page.setViewportSize({ width: 900, height: 1100 });
     const cards = page.locator('.dashboard-grid > .visual-card'); assert.ok(await cards.count() >= 2);
     const first = await cards.nth(0).boundingBox(), second = await cards.nth(1).boundingBox();

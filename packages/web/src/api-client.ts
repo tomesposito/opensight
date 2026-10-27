@@ -1,3 +1,5 @@
+import type { DashboardSummary, PublishedDashboard, ControlValues } from './published-dashboard.js';
+import type { HostedAnalysisInput, Publication } from './hosted-publish.js';
 import type { PrepPipeline } from '@opensight/bundle-parser/prep';
 import type { PrepPreview } from '@opensight/query-engine';
 import type { PrepSourceSummary } from './data-prep.js';
@@ -221,15 +223,15 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
       if (body.loggedOut !== true) throw new ApiError('Invalid sign-out response.', undefined, 'AUTH_RESPONSE_INVALID');
     } finally { if (current === generation) clearSession(); }
   }
-  async function rawResource(route: string, method = 'GET', body?: unknown, signal?: AbortSignal, key?: string): Promise<unknown> {
+  async function rawResource(route: string, method = 'GET', body?: unknown, signal?: AbortSignal, key?: string, headers: Record<string, string> = {}, received?: (response: Response) => void): Promise<unknown> {
     const expected = generation;
-    const response = await authenticatedFetch(`${base}${route}`, { method, ...(signal ? { signal } : {}), credentials: 'same-origin', headers: { Accept: 'application/json', ...(key ? { 'Idempotency-Key': key } : {}), ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) }, ...(body === undefined ? {} : { body: controlBody(body) }) });
+    const response = await authenticatedFetch(`${base}${route}`, { method, ...(signal ? { signal } : {}), credentials: 'same-origin', headers: { ...headers, Accept: 'application/json', ...(key ? { 'Idempotency-Key': key } : {}), ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) }, ...(body === undefined ? {} : { body: controlBody(body) }) });
     const value: unknown = await response.json();
     if (!response.ok) {
       const error = object(value, 'API error');
       throw new ApiError(`${typeof error.errorCode === 'string' ? `${error.errorCode}: ` : ''}${typeof error.Message === 'string' ? error.Message : 'Request failed'}`, response.status, typeof error.errorCode === 'string' ? error.errorCode : undefined);
     }
-    currentSession(expected, signal); return value;
+    currentSession(expected, signal); received?.(response); return value;
   }
   async function resolveResult(value: unknown, expected: number, signal?: AbortSignal): Promise<unknown> {
     if (!value || typeof value !== 'object' || !('operation' in value)) return value;
@@ -354,7 +356,7 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
   async function queryO(query: QueryRequest, dashboardId?: string, signal?: AbortSignal): Promise<QueryResponse> {
     return runQuery('/api/o/query', query, signal, { query, ...(dashboardId ? { dashboardId } : {}) });
   }
-  async function runQuery(route: string, query: QueryRequest, signal?: AbortSignal, payload: unknown = query): Promise<QueryResponse> {
+  async function runQuery(route: string, query: QueryRequest | undefined, signal?: AbortSignal, payload: unknown = query): Promise<QueryResponse> {
     const sessionGeneration = generation;
     const response = await authenticatedFetch(`${base}${route}`, {
       method: 'POST', signal, headers: { Accept: 'application/json', 'Content-Type': 'application/json' }, body: controlBody(payload),
@@ -375,7 +377,7 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
       if (typeof column.name !== 'string' || !column.name || (column.type !== 'string' && column.type !== 'number')) throw new ApiError('Invalid query result column.');
       return { name: column.name, type: column.type };
     });
-    const expected = [...query.dimensions.map(field => field.granularity ? field.granularity.toLowerCase() : field.fieldId), ...query.measures.map(field => field.fieldId)];
+    const expected = query ? [...query.dimensions.map(field => field.granularity ? field.granularity.toLowerCase() : field.fieldId), ...query.measures.map(field => field.fieldId)] : columns.map(column => column.name);
     if (new Set(expected).size !== expected.length || JSON.stringify(columns.map(column => column.name)) !== JSON.stringify(expected)) {
       throw new ApiError('Invalid query result: columns do not match assigned fields.');
     }
@@ -414,7 +416,57 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
       throw new ApiError(`Invalid definition response: ${error instanceof Error ? error.message : String(error)}`, response.status);
     }
   }
+  async function listDashboards(signal?: AbortSignal): Promise<DashboardSummary[]> {
+    const items: DashboardSummary[] = [], seen = new Set<string>();
+    let cursor: string | null = null;
+    do {
+      const body = object(await rawResource('/api/v1/dashboards', 'GET', undefined, signal, undefined, cursor ? { Cursor: cursor } : {}), 'Dashboard collection');
+      if (!Array.isArray(body.items) || !(body.nextCursor === null || typeof body.nextCursor === 'string')) throw new ApiError('DASHBOARD_RESPONSE_INVALID: Invalid collection.');
+      for (const raw of body.items) {
+        const item = object(raw, 'Dashboard');
+        if (typeof item.id !== 'string' || !/^[A-Za-z0-9_-]{1,512}$/.test(item.id) || typeof item.name !== 'string' || !Number.isSafeInteger(item.version)) throw new ApiError('DASHBOARD_RESPONSE_INVALID: Invalid collection item.');
+        items.push(item as unknown as DashboardSummary);
+      }
+      cursor = body.nextCursor as string | null;
+      if (cursor && seen.has(cursor)) throw new ApiError('DASHBOARD_RESPONSE_INVALID: Repeated collection cursor.');
+      if (cursor) seen.add(cursor);
+    } while (cursor);
+    return items;
+  }
+  async function getPublishedDashboard(id: string, signal?: AbortSignal): Promise<PublishedDashboard> {
+    let etag: string | null = null;
+    const body = object(await rawResource(`/api/v1/dashboards/${encodeURIComponent(id)}`, 'GET', undefined, signal, undefined, {}, response => { etag = response.headers.get('etag'); }), 'Dashboard');
+    if (body.DashboardId !== id || typeof body.Name !== 'string' || !Number.isSafeInteger(body.Version) || Number(body.Version) < 1 || !Array.isArray(body.Errors)) throw new ApiError('DASHBOARD_RESPONSE_INVALID: Invalid dashboard definition.');
+    return { id, name: body.Name, revision: etag ? Number(String(etag).slice(1, -1)) : undefined, version: Number(body.Version), definition: convertDefinition(body.Definition), errors: body.Errors as PublishedDashboard['errors'] };
+  }
+  const queryDashboardVisual = (id: string, version: number, visualId: string, controlValues: ControlValues, signal?: AbortSignal) =>
+    runQuery(`/api/v1/dashboards/${encodeURIComponent(id)}/versions/${version}/visuals/${encodeURIComponent(visualId)}/query`, undefined, signal, { controlValues });
+  async function saveHostedAnalysis(id: string, input: HostedAnalysisInput, revision?: number): Promise<number> {
+    const expected = generation;
+    const response = await authenticatedFetch(`${base}/api/v1/analyses${revision === undefined ? '' : `/${encodeURIComponent(id)}`}`, {
+      method: revision === undefined ? 'POST' : 'PUT', credentials: 'same-origin',
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'Idempotency-Key': `editor-save-${id}-${revision ?? 0}`, ...(revision === undefined ? {} : { 'If-Match': `"${revision}"` }) },
+      body: controlBody({ ...(revision === undefined ? { analysisId: id } : {}), ...input }),
+    });
+    const body = object(await response.json(), 'Analysis response'); currentSession(expected);
+    if (!response.ok) throw new ApiError(`${body.errorCode ?? 'ANALYSIS_SAVE_FAILED'}: ${body.Message ?? body.message ?? 'Could not save analysis.'}`, response.status, typeof body.errorCode === 'string' ? body.errorCode : undefined);
+    const etag = response.headers.get('etag');
+    if (body.AnalysisId !== id || !etag || !/^"[1-9]\d*"$/.test(etag) || !Number.isSafeInteger(Number(etag.slice(1, -1)))) throw new ApiError('ANALYSIS_RESPONSE_INVALID: Missing analysis identity or revision.');
+    return Number(etag.slice(1, -1));
+  }
+  async function publishAnalysis(id: string, dashboardId: string | undefined, key: string): Promise<Publication> {
+    const body = object(await rawResource(`/api/v1/analyses/${encodeURIComponent(id)}/publish`, 'POST', dashboardId ? { dashboardId } : {}, undefined, key), 'Publish response');
+    if (typeof body.DashboardId !== 'string' || !/^[A-Za-z0-9_-]{1,512}$/.test(body.DashboardId) || !Number.isSafeInteger(body.Version) || Number(body.Version) < 1 || !Array.isArray(body.Errors)) throw new ApiError('DASHBOARD_RESPONSE_INVALID: Missing publication receipt.');
+    return body as unknown as Publication;
+  }
   return {
+    shareDashboard: async (id: string, userId: string) => {
+      const current = await getPublishedDashboard(id);
+      if (!Number.isSafeInteger(current.revision) || Number(current.revision) < 1) throw new ApiError('DASHBOARD_RESPONSE_INVALID: Missing access revision.');
+      return rawResource(`/api/v1/dashboards/${encodeURIComponent(id)}/shares/user/${encodeURIComponent(userId)}`, 'PUT', { role: 'viewer' }, undefined, undefined, { 'If-Match': `"${current.revision}"` });
+    },
+    listDashboards, getPublishedDashboard, queryDashboardVisual,
+    saveHostedAnalysis, publishAnalysis,
     onDemand, connect, subscribeAvailability,
     login, selectWorkspace, logout, clearSession, getTransportCapabilities, uploadDirectFile, getOperation, getUploadReservation, cancelOperation, cancelUploadReservation,
     listJobs, jobRecipients, jobHistory, jobDeliveries, runJob,

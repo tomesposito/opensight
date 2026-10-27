@@ -21,7 +21,7 @@ function visuals(raw: unknown): Visual[] {
   for (const [index, value] of sheets.entries()) {
     const path = `$.analysis.Definition.Sheets[${index}]`;
     const sheet = object(value, path);
-    keys(sheet, ['SheetId', 'Name', 'ContentType', 'Visuals', 'Layouts', 'FilterControls', 'ParameterControls'], path);
+    keys(sheet, ['SheetId', 'Name', 'ContentType', 'Visuals', 'Layouts', 'FilterControls', 'ParameterControls', 'OpenSightLayoutSettings'], path);
     const sheetId = string(sheet.SheetId, `${path}.SheetId`);
     unique(sheetIds, sheetId, `${path}.SheetId`);
     if (sheet.ContentType !== undefined) equals(sheet.ContentType, 'INTERACTIVE', `${path}.ContentType`);
@@ -88,7 +88,17 @@ function column(raw: unknown, path: string, binder: ExpressionBinder): string {
   return name;
 }
 
-function filters(raw: unknown, target: Visual, all: Visual[], sheetIds: Set<string>, binder: ExpressionBinder): RowFilter[] {
+function parameterPredicate(columnName: string, rawName: unknown, operator: unknown, path: string, binder: ExpressionBinder, parameters: ReturnType<typeof validateParameters>): RowFilter {
+  const name = string(rawName, `${path}.ParameterName`), p = parameters.declarations.find(p => p.name === name);
+  if (!p) fail('UNRESOLVED_BINDING', path, `undeclared parameter ${name}`);
+  const type = binder.bind(columnName, path).scalarType;
+  if (type !== p.type) fail('TYPE_MISMATCH', path, `parameter ${name} (${p.type}) does not match ${columnName} (${type})`);
+  if (!['EQUALS', 'GREATER_THAN_OR_EQUAL_TO', 'LESS_THAN_OR_EQUAL_TO'].includes(String(operator)) || operator !== 'EQUALS' && (p.multiple || type === 'string')) fail('TYPE_MISMATCH', path, 'range comparisons require a single number or datetime parameter');
+  const values = parameters.bindings[name]!;
+  return { columnName, path, scalarType: type, operator: operator as 'EQUALS' | 'GREATER_THAN_OR_EQUAL_TO' | 'LESS_THAN_OR_EQUAL_TO', ...(values.length === 1 ? { value: values[0]! } : { values }) };
+}
+
+function filters(raw: unknown, target: Visual, all: Visual[], sheetIds: Set<string>, binder: ExpressionBinder, parameters: ReturnType<typeof validateParameters>): RowFilter[] {
   const result: RowFilter[] = [];
   const ids = new Set<string>();
   for (const [i, value] of array(raw === undefined ? [] : raw, '$.analysis.Definition.FilterGroups').entries()) {
@@ -104,6 +114,28 @@ function filters(raw: unknown, target: Visual, all: Visual[], sheetIds: Set<stri
     if (entries.length !== 1) fail('UNSUPPORTED_FEATURE', `${p}.Filters`, 'exactly one filter per group is supported');
     const fp = `${p}.Filters[0]`;
     const [kind, f] = variant(entries[0], fp);
+    if (kind === 'NumericEqualityFilter') {
+      keys(f, ['FilterId', 'Column', 'MatchOperator', 'NullOption', 'ParameterName'], fp);
+      string(f.FilterId, `${fp}.FilterId`); equals(f.MatchOperator, 'EQUALS', `${fp}.MatchOperator`); equals(f.NullOption, 'NON_NULLS_ONLY', `${fp}.NullOption`);
+      const name = column(f.Column, `${fp}.Column`, binder);
+      if (binder.bind(name, fp).scalarType !== 'number') fail('TYPE_MISMATCH', fp, 'Numeric filter requires a number column');
+      result.push(parameterPredicate(name, f.ParameterName, 'EQUALS', fp, binder, parameters)); continue;
+    }
+    if (kind === 'NumericRangeFilter' || kind === 'TimeRangeFilter') {
+      const date = kind === 'TimeRangeFilter', minKey = date ? 'RangeMinimumValue' : 'RangeMinimum', maxKey = date ? 'RangeMaximumValue' : 'RangeMaximum';
+      keys(f, ['FilterId', 'Column', 'NullOption', minKey, maxKey, 'IncludeMinimum', 'IncludeMaximum', ...(date ? ['TimeGranularity'] : [])], fp);
+      string(f.FilterId, `${fp}.FilterId`); equals(f.NullOption, 'NON_NULLS_ONLY', `${fp}.NullOption`);
+      if (date && f.TimeGranularity !== undefined && !['SECOND', 'MILLISECOND'].includes(String(f.TimeGranularity))) fail('UNSUPPORTED_FEATURE', fp, 'Only exact datetime ranges are supported');
+      const name = column(f.Column, `${fp}.Column`, binder);
+      if (binder.bind(name, fp).scalarType !== (date ? 'datetime' : 'number')) fail('TYPE_MISMATCH', fp, 'Range filter column type does not match its variant');
+      if (f[minKey] === undefined && f[maxKey] === undefined) fail('INVALID_INPUT', fp, 'A range bound is required');
+      for (const [key, include, operator] of [[minKey, 'IncludeMinimum', 'GREATER_THAN_OR_EQUAL_TO'], [maxKey, 'IncludeMaximum', 'LESS_THAN_OR_EQUAL_TO']] as const) if (f[key] !== undefined) {
+        const bound = object(f[key], `${fp}.${key}`); keys(bound, ['Parameter'], `${fp}.${key}`);
+        if (f[include] !== true) fail('UNSUPPORTED_FEATURE', fp, 'Only inclusive parameter ranges are supported');
+        result.push(parameterPredicate(name, bound.Parameter, operator, fp, binder, parameters));
+      }
+      continue;
+    }
     equals(kind, 'CategoryFilter', fp);
     keys(f, ['FilterId', 'Column', 'Configuration'], `${fp}.${kind}`);
     string(f.FilterId, `${fp}.${kind}.FilterId`);
@@ -111,6 +143,12 @@ function filters(raw: unknown, target: Visual, all: Visual[], sheetIds: Set<stri
     if (binder.bind(name, fp).scalarType !== 'string') fail('TYPE_MISMATCH', fp, 'category equality requires a string column');
     const cp = `${fp}.${kind}.Configuration`;
     const [configKind, config] = variant(f.Configuration, cp);
+    if (['CustomFilterConfiguration', 'CustomFilterListConfiguration', 'FilterListConfiguration'].includes(configKind) && config.ParameterName !== undefined) {
+      if (config.CategoryValues !== undefined) fail('UNSUPPORTED_FEATURE', `${cp}.${configKind}.ParameterName`, 'Static values and a parameter binding cannot be combined');
+      keys(config, ['MatchOperator', 'ParameterName', 'NullOption'], cp);
+      equals(config.MatchOperator, 'EQUALS', `${cp}.MatchOperator`); equals(config.NullOption, 'NON_NULLS_ONLY', `${cp}.NullOption`);
+      result.push(parameterPredicate(name, config.ParameterName, 'EQUALS', cp, binder, parameters)); continue;
+    }
     equals(configKind, 'FilterListConfiguration', cp);
     const lp = `${cp}.${configKind}`;
     keys(config, ['MatchOperator', 'CategoryValues', 'NullOption'], lp);
@@ -132,11 +170,12 @@ const wellKinds: Record<string, string> = {
 function fieldWells(visual: Visual, binder: ExpressionBinder): { dimensions: Dimension[]; measures: Measure[] } {
   const { path, body, kind } = visual;
   if (!Object.hasOwn(wellKinds, kind)) fail('UNSUPPORTED_FEATURE', path, 'unsupported visual kind');
-  keys(body, ['VisualId', 'Title', 'Subtitle', 'ChartConfiguration', 'Actions'], path);
+  keys(body, ['VisualId', 'Title', 'Subtitle', 'ChartConfiguration', 'Actions', 'OpenSightPalette', 'OpenSightFormatting', 'OpenSightReferenceLines'], path);
   emptyArray(body.Actions, `${path}.Actions`);
   const cp = `${path}.ChartConfiguration`;
   const config = object(body.ChartConfiguration, cp);
-  keys(config, ['FieldWells'], cp);
+  // These properties affect rendering only; query-affecting properties still fail closed.
+  keys(config, ['FieldWells', 'Legend', 'DataLabels', 'Tooltip', 'Orientation', 'BarsArrangement', 'DonutOptions', 'TotalOptions', 'OpenSightSubtotalOptions'], cp);
   let wp = `${cp}.FieldWells`;
   let wells = object(config.FieldWells, wp);
   const expectedKind = wellKinds[kind];
@@ -273,7 +312,7 @@ export function planVisual(request: PlanRequest, options: PlanOptions = {}): Que
   string(analysis.Name, '$.analysis.Name');
   const dp = '$.analysis.Definition';
   const definition = object(analysis.Definition, dp);
-  keys(definition, ['DataSetIdentifierDeclarations', 'CalculatedFields', 'FilterGroups', 'Sheets', 'ParameterDeclarations'], dp);
+  keys(definition, ['DataSetIdentifierDeclarations', 'CalculatedFields', 'FilterGroups', 'Sheets', 'ParameterDeclarations', 'OpenSightTheme', 'OpenSightDescription'], dp);
   const declaredParameters = definitionParameters(definition.ParameterDeclarations);
   const declarations = array(definition.DataSetIdentifierDeclarations, `${dp}.DataSetIdentifierDeclarations`);
   if (declarations.length !== 1) fail('UNSUPPORTED_FEATURE', `${dp}.DataSetIdentifierDeclarations`, 'exactly one dataset is supported');
@@ -298,19 +337,11 @@ export function planVisual(request: PlanRequest, options: PlanOptions = {}): Que
   });
   const fields = fieldWells(visual, binder);
   const sheetIds = new Set(array(definition.Sheets, `${dp}.Sheets`).map((s, i) => string(object(s, `${dp}.Sheets[${i}]`).SheetId, `${dp}.Sheets[${i}].SheetId`)));
-  const predicates = filters(definition.FilterGroups, visual, all, sheetIds, binder);
+  const predicates = filters(definition.FilterGroups, visual, all, sheetIds, binder, parameters);
   for (const [i, raw] of array(r.parameterFilters ?? [], '$.parameterFilters').entries()) {
     const path = `$.parameterFilters[${i}]`, f = object(raw, path);
     keys(f, ['columnName', 'parameterName', 'operator'], path);
-    const columnName = string(f.columnName, `${path}.columnName`), name = string(f.parameterName, `${path}.parameterName`);
-    const p = parameters.declarations.find(p => p.name === name);
-    if (!p) fail('UNRESOLVED_BINDING', path, `undeclared parameter ${name}`);
-    const type = binder.bind(columnName, path).scalarType;
-    if (type !== p.type) fail('TYPE_MISMATCH', path, `parameter ${name} (${p.type}) does not match ${columnName} (${type})`);
-    const operator = f.operator ?? 'EQUALS';
-    if (!['EQUALS', 'GREATER_THAN_OR_EQUAL_TO', 'LESS_THAN_OR_EQUAL_TO'].includes(String(operator)) || operator !== 'EQUALS' && (p.multiple || type === 'string')) fail('TYPE_MISMATCH', path, 'range comparisons require a single number or datetime parameter');
-    const values = parameters.bindings[name]!;
-    predicates.push({ columnName, path, scalarType: type, operator: operator as 'EQUALS' | 'GREATER_THAN_OR_EQUAL_TO' | 'LESS_THAN_OR_EQUAL_TO', ...(values.length === 1 ? { value: values[0]! } : { values }) });
+    predicates.push(parameterPredicate(string(f.columnName, `${path}.columnName`), f.parameterName, f.operator ?? 'EQUALS', path, binder, parameters));
   }
   const nodes = (e: RowExpression): RowExpression[] => [e, ...expressionChildren(e).flatMap(nodes)];
   const allNodes = binder.calculations.flatMap(c => nodes(c.expression));

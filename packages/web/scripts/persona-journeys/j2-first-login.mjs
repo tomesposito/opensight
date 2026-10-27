@@ -29,9 +29,12 @@ await runJourney('j2-first-login', 'Workspace Admin', async j => {
     assert.equal(await page.locator('.product-header .account-workspace').innerText(), 'Acme Analytics');
     assert.match(await page.locator('.account-menu').innerText(), /Acme admin/);
     await page.getByLabel('Account', { exact: true }).click();
-    const charts = await page.locator('.chart svg').count();
-    if (charts) j.gap('hosted-empty-home', 'A newly provisioned workspace has no staged dashboards.', `The fresh hosted home renders ${charts} sample SVG charts.`);
-    else assert.equal(charts, 0);
+    await j.step('hosted-empty-home', null, async () => {
+      await page.getByText('No published dashboards are available to you yet.', { exact: true }).waitFor();
+      assert.equal(await page.locator('.chart svg').count(), 0);
+      assert.doesNotMatch(await page.locator('main').innerText(), /Pinned synthetic sales|Pinned sample data/);
+      return 'The fresh hosted workspace has a real empty dashboard collection.';
+    });
     return 'Password + TOTP sign-in went directly to the sole workspace; its name appears in the header Account menu.';
   });
   await j.step('invitations-ui', page, async () => {
