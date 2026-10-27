@@ -218,3 +218,14 @@ is required to use the implemented slice. Decision-document housekeeping is
 deferred: D-49's recommendation and implications still describe the older
 executable-only gate, and D-54 can record the brief's synchronous CSV/PDF
 choices. The confirmed decisions are unchanged.
+
+## Web editor integration (#151)
+
+The hosted web editor now uses these routes to save analyses and publish
+versioned dashboards. Hosted Home and My stuff list accessible publications;
+the reader view queries their frozen visual definitions with live data and
+supports authored parameter controls. Administrators can grant definition
+access through the existing share route. D-53's independent dataset access
+remains enforced, including the owner-only prepared-data boundary. See
+[the editor publication guide](issue-151-editor-publish.md) for recovery drafts,
+retry behavior, reader limitations and visual verification.

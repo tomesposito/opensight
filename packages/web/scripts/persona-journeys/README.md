@@ -76,9 +76,11 @@ These builds and the suite require no external network access.
 **Gaps are product findings, not test bugs.** They must state what was expected
 and what the shipped product actually offers. Do not add fake data, bypass a UI
 restriction, or relabel an assertion failure merely to obtain a green run.
-Current findings include missing hosted enrollment/invitation UI, unavailable
-dashboard publication and reader Ask O entry, and an imported Athena definition
-whose source is unconfigured. The AI answer is environment-limited because the
+Current findings include missing hosted enrollment UI, owner-only prepared data
+that remains unavailable to a different dashboard reader under D-53, and an
+imported Athena definition whose source is unconfigured. J4 publishes and grants
+definition access through the product, then checks the real reader surface; J2
+asserts a true empty hosted home. The AI answer is environment-limited because the
 fixture has no provider; live embedding remains a future journey. The generated
 report is the authoritative record for the latest run.
 
