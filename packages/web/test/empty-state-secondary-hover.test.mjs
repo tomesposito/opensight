@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { defineHoverCases, styles } from './interaction.mjs';
 
 // Issue #108 polish slice 19: hover feedback for .empty-state-secondary. A
 // fresh interactive-state audit (home, analyses, dashboards, data, create
@@ -16,7 +16,7 @@ import { readFile } from 'node:fs/promises';
 // geometry is identical — no shift. The state is instantaneous, so no
 // prefers-reduced-motion variant is needed; the global button :active 1px
 // pressed shift (slice 14) already composes with it.
-const css = await readFile(new URL('../src/style.css', import.meta.url), 'utf8');
+const css = styles['style.css'];
 
 test('empty-state secondary buttons give hover feedback', () => {
   const rule = css.match(
@@ -45,4 +45,16 @@ test('the resting text-button styling is unchanged', () => {
   assert.match(base[1], /background:\s*transparent/);
   assert.match(base[1], /text-decoration:\s*underline/);
   assert.match(base[1], /color:\s*#176fa1/);
+});
+
+defineHoverCases('empty-state secondary controls', {
+  html: `<section class="empty-page-state"><button id="default" class="empty-state-secondary">Try sample data</button></section>
+    <div class="app-shell"><section class="empty-page-state"><button id="shell" class="empty-state-secondary">Refresh drafts</button></section></div>`,
+  cases: ['#default', '#shell'].map(target => ({
+    target, rule: '.empty-page-state .empty-state-secondary:hover',
+    resting: { backgroundColor: 'rgba(0, 0, 0, 0)', color: target === '#default' ? 'rgb(23, 111, 161)' : 'rgb(18, 110, 118)' },
+    hovered: { backgroundColor: 'rgb(234, 243, 247)' },
+    unchanged: ['color', 'textDecorationLine'],
+    paintOnly: true,
+  })),
 });

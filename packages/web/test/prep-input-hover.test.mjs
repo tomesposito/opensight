@@ -1,7 +1,6 @@
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import { chromiumPage } from './chromium.mjs';
+import { defineHoverCases, styles } from './interaction.mjs';
 
 // Issue #108 polish slice 39: hover feedback for the data-prep inputs and
 // textareas. A fresh behavioral hover audit of the preparation surface
@@ -16,7 +15,7 @@ import { chromiumPage } from './chromium.mjs';
 // hover tint (#edf6fc). Background only, so resting geometry is
 // identical; disabled fields keep their flat state. Static (no
 // animation), so no reduced-motion variant is needed.
-const css = await readFile(new URL('../src/style.css', import.meta.url), 'utf8');
+const css = styles['style.css'];
 
 const hoverRule = css.match(/\.data-prep\s+input:hover:not\(:disabled\),\s*\.data-prep\s+textarea:hover:not\(:disabled\)\s*\{([^}]*)\}/);
 
@@ -44,55 +43,33 @@ test('the prep input/textarea hover rule coexists with the prep button and selec
   assert.ok(hoverRule, 'expected the prep input/textarea hover rule');
 });
 
-{
-  let page;
-  before(async () => { page = await chromiumPage(); });
-  after(async () => { await page?.close(); });
-
-  test('applying the hover rule changes the visual state with identical geometry', async () => {
-    await page.setContent(`<style>${css}</style><div class="data-prep"><div class="prep-document-bar"><label>Dataset name<input id="name" value="demo"></label></div><div class="prep-sidebar"><label class="prep-steps-search">Search steps<input id="search" type="search" placeholder="Search steps"></label></div><label>Expression<textarea id="expr" rows="3">{revenue}</textarea></label><label>Locked<input id="locked" disabled value="x"></label></div>`);
-    const actual = await page.evaluate(() => {
-      const rules = [];
-      for (const sheet of document.styleSheets) {
-        for (const rule of sheet.cssRules) {
-          const sel = (rule.selectorText || '').replace(/"/g, '');
-          if (sel === '.data-prep input:hover:not(:disabled), .data-prep textarea:hover:not(:disabled)') rules.push(rule);
-        }
-      }
-      const measure = el => {
-        const rest = { background: getComputedStyle(el).backgroundColor, color: getComputedStyle(el).color, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        const hover = rules[0];
-        for (const prop of hover.style) el.style.setProperty(prop, hover.style.getPropertyValue(prop));
-        const hovered = { background: getComputedStyle(el).backgroundColor, color: getComputedStyle(el).color, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        return { rest, hovered };
-      };
-      const name = document.querySelector('#name');
-      const search = document.querySelector('#search');
-      const expr = document.querySelector('#expr');
-      const locked = document.querySelector('#locked');
-      return {
-        ruleCount: rules.length,
-        props: rules.length ? [...rules[0].style] : [],
-        backgroundColor: rules.length ? rules[0].style.getPropertyValue('background-color') : null,
-        name: measure(name),
-        search: measure(search),
-        expr: measure(expr),
-        nameMatches: name.matches('.data-prep input:not(:disabled)'),
-        exprMatches: expr.matches('.data-prep textarea:not(:disabled)'),
-        disabledMatches: locked.matches('.data-prep input:not(:disabled)'),
-      };
-    });
-    assert.equal(actual.ruleCount, 1);
-    assert.ok(actual.props.length && actual.props.every(p => p.startsWith('background')), 'hover rule must set background longhands only');
-    assert.equal(actual.backgroundColor, 'rgb(237, 246, 252)');
-    for (const key of ['name', 'search', 'expr']) {
-      assert.equal(actual[key].rest.background, 'rgb(255, 255, 255)', key);
-      assert.equal(actual[key].hovered.background, 'rgb(237, 246, 252)', key);
-      assert.equal(actual[key].rest.color, actual[key].hovered.color, key + ' text color must not change');
-      assert.equal(actual[key].rest.box, actual[key].hovered.box, key);
-    }
-    assert.ok(actual.nameMatches);
-    assert.ok(actual.exprMatches);
-    assert.equal(actual.disabledMatches, false, 'disabled inputs keep their flat state');
-  });
-}
+defineHoverCases('prep-input hover', {
+  html: `<div class="data-prep"><div class="prep-document-bar"><label>Dataset name<input id="name" value="demo"></label></div><div class="prep-sidebar"><label class="prep-steps-search">Search steps<input id="search" type="search" placeholder="Search steps"></label></div><label>Expression<textarea id="expr" rows="3">{revenue}</textarea></label><label>Locked<input id="locked" disabled value="x"></label></div>`,
+  cases: [
+    {
+      target: '#name',
+      rule: '.data-prep input:hover:not(:disabled), .data-prep textarea:hover:not(:disabled)',
+      resting: { backgroundColor: 'rgb(255, 255, 255)' },
+      hovered: { backgroundColor: 'rgb(237, 246, 252)' },
+      paintOnly: true,
+      unchanged: ['color'],
+      excluded: ['#locked'],
+    },
+    {
+      target: '#search',
+      rule: '.data-prep input:hover:not(:disabled), .data-prep textarea:hover:not(:disabled)',
+      resting: { backgroundColor: 'rgb(255, 255, 255)' },
+      hovered: { backgroundColor: 'rgb(237, 246, 252)' },
+      paintOnly: true,
+      unchanged: ['color'],
+    },
+    {
+      target: '#expr',
+      rule: '.data-prep input:hover:not(:disabled), .data-prep textarea:hover:not(:disabled)',
+      resting: { backgroundColor: 'rgb(255, 255, 255)' },
+      hovered: { backgroundColor: 'rgb(237, 246, 252)' },
+      paintOnly: true,
+      unchanged: ['color'],
+    },
+  ],
+});

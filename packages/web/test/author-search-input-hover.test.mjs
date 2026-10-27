@@ -1,7 +1,6 @@
-import { after, before, describe, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import { chromiumPage } from './chromium.mjs';
+import { defineHoverCases, styles } from './interaction.mjs';
 
 // Issue #108 polish slice 38: hover feedback for the author-workspace search
 // input (the Data panel's "Search fields" field in the builder panel). The
@@ -17,7 +16,7 @@ import { chromiumPage } from './chromium.mjs';
 // (#334c62) via a more specific variant, as in slices 36/37. Paint-only: the
 // rules change background only, so resting geometry is identical and there
 // is no animation to need a reduced-motion variant.
-const styleCss = await readFile(new URL('../src/style.css', import.meta.url), 'utf8');
+const styleCss = styles['style.css'];
 
 const lightRule = styleCss.match(/\.author-workspace\s+input\[type=search\]:hover:not\(:disabled\)\s*\{([^}]*)\}/);
 const darkRule = styleCss.match(/\.author-workspace\[data-chrome=dark\]\s+input\[type=search\]:hover:not\(:disabled\)\s*\{([^}]*)\}/);
@@ -51,33 +50,18 @@ test('the search-input hover rules coexist with the slice-36/37 author hover rul
   assert.ok(styleCss.match(/\.author-workspace\s+input\[type=color\]:hover:not\(:disabled\)\s*\{[^}]*background:\s*#edf7f7/), 'slice-37 color-input rule must still be present');
 });
 
-describe('author search-input hover in offline Chromium', () => {
-  let page;
-  before(async () => { page = await chromiumPage(); });
-  after(async () => { await page?.close(); });
-
-  test('applying the hover rule changes the visual state with identical geometry', async () => {
-    await page.setContent(`<style>${styleCss}</style>`
-      + `<div class="author-workspace"><div class="author-layout"><details class="builder-panel fields-panel" open><div class="panel-content">`
+defineHoverCases('author-search-input hover', {
+  html: `<div class="author-workspace"><div class="author-layout"><details class="builder-panel fields-panel" open><div class="panel-content">`
       + `<label>Search fields<input type="search" id="s" placeholder="Search fields"></label>`
-      + `</div></details></div></div>`);
-    const actual = await page.evaluate(() => {
-      const find = text => {
-        const hits = [];
-        for (const s of document.styleSheets) for (const r of s.cssRules) if (r.selectorText?.replaceAll('"', '') === text) hits.push(r);
-        return hits;
-      };
-      const el = document.querySelector('#s');
-      const rules = find('.author-workspace input[type=search]:hover:not(:disabled)');
-      const rest = { background: getComputedStyle(el).backgroundColor, border: getComputedStyle(el).borderTopColor, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-      for (const prop of rules[0].style) el.style.setProperty(prop, rules[0].style.getPropertyValue(prop));
-      const hovered = { background: getComputedStyle(el).backgroundColor, border: getComputedStyle(el).borderTopColor, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-      return { ruleCount: rules.length, rest, hovered };
-    });
-    assert.equal(actual.ruleCount, 1);
-    assert.equal(actual.rest.background, 'rgb(255, 255, 255)');
-    assert.equal(actual.hovered.background, 'rgb(237, 247, 247)');
-    assert.equal(actual.hovered.border, actual.rest.border);
-    assert.equal(actual.rest.box, actual.hovered.box);
-  });
+      + `</div></details></div></div>`,
+  cases: [
+    {
+      target: '#s',
+      rule: '.author-workspace input[type="search"]:hover:not(:disabled)',
+      resting: { backgroundColor: 'rgb(255, 255, 255)' },
+      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      paintOnly: true,
+      unchanged: ['borderTopColor'],
+    },
+  ],
 });

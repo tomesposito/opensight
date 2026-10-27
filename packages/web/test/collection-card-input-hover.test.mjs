@@ -1,7 +1,6 @@
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import { chromiumPage } from './chromium.mjs';
+import { defineHoverCases, styles } from './interaction.mjs';
 
 // Issue #108 polish slice 64: hover feedback for inputs inside a
 // collection card (.collection-card input in app-chrome.css) — the
@@ -24,7 +23,7 @@ import { chromiumPage } from './chromium.mjs';
 // variant is needed; radio/checkbox inputs are excluded so the
 // favorites-filter checkbox keeps its native rendering (the
 // data-dialog / admin-settings pattern), and file inputs likewise.
-const css = await readFile(new URL('../src/app-chrome.css', import.meta.url), 'utf8');
+const css = styles['app-chrome.css'];
 
 const inputHover = css.match(/\.collection-card input:hover:not\(:disabled\):not\(\[type=radio\]\):not\(\[type=checkbox\]\):not\(\[type=file\]\)\s*\{([^}]*)\}/);
 
@@ -52,47 +51,28 @@ test('the neighbouring collection hover rules are untouched', () => {
   assert.ok(css.match(/\.collection-pagination select:hover:not\(:disabled\)\s*\{[^}]*background:\s*#eaf3f7/), 'the collection-pagination select hover rule must still be present');
 });
 
-{
-  let page;
-  before(async () => { page = await chromiumPage(); });
-  after(async () => { await page?.close(); });
-
-  test('applying the hover rule changes the visual state with identical geometry', async () => {
-    await page.setContent(`<style>${css}</style><div class="collection-card">
+defineHoverCases('collection-card-input hover', {
+  html: `<div class="collection-card">
       <div class="draft-collection-tools"><label>Search analyses<input id="search" type="search" /></label></div>
       <form class="draft-rename"><label>Draft name<input id="rename" value="Q3 sales" /></label></form>
       <input id="off" disabled />
       <label class="favorites-filter"><input id="fav" type="checkbox" />Favorites only</label>
-    </div>`);
-    const actual = await page.evaluate(() => {
-      let found;
-      for (const sheet of document.styleSheets) {
-        for (const rule of sheet.cssRules) {
-          if ((rule.selectorText || '').replaceAll('"', '') === '.collection-card input:hover:not(:disabled):not([type=radio]):not([type=checkbox]):not([type=file])') found = rule;
-        }
-      }
-      const measure = (el, rule) => {
-        const rest = { background: getComputedStyle(el).backgroundColor, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        if (rule) { for (const prop of rule.style) el.style.setProperty(prop, rule.style.getPropertyValue(prop)); }
-        const hovered = { background: getComputedStyle(el).backgroundColor, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        el.removeAttribute('style');
-        return { rest, hovered };
-      };
-      const plain = found ? found.selectorText.replace(':hover', '') : null;
-      return {
-        search: found ? measure(document.querySelector('#search'), found) : null,
-        rename: found ? measure(document.querySelector('#rename'), found) : null,
-        offMatches: plain ? document.querySelector('#off').matches(plain) : null,
-        favMatches: plain ? document.querySelector('#fav').matches(plain) : null,
-      };
-    });
-    assert.ok(actual.search, 'expected the input hover rule in the CSSOM');
-    assert.equal(actual.search.rest.background, 'rgb(255, 255, 255)', 'search rest');
-    assert.equal(actual.search.hovered.background, 'rgb(234, 243, 247)', 'search hover');
-    assert.equal(actual.search.rest.box, actual.search.hovered.box, 'search geometry');
-    assert.equal(actual.rename.hovered.background, 'rgb(234, 243, 247)', 'rename hover');
-    assert.equal(actual.rename.rest.box, actual.rename.hovered.box, 'rename geometry');
-    assert.equal(actual.offMatches, false, 'disabled inputs must be excluded from the hover rule');
-    assert.equal(actual.favMatches, false, 'checkbox inputs must be excluded from the hover rule');
-  });
-}
+    </div>`,
+  cases: [
+    {
+      target: '#search',
+      rule: '.collection-card input:hover:not(:disabled):not([type="radio"]):not([type="checkbox"]):not([type="file"])',
+      resting: { backgroundColor: 'rgb(255, 255, 255)' },
+      hovered: { backgroundColor: 'rgb(234, 243, 247)' },
+      paintOnly: true,
+      excluded: ['#off', '#fav'],
+    },
+    {
+      target: '#rename',
+      rule: '.collection-card input:hover:not(:disabled):not([type="radio"]):not([type="checkbox"]):not([type="file"])',
+      resting: { backgroundColor: 'rgb(255, 255, 255)' },
+      hovered: { backgroundColor: 'rgb(234, 243, 247)' },
+      paintOnly: true,
+    },
+  ],
+});

@@ -1,7 +1,6 @@
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import { chromiumPage } from './chromium.mjs';
+import { defineHoverCases, styles } from './interaction.mjs';
 
 // Issue #108 polish slice 30: hover feedback for the create-dataset dialog's
 // plain buttons. A fresh behavioral hover audit extended past the 5 landing
@@ -17,7 +16,7 @@ import { chromiumPage } from './chromium.mjs';
 // the first time. Background only, so resting geometry is identical; disabled
 // buttons keep their flat state. Static (no animation), so no reduced-motion
 // variant is needed.
-const css = await readFile(new URL('../src/data-section.css', import.meta.url), 'utf8');
+const css = styles['data-section.css'];
 
 const hoverRule = css.match(/\.data-dialog\s+button:hover:not\(:disabled\):not\(\.data-primary\):not\(\[aria-selected=true\]\)\s*\{([^}]*)\}/);
 
@@ -43,49 +42,17 @@ test('the dialog-button hover rule coexists with the data-page button rule', () 
   assert.ok(hoverRule, 'expected the dialog plain-button hover rule');
 });
 
-{
-  let page;
-  before(async () => { page = await chromiumPage(); });
-  after(async () => { await page?.close(); });
-
-  test('applying the hover rule changes the visual state with identical geometry', async () => {
-    await page.setContent(`<style>${css}</style><div class="data-page"><dialog class="data-dialog" open><div class="data-dialog-body"><div class="data-dialog-tools"><button type="button">Upload file</button><button type="button" disabled>Staged</button><button type="button" class="data-primary">Continue</button></div></div></dialog></div>`);
-    const actual = await page.evaluate(() => {
-      const rules = [];
-      for (const sheet of document.styleSheets) {
-        for (const rule of sheet.cssRules) {
-          const sel = (rule.selectorText || '').replace(/"/g, '');
-          if (sel === '.data-dialog button:hover:not(:disabled):not(.data-primary):not([aria-selected=true])') rules.push(rule);
-        }
-      }
-      const plain = document.querySelector('.data-dialog-tools button:not([disabled]):not(.data-primary)');
-      const disabled = document.querySelector('.data-dialog-tools button[disabled]');
-      const primary = document.querySelector('.data-dialog-tools button.data-primary');
-      const rest = { background: getComputedStyle(plain).backgroundColor, color: getComputedStyle(plain).color, box: JSON.stringify(plain.getBoundingClientRect().toJSON()) };
-      // Simulate the matched rule: copy its declarations onto the button
-      // exactly as the browser cascade would apply them on hover.
-      const hover = rules[0];
-      for (const prop of hover.style) plain.style.setProperty(prop, hover.style.getPropertyValue(prop));
-      const hovered = { background: getComputedStyle(plain).backgroundColor, color: getComputedStyle(plain).color, box: JSON.stringify(plain.getBoundingClientRect().toJSON()) };
-      return {
-        ruleCount: rules.length,
-        props: rules.length ? [...rules[0].style] : [],
-        backgroundColor: rules.length ? rules[0].style.getPropertyValue('background-color') : null,
-        rest, hovered,
-        plainMatches: plain.matches('.data-dialog button:not(:disabled):not(.data-primary):not([aria-selected=true])'),
-        primaryMatches: primary.matches('.data-dialog button:not(:disabled):not(.data-primary):not([aria-selected=true])'),
-        disabledMatches: disabled.matches('.data-dialog button:not(:disabled):not(.data-primary):not([aria-selected=true])'),
-      };
-    });
-    assert.equal(actual.ruleCount, 1);
-    assert.ok(actual.props.length && actual.props.every(p => p.startsWith('background')), 'hover rule must set background longhands only');
-    assert.equal(actual.backgroundColor, 'rgb(234, 243, 247)');
-    assert.equal(actual.rest.background, 'rgb(255, 255, 255)');
-    assert.equal(actual.hovered.background, 'rgb(234, 243, 247)');
-    assert.equal(actual.rest.color, actual.hovered.color, 'teal button text must not change');
-    assert.equal(actual.rest.box, actual.hovered.box);
-    assert.ok(actual.plainMatches);
-    assert.equal(actual.primaryMatches, false, 'data-primary buttons keep their dark hover');
-    assert.equal(actual.disabledMatches, false, 'disabled buttons keep their flat state');
-  });
-}
+defineHoverCases('data-dialog-button hover', {
+  html: `<div class="data-page"><dialog class="data-dialog" open><div class="data-dialog-body"><div class="data-dialog-tools"><button type="button">Upload file</button><button type="button" disabled>Staged</button><button type="button" class="data-primary">Continue</button></div></div></dialog></div>`,
+  cases: [
+    {
+      target: '.data-dialog-tools button:not([disabled]):not(.data-primary)',
+      rule: '.data-dialog button:hover:not(:disabled):not(.data-primary):not([aria-selected="true"])',
+      resting: { backgroundColor: 'rgb(255, 255, 255)' },
+      hovered: { backgroundColor: 'rgb(234, 243, 247)' },
+      paintOnly: true,
+      unchanged: ['color'],
+      excluded: ['.data-dialog-tools button.data-primary', '.data-dialog-tools button[disabled]'],
+    },
+  ],
+});

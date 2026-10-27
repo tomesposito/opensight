@@ -1,7 +1,6 @@
-import { after, before, describe, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import { chromiumPage } from './chromium.mjs';
+import { defineHoverCases, styles } from './interaction.mjs';
 
 // Issue #108 polish slice 92: hover feedback for the data-sources
 // heading's "Prepare data" button (.app-shell .data-sources-heading
@@ -21,7 +20,7 @@ import { chromiumPage } from './chromium.mjs';
 // only, so resting geometry is identical and there is no
 // animation. The gallery is a fixed-light app-shell surface, so
 // no dark variant is added.
-const css = await readFile(new URL('../src/app-chrome.css', import.meta.url), 'utf8');
+const css = styles['app-chrome.css'];
 
 const rule = css.match(/^\.app-shell \.data-sources-heading > button:hover:not\(:disabled\)\s*\{([^}]*)\}/m);
 
@@ -46,45 +45,21 @@ test('the resting data-sources heading button rule is preserved', () => {
   assert.ok(css.match(/\.app-shell \.connector-submit\s*\{[^}]*background:\s*#157f88/), 'the app-shell connector-submit resting rule must remain');
 });
 
-describe('Data-sources heading button hover in offline Chromium', () => {
-  let page;
-  before(async () => { page = await chromiumPage(); });
-  after(async () => { await page?.close(); });
-
-  test('applying the hover rule changes the visual state with identical geometry, and buttons outside .data-sources-heading and disabled buttons are out of scope', async () => {
-    await page.setContent(`<style>${css}</style>`
-      + `<div class="app-shell"><main><section class="data-sources">`
+defineHoverCases('data-sources-heading-button hover', {
+  html: `<div class="app-shell"><main><section class="data-sources">`
       + `<div class="data-sources-heading"><div><h1 id="data-sources-title">Create a data set</h1></div><button id="targetBtn">Prepare data</button></div>`
       + `<div class="data-sources-heading"><button id="disabledBtn" disabled>Prepare data</button></div>`
       + `</section></main></div>`
-      + `<button id="outsideBtn">Prepare data</button>`);
-    const actual = await page.evaluate(() => {
-      const all = [...document.styleSheets].flatMap(s => [...s.cssRules]);
-      const found = all.find(r => (r.selectorText || '').includes('.data-sources-heading > button:hover')) ?? null;
-      const measure = (el, rule) => {
-        const rest = { background: getComputedStyle(el).backgroundColor, color: getComputedStyle(el).color, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        if (rule) { for (const prop of rule.style) el.style.setProperty(prop, rule.style.getPropertyValue(prop)); }
-        const hovered = { background: getComputedStyle(el).backgroundColor, color: getComputedStyle(el).color, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        el.removeAttribute('style');
-        return { rest, hovered };
-      };
-      const bare = found ? found.selectorText.replaceAll(':hover', '') : '';
-      return {
-        found: !!found,
-        props: found ? [...found.style] : [],
-        target: found ? measure(document.querySelector('#targetBtn'), found) : null,
-        disabledMatches: found ? document.querySelector('#disabledBtn').matches(bare) : null,
-        outsideMatches: found ? document.querySelector('#outsideBtn').matches(bare) : null,
-      };
-    });
-    assert.ok(actual.found, 'expected the hover rule in the CSSOM');
-    assert.ok(actual.props.length && actual.props.every(p => p.startsWith('background')), 'hover rule must set background longhands only');
-    assert.equal(actual.target.rest.background, 'rgb(21, 127, 136)', 'heading button rest');
-    assert.equal(actual.target.hovered.background, 'rgb(18, 110, 118)', 'heading button hover');
-    assert.notEqual(actual.target.rest.background, actual.target.hovered.background);
-    assert.equal(actual.target.rest.color, actual.target.hovered.color, 'heading button colour unchanged on hover');
-    assert.equal(actual.target.rest.box, actual.target.hovered.box, 'heading button geometry');
-    assert.equal(actual.disabledMatches, false, 'a disabled heading button must be out of scope');
-    assert.equal(actual.outsideMatches, false, 'a button outside .data-sources-heading must be out of scope');
-  });
+      + `<button id="outsideBtn">Prepare data</button>`,
+  cases: [
+    {
+      target: '#targetBtn',
+      rule: '.app-shell .data-sources-heading > button:hover:not(:disabled)',
+      resting: { backgroundColor: 'rgb(21, 127, 136)' },
+      hovered: { backgroundColor: 'rgb(18, 110, 118)' },
+      paintOnly: true,
+      unchanged: ['color'],
+      excluded: ['#disabledBtn', '#outsideBtn'],
+    },
+  ],
 });

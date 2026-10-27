@@ -1,7 +1,6 @@
-import { after, before, describe, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import { chromiumPage } from './chromium.mjs';
+import { defineHoverCases, styles } from './interaction.mjs';
 
 // Issue #108 polish slice 22: hover feedback for the standalone Ask O trigger
 // button (.q-trigger). A fresh interactive-state audit on the fixture demo
@@ -15,7 +14,7 @@ import { chromiumPage } from './chromium.mjs';
 // buttons and tabs (slices 16/19/21); disabled triggers keep their flat state.
 // Background only, so resting geometry is identical. Static (no animation),
 // so no reduced-motion variant is needed.
-const css = await readFile(new URL('../src/style.css', import.meta.url), 'utf8');
+const css = styles['style.css'];
 
 const hoverRule = css.match(/\.q-trigger:hover:not\(:disabled\)\s*\{([^}]*)\}/);
 
@@ -48,47 +47,16 @@ test('the author-chrome button hover rule still outranks the new rule', () => {
   assert.ok(!/!important/.test(hoverRule[1]), 'standalone hover rule must not use !important');
 });
 
-describe('Ask O trigger hover in offline Chromium', () => {
-  let page;
-  before(async () => { page = await chromiumPage(); });
-  after(async () => { await page?.close(); });
-
-  test('applying the hover rule changes the visual state with identical geometry', async () => {
-    await page.setContent(`<style>${css}</style><div class="q-entry"><button type="button" class="q-trigger"><span class="o-mark">O</span><span class="q-trigger-label">Ask a question about Local sales</span></button><button type="button" class="q-trigger" disabled><span class="o-mark">O</span><span class="q-trigger-label">Ask a question about Local sales</span></button></div>`);
-    const actual = await page.evaluate(() => {
-      const rules = [];
-      for (const sheet of document.styleSheets) {
-        for (const rule of sheet.cssRules) {
-          if (rule.selectorText === '.q-trigger:hover:not(:disabled)') rules.push(rule);
-        }
-      }
-      const enabled = document.querySelector('.q-entry .q-trigger:not([disabled])');
-      const disabled = document.querySelector('.q-entry .q-trigger[disabled]');
-      const rest = { background: getComputedStyle(enabled).backgroundColor, box: JSON.stringify(enabled.getBoundingClientRect().toJSON()) };
-      // Simulate the matched rule: copy its declarations onto the enabled
-      // trigger exactly as the browser cascade would apply them on hover.
-      const hover = rules[0];
-      for (const prop of hover.style) enabled.style.setProperty(prop, hover.style.getPropertyValue(prop));
-      const hovered = { background: getComputedStyle(enabled).backgroundColor, box: JSON.stringify(enabled.getBoundingClientRect().toJSON()) };
-      const disabledHover = { background: getComputedStyle(disabled).backgroundColor, box: JSON.stringify(disabled.getBoundingClientRect().toJSON()), matches: disabled.matches('.q-trigger:hover:not(:disabled)') };
-      return {
-        ruleCount: rules.length,
-        // The browser expands the `background` shorthand into longhands; the
-        // rule must set only background longhands, with the menu tint color.
-        props: rules.length ? [...rules[0].style] : [],
-        backgroundColor: rules.length ? rules[0].style.getPropertyValue('background-color') : null,
-        rest, hovered, disabledHover,
-        enabledMatches: enabled.matches('.q-trigger:not(:disabled)'),
-      };
-    });
-    assert.equal(actual.ruleCount, 1);
-    assert.ok(actual.props.length && actual.props.every(p => p.startsWith('background')), 'hover rule must set background longhands only');
-    assert.equal(actual.backgroundColor, 'rgb(234, 243, 247)');
-    assert.equal(actual.rest.background, 'rgb(255, 255, 255)');
-    assert.equal(actual.hovered.background, 'rgb(234, 243, 247)');
-    assert.equal(actual.rest.box, actual.hovered.box);
-    assert.ok(actual.enabledMatches);
-    assert.equal(actual.disabledHover.matches, false);
-    assert.equal(actual.disabledHover.background, 'rgb(255, 255, 255)');
-  });
+defineHoverCases('q-trigger hover', {
+  html: `<div class="q-entry"><button type="button" class="q-trigger"><span class="o-mark">O</span><span class="q-trigger-label">Ask a question about Local sales</span></button><button type="button" class="q-trigger" disabled><span class="o-mark">O</span><span class="q-trigger-label">Ask a question about Local sales</span></button></div>`,
+  cases: [
+    {
+      target: '.q-entry .q-trigger:not([disabled])',
+      rule: '.q-trigger:hover:not(:disabled)',
+      resting: { backgroundColor: 'rgb(255, 255, 255)' },
+      hovered: { backgroundColor: 'rgb(234, 243, 247)' },
+      paintOnly: true,
+      excluded: [{ target: '.q-entry .q-trigger[disabled]', resting: { backgroundColor: 'rgb(255, 255, 255)' } }],
+    },
+  ],
 });

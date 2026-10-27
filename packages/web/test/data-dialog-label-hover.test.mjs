@@ -1,7 +1,6 @@
-import { after, before, describe, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import { chromiumPage } from './chromium.mjs';
+import { defineHoverCases, styles } from './interaction.mjs';
 
 // Issue #108 polish slice 119: hover feedback for the data dialogs'
 // plain labels (.data-dialog label — "Dataset name" in DatasetDetail's
@@ -28,9 +27,7 @@ import { chromiumPage } from './chromium.mjs';
 // there is no animation; the data dialogs are fixed-light surfaces, so
 // no dark variant. Connector tiles (label.data-connector-tile) already
 // hover #eaf3f7 under their own rules, so they are unchanged in effect.
-const dataCss = await readFile(new URL('../src/data-section.css', import.meta.url), 'utf8');
-const allCss = (await Promise.all(['style.css', 'app-chrome.css', 'data-section.css', 'embed.css', 'sign-in.css']
-  .map(name => readFile(new URL(`../src/${name}`, import.meta.url), 'utf8')))).join('\n');
+const dataCss = styles['data-section.css'];
 
 const labelRule = dataCss.match(/^\.data-dialog label:hover\s*\{([^}]*)\}/m);
 
@@ -56,51 +53,47 @@ test('the resting data-dialog label rules are preserved', () => {
   assert.ok(dataCss.match(/\.data-dialog \.data-connector-tile\s*\{[^}]*display:\s*flex/), 'the connector tile label resting rule must remain');
 });
 
-describe('Data-dialog label hover in offline Chromium', () => {
-  let page;
-  before(async () => { page = await chromiumPage(); });
-  after(async () => { await page?.close(); });
-
-  test('applying the hover rule changes the label visual state with identical geometry in the real ancestor context, and labels outside a data dialog are out of scope', async () => {
-    await page.setContent(`<style>${allCss}</style>`
-      + `<dialog class="data-dialog" open><form><div class="data-dialog-body">`
+defineHoverCases('data-dialog-label hover', {
+  html: `<dialog class="data-dialog" open><form><div class="data-dialog-body">`
       + `<label id="nameLabel">Dataset name<input id="nameInput" value="Sales copy"/></label>`
       + `<label id="sourceLabel">Configured source<select id="sourceSelect"><option>PostgreSQL</option></select></label>`
       + `<div class="data-inline-panel"><label id="panelLabel">Replace <strong>Sales</strong> with <select id="panelSelect"><option>Other</option></select></label></div>`
       + `<label class="data-connector-tile" id="tileLabel"><input id="tileRadio" type="radio" name="c"/>PostgreSQL</label>`
       + `</div></form></dialog>`
-      + `<label id="outsideLabel">Outside<input id="outsideInput"/></label>`);
-    const actual = await page.evaluate(() => {
-      const all = [...document.styleSheets].flatMap(s => [...s.cssRules]);
-      const norm = r => (r.selectorText || '').replaceAll('"', '');
-      const label = all.find(r => norm(r) === '.data-dialog label:hover') ?? null;
-      const measure = (el, rule) => {
-        const rest = { background: getComputedStyle(el).backgroundColor, color: getComputedStyle(el).color, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        if (rule) { for (const prop of rule.style) el.style.setProperty(prop, rule.style.getPropertyValue(prop)); }
-        const hovered = { background: getComputedStyle(el).backgroundColor, color: getComputedStyle(el).color, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        el.removeAttribute('style');
-        return { rest, hovered };
-      };
-      const el = id => document.querySelector(`#${id}`);
-      return {
-        found: !!label,
-        props: label ? [...label.style] : [],
-        nameLabel: label ? measure(el('nameLabel'), label) : null,
-        sourceLabel: label ? measure(el('sourceLabel'), label) : null,
-        panelLabel: label ? measure(el('panelLabel'), label) : null,
-        tileLabel: label ? measure(el('tileLabel'), label) : null,
-        outsideLabelMatches: label ? el('outsideLabel').matches(label.selectorText.replaceAll(':hover', '')) : null,
-      };
-    });
-    assert.equal(actual.found, true, 'expected the data-dialog label hover rule in the CSSOM');
-    assert.ok(actual.props.length && actual.props.every(p => p.startsWith('background')), 'hover rule must set background longhands only');
-    for (const key of ['nameLabel', 'sourceLabel', 'panelLabel', 'tileLabel']) {
-      assert.equal(actual[key].rest.background, 'rgba(0, 0, 0, 0)', `${key} rest`);
-      assert.equal(actual[key].hovered.background, 'rgb(234, 243, 247)', `${key} hover`);
-      assert.notEqual(actual[key].rest.background, actual[key].hovered.background);
-      assert.equal(actual[key].rest.color, actual[key].hovered.color, `${key} colour unchanged on hover`);
-      assert.equal(actual[key].rest.box, actual[key].hovered.box, `${key} geometry`);
-    }
-    assert.equal(actual.outsideLabelMatches, false, 'a label outside .data-dialog must be out of scope');
-  });
+      + `<label id="outsideLabel">Outside<input id="outsideInput"/></label>`,
+  cases: [
+    {
+      target: '#nameLabel',
+      rule: '.data-dialog label:hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(234, 243, 247)' },
+      paintOnly: true,
+      unchanged: ['color'],
+      excluded: ['#outsideLabel'],
+    },
+    {
+      target: '#sourceLabel',
+      rule: '.data-dialog label:hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(234, 243, 247)' },
+      paintOnly: true,
+      unchanged: ['color'],
+    },
+    {
+      target: '#panelLabel',
+      rule: '.data-dialog label:hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(234, 243, 247)' },
+      paintOnly: true,
+      unchanged: ['color'],
+    },
+    {
+      target: '#tileLabel',
+      rule: '.data-dialog label:hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(234, 243, 247)' },
+      paintOnly: true,
+      unchanged: ['color'],
+    },
+  ],
 });

@@ -1,7 +1,6 @@
-import { after, before, describe, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import { chromiumPage } from './chromium.mjs';
+import { defineHoverCases, styles } from './interaction.mjs';
 
 // Issue #108 polish slice 130: hover feedback for the visual action
 // menu's trigger button (.visual-action-menu > button — the "⋯" button
@@ -27,9 +26,7 @@ import { chromiumPage } from './chromium.mjs';
 // .dashboard-grid so the author contexts keep their existing generic
 // hovers exactly. Background only, so resting geometry is identical
 // and there is no animation.
-const styleCss = await readFile(new URL('../src/style.css', import.meta.url), 'utf8');
-const allCss = (await Promise.all(['style.css', 'app-chrome.css', 'data-section.css', 'embed.css', 'sign-in.css']
-  .map(name => readFile(new URL(`../src/${name}`, import.meta.url), 'utf8')))).join('\n');
+const styleCss = styles['style.css'];
 
 const triggerRule = styleCss.match(/^\.dashboard-grid \.visual-action-menu > button:hover:not\(:disabled\)\s*\{([^}]*)\}/m);
 
@@ -54,55 +51,47 @@ test('the resting visual-action-menu rules are preserved and the author generic 
   assert.ok(styleCss.match(/\.author-workspace\[data-chrome=dark\] button:hover:not\(:disabled\)\s*\{[^}]*background:\s*#334c62/), 'the author dark generic button hover must remain');
 });
 
-describe('Visual-action trigger hover in offline Chromium', () => {
-  let page;
-  before(async () => { page = await chromiumPage(); });
-  after(async () => { await page?.close(); });
-
-  test('applying the hover rule changes the dashboard trigger visual state with identical geometry, the author triggers keep their generic hovers, and a trigger outside the dashboard grid is out of scope', async () => {
-    const menu = id => `<div class="visual-action-menu"><button type="button" id="${id}" aria-haspopup="menu" aria-expanded="false" aria-label="Run action">⋯</button><div role="menu"><button type="button" role="menuitem" id="${id}Item">Act</button></div></div>`;
+const menu = id => `<div class="visual-action-menu"><button type="button" id="${id}" aria-haspopup="menu" aria-expanded="false" aria-label="Run action">⋯</button><div role="menu"><button type="button" role="menuitem" id="${id}Item">Act</button></div></div>`;
     const card = id => `<section class="visual-card"><header class="card-heading"><div class="card-titles"><h3>T</h3></div>${menu(id)}</header></section>`;
-    await page.setContent(`<style>${allCss}</style>`
-      + `<div class="app-shell"><main><div class="dashboard-grid">${card('dashTrigger')}</div></main></div>`
+
+defineHoverCases('visual-action-trigger hover', {
+  html: `<div class="app-shell"><main><div class="dashboard-grid">${card('dashTrigger')}</div></main></div>`
       + `<div class="author-workspace"><div class="author-center">${card('authorTrigger')}</div></div>`
       + `<div class="author-workspace" data-chrome="dark"><div class="author-center">${card('darkTrigger')}</div></div>`
-      + `<main>${card('outsideTrigger')}</main>`);
-    const actual = await page.evaluate(() => {
-      const all = [...document.styleSheets].flatMap(s => [...s.cssRules]);
-      const norm = r => (r.selectorText || '').replaceAll('"', '');
-      const find = sel => all.find(r => norm(r) === sel) ?? null;
-      const triggerRuleFound = find('.dashboard-grid .visual-action-menu > button:hover:not(:disabled)');
-      const itemRule = find('.visual-action-menu [role=menuitem]:hover:not(:disabled)');
-      const authorRule = find('.author-workspace button:hover:not(:disabled), .author-layout button:hover:not(:disabled)');
-      const darkRule = all.find(r => norm(r).includes('[data-chrome=dark] button:hover:not(:disabled)') && norm(r).startsWith('.author-workspace')) ?? null;
-      const el = id => document.querySelector(`#${id}`);
-      const measure = (target, found) => {
-        const rest = { background: getComputedStyle(target).backgroundColor, color: getComputedStyle(target).color, box: JSON.stringify(target.getBoundingClientRect().toJSON()) };
-        if (found) { for (const prop of found.style) target.style.setProperty(prop, found.style.getPropertyValue(prop), found.style.getPropertyPriority(prop)); }
-        const hovered = { background: getComputedStyle(target).backgroundColor, color: getComputedStyle(target).color, box: JSON.stringify(target.getBoundingClientRect().toJSON()) };
-        target.removeAttribute('style');
-        return { rest, hovered };
-      };
-      return {
-        found: !!triggerRuleFound,
-        props: triggerRuleFound ? [...triggerRuleFound.style] : [],
-        dash: triggerRuleFound ? measure(el('dashTrigger'), triggerRuleFound) : null,
-        dashItem: itemRule ? measure(el('dashTriggerItem'), itemRule) : null,
-        author: authorRule ? measure(el('authorTrigger'), authorRule) : null,
-        dark: darkRule ? measure(el('darkTrigger'), darkRule) : null,
-        outsideMatches: el('outsideTrigger').matches('.dashboard-grid .visual-action-menu > button'),
-      };
-    });
-    assert.equal(actual.found, true, 'expected the hover rule in the CSSOM');
-    assert.ok(actual.props.length && actual.props.every(p => p.startsWith('background')), 'hover rule must set background longhands only');
-    assert.equal(actual.dash.rest.background, 'rgb(239, 239, 239)', 'dashboard trigger rest is the UA default');
-    assert.equal(actual.dash.hovered.background, 'rgb(232, 241, 243)', 'dashboard trigger hover');
-    assert.notEqual(actual.dash.rest.background, actual.dash.hovered.background);
-    assert.equal(actual.dash.rest.color, actual.dash.hovered.color, 'dashboard trigger colour unchanged on hover');
-    assert.equal(actual.dash.rest.box, actual.dash.hovered.box, 'dashboard trigger geometry');
-    assert.equal(actual.dashItem.hovered.background, 'rgb(232, 241, 243)', 'the menuitem keeps its own hover tint');
-    assert.equal(actual.author.hovered.background, 'rgb(237, 247, 247)', 'the author light trigger keeps the generic author hover');
-    assert.equal(actual.dark.hovered.background, 'rgb(51, 76, 98)', 'the author dark trigger keeps the generic dark author hover');
-    assert.equal(actual.outsideMatches, false, 'a visual-action trigger outside .dashboard-grid must be out of scope');
-  });
+      + `<main>${card('outsideTrigger')}</main>`,
+  cases: [
+    {
+      target: '#dashTrigger',
+      rule: '.dashboard-grid .visual-action-menu > button:hover:not(:disabled)',
+      resting: { backgroundColor: 'rgb(239, 239, 239)' },
+      hovered: { backgroundColor: 'rgb(232, 241, 243)' },
+      paintOnly: true,
+      unchanged: ['color'],
+      excluded: ['#outsideTrigger'],
+    },
+    {
+      target: '#dashTriggerItem',
+      rule: '.visual-action-menu [role="menuitem"]:hover:not(:disabled)',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(232, 241, 243)' },
+      paintOnly: true,
+      unchanged: ['color'],
+    },
+    {
+      target: '#authorTrigger',
+      rule: '.author-workspace button:hover:not(:disabled), .author-layout button:hover:not(:disabled)',
+      resting: { backgroundColor: 'rgb(255, 255, 255)' },
+      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      paintOnly: true,
+      unchanged: ['color'],
+    },
+    {
+      target: '#darkTrigger',
+      rule: '.author-workspace[data-chrome="dark"] button:hover:not(:disabled)',
+      resting: { backgroundColor: 'rgb(32, 46, 64)' },
+      hovered: { backgroundColor: 'rgb(51, 76, 98)' },
+      paintOnly: true,
+      unchanged: ['color'],
+    },
+  ],
 });

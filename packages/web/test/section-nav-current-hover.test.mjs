@@ -1,7 +1,6 @@
-import { after, before, describe, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import { chromiumPage } from './chromium.mjs';
+import { defineHoverCases, styles } from './interaction.mjs';
 
 // Issue #108 polish slice 74: hover feedback for a section nav's
 // current link (.section-nav a[aria-current] in AppNavigation.tsx) in
@@ -23,8 +22,8 @@ import { chromiumPage } from './chromium.mjs';
 // rail, where slice 73's rule already governs its current link.
 // Background only, so the selected border and teal text are unchanged
 // and resting geometry is identical.
-const styleCss = await readFile(new URL('../src/style.css', import.meta.url), 'utf8');
-const appChromeCss = await readFile(new URL('../src/app-chrome.css', import.meta.url), 'utf8');
+const styleCss = styles['style.css'];
+const appChromeCss = styles['app-chrome.css'];
 
 const rule = styleCss.match(/\.section-nav\s+a\[aria-current\]:hover\s*\{([^}]*)\}/);
 
@@ -55,43 +54,27 @@ test('the neighbouring nav hovers are untouched', () => {
   assert.ok(appChromeCss.match(/\.app-shell > \.section-nav a, \.app-shell > \.admin-navigation \.section-nav a\s*\{[^}]*padding:\s*8px 0/), 'the top section-nav link layout must remain');
 });
 
-describe('current section link hover in offline Chromium', () => {
-  let page;
-  before(async () => { page = await chromiumPage(); });
-  after(async () => { await page?.close(); });
-
-  test('applying the hover rule changes the visual state with identical geometry in both contexts', async () => {
-    await page.setContent(`<style>${styleCss}</style><style>${appChromeCss}</style>`
-      + `<div class="app-shell"><nav class="section-nav" aria-label="Data"><a id="top-plain" href="#/data">Data sources</a><a id="top-current" href="#/data/preparation" aria-current="page">Preparation</a></nav>`
+defineHoverCases('section-nav-current hover', {
+  html: `<div class="app-shell"><nav class="section-nav" aria-label="Data"><a id="top-plain" href="#/data">Data sources</a><a id="top-current" href="#/data/preparation" aria-current="page">Preparation</a></nav>`
       + `<aside class="product-navigation"><nav class="section-nav" aria-label="Admin"><a id="rail-plain" href="#/admin/users">Users</a><a id="rail-current" href="#/admin/security" aria-current="page">Security</a></nav></aside>`
-      + `<p><a id="outside" href="#/home" aria-current="page">Outside any section nav</a></p></div>`);
-    const actual = await page.evaluate(() => {
-      const all = [...document.styleSheets].flatMap(s => [...s.cssRules]);
-      const found = all.find(r => (r.selectorText || '') === '.section-nav a[aria-current]:hover') ?? null;
-      const measure = (el, rule) => {
-        const rest = { background: getComputedStyle(el).backgroundColor, color: getComputedStyle(el).color, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        if (rule) { for (const prop of rule.style) el.style.setProperty(prop, rule.style.getPropertyValue(prop)); }
-        const hovered = { background: getComputedStyle(el).backgroundColor, color: getComputedStyle(el).color, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        el.removeAttribute('style');
-        return { rest, hovered };
-      };
-      const matches = (el, rule) => rule ? el.matches(rule.selectorText.replaceAll(':hover', '')) : null;
-      return {
-        found: !!found,
-        top: found ? measure(document.querySelector('#top-current'), found) : null,
-        rail: found ? measure(document.querySelector('#rail-current'), found) : null,
-        plainMatches: matches(document.querySelector('#top-plain'), found),
-        outsideMatches: matches(document.querySelector('#outside'), found),
-      };
-    });
-    assert.ok(actual.found, 'expected the hover rule in the CSSOM');
-    for (const ctx of ['top', 'rail']) {
-      assert.equal(actual[ctx].rest.background, 'rgb(234, 244, 244)', `${ctx} current link rest background`);
-      assert.equal(actual[ctx].hovered.background, 'rgb(220, 239, 240)', `${ctx} current link hover background`);
-      assert.equal(actual[ctx].hovered.color, actual[ctx].rest.color, `${ctx} current link color unchanged`);
-      assert.equal(actual[ctx].rest.box, actual[ctx].hovered.box, `${ctx} current link geometry`);
-    }
-    assert.equal(actual.plainMatches, false, 'a non-current section link must be out of scope');
-    assert.equal(actual.outsideMatches, false, 'a current link outside a section nav must be out of scope');
-  });
+      + `<p><a id="outside" href="#/home" aria-current="page">Outside any section nav</a></p></div>`,
+  cases: [
+    {
+      target: '#top-current',
+      rule: '.section-nav a[aria-current]:hover',
+      resting: { backgroundColor: 'rgb(234, 244, 244)' },
+      hovered: { backgroundColor: 'rgb(220, 239, 240)' },
+      paintOnly: true,
+      unchanged: ['color'],
+      excluded: ['#top-plain', '#outside'],
+    },
+    {
+      target: '#rail-current',
+      rule: '.section-nav a[aria-current]:hover',
+      resting: { backgroundColor: 'rgb(234, 244, 244)' },
+      hovered: { backgroundColor: 'rgb(220, 239, 240)' },
+      paintOnly: true,
+      unchanged: ['color'],
+    },
+  ],
 });

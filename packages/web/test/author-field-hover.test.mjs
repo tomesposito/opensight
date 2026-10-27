@@ -1,7 +1,6 @@
-import { after, before, describe, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import { chromiumPage } from './chromium.mjs';
+import { defineHoverCases, styles } from './interaction.mjs';
 
 // Issue #108 polish slice 67: hover feedback for the author layout's
 // plain fields (text/number/date inputs and textareas). The author
@@ -19,7 +18,7 @@ import { chromiumPage } from './chromium.mjs';
 // excluded: native/OS-rendered controls keep their own rendering (the
 // house pattern, slice 38's by-design family). Background only, so
 // resting geometry is identical and there is no animation.
-const styleCss = await readFile(new URL('../src/style.css', import.meta.url), 'utf8');
+const styleCss = styles['style.css'];
 
 const lightRule = styleCss.match(/\.author-layout\s+input:hover:not\(:disabled\):not\(\[type=radio\]\):not\(\[type=checkbox\]\):not\(\[type=file\]\):not\(\[type=range\]\),\s*\.author-layout\s+textarea:hover:not\(:disabled\)\s*\{([^}]*)\}/);
 const darkRule = styleCss.match(/\.author-workspace\[data-chrome=dark\]\s+\.author-layout\s+input:hover:not\(:disabled\):not\(\[type=radio\]\):not\(\[type=checkbox\]\):not\(\[type=file\]\):not\(\[type=range\]\),\s*\.author-workspace\[data-chrome=dark\]\s+\.author-layout\s+textarea:hover:not\(:disabled\)\s*\{([^}]*)\}/);
@@ -54,58 +53,49 @@ test('the header analysis-title input keeps its border-only hover by design', ()
   assert.ok(!/background/.test(title[1]), 'the title hover must stay border-only');
 });
 
-describe('author field hover in offline Chromium', () => {
-  let page;
-  before(async () => { page = await chromiumPage(); });
-  after(async () => { await page?.close(); });
-
-  test('applying the hover rules changes the visual state with identical geometry', async () => {
-    await page.setContent(`<style>${styleCss}</style>`
-      + `<div class="author-workspace"><header class="author-topbar"><label class="analysis-title"><input id="title"></label></header>`
+defineHoverCases('author-field hover', {
+  html: `<div class="author-workspace"><header class="author-topbar"><label class="analysis-title"><input id="title"></label></header>`
       + `<div class="author-layout"><label>Title <input id="text"></label>`
       + `<label>Size <input id="num" type="number"></label>`
       + `<label>Notes <textarea id="ta"></textarea></label>`
       + `<input id="off" disabled><input id="chk" type="checkbox"><input id="rng" type="range"></div></div>`
-      + `<div class="author-workspace" data-chrome="dark"><div class="author-layout"><input id="dark-text"><textarea id="dark-ta"></textarea></div></div>`);
-    const actual = await page.evaluate(() => {
-      const all = [...document.styleSheets].flatMap(s => [...s.cssRules]);
-      const light = all.find(r => (r.selectorText || '').includes('author-layout') && (r.selectorText || '').includes('textarea:hover') && !(r.selectorText || '').includes('data-chrome')) ?? null;
-      const dark = all.find(r => (r.selectorText || '').includes('data-chrome') && (r.selectorText || '').includes('author-layout') && (r.selectorText || '').includes('textarea:hover')) ?? null;
-      const measure = (el, rule) => {
-        const rest = { background: getComputedStyle(el).backgroundColor, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        if (rule) { for (const prop of rule.style) el.style.setProperty(prop, rule.style.getPropertyValue(prop)); }
-        const hovered = { background: getComputedStyle(el).backgroundColor, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        el.removeAttribute('style');
-        return { rest, hovered };
-      };
-      const matches = (el, rule) => rule ? el.matches(rule.selectorText.replaceAll(':hover', '')) : null;
-      return {
-        lightFound: !!light, darkFound: !!dark,
-        text: light ? measure(document.querySelector('#text'), light) : null,
-        num: light ? measure(document.querySelector('#num'), light) : null,
-        ta: light ? measure(document.querySelector('#ta'), light) : null,
-        darkText: dark ? measure(document.querySelector('#dark-text'), dark) : null,
-        darkTa: dark ? measure(document.querySelector('#dark-ta'), dark) : null,
-        titleMatches: matches(document.querySelector('#title'), light),
-        offMatches: matches(document.querySelector('#off'), light),
-        chkMatches: matches(document.querySelector('#chk'), light),
-        rngMatches: matches(document.querySelector('#rng'), light),
-      };
-    });
-    assert.ok(actual.lightFound, 'expected the light hover rule in the CSSOM');
-    assert.ok(actual.darkFound, 'expected the dark hover rule in the CSSOM');
-    for (const key of ['text', 'num', 'ta']) {
-      assert.equal(actual[key].rest.background, 'rgb(255, 255, 255)', `${key} rest`);
-      assert.equal(actual[key].hovered.background, 'rgb(237, 247, 247)', `${key} hover`);
-      assert.equal(actual[key].rest.box, actual[key].hovered.box, `${key} geometry`);
-    }
-    for (const key of ['darkText', 'darkTa']) {
-      assert.equal(actual[key].hovered.background, 'rgb(51, 76, 98)', `${key} hover`);
-      assert.equal(actual[key].rest.box, actual[key].hovered.box, `${key} geometry`);
-    }
-    assert.equal(actual.titleMatches, false, 'the header title input must be outside the rule scope');
-    assert.equal(actual.offMatches, false, 'disabled fields must be excluded');
-    assert.equal(actual.chkMatches, false, 'checkboxes must be excluded');
-    assert.equal(actual.rngMatches, false, 'range inputs must be excluded');
-  });
+      + `<div class="author-workspace" data-chrome="dark"><div class="author-layout"><input id="dark-text"><textarea id="dark-ta"></textarea></div></div>`,
+  cases: [
+    {
+      target: '#text',
+      rule: '.author-layout input:hover:not(:disabled):not([type="radio"]):not([type="checkbox"]):not([type="file"]):not([type="range"]), .author-layout textarea:hover:not(:disabled)',
+      resting: { backgroundColor: 'rgb(255, 255, 255)' },
+      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      paintOnly: true,
+      excluded: ['#title', '#off', '#chk', '#rng'],
+    },
+    {
+      target: '#num',
+      rule: '.author-layout input:hover:not(:disabled):not([type="radio"]):not([type="checkbox"]):not([type="file"]):not([type="range"]), .author-layout textarea:hover:not(:disabled)',
+      resting: { backgroundColor: 'rgb(255, 255, 255)' },
+      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      paintOnly: true,
+    },
+    {
+      target: '#ta',
+      rule: '.author-layout input:hover:not(:disabled):not([type="radio"]):not([type="checkbox"]):not([type="file"]):not([type="range"]), .author-layout textarea:hover:not(:disabled)',
+      resting: { backgroundColor: 'rgb(255, 255, 255)' },
+      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      paintOnly: true,
+    },
+    {
+      target: '#dark-text',
+      rule: '.author-workspace[data-chrome="dark"] .author-layout input:hover:not(:disabled):not([type="radio"]):not([type="checkbox"]):not([type="file"]):not([type="range"]), .author-workspace[data-chrome="dark"] .author-layout textarea:hover:not(:disabled)',
+      resting: { backgroundColor: 'rgb(32, 46, 64)' },
+      hovered: { backgroundColor: 'rgb(51, 76, 98)' },
+      paintOnly: true,
+    },
+    {
+      target: '#dark-ta',
+      rule: '.author-workspace[data-chrome="dark"] .author-layout input:hover:not(:disabled):not([type="radio"]):not([type="checkbox"]):not([type="file"]):not([type="range"]), .author-workspace[data-chrome="dark"] .author-layout textarea:hover:not(:disabled)',
+      resting: { backgroundColor: 'rgb(32, 46, 64)' },
+      hovered: { backgroundColor: 'rgb(51, 76, 98)' },
+      paintOnly: true,
+    },
+  ],
 });

@@ -1,7 +1,6 @@
-import { after, before, describe, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import { chromiumPage } from './chromium.mjs';
+import { defineHoverCases, styles } from './interaction.mjs';
 
 // Issue #108 polish slice 122: hover feedback for the API picker
 // form's labels (.api-picker label — "Resource" and "Resource ID" in
@@ -31,9 +30,7 @@ import { chromiumPage } from './chromium.mjs';
 // label and the field inside it take the same tint, hovering either
 // reads as one surface, not two steps. Background only, so resting
 // geometry is identical and there is no animation.
-const styleCss = await readFile(new URL('../src/style.css', import.meta.url), 'utf8');
-const allCss = (await Promise.all(['style.css', 'app-chrome.css', 'data-section.css', 'embed.css', 'sign-in.css']
-  .map(name => readFile(new URL(`../src/${name}`, import.meta.url), 'utf8')))).join('\n');
+const styleCss = styles['style.css'];
 
 const labelRule = styleCss.match(/^\.api-picker label:hover\s*\{([^}]*)\}/m);
 const labelDarkRule = styleCss.match(/^\.author-workspace\[data-chrome=dark\] \.api-picker label:hover\s*\{([^}]*)\}/m);
@@ -64,57 +61,37 @@ test('the resting api-picker rules are preserved', () => {
   assert.ok(styleCss.match(/\.api-picker button\s*\{[^}]*background:\s*#157f88/), 'the resting api-picker button rule must remain');
 });
 
-describe('Api-picker label hover in offline Chromium', () => {
-  let page;
-  before(async () => { page = await chromiumPage(); });
-  after(async () => { await page?.close(); });
-
-  test('applying the hover rules changes the label visual state with identical geometry in the real ancestor contexts, and labels outside the picker are out of scope', async () => {
-    await page.setContent(`<style>${allCss}</style>`
-      + `<form class="api-picker"><label id="soloLabel">Resource<select id="soloSelect"><option>Analysis</option></select></label></form>`
+defineHoverCases('api-picker-label hover', {
+  html: `<form class="api-picker"><label id="soloLabel">Resource<select id="soloSelect"><option>Analysis</option></select></label></form>`
       + `<div class="author-workspace"><div class="api-picker"><label id="authorLabel">Analysis dataset<select><option>Sample</option></select></label></div></div>`
       + `<div class="author-workspace" data-chrome="dark"><div class="api-picker"><label id="darkLabel">Analysis dataset<select><option>Sample</option></select></label></div></div>`
-      + `<form><label id="outsideLabel">Outside<input/></label></form>`);
-    const actual = await page.evaluate(() => {
-      const all = [...document.styleSheets].flatMap(s => [...s.cssRules]);
-      const norm = r => (r.selectorText || '').replaceAll('"', '');
-      const label = all.find(r => norm(r) === '.api-picker label:hover') ?? null;
-      const labelDark = all.find(r => norm(r) === '.author-workspace[data-chrome=dark] .api-picker label:hover') ?? null;
-      const measure = (el, rule) => {
-        const rest = { background: getComputedStyle(el).backgroundColor, color: getComputedStyle(el).color, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        if (rule) { for (const prop of rule.style) el.style.setProperty(prop, rule.style.getPropertyValue(prop)); }
-        const hovered = { background: getComputedStyle(el).backgroundColor, color: getComputedStyle(el).color, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        el.removeAttribute('style');
-        return { rest, hovered };
-      };
-      const el = id => document.querySelector(`#${id}`);
-      return {
-        found: { label: !!label, labelDark: !!labelDark },
-        props: [label, labelDark].map(r => r ? [...r.style] : []),
-        soloLabel: label ? measure(el('soloLabel'), label) : null,
-        authorLabel: label ? measure(el('authorLabel'), label) : null,
-        darkLabel: labelDark ? measure(el('darkLabel'), labelDark) : null,
-        outsideLabelMatches: label ? el('outsideLabel').matches(label.selectorText.replaceAll(':hover', '')) : null,
-        outsideDarkMatches: labelDark ? el('outsideLabel').matches(labelDark.selectorText.replaceAll(':hover', '')) : null,
-      };
-    });
-    assert.deepEqual(actual.found, { label: true, labelDark: true }, 'expected both hover rules in the CSSOM');
-    for (const props of actual.props) {
-      assert.ok(props.length && props.every(p => p.startsWith('background')), 'hover rules must set background longhands only');
-    }
-    assert.equal(actual.soloLabel.rest.background, 'rgba(0, 0, 0, 0)', 'standalone label rest');
-    assert.equal(actual.soloLabel.hovered.background, 'rgb(237, 247, 247)', 'standalone label hover');
-    assert.notEqual(actual.soloLabel.rest.background, actual.soloLabel.hovered.background);
-    assert.equal(actual.soloLabel.rest.color, actual.soloLabel.hovered.color, 'standalone label colour unchanged on hover');
-    assert.equal(actual.soloLabel.rest.box, actual.soloLabel.hovered.box, 'standalone label geometry');
-    assert.equal(actual.authorLabel.rest.background, 'rgba(0, 0, 0, 0)', 'author label rest');
-    assert.equal(actual.authorLabel.hovered.background, 'rgb(237, 247, 247)', 'author label hover');
-    assert.equal(actual.authorLabel.rest.box, actual.authorLabel.hovered.box, 'author label geometry');
-    assert.equal(actual.darkLabel.rest.background, 'rgba(0, 0, 0, 0)', 'dark label rest');
-    assert.equal(actual.darkLabel.hovered.background, 'rgb(51, 76, 98)', 'dark label hover');
-    assert.equal(actual.darkLabel.rest.color, actual.darkLabel.hovered.color, 'dark label colour unchanged on hover');
-    assert.equal(actual.darkLabel.rest.box, actual.darkLabel.hovered.box, 'dark label geometry');
-    assert.equal(actual.outsideLabelMatches, false, 'a label outside .api-picker must be out of scope');
-    assert.equal(actual.outsideDarkMatches, false, 'a label outside .api-picker must be out of scope for the dark variant');
-  });
+      + `<form><label id="outsideLabel">Outside<input/></label></form>`,
+  cases: [
+    {
+      target: '#soloLabel',
+      rule: '.api-picker label:hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      paintOnly: true,
+      unchanged: ['color'],
+      excluded: ['#outsideLabel'],
+    },
+    {
+      target: '#authorLabel',
+      rule: '.api-picker label:hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      paintOnly: true,
+      unchanged: ['color'],
+    },
+    {
+      target: '#darkLabel',
+      rule: '.author-workspace[data-chrome="dark"] .api-picker label:hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(51, 76, 98)' },
+      paintOnly: true,
+      unchanged: ['color'],
+      excluded: ['#outsideLabel'],
+    },
+  ],
 });

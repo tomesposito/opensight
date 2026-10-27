@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { defineHoverCases, styles } from './interaction.mjs';
 
 // Issue #108 polish slice 17: hover feedback for the persistent shell header
 // chrome. A fresh interactive-state audit found the two header chrome controls
@@ -10,7 +10,7 @@ import { readFile } from 'node:fs/promises';
 // the account menu's [open] state already uses). The brand's hover pill keeps
 // the resting geometry identical (padding cancelled by negative margins), and
 // the account-summary hover composes with slice 15's :active pressed shift.
-const css = await readFile(new URL('../src/app-chrome.css', import.meta.url), 'utf8');
+const css = styles['app-chrome.css'];
 
 test('brand link has a hover state using the dark-chrome tint', () => {
   const rule = css.match(/\.product-header\s+\.brand:hover\s*\{([^}]*)\}/);
@@ -35,4 +35,19 @@ test('account menu summary previews its open state on hover', () => {
   const open = css.match(/\.account-menu\[open\]\s+summary\s*\{([^}]*)\}/);
   assert.ok(open, 'expected the .account-menu[open] summary rule to remain');
   assert.match(open[1], /background:\s*#365764/);
+});
+
+defineHoverCases('persistent header controls', {
+  html: `<header class="product-header"><a id="brand" class="brand" href="#">OpenSight</a>
+    <details class="account-menu"><summary id="account">Account</summary></details></header>`,
+  cases: [
+    { target: '#brand', rule: '.product-header .brand:hover' },
+    { target: '#account', rule: '.account-menu summary:hover' },
+  ].map(entry => ({
+    ...entry,
+    resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+    hovered: { backgroundColor: 'rgb(54, 87, 100)' },
+    paintOnly: true,
+    unchanged: ['color'],
+  })),
 });

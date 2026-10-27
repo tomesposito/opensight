@@ -1,7 +1,6 @@
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import { chromiumPage } from './chromium.mjs';
+import { defineHoverCases, styles } from './interaction.mjs';
 
 // Issue #108 polish slice 42: hover feedback for the author workspace's
 // disclosure summaries. A behavioral hover audit that included <summary>
@@ -20,7 +19,7 @@ import { chromiumPage } from './chromium.mjs';
 // .author-menu summary keeps its own header hover and is not in this
 // group. Background only, so resting geometry is identical. Static
 // (no animation), so no reduced-motion variant is needed.
-const rawCss = await readFile(new URL('../src/style.css', import.meta.url), 'utf8');
+const rawCss = styles['style.css'];
 const css = rawCss.replace(/\/\*[\s\S]*?\*\//g, '');
 
 const SELECTORS = [
@@ -83,58 +82,38 @@ test('the author summary hover rules coexist with the other summary states', () 
   assert.ok(css.match(/summary:focus-visible/), 'the global summary focus-visible outline must still be present');
 });
 
-{
-  let page;
-  before(async () => { page = await chromiumPage(); });
-  after(async () => { await page?.close(); });
-
-  test('applying the hover rule changes the visual state with identical geometry', async () => {
-    await page.setContent(`<style>${css}</style><div class="author-workspace">
+defineHoverCases('author-summary hover', {
+  html: `<div class="author-workspace">
       <details class="builder-panel" open><summary id="panel">Data</summary></details>
       <details class="field-group" open><summary id="group">Geography</summary></details>
       <div class="bundle-import"><details><summary id="import">Import bundle</summary></details></div>
       <details><summary id="plain">Plain author summary</summary></details>
-    </div><details><summary id="outside">Outside summary</summary></details>`);
-    const actual = await page.evaluate(() => {
-      const ours = [];
-      for (const sheet of document.styleSheets) {
-        for (const rule of sheet.cssRules) {
-          if ((rule.selectorText || '').includes('.builder-panel > summary:hover') && !(rule.selectorText || '').includes('data-chrome')) ours.push(rule);
-        }
-      }
-      const measure = el => {
-        const rest = { background: getComputedStyle(el).backgroundColor, color: getComputedStyle(el).color, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        for (const rule of ours) {
-          const selectors = rule.selectorText.split(',').map(s => s.trim().replace(/:hover$/, ''));
-          if (selectors.some(s => { try { return el.matches(s); } catch { return false; } })) {
-            for (const prop of rule.style) el.style.setProperty(prop, rule.style.getPropertyValue(prop));
-          }
-        }
-        const hovered = { background: getComputedStyle(el).backgroundColor, color: getComputedStyle(el).color, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        return { rest, hovered };
-      };
-      return {
-        ruleCount: ours.length,
-        props: ours.length ? [...ours[0].style] : [],
-        backgroundColor: ours.length ? ours[0].style.getPropertyValue('background-color') : null,
-        panel: measure(document.querySelector('#panel')),
-        group: measure(document.querySelector('#group')),
-        imp: measure(document.querySelector('#import')),
-        plain: measure(document.querySelector('#plain')),
-        outside: measure(document.querySelector('#outside')),
-      };
-    });
-    assert.equal(actual.ruleCount, 1);
-    assert.ok(actual.props.length && actual.props.every(p => p.startsWith('background')), 'hover rule must set background longhands only');
-    assert.equal(actual.backgroundColor, 'rgb(237, 247, 247)');
-    for (const key of ['panel', 'group', 'imp']) {
-      assert.equal(actual[key].hovered.background, 'rgb(237, 247, 247)', `${key} summary must tint on hover`);
-      assert.equal(actual[key].rest.color, actual[key].hovered.color, 'text color must not change');
-      assert.equal(actual[key].rest.box, actual[key].hovered.box, 'geometry must not change');
-    }
-    assert.equal(actual.panel.rest.background, 'rgb(255, 255, 255)');
-    assert.equal(actual.group.rest.background, 'rgba(0, 0, 0, 0)');
-    assert.equal(actual.plain.hovered.background, actual.plain.rest.background, 'summaries outside the six groups keep their own states');
-    assert.equal(actual.outside.hovered.background, actual.outside.rest.background, 'summaries outside the author workspace keep their own states');
-  });
-}
+    </div><details><summary id="outside">Outside summary</summary></details>`,
+  cases: [
+    {
+      target: '#panel',
+      rule: '.author-workspace .builder-panel > summary:hover, .author-workspace .field-group > summary:hover, .author-workspace .property-section > summary:hover, .author-workspace .parameter-editor > summary:hover, .author-workspace .local-drafts > summary:hover, .author-workspace .bundle-import summary:hover',
+      resting: { backgroundColor: 'rgb(255, 255, 255)' },
+      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      paintOnly: true,
+      unchanged: ['color'],
+      excluded: [{ target: '#plain', resting: { backgroundColor: 'rgba(0, 0, 0, 0)', color: 'rgb(25, 56, 74)' } }, { target: '#outside', resting: { backgroundColor: 'rgba(0, 0, 0, 0)', color: 'rgb(25, 56, 74)' } }],
+    },
+    {
+      target: '#group',
+      rule: '.author-workspace .builder-panel > summary:hover, .author-workspace .field-group > summary:hover, .author-workspace .property-section > summary:hover, .author-workspace .parameter-editor > summary:hover, .author-workspace .local-drafts > summary:hover, .author-workspace .bundle-import summary:hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      paintOnly: true,
+      unchanged: ['color'],
+    },
+    {
+      target: '#import',
+      rule: '.author-workspace .builder-panel > summary:hover, .author-workspace .field-group > summary:hover, .author-workspace .property-section > summary:hover, .author-workspace .parameter-editor > summary:hover, .author-workspace .local-drafts > summary:hover, .author-workspace .bundle-import summary:hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      paintOnly: true,
+      unchanged: ['color'],
+    },
+  ],
+});

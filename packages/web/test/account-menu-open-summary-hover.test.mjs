@@ -1,7 +1,6 @@
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import { chromiumPage } from './chromium.mjs';
+import { defineHoverCases, styles } from './interaction.mjs';
 
 // Issue #108 polish slice 80: hover feedback for the product
 // header's OPEN account-menu summary (.account-menu[open] summary
@@ -21,8 +20,8 @@ import { chromiumPage } from './chromium.mjs';
 // only, so the summary's #526c7a border, white text and resting
 // geometry are identical; static (no animation), so no
 // reduced-motion variant.
-const css = await readFile(new URL('../src/app-chrome.css', import.meta.url), 'utf8');
-const styleCss = await readFile(new URL('../src/style.css', import.meta.url), 'utf8');
+const css = styles['app-chrome.css'];
+const styleCss = styles['style.css'];
 
 const rule = css.match(/\.account-menu\[open\] summary:hover\s*\{([^}]*)\}/);
 
@@ -62,13 +61,8 @@ test('the neighbouring header hover rules are untouched', () => {
   assert.ok(css.match(/\.product-header \.fixture-picker select:hover:not\(:disabled\)\s*\{\s*background:\s*#365764/), 'the slice-33 fixture-picker hover must remain #365764');
 });
 
-{
-  let page;
-  before(async () => { page = await chromiumPage(); });
-  after(async () => { await page?.close(); });
-
-  test('applying the hover rule changes the visual state with identical geometry', async () => {
-    await page.setContent(`<style>${css}</style><header class="product-header">
+defineHoverCases('account-menu-open-summary hover', {
+  html: `<header class="product-header">
       <details class="account-menu hosted-account" id="open-menu" open>
         <summary id="open-summary">Account</summary>
         <div class="account-panel"><p>Local workspace</p></div>
@@ -79,43 +73,16 @@ test('the neighbouring header hover rules are untouched', () => {
       <details id="outside-menu" open>
         <summary id="outside-summary">Other</summary>
       </details>
-    </header>`);
-    const actual = await page.evaluate(() => {
-      const rules = [];
-      for (const sheet of document.styleSheets) {
-        for (const rule of sheet.cssRules) {
-          if ((rule.selectorText || '') === '.account-menu[open] summary:hover') rules.push(rule);
-        }
-      }
-      const open = document.querySelector('#open-summary');
-      const closed = document.querySelector('#closed-summary');
-      const outside = document.querySelector('#outside-summary');
-      const rest = { background: getComputedStyle(open).backgroundColor, border: getComputedStyle(open).borderTopColor, box: JSON.stringify(open.getBoundingClientRect().toJSON()) };
-      const hover = rules[0];
-      if (hover) for (const prop of hover.style) open.style.setProperty(prop, hover.style.getPropertyValue(prop));
-      const hovered = { background: getComputedStyle(open).backgroundColor, border: getComputedStyle(open).borderTopColor, box: JSON.stringify(open.getBoundingClientRect().toJSON()) };
-      return {
-        ruleCount: rules.length,
-        props: rules.length ? [...rules[0].style] : [],
-        backgroundColor: rules.length ? rules[0].style.getPropertyValue('background-color') : null,
-        open: { rest, hovered },
-        openMatches: open.matches('.account-menu[open] summary'),
-        closedMatches: closed.matches('.account-menu[open] summary'),
-        outsideMatches: outside.matches('.account-menu[open] summary'),
-        closedBg: getComputedStyle(closed).backgroundColor,
-      };
-    });
-    assert.equal(actual.ruleCount, 1);
-    assert.ok(actual.props.length && actual.props.every(p => p.startsWith('background')), 'hover rule must set background longhands only');
-    assert.equal(actual.backgroundColor, 'rgb(37, 74, 94)');
-    assert.equal(actual.open.rest.background, 'rgb(54, 87, 100)');
-    assert.equal(actual.open.hovered.background, 'rgb(37, 74, 94)');
-    assert.notEqual(actual.open.rest.background, actual.open.hovered.background);
-    assert.equal(actual.open.rest.border, actual.open.hovered.border, 'the #526c7a border must be unchanged');
-    assert.equal(actual.open.rest.box, actual.open.hovered.box);
-    assert.ok(actual.openMatches);
-    assert.equal(actual.closedMatches, false, 'a closed account summary keeps the slice-17 hover rule');
-    assert.equal(actual.outsideMatches, false, 'an open summary outside the account menu is out of scope');
-    assert.equal(actual.closedBg, 'rgba(0, 0, 0, 0)', 'closed summary resting state unchanged');
-  });
-}
+    </header>`,
+  cases: [
+    {
+      target: '#open-summary',
+      rule: '.account-menu[open] summary:hover',
+      resting: { backgroundColor: 'rgb(54, 87, 100)' },
+      hovered: { backgroundColor: 'rgb(37, 74, 94)' },
+      paintOnly: true,
+      unchanged: ['borderTopColor'],
+      excluded: [{ target: '#closed-summary', resting: { backgroundColor: 'rgba(0, 0, 0, 0)' } }, '#outside-summary'],
+    },
+  ],
+});

@@ -1,7 +1,6 @@
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import { chromiumPage } from './chromium.mjs';
+import { defineHoverCases, styles } from './interaction.mjs';
 
 // Issue #108 polish slice 56: hover feedback for the sign-in link
 // buttons (.sign-in-links button — "Retry connection" and "Explore
@@ -18,7 +17,7 @@ import { chromiumPage } from './chromium.mjs';
 // animation), so no reduced-motion variant is needed. The disabled
 // state (the links are disabled while the sign-in form is busy) is
 // excluded and keeps its flat resting state.
-const css = await readFile(new URL('../src/sign-in.css', import.meta.url), 'utf8');
+const css = styles['sign-in.css'];
 
 const hoverRule = css.match(/\.sign-in-links button:hover:not\(:disabled\)\s*\{([^}]*)\}/);
 
@@ -47,44 +46,18 @@ test('the hover step coexists with the other sign-in hover rules', () => {
   assert.ok(css.match(/\.sign-in-field input:hover:not\(:disabled\)\s*\{[^}]*background:\s*#eaf4f4/), 'the slice-55 sign-in field hover rule must still be present');
 });
 
-{
-  let page;
-  before(async () => { page = await chromiumPage(); });
-  after(async () => { await page?.close(); });
-
-  test('applying the hover rule changes the visual state with identical geometry', async () => {
-    await page.setContent(`<style>${css}</style><div class="sign-in-page"><section class="sign-in-card">
+defineHoverCases('signin-link hover', {
+  html: `<div class="sign-in-page"><section class="sign-in-card">
       <nav class="sign-in-links" aria-label="Sign-in help"><button id="retry" type="button">Retry connection</button><button id="demo" type="button" disabled>Explore sample data</button></nav>
-    </section></div>`);
-    const actual = await page.evaluate(() => {
-      const rules = [];
-      for (const sheet of document.styleSheets) {
-        for (const rule of sheet.cssRules) {
-          if ((rule.selectorText || '').includes('.sign-in-links button:hover')) rules.push(rule);
-        }
-      }
-      const measure = (id) => {
-        const el = document.querySelector(id);
-        const rest = { color: getComputedStyle(el).color, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        const hover = rules[0];
-        if (hover) { for (const prop of hover.style) el.style.setProperty(prop, hover.style.getPropertyValue(prop)); }
-        const hovered = { color: getComputedStyle(el).color, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        return { rest, hovered };
-      };
-      const demo = document.querySelector('#demo');
-      return {
-        ruleCount: rules.length,
-        colorValue: rules.length ? rules[0].style.getPropertyValue('color') : null,
-        retry: measure('#retry'),
-        demoMatches: rules.length ? demo.matches(rules[0].selectorText.replace(':hover', '')) : null,
-      };
-    });
-    assert.equal(actual.ruleCount, 1);
-    assert.equal(actual.colorValue, 'rgb(14, 89, 96)');
-    assert.equal(actual.retry.rest.color, 'rgb(18, 110, 118)');
-    assert.equal(actual.retry.hovered.color, 'rgb(14, 89, 96)');
-    assert.notEqual(actual.retry.rest.color, actual.retry.hovered.color);
-    assert.equal(actual.retry.rest.box, actual.retry.hovered.box);
-    assert.equal(actual.demoMatches, false, 'disabled link buttons must be excluded from the hover rule');
-  });
-}
+    </section></div>`,
+  cases: [
+    {
+      target: '#retry',
+      rule: '.sign-in-links button:hover:not(:disabled)',
+      resting: { color: 'rgb(18, 110, 118)', backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { color: 'rgb(14, 89, 96)', backgroundColor: 'rgba(0, 0, 0, 0)' },
+      paintOnly: true,
+      excluded: ['#demo'],
+    },
+  ],
+});

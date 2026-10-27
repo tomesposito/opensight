@@ -1,7 +1,6 @@
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import { chromiumPage } from './chromium.mjs';
+import { defineHoverCases, styles } from './interaction.mjs';
 
 // Issue #108 polish slice 66: hover feedback for the connector setup
 // submit button (.connector-submit in ConnectorDetails / DirectUpload
@@ -27,9 +26,9 @@ import { chromiumPage } from './chromium.mjs';
 // loaded last, wins. Background only on hover, so resting geometry is
 // identical. Static (no animation), so no reduced-motion variant is
 // needed.
-const css = await readFile(new URL('../src/app-chrome.css', import.meta.url), 'utf8');
-const styleCss = await readFile(new URL('../src/style.css', import.meta.url), 'utf8');
-const dataCss = await readFile(new URL('../src/data-section.css', import.meta.url), 'utf8');
+const css = styles['app-chrome.css'];
+const styleCss = styles['style.css'];
+const dataCss = styles['data-section.css'];
 
 const submitHover = css.match(/\.app-shell \.connector-details button\.connector-submit:hover:not\(:disabled\)\s*\{([^}]*)\}/);
 
@@ -61,48 +60,25 @@ test('the generic data-dialog rules the submit must outrank are untouched', () =
   assert.ok(dataCss.match(/\.data-page button, \.data-dialog button\s*\{[^}]*color:\s*#176482/), 'the data-dialog generic button resting rule must still be present');
 });
 
-{
-  let page;
-  before(async () => { page = await chromiumPage(); });
-  after(async () => { await page?.close(); });
-
-  test('applying the hover rule changes the visual state with identical geometry in both contexts', async () => {
-    // Real cascade order: data-section.css (imported by style.css),
-    // then style.css's own connector-submit resting rule, then
-    // app-chrome.css (loaded last by main.tsx).
-    const base = styleCss.match(/\.connector-submit\s*\{[^}]*\}/);
-    assert.ok(base, 'expected the style.css connector-submit resting rule');
-    const combined = `${dataCss}\n${base[0]}\n${css}`;
-    await page.setContent(`<style>${combined}</style><div class="app-shell"><dialog class="data-dialog" open><div class="data-dialog-body"><aside class="connector-details"><form><button type="submit" class="connector-submit" id="dialog-submit">Upload to staging</button><button type="submit" class="connector-submit" id="dialog-off" disabled>Upload to staging</button></form></aside></div></dialog><main><section class="data-sources"><aside class="connector-details"><form><button type="submit" class="connector-submit" id="solo-submit">Validate configuration</button></form></aside></section></main></div>`);
-    const actual = await page.evaluate(() => {
-      let found;
-      for (const sheet of document.styleSheets) {
-        for (const rule of sheet.cssRules) {
-          if ((rule.selectorText || '') === '.app-shell .connector-details button.connector-submit:hover:not(:disabled)') found = rule;
-        }
-      }
-      const measure = (el, rule) => {
-        const rest = { background: getComputedStyle(el).backgroundColor, color: getComputedStyle(el).color, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        if (rule) { for (const prop of rule.style) el.style.setProperty(prop, rule.style.getPropertyValue(prop)); }
-        const hovered = { background: getComputedStyle(el).backgroundColor, color: getComputedStyle(el).color, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        el.removeAttribute('style');
-        return { rest, hovered };
-      };
-      const off = document.querySelector('#dialog-off');
-      return {
-        dialog: found ? measure(document.querySelector('#dialog-submit'), found) : null,
-        solo: found ? measure(document.querySelector('#solo-submit'), found) : null,
-        offMatches: found ? off.matches(found.selectorText.replace(':hover', '')) : null,
-      };
-    });
-    assert.ok(actual.dialog && actual.solo, 'expected the connector-submit hover rule in the CSSOM');
-    for (const [name, m] of [['dialog', actual.dialog], ['standalone', actual.solo]]) {
-      assert.equal(m.rest.background, 'rgb(21, 127, 136)', `${name} rest background`);
-      assert.equal(m.rest.color, 'rgb(255, 255, 255)', `${name} rest label color`);
-      assert.equal(m.hovered.background, 'rgb(18, 110, 118)', `${name} hover background`);
-      assert.equal(m.hovered.color, m.rest.color, `${name} label color unchanged`);
-      assert.equal(m.rest.box, m.hovered.box, `${name} geometry`);
-    }
-    assert.equal(actual.offMatches, false, 'disabled submits must be excluded from the hover rule');
-  });
-}
+defineHoverCases('connector-submit hover', {
+  html: `<div class="app-shell"><dialog class="data-dialog" open><div class="data-dialog-body"><aside class="connector-details"><form><button type="submit" class="connector-submit" id="dialog-submit">Upload to staging</button><button type="submit" class="connector-submit" id="dialog-off" disabled>Upload to staging</button></form></aside></div></dialog><main><section class="data-sources"><aside class="connector-details"><form><button type="submit" class="connector-submit" id="solo-submit">Validate configuration</button></form></aside></section></main></div>`,
+  cases: [
+    {
+      target: '#dialog-submit',
+      rule: '.app-shell .connector-details button.connector-submit:hover:not(:disabled)',
+      resting: { backgroundColor: 'rgb(21, 127, 136)', color: 'rgb(255, 255, 255)' },
+      hovered: { backgroundColor: 'rgb(18, 110, 118)' },
+      paintOnly: true,
+      unchanged: ['color'],
+      excluded: ['#dialog-off'],
+    },
+    {
+      target: '#solo-submit',
+      rule: '.app-shell .connector-details button.connector-submit:hover:not(:disabled)',
+      resting: { backgroundColor: 'rgb(21, 127, 136)', color: 'rgb(255, 255, 255)' },
+      hovered: { backgroundColor: 'rgb(18, 110, 118)' },
+      paintOnly: true,
+      unchanged: ['color'],
+    },
+  ],
+});

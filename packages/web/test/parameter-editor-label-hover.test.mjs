@@ -1,7 +1,6 @@
-import { after, before, describe, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import { chromiumPage } from './chromium.mjs';
+import { defineHoverCases, styles } from './interaction.mjs';
 
 // Issue #108 polish slice 115: hover feedback for the
 // ParameterEditor's plain field labels (.parameter-editor label —
@@ -39,9 +38,7 @@ import { chromiumPage } from './chromium.mjs';
 // specificity with the same tints, so the checkbox labels are
 // unchanged. Background only, so resting geometry is identical
 // and there is no animation.
-const styleCss = await readFile(new URL('../src/style.css', import.meta.url), 'utf8');
-const allCss = (await Promise.all(['style.css', 'app-chrome.css', 'data-section.css', 'embed.css', 'sign-in.css']
-  .map(name => readFile(new URL(`../src/${name}`, import.meta.url), 'utf8')))).join('\n');
+const styleCss = styles['style.css'];
 
 const rule = styleCss.match(/^\.parameter-editor label:hover\s*\{([^}]*)\}/m);
 const darkRule = styleCss.match(/^\.author-workspace\[data-chrome=dark\] \.parameter-editor label:hover\s*\{([^}]*)\}/m);
@@ -71,73 +68,82 @@ test('the resting parameter-editor label rule and the slice-99 checkbox rules ar
   assert.ok(styleCss.match(/^\.parameter-editor label:has\(> input\[type=checkbox\]\):hover/m), 'the slice-99 checkbox label hover must remain');
 });
 
-describe('Parameter-editor label hover in offline Chromium', () => {
-  let page;
-  before(async () => { page = await chromiumPage(); });
-  after(async () => { await page?.close(); });
-
-  test('applying the hover rules changes the label visual state with identical geometry in the real ancestor contexts in both chromes, the checkbox labels keep their slice-99 tint, and labels outside the editor are out of scope', async () => {
-    const ctx = (id, dark) => `<div class="author-workspace" ${dark ? 'data-chrome="dark"' : ''}><div class="author-layout"><aside class="builder-panel">`
+const ctx = (id, dark) => `<div class="author-workspace" ${dark ? 'data-chrome="dark"' : ''}><div class="author-layout"><aside class="builder-panel">`
       + `<details class="parameter-editor" open><summary>Parameters</summary><form>`
       + `<label id="${id}Name">Parameter name<input value="x"/></label>`
       + `<label id="${id}Type">Parameter type<select><option>string</option></select></label>`
       + `<label id="${id}Check"><input type="checkbox"/>Multiple values</label>`
       + `<label id="${id}Def">Default values<textarea></textarea></label>`
       + `</form></details></aside></div></div>`;
-    await page.setContent(`<style>${allCss}</style>` + ctx('l', false) + ctx('d', true)
-      + `<label id="outsideLabel">Outside<input/></label>`);
-    const actual = await page.evaluate(() => {
-      const all = [...document.styleSheets].flatMap(s => [...s.cssRules]);
-      const norm = r => (r.selectorText || '').replaceAll('"', '');
-      const light = all.find(r => norm(r) === '.parameter-editor label:hover') ?? null;
-      const dark = all.find(r => norm(r) === '.author-workspace[data-chrome=dark] .parameter-editor label:hover') ?? null;
-      const check99 = all.find(r => norm(r) === '.parameter-editor label:has(> input[type=checkbox]):hover') ?? null;
-      const check99Dark = all.find(r => norm(r) === '.author-workspace[data-chrome=dark] .parameter-editor label:has(> input[type=checkbox]):hover') ?? null;
-      const measure = (el, rule) => {
-        const rest = { background: getComputedStyle(el).backgroundColor, color: getComputedStyle(el).color, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        if (rule) { for (const prop of rule.style) el.style.setProperty(prop, rule.style.getPropertyValue(prop)); }
-        const hovered = { background: getComputedStyle(el).backgroundColor, color: getComputedStyle(el).color, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        el.removeAttribute('style');
-        return { rest, hovered };
-      };
-      const el = id => document.querySelector(`#${id}`);
-      return {
-        foundLight: !!light, foundDark: !!dark,
-        propsLight: light ? [...light.style] : [], propsDark: dark ? [...dark.style] : [],
-        lName: light ? measure(el('lName'), light) : null,
-        lType: light ? measure(el('lType'), light) : null,
-        lDef: light ? measure(el('lDef'), light) : null,
-        dName: dark ? measure(el('dName'), dark) : null,
-        dType: dark ? measure(el('dType'), dark) : null,
-        dDef: dark ? measure(el('dDef'), dark) : null,
-        lCheck99: check99 ? measure(el('lCheck'), check99) : null,
-        dCheck99: check99Dark ? measure(el('dCheck'), check99Dark) : null,
-        checkMatchesPlain: light ? el('lCheck').matches(light.selectorText.replaceAll(':hover', '')) : null,
-        outsideMatches: light ? el('outsideLabel').matches(light.selectorText.replaceAll(':hover', '')) : null,
-      };
-    });
-    assert.ok(actual.foundLight, 'expected the light hover rule in the CSSOM');
-    assert.ok(actual.foundDark, 'expected the dark hover rule in the CSSOM');
-    for (const props of [actual.propsLight, actual.propsDark]) {
-      assert.ok(props.length && props.every(p => p.startsWith('background')), 'hover rules must set background longhands only');
-    }
-    for (const key of ['lName', 'lType', 'lDef']) {
-      assert.equal(actual[key].rest.background, 'rgba(0, 0, 0, 0)', `${key} label rest (transparent)`);
-      assert.equal(actual[key].hovered.background, 'rgb(237, 247, 247)', `${key} label hover`);
-      assert.notEqual(actual[key].rest.background, actual[key].hovered.background);
-      assert.equal(actual[key].rest.color, actual[key].hovered.color, `${key} label colour unchanged on hover`);
-      assert.equal(actual[key].rest.box, actual[key].hovered.box, `${key} label geometry`);
-    }
-    for (const key of ['dName', 'dType', 'dDef']) {
-      assert.equal(actual[key].rest.background, 'rgba(0, 0, 0, 0)', `${key} label rest (transparent)`);
-      assert.equal(actual[key].hovered.background, 'rgb(51, 76, 98)', `${key} label hover`);
-      assert.notEqual(actual[key].rest.background, actual[key].hovered.background);
-      assert.equal(actual[key].rest.color, actual[key].hovered.color, `${key} label colour unchanged on hover`);
-      assert.equal(actual[key].rest.box, actual[key].hovered.box, `${key} label geometry`);
-    }
-    assert.equal(actual.lCheck99.hovered.background, 'rgb(237, 247, 247)', 'the light checkbox label keeps its slice-99 tint');
-    assert.equal(actual.dCheck99.hovered.background, 'rgb(51, 76, 98)', 'the dark checkbox label keeps its slice-99 tint');
-    assert.equal(actual.checkMatchesPlain, true, 'the plain rule also covers the checkbox labels, at the same tint and below the slice-99 specificity');
-    assert.equal(actual.outsideMatches, false, 'a label outside .parameter-editor must be out of scope');
-  });
+
+defineHoverCases('parameter-editor-label hover', {
+  html: `` + ctx('l', false) + ctx('d', true)
+      + `<label id="outsideLabel">Outside<input/></label>`,
+  cases: [
+    {
+      target: '#lName',
+      rule: '.parameter-editor label:hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      paintOnly: true,
+      unchanged: ['color'],
+      excluded: ['#outsideLabel'],
+    },
+    {
+      target: '#lType',
+      rule: '.parameter-editor label:hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      paintOnly: true,
+      unchanged: ['color'],
+    },
+    {
+      target: '#lDef',
+      rule: '.parameter-editor label:hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      paintOnly: true,
+      unchanged: ['color'],
+    },
+    {
+      target: '#dName',
+      rule: '.author-workspace[data-chrome="dark"] .parameter-editor label:hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(51, 76, 98)' },
+      paintOnly: true,
+      unchanged: ['color'],
+    },
+    {
+      target: '#dType',
+      rule: '.author-workspace[data-chrome="dark"] .parameter-editor label:hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(51, 76, 98)' },
+      paintOnly: true,
+      unchanged: ['color'],
+    },
+    {
+      target: '#dDef',
+      rule: '.author-workspace[data-chrome="dark"] .parameter-editor label:hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(51, 76, 98)' },
+      paintOnly: true,
+      unchanged: ['color'],
+    },
+    {
+      target: '#lCheck',
+      rule: '.parameter-editor label:has(> input[type="checkbox"]):hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      paintOnly: true,
+      unchanged: ['color'],
+    },
+    {
+      target: '#dCheck',
+      rule: '.author-workspace[data-chrome="dark"] .parameter-editor label:has(> input[type="checkbox"]):hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(51, 76, 98)' },
+      paintOnly: true,
+      unchanged: ['color'],
+    },
+  ],
 });

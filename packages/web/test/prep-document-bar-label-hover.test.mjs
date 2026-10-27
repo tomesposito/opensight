@@ -1,7 +1,6 @@
-import { after, before, describe, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import { chromiumPage } from './chromium.mjs';
+import { defineHoverCases, styles } from './interaction.mjs';
 
 // Issue #108 polish slice 105: hover feedback for the data-prep
 // document bar's field labels (.prep-document-bar > label in
@@ -26,9 +25,7 @@ import { chromiumPage } from './chromium.mjs';
 // is introduced. Background only, so resting geometry is identical
 // and there is no animation. The data-prep surface is fixed light,
 // so no dark variant.
-const styleCss = await readFile(new URL('../src/style.css', import.meta.url), 'utf8');
-const allCss = (await Promise.all(['style.css', 'app-chrome.css', 'data-section.css', 'embed.css', 'sign-in.css']
-  .map(name => readFile(new URL(`../src/${name}`, import.meta.url), 'utf8')))).join('\n');
+const styleCss = styles['style.css'];
 
 const rule = styleCss.match(/^\.prep-document-bar > label:hover\s*\{([^}]*)\}/m);
 
@@ -53,46 +50,20 @@ test('the resting prep-document-bar and data-prep label rules are preserved and 
   assert.ok(!/data-chrome=dark[^\n]*prep-document-bar/.test(styleCss), 'the fixed-light data-prep surface must not gain a dark variant for this rule');
 });
 
-describe('Prep-document-bar label hover in offline Chromium', () => {
-  let page;
-  before(async () => { page = await chromiumPage(); });
-  after(async () => { await page?.close(); });
-
-  test('applying the hover rule changes the label visual state with identical geometry in the real ancestor context, and labels that are not direct children of the bar are out of scope', async () => {
-    await page.setContent(`<style>${allCss}</style>`
-      + `<section class="data-prep"><div class="prep-document-bar">`
+defineHoverCases('prep-document-bar-label hover', {
+  html: `<section class="data-prep"><div class="prep-document-bar">`
       + `<label id="docLabel">Dataset name<input type="text"></label>`
       + `<div class="prep-actions"><label id="nestedLabel">Nested<input type="text"></label></div>`
-      + `</div><form class="prep-step-editor"><label id="outsideLabel">Step name (optional)<input type="text"></label></form></section>`);
-    const actual = await page.evaluate(() => {
-      const all = [...document.styleSheets].flatMap(s => [...s.cssRules]);
-      const norm = r => (r.selectorText || '').replaceAll('"', '');
-      const found = all.find(r => norm(r) === '.prep-document-bar > label:hover') ?? null;
-      const measure = (el, rule) => {
-        const rest = { background: getComputedStyle(el).backgroundColor, color: getComputedStyle(el).color, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        if (rule) { for (const prop of rule.style) el.style.setProperty(prop, rule.style.getPropertyValue(prop)); }
-        const hovered = { background: getComputedStyle(el).backgroundColor, color: getComputedStyle(el).color, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        el.removeAttribute('style');
-        return { rest, hovered };
-      };
-      const bare = found ? found.selectorText.replaceAll(':hover', '') : '';
-      const el = id => document.querySelector(`#${id}`);
-      return {
-        found: !!found,
-        props: found ? [...found.style] : [],
-        label: found ? measure(el('docLabel'), found) : null,
-        nestedMatches: found ? el('nestedLabel').matches(bare) : null,
-        outsideMatches: found ? el('outsideLabel').matches(bare) : null,
-      };
-    });
-    assert.ok(actual.found, 'expected the hover rule in the CSSOM');
-    assert.ok(actual.props.length && actual.props.every(p => p.startsWith('background')), 'hover rule must set background longhands only');
-    assert.equal(actual.label.rest.background, 'rgba(0, 0, 0, 0)', 'document-bar label rest (transparent)');
-    assert.equal(actual.label.hovered.background, 'rgb(237, 246, 252)', 'document-bar label hover');
-    assert.notEqual(actual.label.rest.background, actual.label.hovered.background);
-    assert.equal(actual.label.rest.color, actual.label.hovered.color, 'document-bar label colour unchanged on hover');
-    assert.equal(actual.label.rest.box, actual.label.hovered.box, 'document-bar label geometry');
-    assert.equal(actual.nestedMatches, false, 'a label nested inside the bar but not a direct child must be out of scope');
-    assert.equal(actual.outsideMatches, false, 'a label outside the document bar must be out of scope');
-  });
+      + `</div><form class="prep-step-editor"><label id="outsideLabel">Step name (optional)<input type="text"></label></form></section>`,
+  cases: [
+    {
+      target: '#docLabel',
+      rule: '.prep-document-bar > label:hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(237, 246, 252)' },
+      paintOnly: true,
+      unchanged: ['color'],
+      excluded: ['#nestedLabel', '#outsideLabel'],
+    },
+  ],
 });

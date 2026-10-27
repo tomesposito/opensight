@@ -1,7 +1,6 @@
-import { after, before, describe, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import { chromiumPage } from './chromium.mjs';
+import { defineHoverCases, styles } from './interaction.mjs';
 
 // Issue #108 polish slice 118: hover feedback for the rename-sheet
 // form's label and input (.rename-sheet label / input — "Sheet
@@ -32,9 +31,7 @@ import { chromiumPage } from './chromium.mjs';
 // the same tint, hovering either reads as one surface, not two
 // steps. Background only, so resting geometry is identical and
 // there is no animation.
-const styleCss = await readFile(new URL('../src/style.css', import.meta.url), 'utf8');
-const allCss = (await Promise.all(['style.css', 'app-chrome.css', 'data-section.css', 'embed.css', 'sign-in.css']
-  .map(name => readFile(new URL(`../src/${name}`, import.meta.url), 'utf8')))).join('\n');
+const styleCss = styles['style.css'];
 
 const labelRule = styleCss.match(/^\.rename-sheet label:hover\s*\{([^}]*)\}/m);
 const labelDarkRule = styleCss.match(/^\.author-workspace\[data-chrome=dark\] \.rename-sheet label:hover\s*\{([^}]*)\}/m);
@@ -74,62 +71,47 @@ test('the resting rename-sheet and shared label rules are preserved', () => {
   assert.ok(styleCss.match(/\.author-workspace button:hover:not\(:disabled\)/), 'the author button hover for the form buttons must remain');
 });
 
-describe('Rename-sheet hover in offline Chromium', () => {
-  let page;
-  before(async () => { page = await chromiumPage(); });
-  after(async () => { await page?.close(); });
-
-  test('applying the hover rules changes the label and input visual state with identical geometry in the real ancestor context in both chromes, and labels/inputs outside the rename form are out of scope', async () => {
-    const ctx = (id, dark) => `<div class="author-workspace" ${dark ? 'data-chrome="dark"' : ''}><div class="author-center"><div class="sheet-toolbar">`
+const ctx = (id, dark) => `<div class="author-workspace" ${dark ? 'data-chrome="dark"' : ''}><div class="author-center"><div class="sheet-toolbar">`
       + `<form class="rename-sheet"><label id="${id}Label">Sheet name<input id="${id}Input" value="Sheet 1"/></label>`
       + `<button type="submit">Save name</button><button type="button">Cancel</button></form>`
       + `</div></div></div>`;
-    await page.setContent(`<style>${allCss}</style>` + ctx('l', false) + ctx('d', true)
-      + `<label id="outsideLabel">Outside<input id="outsideInput"/></label>`);
-    const actual = await page.evaluate(() => {
-      const all = [...document.styleSheets].flatMap(s => [...s.cssRules]);
-      const norm = r => (r.selectorText || '').replaceAll('"', '');
-      const label = all.find(r => norm(r) === '.rename-sheet label:hover') ?? null;
-      const labelDark = all.find(r => norm(r) === '.author-workspace[data-chrome=dark] .rename-sheet label:hover') ?? null;
-      const input = all.find(r => norm(r) === '.rename-sheet input:hover:not(:disabled)') ?? null;
-      const inputDark = all.find(r => norm(r) === '.author-workspace[data-chrome=dark] .rename-sheet input:hover:not(:disabled)') ?? null;
-      const measure = (el, rule) => {
-        const rest = { background: getComputedStyle(el).backgroundColor, color: getComputedStyle(el).color, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        if (rule) { for (const prop of rule.style) el.style.setProperty(prop, rule.style.getPropertyValue(prop)); }
-        const hovered = { background: getComputedStyle(el).backgroundColor, color: getComputedStyle(el).color, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        el.removeAttribute('style');
-        return { rest, hovered };
-      };
-      const el = id => document.querySelector(`#${id}`);
-      return {
-        found: { label: !!label, labelDark: !!labelDark, input: !!input, inputDark: !!inputDark },
-        props: [label, labelDark, input, inputDark].map(r => r ? [...r.style] : []),
-        lLabel: label ? measure(el('lLabel'), label) : null,
-        dLabel: labelDark ? measure(el('dLabel'), labelDark) : null,
-        lInput: input ? measure(el('lInput'), input) : null,
-        dInput: inputDark ? measure(el('dInput'), inputDark) : null,
-        outsideLabelMatches: label ? el('outsideLabel').matches(label.selectorText.replaceAll(':hover', '')) : null,
-        outsideInputMatches: input ? el('outsideInput').matches(input.selectorText.replaceAll(':hover', '').replaceAll(':not(:disabled)', '')) : null,
-      };
-    });
-    assert.deepEqual(actual.found, { label: true, labelDark: true, input: true, inputDark: true }, 'expected all four hover rules in the CSSOM');
-    for (const props of actual.props) {
-      assert.ok(props.length && props.every(p => p.startsWith('background')), 'hover rules must set background longhands only');
-    }
-    for (const [key, tint] of [['lLabel', 'rgb(237, 247, 247)'], ['lInput', 'rgb(237, 247, 247)']]) {
-      assert.equal(actual[key].rest.background, key === 'lLabel' ? 'rgba(0, 0, 0, 0)' : 'rgb(255, 255, 255)', `${key} rest`);
-      assert.equal(actual[key].hovered.background, tint, `${key} hover`);
-      assert.notEqual(actual[key].rest.background, actual[key].hovered.background);
-      assert.equal(actual[key].rest.color, actual[key].hovered.color, `${key} colour unchanged on hover`);
-      assert.equal(actual[key].rest.box, actual[key].hovered.box, `${key} geometry`);
-    }
-    for (const key of ['dLabel', 'dInput']) {
-      assert.equal(actual[key].hovered.background, 'rgb(51, 76, 98)', `${key} hover`);
-      assert.notEqual(actual[key].rest.background, actual[key].hovered.background);
-      assert.equal(actual[key].rest.color, actual[key].hovered.color, `${key} colour unchanged on hover`);
-      assert.equal(actual[key].rest.box, actual[key].hovered.box, `${key} geometry`);
-    }
-    assert.equal(actual.outsideLabelMatches, false, 'a label outside .rename-sheet must be out of scope');
-    assert.equal(actual.outsideInputMatches, false, 'an input outside .rename-sheet must be out of scope');
-  });
+
+defineHoverCases('rename-sheet hover', {
+  html: `` + ctx('l', false) + ctx('d', true)
+      + `<label id="outsideLabel">Outside<input id="outsideInput"/></label>`,
+  cases: [
+    {
+      target: '#lLabel',
+      rule: '.rename-sheet label:hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      paintOnly: true,
+      unchanged: ['color'],
+      excluded: ['#outsideLabel', '#outsideInput'],
+    },
+    {
+      target: '#dLabel',
+      rule: '.author-workspace[data-chrome="dark"] .rename-sheet label:hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(51, 76, 98)' },
+      paintOnly: true,
+      unchanged: ['color'],
+    },
+    {
+      target: '#lInput',
+      rule: '.rename-sheet input:hover:not(:disabled)',
+      resting: { backgroundColor: 'rgb(255, 255, 255)' },
+      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      paintOnly: true,
+      unchanged: ['color'],
+    },
+    {
+      target: '#dInput',
+      rule: '.author-workspace[data-chrome="dark"] .rename-sheet input:hover:not(:disabled)',
+      resting: { backgroundColor: 'rgb(32, 46, 64)' },
+      hovered: { backgroundColor: 'rgb(51, 76, 98)' },
+      paintOnly: true,
+      unchanged: ['color'],
+    },
+  ],
 });

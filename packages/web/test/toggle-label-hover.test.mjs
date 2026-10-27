@@ -1,7 +1,6 @@
-import { after, before, describe, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import { chromiumPage } from './chromium.mjs';
+import { defineHoverCases, styles } from './interaction.mjs';
 
 // Issue #108 polish slice 97: hover feedback for the Properties panels'
 // toggle labels (label.toggle in Author.tsx / PropertiesSections.tsx /
@@ -29,9 +28,7 @@ import { chromiumPage } from './chromium.mjs';
 // dark hover tint (#334c62, the dark button and field hovers).
 // Background only, so resting geometry is identical and there is no
 // animation.
-const styleCss = await readFile(new URL('../src/style.css', import.meta.url), 'utf8');
-const allCss = (await Promise.all(['style.css', 'app-chrome.css', 'data-section.css', 'embed.css', 'sign-in.css']
-  .map(name => readFile(new URL(`../src/${name}`, import.meta.url), 'utf8')))).join('\n');
+const styleCss = styles['style.css'];
 
 const rule = styleCss.match(/^label\.toggle:hover\s*\{([^}]*)\}/m);
 const darkRule = styleCss.match(/^\.author-workspace\[data-chrome=dark\] label\.toggle:hover\s*\{([^}]*)\}/m);
@@ -61,65 +58,32 @@ test('the resting toggle rules are preserved, the checkbox has no hover rule of 
   assert.ok(styleCss.match(/\.author-workspace\[data-chrome=dark\] button:hover:not\(:disabled\)\s*\{[^}]*background:\s*#334c62/), 'the author dark button hover must remain #334c62');
 });
 
-describe('Toggle label hover in offline Chromium', () => {
-  let page;
-  before(async () => { page = await chromiumPage(); });
-  after(async () => { await page?.close(); });
-
-  test('applying the hover rules changes the label visual state with identical geometry in the light and dark author contexts, and the checkbox, the div.toggle row and outside labels are out of scope', async () => {
-    await page.setContent(`<style>${allCss}</style>`
-      + `<div class="author-workspace"><div class="author-layout"><aside class="builder-panel properties-panel"><div class="panel-content">`
+defineHoverCases('toggle-label hover', {
+  html: `<div class="author-workspace"><div class="author-layout"><aside class="builder-panel properties-panel"><div class="panel-content">`
       + `<label class="toggle" id="toggleLabel"><input id="toggleBox" type="checkbox">Show legend</label>`
       + `<div class="toggle" id="toggleDiv"><span>Extra field</span></div>`
       + `</div></aside></div></div>`
       + `<div class="author-workspace" data-chrome="dark"><div class="author-layout"><aside class="builder-panel properties-panel"><div class="panel-content">`
       + `<label class="toggle" id="toggleDark"><input type="checkbox">Show legend</label></div></aside></div></div>`
-      + `<label id="outsideLabel"><input type="checkbox">Other toggle</label>`);
-    const actual = await page.evaluate(() => {
-      const all = [...document.styleSheets].flatMap(s => [...s.cssRules]);
-      const found = all.find(r => (r.selectorText || '') === 'label.toggle:hover') ?? null;
-      const darkFound = all.find(r => (r.selectorText || '').replaceAll('"', '') === '.author-workspace[data-chrome=dark] label.toggle:hover') ?? null;
-      const label = document.querySelector('#toggleLabel');
-      const darkLabel = document.querySelector('#toggleDark');
-      const box = document.querySelector('#toggleBox');
-      const measure = (el, rule) => {
-        const rest = { background: getComputedStyle(el).backgroundColor, color: getComputedStyle(el).color, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        if (rule) { for (const prop of rule.style) el.style.setProperty(prop, rule.style.getPropertyValue(prop)); }
-        const hovered = { background: getComputedStyle(el).backgroundColor, color: getComputedStyle(el).color, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        el.removeAttribute('style');
-        return { rest, hovered };
-      };
-      const bare = found ? found.selectorText.replaceAll(':hover', '') : '';
-      const darkBare = darkFound ? darkFound.selectorText.replaceAll(':hover', '') : '';
-      return {
-        found: !!found,
-        darkFound: !!darkFound,
-        props: found ? [...found.style] : [],
-        darkProps: darkFound ? [...darkFound.style] : [],
-        label: found ? measure(label, found) : null,
-        darkLabel: darkFound ? measure(darkLabel, darkFound) : null,
-        boxMatches: found ? box.matches(bare) : null,
-        divMatches: found ? document.querySelector('#toggleDiv').matches(bare) : null,
-        darkBoxMatches: darkFound ? darkLabel.querySelector('input').matches(darkBare) : null,
-        outsideMatches: found ? document.querySelector('#outsideLabel').matches(bare) : null,
-      };
-    });
-    assert.ok(actual.found, 'expected the hover rule in the CSSOM');
-    assert.ok(actual.darkFound, 'expected the dark-chrome hover rule in the CSSOM');
-    assert.ok(actual.props.length && actual.props.every(p => p.startsWith('background')), 'hover rule must set background longhands only');
-    assert.ok(actual.darkProps.length && actual.darkProps.every(p => p.startsWith('background')), 'dark hover rule must set background longhands only');
-    assert.equal(actual.label.rest.background, 'rgba(0, 0, 0, 0)', 'toggle label rest (transparent)');
-    assert.equal(actual.label.hovered.background, 'rgb(237, 247, 247)', 'toggle label hover');
-    assert.notEqual(actual.label.rest.background, actual.label.hovered.background);
-    assert.equal(actual.label.rest.color, actual.label.hovered.color, 'toggle label colour unchanged on hover');
-    assert.equal(actual.label.rest.box, actual.label.hovered.box, 'toggle label geometry');
-    assert.equal(actual.darkLabel.rest.background, 'rgba(0, 0, 0, 0)', 'dark toggle label rest (transparent)');
-    assert.equal(actual.darkLabel.hovered.background, 'rgb(51, 76, 98)', 'dark toggle label hover');
-    assert.equal(actual.darkLabel.rest.color, actual.darkLabel.hovered.color, 'dark toggle label colour unchanged on hover');
-    assert.equal(actual.darkLabel.rest.box, actual.darkLabel.hovered.box, 'dark toggle label geometry');
-    assert.equal(actual.boxMatches, false, 'the checkbox inside label.toggle must be out of scope');
-    assert.equal(actual.divMatches, false, 'the div.toggle row must be out of scope');
-    assert.equal(actual.darkBoxMatches, false, 'the checkbox inside the dark label.toggle must be out of scope');
-    assert.equal(actual.outsideMatches, false, 'a label outside .toggle must be out of scope');
-  });
+      + `<label id="outsideLabel"><input type="checkbox">Other toggle</label>`,
+  cases: [
+    {
+      target: '#toggleLabel',
+      rule: 'label.toggle:hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      paintOnly: true,
+      unchanged: ['color'],
+      excluded: ['#toggleBox', '#toggleDiv', '#outsideLabel'],
+    },
+    {
+      target: '#toggleDark',
+      rule: '.author-workspace[data-chrome="dark"] label.toggle:hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(51, 76, 98)' },
+      paintOnly: true,
+      unchanged: ['color'],
+      excluded: ['#toggleDark > input:nth-child(1)'],
+    },
+  ],
 });

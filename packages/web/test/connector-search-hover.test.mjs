@@ -1,7 +1,6 @@
-import { after, before, describe, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import { chromiumPage } from './chromium.mjs';
+import { defineHoverCases, styles } from './interaction.mjs';
 
 // Issue #108 polish slice 90: hover feedback for the connector
 // gallery's search input (.connector-search input[type=search] in
@@ -22,8 +21,8 @@ import { chromiumPage } from './chromium.mjs';
 // 23/64). Background only, so resting colour and geometry are
 // unchanged. The gallery is a fixed-light app-shell surface, so no
 // dark variant is added.
-const css = await readFile(new URL('../src/style.css', import.meta.url), 'utf8');
-const dataCss = await readFile(new URL('../src/data-section.css', import.meta.url), 'utf8');
+const css = styles['style.css'];
+const dataCss = styles['data-section.css'];
 
 const rule = css.match(/^\.connector-search input\[type=search\]:hover:not\(:disabled\)\s*\{([^}]*)\}/m);
 
@@ -48,42 +47,20 @@ test('the resting connector-search rules are preserved', () => {
   assert.ok(css.match(/\.connector-card:hover\s*\{[^}]*background:\s*#f8fbff/), 'the connector-card hover must remain');
 });
 
-describe('Connector-search hover in offline Chromium', () => {
-  let page;
-  before(async () => { page = await chromiumPage(); });
-  after(async () => { await page?.close(); });
-
-  test('applying the hover rule changes the visual state with identical geometry, and search inputs outside .connector-search are out of scope', async () => {
-    await page.setContent(`<style>${css}</style>`
-      + `<div class="app-shell"><main><section class="data-sources"><div class="connector-layout"><div class="connector-picker">`
+defineHoverCases('connector-search hover', {
+  html: `<div class="app-shell"><main><section class="data-sources"><div class="connector-layout"><div class="connector-picker">`
       + `<label class="connector-search">Find a data source<input id="target" type="search" placeholder="Search data sources"></label>`
       + `</div></div></section></main></div>`
-      + `<input id="outside" type="search">`);
-    const actual = await page.evaluate(() => {
-      const all = [...document.styleSheets].flatMap(s => [...s.cssRules]);
-      const found = all.find(r => (r.selectorText || '').replaceAll('"', '') === '.connector-search input[type=search]:hover:not(:disabled)') ?? null;
-      const measure = (el, rule) => {
-        const rest = { background: getComputedStyle(el).backgroundColor, color: getComputedStyle(el).color, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        if (rule) { for (const prop of rule.style) el.style.setProperty(prop, rule.style.getPropertyValue(prop)); }
-        const hovered = { background: getComputedStyle(el).backgroundColor, color: getComputedStyle(el).color, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        el.removeAttribute('style');
-        return { rest, hovered };
-      };
-      const outside = document.querySelector('#outside');
-      return {
-        found: !!found,
-        props: found ? [...found.style] : [],
-        target: found ? measure(document.querySelector('#target'), found) : null,
-        outsideMatches: found ? outside.matches(found.selectorText.replaceAll(':hover', '')) : null,
-      };
-    });
-    assert.ok(actual.found, 'expected the hover rule in the CSSOM');
-    assert.ok(actual.props.length && actual.props.every(p => p.startsWith('background')), 'hover rule must set background longhands only');
-    assert.equal(actual.target.rest.background, 'rgb(255, 255, 255)', 'connector-search rest');
-    assert.equal(actual.target.hovered.background, 'rgb(234, 243, 247)', 'connector-search hover');
-    assert.notEqual(actual.target.rest.background, actual.target.hovered.background);
-    assert.equal(actual.target.rest.color, actual.target.hovered.color, 'connector-search colour unchanged on hover');
-    assert.equal(actual.target.rest.box, actual.target.hovered.box, 'connector-search geometry');
-    assert.equal(actual.outsideMatches, false, 'a search input outside .connector-search must be out of scope');
-  });
+      + `<input id="outside" type="search">`,
+  cases: [
+    {
+      target: '#target',
+      rule: '.connector-search input[type="search"]:hover:not(:disabled)',
+      resting: { backgroundColor: 'rgb(255, 255, 255)' },
+      hovered: { backgroundColor: 'rgb(234, 243, 247)' },
+      paintOnly: true,
+      unchanged: ['color'],
+      excluded: ['#outside'],
+    },
+  ],
 });

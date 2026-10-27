@@ -1,7 +1,6 @@
-import { after, before, describe, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import { chromiumPage } from './chromium.mjs';
+import { defineHoverCases, styles } from './interaction.mjs';
 
 // Issue #108 polish slice 70: hover feedback for the first-run page's
 // "Required API environment variables" disclosure summary (.first-run
@@ -18,7 +17,7 @@ import { chromiumPage } from './chromium.mjs';
 // .app-shell), so no app-shell rule reaches it either. It now takes
 // the first-run surface's own hover tint (#eaf3f4). Background only,
 // so resting geometry is identical and there is no animation.
-const styleCss = await readFile(new URL('../src/style.css', import.meta.url), 'utf8');
+const styleCss = styles['style.css'];
 
 const rule = styleCss.match(/\.first-run\s+summary:hover\s*\{([^}]*)\}/);
 
@@ -43,36 +42,17 @@ test('the neighbouring first-run hover rules are untouched', () => {
   assert.ok(styleCss.match(/\.first-run-docs a:hover\s*\{[^}]*background:\s*#eaf3f4/), 'slice 63 docs-link hover must remain');
 });
 
-describe('first-run summary hover in offline Chromium', () => {
-  let page;
-  before(async () => { page = await chromiumPage(); });
-  after(async () => { await page?.close(); });
-
-  test('applying the hover rule changes the visual state with identical geometry', async () => {
-    await page.setContent(`<style>${styleCss}</style>`
-      + `<div class="first-run"><main class="first-run-main"><div class="first-run-paths"><section class="first-run-setup"><details><summary id="s">Required API environment variables</summary></details></section></div></main></div>`
-      + `<details><summary id="outside">Outside summary</summary></details>`);
-    const actual = await page.evaluate(() => {
-      const all = [...document.styleSheets].flatMap(s => [...s.cssRules]);
-      const found = all.find(r => (r.selectorText || '') === '.first-run summary:hover') ?? null;
-      const measure = (el, rule) => {
-        const rest = { background: getComputedStyle(el).backgroundColor, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        if (rule) { for (const prop of rule.style) el.style.setProperty(prop, rule.style.getPropertyValue(prop)); }
-        const hovered = { background: getComputedStyle(el).backgroundColor, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        el.removeAttribute('style');
-        return { rest, hovered };
-      };
-      const matches = (el, rule) => rule ? el.matches(rule.selectorText.replaceAll(':hover', '')) : null;
-      return {
-        found: !!found,
-        s: found ? measure(document.querySelector('#s'), found) : null,
-        outsideMatches: matches(document.querySelector('#outside'), found),
-      };
-    });
-    assert.ok(actual.found, 'expected the hover rule in the CSSOM');
-    assert.equal(actual.s.rest.background, 'rgba(0, 0, 0, 0)', 'summary rest');
-    assert.equal(actual.s.hovered.background, 'rgb(234, 243, 244)', 'summary hover');
-    assert.equal(actual.s.rest.box, actual.s.hovered.box, 'summary geometry');
-    assert.equal(actual.outsideMatches, false, 'a summary outside .first-run must be out of scope');
-  });
+defineHoverCases('first-run-summary hover', {
+  html: `<div class="first-run"><main class="first-run-main"><div class="first-run-paths"><section class="first-run-setup"><details><summary id="s">Required API environment variables</summary></details></section></div></main></div>`
+      + `<details><summary id="outside">Outside summary</summary></details>`,
+  cases: [
+    {
+      target: '#s',
+      rule: '.first-run summary:hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(234, 243, 244)' },
+      paintOnly: true,
+      excluded: ['#outside'],
+    },
+  ],
 });

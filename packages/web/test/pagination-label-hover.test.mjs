@@ -1,7 +1,6 @@
-import { after, before, describe, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import { chromiumPage } from './chromium.mjs';
+import { defineHoverCases, styles } from './interaction.mjs';
 
 // Issue #108 polish slice 120: hover feedback for the Create Analysis
 // dialog's pagination label (.dataset-picker-pagination label —
@@ -25,9 +24,7 @@ import { chromiumPage } from './chromium.mjs';
 // either reads as one surface, not two steps. Background only, so
 // resting geometry is identical and there is no animation; the dialog
 // is a fixed-light surface, so no dark variant.
-const styleCss = await readFile(new URL('../src/style.css', import.meta.url), 'utf8');
-const allCss = (await Promise.all(['style.css', 'app-chrome.css', 'data-section.css', 'embed.css', 'sign-in.css']
-  .map(name => readFile(new URL(`../src/${name}`, import.meta.url), 'utf8')))).join('\n');
+const styleCss = styles['style.css'];
 
 const labelRule = styleCss.match(/^\.dataset-picker-pagination label:hover\s*\{([^}]*)\}/m);
 
@@ -53,44 +50,21 @@ test('the resting pagination rules are preserved', () => {
   assert.ok(styleCss.match(/\.dataset-picker-pagination select\s*\{[^}]*padding:\s*3px 6px/), 'the resting pagination select rule must remain');
 });
 
-describe('Pagination label hover in offline Chromium', () => {
-  let page;
-  before(async () => { page = await chromiumPage(); });
-  after(async () => { await page?.close(); });
-
-  test('applying the hover rule changes the label visual state with identical geometry in the real ancestor context, and labels outside the pagination row are out of scope', async () => {
-    await page.setContent(`<style>${allCss}</style>`
-      + `<dialog class="create-analysis-dialog" open><form>`
+defineHoverCases('pagination-label hover', {
+  html: `<dialog class="create-analysis-dialog" open><form>`
       + `<div class="dataset-picker-pagination"><label id="pageLabel">Items per page <select id="pageSelect"><option>25</option></select></label></div>`
       + `<label id="dialogLabel">Other label<input id="dialogInput"/></label>`
       + `</form></dialog>`
-      + `<div class="dataset-picker-pagination"><label id="outsideDialogLabel">Items per page <select><option>25</option></select></label></div>`);
-    const actual = await page.evaluate(() => {
-      const all = [...document.styleSheets].flatMap(s => [...s.cssRules]);
-      const norm = r => (r.selectorText || '').replaceAll('"', '');
-      const label = all.find(r => norm(r) === '.dataset-picker-pagination label:hover') ?? null;
-      const measure = (el, rule) => {
-        const rest = { background: getComputedStyle(el).backgroundColor, color: getComputedStyle(el).color, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        if (rule) { for (const prop of rule.style) el.style.setProperty(prop, rule.style.getPropertyValue(prop)); }
-        const hovered = { background: getComputedStyle(el).backgroundColor, color: getComputedStyle(el).color, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        el.removeAttribute('style');
-        return { rest, hovered };
-      };
-      const el = id => document.querySelector(`#${id}`);
-      return {
-        found: !!label,
-        props: label ? [...label.style] : [],
-        pageLabel: label ? measure(el('pageLabel'), label) : null,
-        dialogLabelMatches: label ? el('dialogLabel').matches(label.selectorText.replaceAll(':hover', '')) : null,
-      };
-    });
-    assert.equal(actual.found, true, 'expected the pagination label hover rule in the CSSOM');
-    assert.ok(actual.props.length && actual.props.every(p => p.startsWith('background')), 'hover rule must set background longhands only');
-    assert.equal(actual.pageLabel.rest.background, 'rgba(0, 0, 0, 0)', 'pageLabel rest');
-    assert.equal(actual.pageLabel.hovered.background, 'rgb(237, 247, 252)', 'pageLabel hover');
-    assert.notEqual(actual.pageLabel.rest.background, actual.pageLabel.hovered.background);
-    assert.equal(actual.pageLabel.rest.color, actual.pageLabel.hovered.color, 'pageLabel colour unchanged on hover');
-    assert.equal(actual.pageLabel.rest.box, actual.pageLabel.hovered.box, 'pageLabel geometry');
-    assert.equal(actual.dialogLabelMatches, false, 'a label inside the dialog but outside .dataset-picker-pagination must be out of scope');
-  });
+      + `<div class="dataset-picker-pagination"><label id="outsideDialogLabel">Items per page <select><option>25</option></select></label></div>`,
+  cases: [
+    {
+      target: '#pageLabel',
+      rule: '.dataset-picker-pagination label:hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(237, 247, 252)' },
+      paintOnly: true,
+      unchanged: ['color'],
+      excluded: ['#dialogLabel'],
+    },
+  ],
 });

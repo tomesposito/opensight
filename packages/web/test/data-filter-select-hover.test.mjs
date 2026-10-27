@@ -1,7 +1,6 @@
-import { after, before, describe, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import { chromiumPage } from './chromium.mjs';
+import { defineHoverCases, styles } from './interaction.mjs';
 
 // Issue #108 polish slice 21: hover feedback for the Data landing's dataset
 // filter select. A fresh interactive-state audit of the landing surfaces
@@ -13,7 +12,7 @@ import { chromiumPage } from './chromium.mjs';
 // disabled selects (e.g. the dataset-permissions select) keep their flat
 // state. Background only, so resting geometry is identical. Static (no
 // animation), so no reduced-motion variant is needed.
-const css = await readFile(new URL('../src/data-section.css', import.meta.url), 'utf8');
+const css = styles['data-section.css'];
 
 const hoverRule = css.match(/\.data-page\s+select:hover:not\(:disabled\)\s*\{([^}]*)\}/);
 
@@ -36,47 +35,16 @@ test('the resting select rule still reserves the geometry the hover keeps', () =
   assert.match(resting[2], /background:\s*white/);
 });
 
-describe('data-page filter select hover in offline Chromium', () => {
-  let page;
-  before(async () => { page = await chromiumPage(); });
-  after(async () => { await page?.close(); });
-
-  test('applying the hover rule changes the visual state with identical geometry', async () => {
-    await page.setContent(`<style>${css}</style><section class="data-page"><div class="data-tools"><select aria-label="Filter datasets"><option value="all">All datasets</option><option value="cached">Cached datasets</option></select><select aria-label="Disabled filter" disabled><option>Owner</option></select></div></section>`);
-    const actual = await page.evaluate(() => {
-      const rules = [];
-      for (const sheet of document.styleSheets) {
-        for (const rule of sheet.cssRules) {
-          if (rule.selectorText === '.data-page select:hover:not(:disabled)') rules.push(rule);
-        }
-      }
-      const enabled = document.querySelector('.data-page select:not([disabled])');
-      const disabled = document.querySelector('.data-page select[disabled]');
-      const rest = { background: getComputedStyle(enabled).backgroundColor, box: JSON.stringify(enabled.getBoundingClientRect().toJSON()) };
-      // Simulate the matched rule: copy its declarations onto the enabled
-      // select exactly as the browser cascade would apply them on hover.
-      const hover = rules[0];
-      for (const prop of hover.style) enabled.style.setProperty(prop, hover.style.getPropertyValue(prop));
-      const hovered = { background: getComputedStyle(enabled).backgroundColor, box: JSON.stringify(enabled.getBoundingClientRect().toJSON()) };
-      const disabledHover = { background: getComputedStyle(disabled).backgroundColor, box: JSON.stringify(disabled.getBoundingClientRect().toJSON()), matches: disabled.matches('.data-page select:hover:not(:disabled)') };
-      return {
-        ruleCount: rules.length,
-        // The browser expands the `background` shorthand into longhands; the
-        // rule must set only background longhands, with the menu tint color.
-        props: rules.length ? [...rules[0].style] : [],
-        backgroundColor: rules.length ? rules[0].style.getPropertyValue('background-color') : null,
-        rest, hovered, disabledHover,
-        enabledMatches: enabled.matches('.data-page select:not(:disabled)'),
-      };
-    });
-    assert.equal(actual.ruleCount, 1);
-    assert.ok(actual.props.length && actual.props.every(p => p.startsWith('background')), 'hover rule must set background longhands only');
-    assert.equal(actual.backgroundColor, 'rgb(234, 243, 247)');
-    assert.equal(actual.rest.background, 'rgb(255, 255, 255)');
-    assert.equal(actual.hovered.background, 'rgb(234, 243, 247)');
-    assert.equal(actual.rest.box, actual.hovered.box);
-    assert.ok(actual.enabledMatches);
-    assert.equal(actual.disabledHover.matches, false);
-    assert.equal(actual.disabledHover.background, 'rgb(255, 255, 255)');
-  });
+defineHoverCases('data-filter-select hover', {
+  html: `<section class="data-page"><div class="data-tools"><select aria-label="Filter datasets"><option value="all">All datasets</option><option value="cached">Cached datasets</option></select><select aria-label="Disabled filter" disabled><option>Owner</option></select></div></section>`,
+  cases: [
+    {
+      target: '.data-page select:not([disabled])',
+      rule: '.data-page select:hover:not(:disabled)',
+      resting: { backgroundColor: 'rgb(255, 255, 255)' },
+      hovered: { backgroundColor: 'rgb(234, 243, 247)' },
+      paintOnly: true,
+      excluded: [{ target: '.data-page select[disabled]', resting: { backgroundColor: 'rgb(255, 255, 255)' } }],
+    },
+  ],
 });

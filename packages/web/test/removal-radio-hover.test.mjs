@@ -1,7 +1,6 @@
-import { after, before, describe, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import { chromiumPage } from './chromium.mjs';
+import { defineHoverCases, styles } from './interaction.mjs';
 
 // Issue #108 polish slice 102: hover feedback for the operator
 // user-removal dialog's radio labels (.admin-settings [role=dialog]
@@ -32,9 +31,7 @@ import { chromiumPage } from './chromium.mjs';
 // hovers via the admin select hover. The admin surface is fixed
 // light, so no dark variant. Background only, so resting geometry is
 // identical and there is no animation.
-const styleCss = await readFile(new URL('../src/style.css', import.meta.url), 'utf8');
-const allCss = (await Promise.all(['style.css', 'app-chrome.css', 'data-section.css', 'embed.css', 'sign-in.css']
-  .map(name => readFile(new URL(`../src/${name}`, import.meta.url), 'utf8')))).join('\n');
+const styleCss = styles['style.css'];
 
 const rule = styleCss.match(/^\.admin-settings \[role="dialog"\] label:has\(> input\[type=radio\]\):hover\s*\{([^}]*)\}/m);
 
@@ -60,54 +57,31 @@ test('the resting removal dialog rules are preserved and the radio has no hover 
   assert.ok(!/data-chrome=dark[^\n]*removal|\.admin-settings \[data-chrome/.test(styleCss), 'the fixed-light admin surface must not gain a dark variant for this rule');
 });
 
-describe('Removal dialog radio label hover in offline Chromium', () => {
-  let page;
-  before(async () => { page = await chromiumPage(); });
-  after(async () => { await page?.close(); });
-
-  test('applying the hover rule changes the label visual state with identical geometry in the real ancestor context, and the radio, the owner label and outside labels are out of scope', async () => {
-    await page.setContent(`<style>${allCss}</style>`
-      + `<main class="admin-settings"><section role="dialog" class="automation-notice"><h2>Remove user u1</h2>`
+defineHoverCases('removal-radio hover', {
+  html: `<main class="admin-settings"><section role="dialog" class="automation-notice"><h2>Remove user u1</h2>`
       + `<fieldset><legend>Owned schedules</legend>`
       + `<label id="transferLabel"><input id="transferRadio" type="radio" name="job-disposition">Transfer schedules to another user</label>`
       + `<label id="ownerLabel">New schedule owner<select aria-label="New schedule owner"><option>Choose a user</option></select></label>`
       + `<label id="stopLabel"><input type="radio" name="job-disposition">Stop schedules</label>`
       + `</fieldset></section>`
-      + `<label id="outsideLabel"><input type="radio">Other label</label></main>`);
-    const actual = await page.evaluate(() => {
-      const all = [...document.styleSheets].flatMap(s => [...s.cssRules]);
-      const norm = r => (r.selectorText || '').replaceAll('"', '');
-      const found = all.find(r => norm(r) === '.admin-settings [role=dialog] label:has(> input[type=radio]):hover') ?? null;
-      const measure = (el, rule) => {
-        const rest = { background: getComputedStyle(el).backgroundColor, color: getComputedStyle(el).color, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        if (rule) { for (const prop of rule.style) el.style.setProperty(prop, rule.style.getPropertyValue(prop)); }
-        const hovered = { background: getComputedStyle(el).backgroundColor, color: getComputedStyle(el).color, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        el.removeAttribute('style');
-        return { rest, hovered };
-      };
-      const bare = found ? found.selectorText.replaceAll(':hover', '') : '';
-      const el = id => document.querySelector(`#${id}`);
-      return {
-        found: !!found,
-        props: found ? [...found.style] : [],
-        transfer: found ? measure(el('transferLabel'), found) : null,
-        stop: found ? measure(el('stopLabel'), found) : null,
-        radioMatches: found ? el('transferRadio').matches(bare) : null,
-        ownerMatches: found ? el('ownerLabel').matches(bare) : null,
-        outsideMatches: found ? el('outsideLabel').matches(bare) : null,
-      };
-    });
-    assert.ok(actual.found, 'expected the hover rule in the CSSOM');
-    assert.ok(actual.props.length && actual.props.every(p => p.startsWith('background')), 'hover rule must set background longhands only');
-    for (const [name, ctx] of [['transfer', actual.transfer], ['stop', actual.stop]]) {
-      assert.equal(ctx.rest.background, 'rgba(0, 0, 0, 0)', `${name} label rest (transparent)`);
-      assert.equal(ctx.hovered.background, 'rgb(237, 247, 247)', `${name} label hover`);
-      assert.notEqual(ctx.rest.background, ctx.hovered.background);
-      assert.equal(ctx.rest.color, ctx.hovered.color, `${name} label colour unchanged on hover`);
-      assert.equal(ctx.rest.box, ctx.hovered.box, `${name} label geometry`);
-    }
-    assert.equal(actual.radioMatches, false, 'the radio inside the label must be out of scope');
-    assert.equal(actual.ownerMatches, false, 'the schedule-owner label in the same fieldset must be out of scope (its select already hovers)');
-    assert.equal(actual.outsideMatches, false, 'a radio label outside the admin dialog must be out of scope');
-  });
+      + `<label id="outsideLabel"><input type="radio">Other label</label></main>`,
+  cases: [
+    {
+      target: '#transferLabel',
+      rule: '.admin-settings [role="dialog"] label:has(> input[type="radio"]):hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      paintOnly: true,
+      unchanged: ['color'],
+      excluded: ['#transferRadio', '#ownerLabel', '#outsideLabel'],
+    },
+    {
+      target: '#stopLabel',
+      rule: '.admin-settings [role="dialog"] label:has(> input[type="radio"]):hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      paintOnly: true,
+      unchanged: ['color'],
+    },
+  ],
 });

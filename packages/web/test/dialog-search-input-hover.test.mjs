@@ -1,7 +1,6 @@
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import { chromiumPage } from './chromium.mjs';
+import { defineHoverCases, styles } from './interaction.mjs';
 
 // Issue #108 polish slice 48: hover feedback for the creation dialogs'
 // search inputs. A fresh behavioral hover audit that OPENED both creation
@@ -24,8 +23,8 @@ import { chromiumPage } from './chromium.mjs';
 // connector tiles — by-design native controls (slices 33/37/38 precedent);
 // the connector tiles are a selection-card affordance, a separate lead.
 // Static (no animation), so no reduced-motion variant is needed.
-const dataCss = await readFile(new URL('../src/data-section.css', import.meta.url), 'utf8');
-const styleCss = await readFile(new URL('../src/style.css', import.meta.url), 'utf8');
+const dataCss = styles['data-section.css'];
+const styleCss = styles['style.css'];
 
 const dataRule = dataCss.match(/\.data-dialog\s+input\[type=search\]:hover:not\(:disabled\)\s*\{([^}]*)\}/);
 const createRule = styleCss.match(/\.create-analysis-dialog\s+input\[type=search\]:hover:not\(:disabled\)\s*\{([^}]*)\}/);
@@ -59,51 +58,25 @@ test('the new rules coexist with the earlier dialog hover rules', () => {
   assert.ok(styleCss.match(/\.create-analysis-dialog\s+select:hover:not\(:disabled\)\s*\{[^}]*background:\s*#edf7fc/), 'slice-23 create-analysis select rule must still be present');
 });
 
-{
-  let page;
-  before(async () => { page = await chromiumPage(); });
-  after(async () => { await page?.close(); });
-
-  test('applying the hover rules changes the visual state with identical geometry', async () => {
-    await page.setContent(`<style>${dataCss}</style><style>${styleCss}</style>
+defineHoverCases('dialog-search-input hover', {
+  html: `
       <div class="data-dialog"><div class="data-dialog-tools"><input type="search" aria-label="Search data sources"><input type="search" aria-label="Disabled search" disabled></div></div>
-      <dialog class="create-analysis-dialog" open><div class="dataset-picker-search"><input type="search" aria-label="Search datasets by name"></div></dialog>`);
-    const actual = await page.evaluate(() => {
-      const found = {};
-      for (const sheet of document.styleSheets) {
-        for (const rule of sheet.cssRules) {
-          const sel = (rule.selectorText || '').replace(/"/g, '');
-          if (sel === '.data-dialog input[type=search]:hover:not(:disabled)') found.data = rule;
-          if (sel === '.create-analysis-dialog input[type=search]:hover:not(:disabled)') found.create = rule;
-        }
-      }
-      const measure = (input, rule) => {
-        const rest = { background: getComputedStyle(input).backgroundColor, box: JSON.stringify(input.getBoundingClientRect().toJSON()) };
-        for (const prop of rule.style) input.style.setProperty(prop, rule.style.getPropertyValue(prop));
-        const hovered = { background: getComputedStyle(input).backgroundColor, box: JSON.stringify(input.getBoundingClientRect().toJSON()) };
-        return { rest, hovered, props: [...rule.style] };
-      };
-      const dataInput = document.querySelector('.data-dialog input:not([disabled])');
-      const disabled = document.querySelector('.data-dialog input[disabled]');
-      const createInput = document.querySelector('.create-analysis-dialog input');
-      return {
-        data: found.data ? measure(dataInput, found.data) : null,
-        create: found.create ? measure(createInput, found.create) : null,
-        disabledMatches: disabled.matches('.data-dialog input[type=search]:hover:not(:disabled)'),
-        disabledBackground: getComputedStyle(disabled).backgroundColor,
-      };
-    });
-    assert.ok(actual.data, 'expected the data-dialog hover rule in the CSSOM');
-    assert.ok(actual.create, 'expected the create-analysis hover rule in the CSSOM');
-    assert.ok(actual.data.props.every(p => p.startsWith('background')), 'data hover must set background only');
-    assert.ok(actual.create.props.every(p => p.startsWith('background')), 'create hover must set background only');
-    assert.equal(actual.data.rest.background, 'rgb(255, 255, 255)');
-    assert.equal(actual.data.hovered.background, 'rgb(234, 243, 247)');
-    assert.equal(actual.data.rest.box, actual.data.hovered.box);
-    assert.equal(actual.create.rest.background, 'rgb(255, 255, 255)');
-    assert.equal(actual.create.hovered.background, 'rgb(237, 247, 252)');
-    assert.equal(actual.create.rest.box, actual.create.hovered.box);
-    assert.equal(actual.disabledMatches, false);
-    assert.equal(actual.disabledBackground, 'rgb(255, 255, 255)');
-  });
-}
+      <dialog class="create-analysis-dialog" open><div class="dataset-picker-search"><input type="search" aria-label="Search datasets by name"></div></dialog>`,
+  cases: [
+    {
+      target: '.data-dialog input:not([disabled])',
+      rule: '.data-dialog input[type="search"]:hover:not(:disabled)',
+      resting: { backgroundColor: 'rgb(255, 255, 255)' },
+      hovered: { backgroundColor: 'rgb(234, 243, 247)' },
+      paintOnly: true,
+      excluded: [{ target: '.data-dialog input[disabled]', resting: { backgroundColor: 'rgb(255, 255, 255)' } }],
+    },
+    {
+      target: '.create-analysis-dialog input',
+      rule: '.create-analysis-dialog input[type="search"]:hover:not(:disabled)',
+      resting: { backgroundColor: 'rgb(255, 255, 255)' },
+      hovered: { backgroundColor: 'rgb(237, 247, 252)' },
+      paintOnly: true,
+    },
+  ],
+});

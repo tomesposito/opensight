@@ -1,7 +1,6 @@
-import { after, before, describe, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import { chromiumPage } from './chromium.mjs';
+import { defineHoverCases, styles } from './interaction.mjs';
 
 // Issue #108 polish slice 129: hover feedback for the fixture-picker label
 // (.product-header .fixture-picker in Application.tsx, rendered as children
@@ -25,10 +24,8 @@ import { chromiumPage } from './chromium.mjs';
 // surface. No colour change: the label text is already the light #d0e0e8,
 // readable on #365764. Background only, so resting geometry is identical
 // and there is no animation.
-const chromeCss = await readFile(new URL('../src/app-chrome.css', import.meta.url), 'utf8');
-const styleCss = await readFile(new URL('../src/style.css', import.meta.url), 'utf8');
-const allCss = (await Promise.all(['style.css', 'app-chrome.css', 'data-section.css', 'embed.css', 'sign-in.css']
-  .map(name => readFile(new URL(`../src/${name}`, import.meta.url), 'utf8')))).join('\n');
+const chromeCss = styles['app-chrome.css'];
+const styleCss = styles['style.css'];
 
 const labelRule = chromeCss.match(/^\.product-header \.fixture-picker:hover\s*\{([^}]*)\}/m);
 
@@ -54,43 +51,17 @@ test('the resting fixture-picker rules are preserved', () => {
   assert.ok(chromeCss.match(/\.product-header \.fixture-picker select:hover:not\(:disabled\)\s*\{[^}]*background:\s*#365764[^}]*color:\s*#fff/), 'the slice-33 select hover must remain');
 });
 
-describe('Fixture-picker label hover in offline Chromium', () => {
-  let page;
-  before(async () => { page = await chromiumPage(); });
-  after(async () => { await page?.close(); });
-
-  test('applying the hover rule changes the label visual state with identical geometry, and labels outside the header fixture-picker are out of scope', async () => {
-    await page.setContent(`<style>${allCss}</style>`
-      + `<div class="app-shell"><header class="app-header product-header"><a class="brand" href="#/home">OpenSight</a><label class="fixture-picker" id="fpLabel">Definition example<select><option>TotalDeathByCountry</option></select></label></header><main><label class="fixture-picker" id="outsideLabel">Other<select><option>x</option></select></label><header class="product-header"><label id="plainLabel">Plain</label></header></main></div>`);
-    const actual = await page.evaluate(() => {
-      const all = [...document.styleSheets].flatMap(s => [...s.cssRules]);
-      const norm = r => (r.selectorText || '').replaceAll('"', '');
-      const rule = all.find(r => norm(r) === '.product-header .fixture-picker:hover') ?? null;
-      const el = id => document.querySelector(`#${id}`);
-      const measure = (target, found) => {
-        const rest = { background: getComputedStyle(target).backgroundColor, color: getComputedStyle(target).color, box: JSON.stringify(target.getBoundingClientRect().toJSON()) };
-        if (found) { for (const prop of found.style) target.style.setProperty(prop, found.style.getPropertyValue(prop)); }
-        const hovered = { background: getComputedStyle(target).backgroundColor, color: getComputedStyle(target).color, box: JSON.stringify(target.getBoundingClientRect().toJSON()) };
-        target.removeAttribute('style');
-        return { rest, hovered };
-      };
-      return {
-        found: !!rule,
-        props: rule ? [...rule.style] : [],
-        label: rule ? measure(el('fpLabel'), rule) : null,
-        outsideMatches: el('outsideLabel').matches('.product-header .fixture-picker'),
-        plainMatches: el('plainLabel').matches('.product-header .fixture-picker'),
-      };
-    });
-    assert.equal(actual.found, true, 'expected the hover rule in the CSSOM');
-    assert.ok(actual.props.length && actual.props.every(p => p.startsWith('background')), 'hover rule must set background longhands only');
-    assert.equal(actual.label.rest.background, 'rgba(0, 0, 0, 0)', 'label rest');
-    assert.equal(actual.label.hovered.background, 'rgb(54, 87, 100)', 'label hover');
-    assert.notEqual(actual.label.rest.background, actual.label.hovered.background);
-    assert.equal(actual.label.rest.color, 'rgb(208, 224, 232)', 'label rest colour');
-    assert.equal(actual.label.rest.color, actual.label.hovered.color, 'label colour unchanged on hover');
-    assert.equal(actual.label.rest.box, actual.label.hovered.box, 'label geometry');
-    assert.equal(actual.outsideMatches, false, 'a fixture-picker label outside .product-header must be out of scope');
-    assert.equal(actual.plainMatches, false, 'a plain label inside .product-header must be out of scope');
-  });
+defineHoverCases('fixture-picker-label hover', {
+  html: `<div class="app-shell"><header class="app-header product-header"><a class="brand" href="#/home">OpenSight</a><label class="fixture-picker" id="fpLabel">Definition example<select><option>TotalDeathByCountry</option></select></label></header><main><label class="fixture-picker" id="outsideLabel">Other<select><option>x</option></select></label><header class="product-header"><label id="plainLabel">Plain</label></header></main></div>`,
+  cases: [
+    {
+      target: '#fpLabel',
+      rule: '.product-header .fixture-picker:hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)', color: 'rgb(208, 224, 232)' },
+      hovered: { backgroundColor: 'rgb(54, 87, 100)' },
+      paintOnly: true,
+      unchanged: ['color'],
+      excluded: ['#outsideLabel', '#plainLabel'],
+    },
+  ],
 });

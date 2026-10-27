@@ -1,7 +1,6 @@
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import { chromiumPage } from './chromium.mjs';
+import { defineHoverCases, styles } from './interaction.mjs';
 
 // Issue #108 polish slice 61: hover feedback for the Dashboard's
 // .action-status bar ("Reset actions" button in Dashboard.tsx). Static
@@ -18,7 +17,7 @@ import { chromiumPage } from './chromium.mjs';
 // Background only, so resting geometry is identical. Static (no
 // animation), so no reduced-motion variant is needed; the disabled state
 // (no active selection) keeps its flat resting state.
-const css = await readFile(new URL('../src/style.css', import.meta.url), 'utf8');
+const css = styles['style.css'];
 
 const buttonHover = css.match(/\.action-status button:hover:not\(:disabled\)\s*\{([^}]*)\}/);
 
@@ -44,40 +43,19 @@ test('the author and job-management hover rules are untouched', () => {
   assert.ok(css.match(/\.job-management button:hover:not\(:disabled\)\s*\{[^}]*background:\s*#edf7f7/), 'the job-management button hover rule must still be present');
 });
 
-{
-  let page;
-  before(async () => { page = await chromiumPage(); });
-  after(async () => { await page?.close(); });
-
-  test('applying the hover rule changes the visual state with identical geometry', async () => {
-    await page.setContent(`<style>${css}</style><div class="action-status">
+defineHoverCases('action-status hover', {
+  html: `<div class="action-status">
       <button id="reset" type="button">Reset actions</button><span role="status">1 active selection(s)</span>
       <button id="off" type="button" disabled>Reset actions</button>
-    </div>`);
-    const actual = await page.evaluate(() => {
-      let found;
-      for (const sheet of document.styleSheets) {
-        for (const rule of sheet.cssRules) {
-          if ((rule.selectorText || '') === '.action-status button:hover:not(:disabled)') found = rule;
-        }
-      }
-      const measure = (el, rule) => {
-        const rest = { background: getComputedStyle(el).backgroundColor, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        if (rule) { for (const prop of rule.style) el.style.setProperty(prop, rule.style.getPropertyValue(prop)); }
-        const hovered = { background: getComputedStyle(el).backgroundColor, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        el.removeAttribute('style');
-        return { rest, hovered };
-      };
-      const off = document.querySelector('#off');
-      return {
-        reset: found ? measure(document.querySelector('#reset'), found) : null,
-        offMatches: found ? off.matches(found.selectorText.replace(':hover', '')) : null,
-      };
-    });
-    assert.ok(actual.reset, 'expected the button hover rule in the CSSOM');
-    assert.equal(actual.reset.rest.background, 'rgb(239, 239, 239)', 'reset rest');
-    assert.equal(actual.reset.hovered.background, 'rgb(237, 247, 247)', 'reset hover');
-    assert.equal(actual.reset.rest.box, actual.reset.hovered.box, 'reset geometry');
-    assert.equal(actual.offMatches, false, 'disabled buttons must be excluded from the hover rule');
-  });
-}
+    </div>`,
+  cases: [
+    {
+      target: '#reset',
+      rule: '.action-status button:hover:not(:disabled)',
+      resting: { backgroundColor: 'rgb(239, 239, 239)' },
+      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      paintOnly: true,
+      excluded: ['#off'],
+    },
+  ],
+});

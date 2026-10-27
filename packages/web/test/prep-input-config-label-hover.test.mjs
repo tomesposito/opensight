@@ -1,7 +1,6 @@
-import { after, before, describe, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import { chromiumPage } from './chromium.mjs';
+import { defineHoverCases, styles } from './interaction.mjs';
 
 // Issue #108 polish slice 107: hover feedback for the data-prep
 // input-config source-picker label (.prep-input-config > label in
@@ -30,9 +29,7 @@ import { chromiumPage } from './chromium.mjs';
 // identical tint via slice 106. Background only, so resting
 // geometry is identical and there is no animation. The data-prep
 // surface is fixed light, so no dark variant.
-const styleCss = await readFile(new URL('../src/style.css', import.meta.url), 'utf8');
-const allCss = (await Promise.all(['style.css', 'app-chrome.css', 'data-section.css', 'embed.css', 'sign-in.css']
-  .map(name => readFile(new URL(`../src/${name}`, import.meta.url), 'utf8')))).join('\n');
+const styleCss = styles['style.css'];
 
 const rule = styleCss.match(/^\.prep-input-config > label:hover\s*\{([^}]*)\}/m);
 
@@ -57,52 +54,24 @@ test('the resting prep-input-config and data-prep label rules are preserved and 
   assert.ok(!/data-chrome=dark[^\n]*prep-input-config/.test(styleCss), 'the fixed-light data-prep surface must not gain a dark variant for this rule');
 });
 
-describe('Prep-input-config label hover in offline Chromium', () => {
-  let page;
-  before(async () => { page = await chromiumPage(); });
-  after(async () => { await page?.close(); });
-
-  test('applying the hover rule changes the label visual state with identical geometry in the real ancestor context, and labels outside the input config are out of scope', async () => {
-    await page.setContent(`<style>${allCss}</style>`
-      + `<section class="data-prep"><div class="prep-workspace"><div class="prep-main"><section class="prep-configure">`
+defineHoverCases('prep-input-config-label hover', {
+  html: `<section class="data-prep"><div class="prep-workspace"><div class="prep-main"><section class="prep-configure">`
       + `<div class="prep-input-config"><h3>Input · Add data</h3>`
       + `<label id="pickerLabel">Connected source<select><option>Sales</option></select></label>`
       + `</div>`
       + `<div class="prep-staging"><label id="stagingLabel">Stage a source<select><option>Sales</option></select></label></div>`
       + `<form class="prep-step-editor"><label id="stepLabel">Step name (optional)<input type="text"></label></form>`
       + `</section></div></div></section>`
-      + `<div class="prep-document-bar"><label id="docLabel">Dataset name<input type="text"></label></div>`);
-    const actual = await page.evaluate(() => {
-      const all = [...document.styleSheets].flatMap(s => [...s.cssRules]);
-      const norm = r => (r.selectorText || '').replaceAll('"', '');
-      const found = all.find(r => norm(r) === '.prep-input-config > label:hover') ?? null;
-      const measure = (el, rule) => {
-        const rest = { background: getComputedStyle(el).backgroundColor, color: getComputedStyle(el).color, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        if (rule) { for (const prop of rule.style) el.style.setProperty(prop, rule.style.getPropertyValue(prop)); }
-        const hovered = { background: getComputedStyle(el).backgroundColor, color: getComputedStyle(el).color, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        el.removeAttribute('style');
-        return { rest, hovered };
-      };
-      const bare = found ? found.selectorText.replaceAll(':hover', '') : '';
-      const el = id => document.querySelector(`#${id}`);
-      return {
-        found: !!found,
-        props: found ? [...found.style] : [],
-        picker: found ? measure(el('pickerLabel'), found) : null,
-        stagingMatches: found ? el('stagingLabel').matches(bare) : null,
-        stepMatches: found ? el('stepLabel').matches(bare) : null,
-        docMatches: found ? el('docLabel').matches(bare) : null,
-      };
-    });
-    assert.ok(actual.found, 'expected the hover rule in the CSSOM');
-    assert.ok(actual.props.length && actual.props.every(p => p.startsWith('background')), 'hover rule must set background longhands only');
-    assert.equal(actual.picker.rest.background, 'rgba(0, 0, 0, 0)', 'picker label rest (transparent)');
-    assert.equal(actual.picker.hovered.background, 'rgb(237, 246, 252)', 'picker label hover');
-    assert.notEqual(actual.picker.rest.background, actual.picker.hovered.background);
-    assert.equal(actual.picker.rest.color, actual.picker.hovered.color, 'picker label colour unchanged on hover');
-    assert.equal(actual.picker.rest.box, actual.picker.hovered.box, 'picker label geometry');
-    assert.equal(actual.stagingMatches, false, 'the staging source-picker label outside the input config must be out of scope');
-    assert.equal(actual.stepMatches, false, 'a step-editor label outside the input config must be out of scope');
-    assert.equal(actual.docMatches, false, 'a document-bar label outside the input config must be out of scope');
-  });
+      + `<div class="prep-document-bar"><label id="docLabel">Dataset name<input type="text"></label></div>`,
+  cases: [
+    {
+      target: '#pickerLabel',
+      rule: '.prep-input-config > label:hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(237, 246, 252)' },
+      paintOnly: true,
+      unchanged: ['color'],
+      excluded: ['#stagingLabel', '#stepLabel', '#docLabel'],
+    },
+  ],
 });

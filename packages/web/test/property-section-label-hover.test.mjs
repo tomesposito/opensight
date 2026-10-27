@@ -1,7 +1,6 @@
-import { after, before, describe, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import { chromiumPage } from './chromium.mjs';
+import { defineHoverCases, styles } from './interaction.mjs';
 
 // Issue #108 polish slice 116: hover feedback for the Properties
 // panel sections' plain field labels (.property-section label —
@@ -43,9 +42,7 @@ import { chromiumPage } from './chromium.mjs';
 // same tints, so the toggle labels are unchanged whichever rule
 // wins. Background only, so resting geometry is identical and
 // there is no animation.
-const styleCss = await readFile(new URL('../src/style.css', import.meta.url), 'utf8');
-const allCss = (await Promise.all(['style.css', 'app-chrome.css', 'data-section.css', 'embed.css', 'sign-in.css']
-  .map(name => readFile(new URL(`../src/${name}`, import.meta.url), 'utf8')))).join('\n');
+const styleCss = styles['style.css'];
 
 const rule = styleCss.match(/^\.property-section label:hover\s*\{([^}]*)\}/m);
 const darkRule = styleCss.match(/^\.author-workspace\[data-chrome=dark\] \.property-section label:hover\s*\{([^}]*)\}/m);
@@ -76,13 +73,7 @@ test('the resting author-layout label rule, the color-inputs label rule and the 
   assert.ok(styleCss.match(/^label\.toggle:hover/m), 'the slice-97 toggle label hover must remain');
 });
 
-describe('Property-section label hover in offline Chromium', () => {
-  let page;
-  before(async () => { page = await chromiumPage(); });
-  after(async () => { await page?.close(); });
-
-  test('applying the hover rules changes the label visual state with identical geometry in the real ancestor contexts in both chromes, the toggle labels keep their slice-97 tint, and labels outside a property section are out of scope', async () => {
-    const ctx = (id, dark) => `<div class="author-workspace" ${dark ? 'data-chrome="dark"' : ''}><div class="author-layout"><aside class="properties-panel">`
+const ctx = (id, dark) => `<div class="author-workspace" ${dark ? 'data-chrome="dark"' : ''}><div class="author-layout"><aside class="properties-panel">`
       + `<details class="property-section" open><summary>Drill-down hierarchy</summary>`
       + `<label id="${id}Name">Hierarchy name<input value="x"/></label>`
       + `<label id="${id}Dim">Level dimension<select><option>region</option></select></label></details>`
@@ -93,64 +84,107 @@ describe('Property-section label hover in offline Chromium', () => {
       + `<label id="${id}Font">Analysis font<select><option>Inter</option></select></label>`
       + `<div class="color-inputs"><label id="${id}Color">Color 1<input type="color" value="#123456"/></label></div></details>`
       + `</aside></div></div>`;
-    await page.setContent(`<style>${allCss}</style>` + ctx('l', false) + ctx('d', true)
-      + `<label id="outsideLabel">Outside<input/></label>`);
-    const actual = await page.evaluate(() => {
-      const all = [...document.styleSheets].flatMap(s => [...s.cssRules]);
-      const norm = r => (r.selectorText || '').replaceAll('"', '');
-      const light = all.find(r => norm(r) === '.property-section label:hover') ?? null;
-      const dark = all.find(r => norm(r) === '.author-workspace[data-chrome=dark] .property-section label:hover') ?? null;
-      const toggle = all.find(r => norm(r) === 'label.toggle:hover') ?? null;
-      const toggleDark = all.find(r => norm(r) === '.author-workspace[data-chrome=dark] label.toggle:hover') ?? null;
-      const measure = (el, rule) => {
-        const rest = { background: getComputedStyle(el).backgroundColor, color: getComputedStyle(el).color, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        if (rule) { for (const prop of rule.style) el.style.setProperty(prop, rule.style.getPropertyValue(prop)); }
-        const hovered = { background: getComputedStyle(el).backgroundColor, color: getComputedStyle(el).color, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        el.removeAttribute('style');
-        return { rest, hovered };
-      };
-      const el = id => document.querySelector(`#${id}`);
-      return {
-        foundLight: !!light, foundDark: !!dark,
-        propsLight: light ? [...light.style] : [], propsDark: dark ? [...dark.style] : [],
-        lName: light ? measure(el('lName'), light) : null,
-        lDim: light ? measure(el('lDim'), light) : null,
-        lWidth: light ? measure(el('lWidth'), light) : null,
-        lFont: light ? measure(el('lFont'), light) : null,
-        lColor: light ? measure(el('lColor'), light) : null,
-        dName: dark ? measure(el('dName'), dark) : null,
-        dDim: dark ? measure(el('dDim'), dark) : null,
-        dWidth: dark ? measure(el('dWidth'), dark) : null,
-        dFont: dark ? measure(el('dFont'), dark) : null,
-        dColor: dark ? measure(el('dColor'), dark) : null,
-        lToggle97: toggle ? measure(el('lToggle'), toggle) : null,
-        dToggle97: toggleDark ? measure(el('dToggle'), toggleDark) : null,
-        toggleMatchesPlain: light ? el('lToggle').matches(light.selectorText.replaceAll(':hover', '')) : null,
-        outsideMatches: light ? el('outsideLabel').matches(light.selectorText.replaceAll(':hover', '')) : null,
-      };
-    });
-    assert.ok(actual.foundLight, 'expected the light hover rule in the CSSOM');
-    assert.ok(actual.foundDark, 'expected the dark hover rule in the CSSOM');
-    for (const props of [actual.propsLight, actual.propsDark]) {
-      assert.ok(props.length && props.every(p => p.startsWith('background')), 'hover rules must set background longhands only');
-    }
-    for (const key of ['lName', 'lDim', 'lWidth', 'lFont', 'lColor']) {
-      assert.equal(actual[key].rest.background, 'rgba(0, 0, 0, 0)', `${key} label rest (transparent)`);
-      assert.equal(actual[key].hovered.background, 'rgb(237, 247, 247)', `${key} label hover`);
-      assert.notEqual(actual[key].rest.background, actual[key].hovered.background);
-      assert.equal(actual[key].rest.color, actual[key].hovered.color, `${key} label colour unchanged on hover`);
-      assert.equal(actual[key].rest.box, actual[key].hovered.box, `${key} label geometry`);
-    }
-    for (const key of ['dName', 'dDim', 'dWidth', 'dFont', 'dColor']) {
-      assert.equal(actual[key].rest.background, 'rgba(0, 0, 0, 0)', `${key} label rest (transparent)`);
-      assert.equal(actual[key].hovered.background, 'rgb(51, 76, 98)', `${key} label hover`);
-      assert.notEqual(actual[key].rest.background, actual[key].hovered.background);
-      assert.equal(actual[key].rest.color, actual[key].hovered.color, `${key} label colour unchanged on hover`);
-      assert.equal(actual[key].rest.box, actual[key].hovered.box, `${key} label geometry`);
-    }
-    assert.equal(actual.lToggle97.hovered.background, 'rgb(237, 247, 247)', 'the light toggle label keeps its slice-97 tint');
-    assert.equal(actual.dToggle97.hovered.background, 'rgb(51, 76, 98)', 'the dark toggle label keeps its slice-97 tint');
-    assert.equal(actual.toggleMatchesPlain, true, 'the plain rule also covers the toggle labels, at the same tint as slice 97');
-    assert.equal(actual.outsideMatches, false, 'a label outside .property-section must be out of scope');
-  });
+
+defineHoverCases('property-section-label hover', {
+  html: `` + ctx('l', false) + ctx('d', true)
+      + `<label id="outsideLabel">Outside<input/></label>`,
+  cases: [
+    {
+      target: '#lName',
+      rule: '.property-section label:hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      paintOnly: true,
+      unchanged: ['color'],
+      excluded: ['#outsideLabel'],
+    },
+    {
+      target: '#lDim',
+      rule: '.property-section label:hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      paintOnly: true,
+      unchanged: ['color'],
+    },
+    {
+      target: '#lWidth',
+      rule: '.property-section label:hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      paintOnly: true,
+      unchanged: ['color'],
+    },
+    {
+      target: '#lFont',
+      rule: '.property-section label:hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      paintOnly: true,
+      unchanged: ['color'],
+    },
+    {
+      target: '#lColor',
+      rule: '.property-section label:hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      paintOnly: true,
+      unchanged: ['color'],
+    },
+    {
+      target: '#dName',
+      rule: '.author-workspace[data-chrome="dark"] .property-section label:hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(51, 76, 98)' },
+      paintOnly: true,
+      unchanged: ['color'],
+    },
+    {
+      target: '#dDim',
+      rule: '.author-workspace[data-chrome="dark"] .property-section label:hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(51, 76, 98)' },
+      paintOnly: true,
+      unchanged: ['color'],
+    },
+    {
+      target: '#dWidth',
+      rule: '.author-workspace[data-chrome="dark"] .property-section label:hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(51, 76, 98)' },
+      paintOnly: true,
+      unchanged: ['color'],
+    },
+    {
+      target: '#dFont',
+      rule: '.author-workspace[data-chrome="dark"] .property-section label:hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(51, 76, 98)' },
+      paintOnly: true,
+      unchanged: ['color'],
+    },
+    {
+      target: '#dColor',
+      rule: '.author-workspace[data-chrome="dark"] .property-section label:hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(51, 76, 98)' },
+      paintOnly: true,
+      unchanged: ['color'],
+    },
+    {
+      target: '#lToggle',
+      rule: 'label.toggle:hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      paintOnly: true,
+      unchanged: ['color'],
+    },
+    {
+      target: '#dToggle',
+      rule: '.author-workspace[data-chrome="dark"] label.toggle:hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(51, 76, 98)' },
+      paintOnly: true,
+      unchanged: ['color'],
+    },
+  ],
 });

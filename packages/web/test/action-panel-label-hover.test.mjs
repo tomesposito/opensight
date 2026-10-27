@@ -1,7 +1,6 @@
-import { after, before, describe, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import { chromiumPage } from './chromium.mjs';
+import { defineHoverCases, styles } from './interaction.mjs';
 
 // Issue #108 polish slice 121: hover feedback for the action panel's
 // plain field labels (.action-panel-body label — "Action name" and
@@ -35,9 +34,7 @@ import { chromiumPage } from './chromium.mjs';
 // radio/checkbox labels are unchanged whichever rule wins.
 // Background only, so resting geometry is identical and there is
 // no animation.
-const styleCss = await readFile(new URL('../src/style.css', import.meta.url), 'utf8');
-const allCss = (await Promise.all(['style.css', 'app-chrome.css', 'data-section.css', 'embed.css', 'sign-in.css']
-  .map(name => readFile(new URL(`../src/${name}`, import.meta.url), 'utf8')))).join('\n');
+const styleCss = styles['style.css'];
 
 const labelRule = styleCss.match(/^\.action-panel-body label:hover\s*\{([^}]*)\}/m);
 const labelDarkRule = styleCss.match(/^\.author-workspace\[data-chrome=dark\] \.action-panel-body label:hover\s*\{([^}]*)\}/m);
@@ -69,52 +66,31 @@ test('the resting action-panel rules are preserved', () => {
   assert.ok(styleCss.match(/\.action-radio-group label\s*\{[^}]*display:\s*flex/), 'the resting radio-group label rule must remain');
 });
 
-describe('Action-panel label hover in offline Chromium', () => {
-  let page;
-  before(async () => { page = await chromiumPage(); });
-  after(async () => { await page?.close(); });
-
-  test('applying the hover rules changes the label visual state with identical geometry in the real ancestor context in both chromes, and labels outside the panel body are out of scope', async () => {
-    const ctx = (id, dark) => `<div class="author-workspace" ${dark ? 'data-chrome="dark"' : ''}><div class="author-layout"><div class="action-panel"><div class="action-panel-body">`
+const ctx = (id, dark) => `<div class="author-workspace" ${dark ? 'data-chrome="dark"' : ''}><div class="author-layout"><div class="action-panel"><div class="action-panel-body">`
       + `<label id="${id}Label">Action name<input id="${id}Input"/></label>`
       + `<fieldset class="action-radio-group"><label id="${id}Radio"><input type="radio" checked/>Select</label></fieldset>`
       + `</div></div></div></div>`;
-    await page.setContent(`<style>${allCss}</style>` + ctx('l', false) + ctx('d', true)
-      + `<div class="author-workspace"><div class="author-layout"><label id="outsideLabel">Outside<input/></label></div></div>`);
-    const actual = await page.evaluate(() => {
-      const all = [...document.styleSheets].flatMap(s => [...s.cssRules]);
-      const norm = r => (r.selectorText || '').replaceAll('"', '');
-      const label = all.find(r => norm(r) === '.action-panel-body label:hover') ?? null;
-      const labelDark = all.find(r => norm(r) === '.author-workspace[data-chrome=dark] .action-panel-body label:hover') ?? null;
-      const measure = (el, rule) => {
-        const rest = { background: getComputedStyle(el).backgroundColor, color: getComputedStyle(el).color, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        if (rule) { for (const prop of rule.style) el.style.setProperty(prop, rule.style.getPropertyValue(prop)); }
-        const hovered = { background: getComputedStyle(el).backgroundColor, color: getComputedStyle(el).color, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        el.removeAttribute('style');
-        return { rest, hovered };
-      };
-      const el = id => document.querySelector(`#${id}`);
-      return {
-        found: { label: !!label, labelDark: !!labelDark },
-        props: [label, labelDark].map(r => r ? [...r.style] : []),
-        lLabel: label ? measure(el('lLabel'), label) : null,
-        dLabel: labelDark ? measure(el('dLabel'), labelDark) : null,
-        outsideLabelMatches: label ? el('outsideLabel').matches(label.selectorText.replaceAll(':hover', '')) : null,
-      };
-    });
-    assert.deepEqual(actual.found, { label: true, labelDark: true }, 'expected both hover rules in the CSSOM');
-    for (const props of actual.props) {
-      assert.ok(props.length && props.every(p => p.startsWith('background')), 'hover rules must set background longhands only');
-    }
-    assert.equal(actual.lLabel.rest.background, 'rgba(0, 0, 0, 0)', 'light label rest');
-    assert.equal(actual.lLabel.hovered.background, 'rgb(237, 247, 247)', 'light label hover');
-    assert.notEqual(actual.lLabel.rest.background, actual.lLabel.hovered.background);
-    assert.equal(actual.lLabel.rest.color, actual.lLabel.hovered.color, 'light label colour unchanged on hover');
-    assert.equal(actual.lLabel.rest.box, actual.lLabel.hovered.box, 'light label geometry');
-    assert.equal(actual.dLabel.rest.background, 'rgba(0, 0, 0, 0)', 'dark label rest');
-    assert.equal(actual.dLabel.hovered.background, 'rgb(51, 76, 98)', 'dark label hover');
-    assert.equal(actual.dLabel.rest.color, actual.dLabel.hovered.color, 'dark label colour unchanged on hover');
-    assert.equal(actual.dLabel.rest.box, actual.dLabel.hovered.box, 'dark label geometry');
-    assert.equal(actual.outsideLabelMatches, false, 'a label outside .action-panel-body must be out of scope');
-  });
+
+defineHoverCases('action-panel-label hover', {
+  html: `` + ctx('l', false) + ctx('d', true)
+      + `<div class="author-workspace"><div class="author-layout"><label id="outsideLabel">Outside<input/></label></div></div>`,
+  cases: [
+    {
+      target: '#lLabel',
+      rule: '.action-panel-body label:hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      paintOnly: true,
+      unchanged: ['color'],
+      excluded: ['#outsideLabel'],
+    },
+    {
+      target: '#dLabel',
+      rule: '.author-workspace[data-chrome="dark"] .action-panel-body label:hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(51, 76, 98)' },
+      paintOnly: true,
+      unchanged: ['color'],
+    },
+  ],
 });

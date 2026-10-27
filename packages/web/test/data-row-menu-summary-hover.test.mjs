@@ -1,7 +1,6 @@
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import { chromiumPage } from './chromium.mjs';
+import { defineHoverCases, styles } from './interaction.mjs';
 
 // Issue #108 polish slice 50: hover feedback for the Manage data dialog's
 // per-dataset row-menu trigger (.data-row-menu summary, "More actions
@@ -16,7 +15,7 @@ import { chromiumPage } from './chromium.mjs';
 // <button>. It now takes the data surface's tint (#eaf3f7, slices
 // 16/21/27/48/49). Background only, so resting geometry is identical.
 // Static (no animation), so no reduced-motion variant is needed.
-const css = await readFile(new URL('../src/data-section.css', import.meta.url), 'utf8');
+const css = styles['data-section.css'];
 
 const hoverRule = css.match(/\.data-row-menu summary:hover\s*\{([^}]*)\}/);
 
@@ -45,41 +44,18 @@ test('the row-menu summary hover rule coexists with the dialog button hover rule
   assert.ok(hoverRule, 'expected the .data-row-menu summary hover rule');
 });
 
-{
-  let page;
-  before(async () => { page = await chromiumPage(); });
-  after(async () => { await page?.close(); });
-
-  test('applying the hover rule changes the visual state with identical geometry', async () => {
-    await page.setContent(`<style>${css}</style><details class="data-row-menu" id="menu">
+defineHoverCases('data-row-menu-summary hover', {
+  html: `<details class="data-row-menu" id="menu">
       <summary id="trigger" aria-label="More actions for Sample sales data">⋯</summary>
       <div><button type="button">Remove dataset</button></div>
-    </details>`);
-    const actual = await page.evaluate(() => {
-      const rules = [];
-      for (const sheet of document.styleSheets) {
-        for (const rule of sheet.cssRules) {
-          if ((rule.selectorText || '') === '.data-row-menu summary:hover') rules.push(rule);
-        }
-      }
-      const trigger = document.querySelector('#trigger');
-      const rest = { background: getComputedStyle(trigger).backgroundColor, box: JSON.stringify(trigger.getBoundingClientRect().toJSON()) };
-      const hover = rules[0];
-      if (hover) for (const prop of hover.style) trigger.style.setProperty(prop, hover.style.getPropertyValue(prop));
-      const hovered = { background: getComputedStyle(trigger).backgroundColor, box: JSON.stringify(trigger.getBoundingClientRect().toJSON()) };
-      return {
-        ruleCount: rules.length,
-        props: rules.length ? [...rules[0].style] : [],
-        backgroundColor: rules.length ? rules[0].style.getPropertyValue('background-color') : null,
-        rest,
-        hovered,
-      };
-    });
-    assert.equal(actual.ruleCount, 1);
-    assert.ok(actual.props.length && actual.props.every(p => p.startsWith('background')), 'hover rule must set background longhands only');
-    assert.equal(actual.backgroundColor, 'rgb(234, 243, 247)');
-    assert.equal(actual.hovered.background, 'rgb(234, 243, 247)');
-    assert.notEqual(actual.rest.background, actual.hovered.background);
-    assert.equal(actual.rest.box, actual.hovered.box);
-  });
-}
+    </details>`,
+  cases: [
+    {
+      target: '#trigger',
+      rule: '.data-row-menu summary:hover',
+      resting: { backgroundColor: 'rgb(255, 255, 255)' },
+      hovered: { backgroundColor: 'rgb(234, 243, 247)' },
+      paintOnly: true,
+    },
+  ],
+});

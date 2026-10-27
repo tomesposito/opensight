@@ -1,7 +1,6 @@
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import { chromiumPage } from './chromium.mjs';
+import { defineHoverCases, styles } from './interaction.mjs';
 
 // Issue #108 polish slice 57: hover feedback for the API explorer's
 // picker form (.api-picker in ApiExplorer, Application.tsx — Resource
@@ -18,7 +17,7 @@ import { chromiumPage } from './chromium.mjs';
 // author select/input language). Background only, so resting geometry
 // is identical. Static (no animation), so no reduced-motion variant
 // is needed; disabled controls keep their flat resting state.
-const css = await readFile(new URL('../src/style.css', import.meta.url), 'utf8');
+const css = styles['style.css'];
 
 const buttonHover = css.match(/\.api-picker button:hover:not\(:disabled\)\s*\{([^}]*)\}/);
 const fieldHover = css.match(/\.api-picker select:hover:not\(:disabled\),\s*\.api-picker input:hover:not\(:disabled\)\s*\{([^}]*)\}/);
@@ -57,51 +56,34 @@ test('the author hover rules the Author-page instance relies on are untouched', 
   assert.ok(css.indexOf('.author-workspace button:hover') > css.indexOf('.api-picker button:hover'), 'the author hover rule must stay later in the file so the Author-page .api-picker instance keeps its author hover');
 });
 
-{
-  let page;
-  before(async () => { page = await chromiumPage(); });
-  after(async () => { await page?.close(); });
-
-  test('applying the hover rules changes the visual state with identical geometry', async () => {
-    await page.setContent(`<style>${css}</style><form class="api-picker">
+defineHoverCases('api-picker hover', {
+  html: `<form class="api-picker">
       <label>Resource<select id="kind"><option value="analysis">Analysis</option></select></label>
       <label class="resource-id">Resource ID<input id="rid" value="renderable-sales"></label>
       <button id="load" type="submit">Load definition</button><button id="off" type="submit" disabled>Load definition</button>
-    </form>`);
-    const actual = await page.evaluate(() => {
-      const found = {};
-      for (const sheet of document.styleSheets) {
-        for (const rule of sheet.cssRules) {
-          const sel = rule.selectorText || '';
-          if (sel === '.api-picker button:hover:not(:disabled)') found.button = rule;
-          if (sel === '.api-picker select:hover:not(:disabled), .api-picker input:hover:not(:disabled)') found.field = rule;
-        }
-      }
-      const measure = (el, rule) => {
-        const rest = { background: getComputedStyle(el).backgroundColor, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        if (rule) { for (const prop of rule.style) el.style.setProperty(prop, rule.style.getPropertyValue(prop)); }
-        const hovered = { background: getComputedStyle(el).backgroundColor, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        return { rest, hovered };
-      };
-      const off = document.querySelector('#off');
-      return {
-        button: found.button ? measure(document.querySelector('#load'), found.button) : null,
-        select: found.field ? measure(document.querySelector('#kind'), found.field) : null,
-        input: found.field ? measure(document.querySelector('#rid'), found.field) : null,
-        offMatches: found.button ? off.matches(found.button.selectorText.replace(':hover', '')) : null,
-      };
-    });
-    assert.ok(actual.button, 'expected the button hover rule in the CSSOM');
-    assert.equal(actual.button.rest.background, 'rgb(21, 127, 136)');
-    assert.equal(actual.button.hovered.background, 'rgb(18, 110, 118)');
-    assert.equal(actual.button.rest.box, actual.button.hovered.box);
-    assert.ok(actual.select, 'expected the field hover rule in the CSSOM');
-    assert.equal(actual.select.rest.background, 'rgb(255, 255, 255)');
-    assert.equal(actual.select.hovered.background, 'rgb(237, 247, 247)');
-    assert.equal(actual.select.rest.box, actual.select.hovered.box);
-    assert.equal(actual.input.rest.background, 'rgb(255, 255, 255)');
-    assert.equal(actual.input.hovered.background, 'rgb(237, 247, 247)');
-    assert.equal(actual.input.rest.box, actual.input.hovered.box);
-    assert.equal(actual.offMatches, false, 'disabled buttons must be excluded from the hover rule');
-  });
-}
+    </form>`,
+  cases: [
+    {
+      target: '#load',
+      rule: '.api-picker button:hover:not(:disabled)',
+      resting: { backgroundColor: 'rgb(21, 127, 136)' },
+      hovered: { backgroundColor: 'rgb(18, 110, 118)' },
+      paintOnly: true,
+      excluded: ['#off'],
+    },
+    {
+      target: '#kind',
+      rule: '.api-picker select:hover:not(:disabled), .api-picker input:hover:not(:disabled)',
+      resting: { backgroundColor: 'rgb(255, 255, 255)' },
+      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      paintOnly: true,
+    },
+    {
+      target: '#rid',
+      rule: '.api-picker select:hover:not(:disabled), .api-picker input:hover:not(:disabled)',
+      resting: { backgroundColor: 'rgb(255, 255, 255)' },
+      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      paintOnly: true,
+    },
+  ],
+});
