@@ -76,14 +76,17 @@ test('hosted entry shows the first-run gate while the session resolves, before e
   assert.doesNotMatch(html, /visual-card|Sample dashboard|source-picker/);
 });
 
-test('a build without the pinned sample gives recovery guidance without falling back to an empty chart', () => {
+test('a demo build without the pinned sample gives recovery guidance without falling back to an empty chart', () => {
   const saved = [...generated];
   try {
     generated.splice(0, generated.length, ...saved.filter(f => f.id !== 'renderable-sales'));
-    const html = render(hosted('reader'));
+    const html = render();
     assert.match(html, /The sample dashboard is not included in this build/);
     assert.match(html, /Ask the operator to restore the pinned sales sample/);
     assert.doesNotMatch(html, /visual-card|Choose Author/);
+    const hostedHome = render(hosted('reader'));
+    assert.match(hostedHome, /Loading dashboards/);
+    assert.doesNotMatch(hostedHome, /restore the pinned sales sample|visual-card/);
   } finally { generated.splice(0, generated.length, ...saved); }
 });
 
