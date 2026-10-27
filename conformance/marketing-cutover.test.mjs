@@ -15,9 +15,10 @@ const request = (host, uri, method = 'GET') => context.handler({ request: { head
 
 test('D-77 shared edge separates object/cache paths, canonicalizes demo and refuses cross-host routing', () => {
   const apex = 'opensight.example', app = 'app.' + apex;
-  for (const [path, mapped] of [['/', '/marketing/index.html'], ['/index.html', '/marketing/index.html'], ['/demo/', '/marketing/demo/index.html'], ['/demo/index.html', '/marketing/demo/index.html'], ['/assets/hero.mp4', '/marketing/assets/hero.mp4']]) {
+  for (const [path, mapped] of [['/', '/marketing/index.html'], ['/index.html', '/marketing/index.html'], ['/demo/', '/marketing/demo/index.html'], ['/demo/index.html', '/marketing/demo/index.html'], ['/assets/hero.mp4', '/marketing/assets/hero.mp4'], ['/robots.txt', '/marketing/robots.txt'], ['/sitemap.xml', '/marketing/sitemap.xml']]) {
     assert.equal(request(apex, path).uri, mapped); assert.equal(request(apex, path, 'HEAD').uri, mapped);
   }
+  for (const path of ['/robots.txt', '/sitemap.xml']) assert.equal(request(app, path).statusCode, 404);
   assert.equal(request(apex, '/demo').headers.location.value, '/demo/');
   assert.equal(request(app, '/').uri, '/index.html');
   assert.equal(request(app, '/assets/app-abcdefgh.js').uri, '/assets/app-abcdefgh.js');
@@ -38,6 +39,10 @@ test('D-77 marketing assets have accurate media types and cannot inherit immutab
   assert.equal(frontendMetadata('marketing/assets/hero-poster.jpg').ContentType, 'image/jpeg');
   assert.equal(frontendMetadata('marketing/assets/opensight-tour.gif').ContentType, 'image/gif');
   assert.equal(frontendMetadata('marketing/assets/blaze.png').CacheControl, 'public,max-age=300');
+  assert.equal(frontendMetadata('marketing/robots.txt').ContentType, 'text/plain; charset=utf-8');
+  assert.equal(frontendMetadata('marketing/sitemap.xml').ContentType, 'application/xml; charset=utf-8');
+  assert.equal(frontendMetadata('marketing/robots.txt').CacheControl, 'no-store');
+  assert.equal(frontendMetadata('marketing/sitemap.xml').CacheControl, 'no-store');
   assert.equal(frontendMetadata('marketing/demo/index.html').CacheControl, 'no-store');
   assert.equal(frontendMetadata('assets/app-abcdefgh.js').CacheControl, 'public,max-age=31536000,immutable');
 });
@@ -134,12 +139,14 @@ test('D-77 live-site acceptance detects wrong content and cross-host API exposur
   const { verifySites } = await import('../ops/serverless/site-smoke.mjs');
   const { digest } = await import('../ops/serverless/release-manifest.mjs');
   const config = { origin: 'https://app.opensight.example', marketingOrigin: 'https://opensight.example' };
-  const files = { 'index.html': digest('OpenSight app'), 'marketing/index.html': digest('OpenSight site'), 'marketing/demo/index.html': digest('OpenSight demo') };
+  const files = { 'index.html': digest('OpenSight app'), 'marketing/index.html': digest('OpenSight site'), 'marketing/demo/index.html': digest('OpenSight demo'), 'marketing/robots.txt': digest('OpenSight robots'), 'marketing/sitemap.xml': digest('OpenSight sitemap') };
   const fake = async url => {
     const u = new URL(url);
     if (u.pathname === '/demo') return new Response(null, { status: 308, headers: { location: '/demo/' } });
     if (u.pathname === '/') return new Response(u.host.startsWith('app.') ? 'OpenSight app' : 'OpenSight site', { headers: { 'content-type': 'text/html' } });
     if (u.pathname === '/demo/') return new Response('OpenSight demo', { headers: { 'content-type': 'text/html' } });
+    if (!u.host.startsWith('app.') && u.pathname === '/robots.txt') return new Response('OpenSight robots', { headers: { 'content-type': 'text/plain; charset=utf-8' } });
+    if (!u.host.startsWith('app.') && u.pathname === '/sitemap.xml') return new Response('OpenSight sitemap', { headers: { 'content-type': 'application/xml; charset=utf-8' } });
     return new Response(null, { status: 404 });
   };
   await verifySites(config, files, fake);

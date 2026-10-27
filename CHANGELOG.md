@@ -13,6 +13,10 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Added
 
+- The hosted pipeline now serves the marketing site's `robots.txt` and
+  `sitemap.xml` on the marketing host (correct plain-text and XML content
+  types; the app host still returns 404 for both), completing the live
+  serving side of the crawler and sitemap work (#149, follow-up to #134).
 - Opt-in tenant usage tracking with a private event log, content-free PostHog
   events, and an administrator off switch (#137).
 - Marketing site crawler rules, public sitemap, social sharing metadata,

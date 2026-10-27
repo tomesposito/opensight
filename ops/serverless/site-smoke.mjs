@@ -12,9 +12,16 @@ export async function verifySites(config, files, request = fetch) {
   if (!config.marketingOrigin) return;
   await page(config.marketingOrigin, '/', 'marketing/index.html');
   await page(config.marketingOrigin, '/demo/', 'marketing/demo/index.html');
+  for (const [path, file, type] of [['/robots.txt', 'marketing/robots.txt', 'text/plain'], ['/sitemap.xml', 'marketing/sitemap.xml', 'application/xml']]) {
+    const response = await get(config.marketingOrigin + path);
+    const bytes = Buffer.from(await response.arrayBuffer());
+    if (response.status !== 200 || !response.headers.get('content-type')?.startsWith(type)
+      || (files && files[file] && digest(bytes) !== files[file])) throw Error('SMOKE_FRONTEND_FAILED');
+  }
   const redirect = await get(config.marketingOrigin + '/demo');
   if (redirect.status !== 308 || redirect.headers.get('location') !== '/demo/') throw Error('SMOKE_DEMO_REDIRECT_FAILED');
-  for (const [origin, path] of [[config.origin, '/marketing/index.html'], [config.marketingOrigin, '/opensight-embed.html'],
+  for (const [origin, path] of [[config.origin, '/marketing/index.html'], [config.origin, '/robots.txt'], [config.origin, '/sitemap.xml'],
+    [config.marketingOrigin, '/opensight-embed.html'],
     [config.marketingOrigin, '/api/api/session'], [config.marketingOrigin, '/embed/sessions/synthetic']]) {
     const response = await get(origin + path);
     if (![403, 404].includes(response.status)) throw Error('SMOKE_HOST_ISOLATION_FAILED');
