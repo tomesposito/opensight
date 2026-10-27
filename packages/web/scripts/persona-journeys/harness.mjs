@@ -50,7 +50,7 @@ export async function startLocalStack(dataRoot) {
   stack.stop = async () => { await stack.vite?.close(); await close(stack.api); };
   await stack.start(); return stack;
 }
-export async function startHostedStack() {
+export async function startHostedStack({ invitationSeconds } = {}) {
   await temporaryRoot().then(p => rm(p, { recursive: true })); // Set SQLite's disk-backed TMPDIR before importing fixtures.
   const [{ Pool }, { PostgresMetadataDatabase }, { realEmbedFixture }, { serverEnvironment }, hosted] = await Promise.all([
     import('pg'), import('../../../api/dist/metadata-db.js'), import('../../../api/test/embed-real-fixture.mjs'),
@@ -72,7 +72,8 @@ export async function startHostedStack() {
     stack.fixture = await realEmbedFixture(db, 'postgres', origin, 'https://product.example');
     stack.mail = stack.fixture.mail;
     stack.api = await hosted.createHostedApiServer({ membershipDatabase: db, tenantDatabase: db, builtinAuth: stack.fixture.auth,
-      security: { authenticate: stack.fixture.auth.authenticate }, env: serverEnvironment(stack.fixture), mailTransport: stack.mail });
+      security: { authenticate: stack.fixture.auth.authenticate }, env: { ...serverEnvironment(stack.fixture),
+        ...(invitationSeconds === undefined ? {} : { OPENSIGHT_INVITATION_SECONDS: String(invitationSeconds) }) }, mailTransport: stack.mail });
     stack.apiTransport = await listen(stack.api);
     stack.vite = await viteServer(); stack.transport = `http://127.0.0.1:${stack.vite.httpServer.address().port}`;
     stack.tokens = { admin: (await stack.fixture.login()).token, reader: (await stack.fixture.reader.login()).token };

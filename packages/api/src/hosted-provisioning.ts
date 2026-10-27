@@ -1,6 +1,6 @@
 import { disabledAnalytics, type Analytics } from './analytics.js';
 import { randomBytes, randomUUID } from 'node:crypto';
-import { isRole, type Role } from '@opensight/query-engine';
+import { hasCapability, isRole, type Role } from '@opensight/query-engine';
 import { MetadataError, missing, type Database, type SqlConnection } from './metadata-db.js';
 import { identifier, insertResource } from './metadata-resources.js';
 import { checksum, MetadataOperator, type TenantOperation } from './metadata-operator.js';
@@ -13,9 +13,11 @@ import { normalizedEmail } from './hosted-auth.js';
 import { appendOperatorAudit } from './operator-audit.js';
 import { applyDisposition, disposition, type JobDisposition, type JobOwnership } from './job-ownership.js';
 import { deriveWorkspaceSlug, parseWorkspaceSlug, workspaceLabel } from './workspace-naming.js';
+import type { TenantContext } from './metadata.js';
 
 export interface OnboardingInput { name: string; slug?: string; administrator: { email: string; name: string } }
 export interface InvitationInput { email: string; name: string; role: Role }
+export interface PendingInvitation { id: string; namespaceId: string; email: string; name: string; role: Role; expiresAt: string }
 function label(value: string): string {
   if (typeof value !== 'string' || !value.trim() || value.length > 512 || /[\x00-\x1f]/.test(value)) throw new MetadataError('METADATA_INVALID', 400);
   return value;
@@ -42,13 +44,14 @@ export class HostedProvisioning {
     await this.reserve(operationId, checksum({ action, tenantId, expectedVersion }));
     return this.operator.transition(operationId, tenantId, action, expectedVersion);
   }
-  private async invite(c: SqlConnection, operationId: string, tenantId: string, namespaceId: string, userId: string, email: string): Promise<string> {
+  private async invite(c: SqlConnection, operationId: string, tenantId: string, namespaceId: string, userId: string, email: string): Promise<{ id: string; token: string; expiresAt: string }> {
     await c.query("INSERT INTO h2_identities (subject,email,status) VALUES (?,?,'invited') ON CONFLICT (email) DO NOTHING", [randomUUID(), email]);
     const subject = String((await c.query('SELECT subject FROM h2_identities WHERE email = ?', [email]))[0]!.subject);
     await c.query("INSERT INTO h2_memberships (subject,tenant_id,namespace_id,user_id,status) VALUES (?,?,?,?,'invited')", [subject, tenantId, namespaceId, userId]);
     const token = randomBytes(32).toString('base64url');
-    await c.query('INSERT INTO h2_invitations VALUES (?,?,?,?,?,?,0,0)', [operationId, subject, tenantId, digest(token), seal(token, this.config.encryptionKey, `invitation:${operationId}`), this.clock() + this.config.invitationSeconds * 1000]);
-    return operationId;
+    const expiresAt = this.clock() + this.config.invitationSeconds * 1000;
+    await c.query('INSERT INTO h2_invitations VALUES (?,?,?,?,?,?,0,0)', [operationId, subject, tenantId, digest(token), seal(token, this.config.encryptionKey, `invitation:${operationId}`), expiresAt]);
+    return { id: operationId, token, expiresAt: new Date(expiresAt).toISOString() };
   }
   async provision(key: string, raw: OnboardingInput): Promise<TenantOperation> {
     const name = label(raw.name), slug = parseWorkspaceSlug(raw.slug) ?? deriveWorkspaceSlug(name);
@@ -69,7 +72,7 @@ export class HostedProvisioning {
       await insertResource(c, { tenantId, namespaceId }, { kind: 'user', id: userId }, { name: input.administrator.name, role: 'administrator' });
       await c.query("INSERT INTO h1_operations VALUES (?,?,?,'provision',?,'pending','created')", [operationId, tenantId, namespaceId, hash]);
       const invitation = await this.invite(c, operationId, tenantId, namespaceId, userId, input.administrator.email);
-      await c.query('INSERT INTO h2_onboarding VALUES (?,?,?,?)', [operationId, hash, tenantId, invitation]);
+      await c.query('INSERT INTO h2_onboarding VALUES (?,?,?,?)', [operationId, hash, tenantId, invitation.id]);
       await appendMetadataEvent(c, { tenantId, namespaceId }, 'tenant.provisioning');
       // The committed provisioning mutations are audited in the transaction that creates
       // them, so a later SMTP failure cannot leave them unaudited. Invitation tokens are
@@ -123,6 +126,16 @@ export class HostedProvisioning {
     return this.operator.inspect(operationId);
   }
   async inviteMember(key: string, tenantId: string, raw: InvitationInput): Promise<{ operationId: string; tenantId: string }> {
+    await this.createMemberInvitation(key, tenantId, raw);
+    return { operationId: operatorOperationId(key), tenantId };
+  }
+  /** Tenant creation discloses the fresh token once; lists and operator responses never do. */
+  async inviteTenantMember(context: TenantContext, raw: InvitationInput): Promise<{ invitation: PendingInvitation; token: string }> {
+    const created = await this.createMemberInvitation(randomUUID(), context.tenantId, raw, context);
+    if (!created) throw new MetadataError('OPERATION_ID_REUSED');
+    return { invitation: created.invitation, token: created.token };
+  }
+  private async createMemberInvitation(key: string, tenantId: string, raw: InvitationInput, context?: TenantContext) {
     identifier(tenantId);
     if (!isRole(raw.role)) throw new MetadataError('METADATA_INVALID', 400);
     const input = { email: normalizedEmail(raw.email), name: label(raw.name), role: raw.role }, operationId = operatorOperationId(key);
@@ -132,21 +145,64 @@ export class HostedProvisioning {
     const invited = await this.database.transaction(async c => {
       const rows = await c.query("UPDATE h1_tenants SET version = version WHERE tenant_id = ? AND state = 'active' RETURNING tenant_id", [tenantId]);
       if (!rows.length) throw new MetadataError('TENANT_UNAVAILABLE', 403);
+      if (context) await this.tenantAdmin(c, context);
       const prior = (await c.query('SELECT * FROM h2_onboarding WHERE operation_id = ?', [operationId]))[0];
       if (prior) { if (prior.request_hash !== hash) throw new MetadataError('OPERATION_ID_REUSED'); return; }
       const namespaceId = String((await c.query('SELECT namespace_id FROM h1_namespaces WHERE tenant_id = ?', [tenantId]))[0]!.namespace_id), userId = randomUUID();
+      if (context && (await c.query(`SELECT m.user_id FROM h2_memberships m JOIN h2_identities i ON i.subject = m.subject
+        WHERE m.tenant_id = ? AND i.email = ?`, [tenantId, input.email])).length) throw new MetadataError('MEMBERSHIP_EXISTS', 409);
       await insertResource(c, { tenantId, namespaceId }, { kind: 'user', id: userId }, { name: input.name, role: input.role });
-      await this.invite(c, operationId, tenantId, namespaceId, userId, input.email);
+      const invitation = await this.invite(c, operationId, tenantId, namespaceId, userId, input.email);
       await c.query('INSERT INTO h2_onboarding VALUES (?,?,?,?)', [operationId, hash, tenantId, operationId]);
-      await c.query('UPDATE h1_revisions SET "authorization" = "authorization" + 1 WHERE tenant_id = ?', [tenantId]);
+      // Pending membership grants no admission and changes no active user's permissions.
+      // Preserve tenant sessions for this workflow; operator invalidation stays unchanged.
+      if (!context) await c.query('UPDATE h1_revisions SET "authorization" = "authorization" + 1 WHERE tenant_id = ?', [tenantId]);
       await appendMetadataEvent(c, { tenantId, namespaceId }, 'membership.invited');
       // The invitation token is sealed in h2_invitations and mailed; only the recipient identity lands here.
-      await appendOperatorAudit(c, { action: 'membership.invited', tenantId, subject: input.email, detail: { operationId, userId, role: input.role } });
-      return { tenantId, namespaceId };
+      await appendOperatorAudit(c, { ...(context ? { actor: context.userId } : {}), action: 'membership.invited', tenantId, subject: input.email, detail: { operationId, userId, role: input.role } });
+      return { tenantId, namespaceId, invitation: { id: invitation.id, namespaceId, ...input, expiresAt: invitation.expiresAt }, token: invitation.token };
     });
     if (invited) this.analytics.track(invited, { name: 'user_invited' });
     await this.deliver(operationId);
-    return { operationId, tenantId };
+    return invited;
+  }
+  /** Recheck admission under the same tenant lock used by acceptance/removal. */
+  private async tenantAdmin(c: SqlConnection, context: TenantContext): Promise<void> {
+    const tenant = await c.query("UPDATE h1_tenants SET version = version WHERE tenant_id = ? AND state = 'active' RETURNING tenant_id", [context.tenantId]);
+    if (!tenant.length) throw new MetadataError('TENANT_UNAVAILABLE', 403);
+    const row = (await c.query(`SELECT u.body, r."authorization" FROM h2_memberships m
+      JOIN h1_resources u ON u.tenant_id = m.tenant_id AND u.namespace_id = m.namespace_id AND u.resource_id = m.user_id AND u.kind = 'user' AND u.owner_id = ''
+      JOIN h1_revisions r ON r.tenant_id = m.tenant_id AND r.namespace_id = m.namespace_id
+      WHERE m.tenant_id = ? AND m.namespace_id = ? AND m.user_id = ? AND m.status = 'active'`, [context.tenantId, context.namespaceId, context.userId]))[0];
+    if (!row || !hasCapability((JSON.parse(String(row.body)) as { role: Role }).role, 'admin')) throw new MetadataError('SECURITY_ADMIN_REQUIRED', 403);
+    if (Number(row.authorization) !== context.authorizationRevision) throw new MetadataError('AUTHORIZATION_REVISED', 403);
+  }
+  async listTenantInvitations(context: TenantContext): Promise<PendingInvitation[]> {
+    return this.database.transaction(async c => {
+      await this.tenantAdmin(c, context);
+      const rows = await c.query(`SELECT v.invitation_id, v.expires_at, i.email, u.body FROM h2_invitations v
+        JOIN h2_identities i ON i.subject = v.subject
+        JOIN h2_memberships m ON m.subject = v.subject AND m.tenant_id = v.tenant_id
+        JOIN h1_resources u ON u.tenant_id = m.tenant_id AND u.namespace_id = m.namespace_id AND u.resource_id = m.user_id AND u.kind = 'user' AND u.owner_id = ''
+        WHERE v.tenant_id = ? AND m.namespace_id = ? AND m.status = 'invited' AND v.accepted = 0 AND v.expires_at > ?
+        ORDER BY v.expires_at, v.invitation_id`, [context.tenantId, context.namespaceId, this.clock()]);
+      return rows.map(row => {
+        const user = JSON.parse(String(row.body)) as { name: string; role: Role };
+        return { id: String(row.invitation_id), namespaceId: context.namespaceId, email: String(row.email), name: user.name, role: user.role, expiresAt: new Date(Number(row.expires_at)).toISOString() };
+      });
+    });
+  }
+  async revokeTenantInvitation(context: TenantContext, invitationId: string): Promise<void> {
+    identifier(invitationId);
+    await this.database.transaction(async c => {
+      await this.tenantAdmin(c, context);
+      // Keep the operation's FK history, but expire the token and erase its sealed copy.
+      const rows = await c.query(`UPDATE h2_invitations SET expires_at = 0, token_secret = ''
+        WHERE tenant_id = ? AND invitation_id = ? AND accepted = 0 AND expires_at > ? RETURNING subject`, [context.tenantId, invitationId, this.clock()]);
+      if (!rows.length) missing();
+      await appendMetadataEvent(c, context, 'membership.invitation-revoked');
+      await appendOperatorAudit(c, { actor: context.userId, action: 'membership.invitation-revoked', tenantId: context.tenantId, subject: String(rows[0]!.subject), detail: { invitationId } });
+    });
   }
   /** Removal is an admission tombstone, preserving referenced owners/assets until their lifecycle handles them. */
   async removeMember(tenantId: string, userId: string, raw?: JobDisposition): Promise<void> {

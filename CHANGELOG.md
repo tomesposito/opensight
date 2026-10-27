@@ -13,6 +13,10 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Added
 
+- Hosted workspace administrators can invite members in all five roles, share
+  single-use invitations, and list or revoke pending invitations within their
+  own workspace. Invitations expire after seven days by default; member removal
+  remains operator-managed with the required schedule disposition (#150).
 - The hosted pipeline now serves the marketing site's `robots.txt` and
   `sitemap.xml` on the marketing host (correct plain-text and XML content
   types; the app host still returns 404 for both), completing the live

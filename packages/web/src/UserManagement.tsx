@@ -4,19 +4,16 @@ import { allowed, useAccess, type Session } from './access.js';
 import type { Invitation, createApiClient } from './api-client.js';
 
 type Client = Pick<ReturnType<typeof createApiClient>, 'listUsers' | 'saveUser' | 'deleteUser' | 'listInvitations' | 'inviteUser' | 'revokeInvitation'>;
-function RoleSelect({ value, onChange, disabled }: { value: Role; onChange: (role: Role) => void; disabled?: boolean }) {
-  return <select aria-label="Role" value={value} disabled={disabled} onChange={e => onChange(e.target.value as Role)}>{ROLES.map(role => <option key={role}>{role}</option>)}</select>;
+const roleLabels: Record<Role, string> = { administrator: 'Administrator', author: 'Author', author_ai: 'Author AI', reader: 'Reader', reader_ai: 'Reader AI' };
+function RoleSelect({ value, onChange, disabled, tenant }: { value: Role; onChange: (role: Role) => void; disabled?: boolean; tenant?: boolean }) {
+  return <select aria-label="Role" value={value} disabled={disabled} onChange={e => onChange(e.target.value as Role)}>{ROLES.map(role => <option key={role} value={role}>{tenant ? roleLabels[role] : role}</option>)}</select>;
 }
 export function UserManagement({ client }: { client: Client }) {
   const access = useAccess();
   if (access.mode !== 'hosted' || !allowed(access, 'admin')) return <p role="alert">SECURITY_ADMIN_REQUIRED: Hosted administrator access required.</p>;
-  if (access.session?.tenantId) return <section className="admin-settings"><h1>Users and invitations</h1>
-    <p>Membership in this hosted tenant is managed by the operator. Removing a user requires transferring or stopping their refresh, report and alert schedules.</p>
-    <a href="#operator-users">Open operator user removal</a><p>The operator credential is required. Tenant administrator sessions cannot remove members.</p>
-  </section>;
-  return <Users client={client} />;
+  return <Users key={access.session?.tenantId ?? 'local'} client={client} tenant={!!access.session?.tenantId} />;
 }
-function Users({ client }: { client: Client }) {
+function Users({ client, tenant }: { client: Client; tenant: boolean }) {
   const [users, setUsers] = useState<Session[]>([]), [invitations, setInvitations] = useState<Invitation[]>([]);
   const [id, setId] = useState(''), [name, setName] = useState(''), [role, setRole] = useState<Role>('reader');
   const [error, setError] = useState(''), [message, setMessage] = useState(''), [link, setLink] = useState(''), [busy, setBusy] = useState(false);
@@ -33,20 +30,23 @@ function Users({ client }: { client: Client }) {
     finally { setBusy(false); }
   };
   return <section className="admin-settings" aria-labelledby="users-title"><h1 id="users-title">Users and invitations</h1>
-    <p>Manage users in this namespace. Administrators configure the system and invite users. Authors build analyses; readers view published dashboards. Administrators and roles ending in _ai can use AI.</p>
+    <p>Manage users in this {tenant ? 'workspace' : 'namespace'}. Administrators configure the system and invite users. Authors build analyses; readers view published dashboards. Administrators and roles ending in _ai can use AI.</p>
+    {tenant && <p>Member removal is operator-managed because it requires transferring or stopping the member’s refresh, report and alert schedules. Tenant administrator sessions cannot remove members.</p>}
     <form aria-label="Invite user" onSubmit={e => { e.preventDefault(); setLink(''); void run(async () => {
-      const created = await client.inviteUser({ id, name, role });
+      const created = await client.inviteUser({ ...(tenant ? { email: id } : { id }), name, role });
       const url = new URL(window.location.href); url.search = ''; url.hash = `invite=${created.token}`;
       setLink(url.href); setId(''); setName('');
     }, 'Invitation created. Share the single-use link with the invited person.'); }}>
-      <label>Sign-in user ID<input required value={id} maxLength={512} pattern="[A-Za-z0-9_-]+" onChange={e => setId(e.target.value)} disabled={busy} /></label>
+      <label>{tenant ? 'Email address' : 'Sign-in user ID'}<input type={tenant ? 'email' : 'text'} required value={id} maxLength={512} pattern={tenant ? undefined : '[A-Za-z0-9_-]+'} onChange={e => setId(e.target.value)} disabled={busy} /></label>
       <label>Display name<input required value={name} maxLength={512} onChange={e => setName(e.target.value)} disabled={busy} /></label>
-      <label>Role<RoleSelect value={role} onChange={setRole} disabled={busy} /></label><button type="submit" disabled={busy}>Create invitation</button>
+      <label>Role<RoleSelect value={role} onChange={setRole} disabled={busy} tenant={tenant} /></label><button type="submit" disabled={busy}>Create invitation</button>
     </form>
-    <p>Use the identity supplied by your configured sign-in service. Invitations expire after 7 days. The invited person must sign in as that identity to accept; creating an invitation does not create login credentials or send email.</p>
+    {tenant ? <p>Invitations expire after 7 days and are bound to the invited email address. Share the single-use link shown below; an invitation email is also sent. Enrollment currently uses the OpenSight enrollment API.</p>
+      : <p>Use the identity supplied by your configured sign-in service. Invitations expire after 7 days. The invited person must sign in as that identity to accept; creating an invitation does not create login credentials or send email.</p>}
     {link && <label>Single-use invitation link<input readOnly value={link} onFocus={e => e.target.select()} /></label>}
-    <h2>Users</h2>{users.map(user => <UserRow key={`${user.id}/${user.role}/${user.name}`} user={user} busy={busy} onSave={value => void run(() => client.saveUser(user.id, value), 'User updated.')} onDelete={() => void run(() => client.deleteUser(user.id), 'User removed.')} />)}
-    <h2>Pending invitations</h2>{invitations.length ? <ul>{invitations.map(invite => <li key={invite.id}>{invite.name} ({invite.id}) · {invite.role} · Expires {invite.expiresAt} <button type="button" disabled={busy} onClick={() => void run(async () => { await client.revokeInvitation(invite.id); setLink(''); }, 'Invitation revoked.')}>Revoke {invite.id}</button></li>)}</ul> : <p>No pending invitations.</p>}
+    <h2>Users</h2>{tenant ? <ul>{users.map(user => <li key={user.id}>{user.name} · {roleLabels[user.role]}</li>)}</ul>
+      : users.map(user => <UserRow key={`${user.id}/${user.role}/${user.name}`} user={user} busy={busy} onSave={value => void run(() => client.saveUser(user.id, value), 'User updated.')} onDelete={() => void run(() => client.deleteUser(user.id), 'User removed.')} />)}
+    <h2>Pending invitations</h2>{invitations.length ? <ul>{invitations.map(invite => <li key={invite.id}>{invite.name} ({invite.email ?? invite.id}) · {tenant ? roleLabels[invite.role] : invite.role} · Expires {invite.expiresAt} <button type="button" disabled={busy} onClick={() => void run(async () => { await client.revokeInvitation(invite.id); setLink(''); }, 'Invitation revoked.')}>Revoke {invite.email ?? invite.id}</button></li>)}</ul> : <p>No pending invitations.</p>}
     {busy && <p role="status">Working…</p>}{message && <p role="status">{message}</p>}{error && <p role="alert">{error}</p>}
   </section>;
 }

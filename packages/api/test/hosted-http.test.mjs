@@ -9,7 +9,7 @@ import { createHostedApiServer, createBuiltinHostedServer } from '../dist/hosted
 import { hostedConfig } from '../dist/hosted-config.js';
 import { HostedAuth } from '../dist/hosted-auth.js';
 import { authFixture, database, environment, decode32 } from './hosted-helpers.mjs';
-import { totp } from '../dist/auth-crypto.js';
+import { digest, totp, unseal } from '../dist/auth-crypto.js';
 import { StubMailTransport } from '../dist/mail.js';
 
 function configEnv(config) {
@@ -82,7 +82,8 @@ test('H2 tenant administrators cannot provision or use operator credentials as t
   for (const [path, method] of [['/api/host/tenants', 'POST'], [`/api/host/tenants/${f.tenant.tenantId}/suspend`, 'POST'], [`/api/host/tenants/${f.tenant.tenantId}/resume`, 'POST'], [`/api/host/tenants/${f.tenant.tenantId}`, 'DELETE']]) {
     assert.equal((await request(path, { method, headers: tenantHeaders, body: {} })).body.errorCode, 'OPERATOR_REQUIRED');
   }
-  for (const path of ['/api/namespaces/new', '/api/users/new', '/api/invitations']) assert.equal((await request(path, { method: 'PUT', headers: tenantHeaders, body: {} })).body.errorCode, 'OPERATOR_REQUIRED');
+  for (const path of ['/api/namespaces/new', '/api/users/new']) assert.equal((await request(path, { method: 'PUT', headers: tenantHeaders, body: {} })).body.errorCode, 'OPERATOR_REQUIRED');
+  assert.equal((await request('/api/invitations', { method: 'PUT', headers: tenantHeaders, body: {} })).status, 405);
   assert.equal((await request('/api/users', { headers: tenantHeaders })).status, 200);
   assert.equal((await request('/api/session', { headers: operator })).status, 401);
   assert.equal((await request(`/api/host/tenants/${f.tenant.tenantId}`, { headers: { ...operator, origin: f.config.origin } })).body.errorCode, 'OPERATOR_REQUIRED');
@@ -143,6 +144,7 @@ test('H2 operator invitations preprovision users, revoke stale sessions, and pre
   const path = `/api/host/tenants/${f.tenant.tenantId}/invitations`, headers = { ...operator, 'idempotency-key': 'additional-member' };
   const input = { email: 'additional@example.test', name: 'Additional reader', role: 'reader' };
   const first = await request(path, { method: 'POST', headers, body: input }); assert.equal(first.status, 201);
+  assert.deepEqual(Object.keys(first.body).sort(), ['operationId', 'tenantId']);
   assert.deepEqual((await request(path, { method: 'POST', headers, body: input })).body, first.body); assert.equal(f.mail.messages.length, 2);
   assert.equal((await request(path, { method: 'POST', headers, body: { ...input, role: 'administrator' } })).body.errorCode, 'OPERATION_ID_REUSED');
   assert.equal((await request(`/api/host/tenants/${f.tenant.tenantId}/suspend`, { method: 'POST', headers, body: { expectedVersion: 2 } })).body.errorCode, 'OPERATION_ID_REUSED');
@@ -164,6 +166,144 @@ test('H2 operator invitations preprovision users, revoke stale sessions, and pre
   assert.equal((await request('/api/session', { headers: readerHeaders })).status, 401);
   assert.equal((await request('/api/auth/enroll', { method: 'POST', body: { invitationToken, password: randomBytes(24).toString('base64') } })).status, 401);
   assert.equal((await request('/api/host/tenants', { method: 'POST', headers, body: f.input })).body.errorCode, 'OPERATION_ID_REUSED');
+});
+
+test('Issue 150: tenant administrator creates all five roles, lists metadata only, and enrolls Reader AI without losing the admin session', async t => {
+  const f = await authFixture(t);
+  f.config = { ...f.config, invitationSeconds: 604800 };
+  const { request } = await serving(t, f), session = await f.login();
+  const administrator = await f.auth.verify(session.token);
+  const headers = { authorization: `Bearer ${session.token}`, origin: f.config.origin };
+  assert.deepEqual((await request('/api/invitations', { headers })).body, []);
+  const created = [];
+  for (const role of ['administrator', 'author', 'author_ai', 'reader', 'reader_ai']) {
+    const input = { email: `${role}@example.test`, name: `Invited ${role}`, role };
+    const before = Date.now();
+    const result = await request('/api/invitations', { method: 'POST', headers, body: input });
+    assert.equal(result.status, 201); assert.equal(result.headers['cache-control'], 'no-store');
+    const { invitation, token } = result.body; created.push(result.body);
+    assert.deepEqual(Object.keys(result.body).sort(), ['invitation', 'token']);
+    assert.deepEqual(invitation, { id: invitation.id, namespaceId: f.tenant.namespaceId, ...input, expiresAt: invitation.expiresAt });
+    assert.ok(Date.parse(invitation.expiresAt) >= before + 7 * 86400000);
+    assert.ok(Date.parse(invitation.expiresAt) <= Date.now() + 7 * 86400000);
+    assert.ok(/^[A-Za-z0-9_-]{43}$/.test(token));
+    const [stored] = await f.db.transaction(c => c.query('SELECT * FROM h2_invitations WHERE invitation_id = ?', [invitation.id]));
+    assert.equal(stored.token_hash, digest(token)); assert.ok(!JSON.stringify(stored).includes(token));
+    assert.ok(unseal(stored.token_secret, f.config.encryptionKey, `invitation:${invitation.id}`) === token);
+    assert.ok(f.mail.messages.at(-1).html.includes(token));
+  }
+  const pending = await request('/api/invitations', { headers });
+  assert.equal(pending.status, 200); assert.equal(pending.body.length, 5);
+  assert.deepEqual(new Set(pending.body.map(i => i.id)), new Set(created.map(c => c.invitation.id)));
+  assert.ok(!/token|secret|hash/.test(JSON.stringify(pending.body)));
+  assert.equal((await request('/api/session', { headers })).status, 200);
+  const users = (await request('/api/users', { headers })).body;
+  assert.equal(users.length, 6); assert.ok(users.every(u => u.namespaceId === f.tenant.namespaceId));
+  const audit = await f.db.transaction(c => c.query('SELECT actor, detail FROM h8_audit WHERE tenant_id = ? AND action = ?', [f.tenant.tenantId, 'membership.invited']));
+  assert.equal(audit.filter(a => a.actor === administrator.userId).length, 5);
+  for (const { token } of created) assert.ok(!JSON.stringify(audit).includes(token));
+  const { token: invitationToken, invitation } = created.at(-1), password = randomBytes(24).toString('base64');
+  const enrolled = await request('/api/auth/enroll', { method: 'POST', body: { invitationToken, password } });
+  assert.equal(enrolled.status, 200);
+  const secret = decode32(enrolled.body.secret), code = () => totp(secret, Math.floor(f.clock() / 30000));
+  // Possession of another identity's password cannot accept this invitation.
+  assert.equal((await request('/api/auth/accept', { method: 'POST', body: { invitationToken, password: f.password, code: f.code() } })).status, 401);
+  const accept = () => request('/api/auth/accept', { method: 'POST', body: { invitationToken, password, code: code() } });
+  assert.deepEqual((await accept()).body, { accepted: true });
+  // Existing authenticated replays acknowledge completion without issuing credentials.
+  assert.deepEqual((await accept()).body, { accepted: true });
+  f.advance();
+  const login = await request('/api/auth/login', { method: 'POST', body: { email: invitation.email, password, code: code() } });
+  assert.equal(login.status, 200); assert.equal(login.body.tenantId, f.tenant.tenantId);
+  const readerHeaders = { authorization: `Bearer ${login.body.token}` };
+  assert.equal((await request('/api/session', { headers: readerHeaders })).body.role, 'reader_ai');
+  assert.equal((await request(`/api/invitations/${invitation.id}`, { method: 'DELETE', headers })).body.errorCode, 'RESOURCE_NOT_FOUND');
+  assert.equal((await request('/api/invitations', { headers })).body.length, 4);
+  assert.equal((await request('/api/users', { headers: readerHeaders })).body.errorCode, 'SECURITY_ADMIN_REQUIRED');
+  const member = users.find(u => u.role === 'reader_ai');
+  assert.equal((await request(`/api/users/${member.id}`, { method: 'DELETE', headers })).body.errorCode, 'OPERATOR_REQUIRED');
+  assert.equal((await request(`/api/host/tenants/${f.tenant.tenantId}/users/${member.id}`, { method: 'DELETE', headers, body: {} })).body.errorCode, 'OPERATOR_REQUIRED');
+});
+
+test('Issue 150: revoked and expired invitations cannot enroll or accept, including revocation during enrollment', async t => {
+  const f = await authFixture(t), { request } = await serving(t, f);
+  const headers = { authorization: `Bearer ${(await f.login()).token}` };
+  for (const state of ['revoked', 'expired']) {
+    const input = { email: `${state}@example.test`, name: state, role: 'reader_ai' };
+    const result = await request('/api/invitations', { method: 'POST', headers, body: input }); assert.equal(result.status, 201);
+    const { token: invitationToken, invitation } = result.body, password = randomBytes(24).toString('base64');
+    const enrolled = await request('/api/auth/enroll', { method: 'POST', body: { invitationToken, password } }); assert.equal(enrolled.status, 200);
+    const code = totp(decode32(enrolled.body.secret), Math.floor(f.clock() / 30000));
+    if (state === 'revoked') {
+      assert.deepEqual((await request(`/api/invitations/${invitation.id}`, { method: 'DELETE', headers })).body, { deleted: true });
+      const [stored] = await f.db.transaction(c => c.query('SELECT token_secret FROM h2_invitations WHERE invitation_id = ?', [invitation.id]));
+      assert.equal(stored.token_secret, '');
+    } else await f.db.transaction(c => c.query('UPDATE h2_invitations SET expires_at = ? WHERE invitation_id = ?', [Math.min(Date.now(), f.clock()) - 1, invitation.id]));
+    for (const endpoint of ['enroll', 'accept']) {
+      const denied = await request(`/api/auth/${endpoint}`, { method: 'POST', body: { invitationToken, password, ...(endpoint === 'accept' ? { code } : {}) } });
+      assert.equal(denied.status, 401); assert.equal(denied.body.errorCode, 'AUTHENTICATION_FAILED');
+    }
+    const replay = await request(`/api/invitations/${invitation.id}`, { method: 'DELETE', headers });
+    assert.equal(replay.status, 404); assert.equal(replay.body.errorCode, 'RESOURCE_NOT_FOUND');
+    assert.deepEqual((await request('/api/invitations', { headers })).body, []);
+  }
+  assert.equal((await request('/api/session', { headers })).status, 200);
+});
+
+test('Issue 150: all non-admin roles and unauthenticated callers are refused tenant invitations', async t => {
+  const f = await authFixture(t), { request } = await serving(t, f), session = await f.login();
+  const identity = await f.auth.verify(session.token), headers = { authorization: `Bearer ${session.token}` };
+  const attempts = [['/api/invitations', 'GET'], ['/api/invitations', 'POST'], ['/api/invitations/pending', 'DELETE']];
+  for (const role of ['author', 'author_ai', 'reader', 'reader_ai']) {
+    await f.db.transaction(c => c.query("UPDATE h1_resources SET body = ? WHERE tenant_id = ? AND kind = 'user' AND resource_id = ?", [JSON.stringify({ name: 'Non-admin', role }), f.tenant.tenantId, identity.userId]));
+    for (const [path, method] of attempts) {
+      const result = await request(path, { method, headers, ...(method === 'POST' ? { body: { email: 'forbidden@example.test', name: 'Forbidden', role: 'administrator' } } : {}) });
+      assert.equal(result.status, 403); assert.equal(result.body.errorCode, 'SECURITY_ADMIN_REQUIRED');
+    }
+  }
+  for (const [path, method] of attempts) assert.equal((await request(path, { method })).status, 401);
+  assert.equal(f.mail.messages.length, 1);
+});
+
+test('Issue 150: tenant invitation and user routes fail closed across tenants and forged scope inputs', async t => {
+  const f = await authFixture(t), { request } = await serving(t, f);
+  const other = await f.provisioning.provision('other-tenant', { name: 'Other workspace', administrator: { email: 'other-admin@example.test', name: 'Other administrator' } });
+  await f.provisioning.inviteMember('other-invite', other.tenantId, { email: 'other-reader@example.test', name: 'Other reader', role: 'reader' });
+  const [foreign] = await f.db.transaction(c => c.query('SELECT invitation_id, token_secret FROM h2_invitations WHERE tenant_id = ? AND accepted = 0 ORDER BY invitation_id', [other.tenantId]));
+  const headers = { authorization: `Bearer ${(await f.login()).token}` }, input = { email: 'scoped@example.test', name: 'Scoped', role: 'reader_ai' };
+  for (const [field, value] of [['tenantId', other.tenantId], ['namespaceId', other.namespaceId], ['userId', 'forged'], ['subject', 'forged']]) {
+    const result = await request('/api/invitations', { method: 'POST', headers, body: { ...input, [field]: value } });
+    assert.equal(result.status, 403); assert.equal(result.body.errorCode, 'FORGED_PRINCIPAL');
+  }
+  for (const [suffix, method] of [['invitations', 'GET'], ['users', 'GET'], ['invitations', 'POST'], [`invitations/${foreign.invitation_id}`, 'DELETE']]) {
+    const result = await request(`/api/namespaces/${other.namespaceId}/${suffix}`, { method, headers, ...(method === 'POST' ? { body: input } : {}) });
+    assert.equal(result.status, 404); assert.equal(result.body.errorCode, 'RESOURCE_NOT_FOUND');
+  }
+  assert.equal((await request(`/api/invitations/${foreign.invitation_id}`, { method: 'DELETE', headers })).body.errorCode, 'RESOURCE_NOT_FOUND');
+  assert.equal((await request(`/api/invitations/${foreign.invitation_id}`, { method: 'DELETE', headers, body: { tenantId: other.tenantId } })).body.errorCode, 'FORGED_PRINCIPAL');
+  assert.equal((await request(`/api/host/tenants/${other.tenantId}/invitations`, { method: 'POST', headers, body: input })).body.errorCode, 'OPERATOR_REQUIRED');
+  const listed = await request('/api/invitations', { headers }); assert.deepEqual(listed.body, []);
+  const users = (await request('/api/users', { headers })).body;
+  assert.equal(users.length, 1); assert.ok(users.every(u => u.namespaceId === f.tenant.namespaceId));
+  const [unchanged] = await f.db.transaction(c => c.query('SELECT token_secret FROM h2_invitations WHERE invitation_id = ?', [foreign.invitation_id]));
+  assert.ok(unchanged.token_secret === foreign.token_secret);
+  const own = await request(`/api/namespaces/${f.tenant.namespaceId}/invitations`, { method: 'POST', headers, body: input });
+  assert.equal(own.status, 201); assert.equal(own.body.invitation.namespaceId, f.tenant.namespaceId);
+  for (const bad of [{ ...input, role: 'operator' }, { ...input, email: 'bad' }, { ...input, name: '' }, { id: 'legacy', name: 'Legacy', role: 'reader' }]) {
+    assert.equal((await request('/api/invitations', { method: 'POST', headers, body: bad })).status, 400);
+  }
+  assert.equal((await request('/api/invitations', { method: 'POST', headers, body: input })).body.errorCode, 'MEMBERSHIP_EXISTS');
+});
+
+test('Issue 150: invitation management is admitted in hosted invocation mode', async t => {
+  const f = await authFixture(t);
+  await serving(t, f); // Initialize the same durable schemas as a migrated deployment.
+  const { request } = await serving(t, f, { invocation: { signal: new AbortController().signal } });
+  const headers = { authorization: `Bearer ${(await f.login()).token}` };
+  const created = await request('/api/invitations', { method: 'POST', headers, body: { email: 'invocation@example.test', name: 'Invocation', role: 'reader_ai' } });
+  assert.equal(created.status, 201);
+  assert.equal((await request('/api/invitations', { headers })).body.length, 1);
+  assert.equal((await request(`/api/invitations/${created.body.invitation.id}`, { method: 'DELETE', headers })).status, 200);
 });
 
 test('H2 hosted CLI starts with private durable storage and its key-rotation command revokes a running process', async t => {

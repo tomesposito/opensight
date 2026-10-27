@@ -283,6 +283,13 @@ Five roles (administrator, author, author_ai, reader, reader_ai), single-use
 invitations, row/column security with namespaces, folders, asset sharing, an
 embedding SDK with signed URLs, scheduled refreshes, and dashboard reports.
 
+Hosted workspace administrators invite teammates by email, share single-use
+invitations, and revoke pending invitations. Member removal remains
+operator-managed because schedules must be transferred or stopped. See
+[tenant invitations](docs/issue-150-tenant-invitations.md).
+
+![Workspace invitations, captured against a local hosted API with synthetic identities](docs/images/users-invitations.png)
+
 Optional [usage tracking](docs/usage-tracking.md) keeps a tenant event log and
 forwards allowlisted events to PostHog. Self-hosted installs default to off;
 administrators can disable collection in AI provider settings. Events contain
