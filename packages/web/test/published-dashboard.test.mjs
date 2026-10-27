@@ -98,3 +98,14 @@ test('admin dashboard grants are explicit and retain server errors', async t => 
   assert.deepEqual(grant, ['daily', 'reader']); assert.match(JSON.stringify(ui.toJSON()), /ASSET_PRECONDITION_FAILED/);
   assert.doesNotMatch(JSON.stringify(ui.toJSON()), /viewing access granted/);
 });
+
+test('controls on different sheets stay synchronized when they bind the same published parameter', async t => {
+  const value = published(), second = structuredClone(value.definition.sheets[0]); second.sheetId = 'sheet-2'; second.name = 'Details'; second.visuals = [];
+  second.parameterControls[0].dropdown.parameterControlId = 'region-details'; value.definition.sheets.push(second);
+  const queries = [], client = { async getPublishedDashboard() { return value; }, async queryDashboardVisual(...args) { queries.push(args); return { rows: [] }; } };
+  const ui = await mount(t, h(PublishedDashboard, { id: 'daily', client, navigate() {} }));
+  await act(() => ui.root.findByType(ControlInput).props.onChange(['west']));
+  assert.deepEqual(queries.at(-1)[3], { region: ['west'], 'region-details': ['west'] });
+  await act(() => ui.root.findAllByType('button').find(b => b.props.children === 'Details').props.onClick());
+  assert.deepEqual(ui.root.findByType(ControlInput).props.parameter.values, ['west']);
+});

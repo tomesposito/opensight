@@ -57,7 +57,15 @@ function PublishedContent({ value, client }: { value: Definition; client: Reader
     <div className="dashboard-heading"><h1>{value.name}</h1><span className="phase-badge">Published · Version {value.version} · Live data</span></div>
     {value.errors.map((error, i) => <p role="alert" key={i}>{error.errorCode}: {error.message}</p>)}
     <nav className="sheet-tabs" aria-label="Sheets">{preview.sheets.map(s => <button key={s.id} aria-current={s.id === sheetId ? 'page' : undefined} onClick={() => setSheetId(s.id)}>{s.name}</button>)}</nav>
-    {!!controls.bindings.length && <section className="controls-strip" aria-label={`${sheet?.name} controls`}><div className="controls-row">{controls.bindings.map(({ control, parameter, problem }) => <ControlInput key={control.id} control={control} parameter={{ ...parameter, values: controlValues[control.id] ?? parameter.defaultValues }} error={problem} onChange={values => setControlValues(previous => ({ ...previous, [control.id]: values }))} />)}</div></section>}
+    {!!controls.bindings.length && <section className="controls-strip" aria-label={`${sheet?.name} controls`}><div className="controls-row">{controls.bindings.map(({ control, parameter, problem }) => <ControlInput key={control.id} control={control} parameter={{ ...parameter, values: controlValues[control.id] ?? parameter.defaultValues }} error={problem} onChange={values => setControlValues(previous => {
+      const next = { ...previous };
+      // One parameter can have controls on several sheets. Keep every displayed
+      // value and every server control override consistent when any one changes.
+      for (const sheet of value.definition.sheets ?? []) for (const bound of readerControls(value.definition, sheet).bindings) {
+        if (bound.parameter.name === parameter.name) next[bound.control.id] = values;
+      }
+      return next;
+    })} />)}</div></section>}
     {controls.messages.map(message => <p role="alert" key={message}>{message}</p>)}
     {sheet?.visuals.length ? <div className="dashboard-grid" aria-label={sheet.name}>{sheet.visuals.map(visual => <PublishedVisual key={visual.path} visual={visual} value={value} controls={controlValues} client={client} />)}</div> : <p role="status">This published sheet has no visuals.</p>}
   </>;
