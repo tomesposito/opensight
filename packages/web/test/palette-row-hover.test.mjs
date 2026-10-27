@@ -1,7 +1,6 @@
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import { chromiumPage } from './chromium.mjs';
+import { defineHoverCases, styles } from './interaction.mjs';
 
 // Issue #108 polish slice 52: hover background for the command palette
 // and global search result rows (.command-palette li / .global-search
@@ -17,7 +16,7 @@ import { chromiumPage } from './chromium.mjs';
 // its hover is unchanged, and dark chrome resolves the var to #293f55.
 // Background only, so resting geometry is identical. Static (no
 // animation), so no reduced-motion variant is needed.
-const css = await readFile(new URL('../src/style.css', import.meta.url), 'utf8');
+const css = styles['style.css'];
 
 const paletteHover = css.match(/\.command-palette li:hover\s*\{([^}]*)\}/);
 const searchHover = css.match(/\.global-search li:hover\s*\{([^}]*)\}/);
@@ -58,43 +57,17 @@ test('the hover tint coexists with the selected-row and slice-47 rules', () => {
   assert.ok(css.match(/\.command-palette\[data-chrome=dark\]\s*\{[^}]*--palette-selected:\s*#293f55/), 'the dark-chrome palette-selected value must still be present');
 });
 
-{
-  let page;
-  before(async () => { page = await chromiumPage(); });
-  after(async () => { await page?.close(); });
-
-  test('applying the hover rule changes the visual state with identical geometry', async () => {
-    await page.setContent(`<style>${css}</style><dialog class="command-palette" open>
+defineHoverCases('palette-row hover', {
+  html: `<dialog class="command-palette" open>
       <ul><li id="row" aria-selected="false">Go to Data preparation</li></ul>
-    </dialog>`);
-    const actual = await page.evaluate(() => {
-      const rules = [];
-      for (const sheet of document.styleSheets) {
-        for (const rule of sheet.cssRules) {
-          if ((rule.selectorText || '') === '.command-palette li:hover') rules.push(rule);
-        }
-      }
-      const row = document.querySelector('#row');
-      const rest = { background: getComputedStyle(row).backgroundColor, box: JSON.stringify(row.getBoundingClientRect().toJSON()) };
-      const hover = rules[0];
-      // Assign the rule's whole declaration block: the background is a
-      // var() shorthand, which does not survive longhand-by-longhand
-      // copying, but resolves against the dialog's --palette-selected
-      // when applied as cssText.
-      if (hover) row.style.cssText = hover.style.cssText;
-      const hovered = { background: getComputedStyle(row).backgroundColor, box: JSON.stringify(row.getBoundingClientRect().toJSON()) };
-      return {
-        ruleCount: rules.length,
-        backgroundValue: rules.length ? rules[0].style.getPropertyValue('background') : null,
-        rest,
-        hovered,
-      };
-    });
-    assert.equal(actual.ruleCount, 1);
-    assert.equal(actual.backgroundValue, 'var(--palette-selected)');
-    assert.equal(actual.rest.background, 'rgba(0, 0, 0, 0)');
-    assert.equal(actual.hovered.background, 'rgb(226, 242, 250)');
-    assert.notEqual(actual.rest.background, actual.hovered.background);
-    assert.equal(actual.rest.box, actual.hovered.box);
-  });
-}
+    </dialog>`,
+  cases: [
+    {
+      target: '#row',
+      rule: '.command-palette li:hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(226, 242, 250)' },
+      paintOnly: true,
+    },
+  ],
+});

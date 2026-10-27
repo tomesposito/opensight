@@ -1,7 +1,6 @@
-import { after, before, describe, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import { chromiumPage } from './chromium.mjs';
+import { defineHoverCases, styles } from './interaction.mjs';
 
 // Issue #108 polish slice 106: hover feedback for the data-prep step
 // editor's field labels (.prep-step-editor label in
@@ -32,9 +31,7 @@ import { chromiumPage } from './chromium.mjs';
 // labels via slice 104. Background only, so resting geometry is
 // identical and there is no animation. The data-prep surface is
 // fixed light, so no dark variant.
-const styleCss = await readFile(new URL('../src/style.css', import.meta.url), 'utf8');
-const allCss = (await Promise.all(['style.css', 'app-chrome.css', 'data-section.css', 'embed.css', 'sign-in.css']
-  .map(name => readFile(new URL(`../src/${name}`, import.meta.url), 'utf8')))).join('\n');
+const styleCss = styles['style.css'];
 
 const rule = styleCss.match(/^\.prep-step-editor label:hover\s*\{([^}]*)\}/m);
 
@@ -59,14 +56,8 @@ test('the resting prep-step-editor and data-prep label rules are preserved and t
   assert.ok(!/data-chrome=dark[^\n]*prep-step-editor/.test(styleCss), 'the fixed-light data-prep surface must not gain a dark variant for this rule');
 });
 
-describe('Prep-step-editor label hover in offline Chromium', () => {
-  let page;
-  before(async () => { page = await chromiumPage(); });
-  after(async () => { await page?.close(); });
-
-  test('applying the hover rule changes the label visual state with identical geometry in the real ancestor context, and labels outside the step editor are out of scope', async () => {
-    await page.setContent(`<style>${allCss}</style>`
-      + `<section class="data-prep"><div class="prep-workspace"><div class="prep-main"><section class="prep-configure">`
+defineHoverCases('prep-step-editor-label hover', {
+  html: `<section class="data-prep"><div class="prep-workspace"><div class="prep-main"><section class="prep-configure">`
       + `<form class="prep-step-editor"><h3>Rename column</h3>`
       + `<label id="stepNameLabel">Step name (optional)<input type="text"></label>`
       + `<fieldset><legend>Condition 1 (AND)</legend><label id="fieldsetLabel">Column<select><option>revenue</option></select></label></fieldset>`
@@ -74,40 +65,32 @@ describe('Prep-step-editor label hover in offline Chromium', () => {
       + `</form>`
       + `<div class="prep-input-config"><label id="pickerLabel">Connected source<select><option>Sales</option></select></label></div>`
       + `</section></div></div></section>`
-      + `<div class="prep-document-bar"><label id="docLabel">Dataset name<input type="text"></label></div>`);
-    const actual = await page.evaluate(() => {
-      const all = [...document.styleSheets].flatMap(s => [...s.cssRules]);
-      const norm = r => (r.selectorText || '').replaceAll('"', '');
-      const found = all.find(r => norm(r) === '.prep-step-editor label:hover') ?? null;
-      const measure = (el, rule) => {
-        const rest = { background: getComputedStyle(el).backgroundColor, color: getComputedStyle(el).color, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        if (rule) { for (const prop of rule.style) el.style.setProperty(prop, rule.style.getPropertyValue(prop)); }
-        const hovered = { background: getComputedStyle(el).backgroundColor, color: getComputedStyle(el).color, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        el.removeAttribute('style');
-        return { rest, hovered };
-      };
-      const bare = found ? found.selectorText.replaceAll(':hover', '') : '';
-      const el = id => document.querySelector(`#${id}`);
-      return {
-        found: !!found,
-        props: found ? [...found.style] : [],
-        stepName: found ? measure(el('stepNameLabel'), found) : null,
-        fieldset: found ? measure(el('fieldsetLabel'), found) : null,
-        expr: found ? measure(el('exprLabel'), found) : null,
-        pickerMatches: found ? el('pickerLabel').matches(bare) : null,
-        docMatches: found ? el('docLabel').matches(bare) : null,
-      };
-    });
-    assert.ok(actual.found, 'expected the hover rule in the CSSOM');
-    assert.ok(actual.props.length && actual.props.every(p => p.startsWith('background')), 'hover rule must set background longhands only');
-    for (const [name, m] of [['step-name', actual.stepName], ['fieldset', actual.fieldset], ['expression', actual.expr]]) {
-      assert.equal(m.rest.background, 'rgba(0, 0, 0, 0)', `${name} label rest (transparent)`);
-      assert.equal(m.hovered.background, 'rgb(237, 246, 252)', `${name} label hover`);
-      assert.notEqual(m.rest.background, m.hovered.background);
-      assert.equal(m.rest.color, m.hovered.color, `${name} label colour unchanged on hover`);
-      assert.equal(m.rest.box, m.hovered.box, `${name} label geometry`);
-    }
-    assert.equal(actual.pickerMatches, false, 'the input-config source-picker label outside the step editor must be out of scope');
-    assert.equal(actual.docMatches, false, 'a document-bar label outside the step editor must be out of scope');
-  });
+      + `<div class="prep-document-bar"><label id="docLabel">Dataset name<input type="text"></label></div>`,
+  cases: [
+    {
+      target: '#stepNameLabel',
+      rule: '.prep-step-editor label:hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(237, 246, 252)' },
+      paintOnly: true,
+      unchanged: ['color'],
+      excluded: ['#pickerLabel', '#docLabel'],
+    },
+    {
+      target: '#fieldsetLabel',
+      rule: '.prep-step-editor label:hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(237, 246, 252)' },
+      paintOnly: true,
+      unchanged: ['color'],
+    },
+    {
+      target: '#exprLabel',
+      rule: '.prep-step-editor label:hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(237, 246, 252)' },
+      paintOnly: true,
+      unchanged: ['color'],
+    },
+  ],
 });

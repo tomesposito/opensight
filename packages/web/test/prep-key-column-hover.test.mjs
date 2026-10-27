@@ -1,7 +1,6 @@
-import { after, before, describe, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import { chromiumPage } from './chromium.mjs';
+import { defineHoverCases, styles } from './interaction.mjs';
 
 // Issue #108 polish slice 104: hover feedback for the data-prep join
 // editor's key-column labels (.prep-key-column in PrepJoinEditor.tsx —
@@ -23,9 +22,7 @@ import { chromiumPage } from './chromium.mjs';
 // prep-columns row hover), so no new colour is introduced. Background
 // only, so resting geometry is identical and there is no animation.
 // The data-prep surface is fixed light, so no dark variant.
-const styleCss = await readFile(new URL('../src/style.css', import.meta.url), 'utf8');
-const allCss = (await Promise.all(['style.css', 'app-chrome.css', 'data-section.css', 'embed.css', 'sign-in.css']
-  .map(name => readFile(new URL(`../src/${name}`, import.meta.url), 'utf8')))).join('\n');
+const styleCss = styles['style.css'];
 
 const rule = styleCss.match(/^\.prep-key-column:hover\s*\{([^}]*)\}/m);
 
@@ -50,44 +47,20 @@ test('the resting prep-key-column rules are preserved and the fixed-light prep s
   assert.ok(!/data-chrome=dark[^\n]*prep-key-column/.test(styleCss), 'the fixed-light data-prep surface must not gain a dark variant for this rule');
 });
 
-describe('Prep-key-column hover in offline Chromium', () => {
-  let page;
-  before(async () => { page = await chromiumPage(); });
-  after(async () => { await page?.close(); });
-
-  test('applying the hover rule changes the label visual state with identical geometry in the real ancestor context, and labels outside the join keys are out of scope', async () => {
-    await page.setContent(`<style>${allCss}</style>`
-      + `<section class="data-prep"><form class="prep-step-editor"><div class="prep-join-editor"><div class="prep-join-settings"><fieldset class="prep-join-keys"><legend>Join keys</legend><div class="prep-join-key">`
+defineHoverCases('prep-key-column hover', {
+  html: `<section class="data-prep"><form class="prep-step-editor"><div class="prep-join-editor"><div class="prep-join-settings"><fieldset class="prep-join-keys"><legend>Join keys</legend><div class="prep-join-key">`
       + `<label class="prep-key-column" id="keyLabel"><span class="prep-drag-handle" aria-hidden="true">⠿</span><select id="keySelect"><option>region</option></select></label>`
       + `</div></fieldset></div></div></form>`
-      + `<label id="outsideLabel"><input type="checkbox">Other label</label></section>`);
-    const actual = await page.evaluate(() => {
-      const all = [...document.styleSheets].flatMap(s => [...s.cssRules]);
-      const norm = r => (r.selectorText || '').replaceAll('"', '');
-      const found = all.find(r => norm(r) === '.prep-key-column:hover') ?? null;
-      const measure = (el, rule) => {
-        const rest = { background: getComputedStyle(el).backgroundColor, color: getComputedStyle(el).color, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        if (rule) { for (const prop of rule.style) el.style.setProperty(prop, rule.style.getPropertyValue(prop)); }
-        const hovered = { background: getComputedStyle(el).backgroundColor, color: getComputedStyle(el).color, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        el.removeAttribute('style');
-        return { rest, hovered };
-      };
-      const bare = found ? found.selectorText.replaceAll(':hover', '') : '';
-      const el = id => document.querySelector(`#${id}`);
-      return {
-        found: !!found,
-        props: found ? [...found.style] : [],
-        label: found ? measure(el('keyLabel'), found) : null,
-        outsideMatches: found ? el('outsideLabel').matches(bare) : null,
-      };
-    });
-    assert.ok(actual.found, 'expected the hover rule in the CSSOM');
-    assert.ok(actual.props.length && actual.props.every(p => p.startsWith('background')), 'hover rule must set background longhands only');
-    assert.equal(actual.label.rest.background, 'rgba(0, 0, 0, 0)', 'key label rest (transparent)');
-    assert.equal(actual.label.hovered.background, 'rgb(237, 246, 252)', 'key label hover');
-    assert.notEqual(actual.label.rest.background, actual.label.hovered.background);
-    assert.equal(actual.label.rest.color, actual.label.hovered.color, 'key label colour unchanged on hover');
-    assert.equal(actual.label.rest.box, actual.label.hovered.box, 'key label geometry');
-    assert.equal(actual.outsideMatches, false, 'a label outside the join keys must be out of scope');
-  });
+      + `<label id="outsideLabel"><input type="checkbox">Other label</label></section>`,
+  cases: [
+    {
+      target: '#keyLabel',
+      rule: '.prep-key-column:hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(237, 246, 252)' },
+      paintOnly: true,
+      unchanged: ['color'],
+      excluded: ['#outsideLabel'],
+    },
+  ],
 });

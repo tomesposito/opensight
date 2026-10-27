@@ -1,7 +1,6 @@
-import { after, before, describe, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import { chromiumPage } from './chromium.mjs';
+import { defineHoverCases, styles } from './interaction.mjs';
 
 // Issue #108 polish slice 132: hover feedback for the Ask O panel's
 // question label (.q-side-panel .o-bar label — "Ask a question" in
@@ -27,9 +26,7 @@ import { chromiumPage } from './chromium.mjs';
 // animation. Scoped to .q-side-panel: in the author-menu variant the
 // same label is visually hidden (clipped), and the embed context is
 // already covered by embed.css, so both stay unchanged.
-const styleCss = await readFile(new URL('../src/style.css', import.meta.url), 'utf8');
-const allCss = (await Promise.all(['style.css', 'app-chrome.css', 'data-section.css', 'embed.css', 'sign-in.css']
-  .map(name => readFile(new URL(`../src/${name}`, import.meta.url), 'utf8')))).join('\n');
+const styleCss = styles['style.css'];
 
 const labelRule = styleCss.match(/^\.q-side-panel \.o-bar label:hover\s*\{([^}]*)\}/m);
 
@@ -55,53 +52,35 @@ test('the resting o-bar rules are preserved', () => {
   assert.ok(styleCss.match(/\.author-menu \.o-bar label\s*\{[^}]*clip:\s*rect\(0, 0, 0, 0\)/), 'the visually hidden author-menu label rule must remain');
 });
 
-describe('Ask O panel question label hover in offline Chromium', () => {
-  let page;
-  before(async () => { page = await chromiumPage(); });
-  after(async () => { await page?.close(); });
-
-  test('applying the hover rule changes the label visual state with identical geometry, and labels outside the panel o-bar are out of scope', async () => {
-    await page.setContent(`<style>${allCss}</style>`
-      + `<div class="q-side-panel"><header class="q-panel-heading"><h2>ASK O</h2></header><div class="q-panel-content"><section class="o-entry"><form class="o-bar"><label id="panelLabel" for="o-question">Ask a question</label><input id="o-question" type="search"/><button type="submit">Ask</button></form><label id="plainPanelLabel">Plain</label></section></div></div>`
+defineHoverCases('o-bar-label hover', {
+  html: `<div class="q-side-panel"><header class="q-panel-heading"><h2>ASK O</h2></header><div class="q-panel-content"><section class="o-entry"><form class="o-bar"><label id="panelLabel" for="o-question">Ask a question</label><input id="o-question" type="search"/><button type="submit">Ask</button></form><label id="plainPanelLabel">Plain</label></section></div></div>`
       + `<div class="author-workspace" data-chrome="dark"><div class="q-side-panel"><div class="q-panel-content"><section class="o-entry"><form class="o-bar"><label id="darkLabel" for="o-question-dark">Ask a question</label><input id="o-question-dark" type="search"/></form></section></div></div></div>`
-      + `<div class="author-workspace"><div class="author-menu"><form class="o-bar"><label id="menuLabel" for="o-question-menu">Ask a question</label><input id="o-question-menu" type="search"/></form></div></div>`);
-    const actual = await page.evaluate(() => {
-      const all = [...document.styleSheets].flatMap(s => [...s.cssRules]);
-      const norm = r => (r.selectorText || '').replaceAll('"', '');
-      const rule = all.find(r => norm(r) === '.q-side-panel .o-bar label:hover') ?? null;
-      const inputRule = all.find(r => norm(r) === '.q-side-panel .o-bar input:hover:not(:disabled)') ?? null;
-      const el = id => document.querySelector(`#${id}`);
-      const measure = (target, found) => {
-        const rest = { background: getComputedStyle(target).backgroundColor, color: getComputedStyle(target).color, box: JSON.stringify(target.getBoundingClientRect().toJSON()) };
-        // Apply the declaration block as-is: the background value is a
-        // var() shorthand, which does not expand into longhands (the
-        // slice-58 panel input test uses the same mechanism).
-        if (found) target.style.cssText = found.style.cssText;
-        const hovered = { background: getComputedStyle(target).backgroundColor, color: getComputedStyle(target).color, box: JSON.stringify(target.getBoundingClientRect().toJSON()) };
-        target.removeAttribute('style');
-        return { rest, hovered };
-      };
-      return {
-        found: !!rule,
-        props: rule ? [...rule.style] : [],
-        label: rule ? measure(el('panelLabel'), rule) : null,
-        darkLabel: rule ? measure(el('darkLabel'), rule) : null,
-        input: inputRule ? measure(el('o-question'), inputRule) : null,
-        menuMatches: el('menuLabel').matches('.q-side-panel .o-bar label'),
-        plainMatches: el('plainPanelLabel').matches('.q-side-panel .o-bar label'),
-      };
-    });
-    assert.equal(actual.found, true, 'expected the hover rule in the CSSOM');
-    assert.ok(actual.props.length && actual.props.every(p => p.startsWith('background')), 'hover rule must set background longhands only');
-    assert.equal(actual.label.rest.background, 'rgba(0, 0, 0, 0)', 'label rest');
-    assert.equal(actual.label.hovered.background, 'rgb(237, 247, 247)', 'label hover (var fallback outside author chrome)');
-    assert.notEqual(actual.label.rest.background, actual.label.hovered.background);
-    assert.equal(actual.label.rest.color, actual.label.hovered.color, 'label colour unchanged on hover');
-    assert.equal(actual.label.rest.box, actual.label.hovered.box, 'label geometry');
-    assert.equal(actual.darkLabel.rest.background, 'rgba(0, 0, 0, 0)', 'dark label rest');
-    assert.equal(actual.darkLabel.hovered.background, 'rgb(41, 63, 85)', 'dark label hover (var resolves to the dark chrome menu hover, like the panel buttons)');
-    assert.equal(actual.input.hovered.background, 'rgb(237, 247, 247)', 'the slice-58 input hover is unchanged');
-    assert.equal(actual.menuMatches, false, 'the visually hidden author-menu label must be out of scope');
-    assert.equal(actual.plainMatches, false, 'a label in the panel outside .o-bar must be out of scope');
-  });
+      + `<div class="author-workspace"><div class="author-menu"><form class="o-bar"><label id="menuLabel" for="o-question-menu">Ask a question</label><input id="o-question-menu" type="search"/></form></div></div>`,
+  cases: [
+    {
+      target: '#panelLabel',
+      rule: '.q-side-panel .o-bar label:hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      paintOnly: true,
+      unchanged: ['color'],
+      excluded: ['#menuLabel', '#plainPanelLabel'],
+    },
+    {
+      target: '#darkLabel',
+      rule: '.q-side-panel .o-bar label:hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(41, 63, 85)' },
+      paintOnly: true,
+      unchanged: ['color'],
+    },
+    {
+      target: '#o-question',
+      rule: '.q-side-panel .o-bar input:hover:not(:disabled)',
+      resting: { backgroundColor: 'rgb(255, 255, 255)' },
+      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      paintOnly: true,
+      unchanged: ['color'],
+    },
+  ],
 });

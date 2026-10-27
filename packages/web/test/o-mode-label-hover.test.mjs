@@ -1,7 +1,6 @@
-import { after, before, describe, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import { chromiumPage } from './chromium.mjs';
+import { defineHoverCases, styles } from './interaction.mjs';
 
 // Issue #108 polish slice 98: hover feedback for the O-mode notice's
 // "Generative mode" label (.o-mode-notice label in OModeNotice.tsx,
@@ -30,9 +29,7 @@ import { chromiumPage } from './chromium.mjs';
 // .author-workspace (slice 46) and is a fixed-light surface, so the
 // BuildForMe rendering keeps the light tint. Background only, so
 // resting geometry is identical and there is no animation.
-const styleCss = await readFile(new URL('../src/style.css', import.meta.url), 'utf8');
-const allCss = (await Promise.all(['style.css', 'app-chrome.css', 'data-section.css', 'embed.css', 'sign-in.css']
-  .map(name => readFile(new URL(`../src/${name}`, import.meta.url), 'utf8')))).join('\n');
+const styleCss = styles['style.css'];
 
 const rule = styleCss.match(/^\.o-mode-notice label:hover\s*\{([^}]*)\}/m);
 const darkRule = styleCss.match(/^\.author-workspace\[data-chrome=dark\] \.o-mode-notice label:hover\s*\{([^}]*)\}/m);
@@ -62,66 +59,56 @@ test('the resting O-mode rules are preserved, the switch has no hover rule of it
   assert.ok(styleCss.match(/\.author-workspace\[data-chrome=dark\] button:hover:not\(:disabled\)\s*\{[^}]*background:\s*#334c62/), 'the author dark button hover must remain #334c62');
 });
 
-describe('O-mode label hover in offline Chromium', () => {
-  let page;
-  before(async () => { page = await chromiumPage(); });
-  after(async () => { await page?.close(); });
+const notice = id => `<div class="o-mode-notice"><label id="${id}"><input type="checkbox" role="switch">Generative mode</label><small>Needs hosted API</small></div>`;
 
-  test('applying the hover rules changes the label visual state with identical geometry in the standalone, author light, author dark, dialog and panel contexts, and the switch and outside labels are out of scope', async () => {
-    const notice = id => `<div class="o-mode-notice"><label id="${id}"><input type="checkbox" role="switch">Generative mode</label><small>Needs hosted API</small></div>`;
-    await page.setContent(`<style>${allCss}</style>`
-      + `<section class="o-entry">${notice('lblStandalone')}</section>`
+defineHoverCases('o-mode-label hover', {
+  html: `<section class="o-entry">${notice('lblStandalone')}</section>`
       + `<div class="author-workspace" data-chrome="light"><section class="o-entry o-entry-toolbar">${notice('lblLight')}</section></div>`
       + `<div class="author-workspace" data-chrome="dark"><section class="o-entry o-entry-toolbar">${notice('lblDark')}</section></div>`
       + `<dialog class="calculation-dialog" open><details class="o-build-for-me" open>${notice('lblDialog')}</details></dialog>`
       + `<aside class="q-side-panel"><div class="q-panel-content"><section class="o-entry">${notice('lblPanel')}</section></div></aside>`
-      + `<label id="outsideLabel"><input type="checkbox">Other label</label>`);
-    const actual = await page.evaluate(() => {
-      const all = [...document.styleSheets].flatMap(s => [...s.cssRules]);
-      const found = all.find(r => (r.selectorText || '') === '.o-mode-notice label:hover') ?? null;
-      const darkFound = all.find(r => (r.selectorText || '').replaceAll('"', '') === '.author-workspace[data-chrome=dark] .o-mode-notice label:hover') ?? null;
-      const measure = (el, rule) => {
-        const rest = { background: getComputedStyle(el).backgroundColor, color: getComputedStyle(el).color, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        if (rule) { for (const prop of rule.style) el.style.setProperty(prop, rule.style.getPropertyValue(prop)); }
-        const hovered = { background: getComputedStyle(el).backgroundColor, color: getComputedStyle(el).color, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        el.removeAttribute('style');
-        return { rest, hovered };
-      };
-      const bare = found ? found.selectorText.replaceAll(':hover', '') : '';
-      const darkBare = darkFound ? darkFound.selectorText.replaceAll(':hover', '') : '';
-      const label = id => document.querySelector(`#${id}`);
-      return {
-        found: !!found,
-        darkFound: !!darkFound,
-        props: found ? [...found.style] : [],
-        darkProps: darkFound ? [...darkFound.style] : [],
-        standalone: found ? measure(label('lblStandalone'), found) : null,
-        light: found ? measure(label('lblLight'), found) : null,
-        dark: darkFound ? measure(label('lblDark'), darkFound) : null,
-        dialog: found ? measure(label('lblDialog'), found) : null,
-        panel: found ? measure(label('lblPanel'), found) : null,
-        switchMatches: found ? label('lblStandalone').querySelector('input').matches(bare) : null,
-        dialogDarkMatches: darkFound ? label('lblDialog').matches(darkBare) : null,
-        outsideMatches: found ? label('outsideLabel').matches(bare) : null,
-      };
-    });
-    assert.ok(actual.found, 'expected the hover rule in the CSSOM');
-    assert.ok(actual.darkFound, 'expected the dark-chrome hover rule in the CSSOM');
-    assert.ok(actual.props.length && actual.props.every(p => p.startsWith('background')), 'hover rule must set background longhands only');
-    assert.ok(actual.darkProps.length && actual.darkProps.every(p => p.startsWith('background')), 'dark hover rule must set background longhands only');
-    for (const [name, ctx] of [['standalone', actual.standalone], ['author light', actual.light], ['dialog', actual.dialog], ['panel', actual.panel]]) {
-      assert.equal(ctx.rest.background, 'rgba(0, 0, 0, 0)', `${name} O-mode label rest (transparent)`);
-      assert.equal(ctx.hovered.background, 'rgb(237, 247, 247)', `${name} O-mode label hover`);
-      assert.notEqual(ctx.rest.background, ctx.hovered.background);
-      assert.equal(ctx.rest.color, ctx.hovered.color, `${name} O-mode label colour unchanged on hover`);
-      assert.equal(ctx.rest.box, ctx.hovered.box, `${name} O-mode label geometry`);
-    }
-    assert.equal(actual.dark.rest.background, 'rgba(0, 0, 0, 0)', 'author dark O-mode label rest (transparent)');
-    assert.equal(actual.dark.hovered.background, 'rgb(51, 76, 98)', 'author dark O-mode label hover');
-    assert.equal(actual.dark.rest.color, actual.dark.hovered.color, 'author dark O-mode label colour unchanged on hover');
-    assert.equal(actual.dark.rest.box, actual.dark.hovered.box, 'author dark O-mode label geometry');
-    assert.equal(actual.switchMatches, false, 'the switch inside .o-mode-notice label must be out of scope');
-    assert.equal(actual.dialogDarkMatches, false, 'the dark variant must not reach the calculation dialog (it renders outside .author-workspace)');
-    assert.equal(actual.outsideMatches, false, 'a label outside .o-mode-notice must be out of scope');
-  });
+      + `<label id="outsideLabel"><input type="checkbox">Other label</label>`,
+  cases: [
+    {
+      target: '#lblStandalone',
+      rule: '.o-mode-notice label:hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      paintOnly: true,
+      unchanged: ['color'],
+      excluded: ['#lblStandalone > input:nth-child(1)', '#outsideLabel'],
+    },
+    {
+      target: '#lblLight',
+      rule: '.o-mode-notice label:hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      paintOnly: true,
+      unchanged: ['color'],
+    },
+    {
+      target: '#lblDark',
+      rule: '.author-workspace[data-chrome="dark"] .o-mode-notice label:hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(51, 76, 98)' },
+      paintOnly: true,
+      unchanged: ['color'],
+    },
+    {
+      target: '#lblDialog',
+      rule: '.o-mode-notice label:hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      paintOnly: true,
+      unchanged: ['color'],
+    },
+    {
+      target: '#lblPanel',
+      rule: '.o-mode-notice label:hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      paintOnly: true,
+      unchanged: ['color'],
+    },
+  ],
 });

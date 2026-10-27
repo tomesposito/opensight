@@ -1,7 +1,6 @@
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import { chromiumPage } from './chromium.mjs';
+import { defineHoverCases, styles } from './interaction.mjs';
 
 // Issue #108 polish slice 47: hover feedback for the command palette
 // and global search dialogs. The two dialogs are CSS twins (identical
@@ -18,7 +17,7 @@ import { chromiumPage } from './chromium.mjs';
 // survives. All rules are paint-only, so resting geometry is
 // identical; static (no animation), so no reduced-motion variant is
 // needed.
-const css = await readFile(new URL('../src/style.css', import.meta.url), 'utf8');
+const css = styles['style.css'];
 
 const closeRule = css.match(/\.command-palette header button:hover, \.global-search header button:hover\s*\{([^}]*)\}/);
 const inputRule = css.match(/\.command-palette input:hover:not\(:disabled\), \.global-search > input:hover:not\(:disabled\)\s*\{([^}]*)\}/);
@@ -56,13 +55,8 @@ test('the resting rules still reserve the geometry the hover keeps', () => {
   assert.match(pressed[1], /background:\s*var\(--palette-selected\)/);
 });
 
-{
-  let page;
-  before(async () => { page = await chromiumPage(); });
-  after(async () => { await page?.close(); });
-
-  test('applying the hover rules changes the visual state with identical geometry', async () => {
-    await page.setContent(`<style>${css}</style>
+defineHoverCases('palette-search-dialog hover', {
+  html: `
     <dialog class="command-palette" open>
       <header><h2>Command palette</h2><button type="button" id="cp-close">Close <span aria-hidden="true">×</span></button></header>
       <input id="cp-input" type="text" placeholder="Search commands…">
@@ -74,62 +68,48 @@ test('the resting rules still reserve the geometry the hover keeps', () => {
         <button type="button" id="gs-chip" aria-pressed="false">☆ Favorites</button>
         <button type="button" id="gs-chip-pressed" aria-pressed="true">Analyses</button>
       </div>
-    </dialog>`);
-    const actual = await page.evaluate(() => {
-      const wanted = new Set([
-        '.command-palette header button:hover, .global-search header button:hover',
-        '.command-palette input:hover:not(:disabled), .global-search > input:hover:not(:disabled)',
-        '.global-search .search-types button:hover:not([aria-pressed=true])',
-      ]);
-      const bySelector = {};
-      for (const sheet of document.styleSheets) {
-        for (const rule of sheet.cssRules) {
-          // Chromium normalizes attribute values in selectorText with quotes.
-          const sel = (rule.selectorText || '').replaceAll('"', '');
-          if (wanted.has(sel)) bySelector[sel] = rule;
-        }
-      }
-      // Append the declaration block as written: iterating rule.style
-      // expands the var() shorthand into longhands whose individual
-      // values do not re-apply (the var resolves only in the shorthand).
-      const apply = (el, rule) => { el.style.cssText += rule.style.cssText; };
-      const measure = (id, rule) => {
-        const el = document.querySelector(id);
-        const rest = { background: getComputedStyle(el).backgroundColor, image: getComputedStyle(el).backgroundImage.slice(0, 4), box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        apply(el, rule);
-        const hovered = { background: getComputedStyle(el).backgroundColor, image: getComputedStyle(el).backgroundImage.slice(0, 4), box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        return { rest, hovered };
-      };
-      const close = bySelector['.command-palette header button:hover, .global-search header button:hover'];
-      const input = bySelector['.command-palette input:hover:not(:disabled), .global-search > input:hover:not(:disabled)'];
-      const chip = bySelector['.global-search .search-types button:hover:not([aria-pressed=true])'];
-      const chipSelectorNoHover = '.global-search .search-types button:not([aria-pressed=true])';
-      return {
-        ruleKeys: Object.keys(bySelector),
-        cpClose: close ? measure('#cp-close', close) : null,
-        gsClose: close ? measure('#gs-close', close) : null,
-        cpInput: input ? measure('#cp-input', input) : null,
-        gsInput: input ? measure('#gs-input', input) : null,
-        gsChip: chip ? measure('#gs-chip', chip) : null,
-        chipMatchesUnpressed: document.querySelector('#gs-chip').matches(chipSelectorNoHover),
-        chipMatchesPressed: document.querySelector('#gs-chip-pressed').matches(chipSelectorNoHover),
-      };
-    });
-    assert.equal(actual.ruleKeys.length, 3, 'expected exactly the three palette/search hover rules');
-    for (const key of ['cpClose', 'gsClose']) {
-      assert.ok(actual[key], `expected measurements for ${key}`);
-      assert.equal(actual[key].hovered.background, 'rgb(54, 87, 100)');
-      assert.notEqual(actual[key].rest.background, actual[key].hovered.background);
-      assert.equal(actual[key].rest.box, actual[key].hovered.box);
-    }
-    for (const key of ['cpInput', 'gsInput', 'gsChip']) {
-      assert.ok(actual[key], `expected measurements for ${key}`);
-      assert.equal(actual[key].hovered.background, 'rgb(226, 242, 250)');
-      assert.notEqual(actual[key].rest.background, actual[key].hovered.background);
-      assert.equal(actual[key].rest.box, actual[key].hovered.box);
-    }
-    assert.equal(actual.gsInput.hovered.image, 'url(', 'the search icon must survive the input hover');
-    assert.equal(actual.chipMatchesUnpressed, true);
-    assert.equal(actual.chipMatchesPressed, false, 'pressed chips keep their resting selected tint');
-  });
-}
+    </dialog>`,
+  cases: [
+    {
+      target: '#cp-close',
+      rule: '.command-palette header button:hover, .global-search header button:hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(54, 87, 100)' },
+      paintOnly: true,
+      unchanged: ['backgroundImage'],
+    },
+    {
+      target: '#gs-close',
+      rule: '.command-palette header button:hover, .global-search header button:hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(54, 87, 100)' },
+      paintOnly: true,
+      unchanged: ['backgroundImage'],
+    },
+    {
+      target: '#cp-input',
+      rule: '.command-palette input:hover:not(:disabled), .global-search > input:hover:not(:disabled)',
+      resting: { backgroundColor: 'rgb(255, 255, 255)' },
+      hovered: { backgroundColor: 'rgb(226, 242, 250)' },
+      paintOnly: true,
+      unchanged: ['backgroundImage'],
+    },
+    {
+      target: '#gs-input',
+      rule: '.command-palette input:hover:not(:disabled), .global-search > input:hover:not(:disabled)',
+      resting: { backgroundColor: 'rgb(255, 255, 255)' },
+      hovered: { backgroundColor: 'rgb(226, 242, 250)' },
+      paintOnly: true,
+      unchanged: ['backgroundImage'],
+    },
+    {
+      target: '#gs-chip',
+      rule: '.global-search .search-types button:hover:not([aria-pressed="true"])',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(226, 242, 250)' },
+      paintOnly: true,
+      unchanged: ['backgroundImage'],
+      excluded: ['#gs-chip-pressed'],
+    },
+  ],
+});
