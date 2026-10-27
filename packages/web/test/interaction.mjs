@@ -3,13 +3,22 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { chromiumPage } from './chromium.mjs';
 
-// Keep the same order as main.tsx. Every fixture gets the complete cascade,
-// including shell overrides; static rule checks can reuse these sources too.
+// Every fixture gets the complete cascade, including shell overrides;
+// static rule checks can reuse these sources too.
 export const styles = Object.fromEntries(await Promise.all(
   ['style.css', 'app-chrome.css', 'data-section.css', 'embed.css', 'sign-in.css']
     .map(async name => [name, await readFile(new URL(`../src/${name}`, import.meta.url), 'utf8')]),
 ));
-const stylesheet = Object.values(styles).join('\n');
+// Inline style.css's local imports in place: sign-in and data precede its
+// own rules, then main.tsx loads app-chrome. Loading imports again after the
+// shell would reverse equal-specificity overrides (e.g. connector-submit).
+const stylesheet = [
+  styles['style.css'].replace(/^@import '\.\/(.+)';$/gm, (_, name) => {
+    assert.ok(styles[name], `Unknown local stylesheet import: ${name}`);
+    return styles[name];
+  }),
+  styles['app-chrome.css'], styles['embed.css'],
+].join('\n');
 
 export async function loadInteractionFixture(page, html) {
   await page.setContent(`<style>${stylesheet}</style>${html}`);

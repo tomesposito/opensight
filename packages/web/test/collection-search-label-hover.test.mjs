@@ -1,7 +1,6 @@
-import { after, before, describe, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import { chromiumPage } from './chromium.mjs';
+import { defineHoverCases, styles } from './interaction.mjs';
 
 // Issue #108 polish slice 125: hover feedback for the drafts collection
 // tools row's plain search label (.draft-collection-tools label —
@@ -32,9 +31,7 @@ import { chromiumPage } from './chromium.mjs';
 // collection — the author sidebar renders LocalDrafts without the tools
 // row — and that surface is fixed light, so no dark variant. Background
 // only, so resting geometry is identical and there is no animation.
-const appChromeCss = await readFile(new URL('../src/app-chrome.css', import.meta.url), 'utf8');
-const allCss = (await Promise.all(['style.css', 'app-chrome.css', 'data-section.css', 'embed.css', 'sign-in.css']
-  .map(name => readFile(new URL(`../src/${name}`, import.meta.url), 'utf8')))).join('\n');
+const appChromeCss = styles['app-chrome.css'];
 
 const labelRule = appChromeCss.match(/^\.draft-collection-tools label:hover:not\(\.favorites-filter\)\s*\{([^}]*)\}/m);
 
@@ -60,43 +57,18 @@ test('the resting draft-collection tools rules are preserved', () => {
   assert.ok(appChromeCss.match(/\.draft-collection-tools label\.favorites-filter\s*\{[^}]*display:\s*inline-flex/), 'the resting favorites-filter label rule must remain');
 });
 
-describe('Collection search label hover in offline Chromium', () => {
-  let page;
-  before(async () => { page = await chromiumPage(); });
-  after(async () => { await page?.close(); });
-
-  test('applying the hover rule changes the label visual state with identical geometry in the real ancestor context, and the favorites-filter and outside labels are out of scope', async () => {
-    await page.setContent(`<style>${allCss}</style>`
-      + `<div class="app-shell"><main><div class="analyses-home"><section class="collection-page"><div class="collection-card"><section class="local-drafts draft-collection"><div class="draft-collection-tools"><label class="favorites-filter" id="favLabel"><input type="checkbox">Favorites only</label><label id="searchLabel">Search analyses<input type="search"></label><button type="button">Refresh drafts</button></div></section></div></section></div></main></div>`
-      + `<label id="outsideLabel">Outside<input type="search"></label>`);
-    const actual = await page.evaluate(() => {
-      const all = [...document.styleSheets].flatMap(s => [...s.cssRules]);
-      const norm = r => (r.selectorText || '').replaceAll('"', '');
-      const label = all.find(r => norm(r) === '.draft-collection-tools label:hover:not(.favorites-filter)') ?? null;
-      const measure = (el, rule) => {
-        const rest = { background: getComputedStyle(el).backgroundColor, color: getComputedStyle(el).color, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        if (rule) { for (const prop of rule.style) el.style.setProperty(prop, rule.style.getPropertyValue(prop)); }
-        const hovered = { background: getComputedStyle(el).backgroundColor, color: getComputedStyle(el).color, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        el.removeAttribute('style');
-        return { rest, hovered };
-      };
-      const el = id => document.querySelector(`#${id}`);
-      return {
-        found: !!label,
-        props: label ? [...label.style] : [],
-        searchLabel: label ? measure(el('searchLabel'), label) : null,
-        favLabelMatches: label ? el('favLabel').matches(label.selectorText.replaceAll(':hover', '')) : null,
-        outsideLabelMatches: label ? el('outsideLabel').matches(label.selectorText.replaceAll(':hover', '')) : null,
-      };
-    });
-    assert.equal(actual.found, true, 'expected the hover rule in the CSSOM');
-    assert.ok(actual.props.length && actual.props.every(p => p.startsWith('background')), 'hover rule must set background longhands only');
-    assert.equal(actual.searchLabel.rest.background, 'rgba(0, 0, 0, 0)', 'search label rest');
-    assert.equal(actual.searchLabel.hovered.background, 'rgb(234, 243, 247)', 'search label hover');
-    assert.notEqual(actual.searchLabel.rest.background, actual.searchLabel.hovered.background);
-    assert.equal(actual.searchLabel.rest.color, actual.searchLabel.hovered.color, 'search label colour unchanged on hover');
-    assert.equal(actual.searchLabel.rest.box, actual.searchLabel.hovered.box, 'search label geometry');
-    assert.equal(actual.favLabelMatches, false, 'the favorites-filter label must stay owned by its slice-96 hover rule');
-    assert.equal(actual.outsideLabelMatches, false, 'a label outside .draft-collection-tools must be out of scope');
-  });
+defineHoverCases('collection-search-label hover', {
+  html: `<div class="app-shell"><main><div class="analyses-home"><section class="collection-page"><div class="collection-card"><section class="local-drafts draft-collection"><div class="draft-collection-tools"><label class="favorites-filter" id="favLabel"><input type="checkbox">Favorites only</label><label id="searchLabel">Search analyses<input type="search"></label><button type="button">Refresh drafts</button></div></section></div></section></div></main></div>`
+      + `<label id="outsideLabel">Outside<input type="search"></label>`,
+  cases: [
+    {
+      target: '#searchLabel',
+      rule: '.draft-collection-tools label:hover:not(.favorites-filter)',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(234, 243, 247)' },
+      paintOnly: true,
+      unchanged: ['color'],
+      excluded: ['#favLabel', '#outsideLabel'],
+    },
+  ],
 });

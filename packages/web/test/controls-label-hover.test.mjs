@@ -1,7 +1,6 @@
-import { after, before, describe, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import { chromiumPage } from './chromium.mjs';
+import { defineHoverCases, styles } from './interaction.mjs';
 
 // Issue #108 polish slice 112: hover feedback for the sheet
 // controls strip's field labels (.parameter-control label — the
@@ -40,9 +39,7 @@ import { chromiumPage } from './chromium.mjs';
 // no animation. The .parameter-editor plain labels share the
 // resting rule but stay out of scope: they are a different surface
 // (the Data panel), and their checkbox labels are slice 99.
-const styleCss = await readFile(new URL('../src/style.css', import.meta.url), 'utf8');
-const allCss = (await Promise.all(['style.css', 'app-chrome.css', 'data-section.css', 'embed.css', 'sign-in.css']
-  .map(name => readFile(new URL(`../src/${name}`, import.meta.url), 'utf8')))).join('\n');
+const styleCss = styles['style.css'];
 
 const rule = styleCss.match(/\.parameter-control label:hover,\s*\.control-settings label:hover,\s*\.control-form label:hover\s*\{([^}]*)\}/);
 const darkRule = styleCss.match(/\.author-workspace\[data-chrome=dark\] \.parameter-control label:hover,\s*\.author-workspace\[data-chrome=dark\] \.control-settings label:hover,\s*\.author-workspace\[data-chrome=dark\] \.control-form label:hover\s*\{([^}]*)\}/);
@@ -77,13 +74,7 @@ test('the resting controls label rule is preserved and the parameter-editor labe
   assert.ok(!rule[0].includes('parameter-editor'), 'the controls label hover rule must not cover the parameter-editor labels');
 });
 
-describe('Controls label hover in offline Chromium', () => {
-  let page;
-  before(async () => { page = await chromiumPage(); });
-  after(async () => { await page?.close(); });
-
-  test('applying the hover rules changes the label visual state with identical geometry in the real ancestor contexts in both chromes, and labels outside the controls contexts are out of scope', async () => {
-    const strip = (id, dark) => `<div class="author-workspace" ${dark ? 'data-chrome="dark"' : ''}><div class="author-layout"><div class="author-center">`
+const strip = (id, dark) => `<div class="author-workspace" ${dark ? 'data-chrome="dark"' : ''}><div class="author-layout"><div class="author-center">`
       + `<section class="controls-strip"><div class="controls-row"><div class="control-container">`
       + `<div class="parameter-control"><label id="${id}Pc">Region<select><option>a</option></select></label></div>`
       + `<div class="parameter-control"><label id="${id}Slider">Amount<input type="range" min="0" max="10"/><output>5</output></label></div>`
@@ -91,57 +82,76 @@ describe('Controls label hover in offline Chromium', () => {
       + `</div></div>`
       + `<form class="control-form"><label id="${id}Cf">Control label<input value="x"/></label></form>`
       + `</section></div></div></div>`;
-    await page.setContent(`<style>${allCss}</style>` + strip('l', false) + strip('d', true)
+
+defineHoverCases('controls-label hover', {
+  html: `` + strip('l', false) + strip('d', true)
       + `<div class="author-workspace"><details class="parameter-editor" open><summary>Parameters</summary><form><label id="peLabel">Parameter name<input value="y"/></label></form></details></div>`
-      + `<label id="outsideLabel">Outside<input/></label>`);
-    const actual = await page.evaluate(() => {
-      const all = [...document.styleSheets].flatMap(s => [...s.cssRules]);
-      const norm = r => (r.selectorText || '').replaceAll('"', '');
-      const light = all.find(r => norm(r) === '.parameter-control label:hover, .control-settings label:hover, .control-form label:hover') ?? null;
-      const dark = all.find(r => norm(r) === '.author-workspace[data-chrome=dark] .parameter-control label:hover, .author-workspace[data-chrome=dark] .control-settings label:hover, .author-workspace[data-chrome=dark] .control-form label:hover') ?? null;
-      const measure = (el, rule) => {
-        const rest = { background: getComputedStyle(el).backgroundColor, color: getComputedStyle(el).color, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        if (rule) { for (const prop of rule.style) el.style.setProperty(prop, rule.style.getPropertyValue(prop)); }
-        const hovered = { background: getComputedStyle(el).backgroundColor, color: getComputedStyle(el).color, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        el.removeAttribute('style');
-        return { rest, hovered };
-      };
-      const el = id => document.querySelector(`#${id}`);
-      return {
-        foundLight: !!light, foundDark: !!dark,
-        propsLight: light ? [...light.style] : [], propsDark: dark ? [...dark.style] : [],
-        lPc: light ? measure(el('lPc'), light) : null,
-        lSlider: light ? measure(el('lSlider'), light) : null,
-        lCs: light ? measure(el('lCs'), light) : null,
-        lCf: light ? measure(el('lCf'), light) : null,
-        dPc: dark ? measure(el('dPc'), dark) : null,
-        dSlider: dark ? measure(el('dSlider'), dark) : null,
-        dCs: dark ? measure(el('dCs'), dark) : null,
-        dCf: dark ? measure(el('dCf'), dark) : null,
-        peMatches: light ? el('peLabel').matches(light.selectorText.replaceAll(':hover', '')) : null,
-        outsideMatches: light ? el('outsideLabel').matches(light.selectorText.replaceAll(':hover', '')) : null,
-      };
-    });
-    assert.ok(actual.foundLight, 'expected the light hover rule in the CSSOM');
-    assert.ok(actual.foundDark, 'expected the dark hover rule in the CSSOM');
-    for (const props of [actual.propsLight, actual.propsDark]) {
-      assert.ok(props.length && props.every(p => p.startsWith('background')), 'hover rules must set background longhands only');
-    }
-    for (const key of ['lPc', 'lSlider', 'lCs', 'lCf']) {
-      assert.equal(actual[key].rest.background, 'rgba(0, 0, 0, 0)', `${key} label rest (transparent)`);
-      assert.equal(actual[key].hovered.background, 'rgb(237, 247, 247)', `${key} label hover`);
-      assert.notEqual(actual[key].rest.background, actual[key].hovered.background);
-      assert.equal(actual[key].rest.color, actual[key].hovered.color, `${key} label colour unchanged on hover`);
-      assert.equal(actual[key].rest.box, actual[key].hovered.box, `${key} label geometry`);
-    }
-    for (const key of ['dPc', 'dSlider', 'dCs', 'dCf']) {
-      assert.equal(actual[key].rest.background, 'rgba(0, 0, 0, 0)', `${key} label rest (transparent)`);
-      assert.equal(actual[key].hovered.background, 'rgb(51, 76, 98)', `${key} label hover`);
-      assert.notEqual(actual[key].rest.background, actual[key].hovered.background);
-      assert.equal(actual[key].rest.color, actual[key].hovered.color, `${key} label colour unchanged on hover`);
-      assert.equal(actual[key].rest.box, actual[key].hovered.box, `${key} label geometry`);
-    }
-    assert.equal(actual.peMatches, false, 'a parameter-editor plain label must be out of scope');
-    assert.equal(actual.outsideMatches, false, 'a label outside the author workspace must be out of scope');
-  });
+      + `<label id="outsideLabel">Outside<input/></label>`,
+  cases: [
+    {
+      target: '#lPc',
+      rule: '.parameter-control label:hover, .control-settings label:hover, .control-form label:hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      paintOnly: true,
+      unchanged: ['color'],
+      excluded: ['#peLabel', '#outsideLabel'],
+    },
+    {
+      target: '#lSlider',
+      rule: '.parameter-control label:hover, .control-settings label:hover, .control-form label:hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      paintOnly: true,
+      unchanged: ['color'],
+    },
+    {
+      target: '#lCs',
+      rule: '.parameter-control label:hover, .control-settings label:hover, .control-form label:hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      paintOnly: true,
+      unchanged: ['color'],
+    },
+    {
+      target: '#lCf',
+      rule: '.parameter-control label:hover, .control-settings label:hover, .control-form label:hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      paintOnly: true,
+      unchanged: ['color'],
+    },
+    {
+      target: '#dPc',
+      rule: '.author-workspace[data-chrome="dark"] .parameter-control label:hover, .author-workspace[data-chrome="dark"] .control-settings label:hover, .author-workspace[data-chrome="dark"] .control-form label:hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(51, 76, 98)' },
+      paintOnly: true,
+      unchanged: ['color'],
+    },
+    {
+      target: '#dSlider',
+      rule: '.author-workspace[data-chrome="dark"] .parameter-control label:hover, .author-workspace[data-chrome="dark"] .control-settings label:hover, .author-workspace[data-chrome="dark"] .control-form label:hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(51, 76, 98)' },
+      paintOnly: true,
+      unchanged: ['color'],
+    },
+    {
+      target: '#dCs',
+      rule: '.author-workspace[data-chrome="dark"] .parameter-control label:hover, .author-workspace[data-chrome="dark"] .control-settings label:hover, .author-workspace[data-chrome="dark"] .control-form label:hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(51, 76, 98)' },
+      paintOnly: true,
+      unchanged: ['color'],
+    },
+    {
+      target: '#dCf',
+      rule: '.author-workspace[data-chrome="dark"] .parameter-control label:hover, .author-workspace[data-chrome="dark"] .control-settings label:hover, .author-workspace[data-chrome="dark"] .control-form label:hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(51, 76, 98)' },
+      paintOnly: true,
+      unchanged: ['color'],
+    },
+  ],
 });

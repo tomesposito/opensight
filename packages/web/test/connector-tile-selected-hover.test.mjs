@@ -1,7 +1,6 @@
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import { chromiumPage } from './chromium.mjs';
+import { defineHoverCases, styles } from './interaction.mjs';
 
 // Issue #108 polish slice 76: hover feedback for the Create Dataset
 // dialog's selected connector tile (.data-connector-tile[data-selected=true]
@@ -20,7 +19,7 @@ import { chromiumPage } from './chromium.mjs';
 // radio and is excluded via :has(> input:disabled), so it keeps its
 // flat resting state. Background only, so resting geometry is
 // identical; static (no animation), so no reduced-motion variant.
-const css = await readFile(new URL('../src/data-section.css', import.meta.url), 'utf8');
+const css = styles['data-section.css'];
 
 const rule = css.match(/\.data-connector-tile\[data-selected=true\]:hover:not\(:has\(> input:disabled\)\)\s*\{([^}]*)\}/);
 
@@ -61,54 +60,21 @@ test('the neighbouring data-dialog hovers are untouched', () => {
   assert.ok(css.match(/\.data-dialog button:hover:not\(:disabled\):not\(\.data-primary\):not\(\[aria-selected=true\]\)\s*\{\s*background:\s*#eaf3f7/), 'the slice 30 data-dialog button hover must remain');
 });
 
-{
-  let page;
-  before(async () => { page = await chromiumPage(); });
-  after(async () => { await page?.close(); });
-
-  test('applying the hover rule changes the visual state with identical geometry', async () => {
-    await page.setContent(`<style>${css}</style><div class="data-connector-grid">
+defineHoverCases('connector-tile-selected hover', {
+  html: `<div class="data-connector-grid">
       <label class="data-connector-tile" id="selected" data-selected="true"><span aria-hidden="true">▤</span><span><strong>File upload</strong><small>.csv</small></span><input type="radio" name="connector" checked></label>
       <label class="data-connector-tile" id="unselected" data-selected="false"><span aria-hidden="true">▤</span><span><strong>PostgreSQL</strong><small>Connected</small></span><input type="radio" name="connector"></label>
       <label class="data-connector-tile" id="selected-disabled" data-selected="true"><span aria-hidden="true">▤</span><span><strong>MySQL</strong><small>Not available</small></span><input type="radio" name="connector" disabled></label>
-    </div>`);
-    const actual = await page.evaluate(() => {
-      const rules = [];
-      for (const sheet of document.styleSheets) {
-        for (const rule of sheet.cssRules) {
-          const sel = (rule.selectorText || '').replace(/"/g, '');
-          if (sel === '.data-connector-tile[data-selected=true]:hover:not(:has(> input:disabled))') rules.push(rule);
-        }
-      }
-      const selected = document.querySelector('#selected');
-      const unselected = document.querySelector('#unselected');
-      const selectedDisabled = document.querySelector('#selected-disabled');
-      const rest = { background: getComputedStyle(selected).backgroundColor, border: getComputedStyle(selected).borderTopColor, box: JSON.stringify(selected.getBoundingClientRect().toJSON()) };
-      const hover = rules[0];
-      if (hover) for (const prop of hover.style) selected.style.setProperty(prop, hover.style.getPropertyValue(prop));
-      const hovered = { background: getComputedStyle(selected).backgroundColor, border: getComputedStyle(selected).borderTopColor, box: JSON.stringify(selected.getBoundingClientRect().toJSON()) };
-      return {
-        ruleCount: rules.length,
-        props: rules.length ? [...rules[0].style] : [],
-        backgroundColor: rules.length ? rules[0].style.getPropertyValue('background-color') : null,
-        selected: { rest, hovered },
-        selectedMatches: selected.matches('[data-selected=true]:not(:has(> input:disabled))'),
-        unselectedMatches: unselected.matches('[data-selected=true]:not(:has(> input:disabled))'),
-        selectedDisabledMatches: selectedDisabled.matches('[data-selected=true]:not(:has(> input:disabled))'),
-        unselectedBg: getComputedStyle(unselected).backgroundColor,
-      };
-    });
-    assert.equal(actual.ruleCount, 1);
-    assert.ok(actual.props.length && actual.props.every(p => p.startsWith('background')), 'hover rule must set background longhands only');
-    assert.equal(actual.backgroundColor, 'rgb(234, 243, 247)');
-    assert.equal(actual.selected.rest.background, 'rgb(240, 248, 251)');
-    assert.equal(actual.selected.hovered.background, 'rgb(234, 243, 247)');
-    assert.notEqual(actual.selected.rest.background, actual.selected.hovered.background);
-    assert.equal(actual.selected.rest.border, actual.selected.hovered.border, 'the selected border must be unchanged');
-    assert.equal(actual.selected.rest.box, actual.selected.hovered.box);
-    assert.ok(actual.selectedMatches);
-    assert.equal(actual.unselectedMatches, false, 'unselected tile keeps the slice 49 hover rule');
-    assert.equal(actual.selectedDisabledMatches, false, 'selected but unimplemented tile keeps its flat resting state');
-    assert.equal(actual.unselectedBg, 'rgba(0, 0, 0, 0)', 'unselected tile resting state unchanged');
-  });
-}
+    </div>`,
+  cases: [
+    {
+      target: '#selected',
+      rule: '.data-connector-tile[data-selected="true"]:hover:not(:has(> input:disabled))',
+      resting: { backgroundColor: 'rgb(240, 248, 251)' },
+      hovered: { backgroundColor: 'rgb(234, 243, 247)' },
+      paintOnly: true,
+      unchanged: ['borderTopColor'],
+      excluded: [{ target: '#unselected', resting: { backgroundColor: 'rgba(0, 0, 0, 0)' } }, '#selected-disabled'],
+    },
+  ],
+});

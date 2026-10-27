@@ -1,7 +1,8 @@
 # Issue #141: interaction tests
 
 `packages/web/test/interaction.mjs` loads the complete `style.css` plus the
-app chrome, data, embed and sign-in styles for every browser fixture. Static
+app chrome, data, embed and sign-in styles for every browser fixture. Local
+imports are expanded in place, preserving the shipped cascade order. Static
 checks reuse those same source strings through `styles`.
 
 Use `defineHoverCase(name, options)` for one interaction, or
@@ -22,7 +23,8 @@ the target and its ancestors. This activates browser style matching and the
 normal cascade without changing inline declarations. Chromium does not
 expose these inspector-forced states through `Element.matches(':hover')`,
 so the harness checks `CSS.getMatchedStylesForNode` as well as computed
-values. Clearing hover must restore the resting state. Regression tests
+values. Clearing hover must restore the resting state. Geometry is sampled after
+finite entrance animations finish, without disabling product CSS. Regression tests
 prove that wrong selectors and stronger overrides cannot produce the old
 false positives.
 

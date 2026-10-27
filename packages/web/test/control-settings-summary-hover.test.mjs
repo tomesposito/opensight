@@ -1,7 +1,6 @@
-import { after, before, describe, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import { chromiumPage } from './chromium.mjs';
+import { defineHoverCases, styles } from './interaction.mjs';
 
 // Issue #108 polish slice 83: hover feedback for the ControlsStrip
 // per-control disclosure summary (.control-settings summary in
@@ -24,7 +23,7 @@ import { chromiumPage } from './chromium.mjs';
 // variant takes #334c62, the dark summary hover of the neighbouring
 // panels. Background only, so resting geometry is identical and
 // there is no animation.
-const css = await readFile(new URL('../src/style.css', import.meta.url), 'utf8');
+const css = styles['style.css'];
 
 const rule = css.match(/\.control-settings summary:hover\s*\{([^}]*)\}/);
 const darkRule = css.match(/\.author-workspace\[data-chrome=dark\] \.control-settings summary:hover\s*\{([^}]*)\}/);
@@ -63,46 +62,22 @@ test('the neighbouring summary hover rules are untouched', () => {
   assert.ok(css.match(/\.prep-execution summary:hover\s*\{[^}]*background:\s*#edf6fc/), 'the prep-execution summary hover must remain #edf6fc');
 });
 
-describe('Control-settings summary hover in offline Chromium', () => {
-  let page;
-  before(async () => { page = await chromiumPage(); });
-  after(async () => { await page?.close(); });
-
-  test('applying the hover rule changes the visual state with identical geometry', async () => {
-    await page.setContent(`<style>${css}</style>`
-      + `<div class="author-workspace" data-chrome="light"><div class="author-center">`
+defineHoverCases('control-settings-summary hover', {
+  html: `<div class="author-workspace" data-chrome="light"><div class="author-center">`
       + `<section class="controls-strip"><div class="controls-row"><div class="control-container">`
       + `<details class="control-settings" open><summary id="target">Edit Region</summary></details>`
       + `</div></div></section>`
       + `<details class="builder-panel" open><summary id="panel">Data</summary></details>`
       + `</div></div>`
-      + `<details><summary id="outside">Outside summary</summary></details>`);
-    const actual = await page.evaluate(() => {
-      const all = [...document.styleSheets].flatMap(s => [...s.cssRules]);
-      const found = all.find(r => (r.selectorText || '') === '.control-settings summary:hover') ?? null;
-      const measure = (el, rule) => {
-        const rest = { background: getComputedStyle(el).backgroundColor, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        if (rule) { for (const prop of rule.style) el.style.setProperty(prop, rule.style.getPropertyValue(prop)); }
-        const hovered = { background: getComputedStyle(el).backgroundColor, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        el.removeAttribute('style');
-        return { rest, hovered };
-      };
-      const matches = (el, rule) => rule ? el.matches(rule.selectorText.replaceAll(':hover', '')) : null;
-      return {
-        found: !!found,
-        props: found ? [...found.style] : [],
-        target: found ? measure(document.querySelector('#target'), found) : null,
-        panelMatches: matches(document.querySelector('#panel'), found),
-        outsideMatches: matches(document.querySelector('#outside'), found),
-      };
-    });
-    assert.ok(actual.found, 'expected the hover rule in the CSSOM');
-    assert.ok(actual.props.length && actual.props.every(p => p.startsWith('background')), 'hover rule must set background longhands only');
-    assert.equal(actual.target.rest.background, 'rgba(0, 0, 0, 0)', 'summary rest');
-    assert.equal(actual.target.hovered.background, 'rgb(237, 247, 247)', 'summary hover');
-    assert.notEqual(actual.target.rest.background, actual.target.hovered.background);
-    assert.equal(actual.target.rest.box, actual.target.hovered.box, 'summary geometry');
-    assert.equal(actual.panelMatches, false, 'the builder-panel summary must be out of scope');
-    assert.equal(actual.outsideMatches, false, 'a summary outside .control-settings must be out of scope');
-  });
+      + `<details><summary id="outside">Outside summary</summary></details>`,
+  cases: [
+    {
+      target: '#target',
+      rule: '.control-settings summary:hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      paintOnly: true,
+      excluded: ['#panel', '#outside'],
+    },
+  ],
 });

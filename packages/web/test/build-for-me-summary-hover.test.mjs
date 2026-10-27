@@ -1,7 +1,6 @@
-import { after, before, describe, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import { chromiumPage } from './chromium.mjs';
+import { defineHoverCases, styles } from './interaction.mjs';
 
 // Issue #108 polish slice 68: hover feedback for the "Build for me"
 // disclosure summary inside the Calculated field dialog. Slice 46
@@ -17,7 +16,7 @@ import { chromiumPage } from './chromium.mjs';
 // tint). The dialog's resting colors are fixed light (no dark-chrome
 // variant), so no dark variant is added. Background only, so resting
 // geometry is identical and there is no animation.
-const styleCss = await readFile(new URL('../src/style.css', import.meta.url), 'utf8');
+const styleCss = styles['style.css'];
 
 const rule = styleCss.match(/\.calculation-dialog\s+\.o-build-for-me\s+summary:hover\s*\{([^}]*)\}/);
 
@@ -46,36 +45,17 @@ test('the author-workspace summary hover rules are untouched', () => {
   assert.ok(styleCss.match(/\.author-workspace \.builder-panel > summary:hover/), 'slice 42 summary hover must remain');
 });
 
-describe('build-for-me summary hover in offline Chromium', () => {
-  let page;
-  before(async () => { page = await chromiumPage(); });
-  after(async () => { await page?.close(); });
-
-  test('applying the hover rule changes the visual state with identical geometry', async () => {
-    await page.setContent(`<style>${styleCss}</style>`
-      + `<dialog class="calculation-dialog" open><form><details class="o-build-for-me"><summary id="s">Build for me</summary><p>Local deterministic templates</p></details></form></dialog>`
-      + `<div class="author-workspace"><details class="o-build-for-me"><summary id="outside">Build for me</summary></details></div>`);
-    const actual = await page.evaluate(() => {
-      const all = [...document.styleSheets].flatMap(s => [...s.cssRules]);
-      const found = all.find(r => (r.selectorText || '').includes('o-build-for-me') && (r.selectorText || '').includes('summary:hover')) ?? null;
-      const measure = (el, rule) => {
-        const rest = { background: getComputedStyle(el).backgroundColor, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        if (rule) { for (const prop of rule.style) el.style.setProperty(prop, rule.style.getPropertyValue(prop)); }
-        const hovered = { background: getComputedStyle(el).backgroundColor, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        el.removeAttribute('style');
-        return { rest, hovered };
-      };
-      const matches = (el, rule) => rule ? el.matches(rule.selectorText.replaceAll(':hover', '')) : null;
-      return {
-        found: !!found,
-        s: found ? measure(document.querySelector('#s'), found) : null,
-        outsideMatches: matches(document.querySelector('#outside'), found),
-      };
-    });
-    assert.ok(actual.found, 'expected the hover rule in the CSSOM');
-    assert.equal(actual.s.rest.background, 'rgba(0, 0, 0, 0)', 'summary rest');
-    assert.equal(actual.s.hovered.background, 'rgb(237, 247, 247)', 'summary hover');
-    assert.equal(actual.s.rest.box, actual.s.hovered.box, 'summary geometry');
-    assert.equal(actual.outsideMatches, false, 'a build-for-me summary outside the calculation dialog must be out of scope');
-  });
+defineHoverCases('build-for-me-summary hover', {
+  html: `<dialog class="calculation-dialog" open><form><details class="o-build-for-me"><summary id="s">Build for me</summary><p>Local deterministic templates</p></details></form></dialog>`
+      + `<div class="author-workspace"><details class="o-build-for-me"><summary id="outside">Build for me</summary></details></div>`,
+  cases: [
+    {
+      target: '#s',
+      rule: '.calculation-dialog .o-build-for-me summary:hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      paintOnly: true,
+      excluded: ['#outside'],
+    },
+  ],
 });

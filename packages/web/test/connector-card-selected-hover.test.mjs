@@ -1,7 +1,6 @@
-import { after, before, describe, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import { chromiumPage } from './chromium.mjs';
+import { defineHoverCases, styles } from './interaction.mjs';
 
 // Issue #108 final audit: hover feedback for the selected connector
 // card (.app-shell .connector-card.selected in DataSources.tsx — the
@@ -22,10 +21,8 @@ import { chromiumPage } from './chromium.mjs';
 // stays visually distinct at rest and still reads interactive.
 // Background only, so resting geometry is identical; no animation, so
 // no reduced-motion variant is needed.
-const appChromeCss = await readFile(new URL('../src/app-chrome.css', import.meta.url), 'utf8');
-const styleCss = await readFile(new URL('../src/style.css', import.meta.url), 'utf8');
-const allCss = (await Promise.all(['style.css', 'app-chrome.css', 'data-section.css', 'embed.css', 'sign-in.css']
-  .map(name => readFile(new URL(`../src/${name}`, import.meta.url), 'utf8')))).join('\n');
+const appChromeCss = styles['app-chrome.css'];
+const styleCss = styles['style.css'];
 
 const selectedHover = appChromeCss.match(/^\.app-shell \.connector-card\.selected:hover\s*\{([^}]*)\}/m);
 
@@ -49,45 +46,27 @@ test('the tint is the established shell-control hover tint, so no new colour is 
   assert.ok(appChromeCss.match(/\.workspace-banner button:hover:not\(:disabled\)\s*\{[^}]*background:\s*#dceff0/), 'the workspace-banner button hover must remain #dceff0');
 });
 
-describe('Selected connector card hover in offline Chromium', () => {
-  let page;
-  before(async () => { page = await chromiumPage(); });
-  after(async () => { await page?.close(); });
-
-  test('applying the hover rule deepens the selected card with identical geometry, and the unselected card keeps its own hover', async () => {
-    await page.setContent(`<style>${allCss}</style>`
-      + `<div class="app-shell"><section class="data-sources"><div class="connector-grid">`
+defineHoverCases('connector-card-selected hover', {
+  html: `<div class="app-shell"><section class="data-sources"><div class="connector-grid">`
       + `<button type="button" class="connector-card connector-featured selected" id="selectedCard">File</button>`
       + `<button type="button" class="connector-card" id="plainCard">PostgreSQL</button>`
       + `</div></section></div>`
-      + `<button type="button" class="connector-card selected" id="outsideCard">Outside</button>`);
-    const actual = await page.evaluate(() => {
-      const all = [...document.styleSheets].flatMap(s => [...s.cssRules]);
-      const norm = r => (r.selectorText || '').replaceAll('"', '');
-      const rule = all.find(r => norm(r) === '.app-shell .connector-card.selected:hover') ?? null;
-      const plainHover = all.find(r => norm(r) === '.connector-card:hover') ?? null;
-      const measure = (el, r) => {
-        const rest = { background: getComputedStyle(el).backgroundColor, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        if (r) { for (const prop of r.style) el.style.setProperty(prop, r.style.getPropertyValue(prop)); }
-        const hovered = { background: getComputedStyle(el).backgroundColor, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        el.removeAttribute('style');
-        return { rest, hovered };
-      };
-      const el = id => document.querySelector(`#${id}`);
-      return {
-        found: !!rule, props: rule ? [...rule.style] : [],
-        selected: rule ? measure(el('selectedCard'), rule) : null,
-        plain: plainHover ? measure(el('plainCard'), plainHover) : null,
-        outsideMatches: rule ? el('outsideCard').matches(rule.selectorText.replaceAll(':hover', '')) : null,
-      };
-    });
-    assert.equal(actual.found, true, 'expected the selected connector-card hover rule in the CSSOM');
-    assert.ok(actual.props.length && actual.props.every(p => p.startsWith('background')), 'hover rule must set background longhands only');
-    assert.equal(actual.selected.rest.background, 'rgb(234, 244, 244)', 'selectedCard rest');
-    assert.equal(actual.selected.hovered.background, 'rgb(220, 239, 240)', 'selectedCard hover');
-    assert.equal(actual.selected.rest.box, actual.selected.hovered.box, 'selectedCard geometry');
-    assert.equal(actual.plain.rest.background, 'rgb(255, 255, 255)', 'plainCard rest');
-    assert.equal(actual.plain.hovered.background, 'rgb(248, 251, 255)', 'plainCard keeps its hover');
-    assert.equal(actual.outsideMatches, false, 'a selected card outside .app-shell must be out of scope');
-  });
+      + `<button type="button" class="connector-card selected" id="outsideCard">Outside</button>`,
+  cases: [
+    {
+      target: '#selectedCard',
+      rule: '.app-shell .connector-card.selected:hover',
+      resting: { backgroundColor: 'rgb(234, 244, 244)' },
+      hovered: { backgroundColor: 'rgb(220, 239, 240)' },
+      paintOnly: true,
+      excluded: ['#outsideCard'],
+    },
+    {
+      target: '#plainCard',
+      rule: '.connector-card:hover',
+      resting: { backgroundColor: 'rgb(255, 255, 255)' },
+      hovered: { backgroundColor: 'rgb(248, 251, 255)' },
+      paintOnly: true,
+    },
+  ],
 });

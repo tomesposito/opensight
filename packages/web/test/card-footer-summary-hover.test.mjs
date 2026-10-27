@@ -1,7 +1,6 @@
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import { chromiumPage } from './chromium.mjs';
+import { defineHoverCases, styles } from './interaction.mjs';
 
 // Issue #108 polish slice 40: hover feedback for the visual-card footer
 // "View data" summary. A fresh behavioral hover audit across the demo
@@ -15,7 +14,7 @@ import { chromiumPage } from './chromium.mjs';
 // surfaces' menu tint (#eaf3f7). Background only, so resting geometry is
 // identical. Static (no animation), so no reduced-motion variant is
 // needed.
-const css = await readFile(new URL('../src/style.css', import.meta.url), 'utf8');
+const css = styles['style.css'];
 
 const hoverRule = css.match(/\.card-footer\s+summary:hover\s*\{([^}]*)\}/);
 
@@ -46,46 +45,17 @@ test('the card-footer summary hover rule coexists with the other summary states'
   assert.ok(hoverRule, 'expected the card-footer summary hover rule');
 });
 
-{
-  let page;
-  before(async () => { page = await chromiumPage(); });
-  after(async () => { await page?.close(); });
-
-  test('applying the hover rule changes the visual state with identical geometry', async () => {
-    await page.setContent(`<style>${css}</style><div class="visual-card"><div class="card-footer"><details><summary id="view">View data · 1 row</summary></details></div></div><details><summary id="outside">Outside summary</summary></details>`);
-    const actual = await page.evaluate(() => {
-      const rules = [];
-      for (const sheet of document.styleSheets) {
-        for (const rule of sheet.cssRules) {
-          if ((rule.selectorText || '') === '.card-footer summary:hover') rules.push(rule);
-        }
-      }
-      const measure = el => {
-        const rest = { background: getComputedStyle(el).backgroundColor, color: getComputedStyle(el).color, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        const hover = rules[0];
-        for (const prop of hover.style) el.style.setProperty(prop, hover.style.getPropertyValue(prop));
-        const hovered = { background: getComputedStyle(el).backgroundColor, color: getComputedStyle(el).color, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        return { rest, hovered };
-      };
-      const view = document.querySelector('#view');
-      const outside = document.querySelector('#outside');
-      return {
-        ruleCount: rules.length,
-        props: rules.length ? [...rules[0].style] : [],
-        backgroundColor: rules.length ? rules[0].style.getPropertyValue('background-color') : null,
-        view: measure(view),
-        viewMatches: view.matches('.card-footer summary'),
-        outsideMatches: outside.matches('.card-footer summary'),
-      };
-    });
-    assert.equal(actual.ruleCount, 1);
-    assert.ok(actual.props.length && actual.props.every(p => p.startsWith('background')), 'hover rule must set background longhands only');
-    assert.equal(actual.backgroundColor, 'rgb(234, 243, 247)');
-    assert.equal(actual.view.rest.background, 'rgba(0, 0, 0, 0)');
-    assert.equal(actual.view.hovered.background, 'rgb(234, 243, 247)');
-    assert.equal(actual.view.rest.color, actual.view.hovered.color, 'text color must not change');
-    assert.equal(actual.view.rest.box, actual.view.hovered.box);
-    assert.ok(actual.viewMatches);
-    assert.equal(actual.outsideMatches, false, 'summaries outside a card footer keep their own states');
-  });
-}
+defineHoverCases('card-footer-summary hover', {
+  html: `<div class="visual-card"><div class="card-footer"><details><summary id="view">View data · 1 row</summary></details></div></div><details><summary id="outside">Outside summary</summary></details>`,
+  cases: [
+    {
+      target: '#view',
+      rule: '.card-footer summary:hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(234, 243, 247)' },
+      paintOnly: true,
+      unchanged: ['color'],
+      excluded: ['#outside'],
+    },
+  ],
+});

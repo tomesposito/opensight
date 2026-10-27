@@ -1,7 +1,6 @@
-import { after, before, describe, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import { chromiumPage } from './chromium.mjs';
+import { defineHoverCases, styles } from './interaction.mjs';
 
 // Issue #108 polish slice 109: hover feedback for the author build
 // panel's "Change visual type" label (label.change-type in
@@ -23,9 +22,7 @@ import { chromiumPage } from './chromium.mjs';
 // label hover), so no new colour is introduced. Background
 // only, so resting geometry is identical and there is no
 // animation.
-const styleCss = await readFile(new URL('../src/style.css', import.meta.url), 'utf8');
-const allCss = (await Promise.all(['style.css', 'app-chrome.css', 'data-section.css', 'embed.css', 'sign-in.css']
-  .map(name => readFile(new URL(`../src/${name}`, import.meta.url), 'utf8')))).join('\n');
+const styleCss = styles['style.css'];
 
 const rule = styleCss.match(/^\.change-type:hover\s*\{([^}]*)\}/m);
 const darkRule = styleCss.match(/^\.author-workspace\[data-chrome=dark\] \.change-type:hover\s*\{([^}]*)\}/m);
@@ -54,61 +51,33 @@ test('the dark variant uses the author dark hover tint and the resting change-ty
   assert.ok(styleCss.match(/\.author-layout label, \.analysis-title, \.rename-sheet label, \.calculation-dialog label\s*\{[^}]*display:\s*flex[^}]*flex-direction:\s*column/), 'the author label resting rule must remain');
 });
 
-describe('Change-type label hover in offline Chromium', () => {
-  let page;
-  before(async () => { page = await chromiumPage(); });
-  after(async () => { await page?.close(); });
-
-  test('applying the hover rules changes the label visual state with identical geometry in the real ancestor context in both chrome modes, and other labels are out of scope', async () => {
-    const panel = (id, wellId) => `<details class="builder-panel build-panel" open><div class="panel-content">`
+const panel = (id, wellId) => `<details class="builder-panel build-panel" open><div class="panel-content">`
       + `<div class="visual-config"><h3>Field wells</h3>`
       + `<label class="change-type" id="${id}">Change visual type<select><option>Bar</option></select></label>`
       + `<div class="field-wells"><fieldset><label class="well-picker" id="${wellId}"><span class="sr-only">Assign rows</span><select><option>Choose field…</option></select></label></fieldset></div>`
       + `</div></div></details>`;
-    await page.setContent(`<style>${allCss}</style>`
-      + `<div class="author-workspace" data-chrome="light"><div class="author-layout">${panel('changeLight', 'wellLight')}</div></div>`
-      + `<div class="author-workspace" data-chrome="dark"><div class="author-layout">${panel('changeDark', 'wellDark')}</div></div>`);
-    const actual = await page.evaluate(() => {
-      const all = [...document.styleSheets].flatMap(s => [...s.cssRules]);
-      const norm = r => (r.selectorText || '').replaceAll('"', '');
-      const found = all.find(r => norm(r) === '.change-type:hover') ?? null;
-      const foundDark = all.find(r => norm(r) === '.author-workspace[data-chrome=dark] .change-type:hover') ?? null;
-      const measure = (el, rule) => {
-        const rest = { background: getComputedStyle(el).backgroundColor, color: getComputedStyle(el).color, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        if (rule) { for (const prop of rule.style) el.style.setProperty(prop, rule.style.getPropertyValue(prop)); }
-        const hovered = { background: getComputedStyle(el).backgroundColor, color: getComputedStyle(el).color, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        el.removeAttribute('style');
-        return { rest, hovered };
-      };
-      const el = id => document.querySelector(`#${id}`);
-      return {
-        found: !!found,
-        foundDark: !!foundDark,
-        props: found ? [...found.style] : [],
-        darkProps: foundDark ? [...foundDark.style] : [],
-        light: found ? measure(el('changeLight'), found) : null,
-        dark: foundDark ? measure(el('changeDark'), foundDark) : null,
-        wellLightMatches: found ? el('wellLight').matches('.change-type') : null,
-        darkOnLightMatches: foundDark ? el('changeLight').matches(foundDark.selectorText.replaceAll(':hover', '')) : null,
-        darkOnWellMatches: foundDark ? el('wellDark').matches(foundDark.selectorText.replaceAll(':hover', '')) : null,
-      };
-    });
-    assert.ok(actual.found, 'expected the hover rule in the CSSOM');
-    assert.ok(actual.foundDark, 'expected the dark hover rule in the CSSOM');
-    assert.ok(actual.props.length && actual.props.every(p => p.startsWith('background')), 'hover rule must set background longhands only');
-    assert.ok(actual.darkProps.length && actual.darkProps.every(p => p.startsWith('background')), 'dark hover rule must set background longhands only');
-    assert.equal(actual.light.rest.background, 'rgba(0, 0, 0, 0)', 'light label rest (transparent)');
-    assert.equal(actual.light.hovered.background, 'rgb(237, 247, 247)', 'light label hover');
-    assert.notEqual(actual.light.rest.background, actual.light.hovered.background);
-    assert.equal(actual.light.rest.color, actual.light.hovered.color, 'light label colour unchanged on hover');
-    assert.equal(actual.light.rest.box, actual.light.hovered.box, 'light label geometry');
-    assert.equal(actual.dark.rest.background, 'rgba(0, 0, 0, 0)', 'dark label rest (transparent)');
-    assert.equal(actual.dark.hovered.background, 'rgb(51, 76, 98)', 'dark label hover');
-    assert.notEqual(actual.dark.rest.background, actual.dark.hovered.background);
-    assert.equal(actual.dark.rest.color, actual.dark.hovered.color, 'dark label colour unchanged on hover');
-    assert.equal(actual.dark.rest.box, actual.dark.hovered.box, 'dark label geometry');
-    assert.equal(actual.wellLightMatches, false, 'the well-picker label in the same panel must be out of scope');
-    assert.equal(actual.darkOnLightMatches, false, 'the dark rule must not reach the light-chrome label');
-    assert.equal(actual.darkOnWellMatches, false, 'the dark rule must not reach the well-picker label');
-  });
+
+defineHoverCases('change-type-label hover', {
+  html: `<div class="author-workspace" data-chrome="light"><div class="author-layout">${panel('changeLight', 'wellLight')}</div></div>`
+      + `<div class="author-workspace" data-chrome="dark"><div class="author-layout">${panel('changeDark', 'wellDark')}</div></div>`,
+  cases: [
+    {
+      target: '#changeLight',
+      rule: '.change-type:hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      paintOnly: true,
+      unchanged: ['color'],
+      excluded: ['#wellLight'],
+    },
+    {
+      target: '#changeDark',
+      rule: '.author-workspace[data-chrome="dark"] .change-type:hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(51, 76, 98)' },
+      paintOnly: true,
+      unchanged: ['color'],
+      excluded: ['#wellDark'],
+    },
+  ],
 });

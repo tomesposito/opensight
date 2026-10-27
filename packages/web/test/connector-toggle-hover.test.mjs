@@ -1,7 +1,6 @@
-import { after, before, describe, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import { chromiumPage } from './chromium.mjs';
+import { defineHoverCases, styles } from './interaction.mjs';
 
 // Issue #108 polish slice 94: hover feedback for the gallery
 // picker's connector toggle (label.connector-toggle in
@@ -26,8 +25,8 @@ import { chromiumPage } from './chromium.mjs';
 // does not. Background only, so resting geometry is identical and
 // there is no animation. The gallery is a fixed-light app-shell
 // surface, so no dark variant is added.
-const css = await readFile(new URL('../src/style.css', import.meta.url), 'utf8');
-const dataCss = await readFile(new URL('../src/data-section.css', import.meta.url), 'utf8');
+const css = styles['style.css'];
+const dataCss = styles['data-section.css'];
 
 const rule = css.match(/^\.connector-toggle:hover\s*\{([^}]*)\}/m);
 
@@ -54,47 +53,20 @@ test('the resting toggle rules are preserved and the checkbox has no hover rule 
   assert.ok(!/\.connector-toggle:hover[^{]*\{[^}]*input/.test(css), 'the toggle hover rule must not target the checkbox');
 });
 
-describe('Connector-toggle hover in offline Chromium', () => {
-  let page;
-  before(async () => { page = await chromiumPage(); });
-  after(async () => { await page?.close(); });
-
-  test('applying the hover rule changes the label visual state with identical geometry, and the checkbox and outside labels are out of scope', async () => {
-    await page.setContent(`<style>${css}</style>`
-      + `<div class="app-shell"><main><section class="data-sources"><div class="connector-layout"><div class="connector-picker">`
+defineHoverCases('connector-toggle hover', {
+  html: `<div class="app-shell"><main><section class="data-sources"><div class="connector-layout"><div class="connector-picker">`
       + `<label class="connector-toggle" id="toggleLabel"><input id="toggleBox" type="checkbox">Show unavailable connectors</label>`
       + `</div></div></section></main></div>`
-      + `<label id="outsideLabel"><input type="checkbox">Other toggle</label>`);
-    const actual = await page.evaluate(() => {
-      const all = [...document.styleSheets].flatMap(s => [...s.cssRules]);
-      const found = all.find(r => (r.selectorText || '') === '.connector-toggle:hover') ?? null;
-      const label = document.querySelector('#toggleLabel');
-      const box = document.querySelector('#toggleBox');
-      const measure = (el, rule) => {
-        const rest = { background: getComputedStyle(el).backgroundColor, color: getComputedStyle(el).color, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        if (rule) { for (const prop of rule.style) el.style.setProperty(prop, rule.style.getPropertyValue(prop)); }
-        const hovered = { background: getComputedStyle(el).backgroundColor, color: getComputedStyle(el).color, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        el.removeAttribute('style');
-        return { rest, hovered };
-      };
-      const bare = found ? found.selectorText.replaceAll(':hover', '') : '';
-      return {
-        found: !!found,
-        props: found ? [...found.style] : [],
-        label: found ? measure(label, found) : null,
-        boxBackground: getComputedStyle(box).backgroundColor,
-        boxMatches: found ? box.matches(bare) : null,
-        outsideMatches: found ? document.querySelector('#outsideLabel').matches(bare) : null,
-      };
-    });
-    assert.ok(actual.found, 'expected the hover rule in the CSSOM');
-    assert.ok(actual.props.length && actual.props.every(p => p.startsWith('background')), 'hover rule must set background longhands only');
-    assert.equal(actual.label.rest.background, 'rgba(0, 0, 0, 0)', 'connector-toggle label rest (transparent)');
-    assert.equal(actual.label.hovered.background, 'rgb(234, 243, 247)', 'connector-toggle label hover');
-    assert.notEqual(actual.label.rest.background, actual.label.hovered.background);
-    assert.equal(actual.label.rest.color, actual.label.hovered.color, 'connector-toggle label colour unchanged on hover');
-    assert.equal(actual.label.rest.box, actual.label.hovered.box, 'connector-toggle label geometry');
-    assert.equal(actual.boxMatches, false, 'the checkbox inside .connector-toggle must be out of scope');
-    assert.equal(actual.outsideMatches, false, 'a label outside .connector-toggle must be out of scope');
-  });
+      + `<label id="outsideLabel"><input type="checkbox">Other toggle</label>`,
+  cases: [
+    {
+      target: '#toggleLabel',
+      rule: '.connector-toggle:hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(234, 243, 247)' },
+      paintOnly: true,
+      unchanged: ['color'],
+      excluded: [{ target: '#toggleBox', resting: { backgroundColor: 'rgba(0, 0, 0, 0)' } }, '#outsideLabel'],
+    },
+  ],
 });

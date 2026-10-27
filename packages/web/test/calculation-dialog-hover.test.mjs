@@ -1,7 +1,6 @@
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import { chromiumPage } from './chromium.mjs';
+import { defineHoverCases, styles } from './interaction.mjs';
 
 // Issue #108 polish slice 46: hover feedback for the Calculated field
 // dialog. The dialog renders outside .author-workspace (a sibling of it
@@ -16,7 +15,7 @@ import { chromiumPage } from './chromium.mjs';
 // exists for it), so no dark variant is added. Field rules change
 // background only, so resting geometry is identical; static (no
 // animation), so no reduced-motion variant is needed.
-const css = await readFile(new URL('../src/style.css', import.meta.url), 'utf8');
+const css = styles['style.css'];
 
 const buttonRule = css.match(/\.calculation-dialog button:hover:not\(:disabled\)\s*\{([^}]*)\}/);
 const primaryRule = css.match(/\.calculation-dialog \.primary-button:hover:not\(:disabled\)\s*\{([^}]*)\}/);
@@ -57,56 +56,48 @@ test('the dialog stays outside the author-workspace hover scope it now replaces'
   assert.match(authorButton[1], /background:\s*#edf7f7/);
 });
 
-{
-  let page;
-  before(async () => { page = await chromiumPage(); });
-  after(async () => { await page?.close(); });
-
-  test('applying the hover rules changes the visual state with identical geometry', async () => {
-    await page.setContent(`<style>${css}</style><dialog class="calculation-dialog" open><form>
+defineHoverCases('calculation-dialog hover', {
+  html: `<dialog class="calculation-dialog" open><form>
       <label>Name<input id="name" value=""></label>
       <label>Use as<select id="role"><option>Measure (number)</option></select></label>
       <label>Expression<textarea id="expr" rows="5"></textarea></label>
       <div class="dialog-actions"><button type="button" id="cancel">Cancel</button><button type="submit" class="primary-button" id="create">Create field</button></div>
-    </form></dialog>`);
-    const actual = await page.evaluate(() => {
-      const bySelector = {};
-      for (const sheet of document.styleSheets) {
-        for (const rule of sheet.cssRules) {
-          const sel = (rule.selectorText || '');
-          if (sel.includes('.calculation-dialog') && sel.includes(':hover')) bySelector[sel] = rule;
-        }
-      }
-      const apply = (el, rule) => { for (const prop of rule.style) el.style.setProperty(prop, rule.style.getPropertyValue(prop)); };
-      const measure = (id, rule) => {
-        const el = document.querySelector(id);
-        const rest = { background: getComputedStyle(el).backgroundColor, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        apply(el, rule);
-        const hovered = { background: getComputedStyle(el).backgroundColor, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        return { rest, hovered };
-      };
-      const field = bySelector['.calculation-dialog input:hover:not(:disabled), .calculation-dialog select:hover:not(:disabled), .calculation-dialog textarea:hover:not(:disabled)'];
-      const button = bySelector['.calculation-dialog button:hover:not(:disabled)'];
-      const primary = bySelector['.calculation-dialog .primary-button:hover:not(:disabled)'];
-      return {
-        ruleKeys: Object.keys(bySelector),
-        name: field ? measure('#name', field) : null,
-        role: field ? measure('#role', field) : null,
-        expr: field ? measure('#expr', field) : null,
-        cancel: button ? measure('#cancel', button) : null,
-        createBg: primary ? (() => { const el = document.querySelector('#create'); apply(el, primary); return getComputedStyle(el).backgroundColor; })() : null,
-      };
-    });
-    assert.equal(actual.ruleKeys.length, 5, 'expected the five calculation-dialog hover rules (slice 68 added the build-for-me summary rule; slice 117 added the label rule)');
-    for (const key of ['name', 'role', 'expr']) {
-      assert.ok(actual[key], `expected measurements for ${key}`);
-      assert.equal(actual[key].hovered.background, 'rgb(237, 247, 247)');
-      assert.notEqual(actual[key].rest.background, actual[key].hovered.background);
-      assert.equal(actual[key].rest.box, actual[key].hovered.box);
-    }
-    assert.ok(actual.cancel, 'expected measurements for the Cancel button');
-    assert.equal(actual.cancel.hovered.background, 'rgb(237, 247, 247)');
-    assert.equal(actual.cancel.rest.box, actual.cancel.hovered.box);
-    assert.equal(actual.createBg, 'rgb(18, 110, 118)');
-  });
-}
+    </form></dialog>`,
+  cases: [
+    {
+      target: '#name',
+      rule: '.calculation-dialog input:hover:not(:disabled), .calculation-dialog select:hover:not(:disabled), .calculation-dialog textarea:hover:not(:disabled)',
+      resting: { backgroundColor: 'rgb(255, 255, 255)' },
+      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      paintOnly: true,
+    },
+    {
+      target: '#role',
+      rule: '.calculation-dialog input:hover:not(:disabled), .calculation-dialog select:hover:not(:disabled), .calculation-dialog textarea:hover:not(:disabled)',
+      resting: { backgroundColor: 'rgb(255, 255, 255)' },
+      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      paintOnly: true,
+    },
+    {
+      target: '#expr',
+      rule: '.calculation-dialog input:hover:not(:disabled), .calculation-dialog select:hover:not(:disabled), .calculation-dialog textarea:hover:not(:disabled)',
+      resting: { backgroundColor: 'rgb(255, 255, 255)' },
+      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      paintOnly: true,
+    },
+    {
+      target: '#cancel',
+      rule: '.calculation-dialog button:hover:not(:disabled)',
+      resting: { backgroundColor: 'rgb(255, 255, 255)' },
+      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      paintOnly: true,
+    },
+    {
+      target: '#create',
+      rule: '.calculation-dialog .primary-button:hover:not(:disabled)',
+      resting: { backgroundColor: 'rgb(21, 127, 136)' },
+      hovered: { backgroundColor: 'rgb(18, 110, 118)' },
+      paintOnly: true,
+    },
+  ],
+});
