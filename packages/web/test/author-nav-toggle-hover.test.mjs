@@ -1,7 +1,6 @@
-import { after, before, describe, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import { chromiumPage } from './chromium.mjs';
+import { defineHoverCases, styles } from './interaction.mjs';
 
 // Issue #108 polish slice 35: hover feedback for the author-surface
 // navigation toggle. A fresh behavioral hover audit (real mouse hover with
@@ -16,7 +15,7 @@ import { chromiumPage } from './chromium.mjs';
 // dark-chrome hover tint (#365764, slices 24/33). Paint-only: the rule
 // changes the background, so resting geometry is identical and there is no
 // animation to need a reduced-motion variant.
-const chromeCss = await readFile(new URL('../src/app-chrome.css', import.meta.url), 'utf8');
+const chromeCss = styles['app-chrome.css'];
 
 const toggleRule = chromeCss.match(/\.author-workspace\s+\.app-header\s+\.navigation-toggle:hover:not\(:disabled\)\s*\{([^}]*)\}/);
 
@@ -37,32 +36,17 @@ test('the author toggle resting rule keeps the transparent base the hover replac
   assert.match(base[1], /color:\s*#fff/);
 });
 
-describe('author navigation toggle hover in offline Chromium', () => {
-  let page;
-  before(async () => { page = await chromiumPage(); });
-  after(async () => { await page?.close(); });
-
-  test('applying the hover rule changes the visual state with identical geometry', async () => {
-    await page.setContent(`<style>${chromeCss}</style>`
-      + `<div class="author-workspace"><header class="author-topbar app-header">`
+defineHoverCases('author-nav-toggle hover', {
+  html: `<div class="app-shell" data-page="author"><div class="author-workspace" data-chrome="light"><header class="app-header product-header">`
       + `<button class="navigation-toggle" id="t" aria-label="Toggle navigation">&#9776;</button>`
-      + `</header></div>`);
-    const actual = await page.evaluate(() => {
-      const find = text => {
-        const hits = [];
-        for (const s of document.styleSheets) for (const r of s.cssRules) if (r.selectorText === text) hits.push(r);
-        return hits;
-      };
-      const el = document.querySelector('#t');
-      const rules = find('.author-workspace .app-header .navigation-toggle:hover:not(:disabled)');
-      const rest = { background: getComputedStyle(el).backgroundColor, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-      for (const prop of rules[0].style) el.style.setProperty(prop, rules[0].style.getPropertyValue(prop));
-      const hovered = { background: getComputedStyle(el).backgroundColor, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-      return { ruleCount: rules.length, rest, hovered };
-    });
-    assert.equal(actual.ruleCount, 1);
-    assert.equal(actual.rest.background, 'rgba(0, 0, 0, 0)');
-    assert.equal(actual.hovered.background, 'rgb(54, 87, 100)');
-    assert.equal(actual.rest.box, actual.hovered.box);
-  });
+      + `</header></div></div>`,
+  cases: [
+    {
+      target: '#t',
+      rule: '.author-workspace .app-header .navigation-toggle:hover:not(:disabled)',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(54, 87, 100)' },
+      paintOnly: true,
+    },
+  ],
 });

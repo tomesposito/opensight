@@ -16,6 +16,13 @@ export async function loadInteractionFixture(page, html) {
 }
 
 async function snapshot(page, selector, properties) {
+  // Let existing dialog/menu entrance animations finish before comparing
+  // geometry. Do not disable or override any product CSS in the fixture.
+  await page.evaluate(async () => {
+    await Promise.all(document.getAnimations()
+      .filter(animation => Number.isFinite(animation.effect.getComputedTiming().endTime))
+      .map(animation => animation.finished.catch(() => {})));
+  });
   return page.evaluate(({ selector, properties }) => {
     const element = document.querySelector(selector);
     if (!element) throw new Error(`Missing interaction target: ${selector}`);

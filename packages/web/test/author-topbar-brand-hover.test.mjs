@@ -1,7 +1,6 @@
-import { after, before, describe, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import { chromiumPage } from './chromium.mjs';
+import { defineHoverCases, styles } from './interaction.mjs';
 
 // Issue #108 polish slice 89: hover feedback for the standalone author
 // topbar's brand link (Author.tsx — a plain <a class="brand"> inside
@@ -19,8 +18,8 @@ import { chromiumPage } from './chromium.mjs';
 // tint (#365764). The header variables are shared by both editor
 // chromes, so no dark variant is added. Background only, so resting
 // colour and geometry are unchanged.
-const css = await readFile(new URL('../src/style.css', import.meta.url), 'utf8');
-const appChromeCss = await readFile(new URL('../src/app-chrome.css', import.meta.url), 'utf8');
+const css = styles['style.css'];
+const appChromeCss = styles['app-chrome.css'];
 
 const rule = css.match(/^\.author-topbar \.brand:hover\s*\{([^}]*)\}/m);
 
@@ -45,43 +44,20 @@ test('the resting author-topbar rules are preserved', () => {
   assert.ok(css.match(/\.author-topbar \.brand-mark\s*\{[^}]*color:\s*var\(--header-muted\)/), 'the brand-mark resting rule must remain');
 });
 
-describe('Author-topbar brand hover in offline Chromium', () => {
-  let page;
-  before(async () => { page = await chromiumPage(); });
-  after(async () => { await page?.close(); });
-
-  test('applying the hover rule changes the visual state with identical geometry, and brand links outside .author-topbar are out of scope', async () => {
-    await page.setContent(`<style>${css}</style>`
-      + `<div class="author-workspace" data-chrome="light"><header class="author-topbar app-header">`
+defineHoverCases('author-topbar-brand hover', {
+  html: `<div class="author-workspace" data-chrome="light"><header class="author-topbar app-header">`
       + `<a id="target" class="brand" href="./"><span class="brand-mark" aria-hidden="true">O</span><span class="brand-wordmark">opensight</span></a>`
       + `</header></div>`
-      + `<a id="outside" class="brand" href="./">Outside brand</a>`);
-    const actual = await page.evaluate(() => {
-      const all = [...document.styleSheets].flatMap(s => [...s.cssRules]);
-      const found = all.find(r => (r.selectorText || '') === '.author-topbar .brand:hover') ?? null;
-      const measure = (el, rule) => {
-        const rest = { background: getComputedStyle(el).backgroundColor, color: getComputedStyle(el).color, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        if (rule) { for (const prop of rule.style) el.style.setProperty(prop, rule.style.getPropertyValue(prop)); }
-        const hovered = { background: getComputedStyle(el).backgroundColor, color: getComputedStyle(el).color, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        el.removeAttribute('style');
-        return { rest, hovered };
-      };
-      const outside = document.querySelector('#outside');
-      return {
-        found: !!found,
-        props: found ? [...found.style] : [],
-        target: found ? measure(document.querySelector('#target'), found) : null,
-        outsideMatches: found ? outside.matches(found.selectorText.replaceAll(':hover', '')) : null,
-      };
-    });
-    assert.ok(actual.found, 'expected the hover rule in the CSSOM');
-    assert.ok(actual.props.length && actual.props.every(p => p.startsWith('background')), 'hover rule must set background longhands only');
-    assert.equal(actual.target.rest.background, 'rgba(0, 0, 0, 0)', 'author-topbar brand rest');
-    assert.equal(actual.target.hovered.background, 'rgb(54, 87, 100)', 'author-topbar brand hover');
-    assert.notEqual(actual.target.rest.background, actual.target.hovered.background);
-    assert.equal(actual.target.rest.color, 'rgb(255, 255, 255)', 'author-topbar brand keeps its header text colour at rest');
-    assert.equal(actual.target.rest.color, actual.target.hovered.color, 'author-topbar brand colour unchanged on hover');
-    assert.equal(actual.target.rest.box, actual.target.hovered.box, 'author-topbar brand geometry');
-    assert.equal(actual.outsideMatches, false, 'a brand link outside .author-topbar must be out of scope');
-  });
+      + `<a id="outside" class="brand" href="./">Outside brand</a>`,
+  cases: [
+    {
+      target: '#target',
+      rule: '.author-topbar .brand:hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(54, 87, 100)' },
+      paintOnly: true,
+      unchanged: ['color'],
+      excluded: ['#outside'],
+    },
+  ],
 });

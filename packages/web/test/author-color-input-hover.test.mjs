@@ -1,7 +1,6 @@
-import { after, before, describe, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import { chromiumPage } from './chromium.mjs';
+import { defineHoverCases, styles } from './interaction.mjs';
 
 // Issue #108 polish slice 37: hover feedback for author-workspace color
 // inputs. The author hover rules cover only buttons (line ~318) and selects
@@ -16,7 +15,7 @@ import { chromiumPage } from './chromium.mjs';
 // variant. Paint-only: the rules change background and border-color only, so
 // resting geometry is identical and there is no animation to need a
 // reduced-motion variant.
-const styleCss = await readFile(new URL('../src/style.css', import.meta.url), 'utf8');
+const styleCss = styles['style.css'];
 
 const lightRule = styleCss.match(/\.author-workspace\s+input\[type=color\]:hover:not\(:disabled\)\s*\{([^}]*)\}/);
 const darkRule = styleCss.match(/\.author-workspace\[data-chrome=dark\]\s+input\[type=color\]:hover:not\(:disabled\)\s*\{([^}]*)\}/);
@@ -48,32 +47,16 @@ test('the resting color-input sizing rules are preserved', () => {
   assert.match(fields[1], /height:\s*34px/);
 });
 
-describe('author color-input hover in offline Chromium', () => {
-  let page;
-  before(async () => { page = await chromiumPage(); });
-  after(async () => { await page?.close(); });
-
-  test('applying the hover rule changes the visual state with identical geometry', async () => {
-    await page.setContent(`<style>${styleCss}</style>`
-      + `<div class="author-workspace"><div class="color-inputs"><label>Color 1`
-      + `<input type="color" id="c" value="#157f88"></label></div></div>`);
-    const actual = await page.evaluate(() => {
-      const find = text => {
-        const hits = [];
-        for (const s of document.styleSheets) for (const r of s.cssRules) if (r.selectorText?.replaceAll('"', '') === text) hits.push(r);
-        return hits;
-      };
-      const el = document.querySelector('#c');
-      const rules = find('.author-workspace input[type=color]:hover:not(:disabled)');
-      const rest = { background: getComputedStyle(el).backgroundColor, border: getComputedStyle(el).borderTopColor, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-      for (const prop of rules[0].style) el.style.setProperty(prop, rules[0].style.getPropertyValue(prop));
-      const hovered = { background: getComputedStyle(el).backgroundColor, border: getComputedStyle(el).borderTopColor, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-      return { ruleCount: rules.length, rest, hovered };
-    });
-    assert.equal(actual.ruleCount, 1);
-    assert.equal(actual.rest.background, 'rgb(239, 239, 239)');
-    assert.equal(actual.hovered.background, 'rgb(237, 247, 247)');
-    assert.equal(actual.hovered.border, 'rgb(21, 127, 136)');
-    assert.equal(actual.rest.box, actual.hovered.box);
-  });
+defineHoverCases('author-color-input hover', {
+  html: `<div class="author-workspace"><div class="color-inputs"><label>Color 1`
+      + `<input type="color" id="c" value="#157f88"></label></div></div>`,
+  cases: [
+    {
+      target: '#c',
+      rule: '.author-workspace input[type="color"]:hover:not(:disabled)',
+      resting: { backgroundColor: 'rgb(239, 239, 239)', borderTopColor: 'rgb(0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(237, 247, 247)', borderTopColor: 'rgb(21, 127, 136)' },
+      paintOnly: true,
+    },
+  ],
 });

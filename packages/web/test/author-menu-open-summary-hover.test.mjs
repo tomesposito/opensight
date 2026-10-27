@@ -1,7 +1,6 @@
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import { chromiumPage } from './chromium.mjs';
+import { defineHoverCases, styles } from './interaction.mjs';
 
 // Issue #108 polish slice 79: hover feedback for the author menu's
 // OPEN summary (.author-menu details[open] > summary in
@@ -23,7 +22,7 @@ import { chromiumPage } from './chromium.mjs';
 // new colour is introduced. Background only, so the open rule's
 // inset focus shadow is kept and resting geometry is identical;
 // static (no animation), so no reduced-motion variant.
-const css = await readFile(new URL('../src/style.css', import.meta.url), 'utf8');
+const css = styles['style.css'];
 
 const rule = css.match(/\.author-menu details\[open\] > summary:hover\s*\{([^}]*)\}/);
 
@@ -59,59 +58,23 @@ test('the neighbouring author-menu hover rules are untouched', () => {
   assert.ok(css.match(/\.author-workspace\[data-chrome\] \.author-menu > button\[aria-pressed=true\]:hover:not\(:disabled\)\s*\{\s*background:\s*var\(--header-selected-hover\)/), 'the pressed menu-bar button hover must remain var(--header-selected-hover)');
 });
 
-{
-  let page;
-  before(async () => { page = await chromiumPage(); });
-  after(async () => { await page?.close(); });
-
-  test('applying the hover rule changes the visual state with identical geometry', async () => {
-    await page.setContent(`<style>${css}</style><div class="author-workspace">
+defineHoverCases('author-menu-open-summary hover', {
+  html: `<div class="author-workspace">
       <nav class="author-menu" aria-label="Analysis menu">
         <details name="analysis-menu" open><summary id="open">File</summary><div class="menu-popover"></div></details>
         <details name="analysis-menu"><summary id="closed">Edit</summary><div class="menu-popover"></div></details>
       </nav>
     </div>
-    <details open><summary id="outside">Outside</summary></details>`);
-    const actual = await page.evaluate(() => {
-      const rules = [];
-      for (const sheet of document.styleSheets) {
-        for (const rule of sheet.cssRules) {
-          if ((rule.selectorText || '') === '.author-menu details[open] > summary:hover') rules.push(rule);
-        }
-      }
-      const open = document.querySelector('#open');
-      const closed = document.querySelector('#closed');
-      const outside = document.querySelector('#outside');
-      const rest = { background: getComputedStyle(open).backgroundColor, boxShadow: getComputedStyle(open).boxShadow, box: JSON.stringify(open.getBoundingClientRect().toJSON()) };
-      const hover = rules[0];
-      // A var() shorthand is stored only at shorthand level in CSSOM
-      // (its longhand values read empty), so apply the shorthand
-      // itself rather than copying longhands.
-      if (hover) open.style.setProperty('background', hover.style.getPropertyValue('background'));
-      const hovered = { background: getComputedStyle(open).backgroundColor, boxShadow: getComputedStyle(open).boxShadow, box: JSON.stringify(open.getBoundingClientRect().toJSON()) };
-      return {
-        ruleCount: rules.length,
-        props: rules.length ? [...rules[0].style] : [],
-        ruleText: rules.length ? rules[0].style.cssText : null,
-        open: { rest, hovered },
-        openMatches: open.matches('.author-menu details[open] > summary'),
-        closedMatches: closed.matches('.author-menu details[open] > summary'),
-        outsideMatches: outside.matches('.author-menu details[open] > summary'),
-        closedBg: getComputedStyle(closed).backgroundColor,
-      };
-    });
-    assert.equal(actual.ruleCount, 1);
-    assert.ok(actual.props.length && actual.props.every(p => p.startsWith('background')), 'hover rule must set background longhands only');
-    assert.match(actual.ruleText, /var\(--header-hover\)/);
-    assert.equal(actual.open.rest.background, 'rgb(11, 67, 95)');
-    assert.equal(actual.open.hovered.background, 'rgb(18, 96, 128)');
-    assert.notEqual(actual.open.rest.background, actual.open.hovered.background);
-    assert.equal(actual.open.rest.boxShadow, actual.open.hovered.boxShadow, 'the open inset focus shadow must be unchanged');
-    assert.notEqual(actual.open.rest.boxShadow, 'none', 'the open summary must keep its inset shadow at rest');
-    assert.equal(actual.open.rest.box, actual.open.hovered.box);
-    assert.ok(actual.openMatches);
-    assert.equal(actual.closedMatches, false, 'a closed summary keeps the generic summary hover rule');
-    assert.equal(actual.outsideMatches, false, 'an open summary outside .author-menu is out of scope');
-    assert.notEqual(actual.closedBg, 'rgb(11, 67, 95)', 'closed summary resting state unchanged');
-  });
-}
+    <details open><summary id="outside">Outside</summary></details>`,
+  cases: [
+    {
+      target: '#open',
+      rule: '.author-menu details[open] > summary:hover',
+      resting: { backgroundColor: 'rgb(11, 67, 95)' },
+      hovered: { backgroundColor: 'rgb(18, 96, 128)' },
+      paintOnly: true,
+      unchanged: ['boxShadow'],
+      excluded: [{ target: '#closed', resting: { backgroundColor: 'rgba(0, 0, 0, 0)' } }, '#outside'],
+    },
+  ],
+});

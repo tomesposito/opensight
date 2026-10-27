@@ -1,7 +1,6 @@
-import { after, before, describe, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import { chromiumPage } from './chromium.mjs';
+import { defineHoverCases, styles } from './interaction.mjs';
 
 // Issue #108 polish slice 101: hover feedback for the ActionEditor's
 // radio labels (.action-radio-group label in ActionEditor.tsx — the
@@ -32,9 +31,7 @@ import { chromiumPage } from './chromium.mjs';
 // by slice 100. The dark-chrome variant takes the author dark hover
 // tint (#334c62, the dark button and field hovers). Background only,
 // so resting geometry is identical and there is no animation.
-const styleCss = await readFile(new URL('../src/style.css', import.meta.url), 'utf8');
-const allCss = (await Promise.all(['style.css', 'app-chrome.css', 'data-section.css', 'embed.css', 'sign-in.css']
-  .map(name => readFile(new URL(`../src/${name}`, import.meta.url), 'utf8')))).join('\n');
+const styleCss = styles['style.css'];
 
 const rule = styleCss.match(/^\.action-radio-group label:has\(> input\[type=radio\]\):hover\s*\{([^}]*)\}/m);
 const darkRule = styleCss.match(/^\.author-workspace\[data-chrome=dark\] \.action-radio-group label:has\(> input\[type=radio\]\):hover\s*\{([^}]*)\}/m);
@@ -63,13 +60,7 @@ test('the resting action-radio-group rules are preserved, the radio has no hover
   assert.ok(styleCss.match(/\.author-workspace\[data-chrome=dark\] button:hover:not\(:disabled\)\s*\{[^}]*background:\s*#334c62/), 'the author dark button hover must remain #334c62');
 });
 
-describe('Action radio label hover in offline Chromium', () => {
-  let page;
-  before(async () => { page = await chromiumPage(); });
-  after(async () => { await page?.close(); });
-
-  test('applying the hover rules changes the label visual state with identical geometry in the light and dark author contexts, and the radio, the checkbox labels and outside labels are out of scope', async () => {
-    const panel = prefix => `<div class="action-panel"><div class="action-panel-body">`
+const panel = prefix => `<div class="action-panel"><div class="action-panel-body">`
       + `<fieldset class="action-radio-group"><legend>Activation</legend>`
       + `<label id="${prefix}Activation"><input id="${prefix}ActivationRadio" type="radio">Select</label></fieldset>`
       + `<fieldset class="action-radio-group"><legend>Filter scope</legend>`
@@ -78,55 +69,44 @@ describe('Action radio label hover in offline Chromium', () => {
       + `<fieldset class="action-radio-group"><legend>Target visuals</legend>`
       + `<label id="${prefix}Target"><input type="radio">All visuals</label></fieldset>`
       + `</div></div>`;
-    await page.setContent(`<style>${allCss}</style>`
-      + `<div class="author-workspace"><div class="author-layout"><aside class="builder-panel"><div class="panel-content">${panel('lt')}</div></aside></div></div>`
+
+defineHoverCases('action-radio hover', {
+  html: `<div class="author-workspace"><div class="author-layout"><aside class="builder-panel"><div class="panel-content">${panel('lt')}</div></aside></div></div>`
       + `<div class="author-workspace" data-chrome="dark"><div class="author-layout"><aside class="builder-panel"><div class="panel-content">${panel('dk')}</div></aside></div></div>`
-      + `<label id="outsideLabel"><input type="radio">Other label</label>`);
-    const actual = await page.evaluate(() => {
-      const all = [...document.styleSheets].flatMap(s => [...s.cssRules]);
-      const norm = r => (r.selectorText || '').replaceAll('"', '');
-      const found = all.find(r => norm(r) === '.action-radio-group label:has(> input[type=radio]):hover') ?? null;
-      const darkFound = all.find(r => norm(r) === '.author-workspace[data-chrome=dark] .action-radio-group label:has(> input[type=radio]):hover') ?? null;
-      const measure = (el, rule) => {
-        const rest = { background: getComputedStyle(el).backgroundColor, color: getComputedStyle(el).color, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        if (rule) { for (const prop of rule.style) el.style.setProperty(prop, rule.style.getPropertyValue(prop)); }
-        const hovered = { background: getComputedStyle(el).backgroundColor, color: getComputedStyle(el).color, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        el.removeAttribute('style');
-        return { rest, hovered };
-      };
-      const bare = found ? found.selectorText.replaceAll(':hover', '') : '';
-      const el = id => document.querySelector(`#${id}`);
-      return {
-        found: !!found,
-        darkFound: !!darkFound,
-        props: found ? [...found.style] : [],
-        darkProps: darkFound ? [...darkFound.style] : [],
-        activation: found ? measure(el('ltActivation'), found) : null,
-        scope: found ? measure(el('ltScope'), found) : null,
-        target: found ? measure(el('ltTarget'), found) : null,
-        dark: darkFound ? measure(el('dkTarget'), darkFound) : null,
-        radioMatches: found ? el('ltActivationRadio').matches(bare) : null,
-        checkMatches: found ? el('ltCheck').matches(bare) : null,
-        outsideMatches: found ? el('outsideLabel').matches(bare) : null,
-      };
-    });
-    assert.ok(actual.found, 'expected the hover rule in the CSSOM');
-    assert.ok(actual.darkFound, 'expected the dark-chrome hover rule in the CSSOM');
-    assert.ok(actual.props.length && actual.props.every(p => p.startsWith('background')), 'hover rule must set background longhands only');
-    assert.ok(actual.darkProps.length && actual.darkProps.every(p => p.startsWith('background')), 'dark hover rule must set background longhands only');
-    for (const [name, ctx] of [['activation', actual.activation], ['filter-scope', actual.scope], ['target-visuals', actual.target]]) {
-      assert.equal(ctx.rest.background, 'rgba(0, 0, 0, 0)', `${name} label rest (transparent)`);
-      assert.equal(ctx.hovered.background, 'rgb(237, 247, 247)', `${name} label hover`);
-      assert.notEqual(ctx.rest.background, ctx.hovered.background);
-      assert.equal(ctx.rest.color, ctx.hovered.color, `${name} label colour unchanged on hover`);
-      assert.equal(ctx.rest.box, ctx.hovered.box, `${name} label geometry`);
-    }
-    assert.equal(actual.dark.rest.background, 'rgba(0, 0, 0, 0)', 'author dark target-visuals label rest (transparent)');
-    assert.equal(actual.dark.hovered.background, 'rgb(51, 76, 98)', 'author dark target-visuals label hover');
-    assert.equal(actual.dark.rest.color, actual.dark.hovered.color, 'author dark target-visuals label colour unchanged on hover');
-    assert.equal(actual.dark.rest.box, actual.dark.hovered.box, 'author dark target-visuals label geometry');
-    assert.equal(actual.radioMatches, false, 'the radio inside the label must be out of scope');
-    assert.equal(actual.checkMatches, false, 'the checkbox labels nested in the same fieldset must be out of scope (slice 100 covers them)');
-    assert.equal(actual.outsideMatches, false, 'a radio label outside .action-radio-group must be out of scope');
-  });
+      + `<label id="outsideLabel"><input type="radio">Other label</label>`,
+  cases: [
+    {
+      target: '#ltActivation',
+      rule: '.action-radio-group label:has(> input[type="radio"]):hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      paintOnly: true,
+      unchanged: ['color'],
+      excluded: ['#ltActivationRadio', '#ltCheck', '#outsideLabel'],
+    },
+    {
+      target: '#ltScope',
+      rule: '.action-radio-group label:has(> input[type="radio"]):hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      paintOnly: true,
+      unchanged: ['color'],
+    },
+    {
+      target: '#ltTarget',
+      rule: '.action-radio-group label:has(> input[type="radio"]):hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      paintOnly: true,
+      unchanged: ['color'],
+    },
+    {
+      target: '#dkTarget',
+      rule: '.author-workspace[data-chrome="dark"] .action-radio-group label:has(> input[type="radio"]):hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(51, 76, 98)' },
+      paintOnly: true,
+      unchanged: ['color'],
+    },
+  ],
 });
