@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { assert, button, enrollViaApi, invitationFrom, launchBrowser, navigate, runJourney, signIn, startHostedStack } from './harness.mjs';
 
 await runJourney('j2-first-login', 'Workspace Admin', async j => {
-  const stack = await startHostedStack(); j.cleanup(stack.stop);
+  const stack = await startHostedStack({ invitationSeconds: 604800 }); j.cleanup(stack.stop);
   const email = 'acme-admin@example.test';
   const tenant = await stack.fixture.provisioning.provision(randomUUID(), { name: 'Acme Analytics', administrator: { email, name: 'Acme admin' } });
   const invitation = invitationFrom(stack);
