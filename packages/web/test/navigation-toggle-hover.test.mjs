@@ -33,6 +33,8 @@ test('the toggle resting rule keeps the transparent base the hover replaces', ()
 });
 
 defineHoverCases('navigation-toggle hover', {
+  // The navigation toggle is visible below the shell's 760px breakpoint.
+  viewport: { width: 700, height: 600 },
   html: `<header class="product-header"><button class="navigation-toggle" id="nav">☰</button><button class="navigation-toggle" id="dis" disabled>☰</button></header>`,
   cases: [
     {

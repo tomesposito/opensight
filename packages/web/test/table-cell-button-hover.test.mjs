@@ -56,7 +56,7 @@ defineHoverCases('table-cell-button hover', {
     {
       target: '#cell',
       rule: '.table-scroll td button:hover',
-      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)', textDecorationLine: 'underline' },
       hovered: { backgroundColor: 'rgb(234, 243, 247)' },
       paintOnly: true,
       unchanged: ['color', 'textDecorationLine'],

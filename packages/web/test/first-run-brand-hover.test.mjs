@@ -54,7 +54,7 @@ defineHoverCases('first-run-brand hover', {
     {
       target: '#brand',
       rule: '.first-run-header .brand:hover',
-      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)', color: 'rgb(255, 255, 255)' },
       hovered: { backgroundColor: 'rgb(54, 87, 100)' },
       paintOnly: true,
       unchanged: ['color'],

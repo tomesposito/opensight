@@ -64,7 +64,7 @@ defineHoverCases('data-detail-link hover', {
     {
       target: '#crumb',
       rule: '.data-page a:hover',
-      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)', color: 'rgb(0, 0, 238)', textDecorationLine: 'underline' },
       hovered: { backgroundColor: 'rgb(234, 243, 247)' },
       paintOnly: true,
       unchanged: ['color', 'textDecorationLine'],
@@ -73,7 +73,7 @@ defineHoverCases('data-detail-link hover', {
     {
       target: '#back',
       rule: '.data-page a:hover',
-      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)', color: 'rgb(0, 0, 238)', textDecorationLine: 'underline' },
       hovered: { backgroundColor: 'rgb(234, 243, 247)' },
       paintOnly: true,
       unchanged: ['color', 'textDecorationLine'],
@@ -81,7 +81,7 @@ defineHoverCases('data-detail-link hover', {
     {
       target: '#usage',
       rule: '.data-page a:hover',
-      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)', color: 'rgb(0, 0, 238)', textDecorationLine: 'underline' },
       hovered: { backgroundColor: 'rgb(234, 243, 247)' },
       paintOnly: true,
       unchanged: ['color', 'textDecorationLine'],

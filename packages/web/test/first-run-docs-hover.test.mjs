@@ -54,7 +54,7 @@ defineHoverCases('first-run-docs hover', {
     {
       target: '#guide',
       rule: '.first-run-docs a:hover',
-      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)', color: 'rgb(18, 110, 118)' },
       hovered: { backgroundColor: 'rgb(234, 243, 244)' },
       paintOnly: true,
       unchanged: ['color'],

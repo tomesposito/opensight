@@ -66,7 +66,7 @@ defineHoverCases('connector-submit hover', {
     {
       target: '#dialog-submit',
       rule: '.app-shell .connector-details button.connector-submit:hover:not(:disabled)',
-      resting: { backgroundColor: 'rgb(21, 127, 136)' },
+      resting: { backgroundColor: 'rgb(21, 127, 136)', color: 'rgb(255, 255, 255)' },
       hovered: { backgroundColor: 'rgb(18, 110, 118)' },
       paintOnly: true,
       unchanged: ['color'],
@@ -75,7 +75,7 @@ defineHoverCases('connector-submit hover', {
     {
       target: '#solo-submit',
       rule: '.app-shell .connector-details button.connector-submit:hover:not(:disabled)',
-      resting: { backgroundColor: 'rgb(21, 127, 136)' },
+      resting: { backgroundColor: 'rgb(21, 127, 136)', color: 'rgb(255, 255, 255)' },
       hovered: { backgroundColor: 'rgb(18, 110, 118)' },
       paintOnly: true,
       unchanged: ['color'],

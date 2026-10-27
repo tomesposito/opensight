@@ -70,6 +70,7 @@ export async function checkHoverCase(page, {
   const properties = [...new Set([...Object.keys(resting), ...Object.keys(hovered), ...unchanged])];
   await page.setHovered(null);
   const rest = await snapshot(page, target, properties);
+  assert.ok(rest.box.width > 0 && rest.box.height > 0, `${target} must have visible geometry`);
   assert.equal((await page.hoverState(target)).hovered, false, `${target} starts without hover`);
   expectValues(rest, resting, `${target} at rest`);
   const exclusions = [];
@@ -113,7 +114,7 @@ export async function checkHoverCase(page, {
  * A dark variant can override html, target, rule and expectations, with the
  * same assertions as its light case. Geometry stability defaults to true.
  */
-export function defineHoverCases(name, { html, cases }) {
+export function defineHoverCases(name, { html, cases, viewport = { width: 780, height: 600 } }) {
   describe(name, () => {
     let page;
     before(async () => { page = await chromiumPage(); });
@@ -122,6 +123,7 @@ export function defineHoverCases(name, { html, cases }) {
       const { dark, ...base } = entry;
       for (const [variant, options] of [['', base], ...(dark ? [[' (dark)', { ...base, ...dark }]] : [])]) {
         test(`${options.name ?? options.target}${variant}: real hover`, async () => {
+          await page.setViewportSize(options.viewport ?? viewport);
           await loadInteractionFixture(page, options.html ?? html);
           await checkHoverCase(page, options);
         });

@@ -55,7 +55,7 @@ defineHoverCases('global-search-primary-button hover', {
     {
       target: '#searchPrimary',
       rule: '.global-search .search-empty .primary-button:hover',
-      resting: { backgroundColor: 'rgb(21, 127, 136)' },
+      resting: { backgroundColor: 'rgb(21, 127, 136)', color: 'rgb(255, 255, 255)' },
       hovered: { backgroundColor: 'rgb(18, 110, 118)' },
       paintOnly: true,
       unchanged: ['color'],

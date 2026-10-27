@@ -57,7 +57,7 @@ defineHoverCases('fixture-picker-label hover', {
     {
       target: '#fpLabel',
       rule: '.product-header .fixture-picker:hover',
-      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)', color: 'rgb(208, 224, 232)' },
       hovered: { backgroundColor: 'rgb(54, 87, 100)' },
       paintOnly: true,
       unchanged: ['color'],

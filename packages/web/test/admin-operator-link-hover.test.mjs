@@ -54,7 +54,7 @@ defineHoverCases('admin-operator-link hover', {
     {
       target: '#op',
       rule: '.admin-settings a:hover',
-      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)', color: 'rgb(0, 0, 238)', textDecorationLine: 'underline' },
       hovered: { backgroundColor: 'rgb(237, 247, 247)' },
       paintOnly: true,
       unchanged: ['color', 'textDecorationLine'],

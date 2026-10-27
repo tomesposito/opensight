@@ -53,7 +53,7 @@ defineHoverCases('author-topbar-brand hover', {
     {
       target: '#target',
       rule: '.author-topbar .brand:hover',
-      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)', color: 'rgb(255, 255, 255)' },
       hovered: { backgroundColor: 'rgb(54, 87, 100)' },
       paintOnly: true,
       unchanged: ['color'],

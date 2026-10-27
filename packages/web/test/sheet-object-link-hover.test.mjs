@@ -56,7 +56,7 @@ defineHoverCases('sheet-object-link hover', {
     {
       target: '#target',
       rule: '.sheet-object a:hover',
-      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)', color: 'rgb(0, 0, 238)', textDecorationLine: 'underline' },
       hovered: { backgroundColor: 'rgb(237, 247, 247)' },
       paintOnly: true,
       unchanged: ['color', 'textDecorationLine'],
