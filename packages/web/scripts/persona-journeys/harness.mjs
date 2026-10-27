@@ -158,7 +158,14 @@ export async function runJourney(name, persona, run) {
     gap(name, expected, actual) { this.steps.push({ name, status: 'gap', detail: { expected, actual } }); console.log(`GAP ${name}: ${actual}`); },
     async step(name, page, fn) {
       try { const detail = await fn(); if (page) await capture(this, page, name); this.steps.push({ name, status: 'pass', detail: detail ?? 'Assertions passed.' }); console.log(`PASS ${name}`); }
-      catch (error) { this.steps.push({ name, status: 'fail', detail: error.stack }); throw error; }
+      catch (error) {
+        this.steps.push({ name, status: 'fail', detail: error.stack });
+        if (page && !page.isClosed()) {
+          console.error((await page.locator('main').innerText().catch(() => '')).slice(0, 6000));
+          await capture(this, page, `${name}-failure`).catch(() => {});
+        }
+        throw error;
+      }
     },
   };
   try { await run(j); } catch (error) {
