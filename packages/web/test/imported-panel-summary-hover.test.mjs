@@ -1,7 +1,6 @@
-import { after, before, describe, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import { chromiumPage } from './chromium.mjs';
+import { defineHoverCases, styles } from './interaction.mjs';
 
 // Issue #108 polish slice 82: hover feedback for the ImportedPanels
 // disclosure summaries (details.imported-panel in Author.tsx — the
@@ -24,7 +23,7 @@ import { chromiumPage } from './chromium.mjs';
 // Background only, so resting geometry is identical and there is no
 // animation; the dark-chrome variant takes #334c62, the dark
 // summary hover of the neighbouring panels.
-const css = await readFile(new URL('../src/style.css', import.meta.url), 'utf8');
+const css = styles['style.css'];
 
 const rule = css.match(/\.imported-panel summary:hover\s*\{([^}]*)\}/);
 const darkRule = css.match(/\.author-workspace\[data-chrome=dark\] \.imported-panel summary:hover\s*\{([^}]*)\}/);
@@ -63,49 +62,28 @@ test('the neighbouring author summary hover rules are untouched', () => {
   assert.ok(css.match(/\.first-run summary:hover\s*\{[^}]*background:\s*#eaf3f4/), 'the first-run summary hover must remain #eaf3f4');
 });
 
-describe('Imported-panel summary hover in offline Chromium', () => {
-  let page;
-  before(async () => { page = await chromiumPage(); });
-  after(async () => { await page?.close(); });
-
-  test('applying the hover rule changes the visual state with identical geometry', async () => {
-    await page.setContent(`<style>${css}</style>`
-      + `<div class="author-workspace" data-chrome="light"><div class="author-layout">`
+defineHoverCases('imported-panel-summary hover', {
+  html: `<div class="author-workspace" data-chrome="light"><div class="author-layout">`
       + `<details class="builder-panel fields-panel" open><summary id="panel">Data</summary><div class="panel-content">`
       + `<details class="imported-panel" open><summary id="outer">Imported calculated fields</summary>`
       + `<details open><summary id="inner">Calc 1</summary><pre>{}</pre></details>`
       + `</details></div></details></div></div>`
-      + `<details><summary id="outside">Outside summary</summary></details>`);
-    const actual = await page.evaluate(() => {
-      const all = [...document.styleSheets].flatMap(s => [...s.cssRules]);
-      const found = all.find(r => (r.selectorText || '') === '.imported-panel summary:hover') ?? null;
-      const measure = (el, rule) => {
-        const rest = { background: getComputedStyle(el).backgroundColor, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        if (rule) { for (const prop of rule.style) el.style.setProperty(prop, rule.style.getPropertyValue(prop)); }
-        const hovered = { background: getComputedStyle(el).backgroundColor, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        el.removeAttribute('style');
-        return { rest, hovered };
-      };
-      const matches = (el, rule) => rule ? el.matches(rule.selectorText.replaceAll(':hover', '')) : null;
-      return {
-        found: !!found,
-        props: found ? [...found.style] : [],
-        outer: found ? measure(document.querySelector('#outer'), found) : null,
-        inner: found ? measure(document.querySelector('#inner'), found) : null,
-        panelMatches: matches(document.querySelector('#panel'), found),
-        outsideMatches: matches(document.querySelector('#outside'), found),
-      };
-    });
-    assert.ok(actual.found, 'expected the hover rule in the CSSOM');
-    assert.ok(actual.props.length && actual.props.every(p => p.startsWith('background')), 'hover rule must set background longhands only');
-    assert.equal(actual.outer.rest.background, 'rgba(0, 0, 0, 0)', 'outer summary rest');
-    assert.equal(actual.outer.hovered.background, 'rgb(237, 247, 247)', 'outer summary hover');
-    assert.notEqual(actual.outer.rest.background, actual.outer.hovered.background);
-    assert.equal(actual.outer.rest.box, actual.outer.hovered.box, 'outer summary geometry');
-    assert.equal(actual.inner.rest.background, 'rgba(0, 0, 0, 0)', 'inner summary rest');
-    assert.equal(actual.inner.hovered.background, 'rgb(237, 247, 247)', 'inner summary hover');
-    assert.equal(actual.inner.rest.box, actual.inner.hovered.box, 'inner summary geometry');
-    assert.equal(actual.panelMatches, false, 'the builder-panel summary must be out of scope');
-    assert.equal(actual.outsideMatches, false, 'a summary outside .imported-panel must be out of scope');
-  });
+      + `<details><summary id="outside">Outside summary</summary></details>`,
+  cases: [
+    {
+      target: '#outer',
+      rule: '.imported-panel summary:hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      paintOnly: true,
+      excluded: ['#panel', '#outside'],
+    },
+    {
+      target: '#inner',
+      rule: '.imported-panel summary:hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      paintOnly: true,
+    },
+  ],
 });

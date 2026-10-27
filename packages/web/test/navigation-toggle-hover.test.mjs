@@ -1,7 +1,6 @@
-import { after, before, describe, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import { chromiumPage } from './chromium.mjs';
+import { defineHoverCases, styles } from './interaction.mjs';
 
 // Issue #108 polish slice 24: hover feedback for the shell header's
 // navigation toggle. A fresh interactive-state audit of the app shell found
@@ -13,7 +12,7 @@ import { chromiumPage } from './chromium.mjs';
 // toggle takes the same tint (#365764). Paint-only: the rule changes the
 // background, so resting geometry is identical and there is no animation to
 // need a reduced-motion variant.
-const chromeCss = await readFile(new URL('../src/app-chrome.css', import.meta.url), 'utf8');
+const chromeCss = styles['app-chrome.css'];
 
 const toggleRule = chromeCss.match(/\.product-header\s+\.navigation-toggle:hover:not\(:disabled\)\s*\{([^}]*)\}/);
 
@@ -33,41 +32,16 @@ test('the toggle resting rule keeps the transparent base the hover replaces', ()
   assert.match(base[1], /background:\s*transparent/);
 });
 
-describe('navigation toggle hover in offline Chromium', () => {
-  let page;
-  before(async () => { page = await chromiumPage(); });
-  after(async () => { await page?.close(); });
-
-  test('applying the hover rule changes the visual state with identical geometry', async () => {
-    await page.setContent(`<style>${chromeCss}</style>`
-      + `<header class="product-header"><button class="navigation-toggle" id="nav">☰</button><button class="navigation-toggle" id="dis" disabled>☰</button></header>`);
-    const actual = await page.evaluate(() => {
-      const find = text => {
-        const hits = [];
-        for (const s of document.styleSheets) for (const r of s.cssRules) if (r.selectorText === text) hits.push(r);
-        return hits;
-      };
-      const el = document.querySelector('#nav');
-      const dis = document.querySelector('#dis');
-      const rules = find('.product-header .navigation-toggle:hover:not(:disabled)');
-      const rest = { background: getComputedStyle(el).backgroundColor, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-      for (const prop of rules[0].style) el.style.setProperty(prop, rules[0].style.getPropertyValue(prop));
-      const hovered = { background: getComputedStyle(el).backgroundColor, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-      return {
-        ruleCount: rules.length,
-        rest,
-        hovered,
-        backgroundColor: rules[0].style.getPropertyValue('background-color'),
-        disabledMatches: dis.matches('.product-header .navigation-toggle:hover:not(:disabled)'),
-        disabledRest: getComputedStyle(dis).backgroundColor,
-      };
-    });
-    assert.equal(actual.ruleCount, 1);
-    assert.equal(actual.backgroundColor, 'rgb(54, 87, 100)');
-    assert.equal(actual.rest.background, 'rgba(0, 0, 0, 0)');
-    assert.equal(actual.hovered.background, 'rgb(54, 87, 100)');
-    assert.equal(actual.rest.box, actual.hovered.box);
-    assert.equal(actual.disabledMatches, false);
-    assert.equal(actual.disabledRest, 'rgba(0, 0, 0, 0)');
-  });
+defineHoverCases('navigation-toggle hover', {
+  html: `<header class="product-header"><button class="navigation-toggle" id="nav">☰</button><button class="navigation-toggle" id="dis" disabled>☰</button></header>`,
+  cases: [
+    {
+      target: '#nav',
+      rule: '.product-header .navigation-toggle:hover:not(:disabled)',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(54, 87, 100)' },
+      paintOnly: true,
+      excluded: [{ target: '#dis', resting: { backgroundColor: 'rgba(0, 0, 0, 0)' } }],
+    },
+  ],
 });

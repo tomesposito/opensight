@@ -1,7 +1,6 @@
-import { after, before, describe, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import { chromiumPage } from './chromium.mjs';
+import { defineHoverCases, styles } from './interaction.mjs';
 
 // Issue #108 polish slice 111: hover feedback for the embed
 // surfaces' field labels (.embed-question label — "Question" in
@@ -35,9 +34,7 @@ import { chromiumPage } from './chromium.mjs';
 // reads as one surface, not two steps. Background only, so
 // resting geometry is identical and there is no animation; the
 // embed surfaces are fixed light, so no dark variant is added.
-const embedCss = await readFile(new URL('../src/embed.css', import.meta.url), 'utf8');
-const allCss = (await Promise.all(['style.css', 'app-chrome.css', 'data-section.css', 'embed.css', 'sign-in.css']
-  .map(name => readFile(new URL(`../src/${name}`, import.meta.url), 'utf8')))).join('\n');
+const embedCss = styles['embed.css'];
 
 const rule = embedCss.match(/\.embed-question label:hover,\.embed-author label:hover,\.embed-preview-controls label:hover\s*\{([^}]*)\}/);
 
@@ -62,14 +59,8 @@ test('the resting embed label rules are preserved and there is no dark variant',
   assert.ok(!embedCss.match(/data-chrome=dark/), 'embed.css must have no dark-chrome variant');
 });
 
-describe('Embed label hover in offline Chromium', () => {
-  let page;
-  before(async () => { page = await chromiumPage(); });
-  after(async () => { await page?.close(); });
-
-  test('applying the hover rule changes the label visual state with identical geometry in the real ancestor contexts, and labels outside the embed label contexts are out of scope', async () => {
-    await page.setContent(`<style>${allCss}</style>`
-      + `<div class="embed-frame"><section class="embed-question"><div role="search">`
+defineHoverCases('embed-label hover', {
+  html: `<div class="embed-frame"><section class="embed-question"><div role="search">`
       + `<label id="qLabel">Question<input value="x"/></label></div></section>`
       + `<section class="embed-author"><aside>`
       + `<label id="aLabel">Analysis name<input value="y"/></label>`
@@ -78,40 +69,40 @@ describe('Embed label hover in offline Chromium', () => {
       + `<main class="embed-preview"><div class="embed-preview-controls">`
       + `<label id="pLabel">Branding<select><option>OpenSight default</option></select></label>`
       + `</div></main>`
-      + `<label id="outsideLabel">Outside<input/></label>`);
-    const actual = await page.evaluate(() => {
-      const all = [...document.styleSheets].flatMap(s => [...s.cssRules]);
-      const norm = r => (r.selectorText || '').replaceAll('"', '');
-      const found = all.find(r => norm(r) === '.embed-question label:hover, .embed-author label:hover, .embed-preview-controls label:hover') ?? null;
-      const measure = (el, rule) => {
-        const rest = { background: getComputedStyle(el).backgroundColor, color: getComputedStyle(el).color, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        if (rule) { for (const prop of rule.style) el.style.setProperty(prop, rule.style.getPropertyValue(prop)); }
-        const hovered = { background: getComputedStyle(el).backgroundColor, color: getComputedStyle(el).color, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        el.removeAttribute('style');
-        return { rest, hovered };
-      };
-      const el = id => document.querySelector(`#${id}`);
-      return {
-        found: !!found,
-        props: found ? [...found.style] : [],
-        q: found ? measure(el('qLabel'), found) : null,
-        a: found ? measure(el('aLabel'), found) : null,
-        aSel: found ? measure(el('aSelLabel'), found) : null,
-        p: found ? measure(el('pLabel'), found) : null,
-        frameMatches: found ? el('frameLabel').matches(found.selectorText.replaceAll(':hover', '')) : null,
-        outsideMatches: found ? el('outsideLabel').matches(found.selectorText.replaceAll(':hover', '')) : null,
-      };
-    });
-    assert.ok(actual.found, 'expected the hover rule in the CSSOM');
-    assert.ok(actual.props.length && actual.props.every(p => p.startsWith('background')), 'hover rule must set background longhands only');
-    for (const key of ['q', 'a', 'aSel', 'p']) {
-      assert.equal(actual[key].rest.background, 'rgba(0, 0, 0, 0)', `${key} label rest (transparent)`);
-      assert.equal(actual[key].hovered.background, 'rgb(237, 242, 250)', `${key} label hover`);
-      assert.notEqual(actual[key].rest.background, actual[key].hovered.background);
-      assert.equal(actual[key].rest.color, actual[key].hovered.color, `${key} label colour unchanged on hover`);
-      assert.equal(actual[key].rest.box, actual[key].hovered.box, `${key} label geometry`);
-    }
-    assert.equal(actual.frameMatches, false, 'a plain label inside .embed-frame but outside the question/author contexts must be out of scope');
-    assert.equal(actual.outsideMatches, false, 'a label outside the embed surfaces must be out of scope');
-  });
+      + `<label id="outsideLabel">Outside<input/></label>`,
+  cases: [
+    {
+      target: '#qLabel',
+      rule: '.embed-question label:hover, .embed-author label:hover, .embed-preview-controls label:hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(237, 242, 250)' },
+      paintOnly: true,
+      unchanged: ['color'],
+      excluded: ['#frameLabel', '#outsideLabel'],
+    },
+    {
+      target: '#aLabel',
+      rule: '.embed-question label:hover, .embed-author label:hover, .embed-preview-controls label:hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(237, 242, 250)' },
+      paintOnly: true,
+      unchanged: ['color'],
+    },
+    {
+      target: '#aSelLabel',
+      rule: '.embed-question label:hover, .embed-author label:hover, .embed-preview-controls label:hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(237, 242, 250)' },
+      paintOnly: true,
+      unchanged: ['color'],
+    },
+    {
+      target: '#pLabel',
+      rule: '.embed-question label:hover, .embed-author label:hover, .embed-preview-controls label:hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(237, 242, 250)' },
+      paintOnly: true,
+      unchanged: ['color'],
+    },
+  ],
 });

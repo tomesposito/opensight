@@ -1,7 +1,6 @@
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import { chromiumPage } from './chromium.mjs';
+import { defineHoverCases, styles } from './interaction.mjs';
 
 // Issue #108 polish slice 60: hover feedback for the hosted Jobs page
 // (.job-management in JobManagement.tsx — "Refresh jobs and history" and
@@ -16,7 +15,7 @@ import { chromiumPage } from './chromium.mjs';
 // geometry is identical. Static (no animation), so no reduced-motion
 // variant is needed; disabled buttons (the page's busy state) keep their
 // flat resting state.
-const css = await readFile(new URL('../src/style.css', import.meta.url), 'utf8');
+const css = styles['style.css'];
 
 const buttonHover = css.match(/\.job-management button:hover:not\(:disabled\)\s*\{([^}]*)\}/);
 
@@ -42,44 +41,33 @@ test('the author and admin hover rules are untouched', () => {
   assert.ok(css.match(/\.admin-settings button:hover:not\(:disabled\)\s*\{[^}]*background:\s*#edf7f7/), 'the admin-settings button hover rule must still be present');
 });
 
-{
-  let page;
-  before(async () => { page = await chromiumPage(); });
-  after(async () => { await page?.close(); });
-
-  test('applying the hover rule changes the visual state with identical geometry', async () => {
-    await page.setContent(`<style>${css}</style><section class="job-management">
+defineHoverCases('job-management hover', {
+  html: `<section class="job-management">
       <button id="refresh" type="button">Refresh jobs and history</button>
       <table><tbody><tr><td>job-1</td><td><button id="history" type="button">History job-1</button><button id="run" type="button">Run job-1</button><button id="off" type="button" disabled>History job-2</button></td></tr></tbody></table>
-    </section>`);
-    const actual = await page.evaluate(() => {
-      let found;
-      for (const sheet of document.styleSheets) {
-        for (const rule of sheet.cssRules) {
-          if ((rule.selectorText || '') === '.job-management button:hover:not(:disabled)') found = rule;
-        }
-      }
-      const measure = (el, rule) => {
-        const rest = { background: getComputedStyle(el).backgroundColor, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        if (rule) { for (const prop of rule.style) el.style.setProperty(prop, rule.style.getPropertyValue(prop)); }
-        const hovered = { background: getComputedStyle(el).backgroundColor, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        el.removeAttribute('style');
-        return { rest, hovered };
-      };
-      const off = document.querySelector('#off');
-      return {
-        refresh: found ? measure(document.querySelector('#refresh'), found) : null,
-        history: found ? measure(document.querySelector('#history'), found) : null,
-        run: found ? measure(document.querySelector('#run'), found) : null,
-        offMatches: found ? off.matches(found.selectorText.replace(':hover', '')) : null,
-      };
-    });
-    assert.ok(actual.refresh, 'expected the button hover rule in the CSSOM');
-    for (const key of ['refresh', 'history', 'run']) {
-      assert.equal(actual[key].rest.background, 'rgb(239, 239, 239)', `${key} rest`);
-      assert.equal(actual[key].hovered.background, 'rgb(237, 247, 247)', `${key} hover`);
-      assert.equal(actual[key].rest.box, actual[key].hovered.box, `${key} geometry`);
-    }
-    assert.equal(actual.offMatches, false, 'disabled buttons must be excluded from the hover rule');
-  });
-}
+    </section>`,
+  cases: [
+    {
+      target: '#refresh',
+      rule: '.job-management button:hover:not(:disabled)',
+      resting: { backgroundColor: 'rgb(239, 239, 239)' },
+      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      paintOnly: true,
+      excluded: ['#off'],
+    },
+    {
+      target: '#history',
+      rule: '.job-management button:hover:not(:disabled)',
+      resting: { backgroundColor: 'rgb(239, 239, 239)' },
+      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      paintOnly: true,
+    },
+    {
+      target: '#run',
+      rule: '.job-management button:hover:not(:disabled)',
+      resting: { backgroundColor: 'rgb(239, 239, 239)' },
+      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      paintOnly: true,
+    },
+  ],
+});

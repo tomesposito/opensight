@@ -1,7 +1,6 @@
-import { after, before, describe, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import { chromiumPage } from './chromium.mjs';
+import { defineHoverCases, styles } from './interaction.mjs';
 
 // Issue #108 polish slice 128: hover feedback for the dataset execution
 // controls' labels (.execution-controls label in DatasetExecution.tsx —
@@ -31,10 +30,8 @@ import { chromiumPage } from './chromium.mjs';
 // chrome and #334c62 in author dark chrome (the author select hovers).
 // Background only, so resting geometry is identical and there is no
 // animation.
-const styleCss = await readFile(new URL('../src/style.css', import.meta.url), 'utf8');
-const dataSectionCss = await readFile(new URL('../src/data-section.css', import.meta.url), 'utf8');
-const allCss = (await Promise.all(['style.css', 'app-chrome.css', 'data-section.css', 'embed.css', 'sign-in.css']
-  .map(name => readFile(new URL(`../src/${name}`, import.meta.url), 'utf8')))).join('\n');
+const styleCss = styles['style.css'];
+const dataSectionCss = styles['data-section.css'];
 
 const baseRule = styleCss.match(/^\.execution-controls label:hover\s*\{([^}]*)\}/m);
 const prepRule = styleCss.match(/^\.data-prep \.execution-controls label:hover\s*\{([^}]*)\}/m);
@@ -73,76 +70,53 @@ test('the resting execution-controls rules are preserved', () => {
   assert.ok(styleCss.match(/\.prep-execution summary:hover\s*\{[^}]*background:\s*#edf6fc/), 'the prep-execution summary hover must remain');
 });
 
-describe('Execution-controls label hover in offline Chromium', () => {
-  let page;
-  before(async () => { page = await chromiumPage(); });
-  after(async () => { await page?.close(); });
-
-  test('applying the hover rules changes the label visual state with identical geometry in the data-detail, data-prep and author light/dark contexts, and labels outside .execution-controls are out of scope', async () => {
-    await page.setContent(`<style>${allCss}</style>`
-      + `<div class="app-shell"><main><section class="data-page data-detail"><div class="data-summary"><aside class="data-summary-cards"><section class="data-card"><details open><summary>Storage settings</summary><section class="dataset-execution compact"><div class="execution-controls"><label id="ddLabel">Execution mode<select><option>DIRECT QUERY</option></select></label></div></section></details></section></aside></div></section></main></div>`
+defineHoverCases('execution-controls-label hover', {
+  html: `<div class="app-shell"><main><section class="data-page data-detail"><div class="data-summary"><aside class="data-summary-cards"><section class="data-card"><details open><summary>Storage settings</summary><section class="dataset-execution compact"><div class="execution-controls"><label id="ddLabel">Execution mode<select><option>DIRECT QUERY</option></select></label></div></section></details></section></aside></div></section></main></div>`
       + `<main><section class="data-prep"><details class="prep-execution" open><summary>Dataset execution</summary><section class="dataset-execution"><div class="execution-controls"><label id="prepModeLabel">Execution mode<select><option>DIRECT QUERY</option></select></label><form><label id="prepIntervalLabel">Refresh interval (minutes)<input type="number"></label></form></div></section></details></section></main>`
       + `<div class="author-workspace" data-chrome="light"><div class="author-layout"><section class="dataset-header"><section class="dataset-execution compact"><div class="execution-controls"><label id="authLabel">Execution mode<select><option>DIRECT QUERY</option></select></label></div></section></section></div></div>`
       + `<div class="author-workspace" data-chrome="dark"><div class="author-layout"><section class="dataset-header"><section class="dataset-execution compact"><div class="execution-controls"><label id="darkLabel">Execution mode<select><option>DIRECT QUERY</option></select></label></div></section></section></div></div>`
-      + `<main><section class="dataset-execution"><label id="outsideLabel">Other<select><option>x</option></select></label></section></main>`);
-    const actual = await page.evaluate(() => {
-      const all = [...document.styleSheets].flatMap(s => [...s.cssRules]);
-      const norm = r => (r.selectorText || '').replaceAll('"', '');
-      const find = selector => all.find(r => norm(r) === selector) ?? null;
-      const base = find('.execution-controls label:hover');
-      const prep = find('.data-prep .execution-controls label:hover');
-      const author = find('.author-workspace .execution-controls label:hover');
-      const dark = find('.author-workspace[data-chrome=dark] .execution-controls label:hover');
-      const measure = (el, rule) => {
-        const rest = { background: getComputedStyle(el).backgroundColor, color: getComputedStyle(el).color, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        if (rule) { for (const prop of rule.style) el.style.setProperty(prop, rule.style.getPropertyValue(prop)); }
-        const hovered = { background: getComputedStyle(el).backgroundColor, color: getComputedStyle(el).color, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        el.removeAttribute('style');
-        return { rest, hovered };
-      };
-      const el = id => document.querySelector(`#${id}`);
-      // The winning rule per context is the most specific matching one;
-      // apply base first, then the surface variant, mirroring the cascade.
-      const cascade = (id, ...rules) => {
-        const target = el(id);
-        const rest = { background: getComputedStyle(target).backgroundColor, color: getComputedStyle(target).color, box: JSON.stringify(target.getBoundingClientRect().toJSON()) };
-        for (const rule of rules) { if (rule) { for (const prop of rule.style) target.style.setProperty(prop, rule.style.getPropertyValue(prop)); } }
-        const hovered = { background: getComputedStyle(target).backgroundColor, color: getComputedStyle(target).color, box: JSON.stringify(target.getBoundingClientRect().toJSON()) };
-        target.removeAttribute('style');
-        return { rest, hovered };
-      };
-      return {
-        found: !!base, prepFound: !!prep, authorFound: !!author, darkFound: !!dark,
-        props: base ? [...base.style] : [], prepProps: prep ? [...prep.style] : [],
-        authorProps: author ? [...author.style] : [], darkProps: dark ? [...dark.style] : [],
-        dd: base ? cascade('ddLabel', base) : null,
-        prepMode: prep ? cascade('prepModeLabel', base, prep) : null,
-        prepInterval: prep ? cascade('prepIntervalLabel', base, prep) : null,
-        auth: author ? cascade('authLabel', base, author) : null,
-        darkLabel: dark ? cascade('darkLabel', base, author, dark) : null,
-        outsideMatches: base ? el('outsideLabel').matches('.execution-controls label') : null,
-        single: base ? measure(el('ddLabel'), base) : null,
-      };
-    });
-    assert.equal(actual.found, true, 'expected the base hover rule in the CSSOM');
-    assert.equal(actual.prepFound, true, 'expected the data-prep hover rule in the CSSOM');
-    assert.equal(actual.authorFound, true, 'expected the author hover rule in the CSSOM');
-    assert.equal(actual.darkFound, true, 'expected the dark-chrome hover rule in the CSSOM');
-    for (const [name, props] of [['base', actual.props], ['data-prep', actual.prepProps], ['author', actual.authorProps], ['dark', actual.darkProps]]) {
-      assert.ok(props.length && props.every(p => p.startsWith('background')), `${name} hover rule must set background longhands only`);
-    }
-    const check = (name, m, hover) => {
-      assert.equal(m.rest.background, 'rgba(0, 0, 0, 0)', `${name} label rest`);
-      assert.equal(m.hovered.background, hover, `${name} label hover`);
-      assert.notEqual(m.rest.background, m.hovered.background);
-      assert.equal(m.rest.color, m.hovered.color, `${name} label colour unchanged on hover`);
-      assert.equal(m.rest.box, m.hovered.box, `${name} label geometry`);
-    };
-    check('data-detail', actual.dd, 'rgb(234, 243, 247)');
-    check('data-prep mode', actual.prepMode, 'rgb(237, 246, 252)');
-    check('data-prep interval', actual.prepInterval, 'rgb(237, 246, 252)');
-    check('author light', actual.auth, 'rgb(237, 247, 247)');
-    check('author dark', actual.darkLabel, 'rgb(51, 76, 98)');
-    assert.equal(actual.outsideMatches, false, 'a label outside .execution-controls must be out of scope');
-  });
+      + `<main><section class="dataset-execution"><label id="outsideLabel">Other<select><option>x</option></select></label></section></main>`,
+  cases: [
+    {
+      target: '#ddLabel',
+      rule: '.execution-controls label:hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(234, 243, 247)' },
+      paintOnly: true,
+      unchanged: ['color'],
+      excluded: ['#outsideLabel'],
+    },
+    {
+      target: '#prepModeLabel',
+      rule: '.data-prep .execution-controls label:hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(237, 246, 252)' },
+      paintOnly: true,
+      unchanged: ['color'],
+    },
+    {
+      target: '#prepIntervalLabel',
+      rule: '.data-prep .execution-controls label:hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(237, 246, 252)' },
+      paintOnly: true,
+      unchanged: ['color'],
+    },
+    {
+      target: '#authLabel',
+      rule: '.author-workspace .execution-controls label:hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      paintOnly: true,
+      unchanged: ['color'],
+    },
+    {
+      target: '#darkLabel',
+      rule: '.author-workspace[data-chrome="dark"] .execution-controls label:hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(51, 76, 98)' },
+      paintOnly: true,
+      unchanged: ['color'],
+    },
+  ],
 });

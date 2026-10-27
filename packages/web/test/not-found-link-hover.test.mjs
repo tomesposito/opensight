@@ -1,7 +1,7 @@
-import { after, before, describe, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { chromiumPage } from './chromium.mjs';
+import { defineHoverCases, styles } from './interaction.mjs';
 
 // Issue #108 polish slice 43: hover feedback for the Page-not-found
 // "Go to Home" link. A fresh behavioral hover audit (real mouse hover with
@@ -18,7 +18,7 @@ import { chromiumPage } from './chromium.mjs';
 // tint (#eaf3f7, slices 16/21/25/26/32). Paint-only: the rule changes the
 // background, so resting geometry is identical and there is no animation
 // to need a reduced-motion variant.
-const chromeCss = await readFile(new URL('../src/app-chrome.css', import.meta.url), 'utf8');
+const chromeCss = styles['app-chrome.css'];
 const appTsx = await readFile(new URL('../src/Application.tsx', import.meta.url), 'utf8');
 
 const linkRule = chromeCss.match(/\.not-found-page\s+a:hover\s*\{([^}]*)\}/);
@@ -44,42 +44,17 @@ test('the not-found link hover coexists with the other text-link hovers', () => 
   assert.ok(chromeCss.match(/\.recent-pages\s+a:hover\s*\{\s*background:\s*#eaf3f7/), 'the slice-26 recent-pages hover must still be present');
 });
 
-describe('not-found link hover in offline Chromium', () => {
-  let page;
-  before(async () => { page = await chromiumPage(); });
-  after(async () => { await page?.close(); });
-
-  test('applying the hover rule changes the visual state with identical geometry', async () => {
-    await page.setContent(`<style>${chromeCss}</style>`
-      + `<section class="not-found-page"><h1>Page not found</h1><p>Choose a section in the navigation to continue.</p><a href="#/" id="a">Go to Home</a></section><a href="#/" id="outside">Outside link</a>`);
-    const actual = await page.evaluate(() => {
-      const find = text => {
-        const hits = [];
-        for (const s of document.styleSheets) for (const r of s.cssRules) if (r.selectorText === text) hits.push(r);
-        return hits;
-      };
-      const measure = el => {
-        const rest = { background: getComputedStyle(el).backgroundColor, color: getComputedStyle(el).color, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        for (const rule of find('.not-found-page a:hover')) {
-          if (el.matches('.not-found-page a')) for (const prop of rule.style) el.style.setProperty(prop, rule.style.getPropertyValue(prop));
-        }
-        const hovered = { background: getComputedStyle(el).backgroundColor, color: getComputedStyle(el).color, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        return { rest, hovered };
-      };
-      const rules = find('.not-found-page a:hover');
-      return {
-        ruleCount: rules.length,
-        backgroundColor: rules.length ? rules[0].style.getPropertyValue('background-color') : null,
-        link: measure(document.querySelector('#a')),
-        outside: measure(document.querySelector('#outside')),
-      };
-    });
-    assert.equal(actual.ruleCount, 1);
-    assert.equal(actual.backgroundColor, 'rgb(234, 243, 247)');
-    assert.equal(actual.link.rest.background, 'rgba(0, 0, 0, 0)');
-    assert.equal(actual.link.hovered.background, 'rgb(234, 243, 247)');
-    assert.equal(actual.link.rest.color, actual.link.hovered.color);
-    assert.equal(actual.link.rest.box, actual.link.hovered.box);
-    assert.equal(actual.outside.hovered.background, actual.outside.rest.background, 'links outside the not-found section keep their own states');
-  });
+defineHoverCases('not-found-link hover', {
+  html: `<section class="not-found-page"><h1>Page not found</h1><p>Choose a section in the navigation to continue.</p><a href="#/" id="a">Go to Home</a></section><a href="#/" id="outside">Outside link</a>`,
+  cases: [
+    {
+      target: '#a',
+      rule: '.not-found-page a:hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(234, 243, 247)' },
+      paintOnly: true,
+      unchanged: ['color'],
+      excluded: [{ target: '#outside', resting: { backgroundColor: 'rgba(0, 0, 0, 0)', color: 'rgb(0, 0, 238)' } }],
+    },
+  ],
 });
