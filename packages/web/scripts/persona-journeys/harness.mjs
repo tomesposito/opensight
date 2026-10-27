@@ -28,7 +28,7 @@ async function close(server) { if (server?.listening) await new Promise(r => { s
 // node:http preserves the synthetic Host header required by the hosted boundary.
 function forward(url, method, headers, body) {
   return new Promise((resolve, reject) => {
-    const req = httpRequest(url, { method, headers }, res => {
+    const req = httpRequest(url, { method, headers: { ...headers, ...(body === undefined ? {} : { 'content-length': Buffer.byteLength(body) }) } }, res => {
       const chunks = []; res.on('data', chunk => chunks.push(chunk));
       res.on('end', () => resolve({ status: res.statusCode, headers: res.headers, body: Buffer.concat(chunks) }));
     }); req.on('error', reject); req.end(body);
