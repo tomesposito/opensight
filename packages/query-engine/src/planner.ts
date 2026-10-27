@@ -144,6 +144,7 @@ function filters(raw: unknown, target: Visual, all: Visual[], sheetIds: Set<stri
     const cp = `${fp}.${kind}.Configuration`;
     const [configKind, config] = variant(f.Configuration, cp);
     if (['CustomFilterConfiguration', 'CustomFilterListConfiguration', 'FilterListConfiguration'].includes(configKind) && config.ParameterName !== undefined) {
+      if (config.CategoryValues !== undefined) fail('UNSUPPORTED_FEATURE', `${cp}.${configKind}.ParameterName`, 'Static values and a parameter binding cannot be combined');
       keys(config, ['MatchOperator', 'ParameterName', 'NullOption'], cp);
       equals(config.MatchOperator, 'EQUALS', `${cp}.MatchOperator`); equals(config.NullOption, 'NON_NULLS_ONLY', `${cp}.NullOption`);
       result.push(parameterPredicate(name, config.ParameterName, 'EQUALS', cp, binder, parameters)); continue;
