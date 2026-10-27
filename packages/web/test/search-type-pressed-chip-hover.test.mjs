@@ -1,7 +1,6 @@
-import { after, before, describe, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import { chromiumPage } from './chromium.mjs';
+import { defineHoverCases, styles } from './interaction.mjs';
 
 // Issue #108 polish slice 75: hover feedback for the global search
 // modal's pressed type filter chip (.global-search .search-types
@@ -19,7 +18,7 @@ import { chromiumPage } from './chromium.mjs';
 // variant), so a literal is correct. Background only, so the pressed
 // border (#187199) and text are unchanged and resting geometry is
 // identical.
-const styleCss = await readFile(new URL('../src/style.css', import.meta.url), 'utf8');
+const styleCss = styles['style.css'];
 
 const rule = styleCss.match(/\.global-search \.search-types button\[aria-pressed=true\]:hover\s*\{([^}]*)\}/);
 
@@ -51,44 +50,22 @@ test('the neighbouring dialog hovers are untouched', () => {
   assert.ok(styleCss.match(/\.global-search li:hover\s*\{\s*background:\s*var\(--palette-selected\)/), 'the slice 52 row hover must remain');
 });
 
-describe('pressed search-type chip hover in offline Chromium', () => {
-  let page;
-  before(async () => { page = await chromiumPage(); });
-  after(async () => { await page?.close(); });
-
-  test('applying the hover rule changes the visual state with identical geometry', async () => {
-    await page.setContent(`<style>${styleCss}</style>`
-      + `<dialog class="global-search" open><header><h2>Search</h2><button type="button">Close</button></header>`
+defineHoverCases('search-type-pressed-chip hover', {
+  html: `<dialog class="global-search" open><header><h2>Search</h2><button type="button">Close</button></header>`
       + `<input type="text" placeholder="Find anything">`
       + `<div class="search-types" role="group" aria-label="Filter by type"><span aria-hidden="true">Type</span>`
       + `<button type="button" id="pressed" aria-pressed="true">☆ Favorites</button>`
       + `<button type="button" id="plain" aria-pressed="false">Analyses</button></div></dialog>`
-      + `<p><button type="button" id="outside" aria-pressed="true">Outside the dialog</button></p>`);
-    const actual = await page.evaluate(() => {
-      const all = [...document.styleSheets].flatMap(s => [...s.cssRules]);
-      const found = all.find(r => (r.selectorText || '').replaceAll('"', '') === '.global-search .search-types button[aria-pressed=true]:hover') ?? null;
-      const measure = (el, rule) => {
-        const rest = { background: getComputedStyle(el).backgroundColor, color: getComputedStyle(el).color, border: getComputedStyle(el).borderTopColor, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        if (rule) { for (const prop of rule.style) el.style.setProperty(prop, rule.style.getPropertyValue(prop)); }
-        const hovered = { background: getComputedStyle(el).backgroundColor, color: getComputedStyle(el).color, border: getComputedStyle(el).borderTopColor, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        el.removeAttribute('style');
-        return { rest, hovered };
-      };
-      const matches = (el, rule) => rule ? el.matches(rule.selectorText.replaceAll(':hover', '')) : null;
-      return {
-        found: !!found,
-        pressed: found ? measure(document.querySelector('#pressed'), found) : null,
-        plainMatches: matches(document.querySelector('#plain'), found),
-        outsideMatches: matches(document.querySelector('#outside'), found),
-      };
-    });
-    assert.ok(actual.found, 'expected the hover rule in the CSSOM');
-    assert.equal(actual.pressed.rest.background, 'rgb(226, 242, 250)', 'pressed chip rest background');
-    assert.equal(actual.pressed.hovered.background, 'rgb(200, 234, 250)', 'pressed chip hover background');
-    assert.equal(actual.pressed.hovered.color, actual.pressed.rest.color, 'pressed chip color unchanged');
-    assert.equal(actual.pressed.hovered.border, actual.pressed.rest.border, 'pressed chip border unchanged');
-    assert.equal(actual.pressed.rest.box, actual.pressed.hovered.box, 'pressed chip geometry');
-    assert.equal(actual.plainMatches, false, 'an unpressed chip must be out of scope');
-    assert.equal(actual.outsideMatches, false, 'a pressed button outside the dialog must be out of scope');
-  });
+      + `<p><button type="button" id="outside" aria-pressed="true">Outside the dialog</button></p>`,
+  cases: [
+    {
+      target: '#pressed',
+      rule: '.global-search .search-types button[aria-pressed="true"]:hover',
+      resting: { backgroundColor: 'rgb(226, 242, 250)' },
+      hovered: { backgroundColor: 'rgb(200, 234, 250)' },
+      paintOnly: true,
+      unchanged: ['color', 'borderTopColor'],
+      excluded: ['#plain', '#outside'],
+    },
+  ],
 });

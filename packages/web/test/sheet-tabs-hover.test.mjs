@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { defineHoverCases, styles } from './interaction.mjs';
 
 // Issue #108 polish slice 18: hover feedback for sheet tabs. A fresh
 // interactive-state audit of the remaining surfaces (landing pages were fully
@@ -14,7 +14,7 @@ import { readFile } from 'node:fs/promises';
 // rule, so the hover changes color only — no layout shift. The selected tab
 // keeps its flat state, and the state is instantaneous, so no
 // prefers-reduced-motion variant is needed.
-const css = await readFile(new URL('../src/style.css', import.meta.url), 'utf8');
+const css = styles['style.css'];
 
 test('unselected sheet tabs preview the selected state on hover', () => {
   const rule = css.match(
@@ -45,4 +45,16 @@ test('hover cannot shift tab geometry', () => {
   );
   assert.ok(hover);
   assert.ok(!/padding|margin|border-bottom-width|font-size/.test(hover[1]), 'hover must change colors only');
+});
+
+defineHoverCases('unselected sheet tabs', {
+  html: `<nav class="sheet-tabs"><button id="dashboard">Overview</button><button id="current" aria-current="page">Sales</button></nav>
+    <div class="author-workspace"><div class="sheet-toolbar"><nav class="sheet-tabs"><button id="author" role="tab" aria-selected="false">Overview</button><button id="selected" role="tab" aria-selected="true">Sales</button></nav></div></div>`,
+  cases: ['#dashboard', '#author'].map(target => ({
+    target, rule: '.sheet-tabs button:hover:not([aria-current]):not([aria-selected=true])',
+    resting: { color: target === '#dashboard' ? 'rgb(82, 108, 122)' : 'rgb(25, 56, 74)', borderBottomColor: 'rgba(0, 0, 0, 0)' },
+    hovered: { color: 'rgb(18, 110, 118)', borderBottomColor: 'rgb(21, 127, 136)' },
+    paintOnly: true,
+    excluded: ['#current', '#selected'],
+  })),
 });

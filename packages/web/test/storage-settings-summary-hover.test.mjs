@@ -1,7 +1,6 @@
-import { after, before, describe, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import { chromiumPage } from './chromium.mjs';
+import { defineHoverCases, styles } from './interaction.mjs';
 
 // Issue #108 polish slice 81: hover feedback for the dataset
 // detail's "Storage settings" disclosure summary (the bare
@@ -24,7 +23,7 @@ import { chromiumPage } from './chromium.mjs';
 // (#eaf3f7), so no new colour is introduced. Background only, so
 // resting geometry is identical and there is no animation; the
 // data detail surface is fixed light, so no dark variant is added.
-const css = await readFile(new URL('../src/data-section.css', import.meta.url), 'utf8');
+const css = styles['data-section.css'];
 
 const rule = css.match(/\.data-summary-cards details > summary:hover\s*\{([^}]*)\}/);
 
@@ -57,42 +56,18 @@ test('the neighbouring data hover rules are untouched', () => {
   assert.ok(css.match(/\.data-page input\[type=search\]:hover:not\(:disabled\)\s*\{[^}]*background:\s*#eaf3f7/), 'the slice-27 search input hover must remain #eaf3f7');
 });
 
-describe('Storage settings summary hover in offline Chromium', () => {
-  let page;
-  before(async () => { page = await chromiumPage(); });
-  after(async () => { await page?.close(); });
-
-  test('applying the hover rule changes the visual state with identical geometry', async () => {
-    await page.setContent(`<style>${css}</style>`
-      + `<section class="data-page data-detail"><div class="data-summary"><aside class="data-summary-cards"><section class="data-card"><h2>About</h2><details><summary id="s">Storage settings</summary><p>Execution</p></details></section></aside></div></section>`
+defineHoverCases('storage-settings-summary hover', {
+  html: `<section class="data-page data-detail"><div class="data-summary"><aside class="data-summary-cards"><section class="data-card"><h2>About</h2><details><summary id="s">Storage settings</summary><p>Execution</p></details></section></aside></div></section>`
       + `<details><summary id="outside">Outside summary</summary></details>`
-      + `<aside class="data-summary-cards"><summary id="no-details">Not in details</summary></aside>`);
-    const actual = await page.evaluate(() => {
-      const all = [...document.styleSheets].flatMap(s => [...s.cssRules]);
-      const found = all.find(r => (r.selectorText || '') === '.data-summary-cards details > summary:hover') ?? null;
-      const measure = (el, rule) => {
-        const rest = { background: getComputedStyle(el).backgroundColor, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        if (rule) { for (const prop of rule.style) el.style.setProperty(prop, rule.style.getPropertyValue(prop)); }
-        const hovered = { background: getComputedStyle(el).backgroundColor, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        el.removeAttribute('style');
-        return { rest, hovered };
-      };
-      const matches = (el, rule) => rule ? el.matches(rule.selectorText.replaceAll(':hover', '')) : null;
-      return {
-        found: !!found,
-        props: found ? [...found.style] : [],
-        s: found ? measure(document.querySelector('#s'), found) : null,
-        outsideMatches: matches(document.querySelector('#outside'), found),
-        noDetailsMatches: matches(document.querySelector('#no-details'), found),
-      };
-    });
-    assert.ok(actual.found, 'expected the hover rule in the CSSOM');
-    assert.ok(actual.props.length && actual.props.every(p => p.startsWith('background')), 'hover rule must set background longhands only');
-    assert.equal(actual.s.rest.background, 'rgba(0, 0, 0, 0)', 'summary rest');
-    assert.equal(actual.s.hovered.background, 'rgb(234, 243, 247)', 'summary hover');
-    assert.notEqual(actual.s.rest.background, actual.s.hovered.background);
-    assert.equal(actual.s.rest.box, actual.s.hovered.box, 'summary geometry');
-    assert.equal(actual.outsideMatches, false, 'a summary outside .data-summary-cards must be out of scope');
-    assert.equal(actual.noDetailsMatches, false, 'a summary not inside a details must be out of scope');
-  });
+      + `<aside class="data-summary-cards"><summary id="no-details">Not in details</summary></aside>`,
+  cases: [
+    {
+      target: '#s',
+      rule: '.data-summary-cards details > summary:hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(234, 243, 247)' },
+      paintOnly: true,
+      excluded: ['#outside', '#no-details'],
+    },
+  ],
 });

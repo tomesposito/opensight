@@ -1,7 +1,6 @@
-import { after, before, describe, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import { chromiumPage } from './chromium.mjs';
+import { defineHoverCases, styles } from './interaction.mjs';
 
 // Issue #108 polish slice 95: hover feedback for the sign-in form's
 // checkbox labels (label.sign-in-check in SignIn.tsx — "Show password"
@@ -27,9 +26,7 @@ import { chromiumPage } from './chromium.mjs';
 // inner input does not. Background only, so resting geometry is
 // identical and there is no animation. The sign-in page is a
 // fixed-light surface, so no dark variant is added.
-const css = await readFile(new URL('../src/sign-in.css', import.meta.url), 'utf8');
-const allCss = (await Promise.all(['style.css', 'app-chrome.css', 'data-section.css', 'embed.css', 'sign-in.css']
-  .map(name => readFile(new URL(`../src/${name}`, import.meta.url), 'utf8')))).join('\n');
+const css = styles['sign-in.css'];
 
 const rule = css.match(/^\.sign-in-check:hover\s*\{([^}]*)\}/m);
 
@@ -55,46 +52,20 @@ test('the resting check rules are preserved and the checkbox has no hover rule o
   assert.ok(!/\.sign-in-check:hover[^{]*\{[^}]*input/.test(css), 'the check hover rule must not target the checkbox');
 });
 
-describe('Sign-in-check hover in offline Chromium', () => {
-  let page;
-  before(async () => { page = await chromiumPage(); });
-  after(async () => { await page?.close(); });
-
-  test('applying the hover rule changes the label visual state with identical geometry, and the checkbox and outside labels are out of scope', async () => {
-    await page.setContent(`<style>${allCss}</style>`
-      + `<div class="sign-in-page"><main class="sign-in-main"><section class="sign-in-card"><form>`
+defineHoverCases('signin-check hover', {
+  html: `<div class="sign-in-page"><main class="sign-in-main"><section class="sign-in-card"><form>`
       + `<label class="sign-in-check" id="checkLabel"><input id="checkBox" type="checkbox">Show password</label>`
       + `</form></section></main></div>`
-      + `<label id="outsideLabel"><input type="checkbox">Other check</label>`);
-    const actual = await page.evaluate(() => {
-      const all = [...document.styleSheets].flatMap(s => [...s.cssRules]);
-      const found = all.find(r => (r.selectorText || '') === '.sign-in-check:hover') ?? null;
-      const label = document.querySelector('#checkLabel');
-      const box = document.querySelector('#checkBox');
-      const measure = (el, rule) => {
-        const rest = { background: getComputedStyle(el).backgroundColor, color: getComputedStyle(el).color, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        if (rule) { for (const prop of rule.style) el.style.setProperty(prop, rule.style.getPropertyValue(prop)); }
-        const hovered = { background: getComputedStyle(el).backgroundColor, color: getComputedStyle(el).color, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        el.removeAttribute('style');
-        return { rest, hovered };
-      };
-      const bare = found ? found.selectorText.replaceAll(':hover', '') : '';
-      return {
-        found: !!found,
-        props: found ? [...found.style] : [],
-        label: found ? measure(label, found) : null,
-        boxMatches: found ? box.matches(bare) : null,
-        outsideMatches: found ? document.querySelector('#outsideLabel').matches(bare) : null,
-      };
-    });
-    assert.ok(actual.found, 'expected the hover rule in the CSSOM');
-    assert.ok(actual.props.length && actual.props.every(p => p.startsWith('background')), 'hover rule must set background longhands only');
-    assert.equal(actual.label.rest.background, 'rgba(0, 0, 0, 0)', 'sign-in-check label rest (transparent)');
-    assert.equal(actual.label.hovered.background, 'rgb(234, 244, 244)', 'sign-in-check label hover');
-    assert.notEqual(actual.label.rest.background, actual.label.hovered.background);
-    assert.equal(actual.label.rest.color, actual.label.hovered.color, 'sign-in-check label colour unchanged on hover');
-    assert.equal(actual.label.rest.box, actual.label.hovered.box, 'sign-in-check label geometry');
-    assert.equal(actual.boxMatches, false, 'the checkbox inside .sign-in-check must be out of scope');
-    assert.equal(actual.outsideMatches, false, 'a label outside .sign-in-check must be out of scope');
-  });
+      + `<label id="outsideLabel"><input type="checkbox">Other check</label>`,
+  cases: [
+    {
+      target: '#checkLabel',
+      rule: '.sign-in-check:hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(234, 244, 244)' },
+      paintOnly: true,
+      unchanged: ['color'],
+      excluded: ['#checkBox', '#outsideLabel'],
+    },
+  ],
 });

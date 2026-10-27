@@ -1,7 +1,6 @@
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import { chromiumPage } from './chromium.mjs';
+import { defineHoverCases, styles } from './interaction.mjs';
 
 // Issue #108 polish slice 29: hover feedback for the selected sheet tab.
 // A fresh behavioral hover audit of the landing surfaces
@@ -15,7 +14,7 @@ import { chromiumPage } from './chromium.mjs';
 // distinct at rest (teal text + underline unchanged). Background only, so
 // resting geometry is identical; disabled tabs keep their flat state. Static
 // (no animation), so no reduced-motion variant is needed.
-const css = await readFile(new URL('../src/style.css', import.meta.url), 'utf8');
+const css = styles['style.css'];
 
 const hoverRule = css.match(/\.sheet-tabs\s+button\[aria-current\]:hover:not\(:disabled\),\s*\.sheet-tabs\s+button\[aria-selected=true\]:hover:not\(:disabled\)\s*\{([^}]*)\}/);
 
@@ -41,49 +40,25 @@ test('the selected-tab hover rule coexists with the unselected-tab hover rule', 
   assert.ok(hoverRule, 'expected the selected sheet-tab hover rule');
 });
 
-{
-  let page;
-  before(async () => { page = await chromiumPage(); });
-  after(async () => { await page?.close(); });
-
-  test('applying the hover rule changes the visual state with identical geometry', async () => {
-    await page.setContent(`<style>${css}</style><div class="sheet-tabs"><button type="button" aria-current="page">Overview<span>5 visuals</span></button><button type="button" aria-selected="true">Sheet 2</button><button type="button" aria-current="page" disabled>Archived</button></div>`);
-    const actual = await page.evaluate(() => {
-      const rules = [];
-      for (const sheet of document.styleSheets) {
-        for (const rule of sheet.cssRules) {
-          const sel = (rule.selectorText || '').replace(/"/g, '');
-          if (sel === '.sheet-tabs button[aria-current]:hover:not(:disabled), .sheet-tabs button[aria-selected=true]:hover:not(:disabled)') rules.push(rule);
-        }
-      }
-      const current = document.querySelector('.sheet-tabs button[aria-current="page"]:not([disabled])');
-      const selected = document.querySelector('.sheet-tabs button[aria-selected="true"]');
-      const disabled = document.querySelector('.sheet-tabs button[aria-current="page"][disabled]');
-      const rest = { background: getComputedStyle(current).backgroundColor, color: getComputedStyle(current).color, box: JSON.stringify(current.getBoundingClientRect().toJSON()) };
-      // Simulate the matched rule: copy its declarations onto the selected
-      // tab exactly as the browser cascade would apply them on hover.
-      const hover = rules[0];
-      for (const prop of hover.style) current.style.setProperty(prop, hover.style.getPropertyValue(prop));
-      const hovered = { background: getComputedStyle(current).backgroundColor, color: getComputedStyle(current).color, box: JSON.stringify(current.getBoundingClientRect().toJSON()) };
-      return {
-        ruleCount: rules.length,
-        props: rules.length ? [...rules[0].style] : [],
-        backgroundColor: rules.length ? rules[0].style.getPropertyValue('background-color') : null,
-        rest, hovered,
-        currentMatches: current.matches('.sheet-tabs button[aria-current]:not(:disabled)'),
-        selectedMatches: selected.matches('.sheet-tabs button[aria-selected=true]:not(:disabled)'),
-        disabledMatches: disabled.matches('.sheet-tabs button[aria-current]:hover:not(:disabled), .sheet-tabs button[aria-selected=true]:hover:not(:disabled)'),
-      };
-    });
-    assert.equal(actual.ruleCount, 1);
-    assert.ok(actual.props.length && actual.props.every(p => p.startsWith('background')), 'hover rule must set background longhands only');
-    assert.equal(actual.backgroundColor, 'rgb(234, 243, 247)');
-    assert.equal(actual.rest.background, 'rgba(0, 0, 0, 0)');
-    assert.equal(actual.hovered.background, 'rgb(234, 243, 247)');
-    assert.equal(actual.rest.color, actual.hovered.color, 'teal selected text must not change');
-    assert.equal(actual.rest.box, actual.hovered.box);
-    assert.ok(actual.currentMatches);
-    assert.ok(actual.selectedMatches);
-    assert.equal(actual.disabledMatches, false);
-  });
-}
+defineHoverCases('sheet-tab-selected hover', {
+  html: `<div class="sheet-tabs"><button type="button" aria-current="page">Overview<span>5 visuals</span></button><button type="button" aria-selected="true">Sheet 2</button><button type="button" aria-current="page" disabled>Archived</button></div>`,
+  cases: [
+    {
+      target: '.sheet-tabs button[aria-current=page]:not([disabled])',
+      rule: '.sheet-tabs button[aria-current]:hover:not(:disabled), .sheet-tabs button[aria-selected="true"]:hover:not(:disabled)',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(234, 243, 247)' },
+      paintOnly: true,
+      unchanged: ['color'],
+      excluded: ['.sheet-tabs button[aria-current=page][disabled]'],
+    },
+    {
+      target: '.sheet-tabs button[aria-selected=true]',
+      rule: '.sheet-tabs button[aria-selected=true]:hover:not(:disabled)',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(234, 243, 247)' },
+      paintOnly: true,
+      unchanged: ['color', 'borderBottomColor'],
+    },
+  ],
+});

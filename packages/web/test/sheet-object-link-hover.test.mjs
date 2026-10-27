@@ -1,7 +1,6 @@
-import { after, before, describe, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import { chromiumPage } from './chromium.mjs';
+import { defineHoverCases, styles } from './interaction.mjs';
 
 // Issue #108 polish slice 88: hover feedback for the whole-box
 // hyperlink shown under a text sheet object (SheetObjectCard.tsx —
@@ -23,7 +22,7 @@ import { chromiumPage } from './chromium.mjs';
 // Background only, so the UA link colour/underline and resting
 // geometry are unchanged; the author card is white in both chromes,
 // so no dark variant is added.
-const css = await readFile(new URL('../src/style.css', import.meta.url), 'utf8');
+const css = styles['style.css'];
 
 const rule = css.match(/^\.sheet-object a:hover\s*\{([^}]*)\}/m);
 
@@ -47,46 +46,21 @@ test('the resting sheet-object rules are preserved', () => {
   assert.ok(css.match(/\.sheet-object \.sheet-text-editor\s*\{[^}]*background:\s*white/), 'the sheet text editor resting rule must remain');
 });
 
-describe('Sheet-object link hover in offline Chromium', () => {
-  let page;
-  before(async () => { page = await chromiumPage(); });
-  after(async () => { await page?.close(); });
-
-  test('applying the hover rule changes the visual state with identical geometry, and links outside .sheet-object are out of scope', async () => {
-    await page.setContent(`<style>${css}</style>`
-      + `<div class="author-workspace" data-chrome="light"><div class="author-canvas"><div>`
+defineHoverCases('sheet-object-link hover', {
+  html: `<div class="author-workspace" data-chrome="light"><div class="author-canvas"><div>`
       + `<section class="author-card sheet-object" aria-label="Text box 1">`
       + `<p class="field-hint">Link: <a id="target" href="https://example.com" target="_blank" rel="noopener noreferrer">https://example.com</a></p>`
       + `</section></div></div></div>`
-      + `<section><a id="outside" href="#">Outside</a></section>`);
-    const actual = await page.evaluate(() => {
-      const all = [...document.styleSheets].flatMap(s => [...s.cssRules]);
-      const found = all.find(r => (r.selectorText || '') === '.sheet-object a:hover') ?? null;
-      const measure = (el, rule) => {
-        const rest = { background: getComputedStyle(el).backgroundColor, color: getComputedStyle(el).color, decoration: getComputedStyle(el).textDecorationLine, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        if (rule) { for (const prop of rule.style) el.style.setProperty(prop, rule.style.getPropertyValue(prop)); }
-        const hovered = { background: getComputedStyle(el).backgroundColor, color: getComputedStyle(el).color, decoration: getComputedStyle(el).textDecorationLine, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        el.removeAttribute('style');
-        return { rest, hovered };
-      };
-      const outside = document.querySelector('#outside');
-      return {
-        found: !!found,
-        props: found ? [...found.style] : [],
-        target: found ? measure(document.querySelector('#target'), found) : null,
-        outsideMatches: found ? outside.matches(found.selectorText.replaceAll(':hover', '')) : null,
-      };
-    });
-    assert.ok(actual.found, 'expected the hover rule in the CSSOM');
-    assert.ok(actual.props.length && actual.props.every(p => p.startsWith('background')), 'hover rule must set background longhands only');
-    assert.equal(actual.target.rest.background, 'rgba(0, 0, 0, 0)', 'sheet-object link rest');
-    assert.equal(actual.target.hovered.background, 'rgb(237, 247, 247)', 'sheet-object link hover');
-    assert.notEqual(actual.target.rest.background, actual.target.hovered.background);
-    assert.equal(actual.target.rest.color, 'rgb(0, 0, 238)', 'sheet-object link keeps the UA link colour at rest');
-    assert.equal(actual.target.rest.color, actual.target.hovered.color, 'sheet-object link colour unchanged on hover');
-    assert.equal(actual.target.rest.decoration, 'underline', 'sheet-object link keeps its underline at rest');
-    assert.equal(actual.target.rest.decoration, actual.target.hovered.decoration, 'sheet-object link underline unchanged on hover');
-    assert.equal(actual.target.rest.box, actual.target.hovered.box, 'sheet-object link geometry');
-    assert.equal(actual.outsideMatches, false, 'a link outside .sheet-object must be out of scope');
-  });
+      + `<section><a id="outside" href="#">Outside</a></section>`,
+  cases: [
+    {
+      target: '#target',
+      rule: '.sheet-object a:hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      paintOnly: true,
+      unchanged: ['color', 'textDecorationLine'],
+      excluded: ['#outside'],
+    },
+  ],
 });

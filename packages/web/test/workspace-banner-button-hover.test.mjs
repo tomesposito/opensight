@@ -1,7 +1,6 @@
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import { chromiumPage } from './chromium.mjs';
+import { defineHoverCases, styles } from './interaction.mjs';
 
 // Issue #108 polish slice 62: hover feedback for the local workspace
 // banner's "Remove sample data" button (.app-shell .workspace-banner
@@ -21,7 +20,7 @@ import { chromiumPage } from './chromium.mjs';
 // geometry is identical. Static (no animation), so no reduced-motion
 // variant is needed; :not(:disabled) follows the house pattern (the
 // button is never disabled in the app today).
-const css = await readFile(new URL('../src/app-chrome.css', import.meta.url), 'utf8');
+const css = styles['app-chrome.css'];
 
 const buttonHover = css.match(/\.app-shell \.workspace-banner button:hover:not\(:disabled\)\s*\{([^}]*)\}/);
 
@@ -50,41 +49,20 @@ test('the neighbouring app-chrome hover rules are untouched', () => {
   assert.ok(css.match(/\.collection-card button:hover:not\(:disabled\)\s*\{[^}]*background:\s*#eaf4f4/), 'the collection-card button hover rule must still be present');
 });
 
-{
-  let page;
-  before(async () => { page = await chromiumPage(); });
-  after(async () => { await page?.close(); });
-
-  test('applying the hover rule changes the visual state with identical geometry', async () => {
-    await page.setContent(`<style>${css}</style><div class="app-shell"><aside class="workspace-banner">
+defineHoverCases('workspace-banner-button hover', {
+  html: `<div class="app-shell"><aside class="workspace-banner">
       <span><strong>Local workspace</strong></span><span>Sample sales data loaded</span>
       <button id="remove" type="button">Remove sample data</button>
       <button id="off" type="button" disabled>Remove sample data</button>
-    </aside></div>`);
-    const actual = await page.evaluate(() => {
-      let found;
-      for (const sheet of document.styleSheets) {
-        for (const rule of sheet.cssRules) {
-          if ((rule.selectorText || '') === '.app-shell .workspace-banner button:hover:not(:disabled)') found = rule;
-        }
-      }
-      const measure = (el, rule) => {
-        const rest = { background: getComputedStyle(el).backgroundColor, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        if (rule) { for (const prop of rule.style) el.style.setProperty(prop, rule.style.getPropertyValue(prop)); }
-        const hovered = { background: getComputedStyle(el).backgroundColor, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        el.removeAttribute('style');
-        return { rest, hovered };
-      };
-      const off = document.querySelector('#off');
-      return {
-        remove: found ? measure(document.querySelector('#remove'), found) : null,
-        offMatches: found ? off.matches(found.selectorText.replace(':hover', '')) : null,
-      };
-    });
-    assert.ok(actual.remove, 'expected the button hover rule in the CSSOM');
-    assert.equal(actual.remove.rest.background, 'rgb(239, 239, 239)', 'remove rest');
-    assert.equal(actual.remove.hovered.background, 'rgb(220, 239, 240)', 'remove hover');
-    assert.equal(actual.remove.rest.box, actual.remove.hovered.box, 'remove geometry');
-    assert.equal(actual.offMatches, false, 'disabled buttons must be excluded from the hover rule');
-  });
-}
+    </aside></div>`,
+  cases: [
+    {
+      target: '#remove',
+      rule: '.app-shell .workspace-banner button:hover:not(:disabled)',
+      resting: { backgroundColor: 'rgb(239, 239, 239)' },
+      hovered: { backgroundColor: 'rgb(220, 239, 240)' },
+      paintOnly: true,
+      excluded: ['#off'],
+    },
+  ],
+});

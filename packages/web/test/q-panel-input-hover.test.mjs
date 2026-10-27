@@ -1,7 +1,6 @@
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import { chromiumPage } from './chromium.mjs';
+import { defineHoverCases, styles } from './interaction.mjs';
 
 // Issue #108 polish slice 58: hover feedback for the Ask O side
 // panel's search field (.q-side-panel .o-bar input — OEntry's "Ask a
@@ -22,7 +21,7 @@ import { chromiumPage } from './chromium.mjs';
 // variant is needed; disabled fields keep their flat resting state.
 // The .o-bar scope keeps the mode notice's native checkbox (also
 // inside the panel) on OS rendering by design.
-const css = await readFile(new URL('../src/style.css', import.meta.url), 'utf8');
+const css = styles['style.css'];
 
 const inputHover = css.match(/\.q-side-panel \.o-bar input:hover:not\(:disabled\)\s*\{([^}]*)\}/);
 
@@ -52,45 +51,23 @@ test('the panel button hover and author search hover rules are untouched', () =>
   assert.ok(css.indexOf('.q-side-panel .o-bar input:hover') > css.indexOf('.author-workspace input[type=search]:hover'), 'the panel input hover rule must stay later in the file so it wins at equal specificity inside Author');
 });
 
-{
-  let page;
-  before(async () => { page = await chromiumPage(); });
-  after(async () => { await page?.close(); });
-
-  test('applying the hover rule changes the visual state with identical geometry', async () => {
-    await page.setContent(`<style>${css}</style><div class="q-side-panel" role="dialog">
+defineHoverCases('q-panel-input hover', {
+  html: `<div class="q-side-panel" role="dialog">
       <div class="q-panel-content"><section class="o-entry" aria-label="Ask a question">
       <form class="o-bar"><label for="q">Ask a question</label>
       <input id="q" type="search" value="Sum of revenue by region">
       <input id="off" type="search" disabled>
       <button type="submit">Ask</button></form>
       </section></div>
-    </div>`);
-    const actual = await page.evaluate(() => {
-      let found;
-      for (const sheet of document.styleSheets) {
-        for (const rule of sheet.cssRules) {
-          if ((rule.selectorText || '') === '.q-side-panel .o-bar input:hover:not(:disabled)') found = rule;
-        }
-      }
-      const measure = (el, rule) => {
-        const rest = { background: getComputedStyle(el).backgroundColor, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        // Apply the declaration block as-is: the background value is a
-        // var() shorthand, which does not expand into longhands.
-        if (rule) el.style.cssText = rule.style.cssText;
-        const hovered = { background: getComputedStyle(el).backgroundColor, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        return { rest, hovered };
-      };
-      const off = document.querySelector('#off');
-      return {
-        input: found ? measure(document.querySelector('#q'), found) : null,
-        offMatches: found ? off.matches(found.selectorText.replace(':hover', '')) : null,
-      };
-    });
-    assert.ok(actual.input, 'expected the input hover rule in the CSSOM');
-    assert.equal(actual.input.rest.background, 'rgb(255, 255, 255)');
-    assert.equal(actual.input.hovered.background, 'rgb(237, 247, 247)');
-    assert.equal(actual.input.rest.box, actual.input.hovered.box);
-    assert.equal(actual.offMatches, false, 'disabled inputs must be excluded from the hover rule');
-  });
-}
+    </div>`,
+  cases: [
+    {
+      target: '#q',
+      rule: '.q-side-panel .o-bar input:hover:not(:disabled)',
+      resting: { backgroundColor: 'rgb(255, 255, 255)' },
+      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      paintOnly: true,
+      excluded: ['#off'],
+    },
+  ],
+});

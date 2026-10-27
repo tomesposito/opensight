@@ -1,7 +1,6 @@
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import { chromiumPage } from './chromium.mjs';
+import { defineHoverCases, styles } from './interaction.mjs';
 
 // Issue #108 polish slice 78: hover feedback for the sheet text
 // object's pressed style toggles (.object-text-style
@@ -19,7 +18,7 @@ import { chromiumPage } from './chromium.mjs';
 // 51/57/66), so no new color is introduced. Background only, so the
 // white label is kept and resting geometry is identical; static
 // (no animation), so no reduced-motion variant.
-const css = await readFile(new URL('../src/style.css', import.meta.url), 'utf8');
+const css = styles['style.css'];
 
 const rule = css.match(/\.author-layout \.object-text-style button\[aria-pressed="true"\]:hover:not\(:disabled\)\s*\{([^}]*)\}/);
 
@@ -54,56 +53,23 @@ test('the neighbouring author hover rules are untouched', () => {
   assert.ok(css.match(/\.author-workspace \.primary-button:hover:not\(:disabled\)\s*\{\s*background:\s*#126e76;\s*color:\s*white/), 'the author primary hover must remain');
 });
 
-{
-  let page;
-  before(async () => { page = await chromiumPage(); });
-  after(async () => { await page?.close(); });
-
-  test('applying the hover rule changes the visual state with identical geometry', async () => {
-    await page.setContent(`<style>${css}</style><div class="author-layout">
+defineHoverCases('text-style-pressed hover', {
+  html: `<div class="author-layout">
       <div class="object-text-style" role="group" aria-label="Text style">
         <button type="button" id="pressed" aria-pressed="true">B</button>
         <button type="button" id="plain" aria-pressed="false">I</button>
       </div>
       <button type="button" id="outside" aria-pressed="true">X</button>
-    </div>`);
-    const actual = await page.evaluate(() => {
-      const rules = [];
-      for (const sheet of document.styleSheets) {
-        for (const rule of sheet.cssRules) {
-          const sel = (rule.selectorText || '').replace(/"/g, '');
-          if (sel === '.author-layout .object-text-style button[aria-pressed=true]:hover:not(:disabled)') rules.push(rule);
-        }
-      }
-      const pressed = document.querySelector('#pressed');
-      const plain = document.querySelector('#plain');
-      const outside = document.querySelector('#outside');
-      const rest = { background: getComputedStyle(pressed).backgroundColor, color: getComputedStyle(pressed).color, box: JSON.stringify(pressed.getBoundingClientRect().toJSON()) };
-      const hover = rules[0];
-      if (hover) for (const prop of hover.style) pressed.style.setProperty(prop, hover.style.getPropertyValue(prop));
-      const hovered = { background: getComputedStyle(pressed).backgroundColor, color: getComputedStyle(pressed).color, box: JSON.stringify(pressed.getBoundingClientRect().toJSON()) };
-      return {
-        ruleCount: rules.length,
-        props: rules.length ? [...rules[0].style] : [],
-        backgroundColor: rules.length ? rules[0].style.getPropertyValue('background-color') : null,
-        pressed: { rest, hovered },
-        pressedMatches: pressed.matches('.author-layout .object-text-style button[aria-pressed="true"]:not(:disabled)'),
-        plainMatches: plain.matches('.author-layout .object-text-style button[aria-pressed="true"]:not(:disabled)'),
-        outsideMatches: outside.matches('.author-layout .object-text-style button[aria-pressed="true"]:not(:disabled)'),
-        plainBg: getComputedStyle(plain).backgroundColor,
-      };
-    });
-    assert.equal(actual.ruleCount, 1);
-    assert.ok(actual.props.length && actual.props.every(p => p.startsWith('background')), 'hover rule must set background longhands only');
-    assert.equal(actual.backgroundColor, 'rgb(18, 110, 118)');
-    assert.equal(actual.pressed.rest.background, 'rgb(22, 111, 122)');
-    assert.equal(actual.pressed.hovered.background, 'rgb(18, 110, 118)');
-    assert.notEqual(actual.pressed.rest.background, actual.pressed.hovered.background);
-    assert.equal(actual.pressed.rest.color, actual.pressed.hovered.color, 'the white label must be unchanged');
-    assert.equal(actual.pressed.rest.box, actual.pressed.hovered.box);
-    assert.ok(actual.pressedMatches);
-    assert.equal(actual.plainMatches, false, 'unpressed toggle keeps the author generic hover rule');
-    assert.equal(actual.outsideMatches, false, 'a pressed button outside the text-style group is out of scope');
-    assert.notEqual(actual.plainBg, 'rgb(22, 111, 122)', 'unpressed toggle resting state unchanged');
-  });
-}
+    </div>`,
+  cases: [
+    {
+      target: '#pressed',
+      rule: '.author-layout .object-text-style button[aria-pressed="true"]:hover:not(:disabled)',
+      resting: { backgroundColor: 'rgb(22, 111, 122)' },
+      hovered: { backgroundColor: 'rgb(18, 110, 118)' },
+      paintOnly: true,
+      unchanged: ['color'],
+      excluded: [{ target: '#plain', resting: { backgroundColor: 'rgb(255, 255, 255)' } }, '#outside'],
+    },
+  ],
+});
