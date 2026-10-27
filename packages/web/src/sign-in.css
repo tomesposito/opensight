@@ -40,3 +40,5 @@
 .hosted-account span { min-width: 0; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hosted-account button { flex: none; white-space: nowrap; padding: 5px 10px; border: 1px solid #91a5af; border-radius: 4px; background: transparent; color: inherit; }
 @media (max-width: 400px) { .sign-in-card { padding: 24px; } .sign-in-main { padding-top: 24px; } .hosted-account span { min-width: 0; max-width: 100px; } }
+
+.enrollment-qr { display: block; max-width: 100%; height: auto; margin: 16px auto; }

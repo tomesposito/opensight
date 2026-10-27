@@ -59,7 +59,7 @@ function UserRow({ user, busy, onSave, onDelete }: { user: Session; busy: boolea
 }
 export function AcceptInvitation({ token, client, onAccepted }: { token: string; client: Pick<ReturnType<typeof createApiClient>, 'acceptInvitation'>; onAccepted: () => void }) {
   const [busy, setBusy] = useState(false), [error, setError] = useState('');
-  return <section className="admin-settings"><h1>Accept invitation</h1><p>Sign in through your configured authentication service as the invited user, then accept this invitation.</p>
+  return <section className="admin-settings"><h1>Accept invitation</h1><p>Accept this invitation using your signed-in identity. The invitation must belong to your account. Newly joined workspaces appear in the workspace picker on your next sign-in.</p>
     <button type="button" disabled={busy} onClick={() => { setBusy(true); setError(''); void client.acceptInvitation(token).then(onAccepted).catch(e => setError(e instanceof Error ? e.message : String(e))).finally(() => setBusy(false)); }}>Accept invitation</button>
     {error && <p role="alert">{error}</p>}
   </section>;
