@@ -1,7 +1,6 @@
-import { after, before, describe, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import { chromiumPage } from './chromium.mjs';
+import { defineHoverCases, styles } from './interaction.mjs';
 
 // Issue #108 polish slice 123: hover feedback for the draft-source
 // recovery banner's label (.draft-source-recovery label —
@@ -29,9 +28,7 @@ import { chromiumPage } from './chromium.mjs';
 // label and the select inside it take the same tint, hovering either
 // reads as one surface, not two steps. Background only, so resting
 // geometry is identical and there is no animation.
-const styleCss = await readFile(new URL('../src/style.css', import.meta.url), 'utf8');
-const allCss = (await Promise.all(['style.css', 'app-chrome.css', 'data-section.css', 'embed.css', 'sign-in.css']
-  .map(name => readFile(new URL(`../src/${name}`, import.meta.url), 'utf8')))).join('\n');
+const styleCss = styles['style.css'];
 
 const labelRule = styleCss.match(/^\.draft-source-recovery label:hover\s*\{([^}]*)\}/m);
 const labelDarkRule = styleCss.match(/^\.author-workspace\[data-chrome=dark\] \.draft-source-recovery label:hover\s*\{([^}]*)\}/m);
@@ -62,52 +59,28 @@ test('the resting draft-source-recovery rules are preserved', () => {
   assert.ok(styleCss.match(/\.draft-source-recovery select\s*\{[^}]*max-width:\s*100%/), 'the resting banner select rule must remain');
 });
 
-describe('Draft-source label hover in offline Chromium', () => {
-  let page;
-  before(async () => { page = await chromiumPage(); });
-  after(async () => { await page?.close(); });
-
-  test('applying the hover rules changes the label visual state with identical geometry in the real ancestor contexts, and labels outside the banner are out of scope', async () => {
-    await page.setContent(`<style>${allCss}</style>`
-      + `<div class="author-workspace"><aside class="draft-source-recovery"><label id="lightLabel">Replacement dataset<select><option>Choose a compatible dataset…</option></select></label></aside></div>`
+defineHoverCases('draft-source-label hover', {
+  html: `<div class="author-workspace"><aside class="draft-source-recovery"><label id="lightLabel">Replacement dataset<select><option>Choose a compatible dataset…</option></select></label></aside></div>`
       + `<div class="author-workspace" data-chrome="dark"><aside class="draft-source-recovery"><label id="darkLabel">Replacement dataset<select><option>Choose a compatible dataset…</option></select></label></aside></div>`
-      + `<div class="author-workspace"><label id="outsideLabel">Outside<select><option>Other</option></select></label></div>`);
-    const actual = await page.evaluate(() => {
-      const all = [...document.styleSheets].flatMap(s => [...s.cssRules]);
-      const norm = r => (r.selectorText || '').replaceAll('"', '');
-      const label = all.find(r => norm(r) === '.draft-source-recovery label:hover') ?? null;
-      const labelDark = all.find(r => norm(r) === '.author-workspace[data-chrome=dark] .draft-source-recovery label:hover') ?? null;
-      const measure = (el, rule) => {
-        const rest = { background: getComputedStyle(el).backgroundColor, color: getComputedStyle(el).color, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        if (rule) { for (const prop of rule.style) el.style.setProperty(prop, rule.style.getPropertyValue(prop)); }
-        const hovered = { background: getComputedStyle(el).backgroundColor, color: getComputedStyle(el).color, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        el.removeAttribute('style');
-        return { rest, hovered };
-      };
-      const el = id => document.querySelector(`#${id}`);
-      return {
-        found: { label: !!label, labelDark: !!labelDark },
-        props: [label, labelDark].map(r => r ? [...r.style] : []),
-        lightLabel: label ? measure(el('lightLabel'), label) : null,
-        darkLabel: labelDark ? measure(el('darkLabel'), labelDark) : null,
-        outsideLabelMatches: label ? el('outsideLabel').matches(label.selectorText.replaceAll(':hover', '')) : null,
-        outsideDarkMatches: labelDark ? el('outsideLabel').matches(labelDark.selectorText.replaceAll(':hover', '')) : null,
-      };
-    });
-    assert.deepEqual(actual.found, { label: true, labelDark: true }, 'expected both hover rules in the CSSOM');
-    for (const props of actual.props) {
-      assert.ok(props.length && props.every(p => p.startsWith('background')), 'hover rules must set background longhands only');
-    }
-    assert.equal(actual.lightLabel.rest.background, 'rgba(0, 0, 0, 0)', 'light label rest');
-    assert.equal(actual.lightLabel.hovered.background, 'rgb(237, 247, 247)', 'light label hover');
-    assert.notEqual(actual.lightLabel.rest.background, actual.lightLabel.hovered.background);
-    assert.equal(actual.lightLabel.rest.color, actual.lightLabel.hovered.color, 'light label colour unchanged on hover');
-    assert.equal(actual.lightLabel.rest.box, actual.lightLabel.hovered.box, 'light label geometry');
-    assert.equal(actual.darkLabel.rest.background, 'rgba(0, 0, 0, 0)', 'dark label rest');
-    assert.equal(actual.darkLabel.hovered.background, 'rgb(51, 76, 98)', 'dark label hover');
-    assert.equal(actual.darkLabel.rest.color, actual.darkLabel.hovered.color, 'dark label colour unchanged on hover');
-    assert.equal(actual.darkLabel.rest.box, actual.darkLabel.hovered.box, 'dark label geometry');
-    assert.equal(actual.outsideLabelMatches, false, 'a label outside .draft-source-recovery must be out of scope');
-    assert.equal(actual.outsideDarkMatches, false, 'a label outside .draft-source-recovery must be out of scope for the dark variant');
-  });
+      + `<div class="author-workspace"><label id="outsideLabel">Outside<select><option>Other</option></select></label></div>`,
+  cases: [
+    {
+      target: '#lightLabel',
+      rule: '.draft-source-recovery label:hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      paintOnly: true,
+      unchanged: ['color'],
+      excluded: ['#outsideLabel'],
+    },
+    {
+      target: '#darkLabel',
+      rule: '.author-workspace[data-chrome="dark"] .draft-source-recovery label:hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(51, 76, 98)' },
+      paintOnly: true,
+      unchanged: ['color'],
+      excluded: ['#outsideLabel'],
+    },
+  ],
 });

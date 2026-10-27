@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { defineHoverCases, styles } from './interaction.mjs';
 
 // Issue #108 polish slice 16: hover feedback for the Data landing's create
 // controls. A fresh audit of interactive elements found the teal create
@@ -11,8 +11,8 @@ import { readFile } from 'node:fs/promises';
 // uses); plain buttons and unselected tabs take the data page's established
 // menu-item hover tint (#eaf3f7). Disabled controls and the selected tab keep
 // their flat state.
-const sectionCss = await readFile(new URL('../src/data-section.css', import.meta.url), 'utf8');
-const styleCss = await readFile(new URL('../src/style.css', import.meta.url), 'utf8');
+const sectionCss = styles['data-section.css'];
+const styleCss = styles['style.css'];
 
 test('teal data-page primary buttons darken on hover', () => {
   const rule = sectionCss.match(
@@ -44,4 +44,39 @@ test('analyses-home primary-button hover matches the app-wide language', () => {
   const rule = styleCss.match(/\.analyses-home\s+\.primary-button:hover\s*\{([^}]*)\}/);
   assert.ok(rule, 'expected .analyses-home .primary-button:hover');
   assert.match(rule[1], /background:\s*#126e76/);
+});
+
+const primaryRule = '.data-page .data-primary:hover:not(:disabled), .data-dialog .data-primary:hover:not(:disabled), .data-split > .data-menu > summary:hover';
+defineHoverCases('data create controls', {
+  html: `<section class="data-page">
+    <button id="primary" class="data-primary">Create dataset</button>
+    <button id="disabled" class="data-primary" disabled>Unavailable</button>
+    <button id="plain">Refresh</button>
+    <div class="data-tabs"><button id="tab" aria-selected="false">Sources</button><button id="selected" aria-selected="true">Datasets</button></div>
+    <div class="data-split"><details class="data-menu"><summary id="split">Create options</summary></details></div>
+  </section>
+  <dialog class="data-dialog" open><button id="dialog" class="data-primary">Continue</button></dialog>
+  <section class="analyses-home"><a id="analysis" class="primary-button" href="#">New analysis</a></section>`,
+  cases: [
+    ...['#primary', '#dialog', '#split'].map(target => ({
+      target, rule: primaryRule,
+      resting: { backgroundColor: 'rgb(23, 107, 136)' },
+      hovered: { backgroundColor: 'rgb(20, 93, 118)' },
+      paintOnly: true,
+      excluded: ['#disabled', '#plain'],
+    })),
+    ...['#plain', '#tab'].map(target => ({
+      target, rule: '.data-page button:hover:not(:disabled):not(.data-primary):not([aria-selected=true])',
+      resting: { backgroundColor: target === '#plain' ? 'rgb(255, 255, 255)' : 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(234, 243, 247)' },
+      paintOnly: true,
+      excluded: ['#disabled', '#selected', '#primary'],
+    })),
+    {
+      target: '#analysis', rule: '.analyses-home .primary-button:hover',
+      resting: { backgroundColor: 'rgb(21, 127, 136)' },
+      hovered: { backgroundColor: 'rgb(18, 110, 118)' },
+      paintOnly: true,
+    },
+  ],
 });

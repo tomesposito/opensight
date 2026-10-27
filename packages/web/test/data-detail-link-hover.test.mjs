@@ -1,7 +1,6 @@
-import { after, before, describe, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import { chromiumPage } from './chromium.mjs';
+import { defineHoverCases, styles } from './interaction.mjs';
 
 // Issue #108 polish slice 86: hover feedback for the plain AppLink
 // links on the dataset detail page (DatasetDetail.tsx — the
@@ -24,7 +23,7 @@ import { chromiumPage } from './chromium.mjs';
 // (buttons only) and DatasetDetail. Background only, so the UA link
 // colour/underline and resting geometry are unchanged; the data
 // surface is fixed light, so no dark variant is added.
-const css = await readFile(new URL('../src/data-section.css', import.meta.url), 'utf8');
+const css = styles['data-section.css'];
 
 const rule = css.match(/^\.data-page a:hover\s*\{([^}]*)\}/m);
 
@@ -56,49 +55,36 @@ test('the neighbouring summary hover rules are untouched', () => {
   assert.ok(css.match(/\.data-split > \.data-menu > summary:hover\s*\{[^}]*background:\s*#145d76/), 'the slice-16 split summary hover must remain #145d76');
 });
 
-describe('Data-detail link hover in offline Chromium', () => {
-  let page;
-  before(async () => { page = await chromiumPage(); });
-  after(async () => { await page?.close(); });
-
-  test('applying the hover rule changes the visual state with identical geometry in every DatasetDetail link context, and links outside .data-page are out of scope', async () => {
-    await page.setContent(`<style>${css}</style>`
-      + `<section class="data-page data-detail"><nav class="data-breadcrumb"><a id="crumb" href="#">Datasets</a><span>›</span><span>Sales</span></nav>`
+defineHoverCases('data-detail-link hover', {
+  html: `<section class="data-page data-detail"><nav class="data-breadcrumb"><a id="crumb" href="#">Datasets</a><span>›</span><span>Sales</span></nav>`
       + `<a id="back" href="#">‹ Datasets</a>`
       + `<table class="data-table"><tbody><tr><td><a id="usage" href="#">My analysis</a></td></tr></tbody></table></section>`
-      + `<div class="data-dialog"><a id="outside" href="#">Outside</a></div>`);
-    const actual = await page.evaluate(() => {
-      const all = [...document.styleSheets].flatMap(s => [...s.cssRules]);
-      const found = all.find(r => (r.selectorText || '') === '.data-page a:hover') ?? null;
-      const measure = (el, rule) => {
-        const rest = { background: getComputedStyle(el).backgroundColor, color: getComputedStyle(el).color, decoration: getComputedStyle(el).textDecorationLine, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        if (rule) { for (const prop of rule.style) el.style.setProperty(prop, rule.style.getPropertyValue(prop)); }
-        const hovered = { background: getComputedStyle(el).backgroundColor, color: getComputedStyle(el).color, decoration: getComputedStyle(el).textDecorationLine, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        el.removeAttribute('style');
-        return { rest, hovered };
-      };
-      const outside = document.querySelector('#outside');
-      return {
-        found: !!found,
-        props: found ? [...found.style] : [],
-        crumb: found ? measure(document.querySelector('#crumb'), found) : null,
-        back: found ? measure(document.querySelector('#back'), found) : null,
-        usage: found ? measure(document.querySelector('#usage'), found) : null,
-        outsideMatches: found ? outside.matches(found.selectorText.replaceAll(':hover', '')) : null,
-      };
-    });
-    assert.ok(actual.found, 'expected the hover rule in the CSSOM');
-    assert.ok(actual.props.length && actual.props.every(p => p.startsWith('background')), 'hover rule must set background longhands only');
-    for (const key of ['crumb', 'back', 'usage']) {
-      assert.equal(actual[key].rest.background, 'rgba(0, 0, 0, 0)', `${key} link rest`);
-      assert.equal(actual[key].hovered.background, 'rgb(234, 243, 247)', `${key} link hover`);
-      assert.notEqual(actual[key].rest.background, actual[key].hovered.background);
-      assert.equal(actual[key].rest.color, 'rgb(0, 0, 238)', `${key} link keeps the UA link colour at rest`);
-      assert.equal(actual[key].rest.color, actual[key].hovered.color, `${key} link colour unchanged on hover`);
-      assert.equal(actual[key].rest.decoration, 'underline', `${key} link keeps its underline at rest`);
-      assert.equal(actual[key].rest.decoration, actual[key].hovered.decoration, `${key} link underline unchanged on hover`);
-      assert.equal(actual[key].rest.box, actual[key].hovered.box, `${key} link geometry`);
-    }
-    assert.equal(actual.outsideMatches, false, 'a link inside .data-dialog (not .data-page) must be out of scope');
-  });
+      + `<div class="data-dialog"><a id="outside" href="#">Outside</a></div>`,
+  cases: [
+    {
+      target: '#crumb',
+      rule: '.data-page a:hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(234, 243, 247)' },
+      paintOnly: true,
+      unchanged: ['color', 'textDecorationLine'],
+      excluded: ['#outside'],
+    },
+    {
+      target: '#back',
+      rule: '.data-page a:hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(234, 243, 247)' },
+      paintOnly: true,
+      unchanged: ['color', 'textDecorationLine'],
+    },
+    {
+      target: '#usage',
+      rule: '.data-page a:hover',
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+      hovered: { backgroundColor: 'rgb(234, 243, 247)' },
+      paintOnly: true,
+      unchanged: ['color', 'textDecorationLine'],
+    },
+  ],
 });

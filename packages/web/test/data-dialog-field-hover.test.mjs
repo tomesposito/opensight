@@ -1,7 +1,6 @@
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import { chromiumPage } from './chromium.mjs';
+import { defineHoverCases, styles } from './interaction.mjs';
 
 // Issue #108 polish slice 48: hover feedback for the data dialogs' fields.
 // A behavioral hover probe (real mouse + computed-style delta, replica
@@ -15,7 +14,7 @@ import { chromiumPage } from './chromium.mjs';
 // keep their OS rendering (the slice-44 exclusion pattern). Background
 // only, so resting geometry is identical; disabled fields keep their flat
 // state. Static (no animation), so no reduced-motion variant is needed.
-const css = await readFile(new URL('../src/data-section.css', import.meta.url), 'utf8');
+const css = styles['data-section.css'];
 
 const fieldRule = css.match(/\.data-dialog input:hover:not\(:disabled\):not\(\[type=radio\]\):not\(\[type=checkbox\]\):not\(\[type=file\]\), \.data-dialog select:hover:not\(:disabled\)\s*\{([^}]*)\}/);
 
@@ -43,50 +42,35 @@ test('the dialog field hover rule coexists with the page field rules', () => {
   assert.ok(css.match(/\.data-dialog button:hover:not\(:disabled\):not\(\.data-primary\):not\(\[aria-selected=true\]\)\s*\{[^}]*background:\s*#eaf3f7/), 'the data-dialog button hover rule (slice 30) must still be present');
 });
 
-{
-  let page;
-  before(async () => { page = await chromiumPage(); });
-  after(async () => { await page?.close(); });
-
-  test('applying the hover rule changes the visual state with identical geometry', async () => {
-    await page.setContent(`<style>${css}</style><dialog class="data-dialog" open><div class="data-dialog-body">
+defineHoverCases('data-dialog-field hover', {
+  html: `<dialog class="data-dialog" open><div class="data-dialog-body">
       <div class="data-dialog-tools"><input id="search" type="search" placeholder="Search data sources"></div>
       <label>Connection name<input id="name" type="text" value="x"></label>
       <label>Region<select id="region"><option>us-east-1</option></select></label>
       <label class="data-connector-tile"><input id="tile-radio" type="radio" name="c"></label>
-    </div></dialog>`);
-    const actual = await page.evaluate(() => {
-      let field = null;
-      for (const sheet of document.styleSheets) {
-        for (const rule of sheet.cssRules) {
-          const sel = (rule.selectorText || '');
-          if (sel.includes('.data-dialog input:hover')) field = rule;
-        }
-      }
-      const apply = (el, rule) => { for (const prop of rule.style) el.style.setProperty(prop, rule.style.getPropertyValue(prop)); };
-      const measure = (id) => {
-        const el = document.querySelector(id);
-        const rest = { background: getComputedStyle(el).backgroundColor, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        apply(el, field);
-        const hovered = { background: getComputedStyle(el).backgroundColor, box: JSON.stringify(el.getBoundingClientRect().toJSON()) };
-        return { rest, hovered };
-      };
-      return {
-        found: !!field,
-        selector: field ? field.selectorText : null,
-        search: field ? measure('#search') : null,
-        name: field ? measure('#name') : null,
-        region: field ? measure('#region') : null,
-        radioMatches: field ? document.querySelector('#tile-radio').matches(field.selectorText.split(',')[0]) : null,
-      };
-    });
-    assert.ok(actual.found, 'expected the data-dialog field hover rule in the stylesheet');
-    for (const key of ['search', 'name', 'region']) {
-      assert.ok(actual[key], `expected measurements for ${key}`);
-      assert.equal(actual[key].rest.background, 'rgb(255, 255, 255)');
-      assert.equal(actual[key].hovered.background, 'rgb(234, 243, 247)');
-      assert.equal(actual[key].rest.box, actual[key].hovered.box);
-    }
-    assert.equal(actual.radioMatches, false, 'the tile radio input must be excluded from the field hover rule');
-  });
-}
+    </div></dialog>`,
+  cases: [
+    {
+      target: '#search',
+      rule: '.data-dialog input:hover:not(:disabled):not([type="radio"]):not([type="checkbox"]):not([type="file"]), .data-dialog select:hover:not(:disabled)',
+      resting: { backgroundColor: 'rgb(255, 255, 255)' },
+      hovered: { backgroundColor: 'rgb(234, 243, 247)' },
+      paintOnly: true,
+      excluded: ['#tile-radio'],
+    },
+    {
+      target: '#name',
+      rule: '.data-dialog input:hover:not(:disabled):not([type="radio"]):not([type="checkbox"]):not([type="file"]), .data-dialog select:hover:not(:disabled)',
+      resting: { backgroundColor: 'rgb(255, 255, 255)' },
+      hovered: { backgroundColor: 'rgb(234, 243, 247)' },
+      paintOnly: true,
+    },
+    {
+      target: '#region',
+      rule: '.data-dialog input:hover:not(:disabled):not([type="radio"]):not([type="checkbox"]):not([type="file"]), .data-dialog select:hover:not(:disabled)',
+      resting: { backgroundColor: 'rgb(255, 255, 255)' },
+      hovered: { backgroundColor: 'rgb(234, 243, 247)' },
+      paintOnly: true,
+    },
+  ],
+});
