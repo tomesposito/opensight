@@ -37,14 +37,28 @@ await runJourney('j2-first-login', 'Workspace Admin', async j => {
   await j.step('invitations-ui', page, async () => {
     await navigate(page, 'users');
     await page.getByRole('heading', { name: 'Users and invitations', exact: true }).waitFor();
-    const actual = await page.locator('main').innerText();
-    assert.match(actual, /managed by the operator/);
-    assert.equal(await button(page, 'Create invitation').count(), 0);
-    j.gap('admin-invites-reader', 'Workspace administrator creates a Reader AI invitation in this UI.', actual);
-    if (!/7 days/.test(actual)) j.gap('invitation-expiry-copy', 'The hosted invitations UI states a seven-day expiry.', 'This hosted UI only redirects membership management to the operator; it has no expiry copy.');
-    else assert.match(actual, /7 days/);
+    await j.step('invitation-expiry-copy', null, async () => {
+      assert.match(await page.locator('main').innerText(), /7 days/);
+      return 'The workspace invitation form states that invitations expire after 7 days.';
+    });
+    await j.step('admin-invites-reader', null, async () => {
+      const form = page.getByRole('form', { name: 'Invite user' });
+      await form.getByLabel('Email address', { exact: true }).fill('acme-reader@example.test');
+      await form.getByLabel('Display name', { exact: true }).fill('Acme reader');
+      await form.getByRole('combobox', { name: 'Role', exact: true }).selectOption('reader_ai');
+      await button(page, 'Create invitation').click();
+      await page.getByRole('status').filter({ hasText: 'Invitation created.' }).waitFor();
+      const link = await page.getByLabel('Single-use invitation link', { exact: true }).inputValue();
+      assert.ok(new URL(link).hash === `#invite=${invitationFrom(stack)}`, 'Shared link must carry the mailed invitation');
+      await button(page, 'Revoke acme-reader@example.test').waitFor();
+      assert.equal(await page.getByRole('button', { name: /^Remove / }).count(), 0);
+      // Reload the management view to prove persistence and avoid retaining tokens in captures.
+      await navigate(page, 'sample'); await navigate(page, 'users');
+      await button(page, 'Revoke acme-reader@example.test').waitFor();
+      assert.equal(await page.getByLabel('Single-use invitation link', { exact: true }).count(), 0);
+      return 'Workspace administrator created a Reader AI invitation; the pending invitation persists and its single-use link is shown only at creation.';
+    });
   });
-  await stack.fixture.provisioning.inviteMember(randomUUID(), tenant.tenantId, { email: 'acme-reader@example.test', name: 'Acme reader', role: 'reader_ai' });
   const reader = await enrollViaApi(stack, invitationFrom(stack), 'acme-reader@example.test');
   const readerPage = await browser.page(stack); await watch(readerPage);
   await j.step('reader-sign-in', readerPage, async () => {
@@ -53,7 +67,7 @@ await runJourney('j2-first-login', 'Workspace Admin', async j => {
     await readerPage.getByLabel('Account', { exact: true }).click();
     assert.match(await readerPage.locator('.account-menu').innerText(), /Acme reader/);
     assert.doesNotMatch(await readerPage.locator('.account-menu').innerText(), /Acme admin/);
-    return 'Reader AI enrollment uses the API because hosted invitation/enrollment UI is absent; real SignIn establishes the reader session in a separate context.';
+    return 'Reader AI enrollment uses the API because browser enrollment is issue #152; real SignIn establishes the reader session in a separate context.';
   });
   const second = await stack.fixture.provisioning.provision(randomUUID(), { name: 'Acme Research', administrator: { email, name: 'Acme admin' } });
   tenantIds.push(second.tenantId);
