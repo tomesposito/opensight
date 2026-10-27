@@ -10,6 +10,7 @@ import { identifier } from './metadata-resources.js';
 import { emailAddress } from './mail.js';
 import { appendOperatorAudit } from './operator-audit.js';
 import { workspaceLabel } from './workspace-naming.js';
+import type { TenantContext } from './metadata.js';
 
 /** A workspace picker challenge lives at most five minutes and is single-use. */
 export const LOGIN_SELECTION_MS = 5 * 60 * 1000;
@@ -157,6 +158,37 @@ export class HostedAuth {
       }
     });
     if (activated) this.analytics.track(activated, { name: 'user_activated' });
+    return { accepted: true };
+  }
+  /** Join another workspace using an already verified, MFA-backed session. */
+  async acceptInvitation(context: TenantContext, tokenValue: unknown, peer: string): Promise<{ accepted: true }> {
+    const token = tokenInput(tokenValue);
+    await this.limit(`invite:${digest(token)}`, peer);
+    const activated = await this.database.transaction(async c => {
+      const source = (await c.query("SELECT subject FROM h2_memberships WHERE tenant_id = ? AND namespace_id = ? AND user_id = ? AND status = 'active'", [context.tenantId, context.namespaceId, context.userId]))[0];
+      const target = (await c.query('SELECT * FROM h2_invitations WHERE token_hash = ?', [digest(token)]))[0];
+      if (!source || !target || source.subject !== target.subject) throw new MetadataError('SECURITY_INVITATION_PRINCIPAL_MISMATCH', 403);
+      // Serialize with removal/revocation in both workspaces, in stable order.
+      for (const tenantId of [...new Set([context.tenantId, String(target.tenant_id)])].sort()) {
+        const rows = await c.query("UPDATE h1_tenants SET version = version WHERE tenant_id = ? AND state = 'active' RETURNING tenant_id", [tenantId]);
+        if (!rows.length) throw new MetadataError('TENANT_UNAVAILABLE', 403);
+      }
+      const member = await this.membership(c, String(source.subject), context.tenantId);
+      if (Number(member.authorization) !== context.authorizationRevision) throw new MetadataError('AUTHORIZATION_REVISED', 403);
+      const current = (await c.query('SELECT * FROM h2_invitations WHERE token_hash = ?', [digest(token)]))[0];
+      if (!current || current.subject !== source.subject) denied();
+      if (Number(current.accepted)) throw new MetadataError('INVITATION_USED', 409);
+      if (Number(current.expires_at) === 0) throw new MetadataError('INVITATION_REVOKED', 409);
+      if (Number(current.expires_at) <= this.clock()) throw new MetadataError('INVITATION_EXPIRED', 409);
+      const invited = await this.membership(c, String(source.subject), String(current.tenant_id), true);
+      const changed = await c.query("UPDATE h2_memberships SET status = 'active', version = version + 1 WHERE subject = ? AND tenant_id = ? AND status = 'invited' RETURNING namespace_id", [String(source.subject), String(current.tenant_id)]);
+      if (!changed.length) throw new MetadataError('INVITATION_USED', 409);
+      await c.query('UPDATE h2_invitations SET accepted = 1 WHERE invitation_id = ?', [String(current.invitation_id)]);
+      const scope = { tenantId: String(current.tenant_id), namespaceId: String(invited.namespace_id) };
+      await appendMetadataEvent(c, scope, 'membership.accepted');
+      return scope;
+    });
+    this.analytics.track(activated, { name: 'user_activated' });
     return { accepted: true };
   }
   async login(emailValue: unknown, passwordValue: unknown, code: string, tenantValue: unknown, peer: string): Promise<LoginSession | LoginSelection> {

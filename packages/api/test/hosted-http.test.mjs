@@ -405,3 +405,37 @@ test('Issue #146 item 3: HTTP selection uses the login boundary and completes th
   const unavailable = await serving(t, f, { builtinAuth: undefined });
   assert.equal((await unavailable.request(path, { method: 'POST', body: {} })).body.errorCode, 'BUILTIN_AUTH_UNAVAILABLE');
 });
+
+test('Issue #152: an MFA session accepts its own second workspace invitation once, without resetting credentials or issuing a session', async t => {
+  const f = await authFixture(t), login = await f.login(), { request } = await serving(t, f);
+  const headers = {authorization:`Bearer ${login.token}`};
+  const other = await f.provisioning.provision('browser-second', {name:'Second workspace',administrator:{email:f.email,name:'Existing admin'}});
+  const token = f.mail.messages.at(-1).html.match(/<code>([^<]+)<\/code>/)[1];
+  const before = await f.db.transaction(c=>c.query('SELECT password_hash, totp_secret, last_step FROM h2_identities'));
+  assert.deepEqual(await f.auth.enroll(token,f.password,'local'),{enrollmentRequired:false});
+  const results = await Promise.all([1,2].map(()=>request('/api/invitations/accept',{method:'POST',headers,body:{token}})));
+  assert.deepEqual(results.map(r=>r.status).sort(),[200,409]);
+  assert.deepEqual(results.find(r=>r.status===200).body,{accepted:true});
+  assert.equal(results.find(r=>r.status===409).body.errorCode,'INVITATION_USED');
+  assert.deepEqual(await f.db.transaction(c=>c.query('SELECT password_hash, totp_secret, last_step FROM h2_identities')),before);
+  assert.equal((await request('/api/session',{headers})).body.tenantId,f.tenant.tenantId);
+  const selection = await request('/api/auth/login',{method:'POST',body:{email:f.email,password:f.password,code:f.code()}});
+  assert.equal(selection.status,200); assert.equal(selection.body.selectionRequired,true);
+  assert.ok(selection.body.workspaces.some(w=>w.tenantId===other.tenantId));
+});
+
+test('Issue #152: hosted session acceptance rejects forged identity, another user, expired/revoked links and suspended workspaces', async t => {
+  const f = await authFixture(t), login = await f.login(), { request } = await serving(t, f);
+  const headers = {authorization:`Bearer ${login.token}`};
+  for (const state of ['foreign','expired','revoked','suspended']) {
+    const other = await f.provisioning.provision(`accept-${state}`,{name:`Workspace ${state}`,administrator:{email:state==='foreign'?'foreign@example.test':f.email,name:'Admin'}});
+    const token=f.mail.messages.at(-1).html.match(/<code>([^<]+)<\/code>/)[1];
+    if(state==='expired'||state==='revoked') await f.db.transaction(c=>c.query('UPDATE h2_invitations SET expires_at = ? WHERE tenant_id = ?',[state==='revoked'?0:f.clock()-1,other.tenantId]));
+    if(state==='suspended') await f.provisioning.transition('suspend-accept',other.tenantId,'suspend',2);
+    const result=await request('/api/invitations/accept',{method:'POST',headers,body:{token}});
+    assert.equal(result.body.errorCode,{foreign:'SECURITY_INVITATION_PRINCIPAL_MISMATCH',expired:'INVITATION_EXPIRED',revoked:'INVITATION_REVOKED',suspended:'TENANT_UNAVAILABLE'}[state]);
+    assert.equal((await f.db.transaction(c=>c.query('SELECT accepted FROM h2_invitations WHERE tenant_id = ?',[other.tenantId])))[0].accepted,0);
+    assert.equal((await request('/api/invitations/accept',{method:'POST',headers,body:{token,subject:f.email}})).body.errorCode,'FORGED_PRINCIPAL');
+    assert.equal((await request('/api/invitations/accept',{method:'POST',body:{token}})).status,401);
+  }
+});
