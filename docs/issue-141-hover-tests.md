@@ -67,3 +67,28 @@ skipped or cancelled tests before its checkpoint commit.
 The combined hover and harness audit passed **771 tests, 0 failed, 0 skipped,
 0 cancelled** after the final coverage review. The static demo rebuilt with
 `npm run build:demo --workspace @opensight/web`.
+
+Final root verification: `TZ=UTC npm test`, with `DATABASE_URL` set to the
+provided local PostgreSQL test service, exited **0**. The combined result
+was **4,195 passed / 0 failed / 1 skipped / 0 cancelled / 0 todo**:
+4,163 Node tests passed and all 32 Python SDK tests passed.
+
+| Root suite | Passed | Skipped |
+| --- | ---: | ---: |
+| API | 834 | 1 |
+| Bundle parser | 199 | 0 |
+| CLI | 73 | 0 |
+| Embedding SDK | 10 | 0 |
+| Headless TypeScript SDK | 28 | 0 |
+| Headless Python SDK | 32 | 0 |
+| MCP server | 74 | 0 |
+| O interpreter | 32 | 0 |
+| Parity | 11 | 0 |
+| Query engine | 520 | 0 |
+| Web | 2,294 | 0 |
+| Root conformance | 88 | 0 |
+
+The sole skip was the existing live TLS PostgreSQL CLI integration test:
+`OPENSIGHT_TEST_POSTGRES_CA` was not configured. Other live PostgreSQL
+integration tests ran. No product-CSS specificity fixes or outstanding gaps
+were needed for this issue.
