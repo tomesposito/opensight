@@ -152,7 +152,8 @@ export async function launchBrowser(journey) {
 export async function capture(journey, page, name) {
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `${name}: horizontal overflow`);
   const filename = `${journey.journey}-${name}.png`;
-  await page.screenshot({ path: resolve(output, filename), fullPage: true, animations: 'disabled' });
+  await page.screenshot({ path: resolve(output, filename), fullPage: true, animations: 'disabled',
+    mask: [page.locator('.enrollment-qr'), page.locator('#enrollment-secret')] });
   journey.screenshots.push(filename);
 }
 export async function writeResults(journey) {
@@ -190,24 +191,50 @@ export async function runJourney(name, persona, run) {
   }
   if (j.steps.some(s => s.status === 'fail')) process.exitCode = 1;
 }
-// Enrollment fallback for the shipped API-only enrollment flow. Journeys must
-// record the missing UI as a gap before using this helper; this is not UI coverage.
-export async function enrollViaApi(stack, invitation, email) {
+// Read only the secret shown to the invitee. All enrollment and sign-in requests
+// originate in the real page; never enroll through a fixture or a hand-made POST.
+export async function enrollInBrowser(page, stack, invitation, email) {
   const { decode32 } = await import('../../../api/test/hosted-helpers.mjs');
   const { totp } = await import('../../../api/dist/auth-crypto.js');
   const password = randomBytes(24).toString('base64');
-  const enrollment = await stack.request('/api/auth/enroll', 'POST', { invitationToken: invitation, password });
-  assert.equal(enrollment.status, 200);
-  const secret = decode32(enrollment.body.secret), step = Math.floor(Date.now() / 30000);
-  const accepted = await stack.request('/api/auth/accept', 'POST', { invitationToken: invitation, password, code: totp(secret, step) });
-  assert.equal(accepted.status, 200);
-  let lastStep = step;
-  return { email, password, async code() {
+  const link = `${stack.origin}/#invite=${invitation}`;
+  assert.ok(stack.mail.messages.at(-1).html.includes(`href="${link}"`), 'Invitation mail must lead to browser setup');
+  await page.goto(link);
+  await page.getByRole('heading', { name: 'Set up your account', exact: true }).waitFor();
+  assert.equal(await page.getByLabel(/tenant id|email address/i).count(), 0, 'Setup identity comes from the invitation');
+  await page.getByLabel('New password', { exact: true }).fill(password);
+  await page.getByLabel('Confirm password', { exact: true }).fill(password);
+  await button(page, 'Continue').click();
+  await page.getByRole('heading', { name: 'Set up your authenticator', exact: true }).waitFor();
+  const qr = page.getByRole('img', { name: 'Authenticator setup QR code', exact: true });
+  assert.equal(await qr.isVisible(), true);
+  assert.ok((await qr.locator('path').getAttribute('d')).length > 0, 'Setup must render QR modules');
+  assert.ok((await page.locator('.sign-in-identity').innerText()).includes(`Account: ${email}`));
+  assert.match(await page.locator('.sign-in-identity').innerText(), /Issuer: OpenSight/);
+  const encoded = await page.getByLabel('Setup key (base32)', { exact: true }).inputValue();
+  assert.ok(/^[A-Z2-7]{32}$/.test(encoded), 'Manual setup key must be a complete base32 secret');
+  const secret = decode32(encoded);
+  let lastStep = -1;
+  const account = { email, password, async code() {
     // TOTP replay protection accepts only one code per time step. Wait for a
     // fresh window when needed instead of changing the server clock/database.
-    while (lastStep + 1 > Math.floor(Date.now() / 30000) + 1) await new Promise(r => setTimeout(r, 500));
-    lastStep = Math.max(lastStep + 1, Math.floor(Date.now() / 30000)); return totp(secret, lastStep);
+    while (lastStep >= Math.floor(Date.now() / 30000)) await new Promise(r => setTimeout(r, 500));
+    lastStep = Math.floor(Date.now() / 30000); return totp(secret, lastStep);
   } };
+  await page.getByLabel('Authenticator code', { exact: true }).fill(await account.code());
+  await button(page, 'Confirm authenticator').click();
+  await page.getByRole('heading', { name: 'Sign in', exact: true }).waitFor();
+  assert.equal(new URL(page.url()).hash, '', 'Successful setup clears the invitation hash');
+  assert.equal(await page.getByLabel('Email address', { exact: true }).inputValue(), email);
+  assert.ok(await page.getByLabel('Password', { exact: true }).inputValue() === password, 'Sign-in retains the password just set');
+  assert.equal(await page.getByLabel('Setup key (base32)', { exact: true }).count(), 0);
+  await button(page, 'Continue').click();
+  assert.match(await page.locator('main').innerText(), /Wait for a fresh code/);
+  assert.equal(await page.getByLabel('Authenticator code', { exact: true }).inputValue(), '');
+  await page.getByLabel('Authenticator code', { exact: true }).fill(await account.code());
+  await button(page, 'Sign in').click();
+  await page.locator('.app-shell').waitFor();
+  return account;
 }
 export const invitationFrom = stack => { const token = stack.mail.messages.at(-1)?.html.match(/<code>([^<]+)<\/code>/)?.[1]; assert.ok(token, 'Mail stub must contain invitation'); return token; };
 export async function signIn(page, stack, account) {
