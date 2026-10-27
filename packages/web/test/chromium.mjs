@@ -55,6 +55,43 @@ export async function chromiumPage() {
   try {
     const { targetId } = await send('Target.createTarget', { url: 'about:blank' });
     const { sessionId } = await send('Target.attachToTarget', { targetId, flatten: true });
+    let hoveredNodes = [];
+    let cssEnabled = false;
+    let documentRoot;
+    const getDocument = async () => {
+      // Re-requesting the document invalidates the previous frontend node IDs.
+      documentRoot ??= (await send('DOM.getDocument', { depth: -1 }, sessionId)).root;
+      return documentRoot;
+    };
+    const setHovered = async selector => {
+      if (!cssEnabled) {
+        await send('DOM.enable', {}, sessionId);
+        await send('CSS.enable', {}, sessionId);
+        cssEnabled = true;
+      }
+      for (const nodeId of hoveredNodes) {
+        await send('CSS.forcePseudoState', { nodeId, forcedPseudoClasses: [] }, sessionId);
+      }
+      hoveredNodes = [];
+      if (selector === null) return;
+      const root = await getDocument();
+      const { nodeId } = await send('DOM.querySelector', { nodeId: root.nodeId, selector }, sessionId);
+      if (!nodeId) throw new Error(`Cannot hover missing element: ${selector}`);
+      const pathTo = (node, ancestors = []) => {
+        const path = node.nodeType === 1 ? [...ancestors, node.nodeId] : ancestors;
+        if (node.nodeId === nodeId) return path;
+        for (const child of node.children ?? []) {
+          const found = pathTo(child, path);
+          if (found) return found;
+        }
+      };
+      // Like a pointer over a descendant, hover also applies to its ancestors.
+      hoveredNodes = pathTo(root);
+      if (!hoveredNodes) throw new Error(`Cannot resolve hover ancestry: ${selector}`);
+      for (const id of hoveredNodes) {
+        await send('CSS.forcePseudoState', { nodeId: id, forcedPseudoClasses: ['hover'] }, sessionId);
+      }
+    };
     const evaluate = async (fn, argument) => {
       const result = await send('Runtime.evaluate', {
         expression: `(${fn.toString()})(${JSON.stringify(argument) ?? ''})`, returnByValue: true, awaitPromise: true,
@@ -63,12 +100,29 @@ export async function chromiumPage() {
       return result.result.value;
     };
     return {
-      evaluate, close,
+      evaluate, close, setHovered,
+      hoverState: async selector => {
+        const root = await getDocument();
+        const { nodeId } = await send('DOM.querySelector', { nodeId: root.nodeId, selector }, sessionId);
+        if (!nodeId) throw new Error(`Missing interaction target: ${selector}`);
+        const { matchedCSSRules } = await send('CSS.getMatchedStylesForNode', { nodeId }, sessionId);
+        return {
+          hovered: hoveredNodes.includes(nodeId),
+          rules: matchedCSSRules.flatMap(({ rule, matchingSelectors }) => [
+            rule.selectorList.text,
+            ...matchingSelectors.map(index => rule.selectorList.selectors[index].text),
+          ]),
+        };
+      },
       emulateMedia: media => send('Emulation.setEmulatedMedia', { media }, sessionId),
       printToPDF: () => send('Page.printToPDF', { printBackground: true, preferCSSPageSize: true }, sessionId),
       setViewportSize: size => send('Emulation.setDeviceMetricsOverride', { ...size, deviceScaleFactor: 1, mobile: false }, sessionId),
-      setContent: html => evaluate(content => { document.open(); document.write(content); document.close(); },
-        `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'">${html}`),
+      setContent: async html => {
+        if (hoveredNodes.length) await setHovered(null);
+        await evaluate(content => { document.open(); document.write(content); document.close(); },
+          `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'">${html}`);
+        documentRoot = undefined;
+      },
     };
   } catch (error) { await close(); throw error; }
 }
