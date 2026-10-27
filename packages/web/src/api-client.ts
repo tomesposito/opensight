@@ -223,15 +223,15 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
       if (body.loggedOut !== true) throw new ApiError('Invalid sign-out response.', undefined, 'AUTH_RESPONSE_INVALID');
     } finally { if (current === generation) clearSession(); }
   }
-  async function rawResource(route: string, method = 'GET', body?: unknown, signal?: AbortSignal, key?: string): Promise<unknown> {
+  async function rawResource(route: string, method = 'GET', body?: unknown, signal?: AbortSignal, key?: string, headers: Record<string, string> = {}, received?: (response: Response) => void): Promise<unknown> {
     const expected = generation;
-    const response = await authenticatedFetch(`${base}${route}`, { method, ...(signal ? { signal } : {}), credentials: 'same-origin', headers: { Accept: 'application/json', ...(key ? { 'Idempotency-Key': key } : {}), ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) }, ...(body === undefined ? {} : { body: controlBody(body) }) });
+    const response = await authenticatedFetch(`${base}${route}`, { method, ...(signal ? { signal } : {}), credentials: 'same-origin', headers: { ...headers, Accept: 'application/json', ...(key ? { 'Idempotency-Key': key } : {}), ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) }, ...(body === undefined ? {} : { body: controlBody(body) }) });
     const value: unknown = await response.json();
     if (!response.ok) {
       const error = object(value, 'API error');
       throw new ApiError(`${typeof error.errorCode === 'string' ? `${error.errorCode}: ` : ''}${typeof error.Message === 'string' ? error.Message : 'Request failed'}`, response.status, typeof error.errorCode === 'string' ? error.errorCode : undefined);
     }
-    currentSession(expected, signal); return value;
+    currentSession(expected, signal); received?.(response); return value;
   }
   async function resolveResult(value: unknown, expected: number, signal?: AbortSignal): Promise<unknown> {
     if (!value || typeof value !== 'object' || !('operation' in value)) return value;
@@ -420,7 +420,7 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
     const items: DashboardSummary[] = [], seen = new Set<string>();
     let cursor: string | null = null;
     do {
-      const body = object(await rawResource(`/api/v1/dashboards${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`, 'GET', undefined, signal), 'Dashboard collection');
+      const body = object(await rawResource('/api/v1/dashboards', 'GET', undefined, signal, undefined, cursor ? { Cursor: cursor } : {}), 'Dashboard collection');
       if (!Array.isArray(body.items) || !(body.nextCursor === null || typeof body.nextCursor === 'string')) throw new ApiError('DASHBOARD_RESPONSE_INVALID: Invalid collection.');
       for (const raw of body.items) {
         const item = object(raw, 'Dashboard');
@@ -434,9 +434,10 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
     return items;
   }
   async function getPublishedDashboard(id: string, signal?: AbortSignal): Promise<PublishedDashboard> {
-    const body = object(await rawResource(`/api/v1/dashboards/${encodeURIComponent(id)}`, 'GET', undefined, signal), 'Dashboard');
+    let etag: string | null = null;
+    const body = object(await rawResource(`/api/v1/dashboards/${encodeURIComponent(id)}`, 'GET', undefined, signal, undefined, {}, response => { etag = response.headers.get('etag'); }), 'Dashboard');
     if (body.DashboardId !== id || typeof body.Name !== 'string' || !Number.isSafeInteger(body.Version) || Number(body.Version) < 1 || !Array.isArray(body.Errors)) throw new ApiError('DASHBOARD_RESPONSE_INVALID: Invalid dashboard definition.');
-    return { id, name: body.Name, version: Number(body.Version), definition: convertDefinition(body.Definition), errors: body.Errors as PublishedDashboard['errors'] };
+    return { id, name: body.Name, revision: etag ? Number(String(etag).slice(1, -1)) : undefined, version: Number(body.Version), definition: convertDefinition(body.Definition), errors: body.Errors as PublishedDashboard['errors'] };
   }
   const queryDashboardVisual = (id: string, version: number, visualId: string, controlValues: ControlValues, signal?: AbortSignal) =>
     runQuery(`/api/v1/dashboards/${encodeURIComponent(id)}/versions/${version}/visuals/${encodeURIComponent(visualId)}/query`, undefined, signal, { controlValues });
@@ -444,7 +445,7 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
     const expected = generation;
     const response = await authenticatedFetch(`${base}/api/v1/analyses${revision === undefined ? '' : `/${encodeURIComponent(id)}`}`, {
       method: revision === undefined ? 'POST' : 'PUT', credentials: 'same-origin',
-      headers: { Accept: 'application/json', 'Content-Type': 'application/json', ...(revision === undefined ? {} : { 'If-Match': `"${revision}"` }) },
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'Idempotency-Key': `editor-save-${id}-${revision ?? 0}`, ...(revision === undefined ? {} : { 'If-Match': `"${revision}"` }) },
       body: controlBody({ ...(revision === undefined ? { analysisId: id } : {}), ...input }),
     });
     const body = object(await response.json(), 'Analysis response'); currentSession(expected);
@@ -459,7 +460,11 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
     return body as unknown as Publication;
   }
   return {
-    shareDashboard: (id: string, userId: string) => resource(`/api/v1/dashboards/${encodeURIComponent(id)}/shares/user/${encodeURIComponent(userId)}`, 'PUT', { role: 'viewer' }),
+    shareDashboard: async (id: string, userId: string) => {
+      const current = await getPublishedDashboard(id);
+      if (!Number.isSafeInteger(current.revision) || Number(current.revision) < 1) throw new ApiError('DASHBOARD_RESPONSE_INVALID: Missing access revision.');
+      return rawResource(`/api/v1/dashboards/${encodeURIComponent(id)}/shares/user/${encodeURIComponent(userId)}`, 'PUT', { role: 'viewer' }, undefined, undefined, { 'If-Match': `"${current.revision}"` });
+    },
     listDashboards, getPublishedDashboard, queryDashboardVisual,
     saveHostedAnalysis, publishAnalysis,
     onDemand, connect, subscribeAvailability,

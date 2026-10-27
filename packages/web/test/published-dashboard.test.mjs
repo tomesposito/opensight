@@ -66,7 +66,7 @@ test('v1 collection pagination, published definition and live query use authenti
     if (url.endsWith('/daily')) return Response.json({ DashboardId: 'daily', Name: value.name, Version: 3, Errors: [], Definition: projectDefinition(value.definition) });
     return Response.json({ items: [{ id: calls.length === 1 ? 'one' : 'two', name: 'Dashboard', version: 1 }], nextCursor: calls.length === 1 ? 'next' : null });
   });
-  assert.equal((await api.listDashboards()).length, 2); assert.match(calls[1].url, /cursor=next/);
+  assert.equal((await api.listDashboards()).length, 2); assert.equal(calls[1].headers.Cursor, 'next');
   assert.equal((await api.getPublishedDashboard('daily')).version, 3);
   const result = await api.queryDashboardVisual('daily', 3, value.visualId, { region: ['west'] });
   assert.equal(result.rows[0].region, 'west'); assert.deepEqual(JSON.parse(calls.at(-1).body), { controlValues: { region: ['west'] } });
@@ -82,10 +82,19 @@ for (const role of ['reader', 'reader_ai', 'author', 'author_ai', 'administrator
   const triggers = ui.root.findAllByProps({ className: 'q-trigger' });
   assert.equal(triggers.length, ['reader_ai', 'author_ai', 'administrator'].includes(role) ? 1 : 0);
   if (!triggers.length) return;
-  assert.match(JSON.stringify(triggers[0].props.children), /Daily Orders/);
+  assert.match(triggers[0].findByProps({ className: 'q-trigger-label' }).props.children.join(''), /Daily Orders/);
   await act(() => triggers[0].props.onClick());
   assert.equal(ui.root.findByType(OEntry).props.dashboardId, 'daily');
   assert.deepEqual(ui.root.findByType(QSidePanel).props.draft.dataset.columns.map(c => c.name), ['region', 'revenue']);
   assert.match(JSON.stringify(ui.toJSON()), /not configured/);
   assert.equal(ui.root.findByProps({ role: 'switch' }).props.disabled, true);
+});
+
+test('admin dashboard grants are explicit and retain server errors', async t => {
+  let grant; const client = { async getPublishedDashboard() { return published(); }, async queryDashboardVisual() { return { rows: [] }; }, async listUsers() { return [{ id: 'reader', name: 'Daily reader' }]; }, async shareDashboard(...args) { grant = args; throw new Error('ASSET_PRECONDITION_FAILED'); } };
+  const ui = await mount(t, h(PublishedDashboard, { id: 'daily', client, navigate() {} }), 'administrator');
+  await act(() => ui.root.findByProps({ 'aria-label': 'Viewer' }).props.onChange({ target: { value: 'reader' } }));
+  await act(() => ui.root.findByProps({ className: 'dashboard-access' }).findByType('form').props.onSubmit({ preventDefault() {} }));
+  assert.deepEqual(grant, ['daily', 'reader']); assert.match(JSON.stringify(ui.toJSON()), /ASSET_PRECONDITION_FAILED/);
+  assert.doesNotMatch(JSON.stringify(ui.toJSON()), /viewing access granted/);
 });

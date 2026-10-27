@@ -90,7 +90,7 @@ function DashboardAccess({ id, client }: { id: string; client: ReaderClient }) {
       event.preventDefault(); if (!userId || busy) return; setBusy(true); setStatus('Granting dashboard access…');
       void client.shareDashboard!(id, userId).then(() => setStatus('Dashboard viewing access granted. Dataset permissions are unchanged.'))
         .catch((error: unknown) => setStatus(error instanceof Error ? error.message : String(error))).finally(() => setBusy(false));
-    }}><label>Viewer<select value={userId} onChange={event => setUserId(event.target.value)} required><option value="">Choose a workspace user</option>{users.map(user => <option key={user.id} value={user.id}>{user.name}</option>)}</select></label><button disabled={busy || !userId} type="submit">Grant dashboard access</button></form>
+    }}><label>Viewer<select aria-label="Viewer" value={userId} onChange={event => setUserId(event.target.value)} required><option value="">Choose a workspace user</option>{users.map(user => <option key={user.id} value={user.id}>{user.name}</option>)}</select></label><button disabled={busy || !userId} type="submit">Grant dashboard access</button></form>
     {status && <p role="status">{status}</p>}
   </details>;
 }
