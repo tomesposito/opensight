@@ -19,7 +19,7 @@ async function mount(t, access = { mode: 'local' }) {
     history: { pushState(_s, _t, hash) { location.hash = hash; }, replaceState(_s, _t, hash) { location.hash = hash; } },
     matchMedia: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }),
   };
-  const api = { async listPrepSources() { return []; }, async queryDataset(id, body) { queries.push(id); return { rows: body.measures[0].fieldId === 'row_count' ? [{ row_count: 8 }] : [{ region: 'East', revenue: 900 }] }; } };
+  const api = { async listDashboards() { queries.push('dashboards'); return []; }, async listPrepSources() { return []; }, async queryDataset(id, body) { queries.push(id); return { rows: body.measures[0].fieldId === 'row_count' ? [{ row_count: 8 }] : [{ region: 'East', revenue: 900 }] }; } };
   const element = createElement(AccessProvider, { access }, createElement(Application, { api, fixtures }));
   let renderer; await act(() => { renderer = create(element); });
   t.after(async () => { await act(() => renderer.unmount()); globalThis.window = oldWindow; globalThis.IS_REACT_ACT_ENVIRONMENT = oldAct; });
@@ -74,4 +74,13 @@ test('static demo retains its showcase and sample author dataset without local e
   await ui.navigate('author'); assert.match(ui.text(), /Local sales dataset/); assert.match(ui.text(), /8 sample rows/);
   assert.equal(ui.root.findAllByType(AuthorCanvas).length, 1);
   assert.deepEqual(ui.queries, []);
+});
+
+for (const role of ['administrator', 'author', 'author_ai', 'reader', 'reader_ai']) test(`fresh hosted home is empty for ${role}, with no synthetic charts or data requests`, async t => {
+  const ui = await mount(t, { mode: 'hosted', session: { id: 'user', namespaceId: 'tenant', role } });
+  assert.match(ui.text(), /No published dashboards are available to you yet/);
+  assert.doesNotMatch(ui.text(), /Pinned synthetic sales|Pinned sample data|Renderable Sales|dashboard-grid/);
+  assert.equal(ui.root.findAllByProps({ className: 'chart' }).length, 0);
+  assert.deepEqual(ui.queries, ['dashboards']);
+  assert.equal(ui.text().includes('Create an analysis'), ['administrator', 'author', 'author_ai'].includes(role));
 });
