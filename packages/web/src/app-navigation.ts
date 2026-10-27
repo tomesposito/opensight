@@ -20,7 +20,7 @@ export const pages = {
   api: { path: '/admin/developer/api', section: 'Admin', title: 'API definition preview' },
 } as const;
 export type Page = keyof typeof pages;
-export type AppRoute = { page: Page; draftId?: string; newAnalysis?: boolean; createDataset?: boolean; sourceId?: string; datasetId?: string; baseDatasetId?: string };
+export type AppRoute = { page: Page; dashboardId?: string; draftId?: string; newAnalysis?: boolean; createDataset?: boolean; sourceId?: string; datasetId?: string; baseDatasetId?: string };
 export const productSections = [
   { title: 'My stuff', page: 'my-stuff' },
   { title: 'Analyses', page: 'analyses' }, { title: 'Dashboards', page: 'dashboards' },
@@ -39,14 +39,14 @@ export function recordRecentPage(recents: readonly Page[], page: Page | undefine
 }
 
 export function visiblePage(access: Access, page: Page): boolean {
-  if (page === 'dashboards') return access.mode === 'local';
+  if (page === 'dashboards') return access.mode !== 'demo';
   if (page === 'analyses' || page === 'author' || dataPages.includes(page)) return allowed(access, 'build');
   if (page === 'ai-settings' || page === 'users') return access.mode === 'hosted' && allowed(access, 'admin');
   if (page === 'fixtures') return access.mode === 'demo' || allowed(access, 'build');
   return true;
 }
 export function routeProblem(access: Access, page: Page): string | undefined {
-  if (page === 'dashboards' && access.mode !== 'local') return 'This page is available in the local workspace.';
+  if (page === 'dashboards' && access.mode === 'demo') return 'Publishing dashboards needs a hosted API.';
   if (page === 'api' && access.mode === 'demo') return 'Needs hosted API · The fixture demo does not connect to the API.';
   if (visiblePage(access, page)) return;
   return page === 'ai-settings' || page === 'users'
@@ -54,6 +54,7 @@ export function routeProblem(access: Access, page: Page): string | undefined {
     : 'SECURITY_BUILD_REQUIRED: Author access required.';
 }
 export function routeHash(route: AppRoute): string {
+  if (route.page === 'dashboards' && route.dashboardId) return `#/dashboards/${encodeURIComponent(route.dashboardId)}`;
   if ((route.page === 'data' || route.page === 'data-prep') && route.datasetId) return `#${route.page === 'data' ? '/data/datasets' : '/data/preparation/edit'}/${encodeURIComponent(route.datasetId)}`;
   if (route.page === 'data-prep' && route.baseDatasetId) return `#/data/preparation/dataset/${encodeURIComponent(route.baseDatasetId)}`;
   if (route.page === 'data' && route.createDataset) return '#/data/new';
@@ -69,6 +70,8 @@ export function resetRouteScroll(scope?: { scrollTo?: (x: number, y: number) => 
   scope?.scrollTo?.(0, 0);
 }
 export function parseRoute(hash: string): AppRoute | undefined {
+  const dashboard = /^#\/dashboards\/([A-Za-z0-9_-]{1,512})$/.exec(hash);
+  if (dashboard) return { page: 'dashboards', dashboardId: dashboard[1] };
   if (!hash || hash === '#' || hash === '#/') return { page: 'home' };
   const dataset = /^#\/data\/(datasets|preparation\/edit|preparation\/dataset)\/([A-Za-z0-9_-]{1,128})$/.exec(hash);
   if (dataset) return dataset[1] === 'datasets' ? { page: 'data', datasetId: dataset[2] } : dataset[1] === 'preparation/edit' ? { page: 'data-prep', datasetId: dataset[2] } : { page: 'data-prep', baseDatasetId: dataset[2] };

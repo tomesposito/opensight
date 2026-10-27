@@ -1,3 +1,4 @@
+import { PublishedDashboard } from './PublishedDashboard.js';
 import { DataPrep } from './DataPrep.js';
 import { DatasetDetail } from './DatasetDetail.js';
 import { emptyDraft } from './authoring.js';
@@ -71,7 +72,7 @@ function ApplicationWorkspace({ api, fixtures }: { api: ReturnType<typeof create
     if (problem) return <RouteNotice problem={problem} />;
     switch (route.page) {
       case 'home': return <section className="home-page" aria-label="Home">{access.mode === 'local' && !sampleLoaded ? <LocalEmptyState onSources={() => navigate({ page: 'data-sources' })} onSample={() => setSampleLoaded(true)} /> : sample ? <Dashboard key="sample" fixture={sample} sample /> : <p role="status">The sample dashboard is not included in this build. Ask the operator to restore the pinned sales sample.</p>}</section>;
-      case 'dashboards': return <Dashboards navigate={navigate} />;
+      case 'dashboards': return access.mode === 'hosted' && route.dashboardId ? <PublishedDashboard key={route.dashboardId} id={route.dashboardId} client={api} navigate={navigate} /> : <Dashboards navigate={navigate} client={api} />;
       case 'my-stuff': return <MyStuff recentPages={recentPages} navigate={navigate} />;
       case 'my-folders': return <FolderEmptyState shared={false} navigate={navigate} />;
       case 'shared-folders': return <FolderEmptyState shared navigate={navigate} />;
