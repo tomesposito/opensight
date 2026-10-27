@@ -15,6 +15,8 @@ and `/api/auth/accept` remain in use. Expiry follows `OPENSIGHT_INVITATION_SECON
 
 Revocation expires an unaccepted invitation and erases its sealed token in a
 transaction serialized with acceptance. Historical operation references remain.
+Authentication rereads the invitation after acquiring the tenant lock, so a
+revocation committed after its initial token lookup cannot be bypassed.
 Accepted, expired, revoked and foreign invitation IDs return `RESOURCE_NOT_FOUND`.
 An existing membership returns `MEMBERSHIP_EXISTS` on tenant invitation creation;
 this workflow does not replace memberships or implement member removal.

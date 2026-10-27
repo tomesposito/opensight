@@ -17,6 +17,12 @@ roles, forged tenant/principal fields, foreign namespace paths and invitation
 IDs, member-removal denial, and hosted invocation admission. Existing operator
 idempotency, response shape, mail delivery and session invalidation remain tested.
 
+A deterministic live PostgreSQL regression pauses the final enrollment or
+acceptance transaction after token lookup, commits revocation on another
+connection, then resumes authentication. It failed against the previous code
+with a missing expected rejection. Authentication now rereads invitation state
+under the tenant lock, closing that race without changing enrollment endpoints.
+
 The component tests cover the email/display-name/five-role form, seven-day copy,
 read-only tenant members, create/revoke feedback, and forgetting the shared link
 on remount. The no-tenant session still supports role edits and member removal.

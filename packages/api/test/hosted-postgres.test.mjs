@@ -64,3 +64,52 @@ test('H2 live Postgres: private credentials, concurrent onboarding/MFA/switch, c
   await assert.rejects(auth.verify(fresh.token), { code: 'AUTH_KEY_REVOKED' });
   assert.deepEqual((await tenantPool.query('SELECT * FROM h1_tenants')).rows, []);
 });
+
+test('Issue 150 live Postgres: revocation between invitation lookup and tenant lock denies enrollment and acceptance', { skip: process.env.DATABASE_URL ? false : 'DATABASE_URL is not set' }, async t => {
+  const schema = `invitation_race_${randomUUID().replaceAll('-', '')}`;
+  const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 3, options: `-c search_path=${schema}` });
+  t.after(async () => { await pool.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`); await pool.end(); });
+  await pool.query(`CREATE SCHEMA ${schema}`);
+  const db = new PostgresMetadataDatabase(pool);
+  await initializeMetadata(db, 'postgres'); await initializeAuth(db); await db.transaction(c => initializeAudit(c));
+  const config = hostedConfig(environment()), mail = new StubMailTransport(), now = 1800000000000;
+  const provisioning = new HostedProvisioning(db, config, mail, () => now), auth = await HostedAuth.create(db, config, () => now);
+  const tenant = await provisioning.provision('race-workspace', { name: 'Race workspace', administrator: { email: 'race-admin@example.test', name: 'Admin' } });
+  const token = mail.messages[0].html.match(/<code>([^<]+)<\/code>/)[1], password = randomBytes(24).toString('base64');
+  const enrollment = await auth.enroll(token, password, 'local');
+  await auth.accept(token, password, totp(decode32(enrollment.secret), Math.floor(now / 30000)), 'local');
+  const [admin] = await db.transaction(c => c.query('SELECT user_id FROM h2_memberships WHERE tenant_id = ?', [tenant.tenantId]));
+  const metadata = new TenantMetadata(db, db), context = await metadata.authenticate(null, async () => ({ namespaceId: tenant.namespaceId, userId: admin.user_id }));
+  for (const action of ['enroll', 'accept']) {
+    const created = await provisioning.inviteTenantMember(context, { email: `${action}-race@example.test`, name: action, role: 'reader_ai' });
+    const invitedPassword = randomBytes(24).toString('base64');
+    let code;
+    if (action === 'accept') {
+      const enrolled = await auth.enroll(created.token, invitedPassword, 'local');
+      code = totp(decode32(enrolled.secret), Math.floor(now / 30000));
+    }
+    let invitationTransactions = 0, revoked = false;
+    // Pause the final authentication transaction after its first invitation read,
+    // before it locks the tenant. Revocation commits on another real connection.
+    const racingDb = { durable: true, transaction: work => db.transaction(c => {
+      let lookedUp = false;
+      return work({ query: async (sql, values) => {
+        const rows = await c.query(sql, values);
+        if (!lookedUp && sql === 'SELECT * FROM h2_invitations WHERE token_hash = ?') {
+          lookedUp = true;
+          if (++invitationTransactions === 2) {
+            await provisioning.revokeTenantInvitation(context, created.invitation.id); revoked = true;
+          }
+        }
+        return rows;
+      } });
+    }) };
+    const racingAuth = await HostedAuth.create(racingDb, config, () => now);
+    await assert.rejects(action === 'enroll' ? racingAuth.enroll(created.token, invitedPassword, 'local')
+      : racingAuth.accept(created.token, invitedPassword, code, 'local'), { code: 'AUTHENTICATION_FAILED' });
+    assert.equal(revoked, true);
+    const [stored] = await db.transaction(c => c.query('SELECT accepted, expires_at FROM h2_invitations WHERE invitation_id = ?', [created.invitation.id]));
+    assert.equal(Number(stored.accepted), 0); assert.equal(Number(stored.expires_at), 0);
+    assert.deepEqual(await provisioning.listTenantInvitations(context), []);
+  }
+});

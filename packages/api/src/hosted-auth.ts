@@ -96,7 +96,11 @@ export class HostedAuth {
     const row = (await c.query('SELECT * FROM h2_invitations WHERE token_hash = ?', [digest(token)]))[0];
     if (!row || Number(row.expires_at) <= this.clock() || !equal(String(row.token_hash), digest(token))) denied();
     await this.membership(c, String(row.subject), String(row.tenant_id), true);
-    return row;
+    // The lookup above can precede a concurrent revocation's tenant lock. Read
+    // again while holding that lock so enrollment/acceptance cannot use stale state.
+    const current = (await c.query('SELECT * FROM h2_invitations WHERE token_hash = ?', [digest(token)]))[0];
+    if (!current || Number(current.expires_at) <= this.clock()) denied();
+    return current;
   }
   async enroll(tokenValue: unknown, passwordValue: unknown, peer: string): Promise<{ enrollmentRequired: boolean; secret?: string; uri?: string }> {
     const token = tokenInput(tokenValue), password = passwordInput(passwordValue);
