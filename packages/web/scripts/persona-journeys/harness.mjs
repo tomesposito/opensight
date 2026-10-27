@@ -1,7 +1,7 @@
 // Real browsers and real local servers. The bridge changes transport only.
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
-import { createServer as httpServer } from 'node:http';
+import { createServer as httpServer, request as httpRequest } from 'node:http';
 import { createRequire } from 'node:module';
 import { access, mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
@@ -25,15 +25,24 @@ export async function temporaryRoot() {
 }
 async function listen(server) { server.listen(0, '127.0.0.1'); await once(server, 'listening'); return `http://127.0.0.1:${server.address().port}`; }
 async function close(server) { if (server?.listening) await new Promise(r => { server.close(r); server.closeAllConnections(); }); }
+// node:http preserves the synthetic Host header required by the hosted boundary.
+function forward(url, method, headers, body) {
+  return new Promise((resolve, reject) => {
+    const req = httpRequest(url, { method, headers }, res => {
+      const chunks = []; res.on('data', chunk => chunks.push(chunk));
+      res.on('end', () => resolve({ status: res.statusCode, headers: res.headers, body: Buffer.concat(chunks) }));
+    }); req.on('error', reject); req.end(body);
+  });
+}
 async function viteServer() {
-  const vite = await createServer({ root: webRoot, configFile: resolve(webRoot, 'vite.config.ts'), server: { host: '127.0.0.1', port: 0, strictPort: true }, logLevel: 'error' });
+  const vite = await createServer({ root: webRoot, configFile: resolve(webRoot, 'vite.config.ts'), server: { host: '127.0.0.1', port: 0, strictPort: true, hmr: false, ws: { host: new URL(origin).hostname, protocol: 'wss', clientPort: 443 } }, logLevel: 'error' });
   await vite.listen(); return vite;
 }
 export async function startLocalStack(dataRoot) {
   const { createApiServer } = await import('../../../api/dist/index.js');
   const stack = { origin, dataRoot };
   stack.start = async () => {
-    stack.api = await createApiServer({ dataRoot, localData: true, prepStorePath: resolve(dataRoot, 'prep.json') });
+    stack.api = await createApiServer({ dataRoot, localData: true, prepStorePath: resolve(dataRoot, 'prep.json'), localUploadPath: resolve(dataRoot, 'uploads.duckdb'), analyticsStorePath: resolve(dataRoot, 'analytics.sqlite') });
     stack.apiTransport = await listen(stack.api);
     stack.vite = await viteServer();
     stack.transport = `http://127.0.0.1:${stack.vite.httpServer.address().port}`;
@@ -66,9 +75,10 @@ export async function startHostedStack() {
     stack.vite = await viteServer(); stack.transport = `http://127.0.0.1:${stack.vite.httpServer.address().port}`;
     stack.tokens = { admin: (await stack.fixture.login()).token, reader: (await stack.fixture.reader.login()).token };
     stack.request = async (path, method = 'GET', body, authorization = `Bearer ${stack.tokens.admin}`) => {
-      const response = await fetch(stack.apiTransport + path, { method, redirect: 'manual', headers: { host: new URL(origin).host, authorization,
-        'content-type': 'application/json', 'idempotency-key': randomUUID() }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
-      return { status: response.status, body: await response.json() };
+      const response = await forward(stack.apiTransport + path, method, { host: new URL(origin).host,
+        ...(!path.startsWith('/api/auth/') && authorization ? { authorization } : {}),
+        'content-type': 'application/json', 'idempotency-key': randomUUID() }, body === undefined ? undefined : JSON.stringify(body));
+      return { status: response.status, body: JSON.parse(response.body) };
     };
     return stack;
   } catch (error) { await stack.stop(); throw error; }
@@ -100,7 +110,8 @@ export async function routeBridge(context, stack, journey) {
   await context.routeWebSocket('**/*', socket => {
     // Vite HMR is not required for an acceptance run. Check its origin anyway.
     if (new URL(socket.url()).host !== new URL(stack.origin).host) journey.external.push(socket.url());
-    socket.close();
+    // Leave an inert same-origin socket open: closing before Vite receives its
+    // handshake can itself cause a pageerror in recent Vite clients.
   });
   await context.route(/^https?:/, async route => {
     const req = route.request(), url = new URL(req.url());
@@ -109,9 +120,9 @@ export async function routeBridge(context, stack, journey) {
       const api = stack.apiTransport && url.pathname.startsWith('/api/');
       const headers = { ...req.headers() }; delete headers.host; delete headers['content-length'];
       if (api) headers.host = new URL(stack.origin).host;
-      const response = await fetch((api ? stack.apiTransport : stack.transport) + (api ? url.pathname.replace(/^\/api/, '') : url.pathname) + url.search,
-        { method: req.method(), headers, redirect: 'manual', body: req.postDataBuffer() ?? undefined });
-      const body = Buffer.from(await response.arrayBuffer()), responseHeaders = Object.fromEntries(response.headers);
+      const response = await forward((api ? stack.apiTransport : stack.transport) + (api ? url.pathname.replace(/^\/api/, '') : url.pathname) + url.search,
+        req.method(), headers, req.postDataBuffer() ?? undefined);
+      const body = response.body, responseHeaders = response.headers;
       delete responseHeaders['content-encoding']; delete responseHeaders['content-length'];
       if (api) journey.requests.push({ path: url.pathname, method: req.method(), status: response.status,
         ...(url.pathname.endsWith('/query') ? { body: JSON.parse(body) } : {}) });
