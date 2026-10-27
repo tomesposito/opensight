@@ -5,6 +5,8 @@ import { create } from 'react-test-renderer';
 import { AccessProvider } from '../build/test/access.js';
 import { HostedDashboards } from '../build/test/Dashboards.js';
 import { PublishedDashboard } from '../build/test/PublishedDashboard.js';
+import { QSidePanel } from '../build/test/QSidePanel.js';
+import { OEntry } from '../build/test/OEntry.js';
 import { VisualCard } from '../build/test/VisualCard.js';
 import { ControlInput } from '../build/test/ControlInput.js';
 import { emptyDraft, authorReducer, serializeDraft } from '../build/test/authoring.js';
@@ -72,4 +74,18 @@ test('v1 collection pagination, published definition and live query use authenti
 test('linked control choices fail visibly instead of querying arbitrary reader data', () => {
   const value = published(); value.definition.sheets[0].parameterControls[0].dropdown.selectableValues = { linkToDataSetColumn: { dataSetIdentifier: 'sales_data', columnName: 'region' } };
   assert.match(readerControls(value.definition, value.definition.sheets[0]).bindings[0].problem, /DASHBOARD_CONTROL_OPTIONS_UNAVAILABLE/);
+});
+
+for (const role of ['reader', 'reader_ai', 'author', 'author_ai', 'administrator']) test(`published dashboard Ask O respects ${role} capabilities and scopes questions`, async t => {
+  const value = published(); const client = { async getPublishedDashboard() { return value; }, async queryDashboardVisual() { return { rows: [] }; } };
+  const ui = await mount(t, h(PublishedDashboard, { id: 'daily', client, navigate() {} }), role);
+  const triggers = ui.root.findAllByProps({ className: 'q-trigger' });
+  assert.equal(triggers.length, ['reader_ai', 'author_ai', 'administrator'].includes(role) ? 1 : 0);
+  if (!triggers.length) return;
+  assert.match(JSON.stringify(triggers[0].props.children), /Daily Orders/);
+  await act(() => triggers[0].props.onClick());
+  assert.equal(ui.root.findByType(OEntry).props.dashboardId, 'daily');
+  assert.deepEqual(ui.root.findByType(QSidePanel).props.draft.dataset.columns.map(c => c.name), ['region', 'revenue']);
+  assert.match(JSON.stringify(ui.toJSON()), /not configured/);
+  assert.equal(ui.root.findByProps({ role: 'switch' }).props.disabled, true);
 });

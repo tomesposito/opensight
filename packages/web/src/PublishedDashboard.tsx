@@ -1,3 +1,6 @@
+import { QSidePanel } from './QSidePanel.js';
+import { emptyDraft } from './authoring.js';
+import { normalizeVisual } from './compiler.js';
 import { allowed, useAccess, type Session } from './access.js';
 import { useEffect, useMemo, useState } from 'react';
 import type { createApiClient } from './api-client.js';
@@ -10,7 +13,7 @@ import { ControlInput } from './ControlInput.js';
 import type { FixtureVisual } from './model.js';
 import { AppLink, type Navigate } from './AppNavigation.js';
 
-type ReaderClient = Pick<ReturnType<typeof createApiClient>, 'getPublishedDashboard' | 'queryDashboardVisual'> & Partial<Pick<ReturnType<typeof createApiClient>, 'listUsers' | 'shareDashboard'>>;
+type ReaderClient = Pick<ReturnType<typeof createApiClient>, 'getPublishedDashboard' | 'queryDashboardVisual'> & Partial<Pick<ReturnType<typeof createApiClient>, 'listUsers' | 'shareDashboard' | 'queryO' | 'queryDataset'>>;
 export function PublishedDashboard({ id, client, navigate }: { id: string; client: ReaderClient; navigate: Navigate }) {
   const access = useAccess();
   const [state, setState] = useState<{ value?: Definition; error?: string }>(), [attempt, setAttempt] = useState(0);
@@ -31,11 +34,26 @@ export function PublishedDashboard({ id, client, navigate }: { id: string; clien
 }
 function PublishedContent({ value, client }: { value: Definition; client: ReaderClient }) {
   const preview = useMemo(() => buildApiPreview(value, 'dashboard', []), [value]);
+  const questionDraft = useMemo(() => {
+    const columns = new Map<string, { name: string; type: 'STRING' | 'DATETIME' | 'DECIMAL' }>();
+    for (const sheet of preview.sheets) for (const visual of sheet.visuals) {
+      try {
+        const model = normalizeVisual(visual.source, visual.definition, visual.path);
+        for (const field of model.dimensions) columns.set(field.column, { name: field.column, type: field.dateGranularity ? 'DATETIME' : 'STRING' });
+        for (const field of model.measures) columns.set(field.column, { name: field.column, type: 'DECIMAL' });
+      } catch { /* Unsupported visuals retain their published diagnostics. */ }
+    }
+    return { ...emptyDraft(), title: value.name, dataset: { id: value.id, name: value.name, columns: [...columns.values()] } };
+  }, [preview, value]);
+  const questionClient = useMemo(() => ({ dataset: questionDraft.dataset, queryO: client.queryO,
+    queryDataset: () => Promise.reject(new Error('DASHBOARD_QUERY_REQUIRED: Reader questions must use the dashboard-scoped O endpoint.')),
+  }), [client, questionDraft]);
   const [sheetId, setSheetId] = useState(preview.sheets[0]?.id);
   const sheet = preview.sheets.find(s => s.id === sheetId), rawSheet = value.definition.sheets?.find(s => s.sheetId === sheetId);
   const [controlValues, setControlValues] = useState<ControlValues>({});
   const controls = useMemo(() => rawSheet ? readerControls(value.definition, rawSheet) : { bindings: [], messages: [] }, [value, rawSheet]);
   return <>
+    <QSidePanel draft={questionDraft} client={questionClient} dashboardId={value.id} />
     <div className="dashboard-heading"><h1>{value.name}</h1><span className="phase-badge">Published · Version {value.version} · Live data</span></div>
     {value.errors.map((error, i) => <p role="alert" key={i}>{error.errorCode}: {error.message}</p>)}
     <nav className="sheet-tabs" aria-label="Sheets">{preview.sheets.map(s => <button key={s.id} aria-current={s.id === sheetId ? 'page' : undefined} onClick={() => setSheetId(s.id)}>{s.name}</button>)}</nav>
