@@ -66,10 +66,10 @@ export async function assertReferenceErasureStores(db: Database): Promise<void> 
       for (const row of await c.query("SELECT name FROM sqlite_schema WHERE type = 'table'")) {
         const name = String(row.name);
         if (name.startsWith('sr_')) tables.push(name);
-        else if (/^[a-z][a-z0-9_]*$/.test(name) && (await c.query(`PRAGMA table_info(${name})`)).some(column => column.name === 'tenant_id')) tables.push(name);
+        else if ((await c.query(`PRAGMA table_info("${name.replaceAll('"', '""')}")`)).some(column => ['tenant_id', 'namespace_id'].includes(String(column.name)))) tables.push(name);
       }
     } else tables = (await c.query(`SELECT DISTINCT table_name FROM information_schema.columns
-      WHERE table_schema = current_schema() AND (column_name = 'tenant_id' OR substr(table_name, 1, 3) = 'sr_')`)).map(row => String(row.table_name));
+      WHERE table_schema = current_schema() AND (column_name IN ('tenant_id', 'namespace_id') OR substr(table_name, 1, 3) = 'sr_')`)).map(row => String(row.table_name));
     const supported = new Set<string>([...tenantDeletionTables, 'h2_memberships', 'h1_namespaces', 'h1_tenants', 'h8_audit', 'h1_outbox', 'h1_operations', 'h1_revisions']);
     const unsupported = tables.filter(table => !supported.has(table)).sort();
     if (unsupported.length) throw new MetadataError('TENANT_ERASURE_STORE_UNSUPPORTED', 503, { stores: unsupported });
@@ -97,4 +97,18 @@ export async function purgeTenantRows(c: SqlConnection, tenantId: string): Promi
   await c.query(`UPDATE h1_tenants SET placement = NULL, limit_policy = NULL, display_name = NULL, slug = NULL
     WHERE tenant_id = ? AND (${tenantScrub})`, [tenantId]);
   return subjects;
+}
+
+export function assertNoTenantOrphans(remaining: ErasureCount[]): void {
+  if (remaining.length) throw new MetadataError('TENANT_ERASURE_ORPHANS_REMAIN', 503, { remaining });
+}
+export async function verifyTenantRows(c: SqlConnection, tenantId: string, subjects: readonly string[] = []): Promise<void> {
+  const remaining = (await tenantDeletionInventory(c, tenantId)).filter(entry => ['delete', 'scrub'].includes(entry.action) && entry.count > 0);
+  // Membership deletion must not hide a failed deletion of its former exclusive identity.
+  for (const table of ['h2_login_selections', 'h2_identities']) {
+    let count = 0;
+    for (const subject of subjects) count += await erasureCount(c, table, 'subject = ?', [subject]);
+    if (count) remaining.push({ store: table, action: 'delete', count });
+  }
+  assertNoTenantOrphans(remaining);
 }

@@ -6,7 +6,7 @@ import { seal, unseal, digest } from './auth-crypto.js';
 import { identifier } from './metadata-resources.js';
 import { MetadataOperator } from './metadata-operator.js';
 import { appendOperatorAudit } from './operator-audit.js';
-import { tenantDeletionInventory, assertReferenceErasureStores, purgeTenantRows, type TenantErasureCache, type TenantDeletionOptions, type TenantDeletionReport } from './tenant-erasure.js';
+import { tenantDeletionInventory, assertReferenceErasureStores, purgeTenantRows, verifyTenantRows, assertNoTenantOrphans, type ErasureCount, type TenantErasureCache, type TenantDeletionOptions, type TenantDeletionReport } from './tenant-erasure.js';
 
 // Foreign-key order; only application tables, never database roles or environment.
 export const referenceTables = ['h1_tenants', 'h1_namespaces', 'h1_revisions', 'h1_resources', 'h1_links', 'h1_operations', 'h1_outbox', 'h1_migrations',
@@ -151,7 +151,7 @@ export class ReferenceMaintenance {
   async deleteTenant(operationId: string, externalCopies?: string, options: TenantDeletionOptions = {}): Promise<TenantDeletionReport> {
     if (options.dryRun !== undefined && typeof options.dryRun !== 'boolean') failure('TENANT_ERASURE_MODE_INVALID');
     const operator = new MetadataOperator(this.db), op = await operator.inspect(identifier(operationId));
-    if (op.action !== 'delete' || !['revoked', 'artifacts-removed', 'deleted'].includes(op.step)) failure('OPERATION_TRANSITION_INVALID');
+    if (op.action !== 'delete' || !['revoked', 'artifacts-removed', 'deleted', 'erasure-verified'].includes(op.step)) failure('OPERATION_TRANSITION_INVALID');
     const dryRun = options.dryRun !== false;
     if (!dryRun && options.confirmTenantId !== op.tenantId) failure('TENANT_ERASURE_CONFIRMATION_REQUIRED');
     if (!dryRun && externalCopies !== 'none') failure('BACKUP_COPIES_UNRESOLVED');
@@ -159,30 +159,63 @@ export class ReferenceMaintenance {
     const registry = await this.registry(true);
     const report: TenantDeletionReport = { tenantId: op.tenantId, operationId, dryRun, status: 'planned',
       counts: await this.db.transaction(c => tenantDeletionInventory(c, op.tenantId)) };
-    report.counts.push({ store: 'backups.files', action: 'delete', count: (await this.backupFiles()).length },
+    const files = await this.backupFiles();
+    for (const file of files) if (!(await lstat(join(this.directory, file))).isFile()) failure('BACKUP_PURGE_FAILED');
+    report.counts.push({ store: 'backups.files', action: 'delete', count: files.length },
       { store: 'backups.registrations', action: 'delete', count: Object.keys(registry.backups).length },
       { store: 'backups.deleted-tenants', action: 'fence', count: registry.deleted.includes(op.tenantId) ? 0 : 1 });
     const cached = this.caches.map(cache => cache.countTenant(op.tenantId));
     if (cached.some(count => !Number.isSafeInteger(count) || count < 0)) failure('TENANT_ERASURE_INVENTORY_INVALID');
     report.counts.push({ store: 'blaze.memory', action: 'delete', count: cached.reduce((a, b) => a + b, 0) });
     if (dryRun) return report;
-    // Tombstone the independent registry first. A crash at any subsequent step
-    // cannot make an old registered snapshot eligible for restore again.
-    if (!registry.deleted.includes(op.tenantId)) registry.deleted.push(op.tenantId);
-    registry.backups = {}; await this.saveRegistry(registry);
-    // Purge every managed backup, including abandoned writes and temporary files.
-    for (const file of await readdir(this.directory)) if (file !== 'registry') {
-      const path = join(this.directory, file); if (!(await lstat(path)).isFile()) failure('BACKUP_PURGE_FAILED');
-      await unlink(path);
+    const workRemains = report.counts.some(entry => entry.action !== 'retain' && entry.count > 0);
+    if (op.step === 'erasure-verified' && !workRemains) {
+      await this.verifyExternalErasure(op.tenantId);
+      await this.db.transaction(c => verifyTenantRows(c, op.tenantId));
+      return { ...report, status: 'noop' };
     }
-    await syncDirectory(this.directory);
+    // Fence old snapshots before removing bytes. Do not rewrite an unchanged
+    // registry on retries; a crash cannot make old snapshots restorable again.
+    if (!registry.deleted.includes(op.tenantId) || Object.keys(registry.backups).length) {
+      if (!registry.deleted.includes(op.tenantId)) registry.deleted.push(op.tenantId);
+      registry.backups = {}; await this.saveRegistry(registry);
+    }
+    for (const file of files) await unlink(join(this.directory, file));
+    if (files.length) await syncDirectory(this.directory);
     for (const cache of this.caches) cache.purgeTenant(op.tenantId);
-    await this.db.transaction(c => purgeTenantRows(c, op.tenantId));
-    if (op.step === 'revoked') await operator.checkpoint(operationId, 'revoked', 'artifacts-removed');
-    await operator.finishDeletion(operationId);
-    await this.db.transaction(c => appendOperatorAudit(c, { action: 'tenant.deletion-completed', tenantId: op.tenantId }));
+    await this.verifyExternalErasure(op.tenantId);
+    await this.db.transaction(async c => {
+      const subjects = await purgeTenantRows(c, op.tenantId);
+      await verifyTenantRows(c, op.tenantId, subjects);
+      // Metadata finalization and its audit receipt share the purge transaction.
+      const atomic = new MetadataOperator({ transaction: work => work(c), close: async () => {} });
+      if (op.step === 'revoked') await atomic.checkpoint(operationId, 'revoked', 'artifacts-removed');
+      await atomic.finishDeletion(operationId);
+      await verifyTenantRows(c, op.tenantId, subjects);
+      if (op.step !== 'erasure-verified') {
+        // Older finalizers may already have appended the receipt. Preserve it.
+        if (!(await c.query("SELECT event_id FROM h8_audit WHERE tenant_id = ? AND action = 'tenant.deletion-completed'", [op.tenantId])).length) {
+          await appendOperatorAudit(c, { action: 'tenant.deletion-completed', tenantId: op.tenantId });
+        }
+        // Durable idempotency marker, independent of the audit retention window.
+        await c.query("UPDATE h1_operations SET step = 'erasure-verified' WHERE operation_id = ?", [operationId]);
+      }
+    });
     return { ...report, status: 'deleted' };
   }
+  private async verifyExternalErasure(tenantId: string): Promise<void> {
+    const registry = await this.registry(), remaining: ErasureCount[] = [];
+    const files = (await this.backupFiles()).length, registrations = Object.keys(registry.backups).length;
+    if (files) remaining.push({ store: 'backups.files', action: 'delete', count: files });
+    if (registrations) remaining.push({ store: 'backups.registrations', action: 'delete', count: registrations });
+    if (!registry.deleted.includes(tenantId)) remaining.push({ store: 'backups.deleted-tenants', action: 'fence', count: 1 });
+    const counts = this.caches.map(cache => cache.countTenant(tenantId));
+    if (counts.some(count => !Number.isSafeInteger(count) || count < 0)) failure('TENANT_ERASURE_INVENTORY_INVALID');
+    const cached = counts.reduce((a, b) => a + b, 0);
+    if (cached) remaining.push({ store: 'blaze.memory', action: 'delete', count: cached });
+    assertNoTenantOrphans(remaining);
+  }
+
   async retain(auditDays: number, usageDays: number, now = Date.now()): Promise<void> {
     if (!Number.isSafeInteger(auditDays) || auditDays < 0 || !Number.isSafeInteger(usageDays) || usageDays < 1) failure('REFERENCE_CONFIG_INVALID');
     await this.db.transaction(async c => {

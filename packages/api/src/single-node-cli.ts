@@ -48,5 +48,7 @@ try {
   if (command !== 'serve') { await reference.close(); reference = undefined; console.log('REFERENCE_OPERATION_COMPLETE'); }
 } catch (error) {
   await reference?.close().catch(() => {});
-  console.error(error instanceof MetadataError ? error.code : 'REFERENCE_OPERATION_FAILED'); process.exitCode = 1;
+  console.error(error instanceof MetadataError ? error.code : 'REFERENCE_OPERATION_FAILED');
+  if (error instanceof MetadataError && ['TENANT_ERASURE_ORPHANS_REMAIN', 'TENANT_ERASURE_STORE_UNSUPPORTED'].includes(error.code)) console.error(JSON.stringify(error.detail));
+  process.exitCode = 1;
 }

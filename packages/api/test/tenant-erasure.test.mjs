@@ -155,3 +155,83 @@ test('115 erases attached in-memory cache entries by exact tenant ownership', as
   await maintenance.deleteTenant('erase-one', 'none', execute);
   assert.equal(cache.countTenant('tenant-one'), 0); assert.equal(cache.countTenant('tenant-two'), 1);
 });
+
+test('115 a second run is a byte-for-byte no-op, even after the completion audit has aged out', async t => {
+  const f = await fixture(t); await f.maintenance.deleteTenant('erase-one', 'none', execute);
+  const registry = await readFile(join(f.backups, 'registry')), modified = (await stat(join(f.backups, 'registry'))).mtimeMs;
+  let before = await snapshot(f.db);
+  const again = await f.maintenance.deleteTenant('erase-one', 'none', execute);
+  assert.equal(again.status, 'noop'); assert.ok(again.counts.every(c => c.action === 'retain' || c.count === 0));
+  assert.deepEqual(await snapshot(f.db), before); assert.deepEqual(await readFile(join(f.backups, 'registry')), registry);
+  assert.equal((await stat(join(f.backups, 'registry'))).mtimeMs, modified);
+  await f.maintenance.retain(1, 30, Date.now() + 3 * 86400000);
+  before = await snapshot(f.db);
+  assert.equal(before.h8_audit.filter(r => r.action === 'tenant.deletion-completed').length, 0);
+  assert.equal((await f.maintenance.deleteTenant('erase-one', 'none', execute)).status, 'noop');
+  assert.deepEqual(await snapshot(f.db), before);
+});
+
+test('115 orphan verification lists residual assets, rolls back SQL, and safely retries after backups were purged', async t => {
+  const f = await fixture(t), backup = await f.maintenance.backup();
+  await f.db.transaction(c => c.query("CREATE TRIGGER leave_assets BEFORE DELETE ON h1_resources WHEN OLD.tenant_id = 'tenant-one' BEGIN SELECT RAISE(IGNORE); END"));
+  const before = await snapshot(f.db);
+  await assert.rejects(f.maintenance.deleteTenant('erase-one', 'none', execute), error => {
+    assert.equal(error.code, 'TENANT_ERASURE_ORPHANS_REMAIN');
+    assert.ok(error.detail.remaining.some(c => c.store === 'h1_resources' && c.count === 2)); return true;
+  });
+  assert.deepEqual(await snapshot(f.db), before); assert.deepEqual(await readdir(f.backups), ['registry']);
+  await assert.rejects(f.maintenance.restore(backup.id), { code: 'BACKUP_UNREGISTERED' });
+  await f.db.transaction(c => c.query('DROP TRIGGER leave_assets'));
+  const restarted = await ReferenceMaintenance.open(f.db, f.backups, f.key, 'frozen');
+  assert.equal((await restarted.deleteTenant('erase-one', 'none', execute)).status, 'deleted');
+  assert.equal((await restarted.deleteTenant('erase-one', 'none', execute)).status, 'noop');
+});
+
+test('115 completion receipt failure cannot mark erasure complete or lose identity ownership', async t => {
+  const f = await fixture(t);
+  await f.db.transaction(c => c.query("CREATE TRIGGER fail_receipt BEFORE INSERT ON h8_audit WHEN NEW.action = 'tenant.deletion-completed' BEGIN SELECT RAISE(ABORT, 'simulated receipt failure'); END"));
+  const before = await snapshot(f.db);
+  await assert.rejects(f.maintenance.deleteTenant('erase-one', 'none', execute), /simulated receipt failure/);
+  assert.deepEqual(await snapshot(f.db), before);
+  assert.equal((await f.operator.inspect('erase-one')).step, 'revoked');
+  await f.db.transaction(c => c.query('DROP TRIGGER fail_receipt'));
+  await f.maintenance.deleteTenant('erase-one', 'none', execute);
+  const after = await snapshot(f.db);
+  assert.equal(after.h8_audit.filter(r => r.action === 'tenant.deletion-completed').length, 1);
+  assert.ok(!after.h2_identities.some(r => r.subject === 'one'));
+});
+
+test('115 resumes both legacy artifacts-removed and deleted checkpoints', async t => {
+  for (const finished of [false, true]) await t.test(String(finished), async t => {
+    const f = await fixture(t); await f.operator.checkpoint('erase-one', 'revoked', 'artifacts-removed');
+    if (finished) await f.operator.finishDeletion('erase-one');
+    await f.maintenance.deleteTenant('erase-one', 'none', execute);
+    assert.equal((await f.operator.inspect('erase-one')).step, 'erasure-verified');
+    assert.equal((await f.maintenance.deleteTenant('erase-one', 'none', execute)).status, 'noop');
+  });
+});
+
+test('115 failed cache purge is reported and keeps finalization pending for a safe retry', async t => {
+  const f = await fixture(t); let entries = 1, remove = false;
+  const cache = { countTenant() { return entries; }, purgeTenant() { if (remove) entries = 0; } };
+  const maintenance = await ReferenceMaintenance.open(f.db, f.backups, f.key, 'frozen', [cache]);
+  const before = await snapshot(f.db);
+  await assert.rejects(maintenance.deleteTenant('erase-one', 'none', execute), error => {
+    assert.equal(error.code, 'TENANT_ERASURE_ORPHANS_REMAIN');
+    assert.deepEqual(error.detail.remaining, [{ store: 'blaze.memory', action: 'delete', count: 1 }]); return true;
+  });
+  assert.deepEqual(await snapshot(f.db), before);
+  remove = true; await maintenance.deleteTenant('erase-one', 'none', execute);
+  assert.equal((await maintenance.deleteTenant('erase-one', 'none', execute)).status, 'noop');
+});
+
+test('115 identity deletion cannot be silently skipped after memberships disappear', async t => {
+  const f = await fixture(t);
+  await f.db.transaction(c => c.query("CREATE TRIGGER leave_identity BEFORE DELETE ON h2_identities WHEN OLD.subject = 'one' BEGIN SELECT RAISE(IGNORE); END"));
+  const before = await snapshot(f.db);
+  await assert.rejects(f.maintenance.deleteTenant('erase-one', 'none', execute), error => {
+    assert.equal(error.code, 'TENANT_ERASURE_ORPHANS_REMAIN');
+    assert.ok(error.detail.remaining.some(c => c.store === 'h2_identities' && c.count === 1)); return true;
+  });
+  assert.deepEqual(await snapshot(f.db), before);
+});
