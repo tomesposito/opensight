@@ -4,6 +4,7 @@ export type SqlValue = string | number | null;
 export type SqlRow = Record<string, SqlValue>;
 export interface SqlConnection { query(sql: string, values?: readonly SqlValue[]): Promise<SqlRow[]> }
 export interface Database {
+  readonly dialect?: 'sqlite' | 'postgres';
   /** Hosted authentication requires durable storage; ephemeral adapters fail startup. */
   readonly durable?: boolean;
   transaction<T>(work: (connection: SqlConnection) => Promise<T>, scope?: { tenantId: string; namespaceId: string }): Promise<T>;
@@ -37,6 +38,7 @@ export function constraintError(error: unknown): never {
 
 /** SQLite is the zero-service development adapter. A transaction never escapes its callback. */
 export class SqliteMetadataDatabase implements Database {
+  readonly dialect = 'sqlite' as const;
   readonly durable: boolean;
   readonly #db: DatabaseSync;
   #tail: Promise<unknown> = Promise.resolve();
@@ -70,6 +72,7 @@ export class SqliteMetadataDatabase implements Database {
 
 /** Use a separate owner/operator pool and a non-owner, NOBYPASSRLS tenant pool. */
 export class PostgresMetadataDatabase implements Database {
+  readonly dialect = 'postgres' as const;
   readonly durable = true;
   constructor(private readonly pool: MetadataPool, private readonly tenantRole = false) {}
   async transaction<T>(work: (connection: SqlConnection) => Promise<T>, scope?: { tenantId: string; namespaceId: string }): Promise<T> {

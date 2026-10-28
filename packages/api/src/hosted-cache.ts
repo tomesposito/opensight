@@ -48,5 +48,10 @@ export class HostedCache implements HostedCacheAdapter {
       throw error;
     }
   }
+  countTenant(tenantId: string): number { return [...this.entries.values()].filter(e => e.tenant === tenantId).length; }
+  /** Offline erasure only, after all writers have stopped. */
+  purgeTenant(tenantId: string): void {
+    for (const [key, entry] of this.entries) if (entry.tenant === tenantId) this.entries.delete(key);
+  }
   bytes(tenant?: string): number { return this.size(tenant); }
 }

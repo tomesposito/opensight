@@ -6,7 +6,7 @@ import { seal, unseal, digest } from './auth-crypto.js';
 import { identifier } from './metadata-resources.js';
 import { MetadataOperator } from './metadata-operator.js';
 import { appendOperatorAudit } from './operator-audit.js';
-import { tenantDeletionInventory, type TenantDeletionOptions, type TenantDeletionReport } from './tenant-erasure.js';
+import { tenantDeletionInventory, assertReferenceErasureStores, purgeTenantRows, type TenantErasureCache, type TenantDeletionOptions, type TenantDeletionReport } from './tenant-erasure.js';
 
 // Foreign-key order; only application tables, never database roles or environment.
 export const referenceTables = ['h1_tenants', 'h1_namespaces', 'h1_revisions', 'h1_resources', 'h1_links', 'h1_operations', 'h1_outbox', 'h1_migrations',
@@ -26,8 +26,8 @@ async function privateWrite(path: string, value: string): Promise<void> {
 /** Called under the reference's exclusive lifetime/maintenance lock, with every
  * API/scheduler writer stopped. Registry is independent of database backups. */
 export class ReferenceMaintenance {
-  private constructor(readonly db: Database, readonly directory: string, private readonly key: Buffer) {}
-  static async open(db: Database, path: string, key: Buffer, maintenance: string | undefined): Promise<ReferenceMaintenance> {
+  private constructor(readonly db: Database, readonly directory: string, private readonly key: Buffer, private readonly caches: readonly TenantErasureCache[]) {}
+  static async open(db: Database, path: string, key: Buffer, maintenance: string | undefined, caches: readonly TenantErasureCache[] = []): Promise<ReferenceMaintenance> {
     if (maintenance !== 'frozen') failure('REFERENCE_MAINTENANCE_REQUIRED');
     // Private runtime storage must not accidentally become a public repository export.
     const absolute = resolve(path), repo = resolve(new URL('../../..', import.meta.url).pathname);
@@ -43,7 +43,7 @@ export class ReferenceMaintenance {
         existing = dirname(existing);
       }
     }
-    return new ReferenceMaintenance(db, absolute, key);
+    return new ReferenceMaintenance(db, absolute, key, [...caches]);
   }
   private async registry(allowMissing = false): Promise<Registry> {
     const path = join(this.directory, 'registry');
@@ -155,12 +155,16 @@ export class ReferenceMaintenance {
     const dryRun = options.dryRun !== false;
     if (!dryRun && options.confirmTenantId !== op.tenantId) failure('TENANT_ERASURE_CONFIRMATION_REQUIRED');
     if (!dryRun && externalCopies !== 'none') failure('BACKUP_COPIES_UNRESOLVED');
+    await assertReferenceErasureStores(this.db);
     const registry = await this.registry(true);
     const report: TenantDeletionReport = { tenantId: op.tenantId, operationId, dryRun, status: 'planned',
       counts: await this.db.transaction(c => tenantDeletionInventory(c, op.tenantId)) };
     report.counts.push({ store: 'backups.files', action: 'delete', count: (await this.backupFiles()).length },
       { store: 'backups.registrations', action: 'delete', count: Object.keys(registry.backups).length },
       { store: 'backups.deleted-tenants', action: 'fence', count: registry.deleted.includes(op.tenantId) ? 0 : 1 });
+    const cached = this.caches.map(cache => cache.countTenant(op.tenantId));
+    if (cached.some(count => !Number.isSafeInteger(count) || count < 0)) failure('TENANT_ERASURE_INVENTORY_INVALID');
+    report.counts.push({ store: 'blaze.memory', action: 'delete', count: cached.reduce((a, b) => a + b, 0) });
     if (dryRun) return report;
     // Tombstone the independent registry first. A crash at any subsequent step
     // cannot make an old registered snapshot eligible for restore again.
@@ -172,13 +176,8 @@ export class ReferenceMaintenance {
       await unlink(path);
     }
     await syncDirectory(this.directory);
-    await this.db.transaction(async c => {
-      for (const table of ['analytics_events', 'analytics_settings', 'h8_recovery', 'h8_usage_events', 'h8_monthly_usage', 'h8_usage', 'h7_deliveries', 'h7_occurrences', 'h7_jobs', 'h7_migrations', 'h6_sessions', 'h5_embedding_config', 'h2_onboarding', 'h2_invitations', 'h2_sessions', 'h2_memberships']) await c.query(`DELETE FROM ${table} WHERE tenant_id = ?`, [op.tenantId]);
-      await c.query('DELETE FROM h2_identities WHERE NOT EXISTS (SELECT 1 FROM h2_memberships m WHERE m.subject = h2_identities.subject)');
-      // Namespace reservation remains, but labels and placement may contain tenant data.
-      await c.query("UPDATE h1_namespaces SET name = 'deleted' WHERE tenant_id = ?", [op.tenantId]);
-      await c.query('UPDATE h1_tenants SET placement = NULL, limit_policy = NULL WHERE tenant_id = ?', [op.tenantId]);
-    });
+    for (const cache of this.caches) cache.purgeTenant(op.tenantId);
+    await this.db.transaction(c => purgeTenantRows(c, op.tenantId));
     if (op.step === 'revoked') await operator.checkpoint(operationId, 'revoked', 'artifacts-removed');
     await operator.finishDeletion(operationId);
     await this.db.transaction(c => appendOperatorAudit(c, { action: 'tenant.deletion-completed', tenantId: op.tenantId }));
