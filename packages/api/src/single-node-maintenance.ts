@@ -54,7 +54,10 @@ export class ReferenceMaintenance {
       for (const id of Object.keys(r.backups)) identifier(id);
       return r;
     } catch (error) {
-      if (allowMissing && error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT' && (await this.backupFiles()).length === 0) {
+      if (allowMissing && error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT' && (await this.backupFiles()).every(file => /^registry\.[a-f0-9-]{36}\.tmp$/.test(file))) {
+        // Before the very first atomic registry rename, only abandoned registry
+        // writes can exist. No snapshot is written before that rename. Recover
+        // this interrupted initialization, but never adopt unregistered backups.
         return { version: 1, backups: {}, deleted: [] };
       }
       return failure('BACKUP_REGISTRY_INVALID');

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, readdir, readFile, stat } from 'node:fs/promises';
+import { mkdtemp, rm, readdir, readFile, stat, mkdir, writeFile, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
@@ -234,4 +234,47 @@ test('115 identity deletion cannot be silently skipped after memberships disappe
     assert.ok(error.detail.remaining.some(c => c.store === 'h2_identities' && c.count === 1)); return true;
   });
   assert.deepEqual(await snapshot(f.db), before);
+});
+
+
+test('115 retries interrupted first-registry initialization without accepting unregistered snapshots', async t => {
+  const f = await fixture(t);
+  await mkdir(f.backups);
+  const temporary = join(f.backups, 'registry.00000000-0000-4000-8000-000000000000.tmp');
+  await writeFile(temporary, 'interrupted initial encrypted write');
+  const before = await snapshot(f.db);
+  assert.equal(count(await f.maintenance.deleteTenant('erase-one'), 'backups.files'), 1);
+  assert.equal(await readFile(temporary, 'utf8'), 'interrupted initial encrypted write');
+  assert.deepEqual(await snapshot(f.db), before);
+  await f.maintenance.deleteTenant('erase-one', 'none', execute);
+  assert.deepEqual(await readdir(f.backups), ['registry']);
+  assert.equal((await f.maintenance.deleteTenant('erase-one', 'none', execute)).status, 'noop');
+  const missing = join(f.dir, 'unregistered'); await mkdir(missing);
+  await writeFile(join(missing, 'old.backup'), 'unregistered snapshot');
+  const other = await ReferenceMaintenance.open(f.db, missing, f.key, 'frozen');
+  await assert.rejects(other.deleteTenant('erase-one', 'none', execute), { code: 'BACKUP_REGISTRY_INVALID' });
+  assert.equal(await readFile(join(missing, 'old.backup'), 'utf8'), 'unregistered snapshot');
+});
+
+test('115 rejects symlink backup entries before modifying registry, SQL, or external files', async t => {
+  const f = await fixture(t); await f.maintenance.backup();
+  const external = join(f.dir, 'external'); await writeFile(external, 'preserve');
+  await symlink(external, join(f.backups, 'linked.backup'));
+  const before = await snapshot(f.db), registry = await readFile(join(f.backups, 'registry'));
+  await assert.rejects(f.maintenance.deleteTenant('erase-one', 'none', execute), { code: 'BACKUP_PURGE_FAILED' });
+  assert.deepEqual(await snapshot(f.db), before); assert.deepEqual(await readFile(join(f.backups, 'registry')), registry);
+  assert.equal(await readFile(external, 'utf8'), 'preserve');
+  const link = join(f.dir, 'linked-directory'); await symlink(f.backups, link);
+  await assert.rejects(ReferenceMaintenance.open(f.db, join(link, 'missing'), f.key, 'frozen'), { code: 'BACKUP_DIRECTORY_INVALID' });
+});
+
+test('115 completed operations still purge reintroduced tenant assets and retain a single receipt', async t => {
+  const f = await fixture(t); await f.maintenance.deleteTenant('erase-one', 'none', execute);
+  await f.db.transaction(c => insertResource(c, { tenantId: 'tenant-one', namespaceId: 'one' }, { kind: 'dataset', id: 'stray' }, {}));
+  const plan = await f.maintenance.deleteTenant('erase-one'); assert.equal(count(plan, 'h1_resources.dataset'), 1);
+  assert.equal((await f.maintenance.deleteTenant('erase-one', 'none', execute)).status, 'deleted');
+  assert.equal((await f.maintenance.deleteTenant('erase-one', 'none', execute)).status, 'noop');
+  const after = await snapshot(f.db);
+  assert.ok(!after.h1_resources.some(row => row.tenant_id === 'tenant-one'));
+  assert.equal(after.h8_audit.filter(row => row.action === 'tenant.deletion-completed').length, 1);
 });
