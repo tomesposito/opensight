@@ -52,9 +52,9 @@ test('H8 deletion purges managed backups and private tenant state; old files can
   const f = await fixture(t), backup = await f.maintenance.backup();
   const old = await readFile(join(f.backups, `${backup.id}.backup`));
   const op = new MetadataOperator(f.db); await op.transition('delete-one', 'tenant-one', 'delete', 1);
-  await assert.rejects(f.maintenance.deleteTenant('delete-one', undefined), { code: 'BACKUP_COPIES_UNRESOLVED' });
+  await assert.rejects(f.maintenance.deleteTenant('delete-one', undefined, { dryRun: false, confirmTenantId: 'tenant-one' }), { code: 'BACKUP_COPIES_UNRESOLVED' });
   assert.equal((await op.tenant('tenant-one')).state, 'deleting');
-  await f.maintenance.deleteTenant('delete-one', 'none'); await f.maintenance.deleteTenant('delete-one', 'none');
+  await f.maintenance.deleteTenant('delete-one', 'none', { dryRun: false, confirmTenantId: 'tenant-one' }); await f.maintenance.deleteTenant('delete-one', 'none', { dryRun: false, confirmTenantId: 'tenant-one' });
   assert.equal((await op.tenant('tenant-one')).state, 'deleted');
   assert.deepEqual(await readdir(f.backups), ['registry']);
   assert.equal((await f.db.transaction(c => c.query("SELECT * FROM h1_resources WHERE tenant_id = 'tenant-one'"))).length, 0);
@@ -62,7 +62,7 @@ test('H8 deletion purges managed backups and private tenant state; old files can
   assert.equal((await op.tenant('tenant-two')).state, 'active');
   await writeFile(join(f.backups, `${backup.id}.backup`), old);
   await assert.rejects(f.maintenance.restore(backup.id), { code: 'BACKUP_UNREGISTERED' });
-  await f.maintenance.deleteTenant('delete-one', 'none');
+  await f.maintenance.deleteTenant('delete-one', 'none', { dryRun: false, confirmTenantId: 'tenant-one' });
   const fresh = await f.maintenance.backup(), target = new SqliteMetadataDatabase(join(f.dir, 'after-delete.sqlite')); t.after(() => target.close());
   await migrateReference(target, referenceEnv, 'sqlite');
   await (await ReferenceMaintenance.open(target, f.backups, f.key, 'frozen')).restore(fresh.id);

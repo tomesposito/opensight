@@ -94,7 +94,7 @@ test('H8 live Postgres fresh install/migrate/restart/restore/deletion, single-no
   assert.equal((await new MetadataOperator(target).tenant('tenant-one')).state, 'suspended');
   assert.equal((await target.transaction(c => c.query("SELECT * FROM h1_resources WHERE kind = 'group'"))).length, 1);
   const op = new MetadataOperator(reference.operator); await op.transition('delete-one', 'tenant-one', 'delete', (await op.tenant('tenant-one')).version);
-  await maintenance.deleteTenant('delete-one', 'none');
+  await maintenance.deleteTenant('delete-one', 'none', { dryRun: false, confirmTenantId: 'tenant-one' });
   assert.deepEqual(await readdir(join(dir, 'backups')), ['registry']);
   assert.equal((await op.tenant('tenant-one')).state, 'deleted'); assert.equal((await op.tenant('tenant-two')).state, 'active');
   await assert.rejects(recovery.restore(backup.id), { code: 'BACKUP_UNREGISTERED' });

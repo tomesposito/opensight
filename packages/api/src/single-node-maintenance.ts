@@ -1,11 +1,12 @@
 import { mkdir, lstat, realpath, open, readFile, rename, readdir, unlink } from 'node:fs/promises';
-import { join, resolve, sep } from 'node:path';
+import { dirname, join, resolve, sep } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { MetadataError, type Database, type SqlRow } from './metadata-db.js';
 import { seal, unseal, digest } from './auth-crypto.js';
 import { identifier } from './metadata-resources.js';
 import { MetadataOperator } from './metadata-operator.js';
 import { appendOperatorAudit } from './operator-audit.js';
+import { tenantDeletionInventory, type TenantDeletionOptions, type TenantDeletionReport } from './tenant-erasure.js';
 
 // Foreign-key order; only application tables, never database roles or environment.
 export const referenceTables = ['h1_tenants', 'h1_namespaces', 'h1_revisions', 'h1_resources', 'h1_links', 'h1_operations', 'h1_outbox', 'h1_migrations',
@@ -31,11 +32,20 @@ export class ReferenceMaintenance {
     // Private runtime storage must not accidentally become a public repository export.
     const absolute = resolve(path), repo = resolve(new URL('../../..', import.meta.url).pathname);
     if (absolute === repo || absolute.startsWith(`${repo}${sep}`) && !absolute.startsWith(`${repo}${sep}.opensight${sep}`)) failure('BACKUP_DIRECTORY_INVALID');
-    await mkdir(absolute, { recursive: true, mode: 0o700 });
-    if (!(await lstat(absolute)).isDirectory() || await realpath(absolute) !== absolute) failure('BACKUP_DIRECTORY_INVALID');
+    // Opening maintenance (including a dry run) must not create directories.
+    let existing = absolute;
+    for (;;) {
+      try {
+        if (!(await lstat(existing)).isDirectory() || await realpath(existing) !== existing) failure('BACKUP_DIRECTORY_INVALID');
+        break;
+      } catch (error) {
+        if (!error || typeof error !== 'object' || !('code' in error) || error.code !== 'ENOENT') throw error;
+        existing = dirname(existing);
+      }
+    }
     return new ReferenceMaintenance(db, absolute, key);
   }
-  private async registry(create = false): Promise<Registry> {
+  private async registry(allowMissing = false): Promise<Registry> {
     const path = join(this.directory, 'registry');
     try {
       if (!(await lstat(path)).isFile()) failure('BACKUP_REGISTRY_INVALID');
@@ -44,17 +54,26 @@ export class ReferenceMaintenance {
       for (const id of Object.keys(r.backups)) identifier(id);
       return r;
     } catch (error) {
-      if (create && error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT' && (await readdir(this.directory)).length === 0) {
-        const r: Registry = { version: 1, backups: {}, deleted: [] }; await this.saveRegistry(r); return r;
+      if (allowMissing && error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT' && (await this.backupFiles()).length === 0) {
+        return { version: 1, backups: {}, deleted: [] };
       }
       return failure('BACKUP_REGISTRY_INVALID');
     }
   }
+  private async backupFiles(): Promise<string[]> {
+    try { return (await readdir(this.directory)).filter(file => file !== 'registry').sort(); }
+    catch (error) {
+      if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT') return [];
+      throw error;
+    }
+  }
   private async saveRegistry(registry: Registry): Promise<void> {
+    await mkdir(this.directory, { recursive: true, mode: 0o700 });
     await privateWrite(join(this.directory, 'registry'), seal(JSON.stringify(registry), this.key, 'h8-registry')); await syncDirectory(this.directory);
   }
   async backup(): Promise<{ id: string; bytes: number; rows: number }> {
     const registry = await this.registry(true), id = randomUUID();
+    await this.saveRegistry(registry);
     const snapshot: Snapshot = { version: 1, tables: {} }; let rows = 0, bytes = 0;
     await this.db.transaction(async c => {
       for (const table of referenceTables) {
@@ -129,11 +148,20 @@ export class ReferenceMaintenance {
       await appendOperatorAudit(c, { action: 'restore.memberships-reviewed', tenantId, detail: { users: userIds.length } });
     });
   }
-  async deleteTenant(operationId: string, externalCopies: string | undefined): Promise<void> {
-    if (externalCopies !== 'none') failure('BACKUP_COPIES_UNRESOLVED');
+  async deleteTenant(operationId: string, externalCopies?: string, options: TenantDeletionOptions = {}): Promise<TenantDeletionReport> {
+    if (options.dryRun !== undefined && typeof options.dryRun !== 'boolean') failure('TENANT_ERASURE_MODE_INVALID');
     const operator = new MetadataOperator(this.db), op = await operator.inspect(identifier(operationId));
     if (op.action !== 'delete' || !['revoked', 'artifacts-removed', 'deleted'].includes(op.step)) failure('OPERATION_TRANSITION_INVALID');
+    const dryRun = options.dryRun !== false;
+    if (!dryRun && options.confirmTenantId !== op.tenantId) failure('TENANT_ERASURE_CONFIRMATION_REQUIRED');
+    if (!dryRun && externalCopies !== 'none') failure('BACKUP_COPIES_UNRESOLVED');
     const registry = await this.registry(true);
+    const report: TenantDeletionReport = { tenantId: op.tenantId, operationId, dryRun, status: 'planned',
+      counts: await this.db.transaction(c => tenantDeletionInventory(c, op.tenantId)) };
+    report.counts.push({ store: 'backups.files', action: 'delete', count: (await this.backupFiles()).length },
+      { store: 'backups.registrations', action: 'delete', count: Object.keys(registry.backups).length },
+      { store: 'backups.deleted-tenants', action: 'fence', count: registry.deleted.includes(op.tenantId) ? 0 : 1 });
+    if (dryRun) return report;
     // Tombstone the independent registry first. A crash at any subsequent step
     // cannot make an old registered snapshot eligible for restore again.
     if (!registry.deleted.includes(op.tenantId)) registry.deleted.push(op.tenantId);
@@ -154,6 +182,7 @@ export class ReferenceMaintenance {
     if (op.step === 'revoked') await operator.checkpoint(operationId, 'revoked', 'artifacts-removed');
     await operator.finishDeletion(operationId);
     await this.db.transaction(c => appendOperatorAudit(c, { action: 'tenant.deletion-completed', tenantId: op.tenantId }));
+    return { ...report, status: 'deleted' };
   }
   async retain(auditDays: number, usageDays: number, now = Date.now()): Promise<void> {
     if (!Number.isSafeInteger(auditDays) || auditDays < 0 || !Number.isSafeInteger(usageDays) || usageDays < 1) failure('REFERENCE_CONFIG_INVALID');
