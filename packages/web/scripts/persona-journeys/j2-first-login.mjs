@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { assert, button, enrollViaApi, invitationFrom, launchBrowser, navigate, runJourney, signIn, startHostedStack } from './harness.mjs';
+import { assert, button, enrollInBrowser, invitationFrom, launchBrowser, navigate, runJourney, signIn, startHostedStack } from './harness.mjs';
 
 await runJourney('j2-first-login', 'Workspace Admin', async j => {
   const stack = await startHostedStack({ invitationSeconds: 604800 }); j.cleanup(stack.stop);
@@ -20,11 +20,14 @@ await runJourney('j2-first-login', 'Workspace Admin', async j => {
     await page.getByRole('heading', { name: 'Sign in', exact: true }).waitFor();
     assert.equal(await page.getByLabel(/tenant id/i).count(), 0);
     assert.equal(await page.getByLabel(/invitation|new password/i).count(), 0);
-    j.gap('browser-enrollment', 'An invited administrator enrolls password and TOTP through SignIn.', 'SignIn offers existing credentials only; the mail explicitly directs enrollment to the API. API enrollment is setup for the browser sign-in checks below.');
   });
-  const admin = await enrollViaApi(stack, invitation, email);
+  let admin;
+  await j.step('browser-enrollment', page, async () => {
+    admin = await enrollInBrowser(page, stack, invitation, email);
+    return 'Mailed invitation opens browser password/TOTP setup; the displayed secret produces a live confirmation, then a fresh code signs in directly to the workspace.';
+  });
   await j.step('admin-sign-in', page, async () => {
-    await signIn(page, stack, admin); await page.locator('.app-shell').waitFor();
+    await page.locator('.app-shell').waitFor();
     await page.getByLabel('Account', { exact: true }).click();
     assert.equal(await page.locator('.product-header .account-workspace').innerText(), 'Acme Analytics');
     assert.match(await page.locator('.account-menu').innerText(), /Acme admin/);
@@ -62,15 +65,18 @@ await runJourney('j2-first-login', 'Workspace Admin', async j => {
       return 'Workspace administrator created a Reader AI invitation; the pending invitation persists and its single-use link is shown only at creation.';
     });
   });
-  const reader = await enrollViaApi(stack, invitationFrom(stack), 'acme-reader@example.test');
   const readerPage = await browser.page(stack); await watch(readerPage);
+  await j.step('reader-browser-enrollment', readerPage, async () => {
+    await enrollInBrowser(readerPage, stack, invitationFrom(stack), 'acme-reader@example.test');
+    return 'The invited Reader AI sets a password and confirms the displayed authenticator secret entirely in the browser, then signs in with a fresh code.';
+  });
   await j.step('reader-sign-in', readerPage, async () => {
-    await signIn(readerPage, stack, reader); await readerPage.locator('.app-shell').waitFor();
+    await readerPage.locator('.app-shell').waitFor();
     assert.equal(await readerPage.locator('#product-navigation').getByRole('link', { name: /^(Analyses|Data)$/ }).count(), 0);
     await readerPage.getByLabel('Account', { exact: true }).click();
     assert.match(await readerPage.locator('.account-menu').innerText(), /Acme reader/);
     assert.doesNotMatch(await readerPage.locator('.account-menu').innerText(), /Acme admin/);
-    return 'Reader AI enrollment uses the API because browser enrollment is issue #152; real SignIn establishes the reader session in a separate context.';
+    return 'Browser enrollment and real SignIn establish the reader session in a separate context; author navigation remains unavailable.';
   });
   const second = await stack.fixture.provisioning.provision(randomUUID(), { name: 'Acme Research', administrator: { email, name: 'Acme admin' } });
   tenantIds.push(second.tenantId);

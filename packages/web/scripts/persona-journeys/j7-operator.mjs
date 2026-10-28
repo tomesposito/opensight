@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { assert, button, enrollViaApi, invitationFrom, launchBrowser, runJourney, signIn, startHostedStack } from './harness.mjs';
+import { assert, button, enrollInBrowser, invitationFrom, launchBrowser, runJourney, startHostedStack } from './harness.mjs';
 
 await runJourney('j7-operator', 'Operator', async j => {
   const stack = await startHostedStack(); j.cleanup(stack.stop);
@@ -22,11 +22,13 @@ await runJourney('j7-operator', 'Operator', async j => {
   await j.step('admin-enrollment-entry', adminPage, async () => {
     await adminPage.goto(stack.origin); await adminPage.getByRole('heading', { name: 'Sign in', exact: true }).waitFor();
     assert.equal(await adminPage.getByLabel(/invitation token|new password/i).count(), 0);
-    j.gap('admin-browser-enrollment', 'Provisioned admin enrolls through the browser.', 'The mail directs password/TOTP enrollment to the API. SignIn accepts existing credentials only; API enrollment precedes the separate-context browser sign-in.');
   });
-  const account = await enrollViaApi(stack, invitation, 'operator-admin@example.test');
+  await j.step('admin-browser-enrollment', adminPage, async () => {
+    await enrollInBrowser(adminPage, stack, invitation, 'operator-admin@example.test');
+    return 'The provisioned administrator opens the mailed invitation, sets a password, confirms the displayed TOTP secret, and signs in with a fresh code entirely through the browser.';
+  });
   await j.step('admin-tenant-alive', adminPage, async () => {
-    await signIn(adminPage, stack, account); await adminPage.locator('.app-shell').waitFor();
+    await adminPage.locator('.app-shell').waitFor();
     await adminPage.getByLabel('Account', { exact: true }).click();
     assert.equal(await adminPage.locator('.account-workspace').innerText(), 'Journey operator workspace');
     assert.match(await adminPage.locator('.account-menu').innerText(), /Provisioned admin/);

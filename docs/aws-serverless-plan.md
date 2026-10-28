@@ -173,8 +173,8 @@ payloads; events identify authorized durable work.
 
 Real invitation delivery remains required. Keep email/password/TOTP enrollment
 and real mail transport; test stubs are never deployed as successful delivery.
-Initial enrollment may be operator-assisted through the existing API. A browser
-enrollment screen is a separate UI slice if selected. Verify sender/recipient
+Initial enrollment uses the invitation's browser link for password and TOTP setup
+(#152); the existing API remains available for automation. Verify sender/recipient
 requirements and SES sandbox status privately. Specify the chosen email transport
 with its network path, rather than adding a background sender that cannot recheck
 recipient permissions at delivery.

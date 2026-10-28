@@ -73,7 +73,23 @@ delivery failure without creating another tenant. Delivery is at least once:
 a crash after SMTP acceptance can resend the same invitation, never a new grant.
 Expired invitations fail closed; renewal/recovery UI is outside this slice.
 
-The invitation email supplies a token and tenant ID for the API workflow:
+The invitation email leads with a browser link to
+`<OPENSIGHT_PUBLIC_ORIGIN>/#invite=<token>` and names the workspace. New invitees
+set and confirm a password, scan the authenticator QR code (or copy the base32
+setup key), and confirm a live TOTP code. The page shows the invited account and
+issuer. Successful setup clears the invitation hash and continues into sign-in
+with the email and password held only in memory. Wait for a fresh authenticator
+code before signing in; the setup code has already been consumed. A sole active
+workspace opens directly; multiple workspaces use the named picker (D-83).
+
+Already-enrolled invitees sign in with their existing credentials, then accept
+the pending invitation through `POST /api/invitations/accept` with `{token}` and
+their verified session. Acceptance is bound to that session's identity, activates
+only the invited membership, and does not reset credentials or switch workspaces.
+Used, expired and revoked invitations fail closed with named errors. No session
+or credential is issued by acceptance.
+
+The API workflow remains available for operators and automation:
 
 1. `POST /api/auth/enroll` with `{invitationToken,password}` returns the TOTP
    base32 secret and `otpauth` URI for the enrolling identity. Passwords require
@@ -86,8 +102,8 @@ The invitation email supplies a token and tenant ID for the API workflow:
    `{email,password,code,tenantId}`. The result is `{token,expiresAt,tenantId}`;
    `expiresAt` is Unix milliseconds. Email is normalized to lowercase.
 
-Enrollment remains an API flow. [Issue #63](issue-63-signin-screen.md) adds a
-browser sign-in screen for preprovisioned users with completed enrollment.
+See [browser enrollment (#152)](issue-152-browser-enrollment.md) and
+[the sign-in screen](issue-63-signin-screen.md) for browser behavior and errors.
 
 ## Sessions, storage and revocation
 

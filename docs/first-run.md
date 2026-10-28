@@ -105,17 +105,25 @@ implemented configuration and API request shapes:
    `OPENSIGHT_SMTP_USER` and `OPENSIGHT_SMTP_PASSWORD`. Restart the API with
    `npm start --workspace @opensight/api`.
 5. Use the operator API to provision a tenant and invite its administrator.
-   Follow H2's `/api/host/tenants`, `/api/auth/enroll`, `/api/auth/accept` and
-   `/api/auth/login` workflow: invitation, password, TOTP and verified membership
-   are required. Operator credentials grant no tenant data access.
-6. Open the hosted web app and sign in with your email, password and workspace
-   ID. Continue to the authenticator step, then enter its six-digit code. Both
+   Open the emailed invitation link to set and confirm a password in the browser.
+   Scan the authenticator QR code or enter the displayed base32 setup key, then
+   confirm a live six-digit TOTP code. The invitation is bound to the invited
+   account. H2's `/api/auth/enroll` and `/api/auth/accept` remain available for
+   operator automation; operator credentials grant no tenant data access.
+6. Successful enrollment clears the invitation link and opens sign-in with the
+   email and password already entered. Continue to the authenticator step and
+   wait for a fresh six-digit code: the enrollment code cannot be reused. Later
+   visits start with email and password. Both
    steps are submitted together to `/api/auth/login`; `/api/session` verifies
-   the returned identity before the workspace opens. The client sends login
+   the returned identity before the workspace opens. A single workspace opens
+   directly; choose by name if you belong to several (no workspace ID input).
+   Already-enrolled invitees sign in and accept the invitation with their session.
+   The client sends login
    without cookies or bearer credentials and holds the resulting bearer only
    in memory. Route the API prefix correctly at the trusted HTTPS proxy.
    **Sign out** is in the hosted header. See [the sign-in guide](issue-63-signin-screen.md)
-   for session duration, expiry and error behavior.
+   for session duration, expiry and error behavior, and
+   [browser enrollment](issue-152-browser-enrollment.md) for invitation handling.
 
 Library-based self-hosting can instead use
 `createApiServer({ security: { authenticate, initialState, storePath }, ... })`.

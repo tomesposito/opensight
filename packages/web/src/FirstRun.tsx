@@ -47,7 +47,7 @@ export function FirstRun({ issue, checking, onRetry, onDemo }: {
           <ol>
             <li><strong>Select the hosted API.</strong> Set <code>OPENSIGHT_MODE=hosted</code> in the API process environment. The default fixture mode has no credential verifier.</li>
             <li><strong>Set up durable storage and keys.</strong> Configure the existing variables below, keep secrets on the server, and restart the API. Hosted mode requires HTTPS through a trusted reverse proxy.</li>
-            <li><strong>Provision a tenant and sign in.</strong> Configure SMTP for invitations, use the operator API to invite an administrator, then enroll a password and TOTP. Use the hosted sign-in screen with your email, password and authenticator code, then choose your workspace.</li>
+            <li><strong>Provision a tenant and sign in.</strong> Configure SMTP for invitations and use the operator API to invite an administrator. Open the emailed invitation link to set a password and register TOTP in the browser using the QR code or setup key. Confirm a code, then use the hosted sign-in screen with your email, password and a fresh authenticator code. Choose your workspace if you belong to more than one.</li>
           </ol>
           <details><summary>Required API environment variables</summary>
             <dl className="first-run-config">

@@ -5,8 +5,10 @@ import { FirstRun, type StartupIssue } from './FirstRun.js';
 import { SignIn } from './SignIn.js';
 import { authNotice, type AuthNotice } from './auth-errors.js';
 import { StartupError } from './workspace-startup.js';
+import { InvitationEnrollment, type EnrollmentCredentials } from './InvitationEnrollment.js';
+import { AcceptInvitation } from './UserManagement.js';
 
-type Client = Pick<ReturnType<typeof createApiClient>, 'getSession'> & Partial<Pick<ReturnType<typeof createApiClient>, 'getLocalData' | 'login' | 'selectWorkspace' | 'logout' | 'clearSession' | 'onDemand' | 'connect' | 'subscribeAvailability'>> & Access['aiClient'];
+type Client = Pick<ReturnType<typeof createApiClient>, 'getSession'> & Partial<Pick<ReturnType<typeof createApiClient>, 'getLocalData' | 'enroll' | 'acceptEnrollment' | 'acceptInvitation' | 'login' | 'selectWorkspace' | 'logout' | 'clearSession' | 'onDemand' | 'connect' | 'subscribeAvailability'>> & Access['aiClient'];
 export const SESSION_TIMEOUT_MS = 10_000;
 
 function startupIssue(error: unknown): StartupIssue {
@@ -18,7 +20,9 @@ function startupIssue(error: unknown): StartupIssue {
 }
 
 /** Samples are an explicit UI choice, never a credential or auth fallback. */
-export function SessionGate({ client, offline, children }: { client: Client; offline: boolean; children: ReactNode }) {
+export function SessionGate({ client, offline, children, invitation }: { client: Client; offline: boolean; children: ReactNode; invitation?: { token: string; onAccepted(): void } }) {
+  const [invitationSignIn, setInvitationSignIn] = useState<string>();
+  const [enrolledCredentials, setEnrolledCredentials] = useState<EnrollmentCredentials>();
   const [demo, setDemo] = useState(false);
   const [session, setSession] = useState<Session>();
   const [local, setLocal] = useState(false);
@@ -206,7 +210,18 @@ export function SessionGate({ client, offline, children }: { client: Client; off
   </main></div>;
   if (local) return <AccessProvider access={{ mode: 'local' }}>{children}</AccessProvider>;
   if (signingOut) return <div className="sign-in-page"><main className="sign-in-main"><p role="status">Signing out…</p></main></div>;
-  if (!session && issue === 'sign-in') return <SignIn notice={notice} onSignIn={signIn} onSelectWorkspace={selectWorkspace} onRetry={retry} onDemo={explore} />;
+  if (!session && issue === 'sign-in') {
+    if (invitation && invitationSignIn !== invitation.token) return <InvitationEnrollment key={invitation.token} token={invitation.token} client={client}
+      onEnrolled={credentials => {
+        setEnrolledCredentials(credentials); requireSignIn.current = true;
+        setNotice({ kind: 'info', message: 'Your account is ready. Sign in with the password you just set and a fresh authenticator code. Wait for the code to change after confirming setup.' });
+        invitation.onAccepted();
+      }} onSignIn={() => {
+        setInvitationSignIn(invitation.token);
+        setNotice({ kind: 'info', message: 'Already enrolled? Sign in with your existing credentials, then accept this invitation.' });
+      }} />;
+    return <SignIn notice={notice} initialCredentials={enrolledCredentials} onCredentialsConsumed={() => setEnrolledCredentials(undefined)} onSignIn={signIn} onSelectWorkspace={selectWorkspace} onRetry={retry} onDemo={explore} />;
+  }
   // While the first session check is in flight we know nothing yet — render a minimal
   // loading state in the sign-in shell so the landing page never flashes before auth.
   // The sample-data escape hatch stays available for slow checks.
@@ -215,5 +230,6 @@ export function SessionGate({ client, offline, children }: { client: Client; off
     <nav className="sign-in-links" aria-label="Startup options"><button type="button" onClick={explore}>Explore sample data</button></nav>
   </main></div>;
   if (!session) return <FirstRun issue={issue} checking={checking} onRetry={retry} onDemo={explore} />;
-  return <AccessProvider access={{ mode: 'hosted', session, aiClient: client, ...(client.logout ? { signOut } : {}) }}>{children}</AccessProvider>;
+  return <AccessProvider access={{ mode: 'hosted', session, aiClient: client, ...(client.logout ? { signOut } : {}) }}>{invitation && client.acceptInvitation
+    ? <AcceptInvitation key={invitation.token} token={invitation.token} client={{ acceptInvitation: client.acceptInvitation }} onAccepted={invitation.onAccepted} /> : children}</AccessProvider>;
 }

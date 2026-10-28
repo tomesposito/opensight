@@ -77,6 +77,7 @@ export interface WorkspaceSelection {
   selectionToken: string; selectionExpiresAt: number;
 }
 export type LoginResult = SignedIn | WorkspaceSelection;
+export type Enrollment = { enrollmentRequired: false } | { enrollmentRequired: true; secret: string; uri: string };
 export function isWorkspaceSelection(value: LoginResult | undefined): value is WorkspaceSelection {
   return !!value && 'kind' in value && value.kind === 'selection';
 }
@@ -137,12 +138,32 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
     }
     return response;
   }
-  async function authResponse(response: Response): Promise<Record<string, unknown>> {
+  async function authResponse(response: Response, enrollment = false): Promise<Record<string, unknown>> {
     const value: unknown = await response.json().catch(() => undefined);
     const body = value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
-    if (!response.ok) throw new ApiError('Authentication request failed.', response.status, typeof body?.errorCode === 'string' ? body.errorCode : undefined);
+    if (!response.ok) throw new ApiError(enrollment && typeof body?.Message === 'string' ? body.Message : 'Authentication request failed.', response.status, typeof body?.errorCode === 'string' ? body.errorCode : undefined);
     if (!body) throw new ApiError('Invalid authentication response.', response.status, 'AUTH_RESPONSE_INVALID');
     return body;
+  }
+  async function enrollmentRequest(route: 'enroll' | 'accept', input: { invitationToken: string; password: string; code?: string }, signal?: AbortSignal) {
+    // These public auth endpoints reject cookies and Authorization. Secrets
+    // travel only in the JSON body, never in URLs, headers or persisted state.
+    return authResponse(await fetcher(`${base}/api/auth/${route}`, {
+      method: 'POST', credentials: 'omit', signal,
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json' }, body: JSON.stringify(input),
+    }), true);
+  }
+  async function enroll(invitationToken: string, password: string, signal?: AbortSignal): Promise<Enrollment> {
+    const body = await enrollmentRequest('enroll', { invitationToken, password }, signal);
+    if (body.enrollmentRequired === false) return { enrollmentRequired: false };
+    if (body.enrollmentRequired !== true || typeof body.secret !== 'string' || !/^[A-Z2-7]{32}$/.test(body.secret) || typeof body.uri !== 'string') {
+      throw new ApiError('Invalid enrollment response.', undefined, 'AUTH_RESPONSE_INVALID');
+    }
+    return { enrollmentRequired: true, secret: body.secret, uri: body.uri };
+  }
+  async function acceptEnrollment(invitationToken: string, password: string, code: string, signal?: AbortSignal): Promise<void> {
+    const body = await enrollmentRequest('accept', { invitationToken, password, code }, signal);
+    if (body.accepted !== true) throw new ApiError('Invalid enrollment response.', undefined, 'AUTH_RESPONSE_INVALID');
   }
   function workspaceSelection(body: Record<string, unknown>): WorkspaceSelection {
     const invalid = () => new ApiError('Invalid authentication response.', undefined, 'AUTH_RESPONSE_INVALID');
@@ -298,7 +319,7 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
   const listInvitations = () => resource<Invitation[]>('/api/invitations');
   const inviteUser = (body: ({ id: string } | { email: string }) & { name: string; role: Role }) => resource<{ invitation: Invitation; token: string }>('/api/invitations', 'POST', body);
   const revokeInvitation = (id: string) => resource<{ deleted: true }>(`/api/invitations/${encodeURIComponent(id)}`, 'DELETE');
-  const acceptInvitation = (token: string) => resource<Session>('/api/invitations/accept', 'POST', { token });
+  const acceptInvitation = (token: string) => resource<Session | { accepted: true }>('/api/invitations/accept', 'POST', { token });
   const getAIStatus = () => resource<AIStatus>('/api/o/status');
   const generateO = (request: ORequest) => resource<InterpretationResult>('/api/o/generate', 'POST', request);
   const generateCalculation = (request: ORequest) => resource<CalculationResult>('/api/o/calculation', 'POST', request);
@@ -468,7 +489,7 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
     listDashboards, getPublishedDashboard, queryDashboardVisual,
     saveHostedAnalysis, publishAnalysis,
     onDemand, connect, subscribeAvailability,
-    login, selectWorkspace, logout, clearSession, getTransportCapabilities, uploadDirectFile, getOperation, getUploadReservation, cancelOperation, cancelUploadReservation,
+    enroll, acceptEnrollment, login, selectWorkspace, logout, clearSession, getTransportCapabilities, uploadDirectFile, getOperation, getUploadReservation, cancelOperation, cancelUploadReservation,
     listJobs, jobRecipients, jobHistory, jobDeliveries, runJob,
     getLocalData, getDatasetExecution, setDatasetExecution, refreshBlaze, getPreparedRows, listPrepSources, listPrepDatasets, savePrep, deletePrep, previewPrep, uploadFile, validateConnector, listUsers, saveUser, deleteUser, listInvitations, inviteUser, revokeInvitation, acceptInvitation, getAIStatus, generateO, generateCalculation, getAnalyticsConfig, saveAnalyticsConfig, getAIConfig, saveAIConfig, saveAIKey, testAIConnection, getSession, queryO, getDatasetRefreshStatus,
     queryDataset,

@@ -3,19 +3,22 @@ import { BrandMark } from './BrandMark.js';
 import { isWorkspaceSelection, type LoginInput, type LoginResult, type WorkspaceSelection } from './api-client.js';
 import { authNotice, type AuthNotice } from './auth-errors.js';
 
-export function SignIn({ onSignIn, onSelectWorkspace, notice, onRetry, onDemo }: {
+export function SignIn({ onSignIn, onSelectWorkspace, notice, onRetry, onDemo, initialCredentials, onCredentialsConsumed }: {
   onSignIn(input: LoginInput, remember: boolean): Promise<LoginResult | void>;
   onSelectWorkspace(selectionToken: string, tenantId: string, remember: boolean): Promise<void>;
   notice?: AuthNotice; onRetry(): void; onDemo(): void;
+  initialCredentials?: Pick<LoginInput, 'email' | 'password'>; onCredentialsConsumed?(): void;
 }) {
   const [step, setStep] = useState<'credentials' | 'totp' | 'picker'>('credentials');
-  const [email, setEmail] = useState(''), [password, setPassword] = useState('');
+  const [email, setEmail] = useState(initialCredentials?.email ?? ''), [password, setPassword] = useState(initialCredentials?.password ?? '');
+  const [freshCodeRequired] = useState(!!initialCredentials);
   const [code, setCode] = useState(''), [remember, setRemember] = useState(false), [showPassword, setShowPassword] = useState(false);
   const [challenge, setChallenge] = useState<WorkspaceSelection>();
   const [error, setError] = useState<AuthNotice>(), [busy, setBusy] = useState(false);
   const active = useRef(true), submitting = useRef(false);
   const emailField = useRef<HTMLInputElement>(null), codeField = useRef<HTMLInputElement>(null), pickerList = useRef<HTMLUListElement>(null), alert = useRef<HTMLDivElement>(null);
   useEffect(() => { active.current = true; return () => { active.current = false; }; }, []);
+  useEffect(() => { onCredentialsConsumed?.(); }, [onCredentialsConsumed]);
   useEffect(() => { if (step !== 'picker') (step === 'totp' ? codeField : emailField).current?.focus(); }, [step]);
   useEffect(() => { if (step === 'picker') pickerList.current?.querySelector('button')?.focus(); }, [step]);
   useEffect(() => { if (error || notice) alert.current?.focus(); }, [error, notice]);
@@ -80,6 +83,7 @@ export function SignIn({ onSignIn, onSelectWorkspace, notice, onRetry, onDemo }:
           </> : <>
             <p className="sign-in-identity">{email}</p>
             <p className="sign-in-description">Enter the 6-digit code from your authenticator app. Your sign-in details will be checked together.</p>
+            {freshCodeRequired && <p className="sign-in-help">Wait for a fresh code after the one used to confirm setup. Each code can be used only once.</p>}
             <label className="sign-in-field" htmlFor="signin-code">Authenticator code<input ref={codeField} id="signin-code" className="sign-in-code" type="text" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} required value={code} disabled={busy} onChange={event => setCode(event.target.value)} /></label>
           </>}
           <button className="sign-in-primary" type="submit" disabled={busy}>{busy ? 'Signing in…' : step === 'credentials' ? 'Continue' : 'Sign in'}</button>

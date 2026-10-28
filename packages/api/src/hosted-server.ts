@@ -315,6 +315,12 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
         const resources = await metadata.list(context, path.endsWith('/users') ? 'user' : 'group');
         send(response, 200, resources.map(r => ({ id: r.id, namespaceId: context.namespaceId, ...r.body }))); return;
       }
+      if (path === '/api/invitations/accept') {
+        method(request, response, ['POST']);
+        if (!options.builtinAuth) throw new MetadataError('BUILTIN_AUTH_UNAVAILABLE', 503);
+        const input = await body(request, ['token']);
+        send(response, 200, await options.builtinAuth.acceptInvitation(context, input.token, peer)); return;
+      }
       const invitation = /^\/api\/invitations(?:\/([A-Za-z0-9_-]+))?$/.exec(path);
       if (invitation) {
         const user = await metadata.get(context, { kind: 'user', id: context.userId });
