@@ -322,22 +322,29 @@ For the deletion drill:
 2. Drain/stop the reference and every external/legacy writer. Enumerate and purge
    any external snapshots, filesystem/volume backups or exports first. They are
    outside the managed registry. Do not assert their absence unless verified.
-3. Set `OPENSIGHT_DELETE_OPERATION` to the operation ID and
-   `OPENSIGHT_BACKUP_COPIES=none` to assert that no external retained copies
-   remain. Run the offline finalizer:
+3. Set `OPENSIGHT_DELETE_OPERATION` to the operation ID and run the default
+   dry-run finalizer. It reports exact per-store/table counts without writing:
 
 ```sh
 OPENSIGHT_MAINTENANCE=frozen node --env-file="$OPENSIGHT_RUNTIME_ENV" packages/api/dist/single-node-cli.js delete-tenant
 ```
 
-The finalizer first records a registry deletion fence, invalidates **all** managed
+4. Review the reported tenant and counts. For the real run, explicitly set
+   `OPENSIGHT_DELETE_MODE=execute`, `OPENSIGHT_DELETE_CONFIRM` to the reported
+   tenant ID, and `OPENSIGHT_BACKUP_COPIES=none` to assert verified absence of
+   external copies. Repeat the command above with those environment values.
+
+The finalizer records a registry deletion fence, invalidates **all** managed
 backup registrations, then unlinks all managed backup/temporary files and fsyncs
 the directory. Purging whole snapshots also removes copies of other tenants;
-take a new backup after completion. It removes the tenant's H2–H8 private state,
-orphans' identity records, sources/payloads/metadata and labels, then completes
-H1's `artifacts-removed` and deletion tombstone. Other tenants' live records
-remain. Retrying after interruption is safe; failed purge never completes the
-lifecycle. A copied old backup file is not registered and cannot be restored.
+take a new backup after completion. It removes tenant assets and H2–H8 private
+state, exclusive identities and login selections, upload payloads, and workspace
+labels. It verifies the stores before atomically completing H1's deletion
+lifecycle and appending its retained audit receipt. Retrying after interruption
+is safe. An unchanged completed retry is a no-op, including after audit retention.
+A copied old backup file is not registered and cannot be restored. Unsupported
+stores and residual tenant records fail loudly. See the complete
+[issue #115 store coverage and command contract](issue-115-tenant-erasure.md).
 
 Opaque lifecycle/audit reservations remain by design. Shared identities and
 operator keys remain for other tenants. Global hashed H2 throttle buckets follow
