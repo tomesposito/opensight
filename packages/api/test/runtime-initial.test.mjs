@@ -200,6 +200,9 @@ test('SR4b1 bootstrap refuses populated, foreign, incompatible and retired-key d
     ["INSERT INTO h1_tenants (tenant_id,state,version,tombstone,placement,limit_policy) VALUES ('existing','active',1,NULL,NULL,NULL)", 'INITIAL_DATABASE_NOT_EMPTY'],
     ["CREATE TABLE foreign_table (value TEXT)", 'INITIAL_SCHEMA_NOT_OWNED'],
     ["UPDATE sr_object_schema SET checksum = 'foreign'", 'INITIAL_SCHEMA_INVALID'],
+    ["UPDATE sr_v1_schema SET checksum = 'foreign'", 'INITIAL_SCHEMA_INVALID'],
+    ["DELETE FROM sr_v1_capacity", 'INITIAL_SCHEMA_INVALID'],
+    ["UPDATE sr_v1_capacity SET entries = 1", 'INITIAL_DATABASE_NOT_EMPTY'],
     ["UPDATE sr_control SET state = 'draining'", 'INITIAL_MAINTENANCE_REQUIRED'],
     ["INSERT INTO h2_keys VALUES ('retired','unknown',0)", 'INITIAL_AUTH_KEY_INVALID'],
     ["UPDATE sr_limits SET entitlements = '{\"defaults\":null,\"tenants\":{}}'", 'COORDINATION_CONFIG_CHANGED']

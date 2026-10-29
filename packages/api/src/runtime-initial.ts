@@ -19,6 +19,7 @@ import { manifestChecksum } from './manifest-schema.js';
 import { dispatchChecksum } from './dispatch-schema.js';
 import { objectChecksum } from './object-schema.js';
 import { operationChecksum } from './operation-schema.js';
+import { v1DurableChecksum } from './v1-durable-schema.js';
 
 interface InitialTester { tenantId: string; namespaceId: string; userId: string; subject: string; email: string; name: string; password: string; totpSecret: string }
 export type InitialCommand = { version: 1; command: 'bootstrap-initial'; operationId: string; testers: InitialTester[] }
@@ -28,7 +29,7 @@ export type InitialCommand = { version: 1; command: 'bootstrap-initial'; operati
 export type InitialResult = { state: 'bootstrapped'; epoch: 1; tenants: 2 } | { state: 'active' | 'locks-repaired'; epoch: 1 }
   | { state: 'budgets-configured'; epoch: 1; budgetVersion: number };
 function fail(code = 'INITIAL_ACTIVATION_INVALID'): never { throw new MetadataError(code, 503); }
-const markers = [['sr_coordination_schema', coordinationChecksum], ['sr_manifest_schema', manifestChecksum], ['sr_dispatch_schema', dispatchChecksum], ['sr_object_schema', objectChecksum], ['sr_operation_schema', operationChecksum], ['sr_execution_schema', executionChecksum]] as const;
+const markers = [['sr_coordination_schema', coordinationChecksum], ['sr_manifest_schema', manifestChecksum], ['sr_dispatch_schema', dispatchChecksum], ['sr_object_schema', objectChecksum], ['sr_operation_schema', operationChecksum], ['sr_execution_schema', executionChecksum], ['sr_v1_schema', v1DurableChecksum]] as const;
 const workTables = serverlessTables.filter(t => t.startsWith('sr_') && !t.endsWith('_schema') && !['sr_control', 'sr_limits'].includes(t));
 const initialEmptyTables = [...workTables, 'h1_tenants', 'h1_resources', 'h1_operations', 'h1_outbox', 'h2_identities', 'h2_memberships', 'h2_invitations', 'h2_sessions', 'h2_login_selections', 'h2_onboarding', 'h2_requests', 'h7_jobs', 'h8_usage', 'h8_monthly_usage', 'h8_usage_events', 'h8_ai_warnings', 'analytics_events', 'analytics_settings', 'h8_recovery'];
 const hmac = (config: HostedConfig, value: unknown) => createHmac('sha256', config.encryptionKey).update(canonical(value)).digest('hex');
@@ -107,6 +108,8 @@ async function inspect(c: SqlConnection, env: NodeJS.ProcessEnv, dialect: Coordi
     const rows = await c.query(`SELECT * FROM ${table}`);
     if (rows.length !== 1 || rows[0]?.deployment !== deployment || Number(rows[0]?.version) !== 1 || rows[0]?.checksum !== expected) fail('INITIAL_SCHEMA_INVALID');
   }
+  const capacity = await c.query("SELECT deployment FROM sr_v1_capacity WHERE tenant_id = ''");
+  if (capacity.length !== 1 || capacity[0]?.deployment !== deployment) fail('INITIAL_SCHEMA_INVALID');
   if (Number((await c.query('SELECT version FROM h8_schema WHERE id = 1'))[0]?.version) !== 1) fail('INITIAL_SCHEMA_INVALID');
   const budget = (await c.query('SELECT version, body FROM h4_budget_config WHERE id = 1'))[0];
   const limits = (await c.query('SELECT budget_version, entitlements FROM sr_limits WHERE deployment = ?', [deployment]))[0];
@@ -120,7 +123,10 @@ async function key(c: SqlConnection, config: HostedConfig, allowEmpty: boolean):
   if (keys.length !== 1 || keys[0]?.key_id !== config.keyId || Number(keys[0]?.active) !== 1 || keys[0]?.fingerprint !== digest(config.signingKey)) fail('INITIAL_AUTH_KEY_INVALID');
 }
 async function empty(c: SqlConnection, tables: readonly string[]): Promise<void> {
-  for (const table of tables) if ((await c.query(`SELECT 1 FROM ${table} LIMIT 1`)).length) fail('INITIAL_DATABASE_NOT_EMPTY');
+  for (const table of tables) {
+    const filter = table === 'sr_v1_capacity' ? " WHERE tenant_id <> '' OR entries <> 0 OR bytes <> 0" : '';
+    if ((await c.query(`SELECT 1 FROM ${table}${filter} LIMIT 1`)).length) fail('INITIAL_DATABASE_NOT_EMPTY');
+  }
 }
 async function verifyTesters(c: SqlConnection, deployment: string, operationId: string, requestHash: string, allowBusinessResources = false): Promise<void> {
   for (const table of ['h1_tenants', 'h1_namespaces', 'h1_revisions', 'h2_identities', 'h2_memberships', ...(allowBusinessResources ? [] : ['h1_resources', 'h1_operations'])]) {
