@@ -809,6 +809,7 @@ SR0 implementation decision register (issue #81; proposals, no AWS authorization
 | [D-80](itd/D-80-maintenance-execution.md) | Maintenance execution | ✅ Exact saved plans, transactional migration and isolated held restore |
 | [D-81](itd/D-81-startup-readiness.md) | Deployment startup readiness | ✅ Bounded explicit wake retries for exact generic gateway cold-start failures |
 | [D-84](idd/D-84-tenant-erasure-audit-retention.md) | Tenant erasure audit history | ✅ Retain audit entries, including deletion completion, under normal retention |
+| [D-86](itd/D-86-serverless-authoring.md) | Serverless hosted authoring | ✅ Atomic SQL retry receipts, shared rate windows and literal invitation/authoring/dashboard ingress |
 
 Related confirmed deployment decision: [ITD D-18 — serverless development
 deployment](itd/D-18-serverless-development-deployment.md) (2026-10-10). Lambda
