@@ -40,7 +40,7 @@ import { JobOwnership, disposition } from './job-ownership.js';
 import { jobRoute } from './job-routes.js';
 import { Scheduler } from './schedule.js';
 import { hostedReadiness } from './hosted-health.js';
-import { HostedUsage } from './hosted-usage.js';
+import { HostedUsage, usageMonth } from './hosted-usage.js';
 import type { AiMeter } from './ai-settings.js';
 import { appendOperatorAudit, readOperatorAudit } from './operator-audit.js';
 import { referenceConfig, referenceDisclosure, assertReferenceSurfaces } from './single-node-config.js';
@@ -214,6 +214,15 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
         if (path === '/api/host/audit') {
           method(request, response, ['GET']);
           send(response, 200, { entries: await readOperatorAudit(options.membershipDatabase) }); return;
+        }
+        const billing = /^\/api\/host\/usage(?:\/([^/]+)(?:\/tenants\/([A-Za-z0-9_-]+))?)?$/.exec(path);
+        if (billing) {
+          operator(request); method(request, response, ['GET', 'POST']);
+          const period = usageMonth(billing[1]), tenantId = billing[2];
+          if (!usage) throw new MetadataError('ENTITLEMENT_UNRESOLVED', 503);
+          if (request.method === 'POST') await body(request, []);
+          const records = request.method === 'POST' ? await usage.rollupMonthlyUsageForPeriod(period, tenantId) : await usage.monthlyUsageForPeriod(period, tenantId);
+          send(response, 200, { period, records }); return;
         }
         const tenant = /^\/api\/host\/tenants\/([A-Za-z0-9_-]+)(?:\/(suspend|resume|invitations|users)(?:\/([A-Za-z0-9_-]+))?)?$/.exec(path);
         if (tenant) {

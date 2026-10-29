@@ -135,6 +135,43 @@ export class HostedUsage {
       return record;
     }).catch((error: unknown) => { if (error instanceof MetadataError) throw error; throw new MetadataError('ENTITLEMENT_UNRESOLVED', 503); });
   }
+  /** Read the durable snapshot without touching enforcement counters or refreshing
+   * storage. An unrolled month is explicit: all zeros and storageAsOf = null. */
+  async monthlyUsage(scope: Scope, month: string): Promise<MonthlyUsage> {
+    const period = usageMonth(month);
+    return this.db.transaction(async c => {
+      await this.billingScope(c, scope);
+      const row = (await c.query('SELECT * FROM h8_monthly_usage WHERE tenant_id = ? AND namespace_id = ? AND period = ?', [scope.tenantId, scope.namespaceId, period]))[0];
+      if (!row) return emptyMonthlyUsage(scope, period);
+      const storageAsOf = row.storage_as_of;
+      if (typeof storageAsOf !== 'string' || !Number.isFinite(Date.parse(storageAsOf)) || new Date(storageAsOf).toISOString() !== storageAsOf) throw new MetadataError('ENTITLEMENT_UNRESOLVED', 503);
+      return { ...scope, period, apiCallsAdmitted: usageInteger(row.api_calls_admitted), apiCallsDenied: usageInteger(row.api_calls_denied),
+        computeAttemptsAdmitted: usageInteger(row.compute_attempts_admitted), computeAttemptsDenied: usageInteger(row.compute_attempts_denied),
+        storageBytes: usageInteger(row.storage_bytes), storageAsOf, egressBytes: usageInteger(row.egress_bytes) };
+    }).catch((error: unknown) => { if (error instanceof MetadataError) throw error; throw new MetadataError('ENTITLEMENT_UNRESOLVED', 503); });
+  }
+  private async billingScopes(tenantId?: string): Promise<Scope[]> {
+    if (tenantId !== undefined) identifier(tenantId);
+    return this.db.transaction(async c => {
+      const rows = await c.query(`SELECT n.tenant_id, n.namespace_id FROM h1_namespaces n
+        JOIN h1_tenants t ON t.tenant_id = n.tenant_id WHERE t.state <> 'deleted'${tenantId === undefined ? '' : ' AND n.tenant_id = ?'}
+        ORDER BY n.tenant_id, n.namespace_id`, tenantId === undefined ? [] : [tenantId]);
+      if (tenantId !== undefined && !rows.length) throw new MetadataError('TENANT_UNAVAILABLE', 403);
+      return rows.map(row => ({ tenantId: String(row.tenant_id), namespaceId: String(row.namespace_id) }));
+    }).catch((error: unknown) => { if (error instanceof MetadataError) throw error; throw new MetadataError('ENTITLEMENT_UNRESOLVED', 503); });
+  }
+  /** Operator view, with one distinct record per tenant/namespace, including empty months. */
+  async monthlyUsageForPeriod(month: string, tenantId?: string): Promise<MonthlyUsage[]> {
+    const period = usageMonth(month), records: MonthlyUsage[] = [];
+    for (const scope of await this.billingScopes(tenantId)) records.push(await this.monthlyUsage(scope, period));
+    return records;
+  }
+  /** Operator-triggered refresh; each scope commits independently and is safe to retry. */
+  async rollupMonthlyUsageForPeriod(month: string, tenantId?: string): Promise<MonthlyUsage[]> {
+    const period = usageMonth(month), records: MonthlyUsage[] = [];
+    for (const scope of await this.billingScopes(tenantId)) records.push(await this.rollupMonthlyUsage(scope, period));
+    return records;
+  }
   entitlement(scope: Scope): Entitlement {
     const limit = Object.hasOwn(this.config.tenants, scope.tenantId) ? this.config.tenants[scope.tenantId] : this.config.defaults;
     if (!limit) throw new MetadataError('ENTITLEMENT_UNRESOLVED', 503);
