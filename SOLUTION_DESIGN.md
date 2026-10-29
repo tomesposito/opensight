@@ -1207,6 +1207,15 @@ Preserve trusted ingress, namespace checks, tenant authorization, revision
 checks, durable analytical admission and invocation cancellation. The remaining
 v1 dataset/source/folder/asset-management endpoints remain closed in Lambda.
 
+Invitation creation must prearm the existing durable dispatch recovery before
+committing the invitation and an identifier-only `invitation-deliver` event in
+one transaction. Only the worker decrypts the existing sealed invitation token
+and sends email. Recheck tenant, inviter administrator role, membership and
+invitation validity immediately before SMTP DATA. Use the existing execution
+lease, bounded retry and ambiguous-send hold; uncertain sends never auto-resend.
+Revoked/accepted/expired invitations and stale epochs cannot send. The request
+role receives no SMTP credentials or new email permissions.
+
 Use a shared SQL rate window per tenant and bounded ten-minute SQL retry
 receipts scoped to deployment, tenant, namespace, user, method, path and key.
 Concurrent reservations fail with a retryable named conflict; expired reservation

@@ -62,5 +62,10 @@ adds infrastructure without providing atomicity with the metadata writes.
 - The public route grammar opens only this tested slice. Other v1 routes retain
   their explicit serverless deferral. Existing durable compute admission remains
   authoritative for dashboard queries and exports.
+- Tenant invitations use the existing dispatch outbox and execution leases.
+  Recovery acknowledgement precedes the atomic invitation/event commit; events
+  carry only IDs. Worker email retains the sealed token in its existing store,
+  rechecks current invitation and inviter authority before SMTP DATA, and holds
+  ambiguous sends for explicit replay. Request execution keeps no SMTP access.
 - Deployment follows a registered backup and tested migration, then synthetic
   author, reader, administrator and isolation checks through public ingress.
