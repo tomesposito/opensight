@@ -109,15 +109,17 @@ export class HostedUsage {
       const record = emptyMonthlyUsage(scope, period);
       const rows = await c.query(`SELECT metric, admitted, denied FROM h8_usage
         WHERE tenant_id = ? AND namespace_id = ? AND period >= ? AND period <= ?
-        AND metric IN ('apiCalls', 'computeAttempts')`, [scope.tenantId, scope.namespaceId, `${period}-01`, `${period}-31`]);
+        AND metric IN ('apiCalls', 'computeAttempts', 'egressBytes')`, [scope.tenantId, scope.namespaceId, `${period}-01`, `${period}-31`]);
       for (const row of rows) {
         const admitted = usageInteger(row.admitted), denied = usageInteger(row.denied);
         if (row.metric === 'apiCalls') {
           record.apiCallsAdmitted = usageInteger(record.apiCallsAdmitted + admitted);
           record.apiCallsDenied = usageInteger(record.apiCallsDenied + denied);
-        } else {
+        } else if (row.metric === 'computeAttempts') {
           record.computeAttemptsAdmitted = usageInteger(record.computeAttemptsAdmitted + admitted);
           record.computeAttemptsDenied = usageInteger(record.computeAttemptsDenied + denied);
+        } else {
+          record.egressBytes = usageInteger(record.egressBytes + admitted);
         }
       }
       record.storageBytes = usageInteger(await this.storageBytes(c, scope));
@@ -178,6 +180,23 @@ export class HostedUsage {
       throw new MetadataError('ENTITLEMENT_UNRESOLVED', 503);
     });
     if (denied) throw new MetadataError('USAGE_LIMIT_EXCEEDED', 429);
+  }
+  /** Recorded-only bytes from a caller that knows the actual transferred amount.
+   * No runtime surface supplies this yet: never infer egress from API calls. */
+  async recordEgressBytes(scope: Scope, bytes: number): Promise<void> {
+    if (!Number.isSafeInteger(bytes) || bytes < 0) throw new MetadataError('ENTITLEMENT_UNRESOLVED', 503);
+    this.entitlement(scope);
+    const now = new Date(this.clock()).toISOString(), period = now.slice(0, 10);
+    await this.db.transaction(async c => {
+      await this.lockAiScope(c, scope);
+      const args = [scope.tenantId, scope.namespaceId, period, 'egressBytes'];
+      await c.query('INSERT INTO h8_usage VALUES (?,?,?,?,0,0) ON CONFLICT (tenant_id, namespace_id, period, metric) DO NOTHING', args);
+      const row = (await c.query('SELECT admitted, denied FROM h8_usage WHERE tenant_id = ? AND namespace_id = ? AND period = ? AND metric = ?', args))[0]!;
+      usageInteger(usageInteger(row.admitted) + bytes);
+      usageInteger(row.denied);
+      await c.query('UPDATE h8_usage SET admitted = admitted + ? WHERE tenant_id = ? AND namespace_id = ? AND period = ? AND metric = ?', [bytes, ...args]);
+      await c.query('INSERT INTO h8_usage_events VALUES (?,?,?,?,?,?,?,?)', [randomUUID(), scope.tenantId, scope.namespaceId, now, 'egressBytes', 'byte', bytes, 'admitted']);
+    }).catch((error: unknown) => { if (error instanceof MetadataError) throw error; throw new MetadataError('ENTITLEMENT_UNRESOLVED', 503); });
   }
   /** Derived spend in cents for a token total under an entitlement. Zero when no price is configured. */
   aiSpendCents(entitlement: Entitlement, tokens: number): number {
