@@ -78,3 +78,15 @@ The corrected bytecode passed twelve CloudFront engine cases, including the
 failing upload path and large synthetic authorization/header sets; maximum
 observed compute utilization was 45 percent. The deployment records the exact
 edge correction separately from its immutable runtime and migration receipts.
+
+After the edge optimization, the full root suite exited 0 with **4,358 passed /
+0 failed / 1 skipped** (the same unconfigured TLS PostgreSQL fixture). This adds
+the differential matcher check to the earlier release verification.
+
+The current pilot's SES account remains in sandbox mode and its SMTP IAM policy
+restricts recipients to the existing approved address. Application SMTP capability
+does not imply permission to deliver invitations to arbitrary recipients. Live
+release checks use one exact SES simulator address under an expiring, separately
+recorded operator permission, which must be removed before release completion.
+General invitation delivery requires SES production access and a reviewed mail
+policy; it is not enabled by this application release.
