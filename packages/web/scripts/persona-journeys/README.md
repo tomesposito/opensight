@@ -76,10 +76,13 @@ These builds and the suite require no external network access.
 **Gaps are product findings, not test bugs.** They must state what was expected
 and what the shipped product actually offers. Do not add fake data, bypass a UI
 restriction, or relabel an assertion failure merely to obtain a green run.
-Current findings include owner-only prepared data
-that remains unavailable to a different dashboard reader under D-53, and an
-imported Athena definition whose source is unconfigured. J4 publishes and grants
-definition access through the product, then checks the real reader surface; J2
+Current findings include an imported Athena definition whose source is
+unconfigured. J4 publishes and grants definition access through the product,
+then checks both D-85 reader-filter outcomes: an independently provisioned reader
+source initially denies access, then a trusted fixture policy update grants
+access and the published recipe returns filtered reader rows (issue #155).
+The allowed case requires 200 with the expected rows; 403 is a passing assertion
+only in the explicit denied case, never a substitute for the allowed case. J2
 asserts a true empty hosted home. The AI answer is environment-limited because the
 fixture has no provider; live embedding remains a future journey. The generated
 report is the authoritative record for the latest run.

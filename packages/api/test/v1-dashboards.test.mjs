@@ -119,6 +119,42 @@ test('v1 dashboards: operator retention prunes oldest versions without reusing n
 });
 
 import { readerMember } from './embed-content-helpers.mjs';
+test('Issue 155 HTTP: reader query/export use independent source rows, isolate replay keys and deny revoked access', async t => {
+  const f = await hosted(t, {}, true), reader = await readerMember(f);
+  const readerKey = { kind: 'user', id: reader.identity.userId };
+  // Provision a reader-owned source using the ordinary authoring APIs before
+  // assigning the reader role. Sharing a dashboard never provisions this source.
+  await f.metadata.put(await f.context(), readerKey, { name: 'Reader', role: 'author' }, 1);
+  let token = (await reader.login()).token;
+  const source = good(await f.call('/api/uploads', { token, method: 'POST', body: { ...upload(), base64: Buffer.from('region,amount,private\neast,1,r\nwest,2,s\n').toString('base64') } }), 201).body;
+  const owner = await f.metadata.get(await f.context(), { kind: 'prepared-dataset', id: 'sales', ownerId: f.identity.userId });
+  const sourceId = owner.body.resource.opensightPrep.input, c = await reader.context();
+  const oldKey = { kind: 'source', id: source.id, ownerId: c.userId }, current = await f.metadata.get(c, oldKey);
+  await f.metadata.batch(c, [{ key: { ...oldKey, id: sourceId }, body: current.body, expectedVersion: 0 }, { key: oldKey, body: null, expectedVersion: 1 }]);
+  await f.metadata.put(await f.context(), readerKey, { name: 'Reader', role: 'reader' }, 2); await f.renew();
+  good(await f.request(analyses, { method: 'POST', body: input('analysis', true) }), 201);
+  const id = good(await publish(f), 201).body.DashboardId, path = `${dashboards}/${id}`;
+  good(await f.request(`${path}/shares/user/${c.userId}`, { method: 'PUT', body: { role: 'viewer' }, headers: at(1) }));
+  token = (await reader.login()).token;
+  const queryPath = `${path}/versions/1/visuals/total/query`, query = { method: 'POST', body: {}, headers: { 'Idempotency-Key': 'same-owner-reader-key' } };
+  assert.deepEqual(good(await f.request(queryPath, query)).body.rows, [{ value: 60 }]);
+  assert.deepEqual(good(await f.call(queryPath, { ...query, token })).body.rows, [{ value: 3 }]);
+  assert.deepEqual(good(await f.call(queryPath, { ...query, token })).body.rows, [{ value: 3 }]);
+  const artifact = { method: 'POST', body: { format: 'csv' }, headers: { 'Idempotency-Key': 'reader-export' }, token };
+  assert.equal(good(await f.call(`${path}/exports`, artifact)).body, 'sheetId,visualId,row,column,value\r\nsheet,total,1,amount,3\r\n');
+  // The protocol never accepts caller-supplied source/owner/tenant bindings.
+  for (const forged of [{ ownerId: f.identity.userId }, { tenantId: 'tenant-other' }, { datasetBindings: owner.body.resource }]) {
+    assert.equal((await f.call(queryPath, { token, method: 'POST', body: forged })).status, 422);
+  }
+  await f.db.transaction(async db => {
+    await db.query("UPDATE h1_resources SET body = ?, version = version + 1 WHERE tenant_id = ? AND namespace_id = ? AND kind = 'source' AND owner_id = ? AND resource_id = ?", [JSON.stringify({ ...current.body, policy: { rowLevel: true, rowRules: [] } }), c.tenantId, c.namespaceId, c.userId, sourceId]);
+    await db.query('UPDATE h1_revisions SET policy = policy + 1 WHERE tenant_id = ? AND namespace_id = ?', [c.tenantId, c.namespaceId]);
+  });
+  token = (await reader.login()).token;
+  error(await f.call(queryPath, { ...query, token }), 403, 'DASHBOARD_DATASET_ACCESS_DENIED');
+  error(await f.call(`${path}/exports`, { ...artifact, token }), 403, 'DASHBOARD_DATASET_ACCESS_DENIED');
+  error(await f.call(queryPath, { token, method: 'POST', body: {} }), 403, 'DASHBOARD_DATASET_ACCESS_DENIED');
+});
 async function put(f, kind, id, body) {
   const context = await f.context(); let version = 0;
   try { version = (await f.metadata.get(context, { kind, id })).version; } catch (e) { if (e.code !== 'RESOURCE_NOT_FOUND') throw e; }

@@ -14,6 +14,7 @@ import { containedWork, wireTable, type QueryResult } from './contained-work.js'
 export class HostedDashboards implements DashboardBackend {
   readonly analyses: HostedAnalyses;
   private readonly content: EmbedContent;
+  private readonly publishedVersions = new WeakMap<DashboardVersion, string>();
   constructor(private readonly routes: HostedDataRoutes, private readonly context: TenantContext, private readonly recheck: () => Promise<void>) {
     this.analyses = new HostedAnalyses(routes, context, recheck); this.content = new EmbedContent(routes.data);
   }
@@ -37,6 +38,7 @@ export class HostedDashboards implements DashboardBackend {
     await this.authorize(id);
     const record = (await this.metadata.get(this.context, { kind: 'dashboard', id })).body.published as DashboardRecord | undefined;
     if (!record) throw new MetadataError('RESOURCE_NOT_FOUND', 404);
+    for (const version of record.versions) this.publishedVersions.set(version, id);
     return record;
   }
   async accessSnapshot(id: string) { return this.metadata.get(this.context, { kind: 'dashboard', id }); }
@@ -51,7 +53,14 @@ export class HostedDashboards implements DashboardBackend {
     const dataSetArn = v.definition.dataSetIdentifierDeclarations[0]!.dataSetArn;
     const analysis = { ResourceType: 'Analysis', AnalysisId: 'published', Name: v.name, Definition: definition };
     if (binding.kind === 'prepared-dataset') {
-      if (v.bindingOwnerId !== context.userId) throw new MetadataError('DASHBOARD_DATASET_ACCESS_DENIED', 403);
+      if (v.bindingOwnerId !== context.userId) {
+        // Accept only a version read from an authorized durable dashboard in this
+        // backend/context; a foreign or fabricated version cannot grant recipe access.
+        const dashboardId = this.publishedVersions.get(v);
+        if (!dashboardId) throw new MetadataError('DASHBOARD_DATASET_ACCESS_DENIED', 403);
+        await this.authorize(dashboardId);
+        return this.routes.prep.readerDashboardVisual(context, v.bindingOwnerId, binding.id, analysis, visualId, dataSetArn);
+      }
       return this.routes.prep.dashboardVisual(context, binding.id, analysis, visualId, dataSetArn);
     }
     // Follow the frozen binding, and admit as the reader. Never use EmbedSources' delegation.
