@@ -190,11 +190,17 @@ try {
   // Issue #59: new analyses start with an explicit dataset choice.
   await page.getByRole('link', { name: 'New analysis', exact: true }).click();
   await page.getByRole('dialog', { name: 'Create Analysis', exact: true }).waitFor();
-  await hold(2000);
-  await page.screenshot({ path: resolve(FRAMES, '../create-analysis.png') });
   await page.getByRole('radio', { name: 'Sample sales data', exact: true }).check();
+  // Issue #156: deterministic fields create an ordinary editable bar visual.
+  await page.getByRole('combobox', { name: 'Explore fields (optional)' }).fill('[revenue] by regon');
+  assert.equal(await page.getByRole('button', { name: 'Create analysis', exact: true }).isDisabled(), true);
+  await hold(1000);
+  await page.getByRole('option').filter({ hasText: /^region/ }).click();
+  await hold(1600);
+  await page.screenshot({ path: resolve(FRAMES, '../create-analysis.png') });
+  await page.getByRole('button', { name: 'Create analysis', exact: true }).click();
+  await page.locator('.author-card .chart svg').waitFor();
   await hold(800);
-  await page.getByRole('button', { name: 'Select', exact: true }).click();
 
   // 4. Data preparation: type conversion, second input and bottom join editor.
   await setMode('data-prep');
@@ -209,7 +215,16 @@ try {
   await page.getByRole('button', { name: 'Apply step', exact: true }).click();
   await page.getByRole('button', { name: '＋ Join', exact: true }).click();
   await page.getByRole('button', { name: 'Apply step', exact: true }).click();
-  await page.getByRole('button', { name: 'Configure step', exact: true }).click();
+  await page.getByRole('tab', { name: 'Preview', exact: true }).click();
+  await page.getByRole('button', { name: '＋ Formula column', exact: true }).click();
+  await page.getByLabel('Column name', { exact: true }).fill('net_revenue');
+  await page.getByLabel('Expression', { exact: true }).fill('{revenue} * 0.9');
+  await hold(1200);
+  await page.getByRole('button', { name: 'Apply step', exact: true }).click();
+  await page.getByRole('button', { name: 'Filter net_revenue', exact: true }).click();
+  await page.getByLabel('Operator', { exact: true }).selectOption('GREATER_THAN_OR_EQUAL_TO');
+  await page.getByLabel('Value', { exact: true }).fill('100');
+  await page.getByRole('button', { name: 'Apply step', exact: true }).click();
   await page.locator('.prep-workspace').scrollIntoViewIfNeeded();
   await page.getByRole('searchbox', { name: 'Search steps', exact: true }).fill('join');
   await hold(1200);
@@ -218,14 +233,10 @@ try {
   await hold(1000);
   await page.getByRole('button', { name: 'Fit pipeline to view', exact: true }).click();
   await hold(1000);
-  await page.getByRole('button', { name: 'Use left column category', exact: true }).dragTo(page.locator('[data-key-side="left"][data-key-index="1"]'));
-  await hold(1000);
-  assert.equal(await page.getByRole('button', { name: 'Apply step', exact: true }).isDisabled(), true);
-  await page.getByRole('button', { name: 'Use right column manager', exact: true }).dragTo(page.locator('[data-key-side="right"][data-key-index="1"]'));
-  assert.equal(await page.getByRole('button', { name: 'Apply step', exact: true }).isDisabled(), false);
-  await hold(1800);
-  await page.getByRole('button', { name: 'Apply step', exact: true }).click();
-  await page.getByRole('button', { name: 'Configure step', exact: true }).click();
+  assert.match(await page.locator('.prep-preview').innerText(), /Live preview is unavailable in the static demo/);
+  assert.equal(await page.locator('.prep-preview tbody tr').count(), 0);
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.screenshot({ path: resolve(FRAMES, '../data-prep.png'), fullPage: true });
   await hold(2200);
 
   // 5. Data source connector gallery. End.

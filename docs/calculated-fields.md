@@ -1,5 +1,8 @@
 # Calculated fields (Phase 2c)
 
+Data preparation's [formula-column shortcut](familiar-surface.md) (#156) uses
+this same expression language and the existing row-expression restrictions.
+
 The browser-safe query-engine catalog is the source of signatures, examples and
 validation for the editor and both SQL dialects. Expressions are parsed into a
 typed tree; they are never JavaScript or caller-supplied SQL. Field references use

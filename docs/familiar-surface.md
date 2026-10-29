@@ -35,8 +35,9 @@ unspecified.
 Choose a dataset in Create Analysis, then optionally enter a measure field and
 one dimension after `by`: `revenue`, `[revenue]`, `revenue by region`, or
 `[revenue] by [region]`. Measures are numeric dataset fields; dimensions follow
-the existing author field roles. Numeric measures use SUM. Field names with
-spaces are supported; brackets disambiguate names containing the word `by`.
+the existing author field roles; Boolean fields are unsupported. Numeric measures
+use SUM. Field names with spaces are supported; brackets disambiguate names
+containing the word `by`.
 
 The field picker offers the chosen dataset's fields and closest matches while
 typing, with arrow-key navigation and Enter to pick. Exact field names resolve

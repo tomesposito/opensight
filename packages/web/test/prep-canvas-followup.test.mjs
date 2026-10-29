@@ -184,6 +184,8 @@ test('Select columns drag order is applied to the schema and exported bundle; ke
 test('preview header reordering moves the matching cells and preserves values, nulls and source schema', async t => {
   const columns = structuredClone(leftColumns), rows = [{ region: 'East', category: null, revenue: 17 }];
   const ui = await mount(t, PrepPreviewTable, { columns, rows });
+  assert.deepEqual(ui.root.findAllByProps({ scope: 'row' }).map(n => n.props.children), [1]);
+  assert.equal(ui.root.findAllByType('input').length, 0, 'preview cells have no writeback editor');
   const header = name => () => ui.root.findAllByType('th').find(n => n.props.children[0] === name);
   await dropColumn(header('revenue'), header('region'));
   assert.deepEqual(ui.root.findAllByType('th').filter(n => n.props.tabIndex === 0).map(n => n.props.children[0]), ['revenue', 'region', 'category']);

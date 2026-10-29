@@ -1,5 +1,8 @@
 # Dataset preparation (issues #9, #11, #14, #17, #18, and #58)
 
+The Preview tab also offers [spreadsheet-style column actions](familiar-surface.md)
+for formula columns, filters, and renames (#156), all using the operations below.
+
 The Data preparation view builds a branching transformation pipeline over sources
 from the connector registry. Open it from Data sources → Prepare data, the mode
 picker, or the analysis editor's Data → Prepare data menu. The persistent left
