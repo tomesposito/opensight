@@ -36,6 +36,7 @@ export function DataPrep({ client, initialSource, initialDatasetId, onSources, o
   const [versions, setVersions] = useState<Record<string, number>>();
   const [selected, setSelected] = useState<string | null>(null);
   const [editing, setEditing] = useState<PrepStep>();
+  const gridStep = useRef<string | undefined>(undefined);
   const [tab, setTab] = useState<'configure' | 'preview'>('configure');
   const [staged, setStaged] = useState<PrepJoinInput | null>(null);
   const [staging, setStaging] = useState(false);
@@ -118,6 +119,15 @@ export function DataPrep({ client, initialSource, initialDatasetId, onSources, o
       setEditing(step); setSelected(null); setStaging(false); setTab('configure');
     } catch (e) { setError(prepMessage(e)); }
   };
+  const gridDisabled = !!problem || !pipeline.input || selected !== (pipeline.steps.at(-1)?.id ?? null);
+  const addFromGrid = (kind: 'calculate' | 'filter' | 'rename', column?: string) => {
+    if (gridDisabled) return;
+    const step = newPrepStep(kind, columns, sources, pipeline.input);
+    if (step.kind === 'rename' && column) step.config = { column, name: `${column}_renamed` };
+    if (step.kind === 'filter' && column) step.config = { filters: [{ columnName: column, operator: 'EQUALS', value: ['INTEGER', 'DECIMAL'].includes(columns.find(c => c.name === column)?.type ?? '') ? 0 : '' }] };
+    gridStep.current = step.id;
+    setEditing(step); setSelected(null); setStaging(false); setTab('configure');
+  };
   const stepPipeline = (step: PrepStep): PrepPipeline => ({ ...pipeline, steps: pipeline.steps.some(s => s.id === step.id) ? pipeline.steps.map(s => s.id === step.id ? step : s) : [...pipeline.steps, step] });
   const validateStep = (step: PrepStep) => {
     const next = stepPipeline(step), position = next.steps.findIndex(s => s.id === step.id);
@@ -140,6 +150,7 @@ export function DataPrep({ client, initialSource, initialDatasetId, onSources, o
     const exists = pipeline.steps.some(s => s.id === step.id), next = { ...pipeline, steps: exists ? pipeline.steps.map(s => s.id === step.id ? step : s) : [...pipeline.steps, step] };
     try {
       validateStep(step); change(next); setEditing(undefined); setSelected(step.id); setStaging(false);
+      if (gridStep.current === step.id) { gridStep.current = undefined; setTab('preview'); }
       if (staged && (step.kind === 'join' || step.kind === 'append') && prepRefKey(step.config.source) === prepRefKey(staged)) setStaged(null);
     } catch (e) { setError(prepMessage(e)); }
   };
@@ -239,7 +250,7 @@ export function DataPrep({ client, initialSource, initialDatasetId, onSources, o
         <p>The staged source appears on the canvas flagged as not yet joined. Add a Join or Append step to declare how it relates to your pipeline.</p></div> : selected ? <div className="prep-step-summary"><h3>{pipeline.steps[index] ? prepStepLabel(pipeline.steps[index]!) : 'Step'}</h3><button onClick={() => setEditing(pipeline.steps[index])}>Configure step</button><div className="prep-actions"><button disabled={index <= 0} onClick={() => move(-1)}>Move earlier</button><button disabled={index < 0 || index >= pipeline.steps.length - 1} onClick={() => move(1)}>Move later</button><button onClick={remove}>Remove step</button></div></div> : <div className="prep-input-config"><h3>Input · Add data</h3><PrepSourcePicker label="Connected source" value={pipeline.input} sources={sources} change={input => change({ ...pipeline, input: input as PrepInput })} />{client && <button onClick={() => setReload(n => n + 1)}>Refresh sources</button>}<p>{client ? 'Upload files in Data sources, or choose a saved prepared dataset. Joins use the same engine and configured connection.' : 'Sample schema only. Source bindings must be configured on the hosted API before preview.'}</p></div>}
       </section>
       <section className="prep-preview" id="prep-preview-panel" role="tabpanel" aria-labelledby="prep-preview-tab" hidden={tab !== 'preview'}><div className="prep-preview-heading"><h2>{selected && pipeline.steps[index] ? `${prepStepLabel(pipeline.steps[index]!)} preview` : 'Input preview'}</h2><span>{columns.length} columns{rightLabel(selectedStep) ? ` · Right source: ${rightLabel(selectedStep)}` : ''}</span></div>{problem ? <p className="prep-error" role="alert">{problem}</p> : !client ? <p className="prep-preview-empty">Needs local or hosted API · Live preview is unavailable in the static demo.</p> : current?.error ? <p className="prep-error" role="alert">{current.error}</p> : !current?.result ? <p role="status">Loading step preview…</p> : <p role="status">{current.result.returnedRows} rows shown · {current.result.truncated ? `at least ${current.result.rowCountLowerBound} output rows; total unknown` : `${current.result.totalRows} output rows total`} · limit {current.result.limit} · {current.result.dialect}{current.result.cachedInputs?.map(input => <span key={`${input.datasetId}:${input.refreshedAt}`}><br />Cached input {input.datasetId} · refreshed {input.refreshedAt}</span>)}</p>}
-        <PrepPreviewTable key={JSON.stringify([resource.dataSetId, selected, columns])} columns={columns} rows={!problem ? current?.result?.rows ?? [] : []} /><p className="prep-preview-help">Draft previews execute source steps and label cached inputs. Previews return at most 100 rows after transformation. Aggregates use the full source; row order is unspecified. {onBuild ? 'Save the pipeline, then select Build a chart to query its output in the analysis editor.' : 'Prepared datasets are saved as pipeline metadata; connecting them to analysis visuals requires hosted dataset publication.'}</p>
+        <PrepPreviewTable key={JSON.stringify([resource.dataSetId, selected, columns])} columns={columns} rows={!problem ? current?.result?.rows ?? [] : []} onAction={addFromGrid} actionsDisabled={gridDisabled} /><p className="prep-preview-help">Draft previews execute source steps and label cached inputs. Previews return at most 100 rows after transformation. Aggregates use the full source; row order is unspecified. {onBuild ? 'Save the pipeline, then select Build a chart to query its output in the analysis editor.' : 'Prepared datasets are saved as pipeline metadata; connecting them to analysis visuals requires hosted dataset publication.'}</p>
       </section></div></div>
   </section>;
 }

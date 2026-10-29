@@ -186,11 +186,11 @@ test('preview header reordering moves the matching cells and preserves values, n
   const ui = await mount(t, PrepPreviewTable, { columns, rows });
   const header = name => () => ui.root.findAllByType('th').find(n => n.props.children[0] === name);
   await dropColumn(header('revenue'), header('region'));
-  assert.deepEqual(ui.root.findAllByType('th').map(n => n.props.children[0]), ['revenue', 'region', 'category']);
+  assert.deepEqual(ui.root.findAllByType('th').filter(n => n.props.tabIndex === 0).map(n => n.props.children[0]), ['revenue', 'region', 'category']);
   assert.equal(ui.root.findAllByType('td')[0].props.children, '17');
   assert.equal(ui.root.findAllByType('td')[1].props.children, 'East');
   assert.equal(ui.root.findByType('em').props.children, 'null');
   await act(async () => header('revenue')().props.onKeyDown({ key: 'ArrowRight', altKey: true, preventDefault() {} }));
-  assert.deepEqual(ui.root.findAllByType('th').map(n => n.props.children[0]), ['region', 'revenue', 'category']);
+  assert.deepEqual(ui.root.findAllByType('th').filter(n => n.props.tabIndex === 0).map(n => n.props.children[0]), ['region', 'revenue', 'category']);
   assert.deepEqual(columns, leftColumns); assert.deepEqual(rows, [{ region: 'East', category: null, revenue: 17 }]);
 });

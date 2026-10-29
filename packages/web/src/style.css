@@ -2000,6 +2000,12 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .prep-preview td { padding: 10px 16px; border-bottom: 1px solid #e1e7ec; white-space: nowrap; }
 .prep-preview td em { color: #8899a4; }
 .prep-preview-help { color: #5c7281; line-height: 1.6; }
+.prep-grid-tools { display: flex; align-items: center; gap: 8px; padding: 8px 16px; border-bottom: 1px solid #dce3e9; font-size: 12px; }
+.prep-grid-column-actions { display: flex; gap: 4px; margin-top: 8px; }
+.prep-grid-column-actions button { padding: 4px 8px; font-size: 12px; }
+.prep-preview thead th { position: sticky; top: 0; z-index: 1; }
+.prep-preview th.prep-row-number { width: 40px; padding: 8px; text-align: right; font-weight: normal; color: #5c7281; cursor: default; }
+.prep-preview td { border-right: 1px solid #e1e7ec; }
 @media (max-width: 800px) {
   .data-prep { padding: 12px; }
   .prep-heading { align-items: flex-start; flex-direction: column; }
