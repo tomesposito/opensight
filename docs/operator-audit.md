@@ -27,7 +27,7 @@ subject, and when.
 | `tenant.suspended` / `tenant.resumed` | `MetadataOperator.transition` |
 | `tenant.deletion-requested` | `MetadataOperator.transition` (`delete`) |
 | `tenant.deletion-finished` | `MetadataOperator.finishDeletion` |
-| `tenant.deletion-completed` | `ReferenceMaintenance.deleteTenant` (artifacts purged) |
+| `tenant.deletion-completed` | `ReferenceMaintenance.deleteTenant` (stores verified; retained under D-84; no duplicate on retry) |
 | `operation.checkpointed` | `MetadataOperator.checkpoint` |
 | `membership.invited` | `HostedProvisioning.inviteMember` |
 | `membership.removed` | `HostedProvisioning.removeMember` |

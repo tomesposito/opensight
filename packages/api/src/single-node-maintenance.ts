@@ -1,11 +1,12 @@
 import { mkdir, lstat, realpath, open, readFile, rename, readdir, unlink } from 'node:fs/promises';
-import { join, resolve, sep } from 'node:path';
+import { dirname, join, resolve, sep } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { MetadataError, type Database, type SqlRow } from './metadata-db.js';
 import { seal, unseal, digest } from './auth-crypto.js';
 import { identifier } from './metadata-resources.js';
 import { MetadataOperator } from './metadata-operator.js';
 import { appendOperatorAudit } from './operator-audit.js';
+import { tenantDeletionInventory, assertReferenceErasureStores, purgeTenantRows, verifyTenantRows, assertNoTenantOrphans, type ErasureCount, type TenantErasureCache, type TenantDeletionOptions, type TenantDeletionReport } from './tenant-erasure.js';
 
 // Foreign-key order; only application tables, never database roles or environment.
 export const referenceTables = ['h1_tenants', 'h1_namespaces', 'h1_revisions', 'h1_resources', 'h1_links', 'h1_operations', 'h1_outbox', 'h1_migrations',
@@ -25,17 +26,26 @@ async function privateWrite(path: string, value: string): Promise<void> {
 /** Called under the reference's exclusive lifetime/maintenance lock, with every
  * API/scheduler writer stopped. Registry is independent of database backups. */
 export class ReferenceMaintenance {
-  private constructor(readonly db: Database, readonly directory: string, private readonly key: Buffer) {}
-  static async open(db: Database, path: string, key: Buffer, maintenance: string | undefined): Promise<ReferenceMaintenance> {
+  private constructor(readonly db: Database, readonly directory: string, private readonly key: Buffer, private readonly caches: readonly TenantErasureCache[]) {}
+  static async open(db: Database, path: string, key: Buffer, maintenance: string | undefined, caches: readonly TenantErasureCache[] = []): Promise<ReferenceMaintenance> {
     if (maintenance !== 'frozen') failure('REFERENCE_MAINTENANCE_REQUIRED');
     // Private runtime storage must not accidentally become a public repository export.
     const absolute = resolve(path), repo = resolve(new URL('../../..', import.meta.url).pathname);
     if (absolute === repo || absolute.startsWith(`${repo}${sep}`) && !absolute.startsWith(`${repo}${sep}.opensight${sep}`)) failure('BACKUP_DIRECTORY_INVALID');
-    await mkdir(absolute, { recursive: true, mode: 0o700 });
-    if (!(await lstat(absolute)).isDirectory() || await realpath(absolute) !== absolute) failure('BACKUP_DIRECTORY_INVALID');
-    return new ReferenceMaintenance(db, absolute, key);
+    // Opening maintenance (including a dry run) must not create directories.
+    let existing = absolute;
+    for (;;) {
+      try {
+        if (!(await lstat(existing)).isDirectory() || await realpath(existing) !== existing) failure('BACKUP_DIRECTORY_INVALID');
+        break;
+      } catch (error) {
+        if (!error || typeof error !== 'object' || !('code' in error) || error.code !== 'ENOENT') throw error;
+        existing = dirname(existing);
+      }
+    }
+    return new ReferenceMaintenance(db, absolute, key, [...caches]);
   }
-  private async registry(create = false): Promise<Registry> {
+  private async registry(allowMissing = false): Promise<Registry> {
     const path = join(this.directory, 'registry');
     try {
       if (!(await lstat(path)).isFile()) failure('BACKUP_REGISTRY_INVALID');
@@ -44,17 +54,29 @@ export class ReferenceMaintenance {
       for (const id of Object.keys(r.backups)) identifier(id);
       return r;
     } catch (error) {
-      if (create && error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT' && (await readdir(this.directory)).length === 0) {
-        const r: Registry = { version: 1, backups: {}, deleted: [] }; await this.saveRegistry(r); return r;
+      if (allowMissing && error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT' && (await this.backupFiles()).every(file => /^registry\.[a-f0-9-]{36}\.tmp$/.test(file))) {
+        // Before the very first atomic registry rename, only abandoned registry
+        // writes can exist. No snapshot is written before that rename. Recover
+        // this interrupted initialization, but never adopt unregistered backups.
+        return { version: 1, backups: {}, deleted: [] };
       }
       return failure('BACKUP_REGISTRY_INVALID');
     }
   }
+  private async backupFiles(): Promise<string[]> {
+    try { return (await readdir(this.directory)).filter(file => file !== 'registry').sort(); }
+    catch (error) {
+      if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT') return [];
+      throw error;
+    }
+  }
   private async saveRegistry(registry: Registry): Promise<void> {
+    await mkdir(this.directory, { recursive: true, mode: 0o700 });
     await privateWrite(join(this.directory, 'registry'), seal(JSON.stringify(registry), this.key, 'h8-registry')); await syncDirectory(this.directory);
   }
   async backup(): Promise<{ id: string; bytes: number; rows: number }> {
     const registry = await this.registry(true), id = randomUUID();
+    await this.saveRegistry(registry);
     const snapshot: Snapshot = { version: 1, tables: {} }; let rows = 0, bytes = 0;
     await this.db.transaction(async c => {
       for (const table of referenceTables) {
@@ -129,32 +151,74 @@ export class ReferenceMaintenance {
       await appendOperatorAudit(c, { action: 'restore.memberships-reviewed', tenantId, detail: { users: userIds.length } });
     });
   }
-  async deleteTenant(operationId: string, externalCopies: string | undefined): Promise<void> {
-    if (externalCopies !== 'none') failure('BACKUP_COPIES_UNRESOLVED');
+  async deleteTenant(operationId: string, externalCopies?: string, options: TenantDeletionOptions = {}): Promise<TenantDeletionReport> {
+    if (options.dryRun !== undefined && typeof options.dryRun !== 'boolean') failure('TENANT_ERASURE_MODE_INVALID');
     const operator = new MetadataOperator(this.db), op = await operator.inspect(identifier(operationId));
-    if (op.action !== 'delete' || !['revoked', 'artifacts-removed', 'deleted'].includes(op.step)) failure('OPERATION_TRANSITION_INVALID');
+    if (op.action !== 'delete' || !['revoked', 'artifacts-removed', 'deleted', 'erasure-verified'].includes(op.step)) failure('OPERATION_TRANSITION_INVALID');
+    const dryRun = options.dryRun !== false;
+    if (!dryRun && options.confirmTenantId !== op.tenantId) failure('TENANT_ERASURE_CONFIRMATION_REQUIRED');
+    if (!dryRun && externalCopies !== 'none') failure('BACKUP_COPIES_UNRESOLVED');
+    await assertReferenceErasureStores(this.db);
     const registry = await this.registry(true);
-    // Tombstone the independent registry first. A crash at any subsequent step
-    // cannot make an old registered snapshot eligible for restore again.
-    if (!registry.deleted.includes(op.tenantId)) registry.deleted.push(op.tenantId);
-    registry.backups = {}; await this.saveRegistry(registry);
-    // Purge every managed backup, including abandoned writes and temporary files.
-    for (const file of await readdir(this.directory)) if (file !== 'registry') {
-      const path = join(this.directory, file); if (!(await lstat(path)).isFile()) failure('BACKUP_PURGE_FAILED');
-      await unlink(path);
+    const report: TenantDeletionReport = { tenantId: op.tenantId, operationId, dryRun, status: 'planned',
+      counts: await this.db.transaction(c => tenantDeletionInventory(c, op.tenantId)) };
+    const files = await this.backupFiles();
+    for (const file of files) if (!(await lstat(join(this.directory, file))).isFile()) failure('BACKUP_PURGE_FAILED');
+    report.counts.push({ store: 'backups.files', action: 'delete', count: files.length },
+      { store: 'backups.registrations', action: 'delete', count: Object.keys(registry.backups).length },
+      { store: 'backups.deleted-tenants', action: 'fence', count: registry.deleted.includes(op.tenantId) ? 0 : 1 });
+    const cached = this.caches.map(cache => cache.countTenant(op.tenantId));
+    if (cached.some(count => !Number.isSafeInteger(count) || count < 0)) failure('TENANT_ERASURE_INVENTORY_INVALID');
+    report.counts.push({ store: 'blaze.memory', action: 'delete', count: cached.reduce((a, b) => a + b, 0) });
+    if (dryRun) return report;
+    const workRemains = report.counts.some(entry => entry.action !== 'retain' && entry.count > 0);
+    if (op.step === 'erasure-verified' && !workRemains) {
+      await this.verifyExternalErasure(op.tenantId);
+      await this.db.transaction(c => verifyTenantRows(c, op.tenantId));
+      return { ...report, status: 'noop' };
     }
-    await syncDirectory(this.directory);
+    // Fence old snapshots before removing bytes. Do not rewrite an unchanged
+    // registry on retries; a crash cannot make old snapshots restorable again.
+    if (!registry.deleted.includes(op.tenantId) || Object.keys(registry.backups).length) {
+      if (!registry.deleted.includes(op.tenantId)) registry.deleted.push(op.tenantId);
+      registry.backups = {}; await this.saveRegistry(registry);
+    }
+    for (const file of files) await unlink(join(this.directory, file));
+    if (files.length) await syncDirectory(this.directory);
+    for (const cache of this.caches) cache.purgeTenant(op.tenantId);
+    await this.verifyExternalErasure(op.tenantId);
     await this.db.transaction(async c => {
-      for (const table of ['analytics_events', 'analytics_settings', 'h8_recovery', 'h8_usage_events', 'h8_monthly_usage', 'h8_usage', 'h7_deliveries', 'h7_occurrences', 'h7_jobs', 'h7_migrations', 'h6_sessions', 'h5_embedding_config', 'h2_onboarding', 'h2_invitations', 'h2_sessions', 'h2_memberships']) await c.query(`DELETE FROM ${table} WHERE tenant_id = ?`, [op.tenantId]);
-      await c.query('DELETE FROM h2_identities WHERE NOT EXISTS (SELECT 1 FROM h2_memberships m WHERE m.subject = h2_identities.subject)');
-      // Namespace reservation remains, but labels and placement may contain tenant data.
-      await c.query("UPDATE h1_namespaces SET name = 'deleted' WHERE tenant_id = ?", [op.tenantId]);
-      await c.query('UPDATE h1_tenants SET placement = NULL, limit_policy = NULL WHERE tenant_id = ?', [op.tenantId]);
+      const subjects = await purgeTenantRows(c, op.tenantId);
+      await verifyTenantRows(c, op.tenantId, subjects);
+      // Metadata finalization and its audit receipt share the purge transaction.
+      const atomic = new MetadataOperator({ transaction: work => work(c), close: async () => {} });
+      if (op.step === 'revoked') await atomic.checkpoint(operationId, 'revoked', 'artifacts-removed');
+      await atomic.finishDeletion(operationId);
+      await verifyTenantRows(c, op.tenantId, subjects);
+      if (op.step !== 'erasure-verified') {
+        // Older finalizers may already have appended the receipt. Preserve it.
+        if (!(await c.query("SELECT event_id FROM h8_audit WHERE tenant_id = ? AND action = 'tenant.deletion-completed'", [op.tenantId])).length) {
+          await appendOperatorAudit(c, { action: 'tenant.deletion-completed', tenantId: op.tenantId });
+        }
+        // Durable idempotency marker, independent of the audit retention window.
+        await c.query("UPDATE h1_operations SET step = 'erasure-verified' WHERE operation_id = ?", [operationId]);
+      }
     });
-    if (op.step === 'revoked') await operator.checkpoint(operationId, 'revoked', 'artifacts-removed');
-    await operator.finishDeletion(operationId);
-    await this.db.transaction(c => appendOperatorAudit(c, { action: 'tenant.deletion-completed', tenantId: op.tenantId }));
+    return { ...report, status: 'deleted' };
   }
+  private async verifyExternalErasure(tenantId: string): Promise<void> {
+    const registry = await this.registry(), remaining: ErasureCount[] = [];
+    const files = (await this.backupFiles()).length, registrations = Object.keys(registry.backups).length;
+    if (files) remaining.push({ store: 'backups.files', action: 'delete', count: files });
+    if (registrations) remaining.push({ store: 'backups.registrations', action: 'delete', count: registrations });
+    if (!registry.deleted.includes(tenantId)) remaining.push({ store: 'backups.deleted-tenants', action: 'fence', count: 1 });
+    const counts = this.caches.map(cache => cache.countTenant(tenantId));
+    if (counts.some(count => !Number.isSafeInteger(count) || count < 0)) failure('TENANT_ERASURE_INVENTORY_INVALID');
+    const cached = counts.reduce((a, b) => a + b, 0);
+    if (cached) remaining.push({ store: 'blaze.memory', action: 'delete', count: cached });
+    assertNoTenantOrphans(remaining);
+  }
+
   async retain(auditDays: number, usageDays: number, now = Date.now()): Promise<void> {
     if (!Number.isSafeInteger(auditDays) || auditDays < 0 || !Number.isSafeInteger(usageDays) || usageDays < 1) failure('REFERENCE_CONFIG_INVALID');
     await this.db.transaction(async c => {

@@ -8,6 +8,8 @@ import { MetadataError } from './metadata-db.js';
 import { hostedReadiness } from './hosted-health.js';
 import { activateAuthKey } from './hosted-auth.js';
 
+import { deletionOptions } from './tenant-erasure.js';
+
 process.umask(0o077);
 let reference: ReferencePostgres | undefined;
 try {
@@ -36,7 +38,7 @@ try {
     const maintenance = await ReferenceMaintenance.open(reference.operator, env.OPENSIGHT_BACKUP_DIRECTORY, config.encryptionKey, env.OPENSIGHT_MAINTENANCE);
     if (command === 'backup') console.log(JSON.stringify(await maintenance.backup()));
     else if (command === 'restore') await maintenance.restore(env.OPENSIGHT_BACKUP_ID ?? '');
-    else if (command === 'delete-tenant') await maintenance.deleteTenant(env.OPENSIGHT_DELETE_OPERATION ?? '', env.OPENSIGHT_BACKUP_COPIES);
+    else if (command === 'delete-tenant') console.log(JSON.stringify(await maintenance.deleteTenant(env.OPENSIGHT_DELETE_OPERATION ?? '', env.OPENSIGHT_BACKUP_COPIES, deletionOptions(env))));
     else if (command === 'restore-review') {
       let users: unknown; try { users = JSON.parse(env.OPENSIGHT_RESTORE_USERS ?? ''); } catch { throw new MetadataError('RESTORE_REVIEW_INVALID', 400); }
       if (!Array.isArray(users) || users.some(u => typeof u !== 'string')) throw new MetadataError('RESTORE_REVIEW_INVALID', 400);
@@ -46,5 +48,7 @@ try {
   if (command !== 'serve') { await reference.close(); reference = undefined; console.log('REFERENCE_OPERATION_COMPLETE'); }
 } catch (error) {
   await reference?.close().catch(() => {});
-  console.error(error instanceof MetadataError ? error.code : 'REFERENCE_OPERATION_FAILED'); process.exitCode = 1;
+  console.error(error instanceof MetadataError ? error.code : 'REFERENCE_OPERATION_FAILED');
+  if (error instanceof MetadataError && ['TENANT_ERASURE_ORPHANS_REMAIN', 'TENANT_ERASURE_STORE_UNSUPPORTED'].includes(error.code)) console.error(JSON.stringify(error.detail));
+  process.exitCode = 1;
 }
