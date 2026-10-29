@@ -24,6 +24,20 @@ export interface MonthlyUsage {
   computeAttemptsAdmitted: number; computeAttemptsDenied: number;
   storageBytes: number; storageAsOf: string | null; egressBytes: number;
 }
+export function usageMonth(value: unknown): string {
+  if (typeof value !== 'string' || !/^(?!0000)[0-9]{4}-(0[1-9]|1[0-2])$/.test(value)) throw new MetadataError('USAGE_PERIOD_INVALID', 400);
+  return value;
+}
+function usageInteger(value: unknown): number {
+  if (typeof value !== 'number' && (typeof value !== 'string' || !/^[0-9]+$/.test(value))) throw new MetadataError('ENTITLEMENT_UNRESOLVED', 503);
+  const count = Number(value);
+  if (!Number.isSafeInteger(count) || count < 0) throw new MetadataError('ENTITLEMENT_UNRESOLVED', 503);
+  return count;
+}
+function emptyMonthlyUsage(scope: Scope, period: string): MonthlyUsage {
+  return { ...scope, period, apiCallsAdmitted: 0, apiCallsDenied: 0, computeAttemptsAdmitted: 0, computeAttemptsDenied: 0,
+    storageBytes: 0, storageAsOf: null, egressBytes: 0 };
+}
 export function entitlementConfig(raw: string | undefined): Entitlements {
   try {
     const input = object(JSON.parse(raw!), ['defaults', 'tenants']);
@@ -77,6 +91,48 @@ export async function resourceBytes(c: SqlConnection, scope: Scope): Promise<num
 export class HostedUsage {
   readonly config: Entitlements;
   constructor(readonly db: Database, config: Entitlements, readonly clock = Date.now, private readonly objectDeployment?: string) { this.config = structuredClone(config); }
+  private async billingScope(c: SqlConnection, scope: Scope, lock = false): Promise<void> {
+    // Reporting includes suspended/provisioning/deleting tenants, but never resurrects
+    // erased tenants. Rollups serialize with metering and H1 writes on the tenant row.
+    const sql = lock ? "UPDATE h1_tenants SET version = version WHERE tenant_id = ? AND state <> 'deleted' RETURNING tenant_id"
+      : "SELECT tenant_id FROM h1_tenants WHERE tenant_id = ? AND state <> 'deleted'";
+    if (!(await c.query(sql, [scope.tenantId])).length) throw new MetadataError('TENANT_UNAVAILABLE', 403);
+    if (!(await c.query('SELECT tenant_id FROM h1_namespaces WHERE tenant_id = ? AND namespace_id = ?', [scope.tenantId, scope.namespaceId])).length) throw new MetadataError('ENTITLEMENT_UNRESOLVED', 503);
+  }
+  /** Recompute UTC daily totals; never increment a previously rolled-up total.
+   * Storage is the CURRENT gauge, not a sum or a historical month-end measurement.
+   * Each run replaces that snapshot and its timestamp, even for a past month. */
+  async rollupMonthlyUsage(scope: Scope, month: string): Promise<MonthlyUsage> {
+    const period = usageMonth(month);
+    return this.db.transaction(async c => {
+      await this.billingScope(c, scope, true);
+      const record = emptyMonthlyUsage(scope, period);
+      const rows = await c.query(`SELECT metric, admitted, denied FROM h8_usage
+        WHERE tenant_id = ? AND namespace_id = ? AND period >= ? AND period <= ?
+        AND metric IN ('apiCalls', 'computeAttempts')`, [scope.tenantId, scope.namespaceId, `${period}-01`, `${period}-31`]);
+      for (const row of rows) {
+        const admitted = usageInteger(row.admitted), denied = usageInteger(row.denied);
+        if (row.metric === 'apiCalls') {
+          record.apiCallsAdmitted = usageInteger(record.apiCallsAdmitted + admitted);
+          record.apiCallsDenied = usageInteger(record.apiCallsDenied + denied);
+        } else {
+          record.computeAttemptsAdmitted = usageInteger(record.computeAttemptsAdmitted + admitted);
+          record.computeAttemptsDenied = usageInteger(record.computeAttemptsDenied + denied);
+        }
+      }
+      record.storageBytes = usageInteger(await this.storageBytes(c, scope));
+      record.storageAsOf = new Date(this.clock()).toISOString();
+      await c.query(`INSERT INTO h8_monthly_usage (tenant_id, namespace_id, period, api_calls_admitted, api_calls_denied,
+        compute_attempts_admitted, compute_attempts_denied, storage_bytes, storage_as_of, egress_bytes) VALUES (?,?,?,?,?,?,?,?,?,?)
+        ON CONFLICT (tenant_id, namespace_id, period) DO UPDATE SET
+        api_calls_admitted = excluded.api_calls_admitted, api_calls_denied = excluded.api_calls_denied,
+        compute_attempts_admitted = excluded.compute_attempts_admitted, compute_attempts_denied = excluded.compute_attempts_denied,
+        storage_bytes = excluded.storage_bytes, storage_as_of = excluded.storage_as_of, egress_bytes = excluded.egress_bytes`,
+      [scope.tenantId, scope.namespaceId, period, record.apiCallsAdmitted, record.apiCallsDenied,
+        record.computeAttemptsAdmitted, record.computeAttemptsDenied, record.storageBytes, record.storageAsOf, record.egressBytes]);
+      return record;
+    }).catch((error: unknown) => { if (error instanceof MetadataError) throw error; throw new MetadataError('ENTITLEMENT_UNRESOLVED', 503); });
+  }
   entitlement(scope: Scope): Entitlement {
     const limit = Object.hasOwn(this.config.tenants, scope.tenantId) ? this.config.tenants[scope.tenantId] : this.config.defaults;
     if (!limit) throw new MetadataError('ENTITLEMENT_UNRESOLVED', 503);
