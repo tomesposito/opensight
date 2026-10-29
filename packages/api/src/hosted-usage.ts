@@ -16,6 +16,14 @@ export interface Entitlement {
   aiCostCentsPerMillionTokens?: number;
 }
 export interface Entitlements { defaults: Entitlement | null; tenants: Record<string, Entitlement> }
+/** Durable monthly billing shape for D-81. Counts and bytes only; no customer content.
+ * A null storageAsOf denotes an explicit empty read before the first rollup. */
+export interface MonthlyUsage {
+  tenantId: string; namespaceId: string; period: string;
+  apiCallsAdmitted: number; apiCallsDenied: number;
+  computeAttemptsAdmitted: number; computeAttemptsDenied: number;
+  storageBytes: number; storageAsOf: string | null; egressBytes: number;
+}
 export function entitlementConfig(raw: string | undefined): Entitlements {
   try {
     const input = object(JSON.parse(raw!), ['defaults', 'tenants']);
@@ -42,6 +50,13 @@ export async function initializeUsage(db: Database): Promise<void> {
     await c.query(`CREATE TABLE IF NOT EXISTS h8_usage_events (
       event_id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, namespace_id TEXT NOT NULL, created_at TEXT NOT NULL,
       metric TEXT NOT NULL, unit TEXT NOT NULL, amount BIGINT NOT NULL, outcome TEXT NOT NULL,
+      FOREIGN KEY (tenant_id, namespace_id) REFERENCES h1_namespaces(tenant_id, namespace_id))`);
+    await c.query(`CREATE TABLE IF NOT EXISTS h8_monthly_usage (
+      tenant_id TEXT NOT NULL, namespace_id TEXT NOT NULL, period TEXT NOT NULL,
+      api_calls_admitted BIGINT NOT NULL, api_calls_denied BIGINT NOT NULL,
+      compute_attempts_admitted BIGINT NOT NULL, compute_attempts_denied BIGINT NOT NULL,
+      storage_bytes BIGINT NOT NULL, storage_as_of TEXT NOT NULL, egress_bytes BIGINT NOT NULL,
+      PRIMARY KEY (tenant_id, namespace_id, period),
       FOREIGN KEY (tenant_id, namespace_id) REFERENCES h1_namespaces(tenant_id, namespace_id))`);
     await c.query(`CREATE TABLE IF NOT EXISTS h8_ai_warnings (
       tenant_id TEXT NOT NULL, namespace_id TEXT NOT NULL, period TEXT NOT NULL,
