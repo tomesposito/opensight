@@ -1,6 +1,6 @@
 import { setImmediate as yieldTurn } from 'node:timers/promises';
 import { containedWork, wireTable, type WireTable, type TableResult, type QueryResult } from './contained-work.js';
-import { parseBundleResource, type BundleDataSet } from '@opensight/bundle-parser';
+import { parseBundleResource, ValidationError, type BundleDataSet } from '@opensight/bundle-parser';
 import { validatePrepPipeline, type PrepPipeline, type PrepInput } from '@opensight/bundle-parser/prep';
 import { compilePrep, planPreparedQuery, planPreparedVisual, type PrepDataset } from '@opensight/query-engine';
 import { HostedData, type Admission } from './hosted-data.js';
@@ -14,21 +14,24 @@ import { validateQuery } from './query.js';
 import type { JobStore } from './job-store.js';
 
 const references = (p: PrepPipeline): PrepInput[] => [p.input, ...p.steps.flatMap(s => s.kind === 'append' ? [s.config.source] : s.kind === 'join' && !(typeof s.config.source !== 'string' && 'step' in s.config.source) ? [s.config.source as PrepInput] : [])];
-interface Graph { pipeline: PrepPipeline; datasets: PrepDataset[]; leaves: Admission[]; revisions: Revisions; reason: string | null; modes: Map<string, { version: number; execution: ExecutionSettings }> }
-/** Owner-only durable recipes. The complete graph is checked even when reading a cached output. */
+interface Graph { pipeline: PrepPipeline; datasets: PrepDataset[]; leaves: Admission[]; revisions: Revisions; reason: string | null; modes: Map<string, { version: number; execution: ExecutionSettings }>; reader: boolean }
+/** Owner-only authoring; published dashboards may execute recipes with reader-owned sources.
+ * The complete graph is checked even when reading an owner's cached output. */
 export class HostedPrep {
   constructor(readonly data: HostedData, private readonly jobs?: JobStore) {}
   private key(context: TenantContext, id: string) { return { kind: 'prepared-dataset' as const, id: identifier(id), ownerId: context.userId }; }
   private cacheKey(context: TenantContext, id: string) { return JSON.stringify([context.tenantId, context.namespaceId, context.userId, 'prep', id]); }
-  private async stored(context: TenantContext, id: string) {
-    const r = await this.data.sources.metadata.get(context, this.key(context, id));
+  private async stored(context: TenantContext, id: string, recipeOwner?: string) {
+    const r = recipeOwner === undefined ? await this.data.sources.metadata.get(context, this.key(context, id))
+      : await this.data.sources.metadata.dashboardRecipe(context, recipeOwner, id);
     const resource = parseBundleResource(r.body.resource);
     if (resource.resourceType !== 'dataset' || !resource.opensightPrep) sourceError('INVALID_PREP_PIPELINE');
     return { resource, version: r.version, execution: r.body.execution === undefined ? directSettings : executionSettings(r.body.execution) };
   }
-  private async graph(context: TenantContext, id: string, pipeline: PrepPipeline): Promise<Graph> {
+  private async graph(context: TenantContext, id: string, pipeline: PrepPipeline, recipeOwner?: string): Promise<Graph> {
     const revisions = await this.data.sources.metadata.revisions(context);
-    await this.data.sources.capability(context, 'build');
+    const reader = recipeOwner !== undefined;
+    await this.data.sources.capability(context, reader ? 'view' : 'build');
     const datasets: PrepDataset[] = [], leaves: Admission[] = [], done = new Set<string>(), active = new Set<string>(), modes = new Map<string, { version: number; execution: ExecutionSettings }>();
     let steps = 0;
     const visit = async (key: string, p: PrepPipeline, depth: number) => {
@@ -38,10 +41,10 @@ export class HostedPrep {
       active.add(key);
       for (const ref of references(p)) {
         if (typeof ref === 'string') {
-          if (!leaves.some(a => a.source.id === ref)) leaves.push(await this.data.admit(context, ref, 'prep'));
+          if (!leaves.some(a => a.source.id === ref)) leaves.push(await this.data.admit(context, ref, reader ? 'query' : 'prep'));
         } else {
           if (ref.dataset === id || active.has(ref.dataset)) sourceError('INVALID_PREP_PIPELINE');
-          const stored = await this.stored(context, ref.dataset), child = stored.resource.opensightPrep!;
+          const stored = await this.stored(context, ref.dataset, recipeOwner), child = stored.resource.opensightPrep!;
           modes.set(ref.dataset, { version: stored.version, execution: stored.execution });
           if (!datasets.some(d => d.id === ref.dataset)) datasets.push({ id: ref.dataset, pipeline: child });
           await visit(ref.dataset, child, depth + 1);
@@ -51,11 +54,14 @@ export class HostedPrep {
     };
     await visit(id, pipeline, 0);
     const reason = materializationReason(id, [{ id, pipeline, mode: 'DIRECT_QUERY' }, ...datasets.map(d => ({ ...d, mode: modes.get(d.id)!.execution.mode }))]);
-    const graph = { pipeline, datasets, leaves, revisions, reason, modes };
+    const graph = { pipeline, datasets, leaves, revisions, reason, modes, reader };
     this.plan(graph, id); // Validate every stage, including branches outside the selected output.
     await this.data.finish(context, leaves, revisions); return graph;
   }
-  private sources(g: Graph) { return g.leaves.map((a, i) => ({ ...a.physical, connectorId: 'file', schema: undefined, table: `leaf_${i}` })); }
+  private sources(g: Graph) { return g.leaves.map((a, i) => ({ ...a.physical, connectorId: 'file', schema: undefined, table: `leaf_${i}`,
+    // Reader tables enter the compiler only AFTER HostedData.table enforces RLS,
+    // tenant predicates and CLS. Denied columns never enter the recipe schema.
+    ...(g.reader ? { security: 'unrestricted' as const, columns: a.physical.columns.filter(c => !a.deniedColumns.includes(c.name)) } : {}) })); }
   private plan(g: Graph, id: string, through?: string | null) {
     return compilePrep(g.pipeline, this.sources(g), { datasets: g.datasets, datasetId: id, ...(through === undefined ? {} : { through }) });
   }
@@ -68,7 +74,7 @@ export class HostedPrep {
         if (visited.has(ref.dataset)) continue;
         visited.add(ref.dataset);
         const d = datasets.find(d => d.id === ref.dataset)!, mode = g.modes.get(ref.dataset)!;
-        if (mode.execution.mode === 'BLAZE') {
+        if (!g.reader && mode.execution.mode === 'BLAZE') {
           const key = this.cacheKey(context, ref.dataset), stamp = JSON.stringify([mode.version, g.revisions]);
           const table = await this.data.cache!.read(scope, key, stamp); scope.rows(table.rowCount);
           d.materialized = { id: `cached_${tables.length}`, table: `cached_${tables.length}`, connectorId: 'file', columns: table.columns, security: 'unrestricted' };
@@ -79,7 +85,7 @@ export class HostedPrep {
     // Check every cache dependency before opening any leaf. Full graph policy checks already ran.
     await visit(g.pipeline);
     for (const [i, a] of g.leaves.entries()) if (needed.has(a.source.id)) {
-      const table = await this.data.table(context, a, a.physical.columns.map(c => c.name));
+      const table = await this.data.table(context, a, sources[i]!.columns.map(c => c.name));
       tables.push(await wireTable(scope, table, sources[i]!));
     }
     await this.data.finish(context, g.leaves, g.revisions);
@@ -189,6 +195,30 @@ export class HostedPrep {
     const plan = planPreparedVisual(columns, analysis, visualId, dataSetArn);
     const result = await this.execute(context, id, 'rows', {}, { analysis, visualId, dataSetArn }) as QueryResult;
     return { ...result, bindings: Object.fromEntries([...plan.dimensions, ...plan.measures].map(f => [f.fieldId, f.outputName])) };
+  }
+  /** D-85: only the authorized published-dashboard backend supplies recipeOwner.
+   * Recompute even BLAZE/nested BLAZE recipes in request-local memory. No prepared
+   * artifact read or write, and no publisher identity is used for leaf admission. */
+  async readerDashboardVisual(context: TenantContext, recipeOwner: string, id: string, analysis: unknown, visualId: string, dataSetArn: string) {
+    try {
+      const stored = await this.stored(context, id, recipeOwner), graph = await this.graph(context, id, stored.resource.opensightPrep!, recipeOwner);
+      const plan = planPreparedVisual(this.plan(graph, id).columns, analysis, visualId, dataSetArn);
+      return await this.data.work(context, false, graph.leaves, async () => {
+        const scope = this.data.scope(context), table = new BlazeTable(this.data.limits(context));
+        await this.load(context, id, graph, table);
+        const result = await containedWork<QueryResult>(scope, { kind: 'visual', table: await wireTable(scope, table,
+          { id, table: 'output', connectorId: 'file', columns: table.columns, security: 'unrestricted' }), analysis, visualId, dataSetArn }, this.data.limits(context));
+        await this.data.finish(context, graph.leaves, graph.revisions);
+        return { ...result, bindings: Object.fromEntries([...plan.dimensions, ...plan.measures].map(f => [f.fieldId, f.outputName])) };
+      }, graph.revisions);
+    } catch (error) {
+      // Preserve operational/visual errors; conceal unavailable or unexecutable
+      // recipe inputs behind the existing dashboard denial, without partial rows.
+      if (error instanceof ValidationError || error instanceof Error && 'code' in error && /^(RESOURCE_NOT_FOUND|AUTHORIZATION_REVISED|METADATA_REVISED|UNKNOWN_PRINCIPAL|TENANT_CONTEXT_REQUIRED|TENANT_UNAVAILABLE|ROW_ACCESS_DENIED|COLUMN_ACCESS_DENIED|INVALID_PREP_PIPELINE|UNSUPPORTED_PREP_STEP|PREP_.*|SOURCE_.*|UPLOAD_EXPIRED)$/.test(String(error.code))) {
+        throw new MetadataError('DASHBOARD_DATASET_ACCESS_DENIED', 403);
+      }
+      throw error;
+    }
   }
   async execute(context: TenantContext, id: string, path: 'rows' | 'query' | 'refresh', input: unknown = {}, visual?: { analysis: unknown; visualId: string; dataSetArn: string }) {
     const stored = await this.stored(context, id), graph = await this.graph(context, id, stored.resource.opensightPrep!), key = this.cacheKey(context, id);

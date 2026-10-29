@@ -71,6 +71,16 @@ export class TenantMetadata {
       return rows[0] ? resource(rows[0]) : missing();
     });
   }
+  /** Trusted published-dashboard executor only: read recipe metadata in the reader's
+   * tenant, pinned to the publisher. This grants neither source nor secret access;
+   * callers must first authorize the durable dashboard/version. No HTTP route. */
+  async dashboardRecipe(context: TenantContext, ownerId: string, id: string): Promise<MetadataResource> {
+    return this.checked(context, async c => {
+      const key = resourceKey({ kind: 'prepared-dataset', ownerId, id });
+      const rows = await c.query(`SELECT * FROM h1_resources WHERE ${predicates}`, keyValues(context, key));
+      return rows[0] ? resource(rows[0]) : missing();
+    });
+  }
   /** Trusted embedded asset reader: follows only durable dataset links in this tenant.
    * There is no HTTP route for this method, and no prepared-dataset traversal. */
   async embedDatasetSource(context: TenantContext, datasetId: string): Promise<{ source: MetadataResource; secret?: MetadataResource }> {
