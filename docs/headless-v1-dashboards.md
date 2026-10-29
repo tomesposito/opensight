@@ -73,7 +73,7 @@ rejects query strings. The complete schemas are in
 | Attempt to prune latest | 409 `DASHBOARD_LATEST_VERSION` |
 | Undeclared control, ad-hoc filter, SQL or authority envelope | 422 `DASHBOARD_UNDECLARED_CONTROL` |
 | Invalid typed control value | 422 `DASHBOARD_CONTROL_VALUE_INVALID` |
-| Another owner's prepared/source data | 403 `DASHBOARD_DATASET_ACCESS_DENIED` |
+| Prepared recipe input unavailable to reader, or another owner's legacy source | 403 `DASHBOARD_DATASET_ACCESS_DENIED` |
 | Different payload under an existing retry key | 409 `IDEMPOTENCY_CONFLICT` |
 | Tenant rate exceeded | 429 `RATE_LIMIT_EXCEEDED`, with `Retry-After` |
 
@@ -147,10 +147,23 @@ The definition converter recognizes the supported parameter/filter control
 variants so PascalCase descriptions preserve them correctly.
 
 A dashboard grant allows definition access. Data queries and exports separately
-resolve the **reader's own** data access. Owner pins prevent same-ID prepared
-datasets belonging to another caller, including an administrator, from being
-substituted. Source and dataset policies intersect for legacy hosted bindings.
-No publisher principal or delegated data context executes a reader query.
+resolve the **reader's own** data access. Under [D-85](idd/D-85-share-the-recipe.md)
+(#155), hosted readers execute the publisher's prepared recipe with their own
+source authorization. The recipe stays pinned to its publisher; a reader's
+same-ID prepared dataset never substitutes for it. Each leaf source ID resolves
+inside the reader's tenant, namespace and user scope, including nested recipes,
+joins, append inputs and branches outside the selected output. Source row and
+column policies apply before preparation and aggregation. Missing access or an
+unexecutable recipe fails with `DASHBOARD_DATASET_ACCESS_DENIED` (403).
+
+Reader execution recomputes the entire recipe in bounded request-local memory,
+including root and nested Blaze recipes. It never reads or writes prepared
+artifacts, and never opens publisher sources or secrets. Revisions are checked
+through execution and before publication; revocation prevents stale/partial
+results and cached query/export replays. Ordinary authentication still requires
+a current session after policy changes. See [the implementation and security
+proof](issue-155-reader-prepared-access.md). Owner execution is unchanged.
+Source and dataset policies still intersect for legacy hosted bindings.
 
 The existing local `POST /dashboards/{id}/embed-url` accepts optional `version`.
 For published dashboards omission pins the latest version at issuance; the
@@ -226,6 +239,6 @@ versioned dashboards. Hosted Home and My stuff list accessible publications;
 the reader view queries their frozen visual definitions with live data and
 supports authored parameter controls. Administrators can grant definition
 access through the existing share route. D-53's independent dataset access
-remains enforced, including the owner-only prepared-data boundary. See
+remains enforced through D-85's reader-authorized prepared execution. See
 [the editor publication guide](issue-151-editor-publish.md) for recovery drafts,
 retry behavior, reader limitations and visual verification.
