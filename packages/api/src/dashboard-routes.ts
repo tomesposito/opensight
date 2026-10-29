@@ -10,9 +10,13 @@ import { dashboardVersion, describeDashboard, type DashboardBackend, type Dashbo
 import { dashboardControls } from './dashboard-controls.js';
 import { dashboardExport } from './dashboard-export.js';
 import type { AnalysisProtocol } from './analysis-routes.js';
+import { RetryStore, type RetryAdapter } from './retry-store.js';
 
 interface Reply { status: number; body: unknown; version?: number; bytes?: Buffer; contentType?: string; filename?: string }
-interface Replay { fingerprint: string; reply: Reply; id: string; sourceId?: string; removed?: boolean; access?: unknown; expires: number; dataVersion?: number; dataStamp?: unknown }
+interface Replay { fingerprint: string; reply: Omit<Reply, 'bytes'> & { bytes?: string }; id: string; sourceId?: string; removed?: boolean; access?: unknown; dataVersion?: number; dataStamp?: unknown }
+interface DashboardProtocol extends Pick<AnalysisProtocol, 'paging'> {
+  publishData?(request: IncomingMessage, response: ServerResponse, status: number, body: unknown, recheck: () => Promise<void>): Promise<void>;
+}
 function canonical(v: unknown): string {
   if (Array.isArray(v)) return `[${v.map(canonical).join(',')}]`;
   if (v && typeof v === 'object') return `{${Object.entries(v).sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => `${JSON.stringify(k)}:${canonical(v)}`).join(',')}}`;
@@ -22,10 +26,10 @@ function fail(code: string, status = 422): never { throw new MetadataError(code,
 function keys(body: Record<string, unknown>, allowed: string[]) { if (Object.keys(body).some(k => !allowed.includes(k))) fail('DASHBOARD_INVALID_INPUT'); }
 function version(raw: unknown): number { if (!Number.isSafeInteger(raw) || Number(raw) < 1) fail('DASHBOARD_VERSION_INVALID'); return Number(raw); }
 export class DashboardRoutes {
-  private readonly replay = new Map<string, Replay>();
   private readonly tails = new Map<string, Promise<unknown>>();
   private readonly cap?: number;
-  constructor(private readonly protocol: Pick<AnalysisProtocol, 'paging'>, private readonly env: NodeJS.ProcessEnv, private readonly analytics = disabledAnalytics) {
+  constructor(private readonly protocol: DashboardProtocol, private readonly env: NodeJS.ProcessEnv, private readonly analytics = disabledAnalytics,
+    private readonly replay: RetryAdapter = new RetryStore({ env, periodicPrune: false })) {
     const raw = env.OPENSIGHT_DASHBOARD_VERSION_CAP;
     if (raw !== undefined) { if (!/^[1-9]\d*$/.test(raw) || !Number.isSafeInteger(Number(raw))) throw new Error('OPENSIGHT_DASHBOARD_VERSION_CAP must be a positive integer'); this.cap = Number(raw); }
   }
@@ -85,8 +89,8 @@ export class DashboardRoutes {
     const scope = backend.analyses.scope, key = keyHeader === undefined ? undefined : canonical([scope.tenantId, scope.namespaceId, scope.userId, verb, path, identifier(keyHeader)]);
     const fingerprint = createHash('sha256').update(canonical([raw, expected])).digest('hex');
     const execute = () => this.serial(canonical([scope.tenantId, scope.namespaceId, publish ? `source:${publish[1]}` : id]), async () => {
-      for (const [k, v] of this.replay) if (v.expires <= Date.now()) this.replay.delete(k);
-      const seen = key === undefined ? undefined : this.replay.get(key);
+      const receiptKey = key === undefined ? undefined : `dashboard:${key}`;
+      const seen = receiptKey === undefined ? undefined : await this.replay.get<Replay>(receiptKey);
       const authorize = async (dashboardId: string, removed = false, access?: unknown) => {
         if (publish) await backend.analyses.authorize(publish[1], true);
         if (removed) { if ((await backend.list()).some(d => d.id === dashboardId)) fail('IDEMPOTENCY_CONFLICT', 409); await backend.authorizeRemoved(access); }
@@ -104,11 +108,24 @@ export class DashboardRoutes {
         }
         if (seen.dataVersion && canonical(seen.dataStamp) !== canonical(stamp)) fail('DASHBOARD_REPLAY_REVISED', 409);
         await backend.analyses.check(stamp); await authorize(seen.id, seen.removed, seen.access);
-        response.setHeader('Idempotent-Replayed', 'true'); this.send(response, seen.reply); return;
+        const { bytes, ...reply } = seen.reply;
+        response.setHeader('Idempotent-Replayed', 'true');
+        if (seen.dataVersion && bytes === undefined && this.protocol.publishData) {
+          if (reply.version !== undefined) response.setHeader('ETag', `"${reply.version}"`);
+          await this.protocol.publishData(request, response, reply.status, reply.body, () => backend.analyses.check(stamp));
+        } else this.send(response, { ...reply, ...(bytes === undefined ? {} : { bytes: Buffer.from(bytes, 'base64') }) });
+        return;
       }
-      if (key !== undefined && this.replay.size >= 1000) { response.setHeader('Retry-After', '60'); fail('IDEMPOTENCY_CAPACITY_EXCEEDED', 429); }
+      const reservation = receiptKey === undefined ? undefined : await this.replay.reserve<Replay>(scope.tenantId, receiptKey);
+      try {
       await authorize(id); const stamp = await backend.analyses.stamp();
       let record: DashboardRecord | undefined, change: DashboardChange | undefined, reply: Reply, access: unknown, dataVersion: number | undefined;
+      const prepare = () => {
+        const { bytes, ...json } = reply;
+        reservation?.prepare({ fingerprint, reply: { ...json, ...(bytes === undefined ? {} : { bytes: bytes.toString('base64') }) }, id,
+          removed: change?.kind === 'delete', access, dataVersion, ...(dataVersion ? { dataStamp: stamp } : {}) });
+        return reservation ?? {};
+      };
       if (publish) {
         const source = await backend.analyses.get(publish[1]!);
         let diagnostics: AnalysisDiagnostic[];
@@ -122,8 +139,12 @@ export class DashboardRoutes {
         if (body.dashboardId !== undefined) record = await backend.get(id);
         change = { kind: 'publish', dashboardId: id, create: body.dashboardId === undefined, source, publishedAt: new Date().toISOString(), cap: this.cap, errors: diagnostics };
         await backend.analyses.check(stamp);
-        record = (await backend.change(id, change, stamp))!;
-        const v = dashboardVersion(record); reply = { status: 201, body: { DashboardId: id, Version: v.version, PublishedAt: v.publishedAt, Errors: diagnostics }, version: v.version };
+        const publishReply = (next: DashboardRecord) => {
+          const v = dashboardVersion(next); reply = { status: 201, body: { DashboardId: id, Version: v.version, PublishedAt: v.publishedAt, Errors: diagnostics }, version: v.version };
+          return prepare();
+        };
+        record = (await backend.change(id, change, stamp, next => publishReply(next!)))!;
+        publishReply(record);
       } else {
         record = await backend.get(id);
         if (principalId) {
@@ -142,14 +163,17 @@ export class DashboardRoutes {
           reply = { status: 200, body: null, version: selected, ...artifact };
         }
         await backend.analyses.check(stamp);
-        if (change) await backend.change(id, change, stamp);
+        if (change) await backend.change(id, change, stamp, prepare);
         if (change?.kind === 'share' && change.role) this.analytics.track(scope, { name: 'dashboard_shared' });
       }
-      if (key !== undefined && reply.bytes && [...this.replay.values()].reduce((size, r) => size + (r.reply.bytes?.length ?? 0), reply.bytes.length) > 64 * 1024 * 1024) { response.setHeader('Retry-After', '60'); fail('IDEMPOTENCY_CAPACITY_EXCEEDED', 429); }
-      if (key !== undefined) this.replay.set(key, { fingerprint, reply, id, expires: Date.now() + 600000, removed: change?.kind === 'delete', access, dataVersion, ...(dataVersion ? { dataStamp: stamp } : {}) });
+      prepare(); await reservation?.commit();
       if (dataVersion) dashboardVersion(await backend.get(id), dataVersion);
       await authorize(id, change?.kind === 'delete', access);
-      this.send(response, reply);
+      if (dataVersion && !reply!.bytes && this.protocol.publishData) {
+        if (reply!.version !== undefined) response.setHeader('ETag', `"${reply!.version}"`);
+        await this.protocol.publishData(request, response, reply!.status, reply!.body, () => backend.analyses.check(stamp));
+      } else this.send(response, reply!);
+      } finally { await reservation?.release(); }
     });
     if (key === undefined) await execute(); else await this.serial(`retry:${key}`, execute);
   }

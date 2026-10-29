@@ -24,7 +24,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   // Conservatively changing any schema/coordination/auth contract requires a new
   // reviewed compatibility baseline, never an automatic production migration.
   const contracts = files.filter(p => /^packages\/api\/src\//.test(p)
-    && /(?:schema|migration|coordination|dispatch|authority|metadata|auth|session|object-|artifact-|manifest|durable-)/.test(p));
+    && /(?:schema|migration|coordination|dispatch|authority|metadata|auth|session|object-|artifact-|manifest|durable-|v1-durable|v1-route-contract|retry-store|runtime-ingress)/.test(p));
   const index = JSON.parse(execFileSync('tar', ['-xOf', join(root, 'runtime.oci.tar'), 'index.json'], { encoding: 'utf8' }));
   if (index.manifests?.length !== 1) throw Error('SINGLE_IMAGE_REQUIRED');
   const artifacts = Object.fromEntries(['runtime.oci.tar', 'frontend.tar.gz', 'runtime-sbom.json'].map(p => [p, digest(readFileSync(join(root, p)))]));

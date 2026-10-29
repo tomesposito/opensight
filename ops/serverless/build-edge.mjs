@@ -2,7 +2,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import ts from 'typescript';
 const sourcePath = new URL('../../packages/api/src/runtime-ingress.ts', import.meta.url);
-const outputPath = new URL('./edge-viewer.js', import.meta.url);
+const outputPaths = ['./edge-viewer.js', './modules/edge/edge-viewer.js'].map(path => new URL(path, import.meta.url));
 /** Compile the actual SR1 viewer/path checks; do not maintain a second route list. */
 export async function edgeSource() {
   const source = await readFile(sourcePath, 'utf8'), file = ts.createSourceFile('ingress.ts', source, ts.ScriptTarget.Latest, true);
@@ -42,6 +42,10 @@ export async function edgeSource() {
     }
   }
   if (selected.length !== functions.length + variables.length) throw Error('EDGE_SOURCE_CHANGED');
+  const v1 = ts.createSourceFile('v1-route-contract.ts', await readFile(new URL('../../packages/api/src/v1-route-contract.ts', import.meta.url), 'utf8'), ts.ScriptTarget.Latest, true);
+  const contract = v1.statements.find(s => ts.isFunctionDeclaration(s) && s.name?.text === 'serverlessV1Methods');
+  if (!contract) throw Error('EDGE_SOURCE_CHANGED');
+  selected.unshift(contract.getText(v1).replace(/^export /, ''));
   const adapted = selected.join('\n').replaceAll('singleton.has(name)', 'singleton.includes(name)').replaceAll('Object.hasOwn(', 'Object.prototype.hasOwnProperty.call(')
     .replaceAll('new URL(origin).host', '__OPENSIGHT_HOST__');
   // Runtime 2.0 provides native Buffer.byteLength. URI encoding plus regex
@@ -68,7 +72,9 @@ function handler(event) {
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const code = await edgeSource();
-  if (process.argv.includes('--check')) { if (await readFile(outputPath, 'utf8') !== code) throw Error('EDGE_GENERATED_FILE_STALE'); }
-  else await writeFile(outputPath, code);
+  for (const outputPath of outputPaths) {
+    if (process.argv.includes('--check')) { if (await readFile(outputPath, 'utf8') !== code) throw Error('EDGE_GENERATED_FILE_STALE'); }
+    else await writeFile(outputPath, code);
+  }
   console.log(`CloudFront viewer boundary: ${Buffer.byteLength(code)} bytes.`);
 }

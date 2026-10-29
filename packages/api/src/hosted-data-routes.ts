@@ -13,6 +13,9 @@ export class HostedDataRoutes {
   readonly prep: HostedPrep;
   constructor(readonly data: HostedData, jobs?: JobStore,
     private readonly result?: (request: IncomingMessage, context: TenantContext, status: number, body: unknown, recheck: () => Promise<void>) => Promise<{ status: number; body: unknown }>) { this.prep = new HostedPrep(data, jobs); }
+  output(request: IncomingMessage, context: TenantContext, status: number, body: unknown, recheck: () => Promise<void>): Promise<{ status: number; body: unknown }> {
+    return this.result ? this.result(request, context, status, body, recheck) : Promise.resolve({ status, body });
+  }
   async route(request: IncomingMessage, response: ServerResponse, path: string, context: TenantContext, recheck: () => Promise<void>): Promise<boolean> {
     this.data.begin(context, undefined, recheck);
     const revisions = await this.data.sources.metadata.revisions(context);
@@ -27,7 +30,7 @@ export class HostedDataRoutes {
     const publish = async (status: number, body: unknown) => {
       if (read) { await recheck(); await this.data.publication(context, revisions); }
       else await this.data.sources.metadata.revisions(context);
-      const output = this.result && read ? await this.result(request, context, status, body, recheck) : { status, body };
+      const output = read ? await this.output(request, context, status, body, recheck) : { status, body };
       send(response, output.status, output.body);
     };
     if (path === '/api/connectors') {

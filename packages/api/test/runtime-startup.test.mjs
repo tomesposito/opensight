@@ -168,6 +168,7 @@ test('SR3 startup requires all durable schema markers and never enables a partia
   const checksums = await Promise.all(['coordination', 'manifest', 'dispatch', 'object', 'operation', 'execution'].map(async name => {
     const module = await import(`../dist/${name}-schema.js`); return [`sr_${name}_schema`, module[`${name}Checksum`]];
   }));
+  checksums.push(['sr_v1_schema', (await import('../dist/v1-durable-schema.js')).v1DurableChecksum]);
   for (const broken of [undefined, ...checksums.map(([table]) => table)]) {
     const seen = [];
     const db = { transaction: async work => work({ query: async sql => {

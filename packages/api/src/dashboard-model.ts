@@ -2,6 +2,7 @@ import type { AnalysisBackend, AnalysisRecord, DatasetBindings } from './analysi
 import type { JsonObject } from './mapping.js';
 import type { AssetGrant } from './organization.js';
 import { MetadataError } from './metadata-db.js';
+import type { RetryCommit } from './retry-store.js';
 import { projectDefinition, type AnalysisDiagnostic } from '@opensight/web/analysis';
 
 /** Only definitions and server-owned binding identities are durable. */
@@ -28,7 +29,7 @@ export interface DashboardBackend {
   authorizeRemoved(snapshot: unknown): Promise<void>;
   revision(id: string): Promise<number>;
   grants(id: string): Promise<AssetGrant[] | undefined>;
-  change(id: string, change: DashboardChange, stamp: unknown): Promise<DashboardRecord | null>;
+  change(id: string, change: DashboardChange, stamp: unknown, receipt?: (record: DashboardRecord | null) => RetryCommit): Promise<DashboardRecord | null>;
   query(version: DashboardVersion, definition: JsonObject, visualId: string): Promise<DashboardQuery>;
 }
 export interface DashboardQuery {

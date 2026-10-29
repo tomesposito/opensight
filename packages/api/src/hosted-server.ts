@@ -44,7 +44,7 @@ import { HostedUsage, usageMonth } from './hosted-usage.js';
 import type { AiMeter } from './ai-settings.js';
 import { appendOperatorAudit, readOperatorAudit } from './operator-audit.js';
 import { referenceConfig, referenceDisclosure, assertReferenceSurfaces } from './single-node-config.js';
-import { V1Routes } from './v1-routes.js';
+import { V1Routes, type DurableV1Factory } from './v1-routes.js';
 import { publicQuotaMessage } from './storage-breakdown.js';
 
 const invocationFinishes = new WeakMap<Server, () => Promise<void>>();
@@ -64,6 +64,8 @@ export interface HostedInvocationAdapters {
   embedContent: EmbedContent;
   jobs?: JobStore;
   mail?: MailTransport;
+  v1?: DurableV1Factory;
+  invitations?: import('./hosted-provisioning.js').InvitationDispatch;
   allows(path: string): boolean;
   capabilities: Readonly<Record<string, unknown>>;
   resultMaxBytes?: number;
@@ -137,7 +139,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
   const invocation = options.invocation?.compose?.(metadata, budgets, options.builtinAuth, usage?.aiMeter(), analytics);
   const jobs = invocation?.jobs ?? new JobStore(options.membershipDatabase, metadata);
   const data = invocation?.data ?? new HostedDataRoutes(new HostedData(new HostedSources(metadata, config.encryptionKey.toString('base64'), sourceEndpoints(options.env)), undefined, budgets, undefined, undefined, analytics), jobs);
-  const v1 = new V1Routes(data, options.env ?? process.env, { invocation: !!options.invocation, analytics });
+  const v1 = new V1Routes(data, options.env ?? process.env, { invocation: !!options.invocation, analytics, durable: invocation?.v1 });
   const embedContent = invocation?.embedContent ?? new EmbedContent(new HostedData(new EmbedSources(metadata, config.encryptionKey.toString('base64'), sourceEndpoints(options.env)), undefined, budgets, undefined, undefined, analytics));
   const mail = invocation?.mail ?? options.mailTransport ?? smtpFromEnvironment(options.env);
   if (!options.invocation) await initializeJobs(options.membershipDatabase);
@@ -148,7 +150,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
   const ownership = new JobOwnership(jobs, renderer), scheduler = new Scheduler(() => runner.tick());
   const sessions = new EmbedSessions(options.membershipDatabase, metadata, policy, embedSessionKey(options.env ?? process.env), (context, grant) => embedContent.authorize(context, grant));
   await sessions.initialize(!options.invocation);
-  const provisioning = new HostedProvisioning(options.membershipDatabase, config, mail, Date.now, ownership, analytics);
+  const provisioning = new HostedProvisioning(options.membershipDatabase, config, mail, Date.now, ownership, analytics, invocation?.invitations);
   // Prove that the durable H1/H2 schema is reachable before binding a socket.
   await options.membershipDatabase.transaction(async c => { await c.query('SELECT tenant_id FROM h1_tenants WHERE 1 = 0'); await c.query('SELECT subject FROM h2_memberships WHERE 1 = 0'); });
   await assertHostedSourcesReady(options.membershipDatabase);

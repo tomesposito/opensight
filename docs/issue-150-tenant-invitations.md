@@ -1,5 +1,10 @@
 # Issue #150: tenant administrator invitations
 
+In the serverless composition, [D-86](phase5-serverless-authoring.md) commits
+invitation delivery to the existing durable worker queue. Only the worker has
+SMTP credentials; invitation and inviter authority are checked before SMTP DATA.
+Ambiguous delivery is held for explicit operator replay rather than resent.
+
 Verified tenant administrators can use `GET /api/invitations`,
 `POST /api/invitations` with `{email, name, role}`, and
 `DELETE /api/invitations/:id`. The tenant comes exclusively from the verified

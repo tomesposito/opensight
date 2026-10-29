@@ -1,4 +1,5 @@
 import { MetadataError } from './metadata-db.js';
+import type { SqlConnection } from './metadata-db.js';
 
 /**
  * Process-local, ten-minute receipts shared by v1 datasets/queries and analyses.
@@ -15,10 +16,25 @@ import { MetadataError } from './metadata-db.js';
 export const RETRY_TTL_MS = 10 * 60 * 1000;
 interface Usage { entries: number; bytes: number }
 interface Entry { tenantId: string; bytes: number; value?: unknown; expiresAt?: number }
-export interface RetryReservation<T> {
+export interface RetryCommit { persist?(connection: SqlConnection): Promise<void> }
+export interface RetryReservation<T> extends RetryCommit {
   prepare(value: T): void;
-  commit(expiresAt?: number): void;
-  release(): void;
+  commit(expiresAt?: number): void | Promise<void>;
+  release(): void | Promise<void>;
+}
+export interface RetryAdapter {
+  get<T>(key: string): T | undefined | Promise<T | undefined>;
+  reserve<T>(tenantId: string, key: string): RetryReservation<T> | Promise<RetryReservation<T>>;
+  close(): void;
+}
+export function retryLimits(env: NodeJS.ProcessEnv) {
+  return { entries: positive(env, 'OPENSIGHT_RETRY_CACHE_MAX_ENTRIES', 1000), bytes: positive(env, 'OPENSIGHT_RETRY_CACHE_MAX_BYTES', 64 * 1024 * 1024),
+    tenantEntries: positive(env, 'OPENSIGHT_RETRY_CACHE_PER_TENANT_MAX_ENTRIES', 250), tenantBytes: positive(env, 'OPENSIGHT_RETRY_CACHE_PER_TENANT_MAX_BYTES', 16 * 1024 * 1024) };
+}
+export function v1RateLimit(env: NodeJS.ProcessEnv): number {
+  const limit = positive(env, 'OPENSIGHT_V1_RATE_LIMIT_PER_MINUTE', 600);
+  if (limit > 100000) throw new Error('OPENSIGHT_V1_RATE_LIMIT_PER_MINUTE must be at most 100000');
+  return limit;
 }
 function positive(env: NodeJS.ProcessEnv, name: string, fallback: number): number {
   const raw = env[name];

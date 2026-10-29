@@ -77,6 +77,11 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
+- Hosted invitations, analysis saves, publishing, sharing and reader dashboards
+  now cross the serverless ingress boundary. Retries and rate limits survive
+  Lambda changes, publication receipts commit with metadata, and invitation
+  email uses the existing worker queue without exposing SMTP credentials to
+  request execution (#150, #151, #152, #155; D-86).
 - Fresh hosted workspaces show a real empty dashboard collection for every role
   instead of the pinned synthetic sales showcase. Local sample opt-in and demo
   publication notices retain their existing behavior (#151).

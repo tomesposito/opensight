@@ -1198,6 +1198,44 @@ signing tests, API validation tests; full suite green; demo rebuilt.
 
 ### Phase 5 — Hosted correctness and serverless readiness
 
+**Hosted release integration (frozen 2026-10-29):** Complete the deployment
+boundary for the shipped invitation, authoring, publishing, sharing and reader
+features (#150, #151, #152, #155), under
+[D-86](docs/itd/D-86-serverless-authoring.md). Admit only their literal routes
+and methods through the common viewer/gateway grammar and invocation gate.
+Preserve trusted ingress, namespace checks, tenant authorization, revision
+checks, durable analytical admission and invocation cancellation. The remaining
+v1 dataset/source/folder/asset-management endpoints remain closed in Lambda.
+
+Invitation creation must prearm the existing durable dispatch recovery before
+committing the invitation and an identifier-only `invitation-deliver` event in
+one transaction. Only the worker decrypts the existing sealed invitation token
+and sends email. Recheck tenant, inviter administrator role, membership and
+invitation validity immediately before SMTP DATA. Use the existing execution
+lease, bounded retry and ambiguous-send hold; uncertain sends never auto-resend.
+Revoked/accepted/expired invitations and stale epochs cannot send. The request
+role receives no SMTP credentials or new email permissions.
+
+Use a shared SQL rate window per tenant and bounded ten-minute SQL retry
+receipts scoped to deployment, tenant, namespace, user, method, path and key.
+Concurrent reservations fail with a retryable named conflict; expired reservation
+tokens cannot commit. Receipt completion and metadata mutation commit in the
+same tenant transaction, including generated dashboard IDs, grants and deletion.
+Replays recheck current authorization and data admission. Capacity includes
+pending entries and complete JSON receipt bytes, with global/per-tenant caps;
+capacity failures roll back the business write. Shared counters contain no
+customer payload. Local server behavior retains its existing memory adapter.
+
+Add owner-migrated receipt, capacity and rate tables plus a schema marker, with
+tenant RLS, bounded runtime grants, readiness checks, backup/restore inventory
+versioning and tenant-erasure cleanup. No runtime DDL or timers. Verify separate
+invocations, concurrent keys, lost responses, transaction rollback, expiry,
+revocation, cross-tenant denial and real PostgreSQL RLS. Exercise the real edge
+and Lambda request adapter, not only the hosted HTTP server. Rebuild and compare
+the demo; run the full root suite. Publish an attested master build, rehearse
+the registered backup migration (including monthly usage), deploy through the
+existing maintenance protocol, then verify hosted workflows and release state.
+
 **SR4c compatible release automation (frozen 2026-10-11):** The operator approved
 public isolated CI, immutable release artifacts, private manual deployment via
 dedicated OIDC roles, and an independently tested access shutoff. Implement

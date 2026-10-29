@@ -223,9 +223,11 @@ was rebuilt; all three captures are byte-identical to the analyses baseline,
 with zero page errors or external requests. Per-suite counts and reference
 comparisons are recorded in [gap notes](issue-95-dashboards-gap-notes.md).
 
-Deferred by the brief: serverless `/api/v1` integration and durable distributed
-rate/retry adapters (remote handoff; `serverless-application.ts` and Lambda
-composition unchanged), anonymous/delegated data access, stored snapshots,
+The original brief deferred serverless `/api/v1` integration and distributed
+rate/retry adapters. [D-86's hosted authoring integration](phase5-serverless-authoring.md)
+now supplies those adapters for analysis/dashboard routes and the shipped hosted
+UI, including sharing and deletion. Other v1 surfaces remain closed in Lambda.
+Still deferred: anonymous/delegated data access, stored snapshots,
 job-backed large exports, dashboard MCP tools. The assets decided core is implemented separately. No product decision
 is required to use the implemented slice. Decision-document housekeeping is
 deferred: D-49's recommendation and implications still describe the older
