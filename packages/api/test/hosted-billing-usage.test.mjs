@@ -260,7 +260,7 @@ test('single-node backups preserve monthly records, daily retention keeps them a
   assert.equal((await counters(f.db)).daily.length, 0);
   assert.deepEqual(await f.usage.monthlyUsageForPeriod(month), records);
   await new MetadataOperator(f.db).transition('billing-delete', one.tenantId, 'delete', 1);
-  await maintenance.deleteTenant('billing-delete', 'none');
+  await maintenance.deleteTenant('billing-delete', 'none', { dryRun: false, confirmTenantId: one.tenantId });
   assert.deepEqual((await f.db.transaction(c => c.query('SELECT tenant_id FROM h8_monthly_usage'))).map(r => r.tenant_id), [two.tenantId]);
 });
 

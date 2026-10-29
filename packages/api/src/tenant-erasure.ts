@@ -13,7 +13,7 @@ export interface TenantDeletionReport {
 }
 /** Fixed predicates, shared by inventory and purge. Never accept SQL from an operator. */
 export const tenantDeletionTables = [
-  'analytics_events', 'analytics_settings', 'h8_ai_warnings', 'h8_recovery', 'h8_usage_events', 'h8_usage',
+  'analytics_events', 'analytics_settings', 'h8_ai_warnings', 'h8_recovery', 'h8_usage_events', 'h8_monthly_usage', 'h8_usage',
   'h7_deliveries', 'h7_occurrences', 'h7_jobs', 'h7_migrations', 'h6_sessions', 'h5_embedding_config',
   'h2_onboarding', 'h2_invitations', 'h2_sessions',
   'h1_links', 'h1_resources',
