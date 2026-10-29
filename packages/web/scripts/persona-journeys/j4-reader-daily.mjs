@@ -15,7 +15,14 @@ await runJourney('j4-reader-daily', 'Reader AI', async j => {
   const source = await f.sources.upload(await f.context(), { config: { format: 'csv' }, base64: Buffer.from(csv).toString('base64'), policy: { rowLevel: false, rowRules: [] }, expiresAt: '2099-01-01T00:00:00.000Z' });
   const prep = new HostedPrep(new HostedData(f.sources, undefined, f.budgets));
   await prep.save(await f.context(), 'orders', { name: 'Orders', pipeline: { ...seed.pipeline, input: source.id }, expectedVersion: 0 });
-  await f.metadata.put(await f.context(), { kind: 'user', id: f.reader.identity.userId }, { name: 'Daily reader', role: 'reader_ai' }, 1);
+  // Independently provision the reader's source while this fixture identity is
+  // an author, then assign Reader AI. Dashboard sharing supplies no source grant.
+  const readerUser = { kind: 'user', id: f.reader.identity.userId };
+  await f.metadata.put(await f.context(), readerUser, { name: 'Daily reader', role: 'author' }, 1);
+  const ownSource = await f.sources.upload(await f.reader.context(), { config: { format: 'csv' }, base64: Buffer.from(csv).toString('base64'), policy: { rowLevel: true, rowRules: [] }, expiresAt: '2099-01-01T00:00:00.000Z' });
+  const readerContext = await f.reader.context(), oldKey = f.sources.key(readerContext, 'source', ownSource.id), ownRecord = await f.metadata.get(readerContext, oldKey);
+  await f.metadata.batch(readerContext, [{ key: { ...oldKey, id: source.id }, body: ownRecord.body, expectedVersion: 0 }, { key: oldKey, body: null, expectedVersion: 1 }]);
+  await f.metadata.put(await f.context(), readerUser, { name: 'Daily reader', role: 'reader_ai' }, 2);
   const adminToken = (await f.login()).token, readerToken = (await f.reader.login()).token;
   const browser = await launchBrowser(j), author = await browser.page(stack, adminToken);
   await j.step('author-orders-analysis', author, async () => {
@@ -71,7 +78,7 @@ await runJourney('j4-reader-daily', 'Reader AI', async j => {
     await author.getByLabel('Viewer', { exact: true }).selectOption({ label: 'Daily reader' });
     await button(author, 'Grant dashboard access').click();
     await author.getByText('Dashboard viewing access granted. Dataset permissions are unchanged.', { exact: true }).waitFor();
-    return 'An administrator grants definition visibility through the product. D-53 keeps publisher-owned prepared data private.';
+    return 'An administrator grants definition visibility through the product. D-85 requires independent reader source authorization.';
   });
   const page = await browser.page(stack, readerToken);
   await j.step('reader-open-orders', page, async () => {
@@ -96,15 +103,29 @@ await runJourney('j4-reader-daily', 'Reader AI', async j => {
   const response = page.waitForResponse(r => r.url().includes('/versions/1/visuals/') && r.url().endsWith('/query') && r.request().postDataJSON()?.controlValues?.['control-1']?.[0] === 'west');
   await controls.selectOption('west');
   const filtered = await response;
-  if (filtered.status() === 403) {
+  await j.step('reader-filter-without-source-access', page, async () => {
+    assert.equal(filtered.status(), 403);
     const error = await filtered.json(); assert.equal(error.errorCode, 'DASHBOARD_DATASET_ACCESS_DENIED');
     await page.locator('.dashboard-grid').getByText(/DASHBOARD_DATASET_ACCESS_DENIED/).first().waitFor();
     assert.equal(await page.locator('.dashboard-grid .chart svg').count(), 0);
-    j.gap('reader-filter', 'Apply Region to live Orders rows as a Reader.', 'The real dashboard sends the declared control to v1; D-53/HQ-4 deny publisher-owned prepared data with DASHBOARD_DATASET_ACCESS_DENIED. No sample or stale rows are shown.');
-  } else await j.step('reader-filter', page, async () => {
+    return 'The reader source policy denies all rows. Dashboard sharing cannot override it; no sample or stale rows appear.';
+  });
+  // Trusted fixture policy administration models independently granted source
+  // access. It edits only the reader's source and bumps the real policy revision.
+  await f.db.transaction(async db => {
+    await db.query("UPDATE h1_resources SET body = ?, version = version + 1 WHERE tenant_id = ? AND namespace_id = ? AND kind = 'source' AND owner_id = ? AND resource_id = ?", [JSON.stringify({ ...ownRecord.body, policy: { rowLevel: false, rowRules: [] } }), readerContext.tenantId, readerContext.namespaceId, readerContext.userId, source.id]);
+    await db.query('UPDATE h1_revisions SET policy = policy + 1 WHERE tenant_id = ? AND namespace_id = ?', [readerContext.tenantId, readerContext.namespaceId]);
+  });
+  await page.context().setExtraHTTPHeaders({ Authorization: `Bearer ${(await f.reader.login()).token}` });
+  await j.step('reader-filter', page, async () => {
+    await page.reload(); await controls.waitFor();
+    const response = page.waitForResponse(r => r.url().includes('/versions/1/visuals/') && r.url().endsWith('/query') && r.request().postDataJSON()?.controlValues?.['control-1']?.[0] === 'west');
+    await controls.selectOption('west');
+    const filtered = await response;
     assert.equal(filtered.status(), 200); assert.deepEqual((await filtered.json()).rows, [{ region: 'west', revenue: 20 }]);
     await page.locator('.dashboard-grid .chart svg').first().waitFor();
     assert.equal(await controls.inputValue(), 'west');
+    return 'D-85 executes the publisher recipe on the independently authorized reader source and applies Region to live rows.';
   });
   const trigger = page.getByRole('button', { name: /^Ask a question about / });
   const panelAvailable = await trigger.count() > 0;
