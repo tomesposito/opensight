@@ -3,7 +3,7 @@ import { MetadataError, type Database, type SqlConnection, type SqlRow } from '.
 import { checksum } from './metadata-operator.js';
 import { coordinationNow, type CoordinationDialect } from './coordination-schema.js';
 import { appendOperatorAudit } from './operator-audit.js';
-import { databaseInventory, inventoryTables, snapshotInventory, upgradedAudit, currentInventory, namedWorkspaces, aiWarnings, usageTracking } from './serverless-backup-schema.js';
+import { databaseInventory, inventoryTables, snapshotInventory, upgradedAudit, currentInventory, namedWorkspaces, aiWarnings, usageTracking, monthlyBilling } from './serverless-backup-schema.js';
 
 export interface CloudSnapshot {
   version: 1; id: string; deployment: string; epoch: number; createdAt: number; expiresAt: number;
@@ -160,6 +160,7 @@ export async function migrateRegistered(db: Database, env: NodeJS.ProcessEnv, sn
         if (fingerprint(await c.query(`SELECT * FROM ${table} LIMIT 100001`)) !== fingerprint(baseline)) denied('MIGRATION_PRESERVATION_FAILED');
       }
       if (upgraded && !namedWorkspaces(sourceInventory) && (await c.query('SELECT 1 FROM h2_login_selections LIMIT 1')).length) denied('MIGRATION_PRESERVATION_FAILED');
+      if (upgraded && !monthlyBilling(sourceInventory) && (await c.query('SELECT 1 FROM h8_monthly_usage LIMIT 1')).length) denied('MIGRATION_PRESERVATION_FAILED');
       if (upgraded && !aiWarnings(sourceInventory) && (await c.query('SELECT 1 FROM h8_ai_warnings LIMIT 1')).length) denied('MIGRATION_PRESERVATION_FAILED');
       if (upgraded && !usageTracking(sourceInventory)) for (const table of ['analytics_events', 'analytics_settings']) if ((await c.query(`SELECT 1 FROM ${table} LIMIT 1`)).length) denied('MIGRATION_PRESERVATION_FAILED');
       for (const table of inventoryTables(sourceInventory).filter(t => t.endsWith('_schema')))

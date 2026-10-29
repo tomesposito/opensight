@@ -121,7 +121,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
   if (options.invocation && reference) throw new MetadataError('SERVERLESS_REFERENCE_FORBIDDEN', 503);
   const usage = reference ? new HostedUsage(options.membershipDatabase, reference.entitlements) : options.invocation?.usage;
   if (reference) await options.membershipDatabase.transaction(async c => {
-    for (const table of ['h8_usage', 'h8_usage_events', 'h8_audit', 'h8_recovery']) await c.query(`SELECT 1 FROM ${table} WHERE 1 = 0`);
+    for (const table of ['h8_usage', 'h8_monthly_usage', 'h8_usage_events', 'h8_audit', 'h8_recovery']) await c.query(`SELECT 1 FROM ${table} WHERE 1 = 0`);
     const r = (await c.query('SELECT version FROM h8_schema WHERE id = 1'))[0];
     if (Number(r?.version) !== 1) throw new MetadataError('MIGRATIONS_REQUIRED', 503);
     await appendOperatorAudit(c, { action: 'reference.started' });
@@ -187,7 +187,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
         if (draining) throw new MetadataError('SERVER_DRAINING', 503);
         await hostedReadiness(options.membershipDatabase, options.tenantDatabase);
         if (reference) await options.membershipDatabase.transaction(async c => {
-          for (const table of ['h8_usage', 'h8_usage_events', 'h8_audit', 'h8_recovery']) await c.query(`SELECT 1 FROM ${table} WHERE 1 = 0`);
+          for (const table of ['h8_usage', 'h8_monthly_usage', 'h8_usage_events', 'h8_audit', 'h8_recovery']) await c.query(`SELECT 1 FROM ${table} WHERE 1 = 0`);
           const row = (await c.query('SELECT version FROM h8_schema WHERE id = 1'))[0];
           if (Number(row?.version) !== 1) throw new MetadataError('MIGRATIONS_REQUIRED', 503);
         }).catch(() => { throw new MetadataError('MIGRATIONS_REQUIRED', 503); });
