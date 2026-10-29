@@ -77,6 +77,9 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
+- Precompile the shared serverless route patterns for CloudFront and bypass v1
+  matching for ordinary API requests, preventing edge CPU throttling during
+  uploads and hosted authoring (#150, #151; D-86).
 - Hosted invitations, analysis saves, publishing, sharing and reader dashboards
   now cross the serverless ingress boundary. Retries and rate limits survive
   Lambda changes, publication receipts commit with metadata, and invitation

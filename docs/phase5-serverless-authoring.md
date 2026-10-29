@@ -68,3 +68,13 @@ The final root `npm test` run on isolated Linux with PostgreSQL exited 0:
 PostgreSQL fixture). Python SDK tests ran separately on the host:
 **32 passed / 0 failed / 0 skipped**. The private operator rehearsal passed
 **4 migration tests and 2 registry tests**, without failures or skips.
+
+The first public acceptance exposed CloudFront CPU throttling on upload
+completion. The edge generator now folds the shared grammar's constant regex
+templates into literals and rejects non-v1 paths before entering that matcher.
+The API grammar and permissions are unchanged. Differential checks cover 364
+route variants, including ID limits, malformed paths and deferred surfaces.
+The corrected bytecode passed twelve CloudFront engine cases, including the
+failing upload path and large synthetic authorization/header sets; maximum
+observed compute utilization was 45 percent. The deployment records the exact
+edge correction separately from its immutable runtime and migration receipts.
