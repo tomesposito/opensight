@@ -9,16 +9,17 @@ type AutoState = 'clean' | 'unsaved' | 'saving' | 'error';
 const newestSave = (entry?: SaveMetadata) => [entry?.manualSavedAt, entry?.autoSavedAt].filter((date): date is string => !!date).sort().at(-1) ?? null;
 const recoveryTime = (entry?: SaveMetadata) => entry?.autoSavedAt && (!entry.manualSavedAt || entry.autoSavedAt > entry.manualSavedAt) ? entry.autoSavedAt : null;
 
-export function useLocalDrafts(access: Access, dataset?: AuthorDataset, opening?: { draftId?: string; newAnalysis?: boolean }) {
+export function useLocalDrafts(access: Access, dataset?: AuthorDataset, opening?: { draftId?: string; newAnalysis?: boolean; initialDraft?: AuthorDraft }) {
   const key = draftStorageKey(access);
   const store = useMemo(() => createDraftStore(browserDraftStorage, access), [key]);
   const [initial] = useState<SaveMetadata & { id?: string; draft: AuthorDraft; saved?: string; message: string; openingError?: string }>(() => {
+    const fresh = () => opening?.newAnalysis && opening.initialDraft ? opening.initialDraft : { ...emptyDraft(), ...(dataset ? { dataset } : {}) };
     try {
       if (opening?.draftId) store.open(opening.draftId);
       const restored = opening?.newAnalysis && !opening.draftId ? undefined : store.restore();
       if (restored && (opening?.draftId || !dataset || JSON.stringify(restored.draft.dataset) === JSON.stringify(dataset))) return { ...restored, saved: JSON.stringify(restored.draft), message: 'Draft restored from this device.' };
-      return { draft: { ...emptyDraft(), ...(dataset ? { dataset } : {}) }, message: 'Save this analysis on this device.' };
-    } catch (error) { return { draft: { ...emptyDraft(), ...(dataset ? { dataset } : {}) }, message: draftStorageError(error), ...(opening?.draftId ? { openingError: draftStorageError(error) } : {}) }; }
+      return { draft: fresh(), message: 'Save this analysis on this device.' };
+    } catch (error) { return { draft: fresh(), message: draftStorageError(error), ...(opening?.draftId ? { openingError: draftStorageError(error) } : {}) }; }
   });
   const [history, dispatch] = useReducer(authorHistoryReducer, initial.draft, createAuthorHistory);
   const { draft } = history;

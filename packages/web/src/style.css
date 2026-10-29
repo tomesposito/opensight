@@ -190,6 +190,16 @@ select { background: #fff; border: 1px solid #c9d8de; border-radius: 6px; paddin
 .create-analysis-actions .dataset-picker-select { background: #24749d; color: #fff; }
 .create-analysis-actions .dataset-picker-select:hover:not(:disabled) { background: #185a7b; }
 .create-analysis-actions .dataset-picker-select:disabled { background: #e0e1e4; color: #767b80; }
+.field-search { border-top: 1px solid #dce3e9; padding: 12px 0; }
+.field-search > label { display: block; font-weight: bold; margin-bottom: 4px; }
+.field-search > input { box-sizing: border-box; width: 100%; padding: 8px; border: 1px solid #6b9eb6; border-radius: 4px; font: inherit; }
+.field-search > input:hover { background: #edf7fc; }
+.field-search ul { list-style: none; margin: 4px 0; padding: 0; max-height: 160px; overflow: auto; border: 1px solid #c9d8de; }
+.field-search .search-row { display: flex; justify-content: space-between; gap: 8px; padding: 4px 8px; cursor: pointer; }
+.field-search .search-row:hover, .field-search [aria-selected=true] { background: #edf7fc; }
+.field-search p { margin: 4px 0; }
+.field-search [role=alert] { color: #a12828; }
+.field-search-result { display: flex; align-items: center; gap: 8px; }
 @media (max-width: 600px) {
   .create-analysis-dialog { padding: 16px; }
   .create-analysis-tools { flex-wrap: wrap; }

@@ -54,7 +54,7 @@ import {
 } from './authoring.js';
 import type { AuthorAction, AuthorDataset, AuthorDraft, AuthorVisual, CalculatedField, FieldGroup, VisualKind, Well } from './authoring.js';
 
-interface AuthorProps { renderIdentity?: (title: ReactNode) => ReactNode; sampleLoaded?: boolean; onTrySample?: () => void; onSources?: () => void; onDatasetChange?: (dataset?: AuthorDataset) => void; dataset?: AuthorDataset; client?: QueryClient & Partial<PublishingClient>; onPrep?: () => void; inApp?: boolean; draftId?: string; newAnalysis?: boolean; onDraftChange?: (id?: string) => void }
+interface AuthorProps { initialDraft?: AuthorDraft; renderIdentity?: (title: ReactNode) => ReactNode; sampleLoaded?: boolean; onTrySample?: () => void; onSources?: () => void; onDatasetChange?: (dataset?: AuthorDataset) => void; dataset?: AuthorDataset; client?: QueryClient & Partial<PublishingClient>; onPrep?: () => void; inApp?: boolean; draftId?: string; newAnalysis?: boolean; onDraftChange?: (id?: string) => void }
 export function Author(props: AuthorProps) {
   const access = useAccess();
   return allowed(access, 'build') ? <AuthorWorkspace key={draftStorageKey(access)} {...props} /> : <p role="alert">SECURITY_BUILD_REQUIRED: Author access required.</p>;
@@ -62,10 +62,10 @@ export function Author(props: AuthorProps) {
 
 type EditorProps = { draft: AuthorDraft; dispatch: Dispatch<AuthorAction>; client?: QueryClient };
 const saveTime = (iso: string) => new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
-function AuthorWorkspace({ renderIdentity, sampleLoaded = false, onTrySample, client: apiClient, dataset, onDatasetChange, onPrep, onSources, inApp, draftId, newAnalysis, onDraftChange }: AuthorProps) {
+function AuthorWorkspace({ initialDraft, renderIdentity, sampleLoaded = false, onTrySample, client: apiClient, dataset, onDatasetChange, onPrep, onSources, inApp, draftId, newAnalysis, onDraftChange }: AuthorProps) {
   const access = useAccess();
   const notify = useToast();
-  const drafts = useLocalDrafts(access, dataset, { draftId, newAnalysis });
+  const drafts = useLocalDrafts(access, dataset, { draftId, newAnalysis, initialDraft });
   const { draft, dispatch } = drafts;
   const noData = draft.noDataset === true || (access.mode === 'local' && !draft.dataset && !draft.bundle && !sampleLoaded);
   const workspace = useRef<HTMLDivElement>(null);
@@ -262,8 +262,8 @@ function AuthorWorkspace({ renderIdentity, sampleLoaded = false, onTrySample, cl
   </div>
     {createOpen && <CreateAnalysisDialog client={apiClient} sampleAvailable={access.mode === 'demo' || sampleLoaded} offline={!apiClient} selectionError={drafts.autoError ?? undefined}
       onClose={() => setCreateOpen(false)} onCreateDataset={apiClient && onPrep ? () => { if (drafts.keepCurrent()) { setCreateOpen(false); onPrep(); } } : undefined}
-      onSelect={dataset => {
-        if (drafts.replace({ ...emptyDraft(), ...(dataset ? { dataset } : {}) })) setCreateOpen(false);
+      onSelect={(dataset, initialDraft) => {
+        if (drafts.replace(initialDraft ?? { ...emptyDraft(), ...(dataset ? { dataset } : {}) })) setCreateOpen(false);
       }} />}
   </>;
 }

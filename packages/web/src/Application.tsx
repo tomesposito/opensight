@@ -1,7 +1,7 @@
 import { PublishedDashboard } from './PublishedDashboard.js';
 import { DataPrep } from './DataPrep.js';
 import { DatasetDetail } from './DatasetDetail.js';
-import { emptyDraft } from './authoring.js';
+import { emptyDraft, type AuthorDraft } from './authoring.js';
 import { DataLanding } from './DataLanding.js';
 import { CreateDatasetDialog } from './CreateDatasetDialog.js';
 import { UserManagement } from './UserManagement.js';
@@ -49,7 +49,7 @@ function ApplicationWorkspace({ api, fixtures }: { api: ReturnType<typeof create
   const { route, navigate, entry } = useAppRoute();
   const [creation, setCreation] = useState<'dataset' | 'source' | 'file'>();
   const [authorDataset, setAuthorDataset] = useState<AuthorDataset>();
-  const [newAnalysisChoice, setNewAnalysisChoice] = useState<{ entry: number; dataset?: AuthorDataset }>();
+  const [newAnalysisChoice, setNewAnalysisChoice] = useState<{ entry: number; dataset?: AuthorDataset; initialDraft?: AuthorDraft }>();
   const [sampleLoaded, setSampleLoaded] = useState(false);
   const [fixtureId, setFixtureId] = useState(access.mode === 'demo' ? fixtures.find(f => f.id === 'renderable-sales')?.id ?? fixtures[0]?.id : fixtures[0]?.id);
   const fixture = fixtures.find(f => f.id === fixtureId);
@@ -78,7 +78,7 @@ function ApplicationWorkspace({ api, fixtures }: { api: ReturnType<typeof create
       case 'my-folders': return <FolderEmptyState shared={false} navigate={navigate} />;
       case 'shared-folders': return <FolderEmptyState shared navigate={navigate} />;
       case 'analyses': return <Analyses navigate={navigate} />;
-      case 'author': return choosingDataset ? <Analyses navigate={navigate} /> : <Author key={entry} renderIdentity={identity} sampleLoaded={sampleLoaded} onTrySample={() => setSampleLoaded(true)} inApp draftId={route.draftId} newAnalysis={route.newAnalysis} onDraftChange={draftId => navigate({ page: 'author', draftId }, true)} onSources={() => navigate({ page: 'data-sources' })} onDatasetChange={setAuthorDataset} dataset={route.draftId ? undefined : route.newAnalysis ? newAnalysisChoice?.dataset : authorDataset} onPrep={() => navigate({ page: 'data-prep' })} client={connected ? api : undefined} />;
+      case 'author': return choosingDataset ? <Analyses navigate={navigate} /> : <Author key={entry} renderIdentity={identity} sampleLoaded={sampleLoaded} onTrySample={() => setSampleLoaded(true)} inApp draftId={route.draftId} newAnalysis={route.newAnalysis} initialDraft={route.newAnalysis ? newAnalysisChoice?.initialDraft : undefined} onDraftChange={draftId => navigate({ page: 'author', draftId }, true)} onSources={() => navigate({ page: 'data-sources' })} onDatasetChange={setAuthorDataset} dataset={route.draftId ? undefined : route.newAnalysis ? newAnalysisChoice?.dataset : authorDataset} onPrep={() => navigate({ page: 'data-prep' })} client={connected ? api : undefined} />;
       case 'data': if (route.datasetId) return <DatasetDetail key={route.datasetId} datasetId={route.datasetId} client={connected ? api : undefined} navigate={navigate} onGenerate={dataset => { const draftId = createDraftStore(browserDraftStorage, access).save({ ...emptyDraft(), dataset }); navigate({ page: 'author', draftId }); }} />;
       // Data sources is a bookmarkable tab of the Data landing page.
       // falls through
@@ -97,7 +97,7 @@ function ApplicationWorkspace({ api, fixtures }: { api: ReturnType<typeof create
     {!editing && identity()}
     <main className={mode === 'author' && !choosingDataset ? 'author-main' : undefined}>{content()}</main>
     {choosingDataset && <CreateAnalysisDialog client={connected ? api : undefined} sampleAvailable={access.mode === 'demo' || sampleLoaded} offline={!connected}
-      onSelect={dataset => { setAuthorDataset(dataset); setNewAnalysisChoice({ entry, dataset }); }}
+      onSelect={(dataset, initialDraft) => { setAuthorDataset(dataset); setNewAnalysisChoice({ entry, dataset, initialDraft }); }}
       onCreateDataset={() => navigate({ page: 'data', createDataset: true })}
       onClose={() => navigate({ page: 'analyses' }, true)} />}
     {!problem && (mode === 'data' || mode === 'data-sources') && (creation || route?.createDataset) && <CreateDatasetDialog client={connected ? api : undefined} start={creation ?? 'dataset'} onClose={() => { setCreation(undefined); if (route?.createDataset) navigate({ page: 'data' }, true); }} onPrep={sourceId => { setCreation(undefined); navigate({ page: 'data-prep', sourceId }); }} />}
