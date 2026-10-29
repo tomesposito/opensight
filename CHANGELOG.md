@@ -13,6 +13,9 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Added
 
+- Durable monthly hosted usage records and operator reporting for admitted and
+  denied API calls and compute attempts, current storage snapshots, and explicitly
+  recorded egress bytes, preparing usage-based billing without changing quotas (#154).
 - Invited users can set a password and register TOTP from the emailed browser
   link, with a scannable QR code and manual setup key, then sign in with a fresh
   authenticator code and open their workspace or workspace picker. Existing

@@ -23,7 +23,7 @@ const durableTables = [...coordinationTables, ...manifestTables, ...dispatchTabl
 // h8_audit_schema rides along for ownership/backup/restore inventory, but stays out of
 // baseTables on purpose: the existing-database foreign check must accept deployed
 // databases that predate the marker (the owner migration adds it).
-const additiveTables = ['h2_login_selections', 'h8_ai_warnings', 'analytics_events', 'analytics_settings'];
+const additiveTables = ['h8_monthly_usage', 'h2_login_selections', 'h8_ai_warnings', 'analytics_events', 'analytics_settings'];
 export const serverlessTables = [...baseTables, ...additiveTables, 'h8_audit_schema', ...durableTables];
 export async function grantServerlessRuntime(c: SqlConnection, env: NodeJS.ProcessEnv): Promise<void> {
   const schema = String((await c.query('SELECT current_schema() AS schema'))[0]?.schema);
