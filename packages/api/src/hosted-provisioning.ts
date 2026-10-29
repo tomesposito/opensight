@@ -6,7 +6,7 @@ import { identifier, insertResource } from './metadata-resources.js';
 import { checksum, MetadataOperator, type TenantOperation } from './metadata-operator.js';
 import { appendMetadataEvent } from './metadata-outbox.js';
 import type { HostedConfig } from './hosted-config.js';
-import type { MailTransport } from './mail.js';
+import type { MailTransport, MailMessage } from './mail.js';
 import { digest, seal, unseal } from './auth-crypto.js';
 import { escapeHtml } from './reports.js';
 import { normalizedEmail } from './hosted-auth.js';
@@ -18,6 +18,14 @@ import type { TenantContext } from './metadata.js';
 export interface OnboardingInput { name: string; slug?: string; administrator: { email: string; name: string } }
 export interface InvitationInput { email: string; name: string; role: Role }
 export interface PendingInvitation { id: string; namespaceId: string; email: string; name: string; role: Role; expiresAt: string }
+export interface InvitationDispatch {
+  readonly configured: boolean;
+  create<T>(context: TenantContext, invitationId: string, requestHash: string, work: (c: SqlConnection) => Promise<T>): Promise<T | undefined>;
+}
+export function invitationMessage(origin: string, tenantId: string, workspaceName: unknown, email: string, token: string): MailMessage {
+  const tenantLine = workspaceName ? `<p>Workspace: ${escapeHtml(workspaceLabel(workspaceName, tenantId))}</p>` : `<p>Tenant: ${escapeHtml(tenantId)}</p>`;
+  return { to: [email], subject: 'OpenSight invitation', html: `<p>You have been invited to OpenSight.</p>${tenantLine}<p><a href="${escapeHtml(origin)}/#invite=${token}">Set up your OpenSight account</a> in your browser: choose a password and register your authenticator app. If you already have an account, sign in to accept the invitation.</p><p>This invitation is single-use. Operators and automation can also use the enrollment API with this token:</p><code>${token}</code>` };
+}
 function label(value: string): string {
   if (typeof value !== 'string' || !value.trim() || value.length > 512 || /[\x00-\x1f]/.test(value)) throw new MetadataError('METADATA_INVALID', 400);
   return value;
@@ -27,7 +35,7 @@ export const operatorOperationId = (key: string): string => checksum(['deploymen
 
 export class HostedProvisioning {
   readonly operator: MetadataOperator;
-  constructor(private readonly database: Database, private readonly config: HostedConfig, private readonly mail: MailTransport, private readonly clock = Date.now, private readonly jobs?: JobOwnership, private readonly analytics = disabledAnalytics) {
+  constructor(private readonly database: Database, private readonly config: HostedConfig, private readonly mail: MailTransport, private readonly clock = Date.now, private readonly jobs?: JobOwnership, private readonly analytics = disabledAnalytics, private readonly invitationDispatch?: InvitationDispatch) {
     this.operator = new MetadataOperator(database);
   }
   private async reserve(operationId: string, hash: string): Promise<void> {
@@ -90,14 +98,8 @@ export class HostedProvisioning {
     if (Number(row.delivered) || Number(row.accepted)) return;
     if (Number(row.expires_at) <= this.clock()) throw new MetadataError('INVITATION_EXPIRED', 409);
     const token = unseal(String(row.token_secret), this.config.encryptionKey, `invitation:${invitationId}`);
-    // The workspace name is shown when the tenant has one; legacy tenants
-    // without a display name keep the raw tenant line (fallback, never typed).
-    const tenantLine = row.display_name
-      ? `<p>Workspace: ${escapeHtml(workspaceLabel(row.display_name, String(row.tenant_id)))}</p>`
-      : `<p>Tenant: ${row.tenant_id}</p>`;
     // Delivery belongs to the identity flow, never to operator metadata responses.
-    await this.mail.send({ to: [String(row.email)], subject: 'OpenSight invitation',
-      html: `<p>You have been invited to OpenSight.</p>${tenantLine}<p><a href="${escapeHtml(this.config.origin)}/#invite=${token}">Set up your OpenSight account</a> in your browser: choose a password and register your authenticator app. If you already have an account, sign in to accept the invitation.</p><p>This invitation is single-use. Operators and automation can also use the enrollment API with this token:</p><code>${token}</code>` });
+    await this.mail.send(invitationMessage(this.config.origin, String(row.tenant_id), row.display_name, String(row.email), token));
     await this.database.transaction(c => c.query('UPDATE h2_invitations SET delivered = 1 WHERE invitation_id = ?', [invitationId]));
   }
   private async completeProvision(operationId: string, input: Pick<OnboardingInput, 'administrator'>): Promise<TenantOperation> {
@@ -140,9 +142,10 @@ export class HostedProvisioning {
     if (!isRole(raw.role)) throw new MetadataError('METADATA_INVALID', 400);
     const input = { email: normalizedEmail(raw.email), name: label(raw.name), role: raw.role }, operationId = operatorOperationId(key);
     const hash = checksum({ action: 'invite', tenantId, input });
-    if (!this.mail.configured) throw new MetadataError('SMTP_NOT_CONFIGURED', 503);
+    const delivery = context ? this.invitationDispatch : undefined;
+    if (!(delivery?.configured ?? this.mail.configured)) throw new MetadataError('SMTP_NOT_CONFIGURED', 503);
     await this.reserve(operationId, hash);
-    const invited = await this.database.transaction(async c => {
+    const work = async (c: SqlConnection) => {
       const rows = await c.query("UPDATE h1_tenants SET version = version WHERE tenant_id = ? AND state = 'active' RETURNING tenant_id", [tenantId]);
       if (!rows.length) throw new MetadataError('TENANT_UNAVAILABLE', 403);
       if (context) await this.tenantAdmin(c, context);
@@ -161,9 +164,10 @@ export class HostedProvisioning {
       // The invitation token is sealed in h2_invitations and mailed; only the recipient identity lands here.
       await appendOperatorAudit(c, { ...(context ? { actor: context.userId } : {}), action: 'membership.invited', tenantId, subject: input.email, detail: { operationId, userId, role: input.role } });
       return { tenantId, namespaceId, invitation: { id: invitation.id, namespaceId, ...input, expiresAt: invitation.expiresAt }, token: invitation.token };
-    });
+    };
+    const invited = delivery && context ? await delivery.create(context, operationId, hash, work) : await this.database.transaction(work);
     if (invited) this.analytics.track(invited, { name: 'user_invited' });
-    await this.deliver(operationId);
+    if (!delivery) await this.deliver(operationId);
     return invited;
   }
   /** Recheck admission under the same tenant lock used by acceptance/removal. */

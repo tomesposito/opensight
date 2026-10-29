@@ -32,6 +32,9 @@ import { DurableResults } from './durable-results.js';
 import { method, send } from './automation-routes.js';
 import { JobStore } from './job-store.js';
 import { serverlessMail } from './serverless-mail.js';
+import { DurableV1 } from './v1-durable.js';
+import { serverlessV1Methods } from './v1-route-contract.js';
+import { DurableInvitations } from './durable-invitations.js';
 
 export function serverlessTransport(aws: InvocationAws, env: NodeJS.ProcessEnv): AwsDispatch {
   const required = (key: string) => { const value = env[key]; if (!value) throw new MetadataError('DISPATCH_CONFIG_INVALID', 503); return value; };
@@ -50,7 +53,7 @@ export async function serverlessUsage(database: Database, deployment: string): P
 /** Literal supported data routes. Legacy base64 uploads remain gated. */
 export function serverlessDataPath(raw: string): boolean {
   const path = raw.replace(/^\/api\/namespaces\/[A-Za-z0-9_-]+\//, '/api/');
-  return path === '/api/admin/analytics' || /^\/api\/(?:session|namespaces|users|groups|connectors|sources|prep-sources|prep-datasets)$/.test(path)
+  return !!serverlessV1Methods(path) || path === '/api/admin/analytics' || /^\/api\/(?:session|namespaces|users|groups|connectors|sources|prep-sources|prep-datasets)$/.test(path)
     || /^\/api\/(?:automation-status|job-recipients|jobs(?:\/[A-Za-z0-9_-]{1,512}(?:\/(?:runs|deliveries))?)?)$/.test(path)
     || /^\/api\/sources\/[A-Za-z0-9_-]+(?:\/(?:bind|rotate|preview|rows|output|query|refresh|policy))?$/.test(path)
     || /^\/api\/(?:ai\/sources(?:\/[A-Za-z0-9_-]+\/schema)?|prep-datasets\/import)$/.test(path)
@@ -66,7 +69,7 @@ export function serverlessAdapters(database: Database, metadata: TenantMetadata,
   if (!bucket) throw new MetadataError('ARTIFACT_CONFIG_INVALID', 503);
   const coordinator = new DurableCoordinator(database, metadata, deployment), manifests = new ManifestStore(coordinator);
   const transfer = new ArtifactTransfer(aws, { bucket, prefix: 'artifacts/v1' }), ledger = new ObjectLedger(metadata, deployment);
-  const dispatch = new DurableDispatch(database, metadata, deployment, serverlessTransport(aws, env));
+  const dispatch = new DurableDispatch(database, metadata, deployment, serverlessTransport(aws, env), database.dialect ?? 'postgres');
   const jobs = new JobStore(database, metadata, () => new Date(), dispatch);
   const work = new ServerlessWork(coordinator, manifests, dispatch, ledger, transfer, budgets, aws.scope, () => aws.close());
   const sourceArtifacts = new SourceArtifacts(coordinator, context => work.attempt(context), transfer, budgets);
@@ -83,6 +86,8 @@ export function serverlessAdapters(database: Database, metadata: TenantMetadata,
   const embedContent = new EmbedContent(new HostedData(embedSources, undefined, budgets, work.cache, work, analytics));
   const uploadService = new DurableUploads(metadata, dispatch, ledger, new UploadObjects(aws, bucket)), uploads = new DurableUploadRoutes(uploadService);
   return { data, embedContent, jobs, mail: serverlessMail(aws, env), allows: serverlessDataPath, capabilities: { directUploads: { version: 1, maxBytes: 8 * 1024 * 1024 }, resultChunks: { version: 1, maxBytes: 1024 * 1024, maxResultBytes: budgets.config.node.resultBytes }, controlJsonBytes: 1024 * 1024 },
+    v1: context => new DurableV1(database, metadata, context, deployment, env, database.dialect ?? 'postgres'),
+    invitations: new DurableInvitations(dispatch, metadata, config, serverlessMail(aws, env)),
     resultMaxBytes: budgets.config.node.resultBytes,
     idleReconnect: true,
     embedResult: (context, session, body, recheck) => results.publish(context, body, { kind: 'embed', id: session.id, expiresAt: session.expiresAt }, recheck),

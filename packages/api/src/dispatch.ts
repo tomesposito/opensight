@@ -15,7 +15,7 @@ export function dispatchEnvelope(raw: unknown): DispatchEnvelope {
     return { version: 1, deploymentEpoch: Number(value.deploymentEpoch), eventId: identifier(value.eventId), kind: value.kind as DispatchEnvelope['kind'] };
   } catch { throw new MetadataError('SCHEDULE_EVENT_INVALID', 400); }
 }
-export type DurableEventKind = 'ingest' | 'object-cleanup' | 'result-expire' | 'artifact-cleanup' | 'job-due' | 'job-execute' | 'job-deliver';
+export type DurableEventKind = 'ingest' | 'object-cleanup' | 'result-expire' | 'artifact-cleanup' | 'job-due' | 'job-execute' | 'job-deliver' | 'invitation-deliver';
 export interface DurableEvent {
   eventId: string; aggregateId: string; aggregateRevision: number; kind: DurableEventKind;
   dueAt: number; expiresAt: number; epoch: number;
@@ -26,19 +26,19 @@ export interface DispatchTransport {
   /** Resolve only after SQS send or exact one-time Scheduler create/GET acknowledgement. */
   dispatch(envelope: DispatchEnvelope, event: DurableEvent): Promise<void>;
 }
-export interface IntentRequest { kind: 'upload-reserve' | 'upload-complete' | 'artifact-write' | 'artifact-refresh' | 'result-write' | 'job-write'; requestDigest: string; idempotencyKey: string; revisions: Revisions }
+export interface IntentRequest { kind: 'upload-reserve' | 'upload-complete' | 'artifact-write' | 'artifact-refresh' | 'result-write' | 'job-write' | 'invitation-write'; requestDigest: string; idempotencyKey: string; revisions: Revisions }
 export interface DispatchPreparation { readonly intentId: string }
 export interface DispatchReceipt { id: string; revision: number }
 export type EventInput = Omit<DurableEvent, 'eventId' | 'epoch'>;
 interface Prepared { context: TenantContext; input: IntentRequest; epoch: number; idempotencyDigest: string }
 const scoped = 'deployment = ? AND tenant_id = ? AND namespace_id = ? AND owner_id = ?';
-const eventKinds: readonly DurableEventKind[] = ['ingest', 'object-cleanup', 'result-expire', 'artifact-cleanup', 'job-due', 'job-execute', 'job-deliver'];
+const eventKinds: readonly DurableEventKind[] = ['ingest', 'object-cleanup', 'result-expire', 'artifact-cleanup', 'job-due', 'job-execute', 'job-deliver', 'invitation-deliver'];
 const integer = (value: SqlValue | undefined): number => {
   const n = Number(value); if (!Number.isSafeInteger(n) || n < 1) throw new MetadataError('DISPATCH_UNAVAILABLE', 503); return n;
 };
 const snapshot = (raw: IntentRequest): IntentRequest => {
   const input = structuredClone(raw), r = object(input, ['kind', 'requestDigest', 'idempotencyKey', 'revisions']);
-  if (!['upload-reserve', 'upload-complete', 'artifact-write', 'artifact-refresh', 'result-write', 'job-write'].includes(String(r.kind))
+  if (!['upload-reserve', 'upload-complete', 'artifact-write', 'artifact-refresh', 'result-write', 'job-write', 'invitation-write'].includes(String(r.kind))
     || typeof r.requestDigest !== 'string' || !/^[a-f0-9]{64}$/.test(r.requestDigest)
     || typeof r.idempotencyKey !== 'string' || !/^[A-Za-z0-9_-]{16,128}$/.test(r.idempotencyKey)) throw new MetadataError('DISPATCH_INPUT_INVALID', 400);
   const revisions = object(r.revisions, ['authorization', 'policy', 'configuration']);

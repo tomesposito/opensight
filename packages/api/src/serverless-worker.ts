@@ -21,6 +21,9 @@ import { DurableJobs } from './durable-jobs.js';
 import { JobRenderer } from './job-renderer.js';
 import { currentAuthority } from './serverless-authority.js';
 import { expireResultOperation } from './durable-results.js';
+import { DurableInvitations } from './durable-invitations.js';
+import { hostedConfig } from './hosted-config.js';
+import { serverlessMail } from './serverless-mail.js';
 
 /** Event envelopes carry identifiers only; each service reclaims current SQL authority. */
 export async function runServerlessEvent(raw: ScheduledEvent, db: InvocationDatabases, scope: InvocationScope, env: NodeJS.ProcessEnv): Promise<void> {
@@ -33,6 +36,9 @@ export async function runServerlessEvent(raw: ScheduledEvent, db: InvocationData
   if (event.kind === 'recover') { await dispatch.recover(event); return; }
   const inspected = await dispatch.inspect(event, true);
   if (!inspected) { await dispatch.flushEvent(event); return; }
+  if (inspected.kind === 'invitation-deliver') {
+    await new DurableInvitations(dispatch, metadata, hostedConfig(env), serverlessMail(aws, env)).run(event, scope.remaining()); return;
+  }
   if (inspected.kind.startsWith('job-')) {
     const budgets = await loadBudgets(db.membership, metadata); scope.own({ close: () => budgets.shutdown(), force: () => budgets.close() });
     const adapters = serverlessAdapters(db.membership, metadata, budgets, aws, env);
@@ -73,6 +79,9 @@ export async function replayServerlessEvent(event: DispatchEnvelope, db: Invocat
   const dispatch = new DurableDispatch(db.membership, metadata, deployment, serverlessTransport(aws, env));
   const target = await dispatch.inspect(event, true);
   if (!target) throw new MetadataError('DISPATCH_REPLAY_DENIED', 409);
+  if (target.kind === 'invitation-deliver') {
+    await new DurableInvitations(dispatch, metadata, hostedConfig(env), serverlessMail(aws, env)).replay(event, acceptAmbiguous); return;
+  }
   if (target.kind.startsWith('job-')) {
     const budgets = await loadBudgets(db.membership, metadata); scope.own({ close: () => budgets.shutdown(), force: () => budgets.close() });
     const adapters = serverlessAdapters(db.membership, metadata, budgets, aws, env);

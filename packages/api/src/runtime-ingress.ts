@@ -1,6 +1,7 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { isIP } from 'node:net';
 import { MetadataError } from './metadata-db.js';
+import { serverlessV1Methods } from './v1-route-contract.js';
 
 export interface RuntimeRequest { method: string; path: string; headers: Record<string, string>; body: Buffer; peer: string; requestTime: number }
 export interface RuntimeResponse { statusCode: number; headers: Record<string, string>; body: string; isBase64Encoded?: boolean; cookies?: string[] }
@@ -10,7 +11,7 @@ export const applicationEnvelopeBytes = 2 * 1024 * 1024;
 function invalid(): never { throw new MetadataError('HOSTED_REQUEST_INVALID', 400); }
 function denied(): never { throw new MetadataError('UNTRUSTED_INGRESS', 403); }
 const record = (v: unknown): Record<string, unknown> => v && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, unknown> : invalid();
-const singleton = new Set(['host', 'authorization', 'origin', 'content-type', 'content-length', 'idempotency-key', 'if-match', 'if-none-match', 'if-modified-since', 'if-unmodified-since', 'range',
+const singleton = new Set(['host', 'authorization', 'origin', 'content-type', 'content-length', 'idempotency-key', 'if-match', 'if-none-match', 'if-modified-since', 'if-unmodified-since', 'range', 'limit', 'cursor',
   'x-opensight-ingress-key-id', 'x-opensight-ingress-secret', 'x-opensight-ingress-origin', 'x-opensight-ingress-peer', 'cloudfront-viewer-address']);
 export const forgedPrincipalHeaders = ['x-user', 'x-user-id', 'x-principal', 'x-groups', 'x-group-ids', 'x-namespace', 'x-namespace-id', 'x-tenant', 'x-tenant-id', 'x-subject', 'x-role', 'x-roles', 'x-capabilities'];
 
@@ -44,6 +45,8 @@ export function publicPath(path: unknown): string {
   if (/^\/api\/(?:host|api|healthz|readyz|metrics|migrate|migration|drain)(?:\/|$)/.test(internal)) throw new MetadataError('RESOURCE_NOT_FOUND', 404);
   const unscoped = internal.replace(/^\/api\/namespaces\/[A-Za-z0-9_-]+\//, '/api/');
   if (!/^\/embed\/sessions\/[A-Za-z0-9_-]+$/.test(unscoped)
+    && !serverlessV1Methods(unscoped)
+    && !/^\/api\/invitations(?:\/[A-Za-z0-9_-]+)?$/.test(unscoped)
     && !/^\/api\/(?:startup|session|namespaces|users|groups|connectors|sources|prep-sources|uploads|prep-datasets|automation-status|job-recipients|jobs)$/.test(unscoped)
     && !/^\/api\/auth\/(?:enroll|accept|login(?:\/select)?|switch|logout)$/.test(unscoped)
     && !/^\/api\/sources\/[A-Za-z0-9_-]+(?:\/(?:bind|rotate|preview|rows|output|query|refresh|policy))?$/.test(unscoped)
@@ -59,7 +62,10 @@ export function publicPath(path: unknown): string {
 function routeMethod(path: string, method: string): void {
   const p = path.replace(/^\/api\/namespaces\/[A-Za-z0-9_-]+\//, '/api/');
   let allowed: readonly string[] = ['GET'];
-  if (p === '/api/startup' || p.startsWith('/api/auth/') || /^\/api\/embedding\/(?:sessions$|Generate)/.test(p) || p.endsWith('/renew')) allowed = ['POST'];
+  if (serverlessV1Methods(p)) allowed = serverlessV1Methods(p)!;
+  else if (p === '/api/invitations') allowed = ['GET', 'POST'];
+  else if (/^\/api\/invitations\/[A-Za-z0-9_-]+$/.test(p)) allowed = ['DELETE'];
+  else if (p === '/api/startup' || p.startsWith('/api/auth/') || /^\/api\/embedding\/(?:sessions$|Generate)/.test(p) || p.endsWith('/renew')) allowed = ['POST'];
   else if (p === '/api/embedding/config') allowed = ['GET', 'PUT'];
   else if (/^\/api\/embedding\/sessions\//.test(p)) allowed = ['DELETE'];
   else if (/^\/api\/embed\/sessions\//.test(p)) allowed = /\/(status|content)$/.test(p) ? ['GET'] : ['POST'];
@@ -157,7 +163,7 @@ export function adaptGatewayRequest(raw: unknown, env: NodeJS.ProcessEnv): Runti
   if (['GET', 'HEAD'].includes(method) && body.length || h['content-length'] !== undefined && (!/^\d+$/.test(h['content-length']) || Number(h['content-length']) !== body.length)) invalid();
   routeMethod(path, method);
   const forwarded: Record<string, string> = { host: new URL(config.origin).host, 'content-length': String(body.length) };
-  for (const name of ['authorization', 'content-type', 'origin', 'idempotency-key', 'if-match', 'if-none-match', 'if-modified-since', 'if-unmodified-since', 'range', 'accept']) if (h[name] !== undefined) forwarded[name] = h[name];
+  for (const name of ['authorization', 'content-type', 'origin', 'idempotency-key', 'if-match', 'if-none-match', 'if-modified-since', 'if-unmodified-since', 'range', 'accept', 'limit', 'cursor']) if (h[name] !== undefined) forwarded[name] = h[name];
   if (event.cookies !== undefined) {
     if (h.cookie !== undefined) invalid();
     if (!Array.isArray(event.cookies) || event.cookies.some(c => typeof c !== 'string' || /[\r\n\x00]/.test(c)) || Buffer.byteLength(event.cookies.join('; ')) > 8192) invalid();

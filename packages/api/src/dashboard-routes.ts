@@ -14,6 +14,9 @@ import { RetryStore, type RetryAdapter } from './retry-store.js';
 
 interface Reply { status: number; body: unknown; version?: number; bytes?: Buffer; contentType?: string; filename?: string }
 interface Replay { fingerprint: string; reply: Omit<Reply, 'bytes'> & { bytes?: string }; id: string; sourceId?: string; removed?: boolean; access?: unknown; dataVersion?: number; dataStamp?: unknown }
+interface DashboardProtocol extends Pick<AnalysisProtocol, 'paging'> {
+  publishData?(request: IncomingMessage, response: ServerResponse, status: number, body: unknown, recheck: () => Promise<void>): Promise<void>;
+}
 function canonical(v: unknown): string {
   if (Array.isArray(v)) return `[${v.map(canonical).join(',')}]`;
   if (v && typeof v === 'object') return `{${Object.entries(v).sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => `${JSON.stringify(k)}:${canonical(v)}`).join(',')}}`;
@@ -25,7 +28,7 @@ function version(raw: unknown): number { if (!Number.isSafeInteger(raw) || Numbe
 export class DashboardRoutes {
   private readonly tails = new Map<string, Promise<unknown>>();
   private readonly cap?: number;
-  constructor(private readonly protocol: Pick<AnalysisProtocol, 'paging'>, private readonly env: NodeJS.ProcessEnv, private readonly analytics = disabledAnalytics,
+  constructor(private readonly protocol: DashboardProtocol, private readonly env: NodeJS.ProcessEnv, private readonly analytics = disabledAnalytics,
     private readonly replay: RetryAdapter = new RetryStore({ env, periodicPrune: false })) {
     const raw = env.OPENSIGHT_DASHBOARD_VERSION_CAP;
     if (raw !== undefined) { if (!/^[1-9]\d*$/.test(raw) || !Number.isSafeInteger(Number(raw))) throw new Error('OPENSIGHT_DASHBOARD_VERSION_CAP must be a positive integer'); this.cap = Number(raw); }
@@ -106,7 +109,12 @@ export class DashboardRoutes {
         if (seen.dataVersion && canonical(seen.dataStamp) !== canonical(stamp)) fail('DASHBOARD_REPLAY_REVISED', 409);
         await backend.analyses.check(stamp); await authorize(seen.id, seen.removed, seen.access);
         const { bytes, ...reply } = seen.reply;
-        response.setHeader('Idempotent-Replayed', 'true'); this.send(response, { ...reply, ...(bytes === undefined ? {} : { bytes: Buffer.from(bytes, 'base64') }) }); return;
+        response.setHeader('Idempotent-Replayed', 'true');
+        if (seen.dataVersion && bytes === undefined && this.protocol.publishData) {
+          if (reply.version !== undefined) response.setHeader('ETag', `"${reply.version}"`);
+          await this.protocol.publishData(request, response, reply.status, reply.body, () => backend.analyses.check(stamp));
+        } else this.send(response, { ...reply, ...(bytes === undefined ? {} : { bytes: Buffer.from(bytes, 'base64') }) });
+        return;
       }
       const reservation = receiptKey === undefined ? undefined : await this.replay.reserve<Replay>(scope.tenantId, receiptKey);
       try {
@@ -161,7 +169,10 @@ export class DashboardRoutes {
       prepare(); await reservation?.commit();
       if (dataVersion) dashboardVersion(await backend.get(id), dataVersion);
       await authorize(id, change?.kind === 'delete', access);
-      this.send(response, reply!);
+      if (dataVersion && !reply!.bytes && this.protocol.publishData) {
+        if (reply!.version !== undefined) response.setHeader('ETag', `"${reply!.version}"`);
+        await this.protocol.publishData(request, response, reply!.status, reply!.body, () => backend.analyses.check(stamp));
+      } else this.send(response, reply!);
       } finally { await reservation?.release(); }
     });
     if (key === undefined) await execute(); else await this.serial(`retry:${key}`, execute);

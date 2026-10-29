@@ -18,7 +18,10 @@ import { readBody, RequestError, SecurityError, validateQuery } from './query.js
 import { BlazeError } from './blaze.js';
 import type { HostedDataRoutes } from './hosted-data-routes.js';
 import type { TenantContext } from './metadata.js';
-import { RetryStore, RETRY_TTL_MS } from './retry-store.js';
+import { RetryStore, RETRY_TTL_MS, v1RateLimit, type RetryAdapter } from './retry-store.js';
+import { serverlessV1Methods } from './v1-route-contract.js';
+
+export type DurableV1Factory = (context: TenantContext) => RetryAdapter & { take(): Promise<{ allowed: boolean; retryAfter: number }> };
 
 /**
  * Headless v1 surface (issue #95, IDD D-37, frozen contract
@@ -65,10 +68,7 @@ class RateLimiter {
   private readonly buckets = new Map<string, { tokens: number; resetAt: number }>();
   readonly perMinute: number;
   constructor(env: NodeJS.ProcessEnv = process.env) {
-    const raw = env.OPENSIGHT_V1_RATE_LIMIT_PER_MINUTE;
-    if (raw === undefined) this.perMinute = 600;
-    else if (/^[1-9]\d*$/.test(raw) && Number(raw) <= 100000) this.perMinute = Number(raw);
-    else throw new Error('OPENSIGHT_V1_RATE_LIMIT_PER_MINUTE must be a positive integer');
+    this.perMinute = v1RateLimit(env);
   }
   take(key: string): { allowed: boolean; retryAfter: number } {
     const now = Date.now(), windowMs = 60000;
@@ -87,7 +87,8 @@ export class V1Routes {
   private readonly analyses: AnalysisRoutes;
   private readonly assets: AssetRoutes;
   private readonly dashboards: DashboardRoutes;
-  constructor(private readonly hostedRoutes?: HostedDataRoutes, env: NodeJS.ProcessEnv = process.env, options: { invocation?: boolean; analytics?: Analytics } = {}) {
+  constructor(private readonly hostedRoutes?: HostedDataRoutes, private readonly env: NodeJS.ProcessEnv = process.env,
+    private readonly options: { invocation?: boolean; analytics?: Analytics; durable?: DurableV1Factory } = {}) {
     this.limiter = new RateLimiter(env);
     this.assets = new AssetRoutes({ paging: r => this.paging(r), ifMatch: r => this.ifMatch(r) }, options.analytics ?? disabledAnalytics);
     this.dashboards = new DashboardRoutes({ paging: r => this.paging(r) }, env, options.analytics ?? disabledAnalytics);
@@ -110,19 +111,29 @@ export class V1Routes {
   async route(request: IncomingMessage, response: ServerResponse, path: string, context: TenantContext, recheck: () => Promise<void>): Promise<boolean> {
     if (!path.startsWith('/api/v1/')) return false;
     try {
-      const gate = this.limiter.take(context.tenantId);
+      if (this.options.invocation && (!this.options.durable || !serverlessV1Methods(path)?.includes(request.method ?? ''))) throw new MetadataError('SERVERLESS_STORAGE_REQUIRED', 503);
+      const durable = this.options.durable?.(context);
+      const gate = durable ? await durable.take() : this.limiter.take(context.tenantId);
       if (!gate.allowed) { response.setHeader('Retry-After', String(gate.retryAfter)); v1Fail('RATE_LIMIT_EXCEEDED', 429, `Rate limit exceeded; retry after ${gate.retryAfter}s`); }
       this.routes.data.begin(context, undefined, recheck);
-      if (this.assets.matches(path, request.method)) {
-        await this.assets.route(request, response, path, { scope: context, transaction: async (write, work) => {
-          await recheck(); return this.routes.data.sources.metadata.assetTransaction(context, write, work);
+      const protocol = { paging: (r: IncomingMessage) => this.paging(r), ifMatch: (r: IncomingMessage) => this.ifMatch(r),
+        publishData: async (r: IncomingMessage, res: ServerResponse, status: number, body: unknown, validate: () => Promise<void>) => {
+          const output = await this.routes.output(r, context, status, body, async () => { await recheck(); await validate(); });
+          send(res, output.status, output.body);
+        } };
+      const assets = durable ? new AssetRoutes(protocol, this.options.analytics, durable) : this.assets;
+      const analyses = durable ? new AnalysisRoutes(protocol, durable, this.options.analytics) : this.analyses;
+      const dashboards = durable ? new DashboardRoutes(protocol, this.env, this.options.analytics, durable) : this.dashboards;
+      if (assets.matches(path, request.method)) {
+        await assets.route(request, response, path, { scope: context, transaction: async (write, work, receipt) => {
+          await recheck(); return this.routes.data.sources.metadata.assetTransaction(context, write, work, receipt);
         } }); return true;
       }
       if (/^\/api\/v1\/dashboards(?:\/|$)/.test(path) || /^\/api\/v1\/analyses\/[^/]+\/publish$/.test(path)) {
-        await this.dashboards.route(request, response, path, new HostedDashboards(this.routes, context, recheck)); return true;
+        await dashboards.route(request, response, path, new HostedDashboards(this.routes, context, recheck)); return true;
       }
       if (/^\/api\/v1\/analyses(?:\/|$)/.test(path)) {
-        await this.analyses.route(request, response, path, new HostedAnalyses(this.routes, context, recheck)); return true;
+        await analyses.route(request, response, path, new HostedAnalyses(this.routes, context, recheck)); return true;
       }
       const revisions = await this.routes.data.sources.metadata.revisions(context);
       const read = request.method === 'GET' || path.endsWith('/query');
@@ -143,6 +154,7 @@ export class V1Routes {
     const errorCode = dataError ? error.code : error instanceof MetadataError || error instanceof SecurityError ? error.code
       : error instanceof RequestError ? (status === 405 ? 'METHOD_NOT_ALLOWED' : status === 404 ? 'RESOURCE_NOT_FOUND' : 'HOSTED_REQUEST_INVALID') : 'HOSTED_INTERNAL_ERROR';
     if (errorCode === 'IDEMPOTENCY_CAPACITY_EXCEEDED') response.setHeader('Retry-After', '60');
+    if (errorCode === 'IDEMPOTENCY_IN_PROGRESS') response.setHeader('Retry-After', '1');
     const rawDetail = (error as { detail?: unknown })?.detail;
     const summary = rawDetail !== null && typeof rawDetail === 'object' && 'summary' in rawDetail
       && typeof (rawDetail as { summary: unknown }).summary === 'string' ? (rawDetail as { summary: string }).summary : undefined;
