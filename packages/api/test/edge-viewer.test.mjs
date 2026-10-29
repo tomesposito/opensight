@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
 import { edgeSource } from '../../../ops/serverless/build-edge.mjs';
 import { validateViewerRequest } from '../dist/runtime-ingress.js';
+import { serverlessV1Methods } from '../dist/v1-route-contract.js';
 const origin = 'https://opensight.example', host = 'opensight.example';
 const source = await readFile(new URL('../../../ops/serverless/edge-viewer.js', import.meta.url), 'utf8');
 const context = vm.createContext({ Buffer: { byteLength: Buffer.byteLength } });
@@ -19,6 +20,19 @@ test('SR4a generated edge boundary is current, within CloudFront size limit and 
   const live = frame();
   Object.defineProperty(live.request, 'unrelatedNativeField', { enumerable: true, get() { throw Error('Unrelated event fields must not be copied'); } });
   assert.equal(context.handler(live).headers['x-opensight-ingress-peer'].value, live.viewer.ip);
+});
+test('D-86 folded edge grammar matches shared routes without per-request regex construction', () => {
+  assert.ok(!source.includes('new RegExp'));
+  for (const id of ['a', 'a-b_c', 'x'.repeat(512), 'x'.repeat(513), '', '%2f', '.', 'a/b']) {
+    for (const suffix of ['', '/publish', '/calculated-fields', '/filter-groups', '/filter-groups/f', '/sheets/s/layouts', '/sheets/s/visuals', '/sheets/s/visuals/v', '/shares/user/u', '/versions', '/versions/1', '/versions/0', '/versions/1/visuals/v/query', '/exports', '/unknown']) {
+      for (const kind of ['analyses', 'dashboards', 'datasets']) {
+        const path = `/api/v1/${kind}/${id}${suffix}`;
+        assert.equal(JSON.stringify(context.serverlessV1Methods(path)), JSON.stringify(serverlessV1Methods(path)), path);
+      }
+    }
+  }
+  for (const path of ['/api/v1/analyses', '/api/v1/dashboards', '/api/uploads/reservations/a/complete', '/api/session'])
+    assert.equal(JSON.stringify(context.serverlessV1Methods(path)), JSON.stringify(serverlessV1Methods(path)), path);
 });
 test('SR4a edge executes shared path/header rejection without Node APIs and cannot accept forged provenance', () => {
   const bad = [];

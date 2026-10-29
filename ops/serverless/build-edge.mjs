@@ -45,7 +45,30 @@ export async function edgeSource() {
   const v1 = ts.createSourceFile('v1-route-contract.ts', await readFile(new URL('../../packages/api/src/v1-route-contract.ts', import.meta.url), 'utf8'), ts.ScriptTarget.Latest, true);
   const contract = v1.statements.find(s => ts.isFunctionDeclaration(s) && s.name?.text === 'serverlessV1Methods');
   if (!contract) throw Error('EDGE_SOURCE_CHANGED');
-  selected.unshift(contract.getText(v1).replace(/^export /, ''));
+  // CloudFront has a very small CPU budget. Fold this shared grammar's constant
+  // regex templates at build time instead of compiling them on every request.
+  const identifier = contract.body.statements[0];
+  if (!ts.isVariableStatement(identifier) || identifier.declarationList.declarations.length !== 1) throw Error('EDGE_SOURCE_CHANGED');
+  const declaration = identifier.declarationList.declarations[0];
+  if (declaration.name.getText(v1) !== 'id' || !ts.isStringLiteral(declaration.initializer)) throw Error('EDGE_SOURCE_CHANGED');
+  let grammar = contract.getText(v1).replace(/^export /, '').replace(identifier.getText(v1), '');
+  let folded = 0;
+  const visit = node => {
+    if (ts.isNewExpression(node) && node.expression.getText(v1) === 'RegExp') {
+      const template = node.arguments?.[0];
+      if (node.arguments.length !== 1 || !template || !ts.isTemplateExpression(template)
+        || template.templateSpans.some(span => span.expression.getText(v1) !== 'id')) throw Error('EDGE_SOURCE_CHANGED');
+      const pattern = template.head.text + template.templateSpans.map(span => declaration.initializer.text + span.literal.text).join('');
+      if (!pattern.startsWith('^/api/v1/')) throw Error('EDGE_SOURCE_CHANGED');
+      grammar = grammar.replace(node.getText(v1), '/' + pattern.replaceAll('/', '\\/') + '/'); folded++;
+    }
+    if (ts.isStringLiteral(node) && node.text.startsWith('/') && !node.text.startsWith('/api/v1/')) throw Error('EDGE_SOURCE_CHANGED');
+    ts.forEachChild(node, visit);
+  };
+  visit(contract);
+  if (!folded || grammar.includes('new RegExp')) throw Error('EDGE_SOURCE_CHANGED');
+  grammar = grammar.replace('{', "{\nif (path.indexOf('/api/v1/') !== 0) return undefined;");
+  selected.unshift(grammar);
   const adapted = selected.join('\n').replaceAll('singleton.has(name)', 'singleton.includes(name)').replaceAll('Object.hasOwn(', 'Object.prototype.hasOwnProperty.call(')
     .replaceAll('new URL(origin).host', '__OPENSIGHT_HOST__');
   // Runtime 2.0 provides native Buffer.byteLength. URI encoding plus regex

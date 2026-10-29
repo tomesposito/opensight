@@ -68,3 +68,25 @@ The final root `npm test` run on isolated Linux with PostgreSQL exited 0:
 PostgreSQL fixture). Python SDK tests ran separately on the host:
 **32 passed / 0 failed / 0 skipped**. The private operator rehearsal passed
 **4 migration tests and 2 registry tests**, without failures or skips.
+
+The first public acceptance exposed CloudFront CPU throttling on upload
+completion. The edge generator now folds the shared grammar's constant regex
+templates into literals and rejects non-v1 paths before entering that matcher.
+The API grammar and permissions are unchanged. Differential checks cover 364
+route variants, including ID limits, malformed paths and deferred surfaces.
+The corrected bytecode passed twelve CloudFront engine cases, including the
+failing upload path and large synthetic authorization/header sets; maximum
+observed compute utilization was 45 percent. The deployment records the exact
+edge correction separately from its immutable runtime and migration receipts.
+
+After the edge optimization, the full root suite exited 0 with **4,358 passed /
+0 failed / 1 skipped** (the same unconfigured TLS PostgreSQL fixture). This adds
+the differential matcher check to the earlier release verification.
+
+The current pilot's SES account remains in sandbox mode and its SMTP IAM policy
+restricts recipients to the existing approved address. Application SMTP capability
+does not imply permission to deliver invitations to arbitrary recipients. Live
+release checks use one exact SES simulator address under an expiring, separately
+recorded operator permission, which must be removed before release completion.
+General invitation delivery requires SES production access and a reviewed mail
+policy; it is not enabled by this application release.
