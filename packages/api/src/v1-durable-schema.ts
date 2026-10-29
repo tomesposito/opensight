@@ -17,11 +17,8 @@ const schema = [
     used INTEGER NOT NULL CHECK (used >= 0), reset_at BIGINT NOT NULL, PRIMARY KEY (deployment, tenant_id, namespace_id),
     FOREIGN KEY (tenant_id, namespace_id) REFERENCES h1_namespaces(tenant_id, namespace_id))`,
 ];
-export const v1DurableChecksum = createHash('sha256').update(schema.join('\n') + erasure.toString()).digest('hex');
-/** Tenant lifecycle revocation erases payloads and releases shared capacity atomically. */
-async function erasure(c: import('./metadata-db.js').SqlConnection, dialect: CoordinationDialect): Promise<void> {
-  if (dialect === 'postgres') {
-    await c.query(`CREATE OR REPLACE FUNCTION sr_v1_erase_tenant() RETURNS trigger LANGUAGE plpgsql AS $$
+const postgresErasure = [
+  `CREATE OR REPLACE FUNCTION sr_v1_erase_tenant() RETURNS trigger LANGUAGE plpgsql AS $$
       BEGIN
         PERFORM 1 FROM sr_v1_capacity WHERE tenant_id = '' ORDER BY deployment FOR UPDATE;
         UPDATE sr_v1_capacity SET entries = entries - COALESCE((SELECT t.entries FROM sr_v1_capacity t WHERE t.deployment = sr_v1_capacity.deployment AND t.tenant_id = NEW.tenant_id), 0),
@@ -30,16 +27,21 @@ async function erasure(c: import('./metadata-db.js').SqlConnection, dialect: Coo
         DELETE FROM sr_v1_rates WHERE tenant_id = NEW.tenant_id;
         DELETE FROM sr_v1_capacity WHERE tenant_id = NEW.tenant_id;
         RETURN NEW;
-      END $$`);
-    await c.query(`CREATE TRIGGER sr_v1_erase AFTER UPDATE OF state ON h1_tenants FOR EACH ROW
-      WHEN (NEW.state IN ('deleting','deleted')) EXECUTE FUNCTION sr_v1_erase_tenant()`);
-  } else await c.query(`CREATE TRIGGER sr_v1_erase AFTER UPDATE OF state ON h1_tenants WHEN NEW.state IN ('deleting','deleted') BEGIN
+      END $$`,
+  `CREATE TRIGGER sr_v1_erase AFTER UPDATE OF state ON h1_tenants FOR EACH ROW
+      WHEN (NEW.state IN ('deleting','deleted')) EXECUTE FUNCTION sr_v1_erase_tenant()`,
+];
+const sqliteErasure = `CREATE TRIGGER sr_v1_erase AFTER UPDATE OF state ON h1_tenants WHEN NEW.state IN ('deleting','deleted') BEGIN
     UPDATE sr_v1_capacity SET entries = entries - COALESCE((SELECT t.entries FROM sr_v1_capacity t WHERE t.deployment = sr_v1_capacity.deployment AND t.tenant_id = NEW.tenant_id), 0),
       bytes = bytes - COALESCE((SELECT t.bytes FROM sr_v1_capacity t WHERE t.deployment = sr_v1_capacity.deployment AND t.tenant_id = NEW.tenant_id), 0) WHERE tenant_id = '';
     DELETE FROM sr_v1_receipts WHERE tenant_id = NEW.tenant_id;
     DELETE FROM sr_v1_rates WHERE tenant_id = NEW.tenant_id;
     DELETE FROM sr_v1_capacity WHERE tenant_id = NEW.tenant_id;
-  END`);
+  END`;
+export const v1DurableChecksum = createHash('sha256').update([...schema, ...postgresErasure, sqliteErasure].join('\n')).digest('hex');
+/** Hash SQL text, never function source: bundling must preserve the owner/runtime marker. */
+async function erasure(c: import('./metadata-db.js').SqlConnection, dialect: CoordinationDialect): Promise<void> {
+  for (const sql of dialect === 'postgres' ? postgresErasure : [sqliteErasure]) await c.query(sql);
 }
 export async function migrateV1Durable(database: Database, deployment: string, dialect: CoordinationDialect): Promise<void> {
   await database.transaction(async c => {
