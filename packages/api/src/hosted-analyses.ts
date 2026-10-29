@@ -7,6 +7,7 @@ import type { TenantContext, Revisions } from './metadata.js';
 import { object, resourceKey } from './metadata-resources.js';
 import { boundColumns } from './source-schema.js';
 import type { AnalysisBackend, AnalysisRecord, DatasetBindings } from './analysis-model.js';
+import type { RetryCommit } from './retry-store.js';
 
 export class HostedAnalyses implements AnalysisBackend {
   readonly scope: TenantContext;
@@ -75,7 +76,7 @@ export class HostedAnalyses implements AnalysisBackend {
   }
   async stamp() { return this.metadata.revisions(this.scope); }
   async check(stamp: unknown) { await this.recheck(); await this.routes.data.publication(this.scope, stamp as Revisions); }
-  async save(record: AnalysisRecord, expectedVersion: number, stamp: unknown) {
+  async save(record: AnalysisRecord, expectedVersion: number, stamp: unknown, receipt?: RetryCommit) {
     await this.recheck();
     await this.metadata.mutateAnalysis(this.scope, record.id, {
       hasHadVisual: record.hasHadVisual === true,
@@ -84,8 +85,8 @@ export class HostedAnalyses implements AnalysisBackend {
         const ref = record.datasetBindings[d.identifier]!;
         return { ...ref, ...(ref.kind === 'prepared-dataset' ? { ownerId: this.scope.userId } : {}) };
       }),
-    }, expectedVersion, stamp as Revisions);
+    }, expectedVersion, stamp as Revisions, receipt);
     this.routes.data.begin(this.scope);
   }
-  async remove(id: string, expectedVersion: number, stamp: unknown) { await this.recheck(); await this.metadata.mutateAnalysis(this.scope, id, null, expectedVersion, stamp as Revisions); this.routes.data.begin(this.scope); }
+  async remove(id: string, expectedVersion: number, stamp: unknown, receipt?: RetryCommit) { await this.recheck(); await this.metadata.mutateAnalysis(this.scope, id, null, expectedVersion, stamp as Revisions, receipt); this.routes.data.begin(this.scope); }
 }

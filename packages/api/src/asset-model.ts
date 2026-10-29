@@ -11,7 +11,7 @@ export type AssetScope = { tenantId: string; namespaceId: string; userId: string
 export interface AssetBackend {
   readonly scope: AssetScope;
   /** Read/check or change in one durable transaction, with current identity. */
-  transaction<T>(write: boolean, work: (catalog: AssetCatalog) => T): Promise<T>;
+  transaction<T>(write: boolean, work: (catalog: AssetCatalog) => T, receipt?: (result: T) => import('./retry-store.js').RetryCommit): Promise<T>;
 }
 export const assetKey = (r: ResourceKey) => JSON.stringify([r.kind, r.ownerId ?? '', r.id]);
 export function assetFail(code: string, status = 400): never { throw new MetadataError(code, status); }

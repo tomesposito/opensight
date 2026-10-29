@@ -8,6 +8,7 @@ import { identifier, object, type MetadataResource } from './metadata-resources.
 import { AssetCatalog, assetFail, assetKind, assetName, summary, type AssetBackend } from './asset-model.js';
 import type { AnalysisProtocol } from './analysis-routes.js';
 import type { AssetGrant } from './organization.js';
+import { RetryStore, type RetryAdapter } from './retry-store.js';
 
 interface Reply { status: number; body: unknown; version?: number }
 interface Receipt { fingerprint: string; reply: Reply; access: MetadataResource; removed: boolean; expires: number }
@@ -19,9 +20,9 @@ function canonical(v: unknown): string {
 const shareWire = (g: AssetGrant) => ({ Principal: { Type: g.principal.type, Id: g.principal.id }, Role: g.role });
 const folderWire = (r: MetadataResource) => ({ Id: r.id, Name: r.body.name, Version: r.version });
 export class AssetRoutes {
-  private readonly receipts = new Map<string, Receipt>();
   private tail: Promise<unknown> = Promise.resolve();
-  constructor(private readonly protocol: AnalysisProtocol, private readonly analytics = disabledAnalytics) {}
+  constructor(private readonly protocol: AnalysisProtocol, private readonly analytics = disabledAnalytics,
+    private readonly receipts: RetryAdapter = new RetryStore({ periodicPrune: false })) {}
   matches(path: string, verb?: string) {
     return /^\/api\/v1\/(assets|folders)(?:\/|$)/.test(path)
       || /^\/api\/v1\/(analyses|dashboards)\/[^/]+\/shares\//.test(path)
@@ -66,8 +67,8 @@ export class AssetRoutes {
     const key = read || keyHeader === undefined ? undefined : canonical([backend.scope.tenantId, backend.scope.namespaceId, backend.scope.userId, verb, path, identifier(keyHeader)]);
     const fingerprint = createHash('sha256').update(canonical([body, expected])).digest('hex');
     const run = async () => {
-      for (const [k, v] of this.receipts) if (v.expires <= Date.now()) this.receipts.delete(k);
-      const receipt = key === undefined ? undefined : this.receipts.get(key);
+      const receiptKey = key === undefined ? undefined : `asset:${key}`;
+      const receipt = receiptKey === undefined ? undefined : await this.receipts.get<Receipt>(receiptKey);
       if (receipt) {
         await backend.transaction(false, c => {
           const old = receipt.access, current = c.find(old.kind, old.id, old.ownerId);
@@ -78,8 +79,14 @@ export class AssetRoutes {
         });
         response.setHeader('Idempotent-Replayed', 'true'); this.send(response, receipt.reply); return;
       }
-      if (key !== undefined && this.receipts.size >= 1000) { response.setHeader('Retry-After', '60'); assetFail('IDEMPOTENCY_CAPACITY_EXCEEDED', 429); }
+      const reservation = receiptKey === undefined ? undefined : await this.receipts.reserve<Receipt>(backend.scope.tenantId, receiptKey);
+      try {
       let access: MetadataResource | undefined, removed = false;
+      const expires = Date.now() + 600000;
+      const prepare = (reply: Reply) => {
+        reservation?.prepare({ fingerprint, reply, access: access!, removed, expires });
+        return reservation ?? {};
+      };
       const reply = await backend.transaction(!read, c => {
         if (list) {
           let all = c.list();
@@ -114,14 +121,15 @@ export class AssetRoutes {
           return { status: 200, version: r.version, body: verb === 'DELETE' ? { Deleted: true } : shareWire(grant!) };
         }
         c.remove(r); removed = true; return { status: 200, body: { id: r.id, removed: true } };
-      });
+      }, prepare);
       if (share?.[1] === 'dashboards' && verb === 'PUT') this.analytics.track(backend.scope, { name: 'dashboard_shared' });
       if (transfer?.[1] === 'analyses' && transfer[3] === 'copy') {
         this.analytics.track(backend.scope, { name: 'analysis_created' });
         if (wireHasVisuals(access?.body.definition)) this.analytics.track(backend.scope, { name: 'analysis_first_visual' });
       }
-      if (key !== undefined) this.receipts.set(key, { fingerprint, reply, access: access!, removed, expires: Date.now() + 600000 });
+      prepare(reply); await reservation?.commit();
       this.send(response, reply);
+      } finally { await reservation?.release(); }
     };
     if (read) await run();
     else { const operation = this.tail.then(run); this.tail = operation.catch(() => {}); await operation; }

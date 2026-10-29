@@ -10,6 +10,7 @@ import type { AssetGrant } from './organization.js';
 import type { JsonObject } from './mapping.js';
 import { boundColumns } from './source-schema.js';
 import { containedWork, wireTable, type QueryResult } from './contained-work.js';
+import type { RetryCommit } from './retry-store.js';
 
 export class HostedDashboards implements DashboardBackend {
   readonly analyses: HostedAnalyses;
@@ -45,7 +46,7 @@ export class HostedDashboards implements DashboardBackend {
   async authorizeRemoved(snapshot: unknown) { await this.authorize(undefined, 'write'); await this.content.access(this.context, snapshot as MetadataResource, true); }
   async revision(id: string) { return (await this.accessSnapshot(id)).version; }
   async grants(id: string) { await this.authorize(id, 'write'); return (await this.accessSnapshot(id)).body.grants as AssetGrant[] | undefined; }
-  async change(id: string, change: DashboardChange, stamp: unknown) { await this.recheck(); return this.metadata.mutateDashboard(this.context, id, change, stamp as Revisions); }
+  async change(id: string, change: DashboardChange, stamp: unknown, receipt?: (record: DashboardRecord | null) => RetryCommit) { await this.recheck(); return this.metadata.mutateDashboard(this.context, id, change, stamp as Revisions, receipt); }
   async query(v: DashboardVersion, definition: JsonObject, visualId: string) {
     const bindings = Object.values(v.datasetBindings);
     if (bindings.length !== 1) throw new MetadataError('DASHBOARD_DATASET_UNSUPPORTED', 422);

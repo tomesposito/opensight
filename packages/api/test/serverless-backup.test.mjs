@@ -82,6 +82,22 @@ test('registered migration preserves retained metadata and receipts, and refuses
  await assert.rejects(migrateRegistered(f.db,f.env,f.snapshot,registry,randomUUID(),'sqlite'),{code:'MIGRATION_PRESERVATION_FAILED'});
  assert.equal((await f.db.transaction(c=>c.query('SELECT state FROM sr_control')))[0].state,'maintenance');
 });
+test('D-86 registered pre-authoring backups migrate and restore without losing legacy state or inventing receipts', async t => {
+ const f=await fixture(t);
+ await f.db.transaction(async c=>{
+  await c.query('DROP TRIGGER sr_v1_erase');
+  for(const table of ['sr_v1_rates','sr_v1_receipts','sr_v1_capacity','sr_v1_schema'])await c.query('DROP TABLE '+table);
+ });
+ const snapshot=await snapshotServerless(f.db,'test',randomUUID(),Date.now()+3600000,['a'.repeat(32)],'sqlite');
+ assert.equal(Object.hasOwn(snapshot.tables,'sr_v1_schema'),false);
+ const registry={...f.registry,epoch:1,backups:{[snapshot.id]:checksum(snapshot)}},operation=randomUUID();
+ const {migrateRegistered}=await import('../dist/serverless-backup.js');
+ assert.equal((await migrateRegistered(f.db,f.env,snapshot,registry,operation,'sqlite')).replayed,false);
+ assert.equal((await migrateRegistered(f.db,f.env,snapshot,registry,operation,'sqlite')).replayed,true);
+ await restoreServerless(f.target,snapshot,{...registry,epoch:2},'sqlite');
+ assert.deepEqual(await f.target.transaction(c=>c.query('SELECT * FROM sr_v1_receipts')),[]);
+ assert.equal((await f.target.transaction(c=>c.query('SELECT * FROM sr_v1_capacity')))[0].entries,0);
+});
 
 test('fixed backup plans reject a production restore target, expired plans and resource overrides before AWS',async()=>{
  const {backupPlan}=await import('../dist/serverless-backup-lambda.js');

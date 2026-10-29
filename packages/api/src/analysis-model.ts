@@ -1,6 +1,7 @@
 import type { BundleDefinition } from '@opensight/bundle-parser';
 import { analysisFail, analysisId, analysisObject, checkAnalysisInput, type AnalysisSchema } from '@opensight/web/analysis';
 import type { JsonObject } from './mapping.js';
+import type { RetryCommit } from './retry-store.js';
 export interface DatasetBinding { kind: 'dataset' | 'prepared-dataset'; id: string }
 export type DatasetBindings = Record<string, DatasetBinding>;
 export interface AnalysisRecord { id: string; name: string; definition: BundleDefinition; datasetBindings: DatasetBindings; version: number; updatedAt?: string; hasHadVisual?: boolean; bindingOwnerId?: string }
@@ -19,8 +20,8 @@ export interface AnalysisBackend {
   /** Capture admission revisions, then compare them inside the storage transaction. */
   stamp(): Promise<unknown>;
   check(stamp: unknown): Promise<void>;
-  save(record: AnalysisRecord, expectedVersion: number, stamp: unknown): Promise<void>;
-  remove(id: string, expectedVersion: number, stamp: unknown): Promise<void>;
+  save(record: AnalysisRecord, expectedVersion: number, stamp: unknown, receipt?: RetryCommit): Promise<void>;
+  remove(id: string, expectedVersion: number, stamp: unknown, receipt?: RetryCommit): Promise<void>;
 }
 export function datasetBindings(raw: unknown, definition: BundleDefinition): DatasetBindings {
   const bindings = analysisObject(raw, '$.datasetBindings'), declarations = definition.dataSetIdentifierDeclarations;

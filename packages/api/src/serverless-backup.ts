@@ -3,7 +3,7 @@ import { MetadataError, type Database, type SqlConnection, type SqlRow } from '.
 import { checksum } from './metadata-operator.js';
 import { coordinationNow, type CoordinationDialect } from './coordination-schema.js';
 import { appendOperatorAudit } from './operator-audit.js';
-import { databaseInventory, inventoryTables, snapshotInventory, upgradedAudit, currentInventory, namedWorkspaces, aiWarnings, usageTracking, monthlyBilling } from './serverless-backup-schema.js';
+import { databaseInventory, inventoryTables, snapshotInventory, upgradedAudit, currentInventory, namedWorkspaces, aiWarnings, usageTracking, monthlyBilling, durableAuthoring } from './serverless-backup-schema.js';
 
 export interface CloudSnapshot {
   version: 1; id: string; deployment: string; epoch: number; createdAt: number; expiresAt: number;
@@ -98,8 +98,23 @@ export async function restoreServerless(db: Database, snapshot: CloudSnapshot, r
     }
     // A recognized legacy backup has no audit marker. Retain the independently
     // verified current target marker and let its audit column defaults apply.
+    // New authoring tables reference sr_control; remove their empty target rows
+    // before restoring a pre-authoring parent, then restore only those defaults.
+    const addedAuthoring = ['sr_v1_schema', 'sr_v1_capacity', 'sr_v1_receipts', 'sr_v1_rates'].filter(t => !sourceTables.includes(t));
+    const defaults = new Map<string, SqlRow[]>();
+    for (const table of addedAuthoring) {
+      const rows = await c.query(`SELECT * FROM ${table}`);
+      if (table === 'sr_v1_capacity' ? rows.length !== 1 || rows[0]?.tenant_id !== '' || Number(rows[0]?.entries) !== 0 || Number(rows[0]?.bytes) !== 0
+        : table !== 'sr_v1_schema' && rows.length) denied('RESTORE_TARGET_NOT_EMPTY');
+      defaults.set(table, rows);
+    }
+    for (const table of [...addedAuthoring].reverse()) await c.query(`DELETE FROM ${table}`);
     for (const table of [...sourceTables].reverse()) await c.query(`DELETE FROM ${table}`);
     for (const table of sourceTables) for (const row of snapshot.tables[table]!) {
+      const keys = Object.keys(row);
+      await c.query(`INSERT INTO ${table} (${keys.map(k => `"${k}"`).join(',')}) VALUES (${keys.map(() => '?').join(',')})`, Object.values(row));
+    }
+    for (const [table, rows] of defaults) for (const row of rows) {
       const keys = Object.keys(row);
       await c.query(`INSERT INTO ${table} (${keys.map(k => `"${k}"`).join(',')}) VALUES (${keys.map(() => '?').join(',')})`, Object.values(row));
     }
@@ -161,6 +176,11 @@ export async function migrateRegistered(db: Database, env: NodeJS.ProcessEnv, sn
       }
       if (upgraded && !namedWorkspaces(sourceInventory) && (await c.query('SELECT 1 FROM h2_login_selections LIMIT 1')).length) denied('MIGRATION_PRESERVATION_FAILED');
       if (upgraded && !monthlyBilling(sourceInventory) && (await c.query('SELECT 1 FROM h8_monthly_usage LIMIT 1')).length) denied('MIGRATION_PRESERVATION_FAILED');
+      if (upgraded && !durableAuthoring(sourceInventory)) {
+        for (const table of ['sr_v1_receipts', 'sr_v1_rates']) if ((await c.query(`SELECT 1 FROM ${table} LIMIT 1`)).length) denied('MIGRATION_PRESERVATION_FAILED');
+        const capacity = await c.query('SELECT * FROM sr_v1_capacity');
+        if (capacity.length !== 1 || capacity[0]?.tenant_id !== '' || Number(capacity[0]?.entries) !== 0 || Number(capacity[0]?.bytes) !== 0) denied('MIGRATION_PRESERVATION_FAILED');
+      }
       if (upgraded && !aiWarnings(sourceInventory) && (await c.query('SELECT 1 FROM h8_ai_warnings LIMIT 1')).length) denied('MIGRATION_PRESERVATION_FAILED');
       if (upgraded && !usageTracking(sourceInventory)) for (const table of ['analytics_events', 'analytics_settings']) if ((await c.query(`SELECT 1 FROM ${table} LIMIT 1`)).length) denied('MIGRATION_PRESERVATION_FAILED');
       for (const table of inventoryTables(sourceInventory).filter(t => t.endsWith('_schema')))

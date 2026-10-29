@@ -14,12 +14,13 @@ import { migrateObjects, objectTables } from './object-schema.js';
 import { migrateOperations, operationTables } from './operation-schema.js';
 import { installRuntimeLocks } from './runtime-row-locks.js';
 import { migrateExecutions, executionTables } from './execution-schema.js';
+import { migrateV1Durable, v1DurableTables } from './v1-durable-schema.js';
 
 const baseTables = ['sr_control', 'h1_tenants', 'h1_namespaces', 'h1_revisions', 'h1_resources', 'h1_links', 'h1_operations', 'h1_outbox', 'h1_migrations',
   'h2_control', 'h2_identities', 'h2_memberships', 'h2_invitations', 'h2_keys', 'h2_sessions', 'h2_attempts', 'h2_onboarding', 'h2_requests',
   'h4_budget_config', 'h5_embedding_config', 'h6_keys', 'h6_sessions', 'h7_jobs', 'h7_occurrences', 'h7_deliveries', 'h7_migrations',
   'h8_usage', 'h8_usage_events', 'h8_audit', 'h8_recovery', 'h8_schema'];
-const durableTables = [...coordinationTables, ...manifestTables, ...dispatchTables, ...objectTables, ...operationTables, ...executionTables];
+const durableTables = [...coordinationTables, ...manifestTables, ...dispatchTables, ...objectTables, ...operationTables, ...executionTables, ...v1DurableTables];
 // h8_audit_schema rides along for ownership/backup/restore inventory, but stays out of
 // baseTables on purpose: the existing-database foreign check must accept deployed
 // databases that predate the marker (the owner migration adds it).
@@ -56,6 +57,7 @@ export async function grantServerlessRuntime(c: SqlConnection, env: NodeJS.Proce
   await c.query(`GRANT SELECT, INSERT, UPDATE, DELETE ON ${writable.join(', ')} TO "${roles.operator}"`);
   await c.query(`GRANT SELECT, INSERT, UPDATE, DELETE ON h1_tenants, h1_namespaces, h1_revisions, h1_resources, h1_links, h1_operations, h1_outbox TO "${roles.tenant}"`);
   await c.query(`GRANT SELECT ON sr_control, sr_storage_usage TO "${roles.tenant}"`);
+  await c.query(`GRANT SELECT, UPDATE ON sr_v1_capacity, sr_v1_receipts TO "${roles.tenant}"`);
   await installRuntimeLocks(c, env);
 }
 /** Schema owner only, one frozen/drained transaction, with no runtime bootstrap or reopening. */
@@ -89,6 +91,7 @@ export async function migrateServerless(database: Database, env: NodeJS.ProcessE
     await migrateObjects(nested, deployment, 'frozen', dialect);
     await migrateOperations(nested, deployment, 'frozen', dialect);
     await migrateExecutions(nested, deployment, 'frozen', dialect);
+    await migrateV1Durable(nested, deployment, dialect);
     // Owner-serialized usage/audit upgrade adds warning intents and upgrades legacy
     // audit columns/markers before runtime grants. Additive tables stay out of
     // baseTables so the foreign-database check accepts pre-upgrade deployments.

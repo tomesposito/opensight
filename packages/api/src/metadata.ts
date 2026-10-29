@@ -8,6 +8,7 @@ import type { JsonObject } from './mapping.js';
 import { appendMetadataEvent } from './metadata-outbox.js';
 import type { HostedUsage } from './hosted-usage.js';
 import { sourceBody } from './source-schema.js';
+import type { RetryCommit } from './retry-store.js';
 
 export interface TenantContext extends Scope { readonly userId: string; readonly authorizationRevision: number }
 export interface Revisions { authorization: number; policy: number; configuration: number }
@@ -156,7 +157,7 @@ export class TenantMetadata {
   }
   /** D-44/D-45: grant-aware author writes, CAS and revision check in one transaction.
    * Only definitions and server-resolved dataset links may change. */
-  async mutateAnalysis(context: TenantContext, id: string, replacement: Pick<JsonObject, 'definition' | 'datasets'> & { hasHadVisual?: boolean } | null, expectedVersion: number, expected: Revisions): Promise<void> {
+  async mutateAnalysis(context: TenantContext, id: string, replacement: Pick<JsonObject, 'definition' | 'datasets'> & { hasHadVisual?: boolean } | null, expectedVersion: number, expected: Revisions, receipt?: RetryCommit): Promise<void> {
     await this.checked(context, async (c, revisions, user) => {
       if (!hasCapability(user.role as Parameters<typeof hasCapability>[0], 'build')) throw new MetadataError('METADATA_WRITE_FORBIDDEN', 403);
       const key = resourceKey({ kind: 'analysis', id });
@@ -193,10 +194,11 @@ export class TenantMetadata {
       // and turn the required stale-version 409 into authentication failures.
       // Reads always check current asset/folder grants and dataset admission.
       await appendMetadataEvent(c, context, replacement ? 'analysis.saved' : 'analysis.deleted');
+      await receipt?.persist?.(c);
     }, true);
   }
   /** Publication, latest-version CAS, grants and source checks share one transaction. */
-  async mutateDashboard(context: TenantContext, id: string, change: DashboardChange, expected: Revisions): Promise<DashboardRecord | null> {
+  async mutateDashboard(context: TenantContext, id: string, change: DashboardChange, expected: Revisions, receipt?: (record: DashboardRecord | null) => RetryCommit): Promise<DashboardRecord | null> {
     return this.checked(context, async (c, revisions, user) => {
       if (JSON.stringify(revisions) !== JSON.stringify(expected)) throw new MetadataError('METADATA_REVISED', 403);
       const key = resourceKey({ kind: 'dashboard', id });
@@ -231,11 +233,12 @@ export class TenantMetadata {
         }
       }
       await appendMetadataEvent(c, context, `dashboard.${change.kind}`);
+      await receipt?.(next).persist?.(c);
       return next;
     }, true);
   }
   /** Assets use the same tenant lock, links, quota accounting and durable rows as authoring. */
-  async assetTransaction<T>(context: TenantContext, write: boolean, work: (catalog: AssetCatalog) => T): Promise<T> {
+  async assetTransaction<T>(context: TenantContext, write: boolean, work: (catalog: AssetCatalog) => T, receipt?: (result: T) => RetryCommit): Promise<T> {
     return this.checked(context, async c => {
       const rows = await c.query("SELECT * FROM h1_resources WHERE tenant_id = ? AND namespace_id = ? AND kind IN ('user','group','folder','analysis','dashboard','prepared-dataset')", scopeValues(context));
       const before = rows.map(resource), catalog = new AssetCatalog(context, structuredClone(before));
@@ -265,6 +268,7 @@ export class TenantMetadata {
       }
       if (removed.some(r => r.kind === 'prepared-dataset')) await c.query('UPDATE h1_revisions SET configuration = configuration + 1 WHERE tenant_id = ? AND namespace_id = ?', scopeValues(context));
       if (changed.length || removed.length) await appendMetadataEvent(c, context, 'assets.changed');
+      await receipt?.(result).persist?.(c);
       return result;
     }, write);
   }

@@ -2,26 +2,29 @@ import { MetadataError, type SqlConnection, type SqlRow } from './metadata-db.js
 import { serverlessTables } from './serverless-migration.js';
 import { AUDIT_SCHEMA_VERSION, auditSchemaChecksum, OPERATOR_ACTOR } from './operator-audit.js';
 import type { CoordinationDialect } from './coordination-schema.js';
+import { v1DurableTables } from './v1-durable-schema.js';
 
 type AuditVersion = 'legacy-audit-v0' | 'audit-v1';
 type WorkspaceInventory = AuditVersion | `${AuditVersion}-workspace-v1`;
 type WarningInventory = WorkspaceInventory | `${WorkspaceInventory}-ai-warnings-v1`;
 type AnalyticsInventory = WarningInventory | `${WarningInventory}-analytics-v1`;
-export type AuditInventory = AnalyticsInventory | `${AnalyticsInventory}-billing-v1`;
-export const currentInventory: AuditInventory = 'audit-v1-workspace-v1-ai-warnings-v1-analytics-v1-billing-v1';
+type BillingInventory = AnalyticsInventory | `${AnalyticsInventory}-billing-v1`;
+export type AuditInventory = BillingInventory | `${BillingInventory}-authoring-v1`;
+export const currentInventory: AuditInventory = 'audit-v1-workspace-v1-ai-warnings-v1-analytics-v1-billing-v1-authoring-v1';
 const currentAudit = (inventory: AuditInventory) => inventory.startsWith('audit-v1');
 export const namedWorkspaces = (inventory: AuditInventory) => inventory.includes('-workspace-v1');
 export const aiWarnings = (inventory: AuditInventory) => inventory.includes('-ai-warnings-v1');
 export const usageTracking = (inventory: AuditInventory) => inventory.includes('-analytics-v1');
-export const monthlyBilling = (inventory: AuditInventory) => inventory.endsWith('-billing-v1');
-const inventoryName = (audit: boolean, names: boolean, warnings: boolean, analytics: boolean, billing: boolean): AuditInventory => `${audit ? 'audit-v1' : 'legacy-audit-v0'}${names ? '-workspace-v1' : ''}${warnings ? '-ai-warnings-v1' : ''}${analytics ? '-analytics-v1' : ''}${billing ? '-billing-v1' : ''}`;
+export const monthlyBilling = (inventory: AuditInventory) => inventory.includes('-billing-v1');
+export const durableAuthoring = (inventory: AuditInventory) => inventory.endsWith('-authoring-v1');
+const inventoryName = (audit: boolean, names: boolean, warnings: boolean, analytics: boolean, billing: boolean, authoring: boolean): AuditInventory => `${audit ? 'audit-v1' : 'legacy-audit-v0'}${names ? '-workspace-v1' : ''}${warnings ? '-ai-warnings-v1' : ''}${analytics ? '-analytics-v1' : ''}${billing ? '-billing-v1' : ''}${authoring ? '-authoring-v1' : ''}`;
 const markerTable = 'h8_audit_schema';
 const legacyColumns = ['event_id', 'created_at', 'action'];
 const currentColumns = [...legacyColumns, 'actor', 'tenant_id', 'subject', 'detail'];
 const reject = (): never => { throw new MetadataError('BACKUP_SCHEMA_INVALID', 503); };
 const sameKeys = (row: object, names: readonly string[]) => Object.keys(row).sort().join() === [...names].sort().join();
 export const inventoryTables = (inventory: AuditInventory): string[] =>
-  serverlessTables.filter(t => (t !== 'h8_monthly_usage' || monthlyBilling(inventory)) && (t !== markerTable || currentAudit(inventory)) && (t !== 'h2_login_selections' || namedWorkspaces(inventory)) && (t !== 'h8_ai_warnings' || aiWarnings(inventory)) && (!['analytics_events', 'analytics_settings'].includes(t) || usageTracking(inventory)));
+  serverlessTables.filter(t => (!v1DurableTables.some(v => v === t) || durableAuthoring(inventory)) && (t !== 'h8_monthly_usage' || monthlyBilling(inventory)) && (t !== markerTable || currentAudit(inventory)) && (t !== 'h2_login_selections' || namedWorkspaces(inventory)) && (t !== 'h8_ai_warnings' || aiWarnings(inventory)) && (!['analytics_events', 'analytics_settings'].includes(t) || usageTracking(inventory)));
 
 function validMarker(rows: SqlRow[]): boolean {
   return rows.length === 1 && sameKeys(rows[0]!, ['id', 'version', 'checksum'])
@@ -31,7 +34,7 @@ function validMarker(rows: SqlRow[]): boolean {
 /** Version-1 snapshots recognize audit, workspace, AI warning, analytics and billing upgrades explicitly. Their original bytes/checksum remain the registration authority. */
 export function snapshotInventory(tables: Record<string, SqlRow[]>): AuditInventory {
   if (!tables || typeof tables !== 'object' || Array.isArray(tables)) reject();
-  const inventory = inventoryName(Object.hasOwn(tables, markerTable), Object.hasOwn(tables, 'h2_login_selections'), Object.hasOwn(tables, 'h8_ai_warnings'), Object.hasOwn(tables, 'analytics_events'), Object.hasOwn(tables, 'h8_monthly_usage'));
+  const inventory = inventoryName(Object.hasOwn(tables, markerTable), Object.hasOwn(tables, 'h2_login_selections'), Object.hasOwn(tables, 'h8_ai_warnings'), Object.hasOwn(tables, 'analytics_events'), Object.hasOwn(tables, 'h8_monthly_usage'), Object.hasOwn(tables, 'sr_v1_schema'));
   if (!sameKeys(tables, inventoryTables(inventory))) reject();
   if (Object.values(tables).some(rows => !Array.isArray(rows))) reject();
   if (tables.h1_tenants!.some(row => ['display_name', 'slug'].some(key => Object.hasOwn(row, key) !== namedWorkspaces(inventory)))) reject();
@@ -51,7 +54,8 @@ export async function databaseInventory(c: SqlConnection, dialect: CoordinationD
   const relations = await c.query(dialect === 'postgres'
     ? "SELECT relname AS name, relkind AS kind, CASE WHEN relowner=(SELECT oid FROM pg_roles WHERE rolname=current_user) THEN 1 ELSE 0 END AS owned FROM pg_class WHERE relnamespace=current_schema()::regnamespace"
     : "SELECT name, CASE WHEN type='table' THEN 'r' ELSE type END AS kind, 1 AS owned FROM sqlite_master");
-  const inventory = inventoryName(relations.some(r => r.name === markerTable), relations.some(r => r.name === 'h2_login_selections'), relations.some(r => r.name === 'h8_ai_warnings'), relations.some(r => r.name === 'analytics_events'), relations.some(r => r.name === 'h8_monthly_usage'));
+  const inventory = inventoryName(relations.some(r => r.name === markerTable), relations.some(r => r.name === 'h2_login_selections'), relations.some(r => r.name === 'h8_ai_warnings'), relations.some(r => r.name === 'analytics_events'), relations.some(r => r.name === 'h8_monthly_usage'), relations.some(r => r.name === 'sr_v1_schema'));
+  if (v1DurableTables.some(t => relations.some(r => r.name === t) !== durableAuthoring(inventory))) reject();
   if (relations.some(r => r.name === 'analytics_events') !== relations.some(r => r.name === 'analytics_settings')) reject();
   for (const table of inventoryTables(inventory)) {
     if (!relations.some(r => r.name === table && ['r', 'p'].includes(String(r.kind)) && Number(r.owned) === 1))

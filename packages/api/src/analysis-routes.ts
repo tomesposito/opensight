@@ -8,7 +8,7 @@ import { identifier } from './metadata-resources.js';
 import { method, send } from './automation-routes.js';
 import { readBody } from './query.js';
 import { analysisName, datasetBindings, describeAnalysis, type AnalysisRecord, type AnalysisBackend } from './analysis-model.js';
-import type { RetryStore } from './retry-store.js';
+import type { RetryAdapter } from './retry-store.js';
 
 interface Reply { status: number; body: unknown; version?: number }
 interface Replay { fingerprint: string; reply: Reply; record: AnalysisRecord; removed: boolean; access: unknown }
@@ -30,7 +30,7 @@ function bodyKeys(body: Record<string, unknown>, keys: string[]): void {
 /** One working version and one shared admission path for all approved verbs. */
 export class AnalysisRoutes {
   private readonly tails = new Map<string, Promise<unknown>>();
-  constructor(private readonly protocol: AnalysisProtocol, private readonly retries: RetryStore, private readonly analytics = disabledAnalytics) {}
+  constructor(private readonly protocol: AnalysisProtocol, private readonly retries: RetryAdapter, private readonly analytics = disabledAnalytics) {}
   private async serial<T>(key: string, work: () => Promise<T>): Promise<T> {
     const result = (this.tails.get(key) ?? Promise.resolve()).then(work), tail = result.catch(() => {});
     this.tails.set(key, tail);
@@ -74,7 +74,7 @@ export class AnalysisRoutes {
     const scopedId = canonical([backend.scope.tenantId, backend.scope.namespaceId, id]);
     const execute = () => this.serial(`analysis:${scopedId}`, async () => {
       const receiptKey = key === undefined ? undefined : `analysis:${key}`;
-      const seen = receiptKey === undefined ? undefined : this.retries.get<Replay>(receiptKey);
+      const seen = receiptKey === undefined ? undefined : await this.retries.get<Replay>(receiptKey);
       if (seen) {
         const stamp = await backend.stamp();
         if (seen.removed) {
@@ -91,7 +91,7 @@ export class AnalysisRoutes {
         await backend.check(stamp);
         response.setHeader('Idempotent-Replayed', 'true'); this.publish(response, seen.reply); return;
       }
-      const reservation = receiptKey === undefined ? undefined : this.retries.reserve<Replay>(backend.scope.tenantId, receiptKey);
+      const reservation = receiptKey === undefined ? undefined : await this.retries.reserve<Replay>(backend.scope.tenantId, receiptKey);
       try {
         await backend.authorize(pathId, true);
         const stamp = await backend.stamp();
@@ -149,7 +149,7 @@ export class AnalysisRoutes {
         // includes the definition and access snapshot, even for a small delete reply.
         reservation?.prepare({ fingerprint, reply, record, removed, access });
         await backend.check(stamp);
-        if (removed) await backend.remove(id, version, stamp); else await backend.save(record, version, stamp);
+        if (removed) await backend.remove(id, version, stamp, reservation); else await backend.save(record, version, stamp, reservation);
         if (!removed) {
           if (!previous) this.analytics.track(backend.scope, { name: 'analysis_created' });
           if (!hadVisual && hasVisual) this.analytics.track(backend.scope, { name: 'analysis_first_visual' });
@@ -157,12 +157,12 @@ export class AnalysisRoutes {
             && !Object.values(previous?.datasetBindings ?? {}).some(b => b.kind === 'dataset' && b.id === 'sales')) this.analytics.track(backend.scope, { name: 'sample_data_opted_in' });
         }
         // Store after commit, before writing the response: disconnected clients can retry.
-        reservation?.commit();
+        await reservation?.commit();
         const publication = await backend.stamp();
         if (removed) await backend.authorizeRemoved(access); else await backend.authorize(id, true);
         await this.describe(record, backend); await backend.check(publication);
         this.publish(response, reply);
-      } finally { reservation?.release(); }
+      } finally { await reservation?.release(); }
     });
     // Create requests share one route but can target different analysis IDs.
     // Reserve the retry key before taking the resource lock, so different
