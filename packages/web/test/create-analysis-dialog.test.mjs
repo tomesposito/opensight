@@ -10,12 +10,12 @@ const source = (id, extra = {}) => ({ id, ref: { dataset: id }, name: `Dataset $
 async function mount(t, props = {}) {
   const oldAct = globalThis.IS_REACT_ACT_ENVIRONMENT;
   globalThis.IS_REACT_ACT_ENVIRONMENT = true;
-  const selected = [], actions = [];
-  const defaults = { onSelect: dataset => selected.push(dataset), onClose: () => actions.push('close') };
+  const selected = [], actions = [], created = [];
+  const defaults = { onSelect: (dataset, draft) => { selected.push(dataset); created.push(draft); }, onClose: () => actions.push('close') };
   let renderer; await act(() => { renderer = create(createElement(CreateAnalysisDialog, { ...defaults, ...props })); });
   t.after(async () => { await act(() => renderer.unmount()); globalThis.IS_REACT_ACT_ENVIRONMENT = oldAct; });
   const button = name => renderer.root.findAllByType('button').find(b => b.props.children === name || b.props['aria-label'] === name);
-  return { selected, actions, button, get root() { return renderer.root; }, text: () => JSON.stringify(renderer.toJSON()),
+  return { selected, actions, created, button, get root() { return renderer.root; }, text: () => JSON.stringify(renderer.toJSON()),
     radios: () => renderer.root.findAllByType('input').filter(i => i.props.type === 'radio'),
     click: name => act(() => button(name).props.onClick()),
     search: value => act(() => renderer.root.findByProps({ type: 'search' }).props.onChange({ target: { value } })),
@@ -152,4 +152,50 @@ test('static dialog renders the public sample honestly without fetching or inven
   const html = renderToStaticMarkup(createElement(CreateAnalysisDialog, { sampleAvailable: true, offline: true, onClose() {}, onSelect() {} }));
   assert.match(html, /BLAZE/); assert.doesNotMatch(html, /SPICE|<time|SNOWFLAKE/);
   assert.match(html, /Creating datasets needs a local or hosted API/);
+});
+
+test('field search picks close matches with keyboard/pointer and blocks unresolved tokens from submission', async t => {
+  const ui = await mount(t, { sampleAvailable: true });
+  await act(() => ui.radios()[0].props.onChange());
+  const input = () => ui.root.findByProps({ role: 'combobox' });
+  const query = value => act(() => input().props.onChange({ target: { value } }));
+  await query('revenu');
+  assert.match(ui.text(), /Unknown field.*revenu/); assert.match(ui.text(), /Closest measure fields/);
+  assert.equal(ui.button('Create analysis').props.disabled, true); await ui.submit(); assert.deepEqual(ui.selected, []);
+  const key = (key, extra = {}) => act(() => input().props.onKeyDown({ key, preventDefault() {}, stopPropagation() {}, nativeEvent: {}, ...extra }));
+  await key('Enter', { nativeEvent: { isComposing: true } }); assert.equal(input().props.value, 'revenu');
+  await key('Enter'); assert.equal(input().props.value, '[revenue]'); assert.equal(input().props['aria-expanded'], false);
+  await ui.click('Add by dimension');
+  await query('[revenue] by regon');
+  assert.match(ui.text(), /Unknown field.*regon/); await ui.submit(); assert.deepEqual(ui.selected, []);
+  const options = () => ui.root.findAllByProps({ role: 'option' });
+  assert.equal(options()[0].findByProps({ className: 'search-name' }).props.children, 'region');
+  await key('ArrowDown'); assert.equal(options()[1].props['aria-selected'], true);
+  await key('ArrowUp'); assert.equal(options()[0].props['aria-selected'], true);
+  await key('Escape'); assert.equal(input().props['aria-expanded'], false);
+  await act(() => input().props.onFocus()); await act(() => options()[0].props.onClick());
+  await ui.submit(); assert.equal(ui.created.length, 1);
+  assert.equal(ui.created[0].sheets[0].visuals[0].kind, 'bar');
+  assert.deepEqual(ui.created[0].sheets[0].visuals[0].measures, ['revenue']);
+  assert.equal(ui.created[0].sheets[0].visuals[0].dimension, 'region');
+});
+
+test('typed KPI search creates a normal dataset-bound draft and dataset switches/refresh discard stale tokens', async t => {
+  const ui = await mount(t, { client: { listPrepSources: async () => [source('one'), source('two', { columns: [{ name: 'total', type: 'DECIMAL' }] })] } });
+  await act(() => ui.radios()[0].props.onChange());
+  const input = () => ui.root.findByProps({ role: 'combobox' });
+  await act(() => input().props.onChange({ target: { value: 'amount' } })); await ui.submit();
+  assert.equal(ui.created[0].dataset.id, 'one'); assert.equal(ui.created[0].sheets[0].visuals[0].kind, 'kpi');
+  await act(() => ui.radios()[1].props.onChange()); assert.equal(input().props.value, '');
+  await act(() => input().props.onChange({ target: { value: 'amount' } }));
+  assert.match(ui.text(), /Unknown field.*amount/); assert.match(ui.text(), /total/); await ui.submit(); assert.equal(ui.created.length, 1);
+  await ui.click('Refresh datasets'); await ui.submit(); assert.equal(ui.created.length, 1);
+  await act(() => ui.radios()[0].props.onChange()); assert.equal(input().props.value, '');
+});
+
+test('ambiguous fields do not create analyses through the dialog submit handler', async t => {
+  const ui = await mount(t, { client: { listPrepSources: async () => [source('ambiguous', { columns: [{ name: 'Amount', type: 'INTEGER' }, { name: 'amount', type: 'INTEGER' }] })] } });
+  await act(() => ui.radios()[0].props.onChange());
+  await act(() => ui.root.findByProps({ role: 'combobox' }).props.onChange({ target: { value: 'amount' } }));
+  assert.match(ui.text(), /Ambiguous field/); await ui.submit(); assert.deepEqual(ui.created, []);
 });
