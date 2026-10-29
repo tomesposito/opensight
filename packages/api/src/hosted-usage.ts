@@ -25,17 +25,17 @@ export interface MonthlyUsage {
   storageBytes: number; storageAsOf: string | null; egressBytes: number;
 }
 export function usageMonth(value: unknown): string {
-  if (typeof value !== 'string' || !/^(?!0000)[0-9]{4}-(0[1-9]|1[0-2])$/.test(value)) throw new MetadataError('USAGE_PERIOD_INVALID', 400);
+  if (typeof value !== 'string' || value.length !== 7 || !/^(?!0000)[0-9]{4}-(0[1-9]|1[0-2])$/.test(value)) throw new MetadataError('USAGE_PERIOD_INVALID', 400);
   return value;
 }
 function usageInteger(value: unknown): number {
-  if (typeof value !== 'number' && (typeof value !== 'string' || !/^[0-9]+$/.test(value))) throw new MetadataError('ENTITLEMENT_UNRESOLVED', 503);
+  if (typeof value !== 'number' && (typeof value !== 'string' || !value.length || /[^0-9]/.test(value))) throw new MetadataError('ENTITLEMENT_UNRESOLVED', 503);
   const count = Number(value);
   if (!Number.isSafeInteger(count) || count < 0) throw new MetadataError('ENTITLEMENT_UNRESOLVED', 503);
   return count;
 }
 function emptyMonthlyUsage(scope: Scope, period: string): MonthlyUsage {
-  return { ...scope, period, apiCallsAdmitted: 0, apiCallsDenied: 0, computeAttemptsAdmitted: 0, computeAttemptsDenied: 0,
+  return { tenantId: scope.tenantId, namespaceId: scope.namespaceId, period, apiCallsAdmitted: 0, apiCallsDenied: 0, computeAttemptsAdmitted: 0, computeAttemptsDenied: 0,
     storageBytes: 0, storageAsOf: null, egressBytes: 0 };
 }
 export function entitlementConfig(raw: string | undefined): Entitlements {
@@ -145,7 +145,7 @@ export class HostedUsage {
       if (!row) return emptyMonthlyUsage(scope, period);
       const storageAsOf = row.storage_as_of;
       if (typeof storageAsOf !== 'string' || !Number.isFinite(Date.parse(storageAsOf)) || new Date(storageAsOf).toISOString() !== storageAsOf) throw new MetadataError('ENTITLEMENT_UNRESOLVED', 503);
-      return { ...scope, period, apiCallsAdmitted: usageInteger(row.api_calls_admitted), apiCallsDenied: usageInteger(row.api_calls_denied),
+      return { tenantId: scope.tenantId, namespaceId: scope.namespaceId, period, apiCallsAdmitted: usageInteger(row.api_calls_admitted), apiCallsDenied: usageInteger(row.api_calls_denied),
         computeAttemptsAdmitted: usageInteger(row.compute_attempts_admitted), computeAttemptsDenied: usageInteger(row.compute_attempts_denied),
         storageBytes: usageInteger(row.storage_bytes), storageAsOf, egressBytes: usageInteger(row.egress_bytes) };
     }).catch((error: unknown) => { if (error instanceof MetadataError) throw error; throw new MetadataError('ENTITLEMENT_UNRESOLVED', 503); });
