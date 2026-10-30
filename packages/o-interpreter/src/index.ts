@@ -1,5 +1,5 @@
 /** Bounded, deterministic grammar. This package does not execute expressions or queries. */
-export interface SchemaField { name: string; type: string; role?: 'dimension' | 'measure' }
+export interface SchemaField { name: string; type: string; role?: 'dimension' | 'measure'; synonyms?: readonly string[] }
 export type Aggregation = 'SUM' | 'AVG' | 'COUNT' | 'MIN' | 'MAX';
 export type Granularity = 'YEAR' | 'QUARTER' | 'MONTH' | 'DAY';
 export interface QFilter { field: string; operator: 'equals' | 'year'; value: string | number }
@@ -13,6 +13,32 @@ export interface Interpretation {
   suggestedVisualType: 'bar' | 'line' | 'pie' | 'table' | 'kpi';
   confidence: number;
   explanation: string;
+  grounding: { fieldsUsed: string[]; synonymsMatched: { term: string; field: string }[]; unmatchedTerms: string[] };
+}
+export type InterpretationStep =
+  | { kind: 'aggregation'; value: Aggregation }
+  | { kind: 'measure'; value: string | null }
+  | { kind: 'group-by'; values: string[] }
+  | { kind: 'filter'; value: QFilter }
+  | { kind: 'top-n'; value: number | null }
+  | { kind: 'granularity'; value: Granularity }
+  | { kind: 'visual'; value: Interpretation['suggestedVisualType'] };
+
+/** Pure, inspectable steps; editing belongs to the caller. */
+export function interpretationSteps(i: Interpretation): InterpretationStep[] {
+  return [
+    { kind: 'aggregation', value: i.aggregation }, { kind: 'measure', value: i.measure },
+    { kind: 'group-by', values: [...i.dimensions] },
+    ...i.filters.map(value => ({ kind: 'filter' as const, value: { ...value } })),
+    { kind: 'top-n', value: i.topN },
+    ...(i.granularity ? [{ kind: 'granularity' as const, value: i.granularity }] : []),
+    { kind: 'visual', value: i.suggestedVisualType },
+  ];
+}
+
+/** The optional original hint explains the parser's grouping-driven visual choice. */
+export function describeInterpretation(i: Pick<Interpretation, 'aggregation' | 'measure' | 'dimensions' | 'granularity' | 'filters' | 'topN' | 'suggestedVisualType'>, hint?: Interpretation['suggestedVisualType']): string {
+  return `Showing ${i.aggregation.toLowerCase()} of ${i.measure ?? 'rows'}${i.dimensions.length ? ` by ${i.dimensions.join(' and ')}` : ''}${i.granularity ? ` (${i.granularity.toLowerCase()})` : ''}${i.filters.length ? `; ${i.filters.map(f => `${f.field} ${f.operator === 'year' ? 'in year' : 'is'} ${f.value}`).join(' and ')}` : ''}${i.topN ? `; top ${i.topN}` : ''}${hint && hint !== i.suggestedVisualType ? `; ${i.suggestedVisualType} used for this grouping` : ''}.`;
 }
 export interface QDiagnostic { code: string; message: string }
 export interface CalculationSuggestion { name: string; expression: string; role: 'measure' | 'dimension'; explanation: string }
@@ -22,21 +48,26 @@ export const numeric = (field: SchemaField): boolean => ['NUMBER', 'INTEGER', 'D
 export const datetime = (field: SchemaField): boolean => ['DATE', 'DATETIME', 'TIMESTAMP'].includes(field.type.toUpperCase());
 export const words = (name: string): string[] => name.replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase().split(/[\s_]+/).filter(Boolean);
 interface Token { raw: string; word: string; quoted: boolean }
-interface Match { fields: SchemaField[]; length: number; alias: boolean }
+interface Match { fields: SchemaField[]; length: number; alias: boolean; synonyms: string[] }
 function matchField(tokens: Token[], index: number, schema: readonly SchemaField[]): Match | undefined {
   const candidates = schema.flatMap(field => {
-    const exact = words(field.name), aliases = [exact];
-    // Explicit, documented business synonym; exact names always win.
-    if (words(field.name).join(' ') === 'revenue') aliases.push(['sales']);
-    if (exact.length > 1) aliases.push([exact[exact.length - 1]!]);
-    return aliases.flatMap((parts, a) => {
-      const single = words(tokens[index]?.raw ?? '').join(' ') === exact.join(' ');
-      const length = a === 0 && single ? 1 : parts.every((part, j) => tokens[index + j]?.word === part) ? parts.length : 0;
-      return length ? [{ field, length, alias: a !== 0 }] : [];
+    const exact = words(field.name);
+    const aliases = [{ parts: exact, alias: false, synonym: false },
+      ...(field.synonyms ?? []).map(term => ({ parts: words(term), alias: true, synonym: true })),
+      ...(exact.length > 1 ? [{ parts: [exact[exact.length - 1]!], alias: true, synonym: false }] : []),
+    ];
+    return aliases.flatMap(({ parts, alias, synonym }) => {
+      if (!parts.length) return [];
+      const single = words(tokens[index]?.raw ?? '').join(' ') === parts.join(' ');
+      const length = single ? 1 : parts.every((part, j) => tokens[index + j]?.word === part) ? parts.length : 0;
+      return length ? [{ field, length, alias, synonym }] : [];
     });
-  }).sort((a, b) => b.length - a.length || Number(a.alias) - Number(b.alias));
+  }).sort((a, b) => Number(a.alias) - Number(b.alias) || b.length - a.length);
   const first = candidates[0];
-  return first && { fields: candidates.filter(c => c.length === first.length && c.alias === first.alias).map(c => c.field), length: first.length, alias: first.alias };
+  if (!first) return;
+  const matches = candidates.filter(c => c.length === first.length && c.alias === first.alias)
+    .filter((c, i, all) => all.findIndex(other => other.field.name === c.field.name) === i);
+  return { fields: matches.map(c => c.field), length: first.length, alias: first.alias, synonyms: matches.filter(c => c.synonym).map(c => c.field.name) };
 }
 const aggregates: Record<string, Aggregation> = { sum: 'SUM', total: 'SUM', avg: 'AVG', average: 'AVG', mean: 'AVG', count: 'COUNT', min: 'MIN', minimum: 'MIN', max: 'MAX', maximum: 'MAX' };
 const grains: Record<string, Granularity> = { year: 'YEAR', yearly: 'YEAR', annually: 'YEAR', quarter: 'QUARTER', quarterly: 'QUARTER', month: 'MONTH', monthly: 'MONTH', day: 'DAY', daily: 'DAY' };
@@ -55,9 +86,18 @@ export function interpretQuestion(question: string, schema: readonly SchemaField
   if (tokens.some(t => [';', '`', '\0', "'", '"'].includes(t.raw))) return stop('UNSUPPORTED_SYNTAX', 'Use a question with balanced quotes, without statement separators.');
   const measures: SchemaField[] = [], dimensions: SchemaField[][] = [], filterOptions: QFilter[][] = [];
   const aggregations: Aggregation[] = [], unknown: string[] = [];
+  const synonymsMatched: Interpretation['grounding']['synonymsMatched'] = [];
   let granularity: Granularity | null = null, topN: number | null = null;
   let hint: Interpretation['suggestedVisualType'] | undefined, countRows = false, time = false, aliases = 0, blocked = false;
-  const fieldAt = (i: number) => { const m = matchField(tokens, i, schema); if (m?.alias) aliases++; return m; };
+  const fieldAt = (i: number) => {
+    const m = matchField(tokens, i, schema);
+    if (m?.alias) aliases++;
+    if (m) for (const field of m.synonyms) {
+      const term = tokens.slice(i, i + m.length).map(t => t.raw).join(' ');
+      if (!synonymsMatched.some(s => s.term === term && s.field === field)) synonymsMatched.push({ term, field });
+    }
+    return m;
+  };
   const bad = (code: string, message: string) => { error(code, message); blocked = true; };
   for (let i = 0; i < tokens.length;) {
     const token = tokens[i]!, word = token.word;
@@ -144,8 +184,14 @@ export function interpretQuestion(question: string, schema: readonly SchemaField
       const grain = dims.some(datetime) ? granularity ?? 'MONTH' : null;
       const assumptions = (!aggregations.length ? 0.10 : 0) + (time && schema.filter(datetime).length > 1 ? 0.10 : 0) + aliases * 0.05;
       const confidence = Math.max(0.15, Math.min(0.99, 0.98 - assumptions - Math.min(0.60, unknown.length * 0.15) - (aggregation === 'AVG' && !aggregations.length ? 0.12 : 0)));
-      const explanation = `Showing ${aggregation.toLowerCase()} of ${measure?.name ?? 'rows'}${names.length ? ` by ${names.join(' and ')}` : ''}${grain ? ` (${grain.toLowerCase()})` : ''}${filters.length ? `; ${filters.map(f => `${f.field} ${f.operator === 'year' ? 'in year' : 'is'} ${f.value}`).join(' and ')}` : ''}${topN ? `; top ${topN}` : ''}${hint && hint !== type ? `; ${type} used for this grouping` : ''}.`;
-      results.push({ measure: measure?.name ?? null, aggregation, dimensions: names, filters, granularity: grain, topN, suggestedVisualType: type, confidence: Math.round(confidence * 100) / 100, explanation });
+      const fieldsUsed = [...new Set([...(measure ? [measure.name] : []), ...names, ...filters.map(f => f.field)])];
+      const interpretation: Interpretation = {
+        measure: measure?.name ?? null, aggregation, dimensions: names, filters, granularity: grain, topN,
+        suggestedVisualType: type, confidence: Math.round(confidence * 100) / 100, explanation: '',
+        grounding: { fieldsUsed, synonymsMatched: synonymsMatched.filter(s => fieldsUsed.includes(s.field)), unmatchedTerms: [...unknown] },
+      };
+      interpretation.explanation = describeInterpretation(interpretation, hint);
+      results.push(interpretation);
     }
   }
   const interpretations = [...new Map(results.map(r => [JSON.stringify({ ...r, confidence: 0 }), r])).values()].sort((a, b) => b.confidence - a.confidence || a.explanation.localeCompare(b.explanation, 'en')).slice(0, 12);

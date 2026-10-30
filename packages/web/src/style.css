@@ -1433,6 +1433,17 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .o-result .visual-content { min-height: 260px; }
 .o-explanation { font-weight: 600; }
 .o-explanation span { font-weight: normal; margin-left: 8px; }
+.o-grounding, .o-steps { font: 12px Arial, "Helvetica Neue", Helvetica, sans-serif; overflow-wrap: anywhere; }
+.o-grounding, .o-steps p { margin: 4px 0; }
+.o-steps { display: grid; gap: 8px; min-width: 0; margin: 8px 0; padding: 8px; border: 1px solid var(--chrome-border, #c9d8de); }
+.o-steps legend { padding: 0 4px; font-size: 13px; font-weight: 600; }
+.o-steps label { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.o-steps :is(select, input) { min-width: 0; min-height: 28px; padding: 4px 8px; font: inherit; color: inherit; background: var(--chrome-surface, #fff); border: 1px solid var(--chrome-border, #c9d8de); border-radius: 4px; }
+.o-steps select { flex: 1; }
+.o-step-top, .o-step-chips { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; }
+.o-step-top input { width: 80px; }
+.o-step-chip { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; padding-left: 4px; border: 1px solid var(--chrome-border, #c9d8de); border-radius: 4px; }
+.o-step-chip button { flex-shrink: 0; }
 .o-alternatives > div { display: flex; flex-wrap: wrap; gap: 8px; }
 .o-alternatives button { flex: 1 1 220px; text-align: left; white-space: normal; }
 .o-alternatives small { display: block; margin-top: 4px; }

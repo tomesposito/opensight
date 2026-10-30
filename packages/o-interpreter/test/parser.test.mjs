@@ -61,7 +61,7 @@ test('ambiguous suffixes, date fields and explicit multiple measures produce alt
 });
 test('exact field names beat aliases; sales can resolve to revenue with reduced confidence', () => {
   assert.equal(first('sum sales').measure, 'Sales');
-  const i = ask('sum sales', [{ name: 'revenue', type: 'DECIMAL' }]).interpretations[0];
+  const i = ask('sum sales', [{ name: 'revenue', type: 'DECIMAL', synonyms: ['sales'] }]).interpretations[0];
   assert.equal(i.measure, 'revenue'); assert.ok(i.confidence < 0.98);
 });
 test('unknown words reduce confidence and gibberish/blank inputs give named diagnostics', () => {
