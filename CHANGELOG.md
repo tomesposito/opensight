@@ -13,6 +13,9 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Added
 
+- Caller-declared SUM/COUNT aggregate tables and opt-in live-query result caching
+  with per-dataset TTL and manual invalidation; visual cards identify cached and
+  aggregate results (#159).
 - Ask O answers are grounded and inspectable: every answer names the defined
   fields it used, any field synonyms it matched (declared in dataset field
   metadata, e.g. "sales" for revenue), and any question terms it did not
