@@ -2,30 +2,34 @@
 
 ## Contract and scope
 
-This slice implements issue #158's body and 2026-10-29 scoping comment, as
-supplied in the run brief. The comment's D-56 citation does not check out:
-[D-56](idd/D-56-asset-move-semantics.md) concerns asset move semantics, not NLQ.
-There is no NLQ IDD in the repository. The issue scope is the contract for this
-slice; no new IDD or `SOLUTION_DESIGN.md` change is required.
+This slice implements [issue #158](https://github.com/tomesposito/opensight/issues/158)
+as scoped by the issue-158 build brief: defined-field grounding, metadata
+synonyms, and visible, editable interpretation steps in Ask O. The brief's
+resolved decisions are the contract for this slice; `SOLUTION_DESIGN.md` is
+unchanged. The issue body was read along with the available October 29 comment
+(roadmap scheduling); the detailed scoping comment is supplied by the brief.
 
-Ask O continues to use its bounded deterministic grammar. Every interpretation
-reports the defined fields used, declared synonyms matched, and question terms
-not understood. Users can inspect and edit interpretation steps before previewing
-or adding an ordinary visual to an analysis. Unsupported questions retain their
-existing named diagnostics and produce no interpretation; unknown extra words
-retain `UNRECOGNIZED_WORDS` and the existing confidence penalty.
+The brief reports a D-56 citation in that scoping comment. It does not check
+out: [D-56](idd/D-56-asset-move-semantics.md) concerns asset move semantics,
+not NLQ. There is no NLQ IDD in the repository. This slice proceeds on the
+issue and the explicit scope/resolved decisions in the brief, without creating
+an IDD or claiming that D-56 authorizes NLQ decisions.
 
-## Field metadata and grounding
+Ask O continues to use its bounded deterministic grammar. Unsupported
+questions retain the existing named diagnostics and no interpretation; partial
+matches retain `UNRECOGNIZED_WORDS` and name the unmatched terms. Grounding
+never invents a field. Existing AI/local modes, alternatives, confidence and
+honesty notices remain intact.
 
-`SchemaField` in o-interpreter and web `DataField` gain optional
-`synonyms?: readonly string[]`. Matching uses declared synonyms as aliases;
-exact field names take precedence. Existing suffix aliases remain supported.
-Synonym matches incur the existing alias confidence penalty. No field is invented.
+## Field vocabulary and grounding
 
-The interpreter's hardcoded revenue/sales alias moves to the revenue entry in
-web `SALES_FIELDS` as `synonyms: ['sales']`. `dataFields()` preserves dataset
-column metadata; calculated fields have undefined synonyms. Calculation
-suggestion templates retain their independent sales/revenue handling.
+`SchemaField` in `o-interpreter` and web `DataField` gain optional
+`synonyms?: readonly string[]`. Declared synonyms are aliases; exact field names
+win over aliases and alias matches retain the existing confidence penalty.
+The interpreter's hardcoded revenue/sales alias is removed. Instead, the web's
+`SALES_FIELDS` revenue field declares `synonyms: ['sales']`. `dataFields()` passes
+metadata through from dataset columns; calculated fields have no synonyms
+(`undefined`). Existing shortened field-name matching remains available.
 
 Every `Interpretation` has required grounding:
 
@@ -37,67 +41,69 @@ grounding: {
 }
 ```
 
-`fieldsUsed` contains the measure, dimensions and filter fields, deduplicated
-in that order. Counting rows has no measure field. Synonym matches identify
-only fields used by the selected interpretation, including dimension and filter
-matches. `unmatchedTerms` is the parser's existing unknown-token list.
-The panel shows “Grounded in: …”, synonym notes such as “‘sales’ → revenue”,
-and named unmatched terms. After removal edits, grounding reflects retained
-fields and retains the original unmatched question terms.
+`fieldsUsed` contains the measure, dimensions, then filter fields, deduplicated
+in that order. Count-rows has a null measure and includes only its dimensions
+and filters. `synonymsMatched` identifies matched aliases and the defined field
+chosen by that interpretation, including ambiguous alternatives independently.
+`unmatchedTerms` is the interpreter's existing unknown-token list. Interpretations
+are constructed only in the existing results loop.
 
-## Steps and explanations
+## Steps and description
 
-The interpreter exports a pure `interpretationSteps()` derivation returning a
-discriminated union of `aggregation`, `measure`, `group-by`, `filter`, `top-n`,
-`granularity`, and `visual` steps. Each carries its current value; grouping
-carries the dimension names and each filter carries its field, operator and
-value. Granularity appears for date grouping. The measure is displayed for
-inspection; the requested controls do not change the selected measure.
+The interpreter exports a pure `interpretationSteps(interpretation)` derivation
+returning discriminated step objects with kinds `aggregation`, `measure`,
+`group-by`, `filter`, `top-n`, `granularity`, and `visual`, carrying their current
+values. Filters are individually inspectable/removable; grouping carries the
+current dimension names. Granularity is present when the interpretation has
+date grouping. No interpreter mutation API is added.
 
-`describeInterpretation()` derives the explanation from interpretation fields.
-The parser uses the same helper, preserving existing explanation wording and
-confidence. An optional original chart hint preserves the parser's existing
-“used for this grouping” explanation when a hint cannot fit its grouping.
+`describeInterpretation(...)` derives the existing explanation wording from
+interpretation fields. The parser uses it too, retaining byte-identical wording
+for unedited questions, including grouping-related chart overrides. The web
+regenerates explanation and therefore the prepared visual's title after edits.
 
-The web layer makes immutable interpretation edits and regenerates explanations
-with this helper. Aggregation and visual type use selects; dimensions and filters
-have removable chips; Top N can be edited or cleared; date granularity uses a
-select. The existing `prepareOVisual` memo reruns, and the ordinary query/preview
-flow and `o-add` action both receive the edited interpretation. Switching
-alternatives, changing datasets or asking a new question resets edits. Existing
-AI/local mode behavior, alternatives and honesty notices remain intact.
+## Panel and edits
 
-## Edit constraints
+Below the explanation, show `Grounded in: …`, matched synonyms such as
+`‘sales’ → revenue`, and unmatched terms when present. Render compact controls
+inside the existing panel: aggregation and visual selects, dimension and filter
+chips with remove buttons, Top N edit/clear, and a granularity select only while
+a datetime dimension is present. The measure is an inspectable step.
 
-- Aggregations are SUM, AVG, COUNT, MIN and MAX. Non-numeric measures and
-  counting rows permit only COUNT.
-- Visual types are bar, line, pie, table and kpi.
-- Removing the final dimension clears Top N because it requires grouping.
-  Top N uses the grammar's integer range of 1–10,000; invalid input is reported
-  and cannot be added, rather than silently replaced.
-- Granularity is editable only with a datetime dimension, using YEAR, QUARTER,
-  MONTH or DAY. Removing the final date dimension clears granularity.
-- Existing named preparation errors remain visible and disable adding a visual.
-  Edits never bypass the existing query/validation path or silently repair an
-  unsupported calculation.
+Edits immutably produce an effective interpretation, regenerate its explanation
+and current field grounding, and rerun the existing `prepareOVisual` memo and
+query/preview flow. Both preview and `ADD TO ANALYSIS` use that prepared result.
+Switching alternatives or asking a new question resets edits. No new query
+engine, visual path, fonts, or floating UI is introduced.
 
-Controls follow existing q-panel/o-entry styles, editor system typography and
-compact 4/8px spacing. The static demo remains labeled synthetic/offline.
+Constraints:
 
-## Explicit non-goals
+- Aggregations are SUM, AVG, COUNT, MIN, MAX; a nonnumeric measure or count-rows
+  permits only COUNT.
+- Visual choices are bar, line, pie, table, kpi.
+- Removing the last dimension also clears Top N, which requires grouping.
+- Top N uses the existing integer range 1–10,000. Granularity choices are YEAR,
+  QUARTER, MONTH, DAY and require a datetime dimension.
+- Invalid edited states fail closed with named errors through the existing
+  preparation/preview validation path; never silently discard requested semantics.
 
-No shared or semantic metric store (#157), writeback (#161), new NLQ grammar,
-query engine, visual path, provider or LLM changes. The API generative route
-continues to reinterpret provider rewrites through the extended interpreter;
-its schema comes from dataset columns without synonyms and remains unchanged.
-No synonym metadata is introduced on that path. No dependencies, AWS calls,
-deployment, push, merge or `SOLUTION_DESIGN.md` edits are part of this build.
+## Non-goals and compatibility
+
+No shared/semantic metric store (#157), writeback (#161), new grammar beyond
+metadata matching/grounding, new query engine, or provider/LLM change. The API
+generative route still reinterprets provider rewrites with the same interpreter.
+It builds schema fields from dataset columns without synonym metadata and
+continues to have no synonyms. `suggestCalculation` has separate sales/revenue
+templates and is unchanged. No new dependencies or configuration are required.
 
 ## Verification
 
-Interpreter tests cover grounding, metadata aliases, exact-name precedence,
-unknown words, step values and edited descriptions while retaining existing
-parser expectations. Web tests drive controls through the ordinary preview,
-assert fixture results and filters, and validate adding an edited interpretation.
-The final build includes the full root `npm test`, a rebuilt static demo,
-reference comparison and refreshed Ask O screenshot and README hero GIF.
+Interpreter tests cover field grounding, metadata synonyms, exact-name
+precedence, unknown terms and diagnostics, count-rows, step values, and shared
+description after edits. Web tests cover rendered grounding/unknown terms,
+metadata propagation, aggregation edits changing executed fixture results,
+filter removal, edited add-to-analysis validation, reset behavior and edit
+constraints. Run the complete root `npm test`, reporting exact passed/failed/
+skipped counts. Rebuild the static demo, compare screenshots with the reference
+set, record findings in gap notes, and refresh affected README imagery and tour.
+The static demo is not a deployed server; visual fidelity remains unmeasured.
