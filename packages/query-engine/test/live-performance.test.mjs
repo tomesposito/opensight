@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { planVisual } from '@opensight/query-engine';
-import { calculation, dimension, measure, request, wells } from './helpers.mjs';
+import { writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { executeLocal, LiveResultCache, liveDatasetCachePrefix, planVisual, refreshLocal } from '@opensight/query-engine';
+import { calculation, measure, read, request, temporaryCsv, wells } from './helpers.mjs';
 
 const aggregate = () => ({ name: 'Sales by region', tableName: 'sales_by_region', tableSchema: 'reporting',
   dimensions: [{ columnName: 'region' }], measures: [{ columnName: 'revenue', aggregation: 'SUM' }], countColumn: 'row_count' });
@@ -84,4 +86,109 @@ test('aggregate declarations cannot come from request or imported metadata', () 
   delete r.aggregates;
   r.analysis.Definition.aggregates = [aggregate()];
   assert.throws(() => planVisual(r), { code: 'UNSUPPORTED_FEATURE' });
+});
+
+test('cache isolates rows, records stats, and drops entries at the TTL boundary', () => {
+  let now = 1000;
+  const cache = new LiveResultCache({ now: () => now });
+  assert.equal(cache.get('one'), undefined);
+  const rows = [{ total: 1 }];
+  cache.set('one', rows, 100);
+  rows[0].total = 99;
+  const cached = cache.get('one');
+  assert.deepEqual(cached, { rows: [{ total: 1 }], cachedAt: new Date(1000).toISOString() });
+  cached.rows[0].total = 88;
+  now = 1099;
+  assert.equal(cache.get('one').rows[0].total, 1);
+  now = 1100;
+  assert.equal(cache.get('one'), undefined);
+  now = 1000;
+  assert.equal(cache.get('one'), undefined, 'expired entry was dropped');
+  assert.deepEqual(cache.stats(), { hits: 2, misses: 3, stores: 1 });
+});
+
+test('cache invalidation is prefix-specific or full and keeps cumulative counters', () => {
+  const cache = new LiveResultCache();
+  for (const key of ['dataset:a', 'dataset:b', 'other:a']) cache.set(key, [], 1000);
+  cache.invalidate('dataset:');
+  assert.equal(cache.get('dataset:a'), undefined);
+  assert.equal(cache.get('dataset:b'), undefined);
+  assert.ok(cache.get('other:a'));
+  cache.invalidate();
+  assert.equal(cache.get('other:a'), undefined);
+  assert.deepEqual(cache.stats(), { hits: 1, misses: 3, stores: 3 });
+  assert.ok(JSON.stringify(['arn:a', 'visual']).startsWith(liveDatasetCachePrefix('arn:a')));
+  assert.ok(!JSON.stringify(['arn:ab', 'visual']).startsWith(liveDatasetCachePrefix('arn:a')));
+});
+
+test('bounded cache evicts oldest store, independent of reads, and replaces existing keys', () => {
+  const cache = new LiveResultCache({ maxEntries: 2 });
+  cache.set('first', [], 1000); cache.set('second', [], 1000);
+  cache.get('first'); cache.set('third', [], 1000);
+  assert.equal(cache.get('first'), undefined);
+  cache.set('second', [{ total: 2 }], 1000);
+  assert.ok(cache.get('third'));
+  cache.set('fourth', [], 1000);
+  assert.equal(cache.get('third'), undefined);
+  assert.deepEqual(cache.get('second').rows, [{ total: 2 }]);
+  const defaults = new LiveResultCache();
+  for (let i = 0; i <= 100; i++) defaults.set(String(i), [], 1000);
+  assert.equal(defaults.get('0'), undefined);
+  assert.ok(defaults.get('1'));
+});
+
+test('cache limits and TTL reject invalid values with named errors', async () => {
+  for (const invalid of [0, -1, 0.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1, '100']) {
+    assert.throws(() => new LiveResultCache({ maxEntries: invalid }), { code: 'INVALID_INPUT' });
+    const cache = new LiveResultCache();
+    assert.throws(() => cache.set('key', [], invalid), { code: 'INVALID_INPUT' });
+    await assert.rejects(executeLocal(request(), { dataRoot: '/absent', liveCache: { cache, ttlMs: invalid } }), { code: 'INVALID_INPUT' });
+  }
+});
+
+test('local execution caches only by opt-in, replans hits, and refresh invalidates every dataset visual', async t => {
+  const r = request(), file = read('sales.csv'), options = temporaryCsv(t, file);
+  const cache = new LiveResultCache({ now: () => 1000 });
+  options.liveCache = { cache, ttlMs: 1000 };
+  const first = await executeLocal(r, options);
+  assert.deepEqual(first.provenance, { source: 'live' });
+  await executeLocal({ ...r, visualId: 'revenue-by-region' }, options);
+  cache.set(JSON.stringify(['unrelated-dataset', 'visual']), [], 1000);
+  writeFileSync(join(options.dataRoot, 'sales.csv'), file + '9,2025-04-01,East,Hardware,10,2\n');
+  const second = await executeLocal(r, options);
+  assert.deepEqual(second.rows, first.rows);
+  assert.notEqual(second.plan, first.plan);
+  assert.deepEqual(second.provenance, { source: 'cache', cachedAt: new Date(1000).toISOString() });
+  const invalid = structuredClone(r); wells(invalid).Values[0].NumericalMeasureField.Column.ColumnName = 'missing';
+  await assert.rejects(executeLocal(invalid, options), { code: 'UNRESOLVED_BINDING' });
+  assert.equal(await refreshLocal(r, options), 9);
+  const refreshed = await executeLocal(r, options);
+  assert.deepEqual(refreshed.provenance, { source: 'live' });
+  assert.deepEqual(refreshed.rows, [{ revenue: 510 }]);
+  assert.equal((await executeLocal({ ...r, visualId: 'revenue-by-region' }, options)).provenance.source, 'live');
+  assert.ok(cache.get(JSON.stringify(['unrelated-dataset', 'visual'])));
+  assert.deepEqual((await executeLocal(r, { dataRoot: options.dataRoot })).provenance, { source: 'live' });
+});
+
+test('security contexts never read or populate cache, even without active protections', async t => {
+  const r = request(), options = temporaryCsv(t, read('sales.csv'));
+  const cache = new LiveResultCache(); options.liveCache = { cache, ttlMs: 1000 };
+  await executeLocal(r, options);
+  const before = cache.stats();
+  r.security = { namespaceId: 'default', userId: 'alice', users: [{ id: 'alice', namespaceId: 'default' }], groups: [],
+    policy: { namespaceId: 'default', dataSetArn: r.localData.dataSetArn, rowLevel: false, rowRules: [] } };
+  assert.equal(planVisual(r).securityProtected, undefined);
+  writeFileSync(join(options.dataRoot, 'sales.csv'), read('sales.csv') + '9,2025-04-01,East,Hardware,10,2\n');
+  for (let i = 0; i < 2; i++) {
+    const result = await executeLocal(r, options);
+    assert.deepEqual(result.provenance, { source: 'live' });
+    assert.deepEqual(result.rows, [{ revenue: 510 }]);
+  }
+  assert.deepEqual(cache.stats(), before);
+  r.localData.security.dataset = 'protected';
+  r.security.policy.rowLevel = true;
+  r.security.policy.rowRules = [{ id: 'east', predicate: { column: 'region', operator: 'eq', value: 'East' }, principals: [{ type: 'user', id: 'alice' }] }];
+  assert.equal(planVisual(r, { aggregates: [aggregate()] }).executionSource.kind, 'source');
+  assert.equal((await executeLocal(r, options)).provenance.source, 'live');
+  assert.deepEqual(cache.stats(), before);
 });
