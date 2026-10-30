@@ -287,7 +287,7 @@ function sql(plan: Omit<QueryPlan, 'sql' | 'parameters'>, parameters: ParameterV
   const projections = [
     ...dimensions.map((expression, i) => `${expression} AS ${q(plan.dimensions[i]!.outputName)}`),
     ...plan.measures.map(m => { const c = plan.calculations.find(c => c.name === m.columnName && c.expression.level === 'aggregate');
-      return `${c ? expressionSql(expand(c.expression), plan.dialect, bind) : m.aggregation === 'COUNT' && countColumn !== undefined ? `SUM(${q(countColumn)})` : `${m.aggregation}(${q(m.columnName)})`} AS ${q(m.outputName)}`; }),
+      return `${c ? expressionSql(expand(c.expression), plan.dialect, bind) : m.aggregation === 'COUNT' && countColumn !== undefined ? `COALESCE(SUM(${q(countColumn)}), 0)` : `${m.aggregation}(${q(m.columnName)})`} AS ${q(m.outputName)}`; }),
   ];
   const positions = dimensions.map((_, i) => i + 1).join(', ');
   return `${ctes.length ? `WITH ${ctes.join(',\n')}\n` : ''}SELECT ${projections.join(', ')}\nFROM ${from}` +

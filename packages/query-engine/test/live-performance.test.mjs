@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { PGlite } from '@electric-sql/pglite';
 import { executeLocal, LiveResultCache, liveDatasetCachePrefix, planVisual, refreshLocal } from '@opensight/query-engine';
 import { calculation, measure, read, request, temporaryCsv, wells } from './helpers.mjs';
 
@@ -28,7 +29,7 @@ test('COUNT uses the declared per-grain count column', () => {
   const r = request(); wells(r).Values = [measure('revenue', 'COUNT')];
   const p = planVisual(r, { aggregates: [aggregate()] });
   assert.equal(p.executionSource.kind, 'aggregate');
-  assert.match(p.sql, /SUM\("row_count"\) AS "revenue"/);
+  assert.match(p.sql, /COALESCE\(SUM\("row_count"\), 0\) AS "revenue"/);
   const a = aggregate(); delete a.countColumn;
   assert.deepEqual(planVisual(r, { aggregates: [a] }).executionSource, { kind: 'source' });
 });
@@ -191,4 +192,69 @@ test('security contexts never read or populate cache, even without active protec
   assert.equal(planVisual(r, { aggregates: [aggregate()] }).executionSource.kind, 'source');
   assert.equal((await executeLocal(r, options)).provenance.source, 'live');
   assert.deepEqual(cache.stats(), before);
+});
+
+test('cached SQL rows use fresh shared post-processing when calculations change', async t => {
+  const r = request('revenue-by-region'); r.analysis.Definition.FilterGroups = [];
+  calculation(r, 'sumOver(sum({revenue}), [], POST_AGG_FILTER)');
+  const cache = new LiveResultCache(), options = { ...temporaryCsv(t, read('sales.csv')), liveCache: { cache, ttlMs: 1000 } };
+  const first = await executeLocal(r, options);
+  assert.deepEqual(first.rows, [{ region: 'East', calculated: 900 }, { region: 'West', calculated: 900 }]);
+  r.analysis.Definition.CalculatedFields.at(-1).Expression = 'sumOver(sum({revenue}), [], POST_AGG_FILTER) * 2';
+  const second = await executeLocal(r, options);
+  assert.equal(second.plan.sql, first.plan.sql);
+  assert.equal(second.provenance.source, 'cache');
+  assert.deepEqual(second.rows, [{ region: 'East', calculated: 1800 }, { region: 'West', calculated: 1800 }]);
+});
+
+test('cache keys separate parameter values and datasets; expiry and failed refresh cannot serve stale rows', async t => {
+  let now = 1000;
+  const cache = new LiveResultCache({ now: () => now });
+  const r = request(), options = { ...temporaryCsv(t, read('sales.csv')), liveCache: { cache, ttlMs: 100 } };
+  await executeLocal(r, options);
+  const west = structuredClone(r);
+  west.analysis.Definition.FilterGroups[0].Filters[0].CategoryFilter.Configuration.FilterListConfiguration.CategoryValues = ['West'];
+  const result = await executeLocal(west, options);
+  assert.equal(result.provenance.source, 'live');
+  assert.deepEqual(result.rows, [{ revenue: 400 }]);
+  const other = structuredClone(r), arn = r.localData.dataSetArn + '-other';
+  other.localData.dataSetArn = arn;
+  other.dataSet.DataSet.Arn = arn;
+  other.analysis.Definition.DataSetIdentifierDeclarations[0].DataSetArn = arn;
+  assert.equal((await executeLocal(other, options)).provenance.source, 'live');
+  writeFileSync(join(options.dataRoot, 'sales.csv'), read('sales.csv') + '9,2025-04-01,East,Hardware,10,2\n');
+  now += 100;
+  assert.deepEqual((await executeLocal(r, options)).rows, [{ revenue: 510 }]);
+  writeFileSync(join(options.dataRoot, 'sales.csv'), 'bad,header\n');
+  await assert.rejects(refreshLocal(r, options), { code: 'LOCAL_DATA_ERROR' });
+  await assert.rejects(executeLocal(r, options), { code: 'LOCAL_DATA_ERROR' });
+});
+
+test('embedded Postgres aggregate results agree with the source across grains, dates, filters and empty COUNT', async t => {
+  const pg = new PGlite(); t.after(() => pg.close());
+  await pg.exec('CREATE TABLE sales (order_id BIGINT, order_date TIMESTAMP, region TEXT, category TEXT, revenue DOUBLE PRECISION, profit DOUBLE PRECISION)');
+  for (const line of read('sales.csv').trim().split('\n').slice(1)) await pg.query('INSERT INTO sales VALUES ($1,$2,$3,$4,$5,$6)', line.split(',').map(v => v === '' ? null : v));
+  await pg.exec("CREATE SCHEMA reporting; CREATE TABLE reporting.sales_rollup AS SELECT region, date_trunc('month', order_date) AS order_date, SUM(revenue) AS revenue, COUNT(*) AS row_count FROM sales GROUP BY 1, 2");
+  const a = aggregate(); a.tableName = 'sales_rollup'; a.dimensions.push({ columnName: 'order_date', granularity: 'MONTH' });
+  for (const visualId of ['total-revenue', 'revenue-by-region', 'revenue-trend']) {
+    const r = request(visualId);
+    for (const filters of [r.analysis.Definition.FilterGroups, []]) {
+      r.analysis.Definition.FilterGroups = filters;
+      const source = planVisual(r, { dialect: 'postgres' }), rollup = planVisual(r, { dialect: 'postgres', aggregates: [a] });
+      assert.equal(rollup.executionSource.kind, 'aggregate');
+      assert.deepEqual((await pg.query(rollup.sql, [...rollup.parameters])).rows, (await pg.query(source.sql, [...source.parameters])).rows);
+      assert.deepEqual((await pg.query(rollup.sql, [...rollup.parameters])).rows, (await executeLocal(r, temporaryCsv(t, read('sales.csv')))).rows);
+    }
+  }
+  for (const visualId of ['total-revenue', 'revenue-by-region']) {
+    const r = request(visualId); wells(r).Values = [measure('order_id', 'COUNT', 'orders')];
+    for (const region of ['East', 'No matching region']) {
+      r.analysis.Definition.FilterGroups[0].Filters[0].CategoryFilter.Configuration.FilterListConfiguration.CategoryValues = [region];
+      const source = planVisual(r, { dialect: 'postgres' }), rollup = planVisual(r, { dialect: 'postgres', aggregates: [a] });
+      assert.equal(rollup.executionSource.kind, 'aggregate');
+      // PGlite returns NUMERIC SUM(bigint) as text; the executor normalizes safe counts.
+      const counts = async plan => (await pg.query(plan.sql, [...plan.parameters])).rows.map(row => ({ ...row, orders: row.orders === null ? null : Number(row.orders) }));
+      assert.deepEqual(await counts(rollup), await counts(source));
+    }
+  }
 });

@@ -24,7 +24,8 @@ because comparing truncated values can change which source rows qualify.
 
 The aggregate must contain one row per declared grain, with per-grain SUM values
 stored under the original measure column names, and an optional per-grain row count
-under `countColumn`. COUNT is rewritten as SUM of that count column. The caller
+under `countColumn`. COUNT is rewritten as SUM of that count column, coalesced to
+zero for an empty scalar result. The caller
 must ensure row counts match the queried COUNT column: source COUNT(column) ignores
 NULL values. A row-count declaration is therefore unsuitable for nullable COUNT
 targets. Date grain values must already be truncated to that grain in UTC; existing

@@ -28,6 +28,18 @@ test('Postgres aggregate execution and result caching share the caller-owned opt
   assert.equal(mocks.connectMock.mock.callCount(), 2);
 });
 
+test('Postgres never accesses the cache with a security context, including an unprotected policy', async t => {
+  const mocks = mockClient(t);
+  const cache = new LiveResultCache(), configured = { ...options, liveCache: { cache, ttlMs: 1000 } };
+  const r = request(); await executePostgres(r, configured);
+  const stats = cache.stats();
+  r.security = { namespaceId: 'default', userId: 'alice', users: [{ id: 'alice', namespaceId: 'default' }], groups: [],
+    policy: { namespaceId: 'default', dataSetArn: r.localData.dataSetArn, rowLevel: false, rowRules: [] } };
+  for (let i = 0; i < 2; i++) assert.equal((await executePostgres(r, configured)).provenance.source, 'live');
+  assert.equal(mocks.connectMock.mock.callCount(), 3);
+  assert.deepEqual(cache.stats(), stats);
+});
+
 function mockClient(t, { query = () => empty, connect = () => {}, end = () => {} } = {}) {
   const clients = [];
   const connectMock = t.mock.method(Client.prototype, 'connect', async function () {

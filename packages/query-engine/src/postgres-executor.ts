@@ -34,7 +34,8 @@ export async function executePostgres(request: PlanRequest, options: PostgresExe
   const cache = request.security === undefined && !plan.securityProtected ? policy : undefined;
   const key = liveResultCacheKey(plan);
   const cached = cache?.cache.get(key);
-  if (cached) return { plan, rows: cached.rows, provenance: { ...liveProvenance(plan), source: 'cache', cachedAt: cached.cachedAt } };
+  if (cached) return { plan, rows: plan.postProcess ? evaluateSqlPlan(plan, cached.rows) : cached.rows,
+    provenance: { ...liveProvenance(plan), source: 'cache', cachedAt: cached.cachedAt } };
   try {
     const client = new Client({ connectionString });
     try {
@@ -50,7 +51,8 @@ export async function executePostgres(request: PlanRequest, options: PostgresExe
       const rows = result.rows.map(values => Object.fromEntries(result.fields.map((field, i) =>
         [field.name, resultValue(values[i], field.dataTypeID)])));
       const resultRows = plan.postProcess ? evaluateSqlPlan(plan, rows) : rows;
-      cache?.cache.set(key, resultRows, cache.ttlMs);
+      // Cache SQL rows: post-processing is not represented in the SQL cache key.
+      cache?.cache.set(key, rows, cache.ttlMs);
       return { plan, rows: resultRows, provenance: liveProvenance(plan) };
     } finally {
       await client.end();
