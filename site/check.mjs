@@ -114,16 +114,16 @@ const content = (attribute, key) => {
 };
 const title = html.match(/<title>([^<]+)<\/title>/)?.[1];
 const description = content('name', 'description');
-const poster = 'https://getopensight.org/assets/hero-poster.jpg';
+const shareImage = 'https://getopensight.org/assets/og-image.jpg';
 for (const [key, expected] of Object.entries({
   'og:title': title, 'og:description': description, 'og:type': 'website',
-  'og:url': publicUrls[0], 'og:image': poster,
+  'og:url': publicUrls[0], 'og:image': shareImage,
 })) {
   check(content('property', key) === expected, `incorrect ${key} content`);
 }
 for (const [key, expected] of Object.entries({
   'twitter:card': 'summary_large_image', 'twitter:title': title,
-  'twitter:description': description, 'twitter:image': poster,
+  'twitter:description': description, 'twitter:image': shareImage,
 })) {
   check(content('name', key) === expected, `incorrect ${key} content`);
 }

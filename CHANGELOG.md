@@ -82,6 +82,9 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Changed
 
+- Link previews for getopensight.org now use a designed marketing share
+  card (`site/assets/og-image.jpg`, 1200×630) as the og:image and
+  twitter:image, replacing the hero video poster frame.
 - The question side panel is branded "Ask O" (trigger mark "O", heading
   "ASK O") and docks into the layout — the shell reserves its width instead
   of the panel overlaying the canvas (#135, #136).
