@@ -82,6 +82,10 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Changed
 
+- The brand mark was redrawn to match the approved brand sheets: four
+  filled sparkle arms with a four-point star center hole replace the
+  earlier ring-arc rendering, across the app header mark, favicons,
+  touch icon, marketing site, and the link-preview share card.
 - Link previews for getopensight.org now use a designed marketing share
   card (`site/assets/og-image.jpg`, 1200×630) as the og:image and
   twitter:image, replacing the hero video poster frame.
