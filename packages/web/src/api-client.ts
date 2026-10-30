@@ -1,7 +1,7 @@
 import type { DashboardSummary, PublishedDashboard, ControlValues } from './published-dashboard.js';
 import type { HostedAnalysisInput, Publication } from './hosted-publish.js';
 import type { PrepPipeline } from '@opensight/bundle-parser/prep';
-import type { PrepPreview } from '@opensight/query-engine';
+import type { PrepPreview, QueryResult } from '@opensight/query-engine';
 import type { PrepSourceSummary } from './data-prep.js';
 import type { ConnectorState } from '@opensight/query-engine/browser';
 import type { UploadSummary } from '@opensight/query-engine';
@@ -23,6 +23,7 @@ export interface QueryResponse {
   columns: { name: string; type: 'string' | 'number' }[];
   rows: Row[];
   execution?: ExecutionProvenance;
+  provenance?: QueryResult['provenance'];
 }
 export interface ExecutionSettings { mode: 'DIRECT_QUERY' | 'BLAZE'; intervalMinutes: number | null }
 export interface ExecutionStatus extends ExecutionSettings {
@@ -412,7 +413,20 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
         return [column.name, value as string | number | null];
       }));
     });
-    return { columns, rows, ...(body.execution ? { execution: body.execution as ExecutionProvenance } : {}) };
+    let provenance: QueryResponse['provenance'];
+    if (body.provenance !== undefined) {
+      const p = object(body.provenance, 'Query provenance');
+      if (!['live', 'cache', 'aggregate'].includes(String(p.source)) ||
+          p.aggregateName !== undefined && (typeof p.aggregateName !== 'string' || !p.aggregateName) ||
+          p.source === 'aggregate' && !p.aggregateName ||
+          p.cachedAt !== undefined && (typeof p.cachedAt !== 'string' || !Number.isFinite(Date.parse(p.cachedAt)))) {
+        throw new ApiError('Invalid query result provenance.');
+      }
+      provenance = { source: p.source as NonNullable<QueryResponse['provenance']>['source'],
+        ...(typeof p.aggregateName === 'string' ? { aggregateName: p.aggregateName } : {}),
+        ...(typeof p.cachedAt === 'string' ? { cachedAt: p.cachedAt } : {}) };
+    }
+    return { columns, rows, ...(provenance ? { provenance } : {}), ...(body.execution ? { execution: body.execution as ExecutionProvenance } : {}) };
   }
   async function getDefinition(kind: ResourceKind, id: string, signal?: AbortSignal): Promise<DefinitionResponse> {
     if (!/^[A-Za-z0-9_-]{1,512}$/.test(id)) throw new ApiError('Resource ID must contain 1–512 letters, digits, underscores or hyphens.');

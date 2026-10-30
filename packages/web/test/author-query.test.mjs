@@ -12,8 +12,35 @@ import { Author, AuthorCanvas } from '../build/test/Author.js';
 
 const draft = kind => authorReducer(emptyDraft(), { type: 'add', kind });
 const visual = kind => activeSheet(draft(kind)).visuals[0];
-const render = (item, data, props = {}) => renderToStaticMarkup(createElement(VisualCard, { visual: { ...buildAuthorVisual(item), rows: data.rows }, dataMessage: data.message, ...props }));
+const render = (item, data, props = {}) => renderToStaticMarkup(createElement(VisualCard, { visual: { ...buildAuthorVisual(item), rows: data.rows }, dataMessage: data.message, provenance: data.provenance, ...props }));
 const controller = () => new AbortController();
+
+test('query provenance survives HTTP and author loading, with labels only for cache or aggregate results', async () => {
+  const item = visual('kpi');
+  for (const [provenance, label] of [
+    [undefined, undefined], [{ source: 'live' }, undefined],
+    [{ source: 'cache', cachedAt: '2026-10-30T00:00:00.000Z' }, 'Cached result'],
+    [{ source: 'aggregate', aggregateName: '<regional sales>' }, 'Aggregate: &lt;regional sales&gt;'],
+  ]) {
+    const client = createApiClient('/', async () => Response.json({ columns: [{ name: 'revenue', type: 'number' }], rows: [{ revenue: 900 }], ...(provenance ? { provenance } : {}) }));
+    const data = await loadAuthorRows(client, buildAuthorQuery(item), controller().signal);
+    assert.deepEqual(data.provenance, provenance);
+    const html = render(item, data);
+    if (label) {
+      assert.ok(html.includes(label));
+      assert.doesNotMatch(render(item, data, { loading: true }), /query-provenance/);
+    } else assert.doesNotMatch(html, /query-provenance|Cached result|Aggregate:/);
+  }
+});
+
+test('malformed provenance cannot claim a cached or aggregate result', async () => {
+  for (const provenance of [{ source: 'unknown' }, { source: 'aggregate' }, { source: 'aggregate', aggregateName: 4 }, { source: 'cache', cachedAt: 'yesterday' }]) {
+    const client = createApiClient('/', async () => Response.json({ columns: [{ name: 'revenue', type: 'number' }], rows: [{ revenue: 900 }], provenance }));
+    const data = await loadAuthorRows(client, buildAuthorQuery(visual('kpi')), controller().signal);
+    assert.equal(data.rows, null);
+    assert.match(data.message, /Invalid query result provenance/);
+  }
+});
 
 test('assignments produce the query projection for all kinds, dates and multiple measures without the fixture East filter', () => {
   for (const kind of ['bar', 'line', 'pie', 'kpi', 'table']) {
