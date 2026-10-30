@@ -82,6 +82,12 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Changed
 
+- The whole app palette moved to the approved brand colors: brand-blue
+  accents and slate borders, tints, and ink replace the pre-brand
+  teal/blue-gray system across home, analyses, the editor, data,
+  admin, first-run, and embed surfaces. Editor layout and typography
+  are unchanged; data-viz theme palettes and semantic colors stay
+  as they were (#167).
 - Sign-in and invitation enrollment screens restyled to the approved
   brand design (navy page with the brand glow, white card, brand-accent
   actions, Inter), replacing the pre-brand teal styling (#166).
