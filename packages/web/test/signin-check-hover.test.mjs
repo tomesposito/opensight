@@ -18,7 +18,7 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // section.sign-in-card > form > label.sign-in-check) confirmed zero
 // matching :hover rules and a transparent rest for both the label and
 // the checkbox. The label now takes the sign-in surface's established
-// hover tint (#eaf4f4 — its own field hover, slice 55, and the
+// hover tint (#eef3fd — its own field hover, slice 55, and the
 // secondary button hover, and the info alert background), so no new
 // colour is introduced. The rule is on the label, not the checkbox:
 // the checkbox keeps its native rendering, following the slice-94
@@ -32,12 +32,12 @@ const rule = css.match(/^\.sign-in-check:hover\s*\{([^}]*)\}/m);
 
 test('the sign-in-check hover rule exists and uses the established hover tint', () => {
   assert.ok(rule, 'expected the .sign-in-check :hover rule');
-  assert.match(rule[1], /background:\s*#eaf4f4/);
+  assert.match(rule[1], /background:\s*#eef3fd/);
 });
 
 test('the hover tint matches the sign-in field and secondary hovers, so no new colour is introduced', () => {
-  assert.ok(css.match(/\.sign-in-field input:hover:not\(:disabled\)\s*\{[^}]*background:\s*#eaf4f4/), 'the sign-in field hover must remain #eaf4f4');
-  assert.ok(css.match(/\.sign-in-secondary:hover:not\(:disabled\)\s*\{[^}]*background:\s*#eaf4f4/), 'the sign-in secondary hover must remain #eaf4f4');
+  assert.ok(css.match(/\.sign-in-field input:hover:not\(:disabled\)\s*\{[^}]*background:\s*#eef3fd/), 'the sign-in field hover must remain #eef3fd');
+  assert.ok(css.match(/\.sign-in-secondary:hover:not\(:disabled\)\s*\{[^}]*background:\s*#eef3fd/), 'the sign-in secondary hover must remain #eef3fd');
 });
 
 test('the check hover rule is paint-only: resting geometry and label presentation cannot shift', () => {
@@ -47,7 +47,7 @@ test('the check hover rule is paint-only: resting geometry and label presentatio
 
 test('the resting check rules are preserved and the checkbox has no hover rule of its own', () => {
   assert.ok(css.match(/\.sign-in-check\s*\{[^}]*display:\s*flex[^}]*cursor:\s*pointer/), 'the sign-in-check resting rule must remain');
-  assert.ok(css.match(/\.sign-in-check input\s*\{[^}]*accent-color:\s*#157f88/), 'the sign-in-check input resting rule must remain');
+  assert.ok(css.match(/\.sign-in-check input\s*\{[^}]*accent-color:\s*#3b82f6/), 'the sign-in-check input resting rule must remain');
   assert.ok(!/\.sign-in-check input:hover/.test(css), 'the checkbox must keep its native rendering with no hover rule of its own');
   assert.ok(!/\.sign-in-check:hover[^{]*\{[^}]*input/.test(css), 'the check hover rule must not target the checkbox');
 });
@@ -62,7 +62,7 @@ defineHoverCases('signin-check hover', {
       target: '#checkLabel',
       rule: '.sign-in-check:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(234, 244, 244)' },
+      hovered: { backgroundColor: 'rgb(238, 243, 253)' },
       paintOnly: true,
       unchanged: ['color'],
       excluded: ['#checkBox', '#outsideLabel'],
