@@ -9,6 +9,7 @@ import { compileVisual, DATA_REQUIRED_LABEL, displayCell, rowGroupKey, rowGroupV
 import type { CompiledVisual } from './compiler.js';
 import type { Cell, FixtureVisual } from './model.js';
 import { init } from './echarts.js';
+import type { QueryResponse } from './api-client.js';
 
 function Chart({ option, title, compiled, interaction }: { option: EChartsOption; title: string; compiled: CompiledVisual; interaction?: VisualInteraction }) {
   const container = useRef<HTMLDivElement>(null);
@@ -95,7 +96,7 @@ function DataTable({ compiled, interaction, onRowGroupToggle }: { compiled: Comp
   </table></div>;
 }
 
-export function VisualCard({ visual, dataMessage, loading = false, definitionPreview = false, interaction, onRowGroupToggle, actionMenu, actionNote }: { visual: FixtureVisual; dataMessage?: string; loading?: boolean; definitionPreview?: boolean; interaction?: VisualInteraction; onRowGroupToggle?: RowGroupToggle; actionMenu?: ReactNode; actionNote?: string }) {
+export function VisualCard({ visual, dataMessage, loading = false, definitionPreview = false, interaction, onRowGroupToggle, actionMenu, actionNote, provenance }: { visual: FixtureVisual; dataMessage?: string; loading?: boolean; definitionPreview?: boolean; interaction?: VisualInteraction; onRowGroupToggle?: RowGroupToggle; actionMenu?: ReactNode; actionNote?: string; provenance?: QueryResponse['provenance'] }) {
   const headingId = useId();
   const theme = visual.theme ?? LIGHT_THEME;
   const result = useMemo(() => {
@@ -127,6 +128,7 @@ export function VisualCard({ visual, dataMessage, loading = false, definitionPre
         </div>}
       </div>
       <footer className="card-footer">
+        {!loading && visual.rows !== null && (provenance?.source === 'cache' || provenance?.source === 'aggregate') && <span className="query-provenance">{provenance.source === 'cache' ? 'Cached result' : `Aggregate: ${provenance.aggregateName}`}</span>}
         {compiled.model.facet && <p className="facet-caption">Group by: {fieldName(compiled.model.facet, compiled.model.formatting)}</p>}
         {compiled.model.breakdown && <p className="facet-caption">Breakdown: {fieldName(compiled.model.breakdown, compiled.model.formatting)}</p>}
         {compiled.state === 'ready' && compiled.model.kind !== 'table' && compiled.model.kind !== 'pivot' && <details><summary>View data · {compiled.table.rows.length} {compiled.table.rows.length === 1 ? 'row' : 'rows'}</summary><DataTable compiled={compiled} interaction={interaction} /></details>}

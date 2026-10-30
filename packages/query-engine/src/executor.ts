@@ -3,6 +3,7 @@ import { realpath, stat } from 'node:fs/promises';
 import { isAbsolute, relative, resolve } from 'node:path';
 import { DuckDBInstance } from '@duckdb/node-api';
 import { planVisual } from './planner.js';
+import { liveDatasetCachePrefix, liveProvenance, liveResultCacheKey, validateLiveCache } from './live-performance.js';
 import type { ColumnType, ExecuteOptions, PlanRequest, QueryResult, ResultValue } from './types.js';
 import { fail, QueryEngineError, quoteIdentifier as q, quoteLiteral, string } from './validation.js';
 
@@ -35,6 +36,13 @@ async function runLocal(request: PlanRequest, options: ExecuteOptions, refresh: 
   const plan = planVisual(request);
   if (refresh && (plan.securityProtected || plan.localData.security.dataset === 'protected')) fail('SECURITY_REJECTED', '$.security', 'protected dataset refresh requires a scoped materialization implementation');
   const rootInput = string(options?.dataRoot, '$.options.dataRoot');
+  const policy = validateLiveCache(options?.liveCache);
+  if (refresh) policy?.cache.invalidate(liveDatasetCachePrefix(plan.localData.dataSetArn));
+  const cache = !refresh && request.security === undefined && !plan.securityProtected ? policy : undefined;
+  const key = liveResultCacheKey(plan);
+  const cached = cache?.cache.get(key);
+  if (cached) return { plan, rows: plan.postProcess ? evaluateSqlPlan(plan, cached.rows) : cached.rows,
+    provenance: { ...liveProvenance(plan), source: 'cache', cachedAt: cached.cachedAt } };
   let csvPath: string;
   try {
     const root = await realpath(rootInput);
@@ -76,7 +84,10 @@ async function runLocal(request: PlanRequest, options: ExecuteOptions, refresh: 
       const reader = await connection.runAndReadAll(refresh ? `SELECT COUNT(*) AS rows FROM ${q(plan.tableName)}` : plan.sql, refresh ? [] : [...plan.parameters]);
       const names = reader.columnNames();
       const rows = reader.getRows().map((values) => Object.fromEntries(names.map((name, i) => [name, resultValue(values[i])])));
-      return { plan, rows: !refresh && plan.postProcess ? evaluateSqlPlan(plan, rows) : rows };
+      const resultRows = !refresh && plan.postProcess ? evaluateSqlPlan(plan, rows) : rows;
+      // Cache SQL rows: post-processing is not represented in the SQL cache key.
+      cache?.cache.set(key, rows, cache.ttlMs);
+      return { plan, rows: resultRows, provenance: liveProvenance(plan) };
     } finally {
       connection.closeSync();
     }

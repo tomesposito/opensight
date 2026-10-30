@@ -3,12 +3,12 @@ import { declaration, type AuthorParameter } from './parameters.js';
 import type { AuthorControl } from './controls.js';
 import { authorVisualProblem, noDimensions, visualDimensions, dataFields, type AuthorDataset, type CalculatedField, type AuthorVisual } from './authoring.js';
 import { FACETED_KINDS } from './facet-layout.js';
-import type { createApiClient, QueryRequest } from './api-client.js';
+import type { createApiClient, QueryRequest, QueryResponse } from './api-client.js';
 import { ApiError } from './api-client.js';
 import type { Row } from './model.js';
 
 export type QueryClient = Pick<ReturnType<typeof createApiClient>, 'queryDataset'> & Partial<Pick<ReturnType<typeof createApiClient>, 'getDatasetRefreshStatus' | 'queryO' | 'getDatasetExecution' | 'setDatasetExecution' | 'refreshBlaze' | 'getPreparedRows' | 'listPrepSources'>> & { dataset?: AuthorDataset };
-export interface AuthorRows { rows: Row[] | null; message?: string }
+export interface AuthorRows { rows: Row[] | null; message?: string; provenance?: QueryResponse['provenance'] }
 
 export function buildAuthorQuery(visual: AuthorVisual, calculations: readonly CalculatedField[] = [], parameters: readonly AuthorParameter[] = [], dataset?: AuthorDataset): QueryRequest | null {
   if (authorVisualProblem(visual) || unresolvedVisualFieldDiagnostics(visual, calculations, dataset, parameters).length) return null;
@@ -61,7 +61,7 @@ export async function loadAuthorRows(client: QueryClient, request: QueryRequest,
       try {
         const result = await client.queryDataset(client.dataset?.id ?? 'sales', request, signal);
         signal.throwIfAborted();
-        return { rows: result.rows };
+        return { rows: result.rows, ...(result.provenance ? { provenance: result.provenance } : {}) };
       } catch (error) {
         // A reopened visual can arrive before the cancelled previous read has
         // released the local prepared-data gate. Retry only that named conflict.

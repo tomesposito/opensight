@@ -34,5 +34,5 @@ export function LiveAuthorVisual({ visual, theme, client, calculations, paramete
   const preview = useMemo(() => ({ ...buildAuthorVisual(visual, calculations, client?.dataset), theme, rows: current?.rows ?? null }), [visual, current, calculations, theme, client?.dataset]);
   useEffect(() => { storeVisualRows(visual.id, preview.rows); return () => { clearVisualRows(visual.id); }; }, [visual.id, preview.rows]);
   // Clear previous results immediately when assignments change, even before the effect runs.
-  return <VisualCard interaction={interaction} onRowGroupToggle={onRowGroupToggle} visual={preview} loading={!!request && !current} dataMessage={fieldProblem ?? current?.message} />;
+  return <VisualCard interaction={interaction} onRowGroupToggle={onRowGroupToggle} visual={preview} loading={!!request && !current} dataMessage={fieldProblem ?? current?.message} provenance={current?.provenance} />;
 }

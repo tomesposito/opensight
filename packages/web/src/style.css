@@ -349,6 +349,7 @@ details[open] .menu-popover { animation: menu-open 150ms ease-out; }
 .empty-state p { color: #687e89; font-size: 13px; max-width: 300px; line-height: 1.6; }
 .empty-state small { border: 1px solid #dce5e9; border-radius: 4px; padding: 6px 10px; color: #526c7a; }
 .card-footer { padding: 0 20px; font-size: 11px; color: #607784; }
+.query-provenance { display: block; padding: 4px 0; font: 12px Arial, "Helvetica Neue", Helvetica, sans-serif; overflow-wrap: anywhere; }
 .card-footer details { border-top: 1px solid #edf1f3; padding: 9px 0; }
 .card-footer summary:hover { background: #eaf3f7; }
 .facet-caption { text-align: center; font-size: 12px; color: #526c7a; margin: 6px 0 2px; }

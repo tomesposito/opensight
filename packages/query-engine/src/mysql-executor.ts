@@ -52,7 +52,7 @@ export async function executeMySql(request: PlanRequest, options: MySqlExecuteOp
     const [rows, fields] = await client.execute<RowDataPacket[]>({ sql: plan.sql, values: [...plan.parameters], timeout: 10000 });
     const numericTypes = new Set([0, 1, 2, 3, 4, 5, 8, 9, 13, 246]);
     const converted = rows.map(row => Object.fromEntries(fields.map((f, i) => [f.name, value(row[i] as unknown, numericTypes.has(f.type ?? -1))])));
-    return { plan, rows: plan.postProcess ? evaluateSqlPlan(plan, converted) : converted };
+    return { plan, rows: plan.postProcess ? evaluateSqlPlan(plan, converted) : converted, provenance: { source: 'live' } };
   } catch (error) {
     if (error instanceof QueryEngineError) throw error;
     throw new QueryEngineError('EXECUTION_ERROR', '$.mysql', 'MySQL connection or query failed');

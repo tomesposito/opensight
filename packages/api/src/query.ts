@@ -139,11 +139,11 @@ export class SalesQuery {
   }
 
   async execute(body: QueryBody, identity?: Identity) {
-    const { plan, rows } = await executeLocal(this.secured(interactiveRequest(body, this.metadata), identity), { dataRoot: this.dataRoot });
+    const { plan, rows, provenance } = await executeLocal(this.secured(interactiveRequest(body, this.metadata), identity), { dataRoot: this.dataRoot });
     return {
       columns: [...plan.dimensions.map(field => ({ name: field.outputName, type: 'string' as const })),
         ...plan.measures.map(field => ({ name: field.outputName, type: 'number' as const }))],
-      rows,
+      rows, provenance,
     };
   }
 

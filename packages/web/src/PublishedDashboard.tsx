@@ -72,17 +72,17 @@ function PublishedContent({ value, client }: { value: Definition; client: Reader
 }
 function PublishedVisual({ visual, value, controls, client }: { visual: FixtureVisual; value: Definition; controls: ControlValues; client: ReaderClient }) {
   const key = JSON.stringify([value.id, value.version, viewVisualId(visual), controls]);
-  const [state, setState] = useState<{ key: string; rows: FixtureVisual['rows']; error?: string }>();
+  const [state, setState] = useState<{ key: string; rows: FixtureVisual['rows']; error?: string; provenance?: import('./api-client.js').QueryResponse['provenance'] }>();
   useEffect(() => {
     const abort = new AbortController();
     void client.queryDashboardVisual(value.id, value.version, viewVisualId(visual), controls, abort.signal)
-      .then(result => { if (!abort.signal.aborted) setState({ key, rows: result.rows }); })
+      .then(result => { if (!abort.signal.aborted) setState({ key, rows: result.rows, provenance: result.provenance }); })
       .catch((error: unknown) => { if (!abort.signal.aborted) setState({ key, rows: null, error: error instanceof Error ? error.message : String(error) }); });
     return () => abort.abort();
   }, [client, key]);
   const current = state?.key === key ? state : undefined;
   const bindings = useMemo(() => { try { return publishedBindings(visual); } catch { return {}; } }, [visual]);
-  return <VisualCard visual={{ ...visual, bindings, rows: current?.rows ?? null }} loading={!current} dataMessage={current?.error} />;
+  return <VisualCard visual={{ ...visual, bindings, rows: current?.rows ?? null }} loading={!current} dataMessage={current?.error} provenance={current?.provenance} />;
 }
 
 function DashboardAccess({ id, client }: { id: string; client: ReaderClient }) {

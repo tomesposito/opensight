@@ -1,11 +1,44 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { Client, types } from 'pg';
-import { executePostgres, QueryEngineError } from '@opensight/query-engine';
+import { executePostgres, LiveResultCache, QueryEngineError } from '@opensight/query-engine';
 import { calculation, request } from './helpers.mjs';
 
 const options = { connectionString: 'postgres://user:secret@example.invalid/test' };
 const empty = { fields: [], rows: [] };
+
+test('Postgres aggregate execution and result caching share the caller-owned options seam', async t => {
+  const mocks = mockClient(t, { query: config => typeof config === 'string' ? empty : {
+    fields: [{ name: 'revenue', dataTypeID: types.builtins.FLOAT8 }], rows: [['500']],
+  } });
+  let now = 1000;
+  const cache = new LiveResultCache({ now: () => now });
+  const configured = { ...options, liveCache: { cache, ttlMs: 100 }, aggregates: [{ name: 'regional sales', tableName: 'sales_summary', tableSchema: 'reporting',
+    dimensions: [{ columnName: 'region' }], measures: [{ columnName: 'revenue', aggregation: 'SUM' }] }] };
+  const first = await executePostgres(request(), configured);
+  assert.match(first.plan.sql, /FROM "reporting"\."sales_summary"/);
+  assert.deepEqual(first.provenance, { source: 'aggregate', aggregateName: 'regional sales' });
+  const second = await executePostgres(request(), configured);
+  assert.deepEqual(second.rows, first.rows);
+  assert.notEqual(second.plan, first.plan);
+  assert.deepEqual(second.provenance, { source: 'cache', aggregateName: 'regional sales', cachedAt: new Date(now).toISOString() });
+  assert.equal(mocks.connectMock.mock.callCount(), 1);
+  now += 100;
+  assert.equal((await executePostgres(request(), configured)).provenance.source, 'aggregate');
+  assert.equal(mocks.connectMock.mock.callCount(), 2);
+});
+
+test('Postgres never accesses the cache with a security context, including an unprotected policy', async t => {
+  const mocks = mockClient(t);
+  const cache = new LiveResultCache(), configured = { ...options, liveCache: { cache, ttlMs: 1000 } };
+  const r = request(); await executePostgres(r, configured);
+  const stats = cache.stats();
+  r.security = { namespaceId: 'default', userId: 'alice', users: [{ id: 'alice', namespaceId: 'default' }], groups: [],
+    policy: { namespaceId: 'default', dataSetArn: r.localData.dataSetArn, rowLevel: false, rowRules: [] } };
+  for (let i = 0; i < 2; i++) assert.equal((await executePostgres(r, configured)).provenance.source, 'live');
+  assert.equal(mocks.connectMock.mock.callCount(), 3);
+  assert.deepEqual(cache.stats(), stats);
+});
 
 function mockClient(t, { query = () => empty, connect = () => {}, end = () => {} } = {}) {
   const clients = [];

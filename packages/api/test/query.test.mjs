@@ -59,7 +59,7 @@ test('query computes MONTH and multiple dimensions after all requested equality 
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), { columns: [{ name: 'month', type: 'string' }, { name: 'category', type: 'string' }, { name: 'total', type: 'number' }], rows: [
     { month: '2025-01', category: 'Hardware', total: 100 }, { month: '2025-03', category: 'Hardware', total: 0 }, { month: '2025-04', category: 'Hardware', total: 100 },
-  ] });
+  ], provenance: { source: 'live' } });
 });
 
 test('KPI totals use all sales rows, and filter values remain parameterized', async t => {

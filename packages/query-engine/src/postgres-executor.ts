@@ -1,6 +1,7 @@
 import { evaluateSqlPlan } from './evaluate.js';
 import { Client, types } from 'pg';
 import { planVisual } from './planner.js';
+import { liveProvenance, liveResultCacheKey, validateLiveCache } from './live-performance.js';
 import type { PlanRequest, PostgresExecuteOptions, QueryResult, ResultValue } from './types.js';
 import { fail, QueryEngineError, string } from './validation.js';
 
@@ -27,8 +28,14 @@ function resultValue(value: unknown, oid: number): ResultValue {
 
 /** Validate and plan before connecting. Each call owns and closes one client. */
 export async function executePostgres(request: PlanRequest, options: PostgresExecuteOptions): Promise<QueryResult> {
-  const plan = planVisual(request, { dialect: 'postgres' });
+  const plan = planVisual(request, { dialect: 'postgres', aggregates: options?.aggregates });
   const connectionString = string(options?.connectionString, '$.options.connectionString');
+  const policy = validateLiveCache(options?.liveCache);
+  const cache = request.security === undefined && !plan.securityProtected ? policy : undefined;
+  const key = liveResultCacheKey(plan);
+  const cached = cache?.cache.get(key);
+  if (cached) return { plan, rows: plan.postProcess ? evaluateSqlPlan(plan, cached.rows) : cached.rows,
+    provenance: { ...liveProvenance(plan), source: 'cache', cachedAt: cached.cachedAt } };
   try {
     const client = new Client({ connectionString });
     try {
@@ -43,7 +50,10 @@ export async function executePostgres(request: PlanRequest, options: PostgresExe
       });
       const rows = result.rows.map(values => Object.fromEntries(result.fields.map((field, i) =>
         [field.name, resultValue(values[i], field.dataTypeID)])));
-      return { plan, rows: plan.postProcess ? evaluateSqlPlan(plan, rows) : rows };
+      const resultRows = plan.postProcess ? evaluateSqlPlan(plan, rows) : rows;
+      // Cache SQL rows: post-processing is not represented in the SQL cache key.
+      cache?.cache.set(key, rows, cache.ttlMs);
+      return { plan, rows: resultRows, provenance: liveProvenance(plan) };
     } finally {
       await client.end();
     }

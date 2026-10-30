@@ -5,6 +5,8 @@ export type Aggregation = 'SUM' | 'AVG' | 'COUNT' | 'MIN' | 'MAX';
 export type SqlDialect = 'duckdb' | 'postgres' | 'mysql';
 export interface PlanOptions {
   readonly dialect?: SqlDialect;
+  /** Trusted caller-owned configuration; do not accept assertions from an imported asset. */
+  readonly aggregates?: readonly import('./live-performance.js').AggregateTableDeclaration[];
 }
 export interface SourceLocation {
   readonly path: string;
@@ -89,6 +91,7 @@ export interface PlanRequest {
   readonly visualId: string;
 }
 export interface QueryPlan {
+  readonly executionSource: { readonly kind: 'source' } | { readonly kind: 'aggregate'; readonly name: string };
   readonly securityProtected?: boolean;
   readonly deniedColumns?: readonly string[];
   readonly rowSecurity?: import('./security.js').RowPredicate;
@@ -116,12 +119,23 @@ export type ResultRow = Record<string, ResultValue>;
 export interface QueryResult {
   readonly plan: QueryPlan;
   readonly rows: ResultRow[];
+  readonly provenance: {
+    readonly source: 'live' | 'cache' | 'aggregate';
+    readonly aggregateName?: string;
+    readonly cachedAt?: string;
+  };
 }
 export interface ExecuteOptions {
   /** CSV must resolve to a regular file inside this caller-selected directory. */
   readonly dataRoot: string;
+  /** Trusted caller-owned configuration; do not accept assertions from an imported asset. */
+  readonly liveCache?: import('./live-performance.js').LiveCachePolicy;
 }
 export interface PostgresExecuteOptions {
   /** Trusted caller-owned connection details, never taken from imported metadata. */
   readonly connectionString: string;
+  /** Trusted caller-owned configuration; do not accept assertions from an imported asset. */
+  readonly aggregates?: readonly import('./live-performance.js').AggregateTableDeclaration[];
+  /** Trusted caller-owned configuration; do not accept assertions from an imported asset. */
+  readonly liveCache?: import('./live-performance.js').LiveCachePolicy;
 }

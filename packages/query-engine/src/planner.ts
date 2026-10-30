@@ -7,6 +7,7 @@ import { functionReference, functionError } from './catalog.js';
 import { validateParameters, type ParameterValue } from './parameters.js';
 import { ExpressionBinder, expressionSql } from './expressions.js';
 import { bindMetadata } from './metadata.js';
+import { matchingAggregate, validateAggregates } from './live-performance.js';
 import type { Aggregation, Dimension, Measure, PlanOptions, PlanRequest, QueryPlan, RowFilter, RowExpression } from './types.js';
 import { array, emptyArray, equals, fail, keys, object, quoteIdentifier, string, unique, variant } from './validation.js';
 import type { ObjectValue } from './validation.js';
@@ -236,7 +237,7 @@ function fieldWells(visual: Visual, binder: ExpressionBinder): { dimensions: Dim
   return { dimensions, measures };
 }
 
-function sql(plan: Omit<QueryPlan, 'sql' | 'parameters'>, parameters: ParameterValue[]): string {
+function sql(plan: Omit<QueryPlan, 'sql' | 'parameters'>, parameters: ParameterValue[], countColumn?: string): string {
   const q = (value: string) => quoteIdentifier(value, plan.dialect);
   const bind = (value: ParameterValue): string => { parameters.push(value); return `$${parameters.length}`; };
   const ctes: string[] = [];
@@ -286,7 +287,7 @@ function sql(plan: Omit<QueryPlan, 'sql' | 'parameters'>, parameters: ParameterV
   const projections = [
     ...dimensions.map((expression, i) => `${expression} AS ${q(plan.dimensions[i]!.outputName)}`),
     ...plan.measures.map(m => { const c = plan.calculations.find(c => c.name === m.columnName && c.expression.level === 'aggregate');
-      return `${c ? expressionSql(expand(c.expression), plan.dialect, bind) : `${m.aggregation}(${q(m.columnName)})`} AS ${q(m.outputName)}`; }),
+      return `${c ? expressionSql(expand(c.expression), plan.dialect, bind) : m.aggregation === 'COUNT' && countColumn !== undefined ? `COALESCE(SUM(${q(countColumn)}), 0)` : `${m.aggregation}(${q(m.columnName)})`} AS ${q(m.outputName)}`; }),
   ];
   const positions = dimensions.map((_, i) => i + 1).join(', ');
   return `${ctes.length ? `WITH ${ctes.join(',\n')}\n` : ''}SELECT ${projections.join(', ')}\nFROM ${from}` +
@@ -296,12 +297,13 @@ function sql(plan: Omit<QueryPlan, 'sql' | 'parameters'>, parameters: ParameterV
 /** Plan a synthetic local visual. Unknown execution semantics fail closed. */
 export function planVisual(request: PlanRequest, options: PlanOptions = {}): QueryPlan {
   const opts = object(options, '$.options');
-  keys(opts, ['dialect'], '$.options');
+  keys(opts, ['dialect', 'aggregates'], '$.options');
   const dialect = opts.dialect === undefined ? 'duckdb' : opts.dialect;
   if (dialect !== 'duckdb' && dialect !== 'postgres' && dialect !== 'mysql') fail('UNSUPPORTED_FEATURE', '$.options.dialect', 'expected duckdb, postgres or mysql');
   const r = object(request, '$');
   keys(r, ['analysis', 'dataSet', 'dataSource', 'localData', 'visualId', 'parameterDeclarations', 'parameterBindings', 'parameterFilters', 'security'], '$');
   const metadata = bindMetadata(r.dataSet, r.dataSource, r.localData, r.security !== undefined);
+  const aggregates = opts.aggregates === undefined ? [] : validateAggregates(opts.aggregates, metadata.columns);
   const security = r.security === undefined ? undefined : resolveSecurity(r.security, metadata.columns, metadata.localData.dataSetArn);
   if (metadata.localData.security.dataset === 'protected' && !security?.protected) fail('SECURITY_REJECTED', '$.security', 'protected dataset requires an active policy');
   const rowSecurity = security?.rowPredicate;
@@ -354,7 +356,8 @@ export function planVisual(request: PlanRequest, options: PlanOptions = {}): Que
     for (const arg of node.args) if (arg.kind === 'list') checkGroupField(arg, node);
     if (node.name.startsWith('periodOverPeriod')) checkGroupField(node.args[1]!, node);
   }
-  const plan: Omit<QueryPlan, 'sql' | 'parameters'> = {
+  let plan: Omit<QueryPlan, 'sql' | 'parameters'> = {
+    executionSource: { kind: 'source' },
     ...(security?.protected ? { securityProtected: true, deniedColumns: security.deniedColumns } : {}),
     ...(rowSecurity ? { rowSecurity } : {}),
     dialect, mode: 'synthetic-local', visualId, dataSetIdentifier: identifier,
@@ -364,7 +367,12 @@ export function planVisual(request: PlanRequest, options: PlanOptions = {}): Que
     ...(allNodes.some(e => ['table', 'pre_filter', 'pre_agg'].includes(e.level)) || predicates.some(f => ['aggregate', 'table'].includes(binder.bind(f.columnName, f.path).level ?? 'row')) ? { postProcess: true } : {}),
     stages: ['source', 'row-calculations', 'row-filters', 'visual-aggregation', 'order'],
   };
+  const aggregate = matchingAggregate(plan, aggregates);
+  if (aggregate) {
+    plan = { ...plan, tableName: aggregate.tableName, tableSchema: dialect === 'duckdb' ? undefined : aggregate.tableSchema,
+      executionSource: { kind: 'aggregate', name: aggregate.name } };
+  }
   const values: ParameterValue[] = [];
-  const statement = sql(plan, values);
+  const statement = sql(plan, values, aggregate?.countColumn);
   return { ...plan, ...(dialect === 'mysql' ? mysqlBindings(statement, values) : { sql: statement, parameters: values }) };
 }
