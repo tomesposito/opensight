@@ -82,3 +82,14 @@ test('description round-trips ordinary interpretations and describes immutable e
   assert.equal(fallback.explanation, 'Showing sum of revenue by region and category; table used for this grouping.');
   assert.equal(describeInterpretation(fallback, 'pie'), fallback.explanation);
 });
+
+test('a defined field named like an aggregation word wins over the keyword', () => {
+  const schema = [
+    { name: 'Total', type: 'DECIMAL' }, { name: 'Region', type: 'STRING' }, { name: 'revenue', type: 'DECIMAL' },
+  ];
+  const i = interpretQuestion('sum Total by Region', schema).interpretations[0];
+  assert.equal(i.measure, 'Total'); assert.equal(i.aggregation, 'SUM');
+  // Without such a field, the same word remains the aggregation keyword.
+  const j = interpretQuestion('total revenue by Region', schema.slice(1)).interpretations[0];
+  assert.equal(j.measure, 'revenue'); assert.equal(j.aggregation, 'SUM');
+});

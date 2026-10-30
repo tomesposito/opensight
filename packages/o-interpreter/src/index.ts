@@ -150,7 +150,13 @@ export function interpretQuestion(question: string, schema: readonly SchemaField
     }
     if (word === 'over' && tokens[i + 1]?.word === 'time') { time = true; granularity ??= 'MONTH'; i += 2; continue; }
     if (Object.hasOwn(grains, word)) { granularity = grains[word]!; time = true; i++; continue; }
-    if (Object.hasOwn(aggregates, word)) { aggregations.push(aggregates[word]!); i++; continue; }
+    if (Object.hasOwn(aggregates, word)) {
+      // A defined field literally named like an aggregation word ("Total") is
+      // part of the closed vocabulary and wins over the keyword: fall through
+      // to field matching instead of consuming the token as an aggregation.
+      const m = fieldAt(i);
+      if (!(m && !m.alias && m.length === 1 && words(m.fields[0]!.name).join(' ') === word)) { aggregations.push(aggregates[word]!); i++; continue; }
+    }
     if (['rows', 'records'].includes(word) && aggregations.includes('COUNT')) { countRows = true; i++; continue; }
     if (charts.has(word)) { hint = word === 'trend' ? 'line' : word as typeof hint; if (word === 'trend') { time = true; granularity ??= 'MONTH'; } i++; continue; }
     const m = fieldAt(i);
