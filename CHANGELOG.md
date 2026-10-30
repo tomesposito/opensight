@@ -13,6 +13,12 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Added
 
+- Ask O answers are grounded and inspectable: every answer names the defined
+  fields it used, any field synonyms it matched (declared in dataset field
+  metadata, e.g. "sales" for revenue), and any question terms it did not
+  understand; the interpretation is shown as editable steps (aggregation,
+  group-by, filters, Top N, granularity, visual type) that re-run the normal
+  preview and add-to-analysis path when changed (#158).
 - Spreadsheet-style data-prep previews with numbered rows, typed column headers,
   and formula, filter, and rename shortcuts that create ordinary validated
   preparation steps (#156).
