@@ -2,22 +2,22 @@
 .data-page { max-width: 1440px; margin: 0 auto; padding: 24px 32px; }
 .data-page h1 { font-size: 24px; font-weight: 400; margin: 0 0 16px; }
 .data-page h2, .data-dialog h2 { font-size: 16px; font-weight: 500; margin: 0 0 8px; }
-.data-card { padding: 16px; background: white; border: 1px solid #d9e1e5; border-radius: 6px; box-shadow: 0 1px 2px #19384a14; }
+.data-card { padding: 16px; background: white; border: 1px solid #d9e1e5; border-radius: 6px; box-shadow: 0 1px 2px #1b274014; }
 .data-toolbar, .data-tools, .data-dialog-tools, .data-detail-heading { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 .data-toolbar { justify-content: space-between; margin-bottom: 16px; }
 .data-page button, .data-dialog button, .data-page select, .data-dialog select, .data-page input, .data-dialog input { font: inherit; }
 .data-page button, .data-dialog button { border: 1px solid #8ca6b4; border-radius: 3px; padding: 4px 12px; background: white; color: #176482; }
 .data-page button:disabled, .data-dialog button:disabled { color: #65737b; border-color: #c7cfd3; background: #f0f2f3; cursor: not-allowed; }
-.data-page .data-primary, .data-dialog .data-primary { color: white; background: #176b88; border-color: #176b88; }
+.data-page .data-primary, .data-dialog .data-primary { color: white; background: #2f66d8; border-color: #2f66d8; }
 /* Issue #108 polish slice 16: every control on the Data landing now gives
-   hover feedback. The teal create controls darken (#176b88 -> #145d76, the
-   same ~13% step the app-wide #157f88 -> #126e76 primary-button hover uses);
+   hover feedback. The teal create controls darken (#2f66d8 -> #1e4fa3, the
+   same ~13% step the app-wide #3b82f6 -> #2f66d8 primary-button hover uses);
    plain buttons and unselected tabs take the data page's established
-   menu-item hover tint (#eaf3f7). Disabled controls and the selected tab
+   menu-item hover tint (#e8eefb). Disabled controls and the selected tab
    keep their flat state. */
 .data-page .data-primary:hover:not(:disabled), .data-dialog .data-primary:hover:not(:disabled),
-.data-split > .data-menu > summary:hover { background: #145d76; }
-.data-page button:hover:not(:disabled):not(.data-primary):not([aria-selected=true]) { background: #eaf3f7; }
+.data-split > .data-menu > summary:hover { background: #1e4fa3; }
+.data-page button:hover:not(:disabled):not(.data-primary):not([aria-selected=true]) { background: #e8eefb; }
 /* Issue #108 polish slice 30: the create-dataset dialog's plain buttons
    ("Upload file", "Create data source" in .data-dialog-tools) had zero hover
    state — a fresh behavioral hover audit extended past the 5 landing routes
@@ -26,11 +26,11 @@
    largest remaining zero-hover control class. Slice 16's rule covered
    .data-page buttons but not .data-dialog buttons, and the dialog buttons
    share the data surface's plain-button style (white bg, teal text), so they
-   take the same established menu-item tint (#eaf3f7). This also gives the
+   take the same established menu-item tint (#e8eefb). This also gives the
    dialog header/footer plain buttons hover feedback for the first time.
    Background only, so resting geometry is identical; disabled buttons keep
    their flat state. Static (no animation), so no reduced-motion variant. */
-.data-dialog button:hover:not(:disabled):not(.data-primary):not([aria-selected=true]) { background: #eaf3f7; }
+.data-dialog button:hover:not(:disabled):not(.data-primary):not([aria-selected=true]) { background: #e8eefb; }
 /* Issue #108 polish slice 48: the data dialogs' fields (the create-dataset
    dialog's "Search data sources" input, the connector config form's text
    inputs and selects in ManageData / DatasetDetail / DatasetRefresh — all
@@ -40,28 +40,28 @@
    white while the dialog buttons beside them tinted (slices 16/30). Slices
    21/27 gave the .data-page select and search input this same tint but never
    the dialog fields, which share the data surface's field style (white bg,
-   #9eb0ba border). They take the same established menu-item tint (#eaf3f7).
+   #9eb0ba border). They take the same established menu-item tint (#e8eefb).
    Native radio/checkbox/file inputs keep their OS rendering (the slice-44
    exclusion pattern). Background only, so resting geometry is identical;
    disabled fields keep their flat state. Static (no animation), so no
    reduced-motion variant. */
-.data-dialog input:hover:not(:disabled):not([type=radio]):not([type=checkbox]):not([type=file]), .data-dialog select:hover:not(:disabled) { background: #eaf3f7; }
+.data-dialog input:hover:not(:disabled):not([type=radio]):not([type=checkbox]):not([type=file]), .data-dialog select:hover:not(:disabled) { background: #e8eefb; }
 /* Issue #108 polish slice 21: the Data landing's dataset filter select was the
    last interactive control on the surface with zero hover feedback — the fresh
    audit found the surrounding buttons and tabs already take the data page's
-   established menu-item tint (#eaf3f7, slice 16) while hovering the select
+   established menu-item tint (#e8eefb, slice 16) while hovering the select
    changed nothing. It takes the same tint; disabled selects keep their flat
    state. Background only, so resting geometry is identical. */
-.data-page select:hover:not(:disabled) { background: #eaf3f7; }
+.data-page select:hover:not(:disabled) { background: #e8eefb; }
 /* Issue #108 polish slice 27: the Data landing's dataset search input was the
    last interactive control on the landing surfaces with zero hover feedback —
    a fresh interactive-state audit (home/my-stuff/analyses/dashboards/data,
    in-page CLS 0 on every route, no page errors) found the surrounding buttons,
    tabs, and the filter select already take the data page's established
-   menu-item tint (#eaf3f7, slices 16/21) while hovering the search input
+   menu-item tint (#e8eefb, slices 16/21) while hovering the search input
    changed nothing. It takes the same tint; disabled inputs keep their flat
    state. Background only, so resting geometry is identical. */
-.data-page input[type=search]:hover:not(:disabled) { background: #eaf3f7; }
+.data-page input[type=search]:hover:not(:disabled) { background: #e8eefb; }
 /* Issue #108 polish slice 48: the create-dataset dialog's search inputs
    ("Search data sources" / "Search connectors", .data-dialog-tools) had
    zero hover state — a fresh behavioral hover audit that opened both
@@ -70,30 +70,30 @@
    beside them tinted (slice 30). Slice 27's rule covered .data-page search
    inputs but not .data-dialog ones — the same unfinished-member pattern
    slice 30 fixed for dialog buttons. They take the data surface's
-   established menu-item tint (#eaf3f7). Background only, so resting
+   established menu-item tint (#e8eefb). Background only, so resting
    geometry is identical; disabled inputs keep their flat state. */
-.data-dialog input[type=search]:hover:not(:disabled) { background: #eaf3f7; }
+.data-dialog input[type=search]:hover:not(:disabled) { background: #e8eefb; }
 .data-page input, .data-dialog input, .data-page select, .data-dialog select { padding: 4px 8px; border: 1px solid #9eb0ba; border-radius: 3px; background: white; color: inherit; }
 .data-tools { margin: 0 0 12px; }
 .data-tools input[type=search], .data-dialog-tools input[type=search] { width: 260px; max-width: 100%; }
 .data-reload { margin-left: auto; }
 .data-tabs { display: flex; gap: 4px; }
 .data-tabs button { border: 0; border-radius: 0; padding: 8px 12px; color: #233b49; background: transparent; border-bottom: 2px solid transparent; }
-.data-tabs button[aria-selected=true] { border-bottom-color: #176b88; background: #eff4f6; font-weight: bold; }
+.data-tabs button[aria-selected=true] { border-bottom-color: #2f66d8; background: #eff4f6; font-weight: bold; }
 /* Issue #108 polish slice 28: the selected data-page tab ("Datasets", …) was
    the last interactive control on the landing surfaces with zero hover
    feedback — a fresh interactive-state audit (home/my-stuff/analyses/
    dashboards/data, in-page CLS 0 on every route, no page errors) found the
    unselected tabs already take the data page's established menu-item tint
-   (#eaf3f7, slices 16/21) while hovering the selected tab changed nothing.
+   (#e8eefb, slices 16/21) while hovering the selected tab changed nothing.
    The selected tab takes the same tint on hover: it stays visually distinct
    from unselected tabs at rest, and reads interactive on hover. Background
    only, so resting geometry is identical; disabled tabs keep their flat
    state. */
-.data-tabs button[aria-selected=true]:hover:not(:disabled) { background: #eaf3f7; }
+.data-tabs button[aria-selected=true]:hover:not(:disabled) { background: #e8eefb; }
 .data-split { display: flex; align-items: stretch; }
 .data-split > button { border-radius: 3px 0 0 3px; }
-.data-split > .data-menu > summary { background: #176b88; color: white; border-radius: 0 3px 3px 0; border-left: 1px solid #7facbd; padding: 4px 8px; height: 100%; }
+.data-split > .data-menu > summary { background: #2f66d8; color: white; border-radius: 0 3px 3px 0; border-left: 1px solid #7facbd; padding: 4px 8px; height: 100%; }
 .data-menu { position: relative; display: inline-block; }
 .data-menu > summary { list-style: none; padding: 0 8px; font-size: 16px; cursor: pointer; display: flex; align-items: center; }
 .data-menu > summary::-webkit-details-marker { display: none; }
@@ -102,20 +102,20 @@
    in the Data landing's dataset rows and DatasetDetail's standalone
    "Dataset actions" menu) had no hover state outside .data-split.
    Slice 16 gave the split-button variant its hover (.data-split >
-   .data-menu > summary:hover, #145d76 on its teal #176b88 rest), but
+   .data-menu > summary:hover, #1e4fa3 on its teal #2f66d8 rest), but
    the plain variant rests transparent and matched no :hover rule: the
    data page's button hover is button-only and a summary is not a
    button, and every other summary:hover rule is scoped elsewhere. A
    CSSOM probe with all five real stylesheets (1,337 rules) in the real
    ancestor context confirmed zero matching :hover rules and a
    transparent rest, while the split neighbour rests rgb(23,107,136).
-   It now takes the data surface's established hover tint (#eaf3f7,
+   It now takes the data surface's established hover tint (#e8eefb,
    slices 16/20/104), so no new colour is introduced. The split rule
    (0,3,1) still beats this rule (0,2,1) for the split variant, so its
    teal hover is unchanged. Background only, so resting geometry is
    identical; static (no animation), so no reduced-motion variant is
    needed. The data surface is fixed light, so no dark variant. */
-.data-menu > summary:hover { background: #eaf3f7; }
+.data-menu > summary:hover { background: #e8eefb; }
 /* Issue #108 polish slice 86: the plain AppLink links on the dataset
    detail page (DatasetDetail.tsx — the .data-breadcrumb "Datasets"
    link, the standalone "‹ Datasets" link under it, the Usage tab's
@@ -134,19 +134,19 @@
    rest == hover on every paint property. DatasetDetail is a
    sub-route (reached only by opening a dataset), the same blind spot
    slices 81/85 noted for this page. The links now take the data
-   surface's established hover tint (#eaf3f7, slices 16/20/50/85), so
+   surface's established hover tint (#e8eefb, slices 16/20/50/85), so
    no new colour is introduced; the scope is tight in practice — the
    only .data-page roots are DataLanding (renders no <a>), DataPrep's
    opening branch (buttons only) and DatasetDetail. Background only,
    so the UA link colour/underline and resting geometry are identical;
    static (no animation), so no reduced-motion variant is needed.
    The data surface is fixed light, so no dark variant. */
-.data-page a:hover { background: #eaf3f7; }
-.data-menu-items { position: absolute; right: 0; top: 100%; z-index: 15; width: max-content; max-width: 300px; background: white; border: 1px solid #bbcbd3; box-shadow: 0 4px 12px #19384a33; padding: 4px; }
+.data-page a:hover { background: #e8eefb; }
+.data-menu-items { position: absolute; right: 0; top: 100%; z-index: 15; width: max-content; max-width: 300px; background: white; border: 1px solid #bbcbd3; box-shadow: 0 4px 12px #1b274033; padding: 4px; }
 details[open] .data-menu-items { animation: menu-open 150ms ease-out; }
 @media (prefers-reduced-motion: reduce) { details[open] .data-menu-items { animation: none; } }
 .data-menu-items button { display: block; border: 0; text-align: left; width: 100%; }
-.data-menu-items button:hover { background: #eaf3f7; }
+.data-menu-items button:hover { background: #e8eefb; }
 .data-table-scroll { overflow-x: auto; }
 .data-table { width: 100%; border-collapse: collapse; text-align: left; }
 .data-table th { font-size: 12px; padding: 8px; border-bottom: 1px solid #c8d5dc; font-weight: bold; white-space: nowrap; }
@@ -177,23 +177,23 @@ details[open] .data-menu-items { animation: menu-open 150ms ease-out; }
 @media (max-width: 700px) { .data-page { padding: 16px 8px; } .data-toolbar { align-items: start; } .data-badges { display: flex; margin: 4px 0 0; } .data-dialog { width: calc(100vw - 16px); } }
 .data-connector-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .data-connector-tile { display: flex; gap: 12px; align-items: center; padding: 16px 12px; border: 1px solid #d3dfe5; border-radius: 4px; cursor: pointer; }
-.data-connector-tile[data-selected=true] { border-color: #176b88; background: #f0f8fb; }
-.data-connector-tile:hover:not([data-selected=true]):not(:has(> input:disabled)) { background: #eaf3f7; }
+.data-connector-tile[data-selected=true] { border-color: #2f66d8; background: #f0f8fb; }
+.data-connector-tile:hover:not([data-selected=true]):not(:has(> input:disabled)) { background: #e8eefb; }
 /* Issue #108 polish slice 76: the selected connector tile was the Create
    Dataset dialog's last zero-hover control — slice 49's hover rule
    explicitly excludes it, so hovering the chosen tile changed nothing
-   while every unselected enabled tile steps white -> #eaf3f7 (a real-mouse
+   while every unselected enabled tile steps white -> #e8eefb (a real-mouse
    probe on the demo dialog measured the selected tile, 301x82, at
    rgb(240,248,251) on rest and hover alike). Following slice 28's
    selected-tab language, the selected tile takes the data surface's
-   established hover tint (#eaf3f7) on hover — one visible step deeper
+   established hover tint (#e8eefb) on hover — one visible step deeper
    than its #f0f8fb resting tint; it stays distinct at rest via the tint
-   and the #176b88 border, which the hover keeps. A selected tile whose
+   and the #2f66d8 border, which the hover keeps. A selected tile whose
    connector is unimplemented (disabled radio) keeps its flat state, via
    the same :has(> input:disabled) guard slice 49 uses. Background only,
    so resting geometry is identical; static (no animation), so no
    reduced-motion variant is needed. */
-.data-connector-tile[data-selected=true]:hover:not(:has(> input:disabled)) { background: #eaf3f7; }
+.data-connector-tile[data-selected=true]:hover:not(:has(> input:disabled)) { background: #e8eefb; }
 .data-connector-tile > span:first-child { font-size: 24px; color: #387d99; }
 .data-connector-tile strong { font-weight: 500; }
 .data-connector-tile small { display: block; color: #5a6d78; }
@@ -218,7 +218,7 @@ details[open] .data-menu-items { animation: menu-open 150ms ease-out; }
    disclosure summary (the bare <details> in DatasetDetail.tsx's About
    card — the only details inside .data-summary-cards, rendered
    unconditionally on the dataset Summary tab) had no hover state.
-   Every other control on the data detail tints #eaf3f7 on hover —
+   Every other control on the data detail tints #e8eefb on hover —
    buttons via .data-page button:hover, the selected tab (slice 28),
    the filter select (slice 21), the search input (slice 27) and the
    row-menu summary (.data-row-menu summary:hover) — but a summary is
@@ -231,11 +231,11 @@ details[open] .data-menu-items { animation: menu-open 150ms ease-out; }
    :hover rules. The dataset detail is a sub-route reached by opening
    a dataset, so top-level route audits never hover it (the slices
    50/62/64/67/68 blind spot). It now takes the data surface's
-   established hover tint (#eaf3f7), so no new colour is introduced.
+   established hover tint (#e8eefb), so no new colour is introduced.
    Background only, so resting geometry is identical; static (no
    animation), so no reduced-motion variant is needed. The data
    detail surface is fixed light, so no dark variant is added. */
-.data-summary-cards details > summary:hover { background: #eaf3f7; }
+.data-summary-cards details > summary:hover { background: #e8eefb; }
 .data-refresh { display: grid; gap: 16px; }
 .data-refresh .data-email { justify-self: end; }
 .data-dialog label { display: block; }
@@ -255,16 +255,16 @@ details[open] .data-menu-items { animation: menu-open 150ms ease-out; }
    (dialog.data-dialog > form > .data-dialog-body > label) confirmed
    zero matching :hover rules and a transparent rest, while the fields
    inside the labels matched the field hover. The labels now take the
-   data surface's established hover tint (#eaf3f7 — the dialogs' own
+   data surface's established hover tint (#e8eefb — the dialogs' own
    field and button hovers), so no new colour is introduced, and
    because the label and the field inside it take the same tint,
    hovering either reads as one surface. Background only, so resting
    geometry is identical; static (no animation), so no reduced-motion
    variant is needed. The data dialogs are fixed-light surfaces, so no
    dark variant is added. Connector tiles (label.data-connector-tile)
-   already hover #eaf3f7 under their own rules, so they are unchanged
+   already hover #e8eefb under their own rules, so they are unchanged
    in effect. */
-.data-dialog label:hover { background: #eaf3f7; }
+.data-dialog label:hover { background: #e8eefb; }
 .data-dialog .data-connector-tile { display: flex; }
 @media (max-width: 900px) { .data-summary { grid-template-columns: 1fr; } .data-detail-actions { flex-wrap: wrap; } }
 .data-refresh .data-table th:first-child, .data-dialog .data-table th:first-child { width: auto; }
@@ -273,7 +273,7 @@ details[open] .data-menu-items { animation: menu-open 150ms ease-out; }
 .data-row-actions > button { margin-right: 4px; }
 .data-row-menu { display: inline-block; position: relative; }
 .data-row-menu summary { list-style: none; cursor: pointer; display: inline-flex; padding: 4px 6px; border: 1px solid #8ca6b4; border-radius: 3px; background: white; color: #176482; }
-.data-row-menu summary:hover { background: #eaf3f7; }
+.data-row-menu summary:hover { background: #e8eefb; }
 .data-row-menu summary::-webkit-details-marker { display: none; }
 .data-row-menu > div { position: absolute; right: 0; z-index: 2; background: white; border: 1px solid #a7b6bf; border-radius: 3px; box-shadow: 0 4px 12px #172d3c33; padding: 4px; min-width: 140px; }
 .data-row-menu > div > button { border: 0; width: 100%; text-align: left; }

@@ -9,7 +9,7 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // of every interactive element in packages/web/src, contexts resolved
 // through the component graph, computed style at rest vs hover in
 // Chromium with all five shipped stylesheets) found it was a
-// rule-but-no-change surface: .data-prep select:hover (#edf6fc)
+// rule-but-no-change surface: .data-prep select:hover (#e8eefb)
 // matches it, but ties the empty resting rule (.prep-key-column.empty
 // select, white) on specificity — 0-3-1 each once :not(:disabled) is
 // counted — and loses on source order, so hovering the empty select
@@ -17,7 +17,7 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // 0-2-1) hovers correctly, and the label wrapping both takes the
 // slice-104 key-column label hover. The empty select — a live
 // dropdown, not a disabled state — now takes the same prep tint
-// #edf6fc on hover, so no new colour is introduced. Background only,
+// #e8eefb on hover, so no new colour is introduced. Background only,
 // so resting geometry is identical and there is no animation.
 const styleCss = styles['style.css'];
 
@@ -25,11 +25,11 @@ const emptyHover = styleCss.match(/^\.data-prep \.prep-key-column\.empty select:
 
 test('the empty key-column select hover rule exists with the prep tint', () => {
   assert.ok(emptyHover, 'expected the empty key-column select :hover rule');
-  assert.match(emptyHover[1], /background:\s*#edf6fc/);
+  assert.match(emptyHover[1], /background:\s*#e8eefb/);
 });
 
 test('the hover tint matches the general prep select hover, so no new colour is introduced', () => {
-  assert.ok(styleCss.match(/\.data-prep select:hover:not\(:disabled\)\s*\{[^}]*background:\s*#edf6fc/), 'the general prep select hover must remain #edf6fc');
+  assert.ok(styleCss.match(/\.data-prep select:hover:not\(:disabled\)\s*\{[^}]*background:\s*#e8eefb/), 'the general prep select hover must remain #e8eefb');
 });
 
 test('the hover rule is paint-only: resting geometry cannot shift', () => {
@@ -53,7 +53,7 @@ defineHoverCases('prep-join-empty-key-select hover', {
       target: '#emptySelect',
       rule: '.data-prep .prep-key-column.empty select:hover:not(:disabled)',
       resting: { backgroundColor: 'rgb(255, 255, 255)' },
-      hovered: { backgroundColor: 'rgb(237, 246, 252)' },
+      hovered: { backgroundColor: 'rgb(232, 238, 251)' },
       paintOnly: true,
       excluded: ['#disabledSelect'],
     },
@@ -61,7 +61,7 @@ defineHoverCases('prep-join-empty-key-select hover', {
       target: '#filledSelect',
       rule: '.data-prep select:hover:not(:disabled)',
       resting: { backgroundColor: 'rgb(245, 251, 255)' },
-      hovered: { backgroundColor: 'rgb(237, 246, 252)' },
+      hovered: { backgroundColor: 'rgb(232, 238, 251)' },
       paintOnly: true,
     },
   ],

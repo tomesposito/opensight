@@ -6,7 +6,7 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // quick links. A fresh interactive-state audit of the landing surfaces found
 // `nav.my-stuff-links a` ("My analyses", "Dashboards", "My folders", "Shared
 // folders") was the last control class with zero hover state: hovering them
-// changed nothing. They take the app-wide menu-item hover tint (#eaf3f7,
+// changed nothing. They take the app-wide menu-item hover tint (#e8eefb,
 // slices 16/21). Paint-only: the rule changes the background, so resting
 // geometry is identical and there is no animation to need a reduced-motion
 // variant.
@@ -16,7 +16,7 @@ const linksRule = chromeCss.match(/\.my-stuff-links\s+a:hover\s*\{([^}]*)\}/);
 
 test('the my-stuff quick links have a hover state with the menu-item tint', () => {
   assert.ok(linksRule, 'expected .my-stuff-links a:hover');
-  assert.match(linksRule[1], /background:\s*#eaf3f7/);
+  assert.match(linksRule[1], /background:\s*#e8eefb/);
 });
 
 test('the quick-link hover rule is paint-only: resting geometry cannot shift', () => {
@@ -37,7 +37,7 @@ defineHoverCases('my-stuff-links hover', {
       target: '#a',
       rule: '.my-stuff-links a:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(234, 243, 247)' },
+      hovered: { backgroundColor: 'rgb(232, 238, 251)' },
       paintOnly: true,
     },
   ],

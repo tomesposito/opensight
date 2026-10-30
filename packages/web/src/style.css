@@ -1,13 +1,13 @@
 @import './sign-in.css';
 @import './data-section.css';
-:root { font-family: Inter, ui-sans-serif, system-ui, sans-serif; color: #19384a; background: #f3f6f7; font-synthesis: none; text-rendering: optimizeLegibility; }
+:root { font-family: Inter, ui-sans-serif, system-ui, sans-serif; color: #1b2740; background: #f3f6f7; font-synthesis: none; text-rendering: optimizeLegibility; }
 * { box-sizing: border-box; }
 body { margin: 0; }
 .toast-host { position: fixed; z-index: 100; bottom: 24px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 8px; width: min(480px, calc(100% - 32px)); pointer-events: none; font: 12px/1.5 Arial, "Helvetica Neue", Helvetica, sans-serif; }
-.toast { display: flex; align-items: center; gap: 16px; max-width: 100%; padding: 8px 12px; border: 1px solid #526c7a; border-radius: 6px; background: #19384a; color: #fff; box-shadow: 0 4px 16px #19384a33; pointer-events: auto; opacity: 1; transition: opacity 180ms ease; animation: toast-enter 150ms ease-out; }
+.toast { display: flex; align-items: center; gap: 16px; max-width: 100%; padding: 8px 12px; border: 1px solid #5b6b8c; border-radius: 6px; background: #1b2740; color: #fff; box-shadow: 0 4px 16px #1b274033; pointer-events: auto; opacity: 1; transition: opacity 180ms ease; animation: toast-enter 150ms ease-out; }
 .toast > span { min-width: 0; overflow-wrap: anywhere; }
 .toast > button { flex: none; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: inherit; font-size: 20px; }
-.toast > button:hover { background: #365764; }
+.toast > button:hover { background: #2b3a55; }
 .toast-leaving { opacity: 0; }
 /* Toast enter transition (issue #108 polish): notifications fade and rise on
    arrival instead of popping in, on the same beat as the dialog (slice 9) and
@@ -28,87 +28,87 @@ button:active:not(:disabled) { transform: translateY(1px); }
    shadow (line ~517); the shift composes with it. Instantaneous state, so
    no reduced-motion variant is needed. */
 summary:active { transform: translateY(1px); }
-.app-header { position: sticky; top: 0; z-index: 60; display: flex; flex-wrap: wrap; align-items: center; gap: 24px; padding: 20px 36px; background: #fff; border-bottom: 1px solid #dce5e9; }
+.app-header { position: sticky; top: 0; z-index: 60; display: flex; flex-wrap: wrap; align-items: center; gap: 24px; padding: 20px 36px; background: #fff; border-bottom: 1px solid #e2e8f2; }
 .brand { color: #153c4a; text-decoration: none; font-size: 23px; font-weight: 750; letter-spacing: -.8px; display: flex; align-items: center; gap: 10px; }
-.brand-mark { color: #157f88; font-size: 32px; }
+.brand-mark { color: #3b82f6; font-size: 32px; }
 /* Brand identity (issue #109): lowercase wordmark in Inter/system bold next to the gradient mark. */
 .brand-wordmark { font-weight: 700; letter-spacing: -.4px; }
 .sign-in-brand .brand-wordmark { color: #0f172a; }
-.header-caption { color: #687e89; border-left: 1px solid #dce5e9; padding-left: 24px; font-size: 14px; }
-.fixture-picker { display: flex; align-items: center; gap: 12px; margin-left: auto; font-size: 12px; font-weight: 650; color: #526c7a; }
-select { background: #fff; border: 1px solid #c9d8de; border-radius: 6px; padding: 10px; color: #19384a; max-width: 340px; }
+.header-caption { color: #6b7a90; border-left: 1px solid #e2e8f2; padding-left: 24px; font-size: 14px; }
+.fixture-picker { display: flex; align-items: center; gap: 12px; margin-left: auto; font-size: 12px; font-weight: 650; color: #5b6b8c; }
+select { background: #fff; border: 1px solid #c3cfe0; border-radius: 6px; padding: 10px; color: #1b2740; max-width: 340px; }
 .product-header { gap: 16px 28px; padding-top: 10px; padding-bottom: 10px; }
 .app-nav, .section-nav { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; }
-.app-nav a, .section-nav a { color: #365764; text-decoration: none; padding: 12px 8px; border-bottom: 3px solid transparent; font-size: 14px; }
+.app-nav a, .section-nav a { color: #2b3a55; text-decoration: none; padding: 12px 8px; border-bottom: 3px solid transparent; font-size: 14px; }
 .app-nav a { font-weight: 650; }
-.app-nav a[aria-current], .section-nav a[aria-current] { color: #126e76; border-color: #157f88; background: #eaf4f4; }
-.app-nav a:hover, .section-nav a:hover { background: #eaf4f4; }
+.app-nav a[aria-current], .section-nav a[aria-current] { color: #2f66d8; border-color: #3b82f6; background: #eef3fd; }
+.app-nav a:hover, .section-nav a:hover { background: #eef3fd; }
 /* Issue #108 polish slice 74: a section nav's current link had zero hover
    feedback in both of its contexts — the top section nav (.app-shell >
    .section-nav, Data) and the rail's section groups (.product-navigation
    .section-nav, Analyses/Admin/Developer tools). Its resting selected
-   background (#eaf4f4, above) is the exact tint the generic hover paints,
+   background (#eef3fd, above) is the exact tint the generic hover paints,
    and both rules tie at (0,2,1), so hovering the current link changed
-   nothing while every plain section link steps transparent -> #eaf4f4.
+   nothing while every plain section link steps transparent -> #eef3fd.
    app-chrome.css adds no section-nav link background (only padding,
    border and radius), so this cascade governs both contexts. Following
    the slices 28/29 selected-control language (and slice 73 for the
    rail's app-nav current link), the current link takes a dedicated
-   hover step: #dceff0, one visible step deeper than #eaf4f4 and already
+   hover step: #d9e6fa, one visible step deeper than #eef3fd and already
    in the palette (the rail hover/selected tint). Its (0,3,1)
    specificity beats both the resting selected rule and the generic
    hover. Scope is .section-nav only: .app-nav renders only inside the
    rail, where slice 73's (0,4,1) rule already governs its current link.
    Background only, so the selected border and teal text are unchanged
    and resting geometry is identical. */
-.section-nav a[aria-current]:hover { background: #dceff0; }
-.section-nav { padding: 0 36px; border-bottom: 1px solid #dce5e9; background: #fff; }
+.section-nav a[aria-current]:hover { background: #d9e6fa; }
+.section-nav { padding: 0 36px; border-bottom: 1px solid #e2e8f2; background: #fff; }
 .section-nav a { font-size: 13px; }
 .developer-nav { background: #f3f6f7; }
-.developer-nav > span { font-size: 12px; color: #526c7a; padding: 10px 8px; }
-.analyses-home .primary-button { padding: 10px 16px; background: #157f88; color: #fff; border-radius: 5px; text-decoration: none; white-space: nowrap; }
+.developer-nav > span { font-size: 12px; color: #5b6b8c; padding: 10px 8px; }
+.analyses-home .primary-button { padding: 10px 16px; background: #3b82f6; color: #fff; border-radius: 5px; text-decoration: none; white-space: nowrap; }
 /* Issue #108 polish slice 16: the Analyses landing's New analysis button had
-   no hover state (every other primary-button context darkens to #126e76). */
-.analyses-home .primary-button:hover { background: #126e76; }
+   no hover state (every other primary-button context darkens to #2f66d8). */
+.analyses-home .primary-button:hover { background: #2f66d8; }
 .analyses-home .local-drafts { margin-top: 24px; }
 /* Native modal supplies focus containment and makes the underlying workspace inert. */
-.create-analysis-dialog { width: min(960px, calc(100vw - 32px)); max-width: none; max-height: calc(100dvh - 32px); padding: 20px; border: 1px solid #c6cbd0; border-radius: 6px; background: #fff; color: #20252b; box-shadow: 0 8px 32px #0004; font: 12px/1.5 Arial, "Helvetica Neue", Helvetica, sans-serif; }
+.create-analysis-dialog { width: min(960px, calc(100vw - 32px)); max-width: none; max-height: calc(100dvh - 32px); padding: 20px; border: 1px solid #c6cbd0; border-radius: 6px; background: #fff; color: #1b2740; box-shadow: 0 8px 32px #0004; font: 12px/1.5 Arial, "Helvetica Neue", Helvetica, sans-serif; }
 .create-analysis-dialog::backdrop { background: #0008; }
 .create-analysis-dialog button, .create-analysis-dialog select { padding: 6px 12px; border: 1px solid #6b9eb6; border-radius: 5px; background: #fff; color: #246583; font: inherit; }
-.create-analysis-dialog button:hover:not(:disabled) { background: #edf7fc; }
+.create-analysis-dialog button:hover:not(:disabled) { background: #e8eefb; }
 /* Issue #108 polish slice 23: the dialog's "Items per page" select was the
    last control in the Create Analysis dialog with zero hover state (a fresh
    probe hovered every dialog control; the select changed nothing). It takes
-   the dialog's established button hover tint (#edf7fc, same rule as above);
+   the dialog's established button hover tint (#e8eefb, same rule as above);
    background only, so resting geometry is identical. Static, no animation. */
-.create-analysis-dialog select:hover:not(:disabled) { background: #edf7fc; }
+.create-analysis-dialog select:hover:not(:disabled) { background: #e8eefb; }
 /* Issue #108 polish slice 48: the dialog's dataset search input
    (.dataset-picker-search input, "Search datasets by name") was the last
    control in the Create Analysis dialog with zero hover state — the slice
    48 behavioral audit opened the dialog and measured white -> white on it
    at 420x34, while its buttons and the pagination select beside it tinted.
-   It takes the dialog's established hover tint (#edf7fc, the button/select
+   It takes the dialog's established hover tint (#e8eefb, the button/select
    rules above); background only, so resting geometry is identical and the
    search icon (an absolutely-positioned sibling svg) is unaffected. */
-.create-analysis-dialog input[type=search]:hover:not(:disabled) { background: #edf7fc; }
+.create-analysis-dialog input[type=search]:hover:not(:disabled) { background: #e8eefb; }
 .create-analysis-dialog button:disabled { color: #767b80; border-color: #e0e1e4; cursor: default; }
 .create-analysis-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 28px; }
 .create-analysis-heading h2 { font: bold 16px/1.5 Arial, "Helvetica Neue", Helvetica, sans-serif; margin: 0; }
 .create-analysis-heading p { margin: 0; }
-.create-analysis-heading > button { border: 0; padding: 0 4px; color: #20252b; font-size: 20px; line-height: 1; }
+.create-analysis-heading > button { border: 0; padding: 0 4px; color: #1b2740; font-size: 20px; line-height: 1; }
 .create-analysis-tools { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
 .dataset-picker-tabs { display: flex; flex: none; padding: 3px; border-radius: 6px; background: #f1f1f5; }
-.dataset-picker-tabs button { padding: 5px 12px; border-color: transparent; background: transparent; color: #20252b; }
+.dataset-picker-tabs button { padding: 5px 12px; border-color: transparent; background: transparent; color: #1b2740; }
 .dataset-picker-tabs button[aria-selected=true] { background: #fff; box-shadow: 0 1px 4px #0003; }
 .dataset-picker-tabs button:disabled { border-color: transparent; }
 .dataset-picker-search { position: relative; flex: 1; max-width: 420px; min-width: 120px; }
 .dataset-picker-search svg { position: absolute; left: 10px; top: 9px; width: 14px; height: 14px; color: #6a6e73; }
-.dataset-picker-search input { width: 100%; padding: 7px 8px 7px 32px; border: 1px solid #969da3; border-radius: 5px; color: #20252b; background: #fff; }
+.dataset-picker-search input { width: 100%; padding: 7px 8px 7px 32px; border: 1px solid #969da3; border-radius: 5px; color: #1b2740; background: #fff; }
 .create-analysis-tools .create-dataset-button { margin-left: auto; white-space: nowrap; }
 .dataset-picker-table { max-height: min(420px, 48dvh); overflow: auto; min-height: 176px; }
 .dataset-picker-table table { font: inherit; min-width: 680px; }
-.dataset-picker-table th { position: sticky; top: 0; z-index: 1; background: #d6effd; color: #20252b; font-weight: bold; padding: 8px 12px; white-space: nowrap; }
-.dataset-picker-table td { padding: 8px 12px; border-bottom: 1px solid #e5e7ea; color: #20252b; }
+.dataset-picker-table th { position: sticky; top: 0; z-index: 1; background: #d6effd; color: #1b2740; font-weight: bold; padding: 8px 12px; white-space: nowrap; }
+.dataset-picker-table td { padding: 8px 12px; border-bottom: 1px solid #e5e7ea; color: #1b2740; }
 .dataset-picker-table th:first-child, .dataset-picker-table td:first-child { width: 32px; padding-right: 0; }
 .dataset-picker-table th:nth-child(2) { width: 32%; }
 .dataset-picker-table td:nth-child(2) { overflow-wrap: anywhere; }
@@ -175,13 +175,13 @@ select { background: #fff; border: 1px solid #c9d8de; border-radius: 6px; paddin
    A CSSOM probe (1,386 rules, real ancestor context) confirmed zero
    matching :hover rules and a transparent rest for the label while the
    select inside it tinted. It takes the dialog's established hover tint
-   (#edf7fc, the button/select/search hovers above), so no new colour is
+   (#e8eefb, the button/select/search hovers above), so no new colour is
    introduced — and because the label and the select inside it take the
    same tint, hovering either reads as one surface. Background only, so
    resting geometry is identical; static, so no animation and no
    reduced-motion variant is needed. The dialog is a fixed-light
    surface, so no dark variant. */
-.dataset-picker-pagination label:hover { background: #edf7fc; }
+.dataset-picker-pagination label:hover { background: #e8eefb; }
 .dataset-picker-pagination select { padding: 3px 6px; border-color: #969da3; }
 .dataset-picker-pagination button { padding: 2px 8px; border-color: transparent; }
 .dataset-picker-pagination .dataset-picker-refresh { margin-right: auto; }
@@ -190,13 +190,13 @@ select { background: #fff; border: 1px solid #c9d8de; border-radius: 6px; paddin
 .create-analysis-actions .dataset-picker-select { background: #24749d; color: #fff; }
 .create-analysis-actions .dataset-picker-select:hover:not(:disabled) { background: #185a7b; }
 .create-analysis-actions .dataset-picker-select:disabled { background: #e0e1e4; color: #767b80; }
-.field-search { border-top: 1px solid #dce3e9; padding: 12px 0; }
+.field-search { border-top: 1px solid #dde5ef; padding: 12px 0; }
 .field-search > label { display: block; font-weight: bold; margin-bottom: 4px; }
 .field-search > input { box-sizing: border-box; width: 100%; padding: 8px; border: 1px solid #6b9eb6; border-radius: 4px; font: inherit; }
-.field-search > input:hover { background: #edf7fc; }
-.field-search ul { list-style: none; margin: 4px 0; padding: 0; max-height: 160px; overflow: auto; border: 1px solid #c9d8de; }
+.field-search > input:hover { background: #e8eefb; }
+.field-search ul { list-style: none; margin: 4px 0; padding: 0; max-height: 160px; overflow: auto; border: 1px solid #c3cfe0; }
 .field-search .search-row { display: flex; justify-content: space-between; gap: 8px; padding: 4px 8px; cursor: pointer; }
-.field-search .search-row:hover, .field-search [aria-selected=true] { background: #edf7fc; }
+.field-search .search-row:hover, .field-search [aria-selected=true] { background: #e8eefb; }
 .field-search p { margin: 4px 0; }
 .field-search [role=alert] { color: #a12828; }
 .field-search-result { display: flex; align-items: center; gap: 8px; }
@@ -214,10 +214,10 @@ select { background: #fff; border: 1px solid #c9d8de; border-radius: 6px; paddin
   .analyses-home .dashboard-heading { flex-wrap: wrap; }
 }
 .api-picker { display: flex; flex-wrap: wrap; gap: 16px; align-items: end; }
-.api-picker label { display: flex; flex-direction: column; gap: 8px; font-size: 12px; color: #526c7a; }
+.api-picker label { display: flex; flex-direction: column; gap: 8px; font-size: 12px; color: #5b6b8c; }
 .resource-id { flex: 1; min-width: 180px; }
-.api-picker input { min-width: 0; padding: 10px; border: 1px solid #c9d8de; border-radius: 6px; }
-.api-picker button { padding: 11px 18px; border: 0; border-radius: 6px; background: #157f88; color: white; }
+.api-picker input { min-width: 0; padding: 10px; border: 1px solid #c3cfe0; border-radius: 6px; }
+.api-picker button { padding: 11px 18px; border: 0; border-radius: 6px; background: #3b82f6; color: white; }
 /* Issue #108 polish slice 57: the API explorer's picker form (.api-picker
    in ApiExplorer — Resource select, Resource ID input, Load definition
    button) had no hover state at all. It renders in <main> inside
@@ -226,13 +226,13 @@ select { background: #fff; border: 1px solid #c9d8de; border-radius: 6px; paddin
    .api-picker instance sits inside .author-workspace and is already
    covered by the author hover rules (equal specificity, later in this
    file, so it keeps its author hover). The submit button now takes the
-   app-wide primary hover step (#157f88 -> #126e76) and the select and
-   input take this file's field hover tint (#edf7f7, the author
+   app-wide primary hover step (#3b82f6 -> #2f66d8) and the select and
+   input take this file's field hover tint (#eef3fd, the author
    select/input language). Background only, so resting geometry is
    identical. Static, so no reduced-motion variant is needed; disabled
    controls keep their flat resting state. */
-.api-picker button:hover:not(:disabled) { background: #126e76; }
-.api-picker select:hover:not(:disabled), .api-picker input:hover:not(:disabled) { background: #edf7f7; }
+.api-picker button:hover:not(:disabled) { background: #2f66d8; }
+.api-picker select:hover:not(:disabled), .api-picker input:hover:not(:disabled) { background: #eef3fd; }
 /* Issue #108 polish slice 122: the picker form's labels (.api-picker
    label — "Resource" and "Resource ID" in Application.tsx's
    ApiExplorer form, "Analysis dataset" in Author.tsx's dataset
@@ -243,54 +243,54 @@ select { background: #fff; border: 1px solid #c9d8de; border-radius: 6px; paddin
    tinted. The resting rule lays each label out as a column flex
    (text line, 8px gap, field), so the label is itself a visible
    surface. The labels now take the picker's own field hover tint
-   (#edf7f7), plus the author dark-chrome variant (#334c62) for the
+   (#eef3fd), plus the author dark-chrome variant (#36486a) for the
    Author instance, so no new colour is introduced and the label
    and the field inside it read as one surface. Background only,
    so resting geometry is identical and there is no animation. */
-.api-picker label:hover { background: #edf7f7; }
-.author-workspace[data-chrome=dark] .api-picker label:hover { background: #334c62; }
+.api-picker label:hover { background: #eef3fd; }
+.author-workspace[data-chrome=dark] .api-picker label:hover { background: #36486a; }
 main { padding: 34px 36px; max-width: 1680px; margin: auto; }
 main.author-main { max-width: none; padding: 16px; padding-top: 0; }
 .dashboard-heading { display: flex; justify-content: space-between; align-items: center; gap: 20px; }
-.eyebrow { color: #526c7a; font-size: 12px; margin: 0 0 8px; }
+.eyebrow { color: #5b6b8c; font-size: 12px; margin: 0 0 8px; }
 h1 { margin: 0; font-size: clamp(23px, 3vw, 32px); font-weight: 650; letter-spacing: -.7px; }
 .phase-badge { font-size: 11px; font-weight: 650; background: #e4eef0; color: #346773; padding: 7px 10px; border-radius: 5px; white-space: nowrap; }
-.fixture-notice { background: #eaf2f3; border-left: 3px solid #157f88; padding: 13px 16px; margin: 24px 0; line-height: 1.6; font-size: 13px; color: #365764; }
+.fixture-notice { background: #e8eefb; border-left: 3px solid #3b82f6; padding: 13px 16px; margin: 24px 0; line-height: 1.6; font-size: 13px; color: #2b3a55; }
 /* Issue #108 polish slice 34: the fixture-notice "Open Home" link (Dashboard
    fixture previews: "Questions are unavailable for definition previews. Open
    Home to explore sample sales data.") was the last user-facing control with
    zero hover state — a fresh behavioral hover audit (real mouse hover +
    computed-style delta, Chromium) found it on the Developer fixture preview
    page; the landing thread stays complete since slice 29. The app-wide
-   menu-item tint (#eaf3f7, slices 16/21/25/26/30/32) is invisible against the
-   notice's own #eaf2f3 background, so the link takes the palette's darker
-   blue-gray step (#d4dfe7); background only, so resting geometry is
+   menu-item tint (#e8eefb, slices 16/21/25/26/30/32) is invisible against the
+   notice's own #e8eefb background, so the link takes the palette's darker
+   blue-gray step (#d7e0ee); background only, so resting geometry is
    identical. Static, no animation. */
-.fixture-notice a:hover { background: #d4dfe7; }
+.fixture-notice a:hover { background: #d7e0ee; }
 .sheet-tabs { display: flex; gap: 20px; border-bottom: 1px solid #d9e3e8; margin-bottom: 22px; }
-.sheet-tabs button { border: 0; border-bottom: 3px solid transparent; padding: 12px 0; background: transparent; color: #526c7a; font-weight: 650; font-size: 14px; }
-.sheet-tabs button[aria-current] { color: #126e76; border-color: #157f88; }
+.sheet-tabs button { border: 0; border-bottom: 3px solid transparent; padding: 12px 0; background: transparent; color: #5b6b8c; font-weight: 650; font-size: 14px; }
+.sheet-tabs button[aria-current] { color: #2f66d8; border-color: #3b82f6; }
 /* Issue #108 polish slice 18: sheet tabs had no hover state — hovering an
    unselected tab changed nothing. An unselected tab now previews the selected
    state (teal text + underline), the same preview language slice 17 used for
    the account-menu summary. Resting geometry is identical (the 3px border is
    already reserved, only its color changes), and the selected tab keeps its
    flat state. Static state, no animation — no reduced-motion variant needed. */
-.sheet-tabs button:hover:not([aria-current]):not([aria-selected=true]) { color: #126e76; border-bottom-color: #157f88; }
+.sheet-tabs button:hover:not([aria-current]):not([aria-selected=true]) { color: #2f66d8; border-bottom-color: #3b82f6; }
 /* Issue #108 polish slice 29: the selected sheet tab (home "Overview",
    dashboard sheet switcher, author sheet toolbar) had zero hover state —
    slice 18's rule deliberately excluded it, and the behavioral audit found it
    was the last interactive control on the landing surfaces with no hover
-   feedback. It now takes the #eaf3f7 menu-item tint on hover (the slice-28
+   feedback. It now takes the #e8eefb menu-item tint on hover (the slice-28
    selected-data-tab language), so it reads interactive while staying visually
    distinct at rest (teal text + underline unchanged). Background only, so
    resting geometry is identical; disabled tabs keep their flat state. Static
    state, no animation — no reduced-motion variant needed. */
 .sheet-tabs button[aria-current]:hover:not(:disabled),
-.sheet-tabs button[aria-selected=true]:hover:not(:disabled) { background: #eaf3f7; }
-.sheet-tabs span { font-size: 11px; margin-left: 10px; font-weight: 400; color: #687e89; }
+.sheet-tabs button[aria-selected=true]:hover:not(:disabled) { background: #e8eefb; }
+.sheet-tabs span { font-size: 11px; margin-left: 10px; font-weight: 400; color: #6b7a90; }
 .dashboard-grid { display: grid; grid-template-columns: repeat(36, minmax(0, 1fr)); grid-auto-rows: 46px; gap: 10px; }
-.visual-card { position: relative; min-width: 0; min-height: 0; display: flex; flex-direction: column; border: 1px solid #dce5e9; border-radius: 8px; background: white; box-shadow: 0 2px 5px #183b4b05; overflow: auto; }
+.visual-card { position: relative; min-width: 0; min-height: 0; display: flex; flex-direction: column; border: 1px solid #e2e8f2; border-radius: 8px; background: white; box-shadow: 0 2px 5px #183b4b05; overflow: auto; }
 .card-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 18px 20px 4px; }
 .card-titles { min-width: 0; overflow-wrap: anywhere; }
 .card-subtitle { margin: 4px 0 0; font-size: 12px; white-space: pre-wrap; }
@@ -315,9 +315,9 @@ h3 { font-size: 14px; font-weight: 650; margin: 0; }
 .skeleton-kpi-delta { width: 30%; height: 12px; border-radius: 3px; }
 .skeleton-block { flex: 1; display: flex; }
 .skeleton-fill { flex: 1; border-radius: 6px; }
-.skeleton-shape { background: linear-gradient(90deg, #e6edf0 25%, #f4f8f9 50%, #e6edf0 75%); background-size: 200% 100%; animation: skeleton-shimmer 1.4s ease-in-out infinite; }
+.skeleton-shape { background: linear-gradient(90deg, #e6ecf4 25%, #f4f8f9 50%, #e6ecf4 75%); background-size: 200% 100%; animation: skeleton-shimmer 1.4s ease-in-out infinite; }
 @keyframes skeleton-shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
-@media (prefers-reduced-motion: reduce) { .skeleton-shape { animation: none; background: #e6edf0; } }
+@media (prefers-reduced-motion: reduce) { .skeleton-shape { animation: none; background: #e6ecf4; } }
 /* Dialog open transitions (issue #108 polish): modals fade and rise slightly on
    open instead of popping in. Static under prefers-reduced-motion. */
 @keyframes dialog-open { from { opacity: 0; transform: translateY(10px) scale(.99); } to { opacity: 1; transform: none; } }
@@ -345,14 +345,14 @@ details[open] .menu-popover { animation: menu-open 150ms ease-out; }
 .visual-card { animation: visual-enter 150ms ease-out; }
 @media (prefers-reduced-motion: reduce) { .visual-card { animation: none; } }
 /* Card style · Loading animation off: same skeleton shapes, no shimmer motion. */
-.skeleton-static .skeleton-shape { animation: none; background: #e6edf0; }
-.empty-state p { color: #687e89; font-size: 13px; max-width: 300px; line-height: 1.6; }
-.empty-state small { border: 1px solid #dce5e9; border-radius: 4px; padding: 6px 10px; color: #526c7a; }
+.skeleton-static .skeleton-shape { animation: none; background: #e6ecf4; }
+.empty-state p { color: #6b7a90; font-size: 13px; max-width: 300px; line-height: 1.6; }
+.empty-state small { border: 1px solid #e2e8f2; border-radius: 4px; padding: 6px 10px; color: #5b6b8c; }
 .card-footer { padding: 0 20px; font-size: 11px; color: #607784; }
 .query-provenance { display: block; padding: 4px 0; font: 12px Arial, "Helvetica Neue", Helvetica, sans-serif; overflow-wrap: anywhere; }
 .card-footer details { border-top: 1px solid #edf1f3; padding: 9px 0; }
-.card-footer summary:hover { background: #eaf3f7; }
-.facet-caption { text-align: center; font-size: 12px; color: #526c7a; margin: 6px 0 2px; }
+.card-footer summary:hover { background: #e8eefb; }
+.facet-caption { text-align: center; font-size: 12px; color: #5b6b8c; margin: 6px 0 2px; }
 .render-notes li { line-height: 1.6; overflow-wrap: anywhere; padding: 4px 0; }
 .table-scroll { overflow: auto; margin: 12px 0; }
 /* Keep scrolling inside table/pivot cards so their headers can freeze. */
@@ -366,12 +366,12 @@ details[open] .menu-popover { animation: menu-open 150ms ease-out; }
 .table-scroll tbody tr > :is(th, td):first-child { background-color: inherit; }
 .table-scroll thead th:first-child { z-index: 3; }
 table { width: 100%; border-collapse: collapse; font-size: 13px; text-align: left; }
-th { padding: 12px; background: #f3f7f8; color: #526c7a; font-weight: 600; }
+th { padding: 12px; background: #f8fafc; color: #5b6b8c; font-weight: 600; }
 td { padding: 14px 12px; border-bottom: 1px solid #e7edef; font-variant-numeric: tabular-nums; }
 .visual-error { padding: 20px; color: #a23b37; font-size: 13px; overflow-wrap: anywhere; }
-.provenance { font-size: 11px; color: #687e89; margin: 24px 0 0; overflow-wrap: anywhere; }
-.app-footer { text-align: center; font-size: 11px; color: #687e89; padding: 14px 20px 28px; }
-.first-run-header { background: #162e40; color: #d0e0e8; display: flex; align-items: center; flex-wrap: wrap; gap: 24px; padding: 18px 36px; font-size: 13px; }
+.provenance { font-size: 11px; color: #6b7a90; margin: 24px 0 0; overflow-wrap: anywhere; }
+.app-footer { text-align: center; font-size: 11px; color: #6b7a90; padding: 14px 20px 28px; }
+.first-run-header { background: #16264a; color: #cfdcee; display: flex; align-items: center; flex-wrap: wrap; gap: 24px; padding: 18px 36px; font-size: 13px; }
 .first-run-header .brand { color: #fff; }
 /* Issue #108 polish slice 71: hover feedback for the first-run header's
    brand link (.first-run-header .brand in FirstRun.tsx). Verified lead
@@ -382,41 +382,41 @@ td { padding: 14px 12px; border-bottom: 1px solid #e7edef; font-variant-numeric:
    no app-shell rule reaches it either; its only rules set the white
    resting color and the teal mark, and hovering it changed nothing
    while the same brand link in the product header tints on hover. It
-   now takes that header's own dark-chrome hover tint (#365764, the
+   now takes that header's own dark-chrome hover tint (#2b3a55, the
    .product-header .brand:hover tint), matching the header's dark
-   #162e40 resting background. Background only, so resting geometry is
+   #16264a resting background. Background only, so resting geometry is
    identical and there is no animation. */
-.first-run-header .brand:hover { background: #365764; }
+.first-run-header .brand:hover { background: #2b3a55; }
 .first-run-header .brand-mark { color: #72d3d4; }
 .first-run-main { max-width: 1180px; padding: 48px 36px 28px; }
 .first-run-intro { max-width: 750px; margin-bottom: 28px; }
 .first-run-intro h1 { font-size: clamp(30px, 4vw, 44px); }
 .first-run p, .first-run li { line-height: 1.65; }
 .first-run-intro p { color: #446171; }
-.first-run-intro .eyebrow { font-weight: 700; letter-spacing: 1.4px; color: #126e76; }
+.first-run-intro .eyebrow { font-weight: 700; letter-spacing: 1.4px; color: #2f66d8; }
 .first-run h2 { font-size: 21px; letter-spacing: -.3px; margin: 0 0 12px; }
 .first-run-status { display: flex; align-items: center; gap: 24px; padding: 22px 24px; background: #fff6e6; border: 1px solid #e5c990; border-left: 4px solid #ad7020; border-radius: 6px; margin-bottom: 24px; }
 .first-run-status > div { flex: 1; }
 .first-run-status h2 { font-size: 17px; }
 .first-run-status p { margin: 0; font-size: 14px; }
-.first-run button, .fixture-demo-banner button { min-height: 42px; border: 1px solid #a1b7c2; border-radius: 5px; background: #fff; color: #19384a; padding: 10px 16px; font-weight: 650; }
-.first-run button:hover:not(:disabled), .fixture-demo-banner button:hover { background: #eaf3f4; }
+.first-run button, .fixture-demo-banner button { min-height: 42px; border: 1px solid #a1b7c2; border-radius: 5px; background: #fff; color: #1b2740; padding: 10px 16px; font-weight: 650; }
+.first-run button:hover:not(:disabled), .fixture-demo-banner button:hover { background: #eef3fd; }
 .first-run-paths { display: grid; grid-template-columns: minmax(0, .85fr) minmax(0, 1.3fr); gap: 24px; }
-.first-run-paths > section { min-width: 0; border: 1px solid #d1e0e5; border-radius: 8px; padding: 28px; background: #fff; }
-.first-run-paths .first-run-demo { background: #eaf4f4; }
+.first-run-paths > section { min-width: 0; border: 1px solid #ccd8e6; border-radius: 8px; padding: 28px; background: #fff; }
+.first-run-paths .first-run-demo { background: #eef3fd; }
 .first-run-demo ul { padding-left: 20px; margin: 22px 0; }
-.first-run .first-run-primary { background: #126e76; color: #fff; border-color: #126e76; }
+.first-run .first-run-primary { background: #2f66d8; color: #fff; border-color: #2f66d8; }
 .first-run .first-run-primary:hover:not(:disabled) { background: #0d5960; }
 .first-run .first-run-note { color: #4c6573; font-size: 13px; margin-top: 20px; }
 .first-run-setup ol { padding-left: 20px; margin-bottom: 24px; font-size: 14px; }
 .first-run-setup li { padding-left: 5px; margin: 14px 0; }
 .first-run code { font-size: .9em; overflow-wrap: anywhere; }
-.first-run details { border-top: 1px solid #d1e0e5; padding-top: 18px; font-size: 14px; }
+.first-run details { border-top: 1px solid #ccd8e6; padding-top: 18px; font-size: 14px; }
 .first-run summary { font-weight: 650; line-height: 1.6; }
 /* Issue #108 polish slice 70: hover feedback for the first-run page's
    "Required API environment variables" disclosure summary (.first-run
    summary, FirstRun.tsx, inside .first-run-setup). Every other
-   first-run control hovers to the surface tint #eaf3f4 — its buttons
+   first-run control hovers to the surface tint #eef3fd — its buttons
    (.first-run button:hover) and its docs links (slice 63) — but a
    summary is neither, and every summary:hover rule in the cascade is
    scoped elsewhere (.author-workspace, .prep-*, .calculation-dialog,
@@ -425,11 +425,11 @@ td { padding: 14px 12px; border-bottom: 1px solid #e7edef; font-variant-numeric:
    (rendered before any session, outside .app-shell), so no app-shell
    rule reaches it either. Background only, so resting geometry is
    identical and there is no animation. */
-.first-run summary:hover { background: #eaf3f4; }
-.first-run-config dt { color: #19384a; font-weight: 650; line-height: 1.7; margin-top: 16px; }
+.first-run summary:hover { background: #eef3fd; }
+.first-run-config dt { color: #1b2740; font-weight: 650; line-height: 1.7; margin-top: 16px; }
 .first-run-config dd { margin: 6px 0 0; line-height: 1.6; color: #4c6573; }
 .first-run-docs { display: flex; align-items: baseline; flex-wrap: wrap; gap: 14px 24px; margin-top: 28px; font-size: 13px; }
-.first-run-docs a { color: #126e76; text-underline-offset: 3px; }
+.first-run-docs a { color: #2f66d8; text-underline-offset: 3px; }
 /* Issue #108 polish slice 63: the first-run docs links (the "Setup guides"
    row in FirstRun.tsx) had no hover state at all — the page is standalone
    (SessionGate renders it before any session, outside .app-shell), so no
@@ -438,12 +438,12 @@ td { padding: 14px 12px; border-bottom: 1px solid #e7edef; font-variant-numeric:
    .first-run-primary:hover) while the four setup-guide links changed
    nothing on hover, unlike links on every other surface (fixture-notice,
    my-stuff, recent-pages, folder and not-found links all step). The links
-   now take the first-run surface's own button hover tint (#eaf3f4) as a
+   now take the first-run surface's own button hover tint (#eef3fd) as a
    background step, underline kept. Background only, so resting geometry
    is identical and there is no animation. */
-.first-run-docs a:hover { background: #eaf3f4; }
+.first-run-docs a:hover { background: #eef3fd; }
 .first-run-docs span { flex-basis: 100%; color: #4c6573; }
-.fixture-demo-banner { background: #162e40; color: #fff; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 24px; font-size: 14px; }
+.fixture-demo-banner { background: #16264a; color: #fff; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 24px; font-size: 14px; }
 @media (max-width: 760px) {
   .first-run-main { padding: 28px 18px; }
   .first-run-header { padding: 14px 18px; gap: 10px 24px; }
@@ -453,24 +453,24 @@ td { padding: 14px 12px; border-bottom: 1px solid #e7edef; font-variant-numeric:
 }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 /* Author density uses 4/8px spacing and 28px controls; saved grid geometry stays independent. */
-.author-workspace button, .sheet-toolbar button, .author-layout button, .calculation-dialog button { min-height: 28px; padding: 4px 8px; border: 1px solid #c9d8de; border-radius: 5px; background: white; color: #19384a; }
+.author-workspace button, .sheet-toolbar button, .author-layout button, .calculation-dialog button { min-height: 28px; padding: 4px 8px; border: 1px solid #c3cfe0; border-radius: 5px; background: white; color: #1b2740; }
 button:disabled { cursor: default; opacity: .5; }
-.author-workspace button:hover:not(:disabled), .author-layout button:hover:not(:disabled) { border-color: #157f88; background: #edf7f7; }
-.author-workspace .primary-button, .author-layout .primary-button, .calculation-dialog .primary-button { background: #157f88; color: white; border-color: #157f88; }
-.author-workspace .primary-button:hover:not(:disabled) { background: #126e76; color: white; }
+.author-workspace button:hover:not(:disabled), .author-layout button:hover:not(:disabled) { border-color: #3b82f6; background: #eef3fd; }
+.author-workspace .primary-button, .author-layout .primary-button, .calculation-dialog .primary-button { background: #3b82f6; color: white; border-color: #3b82f6; }
+.author-workspace .primary-button:hover:not(:disabled) { background: #2f66d8; color: white; }
 /* Issue #108 polish slice 36: author-workspace selects (the Properties panel's
    palette and font-family pickers, field-well and dialog selects) had no hover
    state at all — the author hover rule above covers only buttons, so hovering
    a select changed nothing while the buttons beside it tinted. A behavioral
    audit with the Analysis theme section expanded (real mouse hover, :hover
    confirmed) measured white -> white on the palette select. Selects now take
-   the author buttons' hover tint (#edf7f7); dark chrome takes the dark button
-   hover (#334c62) via a more specific variant, since the light rule would
+   the author buttons' hover tint (#eef3fd); dark chrome takes the dark button
+   hover (#36486a) via a more specific variant, since the light rule would
    otherwise outrank the dark resting :is() background rule. The chrome-switch
    select keeps its own more specific header hover. Background only, so
    resting geometry is identical and there is no animation. */
-.author-workspace select:hover:not(:disabled) { background: #edf7f7; }
-.author-workspace[data-chrome=dark] select:hover:not(:disabled) { background: #334c62; }
+.author-workspace select:hover:not(:disabled) { background: #eef3fd; }
+.author-workspace[data-chrome=dark] select:hover:not(:disabled) { background: #36486a; }
 /* Issue #108 polish slice 37: author-workspace color inputs (the Analysis
    theme palette swatches and theme color fields, the formatting and card
    color pickers) had no hover state at all — the author hover rules cover
@@ -479,14 +479,14 @@ button:disabled { cursor: default; opacity: .5; }
    expanded (real mouse hover, :hover and hit-test confirmed) measured
    rgb(239,239,239) -> rgb(239,239,239) on the palette swatches, the largest
    real zero-hover class left on the author surface (8 inputs). Color inputs
-   now take the author buttons' hover language (background #edf7f7 + border
-   #157f88 — the border and padding frame is most of what a native swatch
+   now take the author buttons' hover language (background #eef3fd + border
+   #3b82f6 — the border and padding frame is most of what a native swatch
    control shows around its color well); dark chrome takes the dark button
-   hover background (#334c62) via a more specific variant, as in slice 36.
+   hover background (#36486a) via a more specific variant, as in slice 36.
    Paint-only (background + border-color), so resting geometry is identical
    and there is no animation. */
-.author-workspace input[type=color]:hover:not(:disabled) { background: #edf7f7; border-color: #157f88; }
-.author-workspace[data-chrome=dark] input[type=color]:hover:not(:disabled) { background: #334c62; }
+.author-workspace input[type=color]:hover:not(:disabled) { background: #eef3fd; border-color: #3b82f6; }
+.author-workspace[data-chrome=dark] input[type=color]:hover:not(:disabled) { background: #36486a; }
 /* Issue #108 polish slice 38: the author Data panel's field-search input
    (builder-panel "Search fields") had no hover state at all — the author
    hover rules cover buttons, selects and color inputs, so hovering the
@@ -497,12 +497,12 @@ button:disabled { cursor: default; opacity: .5; }
    only other real hits are single native controls judged standard no-hover
    by design: a 13x13 favorites checkbox (as in slice 33) and the bundle
    import's OS-rendered file input. Search inputs now take the author
-   buttons' hover tint (#edf7f7); dark chrome takes the dark button hover
-   background (#334c62) via a more specific variant, as in slices 36/37.
+   buttons' hover tint (#eef3fd); dark chrome takes the dark button hover
+   background (#36486a) via a more specific variant, as in slices 36/37.
    Background only, so resting geometry is identical and there is no
    animation. */
-.author-workspace input[type=search]:hover:not(:disabled) { background: #edf7f7; }
-.author-workspace[data-chrome=dark] input[type=search]:hover:not(:disabled) { background: #334c62; }
+.author-workspace input[type=search]:hover:not(:disabled) { background: #eef3fd; }
+.author-workspace[data-chrome=dark] input[type=search]:hover:not(:disabled) { background: #36486a; }
 /* Issue #108 polish slice 67: the author layout's plain fields — text,
    number and date inputs and textareas — had no hover state at all. The
    author hover rules cover buttons, selects (slice 36), color inputs
@@ -519,7 +519,7 @@ button:disabled { cursor: default; opacity: .5; }
    and the author field audit found every reachable field covered
    except this class, which only renders once a visual or control is
    selected. The fields now take the author buttons' hover tint
-   (#edf7f7); dark chrome takes the dark button hover (#334c62) via
+   (#eef3fd); dark chrome takes the dark button hover (#36486a) via
    more specific variants, as in slices 36-38. The rule is scoped to
    .author-layout (the scope of the .author-layout input resting group
    and the button-hover pairing) so the header analysis-title input —
@@ -531,8 +531,8 @@ button:disabled { cursor: default; opacity: .5; }
    rendering (the house pattern), and range inputs likewise as an
    OS-rendered control (the slice-38 by-design family). Background
    only, so resting geometry is identical and there is no animation. */
-.author-layout input:hover:not(:disabled):not([type=radio]):not([type=checkbox]):not([type=file]):not([type=range]), .author-layout textarea:hover:not(:disabled) { background: #edf7f7; }
-.author-workspace[data-chrome=dark] .author-layout input:hover:not(:disabled):not([type=radio]):not([type=checkbox]):not([type=file]):not([type=range]), .author-workspace[data-chrome=dark] .author-layout textarea:hover:not(:disabled) { background: #334c62; }
+.author-layout input:hover:not(:disabled):not([type=radio]):not([type=checkbox]):not([type=file]):not([type=range]), .author-layout textarea:hover:not(:disabled) { background: #eef3fd; }
+.author-workspace[data-chrome=dark] .author-layout input:hover:not(:disabled):not([type=radio]):not([type=checkbox]):not([type=file]):not([type=range]), .author-workspace[data-chrome=dark] .author-layout textarea:hover:not(:disabled) { background: #36486a; }
 /* Issue #108 polish slice 134: the Data panel's "Search fields" label
    (.fields-panel .panel-content > label in Author.tsx — the text line
    plus its search input at the top of the author Data panel) had zero
@@ -549,7 +549,7 @@ button:disabled { cursor: default; opacity: .5; }
    .panel-content) confirmed zero matching :hover rules for the label
    and a transparent rest in both chromes, while the inner input
    matched the author-layout input hover. The label now takes the
-   input's own hover tint (#edf7f7; dark chrome #334c62 — the
+   input's own hover tint (#eef3fd; dark chrome #36486a — the
    fixture-picker / chrome-switch precedent: the label takes its
    field's hover tint), so no new colour is introduced and label and
    field read as one surface. The scope is the direct child of
@@ -557,8 +557,8 @@ button:disabled { cursor: default; opacity: .5; }
    nested in their section keep their own slice-128 rules (the same
    tints) and the field-group rows are out of scope. Background only,
    so resting geometry is identical and there is no animation. */
-.fields-panel .panel-content > label:hover { background: #edf7f7; }
-.author-workspace[data-chrome=dark] .fields-panel .panel-content > label:hover { background: #334c62; }
+.fields-panel .panel-content > label:hover { background: #eef3fd; }
+.author-workspace[data-chrome=dark] .fields-panel .panel-content > label:hover { background: #36486a; }
 /* Issue #108 polish slice 42: the author workspace's disclosure summaries
    had no hover state at all — the author hover rules cover buttons, selects,
    color inputs and search inputs, and the global summary rules give only
@@ -572,24 +572,24 @@ button:disabled { cursor: default; opacity: .5; }
    ("Analysis theme", 202x17), and the author-tools summaries ("Local drafts
    (1)" 99x17, "Import bundle" 93x17). The header's .author-menu summary
    already has its own header hover and is not in this group. These summaries
-   now take the author buttons' hover tint (#edf7f7); dark chrome takes the
-   dark button hover background (#334c62) via a more specific variant, as in
+   now take the author buttons' hover tint (#eef3fd); dark chrome takes the
+   dark button hover background (#36486a) via a more specific variant, as in
    slices 36/37/38. Background only, so resting geometry is identical and
    there is no animation. */
-.author-workspace .builder-panel > summary:hover, .author-workspace .field-group > summary:hover, .author-workspace .property-section > summary:hover, .author-workspace .parameter-editor > summary:hover, .author-workspace .local-drafts > summary:hover, .author-workspace .bundle-import summary:hover { background: #edf7f7; }
-.author-workspace[data-chrome=dark] .builder-panel > summary:hover, .author-workspace[data-chrome=dark] .field-group > summary:hover, .author-workspace[data-chrome=dark] .property-section > summary:hover, .author-workspace[data-chrome=dark] .parameter-editor > summary:hover, .author-workspace[data-chrome=dark] .local-drafts > summary:hover, .author-workspace[data-chrome=dark] .bundle-import summary:hover { background: #334c62; }
+.author-workspace .builder-panel > summary:hover, .author-workspace .field-group > summary:hover, .author-workspace .property-section > summary:hover, .author-workspace .parameter-editor > summary:hover, .author-workspace .local-drafts > summary:hover, .author-workspace .bundle-import summary:hover { background: #eef3fd; }
+.author-workspace[data-chrome=dark] .builder-panel > summary:hover, .author-workspace[data-chrome=dark] .field-group > summary:hover, .author-workspace[data-chrome=dark] .property-section > summary:hover, .author-workspace[data-chrome=dark] .parameter-editor > summary:hover, .author-workspace[data-chrome=dark] .local-drafts > summary:hover, .author-workspace[data-chrome=dark] .bundle-import summary:hover { background: #36486a; }
 /* Issue #108 polish slice 96: dark-chrome variant of the favorites-filter
    label hover (app-chrome.css). The label also renders in the author
    sidebar's local-drafts panel, where the light collection tint would sit
-   wrong on the dark chrome; it takes the author dark hover tint (#334c62,
+   wrong on the dark chrome; it takes the author dark hover tint (#36486a,
    the dark button and summary hovers above) instead. Background only. */
-.author-workspace[data-chrome=dark] .favorites-filter:hover { background: #334c62; }
+.author-workspace[data-chrome=dark] .favorites-filter:hover { background: #36486a; }
 /* Issue #108 polish slice 126: dark-chrome variant of the draft-rename
    label hover (app-chrome.css). The label also renders in the author
    sidebar's local-drafts panel, where the light collection tint would sit
-   wrong on the dark chrome; it takes the author dark hover tint (#334c62,
+   wrong on the dark chrome; it takes the author dark hover tint (#36486a,
    the dark button and summary hovers above) instead. Background only. */
-.author-workspace[data-chrome=dark] .draft-rename label:hover { background: #334c62; }
+.author-workspace[data-chrome=dark] .draft-rename label:hover { background: #36486a; }
 /* Issue #108 polish slice 127: the draft-rename form's input in the author
    sidebar (.author-workspace .draft-rename input — LocalDrafts.tsx's
    rename field inside the author-tools local-drafts panel) had zero hover
@@ -601,49 +601,49 @@ button:disabled { cursor: default; opacity: .5; }
    rules) in the real ancestor contexts confirmed zero matching :hover
    rules in both author chromes, while the label around it (slice 126),
    the panel summary and the form's buttons do step. It now takes the
-   author surface's established field hover tints (#edf7f7 light — the
+   author surface's established field hover tints (#eef3fd light — the
    author-layout field hover above and the rename-sheet input hover, the
    precedent for a rename input outside .author-layout — and the author
-   dark field tint #334c62), so no new colour is introduced. Both rules
+   dark field tint #36486a), so no new colour is introduced. Both rules
    are scoped to .author-workspace, so the collection instance keeps its
-   slice-64 #eaf3f7 hover untouched. Background only, so resting geometry
+   slice-64 #e8eefb hover untouched. Background only, so resting geometry
    is identical and there is no animation. */
-.author-workspace .draft-rename input:hover:not(:disabled) { background: #edf7f7; }
-.author-workspace[data-chrome=dark] .draft-rename input:hover:not(:disabled) { background: #334c62; }
+.author-workspace .draft-rename input:hover:not(:disabled) { background: #eef3fd; }
+.author-workspace[data-chrome=dark] .draft-rename input:hover:not(:disabled) { background: #36486a; }
 .author-topbar { display: flex; align-items: center; flex-wrap: wrap; gap: 14px; }
 .author-topbar .analysis-title { flex: 1; min-width: 200px; }
 .author-topbar .analysis-title input { font-size: 23px; font-weight: 600; background: transparent; border-color: transparent; padding-left: 0; }
 .author-workspace .fixture-notice { margin: 4px 0; padding: 4px 8px; font-size: 12px; line-height: 1.5; }
 .author-save { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 12px; margin-bottom: 4px; }
-.author-save p { margin: 0; color: #526c7a; font-size: 11px; line-height: 1.5; }
+.author-save p { margin: 0; color: #5b6b8c; font-size: 11px; line-height: 1.5; }
 .author-layout { --data-width: 190px; --build-width: 216px; --properties-width: 220px; display: grid; grid-template-columns: var(--data-width) var(--build-width) minmax(0, 1fr) var(--properties-width); gap: 8px; align-items: start; }
 .author-layout:has(> .fields-panel:not([open])) { --data-width: 44px; }
 .author-layout:has(> .build-panel:not([open])) { --build-width: 44px; }
 .author-layout:has(> .properties-panel:not([open])) { --properties-width: 44px; }
 .author-layout h2 { font-size: 14px; margin: 0 0 8px; }
-.author-layout label, .analysis-title, .rename-sheet label, .calculation-dialog label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: #526c7a; margin-bottom: 8px; }
-.author-layout input:not([type=checkbox]), .analysis-title input, .rename-sheet input, .calculation-dialog input, .calculation-dialog textarea { width: 100%; min-width: 0; font: inherit; padding: 5px 6px; border: 1px solid #c9d8de; border-radius: 5px; }
+.author-layout label, .analysis-title, .rename-sheet label, .calculation-dialog label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: #5b6b8c; margin-bottom: 8px; }
+.author-layout input:not([type=checkbox]), .analysis-title input, .rename-sheet input, .calculation-dialog input, .calculation-dialog textarea { width: 100%; min-width: 0; font: inherit; padding: 5px 6px; border: 1px solid #c3cfe0; border-radius: 5px; }
 .author-layout select, .calculation-dialog select { width: 100%; min-width: 0; max-width: none; padding: 5px 6px; }
-.builder-panel { min-width: 0; border: 1px solid #dce5e9; border-radius: 6px; background: white; position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow: auto; }
+.builder-panel { min-width: 0; border: 1px solid #e2e8f2; border-radius: 6px; background: white; position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow: auto; }
 .builder-panel > summary { position: sticky; top: 0; z-index: 1; padding: 8px; font-size: 13px; font-weight: 650; border-bottom: 1px solid var(--chrome-border, #e7edef); background: var(--chrome-surface, white); }
 .panel-content { padding: 8px; }
 .builder-panel p { font-size: 12px; line-height: 1.5; }
 .calculation-button { width: 100%; font-size: 11px; font-weight: 650; }
 .dataset-header { margin-bottom: 8px; }
-.dataset-label { display: block; font-size: 12px; color: var(--chrome-muted, #526c7a); }
+.dataset-label { display: block; font-size: 12px; color: var(--chrome-muted, #5b6b8c); }
 .dataset-name { display: block; font-size: 13px; line-height: 1.4; margin: 2px 0 4px; overflow-wrap: anywhere; }
 .dataset-badge { display: inline-block; border-radius: 3px; padding: 2px 6px; font-size: 10px; font-weight: 750; letter-spacing: .03em; background: #ffe2a1; color: #604000; }
 .dataset-badge[data-mode=direct] { background: #d9edf3; color: #174657; }
-.dataset-header .dataset-metadata { margin: 6px 0 0; color: var(--chrome-muted, #526c7a); font-size: 11px; overflow-wrap: anywhere; }
+.dataset-header .dataset-metadata { margin: 6px 0 0; color: var(--chrome-muted, #5b6b8c); font-size: 11px; overflow-wrap: anywhere; }
 .field-group { margin-top: 8px; }
 .field-group > summary { padding: 4px 0; font-size: 12px; font-weight: 650; cursor: pointer; }
 .field-folder { width: 13px; height: 13px; margin-right: 5px; vertical-align: -2px; fill: none; stroke: currentColor; stroke-width: 1.3; }
 .field-group button { display: flex; align-items: center; width: 100%; gap: 4px; min-height: 26px; padding: 3px 4px; margin-top: 2px; text-align: left; font-size: 12px; }
-.field-group button[aria-pressed=true], .visual-gallery button[aria-pressed=true] { background: #eaf5f5; border-color: #157f88; color: #126e76; }
-.field-icon { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 20px; font-size: 11px; font-weight: 650; color: var(--chrome-icon, #157f88); }
+.field-group button[aria-pressed=true], .visual-gallery button[aria-pressed=true] { background: #eaf5f5; border-color: #3b82f6; color: #2f66d8; }
+.field-icon { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 20px; font-size: 11px; font-weight: 650; color: var(--chrome-icon, #3b82f6); }
 .field-icon svg { width: 16px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.3; stroke-linecap: round; stroke-linejoin: round; }
 .field-name { overflow-wrap: anywhere; flex: 1; }
-.field-type { font-size: 8px; color: #526c7a; }
+.field-type { font-size: 8px; color: #5b6b8c; }
 .author-center, .author-canvas, .visual-config { min-width: 0; }
 .add-visual { display: flex; flex-direction: column; gap: 6px; }
 .visual-gallery { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; max-height: 168px; overflow: auto; padding: 2px; }
@@ -652,25 +652,25 @@ button:disabled { cursor: default; opacity: .5; }
 .visual-gallery button span { font-size: 20px; line-height: 1; min-height: 20px; }
 .visual-gallery button[value=kpi] span { font-size: 16px; padding-top: 4px; }
 .change-type { margin-top: 8px; max-width: 230px; }
-.visual-config { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--chrome-border, #c9d8de); }
+.visual-config { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--chrome-border, #c3cfe0); }
 .visual-config h3 { font-size: 13px; }
 .selected-visual { overflow-wrap: anywhere; margin: 0 0 8px; }
 .field-wells { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
 .field-wells fieldset { min-width: 0; border: 1px solid transparent; border-radius: 4px; padding: 4px; margin: 0; }
-.author-layout .well-placeholder { width: 100%; text-align: left; font-size: 12px; color: var(--chrome-muted, #526c7a); background: transparent; border: 1px dashed #9a782b; border-radius: 12px; padding: 4px 8px; }
-.field-wells .active-well { border-color: #157f88; background: #f8fcfc; }
-.field-wells legend { font-size: 11px; font-weight: 650; color: #526c7a; text-transform: uppercase; }
-.field-wells p, .field-hint { font-size: 11px; line-height: 1.4; margin: 6px 0; color: #526c7a; }
-.author-layout .field-chip { display: flex; align-items: center; gap: 4px; width: 100%; background: #eaf5f5; color: #126e76; border: 1px solid #7daeba; border-radius: 12px; padding: 4px; margin: 0 0 4px; font-size: 12px; text-align: left; }
+.author-layout .well-placeholder { width: 100%; text-align: left; font-size: 12px; color: var(--chrome-muted, #5b6b8c); background: transparent; border: 1px dashed #9a782b; border-radius: 12px; padding: 4px 8px; }
+.field-wells .active-well { border-color: #3b82f6; background: #f8fcfc; }
+.field-wells legend { font-size: 11px; font-weight: 650; color: #5b6b8c; text-transform: uppercase; }
+.field-wells p, .field-hint { font-size: 11px; line-height: 1.4; margin: 6px 0; color: #5b6b8c; }
+.author-layout .field-chip { display: flex; align-items: center; gap: 4px; width: 100%; background: #eaf5f5; color: #2f66d8; border: 1px solid #7daeba; border-radius: 12px; padding: 4px; margin: 0 0 4px; font-size: 12px; text-align: left; }
 .field-chip-name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .well-picker { margin: 4px 0 0 !important; }
 .canvas-label { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; padding: 4px 8px; margin: 0 0 6px; font-size: 12px; }
-.canvas-label span { font-size: 10px; color: #526c7a; }
+.canvas-label span { font-size: 10px; color: #5b6b8c; }
 .author-canvas { background-image: radial-gradient(#cddde0 1px, transparent 1px); background-size: 16px 16px; min-height: max(540px, 65vh); margin-inline: auto; }
-.canvas-empty { padding: 65px 24px; border: 1px dashed #b1c9ce; border-radius: 6px; text-align: center; color: #526c7a; background: #f8fbfcdd; }
-.author-card { height: 100%; display: flex; flex-direction: column; border: 1px solid #c9d8de; border-radius: 6px; background: white; overflow: hidden; }
-.author-card.is-selected { border-color: #157f88; box-shadow: 0 0 0 1px #157f88; }
-.author-card-toolbar { font-family: var(--editor-font-family); display: flex; align-items: center; flex-wrap: wrap; gap: 4px; padding: 4px; background: #f3f7f8; }
+.canvas-empty { padding: 65px 24px; border: 1px dashed #b1c9ce; border-radius: 6px; text-align: center; color: #5b6b8c; background: #f8fbfcdd; }
+.author-card { height: 100%; display: flex; flex-direction: column; border: 1px solid #c3cfe0; border-radius: 6px; background: white; overflow: hidden; }
+.author-card.is-selected { border-color: #3b82f6; box-shadow: 0 0 0 1px #3b82f6; }
+.author-card-toolbar { font-family: var(--editor-font-family); display: flex; align-items: center; flex-wrap: wrap; gap: 4px; padding: 4px; background: #f8fafc; }
 .author-card-toolbar strong { font-size: 11px; overflow-wrap: anywhere; min-width: 0; flex: 1; }
 .drag-handle { cursor: grab; touch-action: none; padding: 4px; font-size: 16px; }
 .drag-handle:active { cursor: grabbing; }
@@ -694,7 +694,7 @@ button:disabled { cursor: default; opacity: .5; }
 .author-card .chart { min-height: 140px; }
 .react-grid-item > .react-resizable-handle { z-index: 2; }
 .author-layout .toggle { flex-direction: row; align-items: center; gap: 6px; margin: 6px 0; }
-.toggle input { width: 17px; height: 17px; flex-shrink: 0; accent-color: #157f88; }
+.toggle input { width: 17px; height: 17px; flex-shrink: 0; accent-color: #3b82f6; }
 /* Issue #108 polish slice 97: the Properties panels' toggle labels
    (label.toggle in Author.tsx / PropertiesSections.tsx /
    FormattingEditor.tsx / PivotOptionsEditor.tsx / TooltipEditor.tsx /
@@ -708,7 +708,7 @@ button:disabled { cursor: default; opacity: .5; }
    fields around them do step. A CSSOM probe with all five real
    stylesheets (1,350 rules) in the real ancestor contexts (author
    light chrome and author dark chrome) confirmed zero matching :hover
-   rules and a transparent rest in both. The label now takes #edf7f7,
+   rules and a transparent rest in both. The label now takes #eef3fd,
    the author surface's established hover tint (the author button and
    field hovers), so no new colour is introduced. The rule is on the
    label, not the checkbox: the checkbox keeps its native rendering,
@@ -719,14 +719,14 @@ button:disabled { cursor: default; opacity: .5; }
    whose button already hovers via the author button hover) stays out
    of scope. Background only, so resting geometry is identical and
    there is no animation. */
-label.toggle:hover { background: #edf7f7; }
+label.toggle:hover { background: #eef3fd; }
 /* Issue #108 polish slice 97: dark-chrome variant of the toggle label
    hover above. The toggles render in the author Properties panels,
    where the light tint would sit wrong on dark chrome; it takes the
-   author dark hover tint (#334c62, the dark button and field hovers)
+   author dark hover tint (#36486a, the dark button and field hovers)
    instead. Background only. */
-.author-workspace[data-chrome=dark] label.toggle:hover { background: #334c62; }
-.filter-editor { border-top: 1px solid #dce5e9; margin-top: 20px; padding-top: 14px; }
+.author-workspace[data-chrome=dark] label.toggle:hover { background: #36486a; }
+.filter-editor { border-top: 1px solid #e2e8f2; margin-top: 20px; padding-top: 14px; }
 .filter-editor h3 { margin-bottom: 12px; }
 .filter-values { max-height: 210px; overflow: auto; }
 .filter-actions { display: flex; gap: 6px; }
@@ -735,7 +735,7 @@ label.toggle:hover { background: #edf7f7; }
 .sheet-toolbar > button { font-size: 11px; }
 .sheet-toolbar .sheet-tabs { margin: 0 auto 0 0; gap: 6px; max-width: 100%; overflow: auto; }
 .sheet-toolbar .sheet-tabs button { border: 0; border-bottom: 3px solid transparent; border-radius: 0; background: transparent; white-space: nowrap; }
-.sheet-tabs button[aria-selected=true] { color: #126e76; border-bottom-color: #157f88; }
+.sheet-tabs button[aria-selected=true] { color: #2f66d8; border-bottom-color: #3b82f6; }
 .rename-sheet { flex-basis: 100%; display: flex; gap: 8px; align-items: end; }
 .rename-sheet label { margin: 0; }
 /* Issue #108 polish slice 118: the rename-sheet form's label
@@ -749,23 +749,23 @@ label.toggle:hover { background: #edf7f7; }
    changed nothing. The shared resting rule lays the label out as
    a column flex (text line, 4px gap, field), so the label is
    itself a visible surface. The label and input now take the
-   author surface's established hover tints (#edf7f7 light, the
-   author dark-chrome variant #334c62 — the field and label hover
+   author surface's established hover tints (#eef3fd light, the
+   author dark-chrome variant #36486a — the field and label hover
    tints of slices 112-117), so no new colour is introduced, and
    because the label and the field inside it take the same tint,
    hovering either reads as one surface. Background only, so
    resting geometry is identical and there is no animation. */
-.rename-sheet label:hover { background: #edf7f7; }
-.author-workspace[data-chrome=dark] .rename-sheet label:hover { background: #334c62; }
-.rename-sheet input:hover:not(:disabled) { background: #edf7f7; }
-.author-workspace[data-chrome=dark] .rename-sheet input:hover:not(:disabled) { background: #334c62; }
-.calculation-dialog { width: min(520px, calc(100% - 32px)); border: 1px solid #c9d8de; border-radius: 8px; padding: 24px; color: #19384a; }
+.rename-sheet label:hover { background: #eef3fd; }
+.author-workspace[data-chrome=dark] .rename-sheet label:hover { background: #36486a; }
+.rename-sheet input:hover:not(:disabled) { background: #eef3fd; }
+.author-workspace[data-chrome=dark] .rename-sheet input:hover:not(:disabled) { background: #36486a; }
+.calculation-dialog { width: min(520px, calc(100% - 32px)); border: 1px solid #c3cfe0; border-radius: 8px; padding: 24px; color: #1b2740; }
 .calculation-dialog::backdrop { background: #153c4a88; }
 .calculation-dialog h2 { margin-top: 0; font-size: 20px; }
 .calculation-dialog textarea { resize: vertical; font-family: monospace; }
 .dialog-actions { display: flex; justify-content: end; gap: 10px; }
 tr.subtotal, tr.total { font-weight: 650; background: #edf6f6; }
-.expand-toggle { font-weight: 700; min-width: 1.5em; padding: 0 0.3em; margin-right: 0.45em; border: 1px solid #b9cdd4; border-radius: 4px; background: #fff; color: #126e76; cursor: pointer; line-height: 1.5; }
+.expand-toggle { font-weight: 700; min-width: 1.5em; padding: 0 0.3em; margin-right: 0.45em; border: 1px solid #b9cdd4; border-radius: 4px; background: #fff; color: #2f66d8; cursor: pointer; line-height: 1.5; }
 .expand-toggle:hover { background: #e3f0f1; }
 .expand-toggle:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
 tr.row-group { font-weight: 650; }
@@ -821,11 +821,11 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
    last label with zero hover feedback: its sibling summary takes the
    author summary hover (.bundle-import summary:hover), and every other
    label :hover rule in the cascade is scoped elsewhere. The label now
-   takes the author label tint #edf7f7 (dark #334c62), so the row reads
+   takes the author label tint #eef3fd (dark #36486a), so the row reads
    as one surface with the file field it labels. Background only, so
    resting geometry is identical and there is no animation. */
-.author-workspace .bundle-import label:hover { background: #edf7f7; }
-.author-workspace[data-chrome=dark] .bundle-import label:hover { background: #334c62; }
+.author-workspace .bundle-import label:hover { background: #eef3fd; }
+.author-workspace[data-chrome=dark] .bundle-import label:hover { background: #36486a; }
 .bundle-import p { margin: 8px 0; }
 .import-report { width: min(850px, 90vw); max-height: 85vh; overflow: auto; border: 1px solid #8ba9b2; border-radius: 10px; padding: 24px; }
 .import-report::backdrop { background: #15374688; }
@@ -848,18 +848,18 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
    cursor/margin above and the slice-15 :active press. A CSSOM probe
    with the real stylesheets confirmed zero matching :hover rules for
    both the outer and the nested summaries, resting transparent while
-   the panel's own summary steps to #edf7f7. ImportedPanels renders
+   the panel's own summary steps to #eef3fd. ImportedPanels renders
    only for imported bundles, so route audits never hover it (the
    slices 50/62/64/67/68 blind spot). It now takes the author
-   surface's established hover tint (#edf7f7, the author generic and
+   surface's established hover tint (#eef3fd, the author generic and
    summary hovers), so no new colour is introduced; the descendant
    selector covers the nested per-value summaries too, mirroring
    .bundle-import summary:hover. Background only, so resting
    geometry is identical; static (no animation), so no
    reduced-motion variant is needed. The dark-chrome variant takes
-   #334c62, the dark summary hover of the neighbouring panels. */
-.imported-panel summary:hover { background: #edf7f7; }
-.author-workspace[data-chrome=dark] .imported-panel summary:hover { background: #334c62; }
+   #36486a, the dark summary hover of the neighbouring panels. */
+.imported-panel summary:hover { background: #eef3fd; }
+.author-workspace[data-chrome=dark] .imported-panel summary:hover { background: #36486a; }
 
 .controls-strip { border: 1px solid var(--border, #cbd5e1); background: #fff; padding: 14px; margin-bottom: 12px; border-radius: 6px; }
 .controls-heading, .controls-row { display: flex; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
@@ -890,14 +890,14 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
    matching :hover rules and a transparent rest. The summary renders
    only when a sheet has parameter controls, so route audits without
    controls never hover it (the slices 50/62/64/67/68 blind spot). It
-   now takes the author surface's established hover tint (#edf7f7,
+   now takes the author surface's established hover tint (#eef3fd,
    the author generic and summary hovers), so no new colour is
    introduced. Background only, so resting geometry is identical;
    static (no animation), so no reduced-motion variant is needed. The
-   dark-chrome variant takes #334c62, the dark summary hover of the
+   dark-chrome variant takes #36486a, the dark summary hover of the
    neighbouring panels. */
-.control-settings summary:hover { background: #edf7f7; }
-.author-workspace[data-chrome=dark] .control-settings summary:hover { background: #334c62; }
+.control-settings summary:hover { background: #eef3fd; }
+.author-workspace[data-chrome=dark] .control-settings summary:hover { background: #36486a; }
 /* Issue #108 polish slice 84: the Properties panel's "Unsupported
    features (retained)" disclosure summary (a plain <details><summary>
    inside .dataset-binding in Author.tsx's Properties — the Dataset
@@ -917,14 +917,14 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
    and a transparent rest. The block renders only for imported
    visuals with retained unsupported features, so route audits never
    hover it (the slices 50/62/64/67/68 blind spot). It now takes the
-   author surface's established hover tint (#edf7f7, the author
+   author surface's established hover tint (#eef3fd, the author
    generic and summary hovers), so no new colour is introduced.
    Background only, so resting geometry is identical; static (no
    animation), so no reduced-motion variant is needed. The
-   dark-chrome variant takes #334c62, the dark summary hover of the
+   dark-chrome variant takes #36486a, the dark summary hover of the
    neighbouring panels. */
-.dataset-binding summary:hover { background: #edf7f7; }
-.author-workspace[data-chrome=dark] .dataset-binding summary:hover { background: #334c62; }
+.dataset-binding summary:hover { background: #eef3fd; }
+.author-workspace[data-chrome=dark] .dataset-binding summary:hover { background: #36486a; }
 .control-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; padding-top: 14px; }
 /* Issue #108 polish slice 112: the sheet controls strip's field
    labels (.parameter-control label — the on-sheet control's own
@@ -951,19 +951,19 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
    (author-workspace > author-layout > author-center >
    controls-strip, light and dark chrome) confirmed zero matching
    :hover rules for all eight label variants and a transparent rest
-   in both chromes. The labels now take #edf7f7, the author
+   in both chromes. The labels now take #eef3fd, the author
    surface's established hover tint (the author button, field and
    summary hovers, and the slice-83 control-settings summary hover
    in this same strip), plus the author dark-chrome variant
-   #334c62, so no new colour is introduced — and because the inner
+   #36486a, so no new colour is introduced — and because the inner
    field's own hover is the same tint, hovering the field inside
    the label reads as one surface, not two steps. Background only,
    so resting geometry is identical and there is no animation. The
    .parameter-editor plain labels share the resting rule but stay
    out of scope: they are a different surface (the Data panel),
    and their checkbox labels are slice 99. */
-.parameter-control label:hover, .control-settings label:hover, .control-form label:hover { background: #edf7f7; }
-.author-workspace[data-chrome=dark] .parameter-control label:hover, .author-workspace[data-chrome=dark] .control-settings label:hover, .author-workspace[data-chrome=dark] .control-form label:hover { background: #334c62; }
+.parameter-control label:hover, .control-settings label:hover, .control-form label:hover { background: #eef3fd; }
+.author-workspace[data-chrome=dark] .parameter-control label:hover, .author-workspace[data-chrome=dark] .control-settings label:hover, .author-workspace[data-chrome=dark] .control-form label:hover { background: #36486a; }
 .parameter-editor { margin-top: 16px; }
 .parameter-editor form { padding: 8px 0; }
 .parameter-editor p { overflow-wrap: anywhere; }
@@ -983,7 +983,7 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
    author dark chrome) confirmed zero matching :hover rules for both
    labels and their checkboxes and a transparent rest in both, and
    confirmed the name, type and default fields do match the author
-   field hovers. The labels now take #edf7f7, the author surface's
+   field hovers. The labels now take #eef3fd, the author surface's
    established hover tint (the author button and field hovers), so no
    new colour is introduced. The rule is on the label, not the checkbox:
    the checkbox keeps its native rendering, following the slice-94
@@ -996,13 +996,13 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
    labels stay out of scope because their fields already hover via the
    author field hover. Background only, so resting geometry is
    identical and there is no animation. */
-.parameter-editor label:has(> input[type=checkbox]):hover { background: #edf7f7; }
+.parameter-editor label:has(> input[type=checkbox]):hover { background: #eef3fd; }
 /* Issue #108 polish slice 99: dark-chrome variant of the parameter
    checkbox label hover above. The editor renders in the author Data
    panel under dark chrome, where the light tint would sit wrong; it
-   takes the author dark hover tint (#334c62, the dark button and field
+   takes the author dark hover tint (#36486a, the dark button and field
    hovers) instead. Background only. */
-.author-workspace[data-chrome=dark] .parameter-editor label:has(> input[type=checkbox]):hover { background: #334c62; }
+.author-workspace[data-chrome=dark] .parameter-editor label:has(> input[type=checkbox]):hover { background: #36486a; }
 /* Issue #108 polish slice 115: the ParameterEditor's plain field
    labels (.parameter-editor label — "Parameter name", "Parameter
    type" and "Default values" in ParameterEditor.tsx's
@@ -1019,7 +1019,7 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
    real ancestor contexts (light and dark chrome) confirmed zero
    matching :hover rules for all three plain labels and a
    transparent rest in both chromes. The labels now take the author
-   surface's established hover tint (#edf7f7, the author button,
+   surface's established hover tint (#eef3fd, the author button,
    field and summary hovers and the slice-99 checkbox-label hover
    in this same editor), so no new colour is introduced — and
    because the inner field's own hover is the same tint, hovering
@@ -1028,10 +1028,10 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
    higher specificity with the same tints, so the checkbox labels
    are unchanged. Background only, so resting geometry is
    identical; static (no animation), so no reduced-motion variant
-   is needed. The dark-chrome variant takes #334c62, the author
+   is needed. The dark-chrome variant takes #36486a, the author
    dark hover tint. */
-.parameter-editor label:hover { background: #edf7f7; }
-.author-workspace[data-chrome=dark] .parameter-editor label:hover { background: #334c62; }
+.parameter-editor label:hover { background: #eef3fd; }
+.author-workspace[data-chrome=dark] .parameter-editor label:hover { background: #36486a; }
 /* Issue #108 polish slice 116: the Properties panel sections'
    plain field labels (.property-section label — "Edit title",
    "Title font size" and "Alt text" in PropertiesSections.tsx,
@@ -1061,10 +1061,10 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
    labels and a transparent rest in both chromes, while the
    toggle labels matched the slice-97 rules and the name/font
    fields matched the author field hovers. The labels now take
-   #edf7f7, the author surface's established hover tint (the
+   #eef3fd, the author surface's established hover tint (the
    author button, field and summary hovers, the slice-97 toggle
    hover in these same sections, and the slices 112-115 label
-   hovers), plus the author dark-chrome variant #334c62, so no
+   hovers), plus the author dark-chrome variant #36486a, so no
    new colour is introduced — and because the inner field's own
    hover is the same tint, hovering the field inside the label
    reads as one surface, not two steps. The slice-97 toggle rules
@@ -1072,44 +1072,44 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
    whichever rule wins. Background only, so resting geometry is
    identical; static (no animation), so no reduced-motion variant
    is needed. */
-.property-section label:hover { background: #edf7f7; }
-.author-workspace[data-chrome=dark] .property-section label:hover { background: #334c62; }
+.property-section label:hover { background: #eef3fd; }
+.author-workspace[data-chrome=dark] .property-section label:hover { background: #36486a; }
 
 .property-section fieldset { margin-block: .7rem; min-width: 0; border: 1px solid var(--chrome-border, #cedbde); }
 .action-target { border-top: 1px solid #dce5e7; padding-block: .6rem; }
 .action-target p { font-size: .8rem; margin-block: .3rem; }
 .action-status, .drill-navigation { display: flex; align-items: center; flex-wrap: wrap; gap: .4rem; padding: .5rem; font-size: .8rem; }
 .drill-navigation { border-bottom: 1px solid #dce5e7; }
-.drill-navigation button[aria-pressed="true"] { background: #157f88; color: white; }
+.drill-navigation button[aria-pressed="true"] { background: #3b82f6; color: white; }
 /* Issue #108 polish slice 61: the Dashboard's .action-status bar ("Reset
    actions") renders in <main> inside .app-shell, outside .author-workspace,
    so no :hover rule reached its button — the bar's only rule sets layout —
    and hovering changed nothing while buttons on every other surface tint.
-   It takes style.css's generic button hover tint (#edf7f7, the author
+   It takes style.css's generic button hover tint (#eef3fd, the author
    button hover; slices 57/59/60). Background only, so resting geometry is
    identical. Static, no animation. The Author instance of .action-status
    already takes the same tint from the author rule (which also sets its
    border-color, and whose dark-chrome variant has higher specificity), so
    it is unchanged in effect; the disabled state (no active selection)
    keeps its flat resting state. */
-.action-status button:hover:not(:disabled) { background: #edf7f7; }
+.action-status button:hover:not(:disabled) { background: #eef3fd; }
 .table-scroll td button { color: #126a74; text-decoration: underline; }
 
 /* NEW LOOK controls the editor; the analysis theme independently styles its canvas. */
 .author-workspace {
   --editor-font-family: Arial, "Helvetica Neue", Helvetica, sans-serif;
   font-family: var(--editor-font-family); font-size: 12px; line-height: 1.4;
-  --chrome-surface: #fff; --chrome-bg: #f3f6f7; --chrome-text: #19384a; --chrome-muted: #526c7a; --chrome-border: #c9d8de; --chrome-menu-hover: #eaf3f8; --chrome-menu-shadow: #14253633;
+  --chrome-surface: #fff; --chrome-bg: #f3f6f7; --chrome-text: #1b2740; --chrome-muted: #5b6b8c; --chrome-border: #c3cfe0; --chrome-menu-hover: #eaf3f8; --chrome-menu-shadow: #0e1a3333;
   /* Both editor themes share the NEW LOOK identity and menu bands. */
-  --header-bg: #142536; --header-text: #ffffff; --header-muted: #c8eafa;
+  --header-bg: #0e1a33; --header-text: #ffffff; --header-muted: #bfdcfb;
   --header-menu-bg: #187199; --header-hover: #126080; --header-pressed: #0b435f;
-  --header-border: #c8eafa; --header-focus: #ffffff;
-  --header-selected-bg: #e2f2fa; --header-selected-text: #103e56; --header-selected-hover: #c8eafa;
+  --header-border: #bfdcfb; --header-focus: #ffffff;
+  --header-selected-bg: #d9e6fa; --header-selected-text: #103e56; --header-selected-hover: #bfdcfb;
   color: var(--chrome-text); background: var(--chrome-bg);
 }
-.author-workspace[data-chrome=dark] { color-scheme: dark; --chrome-surface: #202e40; --chrome-bg: #141e2c; --chrome-text: #e7eef7; --chrome-muted: #adc0d5; --chrome-border: #45566d; --chrome-icon: #7dd4df; --chrome-menu-hover: #293f55; --chrome-menu-shadow: #00000080; }
+.author-workspace[data-chrome=dark] { color-scheme: dark; --chrome-surface: #202e40; --chrome-bg: #141e2c; --chrome-text: #e7eef7; --chrome-muted: #a9c0dd; --chrome-border: #45566d; --chrome-icon: #7dd4df; --chrome-menu-hover: #1e3358; --chrome-menu-shadow: #00000080; }
 .shortcuts-dialog { box-sizing: border-box; width: min(480px, calc(100% - 32px)); max-height: calc(100dvh - 32px); overflow: auto; padding: 24px; border: 1px solid var(--chrome-border); border-radius: 8px; color: var(--chrome-text); background: var(--chrome-surface); font: inherit; }
-.shortcuts-dialog::backdrop { background: #14253688; }
+.shortcuts-dialog::backdrop { background: #0e1a3388; }
 .shortcuts-dialog header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .shortcuts-dialog h2 { margin: 0; font-size: 16px; }
 .shortcuts-dialog p { color: var(--chrome-muted); }
@@ -1119,12 +1119,12 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .shortcuts-dialog dl > div { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 8px 0; }
 .shortcuts-dialog dd { margin: 0; flex-shrink: 0; }
 .shortcuts-dialog kbd { padding: 2px 4px; border: 1px solid var(--chrome-border); border-radius: 4px; background: var(--chrome-bg); font: inherit; }
-.command-palette { --palette-surface: #fff; --palette-text: #19384a; --palette-muted: #526c7a; --palette-border: #c9d8de; --palette-selected: #e2f2fa; width: min(520px, calc(100% - 32px)); max-height: calc(100dvh - 32px); padding: 0; border: 1px solid var(--palette-border); border-radius: 8px; background: var(--palette-surface); color: var(--palette-text); box-shadow: 0 8px 32px #14253644; font: 12px/1.4 Arial, "Helvetica Neue", Helvetica, sans-serif; overflow: auto; }
-.command-palette[data-chrome=dark] { color-scheme: dark; --palette-surface: #202e40; --palette-text: #e7eef7; --palette-muted: #adc0d5; --palette-border: #45566d; --palette-selected: #293f55; }
-.command-palette::backdrop { background: #14253688; }
-.command-palette header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 16px; background: #142536; color: #fff; }
+.command-palette { --palette-surface: #fff; --palette-text: #1b2740; --palette-muted: #5b6b8c; --palette-border: #c3cfe0; --palette-selected: #d9e6fa; width: min(520px, calc(100% - 32px)); max-height: calc(100dvh - 32px); padding: 0; border: 1px solid var(--palette-border); border-radius: 8px; background: var(--palette-surface); color: var(--palette-text); box-shadow: 0 8px 32px #0e1a3344; font: 12px/1.4 Arial, "Helvetica Neue", Helvetica, sans-serif; overflow: auto; }
+.command-palette[data-chrome=dark] { color-scheme: dark; --palette-surface: #202e40; --palette-text: #e7eef7; --palette-muted: #a9c0dd; --palette-border: #45566d; --palette-selected: #1e3358; }
+.command-palette::backdrop { background: #0e1a3388; }
+.command-palette header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 16px; background: #0e1a33; color: #fff; }
 .command-palette h2 { margin: 0; font-size: 13px; }
-.command-palette header button { padding: 4px 8px; color: inherit; background: transparent; border: 1px solid #adc0d5; border-radius: 4px; }
+.command-palette header button { padding: 4px 8px; color: inherit; background: transparent; border: 1px solid #a9c0dd; border-radius: 4px; }
 .command-palette input { display: block; width: calc(100% - 32px); margin: 16px; padding: 8px; background: var(--palette-surface); color: var(--palette-text); border: 1px solid var(--palette-border); border-radius: 4px; }
 .command-palette input::placeholder { color: var(--palette-muted); }
 .command-palette ul { list-style: none; max-height: min(320px, 40dvh); overflow-y: auto; padding: 4px 8px; margin: 0; border-block: 1px solid var(--palette-border); }
@@ -1138,7 +1138,7 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .author-workspace[data-chrome=dark] .fixture-notice { background: #223b4a; color: #c4dce7; }
 .author-workspace[data-chrome=dark] button[aria-pressed=true] { background: #28586a; color: #fff; }
 .author-workspace[data-chrome=dark] .primary-button { background: #177b93; color: #fff; }
-.author-workspace[data-chrome=dark] button:hover:not(:disabled) { background: #334c62; }
+.author-workspace[data-chrome=dark] button:hover:not(:disabled) { background: #36486a; }
 .author-workspace[data-chrome] label.chrome-switch { display: flex; gap: 8px; align-items: center; margin-left: 8px; padding-left: 8px; border-left: 1px solid var(--header-border); color: var(--header-text); font-size: 12px; white-space: nowrap; }
 .author-workspace[data-chrome] .chrome-switch select { min-height: 28px; padding: 4px; border-radius: 3px; border: 1px solid var(--header-border); background: var(--header-bg); color: var(--header-text); font-size: 12px; }
 .author-workspace[data-chrome] .chrome-switch select:hover { background: var(--header-pressed); }
@@ -1229,18 +1229,18 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .author-workspace[data-chrome] .author-menu > .analysis-search { margin: 0; padding: 8px; min-height: 36px; line-height: 20px; border: 0; border-radius: 0; }
 .toolbar-notice { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; padding: 12px; background: var(--chrome-surface); border: 1px solid var(--chrome-border); font-size: 13px; }
 .canvas-viewport { min-width: 0; overflow: auto; }
-.property-section { border-top: 1px solid var(--chrome-border, #c9d8de); padding: 8px 0; }
+.property-section { border-top: 1px solid var(--chrome-border, #c3cfe0); padding: 8px 0; }
 .property-section summary { font-size: 12px; font-weight: 600; cursor: pointer; }
 .property-section[open] > summary { margin-bottom: 8px; }
 .property-section li { font-size: 12px; overflow-wrap: anywhere; margin-bottom: 8px; }
 .property-section input[type=color] { height: 34px; padding: 3px; }
-.property-group { border-top: 1px solid var(--chrome-border, #c9d8de); padding: 8px 0; }
+.property-group { border-top: 1px solid var(--chrome-border, #c3cfe0); padding: 8px 0; }
 .property-group:first-of-type { border-top: 0; padding-top: 0; }
 .property-group h4 { margin: 0 0 8px; font-size: 11px; font-weight: 400; color: var(--chrome-muted, #526575); }
 .property-section .property-unavailable { border: 0; padding: 0; margin: 0; min-width: 0; }
 .property-unavailable .field-hint { margin: 4px 0 8px; }
 .property-unavailable :is(input, select, textarea, button):disabled { cursor: not-allowed; opacity: .65; }
-.property-section textarea { width: 100%; max-width: 100%; min-width: 0; resize: vertical; font: inherit; padding: 4px; border: 1px solid var(--chrome-border, #c9d8de); border-radius: 3px; }
+.property-section textarea { width: 100%; max-width: 100%; min-width: 0; resize: vertical; font: inherit; padding: 4px; border: 1px solid var(--chrome-border, #c3cfe0); border-radius: 3px; }
 .property-inline { display: flex; align-items: center; gap: 4px; min-width: 0; }
 .property-inline > * { flex: 1; min-width: 0; }
 .property-inline input[type=color] { flex: 0 0 24px; width: 24px; height: 24px; padding: 0; }
@@ -1249,27 +1249,27 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .property-caption { margin: 8px 0; font-size: 12px; font-weight: 600; }
 .property-inline + .property-inline { margin-top: 4px; }
 .action-list { list-style: none; margin: 8px 0; padding: 0; display: grid; gap: 4px; }
-.action-row { display: flex; flex-direction: column; align-items: stretch; gap: 2px; width: 100%; padding: 8px; text-align: left; background: var(--chrome-surface, #fff); border: 1px solid var(--chrome-border, #c9d8de); border-radius: 4px; font: inherit; cursor: pointer; color: inherit; }
+.action-row { display: flex; flex-direction: column; align-items: stretch; gap: 2px; width: 100%; padding: 8px; text-align: left; background: var(--chrome-surface, #fff); border: 1px solid var(--chrome-border, #c3cfe0); border-radius: 4px; font: inherit; cursor: pointer; color: inherit; }
 .action-row:hover { border-color: #16859b; }
 .action-row-name { font-size: 12px; font-weight: 600; overflow-wrap: anywhere; }
 .action-row-meta { font-size: 11px; color: var(--chrome-muted, #526575); }
 .new-action-button { margin-top: 4px; }
 .action-panel { display: flex; flex-direction: column; height: 100%; min-height: 0; }
-.action-panel-header { display: flex; align-items: center; gap: 8px; padding: 4px 0 8px; border-bottom: 1px solid var(--chrome-border, #c9d8de); }
+.action-panel-header { display: flex; align-items: center; gap: 8px; padding: 4px 0 8px; border-bottom: 1px solid var(--chrome-border, #c3cfe0); }
 .action-panel-header h2 { flex: 1; margin: 0; font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.action-panel-header button { border: 1px solid var(--chrome-border, #c9d8de); background: var(--chrome-surface, #fff); border-radius: 4px; padding: 2px 10px; font: inherit; cursor: pointer; color: inherit; }
+.action-panel-header button { border: 1px solid var(--chrome-border, #c3cfe0); background: var(--chrome-surface, #fff); border-radius: 4px; padding: 2px 10px; font: inherit; cursor: pointer; color: inherit; }
 .action-panel-body { flex: 1; overflow-y: auto; padding: 8px 0; display: grid; gap: 8px; align-content: start; }
 .action-panel-body label { display: grid; gap: 4px; font-size: 12px; }
-.action-panel-body input:not([type=radio]):not([type=checkbox]), .action-panel-body select { width: 100%; max-width: 100%; min-width: 0; padding: 4px; font: inherit; border: 1px solid var(--chrome-border, #c9d8de); border-radius: 3px; color: inherit; background: var(--chrome-surface, #fff); }
+.action-panel-body input:not([type=radio]):not([type=checkbox]), .action-panel-body select { width: 100%; max-width: 100%; min-width: 0; padding: 4px; font: inherit; border: 1px solid var(--chrome-border, #c3cfe0); border-radius: 3px; color: inherit; background: var(--chrome-surface, #fff); }
 .action-radio-group { border: 0; padding: 0; margin: 0; min-width: 0; display: grid; gap: 4px; }
 .action-radio-group legend { font-size: 12px; font-weight: 600; padding: 0; margin-bottom: 4px; }
 .action-radio-group label { display: flex; flex-direction: row; align-items: center; gap: 6px; font-size: 12px; margin-bottom: 0; }
 .action-checkbox-list { display: grid; gap: 4px; margin-top: 4px; padding-left: 20px; }
 .action-checkbox-list label { display: flex; flex-direction: row; align-items: center; gap: 6px; font-size: 12px; font-weight: 400; margin-bottom: 0; }
-.action-checkbox-list label:has(> input[type=checkbox]):hover { background: #edf7f7; }
-.author-workspace[data-chrome=dark] .action-checkbox-list label:has(> input[type=checkbox]):hover { background: #334c62; }
-.action-radio-group label:has(> input[type=radio]):hover { background: #edf7f7; }
-.author-workspace[data-chrome=dark] .action-radio-group label:has(> input[type=radio]):hover { background: #334c62; }
+.action-checkbox-list label:has(> input[type=checkbox]):hover { background: #eef3fd; }
+.author-workspace[data-chrome=dark] .action-checkbox-list label:has(> input[type=checkbox]):hover { background: #36486a; }
+.action-radio-group label:has(> input[type=radio]):hover { background: #eef3fd; }
+.author-workspace[data-chrome=dark] .action-radio-group label:has(> input[type=radio]):hover { background: #36486a; }
 /* Issue #108 polish slice 121: the action panel's plain field labels
    (.action-panel-body label — "Action name" and "Action type" in
    ActionEditor.tsx's ActionPanel, "Source field" in FilterFields,
@@ -1284,27 +1284,27 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
    label tinted via the author field hovers. A CSSOM probe (1,387
    rules, real ancestor context) confirmed zero matching :hover
    rules and a transparent rest for the plain labels. They now take
-   the author surface's established hover tint (#edf7f7, the panel's
+   the author surface's established hover tint (#eef3fd, the panel's
    own :has label hovers and the author field/button/summary
-   hovers), plus the author dark-chrome variant #334c62, so no new
+   hovers), plus the author dark-chrome variant #36486a, so no new
    colour is introduced — and because the label and the field inside
    it take the same tint, hovering either reads as one surface. The
    :has rules keep higher specificity with the same tints, so the
    radio/checkbox labels are unchanged. Background only, so resting
    geometry is identical; static, so no animation and no
    reduced-motion variant is needed. */
-.action-panel-body label:hover { background: #edf7f7; }
-.author-workspace[data-chrome=dark] .action-panel-body label:hover { background: #334c62; }
-.action-target { display: grid; gap: 4px; padding: 6px; border: 1px solid var(--chrome-border, #c9d8de); border-radius: 4px; }
-.action-panel-footer { display: grid; gap: 8px; padding: 12px 0 4px; border-top: 1px solid var(--chrome-border, #c9d8de); }
+.action-panel-body label:hover { background: #eef3fd; }
+.author-workspace[data-chrome=dark] .action-panel-body label:hover { background: #36486a; }
+.action-target { display: grid; gap: 4px; padding: 6px; border: 1px solid var(--chrome-border, #c3cfe0); border-radius: 4px; }
+.action-panel-footer { display: grid; gap: 8px; padding: 12px 0 4px; border-top: 1px solid var(--chrome-border, #c3cfe0); }
 .action-panel-footer button { padding: 8px; border-radius: 4px; font: inherit; cursor: pointer; }
-.action-panel-footer button:not(.primary-button):not(.danger-button) { background: var(--chrome-surface, #fff); border: 1px solid var(--chrome-border, #c9d8de); color: inherit; }
+.action-panel-footer button:not(.primary-button):not(.danger-button) { background: var(--chrome-surface, #fff); border: 1px solid var(--chrome-border, #c3cfe0); color: inherit; }
 .author-layout .danger-button, .author-workspace .danger-button { background: transparent; color: #b4232a; border: 1px solid #b4232a; }
 .author-layout .danger-button:hover:not(:disabled), .author-workspace .danger-button:hover:not(:disabled) { background: #b4232a; color: #fff; }
 .notice-amber { padding: 8px; background: #fef3e2; border: 1px solid #f0c36d; border-radius: 4px; color: #7a4b00; font-size: 12px; }
 .author-workspace[data-chrome=dark] .notice-amber { background: #3a2f16; border-color: #8a6d2b; color: #f5d98b; }
 .visual-action-menu { position: relative; }
-.visual-action-menu [role=menu] { position: absolute; z-index: 5; top: 100%; right: 0; display: grid; min-width: 160px; background: var(--chrome-surface, #fff); border: 1px solid var(--chrome-border, #c9d8de); border-radius: 4px; box-shadow: 0 4px 12px rgb(0 0 0 / .15); padding: 4px; animation: menu-open 150ms ease-out; }
+.visual-action-menu [role=menu] { position: absolute; z-index: 5; top: 100%; right: 0; display: grid; min-width: 160px; background: var(--chrome-surface, #fff); border: 1px solid var(--chrome-border, #c3cfe0); border-radius: 4px; box-shadow: 0 4px 12px rgb(0 0 0 / .15); padding: 4px; animation: menu-open 150ms ease-out; }
 @media (prefers-reduced-motion: reduce) { .visual-action-menu [role=menu] { animation: none; } }
 .visual-action-menu [role=menuitem] { text-align: left; padding: 6px 8px; font: inherit; font-size: 12px; background: transparent; border: 0; border-radius: 3px; cursor: pointer; color: inherit; }
 .visual-action-menu [role=menuitem]:hover:not(:disabled) { background: #e8f1f3; }
@@ -1331,20 +1331,20 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .properties-tabs button[aria-selected=true] { border-bottom: 3px solid #16859b; font-weight: 700; }
 .properties-tabs button:focus-visible { outline: 2px solid #16859b; outline-offset: 2px; }
 .author-workspace :focus-visible { outline: 2px solid #499de3; outline-offset: 2px; }
-.visual-card th { background: var(--visual-header, #f3f7f8); color: inherit; }
+.visual-card th { background: var(--visual-header, #f8fafc); color: inherit; }
 .visual-card :is(tr.subtotal, tr.total) { background: var(--visual-header, #edf6f6); }
 .visual-card .table-scroll td button { color: inherit; background: transparent; }
 /* Issue #108 polish slice 72: hover feedback for the table row-selection
    button (.table-scroll td button in VisualCard's DataTable — the first
    column's value rendered as a button when the visual has an
    interaction, so clicking it applies the row's filter action). In the
-   author workspace the generic author button hover (#edf7f7) reaches it,
+   author workspace the generic author button hover (#eef3fd) reaches it,
    but a visual card on the consumer Dashboard renders in <main> inside
    .app-shell, outside .author-workspace and .data-prep, and a CSSOM
    audit showed the button matches zero :hover rules there: resting at
    color inherit / background transparent (the rule above), hovering
    changed nothing while the card's own footer summaries tint on hover.
-   It now takes #eaf3f7 — that card-footer summary tint, the same light
+   It now takes #e8eefb — that card-footer summary tint, the same light
    tint the data-row-menu summary uses. This selector ties the resting
    rule above at (0,2,2) and wins by standing after it; it stays below
    the author (0,3,1) and data-prep (0,3,1) button hovers, so those
@@ -1352,7 +1352,7 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
    author-context button still hovers to rgb(237,247,247)). Background
    only, so resting geometry is identical; the underline and inherited
    color are kept. Static, no animation. */
-.table-scroll td button:hover { background: #eaf3f7; }
+.table-scroll td button:hover { background: #e8eefb; }
 @media (max-width: 760px) {
   .author-menu > details { position: static; }
   .menu-popover { left: 0; width: min(320px, 90vw); max-height: min(360px, 45vh); }
@@ -1369,18 +1369,18 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
    in the app shell and no identity renderer is supplied) had zero
    hover feedback. The other two brand-link instances already hover —
    .product-header .brand:hover and .first-run-header .brand:hover
-   (slice 71), both #365764 — but each is scoped to its own header, and
+   (slice 71), both #2b3a55 — but each is scoped to its own header, and
    every other a:hover rule is scoped elsewhere, while the author
    generic hovers are button/input/select/textarea/summary-typed, so
    this link matched no :hover rule. A CSSOM probe with all five real
    stylesheets (1,341 rules) in the real ancestor context confirmed
    zero matching :hover rules and a transparent rest. It now takes the
-   brand links' established dark-header hover tint (#365764, the
+   brand links' established dark-header hover tint (#2b3a55, the
    product-header and first-run brand hovers), so no new colour is
    introduced. The header variables are shared by both editor chromes,
    so no dark variant is added. Background only, so resting colour and
    geometry are identical and there is no animation. */
-.author-topbar .brand:hover { background: #365764; }
+.author-topbar .brand:hover { background: #2b3a55; }
 .author-topbar .brand-mark { color: var(--header-muted); font-size: 18px; }
 .author-workspace .author-topbar .analysis-title { flex: 0 1 38rem; min-width: 0; margin: 0; padding-left: 8px; border-left: 1px solid var(--header-muted); }
 .author-workspace .author-topbar .analysis-title:first-child { padding-left: 0; border-left: 0; }
@@ -1425,7 +1425,7 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .o-entry { margin: 8px 0; padding: 10px 14px; border: 1px solid var(--border, #cbd5e1); border-radius: 6px; background: var(--panel, #fff); color: var(--text, #15283d); }
 .o-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 .o-bar label { font-weight: 650; }
-.o-bar input { flex: 1 1 240px; min-width: 0; font: inherit; padding: 8px; border: 1px solid #c9d8de; border-radius: 5px; }
+.o-bar input { flex: 1 1 240px; min-width: 0; font: inherit; padding: 8px; border: 1px solid #c3cfe0; border-radius: 5px; }
 .o-local-label, .o-source, .o-diagnostic, .o-explanation span { font-size: 12px; }
 .o-answer { margin-top: 12px; border-top: 1px solid #cbd5e1; padding-top: 10px; }
 .o-answer-actions { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
@@ -1436,14 +1436,14 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .o-explanation span { font-weight: normal; margin-left: 8px; }
 .o-grounding, .o-steps { font: 12px Arial, "Helvetica Neue", Helvetica, sans-serif; overflow-wrap: anywhere; }
 .o-grounding, .o-steps p { margin: 4px 0; }
-.o-steps { display: grid; gap: 8px; min-width: 0; margin: 8px 0; padding: 8px; border: 1px solid var(--chrome-border, #c9d8de); }
+.o-steps { display: grid; gap: 8px; min-width: 0; margin: 8px 0; padding: 8px; border: 1px solid var(--chrome-border, #c3cfe0); }
 .o-steps legend { padding: 0 4px; font-size: 13px; font-weight: 600; }
 .o-steps label { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.o-steps :is(select, input) { min-width: 0; min-height: 28px; padding: 4px 8px; font: inherit; color: inherit; background: var(--chrome-surface, #fff); border: 1px solid var(--chrome-border, #c9d8de); border-radius: 4px; }
+.o-steps :is(select, input) { min-width: 0; min-height: 28px; padding: 4px 8px; font: inherit; color: inherit; background: var(--chrome-surface, #fff); border: 1px solid var(--chrome-border, #c3cfe0); border-radius: 4px; }
 .o-steps select { flex: 1; }
 .o-step-top, .o-step-chips { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; }
 .o-step-top input { width: 80px; }
-.o-step-chip { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; padding-left: 4px; border: 1px solid var(--chrome-border, #c9d8de); border-radius: 4px; }
+.o-step-chip { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; padding-left: 4px; border: 1px solid var(--chrome-border, #c3cfe0); border-radius: 4px; }
 .o-step-chip button { flex-shrink: 0; }
 .o-alternatives > div { display: flex; flex-wrap: wrap; gap: 8px; }
 .o-alternatives button { flex: 1 1 220px; text-align: left; white-space: normal; }
@@ -1455,16 +1455,16 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .o-entry-toolbar .o-answer { flex-basis: 100%; color: var(--chrome-text); }
 /* Non-modal, right-docked Q panel; the sheet remains available alongside it. */
 .q-entry { margin: 8px 0; }
-.q-trigger { display: flex; align-items: center; gap: 8px; min-height: 28px; max-width: 100%; padding: 4px 8px; border: 1px solid #c9d8de; border-radius: 5px; background: #fff; color: #19384a; text-align: left; font: 12px Arial, "Helvetica Neue", Helvetica, sans-serif; }
+.q-trigger { display: flex; align-items: center; gap: 8px; min-height: 28px; max-width: 100%; padding: 4px 8px; border: 1px solid #c3cfe0; border-radius: 5px; background: #fff; color: #1b2740; text-align: left; font: 12px Arial, "Helvetica Neue", Helvetica, sans-serif; }
 .author-workspace[data-chrome] .author-menu > .q-trigger { flex: 0 1 clamp(220px, 18vw, 280px); min-width: 0; margin: 4px auto; padding: 4px 8px; border: 1px solid var(--header-border); border-radius: 20px; background: var(--header-pressed); }
 .q-trigger .o-mark { flex-shrink: 0; }
 /* Standalone Ask O trigger (home sample dashboard, dashboard view) takes the
-   established menu-item hover tint (#eaf3f7), same state language as the
+   established menu-item hover tint (#e8eefb), same state language as the
    data-page buttons and tabs (slices 16/19/21). The author-chrome rendering is
    governed by the more specific .author-menu > button:hover rule, which keeps
    winning there; disabled triggers keep their flat state. Background only, so
    resting geometry is identical. */
-.q-trigger:hover:not(:disabled) { background: #eaf3f7; }
+.q-trigger:hover:not(:disabled) { background: #e8eefb; }
 .q-trigger-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (max-width: 1100px) {
   .author-workspace[data-chrome] .author-menu > .q-trigger { flex: 1 1 240px; }
@@ -1483,10 +1483,10 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
    the border-left alone separates the docked column. Below the 760px
    shell breakpoint the panel is effectively full-width and still floats,
    so the shadow returns there only. */
-.q-side-panel { position: fixed; z-index: 70; inset: 0 0 0 auto; display: flex; flex-direction: column; width: min(400px, 100%); border-left: 1px solid var(--chrome-border, #c9d8de); background: var(--chrome-surface, #fff); color: var(--chrome-text, #15283d); font: 12px Arial, "Helvetica Neue", Helvetica, sans-serif; animation: q-panel-enter 150ms ease-out; }
+.q-side-panel { position: fixed; z-index: 70; inset: 0 0 0 auto; display: flex; flex-direction: column; width: min(400px, 100%); border-left: 1px solid var(--chrome-border, #c3cfe0); background: var(--chrome-surface, #fff); color: var(--chrome-text, #15283d); font: 12px Arial, "Helvetica Neue", Helvetica, sans-serif; animation: q-panel-enter 150ms ease-out; }
 @media (max-width: 760px) { .q-side-panel { box-shadow: -4px 0 16px #15283d26; } }
 @media (prefers-reduced-motion: reduce) { .q-side-panel { animation: none; } }
-.q-panel-heading { display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; gap: 8px; padding: 8px; border-bottom: 1px solid var(--chrome-border, #c9d8de); }
+.q-panel-heading { display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; gap: 8px; padding: 8px; border-bottom: 1px solid var(--chrome-border, #c3cfe0); }
 .q-panel-heading h2, .q-side-panel .o-alternatives h3 { margin: 0; font-size: 13px; }
 .q-panel-content { min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 8px; }
 .q-side-panel .o-entry { margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent; color: inherit; }
@@ -1494,8 +1494,8 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .q-side-panel .o-bar label { flex-basis: 100%; }
 .q-side-panel .o-bar input { flex: 1 1 0; width: 0; }
 .q-side-panel :is(button, input) { min-height: 28px; padding: 4px 8px; font: inherit; }
-.q-side-panel button { border: 1px solid var(--chrome-border, #c9d8de); border-radius: 5px; background: var(--chrome-surface, #fff); color: inherit; }
-.q-side-panel button:hover:not(:disabled) { background: var(--chrome-menu-hover, #edf7f7); }
+.q-side-panel button { border: 1px solid var(--chrome-border, #c3cfe0); border-radius: 5px; background: var(--chrome-surface, #fff); color: inherit; }
+.q-side-panel button:hover:not(:disabled) { background: var(--chrome-menu-hover, #eef3fd); }
 /* Issue #108 polish slice 58: the panel's search field (.o-bar input,
    OEntry's "Ask a question" input) had no hover rule of its own. Inside
    the Author workspace the generic author search-input hover reaches
@@ -1503,14 +1503,14 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
    .author-workspace, so hovering the field changed nothing while every
    button beside it tinted. It now takes the panel's own hover tint —
    the same var its button rule above uses (dark chrome resolves the
-   var to #293f55, matching the buttons). At equal specificity to the
+   var to #1e3358, matching the buttons). At equal specificity to the
    author search hover rule and later in this file, the panel input
    matches its panel buttons inside Author too. Background only, so
    resting geometry is identical. Static, so no reduced-motion variant
    is needed; disabled fields keep their flat resting state. The
    .o-bar scope keeps the mode notice's native checkbox on OS rendering
    by design. */
-.q-side-panel .o-bar input:hover:not(:disabled) { background: var(--chrome-menu-hover, #edf7f7); }
+.q-side-panel .o-bar input:hover:not(:disabled) { background: var(--chrome-menu-hover, #eef3fd); }
 /* Issue #108 polish slice 132: the Ask O panel's question label
    (.q-side-panel .o-bar label — "Ask a question" in OEntry's form,
    rendered inside .q-panel-content) had zero hover feedback. The
@@ -1524,17 +1524,17 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
    same panel all tint. A CSSOM probe with all five real stylesheets
    (1,406 rules) in the real ancestor context confirmed zero matching
    :hover rules and a transparent rest. The label now takes the
-   panel's own hover expression, var(--chrome-menu-hover, #edf7f7) —
+   panel's own hover expression, var(--chrome-menu-hover, #eef3fd) —
    the exact background of the panel button hover and the slice-58
    input hover — so no new colour is introduced, label and field read
-   as one surface, and dark chrome resolves the var to #293f55
+   as one surface, and dark chrome resolves the var to #1e3358
    exactly like the panel buttons. Background only, so resting
    geometry is identical and there is no animation. Scoped to
    .q-side-panel: in the author-menu variant the same label is
    visually hidden (clipped), and the embed context is already
    covered by embed.css, so both stay unchanged. */
-.q-side-panel .o-bar label:hover { background: var(--chrome-menu-hover, #edf7f7); }
-.q-side-panel .o-answer { margin-top: 8px; padding-top: 8px; border-color: var(--chrome-border, #c9d8de); }
+.q-side-panel .o-bar label:hover { background: var(--chrome-menu-hover, #eef3fd); }
+.q-side-panel .o-answer { margin-top: 8px; padding-top: 8px; border-color: var(--chrome-border, #c3cfe0); }
 .q-side-panel .o-alternatives { margin-top: 8px; }
 .q-side-panel .o-alternatives h3 { margin-bottom: 8px; }
 .q-side-panel :focus-visible, .q-trigger:focus-visible { outline: 2px solid #499de3; outline-offset: 2px; }
@@ -1558,7 +1558,7 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
    ancestor contexts confirmed zero matching :hover rules for the
    label and a transparent rest in all of them (the switch itself
    steps only inside the calculation dialog, via that dialog's
-   generic input hover, slice 46). The label now takes #edf7f7, the
+   generic input hover, slice 46). The label now takes #eef3fd, the
    author surface's established hover tint (the author button and
    field hovers, the calculation-dialog hovers, and the Ask O panel's
    fallback hover tint), so no new colour is introduced. The rule is
@@ -1568,15 +1568,15 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
    precedents where the label surface hovers and its inner input does
    not. Background only, so resting geometry is identical and there
    is no animation. */
-.o-mode-notice label:hover { background: #edf7f7; }
+.o-mode-notice label:hover { background: #eef3fd; }
 /* Issue #108 polish slice 98: dark-chrome variant of the O-mode
    notice label hover above. The notice renders in the author toolbar
    under dark chrome, where the light tint would sit wrong; it takes
-   the author dark hover tint (#334c62, the dark button and field
+   the author dark hover tint (#36486a, the dark button and field
    hovers) instead. The calculation dialog renders outside
    .author-workspace (slice 46) and is a fixed-light surface, so the
    BuildForMe rendering keeps the light tint above. Background only. */
-.author-workspace[data-chrome=dark] .o-mode-notice label:hover { background: #334c62; }
+.author-workspace[data-chrome=dark] .o-mode-notice label:hover { background: #36486a; }
 
 .admin-settings { max-width: 52rem; padding: 1.5rem; margin: 0 auto; }
 .admin-settings form { display: flex; flex-wrap: wrap; align-items: end; gap: 1rem; margin: 1.5rem 0; }
@@ -1589,7 +1589,7 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
    inside .app-shell, outside .author-workspace and .data-page, so the
    author/data/dialog hover rules never reach them, and hovering a
    Save button, text field, or select changed nothing while every
-   other surface in the app tints on hover. They now take #edf7f7 —
+   other surface in the app tints on hover. They now take #eef3fd —
    style.css's one hover tint for both generic buttons
    (.author-workspace button:hover) and fields (.author-workspace
    select/input:hover, the .api-picker fields). Background only, so
@@ -1598,8 +1598,8 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
    state. Radio/checkbox inputs are excluded so the user-removal
    dialog's native controls keep OS rendering (the data-dialog /
    analysis-file-dialog exclusion pattern). */
-.admin-settings button:hover:not(:disabled) { background: #edf7f7; }
-.admin-settings input:hover:not(:disabled):not([type=radio]):not([type=checkbox]), .admin-settings select:hover:not(:disabled) { background: #edf7f7; }
+.admin-settings button:hover:not(:disabled) { background: #eef3fd; }
+.admin-settings input:hover:not(:disabled):not([type=radio]):not([type=checkbox]), .admin-settings select:hover:not(:disabled) { background: #eef3fd; }
 /* Issue #108 polish slice 87: the one link on the admin surfaces —
    "Open operator user removal" (UserManagement.tsx, the hosted-tenant
    branch) — is a plain <a> inside .admin-settings, so slice 59's
@@ -1612,12 +1612,12 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
    rest. It is the only <a> inside .admin-settings anywhere (the AI
    settings, operator-removal, users and accept-invitation branches
    render no other links), so the scope is tight. It now takes the
-   admin surface's established hover tint (#edf7f7, slice 59), so no
+   admin surface's established hover tint (#eef3fd, slice 59), so no
    new colour is introduced. Background only, so the UA link
    colour/underline and resting geometry are identical; static (no
    animation), so no reduced-motion variant is needed. The admin
    surface is fixed light, so no dark variant. */
-.admin-settings a:hover { background: #edf7f7; }
+.admin-settings a:hover { background: #eef3fd; }
 
 /* Connector gallery: docked details, clear availability, no simulated connections. */
 .data-sources { max-width: 1500px; margin: 0 auto; padding: 28px 32px; color: #26364a; }
@@ -1646,12 +1646,12 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
    label.connector-search) confirmed zero matching :hover rules and a
    white rest, while the gallery's cards (.connector-card:hover) and
    its submit (slice 66) do step. It now takes the app surfaces'
-   established field hover tint (#eaf3f7 — the data search inputs,
+   established field hover tint (#e8eefb — the data search inputs,
    slices 27/48, and the collection fields, slices 23/64), so no new
    colour is introduced. Background only, so resting geometry is
    identical and there is no animation. The gallery is a fixed-light
    app-shell surface, so no dark variant is added. */
-.connector-search input[type=search]:hover:not(:disabled) { background: #eaf3f7; }
+.connector-search input[type=search]:hover:not(:disabled) { background: #e8eefb; }
 .connector-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(176px, 1fr)); gap: 14px; }
 .connector-featured { grid-column: 1 / -1; }
 .connector-description { font-size: 14px; line-height: 1.5; }
@@ -1672,7 +1672,7 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
    .connector-picker > label.connector-toggle) confirmed zero
    matching :hover rules and a transparent rest for both the label
    and the checkbox. The label now takes the app surfaces'
-   established hover tint (#eaf3f7 — the gallery's own search and
+   established hover tint (#e8eefb — the gallery's own search and
    details hovers, slices 90/91/93, and the data-connector-tile
    label hover in the Create Dataset dialog), so no new colour is
    introduced. The rule is on the label, not the checkbox: the
@@ -1681,8 +1681,8 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
    its inner input does not. Background only, so resting geometry
    is identical and there is no animation. The gallery is a
    fixed-light app-shell surface, so no dark variant is added. */
-.connector-toggle:hover { background: #eaf3f7; }
-.connector-unavailable { border-top: 1px solid #d4dfe7; padding-top: 16px; }
+.connector-toggle:hover { background: #e8eefb; }
+.connector-unavailable { border-top: 1px solid #d7e0ee; padding-top: 16px; }
 .connector-unavailable > p { font-size: 13px; color: #52687b; }
 .connector-card { display: flex; flex-direction: column; text-align: left; align-items: flex-start; gap: 6px; min-height: 176px; padding: 18px; border: 1px solid #cdd8e2; border-radius: 4px; background: white; color: #26364a; cursor: pointer; }
 .connector-card:hover { border-color: #508bb6; background: #f8fbff; }
@@ -1695,7 +1695,7 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .connector-name { font-size: 15px; font-weight: 600; }
 .connector-category { font-size: 11px; color: #647789; }
 .connector-state { font-size: 11px; line-height: 1.4; margin-top: auto; padding-top: 8px; color: #516779; }
-.connector-details { min-width: 0; border-left: 1px solid #d4dfe7; padding: 6px 0 12px 24px; font-size: 13px; }
+.connector-details { min-width: 0; border-left: 1px solid #d7e0ee; padding: 6px 0 12px 24px; font-size: 13px; }
 .connector-details form, .connector-details label { display: grid; gap: 7px; }
 .connector-details form { gap: 16px; margin: 22px 0 16px; }
 .connector-details label { font-size: 12px; font-weight: 600; }
@@ -1714,7 +1714,7 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
    confirmed zero matching :hover rules and a white rest for both
    the text input and the select, while the gallery's search input
    (slice 90) and its submit (slice 66) do step. They now take the
-   app surfaces' established field hover tint (#eaf3f7 — the
+   app surfaces' established field hover tint (#e8eefb — the
    data-dialog fields these mirror, slices 27/48, and the connector
    search input, slice 90), so no new colour is introduced. The file
    input keeps its flat state, following the data-dialog rule's own
@@ -1722,7 +1722,7 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
    resting geometry is identical and there is no animation. The
    gallery is a fixed-light app-shell surface, so no dark variant
    is added. */
-.connector-details input:hover:not(:disabled):not([type=radio]):not([type=checkbox]):not([type=file]), .connector-details select:hover:not(:disabled) { background: #eaf3f7; }
+.connector-details input:hover:not(:disabled):not([type=radio]):not([type=checkbox]):not([type=file]), .connector-details select:hover:not(:disabled) { background: #e8eefb; }
 /* Issue #108 polish slice 93: the plain connector-details buttons
    (.connector-details button without .connector-submit — "Prepare
    PostgreSQL data" and "Prepare this upload" in DataSources.tsx's
@@ -1740,13 +1740,13 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
    and a UA-default rest for all of them, while the gallery's
    fields (slice 91) and its submit (slice 66) do step. They now
    take the app surfaces' established secondary-button hover tint
-   (#eaf3f7 — the data-dialog button hover these mirror in the
+   (#e8eefb — the data-dialog button hover these mirror in the
    dialog context, and the details fields' hover, slice 91), so no
    new colour is introduced. The primary submit is excluded so it
-   keeps its #126e76 step. Background only, so resting geometry is
+   keeps its #2f66d8 step. Background only, so resting geometry is
    identical and there is no animation. The gallery is a
    fixed-light app-shell surface, so no dark variant is added. */
-.connector-details button:hover:not(:disabled):not(.connector-submit) { background: #eaf3f7; }
+.connector-details button:hover:not(:disabled):not(.connector-submit) { background: #e8eefb; }
 /* Issue #108 polish slice 131: the connector details labels
    (.connector-details label — "File" and the schema-field labels
    in DataSources.tsx's ConnectorDetails form, plus "Data expires"
@@ -1757,7 +1757,7 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
    { display: grid; gap: 7px; }) makes each label a visible surface
    (text line, gap, field). In the create-dataset dialog the SAME
    ConnectorDetails labels already hover via .data-dialog
-   label:hover (#eaf3f7), but in the standalone gallery
+   label:hover (#e8eefb), but in the standalone gallery
    (app-shell > main > section.data-sources > .connector-layout >
    aside.connector-details) every label :hover rule in the cascade
    is scoped elsewhere, so a CSSOM probe with all five real
@@ -1766,7 +1766,7 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
    the gallery form label, the file label and the DirectUpload
    label, while the fields inside them tint (slice 91) and the
    aside's plain buttons (slice 93), submit (slice 66) and toggle
-   label (slice 94) do step. They now take #eaf3f7 — the tint these
+   label (slice 94) do step. They now take #e8eefb — the tint these
    same labels already take inside the data-dialog, and the
    gallery's own field (slice 91), plain-button (slice 93) and
    toggle-label (slice 94) hovers — so no new colour is introduced
@@ -1778,7 +1778,7 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
    Background only, so resting geometry is identical and there is
    no animation. The gallery is a fixed-light app-shell surface,
    so no dark variant is added. */
-.connector-details label:hover { background: #eaf3f7; }
+.connector-details label:hover { background: #e8eefb; }
 .connector-details input:disabled, .connector-details select:disabled { background: #f0f3f6; color: #6a7886; }
 .connector-availability { padding: 9px 12px; background: #f0f3f6; border-radius: 3px; font-weight: 600; }
 .connector-submit { background: #087cb8; color: white; padding: 11px; border: 0; border-radius: 3px; font-weight: 600; cursor: pointer; }
@@ -1787,8 +1787,8 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .connector-error { color: #a12b26; overflow-wrap: anywhere; }
 .upload-result { overflow-wrap: anywhere; }
 .upload-result table { width: 100%; border-collapse: collapse; font-size: 12px; }
-.upload-result th, .upload-result td { text-align: left; border-bottom: 1px solid #d4dfe7; padding: 8px 4px; }
-@media (max-width: 900px) { .connector-layout { grid-template-columns: minmax(0, 1fr); } .connector-details { border-left: 0; border-top: 1px solid #d4dfe7; padding: 20px 0; } }
+.upload-result th, .upload-result td { text-align: left; border-bottom: 1px solid #d7e0ee; padding: 8px 4px; }
+@media (max-width: 900px) { .connector-layout { grid-template-columns: minmax(0, 1fr); } .connector-details { border-left: 0; border-top: 1px solid #d7e0ee; padding: 20px 0; } }
 @media (max-width: 520px) { .data-sources { padding: 20px 16px; } .connector-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; } .connector-card { padding: 12px; } .connector-count { display: none; } }
 
 /* Dataset preparation: docked controls, ordered graph, and dominant preview. */
@@ -1798,10 +1798,10 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .prep-heading p { margin: 0 0 12px; }
 .prep-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .data-prep button { cursor: pointer; border: 1px solid #aebdca; background: white; border-radius: 4px; color: #243746; padding: 4px 8px; font: inherit; font-size: 12px; }
-.data-prep button:hover:not(:disabled) { background: #edf6fc; border-color: #1681b9; }
+.data-prep button:hover:not(:disabled) { background: #e8eefb; border-color: #1681b9; }
 /* Slice 31 (#108): the prep document-bar selects (saved/imported dataset
    pickers) had zero hover feedback — take the surface's button hover tint. */
-.data-prep select:hover:not(:disabled) { background: #edf6fc; }
+.data-prep select:hover:not(:disabled) { background: #e8eefb; }
 /* Slice 39 (#108): the prep inputs and textareas had zero hover feedback —
    the last members of the resting-rule group (.data-prep input, select,
    textarea) without a hover state. A fresh behavioral hover audit of the
@@ -1811,10 +1811,10 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
    every button and the Connected source select beside them tinted. The
    step editors' text inputs and expression/values textareas share the
    same resting rule and the same gap. Inputs and textareas now take the
-   surface's own hover tint (#edf6fc, buttons slice-31 select language).
+   surface's own hover tint (#e8eefb, buttons slice-31 select language).
    Background only, so resting geometry is identical and there is no
    animation. */
-.data-prep input:hover:not(:disabled), .data-prep textarea:hover:not(:disabled) { background: #edf6fc; }
+.data-prep input:hover:not(:disabled), .data-prep textarea:hover:not(:disabled) { background: #e8eefb; }
 .data-prep button:focus-visible, .data-prep input:focus-visible, .data-prep select:focus-visible, .data-prep textarea:focus-visible { outline: 3px solid #1681b9; outline-offset: 2px; }
 .data-prep button:disabled { cursor: default; opacity: .5; }
 .prep-document-bar { flex-wrap: wrap; padding: 8px; background: #edf2f6; border: 1px solid #c9d3dc; }
@@ -1838,7 +1838,7 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .prep-step-editor legend { font-size: 12px; }
 .prep-columns { max-height: 220px; overflow: auto; }
 .prep-columns label { flex-direction: row; align-items: center; gap: 6px; overflow-wrap: anywhere; }
-.prep-columns label small { color: #5c7281; margin-left: auto; font-size: 9px; }
+.prep-columns label small { color: #64748b; margin-left: auto; font-size: 9px; }
 /* Slice 103 (#108): the column-picker rows (.prep-columns label — the
    full-row label wrapping drag handle, checkbox, name and type) had
    zero hover feedback: every label :hover rule is scoped elsewhere, so
@@ -1846,11 +1846,11 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
    changed nothing, while only the small checkbox box tinted via the
    slice-39 input hover. The row is the interactive surface (click
    toggles, selected rows are focusable and draggable), so it now takes
-   the data-prep surface's hover tint (#edf6fc, slices 31/39).
+   the data-prep surface's hover tint (#e8eefb, slices 31/39).
    Background only, so resting geometry is identical and there is no
    animation. The data-prep surface is fixed light, so no dark
    variant. */
-.prep-columns label:hover { background: #edf6fc; }
+.prep-columns label:hover { background: #e8eefb; }
 /* Slice 104 (#108): the join editor's key-column labels
    (.prep-key-column — the label wrapping the drag handle and the
    column select in the join-keys fieldset) had zero hover feedback:
@@ -1859,11 +1859,11 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
    only the select inside it tinted via the slice-31 select hover.
    The label is itself an interactive surface (it is the drop target
    for dragged table columns and wraps the key-pair drag handle), so
-   it now takes the data-prep surface's hover tint (#edf6fc, slices
+   it now takes the data-prep surface's hover tint (#e8eefb, slices
    31/39/103). Background only, so resting geometry is identical and
    there is no animation. The data-prep surface is fixed light, so
    no dark variant. */
-.prep-key-column:hover { background: #edf6fc; }
+.prep-key-column:hover { background: #e8eefb; }
 /* Slice 105 (#108): the document bar's field labels
    (.prep-document-bar > label — "Dataset name" wrapping its text
    input and "Saved datasets" wrapping its select in DataPrep.tsx)
@@ -1874,11 +1874,11 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
    input hover. The .data-prep label rule lays the label out as a
    column flex (text line, gap, field), so the label itself is a
    visible surface, so it now takes the data-prep surface's hover
-   tint (#edf6fc, slices 31/39/103/104). The child-combinator scope
+   tint (#e8eefb, slices 31/39/103/104). The child-combinator scope
    keeps labels nested deeper in the bar out. Background only, so
    resting geometry is identical and there is no animation. The
    data-prep surface is fixed light, so no dark variant. */
-.prep-document-bar > label:hover { background: #edf6fc; }
+.prep-document-bar > label:hover { background: #e8eefb; }
 /* Slice 106 (#108): the step editor's field labels
    (.prep-step-editor label — "Step name (optional)", the left-input
    label, and the Select/Text helper labels in the step fieldsets in
@@ -1889,13 +1889,13 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
    hover and the slice-39 input/textarea hovers. The .data-prep
    label rule lays the label out as a column flex (text line, gap,
    field), so the label itself is a visible surface, so it now takes
-   the data-prep surface's hover tint (#edf6fc, slices 31/39/103/
+   the data-prep surface's hover tint (#e8eefb, slices 31/39/103/
    104/105). The column-picker rows and key-column labels nested in
    the editor already take the identical tint (slices 103/104).
    Background only, so resting geometry is identical and there is
    no animation. The data-prep surface is fixed light, so no dark
    variant. */
-.prep-step-editor label:hover { background: #edf6fc; }
+.prep-step-editor label:hover { background: #e8eefb; }
 /* Slice 107 (#108): the input config's source-picker label
    (.prep-input-config > label — "Connected source" wrapping its
    PrepSourcePicker select in DataPrep.tsx) had zero hover feedback:
@@ -1905,13 +1905,13 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
    slice-31 select hover. The .data-prep label rule lays the label
    out as a column flex (text line, gap, field), so the label itself
    is a visible surface, so it now takes the data-prep surface's
-   hover tint (#edf6fc, slices 31/39/103/104/105/106). The
+   hover tint (#e8eefb, slices 31/39/103/104/105/106). The
    child-combinator scope keeps the staging picker's label out; the
    step editor's source-picker label already takes the identical
    tint via slice 106. Background only, so resting geometry is
    identical and there is no animation. The data-prep surface is
    fixed light, so no dark variant. */
-.prep-input-config > label:hover { background: #edf6fc; }
+.prep-input-config > label:hover { background: #e8eefb; }
 /* Slice 108 (#108): the staging view's source-picker label
    (.prep-staging > label — "Stage a source" wrapping its
    PrepSourcePicker select in DataPrep.tsx) had zero hover feedback:
@@ -1921,13 +1921,13 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
    slice-31 select hover. The .data-prep label rule lays the label
    out as a column flex (text line, gap, field), so the label itself
    is a visible surface, so it now takes the data-prep surface's
-   hover tint (#edf6fc, slices 31/39/103/104/105/106/107). The
+   hover tint (#e8eefb, slices 31/39/103/104/105/106/107). The
    child-combinator scope keeps labels nested deeper in the staging
    view out; the input-config picker's label already takes the
    identical tint via slice 107. Background only, so resting
    geometry is identical and there is no animation. The data-prep
    surface is fixed light, so no dark variant. */
-.prep-staging > label:hover { background: #edf6fc; }
+.prep-staging > label:hover { background: #e8eefb; }
 /* Slice 109 (#108): the author build panel's "Change visual type"
    label (.change-type in Author.tsx — text + select inside
    .visual-config in the .build-panel Panel in .author-layout in
@@ -1938,12 +1938,12 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
    via the author select hover. The .author-layout label rule
    lays the label out as a column flex (text line, gap, field),
    so the label itself is a visible surface, so it now takes the
-   author surface's hover tints (#edf7f7 light / #334c62 dark —
+   author surface's hover tints (#eef3fd light / #36486a dark —
    the author select hover and the slice-97 toggle label hover),
    so no new colour is introduced. Background only, so resting
    geometry is identical and there is no animation. */
-.change-type:hover { background: #edf7f7; }
-.author-workspace[data-chrome=dark] .change-type:hover { background: #334c62; }
+.change-type:hover { background: #eef3fd; }
+.author-workspace[data-chrome=dark] .change-type:hover { background: #36486a; }
 /* Slice 110 (#108): the admin surfaces' field labels
    (.admin-settings label — "AI provider", "Model ID" and
    "Replace API key" in AISettings.tsx, "Sign-in user ID",
@@ -1957,14 +1957,14 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
    the slice-59 admin field hover. The .admin-settings label
    rule lays the label out as a grid (text line, gap, field),
    so the label itself is a visible surface, so it now takes
-   the admin surface's hover tint (#edf7f7 — the slice-59 admin
+   the admin surface's hover tint (#eef3fd — the slice-59 admin
    button and field hovers and the slice-87 admin link hover),
    so no new colour is introduced. The removal dialog's radio
    labels already take the identical tint via slice 102, so
    this broader scope changes nothing there. Background only,
    so resting geometry is identical and there is no animation.
    The admin surface is fixed light, so no dark variant. */
-.admin-settings label:hover { background: #edf7f7; }
+.admin-settings label:hover { background: #eef3fd; }
 /* Slice 112 (#108): the imported-dataset picker label (the bare
    <label> in DataPrep.tsx — "Imported dataset" wrapping its
    select, a direct child of section.data-prep, rendered only
@@ -1976,26 +1976,26 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
    The .data-prep label rule lays the label out as a column flex
    (text line, gap, field), so the label itself is a visible
    surface, so it now takes the data-prep surface's hover tint
-   (#edf6fc, slices 31/39/103/104/105/106/107/108), so no new
+   (#e8eefb, slices 31/39/103/104/105/106/107/108), so no new
    colour is introduced. The child-combinator scope keeps labels
    nested deeper in the section out; the document-bar, step
    editor, input-config and staging labels already take the
    identical tint via slices 105/106/107/108. Background only,
    so resting geometry is identical and there is no animation.
    The data-prep surface is fixed light, so no dark variant. */
-.data-prep > label:hover { background: #edf6fc; }
+.data-prep > label:hover { background: #e8eefb; }
 .prep-main { min-width: 0; }
-.prep-canvas-heading, .prep-preview-heading { padding: 8px; border-bottom: 1px solid #dce3e9; font-size: 12px; color: #5c7281; }
+.prep-canvas-heading, .prep-preview-heading { padding: 8px; border-bottom: 1px solid #dde5ef; font-size: 12px; color: #64748b; }
 .prep-canvas-heading h2, .prep-preview-heading h2 { margin: 0; color: #243746; }
 .prep-canvas { overflow-x: auto; min-height: 250px; padding: 28px 24px; background-color: #f4f7fa; background-image: radial-gradient(#c3cdd5 1px, transparent 1px); background-size: 18px 18px; }
 .prep-nodes { display: flex; align-items: center; list-style: none; padding: 0; margin: 25px 0; width: max-content; }
 .prep-node-wrap { display: flex; align-items: center; position: relative; }
-.prep-edge { width: 32px; flex: 0 0 32px; border-top: 2px solid #7d94a5; position: relative; }
-.prep-edge::after { content: ''; position: absolute; right: 0; top: -5px; border-left: 6px solid #7d94a5; border-top: 4px solid transparent; border-bottom: 4px solid transparent; }
+.prep-edge { width: 32px; flex: 0 0 32px; border-top: 2px solid #8496ad; position: relative; }
+.prep-edge::after { content: ''; position: absolute; right: 0; top: -5px; border-left: 6px solid #8496ad; border-top: 4px solid transparent; border-bottom: 4px solid transparent; }
 .prep-branches { list-style: none; margin: 0; padding: 0 0 0 32px; position: relative; }
-.prep-branches::before { content: ''; position: absolute; left: 0; top: 50%; width: 32px; border-top: 2px solid #7d94a5; }
+.prep-branches::before { content: ''; position: absolute; left: 0; top: 50%; width: 32px; border-top: 2px solid #8496ad; }
 .prep-branches > li { padding: 18px 0; }
-.prep-branches > li::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; border-left: 2px solid #7d94a5; }
+.prep-branches > li::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; border-left: 2px solid #8496ad; }
 .prep-branches > li:first-child::before { top: 50%; }
 .prep-branches > li:last-child::before { bottom: 50%; }
 .prep-branches > li:only-child::before { display: none; }
@@ -2008,25 +2008,25 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .data-prep .prep-node { width: 168px; min-height: 124px; padding: 14px; display: flex; flex-direction: column; align-items: flex-start; gap: 10px; border: 1px solid #aebdca; border-top: 4px solid #426f91; box-shadow: 0 2px 5px #1230470d; text-align: left; }
 .data-prep .prep-node.selected { border-color: #087fbc; box-shadow: 0 0 0 2px #b4ddf3; }
 .prep-node > strong { overflow-wrap: anywhere; max-width: 100%; }
-.prep-node > span:last-child { font-size: 11px; color: #536879; overflow-wrap: anywhere; max-width: 100%; }
+.prep-node > span:last-child { font-size: 11px; color: #51637a; overflow-wrap: anywhere; max-width: 100%; }
 .prep-node-icon { border-radius: 4px; background: #e4eff7; min-width: 23px; height: 23px; display: grid; place-items: center; color: #216c9b; }
 .prep-secondary-source { width: 168px; display: flex; flex-direction: column; align-items: center; font-size: 11px; gap: 6px; margin-bottom: 10px; overflow-wrap: anywhere; }
 .prep-output { width: 150px; min-height: 100px; padding: 12px; box-sizing: border-box; display: flex; flex-direction: column; gap: 12px; font-size: 12px; color: #356250; border: 1px dashed #82a594; background: #f3faf5; overflow-wrap: anywhere; }
 .prep-canvas-hint { color: #566a79; font-size: 12px; }
 .prep-preview > p { margin: 14px 16px; font-size: 12px; }
-.prep-preview-empty { min-height: 42px; color: #5c7281; }
+.prep-preview-empty { min-height: 42px; color: #64748b; }
 .prep-table-scroll { overflow: auto; max-height: 390px; }
 .prep-preview table { width: 100%; border-collapse: collapse; font-size: 12px; }
-.prep-preview th { text-align: left; padding: 12px 16px; background: #edf2f6; border: 1px solid #dce3e9; white-space: nowrap; }
-.prep-preview th small { display: block; font-size: 10px; font-weight: normal; color: #5c7281; margin-top: 6px; }
+.prep-preview th { text-align: left; padding: 12px 16px; background: #edf2f6; border: 1px solid #dde5ef; white-space: nowrap; }
+.prep-preview th small { display: block; font-size: 10px; font-weight: normal; color: #64748b; margin-top: 6px; }
 .prep-preview td { padding: 10px 16px; border-bottom: 1px solid #e1e7ec; white-space: nowrap; }
 .prep-preview td em { color: #8899a4; }
-.prep-preview-help { color: #5c7281; line-height: 1.6; }
-.prep-grid-tools { display: flex; align-items: center; gap: 8px; padding: 8px 16px; border-bottom: 1px solid #dce3e9; font-size: 12px; }
+.prep-preview-help { color: #64748b; line-height: 1.6; }
+.prep-grid-tools { display: flex; align-items: center; gap: 8px; padding: 8px 16px; border-bottom: 1px solid #dde5ef; font-size: 12px; }
 .prep-grid-column-actions { display: flex; gap: 4px; margin-top: 8px; }
 .prep-grid-column-actions button { padding: 4px 8px; font-size: 12px; }
 .prep-preview thead th { position: sticky; top: 0; z-index: 1; }
-.prep-preview th.prep-row-number { width: 40px; padding: 8px; text-align: right; font-weight: normal; color: #5c7281; cursor: default; }
+.prep-preview th.prep-row-number { width: 40px; padding: 8px; text-align: right; font-weight: normal; color: #64748b; cursor: default; }
 .prep-preview td { border-right: 1px solid #e1e7ec; }
 @media (max-width: 800px) {
   .data-prep { padding: 12px; }
@@ -2069,16 +2069,16 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
    all five real stylesheets (1,399 rules) in the real ancestor
    contexts confirmed zero matching :hover rules for every label. Each
    label now takes the hover tint of the field inside it on its own
-   surface — #eaf3f7 on the data surfaces (the data-page select hover),
-   #edf6fc in data-prep (its select/input hovers), #edf7f7 in author
-   light chrome and #334c62 in author dark chrome (the author select
+   surface — #e8eefb on the data surfaces (the data-page select hover),
+   #e8eefb in data-prep (its select/input hovers), #eef3fd in author
+   light chrome and #36486a in author dark chrome (the author select
    hovers) — so no new colour is introduced and label and field read
    as one surface. Background only, so resting geometry is identical
    and there is no animation. */
-.execution-controls label:hover { background: #eaf3f7; }
-.data-prep .execution-controls label:hover { background: #edf6fc; }
-.author-workspace .execution-controls label:hover { background: #edf7f7; }
-.author-workspace[data-chrome=dark] .execution-controls label:hover { background: #334c62; }
+.execution-controls label:hover { background: #e8eefb; }
+.data-prep .execution-controls label:hover { background: #e8eefb; }
+.author-workspace .execution-controls label:hover { background: #eef3fd; }
+.author-workspace[data-chrome=dark] .execution-controls label:hover { background: #36486a; }
 .execution-controls input, .execution-controls select { padding: 7px 9px; border: 1px solid #b6c4d2; border-radius: 3px; background: var(--panel, white); color: inherit; }
 .execution-controls input { width: 145px; }
 .execution-controls button { min-height: 33px; }
@@ -2110,12 +2110,12 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
    the cascade is scoped elsewhere, so the label rested transparent
    and hovering its text changed nothing while only the select
    inside it tinted. The label now takes the author select/button
-   hover tint (#edf7f7), plus the author dark-chrome variant
-   (#334c62), so no new colour is introduced and the label and the
+   hover tint (#eef3fd), plus the author dark-chrome variant
+   (#36486a), so no new colour is introduced and the label and the
    select inside it read as one surface. Background only, so
    resting geometry is identical and there is no animation. */
-.draft-source-recovery label:hover { background: #edf7f7; }
-.author-workspace[data-chrome=dark] .draft-source-recovery label:hover { background: #334c62; }
+.draft-source-recovery label:hover { background: #eef3fd; }
+.author-workspace[data-chrome=dark] .draft-source-recovery label:hover { background: #36486a; }
 /* Durable automation histories contain long occurrence IDs. Keep them in the
    page's content column, including on narrow operator screens. */
 .job-management table { width: 100%; table-layout: fixed; border-collapse: collapse; margin: 16px 0; }
@@ -2126,17 +2126,17 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
    <main> inside .app-shell, outside .author-workspace, .data-page,
    .collection-card and .admin-settings, so no hover rule reached its
    buttons; hovering changed nothing while buttons on every other surface
-   tint. They now take #edf7f7 — style.css's generic button hover tint
+   tint. They now take #eef3fd — style.css's generic button hover tint
    (.author-workspace button:hover, the slice-59 admin buttons).
    Background only, so resting geometry is identical. Static, so no
    reduced-motion variant is needed; disabled buttons (the page's busy
    state) keep their flat resting state. */
-.job-management button:hover:not(:disabled) { background: #edf7f7; }
+.job-management button:hover:not(:disabled) { background: #eef3fd; }
 .admin-settings [role="dialog"] { margin-top: 24px; overflow-wrap: anywhere; }
 .admin-settings [role="dialog"] fieldset { display: grid; gap: 12px; }
 .admin-settings [role="dialog"] select { max-width: 100%; }
 .admin-settings [role="dialog"] label:has(input[type="radio"]) { display: flex; align-items: center; }
-.admin-settings [role="dialog"] label:has(> input[type=radio]):hover { background: #edf7f7; }
+.admin-settings [role="dialog"] label:has(> input[type=radio]):hover { background: #eef3fd; }
 .admin-settings [role="dialog"] input[type="radio"] { width: auto; margin-right: .5rem; }
 
 /* Analytics consent is one compact checkbox row within the settings form. */
@@ -2147,8 +2147,8 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .chart.insight-chart { overflow: auto; }
 
 /* Floating back-to-top control on long dashboard/sample pages. */
-.back-to-top { position: fixed; z-index: 30; bottom: 24px; right: 24px; min-height: 40px; padding: 8px 16px; border: 1px solid #526c7a; border-radius: 6px; background: #19384a; color: #fff; font: 600 12px/1.5 Arial, "Helvetica Neue", Helvetica, sans-serif; box-shadow: 0 4px 16px #19384a33; }
-.back-to-top:hover { background: #254a5e; }
+.back-to-top { position: fixed; z-index: 30; bottom: 24px; right: 24px; min-height: 40px; padding: 8px 16px; border: 1px solid #5b6b8c; border-radius: 6px; background: #1b2740; color: #fff; font: 600 12px/1.5 Arial, "Helvetica Neue", Helvetica, sans-serif; box-shadow: 0 4px 16px #1b274033; }
+.back-to-top:hover { background: #24407c; }
 
 /* The real local workspace starts empty; demo/hosted chrome retains its styling. */
 .app-shell[data-workspace="local"] { font: 12px/1.5 Arial, "Helvetica Neue", Helvetica, sans-serif; }
@@ -2160,7 +2160,7 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .empty-page-state .primary-button { display: inline-block; padding: 8px 16px; border: 1px solid #176fa1; border-radius: 4px; background: #176fa1; color: #fff; text-decoration: none; }
 .empty-page-state .primary-button:hover { border-color: #125881; background: #125881; }
 .empty-page-state .empty-state-secondary { padding: 4px 8px; border: 0; background: transparent; color: #176fa1; text-decoration: underline; }
-.empty-page-state .empty-state-secondary:hover { background: #eaf3f7; border-radius: 4px; }
+.empty-page-state .empty-state-secondary:hover { background: #e8eefb; border-radius: 4px; }
 .empty-page-note { margin: 8px 0 0; text-align: center; }
 .author-center > .author-canvas > .local-empty-state { min-height: 480px; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
 .author-layout-empty > .author-center { grid-column: 3 / -1; }
@@ -2173,10 +2173,10 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .prep-heading p { margin-bottom: 8px; }
 .prep-execution { margin: 8px 0; }
 .prep-execution summary { cursor: pointer; }
-.prep-execution summary:hover { background: #edf6fc; }
+.prep-execution summary:hover { background: #e8eefb; }
 .prep-catalog-group { border-top: 1px solid #e1e7ec; padding: 8px 0; }
 .prep-steps-search { margin-bottom: 8px; }
-.prep-sidebar:focus-visible { outline: 2px solid #087caa; outline-offset: -2px; }
+.prep-sidebar:focus-visible { outline: 2px solid #0284c7; outline-offset: -2px; }
 .data-prep .prep-add-data { border-color: transparent; }
 .prep-detail-tabs { display: flex; align-items: center; border-block: 1px solid #c9d3dc; }
 .prep-detail-tabs > button { border: 0; border-radius: 0; padding: 12px 16px; border-bottom: 2px solid transparent; }
@@ -2187,7 +2187,7 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .prep-configure h3 { font-size: 13px; margin: 8px 0; }
 .prep-configure .prep-step-editor, .prep-configure .prep-staging, .prep-configure .prep-input-config, .prep-configure .prep-step-summary { border: 0; margin-top: 0; }
 .prep-step-editor > label, .prep-input-config > label, .prep-staging > label { max-width: 360px; }
-.prep-step-editor > p, .prep-configure p { color: #536879; line-height: 1.5; }
+.prep-step-editor > p, .prep-configure p { color: #51637a; line-height: 1.5; }
 .prep-step-editor > fieldset { max-width: 600px; }
 @media (max-width: 700px) {
   .data-prep { padding: 8px; }
@@ -2195,19 +2195,19 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
   .prep-configure { padding: 8px; }
 }
 .prep-catalog-group > button { display: flex; align-items: center; gap: 8px; }
-.prep-catalog-group > button > span { width: 16px; text-align: center; color: #536879; }
+.prep-catalog-group > button > span { width: 16px; text-align: center; color: #51637a; }
 .prep-canvas { height: 320px; min-height: 0; overflow: hidden; padding: 0; position: relative; background-color: #fafbfc; background-size: 12px 12px; }
 .prep-viewport-shell { height: 100%; position: relative; }
 .prep-viewport { height: 100%; overflow: hidden; cursor: grab; touch-action: none; }
 .prep-viewport.panning { cursor: grabbing; user-select: none; }
-.prep-viewport:focus-visible { outline: 2px solid #087caa; outline-offset: -2px; }
+.prep-viewport:focus-visible { outline: 2px solid #0284c7; outline-offset: -2px; }
 .prep-viewport-content { width: max-content; padding-bottom: 40px; transform-origin: 0 0; }
 .prep-zoom { position: absolute; bottom: 8px; right: 8px; display: flex; gap: 4px; }
 .prep-zoom button { padding: 4px 8px; background: #fff; }
 .prep-canvas-hint { position: absolute; bottom: 40px; left: 24px; pointer-events: none; }
 .prep-nodes { margin: 8px 0; }
 .data-prep .prep-node { width: 148px; min-height: 56px; display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 4px 8px; border: 1px solid #c0c8ce; padding: 8px; border-radius: 6px; background: #fff; }
-.prep-node .prep-node-icon { grid-row: 1 / span 3; align-self: stretch; height: auto; min-height: 24px; margin: -8px 0 -8px -8px; border-radius: 6px 0 0 6px; background: #f0f2f4; color: #536879; }
+.prep-node .prep-node-icon { grid-row: 1 / span 3; align-self: stretch; height: auto; min-height: 24px; margin: -8px 0 -8px -8px; border-radius: 6px 0 0 6px; background: #f0f2f4; color: #51637a; }
 .prep-node > span:not(.prep-node-icon) { grid-column: 2; }
 .prep-node > strong { font-size: 12px; font-weight: 500; }
 .data-prep .prep-node.selected { border-color: #172d3b; box-shadow: 0 0 0 1px #172d3b; }
@@ -2228,34 +2228,34 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .prep-node .prep-output-marker { font-size: 9px; padding: 2px 4px; justify-self: start; }
 .prep-secondary-source { position: static; grid-column: 1; grid-row: 1; align-self: end; width: 148px; margin: 0; padding-bottom: 48px; }
 .prep-secondary-source > button { width: 100%; font-size: 12px; }
-.prep-right-edge { position: relative; grid-column: 1; grid-row: 1; align-self: end; justify-self: start; height: 48px; margin-left: 24px; border-left: 1px solid #7d94a5; }
-.prep-right-edge::after { content: ''; position: absolute; bottom: 0; left: -4px; border-top: 6px solid #7d94a5; border-inline: 3px solid transparent; }
-.prep-port-label { font-size: 9px; position: absolute; top: -14px; left: 0; color: #536879; background: #fafbfc; }
+.prep-right-edge { position: relative; grid-column: 1; grid-row: 1; align-self: end; justify-self: start; height: 48px; margin-left: 24px; border-left: 1px solid #8496ad; }
+.prep-right-edge::after { content: ''; position: absolute; bottom: 0; left: -4px; border-top: 6px solid #8496ad; border-inline: 3px solid transparent; }
+.prep-port-label { font-size: 9px; position: absolute; top: -14px; left: 0; color: #51637a; background: #fafbfc; }
 .prep-right-edge .prep-port-label { left: 4px; top: 18px; }
 .prep-output { width: 148px; min-height: 56px; padding: 8px; gap: 4px; border-radius: 6px; }
 .prep-input-rail { padding-left: 0; margin-bottom: 0; }
-.prep-join-editor { display: grid; grid-template-columns: minmax(160px, 1fr) minmax(360px, 3fr) minmax(160px, 1fr); margin-block: 8px; border-block: 1px solid #dce3e9; }
+.prep-join-editor { display: grid; grid-template-columns: minmax(160px, 1fr) minmax(360px, 3fr) minmax(160px, 1fr); margin-block: 8px; border-block: 1px solid #dde5ef; }
 .prep-join-table { padding: 8px; min-width: 0; }
-.prep-join-settings { padding: 8px 16px; min-width: 0; border-inline: 1px solid #dce3e9; }
+.prep-join-settings { padding: 8px 16px; min-width: 0; border-inline: 1px solid #dde5ef; }
 .prep-step-editor .prep-join-type, .prep-step-editor .prep-join-keys { border: 0; padding: 0; margin: 0 0 16px; }
 .prep-join-type legend, .prep-join-keys legend { margin-bottom: 4px; }
 .prep-join-type [role="radiogroup"] { display: flex; }
 .prep-join-type button { border-radius: 0; padding: 4px 12px; display: grid; place-items: center; }
 .prep-join-type button + button { margin-left: -1px; }
-.prep-join-type button[aria-checked="true"] { color: #087caa; background: #e5f3fa; border-color: #087caa; z-index: 1; }
+.prep-join-type button[aria-checked="true"] { color: #0284c7; background: #e5f3fa; border-color: #0284c7; z-index: 1; }
 .prep-join-key { display: grid; grid-template-columns: minmax(0, 1fr) 8px minmax(0, 1fr) 24px; align-items: center; gap: 8px; margin: 8px 0; }
 .data-prep .prep-key-column select { border-radius: 16px; border-color: #85adc1; background: #f5fbff; font-weight: normal; padding: 4px 8px; width: 100%; font-size: 12px; }
-.data-prep .prep-key-column.empty select { border-style: dashed; border-color: #929da5; background: #fff; color: #536879; }
+.data-prep .prep-key-column.empty select { border-style: dashed; border-color: #929da5; background: #fff; color: #51637a; }
 /* Issue #108 final audit: the empty join key-column select (the
    dashed placeholder dropdown in PrepJoinEditor.tsx) had zero hover
    feedback: the prep select hover (.data-prep select:hover,
-   #edf6fc) ties the empty resting rule above on specificity (0-3-1
+   #e8eefb) ties the empty resting rule above on specificity (0-3-1
    each, counting :not) and loses on source order, while the
    non-empty key select (resting #f5fbff at 0-2-1) hovers correctly.
    The empty select — a live dropdown, not a disabled state — now
    takes the same prep tint on hover. Background only, so resting
    geometry is identical and there is no animation. */
-.data-prep .prep-key-column.empty select:hover:not(:disabled) { background: #edf6fc; }
+.data-prep .prep-key-column.empty select:hover:not(:disabled) { background: #e8eefb; }
 .data-prep .prep-remove-key { border: 0; padding: 0; font-size: 20px; }
 .prep-join-columns { list-style: none; padding: 0; margin: 4px 0; max-height: 300px; overflow: auto; }
 .prep-join-columns button { width: 100%; display: flex; align-items: center; text-align: left; gap: 8px; border-color: transparent; border-radius: 16px; padding: 4px 8px; }
@@ -2268,7 +2268,7 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 /* Issue #108 polish slice 69: hover feedback for the join editor's
    "Right output columns" disclosure summary (.prep-join-outputs
    summary, PrepJoinEditor.tsx, inside .data-prep). Every other
-   data-prep control hovers to the surface tint #edf6fc — buttons,
+   data-prep control hovers to the surface tint #e8eefb — buttons,
    selects, inputs/textareas, and the prep-execution summary
    (slice 41) — but a summary is none of those elements, so the
    .data-prep hover rules never reached this one and no summary
@@ -2276,18 +2276,18 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
    only renders while a join step is being configured, so route
    audits never reach it. Background only, so resting geometry
    is identical and there is no animation. */
-.prep-join-outputs summary:hover { background: #edf6fc; }
+.prep-join-outputs summary:hover { background: #e8eefb; }
 .prep-join-outputs label { margin-bottom: 8px; }
 .prep-key-column { display: flex; flex-direction: row !important; align-items: center; gap: 4px; }
 .prep-key-column select { min-width: 0; }
 .prep-drag-handle, .prep-join-columns [draggable], .prep-preview th { cursor: grab; }
-.prep-drag-handle { color: #536879; flex-shrink: 0; }
+.prep-drag-handle { color: #51637a; flex-shrink: 0; }
 .prep-columns > p { font-size: 11px; }
-.data-prep [data-prep-drop="before"] { box-shadow: inset 0 3px #087caa; }
-.data-prep [data-prep-drop="after"] { box-shadow: inset 0 -3px #087caa; }
-.data-prep [data-prep-drop="assign"] { outline: 2px solid #087caa; outline-offset: 2px; background: #e5f3fa; }
-.prep-preview th[data-prep-drop="before"] { box-shadow: inset 3px 0 #087caa; }
-.prep-preview th[data-prep-drop="after"] { box-shadow: inset -3px 0 #087caa; }
+.data-prep [data-prep-drop="before"] { box-shadow: inset 0 3px #0284c7; }
+.data-prep [data-prep-drop="after"] { box-shadow: inset 0 -3px #0284c7; }
+.data-prep [data-prep-drop="assign"] { outline: 2px solid #0284c7; outline-offset: 2px; background: #e5f3fa; }
+.prep-preview th[data-prep-drop="before"] { box-shadow: inset 3px 0 #0284c7; }
+.prep-preview th[data-prep-drop="after"] { box-shadow: inset -3px 0 #0284c7; }
 @media (max-width: 1100px) {
   .prep-join-editor { grid-template-columns: minmax(140px, 1fr) minmax(300px, 2fr); }
   .prep-join-table:last-child { grid-column: 1; grid-row: 2; }
@@ -2301,11 +2301,11 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
   .prep-join-key { gap: 4px; }
 }
 
-.analysis-file-dialog { box-sizing: border-box; width: min(480px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); overflow: auto; padding: 24px; border: 1px solid var(--chrome-border, #c9d8de); border-radius: 8px; color: var(--chrome-text, #19384a); background: var(--chrome-surface, #fff); box-shadow: 0 8px 32px #14253644; font: 12px/1.5 Arial, "Helvetica Neue", Helvetica, sans-serif; }
-.analysis-file-dialog::backdrop { background: #14253688; }
+.analysis-file-dialog { box-sizing: border-box; width: min(480px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); overflow: auto; padding: 24px; border: 1px solid var(--chrome-border, #c3cfe0); border-radius: 8px; color: var(--chrome-text, #1b2740); background: var(--chrome-surface, #fff); box-shadow: 0 8px 32px #0e1a3344; font: 12px/1.5 Arial, "Helvetica Neue", Helvetica, sans-serif; }
+.analysis-file-dialog::backdrop { background: #0e1a3388; }
 .analysis-file-dialog h2 { font-size: 16px; margin: 0 0 8px; }
 .analysis-file-dialog label { display: grid; gap: 4px; }
-.analysis-file-dialog input { width: 100%; min-width: 0; padding: 4px 8px; border: 1px solid var(--chrome-border, #c9d8de); border-radius: 5px; background: var(--chrome-surface, #fff); color: inherit; }
+.analysis-file-dialog input { width: 100%; min-width: 0; padding: 4px 8px; border: 1px solid var(--chrome-border, #c3cfe0); border-radius: 5px; background: var(--chrome-surface, #fff); color: inherit; }
 .analysis-file-dialog .dialog-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
 /* Issue #108 polish slice 44: the analysis file dialogs' text inputs and
    textareas (Save-as-Analysis title, New Sheet name, Layout Settings
@@ -2318,13 +2318,13 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
    (430x28), the Analysis name input (430x28) and the Description
    textarea (430x64), while the same dialogs' buttons and selects
    tinted. Text inputs and textareas now take the author buttons' hover
-   tint (#edf7f7); dark chrome takes the dark button hover background
-   (#334c62) via a more specific variant, as in slices 36/37/38. Radio
+   tint (#eef3fd); dark chrome takes the dark button hover background
+   (#36486a) via a more specific variant, as in slices 36/37/38. Radio
    and checkbox inputs keep their native rendering (slices 33/37/38
    precedent). Background only, so resting geometry is identical and
    there is no animation. */
-.analysis-file-dialog input:hover:not(:disabled):not([type=radio]):not([type=checkbox]), .analysis-file-dialog textarea:hover:not(:disabled) { background: #edf7f7; }
-.author-workspace[data-chrome=dark] .analysis-file-dialog input:hover:not(:disabled):not([type=radio]):not([type=checkbox]), .author-workspace[data-chrome=dark] .analysis-file-dialog textarea:hover:not(:disabled) { background: #334c62; }
+.analysis-file-dialog input:hover:not(:disabled):not([type=radio]):not([type=checkbox]), .analysis-file-dialog textarea:hover:not(:disabled) { background: #eef3fd; }
+.author-workspace[data-chrome=dark] .analysis-file-dialog input:hover:not(:disabled):not([type=radio]):not([type=checkbox]), .author-workspace[data-chrome=dark] .analysis-file-dialog textarea:hover:not(:disabled) { background: #36486a; }
 /* Issue #108 polish slice 114: the analysis file dialogs' field labels
    (Save-as-Analysis "Analysis name"; Analysis Settings "Analysis name",
    "Description" and "Analysis theme"; New Sheet "Sheet name", "Layout"
@@ -2334,16 +2334,16 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
    field), so the label is a visible surface, but every label :hover
    rule is scoped elsewhere and hovering a label's text or gap changed
    nothing, while only the field inside it tinted via slice 44. The
-   labels now take the same author hover tint (#edf7f7; dark chrome
-   #334c62), so hovering the field inside the label reads as one
+   labels now take the same author hover tint (#eef3fd; dark chrome
+   #36486a), so hovering the field inside the label reads as one
    surface, not two steps. The New Sheet dialog's disabled sheet-type
    card is a label too and keeps slice 45's exclusion: the :not leaves
    its subtle resting background and not-allowed cursor untouched (the
    enabled card already takes the identical tint via slice 45).
    Background only, so resting geometry is identical and there is no
    animation. */
-.analysis-file-dialog label:hover:not(.sheet-type-card-disabled) { background: #edf7f7; }
-.author-workspace[data-chrome=dark] .analysis-file-dialog label:hover:not(.sheet-type-card-disabled) { background: #334c62; }
+.analysis-file-dialog label:hover:not(.sheet-type-card-disabled) { background: #eef3fd; }
+.author-workspace[data-chrome=dark] .analysis-file-dialog label:hover:not(.sheet-type-card-disabled) { background: #36486a; }
 
 /* Keep the snapshot laid out for accurate scroll offsets, out of screen view. */
 .analysis-print-root { position: fixed; left: -100000px; top: 0; width: 1000px; visibility: hidden; pointer-events: none; }
@@ -2357,32 +2357,32 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
   .analysis-print-notice { font-size: 10px; margin-bottom: 12px !important; }
   .analysis-print-sheet .author-canvas { min-height: 0; background-image: none; }
   .analysis-print-sheet .canvas-viewport { overflow: visible; }
-  .analysis-print-sheet .author-card.is-selected { border-color: #c9d8de; box-shadow: none; }
+  .analysis-print-sheet .author-card.is-selected { border-color: #c3cfe0; box-shadow: none; }
   .analysis-print-sheet .react-grid-item { transition: none !important; }
 }
 
 .analysis-settings-dialog label { margin-top: 12px; }
-.analysis-settings-dialog textarea, .analysis-settings-dialog select { box-sizing: border-box; width: 100%; min-width: 0; padding: 4px 8px; border: 1px solid var(--chrome-border, #c9d8de); border-radius: 5px; background: var(--chrome-surface, #fff); color: inherit; font: inherit; }
+.analysis-settings-dialog textarea, .analysis-settings-dialog select { box-sizing: border-box; width: 100%; min-width: 0; padding: 4px 8px; border: 1px solid var(--chrome-border, #c3cfe0); border-radius: 5px; background: var(--chrome-surface, #fff); color: inherit; font: inherit; }
 .analysis-settings-dialog textarea { resize: vertical; }
 .analysis-settings-dialog .author-menu-item > button { width: 100%; text-align: left; margin-top: 4px; }
 .sheet-type-cards { display: grid; gap: 8px; margin-top: 12px; }
-.sheet-type-card { display: flex; gap: 10px; align-items: flex-start; margin-top: 0; padding: 10px 12px; border: 1px solid var(--chrome-border, #c9d8de); border-radius: 6px; cursor: pointer; }
+.sheet-type-card { display: flex; gap: 10px; align-items: flex-start; margin-top: 0; padding: 10px 12px; border: 1px solid var(--chrome-border, #c3cfe0); border-radius: 6px; cursor: pointer; }
 .sheet-type-card input { margin-top: 3px; flex: none; }
 .sheet-type-card strong { display: block; }
-.sheet-type-card span span { display: block; color: var(--chrome-muted, #536879); font-size: 12px; }
+.sheet-type-card span span { display: block; color: var(--chrome-muted, #51637a); font-size: 12px; }
 .sheet-type-card-disabled { cursor: not-allowed; opacity: 0.75; background: var(--chrome-subtle, #f2f6f8); }
 /* Issue #108 polish slice 45: the New Sheet dialog's sheet-type cards are
    clickable selection cards (pointer cursor, bordered, padded) but had no
    hover state at all — slice 44's dialog audit measured the enabled
    Interactive card's label flat on hover while the same dialog's buttons,
    selects, inputs and textareas all tinted. The enabled card now takes
-   the author hover tint (#edf7f7); dark chrome takes the dark variant
-   (#334c62), as in slices 36/37/38/44. The disabled Pixel-Perfect card is
+   the author hover tint (#eef3fd); dark chrome takes the dark variant
+   (#36486a), as in slices 36/37/38/44. The disabled Pixel-Perfect card is
    excluded: it keeps its subtle resting background and not-allowed
    cursor. Background only, so resting geometry is identical and there
    is no animation. */
-.sheet-type-card:hover:not(.sheet-type-card-disabled) { background: #edf7f7; }
-.author-workspace[data-chrome=dark] .sheet-type-card:hover:not(.sheet-type-card-disabled) { background: #334c62; }
+.sheet-type-card:hover:not(.sheet-type-card-disabled) { background: #eef3fd; }
+.author-workspace[data-chrome=dark] .sheet-type-card:hover:not(.sheet-type-card-disabled) { background: #36486a; }
 /* Issue #108 polish slice 46: the Calculated field dialog renders outside
    .author-workspace (a sibling of it in Author.tsx), so the author hover
    rules never reach it — its resting and primary rules name
@@ -2390,14 +2390,14 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
    "Use as" and "Function reference" selects, the Name input and the
    Expression textarea all measured flat: hovering changed nothing while
    every other author control tinted. They now take the author hover
-   language exactly (buttons: border + #edf7f7; primary: #126e76; fields:
-   #edf7f7 background only). The dialog's resting colors are fixed light
+   language exactly (buttons: border + #eef3fd; primary: #2f66d8; fields:
+   #eef3fd background only). The dialog's resting colors are fixed light
    (it has no dark-chrome variant), so no dark variant is added. Field
    rules are background-only, so resting geometry is identical and there
    is no animation. */
-.calculation-dialog button:hover:not(:disabled) { border-color: #157f88; background: #edf7f7; }
-.calculation-dialog .primary-button:hover:not(:disabled) { background: #126e76; color: white; }
-.calculation-dialog input:hover:not(:disabled), .calculation-dialog select:hover:not(:disabled), .calculation-dialog textarea:hover:not(:disabled) { background: #edf7f7; }
+.calculation-dialog button:hover:not(:disabled) { border-color: #3b82f6; background: #eef3fd; }
+.calculation-dialog .primary-button:hover:not(:disabled) { background: #2f66d8; color: white; }
+.calculation-dialog input:hover:not(:disabled), .calculation-dialog select:hover:not(:disabled), .calculation-dialog textarea:hover:not(:disabled) { background: #eef3fd; }
 /* Issue #108 polish slice 68: one control in the Calculated field
    dialog still had no hover state — the "Build for me" disclosure
    summary (.o-build-for-me summary, BuildForMe.tsx, mounted inside
@@ -2407,11 +2407,11 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
    sibling in Author.tsx), and the global summary rules give only the
    pointer cursor and an :active press, so hovering "Build for me"
    changed nothing while every other control in the dialog tinted.
-   It now takes the dialog's own hover tint (#edf7f7, slice 46's
+   It now takes the dialog's own hover tint (#eef3fd, slice 46's
    button/field tint). The dialog's resting colors are fixed light
    (no dark-chrome variant), so no dark variant is added. Background
    only, so resting geometry is identical and there is no animation. */
-.calculation-dialog .o-build-for-me summary:hover { background: #edf7f7; }
+.calculation-dialog .o-build-for-me summary:hover { background: #eef3fd; }
 /* Issue #108 polish slice 117: one surface in the Calculated field
    dialog still had no hover state — its field labels
    (.calculation-dialog label — "Name", "Use as", "Expression" and
@@ -2425,16 +2425,16 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
    label tinted. The shared resting rule lays these labels out as
    column flexes (text line, 4px gap, field), so each label is
    itself a visible surface. They now take the dialog's own hover
-   tint (#edf7f7, slice 46's field tint — the same tint as the
+   tint (#eef3fd, slice 46's field tint — the same tint as the
    inner field's hover, so the label reads as one surface), so no
    new colour is introduced. The dialog's resting colors are
    fixed light (no dark-chrome variant), so no dark variant is
    added. Background only, so resting geometry is identical and
    there is no animation. */
-.calculation-dialog label:hover { background: #edf7f7; }
+.calculation-dialog label:hover { background: #eef3fd; }
 .settings-palette { display: flex; gap: 4px; margin-top: 8px; }
-.settings-palette span { width: 24px; height: 16px; border: 1px solid var(--chrome-border, #c9d8de); }
-.analysis-settings-dialog button[aria-disabled="true"] { color: var(--chrome-muted, #536879); cursor: not-allowed; }
+.settings-palette span { width: 24px; height: 16px; border: 1px solid var(--chrome-border, #c3cfe0); }
+.analysis-settings-dialog button[aria-disabled="true"] { color: var(--chrome-muted, #51637a); cursor: not-allowed; }
 /* Keep the modal geometry stable when focus leaves an unavailable setting.
    Collapsing a reason on pointer-down can move Apply/Cancel before the click. */
 .analysis-settings-dialog .menu-item-reason { display: block; margin: 4px 0 8px; }
@@ -2453,14 +2453,14 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
    is the only <a> inside .sheet-object anywhere, and it renders
    only when a text object has a link URL set, so route audits never
    hover it. It now takes the author surface's established hover
-   tint (#edf7f7 — the tint the card's own toolbar buttons take via
+   tint (#eef3fd — the tint the card's own toolbar buttons take via
    the author generic button hover), so no new colour is
    introduced. Background only, so the UA link colour/underline and
    resting geometry are identical; static (no animation), so no
    reduced-motion variant is needed. The author card is white in
    both chromes (.author-card background is unconditional — the
    card-footer precedent), so no dark variant. */
-.sheet-object a:hover { background: #edf7f7; }
+.sheet-object a:hover { background: #eef3fd; }
 .sheet-object .drag-handle { border: 0; cursor: move; padding: 2px 6px; }
 .sheet-object .sheet-text-editor { flex: 1; width: 100%; min-height: 0; resize: none; border: 0; border-radius: 0; padding: 12px; margin: 0; background: white; line-height: 1.4; font-family: Arial, "Helvetica Neue", Helvetica, sans-serif; }
 .sheet-image-frame { flex: 1; min-height: 0; padding: 8px; background: white; }
@@ -2472,25 +2472,25 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
    SheetObjectProperties) were the author surface's zero-hover pressed
    control — the rule above pairs the pressed rest and hover in one
    declaration at #166f7a, and its (0,4,1) hover variant beats the
-   author generic hover (#edf7f7, (0,3,1)), so hovering a pressed
+   author generic hover (#eef3fd, (0,3,1)), so hovering a pressed
    toggle changed nothing while every unpressed toggle steps
-   transparent -> #edf7f7. The group only renders while a text sheet
+   transparent -> #eef3fd. The group only renders while a text sheet
    object is selected, so route audits never reach it. Following the
    slices 28/29/73-77 selected-control language, the pressed toggle
    takes a dedicated hover step one visible step deeper than its
-   #166f7a rest: #126e76, the app-wide primary hover step (slices
+   #166f7a rest: #2f66d8, the app-wide primary hover step (slices
    51/57/66), so no new color is introduced. Specificity (0,5,1)
    beats the paired hover rule. Background only, so the white label
    is kept and resting geometry is identical; static (no animation),
    so no reduced-motion variant is needed. Disabled pressed toggles
    keep their flat state. */
-.author-layout .object-text-style button[aria-pressed="true"]:hover:not(:disabled) { background: #126e76; }
+.author-layout .object-text-style button[aria-pressed="true"]:hover:not(:disabled) { background: #2f66d8; }
 /* Global "find anything" search modal — mirrors the command palette chrome. */
-.global-search { --palette-surface: #fff; --palette-text: #19384a; --palette-muted: #526c7a; --palette-border: #c9d8de; --palette-selected: #e2f2fa; width: min(520px, calc(100% - 32px)); max-height: calc(100dvh - 32px); padding: 0; border: 1px solid var(--palette-border); border-radius: 8px; background: var(--palette-surface); color: var(--palette-text); box-shadow: 0 8px 32px #14253644; font: 12px/1.4 Arial, "Helvetica Neue", Helvetica, sans-serif; overflow: auto; }
-.global-search::backdrop { background: #14253688; }
-.global-search header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 16px; background: #142536; color: #fff; }
+.global-search { --palette-surface: #fff; --palette-text: #1b2740; --palette-muted: #5b6b8c; --palette-border: #c3cfe0; --palette-selected: #d9e6fa; width: min(520px, calc(100% - 32px)); max-height: calc(100dvh - 32px); padding: 0; border: 1px solid var(--palette-border); border-radius: 8px; background: var(--palette-surface); color: var(--palette-text); box-shadow: 0 8px 32px #0e1a3344; font: 12px/1.4 Arial, "Helvetica Neue", Helvetica, sans-serif; overflow: auto; }
+.global-search::backdrop { background: #0e1a3388; }
+.global-search header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 16px; background: #0e1a33; color: #fff; }
 .global-search h2 { margin: 0; font-size: 13px; }
-.global-search header button { padding: 4px 8px; color: inherit; background: transparent; border: 1px solid #adc0d5; border-radius: 4px; }
+.global-search header button { padding: 4px 8px; color: inherit; background: transparent; border: 1px solid #a9c0dd; border-radius: 4px; }
 .global-search > input { display: block; width: calc(100% - 32px); margin: 16px 16px 8px; padding: 8px 8px 8px 28px; background: var(--palette-surface) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='m15 15 5 5M17 10a7 7 0 1 1-14 0 7 7 0 0 1 14 0' fill='none' stroke='%23526c7a' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E") no-repeat 8px center/16px 16px; color: var(--palette-text); border: 1px solid var(--palette-border); border-radius: 4px; }
 .global-search > input::placeholder { color: var(--palette-muted); }
 .global-search .search-types { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 0 16px 8px; color: var(--palette-muted); }
@@ -2514,42 +2514,42 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
    context (analyses home, author workspace, calculation dialog,
    empty-page state, collection cards), so inside the search dialog
    the button rested at the UA default grey and hovering changed
-   nothing. It now takes the standard primary paint (#157f88 with
+   nothing. It now takes the standard primary paint (#3b82f6 with
    white text, the empty-page-state primary's padding and radius) and
-   the standard primary hover deepening (#126e76) every other context
+   the standard primary hover deepening (#2f66d8) every other context
    uses. The dialog is a fixed-light surface, so no dark variant. */
-.global-search .search-empty .primary-button { padding: 8px 16px; border: 1px solid #157f88; border-radius: 4px; background: #157f88; color: #fff; }
-.global-search .search-empty .primary-button:hover { background: #126e76; border-color: #126e76; }
+.global-search .search-empty .primary-button { padding: 8px 16px; border: 1px solid #3b82f6; border-radius: 4px; background: #3b82f6; color: #fff; }
+.global-search .search-empty .primary-button:hover { background: #2f66d8; border-color: #2f66d8; }
 /* Issue #108 polish slice 47: the command palette and global search
    dialogs are CSS twins mounted at the app-shell level, so no workspace
    hover rule reaches them — their header Close buttons rested
    transparent on the dark header, their search inputs rested flat
    white, and the search type filter chips rested transparent; hovering
    any of them changed nothing while their list rows underlined. The
-   Close buttons now take the dark-chrome hover tint (#365764, the
+   Close buttons now take the dark-chrome hover tint (#2b3a55, the
    .toast / product-header language); the inputs take the dialogs' own
    selected tint via background-color only, so the global search
    input's search-icon background image survives; unpressed filter
    chips take the same tint (pressed chips already rest there).
    Paint only, so resting geometry is identical and there is no
    animation. */
-.command-palette header button:hover, .global-search header button:hover { background: #365764; }
+.command-palette header button:hover, .global-search header button:hover { background: #2b3a55; }
 .command-palette input:hover:not(:disabled), .global-search > input:hover:not(:disabled) { background-color: var(--palette-selected); }
 .global-search .search-types button:hover:not([aria-pressed=true]) { background: var(--palette-selected); }
 /* Issue #108 polish slice 75: the pressed search-type chip was the
    global search dialog's last zero-hover control — slice 47's chip
    hover deliberately excluded it because it already rests at the
-   unpressed hover tint (var(--palette-selected), #e2f2fa), so hovering
+   unpressed hover tint (var(--palette-selected), #d9e6fa), so hovering
    it changed nothing while every plain chip steps transparent ->
-   #e2f2fa. Following the slices 28/29/73/74 selected-control language,
+   #d9e6fa. Following the slices 28/29/73/74 selected-control language,
    the pressed chip now takes a dedicated hover step one visible step
-   deeper: #c8eafa, already the codebase's selected-hover step for this
+   deeper: #bfdcfb, already the codebase's selected-hover step for this
    exact resting tint (--header-selected-hover, the author menu's
    pressed-button hover). The dialog's resting colors are fixed light
    (no dark variant), so a literal is correct. Background only, so the
    pressed border and text are unchanged and resting geometry is
    identical; no animation. */
-.global-search .search-types button[aria-pressed=true]:hover { background: #c8eafa; }
+.global-search .search-types button[aria-pressed=true]:hover { background: #bfdcfb; }
 /* Issue #108 polish slice 52: the palette twins' result rows were the
    last controls in these dialogs whose hover painted nothing — a row
    hover only underlined the text while the keyboard-selected row rests
@@ -2559,5 +2559,5 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
    rows now take var(--palette-selected) as their hover background (the
    existing underline is kept). The selected row already rests at the
    same tint, so its hover is unchanged; dark chrome resolves the var
-   to #293f55. Background only, so resting geometry is identical and
+   to #1e3358. Background only, so resting geometry is identical and
    there is no animation. */

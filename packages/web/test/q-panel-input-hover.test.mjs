@@ -6,14 +6,14 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // panel's search field (.q-side-panel .o-bar input — OEntry's "Ask a
 // question" input, type=search, QSidePanel.tsx). Static audit
 // follow-on to slices 53-57: the panel gives its buttons a hover step
-// (.q-side-panel button:hover -> var(--chrome-menu-hover, #edf7f7))
+// (.q-side-panel button:hover -> var(--chrome-menu-hover, #eef3fd))
 // but the field had no hover rule of its own. Inside the Author
 // workspace the generic author search-input hover reaches it, but on
 // the Dashboard (QSidePanel renders there too, Dashboard.tsx) the
 // panel is a fixed overlay outside .author-workspace, so hovering the
 // field changed nothing while every button beside it tinted. The
 // field now takes the panel's own hover tint — the same var its
-// button rule uses (dark chrome resolves the var to #293f55,
+// button rule uses (dark chrome resolves the var to #1e3358,
 // matching the buttons). At equal specificity to the author search
 // hover rule and later in style.css, the panel input matches its
 // panel buttons inside Author too. Background only, so resting
@@ -27,7 +27,7 @@ const inputHover = css.match(/\.q-side-panel \.o-bar input:hover:not\(:disabled\
 
 test('the q-panel search input hover rule exists with the panel tint', () => {
   assert.ok(inputHover, 'expected the q-panel o-bar input hover rule');
-  assert.match(inputHover[1], /background:\s*var\(--chrome-menu-hover, #edf7f7\)/);
+  assert.match(inputHover[1], /background:\s*var\(--chrome-menu-hover, #eef3fd\)/);
 });
 
 test('the hover rule is paint-only: resting geometry cannot shift', () => {
@@ -39,15 +39,15 @@ test('the resting rules still reserve the geometry the hover keeps', () => {
   const field = css.match(/(?:^|\n)\.o-bar input\s*\{([^}]*)\}/);
   assert.ok(field, 'expected the o-bar input resting rule');
   assert.match(field[1], /padding:\s*8px/);
-  assert.match(field[1], /border:\s*1px solid #c9d8de/);
+  assert.match(field[1], /border:\s*1px solid #c3cfe0/);
   const panelField = css.match(/\.q-side-panel \.o-bar input\s*\{([^}]*)\}/);
   assert.ok(panelField, 'expected the q-panel o-bar input resting rule');
   assert.match(panelField[1], /flex:\s*1 1 0/);
 });
 
 test('the panel button hover and author search hover rules are untouched', () => {
-  assert.ok(css.match(/\.q-side-panel button:hover:not\(:disabled\)\s*\{[^}]*background:\s*var\(--chrome-menu-hover, #edf7f7\)/), 'the q-panel button hover rule must still be present');
-  assert.ok(css.match(/\.author-workspace input\[type=search\]:hover:not\(:disabled\)\s*\{[^}]*background:\s*#edf7f7/), 'the author search hover rule must still be present');
+  assert.ok(css.match(/\.q-side-panel button:hover:not\(:disabled\)\s*\{[^}]*background:\s*var\(--chrome-menu-hover, #eef3fd\)/), 'the q-panel button hover rule must still be present');
+  assert.ok(css.match(/\.author-workspace input\[type=search\]:hover:not\(:disabled\)\s*\{[^}]*background:\s*#eef3fd/), 'the author search hover rule must still be present');
   assert.ok(css.indexOf('.q-side-panel .o-bar input:hover') > css.indexOf('.author-workspace input[type=search]:hover'), 'the panel input hover rule must stay later in the file so it wins at equal specificity inside Author');
 });
 
@@ -65,7 +65,7 @@ defineHoverCases('q-panel-input hover', {
       target: '#q',
       rule: '.q-side-panel .o-bar input:hover:not(:disabled)',
       resting: { backgroundColor: 'rgb(255, 255, 255)' },
-      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      hovered: { backgroundColor: 'rgb(238, 243, 253)' },
       paintOnly: true,
       excluded: ['#off'],
     },

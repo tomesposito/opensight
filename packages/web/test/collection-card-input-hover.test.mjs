@@ -9,15 +9,15 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // collection on the Analyses home page (LocalDrafts.tsx via
 // Analyses.tsx inside CollectionPage's .collection-card). Static audit
 // follow-on to slices 59-63: buttons in the same card tint
-// (.collection-card button:hover -> #eaf4f4) and the pagination select
-// tints (.collection-pagination select:hover -> #eaf3f7, slice 23), but
+// (.collection-card button:hover -> #eef3fd) and the pagination select
+// tints (.collection-pagination select:hover -> #e8eefb, slice 23), but
 // no :hover rule in any stylesheet reached a .collection-card input —
 // the search-input hover rules are scoped to .author-workspace /
 // .data-page — and a real-mouse Chromium probe measured the search and
 // rename fields white -> white on hover. The expanded collection only
 // renders when local drafts exist, so empty-state route audits never
 // reach these fields (the slices 50/62 blind spot). The fields now take
-// #eaf3f7, the collection surface's own field hover tint (the slice-23
+// #e8eefb, the collection surface's own field hover tint (the slice-23
 // pagination select in the same card). Background only, so resting
 // geometry is identical. Static (no animation), so no reduced-motion
 // variant is needed; radio/checkbox inputs are excluded so the
@@ -29,7 +29,7 @@ const inputHover = css.match(/\.collection-card input:hover:not\(:disabled\):not
 
 test('the collection-card input hover rule exists with the collection field tint', () => {
   assert.ok(inputHover, 'expected the collection-card input hover rule');
-  assert.match(inputHover[1], /background:\s*#eaf3f7/);
+  assert.match(inputHover[1], /background:\s*#e8eefb/);
 });
 
 test('the hover rule is paint-only: resting geometry cannot shift', () => {
@@ -47,8 +47,8 @@ test('the resting collection-card rules are preserved', () => {
 });
 
 test('the neighbouring collection hover rules are untouched', () => {
-  assert.ok(css.match(/\.collection-card button:hover:not\(:disabled\)\s*\{[^}]*background:\s*#eaf4f4/), 'the collection-card button hover rule must still be present');
-  assert.ok(css.match(/\.collection-pagination select:hover:not\(:disabled\)\s*\{[^}]*background:\s*#eaf3f7/), 'the collection-pagination select hover rule must still be present');
+  assert.ok(css.match(/\.collection-card button:hover:not\(:disabled\)\s*\{[^}]*background:\s*#eef3fd/), 'the collection-card button hover rule must still be present');
+  assert.ok(css.match(/\.collection-pagination select:hover:not\(:disabled\)\s*\{[^}]*background:\s*#e8eefb/), 'the collection-pagination select hover rule must still be present');
 });
 
 defineHoverCases('collection-card-input hover', {
@@ -63,7 +63,7 @@ defineHoverCases('collection-card-input hover', {
       target: '#search',
       rule: '.collection-card input:hover:not(:disabled):not([type="radio"]):not([type="checkbox"]):not([type="file"])',
       resting: { backgroundColor: 'rgb(255, 255, 255)' },
-      hovered: { backgroundColor: 'rgb(234, 243, 247)' },
+      hovered: { backgroundColor: 'rgb(232, 238, 251)' },
       paintOnly: true,
       excluded: ['#off', '#fav'],
     },
@@ -71,7 +71,7 @@ defineHoverCases('collection-card-input hover', {
       target: '#rename',
       rule: '.collection-card input:hover:not(:disabled):not([type="radio"]):not([type="checkbox"]):not([type="file"])',
       resting: { backgroundColor: 'rgb(255, 255, 255)' },
-      hovered: { backgroundColor: 'rgb(234, 243, 247)' },
+      hovered: { backgroundColor: 'rgb(232, 238, 251)' },
       paintOnly: true,
     },
   ],

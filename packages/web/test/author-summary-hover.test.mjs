@@ -13,9 +13,9 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // theme"), and the author-tools summaries ("Local drafts (1)",
 // "Import bundle"). They already have the global pointer cursor, the
 // focus outline and the slice-15 :active press; hover was the missing
-// state. They now take the author buttons' hover tint (#edf7f7, slices
+// state. They now take the author buttons' hover tint (#eef3fd, slices
 // 36/37/38 language); dark chrome takes the dark button hover
-// background (#334c62) via a more specific variant. The header's
+// background (#36486a) via a more specific variant. The header's
 // .author-menu summary keeps its own header hover and is not in this
 // group. Background only, so resting geometry is identical. Static
 // (no animation), so no reduced-motion variant is needed.
@@ -44,12 +44,12 @@ const darkRule = ruleFor(DARK_SELECTORS);
 
 test('the author summary hover rule exists for all six summary groups and uses the author tint', () => {
   assert.ok(hoverRule, 'expected the grouped author summary hover rule');
-  assert.match(hoverRule, /background:\s*#edf7f7/);
+  assert.match(hoverRule, /background:\s*#eef3fd/);
 });
 
 test('the dark-chrome variant exists for all six groups and uses the dark hover background', () => {
   assert.ok(darkRule, 'expected the grouped dark author summary hover rule');
-  assert.match(darkRule, /background:\s*#334c62/);
+  assert.match(darkRule, /background:\s*#36486a/);
 });
 
 test('the hover rules are paint-only: resting geometry cannot shift', () => {
@@ -94,16 +94,16 @@ defineHoverCases('author-summary hover', {
       target: '#panel',
       rule: '.author-workspace .builder-panel > summary:hover, .author-workspace .field-group > summary:hover, .author-workspace .property-section > summary:hover, .author-workspace .parameter-editor > summary:hover, .author-workspace .local-drafts > summary:hover, .author-workspace .bundle-import summary:hover',
       resting: { backgroundColor: 'rgb(255, 255, 255)' },
-      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      hovered: { backgroundColor: 'rgb(238, 243, 253)' },
       paintOnly: true,
       unchanged: ['color'],
-      excluded: [{ target: '#plain', resting: { backgroundColor: 'rgba(0, 0, 0, 0)', color: 'rgb(25, 56, 74)' } }, { target: '#outside', resting: { backgroundColor: 'rgba(0, 0, 0, 0)', color: 'rgb(25, 56, 74)' } }],
+      excluded: [{ target: '#plain', resting: { backgroundColor: 'rgba(0, 0, 0, 0)', color: 'rgb(27, 39, 64)' } }, { target: '#outside', resting: { backgroundColor: 'rgba(0, 0, 0, 0)', color: 'rgb(27, 39, 64)' } }],
     },
     {
       target: '#group',
       rule: '.author-workspace .builder-panel > summary:hover, .author-workspace .field-group > summary:hover, .author-workspace .property-section > summary:hover, .author-workspace .parameter-editor > summary:hover, .author-workspace .local-drafts > summary:hover, .author-workspace .bundle-import summary:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      hovered: { backgroundColor: 'rgb(238, 243, 253)' },
       paintOnly: true,
       unchanged: ['color'],
     },
@@ -111,7 +111,7 @@ defineHoverCases('author-summary hover', {
       target: '#import',
       rule: '.author-workspace .builder-panel > summary:hover, .author-workspace .field-group > summary:hover, .author-workspace .property-section > summary:hover, .author-workspace .parameter-editor > summary:hover, .author-workspace .local-drafts > summary:hover, .author-workspace .bundle-import summary:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      hovered: { backgroundColor: 'rgb(238, 243, 253)' },
       paintOnly: true,
       unchanged: ['color'],
     },

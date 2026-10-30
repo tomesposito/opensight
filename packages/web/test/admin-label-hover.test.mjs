@@ -19,7 +19,7 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // and hovering its text or gap changed nothing, while only the
 // field inside it tinted via the slice-59 admin field hover.
 // This was the fresh zero-hover audit on a new surface left by
-// slice 109. The label now takes #edf7f7, the admin surface's
+// slice 109. The label now takes #eef3fd, the admin surface's
 // established hover tint (the slice-59 admin button and field
 // hovers and the slice-87 admin link hover), so no new colour
 // is introduced. The dialog radio labels already take the
@@ -33,13 +33,13 @@ const rule = styleCss.match(/^\.admin-settings label:hover\s*\{([^}]*)\}/m);
 
 test('the admin-settings label hover rule exists and uses the established hover tint', () => {
   assert.ok(rule, 'expected the .admin-settings label :hover rule');
-  assert.match(rule[1], /background:\s*#edf7f7/);
+  assert.match(rule[1], /background:\s*#eef3fd/);
 });
 
 test('the hover tint matches the admin button, field and link hovers, so no new colour is introduced', () => {
-  assert.ok(styleCss.match(/\.admin-settings button:hover:not\(:disabled\)\s*\{[^}]*background:\s*#edf7f7/), 'the admin button hover must remain #edf7f7');
-  assert.ok(styleCss.match(/\.admin-settings select:hover:not\(:disabled\)\s*\{[^}]*background:\s*#edf7f7/), 'the admin select hover must remain #edf7f7');
-  assert.ok(styleCss.match(/^\.admin-settings a:hover\s*\{[^}]*background:\s*#edf7f7/m), 'the admin link hover must remain #edf7f7');
+  assert.ok(styleCss.match(/\.admin-settings button:hover:not\(:disabled\)\s*\{[^}]*background:\s*#eef3fd/), 'the admin button hover must remain #eef3fd');
+  assert.ok(styleCss.match(/\.admin-settings select:hover:not\(:disabled\)\s*\{[^}]*background:\s*#eef3fd/), 'the admin select hover must remain #eef3fd');
+  assert.ok(styleCss.match(/^\.admin-settings a:hover\s*\{[^}]*background:\s*#eef3fd/m), 'the admin link hover must remain #eef3fd');
 });
 
 test('the admin-settings label hover rule is paint-only: resting geometry and label presentation cannot shift', () => {
@@ -49,7 +49,7 @@ test('the admin-settings label hover rule is paint-only: resting geometry and la
 
 test('the resting admin-settings label rule is preserved, the dialog radio hover keeps the same tint, and there is no dark variant', () => {
   assert.ok(styleCss.match(/^\.admin-settings label\s*\{[^}]*display:\s*grid[^}]*gap:\s*\.4rem[^}]*flex:\s*1 1 14rem/m), 'the admin label resting rule must remain');
-  assert.ok(styleCss.match(/\.admin-settings \[role="dialog"\] label:has\(> input\[type=radio\]\):hover\s*\{[^}]*background:\s*#edf7f7/), 'the slice-102 dialog radio label hover must remain #edf7f7');
+  assert.ok(styleCss.match(/\.admin-settings \[role="dialog"\] label:has\(> input\[type=radio\]\):hover\s*\{[^}]*background:\s*#eef3fd/), 'the slice-102 dialog radio label hover must remain #eef3fd');
   assert.ok(!styleCss.match(/data-chrome=dark\] \.admin-settings label:hover/), 'the fixed-light admin surface must have no dark label hover variant');
 });
 
@@ -65,7 +65,7 @@ defineHoverCases('admin-label hover', {
       target: '#aiLabel',
       rule: '.admin-settings label:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      hovered: { backgroundColor: 'rgb(238, 243, 253)' },
       paintOnly: true,
       unchanged: ['color'],
       excluded: ['#outsideLabel'],
@@ -74,7 +74,7 @@ defineHoverCases('admin-label hover', {
       target: '#modelLabel',
       rule: '.admin-settings label:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      hovered: { backgroundColor: 'rgb(238, 243, 253)' },
       paintOnly: true,
       unchanged: ['color'],
     },
@@ -82,7 +82,7 @@ defineHoverCases('admin-label hover', {
       target: '#linkLabel',
       rule: '.admin-settings label:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      hovered: { backgroundColor: 'rgb(238, 243, 253)' },
       paintOnly: true,
       unchanged: ['color'],
     },
@@ -90,7 +90,7 @@ defineHoverCases('admin-label hover', {
       target: '#tenantLabel',
       rule: '.admin-settings label:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      hovered: { backgroundColor: 'rgb(238, 243, 253)' },
       paintOnly: true,
       unchanged: ['color'],
     },

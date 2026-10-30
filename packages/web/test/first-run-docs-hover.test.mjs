@@ -9,12 +9,12 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // the first-run page is standalone — SessionGate renders it before any
 // session exists, outside .app-shell — so no app-shell, author or data
 // hover rule reaches it, and style.css gave both of its buttons a hover
-// step (.first-run button:hover -> #eaf3f4, .first-run-primary:hover ->
+// step (.first-run button:hover -> #eef3fd, .first-run-primary:hover ->
 // #0d5960) while the docs links' only rule set color/underline-offset
 // and hovering changed nothing, unlike links on every other surface
 // (fixture-notice, my-stuff, recent-pages, folder and not-found links
 // all step on hover). The links now take the first-run surface's own
-// button hover tint (#eaf3f4) as a background step, underline kept.
+// button hover tint (#eef3fd) as a background step, underline kept.
 // Background only, so resting geometry is identical. Static (no
 // animation), so no reduced-motion variant is needed.
 const css = styles['style.css'];
@@ -23,7 +23,7 @@ const linkHover = css.match(/\.first-run-docs a:hover\s*\{([^}]*)\}/);
 
 test('the first-run docs link hover rule exists with the surface tint', () => {
   assert.ok(linkHover, 'expected the first-run-docs link hover rule');
-  assert.match(linkHover[1], /background:\s*#eaf3f4/);
+  assert.match(linkHover[1], /background:\s*#eef3fd/);
 });
 
 test('the hover rule is paint-only: resting geometry cannot shift', () => {
@@ -37,12 +37,12 @@ test('the resting first-run-docs rules are preserved', () => {
   assert.match(nav[1], /display:\s*flex/);
   const link = css.match(/\.first-run-docs a\s*\{([^}]*)\}/);
   assert.ok(link, 'expected the first-run-docs link resting rule');
-  assert.match(link[1], /color:\s*#126e76/);
+  assert.match(link[1], /color:\s*#2f66d8/);
   assert.match(link[1], /text-underline-offset:\s*3px/);
 });
 
 test('the neighbouring first-run hover rules are untouched', () => {
-  assert.ok(css.match(/\.first-run button:hover:not\(:disabled\), \.fixture-demo-banner button:hover\s*\{[^}]*background:\s*#eaf3f4/), 'the first-run button hover rule must still be present');
+  assert.ok(css.match(/\.first-run button:hover:not\(:disabled\), \.fixture-demo-banner button:hover\s*\{[^}]*background:\s*#eef3fd/), 'the first-run button hover rule must still be present');
   assert.ok(css.match(/\.first-run \.first-run-primary:hover:not\(:disabled\)\s*\{[^}]*background:\s*#0d5960/), 'the first-run primary hover rule must still be present');
 });
 
@@ -54,8 +54,8 @@ defineHoverCases('first-run-docs hover', {
     {
       target: '#guide',
       rule: '.first-run-docs a:hover',
-      resting: { backgroundColor: 'rgba(0, 0, 0, 0)', color: 'rgb(18, 110, 118)' },
-      hovered: { backgroundColor: 'rgb(234, 243, 244)' },
+      resting: { backgroundColor: 'rgba(0, 0, 0, 0)', color: 'rgb(47, 102, 216)' },
+      hovered: { backgroundColor: 'rgb(238, 243, 253)' },
       paintOnly: true,
       unchanged: ['color'],
     },

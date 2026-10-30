@@ -23,10 +23,10 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // author-center > sheet-toolbar > form.rename-sheet, light and
 // dark chrome) confirmed zero matching :hover rules for both the
 // label and the input and a transparent label rest in both
-// chromes. The label and input now take #edf7f7, the author
+// chromes. The label and input now take #eef3fd, the author
 // surface's established hover tint (the author button, field and
 // summary hovers and the slices 112-117 label hovers), plus the
-// author dark-chrome variant #334c62, so no new colour is
+// author dark-chrome variant #36486a, so no new colour is
 // introduced — and because the label and the field inside it take
 // the same tint, hovering either reads as one surface, not two
 // steps. Background only, so resting geometry is identical and
@@ -41,20 +41,20 @@ const allRules = [labelRule, labelDarkRule, inputRule, inputDarkRule];
 
 test('the rename-sheet label and input hover rules exist and use the established hover tints', () => {
   assert.ok(labelRule, 'expected the rename-sheet label :hover rule');
-  assert.match(labelRule[1], /background:\s*#edf7f7/);
+  assert.match(labelRule[1], /background:\s*#eef3fd/);
   assert.ok(inputRule, 'expected the rename-sheet input :hover rule');
-  assert.match(inputRule[1], /background:\s*#edf7f7/);
+  assert.match(inputRule[1], /background:\s*#eef3fd/);
   assert.ok(labelDarkRule, 'expected the author dark-chrome rename-sheet label :hover variant');
-  assert.match(labelDarkRule[1], /background:\s*#334c62/);
+  assert.match(labelDarkRule[1], /background:\s*#36486a/);
   assert.ok(inputDarkRule, 'expected the author dark-chrome rename-sheet input :hover variant');
-  assert.match(inputDarkRule[1], /background:\s*#334c62/);
+  assert.match(inputDarkRule[1], /background:\s*#36486a/);
 });
 
 test('the hover tints match the author field and label hovers, so no new colour is introduced', () => {
-  assert.ok(styleCss.match(/\.author-workspace select:hover:not\(:disabled\)\s*\{[^}]*background:\s*#edf7f7/), 'the author select hover must remain #edf7f7');
-  assert.ok(styleCss.match(/^\.property-section label:hover\s*\{[^}]*background:\s*#edf7f7/m), 'the slice-116 property-section label hover must remain #edf7f7');
-  assert.ok(styleCss.match(/\.author-layout input:hover:not\(:disabled\):not\(\[type=radio\]\)[^{]*\{[^}]*background:\s*#edf7f7/), 'the author field hover must remain #edf7f7');
-  assert.ok(styleCss.match(/^\.author-workspace\[data-chrome=dark\] \.property-section label:hover\s*\{[^}]*background:\s*#334c62/m), 'the slice-116 dark label hover must remain #334c62');
+  assert.ok(styleCss.match(/\.author-workspace select:hover:not\(:disabled\)\s*\{[^}]*background:\s*#eef3fd/), 'the author select hover must remain #eef3fd');
+  assert.ok(styleCss.match(/^\.property-section label:hover\s*\{[^}]*background:\s*#eef3fd/m), 'the slice-116 property-section label hover must remain #eef3fd');
+  assert.ok(styleCss.match(/\.author-layout input:hover:not\(:disabled\):not\(\[type=radio\]\)[^{]*\{[^}]*background:\s*#eef3fd/), 'the author field hover must remain #eef3fd');
+  assert.ok(styleCss.match(/^\.author-workspace\[data-chrome=dark\] \.property-section label:hover\s*\{[^}]*background:\s*#36486a/m), 'the slice-116 dark label hover must remain #36486a');
 });
 
 test('the rename-sheet hover rules are paint-only: resting geometry and presentation cannot shift', () => {
@@ -84,7 +84,7 @@ defineHoverCases('rename-sheet hover', {
       target: '#lLabel',
       rule: '.rename-sheet label:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      hovered: { backgroundColor: 'rgb(238, 243, 253)' },
       paintOnly: true,
       unchanged: ['color'],
       excluded: ['#outsideLabel', '#outsideInput'],
@@ -93,7 +93,7 @@ defineHoverCases('rename-sheet hover', {
       target: '#dLabel',
       rule: '.author-workspace[data-chrome="dark"] .rename-sheet label:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(51, 76, 98)' },
+      hovered: { backgroundColor: 'rgb(54, 72, 106)' },
       paintOnly: true,
       unchanged: ['color'],
     },
@@ -101,7 +101,7 @@ defineHoverCases('rename-sheet hover', {
       target: '#lInput',
       rule: '.rename-sheet input:hover:not(:disabled)',
       resting: { backgroundColor: 'rgb(255, 255, 255)' },
-      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      hovered: { backgroundColor: 'rgb(238, 243, 253)' },
       paintOnly: true,
       unchanged: ['color'],
     },
@@ -109,7 +109,7 @@ defineHoverCases('rename-sheet hover', {
       target: '#dInput',
       rule: '.author-workspace[data-chrome="dark"] .rename-sheet input:hover:not(:disabled)',
       resting: { backgroundColor: 'rgb(32, 46, 64)' },
-      hovered: { backgroundColor: 'rgb(51, 76, 98)' },
+      hovered: { backgroundColor: 'rgb(54, 72, 106)' },
       paintOnly: true,
       unchanged: ['color'],
     },

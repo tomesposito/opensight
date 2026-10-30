@@ -11,7 +11,7 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // summaries already tint on hover (.account-menu, .author-menu,
 // .data-menu), and this one already has the global cursor, focus outline
 // and :active press, but no hover state at all. It now takes the landing
-// surfaces' menu tint (#eaf3f7). Background only, so resting geometry is
+// surfaces' menu tint (#e8eefb). Background only, so resting geometry is
 // identical. Static (no animation), so no reduced-motion variant is
 // needed.
 const css = styles['style.css'];
@@ -20,7 +20,7 @@ const hoverRule = css.match(/\.card-footer\s+summary:hover\s*\{([^}]*)\}/);
 
 test('the card-footer summary hover rule exists and uses the landing menu tint', () => {
   assert.ok(hoverRule, 'expected .card-footer summary:hover');
-  assert.match(hoverRule[1], /background:\s*#eaf3f7/);
+  assert.match(hoverRule[1], /background:\s*#e8eefb/);
 });
 
 test('the hover preview is paint-only: resting geometry cannot shift', () => {
@@ -52,7 +52,7 @@ defineHoverCases('card-footer-summary hover', {
       target: '#view',
       rule: '.card-footer summary:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(234, 243, 247)' },
+      hovered: { backgroundColor: 'rgb(232, 238, 251)' },
       paintOnly: true,
       unchanged: ['color'],
       excluded: ['#outside'],

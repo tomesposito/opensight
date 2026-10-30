@@ -12,8 +12,8 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // sits inside .author-workspace and is already covered by the author
 // hover rules (equal specificity, later in style.css, so it keeps its
 // author hover). The button now takes the app-wide primary hover step
-// (#157f88 -> #126e76, the primary-button/account-panel language) and
-// the select and input take style.css's field hover tint (#edf7f7, the
+// (#3b82f6 -> #2f66d8, the primary-button/account-panel language) and
+// the select and input take style.css's field hover tint (#eef3fd, the
 // author select/input language). Background only, so resting geometry
 // is identical. Static (no animation), so no reduced-motion variant
 // is needed; disabled controls keep their flat resting state.
@@ -24,12 +24,12 @@ const fieldHover = css.match(/\.api-picker select:hover:not\(:disabled\),\s*\.ap
 
 test('the api-picker button hover rule exists with the primary step', () => {
   assert.ok(buttonHover, 'expected the api-picker button hover rule');
-  assert.match(buttonHover[1], /background:\s*#126e76/);
+  assert.match(buttonHover[1], /background:\s*#2f66d8/);
 });
 
 test('the api-picker field hover rule exists with the field tint', () => {
   assert.ok(fieldHover, 'expected the api-picker select/input hover rule');
-  assert.match(fieldHover[1], /background:\s*#edf7f7/);
+  assert.match(fieldHover[1], /background:\s*#eef3fd/);
 });
 
 test('the hover rules are paint-only: resting geometry cannot shift', () => {
@@ -43,16 +43,16 @@ test('the resting api-picker rules still reserve the geometry the hover keeps', 
   const button = css.match(/\.api-picker button\s*\{([^}]*)\}/);
   assert.ok(button, 'expected the api-picker button resting rule');
   assert.match(button[1], /padding:\s*11px 18px/);
-  assert.match(button[1], /background:\s*#157f88/);
+  assert.match(button[1], /background:\s*#3b82f6/);
   const input = css.match(/\.api-picker input\s*\{([^}]*)\}/);
   assert.ok(input, 'expected the api-picker input resting rule');
   assert.match(input[1], /padding:\s*10px/);
-  assert.match(input[1], /border:\s*1px solid #c9d8de/);
+  assert.match(input[1], /border:\s*1px solid #c3cfe0/);
 });
 
 test('the author hover rules the Author-page instance relies on are untouched', () => {
-  assert.ok(css.match(/\.author-workspace button:hover:not\(:disabled\)[^{]*\{[^}]*background:\s*#edf7f7/), 'the author button hover rule must still be present');
-  assert.ok(css.match(/\.author-workspace select:hover:not\(:disabled\)\s*\{[^}]*background:\s*#edf7f7/), 'the author select hover rule must still be present');
+  assert.ok(css.match(/\.author-workspace button:hover:not\(:disabled\)[^{]*\{[^}]*background:\s*#eef3fd/), 'the author button hover rule must still be present');
+  assert.ok(css.match(/\.author-workspace select:hover:not\(:disabled\)\s*\{[^}]*background:\s*#eef3fd/), 'the author select hover rule must still be present');
   assert.ok(css.indexOf('.author-workspace button:hover') > css.indexOf('.api-picker button:hover'), 'the author hover rule must stay later in the file so the Author-page .api-picker instance keeps its author hover');
 });
 
@@ -66,8 +66,8 @@ defineHoverCases('api-picker hover', {
     {
       target: '#load',
       rule: '.api-picker button:hover:not(:disabled)',
-      resting: { backgroundColor: 'rgb(21, 127, 136)' },
-      hovered: { backgroundColor: 'rgb(18, 110, 118)' },
+      resting: { backgroundColor: 'rgb(59, 130, 246)' },
+      hovered: { backgroundColor: 'rgb(47, 102, 216)' },
       paintOnly: true,
       excluded: ['#off'],
     },
@@ -75,14 +75,14 @@ defineHoverCases('api-picker hover', {
       target: '#kind',
       rule: '.api-picker select:hover:not(:disabled), .api-picker input:hover:not(:disabled)',
       resting: { backgroundColor: 'rgb(255, 255, 255)' },
-      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      hovered: { backgroundColor: 'rgb(238, 243, 253)' },
       paintOnly: true,
     },
     {
       target: '#rid',
       rule: '.api-picker select:hover:not(:disabled), .api-picker input:hover:not(:disabled)',
       resting: { backgroundColor: 'rgb(255, 255, 255)' },
-      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      hovered: { backgroundColor: 'rgb(238, 243, 253)' },
       paintOnly: true,
     },
   ],

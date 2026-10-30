@@ -12,7 +12,7 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // expanding the rail's collapsed "More" disclosure — the admin/developer
 // routes, finding `.product-header .fixture-picker select` as the largest
 // real user-facing control with zero hover state. It takes the header's own
-// hover tint (#365764, like the brand mark, navigation toggle and account
+// hover tint (#2b3a55, like the brand mark, navigation toggle and account
 // menu) with light text so the dark resting text stays readable. Paint-only:
 // the rule changes background and color, so resting geometry is identical
 // and there is no animation to need a reduced-motion variant.
@@ -22,7 +22,7 @@ const selectRule = chromeCss.match(/\.product-header\s+\.fixture-picker\s+select
 
 test('the fixture-picker select has a hover state with the header tint', () => {
   assert.ok(selectRule, 'expected .product-header .fixture-picker select:hover:not(:disabled)');
-  assert.match(selectRule[1], /background:\s*#365764/);
+  assert.match(selectRule[1], /background:\s*#2b3a55/);
   assert.match(selectRule[1], /color:\s*#fff/);
 });
 
@@ -45,8 +45,8 @@ defineHoverCases('fixture-picker-select hover', {
       target: '#s',
       rule: '.product-header .fixture-picker select:hover:not(:disabled)',
       // The complete cascade includes style.css's base select treatment.
-      resting: { backgroundColor: 'rgb(255, 255, 255)', color: 'rgb(25, 56, 74)' },
-      hovered: { backgroundColor: 'rgb(54, 87, 100)', color: 'rgb(255, 255, 255)' },
+      resting: { backgroundColor: 'rgb(255, 255, 255)', color: 'rgb(27, 39, 64)' },
+      hovered: { backgroundColor: 'rgb(43, 58, 85)', color: 'rgb(255, 255, 255)' },
       paintOnly: true,
     },
   ],

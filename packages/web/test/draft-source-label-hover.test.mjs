@@ -22,9 +22,9 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // :hover rules for the label in both chromes and a transparent rest,
 // while the inner select matched the author select hovers and the
 // banner's buttons matched the author button hover. The label now
-// takes #edf7f7, the author surface's established hover tint (its
+// takes #eef3fd, the author surface's established hover tint (its
 // select/button/field/label hovers), plus the author dark-chrome
-// variant #334c62, so no new colour is introduced — and because the
+// variant #36486a, so no new colour is introduced — and because the
 // label and the select inside it take the same tint, hovering either
 // reads as one surface, not two steps. Background only, so resting
 // geometry is identical and there is no animation.
@@ -35,15 +35,15 @@ const labelDarkRule = styleCss.match(/^\.author-workspace\[data-chrome=dark\] \.
 
 test('the draft-source label hover rules exist and use the established hover tints', () => {
   assert.ok(labelRule, 'expected the draft-source-recovery label :hover rule');
-  assert.match(labelRule[1], /background:\s*#edf7f7/);
+  assert.match(labelRule[1], /background:\s*#eef3fd/);
   assert.ok(labelDarkRule, 'expected the author dark-chrome draft-source label :hover variant');
-  assert.match(labelDarkRule[1], /background:\s*#334c62/);
+  assert.match(labelDarkRule[1], /background:\s*#36486a/);
 });
 
 test('the hover tints match the author select hovers, so no new colour is introduced', () => {
-  assert.ok(styleCss.match(/\.author-workspace select:hover:not\(:disabled\)\s*\{[^}]*background:\s*#edf7f7/), 'the author select hover must remain #edf7f7');
-  assert.ok(styleCss.match(/\.author-workspace\[data-chrome=dark\] select:hover:not\(:disabled\)\s*\{[^}]*background:\s*#334c62/), 'the author dark select hover must remain #334c62');
-  assert.ok(styleCss.match(/\.author-workspace button:hover:not\(:disabled\),\s*\.author-layout button:hover:not\(:disabled\)\s*\{[^}]*background:\s*#edf7f7/), 'the author button hover must remain #edf7f7');
+  assert.ok(styleCss.match(/\.author-workspace select:hover:not\(:disabled\)\s*\{[^}]*background:\s*#eef3fd/), 'the author select hover must remain #eef3fd');
+  assert.ok(styleCss.match(/\.author-workspace\[data-chrome=dark\] select:hover:not\(:disabled\)\s*\{[^}]*background:\s*#36486a/), 'the author dark select hover must remain #36486a');
+  assert.ok(styleCss.match(/\.author-workspace button:hover:not\(:disabled\),\s*\.author-layout button:hover:not\(:disabled\)\s*\{[^}]*background:\s*#eef3fd/), 'the author button hover must remain #eef3fd');
 });
 
 test('the draft-source label hover rules are paint-only: resting geometry and presentation cannot shift', () => {
@@ -68,7 +68,7 @@ defineHoverCases('draft-source-label hover', {
       target: '#lightLabel',
       rule: '.draft-source-recovery label:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      hovered: { backgroundColor: 'rgb(238, 243, 253)' },
       paintOnly: true,
       unchanged: ['color'],
       excluded: ['#outsideLabel'],
@@ -77,7 +77,7 @@ defineHoverCases('draft-source-label hover', {
       target: '#darkLabel',
       rule: '.author-workspace[data-chrome="dark"] .draft-source-recovery label:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(51, 76, 98)' },
+      hovered: { backgroundColor: 'rgb(54, 72, 106)' },
       paintOnly: true,
       unchanged: ['color'],
       excluded: ['#outsideLabel'],

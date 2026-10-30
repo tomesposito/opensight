@@ -11,7 +11,7 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // select, input and textarea around it tinted (slices 31/39). It already
 // has the pointer cursor, the global focus outline and the slice-15
 // :active press; hover was the missing state. It now takes the data-prep
-// surface's own hover tint (#edf6fc, the buttons/selects/inputs
+// surface's own hover tint (#e8eefb, the buttons/selects/inputs
 // language). Background only, so resting geometry is identical. Static
 // (no animation), so no reduced-motion variant is needed.
 const css = styles['style.css'];
@@ -20,7 +20,7 @@ const hoverRule = css.match(/\.prep-execution\s+summary:hover\s*\{([^}]*)\}/);
 
 test('the prep-execution summary hover rule exists and uses the data-prep tint', () => {
   assert.ok(hoverRule, 'expected .prep-execution summary:hover');
-  assert.match(hoverRule[1], /background:\s*#edf6fc/);
+  assert.match(hoverRule[1], /background:\s*#e8eefb/);
 });
 
 test('the hover preview is paint-only: resting geometry cannot shift', () => {
@@ -51,7 +51,7 @@ defineHoverCases('prep-execution-summary hover', {
       target: '#exec',
       rule: '.prep-execution summary:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(237, 246, 252)' },
+      hovered: { backgroundColor: 'rgb(232, 238, 251)' },
       paintOnly: true,
       unchanged: ['color'],
       excluded: ['#outside'],

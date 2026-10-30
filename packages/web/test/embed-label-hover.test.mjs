@@ -27,7 +27,7 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // This was the fresh zero-hover audit on a new surface left by
 // slice 110 (whose audit had already flagged the embed-author and
 // embed-question labels as candidates). The labels now take
-// #edf2fa, the embed surface's established hover tint
+// #eef3fd, the embed surface's established hover tint
 // (--embed-tint on .embed-frame and the slice-54 field hover), so
 // no new colour is introduced — and because the inner field's own
 // hover is the same tint, hovering the field inside the label
@@ -40,12 +40,12 @@ const rule = embedCss.match(/\.embed-question label:hover,\.embed-author label:h
 
 test('the embed label hover rule exists for all three embed label contexts and uses the established hover tint', () => {
   assert.ok(rule, 'expected the grouped embed label :hover rule');
-  assert.match(rule[1], /background:\s*#edf2fa/);
+  assert.match(rule[1], /background:\s*#eef3fd/);
 });
 
 test('the hover tint matches the slice-54 embed field hover and the embed tint var, so no new colour is introduced', () => {
-  assert.ok(embedCss.match(/\.embed-question input:hover:not\(:disabled\),\.embed-author input:hover:not\(:disabled\),\.embed-author select:hover:not\(:disabled\),\.embed-preview-controls select:hover:not\(:disabled\)\s*\{[^}]*background:\s*#edf2fa/), 'the slice-54 embed field hover must remain #edf2fa');
-  assert.ok(embedCss.match(/\.embed-frame\s*\{[^}]*--embed-tint:\s*#edf2fa/), 'the embed tint var must remain #edf2fa');
+  assert.ok(embedCss.match(/\.embed-question input:hover:not\(:disabled\),\.embed-author input:hover:not\(:disabled\),\.embed-author select:hover:not\(:disabled\),\.embed-preview-controls select:hover:not\(:disabled\)\s*\{[^}]*background:\s*#eef3fd/), 'the slice-54 embed field hover must remain #eef3fd');
+  assert.ok(embedCss.match(/\.embed-frame\s*\{[^}]*--embed-tint:\s*#eef3fd/), 'the embed tint var must remain #eef3fd');
 });
 
 test('the embed label hover rule is paint-only: resting geometry and label presentation cannot shift', () => {
@@ -75,7 +75,7 @@ defineHoverCases('embed-label hover', {
       target: '#qLabel',
       rule: '.embed-question label:hover, .embed-author label:hover, .embed-preview-controls label:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(237, 242, 250)' },
+      hovered: { backgroundColor: 'rgb(238, 243, 253)' },
       paintOnly: true,
       unchanged: ['color'],
       excluded: ['#frameLabel', '#outsideLabel'],
@@ -84,7 +84,7 @@ defineHoverCases('embed-label hover', {
       target: '#aLabel',
       rule: '.embed-question label:hover, .embed-author label:hover, .embed-preview-controls label:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(237, 242, 250)' },
+      hovered: { backgroundColor: 'rgb(238, 243, 253)' },
       paintOnly: true,
       unchanged: ['color'],
     },
@@ -92,7 +92,7 @@ defineHoverCases('embed-label hover', {
       target: '#aSelLabel',
       rule: '.embed-question label:hover, .embed-author label:hover, .embed-preview-controls label:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(237, 242, 250)' },
+      hovered: { backgroundColor: 'rgb(238, 243, 253)' },
       paintOnly: true,
       unchanged: ['color'],
     },
@@ -100,7 +100,7 @@ defineHoverCases('embed-label hover', {
       target: '#pLabel',
       rule: '.embed-question label:hover, .embed-author label:hover, .embed-preview-controls label:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(237, 242, 250)' },
+      hovered: { backgroundColor: 'rgb(238, 243, 253)' },
       paintOnly: true,
       unchanged: ['color'],
     },

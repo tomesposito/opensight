@@ -9,8 +9,8 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // behavioral audit with the Analysis theme section expanded (real mouse
 // hover, :hover confirmed applied) measured white -> white on the palette
 // select while the buttons beside it tinted. Selects now take the author
-// buttons' hover tint (#edf7f7); dark chrome takes the dark button hover
-// (#334c62) via a more specific variant. Paint-only: the rules change the
+// buttons' hover tint (#eef3fd); dark chrome takes the dark button hover
+// (#36486a) via a more specific variant. Paint-only: the rules change the
 // background, so resting geometry is identical and there is no animation
 // to need a reduced-motion variant.
 const styleCss = styles['style.css'];
@@ -20,12 +20,12 @@ const darkRule = styleCss.match(/\.author-workspace\[data-chrome=dark\]\s+select
 
 test('author-workspace selects have a hover state with the author button tint', () => {
   assert.ok(lightRule, 'expected .author-workspace select:hover:not(:disabled)');
-  assert.match(lightRule[1], /background:\s*#edf7f7/);
+  assert.match(lightRule[1], /background:\s*#eef3fd/);
 });
 
 test('dark chrome selects take the dark button hover tint', () => {
   assert.ok(darkRule, 'expected .author-workspace[data-chrome=dark] select:hover:not(:disabled)');
-  assert.match(darkRule[1], /background:\s*#334c62/);
+  assert.match(darkRule[1], /background:\s*#36486a/);
 });
 
 test('the select hover rules are paint-only: resting geometry cannot shift', () => {
@@ -49,7 +49,7 @@ defineHoverCases('author-select hover', {
       target: '#s',
       rule: '.author-workspace select:hover:not(:disabled)',
       resting: { backgroundColor: 'rgb(255, 255, 255)' },
-      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      hovered: { backgroundColor: 'rgb(238, 243, 253)' },
       paintOnly: true,
     },
   ],

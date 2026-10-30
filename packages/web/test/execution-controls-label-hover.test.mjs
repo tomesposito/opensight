@@ -25,9 +25,9 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // label a visible surface (text line, gap, field). Each label now
 // takes the hover tint of the field inside it on its own surface, so
 // no new colour is introduced and label and field read as one surface:
-// #eaf3f7 on the data surfaces (the data-page select hover), #edf6fc
-// in data-prep (its select/input hovers), #edf7f7 in author light
-// chrome and #334c62 in author dark chrome (the author select hovers).
+// #e8eefb on the data surfaces (the data-page select hover), #e8eefb
+// in data-prep (its select/input hovers), #eef3fd in author light
+// chrome and #36486a in author dark chrome (the author select hovers).
 // Background only, so resting geometry is identical and there is no
 // animation.
 const styleCss = styles['style.css'];
@@ -40,21 +40,21 @@ const darkRule = styleCss.match(/^\.author-workspace\[data-chrome=dark\] \.execu
 
 test('the execution-controls label hover rules exist for every surface and use each surface field tint', () => {
   assert.ok(baseRule, 'expected the base execution-controls label :hover rule');
-  assert.match(baseRule[1], /background:\s*#eaf3f7/);
+  assert.match(baseRule[1], /background:\s*#e8eefb/);
   assert.ok(prepRule, 'expected the data-prep execution-controls label hover variant');
-  assert.match(prepRule[1], /background:\s*#edf6fc/);
+  assert.match(prepRule[1], /background:\s*#e8eefb/);
   assert.ok(authorRule, 'expected the author execution-controls label hover variant');
-  assert.match(authorRule[1], /background:\s*#edf7f7/);
+  assert.match(authorRule[1], /background:\s*#eef3fd/);
   assert.ok(darkRule, 'expected the author dark-chrome execution-controls label hover variant');
-  assert.match(darkRule[1], /background:\s*#334c62/);
+  assert.match(darkRule[1], /background:\s*#36486a/);
 });
 
 test('the hover tints match the hovers of the fields inside the labels, so no new colour is introduced', () => {
-  assert.ok(dataSectionCss.match(/\.data-page select:hover:not\(:disabled\)\s*\{[^}]*background:\s*#eaf3f7/), 'the data-page select hover must remain #eaf3f7');
-  assert.ok(styleCss.match(/\.data-prep select:hover:not\(:disabled\)\s*\{[^}]*background:\s*#edf6fc/), 'the data-prep select hover must remain #edf6fc');
-  assert.ok(styleCss.match(/\.data-prep input:hover:not\(:disabled\)[^{]*\{[^}]*background:\s*#edf6fc/), 'the data-prep input hover must remain #edf6fc');
-  assert.ok(styleCss.match(/\.author-workspace select:hover:not\(:disabled\)\s*\{[^}]*background:\s*#edf7f7/), 'the author select hover must remain #edf7f7');
-  assert.ok(styleCss.match(/\.author-workspace\[data-chrome=dark\] select:hover:not\(:disabled\)\s*\{[^}]*background:\s*#334c62/), 'the author dark select hover must remain #334c62');
+  assert.ok(dataSectionCss.match(/\.data-page select:hover:not\(:disabled\)\s*\{[^}]*background:\s*#e8eefb/), 'the data-page select hover must remain #e8eefb');
+  assert.ok(styleCss.match(/\.data-prep select:hover:not\(:disabled\)\s*\{[^}]*background:\s*#e8eefb/), 'the data-prep select hover must remain #e8eefb');
+  assert.ok(styleCss.match(/\.data-prep input:hover:not\(:disabled\)[^{]*\{[^}]*background:\s*#e8eefb/), 'the data-prep input hover must remain #e8eefb');
+  assert.ok(styleCss.match(/\.author-workspace select:hover:not\(:disabled\)\s*\{[^}]*background:\s*#eef3fd/), 'the author select hover must remain #eef3fd');
+  assert.ok(styleCss.match(/\.author-workspace\[data-chrome=dark\] select:hover:not\(:disabled\)\s*\{[^}]*background:\s*#36486a/), 'the author dark select hover must remain #36486a');
 });
 
 test('the execution-controls label hover rules are paint-only: resting geometry and presentation cannot shift', () => {
@@ -67,7 +67,7 @@ test('the execution-controls label hover rules are paint-only: resting geometry 
 test('the resting execution-controls rules are preserved', () => {
   assert.ok(styleCss.match(/\.execution-controls label\s*\{[^}]*display:\s*grid[^}]*gap:\s*5px/), 'the resting execution-controls label rule must remain');
   assert.ok(styleCss.match(/\.execution-controls input, \.execution-controls select\s*\{[^}]*padding:\s*7px 9px/), 'the resting execution-controls field rule must remain');
-  assert.ok(styleCss.match(/\.prep-execution summary:hover\s*\{[^}]*background:\s*#edf6fc/), 'the prep-execution summary hover must remain');
+  assert.ok(styleCss.match(/\.prep-execution summary:hover\s*\{[^}]*background:\s*#e8eefb/), 'the prep-execution summary hover must remain');
 });
 
 defineHoverCases('execution-controls-label hover', {
@@ -81,7 +81,7 @@ defineHoverCases('execution-controls-label hover', {
       target: '#ddLabel',
       rule: '.execution-controls label:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(234, 243, 247)' },
+      hovered: { backgroundColor: 'rgb(232, 238, 251)' },
       paintOnly: true,
       unchanged: ['color'],
       excluded: ['#outsideLabel'],
@@ -90,7 +90,7 @@ defineHoverCases('execution-controls-label hover', {
       target: '#prepModeLabel',
       rule: '.data-prep .execution-controls label:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(237, 246, 252)' },
+      hovered: { backgroundColor: 'rgb(232, 238, 251)' },
       paintOnly: true,
       unchanged: ['color'],
     },
@@ -98,7 +98,7 @@ defineHoverCases('execution-controls-label hover', {
       target: '#prepIntervalLabel',
       rule: '.data-prep .execution-controls label:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(237, 246, 252)' },
+      hovered: { backgroundColor: 'rgb(232, 238, 251)' },
       paintOnly: true,
       unchanged: ['color'],
     },
@@ -106,7 +106,7 @@ defineHoverCases('execution-controls-label hover', {
       target: '#authLabel',
       rule: '.author-workspace .execution-controls label:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      hovered: { backgroundColor: 'rgb(238, 243, 253)' },
       paintOnly: true,
       unchanged: ['color'],
     },
@@ -114,7 +114,7 @@ defineHoverCases('execution-controls-label hover', {
       target: '#darkLabel',
       rule: '.author-workspace[data-chrome="dark"] .execution-controls label:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(51, 76, 98)' },
+      hovered: { backgroundColor: 'rgb(54, 72, 106)' },
       paintOnly: true,
       unchanged: ['color'],
     },

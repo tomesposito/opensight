@@ -23,9 +23,9 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // transparent rest, while the inner select/input matched the
 // slice-57 field hover (plus the author field hovers in the Author
 // contexts) and the submit matched the slice-57 button hover. The
-// labels now take #edf7f7, the picker's own established hover tint
+// labels now take #eef3fd, the picker's own established hover tint
 // (its slice-57 field hover and the author field/button/label
-// hovers), plus the author dark-chrome variant #334c62 for the
+// hovers), plus the author dark-chrome variant #36486a for the
 // Author instance, so no new colour is introduced — and because the
 // label and the field inside it take the same tint, hovering either
 // reads as one surface, not two steps. Background only, so resting
@@ -37,15 +37,15 @@ const labelDarkRule = styleCss.match(/^\.author-workspace\[data-chrome=dark\] \.
 
 test('the api-picker label hover rules exist and use the established hover tints', () => {
   assert.ok(labelRule, 'expected the api-picker label :hover rule');
-  assert.match(labelRule[1], /background:\s*#edf7f7/);
+  assert.match(labelRule[1], /background:\s*#eef3fd/);
   assert.ok(labelDarkRule, 'expected the author dark-chrome api-picker label :hover variant');
-  assert.match(labelDarkRule[1], /background:\s*#334c62/);
+  assert.match(labelDarkRule[1], /background:\s*#36486a/);
 });
 
 test('the hover tints match the slice-57 api-picker field hover and the author dark field hover, so no new colour is introduced', () => {
-  assert.ok(styleCss.match(/\.api-picker select:hover:not\(:disabled\),\s*\.api-picker input:hover:not\(:disabled\)\s*\{[^}]*background:\s*#edf7f7/), 'the slice-57 api-picker field hover must remain #edf7f7');
-  assert.ok(styleCss.match(/\.author-workspace\[data-chrome=dark\] select:hover:not\(:disabled\)\s*\{[^}]*background:\s*#334c62/), 'the author dark field hover must remain #334c62');
-  assert.ok(styleCss.match(/\.api-picker button:hover:not\(:disabled\)\s*\{[^}]*background:\s*#126e76/), 'the slice-57 api-picker button hover must remain #126e76');
+  assert.ok(styleCss.match(/\.api-picker select:hover:not\(:disabled\),\s*\.api-picker input:hover:not\(:disabled\)\s*\{[^}]*background:\s*#eef3fd/), 'the slice-57 api-picker field hover must remain #eef3fd');
+  assert.ok(styleCss.match(/\.author-workspace\[data-chrome=dark\] select:hover:not\(:disabled\)\s*\{[^}]*background:\s*#36486a/), 'the author dark field hover must remain #36486a');
+  assert.ok(styleCss.match(/\.api-picker button:hover:not\(:disabled\)\s*\{[^}]*background:\s*#2f66d8/), 'the slice-57 api-picker button hover must remain #2f66d8');
 });
 
 test('the api-picker label hover rules are paint-only: resting geometry and presentation cannot shift', () => {
@@ -58,7 +58,7 @@ test('the api-picker label hover rules are paint-only: resting geometry and pres
 test('the resting api-picker rules are preserved', () => {
   assert.ok(styleCss.match(/\.api-picker\s*\{[^}]*display:\s*flex/), 'the resting api-picker rule must remain');
   assert.ok(styleCss.match(/\.api-picker label\s*\{[^}]*display:\s*flex[^}]*flex-direction:\s*column[^}]*gap:\s*8px/), 'the resting api-picker label rule must remain');
-  assert.ok(styleCss.match(/\.api-picker button\s*\{[^}]*background:\s*#157f88/), 'the resting api-picker button rule must remain');
+  assert.ok(styleCss.match(/\.api-picker button\s*\{[^}]*background:\s*#3b82f6/), 'the resting api-picker button rule must remain');
 });
 
 defineHoverCases('api-picker-label hover', {
@@ -71,7 +71,7 @@ defineHoverCases('api-picker-label hover', {
       target: '#soloLabel',
       rule: '.api-picker label:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      hovered: { backgroundColor: 'rgb(238, 243, 253)' },
       paintOnly: true,
       unchanged: ['color'],
       excluded: ['#outsideLabel'],
@@ -80,7 +80,7 @@ defineHoverCases('api-picker-label hover', {
       target: '#authorLabel',
       rule: '.api-picker label:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      hovered: { backgroundColor: 'rgb(238, 243, 253)' },
       paintOnly: true,
       unchanged: ['color'],
     },
@@ -88,7 +88,7 @@ defineHoverCases('api-picker-label hover', {
       target: '#darkLabel',
       rule: '.author-workspace[data-chrome="dark"] .api-picker label:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(51, 76, 98)' },
+      hovered: { backgroundColor: 'rgb(54, 72, 106)' },
       paintOnly: true,
       unchanged: ['color'],
       excluded: ['#outsideLabel'],

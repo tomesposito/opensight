@@ -8,15 +8,15 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // found exactly two real zero-hover classes left in them:
 // - the Create Analysis dialog's dataset search input (.dataset-picker-search
 //   input, 420x34) measured white -> white, while the dialog's buttons and
-//   its pagination select tinted (#edf7fc, base + slice 23 rules) — the
+//   its pagination select tinted (#e8eefb, base + slice 23 rules) — the
 //   dialog had button and select hover rules but no input rule;
 // - the Create Dataset dialog's search inputs (.data-dialog-tools
 //   input[type=search], 260x28, both the dataset and connector stages)
 //   measured white -> white, while the dialog's buttons tinted (slice 30).
 //   Slice 27 gave .data-page search inputs hover but not .data-dialog ones
 //   — the same unfinished-member pattern slice 30 fixed for dialog buttons.
-// Each input takes its own surface's established hover tint: #edf7fc for
-// the create-analysis dialog, #eaf3f7 (the data surface's menu tint) for
+// Each input takes its own surface's established hover tint: #e8eefb for
+// the create-analysis dialog, #e8eefb (the data surface's menu tint) for
 // the data dialog. Background only, so resting geometry is identical;
 // disabled inputs keep their flat state. The audit's other zero-hover hits
 // were the 13x13 native radio inputs inside the dataset table and the
@@ -31,12 +31,12 @@ const createRule = styleCss.match(/\.create-analysis-dialog\s+input\[type=search
 
 test('the data-dialog search input has a hover state using the data menu tint', () => {
   assert.ok(dataRule, 'expected .data-dialog input[type=search]:hover:not(:disabled)');
-  assert.match(dataRule[1], /background:\s*#eaf3f7/);
+  assert.match(dataRule[1], /background:\s*#e8eefb/);
 });
 
 test('the create-analysis-dialog search input has a hover state using the dialog tint', () => {
   assert.ok(createRule, 'expected .create-analysis-dialog input[type=search]:hover:not(:disabled)');
-  assert.match(createRule[1], /background:\s*#edf7fc/);
+  assert.match(createRule[1], /background:\s*#e8eefb/);
 });
 
 test('both hover rules are paint-only: resting geometry cannot shift', () => {
@@ -52,10 +52,10 @@ test('the resting input rules still reserve the geometry the hovers keep', () =>
 });
 
 test('the new rules coexist with the earlier dialog hover rules', () => {
-  assert.ok(dataCss.match(/\.data-dialog\s+button:hover:not\(:disabled\):not\(\.data-primary\):not\(\[aria-selected=true\]\)\s*\{[^}]*background:\s*#eaf3f7/), 'slice-30 data-dialog button rule must still be present');
-  assert.ok(dataCss.match(/\.data-page\s+input\[type=search\]:hover:not\(:disabled\)\s*\{[^}]*background:\s*#eaf3f7/), 'slice-27 data-page search rule must still be present');
-  assert.ok(styleCss.match(/\.create-analysis-dialog\s+button:hover:not\(:disabled\)\s*\{[^}]*background:\s*#edf7fc/), 'create-analysis button rule must still be present');
-  assert.ok(styleCss.match(/\.create-analysis-dialog\s+select:hover:not\(:disabled\)\s*\{[^}]*background:\s*#edf7fc/), 'slice-23 create-analysis select rule must still be present');
+  assert.ok(dataCss.match(/\.data-dialog\s+button:hover:not\(:disabled\):not\(\.data-primary\):not\(\[aria-selected=true\]\)\s*\{[^}]*background:\s*#e8eefb/), 'slice-30 data-dialog button rule must still be present');
+  assert.ok(dataCss.match(/\.data-page\s+input\[type=search\]:hover:not\(:disabled\)\s*\{[^}]*background:\s*#e8eefb/), 'slice-27 data-page search rule must still be present');
+  assert.ok(styleCss.match(/\.create-analysis-dialog\s+button:hover:not\(:disabled\)\s*\{[^}]*background:\s*#e8eefb/), 'create-analysis button rule must still be present');
+  assert.ok(styleCss.match(/\.create-analysis-dialog\s+select:hover:not\(:disabled\)\s*\{[^}]*background:\s*#e8eefb/), 'slice-23 create-analysis select rule must still be present');
 });
 
 defineHoverCases('dialog-search-input hover', {
@@ -67,7 +67,7 @@ defineHoverCases('dialog-search-input hover', {
       target: '.data-dialog input:not([disabled])',
       rule: '.data-dialog input[type="search"]:hover:not(:disabled)',
       resting: { backgroundColor: 'rgb(255, 255, 255)' },
-      hovered: { backgroundColor: 'rgb(234, 243, 247)' },
+      hovered: { backgroundColor: 'rgb(232, 238, 251)' },
       paintOnly: true,
       excluded: [{ target: '.data-dialog input[disabled]', resting: { backgroundColor: 'rgb(255, 255, 255)' } }],
     },
@@ -75,7 +75,7 @@ defineHoverCases('dialog-search-input hover', {
       target: '.create-analysis-dialog input',
       rule: '.create-analysis-dialog input[type="search"]:hover:not(:disabled)',
       resting: { backgroundColor: 'rgb(255, 255, 255)' },
-      hovered: { backgroundColor: 'rgb(237, 247, 252)' },
+      hovered: { backgroundColor: 'rgb(232, 238, 251)' },
       paintOnly: true,
     },
   ],

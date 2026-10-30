@@ -11,7 +11,7 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // controls with zero hover feedback: hovering them changed nothing.
 // Slice 16's rule covered .data-page buttons but not .data-dialog buttons,
 // and the dialog buttons share the data surface's plain-button style (white
-// bg, teal text), so they take the same established menu-item tint (#eaf3f7).
+// bg, teal text), so they take the same established menu-item tint (#e8eefb).
 // This also gives the dialog header/footer plain buttons hover feedback for
 // the first time. Background only, so resting geometry is identical; disabled
 // buttons keep their flat state. Static (no animation), so no reduced-motion
@@ -22,7 +22,7 @@ const hoverRule = css.match(/\.data-dialog\s+button:hover:not\(:disabled\):not\(
 
 test('the dialog plain-button hover rule exists and uses the menu tint', () => {
   assert.ok(hoverRule, 'expected .data-dialog button:hover:not(:disabled):not(.data-primary):not([aria-selected=true])');
-  assert.match(hoverRule[1], /background:\s*#eaf3f7/);
+  assert.match(hoverRule[1], /background:\s*#e8eefb/);
 });
 
 test('the hover preview is paint-only: resting geometry cannot shift', () => {
@@ -38,7 +38,7 @@ test('the resting dialog-button rule still reserves the geometry the hover keeps
 });
 
 test('the dialog-button hover rule coexists with the data-page button rule', () => {
-  assert.ok(css.match(/\.data-page\s+button:hover:not\(:disabled\):not\(\.data-primary\):not\(\[aria-selected=true\]\)\s*\{[^}]*background:\s*#eaf3f7/), 'the data-page plain-button hover rule (slice 16) must still be present');
+  assert.ok(css.match(/\.data-page\s+button:hover:not\(:disabled\):not\(\.data-primary\):not\(\[aria-selected=true\]\)\s*\{[^}]*background:\s*#e8eefb/), 'the data-page plain-button hover rule (slice 16) must still be present');
   assert.ok(hoverRule, 'expected the dialog plain-button hover rule');
 });
 
@@ -49,7 +49,7 @@ defineHoverCases('data-dialog-button hover', {
       target: '.data-dialog-tools button:not([disabled]):not(.data-primary)',
       rule: '.data-dialog button:hover:not(:disabled):not(.data-primary):not([aria-selected="true"])',
       resting: { backgroundColor: 'rgb(255, 255, 255)' },
-      hovered: { backgroundColor: 'rgb(234, 243, 247)' },
+      hovered: { backgroundColor: 'rgb(232, 238, 251)' },
       paintOnly: true,
       unchanged: ['color'],
       excluded: ['.data-dialog-tools button.data-primary', '.data-dialog-tools button[disabled]'],

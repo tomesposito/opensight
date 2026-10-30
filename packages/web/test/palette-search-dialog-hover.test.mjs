@@ -10,7 +10,7 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // flat white, and the global search type filter chips rested
 // transparent — hovering any of them changed nothing while their list
 // rows underlined. The Close buttons now take the dark-chrome hover
-// tint (#365764, the .toast / product-header language); the inputs and
+// tint (#2b3a55, the .toast / product-header language); the inputs and
 // unpressed chips take the dialogs' own selected tint
 // (var(--palette-selected)). The input rule sets background-color
 // only, so the global search input's search-icon background image
@@ -25,7 +25,7 @@ const chipRule = css.match(/\.global-search \.search-types button:hover:not\(\[a
 
 test('the palette/search dialog hover rules exist with the dialog tints', () => {
   assert.ok(closeRule, 'expected the grouped header Close button hover rule');
-  assert.match(closeRule[1], /background:\s*#365764/);
+  assert.match(closeRule[1], /background:\s*#2b3a55/);
   assert.ok(inputRule, 'expected the grouped search input hover rule');
   assert.match(inputRule[1], /background-color:\s*var\(--palette-selected\)/);
   assert.ok(chipRule, 'expected the search-types chip hover rule');
@@ -74,7 +74,7 @@ defineHoverCases('palette-search-dialog hover', {
       target: '#cp-close',
       rule: '.command-palette header button:hover, .global-search header button:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(54, 87, 100)' },
+      hovered: { backgroundColor: 'rgb(43, 58, 85)' },
       paintOnly: true,
       unchanged: ['backgroundImage'],
     },
@@ -82,7 +82,7 @@ defineHoverCases('palette-search-dialog hover', {
       target: '#gs-close',
       rule: '.command-palette header button:hover, .global-search header button:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(54, 87, 100)' },
+      hovered: { backgroundColor: 'rgb(43, 58, 85)' },
       paintOnly: true,
       unchanged: ['backgroundImage'],
     },
@@ -90,7 +90,7 @@ defineHoverCases('palette-search-dialog hover', {
       target: '#cp-input',
       rule: '.command-palette input:hover:not(:disabled), .global-search > input:hover:not(:disabled)',
       resting: { backgroundColor: 'rgb(255, 255, 255)' },
-      hovered: { backgroundColor: 'rgb(226, 242, 250)' },
+      hovered: { backgroundColor: 'rgb(217, 230, 250)' },
       paintOnly: true,
       unchanged: ['backgroundImage'],
     },
@@ -98,7 +98,7 @@ defineHoverCases('palette-search-dialog hover', {
       target: '#gs-input',
       rule: '.command-palette input:hover:not(:disabled), .global-search > input:hover:not(:disabled)',
       resting: { backgroundColor: 'rgb(255, 255, 255)' },
-      hovered: { backgroundColor: 'rgb(226, 242, 250)' },
+      hovered: { backgroundColor: 'rgb(217, 230, 250)' },
       paintOnly: true,
       unchanged: ['backgroundImage'],
     },
@@ -106,7 +106,7 @@ defineHoverCases('palette-search-dialog hover', {
       target: '#gs-chip',
       rule: '.global-search .search-types button:hover:not([aria-pressed="true"])',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(226, 242, 250)' },
+      hovered: { backgroundColor: 'rgb(217, 230, 250)' },
       paintOnly: true,
       unchanged: ['backgroundImage'],
       excluded: ['#gs-chip-pressed'],

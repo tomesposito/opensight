@@ -17,7 +17,7 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // paint property. It is the only <a> inside .sheet-object anywhere,
 // and it renders only when a text object has a link URL set, so
 // route audits never hover it. The link now takes the author
-// surface's established hover tint (#edf7f7, the tint the card's own
+// surface's established hover tint (#eef3fd, the tint the card's own
 // toolbar buttons take via the author generic button hover).
 // Background only, so the UA link colour/underline and resting
 // geometry are unchanged; the author card is white in both chromes,
@@ -28,12 +28,12 @@ const rule = css.match(/^\.sheet-object a:hover\s*\{([^}]*)\}/m);
 
 test('the sheet-object link hover rule exists and uses the author surface tint', () => {
   assert.ok(rule, 'expected the .sheet-object a:hover rule');
-  assert.match(rule[1], /background:\s*#edf7f7/);
+  assert.match(rule[1], /background:\s*#eef3fd/);
 });
 
 test('the hover tint is the established author-surface hover tint, distinct from the transparent rest', () => {
-  assert.ok(css.match(/\.author-workspace button:hover:not\(:disabled\), \.author-layout button:hover:not\(:disabled\)\s*\{[^}]*background:\s*#edf7f7/), 'the author generic button hover must remain #edf7f7');
-  assert.notEqual('#edf7f7', 'transparent', 'the hover tint must differ from the resting state');
+  assert.ok(css.match(/\.author-workspace button:hover:not\(:disabled\), \.author-layout button:hover:not\(:disabled\)\s*\{[^}]*background:\s*#eef3fd/), 'the author generic button hover must remain #eef3fd');
+  assert.notEqual('#eef3fd', 'transparent', 'the hover tint must differ from the resting state');
 });
 
 test('the link hover rule is paint-only: resting geometry and link presentation cannot shift', () => {
@@ -57,7 +57,7 @@ defineHoverCases('sheet-object-link hover', {
       target: '#target',
       rule: '.sheet-object a:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)', color: 'rgb(0, 0, 238)', textDecorationLine: 'underline' },
-      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      hovered: { backgroundColor: 'rgb(238, 243, 253)' },
       paintOnly: true,
       unchanged: ['color', 'textDecorationLine'],
       excluded: ['#outside'],

@@ -9,7 +9,7 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // #/data/preparation — were the largest remaining interactive controls with
 // zero hover feedback: hovering them changed nothing. The surface already
 // gives its buttons a hover state (.data-prep button:hover) but selects had
-// none, so they take the surface's own button hover tint (#edf6fc).
+// none, so they take the surface's own button hover tint (#e8eefb).
 // Background only, so resting geometry is identical; disabled selects keep
 // their flat state. Static (no animation), so no reduced-motion variant is
 // needed.
@@ -19,7 +19,7 @@ const hoverRule = css.match(/\.data-prep\s+select:hover:not\(:disabled\)\s*\{([^
 
 test('the prep select hover rule exists and uses the data-prep hover tint', () => {
   assert.ok(hoverRule, 'expected .data-prep select:hover:not(:disabled)');
-  assert.match(hoverRule[1], /background:\s*#edf6fc/);
+  assert.match(hoverRule[1], /background:\s*#e8eefb/);
 });
 
 test('the hover preview is paint-only: resting geometry cannot shift', () => {
@@ -35,7 +35,7 @@ test('the resting prep-select rule still reserves the geometry the hover keeps',
 });
 
 test('the prep select hover rule coexists with the prep button hover rule', () => {
-  assert.ok(css.match(/\.data-prep\s+button:hover:not\(:disabled\)\s*\{[^}]*background:\s*#edf6fc/), 'the data-prep button hover rule must still be present');
+  assert.ok(css.match(/\.data-prep\s+button:hover:not\(:disabled\)\s*\{[^}]*background:\s*#e8eefb/), 'the data-prep button hover rule must still be present');
   assert.ok(hoverRule, 'expected the prep select hover rule');
 });
 
@@ -46,7 +46,7 @@ defineHoverCases('prep-select hover', {
       target: '.prep-document-bar select:not([disabled])',
       rule: '.data-prep select:hover:not(:disabled)',
       resting: { backgroundColor: 'rgb(255, 255, 255)' },
-      hovered: { backgroundColor: 'rgb(237, 246, 252)' },
+      hovered: { backgroundColor: 'rgb(232, 238, 251)' },
       paintOnly: true,
       unchanged: ['color'],
       excluded: ['.prep-document-bar select[disabled]'],

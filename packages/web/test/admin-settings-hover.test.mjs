@@ -10,7 +10,7 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // surfaces render in <main> inside .app-shell, outside
 // .author-workspace and .data-page, so the author/data/dialog hover
 // rules never apply, and hovering a Save button, text field, or select
-// changed nothing. Every control now takes #edf7f7 — style.css's one
+// changed nothing. Every control now takes #eef3fd — style.css's one
 // hover tint for both generic buttons (.author-workspace button:hover)
 // and fields (.author-workspace select/input:hover, the .api-picker
 // fields of slice 57). Background only, so resting geometry is
@@ -26,12 +26,12 @@ const fieldHover = css.match(/\.admin-settings input:hover:not\(:disabled\):not\
 
 test('the admin-settings button hover rule exists with the app tint', () => {
   assert.ok(buttonHover, 'expected the admin-settings button hover rule');
-  assert.match(buttonHover[1], /background:\s*#edf7f7/);
+  assert.match(buttonHover[1], /background:\s*#eef3fd/);
 });
 
 test('the admin-settings field hover rule exists with the tint and native-control exclusions', () => {
   assert.ok(fieldHover, 'expected the admin-settings input/select hover rule');
-  assert.match(fieldHover[1], /background:\s*#edf7f7/);
+  assert.match(fieldHover[1], /background:\s*#eef3fd/);
 });
 
 test('the hover rules are paint-only: resting geometry cannot shift', () => {
@@ -51,8 +51,8 @@ test('the resting admin-settings rules still reserve the geometry the hover keep
 });
 
 test('the author hover rules are untouched', () => {
-  assert.ok(css.match(/\.author-workspace button:hover:not\(:disabled\)[^{]*\{[^}]*background:\s*#edf7f7/), 'the author button hover rule must still be present');
-  assert.ok(css.match(/\.author-workspace select:hover:not\(:disabled\)\s*\{[^}]*background:\s*#edf7f7/), 'the author select hover rule must still be present');
+  assert.ok(css.match(/\.author-workspace button:hover:not\(:disabled\)[^{]*\{[^}]*background:\s*#eef3fd/), 'the author button hover rule must still be present');
+  assert.ok(css.match(/\.author-workspace select:hover:not\(:disabled\)\s*\{[^}]*background:\s*#eef3fd/), 'the author select hover rule must still be present');
 });
 
 defineHoverCases('admin-settings hover', {
@@ -69,7 +69,7 @@ defineHoverCases('admin-settings hover', {
       target: '#save',
       rule: '.admin-settings button:hover:not(:disabled)',
       resting: { backgroundColor: 'rgb(239, 239, 239)' },
-      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      hovered: { backgroundColor: 'rgb(238, 243, 253)' },
       paintOnly: true,
       excluded: ['#off', '#radio'],
     },
@@ -77,28 +77,28 @@ defineHoverCases('admin-settings hover', {
       target: '#prov',
       rule: '.admin-settings input:hover:not(:disabled):not([type="radio"]):not([type="checkbox"]), .admin-settings select:hover:not(:disabled)',
       resting: { backgroundColor: 'rgb(255, 255, 255)' },
-      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      hovered: { backgroundColor: 'rgb(238, 243, 253)' },
       paintOnly: true,
     },
     {
       target: '#model',
       rule: '.admin-settings input:hover:not(:disabled):not([type="radio"]):not([type="checkbox"]), .admin-settings select:hover:not(:disabled)',
       resting: { backgroundColor: 'rgb(255, 255, 255)' },
-      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      hovered: { backgroundColor: 'rgb(238, 243, 253)' },
       paintOnly: true,
     },
     {
       target: '#key',
       rule: '.admin-settings input:hover:not(:disabled):not([type="radio"]):not([type="checkbox"]), .admin-settings select:hover:not(:disabled)',
       resting: { backgroundColor: 'rgb(255, 255, 255)' },
-      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      hovered: { backgroundColor: 'rgb(238, 243, 253)' },
       paintOnly: true,
     },
     {
       target: '#dlgselect',
       rule: '.admin-settings input:hover:not(:disabled):not([type="radio"]):not([type="checkbox"]), .admin-settings select:hover:not(:disabled)',
       resting: { backgroundColor: 'rgb(255, 255, 255)' },
-      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      hovered: { backgroundColor: 'rgb(238, 243, 253)' },
       paintOnly: true,
     },
   ],

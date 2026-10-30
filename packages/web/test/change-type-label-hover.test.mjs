@@ -16,8 +16,8 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // in both chrome modes and hovering its text or gap changed
 // nothing, while only the select inside it tinted via the author
 // select hover. This was the fresh zero-hover audit on a new
-// surface left by slice 108. The label now takes #edf7f7 (light)
-// / #334c62 (dark chrome), the author surface's established
+// surface left by slice 108. The label now takes #eef3fd (light)
+// / #36486a (dark chrome), the author surface's established
 // hover tints (the author select hover and the slice-97 toggle
 // label hover), so no new colour is introduced. Background
 // only, so resting geometry is identical and there is no
@@ -29,12 +29,12 @@ const darkRule = styleCss.match(/^\.author-workspace\[data-chrome=dark\] \.chang
 
 test('the change-type label hover rule exists and uses the established hover tint', () => {
   assert.ok(rule, 'expected the .change-type :hover rule');
-  assert.match(rule[1], /background:\s*#edf7f7/);
+  assert.match(rule[1], /background:\s*#eef3fd/);
 });
 
 test('the hover tint matches the author select and toggle-label hovers, so no new colour is introduced', () => {
-  assert.ok(styleCss.match(/\.author-workspace select:hover:not\(:disabled\)\s*\{[^}]*background:\s*#edf7f7/), 'the author select hover must remain #edf7f7');
-  assert.ok(styleCss.match(/^label\.toggle:hover\s*\{[^}]*background:\s*#edf7f7/m), 'the toggle label hover must remain #edf7f7');
+  assert.ok(styleCss.match(/\.author-workspace select:hover:not\(:disabled\)\s*\{[^}]*background:\s*#eef3fd/), 'the author select hover must remain #eef3fd');
+  assert.ok(styleCss.match(/^label\.toggle:hover\s*\{[^}]*background:\s*#eef3fd/m), 'the toggle label hover must remain #eef3fd');
 });
 
 test('the change-type label hover rules are paint-only: resting geometry and label presentation cannot shift', () => {
@@ -45,8 +45,8 @@ test('the change-type label hover rules are paint-only: resting geometry and lab
 
 test('the dark variant uses the author dark hover tint and the resting change-type and author label rules are preserved', () => {
   assert.ok(darkRule, 'expected the dark .change-type :hover rule');
-  assert.match(darkRule[1], /background:\s*#334c62/);
-  assert.ok(styleCss.match(/\.author-workspace\[data-chrome=dark\] select:hover:not\(:disabled\)\s*\{[^}]*background:\s*#334c62/), 'the author dark select hover must remain #334c62');
+  assert.match(darkRule[1], /background:\s*#36486a/);
+  assert.ok(styleCss.match(/\.author-workspace\[data-chrome=dark\] select:hover:not\(:disabled\)\s*\{[^}]*background:\s*#36486a/), 'the author dark select hover must remain #36486a');
   assert.ok(styleCss.match(/^\.change-type\s*\{[^}]*max-width:\s*230px/m), 'the change-type resting rule must remain');
   assert.ok(styleCss.match(/\.author-layout label, \.analysis-title, \.rename-sheet label, \.calculation-dialog label\s*\{[^}]*display:\s*flex[^}]*flex-direction:\s*column/), 'the author label resting rule must remain');
 });
@@ -65,7 +65,7 @@ defineHoverCases('change-type-label hover', {
       target: '#changeLight',
       rule: '.change-type:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      hovered: { backgroundColor: 'rgb(238, 243, 253)' },
       paintOnly: true,
       unchanged: ['color'],
       excluded: ['#wellLight'],
@@ -74,7 +74,7 @@ defineHoverCases('change-type-label hover', {
       target: '#changeDark',
       rule: '.author-workspace[data-chrome="dark"] .change-type:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(51, 76, 98)' },
+      hovered: { backgroundColor: 'rgb(54, 72, 106)' },
       paintOnly: true,
       unchanged: ['color'],
       excluded: ['#wellDark'],

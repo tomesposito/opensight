@@ -15,9 +15,9 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // cards), so here it rested at the UA default grey and hovering
 // changed nothing — while the dialog's own header button, search
 // input, type chips and result rows all carry hover states. The
-// button now takes the standard primary paint (#157f88, white text,
+// button now takes the standard primary paint (#3b82f6, white text,
 // the empty-page-state primary's padding/radius) and the standard
-// primary hover deepening (#126e76) used by every other context, so
+// primary hover deepening (#2f66d8) used by every other context, so
 // no new colour is introduced. The dialog is a fixed-light surface,
 // so no dark variant.
 const styleCss = styles['style.css'];
@@ -27,19 +27,19 @@ const hoverRule = styleCss.match(/^\.global-search \.search-empty \.primary-butt
 
 test('the global-search primary button resting rule paints the standard primary treatment', () => {
   assert.ok(restRule, 'expected the global-search primary-button resting rule');
-  assert.match(restRule[1], /background:\s*#157f88/);
+  assert.match(restRule[1], /background:\s*#3b82f6/);
   assert.match(restRule[1], /color:\s*#fff/);
 });
 
 test('the global-search primary button hover rule deepens to the standard primary hover', () => {
   assert.ok(hoverRule, 'expected the global-search primary-button :hover rule');
-  assert.match(hoverRule[1], /background:\s*#126e76/);
-  assert.match(hoverRule[1], /border-color:\s*#126e76/);
+  assert.match(hoverRule[1], /background:\s*#2f66d8/);
+  assert.match(hoverRule[1], /border-color:\s*#2f66d8/);
 });
 
 test('the paint matches the other primary contexts, so no new colour is introduced', () => {
-  assert.ok(styleCss.match(/\.analyses-home \.primary-button\s*\{[^}]*background:\s*#157f88/), 'the analyses-home primary must remain #157f88');
-  assert.ok(styleCss.match(/\.analyses-home \.primary-button:hover\s*\{[^}]*background:\s*#126e76/), 'the analyses-home primary hover must remain #126e76');
+  assert.ok(styleCss.match(/\.analyses-home \.primary-button\s*\{[^}]*background:\s*#3b82f6/), 'the analyses-home primary must remain #3b82f6');
+  assert.ok(styleCss.match(/\.analyses-home \.primary-button:hover\s*\{[^}]*background:\s*#2f66d8/), 'the analyses-home primary hover must remain #2f66d8');
 });
 
 test('the neighbouring global-search rules are preserved', () => {
@@ -55,8 +55,8 @@ defineHoverCases('global-search-primary-button hover', {
     {
       target: '#searchPrimary',
       rule: '.global-search .search-empty .primary-button:hover',
-      resting: { backgroundColor: 'rgb(21, 127, 136)', color: 'rgb(255, 255, 255)' },
-      hovered: { backgroundColor: 'rgb(18, 110, 118)' },
+      resting: { backgroundColor: 'rgb(59, 130, 246)', color: 'rgb(255, 255, 255)' },
+      hovered: { backgroundColor: 'rgb(47, 102, 216)' },
       paintOnly: true,
       unchanged: ['color'],
       excluded: [{ target: '#outsidePrimary', resting: { backgroundColor: 'rgb(239, 239, 239)' } }],

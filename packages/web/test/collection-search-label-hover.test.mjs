@@ -21,7 +21,7 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // for the label and a transparent rest, while the search input inside it
 // matched the slice-64 collection-card field hover and the
 // favorites-filter label beside it matched the slice-96 hover. The label
-// now takes #eaf3f7, the collection surface's established hover tint
+// now takes #e8eefb, the collection surface's established hover tint
 // (the search field inside it and the favorites-filter label beside it),
 // so no new colour is introduced — and because the label and the field
 // inside it take the same tint, hovering either reads as one surface,
@@ -37,13 +37,13 @@ const labelRule = appChromeCss.match(/^\.draft-collection-tools label:hover:not\
 
 test('the collection search label hover rule exists and uses the established hover tint', () => {
   assert.ok(labelRule, 'expected the draft-collection-tools label :hover rule');
-  assert.match(labelRule[1], /background:\s*#eaf3f7/);
+  assert.match(labelRule[1], /background:\s*#e8eefb/);
 });
 
 test('the hover tint matches the search field and favorites-filter hovers, so no new colour is introduced', () => {
-  assert.ok(appChromeCss.match(/\.collection-card input:hover:not\(:disabled\):not\(\[type=radio\]\):not\(\[type=checkbox\]\):not\(\[type=file\]\)\s*\{[^}]*background:\s*#eaf3f7/), 'the collection-card field hover must remain #eaf3f7');
-  assert.ok(appChromeCss.match(/\.favorites-filter:hover\s*\{[^}]*background:\s*#eaf3f7/), 'the favorites-filter label hover must remain #eaf3f7');
-  assert.ok(appChromeCss.match(/\.collection-pagination label:hover\s*\{[^}]*background:\s*#eaf3f7/), 'the collection pagination label hover must remain #eaf3f7');
+  assert.ok(appChromeCss.match(/\.collection-card input:hover:not\(:disabled\):not\(\[type=radio\]\):not\(\[type=checkbox\]\):not\(\[type=file\]\)\s*\{[^}]*background:\s*#e8eefb/), 'the collection-card field hover must remain #e8eefb');
+  assert.ok(appChromeCss.match(/\.favorites-filter:hover\s*\{[^}]*background:\s*#e8eefb/), 'the favorites-filter label hover must remain #e8eefb');
+  assert.ok(appChromeCss.match(/\.collection-pagination label:hover\s*\{[^}]*background:\s*#e8eefb/), 'the collection pagination label hover must remain #e8eefb');
 });
 
 test('the collection search label hover rule is paint-only: resting geometry and presentation cannot shift', () => {
@@ -65,7 +65,7 @@ defineHoverCases('collection-search-label hover', {
       target: '#searchLabel',
       rule: '.draft-collection-tools label:hover:not(.favorites-filter)',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(234, 243, 247)' },
+      hovered: { backgroundColor: 'rgb(232, 238, 251)' },
       paintOnly: true,
       unchanged: ['color'],
       excluded: ['#favLabel', '#outsideLabel'],

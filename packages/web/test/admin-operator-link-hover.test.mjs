@@ -17,7 +17,7 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // .admin-settings anywhere (the AI settings, operator-removal, users
 // and accept-invitation branches render no other links), so the
 // scope is tight. The link now takes the admin surface's established
-// hover tint (#edf7f7, slice 59). Background only, so the UA link
+// hover tint (#eef3fd, slice 59). Background only, so the UA link
 // colour/underline and resting geometry are unchanged; the admin
 // surface is fixed light, so no dark variant is added.
 const css = styles['style.css'];
@@ -26,13 +26,13 @@ const rule = css.match(/^\.admin-settings a:hover\s*\{([^}]*)\}/m);
 
 test('the admin-settings link hover rule exists and uses the admin surface tint', () => {
   assert.ok(rule, 'expected the .admin-settings a:hover rule');
-  assert.match(rule[1], /background:\s*#edf7f7/);
+  assert.match(rule[1], /background:\s*#eef3fd/);
 });
 
 test('the hover tint is the established admin-surface hover tint, distinct from the transparent rest', () => {
-  assert.ok(css.match(/\.admin-settings button:hover:not\(:disabled\)\s*\{[^}]*background:\s*#edf7f7/), 'the slice-59 admin button hover must remain #edf7f7');
-  assert.ok(css.match(/\.admin-settings input:hover:not\(:disabled\):not\(\[type=radio\]\):not\(\[type=checkbox\]\), \.admin-settings select:hover:not\(:disabled\)\s*\{[^}]*background:\s*#edf7f7/), 'the slice-59 admin field hover must remain #edf7f7');
-  assert.notEqual('#edf7f7', 'transparent', 'the hover tint must differ from the resting state');
+  assert.ok(css.match(/\.admin-settings button:hover:not\(:disabled\)\s*\{[^}]*background:\s*#eef3fd/), 'the slice-59 admin button hover must remain #eef3fd');
+  assert.ok(css.match(/\.admin-settings input:hover:not\(:disabled\):not\(\[type=radio\]\):not\(\[type=checkbox\]\), \.admin-settings select:hover:not\(:disabled\)\s*\{[^}]*background:\s*#eef3fd/), 'the slice-59 admin field hover must remain #eef3fd');
+  assert.notEqual('#eef3fd', 'transparent', 'the hover tint must differ from the resting state');
 });
 
 test('the link hover rule is paint-only: resting geometry and link presentation cannot shift', () => {
@@ -55,7 +55,7 @@ defineHoverCases('admin-operator-link hover', {
       target: '#op',
       rule: '.admin-settings a:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)', color: 'rgb(0, 0, 238)', textDecorationLine: 'underline' },
-      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      hovered: { backgroundColor: 'rgb(238, 243, 253)' },
       paintOnly: true,
       unchanged: ['color', 'textDecorationLine'],
       excluded: ['#outside'],

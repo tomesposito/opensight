@@ -17,7 +17,7 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // (1,356 rules) in the real ancestor contexts (author light chrome and
 // author dark chrome) confirmed zero matching :hover rules for both
 // label kinds and their checkboxes and a transparent rest in both.
-// The labels now take #edf7f7, the author surface's established hover
+// The labels now take #eef3fd, the author surface's established hover
 // tint (the author button and field hovers), so no new colour is
 // introduced. The rule is on the label, not the checkbox: the checkbox
 // keeps its native rendering, following the slice-94 connector-toggle,
@@ -29,7 +29,7 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // inside .action-target stay out of scope because their selects
 // already hover via the author field hover, and the .action-radio-group
 // radio labels are a different thread. The dark-chrome variant takes
-// the author dark hover tint (#334c62, the dark button and field
+// the author dark hover tint (#36486a, the dark button and field
 // hovers). Background only, so resting geometry is identical and there
 // is no animation.
 const styleCss = styles['style.css'];
@@ -39,11 +39,11 @@ const darkRule = styleCss.match(/^\.author-workspace\[data-chrome=dark\] \.actio
 
 test('the action checkbox label hover rule exists and uses the established hover tint', () => {
   assert.ok(rule, 'expected the .action-checkbox-list checkbox label :hover rule');
-  assert.match(rule[1], /background:\s*#edf7f7/);
+  assert.match(rule[1], /background:\s*#eef3fd/);
 });
 
 test('the hover tint matches the author button and field hovers, so no new colour is introduced', () => {
-  assert.ok(styleCss.match(/\.author-workspace button:hover:not\(:disabled\), \.author-layout button:hover:not\(:disabled\)\s*\{[^}]*background:\s*#edf7f7/), 'the author button hover must remain #edf7f7');
+  assert.ok(styleCss.match(/\.author-workspace button:hover:not\(:disabled\), \.author-layout button:hover:not\(:disabled\)\s*\{[^}]*background:\s*#eef3fd/), 'the author button hover must remain #eef3fd');
   assert.ok(styleCss.match(/\.author-layout input:hover:not\(:disabled\):not\(\[type=radio\]\):not\(\[type=checkbox\]\)/), 'the author field hover must remain and keep its checkbox exclusion');
 });
 
@@ -57,8 +57,8 @@ test('the resting action-checkbox-list rules are preserved, the checkbox has no 
   assert.ok(styleCss.match(/\.action-checkbox-list label\s*\{[^}]*display:\s*flex[^}]*flex-direction:\s*row/), 'the action-checkbox-list label resting rule must remain');
   assert.ok(!/\.action-checkbox-list input:hover/.test(styleCss), 'the checkbox must keep its native rendering with no hover rule of its own');
   assert.ok(darkRule, 'expected the author dark-chrome action checkbox label hover variant');
-  assert.match(darkRule[1], /background:\s*#334c62/);
-  assert.ok(styleCss.match(/\.author-workspace\[data-chrome=dark\] button:hover:not\(:disabled\)\s*\{[^}]*background:\s*#334c62/), 'the author dark button hover must remain #334c62');
+  assert.match(darkRule[1], /background:\s*#36486a/);
+  assert.ok(styleCss.match(/\.author-workspace\[data-chrome=dark\] button:hover:not\(:disabled\)\s*\{[^}]*background:\s*#36486a/), 'the author dark button hover must remain #36486a');
 });
 
 const panel = prefix => `<div class="action-panel"><div class="action-panel-body">`
@@ -80,7 +80,7 @@ defineHoverCases('action-checkbox hover', {
       target: '#ltScope',
       rule: '.action-checkbox-list label:has(> input[type="checkbox"]):hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      hovered: { backgroundColor: 'rgb(238, 243, 253)' },
       paintOnly: true,
       unchanged: ['color'],
       excluded: ['#ltScopeBox', '#ltMap', '#ltRadio', '#outsideLabel'],
@@ -89,7 +89,7 @@ defineHoverCases('action-checkbox hover', {
       target: '#ltTarget',
       rule: '.action-checkbox-list label:has(> input[type="checkbox"]):hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      hovered: { backgroundColor: 'rgb(238, 243, 253)' },
       paintOnly: true,
       unchanged: ['color'],
     },
@@ -97,7 +97,7 @@ defineHoverCases('action-checkbox hover', {
       target: '#dkTarget',
       rule: '.author-workspace[data-chrome="dark"] .action-checkbox-list label:has(> input[type="checkbox"]):hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(51, 76, 98)' },
+      hovered: { backgroundColor: 'rgb(54, 72, 106)' },
       paintOnly: true,
       unchanged: ['color'],
     },

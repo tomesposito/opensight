@@ -16,7 +16,7 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // in the real ancestor context confirmed zero matching :hover
 // rules and a transparent rest for both the label and the
 // checkbox. The label now takes the app surfaces' established
-// hover tint (#eaf3f7 — the gallery's own search and details
+// hover tint (#e8eefb — the gallery's own search and details
 // hovers, slices 90/91/93, and the data-connector-tile label hover
 // in the Create Dataset dialog), so no new colour is introduced.
 // The rule is on the label, not the checkbox: the checkbox keeps
@@ -32,13 +32,13 @@ const rule = css.match(/^\.connector-toggle:hover\s*\{([^}]*)\}/m);
 
 test('the connector-toggle hover rule exists and uses the established hover tint', () => {
   assert.ok(rule, 'expected the .connector-toggle :hover rule');
-  assert.match(rule[1], /background:\s*#eaf3f7/);
+  assert.match(rule[1], /background:\s*#e8eefb/);
 });
 
 test('the hover tint matches the gallery search and details hovers and the connector-tile label hover, so no new colour is introduced', () => {
-  assert.ok(css.match(/\.connector-search input\[type=search\]:hover:not\(:disabled\)\s*\{[^}]*background:\s*#eaf3f7/), 'the connector-search hover must remain #eaf3f7');
-  assert.ok(css.match(/\.connector-details input:hover:not\(:disabled\):not\(\[type=radio\]\):not\(\[type=checkbox\]\):not\(\[type=file\]\), \.connector-details select:hover:not\(:disabled\)\s*\{[^}]*background:\s*#eaf3f7/), 'the connector-details field hover must remain #eaf3f7');
-  assert.ok(dataCss.match(/\.data-connector-tile:hover:not\(\[data-selected=true\]\)[^{]*\{[^}]*background:\s*#eaf3f7/), 'the data-connector-tile label hover must remain #eaf3f7');
+  assert.ok(css.match(/\.connector-search input\[type=search\]:hover:not\(:disabled\)\s*\{[^}]*background:\s*#e8eefb/), 'the connector-search hover must remain #e8eefb');
+  assert.ok(css.match(/\.connector-details input:hover:not\(:disabled\):not\(\[type=radio\]\):not\(\[type=checkbox\]\):not\(\[type=file\]\), \.connector-details select:hover:not\(:disabled\)\s*\{[^}]*background:\s*#e8eefb/), 'the connector-details field hover must remain #e8eefb');
+  assert.ok(dataCss.match(/\.data-connector-tile:hover:not\(\[data-selected=true\]\)[^{]*\{[^}]*background:\s*#e8eefb/), 'the data-connector-tile label hover must remain #e8eefb');
 });
 
 test('the toggle hover rule is paint-only: resting geometry and label presentation cannot shift', () => {
@@ -63,7 +63,7 @@ defineHoverCases('connector-toggle hover', {
       target: '#toggleLabel',
       rule: '.connector-toggle:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(234, 243, 247)' },
+      hovered: { backgroundColor: 'rgb(232, 238, 251)' },
       paintOnly: true,
       unchanged: ['color'],
       excluded: [{ target: '#toggleBox', resting: { backgroundColor: 'rgba(0, 0, 0, 0)' } }, '#outsideLabel'],

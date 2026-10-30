@@ -8,10 +8,10 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // slices 8/16/17/18 — except the secondary text-button used by empty states
 // ("Try sample data" on the local home empty state, "Refresh drafts" on the
 // analyses empty state). It had no :hover rule at all: hovering changed
-// nothing. It now takes the established menu-item hover tint (#eaf3f7, the
+// nothing. It now takes the established menu-item hover tint (#e8eefb, the
 // same tint the data-page buttons and rail menus use) as a subtle background
 // pill. The tint works in both color contexts the button renders in (default
-// #176fa1 and the app-shell #126e76 override) without touching the text
+// #176fa1 and the app-shell #2f66d8 override) without touching the text
 // color. Background and border-radius do not affect layout, so the resting
 // geometry is identical — no shift. The state is instantaneous, so no
 // prefers-reduced-motion variant is needed; the global button :active 1px
@@ -23,7 +23,7 @@ test('empty-state secondary buttons give hover feedback', () => {
     /\.empty-page-state\s+\.empty-state-secondary:hover\s*\{([^}]*)\}/,
   );
   assert.ok(rule, 'expected .empty-page-state .empty-state-secondary:hover');
-  assert.match(rule[1], /background:\s*#eaf3f7/);
+  assert.match(rule[1], /background:\s*#e8eefb/);
 });
 
 test('the hover pill cannot shift layout', () => {
@@ -52,8 +52,8 @@ defineHoverCases('empty-state secondary controls', {
     <div class="app-shell"><section class="empty-page-state"><button id="shell" class="empty-state-secondary">Refresh drafts</button></section></div>`,
   cases: ['#default', '#shell'].map(target => ({
     target, rule: '.empty-page-state .empty-state-secondary:hover',
-    resting: { backgroundColor: 'rgba(0, 0, 0, 0)', color: target === '#default' ? 'rgb(23, 111, 161)' : 'rgb(18, 110, 118)' },
-    hovered: { backgroundColor: 'rgb(234, 243, 247)' },
+    resting: { backgroundColor: 'rgba(0, 0, 0, 0)', color: target === '#default' ? 'rgb(23, 111, 161)' : 'rgb(47, 102, 216)' },
+    hovered: { backgroundColor: 'rgb(232, 238, 251)' },
     unchanged: ['color', 'textDecorationLine'],
     paintOnly: true,
   })),

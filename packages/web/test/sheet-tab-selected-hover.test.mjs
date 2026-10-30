@@ -9,7 +9,7 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // "Overview" tab, aria-current="page") was the last interactive control on
 // the landing surfaces with zero hover feedback: hovering it changed nothing.
 // Slice 18's rule deliberately excluded the selected tab; the selected tab
-// now takes the #eaf3f7 menu-item tint on hover (the slice-28
+// now takes the #e8eefb menu-item tint on hover (the slice-28
 // selected-data-tab language), so it reads interactive while staying visually
 // distinct at rest (teal text + underline unchanged). Background only, so
 // resting geometry is identical; disabled tabs keep their flat state. Static
@@ -20,7 +20,7 @@ const hoverRule = css.match(/\.sheet-tabs\s+button\[aria-current\]:hover:not\(:d
 
 test('the selected sheet tab has a hover state using the menu tint', () => {
   assert.ok(hoverRule, 'expected .sheet-tabs button[aria-current]:hover:not(:disabled), .sheet-tabs button[aria-selected=true]:hover:not(:disabled)');
-  assert.match(hoverRule[1], /background:\s*#eaf3f7/);
+  assert.match(hoverRule[1], /background:\s*#e8eefb/);
 });
 
 test('the hover preview is paint-only: resting geometry cannot shift', () => {
@@ -31,12 +31,12 @@ test('the hover preview is paint-only: resting geometry cannot shift', () => {
 test('the resting selected-tab rule still reserves the geometry the hover keeps', () => {
   const resting = css.match(/\.sheet-tabs\s+button\[aria-current\]\s*\{([^}]*)\}/);
   assert.ok(resting, 'expected the .sheet-tabs button[aria-current] resting rule');
-  assert.match(resting[1], /color:\s*#126e76/);
-  assert.match(resting[1], /border-color:\s*#157f88/);
+  assert.match(resting[1], /color:\s*#2f66d8/);
+  assert.match(resting[1], /border-color:\s*#3b82f6/);
 });
 
 test('the selected-tab hover rule coexists with the unselected-tab hover rule', () => {
-  assert.ok(css.match(/\.sheet-tabs\s+button:hover:not\(\[aria-current\]\):not\(\[aria-selected=true\]\)\s*\{[^}]*color:\s*#126e76/), 'the unselected-tab hover rule (slice 18) must still be present');
+  assert.ok(css.match(/\.sheet-tabs\s+button:hover:not\(\[aria-current\]\):not\(\[aria-selected=true\]\)\s*\{[^}]*color:\s*#2f66d8/), 'the unselected-tab hover rule (slice 18) must still be present');
   assert.ok(hoverRule, 'expected the selected sheet-tab hover rule');
 });
 
@@ -47,7 +47,7 @@ defineHoverCases('sheet-tab-selected hover', {
       target: '.sheet-tabs button[aria-current=page]:not([disabled])',
       rule: '.sheet-tabs button[aria-current]:hover:not(:disabled), .sheet-tabs button[aria-selected="true"]:hover:not(:disabled)',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(234, 243, 247)' },
+      hovered: { backgroundColor: 'rgb(232, 238, 251)' },
       paintOnly: true,
       unchanged: ['color'],
       excluded: ['.sheet-tabs button[aria-current=page][disabled]'],
@@ -56,7 +56,7 @@ defineHoverCases('sheet-tab-selected hover', {
       target: '.sheet-tabs button[aria-selected=true]',
       rule: '.sheet-tabs button[aria-selected=true]:hover:not(:disabled)',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(234, 243, 247)' },
+      hovered: { backgroundColor: 'rgb(232, 238, 251)' },
       paintOnly: true,
       unchanged: ['color', 'borderBottomColor'],
     },

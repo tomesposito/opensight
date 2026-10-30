@@ -21,7 +21,7 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // via the slice-46 field hovers. The dialog renders outside
 // .author-workspace (a sibling of it in Author.tsx), so the author
 // label hovers never reach it either. The labels now take
-// #edf7f7, the dialog's own established hover tint (slice 46's
+// #eef3fd, the dialog's own established hover tint (slice 46's
 // button, field and summary hovers in this same dialog), so no
 // new colour is introduced — and because the inner field's own
 // hover is the same tint, hovering the field inside the label
@@ -35,12 +35,12 @@ const rule = styleCss.match(/^\.calculation-dialog label:hover\s*\{([^}]*)\}/m);
 
 test('the calculation-dialog label hover rule exists and uses the established hover tint', () => {
   assert.ok(rule, 'expected the calculation-dialog label :hover rule');
-  assert.match(rule[1], /background:\s*#edf7f7/);
+  assert.match(rule[1], /background:\s*#eef3fd/);
 });
 
 test('the hover tint matches the slice-46 dialog field hover, so no new colour is introduced', () => {
-  assert.ok(styleCss.match(/\.calculation-dialog input:hover:not\(:disabled\), \.calculation-dialog select:hover:not\(:disabled\), \.calculation-dialog textarea:hover:not\(:disabled\)\s*\{[^}]*background:\s*#edf7f7/), 'the slice-46 dialog field hover must remain #edf7f7');
-  assert.ok(styleCss.match(/\.calculation-dialog \.o-build-for-me summary:hover\s*\{[^}]*background:\s*#edf7f7/), 'the slice-68 dialog summary hover must remain #edf7f7');
+  assert.ok(styleCss.match(/\.calculation-dialog input:hover:not\(:disabled\), \.calculation-dialog select:hover:not\(:disabled\), \.calculation-dialog textarea:hover:not\(:disabled\)\s*\{[^}]*background:\s*#eef3fd/), 'the slice-46 dialog field hover must remain #eef3fd');
+  assert.ok(styleCss.match(/\.calculation-dialog \.o-build-for-me summary:hover\s*\{[^}]*background:\s*#eef3fd/), 'the slice-68 dialog summary hover must remain #eef3fd');
 });
 
 test('the calculation-dialog label hover rule is paint-only: resting geometry and label presentation cannot shift', () => {
@@ -67,7 +67,7 @@ defineHoverCases('calculation-dialog-label hover', {
       target: '#nameLabel',
       rule: '.calculation-dialog label:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      hovered: { backgroundColor: 'rgb(238, 243, 253)' },
       paintOnly: true,
       unchanged: ['color'],
       excluded: ['#outsideLabel'],
@@ -76,7 +76,7 @@ defineHoverCases('calculation-dialog-label hover', {
       target: '#roleLabel',
       rule: '.calculation-dialog label:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      hovered: { backgroundColor: 'rgb(238, 243, 253)' },
       paintOnly: true,
       unchanged: ['color'],
     },
@@ -84,7 +84,7 @@ defineHoverCases('calculation-dialog-label hover', {
       target: '#exprLabel',
       rule: '.calculation-dialog label:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      hovered: { backgroundColor: 'rgb(238, 243, 253)' },
       paintOnly: true,
       unchanged: ['color'],
     },
@@ -92,7 +92,7 @@ defineHoverCases('calculation-dialog-label hover', {
       target: '#fnLabel',
       rule: '.calculation-dialog label:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      hovered: { backgroundColor: 'rgb(238, 243, 253)' },
       paintOnly: true,
       unchanged: ['color'],
     },

@@ -8,7 +8,7 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // no page errors) found the search input was the last interactive control on
 // the landing surfaces with zero hover state: hovering it changed nothing,
 // while the surrounding buttons, tabs, and the filter select already take the
-// data page's established menu-item hover tint (#eaf3f7, slices 16/21). The
+// data page's established menu-item hover tint (#e8eefb, slices 16/21). The
 // input takes the same tint; disabled inputs keep their flat state. Background
 // only, so resting geometry is identical. Static (no animation), so no
 // reduced-motion variant is needed.
@@ -18,7 +18,7 @@ const hoverRule = css.match(/\.data-page\s+input\[type=search\]:hover:not\(:disa
 
 test('the data-page search input has a hover state using the menu tint', () => {
   assert.ok(hoverRule, 'expected .data-page input[type=search]:hover:not(:disabled)');
-  assert.match(hoverRule[1], /background:\s*#eaf3f7/);
+  assert.match(hoverRule[1], /background:\s*#e8eefb/);
 });
 
 test('the hover preview is paint-only: resting geometry cannot shift', () => {
@@ -36,7 +36,7 @@ test('the resting search-input rule still reserves the geometry the hover keeps'
 });
 
 test('the data-page search input hover rule coexists with the filter select rule', () => {
-  assert.ok(css.match(/\.data-page\s+select:hover:not\(:disabled\)\s*\{[^}]*background:\s*#eaf3f7/), 'slice-21 filter select rule must still be present');
+  assert.ok(css.match(/\.data-page\s+select:hover:not\(:disabled\)\s*\{[^}]*background:\s*#e8eefb/), 'slice-21 filter select rule must still be present');
   assert.ok(hoverRule, 'expected .data-page input[type=search]:hover:not(:disabled)');
 });
 
@@ -47,7 +47,7 @@ defineHoverCases('data-search-input hover', {
       target: '.data-page input:not([disabled])',
       rule: '.data-page input[type="search"]:hover:not(:disabled)',
       resting: { backgroundColor: 'rgb(255, 255, 255)' },
-      hovered: { backgroundColor: 'rgb(234, 243, 247)' },
+      hovered: { backgroundColor: 'rgb(232, 238, 251)' },
       paintOnly: true,
       excluded: [{ target: '.data-page input[disabled]', resting: { backgroundColor: 'rgb(255, 255, 255)' } }],
     },

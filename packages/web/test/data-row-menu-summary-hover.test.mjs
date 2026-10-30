@@ -12,7 +12,7 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // own item button tinted. Summary triggers elsewhere all take hover
 // (card-footer slice 40, prep-execution slice 41, author-workspace
 // slice 42); this one was missed because it is a <summary>, not a
-// <button>. It now takes the data surface's tint (#eaf3f7, slices
+// <button>. It now takes the data surface's tint (#e8eefb, slices
 // 16/21/27/48/49). Background only, so resting geometry is identical.
 // Static (no animation), so no reduced-motion variant is needed.
 const css = styles['data-section.css'];
@@ -21,7 +21,7 @@ const hoverRule = css.match(/\.data-row-menu summary:hover\s*\{([^}]*)\}/);
 
 test('the row-menu summary hover rule exists and uses the data surface tint', () => {
   assert.ok(hoverRule, 'expected the .data-row-menu summary:hover rule');
-  assert.match(hoverRule[1], /background:\s*#eaf3f7/);
+  assert.match(hoverRule[1], /background:\s*#e8eefb/);
 });
 
 test('the hover rule is paint-only: resting geometry cannot shift', () => {
@@ -54,7 +54,7 @@ defineHoverCases('data-row-menu-summary hover', {
       target: '#trigger',
       rule: '.data-row-menu summary:hover',
       resting: { backgroundColor: 'rgb(255, 255, 255)' },
-      hovered: { backgroundColor: 'rgb(234, 243, 247)' },
+      hovered: { backgroundColor: 'rgb(232, 238, 251)' },
       paintOnly: true,
     },
   ],

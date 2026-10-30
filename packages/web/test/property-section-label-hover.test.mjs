@@ -32,10 +32,10 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // labels and a transparent rest in both chromes, while the
 // toggle labels matched the slice-97 rules and the name/font
 // fields matched the author field hovers. The labels now take
-// #edf7f7, the author surface's established hover tint (the
+// #eef3fd, the author surface's established hover tint (the
 // author button, field and summary hovers, the slice-97 toggle
 // hover in these same sections, and the slices 112-115 label
-// hovers), plus the author dark-chrome variant #334c62, so no new
+// hovers), plus the author dark-chrome variant #36486a, so no new
 // colour is introduced — and because the inner field's own hover
 // is the same tint, hovering the field inside the label reads as
 // one surface, not two steps. The slice-97 toggle rules carry the
@@ -49,15 +49,15 @@ const darkRule = styleCss.match(/^\.author-workspace\[data-chrome=dark\] \.prope
 
 test('the property-section plain label hover rule exists and uses the established hover tint', () => {
   assert.ok(rule, 'expected the property-section plain label :hover rule');
-  assert.match(rule[1], /background:\s*#edf7f7/);
+  assert.match(rule[1], /background:\s*#eef3fd/);
 });
 
 test('the hover tints match the author field hovers and the slice-97 toggle-label hovers, so no new colour is introduced', () => {
-  assert.ok(styleCss.match(/\.author-workspace select:hover:not\(:disabled\)\s*\{[^}]*background:\s*#edf7f7/), 'the author select hover must remain #edf7f7');
-  assert.ok(styleCss.match(/^label\.toggle:hover\s*\{[^}]*background:\s*#edf7f7/m), 'the slice-97 toggle label hover must remain #edf7f7');
+  assert.ok(styleCss.match(/\.author-workspace select:hover:not\(:disabled\)\s*\{[^}]*background:\s*#eef3fd/), 'the author select hover must remain #eef3fd');
+  assert.ok(styleCss.match(/^label\.toggle:hover\s*\{[^}]*background:\s*#eef3fd/m), 'the slice-97 toggle label hover must remain #eef3fd');
   assert.ok(darkRule, 'expected the author dark-chrome property-section label :hover variant');
-  assert.match(darkRule[1], /background:\s*#334c62/);
-  assert.ok(styleCss.match(/^\.author-workspace\[data-chrome=dark\] label\.toggle:hover\s*\{[^}]*background:\s*#334c62/m), 'the slice-97 dark toggle label hover must remain #334c62');
+  assert.match(darkRule[1], /background:\s*#36486a/);
+  assert.ok(styleCss.match(/^\.author-workspace\[data-chrome=dark\] label\.toggle:hover\s*\{[^}]*background:\s*#36486a/m), 'the slice-97 dark toggle label hover must remain #36486a');
 });
 
 test('the property-section label hover rules are paint-only: resting geometry and label presentation cannot shift', () => {
@@ -93,7 +93,7 @@ defineHoverCases('property-section-label hover', {
       target: '#lName',
       rule: '.property-section label:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      hovered: { backgroundColor: 'rgb(238, 243, 253)' },
       paintOnly: true,
       unchanged: ['color'],
       excluded: ['#outsideLabel'],
@@ -102,7 +102,7 @@ defineHoverCases('property-section-label hover', {
       target: '#lDim',
       rule: '.property-section label:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      hovered: { backgroundColor: 'rgb(238, 243, 253)' },
       paintOnly: true,
       unchanged: ['color'],
     },
@@ -110,7 +110,7 @@ defineHoverCases('property-section-label hover', {
       target: '#lWidth',
       rule: '.property-section label:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      hovered: { backgroundColor: 'rgb(238, 243, 253)' },
       paintOnly: true,
       unchanged: ['color'],
     },
@@ -118,7 +118,7 @@ defineHoverCases('property-section-label hover', {
       target: '#lFont',
       rule: '.property-section label:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      hovered: { backgroundColor: 'rgb(238, 243, 253)' },
       paintOnly: true,
       unchanged: ['color'],
     },
@@ -126,7 +126,7 @@ defineHoverCases('property-section-label hover', {
       target: '#lColor',
       rule: '.property-section label:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      hovered: { backgroundColor: 'rgb(238, 243, 253)' },
       paintOnly: true,
       unchanged: ['color'],
     },
@@ -134,7 +134,7 @@ defineHoverCases('property-section-label hover', {
       target: '#dName',
       rule: '.author-workspace[data-chrome="dark"] .property-section label:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(51, 76, 98)' },
+      hovered: { backgroundColor: 'rgb(54, 72, 106)' },
       paintOnly: true,
       unchanged: ['color'],
     },
@@ -142,7 +142,7 @@ defineHoverCases('property-section-label hover', {
       target: '#dDim',
       rule: '.author-workspace[data-chrome="dark"] .property-section label:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(51, 76, 98)' },
+      hovered: { backgroundColor: 'rgb(54, 72, 106)' },
       paintOnly: true,
       unchanged: ['color'],
     },
@@ -150,7 +150,7 @@ defineHoverCases('property-section-label hover', {
       target: '#dWidth',
       rule: '.author-workspace[data-chrome="dark"] .property-section label:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(51, 76, 98)' },
+      hovered: { backgroundColor: 'rgb(54, 72, 106)' },
       paintOnly: true,
       unchanged: ['color'],
     },
@@ -158,7 +158,7 @@ defineHoverCases('property-section-label hover', {
       target: '#dFont',
       rule: '.author-workspace[data-chrome="dark"] .property-section label:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(51, 76, 98)' },
+      hovered: { backgroundColor: 'rgb(54, 72, 106)' },
       paintOnly: true,
       unchanged: ['color'],
     },
@@ -166,7 +166,7 @@ defineHoverCases('property-section-label hover', {
       target: '#dColor',
       rule: '.author-workspace[data-chrome="dark"] .property-section label:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(51, 76, 98)' },
+      hovered: { backgroundColor: 'rgb(54, 72, 106)' },
       paintOnly: true,
       unchanged: ['color'],
     },
@@ -174,7 +174,7 @@ defineHoverCases('property-section-label hover', {
       target: '#lToggle',
       rule: 'label.toggle:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      hovered: { backgroundColor: 'rgb(238, 243, 253)' },
       paintOnly: true,
       unchanged: ['color'],
     },
@@ -182,7 +182,7 @@ defineHoverCases('property-section-label hover', {
       target: '#dToggle',
       rule: '.author-workspace[data-chrome="dark"] label.toggle:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(51, 76, 98)' },
+      hovered: { backgroundColor: 'rgb(54, 72, 106)' },
       paintOnly: true,
       unchanged: ['color'],
     },

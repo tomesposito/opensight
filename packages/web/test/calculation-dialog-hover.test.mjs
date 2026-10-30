@@ -9,8 +9,8 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // rule did. Its buttons, the "Use as" and "Function reference" selects,
 // the Name input and the Expression textarea all changed nothing on
 // hover while every other author control tinted. They now take the
-// author hover language exactly (buttons: border + #edf7f7; primary:
-// #126e76 with white text; fields: #edf7f7 background only). The
+// author hover language exactly (buttons: border + #eef3fd; primary:
+// #2f66d8 with white text; fields: #eef3fd background only). The
 // dialog's resting colors are fixed light (no dark-chrome variant
 // exists for it), so no dark variant is added. Field rules change
 // background only, so resting geometry is identical; static (no
@@ -23,13 +23,13 @@ const fieldRule = css.match(/\.calculation-dialog input:hover:not\(:disabled\), 
 
 test('the calculation-dialog hover rules exist with the author tints', () => {
   assert.ok(buttonRule, 'expected the .calculation-dialog button hover rule');
-  assert.match(buttonRule[1], /border-color:\s*#157f88/);
-  assert.match(buttonRule[1], /background:\s*#edf7f7/);
+  assert.match(buttonRule[1], /border-color:\s*#3b82f6/);
+  assert.match(buttonRule[1], /background:\s*#eef3fd/);
   assert.ok(primaryRule, 'expected the .calculation-dialog primary-button hover rule');
-  assert.match(primaryRule[1], /background:\s*#126e76/);
+  assert.match(primaryRule[1], /background:\s*#2f66d8/);
   assert.match(primaryRule[1], /color:\s*white/);
   assert.ok(fieldRule, 'expected the grouped .calculation-dialog field hover rule');
-  assert.match(fieldRule[1], /background:\s*#edf7f7/);
+  assert.match(fieldRule[1], /background:\s*#eef3fd/);
 });
 
 test('the field hover rule is paint-only: resting geometry cannot shift', () => {
@@ -45,7 +45,7 @@ test('the resting rules still reserve the geometry the hover keeps', () => {
   const restingField = css.match(/\.calculation-dialog input, \.calculation-dialog textarea\s*\{([^}]*)\}/);
   assert.ok(restingField, 'expected the resting field rule naming .calculation-dialog');
   assert.match(restingField[1], /padding:\s*5px 6px/);
-  assert.match(restingField[1], /border:\s*1px solid #c9d8de/);
+  assert.match(restingField[1], /border:\s*1px solid #c3cfe0/);
 });
 
 test('the dialog stays outside the author-workspace hover scope it now replaces', () => {
@@ -53,7 +53,7 @@ test('the dialog stays outside the author-workspace hover scope it now replaces'
   // dialog rule is a deliberate sibling, not a widening of that rule.
   const authorButton = css.match(/\.author-workspace button:hover:not\(:disabled\), \.author-layout button:hover:not\(:disabled\)\s*\{([^}]*)\}/);
   assert.ok(authorButton, 'expected the author button hover rule unchanged');
-  assert.match(authorButton[1], /background:\s*#edf7f7/);
+  assert.match(authorButton[1], /background:\s*#eef3fd/);
 });
 
 defineHoverCases('calculation-dialog hover', {
@@ -68,35 +68,35 @@ defineHoverCases('calculation-dialog hover', {
       target: '#name',
       rule: '.calculation-dialog input:hover:not(:disabled), .calculation-dialog select:hover:not(:disabled), .calculation-dialog textarea:hover:not(:disabled)',
       resting: { backgroundColor: 'rgb(255, 255, 255)' },
-      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      hovered: { backgroundColor: 'rgb(238, 243, 253)' },
       paintOnly: true,
     },
     {
       target: '#role',
       rule: '.calculation-dialog input:hover:not(:disabled), .calculation-dialog select:hover:not(:disabled), .calculation-dialog textarea:hover:not(:disabled)',
       resting: { backgroundColor: 'rgb(255, 255, 255)' },
-      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      hovered: { backgroundColor: 'rgb(238, 243, 253)' },
       paintOnly: true,
     },
     {
       target: '#expr',
       rule: '.calculation-dialog input:hover:not(:disabled), .calculation-dialog select:hover:not(:disabled), .calculation-dialog textarea:hover:not(:disabled)',
       resting: { backgroundColor: 'rgb(255, 255, 255)' },
-      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      hovered: { backgroundColor: 'rgb(238, 243, 253)' },
       paintOnly: true,
     },
     {
       target: '#cancel',
       rule: '.calculation-dialog button:hover:not(:disabled)',
       resting: { backgroundColor: 'rgb(255, 255, 255)' },
-      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      hovered: { backgroundColor: 'rgb(238, 243, 253)' },
       paintOnly: true,
     },
     {
       target: '#create',
       rule: '.calculation-dialog .primary-button:hover:not(:disabled)',
-      resting: { backgroundColor: 'rgb(21, 127, 136)' },
-      hovered: { backgroundColor: 'rgb(18, 110, 118)' },
+      resting: { backgroundColor: 'rgb(59, 130, 246)' },
+      hovered: { backgroundColor: 'rgb(47, 102, 216)' },
       paintOnly: true,
     },
   ],

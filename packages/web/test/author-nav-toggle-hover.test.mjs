@@ -12,7 +12,7 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // changed nothing. Slice 24's rule only covers `.product-header`, but the
 // author header renders as `author-topbar app-header`, so the same button
 // class had no hover rule on this surface. It takes the established
-// dark-chrome hover tint (#365764, slices 24/33). Paint-only: the rule
+// dark-chrome hover tint (#2b3a55, slices 24/33). Paint-only: the rule
 // changes the background, so resting geometry is identical and there is no
 // animation to need a reduced-motion variant.
 const chromeCss = styles['app-chrome.css'];
@@ -21,7 +21,7 @@ const toggleRule = chromeCss.match(/\.author-workspace\s+\.app-header\s+\.naviga
 
 test('the author navigation toggle has a hover state with the dark-chrome tint', () => {
   assert.ok(toggleRule, 'expected .author-workspace .app-header .navigation-toggle:hover:not(:disabled)');
-  assert.match(toggleRule[1], /background:\s*#365764/);
+  assert.match(toggleRule[1], /background:\s*#2b3a55/);
 });
 
 test('the author toggle hover rule is paint-only: resting geometry cannot shift', () => {
@@ -45,7 +45,7 @@ defineHoverCases('author-nav-toggle hover', {
       target: '#t',
       rule: '.author-workspace .app-header .navigation-toggle:hover:not(:disabled)',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(54, 87, 100)' },
+      hovered: { backgroundColor: 'rgb(43, 58, 85)' },
       paintOnly: true,
     },
   ],

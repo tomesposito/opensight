@@ -9,7 +9,7 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // was the last interactive control on the landing surfaces with zero hover
 // state: hovering it changed nothing, while the unselected tabs and the
 // surrounding controls already take the data page's established menu-item
-// hover tint (#eaf3f7, slices 16/21/27). The selected tab takes the same tint
+// hover tint (#e8eefb, slices 16/21/27). The selected tab takes the same tint
 // on hover; its resting state (bg #eff4f6, bold, teal bottom border) stays
 // distinct. Background only, so resting geometry is identical. Static (no
 // animation), so no reduced-motion variant is needed.
@@ -19,7 +19,7 @@ const hoverRule = css.match(/\.data-tabs\s+button\[aria-selected=true\]:hover:no
 
 test('the selected data tab has a hover state using the menu tint', () => {
   assert.ok(hoverRule, 'expected .data-tabs button[aria-selected=true]:hover:not(:disabled)');
-  assert.match(hoverRule[1], /background:\s*#eaf3f7/);
+  assert.match(hoverRule[1], /background:\s*#e8eefb/);
 });
 
 test('the hover preview is paint-only: resting geometry cannot shift', () => {
@@ -31,11 +31,11 @@ test('the resting selected-tab rule still reserves the geometry the hover keeps'
   const resting = css.match(/\.data-tabs\s+button\[aria-selected=true\]\s*\{([^}]*)\}/);
   assert.ok(resting, 'expected the .data-tabs button[aria-selected=true] resting rule');
   assert.match(resting[1], /background:\s*#eff4f6/);
-  assert.match(resting[1], /border-bottom-color:\s*#176b88/);
+  assert.match(resting[1], /border-bottom-color:\s*#2f66d8/);
 });
 
 test('the selected-tab hover rule coexists with the general tab hover rule', () => {
-  assert.ok(css.match(/\.data-page\s+button:hover:not\(:disabled\):not\(\.data-primary\):not\(\[aria-selected=true\]\)\s*\{[^}]*background:\s*#eaf3f7/), 'the unselected-tab hover rule (slice 16) must still be present');
+  assert.ok(css.match(/\.data-page\s+button:hover:not\(:disabled\):not\(\.data-primary\):not\(\[aria-selected=true\]\)\s*\{[^}]*background:\s*#e8eefb/), 'the unselected-tab hover rule (slice 16) must still be present');
   assert.ok(hoverRule, 'expected .data-tabs button[aria-selected=true]:hover:not(:disabled)');
 });
 
@@ -46,7 +46,7 @@ defineHoverCases('data-tab-selected hover', {
       target: '.data-tabs button[aria-selected=true]:not([disabled])',
       rule: '.data-tabs button[aria-selected="true"]:hover:not(:disabled)',
       resting: { backgroundColor: 'rgb(239, 244, 246)' },
-      hovered: { backgroundColor: 'rgb(234, 243, 247)' },
+      hovered: { backgroundColor: 'rgb(232, 238, 251)' },
       paintOnly: true,
       excluded: [{ target: '.data-tabs button[aria-selected=true][disabled]', resting: { backgroundColor: 'rgb(239, 244, 246)' } }],
     },

@@ -6,12 +6,12 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // modal's pressed type filter chip (.global-search .search-types
 // button[aria-pressed=true] in GlobalSearch.tsx). Slice 47 gave the
 // unpressed chips the dialog's selected tint on hover
-// (var(--palette-selected), #e2f2fa) and deliberately excluded the
+// (var(--palette-selected), #d9e6fa) and deliberately excluded the
 // pressed chip because it already rests at that exact tint — so
 // hovering the pressed chip changed nothing, while every plain chip
-// steps transparent -> #e2f2fa. Following the slices 28/29/73/74
+// steps transparent -> #d9e6fa. Following the slices 28/29/73/74
 // selected-control language, the pressed chip now takes a dedicated
-// hover step one visible step deeper: #c8eafa, already the codebase's
+// hover step one visible step deeper: #bfdcfb, already the codebase's
 // selected-hover step for this resting tint (--header-selected-hover,
 // the author menu's pressed-button hover at line ~772). The dialog's
 // resting colors are fixed light (the dialog carries no dark chrome
@@ -24,12 +24,12 @@ const rule = styleCss.match(/\.global-search \.search-types button\[aria-pressed
 
 test('the pressed search-type chip has a hover state one step deeper than its selected tint', () => {
   assert.ok(rule, 'expected the .global-search .search-types button[aria-pressed=true]:hover rule');
-  assert.match(rule[1], /background:\s*#c8eafa/);
+  assert.match(rule[1], /background:\s*#bfdcfb/);
 });
 
 test('the hover tint is the existing selected-hover step for the resting tint', () => {
-  assert.ok(styleCss.match(/--header-selected-bg:\s*#e2f2fa;\s*--header-selected-text:\s*#103e56;\s*--header-selected-hover:\s*#c8eafa/), 'the header selected-hover precedent must remain #c8eafa over #e2f2fa');
-  assert.ok(styleCss.match(/\.global-search \{[^}]*--palette-selected:\s*#e2f2fa/), 'the dialog selected tint must remain #e2f2fa');
+  assert.ok(styleCss.match(/--header-selected-bg:\s*#d9e6fa;\s*--header-selected-text:\s*#103e56;\s*--header-selected-hover:\s*#bfdcfb/), 'the header selected-hover precedent must remain #bfdcfb over #d9e6fa');
+  assert.ok(styleCss.match(/\.global-search \{[^}]*--palette-selected:\s*#d9e6fa/), 'the dialog selected tint must remain #d9e6fa');
   assert.ok(styleCss.match(/\.author-workspace\[data-chrome\] \.author-menu > button\[aria-pressed=true\]:hover:not\(:disabled\)\s*\{\s*background:\s*var\(--header-selected-hover\)/), 'the author menu pressed-button hover must still use the selected-hover var');
 });
 
@@ -45,7 +45,7 @@ test('the resting pressed-chip rule is preserved', () => {
 
 test('the neighbouring dialog hovers are untouched', () => {
   assert.ok(styleCss.match(/\.global-search \.search-types button:hover:not\(\[aria-pressed=true\]\)\s*\{\s*background:\s*var\(--palette-selected\)/), 'the slice 47 unpressed chip hover must remain');
-  assert.ok(styleCss.match(/\.command-palette header button:hover, \.global-search header button:hover\s*\{\s*background:\s*#365764/), 'the slice 47 Close button hover must remain');
+  assert.ok(styleCss.match(/\.command-palette header button:hover, \.global-search header button:hover\s*\{\s*background:\s*#2b3a55/), 'the slice 47 Close button hover must remain');
   assert.ok(styleCss.match(/\.command-palette input:hover:not\(:disabled\), \.global-search > input:hover:not\(:disabled\)\s*\{\s*background-color:\s*var\(--palette-selected\)/), 'the slice 47 input hover must remain');
   assert.ok(styleCss.match(/\.global-search li:hover\s*\{\s*background:\s*var\(--palette-selected\)/), 'the slice 52 row hover must remain');
 });
@@ -61,8 +61,8 @@ defineHoverCases('search-type-pressed-chip hover', {
     {
       target: '#pressed',
       rule: '.global-search .search-types button[aria-pressed="true"]:hover',
-      resting: { backgroundColor: 'rgb(226, 242, 250)' },
-      hovered: { backgroundColor: 'rgb(200, 234, 250)' },
+      resting: { backgroundColor: 'rgb(217, 230, 250)' },
+      hovered: { backgroundColor: 'rgb(191, 220, 251)' },
       paintOnly: true,
       unchanged: ['color', 'borderTopColor'],
       excluded: ['#plain', '#outside'],

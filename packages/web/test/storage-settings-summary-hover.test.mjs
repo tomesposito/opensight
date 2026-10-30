@@ -7,7 +7,7 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // <details> in DatasetDetail.tsx's About card — the only details
 // inside .data-summary-cards, rendered unconditionally on the
 // dataset Summary tab). Every other control on the data detail
-// tints #eaf3f7 on hover — buttons via .data-page button:hover,
+// tints #e8eefb on hover — buttons via .data-page button:hover,
 // the selected tab (slice 28), the filter select (slice 21), the
 // search input (slice 27) and the row-menu summary (.data-row-menu
 // summary:hover) — but a summary is none of those elements, and
@@ -20,7 +20,7 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // detail is a sub-route reached by opening a dataset, so top-level
 // route audits never hover it (the slices 50/62/64/67/68 blind
 // spot). It now takes the data surface's established hover tint
-// (#eaf3f7), so no new colour is introduced. Background only, so
+// (#e8eefb), so no new colour is introduced. Background only, so
 // resting geometry is identical and there is no animation; the
 // data detail surface is fixed light, so no dark variant is added.
 const css = styles['data-section.css'];
@@ -29,13 +29,13 @@ const rule = css.match(/\.data-summary-cards details > summary:hover\s*\{([^}]*)
 
 test('the Storage settings summary hover rule exists and uses the data surface tint', () => {
   assert.ok(rule, 'expected the .data-summary-cards details > summary:hover rule');
-  assert.match(rule[1], /background:\s*#eaf3f7/);
+  assert.match(rule[1], /background:\s*#e8eefb/);
 });
 
 test('the hover tint is the established data-surface hover tint, distinct from the transparent rest', () => {
-  assert.ok(css.match(/\.data-page button:hover:not\(:disabled\):not\(\.data-primary\):not\(\[aria-selected=true\]\)\s*\{[^}]*background:\s*#eaf3f7/), 'the data-page button hover must remain #eaf3f7');
-  assert.ok(css.match(/\.data-row-menu summary:hover\s*\{[^}]*background:\s*#eaf3f7/), 'the row-menu summary hover must remain #eaf3f7');
-  assert.notEqual('#eaf3f7', 'transparent', 'the hover tint must differ from the resting state');
+  assert.ok(css.match(/\.data-page button:hover:not\(:disabled\):not\(\.data-primary\):not\(\[aria-selected=true\]\)\s*\{[^}]*background:\s*#e8eefb/), 'the data-page button hover must remain #e8eefb');
+  assert.ok(css.match(/\.data-row-menu summary:hover\s*\{[^}]*background:\s*#e8eefb/), 'the row-menu summary hover must remain #e8eefb');
+  assert.notEqual('#e8eefb', 'transparent', 'the hover tint must differ from the resting state');
 });
 
 test('the summary hover rule is paint-only: resting geometry cannot shift', () => {
@@ -50,10 +50,10 @@ test('the resting data-summary-cards rules are preserved', () => {
 });
 
 test('the neighbouring data hover rules are untouched', () => {
-  assert.ok(css.match(/\.data-split > \.data-menu > summary:hover\s*\{[^}]*background:\s*#145d76/), 'the slice-16 data-menu summary hover must remain #145d76');
-  assert.ok(css.match(/\.data-tabs button\[aria-selected=true\]:hover:not\(:disabled\)\s*\{[^}]*background:\s*#eaf3f7/), 'the slice-28 selected data-tab hover must remain #eaf3f7');
-  assert.ok(css.match(/\.data-page select:hover:not\(:disabled\)\s*\{[^}]*background:\s*#eaf3f7/), 'the slice-21 filter select hover must remain #eaf3f7');
-  assert.ok(css.match(/\.data-page input\[type=search\]:hover:not\(:disabled\)\s*\{[^}]*background:\s*#eaf3f7/), 'the slice-27 search input hover must remain #eaf3f7');
+  assert.ok(css.match(/\.data-split > \.data-menu > summary:hover\s*\{[^}]*background:\s*#1e4fa3/), 'the slice-16 data-menu summary hover must remain #1e4fa3');
+  assert.ok(css.match(/\.data-tabs button\[aria-selected=true\]:hover:not\(:disabled\)\s*\{[^}]*background:\s*#e8eefb/), 'the slice-28 selected data-tab hover must remain #e8eefb');
+  assert.ok(css.match(/\.data-page select:hover:not\(:disabled\)\s*\{[^}]*background:\s*#e8eefb/), 'the slice-21 filter select hover must remain #e8eefb');
+  assert.ok(css.match(/\.data-page input\[type=search\]:hover:not\(:disabled\)\s*\{[^}]*background:\s*#e8eefb/), 'the slice-27 search input hover must remain #e8eefb');
 });
 
 defineHoverCases('storage-settings-summary hover', {
@@ -65,7 +65,7 @@ defineHoverCases('storage-settings-summary hover', {
       target: '#s',
       rule: '.data-summary-cards details > summary:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(234, 243, 247)' },
+      hovered: { backgroundColor: 'rgb(232, 238, 251)' },
       paintOnly: true,
       excluded: ['#outside', '#no-details'],
     },

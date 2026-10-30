@@ -77,7 +77,7 @@ defineHoverCases('chrome-switch-label hover', {
     {
       target: '#lightSelect',
       rule: '.author-workspace[data-chrome] .chrome-switch select:hover',
-      resting: { backgroundColor: 'rgb(20, 37, 54)' },
+      resting: { backgroundColor: 'rgb(14, 26, 51)' },
       hovered: { backgroundColor: 'rgb(11, 67, 95)' },
       paintOnly: true,
       unchanged: ['color'],

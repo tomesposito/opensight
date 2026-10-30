@@ -23,7 +23,7 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // (standalone .data-prep and inside .app-shell) confirmed zero
 // matching :hover rules for the step-name, left-input, fieldset and
 // textarea labels and a transparent rest in both. The labels now
-// take #edf6fc, the data-prep surface's established hover tint (the
+// take #e8eefb, the data-prep surface's established hover tint (the
 // slice-31 select hover, the slice-39 button and input/textarea
 // hovers, and the slice-103/104/105 prep label hovers), so no new
 // colour is introduced. The column-picker row labels nested in the
@@ -37,12 +37,12 @@ const rule = styleCss.match(/^\.prep-step-editor label:hover\s*\{([^}]*)\}/m);
 
 test('the prep-step-editor label hover rule exists and uses the established hover tint', () => {
   assert.ok(rule, 'expected the .prep-step-editor label :hover rule');
-  assert.match(rule[1], /background:\s*#edf6fc/);
+  assert.match(rule[1], /background:\s*#e8eefb/);
 });
 
 test('the hover tint matches the data-prep select and prep-columns hovers, so no new colour is introduced', () => {
-  assert.ok(styleCss.match(/\.data-prep select:hover:not\(:disabled\)\s*\{[^}]*background:\s*#edf6fc/), 'the data-prep select hover must remain #edf6fc');
-  assert.ok(styleCss.match(/\.prep-columns label:hover\s*\{[^}]*background:\s*#edf6fc/), 'the prep-columns label hover must remain #edf6fc');
+  assert.ok(styleCss.match(/\.data-prep select:hover:not\(:disabled\)\s*\{[^}]*background:\s*#e8eefb/), 'the data-prep select hover must remain #e8eefb');
+  assert.ok(styleCss.match(/\.prep-columns label:hover\s*\{[^}]*background:\s*#e8eefb/), 'the prep-columns label hover must remain #e8eefb');
 });
 
 test('the prep-step-editor label hover rule is paint-only: resting geometry and label presentation cannot shift', () => {
@@ -71,7 +71,7 @@ defineHoverCases('prep-step-editor-label hover', {
       target: '#stepNameLabel',
       rule: '.prep-step-editor label:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(237, 246, 252)' },
+      hovered: { backgroundColor: 'rgb(232, 238, 251)' },
       paintOnly: true,
       unchanged: ['color'],
       excluded: ['#pickerLabel', '#docLabel'],
@@ -80,7 +80,7 @@ defineHoverCases('prep-step-editor-label hover', {
       target: '#fieldsetLabel',
       rule: '.prep-step-editor label:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(237, 246, 252)' },
+      hovered: { backgroundColor: 'rgb(232, 238, 251)' },
       paintOnly: true,
       unchanged: ['color'],
     },
@@ -88,7 +88,7 @@ defineHoverCases('prep-step-editor-label hover', {
       target: '#exprLabel',
       rule: '.prep-step-editor label:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(237, 246, 252)' },
+      hovered: { backgroundColor: 'rgb(232, 238, 251)' },
       paintOnly: true,
       unchanged: ['color'],
     },

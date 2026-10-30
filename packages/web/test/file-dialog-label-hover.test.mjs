@@ -27,10 +27,10 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // them, and confirmed the input inside the settings label does
 // match the slice-44 field hover. This was the fresh zero-hover
 // audit on a new surface left by slice 113. The labels now take
-// #edf7f7, the author surface's established hover tint (the
+// #eef3fd, the author surface's established hover tint (the
 // slice-44 dialog field hover and the slice-45 sheet-type-card
 // hover in this same dialog family), plus the author dark-chrome
-// variant #334c62, so no new colour is introduced — and because
+// variant #36486a, so no new colour is introduced — and because
 // the inner field's own hover is the same tint, hovering the
 // field inside the label reads as one surface, not two steps.
 // The New Sheet dialog's disabled sheet-type card keeps slice
@@ -46,15 +46,15 @@ const darkRule = styleCss.match(/^\.author-workspace\[data-chrome=dark\] \.analy
 
 test('the file-dialog label hover rule exists and uses the established hover tint', () => {
   assert.ok(rule, 'expected the .analysis-file-dialog label :hover rule');
-  assert.match(rule[1], /background:\s*#edf7f7/);
+  assert.match(rule[1], /background:\s*#eef3fd/);
 });
 
 test('the hover tints match the slice-44 dialog field hover and the slice-45 sheet-type-card hover, so no new colour is introduced', () => {
-  assert.ok(styleCss.match(/\.analysis-file-dialog input:hover:not\(:disabled\):not\(\[type=radio\]\):not\(\[type=checkbox\]\), \.analysis-file-dialog textarea:hover:not\(:disabled\)\s*\{[^}]*background:\s*#edf7f7/), 'the slice-44 dialog field hover must remain #edf7f7');
-  assert.ok(styleCss.match(/\.sheet-type-card:hover:not\(\.sheet-type-card-disabled\)\s*\{[^}]*background:\s*#edf7f7/), 'the slice-45 sheet-type-card hover must remain #edf7f7');
+  assert.ok(styleCss.match(/\.analysis-file-dialog input:hover:not\(:disabled\):not\(\[type=radio\]\):not\(\[type=checkbox\]\), \.analysis-file-dialog textarea:hover:not\(:disabled\)\s*\{[^}]*background:\s*#eef3fd/), 'the slice-44 dialog field hover must remain #eef3fd');
+  assert.ok(styleCss.match(/\.sheet-type-card:hover:not\(\.sheet-type-card-disabled\)\s*\{[^}]*background:\s*#eef3fd/), 'the slice-45 sheet-type-card hover must remain #eef3fd');
   assert.ok(darkRule, 'expected the author dark-chrome file-dialog label :hover variant');
-  assert.match(darkRule[1], /background:\s*#334c62/);
-  assert.ok(styleCss.match(/\.author-workspace\[data-chrome=dark\] \.analysis-file-dialog input:hover:not\(:disabled\):not\(\[type=radio\]\):not\(\[type=checkbox\]\)[^}]*\{[^}]*background:\s*#334c62/), 'the slice-44 dark dialog field hover must remain #334c62');
+  assert.match(darkRule[1], /background:\s*#36486a/);
+  assert.ok(styleCss.match(/\.author-workspace\[data-chrome=dark\] \.analysis-file-dialog input:hover:not\(:disabled\):not\(\[type=radio\]\):not\(\[type=checkbox\]\)[^}]*\{[^}]*background:\s*#36486a/), 'the slice-44 dark dialog field hover must remain #36486a');
 });
 
 test('the file-dialog label hover rules are paint-only: resting geometry and label presentation cannot shift', () => {
@@ -89,7 +89,7 @@ defineHoverCases('file-dialog-label hover', {
       target: '#lName',
       rule: '.analysis-file-dialog label:hover:not(.sheet-type-card-disabled)',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      hovered: { backgroundColor: 'rgb(238, 243, 253)' },
       paintOnly: true,
       unchanged: ['color'],
       excluded: [{ target: '#lDisabledCard', resting: { backgroundColor: 'rgb(242, 246, 248)' }, hovered: { backgroundColor: 'rgb(242, 246, 248)' } }, '#outsideLabel'],
@@ -98,7 +98,7 @@ defineHoverCases('file-dialog-label hover', {
       target: '#lCard',
       rule: '.analysis-file-dialog label:hover:not(.sheet-type-card-disabled)',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      hovered: { backgroundColor: 'rgb(238, 243, 253)' },
       paintOnly: true,
       unchanged: ['color'],
     },
@@ -106,7 +106,7 @@ defineHoverCases('file-dialog-label hover', {
       target: '#lTheme',
       rule: '.analysis-file-dialog label:hover:not(.sheet-type-card-disabled)',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      hovered: { backgroundColor: 'rgb(238, 243, 253)' },
       paintOnly: true,
       unchanged: ['color'],
     },
@@ -114,7 +114,7 @@ defineHoverCases('file-dialog-label hover', {
       target: '#lCopy',
       rule: '.analysis-file-dialog label:hover:not(.sheet-type-card-disabled)',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      hovered: { backgroundColor: 'rgb(238, 243, 253)' },
       paintOnly: true,
       unchanged: ['color'],
     },
@@ -122,7 +122,7 @@ defineHoverCases('file-dialog-label hover', {
       target: '#lSheet',
       rule: '.analysis-file-dialog label:hover:not(.sheet-type-card-disabled)',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      hovered: { backgroundColor: 'rgb(238, 243, 253)' },
       paintOnly: true,
       unchanged: ['color'],
     },
@@ -130,7 +130,7 @@ defineHoverCases('file-dialog-label hover', {
       target: '#dName',
       rule: '.author-workspace[data-chrome="dark"] .analysis-file-dialog label:hover:not(.sheet-type-card-disabled)',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(51, 76, 98)' },
+      hovered: { backgroundColor: 'rgb(54, 72, 106)' },
       paintOnly: true,
       unchanged: ['color'],
     },
@@ -138,7 +138,7 @@ defineHoverCases('file-dialog-label hover', {
       target: '#dTheme',
       rule: '.author-workspace[data-chrome="dark"] .analysis-file-dialog label:hover:not(.sheet-type-card-disabled)',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(51, 76, 98)' },
+      hovered: { backgroundColor: 'rgb(54, 72, 106)' },
       paintOnly: true,
       unchanged: ['color'],
     },

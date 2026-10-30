@@ -6,7 +6,7 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // input (.draft-rename input in LocalDrafts.tsx, the rename field in the
 // author sidebar's local-drafts panel). Slice 126's backup lead, re-verified
 // this run: the input's collection-context instance already hovers via
-// slice 64 (.collection-card input:hover, #eaf3f7), but in the author
+// slice 64 (.collection-card input:hover, #e8eefb), but in the author
 // sidebar LocalDrafts renders inside .author-workspace > .author-tools >
 // details.local-drafts — outside .collection-card and outside
 // .author-layout (the author field hover's scope) — and the
@@ -17,9 +17,9 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // ancestor contexts confirmed zero matching :hover rules for the input in
 // both author contexts (rests rgb(255,255,255) light, rgb(32,46,64) dark),
 // while the collection input matched the slice-64 rule alone. The input
-// now takes the author surface's established field hover tints — #edf7f7
+// now takes the author surface's established field hover tints — #eef3fd
 // light (the author-layout field hover and the rename-sheet input hover,
-// the precedent for a rename input outside .author-layout) and #334c62 in
+// the precedent for a rename input outside .author-layout) and #36486a in
 // dark chrome (the author dark field hover) — so no new colour is
 // introduced. Both rules are scoped to .author-workspace, so the
 // collection instance keeps its slice-64 hover untouched. Background
@@ -32,16 +32,16 @@ const darkRule = styleCss.match(/^\.author-workspace\[data-chrome=dark\] \.draft
 
 test('the draft-rename input hover rules exist for the author sidebar and use the established author field tints', () => {
   assert.ok(inputRule, 'expected the author draft-rename input :hover rule');
-  assert.match(inputRule[1], /background:\s*#edf7f7/);
+  assert.match(inputRule[1], /background:\s*#eef3fd/);
   assert.ok(darkRule, 'expected the author dark-chrome draft-rename input hover variant');
-  assert.match(darkRule[1], /background:\s*#334c62/);
+  assert.match(darkRule[1], /background:\s*#36486a/);
 });
 
 test('the hover tints match the author field hovers, so no new colour is introduced, and the collection hover is preserved', () => {
-  assert.ok(styleCss.match(/\.author-layout input:hover:not\(:disabled\)[^{]*\{[^}]*background:\s*#edf7f7/), 'the author-layout field hover must remain #edf7f7');
-  assert.ok(styleCss.match(/\.rename-sheet input:hover:not\(:disabled\)\s*\{[^}]*background:\s*#edf7f7/), 'the rename-sheet input hover must remain #edf7f7');
-  assert.ok(styleCss.match(/\.author-workspace\[data-chrome=dark\] \.author-layout input:hover:not\(:disabled\)[^{]*\{[^}]*background:\s*#334c62/), 'the author-layout dark field hover must remain #334c62');
-  assert.ok(appChromeCss.match(/\.collection-card input:hover:not\(:disabled\):not\(\[type=radio\]\):not\(\[type=checkbox\]\):not\(\[type=file\]\)\s*\{[^}]*background:\s*#eaf3f7/), 'the collection-card field hover must remain #eaf3f7');
+  assert.ok(styleCss.match(/\.author-layout input:hover:not\(:disabled\)[^{]*\{[^}]*background:\s*#eef3fd/), 'the author-layout field hover must remain #eef3fd');
+  assert.ok(styleCss.match(/\.rename-sheet input:hover:not\(:disabled\)\s*\{[^}]*background:\s*#eef3fd/), 'the rename-sheet input hover must remain #eef3fd');
+  assert.ok(styleCss.match(/\.author-workspace\[data-chrome=dark\] \.author-layout input:hover:not\(:disabled\)[^{]*\{[^}]*background:\s*#36486a/), 'the author-layout dark field hover must remain #36486a');
+  assert.ok(appChromeCss.match(/\.collection-card input:hover:not\(:disabled\):not\(\[type=radio\]\):not\(\[type=checkbox\]\):not\(\[type=file\]\)\s*\{[^}]*background:\s*#e8eefb/), 'the collection-card field hover must remain #e8eefb');
 });
 
 test('the draft-rename input hover rules are paint-only: resting geometry and presentation cannot shift', () => {
@@ -54,8 +54,8 @@ test('the draft-rename input hover rules are paint-only: resting geometry and pr
 test('the resting draft-rename and local-drafts rules are preserved', () => {
   assert.ok(styleCss.match(/\.local-drafts form\s*\{[^}]*display:\s*flex/), 'the resting local-drafts form rule must remain');
   assert.ok(appChromeCss.match(/\.collection-card \.draft-rename label\s*\{[^}]*display:\s*grid[^}]*gap:\s*4px/), 'the resting collection draft-rename label rule must remain');
-  assert.ok(appChromeCss.match(/\.draft-rename label:hover\s*\{[^}]*background:\s*#eaf3f7/), 'the slice-126 draft-rename label hover must remain');
-  assert.ok(styleCss.match(/\.author-workspace\[data-chrome=dark\] \.draft-rename label:hover\s*\{[^}]*background:\s*#334c62/), 'the slice-126 dark label hover must remain');
+  assert.ok(appChromeCss.match(/\.draft-rename label:hover\s*\{[^}]*background:\s*#e8eefb/), 'the slice-126 draft-rename label hover must remain');
+  assert.ok(styleCss.match(/\.author-workspace\[data-chrome=dark\] \.draft-rename label:hover\s*\{[^}]*background:\s*#36486a/), 'the slice-126 dark label hover must remain');
 });
 
 defineHoverCases('draft-rename-input hover', {
@@ -68,7 +68,7 @@ defineHoverCases('draft-rename-input hover', {
       target: '#authInput',
       rule: '.author-workspace .draft-rename input:hover:not(:disabled)',
       resting: { backgroundColor: 'rgb(255, 255, 255)' },
-      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      hovered: { backgroundColor: 'rgb(238, 243, 253)' },
       paintOnly: true,
       unchanged: ['color'],
       excluded: ['#disabledInput', '#outsideInput'],
@@ -77,7 +77,7 @@ defineHoverCases('draft-rename-input hover', {
       target: '#darkInput',
       rule: '.author-workspace[data-chrome="dark"] .draft-rename input:hover:not(:disabled)',
       resting: { backgroundColor: 'rgb(32, 46, 64)' },
-      hovered: { backgroundColor: 'rgb(51, 76, 98)' },
+      hovered: { backgroundColor: 'rgb(54, 72, 106)' },
       paintOnly: true,
       unchanged: ['color'],
     },
@@ -85,7 +85,7 @@ defineHoverCases('draft-rename-input hover', {
       target: '#collInput',
       rule: '.collection-card input:hover:not(:disabled):not([type="radio"]):not([type="checkbox"]):not([type="file"])',
       resting: { backgroundColor: 'rgb(255, 255, 255)' },
-      hovered: { backgroundColor: 'rgb(234, 243, 247)' },
+      hovered: { backgroundColor: 'rgb(232, 238, 251)' },
       paintOnly: true,
       unchanged: ['color'],
     },

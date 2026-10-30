@@ -18,8 +18,8 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // details.builder-panel.fields-panel > .panel-content) confirmed zero
 // matching :hover rules for the label and a transparent rest in both
 // chromes, while the inner input matched the author-layout input
-// hover. The label now takes the input's own hover tint (#edf7f7;
-// dark chrome #334c62 — the fixture-picker / chrome-switch precedent:
+// hover. The label now takes the input's own hover tint (#eef3fd;
+// dark chrome #36486a — the fixture-picker / chrome-switch precedent:
 // the label takes its field's hover tint), so no new colour is
 // introduced and label and field read as one surface. The scope is
 // the direct child of .panel-content, so the dataset header's
@@ -34,14 +34,14 @@ const darkLabelRule = styleCss.match(/^\.author-workspace\[data-chrome=dark\] \.
 
 test('the search-fields label hover rules exist and use the established author tints', () => {
   assert.ok(labelRule, 'expected the .fields-panel .panel-content > label:hover rule');
-  assert.match(labelRule[1], /background:\s*#edf7f7/);
+  assert.match(labelRule[1], /background:\s*#eef3fd/);
   assert.ok(darkLabelRule, 'expected the dark-chrome search-fields label :hover variant');
-  assert.match(darkLabelRule[1], /background:\s*#334c62/);
+  assert.match(darkLabelRule[1], /background:\s*#36486a/);
 });
 
 test('the hover tints match the author-layout input hover, so no new colour is introduced', () => {
-  assert.ok(styleCss.match(/^\.author-layout input:hover[^{]*\{[^}]*background:\s*#edf7f7/m), 'the author-layout input hover must remain #edf7f7');
-  assert.ok(styleCss.match(/^\.author-workspace\[data-chrome=dark\] \.author-layout input:hover[^{]*\{[^}]*background:\s*#334c62/m), 'the dark author-layout input hover must remain #334c62');
+  assert.ok(styleCss.match(/^\.author-layout input:hover[^{]*\{[^}]*background:\s*#eef3fd/m), 'the author-layout input hover must remain #eef3fd');
+  assert.ok(styleCss.match(/^\.author-workspace\[data-chrome=dark\] \.author-layout input:hover[^{]*\{[^}]*background:\s*#36486a/m), 'the dark author-layout input hover must remain #36486a');
 });
 
 test('the label hover rules are paint-only: resting geometry and text colour cannot shift', () => {
@@ -67,7 +67,7 @@ defineHoverCases('search-fields-label hover', {
       target: '#light',
       rule: '.fields-panel .panel-content > label:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      hovered: { backgroundColor: 'rgb(238, 243, 253)' },
       paintOnly: true,
       unchanged: ['color'],
       excluded: ['#lightNested', '#otherPanel'],
@@ -76,7 +76,7 @@ defineHoverCases('search-fields-label hover', {
       target: '#dark',
       rule: '.author-workspace[data-chrome="dark"] .fields-panel .panel-content > label:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(51, 76, 98)' },
+      hovered: { backgroundColor: 'rgb(54, 72, 106)' },
       paintOnly: true,
       unchanged: ['color'],
     },
@@ -84,7 +84,7 @@ defineHoverCases('search-fields-label hover', {
       target: '#lightInput',
       rule: '.author-layout input:hover:not(:disabled):not([type="radio"]):not([type="checkbox"]):not([type="file"]):not([type="range"]), .author-layout textarea:hover:not(:disabled)',
       resting: { backgroundColor: 'rgb(255, 255, 255)' },
-      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      hovered: { backgroundColor: 'rgb(238, 243, 253)' },
       paintOnly: true,
       unchanged: ['color'],
     },

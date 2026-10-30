@@ -161,5 +161,5 @@ test('Issue #49: shimmer motion is static under prefers-reduced-motion', () => {
   assert.match(css, /@keyframes skeleton-shimmer/);
   assert.match(css, /@media \(prefers-reduced-motion: reduce\)/);
   const reduced = css.slice(css.indexOf('prefers-reduced-motion'));
-  assert.match(reduced, /\.skeleton-shape \{ animation: none; background: #e6edf0; \}/);
+  assert.match(reduced, /\.skeleton-shape \{ animation: none; background: #e6ecf4; \}/);
 });

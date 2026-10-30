@@ -9,9 +9,9 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // definition previews. Open Home to explore sample sales data.") as the last
 // user-facing control with zero hover state — hovering the link changed
 // nothing. The landing-surface hover thread stays complete since slice 29.
-// The app-wide menu-item tint (#eaf3f7, slices 16/21/25/26/30/32) is
-// invisible against the notice's own #eaf2f3 background, so the link takes
-// the palette's darker blue-gray step (#d4dfe7). Paint-only: the rule
+// The app-wide menu-item tint (#e8eefb, slices 16/21/25/26/30/32) is
+// invisible against the notice's own #e8eefb background, so the link takes
+// the palette's darker blue-gray step (#d7e0ee). Paint-only: the rule
 // changes the background, so resting geometry is identical and there is no
 // animation to need a reduced-motion variant.
 const styleCss = styles['style.css'];
@@ -20,7 +20,7 @@ const linkRule = styleCss.match(/\.fixture-notice\s+a:hover\s*\{([^}]*)\}/);
 
 test('the fixture-notice link has a hover state with the darker palette tint', () => {
   assert.ok(linkRule, 'expected .fixture-notice a:hover');
-  assert.match(linkRule[1], /background:\s*#d4dfe7/);
+  assert.match(linkRule[1], /background:\s*#d7e0ee/);
 });
 
 test('the notice-link hover rule is paint-only: resting geometry cannot shift', () => {
@@ -42,7 +42,7 @@ defineHoverCases('fixture-notice-link hover', {
       target: '#a',
       rule: '.fixture-notice a:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(212, 223, 231)' },
+      hovered: { backgroundColor: 'rgb(215, 224, 238)' },
       paintOnly: true,
       unchanged: ['color', 'textDecorationLine'],
     },
