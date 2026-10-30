@@ -5,6 +5,8 @@ export type Aggregation = 'SUM' | 'AVG' | 'COUNT' | 'MIN' | 'MAX';
 export type SqlDialect = 'duckdb' | 'postgres' | 'mysql';
 export interface PlanOptions {
   readonly dialect?: SqlDialect;
+  /** Trusted caller-owned configuration; do not accept assertions from an imported asset. */
+  readonly aggregates?: readonly import('./live-performance.js').AggregateTableDeclaration[];
 }
 export interface SourceLocation {
   readonly path: string;
@@ -89,6 +91,7 @@ export interface PlanRequest {
   readonly visualId: string;
 }
 export interface QueryPlan {
+  readonly executionSource: { readonly kind: 'source' } | { readonly kind: 'aggregate'; readonly name: string };
   readonly securityProtected?: boolean;
   readonly deniedColumns?: readonly string[];
   readonly rowSecurity?: import('./security.js').RowPredicate;
