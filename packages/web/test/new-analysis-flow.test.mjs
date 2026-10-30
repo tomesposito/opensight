@@ -108,3 +108,28 @@ test('direct new-analysis URLs retain the hosted build gate without catalog requ
   assert.match(ui.text(), /SECURITY_BUILD_REQUIRED/); assert.deepEqual(ui.requests, []);
   assert.equal(ui.root.findAllByType(CreateAnalysisDialog).length, 0);
 });
+
+test('search-created analyses open in Author, save/reload and can be replaced by another normal search draft', async t => {
+  const ui = await mount(t);
+  await ui.link('New analysis');
+  const explore = async text => {
+    const dialog = () => ui.root.findByType(CreateAnalysisDialog);
+    await act(() => dialog().findByProps({ type: 'radio' }).props.onChange());
+    await act(() => dialog().findByProps({ role: 'combobox' }).props.onChange({ target: { value: text } }));
+    await act(() => dialog().findByType('form').props.onSubmit({ preventDefault() {} }));
+  };
+  await explore('[amount] by [team]');
+  const draft = () => ui.root.findByType(AuthorCanvas).props.draft;
+  assert.equal(draft().dataset.id, dataset.id);
+  assert.equal(draft().sheets[0].visuals.length, 1);
+  assert.equal(draft().sheets[0].visuals[0].kind, 'bar');
+  assert.equal(draft().sheets[0].visuals[0].dimension, 'team');
+  assert.deepEqual(draft().sheets[0].visuals[0].measures, ['amount']);
+  await ui.click('Save draft'); await ui.reload();
+  assert.equal(draft().sheets[0].visuals[0].kind, 'bar');
+  await ui.click('New analysis'); await explore('amount');
+  assert.equal(draft().sheets[0].visuals.length, 1); assert.equal(draft().sheets[0].visuals[0].kind, 'kpi');
+  assert.equal(draft().sheets[0].visuals[0].dimension, null);
+  await ui.click('Save draft'); assert.equal(ui.store.list().length, 2);
+  assert.equal(ui.requests.includes('sales'), false);
+});

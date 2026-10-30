@@ -74,6 +74,9 @@ failure guidance and the recovery notice for work that was never manually saved.
 The [dataset picker](docs/issue-59-dataset-picker.md) searches prepared datasets
 by name. Topics needs a hosted API with topic support; the static demo offers
 its labeled synthetic sample.
+After choosing a dataset, [Explore fields](docs/familiar-surface.md) accepts
+`[revenue] by [region]` to create a bar chart, or `[revenue]` for a KPI.
+Field suggestions are deterministic; unknown or ambiguous names block creation.
 
 If the API is unavailable, the first-run screen offers recovery guidance; an API
 without local-data support or authentication instead offers setup and explicit
@@ -215,6 +218,10 @@ editing one opens the preparation canvas: select fields, add calculated columns,
 change types, rename, filter — and combine sources with join/append steps. Branch
 from an earlier step, choose the output, and preview each path against a local or
 hosted API.
+
+The Preview grid includes row numbers and typed headers. Add a formula column,
+filter a column, or rename it through the existing validated prep steps.
+Formula columns use the calculated-field language; cell values are read-only.
 
 ![Data landing page with datasets, topics, and data sources tabs](docs/images/data-landing.png)
 

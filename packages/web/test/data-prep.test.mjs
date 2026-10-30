@@ -376,7 +376,7 @@ test('hosted branch selections preview each stage independently and output chang
   for (const id of ['summary', 'detail', 'clean']) {
     await selectNode(ui, id); await act(async () => new Promise(resolve => setTimeout(resolve, 340)));
     assert.equal(calls.at(-1), id);
-    const headers = ui.renderer.root.findAllByType('th').map(n => n.props.children[0]);
+    const headers = ui.renderer.root.findAllByType('th').filter(n => n.props.tabIndex === 0).map(n => n.props.children[0]);
     assert.deepEqual(headers, id === 'summary' ? ['total'] : id === 'detail' ? ['region'] : ['region', 'amount']);
   }
   await nodeAction(ui, 'summary', 'Set as output'); await ui.click('Save pipeline');
@@ -516,4 +516,61 @@ test('append still rejects missing or differently typed columns with PREP_SCHEMA
   assert.match(JSON.stringify(ui.renderer.toJSON()), /PREP_SCHEMA_MISMATCH/);
   assert.equal(ui.button('Apply step').props.disabled, true);
   await submitStep(ui.renderer); assert.equal(graphPipeline(ui).steps.length, 1);
+});
+
+test('grid formula/filter/rename actions execute exactly like the catalog steps in DuckDB and Postgres', async t => {
+  const { UploadStaging, compilePrep } = await import('@opensight/query-engine');
+  const { PGlite } = await import('@electric-sql/pglite');
+  const staging = await UploadStaging.create(), pg = new PGlite();
+  t.after(async () => { await staging.close(); await pg.close(); });
+  const csv = 'region,amount\nEast,2.9\nWest,3.1\nEast,4.8\nNorth,\n';
+  const upload = await staging.ingest({ config: { format: 'csv' }, data: new TextEncoder().encode(csv) });
+  const sources = staging.prepSources().map(s => ({ ...s, available: true }));
+  const client = { async listPrepSources() { return sources; }, async listPrepDatasets() { return { datasets: [], persistence: 'file' }; }, async previewPrep(id, p, through) { return staging.previewPrep(p, { through }); } };
+  const grid = await mount(t, client), catalog = await mount(t, client);
+  await grid.click('Preview'); await grid.click('＋ Formula column');
+  await catalog.click('＋ Add calculated columns');
+  for (const ui of [grid, catalog]) {
+    await field(ui.renderer, 'Column name', 'net'); await field(ui.renderer, 'Expression', '{amount} * 2'); await submitStep(ui.renderer);
+  }
+  assert.equal(grid.renderer.root.findByProps({ id: 'prep-preview-tab' }).props['aria-selected'], true);
+  await grid.click('Filter net'); await catalog.click('＋ Filter'); await field(catalog.renderer, 'Column', 'net');
+  for (const ui of [grid, catalog]) {
+    await field(ui.renderer, 'Operator', 'GREATER_THAN_OR_EQUAL_TO'); await field(ui.renderer, 'Value', '6'); await submitStep(ui.renderer);
+  }
+  await grid.click('Rename region'); await catalog.click('＋ Rename columns'); await field(catalog.renderer, 'Column', 'region');
+  for (const ui of [grid, catalog]) { await field(ui.renderer, 'New name', 'area'); await submitStep(ui.renderer); }
+  const actual = graphPipeline(grid), equivalent = graphPipeline(catalog);
+  const configs = p => p.steps.map(({ kind, config }) => ({ kind, config }));
+  assert.deepEqual(configs(actual), configs(equivalent));
+  assert.deepEqual(actual.steps.map(s => s.kind), ['calculate', 'filter', 'rename']);
+  const sorted = rows => rows.sort((a, b) => a.amount - b.amount);
+  const rows = sorted((await staging.previewPrep(actual)).rows);
+  assert.deepEqual(rows, sorted((await staging.previewPrep(equivalent)).rows));
+  assert.deepEqual(rows, [{ area: 'West', amount: 3.1, net: 6.2 }, { area: 'East', amount: 4.8, net: 9.6 }]);
+  await pg.exec("CREATE TABLE sales (region TEXT, amount DOUBLE PRECISION); INSERT INTO sales VALUES ('East',2.9),('West',3.1),('East',4.8),('North',NULL)");
+  for (const pipeline of [actual, equivalent]) {
+    const plan = compilePrep(pipeline, [{ ...sources[0], table: 'sales', connectorId: 'postgresql', security: 'unrestricted' }], { dialect: 'postgres' });
+    assert.deepEqual(sorted((await pg.query(plan.sql, plan.parameters)).rows), rows);
+  }
+  await selectNode(grid, actual.steps[0].id);
+  assert.equal(grid.button('＋ Formula column').props.disabled, true, 'earlier previews cannot accidentally transform another schema');
+  await grid.click('＋ Formula column'); assert.equal(graphPipeline(grid).steps.length, 3);
+  await selectNode(grid, actual.steps[2].id); await grid.click('Configure step');
+  assert.equal(grid.renderer.root.findByType(PrepStepEditor).props.step.kind, 'rename');
+});
+
+test('grid formula validation blocks unknown columns, new functions, aggregates and collisions', async t => {
+  const ui = await mount(t); await ui.click('Preview'); await ui.click('＋ Formula column');
+  await field(ui.renderer, 'Column name', 'net');
+  for (const expression of ['{missing} + 1', 'EXCELSUM({revenue})', 'sum({revenue})', 'sumOver({revenue}, [], PRE_AGG)']) {
+    await field(ui.renderer, 'Expression', expression); assert.equal(ui.button('Apply step').props.disabled, true);
+    await submitStep(ui.renderer); assert.equal(graphPipeline(ui).steps.length, 0);
+  }
+  await field(ui.renderer, 'Expression', '{revenue} * 0.9'); await field(ui.renderer, 'Column name', 'region');
+  assert.equal(ui.button('Apply step').props.disabled, true);
+  await ui.click('Cancel'); assert.equal(graphPipeline(ui).steps.length, 0);
+  await ui.click('Preview'); await ui.click('Filter revenue'); await field(ui.renderer, 'Value', 'invalid');
+  assert.equal(ui.button('Apply step').props.disabled, true); await submitStep(ui.renderer);
+  assert.equal(graphPipeline(ui).steps.length, 0);
 });

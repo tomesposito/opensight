@@ -13,6 +13,12 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Added
 
+- Spreadsheet-style data-prep previews with numbered rows, typed column headers,
+  and formula, filter, and rename shortcuts that create ordinary validated
+  preparation steps (#156).
+- Deterministic field search in Create Analysis, with keyboard-accessible field
+  suggestions, explicit unknown/ambiguous-token errors, and normal editable
+  KPI or bar analyses from a measure optionally grouped by a dimension (#156).
 - Hosted readers can open published prepared dashboards when independently
   authorized for every recipe source. Recipes execute on reader-scoped data,
   including joins and aggregates, without reusing publisher prepared caches;
