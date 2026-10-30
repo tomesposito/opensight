@@ -11,6 +11,19 @@ export function prepareOVisual(interpretation: Interpretation, existing: readonl
     if (existing.some(c => c.name === name) && ![undefined, 'row'].includes(calculationInfo(name, existing, dataset).level)) throw new Error(`O_UNSUPPORTED_CALCULATION: ${name} is already an aggregate or table calculation.`);
     return f;
   };
+  // Edits can reach combinations the parser never constructs. Reject them before
+  // helpers or a query are produced, retaining the normal preview error surface.
+  if (!['SUM', 'AVG', 'COUNT', 'MIN', 'MAX'].includes(interpretation.aggregation)
+    || (interpretation.measure === null || !numeric(field(interpretation.measure))) && interpretation.aggregation !== 'COUNT') throw new Error('O_UNSUPPORTED_INTERPRETATION: This measure supports only compatible aggregations (COUNT for non-numeric fields or rows).');
+  if (interpretation.topN !== null && (!Number.isSafeInteger(interpretation.topN) || interpretation.topN < 1 || interpretation.topN > 10000)) throw new Error('O_INVALID_TOP_N: Use one Top N integer from 1 to 10,000.');
+  if (interpretation.topN !== null && !interpretation.dimensions.length) throw new Error('O_MISSING_DIMENSION: Top N needs a grouping field.');
+  const kind = interpretation.suggestedVisualType;
+  if (!['bar', 'line', 'pie', 'table', 'kpi'].includes(kind)
+    || kind === 'kpi' && interpretation.dimensions.length > 0
+    || kind !== 'table' && interpretation.dimensions.length > 1) throw new Error('O_UNSUPPORTED_INTERPRETATION: Use table for multiple dimensions, or remove dimensions for a KPI.');
+  if (kind !== 'kpi' && !interpretation.dimensions.length) throw new Error('O_MISSING_DIMENSION: This visual needs a grouping field. Choose KPI for an ungrouped measure.');
+  if (interpretation.granularity !== null && (!['YEAR', 'QUARTER', 'MONTH', 'DAY'].includes(interpretation.granularity)
+    || !interpretation.dimensions.some(name => datetime(field(name))))) throw new Error('O_UNSUPPORTED_INTERPRETATION: Granularity needs a datetime grouping field.');
   const ref = (name: string) => { field(name); return `{${name}}`; };
   const literal = (value: string) => `'${value.replace(/'/g, "''")}'`;
   const add = (label: string, expression: string, role: CalculatedField['role']) => {
@@ -46,7 +59,6 @@ export function prepareOVisual(interpretation: Interpretation, existing: readonl
     const sort = [expression + ' DESC', ...dimensions.map(name => `{${name}} ASC`)];
     filters.push({ columnName: add(`top ${interpretation.topN}`, `ifelse(rank([${sort.join(', ')}], [], POST_AGG_FILTER) <= ${interpretation.topN}, 'yes', 'no')`, 'dimension'), values: ['yes'] });
   }
-  const kind = interpretation.suggestedVisualType;
   return { calculatedFields, visual: {
     ...defaults(), id: 'o-preview', kind, title: interpretation.explanation.replace(/^Showing /, '').replace(/\.$/, ''),
     dimension: dimensions[0] ?? null, rows: kind === 'table' ? dimensions : [], measures: [measure],

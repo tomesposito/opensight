@@ -66,13 +66,18 @@ test('removing a filter step removes it from the prepared visual', async t => {
   assert.equal(activeSheet(draft()).visuals[1].filters.length, 0);
 });
 
-test('removing the last group-by step also clears Top N', async t => {
-  const { renderer, ask, draft } = await harness(t);
+test('removing the last group-by step with Top N set fails closed until the steps are fixed', async t => {
+  const { renderer, ask, draft, texts } = await harness(t);
   await ask('sum revenue by region top 2');
   assert.equal(renderer.root.findAllByProps({ 'aria-label': 'Top N step' }).length, 1);
   const remove = renderer.root.findByProps({ 'aria-label': 'Remove group-by region' });
   await act(() => remove.props.onClick());
-  assert.equal(renderer.root.findAllByProps({ 'aria-label': 'Top N step' }).length, 0);
+  // Fail closed: the invalid combination names its error instead of silently dropping Top N.
+  assert.ok(texts().some(x => x.includes('O_MISSING_DIMENSION')), texts().join(' | '));
+  const clear = renderer.root.findByProps({ 'aria-label': 'Clear top N' });
+  await act(() => clear.props.onClick());
+  const visualSelect = renderer.root.findByProps({ 'aria-label': 'Visual step' });
+  await act(() => visualSelect.props.onChange({ target: { value: 'kpi' } }));
   const button = renderer.root.findAllByType('button').find(b => b.props.children === 'ADD TO ANALYSIS');
   assert.ok(button);
   await act(() => button.props.onClick());

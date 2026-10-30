@@ -81,7 +81,11 @@ Constraints:
 - Aggregations are SUM, AVG, COUNT, MIN, MAX; a nonnumeric measure or count-rows
   permits only COUNT.
 - Visual choices are bar, line, pie, table, kpi.
-- Removing the last dimension also clears Top N, which requires grouping.
+- Removing the last dimension while Top N is set does not silently discard
+  Top N: the edited interpretation fails closed with `O_MISSING_DIMENSION`
+  until the user clears Top N or switches the visual step to KPI (which
+  clears Top N). Granularity is cleared when its datetime dimension is
+  removed, since the granularity control only exists alongside one.
 - Top N uses the existing integer range 1–10,000. Granularity choices are YEAR,
   QUARTER, MONTH, DAY and require a datetime dimension.
 - Invalid edited states fail closed with named errors through the existing
