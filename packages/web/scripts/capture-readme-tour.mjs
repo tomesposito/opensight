@@ -48,7 +48,7 @@ try {
   await page.getByRole('button', { name: /^Ask a question about / }).click();
   await page.click('#o-question');
   await hold(400);
-  for (const ch of 'revenue by region') {
+  for (const ch of 'sum sales by region') {
     await page.press('#o-question', ch === ' ' ? ' ' : ch);
     if (n % 2 === 0) await snap();
     await page.waitForTimeout(70);
@@ -57,7 +57,10 @@ try {
   await page.press('#o-question', 'Enter'); // 3. answer renders
   await page.locator('.o-result .chart svg').waitFor();
   assert.match(await page.locator('.o-source').innerText(), /^Offline demo:/);
+  assert.match(await page.locator('.o-answer').innerText(), /‘sales’ → revenue/);
   await hold(2800);
+  await page.getByLabel('Aggregation step', { exact: true }).selectOption('AVG');
+  assert.match(await page.locator('.o-explanation').innerText(), /Showing avg/);
   await hold(1200);
 
   // Author and its Analyses home share the same device-local store.
@@ -71,9 +74,11 @@ try {
   await hold(1400);
   await page.locator('.author-card-actions button[aria-label^="Remove "]').click();
   await page.getByRole('button', { name: /^Ask a question about / }).click();
-  await page.locator('#o-question').fill('revenue by region');
+  await page.locator('#o-question').fill('sum sales by region for category Hardware');
   await page.locator('#o-question').press('Enter');
   await page.locator('.o-result .chart svg').waitFor();
+  await page.getByRole('button', { name: 'Remove filter category', exact: true }).click();
+  await page.getByLabel('Aggregation step', { exact: true }).selectOption('AVG');
   await hold(1400);
   await page.getByRole('button', { name: 'ADD TO ANALYSIS', exact: true }).click();
   await page.keyboard.press('Escape');

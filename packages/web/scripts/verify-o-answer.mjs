@@ -75,6 +75,7 @@ try {
   const sales = [{ region: 'East', 'O sum revenue': 500 }, { region: 'West', 'O sum revenue': 400 }];
   page = await localPage();
   await navigate(page, 'author');
+  await page.getByRole('button', { name: 'Try sample data', exact: true }).click();
   await ask('revenue by region');
   await chart('.o-result', [['East', '500'], ['West', '400']]);
   assert.equal(queries.at(-1).path, '/api/datasets/sales/query');
@@ -82,7 +83,7 @@ try {
   assert.equal(await page.locator('.o-source').innerText(), 'Local sales API query.');
   await capture('o-sales');
   await page.getByRole('button', { name: 'ADD TO ANALYSIS', exact: true }).click();
-  await page.getByRole('button', { name: 'Close Ask Q', exact: true }).click();
+  await page.getByRole('button', { name: 'Close Ask O', exact: true }).click();
   await chart('.author-card', [['East', '500'], ['West', '400']]);
   assert.deepEqual(queries.at(-1).body.rows, sales);
   console.log('PASS: local sales O chart and ADD TO ANALYSIS: East 500, West 400, real HTTP 200 dataset queries');
@@ -91,16 +92,18 @@ try {
   const uploadedStart = queries.length;
   page = await localPage();
   await navigate(page, 'data-sources');
-  await page.getByRole('button', { name: /Upload a file/ }).click();
+  await page.getByRole('button', { name: 'Create data source', exact: true }).click();
+  await page.getByRole('radio', { name: 'Upload a file', exact: true }).check();
+  await page.getByRole('button', { name: 'Next', exact: true }).click();
   await page.getByLabel('File', { exact: true }).setInputFiles({ name: 'teams.csv', mimeType: 'text/csv', buffer: Buffer.from('team,amount,day\nNorth,2,2026-01-01\nSouth,3,2026-01-02\nNorth,4,2026-01-03\n') });
   await page.getByRole('button', { name: 'Upload to staging', exact: true }).click();
-  await page.getByRole('heading', { name: 'Upload staged', exact: true }).waitFor();
-  await page.getByRole('button', { name: 'Prepare this upload', exact: true }).click();
+  await page.getByRole('heading', { name: 'Transformation pipeline', exact: true }).waitFor();
+  await page.getByRole('tab', { name: 'Preview', exact: true }).click();
   await page.getByText(/3 rows shown/).waitFor();
   await page.getByLabel('Dataset name', { exact: true }).fill('Team totals');
   await page.getByRole('button', { name: 'Save pipeline', exact: true }).click();
-  await page.getByText(/Dataset pipeline saved/).waitFor();
-  await page.getByRole('button', { name: 'Build a chart', exact: true }).click();
+  await page.getByRole('heading', { name: 'Team totals', exact: true }).waitFor();
+  await page.getByRole('button', { name: 'Generate analysis', exact: true }).click();
   await page.getByRole('button', { name: 'Assign amount', exact: true }).waitFor();
   await page.getByLabel('Analysis title', { exact: true }).fill('Team totals');
   await ask('amount by team');
@@ -112,7 +115,7 @@ try {
   assert.equal(await page.locator('.o-source').innerText(), 'Team totals API query.');
   await capture('o-uploaded', false);
   await page.getByRole('button', { name: 'ADD TO ANALYSIS', exact: true }).click();
-  await page.getByRole('button', { name: 'Close Ask Q', exact: true }).click();
+  await page.getByRole('button', { name: 'Close Ask O', exact: true }).click();
   await chart('.author-card', [['North', '6'], ['South', '3']]);
   assert.equal(queries.at(-1).path, preparedPath); assert.deepEqual(queries.at(-1).body.rows, teams);
   await page.getByRole('button', { name: 'Save draft', exact: true }).click();
@@ -154,7 +157,7 @@ try {
   await ask('revenue by region');
   await page.locator('.o-result .chart svg').waitFor();
   await page.getByRole('button', { name: 'ADD TO ANALYSIS', exact: true }).click();
-  await page.getByRole('button', { name: 'Close Ask Q', exact: true }).click();
+  await page.getByRole('button', { name: 'Close Ask O', exact: true }).click();
   await chart('.author-card', [['East', '500'], ['West', '400']]);
   await page.getByRole('button', { name: 'Save draft', exact: true }).click();
   await page.getByText('Draft saved on this device.', { exact: true }).waitFor();

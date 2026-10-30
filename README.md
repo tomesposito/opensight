@@ -268,9 +268,13 @@ prepare its columns, save the pipeline and select **Build a chart**. See
 
 ![Live chart from a locally uploaded and prepared CSV](docs/images/local-data.png)
 
-### 💬 Ask Q
+### 💬 Ask O
 
 A shared right-side panel opens from **Ask a question** in Home and Author.
+The panel names the defined fields, matched metadata synonyms and any unmatched
+question terms. Editable aggregation, grouping, filter, Top N, date granularity
+and visual steps rerun the ordinary preview before adding a visual. See
+[grounded Ask O](docs/grounded-ask-o.md) for the bounded grammar and constraints.
 The panel contains the interpreted question, chart preview and alternatives;
 Author also offers **ADD TO ANALYSIS**. Escape or Close returns focus to the
 trigger. A local deterministic
@@ -280,7 +284,7 @@ configure a real AI provider
 (OpenAI, Anthropic, Bedrock, or a custom endpoint) for generative answers,
 gated by role.
 
-![ASK Q side panel in Author with a synthetic sales preview and ADD TO ANALYSIS](docs/images/q-side-panel.png)
+![Ask O in Author with field grounding, editable steps and a synthetic sales preview](docs/images/q-side-panel.png)
 
 ![O answer querying a locally uploaded CSV: North 6 and South 3](docs/images/o-answer.png)
 

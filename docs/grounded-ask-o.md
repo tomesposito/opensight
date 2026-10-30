@@ -43,7 +43,7 @@ grounding: {
 
 `fieldsUsed` contains the measure, dimensions, then filter fields, deduplicated
 in that order. Count-rows has a null measure and includes only its dimensions
-and filters. `synonymsMatched` identifies matched aliases and the defined field
+and filters. `synonymsMatched` identifies matched metadata synonyms and the defined field
 chosen by that interpretation, including ambiguous alternatives independently.
 `unmatchedTerms` is the interpreter's existing unknown-token list. Interpretations
 are constructed only in the existing results loop.
@@ -90,6 +90,15 @@ Constraints:
 - Invalid edited states fail closed with named errors through the existing
   preparation/preview validation path; never silently discard requested semantics.
   Top N input outside its integer range is reported rather than silently ignored.
+
+Preparation retains `O_UNKNOWN_FIELD` and `O_UNSUPPORTED_CALCULATION`. Because
+edits can form combinations the parser does not produce, the same preparation
+path also rejects invalid Top N (`O_INVALID_TOP_N`), missing grouping
+(`O_MISSING_DIMENSION`) and incompatible aggregations, granularity or visual
+groupings (`O_UNSUPPORTED_INTERPRETATION`). Multiple dimensions require a table;
+a KPI requires no dimensions. These errors disable adding and replace the
+previous preview. Confidence continues to describe the original grammar match
+and is labeled accordingly after an edit.
 
 ## Non-goals and compatibility
 
