@@ -1,6 +1,6 @@
 /** Portable dataset preparation metadata. Source IDs resolve through trusted connectors. */
 export type PrepType = 'INTEGER' | 'DECIMAL' | 'STRING' | 'DATETIME' | 'BOOLEAN';
-export interface PrepColumn { name: string; type: PrepType; synonyms?: readonly string[] }
+export interface PrepColumn { name: string; type: PrepType }
 export type PrepAggregation = 'SUM' | 'AVG' | 'COUNT' | 'MIN' | 'MAX';
 /** Same predicate shape/operators as the Phase 2b bound row filter. */
 export type PrepFilter = { columnName: string; operator?: 'EQUALS' | 'GREATER_THAN_OR_EQUAL_TO' | 'LESS_THAN_OR_EQUAL_TO' } & ({ value: string | number } | { values: (string | number)[] });

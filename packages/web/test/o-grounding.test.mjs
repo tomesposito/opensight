@@ -107,6 +107,8 @@ test('Top N edits, clear and final-dimension removal never retain an invalid gro
   await ui.ask('sum revenue by region top 1');
   assert.equal(ui.card().rows.length, 1);
   await ui.change('Top N step', '2'); assert.equal(ui.card().rows.length, 2);
+  await ui.change('Top N step', '1.5');
+  assert.match(ui.text(), /O_INVALID_TOP_N/);
   await ui.change('Top N step', '0');
   assert.match(ui.text(), /O_INVALID_TOP_N/);
   assert.equal(ui.renderer.root.findAllByType(LiveAuthorVisual).length, 0);
@@ -115,6 +117,7 @@ test('Top N edits, clear and final-dimension removal never retain an invalid gro
   assert.equal(ui.preview().visual.filters.length, 0);
   await ui.ask('sum revenue by region top 1');
   await ui.click('Remove group-by region');
+  assert.equal(ui.renderer.root.findAllByProps({ 'aria-label': 'Top N step' }).length, 0);
   assert.match(ui.text(), /O_MISSING_DIMENSION/);
   await ui.change('Visual step', 'kpi');
   assert.equal(ui.preview().visual.filters.length, 0);
@@ -150,7 +153,7 @@ test('visual edits fail closed for incompatible groupings rather than dropping f
 test('existing unsupported-calculation errors remain visible through edits and prevent addition', async t => {
   const initial = { ...emptyDraft(), calculatedFields: [{ name: 'Total', role: 'measure', expression: 'sum({revenue})' }] };
   const ui = await mount(t, initial);
-  await ui.ask('sum Total by region');
+  await ui.ask('sum "Total" by region');
   assert.match(ui.text(), /O_UNSUPPORTED_CALCULATION/);
   await ui.change('Aggregation step', 'AVG');
   assert.match(ui.text(), /O_UNSUPPORTED_CALCULATION/);
