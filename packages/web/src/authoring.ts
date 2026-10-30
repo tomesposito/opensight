@@ -27,13 +27,13 @@ export const SALES_FIELDS = [
   { name: 'order_date', role: 'dimension', type: 'DATETIME' },
   { name: 'region', role: 'dimension', type: 'STRING' },
   { name: 'category', role: 'dimension', type: 'STRING' },
-  { name: 'revenue', role: 'measure', type: 'DECIMAL' },
+  { name: 'revenue', role: 'measure', type: 'DECIMAL', synonyms: ['sales'] },
   { name: 'profit', role: 'measure', type: 'DECIMAL' },
 ] as const;
 export interface CalculatedField { name: string; expression: string; role: 'dimension' | 'measure' }
 export const FIELD_GROUPS = ['Geography', 'Metadata', 'Sales', 'Columns', 'Calculated'] as const;
 export type FieldGroup = typeof FIELD_GROUPS[number];
-export interface DataField { name: string; role: 'dimension' | 'measure'; type: string; group?: FieldGroup }
+export interface DataField { name: string; role: 'dimension' | 'measure'; type: string; group?: FieldGroup; synonyms?: readonly string[] }
 /** Presentation only: never persisted in a draft or bundle definition. */
 export function fieldGroup(field: DataField): FieldGroup {
   if (field.group) return field.group;
@@ -41,7 +41,7 @@ export function fieldGroup(field: DataField): FieldGroup {
   if (field.type === 'DATETIME' || /(^id$|_id$)/i.test(field.name)) return 'Metadata';
   return 'Sales';
 }
-export interface AuthorDataset { id: string; name: string; columns: readonly PrepColumn[] }
+export interface AuthorDataset { id: string; name: string; columns: readonly (PrepColumn & Pick<DataField, 'synonyms'>)[] }
 export const datasetFields = (dataset?: AuthorDataset): readonly DataField[] => dataset ? dataset.columns.map(c => ({ ...c, role: c.type === 'INTEGER' || c.type === 'DECIMAL' ? 'measure' : 'dimension' })) : SALES_FIELDS;
 export function calculationInfo(name: string, calculations: readonly CalculatedField[], dataset?: AuthorDataset) {
   const visiting = new Set<string>();
