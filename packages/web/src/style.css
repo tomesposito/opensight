@@ -1432,11 +1432,6 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .o-result .visual-card { min-width: 0; }
 .o-result .visual-content { min-height: 260px; }
 .o-explanation { font-weight: 600; }
-.o-grounding { font-size: 12px; margin: 4px 0; }
-.o-steps { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 8px 0; font-size: 12px; }
-.o-steps select, .o-steps input[type="number"] { font-size: 12px; max-width: 90px; }
-.o-step-chip { display: inline-flex; align-items: center; gap: 4px; border: 1px solid #cbd5e1; border-radius: 4px; padding: 2px 6px; }
-.o-step-chip button { border: none; background: none; cursor: pointer; padding: 0 2px; font-size: 12px; }
 .o-explanation span { font-weight: normal; margin-left: 8px; }
 .o-grounding, .o-steps { font: 12px Arial, "Helvetica Neue", Helvetica, sans-serif; overflow-wrap: anywhere; }
 .o-grounding, .o-steps p { margin: 4px 0; }
