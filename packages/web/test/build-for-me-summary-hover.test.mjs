@@ -12,7 +12,7 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // scoped to .author-workspace, and the global summary rules give only
 // cursor and an :active press, so hovering "Build for me" changed
 // nothing while every other control in the same dialog tinted. It now
-// takes the dialog's own hover tint (#edf7f7, slice 46's button/field
+// takes the dialog's own hover tint (#eef3fd, slice 46's button/field
 // tint). The dialog's resting colors are fixed light (no dark-chrome
 // variant), so no dark variant is added. Background only, so resting
 // geometry is identical and there is no animation.
@@ -22,7 +22,7 @@ const rule = styleCss.match(/\.calculation-dialog\s+\.o-build-for-me\s+summary:h
 
 test('the build-for-me summary has a hover state with the calculation dialog tint', () => {
   assert.ok(rule, 'expected the .calculation-dialog .o-build-for-me summary hover rule');
-  assert.match(rule[1], /background:\s*#edf7f7/);
+  assert.match(rule[1], /background:\s*#eef3fd/);
 });
 
 test('the summary hover rule is paint-only: resting geometry cannot shift', () => {
@@ -36,9 +36,9 @@ test('the resting build-for-me rules are preserved', () => {
 });
 
 test('the neighbouring calculation-dialog hover rules are untouched', () => {
-  assert.ok(styleCss.match(/\.calculation-dialog button:hover:not\(:disabled\)\s*\{[^}]*border-color:\s*#157f88; background:\s*#edf7f7/), 'slice 46 button hover must remain');
-  assert.ok(styleCss.match(/\.calculation-dialog \.primary-button:hover:not\(:disabled\)\s*\{[^}]*background:\s*#126e76/), 'slice 46 primary hover must remain');
-  assert.ok(styleCss.match(/\.calculation-dialog input:hover:not\(:disabled\), \.calculation-dialog select:hover:not\(:disabled\), \.calculation-dialog textarea:hover:not\(:disabled\)\s*\{[^}]*background:\s*#edf7f7/), 'slice 46 field hover must remain');
+  assert.ok(styleCss.match(/\.calculation-dialog button:hover:not\(:disabled\)\s*\{[^}]*border-color:\s*#3b82f6; background:\s*#eef3fd/), 'slice 46 button hover must remain');
+  assert.ok(styleCss.match(/\.calculation-dialog \.primary-button:hover:not\(:disabled\)\s*\{[^}]*background:\s*#2f66d8/), 'slice 46 primary hover must remain');
+  assert.ok(styleCss.match(/\.calculation-dialog input:hover:not\(:disabled\), \.calculation-dialog select:hover:not\(:disabled\), \.calculation-dialog textarea:hover:not\(:disabled\)\s*\{[^}]*background:\s*#eef3fd/), 'slice 46 field hover must remain');
 });
 
 test('the author-workspace summary hover rules are untouched', () => {
@@ -53,7 +53,7 @@ defineHoverCases('build-for-me-summary hover', {
       target: '#s',
       rule: '.calculation-dialog .o-build-for-me summary:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      hovered: { backgroundColor: 'rgb(238, 243, 253)' },
       paintOnly: true,
       excluded: ['#outside'],
     },

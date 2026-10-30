@@ -233,7 +233,7 @@ describe('issue #108 polish slice 8: navigation rail hover feedback', () => {
     // The rail base rule sets background: transparent on .app-nav links at the
     // same specificity as style.css's generic :hover rule, so without a
     // rail-scoped hover rule hovering a link changes nothing.
-    assert.match(css, /\.product-navigation[^{]*\.app-nav a:hover[^{]*\{[^}]*background:\s*#dceff0/);
+    assert.match(css, /\.product-navigation[^{]*\.app-nav a:hover[^{]*\{[^}]*background:\s*#d9e6fa/);
     await page.setViewportSize({ width: 1440, height: 900 });
     const html = renderToStaticMarkup(h('div', { className: 'app-shell' },
       h(AppNavigation, { route: { page: 'home' }, navigate() {} })));
@@ -254,7 +254,7 @@ describe('issue #108 polish slice 8: navigation rail hover feedback', () => {
       return { base, hoverBg };
     });
     assert.equal(actual.base, 'rgba(0, 0, 0, 0)');
-    assert.ok(actual.hoverBg === 'rgb(220, 239, 240)' || actual.hoverBg === '#dceff0',
+    assert.ok(actual.hoverBg === 'rgb(217, 230, 250)' || actual.hoverBg === '#d9e6fa',
       `rail link hover background is ${actual.hoverBg}`);
   });
 });

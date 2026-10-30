@@ -9,7 +9,7 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // control with zero hover state: hovering it changed nothing. Its siblings
 // already carry the established dark-chrome hover language from slice 17
 // (`.product-header .brand:hover`, `.account-menu summary:hover`), so the
-// toggle takes the same tint (#365764). Paint-only: the rule changes the
+// toggle takes the same tint (#2b3a55). Paint-only: the rule changes the
 // background, so resting geometry is identical and there is no animation to
 // need a reduced-motion variant.
 const chromeCss = styles['app-chrome.css'];
@@ -18,7 +18,7 @@ const toggleRule = chromeCss.match(/\.product-header\s+\.navigation-toggle:hover
 
 test('the header navigation toggle has a hover state with the dark-chrome tint', () => {
   assert.ok(toggleRule, 'expected .product-header .navigation-toggle:hover:not(:disabled)');
-  assert.match(toggleRule[1], /background:\s*#365764/);
+  assert.match(toggleRule[1], /background:\s*#2b3a55/);
 });
 
 test('the toggle hover rule is paint-only: resting geometry cannot shift', () => {
@@ -41,7 +41,7 @@ defineHoverCases('navigation-toggle hover', {
       target: '#nav',
       rule: '.product-header .navigation-toggle:hover:not(:disabled)',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(54, 87, 100)' },
+      hovered: { backgroundColor: 'rgb(43, 58, 85)' },
       paintOnly: true,
       excluded: [{ target: '#dis', resting: { backgroundColor: 'rgba(0, 0, 0, 0)' } }],
     },

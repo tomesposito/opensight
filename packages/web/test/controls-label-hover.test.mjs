@@ -28,11 +28,11 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // controls-strip, light and dark chrome) confirmed zero matching
 // :hover rules for all eight label variants and a transparent
 // rest in both chromes. This was the fresh zero-hover audit on a
-// new surface left by slice 111. The labels now take #edf7f7, the
+// new surface left by slice 111. The labels now take #eef3fd, the
 // author surface's established hover tint (the author button,
 // field and summary hovers, and the slice-83 control-settings
 // summary hover in this same strip), plus the author dark-chrome
-// variant #334c62, so no new colour is introduced — and because
+// variant #36486a, so no new colour is introduced — and because
 // the inner field's own hover is the same tint, hovering the
 // field inside the label reads as one surface, not two steps.
 // Background only, so resting geometry is identical and there is
@@ -46,15 +46,15 @@ const darkRule = styleCss.match(/\.author-workspace\[data-chrome=dark\] \.parame
 
 test('the controls label hover rule exists for all three controls label contexts and uses the established hover tint', () => {
   assert.ok(rule, 'expected the grouped controls label :hover rule');
-  assert.match(rule[1], /background:\s*#edf7f7/);
+  assert.match(rule[1], /background:\s*#eef3fd/);
 });
 
 test('the hover tints match the author field/button hovers and the slice-83 summary hover, so no new colour is introduced', () => {
-  assert.ok(styleCss.match(/\.author-workspace select:hover:not\(:disabled\)\s*\{[^}]*background:\s*#edf7f7/), 'the author select hover must remain #edf7f7');
-  assert.ok(styleCss.match(/\.control-settings summary:hover\s*\{[^}]*background:\s*#edf7f7/), 'the slice-83 control-settings summary hover must remain #edf7f7');
+  assert.ok(styleCss.match(/\.author-workspace select:hover:not\(:disabled\)\s*\{[^}]*background:\s*#eef3fd/), 'the author select hover must remain #eef3fd');
+  assert.ok(styleCss.match(/\.control-settings summary:hover\s*\{[^}]*background:\s*#eef3fd/), 'the slice-83 control-settings summary hover must remain #eef3fd');
   assert.ok(darkRule, 'expected the author dark-chrome controls label :hover variant');
-  assert.match(darkRule[1], /background:\s*#334c62/);
-  assert.ok(styleCss.match(/\.author-workspace\[data-chrome=dark\] \.control-settings summary:hover\s*\{[^}]*background:\s*#334c62/), 'the slice-83 dark summary hover must remain #334c62');
+  assert.match(darkRule[1], /background:\s*#36486a/);
+  assert.ok(styleCss.match(/\.author-workspace\[data-chrome=dark\] \.control-settings summary:hover\s*\{[^}]*background:\s*#36486a/), 'the slice-83 dark summary hover must remain #36486a');
 });
 
 test('the controls label hover rules are paint-only: resting geometry and label presentation cannot shift', () => {
@@ -92,7 +92,7 @@ defineHoverCases('controls-label hover', {
       target: '#lPc',
       rule: '.parameter-control label:hover, .control-settings label:hover, .control-form label:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      hovered: { backgroundColor: 'rgb(238, 243, 253)' },
       paintOnly: true,
       unchanged: ['color'],
       excluded: ['#peLabel', '#outsideLabel'],
@@ -101,7 +101,7 @@ defineHoverCases('controls-label hover', {
       target: '#lSlider',
       rule: '.parameter-control label:hover, .control-settings label:hover, .control-form label:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      hovered: { backgroundColor: 'rgb(238, 243, 253)' },
       paintOnly: true,
       unchanged: ['color'],
     },
@@ -109,7 +109,7 @@ defineHoverCases('controls-label hover', {
       target: '#lCs',
       rule: '.parameter-control label:hover, .control-settings label:hover, .control-form label:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      hovered: { backgroundColor: 'rgb(238, 243, 253)' },
       paintOnly: true,
       unchanged: ['color'],
     },
@@ -117,7 +117,7 @@ defineHoverCases('controls-label hover', {
       target: '#lCf',
       rule: '.parameter-control label:hover, .control-settings label:hover, .control-form label:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      hovered: { backgroundColor: 'rgb(238, 243, 253)' },
       paintOnly: true,
       unchanged: ['color'],
     },
@@ -125,7 +125,7 @@ defineHoverCases('controls-label hover', {
       target: '#dPc',
       rule: '.author-workspace[data-chrome="dark"] .parameter-control label:hover, .author-workspace[data-chrome="dark"] .control-settings label:hover, .author-workspace[data-chrome="dark"] .control-form label:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(51, 76, 98)' },
+      hovered: { backgroundColor: 'rgb(54, 72, 106)' },
       paintOnly: true,
       unchanged: ['color'],
     },
@@ -133,7 +133,7 @@ defineHoverCases('controls-label hover', {
       target: '#dSlider',
       rule: '.author-workspace[data-chrome="dark"] .parameter-control label:hover, .author-workspace[data-chrome="dark"] .control-settings label:hover, .author-workspace[data-chrome="dark"] .control-form label:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(51, 76, 98)' },
+      hovered: { backgroundColor: 'rgb(54, 72, 106)' },
       paintOnly: true,
       unchanged: ['color'],
     },
@@ -141,7 +141,7 @@ defineHoverCases('controls-label hover', {
       target: '#dCs',
       rule: '.author-workspace[data-chrome="dark"] .parameter-control label:hover, .author-workspace[data-chrome="dark"] .control-settings label:hover, .author-workspace[data-chrome="dark"] .control-form label:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(51, 76, 98)' },
+      hovered: { backgroundColor: 'rgb(54, 72, 106)' },
       paintOnly: true,
       unchanged: ['color'],
     },
@@ -149,7 +149,7 @@ defineHoverCases('controls-label hover', {
       target: '#dCf',
       rule: '.author-workspace[data-chrome="dark"] .parameter-control label:hover, .author-workspace[data-chrome="dark"] .control-settings label:hover, .author-workspace[data-chrome="dark"] .control-form label:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(51, 76, 98)' },
+      hovered: { backgroundColor: 'rgb(54, 72, 106)' },
       paintOnly: true,
       unchanged: ['color'],
     },

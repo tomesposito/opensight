@@ -12,7 +12,7 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // (.data-prep input, .data-prep select, .data-prep textarea) — had none.
 // The step editors' text inputs and expression/values textareas share the
 // same resting rule and the same gap. They now take the surface's own
-// hover tint (#edf6fc). Background only, so resting geometry is
+// hover tint (#e8eefb). Background only, so resting geometry is
 // identical; disabled fields keep their flat state. Static (no
 // animation), so no reduced-motion variant is needed.
 const css = styles['style.css'];
@@ -21,7 +21,7 @@ const hoverRule = css.match(/\.data-prep\s+input:hover:not\(:disabled\),\s*\.dat
 
 test('the prep input/textarea hover rule exists and uses the data-prep hover tint', () => {
   assert.ok(hoverRule, 'expected .data-prep input:hover:not(:disabled), .data-prep textarea:hover:not(:disabled)');
-  assert.match(hoverRule[1], /background:\s*#edf6fc/);
+  assert.match(hoverRule[1], /background:\s*#e8eefb/);
 });
 
 test('the hover preview is paint-only: resting geometry cannot shift', () => {
@@ -38,8 +38,8 @@ test('the resting prep input/select/textarea rule still reserves the geometry th
 });
 
 test('the prep input/textarea hover rule coexists with the prep button and select hover rules', () => {
-  assert.ok(css.match(/\.data-prep\s+button:hover:not\(:disabled\)\s*\{[^}]*background:\s*#edf6fc/), 'the data-prep button hover rule must still be present');
-  assert.ok(css.match(/\.data-prep\s+select:hover:not\(:disabled\)\s*\{[^}]*background:\s*#edf6fc/), 'the slice-31 data-prep select hover rule must still be present');
+  assert.ok(css.match(/\.data-prep\s+button:hover:not\(:disabled\)\s*\{[^}]*background:\s*#e8eefb/), 'the data-prep button hover rule must still be present');
+  assert.ok(css.match(/\.data-prep\s+select:hover:not\(:disabled\)\s*\{[^}]*background:\s*#e8eefb/), 'the slice-31 data-prep select hover rule must still be present');
   assert.ok(hoverRule, 'expected the prep input/textarea hover rule');
 });
 
@@ -50,7 +50,7 @@ defineHoverCases('prep-input hover', {
       target: '#name',
       rule: '.data-prep input:hover:not(:disabled), .data-prep textarea:hover:not(:disabled)',
       resting: { backgroundColor: 'rgb(255, 255, 255)' },
-      hovered: { backgroundColor: 'rgb(237, 246, 252)' },
+      hovered: { backgroundColor: 'rgb(232, 238, 251)' },
       paintOnly: true,
       unchanged: ['color'],
       excluded: ['#locked'],
@@ -59,7 +59,7 @@ defineHoverCases('prep-input hover', {
       target: '#search',
       rule: '.data-prep input:hover:not(:disabled), .data-prep textarea:hover:not(:disabled)',
       resting: { backgroundColor: 'rgb(255, 255, 255)' },
-      hovered: { backgroundColor: 'rgb(237, 246, 252)' },
+      hovered: { backgroundColor: 'rgb(232, 238, 251)' },
       paintOnly: true,
       unchanged: ['color'],
     },
@@ -67,7 +67,7 @@ defineHoverCases('prep-input hover', {
       target: '#expr',
       rule: '.data-prep input:hover:not(:disabled), .data-prep textarea:hover:not(:disabled)',
       resting: { backgroundColor: 'rgb(255, 255, 255)' },
-      hovered: { backgroundColor: 'rgb(237, 246, 252)' },
+      hovered: { backgroundColor: 'rgb(232, 238, 251)' },
       paintOnly: true,
       unchanged: ['color'],
     },

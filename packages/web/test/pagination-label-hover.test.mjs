@@ -18,7 +18,7 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // form > .dataset-picker-pagination > label) confirmed zero matching
 // :hover rules for the label and a transparent rest, while the select
 // inside it matched the slice-23 select hover. The label now takes
-// #edf7fc, the dialog's established hover tint (its button, select and
+// #e8eefb, the dialog's established hover tint (its button, select and
 // search-input hovers), so no new colour is introduced — and because
 // the label and the select inside it take the same tint, hovering
 // either reads as one surface, not two steps. Background only, so
@@ -30,13 +30,13 @@ const labelRule = styleCss.match(/^\.dataset-picker-pagination label:hover\s*\{(
 
 test('the pagination label hover rule exists and uses the established hover tint', () => {
   assert.ok(labelRule, 'expected the dataset-picker-pagination label :hover rule');
-  assert.match(labelRule[1], /background:\s*#edf7fc/);
+  assert.match(labelRule[1], /background:\s*#e8eefb/);
 });
 
 test('the hover tint matches the dialog button, select and search-input hovers, so no new colour is introduced', () => {
-  assert.ok(styleCss.match(/\.create-analysis-dialog button:hover:not\(:disabled\)\s*\{[^}]*background:\s*#edf7fc/), 'the dialog button hover must remain #edf7fc');
-  assert.ok(styleCss.match(/\.create-analysis-dialog\s+select:hover:not\(:disabled\)\s*\{[^}]*background:\s*#edf7fc/), 'the dialog select hover must remain #edf7fc');
-  assert.ok(styleCss.match(/\.create-analysis-dialog input\[type=search\]:hover:not\(:disabled\)\s*\{[^}]*background:\s*#edf7fc/), 'the dialog search-input hover must remain #edf7fc');
+  assert.ok(styleCss.match(/\.create-analysis-dialog button:hover:not\(:disabled\)\s*\{[^}]*background:\s*#e8eefb/), 'the dialog button hover must remain #e8eefb');
+  assert.ok(styleCss.match(/\.create-analysis-dialog\s+select:hover:not\(:disabled\)\s*\{[^}]*background:\s*#e8eefb/), 'the dialog select hover must remain #e8eefb');
+  assert.ok(styleCss.match(/\.create-analysis-dialog input\[type=search\]:hover:not\(:disabled\)\s*\{[^}]*background:\s*#e8eefb/), 'the dialog search-input hover must remain #e8eefb');
 });
 
 test('the pagination label hover rule is paint-only: resting geometry and presentation cannot shift', () => {
@@ -61,7 +61,7 @@ defineHoverCases('pagination-label hover', {
       target: '#pageLabel',
       rule: '.dataset-picker-pagination label:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(237, 247, 252)' },
+      hovered: { backgroundColor: 'rgb(232, 238, 251)' },
       paintOnly: true,
       unchanged: ['color'],
       excluded: ['#dialogLabel'],

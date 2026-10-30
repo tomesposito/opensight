@@ -17,7 +17,7 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // via the slice-39 .data-prep input hover. A CSSOM probe with all
 // five real stylesheets in the real ancestor context confirmed zero
 // matching :hover rules for the row label and a transparent rest.
-// The rows now take #edf6fc, the data-prep surface's established
+// The rows now take #e8eefb, the data-prep surface's established
 // hover tint (the slice-31 select hover and the slice-39 button and
 // input/textarea hovers), so no new colour is introduced. Background
 // only, so resting geometry is identical and there is no animation.
@@ -28,12 +28,12 @@ const rule = styleCss.match(/^\.prep-columns label:hover\s*\{([^}]*)\}/m);
 
 test('the prep-columns label hover rule exists and uses the established hover tint', () => {
   assert.ok(rule, 'expected the .prep-columns label :hover rule');
-  assert.match(rule[1], /background:\s*#edf6fc/);
+  assert.match(rule[1], /background:\s*#e8eefb/);
 });
 
 test('the hover tint matches the data-prep button and input hovers, so no new colour is introduced', () => {
-  assert.ok(styleCss.match(/\.data-prep button:hover:not\(:disabled\)\s*\{[^}]*background:\s*#edf6fc/), 'the data-prep button hover must remain #edf6fc');
-  assert.ok(styleCss.match(/\.data-prep input:hover:not\(:disabled\), \.data-prep textarea:hover:not\(:disabled\)\s*\{[^}]*background:\s*#edf6fc/), 'the data-prep input hover must remain #edf6fc');
+  assert.ok(styleCss.match(/\.data-prep button:hover:not\(:disabled\)\s*\{[^}]*background:\s*#e8eefb/), 'the data-prep button hover must remain #e8eefb');
+  assert.ok(styleCss.match(/\.data-prep input:hover:not\(:disabled\), \.data-prep textarea:hover:not\(:disabled\)\s*\{[^}]*background:\s*#e8eefb/), 'the data-prep input hover must remain #e8eefb');
 });
 
 test('the prep-columns label hover rule is paint-only: resting geometry and label presentation cannot shift', () => {
@@ -57,7 +57,7 @@ defineHoverCases('prep-columns-label hover', {
       target: '#rowLabel',
       rule: '.prep-columns label:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(237, 246, 252)' },
+      hovered: { backgroundColor: 'rgb(232, 238, 251)' },
       paintOnly: true,
       unchanged: ['color'],
       excluded: ['#outsideLabel'],

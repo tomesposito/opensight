@@ -16,7 +16,7 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // rules) in the real ancestor context confirmed zero matching :hover
 // rules and a white rest, while the gallery's cards
 // (.connector-card:hover) and its submit (slice 66) do step. It now
-// takes the app surfaces' established field hover tint (#eaf3f7 — the
+// takes the app surfaces' established field hover tint (#e8eefb — the
 // data search inputs, slices 27/48, and the collection fields, slices
 // 23/64). Background only, so resting colour and geometry are
 // unchanged. The gallery is a fixed-light app-shell surface, so no
@@ -28,12 +28,12 @@ const rule = css.match(/^\.connector-search input\[type=search\]:hover:not\(:dis
 
 test('the connector-search hover rule exists and uses the established field tint', () => {
   assert.ok(rule, 'expected the .connector-search input[type=search]:hover rule');
-  assert.match(rule[1], /background:\s*#eaf3f7/);
+  assert.match(rule[1], /background:\s*#e8eefb/);
 });
 
 test('the hover tint matches the data search-input hovers, so no new colour is introduced', () => {
-  assert.ok(dataCss.match(/\.data-page input\[type=search\]:hover:not\(:disabled\)\s*\{[^}]*background:\s*#eaf3f7/), 'the data-page search hover must remain #eaf3f7');
-  assert.ok(dataCss.match(/\.data-dialog input\[type=search\]:hover:not\(:disabled\)\s*\{[^}]*background:\s*#eaf3f7/), 'the data-dialog search hover must remain #eaf3f7');
+  assert.ok(dataCss.match(/\.data-page input\[type=search\]:hover:not\(:disabled\)\s*\{[^}]*background:\s*#e8eefb/), 'the data-page search hover must remain #e8eefb');
+  assert.ok(dataCss.match(/\.data-dialog input\[type=search\]:hover:not\(:disabled\)\s*\{[^}]*background:\s*#e8eefb/), 'the data-dialog search hover must remain #e8eefb');
 });
 
 test('the search hover rule is paint-only: resting geometry and field presentation cannot shift', () => {
@@ -57,7 +57,7 @@ defineHoverCases('connector-search hover', {
       target: '#target',
       rule: '.connector-search input[type="search"]:hover:not(:disabled)',
       resting: { backgroundColor: 'rgb(255, 255, 255)' },
-      hovered: { backgroundColor: 'rgb(234, 243, 247)' },
+      hovered: { backgroundColor: 'rgb(232, 238, 251)' },
       paintOnly: true,
       unchanged: ['color'],
       excluded: ['#outside'],

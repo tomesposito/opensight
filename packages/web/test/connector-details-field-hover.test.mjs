@@ -16,7 +16,7 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // zero matching :hover rules and a white rest for both the text
 // input and the select, while the gallery's search input (slice 90)
 // and its submit (slice 66) do step. They now take the app surfaces'
-// established field hover tint (#eaf3f7 — the data-dialog fields
+// established field hover tint (#e8eefb — the data-dialog fields
 // these mirror, slices 27/48, and the connector search input,
 // slice 90), so no new colour is introduced. The file input keeps
 // its flat state, following the data-dialog rule's own exclusion of
@@ -30,12 +30,12 @@ const rule = css.match(/^\.connector-details input:hover:not\(:disabled\):not\(\
 
 test('the connector-details field hover rule exists and uses the established field tint', () => {
   assert.ok(rule, 'expected the .connector-details input/select :hover rule');
-  assert.match(rule[1], /background:\s*#eaf3f7/);
+  assert.match(rule[1], /background:\s*#e8eefb/);
 });
 
 test('the hover tint matches the data-dialog field hovers and the slice-90 search hover, so no new colour is introduced', () => {
-  assert.ok(dataCss.match(/\.data-dialog input:hover:not\(:disabled\):not\(\[type=radio\]\):not\(\[type=checkbox\]\):not\(\[type=file\]\), \.data-dialog select:hover:not\(:disabled\)\s*\{[^}]*background:\s*#eaf3f7/), 'the data-dialog field hover must remain #eaf3f7');
-  assert.ok(css.match(/\.connector-search input\[type=search\]:hover:not\(:disabled\)\s*\{[^}]*background:\s*#eaf3f7/), 'the connector-search hover must remain #eaf3f7');
+  assert.ok(dataCss.match(/\.data-dialog input:hover:not\(:disabled\):not\(\[type=radio\]\):not\(\[type=checkbox\]\):not\(\[type=file\]\), \.data-dialog select:hover:not\(:disabled\)\s*\{[^}]*background:\s*#e8eefb/), 'the data-dialog field hover must remain #e8eefb');
+  assert.ok(css.match(/\.connector-search input\[type=search\]:hover:not\(:disabled\)\s*\{[^}]*background:\s*#e8eefb/), 'the connector-search hover must remain #e8eefb');
 });
 
 test('the field hover rule is paint-only: resting geometry and field presentation cannot shift', () => {
@@ -62,7 +62,7 @@ defineHoverCases('connector-details-field hover', {
       target: '#targetInput',
       rule: '.connector-details input:hover:not(:disabled):not([type="radio"]):not([type="checkbox"]):not([type="file"]), .connector-details select:hover:not(:disabled)',
       resting: { backgroundColor: 'rgb(255, 255, 255)' },
-      hovered: { backgroundColor: 'rgb(234, 243, 247)' },
+      hovered: { backgroundColor: 'rgb(232, 238, 251)' },
       paintOnly: true,
       unchanged: ['color'],
       excluded: ['#fileInput', '#outsideInput', '#outsideSelect'],
@@ -71,7 +71,7 @@ defineHoverCases('connector-details-field hover', {
       target: '#targetSelect',
       rule: '.connector-details input:hover:not(:disabled):not([type="radio"]):not([type="checkbox"]):not([type="file"]), .connector-details select:hover:not(:disabled)',
       resting: { backgroundColor: 'rgb(255, 255, 255)' },
-      hovered: { backgroundColor: 'rgb(234, 243, 247)' },
+      hovered: { backgroundColor: 'rgb(232, 238, 251)' },
       paintOnly: true,
       unchanged: ['color'],
     },

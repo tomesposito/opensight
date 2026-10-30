@@ -11,13 +11,13 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // with all five shipped stylesheets) found the selected card was a
 // rule-but-no-change surface: .connector-card:hover (style.css,
 // #f8fbff) matches it, but loses the cascade to .app-shell
-// .connector-card.selected (app-chrome.css, #eaf4f4; specificity 0-3-0
+// .connector-card.selected (app-chrome.css, #eef3fd; specificity 0-3-0
 // over 0-2-0), so hovering the selected card changed nothing while
 // unselected cards tint to #f8fbff. The selected card now deepens to
-// #dceff0 — the app shell's own control hover tint (.product-
+// #d9e6fa — the app shell's own control hover tint (.product-
 // navigation links, .rail-search, the workspace-banner button of
 // slice 62, which made the same choice for a control resting on
-// #eaf4f4 because the lighter menu tints would blend into it) — so it
+// #eef3fd because the lighter menu tints would blend into it) — so it
 // stays visually distinct at rest and still reads interactive.
 // Background only, so resting geometry is identical; no animation, so
 // no reduced-motion variant is needed.
@@ -28,7 +28,7 @@ const selectedHover = appChromeCss.match(/^\.app-shell \.connector-card\.selecte
 
 test('the selected connector card hover rule exists with the shell tint', () => {
   assert.ok(selectedHover, 'expected the selected connector-card hover rule');
-  assert.match(selectedHover[1], /background:\s*#dceff0/);
+  assert.match(selectedHover[1], /background:\s*#d9e6fa/);
 });
 
 test('the hover rule is paint-only: resting geometry cannot shift', () => {
@@ -37,13 +37,13 @@ test('the hover rule is paint-only: resting geometry cannot shift', () => {
 });
 
 test('the resting selected-card rule and the unselected card hover are preserved', () => {
-  assert.ok(appChromeCss.match(/\.app-shell \.connector-card\.selected\s*\{[^}]*background:\s*#eaf4f4/), 'the app-shell selected card resting rule must remain');
+  assert.ok(appChromeCss.match(/\.app-shell \.connector-card\.selected\s*\{[^}]*background:\s*#eef3fd/), 'the app-shell selected card resting rule must remain');
   assert.ok(styleCss.match(/\.connector-card:hover\s*\{[^}]*background:\s*#f8fbff/), 'the unselected card hover must remain #f8fbff');
   assert.ok(styleCss.match(/\.connector-card\.selected\s*\{[^}]*background:\s*#f4faff/), 'the base selected card resting rule must remain');
 });
 
 test('the tint is the established shell-control hover tint, so no new colour is introduced', () => {
-  assert.ok(appChromeCss.match(/\.workspace-banner button:hover:not\(:disabled\)\s*\{[^}]*background:\s*#dceff0/), 'the workspace-banner button hover must remain #dceff0');
+  assert.ok(appChromeCss.match(/\.workspace-banner button:hover:not\(:disabled\)\s*\{[^}]*background:\s*#d9e6fa/), 'the workspace-banner button hover must remain #d9e6fa');
 });
 
 defineHoverCases('connector-card-selected hover', {
@@ -56,8 +56,8 @@ defineHoverCases('connector-card-selected hover', {
     {
       target: '#selectedCard',
       rule: '.app-shell .connector-card.selected:hover',
-      resting: { backgroundColor: 'rgb(234, 244, 244)' },
-      hovered: { backgroundColor: 'rgb(220, 239, 240)' },
+      resting: { backgroundColor: 'rgb(238, 243, 253)' },
+      hovered: { backgroundColor: 'rgb(217, 230, 250)' },
       paintOnly: true,
       excluded: ['#outsideCard'],
     },

@@ -13,141 +13,141 @@
 .app-shell { transition: padding-right 150ms ease-out; }
 @media (min-width: 761px) { .app-shell:has(.q-side-panel) { padding-right: 400px; } }
 @media (prefers-reduced-motion: reduce) { .app-shell { transition: none; } }
-.app-shell .product-header { height: var(--app-band); min-height: var(--app-band); padding: 4px 20px; margin-left: calc(-1 * var(--app-rail)); gap: 16px; flex-wrap: nowrap; background: #162e40; color: #fff; }
+.app-shell .product-header { height: var(--app-band); min-height: var(--app-band); padding: 4px 20px; margin-left: calc(-1 * var(--app-rail)); gap: 16px; flex-wrap: nowrap; background: #16264a; color: #fff; }
 .product-header .brand { font-size: 18px; letter-spacing: -.4px; color: #fff; gap: 8px; flex-shrink: 0; padding: 4px 8px; margin: -4px -8px; border-radius: 4px; }
-.product-header .brand:hover { background: #365764; }
+.product-header .brand:hover { background: #2b3a55; }
 .product-header .brand-mark { display: inline-flex; color: #72d3d4; }
 .product-header .breadcrumbs { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 12px; color: #a8c1cc; white-space: nowrap; }
-.product-header .breadcrumbs a { color: #d0e0e8; text-decoration: none; }
+.product-header .breadcrumbs a { color: #cfdcee; text-decoration: none; }
 .product-header .breadcrumbs a:hover { text-decoration: underline; }
-.product-header .header-caption { font-size: 12px; padding: 0; margin: 0; color: #d0e0e8; border: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.product-header .fixture-picker { min-width: 0; color: #d0e0e8; }
+.product-header .header-caption { font-size: 12px; padding: 0; margin: 0; color: #cfdcee; border: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.product-header .fixture-picker { min-width: 0; color: #cfdcee; }
 .product-header .fixture-picker select { min-width: 0; max-width: 260px; padding: 4px 8px; font-size: 12px; }
 /* Issue #108 polish slice 33: the fixture-picker select had zero hover
-   feedback. It takes the header's own hover tint (#365764, like the brand
+   feedback. It takes the header's own hover tint (#2b3a55, like the brand
    mark, navigation toggle and account menu) with light text so the dark
    resting text stays readable; paint-only, no geometry change. */
-.product-header .fixture-picker select:hover:not(:disabled) { background: #365764; color: #fff; }
+.product-header .fixture-picker select:hover:not(:disabled) { background: #2b3a55; color: #fff; }
 /* Issue #108 polish slice 129: the fixture-picker label itself (the
    "Definition example" text and the gap around the select it wraps) had
    zero hover feedback — slice 33 hovered only the select inside it, and
    every other label :hover rule in the cascade is scoped to a panel,
    dialog or surface elsewhere, so the label rested transparent while the
-   brand link and account summary in the same header step to #365764.
+   brand link and account summary in the same header step to #2b3a55.
    A CSSOM probe with all five real stylesheets (1,403 rules) in the real
    ancestor context confirmed zero matching :hover rules and a
    transparent rest. The label now takes the same header hover tint
-   (#365764, the select's own hover), so no new colour is introduced and
+   (#2b3a55, the select's own hover), so no new colour is introduced and
    label and field read as one surface. No colour change: the label text
-   is already the light #d0e0e8, readable on #365764. Background only, so
+   is already the light #cfdcee, readable on #2b3a55. Background only, so
    resting geometry is identical and there is no animation. */
-.product-header .fixture-picker:hover { background: #365764; }
-.product-navigation { position: fixed; z-index: 59; left: 0; top: var(--app-navigation-top, var(--app-band)); bottom: 0; width: var(--app-rail); padding: 16px 8px; overflow-y: auto; background: #edf3f5; border-right: 1px solid #d1e0e5; }
+.product-header .fixture-picker:hover { background: #2b3a55; }
+.product-navigation { position: fixed; z-index: 59; left: 0; top: var(--app-navigation-top, var(--app-band)); bottom: 0; width: var(--app-rail); padding: 16px 8px; overflow-y: auto; background: #edf3f5; border-right: 1px solid #ccd8e6; }
 .product-navigation .app-nav { display: flex; flex-direction: column; align-items: stretch; gap: 4px; }
-.product-navigation .app-nav a, .product-navigation .rail-search, .product-navigation .rail-more { display: flex; align-items: center; gap: 8px; width: 100%; font: 12px/1.5 Arial, "Helvetica Neue", Helvetica, sans-serif; text-align: left; padding: 8px; min-height: 36px; border: 1px solid transparent; border-radius: 5px; background: transparent; color: #365764; }
+.product-navigation .app-nav a, .product-navigation .rail-search, .product-navigation .rail-more { display: flex; align-items: center; gap: 8px; width: 100%; font: 12px/1.5 Arial, "Helvetica Neue", Helvetica, sans-serif; text-align: left; padding: 8px; min-height: 36px; border: 1px solid transparent; border-radius: 5px; background: transparent; color: #2b3a55; }
 .product-navigation .navigation-icon { flex: none; width: 16px; height: 16px; }
 .product-navigation .rail-search:hover, .product-navigation .rail-more:hover,
-.product-navigation .app-nav a:hover { background: #dceff0; }
+.product-navigation .app-nav a:hover { background: #d9e6fa; }
 .product-navigation .app-nav a[href="#/my-stuff"] { margin-bottom: 12px; }
 .product-navigation .rail-chevron { margin-left: auto; display: flex; }
 .product-navigation .rail-more { margin-top: 4px; }
 .product-navigation #more-navigation[hidden] { display: none; }
-.product-navigation .rail-group-title { font-size: 11px; color: #526c7a; padding: 4px 8px; }
-.product-navigation .developer-nav > span[aria-disabled] { font-size: 11px; padding: 4px 8px; color: #526c7a; }
-.rail-recents { border-top: 1px solid #d1e0e5; margin-top: 16px; padding: 16px 8px 0; }
+.product-navigation .rail-group-title { font-size: 11px; color: #5b6b8c; padding: 4px 8px; }
+.product-navigation .developer-nav > span[aria-disabled] { font-size: 11px; padding: 4px 8px; color: #5b6b8c; }
+.rail-recents { border-top: 1px solid #ccd8e6; margin-top: 16px; padding: 16px 8px 0; }
 .rail-recents h2 { font-size: 12px; font-weight: 500; margin: 0 0 4px; }
-.rail-recents .recents-caption { font-size: 11px; color: #526c7a; margin: 0 0 12px; }
+.rail-recents .recents-caption { font-size: 11px; color: #5b6b8c; margin: 0 0 12px; }
 .rail-recents nav { display: flex; flex-direction: column; gap: 4px; }
-.rail-recents a { padding: 6px 0; font-size: 12px; color: #365764; text-decoration: none; overflow-wrap: anywhere; }
-.rail-recents a:hover { color: #126e76; text-decoration: underline; }
-.recents-empty { font-size: 12px; color: #526c7a; }
-.product-navigation :focus-visible, .product-header :focus-visible { outline: 2px solid #157f88; outline-offset: 2px; }
+.rail-recents a { padding: 6px 0; font-size: 12px; color: #2b3a55; text-decoration: none; overflow-wrap: anywhere; }
+.rail-recents a:hover { color: #2f66d8; text-decoration: underline; }
+.recents-empty { font-size: 12px; color: #5b6b8c; }
+.product-navigation :focus-visible, .product-header :focus-visible { outline: 2px solid #3b82f6; outline-offset: 2px; }
 .product-header :focus-visible { outline-color: #e5a046; }
-.product-navigation .app-nav a[aria-current] { border-color: #157f88; background: #dceff0; color: #126e76; font-weight: 600; }
+.product-navigation .app-nav a[aria-current] { border-color: #3b82f6; background: #d9e6fa; color: #2f66d8; font-weight: 600; }
 /* Issue #108 polish slice 73: the rail's current-page link had zero hover
-   feedback on every route — its resting selected background (#dceff0) is
+   feedback on every route — its resting selected background (#d9e6fa) is
    the generic rail hover tint itself, and the [aria-current] rule ties the
    hover rule at (0,3,1) and stands after it, so hovering the current link
-   changed nothing while every other rail link steps transparent -> #dceff0.
+   changed nothing while every other rail link steps transparent -> #d9e6fa.
    A fresh whole-demo behavioral audit (real mouse + computed-style delta)
    flagged it on every route audited. Following the slices 28/29
    selected-control language, the current link takes a dedicated hover
-   step: #cddde0, one visible step deeper than #dceff0 and already in the
+   step: #cddde0, one visible step deeper than #d9e6fa and already in the
    palette (the author-canvas dot grid). Its (0,4,1) specificity beats both
    the generic hover and the resting selected rule. Background only, so
    the selected border, teal text and weight are unchanged and resting
    geometry is identical. */
 .product-navigation .app-nav a[aria-current]:hover { background: #cddde0; }
-.product-navigation .section-nav { margin-top: 16px; padding: 12px 4px; border-top: 1px solid #d1e0e5; border-bottom: 0; background: transparent; gap: 4px; flex-direction: column; align-items: stretch; }
+.product-navigation .section-nav { margin-top: 16px; padding: 12px 4px; border-top: 1px solid #ccd8e6; border-bottom: 0; background: transparent; gap: 4px; flex-direction: column; align-items: stretch; }
 .product-navigation .section-nav a { padding: 6px 8px; border: 0; border-radius: 4px; font-size: 12px; }
 .product-header .account-menu { display: block; position: relative; flex: none; margin-left: auto; min-width: 0; color: #fff; font-size: 12px; }
-.account-menu summary { display: flex; align-items: center; gap: 8px; padding: 6px 8px; min-height: 32px; border: 1px solid #526c7a; border-radius: 4px; cursor: pointer; list-style: none; }
+.account-menu summary { display: flex; align-items: center; gap: 8px; padding: 6px 8px; min-height: 32px; border: 1px solid #5b6b8c; border-radius: 4px; cursor: pointer; list-style: none; }
 .account-menu summary::-webkit-details-marker { display: none; }
-.account-menu summary:hover { background: #365764; }
-.account-menu[open] summary { background: #365764; }
+.account-menu summary:hover { background: #2b3a55; }
+.account-menu[open] summary { background: #2b3a55; }
 /* Issue #108 polish slice 80: the account menu's OPEN summary had zero
    hover feedback — its [open] rule paints the exact tint the slice-17
-   hover rule paints (#365764), ties it at (0,2,1) and stands after it,
+   hover rule paints (#2b3a55), ties it at (0,2,1) and stands after it,
    so hovering the open summary changed nothing while every closed
-   summary steps transparent -> #365764. Slice 17 made the closed hover
+   summary steps transparent -> #2b3a55. Slice 17 made the closed hover
    preview the open state; slices 73-79 since established that
    selected/open controls take a dedicated hover step beyond their
    selected rest (slice 79 did this for the author menu's open
-   summary). The open summary now steps one step deeper: #254a5e,
+   summary). The open summary now steps one step deeper: #24407c,
    already in the palette as the dark control hover step
-   (.back-to-top:hover, resting at #19384a) and the middle step of
-   the dark-teal sequence #162e40 (header) -> #254a5e -> #365764, so
+   (.back-to-top:hover, resting at #1b2740) and the middle step of
+   the dark-teal sequence #16264a (header) -> #24407c -> #2b3a55, so
    no new colour is introduced. Its (0,3,1) specificity beats both
    the open rule and the closed hover rule. Background only, so the
-   summary's #526c7a border, white text and resting geometry are
+   summary's #5b6b8c border, white text and resting geometry are
    identical; static (no animation), so no reduced-motion variant. */
-.account-menu[open] summary:hover { background: #254a5e; }
-.account-menu .account-panel { position: absolute; right: 0; top: calc(100% + 8px); width: min(260px, calc(100vw - 24px)); padding: 16px; background: #fff; color: #19384a; border: 1px solid #c9d8de; border-radius: 6px; box-shadow: 0 4px 16px #162e4026; z-index: 70; overflow-wrap: anywhere; }
-.account-panel p { font-size: 12px; margin: 8px 0 12px; color: #526c7a; }
-.product-header .account-panel button { padding: 6px 12px; min-height: 32px; border: 1px solid #157f88; border-radius: 4px; background: #157f88; color: #fff; font-size: 12px; }
+.account-menu[open] summary:hover { background: #24407c; }
+.account-menu .account-panel { position: absolute; right: 0; top: calc(100% + 8px); width: min(260px, calc(100vw - 24px)); padding: 16px; background: #fff; color: #1b2740; border: 1px solid #c3cfe0; border-radius: 6px; box-shadow: 0 4px 16px #16264a26; z-index: 70; overflow-wrap: anywhere; }
+.account-panel p { font-size: 12px; margin: 8px 0 12px; color: #5b6b8c; }
+.product-header .account-panel button { padding: 6px 12px; min-height: 32px; border: 1px solid #3b82f6; border-radius: 4px; background: #3b82f6; color: #fff; font-size: 12px; }
 /* Issue #108 polish slice 51: the account panel's Sign out button is a
-   primary button (#157f88, white text) with no hover feedback on app
+   primary button (#3b82f6, white text) with no hover feedback on app
    routes — it renders only in hosted mode, so demo-route audits never
    reached it, and on the author route the generic author-workspace
    button hover would paint its light tint under the white text. It now
-   takes the app-wide primary hover step (#157f88 -> #126e76); the
+   takes the app-wide primary hover step (#3b82f6 -> #2f66d8); the
    .account-menu segment keeps this rule above the author generic hover
    rules. Background only, so resting geometry is identical. */
-.product-header .account-menu .account-panel button:hover:not(:disabled) { background: #126e76; }
+.product-header .account-menu .account-panel button:hover:not(:disabled) { background: #2f66d8; }
 .app-shell > .section-nav, .app-shell > .admin-navigation .section-nav { padding: 0 32px; gap: 8px 24px; }
 .app-shell > .section-nav a, .app-shell > .admin-navigation .section-nav a { padding: 8px 0; font-size: 12px; }
 .app-shell > main { width: 100%; padding: 32px; min-width: 0; container: dashboard-content / inline-size; }
-.route-notice { max-width: 560px; margin: 64px auto; padding: 40px 24px; text-align: center; border: 1px solid #d1e0e5; border-radius: 8px; background: #fff; }
+.route-notice { max-width: 560px; margin: 64px auto; padding: 40px 24px; text-align: center; border: 1px solid #ccd8e6; border-radius: 8px; background: #fff; }
 .route-notice > span[aria-hidden="true"] { display: block; font-size: 30px; color: #548599; margin-bottom: 12px; }
-.route-notice p { margin: 0; color: #365764; font-size: 14px; }
+.route-notice p { margin: 0; color: #2b3a55; font-size: 14px; }
 .app-shell h1 { font-size: 24px; line-height: 1.25; font-weight: 500; letter-spacing: -.4px; }
 .app-shell .dashboard-heading { gap: 16px; margin-bottom: 20px; }
 .app-shell .dashboard-heading .eyebrow { margin: 0 0 4px; font-size: 11px; }
 .app-shell .phase-badge { font-size: 11px; padding: 4px 8px; }
-.app-shell .workspace-banner { font-size: 12px; padding: 6px 32px; gap: 8px; background: #eaf4f4; color: #365764; border-bottom: 1px solid #c9d8de; }
+.app-shell .workspace-banner { font-size: 12px; padding: 6px 32px; gap: 8px; background: #eef3fd; color: #2b3a55; border-bottom: 1px solid #c3cfe0; }
 .app-shell .workspace-banner button { min-height: 28px; padding: 4px 8px; font-size: 12px; }
 /* Issue #108 polish slice 62: the workspace banner's "Remove sample data"
    button had no hover feedback — the banner renders as an <aside> directly
    inside .app-shell, outside <main> and every hover scope (author, data,
    collection, admin), and its only rule sets size. It takes app-chrome's
-   own shell-control hover tint (#dceff0, the product-navigation hover);
-   the lighter #eaf3f7/#eaf4f4 tints would vanish against the banner's own
-   #eaf4f4 background. Background only, geometry identical, no animation. */
-.app-shell .workspace-banner button:hover:not(:disabled) { background: #dceff0; }
+   own shell-control hover tint (#d9e6fa, the product-navigation hover);
+   the lighter #e8eefb/#eef3fd tints would vanish against the banner's own
+   #eef3fd background. Background only, geometry identical, no animation. */
+.app-shell .workspace-banner button:hover:not(:disabled) { background: #d9e6fa; }
 .home-page > .fixture-notice { margin: 16px 0; padding: 8px 12px; font-size: 12px; }
 .home-page > .sheet-tabs { margin-bottom: 16px; gap: 24px; }
 .home-page > .sheet-tabs button { padding: 8px 0; font-size: 13px; }
 .home-page .visual-card { border-radius: 6px; box-shadow: 0 1px 3px #183b4b0a; }
 .home-page .card-heading { padding: 12px 16px 4px; }
-.home-page > .local-empty-state { margin: max(24px, 8vh) auto; max-width: 720px; background: #fff; border: 1px solid #d1e0e5; border-radius: 8px; }
+.home-page > .local-empty-state { margin: max(24px, 8vh) auto; max-width: 720px; background: #fff; border: 1px solid #ccd8e6; border-radius: 8px; }
 .home-page > .local-empty-state .empty-page-state { min-height: 320px; }
-.app-shell .empty-page-state .primary-button { background: #157f88; border-color: #157f88; }
-.app-shell .empty-page-state .primary-button:hover { background: #126e76; }
-.app-shell .empty-page-state .empty-state-secondary { color: #126e76; }
-.navigation-toggle { display: none; align-items: center; justify-content: center; flex: none; width: 32px; height: 32px; padding: 0; font-size: 18px; border: 1px solid #526c7a; border-radius: 4px; background: transparent; color: #fff; }
-.product-header .navigation-toggle:hover:not(:disabled) { background: #365764; }
-.author-workspace .app-header .navigation-toggle:hover:not(:disabled) { background: #365764; }
-.navigation-scrim { display: none; position: fixed; inset: var(--app-navigation-top, var(--app-band)) 0 0; border: 0; padding: 0; background: #14253655; z-index: 58; }
+.app-shell .empty-page-state .primary-button { background: #3b82f6; border-color: #3b82f6; }
+.app-shell .empty-page-state .primary-button:hover { background: #2f66d8; }
+.app-shell .empty-page-state .empty-state-secondary { color: #2f66d8; }
+.navigation-toggle { display: none; align-items: center; justify-content: center; flex: none; width: 32px; height: 32px; padding: 0; font-size: 18px; border: 1px solid #5b6b8c; border-radius: 4px; background: transparent; color: #fff; }
+.product-header .navigation-toggle:hover:not(:disabled) { background: #2b3a55; }
+.author-workspace .app-header .navigation-toggle:hover:not(:disabled) { background: #2b3a55; }
+.navigation-scrim { display: none; position: fixed; inset: var(--app-navigation-top, var(--app-band)) 0 0; border: 0; padding: 0; background: #0e1a3355; z-index: 58; }
 .app-shell[data-page=author] { --app-rail: 0px; }
 .app-shell[data-page=author] .product-navigation { display: none; width: 224px; }
 .app-shell[data-page=author] .navigation-toggle { display: inline-flex; }
@@ -181,29 +181,29 @@
 .collection-page > h1 { margin: 0 0 20px; }
 .my-stuff-page .collection-card + .collection-card { margin-top: 24px; }
 .my-stuff-page h2, .folder-page h2 { font-size: 16px; font-weight: 500; margin: 0 0 8px; }
-.my-stuff-page p, .folder-page p { color: #526c7a; font-size: 12px; }
+.my-stuff-page p, .folder-page p { color: #5b6b8c; font-size: 12px; }
 .my-stuff-links { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 16px; }
-.my-stuff-links a, .folder-empty-state a { color: #126e76; }
+.my-stuff-links a, .folder-empty-state a { color: #2f66d8; }
 .my-stuff-links a { padding: 8px 12px; border: 1px solid #9dbfc4; border-radius: 4px; text-decoration: none; }
 /* Issue #108 polish slice 25: the my-stuff collection quick links ("My
    analyses", "Dashboards", "My folders", "Shared folders") were the last
    control class on the landing surfaces with zero hover state — hovering them
    changed nothing (the fresh probe found every other reachable control
    covered by slices 8-24). They take the app-wide menu-item hover tint
-   (#eaf3f7, slices 16/21); background only, so resting geometry is identical.
+   (#e8eefb, slices 16/21); background only, so resting geometry is identical.
    Static, no animation. */
-.my-stuff-links a:hover { background: #eaf3f7; }
+.my-stuff-links a:hover { background: #e8eefb; }
 .recent-pages { margin: 16px 0 0; padding: 0; list-style: none; }
-.recent-pages a { display: block; padding: 8px 0; border-top: 1px solid #d1e0e5; color: #126e76; text-decoration: none; }
+.recent-pages a { display: block; padding: 8px 0; border-top: 1px solid #ccd8e6; color: #2f66d8; text-decoration: none; }
 /* Issue #108 polish slice 26: the "Recent pages" rows on the My stuff page
    (ul.recent-pages > li > a) were the last reachable landing-surface controls
    with zero hover state — a fresh audit (home/analyses/dashboards/data/my-stuff
    with the click-navigation race fixed) found the quick links, rail nav,
    breadcrumbs, pagination selects, Q trigger, and navigation toggle all covered
-   by slices 8-25. They take the app-wide menu-item hover tint (#eaf3f7,
+   by slices 8-25. They take the app-wide menu-item hover tint (#e8eefb,
    slices 16/21/25); background only, so resting geometry is identical.
    Static, no animation. */
-.recent-pages a:hover { background: #eaf3f7; }
+.recent-pages a:hover { background: #e8eefb; }
 /* Issue #108 polish slice 32: the folders "About folders and sharing" link
    (.folder-empty-state a, My folders and Shared folders pages) was the last
    user-facing control with zero hover state — a fresh behavioral hover audit
@@ -211,9 +211,9 @@
    routes (0 candidates: the landing-surface hover thread stays complete since
    slice 29) and the top-level offline-demo routes, finding only this link.
    It shares its teal resting color with the slice-25 my-stuff quick links and
-   takes the same app-wide menu-item hover tint (#eaf3f7, slices 16/21/25/26);
+   takes the same app-wide menu-item hover tint (#e8eefb, slices 16/21/25/26);
    background only, so resting geometry is identical. Static, no animation. */
-.folder-empty-state a:hover { background: #eaf3f7; }
+.folder-empty-state a:hover { background: #e8eefb; }
 /* Issue #108 polish slice 43: the Page-not-found "Go to Home" link
    (.not-found-page a, any unknown route) was the last user-facing control
    with zero hover state — a fresh whole-document behavioral hover audit
@@ -221,36 +221,36 @@
    every other zero-hover hit explained (opened-menu summaries resting at
    their hover/pressed tint, current-page nav links resting at their hover
    tint by design, the by-design native favorites checkbox). It takes the
-   same app-wide menu-item hover tint (#eaf3f7, slices 16/21/25/26/32);
+   same app-wide menu-item hover tint (#e8eefb, slices 16/21/25/26/32);
    background only, so resting geometry is identical. Static, no animation. */
-.not-found-page a:hover { background: #eaf3f7; }
+.not-found-page a:hover { background: #e8eefb; }
 .folder-empty-state { min-height: 320px; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
-.folder-empty-state > svg { color: #157f88; margin-bottom: 24px; }
+.folder-empty-state > svg { color: #3b82f6; margin-bottom: 24px; }
 .folder-empty-state p { max-width: 560px; margin: 0 0 12px; }
-.collection-banner { display: flex; align-items: center; justify-content: space-between; gap: 24px; min-height: 168px; padding: 24px; margin-bottom: 24px; border-radius: 6px; background: #162e40; color: #fff; }
+.collection-banner { display: flex; align-items: center; justify-content: space-between; gap: 24px; min-height: 168px; padding: 24px; margin-bottom: 24px; border-radius: 6px; background: #16264a; color: #fff; }
 .collection-banner > div { max-width: 620px; }
 .collection-banner h2 { font-size: 16px; font-weight: 500; margin: 0 0 8px; }
-.collection-banner p { font-size: 13px; color: #d0e0e8; margin: 0 0 12px; }
+.collection-banner p { font-size: 13px; color: #cfdcee; margin: 0 0 12px; }
 .collection-banner > svg { flex: 0 1 240px; width: 28%; min-width: 140px; max-height: 120px; }
 .collection-banner button { border: 1px solid #72d3d4; border-radius: 4px; background: transparent; color: #fff; min-height: 28px; padding: 4px 12px; font-size: 12px; }
-.collection-banner button:hover { background: #365764; }
-.collection-card { padding: 16px; background: #fff; border: 1px solid #d1e0e5; border-radius: 6px; box-shadow: 0 1px 3px #183b4b0a; min-width: 0; }
+.collection-banner button:hover { background: #2b3a55; }
+.collection-card { padding: 16px; background: #fff; border: 1px solid #ccd8e6; border-radius: 6px; box-shadow: 0 1px 3px #183b4b0a; min-width: 0; }
 .collection-tools { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-bottom: 16px; }
-.collection-tools .primary-button, .collection-card .primary-button { display: inline-block; padding: 6px 12px; border: 1px solid #157f88; border-radius: 4px; background: #157f88; color: #fff; font-size: 12px; text-decoration: none; }
-.collection-card button, .collection-card select, .collection-card input { min-height: 28px; padding: 4px 8px; border: 1px solid #b9ced5; border-radius: 4px; background: #fff; color: #19384a; font: inherit; font-size: 12px; }
-.collection-card button:hover:not(:disabled) { background: #eaf4f4; }
+.collection-tools .primary-button, .collection-card .primary-button { display: inline-block; padding: 6px 12px; border: 1px solid #3b82f6; border-radius: 4px; background: #3b82f6; color: #fff; font-size: 12px; text-decoration: none; }
+.collection-card button, .collection-card select, .collection-card input { min-height: 28px; padding: 4px 8px; border: 1px solid #b9ced5; border-radius: 4px; background: #fff; color: #1b2740; font: inherit; font-size: 12px; }
+.collection-card button:hover:not(:disabled) { background: #eef3fd; }
 /* Issue #108 polish slice 64: inputs inside a collection card (the drafts
    search field and rename field of the expanded LocalDrafts collection on
    the Analyses home page) had no hover state — buttons in the same card
-   tint (#eaf4f4 above) and the pagination select tints (#eaf3f7, slice 23),
+   tint (#eef3fd above) and the pagination select tints (#e8eefb, slice 23),
    but no :hover rule in any stylesheet reaches a .collection-card input
    (the search-input hover rules are scoped to .author-workspace /
-   .data-page). The fields now take #eaf3f7, the collection surface's own
+   .data-page). The fields now take #e8eefb, the collection surface's own
    field hover tint (the slice-23 pagination select in the same card);
    background only, so resting geometry is identical. Radio/checkbox inputs
    are excluded so the favorites-filter checkbox keeps its native rendering
    (the data-dialog / admin-settings pattern), and file inputs likewise. */
-.collection-card input:hover:not(:disabled):not([type=radio]):not([type=checkbox]):not([type=file]) { background: #eaf3f7; }
+.collection-card input:hover:not(:disabled):not([type=radio]):not([type=checkbox]):not([type=file]) { background: #e8eefb; }
 .collection-card .empty-state-secondary { border: 0; }
 .collection-card .empty-page-state { min-height: 300px; }
 .analyses-home .draft-collection { margin: 0; padding: 0; border: 0; }
@@ -269,17 +269,17 @@
    A CSSOM probe with all five real stylesheets (1,348 rules) in the real
    ancestor contexts (app-shell collection card, author light chrome and
    author dark chrome) confirmed zero matching :hover rules and a
-   transparent rest in all three. The label now takes #eaf3f7, the
+   transparent rest in all three. The label now takes #e8eefb, the
    collection surface's established field hover tint (the slice-64 search
    field beside it and the slice-23 pagination select in the same card), so
    no new colour is introduced. The rule is on the label, not the checkbox:
    the checkbox keeps its native rendering, following the slice-94
    connector-toggle and slice-95 sign-in-check precedents where the label
    surface hovers and its inner input does not. The author dark-chrome
-   variant (style.css) takes the author dark hover tint #334c62.
+   variant (style.css) takes the author dark hover tint #36486a.
    Background only, so resting geometry is identical and there is no
    animation. */
-.favorites-filter:hover { background: #eaf3f7; }
+.favorites-filter:hover { background: #e8eefb; }
 /* Issue #108 polish slice 125: the drafts collection tools row's plain
    search label (.draft-collection-tools label — "Search analyses" in
    LocalDrafts.tsx's expanded collection, wrapping the search input) had
@@ -289,7 +289,7 @@
    rested transparent and hovering its text or gap changed nothing, while
    only the field inside it tinted. The resting rule above makes the
    label a visible surface (text line, 4px gap, field). It now takes
-   #eaf3f7, the collection surface's own hover tint (the search field
+   #e8eefb, the collection surface's own hover tint (the search field
    inside it, slice 64, and the slice-96 favorites label beside it), so
    no new colour is introduced and the label and the field inside it
    read as one surface. The favorites-filter label is excluded: slice 96
@@ -299,11 +299,11 @@
    the tools row — and that surface is fixed light, so no dark variant.
    Background only, so resting geometry is identical and there is no
    animation. */
-.draft-collection-tools label:hover:not(.favorites-filter) { background: #eaf3f7; }
+.draft-collection-tools label:hover:not(.favorites-filter) { background: #e8eefb; }
 .collection-card input { min-width: 0; width: 100%; }
 .collection-table-scroll { overflow: auto; }
 .collection-table-scroll table { min-width: 600px; font-size: 12px; }
-.collection-table-scroll th { padding: 8px 12px; background: #f3f7f8; border-bottom: 1px solid #d1e0e5; color: #365764; }
+.collection-table-scroll th { padding: 8px 12px; background: #f8fafc; border-bottom: 1px solid #ccd8e6; color: #2b3a55; }
 .collection-table-scroll td { padding: 8px 12px; }
 .collection-table-scroll td:first-child { width: 48%; overflow-wrap: anywhere; max-width: 360px; }
 .collection-table-scroll td:nth-child(2) { white-space: nowrap; }
@@ -312,7 +312,7 @@
 .draft-name-link:hover:not(:disabled) strong, .draft-name-link:focus-visible:not(:disabled) strong { text-decoration: underline; }
 .draft-name-link:disabled { cursor: default; }
 .collection-row-actions { display: flex; gap: 8px; }
-.collection-badge { display: inline-block; font-size: 10px; margin-left: 8px; padding: 1px 6px; background: #eaf4f4; border-radius: 3px; color: #126e76; }
+.collection-badge { display: inline-block; font-size: 10px; margin-left: 8px; padding: 1px 6px; background: #eef3fd; border-radius: 3px; color: #2f66d8; }
 .collection-pagination { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 16px; font-size: 12px; }
 .collection-pagination > span:first-child { margin-right: auto; }
 .collection-pagination label { display: flex; align-items: center; gap: 8px; }
@@ -320,9 +320,9 @@
 /* Issue #108 polish slice 23: the drafts collection's "Items per page" select
    was the last control on the collections surface with zero hover state (the
    fresh probe found every landing/dialog control covered by slices 8-22).
-   It takes the app-wide menu-item hover tint (#eaf3f7, slices 16/21);
+   It takes the app-wide menu-item hover tint (#e8eefb, slices 16/21);
    background only, so resting geometry is identical. Static, no animation. */
-.collection-pagination select:hover:not(:disabled) { background: #eaf3f7; }
+.collection-pagination select:hover:not(:disabled) { background: #e8eefb; }
 /* Issue #108 polish slice 124: the pagination label wrapping that select
    ("Items per page" in LocalDrafts.tsx's expanded collection) had zero
    hover feedback of its own — slice 23 hovered the select inside it and
@@ -330,16 +330,16 @@
    is scoped elsewhere, so the label rested transparent and hovering its
    text or gap changed nothing, while only the select inside it tinted.
    The resting rule above makes the label a visible surface (text line,
-   8px gap, field). It now takes #eaf3f7, the collection surface's own
+   8px gap, field). It now takes #e8eefb, the collection surface's own
    hover tint (the select inside it, slice 23, and the slice-64 card
    field hover), so no new colour is introduced and the label and the
    select inside it read as one surface. Background only, so resting
    geometry is identical and there is no animation; the collection
    surface is fixed light, so no dark variant. */
-.collection-pagination label:hover { background: #eaf3f7; }
-.collection-note { color: #526c7a; margin: 16px 0 0; font-size: 11px; }
+.collection-pagination label:hover { background: #e8eefb; }
+.collection-note { color: #5b6b8c; margin: 16px 0 0; font-size: 11px; }
 .collection-no-results { text-align: center; padding: 32px 16px; }
-.collection-card .draft-rename { margin-top: 16px; padding-top: 16px; border-top: 1px solid #d1e0e5; }
+.collection-card .draft-rename { margin-top: 16px; padding-top: 16px; border-top: 1px solid #ccd8e6; }
 .collection-card .draft-rename label { display: grid; gap: 4px; }
 /* Issue #108 polish slice 126: the draft-rename form's label
    (.draft-rename label — "Draft name" in LocalDrafts.tsx, wrapping the
@@ -356,16 +356,16 @@
    confirmed zero matching :hover rules for the label in all three.
    The resting rules above and in style.css (.local-drafts form) make
    the label a visible surface (text line, 4px gap, field). It now
-   takes #eaf3f7, the collection surface's own hover tint (the rename
+   takes #e8eefb, the collection surface's own hover tint (the rename
    field inside it, slice 64, and the neighbouring labels, slices
    96/124/125), so no new colour is introduced and the label and the
    field inside it read as one surface in the collection context; the
    same light rule reaches the author sidebar in light chrome,
    following the slice-96 favorites-filter precedent for this same
    component. The author dark-chrome variant (style.css) takes the
-   author dark hover tint #334c62. Background only, so resting
+   author dark hover tint #36486a. Background only, so resting
    geometry is identical and there is no animation. */
-.draft-rename label:hover { background: #eaf3f7; }
+.draft-rename label:hover { background: #e8eefb; }
 @media (max-width: 760px) {
   .collection-banner { padding: 20px; gap: 16px; }
   .collection-banner > svg { display: none; }
@@ -378,13 +378,13 @@
 .app-shell .data-sources-heading { align-items: flex-start; margin-bottom: 20px; flex-wrap: wrap; }
 .app-shell .data-sources-heading h1, .app-shell .prep-heading h1 { margin: 0 0 8px; font-size: 24px; font-weight: 500; }
 .app-shell .data-sources-heading .eyebrow, .app-shell .prep-heading .eyebrow { display: none; }
-.app-shell .data-sources-heading p, .app-shell .prep-heading p { font-size: 12px; margin: 0; color: #526c7a; }
-.app-shell .data-sources-heading > button { min-height: 32px; padding: 6px 12px; border: 1px solid #157f88; background: #157f88; color: #fff; border-radius: 4px; font-size: 12px; }
+.app-shell .data-sources-heading p, .app-shell .prep-heading p { font-size: 12px; margin: 0; color: #5b6b8c; }
+.app-shell .data-sources-heading > button { min-height: 32px; padding: 6px 12px; border: 1px solid #3b82f6; background: #3b82f6; color: #fff; border-radius: 4px; font-size: 12px; }
 /* Issue #108 polish slice 92: the data-sources heading's "Prepare data"
    button (DataSources.tsx — the plain <button> in .data-sources-heading
    inside section.data-sources in .app-shell > main) had zero hover
    feedback. It is a primary button (the resting rule above paints it
-   #157f88 with white text), but every button:hover rule in the cascade
+   #3b82f6 with white text), but every button:hover rule in the cascade
    is scoped elsewhere — author, data-page/data-dialog, admin,
    collection, the product-header account panel, the workspace banner,
    the empty-page primary, the connector-submit in this same gallery —
@@ -392,37 +392,37 @@
    (slice 90), details fields (slice 91) and submit (slice 66) do step.
    A CSSOM probe with all five real stylesheets (1,344 rules) in the
    real ancestor context confirmed zero matching :hover rules and a
-   #157f88 rest. It now takes the app-wide primary hover step
-   (#157f88 -> #126e76, slices 51/57/59/66), so no new colour is
+   #3b82f6 rest. It now takes the app-wide primary hover step
+   (#3b82f6 -> #2f66d8, slices 51/57/59/66), so no new colour is
    introduced. Background only, so resting geometry is identical and
    there is no animation. The gallery is a fixed-light app-shell
    surface, so no dark variant is added. */
-.app-shell .data-sources-heading > button:hover:not(:disabled) { background: #126e76; }
-.app-shell .connector-demo-notice { margin: 0 0 16px; padding: 8px 12px; font-size: 12px; background: #eaf4f4; border-color: #157f88; }
-.app-shell .connector-layout { padding: 16px; background: #fff; border: 1px solid #d1e0e5; border-radius: 6px; gap: 24px; }
+.app-shell .data-sources-heading > button:hover:not(:disabled) { background: #2f66d8; }
+.app-shell .connector-demo-notice { margin: 0 0 16px; padding: 8px 12px; font-size: 12px; background: #eef3fd; border-color: #3b82f6; }
+.app-shell .connector-layout { padding: 16px; background: #fff; border: 1px solid #ccd8e6; border-radius: 6px; gap: 24px; }
 .app-shell .connector-search { font-size: 12px; max-width: 360px; }
 .app-shell .connector-search input { min-height: 32px; padding: 6px 8px; font-size: 12px; }
 .app-shell .connector-grid { gap: 12px; }
 .app-shell .connector-card { min-height: 148px; padding: 16px; gap: 4px; }
-.app-shell .connector-card.selected { border-color: #157f88; box-shadow: inset 0 0 0 1px #157f88; background: #eaf4f4; }
+.app-shell .connector-card.selected { border-color: #3b82f6; box-shadow: inset 0 0 0 1px #3b82f6; background: #eef3fd; }
 /* Issue #108 final audit: the selected connector card (DataSources.tsx)
    had zero hover feedback in the app shell — .connector-card:hover
    (style.css, #f8fbff) matches it, but loses the cascade to the
    selected rule above (specificity 0-3-0 over 0-2-0), so hovering the
    selected card changed nothing while unselected cards tint. The
-   selected card now deepens to #dceff0, the shell-control hover tint
+   selected card now deepens to #d9e6fa, the shell-control hover tint
    (product navigation, workspace banner — the slice-62 choice for a
-   control resting on #eaf4f4), staying distinct at rest and still
+   control resting on #eef3fd), staying distinct at rest and still
    reading interactive. Background only, geometry identical, no
    animation, so no reduced-motion variant is needed. */
-.app-shell .connector-card.selected:hover { background: #dceff0; }
+.app-shell .connector-card.selected:hover { background: #d9e6fa; }
 .app-shell .connector-name { font-size: 13px; }
 .app-shell .connector-description { font-size: 12px; }
 .app-shell .connector-details { padding: 0 0 0 24px; font-size: 12px; }
 .app-shell .connector-details h2 { margin: 4px 0 12px; font-size: 16px; font-weight: 600; }
 .app-shell .connector-details form { gap: 12px; margin: 16px 0; }
 .app-shell .connector-details input, .app-shell .connector-details select { min-height: 32px; padding: 6px 8px; }
-.app-shell .connector-submit { background: #157f88; padding: 8px 12px; color: #fff; }
+.app-shell .connector-submit { background: #3b82f6; padding: 8px 12px; color: #fff; }
 .app-shell .connector-submit:disabled { background: #dbe3e9; }
 /* Issue #108 polish slice 66: the connector setup submit button
    (.connector-submit in ConnectorDetails / DirectUpload — "Upload to
@@ -431,17 +431,17 @@
    nothing; in its live context inside the create-dataset dialog
    (.data-dialog, CreateDatasetDialog's config stage) the generic
    data-dialog button rules reach it instead: their hover paints the
-   light #eaf3f7 tint, and their resting color #176482 (specificity
+   light #e8eefb tint, and their resting color #176482 (specificity
    (0,1,1)) beats the button's own white from style.css ((0,1,0)), so
-   the label rests dark teal on the teal #157f88 background. The
+   the label rests dark teal on the teal #3b82f6 background. The
    app-shell resting rule above now also carries the white label
    ((0,2,0) beats the generic resting color), and the submit takes the
-   app-wide primary hover step (#157f88 -> #126e76, slices 51/57/59).
+   app-wide primary hover step (#3b82f6 -> #2f66d8, slices 51/57/59).
    The .connector-details + button segments lift the hover rule to
    (0,5,1), tying the generic dialog hover so this later stylesheet
    wins. Background only on hover, so resting geometry is identical;
    disabled submits keep their flat state. */
-.app-shell .connector-details button.connector-submit:hover:not(:disabled) { background: #126e76; }
+.app-shell .connector-details button.connector-submit:hover:not(:disabled) { background: #2f66d8; }
 .app-shell .prep-heading { margin-bottom: 16px; }
 .app-shell .prep-document-bar { gap: 8px 16px; padding: 12px; border-radius: 6px 6px 0 0; background: #fff; }
 .app-shell .prep-document-bar input { padding: 6px 8px; }
@@ -450,7 +450,7 @@
 .app-shell .prep-sidebar h2 { font-size: 13px; }
 @media (max-width: 1100px) {
   .app-shell .connector-layout { grid-template-columns: minmax(0, 1fr); }
-  .app-shell .connector-details { border-left: 0; border-top: 1px solid #d1e0e5; padding: 16px 0 0; }
+  .app-shell .connector-details { border-left: 0; border-top: 1px solid #ccd8e6; padding: 16px 0 0; }
 }
 @media (max-width: 760px) {
   .app-shell .connector-layout { padding: 12px; gap: 16px; }
@@ -462,26 +462,26 @@
 .app-shell[data-page=author] main .workspace-banner { margin: 0 -16px; padding: 6px 16px; }
 .product-header .analysis-title { flex: 0 1 600px; min-width: 0; margin: 0; }
 .author-workspace[data-chrome] .product-header .analysis-title input { width: 100%; min-width: 0; height: 28px; padding: 4px 8px; border: 1px solid transparent; border-radius: 3px; background: transparent; color: #fff; font-size: 12px; line-height: 18px; text-overflow: ellipsis; }
-.author-workspace[data-chrome] .product-header .analysis-title input:hover { border-color: #526c7a; }
-.author-workspace[data-chrome] .product-header .navigation-toggle { width: 32px; height: 32px; padding: 0; border: 1px solid #526c7a; background: transparent; color: #fff; font-size: 18px; }
+.author-workspace[data-chrome] .product-header .analysis-title input:hover { border-color: #5b6b8c; }
+.author-workspace[data-chrome] .product-header .navigation-toggle { width: 32px; height: 32px; padding: 0; border: 1px solid #5b6b8c; background: transparent; color: #fff; font-size: 18px; }
 .author-workspace[data-chrome] .product-header :focus-visible { outline: 2px solid #e5a046; outline-offset: 2px; }
 .author-workspace .product-navigation { font: 13px/1.5 Arial, "Helvetica Neue", Helvetica, sans-serif; }
-.app-shell .create-analysis-dialog { color: #19384a; border-color: #c9d8de; }
-.app-shell .create-analysis-dialog button, .app-shell .create-analysis-dialog select { color: #126e76; border-color: #9dbfc4; }
-.app-shell .create-analysis-actions .dataset-picker-select { background: #157f88; color: #fff; }
+.app-shell .create-analysis-dialog { color: #1b2740; border-color: #c3cfe0; }
+.app-shell .create-analysis-dialog button, .app-shell .create-analysis-dialog select { color: #2f66d8; border-color: #9dbfc4; }
+.app-shell .create-analysis-actions .dataset-picker-select { background: #3b82f6; color: #fff; }
 .app-shell .create-analysis-actions .dataset-picker-select:disabled { background: #e0e1e4; color: #767b80; }
-.app-shell .dataset-picker-table th { background: #eaf4f4; color: #365764; }
-.app-shell .dataset-picker-table td { color: #19384a; }
-.app-shell .dataset-picker-table tr[data-selected] { background: #edf7f7; }
-.app-shell .dataset-picker-table input { accent-color: #157f88; }
+.app-shell .dataset-picker-table th { background: #eef3fd; color: #2b3a55; }
+.app-shell .dataset-picker-table td { color: #1b2740; }
+.app-shell .dataset-picker-table tr[data-selected] { background: #eef3fd; }
+.app-shell .dataset-picker-table input { accent-color: #3b82f6; }
 @media (max-width: 760px) {
   .app-shell[data-page=author] .product-header .breadcrumbs { display: none; }
   .product-header .analysis-title { flex: 1; }
 }
 
-.author-workspace[data-chrome] .navigation-scrim { background: #14253655; border: 0; padding: 0; }
+.author-workspace[data-chrome] .navigation-scrim { background: #0e1a3355; border: 0; padding: 0; }
 
 /* A reader's narrow-screen Ask O remains in flow; it never covers a dashboard. */
 @media (max-width: 760px) {
-  .published-dashboard .q-side-panel { position: static; width: 100%; max-height: 60dvh; margin-block: 12px; border: 1px solid var(--chrome-border, #c9d8de); box-shadow: none; }
+  .published-dashboard .q-side-panel { position: static; width: 100%; max-height: 60dvh; margin-block: 12px; border: 1px solid var(--chrome-border, #c3cfe0); box-shadow: none; }
 }

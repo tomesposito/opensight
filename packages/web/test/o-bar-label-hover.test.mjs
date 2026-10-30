@@ -11,17 +11,17 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // full-width row of the panel's question bar, directly above the search
 // input. Every label :hover rule in the cascade is scoped elsewhere —
 // the panel's own input (slice 58) and buttons hover via
-// var(--chrome-menu-hover, #edf7f7), and the mode-notice label inside
+// var(--chrome-menu-hover, #eef3fd), and the mode-notice label inside
 // the same panel hovers — so the label rested transparent and hovering
 // its row changed nothing, while the field below it tinted. A CSSOM
 // probe with all five real stylesheets (1,406 rules) in the real
 // ancestor context (.q-side-panel > .q-panel-content > section.o-entry
 // > form.o-bar) confirmed zero matching :hover rules for the label and
 // a transparent rest. The label now takes the panel's own hover
-// expression, var(--chrome-menu-hover, #edf7f7) — the exact background
+// expression, var(--chrome-menu-hover, #eef3fd) — the exact background
 // of the panel button hover and the slice-58 input hover — so no new
 // colour is introduced, label and field read as one surface, and dark
-// chrome resolves the var to #293f55 exactly like the panel buttons.
+// chrome resolves the var to #1e3358 exactly like the panel buttons.
 // Background only, so resting geometry is identical and there is no
 // animation. Scoped to .q-side-panel: in the author-menu variant the
 // same label is visually hidden (clipped), and the embed context is
@@ -32,12 +32,12 @@ const labelRule = styleCss.match(/^\.q-side-panel \.o-bar label:hover\s*\{([^}]*
 
 test('the Ask O panel question label hover rule exists and uses the panel hover expression', () => {
   assert.ok(labelRule, 'expected the .q-side-panel .o-bar label:hover rule');
-  assert.match(labelRule[1], /background:\s*var\(--chrome-menu-hover, #edf7f7\)/);
+  assert.match(labelRule[1], /background:\s*var\(--chrome-menu-hover, #eef3fd\)/);
 });
 
 test('the hover tint matches the panel button and slice-58 input hovers, so no new colour is introduced', () => {
-  assert.ok(styleCss.match(/\.q-side-panel button:hover:not\(:disabled\)\s*\{[^}]*background:\s*var\(--chrome-menu-hover, #edf7f7\)/), 'the panel button hover must remain var(--chrome-menu-hover, #edf7f7)');
-  assert.ok(styleCss.match(/\.q-side-panel \.o-bar input:hover:not\(:disabled\)\s*\{[^}]*background:\s*var\(--chrome-menu-hover, #edf7f7\)/), 'the slice-58 panel input hover must remain var(--chrome-menu-hover, #edf7f7)');
+  assert.ok(styleCss.match(/\.q-side-panel button:hover:not\(:disabled\)\s*\{[^}]*background:\s*var\(--chrome-menu-hover, #eef3fd\)/), 'the panel button hover must remain var(--chrome-menu-hover, #eef3fd)');
+  assert.ok(styleCss.match(/\.q-side-panel \.o-bar input:hover:not\(:disabled\)\s*\{[^}]*background:\s*var\(--chrome-menu-hover, #eef3fd\)/), 'the slice-58 panel input hover must remain var(--chrome-menu-hover, #eef3fd)');
 });
 
 test('the label hover rule is paint-only: resting geometry and text colour cannot shift', () => {
@@ -61,7 +61,7 @@ defineHoverCases('o-bar-label hover', {
       target: '#panelLabel',
       rule: '.q-side-panel .o-bar label:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      hovered: { backgroundColor: 'rgb(238, 243, 253)' },
       paintOnly: true,
       unchanged: ['color'],
       excluded: ['#menuLabel', '#plainPanelLabel'],
@@ -70,7 +70,7 @@ defineHoverCases('o-bar-label hover', {
       target: '#darkLabel',
       rule: '.q-side-panel .o-bar label:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(41, 63, 85)' },
+      hovered: { backgroundColor: 'rgb(30, 51, 88)' },
       paintOnly: true,
       unchanged: ['color'],
     },
@@ -78,7 +78,7 @@ defineHoverCases('o-bar-label hover', {
       target: '#o-question',
       rule: '.q-side-panel .o-bar input:hover:not(:disabled)',
       resting: { backgroundColor: 'rgb(255, 255, 255)' },
-      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      hovered: { backgroundColor: 'rgb(238, 243, 253)' },
       paintOnly: true,
       unchanged: ['color'],
     },

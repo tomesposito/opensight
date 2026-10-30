@@ -17,7 +17,7 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // prep-input-config labels), so the label rested transparent and
 // hovering its text or gap changed nothing, while only the select
 // inside it tinted via the slice-31 select hover. This was the
-// backup lead left by slice 107. The label now takes #edf6fc, the
+// backup lead left by slice 107. The label now takes #e8eefb, the
 // data-prep surface's established hover tint (the slice-31 select
 // hover, the slice-39 button and input/textarea hovers, and the
 // slice-103/104/105/106/107 prep label hovers), so no new colour
@@ -33,12 +33,12 @@ const rule = styleCss.match(/^\.prep-staging > label:hover\s*\{([^}]*)\}/m);
 
 test('the prep-staging label hover rule exists and uses the established hover tint', () => {
   assert.ok(rule, 'expected the .prep-staging > label :hover rule');
-  assert.match(rule[1], /background:\s*#edf6fc/);
+  assert.match(rule[1], /background:\s*#e8eefb/);
 });
 
 test('the hover tint matches the data-prep select and prep-columns hovers, so no new colour is introduced', () => {
-  assert.ok(styleCss.match(/\.data-prep select:hover:not\(:disabled\)\s*\{[^}]*background:\s*#edf6fc/), 'the data-prep select hover must remain #edf6fc');
-  assert.ok(styleCss.match(/\.prep-columns label:hover\s*\{[^}]*background:\s*#edf6fc/), 'the prep-columns label hover must remain #edf6fc');
+  assert.ok(styleCss.match(/\.data-prep select:hover:not\(:disabled\)\s*\{[^}]*background:\s*#e8eefb/), 'the data-prep select hover must remain #e8eefb');
+  assert.ok(styleCss.match(/\.prep-columns label:hover\s*\{[^}]*background:\s*#e8eefb/), 'the prep-columns label hover must remain #e8eefb');
 });
 
 test('the prep-staging label hover rule is paint-only: resting geometry and label presentation cannot shift', () => {
@@ -66,7 +66,7 @@ defineHoverCases('prep-staging-label hover', {
       target: '#stagingLabel',
       rule: '.prep-staging > label:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(237, 246, 252)' },
+      hovered: { backgroundColor: 'rgb(232, 238, 251)' },
       paintOnly: true,
       unchanged: ['color'],
       excluded: ['#pickerLabel', '#stepLabel', '#docLabel'],

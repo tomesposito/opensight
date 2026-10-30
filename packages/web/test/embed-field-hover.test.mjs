@@ -10,7 +10,7 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // author's name input and its Dataset/Visual type/Group by/Value/
 // Aggregation selects, and the preview's Branding/Palette selects all
 // rest at #fff, but hovering changed nothing, while the buttons beside
-// them tint. The fields now take #edf2fa on hover — the embed
+// them tint. The fields now take #eef3fd on hover — the embed
 // surface's own tint (--embed-tint on .embed-frame, the state-symbol
 // background). Background only, so resting geometry is identical.
 // Static (no animation), so no reduced-motion variant is needed.
@@ -21,7 +21,7 @@ const hoverRule = css.match(/\.embed-question input:hover:not\(:disabled\),\.emb
 
 test('the embed field hover rule exists for all four embed field contexts', () => {
   assert.ok(hoverRule, 'expected the grouped embed field hover rule');
-  assert.match(hoverRule[1], /background:\s*#edf2fa/);
+  assert.match(hoverRule[1], /background:\s*#eef3fd/);
 });
 
 test('the hover rule is paint-only: resting geometry cannot shift', () => {
@@ -43,8 +43,8 @@ test('the resting field rules still reserve the geometry the hover keeps', () =>
 });
 
 test('the hover step coexists with the embed button hover rule and theme vars', () => {
-  assert.ok(css.match(/\.embed-frame\s*\{[^}]*--embed-tint:\s*#edf2fa/), 'the embed tint var must still be present');
-  assert.ok(css.match(/\.embed-state button:hover:not\(:disabled\),\.embed-question button:hover:not\(:disabled\),\.embed-author button:hover:not\(:disabled\)\s*\{[^}]*background:\s*#d4dfe7/), 'the slice-53 embed button hover rule must still be present');
+  assert.ok(css.match(/\.embed-frame\s*\{[^}]*--embed-tint:\s*#eef3fd/), 'the embed tint var must still be present');
+  assert.ok(css.match(/\.embed-state button:hover:not\(:disabled\),\.embed-question button:hover:not\(:disabled\),\.embed-author button:hover:not\(:disabled\)\s*\{[^}]*background:\s*#d7e0ee/), 'the slice-53 embed button hover rule must still be present');
 });
 
 defineHoverCases('embed-field hover', {
@@ -61,7 +61,7 @@ defineHoverCases('embed-field hover', {
       target: '#q',
       rule: '.embed-question input:hover:not(:disabled), .embed-author input:hover:not(:disabled), .embed-author select:hover:not(:disabled), .embed-preview-controls select:hover:not(:disabled)',
       resting: { backgroundColor: 'rgb(255, 255, 255)' },
-      hovered: { backgroundColor: 'rgb(237, 242, 250)' },
+      hovered: { backgroundColor: 'rgb(238, 243, 253)' },
       paintOnly: true,
       excluded: ['#locked'],
     },
@@ -69,14 +69,14 @@ defineHoverCases('embed-field hover', {
       target: '#ds',
       rule: '.embed-question input:hover:not(:disabled), .embed-author input:hover:not(:disabled), .embed-author select:hover:not(:disabled), .embed-preview-controls select:hover:not(:disabled)',
       resting: { backgroundColor: 'rgb(255, 255, 255)' },
-      hovered: { backgroundColor: 'rgb(237, 242, 250)' },
+      hovered: { backgroundColor: 'rgb(238, 243, 253)' },
       paintOnly: true,
     },
     {
       target: '#brand',
       rule: '.embed-question input:hover:not(:disabled), .embed-author input:hover:not(:disabled), .embed-author select:hover:not(:disabled), .embed-preview-controls select:hover:not(:disabled)',
       resting: { backgroundColor: 'rgb(255, 255, 255)' },
-      hovered: { backgroundColor: 'rgb(237, 242, 250)' },
+      hovered: { backgroundColor: 'rgb(238, 243, 253)' },
       paintOnly: true,
     },
   ],

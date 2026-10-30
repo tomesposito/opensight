@@ -9,7 +9,7 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // (260x28), a config-form text input and a select white -> white on hover,
 // while the dialog's plain buttons tinted (slices 16/30) and its primary
 // button darkened. Slices 21/27 gave the .data-page select and search input
-// the data surface's menu-item tint (#eaf3f7) but never the .data-dialog
+// the data surface's menu-item tint (#e8eefb) but never the .data-dialog
 // fields. They now take the same tint. Native radio/checkbox/file inputs
 // keep their OS rendering (the slice-44 exclusion pattern). Background
 // only, so resting geometry is identical; disabled fields keep their flat
@@ -20,7 +20,7 @@ const fieldRule = css.match(/\.data-dialog input:hover:not\(:disabled\):not\(\[t
 
 test('the data-dialog field hover rule exists and uses the menu tint', () => {
   assert.ok(fieldRule, 'expected the grouped .data-dialog input/select hover rule');
-  assert.match(fieldRule[1], /background:\s*#eaf3f7/);
+  assert.match(fieldRule[1], /background:\s*#e8eefb/);
 });
 
 test('the field hover rule is paint-only: resting geometry cannot shift', () => {
@@ -37,9 +37,9 @@ test('the resting dialog-field rule still reserves the geometry the hover keeps'
 });
 
 test('the dialog field hover rule coexists with the page field rules', () => {
-  assert.ok(css.match(/\.data-page select:hover:not\(:disabled\)\s*\{[^}]*background:\s*#eaf3f7/), 'the data-page select hover rule (slice 21) must still be present');
-  assert.ok(css.match(/\.data-page input\[type=search\]:hover:not\(:disabled\)\s*\{[^}]*background:\s*#eaf3f7/), 'the data-page search-input hover rule (slice 27) must still be present');
-  assert.ok(css.match(/\.data-dialog button:hover:not\(:disabled\):not\(\.data-primary\):not\(\[aria-selected=true\]\)\s*\{[^}]*background:\s*#eaf3f7/), 'the data-dialog button hover rule (slice 30) must still be present');
+  assert.ok(css.match(/\.data-page select:hover:not\(:disabled\)\s*\{[^}]*background:\s*#e8eefb/), 'the data-page select hover rule (slice 21) must still be present');
+  assert.ok(css.match(/\.data-page input\[type=search\]:hover:not\(:disabled\)\s*\{[^}]*background:\s*#e8eefb/), 'the data-page search-input hover rule (slice 27) must still be present');
+  assert.ok(css.match(/\.data-dialog button:hover:not\(:disabled\):not\(\.data-primary\):not\(\[aria-selected=true\]\)\s*\{[^}]*background:\s*#e8eefb/), 'the data-dialog button hover rule (slice 30) must still be present');
 });
 
 defineHoverCases('data-dialog-field hover', {
@@ -54,7 +54,7 @@ defineHoverCases('data-dialog-field hover', {
       target: '#search',
       rule: '.data-dialog input:hover:not(:disabled):not([type="radio"]):not([type="checkbox"]):not([type="file"]), .data-dialog select:hover:not(:disabled)',
       resting: { backgroundColor: 'rgb(255, 255, 255)' },
-      hovered: { backgroundColor: 'rgb(234, 243, 247)' },
+      hovered: { backgroundColor: 'rgb(232, 238, 251)' },
       paintOnly: true,
       excluded: ['#tile-radio'],
     },
@@ -62,14 +62,14 @@ defineHoverCases('data-dialog-field hover', {
       target: '#name',
       rule: '.data-dialog input:hover:not(:disabled):not([type="radio"]):not([type="checkbox"]):not([type="file"]), .data-dialog select:hover:not(:disabled)',
       resting: { backgroundColor: 'rgb(255, 255, 255)' },
-      hovered: { backgroundColor: 'rgb(234, 243, 247)' },
+      hovered: { backgroundColor: 'rgb(232, 238, 251)' },
       paintOnly: true,
     },
     {
       target: '#region',
       rule: '.data-dialog input:hover:not(:disabled):not([type="radio"]):not([type="checkbox"]):not([type="file"]), .data-dialog select:hover:not(:disabled)',
       resting: { backgroundColor: 'rgb(255, 255, 255)' },
-      hovered: { backgroundColor: 'rgb(234, 243, 247)' },
+      hovered: { backgroundColor: 'rgb(232, 238, 251)' },
       paintOnly: true,
     },
   ],

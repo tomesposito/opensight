@@ -11,11 +11,11 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // Shortcuts help) and the author workspace with every dock panel
 // expanded (161 controls) — could never reach it; both expanded-audit
 // zero-hover hits were probe artifacts on parked-mouse re-probe. A
-// static audit found this primary button (#157f88 background and
+// static audit found this primary button (#3b82f6 background and
 // border, white text) had no hover rule on app routes, while primary
-// buttons everywhere else darken #157f88 -> #126e76 on hover; on the
+// buttons everywhere else darken #3b82f6 -> #2f66d8 on hover; on the
 // author route the generic .author-workspace button:hover would even
-// paint its light #edf7f7 tint under the button's white text. It now
+// paint its light #eef3fd tint under the button's white text. It now
 // takes the primary hover step, with the .account-menu segment keeping
 // the rule above the author generic hover rules. Background only, so
 // resting geometry is identical. Static (no animation), so no
@@ -27,7 +27,7 @@ const hoverRule = css.match(/\.product-header \.account-menu \.account-panel but
 
 test('the account-panel button hover rule exists and uses the primary hover step', () => {
   assert.ok(hoverRule, 'expected the .product-header .account-menu .account-panel button:hover rule');
-  assert.match(hoverRule[1], /background:\s*#126e76/);
+  assert.match(hoverRule[1], /background:\s*#2f66d8/);
 });
 
 test('the hover rule is paint-only: resting geometry cannot shift', () => {
@@ -40,8 +40,8 @@ test('the resting account-panel button rules still reserve the geometry the hove
   assert.ok(resting, 'expected the .product-header .account-panel button resting rule');
   assert.match(resting[1], /padding:\s*6px 12px/);
   assert.match(resting[1], /min-height:\s*32px/);
-  assert.match(resting[1], /border:\s*1px solid #157f88/);
-  assert.match(resting[1], /background:\s*#157f88/);
+  assert.match(resting[1], /border:\s*1px solid #3b82f6/);
+  assert.match(resting[1], /background:\s*#3b82f6/);
   assert.match(resting[1], /color:\s*#fff/);
 });
 
@@ -67,8 +67,8 @@ defineHoverCases('account-panel-button hover', {
     {
       target: '#signout',
       rule: '.product-header .account-menu .account-panel button:hover:not(:disabled)',
-      resting: { backgroundColor: 'rgb(21, 127, 136)' },
-      hovered: { backgroundColor: 'rgb(18, 110, 118)' },
+      resting: { backgroundColor: 'rgb(59, 130, 246)' },
+      hovered: { backgroundColor: 'rgb(47, 102, 216)' },
       paintOnly: true,
     },
   ],

@@ -8,14 +8,14 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // when the author is not embedded in the app shell and no identity
 // renderer is supplied). The other two brand-link instances already
 // hover — .product-header .brand:hover and .first-run-header
-// .brand:hover (slice 71), both #365764 — but each is scoped to its
+// .brand:hover (slice 71), both #2b3a55 — but each is scoped to its
 // own header, every other a:hover rule is scoped elsewhere, and the
 // author generic hovers are button/input/select/textarea/
 // summary-typed, so this link matched no :hover rule. A CSSOM probe
 // with all five real stylesheets (1,341 rules) in the real ancestor
 // context confirmed zero matching :hover rules and a transparent
 // rest. It now takes the brand links' established dark-header hover
-// tint (#365764). The header variables are shared by both editor
+// tint (#2b3a55). The header variables are shared by both editor
 // chromes, so no dark variant is added. Background only, so resting
 // colour and geometry are unchanged.
 const css = styles['style.css'];
@@ -25,12 +25,12 @@ const rule = css.match(/^\.author-topbar \.brand:hover\s*\{([^}]*)\}/m);
 
 test('the author-topbar brand hover rule exists and uses the brand hover tint', () => {
   assert.ok(rule, 'expected the .author-topbar .brand:hover rule');
-  assert.match(rule[1], /background:\s*#365764/);
+  assert.match(rule[1], /background:\s*#2b3a55/);
 });
 
 test('the hover tint matches the other brand-link hovers, so no new colour is introduced', () => {
-  assert.ok(appChromeCss.match(/\.product-header\s+\.brand:hover\s*\{[^}]*background:\s*#365764/), 'the product-header brand hover must remain #365764');
-  assert.ok(css.match(/\.first-run-header\s+\.brand:hover\s*\{[^}]*background:\s*#365764/), 'the first-run brand hover must remain #365764');
+  assert.ok(appChromeCss.match(/\.product-header\s+\.brand:hover\s*\{[^}]*background:\s*#2b3a55/), 'the product-header brand hover must remain #2b3a55');
+  assert.ok(css.match(/\.first-run-header\s+\.brand:hover\s*\{[^}]*background:\s*#2b3a55/), 'the first-run brand hover must remain #2b3a55');
 });
 
 test('the brand hover rule is paint-only: resting geometry and link presentation cannot shift', () => {
@@ -54,7 +54,7 @@ defineHoverCases('author-topbar-brand hover', {
       target: '#target',
       rule: '.author-topbar .brand:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)', color: 'rgb(255, 255, 255)' },
-      hovered: { backgroundColor: 'rgb(54, 87, 100)' },
+      hovered: { backgroundColor: 'rgb(43, 58, 85)' },
       paintOnly: true,
       unchanged: ['color'],
       excluded: ['#outside'],

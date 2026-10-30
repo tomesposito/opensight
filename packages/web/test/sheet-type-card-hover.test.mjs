@@ -9,7 +9,7 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // padded selection card with a pointer cursor that changed nothing —
 // while the same dialog's buttons, selects, inputs and textareas all
 // tinted (slices 36/37/38/44). The enabled card now takes the author
-// hover tint (#edf7f7), with the dark-chrome variant (#334c62) from
+// hover tint (#eef3fd), with the dark-chrome variant (#36486a) from
 // slices 36/37/38/44. The disabled Pixel-Perfect card is excluded: it
 // keeps its subtle resting background and not-allowed cursor.
 // Background only, so resting geometry is identical; static (no
@@ -21,9 +21,9 @@ const darkRule = css.match(/\.author-workspace\[data-chrome=dark\]\s+\.sheet-typ
 
 test('the sheet-type-card hover rules exist in light and dark chrome with the author tints', () => {
   assert.ok(hoverRule, 'expected the .sheet-type-card hover rule');
-  assert.match(hoverRule[1], /background:\s*#edf7f7/);
+  assert.match(hoverRule[1], /background:\s*#eef3fd/);
   assert.ok(darkRule, 'expected the dark-chrome .sheet-type-card hover rule');
-  assert.match(darkRule[1], /background:\s*#334c62/);
+  assert.match(darkRule[1], /background:\s*#36486a/);
 });
 
 test('the hover rules are paint-only: resting geometry cannot shift', () => {
@@ -37,7 +37,7 @@ test('the resting card rule still reserves the geometry the hover keeps', () => 
   const resting = css.match(/\.sheet-type-card\s*\{([^}]*)\}/);
   assert.ok(resting, 'expected the .sheet-type-card resting rule');
   assert.match(resting[1], /padding:\s*10px 12px/);
-  assert.match(resting[1], /border:\s*1px solid var\(--chrome-border, #c9d8de\)/);
+  assert.match(resting[1], /border:\s*1px solid var\(--chrome-border, #c3cfe0\)/);
   assert.match(resting[1], /cursor:\s*pointer/);
 });
 
@@ -56,7 +56,7 @@ defineHoverCases('sheet-type-card hover', {
       target: '#enabled',
       rule: '.sheet-type-card:hover:not(.sheet-type-card-disabled)',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      hovered: { backgroundColor: 'rgb(238, 243, 253)' },
       paintOnly: true,
       excluded: [{ target: '#disabled', resting: { backgroundColor: 'rgb(242, 246, 248)' } }],
     },

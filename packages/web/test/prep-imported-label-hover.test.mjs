@@ -22,7 +22,7 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // bundle imports, so route audits never hover it (the conditional
 // blind spot of slices 84/88). This was a fresh zero-hover audit
 // on the data-prep surface, follow-on to slices 103–108. The
-// label now takes #edf6fc, the data-prep surface's established
+// label now takes #e8eefb, the data-prep surface's established
 // hover tint (the slice-31 select hover, the slice-39 button and
 // input/textarea hovers, and the slice-103–108 prep label
 // hovers), so no new colour is introduced. The child-combinator
@@ -38,12 +38,12 @@ const rule = styleCss.match(/^\.data-prep > label:hover\s*\{([^}]*)\}/m);
 
 test('the prep imported-dataset label hover rule exists and uses the established hover tint', () => {
   assert.ok(rule, 'expected the .data-prep > label :hover rule');
-  assert.match(rule[1], /background:\s*#edf6fc/);
+  assert.match(rule[1], /background:\s*#e8eefb/);
 });
 
 test('the hover tint matches the data-prep select and prep-columns hovers, so no new colour is introduced', () => {
-  assert.ok(styleCss.match(/\.data-prep select:hover:not\(:disabled\)\s*\{[^}]*background:\s*#edf6fc/), 'the data-prep select hover must remain #edf6fc');
-  assert.ok(styleCss.match(/\.prep-columns label:hover\s*\{[^}]*background:\s*#edf6fc/), 'the prep-columns label hover must remain #edf6fc');
+  assert.ok(styleCss.match(/\.data-prep select:hover:not\(:disabled\)\s*\{[^}]*background:\s*#e8eefb/), 'the data-prep select hover must remain #e8eefb');
+  assert.ok(styleCss.match(/\.prep-columns label:hover\s*\{[^}]*background:\s*#e8eefb/), 'the prep-columns label hover must remain #e8eefb');
 });
 
 test('the prep imported-dataset label hover rule is paint-only: resting geometry and label presentation cannot shift', () => {
@@ -53,7 +53,7 @@ test('the prep imported-dataset label hover rule is paint-only: resting geometry
 
 test('the resting data-prep label rules are preserved and the fixed-light prep surface gains no dark variant', () => {
   assert.ok(styleCss.match(/\.data-prep label\s*\{[^}]*display:\s*flex[^}]*flex-direction:\s*column/), 'the data-prep label resting rule must remain');
-  assert.ok(styleCss.match(/\.prep-document-bar > label:hover\s*\{[^}]*background:\s*#edf6fc/), 'the slice-105 document-bar label hover must remain');
+  assert.ok(styleCss.match(/\.prep-document-bar > label:hover\s*\{[^}]*background:\s*#e8eefb/), 'the slice-105 document-bar label hover must remain');
   assert.ok(!/data-chrome=dark[^\n]*data-prep > label/.test(styleCss), 'the fixed-light data-prep surface must not gain a dark variant for this rule');
 });
 
@@ -71,7 +71,7 @@ defineHoverCases('prep-imported-label hover', {
       target: '#importedLabel',
       rule: '.data-prep > label:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(237, 246, 252)' },
+      hovered: { backgroundColor: 'rgb(232, 238, 251)' },
       paintOnly: true,
       unchanged: ['color'],
       excluded: ['#docLabel', '#stagingLabel', '#stepLabel', '#outsideLabel'],

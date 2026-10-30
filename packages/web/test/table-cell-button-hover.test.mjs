@@ -6,13 +6,13 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // button (.table-scroll td button in VisualCard's DataTable — the first
 // column's value rendered as a button when the visual has an
 // interaction, so clicking it applies the row's filter action). In the
-// author workspace the generic author button hover (#edf7f7) reaches it,
+// author workspace the generic author button hover (#eef3fd) reaches it,
 // but a visual card on the consumer Dashboard renders in <main> inside
 // .app-shell, outside .author-workspace and .data-prep, and a CSSOM
 // audit (probe-slice72) showed the button matches zero :hover rules
 // there: resting at color inherit / background transparent (the
 // .visual-card resting rule), hovering changed nothing while the card's
-// own footer summaries tint on hover. It now takes #eaf3f7 — that
+// own footer summaries tint on hover. It now takes #e8eefb — that
 // card-footer summary tint. The new selector ties the visual-card
 // resting rule at (0,2,2) and wins by standing after it; it stays below
 // the author (0,3,1) and data-prep (0,3,1) button hovers, so those
@@ -26,11 +26,11 @@ const rule = styleCss.match(/\.table-scroll\s+td\s+button:hover\s*\{([^}]*)\}/);
 
 test('the table cell button has a hover state with the card tint', () => {
   assert.ok(rule, 'expected the .table-scroll td button hover rule');
-  assert.match(rule[1], /background:\s*#eaf3f7/);
+  assert.match(rule[1], /background:\s*#e8eefb/);
 });
 
 test('the cell hover tint matches the card-footer summary hover tint', () => {
-  assert.ok(styleCss.match(/\.card-footer\s+summary:hover\s*\{[^}]*background:\s*#eaf3f7/), 'the card-footer summary hover must remain #eaf3f7');
+  assert.ok(styleCss.match(/\.card-footer\s+summary:hover\s*\{[^}]*background:\s*#e8eefb/), 'the card-footer summary hover must remain #e8eefb');
 });
 
 test('the cell hover rule is paint-only: resting geometry cannot shift', () => {
@@ -44,9 +44,9 @@ test('the resting table cell button rules are preserved', () => {
 });
 
 test('the neighbouring scoped button hovers are untouched', () => {
-  assert.ok(styleCss.match(/\.author-workspace button:hover:not\(:disabled\)[^{]*\{[^}]*background:\s*#edf7f7/), 'the author button hover must remain');
-  assert.ok(styleCss.match(/\.data-prep button:hover:not\(:disabled\)\s*\{[^}]*background:\s*#edf6fc/), 'the data-prep button hover must remain');
-  assert.ok(styleCss.match(/\.action-status button:hover:not\(:disabled\)\s*\{[^}]*background:\s*#edf7f7/), 'slice 61 action-status hover must remain');
+  assert.ok(styleCss.match(/\.author-workspace button:hover:not\(:disabled\)[^{]*\{[^}]*background:\s*#eef3fd/), 'the author button hover must remain');
+  assert.ok(styleCss.match(/\.data-prep button:hover:not\(:disabled\)\s*\{[^}]*background:\s*#e8eefb/), 'the data-prep button hover must remain');
+  assert.ok(styleCss.match(/\.action-status button:hover:not\(:disabled\)\s*\{[^}]*background:\s*#eef3fd/), 'slice 61 action-status hover must remain');
 });
 
 defineHoverCases('table-cell-button hover', {
@@ -57,7 +57,7 @@ defineHoverCases('table-cell-button hover', {
       target: '#cell',
       rule: '.table-scroll td button:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)', textDecorationLine: 'underline' },
-      hovered: { backgroundColor: 'rgb(234, 243, 247)' },
+      hovered: { backgroundColor: 'rgb(232, 238, 251)' },
       paintOnly: true,
       unchanged: ['color', 'textDecorationLine'],
       excluded: ['#outside'],

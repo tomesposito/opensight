@@ -8,9 +8,9 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // errors, no slow scroll frames) found these two selects were the last
 // interactive controls with zero hover state: hovering them changed nothing.
 // - The Create Analysis dialog's select takes the dialog's established button
-//   hover tint (#edf7fc, same rule family as the dialog's buttons).
+//   hover tint (#e8eefb, same rule family as the dialog's buttons).
 // - The drafts collection's `.collection-pagination` select takes the
-//   app-wide menu-item hover tint (#eaf3f7, slices 16/21).
+//   app-wide menu-item hover tint (#e8eefb, slices 16/21).
 // Both are background-only (paint, no geometry shift), disabled selects keep
 // their flat state, and there is no animation so no reduced-motion variant is
 // needed.
@@ -22,12 +22,12 @@ const collectionRule = chromeCss.match(/\.collection-pagination\s+select:hover:n
 
 test('the Create Analysis dialog pagination select has a hover state with the dialog tint', () => {
   assert.ok(dialogRule, 'expected .create-analysis-dialog select:hover:not(:disabled)');
-  assert.match(dialogRule[1], /background:\s*#edf7fc/);
+  assert.match(dialogRule[1], /background:\s*#e8eefb/);
 });
 
 test('the drafts collection pagination select has a hover state with the menu tint', () => {
   assert.ok(collectionRule, 'expected .collection-pagination select:hover:not(:disabled)');
-  assert.match(collectionRule[1], /background:\s*#eaf3f7/);
+  assert.match(collectionRule[1], /background:\s*#e8eefb/);
 });
 
 test('both hover rules are paint-only: resting geometry cannot shift', () => {
@@ -51,14 +51,14 @@ defineHoverCases('pagination-select hover', {
       target: '#dlg',
       rule: '.create-analysis-dialog select:hover:not(:disabled)',
       resting: { backgroundColor: 'rgb(255, 255, 255)' },
-      hovered: { backgroundColor: 'rgb(237, 247, 252)' },
+      hovered: { backgroundColor: 'rgb(232, 238, 251)' },
       paintOnly: true,
     },
     {
       target: '#col',
       rule: '.collection-pagination select:hover:not(:disabled)',
       resting: { backgroundColor: 'rgb(255, 255, 255)' },
-      hovered: { backgroundColor: 'rgb(234, 243, 247)' },
+      hovered: { backgroundColor: 'rgb(232, 238, 251)' },
       paintOnly: true,
       excluded: [{ target: '#dis', resting: { backgroundColor: 'rgb(255, 255, 255)' } }],
     },

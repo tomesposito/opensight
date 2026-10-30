@@ -20,10 +20,10 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // and a UA-default rest for all of them, while the gallery's
 // fields (slice 91) and its submit (slice 66) do step. They now
 // take the app surfaces' established secondary-button hover tint
-// (#eaf3f7 — the data-dialog button hover these mirror in the
+// (#e8eefb — the data-dialog button hover these mirror in the
 // dialog context, and the details fields' hover, slice 91), so
 // no new colour is introduced. The primary submit is excluded so
-// it keeps its #126e76 step. Background only, so resting
+// it keeps its #2f66d8 step. Background only, so resting
 // geometry is identical and there is no animation. The gallery
 // is a fixed-light app-shell surface, so no dark variant is
 // added.
@@ -34,12 +34,12 @@ const rule = css.match(/^\.connector-details button:hover:not\(:disabled\):not\(
 
 test('the connector-details plain button hover rule exists and uses the established secondary tint', () => {
   assert.ok(rule, 'expected the .connector-details button :hover rule');
-  assert.match(rule[1], /background:\s*#eaf3f7/);
+  assert.match(rule[1], /background:\s*#e8eefb/);
 });
 
 test('the hover tint matches the data-dialog button hover and the slice-91 field hover, so no new colour is introduced', () => {
-  assert.ok(dataCss.match(/\.data-dialog button:hover:not\(:disabled\):not\(\.data-primary\):not\(\[aria-selected=true\]\)\s*\{[^}]*background:\s*#eaf3f7/), 'the data-dialog button hover must remain #eaf3f7');
-  assert.ok(css.match(/\.connector-details input:hover:not\(:disabled\):not\(\[type=radio\]\):not\(\[type=checkbox\]\):not\(\[type=file\]\), \.connector-details select:hover:not\(:disabled\)\s*\{[^}]*background:\s*#eaf3f7/), 'the connector-details field hover must remain #eaf3f7');
+  assert.ok(dataCss.match(/\.data-dialog button:hover:not\(:disabled\):not\(\.data-primary\):not\(\[aria-selected=true\]\)\s*\{[^}]*background:\s*#e8eefb/), 'the data-dialog button hover must remain #e8eefb');
+  assert.ok(css.match(/\.connector-details input:hover:not\(:disabled\):not\(\[type=radio\]\):not\(\[type=checkbox\]\):not\(\[type=file\]\), \.connector-details select:hover:not\(:disabled\)\s*\{[^}]*background:\s*#e8eefb/), 'the connector-details field hover must remain #e8eefb');
 });
 
 test('the button hover rule is paint-only: resting geometry and button presentation cannot shift', () => {
@@ -69,7 +69,7 @@ defineHoverCases('connector-details-button hover', {
       target: '#pgBtn',
       rule: '.connector-details button:hover:not(:disabled):not(.connector-submit)',
       resting: { backgroundColor: 'rgb(239, 239, 239)' },
-      hovered: { backgroundColor: 'rgb(234, 243, 247)' },
+      hovered: { backgroundColor: 'rgb(232, 238, 251)' },
       paintOnly: true,
       unchanged: ['color'],
       excluded: ['#submitBtn', '#disabledBtn', '#outsideBtn'],
@@ -78,7 +78,7 @@ defineHoverCases('connector-details-button hover', {
       target: '#uploadBtn',
       rule: '.connector-details button:hover:not(:disabled):not(.connector-submit)',
       resting: { backgroundColor: 'rgb(239, 239, 239)' },
-      hovered: { backgroundColor: 'rgb(234, 243, 247)' },
+      hovered: { backgroundColor: 'rgb(232, 238, 251)' },
       paintOnly: true,
       unchanged: ['color'],
     },
@@ -86,7 +86,7 @@ defineHoverCases('connector-details-button hover', {
       target: '#statusBtn',
       rule: '.connector-details button:hover:not(:disabled):not(.connector-submit)',
       resting: { backgroundColor: 'rgb(239, 239, 239)' },
-      hovered: { backgroundColor: 'rgb(234, 243, 247)' },
+      hovered: { backgroundColor: 'rgb(232, 238, 251)' },
       paintOnly: true,
       unchanged: ['color'],
     },

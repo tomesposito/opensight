@@ -17,11 +17,11 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // matching :hover rules for both the outer and the nested summaries.
 // ImportedPanels renders only for imported bundles, so route audits
 // never hover it (the slices 50/62/64/67/68 blind spot). It now
-// takes the author surface's established hover tint (#edf7f7), so no
+// takes the author surface's established hover tint (#eef3fd), so no
 // new colour is introduced; the descendant selector covers the
 // nested summaries too, mirroring .bundle-import summary:hover.
 // Background only, so resting geometry is identical and there is no
-// animation; the dark-chrome variant takes #334c62, the dark
+// animation; the dark-chrome variant takes #36486a, the dark
 // summary hover of the neighbouring panels.
 const css = styles['style.css'];
 
@@ -30,19 +30,19 @@ const darkRule = css.match(/\.author-workspace\[data-chrome=dark\] \.imported-pa
 
 test('the imported-panel summary hover rule exists and uses the author surface tint', () => {
   assert.ok(rule, 'expected the .imported-panel summary:hover rule');
-  assert.match(rule[1], /background:\s*#edf7f7/);
+  assert.match(rule[1], /background:\s*#eef3fd/);
 });
 
 test('the hover tint is the established author hover tint, distinct from the transparent rest', () => {
-  assert.ok(css.match(/\.author-workspace button:hover:not\(:disabled\), \.author-layout button:hover:not\(:disabled\)\s*\{[^}]*background:\s*#edf7f7/), 'the author generic button hover must remain #edf7f7');
-  assert.ok(css.match(/\.author-workspace \.builder-panel > summary:hover[^{]*\{[^}]*background:\s*#edf7f7/), 'the builder-panel summary hover must remain #edf7f7');
-  assert.notEqual('#edf7f7', 'transparent', 'the hover tint must differ from the resting state');
+  assert.ok(css.match(/\.author-workspace button:hover:not\(:disabled\), \.author-layout button:hover:not\(:disabled\)\s*\{[^}]*background:\s*#eef3fd/), 'the author generic button hover must remain #eef3fd');
+  assert.ok(css.match(/\.author-workspace \.builder-panel > summary:hover[^{]*\{[^}]*background:\s*#eef3fd/), 'the builder-panel summary hover must remain #eef3fd');
+  assert.notEqual('#eef3fd', 'transparent', 'the hover tint must differ from the resting state');
 });
 
 test('the dark-chrome variant uses the established dark summary hover tint', () => {
   assert.ok(darkRule, 'expected the dark-chrome imported-panel summary hover rule');
-  assert.match(darkRule[1], /background:\s*#334c62/);
-  assert.ok(css.match(/\.author-workspace\[data-chrome=dark\] \.builder-panel > summary:hover[^{]*\{[^}]*background:\s*#334c62/), 'the dark builder-panel summary hover must remain #334c62');
+  assert.match(darkRule[1], /background:\s*#36486a/);
+  assert.ok(css.match(/\.author-workspace\[data-chrome=dark\] \.builder-panel > summary:hover[^{]*\{[^}]*background:\s*#36486a/), 'the dark builder-panel summary hover must remain #36486a');
 });
 
 test('the summary hover rules are paint-only: resting geometry cannot shift', () => {
@@ -58,8 +58,8 @@ test('the resting imported-panel rules are preserved', () => {
 
 test('the neighbouring author summary hover rules are untouched', () => {
   assert.ok(css.match(/\.author-workspace \.bundle-import summary:hover\s*\{/), 'the bundle-import summary hover must remain in the shared summary hover group');
-  assert.ok(css.match(/\.calculation-dialog \.o-build-for-me summary:hover\s*\{[^}]*background:\s*#edf7f7/), 'the slice-68 build-for-me summary hover must remain #edf7f7');
-  assert.ok(css.match(/\.first-run summary:hover\s*\{[^}]*background:\s*#eaf3f4/), 'the first-run summary hover must remain #eaf3f4');
+  assert.ok(css.match(/\.calculation-dialog \.o-build-for-me summary:hover\s*\{[^}]*background:\s*#eef3fd/), 'the slice-68 build-for-me summary hover must remain #eef3fd');
+  assert.ok(css.match(/\.first-run summary:hover\s*\{[^}]*background:\s*#eef3fd/), 'the first-run summary hover must remain #eef3fd');
 });
 
 defineHoverCases('imported-panel-summary hover', {
@@ -74,7 +74,7 @@ defineHoverCases('imported-panel-summary hover', {
       target: '#outer',
       rule: '.imported-panel summary:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      hovered: { backgroundColor: 'rgb(238, 243, 253)' },
       paintOnly: true,
       excluded: ['#panel', '#outside'],
     },
@@ -82,7 +82,7 @@ defineHoverCases('imported-panel-summary hover', {
       target: '#inner',
       rule: '.imported-panel summary:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      hovered: { backgroundColor: 'rgb(238, 243, 253)' },
       paintOnly: true,
     },
   ],

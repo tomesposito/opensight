@@ -132,7 +132,7 @@ test('horizontal faceted bar reference lines use each panel\'s value xAxis', () 
   input.definition.BarChartVisual.ChartConfiguration.Orientation = 'HORIZONTAL';
   input.definition.BarChartVisual.OpenSightReferenceLines = [
     { value: 75, label: 'Minimum', color: '#c0392b' },
-    { value: 150, label: 'Goal', color: '#157f88' },
+    { value: 150, label: 'Goal', color: '#3b82f6' },
   ];
   const { option } = compileVisual(input);
   assert.equal(option.xAxis.length, 2);
@@ -142,7 +142,7 @@ test('horizontal faceted bar reference lines use each panel\'s value xAxis', () 
     assert.equal(option.xAxis[series.xAxisIndex].type, 'value');
     assert.deepEqual(series.markLine.data, [
       { name: 'Minimum', xAxis: 75, label: { color: '#c0392b' }, lineStyle: { color: '#c0392b' } },
-      { name: 'Goal', xAxis: 150, label: { color: '#157f88' }, lineStyle: { color: '#157f88' } },
+      { name: 'Goal', xAxis: 150, label: { color: '#3b82f6' }, lineStyle: { color: '#3b82f6' } },
     ]);
   }
 });

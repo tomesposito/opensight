@@ -11,7 +11,7 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // { display: grid; gap: 7px; }) makes each label a visible surface
 // (text line, gap, field). In the Create Dataset dialog the SAME
 // ConnectorDetails labels already hover via .data-dialog label:hover
-// (#eaf3f7), but on the standalone gallery surface (app-shell > main
+// (#e8eefb), but on the standalone gallery surface (app-shell > main
 // > section.data-sources > .connector-layout > aside.connector-details)
 // every label :hover rule in the cascade is scoped elsewhere (data
 // dialog, data-prep, author, admin, collection, embed, sign-in
@@ -25,7 +25,7 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // the DirectUpload label, the data-dialog rule alone for the dialog
 // label, and the slice-91 field hover for the inner fields (the file
 // input itself is excluded from the field hover by design). The
-// labels now take #eaf3f7 — the tint these same labels already take
+// labels now take #e8eefb — the tint these same labels already take
 // inside the data-dialog, and the gallery's own field (slice 91),
 // plain-button (slice 93) and toggle-label (slice 94) hovers — so no
 // new colour is introduced and label and field read as one surface.
@@ -43,12 +43,12 @@ const labelRule = styleCss.match(/^\.connector-details label:hover\s*\{([^}]*)\}
 
 test('the connector-details label hover rule exists and uses the established gallery tint', () => {
   assert.ok(labelRule, 'expected the .connector-details label:hover rule');
-  assert.match(labelRule[1], /background:\s*#eaf3f7/);
+  assert.match(labelRule[1], /background:\s*#e8eefb/);
 });
 
 test('the hover tint matches the data-dialog label hover these same labels already take in the dialog, and the slice-91 field hover, so no new colour is introduced', () => {
-  assert.ok(dataCss.match(/\.data-dialog label:hover\s*\{[^}]*background:\s*#eaf3f7/), 'the data-dialog label hover must remain #eaf3f7');
-  assert.ok(styleCss.match(/\.connector-details input:hover:not\(:disabled\):not\(\[type=radio\]\):not\(\[type=checkbox\]\):not\(\[type=file\]\), \.connector-details select:hover:not\(:disabled\)\s*\{[^}]*background:\s*#eaf3f7/), 'the slice-91 connector-details field hover must remain #eaf3f7');
+  assert.ok(dataCss.match(/\.data-dialog label:hover\s*\{[^}]*background:\s*#e8eefb/), 'the data-dialog label hover must remain #e8eefb');
+  assert.ok(styleCss.match(/\.connector-details input:hover:not\(:disabled\):not\(\[type=radio\]\):not\(\[type=checkbox\]\):not\(\[type=file\]\), \.connector-details select:hover:not\(:disabled\)\s*\{[^}]*background:\s*#e8eefb/), 'the slice-91 connector-details field hover must remain #e8eefb');
 });
 
 test('the label hover rule is paint-only: resting geometry cannot shift', () => {
@@ -74,7 +74,7 @@ defineHoverCases('connector-details-label hover', {
       target: '#fieldLabel',
       rule: '.connector-details label:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(234, 243, 247)' },
+      hovered: { backgroundColor: 'rgb(232, 238, 251)' },
       paintOnly: true,
       unchanged: ['color'],
       excluded: ['#outsideLabel'],
@@ -83,7 +83,7 @@ defineHoverCases('connector-details-label hover', {
       target: '#fileLabel',
       rule: '.connector-details label:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(234, 243, 247)' },
+      hovered: { backgroundColor: 'rgb(232, 238, 251)' },
       paintOnly: true,
       unchanged: ['color'],
     },
@@ -91,7 +91,7 @@ defineHoverCases('connector-details-label hover', {
       target: '#expiresLabel',
       rule: '.connector-details label:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(234, 243, 247)' },
+      hovered: { backgroundColor: 'rgb(232, 238, 251)' },
       paintOnly: true,
       unchanged: ['color'],
     },
@@ -99,7 +99,7 @@ defineHoverCases('connector-details-label hover', {
       target: '#dFieldLabel',
       rule: '.data-dialog label:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(234, 243, 247)' },
+      hovered: { backgroundColor: 'rgb(232, 238, 251)' },
       paintOnly: true,
       unchanged: ['color'],
     },
@@ -107,7 +107,7 @@ defineHoverCases('connector-details-label hover', {
       target: '#fieldLabel > select:nth-child(1)',
       rule: '.connector-details input:hover:not(:disabled):not([type="radio"]):not([type="checkbox"]):not([type="file"]), .connector-details select:hover:not(:disabled)',
       resting: { backgroundColor: 'rgb(255, 255, 255)' },
-      hovered: { backgroundColor: 'rgb(234, 243, 247)' },
+      hovered: { backgroundColor: 'rgb(232, 238, 251)' },
       paintOnly: true,
       unchanged: ['color'],
     },

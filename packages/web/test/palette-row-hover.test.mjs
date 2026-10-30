@@ -13,7 +13,7 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // link and never shows its hit area. The rows now take
 // var(--palette-selected) as their hover background, keeping the
 // existing underline; the selected row already rests at that tint, so
-// its hover is unchanged, and dark chrome resolves the var to #293f55.
+// its hover is unchanged, and dark chrome resolves the var to #1e3358.
 // Background only, so resting geometry is identical. Static (no
 // animation), so no reduced-motion variant is needed.
 const css = styles['style.css'];
@@ -54,7 +54,7 @@ test('the hover tint coexists with the selected-row and slice-47 rules', () => {
   assert.ok(css.match(/\.global-search li\[aria-selected=true\]\s*\{[^}]*background:\s*var\(--palette-selected\)/), 'the global search selected-row rule must still be present');
   assert.ok(css.match(/\.command-palette header button:hover/), 'the slice-47 palette header hover rule must still be present');
   assert.ok(css.match(/\.global-search \.search-types button:hover/), 'the slice-47 search chip hover rule must still be present');
-  assert.ok(css.match(/\.command-palette\[data-chrome=dark\]\s*\{[^}]*--palette-selected:\s*#293f55/), 'the dark-chrome palette-selected value must still be present');
+  assert.ok(css.match(/\.command-palette\[data-chrome=dark\]\s*\{[^}]*--palette-selected:\s*#1e3358/), 'the dark-chrome palette-selected value must still be present');
 });
 
 defineHoverCases('palette-row hover', {
@@ -66,7 +66,7 @@ defineHoverCases('palette-row hover', {
       target: '#row',
       rule: '.command-palette li:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(226, 242, 250)' },
+      hovered: { backgroundColor: 'rgb(217, 230, 250)' },
       paintOnly: true,
     },
   ],

@@ -24,10 +24,10 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // :hover rules for the plain labels and a transparent rest, while
 // the radio/checkbox labels matched the :has hovers and the inner
 // input/select matched the author field hovers. The labels now take
-// #edf7f7, the author surface's established hover tint (the panel's
+// #eef3fd, the author surface's established hover tint (the panel's
 // own :has label hovers, the author field, button and summary
 // hovers, and the slices 112-120 label hovers), plus the author
-// dark-chrome variant #334c62, so no new colour is introduced — and
+// dark-chrome variant #36486a, so no new colour is introduced — and
 // because the label and the field inside it take the same tint,
 // hovering either reads as one surface, not two steps. The :has
 // rules carry higher specificity with the same tints, so the
@@ -41,16 +41,16 @@ const labelDarkRule = styleCss.match(/^\.author-workspace\[data-chrome=dark\] \.
 
 test('the action-panel label hover rules exist and use the established hover tints', () => {
   assert.ok(labelRule, 'expected the action-panel-body label :hover rule');
-  assert.match(labelRule[1], /background:\s*#edf7f7/);
+  assert.match(labelRule[1], /background:\s*#eef3fd/);
   assert.ok(labelDarkRule, 'expected the author dark-chrome action-panel-body label :hover variant');
-  assert.match(labelDarkRule[1], /background:\s*#334c62/);
+  assert.match(labelDarkRule[1], /background:\s*#36486a/);
 });
 
 test('the hover tints match the panel :has label hovers and the author field hovers, so no new colour is introduced', () => {
-  assert.ok(styleCss.match(/\.action-radio-group label:has\(> input\[type=radio\]\):hover\s*\{[^}]*background:\s*#edf7f7/), 'the panel radio label hover must remain #edf7f7');
-  assert.ok(styleCss.match(/\.action-checkbox-list label:has\(> input\[type=checkbox\]\):hover\s*\{[^}]*background:\s*#edf7f7/), 'the panel checkbox label hover must remain #edf7f7');
-  assert.ok(styleCss.match(/\.author-layout input:hover:not\(:disabled\):not\(\[type=radio\]\)[^{]*\{[^}]*background:\s*#edf7f7/), 'the author field hover must remain #edf7f7');
-  assert.ok(styleCss.match(/\.author-workspace\[data-chrome=dark\] \.action-radio-group label:has\(> input\[type=radio\]\):hover\s*\{[^}]*background:\s*#334c62/), 'the dark panel radio label hover must remain #334c62');
+  assert.ok(styleCss.match(/\.action-radio-group label:has\(> input\[type=radio\]\):hover\s*\{[^}]*background:\s*#eef3fd/), 'the panel radio label hover must remain #eef3fd');
+  assert.ok(styleCss.match(/\.action-checkbox-list label:has\(> input\[type=checkbox\]\):hover\s*\{[^}]*background:\s*#eef3fd/), 'the panel checkbox label hover must remain #eef3fd');
+  assert.ok(styleCss.match(/\.author-layout input:hover:not\(:disabled\):not\(\[type=radio\]\)[^{]*\{[^}]*background:\s*#eef3fd/), 'the author field hover must remain #eef3fd');
+  assert.ok(styleCss.match(/\.author-workspace\[data-chrome=dark\] \.action-radio-group label:has\(> input\[type=radio\]\):hover\s*\{[^}]*background:\s*#36486a/), 'the dark panel radio label hover must remain #36486a');
 });
 
 test('the action-panel label hover rules are paint-only: resting geometry and presentation cannot shift', () => {
@@ -79,7 +79,7 @@ defineHoverCases('action-panel-label hover', {
       target: '#lLabel',
       rule: '.action-panel-body label:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      hovered: { backgroundColor: 'rgb(238, 243, 253)' },
       paintOnly: true,
       unchanged: ['color'],
       excluded: ['#outsideLabel'],
@@ -88,7 +88,7 @@ defineHoverCases('action-panel-label hover', {
       target: '#dLabel',
       rule: '.author-workspace[data-chrome="dark"] .action-panel-body label:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(51, 76, 98)' },
+      hovered: { backgroundColor: 'rgb(54, 72, 106)' },
       paintOnly: true,
       unchanged: ['color'],
     },

@@ -9,7 +9,7 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // .admin-settings, so no :hover rule in any stylesheet reached its button
 // — its only rule (.action-status, .drill-navigation) sets layout — and
 // hovering changed nothing while buttons on every other surface tint.
-// The button now takes #edf7f7 — style.css's generic button hover tint
+// The button now takes #eef3fd — style.css's generic button hover tint
 // (.author-workspace button:hover, the slice-60 .job-management button).
 // The Author instance of .action-status already takes the same tint from
 // the author rule, which also sets its border-color and whose dark-chrome
@@ -23,7 +23,7 @@ const buttonHover = css.match(/\.action-status button:hover:not\(:disabled\)\s*\
 
 test('the action-status button hover rule exists with the app tint', () => {
   assert.ok(buttonHover, 'expected the action-status button hover rule');
-  assert.match(buttonHover[1], /background:\s*#edf7f7/);
+  assert.match(buttonHover[1], /background:\s*#eef3fd/);
 });
 
 test('the hover rule is paint-only: resting geometry cannot shift', () => {
@@ -39,8 +39,8 @@ test('the resting action-status layout rule is preserved', () => {
 });
 
 test('the author and job-management hover rules are untouched', () => {
-  assert.ok(css.match(/\.author-workspace button:hover:not\(:disabled\)[^{]*\{[^}]*background:\s*#edf7f7/), 'the author button hover rule must still be present');
-  assert.ok(css.match(/\.job-management button:hover:not\(:disabled\)\s*\{[^}]*background:\s*#edf7f7/), 'the job-management button hover rule must still be present');
+  assert.ok(css.match(/\.author-workspace button:hover:not\(:disabled\)[^{]*\{[^}]*background:\s*#eef3fd/), 'the author button hover rule must still be present');
+  assert.ok(css.match(/\.job-management button:hover:not\(:disabled\)\s*\{[^}]*background:\s*#eef3fd/), 'the job-management button hover rule must still be present');
 });
 
 defineHoverCases('action-status hover', {
@@ -53,7 +53,7 @@ defineHoverCases('action-status hover', {
       target: '#reset',
       rule: '.action-status button:hover:not(:disabled)',
       resting: { backgroundColor: 'rgb(239, 239, 239)' },
-      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      hovered: { backgroundColor: 'rgb(238, 243, 253)' },
       paintOnly: true,
       excluded: ['#off'],
     },

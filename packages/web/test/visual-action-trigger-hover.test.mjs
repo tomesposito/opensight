@@ -10,7 +10,7 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // Author.tsx (AuthorCard inside .author-workspace); the embed surfaces
 // render VisualCard without an actionMenu, so no trigger exists there.
 // In the author contexts the trigger already hovers via the generic
-// author button hovers (light #edf7f7, dark #334c62), but on the
+// author button hovers (light #eef3fd, dark #36486a), but on the
 // dashboard it matched no :hover rule at all: every button :hover rule
 // in the cascade is scoped elsewhere (author, data-page, data-dialog,
 // embed, sign-in, Ask O panel scopes), so it rested at the UA default
@@ -47,8 +47,8 @@ test('the trigger hover rule is paint-only: resting geometry cannot shift', () =
 test('the resting visual-action-menu rules are preserved and the author generic hovers are untouched', () => {
   assert.ok(styleCss.match(/\.visual-action-menu\s*\{[^}]*position:\s*relative/), 'the resting menu rule must remain');
   assert.ok(styleCss.match(/\.visual-action-menu \[role=menuitem\]\s*\{[^}]*background:\s*transparent/), 'the resting menuitem rule must remain');
-  assert.ok(styleCss.match(/\.author-workspace button:hover:not\(:disabled\), \.author-layout button:hover:not\(:disabled\)\s*\{[^}]*background:\s*#edf7f7/), 'the author light generic button hover must remain');
-  assert.ok(styleCss.match(/\.author-workspace\[data-chrome=dark\] button:hover:not\(:disabled\)\s*\{[^}]*background:\s*#334c62/), 'the author dark generic button hover must remain');
+  assert.ok(styleCss.match(/\.author-workspace button:hover:not\(:disabled\), \.author-layout button:hover:not\(:disabled\)\s*\{[^}]*background:\s*#eef3fd/), 'the author light generic button hover must remain');
+  assert.ok(styleCss.match(/\.author-workspace\[data-chrome=dark\] button:hover:not\(:disabled\)\s*\{[^}]*background:\s*#36486a/), 'the author dark generic button hover must remain');
 });
 
 const menu = id => `<div class="visual-action-menu"><button type="button" id="${id}" aria-haspopup="menu" aria-expanded="false" aria-label="Run action">⋯</button><div role="menu"><button type="button" role="menuitem" id="${id}Item">Act</button></div></div>`;
@@ -81,7 +81,7 @@ defineHoverCases('visual-action-trigger hover', {
       target: '#authorTrigger',
       rule: '.author-workspace button:hover:not(:disabled), .author-layout button:hover:not(:disabled)',
       resting: { backgroundColor: 'rgb(255, 255, 255)' },
-      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      hovered: { backgroundColor: 'rgb(238, 243, 253)' },
       paintOnly: true,
       unchanged: ['color'],
     },
@@ -89,7 +89,7 @@ defineHoverCases('visual-action-trigger hover', {
       target: '#darkTrigger',
       rule: '.author-workspace[data-chrome="dark"] button:hover:not(:disabled)',
       resting: { backgroundColor: 'rgb(32, 46, 64)' },
-      hovered: { backgroundColor: 'rgb(51, 76, 98)' },
+      hovered: { backgroundColor: 'rgb(54, 72, 106)' },
       paintOnly: true,
       unchanged: ['color'],
     },

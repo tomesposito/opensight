@@ -10,8 +10,8 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // hover, :hover and hit-test confirmed) measured rgb(239,239,239) ->
 // rgb(239,239,239) on the palette swatches, the largest real zero-hover class
 // left on the author surface (8 inputs). Color inputs now take the author
-// buttons' hover language (background #edf7f7 + border #157f88); dark chrome
-// takes the dark button hover background (#334c62) via a more specific
+// buttons' hover language (background #eef3fd + border #3b82f6); dark chrome
+// takes the dark button hover background (#36486a) via a more specific
 // variant. Paint-only: the rules change background and border-color only, so
 // resting geometry is identical and there is no animation to need a
 // reduced-motion variant.
@@ -22,13 +22,13 @@ const darkRule = styleCss.match(/\.author-workspace\[data-chrome=dark\]\s+input\
 
 test('author-workspace color inputs have a hover state with the author button language', () => {
   assert.ok(lightRule, 'expected .author-workspace input[type=color]:hover:not(:disabled)');
-  assert.match(lightRule[1], /background:\s*#edf7f7/);
-  assert.match(lightRule[1], /border-color:\s*#157f88/);
+  assert.match(lightRule[1], /background:\s*#eef3fd/);
+  assert.match(lightRule[1], /border-color:\s*#3b82f6/);
 });
 
 test('dark chrome color inputs take the dark button hover background', () => {
   assert.ok(darkRule, 'expected .author-workspace[data-chrome=dark] input[type=color]:hover:not(:disabled)');
-  assert.match(darkRule[1], /background:\s*#334c62/);
+  assert.match(darkRule[1], /background:\s*#36486a/);
 });
 
 test('the color-input hover rules are paint-only: resting geometry cannot shift', () => {
@@ -49,13 +49,13 @@ test('the resting color-input sizing rules are preserved', () => {
 
 defineHoverCases('author-color-input hover', {
   html: `<div class="author-workspace"><div class="color-inputs"><label>Color 1`
-      + `<input type="color" id="c" value="#157f88"></label></div></div>`,
+      + `<input type="color" id="c" value="#3b82f6"></label></div></div>`,
   cases: [
     {
       target: '#c',
       rule: '.author-workspace input[type="color"]:hover:not(:disabled)',
       resting: { backgroundColor: 'rgb(239, 239, 239)', borderTopColor: 'rgb(0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(237, 247, 247)', borderTopColor: 'rgb(21, 127, 136)' },
+      hovered: { backgroundColor: 'rgb(238, 243, 253)', borderTopColor: 'rgb(59, 130, 246)' },
       paintOnly: true,
     },
   ],

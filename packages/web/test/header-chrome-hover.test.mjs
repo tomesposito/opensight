@@ -6,7 +6,7 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // chrome. A fresh interactive-state audit found the two header chrome controls
 // present on every page — the brand logo link (a.brand) and the Account menu
 // summary toggle — had zero hover state; hovering them changed nothing. Both
-// now take the header's established dark-chrome state (#365764, the same tint
+// now take the header's established dark-chrome state (#2b3a55, the same tint
 // the account menu's [open] state already uses). The brand's hover pill keeps
 // the resting geometry identical (padding cancelled by negative margins), and
 // the account-summary hover composes with slice 15's :active pressed shift.
@@ -15,7 +15,7 @@ const css = styles['app-chrome.css'];
 test('brand link has a hover state using the dark-chrome tint', () => {
   const rule = css.match(/\.product-header\s+\.brand:hover\s*\{([^}]*)\}/);
   assert.ok(rule, 'expected .product-header .brand:hover');
-  assert.match(rule[1], /background:\s*#365764/);
+  assert.match(rule[1], /background:\s*#2b3a55/);
 });
 
 test('brand hover pill keeps resting geometry identical', () => {
@@ -31,10 +31,10 @@ test('brand hover pill keeps resting geometry identical', () => {
 test('account menu summary previews its open state on hover', () => {
   const hover = css.match(/\.account-menu\s+summary:hover\s*\{([^}]*)\}/);
   assert.ok(hover, 'expected .account-menu summary:hover');
-  assert.match(hover[1], /background:\s*#365764/);
+  assert.match(hover[1], /background:\s*#2b3a55/);
   const open = css.match(/\.account-menu\[open\]\s+summary\s*\{([^}]*)\}/);
   assert.ok(open, 'expected the .account-menu[open] summary rule to remain');
-  assert.match(open[1], /background:\s*#365764/);
+  assert.match(open[1], /background:\s*#2b3a55/);
 });
 
 defineHoverCases('persistent header controls', {
@@ -46,7 +46,7 @@ defineHoverCases('persistent header controls', {
   ].map(entry => ({
     ...entry,
     resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-    hovered: { backgroundColor: 'rgb(54, 87, 100)' },
+    hovered: { backgroundColor: 'rgb(43, 58, 85)' },
     paintOnly: true,
     unchanged: ['color'],
   })),

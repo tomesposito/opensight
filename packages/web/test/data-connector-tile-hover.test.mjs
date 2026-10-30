@@ -11,7 +11,7 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // surface hover tint. The tiles are labels with a pointer cursor and a
 // resting border, while every field and button around them in the same
 // dialog tinted (slices 16/30/48). An unselected, enabled tile now takes
-// the data surface's tint (#eaf3f7, slices 16/21/27/48). The selected
+// the data surface's tint (#e8eefb, slices 16/21/27/48). The selected
 // tile is excluded: it already rests distinct at #f0f8fb with the teal
 // border. Tiles whose connector is unimplemented carry a disabled radio
 // and are excluded via :has(> input:disabled), so they keep their flat
@@ -23,7 +23,7 @@ const hoverRule = css.match(/\.data-connector-tile:hover:not\(\[data-selected=tr
 
 test('the connector-tile hover rule exists and uses the data surface tint', () => {
   assert.ok(hoverRule, 'expected the .data-connector-tile hover rule');
-  assert.match(hoverRule[1], /background:\s*#eaf3f7/);
+  assert.match(hoverRule[1], /background:\s*#e8eefb/);
 });
 
 test('the hover rule is paint-only: resting geometry cannot shift', () => {
@@ -40,7 +40,7 @@ test('the resting tile rules still reserve the geometry the hover keeps', () => 
   const selected = css.match(/\.data-connector-tile\[data-selected=true\]\s*\{([^}]*)\}/);
   assert.ok(selected, 'expected the selected tile resting rule');
   assert.match(selected[1], /background:\s*#f0f8fb/);
-  assert.match(selected[1], /border-color:\s*#176b88/);
+  assert.match(selected[1], /border-color:\s*#2f66d8/);
 });
 
 test('the tile hover rule coexists with the data-dialog field hover rule', () => {
@@ -59,7 +59,7 @@ defineHoverCases('data-connector-tile hover', {
       target: '#enabled',
       rule: '.data-connector-tile:hover:not([data-selected="true"]):not(:has(> input:disabled))',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(234, 243, 247)' },
+      hovered: { backgroundColor: 'rgb(232, 238, 251)' },
       paintOnly: true,
       excluded: [{ target: '#selected', resting: { backgroundColor: 'rgb(240, 248, 251)' } }, '#disabled'],
     },

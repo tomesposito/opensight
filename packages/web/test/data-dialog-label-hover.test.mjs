@@ -19,27 +19,27 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // form > .data-dialog-body > label) confirmed zero matching :hover
 // rules for the labels and a transparent rest, while the fields inside
 // them matched the data-dialog field hover. The labels now take
-// #eaf3f7, the data surface's established hover tint (the dialogs' own
+// #e8eefb, the data surface's established hover tint (the dialogs' own
 // field and button hovers, slices 30/48, and the data-page hovers), so
 // no new colour is introduced — and because the label and the field
 // inside it take the same tint, hovering either reads as one surface,
 // not two steps. Background only, so resting geometry is identical and
 // there is no animation; the data dialogs are fixed-light surfaces, so
 // no dark variant. Connector tiles (label.data-connector-tile) already
-// hover #eaf3f7 under their own rules, so they are unchanged in effect.
+// hover #e8eefb under their own rules, so they are unchanged in effect.
 const dataCss = styles['data-section.css'];
 
 const labelRule = dataCss.match(/^\.data-dialog label:hover\s*\{([^}]*)\}/m);
 
 test('the data-dialog label hover rule exists and uses the established hover tint', () => {
   assert.ok(labelRule, 'expected the data-dialog label :hover rule');
-  assert.match(labelRule[1], /background:\s*#eaf3f7/);
+  assert.match(labelRule[1], /background:\s*#e8eefb/);
 });
 
 test('the hover tint matches the data-dialog field and button hovers, so no new colour is introduced', () => {
-  assert.ok(dataCss.match(/\.data-dialog input:hover:not\(:disabled\):not\(\[type=radio\]\)[^{]*\{[^}]*background:\s*#eaf3f7/), 'the data-dialog field hover must remain #eaf3f7');
-  assert.ok(dataCss.match(/\.data-dialog button:hover:not\(:disabled\):not\(\.data-primary\):not\(\[aria-selected=true\]\)\s*\{[^}]*background:\s*#eaf3f7/), 'the data-dialog button hover must remain #eaf3f7');
-  assert.ok(dataCss.match(/\.data-page select:hover:not\(:disabled\)\s*\{[^}]*background:\s*#eaf3f7/), 'the data-page select hover must remain #eaf3f7');
+  assert.ok(dataCss.match(/\.data-dialog input:hover:not\(:disabled\):not\(\[type=radio\]\)[^{]*\{[^}]*background:\s*#e8eefb/), 'the data-dialog field hover must remain #e8eefb');
+  assert.ok(dataCss.match(/\.data-dialog button:hover:not\(:disabled\):not\(\.data-primary\):not\(\[aria-selected=true\]\)\s*\{[^}]*background:\s*#e8eefb/), 'the data-dialog button hover must remain #e8eefb');
+  assert.ok(dataCss.match(/\.data-page select:hover:not\(:disabled\)\s*\{[^}]*background:\s*#e8eefb/), 'the data-page select hover must remain #e8eefb');
 });
 
 test('the data-dialog label hover rule is paint-only: resting geometry and presentation cannot shift', () => {
@@ -66,7 +66,7 @@ defineHoverCases('data-dialog-label hover', {
       target: '#nameLabel',
       rule: '.data-dialog label:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(234, 243, 247)' },
+      hovered: { backgroundColor: 'rgb(232, 238, 251)' },
       paintOnly: true,
       unchanged: ['color'],
       excluded: ['#outsideLabel'],
@@ -75,7 +75,7 @@ defineHoverCases('data-dialog-label hover', {
       target: '#sourceLabel',
       rule: '.data-dialog label:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(234, 243, 247)' },
+      hovered: { backgroundColor: 'rgb(232, 238, 251)' },
       paintOnly: true,
       unchanged: ['color'],
     },
@@ -83,7 +83,7 @@ defineHoverCases('data-dialog-label hover', {
       target: '#panelLabel',
       rule: '.data-dialog label:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(234, 243, 247)' },
+      hovered: { backgroundColor: 'rgb(232, 238, 251)' },
       paintOnly: true,
       unchanged: ['color'],
     },
@@ -91,7 +91,7 @@ defineHoverCases('data-dialog-label hover', {
       target: '#tileLabel',
       rule: '.data-dialog label:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(234, 243, 247)' },
+      hovered: { backgroundColor: 'rgb(232, 238, 251)' },
       paintOnly: true,
       unchanged: ['color'],
     },

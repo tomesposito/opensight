@@ -7,7 +7,7 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // embed.css carried no :hover rules at all: the embed buttons rest at
 // #eef3f8 with cursor:pointer, but hovering changed nothing, while
 // every other surface in the app gives its buttons a hover step. The
-// buttons now take #d4dfe7 on hover — the codebase's existing
+// buttons now take #d7e0ee on hover — the codebase's existing
 // blue-gray hover step (.fixture-notice a:hover in style.css).
 // Background only, so resting geometry is identical. Static (no
 // animation), so no reduced-motion variant is needed. Disabled
@@ -18,7 +18,7 @@ const hoverRule = css.match(/\.embed-state button:hover:not\(:disabled\),\.embed
 
 test('the embed button hover rule exists for all three embed contexts', () => {
   assert.ok(hoverRule, 'expected the grouped embed button hover rule');
-  assert.match(hoverRule[1], /background:\s*#d4dfe7/);
+  assert.match(hoverRule[1], /background:\s*#d7e0ee/);
 });
 
 test('the hover rule is paint-only: resting geometry cannot shift', () => {
@@ -36,7 +36,7 @@ test('the resting button rule still reserves the geometry the hover keeps', () =
 });
 
 test('the hover step coexists with the embed theme vars and resting rules', () => {
-  assert.ok(css.match(/\.embed-frame\s*\{[^}]*--embed-tint:\s*#edf2fa/), 'the embed tint var must still be present');
+  assert.ok(css.match(/\.embed-frame\s*\{[^}]*--embed-tint:\s*#eef3fd/), 'the embed tint var must still be present');
   assert.ok(css.match(/\.embed-question input,\.embed-author input,\.embed-author select\s*\{/), 'the embed field resting rule must still be present');
   assert.ok(css.match(/\.embed-preview-controls select\s*\{/), 'the embed preview select resting rule must still be present');
 });
@@ -50,7 +50,7 @@ defineHoverCases('embed-button hover', {
       target: '#btn',
       rule: '.embed-state button:hover:not(:disabled), .embed-question button:hover:not(:disabled), .embed-author button:hover:not(:disabled)',
       resting: { backgroundColor: 'rgb(238, 243, 248)' },
-      hovered: { backgroundColor: 'rgb(212, 223, 231)' },
+      hovered: { backgroundColor: 'rgb(215, 224, 238)' },
       paintOnly: true,
     },
   ],

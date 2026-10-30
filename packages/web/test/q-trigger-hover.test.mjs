@@ -10,7 +10,7 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // 8/16/17/18/20/21). The author-chrome rendering of the same button keeps its
 // existing header hover tint via the more specific .author-menu > button:hover
 // rule, which wins over this rule in the cascade. The trigger takes the
-// established menu-item hover tint (#eaf3f7), same language as the data-page
+// established menu-item hover tint (#e8eefb), same language as the data-page
 // buttons and tabs (slices 16/19/21); disabled triggers keep their flat state.
 // Background only, so resting geometry is identical. Static (no animation),
 // so no reduced-motion variant is needed.
@@ -20,7 +20,7 @@ const hoverRule = css.match(/\.q-trigger:hover:not\(:disabled\)\s*\{([^}]*)\}/);
 
 test('the Ask O trigger has a hover state using the menu tint', () => {
   assert.ok(hoverRule, 'expected .q-trigger:hover:not(:disabled)');
-  assert.match(hoverRule[1], /background:\s*#eaf3f7/);
+  assert.match(hoverRule[1], /background:\s*#e8eefb/);
 });
 
 test('the hover preview is paint-only: resting geometry cannot shift', () => {
@@ -32,7 +32,7 @@ test('the resting trigger rule still reserves the geometry the hover keeps', () 
   const matches = [...css.matchAll(/([^{}]*\.q-trigger[^{}]*)\{([^}]*)\}/g)]
     .filter(([, selector]) => !selector.includes(':'));
   assert.ok(matches.length, 'expected a non-pseudo .q-trigger rule');
-  const resting = matches.find(([, , body]) => /border:\s*1px\s+solid\s+#c9d8de/.test(body));
+  const resting = matches.find(([, , body]) => /border:\s*1px\s+solid\s+#c3cfe0/.test(body));
   assert.ok(resting, 'expected the base rule with the resting border');
   assert.match(resting[2], /background:\s*#fff/);
 });
@@ -54,7 +54,7 @@ defineHoverCases('q-trigger hover', {
       target: '.q-entry .q-trigger:not([disabled])',
       rule: '.q-trigger:hover:not(:disabled)',
       resting: { backgroundColor: 'rgb(255, 255, 255)' },
-      hovered: { backgroundColor: 'rgb(234, 243, 247)' },
+      hovered: { backgroundColor: 'rgb(232, 238, 251)' },
       paintOnly: true,
       excluded: [{ target: '.q-entry .q-trigger[disabled]', resting: { backgroundColor: 'rgb(255, 255, 255)' } }],
     },

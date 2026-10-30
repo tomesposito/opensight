@@ -7,7 +7,7 @@ const rule = '.author-workspace select:hover:not(:disabled)';
 const expectation = {
   target: '#palette', rule,
   resting: { backgroundColor: 'rgb(255, 255, 255)' },
-  hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+  hovered: { backgroundColor: 'rgb(238, 243, 253)' },
 };
 
 defineHoverCase('full stylesheet hover, disabled exclusion and dark override', {
@@ -18,7 +18,7 @@ defineHoverCase('full stylesheet hover, disabled exclusion and dark override', {
     html: '<div class="author-workspace" data-chrome="dark"><select id="palette"><option>Coastal</option></select><select id="disabled" disabled><option>Disabled</option></select></div>',
     rule: '.author-workspace[data-chrome=dark] select:hover:not(:disabled)',
     resting: { backgroundColor: 'rgb(32, 46, 64)' },
-    hovered: { backgroundColor: 'rgb(51, 76, 98)' },
+    hovered: { backgroundColor: 'rgb(54, 72, 106)' },
   },
 });
 
@@ -27,7 +27,7 @@ before(async () => { page = await chromiumPage(); });
 after(async () => { await page?.close(); });
 
 test('a matching tint cannot hide a non-applicable hover selector', async () => {
-  await loadInteractionFixture(page, '<select id="palette" style="background: #edf7f7"><option>Coastal</option></select>');
+  await loadInteractionFixture(page, '<select id="palette" style="background: #eef3fd"><option>Coastal</option></select>');
   await assert.rejects(checkHoverCase(page, {
     ...expectation, resting: expectation.hovered,
   }), /matches .* while hovered/);
@@ -43,7 +43,7 @@ test('hover propagates to ancestors, clears between targets and survives fixture
   await page.setHovered('#box');
   assert.deepEqual(await page.evaluate(() => ({
     background: getComputedStyle(document.querySelector('#label')).backgroundColor,
-  })), { background: 'rgb(237, 247, 247)' });
+  })), { background: 'rgb(238, 243, 253)' });
   assert.equal((await page.hoverState('#box')).hovered, true);
   assert.equal((await page.hoverState('#label')).hovered, true);
   await page.setHovered('#other');

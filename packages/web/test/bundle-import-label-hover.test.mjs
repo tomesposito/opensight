@@ -15,7 +15,7 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // every other label :hover rule in the cascade is scoped elsewhere
 // (property-section, parameter-editor, prep, data-dialog, sign-in,
 // collection labels). The label now takes the author label tint
-// #edf7f7 (dark #334c62) — the same tints as the property-section and
+// #eef3fd (dark #36486a) — the same tints as the property-section and
 // parameter-editor label hovers — so the row reads as one surface with
 // the field it labels. Background only, so resting geometry is
 // identical and there is no animation.
@@ -26,13 +26,13 @@ const darkRule = styleCss.match(/^\.author-workspace\[data-chrome=dark\] \.bundl
 
 test('the bundle-import label hover rule exists with the author label tint, light and dark', () => {
   assert.ok(lightRule, 'expected the bundle-import label :hover rule');
-  assert.match(lightRule[1], /background:\s*#edf7f7/);
+  assert.match(lightRule[1], /background:\s*#eef3fd/);
   assert.ok(darkRule, 'expected the dark bundle-import label :hover rule');
-  assert.match(darkRule[1], /background:\s*#334c62/);
+  assert.match(darkRule[1], /background:\s*#36486a/);
 });
 
 test('the hover tint matches the neighbouring author label hovers, so no new colour is introduced', () => {
-  assert.ok(styleCss.match(/\.property-section label:hover\s*\{[^}]*background:\s*#edf7f7/), 'the property-section label hover must remain #edf7f7');
+  assert.ok(styleCss.match(/\.property-section label:hover\s*\{[^}]*background:\s*#eef3fd/), 'the property-section label hover must remain #eef3fd');
   assert.ok(styleCss.match(/\.author-workspace \.bundle-import summary:hover/), 'the bundle-import summary hover must remain');
 });
 
@@ -59,7 +59,7 @@ defineHoverCases('bundle-import-label hover', {
       target: '#lightLabel',
       rule: '.author-workspace .bundle-import label:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      hovered: { backgroundColor: 'rgb(238, 243, 253)' },
       paintOnly: true,
       excluded: ['#outsideLabel'],
     },
@@ -67,7 +67,7 @@ defineHoverCases('bundle-import-label hover', {
       target: '#darkLabel',
       rule: '.author-workspace[data-chrome="dark"] .bundle-import label:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(51, 76, 98)' },
+      hovered: { backgroundColor: 'rgb(54, 72, 106)' },
       paintOnly: true,
     },
   ],

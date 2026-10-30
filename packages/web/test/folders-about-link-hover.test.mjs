@@ -9,9 +9,9 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // stays complete since slice 29) and then the top-level offline-demo routes,
 // finding `.folder-empty-state a` (My folders and Shared folders pages) as
 // the last user-facing control with zero hover state: hovering the link
-// changed nothing. It shares its teal resting color (#126e76) with the
+// changed nothing. It shares its teal resting color (#2f66d8) with the
 // slice-25 my-stuff quick links and now takes the same app-wide menu-item
-// hover tint (#eaf3f7, slices 16/21/25/26). Paint-only: the rule changes the
+// hover tint (#e8eefb, slices 16/21/25/26). Paint-only: the rule changes the
 // background, so resting geometry is identical and there is no animation to
 // need a reduced-motion variant.
 const chromeCss = styles['app-chrome.css'];
@@ -20,7 +20,7 @@ const linkRule = chromeCss.match(/\.folder-empty-state\s+a:hover\s*\{([^}]*)\}/)
 
 test('the folders about-link has a hover state with the menu-item tint', () => {
   assert.ok(linkRule, 'expected .folder-empty-state a:hover');
-  assert.match(linkRule[1], /background:\s*#eaf3f7/);
+  assert.match(linkRule[1], /background:\s*#e8eefb/);
 });
 
 test('the about-link hover rule is paint-only: resting geometry cannot shift', () => {
@@ -31,7 +31,7 @@ test('the about-link hover rule is paint-only: resting geometry cannot shift', (
 test('the about-link resting rule keeps the teal text color the hover preserves', () => {
   const base = chromeCss.match(/\.my-stuff-links\s+a,\s*\.folder-empty-state\s+a\s*\{([^}]*)\}/);
   assert.ok(base, 'expected the shared resting color rule');
-  assert.match(base[1], /color:\s*#126e76/);
+  assert.match(base[1], /color:\s*#2f66d8/);
   assert.ok(!/background:/.test(base[1]), 'resting rule must not set a background');
 });
 
@@ -42,7 +42,7 @@ defineHoverCases('folders-about-link hover', {
       target: '#a',
       rule: '.folder-empty-state a:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(234, 243, 247)' },
+      hovered: { backgroundColor: 'rgb(232, 238, 251)' },
       paintOnly: true,
       unchanged: ['color'],
     },

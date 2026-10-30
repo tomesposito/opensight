@@ -9,7 +9,7 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // .author-workspace, .data-page, .collection-card and .admin-settings, so
 // no :hover rule in any stylesheet reached its buttons — its only button
 // rule set white-space/overflow-wrap — and hovering changed nothing while
-// buttons on every other surface tint. The buttons now take #edf7f7 —
+// buttons on every other surface tint. The buttons now take #eef3fd —
 // style.css's generic button hover tint (.author-workspace button:hover,
 // the slice-59 .admin-settings buttons). Background only, so resting
 // geometry is identical. Static (no animation), so no reduced-motion
@@ -21,7 +21,7 @@ const buttonHover = css.match(/\.job-management button:hover:not\(:disabled\)\s*
 
 test('the job-management button hover rule exists with the app tint', () => {
   assert.ok(buttonHover, 'expected the job-management button hover rule');
-  assert.match(buttonHover[1], /background:\s*#edf7f7/);
+  assert.match(buttonHover[1], /background:\s*#eef3fd/);
 });
 
 test('the hover rule is paint-only: resting geometry cannot shift', () => {
@@ -37,8 +37,8 @@ test('the resting job-management button rule still reserves the wrapping the hov
 });
 
 test('the author and admin hover rules are untouched', () => {
-  assert.ok(css.match(/\.author-workspace button:hover:not\(:disabled\)[^{]*\{[^}]*background:\s*#edf7f7/), 'the author button hover rule must still be present');
-  assert.ok(css.match(/\.admin-settings button:hover:not\(:disabled\)\s*\{[^}]*background:\s*#edf7f7/), 'the admin-settings button hover rule must still be present');
+  assert.ok(css.match(/\.author-workspace button:hover:not\(:disabled\)[^{]*\{[^}]*background:\s*#eef3fd/), 'the author button hover rule must still be present');
+  assert.ok(css.match(/\.admin-settings button:hover:not\(:disabled\)\s*\{[^}]*background:\s*#eef3fd/), 'the admin-settings button hover rule must still be present');
 });
 
 defineHoverCases('job-management hover', {
@@ -51,7 +51,7 @@ defineHoverCases('job-management hover', {
       target: '#refresh',
       rule: '.job-management button:hover:not(:disabled)',
       resting: { backgroundColor: 'rgb(239, 239, 239)' },
-      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      hovered: { backgroundColor: 'rgb(238, 243, 253)' },
       paintOnly: true,
       excluded: ['#off'],
     },
@@ -59,14 +59,14 @@ defineHoverCases('job-management hover', {
       target: '#history',
       rule: '.job-management button:hover:not(:disabled)',
       resting: { backgroundColor: 'rgb(239, 239, 239)' },
-      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      hovered: { backgroundColor: 'rgb(238, 243, 253)' },
       paintOnly: true,
     },
     {
       target: '#run',
       rule: '.job-management button:hover:not(:disabled)',
       resting: { backgroundColor: 'rgb(239, 239, 239)' },
-      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      hovered: { backgroundColor: 'rgb(238, 243, 253)' },
       paintOnly: true,
     },
   ],

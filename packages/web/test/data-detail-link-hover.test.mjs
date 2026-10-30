@@ -18,7 +18,7 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // with all five real stylesheets (1,336 rules) in the real ancestor
 // contexts confirmed zero matching :hover rules and rest == hover.
 // The links now take the data surface's established hover tint
-// (#eaf3f7). The scope is tight in practice: the only .data-page
+// (#e8eefb). The scope is tight in practice: the only .data-page
 // roots are DataLanding (renders no <a>), DataPrep's opening branch
 // (buttons only) and DatasetDetail. Background only, so the UA link
 // colour/underline and resting geometry are unchanged; the data
@@ -29,14 +29,14 @@ const rule = css.match(/^\.data-page a:hover\s*\{([^}]*)\}/m);
 
 test('the data-page link hover rule exists and uses the data surface tint', () => {
   assert.ok(rule, 'expected the .data-page a:hover rule');
-  assert.match(rule[1], /background:\s*#eaf3f7/);
+  assert.match(rule[1], /background:\s*#e8eefb/);
 });
 
 test('the hover tint is the established data-surface hover tint, distinct from the transparent rest', () => {
-  assert.ok(css.match(/\.data-page button:hover:not\(:disabled\):not\(\.data-primary\):not\(\[aria-selected=true\]\)\s*\{[^}]*background:\s*#eaf3f7/), 'the data-page button hover must remain #eaf3f7');
-  assert.ok(css.match(/\.data-menu > summary:hover\s*\{[^}]*background:\s*#eaf3f7/), 'the slice-85 data-menu summary hover must remain #eaf3f7');
-  assert.ok(css.match(/\.data-row-menu summary:hover\s*\{[^}]*background:\s*#eaf3f7/), 'the slice-50 row-menu summary hover must remain #eaf3f7');
-  assert.notEqual('#eaf3f7', 'transparent', 'the hover tint must differ from the resting state');
+  assert.ok(css.match(/\.data-page button:hover:not\(:disabled\):not\(\.data-primary\):not\(\[aria-selected=true\]\)\s*\{[^}]*background:\s*#e8eefb/), 'the data-page button hover must remain #e8eefb');
+  assert.ok(css.match(/\.data-menu > summary:hover\s*\{[^}]*background:\s*#e8eefb/), 'the slice-85 data-menu summary hover must remain #e8eefb');
+  assert.ok(css.match(/\.data-row-menu summary:hover\s*\{[^}]*background:\s*#e8eefb/), 'the slice-50 row-menu summary hover must remain #e8eefb');
+  assert.notEqual('#e8eefb', 'transparent', 'the hover tint must differ from the resting state');
 });
 
 test('the link hover rule is paint-only: resting geometry and link presentation cannot shift', () => {
@@ -46,13 +46,13 @@ test('the link hover rule is paint-only: resting geometry and link presentation 
 
 test('the resting data-page rules are preserved', () => {
   assert.ok(css.match(/\.data-breadcrumb\s*\{[^}]*display:\s*flex; gap:\s*8px/), 'the data-breadcrumb layout rule must remain');
-  assert.ok(css.match(/\.data-page button:hover:not\(:disabled\):not\(\.data-primary\):not\(\[aria-selected=true\]\)\s*\{[^}]*background:\s*#eaf3f7/), 'the data-page button hover must remain');
-  assert.ok(css.match(/\.data-menu-items button:hover\s*\{[^}]*background:\s*#eaf3f7/), 'the data-menu-items button hover must remain #eaf3f7');
+  assert.ok(css.match(/\.data-page button:hover:not\(:disabled\):not\(\.data-primary\):not\(\[aria-selected=true\]\)\s*\{[^}]*background:\s*#e8eefb/), 'the data-page button hover must remain');
+  assert.ok(css.match(/\.data-menu-items button:hover\s*\{[^}]*background:\s*#e8eefb/), 'the data-menu-items button hover must remain #e8eefb');
 });
 
 test('the neighbouring summary hover rules are untouched', () => {
-  assert.ok(css.match(/\.data-summary-cards details > summary:hover\s*\{[^}]*background:\s*#eaf3f7/), 'the slice-81 storage-settings summary hover must remain #eaf3f7');
-  assert.ok(css.match(/\.data-split > \.data-menu > summary:hover\s*\{[^}]*background:\s*#145d76/), 'the slice-16 split summary hover must remain #145d76');
+  assert.ok(css.match(/\.data-summary-cards details > summary:hover\s*\{[^}]*background:\s*#e8eefb/), 'the slice-81 storage-settings summary hover must remain #e8eefb');
+  assert.ok(css.match(/\.data-split > \.data-menu > summary:hover\s*\{[^}]*background:\s*#1e4fa3/), 'the slice-16 split summary hover must remain #1e4fa3');
 });
 
 defineHoverCases('data-detail-link hover', {
@@ -65,7 +65,7 @@ defineHoverCases('data-detail-link hover', {
       target: '#crumb',
       rule: '.data-page a:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)', color: 'rgb(0, 0, 238)', textDecorationLine: 'underline' },
-      hovered: { backgroundColor: 'rgb(234, 243, 247)' },
+      hovered: { backgroundColor: 'rgb(232, 238, 251)' },
       paintOnly: true,
       unchanged: ['color', 'textDecorationLine'],
       excluded: ['#outside'],
@@ -74,7 +74,7 @@ defineHoverCases('data-detail-link hover', {
       target: '#back',
       rule: '.data-page a:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)', color: 'rgb(0, 0, 238)', textDecorationLine: 'underline' },
-      hovered: { backgroundColor: 'rgb(234, 243, 247)' },
+      hovered: { backgroundColor: 'rgb(232, 238, 251)' },
       paintOnly: true,
       unchanged: ['color', 'textDecorationLine'],
     },
@@ -82,7 +82,7 @@ defineHoverCases('data-detail-link hover', {
       target: '#usage',
       rule: '.data-page a:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)', color: 'rgb(0, 0, 238)', textDecorationLine: 'underline' },
-      hovered: { backgroundColor: 'rgb(234, 243, 247)' },
+      hovered: { backgroundColor: 'rgb(232, 238, 251)' },
       paintOnly: true,
       unchanged: ['color', 'textDecorationLine'],
     },

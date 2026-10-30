@@ -13,7 +13,7 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // author input hover rules cover only [type=search] (slice 38) and
 // [type=color] (slice 37); the dialogs' text inputs and textareas were
 // the unfinished members. They now take the author buttons' hover tint
-// (#edf7f7), with the dark-chrome variant (#334c62) from slices
+// (#eef3fd), with the dark-chrome variant (#36486a) from slices
 // 36/37/38. Radio and checkbox inputs keep their native rendering.
 // Background only, so resting geometry is identical; static (no
 // animation), so no reduced-motion variant is needed.
@@ -24,9 +24,9 @@ const darkRule = css.match(/\.author-workspace\[data-chrome=dark\]\s+\.analysis-
 
 test('the dialog input/textarea hover rules exist in light and dark chrome with the author tints', () => {
   assert.ok(hoverRule, 'expected the .analysis-file-dialog input/textarea hover rule');
-  assert.match(hoverRule[1], /background:\s*#edf7f7/);
+  assert.match(hoverRule[1], /background:\s*#eef3fd/);
   assert.ok(darkRule, 'expected the dark-chrome .analysis-file-dialog input/textarea hover rule');
-  assert.match(darkRule[1], /background:\s*#334c62/);
+  assert.match(darkRule[1], /background:\s*#36486a/);
 });
 
 test('the hover rules are paint-only: resting geometry cannot shift', () => {
@@ -40,14 +40,14 @@ test('the resting dialog input rule still reserves the geometry the hover keeps'
   const resting = css.match(/\.analysis-file-dialog input \{([^}]*)\}/);
   assert.ok(resting, 'expected the .analysis-file-dialog input resting rule');
   assert.match(resting[1], /background:\s*var\(--chrome-surface, #fff\)/);
-  assert.match(resting[1], /border:\s*1px solid var\(--chrome-border, #c9d8de\)/);
+  assert.match(resting[1], /border:\s*1px solid var\(--chrome-border, #c3cfe0\)/);
   assert.match(resting[1], /padding:\s*4px 8px/);
 });
 
 test('the dialog input/textarea hover coexists with the dialog button and select hovers', () => {
-  assert.ok(css.match(/\.author-workspace button:hover:not\(:disabled\),\s*\.author-layout button:hover:not\(:disabled\)\s*\{[^}]*background:\s*#edf7f7/), 'the author button hover rule must still be present');
-  assert.ok(css.match(/\.author-workspace select:hover:not\(:disabled\)\s*\{[^}]*background:\s*#edf7f7/), 'the slice-36 author select hover rule must still be present');
-  assert.ok(css.match(/\.author-workspace input\[type=search\]:hover:not\(:disabled\)\s*\{[^}]*background:\s*#edf7f7/), 'the slice-38 author search-input hover rule must still be present');
+  assert.ok(css.match(/\.author-workspace button:hover:not\(:disabled\),\s*\.author-layout button:hover:not\(:disabled\)\s*\{[^}]*background:\s*#eef3fd/), 'the author button hover rule must still be present');
+  assert.ok(css.match(/\.author-workspace select:hover:not\(:disabled\)\s*\{[^}]*background:\s*#eef3fd/), 'the slice-36 author select hover rule must still be present');
+  assert.ok(css.match(/\.author-workspace input\[type=search\]:hover:not\(:disabled\)\s*\{[^}]*background:\s*#eef3fd/), 'the slice-38 author search-input hover rule must still be present');
 });
 
 defineHoverCases('analysis-file-dialog-input hover', {
@@ -57,7 +57,7 @@ defineHoverCases('analysis-file-dialog-input hover', {
       target: '#name',
       rule: '.analysis-file-dialog input:hover:not(:disabled):not([type="radio"]):not([type="checkbox"]), .analysis-file-dialog textarea:hover:not(:disabled)',
       resting: { backgroundColor: 'rgb(255, 255, 255)' },
-      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      hovered: { backgroundColor: 'rgb(238, 243, 253)' },
       paintOnly: true,
       unchanged: ['color'],
       excluded: ['#radio', '#locked', { target: '#outside', resting: { backgroundColor: 'rgb(255, 255, 255)' } }],
@@ -66,7 +66,7 @@ defineHoverCases('analysis-file-dialog-input hover', {
       target: '#desc',
       rule: '.analysis-file-dialog input:hover:not(:disabled):not([type="radio"]):not([type="checkbox"]), .analysis-file-dialog textarea:hover:not(:disabled)',
       resting: { backgroundColor: 'rgb(255, 255, 255)' },
-      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      hovered: { backgroundColor: 'rgb(238, 243, 253)' },
       paintOnly: true,
       unchanged: ['color'],
     },

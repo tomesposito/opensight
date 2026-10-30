@@ -11,7 +11,7 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // controls-strip text/date inputs, sheet rename, the sheet text
 // object's editor — changed nothing on hover while the select beside
 // it tinted. The fields now take the author buttons' hover tint
-// (#edf7f7); dark chrome takes the dark button hover (#334c62). The
+// (#eef3fd); dark chrome takes the dark button hover (#36486a). The
 // rule is scoped to .author-layout so the header analysis-title input
 // (transparent at rest, light text on the dark header, border-only
 // hover by design) is never reached. Radio/checkbox/file/range are
@@ -25,12 +25,12 @@ const darkRule = styleCss.match(/\.author-workspace\[data-chrome=dark\]\s+\.auth
 
 test('author-layout plain inputs and textareas have a hover state with the author button tint', () => {
   assert.ok(lightRule, 'expected the .author-layout input/textarea hover rule');
-  assert.match(lightRule[1], /background:\s*#edf7f7/);
+  assert.match(lightRule[1], /background:\s*#eef3fd/);
 });
 
 test('dark chrome author-layout fields take the dark button hover tint', () => {
   assert.ok(darkRule, 'expected the dark .author-layout input/textarea hover rule');
-  assert.match(darkRule[1], /background:\s*#334c62/);
+  assert.match(darkRule[1], /background:\s*#36486a/);
 });
 
 test('the field hover rules are paint-only: resting geometry cannot shift', () => {
@@ -41,9 +41,9 @@ test('the field hover rules are paint-only: resting geometry cannot shift', () =
 });
 
 test('the neighbouring author hover rules are untouched', () => {
-  assert.ok(styleCss.match(/\.author-workspace\s+select:hover:not\(:disabled\)\s*\{[^}]*background:\s*#edf7f7/), 'slice 36 select hover must remain');
-  assert.ok(styleCss.match(/\.author-workspace\s+input\[type=color\]:hover:not\(:disabled\)\s*\{[^}]*background:\s*#edf7f7; border-color:\s*#157f88/), 'slice 37 color hover must remain');
-  assert.ok(styleCss.match(/\.author-workspace\s+input\[type=search\]:hover:not\(:disabled\)\s*\{[^}]*background:\s*#edf7f7/), 'slice 38 search hover must remain');
+  assert.ok(styleCss.match(/\.author-workspace\s+select:hover:not\(:disabled\)\s*\{[^}]*background:\s*#eef3fd/), 'slice 36 select hover must remain');
+  assert.ok(styleCss.match(/\.author-workspace\s+input\[type=color\]:hover:not\(:disabled\)\s*\{[^}]*background:\s*#eef3fd; border-color:\s*#3b82f6/), 'slice 37 color hover must remain');
+  assert.ok(styleCss.match(/\.author-workspace\s+input\[type=search\]:hover:not\(:disabled\)\s*\{[^}]*background:\s*#eef3fd/), 'slice 38 search hover must remain');
 });
 
 test('the header analysis-title input keeps its border-only hover by design', () => {
@@ -65,7 +65,7 @@ defineHoverCases('author-field hover', {
       target: '#text',
       rule: '.author-layout input:hover:not(:disabled):not([type="radio"]):not([type="checkbox"]):not([type="file"]):not([type="range"]), .author-layout textarea:hover:not(:disabled)',
       resting: { backgroundColor: 'rgb(255, 255, 255)' },
-      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      hovered: { backgroundColor: 'rgb(238, 243, 253)' },
       paintOnly: true,
       excluded: ['#title', '#off', '#chk', '#rng'],
     },
@@ -73,28 +73,28 @@ defineHoverCases('author-field hover', {
       target: '#num',
       rule: '.author-layout input:hover:not(:disabled):not([type="radio"]):not([type="checkbox"]):not([type="file"]):not([type="range"]), .author-layout textarea:hover:not(:disabled)',
       resting: { backgroundColor: 'rgb(255, 255, 255)' },
-      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      hovered: { backgroundColor: 'rgb(238, 243, 253)' },
       paintOnly: true,
     },
     {
       target: '#ta',
       rule: '.author-layout input:hover:not(:disabled):not([type="radio"]):not([type="checkbox"]):not([type="file"]):not([type="range"]), .author-layout textarea:hover:not(:disabled)',
       resting: { backgroundColor: 'rgb(255, 255, 255)' },
-      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      hovered: { backgroundColor: 'rgb(238, 243, 253)' },
       paintOnly: true,
     },
     {
       target: '#dark-text',
       rule: '.author-workspace[data-chrome="dark"] .author-layout input:hover:not(:disabled):not([type="radio"]):not([type="checkbox"]):not([type="file"]):not([type="range"]), .author-workspace[data-chrome="dark"] .author-layout textarea:hover:not(:disabled)',
       resting: { backgroundColor: 'rgb(32, 46, 64)' },
-      hovered: { backgroundColor: 'rgb(51, 76, 98)' },
+      hovered: { backgroundColor: 'rgb(54, 72, 106)' },
       paintOnly: true,
     },
     {
       target: '#dark-ta',
       rule: '.author-workspace[data-chrome="dark"] .author-layout input:hover:not(:disabled):not([type="radio"]):not([type="checkbox"]):not([type="file"]):not([type="range"]), .author-workspace[data-chrome="dark"] .author-layout textarea:hover:not(:disabled)',
       resting: { backgroundColor: 'rgb(32, 46, 64)' },
-      hovered: { backgroundColor: 'rgb(51, 76, 98)' },
+      hovered: { backgroundColor: 'rgb(54, 72, 106)' },
       paintOnly: true,
     },
   ],

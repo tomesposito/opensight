@@ -8,7 +8,7 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // errors) found the filter select was the last interactive control on the
 // data surface with zero hover state: hovering it changed nothing, while the
 // surrounding buttons and tabs already take the data page's established
-// menu-item hover tint (#eaf3f7, slice 16). The select takes the same tint;
+// menu-item hover tint (#e8eefb, slice 16). The select takes the same tint;
 // disabled selects (e.g. the dataset-permissions select) keep their flat
 // state. Background only, so resting geometry is identical. Static (no
 // animation), so no reduced-motion variant is needed.
@@ -18,7 +18,7 @@ const hoverRule = css.match(/\.data-page\s+select:hover:not\(:disabled\)\s*\{([^
 
 test('the data-page filter select has a hover state using the menu tint', () => {
   assert.ok(hoverRule, 'expected .data-page select:hover:not(:disabled)');
-  assert.match(hoverRule[1], /background:\s*#eaf3f7/);
+  assert.match(hoverRule[1], /background:\s*#e8eefb/);
 });
 
 test('the hover preview is paint-only: resting geometry cannot shift', () => {
@@ -42,7 +42,7 @@ defineHoverCases('data-filter-select hover', {
       target: '.data-page select:not([disabled])',
       rule: '.data-page select:hover:not(:disabled)',
       resting: { backgroundColor: 'rgb(255, 255, 255)' },
-      hovered: { backgroundColor: 'rgb(234, 243, 247)' },
+      hovered: { backgroundColor: 'rgb(232, 238, 251)' },
       paintOnly: true,
       excluded: [{ target: '.data-page select[disabled]', resting: { backgroundColor: 'rgb(255, 255, 255)' } }],
     },

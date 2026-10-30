@@ -17,14 +17,14 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // .collection-card > .draft-collection > .draft-collection-tools, and the
 // author sidebar's details.local-drafts in both chromes) confirmed zero
 // matching :hover rules and a transparent rest in all three. The label
-// now takes #eaf3f7, the collection surface's established field hover tint
+// now takes #e8eefb, the collection surface's established field hover tint
 // (the slice-64 search field beside it and the slice-23 pagination select
 // in the same card), so no new colour is introduced. The rule is on the
 // label, not the checkbox: the checkbox keeps its native rendering,
 // following the slice-94 connector-toggle and slice-95 sign-in-check
 // precedents where the label surface hovers and its inner input does not.
 // The author dark-chrome variant takes the author dark hover tint
-// (#334c62, the dark button and summary hovers), as in slices 36/37/38.
+// (#36486a, the dark button and summary hovers), as in slices 36/37/38.
 // Background only, so resting geometry is identical and there is no
 // animation.
 const appCss = styles['app-chrome.css'];
@@ -35,12 +35,12 @@ const darkRule = styleCss.match(/^\.author-workspace\[data-chrome=dark\] \.favor
 
 test('the favorites-filter hover rule exists and uses the established hover tint', () => {
   assert.ok(rule, 'expected the .favorites-filter :hover rule');
-  assert.match(rule[1], /background:\s*#eaf3f7/);
+  assert.match(rule[1], /background:\s*#e8eefb/);
 });
 
 test('the hover tint matches the collection field and pagination select hovers, so no new colour is introduced', () => {
-  assert.ok(appCss.match(/\.collection-card input:hover:not\(:disabled\):not\(\[type=radio\]\):not\(\[type=checkbox\]\):not\(\[type=file\]\)\s*\{[^}]*background:\s*#eaf3f7/), 'the collection-card field hover must remain #eaf3f7');
-  assert.ok(appCss.match(/\.collection-pagination select:hover:not\(:disabled\)\s*\{[^}]*background:\s*#eaf3f7/), 'the pagination select hover must remain #eaf3f7');
+  assert.ok(appCss.match(/\.collection-card input:hover:not\(:disabled\):not\(\[type=radio\]\):not\(\[type=checkbox\]\):not\(\[type=file\]\)\s*\{[^}]*background:\s*#e8eefb/), 'the collection-card field hover must remain #e8eefb');
+  assert.ok(appCss.match(/\.collection-pagination select:hover:not\(:disabled\)\s*\{[^}]*background:\s*#e8eefb/), 'the pagination select hover must remain #e8eefb');
 });
 
 test('the favorites-filter hover rule is paint-only: resting geometry and label presentation cannot shift', () => {
@@ -53,8 +53,8 @@ test('the resting favorites-filter rule is preserved, the checkbox has no hover 
   assert.ok(!/\.favorites-filter input:hover/.test(appCss + styleCss), 'the checkbox must keep its native rendering with no hover rule of its own');
   assert.ok(!/\.favorites-filter:hover[^{]*\{[^}]*input/.test(appCss), 'the label hover rule must not target the checkbox');
   assert.ok(darkRule, 'expected the author dark-chrome favorites-filter hover variant');
-  assert.match(darkRule[1], /background:\s*#334c62/);
-  assert.ok(styleCss.match(/\.author-workspace\[data-chrome=dark\] button:hover:not\(:disabled\)\s*\{[^}]*background:\s*#334c62/), 'the author dark button hover must remain #334c62');
+  assert.match(darkRule[1], /background:\s*#36486a/);
+  assert.ok(styleCss.match(/\.author-workspace\[data-chrome=dark\] button:hover:not\(:disabled\)\s*\{[^}]*background:\s*#36486a/), 'the author dark button hover must remain #36486a');
 });
 
 defineHoverCases('favorites-filter hover', {
@@ -70,7 +70,7 @@ defineHoverCases('favorites-filter hover', {
       target: '#favLabel',
       rule: '.favorites-filter:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(234, 243, 247)' },
+      hovered: { backgroundColor: 'rgb(232, 238, 251)' },
       paintOnly: true,
       unchanged: ['color'],
       excluded: ['#favBox', '#outsideLabel'],
@@ -79,7 +79,7 @@ defineHoverCases('favorites-filter hover', {
       target: '#favDark',
       rule: '.author-workspace[data-chrome="dark"] .favorites-filter:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(51, 76, 98)' },
+      hovered: { backgroundColor: 'rgb(54, 72, 106)' },
       paintOnly: true,
       unchanged: ['color'],
       excluded: ['#favDark > input:nth-child(1)'],

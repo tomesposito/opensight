@@ -16,7 +16,7 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // contexts confirmed zero matching :hover rules for the label and a
 // transparent rest in all of them (the switch itself steps only
 // inside the calculation dialog, via that dialog's generic input
-// hover, slice 46). The label now takes #edf7f7, the author surface's
+// hover, slice 46). The label now takes #eef3fd, the author surface's
 // established hover tint (the author button and field hovers, the
 // calculation-dialog hovers, and the Ask O panel's fallback hover
 // tint), so no new colour is introduced. The rule is on the label,
@@ -24,7 +24,7 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // the slice-94 connector-toggle, slice-95 sign-in-check, slice-96
 // favorites-filter and slice-97 toggle-label precedents where the
 // label surface hovers and its inner input does not. The dark-chrome
-// variant takes the author dark hover tint (#334c62, the dark button
+// variant takes the author dark hover tint (#36486a, the dark button
 // and field hovers); the calculation dialog renders outside
 // .author-workspace (slice 46) and is a fixed-light surface, so the
 // BuildForMe rendering keeps the light tint. Background only, so
@@ -36,12 +36,12 @@ const darkRule = styleCss.match(/^\.author-workspace\[data-chrome=dark\] \.o-mod
 
 test('the O-mode label hover rule exists and uses the established hover tint', () => {
   assert.ok(rule, 'expected the .o-mode-notice label :hover rule');
-  assert.match(rule[1], /background:\s*#edf7f7/);
+  assert.match(rule[1], /background:\s*#eef3fd/);
 });
 
 test('the hover tint matches the author button and calculation-dialog input hovers, so no new colour is introduced', () => {
-  assert.ok(styleCss.match(/\.author-workspace button:hover:not\(:disabled\), \.author-layout button:hover:not\(:disabled\)\s*\{[^}]*background:\s*#edf7f7/), 'the author button hover must remain #edf7f7');
-  assert.ok(styleCss.match(/\.calculation-dialog input:hover:not\(:disabled\), \.calculation-dialog select:hover:not\(:disabled\), \.calculation-dialog textarea:hover:not\(:disabled\)\s*\{[^}]*background:\s*#edf7f7/), 'the calculation-dialog input hover must remain #edf7f7');
+  assert.ok(styleCss.match(/\.author-workspace button:hover:not\(:disabled\), \.author-layout button:hover:not\(:disabled\)\s*\{[^}]*background:\s*#eef3fd/), 'the author button hover must remain #eef3fd');
+  assert.ok(styleCss.match(/\.calculation-dialog input:hover:not\(:disabled\), \.calculation-dialog select:hover:not\(:disabled\), \.calculation-dialog textarea:hover:not\(:disabled\)\s*\{[^}]*background:\s*#eef3fd/), 'the calculation-dialog input hover must remain #eef3fd');
 });
 
 test('the O-mode label hover rule is paint-only: resting geometry and label presentation cannot shift', () => {
@@ -55,8 +55,8 @@ test('the resting O-mode rules are preserved, the switch has no hover rule of it
   assert.ok(!/\.o-mode-notice input:hover/.test(styleCss), 'the switch must keep its native rendering with no hover rule of its own');
   assert.ok(!/\.o-mode-notice label:hover[^{]*\{[^}]*input/.test(styleCss), 'the label hover rule must not target the switch');
   assert.ok(darkRule, 'expected the author dark-chrome O-mode label hover variant');
-  assert.match(darkRule[1], /background:\s*#334c62/);
-  assert.ok(styleCss.match(/\.author-workspace\[data-chrome=dark\] button:hover:not\(:disabled\)\s*\{[^}]*background:\s*#334c62/), 'the author dark button hover must remain #334c62');
+  assert.match(darkRule[1], /background:\s*#36486a/);
+  assert.ok(styleCss.match(/\.author-workspace\[data-chrome=dark\] button:hover:not\(:disabled\)\s*\{[^}]*background:\s*#36486a/), 'the author dark button hover must remain #36486a');
 });
 
 const notice = id => `<div class="o-mode-notice"><label id="${id}"><input type="checkbox" role="switch">Generative mode</label><small>Needs hosted API</small></div>`;
@@ -73,7 +73,7 @@ defineHoverCases('o-mode-label hover', {
       target: '#lblStandalone',
       rule: '.o-mode-notice label:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      hovered: { backgroundColor: 'rgb(238, 243, 253)' },
       paintOnly: true,
       unchanged: ['color'],
       excluded: ['#lblStandalone > input:nth-child(1)', '#outsideLabel'],
@@ -82,7 +82,7 @@ defineHoverCases('o-mode-label hover', {
       target: '#lblLight',
       rule: '.o-mode-notice label:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      hovered: { backgroundColor: 'rgb(238, 243, 253)' },
       paintOnly: true,
       unchanged: ['color'],
     },
@@ -90,7 +90,7 @@ defineHoverCases('o-mode-label hover', {
       target: '#lblDark',
       rule: '.author-workspace[data-chrome="dark"] .o-mode-notice label:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(51, 76, 98)' },
+      hovered: { backgroundColor: 'rgb(54, 72, 106)' },
       paintOnly: true,
       unchanged: ['color'],
     },
@@ -98,7 +98,7 @@ defineHoverCases('o-mode-label hover', {
       target: '#lblDialog',
       rule: '.o-mode-notice label:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      hovered: { backgroundColor: 'rgb(238, 243, 253)' },
       paintOnly: true,
       unchanged: ['color'],
     },
@@ -106,7 +106,7 @@ defineHoverCases('o-mode-label hover', {
       target: '#lblPanel',
       rule: '.o-mode-notice label:hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      hovered: { backgroundColor: 'rgb(238, 243, 253)' },
       paintOnly: true,
       unchanged: ['color'],
     },

@@ -16,7 +16,7 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // dialog's buttons and select do step. A CSSOM probe with all five
 // real stylesheets in the real ancestor context confirmed zero
 // matching :hover rules for the radio labels and a transparent rest.
-// The labels now take #edf7f7, the admin surface's established hover
+// The labels now take #eef3fd, the admin surface's established hover
 // tint (the slice-59 admin button and field hovers, and the slice-87
 // admin link hover), so no new colour is introduced. The rule is on
 // the label, not the radio: the radio keeps its native rendering,
@@ -37,11 +37,11 @@ const rule = styleCss.match(/^\.admin-settings \[role="dialog"\] label:has\(> in
 
 test('the removal dialog radio label hover rule exists and uses the established hover tint', () => {
   assert.ok(rule, 'expected the .admin-settings [role=dialog] radio label :hover rule');
-  assert.match(rule[1], /background:\s*#edf7f7/);
+  assert.match(rule[1], /background:\s*#eef3fd/);
 });
 
 test('the hover tint matches the admin button and field hovers, so no new colour is introduced', () => {
-  assert.ok(styleCss.match(/\.admin-settings button:hover:not\(:disabled\)\s*\{[^}]*background:\s*#edf7f7/), 'the admin button hover must remain #edf7f7');
+  assert.ok(styleCss.match(/\.admin-settings button:hover:not\(:disabled\)\s*\{[^}]*background:\s*#eef3fd/), 'the admin button hover must remain #eef3fd');
   assert.ok(styleCss.match(/\.admin-settings input:hover:not\(:disabled\):not\(\[type=radio\]\):not\(\[type=checkbox\]\)/), 'the admin field hover must remain and keep its radio exclusion');
 });
 
@@ -70,7 +70,7 @@ defineHoverCases('removal-radio hover', {
       target: '#transferLabel',
       rule: '.admin-settings [role="dialog"] label:has(> input[type="radio"]):hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      hovered: { backgroundColor: 'rgb(238, 243, 253)' },
       paintOnly: true,
       unchanged: ['color'],
       excluded: ['#transferRadio', '#ownerLabel', '#outsideLabel'],
@@ -79,7 +79,7 @@ defineHoverCases('removal-radio hover', {
       target: '#stopLabel',
       rule: '.admin-settings [role="dialog"] label:has(> input[type="radio"]):hover',
       resting: { backgroundColor: 'rgba(0, 0, 0, 0)' },
-      hovered: { backgroundColor: 'rgb(237, 247, 247)' },
+      hovered: { backgroundColor: 'rgb(238, 243, 253)' },
       paintOnly: true,
       unchanged: ['color'],
     },
