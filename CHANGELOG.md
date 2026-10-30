@@ -82,6 +82,9 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Changed
 
+- Sign-in and invitation enrollment screens restyled to the approved
+  brand design (navy page with the brand glow, white card, brand-accent
+  actions, Inter), replacing the pre-brand teal styling (#166).
 - The brand mark was redrawn to match the approved brand sheets: four
   filled sparkle arms with a four-point star center hole replace the
   earlier ring-arc rendering, across the app header mark, favicons,
