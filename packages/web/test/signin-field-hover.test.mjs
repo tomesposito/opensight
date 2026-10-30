@@ -9,7 +9,7 @@ import { defineHoverCases, styles } from './interaction.mjs';
 // .sign-in-secondary) but carried no field :hover rule at all — the
 // text inputs rest at #fff, but hovering changed nothing, while
 // fields on every other surface tint (data slices 16/21/27/48, embed
-// slice 54). The fields now take #eaf4f4 on hover — the sign-in
+// slice 54). The fields now take #eef3fd on hover — the sign-in
 // surface's own tint (the .sign-in-secondary hover step and the info
 // alert background). Background only, so resting geometry is
 // identical. Static (no animation), so no reduced-motion variant is
@@ -23,7 +23,7 @@ const hoverRule = css.match(/\.sign-in-field input:hover:not\(:disabled\)\s*\{([
 
 test('the sign-in field hover rule exists', () => {
   assert.ok(hoverRule, 'expected the sign-in field hover rule');
-  assert.match(hoverRule[1], /background:\s*#eaf4f4/);
+  assert.match(hoverRule[1], /background:\s*#eef3fd/);
 });
 
 test('the hover rule is paint-only: resting geometry cannot shift', () => {
@@ -36,13 +36,13 @@ test('the resting field rule still reserves the geometry the hover keeps', () =>
   assert.ok(rest, 'expected the sign-in field resting rule');
   assert.match(rest[1], /height:\s*36px/);
   assert.match(rest[1], /padding:\s*6px 8px/);
-  assert.match(rest[1], /border:\s*1px solid #91a5af/);
+  assert.match(rest[1], /border:\s*1px solid #c3cfe0/);
   assert.match(rest[1], /background:\s*#fff/);
 });
 
 test('the hover step coexists with the sign-in button hover rules', () => {
-  assert.ok(css.match(/\.sign-in-primary:hover:not\(:disabled\)\s*\{[^}]*background:\s*#0e5960/), 'the sign-in primary hover rule must still be present');
-  assert.ok(css.match(/\.sign-in-secondary:hover:not\(:disabled\)\s*\{[^}]*background:\s*#eaf4f4/), 'the sign-in secondary hover rule must still be present');
+  assert.ok(css.match(/\.sign-in-primary:hover:not\(:disabled\)\s*\{[^}]*background:\s*#2f66d8/), 'the sign-in primary hover rule must still be present');
+  assert.ok(css.match(/\.sign-in-secondary:hover:not\(:disabled\)\s*\{[^}]*background:\s*#eef3fd/), 'the sign-in secondary hover rule must still be present');
 });
 
 defineHoverCases('signin-field hover', {
@@ -55,7 +55,7 @@ defineHoverCases('signin-field hover', {
       target: '#email',
       rule: '.sign-in-field input:hover:not(:disabled)',
       resting: { backgroundColor: 'rgb(255, 255, 255)' },
-      hovered: { backgroundColor: 'rgb(234, 244, 244)' },
+      hovered: { backgroundColor: 'rgb(238, 243, 253)' },
       paintOnly: true,
       excluded: ['#code'],
     },
