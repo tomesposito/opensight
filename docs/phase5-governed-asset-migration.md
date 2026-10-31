@@ -12,6 +12,21 @@ Existing rows remain intact, governed assets require an empty owner, and
 unknown resource kinds remain rejected. Repeated migration is idempotent.
 Runtime roles retain their existing permissions and receive no DDL access.
 
+For the already-current registered inventory, D-87 permits the temporary owner
+controller to preserve the epoch when the only outstanding work is the exact
+inventoried set of future, dispatched, unclaimed object-cleanup events. The
+controller binds their checksum and the independent epoch checksum into its
+plan, drains every runtime invocation, registers the pinned backup, and verifies
+unchanged cleanup rows through migration and reopen. It preserves registry
+history while advancing its revision. It does not change schedules, retention,
+objects, cleanup attempts or runtime permissions.
+
+The private PostgreSQL/control rehearsal passes 11 tests, including same-epoch
+freeze/migration/reopen, acceptance of the retained envelope after reopen,
+denial of changed or unsafe pending work, preservation rollback, and registry
+history. The application bytes remain the tested attested build; these operator
+changes and their confidential configuration are not bundled into that runtime.
+
 Deploy through the registered backup and maintenance protocol with the matching
 runtime and viewer function. A compatible-release approval cannot substitute
 for this migration. Tests exercise legacy constraints, preserved data, invalid
