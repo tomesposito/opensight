@@ -1247,6 +1247,19 @@ SQLite, rehearse the registered backup migration, then deploy the attested
 runtime with its matching viewer routes through the existing maintenance
 protocol. Runtime requests gain no DDL privileges.
 
+**Governed constraint maintenance (D-87, frozen 2026-10-31):** For this
+additive upgrade on the already-current registered table inventory, preserve
+the independent and SQL epochs when the only outstanding obligations are
+explicitly inventoried, future, unclaimed object-cleanup events. Apply the
+narrow exception in [D-87](docs/itd/D-87-preserved-cleanup-maintenance.md):
+complete invocation drain, exact operation/plan binding, unchanged cleanup
+protocol, registered pinned backup, transactional preservation checks and
+watchdog remain mandatory. Preserve every cleanup event, schedule, deadline,
+attempt, object reference and authority record. Reject other pending work or
+inventory drift; do not shorten retention, force early cleanup, replay mail,
+rewrite events or reuse this exception for restore. Rehearse the frozen
+same-epoch path and failure/denial cases before promotion.
+
 **SR4c compatible release automation (frozen 2026-10-11):** The operator approved
 public isolated CI, immutable release artifacts, private manual deployment via
 dedicated OIDC roles, and an independently tested access shutoff. Implement
