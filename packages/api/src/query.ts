@@ -110,6 +110,7 @@ export async function readBody(request: IncomingMessage, maxBytes = BODY_BYTES):
 /** Only the caller-selected sales fixture binding is eligible; request IDs never form paths. */
 export class SalesQuery {
   security?: SecurityService;
+  metricDefinition() { return this.metadata.dataSet; }
   securitySchema() { return bindMetadata(this.metadata.dataSet, this.metadata.dataSource, this.metadata.localData, true); }
   private secured(request: PlanRequest, identity?: Identity): PlanRequest {
     return this.security ? { ...request, security: this.security.context(identity) } : request;

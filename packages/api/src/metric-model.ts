@@ -1,4 +1,4 @@
-import { parseExpression, hasCapability, METRIC_PREFIX, type MetricDefinition, type MetricDataset, type PublishedMetric } from '@opensight/query-engine';
+import { parseExpression, compilePrep, hasCapability, METRIC_PREFIX, type MetricDefinition, type MetricDataset, type PublishedMetric } from '@opensight/query-engine';
 import { AssetCatalog, assetFail, assetKey } from './asset-model.js';
 import { object, identifier, resourceKey, type MetadataResource } from './metadata-resources.js';
 
@@ -54,6 +54,17 @@ export function validateMetricRecord(raw: unknown): MetricRecord {
 export class MetricCatalog {
   constructor(readonly assets: AssetCatalog) {}
   dataset(ref: MetricDataset) { return this.assets.find(ref.kind, ref.id, ref.ownerId) ?? assetFail('METRIC_DATASET_NOT_FOUND', 404); }
+  schema(ref: MetricDataset): MetricSchema {
+    const dataset = this.dataset(ref);
+    if (ref.kind === 'dataset') {
+      const wire = object(dataset.body.definition), d = object(wire.DataSet ?? wire);
+      if (!Array.isArray(d.OutputColumns)) assetFail('METRIC_SCHEMA_UNAVAILABLE', 422);
+      return { columns: d.OutputColumns.map(raw => { const c = object(raw); return { name: String(c.Name), type: String(c.Type) }; }) };
+    }
+    const datasets = this.assets.resources.filter(r => r.kind === 'prepared-dataset' && r.ownerId === ref.ownerId).map(r => ({ id: r.id, pipeline: object(r.body.resource).opensightPrep as import('@opensight/bundle-parser/prep').PrepPipeline }));
+    const sources = this.assets.resources.filter(r => r.kind === 'source' && r.ownerId === ref.ownerId).map((r, i) => ({ id: r.id, table: `metric_schema_${i}`, connectorId: 'file', security: 'unrestricted' as const, columns: object(r.body.binding).columns as import('@opensight/bundle-parser/prep').PrepColumn[] }));
+    return { columns: compilePrep(datasets.find(d => d.id === ref.id)!.pipeline, sources, { datasets, datasetId: ref.id }).columns };
+  }
   canPublish(ref: MetricDataset) {
     const d = this.dataset(ref), user = this.assets.user();
     if (user.body.role === 'administrator') return true;
@@ -62,7 +73,7 @@ export class MetricCatalog {
     const sources = d.body.sources as { ownerId?: string }[] | undefined;
     return !!sources?.length && sources.every(s => s.ownerId === this.assets.scope.userId);
   }
-  canEdit(r: MetadataResource) { const b = metricRecord(r); return this.canPublish(b.dataset) || b.publishedVersion === null && b.createdBy === this.assets.scope.userId; }
+  canEdit(r: MetadataResource) { const b = metricRecord(r); return hasCapability(this.assets.user().body.role, 'build') && (this.canPublish(b.dataset) || b.publishedVersion === null && b.createdBy === this.assets.scope.userId); }
   get(id: string) {
     this.assets.user();
     const r = this.assets.find('metric', id) ?? assetFail('METRIC_NOT_FOUND', 404), b = metricRecord(r);

@@ -198,8 +198,8 @@ export class PrepRoutes {
     routes.syncModes();
     return routes;
   }
-  assetResources(identity: Identity): import('./metadata-resources.js').MetadataResource[] {
-    return this.store.read().datasets.filter(e => this.owned(identity, e)).map(e => ({ kind: 'prepared-dataset', id: e.resource.dataSetId, ownerId: e.userId, version: e.version ?? 1, body: { resource: e.resource, ...(e.updatedAt ? { updatedAt: e.updatedAt } : {}), ...(e.execution ? { execution: e.execution } : {}) } }));
+  assetResources(identity: Identity, workspace = false): import('./metadata-resources.js').MetadataResource[] {
+    return this.store.read().datasets.filter(e => e.namespaceId === identity.namespaceId && (workspace || this.owned(identity, e))).map(e => ({ kind: 'prepared-dataset', id: e.resource.dataSetId, ownerId: e.userId, version: e.version ?? 1, body: { resource: e.resource, ...(e.updatedAt ? { updatedAt: e.updatedAt } : {}), ...(e.execution ? { execution: e.execution } : {}) } }));
   }
   async deleteAsset(identity: Identity, id: string, version: number, check: () => void): Promise<void> {
     if (!this.persistent) throw new MetadataError('ASSET_DURABLE_STORE_REQUIRED', 503);

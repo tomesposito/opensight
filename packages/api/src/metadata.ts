@@ -240,7 +240,7 @@ export class TenantMetadata {
   /** Assets use the same tenant lock, links, quota accounting and durable rows as authoring. */
   async assetTransaction<T>(context: TenantContext, write: boolean, work: (catalog: AssetCatalog) => T, receipt?: (result: T) => RetryCommit): Promise<T> {
     return this.checked(context, async c => {
-      const rows = await c.query("SELECT * FROM h1_resources WHERE tenant_id = ? AND namespace_id = ? AND kind IN ('user','group','folder','analysis','dashboard','prepared-dataset','dataset','metric')", scopeValues(context));
+      const rows = await c.query("SELECT * FROM h1_resources WHERE tenant_id = ? AND namespace_id = ? AND kind IN ('user','group','folder','analysis','dashboard','prepared-dataset','dataset','metric','source')", scopeValues(context));
       const before = rows.map(resource), catalog = new AssetCatalog(context, structuredClone(before));
       const result = work(catalog);
       if (!write) return result;
