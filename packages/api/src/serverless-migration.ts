@@ -6,6 +6,7 @@ import { migrateRuntime } from './runtime-migration.js';
 import { deploymentId } from './runtime-startup.js';
 import { budgetEnvironment } from './budget-store.js';
 import { entitlementConfig, initializeUsage } from './hosted-usage.js';
+import { initializeAccessRequests } from './access-requests.js';
 import { appendOperatorAudit } from './operator-audit.js';
 import { migrateCoordination, coordinationTables, coordinationNow, type CoordinationDialect } from './coordination-schema.js';
 import { migrateManifests, manifestTables } from './manifest-schema.js';
@@ -24,7 +25,7 @@ const durableTables = [...coordinationTables, ...manifestTables, ...dispatchTabl
 // h8_audit_schema rides along for ownership/backup/restore inventory, but stays out of
 // baseTables on purpose: the existing-database foreign check must accept deployed
 // databases that predate the marker (the owner migration adds it).
-const additiveTables = ['h8_monthly_usage', 'h2_login_selections', 'h8_ai_warnings', 'analytics_events', 'analytics_settings'];
+const additiveTables = ['h8_monthly_usage', 'h2_login_selections', 'h8_ai_warnings', 'analytics_events', 'analytics_settings', 'h8_access_requests'];
 export const serverlessTables = [...baseTables, ...additiveTables, 'h8_audit_schema', ...durableTables];
 export async function grantServerlessRuntime(c: SqlConnection, env: NodeJS.ProcessEnv): Promise<void> {
   const schema = String((await c.query('SELECT current_schema() AS schema'))[0]?.schema);
@@ -97,6 +98,7 @@ export async function migrateServerless(database: Database, env: NodeJS.ProcessE
     // audit columns/markers before runtime grants. Additive tables stay out of
     // baseTables so the foreign-database check accepts pre-upgrade deployments.
     await initializeUsage(nested); await initializeAnalytics(nested);
+    await initializeAccessRequests(nested);
     if (dialect === 'postgres') await grantServerlessRuntime(c, env);
     await appendOperatorAudit(c, { action: 'serverless.migrated' });
   });

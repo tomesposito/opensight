@@ -1,4 +1,5 @@
 import { analyticsSettingsRoute } from './analytics-settings.js';
+import { accessRequestRate, initializeAccessRequests, limitAccessRequests, listAccessRequests, storeAccessRequest } from './access-requests.js';
 import { Analytics, analyticsFromEnvironment } from './analytics.js';
 import { AnalyticsStore, initializeAnalytics } from './analytics-store.js';
 import { EmbedSessions, embedSessionKey } from './embed-sessions.js';
@@ -105,7 +106,7 @@ function boundary(request: IncomingMessage, origin: string): void {
     for (let i = 0; i < request.rawHeaders.length; i += 2) if (request.rawHeaders[i]!.toLowerCase() === header) count++;
     if (count > 1) throw new MetadataError('HOSTED_REQUEST_INVALID', 400);
   }
-  if (request.headers.host !== new URL(origin).host || request.headers.origin !== undefined && request.headers.origin !== origin
+  if (request.headers.host !== new URL(origin).host || request.url !== '/api/access-requests' && request.headers.origin !== undefined && request.headers.origin !== origin
     || request.headers.forwarded !== undefined || request.headers['x-forwarded-host'] !== undefined) throw new MetadataError(
       /^\/api\/(?:namespaces\/[^/]+\/)?embedding(?:\/|$)/.test(request.url ?? '') ? 'EMBED_ORIGIN_DENIED' : 'UNTRUSTED_ORIGIN', 403);
   if (forgedHeaders.some(h => request.headers[h] !== undefined)) throw new MetadataError('FORGED_PRINCIPAL', 403);
@@ -116,6 +117,7 @@ function boundary(request: IncomingMessage, origin: string): void {
 /** Hosted tenant plane never exposes legacy fixture stores or ownerless schedulers. */
 export async function createHostedApiServer(options: HostedServerOptions): Promise<Server> {
   const config = hostedConfig(options.env);
+  const accessRate = accessRequestRate(options.env ?? process.env);
   if (options.membershipDatabase?.durable !== true || options.tenantDatabase?.durable !== true) throw new MetadataError('DURABLE_MEMBERSHIP_STORE_REQUIRED', 503);
   if (typeof options.security?.authenticate !== 'function') throw new MetadataError('HOSTED_VERIFIER_REQUIRED', 503);
   const authenticate = options.security.authenticate;
@@ -129,6 +131,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
     await appendOperatorAudit(c, { action: 'reference.started' });
   });
   if (!options.invocation) await initializeAnalytics(options.membershipDatabase);
+  if (!options.invocation) await initializeAccessRequests(options.membershipDatabase);
   const analytics = options.analytics ?? new Analytics(new AnalyticsStore(options.membershipDatabase), analyticsFromEnvironment(options.env));
   if (options.builtinAuth) options.builtinAuth.analytics = analytics;
   const metadata = new TenantMetadata(options.tenantDatabase, options.membershipDatabase, usage);
@@ -168,6 +171,10 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
     const work = (async () => {
       boundary(request, config.origin);
       let path = request.url!;
+      if (path === '/api/access-requests' && request.headers.origin === 'https://getopensight.org') {
+        response.setHeader('Access-Control-Allow-Origin', 'https://getopensight.org');
+        response.setHeader('Vary', 'Origin');
+      }
       if (options.invocation && (path.startsWith('/api/host') || ['/healthz', '/readyz', '/metrics'].includes(path))) throw new MetadataError('RESOURCE_NOT_FOUND', 404);
       if (['/healthz', '/readyz', '/metrics', '/api/host/drain', '/api/host/reference'].includes(path)) {
         operator(request);
@@ -196,10 +203,31 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
         send(response, 200, { ready: true }); return;
       }
       if (draining) throw new MetadataError('SERVER_DRAINING', 503);
+      if (path === '/api/access-requests') {
+        method(request, response, ['POST', 'OPTIONS']);
+        if (request.method === 'OPTIONS') {
+          response.writeHead(204, { 'Access-Control-Allow-Methods': 'POST', 'Access-Control-Allow-Headers': 'Content-Type', 'Cache-Control': 'no-store' });
+          response.end(); return;
+        }
+        await limitAccessRequests(options.membershipDatabase, request.socket.remoteAddress ?? 'unknown', accessRate, Date.now());
+        const raw = await readBody(request, 16 * 1024).catch((error: unknown) => {
+          if (error instanceof RequestError) throw new MetadataError(error.status === 413 ? 'ACCESS_REQUEST_TOO_LARGE' : 'ACCESS_REQUEST_INVALID', error.status);
+          throw error;
+        });
+        if (!raw || typeof raw !== 'object' || Array.isArray(raw)
+          || Object.keys(raw).some(key => !['name', 'email', 'organization', 'note'].includes(key))) throw new MetadataError('ACCESS_REQUEST_INVALID', 400);
+        const input = raw as Record<string, unknown>;
+        await storeAccessRequest(options.membershipDatabase, { name: input.name, email: input.email, organization: input.organization, note: input.note, now: Date.now() });
+        send(response, 201, { received: true }); return;
+      }
       if (path === '/api/host' || path.startsWith('/api/host/')) {
         const authorization = request.headers.authorization;
         const browserMembership = /^\/api\/host\/tenants\/[A-Za-z0-9_-]+\/users(?:\/[A-Za-z0-9_-]+)?$/.test(path);
         if (request.headers.origin !== undefined && !browserMembership || !authorization?.startsWith('Operator ') || !equal(authorization.slice(9), config.operatorKey.toString('base64url'))) throw new MetadataError('OPERATOR_REQUIRED', 403);
+        if (path === '/api/host/access-requests') {
+          method(request, response, ['GET']);
+          send(response, 200, { requests: await listAccessRequests(options.membershipDatabase) }); return;
+        }
         if (path === '/api/host/reference/surfaces') {
           operator(request); method(request, response, ['PUT']);
           assertReferenceSurfaces(await readBody(request));
