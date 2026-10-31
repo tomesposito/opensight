@@ -5,7 +5,8 @@ import { object, identifier, resourceKey, type MetadataResource } from './metada
 export interface MetricVersion { version: number; state: 'draft' | 'published'; definition: MetricDefinition; actor: string; at: string }
 export interface MetricRecord {
   dataset: MetricDataset; createdBy: string; publishedVersion: number | null;
-  versions: MetricVersion[]; audit: { action: 'create' | 'edit' | 'publish'; actor: string; at: string; version: number }[];
+  provenance?: { kind: 'dataset-calculation'; datasetVersion: number; calculationId: string; name: string; expression: string };
+  versions: MetricVersion[]; audit: { action: 'create' | 'promote' | 'edit' | 'publish'; actor: string; at: string; version: number }[];
 }
 export interface MetricSchema { columns: readonly { name: string; type: string }[]; unsafeJoin?: boolean }
 export function metricDataset(raw: unknown): MetricDataset {
@@ -37,7 +38,11 @@ export function metricDefinition(raw: unknown, schema?: MetricSchema): MetricDef
 export function metricRecord(resource: MetadataResource): MetricRecord { return resource.body as unknown as MetricRecord; }
 /** Storage validation is separate from live-schema validation, so historical definitions survive schema changes. */
 export function validateMetricRecord(raw: unknown): MetricRecord {
-  const b = object(raw, ['dataset', 'createdBy', 'publishedVersion', 'versions', 'audit']); metricDataset(b.dataset); identifier(b.createdBy);
+  const b = object(raw, ['dataset', 'createdBy', 'publishedVersion', 'versions', 'audit', 'provenance']); metricDataset(b.dataset); identifier(b.createdBy);
+  if (b.provenance !== undefined) {
+    const p = object(b.provenance, ['kind', 'datasetVersion', 'calculationId', 'name', 'expression']);
+    if (p.kind !== 'dataset-calculation' || !Number.isSafeInteger(p.datasetVersion) || Number(p.datasetVersion) < 1 || ['calculationId', 'name', 'expression'].some(k => typeof p[k] !== 'string' || !p[k])) assetFail('METRIC_INVALID_HISTORY');
+  }
   if (!Array.isArray(b.versions) || !b.versions.length || !Array.isArray(b.audit) || b.audit.length !== b.versions.length) assetFail('METRIC_INVALID_HISTORY');
   let published: number | null = null;
   b.versions.forEach((raw, i) => {
@@ -45,7 +50,7 @@ export function validateMetricRecord(raw: unknown): MetricRecord {
     if (v.version !== i + 1 || !['draft', 'published'].includes(String(v.state)) || typeof v.at !== 'string' || !Number.isFinite(Date.parse(v.at))) assetFail('METRIC_INVALID_HISTORY');
     identifier(v.actor); metricDefinition(v.definition);
     const a = object((b.audit as unknown[])[i], ['action', 'actor', 'at', 'version']);
-    if (a.version !== v.version || a.actor !== v.actor || a.at !== v.at || a.action !== (v.state === 'published' ? 'publish' : i === 0 ? 'create' : 'edit')) assetFail('METRIC_INVALID_HISTORY');
+    if (a.version !== v.version || a.actor !== v.actor || a.at !== v.at || a.action !== (v.state === 'published' ? 'publish' : i === 0 ? b.provenance ? 'promote' : 'create' : 'edit')) assetFail('METRIC_INVALID_HISTORY');
     if (v.state === 'published') published = i + 1;
   });
   if (b.publishedVersion !== published || (b.versions[0] as MetricVersion).actor !== b.createdBy) assetFail('METRIC_INVALID_HISTORY');
@@ -54,6 +59,37 @@ export function validateMetricRecord(raw: unknown): MetricRecord {
 export class MetricCatalog {
   constructor(readonly assets: AssetCatalog) {}
   dataset(ref: MetricDataset) { return this.assets.find(ref.kind, ref.id, ref.ownerId) ?? assetFail('METRIC_DATASET_NOT_FOUND', 404); }
+  calculations(ref: MetricDataset): { id: string; name: string; expression: string }[] {
+    this.assets.build(); const r = this.dataset(ref);
+    if (ref.kind === 'prepared-dataset') {
+      const p = object(r.body.resource).opensightPrep as import('@opensight/bundle-parser/prep').PrepPipeline;
+      return p.steps.flatMap(s => s.kind === 'calculate' ? [{ id: s.id, ...s.config }] : []);
+    }
+    const wire = object(r.body.definition), d = object(wire.DataSet ?? wire);
+    return Object.entries(object(d.LogicalTableMap ?? {})).flatMap(([table, raw]) => {
+      const transforms = object(raw).DataTransforms as Record<string, unknown>[] | undefined;
+      return (transforms ?? []).flatMap((t, index) => {
+        if (!t.CreateColumnsOperation) return [];
+        const columns = object(t.CreateColumnsOperation).Columns as { ColumnId: string; ColumnName: string; Expression: string }[];
+        return columns.map(c => ({ id: `${table}/${index}/${c.ColumnId}`, name: c.ColumnName, expression: c.Expression }));
+      });
+    });
+  }
+  promotionDefinition(ref: MetricDataset, calculationId: string, schema: MetricSchema): MetricDefinition {
+    const calc = this.calculations(ref).find(c => c.id === calculationId) ?? assetFail('METRIC_CALCULATION_NOT_FOUND', 404);
+    // COUNT validates every scalar type without guessing currency or percentage semantics.
+    const base: MetricDefinition = { name: calc.name, expression: calc.expression, defaultAggregation: 'COUNT', format: { style: 'number', decimalPlaces: 2 }, description: '', synonyms: [] };
+    metricDefinition(base, { columns: schema.columns.filter(c => c.name.toLowerCase() !== calc.name.toLowerCase()) });
+    try { metricDefinition({ ...base, defaultAggregation: 'SUM' }, { columns: schema.columns.filter(c => c.name.toLowerCase() !== calc.name.toLowerCase()) }); base.defaultAggregation = 'SUM'; }
+    catch (e) { if (!(e && typeof e === 'object' && 'code' in e && e.code === 'METRIC_TYPE_MISMATCH')) throw e; }
+    return base;
+  }
+  promote(id: string, ref: MetricDataset, calculationId: string, raw: unknown, schema: MetricSchema) {
+    this.assets.build(); const definition = this.promotionDefinition(ref, calculationId, schema);
+    const r = this.create(id, ref, raw ?? definition, schema), b = metricRecord(r);
+    b.provenance = { kind: 'dataset-calculation', datasetVersion: this.dataset(ref).version, calculationId, name: definition.name, expression: definition.expression };
+    b.audit[0]!.action = 'promote'; return r;
+  }
   schema(ref: MetricDataset): MetricSchema {
     const dataset = this.dataset(ref);
     if (ref.kind === 'dataset') {
