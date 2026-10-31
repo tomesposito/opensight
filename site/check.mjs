@@ -27,7 +27,8 @@ const refs = [...html.matchAll(/(?:src|href)="([^"]+)"/g)].map(m => m[1]);
 const local = refs.filter(r => !/^(https?:|mailto:|#)/.test(r) && !DEPLOY_TIME.has(r));
 check(local.length > 0, 'no local references found (unexpected)');
 for (const r of local) {
-  check(existsSync(resolve(root, r)), `missing local asset: ${r}`);
+  // A cache-busting query/fragment still names the same local file.
+  check(existsSync(resolve(root, r.split(/[?#]/)[0])), `missing local asset: ${r}`);
 }
 const ids = new Set([...html.matchAll(/\bid="([^"]+)"/g)].map(m => m[1]));
 const anchors = refs.filter(r => r.startsWith('#'));
