@@ -291,6 +291,67 @@ query parameters are rejected. Stores hold at most 100 datasets per owner and
 `PREP_NOT_FOUND`, and `PREP_LIMIT_EXCEEDED`; expression errors keep their existing
 Phase 2c names and paths. Invalid writes leave the prior resource intact.
 
+## Shared recipe templates (#160)
+
+Choose **Promote recipe** on a saved, unchanged prep pipeline. Enter a template
+name and **Save template draft**. This copies the step sequence, configurations,
+step names, branches and output selection into a workspace asset. The original
+recipe stays unchanged. Templates record the source recipe ID/version, named
+owner, creator, and an immutable version/audit entry on propose, edit and publish.
+No source credentials, connections or row data are copied.
+
+The workflow uses the same draft → published pattern as governed metrics.
+Editors propose from their own saved recipes, whose owner becomes the template
+owner. Only that owner or a workspace administrator can publish. Before first
+publication, drafts are visible only to the creator and approvers. Readers cannot
+use the prep/template authoring surface. **Shared templates** lists visible assets,
+labels drafts awaiting approval and names their owner. **Review** exposes every
+step configuration, input slot, branch and selected output before publication.
+After publication, an owner/admin edit creates a new draft while the last
+published version remains available to other editors. The API exposes history
+and export to editors of the template. Template definition editing is API-only in
+this slice; the UI supports propose, review, publish and reuse.
+
+Choose **Start from** a published template, enter a new dataset name, and bind
+every input slot to an available source or prepared dataset owned by the creator.
+The root input is `input`; distinct secondary sources use `input-1`, `input-2`,
+and so on. Repeated source references share one slot; internal step references
+stay internal. These slots contain no original source IDs. Existing step-kind
+restrictions still apply (for example append takes a connected-source ID).
+The complete copied pipeline is checked using the ordinary prep compiler and
+source admission. Unknown fields, missing inputs, incompatible schemas and
+inaccessible sources fail closed. No step is silently removed and no field is
+automatically renamed. The new dataset is saved with copied, independently
+editable steps. Later template edits/publications cannot mutate it; there is no
+follow-latest binding. Blaze materialization rules remain unchanged.
+
+| Method and resource | Behavior |
+| --- | --- |
+| `GET /api/v1/prep-templates` | Visible workspace templates, paged with `Limit`/`Cursor` |
+| `POST /api/v1/prep-templates` | `{id,datasetId,name}` proposes from the caller's saved recipe |
+| `GET /api/v1/prep-templates/:id` | Visible definition, owner, source provenance and permissions |
+| `PUT /api/v1/prep-templates/:id` | `{definition:{name,pipeline}}` appends a draft; pipeline inputs must be slots |
+| `POST /api/v1/prep-templates/:id/publish` | `{}` publishes the current draft |
+| `GET /api/v1/prep-templates/:id/versions` | Complete definition history, paged |
+| `GET /api/v1/prep-templates/:id/export` | Complete history, ownership, provenance and audit |
+| `POST /api/v1/prep-templates/:id/datasets` | `{id,name,bindings:{input:sourceId,...}}` creates a new owned dataset from the last published version |
+
+Edit, publish and dataset creation require `If-Match` with the template's current
+asset version. Creation never overwrites an existing dataset. Missing bindings
+return `TEMPLATE_INPUT_UNBOUND`; schema/source admission failures return
+`TEMPLATE_BINDING_FAILED`. An unpublished template returns `TEMPLATE_NOT_PUBLISHED`.
+Permission errors use `TEMPLATE_EDIT_FORBIDDEN`/`TEMPLATE_PUBLISH_FORBIDDEN`;
+invisible drafts return `TEMPLATE_NOT_FOUND`. Template writes are versioned and
+audited; unlike metric writes, these routes do not offer idempotency receipts.
+Names are human-confirmed labels; stable template IDs identify assets.
+
+Templates use the existing local asset overlay/security store or hosted metadata
+store, including SQLite/Postgres kind-constraint upgrades. No new dependency,
+configuration variable, service or network operation is introduced. Source recipe
+provenance is historical, so deleting that recipe does not delete the independent
+template. The static demo has no template store and explicitly requires a local
+or hosted API; it never simulates promotion, approval or dataset creation.
+
 ## Host configuration and lifetime
 
 `createApiServer({prepStorePath})` uses the existing atomic JSON store. Omit the

@@ -112,7 +112,42 @@ API; the single-file demo is not a deployed server.
 
 ## Migration boundary
 
-Existing calculated fields remain unchanged. Promotion is opt-in and belongs to
-issue #160, which will add the path for promoting existing calculations into
-governed definitions. This issue implements direct authoring only, with no
-promotion controls or automatic conversion.
+Promotion is opt-in (#160). In **Data → Metrics**, the dataset calculation list
+has **Promote** actions. A saved prep calculation also has a **Promote** action
+when selected on the prep canvas. Both open the existing metric definition form,
+prefilled with the saved name and expression. Numeric expressions default to SUM;
+other scalar types default to COUNT. Format defaults to number with two decimal
+places: currency and percentage semantics are not guessed. The promoter can edit
+all definition fields before saving, and must confirm a unique final name.
+A calculated output that is already a dataset field therefore needs a different
+metric name; `METRIC_NAME_CONFLICT` never overwrites or silently renames it.
+
+Saving creates a draft through the same metric model. The source calculation and
+recipe stay unchanged. Dataset owners and workspace administrators approve by
+publishing; unpublished promotions cannot execute in analyses, dashboards or Ask O.
+The metric carries immutable provenance (source calculation ID, name, expression,
+dataset version, and its existing exact dataset binding). Its first audit action
+is `promote`; later edit/publish versions use the ordinary metric history. The
+catalog labels promoted metrics and export includes provenance and audit.
+
+`POST /api/v1/metrics/promote-calc` takes `{id, dataset, calculationId, definition?}`.
+The definition is optional for API callers; omission uses the defaults and still
+fails on a name conflict. The editor dataset catalog includes `calculations` with
+IDs, source expressions, prefilled definitions or a named validation error.
+Prepared calculations use their stable calculate-step ID. Legacy dataset
+`CreateColumnsOperation` calculations use `logicalTableId/transformIndex/columnId`.
+The server resolves the source itself and validates its original expression even
+when the submitted definition changes it. A missing source reports
+`METRIC_CALCULATION_NOT_FOUND`; invalid expressions and missing fields retain the
+existing metric errors. Readers cannot propose. Source dataset revisions are
+checked against the schema snapshot before commit, and idempotent retries use the
+existing metric receipt mechanism.
+
+This slice covers saved dataset calculations only. Analysis-local calculations
+may depend on parameters, other local calculations and analysis-specific binding;
+there is no analysis promotion action or automatic conversion. A prep expression
+must validate against its dataset's final output schema. Intermediate fields
+removed or renamed later in the recipe are not substituted or inlined: promotion
+fails closed until a definition can bind. Existing join safety rules still apply
+when a published metric is consumed. Unsaved prep changes must be saved first.
+Static-demo promotion controls display the explicit local/hosted API requirement.
