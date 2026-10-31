@@ -178,6 +178,11 @@ Unreleased entries into a new version section (see AGENTS.md §1).
   intent, so an accounting or audit failure can no longer leave repeated
   provider calls unmetered past the tenant's cap; stranded warnings are
   retried and delivered exactly once after recovery (#138).
+- AI spend accounting (reopen): a failure of the warning-intent store itself
+  no longer rolls back the charge either — the intent attempt is savepoint-
+  guarded inside the charge transaction, so recorded usage still advances to
+  the cap and later provider calls stay bounded while the warning store is
+  unavailable (#138).
 
 ### Security
 

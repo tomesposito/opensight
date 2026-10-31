@@ -283,6 +283,33 @@ test('persistent audit failure preserves charges, bounds provider calls across f
   assert.equal((await f.db.transaction(c => c.query("SELECT * FROM h8_usage_events WHERE outcome = 'admitted'"))).length, 8);
 });
 
+test('persistent warning-intent failure preserves charges and bounds provider calls across fresh instances', async t => {
+  const f = await setup(t, priced({ aiSpendCapCents: 100, aiWarnPct: 80 }));
+  await f.usage.recordAiUsage(one, 70);
+  await f.db.transaction(c => c.query('DROP TABLE h8_ai_warnings'));
+  let calls = 0;
+  const freshUsage = () => new HostedUsage(f.db, f.usage.config, f.usage.clock);
+  const complete = async () => {
+    const ai = await AISettings.load({ bootstrap: { provider: 'openai', model: 'm', key: 'key' }, aiMeter: meterFor(freshUsage()),
+      fetcher: async () => { calls++; return openAiReply(10); } });
+    return ai.complete('default', { system: 's', prompt: 'p' });
+  };
+  // The #138 reopen scenario, repeated: with the warning store gone, each
+  // completion still commits its charge, so recorded usage advances to the cap.
+  for (const tokens of [80, 90, 100]) {
+    assert.equal(await complete(), 'OK');
+    const snapshot = await freshUsage().aiUsage(one);
+    assert.equal(snapshot.aiTokens, tokens); assert.equal(snapshot.aiCalls, 1 + (tokens - 70) / 10);
+    assert.equal(calls, (tokens - 70) / 10);
+  }
+  for (let i = 0; i < 3; i++) {
+    await assert.rejects(complete(), { code: 'AI_SPEND_CAP_EXCEEDED', status: 429 });
+    assert.equal(calls, 3);
+  }
+  const snapshot = await freshUsage().aiUsage(one);
+  assert.equal(snapshot.aiCalls, 4); assert.equal(snapshot.aiTokens, 100);
+});
+
 test('warnings delivered before durable intents still deduplicate for the tenant and period', async t => {
   const f = await setup(t, priced({ aiSpendCapCents: 100 }));
   await f.db.transaction(c => appendOperatorAudit(c, { action: 'ai.spend.warning', tenantId: one.tenantId, subject: one.namespaceId,
@@ -322,11 +349,13 @@ test('delivery acknowledgement failure keeps all periods pending and retry only 
 test('charge transaction failures still withhold the answer and roll back both usage metrics', async t => {
   const f = await setup(t, priced({ aiSpendCapCents: 100, aiWarnPct: 80 }));
   await f.usage.recordAiUsage(one, 70);
+  // A failure in the charge store itself (here the usage-event append) is a
+  // genuine charge failure — unlike a warning-intent failure (previous test),
+  // it still withholds the answer and rolls back both usage metrics.
+  await f.db.transaction(c => c.query(`CREATE TRIGGER fail_usage_event BEFORE INSERT ON h8_usage_events
+    BEGIN SELECT RAISE(ABORT, 'usage event store unavailable'); END`));
   const ai = await AISettings.load({ bootstrap: { provider: 'openai', model: 'm', key: 'key' }, aiMeter: meterFor(f.usage),
-    fetcher: async () => {
-      await f.db.transaction(c => c.query('DROP TABLE h8_ai_warnings'));
-      return openAiReply(10);
-    } });
+    fetcher: async () => openAiReply(10) });
   await assert.rejects(ai.complete('default', { system: 's', prompt: 'p' }), { code: 'ENTITLEMENT_UNRESOLVED', status: 503 });
   const snapshot = await f.usage.aiUsage(one);
   assert.equal(snapshot.aiCalls, 1); assert.equal(snapshot.aiTokens, 70);
