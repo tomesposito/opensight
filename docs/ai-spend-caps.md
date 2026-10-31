@@ -103,7 +103,11 @@ warning-delivery intent in `h8_ai_warnings`. A separate transaction appends
 `ai.spend.warning` to the operator audit and marks the intent delivered. Delivery
 is retried on later admission checks (including denied checks) and usage recording;
 an undelivered warning stays pending until the audit store recovers. Audit delivery
-can never erase or block the charge. Durable tenant/day deduplication gives one
+can never erase or block the charge. A failure of the warning-intent store itself
+(missing table, permission or write failure) also cannot erase or block the charge:
+the intent attempt is savepoint-guarded inside the charge transaction and only the
+intent is lost for that crossing — recorded usage still advances, and a later charge
+in the same period retries the intent once the store recovers. Durable tenant/day deduplication gives one
 alert per UTC day across instances and restarts, including alerts delivered before
 intents were introduced. Zero percent alerts on the first successful completion;
 100 percent alerts at the cap. A single call may cross both warning and cap.
