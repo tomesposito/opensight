@@ -85,13 +85,22 @@ test('metrics: legacy SQLite kind constraint upgrades without losing resources o
     await initializeMetadata(db);
     await db.transaction(async c => {
       const [{ sql }] = await c.query("SELECT sql FROM sqlite_master WHERE name = 'h1_resources'");
+      const [{ sql: linkSql }] = await c.query("SELECT sql FROM sqlite_master WHERE name = 'h1_links'");
       await c.query('DROP TABLE h1_links'); await c.query('DROP TABLE h1_resources');
       await c.query(sql.replaceAll(",'metric'", ''));
+      await c.query(linkSql);
+      await c.query("INSERT INTO h1_tenants (tenant_id,state,version) VALUES ('w', 'active', 1)");
+      await c.query("INSERT INTO h1_namespaces VALUES ('w','w','Workspace')");
+      await insertResource(c, { tenantId: 'w', namespaceId: 'w' }, { kind: 'user', id: 'owner' }, { name: 'Owner', role: 'author' });
+      await insertResource(c, { tenantId: 'w', namespaceId: 'w' }, { kind: 'group', id: 'editors' }, { name: 'Editors', userIds: ['owner'] });
     });
-    // initialize recreates links before performing the migration; empty legacy DB upgrades too.
     await initializeMetadata(db);
     const [{ sql }] = await db.transaction(c => c.query("SELECT sql FROM sqlite_master WHERE name = 'h1_resources'"));
     assert.match(sql, /'metric'/);
+    const resources = await db.transaction(c => c.query('SELECT resource_id FROM h1_resources ORDER BY resource_id'));
+    assert.deepEqual(resources.map(r => r.resource_id), ['editors', 'owner']);
+    const links = await db.transaction(c => c.query('SELECT resource_id, target_id FROM h1_links'));
+    assert.deepEqual(links.map(r => ({ ...r })), [{ resource_id: 'editors', target_id: 'owner' }]);
     assert.deepEqual(await db.transaction(c => c.query('PRAGMA foreign_key_check')), []);
   } finally { await db.close(); }
 });

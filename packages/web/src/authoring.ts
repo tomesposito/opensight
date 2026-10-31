@@ -406,7 +406,7 @@ export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorD
   // Manage data: swap or clear the analysis dataset while keeping sheets,
   // visuals, parameters and calculated fields. Unlike 'import' this is an
   // undoable edit, not a document boundary.
-  if (action.type === 'metrics') return draft.dataset ? { ...draft, dataset: { ...draft.dataset, metrics: action.metrics } } : draft;
+  if (action.type === 'metrics') return draft.dataset && JSON.stringify(draft.dataset.metrics ?? []) !== JSON.stringify(action.metrics) ? { ...draft, dataset: { ...draft.dataset, metrics: action.metrics } } : draft;
   if (action.type === 'dataset') {
     const { dataset: _dataset, noDataset: _noDataset, ...content } = draft;
     // The sample uses the existing implicit schema/query path, never a prepared

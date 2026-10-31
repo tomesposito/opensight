@@ -809,8 +809,9 @@ function detailedTooltipFormatter(model: VisualModel, rows: Row[], cell: (row: R
       : titleField ? fieldName(titleField, model.formatting) : model.title;
     const lines = [richTextEscape(title)];
     for (const field of fields) {
-      const label = detail.aggregations && model.measures.includes(field) ? `Sum of ${fieldName(field, model.formatting)}` : fieldName(field, model.formatting);
-      lines.push(`${richTextEscape(label)}: ${richTextEscape(displayCell(cell(row, field)))}`);
+      const governed = model.formatting?.metricFormats?.[field.column];
+      const label = detail.aggregations && model.measures.includes(field) && !governed ? `Sum of ${fieldName(field, model.formatting)}` : fieldName(field, model.formatting);
+      lines.push(`${richTextEscape(label)}: ${richTextEscape(formatMetric(cell(row, field), governed) ?? displayCell(cell(row, field)))}`);
     }
     for (const extra of extras) {
       const name = extra.label ?? fieldName(extra.field, model.formatting);

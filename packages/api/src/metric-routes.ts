@@ -21,8 +21,25 @@ function view(c: MetricCatalog, r: MetadataResource) {
 export class MetricRoutes {
   private tail: Promise<unknown> = Promise.resolve();
   constructor(private readonly protocol: AnalysisProtocol, private readonly receipts: RetryAdapter = new RetryStore({ periodicPrune: false })) {}
-  matches(path: string) { return /^\/api\/v1\/metrics(?:\/|$)/.test(path) || /^\/api\/v1\/datasets\/[^/]+\/metrics$/.test(path); }
+  matches(path: string) { return path === '/api/v1/metric-datasets' || /^\/api\/v1\/metrics(?:\/|$)/.test(path) || /^\/api\/v1\/datasets\/[^/]+\/metrics$/.test(path); }
   async route(request: IncomingMessage, response: ServerResponse, path: string, backend: MetricBackend) {
+    if (path === '/api/v1/metric-datasets') {
+      method(request, response, ['GET']);
+      const all = await backend.transaction(false, a => {
+        a.build(); const c = new MetricCatalog(a);
+        return a.resources.filter(r => r.kind === 'dataset' || r.kind === 'prepared-dataset').map(r => {
+          const dataset = metricDataset({ kind: r.kind, id: r.id, ...(r.ownerId ? { ownerId: r.ownerId } : {}) });
+          const wire = object(r.body.definition ?? r.body.resource), name = r.kind === 'dataset' ? object(wire.DataSet ?? wire).Name : wire.name;
+          return { dataset, name: String(name ?? r.id), canPublish: c.canPublish(dataset), owned: r.ownerId === a.scope.userId };
+        }).sort((a,b) => a.name.localeCompare(b.name) || JSON.stringify(a.dataset).localeCompare(JSON.stringify(b.dataset)));
+      });
+      const { offset, limit } = this.protocol.paging(request);
+      const items = await Promise.all(all.slice(offset, offset + limit).map(async d => {
+        try { const schema = backend.metricSchema ? await backend.metricSchema(d.dataset) : await backend.transaction(false, a => new MetricCatalog(a).schema(d.dataset)); return { ...d, columns: schema.columns }; }
+        catch (error) { return { ...d, columns: [], errorCode: error && typeof error === 'object' && 'code' in error ? String(error.code) : 'METRIC_SCHEMA_UNAVAILABLE' }; }
+      }));
+      send(response, 200, { items, nextCursor: offset + items.length < all.length ? Buffer.from(JSON.stringify({ offset: offset + items.length })).toString('base64') : null }); return;
+    }
     const scoped = /^\/api\/v1\/datasets\/([A-Za-z0-9_-]{1,512})\/metrics$/.exec(path);
     const match = /^\/api\/v1\/metrics(?:\/([A-Za-z0-9_-]{1,512})(?:\/(publish|versions|export))?)?$/.exec(path);
     if (!scoped && !match) assetFail('RESOURCE_NOT_FOUND', 404);
@@ -52,6 +69,9 @@ export class MetricRoutes {
         const reply = await backend.transaction(!read, a => {
           const c = new MetricCatalog(a);
           if (snapshot && JSON.stringify(c.dataset(ref!)) !== JSON.stringify(snapshot)) assetFail('METRIC_DATASET_REVISED', 409);
+          // Hosted schema and definition commit share one catalog snapshot, including
+          // nested prepared datasets and sources that may change independently.
+          if (ref && !backend.metricSchema) schema = c.schema(ref);
           if (read && list) {
             // Dataset header distinguishes legacy/prepared and same-id owners. Never infer by field names.
             const header = request.headers['metric-dataset'];

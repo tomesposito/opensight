@@ -281,3 +281,9 @@ details[open] .data-menu-items { animation: menu-open 150ms ease-out; }
 .data-inline-panel p { margin: 8px 0; }
 .data-inline-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
 .data-dialog .data-danger { color: white; background: #a4262c; border-color: #a4262c; }
+
+.governed-metrics { padding: 16px; }
+.governed-metrics > label, .metric-definition-form > label { display: grid; gap: 4px; margin: 12px 0; }
+.metric-definition-form textarea { font-family: Arial, "Helvetica Neue", Helvetica, sans-serif; width: 100%; box-sizing: border-box; }
+.governed-metrics td small { display: block; max-width: 32em; color: var(--muted); margin-top: 4px; }
+.governed-metrics td button { margin: 4px; }

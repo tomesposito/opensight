@@ -1,4 +1,4 @@
-import type { MetricList, MetricSummary, MetricHistory } from './governed-metrics.js';
+import type { MetricDatasetOption, MetricList, MetricSummary, MetricHistory } from './governed-metrics.js';
 import type { MetricDataset, MetricDefinition } from '@opensight/query-engine/browser';
 import type { DashboardSummary, PublishedDashboard, ControlValues } from './published-dashboard.js';
 import type { HostedAnalysisInput, Publication } from './hosted-publish.js';
@@ -301,6 +301,11 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
     // nor cache telemetry. Do not present its partial body as a local status.
     return 'intervalMinutes' in result ? result : getDatasetExecution(id);
   };
+  const metricDatasets = async (signal?: AbortSignal): Promise<MetricDatasetOption[]> => {
+    const items: MetricDatasetOption[] = []; let cursor: string | null = null;
+    do { const page = await rawResource('/api/v1/metric-datasets', 'GET', undefined, signal, undefined, cursor ? { Cursor: cursor } : {}) as { items: MetricDatasetOption[]; nextCursor: string | null }; items.push(...page.items); cursor = page.nextCursor; } while (cursor);
+    return items;
+  };
   const listMetrics = async (datasetId: string, signal?: AbortSignal, dataset?: MetricDataset): Promise<MetricList> => {
     const items: MetricSummary[] = []; let cursor: string | null = null, canCreate = false, canPublish = false;
     do {
@@ -523,7 +528,7 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
     onDemand, connect, subscribeAvailability,
     enroll, acceptEnrollment, login, selectWorkspace, logout, clearSession, getTransportCapabilities, uploadDirectFile, getOperation, getUploadReservation, cancelOperation, cancelUploadReservation,
     listJobs, jobRecipients, jobHistory, jobDeliveries, runJob,
-    listMetrics, saveMetric, publishMetric, metricHistory, getLocalData, getDatasetExecution, setDatasetExecution, refreshBlaze, getPreparedRows, listPrepSources, listPrepDatasets, savePrep, deletePrep, previewPrep, uploadFile, validateConnector, listUsers, saveUser, deleteUser, listInvitations, inviteUser, revokeInvitation, acceptInvitation, getAIStatus, generateO, generateCalculation, getAnalyticsConfig, saveAnalyticsConfig, getAIConfig, saveAIConfig, saveAIKey, testAIConnection, getSession, queryO, getDatasetRefreshStatus,
+    metricDatasets, listMetrics, saveMetric, publishMetric, metricHistory, getLocalData, getDatasetExecution, setDatasetExecution, refreshBlaze, getPreparedRows, listPrepSources, listPrepDatasets, savePrep, deletePrep, previewPrep, uploadFile, validateConnector, listUsers, saveUser, deleteUser, listInvitations, inviteUser, revokeInvitation, acceptInvitation, getAIStatus, generateO, generateCalculation, getAnalyticsConfig, saveAnalyticsConfig, getAIConfig, saveAIConfig, saveAIKey, testAIConnection, getSession, queryO, getDatasetRefreshStatus,
     queryDataset,
     getAnalysisDefinition: (id: string, signal?: AbortSignal) => getDefinition('analysis', id, signal),
     getDashboardDefinition: (id: string, signal?: AbortSignal) => getDefinition('dashboard', id, signal),

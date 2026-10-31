@@ -1,3 +1,4 @@
+import { GovernedMetrics } from './GovernedMetrics.js';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { BundleDataSet } from '@opensight/bundle-parser';
 import type { createApiClient } from './api-client.js';
@@ -11,7 +12,7 @@ import { DatasetExecution } from './DatasetExecution.js';
 import type { AuthorDataset } from './authoring.js';
 import { AppLink, type Navigate } from './AppNavigation.js';
 
-export type DatasetDetailClient = Pick<ReturnType<typeof createApiClient>, 'listPrepSources' | 'listPrepDatasets' | 'savePrep' | 'deletePrep' | 'getDatasetExecution' | 'setDatasetExecution' | 'refreshBlaze' | 'getPreparedRows'>;
+export type DatasetDetailClient = Pick<ReturnType<typeof createApiClient>, 'listPrepSources' | 'listPrepDatasets' | 'savePrep' | 'deletePrep' | 'getDatasetExecution' | 'setDatasetExecution' | 'refreshBlaze' | 'getPreparedRows'> & import('./GovernedMetrics.js').MetricClient;
 export function DatasetDetail({ datasetId, client, navigate, onGenerate }: { datasetId: string; client?: DatasetDetailClient; navigate: Navigate; onGenerate: (dataset: AuthorDataset) => void }) {
   const catalog = useDataCatalog(client);
   const dataset = catalog.data?.datasets.find(dataset => dataset.dataSetId === datasetId);
@@ -22,7 +23,7 @@ export function DatasetDetail({ datasetId, client, navigate, onGenerate }: { dat
 }
 function DatasetDetailContent({ dataset, data, client, navigate, onGenerate, onChanged }: { onChanged: () => void; dataset: BundleDataSet; data: DataCatalog; client?: DatasetDetailClient; navigate: Navigate; onGenerate: (dataset: AuthorDataset) => void }) {
   const access = useAccess();
-  const [tab, setTab] = useState<'Summary' | 'Refresh' | 'Permissions' | 'Usage'>('Summary');
+  const [tab, setTab] = useState<'Summary' | 'Refresh' | 'Permissions' | 'Usage' | 'Metrics'>('Summary');
   const [query, setQuery] = useState(''), [dialog, setDialog] = useState<'duplicate' | 'delete'>(), [name, setName] = useState(`${dataset.name} copy`);
   const [busy, setBusy] = useState(false), [error, setError] = useState('');
   const [version, setVersion] = useState(data.versions?.[dataset.dataSetId]);
@@ -69,7 +70,7 @@ function DatasetDetailContent({ dataset, data, client, navigate, onGenerate, onC
     </div></div>
     {!source?.available && <p role="alert">{source?.errorCode ?? 'DATASET_UNAVAILABLE'} · This dataset cannot be used for analysis until its sources and cached output are available.</p>}
     {error && !dialog && <p role="alert">{error}</p>}
-    <DataTabs label="Dataset details" tabs={['Summary', 'Refresh', 'Permissions', 'Usage']} selected={tab} select={setTab} />
+    <DataTabs label="Dataset details" tabs={['Summary', 'Refresh', 'Permissions', 'Usage', 'Metrics']} selected={tab} select={setTab} />
     <section role="tabpanel" aria-label={tab}>
     {tab === 'Summary' && <div className="data-summary"><section className="data-card"><h2>Columns ({columns.length})</h2><div className="data-tools"><input aria-label="Search columns" type="search" placeholder="Search columns" value={query} onChange={event => setQuery(event.target.value)} /></div><DataTable headings={['Name', 'Type', 'Description']} empty={!matches.length ? source?.available ? 'No columns match your search.' : 'Columns unavailable. Resolve the dataset error to load its schema.' : undefined}>
       {matches.map(column => <tr key={column.name}><td>{column.name}</td><td>{column.type}</td><td>{typeof objectValue(column)?.description === 'string' ? String(objectValue(column)?.description) : '—'}</td></tr>)}
@@ -81,6 +82,7 @@ function DatasetDetailContent({ dataset, data, client, navigate, onGenerate, onC
       <section className="data-card"><h2>Sources</h2>{sourceNames.length ? <ul>{[...new Set(sourceNames)].map(name => <li key={name}>{name}</li>)}</ul> : <p>Source details unavailable.</p>}</section>
       <section className="data-card"><h2>Usage</h2><p>Analyses on this device: {usage.error ? 'Unavailable' : usage.analyses.length}</p><p>Dashboards: Not available</p><p>Datasets in this catalog: {dependents.length}</p><button onClick={() => setTab('Usage')}>View usage</button></section>
     </aside></div>}
+    {tab === 'Metrics' && <GovernedMetrics client={client} datasetId={dataset.dataSetId} />}
     {tab === 'Refresh' && <DatasetRefresh client={client} datasetId={dataset.dataSetId} onChanged={status => setVersion(status.version)} />}
     {tab === 'Permissions' && <section className="data-card"><div className="data-toolbar"><div><h2>Manage dataset permissions</h2><p>{permissionNote}</p></div><button disabled title={permissionNote}>Add users &amp; groups</button></div>
       <DataTable headings={['Username/Group name', 'Permissions', 'Actions']} empty={access.mode !== 'hosted' || !access.session ? 'Local datasets have no user or group grants. This workspace is shared by its users.' : undefined}>

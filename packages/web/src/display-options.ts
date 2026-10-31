@@ -54,6 +54,19 @@ export function applyDisplayOptions(model: VisualModel, option: EChartsOption, t
     }
   }
   if (!Array.isArray(option.series)) return;
+  // Governed formats follow the result's field identity, including multi-measure
+  // series. Normalized 100% charts retain their derived percentage scale.
+  const governedFormats = model.measures.map(m => model.formatting?.metricFormats?.[m.column]);
+  if (governedFormats.some(Boolean) && model.kind !== 'bar100') {
+    for (const [index, series] of option.series.entries()) {
+      const format = governedFormats[index % governedFormats.length];
+      if (format) series.tooltip = { ...(typeof series.tooltip === 'object' ? series.tooltip : {}), valueFormatter: (value: unknown) => formatMetric(value, format) ?? String(value ?? '') };
+      if (format && 'label' in series && !['pie', 'scatter', 'sankey', 'waterfall'].includes(model.kind)) series.label = { ...series.label, formatter: (params: { value?: unknown }) => formatMetric(model.kind === 'heatmap' && Array.isArray(params.value) ? params.value[2] : params.value, format) ?? '' };
+    }
+    if (governedFormats.length === 1 && governedFormats[0]) for (const axes of [option.xAxis, option.yAxis]) {
+      for (const axis of Array.isArray(axes) ? axes : axes ? [axes] : []) if (axis.type === 'value') axis.axisLabel = { ...axis.axisLabel, formatter: (value: number) => formatMetric(value, governedFormats[0]) ?? String(value) };
+    }
+  }
   const decimals = model.formatting?.decimalPlaces;
   const dataLabels = model.formatting?.dataLabels;
   const formatNumber = (value: unknown): string => typeof value === 'number' && Number.isFinite(value)
@@ -120,7 +133,7 @@ export function applyDisplayOptions(model: VisualModel, option: EChartsOption, t
         if (showMetric) { const text = metricText(params); if (text) parts.push(text); }
         return parts.join(': ');
       };
-    } else if (decimals !== undefined) {
+    } else if (decimals !== undefined && !governedFormats.some(Boolean)) {
       series.label = { ...series.label, formatter: (params: { value?: unknown; percent?: number; name?: string; data?: unknown }): string => {
         if (model.kind === 'pie') return `${params.name ?? ''}: ${formatNumber(params.percent)}%`;
         if (model.kind === 'scatter') return `${params.name ?? ''}: ${Array.isArray(params.value) ? params.value.map(formatNumber).join(', ') : formatNumber(params.value)}`;

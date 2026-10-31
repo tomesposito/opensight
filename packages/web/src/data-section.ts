@@ -4,7 +4,7 @@ import type { createApiClient } from './api-client.js';
 import { prepMessage, type PrepSourceSummary } from './data-prep.js';
 import { prepResources, prepSources } from './prep-contracts.js';
 
-export type DataCatalogClient = Pick<ReturnType<typeof createApiClient>, 'listPrepDatasets' | 'listPrepSources'>;
+export type DataCatalogClient = Pick<ReturnType<typeof createApiClient>, 'listPrepDatasets' | 'listPrepSources'> & import('./GovernedMetrics.js').MetricClient;
 export interface DataCatalog { datasets: BundleDataSet[]; sources: PrepSourceSummary[]; versions?: Record<string, number>; persistence?: 'file' | 'ephemeral' | 'durable' }
 export async function loadDataCatalog(client: DataCatalogClient): Promise<DataCatalog> {
   const saved = await client.listPrepDatasets();

@@ -1,5 +1,6 @@
 import { metricColumn, type MetricDefinition, type MetricDataset, type PublishedMetric, type MetricFormat } from '@opensight/query-engine/browser';
 import type { VisualFormatting } from './formatting.js';
+export interface MetricDatasetOption { dataset: MetricDataset; name: string; columns: { name: string; type: string }[]; canPublish: boolean; owned: boolean; errorCode?: string }
 export interface MetricSummary {
   id: string; dataset: MetricDataset; version: number; publishedVersion: number | null;
   state: 'draft' | 'published'; definition: MetricDefinition; published: PublishedMetric | null;

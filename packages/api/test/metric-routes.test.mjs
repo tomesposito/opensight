@@ -76,3 +76,19 @@ test('metrics: analysis and frozen dashboard follow latest publication; drafts a
   assert.equal(good(await f.request('/api/datasets/sales/query', { method: 'POST', body: query })).rows[0].value, 1800);
   assert.deepEqual(good(await f.request('/api/v1/analyses/governed')).Definition.CalculatedFields, []);
 });
+
+
+test('metric dataset catalog exposes real fields for editor drafts and preserves dataset ownership', async t => {
+  const f = await metricLocal(t);
+  const source = good(await f.request('/api/uploads', { method: 'POST', body: { config: { format: 'csv' }, base64: Buffer.from('amount\n2\n').toString('base64') } }), 201);
+  good(await f.request('/api/datasets/prepared/prep', { method: 'PUT', body: { name: 'Prepared', pipeline: { version: 1, input: source.id, steps: [] } } }), 201);
+  const peerDatasets = good(await f.request('/api/v1/metric-datasets', { user: 'peer' })).items;
+  const choice = peerDatasets.find(d => d.dataset.id === 'prepared');
+  assert.equal(choice.owned, false); assert.equal(choice.canPublish, false);
+  assert.ok(choice.columns.some(c => c.name === 'amount')); assert.equal(choice.dataset.ownerId, 'author');
+  good(await f.request('/api/v1/metrics', { user: 'peer', method: 'POST', body: { id: 'amount', dataset: choice.dataset, definition: { ...def, expression: 'sum({amount})' } } }), 201);
+  error(await f.request('/api/v1/metrics/amount/publish', { user: 'peer', method: 'POST', body: {}, headers: at(1) }), 403, 'METRIC_PUBLISH_FORBIDDEN');
+  good(await f.request('/api/v1/metrics/amount/publish', { method: 'POST', body: {}, headers: at(1) }));
+  assert.equal(good(await f.request('/api/v1/metric-datasets')).items.find(d => d.dataset.id === 'prepared').owned, true);
+  error(await f.request('/api/v1/metric-datasets', { user: 'reader' }), 403, 'METADATA_WRITE_FORBIDDEN');
+});

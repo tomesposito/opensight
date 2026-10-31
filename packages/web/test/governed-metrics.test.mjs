@@ -31,3 +31,17 @@ test('Ask O produces a stable metric reference without snapshotting a governed e
   assert.deepEqual(prepared.calculatedFields, []);
   assert.equal(buildAuthorQuery(prepared.visual, [], [], dataset).measures[0].aggregation, 'AVG');
 });
+
+
+test('governed chart defaults format axis, label and tooltip without an explicit visual override', () => {
+  const chartDataset = { ...dataset, columns: [...dataset.columns, { name: 'region', type: 'STRING' }] };
+  let draft = { ...emptyDraft(), dataset: chartDataset };
+  draft = authorReducer(draft, { type: 'assign-with-no-selection', field: '__metric_margin', well: 'values' });
+  draft = authorReducer(draft, { type: 'assign', field: 'region', well: 'dimension' });
+  const visual = draft.sheets[0].visuals[0];
+  const compiled = compileVisual({ source: 'bundle', definition: serializeVisual(visual, true, [], chartDataset), rows: [{ region: 'East', __metric_margin: .1234 }], bindings: {}, path: '$' });
+  const series = compiled.option.series[0];
+  assert.equal(series.label.formatter({ value: .1234 }), '12.3%');
+  assert.equal(series.tooltip.valueFormatter(.1234), '12.3%');
+  assert.equal(compiled.option.yAxis.axisLabel.formatter(.1234), '12.3%');
+});
