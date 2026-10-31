@@ -303,6 +303,7 @@ export class HostedUsage {
    * tokens in the same tables/serialization as other usage. When cumulative
    * spend first crosses aiWarnPct of the cap in a period, a durable warning
    * intent commits with the charge. Audit delivery is retried independently.
+   * Warning-intent storage failure never rolls back the charge (see below).
    */
   async recordAiUsage(scope: Scope, tokens: number, estimated = false): Promise<{ aiCalls: number; aiTokens: number; spendCents: number; warned: boolean }> {
     if (!Number.isSafeInteger(tokens) || tokens < 0) throw new MetadataError('ENTITLEMENT_UNRESOLVED', 503);
@@ -323,21 +324,36 @@ export class HostedUsage {
       if (cap !== undefined && cost > 0) {
         const warnPct = entitlement.aiWarnPct ?? 80;
         if (BigInt(after) * BigInt(cost) * 100n >= BigInt(cap) * BigInt(warnPct) * 1_000_000n) {
-          const intent = await c.query('SELECT period FROM h8_ai_warnings WHERE tenant_id = ? AND period = ?', [scope.tenantId, period]);
-          if (!intent.length) {
-            // Preserve pre-intent audit deduplication. An unavailable audit store
-            // must not abort the charge transaction, including on Postgres.
-            let prior = false;
-            await c.query('SAVEPOINT opensight_ai_warning_prior');
-            try {
-              prior = (await c.query("SELECT event_id FROM h8_audit WHERE tenant_id = ? AND action = 'ai.spend.warning' AND substr(created_at,1,10) = ?", [scope.tenantId, period])).length > 0;
-            } catch {
-              await c.query('ROLLBACK TO SAVEPOINT opensight_ai_warning_prior');
+          // The warning intent is advisory, not accounting: the usage counters
+          // above are the charge. An unavailable warning-intent store (missing
+          // table, permission or write failure — #138 reopen) must never roll
+          // the charge back, or the next admission sees the unchanged below-cap
+          // counter and pays the provider again. Guard the whole intent block
+          // with a savepoint, exactly like the audit lookup inside it: on
+          // failure, roll back only the intent attempt and commit the charge.
+          // The intent is then absent for this crossing; a later charge in the
+          // same period retries it once the store recovers.
+          await c.query('SAVEPOINT opensight_ai_warning_intent');
+          try {
+            const intent = await c.query('SELECT period FROM h8_ai_warnings WHERE tenant_id = ? AND period = ?', [scope.tenantId, period]);
+            if (!intent.length) {
+              // Preserve pre-intent audit deduplication. An unavailable audit store
+              // must not abort the charge transaction, including on Postgres.
+              let prior = false;
+              await c.query('SAVEPOINT opensight_ai_warning_prior');
+              try {
+                prior = (await c.query("SELECT event_id FROM h8_audit WHERE tenant_id = ? AND action = 'ai.spend.warning' AND substr(created_at,1,10) = ?", [scope.tenantId, period])).length > 0;
+              } catch {
+                await c.query('ROLLBACK TO SAVEPOINT opensight_ai_warning_prior');
+              }
+              await c.query('RELEASE SAVEPOINT opensight_ai_warning_prior');
+              if (!prior) await c.query('INSERT INTO h8_ai_warnings (tenant_id, namespace_id, period, detail, created_at, delivered_at) VALUES (?,?,?,?,?,NULL)',
+                [scope.tenantId, scope.namespaceId, period, JSON.stringify({ period, spendCents, capCents: cap, warnPct, estimated }), now]);
             }
-            await c.query('RELEASE SAVEPOINT opensight_ai_warning_prior');
-            if (!prior) await c.query('INSERT INTO h8_ai_warnings (tenant_id, namespace_id, period, detail, created_at, delivered_at) VALUES (?,?,?,?,?,NULL)',
-              [scope.tenantId, scope.namespaceId, period, JSON.stringify({ period, spendCents, capCents: cap, warnPct, estimated }), now]);
+          } catch {
+            await c.query('ROLLBACK TO SAVEPOINT opensight_ai_warning_intent');
           }
+          await c.query('RELEASE SAVEPOINT opensight_ai_warning_intent');
         }
       }
       return { aiCalls, aiTokens: after, spendCents };

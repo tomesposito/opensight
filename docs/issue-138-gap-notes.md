@@ -108,3 +108,29 @@ image/GIF refreshes.
 All requested implementation and local verification work is complete. Live
 PostgreSQL checks remain unrun because their required configuration is absent.
 No merge, push, deployment or external service call was performed.
+
+## Reopen fix (2026-10-31 weekly Codex review)
+
+The 2026-10-31 review found the original fix partial: `recordAiUsage()` still
+read/inserted `h8_ai_warnings` inside the charge transaction, so a warning-store
+failure rolled back both usage counters and the next admission repeated paid
+provider work below the cap.
+
+Fix: the whole warning-intent block is now guarded by a savepoint
+(`opensight_ai_warning_intent`) inside the charge transaction. On any intent
+failure, only the intent attempt rolls back; the charge commits and recorded
+usage advances. This distinguishes unavailable warning-intent storage (advisory,
+non-blocking) from a retryable audit-delivery failure (intent stays pending) and
+from a genuine charge-store failure (still fail-closed: answer withheld, both
+metrics roll back — now exercised with a usage-event trigger instead of the
+warning-table drop the old test used).
+
+Honest limit: if the intent store is down at the crossing charge and no later
+charge lands in that period, that period's warning may never be delivered. The
+spend cap itself is unaffected — that is the control this issue protects.
+
+Regression coverage (`packages/api/test/ai-spend-caps.test.mjs`, 20 tests):
+a new test drops `h8_ai_warnings`, then completes repeatedly through fresh
+service instances — usage advances 70 → 80 → 90 → 100, and at the cap further
+completions reject `AI_SPEND_CAP_EXCEEDED` with the provider fetcher provably
+not invoked again.
