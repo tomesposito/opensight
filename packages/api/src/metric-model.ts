@@ -79,8 +79,13 @@ export class MetricCatalog {
     const calc = this.calculations(ref).find(c => c.id === calculationId) ?? assetFail('METRIC_CALCULATION_NOT_FOUND', 404);
     // COUNT validates every scalar type without guessing currency or percentage semantics.
     const base: MetricDefinition = { name: calc.name, expression: calc.expression, defaultAggregation: 'COUNT', format: { style: 'number', decimalPlaces: 2 }, description: '', synonyms: [] };
-    metricDefinition(base, { columns: schema.columns.filter(c => c.name.toLowerCase() !== calc.name.toLowerCase()) });
-    try { metricDefinition({ ...base, defaultAggregation: 'SUM' }, { columns: schema.columns.filter(c => c.name.toLowerCase() !== calc.name.toLowerCase()) }); base.defaultAggregation = 'SUM'; }
+    const sourceSchema = { columns: schema.columns.filter(c => c.name.toLowerCase() !== calc.name.toLowerCase()) };
+    // Validate the source expression independently of its old name. Dataset names
+    // may contain characters a governed name forbids; the promoter can rename it.
+    let validationName = '__promotion_0';
+    for (let n = 1; sourceSchema.columns.some(c => c.name.toLowerCase() === validationName); n++) validationName = `__promotion_${n}`;
+    metricDefinition({ ...base, name: validationName }, sourceSchema);
+    try { metricDefinition({ ...base, name: validationName, defaultAggregation: 'SUM' }, sourceSchema); base.defaultAggregation = 'SUM'; }
     catch (e) { if (!(e && typeof e === 'object' && 'code' in e && e.code === 'METRIC_TYPE_MISMATCH')) throw e; }
     return base;
   }

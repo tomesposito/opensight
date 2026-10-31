@@ -33,3 +33,34 @@ for (const [label, fixture] of [['local', metricLocal], ['hosted', metricHosted]
   }
   await f.restart(); assert.equal(good(await f.request('/api/v1/metrics/promoted/export')).provenance.calculationId, 'double');
 });
+
+test('promotion action does not hide an existing metric with the same resource ID', async t => {
+  const f = await metricLocal(t, false);
+  const definition = { name: 'Action name metric', expression: '{revenue}', defaultAggregation: 'SUM', format: { style: 'number', decimalPlaces: 2 }, description: '', synonyms: [] };
+  good(await f.request('/api/v1/metrics', { method: 'POST', body: { id: 'promote-calc', dataset: { kind: 'dataset', id: 'sales' }, definition } }), 201);
+  assert.equal(good(await f.request('/api/v1/metrics/promote-calc')).definition.name, definition.name);
+  good(await f.request('/api/v1/metrics/promote-calc', { method: 'PUT', headers: { 'If-Match': '\"1\"' }, body: { definition: { ...definition, name: 'Renamed action' } } }));
+});
+
+test('legacy dataset promotion validates the stored source even when overridden and infers scalar defaults', async () => {
+  const { AssetCatalog } = await import('../dist/asset-model.js');
+  const { MetricCatalog, metricRecord } = await import('../dist/metric-model.js');
+  const ref = { kind: 'dataset', id: 'legacy' }, schema = { columns: [{ name: 'amount', type: 'DECIMAL' }, { name: 'team', type: 'STRING' }] };
+  const column = { ColumnId: 'calc', ColumnName: 'Team label', Expression: 'upper({team})' };
+  const resources = [{ kind: 'user', id: 'editor', version: 1, body: { name: 'Editor', role: 'author' } }, { ...ref, version: 4, body: { definition: { DataSet: { LogicalTableMap: { table: { DataTransforms: [{ CreateColumnsOperation: { Columns: [column] } }] } } } }, sources: [] } }];
+  const c = new MetricCatalog(new AssetCatalog({ tenantId: 't', namespaceId: 'w', userId: 'editor' }, resources));
+  const calc = c.calculations(ref)[0]; assert.equal(calc.id, 'table/0/calc');
+  const d = c.promotionDefinition(ref, calc.id, schema); assert.equal(d.defaultAggregation, 'COUNT');
+  const r = c.promote('label', ref, calc.id, d, schema); assert.equal(metricRecord(r).provenance.datasetVersion, 4);
+  assert.throws(() => c.promote('duplicate', ref, calc.id, { ...d, name: 'TEAM LABEL' }, schema), { code: 'METRIC_NAME_CONFLICT' });
+  column.ColumnName = '{Team label}';
+  const renamed = c.promotionDefinition(ref, calc.id, schema);
+  assert.equal(renamed.name, '{Team label}');
+  const promoted = c.promote('renamed', ref, calc.id, { ...renamed, name: 'Shared team count' }, schema);
+  assert.equal(metricRecord(promoted).provenance.name, '{Team label}');
+  column.Expression = '{missing}';
+  assert.throws(() => c.promote('bad', ref, calc.id, { ...d, name: 'Override', expression: '{amount}' }, schema), { code: 'METRIC_UNKNOWN_FIELD' });
+  column.Expression = '${AnalysisParameter}';
+  assert.throws(() => c.promote('parameter', ref, calc.id, { ...d, name: 'Override', expression: '{amount}' }, schema), { code: 'METRIC_INVALID_EXPRESSION' });
+  assert.equal(resources.filter(r => r.kind === 'metric').length, 2);
+});

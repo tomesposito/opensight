@@ -40,7 +40,7 @@ export function PrepPromotions({ client, dataset, sources, propose, onCreated, o
   }, [client, available, revision]);
   const action = async (work: () => Promise<void>) => { if (acting.current) return; acting.current = true; setBusy(true); setError(''); try { await work(); } catch (e) { setError(prepMessage(e)); } finally { acting.current = false; setBusy(false); } };
   return <DataDialog title={proposing ? 'Promote recipe to template' : 'Shared recipe templates'} onClose={() => { if (!busy) onClose(); }}>
-    <div className="data-dialog-body">
+    <div className="data-dialog-body prep-promotions">
       {!available ? <p>Needs a local or hosted API. Recipe templates are shared workspace assets; this static demo has no template store.</p> : <>
         <p>Editors propose drafts. The recipe owner or a workspace administrator publishes them for shared use.</p>
         {error && <p role="alert">{error}</p>}{message && <p role="status">{message}</p>}

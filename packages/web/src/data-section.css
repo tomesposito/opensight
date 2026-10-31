@@ -290,3 +290,10 @@ details[open] .data-menu-items { animation: menu-open 150ms ease-out; }
 
 .governed-metrics .data-table th:first-child { width: 40%; }
 .governed-metrics .data-table td:nth-child(2) { min-width: 9em; overflow-wrap: normal; }
+/* Promotion review keeps actions readable; narrow screens scroll the catalog. */
+.governed-metrics [aria-label="Dataset calculations"] .data-table { min-width: 480px; }
+.prep-promotions .data-table { min-width: 620px; }
+.prep-promotions td small { display: block; margin-top: 4px; color: var(--muted); }
+.prep-promotions td button { margin: 4px; white-space: nowrap; }
+.prep-promotions pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+.prep-promotions label { display: grid; gap: 4px; margin: 12px 0; }

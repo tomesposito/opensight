@@ -43,7 +43,7 @@ export class MetricRoutes {
     const scoped = /^\/api\/v1\/datasets\/([A-Za-z0-9_-]{1,512})\/metrics$/.exec(path);
     const match = /^\/api\/v1\/metrics(?:\/([A-Za-z0-9_-]{1,512})(?:\/(publish|versions|export))?)?$/.exec(path);
     if (!scoped && !match) assetFail('RESOURCE_NOT_FOUND', 404);
-    const promotion = path === '/api/v1/metrics/promote-calc';
+    const promotion = path === '/api/v1/metrics/promote-calc' && request.method === 'POST';
     const id = promotion ? undefined : match?.[1], action = match?.[2], list = !!scoped || !id;
     const verb = method(request, response, scoped || action === 'versions' || action === 'export' ? ['GET'] : promotion ? ['POST'] : list ? ['GET', 'POST'] : action === 'publish' ? ['POST'] : ['GET', 'PUT']);
     const read = verb === 'GET', raw = read ? {} : object(await readBody(request), action === 'publish' ? [] : promotion ? ['id', 'dataset', 'calculationId', 'definition'] : list ? ['id', 'dataset', 'definition'] : ['definition']);
