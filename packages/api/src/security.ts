@@ -17,6 +17,7 @@ export interface SecurityState {
   invitations?: Invitation[];
   folders?: Folder[];
   assets?: OrganizedAsset[];
+  templates?: { namespaceId: string; resource: import('./metadata-resources.js').MetadataResource }[];
   metrics?: { namespaceId: string; resource: import('./metadata-resources.js').MetadataResource }[];
   namespaces: { id: string; name: string }[];
   users: User[];
@@ -40,7 +41,7 @@ function rows(raw: unknown): Record<string, unknown>[] {
   return raw as Record<string, unknown>[];
 }
 export function validateSecurityState(raw: unknown, columns: readonly BoundColumn[]): SecurityState {
-  const s = record(raw, ['version', 'namespaces', 'users', 'groups', 'datasets', 'folders', 'assets', 'invitations', 'metrics']);
+  const s = record(raw, ['version', 'namespaces', 'users', 'groups', 'datasets', 'folders', 'assets', 'invitations', 'metrics', 'templates']);
   if (s.version !== 1) invalid('$.version', 'expected 1');
   const namespaces = rows(s.namespaces).map(r => { record(r, ['id', 'name']); return { id: id(r.id, '$.id'), name: name(r.name) }; });
   const users = rows(s.users).map(r => {
@@ -86,6 +87,17 @@ export function validateSecurityState(raw: unknown, columns: readonly BoundColum
       if (!namespaces.some(n => n.id === m.namespaceId) || m.resource.kind !== 'metric' || m.resource.ownerId !== undefined) invalid('$.metrics', 'Invalid metric scope');
       resourceLinks({ kind: 'metric', id: m.resource.id }, m.resource.body);
       if (m.resource.version !== (m.resource.body.versions as unknown[]).length || seen.has(`${m.namespaceId}/${m.resource.id}`)) invalid('$.metrics', 'Invalid metric version or duplicate');
+      seen.add(`${m.namespaceId}/${m.resource.id}`);
+    }
+  }
+  if (s.templates !== undefined) {
+    if (!Array.isArray(s.templates)) invalid('$.templates', 'Expected templates');
+    result.templates = s.templates as NonNullable<SecurityState['templates']>;
+    const seen = new Set<string>();
+    for (const m of result.templates) {
+      if (!namespaces.some(n => n.id === m.namespaceId) || m.resource.kind !== 'prep-template' || m.resource.ownerId !== undefined) invalid('$.templates', 'Invalid metric scope');
+      resourceLinks({ kind: 'prep-template', id: m.resource.id }, m.resource.body);
+      if (m.resource.version !== (m.resource.body.versions as unknown[]).length || seen.has(`${m.namespaceId}/${m.resource.id}`)) invalid('$.templates', 'Invalid metric version or duplicate');
       seen.add(`${m.namespaceId}/${m.resource.id}`);
     }
   }

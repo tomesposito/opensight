@@ -255,6 +255,21 @@ export class PrepRoutes {
     const context = await this.context(identity, entry.resource.opensightPrep!.input, datasets);
     return compilePrep(entry.resource.opensightPrep!, context.sources, { datasets, datasetId: id, dialect: context.dialect }).columns;
   }
+  /** Create only: template application cannot overwrite an existing recipe. */
+  async createFromTemplate(identity: Identity, id: string, name: string, raw: PrepPipeline, recheck: () => Promise<void>) {
+    const pipeline = validatePrepPipeline(raw), datasets = this.datasets(identity);
+    const context = await this.context(identity, pipeline.input, datasets);
+    const resource: BundleDataSet = { resourceType: 'dataset', dataSetId: id, name: prepName(name, '$.name'), physicalTableMap: {}, importMode: 'DIRECT_QUERY', opensightPrep: pipeline };
+    await recheck();
+    await this.store.change(draft => {
+      if (draft.datasets.some(e => this.owned(identity, e) && e.resource.dataSetId === id)) throw new MetadataError('TEMPLATE_DATASET_CONFLICT', 409);
+      if (draft.datasets.length >= 1000 || draft.datasets.filter(e => this.owned(identity, e)).length >= 100) prepFail('PREP_LIMIT_EXCEEDED', '$.datasets', 'Prepared dataset limit reached');
+      this.graph(identity, id, pipeline, draft);
+      compilePrep(pipeline, context.sources, { dialect: context.dialect, datasets: this.datasets(identity, draft), datasetId: id });
+      draft.datasets.push({ ...identity, resource, version: 1, updatedAt: new Date().toISOString() }); this.enforceModes(draft);
+    });
+    this.syncModes(); return { resource, version: 1, persistence: this.persistent ? 'file' : 'ephemeral' };
+  }
   async route(request: IncomingMessage, response: ServerResponse, path: string, query: string, identity: Identity): Promise<void> {
     try {
       if (query) throw new RequestError(400, 'Query parameters are not supported');

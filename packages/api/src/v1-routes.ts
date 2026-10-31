@@ -1,3 +1,4 @@
+import { PrepTemplateRoutes, type TemplateBackend } from './prep-template-routes.js';
 import { disabledAnalytics, type Analytics } from './analytics.js';
 import { MetricRoutes, type MetricBackend } from './metric-routes.js';
 import { AssetRoutes } from './asset-routes.js';
@@ -87,11 +88,13 @@ export class V1Routes {
   private readonly tails = new Map<string, Promise<unknown>>();
   private readonly analyses: AnalysisRoutes;
   private readonly assets: AssetRoutes;
+  private readonly templates: PrepTemplateRoutes;
   private readonly metrics: MetricRoutes;
   private readonly dashboards: DashboardRoutes;
   constructor(private readonly hostedRoutes?: HostedDataRoutes, private readonly env: NodeJS.ProcessEnv = process.env,
     private readonly options: { invocation?: boolean; analytics?: Analytics; durable?: DurableV1Factory } = {}) {
     this.limiter = new RateLimiter(env);
+    this.templates = new PrepTemplateRoutes({ paging: r => this.paging(r), ifMatch: r => this.ifMatch(r) });
     this.metrics = new MetricRoutes({ paging: r => this.paging(r), ifMatch: r => this.ifMatch(r) });
     this.assets = new AssetRoutes({ paging: r => this.paging(r), ifMatch: r => this.ifMatch(r) }, options.analytics ?? disabledAnalytics);
     this.dashboards = new DashboardRoutes({ paging: r => this.paging(r) }, env, options.analytics ?? disabledAnalytics);
@@ -101,11 +104,12 @@ export class V1Routes {
   }
   close(): void { this.retries.close(); }
   private get routes(): HostedDataRoutes { if (!this.hostedRoutes) throw new MetadataError('HOSTED_API_REQUIRED', 503); return this.hostedRoutes; }
-  async local(request: IncomingMessage, response: ServerResponse, path: string, backend: AnalysisBackend, dashboards: DashboardBackend, assets: MetricBackend): Promise<void> {
+  async local(request: IncomingMessage, response: ServerResponse, path: string, backend: AnalysisBackend, dashboards: DashboardBackend, assets: MetricBackend & TemplateBackend): Promise<void> {
     try {
       const gate = this.limiter.take(backend.scope.tenantId);
       if (!gate.allowed) { response.setHeader('Retry-After', String(gate.retryAfter)); v1Fail('RATE_LIMIT_EXCEEDED', 429, 'Rate limit exceeded'); }
-      if (this.metrics.matches(path)) await this.metrics.route(request, response, path, assets);
+      if (this.templates.matches(path)) await this.templates.route(request, response, path, assets);
+      else if (this.metrics.matches(path)) await this.metrics.route(request, response, path, assets);
       else if (this.assets.matches(path, request.method)) await this.assets.route(request, response, path, assets);
       else if (/^\/api\/v1\/dashboards(?:\/|$)/.test(path) || path.endsWith('/publish')) await this.dashboards.route(request, response, path, dashboards);
       else await this.analyses.route(request, response, path, backend);
@@ -129,6 +133,10 @@ export class V1Routes {
       const analyses = durable ? new AnalysisRoutes(protocol, durable, this.options.analytics) : this.analyses;
       const dashboards = durable ? new DashboardRoutes(protocol, this.env, this.options.analytics, durable) : this.dashboards;
       const metrics = durable ? new MetricRoutes(protocol, durable) : this.metrics;
+      if (this.templates.matches(path)) {
+        await this.templates.route(request, response, path, { scope: context, transaction: async (write, work) => { await recheck(); return this.routes.data.sources.metadata.assetTransaction(context, write, work); },
+          createTemplateDataset: async (id, name, pipeline) => { await recheck(); return this.routes.prep.save(context, id, { name, pipeline, expectedVersion: 0 }); } }); return true;
+      }
       if (metrics.matches(path)) {
         await metrics.route(request, response, path, { scope: context, transaction: async (write, work, receipt) => {
           await recheck(); return this.routes.data.sources.metadata.assetTransaction(context, write, work, receipt);

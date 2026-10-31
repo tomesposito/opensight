@@ -2,6 +2,16 @@
 function serverlessV1Methods(path) {
 if (path.indexOf('/api/v1/') !== 0)
 return undefined;
+if (path === '/api/v1/metrics/promote-calc')
+return ['POST'];
+if (path === '/api/v1/prep-templates')
+return ['GET', 'POST'];
+if (/^\/api\/v1\/prep-templates\/[A-Za-z0-9_-]{1,512}$/.test(path))
+return ['GET', 'PUT'];
+if (/^\/api\/v1\/prep-templates\/[A-Za-z0-9_-]{1,512}\/(?:publish|datasets)$/.test(path))
+return ['POST'];
+if (/^\/api\/v1\/prep-templates\/[A-Za-z0-9_-]{1,512}\/(?:versions|export)$/.test(path))
+return ['GET'];
 if (path === '/api/v1/metric-datasets')
 return ['GET'];
 if (path === '/api/v1/metrics')

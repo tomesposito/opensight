@@ -85,7 +85,7 @@ export class DefinitionStore {
       return found ?? localResource(a.id, a.kind, this.get(a.kind, a.id)!, { id: a.id, kind: a.kind, namespaceId: 'default', folderId: null,
         ...(a.kind === 'analysis' && record ? { hasHadVisual: record.hasHadVisual, analysisVersion: record.version, updatedAt: record.updatedAt, datasetBindingOwnerId: record.bindingOwnerId, datasetBindings: record.datasetBindings } : {}),
         ...(a.kind === 'dashboard' && dashboard ? { dashboard } : {}) });
-    }), ...stored.filter(r => r.kind === 'folder' || r.kind === 'metric')];
+    }), ...stored.filter(r => r.kind === 'folder' || r.kind === 'metric' || r.kind === 'prep-template')];
   }
   async assetTransaction<T>(scope: AssetScope, write: boolean, work: (catalog: AssetCatalog) => T, datasets: MetadataResource[]): Promise<T> {
     const run = (state: AnalysisOverlay) => {
@@ -93,7 +93,7 @@ export class DefinitionStore {
         { kind: 'user', id: scope.userId, version: 1, body: { name: scope.userId, role: 'administrator' } }]);
       const result = work(catalog);
       if (write) {
-        const next = catalog.resources.filter(r => ['analysis', 'dashboard', 'folder', 'metric'].includes(r.kind));
+        const next = catalog.resources.filter(r => ['analysis', 'dashboard', 'folder', 'metric', 'prep-template'].includes(r.kind));
         if (datasets.some(d => !catalog.resources.some(r => assetKey(r) === assetKey(d)))) throw new MetadataError('ASSET_LOCAL_DATASET_DELETE_UNAVAILABLE', 503);
         state.assets = next;
         for (const r of next) {
@@ -213,7 +213,7 @@ export class DefinitionStore {
         const seen = new Set<string>();
         for (const value of raw.assets) {
           const r = value as MetadataResource;
-          if (!r || !['analysis', 'dashboard', 'folder', 'metric'].includes(r.kind) || !Number.isSafeInteger(r.version) || r.version < 1 || seen.has(assetKey(r))) throw new Error('Invalid asset overlay');
+          if (!r || !['analysis', 'dashboard', 'folder', 'metric', 'prep-template'].includes(r.kind) || !Number.isSafeInteger(r.version) || r.version < 1 || seen.has(assetKey(r))) throw new Error('Invalid asset overlay');
           seen.add(assetKey(r)); resourceLinks({ kind: r.kind, id: r.id }, r.body);
         }
       }

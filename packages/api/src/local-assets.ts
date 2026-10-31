@@ -49,6 +49,10 @@ export class LocalAssets implements AssetBackend {
     if (ref.id === 'sales' && this.sales) return { columns: this.sales.securitySchema().columns };
     return this.transaction(false, a => new MetricCatalog(a).schema(ref));
   }
+  async createTemplateDataset(id: string, name: string, pipeline: import('@opensight/bundle-parser/prep').PrepPipeline) {
+    await this.recheck(); await this.transaction(false, a => a.build());
+    return this.prep.createFromTemplate(this.identity, id, name, pipeline, this.recheck);
+  }
   private sample() { return this.sales ? [{ kind: 'dataset' as const, id: 'sales', version: 1, body: { definition: this.sales.metricDefinition(), sources: [] } }] : []; }
   private entries(state: SecurityState): MetadataResource[] {
     const ns = this.identity.namespaceId, organization = this.organization!;
@@ -62,6 +66,7 @@ export class LocalAssets implements AssetBackend {
       const definition = organization.definition(ns, kind, id, state);
       if (definition) resources.push(localResource(id, kind, definition, organization.asset(state, ns, kind, id)));
     }
+    resources.push(...(state.templates ?? []).filter(m => m.namespaceId === ns).map(m => m.resource));
     resources.push(...(state.metrics ?? []).filter(m => m.namespaceId === ns).map(m => m.resource));
     resources.push(...this.sample());
     return resources;
@@ -95,7 +100,10 @@ export class LocalAssets implements AssetBackend {
       for (const r of catalog.resources) {
         const old = entries.find(e => assetKey(e) === assetKey(r));
         if (r.kind === 'prepared-dataset' || JSON.stringify(old) === JSON.stringify(r)) continue;
-        if (r.kind === 'metric') {
+        if (r.kind === 'prep-template') {
+          state.templates = (state.templates ?? []).filter(m => m.namespaceId !== this.identity.namespaceId || m.resource.id !== r.id);
+          state.templates.push({ namespaceId: this.identity.namespaceId, resource: r });
+        } else if (r.kind === 'metric') {
           state.metrics = (state.metrics ?? []).filter(m => m.namespaceId !== this.identity.namespaceId || m.resource.id !== r.id);
           state.metrics.push({ namespaceId: this.identity.namespaceId, resource: r });
         } else if (r.kind === 'folder') {
