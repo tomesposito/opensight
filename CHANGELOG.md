@@ -13,6 +13,10 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Added
 
+- The GitHub README now links to [getopensight.org](https://getopensight.org), so anyone who finds the repo can reach the marketing site and the hosted option.
+
+- Marketing site: the favicon URL is versioned and an apple-touch-icon is declared, so browsers pick up the current brand mark instead of a cached one.
+
 - Promote saved dataset calculations into draft governed metrics with source provenance, and share prep recipes as versioned templates with owner approval and explicit input binding (#160).
 
 - Dataset-bound governed metrics with versioned definitions, editor drafts, owner/admin
