@@ -84,7 +84,7 @@ export async function initializeMetadata(database: Database, dialect: 'sqlite' |
 }
 
 /** Upgrade the asset kind constraint without losing rows or dataset links. */
-async function ensureMetricKind(c: SqlConnection, dialect: 'sqlite' | 'postgres'): Promise<void> {
+export async function ensureMetricKind(c: SqlConnection, dialect: 'sqlite' | 'postgres'): Promise<void> {
   if (dialect === 'postgres') {
     const checks = await c.query("SELECT conname, pg_get_constraintdef(oid) AS definition FROM pg_constraint WHERE conrelid = 'h1_resources'::regclass AND contype = 'c'");
     for (const row of checks) {

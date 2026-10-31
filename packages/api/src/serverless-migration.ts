@@ -1,7 +1,7 @@
 import { initializeAnalytics } from './analytics-store.js';
 import { MetadataError, type Database, type SqlConnection } from './metadata-db.js';
 import { initializeAuth } from './auth-schema.js';
-import { ensureTenantNaming } from './metadata-schema.js';
+import { ensureMetricKind, ensureTenantNaming } from './metadata-schema.js';
 import { migrateRuntime } from './runtime-migration.js';
 import { deploymentId } from './runtime-startup.js';
 import { budgetEnvironment } from './budget-store.js';
@@ -83,6 +83,7 @@ export async function migrateServerless(database: Database, env: NodeJS.ProcessE
       if (!saved || JSON.stringify(JSON.parse(String(saved.body))) !== JSON.stringify(budgets)) throw new MetadataError('COORDINATION_CONFIG_CHANGED', 503);
     }
     if (tables.some(r => r.name === 'sr_admission') && (await c.query("SELECT attempt_id FROM sr_admission WHERE deployment = ? AND state = 'held' AND hold_until > ? LIMIT 1", [deployment, await coordinationNow(c, dialect)])).length) throw new MetadataError('WORKSPACE_DRAIN_REQUIRED', 503);
+    await ensureMetricKind(c, dialect);
     await ensureTenantNaming(c, dialect);
     await initializeAuth(nested);
     await migrateCoordination(nested, deployment, entitlements, 'frozen', dialect);
