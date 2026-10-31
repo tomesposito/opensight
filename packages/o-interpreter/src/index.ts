@@ -1,6 +1,11 @@
 /** Bounded, deterministic grammar. This package does not execute expressions or queries. */
-export interface SchemaField { name: string; type: string; role?: 'dimension' | 'measure'; synonyms?: readonly string[] }
-export type Aggregation = 'SUM' | 'AVG' | 'COUNT' | 'MIN' | 'MAX';
+export interface SchemaField { name: string; type: string; role?: 'dimension' | 'measure'; synonyms?: readonly string[]; metric?: { id: string; version: number; defaultAggregation: Aggregation } }
+export type Aggregation = 'SUM' | 'AVG' | 'COUNT' | 'MIN' | 'MAX' | 'DISTINCT_COUNT';
+export interface GovernedVocabularyMetric { id: string; name: string; version: number; synonyms: readonly string[]; defaultAggregation: Aggregation; datasetId: string; state: 'draft' | 'published' }
+/** The caller supplies one explicit dataset; no matching by field names across datasets. */
+export function withGovernedMetrics(fields: readonly SchemaField[], datasetId: string, metrics: readonly GovernedVocabularyMetric[]): SchemaField[] {
+  return [...fields, ...metrics.filter(m => m.datasetId === datasetId && m.state === 'published').map(m => ({ name: m.name, type: 'DECIMAL', role: 'measure' as const, synonyms: m.synonyms, metric: { id: m.id, version: m.version, defaultAggregation: m.defaultAggregation } }))];
+}
 export type Granularity = 'YEAR' | 'QUARTER' | 'MONTH' | 'DAY';
 export interface QFilter { field: string; operator: 'equals' | 'year'; value: string | number }
 export interface Interpretation {
@@ -13,7 +18,7 @@ export interface Interpretation {
   suggestedVisualType: 'bar' | 'line' | 'pie' | 'table' | 'kpi';
   confidence: number;
   explanation: string;
-  grounding: { fieldsUsed: string[]; synonymsMatched: { term: string; field: string }[]; unmatchedTerms: string[] };
+  grounding: { metricsUsed?: { id: string; name: string; version: number }[]; fieldsUsed: string[]; synonymsMatched: { term: string; field: string }[]; unmatchedTerms: string[] };
 }
 export type InterpretationStep =
   | { kind: 'aggregation'; value: Aggregation }
@@ -63,7 +68,8 @@ function matchField(tokens: Token[], index: number, schema: readonly SchemaField
       return length ? [{ field, length, alias, synonym }] : [];
     });
   }).sort((a, b) => Number(a.alias) - Number(b.alias) || b.length - a.length);
-  const first = candidates[0];
+  const phrase = candidates.filter(c => c.field.metric && c.length > 1).sort((a,b) => b.length - a.length)[0];
+  const first = phrase && phrase.length > (candidates[0]?.length ?? 0) ? phrase : candidates[0];
   if (!first) return;
   const matches = candidates.filter(c => c.length === first.length && c.alias === first.alias)
     .filter((c, i, all) => all.findIndex(other => other.field.name === c.field.name) === i);
@@ -149,6 +155,8 @@ export function interpretQuestion(question: string, schema: readonly SchemaField
       continue;
     }
     if (word === 'over' && tokens[i + 1]?.word === 'time') { time = true; granularity ??= 'MONTH'; i += 2; continue; }
+    const governed = matchField(tokens, i, schema);
+    if (governed && governed.fields.some(f => f.metric)) { const m = fieldAt(i)!; measures.push(...m.fields); i += m.length; continue; }
     if (Object.hasOwn(grains, word)) { granularity = grains[word]!; time = true; i++; continue; }
     if (Object.hasOwn(aggregates, word)) { aggregations.push(aggregates[word]!); i++; continue; }
     if (['rows', 'records'].includes(word) && aggregations.includes('COUNT')) { countRows = true; i++; continue; }
@@ -175,9 +183,11 @@ export function interpretQuestion(question: string, schema: readonly SchemaField
   const aggs = [...new Set(aggregations.length ? aggregations : ['SUM' as const, 'AVG' as const])];
   const cross = <T>(sets: T[][]): T[][] => sets.reduce<T[][]>((rows, set) => rows.flatMap(row => set.map(v => [...row, v])).slice(0, 24), [[]]);
   const results: Interpretation[] = [];
-  for (const measure of countRows ? [null] : uniqueMeasures) for (const aggregation of countRows ? ['COUNT' as const] : aggs) {
+  for (const measure of countRows ? [null] : uniqueMeasures) for (const aggregation of countRows ? ['COUNT' as const] : measure?.metric ? [measure.metric.defaultAggregation] : aggs) {
+    if (measure?.metric && aggregations.some(a => a !== measure.metric!.defaultAggregation)) { error('METRIC_AGGREGATION_OVERRIDE', `Use the governed ${measure.metric.defaultAggregation} aggregation for ${measure.name}.`); continue; }
     if (measure && !numeric(measure) && aggregation !== 'COUNT') continue;
     for (const dims of cross(dimensions)) for (const filters of cross(filterOptions)) {
+      if (dims.some(d => d.metric) || filters.some(f => schema.find(s => s.name === f.field)?.metric)) { error('METRIC_ROLE_INVALID', 'Governed metrics are measures, not grouping or filter fields.'); continue; }
       const names = [...new Set(dims.map(f => f.name))];
       if (filters.some((f, i) => filters.findIndex(g => g.field === f.field) !== i)) continue;
       const type = names.length > 1 ? 'table' : !names.length ? 'kpi' : hint ?? (dims.some(datetime) ? 'line' : 'bar');
@@ -188,7 +198,7 @@ export function interpretQuestion(question: string, schema: readonly SchemaField
       const interpretation: Interpretation = {
         measure: measure?.name ?? null, aggregation, dimensions: names, filters, granularity: grain, topN,
         suggestedVisualType: type, confidence: Math.round(confidence * 100) / 100, explanation: '',
-        grounding: { fieldsUsed, synonymsMatched: synonymsMatched.filter(s => fieldsUsed.includes(s.field)), unmatchedTerms: [...unknown] },
+        grounding: { ...(measure?.metric ? { metricsUsed: [{ id: measure.metric.id, name: measure.name, version: measure.metric.version }] } : {}), fieldsUsed, synonymsMatched: synonymsMatched.filter(s => fieldsUsed.includes(s.field)), unmatchedTerms: [...unknown] },
       };
       interpretation.explanation = describeInterpretation(interpretation, hint);
       results.push(interpretation);

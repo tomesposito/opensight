@@ -6,7 +6,7 @@ import { normalizeVisual } from './compiler.js';
 import type { FixtureVisual } from './model.js';
 
 export interface DashboardSummary { id: string; name: string; version: number; publishedAt: string; sourceAnalysisId: string }
-export interface PublishedDashboard { revision?: number; id: string; name: string; version: number; definition: BundleDefinition; errors: { errorCode: string; message: string; path: string }[] }
+export interface PublishedDashboard { metrics?: readonly import('@opensight/query-engine/browser').PublishedMetric[]; revision?: number; id: string; name: string; version: number; definition: BundleDefinition; errors: { errorCode: string; message: string; path: string }[] }
 export type ControlValues = Record<string, ParameterValue[]>;
 export function readerControls(definition: BundleDefinition, sheet: BundleSheet) {
   const messages: string[] = [];

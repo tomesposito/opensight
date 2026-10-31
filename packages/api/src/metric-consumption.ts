@@ -13,3 +13,20 @@ export async function metricDefinition(definition: Record<string, unknown>, bind
   const resolutions = await Promise.all(Object.entries(bindings).map(async ([id, ref]) => [id, await lookup(ref)] as const));
   const result = resolveMetricDefinition(definition, new Map(resolutions)); resolved?.(resolutions.flatMap(([, r]) => [...r.metrics])); return result;
 }
+
+/** Compile Ask O's closed-vocabulary query against the dashboard's one durable binding. */
+export function dashboardQuestion(query: InteractiveQuery, version: import('./dashboard-model.js').DashboardVersion): Record<string, unknown> {
+  const declarations = version.definition.dataSetIdentifierDeclarations;
+  if (declarations.length !== 1) throw new Error('DASHBOARD_DATASET_UNSUPPORTED');
+  const d = declarations[0]!;
+  const definition = (interactiveRequest(query, { dataSet: { DataSet: { Arn: d.dataSetArn } }, dataSource: {}, localData: {} }).analysis as { Definition: Record<string, unknown> }).Definition;
+  const visit = (value: unknown): void => {
+    if (!value || typeof value !== 'object') return;
+    const o = value as Record<string, unknown>;
+    if (o.DataSetIdentifier === 'sales_data') o.DataSetIdentifier = d.identifier;
+    if (o.Identifier === 'sales_data') o.Identifier = d.identifier;
+    Object.values(o).forEach(visit);
+  };
+  visit(definition); return definition;
+}
+import { interactiveRequest } from '@opensight/query-engine';

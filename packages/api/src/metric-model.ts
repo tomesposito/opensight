@@ -119,6 +119,11 @@ export class MetricCatalog {
     b.versions.push({ version, state: action === 'publish' ? 'published' : 'draft', definition: structuredClone(definition), actor, at });
     b.audit.push({ action, version, actor, at }); if (action === 'publish') b.publishedVersion = version;
   }
+  vocabulary(ref: MetricDataset): PublishedMetric[] {
+    this.assets.user();
+    if (!this.assets.resources.some(r => r.kind === 'metric' && assetKey(metricRecord(r).dataset) === assetKey(ref))) return [];
+    return this.published(ref);
+  }
   execution(ref: MetricDataset) {
     const seen = new Set<string>();
     const unsafe = (ref: MetricDataset): boolean => {

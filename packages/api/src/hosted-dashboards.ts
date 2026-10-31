@@ -1,3 +1,4 @@
+import { MetricCatalog } from './metric-model.js';
 import { lookupMetrics, metricDefinition } from './metric-consumption.js';
 import { planPreparedVisual, resolveSecurity, type RowPredicate, type SecurityContext } from '@opensight/query-engine';
 import { MetadataError } from './metadata-db.js';
@@ -48,6 +49,12 @@ export class HostedDashboards implements DashboardBackend {
   async revision(id: string) { return (await this.accessSnapshot(id)).version; }
   async grants(id: string) { await this.authorize(id, 'write'); return (await this.accessSnapshot(id)).body.grants as AssetGrant[] | undefined; }
   async change(id: string, change: DashboardChange, stamp: unknown, receipt?: (record: DashboardRecord | null) => RetryCommit) { await this.recheck(); return this.metadata.mutateDashboard(this.context, id, change, stamp as Revisions, receipt); }
+  async authorizeQuestion(id: string) { await this.authorize(id); await this.routes.data.sources.capability(this.context, 'ai'); }
+  async metricVocabulary(v: DashboardVersion) {
+    if (Object.values(v.datasetBindings).length !== 1) return [];
+    const ref = Object.values(v.datasetBindings)[0]!;
+    return this.metadata.assetTransaction(this.context, false, a => new MetricCatalog(a).vocabulary({ ...ref, ...(ref.kind === 'prepared-dataset' ? { ownerId: v.bindingOwnerId } : {}) }));
+  }
   async query(v: DashboardVersion, definition: JsonObject, visualId: string) {
     const bindings = Object.values(v.datasetBindings);
     if (bindings.length !== 1) throw new MetadataError('DASHBOARD_DATASET_UNSUPPORTED', 422);

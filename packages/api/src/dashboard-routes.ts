@@ -1,3 +1,5 @@
+import { dashboardQuestion } from './metric-consumption.js';
+import { validateQuery } from './query.js';
 import { disabledAnalytics } from './analytics.js';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { createHash, randomUUID } from 'node:crypto';
@@ -48,6 +50,20 @@ export class DashboardRoutes {
     } else send(response, reply.status, reply.body);
   }
   async route(request: IncomingMessage, response: ServerResponse, path: string, backend: DashboardBackend): Promise<void> {
+    const question = /^\/api\/v1\/dashboards\/([A-Za-z0-9_-]{1,512})\/question$/.exec(path);
+    if (question) {
+      method(request, response, ['POST']);
+      if (!backend.authorizeQuestion) fail('SECURITY_AI_REQUIRED', 403);
+      await backend.authorizeQuestion(question[1]!);
+      const stamp = await backend.analyses.stamp(), body = analysisObject(await readBody(request), '$'); keys(body, ['query']);
+      const query = validateQuery(body.query), v = dashboardVersion(await backend.get(question[1]!));
+      if (v.definition.dataSetIdentifierDeclarations.length !== 1) fail('DASHBOARD_DATASET_UNSUPPORTED');
+      const { bindings: _bindings, ...result } = await backend.query(v, dashboardQuestion(query, v), 'query');
+      const check = async () => { await backend.analyses.check(stamp); await backend.authorizeQuestion!(question[1]!); };
+      await check();
+      if (this.protocol.publishData) await this.protocol.publishData(request, response, 200, result, check); else send(response, 200, result);
+      return;
+    }
     const publish = /^\/api\/v1\/analyses\/([A-Za-z0-9_-]{1,512})\/publish$/.exec(path);
     const match = /^\/api\/v1\/dashboards(?:\/([A-Za-z0-9_-]{1,512})(?:\/(versions)(?:\/([1-9]\d*)(?:\/visuals\/([A-Za-z0-9_-]{1,512})\/query)?)?|\/(exports)|\/shares\/(user|group)\/([A-Za-z0-9_-]{1,512}))?)?$/.exec(path);
     if (!publish && !match) fail('RESOURCE_NOT_FOUND', 404);
@@ -66,7 +82,7 @@ export class DashboardRoutes {
           body = (await backend.grants(pathId))?.find(g => g.principal.type === principalType && g.principal.id === principalId);
           if (!body) fail('RESOURCE_NOT_FOUND', 404);
         } else if (versions && !pinned) body = this.page(request, record.versions.map(v => ({ version: v.version, publishedAt: v.publishedAt, publishedBy: v.publishedBy })));
-        else { body = describeDashboard(record, pinned); etag = pinned ?? await backend.revision(pathId); }
+        else { const metrics = await backend.metricVocabulary?.(dashboardVersion(record, pinned)); body = { ...describeDashboard(record, pinned), ...(metrics?.length ? { Metrics: metrics } : {}) }; etag = pinned ?? await backend.revision(pathId); }
       }
       await backend.analyses.check(stamp); await backend.authorize(pathId, principalId ? 'admin' : 'read');
       if (pathId && !principalId && (!versions || pinned)) this.analytics.track(backend.analyses.scope, { name: 'dashboard_viewed' });

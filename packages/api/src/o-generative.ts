@@ -1,6 +1,6 @@
 import { disabledAnalytics } from './analytics.js';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { interpretQuestion, type SchemaField } from '@opensight/o-interpreter';
+import { interpretQuestion, withGovernedMetrics, type SchemaField } from '@opensight/o-interpreter';
 import { resolveSecurity, ExpressionBinder, parseExpression, QueryEngineError } from '@opensight/query-engine';
 import { method, send } from './automation-routes.js';
 import { AIError } from './ai-providers.js';
@@ -12,7 +12,7 @@ import type { Identity, SecurityService } from './security.js';
 import type { OrganizationService } from './organization.js';
 import { requireOScope } from './o-routes.js';
 
-function schema(body: Record<string, unknown>, sales: SalesQuery, identity: Identity, security: SecurityService) {
+async function schema(body: Record<string, unknown>, sales: SalesQuery, identity: Identity, security: SecurityService) {
   const metadata = sales.securitySchema();
   const policy = resolveSecurity(security.context(identity), metadata.columns, metadata.localData.dataSetArn);
   const raw = body.calculatedFields ?? [];
@@ -34,7 +34,8 @@ function schema(body: Record<string, unknown>, sales: SalesQuery, identity: Iden
     const bound = binder.bind(c.Name, '$.calculatedFields');
     fields.push({ name: c.Name, type: bound.scalarType === 'number' ? 'DECIMAL' : bound.scalarType === 'datetime' ? 'DATETIME' : 'STRING' });
   }
-  return { fields, binder };
+  const metrics = sales.metricLookup ? (await sales.metricLookup(identity)({ kind: 'dataset', id: 'sales' })).metrics : [];
+  return { fields: withGovernedMetrics(fields, 'sales', metrics.map(m => ({ ...m, datasetId: 'sales', state: 'published' }))), binder };
 }
 function providerObject(text: string, keys: string[]): Record<string, unknown> {
   try { return record(JSON.parse(text) as unknown, keys); }
@@ -51,7 +52,7 @@ export async function generativeRoute(request: IncomingMessage, response: Server
   const body = record(await readBody(request), ['question', 'dashboardId', 'calculatedFields']);
   requireOScope(body, identity, security, organization, sales);
   if (typeof body.question !== 'string' || !body.question.trim() || body.question.length > 2000) invalid('$.question', 'expected 1–2000 characters');
-  const before = schema(body, sales!, identity, security);
+  const before = await schema(body, sales!, identity, security);
   if (hasFieldNamePII(before.fields)) throw new AIError(400, 'AI_FIELD_NAME_PII', 'A field name matches a sensitive-data pattern. Rename the field before using generative AI.');
   if (!calculation) analytics.track({ tenantId: identity.namespaceId, namespaceId: identity.namespaceId }, { name: 'ask_o_asked', props: { count: 1 } });
   // Prompts are the one place user-influenced content meets the provider:
@@ -62,7 +63,7 @@ export async function generativeRoute(request: IncomingMessage, response: Server
   // Authorization and policy changes during provider I/O must not release stale answers.
   requireOScope(body, identity, security, organization, sales);
   if (calculation) security.require(identity, 'build');
-  const current = schema(body, sales!, identity, security);
+  const current = await schema(body, sales!, identity, security);
   if (calculation) {
     const result = providerObject(text, ['name', 'expression', 'role', 'explanation']);
     if (typeof result.name !== 'string' || !/^[A-Za-z_][A-Za-z0-9_ ]{0,127}$/.test(result.name) || current.fields.some(f => f.name.toLowerCase() === String(result.name).toLowerCase()) || typeof result.expression !== 'string' || typeof result.explanation !== 'string' || result.explanation.length > 2000 || !['measure', 'dimension'].includes(String(result.role))) throw new AIError(502, 'O_INVALID_PROVIDER_RESPONSE', 'Provider returned an invalid calculated field');

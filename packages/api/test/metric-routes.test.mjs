@@ -71,6 +71,8 @@ test('metrics: analysis and frozen dashboard follow latest publication; drafts a
   assert.equal(good(await f.request(path, { method: 'POST', body: {} })).rows[0].value, 900 / 7);
   good(await f.request('/api/v1/metrics/net/publish', { method: 'POST', body: {}, headers: at(3) }));
   assert.equal(good(await f.request(path, { method: 'POST', body: {} })).rows[0].value, 1800);
+  assert.equal(good(await f.request(`/api/v1/dashboards/${published.DashboardId}/question`, { method: 'POST', body: { query } })).rows[0].value, 1800);
+  assert.equal(good(await f.request(`/api/v1/dashboards/${published.DashboardId}`)).Metrics[0].name, 'Renamed revenue');
   assert.equal(good(await f.request('/api/datasets/sales/query', { method: 'POST', body: query })).rows[0].value, 1800);
   assert.deepEqual(good(await f.request('/api/v1/analyses/governed')).Definition.CalculatedFields, []);
 });

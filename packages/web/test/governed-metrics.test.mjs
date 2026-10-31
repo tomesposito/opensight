@@ -21,3 +21,13 @@ test('metric panel fields, assignment, serialization and queries retain stable r
   assert.equal(formatMetric(1.25, { style: 'currency', currency: 'USD', decimalPlaces: 2 }), '$1.25');
   assert.equal(formatMetric(1234, { style: 'number', decimalPlaces: 0 }), '1,234');
 });
+
+test('Ask O produces a stable metric reference without snapshotting a governed expression', async () => {
+  const { oVocabulary, prepareOVisual } = await import('../build/test/o-authoring.js');
+  const { interpretQuestion } = await import('@opensight/o-interpreter');
+  const interpreted = interpretQuestion('profit rate', oVocabulary([], dataset)).interpretations[0];
+  const prepared = prepareOVisual(interpreted, [], dataset);
+  assert.equal(prepared.visual.measures[0], '__metric_margin');
+  assert.deepEqual(prepared.calculatedFields, []);
+  assert.equal(buildAuthorQuery(prepared.visual, [], [], dataset).measures[0].aggregation, 'AVG');
+});

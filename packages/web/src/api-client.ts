@@ -394,7 +394,7 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
     return runQuery(`/api/datasets/${encodeURIComponent(id)}/query`, query, signal);
   }
   async function queryO(query: QueryRequest, dashboardId?: string, signal?: AbortSignal): Promise<QueryResponse> {
-    return runQuery('/api/o/query', query, signal, { query, ...(dashboardId ? { dashboardId } : {}) });
+    return dashboardId ? runQuery(`/api/v1/dashboards/${encodeURIComponent(dashboardId)}/question`, query, signal, { query }) : runQuery('/api/o/query', query, signal, { query });
   }
   async function runQuery(route: string, query: QueryRequest | undefined, signal?: AbortSignal, payload: unknown = query): Promise<QueryResponse> {
     const sessionGeneration = generation;
@@ -490,7 +490,7 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
     let etag: string | null = null;
     const body = object(await rawResource(`/api/v1/dashboards/${encodeURIComponent(id)}`, 'GET', undefined, signal, undefined, {}, response => { etag = response.headers.get('etag'); }), 'Dashboard');
     if (body.DashboardId !== id || typeof body.Name !== 'string' || !Number.isSafeInteger(body.Version) || Number(body.Version) < 1 || !Array.isArray(body.Errors)) throw new ApiError('DASHBOARD_RESPONSE_INVALID: Invalid dashboard definition.');
-    return { id, name: body.Name, revision: etag ? Number(String(etag).slice(1, -1)) : undefined, version: Number(body.Version), definition: convertDefinition(body.Definition), errors: body.Errors as PublishedDashboard['errors'] };
+    return { id, name: body.Name, ...(Array.isArray(body.Metrics) ? { metrics: body.Metrics as PublishedDashboard['metrics'] } : {}), revision: etag ? Number(String(etag).slice(1, -1)) : undefined, version: Number(body.Version), definition: convertDefinition(body.Definition), errors: body.Errors as PublishedDashboard['errors'] };
   }
   const queryDashboardVisual = (id: string, version: number, visualId: string, controlValues: ControlValues, signal?: AbortSignal) =>
     runQuery(`/api/v1/dashboards/${encodeURIComponent(id)}/versions/${version}/visuals/${encodeURIComponent(visualId)}/query`, undefined, signal, { controlValues });

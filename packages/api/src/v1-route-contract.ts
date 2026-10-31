@@ -5,6 +5,7 @@ export function serverlessV1Methods(path: string): readonly string[] | undefined
   if (new RegExp(`^/api/v1/metrics/${id}$`).test(path)) return ['GET', 'PUT'];
   if (new RegExp(`^/api/v1/metrics/${id}/publish$`).test(path)) return ['POST'];
   if (new RegExp(`^/api/v1/(?:metrics/${id}/(?:versions|export)|datasets/${id}/metrics)$`).test(path)) return ['GET'];
+  if (new RegExp(`^/api/v1/dashboards/${id}/question$`).test(path)) return ['POST'];
   if (path === '/api/v1/analyses') return ['GET', 'POST'];
   if (new RegExp(`^/api/v1/analyses/${id}$`).test(path)) return ['GET', 'PUT', 'DELETE'];
   if (new RegExp(`^/api/v1/analyses/${id}/publish$`).test(path)) return ['POST'];

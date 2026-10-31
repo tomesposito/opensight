@@ -1,3 +1,5 @@
+import { MetricCatalog } from './metric-model.js';
+import { LocalAssets } from './local-assets.js';
 import { MetadataError } from './metadata-db.js';
 import { changeDashboard, changeDashboardGrants, describeDashboard, type DashboardBackend, type DashboardChange, type DashboardRecord, type DashboardVersion } from './dashboard-model.js';
 import type { AnalysisBackend } from './analysis-model.js';
@@ -83,6 +85,13 @@ export class LocalDashboards implements DashboardBackend {
       validateOrganization(state); return next;
     });
     return this.root ? legacyWrite(this.root, commit) : commit();
+  }
+  async authorizeQuestion(id: string) { await this.authorize(id); this.organization?.security.require(this.identity, 'ai'); }
+  async metricVocabulary(v: DashboardVersion) {
+    if (Object.values(v.datasetBindings).length !== 1) return [];
+    const ref = Object.values(v.datasetBindings)[0]!;
+    const assets = new LocalAssets(this.store, this.prep, this.identity, this.recheck, this.organization, this.root, this.durableSecurity, this.sales);
+    return assets.transaction(false, a => new MetricCatalog(a).vocabulary({ ...ref, ...(ref.kind === 'prepared-dataset' ? { ownerId: v.bindingOwnerId } : {}) }));
   }
   async query(v: DashboardVersion, definition: JsonObject, visualId: string) {
     const bindings = Object.values(v.datasetBindings);

@@ -30,6 +30,8 @@ export interface DashboardBackend {
   revision(id: string): Promise<number>;
   grants(id: string): Promise<AssetGrant[] | undefined>;
   change(id: string, change: DashboardChange, stamp: unknown, receipt?: (record: DashboardRecord | null) => RetryCommit): Promise<DashboardRecord | null>;
+  metricVocabulary?(version: DashboardVersion): Promise<readonly import('@opensight/query-engine').PublishedMetric[]>;
+  authorizeQuestion?(id: string): Promise<void>;
   query(version: DashboardVersion, definition: JsonObject, visualId: string): Promise<DashboardQuery>;
 }
 export interface DashboardQuery {

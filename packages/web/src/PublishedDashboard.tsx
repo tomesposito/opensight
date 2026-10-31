@@ -44,7 +44,7 @@ function PublishedContent({ value, client }: { value: Definition; client: Reader
         for (const field of model.measures) columns.set(field.column, { name: field.column, type: 'DECIMAL' });
       } catch { /* Unsupported visuals retain their published diagnostics. */ }
     }
-    return { ...emptyDraft(), title: value.name, dataset: { id: value.id, name: value.name, columns: [...columns.values()] } };
+    return { ...emptyDraft(), title: value.name, dataset: { id: value.id, name: value.name, columns: [...columns.values()].filter(c => !c.name.startsWith('__metric_')), metrics: value.metrics } };
   }, [preview, value]);
   const questionClient = useMemo(() => ({ dataset: questionDraft.dataset, queryO: client.queryO,
     queryDataset: () => Promise.reject(new Error('DASHBOARD_QUERY_REQUIRED: Reader questions must use the dashboard-scoped O endpoint.')),
