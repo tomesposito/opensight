@@ -31,7 +31,7 @@ export function LiveAuthorVisual({ visual, theme, client, calculations, paramete
   }, [request, client, interactive]);
   const fixture = useMemo(() => !client && request ? executeFixtureQuery(request) : undefined, [client, request]);
   const current = client ? state?.request === request && state.client === client ? state.result : undefined : fixture;
-  const preview = useMemo(() => ({ ...buildAuthorVisual(visual, calculations, client?.dataset), theme, rows: current?.rows ?? null }), [visual, current, calculations, theme, client?.dataset]);
+  const preview = useMemo(() => ({ ...buildAuthorVisual(visual, calculations, client?.dataset && current && 'metrics' in current && current.metrics ? { ...client.dataset, metrics: current.metrics } : client?.dataset), theme, rows: current?.rows ?? null }), [visual, current, calculations, theme, client?.dataset]);
   useEffect(() => { storeVisualRows(visual.id, preview.rows); return () => { clearVisualRows(visual.id); }; }, [visual.id, preview.rows]);
   // Clear previous results immediately when assignments change, even before the effect runs.
   return <VisualCard interaction={interaction} onRowGroupToggle={onRowGroupToggle} visual={preview} loading={!!request && !current} dataMessage={fieldProblem ?? current?.message} provenance={current?.provenance} />;

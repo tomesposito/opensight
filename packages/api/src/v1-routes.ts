@@ -293,7 +293,7 @@ export class V1Routes {
       // Revision changes invalidate responses, including changes to leaf policies.
       const revisions = await this.routes.data.sources.metadata.revisions(context);
       const dataset = await this.routes.prep.describe(context, id);
-      planPreparedQuery(dataset.columns, body);
+      // HostedPrep resolves current governed references before normal planning.
       await this.idempotent(request, response, context, path, body, async () => {
         const result = await this.routes.prep.execute(context, id, 'query', body);
         return { status: 200, body: { ...result, ...(dataset.execution.mode === 'BLAZE'

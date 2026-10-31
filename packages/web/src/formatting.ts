@@ -1,3 +1,5 @@
+import { validMetricFormat } from './governed-metrics.js';
+import type { MetricFormat } from '@opensight/query-engine/browser';
 import { colorValid } from './themes.js';
 import type { Cell, Field } from './model.js';
 import type { VisualKind } from './visual-catalog.js';
@@ -200,6 +202,7 @@ export function pivotOptionsValid(raw: unknown): raw is PivotOptions {
     && (p.columnWidth === undefined || Number.isInteger(p.columnWidth) && Number(p.columnWidth) >= 60 && Number(p.columnWidth) <= 400);
 }
 export interface VisualFormatting {
+  metricFormats?: Record<string, MetricFormat>;
   pivot?: PivotOptions;
   titleFontSize?: number; barCategoryGap?: number; legendPosition?: LegendPosition;
   /** Legend title (show/text/style) and legend value-entry text styling; absent means theme defaults. */
@@ -223,7 +226,7 @@ export function formattingValid(raw: unknown): raw is VisualFormatting {
   const f = raw as Record<string, unknown>;
   const booleans = ['headersVisible', 'rowNamesVisible', 'columnNamesVisible', 'valueNamesVisible'];
   const colors = ['headerColor', 'headerBackground', 'cellColor', 'cellBackground'];
-  if (Object.keys(f).some(k => ![...booleans, ...colors, 'fontSize', 'decimalPlaces', 'names', 'rules', 'pivot', 'titleFontSize', 'barCategoryGap', 'legendPosition', 'legendTitle', 'legendValueStyle', 'groupTitle', 'altText', 'dataLabels', 'cardStyle', 'cardLayout'].includes(k))) return false;
+  if (Object.keys(f).some(k => ![...booleans, ...colors, 'fontSize', 'decimalPlaces', 'names', 'metricFormats', 'rules', 'pivot', 'titleFontSize', 'barCategoryGap', 'legendPosition', 'legendTitle', 'legendValueStyle', 'groupTitle', 'altText', 'dataLabels', 'cardStyle', 'cardLayout'].includes(k))) return false;
   if (f.legendPosition !== undefined && !legendPositionValid(f.legendPosition)) return false;
   if (f.legendTitle !== undefined && !legendTitleValid(f.legendTitle)) return false;
   if (f.groupTitle !== undefined && !groupTitleValid(f.groupTitle)) return false;
@@ -237,6 +240,7 @@ export function formattingValid(raw: unknown): raw is VisualFormatting {
   if (f.barCategoryGap !== undefined && (!Number.isInteger(f.barCategoryGap) || Number(f.barCategoryGap) < 0 || Number(f.barCategoryGap) > 80)) return false;
   if (booleans.some(k => f[k] !== undefined && typeof f[k] !== 'boolean') || colors.some(k => f[k] !== undefined && !colorValid(f[k]))) return false;
   if (f.fontSize !== undefined && (!Number.isInteger(f.fontSize) || Number(f.fontSize) < 8 || Number(f.fontSize) > 32) || f.decimalPlaces !== undefined && (!Number.isInteger(f.decimalPlaces) || Number(f.decimalPlaces) < 0 || Number(f.decimalPlaces) > 12)) return false;
+  if (f.metricFormats !== undefined && (!f.metricFormats || typeof f.metricFormats !== 'object' || Array.isArray(f.metricFormats) || Object.values(f.metricFormats).some(v => !validMetricFormat(v)))) return false;
   if (f.names !== undefined && (!f.names || typeof f.names !== 'object' || Array.isArray(f.names) || Object.entries(f.names).some(([k, v]) => !k || typeof v !== 'string' || !v.trim() || v.length > 128))) return false;
   if (f.rules !== undefined && (!Array.isArray(f.rules) || f.rules.length > 20 || !f.rules.every(r => r && typeof r === 'object' && Object.keys(r).every(k => ['fieldId', 'operator', 'threshold', 'color', 'background'].includes(k)) && typeof r.fieldId === 'string' && !!r.fieldId && ['gt', 'gte', 'lt', 'lte', 'eq'].includes(r.operator) && typeof r.threshold === 'number' && Number.isFinite(r.threshold) && colorValid(r.color) && colorValid(r.background)))) return false;
   return true;

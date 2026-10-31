@@ -1,3 +1,4 @@
+import { formatMetric } from './governed-metrics.js';
 import { insightGraphic } from './insight-graphic.js';
 import { LIGHT_THEME } from './themes.js';
 import { fieldName, fieldRule, cardChromeStyle, cardLoadingAnimation } from './formatting.js';
@@ -49,7 +50,7 @@ function DataTable({ compiled, interaction, onRowGroupToggle }: { compiled: Comp
   const pivot = model.kind === 'pivot' ? f?.pivot : undefined;
   const width = pivot?.columnWidth ?? (pivot?.wordWrap ? 140 : undefined);
   const cellStyle: CSSProperties = { ...(pivot?.wordWrap !== undefined ? { whiteSpace: pivot.wordWrap ? 'normal' : 'nowrap', overflowWrap: pivot.wordWrap ? 'anywhere' : undefined } : {}), ...(width ? { width, minWidth: width, maxWidth: width } : {}) };
-  const formatted = (value: import('./model.js').Cell, index: number) => typeof value === 'number' && index >= dimensionCount && f?.decimalPlaces !== undefined ? value.toLocaleString('en-US', { minimumFractionDigits: f.decimalPlaces, maximumFractionDigits: f.decimalPlaces }) : displayCell(value);
+  const formatted = (value: import('./model.js').Cell, index: number) => formatMetric(value, f?.metricFormats?.[model.measures[(index - dimensionCount) % model.measures.length]?.column ?? '']) ?? ( typeof value === 'number' && index >= dimensionCount && f?.decimalPlaces !== undefined ? value.toLocaleString('en-US', { minimumFractionDigits: f.decimalPlaces, maximumFractionDigits: f.decimalPlaces }) : displayCell(value));
   const expandable = model.kind === 'pivot' && model.rowDimensions.length >= 2 && Array.isArray(table.rowGroupPaths);
   const signature = JSON.stringify([model.id, model.rowDimensions, pivot?.collapsedRowGroups ?? []]);
   const saved = useMemo(() => new Set((pivot?.collapsedRowGroups ?? []).map(rowGroupKey)), [signature]);

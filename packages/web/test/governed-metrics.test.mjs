@@ -1,0 +1,23 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { dataFields, emptyDraft, authorReducer, serializeVisual, validateDraft } from '../build/test/authoring.js';
+import { buildAuthorQuery } from '../build/test/author-query.js';
+import { formatMetric } from '../build/test/governed-metrics.js';
+import { compileVisual } from '../build/test/compiler.js';
+const metric = { id: 'margin', version: 2, name: 'Margin', expression: 'sum({profit}) / sum({revenue})', defaultAggregation: 'AVG', format: { style: 'percent', decimalPlaces: 1 }, description: '', synonyms: ['profit rate'] };
+const dataset = { id: 'prepared', name: 'Sales', columns: [{ name: 'revenue', type: 'DECIMAL' }, { name: 'profit', type: 'DECIMAL' }], metrics: [metric] };
+test('metric panel fields, assignment, serialization and queries retain stable references and defaults', () => {
+  const field = dataFields([], dataset).find(f => f.metric);
+  assert.equal(field.label, 'Margin'); assert.equal(field.name, '__metric_margin'); assert.equal(field.group, 'Governed metrics');
+  let draft = { ...emptyDraft(), dataset };
+  draft = authorReducer(draft, { type: 'assign-with-no-selection', field: field.name, well: 'values' });
+  draft = authorReducer(draft, { type: 'kind', kind: 'kpi' });
+  validateDraft(draft);
+  const visual = draft.sheets[0].visuals[0], query = buildAuthorQuery(visual, [], [], dataset);
+  assert.equal(query.measures[0].aggregation, 'AVG'); assert.equal(query.calculatedFields, undefined);
+  const definition = serializeVisual(visual, true, [], dataset);
+  const compiled = compileVisual({ source: 'bundle', definition, rows: [{ __metric_margin: .1234 }], bindings: {}, path: '$' });
+  assert.equal(compiled.option.graphic[0].style.text, '12.3%');
+  assert.equal(formatMetric(1.25, { style: 'currency', currency: 'USD', decimalPlaces: 2 }), '$1.25');
+  assert.equal(formatMetric(1234, { style: 'number', decimalPlaces: 0 }), '1,234');
+});

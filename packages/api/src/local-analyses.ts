@@ -1,3 +1,5 @@
+import { LocalAssets } from './local-assets.js';
+import { MetricCatalog } from './metric-model.js';
 import { convertDefinition, projectDefinition, analysisFail, type AnalysisSchema } from '@opensight/web/analysis';
 import { resolveSecurity } from '@opensight/query-engine';
 import { MetadataError } from './metadata-db.js';
@@ -79,6 +81,11 @@ export class LocalAnalyses implements AnalysisBackend {
         if (schema.localData.security.dataset === 'protected' && !security?.protected) analysisFail('SECURITY_REJECTED', '$.datasetBindings', 'Protected dataset requires a policy');
         result.set(name, { columns: schema.columns, deniedColumns: security?.deniedColumns });
       }
+    }
+    const assets = new LocalAssets(this.store, this.prep, this.identity, this.recheck, this.organization, this.root, this.durableSecurity, this.sales);
+    for (const [name, ref] of Object.entries(bindings)) {
+      const metrics = await assets.transaction(false, a => new MetricCatalog(a).execution({ ...ref, ...(ref.kind === 'prepared-dataset' ? { ownerId: this.identity.userId } : {}) }));
+      result.set(name, { ...result.get(name)!, metrics });
     }
     return result;
   }

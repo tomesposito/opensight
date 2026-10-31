@@ -1,3 +1,4 @@
+import { metricColumn } from '@opensight/query-engine/browser';
 import { unresolvedVisualFieldDiagnostics } from './unresolved-fields.js';
 import { declaration, type AuthorParameter } from './parameters.js';
 import type { AuthorControl } from './controls.js';
@@ -7,8 +8,8 @@ import type { createApiClient, QueryRequest, QueryResponse } from './api-client.
 import { ApiError } from './api-client.js';
 import type { Row } from './model.js';
 
-export type QueryClient = Pick<ReturnType<typeof createApiClient>, 'queryDataset'> & Partial<Pick<ReturnType<typeof createApiClient>, 'getDatasetRefreshStatus' | 'queryO' | 'getDatasetExecution' | 'setDatasetExecution' | 'refreshBlaze' | 'getPreparedRows' | 'listPrepSources'>> & { dataset?: AuthorDataset };
-export interface AuthorRows { rows: Row[] | null; message?: string; provenance?: QueryResponse['provenance'] }
+export type QueryClient = Pick<ReturnType<typeof createApiClient>, 'queryDataset'> & Partial<Pick<ReturnType<typeof createApiClient>, 'listMetrics' | 'getDatasetRefreshStatus' | 'queryO' | 'getDatasetExecution' | 'setDatasetExecution' | 'refreshBlaze' | 'getPreparedRows' | 'listPrepSources'>> & { dataset?: AuthorDataset };
+export interface AuthorRows { metrics?: QueryResponse['metrics']; rows: Row[] | null; message?: string; provenance?: QueryResponse['provenance'] }
 
 export function buildAuthorQuery(visual: AuthorVisual, calculations: readonly CalculatedField[] = [], parameters: readonly AuthorParameter[] = [], dataset?: AuthorDataset): QueryRequest | null {
   if (authorVisualProblem(visual) || unresolvedVisualFieldDiagnostics(visual, calculations, dataset, parameters).length) return null;
@@ -33,7 +34,7 @@ export function buildAuthorQuery(visual: AuthorVisual, calculations: readonly Ca
     ({ fieldId: name, columnName: name, ...(dataFields(calculations, dataset).find(f => f.name === name)?.type === 'DATETIME' ? { granularity: visual.dateGrain ?? 'MONTH' } : {}) });
   return {
     dimensions: [...dimensions.map(dimensionDescriptor), ...facetNames.map(dimensionDescriptor), ...breakdownNames.map(dimensionDescriptor)],
-    measures: [...visual.measures.map(name => ({ fieldId: name, columnName: name, aggregation: 'SUM' })),
+    measures: [...visual.measures.map(name => ({ fieldId: name, columnName: name, aggregation: dataset?.metrics?.find(m => metricColumn(m.id) === name)?.defaultAggregation ?? 'SUM' })),
       // Extra tooltip measures aggregate at the visual's existing grain; they never change grouping.
       ...visual.tooltipExtraFields.map(e => ({ fieldId: e.field, columnName: e.field, aggregation: e.aggregation }))],
     filters: [...visual.filters.map(f => f.parameterName ? { columnName: f.columnName, parameterName: f.parameterName, ...(f.operator ? { operator: f.operator } : {}) } : { columnName: f.columnName, values: f.values }), ...dynamic.map(({ filter, parameter }) => ({ columnName: filter.columnName, parameterName: parameter.name, ...(filter.operator ? { operator: filter.operator } : {}) }))],
@@ -61,7 +62,7 @@ export async function loadAuthorRows(client: QueryClient, request: QueryRequest,
       try {
         const result = await client.queryDataset(client.dataset?.id ?? 'sales', request, signal);
         signal.throwIfAborted();
-        return { rows: result.rows, ...(result.provenance ? { provenance: result.provenance } : {}) };
+        return { rows: result.rows, ...(result.metrics ? { metrics: result.metrics } : {}), ...(result.provenance ? { provenance: result.provenance } : {}) };
       } catch (error) {
         // A reopened visual can arrive before the cancelled previous read has
         // released the local prepared-data gate. Retry only that named conflict.

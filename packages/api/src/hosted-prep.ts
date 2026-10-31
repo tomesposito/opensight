@@ -1,3 +1,4 @@
+import { lookupMetrics, metricQuery, metricDefinition } from './metric-consumption.js';
 import { setImmediate as yieldTurn } from 'node:timers/promises';
 import { containedWork, wireTable, type WireTable, type TableResult, type QueryResult } from './contained-work.js';
 import { parseBundleResource, ValidationError, type BundleDataSet } from '@opensight/bundle-parser';
@@ -222,7 +223,8 @@ export class HostedPrep {
   }
   async execute(context: TenantContext, id: string, path: 'rows' | 'query' | 'refresh', input: unknown = {}, visual?: { analysis: unknown; visualId: string; dataSetArn: string }) {
     const stored = await this.stored(context, id), graph = await this.graph(context, id, stored.resource.opensightPrep!), key = this.cacheKey(context, id);
-    const query = path === 'query' ? validateQuery(input) : undefined;
+    let metrics: readonly import('@opensight/query-engine').PublishedMetric[] | undefined;
+    const query = path === 'query' ? await metricQuery(validateQuery(input), { kind: 'prepared-dataset', id, ownerId: context.userId }, lookupMetrics({ scope: context, transaction: (write, work) => this.data.sources.metadata.assetTransaction(context, write, work) }), value => { metrics = value; }) : undefined;
     if (!query) object(input, []);
     const columns = this.plan(graph, id).columns;
     if (query) planPreparedQuery(columns, query); // Query semantics are checked before loading data.
@@ -246,7 +248,7 @@ export class HostedPrep {
         table = new BlazeTable(this.data.limits(context)); await this.load(context, id, graph, table);
       }
       const result = visual ? await containedWork<QueryResult>(scope, { kind: 'visual', table: await wireTable(scope, table, { id, table: 'output', connectorId: 'file', columns: table.columns, security: 'unrestricted' }), ...visual }, this.data.limits(context)) : query ? await this.data.computeQuery(context, table, query) : { columns: table.columns, rows: table.rows(100), rowCount: table.rowCount, truncated: table.rowCount > 100 };
-      await this.data.finish(context, graph.leaves, graph.revisions); return result;
+      await this.data.finish(context, graph.leaves, graph.revisions); return { ...result, ...(metrics ? { metrics } : {}) };
     }, graph.revisions, path === 'refresh' ? {
       claim: { kind: 'prepared-dataset', id, version: stored.version },
       definitions: [...[...graph.modes].map(([id, mode]) => ({ kind: 'prepared-dataset' as const, id, version: mode.version })),

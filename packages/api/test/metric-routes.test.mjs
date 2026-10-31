@@ -52,3 +52,25 @@ test('metric routes: hosted prepared schema and dataset owner publishing through
   assert.equal((await f.metadata.get(await f.context(), { kind: 'metric', id: 'amount' })).body.publishedVersion, 2);
   error(await f.request('/api/v1/datasets/prepared', { method: 'DELETE', headers: at(1) }), 409, 'DATASET_DELETE_BLOCKED_BY_METRIC');
 });
+
+test('metrics: analysis and frozen dashboard follow latest publication; drafts and request overrides never execute', async t => {
+  const f = await metricLocal(t, false), dataset = { kind: 'dataset', id: 'sales' };
+  const query = { dimensions: [], measures: [{ fieldId: 'value', columnName: '__metric_net', aggregation: 'SUM' }], filters: [] };
+  const create = { method: 'POST', body: { id: 'net', dataset, definition: { ...def, expression: '{revenue}', defaultAggregation: 'AVG' } } };
+  good(await f.request('/api/v1/metrics', create), 201);
+  error(await f.request('/api/datasets/sales/query', { method: 'POST', body: query }), 422, 'METRIC_NOT_PUBLISHED');
+  good(await f.request('/api/v1/metrics/net/publish', { method: 'POST', body: {}, headers: at(1) }));
+  assert.equal(good(await f.request('/api/datasets/sales/query', { method: 'POST', body: query })).rows[0].value, 900 / 7);
+  error(await f.request('/api/datasets/sales/query', { method: 'POST', body: { ...query, calculatedFields: [{ name: '__metric_net', expression: '1' }] } }), 422, 'METRIC_OVERRIDE_FORBIDDEN');
+  const definition = { dataSetIdentifierDeclarations: [{ identifier: 'data', dataSetArn: 'arn:aws:quicksight:us-east-1:123456789012:dataset/renderable-sales' }], calculatedFields: [], sheets: [{ sheetId: 'sheet', name: 'Sheet', visuals: [{ kpiVisual: { visualId: 'kpi', chartConfiguration: { fieldWells: { values: [{ numericalMeasureField: { fieldId: 'value', column: { dataSetIdentifier: 'data', columnName: '__metric_net' }, aggregationFunction: { simpleNumericalAggregation: 'SUM' } } }] } } } }] }] };
+  good(await f.request('/api/v1/analyses', { method: 'POST', body: { analysisId: 'governed', name: 'Governed', definition, datasetBindings: { data: dataset } } }), 201);
+  const published = good(await f.request('/api/v1/analyses/governed/publish', { method: 'POST', body: {} }), 201);
+  const path = `/api/v1/dashboards/${published.DashboardId}/versions/1/visuals/kpi/query`;
+  assert.equal(good(await f.request(path, { method: 'POST', body: {} })).rows[0].value, 900 / 7);
+  good(await f.request('/api/v1/metrics/net', { method: 'PUT', body: { definition: { ...def, name: 'Renamed revenue', expression: '{revenue} * 2' } }, headers: at(2) }));
+  assert.equal(good(await f.request(path, { method: 'POST', body: {} })).rows[0].value, 900 / 7);
+  good(await f.request('/api/v1/metrics/net/publish', { method: 'POST', body: {}, headers: at(3) }));
+  assert.equal(good(await f.request(path, { method: 'POST', body: {} })).rows[0].value, 1800);
+  assert.equal(good(await f.request('/api/datasets/sales/query', { method: 'POST', body: query })).rows[0].value, 1800);
+  assert.deepEqual(good(await f.request('/api/v1/analyses/governed')).Definition.CalculatedFields, []);
+});

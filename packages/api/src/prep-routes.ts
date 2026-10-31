@@ -1,3 +1,4 @@
+import { metricQuery, metricDefinition, type MetricLookup } from './metric-consumption.js';
 import { disabledAnalytics } from './analytics.js';
 import { MetadataError } from './metadata-db.js';
 import { randomUUID } from 'node:crypto';
@@ -43,6 +44,8 @@ function send(response: ServerResponse, status: number, body: unknown): void {
 }
 export class PrepRoutes {
   analytics = disabledAnalytics;
+  metricLookup?: (identity: Identity) => MetricLookup;
+  checkMetricDelete?: (identity: Identity, id: string) => Promise<void>;
   private readonly blaze = new BlazeStore();
   private readonly configured = new Map<string, string>();
   private requirement(identity: Identity, id: string, state = this.store.read()): string | null {
@@ -156,9 +159,12 @@ export class PrepRoutes {
       send(response, 200, this.status(identity, id)); return;
     }
     method(request, response, action === 'query' ? ['POST'] : ['GET']);
-    const body = action === 'query' ? await readQuery(request) : undefined;
+    let metrics: readonly import('@opensight/query-engine').PublishedMetric[] | undefined;
+    let body = action === 'query' ? await readQuery(request) : undefined;
+    if (body && this.metricLookup) body = await metricQuery(body, { kind: 'prepared-dataset', id, ownerId: identity.userId }, this.metricLookup(identity), value => { metrics = value; });
     const use = (table: BlazeTable, refreshedAt: string | null) => ({
       ...(body ? queryPrepared(table.columns, table.rowCount, table.value, body) : { columns: table.columns, rows: table.rows(100), rowCount: table.rowCount, truncated: table.rowCount > 100 }),
+      ...(metrics ? { metrics } : {}),
       execution: { mode: refreshedAt ? 'BLAZE' : 'DIRECT_QUERY', cached: !!refreshedAt, refreshedAt, cachedInputs: table.cachedInputs },
     });
     if (this.blaze.status(key).mode === 'BLAZE') {
@@ -171,10 +177,15 @@ export class PrepRoutes {
 
   async dashboardVisual(identity: Identity, id: string, definition: unknown, visualId: string, dataSetArn: string) {
     await this.analysisSchema(identity, id);
+    let metrics: readonly import('@opensight/query-engine').PublishedMetric[] | undefined;
+    if (this.metricLookup) {
+      const wire = definition as Record<string, unknown>;
+      definition = await metricDefinition(wire, Object.fromEntries(((wire.DataSetIdentifierDeclarations ?? []) as { Identifier: string }[]).map(d => [d.Identifier, { kind: 'prepared-dataset', id, ownerId: identity.userId }])), this.metricLookup(identity), value => { metrics = value; });
+    }
     const analysis = { ResourceType: 'Analysis', AnalysisId: 'published', Name: 'Published dashboard', Definition: definition };
     const run = (table: BlazeTable) => {
       const plan = planPreparedVisual(table.columns, analysis, visualId, dataSetArn);
-      return { ...queryPreparedVisual(table.columns, table.rowCount, table.value, analysis, visualId, dataSetArn), bindings: Object.fromEntries([...plan.dimensions, ...plan.measures].map(f => [f.fieldId, f.outputName])) };
+      return { ...(metrics ? { metrics } : {}), ...queryPreparedVisual(table.columns, table.rowCount, table.value, analysis, visualId, dataSetArn), bindings: Object.fromEntries([...plan.dimensions, ...plan.measures].map(f => [f.fieldId, f.outputName])) };
     };
     if (this.blaze.status(this.key(identity, id)).mode === 'BLAZE') return run(this.blaze.read(this.key(identity, id)).table);
     this.requireDirect(identity, id);
@@ -318,6 +329,7 @@ export class PrepRoutes {
       }
       if (!existing) prepFail('PREP_NOT_FOUND', '$.dataset', 'Prepared dataset not found');
       if (request.method === 'GET') { response.setHeader('ETag', `"${existing.version ?? 1}"`); send(response, 200, { resource: existing.resource, persistence: this.persistent ? 'file' : 'ephemeral' }); return; }
+      await this.checkMetricDelete?.(identity, id);
       this.invalidate(identity, id); this.blaze.remove(this.key(identity, id));
       this.configured.delete(this.key(identity, id));
       await this.store.change(draft => { draft.datasets = draft.datasets.filter(e => !(this.owned(identity, e) && e.resource.dataSetId === id)); });

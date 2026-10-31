@@ -1,3 +1,4 @@
+import { formatMetric } from './governed-metrics.js';
 import type { EChartsOption } from 'echarts';
 import type { VisualModel } from './model.js';
 import { LIGHT_THEME, type AnalysisTheme } from './themes.js';
@@ -74,7 +75,8 @@ export function applyDisplayOptions(model: VisualModel, option: EChartsOption, t
       return decimals !== undefined ? formatNumber(delta) : String(delta ?? '');
     }
     const value = model.kind === 'heatmap' && Array.isArray(params.value) ? params.value[2] : params.value;
-    const formatted = decimals !== undefined ? formatNumber(value) : (value === null || value === undefined ? '' : String(value));
+    const governed = model.measures.length === 1 ? model.formatting?.metricFormats?.[model.measures[0]!.column] : undefined;
+    const formatted = formatMetric(value, governed) ?? (decimals !== undefined ? formatNumber(value) : (value === null || value === undefined ? '' : String(value)));
     if (!formatted) return '';
     return `${formatted}${model.kind === 'bar100' ? '%' : ''}`;
   };

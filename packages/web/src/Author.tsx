@@ -67,6 +67,18 @@ function AuthorWorkspace({ initialDraft, renderIdentity, sampleLoaded = false, o
   const notify = useToast();
   const drafts = useLocalDrafts(access, dataset, { draftId, newAnalysis, initialDraft });
   const { draft, dispatch } = drafts;
+  const [metricError, setMetricError] = useState('');
+  const metricList = apiClient?.listMetrics, metricDatasetId = draft.dataset?.id;
+  useEffect(() => {
+    if (!metricList || !metricDatasetId) return;
+    const abort = new AbortController();
+    dispatch({ type: 'metrics', metrics: [] });
+    const refresh = () => { void metricList(metricDatasetId, abort.signal).then(result => {
+      if (!abort.signal.aborted) { dispatch({ type: 'metrics', metrics: result.items.flatMap(m => m.published ? [m.published] : []) }); setMetricError(''); }
+    }).catch((e: unknown) => { if (!abort.signal.aborted) { dispatch({ type: 'metrics', metrics: [] }); setMetricError(String(e)); } }); };
+    refresh(); window.addEventListener('focus', refresh); const timer = setInterval(refresh, 30000);
+    return () => { abort.abort(); clearInterval(timer); window.removeEventListener('focus', refresh); };
+  }, [metricList, metricDatasetId, dispatch]);
   const noData = draft.noDataset === true || (access.mode === 'local' && !draft.dataset && !draft.bundle && !sampleLoaded);
   const workspace = useRef<HTMLDivElement>(null);
   const [hostedStatus, setHostedStatus] = useState('');
@@ -244,6 +256,7 @@ function AuthorWorkspace({ initialDraft, renderIdentity, sampleLoaded = false, o
       <p id="export-help">{exported.error ?? (client ? 'Downloads analysis definitions and sheet layouts; query results are not included.' : 'Downloads analysis definitions and sheet layouts; sample rows and the fixed East preview filter are not included.')}</p>
       {exportStatus && <p role="status">{exportStatus}</p>}
     </div>
+    {metricError && <p role="alert">Governed metrics unavailable: {metricError}</p>}
     {source.problem && <DraftSourceRecovery draft={draft} sources={source.sources} problem={source.problem} onRetry={source.retry} onSources={onSources ? () => { if (drafts.keepCurrent()) onSources(); } : undefined} onReconnect={next => { dispatch({ type: 'import', draft: next }); }} />}
     {noData ? <div className="author-layout author-layout-empty">
       <Panel title="Data" className="fields-panel"><p>No dataset selected.</p>{onSources && <button type="button" onClick={() => { if (drafts.keepCurrent()) onSources(); }}>Add data</button>}</Panel>
@@ -417,12 +430,12 @@ export function AuthorCanvas({ draft, dispatch, client, fit = true, sourceProble
           {matchingFields.filter(f => fieldGroup(f) === group).map(field => <button key={field.name} type="button"
             title={field.type === 'BOOLEAN' ? 'Boolean fields are supported in preparation; convert to text or number before charting.' : undefined}
             disabled={field.type === 'BOOLEAN' || (field.role === 'dimension' && !!selected && noDimensions(selected.kind))}
-            aria-label={`Assign ${field.name}`} aria-pressed={selected?.dimension === field.name || selected?.rows.includes(field.name) || selected?.columns.includes(field.name) || !!selected?.measures.includes(field.name) || !!selected?.smallMultiples?.includes(field.name) || !!selected?.breakdowns?.includes(field.name)}
+            aria-label={`Assign ${field.label ?? field.name}`} aria-pressed={selected?.dimension === field.name || selected?.rows.includes(field.name) || selected?.columns.includes(field.name) || !!selected?.measures.includes(field.name) || !!selected?.smallMultiples?.includes(field.name) || !!selected?.breakdowns?.includes(field.name)}
             draggable={field.type !== 'BOOLEAN'} onDragStart={e => { e.dataTransfer.setData(FIELD_DRAG_TYPE, field.name); e.dataTransfer.effectAllowed = 'copy'; }}
             aria-describedby={`${fieldIconId}-${encodeURIComponent(field.name)}`}
             onClick={() => dispatch({ type: selected ? 'assign' : 'assign-with-no-selection', field: field.name, well: field.role === 'measure' ? 'values' : dimensionWell })}>
             <FieldIcon field={field} id={`${fieldIconId}-${encodeURIComponent(field.name)}`} />
-            <span className="field-name">{field.name}</span><span className="field-type">{field.type}</span>
+            <span className="field-name">{field.label ?? field.name}</span><span className="field-type">{field.type}</span>
           </button>)}
         </details>)}
         {!matchingFields.length && <p role="status">No matching fields.</p>}

@@ -119,6 +119,20 @@ export class MetricCatalog {
     b.versions.push({ version, state: action === 'publish' ? 'published' : 'draft', definition: structuredClone(definition), actor, at });
     b.audit.push({ action, version, actor, at }); if (action === 'publish') b.publishedVersion = version;
   }
+  execution(ref: MetricDataset) {
+    const seen = new Set<string>();
+    const unsafe = (ref: MetricDataset): boolean => {
+      const key = assetKey(ref); if (seen.has(key)) assetFail('METRIC_DATASET_CYCLE', 422); seen.add(key);
+      const r = this.dataset(ref);
+      if (ref.kind === 'dataset') { const wire = object(r.body.definition), d = object(wire.DataSet ?? wire); return Object.values(object(d.LogicalTableMap ?? {})).some(t => !!object(object(t).Source ?? {}).JoinInstruction); }
+      const p = object(object(r.body.resource).opensightPrep), steps = p.steps as { kind: string; config: { source?: unknown } }[];
+      if (steps.some(s => s.kind === 'join')) return true;
+      const refs = [p.input, ...steps.filter(s => s.kind === 'append').map(s => s.config.source)];
+      const result = refs.some(r => r && typeof r === 'object' && 'dataset' in r && unsafe({ ...ref, id: String(r.dataset) }));
+      seen.delete(key); return result;
+    };
+    return { metrics: this.published(ref), unsafeJoin: unsafe(ref) };
+  }
   published(ref: MetricDataset): PublishedMetric[] {
     return this.list(ref).flatMap(r => { const b = metricRecord(r), v = b.versions.find(v => v.version === b.publishedVersion); return v ? [{ id: r.id, version: v.version, ...structuredClone(v.definition) }] : []; });
   }

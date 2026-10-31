@@ -93,8 +93,8 @@ export class LocalDashboards implements DashboardBackend {
       return this.prep.dashboardVisual(this.identity, binding.id, definition, visualId, v.definition.dataSetIdentifierDeclarations[0]!.dataSetArn);
     }
     if (binding.id !== 'sales' || !this.sales) throw new MetadataError('UNRESOLVED_BINDING', 422);
-    const { plan, rows } = await this.sales.executeVisual(definition, visualId, undefined, this.organization ? this.identity : undefined);
-    return { columns: [...plan.dimensions.map(f => ({ name: f.outputName, type: 'string' as const })), ...plan.measures.map(f => ({ name: f.outputName, type: 'number' as const }))], rows,
+    const { plan, rows, metrics } = await this.sales.executeVisual(definition, visualId, undefined, this.organization ? this.identity : undefined);
+    return { columns: [...plan.dimensions.map(f => ({ name: f.outputName, type: 'string' as const })), ...plan.measures.map(f => ({ name: f.outputName, type: 'number' as const }))], rows, ...(metrics ? { metrics } : {}),
       bindings: Object.fromEntries([...plan.dimensions, ...plan.measures].map(f => [f.fieldId, f.outputName])) };
   }
 }

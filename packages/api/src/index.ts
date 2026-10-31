@@ -1,3 +1,4 @@
+import { lookupMetrics } from './metric-consumption.js';
 import { analyticsSettingsRoute } from './analytics-settings.js';
 import { localAnalytics } from './analytics-local.js';
 import type { Analytics } from './analytics.js';
@@ -113,6 +114,17 @@ export async function createApiServer(options: ApiOptions): Promise<Server> {
   const connectorRoutes = new ConnectorRoutes(!!localIdentity, analytics);
   const prepRoutes = await PrepRoutes.create(connectorRoutes, options.prepStorePath, options.prepPostgresBindings);
   prepRoutes.analytics = analytics;
+  const metricAssets = (identity: Identity) => {
+    const ns = identity.namespaceId, local = !security;
+    return new LocalAssets(local ? store : namespaceStores.get(ns), prepRoutes, identity, async () => { if (security) security.user(identity); }, organization,
+      local || ns === 'default' ? options.dataRoot : options.namespaceDataRoots?.[ns], !!options.security?.storePath, local ? sales : namespaceQueries.get(ns));
+  };
+  prepRoutes.metricLookup = identity => lookupMetrics(metricAssets(identity));
+  prepRoutes.checkMetricDelete = async (identity, id) => metricAssets(identity).transaction(false, a => {
+    if (a.resources.some(r => r.kind === 'metric' && JSON.stringify(r.body.dataset) === JSON.stringify({ kind: 'prepared-dataset', id, ownerId: identity.userId }))) throw new MetadataError('DATASET_DELETE_BLOCKED_BY_METRIC', 409);
+  });
+  for (const [ns, query] of namespaceQueries) if (query) query.metricLookup = identity => lookupMetrics(metricAssets(identity ?? localIdentity ?? { namespaceId: ns, userId: 'local' }));
+
   if (options.localUploadPath) await connectorRoutes.openLocal(options.localUploadPath);
   const dashboardBackend = (identity: Identity) => {
     const root = identity.namespaceId === 'default' ? options.dataRoot : options.namespaceDataRoots?.[identity.namespaceId];
