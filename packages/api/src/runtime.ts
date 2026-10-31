@@ -70,7 +70,7 @@ export function createRuntime(env: () => NodeJS.ProcessEnv = () => process.env, 
         response.once('close', () => { if (!response.writableFinished) cancellation.abort(); });
         try {
           const origin = config.OPENSIGHT_PUBLIC_ORIGIN;
-          if (!origin || request.headers.host !== new URL(origin).host || request.headers.origin !== undefined && request.headers.origin !== origin
+          if (!origin || request.headers.host !== new URL(origin).host || request.url !== '/api/access-requests' && request.headers.origin !== undefined && request.headers.origin !== origin
             || request.headers.forwarded || Object.keys(request.headers).some(h => h.startsWith('x-forwarded-') || h.startsWith('x-opensight-ingress-') || h === 'cloudfront-viewer-address')) throw new MetadataError('UNTRUSTED_ORIGIN', 403);
           const headers: Record<string, string> = {};
           for (let i = 0; i < request.rawHeaders.length; i += 2) {

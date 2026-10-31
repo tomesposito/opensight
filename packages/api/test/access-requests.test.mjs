@@ -3,6 +3,10 @@ import assert from 'node:assert/strict';
 import { request as httpRequest } from 'node:http';
 import { h8Fixture, serveH8 } from './h8-helpers.mjs';
 import { StubMailTransport } from '../dist/mail.js';
+import { createHostedApiServer } from '../dist/hosted-server.js';
+import { createRuntime } from '../dist/runtime.js';
+import { adaptGatewayRequest, authorizeIngress, validateViewerRequest } from '../dist/runtime-ingress.js';
+import { runtimeEnv, event, context, payload } from './runtime-helpers.mjs';
 import { accessRequestRate, initializeAccessRequests, limitAccessRequests, listAccessRequests, storeAccessRequest } from '../dist/access-requests.js';
 
 const path = '/api/access-requests';
@@ -159,4 +163,31 @@ test('CORS exception does not weaken other routes, host checks or forged-princip
   error(await f.request(path, { headers: { host: 'foreign.example.com' } }), 403, 'UNTRUSTED_ORIGIN');
   error(await f.request(path, { headers: { 'x-user': 'forged' } }), 403, 'FORGED_PRINCIPAL');
   assert.equal((await f.request(path, { method: 'GET', body: null })).status, 405);
+});
+
+test('the exact marketing URL crosses edge and gateway boundaries, with invocation-safe rate limits', async t => {
+  const f = await setup(t, 1), env = { ...runtimeEnv(), ...f.env };
+  const runtime = createRuntime(() => env, { databases: () => ({ membership: f.db, tenant: f.db }), readiness: async () => {},
+    application: (_db, scope, config) => createHostedApiServer({ membershipDatabase: f.db, tenantDatabase: f.db, env: config,
+      security: { authenticate: async () => assert.fail('public route authenticated a principal') }, mailTransport: f.mail,
+      invocation: { signal: scope.signal } }) });
+  const viewer = { protocol: 'https', uri: path, querystring: {}, headers: { host: { value: 'opensight.example' }, origin: { value: 'https://getopensight.org' } } };
+  validateViewerRequest(viewer, env.OPENSIGHT_PUBLIC_ORIGIN);
+  const e = event(path, 'POST', valid); e.headers.origin = 'https://getopensight.org'; delete e.headers.authorization;
+  assert.equal(authorizeIngress(e, env).isAuthorized, true);
+  assert.equal(adaptGatewayRequest(e, env).path, path);
+  const preflight = event(path, 'OPTIONS'); preflight.headers.origin = e.headers.origin; delete preflight.headers.authorization;
+  let result = await runtime.lambda(preflight, context);
+  assert.equal(result.statusCode, 204); assert.equal(result.headers['access-control-allow-origin'], e.headers.origin);
+  result = await runtime.lambda(e, context);
+  assert.equal(result.statusCode, 201); assert.deepEqual(payload(result), { received: true });
+  assert.equal(result.headers['access-control-allow-origin'], e.headers.origin);
+  result = await runtime.lambda(e, context);
+  assert.equal(result.statusCode, 429); assert.deepEqual(payload(result), { errorCode: 'ACCESS_REQUEST_RATE_LIMITED' });
+  assert.equal(result.headers['access-control-allow-origin'], e.headers.origin);
+  for (const uri of ['/api/access-requests/', '/api/api/namespaces/one/access-requests', '/api/api/host/access-requests', '/api/api/session']) {
+    assert.throws(() => validateViewerRequest({ ...viewer, uri }, env.OPENSIGHT_PUBLIC_ORIGIN));
+    const bad = event(uri, 'POST', valid); bad.headers.origin = e.headers.origin;
+    assert.equal(authorizeIngress(bad, env).isAuthorized, false);
+  }
 });

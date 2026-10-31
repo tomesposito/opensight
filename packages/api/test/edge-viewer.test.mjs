@@ -13,6 +13,17 @@ const context = vm.createContext({ Buffer: { byteLength: Buffer.byteLength } });
 vm.runInContext('Object.hasOwn = undefined; Set = undefined;', context);
 vm.runInContext(source.replaceAll('__OPENSIGHT_ORIGIN__', JSON.stringify(origin)).replaceAll('__OPENSIGHT_HOST__', JSON.stringify(host)), context);
 const frame = () => ({ viewer: { ip: '2001:db8::7' }, request: { method: 'GET', uri: '/api/api/session', querystring: {}, headers: { host: { value: host } } } });
+test('Issue #176: generated edge admits marketing capture and preflight without opening neighboring routes', () => {
+  for (const method of ['POST', 'OPTIONS']) {
+    const e = frame(); e.request.method = method; e.request.uri = '/api/access-requests';
+    e.request.headers.origin = { value: 'https://getopensight.org' };
+    assert.equal(context.handler(e).uri, '/api/access-requests');
+  }
+  for (const uri of ['/api/access-requests/', '/api/api/namespaces/one/access-requests', '/api/api/session', '/api/api/host/access-requests']) {
+    const e = frame(); e.request.uri = uri; e.request.headers.origin = { value: 'https://getopensight.org' };
+    assert.equal(context.handler(e).statusCode, 403);
+  }
+});
 test('SR4a generated edge boundary is current, within CloudFront size limit and injects only the platform viewer peer', async () => {
   assert.equal(source, await edgeSource()); assert.ok(Buffer.byteLength(source) < 10000);
   const event = frame(), output = context.handler(event); assert.equal(output.uri, event.request.uri); assert.equal(output.headers['x-opensight-ingress-peer'].value, event.viewer.ip);
