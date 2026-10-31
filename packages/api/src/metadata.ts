@@ -240,7 +240,7 @@ export class TenantMetadata {
   /** Assets use the same tenant lock, links, quota accounting and durable rows as authoring. */
   async assetTransaction<T>(context: TenantContext, write: boolean, work: (catalog: AssetCatalog) => T, receipt?: (result: T) => RetryCommit): Promise<T> {
     return this.checked(context, async c => {
-      const rows = await c.query("SELECT * FROM h1_resources WHERE tenant_id = ? AND namespace_id = ? AND kind IN ('user','group','folder','analysis','dashboard','prepared-dataset')", scopeValues(context));
+      const rows = await c.query("SELECT * FROM h1_resources WHERE tenant_id = ? AND namespace_id = ? AND kind IN ('user','group','folder','analysis','dashboard','prepared-dataset','dataset','metric')", scopeValues(context));
       const before = rows.map(resource), catalog = new AssetCatalog(context, structuredClone(before));
       const result = work(catalog);
       if (!write) return result;
@@ -249,7 +249,7 @@ export class TenantMetadata {
       const removed = before.filter(r => !next.has(assetKey(r)));
       for (const r of [...changed, ...removed]) {
         if (r.ownerId && r.ownerId !== context.userId) missing();
-        if (!['analysis', 'dashboard', 'folder', 'prepared-dataset'].includes(r.kind)) throw new MetadataError('METADATA_WRITE_FORBIDDEN', 403);
+        if (!['analysis', 'dashboard', 'folder', 'prepared-dataset', 'metric'].includes(r.kind)) throw new MetadataError('METADATA_WRITE_FORBIDDEN', 403);
         await c.query(`DELETE FROM h1_links WHERE ${predicates}`, keyValues(context, r));
       }
       for (const r of changed) {
@@ -266,7 +266,7 @@ export class TenantMetadata {
         if (refs.length) throw new MetadataError('ASSET_DELETE_REFERENCED', 409);
         await c.query(`DELETE FROM h1_resources WHERE ${predicates}`, keyValues(context, r));
       }
-      if (removed.some(r => r.kind === 'prepared-dataset')) await c.query('UPDATE h1_revisions SET configuration = configuration + 1 WHERE tenant_id = ? AND namespace_id = ?', scopeValues(context));
+      if (removed.some(r => r.kind === 'prepared-dataset') || changed.some(r => r.kind === 'metric')) await c.query('UPDATE h1_revisions SET configuration = configuration + 1 WHERE tenant_id = ? AND namespace_id = ?', scopeValues(context));
       if (changed.length || removed.length) await appendMetadataEvent(c, context, 'assets.changed');
       await receipt?.(result).persist?.(c);
       return result;

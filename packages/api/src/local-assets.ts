@@ -51,6 +51,7 @@ export class LocalAssets implements AssetBackend {
       const definition = organization.definition(ns, kind, id, state);
       if (definition) resources.push(localResource(id, kind, definition, organization.asset(state, ns, kind, id)));
     }
+    resources.push(...(state.metrics ?? []).filter(m => m.namespaceId === ns).map(m => m.resource));
     return resources;
   }
   async transaction<T>(write: boolean, work: (catalog: AssetCatalog) => T): Promise<T> {
@@ -82,7 +83,10 @@ export class LocalAssets implements AssetBackend {
       for (const r of catalog.resources) {
         const old = entries.find(e => assetKey(e) === assetKey(r));
         if (r.kind === 'prepared-dataset' || JSON.stringify(old) === JSON.stringify(r)) continue;
-        if (r.kind === 'folder') {
+        if (r.kind === 'metric') {
+          state.metrics = (state.metrics ?? []).filter(m => m.namespaceId !== this.identity.namespaceId || m.resource.id !== r.id);
+          state.metrics.push({ namespaceId: this.identity.namespaceId, resource: r });
+        } else if (r.kind === 'folder') {
           state.folders = (state.folders ?? []).filter(f => f.namespaceId !== this.identity.namespaceId || f.id !== r.id);
           state.folders.push({ id: r.id, namespaceId: this.identity.namespaceId, name: String(r.body.name), grants: r.body.grants as OrganizedAsset['grants'], version: r.version, updatedAt: r.body.updatedAt as string });
         } else if (r.kind === 'analysis' || r.kind === 'dashboard') {

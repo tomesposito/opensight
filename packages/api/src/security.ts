@@ -1,3 +1,4 @@
+import { resourceLinks } from './metadata-resources.js';
 import { isRole, hasCapability, type Role, type Capability } from '@opensight/query-engine';
 import { validateOrganization, type Folder, type OrganizedAsset } from './organization.js';
 import type { IncomingMessage, ServerResponse } from 'node:http';
@@ -16,6 +17,7 @@ export interface SecurityState {
   invitations?: Invitation[];
   folders?: Folder[];
   assets?: OrganizedAsset[];
+  metrics?: { namespaceId: string; resource: import('./metadata-resources.js').MetadataResource }[];
   namespaces: { id: string; name: string }[];
   users: User[];
   groups: Group[];
@@ -38,7 +40,7 @@ function rows(raw: unknown): Record<string, unknown>[] {
   return raw as Record<string, unknown>[];
 }
 export function validateSecurityState(raw: unknown, columns: readonly BoundColumn[]): SecurityState {
-  const s = record(raw, ['version', 'namespaces', 'users', 'groups', 'datasets', 'folders', 'assets', 'invitations']);
+  const s = record(raw, ['version', 'namespaces', 'users', 'groups', 'datasets', 'folders', 'assets', 'invitations', 'metrics']);
   if (s.version !== 1) invalid('$.version', 'expected 1');
   const namespaces = rows(s.namespaces).map(r => { record(r, ['id', 'name']); return { id: id(r.id, '$.id'), name: name(r.name) }; });
   const users = rows(s.users).map(r => {
@@ -76,6 +78,17 @@ export function validateSecurityState(raw: unknown, columns: readonly BoundColum
     if (!(p.type === 'user' ? users : groups).some(v => v.id === p.id && v.namespaceId === d.namespaceId)) invalid('$.principals', 'unresolved principal');
   }
   const result: SecurityState = { version: 1, ...(s.invitations === undefined ? {} : { invitations }), namespaces, users, groups, datasets, ...(s.folders === undefined ? {} : { folders: s.folders as Folder[] }), ...(s.assets === undefined ? {} : { assets: s.assets as OrganizedAsset[] }) };
+  if (s.metrics !== undefined) {
+    if (!Array.isArray(s.metrics)) invalid('$.metrics', 'Expected metrics');
+    result.metrics = s.metrics as NonNullable<SecurityState['metrics']>;
+    const seen = new Set<string>();
+    for (const m of result.metrics) {
+      if (!namespaces.some(n => n.id === m.namespaceId) || m.resource.kind !== 'metric' || m.resource.ownerId !== undefined) invalid('$.metrics', 'Invalid metric scope');
+      resourceLinks({ kind: 'metric', id: m.resource.id }, m.resource.body);
+      if (m.resource.version !== (m.resource.body.versions as unknown[]).length || seen.has(`${m.namespaceId}/${m.resource.id}`)) invalid('$.metrics', 'Invalid metric version or duplicate');
+      seen.add(`${m.namespaceId}/${m.resource.id}`);
+    }
+  }
   validateOrganization(result);
   return result;
 }
