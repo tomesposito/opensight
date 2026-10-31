@@ -19,8 +19,8 @@ const schema = [
   `CREATE TABLE IF NOT EXISTS h1_resources (
     tenant_id TEXT NOT NULL, namespace_id TEXT NOT NULL, kind TEXT NOT NULL,
     owner_id TEXT NOT NULL, resource_id TEXT NOT NULL, body TEXT NOT NULL, version INTEGER NOT NULL CHECK (version > 0),
-    CHECK (kind IN ('user','group','folder','analysis','dashboard','dataset','prepared-dataset','policy','source','secret','ai-config','invitation','job','metric')),
-    CHECK (kind NOT IN ('user','group','folder','analysis','dashboard','dataset','policy','ai-config','invitation','job','metric') OR owner_id = ''),
+    CHECK (kind IN ('user','group','folder','analysis','dashboard','dataset','prepared-dataset','policy','source','secret','ai-config','invitation','job','metric','prep-template')),
+    CHECK (kind NOT IN ('user','group','folder','analysis','dashboard','dataset','policy','ai-config','invitation','job','metric','prep-template') OR owner_id = ''),
     CHECK (kind <> 'prepared-dataset' OR owner_id <> ''),
     PRIMARY KEY (tenant_id, namespace_id, kind, owner_id, resource_id),
     FOREIGN KEY (tenant_id, namespace_id) REFERENCES h1_namespaces(tenant_id, namespace_id))`,
@@ -89,15 +89,15 @@ async function ensureMetricKind(c: SqlConnection, dialect: 'sqlite' | 'postgres'
     const checks = await c.query("SELECT conname, pg_get_constraintdef(oid) AS definition FROM pg_constraint WHERE conrelid = 'h1_resources'::regclass AND contype = 'c'");
     for (const row of checks) {
       const definition = String(row.definition), name = String(row.conname);
-      if (!definition.includes("'job'") || definition.includes("'metric'")) continue;
+      if (!definition.includes("'job'") || (definition.includes("'prep-template'") && definition.includes("'metric'"))) continue;
       if (!/^[a-zA-Z0-9_]+$/.test(name)) throw new Error('Unexpected metadata constraint name');
       await c.query(`ALTER TABLE h1_resources DROP CONSTRAINT "${name}"`);
-      await c.query(`ALTER TABLE h1_resources ADD CONSTRAINT "${name}" ${definition.replaceAll("'job'::text", "'job'::text, 'metric'::text")}`);
+      await c.query(`ALTER TABLE h1_resources ADD CONSTRAINT "${name}" ${definition.replaceAll("'job'::text", "'job'::text" + ["metric", "prep-template"].filter(k => !definition.includes(`'${k}'`)).map(k => `, '${k}'::text`).join(''))}`);
     }
     return;
   }
   const rows = await c.query("SELECT sql FROM sqlite_master WHERE name = 'h1_resources'");
-  if (String(rows[0]?.sql).includes("'metric'")) return;
+  if (["metric", "prep-template"].every(k => String(rows[0]?.sql).includes(`'${k}'`))) return;
   await c.query('CREATE TEMP TABLE metric_link_backup AS SELECT * FROM h1_links');
   await c.query('DROP TABLE h1_links');
   await c.query(schema[3]!.replace('h1_resources', 'h1_resources_metrics'));

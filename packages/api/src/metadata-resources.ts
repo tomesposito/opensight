@@ -1,3 +1,4 @@
+import { validateTemplateRecord } from './prep-template-model.js';
 import { validateMetricRecord } from './metric-model.js';
 import { validateDashboardRecord } from './dashboard-model.js';
 import { sourceBody, sourcePolicyLinks } from './source-schema.js';
@@ -7,7 +8,7 @@ import { executionSettings } from './blaze.js';
 import { isObject, type JsonObject } from './mapping.js';
 import { MetadataError, type SqlConnection } from './metadata-db.js';
 
-export const resourceKinds = ['user', 'group', 'folder', 'analysis', 'dashboard', 'dataset', 'prepared-dataset', 'policy', 'source', 'secret', 'ai-config', 'invitation', 'job', 'metric'] as const;
+export const resourceKinds = ['user', 'group', 'folder', 'analysis', 'dashboard', 'dataset', 'prepared-dataset', 'policy', 'source', 'secret', 'ai-config', 'invitation', 'job', 'metric', 'prep-template'] as const;
 export type MetadataKind = typeof resourceKinds[number];
 export interface ResourceKey { kind: MetadataKind; id: string; ownerId?: string }
 export interface MetadataResource extends ResourceKey { body: JsonObject; version: number }
@@ -52,6 +53,11 @@ export function resourceLinks(key: ResourceKey, raw: JsonObject): ResourceKey[] 
   };
   if (key.ownerId) add('user', key.ownerId);
   switch (key.kind) {
+    case 'prep-template': {
+      const template = validateTemplateRecord(body); add('user', template.owner); add('user', template.createdBy);
+      for (const v of template.versions) add('user', v.actor);
+      break;
+    }
     case 'metric': {
       const metric = validateMetricRecord(body); links.push(metric.dataset);
       add('user', metric.createdBy);

@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { functionCatalog, parseExpression, type MetricDefinition } from '@opensight/query-engine/browser';
 import type { createApiClient } from './api-client.js';
-import type { MetricDatasetOption, MetricHistory, MetricList, MetricSummary } from './governed-metrics.js';
+import type { PromotableCalculation, MetricDatasetOption, MetricHistory, MetricList, MetricSummary } from './governed-metrics.js';
 import { DataDialog, DataTable } from './DataSectionUI.js';
-export type MetricClient = Partial<Pick<ReturnType<typeof createApiClient>, 'metricDatasets' | 'listMetrics' | 'saveMetric' | 'publishMetric' | 'metricHistory'>>;
+export type MetricClient = Partial<Pick<ReturnType<typeof createApiClient>, 'metricDatasets' | 'listMetrics' | 'saveMetric' | 'publishMetric' | 'metricHistory' | 'promoteCalculation'>>;
 const blank = (): MetricDefinition => ({ name: '', expression: '', defaultAggregation: 'SUM', format: { style: 'number', decimalPlaces: 2 }, description: '', synonyms: [] });
 const message = (error: unknown) => error instanceof Error ? error.message : String(error);
 const datasetKey = (d: MetricDatasetOption) => JSON.stringify(d.dataset);
@@ -11,7 +11,7 @@ const datasetKey = (d: MetricDatasetOption) => JSON.stringify(d.dataset);
 export function GovernedMetrics({ client, datasetId }: { client?: MetricClient; datasetId?: string }) {
   const [datasets, setDatasets] = useState<MetricDatasetOption[]>(), [selected, setSelected] = useState('');
   const [list, setList] = useState<MetricList>(), [revision, setRevision] = useState(0), [error, setError] = useState('');
-  const [editing, setEditing] = useState<{ metric?: MetricSummary }>(), [history, setHistory] = useState<{ name: string; versions: MetricHistory[] }>();
+  const [editing, setEditing] = useState<{ metric?: MetricSummary; calculation?: PromotableCalculation }>(), [history, setHistory] = useState<{ name: string; versions: MetricHistory[] }>();
   const [busy, setBusy] = useState(false), acting = useRef(false);
   const available = !!(client?.metricDatasets && client.listMetrics && client.saveMetric && client.publishMetric && client.metricHistory);
   useEffect(() => {
@@ -48,15 +48,18 @@ export function GovernedMetrics({ client, datasetId }: { client?: MetricClient; 
     {dataset && !list && !error && <p role="status">Loading metrics…</p>}
     {list && <><p>{list.canPublish ? 'You can save drafts and publish definitions for this dataset.' : 'You can save a draft for approval. A dataset owner or workspace administrator publishes it.'}</p>
       <DataTable headings={['Name', 'Status', 'Published version', 'Actions']} empty={!list.items.length ? 'No governed metrics for this dataset. Create a definition to get started.' : undefined}>
-        {list.items.map(m => <tr key={m.id}><td>{m.definition.name}<small>{m.definition.description}</small></td><td>{m.state === 'draft' ? 'Draft awaiting approval' : 'Published'}</td><td>{m.publishedVersion ?? 'Not published'}</td><td>
+        {list.items.map(m => <tr key={m.id}><td>{m.definition.name}<small>{m.definition.description}</small>{m.provenance && <small>Promoted from {m.provenance.name} · dataset version {m.provenance.datasetVersion}</small>}</td><td>{m.state === 'draft' ? 'Draft awaiting approval' : 'Published'}</td><td>{m.publishedVersion ?? 'Not published'}</td><td>
           {m.permissions.edit && <button disabled={busy || !!dataset?.errorCode} onClick={() => setEditing({ metric: m })}>Edit {m.definition.name}</button>}
           {m.permissions.publish && m.state === 'draft' && <button disabled={busy || !!dataset?.errorCode} onClick={() => { void action(async () => { await client!.publishMetric!(m.id, m.version); setRevision(n => n + 1); }); }}>Publish {m.definition.name}</button>}
           {m.permissions.edit && <button disabled={busy} onClick={() => { void action(async () => { setHistory({ name: m.definition.name, versions: await client!.metricHistory!(m.id) }); }); }}>History of {m.definition.name}</button>}
         </td></tr>)}
       </DataTable><button disabled={busy} onClick={() => setRevision(n => n + 1)}>Refresh metrics</button></>}
-    {editing && dataset && <MetricDefinitionForm dataset={dataset} metric={editing.metric} onClose={() => setEditing(undefined)} onSave={async definition => {
+    {!!dataset?.calculations?.length && <section aria-label="Dataset calculations"><h3>Dataset calculations</h3><p>Promote a saved calculation to a draft metric. Its original definition stays in the dataset.</p>
+      <DataTable headings={['Calculation', 'Expression', 'Actions']}>{dataset.calculations.map(calc => <tr key={calc.id}><td>{calc.name}</td><td><code>{calc.expression}</code>{calc.errorCode && <small>{calc.errorCode}</small>}</td><td><button disabled={busy || !list?.canCreate || !client?.promoteCalculation || !calc.definition} onClick={() => setEditing({ calculation: calc })}>Promote {calc.name}</button></td></tr>)}</DataTable></section>}
+    {editing && dataset && <MetricDefinitionForm initialDefinition={editing.calculation?.definition} promotionName={editing.calculation?.name} dataset={dataset} metric={editing.metric} onClose={() => setEditing(undefined)} onSave={async definition => {
       const id = editing.metric?.id ?? `metric-${globalThis.crypto.randomUUID()}`;
-      await client!.saveMetric!(id, dataset.dataset, definition, editing.metric?.version);
+      if (editing.calculation) await client!.promoteCalculation!(id, dataset.dataset, editing.calculation.id, definition);
+      else await client!.saveMetric!(id, dataset.dataset, definition, editing.metric?.version);
       setEditing(undefined); setRevision(n => n + 1);
     }} />}
     {history && <DataDialog title={`Version history: ${history.name}`} onClose={() => setHistory(undefined)}><div className="data-dialog-body">
@@ -65,8 +68,8 @@ export function GovernedMetrics({ client, datasetId }: { client?: MetricClient; 
   </section>;
 }
 
-export function MetricDefinitionForm({ dataset, metric, onSave, onClose }: { dataset: MetricDatasetOption; metric?: MetricSummary; onSave: (definition: MetricDefinition) => Promise<void>; onClose: () => void }) {
-  const [definition, setDefinition] = useState<MetricDefinition>(() => metric ? structuredClone(metric.definition) : blank());
+export function MetricDefinitionForm({ dataset, metric, initialDefinition, promotionName, onSave, onClose }: { initialDefinition?: MetricDefinition; promotionName?: string; dataset: MetricDatasetOption; metric?: MetricSummary; onSave: (definition: MetricDefinition) => Promise<void>; onClose: () => void }) {
+  const [definition, setDefinition] = useState<MetricDefinition>(() => structuredClone(metric?.definition ?? initialDefinition ?? blank()));
   const [synonyms, setSynonyms] = useState(definition.synonyms.join('\n')), [error, setError] = useState(''), [busy, setBusy] = useState(false);
   const [functionName, setFunctionName] = useState('sum'), acting = useRef(false);
   const reference = functionCatalog.find(f => f.name === functionName)!;
@@ -83,10 +86,11 @@ export function MetricDefinitionForm({ dataset, metric, onSave, onClose }: { dat
     return undefined;
   })();
   const patch = (value: Partial<MetricDefinition>) => setDefinition(d => ({ ...d, ...value }));
-  return <DataDialog title={metric ? 'Edit governed metric' : 'Create governed metric'} onClose={() => { if (!busy) onClose(); }}>
+  return <DataDialog title={promotionName ? 'Promote calculation' : metric ? 'Edit governed metric' : 'Create governed metric'} onClose={() => { if (!busy) onClose(); }}>
     <form onSubmit={e => { e.preventDefault(); if (acting.current || syntax) return; acting.current = true; setBusy(true); setError('');
       void onSave({ ...definition, name: definition.name.trim(), synonyms: synonyms.split('\n').map(s => s.trim()).filter(Boolean) }).catch(e => setError(message(e))).finally(() => { acting.current = false; setBusy(false); });
     }}><div className="data-dialog-body metric-definition-form"><p>Dataset: {dataset.name}. Saving creates a draft. Published consumers change only after approval.</p>
+      <>{promotionName && <p>Promoting {promotionName}. Confirm a unique metric name; dataset field names cannot be reused. The original calculation is retained.</p>}</>
       <label>Name<input autoFocus required maxLength={128} disabled={busy} value={definition.name} onChange={e => patch({ name: e.target.value })} /></label>
       <label>Expression<textarea required rows={5} maxLength={10000} disabled={busy} value={definition.expression} onChange={e => patch({ expression: e.target.value })} /></label>
       <label>Insert dataset field<select aria-label="Insert dataset field" value="" disabled={busy} onChange={e => patch({ expression: definition.expression + `{${e.target.value}}` })}><option value="" disabled>Choose a field</option>{dataset.columns.map(c => <option key={c.name} value={c.name}>{c.name} · {c.type}</option>)}</select></label>

@@ -1,6 +1,11 @@
 /** The tested hosted-UI slice only; identifiers are literal and never URL-decoded. */
 export function serverlessV1Methods(path: string): readonly string[] | undefined {
   const id = '[A-Za-z0-9_-]{1,512}';
+  if (path === '/api/v1/metrics/promote-calc') return ['GET', 'PUT', 'POST'];
+  if (path === '/api/v1/prep-templates') return ['GET', 'POST'];
+  if (new RegExp(`^/api/v1/prep-templates/${id}$`).test(path)) return ['GET', 'PUT'];
+  if (new RegExp(`^/api/v1/prep-templates/${id}/(?:publish|datasets)$`).test(path)) return ['POST'];
+  if (new RegExp(`^/api/v1/prep-templates/${id}/(?:versions|export)$`).test(path)) return ['GET'];
   if (path === '/api/v1/metric-datasets') return ['GET'];
   if (path === '/api/v1/metrics') return ['GET', 'POST'];
   if (new RegExp(`^/api/v1/metrics/${id}$`).test(path)) return ['GET', 'PUT'];

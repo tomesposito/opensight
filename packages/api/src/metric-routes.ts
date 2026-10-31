@@ -14,7 +14,7 @@ interface Receipt { fingerprint: string; reply: Reply; id: string }
 function view(c: MetricCatalog, r: MetadataResource) {
   const b = metricRecord(r), canEdit = c.canEdit(r), latest = b.versions.at(-1)!, published = b.versions.find(v => v.version === b.publishedVersion);
   return { id: r.id, dataset: b.dataset, version: r.version, publishedVersion: b.publishedVersion,
-    state: canEdit ? latest.state : 'published', definition: (canEdit ? latest : published)!.definition,
+    provenance: b.provenance, createdBy: b.createdBy, state: canEdit ? latest.state : 'published', definition: (canEdit ? latest : published)!.definition,
     published: published ? { id: r.id, version: published.version, ...published.definition } : null,
     permissions: { edit: canEdit, publish: c.canPublish(b.dataset) } };
 }
@@ -35,7 +35,7 @@ export class MetricRoutes {
       });
       const { offset, limit } = this.protocol.paging(request);
       const items = await Promise.all(all.slice(offset, offset + limit).map(async d => {
-        try { const schema = backend.metricSchema ? await backend.metricSchema(d.dataset) : await backend.transaction(false, a => new MetricCatalog(a).schema(d.dataset)); return { ...d, columns: schema.columns }; }
+        try { const schema = backend.metricSchema ? await backend.metricSchema(d.dataset) : await backend.transaction(false, a => new MetricCatalog(a).schema(d.dataset)); return { ...d, columns: schema.columns, calculations: await backend.transaction(false, a => { const c = new MetricCatalog(a); return c.calculations(d.dataset).map(calc => { try { return { ...calc, definition: c.promotionDefinition(d.dataset, calc.id, schema) }; } catch (e) { return { ...calc, errorCode: e && typeof e === 'object' && 'code' in e ? String(e.code) : 'METRIC_INVALID_EXPRESSION' }; } }); }) }; }
         catch (error) { return { ...d, columns: [], errorCode: error && typeof error === 'object' && 'code' in error ? String(error.code) : 'METRIC_SCHEMA_UNAVAILABLE' }; }
       }));
       send(response, 200, { items, nextCursor: offset + items.length < all.length ? Buffer.from(JSON.stringify({ offset: offset + items.length })).toString('base64') : null }); return;
@@ -43,9 +43,10 @@ export class MetricRoutes {
     const scoped = /^\/api\/v1\/datasets\/([A-Za-z0-9_-]{1,512})\/metrics$/.exec(path);
     const match = /^\/api\/v1\/metrics(?:\/([A-Za-z0-9_-]{1,512})(?:\/(publish|versions|export))?)?$/.exec(path);
     if (!scoped && !match) assetFail('RESOURCE_NOT_FOUND', 404);
-    const id = match?.[1], action = match?.[2], list = !!scoped || !id;
-    const verb = method(request, response, scoped || action === 'versions' || action === 'export' ? ['GET'] : list ? ['GET', 'POST'] : action === 'publish' ? ['POST'] : ['GET', 'PUT']);
-    const read = verb === 'GET', raw = read ? {} : object(await readBody(request), action === 'publish' ? [] : list ? ['id', 'dataset', 'definition'] : ['definition']);
+    const promotion = path === '/api/v1/metrics/promote-calc' && request.method === 'POST';
+    const id = promotion ? undefined : match?.[1], action = match?.[2], list = !!scoped || !id;
+    const verb = method(request, response, scoped || action === 'versions' || action === 'export' ? ['GET'] : promotion ? ['POST'] : list ? ['GET', 'POST'] : action === 'publish' ? ['POST'] : ['GET', 'PUT']);
+    const read = verb === 'GET', raw = read ? {} : object(await readBody(request), action === 'publish' ? [] : promotion ? ['id', 'dataset', 'calculationId', 'definition'] : list ? ['id', 'dataset', 'definition'] : ['definition']);
     const expected = !read && !list ? this.protocol.ifMatch(request) : undefined;
     const keyHeader = request.headers['idempotency-key']; if (Array.isArray(keyHeader)) assetFail('INVALID_HEADER');
     const key = !read && keyHeader ? JSON.stringify(['metric', backend.scope, verb, path, identifier(keyHeader)]) : undefined;
@@ -91,7 +92,8 @@ export class MetricRoutes {
             }
             return { status: 200, version: r.version, body: view(c,r) };
           }
-          const r = list ? c.create(resultId, ref!, raw.definition, schema!) : action === 'publish' ? c.publish(id!, expected!, schema!) : c.edit(id!, expected!, raw.definition, schema!);
+          if (promotion && typeof raw.calculationId !== 'string') assetFail('METRIC_CALCULATION_NOT_FOUND', 404);
+          const r = promotion ? c.promote(resultId, ref!, raw.calculationId as string, raw.definition, schema!) : list ? c.create(resultId, ref!, raw.definition, schema!) : action === 'publish' ? c.publish(id!, expected!, schema!) : c.edit(id!, expected!, raw.definition, schema!);
           return { status: list ? 201 : 200, version: r.version, body: view(c,r) };
         }, prepare);
         prepare(reply); await reservation?.commit(); this.send(response, reply);

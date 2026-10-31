@@ -13,6 +13,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Added
 
+- Promote saved dataset calculations into draft governed metrics with source provenance, and share prep recipes as versioned templates with owner approval and explicit input binding (#160).
+
 - Dataset-bound governed metrics with versioned definitions, editor drafts, owner/admin
   approval, audit/export, and shared follow-latest consumption in analyses,
   dashboards and Ask O; unsafe join fan-out fails closed (#157).

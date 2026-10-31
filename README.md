@@ -231,9 +231,18 @@ and Ask O use the latest published expression, aggregation and format. Open a
 dataset's **Metrics** tab to define a metric or inspect its history. See
 [governed metrics](docs/governed-metrics.md) for permissions and join safety.
 
-![Governed metric definition form using a real local API and synthetic team sales](docs/images/governed-metric-form.png)
+Saved dataset calculations can be **promoted** into that same draft form. The
+original calculation remains unchanged, and provenance records its source.
+
+![Calculation promotion into the governed metric form using a real local API and synthetic team sales](docs/images/governed-metric-form.png)
 
 ![Data preparation canvas with hosted preview requirements](docs/images/data-prep.png)
+
+Saved prep recipes can be proposed as **shared templates**. Owners/admins review
+and publish them; editors start new datasets by binding their own inputs. The
+steps are copied and stay independently editable. See [recipe templates](docs/data-prep.md#shared-recipe-templates-160).
+
+![Recipe template awaiting owner approval, captured with a local API and synthetic data](docs/images/recipe-template-review.png)
 
 The serverless adapter supports **8 MiB direct file uploads** with an explicit
 expiry and durable ingestion status. Status checks stop on hidden pages and after
