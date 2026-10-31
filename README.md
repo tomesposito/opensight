@@ -3,6 +3,8 @@
 [![License](https://img.shields.io/badge/License-Apache_2.0-teal.svg)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%3E%3D24-4d7c0f.svg)](package.json)
 
+**Website: [getopensight.org](https://getopensight.org)**
+
 An open-source BI platform aiming for full QuickSight capability parity and
 bidirectional asset compatibility — connect data, prepare datasets, build
 analyses and dashboards, and ask questions in natural language. Self-hosted;
