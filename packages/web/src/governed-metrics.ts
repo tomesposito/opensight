@@ -1,7 +1,9 @@
 import { metricColumn, type MetricDefinition, type MetricDataset, type PublishedMetric, type MetricFormat } from '@opensight/query-engine/browser';
 import type { VisualFormatting } from './formatting.js';
-export interface MetricDatasetOption { dataset: MetricDataset; name: string; columns: { name: string; type: string }[]; canPublish: boolean; owned: boolean; errorCode?: string }
+export interface PromotableCalculation { id: string; name: string; expression: string; definition?: MetricDefinition; errorCode?: string }
+export interface MetricDatasetOption { calculations?: PromotableCalculation[]; dataset: MetricDataset; name: string; columns: { name: string; type: string }[]; canPublish: boolean; owned: boolean; errorCode?: string }
 export interface MetricSummary {
+  provenance?: { kind: 'dataset-calculation'; calculationId: string; datasetVersion: number; name: string; expression: string };
   id: string; dataset: MetricDataset; version: number; publishedVersion: number | null;
   state: 'draft' | 'published'; definition: MetricDefinition; published: PublishedMetric | null;
   permissions: { edit: boolean; publish: boolean };
