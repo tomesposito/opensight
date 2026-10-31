@@ -2,6 +2,18 @@
 function serverlessV1Methods(path) {
 if (path.indexOf('/api/v1/') !== 0)
 return undefined;
+if (path === '/api/v1/metric-datasets')
+return ['GET'];
+if (path === '/api/v1/metrics')
+return ['GET', 'POST'];
+if (/^\/api\/v1\/metrics\/[A-Za-z0-9_-]{1,512}$/.test(path))
+return ['GET', 'PUT'];
+if (/^\/api\/v1\/metrics\/[A-Za-z0-9_-]{1,512}\/publish$/.test(path))
+return ['POST'];
+if (/^\/api\/v1\/(?:metrics\/[A-Za-z0-9_-]{1,512}\/(?:versions|export)|datasets\/[A-Za-z0-9_-]{1,512}\/metrics)$/.test(path))
+return ['GET'];
+if (/^\/api\/v1\/dashboards\/[A-Za-z0-9_-]{1,512}\/question$/.test(path))
+return ['POST'];
 if (path === '/api/v1/analyses')
 return ['GET', 'POST'];
 if (/^\/api\/v1\/analyses\/[A-Za-z0-9_-]{1,512}$/.test(path))

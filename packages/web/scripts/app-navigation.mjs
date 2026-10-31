@@ -3,7 +3,7 @@
 export async function navigate(page, mode) {
   const target = {
     sample: ['Home'], 'my-stuff': ['My stuff'], 'my-folders': ['My folders'], 'shared-folders': ['Shared folders'], analyses: ['Analyses'], author: ['Analyses', 'Author'],
-    'data-prep': ['Data', 'Data preparation'], 'data-sources': ['Data', 'Data sources'],
+    data: ['Data'], 'data-prep': ['Data', 'Data preparation'], 'data-sources': ['Data', 'Data sources'],
     security: ['Admin', 'Security & namespaces'], organization: ['Admin', 'Folders, sharing & embedding'],
     automation: ['Admin', 'Schedules & alerts'], 'ai-settings': ['Admin', 'AI provider settings'],
     users: ['Admin', 'Users and invitations'], fixtures: ['Admin', 'Developer fixture preview'], api: ['Admin', 'API definition preview'],

@@ -1,11 +1,26 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { AuthorCanvas } from '../build/test/Author.js';
 import { dataFields, emptyDraft, authorReducer, serializeVisual, validateDraft } from '../build/test/authoring.js';
 import { buildAuthorQuery } from '../build/test/author-query.js';
 import { formatMetric } from '../build/test/governed-metrics.js';
 import { compileVisual } from '../build/test/compiler.js';
 const metric = { id: 'margin', version: 2, name: 'Margin', expression: 'sum({profit}) / sum({revenue})', defaultAggregation: 'AVG', format: { style: 'percent', decimalPlaces: 1 }, description: '', synonyms: ['profit rate'] };
 const dataset = { id: 'prepared', name: 'Sales', columns: [{ name: 'revenue', type: 'DECIMAL' }, { name: 'profit', type: 'DECIMAL' }], metrics: [metric] };
+test('metric wells show current names and aggregation while assignments keep stable IDs', () => {
+  let draft = authorReducer({ ...emptyDraft(), dataset }, { type: 'assign-with-no-selection', field: '__metric_margin', well: 'values' });
+  draft = authorReducer(draft, { type: 'assign', field: 'revenue', well: 'values' });
+  const renderWells = () => renderToStaticMarkup(createElement(AuthorCanvas, { draft, dispatch() {} })).match(/<div class="field-wells">([\s\S]*?)<\/fieldset><\/div>/)[1];
+  assert.match(renderWells(), /AVG\(Margin\)/);
+  assert.match(renderWells(), /aria-label="Remove Margin from Value"/);
+  assert.match(renderWells(), /<option value="__metric_margin">Margin<\/option>/);
+  assert.match(renderWells(), /aria-label="Move Margin measure earlier"/);
+  draft = authorReducer(draft, { type: 'metrics', metrics: [{ ...metric, name: 'Net margin', defaultAggregation: 'MAX', version: 4 }] });
+  assert.match(renderWells(), /MAX\(Net margin\)/);
+  assert.deepEqual(draft.sheets[0].visuals[0].measures, ['__metric_margin', 'revenue']);
+});
 test('metric panel fields, assignment, serialization and queries retain stable references and defaults', () => {
   const field = dataFields([], dataset).find(f => f.metric);
   assert.equal(field.label, 'Margin'); assert.equal(field.name, '__metric_margin'); assert.equal(field.group, 'Governed metrics');
