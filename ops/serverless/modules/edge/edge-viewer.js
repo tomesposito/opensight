@@ -57,7 +57,9 @@ function publicPath(path) {
 if (typeof path !== 'string' || path.length > 4096 || !/^\/[A-Za-z0-9_./-]*$/.test(path) || path.includes('//') || path.split('/').some(function (p) { return p === '.' || p === '..'; }))
 invalid();
 var internal;
-if (path.startsWith('/api/api/'))
+if (path === '/api/access-requests')
+internal = path;
+else if (path.startsWith('/api/api/'))
 internal = path.slice(4);
 else if (/^\/api\/embed\/sessions\/[A-Za-z0-9_-]+\/(redeem|status|content|question|analysis|save)$/.test(path) || /^\/embed\/sessions\/[A-Za-z0-9_-]+$/.test(path))
 internal = path;
@@ -69,6 +71,7 @@ if (/^\/api\/(?:host|api|healthz|readyz|metrics|migrate|migration|drain)(?:\/|$)
 throw new MetadataError('RESOURCE_NOT_FOUND', 404);
 var unscoped = internal.replace(/^\/api\/namespaces\/[A-Za-z0-9_-]+\//, '/api/');
 if (!/^\/embed\/sessions\/[A-Za-z0-9_-]+$/.test(unscoped)
+&& internal !== '/api/access-requests'
 && !serverlessV1Methods(unscoped)
 && !/^\/api\/invitations(?:\/[A-Za-z0-9_-]+)?$/.test(unscoped)
 && !/^\/api\/(?:startup|session|namespaces|users|groups|connectors|sources|prep-sources|uploads|prep-datasets|automation-status|job-recipients|jobs)$/.test(unscoped)
@@ -120,7 +123,7 @@ if (h.host !== __OPENSIGHT_HOST__ || request.protocol !== 'https')
 denied();
 if (Object.keys(h).some(function (k) { return k.startsWith('x-opensight-ingress-') || k === 'cloudfront-viewer-address' || k === 'x-forwarded-for' || k === 'x-forwarded-proto' || k === 'x-forwarded-port'; }))
 denied();
-if (h.origin !== undefined && h.origin !== origin)
+if (!['/api/access-requests', '/api/api/access-requests'].includes(String(request.uri)) && h.origin !== undefined && h.origin !== origin)
 denied();
 publicPath(request.uri);
 if (Object.keys(record(request.querystring)).length)

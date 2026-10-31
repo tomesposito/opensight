@@ -1,4 +1,4 @@
-// Integrity check for the marketing site (issues #93, #106, #134).
+// Integrity check for the marketing site (issues #93, #106, #134, #176).
 // Usage: node site/check.mjs  (exit 0 = pass)
 // Verifies: every local asset referenced from index.html exists, no external
 // requests beyond allowlisted links, required sections and AEO artifacts present.
@@ -13,7 +13,7 @@ const failures = [];
 const check = (cond, msg) => { if (!cond) failures.push(msg); };
 
 // 1. Required sections.
-for (const id of ['features', 'compatibility', 'open-source', 'get-started']) {
+for (const id of ['features', 'compatibility', 'open-source', 'get-started', 'request-access']) {
   check(html.includes(`id="${id}"`), `missing section #${id}`);
 }
 check(html.includes('class="hero"'), 'missing hero section');
@@ -143,6 +143,25 @@ check(sections[1]?.match(/<p\b[^>]*>([\s\S]*?)<\/p>/)?.[1] === answer,
   'the question-led body must match the approved text exactly');
 const footer = html.match(/<footer\b[^>]*>[\s\S]*?<\/footer>/)?.[0];
 check(footer?.includes('<p>Last updated October 2026</p>'), 'missing footer freshness line');
+
+// 11. D-79's approved access-request copy, visible labels and entry points.
+const access = sections.find(section => section.startsWith('<section id="request-access"'));
+check(sections.at(-1) === access && sections.at(-2)?.startsWith('<section id="get-started"'),
+  'request access must follow Get started and precede the footer');
+check(access?.includes('<h2>Want it hosted? Request access.</h2>'), 'incorrect request-access heading');
+check(access?.match(/<p\b[^>]*>([\s\S]*?)<\/p>/)?.[1] === "OpenSight is free and open source, and you can run it yourself today. If you'd rather we ran it for you, hosted workspaces are opening in small batches. Request access and we'll set up your workspace by hand and send you an invitation.",
+  'request-access body must match the approved text exactly');
+for (const [id, copy] of Object.entries({
+  'access-name': 'Name', 'access-email': 'Work email', 'access-organization': 'Organization',
+  'access-note': 'What do you want to use OpenSight for?',
+})) check(access?.includes(`<label for="${id}">${copy}</label>`), `incorrect access-request label: ${id}`);
+for (const [id, copy] of Object.entries({
+  'access-success': 'Thanks — your request is in. We set up hosted workspaces by hand, so expect an invitation by email when yours is ready.',
+  'access-error': "That didn't go through. Check your connection and try again.",
+})) check(access?.match(new RegExp(`<p id="${id}"[^>]*>([^<]+)</p>`))?.[1] === copy, `incorrect approved message: ${id}`);
+check(access?.match(/<button\b[^>]*type="submit"[^>]*>([^<]+)<\/button>/)?.[1] === 'Request access', 'incorrect request-access submit copy');
+check(html.match(/<div class="nav-cta">([\s\S]*?)<\/div>/)?.[1].includes('href="#request-access">Request access</a>'), 'missing nav Request access link');
+check(sections[0]?.includes('href="#request-access">Request hosted access</a>'), 'missing hero Request hosted access CTA');
 
 if (failures.length) {
   console.error(`site/check.mjs FAILED (${failures.length}):`);

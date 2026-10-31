@@ -6,6 +6,7 @@ import { initializeAuth } from './auth-schema.js';
 import { initializeEmbedding } from './embedding-config.js';
 import { initializeEmbedSessions } from './embed-sessions.js';
 import { initializeUsage } from './hosted-usage.js';
+import { initializeAccessRequests } from './access-requests.js';
 import { appendOperatorAudit } from './operator-audit.js';
 import { budgetEnvironment, migrateBudgets } from './budget-store.js';
 import { referenceConfig, type ReferenceConfig } from './single-node-config.js';
@@ -16,6 +17,7 @@ export async function migrateReference(db: Database, env: NodeJS.ProcessEnv, dia
   referenceConfig(env);
   await initializeMetadata(db, dialect); await initializeAuth(db); await initializeEmbedding(db); await initializeEmbedSessions(db);
   await migrateBudgets(db, budgetEnvironment(env), 'frozen'); await initializeUsage(db); await initializeAnalytics(db);
+  await initializeAccessRequests(db);
   await db.transaction(c => appendOperatorAudit(c, { action: 'reference.migrated' }));
 }
 /** Shared lifetime lock prevents a second scheduler, maintenance while serving,

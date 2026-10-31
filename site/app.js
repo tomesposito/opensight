@@ -1,7 +1,44 @@
 // OpenSight marketing site — tiny progressive enhancement.
-// No framework, no external requests. Reveal-on-scroll only.
+// No framework. Hosted access is sent only on an explicit form submission.
 (function () {
   'use strict';
+
+  var form = document.querySelector('#access-request-form');
+  if (form) {
+    var button = form.querySelector('button[type="submit"]');
+    var success = document.querySelector('#access-success');
+    var error = document.querySelector('#access-error');
+    form.addEventListener('submit', async function (event) {
+      event.preventDefault();
+      if (button.disabled) return;
+      button.disabled = true;
+      form.setAttribute('aria-busy', 'true');
+      success.hidden = true;
+      error.hidden = true;
+      try {
+        var fields = new FormData(form);
+        var body = { name: fields.get('name').trim(), email: fields.get('email').trim() };
+        ['organization', 'note'].forEach(function (key) {
+          var value = fields.get(key).trim();
+          if (value) body[key] = value;
+        });
+        var response = await fetch('https://app.getopensight.org/api/access-requests', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          credentials: 'omit', body: JSON.stringify(body)
+        });
+        if (response.status !== 201) throw new Error('Access request was not received');
+        form.reset();
+        success.hidden = false;
+      } catch (_) {
+        error.hidden = false;
+      } finally {
+        button.disabled = false;
+        form.removeAttribute('aria-busy');
+      }
+    });
+    // Keep submission disabled until the JSON handler is attached.
+    button.disabled = false;
+  }
 
   // Reveal sections/cards as they enter the viewport.
   var els = document.querySelectorAll('.card, .compat-grid > div, .terminal, .oss-inner');

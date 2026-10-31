@@ -12,6 +12,7 @@ import { snapshotServerless,validateRecovery,restoreServerless } from '../dist/s
 import { checksum } from '../dist/metadata-operator.js';
 import { HostedUsage } from '../dist/hosted-usage.js';
 import { readOperatorAudit } from '../dist/operator-audit.js';
+import { listAccessRequests, storeAccessRequest } from '../dist/access-requests.js';
 async function fixture(t){
  const f=await coordinationFixture(t,{migrate:false}),env={...f.env,OPENSIGHT_ENTITLEMENTS:JSON.stringify(f.entitlements)};
  await migrateServerless(f.db,env,'sqlite');
@@ -28,6 +29,26 @@ test('serverless backup restores a held target with advanced epoch, no old membe
  assert.equal((await rows('sr_control'))[0].state,'maintenance');assert.equal((await rows('h8_recovery')).length,2);
  assert.ok((await rows('h8_usage')).every(x=>x.admitted===Number.MAX_SAFE_INTEGER));
  await assert.rejects(restoreServerless(f.target,f.snapshot,f.registry,'sqlite'),{code:'RESTORE_TARGET_NOT_EMPTY'});
+});
+test('access requests survive backup and restore, while pre-capture backups restore an empty list', async t => {
+ const f = await fixture(t);
+ const request = await storeAccessRequest(f.db, { name: 'Synthetic Applicant', email: 'applicant@example.com', now: Date.now() });
+ const snapshot = await snapshotServerless(f.db, 'test', randomUUID(), Date.now()+3600000, ['a'.repeat(32)], 'sqlite');
+ const registry = { ...f.registry, backups: { [snapshot.id]: checksum(snapshot) } };
+ assert.deepEqual(snapshot.tables.h8_access_requests.map(row => row.id), [request.id]);
+ await restoreServerless(f.target, snapshot, registry, 'sqlite');
+ assert.deepEqual(await listAccessRequests(f.target), [request]);
+ const legacy = await fixture(t);
+ await legacy.db.transaction(c => c.query('DROP TABLE h8_access_requests'));
+ const oldSnapshot = await snapshotServerless(legacy.db, 'test', randomUUID(), Date.now()+3600000, ['a'.repeat(32)], 'sqlite');
+ assert.equal(Object.hasOwn(oldSnapshot.tables, 'h8_access_requests'), false);
+ await restoreServerless(legacy.target, oldSnapshot, { ...legacy.registry, backups: { [oldSnapshot.id]: checksum(oldSnapshot) } }, 'sqlite');
+ assert.deepEqual(await listAccessRequests(legacy.target), []);
+ const { migrateRegistered } = await import('../dist/serverless-backup.js'), operation = randomUUID();
+ const oldRegistry = { ...legacy.registry, epoch: 1, backups: { [oldSnapshot.id]: checksum(oldSnapshot) } };
+ assert.equal((await migrateRegistered(legacy.db, legacy.env, oldSnapshot, oldRegistry, operation, 'sqlite')).replayed, false);
+ assert.equal((await migrateRegistered(legacy.db, legacy.env, oldSnapshot, oldRegistry, operation, 'sqlite')).replayed, true);
+ assert.deepEqual(await listAccessRequests(legacy.db), []);
 });
 test('serverless recovery rejects later tenant deletion, retired keys, missing registration/history and stale epochs before target writes',async t=>{
  const f=await fixture(t);

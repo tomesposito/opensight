@@ -13,6 +13,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Added
 
+- Request hosted access from the marketing site, with validated capture and a private operator review list for manually provisioned workspaces (#176).
+
 - The GitHub README now links to [getopensight.org](https://getopensight.org), so anyone who finds the repo can reach the marketing site and the hosted option.
 
 - Marketing site: the favicon URL is versioned and an apple-touch-icon is declared, so browsers pick up the current brand mark instead of a cached one.

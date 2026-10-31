@@ -38,13 +38,15 @@ export function ingressConfig(env: NodeJS.ProcessEnv): IngressConfig {
 export function publicPath(path: unknown): string {
   if (typeof path !== 'string' || path.length > 4096 || !/^\/[A-Za-z0-9_./-]*$/.test(path) || path.includes('//') || path.split('/').some(p => p === '.' || p === '..')) invalid();
   let internal: string;
-  if (path.startsWith('/api/api/')) internal = path.slice(4);
+  if (path === '/api/access-requests') internal = path;
+  else if (path.startsWith('/api/api/')) internal = path.slice(4);
   else if (/^\/api\/embed\/sessions\/[A-Za-z0-9_-]+\/(redeem|status|content|question|analysis|save)$/.test(path) || /^\/embed\/sessions\/[A-Za-z0-9_-]+$/.test(path)) internal = path;
   else throw new MetadataError('RESOURCE_NOT_FOUND', 404);
   if (path.startsWith('/api/api/embed/') || /^\/api\/namespaces\/[^/]+\/(startup|auth|embed)(?:\/|$)/.test(internal)) throw new MetadataError('RESOURCE_NOT_FOUND', 404);
   if (/^\/api\/(?:host|api|healthz|readyz|metrics|migrate|migration|drain)(?:\/|$)/.test(internal)) throw new MetadataError('RESOURCE_NOT_FOUND', 404);
   const unscoped = internal.replace(/^\/api\/namespaces\/[A-Za-z0-9_-]+\//, '/api/');
   if (!/^\/embed\/sessions\/[A-Za-z0-9_-]+$/.test(unscoped)
+    && internal !== '/api/access-requests'
     && !serverlessV1Methods(unscoped)
     && !/^\/api\/invitations(?:\/[A-Za-z0-9_-]+)?$/.test(unscoped)
     && !/^\/api\/(?:startup|session|namespaces|users|groups|connectors|sources|prep-sources|uploads|prep-datasets|automation-status|job-recipients|jobs)$/.test(unscoped)
@@ -63,6 +65,7 @@ function routeMethod(path: string, method: string): void {
   const p = path.replace(/^\/api\/namespaces\/[A-Za-z0-9_-]+\//, '/api/');
   let allowed: readonly string[] = ['GET'];
   if (serverlessV1Methods(p)) allowed = serverlessV1Methods(p)!;
+  else if (path === '/api/access-requests') allowed = ['POST', 'OPTIONS'];
   else if (p === '/api/invitations') allowed = ['GET', 'POST'];
   else if (/^\/api\/invitations\/[A-Za-z0-9_-]+$/.test(p)) allowed = ['DELETE'];
   else if (p === '/api/startup' || p.startsWith('/api/auth/') || /^\/api\/embedding\/(?:sessions$|Generate)/.test(p) || p.endsWith('/renew')) allowed = ['POST'];
@@ -129,7 +132,7 @@ function trusted(raw: unknown, config: IngressConfig): { event: Record<string, u
   const secret = config.keys.get(h['x-opensight-ingress-key-id'] ?? '');
   const hash = (v: string) => createHash('sha256').update(v).digest();
   if (!secret || !timingSafeEqual(hash(secret), hash(h['x-opensight-ingress-secret'] ?? ''))) denied();
-  if (h.origin !== undefined && h.origin !== config.origin) throw new MetadataError('UNTRUSTED_ORIGIN', 403);
+  if (!['/api/access-requests', '/api/api/access-requests'].includes(String(event.rawPath)) && h.origin !== undefined && h.origin !== config.origin) throw new MetadataError('UNTRUSTED_ORIGIN', 403);
   if (h['x-forwarded-proto'] !== undefined && h['x-forwarded-proto'] !== 'https') denied();
   if (h['x-forwarded-port'] !== undefined && h['x-forwarded-port'] !== '443') denied();
   const method = http.method;
@@ -174,7 +177,7 @@ export function adaptGatewayRequest(raw: unknown, env: NodeJS.ProcessEnv): Runti
 
 export function validateLocalRequest(request: RuntimeRequest, origin: string): void {
   const h = headers(request.headers);
-  if (h.host !== new URL(origin).host || h.origin !== undefined && h.origin !== origin
+  if (h.host !== new URL(origin).host || request.path !== '/api/access-requests' && h.origin !== undefined && h.origin !== origin
     || Object.keys(h).some(k => k.startsWith('x-forwarded-') || k.startsWith('x-opensight-ingress-') || k === 'cloudfront-viewer-address')) denied();
   if (!['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'].includes(request.method)
     || ['GET', 'HEAD'].includes(request.method) && request.body.length
@@ -195,7 +198,7 @@ export function validateViewerRequest(raw: unknown, origin: string): void {
   const h = headers(values);
   if (h.host !== new URL(origin).host || request.protocol !== 'https') denied();
   if (Object.keys(h).some(k => k.startsWith('x-opensight-ingress-') || k === 'cloudfront-viewer-address' || k === 'x-forwarded-for' || k === 'x-forwarded-proto' || k === 'x-forwarded-port')) denied();
-  if (h.origin !== undefined && h.origin !== origin) denied();
+  if (!['/api/access-requests', '/api/api/access-requests'].includes(String(request.uri)) && h.origin !== undefined && h.origin !== origin) denied();
   publicPath(request.uri);
   if (Object.keys(record(request.querystring)).length) invalid();
 }
