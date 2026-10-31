@@ -1,3 +1,5 @@
+import { MetricCatalog } from './metric-model.js';
+import { lookupMetrics, metricDefinition } from './metric-consumption.js';
 import { planPreparedVisual, resolveSecurity, type RowPredicate, type SecurityContext } from '@opensight/query-engine';
 import { MetadataError } from './metadata-db.js';
 import { HostedAnalyses } from './hosted-analyses.js';
@@ -47,11 +49,19 @@ export class HostedDashboards implements DashboardBackend {
   async revision(id: string) { return (await this.accessSnapshot(id)).version; }
   async grants(id: string) { await this.authorize(id, 'write'); return (await this.accessSnapshot(id)).body.grants as AssetGrant[] | undefined; }
   async change(id: string, change: DashboardChange, stamp: unknown, receipt?: (record: DashboardRecord | null) => RetryCommit) { await this.recheck(); return this.metadata.mutateDashboard(this.context, id, change, stamp as Revisions, receipt); }
+  async authorizeQuestion(id: string) { await this.authorize(id); await this.routes.data.sources.capability(this.context, 'ai'); }
+  async metricVocabulary(v: DashboardVersion) {
+    if (Object.values(v.datasetBindings).length !== 1) return [];
+    const ref = Object.values(v.datasetBindings)[0]!;
+    return this.metadata.assetTransaction(this.context, false, a => new MetricCatalog(a).vocabulary({ ...ref, ...(ref.kind === 'prepared-dataset' ? { ownerId: v.bindingOwnerId } : {}) }));
+  }
   async query(v: DashboardVersion, definition: JsonObject, visualId: string) {
     const bindings = Object.values(v.datasetBindings);
     if (bindings.length !== 1) throw new MetadataError('DASHBOARD_DATASET_UNSUPPORTED', 422);
     const binding = bindings[0]!, data = this.routes.data, context = this.context;
     const dataSetArn = v.definition.dataSetIdentifierDeclarations[0]!.dataSetArn;
+    let metrics: readonly import('@opensight/query-engine').PublishedMetric[] | undefined;
+    definition = await metricDefinition(definition, Object.fromEntries(Object.entries(v.datasetBindings).map(([id, ref]) => [id, { ...ref, ...(ref.kind === 'prepared-dataset' ? { ownerId: v.bindingOwnerId } : {}) }])), lookupMetrics({ scope: context, transaction: (write, work) => this.metadata.assetTransaction(context, write, work) }), value => { metrics = value; });
     const analysis = { ResourceType: 'Analysis', AnalysisId: 'published', Name: v.name, Definition: definition };
     if (binding.kind === 'prepared-dataset') {
       if (v.bindingOwnerId !== context.userId) {
@@ -60,9 +70,9 @@ export class HostedDashboards implements DashboardBackend {
         const dashboardId = this.publishedVersions.get(v);
         if (!dashboardId) throw new MetadataError('DASHBOARD_DATASET_ACCESS_DENIED', 403);
         await this.authorize(dashboardId);
-        return this.routes.prep.readerDashboardVisual(context, v.bindingOwnerId, binding.id, analysis, visualId, dataSetArn);
+        return { ...await this.routes.prep.readerDashboardVisual(context, v.bindingOwnerId, binding.id, analysis, visualId, dataSetArn), ...(metrics ? { metrics } : {}) };
       }
-      return this.routes.prep.dashboardVisual(context, binding.id, analysis, visualId, dataSetArn);
+      return { ...await this.routes.prep.dashboardVisual(context, binding.id, analysis, visualId, dataSetArn), ...(metrics ? { metrics } : {}) };
     }
     // Follow the frozen binding, and admit as the reader. Never use EmbedSources' delegation.
     const dataset = await this.metadata.get(context, { kind: 'dataset', id: binding.id });
@@ -88,7 +98,7 @@ export class HostedDashboards implements DashboardBackend {
     return data.work(context, false, [a], async () => {
       const table = await data.table(context, a, data.read(a).columns);
       const result = await containedWork<QueryResult>(data.scope(context), { kind: 'visual', table: await wireTable(data.scope(context), table, { ...a.physical, columns: table.columns }), analysis, visualId, dataSetArn }, data.limits(context));
-      return { ...result, bindings: Object.fromEntries([...plan.dimensions, ...plan.measures].map(f => [f.fieldId, f.outputName])) };
+      return { ...result, ...(metrics ? { metrics } : {}), bindings: Object.fromEntries([...plan.dimensions, ...plan.measures].map(f => [f.fieldId, f.outputName])) };
     });
   }
 }

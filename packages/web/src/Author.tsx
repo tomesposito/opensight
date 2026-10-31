@@ -67,6 +67,18 @@ function AuthorWorkspace({ initialDraft, renderIdentity, sampleLoaded = false, o
   const notify = useToast();
   const drafts = useLocalDrafts(access, dataset, { draftId, newAnalysis, initialDraft });
   const { draft, dispatch } = drafts;
+  const [metricError, setMetricError] = useState('');
+  const metricList = apiClient?.listMetrics, metricDatasetId = draft.dataset?.id;
+  useEffect(() => {
+    if (!metricList || !metricDatasetId) return;
+    const abort = new AbortController();
+    dispatch({ type: 'metrics', metrics: [] });
+    const refresh = () => { void metricList(metricDatasetId, abort.signal).then(result => {
+      if (!abort.signal.aborted) { dispatch({ type: 'metrics', metrics: result.items.flatMap(m => m.published ? [m.published] : []) }); setMetricError(''); }
+    }).catch((e: unknown) => { if (!abort.signal.aborted) { dispatch({ type: 'metrics', metrics: [] }); setMetricError(String(e)); } }); };
+    refresh(); window.addEventListener('focus', refresh); const timer = setInterval(refresh, 30000);
+    return () => { abort.abort(); clearInterval(timer); window.removeEventListener('focus', refresh); };
+  }, [metricList, metricDatasetId, dispatch]);
   const noData = draft.noDataset === true || (access.mode === 'local' && !draft.dataset && !draft.bundle && !sampleLoaded);
   const workspace = useRef<HTMLDivElement>(null);
   const [hostedStatus, setHostedStatus] = useState('');
@@ -244,6 +256,7 @@ function AuthorWorkspace({ initialDraft, renderIdentity, sampleLoaded = false, o
       <p id="export-help">{exported.error ?? (client ? 'Downloads analysis definitions and sheet layouts; query results are not included.' : 'Downloads analysis definitions and sheet layouts; sample rows and the fixed East preview filter are not included.')}</p>
       {exportStatus && <p role="status">{exportStatus}</p>}
     </div>
+    {metricError && <p role="alert">Governed metrics unavailable: {metricError}</p>}
     {source.problem && <DraftSourceRecovery draft={draft} sources={source.sources} problem={source.problem} onRetry={source.retry} onSources={onSources ? () => { if (drafts.keepCurrent()) onSources(); } : undefined} onReconnect={next => { dispatch({ type: 'import', draft: next }); }} />}
     {noData ? <div className="author-layout author-layout-empty">
       <Panel title="Data" className="fields-panel"><p>No dataset selected.</p>{onSources && <button type="button" onClick={() => { if (drafts.keepCurrent()) onSources(); }}>Add data</button>}</Panel>
@@ -417,12 +430,12 @@ export function AuthorCanvas({ draft, dispatch, client, fit = true, sourceProble
           {matchingFields.filter(f => fieldGroup(f) === group).map(field => <button key={field.name} type="button"
             title={field.type === 'BOOLEAN' ? 'Boolean fields are supported in preparation; convert to text or number before charting.' : undefined}
             disabled={field.type === 'BOOLEAN' || (field.role === 'dimension' && !!selected && noDimensions(selected.kind))}
-            aria-label={`Assign ${field.name}`} aria-pressed={selected?.dimension === field.name || selected?.rows.includes(field.name) || selected?.columns.includes(field.name) || !!selected?.measures.includes(field.name) || !!selected?.smallMultiples?.includes(field.name) || !!selected?.breakdowns?.includes(field.name)}
+            aria-label={`Assign ${field.label ?? field.name}`} aria-pressed={selected?.dimension === field.name || selected?.rows.includes(field.name) || selected?.columns.includes(field.name) || !!selected?.measures.includes(field.name) || !!selected?.smallMultiples?.includes(field.name) || !!selected?.breakdowns?.includes(field.name)}
             draggable={field.type !== 'BOOLEAN'} onDragStart={e => { e.dataTransfer.setData(FIELD_DRAG_TYPE, field.name); e.dataTransfer.effectAllowed = 'copy'; }}
             aria-describedby={`${fieldIconId}-${encodeURIComponent(field.name)}`}
             onClick={() => dispatch({ type: selected ? 'assign' : 'assign-with-no-selection', field: field.name, well: field.role === 'measure' ? 'values' : dimensionWell })}>
             <FieldIcon field={field} id={`${fieldIconId}-${encodeURIComponent(field.name)}`} />
-            <span className="field-name">{field.name}</span><span className="field-type">{field.type}</span>
+            <span className="field-name">{field.label ?? field.name}</span><span className="field-type">{field.type}</span>
           </button>)}
         </details>)}
         {!matchingFields.length && <p role="status">No matching fields.</p>}
@@ -532,6 +545,7 @@ function SheetTabs({ draft, dispatch }: Omit<EditorProps, 'client'>) {
 
 function FieldWells({ visual, draft, dispatch, activeWell, onWell }: { visual?: AuthorVisual; draft: AuthorDraft; dispatch: Dispatch<AuthorAction>; activeWell: Well; onWell: (well: Well) => void }) {
   const fields = dataFields(draft.calculatedFields, draft.dataset);
+  const fieldLabel = (name: string) => fields.find(f => f.name === name)?.label ?? name;
   const wells: { name: Well; label: string; values: string[] }[] = !visual ? [
     { name: 'dimension', label: 'Group/Color', values: [] }, { name: 'values', label: 'Value', values: [] }, { name: 'smallMultiples', label: 'Small multiples', values: [] },
   ] : [
@@ -546,11 +560,14 @@ function FieldWells({ visual, draft, dispatch, activeWell, onWell }: { visual?: 
     onDragOver={e => { if (e.dataTransfer.types.includes(FIELD_DRAG_TYPE)) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; } }}
     onDrop={e => { if (e.dataTransfer.types.includes(FIELD_DRAG_TYPE)) { e.preventDefault(); e.stopPropagation(); onWell(w.name); assign(e.dataTransfer.getData(FIELD_DRAG_TYPE), w.name); } }}>
     <legend>{w.label.toUpperCase()}</legend>
-    {w.values.map(field => <button className="field-chip" key={field} type="button" aria-label={`Remove ${field} from ${w.label}`} onClick={() => dispatch({ type: 'unassign', field, well: w.name })}><FieldIcon pill field={fields.find(f => f.name === field) ?? { name: field, type: 'UNKNOWN', role: w.name === 'values' ? 'measure' : 'dimension' }} /><span className="field-chip-name">{w.name === 'values' ? `SUM(${field})` : `${field}${fields.find(f => f.name === field)?.type === 'DATETIME' ? ` · ${(w.name !== 'smallMultiples' && visual?.hierarchy?.levels[0]?.granularity) || visual?.dateGrain || 'MONTH'}` : ''}`}</span><span aria-hidden="true">×</span></button>)}
+    {w.values.map(field => {
+      const dataField = fields.find(f => f.name === field), label = fieldLabel(field);
+      return <button className="field-chip" key={field} type="button" aria-label={`Remove ${label} from ${w.label}`} onClick={() => dispatch({ type: 'unassign', field, well: w.name })}><FieldIcon pill field={dataField ?? { name: field, type: 'UNKNOWN', role: w.name === 'values' ? 'measure' : 'dimension' }} /><span className="field-chip-name">{w.name === 'values' ? `${dataField?.metric?.defaultAggregation ?? 'SUM'}(${label})` : `${label}${dataField?.type === 'DATETIME' ? ` · ${(w.name !== 'smallMultiples' && visual?.hierarchy?.levels[0]?.granularity) || visual?.dateGrain || 'MONTH'}` : ''}`}</span><span aria-hidden="true">×</span></button>;
+    })}
     {w.name === 'values' && visual?.kind === 'insight' && <p>One measure; optional second measure for comparison (first minus second).</p>}
-    {w.name === 'values' && visual && visual.measures.length > 1 && <div className="measure-order">{visual.measures.map((name, index) => <button type="button" key={name} disabled={!index} aria-label={`Move ${name} measure earlier`} onClick={() => dispatch({ type: 'measure-move', index, offset: -1 })}>↑ {name}</button>)}</div>}
+    {w.name === 'values' && visual && visual.measures.length > 1 && <div className="measure-order">{visual.measures.map((name, index) => <button type="button" key={name} disabled={!index} aria-label={`Move ${fieldLabel(name)} measure earlier`} onClick={() => dispatch({ type: 'measure-move', index, offset: -1 })}>↑ {fieldLabel(name)}</button>)}</div>}
     {!w.values.length && <button type="button" className="well-placeholder" aria-label={`Select ${w.label.toUpperCase()} well`} aria-pressed={activeWell === w.name} onClick={() => onWell(w.name)}>{w.name === 'columns' && visual?.kind === 'radar' ? 'Optional color dimension' : w.name === 'values' ? 'Add a measure' : 'Add a dimension'}</button>}
-    {visual && <label className="well-picker"><span className="sr-only">Assign {w.name === 'values' ? 'measure' : w.name === 'smallMultiples' ? 'small multiples' : w.name === 'breakdown' ? 'breakdown' : ['radar', 'sankey'].includes(visual.kind) ? w.label.toLowerCase() : w.name === 'dimension' ? 'dimension' : w.name}</span><select aria-label={`Assign ${w.label}`} title={`Assign ${w.label}`} disabled={w.name === 'smallMultiples' && !hasSmallMultiplesWell(visual.kind) || w.name === 'breakdown' && !hasBreakdownWell(visual.kind)} value="" onChange={e => assign(e.target.value, w.name)}><option value="" disabled>Choose field…</option>{fields.filter(f => f.type !== 'BOOLEAN' && f.role === (w.name === 'values' ? 'measure' : 'dimension')).map(f => <option key={f.name}>{f.name}</option>)}</select></label>}
+    {visual && <label className="well-picker"><span className="sr-only">Assign {w.name === 'values' ? 'measure' : w.name === 'smallMultiples' ? 'small multiples' : w.name === 'breakdown' ? 'breakdown' : ['radar', 'sankey'].includes(visual.kind) ? w.label.toLowerCase() : w.name === 'dimension' ? 'dimension' : w.name}</span><select aria-label={`Assign ${w.label}`} title={`Assign ${w.label}`} disabled={w.name === 'smallMultiples' && !hasSmallMultiplesWell(visual.kind) || w.name === 'breakdown' && !hasBreakdownWell(visual.kind)} value="" onChange={e => assign(e.target.value, w.name)}><option value="" disabled>Choose field…</option>{fields.filter(f => f.type !== 'BOOLEAN' && f.role === (w.name === 'values' ? 'measure' : 'dimension')).map(f => <option key={f.name} value={f.name}>{f.label ?? f.name}</option>)}</select></label>}
 </fieldset>)}</div>;
 }
 

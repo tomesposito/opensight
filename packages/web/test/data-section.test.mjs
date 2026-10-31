@@ -35,7 +35,7 @@ test('empty landing has creation, all tabs, and no staged dataset rows', async t
   let created = 0;
   const ui = await mount(t, { onCreate: () => created++ });
   assert.match(ui.text(), /No datasets yet/); assert.doesNotMatch(ui.text(), /Orders|demo-sales/);
-  assert.deepEqual(ui.root.findAllByProps({ role: 'tab' }).map(node => node.children[0]), ['Datasets', 'Topics', 'Data sources']);
+  assert.deepEqual(ui.root.findAllByProps({ role: 'tab' }).map(node => node.children[0]), ['Datasets', 'Topics', 'Data sources', 'Metrics']);
   await act(() => button(ui, 'Create dataset').props.onClick()); assert.equal(created, 1);
   await act(() => button(ui, 'Topics').props.onClick()); assert.match(ui.text(), /No topics available/);
   await act(() => button(ui, 'Data sources').props.onClick()); assert.match(ui.text(), /No data sources yet/);

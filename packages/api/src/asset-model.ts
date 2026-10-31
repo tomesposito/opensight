@@ -108,6 +108,7 @@ export class AssetCatalog {
   remove(r: MetadataResource) {
     this.require(r, true);
     if (r.kind === 'folder' && this.resources.some(a => a.body.folderId === r.id)) assetFail('FOLDER_NOT_EMPTY', 409);
+    if (r.kind === 'prepared-dataset' && this.resources.some(m => m.kind === 'metric' && assetKey(m.body.dataset as ResourceKey) === assetKey(r))) assetFail('DATASET_DELETE_BLOCKED_BY_METRIC', 409);
     if (r.kind === 'prepared-dataset') {
       for (const analysis of this.resources.filter(a => a.kind === 'analysis')) {
         if (!Array.isArray(analysis.body.datasets)) assetFail('DATASET_REFERENCE_UNRESOLVED', 409);

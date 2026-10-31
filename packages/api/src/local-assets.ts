@@ -1,3 +1,6 @@
+import { MetricCatalog } from './metric-model.js';
+import type { MetricDataset } from '@opensight/query-engine';
+import type { SalesQuery } from './query.js';
 import { dashboardVersion } from './dashboard-model.js';
 import { AssetCatalog, assetKey, type AssetBackend } from './asset-model.js';
 import { MetadataError } from './metadata-db.js';
@@ -36,9 +39,17 @@ export function organizedResource(r: MetadataResource, namespaceId: string): Org
 export class LocalAssets implements AssetBackend {
   readonly scope;
   constructor(private readonly store: DefinitionStore | undefined, private readonly prep: PrepRoutes, private readonly identity: Identity,
-    private readonly recheck: () => Promise<void>, private readonly organization?: OrganizationService, private readonly root?: string, private readonly durable = false) {
+    private readonly recheck: () => Promise<void>, private readonly organization?: OrganizationService, private readonly root?: string, private readonly durable = false, private readonly sales?: SalesQuery) {
     this.scope = { tenantId: identity.namespaceId, ...identity };
   }
+  async metricSchema(ref: MetricDataset) {
+    await this.recheck();
+    await this.transaction(false, a => { a.build(); new MetricCatalog(a).dataset(ref); });
+    if (ref.kind === 'prepared-dataset') return { columns: await this.prep.analysisSchema({ ...this.identity, userId: ref.ownerId! }, ref.id) };
+    if (ref.id === 'sales' && this.sales) return { columns: this.sales.securitySchema().columns };
+    return this.transaction(false, a => new MetricCatalog(a).schema(ref));
+  }
+  private sample() { return this.sales ? [{ kind: 'dataset' as const, id: 'sales', version: 1, body: { definition: this.sales.metricDefinition(), sources: [] } }] : []; }
   private entries(state: SecurityState): MetadataResource[] {
     const ns = this.identity.namespaceId, organization = this.organization!;
     const resources: MetadataResource[] = [
@@ -51,6 +62,8 @@ export class LocalAssets implements AssetBackend {
       const definition = organization.definition(ns, kind, id, state);
       if (definition) resources.push(localResource(id, kind, definition, organization.asset(state, ns, kind, id)));
     }
+    resources.push(...(state.metrics ?? []).filter(m => m.namespaceId === ns).map(m => m.resource));
+    resources.push(...this.sample());
     return resources;
   }
   async transaction<T>(write: boolean, work: (catalog: AssetCatalog) => T): Promise<T> {
@@ -58,7 +71,7 @@ export class LocalAssets implements AssetBackend {
     if (write) {
       const snapshot = () => new AssetCatalog(this.scope, [
         ...(this.organization ? this.entries(this.organization.security.store.read()) : [...this.store?.assetResources() ?? [], { kind: 'user' as const, id: this.identity.userId, version: 1, body: { name: this.identity.userId, role: 'administrator' } }]),
-        ...this.prep.assetResources(this.identity),
+        ...this.prep.assetResources(this.identity, true), ...this.sample(),
       ]);
       const draft = snapshot(), before = draft.resources.filter(r => r.kind === 'prepared-dataset');
       const result = work(draft), removed = before.find(r => !draft.resources.includes(r));
@@ -70,11 +83,11 @@ export class LocalAssets implements AssetBackend {
     }
     if (!this.organization) {
       if (!this.store) throw new MetadataError('ASSET_STORE_UNAVAILABLE', 503);
-      return this.store.assetTransaction(this.scope, write, work, this.prep.assetResources(this.identity));
+      return this.store.assetTransaction(this.scope, write, work, [...this.prep.assetResources(this.identity, true), ...this.sample()]);
     }
     if (write && !this.durable) throw new MetadataError('ASSET_DURABLE_STORE_REQUIRED', 503);
     const operation = (state: SecurityState) => {
-      const entries = this.entries(state), prep = this.prep.assetResources(this.identity);
+      const entries = this.entries(state), prep = this.prep.assetResources(this.identity, true);
       const catalog = new AssetCatalog(this.scope, [...structuredClone(entries), ...prep]), result = work(catalog);
       if (!write) return result;
       const after = new Map(catalog.resources.map(r => [assetKey(r), r]));
@@ -82,7 +95,10 @@ export class LocalAssets implements AssetBackend {
       for (const r of catalog.resources) {
         const old = entries.find(e => assetKey(e) === assetKey(r));
         if (r.kind === 'prepared-dataset' || JSON.stringify(old) === JSON.stringify(r)) continue;
-        if (r.kind === 'folder') {
+        if (r.kind === 'metric') {
+          state.metrics = (state.metrics ?? []).filter(m => m.namespaceId !== this.identity.namespaceId || m.resource.id !== r.id);
+          state.metrics.push({ namespaceId: this.identity.namespaceId, resource: r });
+        } else if (r.kind === 'folder') {
           state.folders = (state.folders ?? []).filter(f => f.namespaceId !== this.identity.namespaceId || f.id !== r.id);
           state.folders.push({ id: r.id, namespaceId: this.identity.namespaceId, name: String(r.body.name), grants: r.body.grants as OrganizedAsset['grants'], version: r.version, updatedAt: r.body.updatedAt as string });
         } else if (r.kind === 'analysis' || r.kind === 'dashboard') {

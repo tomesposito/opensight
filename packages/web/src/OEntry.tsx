@@ -1,8 +1,8 @@
 import { useAccess, allowed, useAI } from './access.js';
 import { useMemo, useState, useRef, useEffect, type Dispatch, type ReactNode } from 'react';
 import { describeInterpretation, datetime, interpretQuestion, numeric, type Aggregation, type Granularity, type Interpretation, type InterpretationResult } from '@opensight/o-interpreter';
-import { dataFields, type AuthorAction, type AuthorDraft } from './authoring.js';
-import { prepareOVisual } from './o-authoring.js';
+import { type AuthorAction, type AuthorDraft } from './authoring.js';
+import { prepareOVisual, oVocabulary } from './o-authoring.js';
 import { LiveAuthorVisual } from './LiveAuthorVisual.js';
 import type { QueryClient } from './author-query.js';
 import { OModeNotice } from './OModeNotice.js';
@@ -20,10 +20,10 @@ function OEntryContent({ draft, dispatch, client, renderBar, dashboardId }: OEnt
   const revision = useRef(0);
   useEffect(() => () => { revision.current++; }, []);
   const previewClient = useMemo<QueryClient | undefined>(() => client ? { dataset: client.dataset, queryDataset: (id, query, signal) => {
-    if (access.mode !== 'hosted') return client.queryDataset(id, query, signal);
+    if (access.mode !== 'hosted' || draft.dataset && !dashboardId) return client.queryDataset(id, query, signal);
     if (!client.queryO) return Promise.reject(new Error('SECURITY_AI_REQUIRED: Hosted O endpoint required.'));
     return client.queryO(query, dashboardId, signal);
-  } } : undefined, [access.mode, client, dashboardId]);
+  } } : undefined, [access.mode, client, dashboardId, draft.dataset]);
   const [question, setQuestion] = useState('');
   const [answer, setAnswer] = useState<{ result: InterpretationResult; schema: string }>();
   const [selected, setSelected] = useState(0);
@@ -46,13 +46,13 @@ function OEntryContent({ draft, dispatch, client, renderBar, dashboardId }: OEnt
     try { return { value: prepareOVisual(interpretation, draft.calculatedFields, draft.dataset) }; }
     catch (e) { return { error: e instanceof Error ? e.message : String(e) }; }
   }, [interpretation, draft.calculatedFields, draft.dataset]);
-  const stepFields = dataFields(draft.calculatedFields, draft.dataset);
+  const stepFields = oVocabulary(draft.calculatedFields, draft.dataset);
   const measureField = interpretation ? stepFields.find(f => f.name === interpretation.measure) : undefined;
-  const aggregationOptions: Aggregation[] = interpretation && (interpretation.measure === null || (measureField && !numeric(measureField))) ? ['COUNT'] : ['SUM', 'AVG', 'COUNT', 'MIN', 'MAX'];
+  const aggregationOptions: Aggregation[] = interpretation && (interpretation.measure === null || (measureField && !numeric(measureField))) ? ['COUNT'] : measureField?.metric ? [measureField.metric.defaultAggregation] : ['SUM', 'AVG', 'COUNT', 'MIN', 'MAX'];
   const hasDateDimension = interpretation ? interpretation.dimensions.some(name => { const f = stepFields.find(x => x.name === name); return !!f && datetime(f); }) : false;
   const submit = async () => {
     const current = ++revision.current; setSelected(0); setEdited(undefined); setAdded(''); setError(''); setAnswer(undefined);
-    if (!generative) { setAnswer({ schema, result: interpretQuestion(question, dataFields(draft.calculatedFields, draft.dataset)) }); return; }
+    if (!generative) { setAnswer({ schema, result: interpretQuestion(question, oVocabulary(draft.calculatedFields, draft.dataset)) }); return; }
     if (!ai.available || !ai.client) return;
     setPending(true);
     try {
@@ -80,6 +80,7 @@ function OEntryContent({ draft, dispatch, client, renderBar, dashboardId }: OEnt
       {interpretation && <>
         <p className="o-explanation">{interpretation.explanation} <span>Confidence {Math.round(interpretation.confidence * 100)}% ({edited ? 'original grammar match; steps edited' : 'grammar match'})</span></p>
         <p className="o-grounding">Grounded in: {interpretation.grounding.fieldsUsed.length ? interpretation.grounding.fieldsUsed.join(', ') : 'row count'}</p>
+        {!!interpretation.grounding.metricsUsed?.length && <p className="o-grounding">Governed metrics: {interpretation.grounding.metricsUsed.map(m => `${m.name} · version ${m.version}`).join(', ')}</p>}
         {interpretation.grounding.synonymsMatched.length > 0 && <p className="o-grounding">Synonyms matched: {interpretation.grounding.synonymsMatched.map(s => `‘${s.term}’ → ${s.field}`).join(', ')}</p>}
         {interpretation.grounding.unmatchedTerms.length > 0 && <p className="o-grounding">Not understood: {interpretation.grounding.unmatchedTerms.join(', ')}</p>}
         <div className="o-steps" aria-label="Interpretation steps">

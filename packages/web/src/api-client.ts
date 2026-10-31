@@ -1,3 +1,5 @@
+import type { MetricDatasetOption, MetricList, MetricSummary, MetricHistory } from './governed-metrics.js';
+import type { MetricDataset, MetricDefinition } from '@opensight/query-engine/browser';
 import type { DashboardSummary, PublishedDashboard, ControlValues } from './published-dashboard.js';
 import type { HostedAnalysisInput, Publication } from './hosted-publish.js';
 import type { PrepPipeline } from '@opensight/bundle-parser/prep';
@@ -20,6 +22,7 @@ import { hostedExecution, prepSources, type HostedPrepDataset, type PrepDatasets
 export type { InteractiveQuery as QueryRequest } from '@opensight/query-engine/browser';
 import type { InteractiveQuery as QueryRequest } from '@opensight/query-engine/browser';
 export interface QueryResponse {
+  metrics?: readonly import('@opensight/query-engine/browser').PublishedMetric[];
   columns: { name: string; type: 'string' | 'number' }[];
   rows: Row[];
   execution?: ExecutionProvenance;
@@ -298,6 +301,26 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
     // nor cache telemetry. Do not present its partial body as a local status.
     return 'intervalMinutes' in result ? result : getDatasetExecution(id);
   };
+  const metricDatasets = async (signal?: AbortSignal): Promise<MetricDatasetOption[]> => {
+    const items: MetricDatasetOption[] = []; let cursor: string | null = null;
+    do { const page = await rawResource('/api/v1/metric-datasets', 'GET', undefined, signal, undefined, cursor ? { Cursor: cursor } : {}) as { items: MetricDatasetOption[]; nextCursor: string | null }; items.push(...page.items); cursor = page.nextCursor; } while (cursor);
+    return items;
+  };
+  const listMetrics = async (datasetId: string, signal?: AbortSignal, dataset?: MetricDataset): Promise<MetricList> => {
+    const items: MetricSummary[] = []; let cursor: string | null = null, canCreate = false, canPublish = false;
+    do {
+      const value = await rawResource(`/api/v1/datasets/${encodeURIComponent(datasetId)}/metrics`, 'GET', undefined, signal, undefined, { ...(cursor ? { Cursor: cursor } : {}), ...(dataset ? { 'Metric-Dataset': JSON.stringify(dataset) } : {}) }) as MetricList & { nextCursor: string | null };
+      items.push(...value.items); canCreate = value.canCreate; canPublish = value.canPublish; cursor = value.nextCursor;
+    } while (cursor);
+    return { items, canCreate, canPublish };
+  };
+  const saveMetric = (id: string, dataset: MetricDataset, definition: MetricDefinition, version?: number) => rawResource(version === undefined ? '/api/v1/metrics' : `/api/v1/metrics/${encodeURIComponent(id)}`, version === undefined ? 'POST' : 'PUT', version === undefined ? { id, dataset, definition } : { definition }, undefined, `metric-save-${id}-${version ?? 0}`, version === undefined ? {} : { 'If-Match': `"${version}"` }) as Promise<MetricSummary>;
+  const publishMetric = (id: string, version: number) => rawResource(`/api/v1/metrics/${encodeURIComponent(id)}/publish`, 'POST', {}, undefined, `metric-publish-${id}-${version}`, { 'If-Match': `"${version}"` }) as Promise<MetricSummary>;
+  const metricHistory = async (id: string): Promise<MetricHistory[]> => {
+    const items: MetricHistory[] = []; let cursor: string | null = null;
+    do { const value = await rawResource(`/api/v1/metrics/${encodeURIComponent(id)}/versions`, 'GET', undefined, undefined, undefined, cursor ? { Cursor: cursor } : {}) as { items: MetricHistory[]; nextCursor: string | null }; items.push(...value.items); cursor = value.nextCursor; } while (cursor);
+    return items;
+  };
   const getPreparedRows = (id: string) => resource<PreparedRows>(`/api/datasets/${encodeURIComponent(id)}/rows`);
   const listPrepDatasets = () => resource<PrepDatasetsResponse>('/api/prep-datasets');
   const listPrepSources = async (saved?: PrepDatasetsResponse) => {
@@ -376,7 +399,7 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
     return runQuery(`/api/datasets/${encodeURIComponent(id)}/query`, query, signal);
   }
   async function queryO(query: QueryRequest, dashboardId?: string, signal?: AbortSignal): Promise<QueryResponse> {
-    return runQuery('/api/o/query', query, signal, { query, ...(dashboardId ? { dashboardId } : {}) });
+    return dashboardId ? runQuery(`/api/v1/dashboards/${encodeURIComponent(dashboardId)}/question`, query, signal, { query }) : runQuery('/api/o/query', query, signal, { query });
   }
   async function runQuery(route: string, query: QueryRequest | undefined, signal?: AbortSignal, payload: unknown = query): Promise<QueryResponse> {
     const sessionGeneration = generation;
@@ -426,7 +449,7 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
         ...(typeof p.aggregateName === 'string' ? { aggregateName: p.aggregateName } : {}),
         ...(typeof p.cachedAt === 'string' ? { cachedAt: p.cachedAt } : {}) };
     }
-    return { columns, rows, ...(provenance ? { provenance } : {}), ...(body.execution ? { execution: body.execution as ExecutionProvenance } : {}) };
+    return { columns, rows, ...(Array.isArray(body.metrics) ? { metrics: body.metrics as QueryResponse['metrics'] } : {}), ...(provenance ? { provenance } : {}), ...(body.execution ? { execution: body.execution as ExecutionProvenance } : {}) };
   }
   async function getDefinition(kind: ResourceKind, id: string, signal?: AbortSignal): Promise<DefinitionResponse> {
     if (!/^[A-Za-z0-9_-]{1,512}$/.test(id)) throw new ApiError('Resource ID must contain 1–512 letters, digits, underscores or hyphens.');
@@ -472,7 +495,7 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
     let etag: string | null = null;
     const body = object(await rawResource(`/api/v1/dashboards/${encodeURIComponent(id)}`, 'GET', undefined, signal, undefined, {}, response => { etag = response.headers.get('etag'); }), 'Dashboard');
     if (body.DashboardId !== id || typeof body.Name !== 'string' || !Number.isSafeInteger(body.Version) || Number(body.Version) < 1 || !Array.isArray(body.Errors)) throw new ApiError('DASHBOARD_RESPONSE_INVALID: Invalid dashboard definition.');
-    return { id, name: body.Name, revision: etag ? Number(String(etag).slice(1, -1)) : undefined, version: Number(body.Version), definition: convertDefinition(body.Definition), errors: body.Errors as PublishedDashboard['errors'] };
+    return { id, name: body.Name, ...(Array.isArray(body.Metrics) ? { metrics: body.Metrics as PublishedDashboard['metrics'] } : {}), revision: etag ? Number(String(etag).slice(1, -1)) : undefined, version: Number(body.Version), definition: convertDefinition(body.Definition), errors: body.Errors as PublishedDashboard['errors'] };
   }
   const queryDashboardVisual = (id: string, version: number, visualId: string, controlValues: ControlValues, signal?: AbortSignal) =>
     runQuery(`/api/v1/dashboards/${encodeURIComponent(id)}/versions/${version}/visuals/${encodeURIComponent(visualId)}/query`, undefined, signal, { controlValues });
@@ -505,7 +528,7 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
     onDemand, connect, subscribeAvailability,
     enroll, acceptEnrollment, login, selectWorkspace, logout, clearSession, getTransportCapabilities, uploadDirectFile, getOperation, getUploadReservation, cancelOperation, cancelUploadReservation,
     listJobs, jobRecipients, jobHistory, jobDeliveries, runJob,
-    getLocalData, getDatasetExecution, setDatasetExecution, refreshBlaze, getPreparedRows, listPrepSources, listPrepDatasets, savePrep, deletePrep, previewPrep, uploadFile, validateConnector, listUsers, saveUser, deleteUser, listInvitations, inviteUser, revokeInvitation, acceptInvitation, getAIStatus, generateO, generateCalculation, getAnalyticsConfig, saveAnalyticsConfig, getAIConfig, saveAIConfig, saveAIKey, testAIConnection, getSession, queryO, getDatasetRefreshStatus,
+    metricDatasets, listMetrics, saveMetric, publishMetric, metricHistory, getLocalData, getDatasetExecution, setDatasetExecution, refreshBlaze, getPreparedRows, listPrepSources, listPrepDatasets, savePrep, deletePrep, previewPrep, uploadFile, validateConnector, listUsers, saveUser, deleteUser, listInvitations, inviteUser, revokeInvitation, acceptInvitation, getAIStatus, generateO, generateCalculation, getAnalyticsConfig, saveAnalyticsConfig, getAIConfig, saveAIConfig, saveAIKey, testAIConnection, getSession, queryO, getDatasetRefreshStatus,
     queryDataset,
     getAnalysisDefinition: (id: string, signal?: AbortSignal) => getDefinition('analysis', id, signal),
     getDashboardDefinition: (id: string, signal?: AbortSignal) => getDefinition('dashboard', id, signal),

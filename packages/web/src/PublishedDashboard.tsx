@@ -1,3 +1,4 @@
+import { metricFormatting } from './governed-metrics.js';
 import { QSidePanel } from './QSidePanel.js';
 import { emptyDraft } from './authoring.js';
 import { normalizeVisual } from './compiler.js';
@@ -43,7 +44,7 @@ function PublishedContent({ value, client }: { value: Definition; client: Reader
         for (const field of model.measures) columns.set(field.column, { name: field.column, type: 'DECIMAL' });
       } catch { /* Unsupported visuals retain their published diagnostics. */ }
     }
-    return { ...emptyDraft(), title: value.name, dataset: { id: value.id, name: value.name, columns: [...columns.values()] } };
+    return { ...emptyDraft(), title: value.name, dataset: { id: value.id, name: value.name, columns: [...columns.values()].filter(c => !c.name.startsWith('__metric_')), metrics: value.metrics } };
   }, [preview, value]);
   const questionClient = useMemo(() => ({ dataset: questionDraft.dataset, queryO: client.queryO,
     queryDataset: () => Promise.reject(new Error('DASHBOARD_QUERY_REQUIRED: Reader questions must use the dashboard-scoped O endpoint.')),
@@ -72,17 +73,24 @@ function PublishedContent({ value, client }: { value: Definition; client: Reader
 }
 function PublishedVisual({ visual, value, controls, client }: { visual: FixtureVisual; value: Definition; controls: ControlValues; client: ReaderClient }) {
   const key = JSON.stringify([value.id, value.version, viewVisualId(visual), controls]);
-  const [state, setState] = useState<{ key: string; rows: FixtureVisual['rows']; error?: string; provenance?: import('./api-client.js').QueryResponse['provenance'] }>();
+  const [state, setState] = useState<{ key: string; rows: FixtureVisual['rows']; metrics?: import('./api-client.js').QueryResponse['metrics']; error?: string; provenance?: import('./api-client.js').QueryResponse['provenance'] }>();
   useEffect(() => {
     const abort = new AbortController();
     void client.queryDashboardVisual(value.id, value.version, viewVisualId(visual), controls, abort.signal)
-      .then(result => { if (!abort.signal.aborted) setState({ key, rows: result.rows, provenance: result.provenance }); })
+      .then(result => { if (!abort.signal.aborted) setState({ key, rows: result.rows, metrics: result.metrics, provenance: result.provenance }); })
       .catch((error: unknown) => { if (!abort.signal.aborted) setState({ key, rows: null, error: error instanceof Error ? error.message : String(error) }); });
     return () => abort.abort();
   }, [client, key]);
   const current = state?.key === key ? state : undefined;
   const bindings = useMemo(() => { try { return publishedBindings(visual); } catch { return {}; } }, [visual]);
-  return <VisualCard visual={{ ...visual, bindings, rows: current?.rows ?? null }} loading={!current} dataMessage={current?.error} provenance={current?.provenance} />;
+  const definition = useMemo(() => {
+    if (!current?.metrics) return visual.definition;
+    const wire = structuredClone(visual.definition) as Record<string, Record<string, unknown>>;
+    const body = Object.values(wire)[0];
+    if (body) body.OpenSightFormatting = metricFormatting(body.OpenSightFormatting as import('./formatting.js').VisualFormatting | undefined, current.metrics);
+    return wire as FixtureVisual['definition'];
+  }, [visual.definition, current?.metrics]);
+  return <VisualCard visual={{ ...visual, definition, bindings, rows: current?.rows ?? null }} loading={!current} dataMessage={current?.error} provenance={current?.provenance} />;
 }
 
 function DashboardAccess({ id, client }: { id: string; client: ReaderClient }) {

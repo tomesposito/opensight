@@ -1,10 +1,14 @@
-import { datetime, numeric, type Interpretation } from '@opensight/o-interpreter';
+import { metricColumn } from '@opensight/query-engine/browser';
+import { withGovernedMetrics, datetime, numeric, type Interpretation } from '@opensight/o-interpreter';
 import { calculationInfo, dataFields, defaults, type AuthorDataset, type AuthorVisual, type CalculatedField } from './authoring.js';
 
+export function oVocabulary(existing: readonly CalculatedField[] = [], dataset?: AuthorDataset) {
+  return withGovernedMetrics(dataFields(existing, dataset).filter(f => !f.metric), dataset?.id ?? 'sales', (dataset?.metrics ?? []).map(m => ({ ...m, datasetId: dataset!.id, state: 'published' as const })));
+}
 export interface PreparedOVisual { visual: AuthorVisual; calculatedFields: CalculatedField[] }
 /** O compiles into ordinary Phase 2c expressions and scoped filters, shared by all engines. */
 export function prepareOVisual(interpretation: Interpretation, existing: readonly CalculatedField[] = [], dataset?: AuthorDataset): PreparedOVisual {
-  const fields = dataFields(existing, dataset), calculatedFields: CalculatedField[] = [];
+  const fields = oVocabulary(existing, dataset), calculatedFields: CalculatedField[] = [];
   const field = (name: string) => {
     const f = fields.find(f => f.name === name);
     if (!f || /[{}\0]/.test(name)) throw new Error(`O_UNKNOWN_FIELD: ${name}`);
@@ -13,7 +17,7 @@ export function prepareOVisual(interpretation: Interpretation, existing: readonl
   };
   // Edits can reach combinations the parser never constructs. Reject them before
   // helpers or a query are produced, retaining the normal preview error surface.
-  if (!['SUM', 'AVG', 'COUNT', 'MIN', 'MAX'].includes(interpretation.aggregation)
+  if (!['SUM', 'AVG', 'COUNT', 'MIN', 'MAX', 'DISTINCT_COUNT'].includes(interpretation.aggregation)
     || (interpretation.measure === null || !numeric(field(interpretation.measure))) && interpretation.aggregation !== 'COUNT') throw new Error('O_UNSUPPORTED_INTERPRETATION: This measure supports only compatible aggregations (COUNT for non-numeric fields or rows).');
   if (interpretation.topN !== null && (!Number.isSafeInteger(interpretation.topN) || interpretation.topN < 1 || interpretation.topN > 10000)) throw new Error('O_INVALID_TOP_N: Use one Top N integer from 1 to 10,000.');
   if (interpretation.topN !== null && !interpretation.dimensions.length) throw new Error('O_MISSING_DIMENSION: Top N needs a grouping field.');
@@ -35,9 +39,11 @@ export function prepareOVisual(interpretation: Interpretation, existing: readonl
     while ([...fields, ...calculatedFields].some(f => f.name.toLowerCase() === name.toLowerCase())) name = `${base} ${n++}`;
     calculatedFields.push({ name, expression, role }); return name;
   };
+  const governed = dataset?.metrics?.find(m => m.name === interpretation.measure);
+  if (governed && interpretation.aggregation !== governed.defaultAggregation) throw new Error('METRIC_AGGREGATION_OVERRIDE: Use the governed aggregation.');
   const aggregation = interpretation.aggregation.toLowerCase();
-  const expression = interpretation.measure === null ? 'count(1)' : `${aggregation}(${ref(interpretation.measure)})`;
-  const measure = add(`${aggregation} ${interpretation.measure ?? 'rows'}`, expression, 'measure');
+  const expression = governed ? `{${metricColumn(governed.id)}}` : interpretation.measure === null ? 'count(1)' : `${aggregation}(${ref(interpretation.measure)})`;
+  const measure = governed ? metricColumn(governed.id) : add(`${aggregation} ${interpretation.measure ?? 'rows'}`, expression, 'measure');
   const grain = interpretation.granularity ?? 'MONTH';
   const dates = interpretation.dimensions.filter(name => datetime(field(name)));
   const dimensions = interpretation.dimensions.map(name => {

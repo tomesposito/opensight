@@ -1,3 +1,4 @@
+import { formatMetric } from './governed-metrics.js';
 import { insightGraphic } from './insight-graphic.js';
 import { LIGHT_THEME } from './themes.js';
 import { fieldName, fieldRule, cardChromeStyle, cardLoadingAnimation } from './formatting.js';
@@ -49,7 +50,7 @@ function DataTable({ compiled, interaction, onRowGroupToggle }: { compiled: Comp
   const pivot = model.kind === 'pivot' ? f?.pivot : undefined;
   const width = pivot?.columnWidth ?? (pivot?.wordWrap ? 140 : undefined);
   const cellStyle: CSSProperties = { ...(pivot?.wordWrap !== undefined ? { whiteSpace: pivot.wordWrap ? 'normal' : 'nowrap', overflowWrap: pivot.wordWrap ? 'anywhere' : undefined } : {}), ...(width ? { width, minWidth: width, maxWidth: width } : {}) };
-  const formatted = (value: import('./model.js').Cell, index: number) => typeof value === 'number' && index >= dimensionCount && f?.decimalPlaces !== undefined ? value.toLocaleString('en-US', { minimumFractionDigits: f.decimalPlaces, maximumFractionDigits: f.decimalPlaces }) : displayCell(value);
+  const formatted = (value: import('./model.js').Cell, index: number, row: number) => formatMetric(value, index >= dimensionCount ? f?.metricFormats?.[model.measures[table.measureIndices?.[row]?.[index] ?? (index - dimensionCount) % model.measures.length]?.column ?? ''] : undefined) ?? ( typeof value === 'number' && index >= dimensionCount && f?.decimalPlaces !== undefined ? value.toLocaleString('en-US', { minimumFractionDigits: f.decimalPlaces, maximumFractionDigits: f.decimalPlaces }) : displayCell(value));
   const expandable = model.kind === 'pivot' && model.rowDimensions.length >= 2 && Array.isArray(table.rowGroupPaths);
   const signature = JSON.stringify([model.id, model.rowDimensions, pivot?.collapsedRowGroups ?? []]);
   const saved = useMemo(() => new Set((pivot?.collapsedRowGroups ?? []).map(rowGroupKey)), [signature]);
@@ -91,7 +92,7 @@ function DataTable({ compiled, interaction, onRowGroupToggle }: { compiled: Comp
       const measure = j >= dimensionCount ? model.measures[table.measureIndices?.[i]?.[j] ?? (j - dimensionCount) % model.measures.length] : undefined;
       const rule = measure && fieldRule(f, measure, cell);
       const toggleButton = j === toggleCell ? toggle(path!) : null;
-      return <td key={j} style={{ ...cellStyle, ...(rule ? { color: rule.color, background: rule.background } : {}) }}>{toggleButton}{toggleButton ? ' ' : null}{pivot?.metricPlacement === 'rows' && j === dimensionCount - 1 && f?.valueNamesVisible === false ? <span className="sr-only">{formatted(cell, j)}</span> : j === 0 && interaction && rowSelection(compiled, i) ? <button type="button" onClick={event => { event.stopPropagation(); interaction.onSelect(rowSelection(compiled, i)!); }}>{formatted(cell, j)}</button> : formatted(cell, j)}</td>;
+      return <td key={j} style={{ ...cellStyle, ...(rule ? { color: rule.color, background: rule.background } : {}) }}>{toggleButton}{toggleButton ? ' ' : null}{pivot?.metricPlacement === 'rows' && j === dimensionCount - 1 && f?.valueNamesVisible === false ? <span className="sr-only">{formatted(cell, j, i)}</span> : j === 0 && interaction && rowSelection(compiled, i) ? <button type="button" onClick={event => { event.stopPropagation(); interaction.onSelect(rowSelection(compiled, i)!); }}>{formatted(cell, j, i)}</button> : formatted(cell, j, i)}</td>;
     })}</tr>}</Fragment>; })}</tbody>
   </table></div>;
 }

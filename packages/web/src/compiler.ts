@@ -1,3 +1,4 @@
+import { formatMetric } from './governed-metrics.js';
 import { formatNumber } from '@opensight/query-engine/browser';
 import { convertDefinition } from './definition-converter.js';
 import { InsightError, projectInsightBody, normalizeInsight } from './insight-configuration.js';
@@ -265,7 +266,7 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
       const agg = object(f[aggKey], `${fp}.${aggKey}`);
       const sumKey = key('simpleNumericalAggregation', 'SimpleNumericalAggregation');
       keys(agg, [sumKey], fp);
-      if (agg[sumKey] !== 'SUM') fail(`${fp}.${aggKey}`, 'only explicit SUM result bindings are supported');
+      if (agg[sumKey] !== 'SUM' && !(String(object(f[key('column', 'Column')], fp)[key('columnName', 'ColumnName')]).startsWith('__metric_') && ['AVG', 'COUNT', 'MIN', 'MAX', 'DISTINCT_COUNT'].includes(String(agg[sumKey])))) fail(`${fp}.${aggKey}`, 'only explicit SUM result bindings are supported');
     }
     if (name === key('dateDimensionField', 'DateDimensionField')) enumValue(f[key('dateGranularity', 'DateGranularity')], ['DAY', 'MONTH', 'QUARTER', 'YEAR'], 'DAY', `${fp}.${key('dateGranularity', 'DateGranularity')}`);
     const column = object(f[key('column', 'Column')], `${fp}.${key('column', 'Column')}`);
@@ -711,7 +712,7 @@ export function compileVisual(input: Input): CompiledVisual {
     if (rows.length > 1) fail(input.path, 'KPI expects exactly one aggregate row, not a client-side sum');
     const row = rows[0];
     const value = row ? number(row, model.measures[0]!) : null;
-    const label = state === 'unavailable' ? DATA_REQUIRED_LABEL : state === 'empty' ? 'No results' : value === null ? 'No value' : displayCell(value);
+    const label = state === 'unavailable' ? DATA_REQUIRED_LABEL : state === 'empty' ? 'No results' : value === null ? 'No value' : formatMetric(value, model.formatting?.metricFormats?.[model.measures[0]!.column]) ?? displayCell(value);
     option.tooltip = { show: false };
     option.graphic = [{ type: 'text', left: 'center', top: 'middle', style: { text: label, fill: (model.palette ?? theme.palette)[0], fontSize: value === null ? 22 : 56, fontWeight: 600, fontFamily: theme.fontFamily } }];
   }
@@ -808,8 +809,9 @@ function detailedTooltipFormatter(model: VisualModel, rows: Row[], cell: (row: R
       : titleField ? fieldName(titleField, model.formatting) : model.title;
     const lines = [richTextEscape(title)];
     for (const field of fields) {
-      const label = detail.aggregations && model.measures.includes(field) ? `Sum of ${fieldName(field, model.formatting)}` : fieldName(field, model.formatting);
-      lines.push(`${richTextEscape(label)}: ${richTextEscape(displayCell(cell(row, field)))}`);
+      const governed = model.formatting?.metricFormats?.[field.column];
+      const label = detail.aggregations && model.measures.includes(field) && !governed ? `Sum of ${fieldName(field, model.formatting)}` : fieldName(field, model.formatting);
+      lines.push(`${richTextEscape(label)}: ${richTextEscape(formatMetric(cell(row, field), governed) ?? displayCell(cell(row, field)))}`);
     }
     for (const extra of extras) {
       const name = extra.label ?? fieldName(extra.field, model.formatting);

@@ -1,3 +1,5 @@
+import { metricColumn, type PublishedMetric } from '@opensight/query-engine/browser';
+import { metricFormatting, validMetricFormat } from './governed-metrics.js';
 import { defaultTextStyle, sheetObjectValid, serializeObjects, objectElementType, type SheetObject, type TextObject, type TextStyle } from './sheet-objects.js';
 import { rebindInsight } from './insight-configuration.js';
 import { paletteValid, themeValid, type AnalysisTheme } from './themes.js';
@@ -31,9 +33,9 @@ export const SALES_FIELDS = [
   { name: 'profit', role: 'measure', type: 'DECIMAL' },
 ] as const;
 export interface CalculatedField { name: string; expression: string; role: 'dimension' | 'measure' }
-export const FIELD_GROUPS = ['Geography', 'Metadata', 'Sales', 'Columns', 'Calculated'] as const;
+export const FIELD_GROUPS = ['Geography', 'Metadata', 'Sales', 'Columns', 'Calculated', 'Governed metrics'] as const;
 export type FieldGroup = typeof FIELD_GROUPS[number];
-export interface DataField { name: string; role: 'dimension' | 'measure'; type: string; group?: FieldGroup; synonyms?: readonly string[] }
+export interface DataField { name: string; label?: string; metric?: PublishedMetric; role: 'dimension' | 'measure'; type: string; group?: FieldGroup; synonyms?: readonly string[] }
 /** Presentation only: never persisted in a draft or bundle definition. */
 export function fieldGroup(field: DataField): FieldGroup {
   if (field.group) return field.group;
@@ -41,7 +43,7 @@ export function fieldGroup(field: DataField): FieldGroup {
   if (field.type === 'DATETIME' || /(^id$|_id$)/i.test(field.name)) return 'Metadata';
   return 'Sales';
 }
-export interface AuthorDataset { id: string; name: string; columns: readonly (PrepColumn & Pick<DataField, 'synonyms'>)[] }
+export interface AuthorDataset { metrics?: readonly PublishedMetric[]; id: string; name: string; columns: readonly (PrepColumn & Pick<DataField, 'synonyms'>)[] }
 export const datasetFields = (dataset?: AuthorDataset): readonly DataField[] => dataset ? dataset.columns.map(c => ({ ...c, role: c.type === 'INTEGER' || c.type === 'DECIMAL' ? 'measure' : 'dimension' })) : SALES_FIELDS;
 export function calculationInfo(name: string, calculations: readonly CalculatedField[], dataset?: AuthorDataset) {
   const visiting = new Set<string>();
@@ -55,6 +57,7 @@ export function calculationInfo(name: string, calculations: readonly CalculatedF
   return bind(name);
 }
 export const dataFields = (calculations: readonly CalculatedField[] = [], dataset?: AuthorDataset): DataField[] => [
+  ...(dataset?.metrics ?? []).map(m => ({ name: metricColumn(m.id), label: m.name, metric: m, role: 'measure' as const, type: 'DECIMAL', group: 'Governed metrics' as const, synonyms: m.synonyms })),
   ...datasetFields(dataset).map(f => ({ ...f, group: dataset && fieldGroup(f) === 'Sales' ? 'Columns' as const : fieldGroup(f) })), ...calculations.map(f => {
     let type = f.role === 'measure' ? 'DECIMAL' : 'STRING';
     try { const info = calculationInfo(f.name, calculations, dataset); if (info.scalarType === 'datetime') type = 'DATETIME'; } catch { /* Invalid imported expressions remain in the import report. */ }
@@ -314,6 +317,7 @@ export type AuthorAction =
   | { type: 'remap'; id: string }
   | { type: 'sheet-remap'; id: string }
   | { type: 'analysis-title'; title: string }
+  | { type: 'metrics'; metrics: readonly PublishedMetric[] }
   | { type: 'dataset'; dataset?: AuthorDataset }
   | { type: 'sheet-add'; name?: string; settings?: SheetLayoutSettings }
   | { type: 'control-add'; control: Omit<AuthorControl, 'id'> }
@@ -402,6 +406,7 @@ export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorD
   // Manage data: swap or clear the analysis dataset while keeping sheets,
   // visuals, parameters and calculated fields. Unlike 'import' this is an
   // undoable edit, not a document boundary.
+  if (action.type === 'metrics') return draft.dataset && JSON.stringify(draft.dataset.metrics ?? []) !== JSON.stringify(action.metrics) ? { ...draft, dataset: { ...draft.dataset, metrics: action.metrics } } : draft;
   if (action.type === 'dataset') {
     const { dataset: _dataset, noDataset: _noDataset, ...content } = draft;
     // The sample uses the existing implicit schema/query path, never a prepared
@@ -888,8 +893,9 @@ export function serializeVisual(visual: AuthorVisual, includeInteractions = true
   const multiples = visual.smallMultiples?.length ? { smallMultiples: visual.smallMultiples.map(name => dimensionField(name, visual.dateGrain, calculations, dataset)) } : {};
   const breakdownWells = visual.kind === 'waterfall' && visual.breakdowns?.length ? { breakdowns: visual.breakdowns.map(name => dimensionField(name, visual.dateGrain, calculations, dataset)) } : {};
   const category = visualDimensions(visual).map(name => dimensionField(name, visual.dateGrain, calculations, dataset));
-  const values: BundleMeasureField[] = visual.measures.map(name => ({ numericalMeasureField: { ...columnField(name), aggregationFunction: { simpleNumericalAggregation: 'SUM' } } }));
+  const values: BundleMeasureField[] = visual.measures.map(name => ({ numericalMeasureField: { ...columnField(name), aggregationFunction: { simpleNumericalAggregation: dataset?.metrics?.find(m => metricColumn(m.id) === name)?.defaultAggregation ?? 'SUM' } } }));
   const visibility = (show: boolean) => ({ visibility: show ? 'VISIBLE' : 'HIDDEN' });
+  visual = { ...visual, formatting: metricFormatting(visual.formatting, dataset?.metrics?.filter(m => visual.measures.includes(metricColumn(m.id)))) };
   const body = { ...(visual.subtitle !== undefined ? { subtitle: { ...visibility(visual.subtitleVisible !== false), formatText: { plainText: visual.subtitle } } } : {}), ...(visual.formatting ? { opensightFormatting: visual.formatting } : {}), ...(visual.palette ? { opensightPalette: visual.palette } : {}), ...(visual.referenceLines?.length ? { opensightReferenceLines: visual.referenceLines.map(l => ({ value: l.value, label: l.label, color: l.color })) } : {}), ...(includeInteractions ? serializeInteractions(visual) : {}), visualId: visual.id, ...(visual.title.trim() || !visual.titleVisible ? { title: { ...visibility(visual.titleVisible), ...(visual.title.trim() ? { formatText: { plainText: visual.title.trim() } } : {}) } } : {}) } satisfies BundleVisualBody;
   const display = { legend: { ...visibility(visual.legend), ...(visual.formatting?.legendPosition ? { position: visual.formatting.legendPosition } : {}) }, dataLabels: visibility(visual.labels),
     tooltip: { tooltipVisibility: visual.tooltipVisible ? 'VISIBLE' : 'HIDDEN', ...(visual.tooltipType === 'detailed' && tooltipDetailKinds(visual.kind) ? { selectedTooltipType: 'DETAILED', fieldBasedTooltip: {
@@ -996,7 +1002,8 @@ export function validateDraft(value: unknown): asserts value is AuthorDraft {
   // datasets and removed datasets persist hygienic unresolved names; the built-in sample stays strict.
   const unresolvedAllowed = value.dataset !== undefined || value.noDataset === true;
   if (dataset !== undefined) {
-    if (!isObject(dataset) || !onlyKeys(dataset, ['id', 'name', 'columns']) || typeof dataset.id !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(dataset.id) || dataset.id === 'sales' || typeof dataset.name !== 'string' || !dataset.name.trim() || !Array.isArray(dataset.columns) || !dataset.columns.length || dataset.columns.length > 256 || value.bundle !== undefined) return fail();
+    if (!isObject(dataset) || !onlyKeys(dataset, ['id', 'name', 'columns', 'metrics']) || typeof dataset.id !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(dataset.id) || dataset.id === 'sales' || typeof dataset.name !== 'string' || !dataset.name.trim() || !Array.isArray(dataset.columns) || !dataset.columns.length || dataset.columns.length > 256 || value.bundle !== undefined) return fail();
+    if (dataset.metrics !== undefined && (!Array.isArray(dataset.metrics) || dataset.metrics.some(m => !m || typeof m.id !== 'string' || !/^[A-Za-z0-9_-]{1,512}$/.test(m.id) || typeof m.name !== 'string' || typeof m.expression !== 'string' || !Number.isSafeInteger(m.version) || m.version < 1 || !validMetricFormat(m.format) || !['SUM', 'AVG', 'COUNT', 'MIN', 'MAX', 'DISTINCT_COUNT'].includes(m.defaultAggregation) || !Array.isArray(m.synonyms) || m.synonyms.some((s: unknown) => typeof s !== 'string')))) return fail();
     const names = new Set<string>();
     for (const c of dataset.columns) {
       if (!isObject(c) || !onlyKeys(c, ['name', 'type']) || typeof c.name !== 'string' || !c.name.trim() || c.name !== c.name.trim() || c.name.length > 128 || /[\x00-\x1f]/.test(c.name) || !['STRING', 'INTEGER', 'DECIMAL', 'DATETIME', 'BOOLEAN'].includes(String(c.type)) || names.has(c.name.toLowerCase())) return fail();

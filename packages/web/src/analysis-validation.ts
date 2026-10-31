@@ -2,14 +2,14 @@
  * remain the semantic authorities. Dataset schemas here are already authorized. */
 import type { PrepColumn } from '@opensight/bundle-parser/prep';
 import type { BundleDefinition } from '@opensight/bundle-parser';
-import { ExpressionBinder, parseExpression, planPreparedVisual, QueryEngineError, type BoundColumn } from '@opensight/query-engine/browser';
+import { resolveMetricDefinition, type MetricResolution, ExpressionBinder, parseExpression, planPreparedVisual, QueryEngineError, type BoundColumn } from '@opensight/query-engine/browser';
 import { validateParameters } from '@opensight/query-engine/parameters';
 import { normalizeVisual, CompileError } from './compiler.js';
 import { importParameter, declaration } from './parameters.js';
 import { projectDefinition } from './definition-converter.js';
 export { convertDefinition, projectDefinition } from './definition-converter.js';
 
-export interface AnalysisSchema { columns: readonly { name: string; type: string }[]; deniedColumns?: readonly string[] }
+export interface AnalysisSchema { metrics?: MetricResolution; columns: readonly { name: string; type: string }[]; deniedColumns?: readonly string[] }
 export interface AnalysisDiagnostic { errorCode: string; path: string; message: string }
 type Obj = Record<string, unknown>;
 export function analysisFail(code: ConstructorParameters<typeof QueryEngineError>[0], path: string, message: string): never {
@@ -83,7 +83,9 @@ export function validateAnalysisDefinition(raw: unknown, schemas: ReadonlyMap<st
   let bound: ReturnType<typeof validateParameters>;
   try { bound = validateParameters(parameters.map(declaration), Object.fromEntries(parameters.map(p => [p.name, p.defaultValues]))); }
   catch (error) { analysisFail('INVALID_INPUT', `${root}.parameterDeclarations`, String(error)); }
-  const calculations = array(d.calculatedFields ?? [], `${root}.calculatedFields`);
+  const originals = array(d.calculatedFields ?? [], `${root}.calculatedFields`);
+  apiDefinition = resolveMetricDefinition(apiDefinition, new Map([...schemas].map(([id, schema]) => [id, schema.metrics ?? { metrics: [] }])));
+  const calculations = [...originals, ...array(apiDefinition.CalculatedFields ?? [], `${root}.calculatedFields`).slice(originals.length).map(v => { const c = analysisObject(v, root); return { name: c.Name, expression: c.Expression, dataSetIdentifier: c.DataSetIdentifier }; })];
   const binders = new Map<string, ExpressionBinder>();
   for (const [id, schema] of schemas) {
     const columns: BoundColumn[] = schema.columns.map(c => ({ name: c.name, type: (c.type === 'BOOLEAN' ? 'STRING' : c.type) as BoundColumn['type'], scalarType: c.type === 'STRING' ? 'string' : c.type === 'DATETIME' ? 'datetime' : c.type === 'BOOLEAN' ? 'boolean' : 'number', nullable: true }));

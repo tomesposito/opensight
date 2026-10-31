@@ -39,9 +39,9 @@ const click = (ui, label) => act(() => button(ui, label).props.onClick());
 const change = (node, value) => act(() => node.props.onChange({ target: { value } }));
 const submit = ui => act(async () => ui.root.findByType('dialog').findByType('form').props.onSubmit({ preventDefault() {} }));
 
-test('detail shows searchable real columns, metadata, sources, breadcrumbs and all four tabs', async t => {
+test('detail shows searchable real columns, metadata, sources, breadcrumbs and all five tabs', async t => {
   const ui = await mount(t);
-  assert.deepEqual(ui.root.findAllByProps({ role: 'tab' }).map(node => node.children[0]), ['Summary', 'Refresh', 'Permissions', 'Usage']);
+  assert.deepEqual(ui.root.findAllByProps({ role: 'tab' }).map(node => node.children[0]), ['Summary', 'Refresh', 'Permissions', 'Usage', 'Metrics']);
   for (const value of ['orders.csv', '1,024 bytes', '12', '2026-10-01T12:00:00Z']) assert.ok(ui.text().includes(value), value);
   assert.equal(ui.root.findByProps({ 'aria-label': 'Dataset breadcrumb' }).findByType('a').props.href, '#/data');
   await change(ui.root.findByProps({ 'aria-label': 'Search columns' }), 'AMO');

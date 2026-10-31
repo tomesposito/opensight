@@ -1,3 +1,5 @@
+import { MetricCatalog } from './metric-model.js';
+import { LocalAssets } from './local-assets.js';
 import { MetadataError } from './metadata-db.js';
 import { changeDashboard, changeDashboardGrants, describeDashboard, type DashboardBackend, type DashboardChange, type DashboardRecord, type DashboardVersion } from './dashboard-model.js';
 import type { AnalysisBackend } from './analysis-model.js';
@@ -84,6 +86,13 @@ export class LocalDashboards implements DashboardBackend {
     });
     return this.root ? legacyWrite(this.root, commit) : commit();
   }
+  async authorizeQuestion(id: string) { await this.authorize(id); this.organization?.security.require(this.identity, 'ai'); }
+  async metricVocabulary(v: DashboardVersion) {
+    if (Object.values(v.datasetBindings).length !== 1) return [];
+    const ref = Object.values(v.datasetBindings)[0]!;
+    const assets = new LocalAssets(this.store, this.prep, this.identity, this.recheck, this.organization, this.root, this.durableSecurity, this.sales);
+    return assets.transaction(false, a => new MetricCatalog(a).vocabulary({ ...ref, ...(ref.kind === 'prepared-dataset' ? { ownerId: v.bindingOwnerId } : {}) }));
+  }
   async query(v: DashboardVersion, definition: JsonObject, visualId: string) {
     const bindings = Object.values(v.datasetBindings);
     if (bindings.length !== 1) throw new MetadataError('DASHBOARD_DATASET_UNSUPPORTED', 422);
@@ -93,8 +102,8 @@ export class LocalDashboards implements DashboardBackend {
       return this.prep.dashboardVisual(this.identity, binding.id, definition, visualId, v.definition.dataSetIdentifierDeclarations[0]!.dataSetArn);
     }
     if (binding.id !== 'sales' || !this.sales) throw new MetadataError('UNRESOLVED_BINDING', 422);
-    const { plan, rows } = await this.sales.executeVisual(definition, visualId, undefined, this.organization ? this.identity : undefined);
-    return { columns: [...plan.dimensions.map(f => ({ name: f.outputName, type: 'string' as const })), ...plan.measures.map(f => ({ name: f.outputName, type: 'number' as const }))], rows,
+    const { plan, rows, metrics } = await this.sales.executeVisual(definition, visualId, undefined, this.organization ? this.identity : undefined);
+    return { columns: [...plan.dimensions.map(f => ({ name: f.outputName, type: 'string' as const })), ...plan.measures.map(f => ({ name: f.outputName, type: 'number' as const }))], rows, ...(metrics ? { metrics } : {}),
       bindings: Object.fromEntries([...plan.dimensions, ...plan.measures].map(f => [f.fieldId, f.outputName])) };
   }
 }

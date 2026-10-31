@@ -1,3 +1,4 @@
+import { GovernedMetrics } from './GovernedMetrics.js';
 import { useState } from 'react';
 import type { BundleDataSet } from '@opensight/bundle-parser';
 import { useAccess } from './access.js';
@@ -28,16 +29,16 @@ export function DataLanding({ client, initialTab = 'Datasets', onCreate, onCreat
   onOpen: (dataset: BundleDataSet) => void; onEdit: (dataset: BundleDataSet) => void; onPrep: (source: PrepSourceSummary) => void;
 }) {
   const access = useAccess(), catalog = useDataCatalog(client);
-  const [tab, setTab] = useState<'Datasets' | 'Topics' | 'Data sources'>(initialTab);
+  const [tab, setTab] = useState<'Datasets' | 'Topics' | 'Data sources' | 'Metrics'>(initialTab);
   const [search, setSearch] = useState(''), [filter, setFilter] = useState<DatasetFilter>('all');
   const data = catalog.data ?? { datasets: [], sources: [] };
   const rows = filterDatasets(data, search, filter, access.mode === 'hosted');
   const sources = rawSources(data.sources).filter(source => (source.name ?? source.id).toLowerCase().includes(search.trim().toLowerCase()));
   return <section className="data-page" aria-labelledby="data-title"><h1 id="data-title">Data</h1>
-    <div className="data-card"><div className="data-toolbar"><DataTabs label="Data" tabs={['Datasets', 'Topics', 'Data sources']} selected={tab} select={next => { setTab(next); setSearch(''); }} />
+    <div className="data-card"><div className="data-toolbar"><DataTabs label="Data" tabs={['Datasets', 'Topics', 'Data sources', 'Metrics']} selected={tab} select={next => { setTab(next); setSearch(''); }} />
       <div className="data-split"><button className="data-primary" onClick={onCreate}>Create dataset</button><details className="data-menu"><summary aria-label="More create options"><svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg></summary><div className="data-menu-items"><button onClick={onCreateSource}>Create data source</button></div></details></div></div>
       <section role="tabpanel" aria-label={tab}>
-      {tab === 'Topics' ? <div className="data-empty"><h2>No topics available</h2><p>Topics need a hosted API with topic support.</p></div> : <>
+      {tab === 'Metrics' ? <GovernedMetrics client={client} /> : tab === 'Topics' ? <div className="data-empty"><h2>No topics available</h2><p>Topics need a hosted API with topic support.</p></div> : <>
         <div className="data-tools"><label><span className="sr-only">{tab === 'Datasets' ? 'Search datasets by name' : 'Search data sources'}</span><input type="search" placeholder={tab === 'Datasets' ? 'Search datasets by name' : 'Search data sources'} value={search} onChange={event => setSearch(event.target.value)} /></label>
           {tab === 'Datasets' ? <select aria-label="Filter datasets" value={filter} onChange={event => setFilter(event.target.value as DatasetFilter)}><option value="all">All datasets</option><option value="mine" disabled={access.mode !== 'hosted'}>Owned by me</option><option value="cached">Cached datasets</option><option value="direct">Direct query datasets</option><option value="rls">RLS enabled</option><option value="rules">Rules datasets</option></select> : <button onClick={onCreateSource}>Create data source</button>}
           {client && <button className="data-reload" onClick={catalog.reload}>Reload data</button>}</div>

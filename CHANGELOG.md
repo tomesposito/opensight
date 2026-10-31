@@ -13,6 +13,10 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Added
 
+- Dataset-bound governed metrics with versioned definitions, editor drafts, owner/admin
+  approval, audit/export, and shared follow-latest consumption in analyses,
+  dashboards and Ask O; unsafe join fan-out fails closed (#157).
+
 - Caller-declared SUM/COUNT aggregate tables and opt-in live-query result caching
   with per-dataset TTL and manual invalidation; visual cards identify cached and
   aggregate results (#159).

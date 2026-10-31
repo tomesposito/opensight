@@ -8,10 +8,10 @@ bidirectional asset compatibility — connect data, prepare datasets, build
 analyses and dashboards, and ask questions in natural language. Self-hosted;
 no AWS required.
 
-![OpenSight tour: dashboard, O answer, dataset removal and undo, and data tools](docs/images/opensight-tour.gif)
+![OpenSight tour: dashboard, Ask O, analysis editor, and data tools](docs/images/opensight-tour.gif)
 
-*Above: the offline demo — a dashboard, O answering "sum of revenue by region",
-Manage data removal and undo, data preparation, and data sources.*
+*Above: the offline demo — a dashboard, Ask O answering "sum sales by region",
+the analysis editor, data tools, and the Metrics tab's API requirement.*
 
 ## Run it
 
@@ -223,7 +223,15 @@ The Preview grid includes row numbers and typed headers. Add a formula column,
 filter a column, or rename it through the existing validated prep steps.
 Formula columns use the calculated-field language; cell values are read-only.
 
-![Data landing page with datasets, topics, and data sources tabs](docs/images/data-landing.png)
+![Data landing page with datasets, topics, data sources, and metrics tabs](docs/images/data-landing.png)
+
+Governed metrics are shared, versioned definitions on one dataset. Editors can
+save drafts; dataset owners and administrators publish them. Analyses, dashboards
+and Ask O use the latest published expression, aggregation and format. Open a
+dataset's **Metrics** tab to define a metric or inspect its history. See
+[governed metrics](docs/governed-metrics.md) for permissions and join safety.
+
+![Governed metric definition form using a real local API and synthetic team sales](docs/images/governed-metric-form.png)
 
 ![Data preparation canvas with hosted preview requirements](docs/images/data-prep.png)
 

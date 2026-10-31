@@ -23,3 +23,4 @@ export { ExpressionBinder } from './expressions.js';
 export { QueryEngineError } from './validation.js';
 export type { BoundColumn } from './types.js';
 export { planPreparedVisual } from './prepared-query.js';
+export * from './governed-metrics.js';

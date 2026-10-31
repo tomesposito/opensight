@@ -254,6 +254,10 @@ try {
 
   await page.keyboard.press('Escape');
 
+  await setMode('data');
+  await page.getByRole('tab', { name: 'Metrics', exact: true }).click();
+  assert.match(await page.getByRole('tabpanel').innerText(), /Needs a local or hosted API/);
+  await hold(1400);
   await setMode('security'); await hold(1400);
   assert.deepEqual(errors, []); assert.deepEqual(external, []);
   console.log('frames:', n, 'errors:', JSON.stringify(errors.slice(0, 4)));

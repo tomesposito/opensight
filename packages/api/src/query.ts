@@ -1,3 +1,4 @@
+import { metricQuery, metricDefinition, type MetricLookup } from './metric-consumption.js';
 import { validateParameters } from '@opensight/query-engine/parameters';
 import type { IncomingMessage } from 'node:http';
 import { lstat, realpath } from 'node:fs/promises';
@@ -110,6 +111,8 @@ export async function readBody(request: IncomingMessage, maxBytes = BODY_BYTES):
 /** Only the caller-selected sales fixture binding is eligible; request IDs never form paths. */
 export class SalesQuery {
   security?: SecurityService;
+  metricLookup?: (identity?: Identity) => MetricLookup;
+  metricDefinition() { return this.metadata.dataSet; }
   securitySchema() { return bindMetadata(this.metadata.dataSet, this.metadata.dataSource, this.metadata.localData, true); }
   private secured(request: PlanRequest, identity?: Identity): PlanRequest {
     return this.security ? { ...request, security: this.security.context(identity) } : request;
@@ -139,11 +142,13 @@ export class SalesQuery {
   }
 
   async execute(body: QueryBody, identity?: Identity) {
+    let metrics: readonly import('@opensight/query-engine').PublishedMetric[] | undefined;
+    if (this.metricLookup) body = await metricQuery(body, { kind: 'dataset', id: 'sales' }, this.metricLookup(identity), value => { metrics = value; });
     const { plan, rows, provenance } = await executeLocal(this.secured(interactiveRequest(body, this.metadata), identity), { dataRoot: this.dataRoot });
     return {
       columns: [...plan.dimensions.map(field => ({ name: field.outputName, type: 'string' as const })),
         ...plan.measures.map(field => ({ name: field.outputName, type: 'number' as const }))],
-      rows, provenance,
+      rows, provenance, ...(metrics ? { metrics } : {}),
     };
   }
 
@@ -159,7 +164,10 @@ export class SalesQuery {
     return planVisual(this.secured(this.visualRequest(definition, visualId, window)));
   }
   async executeVisual(definition: unknown, visualId: string, window?: { columnName: string; start: string; end: string }, identity?: Identity) {
-    return executeLocal(this.secured(this.visualRequest(definition, visualId, window), identity), { dataRoot: this.dataRoot });
+    let metrics: readonly import('@opensight/query-engine').PublishedMetric[] | undefined;
+    if (this.metricLookup && isObject(definition)) definition = await metricDefinition(definition, Object.fromEntries(((definition.DataSetIdentifierDeclarations ?? []) as { Identifier: string }[]).map(d => [d.Identifier, { kind: 'dataset', id: 'sales' }])), this.metricLookup(identity), value => { metrics = value; });
+    const result = await executeLocal(this.secured(this.visualRequest(definition, visualId, window), identity), { dataRoot: this.dataRoot });
+    return { ...result, ...(metrics ? { metrics } : {}) };
   }
 
   async refresh(): Promise<number> {
