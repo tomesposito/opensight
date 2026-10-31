@@ -10,6 +10,38 @@ import { environment } from './hosted-helpers.mjs';
 import { runtimeEnv } from './runtime-helpers.mjs';
 import { referenceEnv } from './h8-helpers.mjs';
 
+async function legacyAssetKinds(db, dialect) {
+  await db.transaction(async c => {
+    if (dialect === 'postgres') {
+      const checks = await c.query("SELECT conname, pg_get_constraintdef(oid) AS definition FROM pg_constraint WHERE conrelid = 'h1_resources'::regclass AND contype = 'c'");
+      for (const row of checks.filter(r => r.definition.includes("'metric'"))) {
+        assert.match(row.conname, /^[a-zA-Z0-9_]+$/);
+        await c.query(`ALTER TABLE h1_resources DROP CONSTRAINT "${row.conname}"`);
+        await c.query(`ALTER TABLE h1_resources ADD CONSTRAINT "${row.conname}" ${row.definition.replace(/, '(?:metric|prep-template)'::text/g, '')}`);
+      }
+    } else {
+      const [{ sql }] = await c.query("SELECT sql FROM sqlite_master WHERE name = 'h1_resources'");
+      const [{ sql: links }] = await c.query("SELECT sql FROM sqlite_master WHERE name = 'h1_links'");
+      const saved = {};
+      for (const table of ['h1_resources', 'h1_links']) saved[table] = await c.query(`SELECT * FROM ${table}`);
+      await c.query('DROP TABLE h1_links'); await c.query('DROP TABLE h1_resources');
+      await c.query(sql.replace(/,\s*'(?:metric|prep-template)'/g, '')); await c.query(links);
+      for (const [table, rows] of Object.entries(saved)) for (const row of rows) {
+        const columns = Object.keys(row);
+        await c.query(`INSERT INTO ${table} (${columns.join(',')}) VALUES (${columns.map(() => '?').join(',')})`, Object.values(row));
+      }
+    }
+  });
+}
+async function assetRows(db) {
+  return db.transaction(async c => ({ resources: await c.query('SELECT * FROM h1_resources ORDER BY tenant_id,namespace_id,kind,owner_id,resource_id'),
+    links: await c.query('SELECT * FROM h1_links ORDER BY tenant_id,namespace_id,kind,owner_id,resource_id,target_kind,target_owner,target_id') }));
+}
+async function addGoverned(db, kind, owner = '') {
+  return db.transaction(c => c.query(`INSERT INTO h1_resources (tenant_id,namespace_id,kind,owner_id,resource_id,body,version)
+    SELECT tenant_id,namespace_id,?,?,?,'{}',1 FROM h1_namespaces LIMIT 1`, [kind, owner, randomUUID()]));
+}
+
 test('SR2d composed migration installs all checkpoints atomically and replays without rewriting budgets or opening maintenance', async t => {
   const f = await coordinationFixture(t, { migrate: false }), env = { ...f.env, OPENSIGHT_ENTITLEMENTS: JSON.stringify(f.entitlements) };
   const before = await f.db.transaction(c => c.query('SELECT * FROM h4_budget_config'));
@@ -46,7 +78,20 @@ test('SR2d live Postgres composed owner migration grants runtime DML without own
     const db = new PostgresMetadataDatabase(pool), env = { ...environment(), ...referenceEnv, ...runtimeEnv(), OPENSIGHT_REFERENCE: undefined,
       OPENSIGHT_RUNTIME_OPERATOR_ROLE: operator, OPENSIGHT_RUNTIME_TENANT_ROLE: tenant,
       OPENSIGHT_ENTITLEMENTS: JSON.stringify({ defaults: { apiCalls: 1000, storageBytes: 1000000, computeAttempts: 20 }, tenants: {} }) };
+    await migrateServerless(db, env);
+    await pool.query("INSERT INTO h1_tenants (tenant_id,state,version) VALUES ('governed','active',1)");
+    await pool.query("INSERT INTO h1_namespaces VALUES ('governed','governed','Governed migration')");
+    await addGoverned(db, 'user');
+    await legacyAssetKinds(db, 'postgres');
+    const before = await assetRows(db);
+    await assert.rejects(addGoverned(db, 'metric'), { code: 'METADATA_REFERENCE_INVALID' });
     await migrateServerless(db, env); await migrateServerless(db, env);
+    assert.deepEqual(await assetRows(db), before);
+    for (const kind of ['metric', 'prep-template']) {
+      await addGoverned(db, kind);
+      await assert.rejects(addGoverned(db, kind, 'forged-owner'), { code: 'METADATA_REFERENCE_INVALID' });
+    }
+    await assert.rejects(addGoverned(db, 'unknown-kind'), { code: 'METADATA_REFERENCE_INVALID' });
     const client = await pool.connect();
     try {
     await client.query(`SET ROLE ${operator}`);
@@ -74,4 +119,26 @@ test('Issue #146: existing serverless databases gain tenant columns and selectio
   assert.equal((await f.db.transaction(c => c.query('SELECT * FROM h2_login_selections'))).length, 0);
   const tenants = await f.db.transaction(c => c.query('SELECT display_name FROM h1_tenants'));
   assert.ok(tenants.length); assert.ok(tenants.every(row => row.display_name === null));
+});
+
+test('Issues #157/#160: frozen SQLite owner migration upgrades legacy asset kinds atomically and preserves resources and links', async t => {
+  const f = await coordinationFixture(t, { migrate: false }), env = { ...f.env, OPENSIGHT_ENTITLEMENTS: JSON.stringify(f.entitlements) };
+  await legacyAssetKinds(f.db, 'sqlite');
+  const before = await assetRows(f.db);
+  assert.ok(before.resources.length); assert.ok(before.links.length);
+  for (const kind of ['metric', 'prep-template']) await assert.rejects(addGoverned(f.db, kind));
+  await f.db.transaction(c => c.query('CREATE TABLE sr_object (foreign_value TEXT)'));
+  await assert.rejects(migrateServerless(f.db, env, 'sqlite'), { code: 'OBJECT_FOREIGN_SCHEMA' });
+  assert.deepEqual(await assetRows(f.db), before);
+  for (const kind of ['metric', 'prep-template']) await assert.rejects(addGoverned(f.db, kind));
+  await f.db.transaction(c => c.query('DROP TABLE sr_object'));
+  await migrateServerless(f.db, env, 'sqlite'); await migrateServerless(f.db, env, 'sqlite');
+  assert.deepEqual(await assetRows(f.db), before);
+  for (const kind of ['metric', 'prep-template']) {
+    await addGoverned(f.db, kind);
+    await assert.rejects(addGoverned(f.db, kind, 'forged-owner'));
+  }
+  await assert.rejects(addGoverned(f.db, 'unknown-kind'));
+  assert.deepEqual(await f.db.transaction(c => c.query('PRAGMA foreign_key_check')), []);
+  assert.equal((await f.db.transaction(c => c.query('SELECT state FROM sr_control')))[0].state, 'maintenance');
 });

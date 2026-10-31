@@ -114,6 +114,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
+- Serverless owner upgrades now admit governed metrics and recipe templates on existing databases while preserving resources, links and ownership constraints (#157, #160).
+
 - Precompile the shared serverless route patterns for CloudFront and bypass v1
   matching for ordinary API requests, preventing edge CPU throttling during
   uploads and hosted authoring (#150, #151; D-86).
