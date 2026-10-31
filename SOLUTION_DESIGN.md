@@ -1236,6 +1236,17 @@ the demo; run the full root suite. Publish an attested master build, rehearse
 the registered backup migration (including monthly usage), deploy through the
 existing maintenance protocol, then verify hosted workflows and release state.
 
+**Governed asset release integration (frozen 2026-10-31, #157, #160):** The
+frozen owner migration must upgrade existing `h1_resources` kind and owner
+constraints to admit `metric` and `prep-template`, using the same upgrade as
+single-node metadata initialization. Preserve existing resources, links, RLS
+and runtime grants; invalid kinds and nonempty owners for governed assets stay
+rejected. Repeated migration is idempotent and a later migration failure rolls
+back the constraint change. Verify the existing-database path on PostgreSQL and
+SQLite, rehearse the registered backup migration, then deploy the attested
+runtime with its matching viewer routes through the existing maintenance
+protocol. Runtime requests gain no DDL privileges.
+
 **SR4c compatible release automation (frozen 2026-10-11):** The operator approved
 public isolated CI, immutable release artifacts, private manual deployment via
 dedicated OIDC roles, and an independently tested access shutoff. Implement
