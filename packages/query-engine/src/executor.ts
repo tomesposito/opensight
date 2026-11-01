@@ -43,6 +43,9 @@ async function runLocal(request: PlanRequest, options: ExecuteOptions, refresh: 
   const cached = cache?.cache.get(key);
   if (cached) return { plan, rows: plan.postProcess ? evaluateSqlPlan(plan, cached.rows) : cached.rows,
     provenance: { ...liveProvenance(plan), source: 'cache', cachedAt: cached.cachedAt } };
+  // Capture the fill before any await: an invalidation (including refresh)
+  // landing while this query runs must keep its rows out of the cache.
+  const fill = cache?.cache.beginFill(key);
   let csvPath: string;
   try {
     const root = await realpath(rootInput);
@@ -86,7 +89,7 @@ async function runLocal(request: PlanRequest, options: ExecuteOptions, refresh: 
       const rows = reader.getRows().map((values) => Object.fromEntries(names.map((name, i) => [name, resultValue(values[i])])));
       const resultRows = !refresh && plan.postProcess ? evaluateSqlPlan(plan, rows) : rows;
       // Cache SQL rows: post-processing is not represented in the SQL cache key.
-      cache?.cache.set(key, rows, cache.ttlMs);
+      cache?.cache.set(key, rows, cache.ttlMs, fill);
       return { plan, rows: resultRows, provenance: liveProvenance(plan) };
     } finally {
       connection.closeSync();

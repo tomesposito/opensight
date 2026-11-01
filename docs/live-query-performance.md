@@ -80,6 +80,16 @@ a security context, even without an active protection policy, bypasses cache rea
 and writes. Protected plans also bypass caching. `refreshLocal` bypasses the cache
 and invalidates all that dataset's entries before reloading; a failed reload cannot
 leave an old entry usable. Refresh does not populate the result cache.
+
+Invalidation is also a boundary for queries already in flight (#174). Both
+executors capture a fill token (`cache.beginFill(key)`) on a cache miss, before
+execution starts, and pass it back to `cache.set(key, rows, ttlMs, fill)`. A fill
+stores only while its token is current: a matching prefix or full invalidation
+since capture, or a newer fill begun for the same key, makes the token stale.
+A stale fill still returns its own rows to its own caller with live provenance;
+it stores nothing, removes nothing, and cannot overwrite a newer cached result.
+Invalidation of an unrelated dataset prefix does not block a fill. Direct
+`cache.set` calls without a token keep the previous unconditional behavior.
 `cache.invalidate(liveDatasetCachePrefix(dataSetArn))` manually invalidates one
 dataset (including Postgres); `cache.invalidate()` clears all entries.
 The cache stores SQL result rows. Shared post-processing runs against the fresh

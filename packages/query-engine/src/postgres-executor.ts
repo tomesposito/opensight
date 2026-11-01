@@ -36,6 +36,9 @@ export async function executePostgres(request: PlanRequest, options: PostgresExe
   const cached = cache?.cache.get(key);
   if (cached) return { plan, rows: plan.postProcess ? evaluateSqlPlan(plan, cached.rows) : cached.rows,
     provenance: { ...liveProvenance(plan), source: 'cache', cachedAt: cached.cachedAt } };
+  // Capture the fill before connecting: an invalidation landing while this
+  // query runs must keep its rows out of the cache.
+  const fill = cache?.cache.beginFill(key);
   try {
     const client = new Client({ connectionString });
     try {
@@ -52,7 +55,7 @@ export async function executePostgres(request: PlanRequest, options: PostgresExe
         [field.name, resultValue(values[i], field.dataTypeID)])));
       const resultRows = plan.postProcess ? evaluateSqlPlan(plan, rows) : rows;
       // Cache SQL rows: post-processing is not represented in the SQL cache key.
-      cache?.cache.set(key, rows, cache.ttlMs);
+      cache?.cache.set(key, rows, cache.ttlMs, fill);
       return { plan, rows: resultRows, provenance: liveProvenance(plan) };
     } finally {
       await client.end();

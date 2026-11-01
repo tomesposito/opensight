@@ -122,6 +122,11 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
+- Live-result cache invalidation is now a freshness boundary for in-flight
+  queries: a query that missed before invalidation (including a local refresh)
+  still returns its rows to its caller but cannot repopulate the cache or
+  overwrite a newer cached result (#174).
+
 - Bound opt-in live-query result caches by total and per-result serialized bytes;
   oversized SQL results still return normally, and insertion purges expired
   entries to release their retained bytes (#173).

@@ -132,6 +132,71 @@ test('cache invalidation is prefix-specific or full and keeps cumulative counter
   assert.ok(!JSON.stringify(['arn:ab', 'visual']).startsWith(liveDatasetCachePrefix('arn:a')));
 });
 
+test('a fill captured before a matching invalidation cannot store, but unrelated invalidation does not block it', () => {
+  const cache = new LiveResultCache();
+  const prefixFill = cache.beginFill('dataset:a');
+  cache.invalidate('dataset:');
+  cache.set('dataset:a', [{ total: 1 }], 1000, prefixFill);
+  assert.equal(cache.get('dataset:a'), undefined);
+  assert.equal(cache.stats().stores, 0);
+
+  const fullFill = cache.beginFill('dataset:b');
+  cache.invalidate();
+  cache.set('dataset:b', [{ total: 2 }], 1000, fullFill);
+  assert.equal(cache.get('dataset:b'), undefined);
+  assert.equal(cache.stats().stores, 0);
+
+  const unrelated = cache.beginFill('dataset:c');
+  cache.invalidate('other:');
+  cache.set('dataset:c', [{ total: 3 }], 1000, unrelated);
+  assert.deepEqual(cache.get('dataset:c').rows, [{ total: 3 }]);
+  assert.equal(cache.stats().stores, 1);
+
+  const mismatched = cache.beginFill('dataset:d');
+  cache.set('dataset:e', [{ total: 4 }], 1000, mismatched);
+  assert.equal(cache.get('dataset:e'), undefined);
+  assert.equal(cache.stats().stores, 1);
+});
+
+test('an older in-flight fill cannot overwrite a newer fill, before or after the newer fill stores', () => {
+  const cache = new LiveResultCache();
+  const older = cache.beginFill('key');
+  const newer = cache.beginFill('key');
+  cache.set('key', [{ total: 1 }], 1000, older);
+  assert.equal(cache.get('key'), undefined, 'older fill is superseded as soon as the newer fill begins');
+  cache.set('key', [{ total: 2 }], 1000, newer);
+  assert.deepEqual(cache.get('key').rows, [{ total: 2 }]);
+
+  const first = cache.beginFill('seq');
+  cache.set('seq', [{ total: 1 }], 1000, first);
+  const lateOlder = cache.beginFill('seq2');
+  const lateNewer = cache.beginFill('seq2');
+  cache.set('seq2', [{ total: 2 }], 1000, lateNewer);
+  cache.set('seq2', [{ total: 9 }], 1000, lateOlder);
+  assert.deepEqual(cache.get('seq2').rows, [{ total: 2 }], 'late older fill must not overwrite the newer stored result');
+  // Direct sets without a token keep their existing unconditional behavior.
+  cache.set('seq2', [{ total: 5 }], 1000);
+  assert.deepEqual(cache.get('seq2').rows, [{ total: 5 }]);
+});
+
+test('local execution in flight during dataset invalidation returns live rows but does not repopulate the cache', async t => {
+  const r = request(), options = { ...temporaryCsv(t, read('sales.csv')), liveCache: { cache: new LiveResultCache(), ttlMs: 1000 } };
+  const cache = options.liveCache.cache;
+  // executeLocal captures its fill synchronously before its first await, so
+  // this invalidation lands while the query is genuinely in flight.
+  const pending = executeLocal(r, options);
+  cache.invalidate(liveDatasetCachePrefix(r.localData.dataSetArn));
+  const result = await pending;
+  assert.deepEqual(result.rows, [{ revenue: 500 }]);
+  assert.deepEqual(result.provenance, { source: 'live' });
+  assert.equal(cache.stats().stores, 0);
+  assert.equal(cache.stats().entries, 0);
+  const next = await executeLocal(r, options);
+  assert.deepEqual(next.provenance, { source: 'live' });
+  assert.equal(cache.stats().stores, 1);
+  assert.equal((await executeLocal(r, options)).provenance.source, 'cache');
+});
+
 test('bounded cache evicts oldest store, independent of reads, and replaces existing keys', () => {
   const cache = new LiveResultCache({ maxEntries: 2 });
   cache.set('first', [], 1000); cache.set('second', [], 1000);
