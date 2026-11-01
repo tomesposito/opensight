@@ -131,6 +131,31 @@ test('metrics: analysis and frozen dashboard follow latest publication; drafts a
 });
 
 
+test('hosted metric consumers resolve analyses, dashboards, vocabulary and prep without parsing unrelated assets (#172)', async t => {
+  const f = await metricHosted(t);
+  const source = good(await f.request('/api/uploads', { method: 'POST', body: upload() }), 201);
+  await f.renew();
+  good(await f.request('/api/datasets/prepared/prep', { method: 'PUT', body: { name: 'Prepared', pipeline: { version: 1, input: source.id, steps: [] }, expectedVersion: 0 } }));
+  const dataset = { kind: 'prepared-dataset', id: 'prepared', ownerId: f.identity.userId };
+  good(await f.request('/api/v1/metrics', { method: 'POST', body: { id: 'amount', dataset, definition: { ...def, expression: 'sum({amount})' } } }), 201);
+  good(await f.request('/api/v1/metrics/amount/publish', { method: 'POST', body: {}, headers: at(1) }));
+  const definition = { dataSetIdentifierDeclarations: [{ identifier: 'data', dataSetArn: 'urn:synthetic:prepared' }], calculatedFields: [], sheets: [{ sheetId: 'sheet', name: 'Sheet', visuals: [{ kpiVisual: { visualId: 'kpi', chartConfiguration: { fieldWells: { values: [{ numericalMeasureField: { fieldId: 'value', column: { dataSetIdentifier: 'data', columnName: '__metric_amount' }, aggregationFunction: { simpleNumericalAggregation: 'SUM' } } }] } } } }] }] };
+  const body = { analysisId: 'governed', name: 'Governed', definition, datasetBindings: { data: { kind: 'prepared-dataset', id: 'prepared' } } };
+  good(await f.request('/api/v1/analyses', { method: 'POST', body }), 201);
+  const published = good(await f.request('/api/v1/analyses/governed/publish', { method: 'POST', body: {} }), 201);
+  const context = await f.context();
+  await f.db.transaction(c => c.query('INSERT INTO h1_resources VALUES (?,?,?,?,?,?,?)', [context.tenantId, context.namespaceId, 'analysis', '', 'unrelated-broken', 'not JSON', 1]));
+  await assert.rejects(f.metadata.assetTransaction(context, false, () => null), SyntaxError);
+  good(await f.request('/api/v1/analyses', { method: 'POST', body: { ...body, analysisId: 'another' } }), 201);
+  const dashboard = `/api/v1/dashboards/${published.DashboardId}`;
+  assert.equal(good(await f.request(dashboard)).Metrics[0].id, 'amount');
+  const result = good(await f.request(`${dashboard}/versions/1/visuals/kpi/query`, { method: 'POST', body: {} }));
+  assert.equal(result.rows[0].value, 60); assert.equal(result.metrics[0].version, 2);
+  const query = { dimensions: [], measures: [{ fieldId: 'value', columnName: '__metric_amount', aggregation: 'SUM' }], filters: [] };
+  assert.equal(good(await f.request('/api/datasets/prepared/query', { method: 'POST', body: query })).rows[0].value, 60);
+  assert.equal(good(await f.request(`${dashboard}/question`, { method: 'POST', body: { query } })).rows[0].value, 60);
+});
+
 test('metric dataset catalog exposes real fields for editor drafts and preserves dataset ownership', async t => {
   const f = await metricLocal(t);
   const source = good(await f.request('/api/uploads', { method: 'POST', body: { config: { format: 'csv' }, base64: Buffer.from('amount\n2\n').toString('base64') } }), 201);

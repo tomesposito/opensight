@@ -2,7 +2,7 @@ import { resolveMetricDefinition, resolveMetricQuery, queryUsesMetrics, type Met
 import type { AssetBackend } from './asset-model.js';
 import { MetricCatalog } from './metric-model.js';
 export type MetricLookup = (ref: MetricDataset) => Promise<MetricResolution>;
-export const lookupMetrics = (backend: AssetBackend): MetricLookup => ref => backend.transaction(false, c => new MetricCatalog(c).execution(ref));
+export const lookupMetrics = (backend: AssetBackend): MetricLookup => ref => backend.metricExecution ? backend.metricExecution(ref) : backend.transaction(false, c => new MetricCatalog(c).execution(ref));
 export async function metricQuery(query: InteractiveQuery, ref: MetricDataset, lookup: MetricLookup, resolved?: (metrics: readonly PublishedMetric[]) => void) {
   if (!queryUsesMetrics(query)) return query;
   const resolution = await lookup(ref); const result = resolveMetricQuery(query, resolution); resolved?.(resolution.metrics); return result;

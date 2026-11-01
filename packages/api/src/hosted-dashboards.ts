@@ -1,4 +1,3 @@
-import { MetricCatalog } from './metric-model.js';
 import { lookupMetrics, metricDefinition } from './metric-consumption.js';
 import { planPreparedVisual, resolveSecurity, type RowPredicate, type SecurityContext } from '@opensight/query-engine';
 import { MetadataError } from './metadata-db.js';
@@ -53,7 +52,7 @@ export class HostedDashboards implements DashboardBackend {
   async metricVocabulary(v: DashboardVersion) {
     if (Object.values(v.datasetBindings).length !== 1) return [];
     const ref = Object.values(v.datasetBindings)[0]!;
-    return this.metadata.assetTransaction(this.context, false, a => new MetricCatalog(a).vocabulary({ ...ref, ...(ref.kind === 'prepared-dataset' ? { ownerId: v.bindingOwnerId } : {}) }));
+    return this.metadata.metricVocabulary(this.context, { ...ref, ...(ref.kind === 'prepared-dataset' ? { ownerId: v.bindingOwnerId } : {}) });
   }
   async query(v: DashboardVersion, definition: JsonObject, visualId: string) {
     const bindings = Object.values(v.datasetBindings);
@@ -61,7 +60,7 @@ export class HostedDashboards implements DashboardBackend {
     const binding = bindings[0]!, data = this.routes.data, context = this.context;
     const dataSetArn = v.definition.dataSetIdentifierDeclarations[0]!.dataSetArn;
     let metrics: readonly import('@opensight/query-engine').PublishedMetric[] | undefined;
-    definition = await metricDefinition(definition, Object.fromEntries(Object.entries(v.datasetBindings).map(([id, ref]) => [id, { ...ref, ...(ref.kind === 'prepared-dataset' ? { ownerId: v.bindingOwnerId } : {}) }])), lookupMetrics({ scope: context, transaction: (write, work) => this.metadata.assetTransaction(context, write, work) }), value => { metrics = value; });
+    definition = await metricDefinition(definition, Object.fromEntries(Object.entries(v.datasetBindings).map(([id, ref]) => [id, { ...ref, ...(ref.kind === 'prepared-dataset' ? { ownerId: v.bindingOwnerId } : {}) }])), lookupMetrics({ scope: context, transaction: (write, work) => this.metadata.assetTransaction(context, write, work), metricExecution: ref => this.metadata.metricExecution(context, ref) }), value => { metrics = value; });
     const analysis = { ResourceType: 'Analysis', AnalysisId: 'published', Name: v.name, Definition: definition };
     if (binding.kind === 'prepared-dataset') {
       if (v.bindingOwnerId !== context.userId) {
