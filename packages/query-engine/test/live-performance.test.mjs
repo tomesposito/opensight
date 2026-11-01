@@ -139,12 +139,23 @@ test('bounded cache evicts oldest store, independent of reads, and replaces exis
 });
 
 test('cache limits and TTL reject invalid values with named errors', async () => {
-  for (const invalid of [0, -1, 0.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1, '100']) {
-    assert.throws(() => new LiveResultCache({ maxEntries: invalid }), { code: 'INVALID_INPUT' });
+  for (const invalid of [0, -1, 0.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1, '100', null, true, {}]) {
+    for (const option of ['maxEntries', 'maxBytes', 'maxEntryBytes']) {
+      assert.throws(() => new LiveResultCache({ [option]: invalid }), { code: 'INVALID_INPUT' });
+    }
     const cache = new LiveResultCache();
     assert.throws(() => cache.set('key', [], invalid), { code: 'INVALID_INPUT' });
     await assert.rejects(executeLocal(request(), { dataRoot: '/absent', liveCache: { cache, ttlMs: invalid } }), { code: 'INVALID_INPUT' });
   }
+});
+
+test('cache per-entry budget must fit the total budget, including defaults', () => {
+  assert.throws(() => new LiveResultCache({ maxBytes: 100, maxEntryBytes: 101 }), { code: 'INVALID_INPUT' });
+  assert.throws(() => new LiveResultCache({ maxBytes: 8 * 1024 * 1024 - 1 }), { code: 'INVALID_INPUT' });
+  assert.throws(() => new LiveResultCache({ maxEntryBytes: 32 * 1024 * 1024 + 1 }), { code: 'INVALID_INPUT' });
+  assert.doesNotThrow(() => new LiveResultCache({ maxBytes: 100, maxEntryBytes: 100 }));
+  assert.doesNotThrow(() => new LiveResultCache({ maxBytes: 8 * 1024 * 1024 }));
+  assert.doesNotThrow(() => new LiveResultCache({ maxEntryBytes: 32 * 1024 * 1024 }));
 });
 
 test('local execution caches only by opt-in, replans hits, and refresh invalidates every dataset visual', async t => {

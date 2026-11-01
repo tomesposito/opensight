@@ -83,14 +83,19 @@ export class LiveResultCache {
   private readonly entries = new Map<string, CachedLiveResult & { expiresAt: number }>();
   private readonly now: () => number;
   private readonly maxEntries: number;
+  private readonly maxBytes: number;
+  private readonly maxEntryBytes: number;
   private hits = 0;
   private misses = 0;
   private stores = 0;
 
-  constructor(options: { now?: () => number; maxEntries?: number } = {}) {
+  constructor(options: { now?: () => number; maxEntries?: number; maxBytes?: number; maxEntryBytes?: number } = {}) {
     const opts = object(options, '$.cache');
-    keys(opts, ['now', 'maxEntries'], '$.cache');
+    keys(opts, ['now', 'maxEntries', 'maxBytes', 'maxEntryBytes'], '$.cache');
     this.maxEntries = positiveInteger(opts.maxEntries === undefined ? 100 : opts.maxEntries, '$.cache.maxEntries');
+    this.maxBytes = positiveInteger(opts.maxBytes === undefined ? 32 * 1024 * 1024 : opts.maxBytes, '$.cache.maxBytes');
+    this.maxEntryBytes = positiveInteger(opts.maxEntryBytes === undefined ? 8 * 1024 * 1024 : opts.maxEntryBytes, '$.cache.maxEntryBytes');
+    if (this.maxEntryBytes > this.maxBytes) fail('INVALID_INPUT', '$.cache.maxEntryBytes', 'per-entry budget must fit total byte budget');
     if (opts.now !== undefined && typeof opts.now !== 'function') fail('INVALID_INPUT', '$.cache.now', 'expected a clock function');
     this.now = options.now ?? Date.now;
   }
