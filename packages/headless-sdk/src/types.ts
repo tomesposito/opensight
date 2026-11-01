@@ -138,7 +138,7 @@ export interface QueryDimension {
   granularity?: string;
 }
 
-export type MeasureAggregation = 'SUM' | 'AVG' | 'COUNT' | 'MIN' | 'MAX';
+export type MeasureAggregation = 'SUM' | 'AVG' | 'COUNT' | 'MIN' | 'MAX' | 'DISTINCT_COUNT';
 
 export interface QueryMeasure {
   fieldId: string;

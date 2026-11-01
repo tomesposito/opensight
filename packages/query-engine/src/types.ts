@@ -1,7 +1,7 @@
 import type { ParameterBindings, ParameterDeclaration, ParameterValue } from './parameters.js';
 export type ScalarType = 'number' | 'string' | 'datetime' | 'boolean' | 'unknown';
 export type ColumnType = 'INTEGER' | 'DECIMAL' | 'STRING' | 'DATETIME';
-export type Aggregation = 'SUM' | 'AVG' | 'COUNT' | 'MIN' | 'MAX';
+export type Aggregation = 'SUM' | 'AVG' | 'COUNT' | 'MIN' | 'MAX' | 'DISTINCT_COUNT';
 export type SqlDialect = 'duckdb' | 'postgres' | 'mysql';
 export interface PlanOptions {
   readonly dialect?: SqlDialect;

@@ -122,6 +122,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
+- Governed metrics with a DISTINCT_COUNT default aggregation now run in analyses, dashboards and Ask O instead of failing in the shared query planner; distinct counts ignore duplicates and nulls and work on text as well as numeric fields (#168).
+
 - Serverless owner upgrades now admit governed metrics and recipe templates on existing databases while preserving resources, links and ownership constraints (#157, #160).
 
 - Precompile the shared serverless route patterns for CloudFront and bypass v1

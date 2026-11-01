@@ -3025,7 +3025,7 @@ components:
             properties:
               fieldId: { type: string, minLength: 1 }
               columnName: { type: string, minLength: 1 }
-              aggregation: { type: string, enum: [SUM, AVG, COUNT, MIN, MAX] }
+              aggregation: { type: string, enum: [SUM, AVG, COUNT, MIN, MAX, DISTINCT_COUNT] }
         filters:
           type: array
           items: { $ref: '#/components/schemas/QueryFilter' }

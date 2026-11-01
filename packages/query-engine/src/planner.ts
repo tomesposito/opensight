@@ -222,14 +222,16 @@ function fieldWells(visual: Visual, binder: ExpressionBinder): { dimensions: Dim
     keys(f, ['FieldId', 'Column', 'AggregationFunction'], fp);
     const fieldId = string(f.FieldId, `${fp}.FieldId`);
     const name = column(f.Column, `${fp}.Column`, binder);
-    if (binder.bind(name, fp).scalarType !== 'number') fail('TYPE_MISMATCH', fp, 'numerical measure requires a numeric column');
     const aggregationObject = object(f.AggregationFunction, `${fp}.AggregationFunction`);
     keys(aggregationObject, ['SimpleNumericalAggregation'], `${fp}.AggregationFunction`);
     const aggregationValue = aggregationObject.SimpleNumericalAggregation;
     if (typeof aggregationValue !== 'string' ||
-        !['SUM', 'AVG', 'COUNT', 'MIN', 'MAX'].includes(aggregationValue)) {
-      fail('UNSUPPORTED_FEATURE', `${fp}.AggregationFunction`, 'expected explicit SUM, AVG, COUNT, MIN or MAX');
+        !['SUM', 'AVG', 'COUNT', 'MIN', 'MAX', 'DISTINCT_COUNT'].includes(aggregationValue)) {
+      fail('UNSUPPORTED_FEATURE', `${fp}.AggregationFunction`, 'expected explicit SUM, AVG, COUNT, MIN, MAX or DISTINCT_COUNT');
     }
+    // DISTINCT_COUNT counts distinct values of any scalar type; the other
+    // aggregations are numeric-only.
+    if (aggregationValue !== 'DISTINCT_COUNT' && binder.bind(name, fp).scalarType !== 'number') fail('TYPE_MISMATCH', fp, 'numerical measure requires a numeric column');
     return { fieldId, outputName: outputName(fieldId, undefined, fp), columnName: name,
       aggregation: aggregationValue as Aggregation, path: fp };
   });
@@ -287,7 +289,7 @@ function sql(plan: Omit<QueryPlan, 'sql' | 'parameters'>, parameters: ParameterV
   const projections = [
     ...dimensions.map((expression, i) => `${expression} AS ${q(plan.dimensions[i]!.outputName)}`),
     ...plan.measures.map(m => { const c = plan.calculations.find(c => c.name === m.columnName && c.expression.level === 'aggregate');
-      return `${c ? expressionSql(expand(c.expression), plan.dialect, bind) : m.aggregation === 'COUNT' && countColumn !== undefined ? `COALESCE(SUM(${q(countColumn)}), 0)` : `${m.aggregation}(${q(m.columnName)})`} AS ${q(m.outputName)}`; }),
+      return `${c ? expressionSql(expand(c.expression), plan.dialect, bind) : m.aggregation === 'COUNT' && countColumn !== undefined ? `COALESCE(SUM(${q(countColumn)}), 0)` : m.aggregation === 'DISTINCT_COUNT' ? `COUNT(DISTINCT ${q(m.columnName)})` : `${m.aggregation}(${q(m.columnName)})`} AS ${q(m.outputName)}`; }),
   ];
   const positions = dimensions.map((_, i) => i + 1).join(', ');
   return `${ctes.length ? `WITH ${ctes.join(',\n')}\n` : ''}SELECT ${projections.join(', ')}\nFROM ${from}` +

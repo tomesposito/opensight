@@ -2418,7 +2418,8 @@ export const operations: Operation[] = [
                         "AVG",
                         "COUNT",
                         "MIN",
-                        "MAX"
+                        "MAX",
+                        "DISTINCT_COUNT"
                       ]
                     }
                   }
