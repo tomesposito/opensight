@@ -1,4 +1,4 @@
-import { executeLocal, executePostgres, planVisual, QueryEngineError } from '@opensight/query-engine';
+import { executeLocal, executePostgres, LiveResultCache, planVisual, QueryEngineError } from '@opensight/query-engine';
 import type { LocalDataBinding, PlanOptions, PlanRequest, PostgresExecuteOptions, QueryPlan, QueryResult, RowExpression, SqlDialect } from '@opensight/query-engine';
 const binding: LocalDataBinding = {
   provenance: 'Synthetic test', dataSetArn: 'synthetic', physicalTableId: 'sales', csv: 'sales.csv',
@@ -14,6 +14,12 @@ function consumer(): void {
   const postgresPlan: QueryPlan = planVisual(request, planOptions);
   const postgresOptions: PostgresExecuteOptions = { connectionString: 'postgres://localhost/test' };
   const postgresResult: Promise<QueryResult> = executePostgres(request, postgresOptions);
+  const cache = new LiveResultCache({ maxEntries: 10, maxBytes: 1024, maxEntryBytes: 512 });
+  const stats: { hits: number; misses: number; stores: number; entries: number; retainedBytes: number } = cache.stats();
+  // @ts-expect-error Cache byte budgets are numbers at the public type boundary.
+  new LiveResultCache({ maxBytes: '1024' });
+  // @ts-expect-error Per-entry byte budgets are numbers at the public type boundary.
+  new LiveResultCache({ maxEntryBytes: '512' });
   // @ts-expect-error Dialects are a closed capability set.
   planVisual(request, { dialect: 'sqlite' });
   // @ts-expect-error Postgres execution requires caller-owned connection details.
@@ -26,7 +32,7 @@ function consumer(): void {
   executeLocal({ sql: 'SELECT 1' }, { dataRoot: '/tmp' });
   // @ts-expect-error Arbitrary strings do not establish unrestricted security.
   const invalid: LocalDataBinding['security'] = { dataset: 'maybe', source: 'unrestricted' };
-  void [expression, result, postgresPlan, postgresResult, invalid, QueryEngineError];
+  void [expression, result, postgresPlan, postgresResult, invalid, stats, QueryEngineError];
 }
 void consumer;
 

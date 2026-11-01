@@ -78,27 +78,49 @@ export interface CachedLiveResult {
   readonly cachedAt: string;
 }
 
-/** Bounded FIFO result cache. Stored and returned rows are isolated from caller mutation. */
+/**
+ * Bounded FIFO result cache. Retained size is the UTF-8 byte length of
+ * JSON.stringify(rows), not JS heap usage. Stored and returned rows are isolated
+ * from caller mutation.
+ */
 export class LiveResultCache {
-  private readonly entries = new Map<string, CachedLiveResult & { expiresAt: number }>();
+  private readonly entries = new Map<string, CachedLiveResult & { expiresAt: number; bytes: number }>();
   private readonly now: () => number;
   private readonly maxEntries: number;
+  private readonly maxBytes: number;
+  private readonly maxEntryBytes: number;
   private hits = 0;
   private misses = 0;
   private stores = 0;
+  private retainedBytes = 0;
 
-  constructor(options: { now?: () => number; maxEntries?: number } = {}) {
+  constructor(options: { now?: () => number; maxEntries?: number; maxBytes?: number; maxEntryBytes?: number } = {}) {
     const opts = object(options, '$.cache');
-    keys(opts, ['now', 'maxEntries'], '$.cache');
+    keys(opts, ['now', 'maxEntries', 'maxBytes', 'maxEntryBytes'], '$.cache');
     this.maxEntries = positiveInteger(opts.maxEntries === undefined ? 100 : opts.maxEntries, '$.cache.maxEntries');
+    this.maxBytes = positiveInteger(opts.maxBytes === undefined ? 32 * 1024 * 1024 : opts.maxBytes, '$.cache.maxBytes');
+    this.maxEntryBytes = positiveInteger(opts.maxEntryBytes === undefined ? 8 * 1024 * 1024 : opts.maxEntryBytes, '$.cache.maxEntryBytes');
+    if (this.maxEntryBytes > this.maxBytes) fail('INVALID_INPUT', '$.cache.maxEntryBytes', 'per-entry budget must fit total byte budget');
     if (opts.now !== undefined && typeof opts.now !== 'function') fail('INVALID_INPUT', '$.cache.now', 'expected a clock function');
     this.now = options.now ?? Date.now;
+  }
+
+  private remove(key: string): void {
+    const entry = this.entries.get(key);
+    if (entry) {
+      this.retainedBytes -= entry.bytes;
+      this.entries.delete(key);
+    }
+  }
+
+  private purgeExpired(now: number): void {
+    for (const [key, entry] of this.entries) if (entry.expiresAt <= now) this.remove(key);
   }
 
   get(key: string): CachedLiveResult | undefined {
     const entry = this.entries.get(key);
     if (!entry || entry.expiresAt <= this.now()) {
-      if (entry) this.entries.delete(key);
+      if (entry) this.remove(key);
       this.misses++;
       return;
     }
@@ -109,20 +131,41 @@ export class LiveResultCache {
   set(key: string, rows: readonly ResultRow[], ttlMs: number): void {
     positiveInteger(ttlMs, '$.liveCache.ttlMs');
     const now = this.now();
-    const entry = { rows: rows.map(row => ({ ...row })), cachedAt: new Date(now).toISOString(), expiresAt: now + ttlMs };
-    this.entries.delete(key);
-    if (this.entries.size >= this.maxEntries) this.entries.delete(this.entries.keys().next().value!);
+    this.purgeExpired(now);
+    // A replacement must not leave stale rows available if the new result bypasses caching.
+    this.remove(key);
+    let bytes: number;
+    try {
+      // Account before copying. TextEncoder keeps this shared planner module browser-safe.
+      const serialized = JSON.stringify(rows);
+      if (typeof serialized !== 'string') return;
+      bytes = new TextEncoder().encode(serialized).byteLength;
+      if (!Number.isSafeInteger(bytes) || bytes < 0) return;
+    } catch {
+      // Accounting failure must not fail the caller's otherwise successful query.
+      return;
+    }
+    if (bytes > this.maxEntryBytes || bytes > this.maxBytes) return;
+    // Subtraction avoids overflowing a safe-integer budget when comparing totals.
+    while (this.retainedBytes > this.maxBytes - bytes || this.entries.size >= this.maxEntries) {
+      this.remove(this.entries.keys().next().value!);
+    }
+    const entry = { rows: rows.map(row => ({ ...row })), cachedAt: new Date(now).toISOString(), expiresAt: now + ttlMs, bytes };
     this.entries.set(key, entry);
+    this.retainedBytes += bytes;
     this.stores++;
   }
 
   invalidate(prefix?: string): void {
-    if (prefix === undefined) this.entries.clear();
-    else for (const key of this.entries.keys()) if (key.startsWith(prefix)) this.entries.delete(key);
+    if (prefix === undefined) {
+      this.entries.clear();
+      this.retainedBytes = 0;
+    } else for (const key of this.entries.keys()) if (key.startsWith(prefix)) this.remove(key);
   }
 
-  stats(): { hits: number; misses: number; stores: number } {
-    return { hits: this.hits, misses: this.misses, stores: this.stores };
+  stats(): { hits: number; misses: number; stores: number; entries: number; retainedBytes: number } {
+    this.purgeExpired(this.now());
+    return { hits: this.hits, misses: this.misses, stores: this.stores, entries: this.entries.size, retainedBytes: this.retainedBytes };
   }
 }
 
