@@ -122,6 +122,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
+- Serverless responses complete after persisting opt-in analytics events, without waiting for PostHog delivery; a durable outbox retries pending copies while respecting tenant opt-out (#175).
+
 - Live-result cache invalidation is now a freshness boundary for in-flight
   queries: a query that missed before invalidation (including a local refresh)
   still returns its rows to its caller but cannot repopulate the cache or

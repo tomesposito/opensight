@@ -33,6 +33,8 @@ export function validateAnalyticsEvent(raw: unknown): Pick<AnalyticsRow, 'name' 
 export type AnalyticsTransport = (url: string, init: RequestInit) => Promise<{ ok: boolean }>;
 export interface AnalyticsOptions {
   enabled?: boolean;
+  /** Inline waits for vendor attempts; deferred completion waits only for the own log. */
+  deliveryMode?: 'inline' | 'deferred';
   /** Local composition maps namespaces to opaque installation tenant IDs. */
   localScopes?: ReadonlyMap<string, Scope>;
   vendorKey?: string;
@@ -54,6 +56,7 @@ export class Analytics {
   readonly defaultEnabled: boolean;
   private readonly queue: { scope: Scope; event: Pick<AnalyticsRow, 'name' | 'props'>; id: string; createdAt: string }[] = [];
   private running?: Promise<void>;
+  private draining?: Promise<number>;
   private closed = false;
   constructor(readonly store?: AnalyticsStore, private readonly options: AnalyticsOptions = {}) {
     this.defaultEnabled = options.enabled === true;
@@ -91,10 +94,36 @@ export class Analytics {
           const row: AnalyticsRow = { ...entry.event, ...entry.scope, id: entry.id, createdAt: entry.createdAt };
           if (!await this.store!.append(row, this.defaultEnabled)) continue;
           this.stats.recorded++;
-          if (await this.store!.enabled(entry.scope, this.defaultEnabled)) await this.deliver(row);
+          if (this.options.deliveryMode !== 'deferred' && await this.store!.enabled(entry.scope, this.defaultEnabled)) {
+            await this.deliver(row);
+            await this.store!.markDelivered(row.id);
+          }
         } catch { this.stats.failed++; }
       }
-    }).catch(() => { this.stats.failed++; }).finally(() => { this.running = undefined; if (this.queue.length) this.start(); });
+    }).catch(() => { this.stats.failed++; }).finally(() => {
+      this.running = undefined;
+      if (this.queue.length) this.start();
+      else if (this.options.deliveryMode === 'deferred') void this.drainDeferred();
+    });
+  }
+  /** One bounded best-effort batch. Shared by piggyback triggers and explicit drains,
+   * including after close; failures remain durable for a later invocation. */
+  drainDeferred(limit = 32): Promise<number> {
+    if (!this.configured) return Promise.resolve(0);
+    return this.draining ??= Promise.resolve().then(async () => {
+      let delivered = 0;
+      try {
+        for (const row of await this.store!.undelivered(limit)) {
+          try {
+            if (!await this.store!.enabled(row, this.defaultEnabled)) continue;
+            await this.deliver(row);
+            await this.store!.markDelivered(row.id);
+            delivered++;
+          } catch { this.stats.failed++; }
+        }
+      } catch { this.stats.failed++; }
+      return delivered;
+    }).finally(() => { this.draining = undefined; });
   }
   private async deliver(row: AnalyticsRow): Promise<void> {
     const controller = new AbortController();

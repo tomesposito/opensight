@@ -66,20 +66,29 @@ values, so later caller mutations cannot inject content. Invalid events incremen
 ## Storage and vendor payload
 
 `analytics_events` contains `event_id`, `tenant_id`, `namespace_id`, `event_name`,
-`props` (allowlisted JSON), and `created_at`. `analytics_settings` contains the
-per-tenant boolean override. Both have composite foreign keys to the tenant's
-namespace. The store uses a private metadata connection, tenant-scoped SQL and
-tenant serialization. Tenant log reads require a context issued by
+`props` (allowlisted JSON), `created_at`, and nullable `delivered_at`.
+`delivered_at` records successful vendor delivery; NULL means pending.
+`analytics_settings` contains the per-tenant boolean override. Both have
+composite foreign keys to the tenant's namespace. The store uses a private
+metadata connection, tenant-scoped admission and tenant serialization. Only the
+private operator outbox reader lists undelivered events across tenants, for the
+deployment's single vendor configuration. Delivery state is excluded from
+tenant log rows. Tenant log reads require a context issued by
 `TenantMetadata`, and validate current admission; no public log browsing API is
 added. Application event scopes come only from authentication or provisioning.
 Local installations use stable, randomly generated tenant IDs in their sidecar
 store, rather than sending a local namespace label as a vendor identity.
 
-Owner migrations initialize the tables alongside the other optional-provider
-infrastructure, with no DDL during serverless invocations. Runtime grants,
+Owner migrations initialize the tables and idempotently add `delivered_at` to
+existing tables alongside the other optional-provider infrastructure, with no
+DDL during serverless invocations. Runtime grants,
 bootstrap inventories and registered backup/restore inventories include them.
 Older backups without analytics tables remain recognized and upgrade to empty
-analytics tables. Reference tenant deletion removes that tenant's log/settings.
+analytics tables; backups with pre-outbox rows upgrade with NULL delivery state.
+Pre-change rows may be delivered once again after switching to deferred mode,
+including rows already sent by an inline deployment. This is harmless because
+PostHog deduplicates on the original event `uuid`, which retries preserve.
+Reference tenant deletion removes that tenant's log/settings.
 
 Every vendor call is an HTTPS `POST <host>/capture/` with this shape (placeholders
 below are explanatory, not credentials):
@@ -110,10 +119,33 @@ Tracking never throws into the operation being measured. Call sites do not await
 it. The default in-memory queue holds at most 256 waiting events, plus one active
 event; overflow is dropped. The own log must commit before vendor delivery.
 Storage or transport errors are swallowed and counted, with no content logged.
-Vendor attempts time out after two seconds; redirects are refused. There is no
-retry/outbox or exactly-once delivery guarantee. A crash between an operation's
-commit and logging can lose that event; PostHog failure leaves the own copy.
-`flush()`/`close()` are available to tests and server/invocation shutdown.
+Vendor attempts time out after two seconds; redirects are refused. A crash
+between an operation's commit and logging can lose that event; PostHog failure
+leaves the own copy. `flush()`/`close()` are available to tests and
+server/invocation shutdown, with runtime-specific completion semantics (#175):
+
+- **Local and single-node: inline.** `deliveryMode: 'inline'` is the default.
+  The queue persists each event and awaits its vendor attempt. `flush()` and
+  `close()` wait for both. Each attempt is final for that queue: failures count
+  in `stats.failed` and are not automatically retried. Success sets
+  `delivered_at`; failure leaves NULL, allowing a later deferred drain to retry
+  the same UUID if the deployment changes modes.
+- **Serverless hosted invocations: deferred durable outbox.** The persisted own
+  log row is the completion step. `flush()` and `close()` wait only for queued
+  persistence, never for the vendor. Each persistence queue completion starts
+  one background `drainDeferred()` batch, shared with concurrent drain calls on
+  that Analytics instance. The drain reads at most 32 oldest pending rows by
+  default (or an explicit positive integer limit), rechecks each tenant's
+  enabled switch, and marks only successful vendor responses delivered. Failures
+  increment `stats.failed` and remain pending. Later invocations that track
+  events piggyback another batch; callers can also explicitly invoke
+  `drainDeferred(limit?)`, even after `close()`, to return the number delivered.
+  A frozen or terminated invocation can leave rows pending, including when the
+  vendor accepted an event before its acknowledgment was stored. Retries use
+  the same UUID for PostHog deduplication. Delivery is best-effort retry of
+  undelivered rows, with no eventual or exactly-once delivery guarantee and no
+  scheduled sweep. An explicitly injected Analytics instance keeps its caller's
+  chosen mode.
 
 The browser-only **Try sample data** choice and browser draft autosaves do not
 contact a server. Their clicks cannot be captured by this server-only pipeline.

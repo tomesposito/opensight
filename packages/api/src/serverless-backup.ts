@@ -170,8 +170,9 @@ export async function migrateRegistered(db: Database, env: NodeJS.ProcessEnv, sn
     const fingerprint = (rows: SqlRow[]) => checksum(rows.map(checksum).sort());
     const verify = async (upgraded = !!prior) => {
       for (const table of preserved) {
-        const baseline = table === 'h1_tenants' && upgraded && !namedWorkspaces(sourceInventory)
+        let baseline = table === 'h1_tenants' && upgraded && !namedWorkspaces(sourceInventory)
           ? snapshot.tables[table]!.map(row => ({ ...row, display_name: null, slug: null })) : snapshot.tables[table]!;
+        if (table === 'analytics_events' && upgraded) baseline = baseline.map(row => ({ delivered_at: null, ...row }));
         if (fingerprint(await c.query(`SELECT * FROM ${table} LIMIT 100001`)) !== fingerprint(baseline)) denied('MIGRATION_PRESERVATION_FAILED');
       }
       if (upgraded && !namedWorkspaces(sourceInventory) && (await c.query('SELECT 1 FROM h2_login_selections LIMIT 1')).length) denied('MIGRATION_PRESERVATION_FAILED');
