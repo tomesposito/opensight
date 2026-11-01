@@ -15,6 +15,7 @@ function consumer(): void {
   const postgresOptions: PostgresExecuteOptions = { connectionString: 'postgres://localhost/test' };
   const postgresResult: Promise<QueryResult> = executePostgres(request, postgresOptions);
   const cache = new LiveResultCache({ maxEntries: 10, maxBytes: 1024, maxEntryBytes: 512 });
+  const stats: { hits: number; misses: number; stores: number; entries: number; retainedBytes: number } = cache.stats();
   // @ts-expect-error Cache byte budgets are numbers at the public type boundary.
   new LiveResultCache({ maxBytes: '1024' });
   // @ts-expect-error Per-entry byte budgets are numbers at the public type boundary.
@@ -31,7 +32,7 @@ function consumer(): void {
   executeLocal({ sql: 'SELECT 1' }, { dataRoot: '/tmp' });
   // @ts-expect-error Arbitrary strings do not establish unrestricted security.
   const invalid: LocalDataBinding['security'] = { dataset: 'maybe', source: 'unrestricted' };
-  void [expression, result, postgresPlan, postgresResult, invalid, cache, QueryEngineError];
+  void [expression, result, postgresPlan, postgresResult, invalid, stats, QueryEngineError];
 }
 void consumer;
 

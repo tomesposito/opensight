@@ -8,6 +8,7 @@ import { calculation, measure, read, request, temporaryCsv, wells } from './help
 
 const aggregate = () => ({ name: 'Sales by region', tableName: 'sales_by_region', tableSchema: 'reporting',
   dimensions: [{ columnName: 'region' }], measures: [{ columnName: 'revenue', aggregation: 'SUM' }], countColumn: 'row_count' });
+const rowBytes = rows => Buffer.byteLength(JSON.stringify(rows), 'utf8');
 
 test('aggregate SUM rolls up a dimension subset and preserves SQL filters and dialect schema handling', () => {
   for (const dialect of ['duckdb', 'postgres', 'mysql']) {
@@ -95,6 +96,7 @@ test('cache isolates rows, records stats, and drops entries at the TTL boundary'
   assert.equal(cache.get('one'), undefined);
   const rows = [{ total: 1 }];
   cache.set('one', rows, 100);
+  assert.equal(cache.stats().retainedBytes, rowBytes(rows));
   rows[0].total = 99;
   const cached = cache.get('one');
   assert.deepEqual(cached, { rows: [{ total: 1 }], cachedAt: new Date(1000).toISOString() });
@@ -105,19 +107,27 @@ test('cache isolates rows, records stats, and drops entries at the TTL boundary'
   assert.equal(cache.get('one'), undefined);
   now = 1000;
   assert.equal(cache.get('one'), undefined, 'expired entry was dropped');
-  assert.deepEqual(cache.stats(), { hits: 2, misses: 3, stores: 1 });
+  assert.deepEqual(cache.stats(), { hits: 2, misses: 3, stores: 1, entries: 0, retainedBytes: 0 });
 });
 
 test('cache invalidation is prefix-specific or full and keeps cumulative counters', () => {
   const cache = new LiveResultCache();
-  for (const key of ['dataset:a', 'dataset:b', 'other:a']) cache.set(key, [], 1000);
+  cache.set('dataset:a', [{ total: 1 }], 1000);
+  cache.set('dataset:b', [{ label: 'longer entry' }], 1000);
+  cache.set('other:a', [], 1000);
   cache.invalidate('dataset:');
+  assert.equal(cache.stats().entries, 1);
+  assert.equal(cache.stats().retainedBytes, rowBytes([]));
+  cache.invalidate('absent:');
+  assert.equal(cache.stats().retainedBytes, rowBytes([]));
   assert.equal(cache.get('dataset:a'), undefined);
   assert.equal(cache.get('dataset:b'), undefined);
   assert.ok(cache.get('other:a'));
   cache.invalidate();
   assert.equal(cache.get('other:a'), undefined);
-  assert.deepEqual(cache.stats(), { hits: 1, misses: 3, stores: 3 });
+  assert.deepEqual(cache.stats(), { hits: 1, misses: 3, stores: 3, entries: 0, retainedBytes: 0 });
+  cache.set('after-clear', [], 1000);
+  assert.equal(cache.stats().retainedBytes, rowBytes([]));
   assert.ok(JSON.stringify(['arn:a', 'visual']).startsWith(liveDatasetCachePrefix('arn:a')));
   assert.ok(!JSON.stringify(['arn:ab', 'visual']).startsWith(liveDatasetCachePrefix('arn:a')));
 });
@@ -132,10 +142,147 @@ test('bounded cache evicts oldest store, independent of reads, and replaces exis
   cache.set('fourth', [], 1000);
   assert.equal(cache.get('third'), undefined);
   assert.deepEqual(cache.get('second').rows, [{ total: 2 }]);
+  assert.equal(cache.stats().entries, 2);
+  assert.equal(cache.stats().retainedBytes, rowBytes([{ total: 2 }]) + rowBytes([]));
   const defaults = new LiveResultCache();
   for (let i = 0; i <= 100; i++) defaults.set(String(i), [], 1000);
   assert.equal(defaults.get('0'), undefined);
   assert.ok(defaults.get('1'));
+  assert.equal(defaults.stats().entries, 100);
+  assert.equal(defaults.stats().retainedBytes, 100 * rowBytes([]));
+});
+
+test('cache evicts heterogeneous rows in store order until the byte budget fits', () => {
+  const small = [{ label: 'a' }], medium = [{ label: 'b'.repeat(20) }];
+  const newestSmall = [{ label: 'cc' }], large = [{ label: 'd'.repeat(24) }];
+  const maxBytes = rowBytes(small) + rowBytes(medium) + rowBytes(newestSmall);
+  const cache = new LiveResultCache({ maxBytes, maxEntryBytes: maxBytes });
+  let retainedBytes = 0;
+  for (const [key, rows] of [['small', small], ['medium', medium], ['newest-small', newestSmall]]) {
+    cache.set(key, rows, 1000);
+    retainedBytes += rowBytes(rows);
+    assert.equal(cache.stats().retainedBytes, retainedBytes);
+    assert.ok(cache.stats().retainedBytes <= maxBytes);
+  }
+  assert.ok(cache.get('small'), 'reads must not change FIFO order');
+  cache.set('large', large, 1000);
+  assert.equal(cache.get('small'), undefined);
+  assert.equal(cache.get('medium'), undefined, 'more than one eviction is needed');
+  assert.deepEqual(cache.get('newest-small').rows, newestSmall);
+  assert.deepEqual(cache.get('large').rows, large);
+  assert.equal(cache.stats().entries, 2);
+  assert.equal(cache.stats().retainedBytes, rowBytes(newestSmall) + rowBytes(large));
+  assert.ok(cache.stats().retainedBytes <= maxBytes);
+});
+
+test('cache accounts UTF-8 serialized bytes and accepts exact entry and total limits', () => {
+  const rows = [{ label: 'é🙂', total: null }], bytes = rowBytes(rows);
+  assert.ok(bytes > JSON.stringify(rows).length, 'UTF-8 bytes differ from JS string length');
+  const cache = new LiveResultCache({ maxBytes: bytes * 2, maxEntryBytes: bytes });
+  cache.set('one', rows, 1000);
+  cache.set('two', rows, 1000);
+  assert.deepEqual(cache.stats(), { hits: 0, misses: 0, stores: 2, entries: 2, retainedBytes: bytes * 2 });
+  assert.deepEqual(cache.get('one').rows, rows);
+  assert.deepEqual(cache.get('two').rows, rows);
+});
+
+for (const maxBytes of [64, 128]) test(`oversized rows bypass without cloning with total budget ${maxBytes}`, t => {
+  const cache = new LiveResultCache({ maxBytes, maxEntryBytes: 64 });
+  const rows = [{ label: 'x'.repeat(60) }];
+  assert.ok(rowBytes(rows) > 64 && rowBytes(rows) < 128);
+  const clone = rows.map = t.mock.fn(() => assert.fail('oversized rows must not be cloned'));
+  assert.doesNotThrow(() => cache.set('oversized', rows, 1000));
+  rows[0].label = 'changed';
+  assert.equal(cache.get('oversized'), undefined);
+  assert.equal(clone.mock.callCount(), 0);
+  assert.deepEqual(cache.stats(), { hits: 0, misses: 1, stores: 0, entries: 0, retainedBytes: 0 });
+});
+
+test('cache replacements release old bytes before eviction and use the latest size', () => {
+  const old = [{ label: 'x'.repeat(20) }], small = [{ label: 'x' }], other = [{ total: 1 }];
+  const maxBytes = rowBytes(old) + rowBytes(other);
+  const cache = new LiveResultCache({ maxBytes, maxEntryBytes: maxBytes });
+  cache.set('other', other, 1000);
+  cache.set('replaced', old, 1000);
+  for (const rows of [small, old]) {
+    cache.set('replaced', rows, 1000);
+    assert.deepEqual(cache.get('replaced').rows, rows);
+    assert.deepEqual(cache.get('other').rows, other, 'replacement must not evict a still-fitting entry');
+    assert.equal(cache.stats().entries, 2);
+    assert.equal(cache.stats().retainedBytes, rowBytes(rows) + rowBytes(other));
+  }
+  cache.set('replaced', [{ label: 'x'.repeat(maxBytes) }], 1000);
+  assert.equal(cache.get('replaced'), undefined, 'oversized replacement must not serve the old value');
+  assert.deepEqual(cache.get('other').rows, other, 'bypass must not evict unrelated rows');
+  assert.equal(cache.stats().entries, 1);
+  assert.equal(cache.stats().retainedBytes, rowBytes(other));
+  assert.equal(cache.stats().stores, 4);
+});
+
+test('insertion purges every expired entry before eviction without reading its key', () => {
+  let now = 1000;
+  const rows = [{ total: 1 }], maxBytes = rowBytes(rows) * 3;
+  const cache = new LiveResultCache({ now: () => now, maxEntries: 3, maxBytes, maxEntryBytes: maxBytes });
+  cache.set('live-oldest', rows, 100);
+  cache.set('expired-a', rows, 10);
+  cache.set('expired-b', rows, 10);
+  now = 1010;
+  cache.set('new', rows, 100);
+  now = 1000; // Ensure stats/get cannot hide a missing insertion purge by expiring entries themselves.
+  assert.deepEqual(cache.stats(), { hits: 0, misses: 0, stores: 4, entries: 2, retainedBytes: rowBytes(rows) * 2 });
+  assert.deepEqual(cache.get('live-oldest').rows, rows);
+  assert.deepEqual(cache.get('new').rows, rows);
+  assert.equal(cache.get('expired-a'), undefined);
+  assert.equal(cache.get('expired-b'), undefined);
+});
+
+test('oversized insertion still purges expired entries and invalid TTL leaves the cache untouched', () => {
+  let now = 1000;
+  const cache = new LiveResultCache({ now: () => now, maxBytes: 32, maxEntryBytes: 32 });
+  cache.set('expired', [], 10);
+  now = 1010;
+  assert.throws(() => cache.set('expired', [], 0), { code: 'INVALID_INPUT' });
+  now = 1000;
+  assert.ok(cache.get('expired'), 'TTL validation precedes maintenance or replacement');
+  now = 1010;
+  cache.set('oversized', [{ label: 'x'.repeat(32) }], 100);
+  now = 1000;
+  assert.deepEqual(cache.stats(), { hits: 1, misses: 0, stores: 1, entries: 0, retainedBytes: 0 });
+  assert.equal(cache.get('expired'), undefined);
+});
+
+test('stats reports only live entries without changing cumulative counters', () => {
+  let now = 1000;
+  const cache = new LiveResultCache({ now: () => now });
+  cache.set('short', [], 10);
+  cache.set('long', [{ total: 2 }], 100);
+  now = 1010;
+  assert.deepEqual(cache.stats(), { hits: 0, misses: 0, stores: 2, entries: 1, retainedBytes: rowBytes([{ total: 2 }]) });
+});
+
+test('serialization failures bypass caching without cloning or keeping stale replacements', t => {
+  const circular = []; circular.push(circular);
+  for (const rows of [circular, [{ total: 1n }], Object.assign([], { toJSON: () => { throw new Error('cannot serialize'); } }),
+    Object.assign([], { toJSON: () => undefined })]) {
+    const cache = new LiveResultCache();
+    cache.set('key', [], 1000);
+    const clone = rows.map = t.mock.fn(() => assert.fail('unaccountable rows must not be cloned'));
+    assert.doesNotThrow(() => cache.set('key', rows, 1000));
+    assert.equal(clone.mock.callCount(), 0);
+    assert.equal(cache.get('key'), undefined);
+    assert.deepEqual(cache.stats(), { hits: 0, misses: 1, stores: 1, entries: 0, retainedBytes: 0 });
+  }
+});
+
+test('nonfinite or unsafe byte estimates bypass caching', t => {
+  for (const byteLength of [NaN, Infinity, -1, 0.5, Number.MAX_SAFE_INTEGER + 1]) {
+    const encode = t.mock.method(TextEncoder.prototype, 'encode', () => ({ byteLength }));
+    const cache = new LiveResultCache();
+    assert.doesNotThrow(() => cache.set('key', [], 1000));
+    assert.equal(cache.get('key'), undefined);
+    assert.deepEqual(cache.stats(), { hits: 0, misses: 1, stores: 0, entries: 0, retainedBytes: 0 });
+    encode.mock.restore();
+  }
 });
 
 test('cache limits and TTL reject invalid values with named errors', async () => {
