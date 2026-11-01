@@ -28,6 +28,47 @@ test('Postgres aggregate execution and result caching share the caller-owned opt
   assert.equal(mocks.connectMock.mock.callCount(), 2);
 });
 
+test('Postgres query in flight during invalidation returns live rows but does not repopulate the cache', async t => {
+  const mocks = mockClient(t, { query: config => typeof config === 'string' ? empty : {
+    fields: [{ name: 'revenue', dataTypeID: types.builtins.FLOAT8 }], rows: [['500']],
+  } });
+  const cache = new LiveResultCache(), configured = { ...options, liveCache: { cache, ttlMs: 1000 } };
+  // executePostgres captures its fill synchronously before connecting, so
+  // this invalidation lands while the query is genuinely in flight.
+  const pending = executePostgres(request(), configured);
+  cache.invalidate();
+  const result = await pending;
+  assert.deepEqual(result.rows, [{ revenue: 500 }]);
+  assert.deepEqual(result.provenance, { source: 'live' });
+  assert.equal(cache.stats().stores, 0);
+  await executePostgres(request(), configured);
+  assert.equal(mocks.connectMock.mock.callCount(), 2, 'the invalidated fill left nothing to serve');
+  assert.equal(cache.stats().stores, 1);
+});
+
+test('a delayed older Postgres fill cannot overwrite a newer cached result', async t => {
+  let releaseOld;
+  const oldGate = new Promise(resolve => { releaseOld = resolve; });
+  let calls = 0;
+  mockClient(t, { query: async config => {
+    if (typeof config === 'string') return empty;
+    calls++;
+    if (calls === 1) { await oldGate; return { fields: [{ name: 'revenue', dataTypeID: types.builtins.FLOAT8 }], rows: [['500']] }; }
+    return { fields: [{ name: 'revenue', dataTypeID: types.builtins.FLOAT8 }], rows: [['600']] };
+  } });
+  const cache = new LiveResultCache(), configured = { ...options, liveCache: { cache, ttlMs: 1000 } };
+  const older = executePostgres(request(), configured);
+  const newer = await executePostgres(request(), configured);
+  assert.deepEqual(newer.rows, [{ revenue: 600 }]);
+  releaseOld();
+  const olderResult = await older;
+  assert.deepEqual(olderResult.rows, [{ revenue: 500 }], 'the older caller still receives its own rows');
+  assert.equal(cache.stats().stores, 1);
+  const served = await executePostgres(request(), configured);
+  assert.equal(served.provenance.source, 'cache');
+  assert.deepEqual(served.rows, [{ revenue: 600 }], 'the cache still holds the newer result');
+});
+
 test('Postgres never accesses the cache with a security context, including an unprotected policy', async t => {
   const mocks = mockClient(t);
   const cache = new LiveResultCache(), configured = { ...options, liveCache: { cache, ttlMs: 1000 } };
