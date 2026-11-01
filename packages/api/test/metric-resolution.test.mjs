@@ -101,3 +101,87 @@ test('targeted metrics: checked admission rejects forged contexts, revised autho
   await f.db.transaction(c => c.query("UPDATE h1_tenants SET state = 'suspended'"));
   for (const method of ['metricExecution', 'metricVocabulary']) await assert.rejects(f.metadata[method](admin, legacy), { code: 'TENANT_UNAVAILABLE' });
 });
+
+test('targeted metrics: body reads stay constant as unrelated history grows, even with corrupt JSON elsewhere', async t => {
+  const f = await fixture(t), context = await f.login('peer');
+  const read = async method => {
+    f.reads.length = 0;
+    const result = await f.metadata[method](context, legacy);
+    const bodies = f.reads.flatMap(q => q.rows.filter(r => r.body !== undefined));
+    assert.deepEqual(bodies.map(r => [r.kind ?? 'user', r.resource_id ?? 'peer']), [
+      ['user', 'peer'], ['dataset', 'sales'], ['metric', 'draft-legacy'], ['metric', 'published-legacy'],
+    ]);
+    assert.equal(f.reads.length, 5, 'tenant lock, revision, user, dataset and indexed metrics only');
+    return { result, bytes: bodies.reduce((sum, r) => sum + Buffer.byteLength(r.body), 0) };
+  };
+  const before = await read('metricExecution'), vocabulary = await read('metricVocabulary');
+  await f.db.transaction(async c => {
+    const [row] = await c.query("SELECT body, version FROM h1_resources WHERE kind = 'metric' AND resource_id = 'published-other'");
+    const body = JSON.parse(row.body);
+    // Large unrelated metric history and analysis/dashboard definitions must not
+    // contribute any body bytes to admission for the requested dataset.
+    for (let n = 0; n < 40; n++) {
+      await insertResource(c, scope, { kind: 'metric', id: `unrelated-${n}` }, body, row.version);
+      for (const kind of ['analysis', 'dashboard']) await insertResource(c, scope, { kind, id: `unrelated-${n}` }, {
+        definition: { [kind === 'analysis' ? 'AnalysisId' : 'DashboardId']: `unrelated-${n}`, Definition: { DataSetIdentifierDeclarations: [], opaque: 'x'.repeat(16000) } }, datasets: [], folderId: null,
+      });
+    }
+  });
+  assert.deepEqual(await f.old(context, legacy, 'execution'), before.result);
+  assert.deepEqual(await read('metricExecution'), before);
+  assert.deepEqual(await read('metricVocabulary'), vocabulary);
+  await f.db.transaction(c => c.query("UPDATE h1_resources SET body = 'not JSON' WHERE resource_id = 'unrelated-0'"));
+  await assert.rejects(f.old(context, legacy, 'execution'), SyntaxError);
+  await assert.rejects(f.old(context, legacy, 'vocabulary'), SyntaxError);
+  assert.deepEqual(await read('metricExecution'), before);
+  assert.deepEqual(await read('metricVocabulary'), vocabulary);
+});
+
+test('targeted metrics: recursive reads use exact owner keys once and never read source bodies or join inputs', async t => {
+  const f = await fixture(t), context = await f.login('reader');
+  // The current prep writer accepts append source IDs only. Seed object refs at
+  // SQL level to exercise the input/append walk that MetricCatalog already supports.
+  const root = recipe('graph', { dataset: 'append' }, [
+    { id: 'repeat', kind: 'append', config: { source: { dataset: 'leaf' } } },
+    { id: 'join-branch', kind: 'append', config: { source: { dataset: 'joined' } } },
+  ]);
+  await f.db.transaction(c => c.query('INSERT INTO h1_resources VALUES (?,?,?,?,?,?,?)', [scope.tenantId, scope.namespaceId, root.kind, root.ownerId, root.id, JSON.stringify(root.body), 1]));
+  const expected = await f.old(context, prepared('graph'), 'execution');
+  f.reads.length = 0;
+  assert.deepEqual(await f.metadata.metricExecution(context, prepared('graph')), expected);
+  assert.equal(expected.unsafeJoin, true);
+  const rows = f.reads.flatMap(q => q.rows.filter(r => r.kind));
+  assert.deepEqual(rows.map(r => [r.kind, r.owner_id, r.resource_id]), ['graph', 'append', 'leaf', 'joined'].map(id => ['prepared-dataset', 'owner', id]));
+  for (const read of f.reads.filter(q => q.rows.some(r => r.kind === 'prepared-dataset'))) {
+    assert.match(read.sql, /kind = \? AND owner_id = \? AND resource_id = \?/);
+    assert.equal(read.rows.length, 1);
+  }
+  // A genuinely absent reachable input must still raise the catalog's named error.
+  await f.db.transaction(c => c.query("UPDATE h1_resources SET body = ? WHERE kind = 'prepared-dataset' AND resource_id = 'leaf'", [JSON.stringify(recipe('leaf', { dataset: 'missing' }).body)]));
+  await assert.rejects(f.old(context, prepared('append'), 'execution'), { code: 'METRIC_DATASET_NOT_FOUND' });
+  await assert.rejects(f.metadata.metricExecution(context, prepared('append')), { code: 'METRIC_DATASET_NOT_FOUND' });
+});
+
+test('targeted metrics: tenant isolation and reads leave resources, revisions, links and events unchanged', async t => {
+  const f = await fixture(t), context = await f.login();
+  await f.db.transaction(async c => {
+    await c.query("INSERT INTO h1_tenants (tenant_id,state,version) VALUES ('foreign', 'active', 1)");
+    await c.query("INSERT INTO h1_namespaces VALUES ('foreign','foreign','Foreign')");
+    await c.query("INSERT INTO h1_revisions VALUES ('foreign','foreign',1,1,1)");
+    const foreign = { tenantId: 'foreign', namespaceId: 'foreign' };
+    await insertResource(c, foreign, legacy, { definition: {}, sources: [] });
+    await c.query("INSERT INTO h1_resources VALUES ('foreign','foreign','metric','','published-legacy','not JSON',1)");
+    await c.query("INSERT INTO h1_links VALUES ('foreign','foreign','metric','','published-legacy','dataset','','sales')");
+  });
+  const snapshot = () => f.db.transaction(async c => {
+    const rows = [];
+    for (const table of ['tenants', 'resources', 'revisions', 'links', 'outbox']) rows.push(await c.query(`SELECT * FROM h1_${table}`));
+    return rows;
+  });
+  const before = await snapshot();
+  const result = await f.metadata.metricExecution(context, legacy);
+  assert.deepEqual(result, await f.old(context, legacy, 'execution'));
+  result.metrics[0].name = 'Caller mutation';
+  assert.equal((await f.metadata.metricVocabulary(context, legacy))[0].name, 'Published legacy');
+  assert.deepEqual(await snapshot(), before);
+});
