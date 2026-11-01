@@ -1,5 +1,5 @@
 import { analyticsSettingsRoute } from './analytics-settings.js';
-import { accessRequestRate, initializeAccessRequests, limitAccessRequests, listAccessRequests, storeAccessRequest } from './access-requests.js';
+import { accessRequestNotifyTo, accessRequestRate, initializeAccessRequests, limitAccessRequests, listAccessRequests, notifyAccessRequests, storeAccessRequest } from './access-requests.js';
 import { Analytics, analyticsFromEnvironment } from './analytics.js';
 import { AnalyticsStore, initializeAnalytics } from './analytics-store.js';
 import { EmbedSessions, embedSessionKey } from './embed-sessions.js';
@@ -118,6 +118,7 @@ function boundary(request: IncomingMessage, origin: string): void {
 export async function createHostedApiServer(options: HostedServerOptions): Promise<Server> {
   const config = hostedConfig(options.env);
   const accessRate = accessRequestRate(options.env ?? process.env);
+  const accessNotifyTo = accessRequestNotifyTo(options.env ?? process.env);
   if (options.membershipDatabase?.durable !== true || options.tenantDatabase?.durable !== true) throw new MetadataError('DURABLE_MEMBERSHIP_STORE_REQUIRED', 503);
   if (typeof options.security?.authenticate !== 'function') throw new MetadataError('HOSTED_VERIFIER_REQUIRED', 503);
   const authenticate = options.security.authenticate;
@@ -218,7 +219,11 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
           || Object.keys(raw).some(key => !['name', 'email', 'organization', 'note'].includes(key))) throw new MetadataError('ACCESS_REQUEST_INVALID', 400);
         const input = raw as Record<string, unknown>;
         await storeAccessRequest(options.membershipDatabase, { name: input.name, email: input.email, organization: input.organization, note: input.note, now: Date.now() });
-        send(response, 201, { received: true }); return;
+        send(response, 201, { received: true });
+        // The request is durable before this runs; notification is best-effort
+        // and can never fail or roll back the submission (issue #177).
+        await notifyAccessRequests(options.membershipDatabase, mail, accessNotifyTo, Date.now()).catch(() => 0);
+        return;
       }
       if (path === '/api/host' || path.startsWith('/api/host/')) {
         const authorization = request.headers.authorization;
