@@ -1,3 +1,4 @@
+import type { Idea } from './ideas.js';
 import type { BundleDataSet } from '@opensight/bundle-parser';
 import type { PrepTemplate } from './prep-templates.js';
 import type { MetricDatasetOption, MetricList, MetricSummary, MetricHistory } from './governed-metrics.js';
@@ -529,6 +530,8 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
     return body as unknown as Publication;
   }
   return {
+    listMyIdeas: (signal?: AbortSignal) => rawResource('/api/ideas', 'GET', undefined, signal) as Promise<{ ideas: Idea[] }>,
+    submitIdea: (input: { title: string; description: string; surface: string }) => rawResource('/api/ideas', 'POST', input) as Promise<Idea>,
     shareDashboard: async (id: string, userId: string) => {
       const current = await getPublishedDashboard(id);
       if (!Number.isSafeInteger(current.revision) || Number(current.revision) < 1) throw new ApiError('DASHBOARD_RESPONSE_INVALID: Missing access revision.');

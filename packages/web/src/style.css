@@ -2561,3 +2561,20 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
    same tint, so its hover is unchanged; dark chrome resolves the var
    to #1e3358. Background only, so resting geometry is identical and
    there is no animation. */
+
+/* Issue #178: private hosted ideas and the operator review queue. */
+.ideas-page { max-width: 1000px; margin: 0 auto; padding: 24px; }
+.ideas-page h1 { margin-top: 0; }
+.ideas-page .data-card { margin: 16px 0; padding: 20px; }
+.idea-form { display: grid; gap: 12px; }
+.idea-form label, .idea-filters label { display: grid; gap: 4px; }
+.idea-form input, .idea-form textarea, .idea-form select, .idea-filters input, .idea-filters select { box-sizing: border-box; width: 100%; font: inherit; padding: 8px; }
+.idea-form textarea { resize: vertical; }
+.idea-form button { justify-self: start; }
+.idea-description { white-space: pre-wrap; overflow-wrap: anywhere; }
+.idea-list ul { list-style: none; padding: 0; }
+.idea-list li + li { border-top: 1px solid var(--border, #d7dfe7); margin-top: 16px; padding-top: 8px; }
+.idea-list h3, .idea-review h2, .idea-review p, .idea-list a { overflow-wrap: anywhere; }
+.idea-filters { display: flex; align-items: end; flex-wrap: wrap; gap: 12px; margin: 16px 0; }
+.idea-review .idea-form { max-width: 600px; }
+@media (max-width: 600px) { .ideas-page { padding: 16px; } .ideas-page .data-card { padding: 16px; } }

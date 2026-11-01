@@ -24,8 +24,8 @@ export function DataCatalogSkeleton() {
   </div>;
 }
 
-export function DataLanding({ client, initialTab = 'Datasets', onCreate, onCreateSource, onOpen, onEdit, onPrep }: {
-  client?: DataCatalogClient; initialTab?: 'Datasets' | 'Data sources'; onCreate: () => void; onCreateSource: () => void;
+export function DataLanding({ client, initialTab = 'Datasets', onCreate, onCreateSource, onOpen, onEdit, onPrep, onSuggestIdea }: {
+  onSuggestIdea?: () => void; client?: DataCatalogClient; initialTab?: 'Datasets' | 'Data sources'; onCreate: () => void; onCreateSource: () => void;
   onOpen: (dataset: BundleDataSet) => void; onEdit: (dataset: BundleDataSet) => void; onPrep: (source: PrepSourceSummary) => void;
 }) {
   const access = useAccess(), catalog = useDataCatalog(client);
@@ -34,11 +34,12 @@ export function DataLanding({ client, initialTab = 'Datasets', onCreate, onCreat
   const data = catalog.data ?? { datasets: [], sources: [] };
   const rows = filterDatasets(data, search, filter, access.mode === 'hosted');
   const sources = rawSources(data.sources).filter(source => (source.name ?? source.id).toLowerCase().includes(search.trim().toLowerCase()));
+  const suggestion = access.mode === 'hosted' && client && onSuggestIdea ? <button onClick={onSuggestIdea}>Suggest an idea</button> : null;
   return <section className="data-page" aria-labelledby="data-title"><h1 id="data-title">Data</h1>
     <div className="data-card"><div className="data-toolbar"><DataTabs label="Data" tabs={['Datasets', 'Topics', 'Data sources', 'Metrics']} selected={tab} select={next => { setTab(next); setSearch(''); }} />
       <div className="data-split"><button className="data-primary" onClick={onCreate}>Create dataset</button><details className="data-menu"><summary aria-label="More create options"><svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg></summary><div className="data-menu-items"><button onClick={onCreateSource}>Create data source</button></div></details></div></div>
       <section role="tabpanel" aria-label={tab}>
-      {tab === 'Metrics' ? <GovernedMetrics client={client} /> : tab === 'Topics' ? <div className="data-empty"><h2>No topics available</h2><p>Topics need a hosted API with topic support.</p></div> : <>
+      {tab === 'Metrics' ? <GovernedMetrics client={client} /> : tab === 'Topics' ? <div className="data-empty"><h2>No topics available</h2><p>Topics need a hosted API with topic support.</p>{suggestion}</div> : <>
         <div className="data-tools"><label><span className="sr-only">{tab === 'Datasets' ? 'Search datasets by name' : 'Search data sources'}</span><input type="search" placeholder={tab === 'Datasets' ? 'Search datasets by name' : 'Search data sources'} value={search} onChange={event => setSearch(event.target.value)} /></label>
           {tab === 'Datasets' ? <select aria-label="Filter datasets" value={filter} onChange={event => setFilter(event.target.value as DatasetFilter)}><option value="all">All datasets</option><option value="mine" disabled={access.mode !== 'hosted'}>Owned by me</option><option value="cached">Cached datasets</option><option value="direct">Direct query datasets</option><option value="rls">RLS enabled</option><option value="rules">Rules datasets</option></select> : <button onClick={onCreateSource}>Create data source</button>}
           {client && <button className="data-reload" onClick={catalog.reload}>Reload data</button>}</div>
@@ -48,9 +49,10 @@ export function DataLanding({ client, initialTab = 'Datasets', onCreate, onCreat
             <td>{access.mode === 'hosted' ? 'Me' : 'Local workspace'}</td><td><span title="Modification time is not supplied by the dataset API">Not available</span></td>
             <td><DataMenu label={`Actions for ${dataset.name}`}><button onClick={() => onOpen(dataset)}>View dataset</button><button onClick={() => onEdit(dataset)}>Edit dataset</button></DataMenu></td>
           </tr>)}</DataTable>
-          {!rows.length && <div className="data-empty"><span aria-hidden="true"><svg width="36" height="36" viewBox="0 0 24 24" focusable="false"><rect x="4" y="5" width="16" height="14" rx="1" fill="none" stroke="currentColor" strokeWidth="1.5" /><path d="M4 9.5h16M4 14h16" fill="none" stroke="currentColor" strokeWidth="1.5" /></svg></span><h2>{data.datasets.length ? 'No datasets match your filters' : 'No datasets yet'}</h2><p>{data.datasets.length ? 'Try another name or dataset type.' : 'Create a dataset to prepare data for your analyses.'}</p>{!data.datasets.length && <button onClick={onCreate}>Create dataset</button>}</div>}
+          {!rows.length && <div className="data-empty"><span aria-hidden="true"><svg width="36" height="36" viewBox="0 0 24 24" focusable="false"><rect x="4" y="5" width="16" height="14" rx="1" fill="none" stroke="currentColor" strokeWidth="1.5" /><path d="M4 9.5h16M4 14h16" fill="none" stroke="currentColor" strokeWidth="1.5" /></svg></span><h2>{data.datasets.length ? 'No datasets match your filters' : 'No datasets yet'}</h2><p>{data.datasets.length ? 'Try another name or dataset type.' : 'Create a dataset to prepare data for your analyses.'}</p>{!data.datasets.length && <button onClick={onCreate}>Create dataset</button>}{suggestion}</div>}
         </> : <DataTable headings={['Name', 'Type', 'Action']} empty={!sources.length ? search ? 'No data sources match your search.' : 'No data sources yet. Upload a file or configure a data source to get started.' : undefined}>{sources.map(source => <tr key={source.id}><td>{source.name ?? source.id}</td><td>{source.connectorId === 'file' ? 'File' : source.connectorId}</td><td><button disabled={!source.available} onClick={() => onPrep(source)}>Create dataset</button>{!source.available && <span>{source.errorCode ?? 'SOURCE_UNAVAILABLE'}</span>}</td></tr>)}</DataTable>}
       </>}
+      {tab === 'Data sources' && !catalog.loading && !catalog.error && !sources.length && <div className="data-empty">{suggestion}</div>}
       </section>
       {!client && <p className="data-note">Static demo · Dataset storage and uploads need a local or hosted API.</p>}
     </div>
