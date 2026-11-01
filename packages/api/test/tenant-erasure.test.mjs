@@ -278,3 +278,14 @@ test('115 completed operations still purge reintroduced tenant assets and retain
   assert.ok(!after.h1_resources.some(row => row.tenant_id === 'tenant-one'));
   assert.equal(after.h8_audit.filter(row => row.action === 'tenant.deletion-completed').length, 1);
 });
+
+test('178 tenant deletion inventories and erases only that tenant’s private ideas', async t => {
+  const f = await fixture(t);
+  for (const tenant of ['one', 'two']) await f.db.transaction(c => c.query(`INSERT INTO h8_ideas
+    (id,tenant_id,namespace_id,user_id,title,description,surface,product_version,status,created_at,updated_at)
+    VALUES (?,?,?,'admin','Synthetic idea','Private suggestion','ideas','0.0.0','received','2026-11-01','2026-11-01')`, [`idea-${tenant}`, `tenant-${tenant}`, tenant]));
+  const report = await f.maintenance.deleteTenant('erase-one');
+  assert.equal(count(report, 'h8_ideas'), 1);
+  await f.maintenance.deleteTenant('erase-one', 'none', execute);
+  assert.deepEqual((await f.db.transaction(c => c.query('SELECT id FROM h8_ideas'))).map(row => row.id), ['idea-two']);
+});

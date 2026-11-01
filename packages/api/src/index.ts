@@ -148,6 +148,7 @@ export async function createApiServer(options: ApiOptions): Promise<Server> {
       let path = queryOffset === -1 ? url : url.slice(0, queryOffset);
       const query = queryOffset === -1 ? '' : url.slice(queryOffset + 1);
       if (['x-user', 'x-user-id', 'x-principal', 'x-groups', 'x-group-ids', 'x-namespace', 'x-namespace-id', 'x-role', 'x-roles', 'x-capabilities', 'x-tenant', 'x-tenant-id', 'x-subject'].some(k => request.headers[k] !== undefined)) throw new SecurityError(403, 'FORGED_PRINCIPAL', 'Caller-supplied principal headers are not supported');
+      if (/^\/api\/(?:namespaces\/[^/]+\/)?(?:host\/)?ideas(?:\/|$)/.test(path)) throw new MetadataError('IDEAS_HOSTED_ONLY', 409);
       if (!security && request.headers.authorization) throw new SecurityError(503, 'SECURITY_NOT_CONFIGURED', 'Credential verification is not configured');
       if (path.startsWith('/embed/')) {
         if (!embedding) throw new SecurityError(503, 'EMBEDDING_NOT_CONFIGURED', 'Embedding requires configured authentication');

@@ -12,7 +12,7 @@ import { tenantDeletionInventory, assertReferenceErasureStores, purgeTenantRows,
 export const referenceTables = ['h1_tenants', 'h1_namespaces', 'h1_revisions', 'h1_resources', 'h1_links', 'h1_operations', 'h1_outbox', 'h1_migrations',
   'h2_control', 'h2_identities', 'h2_memberships', 'h2_invitations', 'h2_keys', 'h2_sessions', 'h2_attempts', 'h2_onboarding', 'h2_requests',
   'h4_budget_config', 'h5_embedding_config', 'h6_keys', 'h6_sessions', 'h7_jobs', 'h7_occurrences', 'h7_deliveries', 'h7_migrations',
-  'h8_schema', 'h8_usage', 'h8_monthly_usage', 'h8_usage_events', 'h8_audit', 'h8_recovery', 'analytics_events', 'analytics_settings'] as const;
+  'h8_schema', 'h8_usage', 'h8_monthly_usage', 'h8_usage_events', 'h8_audit', 'h8_recovery', 'analytics_events', 'analytics_settings', 'h8_ideas'] as const;
 interface Registry { version: 1; backups: Record<string, string>; deleted: string[] }
 interface Snapshot { version: 1; tables: Record<string, SqlRow[]> }
 const maxBytes = 64 * 1024 * 1024;
@@ -103,7 +103,8 @@ export class ReferenceMaintenance {
     catch { return failure('BACKUP_INVALID'); }
     const sourceTables = Object.keys(snapshot.tables).sort();
     const compatibleTables = [referenceTables, referenceTables.filter(t => t !== 'h8_monthly_usage')]
-      .flatMap(tables => [tables, tables.filter(t => !t.startsWith('analytics_'))]);
+      .flatMap(tables => [tables, tables.filter(t => !t.startsWith('analytics_'))])
+      .flatMap(tables => [tables, tables.filter(t => t !== 'h8_ideas')]);
     if (snapshot.version !== 1 || !compatibleTables.some(tables => JSON.stringify(sourceTables) === JSON.stringify([...tables].sort()))) failure('BACKUP_INVALID');
     if (snapshot.tables.h1_tenants!.some(t => registry.deleted.includes(String(t.tenant_id)) && t.state !== 'deleted')) failure('BACKUP_DELETED_TENANT');
     await this.db.transaction(async c => {

@@ -1,3 +1,4 @@
+import { initializeIdeas, limitIdeas, listIdeas, myIdeas, submitIdea, transitionIdea } from './ideas.js';
 import { analyticsSettingsRoute } from './analytics-settings.js';
 import { accessRequestNotifyTo, accessRequestRate, initializeAccessRequests, limitAccessRequests, listAccessRequests, notifyAccessRequests, storeAccessRequest } from './access-requests.js';
 import { Analytics, analyticsFromEnvironment } from './analytics.js';
@@ -101,7 +102,7 @@ function code(value: unknown): string {
 }
 function idempotency(request: IncomingMessage): string { return identifier(request.headers['idempotency-key']); }
 function boundary(request: IncomingMessage, origin: string): void {
-  for (const header of ['host', 'authorization', 'origin', 'idempotency-key', 'if-match']) {
+  for (const header of ['host', 'authorization', 'origin', 'idempotency-key', 'if-match', 'idea-status', 'idea-tenant']) {
     let count = 0;
     for (let i = 0; i < request.rawHeaders.length; i += 2) if (request.rawHeaders[i]!.toLowerCase() === header) count++;
     if (count > 1) throw new MetadataError('HOSTED_REQUEST_INVALID', 400);
@@ -133,6 +134,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
   });
   if (!options.invocation) await initializeAnalytics(options.membershipDatabase);
   if (!options.invocation) await initializeAccessRequests(options.membershipDatabase);
+  if (!options.invocation) await initializeIdeas(options.membershipDatabase);
   const analytics = options.analytics ?? new Analytics(new AnalyticsStore(options.membershipDatabase), {
     ...analyticsFromEnvironment(options.env), deliveryMode: options.invocation ? 'deferred' : 'inline',
   });
@@ -229,8 +231,19 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
       }
       if (path === '/api/host' || path.startsWith('/api/host/')) {
         const authorization = request.headers.authorization;
+        const browserIdeas = /^\/api\/host\/ideas(?:\/[A-Za-z0-9_-]+)?$/.test(path);
         const browserMembership = /^\/api\/host\/tenants\/[A-Za-z0-9_-]+\/users(?:\/[A-Za-z0-9_-]+)?$/.test(path);
-        if (request.headers.origin !== undefined && !browserMembership || !authorization?.startsWith('Operator ') || !equal(authorization.slice(9), config.operatorKey.toString('base64url'))) throw new MetadataError('OPERATOR_REQUIRED', 403);
+        if (request.headers.origin !== undefined && !browserMembership && !browserIdeas || !authorization?.startsWith('Operator ') || !equal(authorization.slice(9), config.operatorKey.toString('base64url'))) throw new MetadataError('OPERATOR_REQUIRED', 403);
+        if (path === '/api/host/ideas') {
+          method(request, response, ['GET']);
+          send(response, 200, { ideas: await listIdeas(options.membershipDatabase, { status: request.headers['idea-status'], tenantId: request.headers['idea-tenant'] }) }); return;
+        }
+        const idea = /^\/api\/host\/ideas\/([A-Za-z0-9_-]+)$/.exec(path);
+        if (idea) {
+          method(request, response, ['PATCH']);
+          const input = await body(request, ['status', 'declineCategory', 'declineNote', 'shippedReference']);
+          send(response, 200, await transitionIdea(options.membershipDatabase, idea[1]!, { status: input.status, declineCategory: input.declineCategory, declineNote: input.declineNote, shippedReference: input.shippedReference })); return;
+        }
         if (path === '/api/host/access-requests') {
           method(request, response, ['GET']);
           send(response, 200, { requests: await listAccessRequests(options.membershipDatabase) }); return;
@@ -309,7 +322,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
       // SR2/SR3 supply durable admission/artifacts and event claims. Never run
       // the single-node data/job/embedding plane just because Lambda can invoke it.
       const invitationPath = /^\/api\/(?:namespaces\/[^/]+\/)?invitations(?:\/[A-Za-z0-9_-]+)?$/;
-      if (options.invocation && !['/api/session', '/api/auth/switch', '/api/auth/logout', '/api/namespaces', '/api/users', '/api/groups'].includes(path) && !invitationPath.test(path) && !invocation?.allows(path)) throw new MetadataError('SERVERLESS_STORAGE_REQUIRED', 503);
+      if (options.invocation && !['/api/session', '/api/auth/switch', '/api/auth/logout', '/api/namespaces', '/api/users', '/api/groups'].includes(path) && !invitationPath.test(path) && !/^\/api\/(?:namespaces\/[A-Za-z0-9_-]+\/)?ideas$/.test(path) && !invocation?.allows(path)) throw new MetadataError('SERVERLESS_STORAGE_REQUIRED', 503);
       if (await invocation?.embedOperation?.(request, response, path, sessions)) return;
       if (await embedSessionRoute(request, response, path, sessions, embedContent, invocation?.embedResult, invocation?.resultMaxBytes, invocation?.idleReconnect)) return;
       // Every other request, including unknown and legacy routes, must verify first.
@@ -330,6 +343,14 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
         const user = await metadata.get(context, { kind: 'user', id: context.userId });
         if (!hasCapability(user.body.role as Parameters<typeof hasCapability>[0], 'admin')) throw new MetadataError('SECURITY_ADMIN_REQUIRED', 403);
       })) return;
+      if (path === '/api/ideas') {
+        method(request, response, ['GET', 'POST']);
+        if (request.method === 'GET') { send(response, 200, { ideas: await myIdeas(options.membershipDatabase, context) }); return; }
+        await limitIdeas(options.membershipDatabase, context, Date.now());
+        const input = await body(request, ['title', 'description', 'surface']);
+        send(response, 201, await submitIdea(options.membershipDatabase, context, { title: input.title, description: input.description, surface: input.surface })); return;
+      }
+      if (path.startsWith('/api/ideas/')) throw new MetadataError('IDEA_NOT_FOUND', 404);
       if (path === '/api/session') {
         method(request, response, ['GET']);
         const user = await metadata.get(context, { kind: 'user', id: context.userId });

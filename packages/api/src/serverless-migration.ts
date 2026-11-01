@@ -1,3 +1,4 @@
+import { initializeIdeas } from './ideas.js';
 import { initializeAnalytics } from './analytics-store.js';
 import { MetadataError, type Database, type SqlConnection } from './metadata-db.js';
 import { initializeAuth } from './auth-schema.js';
@@ -25,7 +26,7 @@ const durableTables = [...coordinationTables, ...manifestTables, ...dispatchTabl
 // h8_audit_schema rides along for ownership/backup/restore inventory, but stays out of
 // baseTables on purpose: the existing-database foreign check must accept deployed
 // databases that predate the marker (the owner migration adds it).
-const additiveTables = ['h8_monthly_usage', 'h2_login_selections', 'h8_ai_warnings', 'analytics_events', 'analytics_settings', 'h8_access_requests'];
+const additiveTables = ['h8_monthly_usage', 'h2_login_selections', 'h8_ai_warnings', 'analytics_events', 'analytics_settings', 'h8_access_requests', 'h8_ideas'];
 export const serverlessTables = [...baseTables, ...additiveTables, 'h8_audit_schema', ...durableTables];
 export async function grantServerlessRuntime(c: SqlConnection, env: NodeJS.ProcessEnv): Promise<void> {
   const schema = String((await c.query('SELECT current_schema() AS schema'))[0]?.schema);
@@ -99,6 +100,7 @@ export async function migrateServerless(database: Database, env: NodeJS.ProcessE
     // baseTables so the foreign-database check accepts pre-upgrade deployments.
     await initializeUsage(nested); await initializeAnalytics(nested);
     await initializeAccessRequests(nested);
+    await initializeIdeas(nested);
     if (dialect === 'postgres') await grantServerlessRuntime(c, env);
     await appendOperatorAudit(c, { action: 'serverless.migrated' });
   });

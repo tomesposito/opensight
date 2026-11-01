@@ -74,7 +74,7 @@ if (!/^\/embed\/sessions\/[A-Za-z0-9_-]+$/.test(unscoped)
 && internal !== '/api/access-requests'
 && !serverlessV1Methods(unscoped)
 && !/^\/api\/invitations(?:\/[A-Za-z0-9_-]+)?$/.test(unscoped)
-&& !/^\/api\/(?:startup|session|namespaces|users|groups|connectors|sources|prep-sources|uploads|prep-datasets|automation-status|job-recipients|jobs)$/.test(unscoped)
+&& !/^\/api\/(?:startup|session|ideas|namespaces|users|groups|connectors|sources|prep-sources|uploads|prep-datasets|automation-status|job-recipients|jobs)$/.test(unscoped)
 && !/^\/api\/auth\/(?:enroll|accept|login(?:\/select)?|switch|logout)$/.test(unscoped)
 && !/^\/api\/sources\/[A-Za-z0-9_-]+(?:\/(?:bind|rotate|preview|rows|output|query|refresh|policy))?$/.test(unscoped)
 && !/^\/api\/(?:uploads\/[A-Za-z0-9_-]+|ai\/sources(?:\/[A-Za-z0-9_-]+\/schema)?|prep-datasets\/import)$/.test(unscoped)
