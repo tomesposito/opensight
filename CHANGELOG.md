@@ -122,6 +122,10 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
+- Bound opt-in live-query result caches by total and per-result serialized bytes;
+  oversized SQL results still return normally, and insertion purges expired
+  entries to release their retained bytes (#173).
+
 - Include the marketing site's Apple touch icon in the attested release archive so home-screen bookmarks can load the declared image (#176).
 
 - Hosted governed-metric queries and vocabulary lookups read only their bound

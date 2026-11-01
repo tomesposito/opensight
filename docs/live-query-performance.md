@@ -44,10 +44,33 @@ Caching is off by default. Both `executeLocal` and `executePostgres` accept
 positive safe-integer TTL in milliseconds. No default TTL is invented. Select
 whether and how long to cache each dataset in the calling code.
 
-`LiveResultCache({ maxEntries, now })` defaults to 100 entries; `maxEntries` must be
-a positive safe integer and `now` can be an injected millisecond clock. It evicts
-the oldest stored entry when full, drops expired entries on access, copies rows
-on storage/retrieval, and exposes cumulative `{ hits, misses, stores }` counters.
+`LiveResultCache({ maxEntries, maxBytes, maxEntryBytes, now })` defaults to 100
+entries, 32 MiB total retained bytes (`32 * 1024 * 1024`), and 8 MiB per entry
+(`8 * 1024 * 1024`). All three limits must be positive safe integers, and
+`maxEntryBytes` must be no greater than `maxBytes`; invalid configuration raises
+`INVALID_INPUT`. When lowering `maxBytes` below 8 MiB, also supply a smaller
+`maxEntryBytes`. `now` can be an injected millisecond clock.
+
+The accounting unit is the UTF-8 byte length of `JSON.stringify(rows)`, measured
+on the caller's SQL rows before copying. It is a deterministic serialized-size
+estimate, not a measurement of JavaScript heap usage or transient query memory.
+A result exceeding either byte budget bypasses caching without cloning or
+incrementing `stores`; the executor still returns the query result with live
+(or aggregate) provenance. Serialization failures or nonfinite/unsafe size
+estimates also bypass caching. Invalid TTLs still raise `INVALID_INPUT`.
+
+Insertion purges **all** expired entries, then removes any previous value for the
+same key, including when the replacement bypasses caching. It evicts the oldest
+stored entries until both the total-byte and entry-count limits fit, then copies
+and stores the rows. Reads do not change eviction order. Expiry on access and
+prefix/full invalidation release the removed entries' bytes. Retrieval also
+copies rows to isolate them from caller mutation.
+
+`stats()` returns cumulative `{ hits, misses, stores }` counters plus current
+`entries` and `retainedBytes`. It purges expired entries before reporting the live
+totals, without changing the cumulative counters. `stores` counts only results
+actually stored, including successful replacements.
+
 Keys are JSON arrays of dataset ARN, visual ID, dialect, SQL, and parameters.
 Use a separate cache instance for independent source environments with overlapping
 dataset ARNs; connection strings and local paths are intentionally not keys.
@@ -61,7 +84,9 @@ leave an old entry usable. Refresh does not populate the result cache.
 dataset (including Postgres); `cache.invalidate()` clears all entries.
 The cache stores SQL result rows. Shared post-processing runs against the fresh
 plan on every hit, so changing a table calculation cannot reuse its old output
-when the underlying SQL is unchanged.
+when the underlying SQL is unchanged. Byte budgets therefore apply to the SQL
+rows even when post-processing reduces them to a much smaller displayed result;
+an oversized SQL result is executed live again on the next request.
 
 ## Provenance
 
