@@ -12,12 +12,21 @@ export async function initializeAccessRequests(db: Database): Promise<void> {
     await c.query(`CREATE TABLE IF NOT EXISTS h8_access_requests (
       id TEXT PRIMARY KEY, name TEXT NOT NULL, email TEXT NOT NULL, organization TEXT, note TEXT,
       created_at TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', notified_at TEXT)`);
-    // Additive upgrade for tables created before notifications (issue #177):
-    // same column-check pattern as ensureTenantNaming in metadata-schema.ts.
-    const columns = await c.query(db.dialect === 'postgres'
-      ? "SELECT column_name AS name FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'h8_access_requests'"
-      : 'PRAGMA table_info(h8_access_requests)');
-    if (!columns.some(row => row.name === 'notified_at')) await c.query('ALTER TABLE h8_access_requests ADD COLUMN notified_at TEXT');
+    // Additive upgrade for tables created before notifications (issue #177).
+    // Some callers pass a transaction-scoped Database whose dialect is not
+    // set, so probe for the column under a savepoint instead of branching on
+    // dialect (PRAGMA is SQLite-only; the savepoint pattern is the one the
+    // AI-warning code in hosted-usage.ts already uses on both dialects).
+    await c.query('SAVEPOINT opensight_notified_at_check');
+    let hasNotifiedAt = true;
+    try {
+      await c.query('SELECT notified_at FROM h8_access_requests LIMIT 0');
+    } catch {
+      hasNotifiedAt = false;
+      await c.query('ROLLBACK TO SAVEPOINT opensight_notified_at_check');
+    }
+    await c.query('RELEASE SAVEPOINT opensight_notified_at_check');
+    if (!hasNotifiedAt) await c.query('ALTER TABLE h8_access_requests ADD COLUMN notified_at TEXT');
   });
 }
 function invalid(): never { throw new MetadataError('ACCESS_REQUEST_INVALID', 400); }
