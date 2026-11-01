@@ -365,6 +365,28 @@ test('cached SQL rows use fresh shared post-processing when calculations change'
   assert.deepEqual(second.rows, [{ region: 'East', calculated: 1800 }, { region: 'West', calculated: 1800 }]);
 });
 
+test('oversized SQL rows bypass caching while their small post-processed result stays live', async t => {
+  const r = request(), file = read('sales.csv'), maxEntryBytes = 64;
+  calculation(r, 'sumOver({revenue}, [], PRE_FILTER)');
+  wells(r).Values = [measure('calculated', 'MIN')];
+  const cache = new LiveResultCache({ maxBytes: 256, maxEntryBytes });
+  const store = t.mock.method(cache, 'set');
+  const options = { ...temporaryCsv(t, file), liveCache: { cache, ttlMs: 1000 } };
+  for (const [i, total] of [900, 910].entries()) {
+    const result = await executeLocal(r, options);
+    assert.equal(result.plan.postProcess, true);
+    assert.deepEqual(result.rows, [{ calculated: total }]);
+    assert.ok(rowBytes(result.rows) < maxEntryBytes, 'displayed output alone would fit the cache');
+    assert.deepEqual(result.provenance, { source: 'live' });
+    assert.equal(store.mock.callCount(), i + 1);
+    const sqlRows = store.mock.calls[i].arguments[1];
+    assert.equal(sqlRows.length, 8 + i);
+    assert.ok(rowBytes(sqlRows) > maxEntryBytes, 'the budget applies to SQL rows before post-processing');
+    assert.deepEqual(cache.stats(), { hits: 0, misses: i + 1, stores: 0, entries: 0, retainedBytes: 0 });
+    if (i === 0) writeFileSync(join(options.dataRoot, 'sales.csv'), file + '9,2025-04-01,East,Hardware,10,2\n');
+  }
+});
+
 test('cache keys separate parameter values and datasets; expiry and failed refresh cannot serve stale rows', async t => {
   let now = 1000;
   const cache = new LiveResultCache({ now: () => now });
