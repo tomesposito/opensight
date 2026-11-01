@@ -1,7 +1,7 @@
 /** Synthetic/provisional local query slice. No AWS, archive or source-compatibility claim. */
 export { planVisual } from './planner.js';
 export { LiveResultCache, liveDatasetCachePrefix } from './live-performance.js';
-export type { AggregateTableDeclaration, LiveCachePolicy, CachedLiveResult } from './live-performance.js';
+export type { AggregateTableDeclaration, LiveCachePolicy, CachedLiveResult, LiveCacheFillToken } from './live-performance.js';
 export { executeLocal, refreshLocal } from './executor.js';
 export { executePostgres } from './postgres-executor.js';
 export { QueryEngineError } from './validation.js';

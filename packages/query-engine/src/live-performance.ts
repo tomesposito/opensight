@@ -79,12 +79,26 @@ export interface CachedLiveResult {
 }
 
 /**
+ * Opaque token for one in-flight cache fill, captured by `beginFill` before
+ * execution starts. A fill may store its result only while the token stays
+ * current: no matching invalidation has landed since capture and no newer
+ * fill for the same key has begun. Tokens are caller-passed values, never
+ * accepted from imported assets.
+ */
+export interface LiveCacheFillToken {
+  readonly key: string;
+  readonly globalGeneration: number;
+  readonly prefixGenerations: ReadonlyMap<string, number>;
+  readonly sequence: number;
+}
+
+/**
  * Bounded FIFO result cache. Retained size is the UTF-8 byte length of
  * JSON.stringify(rows), not JS heap usage. Stored and returned rows are isolated
  * from caller mutation.
  */
 export class LiveResultCache {
-  private readonly entries = new Map<string, CachedLiveResult & { expiresAt: number; bytes: number }>();
+  private readonly entries = new Map<string, CachedLiveResult & { expiresAt: number; bytes: number; fillSequence?: number }>();
   private readonly now: () => number;
   private readonly maxEntries: number;
   private readonly maxBytes: number;
@@ -93,6 +107,10 @@ export class LiveResultCache {
   private misses = 0;
   private stores = 0;
   private retainedBytes = 0;
+  private globalGeneration = 0;
+  private readonly prefixGenerations = new Map<string, number>();
+  private fillSequenceCounter = 0;
+  private readonly latestFillByKey = new Map<string, number>();
 
   constructor(options: { now?: () => number; maxEntries?: number; maxBytes?: number; maxEntryBytes?: number } = {}) {
     const opts = object(options, '$.cache');
@@ -128,8 +146,39 @@ export class LiveResultCache {
     return { rows: entry.rows.map(row => ({ ...row })), cachedAt: entry.cachedAt };
   }
 
-  set(key: string, rows: readonly ResultRow[], ttlMs: number): void {
+  /**
+   * Capture a fill token for `key` before execution starts. Beginning a fill
+   * supersedes every older in-flight fill for the same key: those fills may
+   * still return their rows to their own caller, but they can no longer
+   * store them or overwrite this fill's result.
+   */
+  beginFill(key: string): LiveCacheFillToken {
+    const sequence = ++this.fillSequenceCounter;
+    this.latestFillByKey.set(key, sequence);
+    return { key, globalGeneration: this.globalGeneration, prefixGenerations: new Map(this.prefixGenerations), sequence };
+  }
+
+  private fillIsCurrent(fill: LiveCacheFillToken): boolean {
+    if (fill.globalGeneration !== this.globalGeneration) return false;
+    for (const [prefix, generation] of this.prefixGenerations) {
+      if (fill.key.startsWith(prefix) && generation !== (fill.prefixGenerations.get(prefix) ?? 0)) return false;
+    }
+    if (this.latestFillByKey.get(fill.key) !== fill.sequence) return false;
+    const existing = this.entries.get(fill.key);
+    if (existing?.fillSequence !== undefined && existing.fillSequence > fill.sequence) return false;
+    return true;
+  }
+
+  set(key: string, rows: readonly ResultRow[], ttlMs: number, fill?: LiveCacheFillToken): void {
     positiveInteger(ttlMs, '$.liveCache.ttlMs');
+    if (fill !== undefined) {
+      // A stale fill stores nothing and must not remove a newer entry.
+      // Currency is checked before releasing the latest-fill marker; this
+      // method is synchronous, so no other fill can begin in between.
+      const current = fill.key === key && this.fillIsCurrent(fill);
+      if (this.latestFillByKey.get(key) === fill.sequence) this.latestFillByKey.delete(key);
+      if (!current) return;
+    }
     const now = this.now();
     this.purgeExpired(now);
     // A replacement must not leave stale rows available if the new result bypasses caching.
@@ -150,17 +199,25 @@ export class LiveResultCache {
     while (this.retainedBytes > this.maxBytes - bytes || this.entries.size >= this.maxEntries) {
       this.remove(this.entries.keys().next().value!);
     }
-    const entry = { rows: rows.map(row => ({ ...row })), cachedAt: new Date(now).toISOString(), expiresAt: now + ttlMs, bytes };
+    const entry = { rows: rows.map(row => ({ ...row })), cachedAt: new Date(now).toISOString(), expiresAt: now + ttlMs, bytes,
+      ...(fill === undefined ? {} : { fillSequence: fill.sequence }) };
     this.entries.set(key, entry);
     this.retainedBytes += bytes;
     this.stores++;
   }
 
   invalidate(prefix?: string): void {
+    // Invalidation is a freshness boundary for in-flight fills too: bump the
+    // generation so a fill captured before this call can no longer store,
+    // even though its key is not (or no longer) present in the entries map.
     if (prefix === undefined) {
+      this.globalGeneration++;
       this.entries.clear();
       this.retainedBytes = 0;
-    } else for (const key of this.entries.keys()) if (key.startsWith(prefix)) this.remove(key);
+    } else {
+      this.prefixGenerations.set(prefix, (this.prefixGenerations.get(prefix) ?? 0) + 1);
+      for (const key of this.entries.keys()) if (key.startsWith(prefix)) this.remove(key);
+    }
   }
 
   stats(): { hits: number; misses: number; stores: number; entries: number; retainedBytes: number } {
