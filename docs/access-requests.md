@@ -7,10 +7,24 @@ sending, resets and shows the approved confirmation only on HTTP 201, and retain
 the inputs with an error message on any other response or network failure.
 
 Per [D-79](idd/D-79-trial-signup.md), this is a request-access/waitlist flow.
-Capturing a request sends **no email** and creates no tenant, identity, invitation,
-or trial. The operator reviews requests and provisions workspaces manually using
-the existing provisioning and invitation process. Marking requests provisioned
+Capturing a request creates no tenant, identity, invitation, or trial. The
+operator reviews requests and provisions workspaces manually using the
+existing provisioning and invitation process. Marking requests provisioned
 is future work; captured requests remain `pending`.
+
+## Operator notification (#177)
+
+When `OPENSIGHT_ACCESS_REQUEST_NOTIFY_TO` names a single email address and the
+deployment's SMTP transport is configured, storing a request also emails that
+address the requester's name, email, organization, and note. The response to
+the visitor never waits on or fails because of mail: the request is durable
+first, and notification is best-effort afterwards. Each row carries
+`notified_at`; a failed or skipped send leaves it null (visible in the
+operator list), and the next submission retries any unnotified rows oldest
+first, stopping at the first send failure. With the variable unset or SMTP
+unconfigured, capture stays pull-only — the operator list is the backstop.
+A malformed `OPENSIGHT_ACCESS_REQUEST_NOTIFY_TO` fails startup, like the
+rate-limit variable.
 
 ## Endpoint contract
 
@@ -30,8 +44,9 @@ is future work; captured requests remain `pending`.
 - `GET /api/host/access-requests` requires the existing `Operator` authorization
   credential and rejects browser origins. Missing or invalid operator credentials
   return `403 OPERATOR_REQUIRED`. Success returns `200 { "requests": [...] }`;
-  each record has `id`, `name`, `email`, `organization`, `note`, `createdAt`, and
-  `status`. Records are ordered newest first. The existing public serverless
+  each record has `id`, `name`, `email`, `organization`, `note`, `createdAt`,
+  `status`, and `notifiedAt` (null until the operator notification lands).
+  Records are ordered newest first. The existing public serverless
   boundary continues to block all `/api/host` routes; review uses the private
   operator plane.
 - Only the public capture route allows browser responses to
@@ -63,6 +78,7 @@ recognizes the exact marketing form URL and carries its POST and preflight to
 the hosted handler. No deployment or AWS calls are part of this build.
 
 The table stores the submitted personal information, a random UUID, an ISO UTC
-creation timestamp, and `pending` status. Serverless backups include the table;
+creation timestamp, `pending` status, and a nullable `notified_at` timestamp
+(added additively by the initializer for tables created before #177). Serverless backups include the table;
 restoring older backups leaves it empty. Automatic retention/deletion and a
 provisioned-status workflow are not implemented in this slice.

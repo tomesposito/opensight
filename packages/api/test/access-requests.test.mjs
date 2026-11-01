@@ -7,13 +7,14 @@ import { createHostedApiServer } from '../dist/hosted-server.js';
 import { createRuntime } from '../dist/runtime.js';
 import { adaptGatewayRequest, authorizeIngress, validateViewerRequest } from '../dist/runtime-ingress.js';
 import { runtimeEnv, event, context, payload } from './runtime-helpers.mjs';
-import { accessRequestRate, initializeAccessRequests, limitAccessRequests, listAccessRequests, storeAccessRequest } from '../dist/access-requests.js';
+import { accessRequestNotifyTo, accessRequestRate, initializeAccessRequests, limitAccessRequests, listAccessRequests, notifyAccessRequests, storeAccessRequest } from '../dist/access-requests.js';
 
 const path = '/api/access-requests';
 const valid = { name: ' Synthetic Applicant ', email: ' Applicant@EXAMPLE.COM ', organization: ' Example Organization ', note: ' Example use case ' };
-async function setup(t, rate) {
-  const f = await h8Fixture(t), mail = new StubMailTransport();
+async function setup(t, rate, { transport, notifyTo } = {}) {
+  const f = await h8Fixture(t), mail = transport ?? new StubMailTransport();
   if (rate !== undefined) f.env.OPENSIGHT_ACCESS_REQUEST_RATE = String(rate);
+  if (notifyTo !== undefined) f.env.OPENSIGHT_ACCESS_REQUEST_NOTIFY_TO = notifyTo;
   const serving = await serveH8(t, f, { mailTransport: mail });
   const request = (url = path, { method = 'POST', body = valid, raw, headers = {}, localAddress = '127.0.0.1', chunked = false } = {}) => new Promise((resolve, reject) => {
     const bytes = raw ?? (body === null ? undefined : JSON.stringify(body));
@@ -44,7 +45,7 @@ test('public submission stores normalized pending PII; only the operator list re
   assert.match(stored.id, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
   assert.equal(new Date(stored.createdAt).toISOString(), stored.createdAt);
   assert.deepEqual(stored, { id: stored.id, createdAt: stored.createdAt, name: 'Synthetic Applicant', email: 'applicant@example.com',
-    organization: 'Example Organization', note: 'Example use case', status: 'pending' });
+    organization: 'Example Organization', note: 'Example use case', status: 'pending', notifiedAt: null });
   assert.deepEqual(f.mail.messages, []);
 });
 
@@ -190,4 +191,66 @@ test('the exact marketing URL crosses edge and gateway boundaries, with invocati
     const bad = event(uri, 'POST', valid); bad.headers.origin = e.headers.origin;
     assert.equal(authorizeIngress(bad, env).isAuthorized, false);
   }
+});
+
+test('notify-to parsing: unset is null, valid address lowercases, garbage is a config error', () => {
+  assert.equal(accessRequestNotifyTo({}), null);
+  assert.equal(accessRequestNotifyTo({ OPENSIGHT_ACCESS_REQUEST_NOTIFY_TO: '  ' }), null);
+  assert.equal(accessRequestNotifyTo({ OPENSIGHT_ACCESS_REQUEST_NOTIFY_TO: ' Ops@Example.COM ' }), 'ops@example.com');
+  assert.throws(() => accessRequestNotifyTo({ OPENSIGHT_ACCESS_REQUEST_NOTIFY_TO: 'not-an-email' }), /must be a single email address/);
+  assert.throws(() => accessRequestNotifyTo({ OPENSIGHT_ACCESS_REQUEST_NOTIFY_TO: 'a@example.com, b@example.com' }), /must be a single email address/);
+});
+
+test('notification is emailed after a stored submission and stamps notifiedAt', async t => {
+  const f = await setup(t, undefined, { notifyTo: 'ops@example.com' });
+  const response = await f.request();
+  assert.equal(response.status, 201);
+  assert.equal(f.mail.messages.length, 1);
+  const [message] = f.mail.messages;
+  assert.deepEqual(message.to, ['ops@example.com']);
+  assert.match(message.subject, /Synthetic Applicant/);
+  assert.match(message.html, /applicant@example\.com/);
+  assert.match(message.html, /Example Organization/);
+  assert.match(message.dedupeKey, /^access-request:/);
+  const list = await f.request('/api/host/access-requests', { method: 'GET', body: null, headers: f.operator });
+  assert.equal(new Date(list.body.requests[0].notifiedAt).toISOString(), list.body.requests[0].notifiedAt);
+});
+
+test('a failing mail transport never fails the submission; the request stays unnotified', async t => {
+  const failing = { configured: true, async send() { throw new Error('smtp down'); } };
+  const f = await setup(t, undefined, { transport: failing, notifyTo: 'ops@example.com' });
+  const response = await f.request();
+  assert.equal(response.status, 201); assert.deepEqual(response.body, { received: true });
+  const [stored] = await listAccessRequests(f.db);
+  assert.equal(stored.notifiedAt, null);
+});
+
+test('pending notifications retry on a later call, oldest first, and stop at the first failure', async t => {
+  const f = await h8Fixture(t);
+  await initializeAccessRequests(f.db);
+  const first = await storeAccessRequest(f.db, { name: 'First', email: 'first@example.com', now: Date.UTC(2026, 9, 30) });
+  const second = await storeAccessRequest(f.db, { name: 'Second', email: 'second@example.com', now: Date.UTC(2026, 9, 31) });
+  const down = { configured: true, async send() { throw new Error('smtp down'); } };
+  assert.equal(await notifyAccessRequests(f.db, down, 'ops@example.com', Date.now()), 0);
+  assert.deepEqual((await listAccessRequests(f.db)).map(r => r.notifiedAt), [null, null]);
+  const mail = new StubMailTransport();
+  assert.equal(await notifyAccessRequests(f.db, mail, 'ops@example.com', Date.now()), 2);
+  assert.equal(mail.messages[0].dedupeKey, `access-request:${first.id}`);
+  assert.equal(mail.messages[1].dedupeKey, `access-request:${second.id}`);
+  assert.ok((await listAccessRequests(f.db)).every(r => r.notifiedAt !== null));
+  assert.equal(await notifyAccessRequests(f.db, mail, 'ops@example.com', Date.now()), 0);
+  assert.equal(await notifyAccessRequests(f.db, mail, null, Date.now()), 0);
+  assert.equal(await notifyAccessRequests(f.db, { configured: false, async send() { throw new Error('must not be called'); } }, 'ops@example.com', Date.now()), 0);
+});
+
+test('initializer adds notified_at to a pre-notification table without losing rows', async t => {
+  const f = await h8Fixture(t);
+  await f.db.transaction(c => c.query(`CREATE TABLE h8_access_requests (
+    id TEXT PRIMARY KEY, name TEXT NOT NULL, email TEXT NOT NULL, organization TEXT, note TEXT,
+    created_at TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending')`));
+  await f.db.transaction(c => c.query(`INSERT INTO h8_access_requests (id, name, email, organization, note, created_at, status)
+    VALUES ('legacy-1', 'Legacy', 'legacy@example.com', NULL, NULL, '2026-10-30T00:00:00.000Z', 'pending')`));
+  await initializeAccessRequests(f.db); await initializeAccessRequests(f.db);
+  const [row] = await listAccessRequests(f.db);
+  assert.equal(row.id, 'legacy-1'); assert.equal(row.notifiedAt, null);
 });

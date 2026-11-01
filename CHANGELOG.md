@@ -15,6 +15,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 - Request hosted access from the marketing site, with validated capture and a private operator review list for manually provisioned workspaces (#176).
 
+- Hosted access requests can now email the operator when a request lands: set `OPENSIGHT_ACCESS_REQUEST_NOTIFY_TO` and configure SMTP, and each stored request notifies that address. A mail failure never blocks a submission, and unnotified requests stay visible in the operator list and retry on later submissions (#177).
+
 - The GitHub README now links to [getopensight.org](https://getopensight.org), so anyone who finds the repo can reach the marketing site and the hosted option.
 
 - Marketing site: the favicon URL is versioned and an apple-touch-icon is declared, so browsers pick up the current brand mark instead of a cached one.
