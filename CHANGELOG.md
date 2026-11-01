@@ -122,6 +122,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
+- Ask O grounding now names the governed-metric version that actually executed: the executed versions arrive with the query response and replace the interpretation-time label, which stays visible separately as "Interpreted against" when a publication landed in between (#171).
+
 - Hosted workspace sessions stay signed in when governed metrics or preparation templates are saved or published, including unpublished drafts; stale content work still fails closed (#170).
 
 - Hosted governed-metric listing now honors the exact dataset the browser selected: the serverless ingress validates and forwards the `Metric-Dataset` reference instead of dropping it, so legacy datasets and other owners' prepared datasets no longer fall back to the caller's own prepared dataset; malformed references fail closed at ingress (#169).
