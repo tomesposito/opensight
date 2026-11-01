@@ -111,3 +111,35 @@ test('SR4a separate startup route cannot authorize a different method/path or ov
   }
   for (const mode of ['', '$default', 'anything']) assert.equal(authorizeIngress(startup, { ...env, OPENSIGHT_INGRESS_STARTUP_ROUTE: mode }).isAuthorized, false);
 });
+
+test('Issue #169 gateway adaptation forwards the exact Metric-Dataset reference', () => {
+  const legacy = JSON.stringify({ kind: 'dataset', id: 'sales' });
+  const peerPrepared = JSON.stringify({ kind: 'prepared-dataset', id: 'sales', ownerId: 'peer' });
+  const ownPrepared = JSON.stringify({ kind: 'prepared-dataset', id: 'sales', ownerId: 'alice' });
+  // Same id, three different references: each must survive adaptation byte-exact so the
+  // metrics route addresses the dataset the browser selected, not the caller's fallback.
+  for (const ref of [legacy, peerPrepared, ownPrepared]) {
+    const e = event('/api/api/v1/datasets/sales/metrics', 'GET'); e.headers['metric-dataset'] = ref;
+    assert.equal(authorizeIngress(e, runtimeEnv()).isAuthorized, true);
+    const adapted = adaptGatewayRequest(e, runtimeEnv());
+    assert.equal(adapted.path, '/api/v1/datasets/sales/metrics');
+    assert.equal(adapted.headers['metric-dataset'], ref);
+  }
+  const bare = adaptGatewayRequest(event('/api/api/v1/datasets/sales/metrics', 'GET'), runtimeEnv());
+  assert.equal(bare.headers['metric-dataset'], undefined);
+});
+
+test('Issue #169 ingress rejects malformed Metric-Dataset references before SQL', () => {
+  const bad = ['not json', '[]', '"dataset"', '{"kind":"source","id":"sales"}', '{"kind":"dataset"}',
+    '{"kind":"dataset","id":"sales","ownerId":"alice"}', '{"kind":"prepared-dataset","id":"sales"}',
+    '{"kind":"dataset","id":"sales","tenantId":"other"}', '{"kind":"dataset","id":"bad id!"}',
+    '{"kind":"prepared-dataset","id":"sales","ownerId":"bad owner"}',
+    '{"kind":"dataset","id":"a"},{"kind":"dataset","id":"b"}',
+    JSON.stringify({ kind: 'dataset', id: 'x'.repeat(513) }),
+    JSON.stringify({ kind: 'dataset', id: 'x'.repeat(2100) })];
+  for (const value of bad) {
+    const e = event('/api/api/v1/datasets/sales/metrics', 'GET'); e.headers['metric-dataset'] = value;
+    assert.equal(authorizeIngress(e, runtimeEnv()).isAuthorized, false, value.slice(0, 60));
+    assert.throws(() => adaptGatewayRequest(e, runtimeEnv()), undefined, value.slice(0, 60));
+  }
+});

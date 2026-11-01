@@ -6,7 +6,7 @@ const outputPaths = ['./edge-viewer.js', './modules/edge/edge-viewer.js'].map(pa
 /** Compile the actual SR1 viewer/path checks; do not maintain a second route list. */
 export async function edgeSource() {
   const source = await readFile(sourcePath, 'utf8'), file = ts.createSourceFile('ingress.ts', source, ts.ScriptTarget.Latest, true);
-  const functions = ['invalid', 'denied', 'publicPath', 'headers', 'validateViewerRequest'];
+  const functions = ['invalid', 'denied', 'publicPath', 'validMetricDataset', 'headers', 'validateViewerRequest'];
   const variables = ['record', 'singleton', 'forgedPrincipalHeaders'];
   const selected = [];
   for (const statement of file.statements) {
