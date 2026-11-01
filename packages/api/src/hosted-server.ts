@@ -133,7 +133,9 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
   });
   if (!options.invocation) await initializeAnalytics(options.membershipDatabase);
   if (!options.invocation) await initializeAccessRequests(options.membershipDatabase);
-  const analytics = options.analytics ?? new Analytics(new AnalyticsStore(options.membershipDatabase), analyticsFromEnvironment(options.env));
+  const analytics = options.analytics ?? new Analytics(new AnalyticsStore(options.membershipDatabase), {
+    ...analyticsFromEnvironment(options.env), deliveryMode: options.invocation ? 'deferred' : 'inline',
+  });
   if (options.builtinAuth) options.builtinAuth.analytics = analytics;
   const metadata = new TenantMetadata(options.tenantDatabase, options.membershipDatabase, usage);
   const policy = embeddingPolicy(options.env ?? process.env, config.origin);
