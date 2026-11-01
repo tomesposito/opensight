@@ -70,7 +70,7 @@ test('H2 tenant switching verifies preprovisioned membership and revokes the old
   await assert.rejects(f.auth.verify(switched.token), { code: 'AUTHENTICATION_FAILED' });
   assert.equal((await f.db.transaction(c => c.query('SELECT * FROM h2_identities'))).length, 1);
 });
-test('H2 suspension/resume, metadata revisions, membership removal and signing-key rotation invalidate existing sessions', async t => {
+test('H2 configuration changes preserve sessions; suspension/resume, security revisions, membership removal and signing-key rotation invalidate them', async t => {
   const f = await authFixture(t); let session = await f.login();
   let state = await f.provisioning.operator.tenant(f.tenant.tenantId);
   await f.provisioning.operator.transition('suspend', state.tenantId, 'suspend', state.version);
@@ -78,7 +78,11 @@ test('H2 suspension/resume, metadata revisions, membership removal and signing-k
   state = await f.provisioning.operator.tenant(state.tenantId);
   await f.provisioning.operator.transition('resume', state.tenantId, 'resume', state.version);
   await assert.rejects(f.auth.verify(session.token), { code: 'AUTHENTICATION_FAILED' });
-  for (const field of ['authorization', 'policy', 'configuration']) {
+  session = await f.login();
+  const beforeConfiguration = await f.auth.verify(session.token);
+  await f.db.transaction(c => c.query('UPDATE h1_revisions SET configuration = configuration + 1 WHERE tenant_id = ?', [state.tenantId]));
+  assert.deepEqual(await f.auth.verify(session.token), beforeConfiguration);
+  for (const field of ['authorization', 'policy']) {
     session = await f.login();
     await f.db.transaction(c => c.query(`UPDATE h1_revisions SET "${field}" = "${field}" + 1 WHERE tenant_id = ?`, [state.tenantId]));
     await assert.rejects(f.auth.verify(session.token), { code: 'AUTHENTICATION_FAILED' });

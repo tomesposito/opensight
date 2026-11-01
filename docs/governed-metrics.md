@@ -102,9 +102,11 @@ aggregations are `SUM`, `AVG`, `COUNT`, `MIN`, `MAX`, `DISTINCT_COUNT`. Format i
 Metrics use existing workspace asset transactions, durable local definition or
 security storage, and hosted metadata storage. Existing SQLite and Postgres asset
 kind constraints upgrade during metadata initialization. Hosted metric writes
-advance the configuration revision and emit the existing `assets.changed` event,
-using the same session/revision rules as other configuration edits. No new
-configuration variables, dependencies or external services are required.
+advance the configuration revision and emit the existing `assets.changed` event.
+Draft saves and publication preserve existing H2 workspace sessions (#170), while
+content-freshness checks still reject stale in-flight work. H6 embed grants remain
+bound to all captured revisions. No new configuration variables, dependencies or
+external services are required.
 
 The static demo has no metric store and displays an explicit API requirement.
 It does not ship staged definitions. Metric authoring requires a local or hosted

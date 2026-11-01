@@ -295,8 +295,10 @@ export class HostedAuth {
     const membership = await this.membership(c, String(session.subject), String(session.tenant_id));
     const admitted = await c.query('UPDATE h2_sessions SET revoked = revoked WHERE session_id = ? AND revoked = 0 RETURNING session_id', [String(session.session_id)]);
     if (!admitted.length) denied();
+    // Configuration revisions fence content freshness independently of H2 credentials.
+    // Keep the issue-time value stored, but ordinary content edits must not end sessions.
     if (membership.namespace_id !== session.namespace_id || membership.user_id !== session.user_id || Number(membership.version) !== Number(session.membership_version)
-      || Number(membership.authorization) !== Number(session.authorization_revision) || Number(membership.policy) !== Number(session.policy_revision) || Number(membership.configuration) !== Number(session.configuration_revision)) denied();
+      || Number(membership.authorization) !== Number(session.authorization_revision) || Number(membership.policy) !== Number(session.policy_revision)) denied();
     const identity = (await c.query("SELECT subject FROM h2_identities WHERE subject = ? AND status = 'active'", [String(session.subject)]))[0];
     if (!identity) denied();
     return { session, membership };

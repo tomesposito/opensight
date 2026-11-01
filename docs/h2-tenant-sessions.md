@@ -133,9 +133,12 @@ bucket. These conservative pilot limits trade availability for bounded guessing.
 Sessions have random opaque IDs, HMAC signatures bound to the issuer/audience/
 origin and key ID, and authoritative tenant/namespace/subject/user records.
 Every request checks expiry, current key, active membership and tenant state, plus
-membership and authorization/policy/configuration revisions. There is no auth
+membership and authorization/policy revisions. There is no auth
 cache. Suspension followed by resume does not resurrect old sessions. Membership
-removal, metadata revision changes and key rotation deny subsequent operations.
+removal, authorization/policy revision changes and key rotation deny subsequent
+operations. Configuration-only changes preserve H2 sessions (#170). The stored
+issue-time configuration revision remains for schema compatibility; independent
+content-freshness checks still reject work captured before a configuration change.
 
 To rotate signing keys, supply a new key ID and signing key through the environment
 and run `node packages/api/dist/cli.js rotate-auth-key` in hosted mode. Restart

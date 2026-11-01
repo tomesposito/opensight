@@ -30,7 +30,7 @@ test('H3 HTTP durable source lifecycle, policy gates, uploads, owner prep and un
   const write = async (path, method, body) => {
     const result = await call(path, method, body, token);
     if (result.status < 400) {
-      assert.equal((await call('/api/sources', 'GET', undefined, token)).status, 401, 'A durable write invalidates the old revision-bound session');
+      assert.equal((await call('/api/sources', 'GET', undefined, token)).status, 401, 'Source writes advance policy and invalidate the session');
       token = (await f.login()).token;
     }
     return result;
@@ -49,7 +49,8 @@ test('H3 HTTP durable source lifecycle, policy gates, uploads, owner prep and un
   assert.equal((await call(`/api/uploads/${id}`, 'GET', undefined, token)).body.rows.length, 3);
   assert.equal((await call(`/api/ai/sources/${id}/schema`, 'GET', undefined, token)).body.columns.length, 3);
   const pipeline = { version: 1, input: id, steps: [] };
-  assert.equal((await write('/api/datasets/private/prep', 'PUT', { name: 'Private', pipeline, expectedVersion: 0 })).status, 200);
+  assert.equal((await call('/api/datasets/private/prep', 'PUT', { name: 'Private', pipeline, expectedVersion: 0 }, token)).status, 200);
+  assert.equal((await call('/api/sources', 'GET', undefined, token)).status, 200, 'Configuration-only prep writes preserve the session');
   assert.equal((await call('/api/datasets/private/rows', 'GET', undefined, token)).body.rows.length, 3);
   assert.equal((await call('/api/datasets/private/share', 'POST', {}, token)).body.errorCode, 'PREP_SHARING_REFUSED');
   assert.equal((await call('/api/datasets/private/embed', 'POST', {}, token)).body.errorCode, 'PREP_EMBED_REFUSED');
@@ -74,8 +75,8 @@ test('H3 HTTP revoked verification after body intake prevents durable source wri
   assert.equal(calls, 2); assert.equal(result.status, 401);
   assert.equal((await f.db.transaction(c => c.query("SELECT * FROM h1_resources WHERE kind IN ('source','secret')"))).length, 0);
 });
-test('H3 every data response rejects policy changes or expiry during the final verifier check', async t => {
-  for (const change of ['policy', 'expiry']) for (const path of ['discovery', 'query', 'preview', 'output', 'ai', 'prep']) {
+test('H3 every data response rejects policy/configuration changes or expiry during the final verifier check', async t => {
+  for (const change of ['policy', 'configuration', 'expiry']) for (const path of ['discovery', 'query', 'preview', 'output', 'ai', 'prep']) {
     const f = await sourceFixture(t), a = await f.login(), source = await f.sources.upload(a, upload(undefined, new Date(Date.now() + 60000).toISOString()));
     const routes = new HostedDataRoutes(new HostedData(f.sources, undefined, f.budgets));
     await routes.prep.save(a, 'private', { name: 'Private', pipeline: { version: 1, input: source.id, steps: [] }, expectedVersion: 0 });
@@ -87,6 +88,7 @@ test('H3 every data response rejects policy changes or expiry during the final v
     await assert.rejects(routes.route(request, response, url, a, async () => {
       rechecked = true;
       if (change === 'expiry') f.advance(61000);
+      else if (change === 'configuration') await f.db.transaction(c => c.query('UPDATE h1_revisions SET configuration = configuration + 1 WHERE tenant_id = ? AND namespace_id = ?', [a.tenantId, a.namespaceId]));
       else await f.sources.bind(a, source.id, { expectedVersion: 1, policy: { rowLevel: true, rowRules: [] } });
     }), { code: change === 'expiry' ? 'UPLOAD_EXPIRED' : 'METADATA_REVISED' });
     assert.equal(rechecked, true); assert.equal(published, false, `${change}/${path}`);
