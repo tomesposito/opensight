@@ -1,3 +1,4 @@
+import { OperatorIdeas } from './OperatorIdeas.js';
 import { useEffect, useState } from 'react';
 import { createApiClient } from './api-client.js';
 import { SessionGate } from './SessionGate.js';
@@ -15,13 +16,14 @@ export const invitationToken = (hash: string): string | undefined => /^#invite=(
 export default function App() {
   const offline = import.meta.env?.VITE_OPENSIGHT_OFFLINE_DEMO === 'true';
   const [invite, setInvite] = useState(() => invitationToken(window.location.hash));
-  const [operator, setOperator] = useState(() => window.location.hash === '#operator-users');
+  const [operator, setOperator] = useState(() => window.location.hash);
   useEffect(() => {
-    const changed = () => { setInvite(invitationToken(window.location.hash)); setOperator(window.location.hash === '#operator-users'); };
+    const changed = () => { setInvite(invitationToken(window.location.hash)); setOperator(window.location.hash); };
     window.addEventListener('hashchange', changed);
     return () => window.removeEventListener('hashchange', changed);
   }, []);
-  if (!offline && operator) return <OperatorUsers baseUrl={import.meta.env?.VITE_OPENSIGHT_API_URL} />;
+  if (!offline && operator === '#operator-ideas') return <OperatorIdeas baseUrl={import.meta.env?.VITE_OPENSIGHT_API_URL} />;
+  if (!offline && operator === '#operator-users') return <OperatorUsers baseUrl={import.meta.env?.VITE_OPENSIGHT_API_URL} />;
   const invitation = invite ? { token: invite, onAccepted: () => { window.history.replaceState(null, '', window.location.pathname + window.location.search); setInvite(undefined); } } : undefined;
   return <SessionGate offline={offline} client={api} invitation={invitation}><Application api={api} fixtures={fixtures} /></SessionGate>;
 }
