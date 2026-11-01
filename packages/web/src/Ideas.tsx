@@ -11,7 +11,7 @@ export function IdeaDetails({ idea }: { idea: Idea }) {
 }
 export function Ideas({ client, surface = 'ideas' }: { client?: IdeasClient; surface?: string }) {
   const access = useAccess();
-  return <section className="ideas-page" aria-labelledby="ideas-title"><h1 id="ideas-title">Ideas</h1>
+  return <section className="data-page ideas-page" aria-labelledby="ideas-title"><h1 id="ideas-title">Ideas</h1>
     <p>A human reviews every idea. Nothing is built automatically.</p>
     {access.mode === 'hosted' && access.session?.tenantId && client
       ? <HostedIdeas key={`${access.session.tenantId}/${access.session.namespaceId}/${access.session.id}`} client={client} surface={surface} />
