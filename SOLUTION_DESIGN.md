@@ -1277,6 +1277,12 @@ After reopening, retain captured submissions; acceptance failure closes admissio
 for forward reconciliation rather than restoring over new requests. See
 [D-89](docs/itd/D-89-access-request-maintenance.md).
 
+**Access-request release packaging (frozen 2026-11-01, #176):** Include the
+marketing page's existing Apple touch icon in the bounded, attested frontend
+inventory. Verify that each local icon referenced by the marketing HTML is
+packaged with its exact digest and image content type. Do not change the icon
+artwork or expand packaging to arbitrary site files.
+
 **SR4c compatible release automation (frozen 2026-10-11):** The operator approved
 public isolated CI, immutable release artifacts, private manual deployment via
 dedicated OIDC roles, and an independently tested access shutoff. Implement
