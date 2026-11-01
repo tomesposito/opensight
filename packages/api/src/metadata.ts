@@ -1,9 +1,10 @@
 import { AssetCatalog, assetKey } from './asset-model.js';
+import { MetricCatalog } from './metric-model.js';
 import { changeDashboard, changeDashboardGrants, describeDashboard, dashboardVersion, type DashboardRecord, type DashboardChange } from './dashboard-model.js';
 import type { AssetGrant } from './organization.js';
-import { hasCapability } from '@opensight/query-engine';
+import { hasCapability, type MetricDataset, type MetricResolution, type PublishedMetric } from '@opensight/query-engine';
 import { MetadataError, missing, type Database, type SqlConnection, type SqlRow } from './metadata-db.js';
-import { identifier, insertLinks, insertResource, resourceKey, resourceKinds, resourceLinks, type MetadataKind, type MetadataResource, type ResourceKey, type Scope } from './metadata-resources.js';
+import { identifier, insertLinks, insertResource, object, resourceKey, resourceKinds, resourceLinks, type MetadataKind, type MetadataResource, type ResourceKey, type Scope } from './metadata-resources.js';
 import type { JsonObject } from './mapping.js';
 import { appendMetadataEvent } from './metadata-outbox.js';
 import type { HostedUsage } from './hosted-usage.js';
@@ -236,6 +237,48 @@ export class TenantMetadata {
       await receipt?.(next).persist?.(c);
       return next;
     }, true);
+  }
+  /** Trusted metric consumers only; dataset/data admission remains the caller's responsibility. */
+  async metricExecution(context: TenantContext, ref: MetricDataset): Promise<MetricResolution> {
+    return this.readMetrics(context, ref, true, (catalog, dataset) => catalog.execution(dataset));
+  }
+  async metricVocabulary(context: TenantContext, ref: MetricDataset): Promise<PublishedMetric[]> {
+    return this.readMetrics(context, ref, false, (catalog, dataset) => catalog.vocabulary(dataset));
+  }
+  private async readMetrics<T>(context: TenantContext, ref: MetricDataset, execution: boolean, read: (catalog: MetricCatalog, dataset: MetricDataset) => T): Promise<T> {
+    const dataset = { ...ref };
+    return this.checked(context, async (c, _revisions, user) => {
+      // execution/vocabulary -> published/list/get need only the current user,
+      // the exact dataset and ALL its linked metrics (including hidden drafts).
+      // canEdit/canPublish inspect that user's role and dataset ownership/source
+      // references, never source bodies, creator users, groups or folders. The
+      // synthetic user version is unused: checked() already read its current body.
+      // execution additionally walks prepared input/append dataset references;
+      // joins terminate that walk, and vocabulary never walks it or calls schema().
+      // Keep absent rows absent and cycles in the catalog so MetricCatalog retains
+      // its own named errors/short circuits, including vocabulary's empty result.
+      const resources: MetadataResource[] = [{ kind: 'user', id: context.userId, version: 1, body: user }];
+      const seen = new Set<string>();
+      const load = async (ref: MetricDataset): Promise<void> => {
+        const key = assetKey(ref); if (seen.has(key)) return; seen.add(key);
+        const rows = await c.query(`SELECT * FROM h1_resources WHERE ${predicates}`, keyValues(context, ref));
+        if (!rows[0]) return;
+        const entry = resource(rows[0]); resources.push(entry);
+        if (!execution || ref.kind !== 'prepared-dataset') return;
+        const pipeline = object(object(entry.body.resource).opensightPrep) as unknown as import('@opensight/bundle-parser/prep').PrepPipeline;
+        if (pipeline.steps.some(step => step.kind === 'join')) return;
+        for (const input of [pipeline.input, ...pipeline.steps.flatMap(step => step.kind === 'append' ? [step.config.source] : [])]) {
+          if (input && typeof input === 'object' && 'dataset' in input) await load({ ...ref, id: String(input.dataset) });
+        }
+      };
+      await load(dataset);
+      const rows = await c.query(`SELECT r.* FROM h1_links l JOIN h1_resources r
+        ON r.tenant_id = l.tenant_id AND r.namespace_id = l.namespace_id AND r.kind = l.kind AND r.owner_id = l.owner_id AND r.resource_id = l.resource_id
+        WHERE l.tenant_id = ? AND l.namespace_id = ? AND l.kind = 'metric' AND l.target_kind = ? AND l.target_owner = ? AND l.target_id = ?
+        ORDER BY r.resource_id`, [...scopeValues(context), dataset.kind, dataset.ownerId ?? '', dataset.id]);
+      resources.push(...rows.map(resource));
+      return read(new MetricCatalog(new AssetCatalog(context, resources)), dataset);
+    });
   }
   /** Assets use the same tenant lock, links, quota accounting and durable rows as authoring. */
   async assetTransaction<T>(context: TenantContext, write: boolean, work: (catalog: AssetCatalog) => T, receipt?: (result: T) => RetryCommit): Promise<T> {
