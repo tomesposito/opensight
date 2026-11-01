@@ -3,7 +3,7 @@ import type { AnalysisTheme } from './themes.js';
 import type { VisualInteraction } from './visual-selection.js';
 import { executeFixtureQuery } from './fixture-query.js';
 import type { AuthorParameter } from './parameters.js';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { VisualCard, type RowGroupToggle } from './VisualCard.js';
 import { buildAuthorVisual } from './author-preview.js';
 import { buildAuthorQuery, loadAuthorRows } from './author-query.js';
@@ -14,7 +14,7 @@ import { clearVisualRows, storeVisualRows } from './visual-export.js';
 
 export const PARAMETER_DEBOUNCE_MS = 250;
 
-export function LiveAuthorVisual({ visual, theme, client, calculations, parameters = [], interaction, interactive = false, onRowGroupToggle }: { theme?: AnalysisTheme; interaction?: VisualInteraction; interactive?: boolean; parameters?: readonly AuthorParameter[]; visual: AuthorVisual; client?: QueryClient; calculations: readonly CalculatedField[]; onRowGroupToggle?: RowGroupToggle }) {
+export function LiveAuthorVisual({ visual, theme, client, calculations, parameters = [], interaction, interactive = false, onRowGroupToggle, onExecutedMetrics }: { theme?: AnalysisTheme; interaction?: VisualInteraction; interactive?: boolean; parameters?: readonly AuthorParameter[]; visual: AuthorVisual; client?: QueryClient; calculations: readonly CalculatedField[]; onRowGroupToggle?: RowGroupToggle; onExecutedMetrics?: (metrics: AuthorRows['metrics']) => void }) {
   const fieldProblem = unresolvedFieldMessage(unresolvedVisualFieldDiagnostics(visual, calculations, client?.dataset, parameters));
   const queryKey = JSON.stringify(buildAuthorQuery(visual, calculations, parameters, client?.dataset));
   const request: QueryRequest | null = useMemo(() => JSON.parse(queryKey) as QueryRequest | null, [queryKey]);
@@ -31,6 +31,16 @@ export function LiveAuthorVisual({ visual, theme, client, calculations, paramete
   }, [request, client, interactive]);
   const fixture = useMemo(() => !client && request ? executeFixtureQuery(request) : undefined, [client, request]);
   const current = client ? state?.request === request && state.client === client ? state.result : undefined : fixture;
+  // Report the governed-metric versions bound to the result actually displayed, so callers
+  // (Ask O grounding) name the version that executed, not the one known at interpretation time.
+  const executedMetricsCallback = useRef(onExecutedMetrics); executedMetricsCallback.current = onExecutedMetrics;
+  const lastExecutedMetrics = useRef<{ seen: boolean; metrics: AuthorRows['metrics'] }>({ seen: false, metrics: undefined });
+  useEffect(() => {
+    const callback = executedMetricsCallback.current; if (!callback) return;
+    const metrics = current?.metrics;
+    if (lastExecutedMetrics.current.seen && lastExecutedMetrics.current.metrics === metrics) return;
+    lastExecutedMetrics.current = { seen: true, metrics }; callback(metrics);
+  }, [current]);
   const preview = useMemo(() => ({ ...buildAuthorVisual(visual, calculations, client?.dataset && current && 'metrics' in current && current.metrics ? { ...client.dataset, metrics: current.metrics } : client?.dataset), theme, rows: current?.rows ?? null }), [visual, current, calculations, theme, client?.dataset]);
   useEffect(() => { storeVisualRows(visual.id, preview.rows); return () => { clearVisualRows(visual.id); }; }, [visual.id, preview.rows]);
   // Clear previous results immediately when assignments change, even before the effect runs.

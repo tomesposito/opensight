@@ -4,7 +4,7 @@ import { describeInterpretation, datetime, interpretQuestion, numeric, type Aggr
 import { type AuthorAction, type AuthorDraft } from './authoring.js';
 import { prepareOVisual, oVocabulary } from './o-authoring.js';
 import { LiveAuthorVisual } from './LiveAuthorVisual.js';
-import type { QueryClient } from './author-query.js';
+import type { AuthorRows, QueryClient } from './author-query.js';
 import { OModeNotice } from './OModeNotice.js';
 
 interface OEntryProps { draft: AuthorDraft; dispatch?: Dispatch<AuthorAction>; client?: QueryClient; dashboardId?: string; renderBar?: (bar: ReactNode) => ReactNode }
@@ -29,8 +29,12 @@ function OEntryContent({ draft, dispatch, client, renderBar, dashboardId }: OEnt
   const [selected, setSelected] = useState(0);
   const [edited, setEdited] = useState<Interpretation>();
   const [added, setAdded] = useState('');
+  // Governed-metric versions returned with the executed query result. The grounding line
+  // names these once a result is displayed; the interpretation-time versions stay visible
+  // separately when they differ (a publication landed between interpretation and execution).
+  const [executedMetrics, setExecutedMetrics] = useState<AuthorRows['metrics']>();
   const schema = JSON.stringify([draft.calculatedFields, draft.dataset]);
-  useEffect(() => { revision.current++; setPending(false); setError(''); setEdited(undefined); }, [schema, generative]);
+  useEffect(() => { revision.current++; setPending(false); setError(''); setEdited(undefined); setExecutedMetrics(undefined); }, [schema, generative]);
   const result = answer?.schema === schema ? answer.result : undefined;
   const interpretation = result?.interpretations[selected] ? edited ?? result.interpretations[selected] : undefined;
   const edit = (patch: Partial<Pick<Interpretation, 'aggregation' | 'dimensions' | 'filters' | 'topN' | 'granularity' | 'suggestedVisualType'>>) => {
@@ -39,19 +43,21 @@ function OEntryContent({ draft, dispatch, client, renderBar, dashboardId }: OEnt
     next.explanation = describeInterpretation(next);
     const fieldsUsed = [...new Set([...(next.measure ? [next.measure] : []), ...next.dimensions, ...next.filters.map(f => f.field)])];
     next.grounding = { ...interpretation.grounding, fieldsUsed, synonymsMatched: interpretation.grounding.synonymsMatched.filter(s => fieldsUsed.includes(s.field)) };
-    setEdited(next);
+    setEdited(next); setExecutedMetrics(undefined);
   };
   const prepared = useMemo(() => {
     if (!interpretation) return;
     try { return { value: prepareOVisual(interpretation, draft.calculatedFields, draft.dataset) }; }
     catch (e) { return { error: e instanceof Error ? e.message : String(e) }; }
   }, [interpretation, draft.calculatedFields, draft.dataset]);
+  const metricsUsed = interpretation?.grounding.metricsUsed;
+  const executedDiverged = !!metricsUsed?.length && executedMetrics !== undefined && metricsUsed.some(m => { const ex = executedMetrics.find(x => x.id === m.id); return !ex || ex.version !== m.version || ex.name !== m.name; });
   const stepFields = oVocabulary(draft.calculatedFields, draft.dataset);
   const measureField = interpretation ? stepFields.find(f => f.name === interpretation.measure) : undefined;
   const aggregationOptions: Aggregation[] = interpretation && (interpretation.measure === null || (measureField && !numeric(measureField))) ? ['COUNT'] : measureField?.metric ? [measureField.metric.defaultAggregation] : ['SUM', 'AVG', 'COUNT', 'MIN', 'MAX'];
   const hasDateDimension = interpretation ? interpretation.dimensions.some(name => { const f = stepFields.find(x => x.name === name); return !!f && datetime(f); }) : false;
   const submit = async () => {
-    const current = ++revision.current; setSelected(0); setEdited(undefined); setAdded(''); setError(''); setAnswer(undefined);
+    const current = ++revision.current; setSelected(0); setEdited(undefined); setAdded(''); setError(''); setAnswer(undefined); setExecutedMetrics(undefined);
     if (!generative) { setAnswer({ schema, result: interpretQuestion(question, oVocabulary(draft.calculatedFields, draft.dataset)) }); return; }
     if (!ai.available || !ai.client) return;
     setPending(true);
@@ -64,7 +70,7 @@ function OEntryContent({ draft, dispatch, client, renderBar, dashboardId }: OEnt
   const bar = <form className="o-bar" onSubmit={e => { e.preventDefault(); void submit(); }}>
       {renderBar && <span className="o-mark" aria-hidden="true">O</span>}
       <label htmlFor="o-question">Ask a question</label>
-      <input id="o-question" type="search" maxLength={2000} value={question} placeholder={renderBar ? `Ask a question about ${draft.dataset?.name ?? 'Local sales'}` : 'Sum of revenue by region'} onChange={e => { revision.current++; setPending(false); setError(''); setQuestion(e.target.value); setAnswer(undefined); setEdited(undefined); setAdded(''); }} />
+      <input id="o-question" type="search" maxLength={2000} value={question} placeholder={renderBar ? `Ask a question about ${draft.dataset?.name ?? 'Local sales'}` : 'Sum of revenue by region'} onChange={e => { revision.current++; setPending(false); setError(''); setQuestion(e.target.value); setAnswer(undefined); setEdited(undefined); setAdded(''); setExecutedMetrics(undefined); }} />
       <button type="submit" disabled={pending}>Ask</button>
     </form>;
   return <>
@@ -80,7 +86,12 @@ function OEntryContent({ draft, dispatch, client, renderBar, dashboardId }: OEnt
       {interpretation && <>
         <p className="o-explanation">{interpretation.explanation} <span>Confidence {Math.round(interpretation.confidence * 100)}% ({edited ? 'original grammar match; steps edited' : 'grammar match'})</span></p>
         <p className="o-grounding">Grounded in: {interpretation.grounding.fieldsUsed.length ? interpretation.grounding.fieldsUsed.join(', ') : 'row count'}</p>
-        {!!interpretation.grounding.metricsUsed?.length && <p className="o-grounding">Governed metrics: {interpretation.grounding.metricsUsed.map(m => `${m.name} · version ${m.version}`).join(', ')}</p>}
+        {!!metricsUsed?.length && (executedMetrics !== undefined
+          ? <>
+            <p className="o-grounding">Governed metrics (as executed): {metricsUsed.map(m => { const ex = executedMetrics.find(x => x.id === m.id); return ex ? `${ex.name} · version ${ex.version}` : `${m.name} · not returned by the executed query`; }).join(', ')}</p>
+            {executedDiverged && <p className="o-grounding">Interpreted against: {metricsUsed.map(m => `${m.name} · version ${m.version}`).join(', ')}</p>}
+          </>
+          : <p className="o-grounding">Governed metrics: {metricsUsed.map(m => `${m.name} · version ${m.version}`).join(', ')}</p>)}
         {interpretation.grounding.synonymsMatched.length > 0 && <p className="o-grounding">Synonyms matched: {interpretation.grounding.synonymsMatched.map(s => `‘${s.term}’ → ${s.field}`).join(', ')}</p>}
         {interpretation.grounding.unmatchedTerms.length > 0 && <p className="o-grounding">Not understood: {interpretation.grounding.unmatchedTerms.join(', ')}</p>}
         <div className="o-steps" aria-label="Interpretation steps">
@@ -93,13 +104,13 @@ function OEntryContent({ draft, dispatch, client, renderBar, dashboardId }: OEnt
           <label>Visual <select aria-label="Visual step" value={interpretation.suggestedVisualType} onChange={e => edit({ suggestedVisualType: e.target.value as Interpretation['suggestedVisualType'] })}>{(['bar', 'line', 'pie', 'table', 'kpi'] as const).map(v => <option key={v} value={v}>{v}</option>)}</select></label>
         </div>
         {prepared?.error && <p role="alert">{prepared.error}</p>}
-        {prepared?.value && <div className="o-result"><LiveAuthorVisual visual={prepared.value.visual} calculations={[...draft.calculatedFields, ...prepared.value.calculatedFields]} client={previewClient} theme={draft.theme} /></div>}
+        {prepared?.value && <div className="o-result"><LiveAuthorVisual visual={prepared.value.visual} calculations={[...draft.calculatedFields, ...prepared.value.calculatedFields]} client={previewClient} theme={draft.theme} onExecutedMetrics={metrics => setExecutedMetrics(metrics)} /></div>}
         <p className="o-source">{client ? `${client.dataset?.name ?? 'Local sales'} API query.` : 'Offline demo: recomputed synthetic sales rows across all regions. No live queries run.'}</p>
         {dispatch && allowed(access, 'build') && <button type="button" className="primary-button" disabled={!prepared?.value} onClick={() => {
           if (!prepared?.value) return;
           dispatch({ type: 'o-add', ...prepared.value }); setAnswer(undefined); setAdded('Added to the active analysis sheet.');
         }}>ADD TO ANALYSIS</button>}
-        {result.interpretations.length > 1 && <div className="o-alternatives"><h3>Did you mean…?</h3><div>{result.interpretations.map((item, index) => <button type="button" key={item.explanation} aria-pressed={index === selected} onClick={() => { setSelected(index); setEdited(undefined); }}>{item.explanation}<small>{Math.round(item.confidence * 100)}% grammar match</small></button>)}</div></div>}
+        {result.interpretations.length > 1 && <div className="o-alternatives"><h3>Did you mean…?</h3><div>{result.interpretations.map((item, index) => <button type="button" key={item.explanation} aria-pressed={index === selected} onClick={() => { setSelected(index); setEdited(undefined); setExecutedMetrics(undefined); }}>{item.explanation}<small>{Math.round(item.confidence * 100)}% grammar match</small></button>)}</div></div>}
       </>}
     </div>}
     {added && <p role="status">{added}</p>}
