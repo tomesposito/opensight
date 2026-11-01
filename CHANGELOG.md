@@ -124,6 +124,11 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 - Include the marketing site's Apple touch icon in the attested release archive so home-screen bookmarks can load the declared image (#176).
 
+- Hosted governed-metric queries and vocabulary lookups read only their bound
+  dataset, metrics and required prep dependencies; unrelated workspace history
+  no longer expands the metadata read, and repeated definition bindings share
+  one lookup per dataset (#172).
+
 - Ask O grounding now names the governed-metric version that actually executed: the executed versions arrive with the query response and replace the interpretation-time label, which stays visible separately as "Interpreted against" when a publication landed in between (#171).
 
 - Hosted workspace sessions stay signed in when governed metrics or preparation templates are saved or published, including unpublished drafts; stale content work still fails closed (#170).

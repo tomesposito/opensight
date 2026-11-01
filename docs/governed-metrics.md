@@ -108,6 +108,20 @@ content-freshness checks still reject stale in-flight work. H6 embed grants rema
 bound to all captured revisions. No new configuration variables, dependencies or
 external services are required.
 
+Hosted execution and vocabulary reads use a targeted metadata catalog (#172)
+inside the existing tenant lock and principal/revision checks. It contains the
+requesting user, the exact dataset, and every metric linked to that dataset through
+`h1_links`, including drafts. Execution also loads prepared datasets reachable
+through pipeline input and append references for the existing unsafe-join check;
+these are fetched once per exact owner/dataset key. Source bodies, unrelated
+datasets and workspace asset histories are not read. Vocabulary does not need the
+prep walk. The shared metric catalog still decides publication visibility,
+ownership, join safety and named errors. Definitions with repeated bindings share
+one lookup per full dataset reference within that call, without caching across
+calls or publications. Local catalogs, metric authoring transactions and storage
+formats are unchanged. Bound metrics still carry their own full version history;
+this optimization removes unrelated history from the read, not that history.
+
 The static demo has no metric store and displays an explicit API requirement.
 It does not ship staged definitions. Metric authoring requires a local or hosted
 API; the single-file demo is not a deployed server.

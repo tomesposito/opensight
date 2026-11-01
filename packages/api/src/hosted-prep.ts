@@ -224,7 +224,7 @@ export class HostedPrep {
   async execute(context: TenantContext, id: string, path: 'rows' | 'query' | 'refresh', input: unknown = {}, visual?: { analysis: unknown; visualId: string; dataSetArn: string }) {
     const stored = await this.stored(context, id), graph = await this.graph(context, id, stored.resource.opensightPrep!), key = this.cacheKey(context, id);
     let metrics: readonly import('@opensight/query-engine').PublishedMetric[] | undefined;
-    const query = path === 'query' ? await metricQuery(validateQuery(input), { kind: 'prepared-dataset', id, ownerId: context.userId }, lookupMetrics({ scope: context, transaction: (write, work) => this.data.sources.metadata.assetTransaction(context, write, work) }), value => { metrics = value; }) : undefined;
+    const query = path === 'query' ? await metricQuery(validateQuery(input), { kind: 'prepared-dataset', id, ownerId: context.userId }, lookupMetrics({ scope: context, transaction: (write, work) => this.data.sources.metadata.assetTransaction(context, write, work), metricExecution: ref => this.data.sources.metadata.metricExecution(context, ref) }), value => { metrics = value; }) : undefined;
     if (!query) object(input, []);
     const columns = this.plan(graph, id).columns;
     if (query) planPreparedQuery(columns, query); // Query semantics are checked before loading data.

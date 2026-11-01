@@ -1,8 +1,8 @@
 import { resolveMetricDefinition, resolveMetricQuery, queryUsesMetrics, type MetricDataset, type InteractiveQuery, type PublishedMetric, type MetricResolution } from '@opensight/query-engine';
-import type { AssetBackend } from './asset-model.js';
+import { assetKey, type AssetBackend } from './asset-model.js';
 import { MetricCatalog } from './metric-model.js';
 export type MetricLookup = (ref: MetricDataset) => Promise<MetricResolution>;
-export const lookupMetrics = (backend: AssetBackend): MetricLookup => ref => backend.transaction(false, c => new MetricCatalog(c).execution(ref));
+export const lookupMetrics = (backend: AssetBackend): MetricLookup => ref => backend.metricExecution ? backend.metricExecution(ref) : backend.transaction(false, c => new MetricCatalog(c).execution(ref));
 export async function metricQuery(query: InteractiveQuery, ref: MetricDataset, lookup: MetricLookup, resolved?: (metrics: readonly PublishedMetric[]) => void) {
   if (!queryUsesMetrics(query)) return query;
   const resolution = await lookup(ref); const result = resolveMetricQuery(query, resolution); resolved?.(resolution.metrics); return result;
@@ -10,7 +10,13 @@ export async function metricQuery(query: InteractiveQuery, ref: MetricDataset, l
 export async function metricDefinition(definition: Record<string, unknown>, bindings: Record<string, MetricDataset>, lookup: MetricLookup, resolved?: (metrics: readonly PublishedMetric[]) => void) {
   // Resolve only definitions that contain a reserved reference. No extra data admission for ordinary visuals.
   if (!JSON.stringify(definition).includes('__metric_')) return definition;
-  const resolutions = await Promise.all(Object.entries(bindings).map(async ([id, ref]) => [id, await lookup(ref)] as const));
+  const lookups = new Map<string, Promise<MetricResolution>>();
+  const resolutions = await Promise.all(Object.entries(bindings).map(async ([id, ref]) => {
+    const key = assetKey(ref);
+    let resolution = lookups.get(key);
+    if (!resolution) { resolution = lookup(ref); lookups.set(key, resolution); }
+    return [id, await resolution] as const;
+  }));
   const result = resolveMetricDefinition(definition, new Map(resolutions)); resolved?.(resolutions.flatMap(([, r]) => [...r.metrics])); return result;
 }
 

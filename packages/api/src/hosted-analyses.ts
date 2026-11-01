@@ -1,4 +1,3 @@
-import { MetricCatalog } from './metric-model.js';
 import { convertDefinition, projectDefinition, analysisFail, type AnalysisSchema } from '@opensight/web/analysis';
 import { resolveSecurity } from '@opensight/query-engine';
 import { EmbedContent } from './embed-content.js';
@@ -74,7 +73,7 @@ export class HostedAnalyses implements AnalysisBackend {
       }
     }
     for (const [id, ref] of Object.entries(bindings)) {
-      const resolution = await this.metadata.assetTransaction(this.scope, false, a => new MetricCatalog(a).execution({ ...ref, ...(ref.kind === 'prepared-dataset' ? { ownerId: this.scope.userId } : {}) }));
+      const resolution = await this.metadata.metricExecution(this.scope, { ...ref, ...(ref.kind === 'prepared-dataset' ? { ownerId: this.scope.userId } : {}) });
       schemas.set(id, { ...schemas.get(id)!, metrics: resolution });
     }
     return schemas;
