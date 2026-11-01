@@ -96,6 +96,8 @@ test('data empty states offer suggestions only with a hosted client and route pr
     const suggest = button(ui, 'Suggest an idea'); assert.equal(!!suggest, mode === 'hosted' && connected);
     if (suggest) { await act(() => suggest.props.onClick()); assert.equal(clicked, 1); }
   }
+  const legacy = await mount(t, DataLanding, { client, onSuggestIdea() {} }, { ...access, session: { ...access.session, tenantId: undefined } });
+  assert.equal(button(legacy, 'Suggest an idea'), undefined);
 });
 
 test('API client uses authenticated transport, preserves named rate errors and sends no user-supplied identity', async () => {

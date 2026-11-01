@@ -34,7 +34,7 @@ export function DataLanding({ client, initialTab = 'Datasets', onCreate, onCreat
   const data = catalog.data ?? { datasets: [], sources: [] };
   const rows = filterDatasets(data, search, filter, access.mode === 'hosted');
   const sources = rawSources(data.sources).filter(source => (source.name ?? source.id).toLowerCase().includes(search.trim().toLowerCase()));
-  const suggestion = access.mode === 'hosted' && client && onSuggestIdea ? <button onClick={onSuggestIdea}>Suggest an idea</button> : null;
+  const suggestion = access.mode === 'hosted' && access.session?.tenantId && client && onSuggestIdea ? <button onClick={onSuggestIdea}>Suggest an idea</button> : null;
   return <section className="data-page" aria-labelledby="data-title"><h1 id="data-title">Data</h1>
     <div className="data-card"><div className="data-toolbar"><DataTabs label="Data" tabs={['Datasets', 'Topics', 'Data sources', 'Metrics']} selected={tab} select={next => { setTab(next); setSearch(''); }} />
       <div className="data-split"><button className="data-primary" onClick={onCreate}>Create dataset</button><details className="data-menu"><summary aria-label="More create options"><svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg></summary><div className="data-menu-items"><button onClick={onCreateSource}>Create data source</button></div></details></div></div>
