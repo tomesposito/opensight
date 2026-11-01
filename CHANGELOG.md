@@ -122,6 +122,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
+- Hosted workspace sessions stay signed in when governed metrics or preparation templates are saved or published, including unpublished drafts; stale content work still fails closed (#170).
+
 - Hosted governed-metric listing now honors the exact dataset the browser selected: the serverless ingress validates and forwards the `Metric-Dataset` reference instead of dropping it, so legacy datasets and other owners' prepared datasets no longer fall back to the caller's own prepared dataset; malformed references fail closed at ingress (#169).
 
 - Governed metrics with a DISTINCT_COUNT default aggregation now run in analyses, dashboards and Ask O instead of failing in the shared query planner; distinct counts ignore duplicates and nulls and work on text as well as numeric fields (#168).
