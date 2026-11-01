@@ -35,7 +35,9 @@ async function mount(t, client) {
   const flush = async () => { await act(async () => { await new Promise(r => setTimeout(r, 0)); }); };
   return {
     renderer, flush,
-    text: () => JSON.stringify(renderer.toJSON()),
+    // Grounding lines render as two adjacent text nodes (label + value), which
+    // JSON-serialise with a '","' seam; remove the seam so assertions read naturally.
+    text: () => JSON.stringify(renderer.toJSON()).replaceAll('","', ''),
     click: async label => {
       const button = renderer.root.findAllByType('button').find(b => b.props['aria-label'] === label || b.props.children === label);
       assert.ok(button, label); await act(() => button.props.onClick()); await flush();
@@ -61,9 +63,10 @@ test('grounding names the executed metric version and keeps the interpreted vers
 test('grounding follows a re-query after step edits to the newly executed version', async t => {
   const client = fakeClient([3, 4]);
   const ui = await mount(t, client);
-  await ui.ask('profit rate by region');
+  await ui.ask('profit rate by region top 1');
   assert.match(ui.text(), /Governed metrics \(as executed\): Margin · version 3/);
-  await ui.click('Remove group-by region');
+  await act(() => ui.renderer.root.findByProps({ 'aria-label': 'Top N step' }).props.onChange({ target: { value: '2' } }));
+  await ui.flush();
   assert.equal(client.calls.length, 2);
   assert.match(ui.text(), /Governed metrics \(as executed\): Margin · version 4/);
   assert.match(ui.text(), /Interpreted against: Margin · version 2/);
