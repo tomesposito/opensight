@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Analytics, analyticsFromEnvironment, rowCountBucket } from '../dist/analytics.js';
 import { fixture } from './analytics-helpers.mjs';
+import { initializeAnalytics } from '../dist/analytics-store.js';
 
 test('analytics disabled or unconfigured: no log rows, delivery, or caller errors', async () => {
   const f = await fixture(); let calls = 0;
@@ -87,4 +88,39 @@ test('local composition defaults off and preserves opaque tenant IDs across serv
     const next = await localAnalytics(['local'], path, { ANALYTICS_ENABLED: '1', ANALYTICS_VENDOR_KEY: 'test-only' });
     assert.equal(next.analytics.configured, true); assert.equal(next.scope('local').tenantId, tenant); await next.close();
   } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('Issue #175: analytics migration preserves legacy rows and is idempotent with direct and nested databases', async () => {
+  for (const nested of [false, true]) {
+    const f = await fixture();
+    try {
+      await f.store.append({ ...f.a, id: 'legacy', name: 'dashboard_viewed', props: {}, createdAt: '2026-10-01T00:00:00.000Z' }, true);
+      const before = await f.store.read(f.metadata, f.a);
+      await f.db.transaction(c => c.query('ALTER TABLE analytics_events DROP COLUMN delivered_at'));
+      const migrate = () => nested
+        ? f.db.transaction(c => initializeAnalytics({ transaction: work => work(c), close: async () => {} }))
+        : initializeAnalytics(f.db);
+      await migrate(); await migrate();
+      assert.deepEqual(await f.store.read(f.metadata, f.a), before);
+      assert.deepEqual(await f.store.undelivered(), before);
+      assert.equal((await f.db.transaction(c => c.query('SELECT delivered_at FROM analytics_events')))[0].delivered_at, null);
+      await f.store.markDelivered('legacy');
+      await migrate();
+      assert.deepEqual(await f.store.undelivered(), []);
+      assert.deepEqual(await f.store.read(f.metadata, f.a), before);
+    } finally { await f.db.close(); }
+  }
+});
+test('Issue #175: private analytics outbox is ordered, bounded and excludes acknowledged rows', async () => {
+  const f = await fixture();
+  try {
+    for (const [scope, id, createdAt] of [[f.a, 'new', '2026-10-02'], [f.b, 'old-b', '2026-10-01'], [f.a, 'old-a', '2026-10-01']]) {
+      await f.store.append({ ...scope, id, createdAt, name: 'dashboard_viewed', props: {} }, true);
+    }
+    assert.deepEqual((await f.store.undelivered(2)).map(r => r.id), ['old-a', 'old-b']);
+    await f.store.markDelivered('old-a');
+    assert.deepEqual((await f.store.undelivered(2)).map(r => r.id), ['old-b', 'new']);
+    assert.equal(Object.hasOwn((await f.store.read(f.metadata, f.a))[0], 'delivered_at'), false);
+    for (const limit of [0, -1, 1.5, NaN, Infinity]) await assert.rejects(f.store.undelivered(limit), { code: 'ANALYTICS_DRAIN_LIMIT_INVALID' });
+  } finally { await f.db.close(); }
 });
