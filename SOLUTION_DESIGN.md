@@ -1260,6 +1260,29 @@ inventory drift; do not shorten retention, force early cleanup, replay mail,
 rewrite events or reuse this exception for restore. Rehearse the frozen
 same-epoch path and failure/denial cases before promotion.
 
+**Access-request maintenance (D-89, frozen 2026-11-01, #176, #177):** Extend
+the fenced same-epoch procedure only for the registered authoring inventory's
+additive `h8_access_requests` table, including nullable `notified_at`. Bind the
+old and new inventory names and exact release bytes in the owner plan. Require
+the deployed governed constraints, unchanged cleanup protocol, and only the
+exact future, dispatched, unclaimed cleanup obligations. Before first freeze,
+require the old inventory; after registered migration, require the new inventory,
+an empty access-request table and operator-only CRUD grants without DDL. The
+registered migration must preserve every old table and fail transactionally on
+any drift. Keep both epochs and all schedules unchanged; advance the independent
+registry revision with all backup history and authority retained. Rehearse the
+inventory transition, idempotent receipt, rollback, grant denials and unchanged
+cleanup envelope before promotion. Restore remains outside this exception.
+After reopening, retain captured submissions; acceptance failure closes admission
+for forward reconciliation rather than restoring over new requests. See
+[D-89](docs/itd/D-89-access-request-maintenance.md).
+
+**Access-request release packaging (frozen 2026-11-01, #176):** Include the
+marketing page's existing Apple touch icon in the bounded, attested frontend
+inventory. Verify that each local icon referenced by the marketing HTML is
+packaged with its exact digest and image content type. Do not change the icon
+artwork or expand packaging to arbitrary site files.
+
 **SR4c compatible release automation (frozen 2026-10-11):** The operator approved
 public isolated CI, immutable release artifacts, private manual deployment via
 dedicated OIDC roles, and an independently tested access shutoff. Implement
