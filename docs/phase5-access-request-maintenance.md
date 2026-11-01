@@ -26,7 +26,18 @@ operator routes, exact `Metric-Dataset` forwarding and malformed references.
 The unassociated probe was removed. These preflight results do not substitute
 for post-deployment capture, hosted workflow acceptance and final read-back.
 
-No application bytes, dependencies or UI styles change in this maintenance
-slice. The release retains the marketing form's visual checks recorded in
-[issue-176-gap-notes.md](issue-176-gap-notes.md). Production configuration and
-operational evidence stay outside the repository.
+Application logic, dependencies and UI styles are unchanged by this maintenance
+slice. Release review found that the marketing page's declared Apple touch icon
+was absent from the bounded frontend inventory. Packaging now includes that
+existing image; a regression test packages the actual site and checks the bytes,
+digests and image content types of every icon declared by its HTML.
+
+The demo was rebuilt and its Renderable Sales screen was screenshot-compared
+with the previous deployed release at the same viewport. The navigation, chart
+layout, typography and displayed values matched; no new visible gap was found.
+This is a static fixture demo, not hosted-server acceptance or a measured
+QuickSight parity claim. The marketing form retains the checks recorded in
+[issue-176-gap-notes.md](issue-176-gap-notes.md). Existing README images remain
+representative because this packaging correction changes no page layout or
+artwork. Production configuration and operational evidence stay outside the
+repository.
