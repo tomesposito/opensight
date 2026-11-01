@@ -13,6 +13,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Added
 
+- Hosted workspace members can privately suggest Ideas, follow review status and see decline reasons or shipped references; operators review submissions in a human-controlled queue (#178).
+
 - Request hosted access from the marketing site, with validated capture and a private operator review list for manually provisioned workspaces (#176).
 
 - Hosted access requests can now email the operator when a request lands: set `OPENSIGHT_ACCESS_REQUEST_NOTIFY_TO` and configure SMTP, and each stored request notifies that address. A mail failure never blocks a submission, and unnotified requests stay visible in the operator list and retry on later submissions (#177).

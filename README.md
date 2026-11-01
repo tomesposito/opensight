@@ -327,6 +327,16 @@ no customer content or person identifiers.
 
 ![Administrator usage tracking off switch, captured against a local synthetic API](docs/images/analytics-settings.png)
 
+### Ideas with human review
+
+Hosted members can privately suggest improvements from **Ideas** in the navigation
+or the Data empty states, then follow Received, Under review, Accepted, Declined
+(with a reason), and Shipped (with a reference) statuses. Operators review the
+queue; nothing is built automatically. Local and self-hosted installations use
+GitHub issues. See [Ideas](docs/ideas.md) for the privacy model and operator flow.
+
+![Private Ideas form and status list, captured against a local hosted API with synthetic suggestions](docs/images/ideas.png)
+
 ### 🖼️ Embed appearance preview
 
 Tenant administrators can configure exact parent origins, bounded lifetimes and
