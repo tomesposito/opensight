@@ -86,6 +86,31 @@ if (!/^\/embed\/sessions\/[A-Za-z0-9_-]+$/.test(unscoped)
 throw new MetadataError('RESOURCE_NOT_FOUND', 404);
 return internal;
 }
+function validMetricDataset(value) {
+if (Buffer.byteLength(value) > 2048)
+invalid();
+var parsed;
+try {
+parsed = JSON.parse(value);
+}
+catch (_a) {
+invalid();
+}
+var ref = record(parsed);
+var idOk = function (v) { return typeof v === 'string' && /^[A-Za-z0-9_-]{1,512}$/.test(v); };
+if (Object.keys(ref).some(function (k) { return !['kind', 'id', 'ownerId'].includes(k); }) || !idOk(ref.id))
+invalid();
+if (ref.kind === 'dataset') {
+if (ref.ownerId !== undefined)
+invalid();
+}
+else if (ref.kind === 'prepared-dataset') {
+if (!idOk(ref.ownerId))
+invalid();
+}
+else
+invalid();
+}
 function headers(raw) {
 var result = Object.create(null);
 var bytes = 0;
@@ -100,6 +125,8 @@ if (!/^[a-z0-9-]+$/.test(name) || typeof value !== 'string' || /[\x00-\x1f\x7f]/
 invalid();
 if (singleton.includes(name) && value.includes(',') && !(['if-modified-since', 'if-unmodified-since'].includes(name) && /^[A-Z][a-z]{2}, \d{2} [A-Z][a-z]{2} \d{4} \d{2}:\d{2}:\d{2} GMT$/.test(value)))
 invalid();
+if (name === 'metric-dataset')
+validMetricDataset(value);
 bytes += Buffer.byteLength(key) + Buffer.byteLength(value);
 if (bytes > 16384)
 invalid();
