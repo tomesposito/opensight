@@ -84,6 +84,22 @@ function routeMethod(path: string, method: string): void {
   if (!allowed.includes(method)) invalid();
 }
 
+/** The browser's exact dataset reference for governed-metric listing; metric-routes re-validates
+ * it with metricDataset(). JSON field separators contain commas, so this header is deliberately
+ * not a comma-rejecting singleton: a gateway comma-join of two references is not valid JSON for
+ * one reference, and the reference is a selector the route authorizes, never a principal. */
+function validMetricDataset(value: string): void {
+  if (Buffer.byteLength(value) > 2048) invalid();
+  let parsed: unknown;
+  try { parsed = JSON.parse(value); } catch { invalid(); }
+  const ref = record(parsed);
+  const idOk = (v: unknown): boolean => typeof v === 'string' && /^[A-Za-z0-9_-]{1,512}$/.test(v);
+  if (Object.keys(ref).some(k => !['kind', 'id', 'ownerId'].includes(k)) || !idOk(ref.id)) invalid();
+  if (ref.kind === 'dataset') { if (ref.ownerId !== undefined) invalid(); }
+  else if (ref.kind === 'prepared-dataset') { if (!idOk(ref.ownerId)) invalid(); }
+  else invalid();
+}
+
 function headers(raw: unknown): Record<string, string> {
   const result: Record<string, string> = Object.create(null) as Record<string, string>; let bytes = 0;
   for (const [key, value] of Object.entries(record(raw))) {
@@ -91,6 +107,7 @@ function headers(raw: unknown): Record<string, string> {
     if (!/^[a-z0-9-]+$/.test(name) || typeof value !== 'string' || /[\x00-\x1f\x7f]/.test(value) || Object.hasOwn(result, name)) invalid();
     // HTTP-date conditionals contain one comma; they cannot contain a joined pair.
     if (singleton.has(name) && value.includes(',') && !(['if-modified-since', 'if-unmodified-since'].includes(name) && /^[A-Z][a-z]{2}, \d{2} [A-Z][a-z]{2} \d{4} \d{2}:\d{2}:\d{2} GMT$/.test(value))) invalid();
+    if (name === 'metric-dataset') validMetricDataset(value);
     bytes += Buffer.byteLength(key) + Buffer.byteLength(value); if (bytes > 16384) invalid();
     result[name] = value;
   }
@@ -166,7 +183,7 @@ export function adaptGatewayRequest(raw: unknown, env: NodeJS.ProcessEnv): Runti
   if (['GET', 'HEAD'].includes(method) && body.length || h['content-length'] !== undefined && (!/^\d+$/.test(h['content-length']) || Number(h['content-length']) !== body.length)) invalid();
   routeMethod(path, method);
   const forwarded: Record<string, string> = { host: new URL(config.origin).host, 'content-length': String(body.length) };
-  for (const name of ['authorization', 'content-type', 'origin', 'idempotency-key', 'if-match', 'if-none-match', 'if-modified-since', 'if-unmodified-since', 'range', 'accept', 'limit', 'cursor']) if (h[name] !== undefined) forwarded[name] = h[name];
+  for (const name of ['authorization', 'content-type', 'origin', 'idempotency-key', 'if-match', 'if-none-match', 'if-modified-since', 'if-unmodified-since', 'range', 'accept', 'limit', 'cursor', 'metric-dataset']) if (h[name] !== undefined) forwarded[name] = h[name];
   if (event.cookies !== undefined) {
     if (h.cookie !== undefined) invalid();
     if (!Array.isArray(event.cookies) || event.cookies.some(c => typeof c !== 'string' || /[\r\n\x00]/.test(c)) || Buffer.byteLength(event.cookies.join('; ')) > 8192) invalid();
