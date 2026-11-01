@@ -3,11 +3,37 @@ import assert from 'node:assert/strict';
 import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { createHash } from 'node:crypto';
 import vm from 'node:vm';
 import { marketingFiles, frontendMetadata } from '../ops/serverless/frontend-policy.mjs';
 import { frontendFiles } from '../ops/serverless/release-safety.mjs';
 import { packageSites } from '../ops/serverless/package-sites.mjs';
 import { smokeStartup } from '../ops/serverless/release-smoke-request.mjs';
+
+test('marketing release packages every local icon declared by the actual page', () => {
+  const root = mkdtempSync(join(tmpdir(), 'opensight-marketing-icons-'));
+  try {
+    const target = join(root, 'frontend'), demo = join(root, 'demo.html');
+    mkdirSync(target); writeFileSync(demo, '<html>Offline demo</html>');
+    writeFileSync(join(target, 'manifest.json'), JSON.stringify({ version: 1, kind: 'frontend', files: { 'index.html': 'a'.repeat(64) } }));
+    const site = fileURLToPath(new URL('../site/', import.meta.url));
+    packageSites(site, demo, target);
+    const manifest = JSON.parse(readFileSync(join(target, 'manifest.json')));
+    const html = readFileSync(join(site, 'index.html'), 'utf8');
+    const icons = [...html.matchAll(/<link\b[^>]*\brel="(?:icon|apple-touch-icon)"[^>]*>/g)];
+    assert.ok(icons.length >= 2);
+    for (const [tag] of icons) {
+      const path = /\bhref="([^"]+)"/.exec(tag)?.[1].split('?')[0];
+      assert.match(path ?? '', /^assets\/[A-Za-z0-9_.-]+$/);
+      const name = 'marketing/' + path;
+      const expected = readFileSync(join(site, path));
+      assert.deepEqual(readFileSync(join(target, name)), expected);
+      assert.equal(manifest.files[name], createHash('sha256').update(expected).digest('hex'));
+      assert.match(frontendMetadata(name).ContentType, /^image\//);
+    }
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
 const code = readFileSync(new URL('../ops/serverless/edge-static.js', import.meta.url), 'utf8')
   .replace('__OPENSIGHT_APP_HOST__', '"app.opensight.example"').replace('__OPENSIGHT_MARKETING_HOST__', '"opensight.example"');
 const context = vm.createContext({}); vm.runInContext(code, context);

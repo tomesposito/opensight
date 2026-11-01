@@ -2,7 +2,7 @@
 export const marketingFiles = Object.freeze([
   'index.html', 'styles.css', 'app.js', 'robots.txt', 'sitemap.xml', 'demo/index.html',
   'assets/blaze.png', 'assets/data-prep.png', 'assets/data-sources.png',
-  'assets/embed-preview.png', 'assets/favicon.svg', 'assets/hero-poster.jpg',
+  'assets/embed-preview.png', 'assets/favicon.svg', 'assets/apple-touch-icon.png', 'assets/hero-poster.jpg',
   'assets/hero.mp4', 'assets/hero.webm', 'assets/opensight-tour.gif',
 ].map(name => 'marketing/' + name));
 export function requireMarketing(files, required = false) {

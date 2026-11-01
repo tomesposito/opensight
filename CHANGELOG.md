@@ -122,6 +122,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
+- Include the marketing site's Apple touch icon in the attested release archive so home-screen bookmarks can load the declared image (#176).
+
 - Ask O grounding now names the governed-metric version that actually executed: the executed versions arrive with the query response and replace the interpretation-time label, which stays visible separately as "Interpreted against" when a publication landed in between (#171).
 
 - Hosted workspace sessions stay signed in when governed metrics or preparation templates are saved or published, including unpublished drafts; stale content work still fails closed (#170).
