@@ -47,11 +47,12 @@ in projections, filters or calculated-field dependencies. Source creation,
 mutation, upload and refresh require build capability. AI discovery requires AI
 capability. Every request requires a verified tenant session.
 
-H2 sessions remain bound to metadata revisions. Successful durable mutations
-acknowledge the committed write, then the client must authenticate again before
-its next request; the previous session is invalidated. Mutations reverify after
-body intake, before writing. Reads reverify the session, revisions and upload
-expiry immediately before sending a response.
+H2 sessions remain bound to membership and authorization/policy revisions.
+Configuration-only durable mutations preserve the session (#170); changes to
+authorization or policy still require fresh authentication. Mutations acknowledge
+the committed write and reverify after body intake, before writing. Reads reverify
+the session, all content revisions (including configuration) and upload expiry
+immediately before sending a response.
 
 Uploads become unusable exactly at expiry, including cached reads and prepared
 dependencies. Startup and a minute timer remove expired encrypted payload records

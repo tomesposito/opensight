@@ -133,9 +133,11 @@ Every update, resource mutation and delete requires the current `If-Match`:
 The analysis version advances exactly once per successful edit. Hosted
 writes check access, data/security revisions and the analysis version in
 the same metadata transaction. Working-definition edits do not advance
-security/data revisions: doing so would invalidate concurrent bearer
-sessions instead of returning the specified version conflict. Access and
-binding checks always use current metadata. The loser rereads and reapplies.
+security/data revisions: concurrent edits return the specified asset version
+conflict. Authorization/policy changes invalidate H2 sessions; configuration
+changes independently invalidate stale content work while preserving H2 sessions
+(#170). Access and binding checks always use current metadata. The loser rereads
+and reapplies.
 
 `Idempotency-Key` uses the existing ten-minute, process-local convention.
 The cache is scoped by tenant, namespace, user, method and path, binds the

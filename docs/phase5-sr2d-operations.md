@@ -17,10 +17,11 @@ operations do not reserve a native analytics worker; native upload/query/refresh
 work still requires full SR2 admission and H4 containment.
 
 Every externally visible operation rechecks the original request/session or
-event authority at its publication boundary. Metadata edits may invalidate their
-own revision-bound session: acknowledge only the committed write, then require
-fresh authentication for further work as existing H2 requires. Expiry uses SQL
-time; invocation remaining time only limits containment.
+event authority at its publication boundary. Authorization/policy edits invalidate
+their H2 session: acknowledge only the committed write, then require fresh
+authentication for further work. Configuration-only edits preserve H2 sessions
+(#170), while all captured content revisions still fence publication. Expiry uses
+SQL time; invocation remaining time only limits containment.
 
 Background invocation connection budget is 20 seconds, within a maximum 110-second
 work window and 120-second function. This accommodates measured Aurora wake
