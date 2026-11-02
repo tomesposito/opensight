@@ -86,6 +86,47 @@ test('committed uploads and prep saves emit fixed properties; rejected mutations
   const rows = await store.read(f.metadata, await f.login());
   assert.deepEqual(rows.map(r => [r.name, r.props]), [['dataset_uploaded', { sourceType: 'file', rowCountBucket: '1-99' }], ['dataset_prep_saved', {}]]);
 });
+test('Issue #179: a committed live source connection emits data_source_connected; a rejected registration emits nothing', async t => {
+  const { sourceFixture, registration } = await import('./source-helpers.mjs');
+  const { HostedData } = await import('../dist/hosted-data.js');
+  const f = await sourceFixture(t); await initializeAnalytics(f.db);
+  const store = new AnalyticsStore(f.db), analytics = new Analytics(store, { enabled: true, vendorKey: 'test-only', transport: async () => ({ ok: true }) });
+  const data = new HostedData(f.sources, undefined, f.budgets, undefined, undefined, analytics);
+  const context = await f.login(); data.begin(context);
+  await assert.rejects(data.createSource(context, 'rejected', { ...registration(), endpointId: 'missing' }));
+  const source = await data.createSource(context, 'live', registration());
+  assert.equal(source.connectorId, 'postgresql');
+  await analytics.close();
+  const rows = await store.read(f.metadata, await f.login());
+  assert.deepEqual(rows.map(r => [r.name, r.props]), [['data_source_connected', { sourceType: 'postgresql' }]]);
+});
+test('Issue #179: first dashboard save is flagged first, a republish is an edit, and a second dashboard is not first', async t => {
+  const f = await authFixture(t); await initializeAnalytics(f.db); const calls = [];
+  const analytics = new Analytics(new AnalyticsStore(f.db), { enabled: true, vendorKey: 'test-only', transport: async (_url, init) => { calls.push(JSON.parse(init.body)); return { ok: true }; } });
+  const request = await serving(t, f, analytics), { token } = await f.login(), base = '/api/v1/analyses';
+  const definition = { dataSetIdentifierDeclarations: [], sheets: [{ sheetId: 'sheet', visuals: [] }], calculatedFields: [], filterGroups: [] };
+  for (const id of ['campaign-one', 'campaign-two']) {
+    assert.equal((await request(base, { token, method: 'POST', body: { analysisId: id, name: 'Private analysis', definition, datasetBindings: {} } })).status, 201);
+  }
+  const first = await request(`${base}/campaign-one/publish`, { token, method: 'POST', body: {} });
+  assert.equal(first.status, 201, JSON.stringify(first.body));
+  const republish = { token, method: 'POST', body: { dashboardId: first.body.DashboardId }, headers: { 'idempotency-key': 'republish-one' } };
+  assert.equal((await request(`${base}/campaign-one/publish`, republish)).status, 201);
+  assert.equal((await request(`${base}/campaign-one/publish`, republish)).status, 201); // replay: no extra events
+  const second = await request(`${base}/campaign-two/publish`, { token, method: 'POST', body: {} });
+  assert.equal(second.status, 201, JSON.stringify(second.body));
+  await analytics.flush();
+  const dashboardEvents = calls.filter(c => ['dashboard_saved', 'dashboard_edited'].includes(c.event))
+    .map(c => [c.event, c.properties.first]);
+  assert.deepEqual(dashboardEvents, [
+    ['dashboard_saved', true],
+    ['dashboard_saved', false],
+    ['dashboard_edited', undefined],
+    ['dashboard_saved', false],
+  ]);
+  assert.ok(calls.every(c => c.properties.distinct_id === f.tenant.tenantId));
+  assert.doesNotMatch(JSON.stringify(calls), /Private analysis/);
+});
 test('analysis first visual survives removal and server restart; dashboard views and shares use server routes', async t => {
   const f = await authFixture(t); await initializeAnalytics(f.db); const calls = [];
   const analytics = new Analytics(new AnalyticsStore(f.db), { enabled: true, vendorKey: 'test-only', transport: async (_url, init) => { calls.push(JSON.parse(init.body)); return { ok: true }; } });
