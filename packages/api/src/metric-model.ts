@@ -1,4 +1,5 @@
 import { parseExpression, compilePrep, hasCapability, METRIC_PREFIX, type MetricDefinition, type MetricDataset, type PublishedMetric } from '@opensight/query-engine';
+import { containsPII } from './ai-guard.js';
 import { AssetCatalog, assetFail, assetKey } from './asset-model.js';
 import { object, identifier, resourceKey, type MetadataResource } from './metadata-resources.js';
 
@@ -15,6 +16,17 @@ export function metricDataset(raw: unknown): MetricDataset {
   return d as MetricDataset;
 }
 export function metricDefinition(raw: unknown, schema?: MetricSchema): MetricDefinition {
+  return metricDefinitionChecked(raw, schema, false);
+}
+/**
+ * Live validation rejects PII-shaped synonyms (#181): synonyms are serialized
+ * into generative provider prompts, so they must never be stored or published.
+ * Storage validation (validateMetricRecord) passes allowStoredSynonyms so
+ * historical definitions survive; a legacy published metric stays loadable
+ * and is blocked at egress by the ai-guard, and a legacy draft still cannot
+ * be (re)published because publish revalidates through the live path.
+ */
+function metricDefinitionChecked(raw: unknown, schema: MetricSchema | undefined, allowStoredSynonyms: boolean): MetricDefinition {
   const d = object(raw, ['name', 'expression', 'defaultAggregation', 'format', 'description', 'synonyms']);
   if (typeof d.name !== 'string' || !d.name.trim() || d.name !== d.name.trim() || d.name.length > 128 || /[{}\x00-\x1f]/.test(d.name) || d.name.startsWith(METRIC_PREFIX)) assetFail('METRIC_INVALID_NAME');
   if (typeof d.expression !== 'string' || !d.expression.trim() || d.expression.length > 10000) assetFail('METRIC_INVALID_EXPRESSION');
@@ -22,6 +34,7 @@ export function metricDefinition(raw: unknown, schema?: MetricSchema): MetricDef
   const f = object(d.format, ['style', 'decimalPlaces', 'currency']);
   if (!['number', 'percent', 'currency'].includes(String(f.style)) || !Number.isInteger(f.decimalPlaces) || Number(f.decimalPlaces) < 0 || Number(f.decimalPlaces) > 10 || (f.style === 'currency' ? typeof f.currency !== 'string' || !/^[A-Z]{3}$/.test(f.currency) : f.currency !== undefined)) assetFail('METRIC_INVALID_FORMAT');
   if (typeof d.description !== 'string' || d.description.length > 4000 || !Array.isArray(d.synonyms) || d.synonyms.length > 50 || d.synonyms.some(s => typeof s !== 'string' || !s.trim() || s !== s.trim() || s.length > 128 || /[{}\x00-\x1f]/.test(s)) || new Set(d.synonyms.map(s => String(s).toLowerCase())).size !== d.synonyms.length) assetFail('METRIC_INVALID_INPUT');
+  if (!allowStoredSynonyms && (d.synonyms as string[]).some(s => containsPII(s))) assetFail('METRIC_INVALID_INPUT');
   if (schema) {
     if (schema.columns.some(c => c.name.toLowerCase() === String(d.name).toLowerCase())) assetFail('METRIC_NAME_CONFLICT', 409);
     try {
@@ -48,7 +61,7 @@ export function validateMetricRecord(raw: unknown): MetricRecord {
   b.versions.forEach((raw, i) => {
     const v = object(raw, ['version', 'state', 'definition', 'actor', 'at']);
     if (v.version !== i + 1 || !['draft', 'published'].includes(String(v.state)) || typeof v.at !== 'string' || !Number.isFinite(Date.parse(v.at))) assetFail('METRIC_INVALID_HISTORY');
-    identifier(v.actor); metricDefinition(v.definition);
+    identifier(v.actor); metricDefinitionChecked(v.definition, undefined, true);
     const a = object((b.audit as unknown[])[i], ['action', 'actor', 'at', 'version']);
     if (a.version !== v.version || a.actor !== v.actor || a.at !== v.at || a.action !== (v.state === 'published' ? 'publish' : i === 0 ? b.provenance ? 'promote' : 'create' : 'edit')) assetFail('METRIC_INVALID_HISTORY');
     if (v.state === 'published') published = i + 1;
