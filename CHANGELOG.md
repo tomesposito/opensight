@@ -224,6 +224,10 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Security
 
+- XLSX uploads are now rejected before parsing when the workbook's declared
+  uncompressed ZIP sizes exceed the ceilings (16 MiB per member, 64 MiB
+  total, 1000 members), so a small high-ratio file can no longer inflate
+  unboundedly inside the API process during the SheetJS parse (#182).
 - Governed-metric synonyms no longer bypass the generative-AI PII egress
   guard: both Ask O routes check synonyms with field names and return
   `AI_FIELD_NAME_PII` before any provider call, and metric validation rejects

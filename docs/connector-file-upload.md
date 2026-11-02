@@ -28,6 +28,10 @@ mixed types. All-null columns default to STRING. Optional `columns` specifies th
 exact ordered schema. Declare STRING to retain numeric-looking text IDs or large
 integer strings. JSON retains scalar types instead of coercing strings to numbers.
 Limits: 8 MiB input, 100,000 rows, 256 columns, 20 staged tables per session.
+XLSX workbooks are also bounded by their declared uncompressed ZIP sizes,
+checked from the central directory before parsing: at most 16 MiB per member,
+64 MiB in total, and 1000 members; workbooks whose sizes cannot be bounded
+from the headers (ZIP64) are rejected.
 No remote file reads or live database are required.
 
 License verification at build time (2026-09-28): installed `xlsx@0.18.5`

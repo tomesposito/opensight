@@ -59,6 +59,30 @@ test('Excel rejects formulas, merges and text fallback', () => {
   }
   assert.throws(() => parseUpload(input('a,b\n1,2', { format: 'xlsx' })), { code: 'INVALID_UPLOAD' });
 });
+test('xlsx rejects a high-ratio workbook whose declared uncompressed size exceeds the ceilings before parsing (#182)', () => {
+  // 600 distinct near-32k strings inflate to ~18 MiB of shared strings while
+  // deflating to a few KiB: compressed size passes the 8 MiB cap, so only the
+  // pre-parse declared-size check can reject it before SheetJS inflates it.
+  const rows = [['name'], ...Array.from({ length: 600 }, (_, i) => [`${i}:${'x'.repeat(30_000)}`])];
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(rows), 'Data');
+  const bytes = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx', bookSST: true, compression: true });
+  assert.ok(bytes.length < 8 * 1024 * 1024, `fixture should stay under the compressed cap, got ${bytes.length}`);
+  assert.throws(() => parseUpload({ config: { format: 'xlsx' }, data: bytes }), { code: 'UPLOAD_LIMIT_EXCEEDED' });
+});
+test('xlsx rejects a central directory declaring an oversize member, even when the stored bytes are small (#182)', () => {
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([['a'], [1]]), 'Data');
+  const bytes = Buffer.from(XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' }));
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  let end = bytes.length - 22;
+  while (view.getUint32(end, true) !== 0x06054b50) end--;
+  const centralStart = view.getUint32(end + 16, true);
+  assert.equal(view.getUint32(centralStart, true), 0x02014b50);
+  // Declare the first member's uncompressed size just over the 16 MiB ceiling.
+  view.setUint32(centralStart + 24, 16 * 1024 * 1024 + 1, true);
+  assert.throws(() => parseUpload({ config: { format: 'xlsx' }, data: bytes }), { code: 'UPLOAD_LIMIT_EXCEEDED' });
+});
 test('staging isolates sessions, escapes SQL identifiers/values, and recovers after rejection', async () => {
   const a = await UploadStaging.create(), b = await UploadStaging.create();
   try {
