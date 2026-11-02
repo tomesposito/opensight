@@ -47,6 +47,23 @@ for (const [pattern, name] of [
   });
 }
 
+for (const [pattern, synonym] of [
+  ['email', 'test.person@example.com'],
+  ['SSN', 'SSN 123-45-6789'],
+  ['phone', 'call 555-123-4567'],
+  ['payment card', 'card 4111-1111-1111-1111'],
+  ['IPv4', '192.0.2.8'],
+]) {
+  test(`hasFieldNamePII detects ${pattern} in a governed-metric synonym (#181)`, () => {
+    // A clean metric name cannot launder a PII-shaped synonym past the guard:
+    // synonyms are serialized into the provider prompt alongside the name.
+    const fields = Object.freeze([Object.freeze({ name: 'Net revenue', synonyms: Object.freeze(['net sales', synonym]) })]);
+    for (let i = 0; i < 3; i++) assert.equal(hasFieldNamePII(fields), true);
+    assert.equal(hasFieldNamePII([{ name: 'Net revenue', synonyms: ['net sales'] }]), false);
+    assert.deepEqual(fields, [{ name: 'Net revenue', synonyms: ['net sales', synonym] }]);
+  });
+}
+
 test('hasFieldNamePII accepts empty lists and ordinary analytical names unchanged', () => {
   const names = ['Margin', 'Gross revenue', 'revenue 2024', 'Say "hello", it\'s revenue'];
   const fields = Object.freeze(names.map(name => Object.freeze({ name })));

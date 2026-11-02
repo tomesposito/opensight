@@ -127,7 +127,10 @@ Defenses (issues #113 and #139):
   `AI_FIELD_NAME_PII`, before any provider call, spend metering, or question
   analytics. The message asks the user to rename the field and never echoes
   the sensitive name or value. Names are rejected rather than redacted so
-  binding stays unambiguous. CLS-denied columns are excluded before this check
+  binding stays unambiguous. Governed-metric synonyms are checked with the
+  metric name (#181): they are serialized into the prompt alongside it, and
+  metric create/edit/publish validation rejects PII-shaped synonyms outright
+  so new ones cannot be stored. CLS-denied columns are excluded before this check
   and cannot trigger it; calculations that reference denied columns still fail
   authorization.
 - Provider keys are redacted from echoed answers (`AISettings.complete`), and

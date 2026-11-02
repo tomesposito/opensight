@@ -6,8 +6,9 @@
  * the provider prompt carries the free-text question and permitted field
  * names/types: physical columns after CLS filtering plus calculated fields.
  * Calculated expressions are validated on the server, not sent in the prompt.
- * The question is PII-redacted; if any provider-bound field name matches the
- * same patterns, both routes return 400 AI_FIELD_NAME_PII before provider
+ * The question is PII-redacted; if any provider-bound field name — or any
+ * governed-metric synonym carried on a provider-bound field (#181) — matches
+ * the same patterns, both routes return 400 AI_FIELD_NAME_PII before provider
  * calls, spend metering, or question analytics, without echoing the name.
  * Denied columns are excluded before this guard. Patterns are best-effort:
  * unrecognized sensitive terms may still pass, and benign numeric identifiers
@@ -48,10 +49,20 @@ export function redactPII(text: string): string {
   return out;
 }
 
-/** Checks provider-bound field names with the same PII policy as questions. */
-export function hasFieldNamePII(fields: readonly { readonly name: string }[]): boolean {
+/** True when free text matches the same PII policy as questions. */
+export function containsPII(text: string): boolean {
   // Global replace resets lastIndex, so repeated checks cannot skip a match.
-  return fields.some(field => redactPII(field.name) !== field.name);
+  return redactPII(text) !== text;
+}
+
+/**
+ * Checks provider-bound field names with the same PII policy as questions.
+ * Governed-metric synonyms are serialized into the prompt alongside the name
+ * (#181), so they are checked with the name — a clean name cannot launder a
+ * PII-shaped synonym past the egress guard.
+ */
+export function hasFieldNamePII(fields: readonly { readonly name: string; readonly synonyms?: readonly string[] }[]): boolean {
+  return fields.some(field => containsPII(field.name) || (field.synonyms ?? []).some(containsPII));
 }
 
 const SECURITY_PREAMBLE =

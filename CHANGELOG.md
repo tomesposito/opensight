@@ -224,6 +224,10 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Security
 
+- Governed-metric synonyms no longer bypass the generative-AI PII egress
+  guard: both Ask O routes check synonyms with field names and return
+  `AI_FIELD_NAME_PII` before any provider call, and metric validation rejects
+  PII-shaped synonyms so new ones cannot be stored or published (#181).
 - Ask O and planner-backed queries now report CLS-denied columns exactly like
   missing columns, preventing error responses from revealing denied-column
   existence while continuing to reject access (#180).
