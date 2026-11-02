@@ -45,6 +45,9 @@ log rows and already delivered PostHog events are retained.
 | `dataset_prep_saved` | none | Successful prep definition save, including hosted import through save. |
 | `analysis_created` | none | Committed v1 creation/copy or embedded console creation. |
 | `analysis_first_visual` | none | First committed visual, including a creation/copy with visuals. A server-owned `hasHadVisual` analysis field survives edits, visual removal and restart. |
+| `data_source_connected` | `sourceType` | Successful hosted registration of a live data source (`HostedData.createSource`, the `PUT /api/sources/:id` point). Only `postgresql` is a live connection today; file uploads emit `dataset_uploaded` instead, and the local connector `connect` call is validation only (it tests no credentials and opens nothing), so it emits nothing. |
+| `dashboard_saved` | `first` (boolean) | Committed v1 dashboard publish. `first: true` only when the workspace had no published dashboard before this publish (counted tenant-wide, ignoring the publisher's grants, before the commit); later saves carry `first: false`. Idempotency replays are excluded. |
+| `dashboard_edited` | none | A committed republish of an existing dashboard (a new version of a dashboard that already existed), emitted alongside that publish's `dashboard_saved` with `first: false`. Creating a further new dashboard is a save, not an edit. |
 | `dashboard_viewed` | none | Authorized v1 dashboard/version description or legacy definition read; listing and visual queries are excluded. |
 | `dashboard_shared` | none | Successful dashboard share grant write; revocations and idempotency replays are excluded. |
 | `embed_viewed` | none | Authorized embedded content response or legacy signed embed rendering; issuance and status polling are excluded. |
@@ -53,9 +56,18 @@ log rows and already delivered PostHog events are retained.
 
 `sourceType` uses the existing source kinds: `file` or `postgresql`. The upload
 paths currently emit `file`; registering a PostgreSQL connection is not a file
-upload. `rowCountBucket` is exactly `0`, `1-99`, `100-999`, `1000-9999`, or
+upload — it emits `data_source_connected` with `sourceType: postgresql`, and
+that event's schema accepts no other source type until another live connector
+exists. `rowCountBucket` is exactly `0`, `1-99`, `100-999`, `1000-9999`, or
 `10000+`. Raw row counts are never event properties. The question count schema
 accepts positive safe integers; current call sites emit one per admitted question.
+
+The marketing measures (#179) compute from these events per tenant:
+activation is a `data_source_connected` event and a `dashboard_saved` event
+with `first: true` for the same tenant within 7 days of that tenant's
+`tenant_provisioned` event; week-4 retention is a `dashboard_viewed` or
+`dashboard_edited` event in week 4. No paid-funnel events exist: metering is
+not billing, and no event claims a payment.
 
 The TypeScript discriminated union and runtime schemas reject the whole event
 when any property is unknown or invalid. This includes content fields, nested

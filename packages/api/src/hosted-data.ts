@@ -92,6 +92,13 @@ export class HostedData {
       return result;
     }, this.signals.get(context));
   }
+  /** Registering a live (PostgreSQL) source is the connection point for #179.
+   * File uploads emit `dataset_uploaded` instead and never this event. */
+  async createSource(context: TenantContext, id: string, raw: unknown) {
+    const result = await this.sources.create(context, id, raw);
+    this.analytics.track(context, { name: 'data_source_connected', props: { sourceType: 'postgresql' } });
+    return result;
+  }
   async admit(context: TenantContext, id: string, path: DataPath, embedSecurity?: (security: SecurityContext) => SecurityContext): Promise<Admission> {
     const revisions = await this.sources.metadata.revisions(context);
     await this.sources.capability(context, path === 'ai' ? 'ai' : path === 'prep' ? 'build' : 'view');

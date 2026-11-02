@@ -36,6 +36,9 @@ export class HostedDashboards implements DashboardBackend {
     }
     return result;
   }
+  async workspaceDashboardCount() {
+    return (await this.metadata.list(this.context, 'dashboard')).filter(a => a.body.published).length;
+  }
   async get(id: string) {
     await this.authorize(id);
     const record = (await this.metadata.get(this.context, { kind: 'dashboard', id })).body.published as DashboardRecord | undefined;

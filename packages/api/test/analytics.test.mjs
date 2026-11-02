@@ -25,6 +25,11 @@ test('analytics door rejects content, unknown fields, malformed values and execu
       { name: 'dataset_uploaded', props: { sourceType: 'file', rowCountBucket: 3 } },
       { name: 'ask_o_asked', props: { count: 1, question: 'private' } }, { name: 'ask_o_asked', props: { count: NaN } },
       { name: 'ask_o_asked', props: { count: -1 } }, { name: 'ask_o_asked', props: { count: 1.5 } },
+      { name: 'data_source_connected', props: { sourceType: 'file' } },
+      { name: 'data_source_connected', props: { sourceType: 'postgresql', endpoint: 'private' } },
+      { name: 'dashboard_saved', props: { first: 'true' } }, { name: 'dashboard_saved', props: {} },
+      { name: 'dashboard_saved', props: { first: true, name: 'private' } },
+      { name: 'dashboard_edited', props: { first: false } },
       { name: 'analysis_created', userId: 'private' }, { name: 'analysis_created', props: { toJSON() { throw Error(); } } },
       { get name() { throw Error(); } }, { name: 'analysis_created', props: { [Symbol('private')]: 'secret' } },
     ];
@@ -43,6 +48,25 @@ test('analytics log isolates tenant reads and refuses crossed tenant/namespace w
     assert.deepEqual((await f.store.read(f.metadata, f.b)).map(r => r.name), ['user_invited']); assert.equal(analytics.stats.failed, 1);
     await assert.rejects(f.store.read(f.metadata, { ...f.a, tenantId: 'b' }), { code: 'TENANT_CONTEXT_REQUIRED' });
     await assert.rejects(f.store.read(f.metadata, { ...f.a }), { code: 'TENANT_CONTEXT_REQUIRED' });
+  } finally { await f.db.close(); }
+});
+test('Issue #179: the three capture events record only their fixed properties', async () => {
+  const f = await fixture(), analytics = new Analytics(f.store, { enabled: true, vendorKey: 'test-only', transport: async () => ({ ok: true }) });
+  try {
+    analytics.track(f.a, { name: 'data_source_connected', props: { sourceType: 'postgresql' } });
+    analytics.track(f.a, { name: 'dashboard_saved', props: { first: true } });
+    analytics.track(f.a, { name: 'dashboard_saved', props: { first: false } });
+    analytics.track(f.a, { name: 'dashboard_edited' });
+    await analytics.close(); assert.equal(analytics.stats.invalid, 0);
+    // Store reads order by (created_at, event_id); events tracked in the same
+    // millisecond tie on created_at, so compare as a sorted set, not a sequence.
+    const byNameThenProps = (a, b) => a[0].localeCompare(b[0]) || JSON.stringify(a[1]).localeCompare(JSON.stringify(b[1]));
+    assert.deepEqual((await f.store.read(f.metadata, f.a)).map(r => [r.name, r.props]).sort(byNameThenProps), [
+      ['dashboard_edited', {}],
+      ['dashboard_saved', { first: false }],
+      ['dashboard_saved', { first: true }],
+      ['data_source_connected', { sourceType: 'postgresql' }],
+    ].sort(byNameThenProps));
   } finally { await f.db.close(); }
 });
 test('analytics row buckets expose only fixed ranges', () => {
