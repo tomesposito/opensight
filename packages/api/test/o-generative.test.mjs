@@ -5,7 +5,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { Analytics } from '../dist/analytics.js';
 import { dashboardRoot } from './automation-helpers.mjs';
-import { organizationApi } from './organization-helpers.mjs';
+import { organizationApi, registry } from './organization-helpers.mjs';
 import { columnProbeApis, assertSameColumnFailure } from './cls-oracle-helpers.mjs';
 const route = '/api/o/generate';
 const response = text => Response.json({ output: [{ type: 'message', content: [{ type: 'output_text', text: typeof text === 'string' ? text : JSON.stringify(text) }] }] });
@@ -126,6 +126,27 @@ for (const endpoint of [route, '/api/o/calculation']) {
   });
 }
 
+for (const endpoint of [route, '/api/o/calculation']) test(`#181 ${endpoint} blocks a PII-shaped governed-metric synonym before provider transport or analytics`, async t => {
+  // A metric published before the synonym guard existed: its name is clean
+  // but a synonym matches a PII pattern, and synonyms are serialized into
+  // the provider prompt — both routes must refuse before any provider call.
+  const synonym = 'test.person@example.com';
+  const at = '2026-11-01T00:00:00.000Z';
+  const state = registry();
+  state.metrics = [{ namespaceId: 'default', resource: { kind: 'metric', id: 'legacy', version: 1, body: {
+    dataset: { kind: 'dataset', id: 'sales' }, createdBy: 'admin', publishedVersion: 1,
+    versions: [{ version: 1, state: 'published', actor: 'admin', at, definition: { name: 'Legacy revenue', expression: '{revenue}', defaultAggregation: 'SUM', format: { style: 'number', decimalPlaces: 2 }, description: '', synonyms: [synonym] } }],
+    audit: [{ action: 'publish', version: 1, actor: 'admin', at }],
+  } } }];
+  const calls = [];
+  const analytics = new Analytics();
+  const track = t.mock.method(analytics, 'track');
+  const { api } = await organizationApi(t, { analytics, security: { initialState: state }, ai: options(async (_url, init) => { calls.push(JSON.parse(init.body)); return response({ question: 'sum revenue' }); }) });
+  const result = await api(endpoint, 'POST', { question: 'sum revenue', dashboardId: 'sales-dashboard' });
+  assertFieldNamePII(result, synonym);
+  assert.equal(calls.length, 0);
+  assert.equal(track.mock.callCount(), 0);
+});
 test('generative O uses registered capabilities, server metadata and namespace-scoped dashboard access', async t => {
   const calls = [];
   const { api } = await organizationApi(t, { ai: options(async (url, init) => { calls.push(JSON.parse(init.body)); return response({ question: 'sum revenue by region' }); }) });

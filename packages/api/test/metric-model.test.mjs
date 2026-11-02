@@ -50,6 +50,22 @@ test('metrics: unknown identities, invalid fields, same dataset name conflicts, 
   assert.throws(() => c.assets.remove(c.dataset(ref)), { code: 'DATASET_DELETE_BLOCKED_BY_METRIC' });
 });
 
+test('metrics: PII-shaped synonyms are rejected live but historical records survive storage validation (#181)', () => {
+  const entries = resources(), c = catalog(entries);
+  const pii = { ...definition, synonyms: ['net sales', 'test.person@example.com'] };
+  // Synonyms reach generative provider prompts, so the live path (create,
+  // edit, and publish revalidation) refuses to store them at all.
+  assert.throws(() => c.create('a', ref, pii, schema), { code: 'METRIC_INVALID_INPUT' });
+  c.create('a', ref, definition, schema);
+  assert.throws(() => c.edit('a', 1, pii, schema), { code: 'METRIC_INVALID_INPUT' });
+  // A record stored before the guard existed stays loadable: storage
+  // validation tolerates it, and the ai-guard blocks it at provider egress.
+  const legacy = structuredClone(metricRecord(c.assets.find('metric', 'a')).versions[0].definition);
+  legacy.synonyms = ['test.person@example.com'];
+  const record = { dataset: ref, createdBy: 'owner', publishedVersion: null, versions: [{ version: 1, state: 'draft', definition: legacy, actor: 'owner', at: '2026-11-01T00:00:00.000Z' }], audit: [{ action: 'create', version: 1, actor: 'owner', at: '2026-11-01T00:00:00.000Z' }] };
+  assert.equal(validateMetricRecord(record), record);
+});
+
 test('metrics: durable asset transactions preserve history across reopen and isolate workspaces', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'metric-model-')), path = join(directory, 'metadata.sqlite');
   let db = new SqliteMetadataDatabase(path);
