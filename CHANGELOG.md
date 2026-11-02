@@ -224,6 +224,10 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Security
 
+- Ask O and planner-backed queries now report CLS-denied columns exactly like
+  missing columns, preventing error responses from revealing denied-column
+  existence while continuing to reject access (#180).
+
 - Generative questions and calculated-field suggestions now reject permitted
   physical or calculated field names matching common PII patterns before any
   provider call, returning `AI_FIELD_NAME_PII` with rename guidance without

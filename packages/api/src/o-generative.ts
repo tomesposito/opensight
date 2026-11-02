@@ -27,7 +27,8 @@ async function schema(body: Record<string, unknown>, sales: SalesQuery, identity
     return { Name: c.name, Expression: c.expression, DataSetIdentifier: 'sales' };
   });
   const binder = new ExpressionBinder('sales', metadata.columns, declarations, [], {}, (name, path) => {
-    if (policy.deniedColumns.includes(name)) throw new QueryEngineError('COLUMN_ACCESS_DENIED', path, 'Column access denied');
+    // #180: match missing-name binding failures before any provider call.
+    if (policy.deniedColumns.includes(name)) throw new QueryEngineError('UNRESOLVED_BINDING', path, `unknown column: ${name}`);
   });
   const fields: SchemaField[] = metadata.columns.filter(c => !policy.deniedColumns.includes(c.name)).map(c => ({ name: c.name, type: c.type }));
   for (const c of declarations) {

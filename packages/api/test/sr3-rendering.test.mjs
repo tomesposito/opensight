@@ -44,5 +44,5 @@ test('SR3 real recipient report rendering uses SR2 admission and preserves RLS/C
     protectedColumns: ['private', 'amount'], columnGrants: [...stored.body.policy.columnGrants, { id: 'owner-amount', column: 'amount', effect: 'allow', principals: [{ type: 'user', id: 'admin' }] }] } }, stored.version);
   context = await f.metadata.authenticate(null, async () => ({ namespaceId: 'one', userId: 'admin' }));
   await f.store.enqueue(context, 'report'); await f.jobs.run(await f.event('job-execute')); await deliver(await f.event('job-deliver'));
-  assert.equal(f.mail.messages.length, 1); assert.equal((await f.rows('h7_deliveries')).at(-1).error_code, 'COLUMN_ACCESS_DENIED');
+  assert.equal(f.mail.messages.length, 1); assert.equal((await f.rows('h7_deliveries')).at(-1).error_code, 'UNRESOLVED_BINDING'); // #180: planner conceals denied-column existence.
 });

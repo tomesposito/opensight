@@ -53,11 +53,11 @@ test('column grant CRUD validates principals/columns/effects and retains column 
   assert.deepEqual((await api(path)).body, { id: 'revenue', ...grant });
   assert.equal((await api('/api/datasets/sales/column-grants')).body.length, 1);
   assert.equal((await api('/api/datasets/sales/query', 'POST', query, 'alice')).status, 200);
-  assert.equal((await api('/api/datasets/sales/query', 'POST', query, 'bob')).body.errorCode, 'COLUMN_ACCESS_DENIED');
+  assert.equal((await api('/api/datasets/sales/query', 'POST', query, 'bob')).body.errorCode, 'UNRESOLVED_BINDING'); // #180: planner conceals denied-column existence.
   for (const invalid of [{ ...grant, column: 'missing' }, { ...grant, effect: 'other' }, { ...grant, sql: '1' }, { ...grant, principals: [{ type: 'user', id: 'missing' }] }]) assert.equal((await api(path, 'PUT', invalid)).status, 400);
   assert.equal((await api(path, 'PUT', { ...grant, effect: 'deny' }, 'alice')).status, 403);
   assert.equal((await api(path, 'DELETE')).status, 200);
-  assert.equal((await api('/api/datasets/sales/query', 'POST', query, 'alice')).body.errorCode, 'COLUMN_ACCESS_DENIED');
+  assert.equal((await api('/api/datasets/sales/query', 'POST', query, 'alice')).body.errorCode, 'UNRESOLVED_BINDING'); // #180: planner conceals denied-column existence.
 });
 test('namespace CRUD validates resources, scopes reads and handles empty namespace deletion', async t => {
   const api = await secureApi(t, { authenticate: r => {

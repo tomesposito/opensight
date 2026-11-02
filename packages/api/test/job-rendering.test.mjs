@@ -26,7 +26,7 @@ test('H7 real report rendering uses recipient RLS, CLS and dashboard/folder gran
   assert.match(f.mail.messages[0].html, />40</); assert.doesNotMatch(f.mail.messages[0].html, />60</);
   const d = await f.metadata.get(await f.context(), { kind: 'dashboard', id: 'dashboard' });
   await f.metadata.put(await f.context(), { kind: 'dashboard', id: 'dashboard' }, { ...d.body, definition: assetDefinition('dashboard', 'dashboard', 'private') }, d.version);
-  await assert.rejects(f.renderer.authorize(await f.reader.context(), f.spec), { code: 'COLUMN_ACCESS_DENIED' });
+  await assert.rejects(f.renderer.authorize(await f.reader.context(), f.spec), { code: 'UNRESOLVED_BINDING' }); // #180: planner conceals denied-column existence.
   await f.metadata.put(await f.context(), { kind: 'folder', id: 'closed' }, { name: 'Closed', grants: [] });
   await f.metadata.put(await f.context(), { kind: 'dashboard', id: 'dashboard' }, { ...d.body, folderId: 'closed' }, d.version + 1);
   await assert.rejects(f.renderer.authorize(await f.reader.context(), f.spec), { code: 'RESOURCE_NOT_FOUND' });

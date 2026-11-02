@@ -14,6 +14,25 @@ export function secured() {
     policy: { namespaceId: 'default', dataSetArn: r.localData.dataSetArn, rowLevel: true, rowRules: [rule()] } };
   return r;
 }
+for (const dialect of ['duckdb', 'postgres', 'mysql']) test(`#180 ${dialect} denied and missing columns have identical planner diagnostics`, () => {
+  for (const expression of [undefined, '{revenue}', 'sumOver({revenue}, [], PRE_FILTER)']) {
+    const denied = secured();
+    if (expression) calculation(denied, expression);
+    const missing = structuredClone(denied);
+    denied.security.policy.protectedColumns = ['revenue'];
+    const table = missing.dataSet.DataSet.PhysicalTableMap.sales.RelationalTable;
+    table.InputColumns = table.InputColumns.filter(c => c.Name !== 'revenue');
+    missing.dataSet.DataSet.OutputColumns = missing.dataSet.DataSet.OutputColumns.filter(c => c.Name !== 'revenue');
+    let absent;
+    assert.throws(() => planVisual(missing, { dialect }), error => {
+      assert.equal(error.code, 'UNRESOLVED_BINDING');
+      assert.equal(error.message, `${error.path}: unknown column: revenue`);
+      absent = { code: error.code, message: error.message, path: error.path };
+      return true;
+    });
+    assert.throws(() => planVisual(denied, { dialect }), absent);
+  }
+});
 test('RLS executes in DuckDB and PostgreSQL before aggregates, with OR rules and AND predicates', async t => {
   const pg = new PGlite(); t.after(() => pg.close());
   await pg.exec('CREATE TABLE sales (order_id BIGINT, order_date TIMESTAMP, region TEXT, category TEXT, revenue DOUBLE PRECISION, profit DOUBLE PRECISION)');
@@ -69,13 +88,13 @@ for (const dialect of ['duckdb', 'postgres', 'mysql']) test(`${dialect} CLS deny
   assert.doesNotThrow(() => planVisual(r, { dialect }));
   calculation(r, '{Indirect}');
   r.analysis.Definition.CalculatedFields.push({ Name: 'Indirect', DataSetIdentifier: 'sales_data', Expression: '{profit} + 1' });
-  assert.throws(() => planVisual(r, { dialect }), { code: 'COLUMN_ACCESS_DENIED' });
+  assert.throws(() => planVisual(r, { dialect }), { code: 'UNRESOLVED_BINDING' }); // #180: planner conceals denied-column existence.
   r.analysis.Definition.CalculatedFields.at(-1).Expression = 'sumOver({profit}, [], PRE_FILTER)';
-  assert.throws(() => planVisual(r, { dialect }), { code: 'COLUMN_ACCESS_DENIED' });
+  assert.throws(() => planVisual(r, { dialect }), { code: 'UNRESOLVED_BINDING' }); // #180: planner conceals denied-column existence.
   r.security.policy.columnGrants = r.security.policy.columnGrants.filter(g => g.id !== 'deny');
   assert.doesNotThrow(() => planVisual(r, { dialect }));
   r.security.policy.columnGrants = [];
-  assert.throws(() => planVisual(r, { dialect }), { code: 'COLUMN_ACCESS_DENIED' });
+  assert.throws(() => planVisual(r, { dialect }), { code: 'UNRESOLVED_BINDING' }); // #180: planner conceals denied-column existence.
 });
 for (const dialect of ['duckdb', 'postgres', 'mysql']) test(`${dialect} CLS rejects denied filters, dimensions, partitions and parameter filters`, () => {
   for (const change of [
@@ -85,7 +104,7 @@ for (const dialect of ['duckdb', 'postgres', 'mysql']) test(`${dialect} CLS reje
     r => { r.parameterDeclarations = [{ name: 'c', type: 'string', multiple: false }]; r.parameterBindings = { c: ['Hardware'] }; r.parameterFilters = [{ columnName: 'category', parameterName: 'c' }]; },
   ]) {
     const r = secured(); r.security.policy.protectedColumns = ['category']; change(r);
-    assert.throws(() => planVisual(r, { dialect }), { code: 'COLUMN_ACCESS_DENIED' });
+    assert.throws(() => planVisual(r, { dialect }), { code: 'UNRESOLVED_BINDING' }); // #180: planner conceals denied-column existence.
   }
 });
 test('CLS excludes unrequested denied physical columns from SQL multirow projections without dropping requested fields', async () => {
@@ -106,7 +125,7 @@ test('both executors deny forged, omitted and unsupported security before file/c
     [r => { delete r.security; }, 'SECURITY_REJECTED'], [r => { delete r.security.userId; }, 'PRINCIPAL_REQUIRED'],
     [r => { r.security.userId = 'forged'; }, 'UNKNOWN_PRINCIPAL'], [r => { r.security.userId = 'bob'; }, 'ROW_ACCESS_DENIED'],
     [r => { r.security.policy.rowLevel = false; r.security.policy.rowRules = []; }, 'SECURITY_REJECTED'],
-    [r => { r.security.policy.protectedColumns = ['revenue']; }, 'COLUMN_ACCESS_DENIED'],
+    [r => { r.security.policy.protectedColumns = ['revenue']; }, 'UNRESOLVED_BINDING'], // #180: planner conceals denied-column existence.
     [r => { r.security.policy.rowRules[0].predicate = { sql: 'TRUE' }; }, 'INVALID_SECURITY_POLICY'],
     [r => { r.security.policy.rowRules[0].predicate.value = null; }, 'INVALID_SECURITY_POLICY'],
     [r => { r.dataSet.DataSet.RowLevelPermissionDataSet = {}; }, 'SECURITY_REJECTED'],

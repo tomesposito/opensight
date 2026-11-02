@@ -4,6 +4,23 @@ import { secureApi, query } from './security.test.mjs';
 import { ROLES, hasCapability } from '@opensight/query-engine';
 import { validateSecurityState } from '../dist/security.js';
 import { emptySecurityState } from '@opensight/api';
+import { columnProbeApis, assertSameColumnFailure } from './cls-oracle-helpers.mjs';
+
+test('#180 O query gives identical errors for denied and missing direct or calculated columns', async t => {
+  const { denied, missing } = await columnProbeApis(t, 'revenue');
+  for (const probe of [query, {
+    ...query, calculatedFields: [{ name: 'leak', expression: '{revenue}' }],
+    measures: [{ fieldId: 'total', columnName: 'leak', aggregation: 'SUM' }],
+  }]) {
+    const body = { dashboardId: 'sales-dashboard', query: probe };
+    assertSameColumnFailure(
+      await denied('/api/o/query', 'POST', body, 'default-alice'),
+      await missing('/api/o/query', 'POST', body, 'default-alice'), 'revenue');
+  }
+  // A permitted query still executes under the same reader's dashboard scope.
+  const allowed = { ...query, measures: [{ fieldId: 'total', columnName: 'profit', aggregation: 'SUM' }] };
+  for (const api of [denied, missing]) assert.equal((await api('/api/o/query', 'POST', { dashboardId: 'sales-dashboard', query: allowed }, 'default-alice')).status, 200);
+});
 
 test('five roles have explicit capabilities; invalid and legacy request roles fail closed', () => {
   for (const role of [...ROLES, 'admin', 'owner', undefined]) {
@@ -59,7 +76,7 @@ test('reader AI O queries require a visible published dashboard and retain row/c
   await api('/api/datasets/sales/row-rules/east', 'PUT', { principals: [{ type: 'user', id: 'alice' }], predicate: { column: 'region', operator: 'eq', value: 'East' } });
   assert.deepEqual((await api('/api/o/query', 'POST', body, 'default-alice')).body.rows, [{ region: 'East', total: 500 }]);
   await api('/api/datasets/sales/column-grants/revenue', 'PUT', { column: 'revenue', effect: 'deny', principals: [{ type: 'user', id: 'alice' }] });
-  assert.equal((await api('/api/o/query', 'POST', body, 'default-alice')).body.errorCode, 'COLUMN_ACCESS_DENIED');
+  assert.equal((await api('/api/o/query', 'POST', body, 'default-alice')).body.errorCode, 'UNRESOLVED_BINDING'); // #180: planner conceals denied-column existence.
   await api('/dashboards/sales-dashboard/shares/user/bob', 'PUT', { role: 'viewer' });
   assert.equal((await api('/api/o/query', 'POST', body, 'default-alice')).status, 404);
 });

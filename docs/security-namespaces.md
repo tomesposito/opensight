@@ -77,11 +77,22 @@ of whether it comes from a user or group. Unmentioned columns remain available.
 Deleting the last grant leaves the column protected with no allowed principals.
 The persisted `protectedColumns` list is independent of the grants themselves.
 
-The binder rejects requested denied columns with `COLUMN_ACCESS_DENIED`, including
-indirect calculation dependencies, dimensions, filters, parameter filters,
-partition fields and sort fields. It never silently drops a requested field.
+The query planner rejects requested denied columns with `UNRESOLVED_BINDING` and
+`unknown column: <name>`, exactly like a missing column at the same binding path
+(#180). This includes indirect calculation dependencies, dimensions, filters,
+parameter filters, partition fields and sort fields. Ask O query and generative
+schema binding use the same diagnostic; invalid generative schema dependencies
+fail before any provider call. The API retains the usual path prefix in the error
+message and returns the same 422 status, error code and path for either case.
+It never silently drops a requested field or executes a query using a denied one.
 Multirow SQL results project only permitted physical columns. RLS predicates may
 use a denied column internally without granting that column to the caller.
+
+Direct source-read projection checks, embedded Q name checks and shared analysis
+validation retain their separate `COLUMN_ACCESS_DENIED` diagnostics. Scheduler
+rendering uses the planner and records `UNRESOLVED_BINDING` for these failures;
+delivery remains blocked. Ask O has no existing binding-failure log or telemetry
+hook, so no distinct denied-column diagnostic is recorded there.
 
 ## Namespaces
 

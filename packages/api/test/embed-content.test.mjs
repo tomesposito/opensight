@@ -29,7 +29,7 @@ test('H6 registered dashboard and visual execute with viewer RLS/CLS, never issu
   await assert.rejects(f.sources.get(await f.reader.context(), f.source.id), { code: 'RESOURCE_NOT_FOUND' });
   const a = await f.content.admission(opened.context, opened.session, 'dataset'); assert.deepEqual(a.deniedColumns, ['private']);
   const forged = { kind: 'dashboard', id: 'dashboard', version: 1, body: { definition: assetDefinition('dashboard', 'dashboard', 'private'), datasets: [{ kind: 'dataset', id: 'dataset' }], folderId: null } };
-  await assert.rejects(f.content.visuals(opened.context, opened.session, forged), { code: 'COLUMN_ACCESS_DENIED' });
+  await assert.rejects(f.content.visuals(opened.context, opened.session, forged), { code: 'UNRESOLVED_BINDING' }); // #180: planner conceals denied-column existence.
 });
 test('H6 anonymous session tags restrict source rows and deny issuer-only columns; missing tags deny', async t => {
   const f = await fixture(t), body = request({ Namespace: 'virtual-readers', AuthorizedResourceArns: [f.arn('dashboard', 'dashboard')], SessionTags: [{ Key: 'region', Value: 'west' }] });
