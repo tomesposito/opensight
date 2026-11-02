@@ -23,6 +23,42 @@ export class UploadError extends Error {
 const invalid = (path: string, message: string): never => { throw new UploadError('INVALID_UPLOAD', path, message); };
 const mismatch = (path: string, message: string): never => { throw new UploadError('UPLOAD_SCHEMA_MISMATCH', path, message); };
 const MAX_ROWS = 100_000, MAX_COLUMNS = 256, MAX_BYTES = 8 * 1024 * 1024;
+/** Declared uncompressed-size ceilings for XLSX (ZIP) members, checked from the
+ * central directory before SheetJS inflates anything — the same ceilings as
+ * ZIP_LIMITS in @opensight/bundle-parser (member 16 MiB / total 64 MiB / 1000). */
+const XLSX_MEMBER_BYTES = 16 * 1024 * 1024, XLSX_TOTAL_BYTES = 64 * 1024 * 1024, XLSX_MEMBERS = 1000;
+const limit = (message: string): never => { throw new UploadError('UPLOAD_LIMIT_EXCEEDED', '$.data', message); };
+/** Scan only the ZIP end-of-central-directory and central directory headers
+ * (never inflate) and reject a workbook whose declared uncompressed sizes
+ * exceed the ceilings. A workbook that hides its sizes behind ZIP64
+ * sentinels cannot be bounded this way, so it is rejected as over the limit
+ * (fail closed); a malformed directory is an invalid upload. */
+function checkXlsxDeclaredSizes(b: Uint8Array): void {
+  const view = new DataView(b.buffer, b.byteOffset, b.byteLength);
+  const u16 = (offset: number) => view.getUint16(offset, true);
+  const u32 = (offset: number) => view.getUint32(offset, true);
+  let end = b.byteLength - 22;
+  while (end >= Math.max(0, b.byteLength - 65557) && (u32(end) !== 0x06054b50 || end + 22 + u16(end + 20) !== b.byteLength)) end--;
+  if (end < 0 || end < b.byteLength - 65557) invalid('$.data', 'Invalid Excel workbook: missing ZIP end of central directory');
+  const count = u16(end + 10), centralSize = u32(end + 12), centralStart = u32(end + 16);
+  if (count === 65535 || centralSize === 0xffffffff || centralStart === 0xffffffff) limit('Excel workbook uses ZIP64 size fields; its uncompressed size cannot be bounded before parsing');
+  if (u16(end + 4) || u16(end + 6) || u16(end + 8) !== count) invalid('$.data', 'Multi-disk Excel workbooks are unsupported');
+  if (count > XLSX_MEMBERS) limit('Excel workbook exceeds the 1000-member ZIP limit');
+  if (centralStart + centralSize !== end) invalid('$.data', 'Invalid Excel workbook: central directory size mismatch');
+  let offset = centralStart, total = 0;
+  for (let index = 0; index < count; index++) {
+    if (offset + 46 > end || u32(offset) !== 0x02014b50) invalid('$.data', 'Invalid Excel workbook: central directory entry');
+    const uncompressed = u32(offset + 24);
+    const next = offset + 46 + u16(offset + 28) + u16(offset + 30) + u16(offset + 32);
+    if (next > end) invalid('$.data', 'Invalid Excel workbook: truncated central directory');
+    if (uncompressed === 0xffffffff) limit('Excel workbook uses ZIP64 size fields; its uncompressed size cannot be bounded before parsing');
+    if (uncompressed > XLSX_MEMBER_BYTES) limit('Excel workbook member exceeds the 16 MiB uncompressed limit');
+    total += uncompressed;
+    if (total > XLSX_TOTAL_BYTES) limit('Excel workbook exceeds the 64 MiB total uncompressed limit');
+    offset = next;
+  }
+  if (offset !== end) invalid('$.data', 'Invalid Excel workbook: central directory count mismatch');
+}
 const numeric = /^[+-]?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?$/;
 const date = /^\d{4}-\d\d-\d\d(?:T\d\d:\d\d:\d\d(?:\.\d{1,3})?Z)?$/;
 function dateValue(value: string): boolean {
@@ -108,6 +144,8 @@ export function parseUpload(request: UploadRequest): { columns: UploadColumn[]; 
     // Prevent SheetJS's permissive text fallback from treating arbitrary text as Excel.
     const b = request.data;
     if (config.format === 'xlsx' ? !(b[0] === 0x50 && b[1] === 0x4b) : ![0xd0, 0x09].includes(b[0]!)) invalid('$.data', 'File does not match the selected Excel format');
+    // Bound the inflated size from the ZIP headers before SheetJS parses (#182).
+    if (config.format === 'xlsx') checkXlsxDeclaredSizes(b);
     let workbook: XLSX.WorkBook;
     try { workbook = XLSX.read(b, { type: 'array', cellDates: true, cellFormula: true, sheetRows: MAX_ROWS + 2 }); }
     catch { return invalid('$.data', 'Unable to parse Excel workbook'); }
