@@ -24,7 +24,7 @@ test('H3 discovery, preview, output, query and AI use the same RLS/CLS on upload
       { ...query, dimensions: [{ fieldId: 'secret', columnName: 'private' }] },
       { ...query, filters: [{ columnName: 'private', value: 'a' }] },
       { ...query, calculatedFields: [{ name: 'leak', expression: 'strlen({private})' }], measures: [{ fieldId: 'secret', columnName: 'leak', aggregation: 'SUM' }] },
-    ]) await assert.rejects(data.execute(a, u.id, 'query', { mode, query: forged }), { code: 'COLUMN_ACCESS_DENIED' });
+    ]) await assert.rejects(data.execute(a, u.id, 'query', { mode, query: forged }), { code: 'UNRESOLVED_BINDING' }); // #180: planner conceals denied-column existence.
   }
 });
 test('H3 cross-tenant, cross-owner, unresolved policy and forged contexts deny before connector/cache I/O', async t => {
@@ -39,7 +39,7 @@ test('H3 cross-tenant, cross-owner, unresolved policy and forged contexts deny b
     await assert.rejects(data.refresh(a, id), { code });
   }
   await assert.rejects(data.execute(a, 'protected', 'output', { columns: ['private'], mode: 'BLAZE' }), { code: 'COLUMN_ACCESS_DENIED' });
-  await assert.rejects(data.execute(a, 'protected', 'query', { query: { ...query, filters: [{ columnName: 'private', value: 'a' }] } }), { code: 'COLUMN_ACCESS_DENIED' });
+  await assert.rejects(data.execute(a, 'protected', 'query', { query: { ...query, filters: [{ columnName: 'private', value: 'a' }] } }), { code: 'UNRESOLVED_BINDING' }); // #180: planner conceals denied-column existence.
   await assert.rejects(data.admit({ ...a }, 'protected', 'query'), { code: 'TENANT_CONTEXT_REQUIRED' });
   assert.equal(io, 0);
 });

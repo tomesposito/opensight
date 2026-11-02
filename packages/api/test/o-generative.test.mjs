@@ -6,9 +6,24 @@ import { join } from 'node:path';
 import { Analytics } from '../dist/analytics.js';
 import { dashboardRoot } from './automation-helpers.mjs';
 import { organizationApi } from './organization-helpers.mjs';
+import { columnProbeApis, assertSameColumnFailure } from './cls-oracle-helpers.mjs';
 const route = '/api/o/generate';
 const response = text => Response.json({ output: [{ type: 'message', content: [{ type: 'output_text', text: typeof text === 'string' ? text : JSON.stringify(text) }] }] });
 const options = fetcher => ({ bootstrap: { provider: 'openai', model: 'test-model', key: randomBytes(20).toString('hex') }, fetcher });
+for (const endpoint of [route, '/api/o/calculation']) test(`#180 ${endpoint} conceals denied-column existence before provider calls`, async t => {
+  let calls = 0;
+  const { denied, missing } = await columnProbeApis(t, 'profit', {
+    ai: options(async () => { calls++; return response({ question: 'sum revenue' }); }),
+  }, endpoint === route ? 'reader_ai' : 'author_ai');
+  for (const calculatedFields of [
+    [{ name: 'leak', role: 'measure', expression: '{profit}' }],
+    [{ name: 'leak', role: 'measure', expression: '{indirect}' }, { name: 'indirect', role: 'measure', expression: 'sum({profit})' }],
+  ]) {
+    const body = { dashboardId: 'sales-dashboard', question: 'sum leak', calculatedFields };
+    assertSameColumnFailure(await denied(endpoint, 'POST', body, 'default-alice'), await missing(endpoint, 'POST', body, 'default-alice'), 'profit');
+    assert.equal(calls, 0);
+  }
+});
 const sensitiveNames = [
   ['email', 'revenue for test.person@example.com'],
   ['SSN', 'SSN 123-45-6789'],
@@ -106,7 +121,7 @@ for (const endpoint of [route, '/api/o/calculation']) {
     assert.equal(calls[0].input.includes(name), false);
     assert.ok(JSON.parse(calls[0].input).fields.some(field => field.name === 'revenue'));
     const bypass = await api(endpoint, 'POST', { question: 'sum revenue', calculatedFields: [{ name: 'leak', expression: `{${name}}`, role: 'dimension' }] }, 'default-alice');
-    assert.equal(bypass.body.errorCode, 'COLUMN_ACCESS_DENIED');
+    assert.equal(bypass.body.errorCode, 'UNRESOLVED_BINDING'); // #180: schema binder conceals denied-column existence.
     assert.equal(calls.length, 1);
   });
 }
@@ -171,7 +186,7 @@ test('RLS denies before provider call; CLS omits denied fields and blocks calcul
   await api('/api/datasets/sales/column-grants/profit', 'PUT', { column: 'profit', effect: 'deny', principals: [{ type: 'user', id: 'alice' }] });
   assert.equal((await api(route, 'POST', { question: 'sum revenue' }, 'default-alice')).status, 200);
   assert.ok(!calls[0].fields.some(f => f.name === 'profit'));
-  assert.equal((await api(route, 'POST', { question: 'sum leak', calculatedFields: [{ name: 'leak', role: 'measure', expression: '{profit}' }] }, 'default-alice')).body.errorCode, 'COLUMN_ACCESS_DENIED');
+  assert.equal((await api(route, 'POST', { question: 'sum leak', calculatedFields: [{ name: 'leak', role: 'measure', expression: '{profit}' }] }, 'default-alice')).body.errorCode, 'UNRESOLVED_BINDING'); // #180: schema binder conceals denied-column existence.
   await api('/api/datasets/sales/row-rules/admin', 'PUT', { principals: [{ type: 'user', id: 'admin' }], predicate: { column: 'region', operator: 'eq', value: 'East' } });
   assert.equal((await api(route, 'POST', { question: 'sum revenue' }, 'default-alice')).body.errorCode, 'ROW_ACCESS_DENIED');
   assert.equal(calls.length, 1);

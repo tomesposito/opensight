@@ -48,7 +48,7 @@ test('hosted iframe renders the selected visual using viewer RLS, existing chart
   assert.ok(!html.includes(api.secret)); assert.ok(!html.includes(new URL(signed.body.url).searchParams.get('token')));
   assert.ok(!payload.includes('<report>')); assert.equal(data.title, 'Sales <report>');
   await api.api('/api/datasets/sales/column-grants/deny', 'PUT', { column: 'revenue', effect: 'deny', principals: [{ type: 'user', id: 'alice' }] });
-  const denied = await load(api, signed.body.url); assert.equal(denied.status, 422); assert.equal((await denied.json()).errorCode, 'COLUMN_ACCESS_DENIED');
+  const denied = await load(api, signed.body.url); assert.equal(denied.status, 422); assert.equal((await denied.json()).errorCode, 'UNRESOLVED_BINDING'); // #180: planner conceals denied-column existence.
 });
 test('full dashboard embedding renders all stored visuals and never falls back to fixture rows', async t => {
   const api = await embeddedApi(t);

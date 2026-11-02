@@ -134,7 +134,7 @@ export async function handler(raw, context) {
       await metadata.put(await contextFor('owner'),{kind:'dashboard',id:'dashboard'},{definition,datasets:[{kind:'dataset',id:'dataset'}],folderId:null});
       const denied=structuredClone(definition);denied.DashboardId='cls-denied';denied.Definition.Sheets[0].Visuals[0].KPIVisual.ChartConfiguration.FieldWells.Values[0].NumericalMeasureField.Column.ColumnName='private';
       await metadata.put(await contextFor('owner'),{kind:'dashboard',id:'cls-denied'},{definition:denied,datasets:[{kind:'dataset',id:'dataset'}],folderId:null});
-      await assert.rejects(renderer.authorize(await contextFor('reader'),{kind:'report',dashboardId:'cls-denied',recipients:['reader'],enabled:true,schedule:{kind:'interval',minutes:1440,timeZone:'UTC'}}),{code:'COLUMN_ACCESS_DENIED'});
+      await assert.rejects(renderer.authorize(await contextFor('reader'),{kind:'report',dashboardId:'cls-denied',recipients:['reader'],enabled:true,schedule:{kind:'interval',minutes:1440,timeZone:'UTC'}}),{code:'UNRESOLVED_BINDING'}); // #180: planner conceals denied-column existence.
     }
     const owner=await contextFor('owner'),spec=command.startsWith('alert')?{kind:'alert',enabled:true,datasetId:'dataset',dashboardId:'dashboard',visualId:'total',fieldId:'amount',dimensions:{},condition:{kind:'above',threshold:30},recipients:['reader']}:{kind:'report',dashboardId:'dashboard',recipients:['reader'],enabled:true,schedule:{kind:'interval',minutes:1440,timeZone:'UTC'}};
     const put=()=>store.put(owner,'job',spec,0,(c,s)=>renderer.authorize(c,s));

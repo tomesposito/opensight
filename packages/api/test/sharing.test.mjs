@@ -53,9 +53,9 @@ test('shared viewer queries enforce their own RLS and CLS, including group chang
   assert.equal((await api(visual, 'POST', {}, 'default-bob')).status, 404);
   assert.equal((await api(visual, 'POST', {})).body.errorCode, 'ROW_ACCESS_DENIED');
   await api('/api/datasets/sales/column-grants/deny', 'PUT', { column: 'revenue', effect: 'deny', principals: [{ type: 'user', id: 'alice' }] });
-  assert.equal((await api(visual, 'POST', {}, 'default-alice')).body.errorCode, 'COLUMN_ACCESS_DENIED');
+  assert.equal((await api(visual, 'POST', {}, 'default-alice')).body.errorCode, 'UNRESOLVED_BINDING'); // #180: planner conceals denied-column existence.
   await api('/api/datasets/sales/column-grants/allow', 'PUT', { column: 'revenue', effect: 'allow', principals: [{ type: 'group', id: 'team' }] });
-  assert.equal((await api(visual, 'POST', {}, 'default-alice')).body.errorCode, 'COLUMN_ACCESS_DENIED');
+  assert.equal((await api(visual, 'POST', {}, 'default-alice')).body.errorCode, 'UNRESOLVED_BINDING'); // #180: planner conceals denied-column existence.
   await api('/api/datasets/sales/column-grants/deny', 'DELETE');
   assert.deepEqual((await api(visual, 'POST', {}, 'default-alice')).body.rows, [{ revenue: 500 }]);
   await api(`${dashboard}/shares/group/team`, 'DELETE');

@@ -39,7 +39,7 @@ test('H3 live PostgreSQL versus cached SQL: immutable tenant boundary, RLS OR/nu
     for (const r of direct.rows) { assert.equal(r.tenant, 'tenant-one'); assert.equal('private' in r, false); }
     assert.deepEqual(await data.execute(a, id, 'query', { query, mode: 'BLAZE' }), await data.execute(a, id, 'query', { query }));
     for (const mode of ['DIRECT_QUERY', 'BLAZE']) {
-      await assert.rejects(data.execute(a, id, 'query', { mode, query: { ...query, calculatedFields: [{ name: 'leak', expression: 'strlen({private})' }], measures: [{ fieldId: 'leak', columnName: 'leak', aggregation: 'SUM' }] } }), { code: 'COLUMN_ACCESS_DENIED' });
+      await assert.rejects(data.execute(a, id, 'query', { mode, query: { ...query, calculatedFields: [{ name: 'leak', expression: 'strlen({private})' }], measures: [{ fieldId: 'leak', columnName: 'leak', aggregation: 'SUM' }] } }), { code: 'UNRESOLVED_BINDING' }); // #180: planner conceals denied-column existence.
       await assert.rejects(data.execute(a, id, 'output', { mode, columns: ['private'] }), { code: 'COLUMN_ACCESS_DENIED' });
     }
     if (!i) assert.deepEqual((await data.execute(a, id, 'query', { query })).rows, [{ total: 10 }]);
