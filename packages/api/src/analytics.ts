@@ -10,13 +10,15 @@ export function rowCountBucket(count: number): RowCountBucket {
   return count === 0 ? '0' : count < 100 ? '1-99' : count < 1000 ? '100-999' : count < 10000 ? '1000-9999' : '10000+';
 }
 type EmptyEventName = 'tenant_provisioned' | 'user_invited' | 'user_activated' | 'dataset_prep_saved'
-  | 'analysis_created' | 'analysis_first_visual' | 'dashboard_viewed' | 'dashboard_shared' | 'embed_viewed' | 'sample_data_opted_in';
+  | 'analysis_created' | 'analysis_first_visual' | 'dashboard_viewed' | 'dashboard_shared' | 'dashboard_edited' | 'embed_viewed' | 'sample_data_opted_in';
 export type AnalyticsEvent = { name: EmptyEventName; props?: Record<string, never> }
   | { name: 'dataset_uploaded'; props: { sourceType: SourceBinding['connectorId']; rowCountBucket: RowCountBucket } }
+  | { name: 'data_source_connected'; props: { sourceType: 'postgresql' } }
+  | { name: 'dashboard_saved'; props: { first: boolean } }
   | { name: 'ask_o_asked'; props: { count: number } };
 export interface AnalyticsRow { id: string; tenantId: string; namespaceId: string; name: AnalyticsEvent['name']; props: Record<string, string | number>; createdAt: string }
 const emptyNames: readonly string[] = ['tenant_provisioned', 'user_invited', 'user_activated', 'dataset_prep_saved', 'analysis_created',
-  'analysis_first_visual', 'dashboard_viewed', 'dashboard_shared', 'embed_viewed', 'sample_data_opted_in'];
+  'analysis_first_visual', 'dashboard_viewed', 'dashboard_shared', 'dashboard_edited', 'embed_viewed', 'sample_data_opted_in'];
 /** Inspect descriptors, never invoke getters or toJSON supplied by a caller. Copy only schema fields. */
 export function validateAnalyticsEvent(raw: unknown): Pick<AnalyticsRow, 'name' | 'props'> | undefined {
   const plain = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && [Object.prototype, null].includes(Object.getPrototypeOf(v));
@@ -28,6 +30,8 @@ export function validateAnalyticsEvent(raw: unknown): Pick<AnalyticsRow, 'name' 
   if (name === 'dataset_uploaded' && keys(props, ['sourceType', 'rowCountBucket']) && typeof props.sourceType === 'string' && ['file', 'postgresql'].includes(props.sourceType) && rowCountBuckets.includes(props.rowCountBucket as RowCountBucket)) {
     return { name, props: { sourceType: props.sourceType, rowCountBucket: props.rowCountBucket as RowCountBucket } };
   }
+  if (name === 'data_source_connected' && keys(props, ['sourceType']) && props.sourceType === 'postgresql') return { name, props: { sourceType: 'postgresql' } };
+  if (name === 'dashboard_saved' && keys(props, ['first']) && typeof props.first === 'boolean') return { name, props: { first: props.first } };
   if (name === 'ask_o_asked' && keys(props, ['count']) && typeof props.count === 'number' && Number.isSafeInteger(props.count) && props.count > 0) return { name, props: { count: props.count } };
 }
 export type AnalyticsTransport = (url: string, init: RequestInit) => Promise<{ ok: boolean }>;

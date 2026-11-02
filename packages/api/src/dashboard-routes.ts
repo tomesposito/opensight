@@ -154,6 +154,8 @@ export class DashboardRoutes {
         }
         if (body.dashboardId !== undefined) record = await backend.get(id);
         change = { kind: 'publish', dashboardId: id, create: body.dashboardId === undefined, source, publishedAt: new Date().toISOString(), cap: this.cap, errors: diagnostics };
+        // Workspace-first is measured before this publish commits (#179).
+        const workspaceDashboards = backend.workspaceDashboardCount ? await backend.workspaceDashboardCount() : (await backend.list()).length;
         await backend.analyses.check(stamp);
         const publishReply = (next: DashboardRecord) => {
           const v = dashboardVersion(next); reply = { status: 201, body: { DashboardId: id, Version: v.version, PublishedAt: v.publishedAt, Errors: diagnostics }, version: v.version };
@@ -161,6 +163,8 @@ export class DashboardRoutes {
         };
         record = (await backend.change(id, change, stamp, next => publishReply(next!)))!;
         publishReply(record);
+        this.analytics.track(scope, { name: 'dashboard_saved', props: { first: workspaceDashboards === 0 } });
+        if (!change.create) this.analytics.track(scope, { name: 'dashboard_edited' });
       } else {
         record = await backend.get(id);
         if (principalId) {

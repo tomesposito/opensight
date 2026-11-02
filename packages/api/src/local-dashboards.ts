@@ -43,6 +43,11 @@ export class LocalDashboards implements DashboardBackend {
     const state = this.organization.security.store.read();
     return (state.assets ?? []).filter(a => a.namespaceId === this.identity.namespaceId && a.dashboard && !a.deleted && this.organization!.canRead(this.identity, 'dashboard', a.id, state)).map(a => a.dashboard!);
   }
+  async workspaceDashboardCount() {
+    if (!this.organization) return this.store?.dashboards().length ?? 0;
+    const state = this.organization.security.store.read();
+    return (state.assets ?? []).filter(a => a.namespaceId === this.identity.namespaceId && a.kind === 'dashboard' && a.dashboard && !a.deleted).length;
+  }
   async get(id: string) {
     await this.authorize(id);
     const found = (await this.list()).find(d => d.id === id);

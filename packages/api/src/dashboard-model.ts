@@ -24,6 +24,9 @@ export interface DashboardBackend {
   readonly analyses: AnalysisBackend;
   authorize(id?: string, mode?: 'read' | 'write' | 'admin'): Promise<void>;
   list(): Promise<DashboardRecord[]>;
+  /** Tenant/workspace-wide published-dashboard count, ignoring the caller's
+   * grants (unlike `list`). Used only for the `dashboard_saved` first flag. */
+  workspaceDashboardCount?(): Promise<number>;
   get(id: string): Promise<DashboardRecord>;
   accessSnapshot(id: string): Promise<unknown>;
   authorizeRemoved(snapshot: unknown): Promise<void>;

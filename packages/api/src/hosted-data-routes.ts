@@ -49,7 +49,7 @@ export class HostedDataRoutes {
       if (!action) {
         method(request, response, ['GET', 'PUT', 'DELETE']);
         if (request.method === 'GET') await publish(200, await this.data.schema(context, id));
-        else if (request.method === 'PUT') await publish(201, await this.data.sources.create(context, id, await input()));
+        else if (request.method === 'PUT') await publish(201, await this.data.createSource(context, id, await input()));
         else { const raw = object(await input(), ['expectedVersion']); await this.data.sources.retire(context, id, raw.expectedVersion as number); await publish(200, { retired: true }); }
       } else if (action === 'bind' || action === 'rotate') {
         method(request, response, ['POST']); await this.data.sources[action](context, id, await input()); await publish(200, { updated: true });
