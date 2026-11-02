@@ -13,6 +13,7 @@ await mkdir(env.TMPDIR, { recursive: true }); await mkdir(output, { recursive: t
 const journeys = [
   ['j1-discover', 'Evaluator'], ['j2-first-login', 'Workspace Admin'], ['j3-first-dashboard', 'Author'], ['j4-reader-daily', 'Reader AI'],
   ['j5-migration', 'Admin + Author'], ['j6-self-host', 'Self-Hoster'], ['j7-operator', 'Operator'], ['j8-embedding', 'Embedder (future)'],
+  ['j9-ideas', 'Member + Operator'],
 ];
 const results = [];
 for (const [journey, persona] of journeys) {
