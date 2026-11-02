@@ -337,7 +337,8 @@ export function planVisual(request: PlanRequest, options: PlanOptions = {}): Que
     parameters = validateParameters([...supplied.declarations, ...declaredParameters.declarations], { ...declaredParameters.bindings, ...supplied.bindings });
   } catch (e) { fail('INVALID_INPUT', '$.parameterBindings', e instanceof Error ? e.message : String(e)); }
   const binder = new ExpressionBinder(identifier, metadata.columns, definition.CalculatedFields, parameters.declarations, parameters.bindings, (name, path) => {
-    if (security?.deniedColumns.includes(name)) fail('COLUMN_ACCESS_DENIED', path, `access denied to column: ${name}`);
+    // #180: denied and missing names must expose the same binding diagnostic.
+    if (security?.deniedColumns.includes(name)) fail('UNRESOLVED_BINDING', path, `unknown column: ${name}`);
   });
   const fields = fieldWells(visual, binder);
   const sheetIds = new Set(array(definition.Sheets, `${dp}.Sheets`).map((s, i) => string(object(s, `${dp}.Sheets[${i}]`).SheetId, `${dp}.Sheets[${i}].SheetId`)));
