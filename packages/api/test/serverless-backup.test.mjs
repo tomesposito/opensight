@@ -227,3 +227,26 @@ test('Issue #175: pre-outbox analytics backups migrate, replay and restore with 
  await f.db.transaction(c => c.query("UPDATE analytics_events SET delivered_at = '2026-11-01T00:00:00.000Z'"));
  await assert.rejects(migrateRegistered(f.db, f.env, snapshot, registry, operation, 'sqlite'), { code: 'MIGRATION_PRESERVATION_FAILED' });
 });
+
+test('Ideas survive backup/restore and registered pre-Ideas migrations preserve existing data', async t => {
+ const { listIdeas } = await import('../dist/ideas.js');
+ const f = await fixture(t);
+ await f.db.transaction(c => c.query(`INSERT INTO h8_ideas
+   (id,tenant_id,namespace_id,user_id,title,description,surface,product_version,status,created_at,updated_at)
+   VALUES ('synthetic-idea','tenant-one','one','admin','Improve data','More context','data-empty','0.0.0','received','2026-11-01','2026-11-01')`));
+ const saved = await listIdeas(f.db);
+ const snapshot = await snapshotServerless(f.db, 'test', randomUUID(), Date.now()+3600000, ['a'.repeat(32)], 'sqlite');
+ await restoreServerless(f.target, snapshot, { ...f.registry, backups: { [snapshot.id]: checksum(snapshot) } }, 'sqlite');
+ assert.deepEqual(await listIdeas(f.target), saved);
+ const legacy = await fixture(t);
+ await legacy.db.transaction(c => c.query('DROP TABLE h8_ideas'));
+ const old = await snapshotServerless(legacy.db, 'test', randomUUID(), Date.now()+3600000, ['a'.repeat(32)], 'sqlite');
+ assert.equal(Object.hasOwn(old.tables, 'h8_ideas'), false);
+ await restoreServerless(legacy.target, old, { ...legacy.registry, backups: { [old.id]: checksum(old) } }, 'sqlite');
+ assert.deepEqual(await listIdeas(legacy.target), []);
+ const { migrateRegistered } = await import('../dist/serverless-backup.js');
+ const registry = { ...legacy.registry, epoch: 1, backups: { [old.id]: checksum(old) } }, operation = randomUUID();
+ assert.equal((await migrateRegistered(legacy.db, legacy.env, old, registry, operation, 'sqlite')).replayed, false);
+ assert.equal((await migrateRegistered(legacy.db, legacy.env, old, registry, operation, 'sqlite')).replayed, true);
+ assert.deepEqual(await listIdeas(legacy.db), []);
+});

@@ -44,7 +44,7 @@ try {
   };
   const rail = page.locator('#product-navigation');
   await page.goto(origin); await page.getByRole('complementary', { name: 'Local data workspace' }).waitFor();
-  assert.deepEqual(await page.getByRole('navigation', { name: 'Product', exact: true }).getByRole('link').allTextContents(), ['My stuff', 'Analyses', 'Dashboards', 'Data', 'My folders', 'Shared folders']);
+  assert.deepEqual(await page.getByRole('navigation', { name: 'Product', exact: true }).getByRole('link').allTextContents(), ['My stuff', 'Analyses', 'Dashboards', 'Data', 'My folders', 'Shared folders', 'Ideas']);
   await capture('home');
   await navigate(page, 'my-stuff'); await page.getByRole('heading', { name: 'My stuff', exact: true }).waitFor();
   assert.deepEqual(await page.getByRole('navigation', { name: 'Recent pages', exact: true }).getByRole('link').allTextContents(), ['Home']);

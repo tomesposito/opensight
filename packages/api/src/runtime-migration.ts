@@ -1,3 +1,4 @@
+import { initializeIdeas } from './ideas.js';
 import { initializeAnalytics } from './analytics-store.js';
 import { MetadataError, type Database } from './metadata-db.js';
 import { initializeMetadata } from './metadata-schema.js';
@@ -37,6 +38,7 @@ export async function migrateRuntime(db: Database, env: NodeJS.ProcessEnv, diale
     await initializeEmbedding(transaction); await initializeEmbedSessions(transaction);
     await migrateBudgets(transaction, budgets, 'frozen'); await initializeUsage(transaction); await initializeAnalytics(transaction);
     await initializeAccessRequests(transaction);
+    await initializeIdeas(transaction);
     await appendOperatorAudit(c, { action: 'runtime.migrated' });
     await c.query('UPDATE sr_control SET schema_min = ?, schema_max = ?, protocol_min = ?, protocol_max = ? WHERE deployment = ?', [runtimeProtocol, runtimeProtocol, runtimeProtocol, runtimeProtocol, deployment]);
   });

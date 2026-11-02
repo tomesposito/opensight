@@ -1,6 +1,7 @@
 import { allowed, type Access } from './access.js';
 
 export const pages = {
+  ideas: { path: '/ideas', section: 'Ideas', title: 'Ideas' },
   home: { path: '/home', section: 'Home', title: 'Home' },
   'my-stuff': { path: '/my-stuff', section: 'My stuff', title: 'My stuff' },
   'my-folders': { path: '/folders/mine', section: 'My folders', title: 'My folders' },
@@ -20,7 +21,7 @@ export const pages = {
   api: { path: '/admin/developer/api', section: 'Admin', title: 'API definition preview' },
 } as const;
 export type Page = keyof typeof pages;
-export type AppRoute = { page: Page; dashboardId?: string; draftId?: string; newAnalysis?: boolean; createDataset?: boolean; sourceId?: string; datasetId?: string; baseDatasetId?: string };
+export type AppRoute = { page: Page; dashboardId?: string; draftId?: string; newAnalysis?: boolean; createDataset?: boolean; sourceId?: string; datasetId?: string; baseDatasetId?: string; ideaSurface?: string };
 export const productSections = [
   { title: 'My stuff', page: 'my-stuff' },
   { title: 'Analyses', page: 'analyses' }, { title: 'Dashboards', page: 'dashboards' },
@@ -54,6 +55,7 @@ export function routeProblem(access: Access, page: Page): string | undefined {
     : 'SECURITY_BUILD_REQUIRED: Author access required.';
 }
 export function routeHash(route: AppRoute): string {
+  if (route.page === 'ideas' && route.ideaSurface) return `#/ideas/from/${encodeURIComponent(route.ideaSurface)}`;
   if (route.page === 'dashboards' && route.dashboardId) return `#/dashboards/${encodeURIComponent(route.dashboardId)}`;
   if ((route.page === 'data' || route.page === 'data-prep') && route.datasetId) return `#${route.page === 'data' ? '/data/datasets' : '/data/preparation/edit'}/${encodeURIComponent(route.datasetId)}`;
   if (route.page === 'data-prep' && route.baseDatasetId) return `#/data/preparation/dataset/${encodeURIComponent(route.baseDatasetId)}`;
@@ -70,6 +72,8 @@ export function resetRouteScroll(scope?: { scrollTo?: (x: number, y: number) => 
   scope?.scrollTo?.(0, 0);
 }
 export function parseRoute(hash: string): AppRoute | undefined {
+  const idea = /^#\/ideas\/from\/([A-Za-z0-9_-]{1,80})$/.exec(hash);
+  if (idea) return { page: 'ideas', ideaSurface: idea[1] };
   const dashboard = /^#\/dashboards\/([A-Za-z0-9_-]{1,512})$/.exec(hash);
   if (dashboard) return { page: 'dashboards', dashboardId: dashboard[1] };
   if (!hash || hash === '#' || hash === '#/') return { page: 'home' };
