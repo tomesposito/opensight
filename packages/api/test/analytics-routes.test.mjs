@@ -144,8 +144,10 @@ test('analysis first visual survives removal and server restart; dashboard views
   assert.equal((await restart(dash, { token })).status, 200);
   const userId = (await f.db.transaction(c => c.query('SELECT user_id FROM h2_memberships WHERE tenant_id = ? AND status = ?', [f.tenant.tenantId, 'active'])))[0].user_id;
   assert.equal((await restart(`${dash}/shares/user/${userId}`, { token, method: 'PUT', body: { role: 'viewer' }, headers: { 'if-match': '"1"' } })).status, 200);
-  await analytics.flush(); assert.deepEqual(calls.map(c => c.event), ['analysis_created', 'analysis_first_visual', 'dashboard_viewed', 'dashboard_shared']);
-  assert.ok(calls.every(c => Object.keys(c.properties).length === 3));
+  await analytics.flush(); assert.deepEqual(calls.map(c => c.event), ['analysis_created', 'analysis_first_visual', 'dashboard_saved', 'dashboard_viewed', 'dashboard_shared']);
+  // #179: dashboard_saved carries one extra fixed property (first) on top of the standard three.
+  assert.ok(calls.every(c => Object.keys(c.properties).length === (c.event === 'dashboard_saved' ? 4 : 3)));
+  assert.equal(calls.find(c => c.event === 'dashboard_saved').properties.first, true);
 });
 test('Ask O counts validated questions without text; admin connection tests do not emit questions', async t => {
   const { organizationApi } = await import('./organization-helpers.mjs');
