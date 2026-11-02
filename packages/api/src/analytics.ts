@@ -16,7 +16,7 @@ export type AnalyticsEvent = { name: EmptyEventName; props?: Record<string, neve
   | { name: 'data_source_connected'; props: { sourceType: 'postgresql' } }
   | { name: 'dashboard_saved'; props: { first: boolean } }
   | { name: 'ask_o_asked'; props: { count: number } };
-export interface AnalyticsRow { id: string; tenantId: string; namespaceId: string; name: AnalyticsEvent['name']; props: Record<string, string | number>; createdAt: string }
+export interface AnalyticsRow { id: string; tenantId: string; namespaceId: string; name: AnalyticsEvent['name']; props: Record<string, string | number | boolean>; createdAt: string }
 const emptyNames: readonly string[] = ['tenant_provisioned', 'user_invited', 'user_activated', 'dataset_prep_saved', 'analysis_created',
   'analysis_first_visual', 'dashboard_viewed', 'dashboard_shared', 'dashboard_edited', 'embed_viewed', 'sample_data_opted_in'];
 /** Inspect descriptors, never invoke getters or toJSON supplied by a caller. Copy only schema fields. */
