@@ -1,4 +1,4 @@
-// Integrity check for the marketing site (issues #93, #106, #134, #176).
+// Integrity check for the marketing site (issues #93, #106, #134, #176, #183).
 // Usage: node site/check.mjs  (exit 0 = pass)
 // Verifies: every local asset referenced from index.html exists, no external
 // requests beyond allowlisted links, required sections and AEO artifacts present.
@@ -48,7 +48,9 @@ for (const r of external) {
       (url.origin === 'https://github.com' && (
         url.pathname === '/tomesposito/opensight' ||
         url.pathname.startsWith('/tomesposito/opensight/')
-      )) || url.origin === APP_ORIGIN
+      )) || url.origin === APP_ORIGIN ||
+      // The canonical link names the site's own homepage (issue #183).
+      (url.origin === 'https://getopensight.org' && url.pathname === '/')
     ),
     `non-allowlisted external URL: ${r}`
   );
@@ -56,7 +58,10 @@ for (const r of external) {
 
 // 4. No external asset loads (scripts, stylesheets, images, video sources,
 //    posters must all be local) — the site makes zero third-party requests.
-const loads = [...html.matchAll(/<(?:script|link|img|video|source)[^>]*?(?:src|href|poster)="([^"]+)"/g)].map(m => m[1]);
+const loads = [...html.matchAll(/<(?:script|link|img|video|source)[^>]*?(?:src|href|poster)="([^"]+)"/g)]
+  // A canonical link is metadata, not an asset load (issue #183).
+  .filter(m => !m[0].includes('rel="canonical"'))
+  .map(m => m[1]);
 for (const r of loads) {
   check(!/^https?:/.test(r), `external asset load: ${r}`);
 }
@@ -162,6 +167,35 @@ for (const [id, copy] of Object.entries({
 check(access?.match(/<button\b[^>]*type="submit"[^>]*>([^<]+)<\/button>/)?.[1] === 'Request access', 'incorrect request-access submit copy');
 check(html.match(/<div class="nav-cta">([\s\S]*?)<\/div>/)?.[1].includes('href="#request-access">Request access</a>'), 'missing nav Request access link');
 check(sections[0]?.includes('href="#request-access">Request hosted access</a>'), 'missing hero Request hosted access CTA');
+
+// 12. Canonical, share-image dimensions and structured data (issue #183).
+const canonicals = [...html.matchAll(/<link rel="canonical" href="([^"]+)">/g)].map(m => m[1]);
+check(canonicals.length === 1 && canonicals[0] === publicUrls[0],
+  'expected exactly one canonical link naming the homepage');
+// og-image.jpg on disk is 2400x1260 (verified with `file`), not the 1200x630
+// the issue text assumed — the tags declare the asset's true size.
+check(content('property', 'og:image:width') === '2400', 'incorrect og:image:width content');
+check(content('property', 'og:image:height') === '1260', 'incorrect og:image:height content');
+check(content('property', 'og:image:alt') === title, 'incorrect og:image:alt content');
+const ldRaw = html.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/)?.[1];
+check(Boolean(ldRaw), 'missing application/ld+json structured data');
+let ld = null;
+try { ld = ldRaw ? JSON.parse(ldRaw) : null; } catch { /* Reported below. */ }
+check(ld !== null, 'application/ld+json must parse as JSON');
+if (ld) {
+  check(ld['@context'] === 'https://schema.org', 'JSON-LD @context must be schema.org');
+  check(ld['@type'] === 'SoftwareApplication', 'JSON-LD @type must be SoftwareApplication');
+  check(ld.name === 'OpenSight', 'JSON-LD name must be OpenSight');
+  check(ld.url === publicUrls[0], 'JSON-LD url must be the homepage');
+  check(ld.applicationCategory === 'BusinessApplication', 'JSON-LD applicationCategory');
+  check(ld.operatingSystem === 'Any', 'JSON-LD operatingSystem');
+  check(ld.license === 'https://www.apache.org/licenses/LICENSE-2.0', 'JSON-LD license');
+  check(ld.offers?.['@type'] === 'Offer' && ld.offers?.price === '0' &&
+    ld.offers?.priceCurrency === 'USD', 'JSON-LD offers must be a free USD Offer');
+  check(ld.codeRepository === 'https://github.com/tomesposito/opensight', 'JSON-LD codeRepository');
+  check(Array.isArray(ld.sameAs) && ld.sameAs.includes('https://github.com/tomesposito/opensight'),
+    'JSON-LD sameAs must include the GitHub repo');
+}
 
 if (failures.length) {
   console.error(`site/check.mjs FAILED (${failures.length}):`);
