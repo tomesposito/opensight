@@ -58,12 +58,15 @@ test('Issue #179: the three capture events record only their fixed properties', 
     analytics.track(f.a, { name: 'dashboard_saved', props: { first: false } });
     analytics.track(f.a, { name: 'dashboard_edited' });
     await analytics.close(); assert.equal(analytics.stats.invalid, 0);
-    assert.deepEqual((await f.store.read(f.metadata, f.a)).map(r => [r.name, r.props]), [
-      ['data_source_connected', { sourceType: 'postgresql' }],
-      ['dashboard_saved', { first: true }],
-      ['dashboard_saved', { first: false }],
+    // Store reads order by (created_at, event_id); events tracked in the same
+    // millisecond tie on created_at, so compare as a sorted set, not a sequence.
+    const byNameThenProps = (a, b) => a[0].localeCompare(b[0]) || JSON.stringify(a[1]).localeCompare(JSON.stringify(b[1]));
+    assert.deepEqual((await f.store.read(f.metadata, f.a)).map(r => [r.name, r.props]).sort(byNameThenProps), [
       ['dashboard_edited', {}],
-    ]);
+      ['dashboard_saved', { first: false }],
+      ['dashboard_saved', { first: true }],
+      ['data_source_connected', { sourceType: 'postgresql' }],
+    ].sort(byNameThenProps));
   } finally { await f.db.close(); }
 });
 test('analytics row buckets expose only fixed ranges', () => {
