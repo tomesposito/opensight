@@ -13,6 +13,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Added
 
+- Hosted entitlements can now hard-cap egress: an optional monthly `egressBytes` limit counts actual hosted tenant API response bytes and refuses further requests with `USAGE_LIMIT_EXCEEDED` once the cap is reached, instead of only metering egress (#193).
+
 - Indexable documentation pages for local setup, connectors, embedding and shipped
   permissions/row-level security, generated from repository Markdown with freshness
   checks, a docs index, site navigation and sitemap entries (#185).
