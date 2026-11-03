@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OpenSight vs Apache Superset: same licence, different job — OpenSight</title>
+<meta name="description" content="Apache Superset and OpenSight are both Apache-2.0 and free to self-host. Superset is built for SQL teams; OpenSight's ground is QuickSight compatibility — it reads and writes QuickSight definitions.">
+<meta property="og:title" content="OpenSight vs Apache Superset: same licence, different job — OpenSight">
+<meta property="og:description" content="Apache Superset and OpenSight are both Apache-2.0 and free to self-host. Superset is built for SQL teams; OpenSight's ground is QuickSight compatibility — it reads and writes QuickSight definitions.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://getopensight.org/vs/superset/">
+<meta property="og:image" content="https://getopensight.org/assets/og-image.jpg">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="OpenSight vs Apache Superset: same licence, different job — OpenSight">
+<meta name="twitter:description" content="Apache Superset and OpenSight are both Apache-2.0 and free to self-host. Superset is built for SQL teams; OpenSight's ground is QuickSight compatibility — it reads and writes QuickSight definitions.">
+<meta name="twitter:image" content="https://getopensight.org/assets/og-image.jpg">
+<meta property="og:image:width" content="2400">
+<meta property="og:image:height" content="1260">
+<meta property="og:image:alt" content="OpenSight vs Apache Superset: same licence, different job — OpenSight">
+<link rel="canonical" href="https://getopensight.org/vs/superset/">
+<link rel="stylesheet" href="../../styles.css">
+<link rel="icon" href="../../assets/favicon.svg?v=2" type="image/svg+xml">
+<link rel="apple-touch-icon" href="../../assets/apple-touch-icon.png">
+</head>
+<body>
+
+<header class="topnav">
+  <div class="wrap nav-inner">
+    <a class="brand" href="../../" aria-label="OpenSight home">
+      <svg class="brand-mark" viewBox="0 0 100 100" width="26" height="26" aria-hidden="true"><defs><linearGradient id="ss-brand-g" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#38BDF8"/><stop offset="0.5" stop-color="#3B82F6"/><stop offset="1" stop-color="#6D3BFF"/></linearGradient></defs><path d="M 34.2851 0 L 44.2 0 C 45.5807 0 46.7 1.1193 46.7 2.5 L 46.7 6.5 C 46.7 28.7018 28.7018 46.7 6.5 46.7 L 2.5 46.7 C 1.1193 46.7 0 45.5807 0 44.2 L 0 34.2851 C 0 33.398 0.6463 32.6432 1.5227 32.5066 C 17.4905 30.0171 30.0171 17.4905 32.5066 1.5227 C 32.6432 0.6463 33.398 0 34.2851 0 Z M 100 34.2851 L 100 44.2 C 100 45.5807 98.8807 46.7 97.5 46.7 L 93.5 46.7 C 71.2982 46.7 53.3 28.7018 53.3 6.5 L 53.3 2.5 C 53.3 1.1193 54.4193 0 55.8 0 L 65.7149 0 C 66.602 0 67.3568 0.6463 67.4934 1.5227 C 69.9829 17.4905 82.5095 30.0171 98.4773 32.5066 C 99.3537 32.6432 100 33.398 100 34.2851 Z M 65.7149 100 L 55.8 100 C 54.4193 100 53.3 98.8807 53.3 97.5 L 53.3 93.5 C 53.3 71.2982 71.2982 53.3 93.5 53.3 L 97.5 53.3 C 98.8807 53.3 100 54.4193 100 55.8 L 100 65.7149 C 100 66.602 99.3537 67.3568 98.4773 67.4934 C 82.5095 69.9829 69.9829 82.5095 67.4934 98.4773 C 67.3568 99.3537 66.602 100 65.7149 100 Z M 0 65.7149 L 0 55.8 C 0 54.4193 1.1193 53.3 2.5 53.3 L 6.5 53.3 C 28.7018 53.3 46.7 71.2982 46.7 93.5 L 46.7 97.5 C 46.7 98.8807 45.5807 100 44.2 100 L 34.2851 100 C 33.398 100 32.6432 99.3537 32.5066 98.4773 C 30.0171 82.5095 17.4905 69.9829 1.5227 67.4934 C 0.6463 67.3568 0 66.602 0 65.7149 Z" fill="url(#ss-brand-g)" transform="translate(11.5 11.5) scale(0.77)"/></svg>
+      <span class="wordmark">opensight</span>
+    </a>
+    <nav class="nav-links" aria-label="Sections">
+      <a href="../../#features">Features</a>
+      <a href="../../#compatibility">Compatibility</a>
+      <a href="../../#open-source">Open source</a>
+      <a href="../../#get-started">Get started</a>
+    </nav>
+    <div class="nav-cta">
+      <a class="btn btn-ghost btn-github" href="https://github.com/tomesposito/opensight">GitHub</a>
+      <a class="btn btn-ghost" href="https://app.getopensight.org">Login</a>
+      <a class="nav-access" href="../../pricing/">Pricing</a>
+      <a class="nav-access" href="../../#request-access">Request access</a>
+      <a class="btn btn-primary" href="../../demo/">Live demo</a>
+    </div>
+  </div>
+</header>
+
+<main id="top">
+
+  <!-- 1. Opening -->
+  <section class="section">
+    <div class="wrap">
+      <h1>OpenSight vs Apache Superset: same licence, different job</h1>
+      <p class="section-sub">Apache Superset is Apache-2.0, like OpenSight. Self-hosted, it costs $0, like OpenSight. Nobody wins this comparison on licence or sticker price, so it comes down to what your team does all day.</p>
+    </div>
+  </section>
+
+  <!-- 2. Superset is built for SQL teams, and it shows -->
+  <section class="section section-alt">
+    <div class="wrap">
+      <h2>Superset is built for SQL teams, and it shows</h2>
+      <p>Superset's centre of gravity is SQL Lab, its browser SQL editor, with a no-code chart builder and 40+ visualization types around it. For a team of analysts who live in SQL and want the widest chart library they can self-host, Superset is the stronger tool today.</p>
+      <p>Running it is a commitment. A production Superset deployment is several processes — the web app, a Celery worker and scheduler, Redis and a Postgres metadata database. Teams that would rather not run that buy Preset, the managed Superset service: free for up to 5 users, then $20 per user per month billed annually on Professional, with embedded dashboard viewer licences at $500 a month for 50 viewers.</p>
+      <p>Superset and Preset facts checked 3 November 2026 on Apache Superset and Preset's published pages.</p>
+      <p class="pricing-sources">
+        <a href="https://superset.apache.org/">Apache Superset</a>
+        <a href="https://preset.io/pricing">Preset pricing</a>
+      </p>
+    </div>
+  </section>
+
+  <!-- 3. OpenSight's ground is a format, not a chart count -->
+  <section class="section">
+    <div class="wrap">
+      <h2>OpenSight's ground is a format, not a chart count</h2>
+      <p>OpenSight exists for the QuickSight-shaped problem. It reads and writes QuickSight analysis and dashboard definitions, so a team leaving QuickSight keeps its work in the same format, and a team adopting OpenSight can leave the same way. Superset has no QuickSight compatibility; your dashboards live in Superset's own format.</p>
+      <p>If QuickSight is nowhere in your world, that ground is worth nothing to you, and the choice should be made on the tools themselves — where Superset's SQL depth may well win it.</p>
+    </div>
+  </section>
+
+  <!-- 4. Closing -->
+  <section class="section section-alt">
+    <div class="wrap">
+      <p class="section-sub">Try the live demo, or request hosted access — hosted workspaces are opening in small batches and are set up by hand.</p>
+      <p>
+        <a class="btn btn-primary btn-lg" href="../../demo/">Try the live demo</a>
+        <a class="btn btn-primary btn-lg" href="../../#request-access">Request hosted access</a>
+      </p>
+      <nav aria-label="Other comparisons">
+        <a href="../../alternatives/tableau/">Tableau alternative</a>
+        <a href="../../alternatives/power-bi/">Power BI alternative</a>
+        <a href="../metabase/">OpenSight vs Metabase</a>
+      </nav>
+    </div>
+  </section>
+
+</main>
+
+<footer class="footer">
+  <div class="wrap footer-grid">
+    <div>
+      <p class="brand"><svg class="brand-mark" viewBox="0 0 100 100" width="22" height="22" aria-hidden="true"><defs><linearGradient id="ss-foot-g" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#38BDF8"/><stop offset="0.5" stop-color="#3B82F6"/><stop offset="1" stop-color="#6D3BFF"/></linearGradient></defs><path d="M 34.2851 0 L 44.2 0 C 45.5807 0 46.7 1.1193 46.7 2.5 L 46.7 6.5 C 46.7 28.7018 28.7018 46.7 6.5 46.7 L 2.5 46.7 C 1.1193 46.7 0 45.5807 0 44.2 L 0 34.2851 C 0 33.398 0.6463 32.6432 1.5227 32.5066 C 17.4905 30.0171 30.0171 17.4905 32.5066 1.5227 C 32.6432 0.6463 33.398 0 34.2851 0 Z M 100 34.2851 L 100 44.2 C 100 45.5807 98.8807 46.7 97.5 46.7 L 93.5 46.7 C 71.2982 46.7 53.3 28.7018 53.3 6.5 L 53.3 2.5 C 53.3 1.1193 54.4193 0 55.8 0 L 65.7149 0 C 66.602 0 67.3568 0.6463 67.4934 1.5227 C 69.9829 17.4905 82.5095 30.0171 98.4773 32.5066 C 99.3537 32.6432 100 33.398 100 34.2851 Z M 65.7149 100 L 55.8 100 C 54.4193 100 53.3 98.8807 53.3 97.5 L 53.3 93.5 C 53.3 71.2982 71.2982 53.3 93.5 53.3 L 97.5 53.3 C 98.8807 53.3 100 54.4193 100 55.8 L 100 65.7149 C 100 66.602 99.3537 67.3568 98.4773 67.4934 C 82.5095 69.9829 69.9829 82.5095 67.4934 98.4773 C 67.3568 99.3537 66.602 100 65.7149 100 Z M 0 65.7149 L 0 55.8 C 0 54.4193 1.1193 53.3 2.5 53.3 L 6.5 53.3 C 28.7018 53.3 46.7 71.2982 46.7 93.5 L 46.7 97.5 C 46.7 98.8807 45.5807 100 44.2 100 L 34.2851 100 C 33.398 100 32.6432 99.3537 32.5066 98.4773 C 30.0171 82.5095 17.4905 69.9829 1.5227 67.4934 C 0.6463 67.3568 0 66.602 0 65.7149 Z" fill="url(#ss-foot-g)" transform="translate(11.5 11.5) scale(0.77)"/></svg><span class="wordmark">opensight</span></p>
+      <p class="footer-tag">The open-source BI platform.</p>
+    </div>
+    <nav aria-label="Footer">
+      <a href="https://app.getopensight.org">Open the app</a>
+      <a href="../../demo/">Live demo</a>
+      <a href="https://github.com/tomesposito/opensight">GitHub</a>
+      <a href="/docs/">Docs</a>
+      <a href="https://github.com/tomesposito/opensight/issues">Discuss</a>
+    </nav>
+  </div>
+  <div class="wrap footer-base">
+    <p>© 2026 OpenSight contributors · <a href="https://github.com/tomesposito/opensight/blob/master/LICENSE">Apache-2.0</a></p>
+    <p>Last updated November 2026</p>
+  </div>
+</footer>
+
+</body>
+</html>
