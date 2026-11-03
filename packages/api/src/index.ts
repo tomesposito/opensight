@@ -12,6 +12,8 @@ import { LocalDashboards } from './local-dashboards.js';
 import { V1Routes } from './v1-routes.js';
 import { LocalAnalyses } from './local-analyses.js';
 import { PrepRoutes, type PrepPostgresBinding } from './prep-routes.js';
+import { InputTableRoutes } from './input-table-routes.js';
+import { InputTableStore } from './input-tables.js';
 import { ConnectorRoutes } from './connector-routes.js';
 import { invitationRoute } from './invitations.js';
 import { generativeRoute } from './o-generative.js';
@@ -46,6 +48,8 @@ export interface ApiOptions {
   /** Trusted local DuckDB path. Omit for ephemeral library/test staging. */
   localUploadPath?: string;
   prepStorePath?: string;
+  /** Issue #161: governed input tables store; omit for ephemeral library use. */
+  inputTableStorePath?: string;
   prepPostgresBindings?: readonly PrepPostgresBinding[];
   ai?: AIOptions;
   analytics?: Analytics;
@@ -116,6 +120,12 @@ export async function createApiServer(options: ApiOptions): Promise<Server> {
   const connectorRoutes = new ConnectorRoutes(!!localIdentity, analytics);
   const prepRoutes = await PrepRoutes.create(connectorRoutes, options.prepStorePath, options.prepPostgresBindings);
   prepRoutes.analytics = analytics;
+  const inputTables = new InputTableRoutes(await InputTableStore.load(options.inputTableStorePath), {
+    security, localIdentity,
+    workspaceUserIds: identity => security ? security.store.read().users.filter(u => u.namespaceId === identity.namespaceId).map(u => u.id) : undefined,
+  });
+  prepRoutes.inputTableSources = identity => inputTables.prepSourcesFor(identity);
+  prepRoutes.inputTableTables = identity => inputTables.prepTablesFor(identity);
   const metricAssets = (identity: Identity) => {
     const ns = identity.namespaceId, local = !security;
     return new LocalAssets(local ? store : namespaceStores.get(ns), prepRoutes, identity, async () => { if (security) security.user(identity); }, organization,
@@ -190,6 +200,10 @@ export async function createApiServer(options: ApiOptions): Promise<Server> {
         const root = namespaceId === 'default' ? options.dataRoot : options.namespaceDataRoots?.[namespaceId];
         const analyses = new LocalAnalyses(scopedStore, scopedSales, prepRoutes, v1Identity, recheck, organization, root, !!options.security?.storePath);
         await v1.local(request, response, path, analyses, new LocalDashboards(analyses, scopedStore, scopedSales, prepRoutes, v1Identity, recheck, organization, root, !!options.security?.storePath), new LocalAssets(scopedStore, prepRoutes, v1Identity, recheck, organization, root, !!options.security?.storePath, scopedSales)); return;
+      }
+      if (path.startsWith('/api/input-tables')) {
+        if (!localIdentity && (!security || !identity)) throw new SecurityError(503, 'SECURITY_NOT_CONFIGURED', 'Needs hosted API with authentication configured');
+        if (await inputTables.route(request, response, path, query, localIdentity ?? identity)) return;
       }
       const preparedResource = /^\/api\/(prep-sources|prep-datasets)(?:\/|$)/.test(path)
         || /^\/api\/datasets\/[^/]+\/(prep(?:\/|$)|execution$|rows$)/.test(path)

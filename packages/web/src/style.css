@@ -2579,3 +2579,10 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .idea-filters { display: flex; align-items: end; flex-wrap: wrap; gap: 12px; margin: 16px 0; }
 .idea-review .idea-form { max-width: 600px; }
 @media (max-width: 600px) { .ideas-page { padding: 16px; } .ideas-page .data-card { padding: 16px; } }
+
+/* Issue #161: governed input tables grid in the Data section. */
+.input-tables .data-toolbar { align-items: start; }
+.input-table-create, .input-table-editors { border: 1px solid var(--border, #d7dfe7); border-radius: 6px; margin: 16px 0; padding: 16px; }
+.input-table-create label, .input-table-editors label { display: grid; gap: 4px; margin: 8px 0; max-width: 420px; }
+.input-table-column { align-items: end; display: flex; flex-wrap: wrap; gap: 12px; }
+.input-tables td input, .input-tables td select { max-width: 180px; width: 100%; }

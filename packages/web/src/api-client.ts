@@ -1,4 +1,5 @@
 import type { Idea } from './ideas.js';
+import type { InputAuditEntry, InputCellValue, InputColumn, InputRow, InputTableFull, InputTableSummary } from './input-tables.js';
 import type { BundleDataSet } from '@opensight/bundle-parser';
 import type { PrepTemplate } from './prep-templates.js';
 import type { MetricDatasetOption, MetricList, MetricSummary, MetricHistory } from './governed-metrics.js';
@@ -334,6 +335,16 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
     return items;
   };
   const getPreparedRows = (id: string) => resource<PreparedRows>(`/api/datasets/${encodeURIComponent(id)}/rows`);
+  const listInputTables = () => resource<{ tables: InputTableSummary[] }>('/api/input-tables');
+  const getInputTable = (id: string) => resource<InputTableFull>(`/api/input-tables/${encodeURIComponent(id)}`);
+  const createInputTable = (body: { name: string; boundDatasetId?: string | null; columns: InputColumn[]; editors?: string[] }) => resource<InputTableFull>('/api/input-tables', 'POST', body);
+  const updateInputTable = (id: string, body: { name?: string; boundDatasetId?: string | null }) => resource<InputTableFull>(`/api/input-tables/${encodeURIComponent(id)}`, 'PATCH', body);
+  const deleteInputTable = (id: string) => resource<{ deleted: true }>(`/api/input-tables/${encodeURIComponent(id)}`, 'DELETE');
+  const setInputTableEditors = (id: string, editors: string[]) => resource<InputTableFull>(`/api/input-tables/${encodeURIComponent(id)}/editors`, 'PUT', { editors });
+  const addInputTableRow = (id: string, values: Record<string, InputCellValue>) => resource<{ row: InputRow; version: number }>(`/api/input-tables/${encodeURIComponent(id)}/rows`, 'POST', { values });
+  const updateInputTableRow = (id: string, rowId: string, values: Record<string, InputCellValue>) => resource<{ row: InputRow; version: number }>(`/api/input-tables/${encodeURIComponent(id)}/rows/${encodeURIComponent(rowId)}`, 'PATCH', { values });
+  const deleteInputTableRow = (id: string, rowId: string) => resource<{ deleted: true; version: number }>(`/api/input-tables/${encodeURIComponent(id)}/rows/${encodeURIComponent(rowId)}`, 'DELETE');
+  const getInputTableAudit = (id: string) => resource<{ entries: InputAuditEntry[] }>(`/api/input-tables/${encodeURIComponent(id)}/audit`);
   const listPrepDatasets = () => resource<PrepDatasetsResponse>('/api/prep-datasets');
   const listPrepSources = async (saved?: PrepDatasetsResponse) => {
     const [catalog, sources] = await Promise.all([saved ?? listPrepDatasets(), resource<PrepSourceSummary[]>('/api/prep-sources')]);
@@ -543,6 +554,7 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
     enroll, acceptEnrollment, login, selectWorkspace, logout, clearSession, getTransportCapabilities, uploadDirectFile, getOperation, getUploadReservation, cancelOperation, cancelUploadReservation,
     listJobs, jobRecipients, jobHistory, jobDeliveries, runJob,
     listPrepTemplates, proposePrepTemplate, publishPrepTemplate, createFromPrepTemplate, promoteCalculation, metricDatasets, listMetrics, saveMetric, publishMetric, metricHistory, getLocalData, getDatasetExecution, setDatasetExecution, refreshBlaze, getPreparedRows, listPrepSources, listPrepDatasets, savePrep, deletePrep, previewPrep, uploadFile, validateConnector, listUsers, saveUser, deleteUser, listInvitations, inviteUser, revokeInvitation, acceptInvitation, getAIStatus, generateO, generateCalculation, getAnalyticsConfig, saveAnalyticsConfig, getAIConfig, saveAIConfig, saveAIKey, testAIConnection, getSession, queryO, getDatasetRefreshStatus,
+    listInputTables, getInputTable, createInputTable, updateInputTable, deleteInputTable, setInputTableEditors, addInputTableRow, updateInputTableRow, deleteInputTableRow, getInputTableAudit,
     queryDataset,
     getAnalysisDefinition: (id: string, signal?: AbortSignal) => getDefinition('analysis', id, signal),
     getDashboardDefinition: (id: string, signal?: AbortSignal) => getDefinition('dashboard', id, signal),
