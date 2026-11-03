@@ -78,3 +78,14 @@ at all.
 - Open-source repo relationship (issue #107, question 6): everything
   stays MIT-equivalent Apache-2.0 in the repo; the hosted-only part
   is operations (hosting, backups, SLA), not withheld features.
+
+#### UPDATE (2026-10-30, issue #165)
+
+The DECISION above called SSO and audit logs "the future enterprise
+lever — decided if a buyer ever asks." That question is now answered
+without a buyer: on 2026-10-30 the product owner confirmed the
+open-economics rule from issue #165 as written. Core governance —
+single sign-on, row-level security, the audit log, and basic
+embedding — stays in the open product and is never paywalled. For
+those four features the "future enterprise lever" note no longer
+applies. The rule is published in `docs/open-economics.md`.

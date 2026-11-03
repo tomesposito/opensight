@@ -13,6 +13,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Added
 
+- The open-economics rule is published as a docs page: core governance — single sign-on, row-level security, the audit log, and basic embedding — stays in the open product and is never paywalled; paid tiers buy quotas, support, and an SLA. A guard test fails the suite if a published page puts one of the four behind a paid or enterprise tier, and D-77 carries an update recording that its "future enterprise lever" note no longer applies to them (#165).
+
 - Hosted entitlements can now hard-cap egress: an optional monthly `egressBytes` limit counts actual hosted tenant API response bytes and refuses further requests with `USAGE_LIMIT_EXCEEDED` once the cap is reached, instead of only metering egress (#193).
 
 - Indexable documentation pages for local setup, connectors, embedding and shipped
