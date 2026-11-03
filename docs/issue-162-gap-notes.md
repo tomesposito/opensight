@@ -32,12 +32,30 @@ built-in authentication, SQLite metadata and contained query workers, and blocks
 all external requests. It covers subscribing from the existing Metrics tab,
 drill-back preview, mobile layout and unsubscribe.
 
-In this environment Chromium exits before opening a page with:
-`Hatch WebGL domain policy is required for browser startup`. The installed
-Chromium README says this image-owned policy must be supplied by browser-daemon;
-that facility is not available to this run. The policy was not bypassed.
-Consequently no new screenshots, reference comparison or README hero GIF could
-be captured. Existing README imagery was retained rather than represented as
-fresh. Browser layout/fidelity remains unverified; React interaction and real
-HTTP tests cover the functional flows. Run the capture script and the existing
-README GIF capture/assembly workflow once browser provisioning is restored.
+Initial direct Chromium startup failed because its required image-owned WebGL
+policy was not supplied. The existing workspace launcher supplies that policy;
+its checksum matched the installed file. Setting `OPENSIGHT_CHROMIUM` to that
+launcher resolved startup without changing or bypassing the policy. The full
+root suite uses the same setting.
+
+The hosted browser check passed subscription creation, weekly default, a $450
+current / $300 prior comparison, the two regional drivers, drill-back navigation,
+390px mobile layout and unsubscribe. It recorded zero page errors and zero
+external requests. Captures at 1440px and 390px have no document horizontal
+overflow. Visual review caught unstyled controls on the drill-back page; it now
+uses the existing compact Data-page styles, with long expressions wrapping.
+
+Compared the new form and detail captures against the existing Data surface and
+the local QuickSight `qs-2026/qs-data-landing.jpg` reference. The left navigation,
+tabbed data workspace and standard dialog/card controls are retained. There is
+no supplied metric-digest reference, so no feature-specific parity is claimed.
+Existing branding and density differences remain; visual fidelity is unmeasured.
+
+The README adds a synthetic hosted digest preview. Its hero tour is refreshed
+from the final rebuilt static demo with the maintained
+`packages/web/scripts/capture-readme-tour.mjs` adaptation of
+`~/workspace/tools/screenshots/readme-gif.mjs`, using the documented ffmpeg
+palette workflow: 253 frames at 960×600 and 10fps, with zero page errors or
+external requests. The static demo is a local preview, not a
+deployed server. No unresolved issue-specific visual defect remains; no remote
+issue was filed. Captures and logs are under `/tmp/issue162-*`.

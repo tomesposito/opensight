@@ -48,7 +48,7 @@ try {
   });
   page = await context.newPage(); page.on('pageerror', e => errors.push(e.message));
   const capture = async name => { assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, name); await page.screenshot({ path: `${output}/${name}.png`, fullPage: true }); };
-  await page.goto(origin); await navigate(page, 'data'); await page.getByRole('tab', { name: 'Metrics', exact: true }).click();
+  await page.goto(origin); await page.locator('#product-navigation').waitFor(); await navigate(page, 'data'); await page.getByRole('tab', { name: 'Metrics', exact: true }).click();
   await page.getByRole('button', { name: 'Subscribe to Governed revenue', exact: true }).click();
   await page.getByText('No active subscriptions.', { exact: true }).waitFor();
   await page.getByLabel('Driver dimensions (one field per line)').fill('region');

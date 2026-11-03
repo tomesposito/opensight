@@ -303,3 +303,4 @@ details[open] .data-menu-items { animation: menu-open 150ms ease-out; }
 .metric-definition-form form > label textarea { width: 100%; box-sizing: border-box; }
 .metric-definition-form li > button { margin: 4px; }
 .metric-definition-form li { overflow-wrap: anywhere; }
+.metric-detail pre { white-space: pre-wrap; overflow-wrap: anywhere; }

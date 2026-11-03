@@ -46,8 +46,8 @@ export function MetricDetail({ id, client }: { id: string; client?: DigestClient
     void client?.getMetric?.(id, abort.signal).then(m => { if (!abort.signal.aborted) setMetric(m); }).catch(e => { if (!abort.signal.aborted) setError(message(e)); });
     return () => abort.abort();
   }, [id, client]);
-  if (!client) return <section className="data-card"><h2>Metric digests</h2><p>Needs hosted API.</p></section>;
-  return <section className="data-card"><h2>{metric?.published?.name ?? 'Governed metric'}</h2>{error && <p role="alert">{error}</p>}
+  if (!client) return <section className="data-page"><div className="data-card"><h2>Metric digests</h2><p>Needs hosted API.</p></div></section>;
+  return <section className="data-page metric-detail"><div className="data-card"><h2>{metric?.published?.name ?? 'Governed metric'}</h2>{error && <p role="alert">{error}</p>}
     {metric?.published && <><p>{metric.published.description}</p><p>Published version {metric.published.version}</p><pre>{metric.published.expression}</pre><MetricSubscriptions metric={metric} client={client} /></>}
-  </section>;
+  </div></section>;
 }
