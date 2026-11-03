@@ -93,6 +93,11 @@ export async function resourceBytes(c: SqlConnection, scope: Scope): Promise<num
  * Storage uses the caller's H1 tenant transaction; no private SQL grants are needed. */
 export class HostedUsage {
   readonly config: Entitlements;
+  /** Optional billing tier override (issue #194): when the hosted server has
+   * Stripe billing configured, a tenant's durable billing tier entitlement
+   * wins over the operator snapshot. Wired by composition only; unset in
+   * every other mode, where the snapshot alone decides. */
+  tierEntitlement?: (tenantId: string) => Entitlement | undefined;
   constructor(readonly db: Database, config: Entitlements, readonly clock = Date.now, private readonly objectDeployment?: string) { this.config = structuredClone(config); }
   private async billingScope(c: SqlConnection, scope: Scope, lock = false): Promise<void> {
     // Reporting includes suspended/provisioning/deleting tenants, but never resurrects
@@ -176,6 +181,8 @@ export class HostedUsage {
     return records;
   }
   entitlement(scope: Scope): Entitlement {
+    const override = this.tierEntitlement?.(scope.tenantId);
+    if (override) return override;
     const limit = Object.hasOwn(this.config.tenants, scope.tenantId) ? this.config.tenants[scope.tenantId] : this.config.defaults;
     if (!limit) throw new MetadataError('ENTITLEMENT_UNRESOLVED', 503);
     return limit;

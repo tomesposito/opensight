@@ -13,6 +13,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Added
 
+- Stripe billing for the hosted tiers: the operator can generate a Stripe-hosted payment link for a tenant's tier (Light $29/mo, Regular $99/mo, Heavy $399/mo), and a signature-verified webhook applies subscription state to the tenant's entitlement tier exactly once, with every change in the operator audit trail. Past-due subscriptions pause the tenant's hosted access after Stripe's retries run out — data retained, no automatic downgrade — until an admin pays in Stripe or explicitly drops the tenant to Free. Billing is disabled unless the full Stripe configuration is present in the environment; no card data ever touches OpenSight (#194).
+
 - Four competitor pages on the marketing site in the copy approved for the issue: Tableau and Power BI alternatives pages at /alternatives/tableau and /alternatives/power-bi (per-seat maths from the vendors' published prices, what does not convert, and where each incumbent is the better choice), and versus pages at /vs/metabase and /vs/superset (licence and permissions lines, and where Metabase and Superset are stronger today). Every competitor fact is cited to the vendor's published page, the home-page footer links all four, each page cross-links the other three, and all four are listed in the sitemap (#187).
 
 - A QuickSight alternatives page on the marketing site at /alternatives/quicksight and a migration guide in the docs at /docs/migrating-from-quicksight: what converts on bundle import, what must be rebuilt by hand, and where QuickSight is the better choice, in the copy approved for the issue. The home page's QuickSight section links the alternatives page, and both pages are listed in the sitemap (#186).
