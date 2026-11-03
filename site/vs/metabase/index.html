@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OpenSight vs Metabase: both free to self-host. That is where the similarity ends. — OpenSight</title>
+<meta name="description" content="Metabase Open Source and OpenSight are both free to self-host. The licences differ — AGPL v3 against Apache-2.0 — and row and column security is in OpenSight's open product, not a Pro feature.">
+<meta property="og:title" content="OpenSight vs Metabase: both free to self-host. That is where the similarity ends. — OpenSight">
+<meta property="og:description" content="Metabase Open Source and OpenSight are both free to self-host. The licences differ — AGPL v3 against Apache-2.0 — and row and column security is in OpenSight's open product, not a Pro feature.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://getopensight.org/vs/metabase/">
+<meta property="og:image" content="https://getopensight.org/assets/og-image.jpg">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="OpenSight vs Metabase: both free to self-host. That is where the similarity ends. — OpenSight">
+<meta name="twitter:description" content="Metabase Open Source and OpenSight are both free to self-host. The licences differ — AGPL v3 against Apache-2.0 — and row and column security is in OpenSight's open product, not a Pro feature.">
+<meta name="twitter:image" content="https://getopensight.org/assets/og-image.jpg">
+<meta property="og:image:width" content="2400">
+<meta property="og:image:height" content="1260">
+<meta property="og:image:alt" content="OpenSight vs Metabase: both free to self-host. That is where the similarity ends. — OpenSight">
+<link rel="canonical" href="https://getopensight.org/vs/metabase/">
+<link rel="stylesheet" href="../../styles.css">
+<link rel="icon" href="../../assets/favicon.svg?v=2" type="image/svg+xml">
+<link rel="apple-touch-icon" href="../../assets/apple-touch-icon.png">
+</head>
+<body>
+
+<header class="topnav">
+  <div class="wrap nav-inner">
+    <a class="brand" href="../../" aria-label="OpenSight home">
+      <svg class="brand-mark" viewBox="0 0 100 100" width="26" height="26" aria-hidden="true"><defs><linearGradient id="mb-brand-g" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#38BDF8"/><stop offset="0.5" stop-color="#3B82F6"/><stop offset="1" stop-color="#6D3BFF"/></linearGradient></defs><path d="M 34.2851 0 L 44.2 0 C 45.5807 0 46.7 1.1193 46.7 2.5 L 46.7 6.5 C 46.7 28.7018 28.7018 46.7 6.5 46.7 L 2.5 46.7 C 1.1193 46.7 0 45.5807 0 44.2 L 0 34.2851 C 0 33.398 0.6463 32.6432 1.5227 32.5066 C 17.4905 30.0171 30.0171 17.4905 32.5066 1.5227 C 32.6432 0.6463 33.398 0 34.2851 0 Z M 100 34.2851 L 100 44.2 C 100 45.5807 98.8807 46.7 97.5 46.7 L 93.5 46.7 C 71.2982 46.7 53.3 28.7018 53.3 6.5 L 53.3 2.5 C 53.3 1.1193 54.4193 0 55.8 0 L 65.7149 0 C 66.602 0 67.3568 0.6463 67.4934 1.5227 C 69.9829 17.4905 82.5095 30.0171 98.4773 32.5066 C 99.3537 32.6432 100 33.398 100 34.2851 Z M 65.7149 100 L 55.8 100 C 54.4193 100 53.3 98.8807 53.3 97.5 L 53.3 93.5 C 53.3 71.2982 71.2982 53.3 93.5 53.3 L 97.5 53.3 C 98.8807 53.3 100 54.4193 100 55.8 L 100 65.7149 C 100 66.602 99.3537 67.3568 98.4773 67.4934 C 82.5095 69.9829 69.9829 82.5095 67.4934 98.4773 C 67.3568 99.3537 66.602 100 65.7149 100 Z M 0 65.7149 L 0 55.8 C 0 54.4193 1.1193 53.3 2.5 53.3 L 6.5 53.3 C 28.7018 53.3 46.7 71.2982 46.7 93.5 L 46.7 97.5 C 46.7 98.8807 45.5807 100 44.2 100 L 34.2851 100 C 33.398 100 32.6432 99.3537 32.5066 98.4773 C 30.0171 82.5095 17.4905 69.9829 1.5227 67.4934 C 0.6463 67.3568 0 66.602 0 65.7149 Z" fill="url(#mb-brand-g)" transform="translate(11.5 11.5) scale(0.77)"/></svg>
+      <span class="wordmark">opensight</span>
+    </a>
+    <nav class="nav-links" aria-label="Sections">
+      <a href="../../#features">Features</a>
+      <a href="../../#compatibility">Compatibility</a>
+      <a href="../../#open-source">Open source</a>
+      <a href="../../#get-started">Get started</a>
+    </nav>
+    <div class="nav-cta">
+      <a class="btn btn-ghost btn-github" href="https://github.com/tomesposito/opensight">GitHub</a>
+      <a class="btn btn-ghost" href="https://app.getopensight.org">Login</a>
+      <a class="nav-access" href="../../pricing/">Pricing</a>
+      <a class="nav-access" href="../../#request-access">Request access</a>
+      <a class="btn btn-primary" href="../../demo/">Live demo</a>
+    </div>
+  </div>
+</header>
+
+<main id="top">
+
+  <!-- 1. Opening -->
+  <section class="section">
+    <div class="wrap">
+      <h1>OpenSight vs Metabase: both free to self-host. That is where the similarity ends.</h1>
+      <p class="section-sub">Metabase's Open Source edition is free, self-hosted, with unlimited users. So is OpenSight. If price of the open edition is your only question, both answers are $0, and this page is about the questions after that one.</p>
+    </div>
+  </section>
+
+  <!-- 2. The licences differ, and so does the paid line -->
+  <section class="section section-alt">
+    <div class="wrap">
+      <h2>The licences differ, and so does the paid line</h2>
+      <p>Metabase's open edition is AGPL v3. OpenSight is Apache-2.0, all of it, with no commercial edition holding features back.</p>
+      <p>That last part matters at the permissions line. In Metabase, row and column permissions, SSO and white-label embedding are Pro features. Pro is $575 a month including 10 users, then $12 per user after that — a 20-person team pays $575 plus 10 × $12, which is $695 a month. Even Metabase Cloud Starter, at $100 a month including 5 users and $6 per user after that ($190 a month for 20 people), does not include those permissions.</p>
+      <p>In OpenSight, row and column security is in the open product. It is documented on the <a href="/docs/permissions/">permissions page</a> of this site, from the code as shipped.</p>
+      <p>Metabase figures checked 3 November 2026 on Metabase's published pricing page.</p>
+      <p class="pricing-sources">
+        <a href="https://www.metabase.com/pricing/">Metabase pricing</a>
+      </p>
+    </div>
+  </section>
+
+  <!-- 3. Where Metabase is the better choice -->
+  <section class="section">
+    <div class="wrap">
+      <h2>Where Metabase is the better choice</h2>
+      <p>Metabase has been the first BI tool a lot of teams reach for since 2014, and its visual question builder is the gentler start for people who do not write SQL. If nobody on your team works in SQL and nobody is coming from QuickSight, Metabase is probably the easier first month.</p>
+    </div>
+  </section>
+
+  <!-- 4. Where OpenSight is the better choice -->
+  <section class="section section-alt">
+    <div class="wrap">
+      <h2>Where OpenSight is the better choice</h2>
+      <p>If your dashboards need to stay in QuickSight's definition format — because you came from QuickSight, or because you want the exit open — that is OpenSight's ground. It reads and writes QuickSight analysis and dashboard definitions. Metabase keeps your work in Metabase.</p>
+      <p>The same applies if AGPL terms do not work for your company and Apache-2.0 does.</p>
+    </div>
+  </section>
+
+  <!-- 5. Closing -->
+  <section class="section">
+    <div class="wrap">
+      <p class="section-sub">Try the live demo, or request hosted access — hosted workspaces are opening in small batches and are set up by hand.</p>
+      <p>
+        <a class="btn btn-primary btn-lg" href="../../demo/">Try the live demo</a>
+        <a class="btn btn-primary btn-lg" href="../../#request-access">Request hosted access</a>
+      </p>
+      <nav aria-label="Other comparisons" style="display:flex; gap:22px; flex-wrap:wrap; margin-top:22px">
+        <a href="../../alternatives/tableau/">Tableau alternative</a>
+        <a href="../../alternatives/power-bi/">Power BI alternative</a>
+        <a href="../superset/">OpenSight vs Apache Superset</a>
+      </nav>
+    </div>
+  </section>
+
+</main>
+
+<footer class="footer">
+  <div class="wrap footer-grid">
+    <div>
+      <p class="brand"><svg class="brand-mark" viewBox="0 0 100 100" width="22" height="22" aria-hidden="true"><defs><linearGradient id="mb-foot-g" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#38BDF8"/><stop offset="0.5" stop-color="#3B82F6"/><stop offset="1" stop-color="#6D3BFF"/></linearGradient></defs><path d="M 34.2851 0 L 44.2 0 C 45.5807 0 46.7 1.1193 46.7 2.5 L 46.7 6.5 C 46.7 28.7018 28.7018 46.7 6.5 46.7 L 2.5 46.7 C 1.1193 46.7 0 45.5807 0 44.2 L 0 34.2851 C 0 33.398 0.6463 32.6432 1.5227 32.5066 C 17.4905 30.0171 30.0171 17.4905 32.5066 1.5227 C 32.6432 0.6463 33.398 0 34.2851 0 Z M 100 34.2851 L 100 44.2 C 100 45.5807 98.8807 46.7 97.5 46.7 L 93.5 46.7 C 71.2982 46.7 53.3 28.7018 53.3 6.5 L 53.3 2.5 C 53.3 1.1193 54.4193 0 55.8 0 L 65.7149 0 C 66.602 0 67.3568 0.6463 67.4934 1.5227 C 69.9829 17.4905 82.5095 30.0171 98.4773 32.5066 C 99.3537 32.6432 100 33.398 100 34.2851 Z M 65.7149 100 L 55.8 100 C 54.4193 100 53.3 98.8807 53.3 97.5 L 53.3 93.5 C 53.3 71.2982 71.2982 53.3 93.5 53.3 L 97.5 53.3 C 98.8807 53.3 100 54.4193 100 55.8 L 100 65.7149 C 100 66.602 99.3537 67.3568 98.4773 67.4934 C 82.5095 69.9829 69.9829 82.5095 67.4934 98.4773 C 67.3568 99.3537 66.602 100 65.7149 100 Z M 0 65.7149 L 0 55.8 C 0 54.4193 1.1193 53.3 2.5 53.3 L 6.5 53.3 C 28.7018 53.3 46.7 71.2982 46.7 93.5 L 46.7 97.5 C 46.7 98.8807 45.5807 100 44.2 100 L 34.2851 100 C 33.398 100 32.6432 99.3537 32.5066 98.4773 C 30.0171 82.5095 17.4905 69.9829 1.5227 67.4934 C 0.6463 67.3568 0 66.602 0 65.7149 Z" fill="url(#mb-foot-g)" transform="translate(11.5 11.5) scale(0.77)"/></svg><span class="wordmark">opensight</span></p>
+      <p class="footer-tag">The open-source BI platform.</p>
+    </div>
+    <nav aria-label="Footer">
+      <a href="https://app.getopensight.org">Open the app</a>
+      <a href="../../demo/">Live demo</a>
+      <a href="https://github.com/tomesposito/opensight">GitHub</a>
+      <a href="/docs/">Docs</a>
+      <a href="https://github.com/tomesposito/opensight/issues">Discuss</a>
+    </nav>
+  </div>
+  <div class="wrap footer-base">
+    <p>© 2026 OpenSight contributors · <a href="https://github.com/tomesposito/opensight/blob/master/LICENSE">Apache-2.0</a></p>
+    <p>Last updated November 2026</p>
+  </div>
+</footer>
+
+</body>
+</html>

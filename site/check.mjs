@@ -1,4 +1,4 @@
-// Integrity check for the marketing site (issues #93, #106, #134, #176, #183, #184, #185, #186).
+// Integrity check for the marketing site (issues #93, #106, #134, #176, #183, #184, #185, #186, #187).
 // Usage: node site/check.mjs  (exit 0 = pass)
 // Verifies: every local asset referenced from index.html exists, no external
 // requests beyond allowlisted links, required sections and AEO artifacts present.
@@ -106,6 +106,10 @@ check(sitemap.includes('<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0
 const locations = [...sitemap.matchAll(/<url>\s*<loc>([^<]+)<\/loc>\s*<\/url>/g)].map(m => m[1]);
 const publicUrls = ['https://getopensight.org/', 'https://getopensight.org/pricing/',
   'https://getopensight.org/alternatives/quicksight/',
+  'https://getopensight.org/alternatives/tableau/',
+  'https://getopensight.org/alternatives/power-bi/',
+  'https://getopensight.org/vs/metabase/',
+  'https://getopensight.org/vs/superset/',
   'https://getopensight.org/demo/', `${APP_ORIGIN}/`,
   canonicalUrl(''), ...manifest.map(page => canonicalUrl(page.slug))];
 check(locations.length === publicUrls.length, `sitemap.xml must list exactly ${publicUrls.length} public entry points`);
@@ -360,6 +364,120 @@ for (const copy of [
   'One more limit, stated plainly: bundles edited in OpenSight carry an opensightRoundTrip extension that preserves the original resource. OpenSight makes no claim that AWS accepts that extension back on re-import.',
   'Do not count dashboards. Count the two numbers in front of you: the datasets you need to recreate connections for, and the unsupported items in the import report.',
 ]) check(guideText.includes(copy), `migration guide: missing or altered approved copy: ${copy.slice(0, 60)}…`);
+
+// 16. Competitor alternatives + versus pages (issue #187): the copy Tom
+// approved on 2026-11-03 (issue comment 6599573360, approval 6603196634) is
+// exact, every page cites its vendor source, closes with both approved
+// buttons, cross-links the other three pages, and the home footer links all
+// four. No page body links /pricing (approved placement).
+const competitorPages = [
+  {
+    dir: 'alternatives/tableau', url: 'https://getopensight.org/alternatives/tableau/',
+    title: 'Tableau charges for every seat. OpenSight charges for none.',
+    headings: ['What a 20-person team pays Tableau', 'Your Tableau workbooks do not come with you', 'Where Tableau is the better choice'],
+    copy: [
+      'Tableau prices people by role. On the Standard edition a Creator is $75 per user per month, an Explorer is $42, and a Viewer is $15, billed annually. Every deployment needs at least one Creator.',
+      'OpenSight has no seats to price. The software is Apache-2.0 and costs $0, whether one person uses it or two hundred do.',
+      'Take 20 people: 4 who build dashboards and 16 who view them.',
+      '4 Creators at $75 is $300 a month. 16 Viewers at $15 is $240 a month. Together that is $540 a month, $6,480 a year, billed annually. If some of those viewers need to edit rather than just view, they move to Explorer at $42 and the bill climbs again.',
+      'The same team on self-hosted OpenSight pays $0 for the software. The cost is the machine it runs on.',
+      "Vendor prices checked 3 November 2026 on Tableau's published pricing page.",
+      'This page will not pretend otherwise: OpenSight does not import Tableau workbooks. Its compatibility is with QuickSight — it reads and writes QuickSight analysis and dashboard definitions. A team leaving Tableau rebuilds its dashboards in OpenSight. What it gets for that work is a tool it owns outright, in a definition format it can take elsewhere later.',
+      "If your analysts already work in Tableau Desktop and Tableau Prep Builder, and your team knows the tool, staying is a real option. Tableau's desktop authoring and data prep are deeper than what OpenSight offers today, and retraining a team costs more than a licence line suggests.",
+      'OpenSight fits the team that has decided the per-seat bill itself is the problem, and is willing to rebuild once to end it.',
+    ],
+    sources: ['<a href="https://www.tableau.com/pricing/cloud">Tableau pricing</a>'],
+    cross: ['../power-bi/', '../../vs/metabase/', '../../vs/superset/'],
+  },
+  {
+    dir: 'alternatives/power-bi', url: 'https://getopensight.org/alternatives/power-bi/',
+    title: 'First, check whether you already pay for Power BI',
+    headings: ['What Power BI costs when you do pay for it', 'The real difference is the surrounding stack', 'What does not convert'],
+    copy: [
+      'Power BI Pro is included in Microsoft 365 E5. If your company already buys E5, you may already be paying for Power BI, and $0 extra is a hard price to argue with. Check that before you read the rest of this page.',
+      'Pro is $14 per user per month, paid yearly. Premium Per User is $24. Twenty people on Pro is $280 a month, $3,360 a year.',
+      'OpenSight self-hosted is $0 for the software, for any number of users. There is no per-user line to multiply.',
+      "Vendor prices checked 3 November 2026 on Microsoft's published Power BI pricing page.",
+      "Power BI sits inside Microsoft's stack: the service is part of Microsoft Fabric, and its natural home is a company already living in Microsoft 365. If that is your company, Power BI's fit is a genuine advantage, not a lock-in trick.",
+      "OpenSight runs anywhere, with no Microsoft account and no AWS account required. Its dashboards live in QuickSight's definition format, so the work stays readable by another tool later. Pick it when the BI layer is the thing you want to own, outside any one vendor's stack.",
+      'Power BI reports do not import into OpenSight. Leaving Power BI means rebuilding reports. The saving starts after that rebuild, not before it.',
+    ],
+    sources: ['<a href="https://www.microsoft.com/power-platform/products/power-bi/pricing">Microsoft Power BI pricing</a>'],
+    cross: ['../tableau/', '../../vs/metabase/', '../../vs/superset/'],
+  },
+  {
+    dir: 'vs/metabase', url: 'https://getopensight.org/vs/metabase/',
+    title: 'OpenSight vs Metabase: both free to self-host. That is where the similarity ends.',
+    headings: ['The licences differ, and so does the paid line', 'Where Metabase is the better choice', 'Where OpenSight is the better choice'],
+    copy: [
+      "Metabase's Open Source edition is free, self-hosted, with unlimited users. So is OpenSight. If price of the open edition is your only question, both answers are $0, and this page is about the questions after that one.",
+      "Metabase's open edition is AGPL v3. OpenSight is Apache-2.0, all of it, with no commercial edition holding features back.",
+      'That last part matters at the permissions line. In Metabase, row and column permissions, SSO and white-label embedding are Pro features. Pro is $575 a month including 10 users, then $12 per user after that — a 20-person team pays $575 plus 10 × $12, which is $695 a month. Even Metabase Cloud Starter, at $100 a month including 5 users and $6 per user after that ($190 a month for 20 people), does not include those permissions.',
+      'In OpenSight, row and column security is in the open product. It is documented on the permissions page of this site, from the code as shipped.',
+      "Metabase figures checked 3 November 2026 on Metabase's published pricing page.",
+      'Metabase has been the first BI tool a lot of teams reach for since 2014, and its visual question builder is the gentler start for people who do not write SQL. If nobody on your team works in SQL and nobody is coming from QuickSight, Metabase is probably the easier first month.',
+      "If your dashboards need to stay in QuickSight's definition format — because you came from QuickSight, or because you want the exit open — that is OpenSight's ground. It reads and writes QuickSight analysis and dashboard definitions. Metabase keeps your work in Metabase.",
+      'The same applies if AGPL terms do not work for your company and Apache-2.0 does.',
+    ],
+    sources: ['<a href="https://www.metabase.com/pricing/">Metabase pricing</a>'],
+    cross: ['../../alternatives/tableau/', '../../alternatives/power-bi/', '../superset/'],
+  },
+  {
+    dir: 'vs/superset', url: 'https://getopensight.org/vs/superset/',
+    title: 'OpenSight vs Apache Superset: same licence, different job',
+    headings: ['Superset is built for SQL teams, and it shows', "OpenSight's ground is a format, not a chart count"],
+    copy: [
+      'Apache Superset is Apache-2.0, like OpenSight. Self-hosted, it costs $0, like OpenSight. Nobody wins this comparison on licence or sticker price, so it comes down to what your team does all day.',
+      "Superset's centre of gravity is SQL Lab, its browser SQL editor, with a no-code chart builder and 40+ visualization types around it. For a team of analysts who live in SQL and want the widest chart library they can self-host, Superset is the stronger tool today.",
+      'Running it is a commitment. A production Superset deployment is several processes — the web app, a Celery worker and scheduler, Redis and a Postgres metadata database. Teams that would rather not run that buy Preset, the managed Superset service: free for up to 5 users, then $20 per user per month billed annually on Professional, with embedded dashboard viewer licences at $500 a month for 50 viewers.',
+      "Superset and Preset facts checked 3 November 2026 on Apache Superset and Preset's published pages.",
+      "OpenSight exists for the QuickSight-shaped problem. It reads and writes QuickSight analysis and dashboard definitions, so a team leaving QuickSight keeps its work in the same format, and a team adopting OpenSight can leave the same way. Superset has no QuickSight compatibility; your dashboards live in Superset's own format.",
+      "If QuickSight is nowhere in your world, that ground is worth nothing to you, and the choice should be made on the tools themselves — where Superset's SQL depth may well win it.",
+    ],
+    sources: ['<a href="https://superset.apache.org/">Apache Superset</a>', '<a href="https://preset.io/pricing">Preset pricing</a>'],
+    cross: ['../../alternatives/tableau/', '../../alternatives/power-bi/', '../metabase/'],
+  },
+];
+const closingCopy = 'Try the live demo, or request hosted access — hosted workspaces are opening in small batches and are set up by hand.';
+for (const page of competitorPages) {
+  const name = `${page.dir}/index.html`;
+  const body = readArtifact(name);
+  check(body.match(/<title>([^<]+)<\/title>/)?.[1] === `${page.title} — OpenSight`,
+    `${name}: incorrect page title`);
+  check(body.match(/<h1>([^<]+)<\/h1>/)?.[1] === page.title, `${name}: H1 must be the approved page title`);
+  const pageCanonicals = [...body.matchAll(/<link rel="canonical" href="([^"]+)">/g)].map(m => m[1]);
+  check(pageCanonicals.length === 1 && pageCanonicals[0] === page.url,
+    `${name}: expected exactly one canonical link naming the page`);
+  check(body.includes('Apache-2.0'), `${name}: page must name the Apache-2.0 license`);
+  check(!/MIT license/i.test(body), `${name}: page must not claim an MIT license`);
+  const paras = [...body.matchAll(/<p\b[^>]*>([\s\S]*?)<\/p>/g)].map(m => stripTags(m[1]));
+  for (const copy of [...page.copy, closingCopy]) {
+    check(paras.includes(copy), `${name}: missing or altered approved copy: ${copy.slice(0, 60)}…`);
+  }
+  for (const heading of page.headings) {
+    check(body.includes(`<h2>${heading}</h2>`), `${name}: missing approved heading: ${heading}`);
+  }
+  for (const link of page.sources) check(body.includes(link), `${name}: missing vendor source link: ${link}`);
+  check(body.includes('<a class="btn btn-primary btn-lg" href="../../demo/">Try the live demo</a>'),
+    `${name}: missing Try the live demo button`);
+  check(body.includes('<a class="btn btn-primary btn-lg" href="../../#request-access">Request hosted access</a>'),
+    `${name}: missing Request hosted access button to the home request-access form`);
+  for (const href of page.cross) {
+    check(body.includes(`<a href="${href}">`), `${name}: missing cross-link to ${href}`);
+  }
+  check(!/href="(?:\.\.\/)+pricing\/"|href="\/pricing\/"/.test(body.match(/<main[\s\S]*?<\/main>/)?.[0] ?? ''), `${name}: page body must not link /pricing (approved placement)`);
+  for (const match of body.matchAll(/\b(?:href|src)="([^"]+)"/g)) {
+    const ref = match[1];
+    if (/^(?:https?:|#)/.test(ref) || ref === '../../demo/') continue;
+    const path = ref.split(/[?#]/)[0];
+    const target = path.startsWith('/') ? resolve(root, path.slice(1)) : resolve(root, page.dir, path);
+    check(existsSync(target), `${name}: missing local reference: ${ref}`);
+  }
+}
+check(footer?.includes('<a href="/alternatives/tableau/">Tableau alternative</a>'), 'home footer must link the Tableau page');
+check(footer?.includes('<a href="/alternatives/power-bi/">Power BI alternative</a>'), 'home footer must link the Power BI page');
+check(footer?.includes('<a href="/vs/metabase/">OpenSight vs Metabase</a>'), 'home footer must link the Metabase page');
+check(footer?.includes('<a href="/vs/superset/">OpenSight vs Apache Superset</a>'), 'home footer must link the Superset page');
 
 if (failures.length) {
   console.error(`site/check.mjs FAILED (${failures.length}):`);

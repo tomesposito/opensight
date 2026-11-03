@@ -13,6 +13,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Added
 
+- Four competitor pages on the marketing site in the copy approved for the issue: Tableau and Power BI alternatives pages at /alternatives/tableau and /alternatives/power-bi (per-seat maths from the vendors' published prices, what does not convert, and where each incumbent is the better choice), and versus pages at /vs/metabase and /vs/superset (licence and permissions lines, and where Metabase and Superset are stronger today). Every competitor fact is cited to the vendor's published page, the home-page footer links all four, each page cross-links the other three, and all four are listed in the sitemap (#187).
+
 - A QuickSight alternatives page on the marketing site at /alternatives/quicksight and a migration guide in the docs at /docs/migrating-from-quicksight: what converts on bundle import, what must be rebuilt by hand, and where QuickSight is the better choice, in the copy approved for the issue. The home page's QuickSight section links the alternatives page, and both pages are listed in the sitemap (#186).
 
 - A pricing page on the marketing site at /pricing: OpenSight is free to self-host, and the hosted tiers (Free, Light $29/mo, Regular $99/mo, Heavy $399/mo) differ in quotas, not features, with a worked 20-person cost comparison against Tableau and Power BI from the vendors' published prices. Linked from the home-page nav and listed in the sitemap (#184).
