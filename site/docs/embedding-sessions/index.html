@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>H6: scoped embedded sessions (#26) — OpenSight docs</title>
+<meta name="description" content="H6 implements the recorded HQ-5/HQ-6/HQ-7/HQ-12 decisions. Registered dashboard, visual, Q search and authoring experiences, and anonymous dashboard/visual…">
+<link rel="canonical" href="https://getopensight.org/docs/embedding-sessions/">
+<link rel="stylesheet" href="../docs.css">
+</head>
+<body>
+<a class="skip-link" href="#content">Skip to content</a>
+<header class="topnav">
+  <div class="wrap nav-inner">
+    <a class="brand" href="/" aria-label="OpenSight home">
+      <svg class="brand-mark" viewBox="0 0 100 100" width="26" height="26" aria-hidden="true"><defs><linearGradient id="site-brand-g" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#38BDF8"/><stop offset="0.5" stop-color="#3B82F6"/><stop offset="1" stop-color="#6D3BFF"/></linearGradient></defs><path d="M 34.2851 0 L 44.2 0 C 45.5807 0 46.7 1.1193 46.7 2.5 L 46.7 6.5 C 46.7 28.7018 28.7018 46.7 6.5 46.7 L 2.5 46.7 C 1.1193 46.7 0 45.5807 0 44.2 L 0 34.2851 C 0 33.398 0.6463 32.6432 1.5227 32.5066 C 17.4905 30.0171 30.0171 17.4905 32.5066 1.5227 C 32.6432 0.6463 33.398 0 34.2851 0 Z M 100 34.2851 L 100 44.2 C 100 45.5807 98.8807 46.7 97.5 46.7 L 93.5 46.7 C 71.2982 46.7 53.3 28.7018 53.3 6.5 L 53.3 2.5 C 53.3 1.1193 54.4193 0 55.8 0 L 65.7149 0 C 66.602 0 67.3568 0.6463 67.4934 1.5227 C 69.9829 17.4905 82.5095 30.0171 98.4773 32.5066 C 99.3537 32.6432 100 33.398 100 34.2851 Z M 65.7149 100 L 55.8 100 C 54.4193 100 53.3 98.8807 53.3 97.5 L 53.3 93.5 C 53.3 71.2982 71.2982 53.3 93.5 53.3 L 97.5 53.3 C 98.8807 53.3 100 54.4193 100 55.8 L 100 65.7149 C 100 66.602 99.3537 67.3568 98.4773 67.4934 C 82.5095 69.9829 69.9829 82.5095 67.4934 98.4773 C 67.3568 99.3537 66.602 100 65.7149 100 Z M 0 65.7149 L 0 55.8 C 0 54.4193 1.1193 53.3 2.5 53.3 L 6.5 53.3 C 28.7018 53.3 46.7 71.2982 46.7 93.5 L 46.7 97.5 C 46.7 98.8807 45.5807 100 44.2 100 L 34.2851 100 C 33.398 100 32.6432 99.3537 32.5066 98.4773 C 30.0171 82.5095 17.4905 69.9829 1.5227 67.4934 C 0.6463 67.3568 0 66.602 0 65.7149 Z" fill="url(#site-brand-g)" transform="translate(11.5 11.5) scale(0.77)"/></svg>
+      <span class="wordmark">opensight</span>
+    </a>
+    <nav class="nav-links" aria-label="Main">
+      <a href="/">Home</a>
+      <a href="/docs/" aria-current="true">Docs</a>
+      <a href="https://github.com/tomesposito/opensight">GitHub</a>
+    </nav>
+  </div>
+</header>
+<div class="wrap docs-layout">
+  <nav class="docs-nav" aria-label="Documentation">
+    <a class="docs-home" href="/docs/">Documentation</a>
+    <ul>
+      <li><a href="/docs/getting-started/">Getting started</a></li>
+      <li><a href="/docs/connectors/">Data sources and connectors</a></li>
+      <li><a href="/docs/embedding/">Embedding configuration</a></li>
+      <li><a href="/docs/embedding-sessions/" aria-current="page">Embedded sessions</a></li>
+      <li><a href="/docs/permissions/">Permissions and row-level security</a></li>
+    </ul>
+  </nav>
+  <main id="content">
+    <article>
+<h1 id="h6-scoped-embedded-sessions-26">H6: scoped embedded sessions (#26)</h1>
+<p>H6 implements the recorded HQ-5/HQ-6/HQ-7/HQ-12 decisions. Registered dashboard,
+visual, Q search and authoring experiences, and anonymous dashboard/visual sessions
+use the hosted tenant stack. The H5 configuration API and Phase 3c v1 signed URL
+API remain available with their existing semantics. No AWS adapter, infrastructure
+or deployment is supplied. The static demo is still an offline fixture.</p>
+<h2 id="configuration-and-keys">Configuration and keys</h2>
+<p>Configure H2–H5 first. H5 <code>enabled</code>, exact parent allowlists, canonical
+<code>embedOriginId</code>, appearance and lifetime ceilings apply. H6 sessions require a
+ceiling of at least 900 seconds; 36,000 permits the default ten-hour session.
+Existing lower H5 ceilings remain valid configuration but cannot authorize an H6
+session. Set <code>features.anonymous</code> and/or <code>features.authoring</code> explicitly to enable
+those experiences; both default to false. Registered consumption flags retain
+their meaning. Export, download, persistent reader state, filtering and parameter
+controls remain unsupported and true flags are rejected.</p>
+<p>Two additional environment variables configure the shared embed signing key:</p>
+<ul>
+<li><code>OPENSIGHT_EMBED_SESSION_KEY_ID</code>: a unique immutable version identifier.</li>
+<li><code>OPENSIGHT_EMBED_SESSION_KEY</code>: a base64-encoded random 32-byte key.</li>
+</ul>
+<p>There is no default key, body-supplied key, tenant-specific signer or client signer.
+Missing keys leave issuance unavailable. Malformed keys fail startup. Initial
+startup registers the key fingerprint in the operator-owned <code>h6_keys</code> table.
+Explicit operator rotation uses <code>activateEmbedKey(database, embedSessionKey(env))</code>
+from <code>@opensight/api/metadata</code> after validating that a key is configured. Rotation
+retires the previous version immediately, invalidating its bootstraps and sessions.
+Start serving nodes with the new environment; stale nodes cannot issue or validate
+retired keys, and retired IDs cannot be reused. No key material is stored in SQL.
+Do not grant tenant SQL roles access to <code>h6_keys</code> or <code>h6_sessions</code>.</p>
+<h2 id="issuance-contracts">Issuance contracts</h2>
+<p>These are native OpenSight endpoints with the selected compatible request shapes,
+not an AWS protocol or ARN adapter. Resource references use
+<code>urn:opensight:{namespaceId}:{kind}/{id}</code>; namespaces continue to scope assets.
+Issuance, renewal and revocation are product-backend operations authenticated by
+H2. Requests carrying a browser <code>Origin</code> are rejected; broad API credentials stay
+on the product backend. An active user can issue for themself; only a tenant
+administrator can delegate to another active registered membership or issue an
+anonymous session. No external subject mapping, JIT user or service identity is
+inferred from browser input.</p>
+<p><code>POST /api/embedding/GenerateEmbedUrlForRegisteredUser</code> (also
+<code>POST /api/embedding/sessions</code>) accepts:</p>
+<pre><code class="language-json">{
+  &quot;UserArn&quot;: &quot;urn:opensight:namespace:user/reader&quot;,
+  &quot;SessionLifetimeInMinutes&quot;: 600,
+  &quot;AllowedDomains&quot;: [&quot;https://product.example&quot;],
+  &quot;ExperienceConfiguration&quot;: {
+    &quot;Dashboard&quot;: { &quot;InitialDashboardId&quot;: &quot;dashboard&quot; }
+  }
+}
+</code></pre>
+<p><code>UserArn</code> defaults to the verified caller. Choose exactly one experience:</p>
+<div class="table-scroll" role="region" aria-label="Table" tabindex="0">
+<table>
+<thead><tr><th scope="col">Experience</th><th scope="col">Configuration</th><th scope="col">Authority</th></tr></thead>
+<tbody>
+<tr><td>Dashboard</td><td><code>Dashboard: {InitialDashboardId}</code></td><td>Current viewer and folder/asset grants</td></tr>
+<tr><td>Visual</td><td><code>DashboardVisual: {InitialDashboardVisualId: {DashboardId, SheetId, VisualId}}</code></td><td>Same, restricted to the named sheet/visual</td></tr>
+<tr><td>Q search</td><td><code>QSearchBar: {InitialTopicId}</code></td><td>Topic ID resolves to a tenant dataset with current RLS/CLS</td></tr>
+<tr><td>Console</td><td><code>QuickSightConsole: {InitialPath?}</code></td><td>Administrator/author/author_ai; <code>/start</code> or <code>/start/analyses/{id}</code></td></tr>
+</tbody>
+</table>
+</div>
+<p>Q uses a bounded local grammar: <code>sum|total|average|avg|min|max|count FIELD [by FIELD]</code>.
+It queries real authorized data and rejects unsupported questions. It does not
+call a remote model or promise QuickSight language coverage. The console lists
+accessible analyses and datasets, renders supported stored visuals, creates
+bar/table/KPI visuals, edits names and saves versioned analysis definitions.
+Existing folder and co-owner permissions govern edits. Saving invalidates the
+current revision-bound session; the frame confirms the save, clears its content,
+and emits <code>saved</code>. A fresh backend-authenticated session is needed to continue.
+This is an embedded editor, not full QuickSight console parity.</p>
+<p><code>POST /api/embedding/GenerateEmbedUrlForAnonymousUser</code> accepts:</p>
+<pre><code class="language-json">{
+  &quot;Namespace&quot;: &quot;virtual-readers&quot;,
+  &quot;AuthorizedResourceArns&quot;: [&quot;urn:opensight:namespace:dashboard/dashboard&quot;],
+  &quot;SessionTags&quot;: [{ &quot;Key&quot;: &quot;region&quot;, &quot;Value&quot;: &quot;east&quot; }],
+  &quot;SessionLifetimeInMinutes&quot;: 600,
+  &quot;ExperienceConfiguration&quot;: {
+    &quot;Dashboard&quot;: { &quot;InitialDashboardId&quot;: &quot;dashboard&quot; }
+  }
+}
+</code></pre>
+<p>The virtual namespace is a session label, never a tenant switch or durable user.
+Anonymous dashboard/visual scope must be in <code>AuthorizedResourceArns</code> (1–25).
+Tags have unique keys (at most 50), bounded strings, and cannot be supplied by an
+interaction. Anonymous authoring is rejected. Registered authoring is supported.</p>
+<p>Both contracts issue a <strong>five-minute, single-use bootstrap</strong> and a session lasting
+<strong>15–600 whole minutes</strong>, default 600, subject to H5/operator ceilings. Session time
+starts on redemption. An explicit runtime <code>AllowedDomains</code> list contains 1–3
+unique exact origins and replaces the static list for this grant, within the
+operator&#39;s tenant allowlist. Omitting it uses the static list. Wildcards,
+normalization tricks and same-origin parent/embed deployments are refused. A
+separate iframe origin is required to preserve the credential boundary.</p>
+<p>The response is <code>{sessionId, EmbedUrl, bootstrapExpiresAt, SessionLifetimeInMinutes, configRevision}</code>. <code>EmbedUrl</code> is
+<code>https://embed.example/embed/sessions/{id}#bootstrap=...</code>; the fragment never enters
+the HTTP URL or Referer. Unknown fields and unresolved subjects fail closed.</p>
+<p><code>DELETE /api/embedding/sessions/{id}</code> revokes the grant for its issuer or a current
+administrator in the same tenant. <code>POST /api/embedding/sessions/{id}/renew</code> requires
+fresh authentication of the original issuer and reauthorizes the current subject,
+config and asset. It returns a new bootstrap and revokes the old session. Expired
+sessions may be renewed this way; explicitly revoked sessions cannot. Concurrent
+renewals have one winner; losing new grants are revoked. A frame credential can
+perform neither operation and cannot authenticate the general API.</p>
+<h2 id="data-and-authoring-authorization">Data and authoring authorization</h2>
+<p>A dashboard/analysis binds one supported dataset through its durable <code>datasets</code>
+reference. That dataset&#39;s <code>sources</code> reference explicitly identifies one H3 source
+and its owner: <code>{kind: &quot;source&quot;, id, ownerId}</code>. This relationship is validated by
+H1 tenant-scoped foreign keys. The embed-only source adapter follows that link to
+encrypted source storage <strong>after</strong> asset authorization; it applies the viewer&#39;s
+security, never the owner&#39;s. General H3 source routes stay owner-only. No prepared
+dataset, protected pipeline, arbitrary secret or foreign-tenant traversal is added.
+Multi-source execution is refused until supported by an authorized dataset path.</p>
+<p>Registered reads intersect source and dataset RLS, and union their CLS denials.
+Protected imported dataset metadata without a corresponding policy fails closed.
+Every visual is planned with security before source I/O or aggregation. Queries
+use the existing H4 budgets and contained workers; refresh retains fail-closed
+semantics. Requests recheck current revisions and session authority before
+publication. Inaccessible analysis names are omitted from the console list.</p>
+<p>Anonymous reads use the dataset&#39;s enabled
+<code>RowLevelPermissionTagConfiguration</code> (<code>TagRules</code>, optional
+<code>TagRuleConfigurations</code>, <code>TagMultiValueDelimiter</code>, <code>MatchAllValue</code>). A group of tag
+rules is ANDed; configured groups are ORed. Missing required tags, unknown tags,
+invalid rules and protected sources without usable tag rules deny access.
+Anonymous users inherit neither the issuer&#39;s row rules nor column grants; all
+protected columns are denied. Virtual namespace values never select assets.</p>
+<p>Author saves validate source access and every visual before committing. Version
+and revision checks are atomic; clients cannot change grants or folder placement
+through a save. Existing assets need co-owner access where grants are explicit.</p>
+<h2 id="browser-and-sdk-transport">Browser and SDK transport</h2>
+<p><code>createSessionEmbeddingClient({allowedEmbedOrigins, getEmbedUrl, title?})</code> is the
+v2 SDK entry point. The trusted application supplies exact embed origins and a
+callback to its own authenticated backend; the SDK does not receive the backend&#39;s
+API credential. <code>mount(container, callbacks)</code> returns <code>{iframe, refresh, destroy}</code>.
+The v1 <code>createEmbeddingClient</code> exports and TTL validation are unchanged.</p>
+<p>The iframe removes its fragment immediately, accepts one versioned initialization
+message from its actual parent at an allowed origin, and redeems through
+<code>POST /api/embed/sessions/{id}/redeem</code>. Redemption atomically consumes a durable
+record and returns a random embed-only credential. Only its hash is stored in SQL.
+The credential stays in a private closure, never DOM, parent messages, browser
+storage or cookies. Subsequent frame requests use <code>Authorization: Embed ...</code> and
+<code>credentials: omit</code>. All responses are <code>no-store</code>; shell CSP restricts ancestors,
+connections, scripts and images, and uses a nonce and <code>no-referrer</code>.</p>
+<p>Messages have version 2, type <code>opensight:session</code>, session ID, per-mount random
+channel ID, and one event: <code>ready</code>, <code>sessionExpired</code>, <code>authorizationRevoked</code>,
+<code>error</code>, or <code>saved</code>. Both sides check the source window, exact origin, version,
+session and schema; the SDK additionally rejects stale refresh generations.
+Messages contain no credentials, rows, query text or exception details.</p>
+<p>Status checks run every 20 seconds with an eight-second request timeout and a
+45-second authorization deadline. Revocation, suspension, membership/policy/config
+changes, key retirement, expiry or status failure clear protected content and
+credentials. Backgrounding hides content; visibility restoration rechecks status.
+Server authorization is read on every operation. A browser that has already
+received data cannot have a saved screenshot recalled.</p>
+<p>Application code does not log bodies, Authorization headers or credentials. Any
+operator-installed proxy/telemetry must also exclude them; do not enable request
+body capture on redemption. V1 still uses its existing bearer query URL and needs
+its documented proxy query redaction.</p>
+<h2 id="verification">Verification</h2>
+<p>Tests are included in root <code>npm test</code>: session replay/races/restart, renewal,
+expiry, revisions, suspension, key rotation, viewer RLS/CLS, anonymous tag rules,
+author permissions, HTTP credential separation and SDK/iframe forgery attempts.
+The live Postgres test uses independent pools to prove atomic consumption and
+revocation across service instances.</p>
+<p>The separate real-browser harness uses only local HTTPS servers, synthetic data,
+the real hosted API and live Postgres, and an existing Chromium/Playwright install:</p>
+<pre><code class="language-sh">TZ=UTC DATABASE_URL=postgresql://postgres@localhost:5433/opensight \
+OPENSIGHT_SCREENSHOT_TOOLS=&quot;$HOME/workspace/tools/screenshots&quot; \
+node packages/api/scripts/verify-embed-browser.mjs
+</code></pre>
+<p>It proves blocked third-party cookies using a cookie-write/read probe, checks
+rendering and author saves, races/replays bootstraps, sends forged messages, and
+checks revocation/expiry/suspension. Screenshots and non-secret evidence go to
+<code>/tmp/h6-embed-browser</code> (override <code>OPENSIGHT_SCREENSHOT_OUTPUT</code>). A temporary test
+certificate, browser profile and isolated Postgres schema are removed on exit.
+No new runtime dependency, browser download, AWS call or deployment is involved.
+See <a href="https://github.com/tomesposito/opensight/blob/master/docs/issue-26-gap-notes.md">verification and visual review</a> for measured results.</p>
+    </article>
+  </main>
+</div>
+<footer class="footer">
+  <div class="wrap footer-grid">
+    <div>
+      <p class="brand"><svg class="brand-mark" viewBox="0 0 100 100" width="22" height="22" aria-hidden="true"><defs><linearGradient id="site-foot-g" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#38BDF8"/><stop offset="0.5" stop-color="#3B82F6"/><stop offset="1" stop-color="#6D3BFF"/></linearGradient></defs><path d="M 34.2851 0 L 44.2 0 C 45.5807 0 46.7 1.1193 46.7 2.5 L 46.7 6.5 C 46.7 28.7018 28.7018 46.7 6.5 46.7 L 2.5 46.7 C 1.1193 46.7 0 45.5807 0 44.2 L 0 34.2851 C 0 33.398 0.6463 32.6432 1.5227 32.5066 C 17.4905 30.0171 30.0171 17.4905 32.5066 1.5227 C 32.6432 0.6463 33.398 0 34.2851 0 Z M 100 34.2851 L 100 44.2 C 100 45.5807 98.8807 46.7 97.5 46.7 L 93.5 46.7 C 71.2982 46.7 53.3 28.7018 53.3 6.5 L 53.3 2.5 C 53.3 1.1193 54.4193 0 55.8 0 L 65.7149 0 C 66.602 0 67.3568 0.6463 67.4934 1.5227 C 69.9829 17.4905 82.5095 30.0171 98.4773 32.5066 C 99.3537 32.6432 100 33.398 100 34.2851 Z M 65.7149 100 L 55.8 100 C 54.4193 100 53.3 98.8807 53.3 97.5 L 53.3 93.5 C 53.3 71.2982 71.2982 53.3 93.5 53.3 L 97.5 53.3 C 98.8807 53.3 100 54.4193 100 55.8 L 100 65.7149 C 100 66.602 99.3537 67.3568 98.4773 67.4934 C 82.5095 69.9829 69.9829 82.5095 67.4934 98.4773 C 67.3568 99.3537 66.602 100 65.7149 100 Z M 0 65.7149 L 0 55.8 C 0 54.4193 1.1193 53.3 2.5 53.3 L 6.5 53.3 C 28.7018 53.3 46.7 71.2982 46.7 93.5 L 46.7 97.5 C 46.7 98.8807 45.5807 100 44.2 100 L 34.2851 100 C 33.398 100 32.6432 99.3537 32.5066 98.4773 C 30.0171 82.5095 17.4905 69.9829 1.5227 67.4934 C 0.6463 67.3568 0 66.602 0 65.7149 Z" fill="url(#site-foot-g)" transform="translate(11.5 11.5) scale(0.77)"/></svg><span class="wordmark">opensight</span></p>
+      <p class="footer-tag">The open-source BI platform.</p>
+    </div>
+    <nav aria-label="Footer">
+      <a href="https://app.getopensight.org">Open the app</a>
+      <a href="/demo/">Live demo</a>
+      <a href="https://github.com/tomesposito/opensight">GitHub</a>
+      <a href="/docs/">Docs</a>
+      <a href="https://github.com/tomesposito/opensight/issues">Discuss</a>
+    </nav>
+  </div>
+  <div class="wrap footer-base">
+    <p>© 2026 OpenSight contributors · <a href="https://github.com/tomesposito/opensight/blob/master/LICENSE">Apache-2.0</a></p>
+    <p>Last updated October 2026</p>
+  </div>
+</footer>
+</body>
+</html>
