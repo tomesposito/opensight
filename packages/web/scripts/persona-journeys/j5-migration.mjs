@@ -31,8 +31,24 @@ await runJourney('j5-migration', 'Admin + Author', async j => {
     else {
       const actual = await page.locator('.author-card').allTextContents();
       assert.match(actual.join('\n'), /unresolved|unavailable|No data|Unable to load|not found|not supported/i);
-      j.gap('imported-live-visual', 'The imported asset renders at least one populated visual.', { reason: 'This sanitized bundle contains definitions only, referring to an unconfigured Athena dataset; no source rows are included.', actual });
+      return 'Before remap the imported visual honestly shows its unresolved dataset; the remap step that follows binds it to local data.';
     }
+  });
+  await j.step('remap-and-populate', page, async () => {
+    await button(page, 'Remap sheet to local dataset').click();
+    await page.locator('.author-card .author-card-toolbar strong').click();
+    const binding = page.locator('.dataset-binding');
+    await binding.waitFor();
+    const bindingText = await binding.innerText();
+    assert.match(bindingText, /Local sales dataset/);
+    assert.match(bindingText, /Fields requiring manual assignment: country, deaths/);
+    await button(page, 'Assign region').click();
+    await button(page, 'Assign revenue').click();
+    await page.waitForFunction(() => !document.querySelector('.author-card [aria-busy="true"]'));
+    const paths = page.locator('.author-card .chart svg path[d]');
+    await paths.first().waitFor();
+    assert.ok(await paths.count(), 'The imported asset renders at least one populated visual.');
+    return 'Remapped the imported pie to the local sales dataset; country and deaths matched no local field, so region and revenue were assigned by hand and the pie renders populated slices.';
   });
   await j.step('save-import', page, async () => {
     await button(page, 'Save draft').click(); await page.getByText('Draft saved on this device.', { exact: true }).waitFor();
