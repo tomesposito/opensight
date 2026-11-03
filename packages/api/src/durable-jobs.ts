@@ -1,3 +1,4 @@
+import { occurrenceTime, deliveryKey } from './digest-delivery.js';
 import { MetadataError, type SqlConnection, type SqlRow } from './metadata-db.js';
 import { checksum } from './metadata-operator.js';
 import { DurableExecution, type ExecutionEvent, type ExecutionHandle } from './durable-execution.js';
@@ -5,7 +6,7 @@ import { type DispatchEnvelope, type EventInput } from './dispatch.js';
 import { JobStore } from './job-store.js';
 import type { JobExecutor } from './job-renderer.js';
 import { lockTenant, member, readJob, readOccurrence, scoped, scopeArgs, type Occurrence } from './job-schema.js';
-import { hasCapability, type Role } from '@opensight/query-engine';
+import { hasCapability, isRole, type Role } from '@opensight/query-engine';
 import { jobDueEvent, jobExecutionEvent } from './job-dispatch.js';
 import { nextRun } from './schedule.js';
 import { MailError, type MailTransport } from './mail.js';
@@ -79,7 +80,7 @@ export class DurableJobs {
     const event = handle.event;
     await this.execution.complete(handle, async (c, now) => {
       const job = await this.due(c, event); if (!job || job.spec.kind === 'alert') return;
-      if (!hasCapability((await member(c, job, job.ownerId)).role as Role, 'build')) throw new MetadataError('JOB_OWNER_FORBIDDEN', 403);
+      if (!(job.spec.kind === 'digest' ? isRole((await member(c, job, job.ownerId)).role) : hasCapability((await member(c, job, job.ownerId)).role as Role, 'build'))) throw new MetadataError('JOB_OWNER_FORBIDDEN', 403);
       // claim checks the active owner; execution rechecks full tenant/owner/revision authority.
       const run = await this.store.claim(c, job, job.nextRun!);
       const next = job.spec.kind === 'refresh' ? null : nextRun(job.spec.schedule, new Date(now));
@@ -104,10 +105,10 @@ export class DurableJobs {
     const result = await this.executor.execute(owner, run.spec, this.store.clock());
     await this.execution.complete(handle, async (c, now) => {
       const job = await this.store.checkRun(c, run), events: EventInput[] = [];
-      const notify = run.spec.kind === 'report' || run.spec.kind === 'alert' && result.triggered && job.alertState !== 'triggered';
+      const notify = run.spec.kind === 'digest' || run.spec.kind === 'report' || run.spec.kind === 'alert' && result.triggered && job.alertState !== 'triggered';
       if (run.spec.kind === 'alert') await c.query(`UPDATE h7_jobs SET alert_state = ? WHERE ${scoped} AND job_id = ?`, [result.triggered ? 'triggered' : 'ok', ...scopeArgs(run), run.jobId]);
       if (notify && run.spec.kind !== 'refresh') for (const recipient of run.spec.recipients) {
-        const id = checksum([run.tenantId, run.namespaceId, run.jobId, run.id, recipient]);
+        const id = deliveryKey(run, recipient);
         await c.query(`INSERT INTO h7_deliveries (tenant_id, namespace_id, delivery_id, job_id, occurrence_id, recipient_id, state, next_attempt) VALUES (?,?,?,?,?,?,'pending',?) ON CONFLICT (tenant_id, namespace_id, occurrence_id, recipient_id) DO NOTHING`,
           [...scopeArgs(run), id, run.jobId, run.id, recipient, new Date(now).toISOString()]);
         events.push({ aggregateId: id, aggregateRevision: run.jobVersion, kind: 'job-deliver', dueAt: now, expiresAt: Math.min(event.expiresAt, now + 86400000) });
@@ -142,7 +143,7 @@ export class DurableJobs {
     const recipient = await this.store.context(run, String(delivery.recipient_id));
     this.executor.begin(recipient, verify); await this.executor.authorize(recipient, run.spec);
     await this.store.metadata.usage?.consume(this.store.metadata, recipient, 'computeAttempts');
-    const rendered = await this.executor.render(recipient, run.spec, new Date(run.createdAt));
+    const rendered = await this.executor.render(recipient, run.spec, occurrenceTime(run), run.jobId);
     await this.execution.checked(handle, async c => {
       await this.store.checkRun(c, run);
       await c.query(`UPDATE h7_deliveries SET state = 'sending', attempts = attempts + 1, message = NULL WHERE ${scoped} AND delivery_id = ?`, [...scopeArgs(run), handle.event.aggregateId]);
@@ -200,9 +201,9 @@ export class DurableJobs {
         if (Number(usage?.admitted ?? 0) >= limit.computeAttempts) throw new MetadataError('USAGE_LIMIT_EXCEEDED', 429);
       }
       if (event.kind === 'job-due') {
-        await currentAuthority(c, this.store.metadata, dueAuthority!.context, dueAuthority!.revisions, true);
+        await currentAuthority(c, this.store.metadata, dueAuthority!.context, dueAuthority!.revisions);
         const job = await this.due(c, event); if (!job) throw new MetadataError('DISPATCH_REPLAY_DENIED', 409);
-        if (!hasCapability((await member(c, job, job.ownerId)).role as Role, 'build')) throw new MetadataError('JOB_OWNER_FORBIDDEN', 403);
+        if (!(job.spec.kind === 'digest' ? isRole((await member(c, job, job.ownerId)).role) : hasCapability((await member(c, job, job.ownerId)).role as Role, 'build'))) throw new MetadataError('JOB_OWNER_FORBIDDEN', 403);
         return;
       }
       const { run, delivery } = await this.runRow(c, event); await this.store.checkRun(c, run);

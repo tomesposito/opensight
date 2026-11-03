@@ -1,3 +1,4 @@
+import { MetadataError } from './metadata-db.js';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { method, send } from './automation-routes.js';
 import { readBody } from './query.js';
@@ -29,6 +30,7 @@ export async function jobRoute(request: IncomingMessage, response: ServerRespons
       const b = object(await readBody(request), ['expectedVersion']); await store.stop(context, id, b.expectedVersion as number); send(response, 200, { stopped: true });
     } else {
       const b = object(await readBody(request), ['spec', 'expectedVersion']);
+      if (object(b.spec).kind === 'digest') throw new MetadataError('DIGEST_SUBSCRIPTION_ROUTE_REQUIRED', 400);
       send(response, 200, await store.put(context, id, b.spec, b.expectedVersion as number, async (owner, spec) => {
         await executor.authorize(owner, spec);
         if (spec.kind !== 'refresh') for (const id of spec.recipients) await executor.authorize(await store.context(owner, id), spec);

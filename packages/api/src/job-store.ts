@@ -1,3 +1,4 @@
+import { digestPeriods } from './digest-computation.js';
 import { randomUUID } from 'node:crypto';
 import { resourceBytes } from './hosted-usage.js';
 import { hasCapability, isRole, type Role } from '@opensight/query-engine';
@@ -20,10 +21,10 @@ export class JobStore {
     if ((await revisions(c, context)).authorization !== context.authorizationRevision) throw new MetadataError('AUTHORIZATION_REVISED', 403);
     return work(c, user.role === 'administrator');
   }
-  private async change<T>(context: TenantContext, jobId: string, request: unknown, work: (c: SqlConnection, administrator: boolean) => Promise<T>, occurrence = false): Promise<T> {
+  private async change<T>(context: TenantContext, jobId: string, request: unknown, work: (c: SqlConnection, administrator: boolean) => Promise<T>, occurrence = false, digest = false): Promise<T> {
     if (!this.dispatch) return this.checked(context, work);
     const revisions = await this.metadata.revisions(context), key = randomUUID();
-    const preparation = await this.dispatch.prepare(context, { kind: 'job-write', revisions, requestDigest: checksum([jobId, request]), idempotencyKey: key });
+    const preparation = await this.dispatch.prepare(context, { kind: digest ? 'digest-write' : 'job-write', revisions, requestDigest: checksum([jobId, request]), idempotencyKey: key });
     let result!: T;
     await this.dispatch.commit(preparation, async (c, now) => {
       result = await this.checkedOn(c, context, work);
@@ -106,8 +107,9 @@ export class JobStore {
       const user = await member(c, context, context.userId);
       if (!(spec.kind === 'digest' ? isRole(user.role) : hasCapability(user.role as Role, 'build'))) throw new MetadataError('JOB_WRITE_FORBIDDEN', 403);
       if (spec.kind === 'digest' && spec.subscriberId !== context.userId) throw new MetadataError('DIGEST_SELF_ONLY', 403);
-      const prior = (await c.query(`SELECT owner_id, version FROM h7_jobs WHERE ${scoped} AND job_id = ?`, [...scopeArgs(context), id]))[0];
+      const prior = (await c.query(`SELECT owner_id, version, spec FROM h7_jobs WHERE ${scoped} AND job_id = ?`, [...scopeArgs(context), id]))[0];
       if (prior && prior.owner_id !== context.userId) missing();
+      if (prior && (spec.kind === 'digest' || jobSpec(JSON.parse(String(prior.spec))).kind === 'digest')) throw new MetadataError('DIGEST_IMMUTABLE', 409);
       if (Number(prior?.version ?? 0) !== expectedVersion) throw new MetadataError('JOB_VERSION_CONFLICT');
     });
     const rev = await this.metadata.revisions(context);
@@ -127,7 +129,7 @@ export class JobStore {
       } else await c.query('INSERT INTO h7_jobs (tenant_id, namespace_id, job_id, owner_id, version, spec, next_run) VALUES (?,?,?,?,1,?,?)', [...scopeArgs(context), id, context.userId, JSON.stringify(spec), next]);
       await appendMetadataEvent(c, context, row ? 'job.updated' : 'job.created');
       return this.find(c, context, id);
-    });
+    }, false, spec.kind === 'digest');
   }
   async stop(context: TenantContext, id: string, expectedVersion: number): Promise<void> {
     await this.checked(context, async (c, admin) => {
@@ -158,9 +160,10 @@ export class JobStore {
       if (job.ownerId !== owner.userId) throw new MetadataError('JOB_REVISED', 403);
       if (job.spec.kind === 'alert') throw new MetadataError('JOB_REFRESH_REQUIRED', 409);
       return this.claim(c, job, `manual:${randomUUID()}`, context.userId);
-    }), true);
+    }), true, requested.spec.kind === 'digest');
   }
   async claim(c: SqlConnection, job: Job, due: string, initiatedBy = job.ownerId): Promise<Occurrence> {
+    if (job.spec.kind === 'digest') due = digestPeriods(job.spec.cadence, due.startsWith('manual:') ? this.clock() : new Date(due)).current.end;
     if (job.stopped || !job.spec.enabled) throw new MetadataError('JOB_STOPPED', 409);
     await member(c, job, job.ownerId);
     const pending = (await c.query(`SELECT * FROM h7_occurrences WHERE ${scoped} AND job_id = ? AND state IN ('queued','running','delivering')`, [...scopeArgs(job), job.id]))[0];

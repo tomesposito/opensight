@@ -49,6 +49,7 @@ export class JobOwnership {
     const s = await this.store.db.transaction(c => this.scope(c, tenantId)), context = await this.store.context(s, choice.transferTo!);
     for (const j of snapshot.jobs) {
       const job = await this.store.db.transaction(c => this.store.find(c, s, j.id));
+      if (job.spec.kind === 'digest') continue;
       await this.executor.authorize(context, job.spec);
       if (job.spec.kind !== 'refresh') for (const recipient of job.spec.recipients) {
         const recipientContext = await this.store.context(s, recipient);
@@ -69,7 +70,7 @@ export async function applyDisposition(c: SqlConnection, s: Scope, userId: strin
   }
   for (const j of current.jobs) {
     await cancelJob(c, s, j.id, choice?.action === 'transfer' ? 'JOB_OWNER_TRANSFERRED' : 'JOB_OWNER_REMOVED', now);
-    if (choice?.action === 'transfer') await c.query(`UPDATE h7_jobs SET owner_id = ?, version = version + 1, alert_state = 'ok' WHERE ${scoped} AND job_id = ?`, [choice.transferTo!, ...scopeArgs(s), j.id]);
+    if (choice?.action === 'transfer' && j.kind !== 'digest') await c.query(`UPDATE h7_jobs SET owner_id = ?, version = version + 1, alert_state = 'ok' WHERE ${scoped} AND job_id = ?`, [choice.transferTo!, ...scopeArgs(s), j.id]);
     else await c.query(`UPDATE h7_jobs SET stopped = 1, next_run = NULL, version = version + 1 WHERE ${scoped} AND job_id = ?`, [...scopeArgs(s), j.id]);
   }
   await c.query(`UPDATE h7_deliveries SET state = 'cancelled', error_code = 'JOB_RECIPIENT_REMOVED', message = NULL WHERE ${scoped} AND recipient_id = ? AND state IN ('pending','sending')`, [...scopeArgs(s), userId]);

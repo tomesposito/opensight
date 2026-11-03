@@ -26,7 +26,7 @@ export interface DispatchTransport {
   /** Resolve only after SQS send or exact one-time Scheduler create/GET acknowledgement. */
   dispatch(envelope: DispatchEnvelope, event: DurableEvent): Promise<void>;
 }
-export interface IntentRequest { kind: 'upload-reserve' | 'upload-complete' | 'artifact-write' | 'artifact-refresh' | 'result-write' | 'job-write' | 'invitation-write'; requestDigest: string; idempotencyKey: string; revisions: Revisions }
+export interface IntentRequest { kind: 'upload-reserve' | 'upload-complete' | 'artifact-write' | 'artifact-refresh' | 'result-write' | 'job-write' | 'digest-write' | 'invitation-write'; requestDigest: string; idempotencyKey: string; revisions: Revisions }
 export interface DispatchPreparation { readonly intentId: string }
 export interface DispatchReceipt { id: string; revision: number }
 export type EventInput = Omit<DurableEvent, 'eventId' | 'epoch'>;
@@ -38,7 +38,7 @@ const integer = (value: SqlValue | undefined): number => {
 };
 const snapshot = (raw: IntentRequest): IntentRequest => {
   const input = structuredClone(raw), r = object(input, ['kind', 'requestDigest', 'idempotencyKey', 'revisions']);
-  if (!['upload-reserve', 'upload-complete', 'artifact-write', 'artifact-refresh', 'result-write', 'job-write', 'invitation-write'].includes(String(r.kind))
+  if (!['upload-reserve', 'upload-complete', 'artifact-write', 'artifact-refresh', 'result-write', 'job-write', 'digest-write', 'invitation-write'].includes(String(r.kind))
     || typeof r.requestDigest !== 'string' || !/^[a-f0-9]{64}$/.test(r.requestDigest)
     || typeof r.idempotencyKey !== 'string' || !/^[A-Za-z0-9_-]{16,128}$/.test(r.idempotencyKey)) throw new MetadataError('DISPATCH_INPUT_INVALID', 400);
   const revisions = object(r.revisions, ['authorization', 'policy', 'configuration']);
@@ -122,7 +122,7 @@ export class DurableDispatch {
     this.metadata.assertContext(context);
     const input = snapshot(raw), idempotencyDigest = createHash('sha256').update(input.idempotencyKey).digest('hex');
     const found = await this.transaction(async c => {
-      const epoch = await this.control(c); await currentAuthority(c, this.metadata, context, input.revisions, input.kind !== 'result-write');
+      const epoch = await this.control(c); await currentAuthority(c, this.metadata, context, input.revisions, input.kind !== 'result-write' && input.kind !== 'digest-write');
       const now = await coordinationNow(c, this.dialect);
       // A crash before recovery send created no accepted obligation. Scoped activity retires it.
       await c.query(`UPDATE sr_dispatch_intent SET state = 'aborted' WHERE ${scoped} AND state = 'prepared' AND commit_until <= ?`, [...this.scope(context), now]);
@@ -154,7 +154,7 @@ export class DurableDispatch {
     if (!prepared) throw new MetadataError('DISPATCH_PREPARATION_REQUIRED', 403);
     const { context, input, epoch } = prepared;
     if (await this.control(c) !== epoch) throw new MetadataError('WORKSPACE_MAINTENANCE', 503);
-    await currentAuthority(c, this.metadata, context, input.revisions, input.kind !== 'result-write');
+    await currentAuthority(c, this.metadata, context, input.revisions, input.kind !== 'result-write' && input.kind !== 'digest-write');
     const row = await this.row(c, context, handle.intentId), now = await coordinationNow(c, this.dialect);
     if (!row || row.request_digest !== input.requestDigest || row.idempotency_digest !== prepared.idempotencyDigest || integer(row.control_epoch) !== epoch) throw new MetadataError('DISPATCH_PREPARATION_REQUIRED', 403);
     if (row.state === 'committed') return receipt(JSON.parse(String(row.receipt)));
