@@ -12,6 +12,7 @@ export const manifest = [
   { source: 'docs/embed-sessions.md', slug: 'embedding-sessions', title: 'Embedded sessions' },
   { source: 'docs/permissions.md', slug: 'permissions', title: 'Permissions and row-level security' },
   { source: 'docs/open-economics.md', slug: 'open-economics', title: 'Open economics: never paywalled' },
+  { source: 'docs/migrating-from-quicksight.md', slug: 'migrating-from-quicksight', title: 'Moving from QuickSight to OpenSight' },
 ];
 export const docsPath = slug => `/docs/${slug ? `${slug}/` : ''}`;
 export const canonicalUrl = slug => `https://getopensight.org${docsPath(slug)}`;

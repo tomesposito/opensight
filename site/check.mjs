@@ -1,4 +1,4 @@
-// Integrity check for the marketing site (issues #93, #106, #134, #176, #183, #184, #185).
+// Integrity check for the marketing site (issues #93, #106, #134, #176, #183, #184, #185, #186).
 // Usage: node site/check.mjs  (exit 0 = pass)
 // Verifies: every local asset referenced from index.html exists, no external
 // requests beyond allowlisted links, required sections and AEO artifacts present.
@@ -105,6 +105,7 @@ check(sitemap.includes('<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0
   sitemap.includes('</urlset>'), 'sitemap.xml must use the sitemap namespace and urlset');
 const locations = [...sitemap.matchAll(/<url>\s*<loc>([^<]+)<\/loc>\s*<\/url>/g)].map(m => m[1]);
 const publicUrls = ['https://getopensight.org/', 'https://getopensight.org/pricing/',
+  'https://getopensight.org/alternatives/quicksight/',
   'https://getopensight.org/demo/', `${APP_ORIGIN}/`,
   canonicalUrl(''), ...manifest.map(page => canonicalUrl(page.slug))];
 check(locations.length === publicUrls.length, `sitemap.xml must list exactly ${publicUrls.length} public entry points`);
@@ -304,6 +305,61 @@ const homeNavCta = html.match(/<div class="nav-cta">([\s\S]*?)<\/div>/)?.[1] ?? 
 check(homeNavCta.indexOf('href="pricing/">Pricing</a>') !== -1 &&
   homeNavCta.indexOf('href="pricing/">Pricing</a>') < homeNavCta.indexOf('href="#request-access">Request access</a>'),
   'home nav must link Pricing next to Request access');
+
+// 15. QuickSight alternatives page + migration guide (issue #186): the copy
+// Tom approved on 2026-11-03 is exact, the page links the migration guide,
+// the home QuickSight section links the page, and the guide's key lines
+// survive into the generated docs page (freshness itself is section 13).
+const altUrl = 'https://getopensight.org/alternatives/quicksight/';
+const alt = readArtifact('alternatives/quicksight/index.html');
+check(alt.match(/<title>([^<]+)<\/title>/)?.[1] === 'A QuickSight alternative you can own — OpenSight',
+  'alternatives/quicksight: incorrect page title');
+check(alt.match(/<h1>([^<]+)<\/h1>/)?.[1] === 'A QuickSight alternative you can own',
+  'alternatives/quicksight: H1 must be the approved page title');
+const altCanonicals = [...alt.matchAll(/<link rel="canonical" href="([^"]+)">/g)].map(m => m[1]);
+check(altCanonicals.length === 1 && altCanonicals[0] === altUrl,
+  'alternatives/quicksight: expected exactly one canonical link naming the page');
+check(alt.includes('Apache-2.0'), 'alternatives/quicksight: page must name the Apache-2.0 license');
+check(!/MIT license/i.test(alt), 'alternatives/quicksight: page must not claim an MIT license');
+const altParas = [...alt.matchAll(/<p\b[^>]*>([\s\S]*?)<\/p>/g)].map(m => stripTags(m[1]));
+for (const copy of [
+  'QuickSight charges per user. Every author, every reader, every month.',
+  "OpenSight charges nothing for the software. It is Apache-2.0, all of it, with no open-core split. You run it on your own machines, and your dashboards stay in QuickSight's definition format, so leaving QuickSight does not mean rebuilding everything in a new tool's format, and leaving OpenSight later does not either.",
+  'Export a bundle from QuickSight and import the .qs file in OpenSight. Sheets become tabs. Bar, line, pie, KPI, table and pivot visuals land in the editor. A bundle you import and export again without touching it comes back structurally unchanged, including properties OpenSight does not understand yet.',
+  'Datasets are the manual step. An imported dataset points at a data source OpenSight has never seen, so it stays unresolved until you remap it to a local dataset, one visual at a time or a whole sheet at once. The step-by-step version, including what does not convert, is the migration guide.',
+  'If your team already runs on AWS and you want BI with nothing to operate, QuickSight is the simpler choice. It is managed, and it is billed per user. Nobody on your team patches it, backs it up, or upgrades it.',
+  'OpenSight asks you to run software. For some teams that trade is wrong, and no licence saving fixes it.',
+  'Self-hosted: $0 for the software. You pay for the machine it runs on.',
+  'If you would rather not run it, hosted workspaces are opening in small batches and are set up by hand.',
+]) check(altParas.includes(copy), `alternatives/quicksight: missing or altered approved copy: ${copy.slice(0, 60)}…`);
+for (const heading of ['Your QuickSight work comes with you', 'Where QuickSight is the better choice', 'What running it costs']) {
+  check(alt.includes(`<h2>${heading}</h2>`), `alternatives/quicksight: missing approved heading: ${heading}`);
+}
+check(alt.includes('<a href="/docs/migrating-from-quicksight/">migration guide</a>'),
+  'alternatives/quicksight: missing migration guide link');
+check(alt.includes('<a class="btn btn-primary btn-lg" href="../../#request-access">Request hosted access</a>'),
+  'alternatives/quicksight: missing Request hosted access button to the home request-access form');
+for (const match of alt.matchAll(/\b(?:href|src)="([^"]+)"/g)) {
+  const ref = match[1];
+  if (/^(?:https?:|#)/.test(ref) || ref === '../../demo/') continue;
+  const path = ref.split(/[?#]/)[0];
+  const target = path.startsWith('/') ? resolve(root, path.slice(1)) : resolve(root, 'alternatives/quicksight', path);
+  check(existsSync(target), `alternatives/quicksight: missing local reference: ${ref}`);
+}
+const qsSection = sections.find(section => section.startsWith('<section id="quicksight-alternative"'));
+check(qsSection?.includes('<a href="alternatives/quicksight/">A QuickSight alternative you can own</a>'),
+  'home QuickSight section must link the alternatives page');
+const guide = readArtifact('docs/migrating-from-quicksight/index.html');
+const guideText = stripTags(guide);
+for (const copy of [
+  'Moving from QuickSight to OpenSight',
+  'A QuickSight bundle carries four kinds of thing: analyses, dashboards, datasets and data sources.',
+  'That list is your migration plan.',
+  'An untouched import exports back with structural JSON equality: unknown properties, original casing inside opaque JSON, member order and layouts all survive.',
+  'Imported dataset declarations stay unresolved on purpose.',
+  'One more limit, stated plainly: bundles edited in OpenSight carry an opensightRoundTrip extension that preserves the original resource. OpenSight makes no claim that AWS accepts that extension back on re-import.',
+  'Do not count dashboards. Count the two numbers in front of you: the datasets you need to recreate connections for, and the unsupported items in the import report.',
+]) check(guideText.includes(copy), `migration guide: missing or altered approved copy: ${copy.slice(0, 60)}…`);
 
 if (failures.length) {
   console.error(`site/check.mjs FAILED (${failures.length}):`);
