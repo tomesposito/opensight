@@ -115,9 +115,9 @@ test('docs generation is byte-identical on repeat runs and reacts to source edit
   mkdirSync(join(root, 'docs'));
   cpSync(resolve(repoRoot, 'site/index.html'), join(root, 'site/index.html'));
   for (const { source } of manifest) cpSync(resolve(repoRoot, source), join(root, source));
-  assert.equal(buildDocs(root), 6);
+  assert.equal(buildDocs(root), manifest.length + 1);
   const first = new Map([...renderDocs(root)].map(([path]) => [path, readFileSync(join(root, path), 'utf8')]));
-  assert.equal(buildDocs(root), 6);
+  assert.equal(buildDocs(root), manifest.length + 1);
   for (const [path, expected] of first) assert.equal(readFileSync(join(root, path), 'utf8'), expected);
   writeFileSync(join(root, 'docs/permissions.md'), '# Changed title\n\nChanged first paragraph.\n');
   buildDocs(root);
@@ -174,5 +174,27 @@ test('site integrity checks catch missing docs, sitemap/canonical drift and exte
     assert.equal(result.status, 1, `${name}: ${result.stdout}`);
     assert.match(result.stderr, expected);
     writeFileSync(path, before);
+  }
+});
+
+test('open economics rule stays published and no published page paywalls core governance (issue #165)', () => {
+  const entry = manifest.find(page => page.slug === 'open-economics');
+  assert.ok(entry, 'the open-economics rule must stay in the published docs manifest');
+  const rule = readFileSync(resolve(repoRoot, entry.source), 'utf8').toLowerCase();
+  for (const feature of ['single sign-on', 'row-level security', 'audit log', 'basic embedding']) {
+    assert.ok(rule.includes(feature), `the open-economics rule must name ${feature}`);
+  }
+  assert.ok(rule.includes('never paywalled'), 'the open-economics rule must say never paywalled');
+
+  // Published surfaces only: the marketing homepage plus every manifest doc
+  // source. Decision records under docs/idd/ are history, not published copy.
+  const features = 'single sign-on|\\bsso\\b|\\bsaml\\b|row-level security|audit log|embedding';
+  const paywall = 'paid tier|paid plan|paid tiers|enterprise tier|enterprise plan|premium tier';
+  const gated = new RegExp(`(${features})[^.\\n]{0,80}(${paywall})|(${paywall})[^.\\n]{0,80}(${features})`, 'i');
+  const published = [resolve(repoRoot, 'site/index.html'),
+    ...manifest.map(page => resolve(repoRoot, page.source))];
+  for (const path of published) {
+    assert.ok(!gated.test(readFileSync(path, 'utf8')),
+      `${path} must not describe a core governance feature as a paid or enterprise tier feature`);
   }
 });
