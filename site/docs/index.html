@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Documentation — OpenSight docs</title>
+<meta name="description" content="Install and run OpenSight, connect data, configure embedding, and understand permissions and row-level security.">
+<link rel="canonical" href="https://getopensight.org/docs/">
+<link rel="stylesheet" href="docs.css">
+</head>
+<body>
+<a class="skip-link" href="#content">Skip to content</a>
+<header class="topnav">
+  <div class="wrap nav-inner">
+    <a class="brand" href="/" aria-label="OpenSight home">
+      <svg class="brand-mark" viewBox="0 0 100 100" width="26" height="26" aria-hidden="true"><defs><linearGradient id="site-brand-g" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#38BDF8"/><stop offset="0.5" stop-color="#3B82F6"/><stop offset="1" stop-color="#6D3BFF"/></linearGradient></defs><path d="M 34.2851 0 L 44.2 0 C 45.5807 0 46.7 1.1193 46.7 2.5 L 46.7 6.5 C 46.7 28.7018 28.7018 46.7 6.5 46.7 L 2.5 46.7 C 1.1193 46.7 0 45.5807 0 44.2 L 0 34.2851 C 0 33.398 0.6463 32.6432 1.5227 32.5066 C 17.4905 30.0171 30.0171 17.4905 32.5066 1.5227 C 32.6432 0.6463 33.398 0 34.2851 0 Z M 100 34.2851 L 100 44.2 C 100 45.5807 98.8807 46.7 97.5 46.7 L 93.5 46.7 C 71.2982 46.7 53.3 28.7018 53.3 6.5 L 53.3 2.5 C 53.3 1.1193 54.4193 0 55.8 0 L 65.7149 0 C 66.602 0 67.3568 0.6463 67.4934 1.5227 C 69.9829 17.4905 82.5095 30.0171 98.4773 32.5066 C 99.3537 32.6432 100 33.398 100 34.2851 Z M 65.7149 100 L 55.8 100 C 54.4193 100 53.3 98.8807 53.3 97.5 L 53.3 93.5 C 53.3 71.2982 71.2982 53.3 93.5 53.3 L 97.5 53.3 C 98.8807 53.3 100 54.4193 100 55.8 L 100 65.7149 C 100 66.602 99.3537 67.3568 98.4773 67.4934 C 82.5095 69.9829 69.9829 82.5095 67.4934 98.4773 C 67.3568 99.3537 66.602 100 65.7149 100 Z M 0 65.7149 L 0 55.8 C 0 54.4193 1.1193 53.3 2.5 53.3 L 6.5 53.3 C 28.7018 53.3 46.7 71.2982 46.7 93.5 L 46.7 97.5 C 46.7 98.8807 45.5807 100 44.2 100 L 34.2851 100 C 33.398 100 32.6432 99.3537 32.5066 98.4773 C 30.0171 82.5095 17.4905 69.9829 1.5227 67.4934 C 0.6463 67.3568 0 66.602 0 65.7149 Z" fill="url(#site-brand-g)" transform="translate(11.5 11.5) scale(0.77)"/></svg>
+      <span class="wordmark">opensight</span>
+    </a>
+    <nav class="nav-links" aria-label="Main">
+      <a href="/">Home</a>
+      <a href="/docs/" aria-current="page">Docs</a>
+      <a href="https://github.com/tomesposito/opensight">GitHub</a>
+    </nav>
+  </div>
+</header>
+<div class="wrap docs-layout">
+  <nav class="docs-nav" aria-label="Documentation">
+    <a class="docs-home" href="/docs/" aria-current="page">Documentation</a>
+    <ul>
+      <li><a href="/docs/getting-started/">Getting started</a></li>
+      <li><a href="/docs/connectors/">Data sources and connectors</a></li>
+      <li><a href="/docs/embedding/">Embedding configuration</a></li>
+      <li><a href="/docs/embedding-sessions/">Embedded sessions</a></li>
+      <li><a href="/docs/permissions/">Permissions and row-level security</a></li>
+    </ul>
+  </nav>
+  <main id="content">
+    <article>
+<h1 id="documentation">Documentation</h1>
+<ul class="docs-index">
+  <li><h2><a href="/docs/getting-started/">First run: local data, samples or an authenticated workspace</a></h2><p>OpenSight is open-source, QuickSight-compatible BI for dashboards, analysis authoring, data preparation, connectors and embedding. The default local API serves fixtures and a local file workspace; it does not configure authentication or issue sessions.</p></li>
+  <li><h2><a href="/docs/connectors/">Data sources gallery</a></h2><p>Choose Data → Data sources. The default gallery features Upload a file with the upload → prepare → chart path. Show unavailable connectors defaults off; enabling it reveals the rest of the 23-entry catalog under Not yet available. Turning it off removes those cards and returns their selected details to upload. Search matches names or categories within the visible groups; searching never bypasses the toggle. Source details remain docked beside the gallery on desktop and flow below it on narrow screens. All controls have labels; cards are keyboard-accessible buttons with selected state.</p></li>
+  <li><h2><a href="/docs/embedding/">H5: embedding configuration and appearance (#25)</a></h2><p>H5 adds durable tenant configuration and an offline appearance preview. H6 (#26) now supplies hosted sessions under the recorded HQ-5/HQ-6/HQ-7/HQ-12 decisions. Phase 3c v1 remains separate and unchanged: registered dashboard/visual snapshots, 60–900 second TTL, default 300 seconds, existing signatures, SDK, authorization and exact-origin checks.</p></li>
+  <li><h2><a href="/docs/embedding-sessions/">H6: scoped embedded sessions (#26)</a></h2><p>H6 implements the recorded HQ-5/HQ-6/HQ-7/HQ-12 decisions. Registered dashboard, visual, Q search and authoring experiences, and anonymous dashboard/visual sessions use the hosted tenant stack. The H5 configuration API and Phase 3c v1 signed URL API remain available with their existing semantics. No AWS adapter, infrastructure or deployment is supplied. The static demo is still an offline fixture.</p></li>
+  <li><h2><a href="/docs/permissions/">Permissions and row-level security</a></h2><p>Access to an OpenSight analysis or dashboard and access to its data are separate permissions. Sharing a definition lets someone open that asset; it does not give them the owner&#39;s credentials, prepared data, or row and column permissions.</p></li>
+</ul>
+    </article>
+  </main>
+</div>
+<footer class="footer">
+  <div class="wrap footer-grid">
+    <div>
+      <p class="brand"><svg class="brand-mark" viewBox="0 0 100 100" width="22" height="22" aria-hidden="true"><defs><linearGradient id="site-foot-g" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#38BDF8"/><stop offset="0.5" stop-color="#3B82F6"/><stop offset="1" stop-color="#6D3BFF"/></linearGradient></defs><path d="M 34.2851 0 L 44.2 0 C 45.5807 0 46.7 1.1193 46.7 2.5 L 46.7 6.5 C 46.7 28.7018 28.7018 46.7 6.5 46.7 L 2.5 46.7 C 1.1193 46.7 0 45.5807 0 44.2 L 0 34.2851 C 0 33.398 0.6463 32.6432 1.5227 32.5066 C 17.4905 30.0171 30.0171 17.4905 32.5066 1.5227 C 32.6432 0.6463 33.398 0 34.2851 0 Z M 100 34.2851 L 100 44.2 C 100 45.5807 98.8807 46.7 97.5 46.7 L 93.5 46.7 C 71.2982 46.7 53.3 28.7018 53.3 6.5 L 53.3 2.5 C 53.3 1.1193 54.4193 0 55.8 0 L 65.7149 0 C 66.602 0 67.3568 0.6463 67.4934 1.5227 C 69.9829 17.4905 82.5095 30.0171 98.4773 32.5066 C 99.3537 32.6432 100 33.398 100 34.2851 Z M 65.7149 100 L 55.8 100 C 54.4193 100 53.3 98.8807 53.3 97.5 L 53.3 93.5 C 53.3 71.2982 71.2982 53.3 93.5 53.3 L 97.5 53.3 C 98.8807 53.3 100 54.4193 100 55.8 L 100 65.7149 C 100 66.602 99.3537 67.3568 98.4773 67.4934 C 82.5095 69.9829 69.9829 82.5095 67.4934 98.4773 C 67.3568 99.3537 66.602 100 65.7149 100 Z M 0 65.7149 L 0 55.8 C 0 54.4193 1.1193 53.3 2.5 53.3 L 6.5 53.3 C 28.7018 53.3 46.7 71.2982 46.7 93.5 L 46.7 97.5 C 46.7 98.8807 45.5807 100 44.2 100 L 34.2851 100 C 33.398 100 32.6432 99.3537 32.5066 98.4773 C 30.0171 82.5095 17.4905 69.9829 1.5227 67.4934 C 0.6463 67.3568 0 66.602 0 65.7149 Z" fill="url(#site-foot-g)" transform="translate(11.5 11.5) scale(0.77)"/></svg><span class="wordmark">opensight</span></p>
+      <p class="footer-tag">The open-source BI platform.</p>
+    </div>
+    <nav aria-label="Footer">
+      <a href="https://app.getopensight.org">Open the app</a>
+      <a href="/demo/">Live demo</a>
+      <a href="https://github.com/tomesposito/opensight">GitHub</a>
+      <a href="/docs/">Docs</a>
+      <a href="https://github.com/tomesposito/opensight/issues">Discuss</a>
+    </nav>
+  </div>
+  <div class="wrap footer-base">
+    <p>© 2026 OpenSight contributors · <a href="https://github.com/tomesposito/opensight/blob/master/LICENSE">Apache-2.0</a></p>
+    <p>Last updated October 2026</p>
+  </div>
+</footer>
+</body>
+</html>

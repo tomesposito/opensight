@@ -1,4 +1,4 @@
-// Integrity check for the marketing site (issues #93, #106, #134, #176, #183).
+// Integrity check for the marketing site (issues #93, #106, #134, #176, #183, #185).
 // Usage: node site/check.mjs  (exit 0 = pass)
 // Verifies: every local asset referenced from index.html exists, no external
 // requests beyond allowlisted links, required sections and AEO artifacts present.
@@ -6,6 +6,7 @@
 import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
+import { canonicalUrl, manifest, renderDocs } from './build-docs.mjs';
 
 const root = dirname(fileURLToPath(import.meta.url));
 const html = readFileSync(resolve(root, 'index.html'), 'utf8');
@@ -28,7 +29,7 @@ const local = refs.filter(r => !/^(https?:|mailto:|#)/.test(r) && !DEPLOY_TIME.h
 check(local.length > 0, 'no local references found (unexpected)');
 for (const r of local) {
   // A cache-busting query/fragment still names the same local file.
-  check(existsSync(resolve(root, r.split(/[?#]/)[0])), `missing local asset: ${r}`);
+  check(existsSync(resolve(root, r.split(/[?#]/)[0].replace(/^\//, ''))), `missing local asset: ${r}`);
 }
 const ids = new Set([...html.matchAll(/\bid="([^"]+)"/g)].map(m => m[1]));
 const anchors = refs.filter(r => r.startsWith('#'));
@@ -103,8 +104,9 @@ const sitemap = readArtifact('sitemap.xml');
 check(sitemap.includes('<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">') &&
   sitemap.includes('</urlset>'), 'sitemap.xml must use the sitemap namespace and urlset');
 const locations = [...sitemap.matchAll(/<url>\s*<loc>([^<]+)<\/loc>\s*<\/url>/g)].map(m => m[1]);
-const publicUrls = ['https://getopensight.org/', 'https://getopensight.org/demo/', `${APP_ORIGIN}/`];
-check(locations.length === publicUrls.length, 'sitemap.xml must list exactly three public entry points');
+const publicUrls = ['https://getopensight.org/', 'https://getopensight.org/demo/', `${APP_ORIGIN}/`,
+  canonicalUrl(''), ...manifest.map(page => canonicalUrl(page.slug))];
+check(locations.length === publicUrls.length, `sitemap.xml must list exactly ${publicUrls.length} public entry points`);
 for (const url of publicUrls) {
   check(locations.includes(url), `sitemap.xml missing public entry point: ${url}`);
 }
@@ -197,9 +199,46 @@ if (ld) {
     'JSON-LD sameAs must include the GitHub repo');
 }
 
+// 13. Docs are committed, indexable, current and entirely local to load (#185).
+const docsPages = [{ slug: '' }, ...manifest];
+for (const { slug } of docsPages) {
+  const name = `docs/${slug ? `${slug}/` : ''}index.html`;
+  const page = readArtifact(name);
+  const url = canonicalUrl(slug);
+  const canonical = [...page.matchAll(/<link rel="canonical" href="([^"]+)">/g)];
+  check(canonical.length === 1 && canonical[0][1] === url, `${name}: incorrect canonical URL: ${url}`);
+  check(!/<meta\b[^>]*(?:noindex|nofollow)/i.test(page), `${name}: docs must be indexable`);
+  check(!/<(?:script|iframe|object|embed|style)\b/i.test(page), `${name}: scripts and embedded content are not allowed`);
+  check(page.includes(`href="${slug ? '../' : ''}docs.css"`), `${name}: missing relative docs.css`);
+  for (const tag of page.matchAll(/<(?:link|img|video|audio|source|input|image)\b[^>]*>/gi)) {
+    if (/\brel="canonical"/.test(tag[0])) continue;
+    for (const attr of tag[0].matchAll(/\b(?:src|href|poster|srcset)="([^"]+)"/gi)) {
+      check(!/^(?:[a-z][a-z\d+.-]*:|\/\/)/i.test(attr[1]), `${name}: external asset load: ${attr[1]}`);
+    }
+  }
+  for (const match of page.matchAll(/\b(?:href|src)="([^"]+)"/g)) {
+    const ref = match[1];
+    if (/^(?:https?:|#)/.test(ref) || ref === '/demo/') continue;
+    const path = ref.split(/[?#]/)[0];
+    const target = path.startsWith('/') ? resolve(root, path.slice(1)) : resolve(root, dirname(name), path);
+    check(existsSync(target), `${name}: missing local reference: ${ref}`);
+  }
+}
+const docsCss = readArtifact('docs/docs.css');
+check(!/@import|url\s*\(/i.test(docsCss), 'docs/docs.css: asset loads and imports are not allowed');
+try {
+  for (const [path, fresh] of renderDocs()) {
+    const name = path.slice('site/'.length);
+    check(existsSync(resolve(root, name)) && readFileSync(resolve(root, name), 'utf8') === fresh,
+      `${name}: stale generated docs; run node site/build-docs.mjs`);
+  }
+} catch (error) {
+  check(false, `docs generation failed: ${error.message}`);
+}
+
 if (failures.length) {
   console.error(`site/check.mjs FAILED (${failures.length}):`);
   for (const f of failures) console.error(' -', f);
   process.exit(1);
 }
-console.log(`site/check.mjs OK: ${local.length} local refs, ${anchors.length} internal anchors, ${external.length} allowlisted external links, AEO artifacts and approved copy verified (offline; demo/ is deploy-time)`);
+console.log(`site/check.mjs OK: ${local.length} local refs, ${anchors.length} internal anchors, ${external.length} allowlisted external links, ${docsPages.length} fresh docs pages, AEO artifacts and approved copy verified (offline; demo/ is deploy-time)`);

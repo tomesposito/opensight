@@ -1,7 +1,7 @@
 # Marketing site (`site/`)
 
 One-page marketing site for **getopensight.org** (issue #93). Plain static
-HTML/CSS/JS — no framework, no build step beyond copying assets, no external
+HTML/CSS/JS — no framework; the landing page needs only asset copying, with no external
 requests. It deploys to the same S3 + CloudFront Tom already runs; no new
 infrastructure.
 
@@ -24,7 +24,8 @@ infrastructure.
 
 `robots.txt` allows all crawlers, explicitly allows `meta-webindexer`, and
 points at `https://getopensight.org/sitemap.xml`. The sitemap lists the
-marketing page, `/demo/`, and `https://app.getopensight.org/`. Open Graph and
+marketing page, `/demo/`, `https://app.getopensight.org/`, and the six generated
+[documentation pages](documentation-site.md) under `/docs/` (#185). Open Graph and
 Twitter large-image cards reuse the page title and existing meta description
 and name the absolute URL of `assets/og-image.jpg`. The head also carries a
 canonical link to the homepage, the share image's true dimensions
