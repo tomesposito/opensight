@@ -114,8 +114,9 @@ const SIGNATURE_TOLERANCE_SECONDS = 300;
 export function verifyStripeSignature(rawBody: Buffer, header: string | string[] | undefined, secret: string, nowSeconds: number): void {
   const invalid = (): never => { throw new MetadataError('STRIPE_SIGNATURE_INVALID', 400); };
   if (typeof header !== 'string' || !header || header.length > 2048) invalid();
+  const headerText = header as string;
   let timestamp: string | undefined; const signatures: string[] = [];
-  for (const part of header!.split(',')) {
+  for (const part of headerText.split(',')) {
     const eq = part.indexOf('=');
     if (eq < 1) invalid();
     const key = part.slice(0, eq).trim(), value = part.slice(eq + 1).trim();

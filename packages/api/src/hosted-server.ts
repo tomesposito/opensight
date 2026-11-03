@@ -43,6 +43,7 @@ import { jobRoute } from './job-routes.js';
 import { Scheduler } from './schedule.js';
 import { hostedReadiness } from './hosted-health.js';
 import { HostedUsage, usageMonth } from './hosted-usage.js';
+import { billingConfig, HostedBilling, httpStripeClient, initializeBilling, parseStripeEvent, readRawBody, verifyStripeSignature, type StripeFetcher } from './hosted-billing.js';
 import type { AiMeter } from './ai-settings.js';
 import { appendOperatorAudit, readOperatorAudit } from './operator-audit.js';
 import { referenceConfig, referenceDisclosure, assertReferenceSurfaces } from './single-node-config.js';
@@ -90,6 +91,8 @@ export interface HostedServerOptions {
   builtinAuth?: HostedAuth;
   env?: NodeJS.ProcessEnv;
   mailTransport?: MailTransport;
+  /** Test seam for the Stripe REST client (issue #194); production uses fetch. */
+  stripeFetcher?: StripeFetcher;
   analytics?: Analytics;
   /** Invocation mode never runs DDL, activates keys, recovers jobs or starts interval work. */
   invocation?: { signal: AbortSignal; usage?: HostedUsage; compose?(metadata: TenantMetadata, budgets: TenantBudgets, auth?: HostedAuth, aiMeter?: AiMeter, analytics?: Analytics): HostedInvocationAdapters };
@@ -123,6 +126,7 @@ function boundary(request: IncomingMessage, origin: string): void {
 /** Hosted tenant plane never exposes legacy fixture stores or ownerless schedulers. */
 export async function createHostedApiServer(options: HostedServerOptions): Promise<Server> {
   const config = hostedConfig(options.env);
+  const billingCfg = billingConfig(options.env ?? process.env);
   const accessRate = accessRequestRate(options.env ?? process.env);
   const accessNotifyTo = accessRequestNotifyTo(options.env ?? process.env);
   if (options.membershipDatabase?.durable !== true || options.tenantDatabase?.durable !== true) throw new MetadataError('DURABLE_MEMBERSHIP_STORE_REQUIRED', 503);
@@ -139,6 +143,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
   });
   if (!options.invocation) await initializeAnalytics(options.membershipDatabase);
   if (!options.invocation) await initializeAccessRequests(options.membershipDatabase);
+  if (!options.invocation && billingCfg) await initializeBilling(options.membershipDatabase);
   if (!options.invocation) await initializeIdeas(options.membershipDatabase);
   const analytics = options.analytics ?? new Analytics(new AnalyticsStore(options.membershipDatabase), {
     ...analyticsFromEnvironment(options.env), deliveryMode: options.invocation ? 'deferred' : 'inline',
@@ -155,6 +160,11 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
   const v1 = new V1Routes(data, options.env ?? process.env, { invocation: !!options.invocation, analytics, durable: invocation?.v1 });
   const embedContent = invocation?.embedContent ?? new EmbedContent(new HostedData(new EmbedSources(metadata, config.encryptionKey.toString('base64'), sourceEndpoints(options.env)), undefined, budgets, undefined, undefined, analytics));
   const mail = invocation?.mail ?? options.mailTransport ?? smtpFromEnvironment(options.env);
+  // Stripe billing (issue #194) composes on the single-node hosted server;
+  // invocation mode keeps /api/host closed, so billing stays out of it.
+  const billingService = !options.invocation && billingCfg ? new HostedBilling(options.membershipDatabase, billingCfg,
+    { mail, notifyTo: accessNotifyTo, stripe: httpStripeClient(billingCfg.apiKey, options.stripeFetcher) }) : undefined;
+  if (billingService) { await billingService.load(); if (usage) usage.tierEntitlement = tenantId => billingService.tierEntitlement(tenantId); }
   if (!options.invocation) await initializeJobs(options.membershipDatabase);
   const unmigrated = await options.membershipDatabase.transaction(c => c.query(`SELECT j.resource_id FROM h1_resources j WHERE j.kind = 'job'
     AND NOT EXISTS (SELECT 1 FROM h7_migrations m WHERE m.tenant_id = j.tenant_id AND m.namespace_id = j.namespace_id)`));
@@ -235,6 +245,16 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
         await notifyAccessRequests(options.membershipDatabase, mail, accessNotifyTo, Date.now()).catch(() => 0);
         return;
       }
+      if (path === '/api/host/billing/webhook') {
+        // Stripe authenticates with its signature, not the operator key; the
+        // raw body is verified before anything in it is trusted (issue #194).
+        method(request, response, ['POST']);
+        if (!billingService || !billingCfg) throw new MetadataError('RESOURCE_NOT_FOUND', 404);
+        const raw = await readRawBody(request);
+        verifyStripeSignature(raw, request.headers['stripe-signature'], billingCfg.webhookSecret, Math.floor(Date.now() / 1000));
+        const result = await billingService.handleEvent(parseStripeEvent(raw));
+        send(response, 200, { received: true, duplicate: result.duplicate, handled: result.handled }); return;
+      }
       if (path === '/api/host' || path.startsWith('/api/host/')) {
         const authorization = request.headers.authorization;
         const browserIdeas = /^\/api\/host\/ideas(?:\/[A-Za-z0-9_-]+)?$/.test(path);
@@ -279,6 +299,20 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
           if (request.method === 'POST') await body(request, []);
           const records = request.method === 'POST' ? await usage.rollupMonthlyUsageForPeriod(period, tenantId) : await usage.monthlyUsageForPeriod(period, tenantId);
           send(response, 200, { period, records }); return;
+        }
+        const billingTenant = /^\/api\/host\/tenants\/([A-Za-z0-9_-]+)\/billing(?:\/(payment-link|resolve))?$/.exec(path);
+        if (billingTenant) {
+          if (!billingService) throw new MetadataError('RESOURCE_NOT_FOUND', 404);
+          const tenantId = identifier(billingTenant[1]), billingAction = billingTenant[2];
+          if (!billingAction) { method(request, response, ['GET']); send(response, 200, { billing: await billingService.state(tenantId) }); return; }
+          method(request, response, ['POST']);
+          if (billingAction === 'payment-link') {
+            const input = await body(request, ['tier']);
+            send(response, 201, await billingService.createPaymentLink(tenantId, input.tier)); return;
+          }
+          const input = await body(request, ['action']);
+          if (input.action !== 'drop_to_free') throw new MetadataError('BILLING_ACTION_INVALID', 400);
+          send(response, 200, { billing: await billingService.resolveDropToFree(tenantId) }); return;
         }
         const tenant = /^\/api\/host\/tenants\/([A-Za-z0-9_-]+)(?:\/(suspend|resume|invitations|users)(?:\/([A-Za-z0-9_-]+))?)?$/.exec(path);
         if (tenant) {
@@ -344,6 +378,10 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
       };
       const context = await metadata.authenticate(request, verified);
       path = scopePath(path, context);
+      // Billing past-due gate (issue #194): a tenant paused for non-payment
+      // gets no hosted access until an admin resolution reopens it. The
+      // tenant's data is untouched; only access pauses.
+      billingService?.assertAccess(context.tenantId);
       // Egress gate before routing (and before the apiCalls charge): a denied
       // request is not routed, consumes no admitted egress, and its 429 body
       // is not counted. Embed routes above run before this boundary and are
