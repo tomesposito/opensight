@@ -94,9 +94,9 @@ function parameterPredicate(columnName: string, rawName: unknown, operator: unkn
   if (!p) fail('UNRESOLVED_BINDING', path, `undeclared parameter ${name}`);
   const type = binder.bind(columnName, path).scalarType;
   if (type !== p.type) fail('TYPE_MISMATCH', path, `parameter ${name} (${p.type}) does not match ${columnName} (${type})`);
-  if (!['EQUALS', 'GREATER_THAN_OR_EQUAL_TO', 'LESS_THAN_OR_EQUAL_TO'].includes(String(operator)) || operator !== 'EQUALS' && (p.multiple || type === 'string')) fail('TYPE_MISMATCH', path, 'range comparisons require a single number or datetime parameter');
+  if (!['EQUALS', 'GREATER_THAN_OR_EQUAL_TO', 'LESS_THAN_OR_EQUAL_TO', 'LESS_THAN'].includes(String(operator)) || operator !== 'EQUALS' && (p.multiple || type === 'string')) fail('TYPE_MISMATCH', path, 'range comparisons require a single number or datetime parameter');
   const values = parameters.bindings[name]!;
-  return { columnName, path, scalarType: type, operator: operator as 'EQUALS' | 'GREATER_THAN_OR_EQUAL_TO' | 'LESS_THAN_OR_EQUAL_TO', ...(values.length === 1 ? { value: values[0]! } : { values }) };
+  return { columnName, path, scalarType: type, operator: operator as 'EQUALS' | 'GREATER_THAN_OR_EQUAL_TO' | 'LESS_THAN_OR_EQUAL_TO' | 'LESS_THAN', ...(values.length === 1 ? { value: values[0]! } : { values }) };
 }
 
 function filters(raw: unknown, target: Visual, all: Visual[], sheetIds: Set<string>, binder: ExpressionBinder, parameters: ReturnType<typeof validateParameters>): RowFilter[] {

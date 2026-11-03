@@ -61,10 +61,10 @@ export interface Measure {
 export type RowFilter = {
   readonly columnName: string;
   readonly path: string;
-  readonly operator?: 'EQUALS' | 'GREATER_THAN_OR_EQUAL_TO' | 'LESS_THAN_OR_EQUAL_TO';
+  readonly operator?: 'EQUALS' | 'GREATER_THAN_OR_EQUAL_TO' | 'LESS_THAN_OR_EQUAL_TO' | 'LESS_THAN';
   readonly scalarType?: ScalarType;
 } & ({ readonly value: ParameterValue } | { readonly values: readonly ParameterValue[] });
-export interface ParameterFilter { columnName: string; parameterName: string; operator?: 'EQUALS' | 'GREATER_THAN_OR_EQUAL_TO' | 'LESS_THAN_OR_EQUAL_TO' }
+export interface ParameterFilter { columnName: string; parameterName: string; operator?: 'EQUALS' | 'GREATER_THAN_OR_EQUAL_TO' | 'LESS_THAN_OR_EQUAL_TO' | 'LESS_THAN' }
 /** OpenSight local test configuration, never inferred from missing AWS policies. */
 export interface LocalDataBinding {
   readonly provenance: string;

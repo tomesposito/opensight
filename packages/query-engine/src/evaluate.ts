@@ -12,7 +12,7 @@ export function matchesFilter(f: RowFilter, row: ResultRow): boolean {
   const value = comparable(raw);
   if ('values' in f) return f.values.some(v => comparable(v) === value);
   const bound = comparable(f.value);
-  return f.operator === 'GREATER_THAN_OR_EQUAL_TO' ? value >= bound : f.operator === 'LESS_THAN_OR_EQUAL_TO' ? value <= bound : value === bound;
+  return f.operator === 'GREATER_THAN_OR_EQUAL_TO' ? value >= bound : f.operator === 'LESS_THAN_OR_EQUAL_TO' ? value <= bound : f.operator === 'LESS_THAN' ? value < bound : value === bound;
 }
 export const compareValues = (a: ResultValue, b: ResultValue): number => a === b ? 0 : a === null ? -1 : b === null ? 1 : a < b ? -1 : 1;
 const list = (e: RowExpression | undefined): readonly RowExpression[] => e?.kind === 'list' ? e.items : [];

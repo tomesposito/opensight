@@ -105,3 +105,19 @@ test('published numeric and datetime parameter predicates match interactive plan
     body.Column.ColumnName = 'region'; assert.throws(() => planVisual(request), /TYPE_MISMATCH|number column|column type/);
   }
 });
+
+test('digest half-open period filters share DuckDB, Postgres SQL and fixture boundary semantics', async () => {
+  const csv = readFileSync(`${root}/sales.csv`, 'utf8').trim().split('\n').map(r => r.split(',')), names = csv.shift();
+  const rows = csv.map(r => Object.fromEntries(names.map((name, i) => [name, r[i] === '' ? null : ['order_id', 'revenue', 'profit'].includes(name) ? Number(r[i]) : r[i]])));
+  const body = { dimensions: [], measures: [{ fieldId: 'total', columnName: 'revenue', aggregation: 'SUM' }],
+    parameterDeclarations: [{ name: 'End', type: 'datetime', multiple: false }], parameterBindings: { End: ['2025-04-01T00:00:00Z'] },
+    filters: [{ columnName: 'order_date', parameterName: 'End', operator: 'LESS_THAN' }] };
+  const request = interactiveRequest(body, metadata), live = await executeLocal(request, { dataRoot: root });
+  for (const dialect of ['duckdb', 'postgres', 'mysql']) {
+    const plan = planVisual(request, { dialect });
+    assert.match(plan.sql, /"order_date" < CAST|`order_date` < /); assert.doesNotMatch(plan.sql, /2025-04-01/);
+    assert.deepEqual(plan.parameters, ['2025-04-01T00:00:00Z']); assert.deepEqual(evaluatePlan(plan, rows), live.rows);
+    const onlyBoundary = [{ order_date: '2025-04-01T00:00:00Z', revenue: 99 }, { order_date: '2025-03-31T23:59:59.999Z', revenue: 7 }];
+    assert.deepEqual(evaluatePlan(plan, onlyBoundary), [{ total: 7 }]);
+  }
+});
