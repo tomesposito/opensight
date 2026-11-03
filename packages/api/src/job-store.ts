@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { resourceBytes } from './hosted-usage.js';
-import { hasCapability, type Role } from '@opensight/query-engine';
+import { hasCapability, isRole, type Role } from '@opensight/query-engine';
 import { checksum } from './metadata-operator.js';
 import { MetadataError, missing, type Database, type SqlConnection } from './metadata-db.js';
 import { identifier, type Scope } from './metadata-resources.js';
@@ -104,7 +104,8 @@ export class JobStore {
     // Reject non-authors and another owner's IDs before target/recipient lookup.
     await this.checked(context, async c => {
       const user = await member(c, context, context.userId);
-      if (!hasCapability(user.role as Role, 'build')) throw new MetadataError('JOB_WRITE_FORBIDDEN', 403);
+      if (!(spec.kind === 'digest' ? isRole(user.role) : hasCapability(user.role as Role, 'build'))) throw new MetadataError('JOB_WRITE_FORBIDDEN', 403);
+      if (spec.kind === 'digest' && spec.subscriberId !== context.userId) throw new MetadataError('DIGEST_SELF_ONLY', 403);
       const prior = (await c.query(`SELECT owner_id, version FROM h7_jobs WHERE ${scoped} AND job_id = ?`, [...scopeArgs(context), id]))[0];
       if (prior && prior.owner_id !== context.userId) missing();
       if (Number(prior?.version ?? 0) !== expectedVersion) throw new MetadataError('JOB_VERSION_CONFLICT');
@@ -114,7 +115,7 @@ export class JobStore {
     return this.change(context, id, { spec, expectedVersion }, async c => {
       if (JSON.stringify(rev) !== JSON.stringify(await revisions(c, context))) throw new MetadataError('METADATA_REVISED', 403);
       const user = await member(c, context, context.userId);
-      if (!hasCapability(user.role as Role, 'build')) throw new MetadataError('JOB_WRITE_FORBIDDEN', 403);
+      if (!(spec.kind === 'digest' ? isRole(user.role) : hasCapability(user.role as Role, 'build'))) throw new MetadataError('JOB_WRITE_FORBIDDEN', 403);
       const row = (await c.query(`SELECT * FROM h7_jobs WHERE ${scoped} AND job_id = ?`, [...scopeArgs(context), id]))[0];
       if (row && row.owner_id !== context.userId) missing();
       if (Number(row?.version ?? 0) !== expectedVersion) throw new MetadataError('JOB_VERSION_CONFLICT');
@@ -175,7 +176,7 @@ export class JobStore {
     const job = await this.find(c, run, run.jobId);
     if (job.stopped || !job.spec.enabled || job.version !== run.jobVersion || job.ownerId !== run.ownerId) throw new MetadataError('JOB_REVISED', 403);
     if (JSON.stringify(run.revisions) !== JSON.stringify(await revisions(c, run))) throw new MetadataError('JOB_AUTHORIZATION_REVISED', 403);
-    if (!hasCapability(owner.role as Role, 'build')) throw new MetadataError('JOB_OWNER_FORBIDDEN', 403);
+    if (!(run.spec.kind === 'digest' ? isRole(owner.role) : hasCapability(owner.role as Role, 'build'))) throw new MetadataError('JOB_OWNER_FORBIDDEN', 403);
     const row = (await c.query(`SELECT state FROM h7_occurrences WHERE ${scoped} AND occurrence_id = ?`, [...scopeArgs(run), run.id]))[0];
     if (!row || !['queued', 'running', 'delivering'].includes(String(row.state))) throw new MetadataError('JOB_CANCELLED', 403);
     return job;

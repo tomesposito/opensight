@@ -28,7 +28,7 @@ export class JobRenderer implements JobExecutor {
   async verifyDelivery(context: TenantContext): Promise<void> {
     await this.content.data.publication(context, await this.content.data.sources.metadata.revisions(context));
   }
-  private async dashboard(context: TenantContext, spec: Exclude<JobSpec, { kind: 'refresh' }>) {
+  private async dashboard(context: TenantContext, spec: Extract<JobSpec, { kind: 'report' | 'alert' }>) {
     const asset = await this.content.asset(context, 'dashboard', spec.dashboardId), stored = object(asset.body.definition), definition = object(stored.Definition);
     if (!Array.isArray(asset.body.datasets) || asset.body.datasets.length !== 1 || !Array.isArray(definition.DataSetIdentifierDeclarations) || definition.DataSetIdentifierDeclarations.length !== 1) throw new MetadataError('JOB_DATASET_UNSUPPORTED', 422);
     const binding = object(asset.body.datasets[0]);
@@ -45,6 +45,7 @@ export class JobRenderer implements JobExecutor {
     return { asset, stored, definition, admission, analysis, dataSetArn: String(object(definition.DataSetIdentifierDeclarations[0]).DataSetArn) };
   }
   async authorize(context: TenantContext, spec: JobSpec): Promise<void> {
+    if (spec.kind === 'digest') throw new MetadataError('DIGEST_NOT_CONFIGURED', 503);
     if (spec.kind === 'refresh') {
       await this.data.sources.capability(context, 'build');
       if (spec.target.kind === 'prepared-dataset') { await this.prep.get(context, spec.target.id); return; }
@@ -91,7 +92,7 @@ export class JobRenderer implements JobExecutor {
   }
   async render(context: TenantContext, spec: JobSpec, now: Date): Promise<Pick<MailMessage, 'subject' | 'html'>> {
     await this.authorize(context, spec);
-    if (spec.kind === 'refresh') throw new MetadataError('JOB_DELIVERY_INVALID', 422);
+    if (spec.kind === 'refresh' || spec.kind === 'digest') throw new MetadataError('JOB_DELIVERY_INVALID', 422);
     if (spec.kind === 'alert') {
       const metric = await this.metric(context, spec, now);
       if (!metric.triggered) throw new MetadataError('JOB_RECIPIENT_NOT_TRIGGERED', 403);
