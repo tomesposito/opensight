@@ -1,3 +1,5 @@
+import { digestPath, digestRoute } from './digest-routes.js';
+import type { DigestStore } from './digest-store.js';
 import { PrepTemplateRoutes, type TemplateBackend } from './prep-template-routes.js';
 import { disabledAnalytics, type Analytics } from './analytics.js';
 import { MetricRoutes, type MetricBackend } from './metric-routes.js';
@@ -92,7 +94,7 @@ export class V1Routes {
   private readonly metrics: MetricRoutes;
   private readonly dashboards: DashboardRoutes;
   constructor(private readonly hostedRoutes?: HostedDataRoutes, private readonly env: NodeJS.ProcessEnv = process.env,
-    private readonly options: { invocation?: boolean; analytics?: Analytics; durable?: DurableV1Factory } = {}) {
+    private readonly options: { invocation?: boolean; analytics?: Analytics; durable?: DurableV1Factory; digests?: DigestStore } = {}) {
     this.limiter = new RateLimiter(env);
     this.templates = new PrepTemplateRoutes({ paging: r => this.paging(r), ifMatch: r => this.ifMatch(r) });
     this.metrics = new MetricRoutes({ paging: r => this.paging(r), ifMatch: r => this.ifMatch(r) });
@@ -108,6 +110,7 @@ export class V1Routes {
     try {
       const gate = this.limiter.take(backend.scope.tenantId);
       if (!gate.allowed) { response.setHeader('Retry-After', String(gate.retryAfter)); v1Fail('RATE_LIMIT_EXCEEDED', 429, 'Rate limit exceeded'); }
+      if (digestPath(path)) throw new MetadataError('HOSTED_API_REQUIRED', 503);
       if (this.templates.matches(path)) await this.templates.route(request, response, path, assets);
       else if (this.metrics.matches(path)) await this.metrics.route(request, response, path, assets);
       else if (this.assets.matches(path, request.method)) await this.assets.route(request, response, path, assets);
@@ -136,6 +139,10 @@ export class V1Routes {
       if (this.templates.matches(path)) {
         await this.templates.route(request, response, path, { scope: context, transaction: async (write, work) => { await recheck(); return this.routes.data.sources.metadata.assetTransaction(context, write, work); },
           createTemplateDataset: async (id, name, pipeline) => { await recheck(); return this.routes.prep.save(context, id, { name, pipeline, expectedVersion: 0 }); } }); return true;
+      }
+      if (digestPath(path)) {
+        if (!this.options.digests) throw new MetadataError('HOSTED_API_REQUIRED', 503);
+        await recheck(); await digestRoute(request, response, path, context, this.options.digests, this.routes.data); return true;
       }
       if (metrics.matches(path)) {
         await metrics.route(request, response, path, { scope: context, transaction: async (write, work, receipt) => {

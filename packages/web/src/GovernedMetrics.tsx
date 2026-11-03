@@ -1,9 +1,10 @@
+import { MetricSubscriptions, type DigestClient } from './MetricSubscriptions.js';
 import { useEffect, useRef, useState } from 'react';
 import { functionCatalog, parseExpression, type MetricDefinition } from '@opensight/query-engine/browser';
 import type { createApiClient } from './api-client.js';
 import type { PromotableCalculation, MetricDatasetOption, MetricHistory, MetricList, MetricSummary } from './governed-metrics.js';
 import { DataDialog, DataTable } from './DataSectionUI.js';
-export type MetricClient = Partial<Pick<ReturnType<typeof createApiClient>, 'metricDatasets' | 'listMetrics' | 'saveMetric' | 'publishMetric' | 'metricHistory' | 'promoteCalculation'>>;
+export type MetricClient = DigestClient & Partial<Pick<ReturnType<typeof createApiClient>, 'metricDatasets' | 'listMetrics' | 'saveMetric' | 'publishMetric' | 'metricHistory' | 'promoteCalculation'>>;
 const blank = (): MetricDefinition => ({ name: '', expression: '', defaultAggregation: 'SUM', format: { style: 'number', decimalPlaces: 2 }, description: '', synonyms: [] });
 const message = (error: unknown) => error instanceof Error ? error.message : String(error);
 const datasetKey = (d: MetricDatasetOption) => JSON.stringify(d.dataset);
@@ -12,6 +13,7 @@ export function GovernedMetrics({ client, datasetId }: { client?: MetricClient; 
   const [datasets, setDatasets] = useState<MetricDatasetOption[]>(), [selected, setSelected] = useState('');
   const [list, setList] = useState<MetricList>(), [revision, setRevision] = useState(0), [error, setError] = useState('');
   const [editing, setEditing] = useState<{ metric?: MetricSummary; calculation?: PromotableCalculation }>(), [history, setHistory] = useState<{ name: string; versions: MetricHistory[] }>();
+  const [subscribing, setSubscribing] = useState<MetricSummary>();
   const [busy, setBusy] = useState(false), acting = useRef(false);
   const available = !!(client?.metricDatasets && client.listMetrics && client.saveMetric && client.publishMetric && client.metricHistory);
   useEffect(() => {
@@ -26,7 +28,7 @@ export function GovernedMetrics({ client, datasetId }: { client?: MetricClient; 
   }, [client, datasetId, available]);
   const dataset = datasets?.find(d => datasetKey(d) === selected);
   useEffect(() => {
-    setList(undefined); setEditing(undefined); setHistory(undefined);
+    setList(undefined); setSubscribing(undefined); setEditing(undefined); setHistory(undefined);
     if (!dataset || !client?.listMetrics) return;
     const abort = new AbortController();
     void client.listMetrics(dataset.dataset.id, abort.signal, dataset.dataset).then(value => { if (!abort.signal.aborted) { setList(value); setError(''); } }).catch(e => { if (!abort.signal.aborted) setError(message(e)); });
@@ -49,6 +51,7 @@ export function GovernedMetrics({ client, datasetId }: { client?: MetricClient; 
     {list && <><p>{list.canPublish ? 'You can save drafts and publish definitions for this dataset.' : 'You can save a draft for approval. A dataset owner or workspace administrator publishes it.'}</p>
       <DataTable headings={['Name', 'Status', 'Published version', 'Actions']} empty={!list.items.length ? 'No governed metrics for this dataset. Create a definition to get started.' : undefined}>
         {list.items.map(m => <tr key={m.id}><td>{m.definition.name}<small>{m.definition.description}</small>{m.provenance && <small>Promoted from {m.provenance.name} · dataset version {m.provenance.datasetVersion}</small>}</td><td>{m.state === 'draft' ? 'Draft awaiting approval' : 'Published'}</td><td>{m.publishedVersion ?? 'Not published'}</td><td>
+          {m.published && client?.listMetricSubscriptions && <button disabled={busy} onClick={() => setSubscribing(m)}>Subscribe to {m.published.name}</button>}
           {m.permissions.edit && <button disabled={busy || !!dataset?.errorCode} onClick={() => setEditing({ metric: m })}>Edit {m.definition.name}</button>}
           {m.permissions.publish && m.state === 'draft' && <button disabled={busy || !!dataset?.errorCode} onClick={() => { void action(async () => { await client!.publishMetric!(m.id, m.version); setRevision(n => n + 1); }); }}>Publish {m.definition.name}</button>}
           {m.permissions.edit && <button disabled={busy} onClick={() => { void action(async () => { setHistory({ name: m.definition.name, versions: await client!.metricHistory!(m.id) }); }); }}>History of {m.definition.name}</button>}
@@ -62,6 +65,7 @@ export function GovernedMetrics({ client, datasetId }: { client?: MetricClient; 
       else await client!.saveMetric!(id, dataset.dataset, definition, editing.metric?.version);
       setEditing(undefined); setRevision(n => n + 1);
     }} />}
+    {subscribing && <DataDialog title={`Subscribe to ${subscribing.published?.name}`} onClose={() => setSubscribing(undefined)}><div className="data-dialog-body"><MetricSubscriptions metric={subscribing} columns={dataset?.columns} client={client!} /></div><footer><button onClick={() => setSubscribing(undefined)}>Close subscriptions</button></footer></DataDialog>}
     {history && <DataDialog title={`Version history: ${history.name}`} onClose={() => setHistory(undefined)}><div className="data-dialog-body">
       {history.versions.map(v => <details key={v.version}><summary>Version {v.version} · {v.state} · {v.at} · {v.actor}</summary><p>{v.definition.name}</p><pre>{v.definition.expression}</pre><p>Default aggregation: {v.definition.defaultAggregation} · Format: {v.definition.format.style}, {v.definition.format.decimalPlaces} decimal places {v.definition.format.currency ?? ''}</p><p>{v.definition.description}</p><p>Synonyms: {v.definition.synonyms.join(', ') || 'None'}</p></details>)}
     </div><footer><button onClick={() => setHistory(undefined)}>Close history</button></footer></DataDialog>}

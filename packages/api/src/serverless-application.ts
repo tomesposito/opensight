@@ -1,3 +1,4 @@
+import { unsubscribePath } from './digest-routes.js';
 import { disabledAnalytics } from './analytics.js';
 import { createBuiltinHostedServer, type HostedInvocationAdapters } from './hosted-server.js';
 import { MetadataError, type Database } from './metadata-db.js';
@@ -53,7 +54,7 @@ export async function serverlessUsage(database: Database, deployment: string): P
 /** Literal supported data routes. Legacy base64 uploads remain gated. */
 export function serverlessDataPath(raw: string): boolean {
   const path = raw.replace(/^\/api\/namespaces\/[A-Za-z0-9_-]+\//, '/api/');
-  return !!serverlessV1Methods(path) || path === '/api/admin/analytics' || /^\/api\/(?:session|namespaces|users|groups|connectors|sources|prep-sources|prep-datasets)$/.test(path)
+  return !!unsubscribePath(path) || !!serverlessV1Methods(path) || path === '/api/admin/analytics' || /^\/api\/(?:session|namespaces|users|groups|connectors|sources|prep-sources|prep-datasets)$/.test(path)
     || /^\/api\/(?:automation-status|job-recipients|jobs(?:\/[A-Za-z0-9_-]{1,512}(?:\/(?:runs|deliveries))?)?)$/.test(path)
     || /^\/api\/sources\/[A-Za-z0-9_-]+(?:\/(?:bind|rotate|preview|rows|output|query|refresh|policy))?$/.test(path)
     || /^\/api\/(?:ai\/sources(?:\/[A-Za-z0-9_-]+\/schema)?|prep-datasets\/import)$/.test(path)

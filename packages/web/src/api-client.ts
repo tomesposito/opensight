@@ -1,3 +1,4 @@
+import type { MetricSubscriptionInput, MetricSubscription, MetricDigestPreview } from './metric-digests.js';
 import type { Idea } from './ideas.js';
 import type { InputAuditEntry, InputCellValue, InputColumn, InputRow, InputTableFull, InputTableSummary } from './input-tables.js';
 import type { BundleDataSet } from '@opensight/bundle-parser';
@@ -64,7 +65,7 @@ export interface DefinitionResponse {
 export const DEFAULT_API_URL = '/api';
 
 export interface Invitation { id: string; namespaceId: string; name: string; role: Role; invitedBy?: string; email?: string; expiresAt: string }
-export interface TenantJob { id: string; ownerId: string; version: number; spec: { kind: 'refresh' | 'report' | 'alert'; enabled: boolean }; stopped: boolean; nextRun: string | null }
+export interface TenantJob { id: string; ownerId: string; version: number; spec: { kind: 'refresh' | 'report' | 'alert' | 'digest'; enabled: boolean }; stopped: boolean; nextRun: string | null }
 export interface JobHistory { id: string; state: string; errorCode: string | null; createdAt: string; finishedAt: string | null }
 export interface JobDelivery { delivery_id: string; recipient_id: string; state: string; attempts: number; error_code: string | null }
 export interface AIStatus { configured: boolean; state: 'configured' | 'not-configured' | 'needs-approval' }
@@ -548,6 +549,11 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
       if (!Number.isSafeInteger(current.revision) || Number(current.revision) < 1) throw new ApiError('DASHBOARD_RESPONSE_INVALID: Missing access revision.');
       return rawResource(`/api/v1/dashboards/${encodeURIComponent(id)}/shares/user/${encodeURIComponent(userId)}`, 'PUT', { role: 'viewer' }, undefined, undefined, { 'If-Match': `"${current.revision}"` });
     },
+    getMetric: (id: string, signal?: AbortSignal) => rawResource(`/api/v1/metrics/${encodeURIComponent(id)}`, 'GET', undefined, signal) as Promise<MetricSummary>,
+    listMetricSubscriptions: async (id: string, signal?: AbortSignal) => (await rawResource(`/api/v1/metrics/${encodeURIComponent(id)}/subscriptions`, 'GET', undefined, signal) as { items: MetricSubscription[] }).items,
+    subscribeMetric: (id: string, input: MetricSubscriptionInput) => rawResource(`/api/v1/metrics/${encodeURIComponent(id)}/subscriptions`, 'POST', input) as Promise<MetricSubscription>,
+    unsubscribeMetric: (id: string) => rawResource(`/api/v1/metric-subscriptions/${encodeURIComponent(id)}`, 'DELETE'),
+    previewMetricDigest: (id: string) => rawResource(`/api/v1/metric-subscriptions/${encodeURIComponent(id)}/preview`, 'GET') as Promise<MetricDigestPreview>,
     listDashboards, getPublishedDashboard, queryDashboardVisual,
     saveHostedAnalysis, publishAnalysis,
     onDemand, connect, subscribeAvailability,
