@@ -13,6 +13,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Added
 
+- A pricing page on the marketing site at /pricing: OpenSight is free to self-host, and the hosted tiers (Free, Light $29/mo, Regular $99/mo, Heavy $399/mo) differ in quotas, not features, with a worked 20-person cost comparison against Tableau and Power BI from the vendors' published prices. Linked from the home-page nav and listed in the sitemap (#184).
+
 - Governed input tables (writeback v1): a workspace can create OpenSight-owned tables with typed columns (text/number/date/boolean, required or optional), edit them in a grid on the Data page, and join them in data prep like uploaded datasets. Sources are never mutated; editing needs an explicit per-table editor grant plus an author-class role (readers never write), and every change lands in an append-only audit trail that survives table deletion (#161).
 
 - The open-economics rule is published as a docs page: core governance — single sign-on, row-level security, the audit log, and basic embedding — stays in the open product and is never paywalled; paid tiers buy quotas, support, and an SLA. A guard test fails the suite if a published page puts one of the four behind a paid or enterprise tier, and D-77 carries an update recording that its "future enterprise lever" note no longer applies to them (#165).

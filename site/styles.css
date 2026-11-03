@@ -165,6 +165,33 @@ img { max-width: 100%; height: auto; display: block; }
 .access-message { margin: 20px 0 0; color: var(--ink); overflow-wrap: anywhere; }
 .access-error { color: #a02828; }
 
+/* Pricing page (issue #184) */
+.visually-hidden {
+  position: absolute; width: 1px; height: 1px; overflow: hidden;
+  clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap;
+}
+.pricing .section-sub { margin-bottom: 16px; }
+.tiers-scroll { overflow-x: auto; margin: 36px 0 28px; }
+.tiers {
+  border-collapse: collapse; width: 100%; min-width: 640px;
+  border: 1px solid var(--line); border-radius: var(--radius);
+  font-size: 15.5px;
+}
+.tiers caption {
+  text-align: left; color: var(--muted); font-size: 14px;
+  padding: 0 0 10px; caption-side: top;
+}
+.tiers th, .tiers td {
+  padding: 11px 16px; text-align: right; border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+.tiers thead th { background: var(--navy); color: #fff; font-size: 16px; }
+.tiers tbody th[scope="row"] { text-align: left; font-weight: 600; color: var(--navy); }
+.tiers tbody tr:last-child th, .tiers tbody tr:last-child td { border-bottom: none; }
+.tiers tbody tr:nth-child(even) { background: var(--bg-alt); }
+.pricing-sources { display: flex; gap: 22px; flex-wrap: wrap; margin-top: 22px; }
+.pricing-sources a { font-weight: 600; }
+
 /* Footer */
 .footer { background: #0a1428; color: #8ea6c8; padding: 56px 0 0; font-size: 14.5px; }
 .footer-grid { display: flex; justify-content: space-between; align-items: flex-start; gap: 32px; padding-bottom: 36px; }
