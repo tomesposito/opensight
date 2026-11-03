@@ -147,6 +147,7 @@ test('site integrity checks catch missing docs, sitemap/canonical drift and exte
   cpSync(resolve(repoRoot, 'site/docs'), join(root, 'site/docs'), { recursive: true });
   cpSync(resolve(repoRoot, 'site/pricing'), join(root, 'site/pricing'), { recursive: true });
   cpSync(resolve(repoRoot, 'site/alternatives'), join(root, 'site/alternatives'), { recursive: true });
+  cpSync(resolve(repoRoot, 'site/vs'), join(root, 'site/vs'), { recursive: true });
   // The existing homepage check only checks asset existence: no media copies needed.
   mkdirSync(join(root, 'site/assets'));
   const home = readFileSync(join(root, 'site/index.html'), 'utf8');
@@ -168,6 +169,8 @@ test('site integrity checks catch missing docs, sitemap/canonical drift and exte
     ['docs/permissions/index.html', text => text.replace('Access to an OpenSight', 'Obsolete text about OpenSight'), /stale generated docs/],
     ['pricing/index.html', text => text.replace('$99 a month, $1,188 a year', '$99 a month'), /missing or altered approved copy/],
     ['alternatives/quicksight/index.html', text => text.replace('no licence saving fixes it', 'no license saving fixes it'), /missing or altered approved copy/],
+    ['vs/metabase/index.html', text => text.replace('both free to self-host', 'both free'), /incorrect page title/],
+    ['alternatives/tableau/index.html', text => text.replace('costs $0, whether one person uses it', 'costs nothing, whether one person uses it'), /missing or altered approved copy/],
   ];
   for (const [name, change, expected] of cases) {
     const path = join(root, 'site', name), before = readFileSync(path, 'utf8');
