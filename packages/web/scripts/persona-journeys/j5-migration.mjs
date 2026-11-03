@@ -34,6 +34,22 @@ await runJourney('j5-migration', 'Admin + Author', async j => {
       j.gap('imported-live-visual', 'The imported asset renders at least one populated visual.', { reason: 'This sanitized bundle contains definitions only, referring to an unconfigured Athena dataset; no source rows are included.', actual });
     }
   });
+  await j.step('remap-and-assign', page, async () => {
+    await button(page, 'Remap sheet to local dataset').click();
+    await page.locator('.author-card .author-card-toolbar strong').click();
+    const binding = page.locator('.dataset-binding');
+    await binding.waitFor();
+    const bindingText = await binding.innerText();
+    assert.match(bindingText, /Local sales dataset/);
+    assert.match(bindingText, /Fields requiring manual assignment: country, deaths/);
+    await button(page, 'Assign region').click();
+    await button(page, 'Assign revenue').click();
+    const wells = await page.locator('.field-wells').innerText();
+    assert.match(wells, /region/); assert.match(wells, /SUM\(revenue\)/);
+    const card = await page.locator('.author-card').first().innerText();
+    assert.match(card, /Unsupported features: .*\(retained, read-only\)/);
+    return 'Remap binds the local sales dataset and manual assignment fills both wells (region, SUM(revenue)), but the card still shows the placeholder: retained, read-only properties (title, sortConfiguration, dataLabels.overlap) block rendering per docs/bundle-roundtrip.md, so the imported-live-visual gap stays open for a product decision (evidence on issue #191).';
+  });
   await j.step('save-import', page, async () => {
     await button(page, 'Save draft').click(); await page.getByText('Draft saved on this device.', { exact: true }).waitFor();
     return `Saved the imported draft “${title}”.`;
